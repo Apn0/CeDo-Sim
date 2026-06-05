@@ -37,14 +37,14 @@ func _build_visual() -> void:
 	var sm := CylinderMesh.new(); sm.top_radius = 0.025; sm.bottom_radius = 0.025
 	sm.height = 0.95; sm.radial_segments = 10
 	shaft.mesh = sm; shaft.material_override = wood
-	shaft.position = Vector3(0, 0, -0.1)
+	shaft.position = Vector3(0, 0, 0.1)
 	shaft.rotation.x = deg_to_rad(90.0)
 	add_child(shaft)
 	# Blade (a slightly dished box at the front)
 	var blade := MeshInstance3D.new()
 	var bm := BoxMesh.new(); bm.size = Vector3(0.26, 0.04, 0.30)
 	blade.mesh = bm; blade.material_override = steel
-	blade.position = Vector3(0, 0, 0.5)
+	blade.position = Vector3(0, 0, -0.5)
 	add_child(blade)
 	# Base collision so it rests on the floor.
 	var col := CollisionShape3D.new()
