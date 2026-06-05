@@ -68,10 +68,10 @@ static func team_for_shift(day: int, shift: int) -> int:
 # =============================================================================
 static func shift_label(shift: int) -> String:
 	match shift:
-		Shift.EARLY: return "Vroege dienst"
-		Shift.LATE:  return "Late dienst"
+		Shift.EARLY: return "Ochtenddienst"
+		Shift.LATE:  return "Middagdienst"
 		Shift.NIGHT: return "Nachtdienst"
-		_:           return "Rustdag"
+		_:           return "Weekend"
 
 static func shift_short(shift: int) -> String:
 	match shift:

@@ -1,0 +1,14 @@
+res://src/scenes/world/ShiftRota.gd
+res://src/scenes/world/ShovelTool.gd
+res://src/build/Door.gd
+res://src/build/Hmi.gd
+res://src/operator/OperatorContext.gd
+res://src/scenes/hud/HmiOverlay.gd
+res://src/scenes/hud/HUD.gd
+res://src/scenes/player/PlayerController.gd
+res://src/scenes/vehicles/BaseVehicle.gd
+res://src/scenes/vehicles/VehicleEnterArea.gd
+res://src/scenes/world/BarcodeScanner.gd
+res://src/scenes/world/CabinProp.gd
+res://src/scenes/world/WireCutter.gd
+res://src/scenes/world/MainWorld.tscn
