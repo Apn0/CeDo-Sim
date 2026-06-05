@@ -41,7 +41,7 @@ signal interaction_prompt_hide(source: Node)
 ## Fired when the scanner returns a hit. HUD shows `text` in a banner
 ## under the centre crosshair for ~3 s before fading. `text` is multi-line
 ## ("[scan] <name>\n  key : value\n  ...").
-signal scanner_banner(text: String)
+signal scanner_banner(text: String, is_error: bool)
 
 ## #3 — a bale was physically scanned (barcode gun read its label). `entry` is a
 ## structured row for the shift-leader scan log: batch / item / origin / weight_kg /

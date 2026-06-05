@@ -344,5 +344,5 @@ func _emit_prompt_hide() -> void:
 func _emit_banner(text: String) -> void:
 	var bus := get_node_or_null("/root/EventBus")
 	if bus and bus.has_signal("scanner_banner"):
-		bus.emit_signal("scanner_banner", text)
+		bus.emit_signal("scanner_banner", text, false)
 	print(text)

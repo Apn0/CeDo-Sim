@@ -223,6 +223,9 @@ func _scan_in_front() -> void:
 	_last_scanned = labelled
 	# Scan gate (#152): mark a scanned bale so the feed belt will accept it.
 	if labelled.is_in_group("bale"):
+		if labelled.has_meta("scanned") and labelled.get_meta("scanned"):
+			_banner("[scan] ERROR: Bale already scanned!", true)
+			return
 		labelled.set_meta("scanned", true)
 	var label := labelled.get_node_or_null("Label")
 	var info : Dictionary = {}
@@ -303,10 +306,10 @@ func _peel_last_label() -> void:
 # =============================================================================
 # UI helpers
 # =============================================================================
-func _banner(text: String) -> void:
+func _banner(text: String, is_error: bool = false) -> void:
 	var bus := get_node_or_null("/root/EventBus")
 	if bus and bus.has_signal("scanner_banner"):
-		bus.emit_signal("scanner_banner", text)
+		bus.emit_signal("scanner_banner", text, is_error)
 		return
 	# Fallback if EventBus doesn't yet expose the signal: print only.
 	print(text)

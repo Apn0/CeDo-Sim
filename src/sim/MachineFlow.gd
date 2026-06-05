@@ -199,7 +199,7 @@ static func profile(id: String) -> Dictionary:
 		_:
 			# Bales and anything unrecognised are not flow nodes (bales feed the
 			# head node's composition instead — see LineFlow).
-			if BaleDefs.get_origin(id).size() > 0:
+			if BaleDefs.get_origin(id.trim_suffix("_stack5")).size() > 0:
 				pr["role"] = "none"
 	_apply_process(pr, id)
 	return pr

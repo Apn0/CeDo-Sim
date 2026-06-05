@@ -12,3 +12,4 @@ res://src/scenes/world/BarcodeScanner.gd
 res://src/scenes/world/CabinProp.gd
 res://src/scenes/world/WireCutter.gd
 res://src/scenes/world/MainWorld.tscn
+res://src/scenes/player/CameraRig.gd

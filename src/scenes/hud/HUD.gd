@@ -1046,10 +1046,14 @@ func _build_scanner_banner() -> void:
 	_scanner_banner_panel.visible = false
 	add_child(_scanner_banner_panel)
 
-func _on_scanner_banner(text: String) -> void:
+func _on_scanner_banner(text: String, is_error: bool = false) -> void:
 	if _scanner_banner_label == null:
 		return
 	_scanner_banner_label.text = text
+	if is_error:
+		_scanner_banner_label.add_theme_color_override("font_color", Color(1.0, 0.3, 0.3, 1))
+	else:
+		_scanner_banner_label.add_theme_color_override("font_color", Color(0.86, 0.95, 0.86, 1))
 	_scanner_banner_panel.visible = true
 	_scanner_banner_fade = 3.0
 	# (HUD already has _process running; the banner fades in the same per-frame

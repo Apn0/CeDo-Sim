@@ -317,6 +317,6 @@ func _walk(n: Node) -> Array:
 func _toast(text: String) -> void:
 	var bus := get_node_or_null("/root/EventBus")
 	if bus and bus.has_signal("scanner_banner"):
-		bus.emit_signal("scanner_banner", "[place]  %s" % text)
+		bus.emit_signal("scanner_banner", "[place]  %s" % text, false)
 	else:
 		print("[place] %s" % text)

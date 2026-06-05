@@ -1389,16 +1389,34 @@ static func _build_light_bale(origin: String, ghost: bool) -> Node3D:
 		pm.friction = 0.85
 		pm.bounce = 0.05
 		rb.physics_material_override = pm
-		var label := Node3D.new()
-		label.name = "Label"
-		label.set_meta("label_info", {
+		var info := {
 			"item":       "%s bale" % String(o.get("name", origin)),
 			"origin":     origin,
 			"weight_kg":  int(round(BaleDefs.estimated_weight(size))),
 			"batch":      "B-%04d" % (hash(origin + str(size)) & 0xFFFF),
 			"dimensions": "%.2f x %.2f x %.2f m" % [size.x, size.y, size.z],
-		})
-		rb.add_child(label)
+		}
+		var eps := 0.012
+		var ly := size.y * 0.55
+		var face := _bale_label_seq % 4
+		_bale_label_seq += 1
+		var label_pos : Vector3
+		var label_basis : Basis
+		match face:
+			0:   # front (+Z)
+				label_pos   = Vector3(0.0, ly, size.z * 0.5 + eps)
+				label_basis = Basis()
+			1:   # back (-Z)
+				label_pos   = Vector3(0.0, ly, -size.z * 0.5 - eps)
+				label_basis = Basis(Vector3.UP, PI)
+			2:   # right (+X)
+				label_pos   = Vector3(size.x * 0.5 + eps, ly, 0.0)
+				label_basis = Basis(Vector3.UP, -PI * 0.5)
+			_:   # left (-X)
+				label_pos   = Vector3(-size.x * 0.5 - eps, ly, 0.0)
+				label_basis = Basis(Vector3.UP, PI * 0.5)
+		var label_item_script := preload("res://src/scenes/world/LabelItem.gd")
+		label_item_script.attach_to(rb, info, label_pos, label_basis)
 	# Visible sheet stack (a moderate count for a stacked pile) + a yellow shipping
 	# label, so stacked bales read as REAL bales, not plain boxes. (#1 labels / #2 sheets)
 	var rng := RandomNumberGenerator.new()
@@ -1413,11 +1431,6 @@ static func _build_light_bale(origin: String, ghost: bool) -> Node3D:
 		mi.material_override = _mat(tint.lerp(_sample_sheet_color(rng), 0.5), ghost, 0.0, 0.88)
 		mi.position = Vector3(-size.x * 0.48 + t * (float(j) + 0.5), size.y * 0.5, 0.0)
 		rb.add_child(mi)
-	if not ghost:
-		# Yellow shipping label on the +Z face (matches the full bale's look).
-		_box(rb, Vector3(0.11, 0.08, 0.004),
-			Vector3(size.x * 0.18, size.y * 0.62, size.z * 0.5 + 0.004),
-			_mat(Color(0.95, 0.85, 0.10), ghost, 0.0, 0.7))
 	var wires := Node3D.new()
 	wires.name = "Wires"
 	rb.add_child(wires)
@@ -1539,13 +1552,6 @@ static func _m_bale(p: Node3D, id: String, size: Vector3, ghost: bool) -> void:
 	#  They were leaving two inseparable vertical black sheets behind whenever a
 	#  cut bale opened — bug #95. The 3 iron wires already serve as visible
 	#  strapping, so removing these bands is a clean fix.)
-
-	# Yellow stapled label backing (~11×8 cm) on the front (+Z). The origin name
-	# + unique barcode are printed on top by add_bale_label() after placement
-	# (when the bale's unique code is known).
-	if not ghost:
-		var ylw := _mat(Color(0.95, 0.85, 0.10), false, 0.0, 0.7)
-		_box(p, Vector3(0.11, 0.08, 0.004), Vector3(size.x * 0.18, size.y * 0.62, size.z * 0.5 + 0.003), ylw)
 
 ## Builds 3 iron wires (Wire_0/1/2), each a full loop around the bale's length+height
 ## (Top/Bottom run the full length over every sheet edge; Left/Right cap the ±X ends),
@@ -2379,13 +2385,26 @@ static func add_bale_label(body: Node3D, id: String, code: String) -> void:
 	var item := get_item(id)
 	if item.is_empty():
 		return
-	var size: Vector3 = item["size"]
 	var nm := String(BaleDefs.get_origin(id).get("name", id)).to_upper()
-	var lx := size.x * 0.18
-	var ly := size.y * 0.62
-	var lz := size.z * 0.5 + 0.006
+
+	# The bale already has a "Label" child attached by attach_to() (with barcode stripes).
+	# We just need to add the text to it and update its metadata.
+	var label_node := body.get_node_or_null("Label")
+	if label_node == null:
+		return
+
+	if label_node.has_meta("label_info"):
+		var info = label_node.get_meta("label_info")
+		info["batch"] = code
+		label_node.set_meta("label_info", info)
+
+	# Remove old BaleLabel if any (shouldn't be, but just in case)
+	var old_lbl := label_node.get_node_or_null("BaleLabel")
+	if old_lbl:
+		old_lbl.queue_free()
 
 	# Printed text: origin + unique code (small enough to fit an 11×8 cm sticker).
+	# Centered on the label surface (+Z locally).
 	var lbl := Label3D.new()
 	lbl.name = "BaleLabel"
 	lbl.text = "%s\n%s" % [nm, code]
@@ -2393,17 +2412,8 @@ static func add_bale_label(body: Node3D, id: String, code: String) -> void:
 	lbl.pixel_size = 0.00019
 	lbl.modulate = Color(0.05, 0.05, 0.05)
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lbl.position = Vector3(lx, ly + 0.014, lz)
-	body.add_child(lbl)
-
-	# Barcode: stripe widths derived from the code's characters (unique per bale).
-	var blk := _mat(Color(0.04, 0.04, 0.04), false, 0.0, 0.7)
-	var x := lx - 0.045
-	for i in code.length():
-		var ch := code.unicode_at(i)
-		var w := 0.0012 + float(ch % 4) * 0.0009
-		_box(body, Vector3(w, 0.018, 0.002), Vector3(x + w * 0.5, ly - 0.022, lz), blk)
-		x += w + 0.0018
+	lbl.position = Vector3(0.0, 0.018, 0.003)
+	label_node.add_child(lbl)
 
 # =============================================================================
 # SURFACE / OPENING BUILDERS  (used by the 4-point surface tool + door convert)
