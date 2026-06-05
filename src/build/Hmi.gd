@@ -49,7 +49,6 @@ func _on_body_entered(body: Node3D) -> void:
 	if body.name != "Player":
 		return
 	_player_near = true
-	EventBus.interaction_prompt_show.emit(self, "Open %s" % _label)
 
 func _on_body_exited(body: Node3D) -> void:
 	if body.name != "Player":
@@ -58,11 +57,15 @@ func _on_body_exited(body: Node3D) -> void:
 	EventBus.interaction_prompt_hide.emit(self)
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not _player_near:
-		return
-	if event.is_action_pressed("interact"):
+	# Open is driven by PlayerController's crosshair interaction ray.
+	return
+
+func crosshair_prompt(player: Node3D) -> String:
+	return "Open %s" % _label if _player_near else ""
+
+func crosshair_interact(player: Node3D) -> void:
+	if _player_near:
 		_open_overlay()
-		get_viewport().set_input_as_handled()
 
 ## Lazy-loads the shared overlay on first use, then shows it.
 func _open_overlay() -> void:

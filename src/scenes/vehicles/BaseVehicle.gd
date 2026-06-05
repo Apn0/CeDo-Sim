@@ -107,6 +107,10 @@ var _cab_camera       : Camera3D = null
 # See CameraRig.gd. Replaces the old _chase_camera + _third_person bool.
 var _camera_rig       : CameraRig = null
 
+const CAB_CAMERA_DEBUG_STEP_M : float = 0.05
+const CAB_CAMERA_OFFSETS_PATH : String = "user://vehicle_cab_camera_offsets.cfg"
+var _cab_camera_debug_offset : Vector3 = Vector3.ZERO
+
 const GRAB_RANGE      : float = 2.5       # m from the carry point to grab a bale
 var _carried_bale     : Node3D = null
 var _bale_orig_parent : Node = null
@@ -179,9 +183,11 @@ func _ready() -> void:
 	fuel_l = fuel_capacity_l
 	drive_charge = 1.0                 # electric machines spawn fully charged
 	adblue_l = adblue_capacity_l       # diesel machines spawn with a full DEF tank
+	_ensure_cab_camera_debug_actions()
 	if cab_camera_path:
 		_cab_camera = get_node_or_null(cab_camera_path) as Camera3D
 		if _cab_camera:
+			_apply_saved_cab_camera_offset()
 			_cab_camera.current = false
 	# Camera rig — own camera is used by 3rd-person follow + orbit modes; the
 	# cab camera (handed in via set_first_person_camera) is the 1st-person.
@@ -266,6 +272,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		if _camera_rig:
 			_camera_rig.handle_mouse_look((event as InputEventMouseMotion).relative)
 		return
+	# Cab-camera seat debugger: nudge the first-person cab viewpoint with numpad
+	# keys and persist the offset to user:// so the tested correction can be baked
+	# into the scene later.
+	if _handle_cab_camera_debug_input(event):
+		get_viewport().set_input_as_handled()
+		return
 	# Camera rig (F4 cycle / hold-F4 + arrows / hold-F4 + scroll).
 	if _camera_rig and _camera_rig.handle_input(event):
 		get_viewport().set_input_as_handled()
@@ -293,6 +305,105 @@ func _unhandled_input(event: InputEvent) -> void:
 		if has_horn:
 			honk()
 			get_viewport().set_input_as_handled()
+
+# =============================================================================
+# CAB CAMERA DEBUG POSITIONING
+# =============================================================================
+## Numpad 8/2/4/6/9/3 nudges the occupied cab camera in the driver's local
+## forward/back/left/right/up/down axes. The accumulated per-vehicle-type offset
+## is saved to user://vehicle_cab_camera_offsets.cfg and printed after each nudge
+## so a manually tested correction can be baked into the .tscn later.
+func _ensure_cab_camera_debug_actions() -> void:
+	var binds := {
+		"cab_cam_forward":  KEY_KP_8,
+		"cab_cam_back":     KEY_KP_2,
+		"cab_cam_left":     KEY_KP_4,
+		"cab_cam_right":    KEY_KP_6,
+		"cab_cam_up":       KEY_KP_9,
+		"cab_cam_down":     KEY_KP_3,
+	}
+	for action_name in binds:
+		if not InputMap.has_action(action_name):
+			InputMap.add_action(action_name)
+		var key_code: int = binds[action_name]
+		var has_key := false
+		for ev in InputMap.action_get_events(action_name):
+			if ev is InputEventKey and (ev as InputEventKey).keycode == key_code:
+				has_key = true
+				break
+		if not has_key:
+			var k := InputEventKey.new()
+			k.keycode = key_code as Key
+			InputMap.action_add_event(action_name, k)
+
+func _handle_cab_camera_debug_input(event: InputEvent) -> bool:
+	if not occupied or _cab_camera == null or is_platform_ride():
+		return false
+	var basis := _cab_camera_debug_basis()
+	var dir := Vector3.ZERO
+	if event.is_action_pressed("cab_cam_forward"):
+		dir += -basis.z
+	elif event.is_action_pressed("cab_cam_back"):
+		dir += basis.z
+	elif event.is_action_pressed("cab_cam_left"):
+		dir += -basis.x
+	elif event.is_action_pressed("cab_cam_right"):
+		dir += basis.x
+	elif event.is_action_pressed("cab_cam_up"):
+		dir += basis.y
+	elif event.is_action_pressed("cab_cam_down"):
+		dir += -basis.y
+	else:
+		return false
+	_nudge_cab_camera_debug(dir.normalized() * CAB_CAMERA_DEBUG_STEP_M)
+	return true
+
+func _cab_camera_debug_basis() -> Basis:
+	if _camera_rig and _camera_rig.has_method("first_person_base_basis"):
+		return _camera_rig.call("first_person_base_basis") as Basis
+	return _cab_camera.transform.basis
+
+func _nudge_cab_camera_debug(delta_local: Vector3) -> void:
+	_cab_camera_debug_offset += delta_local
+	if _camera_rig and _camera_rig.has_method("nudge_first_person_base"):
+		_camera_rig.call("nudge_first_person_base", delta_local)
+	else:
+		_cab_camera.position += delta_local
+	_save_cab_camera_offset()
+	print("[CabCameraDebug] %s offset=%s position=%s saved=%s" % [
+		_cab_camera_offset_key(),
+		_vec3_str(_cab_camera_debug_offset),
+		_vec3_str(_cab_camera.position),
+		CAB_CAMERA_OFFSETS_PATH,
+	])
+
+func _apply_saved_cab_camera_offset() -> void:
+	var cfg := ConfigFile.new()
+	if cfg.load(CAB_CAMERA_OFFSETS_PATH) != OK:
+		return
+	var value = cfg.get_value("cab_camera_offsets", _cab_camera_offset_key(), Vector3.ZERO)
+	if value is Vector3:
+		_cab_camera_debug_offset = value
+		_cab_camera.position += _cab_camera_debug_offset
+		print("[CabCameraDebug] loaded %s offset=%s from %s" % [
+			_cab_camera_offset_key(),
+			_vec3_str(_cab_camera_debug_offset),
+			CAB_CAMERA_OFFSETS_PATH,
+		])
+
+func _save_cab_camera_offset() -> void:
+	var cfg := ConfigFile.new()
+	cfg.load(CAB_CAMERA_OFFSETS_PATH)
+	cfg.set_value("cab_camera_offsets", _cab_camera_offset_key(), _cab_camera_debug_offset)
+	var err := cfg.save(CAB_CAMERA_OFFSETS_PATH)
+	if err != OK:
+		push_warning("[CabCameraDebug] Could not save %s (error %d)" % [CAB_CAMERA_OFFSETS_PATH, err])
+
+func _cab_camera_offset_key() -> String:
+	return vehicle_type if vehicle_type != "" else name
+
+func _vec3_str(v: Vector3) -> String:
+	return "(%.2f, %.2f, %.2f)" % [v.x, v.y, v.z]
 
 # =============================================================================
 # BALE PICKUP / CARRY / DROP
@@ -557,6 +668,34 @@ func _set_bale_grabbed(b: Node3D, grabbed: bool) -> void:
 		var sb := b as StaticBody3D
 		sb.collision_layer = 1 if not grabbed else 0
 		sb.collision_mask  = 1 if not grabbed else 0
+
+## Crosshair interaction protocol used by PlayerController. VehicleEnterArea still
+## decides whether the cab is reachable; the player must also look at the vehicle.
+func crosshair_prompt(player: Node3D) -> String:
+	var op_ctx := _operator_context()
+	if op_ctx == null or op_ctx.get("current_mode") != "on_foot" or op_ctx.get("interactable_vehicle") != self:
+		return ""
+	if has_method("can_enter") and not can_enter():
+		var reason := enter_refusal_reason() if has_method("enter_refusal_reason") else "Cannot enter right now"
+		return reason if reason != "" else "Cannot enter right now"
+	return "Enter %s" % _pretty_vehicle_type()
+
+func crosshair_interact(player: Node3D) -> void:
+	var op_ctx := _operator_context()
+	if op_ctx != null and op_ctx.has_method("enter_interactable_vehicle"):
+		op_ctx.call("enter_interactable_vehicle", self)
+
+func _operator_context() -> Node:
+	var nodes := get_tree().get_nodes_in_group("operator_context")
+	return nodes[0] if not nodes.is_empty() else null
+
+func _pretty_vehicle_type() -> String:
+	match vehicle_type:
+		"forklift": return "forklift"
+		"bale_clamp": return "bale clamp"
+		"merlo", "merlo_p40": return "Merlo"
+		"scissor_lift": return "scissor lift"
+		_: return vehicle_type.capitalize().replace("_", " ")
 
 func can_exit() -> bool:
 	# In kinematic-drive mode linear_velocity isn't a meaningful speed signal;

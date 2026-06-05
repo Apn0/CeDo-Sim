@@ -867,6 +867,14 @@ func _input(event: InputEvent) -> void:
 			return
 
 	if event.is_action_pressed("ui_cancel"):
+		# Modal overlays such as the HMI own the first ESC press. Close them here in
+		# _input before the pause menu toggles behind their _unhandled_input handler.
+		for overlay in get_tree().get_nodes_in_group("esc_modal_overlay"):
+			if overlay is CanvasLayer and overlay.has_method("is_open") and bool(overlay.call("is_open")):
+				if overlay.has_method("close_overlay"):
+					overlay.call("close_overlay")
+					get_viewport().set_input_as_handled()
+					return
 		# When the settings overlay is open, let IT handle ESC (cancel rebind
 		# capture, or close the menu) — don't toggle the pause card behind it.
 		if _settings_menu and _settings_menu.visible:

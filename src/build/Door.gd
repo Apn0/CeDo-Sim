@@ -92,7 +92,6 @@ func _on_body_entered(body: Node3D) -> void:
 	if body.name != "Player":
 		return
 	_player_near = true
-	EventBus.interaction_prompt_show.emit(self, _prompt_text())
 
 func _on_body_exited(body: Node3D) -> void:
 	if body.name != "Player":
@@ -100,15 +99,19 @@ func _on_body_exited(body: Node3D) -> void:
 	_player_near = false
 	EventBus.interaction_prompt_hide.emit(self)
 
+func crosshair_prompt(player: Node3D) -> String:
+	return _prompt_text() if _player_near and not _moving else ""
+
+func crosshair_interact(player: Node3D) -> void:
+	if _player_near and not _moving:
+		toggle()
+
 func _prompt_text() -> String:
 	return "Close door" if _is_open else "Open door"
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not _player_near or _moving:
-		return
-	if event.is_action_pressed("interact"):
-		toggle()
-		get_viewport().set_input_as_handled()
+	# Toggle is driven by PlayerController's crosshair interaction ray.
+	return
 
 # =============================================================================
 func toggle() -> void:
