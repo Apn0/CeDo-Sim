@@ -18,7 +18,7 @@ class_name PlayerController
 
 const GRAVITY: float = 9.8
 const STEP_HEIGHT: float = 0.4   # max ledge/curb height the player walks over
-const INTERACT_RAY_RANGE: float = 3.0
+const INTERACT_RAY_RANGE: float = 3.75
 
 var _look_interactable: Node = null
 var _look_prompt: String = ""

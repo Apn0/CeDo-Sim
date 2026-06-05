@@ -330,6 +330,21 @@ func _apply_cab_look() -> void:
 	_first_person_camera.rotate_y(_cab_yaw)            # yaw around parent (vehicle) Y
 	_first_person_camera.rotate_object_local(Vector3.RIGHT, _cab_pitch)
 
+## Move the stored first-person camera base pose without disturbing current
+## yaw/pitch. Vehicle cab-camera debug controls use this so the operator can tune
+## seat position live and still keep normal mouse-look behaviour.
+func nudge_first_person_base(delta_local: Vector3) -> void:
+	if _first_person_camera == null or not is_instance_valid(_first_person_camera):
+		return
+	_cab_initial_xf.origin += delta_local
+	_apply_cab_look()
+
+func first_person_base_origin() -> Vector3:
+	return _cab_initial_xf.origin
+
+func first_person_base_basis() -> Basis:
+	return _cab_initial_xf.basis
+
 ## Reset orbit/zoom (useful when (re-)entering a vehicle or respawning).
 func reset() -> void:
 	_orbit_yaw      = 0.0
