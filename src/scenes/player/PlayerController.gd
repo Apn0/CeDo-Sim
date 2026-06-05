@@ -143,6 +143,7 @@ func _physics_process(delta: float) -> void:
 
 	# Suppress WASD when cursor is visible (pause menu / any UI overlay).
 	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		_clear_crosshair_interaction()
 		velocity.x = move_toward(velocity.x, 0.0, friction * delta)
 		velocity.z = move_toward(velocity.z, 0.0, friction * delta)
 		move_and_slide()
@@ -174,6 +175,7 @@ func _physics_process(delta: float) -> void:
 	_attempt_wedge_rescue(wish_dir, delta)
 	_update_stance(delta)
 	move_and_slide()
+	_update_crosshair_interaction()
 
 # ── Stance morph + toggles ────────────────────────────────────────────────────
 ## Smoothly lerp the capsule height + eye height toward the current stance's
@@ -306,6 +308,8 @@ func _input(event: InputEvent) -> void:
 
 	# Crosshair interaction: E acts on the thing under the centre of the screen,
 	# not merely whichever trigger volume the player happens to be standing in.
+	if event.is_action_pressed("interact"):
+		_update_crosshair_interaction()
 	if event.is_action_pressed("interact") and _look_interactable != null:
 		if is_instance_valid(_look_interactable) and _look_interactable.has_method("crosshair_interact"):
 			_look_interactable.call("crosshair_interact", self)
