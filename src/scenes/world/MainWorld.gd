@@ -123,6 +123,8 @@ func _load_building_shell() -> void:
 		return
 	mesh_instance.create_trimesh_collision()
 	print("[MainWorld] Building collision generated")
+	_generate_floor_from_shell(mesh_instance)
+	print("[MainWorld] Dynamic floor generated from building corners")
 
 # Caches the building mesh so doors/windows can carve real, walkable openings
 # at runtime (never touches the source .obj). Must exist BEFORE BuildMode loads
@@ -418,13 +420,9 @@ func _vehicle_anchor() -> Vector3:
 	return marker.global_position if marker else Vector3.ZERO
 
 ## World Y of the floor's TOP surface — placing a machine so its AABB bottom sits
-## at this Y seats it flush on the floor. TempFloor is a 1 m-thick slab (top =
-## origin + 0.5).
+## at this Y seats it flush on the floor.
 func _floor_top_y() -> float:
-	var f := find_child("TempFloor", true, false) as Node3D
-	if f:
-		return f.global_position.y + 0.5
-	return -9.0   # fallback if the floor node is renamed/missing
+	return _floor_min_y_cache
 
 ## Combined AABB of all of `node`'s mesh descendants, expressed in `node`'s OWN
 ## local space (accounts for nested child transforms). Used to seat a machine's
@@ -1395,8 +1393,108 @@ func _on_autosave() -> void:
 	print("[MainWorld] Autosave")
 
 # =============================================================================
+
+# =============================================================================
+# FLOOR GENERATION
+# =============================================================================
+var _floor_min_y_cache: float = -9.0
+
+func _generate_floor_from_shell(shell_mesh: MeshInstance3D) -> void:
+	var mesh = shell_mesh.mesh as ArrayMesh
+	if not mesh:
+		return
+
+	var shell_xf = shell_mesh.global_transform
+	var xz_to_y = {}
+	var min_y = 1000000.0
+
+	# Extract vertices
+	for s in range(mesh.get_surface_count()):
+		var arr = mesh.surface_get_arrays(s)
+		var verts = arr[Mesh.ARRAY_VERTEX] as PackedVector3Array
+		for v in verts:
+			var world_v = shell_xf * v
+			var xz = Vector2(round(world_v.x * 10.0) / 10.0, round(world_v.z * 10.0) / 10.0)
+			if not xz_to_y.has(xz) or world_v.y < xz_to_y[xz]:
+				xz_to_y[xz] = world_v.y
+			if world_v.y < min_y:
+				min_y = world_v.y
+
+	# Filter for bottom corners
+	var bottom_pts = PackedVector2Array()
+	var bottom_ys = PackedFloat32Array()
+	for xz in xz_to_y.keys():
+		var y = xz_to_y[xz]
+		if y <= min_y + 10.0:
+			bottom_pts.push_back(xz)
+			bottom_ys.push_back(y)
+
+	# Add 4 large bounding corners to extend the floor
+	var extents = [
+		Vector2(-2000, -2000), Vector2(2000, -2000),
+		Vector2(2000, 2000), Vector2(-2000, 2000)
+	]
+	for ext in extents:
+		bottom_pts.push_back(ext)
+		bottom_ys.push_back(min_y)
+
+	var floor_node = find_child("TempFloor", true, false) as StaticBody3D
+	if not floor_node:
+		return
+
+	var floor_inv = floor_node.global_transform.affine_inverse()
+	var local_pts = PackedVector2Array()
+	var local_ys = PackedFloat32Array()
+	for i in range(bottom_pts.size()):
+		var xz = bottom_pts[i]
+		var y = bottom_ys[i]
+		var local_v = floor_inv * Vector3(xz.x, y, xz.y)
+		local_pts.push_back(Vector2(local_v.x, local_v.z))
+		local_ys.push_back(local_v.y)
+
+	var delaunay = Geometry2D.delaunay_2d(local_pts)
+
+	var st = SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+
+	for i in range(0, delaunay.size(), 3):
+		var i1 = delaunay[i]
+		var i2 = delaunay[i+1]
+		var i3 = delaunay[i+2]
+
+		var p1 = Vector3(local_pts[i1].x, local_ys[i1], local_pts[i1].y)
+		var p2 = Vector3(local_pts[i2].x, local_ys[i2], local_pts[i2].y)
+		var p3 = Vector3(local_pts[i3].x, local_ys[i3], local_pts[i3].y)
+
+		var normal = (p2 - p1).cross(p3 - p1)
+		if normal.y < 0:
+			st.add_vertex(p1)
+			st.add_vertex(p3)
+			st.add_vertex(p2)
+		else:
+			st.add_vertex(p1)
+			st.add_vertex(p2)
+			st.add_vertex(p3)
+
+	st.generate_normals()
+	var new_mesh = st.commit()
+
+	var mi = floor_node.find_child("MeshInstance3D", false, false) as MeshInstance3D
+	if mi:
+		mi.mesh = new_mesh
+
+	var cs = floor_node.find_child("CollisionShape3D", false, false) as CollisionShape3D
+	if cs:
+		var shape = ConcavePolygonShape3D.new()
+		shape.set_faces(new_mesh.get_faces())
+		cs.shape = shape
+
+	_floor_min_y_cache = min_y
+
+# =============================================================================
 # Helpers
 # =============================================================================
+
 func get_npc(npc_id: String) -> Node:
 	return npcs.get(npc_id, null)
 
