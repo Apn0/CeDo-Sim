@@ -52,17 +52,17 @@ func _build_visual() -> void:
 	led_m.emission_enabled = true
 	led_m.emission = Color(0.20, 1.00, 0.30, 1)
 	led_m.emission_energy_multiplier = 1.6
-	# Body (the bit you scan WITH — the +Z face is the window)
+	# Body (the bit you scan WITH — the -Z face is the window, matching Godot camera-forward)
 	var body := MeshInstance3D.new()
 	var bm := BoxMesh.new(); bm.size = Vector3(0.07, 0.10, 0.20)
 	body.mesh = bm; body.material_override = yellow
-	body.position = Vector3(0.0, 0.04, 0.05)
+	body.position = Vector3(0.0, 0.04, -0.05)
 	add_child(body)
 	# Scanner window (black panel on the front face of the body)
 	var win := MeshInstance3D.new()
 	var wm := BoxMesh.new(); wm.size = Vector3(0.05, 0.06, 0.005)
 	win.mesh = wm; win.material_override = window_m
-	win.position = Vector3(0.0, 0.04, 0.155)
+	win.position = Vector3(0.0, 0.04, -0.155)
 	add_child(win)
 	# Status LED on the top of the body
 	var led := MeshInstance3D.new()
@@ -74,13 +74,13 @@ func _build_visual() -> void:
 	var grip := MeshInstance3D.new()
 	var gm := BoxMesh.new(); gm.size = Vector3(0.05, 0.14, 0.06)
 	grip.mesh = gm; grip.material_override = dark
-	grip.position = Vector3(0.0, -0.06, -0.02)
+	grip.position = Vector3(0.0, -0.06, 0.02)
 	add_child(grip)
 	# Trigger (small darker block on the inside of the grip)
 	var trig := MeshInstance3D.new()
 	var tm := BoxMesh.new(); tm.size = Vector3(0.025, 0.04, 0.03)
 	trig.mesh = tm; trig.material_override = dark
-	trig.position = Vector3(0.0, -0.02, 0.025)
+	trig.position = Vector3(0.0, -0.02, -0.025)
 	add_child(trig)
 	# Bounding collision so it doesn't fall through the floor
 	var col := CollisionShape3D.new()
@@ -104,13 +104,10 @@ func _build_pickup_trigger() -> void:
 # PICKUP / DROP
 # =============================================================================
 func _on_body_entered(body: Node3D) -> void:
-	if _held_by != null:
-		return
-	if body.name != "Player":
+	if _held_by != null or body.name != "Player":
 		return
 	_player_near = true
 	_player_node = body
-	_emit_prompt("Take barcode scanner")
 
 func _on_body_exited(body: Node3D) -> void:
 	if body.name != "Player":
@@ -121,9 +118,6 @@ func _on_body_exited(body: Node3D) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if _held_by == null:
-		if _player_near and event.is_action_pressed("interact"):
-			_pick_up(_player_node)
-			get_viewport().set_input_as_handled()
 		return
 	# Only respond when WE are the active inventory slot — otherwise the player
 	# holds e.g. scissors and pressing E should drop the scissors, not us.
@@ -146,6 +140,13 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 
+func crosshair_prompt(player: Node3D) -> String:
+	return "Take barcode scanner" if _held_by == null and _player_near else ""
+
+func crosshair_interact(player: Node3D) -> void:
+	if _held_by == null and _player_near:
+		_pick_up(player)
+
 func _pick_up(player: Node3D) -> void:
 	_held_by = player
 	var inv := get_node_or_null("/root/Inventory")
@@ -157,9 +158,8 @@ func _pick_up(player: Node3D) -> void:
 		var parent_node : Node = head if head != null else player
 		get_parent().remove_child(self)
 		parent_node.add_child(self)
-	# Held transform: same hand area as scissors but rotated so the WINDOW
-	# points forward (+Z in local). No 180° flip needed — pistol grip already
-	# faces the operator naturally.
+	# Held transform: local -Z is camera-forward, so the window now points away
+	# from the operator and the pistol grip sits back toward the hand.
 	transform = Transform3D(Basis(), Vector3(0.22, -0.18, -0.45))
 	collision_layer = 0
 	collision_mask  = 0

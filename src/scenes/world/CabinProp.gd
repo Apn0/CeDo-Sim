@@ -94,7 +94,6 @@ func _on_body_entered(body: Node3D) -> void:
 		return
 	_player_near = true
 	_player_node = body
-	_emit_prompt("Take %s" % prop_kind)
 
 func _on_body_exited(body: Node3D) -> void:
 	if body.name != "Player":
@@ -105,9 +104,6 @@ func _on_body_exited(body: Node3D) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if _held_by == null:
-		if _player_near and event.is_action_pressed("interact"):
-			_pick_up(_player_node)
-			get_viewport().set_input_as_handled()
 		return
 	var inv := get_node_or_null("/root/Inventory")
 	if inv and not bool(inv.call("is_active", self)):
@@ -115,6 +111,13 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("interact"):
 		_drop()
 		get_viewport().set_input_as_handled()
+
+func crosshair_prompt(player: Node3D) -> String:
+	return ("Take %s" % prop_kind) if _held_by == null and _player_near else ""
+
+func crosshair_interact(player: Node3D) -> void:
+	if _held_by == null and _player_near:
+		_pick_up(player)
 
 func _pick_up(player: Node3D) -> void:
 	_held_by = player

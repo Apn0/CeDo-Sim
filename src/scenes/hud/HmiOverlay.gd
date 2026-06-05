@@ -115,6 +115,7 @@ var _manual_rows  : Array = []           # [{section, lamp:ColorRect, btn:Button
 
 # =============================================================================
 func _ready() -> void:
+	add_to_group("esc_modal_overlay")
 	layer = 45
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	for s in SECTIONS:
@@ -138,6 +139,9 @@ func open_for(label: String) -> void:
 		_last_fed_mass = float(_line_flow.fed_mass)
 	_show_screen(Screen.HOOFDMENU)
 	visible = true
+
+func is_open() -> bool:
+	return visible
 
 func close_overlay() -> void:
 	visible = false
