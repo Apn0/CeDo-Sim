@@ -558,6 +558,34 @@ func _set_bale_grabbed(b: Node3D, grabbed: bool) -> void:
 		sb.collision_layer = 1 if not grabbed else 0
 		sb.collision_mask  = 1 if not grabbed else 0
 
+## Crosshair interaction protocol used by PlayerController. VehicleEnterArea still
+## decides whether the cab is reachable; the player must also look at the vehicle.
+func crosshair_prompt(player: Node3D) -> String:
+	var op_ctx := _operator_context()
+	if op_ctx == null or op_ctx.get("current_mode") != "on_foot" or op_ctx.get("interactable_vehicle") != self:
+		return ""
+	if has_method("can_enter") and not can_enter():
+		var reason := enter_refusal_reason() if has_method("enter_refusal_reason") else "Cannot enter right now"
+		return reason if reason != "" else "Cannot enter right now"
+	return "Enter %s" % _pretty_vehicle_type()
+
+func crosshair_interact(player: Node3D) -> void:
+	var op_ctx := _operator_context()
+	if op_ctx != null and op_ctx.has_method("enter_interactable_vehicle"):
+		op_ctx.call("enter_interactable_vehicle", self)
+
+func _operator_context() -> Node:
+	var nodes := get_tree().get_nodes_in_group("operator_context")
+	return nodes[0] if not nodes.is_empty() else null
+
+func _pretty_vehicle_type() -> String:
+	match vehicle_type:
+		"forklift": return "forklift"
+		"bale_clamp": return "bale clamp"
+		"merlo", "merlo_p40": return "Merlo"
+		"scissor_lift": return "scissor lift"
+		_: return vehicle_type.capitalize().replace("_", " ")
+
 func can_exit() -> bool:
 	# In kinematic-drive mode linear_velocity isn't a meaningful speed signal;
 	# use the runtime forward-speed value instead.

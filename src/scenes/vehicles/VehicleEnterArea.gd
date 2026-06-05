@@ -26,9 +26,8 @@ func _on_body_entered(body: Node3D) -> void:
 		var op_ctx := _find_operator_context()
 		if op_ctx:
 			op_ctx.register_interactable(_vehicle)
-		# Tell the HUD to show an interaction prompt
-		var vtype: String = _vehicle.get("vehicle_type") if "vehicle_type" in _vehicle else "vehicle"
-		EventBus.interaction_prompt_show.emit(_vehicle, "Enter %s" % _pretty_type(vtype))
+		# Prompt/boarding is now crosshair-driven by BaseVehicle. This trigger only
+		# marks the vehicle as close enough to board.
 
 func _on_body_exited(body: Node3D) -> void:
 	if body.name == "Player":
