@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://b5vd8l05lh5fc"]
+
+[ext_resource type="Script" path="res://tests/WalkieVoiceTest.gd" id="1_wv"]
+
+[node name="WalkieVoiceTest" type="Node3D"]
+script = ExtResource("1_wv")

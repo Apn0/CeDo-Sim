@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="ExtruderConfig" load_steps=2 format=3 uid="uid://b3bextrudercfg01"]
+
+[ext_resource type="Script" path="res://src/sim/ExtruderConfig.gd" id="1_cfg"]
+
+[resource]
+script = ExtResource("1_cfg")
+line_id = "3B"
+display_name = "Extruder 3B (EREMA)"
+nominal_kg_per_h = 950.0
+startup_ramp_s = 180.0
+idle_kg_per_h = 50.0
+screw_rpm_idle = 35.0
+screw_rpm_nominal = 110.0
+screw_rpm_max = 145.0
+melt_temp_setpoint = 215.0
+melt_temp_min_alarm = 195.0
+melt_temp_max_alarm = 240.0
+melt_temp_drift_per_s = 0.3
+melt_temp_runaway_per_s = 0.8
+laser_filter_grams_between_swap = 8000000.0
+backflush_threshold_grams = 4000000.0
+backflush_lump_mass_kg = 35.0
+vacuum_alarm_grace_s = 120.0
+compactor_fill_low_pct = 0.2
+compactor_fill_high_pct = 0.85
+compactor_silo_min_fill_pct = 0.05

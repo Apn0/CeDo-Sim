@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://bh6d2lprkijre"]
+
+[ext_resource type="Script" path="res://tests/ShiftTimeScaleTest.gd" id="1_ts"]
+
+[node name="ShiftTimeScaleTest" type="Node3D"]
+script = ExtResource("1_ts")

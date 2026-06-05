@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://b7635lneyxm53"]
+
+[ext_resource type="Script" path="res://tests/ShiftClockTest.gd" id="1_shift"]
+
+[node name="ShiftClockTest" type="Node3D"]
+script = ExtResource("1_shift")

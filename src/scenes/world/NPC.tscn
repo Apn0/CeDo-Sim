@@ -1,0 +1,15 @@
+[gd_scene load_steps=3 format=3 uid="uid://b3fbx8dn5yk0d"]
+
+[ext_resource type="Script" path="res://src/scenes/world/NPC.gd" id="1_npc"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_npc"]
+radius = 0.3
+height = 1.8
+
+[node name="NPC" type="CharacterBody3D"]
+script = ExtResource("1_npc")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("CapsuleShape3D_npc")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]

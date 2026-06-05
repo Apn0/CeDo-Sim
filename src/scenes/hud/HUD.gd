@@ -1,0 +1,1048 @@
+extends CanvasLayer
+
+class_name HUD
+
+## Shift clock display + pause menu with Save & Quit.
+## Owns the ESC key globally — PlayerController no longer handles it.
+##
+## Layout (built programmatically):
+##   ┌──────────────┐   Top-left: dark pill showing HH:MM + amber progress bar.
+##   │  07:23  ████ │
+##   └──────────────┘
+##
+##   (on ESC) full-screen dim overlay + centred card with Resume / Save & Quit.
+
+# ── Runtime references (wired in _connect_signals via call_deferred) ──────────
+var shift_clock : ShiftClock
+var main_world  : MainWorld
+
+# ── UI nodes ──────────────────────────────────────────────────────────────────
+var _time_label   : Label
+var _progress_bar : ProgressBar
+var _pause_overlay: Control   # full-screen dim + card; hidden by default
+var _settings_menu: CanvasLayer   # lazy-instantiated settings overlay
+var _map_overlay  : MapOverlay    # top-down site map, toggled with M
+
+# Walkie-talkie status (bottom-left): battery %, route (headset/speaker), volume.
+var _walkie_panel  : PanelContainer
+var _walkie_batt   : Label
+var _walkie_route  : Label
+var _walkie_vol    : Label
+var _walkie_call   : Label      # last received call (fades)
+var _walkie_call_t : float = 0.0
+
+# Crew / rota panel (top-left, beneath the clock) — Wave 4 shift context
+var crew_manager   : CrewManager
+var _crew_panel    : PanelContainer
+var _crew_assign_panel : CanvasLayer = null   # interactive assignment overlay (Numpad ".")
+var _calendar_label: Label
+var _roster_label  : Label
+var _crew_accum    : float = 0.0   # throttles the ~2 Hz roster refresh
+
+# Line power banner (#171, top-right) — the material line's PLC power-up state so
+# the staged downstream-first start-up reads as "OPSTARTEN 67%", not "broken".
+var line_flow      : Node = null
+var _line_panel    : PanelContainer
+var _line_label    : Label
+
+# Interaction prompt (bottom-centre "[E] ..." hint)
+var _prompt_panel  : PanelContainer
+var _prompt_label  : Label
+var _prompt_source : Node = null   # most recent emitter — clears when it hides
+
+# Vehicle HUD (bottom-right cluster, shown only while in a vehicle)
+var _vehicle_panel  : PanelContainer
+var _vehicle_speed  : Label
+var _vehicle_fuel_lbl: Label
+var _vehicle_fuel_bar: ProgressBar
+var _vehicle_adblue_row: HBoxContainer   # diesel only — DEF / AdBlue level
+var _vehicle_adblue_bar: ProgressBar
+var _vehicle_hb_lbl : Label
+# Clamp force readout — only visible while in a BaleClamp. Shows the locked-in
+# clamp force, ramps live while the operator holds B, and turns amber once the
+# force passes the carried bale's wire_compliance (= wires are bulging = the
+# concrete-scissors action will succeed).
+var _vehicle_clamp_row : HBoxContainer
+var _vehicle_clamp_lbl : Label
+var _vehicle_clamp_bar : ProgressBar
+var _vehicle_clamp_hint: Label
+var _bound_vehicle  : Node = null   # set on operator_entered_vehicle
+
+# Hotbar (bottom-centre, 4 boxes for inventory slots) + scanner banner
+var _hotbar_row   : HBoxContainer
+var _hotbar_boxes : Array = []     # Array[PanelContainer]
+var _hotbar_labels: Array = []     # Array[Label]    — slot name ("scissors" / "—")
+var _scanner_banner_panel : PanelContainer
+var _scanner_banner_label : Label
+var _scanner_banner_fade  : float = 0.0   # seconds remaining
+
+# =============================================================================
+func _ready() -> void:
+	layer = 10                       # above everything 3-D
+	_ensure_map_action()
+	_build_time_display()
+	_build_crew_panel()
+	_build_line_panel()
+	_build_map_overlay()
+	_build_walkie_panel()
+	_build_pause_menu()
+	_build_interaction_prompt()
+	_build_vehicle_hud()
+	_build_hotbar()
+	_build_scanner_banner()
+	_build_crosshair()
+	call_deferred("_connect_signals")
+
+## A small fixed dot at the screen centre — an aiming reference for scanning, cutting
+## wires, and pointing tools. (#7)
+func _build_crosshair() -> void:
+	var dot := ColorRect.new()
+	dot.name = "Crosshair"
+	dot.color = Color(1.0, 1.0, 1.0, 0.85)
+	dot.set_anchors_preset(Control.PRESET_CENTER)
+	dot.custom_minimum_size = Vector2(5, 5)
+	dot.size = Vector2(5, 5)
+	dot.position = Vector2(-2.5, -2.5)   # centre the 5x5 dot on the anchor point
+	dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(dot)
+
+# Wire up after the whole scene tree has finished its _ready() pass.
+func _connect_signals() -> void:
+	# current_scene is MainWorld; root.get_child(0) would be an autoload.
+	main_world = get_tree().current_scene as MainWorld
+	if main_world:
+		shift_clock = main_world.shift_clock
+		crew_manager = main_world.crew_manager
+		line_flow = main_world.line_flow
+		if _map_overlay:
+			_map_overlay.main_world = main_world
+	# Inventory signals → keep the hotbar visuals in sync.
+	var inv := get_node_or_null("/root/Inventory")
+	if inv:
+		if inv.has_signal("active_changed"):
+			inv.active_changed.connect(_on_inventory_active_changed)
+		if inv.has_signal("slots_changed"):
+			inv.slots_changed.connect(_on_inventory_slots_changed)
+		_refresh_hotbar()
+	# Scanner banner pop-in
+	var bus := get_node_or_null("/root/EventBus")
+	if bus and bus.has_signal("scanner_banner"):
+		bus.scanner_banner.connect(_on_scanner_banner)
+		_refresh_crew_panel()        # seed the roster immediately
+	if shift_clock:
+		shift_clock.time_updated.connect(_on_time_updated)
+		shift_clock.shift_ended.connect(_on_shift_ended)
+		_on_time_updated(shift_clock.get_time_string())  # seed the display now
+	else:
+		push_warning("[HUD] ShiftClock not found — time display will be blank")
+
+	_connect_walkie()
+
+	# Global event hooks
+	EventBus.interaction_prompt_show.connect(_on_prompt_show)
+	EventBus.interaction_prompt_hide.connect(_on_prompt_hide)
+	EventBus.operator_entered_vehicle.connect(_on_operator_entered_vehicle)
+	EventBus.operator_exited_vehicle.connect(_on_operator_exited_vehicle)
+
+# =============================================================================
+# BUILD UI
+# =============================================================================
+func _build_time_display() -> void:
+	# ── Outer pill ────────────────────────────────────────────────────────────
+	var panel := PanelContainer.new()
+	panel.name = "TimePanel"
+	panel.anchor_left   = 0.0
+	panel.anchor_top    = 0.0
+	panel.anchor_right  = 0.0
+	panel.anchor_bottom = 0.0
+	panel.offset_left   = 12.0
+	panel.offset_top    = 12.0
+	panel.offset_right  = 118.0
+	panel.offset_bottom = 62.0
+
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.05, 0.05, 0.05, 0.72)
+	style.corner_radius_top_left     = 6
+	style.corner_radius_top_right    = 6
+	style.corner_radius_bottom_left  = 6
+	style.corner_radius_bottom_right = 6
+	style.content_margin_left   = 8.0
+	style.content_margin_right  = 8.0
+	style.content_margin_top    = 5.0
+	style.content_margin_bottom = 5.0
+	panel.add_theme_stylebox_override("panel", style)
+	add_child(panel)
+
+	# ── Inner layout ──────────────────────────────────────────────────────────
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 5)
+	panel.add_child(vbox)
+
+	_time_label = Label.new()
+	_time_label.text = "07:00"
+	_time_label.add_theme_font_size_override("font_size", 26)
+	_time_label.add_theme_color_override("font_color", Color(1.0, 0.92, 0.68, 1.0))
+	_time_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(_time_label)
+
+	_progress_bar = ProgressBar.new()
+	_progress_bar.min_value = 0.0
+	_progress_bar.max_value = 100.0
+	_progress_bar.value     = 0.0
+	_progress_bar.show_percentage = false
+	_progress_bar.custom_minimum_size = Vector2(0.0, 5.0)
+
+	var bar_bg := StyleBoxFlat.new()
+	bar_bg.bg_color = Color(0.18, 0.18, 0.18, 1.0)
+	_progress_bar.add_theme_stylebox_override("background", bar_bg)
+
+	var bar_fill := StyleBoxFlat.new()
+	bar_fill.bg_color = Color(0.82, 0.52, 0.12, 1.0)   # amber
+	_progress_bar.add_theme_stylebox_override("fill", bar_fill)
+
+	vbox.add_child(_progress_bar)
+
+# =============================================================================
+# CREW / ROTA PANEL (top-left under the clock — Wave 4 shift context)
+# =============================================================================
+## A persistent shift-context panel: the 2-2-2-4 calendar line (which dag / dienst
+## / ploeg) plus a live roster of every crew member and what they're doing right
+## now (at post, walking to a jam, servicing, on break). Refreshed ~2× a second.
+func _build_crew_panel() -> void:
+	_crew_panel = PanelContainer.new()
+	_crew_panel.name = "CrewPanel"
+	_crew_panel.anchor_left   = 0.0
+	_crew_panel.anchor_top    = 0.0
+	_crew_panel.anchor_right  = 0.0
+	_crew_panel.anchor_bottom = 0.0
+	_crew_panel.offset_left   = 12.0
+	_crew_panel.offset_top    = 70.0     # just below the time pill (ends at ~62)
+	_crew_panel.offset_right  = 330.0
+	_crew_panel.offset_bottom = 300.0
+
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.05, 0.05, 0.05, 0.66)
+	style.corner_radius_top_left     = 6
+	style.corner_radius_top_right    = 6
+	style.corner_radius_bottom_left  = 6
+	style.corner_radius_bottom_right = 6
+	style.content_margin_left   = 10.0
+	style.content_margin_right  = 10.0
+	style.content_margin_top    = 7.0
+	style.content_margin_bottom = 7.0
+	_crew_panel.add_theme_stylebox_override("panel", style)
+	add_child(_crew_panel)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 4)
+	_crew_panel.add_child(vbox)
+
+	# Calendar header, e.g. "Dag 1 · Vroege dienst · Ploeg A"
+	_calendar_label = Label.new()
+	_calendar_label.text = "Dag 1 · Vroege dienst · Ploeg A"
+	_calendar_label.add_theme_font_size_override("font_size", 14)
+	_calendar_label.add_theme_color_override("font_color", Color(0.62, 0.83, 1.0, 1.0))
+	vbox.add_child(_calendar_label)
+
+	vbox.add_child(HSeparator.new())
+
+	# Live crew roster (one line per worker) + break/fault footer.
+	_roster_label = Label.new()
+	_roster_label.text = ""
+	_roster_label.add_theme_font_size_override("font_size", 12)
+	_roster_label.add_theme_color_override("font_color", Color(0.88, 0.88, 0.86, 1.0))
+	vbox.add_child(_roster_label)
+
+## Pull the latest calendar + roster strings from ShiftClock / CrewManager.
+func _refresh_crew_panel() -> void:
+	if _calendar_label and shift_clock:
+		_calendar_label.text = shift_clock.calendar_string()
+	if _roster_label == null:
+		return
+	if crew_manager == null:
+		_roster_label.text = ""        # crew skipped (no NPCs/line) — show clock only
+		return
+	var lines := crew_manager.roster_lines()
+	var footer := "—  Pauze %d · Storingen %d" % \
+		[crew_manager.count_on_break(), crew_manager.active_faults()]
+	_roster_label.text = "\n".join(lines) + "\n" + footer
+
+# =============================================================================
+# LINE POWER BANNER (#171, top-right) — PLC power-up + granulaat readout
+# =============================================================================
+func _build_line_panel() -> void:
+	_line_panel = PanelContainer.new()
+	_line_panel.name = "LinePanel"
+	_line_panel.anchor_left = 1.0; _line_panel.anchor_right = 1.0
+	_line_panel.anchor_top = 0.0;  _line_panel.anchor_bottom = 0.0
+	_line_panel.offset_left = -290.0; _line_panel.offset_right = -12.0
+	_line_panel.offset_top = 12.0;    _line_panel.offset_bottom = 44.0
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.05, 0.06, 0.05, 0.74)
+	style.set_corner_radius_all(6)
+	style.content_margin_left = 10.0; style.content_margin_right = 10.0
+	style.content_margin_top = 5.0;   style.content_margin_bottom = 5.0
+	_line_panel.add_theme_stylebox_override("panel", style)
+	add_child(_line_panel)
+	_line_label = Label.new()
+	_line_label.add_theme_font_size_override("font_size", 13)
+	_line_label.text = "LIJN  —"
+	_line_panel.add_child(_line_label)
+	_line_panel.visible = false
+
+## Pull the material line's PLC state + granulaat tally and paint the banner.
+func _refresh_line_panel() -> void:
+	if _line_panel == null:
+		return
+	if line_flow == null or not is_instance_valid(line_flow):
+		_line_panel.visible = false
+		return
+	_line_panel.visible = true
+	var frac : float = float(line_flow.call("line_powered_fraction"))
+	var starting : bool = bool(line_flow.call("is_line_starting"))
+	var pct := int(round(frac * 100.0))
+	var state : String
+	var col : Color
+	if frac <= 0.001:
+		state = "UIT";                  col = Color(0.70, 0.40, 0.40)
+	elif starting or frac < 0.999:
+		state = "OPSTARTEN %d%%" % pct;  col = Color(0.95, 0.78, 0.30)
+	else:
+		state = "DRAAIT";               col = Color(0.35, 0.85, 0.45)
+	var gran : float = float(line_flow.get("gran_mass"))
+	var amps : float = float(line_flow.call("live_line_amps"))
+	_line_label.text = "LIJN  ·  %s   ·   %.0f A   ·   gran %.0f kg" % [state, amps, gran]
+	_line_label.add_theme_color_override("font_color", col)
+
+# =============================================================================
+# SITE MAP (full-screen top-down overlay, toggled with M)
+# =============================================================================
+func _build_map_overlay() -> void:
+	_map_overlay = MapOverlay.new()
+	_map_overlay.name = "MapOverlay"
+	add_child(_map_overlay)
+
+# =============================================================================
+# WALKIE-TALKIE PANEL (bottom-left) — battery / route / volume + incoming calls
+# =============================================================================
+func _build_walkie_panel() -> void:
+	_walkie_panel = PanelContainer.new()
+	_walkie_panel.name = "WalkiePanel"
+	_walkie_panel.anchor_left = 0.0
+	_walkie_panel.anchor_top = 1.0
+	_walkie_panel.anchor_right = 0.0
+	_walkie_panel.anchor_bottom = 1.0
+	_walkie_panel.offset_left = 12.0
+	_walkie_panel.offset_right = 250.0
+	_walkie_panel.offset_top = -104.0
+	_walkie_panel.offset_bottom = -12.0
+
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.05, 0.06, 0.05, 0.74)
+	style.corner_radius_top_left = 6
+	style.corner_radius_top_right = 6
+	style.corner_radius_bottom_left = 6
+	style.corner_radius_bottom_right = 6
+	style.content_margin_left = 10.0
+	style.content_margin_right = 10.0
+	style.content_margin_top = 6.0
+	style.content_margin_bottom = 6.0
+	_walkie_panel.add_theme_stylebox_override("panel", style)
+	add_child(_walkie_panel)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 2)
+	_walkie_panel.add_child(vbox)
+
+	var title := Label.new()
+	title.text = "PORTOFOON"
+	title.add_theme_font_size_override("font_size", 11)
+	title.add_theme_color_override("font_color", Color(0.55, 0.78, 0.95, 1.0))
+	vbox.add_child(title)
+
+	_walkie_batt = Label.new()
+	_walkie_batt.add_theme_font_size_override("font_size", 14)
+	vbox.add_child(_walkie_batt)
+
+	_walkie_route = Label.new()
+	_walkie_route.add_theme_font_size_override("font_size", 12)
+	_walkie_route.add_theme_color_override("font_color", Color(0.85, 0.85, 0.82, 1.0))
+	vbox.add_child(_walkie_route)
+
+	_walkie_vol = Label.new()
+	_walkie_vol.add_theme_font_size_override("font_size", 12)
+	_walkie_vol.add_theme_color_override("font_color", Color(0.85, 0.85, 0.82, 1.0))
+	vbox.add_child(_walkie_vol)
+
+	_walkie_call = Label.new()
+	_walkie_call.add_theme_font_size_override("font_size", 11)
+	_walkie_call.add_theme_color_override("font_color", Color(0.95, 0.85, 0.45, 1.0))
+	_walkie_call.text = ""
+	vbox.add_child(_walkie_call)
+
+	_refresh_walkie()
+
+## Pull current walkie state and paint the panel.
+func _refresh_walkie() -> void:
+	var w := get_node_or_null("/root/Walkie")
+	if w == null:
+		return
+	if _walkie_batt:
+		var pct: int = w.battery_percent()
+		var alive: bool = w.battery_alive()
+		_walkie_batt.text = "Accu  %d%%" % pct
+		var col := Color(0.35, 0.8, 0.3)
+		if not alive:       col = Color(0.85, 0.2, 0.15)
+		elif pct < 15:      col = Color(0.9, 0.5, 0.1)
+		_walkie_batt.add_theme_color_override("font_color", col)
+	if _walkie_route:
+		_walkie_route.text = "Route  %s" % ("oortje" if bool(w.get("headset_on")) else "luidspreker")
+	if _walkie_vol:
+		var v := float(w.get("volume"))
+		var bars := int(round(v * 10.0))
+		_walkie_vol.text = "Vol    [%s%s]" % ["█".repeat(bars), "·".repeat(10 - bars)]
+
+func _connect_walkie() -> void:
+	var w := get_node_or_null("/root/Walkie")
+	if w == null:
+		return
+	if w.has_signal("battery_changed"):
+		w.battery_changed.connect(func(_p): _refresh_walkie())
+	if w.has_signal("headset_changed"):
+		w.headset_changed.connect(func(_h): _refresh_walkie())
+	if w.has_signal("volume_changed"):
+		w.volume_changed.connect(func(_v): _refresh_walkie())
+	if w.has_signal("call_received"):
+		w.call_received.connect(_on_walkie_call)
+	# PTT: HUD owns the visible "you said X" echo and the input → Walkie.transmit
+	# routing lives in HUD._input below.
+	if w.has_signal("transmit_sent"):
+		w.transmit_sent.connect(_on_walkie_transmit)
+	_refresh_walkie()
+
+func _on_walkie_call(from_name: String, text: String, heard: bool) -> void:
+	if _walkie_call == null:
+		return
+	if heard:
+		_walkie_call.text = "📻 %s" % text
+		_walkie_call.add_theme_color_override("font_color", Color(0.95, 0.85, 0.45, 1.0))
+	else:
+		_walkie_call.text = "✕ gemist gesprek (%s)" % from_name
+		_walkie_call.add_theme_color_override("font_color", Color(0.7, 0.4, 0.4, 1.0))
+	_walkie_call_t = 6.0
+
+## Player's own PTT key-up gets echoed locally so they see what went out. Cyan
+## tint distinguishes "you" from incoming amber.
+func _on_walkie_transmit(text: String, heard: bool) -> void:
+	if _walkie_call == null:
+		return
+	if heard:
+		_walkie_call.text = "▶  you: %s" % text
+		_walkie_call.add_theme_color_override("font_color", Color(0.55, 0.85, 0.95, 1.0))
+	else:
+		_walkie_call.text = "✕ TX failed — radio is dead"
+		_walkie_call.add_theme_color_override("font_color", Color(0.7, 0.4, 0.4, 1.0))
+	_walkie_call_t = 4.0
+
+## Guarantee newly-added actions exist at runtime. When an action is added to
+## project.godot while the editor is already open, the running game keeps the old
+## in-memory InputMap and the new action silently does nothing — so we register
+## any missing ones here as a fallback. Harmless if the project already defines them.
+func _ensure_map_action() -> void:
+	# action name -> the physical keycode it should be bound to.
+	var fallbacks := {
+		"map_toggle":      KEY_M,
+		"crouch_toggle":   KEY_CTRL,
+		"prone_toggle":    KEY_Z,
+		"walkie_headset":  KEY_J,
+		"walkie_vol_down": KEY_COMMA,
+		"walkie_vol_up":   KEY_PERIOD,
+		"walkie_ptt":      KEY_U,    # push-to-talk — cycles canned responses.
+		"crew_panel":      KEY_KP_PERIOD,   # Numpad "." — open the crew assignment panel
+		# Was V, but V = forklift_forks_widen (clamp release) in the cab, so
+		# releasing the clamp also keyed the radio. Moved to U (unused) so the
+		# two never double-fire. Operators can still talk while driving.
+	}
+	# tool_use is on the LEFT MOUSE BUTTON — register separately because the
+	# fallback dict is keyboard-only.
+	if not InputMap.has_action("tool_use"):
+		InputMap.add_action("tool_use")
+		var mb := InputEventMouseButton.new()
+		mb.button_index = MOUSE_BUTTON_LEFT
+		InputMap.action_add_event("tool_use", mb)
+	for action in fallbacks:
+		var key: int = fallbacks[action]
+		if not InputMap.has_action(action):
+			InputMap.add_action(action)
+		var has_key := false
+		for ev in InputMap.action_get_events(action):
+			if ev is InputEventKey and (ev as InputEventKey).keycode == key:
+				has_key = true
+				break
+		if not has_key:
+			var k := InputEventKey.new()
+			k.keycode = key as Key
+			InputMap.action_add_event(action, k)
+
+
+func _build_pause_menu() -> void:
+	# ── Full-screen dim + centred card ────────────────────────────────────────
+	_pause_overlay = Control.new()
+	_pause_overlay.name = "PauseOverlay"
+	_pause_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_pause_overlay.visible = false
+	add_child(_pause_overlay)
+
+	var dim := ColorRect.new()
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.color = Color(0.0, 0.0, 0.0, 0.55)
+	_pause_overlay.add_child(dim)
+
+	# Card
+	var card := PanelContainer.new()
+	card.set_anchors_preset(Control.PRESET_CENTER)
+
+	var ps := StyleBoxFlat.new()
+	ps.bg_color = Color(0.07, 0.07, 0.07, 0.96)
+	ps.corner_radius_top_left     = 8
+	ps.corner_radius_top_right    = 8
+	ps.corner_radius_bottom_left  = 8
+	ps.corner_radius_bottom_right = 8
+	ps.content_margin_left   = 30.0
+	ps.content_margin_right  = 30.0
+	ps.content_margin_top    = 24.0
+	ps.content_margin_bottom = 24.0
+	card.add_theme_stylebox_override("panel", ps)
+	_pause_overlay.add_child(card)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 14)
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	card.add_child(vbox)
+
+	var title := Label.new()
+	title.text = "SHIFT PAUSED"
+	title.add_theme_font_size_override("font_size", 16)
+	title.add_theme_color_override("font_color", Color(1.0, 0.88, 0.60, 1.0))
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(title)
+
+	var resume_btn := Button.new()
+	resume_btn.text = "Resume"
+	resume_btn.custom_minimum_size = Vector2(164.0, 36.0)
+	resume_btn.pressed.connect(_on_resume_pressed)
+	vbox.add_child(resume_btn)
+
+	var settings_btn := Button.new()
+	settings_btn.text = "Settings"
+	settings_btn.custom_minimum_size = Vector2(164.0, 36.0)
+	settings_btn.pressed.connect(_on_settings_pressed)
+	vbox.add_child(settings_btn)
+
+	var quit_btn := Button.new()
+	quit_btn.text = "Save && Quit"
+	quit_btn.custom_minimum_size = Vector2(164.0, 36.0)
+	quit_btn.pressed.connect(_on_save_quit_pressed)
+	vbox.add_child(quit_btn)
+
+# =============================================================================
+# INTERACTION PROMPT (bottom-centre — "[E] Enter forklift" etc.)
+# =============================================================================
+func _build_interaction_prompt() -> void:
+	_prompt_panel = PanelContainer.new()
+	_prompt_panel.name = "InteractionPrompt"
+	# Bottom-centre anchor
+	_prompt_panel.anchor_left   = 0.5
+	_prompt_panel.anchor_top    = 1.0
+	_prompt_panel.anchor_right  = 0.5
+	_prompt_panel.anchor_bottom = 1.0
+	# Centred horizontally + offset up from bottom edge
+	_prompt_panel.offset_left   = -180.0
+	_prompt_panel.offset_right  =  180.0
+	_prompt_panel.offset_top    = -120.0
+	_prompt_panel.offset_bottom = -76.0
+	_prompt_panel.visible = false
+
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.05, 0.05, 0.05, 0.78)
+	style.corner_radius_top_left     = 5
+	style.corner_radius_top_right    = 5
+	style.corner_radius_bottom_left  = 5
+	style.corner_radius_bottom_right = 5
+	style.content_margin_left   = 14.0
+	style.content_margin_right  = 14.0
+	style.content_margin_top    = 8.0
+	style.content_margin_bottom = 8.0
+	_prompt_panel.add_theme_stylebox_override("panel", style)
+	add_child(_prompt_panel)
+
+	_prompt_label = Label.new()
+	_prompt_label.text = ""
+	_prompt_label.add_theme_font_size_override("font_size", 16)
+	_prompt_label.add_theme_color_override("font_color", Color(1.0, 0.93, 0.72, 1))
+	_prompt_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_prompt_panel.add_child(_prompt_label)
+
+func _on_prompt_show(source: Node, prompt: String) -> void:
+	_prompt_source = source
+	_prompt_label.text = "[E]  %s" % prompt
+	_prompt_panel.visible = true
+
+func _on_prompt_hide(source: Node) -> void:
+	# Only clear if the source that hid is the one currently showing —
+	# protects against out-of-order enter/exit events between overlapping zones
+	if source == _prompt_source:
+		_prompt_panel.visible = false
+		_prompt_source = null
+		_prompt_label.text = ""
+
+# =============================================================================
+# VEHICLE HUD (bottom-right — speed / fuel / handbrake; visible only in cab)
+# =============================================================================
+func _build_vehicle_hud() -> void:
+	_vehicle_panel = PanelContainer.new()
+	_vehicle_panel.name = "VehicleHUD"
+	# Bottom-right anchor
+	_vehicle_panel.anchor_left   = 1.0
+	_vehicle_panel.anchor_top    = 1.0
+	_vehicle_panel.anchor_right  = 1.0
+	_vehicle_panel.anchor_bottom = 1.0
+	_vehicle_panel.offset_left   = -260.0
+	_vehicle_panel.offset_right  = -16.0
+	_vehicle_panel.offset_top    = -130.0
+	_vehicle_panel.offset_bottom = -16.0
+	_vehicle_panel.visible = false
+
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.05, 0.05, 0.05, 0.78)
+	style.corner_radius_top_left     = 6
+	style.corner_radius_top_right    = 6
+	style.corner_radius_bottom_left  = 6
+	style.corner_radius_bottom_right = 6
+	style.content_margin_left   = 12.0
+	style.content_margin_right  = 12.0
+	style.content_margin_top    = 10.0
+	style.content_margin_bottom = 10.0
+	_vehicle_panel.add_theme_stylebox_override("panel", style)
+	add_child(_vehicle_panel)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 6)
+	_vehicle_panel.add_child(vbox)
+
+	# Speed
+	_vehicle_speed = Label.new()
+	_vehicle_speed.text = "0.0 km/h"
+	_vehicle_speed.add_theme_font_size_override("font_size", 22)
+	_vehicle_speed.add_theme_color_override("font_color", Color(1.0, 0.92, 0.7, 1))
+	_vehicle_speed.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(_vehicle_speed)
+
+	# Fuel row: label + bar
+	var fuel_row := HBoxContainer.new()
+	fuel_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(fuel_row)
+
+	_vehicle_fuel_lbl = Label.new()
+	_vehicle_fuel_lbl.text = "FUEL"
+	_vehicle_fuel_lbl.add_theme_font_size_override("font_size", 12)
+	_vehicle_fuel_lbl.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85, 1))
+	fuel_row.add_child(_vehicle_fuel_lbl)
+
+	_vehicle_fuel_bar = ProgressBar.new()
+	_vehicle_fuel_bar.min_value = 0.0
+	_vehicle_fuel_bar.max_value = 100.0
+	_vehicle_fuel_bar.value     = 100.0
+	_vehicle_fuel_bar.show_percentage = true
+	_vehicle_fuel_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_vehicle_fuel_bar.custom_minimum_size = Vector2(160, 14)
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.18, 0.18, 0.18, 1)
+	_vehicle_fuel_bar.add_theme_stylebox_override("background", bg)
+	# Fill colour is set live in _update_vehicle_hud()
+	fuel_row.add_child(_vehicle_fuel_bar)
+
+	# AdBlue / DEF row (diesel machines only — hidden otherwise).
+	_vehicle_adblue_row = HBoxContainer.new()
+	var ad_lbl := Label.new()
+	ad_lbl.text = "DEF "
+	ad_lbl.add_theme_font_size_override("font_size", 12)
+	ad_lbl.add_theme_color_override("font_color", Color(0.55, 0.7, 0.95, 1))
+	_vehicle_adblue_row.add_child(ad_lbl)
+	_vehicle_adblue_bar = ProgressBar.new()
+	_vehicle_adblue_bar.min_value = 0.0
+	_vehicle_adblue_bar.max_value = 100.0
+	_vehicle_adblue_bar.value = 100.0
+	_vehicle_adblue_bar.show_percentage = true
+	_vehicle_adblue_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_vehicle_adblue_bar.custom_minimum_size = Vector2(160, 12)
+	_vehicle_adblue_row.add_child(_vehicle_adblue_bar)
+	_vehicle_adblue_row.visible = false
+	vbox.add_child(_vehicle_adblue_row)
+
+	# Handbrake
+	_vehicle_hb_lbl = Label.new()
+	_vehicle_hb_lbl.text = "🅿  HANDBRAKE"
+	_vehicle_hb_lbl.add_theme_font_size_override("font_size", 13)
+	_vehicle_hb_lbl.add_theme_color_override("font_color", Color(0.95, 0.55, 0.10, 1))
+	_vehicle_hb_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(_vehicle_hb_lbl)
+
+	# Clamp force row (BaleClamp only — hidden in other vehicles)
+	_vehicle_clamp_row = HBoxContainer.new()
+	_vehicle_clamp_row.add_theme_constant_override("separation", 8)
+	_vehicle_clamp_row.visible = false
+	vbox.add_child(_vehicle_clamp_row)
+
+	_vehicle_clamp_lbl = Label.new()
+	_vehicle_clamp_lbl.text = "CLAMP"
+	_vehicle_clamp_lbl.add_theme_font_size_override("font_size", 12)
+	_vehicle_clamp_lbl.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85, 1))
+	_vehicle_clamp_row.add_child(_vehicle_clamp_lbl)
+
+	_vehicle_clamp_bar = ProgressBar.new()
+	_vehicle_clamp_bar.min_value = 0.0
+	_vehicle_clamp_bar.max_value = 100.0
+	_vehicle_clamp_bar.value = 50.0
+	_vehicle_clamp_bar.show_percentage = true
+	_vehicle_clamp_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_vehicle_clamp_bar.custom_minimum_size = Vector2(160, 14)
+	var cbg := StyleBoxFlat.new()
+	cbg.bg_color = Color(0.18, 0.18, 0.18, 1)
+	_vehicle_clamp_bar.add_theme_stylebox_override("background", cbg)
+	_vehicle_clamp_row.add_child(_vehicle_clamp_bar)
+
+	# Wire-cut hint — shows when force ≥ wire compliance on the carried bale
+	_vehicle_clamp_hint = Label.new()
+	_vehicle_clamp_hint.text = "[Shift+B]  cut wires (bulging)"
+	_vehicle_clamp_hint.add_theme_font_size_override("font_size", 11)
+	_vehicle_clamp_hint.add_theme_color_override("font_color", Color(0.95, 0.78, 0.30, 1))
+	_vehicle_clamp_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_vehicle_clamp_hint.visible = false
+	vbox.add_child(_vehicle_clamp_hint)
+
+func _on_operator_entered_vehicle(vehicle: Node) -> void:
+	_bound_vehicle = vehicle
+	_vehicle_panel.visible = true
+	# Clamp row only visible for the bale clamp
+	var is_clamp := "clamp_force" in vehicle
+	_vehicle_clamp_row.visible = is_clamp
+	_vehicle_clamp_hint.visible = false
+
+func _on_operator_exited_vehicle(_vehicle: Node) -> void:
+	_bound_vehicle = null
+	_vehicle_panel.visible = false
+	_vehicle_clamp_row.visible = false
+	_vehicle_clamp_hint.visible = false
+
+func _process(delta: float) -> void:
+	# Crew/rota panel refresh (throttled ~2 Hz) — runs regardless of vehicle state.
+	_crew_accum += delta
+	if _crew_accum >= 0.5:
+		_crew_accum = 0.0
+		_refresh_crew_panel()
+		_refresh_walkie()         # battery % ticks down slowly; 2 Hz is plenty
+		_refresh_line_panel()     # material-line PLC power-up state (#171)
+
+	# Fade the last incoming-call line after a few seconds.
+	if _walkie_call_t > 0.0:
+		_walkie_call_t -= delta
+		if _walkie_call_t <= 0.0 and _walkie_call:
+			_walkie_call.text = ""
+
+	# Scanner banner: decay its visible time, hide when zero.
+	if _scanner_banner_fade > 0.0:
+		_scanner_banner_fade -= delta
+		if _scanner_banner_fade <= 0.0 and _scanner_banner_panel:
+			_scanner_banner_panel.visible = false
+
+	if _bound_vehicle == null or not _vehicle_panel.visible:
+		return
+	# Speed (m/s → km/h). Prefer the kinematic forward-speed signal because
+	# vehicles run in freeze=true / FREEZE_MODE_KINEMATIC, which makes
+	# linear_velocity a contact-response value (~0) instead of motion speed.
+	if _bound_vehicle.has_method("get_speed_mps"):
+		var spd: float = _bound_vehicle.get_speed_mps()
+		_vehicle_speed.text = "%.1f km/h" % (spd * 3.6)
+	elif "linear_velocity" in _bound_vehicle:
+		var v: Vector3 = _bound_vehicle.linear_velocity
+		_vehicle_speed.text = "%.1f km/h" % (v.length() * 3.6)
+	# Fuel
+	if "fuel_l" in _bound_vehicle and "fuel_capacity_l" in _bound_vehicle:
+		var pct := float(_bound_vehicle.fuel_l) / float(_bound_vehicle.fuel_capacity_l) * 100.0
+		_vehicle_fuel_bar.value = pct
+		# Colour: green > 50, amber 15-50, red < 15
+		var fill := StyleBoxFlat.new()
+		if pct < 15.0:    fill.bg_color = Color(0.85, 0.15, 0.10, 1)
+		elif pct < 50.0:  fill.bg_color = Color(0.95, 0.65, 0.10, 1)
+		else:             fill.bg_color = Color(0.30, 0.75, 0.20, 1)
+		_vehicle_fuel_bar.add_theme_stylebox_override("fill", fill)
+	# Handbrake — only show when engaged
+	if "handbrake_engaged" in _bound_vehicle:
+		_vehicle_hb_lbl.visible = bool(_bound_vehicle.handbrake_engaged)
+	# Clamp force (bale clamp only)
+	if _vehicle_clamp_row.visible and "clamp_force" in _bound_vehicle:
+		var f := float(_bound_vehicle.clamp_force)
+		_vehicle_clamp_bar.value = f * 100.0
+		# Amber when bulging (above the carried bale's wire compliance), green
+		# at safe grip levels, dim grey when not yet enough to lift one bale.
+		var fill := StyleBoxFlat.new()
+		var compliance := 0.55
+		if "_carried_bale" in _bound_vehicle and _bound_vehicle._carried_bale != null:
+			compliance = float((_bound_vehicle._carried_bale as Node).get_meta("wire_compliance", 0.55))
+		var min_grip := 0.30
+		if "_carried_bale" in _bound_vehicle and _bound_vehicle._carried_bale != null:
+			min_grip = float((_bound_vehicle._carried_bale as Node).get_meta("clamp_force_needed", 0.30))
+		if f < min_grip:                    fill.bg_color = Color(0.55, 0.55, 0.55, 1)
+		elif f < compliance:                fill.bg_color = Color(0.30, 0.75, 0.20, 1)
+		else:                               fill.bg_color = Color(0.95, 0.65, 0.10, 1)
+		_vehicle_clamp_bar.add_theme_stylebox_override("fill", fill)
+		# Show the cut hint only when bulging AND we're actually carrying a bale
+		var carried = _bound_vehicle._carried_bale if "_carried_bale" in _bound_vehicle else null
+		var bulging := carried != null and f >= compliance and not bool(carried.get_meta("wires_cut", false))
+		_vehicle_clamp_hint.visible = bulging
+
+# =============================================================================
+# INPUT — ESC owned here, not in PlayerController
+# =============================================================================
+## Open/close the interactive crew assignment overlay (Numpad "."). Lazily creates
+## the panel on first use and reuses it after.
+func _toggle_crew_panel() -> void:
+	if crew_manager == null:
+		return
+	if _crew_assign_panel == null or not is_instance_valid(_crew_assign_panel):
+		_crew_assign_panel = load("res://src/scenes/hud/CrewPanel.gd").new() as CanvasLayer
+		add_child(_crew_assign_panel)
+	if _crew_assign_panel.has_method("toggle_for"):
+		_crew_assign_panel.call("toggle_for", crew_manager)
+
+func _input(event: InputEvent) -> void:
+	# ── Walkie-talkie (J = headset/speaker, , / . = volume) ───────────────────
+	var w := get_node_or_null("/root/Walkie")
+	if w != null:
+		if event.is_action_pressed("walkie_headset"):
+			w.toggle_headset()
+			get_viewport().set_input_as_handled()
+			return
+		if event.is_action_pressed("walkie_vol_down"):
+			w.volume_down()
+			get_viewport().set_input_as_handled()
+			return
+		if event.is_action_pressed("walkie_vol_up"):
+			w.volume_up()
+			get_viewport().set_input_as_handled()
+			return
+		if event.is_action_pressed("walkie_ptt"):
+			w.call("transmit")
+			get_viewport().set_input_as_handled()
+			return
+
+	# ── Crew assignment panel (Numpad ".") ───────────────────────────────────
+	if event.is_action_pressed("crew_panel"):
+		_toggle_crew_panel()
+		get_viewport().set_input_as_handled()
+		return
+
+	# ── Site map (M to toggle, scroll to zoom, ESC to close) ──────────────────
+	if event.is_action_pressed("map_toggle"):
+		if _map_overlay:
+			_map_overlay.toggle()
+		get_viewport().set_input_as_handled()
+		return
+	if _map_overlay and _map_overlay.is_open():
+		# While the map is up it owns the wheel (zoom) and ESC (close).
+		if event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
+			var btn := (event as InputEventMouseButton).button_index
+			if btn == MOUSE_BUTTON_WHEEL_UP:
+				_map_overlay.handle_zoom(1)
+				get_viewport().set_input_as_handled()
+				return
+			elif btn == MOUSE_BUTTON_WHEEL_DOWN:
+				_map_overlay.handle_zoom(-1)
+				get_viewport().set_input_as_handled()
+				return
+		if event.is_action_pressed("ui_cancel"):
+			_map_overlay.close()
+			get_viewport().set_input_as_handled()
+			return
+
+	if event.is_action_pressed("ui_cancel"):
+		# When the settings overlay is open, let IT handle ESC (cancel rebind
+		# capture, or close the menu) — don't toggle the pause card behind it.
+		if _settings_menu and _settings_menu.visible:
+			return
+		get_viewport().set_input_as_handled()
+		if _pause_overlay.visible:
+			_do_resume()
+		else:
+			_do_pause()
+
+# =============================================================================
+# PAUSE / RESUME
+# =============================================================================
+func _do_pause() -> void:
+	_pause_overlay.visible = true
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	if shift_clock:
+		shift_clock.pause_shift()
+
+func _do_resume() -> void:
+	_pause_overlay.visible = false
+	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+	if shift_clock:
+		shift_clock.resume_shift()
+
+# =============================================================================
+# SIGNAL HANDLERS
+# =============================================================================
+func _on_time_updated(time_string: String) -> void:
+	if _time_label:
+		_time_label.text = time_string
+	if _progress_bar and shift_clock:
+		_progress_bar.value = shift_clock.get_progress_percent() * 100.0
+
+func _on_shift_ended() -> void:
+	pass  # TODO: end-of-shift screen in a later pass
+
+func _on_resume_pressed() -> void:
+	_do_resume()
+
+func _on_settings_pressed() -> void:
+	# Lazy-load on first use so the pause menu is cheap until needed
+	if _settings_menu == null:
+		var scene := load("res://src/scenes/menus/SettingsMenu.tscn") as PackedScene
+		if not scene:
+			push_error("[HUD] SettingsMenu.tscn missing")
+			return
+		_settings_menu = scene.instantiate()
+		add_child(_settings_menu)
+		_settings_menu.closed.connect(_on_settings_closed)
+	# Hide the pause card while settings overlay is up (it would visually clash)
+	_pause_overlay.visible = false
+	_settings_menu.open()
+
+func _on_settings_closed() -> void:
+	# Return to the pause overlay (game still paused)
+	_pause_overlay.visible = true
+
+func _on_save_quit_pressed() -> void:
+	if main_world:
+		main_world.save_and_quit()
+	else:
+		get_tree().quit()
+
+# =============================================================================
+# HOTBAR (4 inventory slots — bottom-centre)
+# =============================================================================
+func _build_hotbar() -> void:
+	_hotbar_row = HBoxContainer.new()
+	_hotbar_row.name = "Hotbar"
+	_hotbar_row.anchor_left   = 0.5
+	_hotbar_row.anchor_right  = 0.5
+	_hotbar_row.anchor_top    = 1.0
+	_hotbar_row.anchor_bottom = 1.0
+	_hotbar_row.offset_left   = -270.0
+	_hotbar_row.offset_right  =  270.0
+	_hotbar_row.offset_top    = -76.0
+	_hotbar_row.offset_bottom = -16.0
+	_hotbar_row.add_theme_constant_override("separation", 8)
+	_hotbar_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	add_child(_hotbar_row)
+	_hotbar_boxes  = []
+	_hotbar_labels = []
+	for i in 4:
+		var box := PanelContainer.new()
+		box.custom_minimum_size = Vector2(120, 60)
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = Color(0.06, 0.07, 0.06, 0.85)
+		sb.border_color = Color(0.32, 0.52, 0.34, 1.0)
+		sb.set_border_width_all(1)
+		sb.set_corner_radius_all(6)
+		sb.content_margin_top = 6.0; sb.content_margin_bottom = 6.0
+		sb.content_margin_left = 8.0; sb.content_margin_right = 8.0
+		box.add_theme_stylebox_override("panel", sb)
+		var vb := VBoxContainer.new()
+		vb.add_theme_constant_override("separation", 2)
+		box.add_child(vb)
+		var key_lbl := Label.new()
+		key_lbl.text = "[%d]" % (i + 1)
+		key_lbl.add_theme_color_override("font_color", Color(0.6, 0.7, 0.6, 1))
+		key_lbl.add_theme_font_size_override("font_size", 11)
+		vb.add_child(key_lbl)
+		var name_lbl := Label.new()
+		name_lbl.text = "—"
+		name_lbl.add_theme_color_override("font_color", Color(0.86, 0.92, 0.84, 1))
+		name_lbl.add_theme_font_size_override("font_size", 14)
+		vb.add_child(name_lbl)
+		_hotbar_row.add_child(box)
+		_hotbar_boxes.append(box)
+		_hotbar_labels.append(name_lbl)
+
+func _refresh_hotbar() -> void:
+	var inv := get_node_or_null("/root/Inventory")
+	if inv == null:
+		return
+	var active : int = int(inv.get("active_idx"))
+	for i in 4:
+		var lbl : Label = _hotbar_labels[i]
+		lbl.text = String(inv.call("slot_label", i))
+		var box : PanelContainer = _hotbar_boxes[i]
+		var sb : StyleBoxFlat = box.get_theme_stylebox("panel") as StyleBoxFlat
+		if sb == null:
+			continue
+		# Active slot pops with a brighter border + a soft amber glow.
+		if i == active:
+			sb.border_color = Color(0.95, 0.78, 0.30, 1.0)
+			sb.set_border_width_all(2)
+			sb.bg_color = Color(0.10, 0.10, 0.06, 0.92)
+		else:
+			sb.border_color = Color(0.32, 0.52, 0.34, 1.0)
+			sb.set_border_width_all(1)
+			sb.bg_color = Color(0.06, 0.07, 0.06, 0.85)
+
+func _on_inventory_active_changed(_idx: int) -> void:
+	_refresh_hotbar()
+
+func _on_inventory_slots_changed() -> void:
+	_refresh_hotbar()
+
+# =============================================================================
+# SCANNER BANNER (centre-top, fades after ~3 s)
+# =============================================================================
+func _build_scanner_banner() -> void:
+	_scanner_banner_panel = PanelContainer.new()
+	_scanner_banner_panel.name = "ScannerBanner"
+	_scanner_banner_panel.anchor_left   = 0.5
+	_scanner_banner_panel.anchor_right  = 0.5
+	_scanner_banner_panel.anchor_top    = 0.0
+	_scanner_banner_panel.anchor_bottom = 0.0
+	_scanner_banner_panel.offset_left   = -240.0
+	_scanner_banner_panel.offset_right  =  240.0
+	_scanner_banner_panel.offset_top    =  60.0
+	_scanner_banner_panel.offset_bottom =  60.0
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.06, 0.10, 0.06, 0.88)
+	sb.border_color = Color(0.20, 1.00, 0.30, 1.0)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(6)
+	sb.content_margin_left = 14.0
+	sb.content_margin_right = 14.0
+	sb.content_margin_top = 8.0
+	sb.content_margin_bottom = 8.0
+	_scanner_banner_panel.add_theme_stylebox_override("panel", sb)
+	_scanner_banner_label = Label.new()
+	_scanner_banner_label.add_theme_color_override("font_color", Color(0.86, 0.95, 0.86, 1))
+	_scanner_banner_label.add_theme_font_size_override("font_size", 13)
+	_scanner_banner_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_scanner_banner_panel.add_child(_scanner_banner_label)
+	_scanner_banner_panel.visible = false
+	add_child(_scanner_banner_panel)
+
+func _on_scanner_banner(text: String) -> void:
+	if _scanner_banner_label == null:
+		return
+	_scanner_banner_label.text = text
+	_scanner_banner_panel.visible = true
+	_scanner_banner_fade = 3.0
+	# (HUD already has _process running; the banner fades in the same per-frame
+	# tick, see the bottom of the original _process up at line ~646.)

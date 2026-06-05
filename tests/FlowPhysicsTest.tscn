@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://xl7swsaub2ge"]
+
+[ext_resource type="Script" path="res://tests/FlowPhysicsTest.gd" id="1_flow"]
+
+[node name="FlowPhysicsTest" type="Node3D"]
+script = ExtResource("1_flow")

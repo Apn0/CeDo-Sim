@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://bfeedloop0001"]
+
+[ext_resource type="Script" path="res://tests/FeederLoopTest.gd" id="1_feed"]
+
+[node name="FeederLoopTest" type="Node3D"]
+script = ExtResource("1_feed")

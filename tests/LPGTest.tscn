@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://blpgtest00001"]
+
+[ext_resource type="Script" path="res://tests/LPGTest.gd" id="1_lpg"]
+
+[node name="LPGTest" type="Node3D"]
+script = ExtResource("1_lpg")

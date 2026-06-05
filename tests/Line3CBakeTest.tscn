@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://bline3cbake01"]
+
+[ext_resource type="Script" path="res://tests/Line3CBakeTest.gd" id="1_bake"]
+
+[node name="Line3CBakeTest" type="Node3D"]
+script = ExtResource("1_bake")

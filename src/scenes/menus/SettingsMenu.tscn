@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://bcedosetmenu0001"]
+
+[ext_resource type="Script" path="res://src/scenes/menus/SettingsMenu.gd" id="1_settings"]
+
+[node name="SettingsMenu" type="CanvasLayer"]
+script = ExtResource("1_settings")

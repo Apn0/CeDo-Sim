@@ -1,0 +1,126 @@
+[gd_scene format=3 uid="uid://bmerlop40001"]
+
+[ext_resource type="Script" path="res://src/scenes/vehicles/MerloP40.gd" id="1_merlop40"]
+[ext_resource type="Script" path="res://src/scenes/vehicles/VehicleEnterArea.gd" id="2_enter"]
+
+; =============================================================================
+;  MERLO P40 — high-detail FBX variant
+;  -- Procedural Merlo (Merlo.tscn) is unchanged; this is a separate vehicle.
+;  -- Visual mesh comes from res://assets/models/merlo_p40/Merlo.fbx (imported
+;     on first editor open). MerloP40.gd walks the imported tree at runtime
+;     and wires the doors / wheels / wipers / beacon / steering wheel.
+;  -- Chassis collision is a single oversized box approximating the body shape
+;     — a proper convex decomp would need the editor's Mesh → Convex menu.
+; =============================================================================
+
+[sub_resource type="BoxShape3D" id="BoxShape_body"]
+size = Vector3(2.0, 1.6, 5.0)
+
+[sub_resource type="CylinderMesh" id="Cyl_wheel"]
+top_radius = 0.55
+bottom_radius = 0.55
+height = 0.42
+radial_segments = 22
+
+[sub_resource type="StandardMaterial3D" id="Mat_dark"]
+albedo_color = Color(0.12, 0.12, 0.13, 1)
+roughness = 0.85
+
+[sub_resource type="SphereShape3D" id="SphereShape_enter"]
+radius = 2.4
+
+; =============================================================================
+;  ROOT VEHICLE
+; =============================================================================
+[node name="MerloP40" type="VehicleBody3D"]
+mass = 7000.0
+center_of_mass_mode = 1
+center_of_mass = Vector3(0, -0.4, 0.0)
+script = ExtResource("1_merlop40")
+vehicle_type = "merlo_p40"
+vehicle_id = "merlo_p40_a"
+fuel_type = "diesel"
+fuel_capacity_l = 90.0
+fuel_consumption_l_per_h = 6.0
+speed_limit_kmh = 29.0
+engine_power_kw = 75.0
+cab_camera_path = NodePath("CabCamera")
+dismount_offset = Vector3(1.9, 0.0, 0.0)
+
+; Chassis collision (big approximating box — proper convex decomp = editor job)
+[node name="BodyCollision" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.95, 0)
+shape = SubResource("BoxShape_body")
+
+; ── Wheels — fallback cylinder visuals; MerloP40.gd reparents the FBX's
+;    "Roue" meshes under these once the model is imported.
+[node name="Wheel_FL" type="VehicleWheel3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.0, 0.55, 1.6)
+use_as_traction = true
+use_as_steering = true
+wheel_radius = 0.55
+suspension_stiffness = 90.0
+suspension_max_force = 24000.0
+damping_compression = 0.55
+damping_relaxation = 0.55
+
+[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_FL"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 0, 0)
+material_override = SubResource("Mat_dark")
+mesh = SubResource("Cyl_wheel")
+
+[node name="Wheel_FR" type="VehicleWheel3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.0, 0.55, 1.6)
+use_as_traction = true
+use_as_steering = true
+wheel_radius = 0.55
+suspension_stiffness = 90.0
+suspension_max_force = 24000.0
+damping_compression = 0.55
+damping_relaxation = 0.55
+
+[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_FR"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 0, 0)
+material_override = SubResource("Mat_dark")
+mesh = SubResource("Cyl_wheel")
+
+[node name="Wheel_RL" type="VehicleWheel3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.0, 0.55, -1.6)
+use_as_traction = true
+use_as_steering = true
+wheel_radius = 0.55
+suspension_stiffness = 90.0
+suspension_max_force = 24000.0
+damping_compression = 0.55
+damping_relaxation = 0.55
+
+[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_RL"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 0, 0)
+material_override = SubResource("Mat_dark")
+mesh = SubResource("Cyl_wheel")
+
+[node name="Wheel_RR" type="VehicleWheel3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.0, 0.55, -1.6)
+use_as_traction = true
+use_as_steering = true
+wheel_radius = 0.55
+suspension_stiffness = 90.0
+suspension_max_force = 24000.0
+damping_compression = 0.55
+damping_relaxation = 0.55
+
+[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_RR"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 0, 0)
+material_override = SubResource("Mat_dark")
+mesh = SubResource("Cyl_wheel")
+
+; ── Cab camera + enter area ──────────────────────────────────────────────────
+[node name="CabCamera" type="Camera3D" parent="."]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 2.1, -0.3)
+
+[node name="EnterArea" type="Area3D" parent="."]
+script = ExtResource("2_enter")
+
+[node name="EnterAreaShape" type="CollisionShape3D" parent="EnterArea"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, 0)
+shape = SubResource("SphereShape_enter")

@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://dus4s7qsqqo07"]
+
+[ext_resource type="Script" path="res://tests/FlakeCouplingTest.gd" id="1_fc"]
+
+[node name="FlakeCouplingTest" type="Node3D"]
+script = ExtResource("1_fc")

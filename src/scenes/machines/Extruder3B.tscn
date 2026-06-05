@@ -1,0 +1,47 @@
+[gd_scene format=3 uid="uid://b3bextruderscene01"]
+
+[ext_resource type="Script" path="res://src/scenes/machines/ExtruderMachine.gd" id="1_ext"]
+[ext_resource type="Resource" uid="uid://b3bextrudercfg01" path="res://src/data/machines/Extruder3B.tres" id="2_cfg"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_body"]
+size = Vector3(2.2, 2.0, 5.5)
+
+[sub_resource type="BoxShape3D" id="BoxShape_body"]
+size = Vector3(2.2, 2.0, 5.5)
+
+[sub_resource type="StandardMaterial3D" id="Mat_extruder"]
+albedo_color = Color(0.45, 0.48, 0.52, 1)
+metallic = 0.6
+roughness = 0.55
+
+[sub_resource type="BoxShape3D" id="BoxShape_interact"]
+size = Vector3(4.0, 2.0, 7.0)
+
+[node name="Extruder3B" type="Node3D"]
+script = ExtResource("1_ext")
+config_resource = ExtResource("2_cfg")
+debug_label_path = NodePath("DebugLabel")
+
+[node name="Body" type="StaticBody3D" parent="."]
+
+[node name="BodyMesh" type="MeshInstance3D" parent="Body"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.0, 0)
+material_override = SubResource("Mat_extruder")
+mesh = SubResource("BoxMesh_body")
+
+[node name="BodyCollision" type="CollisionShape3D" parent="Body"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.0, 0)
+shape = SubResource("BoxShape_body")
+
+[node name="InteractionArea" type="Area3D" parent="."]
+
+[node name="InteractionShape" type="CollisionShape3D" parent="InteractionArea"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.0, 0)
+shape = SubResource("BoxShape_interact")
+
+[node name="DebugLabel" type="Label3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.6, 0)
+text = "Extruder 3B"
+font_size = 64
+outline_size = 8
+billboard = 1

@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://bvb67ijqr884w"]
+
+[ext_resource type="Script" path="res://tests/MouseJoystickTest.gd" id="1_test"]
+
+[node name="MouseJoystickTest" type="Node3D"]
+script = ExtResource("1_test")

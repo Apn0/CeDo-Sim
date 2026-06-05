@@ -1,0 +1,350 @@
+extends CharacterBody3D
+
+class_name PlayerController
+
+## First-person walking controller.
+## Horizontal look rotates the player body (yaw).
+## Vertical look rotates the Camera3D under Head (pitch, clamped ±90°).
+## Movement is relative to the body's facing direction.
+##
+## ESC / pause is handled by HUD.gd — not here.
+## When the mouse cursor is visible (pause menu open) movement is suppressed.
+
+# Movement
+@export var walk_speed   : float = 5.0
+@export var acceleration : float = 20.0
+@export var friction     : float = 16.0
+@export var jump_speed   : float = 4.5
+
+const GRAVITY: float = 9.8
+const STEP_HEIGHT: float = 0.4   # max ledge/curb height the player walks over
+
+@onready var head     : Node3D   = $Head
+@onready var camera_3d: Camera3D = $Head/Camera3D
+
+# ── Stance (crouch = Left Ctrl, prone = Z) ────────────────────────────────────
+# Each stance sets the capsule height, the eye (Head) height, and a speed factor.
+# Toggling — tap to enter, tap the same key again to stand; you can also go
+# straight crouch↔prone. Standing back up is blocked if there's no headroom.
+enum Stance { STANDING, CROUCHING, PRONE }
+var _stance : int = Stance.STANDING
+
+const STANCE_CAPSULE_H := {Stance.STANDING: 1.8, Stance.CROUCHING: 1.0, Stance.PRONE: 0.5}
+const STANCE_EYE_Y     := {Stance.STANDING: 0.7, Stance.CROUCHING: 0.1, Stance.PRONE: -0.55}
+const STANCE_SPEED_MUL := {Stance.STANDING: 1.0, Stance.CROUCHING: 0.5,  Stance.PRONE: 0.28}
+const STANCE_LERP      := 12.0   # how fast capsule/eye morph between stances
+@onready var _collision : CollisionShape3D = get_node_or_null("Collision")
+
+# Multi-mode camera rig (1st person / 3rd-person follow / orbit). F4 cycles
+# modes; hold-F4 + arrow keys pan, F4 + scroll zooms — see CameraRig.gd.
+var _camera_rig : CameraRig = null
+
+# Live settings (refreshed from SettingsManager on _ready + apply signal)
+var _mouse_sens_x : float = 0.003
+var _mouse_sens_y : float = 0.003
+var _invert_y     : bool  = false
+var _mouse_smooth : float = 0.2
+
+# Smoothing buffer
+var _smoothed_motion : Vector2 = Vector2.ZERO
+
+# Auto-unstuck: tracks how long the player has been pressing a direction with
+# near-zero actual velocity. After WEDGE_THRESHOLD seconds we start nudging the
+# capsule perpendicularly until movement resumes.
+var _wedge_timer : float = 0.0
+const WEDGE_THRESHOLD   : float = 0.5    # s of "trying but stuck" before nudging
+const WEDGE_NUDGE       : float = 0.08   # m of sideways nudge per wedged frame
+
+## F12 panic button — try to free a stuck player by lifting them straight up.
+## If they're STILL inside geometry after a 2 m lift, teleport them to the
+## PlayerSpawn marker (or world origin as a last resort).
+func _unstuck_me() -> void:
+	velocity = Vector3.ZERO
+	# First try just lifting up 2 m — clears the player from low collision
+	# slabs (door-cut SAT misses, curb edges, etc.) without losing position.
+	var lifted := global_transform.translated(Vector3.UP * 2.0)
+	if not test_move(lifted, Vector3.ZERO):
+		global_position += Vector3.UP * 2.0
+		print("[Player] Unstuck: lifted 2 m up to (%.1f, %.1f, %.1f)" % \
+			[global_position.x, global_position.y, global_position.z])
+		return
+	# Lift didn't help — teleport to PlayerSpawn (or world origin)
+	var spawn := get_tree().current_scene.find_child("PlayerSpawn", true, false) as Node3D
+	if spawn:
+		global_position = spawn.global_position + Vector3.UP * 1.0
+		print("[Player] Unstuck: teleported to PlayerSpawn at (%.1f, %.1f, %.1f)" % \
+			[global_position.x, global_position.y, global_position.z])
+	else:
+		global_position = Vector3(0.0, 5.0, 0.0)
+		print("[Player] Unstuck: PlayerSpawn missing — fell back to world origin")
+
+## Wrappers OperatorContext uses to hand camera ownership over to / back from
+## the vehicle the player is currently in. Centralising these here means the
+## OperatorContext doesn't have to know about CameraRig directly.
+func deactivate_camera() -> void:
+	if _camera_rig:
+		_camera_rig.deactivate()
+
+func activate_camera() -> void:
+	if _camera_rig:
+		# Reset to first-person on dismount — orbit/3rd-person was a temporary
+		# inspection mode for the vehicle, not how the player walks around.
+		_camera_rig.set_mode(CameraRig.Mode.FIRST_PERSON)
+		_camera_rig.activate()
+
+func _ready() -> void:
+	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+	floor_snap_length = 0.3   # stick to the ground when stepping down small ledges
+	# Inventory autoload anchors itself to this player so it can re-parent picked-
+	# up tools under our Head node, and so it knows where to drop them.
+	var inv := get_node_or_null("/root/Inventory")
+	if inv:
+		inv.set("player_ref", self)
+		_ensure_hotbar_actions()
+	# Camera rig — covers 1st person (hands camera_3d the current flag), 3rd
+	# person follow (sits up and behind), and orbit (world-space, F4 + arrows).
+	_camera_rig = CameraRig.new()
+	_camera_rig.name = "CameraRig"
+	_camera_rig.third_person_offset = Vector3(0.0, 1.6, -3.6)   # behind (subject +Z is forward)
+	add_child(_camera_rig)
+	_camera_rig.set_first_person_camera(camera_3d)
+	# Player owns the viewport at game start (they're on foot until they enter
+	# a vehicle). OperatorContext flips this when they board / dismount.
+	_camera_rig.activate()
+	_refresh_settings()
+	if Engine.has_singleton("SettingsManager") or has_node("/root/SettingsManager"):
+		var sm := get_node("/root/SettingsManager")
+		if sm.has_signal("settings_applied"):
+			sm.settings_applied.connect(_refresh_settings)
+
+func _refresh_settings() -> void:
+	if not has_node("/root/SettingsManager"):
+		return
+	var g: Dictionary = SettingsManager.gameplay()
+	_mouse_sens_x = float(g.get("mouse_sensitivity_x", 0.003))
+	_mouse_sens_y = float(g.get("mouse_sensitivity_y", 0.003))
+	_invert_y     = bool(g.get("invert_mouse_y", false))
+	_mouse_smooth = float(g.get("mouse_smoothing", 0.2))
+	# FOV
+	var fov := float(SettingsManager.graphics().get("fov", 75.0))
+	if camera_3d:
+		camera_3d.fov = fov
+	if _camera_rig and _camera_rig._camera:
+		_camera_rig._camera.fov = fov
+
+func _physics_process(delta: float) -> void:
+	# Always apply gravity so the capsule rests on the floor.
+	if not is_on_floor():
+		velocity.y -= GRAVITY * delta
+
+	# Suppress WASD when cursor is visible (pause menu / any UI overlay).
+	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		velocity.x = move_toward(velocity.x, 0.0, friction * delta)
+		velocity.z = move_toward(velocity.z, 0.0, friction * delta)
+		move_and_slide()
+		return
+
+	# WASD — relative to body facing direction.
+	var wish_dir := Vector3.ZERO
+	if Input.is_action_pressed("move_forward"):
+		wish_dir -= global_transform.basis.z
+	if Input.is_action_pressed("move_backward"):
+		wish_dir += global_transform.basis.z
+	if Input.is_action_pressed("move_left"):
+		wish_dir -= global_transform.basis.x
+	if Input.is_action_pressed("move_right"):
+		wish_dir += global_transform.basis.x
+
+	wish_dir = wish_dir.normalized()
+
+	var target_xz := wish_dir * walk_speed * float(STANCE_SPEED_MUL[_stance])
+	var accel     := acceleration if wish_dir.length() > 0.0 else friction
+	velocity.x = move_toward(velocity.x, target_xz.x, accel * delta)
+	velocity.z = move_toward(velocity.z, target_xz.z, accel * delta)
+
+	# Jump — only from the ground AND only while standing (can't hop when crouched).
+	if Input.is_action_just_pressed("jump") and is_on_floor() and _stance == Stance.STANDING:
+		velocity.y = jump_speed
+
+	_attempt_step_up()
+	_attempt_wedge_rescue(wish_dir, delta)
+	_update_stance(delta)
+	move_and_slide()
+
+# ── Stance morph + toggles ────────────────────────────────────────────────────
+## Smoothly lerp the capsule height + eye height toward the current stance's
+## targets each frame, keeping the capsule's base on the floor as it shrinks/grows.
+func _update_stance(delta: float) -> void:
+	if _collision == null:
+		_collision = get_node_or_null("Collision") as CollisionShape3D
+	var t := clampf(STANCE_LERP * delta, 0.0, 1.0)
+	# Eye height
+	if head:
+		head.position.y = lerpf(head.position.y, float(STANCE_EYE_Y[_stance]), t)
+	# Capsule height — shrink from the centre, then re-seat so the base stays put.
+	var cap := _collision.shape as CapsuleShape3D if _collision else null
+	if cap:
+		var target_h := float(STANCE_CAPSULE_H[_stance])
+		var new_h := lerpf(cap.height, target_h, t)
+		cap.height = new_h
+		# The standing capsule is centred on the BODY ORIGIN (position.y == 0),
+		# so its bottom sits at -STAND_HALF below the origin. To shrink from the
+		# TOP DOWN (crouch lowers your head, not your feet) we must keep that
+		# bottom fixed: centre = bottom + h/2 = (h/2 - STAND_HALF). Standing
+		# (h=1.8) → 0, identical to the spawn capsule; prone (h=0.5) → -0.65, so
+		# the body never sinks and the eye never drops through the floor.
+		var stand_half := float(STANCE_CAPSULE_H[Stance.STANDING]) * 0.5
+		_collision.position.y = new_h * 0.5 - stand_half
+
+## Can the player stand up to `target` stance? Checks headroom with a test capsule
+## sweep so they don't pop through a low ceiling (a belt, a mezzanine, a machine).
+func _can_change_to(target: int) -> bool:
+	if target <= _stance:
+		return true   # crouching down / going prone never needs headroom
+	var cap := _collision.shape as CapsuleShape3D if _collision else null
+	if cap == null:
+		return true
+	var grow := float(STANCE_CAPSULE_H[target]) - cap.height
+	if grow <= 0.0:
+		return true
+	# Probe straight up by the height we'd gain; if blocked, stay down.
+	return not test_move(global_transform, Vector3.UP * (grow + 0.05))
+
+func _toggle_stance(target: int) -> void:
+	# Tapping the same stance key again returns to standing (if there's headroom).
+	var dest := Stance.STANDING if _stance == target else target
+	if _can_change_to(dest):
+		_stance = dest
+
+## Auto-unstuck — when the player is pressing a direction but the actual
+## horizontal velocity stays near zero, slowly nudge the capsule perpendicular
+## to the input direction. Frees the player from tight inside-corner wedges
+## (like the OBJ's non-orthogonal wall meets) without needing the F12 panic key.
+func _attempt_wedge_rescue(wish_dir: Vector3, delta: float) -> void:
+	var horiz_speed := Vector2(velocity.x, velocity.z).length()
+	if wish_dir.length() < 0.01:
+		_wedge_timer = 0.0
+		return
+	if horiz_speed > 0.3:
+		_wedge_timer = 0.0
+		return
+	# Pressing direction + barely moving = wedged. Accumulate time.
+	_wedge_timer += delta
+	if _wedge_timer < WEDGE_THRESHOLD:
+		return
+	# Try a small sideways nudge — pick whichever side has clear space.
+	var fwd_xz := Vector3(wish_dir.x, 0.0, wish_dir.z).normalized()
+	var perp   := Vector3(-fwd_xz.z, 0.0, fwd_xz.x)   # 90° to the right of wish_dir
+	var nudge_right := perp * WEDGE_NUDGE
+	var nudge_left  := -perp * WEDGE_NUDGE
+	if not test_move(global_transform, nudge_right):
+		global_position += nudge_right
+	elif not test_move(global_transform, nudge_left):
+		global_position += nudge_left
+	# else: both sides blocked → wedged deep, wait for F12 panic key
+
+# Lets the player walk over small ledges/curbs (floor seams, wall bottoms) that
+# a capsule would otherwise jam against. Lifts the body exactly onto a step that
+# is no taller than STEP_HEIGHT; leaves real walls (no clearance above) alone.
+func _attempt_step_up() -> void:
+	var horiz := Vector3(velocity.x, 0.0, velocity.z)
+	if horiz.length() < 0.05 or not is_on_floor():
+		return
+	var step := horiz.normalized() * 0.3
+	if not test_move(global_transform, step):
+		return                                   # path clear — nothing to climb
+	var raised := global_transform.translated(Vector3.UP * STEP_HEIGHT)
+	if test_move(raised, step):
+		return                                   # still blocked a step up → real wall
+	var probe := raised.translated(step)
+	var hit := KinematicCollision3D.new()
+	if test_move(probe, Vector3.DOWN * STEP_HEIGHT, hit):
+		var lift := STEP_HEIGHT - hit.get_travel().length()
+		if lift > 0.01:
+			global_position.y += lift            # set down exactly on the step top
+
+func _input(event: InputEvent) -> void:
+	# Mouse look — only while captured (not paused).
+	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		var rel: Vector2 = (event as InputEventMouseMotion).relative
+		# Smoothing: lerp current relative toward target. 0 = instant, 1 = laggy
+		_smoothed_motion = _smoothed_motion.lerp(rel, 1.0 - _mouse_smooth)
+		var yaw_delta   :=  -_smoothed_motion.x * _mouse_sens_x
+		var pitch_delta :=  -_smoothed_motion.y * _mouse_sens_y
+		if _invert_y:
+			pitch_delta = -pitch_delta
+		rotate_y(yaw_delta)
+		head.rotate_object_local(Vector3.RIGHT, pitch_delta)
+		head.rotation.x = clamp(head.rotation.x, -PI / 2.0, PI / 2.0)
+
+	# Multi-mode camera (F4 cycle, F4 + arrows / scroll = orbit + zoom)
+	if _camera_rig and _camera_rig.handle_input(event):
+		return
+
+	# Legacy "P" toggle keeps working for users who learned it before F4 landed —
+	# it just cycles modes the same way F4 does.
+	if event.is_action_pressed("camera_toggle"):
+		_camera_rig.cycle_mode()
+
+	# Stance toggles — Left Ctrl = crouch, Z = prone (lie down). Tapping the same
+	# key again stands back up (headroom permitting).
+	if event.is_action_pressed("crouch_toggle"):
+		_toggle_stance(Stance.CROUCHING)
+	if event.is_action_pressed("prone_toggle"):
+		_toggle_stance(Stance.PRONE)
+
+	# F12 → "unstuck" panic button. First lifts the capsule 2 m to clear most
+	# wall-carve artefacts; if that doesn't free us, teleports back to
+	# PlayerSpawn marker. Saves the player from having to alt-F4 when the
+	# WallOpenings SAT carve leaves an invisible slab in a doorway.
+	if event.is_action_pressed("debug_unstuck"):
+		_unstuck_me()
+
+	# Hotbar: 1-4 switch the active inventory slot, Q drops the active item.
+	# Tools (scissors / scanner) live under Head and Inventory handles the
+	# show/hide so only the active one is in your hand.
+	var inv := get_node_or_null("/root/Inventory")
+	if inv:
+		for i in 4:
+			if event.is_action_pressed("hotbar_%d" % (i + 1)):
+				inv.call("set_active", i)
+				return
+		if event.is_action_pressed("hotbar_drop"):
+			var t := inv.call("active") as Node3D
+			if t and t.has_method("_drop"):
+				t.call("_drop")    # tool returns itself to the world; will call Inventory.remove()
+			return
+
+	# ESC is owned by HUD.gd — do NOT handle ui_cancel here.
+
+# Register fallback Input actions for the hotbar — same trick as HUD's
+# _ensure_map_action, since users without a fresh .godot project may have a
+# stale InputMap that doesn't know "hotbar_1" yet.
+func _ensure_hotbar_actions() -> void:
+	var binds := {
+		"hotbar_1":          KEY_1,
+		"hotbar_2":          KEY_2,
+		"hotbar_3":          KEY_3,
+		"hotbar_4":          KEY_4,
+		"hotbar_drop":       KEY_Q,
+		# LPG dual-cylinder active-tank valve toggle (bale clamp only). Bound
+		# here as a fallback so a stale InputMap doesn't silently swallow H.
+		"lpg_switch_active": KEY_H,
+		# Vehicle aux — work lamps, 4-way hazards, horn (mast lift only honks).
+		"vehicle_lights":    KEY_L,
+		"vehicle_hazards":   KEY_K,
+		"vehicle_horn":      KEY_N,
+	}
+	for action_name in binds:
+		if not InputMap.has_action(action_name):
+			InputMap.add_action(action_name)
+		var key_code: int = binds[action_name]
+		var has_event := false
+		for ev in InputMap.action_get_events(action_name):
+			if ev is InputEventKey and (ev as InputEventKey).keycode == key_code:
+				has_event = true
+				break
+		if not has_event:
+			var k := InputEventKey.new()
+			k.keycode = key_code as Key
+			InputMap.action_add_event(action_name, k)

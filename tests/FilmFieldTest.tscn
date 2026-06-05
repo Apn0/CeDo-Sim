@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://bfilmfield001"]
+
+[ext_resource type="Script" path="res://tests/FilmFieldTest.gd" id="1_film"]
+
+[node name="FilmFieldTest" type="Node3D"]
+script = ExtResource("1_film")

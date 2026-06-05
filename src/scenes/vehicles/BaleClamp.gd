@@ -1,0 +1,400 @@
+extends BaseVehicle
+class_name BaleClamp
+
+## LPG bale clamp — vertical plates instead of forks. Picks bales up by friction
+## between the two plates, NOT by snap-attaching them like the forklift. The
+## strength of the grip depends on how hard the operator clamps (hold-to-build).
+##
+## Controls (reuses the forklift action set):
+##   R / F  lift up / down
+##   T / G  mast tilt back / forward
+##   V      clamp open (also: release a currently-clamped bale)
+##   B      tap   = clamp shut at LAST-SET force (default 50%)
+##          hold  = force ramps 0 → 100% over CLAMP_RAMP_S; release sets it
+##   Shift+B  cut the iron wires on the bale currently in the clamp,
+##            but only if it is bulging (clamp_force ≥ wire_compliance) —
+##            this is the "concrete scissors" action.
+##
+## Physics model (the bit that lets you lift the bottom of a 3-stack):
+##   - Bales are RigidBody3D. Placed bales are FROZEN (freeze=true) so stacks
+##     sit where the player put them and don't drift under gravity.
+##   - On grab: we walk UP the stack from the grabbed bale, collecting every
+##     bale sitting in the same vertical column. Those bales (and the one in
+##     the plates) are reparented under the carry point — they ride along
+##     kinematically with the clamp instead of fighting it with physics.
+##     The clamp_force value gates whether we can grab at all: if it's below
+##     the bale's clamp_force_needed, the grab fails silently (you didn't
+##     squeeze hard enough). For multi-bale stacks the floor for "enough" is
+##     scaled by stack height so a 3-tall stack needs ~3× the force of one.
+##   - On release: the whole stack drops back as separate frozen rigid bodies
+##     at the release position. Wires-cut bales also fan out into the sheet
+##     arc described in _open_to_sheet_arc.
+##   - The earlier Generic6DOFJoint3D approach was too unreliable for heavy
+##     (459+ kg) RigidBody3D bales — the joint would soften under gravity and
+##     drop the load, or jitter the vehicle. Reparenting works every time.
+##
+## Wire / cut model:
+##   - Every bale comes wrapped in 3 iron wires (visible). meta `wires_cut`
+##     starts false.
+##   - When clamp_force ≥ meta.wire_compliance, the top wire segments visibly
+##     bulge upward — that's the signal the wires are loose enough to cut.
+##   - Shift+B (vehicle_wire_cut) cuts: removes the 3 Wire_i children from the
+##     bale's Model.Wires node, sets meta.wires_cut=true, releases the joint
+##     and re-clamps at the same force (so cutting doesn't drop the load).
+##   - On release of a cut bale: each Sheet_i child detaches into its own
+##     RigidBody3D with low friction so the bale falls open into an arc.
+
+# ── Inspector wiring ──────────────────────────────────────────────────────────
+@export_group("Clamp rig nodes")
+@export var mast_pivot_path    : NodePath
+@export var lift_carriage_path : NodePath
+@export var left_plate_path    : NodePath
+@export var right_plate_path   : NodePath
+
+@export_group("Lift")
+@export var lift_min_m     : float = 0.1
+@export var lift_max_m     : float = 3.0
+@export var lift_speed_m_s : float = 0.6
+
+@export_group("Tilt")
+@export var tilt_min_deg     : float = -8.0
+@export var tilt_max_deg     : float = 12.0
+@export var tilt_speed_deg_s : float = 8.0
+
+@export_group("Clamp")
+@export var clamp_open_m    : float = 1.35
+@export var clamp_closed_m  : float = 0.6     # plates can squeeze tighter than before
+@export var clamp_speed_m_s : float = 0.6
+
+# ── Tunables ──────────────────────────────────────────────────────────────────
+## Time to ramp clamp_force from 0 → 1 while B is held. Long on purpose — the
+## operator should have time to FEEL how hard they're squeezing, so light grabs
+## are easy to dial in (otherwise tap-to-grab always maxes out the force).
+const CLAMP_RAMP_S       : float = 7.5
+## How quickly the plates' visible gap reaches the target.
+const PLATE_TRACK_RATE   : float = 6.0
+## How far above the bale the top wire segments rise when bulging.
+const WIRE_BULGE_M       : float = 0.04
+
+# ── Runtime state ─────────────────────────────────────────────────────────────
+var lift_height_m : float = 0.1
+var tilt_deg      : float = 0.0
+var clamp_gap_m   : float = 1.35
+
+## Locked-in clamp force in [0, 1]. Used by the wire bulge effect, the HUD
+## force bar, and the grab gate (force < bale.clamp_force_needed = no grip).
+var clamp_force        : float = 0.5
+## True while the operator is holding B and the force is ramping up.
+var _force_ramping     : bool  = false
+var _ramp_started_at   : float = 0.0
+var _ramp_start_force  : float = 0.0
+
+# (Stack pickup — _carried_stack / _carried_stack_orig_parents — now lives in
+#  BaseVehicle so every vehicle lifts the bottom of a yard stack, not just this one.)
+
+# Cached node lookups
+var _mast_pivot    : Node3D
+var _lift_carriage : Node3D
+var _left_plate    : Node3D
+var _right_plate   : Node3D
+
+# =============================================================================
+func _ready() -> void:
+	super._ready()
+	vehicle_type = "bale_clamp"
+	if mast_pivot_path:    _mast_pivot    = get_node_or_null(mast_pivot_path)    as Node3D
+	if lift_carriage_path: _lift_carriage = get_node_or_null(lift_carriage_path) as Node3D
+	if left_plate_path:    _left_plate    = get_node_or_null(left_plate_path)    as Node3D
+	if right_plate_path:   _right_plate   = get_node_or_null(right_plate_path)   as Node3D
+
+# =============================================================================
+# INPUT — override the BaseVehicle V/B handlers so we get the force-ramp + cut
+# =============================================================================
+func _unhandled_input(event: InputEvent) -> void:
+	if not occupied:
+		return
+	# Tool-joystick: track LMB/RMB and route drag to the tool (lift / tilt) while
+	# held, instead of the camera (shared BaseVehicle plumbing).
+	if _track_tool_mouse(event):
+		return
+	# Mouse look — feed the camera rig (same path as BaseVehicle uses).
+	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		if _camera_rig:
+			_camera_rig.handle_mouse_look((event as InputEventMouseMotion).relative)
+		return
+	# Camera rig (F4 cycle / hold-F4 + arrows / hold-F4 + scroll). Let the rig
+	# claim the event first — it's the same handler the BaseVehicle uses.
+	if _camera_rig and _camera_rig.handle_input(event):
+		get_viewport().set_input_as_handled()
+		return
+	# Legacy P toggle also cycles modes
+	if event.is_action_pressed("camera_toggle"):
+		_camera_rig.cycle_mode()
+		get_viewport().set_input_as_handled()
+		return
+	# H → switch the active LPG cylinder (bale-clamp dual-tank valve). The base
+	# vehicle does the safe-handover (current level back to its tank, load
+	# from the new one). H only does something while occupied + LPG-powered.
+	if event.is_action_pressed("lpg_switch_active"):
+		switch_active_lpg_tank()
+		get_viewport().set_input_as_handled()
+		return
+	# B → start the force ramp; grab on release. (The Shift+B in-cab wire cut was
+	# removed: cutting now happens ON FOOT with the WireCutter tool — realistic
+	# flow, you have to exit the cab, grab the concrete scissors, and cut each
+	# wire individually before re-entering the clamp to place + open the bale.)
+	if event.is_action_pressed("forklift_forks_pinch"):
+		_force_ramping    = true
+		_ramp_started_at  = Time.get_ticks_msec() / 1000.0
+		_ramp_start_force = clamp_force
+		get_viewport().set_input_as_handled()
+		return
+	if event.is_action_released("forklift_forks_pinch"):
+		if _force_ramping:
+			# Lock in the held force, then close on the nearest bale
+			var dt := Time.get_ticks_msec() / 1000.0 - _ramp_started_at
+			clamp_force = clampf(_ramp_start_force + dt / CLAMP_RAMP_S, 0.0, 1.0)
+			_force_ramping = false
+			_try_grab()
+		get_viewport().set_input_as_handled()
+		return
+	# V → open: release the bale (whole stack drops, cut bales fall to a sheet arc)
+	if event.is_action_pressed("forklift_forks_widen"):
+		_release()
+		get_viewport().set_input_as_handled()
+		return
+
+# =============================================================================
+# PHYSICS TICK — clamp / lift / tilt animation + plate tracking + bulge visuals
+# =============================================================================
+func _physics_process(delta: float) -> void:
+	super._physics_process(delta)
+	if occupied:
+		_update_lift_tilt(delta)
+		# While ramping, update clamp_force live so the HUD bar climbs
+		if _force_ramping:
+			var dt := Time.get_ticks_msec() / 1000.0 - _ramp_started_at
+			clamp_force = clampf(_ramp_start_force + dt / CLAMP_RAMP_S, 0.0, 1.0)
+	_update_plate_gap(delta)
+	_apply_mast_lift_tilt()
+	_update_wire_bulge()
+
+func _update_lift_tilt(delta: float) -> void:
+	# Mouse-as-joystick: hold LEFT, drag Y = lift up/down, X = mast tilt.
+	# (Clamp open/close + wire-cut stay on V / B / Shift+B.)
+	var m := _tool_axes()
+
+	var lift_axis := Input.get_action_strength("forklift_lift_up") \
+				   - Input.get_action_strength("forklift_lift_down")
+	lift_height_m = clampf(lift_height_m + lift_axis * lift_speed_m_s * delta
+		+ float(m["b"]) * lift_speed_m_s * delta * MOUSE_TOOL_MULT, lift_min_m, lift_max_m)
+
+	var tilt_axis := Input.get_action_strength("forklift_tilt_back") \
+				   - Input.get_action_strength("forklift_tilt_fwd")
+	tilt_deg = clampf(tilt_deg + tilt_axis * tilt_speed_deg_s * delta
+		+ float(m["a"]) * tilt_speed_deg_s * delta * MOUSE_TOOL_MULT, tilt_min_deg, tilt_max_deg)
+
+	# Mouse-as-joystick clamp control: RIGHT-drag X scales clamp_force live so the
+	# mouse joystick can open/close the plates (was: V/B keys only). Right = close
+	# (squeeze harder), left = open. Treated as a rate, like the other tool axes,
+	# so a steady drag ramps the force smoothly — matching the B hold-to-build feel.
+	# Pairs cleanly with the keyboard force ramp: either input is welcome.
+	var cf_delta : float = float(m["c"]) * delta * MOUSE_TOOL_MULT * 0.4
+	if absf(cf_delta) > 0.0:
+		clamp_force = clampf(clamp_force + cf_delta, 0.0, 1.0)
+		# A live mouse-driven close should attempt a grab when crossing the bale's
+		# force gate, just like releasing B does — otherwise the mouse path can
+		# build force without ever latching onto a bale.
+		if _carried_bale == null and cf_delta > 0.0:
+			_try_grab()
+		# Mouse-driven open below the wire-compliance threshold should release —
+		# mirror of pressing V (drop the squeeze + drop the bale).
+		if _carried_bale != null and cf_delta < 0.0 and clamp_force < 0.05:
+			_release()
+
+## Plate gap tracks a target — open when no bale, snug against the bale width
+## minus clamp_force squeeze when a bale is gripped. The plates close along the
+## clamp's local X axis, so the gap must follow the bale's X dimension (its
+## LENGTH along the carry-point X). Was previously using size.z — a bug that
+## let the plates close ~15 cm INSIDE the bale, visibly penetrating it past the
+## 10% give. Fix: use size.x and clamp to (bale.x × 0.9) so the closed plates
+## sit exactly at the bale's collision boundary, only the squeeze going further.
+func _update_plate_gap(delta: float) -> void:
+	var target_gap := clamp_open_m
+	if _carried_bale != null:
+		var size := _bale_size(_carried_bale)
+		var squeeze := lerpf(0.0, 0.06, clamp_force)
+		# Bale collision is 90% of visual on X (the 10% give). Closing plates land
+		# exactly on the collision boundary; further squeeze (up to 6 cm) is the
+		# compressed-film deformation.
+		var bale_x_collision := size.x * 0.9
+		target_gap = clampf(bale_x_collision - squeeze, clamp_closed_m, clamp_open_m)
+	elif Input.is_action_pressed("forklift_forks_pinch"):
+		target_gap = clamp_closed_m
+	clamp_gap_m = lerpf(clamp_gap_m, target_gap, clampf(PLATE_TRACK_RATE * delta, 0.0, 1.0))
+
+func _apply_mast_lift_tilt() -> void:
+	if _lift_carriage:
+		_lift_carriage.position.y = lift_height_m
+	if _mast_pivot:
+		_mast_pivot.rotation.x = deg_to_rad(tilt_deg)
+	if _left_plate:
+		_left_plate.position.x = -clamp_gap_m * 0.5
+	if _right_plate:
+		_right_plate.position.x = clamp_gap_m * 0.5
+
+# =============================================================================
+# GRAB / RELEASE — uses BaseVehicle's stack pickup, adds the clamp-force gate,
+# the wire-bulge hook-in, and the sheet-arc fan-out on release.
+# =============================================================================
+## Refuse the grab if clamp_force is below the floor for THIS stack height: a
+## single bale needs ~clamp_force_needed; each additional bale on top piles on
+## the load so the floor scales by stack size. Stops a weak grip lifting a 3-tall
+## stack — the operator must squeeze proportionally harder to take the whole pile.
+func _can_grab_stack(primary: Node3D, stack: Array[Node3D]) -> bool:
+	var base_needed: float = float(primary.get_meta("clamp_force_needed", 0.30))
+	var floor_force := minf(base_needed * float(1 + stack.size()), 0.95)
+	return clamp_force >= floor_force
+
+func _on_grab_refused(primary: Node3D, _stack: Array[Node3D]) -> void:
+	# Subtle feedback: nudge the bale a hair so the player feels they tried.
+	_nudge(primary, Vector3(0.0, 0.02, 0.0))
+
+func _on_grabbed(_primary: Node3D, _stack: Array[Node3D]) -> void:
+	# Tell the wire-bulge logic to start checking against the primary bale.
+	_update_plate_gap(0.001)
+
+## Drop the squeeze immediately so the HUD bar visibly opens up. Runs BEFORE the
+## carried-bale early-out so V works as "release pressure" even on empty air
+## (e.g. the operator over-clamped on nothing).
+func _on_pre_release() -> void:
+	clamp_force = 0.0
+	_force_ramping = false
+
+## After everything is dropped, fan any wires-cut bales into their sheet arc and
+## make sure the squeeze is fully released so the HUD bar drops back.
+func _on_released() -> void:
+	clamp_force = 0.0
+	_force_ramping = false
+
+## Hook into BaseVehicle._drop_bale: after a normal drop, a cut bale opens into
+## the sheet arc. (BaseVehicle calls _drop_bale for every bale in the column.)
+func _drop_bale(b: Node3D, dest: Node) -> void:
+	super._drop_bale(b, dest)
+	if b != null and is_instance_valid(b) and bool(b.get_meta("wires_cut", false)):
+		_open_to_sheet_arc(b)
+
+## Small physical nudge so the player feels their grab attempt did SOMETHING
+## even when clamp_force was insufficient.
+func _nudge(bale: Node3D, impulse: Vector3) -> void:
+	if bale is RigidBody3D:
+		var rb := bale as RigidBody3D
+		var was_frozen := rb.freeze
+		rb.freeze = false
+		rb.apply_central_impulse(impulse * rb.mass)
+		# Refreeze after a moment so the stack doesn't drift
+		await get_tree().create_timer(0.2).timeout
+		if is_instance_valid(rb):
+			rb.freeze = was_frozen
+			rb.linear_velocity = Vector3.ZERO
+			rb.angular_velocity = Vector3.ZERO
+
+## (Kept as a no-op stub for save-game compatibility — wire cutting now happens
+## ON FOOT via the WireCutter tool, not from inside the clamp cab. See
+## src/scenes/world/WireCutter.gd for the new flow.)
+func _try_cut_wires() -> void:
+	pass
+
+# =============================================================================
+# VISUAL HELPERS (wire bulge + sheet arc fall)
+# =============================================================================
+## When carrying with clamp_force above the bale's wire compliance, the top
+## wire segments visibly rise — that's the player's cue to use Shift+B to cut.
+func _update_wire_bulge() -> void:
+	if _carried_bale == null:
+		return
+	var wires := _carried_bale.find_child("Wires", true, false)
+	if wires == null:
+		return
+	var compliance: float = float(_carried_bale.get_meta("wire_compliance", 0.55))
+	var bulge := 0.0
+	if clamp_force > compliance:
+		bulge = (clamp_force - compliance) / maxf(1.0 - compliance, 0.001) * WIRE_BULGE_M
+	for wire in wires.get_children():
+		var top := wire.get_node_or_null("Top") as Node3D
+		if top:
+			var base_y := (wire as Node3D).position.y + (_bale_size(_carried_bale).y * 1.005)
+			top.position.y = base_y - (_bale_size(_carried_bale).y * 1.005) + bulge
+
+## When a cut bale is released, detach each Sheet_i child into its own RigidBody3D.
+## Sheets are now FLEXIBLE + STICKY (was: rigid fan-out slabs). Concretely:
+##   • HIGH inter-sheet friction (0.95) — they cling to each other and the floor,
+##     draping into a pile instead of skating apart like dominoes.
+##   • Strong damping (linear 3.5, angular 5.0) — they settle quickly, no rolling.
+##   • PinJoint3D chain — adjacent sheets are weakly linked so the layered stack
+##     stays roughly together when it falls; the pile drapes, doesn't explode.
+##   • The "outward kick" impulse is REMOVED — sheets fall under gravity only,
+##     so the column drops in place and gradually deforms into a pile of film.
+## Net feel: a bound bale becomes a heavy, lumpy mound of layered film, exactly
+## like what the operator described.
+func _open_to_sheet_arc(bale: Node3D) -> void:
+	var sheets := bale.find_child("Sheets", true, false)
+	if sheets == null:
+		return
+	var scene_root := get_tree().current_scene
+	if scene_root == null:
+		scene_root = get_tree().root
+	var spawned : Array[RigidBody3D] = []
+	for sheet in sheets.get_children():
+		var mi := sheet as MeshInstance3D
+		if mi == null or mi.mesh == null:
+			continue
+		var s_size: Vector3 = (mi.mesh as BoxMesh).size
+		var s_world := mi.global_transform
+		var sheet_rb := RigidBody3D.new()
+		# Each compressed-film slice is light — it's a thin slab, not a brick.
+		sheet_rb.mass = maxf(s_size.x * s_size.y * s_size.z * 80.0, 0.1)
+		sheet_rb.linear_damp  = 3.5       # was 1.2 — kills sliding so sheets stack
+		sheet_rb.angular_damp = 5.0       # was 2.5 — kills tumbling
+		var pm := PhysicsMaterial.new()
+		pm.friction = 0.95                # was 0.35 — STICKY (the user's word)
+		pm.bounce   = 0.0
+		sheet_rb.physics_material_override = pm
+		var col := CollisionShape3D.new()
+		var bs := BoxShape3D.new()
+		bs.size = s_size
+		col.shape = bs
+		sheet_rb.add_child(col)
+		var disp_mi := MeshInstance3D.new()
+		disp_mi.mesh = mi.mesh
+		disp_mi.material_override = mi.material_override
+		sheet_rb.add_child(disp_mi)
+		scene_root.add_child(sheet_rb)
+		sheet_rb.global_transform = s_world
+		# No outward impulse — sheets drop in place under gravity and cling.
+		spawned.append(sheet_rb)
+		sheet.queue_free()
+	# Pin adjacent sheets together with a soft joint — the column stays roughly
+	# layered as it falls + drapes (films cling in the real world too). Soft
+	# joints (high `softness`) let the bind stretch rather than yank.
+	for i in spawned.size() - 1:
+		var a := spawned[i]
+		var b := spawned[i + 1]
+		var joint := PinJoint3D.new()
+		# Anchor halfway between the two sheets' centres so the pin has slack.
+		joint.global_position = (a.global_position + b.global_position) * 0.5
+		joint.set("nodes/node_a", a.get_path())
+		joint.set("nodes/node_b", b.get_path())
+		# A loose impulse cap so a sharp jerk breaks the bond (a stiff joint chain
+		# would keep the whole pile moving as one rigid stack).
+		joint.set_param(PinJoint3D.PARAM_IMPULSE_CLAMP, 4.0)
+		joint.set_param(PinJoint3D.PARAM_DAMPING, 0.6)
+		scene_root.add_child(joint)
+
+func _bale_size(b: Node) -> Vector3:
+	# Read footprint back from the collision shape (it's the authoritative size
+	# in the running scene — independent of the PlaceableCatalog item entry).
+	for c in b.get_children():
+		if c is CollisionShape3D and (c as CollisionShape3D).shape is BoxShape3D:
+			return ((c as CollisionShape3D).shape as BoxShape3D).size
+	return Vector3.ONE

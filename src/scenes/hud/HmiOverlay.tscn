@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://cyfyytk2myage"]
+
+[ext_resource type="Script" path="res://src/scenes/hud/HmiOverlay.gd" id="1_hmi"]
+
+[node name="HmiOverlay" type="CanvasLayer"]
+script = ExtResource("1_hmi")

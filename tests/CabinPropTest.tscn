@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://bcabinprop001"]
+
+[ext_resource type="Script" path="res://tests/CabinPropTest.gd" id="1_prop"]
+
+[node name="CabinPropTest" type="Node3D"]
+script = ExtResource("1_prop")

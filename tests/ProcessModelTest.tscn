@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://cfus68r3ofvee"]
+
+[ext_resource type="Script" path="res://tests/ProcessModelTest.gd" id="1_pm"]
+
+[node name="ProcessModelTest" type="Node3D"]
+script = ExtResource("1_pm")

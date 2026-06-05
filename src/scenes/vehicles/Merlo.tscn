@@ -1,0 +1,651 @@
+[gd_scene format=3 uid="uid://bmerlo00001a"]
+
+; Merlo compact telehandler ("far reacher") — rebuilt from the operator's photos.
+; Signature features captured: glassy cab on the LEFT, FOPS slat cage guarding the
+; windscreen, boom down the RIGHT side with a lift cylinder, green wheel rims on fat
+; tyres, a roof beacon, and the ribbed grapple bucket up front. Node paths the
+; Merlo.gd script drives are unchanged:
+;   BoomPivot / BoomPivot/BoomExtend / .../BucketTilt / .../GrappleArm / .../CarryPoint
+;   CabCamera, EnterArea.
+
+[ext_resource type="Script" path="res://src/scenes/vehicles/Merlo.gd" id="1_merlo"]
+[ext_resource type="Script" path="res://src/scenes/vehicles/VehicleEnterArea.gd" id="2_enter"]
+
+; ── Chassis ───────────────────────────────────────────────────────────────────
+[sub_resource type="BoxShape3D" id="BoxShape_body"]
+size = Vector3(1.7, 1.2, 4.0)
+
+[sub_resource type="BoxMesh" id="Mesh_chassis_low"]
+size = Vector3(1.7, 0.7, 4.0)
+
+[sub_resource type="BoxMesh" id="Mesh_engine_hump"]
+size = Vector3(1.5, 0.55, 1.5)
+
+[sub_resource type="BoxMesh" id="Mesh_counterweight"]
+size = Vector3(1.66, 0.7, 0.5)
+
+; ── Cab (left side) ───────────────────────────────────────────────────────────
+[sub_resource type="BoxMesh" id="Mesh_cab_floor"]
+size = Vector3(0.95, 0.1, 1.7)
+
+[sub_resource type="BoxMesh" id="Mesh_cab_glass"]
+size = Vector3(0.9, 1.3, 1.6)
+
+[sub_resource type="BoxMesh" id="Mesh_cab_post"]
+size = Vector3(0.07, 1.35, 0.07)
+
+[sub_resource type="BoxMesh" id="Mesh_cab_roof"]
+size = Vector3(1.02, 0.09, 1.78)
+
+[sub_resource type="BoxMesh" id="Mesh_fops_slat"]
+size = Vector3(0.9, 0.05, 0.08)
+
+[sub_resource type="BoxMesh" id="Mesh_seat"]
+size = Vector3(0.45, 0.5, 0.45)
+
+[sub_resource type="BoxMesh" id="Mesh_seat_back"]
+size = Vector3(0.45, 0.5, 0.12)
+
+[sub_resource type="CylinderMesh" id="Mesh_joystick"]
+top_radius = 0.025
+bottom_radius = 0.03
+height = 0.22
+radial_segments = 8
+
+[sub_resource type="SphereMesh" id="Mesh_joy_knob"]
+radius = 0.045
+height = 0.09
+
+[sub_resource type="CylinderMesh" id="Mesh_beacon"]
+top_radius = 0.06
+bottom_radius = 0.07
+height = 0.12
+radial_segments = 10
+
+[sub_resource type="CylinderMesh" id="Mesh_exhaust"]
+top_radius = 0.05
+bottom_radius = 0.05
+height = 0.5
+radial_segments = 8
+
+; ── Wheels (fat tyre + green rim) ─────────────────────────────────────────────
+[sub_resource type="CylinderMesh" id="Mesh_tyre"]
+top_radius = 0.5
+bottom_radius = 0.5
+height = 0.45
+radial_segments = 24
+
+[sub_resource type="CylinderMesh" id="Mesh_rim"]
+top_radius = 0.26
+bottom_radius = 0.26
+height = 0.47
+radial_segments = 16
+
+; ── Boom (right side) ─────────────────────────────────────────────────────────
+[sub_resource type="BoxMesh" id="Mesh_boom"]
+size = Vector3(0.42, 0.42, 3.6)
+
+[sub_resource type="BoxMesh" id="Mesh_boom2"]
+size = Vector3(0.32, 0.32, 5.0)
+
+[sub_resource type="CylinderMesh" id="Mesh_lift_cyl"]
+top_radius = 0.08
+bottom_radius = 0.08
+height = 1.8
+radial_segments = 10
+
+[sub_resource type="CylinderMesh" id="Mesh_lift_rod"]
+top_radius = 0.045
+bottom_radius = 0.045
+height = 1.4
+radial_segments = 8
+
+; ── Grapple bucket ────────────────────────────────────────────────────────────
+[sub_resource type="BoxMesh" id="Mesh_headstock"]
+size = Vector3(1.5, 0.6, 0.18)
+
+[sub_resource type="BoxMesh" id="Mesh_bbottom"]
+size = Vector3(1.9, 0.1, 1.05)
+
+[sub_resource type="BoxMesh" id="Mesh_bback"]
+size = Vector3(1.9, 0.6, 0.1)
+
+[sub_resource type="BoxMesh" id="Mesh_brib"]
+size = Vector3(0.06, 0.16, 1.0)
+
+[sub_resource type="BoxMesh" id="Mesh_bside"]
+size = Vector3(0.09, 0.55, 1.05)
+
+[sub_resource type="BoxMesh" id="Mesh_blip"]
+size = Vector3(1.9, 0.06, 0.18)
+
+[sub_resource type="BoxMesh" id="Mesh_armbar"]
+size = Vector3(1.55, 0.12, 0.14)
+
+[sub_resource type="BoxMesh" id="Mesh_tine"]
+size = Vector3(0.06, 0.5, 0.62)
+
+; ── Detail: fuel filler port (right engine deck) ──────────────────────────────
+[sub_resource type="BoxMesh" id="Mesh_fuel_surround"]
+size = Vector3(0.34, 0.12, 0.34)
+
+[sub_resource type="CylinderMesh" id="Mesh_fuel_neck"]
+top_radius = 0.085
+bottom_radius = 0.085
+height = 0.13
+radial_segments = 16
+
+[sub_resource type="CylinderMesh" id="Mesh_fuel_ring"]
+top_radius = 0.10
+bottom_radius = 0.10
+height = 0.03
+radial_segments = 16
+
+[sub_resource type="CylinderMesh" id="Mesh_fuel_hole"]
+top_radius = 0.06
+bottom_radius = 0.06
+height = 0.10
+radial_segments = 14
+
+[sub_resource type="CylinderMesh" id="Mesh_fuel_cap"]
+top_radius = 0.085
+bottom_radius = 0.085
+height = 0.05
+radial_segments = 14
+
+; ── Detail: windscreen wiper ──────────────────────────────────────────────────
+[sub_resource type="CylinderMesh" id="Mesh_wiper_pivot"]
+top_radius = 0.025
+bottom_radius = 0.03
+height = 0.08
+radial_segments = 10
+
+[sub_resource type="BoxMesh" id="Mesh_wiper_arm"]
+size = Vector3(0.022, 0.022, 0.62)
+
+[sub_resource type="BoxMesh" id="Mesh_wiper_blade"]
+size = Vector3(0.03, 0.05, 0.66)
+
+; ── Detail: asset sticker ─────────────────────────────────────────────────────
+[sub_resource type="BoxMesh" id="Mesh_sticker"]
+size = Vector3(0.012, 0.1, 0.26)
+
+; ── Materials ─────────────────────────────────────────────────────────────────
+[sub_resource type="StandardMaterial3D" id="Mat_green"]
+albedo_color = Color(0.36, 0.55, 0.16, 1)
+roughness = 0.55
+
+[sub_resource type="StandardMaterial3D" id="Mat_green_dark"]
+albedo_color = Color(0.24, 0.38, 0.12, 1)
+roughness = 0.6
+
+[sub_resource type="StandardMaterial3D" id="Mat_rim"]
+albedo_color = Color(0.42, 0.62, 0.20, 1)
+metallic = 0.3
+roughness = 0.45
+
+[sub_resource type="StandardMaterial3D" id="Mat_tyre"]
+albedo_color = Color(0.07, 0.07, 0.08, 1)
+roughness = 0.9
+
+[sub_resource type="StandardMaterial3D" id="Mat_dark"]
+albedo_color = Color(0.12, 0.12, 0.13, 1)
+roughness = 0.7
+
+[sub_resource type="StandardMaterial3D" id="Mat_glass"]
+albedo_color = Color(0.30, 0.42, 0.50, 0.42)
+metallic = 0.2
+roughness = 0.08
+transparency = 1
+
+[sub_resource type="StandardMaterial3D" id="Mat_steel"]
+albedo_color = Color(0.46, 0.47, 0.5, 1)
+metallic = 0.6
+roughness = 0.35
+
+[sub_resource type="StandardMaterial3D" id="Mat_chrome"]
+albedo_color = Color(0.7, 0.72, 0.75, 1)
+metallic = 0.85
+roughness = 0.18
+
+[sub_resource type="StandardMaterial3D" id="Mat_grapple_red"]
+albedo_color = Color(0.5, 0.16, 0.13, 1)
+roughness = 0.6
+
+[sub_resource type="StandardMaterial3D" id="Mat_beacon"]
+albedo_color = Color(0.95, 0.62, 0.10, 1)
+emission_enabled = true
+emission = Color(0.95, 0.55, 0.05, 1)
+emission_energy_multiplier = 1.6
+
+; Dark recess inside the fuel neck — reads as the filler mesh / tank opening.
+[sub_resource type="StandardMaterial3D" id="Mat_fuel_hole"]
+albedo_color = Color(0.04, 0.04, 0.05, 1)
+metallic = 0.3
+roughness = 0.9
+
+; Weathered off-white asset sticker (like the 51852 tag in the photo).
+[sub_resource type="StandardMaterial3D" id="Mat_sticker"]
+albedo_color = Color(0.82, 0.80, 0.74, 1)
+roughness = 0.85
+
+[sub_resource type="SphereShape3D" id="Enter_shape"]
+radius = 2.4
+
+; ═══════════════════════════════════════════════════════════════════════════════
+[node name="Merlo" type="VehicleBody3D"]
+mass = 7000.0
+center_of_mass_mode = 1
+center_of_mass = Vector3(0, -0.4, 0.0)
+script = ExtResource("1_merlo")
+vehicle_type = "merlo"
+vehicle_id = "merlo_a"
+fuel_type = "diesel"
+fuel_capacity_l = 90.0
+fuel_consumption_l_per_h = 6.0
+speed_limit_kmh = 29.0
+engine_power_kw = 75.0
+cab_camera_path = NodePath("CabCamera")
+dismount_offset = Vector3(1.9, 0.0, 0.0)
+boom_pivot_path = NodePath("BoomPivot")
+boom_extend_path = NodePath("BoomPivot/BoomExtend")
+bucket_tilt_path = NodePath("BoomPivot/BoomExtend/BucketTilt")
+grapple_arm_path = NodePath("BoomPivot/BoomExtend/BucketTilt/GrappleArm")
+carry_point_path = NodePath("BoomPivot/BoomExtend/BucketTilt/CarryPoint")
+
+; ── Collision (full body) ─────────────────────────────────────────────────────
+[node name="BodyCollision" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.95, 0)
+shape = SubResource("BoxShape_body")
+
+; ── Chassis bodywork ──────────────────────────────────────────────────────────
+[node name="ChassisLow" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.7, 0)
+material_override = SubResource("Mat_green")
+mesh = SubResource("Mesh_chassis_low")
+
+[node name="EngineHump" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.05, 1.25, -1.0)
+material_override = SubResource("Mat_green_dark")
+mesh = SubResource("Mesh_engine_hump")
+
+[node name="Counterweight" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.75, -2.0)
+material_override = SubResource("Mat_dark")
+mesh = SubResource("Mesh_counterweight")
+
+[node name="Exhaust" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.55, 1.75, -1.55)
+material_override = SubResource("Mat_chrome")
+mesh = SubResource("Mesh_exhaust")
+
+; ── Diesel fuel filler port (right engine deck, between cab and rear) ──────────
+; Matches the photo: black plastic surround, a chromed neck ring, and the open
+; tank mouth (cap shown sitting just off to the side "for demonstration").
+[node name="FuelPort" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.6, 1.06, -0.35)
+
+[node name="Surround" type="MeshInstance3D" parent="FuelPort"]
+material_override = SubResource("Mat_dark")
+mesh = SubResource("Mesh_fuel_surround")
+
+[node name="Neck" type="MeshInstance3D" parent="FuelPort"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1, 0)
+material_override = SubResource("Mat_chrome")
+mesh = SubResource("Mesh_fuel_neck")
+
+[node name="Ring" type="MeshInstance3D" parent="FuelPort"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.17, 0)
+material_override = SubResource("Mat_chrome")
+mesh = SubResource("Mesh_fuel_ring")
+
+[node name="Mouth" type="MeshInstance3D" parent="FuelPort"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.14, 0)
+material_override = SubResource("Mat_fuel_hole")
+mesh = SubResource("Mesh_fuel_hole")
+
+; The cap, removed and resting on the deck beside the neck (demonstration).
+[node name="Cap" type="MeshInstance3D" parent="FuelPort"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.26, 0.04, 0.04)
+material_override = SubResource("Mat_dark")
+mesh = SubResource("Mesh_fuel_cap")
+
+; ── Asset sticker on the lower-right green panel (like the 51852 tag) ──────────
+[node name="AssetSticker" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.86, 0.55, -1.4)
+material_override = SubResource("Mat_sticker")
+mesh = SubResource("Mesh_sticker")
+
+[node name="AssetLabel" type="Label3D" parent="AssetSticker"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0.012, 0, 0)
+pixel_size = 0.0016
+modulate = Color(0.12, 0.12, 0.12, 1)
+text = "51852"
+font_size = 64
+outline_size = 0
+
+; ── Cab (RIGHT side from external view; boom is on the LEFT). The cab camera's
+;    forward-looking right-handed basis maps screen-right → vehicle local -X, so
+;    putting cab at +X and boom at -X is what makes the boom show on the OPERATOR's
+;    visual RIGHT inside the cab (the real-Merlo seated POV). ─────────────────
+[node name="Cab" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.42, 1.05, 0.15)
+
+[node name="CabFloor" type="MeshInstance3D" parent="Cab"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
+material_override = SubResource("Mat_dark")
+mesh = SubResource("Mesh_cab_floor")
+
+[node name="CabGlass" type="MeshInstance3D" parent="Cab"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.72, 0)
+material_override = SubResource("Mat_glass")
+mesh = SubResource("Mesh_cab_glass")
+
+[node name="PostFL" type="MeshInstance3D" parent="Cab"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.44, 0.7, 0.78)
+material_override = SubResource("Mat_green_dark")
+mesh = SubResource("Mesh_cab_post")
+
+[node name="PostFR" type="MeshInstance3D" parent="Cab"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.44, 0.7, 0.78)
+material_override = SubResource("Mat_green_dark")
+mesh = SubResource("Mesh_cab_post")
+
+[node name="PostRL" type="MeshInstance3D" parent="Cab"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.44, 0.7, -0.78)
+material_override = SubResource("Mat_green_dark")
+mesh = SubResource("Mesh_cab_post")
+
+[node name="PostRR" type="MeshInstance3D" parent="Cab"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.44, 0.7, -0.78)
+material_override = SubResource("Mat_green_dark")
+mesh = SubResource("Mesh_cab_post")
+
+[node name="CabRoof" type="MeshInstance3D" parent="Cab"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.4, 0)
+material_override = SubResource("Mat_green")
+mesh = SubResource("Mesh_cab_roof")
+
+; FOPS slat cage — horizontal bars guarding the front windscreen (the Merlo tell)
+[node name="FOPS1" type="MeshInstance3D" parent="Cab"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.35, 0.82)
+material_override = SubResource("Mat_green_dark")
+mesh = SubResource("Mesh_fops_slat")
+
+[node name="FOPS2" type="MeshInstance3D" parent="Cab"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.62, 0.82)
+material_override = SubResource("Mat_green_dark")
+mesh = SubResource("Mesh_fops_slat")
+
+[node name="FOPS3" type="MeshInstance3D" parent="Cab"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.89, 0.82)
+material_override = SubResource("Mat_green_dark")
+mesh = SubResource("Mesh_fops_slat")
+
+[node name="FOPS4" type="MeshInstance3D" parent="Cab"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.16, 0.82)
+material_override = SubResource("Mat_green_dark")
+mesh = SubResource("Mesh_fops_slat")
+
+; Windscreen wiper — pivot mounted low on the front glass, arm + blade raked up
+; and across (matching the diagonal blade visible in the photo).
+[node name="WiperPivot" type="Node3D" parent="Cab"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.28, 0.18, 0.83)
+
+[node name="PivotCap" type="MeshInstance3D" parent="Cab/WiperPivot"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0, 0)
+material_override = SubResource("Mat_dark")
+mesh = SubResource("Mesh_wiper_pivot")
+
+; Arm raked up-and-left across the screen (rotate about Z so it lies on the glass).
+[node name="Arm" type="MeshInstance3D" parent="Cab/WiperPivot"]
+transform = Transform3D(0.5, 0.866, 0, -0.866, 0.5, 0, 0, 0, 1, -0.16, 0.27, 0.01)
+material_override = SubResource("Mat_steel")
+mesh = SubResource("Mesh_wiper_arm")
+
+[node name="Blade" type="MeshInstance3D" parent="Cab/WiperPivot"]
+transform = Transform3D(0.5, 0.866, 0, -0.866, 0.5, 0, 0, 0, 1, -0.17, 0.28, 0.02)
+material_override = SubResource("Mat_dark")
+mesh = SubResource("Mesh_wiper_blade")
+
+[node name="Seat" type="MeshInstance3D" parent="Cab"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.35, -0.2)
+material_override = SubResource("Mat_dark")
+mesh = SubResource("Mesh_seat")
+
+[node name="SeatBack" type="MeshInstance3D" parent="Cab"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, -0.42)
+material_override = SubResource("Mat_dark")
+mesh = SubResource("Mesh_seat_back")
+
+; Right-hand joystick (the arm control the operator asked about)
+[node name="JoystickBase" type="MeshInstance3D" parent="Cab"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.34, 0.42, -0.1)
+material_override = SubResource("Mat_dark")
+mesh = SubResource("Mesh_joystick")
+
+[node name="JoystickKnob" type="MeshInstance3D" parent="Cab"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.34, 0.56, -0.1)
+material_override = SubResource("Mat_grapple_red")
+mesh = SubResource("Mesh_joy_knob")
+
+; Roof beacon (amber)
+[node name="Beacon" type="MeshInstance3D" parent="Cab"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.3, 1.5, -0.6)
+material_override = SubResource("Mat_beacon")
+mesh = SubResource("Mesh_beacon")
+
+; ── Wheels ────────────────────────────────────────────────────────────────────
+[node name="Wheel_FL" type="VehicleWheel3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.85, 0.5, 1.4)
+use_as_traction = true
+use_as_steering = true
+wheel_radius = 0.5
+wheel_friction_slip = 10.5
+suspension_max_force = 22000.0
+suspension_stiffness = 8.0
+
+[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_FL"]
+transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0)
+material_override = SubResource("Mat_tyre")
+mesh = SubResource("Mesh_tyre")
+
+[node name="Rim" type="MeshInstance3D" parent="Wheel_FL"]
+transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0)
+material_override = SubResource("Mat_rim")
+mesh = SubResource("Mesh_rim")
+
+[node name="Wheel_FR" type="VehicleWheel3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.85, 0.5, 1.4)
+use_as_traction = true
+use_as_steering = true
+wheel_radius = 0.5
+wheel_friction_slip = 10.5
+suspension_max_force = 22000.0
+suspension_stiffness = 8.0
+
+[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_FR"]
+transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0)
+material_override = SubResource("Mat_tyre")
+mesh = SubResource("Mesh_tyre")
+
+[node name="Rim" type="MeshInstance3D" parent="Wheel_FR"]
+transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0)
+material_override = SubResource("Mat_rim")
+mesh = SubResource("Mesh_rim")
+
+[node name="Wheel_RL" type="VehicleWheel3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.85, 0.5, -1.4)
+use_as_traction = false
+use_as_steering = true
+wheel_radius = 0.5
+wheel_friction_slip = 10.5
+suspension_max_force = 22000.0
+suspension_stiffness = 8.0
+
+[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_RL"]
+transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0)
+material_override = SubResource("Mat_tyre")
+mesh = SubResource("Mesh_tyre")
+
+[node name="Rim" type="MeshInstance3D" parent="Wheel_RL"]
+transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0)
+material_override = SubResource("Mat_rim")
+mesh = SubResource("Mesh_rim")
+
+[node name="Wheel_RR" type="VehicleWheel3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.85, 0.5, -1.4)
+use_as_traction = false
+use_as_steering = true
+wheel_radius = 0.5
+wheel_friction_slip = 10.5
+suspension_max_force = 22000.0
+suspension_stiffness = 8.0
+
+[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_RR"]
+transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0)
+material_override = SubResource("Mat_tyre")
+mesh = SubResource("Mesh_tyre")
+
+[node name="Rim" type="MeshInstance3D" parent="Wheel_RR"]
+transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0)
+material_override = SubResource("Mat_rim")
+mesh = SubResource("Mesh_rim")
+
+; ── Boom (LEFT side of vehicle; appears on operator's visual RIGHT from cab POV
+;    because the cab camera basis flips screen-X to vehicle-X). ───────────────
+[node name="BoomPivot" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.62, 1.5, -1.55)
+
+[node name="BoomMesh" type="MeshInstance3D" parent="BoomPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1.7)
+material_override = SubResource("Mat_green")
+mesh = SubResource("Mesh_boom")
+
+; Lift cylinder under the boom (angled from chassis to mid-boom)
+[node name="LiftCyl" type="MeshInstance3D" parent="BoomPivot"]
+transform = Transform3D(1, 0, 0, 0, 0.92, 0.39, 0, -0.39, 0.92, 0, -0.5, 1.0)
+material_override = SubResource("Mat_steel")
+mesh = SubResource("Mesh_lift_cyl")
+
+[node name="LiftRod" type="MeshInstance3D" parent="BoomPivot"]
+transform = Transform3D(1, 0, 0, 0, 0.92, 0.39, 0, -0.39, 0.92, 0, -0.2, 1.9)
+material_override = SubResource("Mat_chrome")
+mesh = SubResource("Mesh_lift_rod")
+
+[node name="BoomExtend" type="Node3D" parent="BoomPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
+
+; Longer boom2 (5.0 m) shifted back so even at full extension (now 3.0 m, was 2.5)
+; it overlaps the fixed boom's far end — no visible gap at any extension.
+[node name="BoomExtendMesh" type="MeshInstance3D" parent="BoomPivot/BoomExtend"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 2.5)
+material_override = SubResource("Mat_green_dark")
+mesh = SubResource("Mesh_boom2")
+
+; ── Bucket assembly (curl) — re-centred ahead of the vehicle. With the boom
+;    mirrored to vehicle -X, the bucket re-centring X also flips. ─────────────
+[node name="BucketTilt" type="Node3D" parent="BoomPivot/BoomExtend"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.62, -0.15, 5.0)
+
+[node name="CarryPoint" type="Node3D" parent="BoomPivot/BoomExtend/BucketTilt"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.05, 0.4)
+
+[node name="Headstock" type="MeshInstance3D" parent="BoomPivot/BoomExtend/BucketTilt"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0, -0.18)
+material_override = SubResource("Mat_dark")
+mesh = SubResource("Mesh_headstock")
+
+[node name="BucketBottom" type="MeshInstance3D" parent="BoomPivot/BoomExtend/BucketTilt"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.45, 0.38)
+material_override = SubResource("Mat_grapple_red")
+mesh = SubResource("Mesh_bbottom")
+
+[node name="BucketBack" type="MeshInstance3D" parent="BoomPivot/BoomExtend/BucketTilt"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.18, -0.12)
+material_override = SubResource("Mat_grapple_red")
+mesh = SubResource("Mesh_bback")
+
+[node name="Rib1" type="MeshInstance3D" parent="BoomPivot/BoomExtend/BucketTilt"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.6, -0.36, 0.4)
+material_override = SubResource("Mat_grapple_red")
+mesh = SubResource("Mesh_brib")
+
+[node name="Rib2" type="MeshInstance3D" parent="BoomPivot/BoomExtend/BucketTilt"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.3, -0.36, 0.4)
+material_override = SubResource("Mat_grapple_red")
+mesh = SubResource("Mesh_brib")
+
+[node name="Rib3" type="MeshInstance3D" parent="BoomPivot/BoomExtend/BucketTilt"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.36, 0.4)
+material_override = SubResource("Mat_grapple_red")
+mesh = SubResource("Mesh_brib")
+
+[node name="Rib4" type="MeshInstance3D" parent="BoomPivot/BoomExtend/BucketTilt"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.3, -0.36, 0.4)
+material_override = SubResource("Mat_grapple_red")
+mesh = SubResource("Mesh_brib")
+
+[node name="Rib5" type="MeshInstance3D" parent="BoomPivot/BoomExtend/BucketTilt"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.6, -0.36, 0.4)
+material_override = SubResource("Mat_grapple_red")
+mesh = SubResource("Mesh_brib")
+
+[node name="BucketLeft" type="MeshInstance3D" parent="BoomPivot/BoomExtend/BucketTilt"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.9, -0.18, 0.38)
+material_override = SubResource("Mat_grapple_red")
+mesh = SubResource("Mesh_bside")
+
+[node name="BucketRight" type="MeshInstance3D" parent="BoomPivot/BoomExtend/BucketTilt"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9, -0.18, 0.38)
+material_override = SubResource("Mat_grapple_red")
+mesh = SubResource("Mesh_bside")
+
+[node name="BucketLip" type="MeshInstance3D" parent="BoomPivot/BoomExtend/BucketTilt"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.47, 0.9)
+material_override = SubResource("Mat_steel")
+mesh = SubResource("Mesh_blip")
+
+; ── Grapple (top tines that clamp down) ───────────────────────────────────────
+[node name="GrappleArm" type="Node3D" parent="BoomPivot/BoomExtend/BucketTilt"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.12, -0.05)
+
+[node name="ArmBar" type="MeshInstance3D" parent="BoomPivot/BoomExtend/BucketTilt/GrappleArm"]
+material_override = SubResource("Mat_steel")
+mesh = SubResource("Mesh_armbar")
+
+[node name="Tine1" type="MeshInstance3D" parent="BoomPivot/BoomExtend/BucketTilt/GrappleArm"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.62, -0.2, 0.34)
+material_override = SubResource("Mat_steel")
+mesh = SubResource("Mesh_tine")
+
+[node name="Tine2" type="MeshInstance3D" parent="BoomPivot/BoomExtend/BucketTilt/GrappleArm"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.31, -0.2, 0.34)
+material_override = SubResource("Mat_steel")
+mesh = SubResource("Mesh_tine")
+
+[node name="Tine3" type="MeshInstance3D" parent="BoomPivot/BoomExtend/BucketTilt/GrappleArm"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.2, 0.34)
+material_override = SubResource("Mat_steel")
+mesh = SubResource("Mesh_tine")
+
+[node name="Tine4" type="MeshInstance3D" parent="BoomPivot/BoomExtend/BucketTilt/GrappleArm"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.31, -0.2, 0.34)
+material_override = SubResource("Mat_steel")
+mesh = SubResource("Mesh_tine")
+
+[node name="Tine5" type="MeshInstance3D" parent="BoomPivot/BoomExtend/BucketTilt/GrappleArm"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.62, -0.2, 0.34)
+material_override = SubResource("Mat_steel")
+mesh = SubResource("Mesh_tine")
+
+; ── Cab camera + enter area ───────────────────────────────────────────────────
+[node name="CabCamera" type="Camera3D" parent="."]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0.42, 2.0, 0.4)
+
+[node name="EnterArea" type="Area3D" parent="."]
+script = ExtResource("2_enter")
+
+[node name="EnterAreaShape" type="CollisionShape3D" parent="EnterArea"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 0)
+shape = SubResource("Enter_shape")

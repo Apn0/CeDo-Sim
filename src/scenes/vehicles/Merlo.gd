@@ -1,0 +1,155 @@
+extends BaseVehicle
+class_name Merlo
+
+## Diesel telehandler ("far reacher") with an MX-style grapple bucket: a wide
+## scoop with a top grapple of tines that clamp down onto the bucket.
+##
+## Controls (reuses the forklift action set):
+##   R / F  boom raise / lower
+##   T / G  telescope extend / retract
+##   Z / C  bucket curl (tilt the whole scoop)
+##   V / B  grapple open / close (top tines up / down)
+
+@export_group("Boom rig nodes")
+@export var boom_pivot_path  : NodePath
+@export var boom_extend_path : NodePath
+@export var bucket_tilt_path : NodePath   # the whole bucket assembly (curl)
+@export var grapple_arm_path : NodePath   # the tine grapple (opens/closes)
+
+@export_group("Boom")
+@export var boom_min_deg     : float = -5.0
+@export var boom_max_deg     : float = 55.0
+@export var boom_speed_deg_s : float = 12.0
+
+@export_group("Telescope")
+@export var extend_min_m     : float = 0.0
+@export var extend_max_m     : float = 3.0           # bumped from 2.5 — boom2 is 5 m long now
+@export var extend_speed_m_s : float = 0.6
+
+@export_group("Bucket curl")
+@export var curl_min_deg     : float = -45.0
+@export var curl_max_deg     : float = 40.0
+@export var curl_speed_deg_s : float = 25.0
+
+@export_group("Grapple")
+@export var grapple_closed_deg  : float = 0.0
+@export var grapple_open_deg    : float = 75.0
+@export var grapple_speed_deg_s : float = 45.0
+
+var boom_deg    : float = 0.0
+var extend_m    : float = 0.0
+var curl_deg    : float = 0.0
+var grapple_deg : float = 60.0   # start open so the grapple reads as raised tines
+
+var _boom_pivot  : Node3D
+var _boom_extend : Node3D
+var _boom_ext_rest : Vector3 = Vector3.ZERO   # extension's local rest position; extend slides RELATIVE to this
+var _bucket_tilt : Node3D
+var _grapple_arm : Node3D
+
+func _ready() -> void:
+	super._ready()
+	vehicle_type = "merlo"
+	all_wheel_steer = true   # rear wheels counter-steer — the all-wheel look in the photo
+	if boom_pivot_path:  _boom_pivot  = get_node_or_null(boom_pivot_path)  as Node3D
+	if boom_extend_path:
+		_boom_extend = get_node_or_null(boom_extend_path) as Node3D
+		if _boom_extend: _boom_ext_rest = _boom_extend.position
+	if bucket_tilt_path: _bucket_tilt = get_node_or_null(bucket_tilt_path) as Node3D
+	if grapple_arm_path: _grapple_arm = get_node_or_null(grapple_arm_path) as Node3D
+
+func _physics_process(delta: float) -> void:
+	super._physics_process(delta)
+	if occupied:
+		_update_boom(delta)
+	_apply_boom()
+	if occupied:
+		_apply_boom_chassis_lever(delta)
+
+## Telehandler stabiliser effect — when the bucket is touching the ground AND
+## the operator is still holding F (boom_lower), the boom can't push further
+## down, so instead the leverage LIFTS the chassis. Real Merlos use this to
+## level themselves on uneven ground or push the front wheels off the floor.
+##
+## We detect "grounded" via a short ray DOWNWARD from the bucket tilt origin.
+## If the operator is pressing the lower-boom action AND there's ground within
+## ~15 cm of the bucket, we raise the chassis at `BOOM_LEVER_LIFT_S` m/s. The
+## kinematic settle that runs next frame will gently pull the chassis back
+## down once the operator releases F.
+const BOOM_LEVER_LIFT_S      : float = 0.9   # m/s the chassis can rise when leveraging
+const BOOM_LEVER_PROBE_DIST  : float = 0.25  # ground considered "in contact" within this
+const BOOM_LEVER_MAX_HEIGHT  : float = 2.2   # safety cap above settled ride height
+
+func _apply_boom_chassis_lever(delta: float) -> void:
+	# Default state: ride height drifts back to normal so the chassis settles
+	# down when the operator stops leveraging.
+	var leveraging := false
+	if _bucket_tilt and Input.get_action_strength("forklift_lift_down") > 0.5:
+		# Cast a short ray under the bucket. If the bucket is within contact
+		# distance of the ground AND the operator is still asking the boom to
+		# go DOWN, the boom can't, so the leverage lifts the chassis instead.
+		var bucket_world := _bucket_tilt.global_position
+		var space := get_world_3d().direct_space_state
+		if space != null:
+			var from := bucket_world + Vector3.UP * 0.5
+			var to   := bucket_world + Vector3.DOWN * (BOOM_LEVER_PROBE_DIST + 0.6)
+			var q := PhysicsRayQueryParameters3D.create(from, to)
+			q.exclude = [get_rid()]
+			if _carried_bale and _carried_bale is PhysicsBody3D:
+				q.exclude.append((_carried_bale as PhysicsBody3D).get_rid())
+			var hit := space.intersect_ray(q)
+			if not hit.is_empty():
+				var ground_y: float = (hit["position"] as Vector3).y
+				if bucket_world.y - ground_y <= BOOM_LEVER_PROBE_DIST:
+					leveraging = true
+	# Move the ride-height target instead of the chassis directly — the base
+	# settle code lerps the chassis toward that target every frame, so we get
+	# a smooth lift/lower without fighting the settle code.
+	if leveraging:
+		_ride_height_target_m = minf(
+			_ride_height_target_m + BOOM_LEVER_LIFT_S * delta,
+			DEFAULT_RIDE_HEIGHT + BOOM_LEVER_MAX_HEIGHT)
+	else:
+		# Drop back to default ride height when we let off
+		_ride_height_target_m = move_toward(
+			_ride_height_target_m, DEFAULT_RIDE_HEIGHT, BOOM_LEVER_LIFT_S * delta)
+
+func _update_boom(delta: float) -> void:
+	# Mouse-as-joystick (hold a button + drag — see BaseVehicle):
+	#   LEFT  drag  Y = boom elevation,  X = grapple clamp (open/close)
+	#   RIGHT drag  Y = bucket curl,     X = telescope extend/retract
+	# One full drag ≈ a couple of seconds of the keyboard hydraulics.
+	var m := _tool_axes()
+
+	var b := Input.get_action_strength("forklift_lift_up") \
+		   - Input.get_action_strength("forklift_lift_down")
+	boom_deg = clampf(boom_deg + b * boom_speed_deg_s * delta
+		+ float(m["b"]) * boom_speed_deg_s * delta * MOUSE_TOOL_MULT, boom_min_deg, boom_max_deg)
+
+	var e := Input.get_action_strength("forklift_tilt_back") \
+		   - Input.get_action_strength("forklift_tilt_fwd")
+	extend_m = clampf(extend_m + e * extend_speed_m_s * delta
+		+ float(m["c"]) * extend_speed_m_s * delta * MOUSE_TOOL_MULT, extend_min_m, extend_max_m)
+
+	var c := Input.get_action_strength("forklift_rotator_right") \
+		   - Input.get_action_strength("forklift_rotator_left")
+	curl_deg = clampf(curl_deg + c * curl_speed_deg_s * delta
+		+ float(m["d"]) * curl_speed_deg_s * delta * MOUSE_TOOL_MULT, curl_min_deg, curl_max_deg)
+
+	# widen = open (lift tines), pinch = close (clamp onto the bucket)
+	var g := Input.get_action_strength("forklift_forks_widen") \
+		   - Input.get_action_strength("forklift_forks_pinch")
+	grapple_deg = clampf(grapple_deg + g * grapple_speed_deg_s * delta
+		+ float(m["a"]) * grapple_speed_deg_s * delta * MOUSE_TOOL_MULT, grapple_closed_deg, grapple_open_deg)
+
+func _apply_boom() -> void:
+	if _boom_pivot:
+		_boom_pivot.rotation.x = -deg_to_rad(boom_deg)   # +boom_deg raises the tip
+	if _boom_extend:
+		# Slide forward from the captured rest position (not an absolute z=extend_m,
+		# which teleported FBX meshes whose rest origin wasn't at 0).
+		_boom_extend.position = _boom_ext_rest + Vector3(0.0, 0.0, extend_m)
+	if _bucket_tilt:
+		_bucket_tilt.rotation.x = deg_to_rad(curl_deg)
+	if _grapple_arm:
+		_grapple_arm.rotation.x = -deg_to_rad(grapple_deg)   # +grapple_deg lifts tines (open)

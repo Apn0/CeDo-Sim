@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://c837hpqumt66s"]
+
+[ext_resource type="Script" path="res://tests/WastePhysicsTest.gd" id="1_waste"]
+
+[node name="WastePhysicsTest" type="Node3D"]
+script = ExtResource("1_waste")

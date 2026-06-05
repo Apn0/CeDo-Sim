@@ -1,0 +1,461 @@
+[gd_scene format=3 uid="uid://bclamp00001a"]
+
+[ext_resource type="Script" path="res://src/scenes/vehicles/BaleClamp.gd" id="1_clamp"]
+[ext_resource type="Script" path="res://src/scenes/vehicles/VehicleEnterArea.gd" id="2_enter"]
+
+; =============================================================================
+;  BALE CLAMP — Mitsubishi LPG chassis (shared with Forklift) + clamp plates
+;  on the mast carriage instead of forks. Cab interior, ROPS, counterweight,
+;  LPG tank, hood, and tool slots ALL mirror Forklift.tscn — the only mast
+;  difference is LeftPlate/RightPlate (curved-cap vertical paddles).
+; =============================================================================
+
+[sub_resource type="BoxMesh" id="BoxMesh_body"]
+size = Vector3(1.2, 1.0, 2.5)
+
+[sub_resource type="BoxShape3D" id="BoxShape_body"]
+size = Vector3(1.2, 1.0, 2.5)
+
+[sub_resource type="CylinderMesh" id="Wheel_front"]
+top_radius = 0.4
+bottom_radius = 0.4
+height = 0.32
+radial_segments = 20
+
+[sub_resource type="CylinderMesh" id="Wheel_rear"]
+top_radius = 0.25
+bottom_radius = 0.25
+height = 0.28
+radial_segments = 18
+
+[sub_resource type="BoxMesh" id="BoxMesh_mast"]
+size = Vector3(0.08, 3.0, 0.1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_plate"]
+size = Vector3(0.12, 1.04, 1.1)
+
+[sub_resource type="CylinderMesh" id="CylMesh_plate_cap"]
+top_radius = 0.06
+bottom_radius = 0.06
+height = 1.1
+radial_segments = 16
+
+; ── Counterweight + LPG ──────────────────────────────────────────────────────
+[sub_resource type="BoxMesh" id="BoxMesh_counterweight"]
+size = Vector3(1.3, 0.75, 0.7)
+
+[sub_resource type="CylinderMesh" id="Cyl_lpg_tank"]
+top_radius = 0.18
+bottom_radius = 0.18
+height = 0.95
+radial_segments = 18
+
+[sub_resource type="CylinderMesh" id="Cyl_lpg_cap"]
+top_radius = 0.06
+bottom_radius = 0.06
+height = 0.10
+radial_segments = 10
+
+[sub_resource type="BoxMesh" id="BoxMesh_lpg_strap"]
+size = Vector3(0.03, 0.05, 0.42)
+
+; ── Hood / engine cover (front) ──────────────────────────────────────────────
+[sub_resource type="BoxMesh" id="BoxMesh_hood"]
+size = Vector3(1.0, 0.45, 0.4)
+
+[sub_resource type="BoxMesh" id="BoxMesh_sticker"]
+size = Vector3(0.30, 0.16, 0.005)
+
+; ── Cab interior ─────────────────────────────────────────────────────────────
+[sub_resource type="BoxMesh" id="BoxMesh_seat_base"]
+size = Vector3(0.50, 0.10, 0.45)
+
+[sub_resource type="BoxMesh" id="BoxMesh_seat_back"]
+size = Vector3(0.50, 0.50, 0.10)
+
+[sub_resource type="CylinderMesh" id="Cyl_steer_col"]
+top_radius = 0.025
+bottom_radius = 0.025
+height = 0.35
+radial_segments = 12
+
+[sub_resource type="TorusMesh" id="Torus_steer_wheel"]
+inner_radius = 0.12
+outer_radius = 0.15
+rings = 24
+ring_segments = 8
+
+[sub_resource type="BoxMesh" id="BoxMesh_dash"]
+size = Vector3(0.70, 0.06, 0.22)
+
+[sub_resource type="CylinderMesh" id="Cyl_lever"]
+top_radius = 0.018
+bottom_radius = 0.018
+height = 0.25
+radial_segments = 8
+
+[sub_resource type="SphereMesh" id="Sph_lever_knob"]
+radius = 0.035
+height = 0.07
+radial_segments = 10
+rings = 6
+
+; ── Overhead guard (ROPS) ────────────────────────────────────────────────────
+[sub_resource type="CylinderMesh" id="Cyl_rops_post"]
+top_radius = 0.04
+bottom_radius = 0.04
+height = 1.10
+radial_segments = 10
+
+[sub_resource type="BoxMesh" id="BoxMesh_roof_long"]
+size = Vector3(0.08, 0.08, 1.95)
+
+[sub_resource type="BoxMesh" id="BoxMesh_roof_cross"]
+size = Vector3(1.18, 0.08, 0.08)
+
+; ── Materials ────────────────────────────────────────────────────────────────
+; LIVERY BODY COLOUR (#184): dark industrial green (task #39's intent), MATTE so it
+; reads as solid paint instead of the old washed-out cream that looked white in-game.
+; Mat_orange keeps its legacy id but is the body green now. Change Mat_orange +
+; Mat_hood albedo to match the real CeDo photo when available — one-line swap.
+[sub_resource type="StandardMaterial3D" id="Mat_orange"]
+albedo_color = Color(0.13, 0.30, 0.17, 1)
+metallic = 0.0
+roughness = 0.78
+
+[sub_resource type="StandardMaterial3D" id="Mat_hood"]
+albedo_color = Color(0.10, 0.23, 0.13, 1)
+metallic = 0.0
+roughness = 0.62
+
+[sub_resource type="StandardMaterial3D" id="Mat_dark"]
+albedo_color = Color(0.15, 0.15, 0.15, 1)
+roughness = 0.8
+
+[sub_resource type="StandardMaterial3D" id="Mat_seat"]
+albedo_color = Color(0.09, 0.09, 0.10, 1)
+roughness = 0.95
+
+[sub_resource type="StandardMaterial3D" id="Mat_chrome"]
+albedo_color = Color(0.78, 0.80, 0.82, 1)
+metallic = 0.85
+roughness = 0.20
+
+[sub_resource type="StandardMaterial3D" id="Mat_lpg"]
+albedo_color = Color(0.78, 0.18, 0.14, 1)
+roughness = 0.55
+
+[sub_resource type="StandardMaterial3D" id="Mat_sticker"]
+albedo_color = Color(0.85, 0.10, 0.10, 1)
+roughness = 0.30
+emission_enabled = true
+emission = Color(0.5, 0.05, 0.05, 1)
+emission_energy_multiplier = 0.4
+
+[sub_resource type="SphereShape3D" id="Enter_shape"]
+radius = 1.8
+
+; =============================================================================
+;  ROOT VEHICLE
+; =============================================================================
+[node name="BaleClamp" type="VehicleBody3D"]
+mass = 3800.0
+center_of_mass_mode = 1
+center_of_mass = Vector3(0, -0.3, 0.6)
+script = ExtResource("1_clamp")
+vehicle_type = "bale_clamp"
+vehicle_id = "bale_clamp_a"
+fuel_type = "lpg"
+fuel_capacity_l = 14.0
+fuel_consumption_l_per_h = 2.0
+speed_limit_kmh = 12.0
+engine_power_kw = 26.0
+cab_camera_path = NodePath("CabCamera")
+dismount_offset = Vector3(1.4, 0.0, 0.0)
+mast_pivot_path = NodePath("MastPivot")
+lift_carriage_path = NodePath("MastPivot/LiftCarriage")
+left_plate_path = NodePath("MastPivot/LiftCarriage/LeftPlate")
+right_plate_path = NodePath("MastPivot/LiftCarriage/RightPlate")
+carry_point_path = NodePath("MastPivot/LiftCarriage/CarryPoint")
+
+[node name="BodyMesh" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, 0)
+material_override = SubResource("Mat_orange")
+mesh = SubResource("BoxMesh_body")
+
+[node name="BodyCollision" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, 0)
+shape = SubResource("BoxShape_body")
+
+[node name="Wheel_FL" type="VehicleWheel3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.7, 0.4, 0.8)
+use_as_traction = true
+use_as_steering = false
+wheel_radius = 0.4
+wheel_friction_slip = 10.5
+suspension_max_force = 20000.0
+suspension_stiffness = 8.0
+
+[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_FL"]
+transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0)
+mesh = SubResource("Wheel_front")
+material_override = SubResource("Mat_dark")
+
+[node name="Wheel_FR" type="VehicleWheel3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.7, 0.4, 0.8)
+use_as_traction = true
+use_as_steering = false
+wheel_radius = 0.4
+wheel_friction_slip = 10.5
+suspension_max_force = 20000.0
+suspension_stiffness = 8.0
+
+[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_FR"]
+transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0)
+mesh = SubResource("Wheel_front")
+material_override = SubResource("Mat_dark")
+
+[node name="Wheel_RL" type="VehicleWheel3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.55, 0.25, -0.85)
+use_as_traction = false
+use_as_steering = true
+wheel_radius = 0.25
+wheel_friction_slip = 10.5
+suspension_max_force = 20000.0
+suspension_stiffness = 8.0
+
+[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_RL"]
+transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0)
+mesh = SubResource("Wheel_rear")
+material_override = SubResource("Mat_dark")
+
+[node name="Wheel_RR" type="VehicleWheel3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.55, 0.25, -0.85)
+use_as_traction = false
+use_as_steering = true
+wheel_radius = 0.25
+wheel_friction_slip = 10.5
+suspension_max_force = 20000.0
+suspension_stiffness = 8.0
+
+[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_RR"]
+transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0)
+mesh = SubResource("Wheel_rear")
+material_override = SubResource("Mat_dark")
+
+; ── Mast (unchanged) + clamp plates ──────────────────────────────────────────
+[node name="MastPivot" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.4, 1.3)
+
+[node name="MastPostL" type="MeshInstance3D" parent="MastPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.45, 1.5, 0)
+mesh = SubResource("BoxMesh_mast")
+material_override = SubResource("Mat_dark")
+
+[node name="MastPostR" type="MeshInstance3D" parent="MastPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.45, 1.5, 0)
+mesh = SubResource("BoxMesh_mast")
+material_override = SubResource("Mat_dark")
+
+[node name="LiftCarriage" type="Node3D" parent="MastPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 0.05)
+
+[node name="CarryPoint" type="Node3D" parent="MastPivot/LiftCarriage"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.55, 0.55)
+
+[node name="LeftPlate" type="Node3D" parent="MastPivot/LiftCarriage"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.6, 0.55, 0.55)
+
+[node name="LeftPlateMesh" type="MeshInstance3D" parent="MastPivot/LiftCarriage/LeftPlate"]
+mesh = SubResource("BoxMesh_plate")
+material_override = SubResource("Mat_dark")
+
+[node name="LeftPlateCap" type="MeshInstance3D" parent="MastPivot/LiftCarriage/LeftPlate"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 0.52, 0)
+mesh = SubResource("CylMesh_plate_cap")
+material_override = SubResource("Mat_dark")
+
+[node name="RightPlate" type="Node3D" parent="MastPivot/LiftCarriage"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.6, 0.55, 0.55)
+
+[node name="RightPlateMesh" type="MeshInstance3D" parent="MastPivot/LiftCarriage/RightPlate"]
+mesh = SubResource("BoxMesh_plate")
+material_override = SubResource("Mat_dark")
+
+[node name="RightPlateCap" type="MeshInstance3D" parent="MastPivot/LiftCarriage/RightPlate"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 0.52, 0)
+mesh = SubResource("CylMesh_plate_cap")
+material_override = SubResource("Mat_dark")
+
+; ── Counterweight (rear) + LPG cylinder strapped on top ──────────────────────
+[node name="Counterweight" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.65, -1.55)
+mesh = SubResource("BoxMesh_counterweight")
+material_override = SubResource("Mat_dark")
+
+; BaleClamp carries TWO LPG cylinders side-by-side on the counterweight.
+; H switches the active feed between LPG_Mount_0 (left) and LPG_Mount_1 (right).
+; Both lie horizontal with the valve facing forward.
+; Tanks lie along Z (valve to the FRONT), side by side at x=±0.28 so they sit on
+; the counterweight WITHOUT protruding past the body sides (#14 — they used to lie
+; along X at ±0.42 × 0.95 m long, sticking out to ±0.9 and overlapping in the middle).
+[node name="LPG_Mount_0" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, -0.28, 1.18, -1.55)
+
+[node name="LPG_Mount_1" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0.28, 1.18, -1.55)
+
+[node name="LPGCapL" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, -0.28, 1.18, -1.07)
+mesh = SubResource("Cyl_lpg_cap")
+material_override = SubResource("Mat_chrome")
+
+[node name="LPGCapR" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0.28, 1.18, -1.07)
+mesh = SubResource("Cyl_lpg_cap")
+material_override = SubResource("Mat_chrome")
+
+[node name="LPGStrap1" type="MeshInstance3D" parent="."]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -0.28, 1.35, -1.45)
+mesh = SubResource("BoxMesh_lpg_strap")
+material_override = SubResource("Mat_dark")
+
+[node name="LPGStrap2" type="MeshInstance3D" parent="."]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0.28, 1.35, -1.45)
+mesh = SubResource("BoxMesh_lpg_strap")
+material_override = SubResource("Mat_dark")
+
+; ── Hood + Mitsubishi sticker ────────────────────────────────────────────────
+[node name="HoodPanel" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.50, 0.85)
+mesh = SubResource("BoxMesh_hood")
+material_override = SubResource("Mat_hood")
+
+[node name="MitsubishiSticker" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.52, 1.06)
+mesh = SubResource("BoxMesh_sticker")
+material_override = SubResource("Mat_sticker")
+
+; ── Operator seat ────────────────────────────────────────────────────────────
+[node name="SeatBase" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.36, -0.40)
+mesh = SubResource("BoxMesh_seat_base")
+material_override = SubResource("Mat_seat")
+
+[node name="SeatBack" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.66, -0.62)
+mesh = SubResource("BoxMesh_seat_back")
+material_override = SubResource("Mat_seat")
+
+; ── Steering column + wheel ──────────────────────────────────────────────────
+[node name="SteeringColumn" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.927, -0.375, 0, 0.375, 0.927, 0, 1.45, 0.10)
+mesh = SubResource("Cyl_steer_col")
+material_override = SubResource("Mat_dark")
+
+[node name="SteeringWheel" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.375, 0.927, 0, -0.927, 0.375, 0, 1.62, 0.18)
+mesh = SubResource("Torus_steer_wheel")
+material_override = SubResource("Mat_dark")
+
+[node name="SteeringHubChrome" type="MeshInstance3D" parent="."]
+transform = Transform3D(0.10, 0, 0, 0, 0.10, 0, 0, 0, 0.10, 0, 1.62, 0.18)
+mesh = SubResource("Sph_lever_knob")
+material_override = SubResource("Mat_chrome")
+
+; ── Dashboard ────────────────────────────────────────────────────────────────
+[node name="Dashboard" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.55, 0.32)
+mesh = SubResource("BoxMesh_dash")
+material_override = SubResource("Mat_dark")
+
+; ── Control levers (mast lift / clamp force) ────────────────────────────────
+[node name="LeverLift" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.32, 1.50, 0.05)
+mesh = SubResource("Cyl_lever")
+material_override = SubResource("Mat_chrome")
+
+[node name="LeverLiftKnob" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.32, 1.63, 0.05)
+mesh = SubResource("Sph_lever_knob")
+material_override = SubResource("Mat_hood")
+
+[node name="LeverTilt" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.42, 1.50, 0.05)
+mesh = SubResource("Cyl_lever")
+material_override = SubResource("Mat_chrome")
+
+[node name="LeverTiltKnob" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.42, 1.63, 0.05)
+mesh = SubResource("Sph_lever_knob")
+material_override = SubResource("Mat_hood")
+
+; ── Overhead Guard (ROPS) ────────────────────────────────────────────────────
+[node name="RopsPostFL" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.55, 1.85, 0.85)
+mesh = SubResource("Cyl_rops_post")
+material_override = SubResource("Mat_dark")
+
+[node name="RopsPostFR" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.55, 1.85, 0.85)
+mesh = SubResource("Cyl_rops_post")
+material_override = SubResource("Mat_dark")
+
+[node name="RopsPostRL" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.55, 1.85, -1.05)
+mesh = SubResource("Cyl_rops_post")
+material_override = SubResource("Mat_dark")
+
+[node name="RopsPostRR" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.55, 1.85, -1.05)
+mesh = SubResource("Cyl_rops_post")
+material_override = SubResource("Mat_dark")
+
+[node name="RoofBarL" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.55, 2.40, -0.10)
+mesh = SubResource("BoxMesh_roof_long")
+material_override = SubResource("Mat_dark")
+
+[node name="RoofBarR" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.55, 2.40, -0.10)
+mesh = SubResource("BoxMesh_roof_long")
+material_override = SubResource("Mat_dark")
+
+[node name="RoofCrossF" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.40, 0.85)
+mesh = SubResource("BoxMesh_roof_cross")
+material_override = SubResource("Mat_dark")
+
+[node name="RoofCrossM" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.40, -0.10)
+mesh = SubResource("BoxMesh_roof_cross")
+material_override = SubResource("Mat_dark")
+
+[node name="RoofCrossR" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.40, -1.05)
+mesh = SubResource("BoxMesh_roof_cross")
+material_override = SubResource("Mat_dark")
+
+; ── TOOL SLOTS — Node3D anchors for scissors / scanner stowing ───────────────
+[node name="ToolSlot_DashRight" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.30, 1.60, 0.30)
+
+[node name="ToolSlot_BehindSeat" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.55, -1.20)
+
+[node name="ToolSlot_LeftFootwell" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.40, 1.35, -0.20)
+
+; Cup holder — BaseVehicle tags it accepts=["coffee"].
+[node name="ToolSlot_CupHolder" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.42, 1.52, 0.34)
+
+[node name="CabCamera" type="Camera3D" parent="."]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 2.05, -0.8)
+
+[node name="EnterArea" type="Area3D" parent="."]
+script = ExtResource("2_enter")
+
+[node name="EnterAreaShape" type="CollisionShape3D" parent="EnterArea"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
+shape = SubResource("Enter_shape")

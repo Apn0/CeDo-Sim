@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://7qpua6b8xobc"]
+
+[ext_resource type="Script" path="res://tests/VehicleCollisionTest.gd" id="1_test"]
+
+[node name="VehicleCollisionTest" type="Node3D"]
+script = ExtResource("1_test")
