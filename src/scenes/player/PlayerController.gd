@@ -18,6 +18,10 @@ class_name PlayerController
 
 const GRAVITY: float = 9.8
 const STEP_HEIGHT: float = 0.4   # max ledge/curb height the player walks over
+const INTERACT_RAY_RANGE: float = 3.0
+
+var _look_interactable: Node = null
+var _look_prompt: String = ""
 
 @onready var head     : Node3D   = $Head
 @onready var camera_3d: Camera3D = $Head/Camera3D
@@ -139,6 +143,7 @@ func _physics_process(delta: float) -> void:
 
 	# Suppress WASD when cursor is visible (pause menu / any UI overlay).
 	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		_clear_crosshair_interaction()
 		velocity.x = move_toward(velocity.x, 0.0, friction * delta)
 		velocity.z = move_toward(velocity.z, 0.0, friction * delta)
 		move_and_slide()
@@ -170,6 +175,7 @@ func _physics_process(delta: float) -> void:
 	_attempt_wedge_rescue(wish_dir, delta)
 	_update_stance(delta)
 	move_and_slide()
+	_update_crosshair_interaction()
 
 # ── Stance morph + toggles ────────────────────────────────────────────────────
 ## Smoothly lerp the capsule height + eye height toward the current stance's
@@ -300,6 +306,16 @@ func _input(event: InputEvent) -> void:
 	if event.is_action_pressed("debug_unstuck"):
 		_unstuck_me()
 
+	# Crosshair interaction: E acts on the thing under the centre of the screen,
+	# not merely whichever trigger volume the player happens to be standing in.
+	if event.is_action_pressed("interact"):
+		_update_crosshair_interaction()
+	if event.is_action_pressed("interact") and _look_interactable != null:
+		if is_instance_valid(_look_interactable) and _look_interactable.has_method("crosshair_interact"):
+			_look_interactable.call("crosshair_interact", self)
+			get_viewport().set_input_as_handled()
+			return
+
 	# Hotbar: 1-4 switch the active inventory slot, Q drops the active item.
 	# Tools (scissors / scanner) live under Head and Inventory handles the
 	# show/hide so only the active one is in your hand.
@@ -348,3 +364,57 @@ func _ensure_hotbar_actions() -> void:
 			var k := InputEventKey.new()
 			k.keycode = key_code as Key
 			InputMap.action_add_event(action_name, k)
+
+
+# =============================================================================
+# CROSSHAIR INTERACTION
+# =============================================================================
+## Interaction prompts now follow the camera ray: being close is only enough to be
+## reachable; the player must also aim the centre crosshair at an object exposing
+## `crosshair_prompt(player)` and `crosshair_interact(player)`.
+func _update_crosshair_interaction() -> void:
+	if camera_3d == null or not camera_3d.current or Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		_clear_crosshair_interaction()
+		return
+	var from := camera_3d.global_position
+	var to := from - camera_3d.global_transform.basis.z * INTERACT_RAY_RANGE
+	var q := PhysicsRayQueryParameters3D.create(from, to)
+	q.collision_mask = 0xFFFFFFFF
+	q.collide_with_areas = true
+	q.collide_with_bodies = true
+	q.exclude = [get_rid()]
+	var inv := get_node_or_null("/root/Inventory")
+	if inv:
+		var active_tool := inv.call("active") as CollisionObject3D
+		if active_tool:
+			q.exclude.append(active_tool.get_rid())
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	var target := _interactable_from_hit(hit.get("collider") if not hit.is_empty() else null)
+	if target != _look_interactable:
+		_clear_crosshair_interaction()
+		_look_interactable = target
+	if _look_interactable != null and is_instance_valid(_look_interactable):
+		var prompt := "Interact"
+		if _look_interactable.has_method("crosshair_prompt"):
+			prompt = String(_look_interactable.call("crosshair_prompt", self))
+		if prompt != _look_prompt:
+			if _look_prompt != "":
+				EventBus.interaction_prompt_hide.emit(_look_interactable)
+			_look_prompt = prompt
+			if _look_prompt != "":
+				EventBus.interaction_prompt_show.emit(_look_interactable, _look_prompt)
+
+func _clear_crosshair_interaction() -> void:
+	if _look_interactable != null:
+		if is_instance_valid(_look_interactable) and _look_prompt != "":
+			EventBus.interaction_prompt_hide.emit(_look_interactable)
+		_look_interactable = null
+		_look_prompt = ""
+
+func _interactable_from_hit(node: Node) -> Node:
+	var n := node
+	while n != null:
+		if n.has_method("crosshair_interact") and n.has_method("crosshair_prompt"):
+			return n
+		n = n.get_parent()
+	return null

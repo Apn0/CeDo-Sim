@@ -41,20 +41,24 @@ func _ready() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not event.is_action_pressed("interact"):
 		return
-	if current_mode == "on_foot" and interactable_vehicle != null:
-		# Vehicle can refuse boarding (e.g. mast lift while raised — the player
-		# would otherwise teleport onto the deck). Surface the reason as a prompt.
-		var v := interactable_vehicle
-		if v.has_method("can_enter") and not v.can_enter():
-			var reason := ""
-			if v.has_method("enter_refusal_reason"):
-				reason = String(v.call("enter_refusal_reason"))
-			EventBus.interaction_prompt_show.emit(v, reason if reason != "" else "Cannot enter right now")
-			return
-		_enter_vehicle(interactable_vehicle)
+	if current_mode == "on_foot":
+		# Boarding on foot is owned by PlayerController's crosshair ray; standing
+		# inside a VehicleEnterArea only marks that vehicle as reachable.
+		return
 	elif current_mode != "on_foot" and current_vehicle != null \
 			and current_vehicle.has_method("can_exit") and current_vehicle.can_exit():
 		_exit_vehicle()
+
+func enter_interactable_vehicle(vehicle: Node3D) -> void:
+	if current_mode != "on_foot" or vehicle == null or vehicle != interactable_vehicle:
+		return
+	if vehicle.has_method("can_enter") and not vehicle.can_enter():
+		var reason := ""
+		if vehicle.has_method("enter_refusal_reason"):
+			reason = String(vehicle.call("enter_refusal_reason"))
+		EventBus.interaction_prompt_show.emit(vehicle, reason if reason != "" else "Cannot enter right now")
+		return
+	_enter_vehicle(vehicle)
 
 # =============================================================================
 # ENTER / EXIT
