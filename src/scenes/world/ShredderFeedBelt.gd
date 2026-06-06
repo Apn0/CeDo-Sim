@@ -298,10 +298,18 @@ func _place_rider(r: Dictionary) -> void:
 func _discharge_pos() -> Vector3:
 	return to_global(Vector3(0.0, 0.0, deck_length + incline_run + 1.5))
 
+var _cached_containers: Array[Node] = []
+var _container_cache_time: float = 0.0
+
 ## A waste container parked at the discharge (fills inside), or null → floor pile.
 func _container_at(pos: Vector3) -> Node:
-	for c in get_tree().get_nodes_in_group("waste_container"):
-		if c is Node3D and (c as Node).has_method("add"):
+	var now := Time.get_ticks_msec()
+	if now - _container_cache_time > 250:
+		_cached_containers = get_tree().get_nodes_in_group("waste_container")
+		_container_cache_time = float(now)
+
+	for c in _cached_containers:
+		if is_instance_valid(c) and c is Node3D and (c as Node).has_method("add"):
 			if (c as Node3D).global_position.distance_to(pos) < 3.0:
 				return c
 	return null
