@@ -56,10 +56,6 @@ func _on_body_exited(body: Node3D) -> void:
 	_player_near = false
 	EventBus.interaction_prompt_hide.emit(self)
 
-func _unhandled_input(event: InputEvent) -> void:
-	# Open is driven by PlayerController's crosshair interaction ray.
-	return
-
 func crosshair_prompt(_player: Node3D) -> String:
 	return "Open %s" % _label if _player_near else ""
 
