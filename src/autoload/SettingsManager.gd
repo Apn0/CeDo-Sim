@@ -284,7 +284,6 @@ func reset_all() -> void:
 func _apply_to_engine() -> void:
 	_apply_graphics()
 	_apply_audio()
-	_apply_gameplay()
 	_apply_keybinds()
 
 func _apply_graphics() -> void:
@@ -376,11 +375,6 @@ func _apply_audio() -> void:
 	_set_bus_db("Voices",   _current_audio.get("voices_db", 0.0))
 	_set_bus_db("Ambient",  _current_audio.get("ambient_db", -6.0))
 	_set_bus_db("UI",       _current_audio.get("ui_db", -3.0))
-
-func _apply_gameplay() -> void:
-	# Mouse sensitivity + FOV are consumed by PlayerController via SettingsManager.gameplay()
-	# This function is mostly here so the apply pipeline is uniform.
-	pass
 
 func _apply_keybinds() -> void:
 	for action in _current_keybinds:
