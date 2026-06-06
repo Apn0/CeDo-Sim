@@ -54,9 +54,9 @@ func _test_rig_starts_inactive() -> void:
 	_ok(not rig.is_active(),
 		"_active starts false (unattended vehicle won't grab the viewport)")
 	# Even calling set_mode while inactive must NOT make the rig's own camera current
-	rig.set_mode(_CameraRig.Mode.THIRD_PERSON)
+	rig.set_mode(_CameraRig.Mode.FREE_MOVE)
 	_ok(not rig._camera.current,
-		"set_mode(THIRD_PERSON) while inactive does NOT set _camera.current")
+		"set_mode(FREE_MOVE) while inactive does NOT set _camera.current")
 	rig.queue_free()
 
 # =============================================================================
@@ -74,9 +74,9 @@ func _test_activate_deactivate_toggles_first_person_camera() -> void:
 	rig.activate()
 	_ok(cab.current, "after activate() in FIRST_PERSON: cab.current = true")
 	_ok(not rig._camera.current, "in FIRST_PERSON mode: rig._camera.current = false")
-	rig.set_mode(_CameraRig.Mode.THIRD_PERSON)
+	rig.set_mode(_CameraRig.Mode.FREE_MOVE)
 	_ok(not cab.current and rig._camera.current,
-		"switching to THIRD_PERSON: cab off, rig camera on")
+		"switching to FREE_MOVE: cab off, rig camera on")
 	rig.deactivate()
 	_ok(not cab.current and not rig._camera.current,
 		"deactivate(): BOTH cameras off (no viewport ownership)")
@@ -200,14 +200,13 @@ func _test_camera_updates_immediately_on_mode_cycle() -> void:
 	rig.global_position = Vector3(50.0, 0.0, 50.0)   # imagine the vehicle is here
 	rig.activate()
 	# Before cycling, rig._camera is wherever it defaulted to (origin-ish).
-	rig.cycle_mode()   # THIRD_PERSON
-	# After cycle, _update_follow_camera() should have run synchronously
-	# and put the camera in the rig's neighbourhood (within 20 m of the subject)
-	var d := rig._camera.global_position.distance_to(rig.global_position)
-	_ok(d < 20.0,
-		"after F4 cycle to 3rd-person: rig camera within 20m of subject (=%.1f m)" % d)
 	rig.cycle_mode()   # ORBIT
-	d = rig._camera.global_position.distance_to(rig.global_position)
+	# After cycle, _update_orbit_camera() should have run synchronously
+	var d := rig._camera.global_position.distance_to(rig.global_position)
 	_ok(d < 50.0,
-		"after F4 cycle to orbit: rig camera within 50m of subject (=%.1f m)" % d)
+		"after F4 cycle to ORBIT: rig camera within 50m of subject (=%.1f m)" % d)
+	rig.cycle_mode()   # FREE_MOVE
+	d = rig._camera.global_position.distance_to(rig.global_position)
+	_ok(d < 20.0,
+		"after F4 cycle to FREE_MOVE: rig camera within 20m of subject (=%.1f m)" % d)
 	rig.queue_free()

@@ -115,7 +115,7 @@ const ACTION_GROUPS := [
 	},
 	{
 		"label":   "Vehicle aux (lights / horn / wipers / LPG)",
-		"actions": ["vehicle_lights", "vehicle_hazards", "vehicle_horn",
+		"actions": ["vehicle_lights", "vehicle_hazards", "vehicle_blinker_left", "vehicle_blinker_right", "vehicle_horn",
 					"vehicle_wipers", "lpg_switch_active"],
 	},
 	{
@@ -168,6 +168,8 @@ const ACTION_LABELS := {
 	"walkie_ptt":               "Walkie: push-to-talk (U)",
 	"vehicle_lights":           "Vehicle: work lights (L)",
 	"vehicle_hazards":          "Vehicle: hazard blinkers (K)",
+	"vehicle_blinker_left":     "Vehicle: left blinker ([)",
+	"vehicle_blinker_right":    "Vehicle: right blinker (])",
 	"vehicle_horn":             "Vehicle: horn — mast lift (N)",
 	"vehicle_wipers":           "Vehicle: windscreen wipers on/off — Merlo P40 (Y)",
 	"lpg_switch_active":        "Switch active LPG tank — bale clamp (H)",
@@ -458,6 +460,8 @@ func _ensure_aux_actions() -> void:
 		"lpg_switch_active": KEY_H,
 		"vehicle_lights":    KEY_L,
 		"vehicle_hazards":   KEY_K,
+		"vehicle_blinker_left": KEY_BRACKETLEFT,
+		"vehicle_blinker_right": KEY_BRACKETRIGHT,
 		"vehicle_horn":      KEY_N,
 		"vehicle_wipers":    KEY_Y,
 		"walkie_ptt":        KEY_U,

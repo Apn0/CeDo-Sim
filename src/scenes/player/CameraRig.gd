@@ -14,19 +14,18 @@ class_name CameraRig
 ##                  controls feel like Star Citizen's free-look modifier.
 ##
 ## Inputs (only acted on when F4 is held — except for F4-tap which cycles):
-##   F4 (tap)              cycle FIRST_PERSON → THIRD_PERSON → ORBIT → FIRST
-##   F4 + ←/→              orbit yaw   (THIRD_PERSON yaw is fixed; this is ORBIT-only)
+##   F4 (tap)              cycle FIRST_PERSON → ORBIT → FREE_MOVE → FIRST
+##   F4 + ←/→              orbit yaw   (FREE_MOVE is independent)
 ##   F4 + ↑/↓              orbit pitch (ORBIT-only)
-##   F4 + scroll up/down   zoom in / out (ORBIT and THIRD_PERSON)
+##   F4 + scroll up/down   zoom in / out (ORBIT)
 ##
 ## The rig is owned by its subject (parent in the scene tree); the subject calls
 ## set_first_person_camera() at boot and forwards _process(delta) calls so the
 ## orbit/follow updates run every frame.
 
-enum Mode { FIRST_PERSON, THIRD_PERSON, ORBIT }
+enum Mode { FIRST_PERSON, ORBIT, FREE_MOVE }
 
 # Tunables — exposed so the Player and the Vehicles can pick different defaults
-@export var third_person_offset : Vector3 = Vector3(0.0, 2.0, -5.0)    # behind & above (in subject local space)
 @export var orbit_default_dist  : float   = 6.0
 @export var orbit_min_dist      : float   = 2.0
 @export var orbit_max_dist      : float   = 30.0
@@ -44,6 +43,9 @@ var _orbit_pitch        : float = -0.25
 var _orbit_distance     : float = 6.0
 var _f4_held            : bool  = false
 var _f4_acted_this_hold : bool  = false   # any modifier action fired since F4 went down
+
+var _free_move_position : Vector3
+var _free_move_initialized : bool = false
 
 # Cameras: the rig owns one (used in 3rd-person + orbit); the subject hands in
 # the first-person one. Both must outlive the rig — we just toggle .current.
@@ -131,8 +133,8 @@ func set_mode(m: Mode) -> void:
 		_apply_active_camera()
 	# Update the camera's position NOW (don't wait for _process) so the user
 	# sees the camera at the correct place the instant they cycle modes.
-	if _mode == Mode.THIRD_PERSON:
-		_update_follow_camera()
+	if _mode == Mode.FREE_MOVE:
+		_update_free_move_camera(0.0)
 	elif _mode == Mode.ORBIT:
 		_update_orbit_camera()
 
@@ -163,8 +165,8 @@ func _process(delta: float) -> void:
 	# pattern — keeps arrows + wheel free for other uses outside camera mode).
 	if _f4_held:
 		_handle_arrow_pan(delta)
-	if _mode == Mode.THIRD_PERSON:
-		_update_follow_camera()
+	if _mode == Mode.FREE_MOVE:
+		_update_free_move_camera(delta)
 	elif _mode == Mode.ORBIT:
 		_update_orbit_camera()
 
@@ -186,18 +188,42 @@ func _handle_arrow_pan(delta: float) -> void:
 	_orbit_yaw   += yaw_axis * orbit_pan_rate * delta
 	_orbit_pitch  = clampf(_orbit_pitch + pitch_axis * orbit_pan_rate * delta, PITCH_MIN, PITCH_MAX)
 
-## THIRD_PERSON: fixed offset BEHIND the subject (rotates with subject's facing
-## so the camera always sits at the back). +Z is the subject's forward.
-func _update_follow_camera() -> void:
-	# Safe to call before _ready (set_mode now updates synchronously, and some
-	# subjects flip mode in their own _ready() before the rig has finished).
+## FREE_MOVE: Independent free-fly camera using 8/4/6/2/9/3 to move.
+func _update_free_move_camera(delta: float) -> void:
 	if _camera == null or not is_instance_valid(_camera) or not is_inside_tree():
 		return
-	var subj_xf := global_transform
-	_camera.global_position = subj_xf.origin + subj_xf.basis * third_person_offset
-	# Look at the subject's chest/cab height for a nicer framing
-	var look := subj_xf.origin + Vector3.UP * 0.8
-	_safe_look_at(_camera, look)
+	
+	var cy := cos(_orbit_yaw)
+	var sy := sin(_orbit_yaw)
+	var cp := cos(_orbit_pitch)
+	var sp := sin(_orbit_pitch)
+	# Look direction based on current orbit yaw/pitch
+	var fwd := -Vector3(sy * cp, sp, cy * cp).normalized()
+	
+	if not _free_move_initialized:
+		# Start at the subject's head position
+		_free_move_position = global_position + Vector3.UP * 0.8
+		_free_move_initialized = true
+	
+	var move_dir := Vector3.ZERO
+	if Input.is_key_pressed(KEY_8) or Input.is_key_pressed(KEY_KP_8): move_dir += fwd
+	if Input.is_key_pressed(KEY_2) or Input.is_key_pressed(KEY_KP_2): move_dir -= fwd
+	
+	var right := fwd.cross(Vector3.UP).normalized()
+	if right.length_squared() < 0.001:
+		right = Vector3.RIGHT
+	if Input.is_key_pressed(KEY_4) or Input.is_key_pressed(KEY_KP_4): move_dir -= right
+	if Input.is_key_pressed(KEY_6) or Input.is_key_pressed(KEY_KP_6): move_dir += right
+	
+	if Input.is_key_pressed(KEY_9) or Input.is_key_pressed(KEY_KP_9): move_dir += Vector3.UP
+	if Input.is_key_pressed(KEY_3) or Input.is_key_pressed(KEY_KP_3): move_dir += Vector3.DOWN
+	
+	if move_dir != Vector3.ZERO:
+		var move_speed := 10.0
+		_free_move_position += move_dir.normalized() * move_speed * delta
+	
+	_camera.global_position = _free_move_position
+	_safe_look_at(_camera, _free_move_position + fwd)
 
 ## ORBIT: world-space spherical orbit around the subject. Yaw + pitch + distance
 ## are all under arrow/scroll control while F4 is held.
@@ -276,7 +302,7 @@ func handle_input(event: InputEvent) -> bool:
 ## In FIRST_PERSON: rotates the cab/head camera around the YAWED-then-PITCHED
 ## axes (real FPS feel: yaw around world up, pitch around the now-yawed right).
 ##
-## In THIRD_PERSON / ORBIT: feeds into orbit_yaw / orbit_pitch directly so the
+## In ORBIT / FREE_MOVE: feeds into orbit_yaw / orbit_pitch directly so the
 ## mouse and the F4 + arrow keys move the same state.
 func handle_mouse_look(rel: Vector2) -> void:
 	# Mouse sensitivity respects the gameplay slider in Settings. Look the
@@ -305,7 +331,7 @@ func handle_mouse_look(rel: Vector2) -> void:
 		_cab_pitch = clampf(_cab_pitch + pitch_delta, -CAB_PITCH_LIMIT, CAB_PITCH_LIMIT)
 		_apply_cab_look()
 	else:
-		# Outside-vehicle (orbit / 3rd-person) view honours the SEPARATE X/Y invert
+		# Outside-vehicle (orbit / free-move) view honours the SEPARATE X/Y invert
 		# options (#19). These were only ever wired to arrow-pan — now the MOUSE obeys
 		# them too, which is why it "never worked" before.
 		var oyaw := yaw_delta
@@ -356,11 +382,12 @@ func reset() -> void:
 		_first_person_camera.transform = _cab_initial_xf
 	_f4_held = false
 	_f4_acted_this_hold = false
+	_free_move_initialized = false
 
 ## Mode name, for HUD readouts.
 func mode_name() -> String:
 	match _mode:
 		Mode.FIRST_PERSON: return "1st person"
-		Mode.THIRD_PERSON: return "3rd-person follow"
 		Mode.ORBIT:        return "orbit"
+		Mode.FREE_MOVE:    return "free move"
 	return "?"

@@ -13,3 +13,14 @@ res://src/scenes/world/CabinProp.gd
 res://src/scenes/world/WireCutter.gd
 res://src/scenes/world/MainWorld.tscn
 res://src/scenes/player/CameraRig.gd
+res://src/autoload/EventBus.gd
+res://src/build/PlaceableCatalog.gd
+res://src/build/ToolPlacementMode.gd
+res://src/scenes/world/ChargingPlug.gd
+res://src/sim/MachineFlow.gd
+res://src/scenes/world/MainWorld.gd
+res://test_crew.gd
+res://src/autoload/SettingsManager.gd
+res://src/scenes/vehicles/MerloP40.gd
+res://tests/OperatorLifecycleTest.gd
+res://tests/WireFixAndCameraTest.gd

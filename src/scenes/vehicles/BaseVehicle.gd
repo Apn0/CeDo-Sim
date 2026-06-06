@@ -54,15 +54,18 @@ var _active_lpg_idx    : int    = 0
 @export var has_lights : bool = true
 @export var has_horn   : bool = false
 
-var work_lights_on  : bool = false       # L key — forward work lamps
-var hazards_on      : bool = false       # K key — 4-way blinkers
-var _light_work     : Array = []
-var _light_haz      : Array = []         # OmniLight3D corners
-var _light_rev      : SpotLight3D = null # reverse beam (auto)
-var _light_blue_f   : SpotLight3D = null # Linde-style blue spot front
-var _light_blue_r   : SpotLight3D = null # …and rear
-var _haz_blink_t    : float = 0.0
-var _haz_blink_on   : bool  = false
+var work_lights_on    : bool = false       # L key — forward work lamps
+var hazards_on        : bool = false       # K key — 4-way blinkers
+var blinker_left_on   : bool = false
+var blinker_right_on  : bool = false
+var _light_work       : Array = []
+var _light_haz        : Array = []         # OmniLight3D corners
+var _light_rev        : SpotLight3D = null # reverse beam (auto)
+var _light_blue_f     : SpotLight3D = null # Linde-style blue spot front
+var _light_blue_r     : SpotLight3D = null # …and rear
+var _beacons          : Array = []         # Rotating mini-lighthouse elements
+var _haz_blink_t      : float = 0.0
+var _haz_blink_on     : bool  = false
 
 var _beeper         : AudioStreamPlayer3D = null
 var _beeper_pb      : AudioStreamGeneratorPlayback = null
@@ -298,6 +301,16 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("vehicle_hazards"):
 		hazards_on = not hazards_on
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("vehicle_blinker_left"):
+		blinker_left_on = not blinker_left_on
+		if blinker_left_on:
+			blinker_right_on = false
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("vehicle_blinker_right"):
+		blinker_right_on = not blinker_right_on
+		if blinker_right_on:
+			blinker_left_on = false
 		get_viewport().set_input_as_handled()
 	# N = horn. Only vehicles with has_horn=true (mast lift) actually
 	# synthesise sound; everywhere else this is a no-op.
@@ -1369,6 +1382,7 @@ func _vehicle_light_layout() -> Dictionary:
 		"reverse":    Vector3( 0.00, 1.50,-1.85),
 		"blue_front": Vector3( 0.00, 1.05, 1.20),
 		"blue_rear":  Vector3( 0.00, 1.05,-1.55),
+		"beacon":     Vector3( 0.00, 2.40, 0.00),
 	}
 	if vehicle_type == "merlo" or vehicle_type == "merlo_p40":
 		d["work_FL"]    = Vector3(-0.85, 2.30, 1.20)
@@ -1380,6 +1394,7 @@ func _vehicle_light_layout() -> Dictionary:
 		d["reverse"]    = Vector3( 0.00, 1.40,-2.40)
 		d["blue_front"] = Vector3( 0.00, 1.00, 2.40)
 		d["blue_rear"]  = Vector3( 0.00, 1.00,-2.40)
+		d["beacon"]     = Vector3( 0.30, 1.50,-0.60)
 	return d
 
 func _build_lights() -> void:
@@ -1440,6 +1455,78 @@ func _build_lights() -> void:
 	_light_blue_r = _make_blue_spot(layout["blue_rear"],  0.0)
 	add_child(_light_blue_f)
 	add_child(_light_blue_r)
+
+	# Mini-lighthouse beacon rig.
+	# The mast lift gets no lights (has_lights is false), so it skips this.
+	# The Merlo variants specify a beacon position explicitly.
+	var beacon_rig := Node3D.new()
+	beacon_rig.name = "BeaconRig"
+	
+	if vehicle_type == "merlo":
+		# Base Merlo has a beacon node explicitly in the cab at local 0,0,0
+		var existing_beacon = get_node_or_null("Cab/Beacon")
+		if existing_beacon:
+			existing_beacon.queue_free()
+	
+	# The parent Cab node on Merlo
+	var target_parent: Node = self
+	if (vehicle_type == "merlo" or vehicle_type == "merlo_p40") and has_node("Cab"):
+		target_parent = get_node("Cab")
+
+	beacon_rig.position = layout["beacon"]
+	target_parent.add_child(beacon_rig)
+
+	# Add the sweeping beams
+	var b_spot1 := SpotLight3D.new()
+	b_spot1.name = "BeaconBeam1"
+	b_spot1.rotation_degrees = Vector3(0.0, 0.0, 0.0)
+	b_spot1.light_color = Color(1.0, 0.55, 0.05)
+	b_spot1.light_energy = 5.0
+	b_spot1.spot_range = 10.0
+	b_spot1.spot_angle = 35.0
+	b_spot1.spot_angle_attenuation = 2.0
+	b_spot1.visible = false
+	beacon_rig.add_child(b_spot1)
+
+	var b_spot2 := SpotLight3D.new()
+	b_spot2.name = "BeaconBeam2"
+	b_spot2.rotation_degrees = Vector3(0.0, 180.0, 0.0)
+	b_spot2.light_color = Color(1.0, 0.55, 0.05)
+	b_spot2.light_energy = 5.0
+	b_spot2.spot_range = 10.0
+	b_spot2.spot_angle = 35.0
+	b_spot2.spot_angle_attenuation = 2.0
+	b_spot2.visible = false
+	beacon_rig.add_child(b_spot2)
+
+	# Add localized glow
+	var b_glow := OmniLight3D.new()
+	b_glow.name = "BeaconGlow"
+	b_glow.light_color = Color(1.0, 0.55, 0.05)
+	b_glow.light_energy = 2.0
+	b_glow.omni_range = 3.0
+	b_glow.visible = false
+	beacon_rig.add_child(b_glow)
+
+	# Only add the cylindrical body if it's not the Merlo P40 (which has its own).
+	if vehicle_type != "merlo_p40":
+		var b_mesh := MeshInstance3D.new()
+		b_mesh.name = "BeaconMesh"
+		var cyl := CylinderMesh.new()
+		cyl.top_radius = 0.06
+		cyl.bottom_radius = 0.07
+		cyl.height = 0.12
+		cyl.radial_segments = 10
+		b_mesh.mesh = cyl
+		var b_mat := StandardMaterial3D.new()
+		b_mat.albedo_color = Color(0.95, 0.62, 0.10)
+		b_mat.emission_enabled = true
+		b_mat.emission = Color(0.95, 0.55, 0.05)
+		b_mat.emission_energy_multiplier = 1.6
+		b_mesh.material_override = b_mat
+		beacon_rig.add_child(b_mesh)
+
+	_beacons.append(beacon_rig)
 
 ## A Linde-style blue floor spot — aimed steeply down, narrow cone. `yaw_deg`
 ## chooses which side: 180 = forward (the FRONT of the vehicle, since -Z = fwd)
@@ -1518,13 +1605,31 @@ func _build_horn() -> void:
 ## beam, beeper fill, horn fill. Subclass _physics_process implementations call
 ## super._physics_process(delta) before their own work so this runs.
 func _tick_vehicle_aux(delta: float) -> void:
-	# Hazards: 1.5 Hz blink. Lamps follow `hazards_on AND blink-phase`.
+	# Hazards / Blinkers: 1.5 Hz blink. Lamps follow `hazards_on AND blink-phase` or individual blinker state.
 	_haz_blink_t += delta
 	if _haz_blink_t >= 0.33:
 		_haz_blink_t = 0.0
 		_haz_blink_on = not _haz_blink_on
 	for hl in _light_haz:
-		(hl as OmniLight3D).visible = hazards_on and _haz_blink_on
+		var n: String = (hl as OmniLight3D).name
+		var on := false
+		if hazards_on:
+			on = true
+		elif blinker_left_on and (n == "HazardLight_haz_FL" or n == "HazardLight_haz_RL"):
+			on = true
+		elif blinker_right_on and (n == "HazardLight_haz_FR" or n == "HazardLight_haz_RR"):
+			on = true
+		(hl as OmniLight3D).visible = on and _haz_blink_on
+
+	# Mini-lighthouse beacons
+	var beacons_active = hazards_on or blinker_left_on or blinker_right_on or occupied
+	for beacon in _beacons:
+		var br = beacon as Node3D
+		br.rotation.y += delta * TAU / 0.7  # 1 rev per 0.7s
+		for c in br.get_children():
+			if c is Light3D:
+				c.visible = beacons_active
+
 	# Work lights: simple on/off.
 	for wl in _light_work:
 		(wl as SpotLight3D).visible = work_lights_on

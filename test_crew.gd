@@ -88,7 +88,7 @@ func _clock() -> void:
 	var sc := ShiftClock.new()
 	_ok(sc.current_shift() == ShiftRota.Shift.EARLY, "day0/Ploeg A reads as Vroege dienst")
 	_ok(sc.current_team_label() == "Ploeg A", "player ploeg label")
-	_ok(sc.calendar_string().begins_with("Dag 1 · Vroege dienst · Ploeg A"), "calendar string (%s)" % sc.calendar_string())
+	_ok(sc.calendar_string().begins_with("Dag 1 · Ochtenddienst · Ploeg A"), "calendar string (%s)" % sc.calendar_string())
 	sc.advance_day(2)
 	_ok(sc.day_index == 2, "advance_day moves the calendar")
 	sc.free()

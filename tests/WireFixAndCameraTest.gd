@@ -89,7 +89,7 @@ func _test_wire_visual_fix() -> void:
 		bale.queue_free()
 
 # =============================================================================
-# (b1) CAMERA: F4 cycles through 1st → 3rd → orbit → 1st
+# (b1) CAMERA: F4 cycles through 1st → orbit → free move → 1st
 # =============================================================================
 func _test_camera_mode_cycle() -> void:
 	print("[b1] CameraRig mode cycle")
@@ -98,11 +98,11 @@ func _test_camera_mode_cycle() -> void:
 	_ok(rig.mode() == _CameraRig.Mode.FIRST_PERSON,
 		"starts in FIRST_PERSON (=%s)" % rig.mode_name())
 	rig.cycle_mode()
-	_ok(rig.mode() == _CameraRig.Mode.THIRD_PERSON,
-		"after 1st cycle: THIRD_PERSON (=%s)" % rig.mode_name())
-	rig.cycle_mode()
 	_ok(rig.mode() == _CameraRig.Mode.ORBIT,
-		"after 2nd cycle: ORBIT (=%s)" % rig.mode_name())
+		"after 1st cycle: ORBIT (=%s)" % rig.mode_name())
+	rig.cycle_mode()
+	_ok(rig.mode() == _CameraRig.Mode.FREE_MOVE,
+		"after 2nd cycle: FREE_MOVE (=%s)" % rig.mode_name())
 	rig.cycle_mode()
 	_ok(rig.mode() == _CameraRig.Mode.FIRST_PERSON,
 		"after 3rd cycle: back to FIRST_PERSON")
@@ -130,8 +130,8 @@ func _test_camera_f4_modifier_orbit() -> void:
 	var ev_up   := _make_key(KEY_F4, false)
 	rig.handle_input(ev_down)
 	rig.handle_input(ev_up)
-	_ok(rig.mode() == _CameraRig.Mode.FIRST_PERSON,
-		"F4 tap (no arrows) cycles ORBIT → FIRST_PERSON")
+	_ok(rig.mode() == _CameraRig.Mode.FREE_MOVE,
+		"F4 tap (no arrows) cycles ORBIT → FREE_MOVE")
 
 	# Go back to ORBIT, press F4 again, simulate arrow press, release F4
 	rig.set_mode(_CameraRig.Mode.ORBIT)

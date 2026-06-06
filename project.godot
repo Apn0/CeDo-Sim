@@ -17,7 +17,7 @@ compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 config/name="CeDo Simulator"
 config/description="A 1:1 real-time shift simulator for LDPE plastic film recycling operations at CeDo Geleen."
 config/version="0.1.0"
-run/main_scene="res://src/scenes/world/MainWorld.tscn"
+run/main_scene="res://src/scenes/menus/main_menu/MainMenu.tscn"
 config/features=PackedStringArray("4.6")
 config/icon="res://icon.svg"
 

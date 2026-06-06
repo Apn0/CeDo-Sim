@@ -937,7 +937,7 @@ func _on_save_quit_pressed() -> void:
 	if main_world:
 		main_world.save_and_quit()
 	else:
-		get_tree().quit()
+		get_tree().change_scene_to_file("res://src/scenes/menus/main_menu/MainMenu.tscn")
 
 # =============================================================================
 # HOTBAR (4 inventory slots — bottom-centre)

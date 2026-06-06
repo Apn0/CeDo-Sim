@@ -272,6 +272,7 @@ func _articulate_wipers() -> void:
 func _articulate_beacon_and_steering() -> void:
 	if _parts.has("beacon") and not (_parts["beacon"] as Array).is_empty():
 		_beacon_node = (_parts["beacon"] as Array)[0]
+		_beacons.append(_beacon_node)
 	if _parts.has("steering") and not (_parts["steering"] as Array).is_empty():
 		_steering_node = (_parts["steering"] as Array)[0]
 
@@ -557,9 +558,6 @@ func _process(delta: float) -> void:
 			(p as Node3D).rotation.z = sweep_front
 		for p in _wiper_pivots_rear:
 			(p as Node3D).rotation.z = sweep_rear
-	# Beacon spins steadily — 1 rev / 0.7 s, matches a real amber strobe.
-	if _beacon_node != null:
-		_beacon_node.rotation.y += delta * TAU / 0.7
 	# Steering wheel mirrors the chassis steering.
 	if _steering_node != null and "steering" in self:
 		_steering_node.rotation.z = -(self.steering as float) * 3.0

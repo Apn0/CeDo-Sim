@@ -38,6 +38,10 @@ var npcs            : Dictionary = {}
 # The forklift parks 3 m from here so it's always within reach on spawn.
 var _player_spawn_pos : Vector3 = Vector3.ZERO
 
+# Setup mode state
+var is_setup_mode : bool = false
+var setup_overlay : CanvasLayer = null
+
 # ── NPC catalogue ─────────────────────────────────────────────────────────────
 const NPC_DATA: Dictionary = {
 	"romain":     {"name": "Romain",     "role": "shift_leader",       "color": Color.CYAN},
@@ -72,6 +76,38 @@ func _ready() -> void:
 	_spawn_line_flow()
 	_spawn_npcs()
 	_spawn_hud()
+	
+	if game_state and game_state.is_new_save:
+		_start_setup_mode()
+	else:
+		_spawn_world_items()
+
+func _start_setup_mode() -> void:
+	is_setup_mode = true
+	setup_overlay = CanvasLayer.new()
+	var center = CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var label = Label.new()
+	label.text = "Walk to the desired Factory Center and press ENTER"
+	label.add_theme_font_size_override("font_size", 32)
+	var panel = PanelContainer.new()
+	panel.add_child(label)
+	center.add_child(panel)
+	setup_overlay.add_child(center)
+	add_child(setup_overlay)
+
+func _input(event: InputEvent) -> void:
+	if is_setup_mode and event.is_action_pressed("ui_accept"):
+		if player and game_state:
+			game_state.factory_center = player.global_position
+			game_state.is_new_save = false
+			is_setup_mode = false
+			if setup_overlay:
+				setup_overlay.queue_free()
+			save_game()
+			_spawn_world_items()
+
+func _spawn_world_items() -> void:
 	_spawn_forklift()
 	_spawn_bale_clamp()
 	_spawn_merlo()
@@ -267,6 +303,16 @@ func _spawn_player() -> void:
 	print("[MainWorld] Player spawned at %s%s" \
 		% [player.global_position, " (resumed)" if from_save else ""])
 
+func _get_factory_anchor() -> Vector3:
+	if game_state and game_state.factory_center != Vector3.ZERO:
+		return game_state.factory_center
+	if _player_spawn_pos != Vector3.ZERO:
+		return _player_spawn_pos
+	var marker := find_child("PlayerSpawn", false, false) as Node3D
+	if marker:
+		return marker.global_position
+	return Vector3.ZERO
+
 # =============================================================================
 # NPCs
 # =============================================================================
@@ -402,22 +448,16 @@ func _spawn_forklift() -> void:
 	# anchor to where the PLAYER actually ended up (which may be a resumed save
 	# 500 m from the marker), NOT the marker — otherwise a saved game leaves the
 	# forklift stranded back at origin while the player is out by the pipeline.
-	var anchor := _player_spawn_pos
-	if anchor == Vector3.ZERO:
-		var marker := find_child("PlayerSpawn", false, false) as Node3D
-		anchor = marker.global_position if marker else Vector3.ZERO
+	var anchor := _get_factory_anchor()
 	anchor.x += 3.0      # 3 m to the side — close enough to reach immediately
 	anchor.y += 0.5      # small clearance so wheels settle without a hard bounce
 	fork.global_position = anchor
-	print("[MainWorld] Forklift A spawned 3 m from player at %s" % str(anchor))
+	print("[MainWorld] Forklift A spawned 3 m from anchor at %s" % str(anchor))
 
 ## Anchor for the vehicle row — the player's actual spawn (marker OR resumed save),
 ## so every vehicle parks beside the player wherever they end up.
 func _vehicle_anchor() -> Vector3:
-	if _player_spawn_pos != Vector3.ZERO:
-		return _player_spawn_pos
-	var marker := find_child("PlayerSpawn", false, false) as Node3D
-	return marker.global_position if marker else Vector3.ZERO
+	return _get_factory_anchor()
 
 ## World Y of the floor's TOP surface — placing a machine so its AABB bottom sits
 ## at this Y seats it flush on the floor.
@@ -530,10 +570,7 @@ func _spawn_bale_yard() -> void:
 	# Anchor the yard to where the PLAYER actually spawned (which may be a resumed
 	# save far from the marker), so the stacks are always a few steps away to test
 	# with — not stranded back at the factory marker.
-	var base : Vector3 = _player_spawn_pos
-	if base == Vector3.ZERO:
-		var marker := find_child("PlayerSpawn", false, false) as Node3D
-		base = marker.global_position if marker else Vector3.ZERO
+	var base : Vector3 = _get_factory_anchor()
 	# A tidy yard 6 m to the player's side and a few metres ahead — next to the
 	# forklift (which parks at +3 on X), clear of the player capsule. Drop the
 	# FULL capsule half-height (0.9 m): the spawn anchor is the player capsule's
@@ -581,10 +618,7 @@ func _spawn_bale_yard() -> void:
 ## Tagged "placed_object" + "feed_machine" like a build-placed one so LineFlow's
 ## scan treats it as a real feed point.
 func _spawn_test_bunker() -> void:
-	var base : Vector3 = _player_spawn_pos
-	if base == Vector3.ZERO:
-		var marker := find_child("PlayerSpawn", false, false) as Node3D
-		base = marker.global_position if marker else Vector3.ZERO
+	var base : Vector3 = _get_factory_anchor()
 	# In front of the player, past the bale yard, clear of the vehicle row.
 	# -0.9 grounds the base (anchor is the player capsule centre, ~0.9 m up).
 	base += Vector3(2.0, -0.9, 14.0)
@@ -886,10 +920,7 @@ func _spawn_battery_station() -> void:
 	station.name = "BatteryStation"
 	# Near the extruder (which sits ~15 m -Z of spawn), offset to the side so it
 	# reads as a corner office bench rather than blocking the machine.
-	var anchor : Vector3 = _player_spawn_pos
-	if anchor == Vector3.ZERO:
-		var marker := find_child("PlayerSpawn", false, false) as Node3D
-		anchor = marker.global_position if marker else Vector3.ZERO
+	var anchor : Vector3 = _get_factory_anchor()
 	anchor += Vector3(-6.0, 0.0, -15.0)
 	add_child(station)
 	station.global_position = anchor
@@ -902,10 +933,7 @@ func _spawn_battery_station() -> void:
 func _spawn_shift_leader_desk() -> void:
 	var desk : Node3D = load("res://src/scenes/world/ShiftLeaderDesk.gd").new()
 	desk.name = "ShiftLeaderDesk"
-	var anchor : Vector3 = _player_spawn_pos
-	if anchor == Vector3.ZERO:
-		var marker := find_child("PlayerSpawn", false, false) as Node3D
-		anchor = marker.global_position if marker else Vector3.ZERO
+	var anchor : Vector3 = _get_factory_anchor()
 	add_child(desk)
 	desk.global_position = anchor + Vector3(-9.0, 0.0, -14.0)
 	print("[MainWorld] Shift-leader desk (scan log) @ %s" % str(desk.global_position))
@@ -966,10 +994,7 @@ func _build_battery_station_model(station: Node3D) -> void:
 ## A power outlet beside the lift's parking spot, and a diesel bowser by the
 ## vehicle row. Both anchor to the player's actual spawn so they're reachable.
 func _spawn_service_stations() -> void:
-	var anchor : Vector3 = _player_spawn_pos
-	if anchor == Vector3.ZERO:
-		var marker := find_child("PlayerSpawn", false, false) as Node3D
-		anchor = marker.global_position if marker else Vector3.ZERO
+	var anchor : Vector3 = _get_factory_anchor()
 
 	# Wall outlet — near the lift (which parks at +20 on X).
 	var outlet := ServiceStation.new()
@@ -1077,10 +1102,7 @@ func _spawn_feeder_line() -> void:
 	if not FEEDERS_ENABLED:
 		print("[MainWorld] Feeders DISABLED (rebuilding with real clamp physics) — clean scene.")
 		return
-	var base : Vector3 = _player_spawn_pos
-	if base == Vector3.ZERO:
-		var marker := find_child("PlayerSpawn", false, false) as Node3D
-		base = marker.global_position if marker else Vector3.ZERO
+	var base : Vector3 = _get_factory_anchor()
 	# ONE intake for line 3C/6 (#30): the opzetband (feed belt) + its shredder, fed by
 	# Mohammed. No bale lot or prepped bales (#32) — feedstock is built from the menu.
 	_spawn_feeder_station(base + Vector3(-12.0, -0.9, 24.0), "Mohammed",
@@ -1144,10 +1166,7 @@ func _spawn_feeder_station(station: Vector3, worker_name: String,
 	return worker
 
 func _spawn_wire_cutter() -> void:
-	var anchor : Vector3 = _player_spawn_pos
-	if anchor == Vector3.ZERO:
-		var marker := find_child("PlayerSpawn", false, false) as Node3D
-		anchor = marker.global_position if marker else Vector3.ZERO
+	var anchor : Vector3 = _get_factory_anchor()
 	# Sit it on the floor between the bale clamp (+10 X) and the bale yard (+6 X,
 	# +6 Z), so it's right where the wire-cutting action happens.
 	var cutter_pos := anchor + Vector3(8.0, -0.85, 3.0)
@@ -1200,10 +1219,7 @@ func _spawn_wire_cutter() -> void:
 ## Skip is configured for the COARSE_FILM stream so LineFlow routes plastic
 ## rejects into it automatically.
 func _spawn_test_skip() -> void:
-	var anchor : Vector3 = _player_spawn_pos
-	if anchor == Vector3.ZERO:
-		var marker := find_child("PlayerSpawn", false, false) as Node3D
-		anchor = marker.global_position if marker else Vector3.ZERO
+	var anchor : Vector3 = _get_factory_anchor()
 
 	# Steel skip — drop it 4 m to the +X side of the test bunker so the forklift
 	# can swing around to pick it up. Anchor.y - 0.9 grounds the skip base.
@@ -1260,10 +1276,7 @@ func _spawn_test_skip() -> void:
 ##   • Floor pile    — bounded zone for spillover when bins overflow + no skip nearby
 ## Each is pre-seeded so the operator can see fills, mounds, valves immediately.
 func _spawn_test_waste_zones() -> void:
-	var anchor : Vector3 = _player_spawn_pos
-	if anchor == Vector3.ZERO:
-		var marker := find_child("PlayerSpawn", false, false) as Node3D
-		anchor = marker.global_position if marker else Vector3.ZERO
+	var anchor : Vector3 = _get_factory_anchor()
 	var floor_y := anchor.y - 0.9
 
 	# ── Fines bay: 3 fines_bin in a row, +Z further out from the skip ──────────
@@ -1374,7 +1387,7 @@ func save_game() -> void:
 
 func save_and_quit() -> void:
 	save_game()
-	get_tree().quit()
+	get_tree().change_scene_to_file("res://src/scenes/menus/main_menu/MainMenu.tscn")
 
 # =============================================================================
 # AUTOSAVE (every 60 s of real play time)
@@ -1452,7 +1465,7 @@ func _generate_floor_from_shell(shell_mesh: MeshInstance3D) -> void:
 		local_pts.push_back(Vector2(local_v.x, local_v.z))
 		local_ys.push_back(local_v.y)
 
-	var delaunay = Geometry2D.delaunay_2d(local_pts)
+	var delaunay = Geometry2D.triangulate_delaunay(local_pts)
 
 	var st = SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
