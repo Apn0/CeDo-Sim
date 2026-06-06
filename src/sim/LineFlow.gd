@@ -529,11 +529,12 @@ func tick(delta: float) -> void:
 	#    bale on its feed point and DEPLETES that bale (finite); the bale is removed
 	#    when empty, so the line can never feed from thin air or forever.
 	if feed_enabled:
+		var bales := get_tree().get_nodes_in_group("bale")
 		for i in _nodes.size():
 			var nd: Dictionary = _nodes[i]
 			if String(nd["role"]) == "sink" or _has_incoming(i):
 				continue
-			var bale := _bale_at((nd["node"] as Node3D).global_position)
+			var bale := _bale_at((nd["node"] as Node3D).global_position, bales)
 			if bale == null:
 				continue
 			var remaining := _bale_remaining(bale)
@@ -678,10 +679,12 @@ func _bale_remaining(bale: Node3D) -> float:
 	return w
 
 ## Returns the nearest bale within FEED_RADIUS of a feed point, or null.
-func _bale_at(pos: Vector3) -> Node3D:
+func _bale_at(pos: Vector3, bales: Array[Node] = []) -> Node3D:
 	var best : Node3D = null
 	var best_d := FEED_RADIUS
-	for c in get_tree().get_nodes_in_group("bale"):
+	if bales.is_empty():
+		bales = get_tree().get_nodes_in_group("bale")
+	for c in bales:
 		var cn := c as Node3D
 		if cn == null or not cn.has_meta("material_origin"):
 			continue
