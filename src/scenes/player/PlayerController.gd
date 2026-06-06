@@ -109,7 +109,6 @@ func _ready() -> void:
 	# person follow (sits up and behind), and orbit (world-space, F4 + arrows).
 	_camera_rig = CameraRig.new()
 	_camera_rig.name = "CameraRig"
-	_camera_rig.third_person_offset = Vector3(0.0, 1.6, -3.6)   # behind (subject +Z is forward)
 	add_child(_camera_rig)
 	_camera_rig.set_first_person_camera(camera_3d)
 	# Player owns the viewport at game start (they're on foot until they enter
