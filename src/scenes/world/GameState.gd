@@ -6,6 +6,9 @@ class_name GameState
 const SAVE_FILE_PATH: String = "user://cedo_simulator_save.json"
 
 # Game state data
+var is_new_save: bool = true
+var factory_center: Vector3 = Vector3.ZERO
+
 var shift_data: Dictionary = {}
 var player_data: Dictionary = {}
 var npc_data: Dictionary = {}
@@ -26,6 +29,8 @@ func save_game() -> void:
 	var save_data = {
 		"version": 1,
 		"timestamp": Time.get_ticks_msec(),
+		"is_new_save": is_new_save,
+		"factory_center": {"x": factory_center.x, "y": factory_center.y, "z": factory_center.z},
 		"shift": shift_data,
 		"player": player_data,
 		"npcs": npc_data,
@@ -53,6 +58,12 @@ func load_game() -> void:
 
 		if error == OK:
 			var data = json.data
+			is_new_save = data.get("is_new_save", false)
+			
+			var fc = data.get("factory_center", {})
+			if fc and fc.has("x"):
+				factory_center = Vector3(fc["x"], fc["y"], fc["z"])
+				
 			shift_data = data.get("shift", {})
 			player_data = data.get("player", {})
 			npc_data = data.get("npcs", {})
@@ -110,6 +121,8 @@ func clear_save() -> void:
 		var error = DirAccess.remove_absolute(SAVE_FILE_PATH)
 		if error == OK:
 			print("Save file deleted")
+			is_new_save = true
+			factory_center = Vector3.ZERO
 			shift_data.clear()
 			player_data.clear()
 			npc_data.clear()
