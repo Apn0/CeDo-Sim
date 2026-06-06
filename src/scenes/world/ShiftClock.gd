@@ -28,7 +28,7 @@ var shift_active         : bool  = false
 # instead of freezing. The operator asked for "proceed to the next shift / day"
 # to be worked out — this is it. Set false to hold at the end (e.g. for a
 # between-shift summary screen later).
-@export var auto_advance : bool = true
+@export var auto_advance : bool = false
 
 # ── 2-2-2-4 calendar context ─────────────────────────────────────────────────
 # The clock above still runs the single playable 07:00–15:00 window; these two

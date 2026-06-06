@@ -20,6 +20,7 @@ var main_world  : MainWorld
 var _time_label   : Label
 var _progress_bar : ProgressBar
 var _pause_overlay: Control   # full-screen dim + card; hidden by default
+var _end_overlay  : Control   # end-of-shift screen
 var _settings_menu: CanvasLayer   # lazy-instantiated settings overlay
 var _map_overlay  : MapOverlay    # top-down site map, toggled with M
 
@@ -86,6 +87,7 @@ func _ready() -> void:
 	_build_map_overlay()
 	_build_walkie_panel()
 	_build_pause_menu()
+	_build_end_of_shift_menu()
 	_build_interaction_prompt()
 	_build_vehicle_hud()
 	_build_hotbar()
@@ -485,6 +487,67 @@ func _ensure_map_action() -> void:
 			InputMap.action_add_event(action, k)
 
 
+func _build_end_of_shift_menu() -> void:
+	# ── Full-screen dim + centred card ────────────────────────────────────────
+	_end_overlay = Control.new()
+	_end_overlay.name = "EndOverlay"
+	_end_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_end_overlay.visible = false
+	add_child(_end_overlay)
+
+	var dim := ColorRect.new()
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.color = Color(0.0, 0.0, 0.0, 0.75)
+	_end_overlay.add_child(dim)
+
+	# Card
+	var card := PanelContainer.new()
+	card.set_anchors_preset(Control.PRESET_CENTER)
+
+	var ps := StyleBoxFlat.new()
+	ps.bg_color = Color(0.07, 0.07, 0.07, 0.96)
+	ps.corner_radius_top_left     = 8
+	ps.corner_radius_top_right    = 8
+	ps.corner_radius_bottom_left  = 8
+	ps.corner_radius_bottom_right = 8
+	ps.content_margin_left   = 30.0
+	ps.content_margin_right  = 30.0
+	ps.content_margin_top    = 24.0
+	ps.content_margin_bottom = 24.0
+	card.add_theme_stylebox_override("panel", ps)
+	_end_overlay.add_child(card)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 14)
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	card.add_child(vbox)
+
+	var title := Label.new()
+	title.text = "SHIFT ENDED"
+	title.add_theme_font_size_override("font_size", 16)
+	title.add_theme_color_override("font_color", Color(1.0, 0.88, 0.60, 1.0))
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(title)
+
+	var sub_title := Label.new()
+	sub_title.text = "The shift has completed."
+	sub_title.add_theme_font_size_override("font_size", 14)
+	sub_title.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8, 1.0))
+	sub_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(sub_title)
+
+	var next_shift_btn := Button.new()
+	next_shift_btn.text = "Next Shift"
+	next_shift_btn.custom_minimum_size = Vector2(164.0, 36.0)
+	next_shift_btn.pressed.connect(_on_next_shift_pressed)
+	vbox.add_child(next_shift_btn)
+
+	var quit_btn := Button.new()
+	quit_btn.text = "Save & Quit"
+	quit_btn.custom_minimum_size = Vector2(164.0, 36.0)
+	quit_btn.pressed.connect(_on_save_quit_pressed)
+	vbox.add_child(quit_btn)
+
 func _build_pause_menu() -> void:
 	# ── Full-screen dim + centred card ────────────────────────────────────────
 	_pause_overlay = Control.new()
@@ -540,7 +603,7 @@ func _build_pause_menu() -> void:
 	vbox.add_child(settings_btn)
 
 	var quit_btn := Button.new()
-	quit_btn.text = "Save && Quit"
+	quit_btn.text = "Save & Quit"
 	quit_btn.custom_minimum_size = Vector2(164.0, 36.0)
 	quit_btn.pressed.connect(_on_save_quit_pressed)
 	vbox.add_child(quit_btn)
@@ -910,7 +973,16 @@ func _on_time_updated(time_string: String) -> void:
 		_progress_bar.value = shift_clock.get_progress_percent() * 100.0
 
 func _on_shift_ended() -> void:
-	pass  # TODO: end-of-shift screen in a later pass
+	if not shift_clock or shift_clock.auto_advance:
+		return
+	_end_overlay.visible = true
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+
+func _on_next_shift_pressed() -> void:
+	_end_overlay.visible = false
+	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+	if shift_clock and shift_clock.has_method("_roll_to_next_shift"):
+		shift_clock.call("_roll_to_next_shift")
 
 func _on_resume_pressed() -> void:
 	_do_resume()
