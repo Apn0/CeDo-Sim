@@ -40,6 +40,7 @@ var _spin_rate : PackedFloat32Array = PackedFloat32Array()
 var _dunk      : PackedFloat32Array = PackedFloat32Array()   # 0..1 how deep under right now
 var _dunk_zones: Array = []   # Array of {x: float, z: float, r: float}
 var _rng_seed  : int = 12345
+var _rng       : RandomNumberGenerator = RandomNumberGenerator.new()
 
 # =============================================================================
 func _ready() -> void:
@@ -143,8 +144,8 @@ func _write_xform(i: int) -> void:
 
 ## Deterministic 0..1 hash-ish value from an int (avoids Math.random).
 func _frand(n: int) -> float:
-	var x := (n * 1103515245 + 12345 + _rng_seed) & 0x7fffffff
-	return float(x % 10000) / 10000.0
+	_rng.seed = n + _rng_seed
+	return _rng.randf()
 
 # ── Queries for tests / debugging ─────────────────────────────────────────────
 func flake_local_pos(i: int) -> Vector3:

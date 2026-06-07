@@ -99,10 +99,10 @@ func _on_body_exited(body: Node3D) -> void:
 	_player_near = false
 	EventBus.interaction_prompt_hide.emit(self)
 
-func crosshair_prompt(player: Node3D) -> String:
+func crosshair_prompt(_player: Node3D) -> String:
 	return _prompt_text() if _player_near and not _moving else ""
 
-func crosshair_interact(player: Node3D) -> void:
+func crosshair_interact(_player: Node3D) -> void:
 	if _player_near and not _moving:
 		toggle()
 

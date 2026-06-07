@@ -594,7 +594,7 @@ func _build_pause_menu() -> void:
 	vbox.add_child(settings_btn)
 
 	var quit_btn := Button.new()
-	quit_btn.text = "Save && Quit"
+	quit_btn.text = "Save & Quit"
 	quit_btn.custom_minimum_size = Vector2(164.0, 36.0)
 	quit_btn.pressed.connect(_on_save_quit_pressed)
 	vbox.add_child(quit_btn)

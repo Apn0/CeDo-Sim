@@ -492,6 +492,8 @@ func tick(delta: float) -> void:
 		_update_label()
 		return
 
+	var waste_containers := get_tree().get_nodes_in_group("waste_container")
+
 	# 0) PLC powers the line up DOWNSTREAM-FIRST; each powered machine then ramps
 	#    its rotor over SPIN_UP_S. The live spin (0..1) gates how fast it conveys,
 	#    so nothing moves until the rotor is actually turning (#145).
@@ -529,11 +531,12 @@ func tick(delta: float) -> void:
 	#    bale on its feed point and DEPLETES that bale (finite); the bale is removed
 	#    when empty, so the line can never feed from thin air or forever.
 	if feed_enabled:
+		var bales := get_tree().get_nodes_in_group("bale")
 		for i in _nodes.size():
 			var nd: Dictionary = _nodes[i]
 			if String(nd["role"]) == "sink" or _has_incoming(i):
 				continue
-			var bale := _bale_at((nd["node"] as Node3D).global_position)
+			var bale := _bale_at((nd["node"] as Node3D).global_position, bales)
 			if bale == null:
 				continue
 			var remaining := _bale_remaining(bale)
@@ -579,7 +582,7 @@ func tick(delta: float) -> void:
 			var dirt := flow.remove_contaminant(cr)
 			if dirt > 0.0:
 				contam_removed += dirt
-				_dump_waste(nd["wout"] as Vector3, _dirt_batch(dirt), 2)   # Stream.DIRT
+				_dump_waste(nd["wout"] as Vector3, _dirt_batch(dirt), waste_containers, 2)   # Stream.DIRT
 
 		# b) off-spec polymer rejected (optical/float sort) → reject stream
 		var ro: float = nd["reject_other"]
@@ -608,7 +611,7 @@ func tick(delta: float) -> void:
 		if wfrac > 0.0:
 			var w := flow.split_fraction(wfrac)
 			waste_mass += w.mass_kg
-			_dump_waste(nd["wout"] as Vector3, w, _waste_stream_for_role(String(nd["role"]), String(nd["process"])))
+			_dump_waste(nd["wout"] as Vector3, w, waste_containers, _waste_stream_for_role(String(nd["role"]), String(nd["process"])))
 
 		# Live telemetry: smoothed output rate + a snapshot of what's leaving, so the
 		# HMI shows real per-machine moisture / dirt / quality, not just kg in buffer.
@@ -678,10 +681,12 @@ func _bale_remaining(bale: Node3D) -> float:
 	return w
 
 ## Returns the nearest bale within FEED_RADIUS of a feed point, or null.
-func _bale_at(pos: Vector3) -> Node3D:
+func _bale_at(pos: Vector3, bales: Array[Node] = []) -> Node3D:
 	var best : Node3D = null
 	var best_d := FEED_RADIUS
-	for c in get_tree().get_nodes_in_group("bale"):
+	if bales.is_empty():
+		bales = get_tree().get_nodes_in_group("bale")
+	for c in bales:
 		var cn := c as Node3D
 		if cn == null or not cn.has_meta("material_origin"):
 			continue
@@ -699,16 +704,16 @@ func _bale_at(pos: Vector3) -> Node3D:
 ## bin (a container with no accepted_streams filter). Anything still unaccepted
 ## is currently dropped on the floor as a counter — Wave 5 will turn that into
 ## a visible floor pile.
-func _dump_waste(pos: Vector3, w: MaterialBatch, cls: int = -1) -> void:
+func _dump_waste(pos: Vector3, w: MaterialBatch, containers: Array, cls: int = -1) -> void:
 	if w.mass_kg <= 0.0:
 		return
-	var stream_specific : Node = _nearest_container(pos, cls, true)
+	var stream_specific : Node = _nearest_container(pos, cls, true, containers)
 	var leftover : float = w.mass_kg
 	if stream_specific != null:
 		leftover = stream_specific.call("add", w.mass_kg, _stream_density(cls), cls)
 	if leftover > 0.0:
 		# Try a catch-all (no accepted_streams filter) for the overflow.
-		var catch_all : Node = _nearest_container(pos, cls, false)
+		var catch_all : Node = _nearest_container(pos, cls, false, containers)
 		if catch_all != null and catch_all != stream_specific:
 			leftover = catch_all.call("add", leftover, _stream_density(cls), cls)
 	if leftover > 0.0:
@@ -784,10 +789,10 @@ func _nearest_floor_pile(pos: Vector3) -> Node:
 ## only accept containers whose `accepted_streams` list explicitly includes cls
 ## (so a "FINES" bin won't catch our SLUDGE). When false we return the nearest
 ## catch-all (empty accepted_streams) for fallback routing.
-func _nearest_container(pos: Vector3, cls: int, stream_specific: bool) -> Node:
+func _nearest_container(pos: Vector3, cls: int, stream_specific: bool, containers: Array) -> Node:
 	var best : Node = null
 	var best_d := 40.0
-	for c in get_tree().get_nodes_in_group("waste_container"):
+	for c in containers:
 		var cn := c as Node3D
 		if cn == null:
 			continue

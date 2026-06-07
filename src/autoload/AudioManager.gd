@@ -340,7 +340,7 @@ func _start_radio(text: String, gain: float, headset: bool) -> void:
 ## ACTUAL letters so the formant motion loosely tracks the real word shapes.
 func _build_voice_plan(text: String) -> Array:
 	var plan : Array = []
-	var words := text.to_lower().split(" ", false)
+	var words := text.replace(",", "").replace(".", "").to_lower().split(" ", false)
 	for wi in words.size():
 		var w : String = words[wi]
 		var syl_vowels : Array = []
