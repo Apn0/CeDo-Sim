@@ -1,0 +1,18 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://src/sim/FilmScrap.gd" id="1_fif0u"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_4f7bf"]
+size = Vector3(0.1, 0.01, 0.1)
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_y5ygc"]
+size = Vector2(0.1, 0.1)
+
+[node name="FilmScrap" type="RigidBody3D"]
+script = ExtResource("1_fif0u")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("BoxShape3D_4f7bf")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+mesh = SubResource("PlaneMesh_y5ygc")
