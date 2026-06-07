@@ -86,6 +86,10 @@ var _plc            : Node  = null     # a PLCSequencer (typed as Node — versi
 var _plc_stage_node : Array = []
 var auto_start      : bool  = true
 
+# ── per-tick cache for performance ────────────────────────────────────────────
+var _floor_piles_cache : Array = []
+var _waste_containers_cache : Array = []
+
 # =============================================================================
 func _ready() -> void:
 	_connectors = Node3D.new()
@@ -492,7 +496,14 @@ func tick(delta: float) -> void:
 		_update_label()
 		return
 
-	var waste_containers := get_tree().get_nodes_in_group("waste_container")
+	# Cache spatial queries once per tick for heavy inner loops like _dump_waste
+	var tree = get_tree()
+	if tree != null:
+		_floor_piles_cache = tree.get_nodes_in_group("floor_pile")
+		_waste_containers_cache = tree.get_nodes_in_group("waste_container")
+	else:
+		_floor_piles_cache.clear()
+		_waste_containers_cache.clear()
 
 	# 0) PLC powers the line up DOWNSTREAM-FIRST; each powered machine then ramps
 	#    its rotor over SPIN_UP_S. The live spin (0..1) gates how fast it conveys,
@@ -775,7 +786,7 @@ func _stream_color(cls: int) -> Color:
 func _nearest_floor_pile(pos: Vector3) -> Node:
 	var best : Node = null
 	var best_d := 40.0
-	for p in get_tree().get_nodes_in_group("floor_pile"):
+	for p in _floor_piles_cache:
 		var pn := p as Node3D
 		if pn == null:
 			continue
@@ -792,7 +803,7 @@ func _nearest_floor_pile(pos: Vector3) -> Node:
 func _nearest_container(pos: Vector3, cls: int, stream_specific: bool, containers: Array) -> Node:
 	var best : Node = null
 	var best_d := 40.0
-	for c in containers:
+	for c in _waste_containers_cache:
 		var cn := c as Node3D
 		if cn == null:
 			continue
