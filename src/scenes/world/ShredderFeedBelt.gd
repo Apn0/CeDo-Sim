@@ -116,9 +116,19 @@ func _on_container_exited(body: Node3D) -> void:
 	if _cached_containers.has(body):
 		_cached_containers.erase(body)
 
+## Cached shader-material references so _process can toggle scroll_speed when the
+## belt starts/stops — gives the operator an at-a-glance visual cue that matches
+## the PLC state. One material per surface so each can scroll at its own rate
+## (the incline surface visually moves the same direction as the flat deck).
+var _belt_mat_deck    : ShaderMaterial = null
+var _belt_mat_incline : ShaderMaterial = null
+var _belt_mat_top     : ShaderMaterial = null
+
 func _build_visual() -> void:
 	var steel := StandardMaterial3D.new()
 	steel.albedo_color = Color(0.42, 0.45, 0.48); steel.roughness = 0.6; steel.metallic = 0.3
+	# Static fallback material in case the textured one fails to load; the textured
+	# scrolling material is then applied per-surface below.
 	var belt_mat := StandardMaterial3D.new()
 	belt_mat.albedo_color = Color(0.12, 0.12, 0.13); belt_mat.roughness = 0.9
 	var guard := StandardMaterial3D.new()
@@ -127,7 +137,9 @@ func _build_visual() -> void:
 	if deck_length > 0.01:
 		var deck := MeshInstance3D.new()
 		var dm := BoxMesh.new(); dm.size = Vector3(deck_width, 0.10, deck_length)
-		deck.mesh = dm; deck.material_override = belt_mat
+		deck.mesh = dm
+		_belt_mat_deck = load("res://src/build/PlaceableCatalog.gd").make_belt_material(0.0, Vector2(1.0, deck_length * 0.5))
+		deck.material_override = _belt_mat_deck if _belt_mat_deck != null else belt_mat
 		deck.position = Vector3(0.0, deck_height, deck_length * 0.5)
 		add_child(deck)
 		# Side guards along the deck
@@ -149,7 +161,9 @@ func _build_visual() -> void:
 	var inc := MeshInstance3D.new()
 	var hyp := _incline_hyp
 	var im := BoxMesh.new(); im.size = Vector3(deck_width * 0.8, 0.10, hyp)
-	inc.mesh = im; inc.material_override = belt_mat
+	inc.mesh = im
+	_belt_mat_incline = load("res://src/build/PlaceableCatalog.gd").make_belt_material(0.0, Vector2(1.0, hyp * 0.5))
+	inc.material_override = _belt_mat_incline if _belt_mat_incline != null else belt_mat
 	# Pivot the incline so its base sits at the deck's far end and it rises incline_deg.
 	var inc_pivot := Node3D.new()
 	inc_pivot.position = Vector3(0.0, deck_height, deck_length)
@@ -186,7 +200,9 @@ func _build_visual() -> void:
 	if top_flat_m > 0.01:
 		var tray := MeshInstance3D.new()
 		var tm := BoxMesh.new(); tm.size = Vector3(deck_width * 0.8, 0.10, top_flat_m)
-		tray.mesh = tm; tray.material_override = belt_mat
+		tray.mesh = tm
+		_belt_mat_top = load("res://src/build/PlaceableCatalog.gd").make_belt_material(0.0, Vector2(1.0, top_flat_m * 0.5))
+		tray.material_override = _belt_mat_top if _belt_mat_top != null else belt_mat
 		var top_y : float = deck_height + hyp * sin(_incline_angle)
 		var top_z : float = deck_length + hyp * cos(_incline_angle)
 		tray.position = Vector3(0.0, top_y, top_z + top_flat_m * 0.5)
@@ -244,6 +260,16 @@ func _build_funnel_walls(inc_pivot: Node3D, guard_mat: StandardMaterial3D, hyp: 
 			w3.mesh = wm3; w3.material_override = guard_mat
 			w3.position = Vector3(sx * w_narrow, 0.2, start_m + taper_m + tail_m * 0.5)
 			inc_pivot.add_child(w3)
+
+## Push a common scroll_speed into every textured belt surface this belt owns.
+## Called each tick from the live is_running() state so the visual matches the PLC.
+func _set_scroll_speed(s: float) -> void:
+	if _belt_mat_deck != null:
+		_belt_mat_deck.set_shader_parameter("scroll_speed", s)
+	if _belt_mat_incline != null:
+		_belt_mat_incline.set_shader_parameter("scroll_speed", s)
+	if _belt_mat_top != null:
+		_belt_mat_top.set_shader_parameter("scroll_speed", s)
 
 ## Solid collision so the player + vehicles stand/walk ON the belt instead of
 ## falling THROUGH it — both the flat deck and the inclined section. (The belt was
@@ -383,6 +409,10 @@ func _process(delta: float) -> void:
 		if digested > 0.0:
 			_emit_output(digested * OUTPUT_KG_PER_FILL, delta)
 	var running := is_running()
+	# Drive the textured belt scroll speed from the live PLC state so a stopped
+	# belt is OBVIOUSLY stopped (the slats freeze) and a running one is OBVIOUSLY
+	# moving. Scale by belt_speed so a slow belt scrolls slowly. (#texturedbelts)
+	_set_scroll_speed((belt_speed * 4.0) if running else 0.0)
 	var i := _riders.size() - 1
 	while i >= 0:
 		var r : Dictionary = _riders[i]

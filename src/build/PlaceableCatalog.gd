@@ -48,6 +48,11 @@ static func items() -> Array[Dictionary]:
 			{"id": "centrifuge",     "name": "Centrifuge",         "category": "Washing",    "size": Vector3(2.0, 2.4, 2.0),  "color": Color(0.45, 0.50, 0.58)},
 			# ── Conveyance ───────────────────────────────────────────────────
 			{"id": "transport_belt", "name": "Transport belt",     "category": "Conveyance", "size": Vector3(1.0, 0.9, 4.0),  "color": Color(0.34, 0.34, 0.38)},
+			# Two-point variable-length / variable-angle conveyor. Click ONCE to set the
+			# START point + start height (R/F adjust), then click AGAIN for the END point
+			# + end height. Belt spans between the two with the correct angle + length.
+			# size here is the rough footprint for the first-click ghost only.
+			{"id": "variable_belt",  "name": "Conveyor (variable, 2-click)", "category": "Conveyance", "size": Vector3(1.0, 0.40, 1.0), "color": Color(0.34, 0.34, 0.38)},
 			# ── Opzetbanden (intake/feed belts to a shredder) ────────────────────
 			# Geometry is built procedurally by _build_opzetband from the id. The size
 			# here is the rough bounding box (W × H × L) for the build-mode footprint.
@@ -193,6 +198,82 @@ static func categories() -> Array[String]:
 		if not cats.has(c):
 			cats.append(c)
 	return cats
+
+## True when this placeable id requires two clicks (start point + end point) to
+## place. BuildMode reads this and switches to a two-step flow for variable belts.
+static func is_two_point(id: String) -> bool:
+	return id == "variable_belt"
+
+## Build a variable-length / variable-angle conveyor that spans WORLD-SPACE
+## start_pos to end_pos. Length, angle, and (start_y, end_y) are derived from
+## the two points. Belt deck has the scrolling textured material. Returns a
+## StaticBody3D whose origin is at start_pos; geometry is built in local space.
+static func build_variable_belt(start_pos: Vector3, end_pos: Vector3, ghost: bool = false) -> Node3D:
+	var diff := end_pos - start_pos
+	var length : float = diff.length()
+	if length < 0.5:
+		return null   # too short to bother
+	if ghost:
+		return _simple_ghost(Vector3(0.9, 0.4, maxf(length, 0.5)))
+	var body := StaticBody3D.new()
+	body.name = "VariableBelt"
+	body.set_meta("placeable_id", "variable_belt")
+	body.set_meta("vb_start", start_pos)
+	body.set_meta("vb_end",   end_pos)
+	body.add_to_group("placed_object")
+	# Frame oriented so its local +Z points from start to end, height aligned with world up.
+	# We compute the rotation needed to span the diff vector with the belt's local Z.
+	var model := Node3D.new()
+	model.name = "Model"
+	body.add_child(model)
+	_m_variable_belt(model, length, diff, ghost)
+	# Position the body at the START; rotate so model's +Z points toward end_pos.
+	var fwd_xz : Vector3 = Vector3(diff.x, 0.0, diff.z)
+	var horiz_len : float = fwd_xz.length()
+	var yaw : float = atan2(diff.x, diff.z) if horiz_len > 0.01 else 0.0
+	# Pitch around X so the belt rises (or falls) by diff.y over horiz_len.
+	var pitch : float = 0.0 if horiz_len < 0.01 else -atan2(diff.y, horiz_len)
+	# Use LOCAL position/rotation here — body is not yet in the tree (the caller
+	# adds it via add_child after we return). Local equals global when parented
+	# under an at-origin _placed_root, which is the BuildMode usage.
+	body.position = start_pos
+	body.rotation = Vector3(pitch, yaw, 0.0)
+	# Bounding collider — a thin slab along the deck so the player + vehicles can
+	# walk on / drive across it.
+	var col := CollisionShape3D.new()
+	var bx := BoxShape3D.new()
+	bx.size = Vector3(0.92, 0.20, length)
+	col.shape = bx
+	col.position = Vector3(0.0, 0.20, length * 0.5)
+	body.add_child(col)
+	return body
+
+## Internal: build the visual mesh for a variable belt in LOCAL space — deck +
+## side rails along +Z, end rollers, support legs, scrolling textured material.
+static func _m_variable_belt(p: Node3D, length: float, _diff: Vector3, ghost: bool) -> void:
+	var dark := _mat(_DARK, ghost, 0.3, 0.7)
+	var steel := _mat(_STEEL, ghost, 0.5, 0.45)
+	var width : float = 0.92
+	var deck_y : float = 0.20
+	# Belt deck (scrolling textured material so the operator can see when it runs).
+	var deck := _box(p, Vector3(width * 0.92, 0.05, length),
+		Vector3(0.0, deck_y, length * 0.5), dark)
+	if not ghost:
+		deck.material_override = make_belt_material(0.5, Vector2(1.0, length * 0.5))
+	# Side rails
+	_box(p, Vector3(0.06, 0.18, length),
+		Vector3( width * 0.46, deck_y + 0.10, length * 0.5), steel)
+	_box(p, Vector3(0.06, 0.18, length),
+		Vector3(-width * 0.46, deck_y + 0.10, length * 0.5), steel)
+	# End rollers (cylinders along local X across the belt width).
+	_cyl(p, 0.10, 0.10, width, Vector3(0.0, deck_y, 0.0), dark, "x")
+	_cyl(p, 0.10, 0.10, width, Vector3(0.0, deck_y, length), dark, "x")
+	# Drive motor at the top end.
+	_motor_unit(p, 0.14, 0.30, Vector3(width * 0.50, deck_y + 0.06, length - 0.20), "x", ghost)
+	# Support legs are intentionally skipped on this v1 model — the belt body is
+	# rotated as a whole to span (start_y → end_y), so local-down legs would tilt
+	# with it. Proper world-vertical legs need extra geometry; for now the deck
+	# reads as a span and the bounding collider keeps the player + vehicles on it.
 
 ## Build a placeable node.
 ##   ghost = false → solid StaticBody3D with collision + nameplate, in group
@@ -449,6 +530,91 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 				_:           _box(p, size, Vector3(0.0, size.y * 0.5, 0.0), _mat(color, ghost))
 
 # ── primitive helpers ───────────────────────────────────────────────────────
+# ── Belt textures (#texturedbelts) ────────────────────────────────────────────
+## Procedurally-generated rubber-slat belt texture: a 64×128 image of repeating
+## horizontal dark/light bands, sampled per-belt-surface and SCROLLED via the
+## belt_scroll.gdshader so a running belt visibly moves. Cached statically so
+## every belt instance shares the same GPU texture.
+static var _belt_albedo_tex   : ImageTexture = null
+static var _belt_roughness_tex: ImageTexture = null
+static var _belt_normal_tex   : ImageTexture = null
+static var _belt_shader_res   : Shader = null
+
+const _BELT_SLAT_PERIOD : int = 16    # px between slats
+const _BELT_SLAT_BAND   : int = 3     # px-thick slat band
+const _BELT_TEX_W       : int = 64
+const _BELT_TEX_H       : int = 128
+
+static func _belt_albedo_texture() -> ImageTexture:
+	if _belt_albedo_tex != null:
+		return _belt_albedo_tex
+	var img := Image.create(_BELT_TEX_W, _BELT_TEX_H, false, Image.FORMAT_RGB8)
+	for y in _BELT_TEX_H:
+		var is_slat : bool = (y % _BELT_SLAT_PERIOD) < _BELT_SLAT_BAND
+		var base : Color = Color(0.20, 0.20, 0.21) if is_slat else Color(0.085, 0.085, 0.09)
+		# A faint highlight on the very first row of each slat picks out the leading edge
+		# under work-lights, which sells the "ridged rubber" read.
+		if is_slat and (y % _BELT_SLAT_PERIOD) == 0:
+			base = Color(0.30, 0.30, 0.32)
+		for x in _BELT_TEX_W:
+			# Tiny per-pixel speckle so the surface isn't flat-color clean.
+			var n := (float((x * 17 + y * 31) % 11) / 11.0 - 0.5) * 0.020
+			img.set_pixel(x, y, Color(base.r + n, base.g + n, base.b + n))
+	_belt_albedo_tex = ImageTexture.create_from_image(img)
+	return _belt_albedo_tex
+
+static func _belt_roughness_texture() -> ImageTexture:
+	if _belt_roughness_tex != null:
+		return _belt_roughness_tex
+	var img := Image.create(_BELT_TEX_W, _BELT_TEX_H, false, Image.FORMAT_RGB8)
+	for y in _BELT_TEX_H:
+		var is_slat : bool = (y % _BELT_SLAT_PERIOD) < _BELT_SLAT_BAND
+		# Slats catch the light a bit more (lower roughness); webs are matte.
+		var r : float = 0.60 if is_slat else 0.92
+		for x in _BELT_TEX_W:
+			img.set_pixel(x, y, Color(r, r, r))
+	_belt_roughness_tex = ImageTexture.create_from_image(img)
+	return _belt_roughness_tex
+
+## Normal map approximating the slat ridges — leading edge faces +Z (light hits
+## it brighter when scrolling toward the camera). RGB encodes the tangent-space
+## normal: 0.5 = neutral; >0.5 in green channel = +Z tilt.
+static func _belt_normal_texture() -> ImageTexture:
+	if _belt_normal_tex != null:
+		return _belt_normal_tex
+	var img := Image.create(_BELT_TEX_W, _BELT_TEX_H, false, Image.FORMAT_RGB8)
+	for y in _BELT_TEX_H:
+		var phase : int = y % _BELT_SLAT_PERIOD
+		var ny : float = 0.5
+		if phase < _BELT_SLAT_BAND:
+			# Leading face: tilt up in V (away from belt direction).
+			ny = 0.5 + 0.25 * (1.0 - float(phase) / float(_BELT_SLAT_BAND))
+		elif phase >= _BELT_SLAT_PERIOD - _BELT_SLAT_BAND:
+			# Trailing face: tilt down.
+			ny = 0.5 - 0.25 * (1.0 - float(_BELT_SLAT_PERIOD - 1 - phase) / float(_BELT_SLAT_BAND))
+		for x in _BELT_TEX_W:
+			img.set_pixel(x, y, Color(0.5, ny, 1.0))
+	_belt_normal_tex = ImageTexture.create_from_image(img)
+	return _belt_normal_tex
+
+## Build a ShaderMaterial set up for a scrolling textured belt. `scroll_speed`
+## is signed — positive = forward, negative = reverse; 0 = stopped. `tile.y` is
+## the texture repeats along the belt's length axis (set roughly to belt length
+## / texture height ≈ length_m × 2 so a 5 m belt has ~10 slat-spacings visible).
+static func make_belt_material(scroll_speed: float = 0.8,
+		tile: Vector2 = Vector2(1.0, 5.0)) -> ShaderMaterial:
+	if _belt_shader_res == null:
+		_belt_shader_res = load("res://src/build/belt_scroll.gdshader")
+	var m := ShaderMaterial.new()
+	m.shader = _belt_shader_res
+	m.set_shader_parameter("belt_albedo",    _belt_albedo_texture())
+	m.set_shader_parameter("belt_roughness", _belt_roughness_texture())
+	m.set_shader_parameter("belt_normal",    _belt_normal_texture())
+	m.set_shader_parameter("scroll_speed",   scroll_speed)
+	m.set_shader_parameter("uv_tile",        tile)
+	m.set_shader_parameter("uv_offset",      Vector2.ZERO)
+	return m
+
 static func _mat(c: Color, ghost: bool, metallic: float = 0.15, rough: float = 0.7) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.metallic = metallic
@@ -838,8 +1004,13 @@ static func _m_belt(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> voi
 	# end rollers (crosswise along X)
 	_cyl(p, size.y * 0.22, size.y * 0.22, size.x * 0.9, Vector3(0.0, deck_y, hz), dark, "x")
 	_cyl(p, size.y * 0.22, size.y * 0.22, size.x * 0.9, Vector3(0.0, deck_y, -hz), dark, "x")
-	# belt deck
-	_box(p, Vector3(size.x * 0.82, 0.05, size.z * 0.9), Vector3(0.0, deck_y + size.y * 0.22, 0.0), dark)
+	# Belt deck — textured rubber-slat scrolling material so a running belt is
+	# obviously moving and a stopped one is obviously not. Tile.y scales with belt
+	# length so the slat spacing reads consistently across different sizes.
+	var deck := _box(p, Vector3(size.x * 0.82, 0.05, size.z * 0.9),
+		Vector3(0.0, deck_y + size.y * 0.22, 0.0), dark)
+	if not ghost:
+		deck.material_override = make_belt_material(0.6, Vector2(1.0, size.z * 0.5))
 	# side rails
 	_box(p, Vector3(0.06, size.y * 0.18, size.z * 0.95), Vector3(size.x * 0.44, deck_y + size.y * 0.28, 0.0), steel)
 	_box(p, Vector3(0.06, size.y * 0.18, size.z * 0.95), Vector3(-size.x * 0.44, deck_y + size.y * 0.28, 0.0), steel)
@@ -2293,9 +2464,12 @@ static func _m_inclined_belt(p: Node3D, _size: Vector3, _color: Color, ghost: bo
 	var angle := atan2(rise, horiz)                  # PI/4
 	var mid := Vector3(0.0, rise * 0.5, horiz * 0.5)
 	# Diagonal belt deck — rotated about local X so its long axis lies along
-	# the (Y+Z) diagonal. Inner span = 0.85 m wide.
+	# the (Y+Z) diagonal. Inner span = 0.85 m wide. Textured scrolling material
+	# so the inclined belt visibly moves when it's running.
 	var deck := _box(p, Vector3(0.85, 0.06, diag), mid, dark)
 	deck.rotation = Vector3(angle, 0.0, 0.0)
+	if not ghost:
+		deck.material_override = make_belt_material(0.5, Vector2(1.0, diag * 0.5))
 	# Side rails
 	for sx in [-1.0, 1.0]:
 		var rail := _box(p, Vector3(0.06, 0.18, diag), \

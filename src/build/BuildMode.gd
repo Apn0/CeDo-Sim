@@ -43,6 +43,12 @@ var _grid_snap    : bool   = true         # [G] toggles free vs grid-snapped pla
 var _placed_root : Node3D
 var _ghost       : Node3D
 
+# Two-point placement state (variable_belt etc.) — captured on first LMB; second
+# LMB builds the span between (_two_point_start) and the current ghost position.
+var _two_point_start : Vector3 = Vector3.ZERO
+var _has_two_point   : bool = false
+var _two_point_preview : MeshInstance3D = null
+
 # 4-point surface capture
 var _surf_points  : Array[Vector3] = []
 var _surf_markers : Node3D
@@ -250,6 +256,10 @@ func _enter_placing(id: String) -> void:
 	_state = State.PLACING
 	_active_id = id
 	_ghost_height = 0.0
+	# Two-point placement reset: a fresh placeable starts at "click point A".
+	_has_two_point = false
+	_two_point_start = Vector3.ZERO
+	_clear_two_point_preview()
 	_catalog.visible = false
 	_status.visible = true
 	_crosshair.visible = true
@@ -260,6 +270,13 @@ func _enter_placing(id: String) -> void:
 func _update_placing_status() -> void:
 	var nm := String(PlaceableCatalog.get_item(_active_id).get("name", _active_id))
 	var grid_txt := "ON" if _grid_snap else "OFF (free)"
+	if PlaceableCatalog.is_two_point(_active_id):
+		# Two-step prompt that swaps after the first click is captured.
+		var phase : String = ("② click END point + [R]/[F] end height" if _has_two_point
+			else "① click START point + [R]/[F] start height")
+		_status.text = "Placing: %s   ·   %s   ·   height %.2fm   [G] grid: %s   [RMB] cancel   [Tab] catalog" \
+			% [nm, phase, _ghost_height, grid_txt]
+		return
 	_status.text = "Placing: %s   ·   [LMB] place   [Q]/[E] rotate   [R]/[F] height %.2fm   [G] grid: %s   [RMB] away   [X] delete   [Tab] catalog" \
 		% [nm, _ghost_height, grid_txt]
 
@@ -313,7 +330,16 @@ func _input(event: InputEvent) -> void:
 		_place_current()
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("build_cancel"):
-		_enter_browsing()
+		# RMB: first press just cancels an in-progress two-point capture (keep the
+		# operator on the same placeable so they can re-pick the start); a second
+		# RMB falls through to leaving placing mode altogether.
+		if _has_two_point:
+			_has_two_point = false
+			_two_point_start = Vector3.ZERO
+			_clear_two_point_preview()
+			_update_placing_status()
+		else:
+			_enter_browsing()
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("build_rotate_cw"):
 		_ghost_rot_y = wrapf(_ghost_rot_y + ROT_STEP, 0.0, TAU)
@@ -357,6 +383,10 @@ func _process(_delta: float) -> void:
 	p.y += _ghost_height
 	_ghost.global_position = p
 	_ghost.rotation.y = _ghost_rot_y
+	# While picking the END point of a two-point placement, redraw the preview
+	# line from the captured start to the current cursor each frame.
+	if _has_two_point and _two_point_preview != null:
+		_update_two_point_preview(p)
 
 func _spawn_ghost(id: String) -> void:
 	_clear_ghost()
@@ -372,6 +402,27 @@ func _clear_ghost() -> void:
 func _place_current() -> void:
 	if _ghost == null or not _ghost.visible:
 		return
+	# Two-point placeables (variable_belt): first click stashes the START point,
+	# second click spans from start → cursor and finalizes.
+	if PlaceableCatalog.is_two_point(_active_id):
+		if not _has_two_point:
+			_two_point_start = _ghost.global_position
+			_has_two_point = true
+			_ensure_two_point_preview()
+			_update_placing_status()
+			return
+		var end_pos := _ghost.global_position
+		var node := PlaceableCatalog.build_variable_belt(_two_point_start, end_pos, false)
+		if node != null:
+			_placed_root.add_child(node)
+		_has_two_point = false
+		_two_point_start = Vector3.ZERO
+		_clear_two_point_preview()
+		_save_layout()
+		if line_flow:
+			line_flow.rebuild()
+		_update_placing_status()
+		return
 	var node := PlaceableCatalog.build_node(_active_id, false)
 	if node == null:
 		return
@@ -383,6 +434,51 @@ func _place_current() -> void:
 	_save_layout()
 	if line_flow:
 		line_flow.rebuild()
+
+## Two-point placement helpers (variable_belt): a thin cyan cylinder drawn from
+## the captured start to the current ghost cursor so the operator sees the span
+## while picking the end point.
+func _ensure_two_point_preview() -> void:
+	if _two_point_preview != null and is_instance_valid(_two_point_preview):
+		return
+	_two_point_preview = MeshInstance3D.new()
+	_two_point_preview.name = "TwoPointPreview"
+	var cm := CylinderMesh.new()
+	cm.top_radius = 0.05
+	cm.bottom_radius = 0.05
+	cm.height = 1.0
+	cm.radial_segments = 8
+	_two_point_preview.mesh = cm
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.30, 0.80, 1.00, 0.65)
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.emission_enabled = true
+	mat.emission = Color(0.20, 0.60, 0.95)
+	mat.emission_energy_multiplier = 0.6
+	_two_point_preview.material_override = mat
+	add_child(_two_point_preview)
+
+func _clear_two_point_preview() -> void:
+	if _two_point_preview != null and is_instance_valid(_two_point_preview):
+		_two_point_preview.queue_free()
+	_two_point_preview = null
+
+func _update_two_point_preview(end_pos: Vector3) -> void:
+	if _two_point_preview == null:
+		return
+	var diff := end_pos - _two_point_start
+	var len_ := diff.length()
+	if len_ < 0.05:
+		_two_point_preview.visible = false
+		return
+	_two_point_preview.visible = true
+	(_two_point_preview.mesh as CylinderMesh).height = len_
+	var up : Vector3 = diff / len_
+	var ref : Vector3 = Vector3.RIGHT if absf(up.dot(Vector3.RIGHT)) < 0.95 else Vector3.FORWARD
+	var x_axis : Vector3 = up.cross(ref).normalized()
+	var z_axis : Vector3 = x_axis.cross(up).normalized()
+	_two_point_preview.global_transform = Transform3D(Basis(x_axis, up, z_axis),
+		(_two_point_start + end_pos) * 0.5)
 
 ## Stamps a placed bale with a unique code + prints its label (origin + barcode).
 func _finalize_bale(node: Node3D, saved_code: String = "") -> void:
@@ -626,6 +722,16 @@ func _save_layout() -> void:
 			}
 			if child.has_meta("bale_code"):
 				entry["code"] = String(child.get_meta("bale_code"))
+			# Variable-length belts persist their two endpoints directly so reload
+			# rebuilds them via build_variable_belt(start, end) at the correct
+			# length, angle, and start/end height — not a generic placement.
+			if String(child.get_meta("placeable_id")) == "variable_belt":
+				if child.has_meta("vb_start"):
+					var s : Vector3 = child.get_meta("vb_start")
+					entry["sx"] = s.x; entry["sy"] = s.y; entry["sz"] = s.z
+				if child.has_meta("vb_end"):
+					var e : Vector3 = child.get_meta("vb_end")
+					entry["ex"] = e.x; entry["ey"] = e.y; entry["ez"] = e.z
 			arr.append(entry)
 	var f := FileAccess.open(LAYOUT_PATH, FileAccess.WRITE)
 	if f:
@@ -679,6 +785,19 @@ func load_layout() -> void:
 		if String(dict.get("id", "")) == "door":
 			_load_legacy_door(dict)
 			count += 1
+			continue
+
+		# Variable belts: rebuild via build_variable_belt(start, end) from the
+		# persisted endpoints. Skips the standard positioning path because the
+		# belt's transform is derived from the span, not from a single anchor.
+		if String(dict.get("id", "")) == "variable_belt" \
+				and dict.has("sx") and dict.has("ex"):
+			var sv := Vector3(float(dict["sx"]), float(dict["sy"]), float(dict["sz"]))
+			var ev := Vector3(float(dict["ex"]), float(dict["ey"]), float(dict["ez"]))
+			var vb := PlaceableCatalog.build_variable_belt(sv, ev, false)
+			if vb != null:
+				_placed_root.add_child(vb)
+				count += 1
 			continue
 
 		var node := PlaceableCatalog.build_node(String(dict.get("id", "")), false)
