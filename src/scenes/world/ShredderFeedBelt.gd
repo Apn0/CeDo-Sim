@@ -163,6 +163,8 @@ func _build_collision() -> void:
 func is_running() -> bool:
 	return fill < fill_setpoint and _shredder_ok()
 
+var _cached_shredder: Node3D = null
+
 ## #26/#27 — is there a present, non-faulted shredder at the discharge to feed? Drives
 ## both the PLC stop (is_running) and the no-pulverize gate (the digest in _process).
 func _shredder_ok() -> bool:
@@ -171,16 +173,28 @@ func _shredder_ok() -> bool:
 	if not is_inside_tree():
 		return false
 	var disc := _discharge_pos()
+
+	if _cached_shredder != null and is_instance_valid(_cached_shredder) and _cached_shredder.is_inside_tree() and _cached_shredder.global_position.distance_to(disc) <= shredder_reach:
+		if _cached_shredder.has_method("is_faulted") and bool(_cached_shredder.call("is_faulted")):
+			return false
+		if _cached_shredder.has_method("is_running"):
+			return bool(_cached_shredder.call("is_running"))
+		return true
+
+	_cached_shredder = null
 	for s in get_tree().get_nodes_in_group("shredder"):
 		if not (s is Node3D):
 			continue
-		if (s as Node3D).global_position.distance_to(disc) > shredder_reach:
+		var n3d := s as Node3D
+		if n3d.global_position.distance_to(disc) > shredder_reach:
 			continue
+
+		_cached_shredder = n3d
 		# Found one in reach — respect its run/fault state if it exposes them.
-		if s.has_method("is_faulted") and bool(s.call("is_faulted")):
+		if n3d.has_method("is_faulted") and bool(n3d.call("is_faulted")):
 			return false
-		if s.has_method("is_running"):
-			return bool(s.call("is_running"))
+		if n3d.has_method("is_running"):
+			return bool(n3d.call("is_running"))
 		return true
 	return false   # no shredder present → PLC keeps the belt stopped
 
