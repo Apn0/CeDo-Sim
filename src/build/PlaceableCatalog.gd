@@ -150,6 +150,10 @@ static func items() -> Array[Dictionary]:
 			{"id": "compressor_a","name":"Compressor A (vertical, ~3 m)","category":"Hoses & Air","size":Vector3(1.50, 3.00, 1.50),"color":Color(0.30, 0.46, 0.62)},
 			# Screw-type COMPRESSOR cabinet — taller, narrower, ~1 × 1 × 4 m, 5 bar.
 			{"id": "compressor_b","name":"Compressor B (cabinet, ~4 m)","category":"Hoses & Air","size":Vector3(1.00, 4.00, 1.00),"color":Color(0.45, 0.48, 0.52)},
+			# Dirt hot-spot — a floor zone that ACCUMULATES dirt over time. Place these
+			# around the dryers, under chutes, on forklift lanes, etc. Water hose / HP
+			# washer spray clears them. #40
+			{"id": "dirt_hotspot","name":"Dirt hot-spot (auto-accumulates)","category":"Hoses & Air","size":Vector3(1.20, 0.05, 1.20),"color":Color(0.46, 0.36, 0.22)},
 			# Housekeeping helpers (used WITH the blower): a corner CollectionZone
 			# (frees film_scrap that drifts in) and a test PILE of loose scraps to
 			# practice blowing them around the floor.
@@ -422,6 +426,7 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 		"washer_hp_mobile":        _m_washer_hp_mobile(p, size, ghost)
 		"compressor_a":            _m_compressor_a(p, size, color, ghost)
 		"compressor_b":            _m_compressor_b(p, size, color, ghost)
+		"dirt_hotspot":            _m_dirt_hotspot(p, size, color, ghost)
 		"plasmaq":        _m_plasmaq(p, size, color, ghost)
 		"laser_filter":   _m_laser_filter(p, size, color, ghost)
 		"melt_pump":      _m_melt_pump(p, size, color, ghost)
@@ -2580,6 +2585,15 @@ static func _m_hose_reel(p: Node3D, size: Vector3, color: Color, ghost: bool, ho
 	_cyl(p, 0.045, 0.045, 0.08, Vector3(size.x * 0.48, axle_y - 0.85, 0.0), brass, "y")  # tip valve body
 	_box(p, Vector3(0.14, 0.02, 0.02), Vector3(size.x * 0.48, axle_y - 0.85, 0.0), valve_red)  # tip valve handle
 	_cyl(p, hose_r * 0.7, 0.012, 0.10, Vector3(size.x * 0.48, axle_y - 0.95, 0.0), steel, "y")  # nozzle taper
+	# Attach the HoseReel controller — proximity prompt, base-valve cycle, nozzle
+	# deploy/recall. The visual reel above is just chrome; the script makes it usable. #40
+	if not ghost:
+		var ctrl : Node = load("res://src/scenes/world/HoseReel.gd").new()
+		ctrl.name = "HoseReelController"
+		# Brass nozzle handle for water hoses (red would clash with the fire hose).
+		ctrl.set("nozzle_tint", Color(0.76, 0.62, 0.20))
+		ctrl.set("prompt_label", "Take hose tip")
+		p.add_child(ctrl)
 
 ## Wall hook for air hoses: a plate + an L-shaped hook + a coil of translucent
 ## white hose draped over it. No drum mechanism — the operator just slings the
@@ -2668,6 +2682,17 @@ static func _m_washer_hp_mobile(p: Node3D, size: Vector3, ghost: bool) -> void:
 	_cyl(pistol, 0.013, 0.013, 0.04, Vector3(0.0, 0.06, 0.66), dark, "z")      # nozzle tip
 	# A few meters of hose connecting the housing to the pistol — visual only.
 	_cyl(p, 0.013, 0.013, size.z * 0.20, Vector3(size.x * 0.25, size.y * 0.18, size.z * 0.30), hose_mat, "y")
+	# Attach the HoseReel controller with HP-tuned parameters — tighter cone, faster
+	# clear rate. Same interaction (E grab tip; E again to cycle base valve). #40
+	if not ghost:
+		var ctrl : Node = load("res://src/scenes/world/HoseReel.gd").new()
+		ctrl.name = "HoseReelController"
+		ctrl.set("nozzle_max_kg_per_s", 12.0)
+		ctrl.set("nozzle_range_m", 3.0)
+		ctrl.set("nozzle_cone_deg", 8.0)
+		ctrl.set("nozzle_tint", Color(0.82, 0.18, 0.16))
+		ctrl.set("prompt_label", "Take HP washer pistol")
+		p.add_child(ctrl)
 
 ## Vertical industrial compressor (Model A): big upright pressure tank, motor with
 ## a belt guard on top, pressure gauge cluster, outlet pipe + ball valve. 5 bar rated.
@@ -2739,6 +2764,29 @@ static func _m_compressor_b(p: Node3D, size: Vector3, color: Color, ghost: bool)
 	_cyl(p, 0.075, 0.075, 0.01, Vector3(-size.x * 0.18, 1.55, size.z * 0.47), brass, "z")
 	# Top fan grille
 	_box(p, Vector3(size.x * 0.65, 0.04, size.z * 0.65), Vector3(0.0, 0.20 + size.y * 0.82 + 0.04, 0.0), dark)
+
+## A floor "hot spot" placeable that accumulates dirt over time. Visual is just a
+## small brown wear mark on the floor; the actual dirt pile (cone) is spawned by
+## the DirtHotspot controller and grows until a hose / HP washer / shovel clears it.
+static func _m_dirt_hotspot(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
+	# Visible wear patch on the floor — operator should know one is here.
+	var mark := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(size.x, 0.02, size.z)
+	mark.mesh = bm
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(color.r, color.g, color.b, 0.55)
+	m.roughness = 0.95
+	if ghost:
+		m.albedo_color.a = 0.30
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mark.material_override = m
+	mark.position = Vector3(0.0, 0.01, 0.0)
+	p.add_child(mark)
+	if not ghost:
+		var ctrl : Node = load("res://src/sim/DirtHotspot.gd").new()
+		ctrl.name = "DirtHotspot"
+		p.add_child(ctrl)
 
 ## Prints the origin name + unique code + a barcode (derived from the code) onto
 ## a placed bale's yellow label. Called once the bale's unique code is known.
