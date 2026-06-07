@@ -593,7 +593,7 @@ func tick(delta: float) -> void:
 			var dirt := flow.remove_contaminant(cr)
 			if dirt > 0.0:
 				contam_removed += dirt
-				_dump_waste(nd["wout"] as Vector3, _dirt_batch(dirt), waste_containers, 2)   # Stream.DIRT
+				_dump_waste(nd["wout"] as Vector3, _dirt_batch(dirt), _waste_containers_cache, 2)   # Stream.DIRT
 
 		# b) off-spec polymer rejected (optical/float sort) → reject stream
 		var ro: float = nd["reject_other"]
@@ -622,7 +622,7 @@ func tick(delta: float) -> void:
 		if wfrac > 0.0:
 			var w := flow.split_fraction(wfrac)
 			waste_mass += w.mass_kg
-			_dump_waste(nd["wout"] as Vector3, w, waste_containers, _waste_stream_for_role(String(nd["role"]), String(nd["process"])))
+			_dump_waste(nd["wout"] as Vector3, w, _waste_containers_cache, _waste_stream_for_role(String(nd["role"]), String(nd["process"])))
 
 		# Live telemetry: smoothed output rate + a snapshot of what's leaving, so the
 		# HMI shows real per-machine moisture / dirt / quality, not just kg in buffer.

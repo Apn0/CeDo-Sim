@@ -297,6 +297,12 @@ func _input(event: InputEvent) -> void:
 		_toggle_stance(Stance.CROUCHING)
 	if event.is_action_pressed("prone_toggle"):
 		_toggle_stance(Stance.PRONE)
+	# F5 — snapshot the 3rd-person free-cam relative position into the save file so
+	# the operator's preferred external viewpoint survives reload (#freecam).
+	if event.is_action_pressed("freecam_save"):
+		var world := get_tree().current_scene
+		if world and world.has_method("freecam_save_now"):
+			world.call("freecam_save_now")
 
 	# F12 → "unstuck" panic button. First lifts the capsule 2 m to clear most
 	# wall-carve artefacts; if that doesn't free us, teleports back to

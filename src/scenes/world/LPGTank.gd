@@ -191,6 +191,21 @@ func _refresh_prompt() -> void:
 			_emit_prompt("Remove LPG cylinder  (%d %%)" % int(round(level * 100.0)))
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Q (hotbar_drop) — drop a held tank straight to the floor.
+	if event.is_action_pressed("hotbar_drop") and state == State.HELD:
+		_drop_to_floor()
+		get_viewport().set_input_as_handled()
+		return
+	# G (tool_place_mode) — place a held tank: snap to a vehicle mount if one is in
+	# range, otherwise drop to the floor (so G is a useful single action either way).
+	if event.is_action_pressed("tool_place_mode") and state == State.HELD:
+		var mount_g := _find_vehicle_mount()
+		if not mount_g.is_empty():
+			_mount_to(mount_g.get("anchor"), mount_g.get("vehicle"))
+		else:
+			_drop_to_floor()
+		get_viewport().set_input_as_handled()
+		return
 	if not event.is_action_pressed("interact"):
 		return
 	match state:
@@ -202,15 +217,27 @@ func _unhandled_input(event: InputEvent) -> void:
 			# Held → check for a vehicle LPG mount within range. If one is
 			# found, snap to it. Otherwise drop on the floor in front of you.
 			var mount := _find_vehicle_mount()
-			if mount != null:
+			if not mount.is_empty():
 				_mount_to(mount.get("anchor"), mount.get("vehicle"))
 			else:
 				_drop_to_floor()
 			get_viewport().set_input_as_handled()
 		State.MOUNTED:
-			if _player_near:
+			# Cylinder changes are an ON-FOOT job (#LPG-cab-lock): refuse the swap
+			# when the operator is sitting in a vehicle. Real plants treat this as a
+			# tag-out: leave the cab, change the bottle, climb back in.
+			if _player_near and not _operator_in_vehicle():
 				_remove_from_mount(_player_node)
 				get_viewport().set_input_as_handled()
+
+## True when the operator (player) is currently seated in any vehicle. Used to block
+## LPG-cylinder swaps from the cab — that's an on-foot job per the operator.
+func _operator_in_vehicle() -> bool:
+	var scene := get_tree().current_scene
+	if scene == null:
+		return false
+	var oc := scene.find_child("OperatorContext", true, false)
+	return oc != null and oc.get("current_vehicle") != null
 
 # =============================================================================
 # PICK UP / DROP / MOUNT

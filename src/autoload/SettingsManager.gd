@@ -98,7 +98,7 @@ const ACTION_GROUPS := [
 	},
 	{
 		"label":   "Interaction & UI",
-		"actions": ["interact", "ui_cancel", "camera_toggle", "map_toggle", "crew_panel", "debug_unstuck"],
+		"actions": ["interact", "ui_cancel", "camera_toggle", "map_toggle", "crew_panel", "freecam_save", "debug_unstuck"],
 	},
 	{
 		"label":   "Walkie-talkie",
@@ -166,6 +166,7 @@ const ACTION_LABELS := {
 	"hotbar_4":                 "Hand: slot 4 (4)",
 	"hotbar_drop":              "Drop held tool (Q)",
 	"walkie_ptt":               "Walkie: push-to-talk (U)",
+	"freecam_save":             "Free camera: save current position to savefile (F5)",
 	"vehicle_lights":           "Vehicle: work lights (L)",
 	"vehicle_hazards":          "Vehicle: hazard blinkers (K)",
 	"vehicle_blinker_left":     "Vehicle: left blinker ([)",
@@ -457,6 +458,7 @@ func _ensure_aux_actions() -> void:
 		"vehicle_wipers":    KEY_Y,
 		"walkie_ptt":        KEY_U,
 		"tool_place_mode":   KEY_G,
+		"freecam_save":      KEY_F5,
 	}
 	for action_name in binds:
 		if not InputMap.has_action(action_name):

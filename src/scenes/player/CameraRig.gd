@@ -384,6 +384,26 @@ func reset() -> void:
 	_f4_acted_this_hold = false
 	_free_move_initialized = false
 
+## Snapshot the free-move camera state (position + orbit yaw/pitch) for the save
+## file. F5 captures it; load_freecam_state() restores it on the next world load.
+func serialize_freecam() -> Dictionary:
+	return {
+		"x":     _free_move_position.x,
+		"y":     _free_move_position.y,
+		"z":     _free_move_position.z,
+		"yaw":   _orbit_yaw,
+		"pitch": _orbit_pitch,
+	}
+
+## Restore a saved free-move pose. Call after the rig is in the tree (load time).
+func load_freecam_state(d: Dictionary) -> void:
+	if d.is_empty():
+		return
+	_free_move_position = Vector3(float(d.get("x", 0.0)), float(d.get("y", 0.0)), float(d.get("z", 0.0)))
+	_free_move_initialized = true
+	_orbit_yaw   = float(d.get("yaw",   _orbit_yaw))
+	_orbit_pitch = float(d.get("pitch", _orbit_pitch))
+
 ## Mode name, for HUD readouts.
 func mode_name() -> String:
 	match _mode:

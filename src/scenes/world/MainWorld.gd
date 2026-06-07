@@ -302,6 +302,32 @@ func _spawn_player() -> void:
 
 	print("[MainWorld] Player spawned at %s%s" \
 		% [player.global_position, " (resumed)" if from_save else ""])
+	# Restore the saved free-cam pose if there is one. Defer one frame so PlayerController._ready
+	# has built its CameraRig before we hand it the saved state. (#freecam)
+	if from_save and game_state:
+		var saved_player := game_state.load_player_state()
+		var fc = saved_player.get("freecam", null)
+		if fc != null:
+			call_deferred("_restore_freecam_state", fc)
+
+## Walk to the player's CameraRig (built lazily by PlayerController._ready).
+func _freecam_rig() -> Node:
+	if player == null:
+		return null
+	return player.find_child("CameraRig", true, false)
+
+func _restore_freecam_state(d: Dictionary) -> void:
+	var rig := _freecam_rig()
+	if rig != null and rig.has_method("load_freecam_state"):
+		rig.call("load_freecam_state", d)
+
+func freecam_save_now() -> void:
+	# Trigger an immediate save when the operator presses F5 — the rig's current pose
+	# goes in alongside the player position. Also prints a small notice on the banner.
+	save_game()
+	var bus := get_node_or_null("/root/EventBus")
+	if bus and bus.has_signal("scanner_banner"):
+		bus.emit_signal("scanner_banner", "[F5] Free-cam position saved")
 
 func _get_factory_anchor() -> Vector3:
 	if game_state and game_state.factory_center != Vector3.ZERO:
@@ -1373,12 +1399,18 @@ func _start_or_resume_shift() -> void:
 # =============================================================================
 func save_game() -> void:
 	if player and game_state:
-		game_state.save_player_state({
+		var ps := {
 			"x":     player.global_position.x,
 			"y":     player.global_position.y,
 			"z":     player.global_position.z,
 			"rot_y": player.rotation.y,
-		})
+		}
+		# Persist the 3rd-person free-cam pose alongside the player position so the
+		# operator's preferred external viewpoint survives a save/load (#freecam).
+		var rig := _freecam_rig()
+		if rig != null and rig.has_method("serialize_freecam"):
+			ps["freecam"] = rig.call("serialize_freecam")
+		game_state.save_player_state(ps)
 	if shift_clock:
 		shift_clock.save_shift_state()
 	if game_state:

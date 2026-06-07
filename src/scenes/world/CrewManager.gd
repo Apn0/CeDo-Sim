@@ -404,10 +404,28 @@ func station_list() -> Array:
 func pinned_station(worker) -> String:
 	return String(_pinned.get(worker, ""))
 
+## The role-based posts a worker can be assigned to from the crew panel — the proper
+## plant rota positions (shift leader, extruder op, feeder, …) rather than raw machine
+## ids. Order matters: the panel lists them in this order.
+const ROLE_POSTS := [
+	{"id": "role:shift_leader",       "label": "Shiftleader"},
+	{"id": "role:asst_shift_leader",  "label": "Asst. shiftleader"},
+	{"id": "role:extruder_op",        "label": "Extruder operator"},
+	{"id": "role:permanent_feeder",   "label": "Permanent feeder"},
+	{"id": "role:feeder",             "label": "Feeder"},
+	{"id": "role:transitional",       "label": "Transitional (feeder → extruder)"},
+	{"id": "role:all_rounder",        "label": "All-rounder"},
+	{"id": "role:production_manager", "label": "Production manager"},
+]
+
+static func role_posts() -> Array:
+	return ROLE_POSTS
+
 ## Hand-assign `worker` to a post. Special ids: "__auto__" reverts to role-based
-## auto-posting, "__off__" takes them off duty. Anything else is a station id —
-## the worker walks over and mans it, and stays pinned there (auto-post + the
-## break rotation leave a pinned post alone unless a jam pulls them temporarily).
+## auto-posting, "__off__" takes them off duty. "role:X" sets the worker's npc_role
+## to X and auto-posts them as that role (the proper plant rota slots: shift leader,
+## extruder op, feeder, …). Anything else is a station id — the worker walks over
+## and mans that specific machine, and stays pinned (#36 role-based posts).
 func manual_assign(worker, station_id: String) -> void:
 	if worker == null:
 		return
@@ -424,6 +442,18 @@ func manual_assign(worker, station_id: String) -> void:
 		if not best.is_empty():
 			var apos : Vector3 = best["pos"]; apos.y = worker.global_position.y
 			worker.assign_post(String(best["id"]), apos)
+		return
+	# Role-based post: switch the worker's RotA role, then auto-post by that role's zone.
+	if station_id.begins_with("role:"):
+		var new_role := station_id.substr(5)
+		worker.npc_role = new_role
+		_pinned.erase(worker)
+		var best_role : Dictionary = _nearest_in_zone(new_role, worker.global_position, _machine_list())
+		if not best_role.is_empty():
+			var rpos : Vector3 = best_role["pos"]; rpos.y = worker.global_position.y
+			worker.assign_post(String(best_role["id"]), rpos)
+		_pinned[worker] = station_id   # remember the rota pin (the role, not a machine)
+		_emit("npc_called_for_help", ["operator", String(worker.npc_name), station_id])
 		return
 	for m in _machine_list():
 		if String(m["id"]) == station_id:

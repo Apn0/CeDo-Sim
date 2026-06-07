@@ -8,7 +8,8 @@ extends CanvasLayer
 var _cm : Node = null            # CrewManager
 var _built : bool = false
 var _rows : Array = []           # [{worker, task_lbl, opt}]
-var _post_ids : Array = []       # deduped station ids, index-aligned to OptionButton items 2..n
+var _post_ids : Array = []       # post ids, index-aligned to OptionButton items 2..n
+var _post_labels : Array = []    # human labels paired with _post_ids
 
 const C_PANEL := Color(0.11, 0.13, 0.16, 1.0)
 const C_TEXT  := Color(0.88, 0.92, 0.92, 1.0)
@@ -96,9 +97,17 @@ func _populate() -> void:
 		c.queue_free()
 	_rows.clear()
 	_post_ids.clear()
+	_post_labels.clear()
 	if _cm == null:
 		return
-	# Deduped list of assignable stations (machine types) on the line.
+	# Role-based posts FIRST (the proper plant rota slots: shiftleader, extruder op,
+	# feeder, …) — assigning these switches the worker's npc_role and posts them by
+	# zone. #36 — this is what the operator actually thinks in.
+	var roles : Array = _cm.role_posts() if _cm.has_method("role_posts") else []
+	for rp in roles:
+		_post_ids.append(String(rp.get("id", "")))
+		_post_labels.append(String(rp.get("label", "")))
+	# Then specific machine stations (the deduped legacy list) for fine-grained pinning.
 	var seen := {}
 	for s in _cm.station_list():
 		var sid := String(s.get("id", ""))
@@ -106,6 +115,7 @@ func _populate() -> void:
 			continue
 		seen[sid] = true
 		_post_ids.append(sid)
+		_post_labels.append(sid.replace("_", " "))
 	for w in _cm.workers:
 		_add_worker_row(w)
 
@@ -125,8 +135,8 @@ func _add_worker_row(worker) -> void:
 	opt.custom_minimum_size = Vector2(190, 0)
 	opt.add_item("— Auto (rol) —")        # index 0 → "__auto__"
 	opt.add_item("Van dienst af (off)")    # index 1 → "__off__"
-	for sid in _post_ids:
-		opt.add_item(String(sid).replace("_", " "))
+	for i in _post_ids.size():
+		opt.add_item(String(_post_labels[i]))
 	# Reflect the current pin in the dropdown selection.
 	var pinned := String(_cm.pinned_station(worker)) if _cm.has_method("pinned_station") else ""
 	if pinned != "" and _post_ids.has(pinned):
