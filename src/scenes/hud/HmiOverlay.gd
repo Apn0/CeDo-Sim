@@ -129,7 +129,26 @@ var _md_run_btn      : Button = null
 var _md_safeguard_lbl: Label = null
 var _md_rpm_slider   : HSlider = null
 var _md_rpm_pct_lbl  : Label = null
-var _md_comp_rows    : Array = []   # [{name, slider:HSlider, pct_lbl:Label, rpm_lbl:Label}]
+var _md_comp_rows    : Array = []   # [{name, slider:HSlider, pct_lbl:Label, rpm_lbl:Label, nom_rpm}]
+var _md_amps_lbl     : Label = null
+
+## Per-component design RPMs the operator's slider scales. RPM is the rotor's
+## actual SPEED (independent of material) — what the operator commands. Throughput
+## (kg/s) is the consequence, gated by material availability. A paddle spinning
+## empty still has its full RPM here (and still draws the motor idle current).
+const _NOMINAL_RPM := {
+	# Tank stirrer / paddle stages — slow scrapers.
+	"inlet":       30.0,
+	"transport_1": 45.0,
+	"transport_2": 45.0,
+	"outlet":      30.0,
+	# Conveyors / belts / screws (motor side, before any gearbox).
+	"drive":       1450.0,
+	# Shredder / mill rotors run far slower than the drive motor (post-gearbox).
+	"rotor":        800.0,
+}
+static func _nominal_rpm_for(comp_name: String) -> float:
+	return float(_NOMINAL_RPM.get(comp_name, 100.0))
 
 # =============================================================================
 func _ready() -> void:
@@ -332,6 +351,7 @@ func _show_screen(screen: int) -> void:
 	_md_safeguard_lbl = null
 	_md_rpm_slider = null
 	_md_rpm_pct_lbl = null
+	_md_amps_lbl = null
 	for c in _content.get_children():
 		c.queue_free()
 	match screen:
@@ -1079,6 +1099,7 @@ func _build_machine_detail() -> void:
 	_md_safeguard_lbl = null
 	_md_rpm_slider = null
 	_md_rpm_pct_lbl = null
+	_md_amps_lbl = null
 
 	if _selected_machine_id == "":
 		var hint := Label.new()
@@ -1113,6 +1134,13 @@ func _build_machine_detail() -> void:
 	_md_status_lbl.add_theme_font_size_override("font_size", 13)
 	_md_status_lbl.add_theme_color_override("font_color", Color(0.25, 0.30, 0.27, 1))
 	trow.add_child(_md_status_lbl)
+	# Live current draw — a paddle spinning empty still pulls ~35% nominal (motor
+	# idle floor), which is the energy cost the operator was asking to see.
+	_md_amps_lbl = Label.new()
+	_md_amps_lbl.text = "0 A"
+	_md_amps_lbl.add_theme_font_size_override("font_size", 13)
+	_md_amps_lbl.add_theme_color_override("font_color", C_AMBER)
+	trow.add_child(_md_amps_lbl)
 
 	# HAND / AUTO + RUN row
 	var crow := HBoxContainer.new()
@@ -1194,10 +1222,10 @@ func _md_make_rpm_row(label_text: String, comp_key: String, pct: float, design_r
 	pct_lbl.add_theme_font_size_override("font_size", 13)
 	row.add_child(pct_lbl)
 	var rpm_lbl := Label.new()
-	# Live "RPM" readout: scale the design rate by spin and the slider pct, then
-	# present as a relative kg/s figure (the sim doesn't expose RPM in N; this
-	# row is what a real operator panel would call the rotor RPM trend).
-	rpm_lbl.text = "— kg/s"
+	# Live RPM readout — the ROTOR speed the operator's setting commands,
+	# INDEPENDENT of material. A paddle spinning at full RPM with no inflow still
+	# reads its full RPM here (and still draws idle current, shown up top).
+	rpm_lbl.text = "— RPM"
 	rpm_lbl.custom_minimum_size = Vector2(100, 0)
 	rpm_lbl.add_theme_color_override("font_color", Color(0.25, 0.30, 0.27, 1))
 	rpm_lbl.add_theme_font_size_override("font_size", 13)
@@ -1210,7 +1238,10 @@ func _md_make_rpm_row(label_text: String, comp_key: String, pct: float, design_r
 		_md_rpm_pct_lbl = pct_lbl
 	else:
 		slider.value_changed.connect(_on_component_rpm_changed.bind(comp_key))
-		_md_comp_rows.append({"name": comp_key, "slider": slider, "pct_lbl": pct_lbl, "rpm_lbl": rpm_lbl})
+		_md_comp_rows.append({
+			"name": comp_key, "slider": slider, "pct_lbl": pct_lbl, "rpm_lbl": rpm_lbl,
+			"nom_rpm": _nominal_rpm_for(comp_key),
+		})
 	return row
 
 func _on_machine_toggle_hand() -> void:
@@ -1284,12 +1315,20 @@ func _refresh_machines() -> void:
 	var mpct := float(info.get("rpm_pct", 1.0))
 	if _md_rpm_pct_lbl != null:
 		_md_rpm_pct_lbl.text = "%d %%" % int(round(mpct * 100.0))
-	# Per-component readouts (label + live "rpm" = design_rate × spin × this_pct)
+	# Live current — non-zero whenever the rotor is spinning (even starved), which is
+	# the energy cost the operator was asking to see for "spinning empty."
+	if _md_amps_lbl != null:
+		var amps := float(info.get("amps", 0.0))
+		_md_amps_lbl.text = "Stroom: %.1f A" % amps
+	# Per-component readouts: RPM is the rotor's ACTUAL speed (independent of
+	# material) — nominal × spin × master_pct × this_component_pct.
 	var comps : Dictionary = info.get("components", {})
 	for r in _md_comp_rows:
 		var cname := String(r["name"])
 		if not comps.has(cname):
 			continue
 		var cpct := float(comps[cname])
+		var nom_rpm := float(r.get("nom_rpm", 100.0))
+		var actual_rpm : float = nom_rpm * spin * cpct * mpct
 		(r["pct_lbl"] as Label).text = "%d %%" % int(round(cpct * 100.0))
-		(r["rpm_lbl"] as Label).text = "%.2f kg/s" % (rate * spin * cpct * mpct)
+		(r["rpm_lbl"] as Label).text = "%.0f RPM" % actual_rpm
