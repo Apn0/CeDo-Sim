@@ -47,6 +47,14 @@ enum Mode     { ON_REEL, HELD, GROUNDED }
 @export var hose_radius         : float = 0.022   # visual hose tube radius
 @export var pickup_radius       : float = 1.4     # how close to a grounded tip you must stand
 @export var reel_dock_radius    : float = 1.6     # how close to the reel to auto-return
+## Floor level the auto-dropped anchors rest on. The reel spout sits 1 m above
+## this; subsequent anchors lie on the ground so the hose properly drops down.
+@export var floor_y             : float = 0.0
+## Catenary visual: each segment between consecutive anchors is subdivided into
+## this many sub-segments, which sag toward the floor by SAG_RATIO × segment
+## length. SUBDIVS = 1 falls back to straight lines (no sag); ≥4 reads as rope.
+@export var chain_subdivs       : int   = 8
+@export var chain_sag_ratio     : float = 0.18   # parabola depth as a fraction of seg length
 
 var _held_by    : Node3D = null
 var _tip_valve  : int    = TipValve.CLOSED
@@ -404,35 +412,48 @@ func _tick_anchors_and_clamp_tip() -> void:
 	# the last anchor — but only if we have room left on the hose.
 	if ground_dist > hose_segment_m and _anchors.size() < max_anchors:
 		var step_dir : Vector3 = diff_xz / ground_dist
-		# Place the new anchor exactly hose_segment_m along the path. The new anchor
-		# sits on the floor (y matches the last anchor's y so the chain doesn't drift
-		# off the ground every step).
+		# Place the new anchor on the FLOOR, exactly hose_segment_m further along
+		# the path. The first anchor (the reel) sits at its mount height ~1 m up;
+		# every subsequent anchor lies on the floor so the hose drops down from
+		# the reel and trails along the ground, which catenary sag depends on.
 		var anchor_pos : Vector3 = last + step_dir * hose_segment_m
-		anchor_pos.y = last.y
+		anchor_pos.y = floor_y
 		_anchors.append(anchor_pos)
+	# WALL: when the chain is at max anchors, the hose is taut — the player can
+	# NOT walk further from the last anchor than hose_segment_m (a real wall). We
+	# project them back along the over-extension vector each frame. This is gentle
+	# because we only kick in once the chain is fully deployed.
+	if _anchors.size() >= max_anchors:
+		var diff_xz_after := Vector3((_held_by.global_position - _anchors.back()).x, 0.0,
+			(_held_by.global_position - _anchors.back()).z)
+		var d := diff_xz_after.length()
+		if d > hose_segment_m and d > 0.001:
+			var pushed : Vector3 = _anchors.back() + diff_xz_after / d * hose_segment_m
+			pushed.y = _held_by.global_position.y   # don't yank them vertically
+			_held_by.global_position = pushed
 
 func _clear_chain_visual() -> void:
 	if _chain_root == null or not is_instance_valid(_chain_root):
 		return
+	# Use immediate remove + queue_free so the next rebuild within the same frame
+	# doesn't double-count children (queue_free alone is deferred to idle).
 	for c in _chain_root.get_children():
+		_chain_root.remove_child(c)
 		c.queue_free()
 
-## Rebuild the chain visual: one cylinder between each pair of consecutive
-## anchors, plus one final cylinder from the last anchor up to the held nozzle
-## (or no final segment when the nozzle is grounded — the rope ends at the tip's
-## own world position, which IS the last point).
+## Rebuild the chain visual. Each pair of consecutive anchors becomes one rope
+## span; each span is subdivided into chain_subdivs sub-cylinders along a
+## downward parabola so the rope SAGS toward the floor between anchors instead
+## of being a straight stick (a catenary approximation cheap enough to redraw
+## every frame). The reel-to-first-floor-anchor span naturally drops because
+## the reel anchor sits ~1 m above the floor.
 func _redraw_chain() -> void:
 	_ensure_chain_root()
 	_clear_chain_visual()
 	var pts : Array = _anchors.duplicate()
-	# Add the nozzle world position as the last segment endpoint. Whether held
-	# (overridden each frame) or grounded (its actual world position), this is
-	# the natural end of the chain.
-	if _mode != Mode.ON_REEL and _held_by != null:
+	# Append the nozzle world position as the last endpoint (held or grounded).
+	if _mode != Mode.ON_REEL:
 		pts.append(global_position)
-	elif _mode == Mode.GROUNDED:
-		pts.append(global_position)
-	# A chain with < 2 points has no segment to draw.
 	if pts.size() < 2:
 		return
 	for i in pts.size() - 1:
@@ -441,17 +462,35 @@ func _redraw_chain() -> void:
 		var seg_len : float = (b - a).length()
 		if seg_len < 0.01:
 			continue
-		var mi := MeshInstance3D.new()
-		var cm := CylinderMesh.new()
-		cm.top_radius = hose_radius
-		cm.bottom_radius = hose_radius
-		cm.height = seg_len
-		cm.radial_segments = 8
-		mi.mesh = cm
-		mi.material_override = _chain_mat
-		_chain_root.add_child(mi)
-		var up : Vector3 = (b - a) / seg_len
-		var ref : Vector3 = Vector3.RIGHT if absf(up.dot(Vector3.RIGHT)) < 0.95 else Vector3.FORWARD
-		var x_axis : Vector3 = up.cross(ref).normalized()
-		var z_axis : Vector3 = x_axis.cross(up).normalized()
-		mi.global_transform = Transform3D(Basis(x_axis, up, z_axis), (a + b) * 0.5)
+		# Sag depth scales with segment length so longer spans hang lower.
+		var sag : float = seg_len * chain_sag_ratio
+		# Subdivide the span: sample chain_subdivs+1 points along a parabola
+		# (lerp(a,b,t) + DOWN * sag * 4t(1-t)), draw cylinder between consecutive samples.
+		var n : int = max(1, chain_subdivs)
+		var prev : Vector3 = a
+		for k in n:
+			var t : float = float(k + 1) / float(n)
+			var p : Vector3 = a.lerp(b, t) + Vector3.DOWN * sag * 4.0 * t * (1.0 - t)
+			_draw_sub_cylinder(prev, p)
+			prev = p
+
+## Draw a single cylinder between two world points (used by _redraw_chain).
+func _draw_sub_cylinder(a: Vector3, b: Vector3) -> void:
+	var diff := b - a
+	var len_ := diff.length()
+	if len_ < 0.001:
+		return
+	var mi := MeshInstance3D.new()
+	var cm := CylinderMesh.new()
+	cm.top_radius = hose_radius
+	cm.bottom_radius = hose_radius
+	cm.height = len_
+	cm.radial_segments = 6
+	mi.mesh = cm
+	mi.material_override = _chain_mat
+	_chain_root.add_child(mi)
+	var up : Vector3 = diff / len_
+	var ref : Vector3 = Vector3.RIGHT if absf(up.dot(Vector3.RIGHT)) < 0.95 else Vector3.FORWARD
+	var x_axis : Vector3 = up.cross(ref).normalized()
+	var z_axis : Vector3 = x_axis.cross(up).normalized()
+	mi.global_transform = Transform3D(Basis(x_axis, up, z_axis), (a + b) * 0.5)
