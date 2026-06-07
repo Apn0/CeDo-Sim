@@ -48,9 +48,14 @@ echo === [7/8] ScanLogTest (script mode) ===
 set RC7=%ERRORLEVEL%
 
 echo.
-echo === [8/8] VehicleBaleTest (scene mode — needs Godot 4.6) ===
+echo === [8/9] VehicleBaleTest (scene mode — needs Godot 4.6) ===
 %GODOT% --headless --path . res://tests/VehicleBaleTest.tscn
 set RC8=%ERRORLEVEL%
+
+echo.
+echo === [9/9] SecuritySaveTest (script mode) ===
+%GODOT% --headless --path . --script res://tests/SecuritySaveTest.gd
+set RC9=%ERRORLEVEL%
 
 popd
 echo.
@@ -62,6 +67,7 @@ echo VehicleDriveTest       exit: %RC5%
 echo SettingsParseTest      exit: %RC6%
 echo ScanLogTest            exit: %RC7%
 echo VehicleBaleTest        exit: %RC8%
+echo SecuritySaveTest       exit: %RC9%
 if not "%RC1%"=="0" exit /b %RC1%
 if not "%RC2%"=="0" exit /b %RC2%
 if not "%RC3%"=="0" exit /b %RC3%
@@ -69,4 +75,5 @@ if not "%RC4%"=="0" exit /b %RC4%
 if not "%RC5%"=="0" exit /b %RC5%
 if not "%RC6%"=="0" exit /b %RC6%
 if not "%RC7%"=="0" exit /b %RC7%
-exit /b %RC8%
+if not "%RC8%"=="0" exit /b %RC8%
+exit /b %RC9%
