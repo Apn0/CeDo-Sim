@@ -106,7 +106,7 @@ const ACTION_GROUPS := [
 	},
 	{
 		"label":   "Hand tools (on foot)",
-		"actions": ["tool_use", "tool_place_mode",
+		"actions": ["tool_use", "tool_place_mode", "hose_advance_back",
 					"hotbar_1", "hotbar_2", "hotbar_3", "hotbar_4", "hotbar_drop"],
 	},
 	{
@@ -165,6 +165,7 @@ const ACTION_LABELS := {
 	"hotbar_3":                 "Hand: slot 3 (3)",
 	"hotbar_4":                 "Hand: slot 4 (4)",
 	"hotbar_drop":              "Drop held tool (Q)",
+	"hose_advance_back":        "Hose: unanchor last ground point / return tip to reel (F)",
 	"walkie_ptt":               "Walkie: push-to-talk (U)",
 	"freecam_save":             "Free camera: save current position to savefile (F5)",
 	"vehicle_lights":           "Vehicle: work lights (L)",
@@ -459,6 +460,7 @@ func _ensure_aux_actions() -> void:
 		"walkie_ptt":        KEY_U,
 		"tool_place_mode":   KEY_G,
 		"freecam_save":      KEY_F5,
+		"hose_advance_back": KEY_F,
 	}
 	for action_name in binds:
 		if not InputMap.has_action(action_name):

@@ -1,40 +1,78 @@
 extends StaticBody3D
 class_name HoseNozzle
 
-## Operator's water-hose nozzle / HP-washer pistol. Picked up from the owning reel
-## or washer cart by pressing E; the holder spawns it into the player's hand and
-## hands back a reference. LMB cycles the TIP ball valve through three positions:
-## CLOSED → LITTLE → LOT → CLOSED. Water sprays only when BOTH the base valve
-## (owned by the reel/cart) AND the tip valve are open; the effective spray rate
-## is min(base, tip), then scaled by the nozzle's max_kg_per_s.
+## Operator's water-hose nozzle / HP-washer pistol with an Out-of-Ore-style ANCHOR
+## CHAIN deployment mechanism.
 ##
-## Spray is a forward cone from the camera. Any FloorPile (dirt hotspot, shredder
-## output mound, etc.) inside the cone gets scoop()'d at the effective rate, so a
-## few seconds of spray clears a small heap.
+## Two valves are still in play:
+##   • BASE valve (lives on the reel; cycled by E at the reel)
+##   • TIP  valve (LMB cycles CLOSED → LITTLE → LOT → CLOSED)
+## Spray rate = max_kg_per_s × min(base, tip)-scale.
+##
+## CHAIN DEPLOYMENT — the difference from a simple tether:
+##   1. While the operator walks AWAY from the last anchor, a new anchor is
+##      automatically dropped every `segment_m` (default 1 m). The first anchor
+##      is the reel itself; each new one fixes a new bend point on the floor.
+##   2. The chain visual is one cylinder per inter-anchor segment + one last
+##      cylinder from the last anchor up to the held nozzle — so the rope traces
+##      the route the operator walked, NOT a straight line.
+##   3. Pressing `hose_advance_back` (F) UN-anchors the LAST ground point. If no
+##      ground anchors remain AND the operator is near the reel, the tip is
+##      automatically returned to the reel. So the operator walks back, pressing
+##      F at each anchor as they pass it, and the hose neatly reels itself in.
+##   4. Total deployed length is hard-capped at `hose_length_m`. When the chain
+##      is at max anchors no new ones are dropped — the operator can keep moving
+##      but the last segment just gets visually stretched (no spray bonus).
+##   5. Pressing `hotbar_drop` (Q) DROPS the tip in place: the nozzle becomes a
+##      free pickable object at its current world position, and the chain stays
+##      exactly where it was. Walk back and press E to pick it back up.
+##
+## The held nozzle stays parented under the player's Head (so the Inventory
+## hotbar keeps working), but its global_position is overridden each frame to
+## the chain-clamped point — so when the line is taut, the visible tip stays at
+## the limit even if the operator's hand reaches further forward.
 
 const tool_id : String = "hose_nozzle"
 
 enum TipValve { CLOSED, LITTLE, LOT }
+enum Mode     { ON_REEL, HELD, GROUNDED }
 
-## Set by the owning reel/cart when it deploys the nozzle. HP washer overrides
-## these for a tighter, faster cone.
+# Spray + chain config — reels/carts override these per their max_kg_per_s tier.
 @export var max_kg_per_s        : float = 4.0
 @export var max_range_m         : float = 4.0
 @export var cone_half_angle_deg : float = 18.0
-## Cosmetic only — colour-codes the nozzle handle (red for HP, brass for water).
 @export var nozzle_tint         : Color = Color(0.82, 0.18, 0.16)
+@export var hose_length_m       : float = 10.0    # total hose length
+@export var hose_segment_m      : float = 1.0     # distance between auto-anchors
+@export var hose_radius         : float = 0.022   # visual hose tube radius
+@export var pickup_radius       : float = 1.4     # how close to a grounded tip you must stand
+@export var reel_dock_radius    : float = 1.6     # how close to the reel to auto-return
 
 var _held_by    : Node3D = null
 var _tip_valve  : int    = TipValve.CLOSED
-var _owner_ref  : Node   = null     # back-ref to the HoseReel (or HP washer cart)
-var _tether_mi  : MeshInstance3D = null
-var _tether_mat : StandardMaterial3D = null
+var _owner_ref  : Node   = null
+var _mode       : int    = Mode.ON_REEL
+var _player_near_grounded : bool = false
+var _player_node : Node  = null
+# Anchors in WORLD space. Index 0 is the reel (immutable; set in attach_to_player).
+# Subsequent entries are auto-dropped as the operator walks; popped one at a
+# time by F.
+var _anchors    : Array  = []
+# Visual chain — rebuilt every frame, parented at world root so it doesn't
+# inherit the player's head transform.
+var _chain_root : Node3D = null
+var _chain_mat  : StandardMaterial3D = null
+# A small Area3D added when the tip is GROUNDED so the operator can walk to it
+# and press E to pick it back up. Re-removed on pickup.
+var _ground_pickup_area : Area3D = null
 
 # =============================================================================
 func _ready() -> void:
 	add_to_group("hose_nozzle")
 	_build_visual()
-	_build_tether()
+	_chain_mat = StandardMaterial3D.new()
+	_chain_mat.albedo_color = Color(0.10, 0.10, 0.12)
+	_chain_mat.roughness = 0.6
 
 func _build_visual() -> void:
 	var brass := StandardMaterial3D.new()
@@ -44,7 +82,7 @@ func _build_visual() -> void:
 	dark.albedo_color = Color(0.10, 0.10, 0.12); dark.roughness = 0.55
 	var handle_mat := StandardMaterial3D.new()
 	handle_mat.albedo_color = nozzle_tint; handle_mat.roughness = 0.45
-	# Cylindrical body (the valve barrel) — local -Z is the spray direction.
+	# Valve body
 	var body := MeshInstance3D.new()
 	var bm := CylinderMesh.new(); bm.top_radius = 0.025; bm.bottom_radius = 0.035
 	bm.height = 0.14; bm.radial_segments = 14
@@ -52,14 +90,14 @@ func _build_visual() -> void:
 	body.position = Vector3(0.0, 0.0, -0.07)
 	body.rotation.x = deg_to_rad(90.0)
 	add_child(body)
-	# Valve lever sticking up — rotates to reflect tip valve state.
+	# Lever — rotates to reflect tip valve state.
 	var lever := MeshInstance3D.new()
 	var lm := BoxMesh.new(); lm.size = Vector3(0.13, 0.018, 0.022)
 	lever.mesh = lm; lever.material_override = handle_mat
 	lever.name = "Lever"
 	lever.position = Vector3(0.0, 0.04, -0.03)
 	add_child(lever)
-	# Tapered nozzle tip.
+	# Tapered nozzle tip — local -Z is the spray direction.
 	var tip := MeshInstance3D.new()
 	var tm := CylinderMesh.new(); tm.top_radius = 0.012; tm.bottom_radius = 0.022
 	tm.height = 0.06; tm.radial_segments = 12
@@ -67,93 +105,221 @@ func _build_visual() -> void:
 	tip.position = Vector3(0.0, 0.0, -0.17)
 	tip.rotation.x = deg_to_rad(90.0)
 	add_child(tip)
-	# Small bounding collision for when dropped.
+	# Bounding collision (used when grounded — disabled while held).
 	var col := CollisionShape3D.new()
 	var bx := BoxShape3D.new(); bx.size = Vector3(0.16, 0.10, 0.30)
 	col.shape = bx
+	col.name = "BoundsCollision"
 	add_child(col)
 
-func _build_tether() -> void:
-	_tether_mi = MeshInstance3D.new()
-	_tether_mi.name = "Tether"
-	# The tether parents at world root so it draws from reel to nozzle without
-	# inheriting the player's head transform.
-	var tm := CylinderMesh.new()
-	tm.top_radius = 0.022
-	tm.bottom_radius = 0.022
-	tm.height = 1.0
-	tm.radial_segments = 8
-	_tether_mi.mesh = tm
-	_tether_mat = StandardMaterial3D.new()
-	_tether_mat.albedo_color = Color(0.10, 0.10, 0.12)
-	_tether_mat.roughness = 0.6
-	_tether_mi.material_override = _tether_mat
-	_tether_mi.visible = false
+func _ensure_chain_root() -> void:
+	if _chain_root != null and is_instance_valid(_chain_root):
+		return
+	_chain_root = Node3D.new()
+	_chain_root.name = "HoseChain"
+	var scene := get_tree().current_scene
+	(scene if scene else get_tree().root).add_child(_chain_root)
 
 # =============================================================================
-# DEPLOY / RETURN (called by HoseReel)
+# DEPLOY / RETURN / DROP / PICKUP — owned by mode transitions
 # =============================================================================
-## Move into the player's hand. Called by the reel when E is pressed near it.
+## Move into the player's hand. Called by HoseReel.
 func attach_to_player(player: Node3D, owner_ref: Node) -> void:
 	_held_by = player
 	_owner_ref = owner_ref
+	_mode = Mode.HELD
+	_player_near_grounded = false
+	_player_node = null
+	# Seed the chain with the reel as anchor 0 — every subsequent anchor sits
+	# at hose_segment_m intervals from this point along the operator's path.
+	_anchors.clear()
+	if owner_ref is Node3D:
+		_anchors.append((owner_ref as Node3D).global_position + Vector3(0.0, 1.0, 0.0))
+	# Parent under head for the Inventory hotbar to work normally.
 	if get_parent():
 		get_parent().remove_child(self)
 	var head := player.get_node_or_null("Head") as Node3D
 	var parent_node : Node = head if head != null else player
 	parent_node.add_child(self)
-	# Mounted under the camera like ShovelTool / WireCutter; nozzle points along -Z.
 	transform = Transform3D(Basis(), Vector3(0.22, -0.20, -0.55))
 	collision_layer = 0
 	collision_mask  = 0
-	# Slot into the inventory hotbar so 1-4 swaps still work.
+	_set_bounds_disabled(true)
 	var inv := get_node_or_null("/root/Inventory")
 	if inv:
 		inv.call("take", self)
-	# Tether is drawn at world root (independent of the player transform).
-	if _tether_mi != null and _tether_mi.get_parent() == null:
-		var scene := get_tree().current_scene
-		(scene if scene else get_tree().root).add_child(_tether_mi)
+	_ensure_chain_root()
+	_remove_ground_pickup_area()
 
-func _exit_tree() -> void:
-	# Make sure the tether doesn't leak when we're freed.
-	if _tether_mi != null and is_instance_valid(_tether_mi):
-		_tether_mi.queue_free()
+## F — advance back. Pops the LAST anchor (closest to the tip) if any. If the
+## chain is empty (only the reel anchor remains) and the operator is within
+## reel_dock_radius of the reel, the tip is returned to the reel automatically.
+func advance_back() -> bool:
+	if _mode != Mode.HELD:
+		return false
+	if _anchors.size() > 1:
+		_anchors.pop_back()
+		return true
+	# Only the reel anchor remains — return tip if we're close enough to dock.
+	if _owner_ref != null and is_instance_valid(_owner_ref):
+		var reel_pos : Vector3 = (_owner_ref as Node3D).global_position
+		if _held_by != null and (_held_by.global_position - reel_pos).length() <= reel_dock_radius:
+			return_to_owner()
+			return true
+	return false
 
-## Returns the nozzle to its owning reel/cart — closes the tip valve, removes from
-## inventory, asks the owner to recover it (typically queue_free).
+## Q — drop the tip in place. The chain stays exactly where it was; the nozzle
+## becomes a free pickable object at its current world position.
+func drop_in_place() -> void:
+	if _mode != Mode.HELD or _held_by == null:
+		return
+	var inv := get_node_or_null("/root/Inventory")
+	if inv:
+		inv.call("remove", self)
+	# Capture the scene reference BEFORE detaching — get_tree() returns null once
+	# we're orphaned from our parent, which would lose the reparent target.
+	var tree := get_tree()
+	var scene : Node = null
+	if tree != null:
+		scene = tree.current_scene if tree.current_scene != null else tree.root
+	var world_pos := global_position
+	if get_parent():
+		get_parent().remove_child(self)
+	if scene != null:
+		scene.add_child(self)
+	global_position = Vector3(world_pos.x, maxf(world_pos.y - 0.4, 0.05), world_pos.z)
+	rotation = Vector3.ZERO
+	_set_bounds_disabled(false)
+	collision_layer = 1
+	collision_mask  = 1
+	visible = true
+	_tip_valve = TipValve.CLOSED
+	_update_lever_angle()
+	_held_by = null
+	_mode = Mode.GROUNDED
+	_build_ground_pickup_area()
+
+func _build_ground_pickup_area() -> void:
+	_remove_ground_pickup_area()
+	_ground_pickup_area = Area3D.new()
+	_ground_pickup_area.name = "GroundPickup"
+	_ground_pickup_area.collision_mask = 1
+	var cs := CollisionShape3D.new()
+	var sp := SphereShape3D.new(); sp.radius = pickup_radius
+	cs.shape = sp
+	_ground_pickup_area.add_child(cs)
+	add_child(_ground_pickup_area)
+	_ground_pickup_area.body_entered.connect(_on_ground_player_entered)
+	_ground_pickup_area.body_exited.connect(_on_ground_player_exited)
+
+func _remove_ground_pickup_area() -> void:
+	if _ground_pickup_area != null and is_instance_valid(_ground_pickup_area):
+		_ground_pickup_area.queue_free()
+	_ground_pickup_area = null
+	_player_near_grounded = false
+	_player_node = null
+
+func _on_ground_player_entered(body: Node3D) -> void:
+	if body.name != "Player":
+		return
+	_player_near_grounded = true
+	_player_node = body
+	var bus := get_node_or_null("/root/EventBus")
+	if bus and bus.has_signal("interaction_prompt_show"):
+		bus.emit_signal("interaction_prompt_show", self, "Pak slang op  (E)")
+
+func _on_ground_player_exited(body: Node3D) -> void:
+	if body.name != "Player":
+		return
+	_player_near_grounded = false
+	_player_node = null
+	var bus := get_node_or_null("/root/EventBus")
+	if bus and bus.has_signal("interaction_prompt_hide"):
+		bus.emit_signal("interaction_prompt_hide", self)
+
+func _pickup_from_ground(player: Node3D) -> void:
+	if _mode != Mode.GROUNDED:
+		return
+	_held_by = player
+	_mode = Mode.HELD
+	if get_parent():
+		get_parent().remove_child(self)
+	var head := player.get_node_or_null("Head") as Node3D
+	var parent_node : Node = head if head != null else player
+	parent_node.add_child(self)
+	transform = Transform3D(Basis(), Vector3(0.22, -0.20, -0.55))
+	collision_layer = 0
+	collision_mask  = 0
+	_set_bounds_disabled(true)
+	_remove_ground_pickup_area()
+	var inv := get_node_or_null("/root/Inventory")
+	if inv:
+		inv.call("take", self)
+	# Chain stays exactly as it was — the operator's pick up resumes from the
+	# same deployed configuration.
+
+## Force-return: closes valves, frees the nozzle, notifies the reel/cart owner.
 func return_to_owner() -> void:
 	var inv := get_node_or_null("/root/Inventory")
 	if inv:
 		inv.call("remove", self)
 	_tip_valve = TipValve.CLOSED
+	_anchors.clear()
+	_clear_chain_visual()
+	_remove_ground_pickup_area()
+	_held_by = null
+	_mode = Mode.ON_REEL
 	if _owner_ref != null and is_instance_valid(_owner_ref) and _owner_ref.has_method("on_nozzle_returned"):
 		_owner_ref.call("on_nozzle_returned", self)
-	_held_by = null
+
+func _exit_tree() -> void:
+	if _chain_root != null and is_instance_valid(_chain_root):
+		_chain_root.queue_free()
+	if _ground_pickup_area != null and is_instance_valid(_ground_pickup_area):
+		_ground_pickup_area.queue_free()
 
 # =============================================================================
 # INPUT
 # =============================================================================
 func _unhandled_input(event: InputEvent) -> void:
-	if _held_by == null:
+	if _mode == Mode.GROUNDED:
+		# Grounded: E to pick the tip back up; nothing else.
+		if event.is_action_pressed("interact") and _player_near_grounded and _player_node != null:
+			_pickup_from_ground(_player_node as Node3D)
+			get_viewport().set_input_as_handled()
+		return
+	if _mode != Mode.HELD:
 		return
 	var inv := get_node_or_null("/root/Inventory")
 	if inv and not bool(inv.call("is_active", self)):
 		return
-	# E returns the nozzle to its reel/cart (closes everything).
-	if event.is_action_pressed("interact"):
-		return_to_owner()
+	# F — advance back: unanchor last point, or return tip if no anchors + at reel.
+	if event.is_action_pressed("hose_advance_back"):
+		advance_back()
 		get_viewport().set_input_as_handled()
 		return
-	# LMB cycles the tip valve.
+	# Q — drop tip in place. Chain stays put; tip is pickable from the floor.
+	if event.is_action_pressed("hotbar_drop"):
+		drop_in_place()
+		get_viewport().set_input_as_handled()
+		return
+	# LMB — cycle tip valve.
 	if event.is_action_pressed("tool_use"):
 		_tip_valve = (_tip_valve + 1) % 3
 		_update_lever_angle()
 		get_viewport().set_input_as_handled()
 		return
+	# E — only when at the reel, dock-return the tip (otherwise the reel itself
+	# handles E to cycle base valve / pickup).
+	if event.is_action_pressed("interact"):
+		if _owner_ref != null and is_instance_valid(_owner_ref) and _held_by != null:
+			var reel_pos : Vector3 = (_owner_ref as Node3D).global_position
+			if (_held_by.global_position - reel_pos).length() <= reel_dock_radius:
+				return_to_owner()
+				get_viewport().set_input_as_handled()
+				return
 
 func _update_lever_angle() -> void:
-	# Rotate the lever to visually reflect valve state (in-place around its local Y).
 	var lever := get_node_or_null("Lever") as MeshInstance3D
 	if lever == null:
 		return
@@ -162,12 +328,17 @@ func _update_lever_angle() -> void:
 		TipValve.LITTLE: lever.rotation.y = deg_to_rad(40.0)
 		TipValve.LOT:    lever.rotation.y = deg_to_rad(85.0)
 
+func _set_bounds_disabled(disabled: bool) -> void:
+	var col := get_node_or_null("BoundsCollision") as CollisionShape3D
+	if col != null:
+		col.disabled = disabled
+
 # =============================================================================
-# SPRAY (per physics frame) — cone forward of the camera, scoops floor piles
+# PER-FRAME — chain auto-anchor + chain visual + spray
 # =============================================================================
-## Effective spray rate kg/s. Both valves must be open; throttled by min(base,tip).
+## Effective spray rate kg/s (gated by both valves; LITTLE = 35% throttle).
 func _spray_rate() -> float:
-	if _held_by == null or _tip_valve == TipValve.CLOSED:
+	if _mode != Mode.HELD or _tip_valve == TipValve.CLOSED:
 		return 0.0
 	if _owner_ref == null or not is_instance_valid(_owner_ref):
 		return 0.0
@@ -175,17 +346,25 @@ func _spray_rate() -> float:
 	if base == 0:
 		return 0.0
 	var lvl : int = min(base, _tip_valve)
-	# LITTLE = 35% of max throttle, LOT = full.
 	return max_kg_per_s * (0.35 if lvl == 1 else 1.0)
 
-func _process(delta: float) -> void:
-	_update_tether()
-	if _held_by == null:
+## The world position the nozzle should sit at this frame: roughly the operator's
+## hand (head + held_offset), clamped to within hose_segment_m of the last anchor
+## so the rope stays "taut" between operator and last bend. Returns the operator's
+## hand pos for spray aim if not held (defensive).
+func _last_world_pos_when_held() -> Vector3:
+	return global_position
+
+func _process(_delta: float) -> void:
+	if _mode == Mode.HELD:
+		_tick_anchors_and_clamp_tip()
+	_redraw_chain()
+	if _mode != Mode.HELD:
 		return
 	var rate := _spray_rate()
 	if rate <= 0.0001:
 		return
-	# Aim is the camera forward direction (same convention as the leaf blower).
+	# Aim from the camera forward (same convention as the leaf blower / scanner).
 	var cam := _held_by.get_node_or_null("Head/Camera3D") as Camera3D
 	var origin : Vector3
 	var fwd    : Vector3
@@ -196,7 +375,7 @@ func _process(delta: float) -> void:
 		origin = global_position
 		fwd = -global_transform.basis.z.normalized()
 	var cos_half := cos(deg_to_rad(cone_half_angle_deg))
-	var total_scooped := 0.0
+	var dt := _delta
 	for p in get_tree().get_nodes_in_group("floor_pile"):
 		if not (p is Node3D) or not is_instance_valid(p):
 			continue
@@ -206,33 +385,73 @@ func _process(delta: float) -> void:
 			continue
 		if to_p.normalized().dot(fwd) < cos_half:
 			continue
-		# Inside the cone — scoop, but divide rate across piles so multiple piles
-		# don't multiply the throughput per second.
-		total_scooped += float(p.call("scoop", rate * delta))
+		var _scooped : float = float(p.call("scoop", rate * dt))
 
-## Draws a thick line from the owning reel/cart up to the held nozzle so the
-## operator sees the hose pulling out. Hidden when not held.
-func _update_tether() -> void:
-	if _tether_mi == null:
+## Each held-frame: maybe drop a new auto-anchor (if walked past last by >
+## hose_segment_m AND below max anchor cap); then clamp the visible nozzle tip
+## to within hose_segment_m of the last anchor so the chain visually stays taut.
+func _tick_anchors_and_clamp_tip() -> void:
+	if _anchors.is_empty() or _held_by == null:
 		return
-	if _held_by == null or _owner_ref == null or not is_instance_valid(_owner_ref):
-		_tether_mi.visible = false
+	var max_anchors : int = max(1, int(floor(hose_length_m / max(hose_segment_m, 0.05))))
+	var last : Vector3 = _anchors.back()
+	# Hand world position (set by the head parent + the fixed held local offset).
+	var hand : Vector3 = global_position
+	var diff : Vector3 = hand - last
+	var diff_xz := Vector3(diff.x, 0.0, diff.z)
+	var ground_dist : float = diff_xz.length()
+	# Drop a fresh anchor once the operator has stepped past hose_segment_m from
+	# the last anchor — but only if we have room left on the hose.
+	if ground_dist > hose_segment_m and _anchors.size() < max_anchors:
+		var step_dir : Vector3 = diff_xz / ground_dist
+		# Place the new anchor exactly hose_segment_m along the path. The new anchor
+		# sits on the floor (y matches the last anchor's y so the chain doesn't drift
+		# off the ground every step).
+		var anchor_pos : Vector3 = last + step_dir * hose_segment_m
+		anchor_pos.y = last.y
+		_anchors.append(anchor_pos)
+
+func _clear_chain_visual() -> void:
+	if _chain_root == null or not is_instance_valid(_chain_root):
 		return
-	# Reel anchor: roughly the centre-of-mass of the reel body, ~1.1 m off the ground.
-	var a : Vector3 = (_owner_ref as Node3D).global_position + Vector3(0.0, 1.1, 0.0)
-	var b : Vector3 = global_position
-	var diff := b - a
-	var seg_len := diff.length()
-	if seg_len < 0.01:
-		_tether_mi.visible = false
+	for c in _chain_root.get_children():
+		c.queue_free()
+
+## Rebuild the chain visual: one cylinder between each pair of consecutive
+## anchors, plus one final cylinder from the last anchor up to the held nozzle
+## (or no final segment when the nozzle is grounded — the rope ends at the tip's
+## own world position, which IS the last point).
+func _redraw_chain() -> void:
+	_ensure_chain_root()
+	_clear_chain_visual()
+	var pts : Array = _anchors.duplicate()
+	# Add the nozzle world position as the last segment endpoint. Whether held
+	# (overridden each frame) or grounded (its actual world position), this is
+	# the natural end of the chain.
+	if _mode != Mode.ON_REEL and _held_by != null:
+		pts.append(global_position)
+	elif _mode == Mode.GROUNDED:
+		pts.append(global_position)
+	# A chain with < 2 points has no segment to draw.
+	if pts.size() < 2:
 		return
-	(_tether_mi.mesh as CylinderMesh).height = seg_len
-	# Build a basis whose +Y points along the hose direction (the cylinder mesh's
-	# default axis is +Y), with X & Z any orthogonal pair.
-	var up := diff / seg_len
-	var ref := Vector3.RIGHT if absf(up.dot(Vector3.RIGHT)) < 0.95 else Vector3.FORWARD
-	var x_axis := up.cross(ref).normalized()
-	var z_axis := x_axis.cross(up).normalized()
-	var mid := (a + b) * 0.5
-	_tether_mi.global_transform = Transform3D(Basis(x_axis, up, z_axis), mid)
-	_tether_mi.visible = true
+	for i in pts.size() - 1:
+		var a : Vector3 = pts[i]
+		var b : Vector3 = pts[i + 1]
+		var seg_len : float = (b - a).length()
+		if seg_len < 0.01:
+			continue
+		var mi := MeshInstance3D.new()
+		var cm := CylinderMesh.new()
+		cm.top_radius = hose_radius
+		cm.bottom_radius = hose_radius
+		cm.height = seg_len
+		cm.radial_segments = 8
+		mi.mesh = cm
+		mi.material_override = _chain_mat
+		_chain_root.add_child(mi)
+		var up : Vector3 = (b - a) / seg_len
+		var ref : Vector3 = Vector3.RIGHT if absf(up.dot(Vector3.RIGHT)) < 0.95 else Vector3.FORWARD
+		var x_axis : Vector3 = up.cross(ref).normalized()
+		var z_axis : Vector3 = x_axis.cross(up).normalized()
+		mi.global_transform = Transform3D(Basis(x_axis, up, z_axis), (a + b) * 0.5)
