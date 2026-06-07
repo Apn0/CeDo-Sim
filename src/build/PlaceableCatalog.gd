@@ -126,6 +126,12 @@ static func items() -> Array[Dictionary]:
 			{"id": "tool_scissors",  "name": "Wire scissors",      "category": "Tools",      "size": Vector3(0.30, 0.9, 0.30), "color": Color(0.80, 0.30, 0.25)},
 			{"id": "tool_scanner",   "name": "Barcode scanner",    "category": "Tools",      "size": Vector3(0.22, 0.3, 0.22), "color": Color(0.95, 0.78, 0.10)},
 			{"id": "tool_lpg_rack",  "name": "LPG cylinder rack",  "category": "Tools",      "size": Vector3(1.2, 1.4, 0.6),   "color": Color(0.85, 0.55, 0.20)},
+			{"id": "tool_leafblower","name": "Leaf blower",        "category": "Tools",      "size": Vector3(0.30, 0.40, 0.90),"color": Color(0.96, 0.42, 0.10)},
+			# Housekeeping helpers (used WITH the blower): a corner CollectionZone
+			# (frees film_scrap that drifts in) and a test PILE of loose scraps to
+			# practice blowing them around the floor.
+			{"id": "zone_collection","name": "Collection zone",    "category": "Tools",      "size": Vector3(5.0, 0.05, 5.0),  "color": Color(0.20, 0.60, 0.95)},
+			{"id": "film_scrap_pile","name": "Film scrap pile",    "category": "Tools",      "size": Vector3(2.0, 0.05, 2.0),  "color": Color(0.78, 0.82, 0.74)},
 		]
 		# ── Feedstock bales (data-driven from BaleDefs — single source of truth) ──
 		for b in BaleDefs.origins():
@@ -184,6 +190,12 @@ static func build_node(id: String, ghost: bool = false) -> Node3D:
 	# Bale stack — a 5x5 footprint stacked to the origin's allowance. #33
 	if id.ends_with("_stack5"):
 		return _build_bale_stack(id.trim_suffix("_stack5"), ghost)
+	# Collection zone for the leaf blower (just an Area3D; ghost is a flat translucent slab).
+	if id == "zone_collection":
+		return _build_collection_zone(Vector3(item["size"]), ghost)
+	# Test pile of loose film scraps (so the operator can practice blowing them around).
+	if id == "film_scrap_pile":
+		return _build_scrap_pile(Vector3(item["size"]), ghost)
 
 	var size: Vector3 = item["size"]
 	var color: Color  = item["color"]
@@ -1321,7 +1333,61 @@ static func _build_tool(id: String, size: Vector3, ghost: bool) -> Node3D:
 		"tool_scissors": return load("res://src/scenes/world/WireCutter.gd").new()
 		"tool_scanner":  return load("res://src/scenes/world/BarcodeScanner.gd").new()
 		"tool_lpg_rack": return load("res://src/scenes/world/LPGRack.gd").new()
+		"tool_leafblower": return load("res://src/operator/LeafBlower.gd").new()
 	return null
+
+## A placeable CollectionZone (Area3D): film scraps that enter are removed and the
+## zone's scrap_count goes up. The visible footprint is a flat translucent slab so
+## the operator can see where they're aiming the wind.
+static func _build_collection_zone(size: Vector3, ghost: bool) -> Node3D:
+	if ghost:
+		return _simple_ghost(size)
+	var zone : Area3D = load("res://src/sim/CollectionZone.gd").new()
+	zone.name = "CollectionZone"
+	var cs := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(size.x, maxf(size.y, 0.5), size.z)
+	cs.shape = box
+	cs.position = Vector3(0.0, box.size.y * 0.5, 0.0)
+	zone.add_child(cs)
+	# Visible floor pad — translucent blue so the boundary reads on the ground.
+	var pad := MeshInstance3D.new()
+	var pm := BoxMesh.new()
+	pm.size = Vector3(size.x, 0.04, size.z)
+	pad.mesh = pm
+	pad.position = Vector3(0.0, 0.02, 0.0)
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.20, 0.60, 0.95, 0.35)
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.roughness = 0.9
+	pad.material_override = mat
+	zone.add_child(pad)
+	return zone
+
+## A test "pile" of loose film scraps — drops ~30 FilmScrap rigid bodies in a
+## random spread on the floor so the operator can practice blowing them around.
+## The pile root has no collider itself; the scraps do.
+static func _build_scrap_pile(size: Vector3, ghost: bool) -> Node3D:
+	if ghost:
+		return _simple_ghost(size)
+	var root := Node3D.new()
+	root.name = "FilmScrapPile"
+	var scrap_scene := load("res://src/sim/FilmScrap.tscn") as PackedScene
+	if scrap_scene == null:
+		return root
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("scrap_pile") + Time.get_ticks_msec()
+	for i in 30:
+		var s := scrap_scene.instantiate() as Node3D
+		if s == null:
+			continue
+		var x := rng.randf_range(-size.x * 0.5, size.x * 0.5)
+		var z := rng.randf_range(-size.z * 0.5, size.z * 0.5)
+		var y := 0.05 + rng.randf_range(0.0, 0.20)
+		s.position = Vector3(x, y, z)
+		s.rotation.y = rng.randf_range(0.0, TAU)
+		root.add_child(s)
+	return root
 
 ## A translucent box used as a placement preview for items with no ghost model.
 static func _simple_ghost(size: Vector3) -> Node3D:
