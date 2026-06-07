@@ -660,6 +660,10 @@ func load_layout() -> void:
 			continue
 		var dict: Dictionary = entry
 
+		if not _is_valid_layout_entry(dict):
+			print("[BuildMode] Ignoring invalid layout entry: ", dict)
+			continue
+
 		# New 4-point surfaces (door / window / sign / panel).
 		if String(dict.get("kind", "")) == "surface":
 			var pts: Array = []
@@ -714,3 +718,50 @@ func _load_legacy_door(dict: Dictionary) -> void:
 		center + hx - hy,   # bottom-right
 	]
 	_make_surface(pts, "door", "Door")
+
+func _is_valid_layout_entry(dict: Dictionary) -> bool:
+	if dict.has("layout_version"):
+		if typeof(dict["layout_version"]) not in [TYPE_INT, TYPE_FLOAT]:
+			return false
+		# The layout version object shouldn't be mixed with normal object fields.
+		if dict.size() > 1:
+			return false
+		return true
+
+	if dict.has("kind"):
+		if typeof(dict["kind"]) != TYPE_STRING:
+			return false
+		if dict["kind"] == "surface":
+			if not dict.has("p") or typeof(dict["p"]) != TYPE_ARRAY:
+				return false
+			var p_arr: Array = dict["p"]
+			if p_arr.size() != 4:
+				return false
+			for pp in p_arr:
+				if typeof(pp) != TYPE_ARRAY or (pp as Array).size() < 3:
+					return false
+				if typeof(pp[0]) not in [TYPE_INT, TYPE_FLOAT]: return false
+				if typeof(pp[1]) not in [TYPE_INT, TYPE_FLOAT]: return false
+				if typeof(pp[2]) not in [TYPE_INT, TYPE_FLOAT]: return false
+			if dict.has("type") and typeof(dict["type"]) != TYPE_STRING:
+				return false
+			if dict.has("label") and typeof(dict["label"]) != TYPE_STRING:
+				return false
+			return true
+
+	if not dict.has("id") or typeof(dict["id"]) != TYPE_STRING:
+		return false
+	if dict.has("x") and typeof(dict["x"]) not in [TYPE_INT, TYPE_FLOAT]:
+		return false
+	if dict.has("y") and typeof(dict["y"]) not in [TYPE_INT, TYPE_FLOAT]:
+		return false
+	if dict.has("z") and typeof(dict["z"]) not in [TYPE_INT, TYPE_FLOAT]:
+		return false
+	if dict.has("rot_y") and typeof(dict["rot_y"]) not in [TYPE_INT, TYPE_FLOAT]:
+		return false
+	if dict.has("h") and typeof(dict["h"]) not in [TYPE_INT, TYPE_FLOAT]:
+		return false
+	if dict.has("code") and typeof(dict["code"]) != TYPE_STRING:
+		return false
+
+	return true
