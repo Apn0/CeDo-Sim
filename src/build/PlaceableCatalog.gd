@@ -134,6 +134,22 @@ static func items() -> Array[Dictionary]:
 			{"id": "tool_scanner",   "name": "Barcode scanner",    "category": "Tools",      "size": Vector3(0.22, 0.3, 0.22), "color": Color(0.95, 0.78, 0.10)},
 			{"id": "tool_lpg_rack",  "name": "LPG cylinder rack",  "category": "Tools",      "size": Vector3(1.2, 1.4, 0.6),   "color": Color(0.85, 0.55, 0.20)},
 			{"id": "tool_leafblower","name": "Leaf blower",        "category": "Tools",      "size": Vector3(0.30, 0.40, 0.90),"color": Color(0.96, 0.42, 0.10)},
+			# ── Hoses, reels, compressors (housekeeping + process air supply) ────
+			# Wall-mount reel holding a ~10 m thick YELLOW water hose; ball valve at the
+			# base and at the nozzle tip. Used for floor wash-down.
+			{"id": "reel_water_thick_yellow","name":"Water hose reel (yellow, 10 m thick)","category":"Hoses & Air","size":Vector3(0.95, 1.10, 0.60),"color":Color(0.96, 0.78, 0.16)},
+			# Wall-mount reel with a ~10 m thin BLACK water hose; same ball-valve setup.
+			{"id": "reel_water_black","name":"Water hose reel (black, 10 m thin)","category":"Hoses & Air","size":Vector3(0.85, 0.95, 0.55),"color":Color(0.10, 0.10, 0.11)},
+			# Wall-mount reel with a ~10 m RED fire hose (same gauge as the black water hose).
+			{"id": "reel_fire_red","name":"Fire hose reel (red, 10 m)","category":"Hoses & Air","size":Vector3(0.85, 0.95, 0.55),"color":Color(0.78, 0.16, 0.14)},
+			# Simple wall HOOK with a coil of ~20 m translucent-white air hose draped over it.
+			{"id": "hook_air_hose","name":"Air hose hook (20 m, translucent)","category":"Hoses & Air","size":Vector3(0.70, 1.00, 0.55),"color":Color(0.92, 0.92, 0.88)},
+			# Mobile HIGH-PRESSURE WASHER cart (~4 m thin hose + pistol w/ elongated barrel).
+			{"id": "washer_hp_mobile","name":"High-pressure washer (mobile)","category":"Hoses & Air","size":Vector3(0.60, 1.00, 0.90),"color":Color(0.86, 0.18, 0.16)},
+			# Reciprocating COMPRESSOR — vertical tank + motor on top, ~1.5 × 1.5 × 3 m, 5 bar.
+			{"id": "compressor_a","name":"Compressor A (vertical, ~3 m)","category":"Hoses & Air","size":Vector3(1.50, 3.00, 1.50),"color":Color(0.30, 0.46, 0.62)},
+			# Screw-type COMPRESSOR cabinet — taller, narrower, ~1 × 1 × 4 m, 5 bar.
+			{"id": "compressor_b","name":"Compressor B (cabinet, ~4 m)","category":"Hoses & Air","size":Vector3(1.00, 4.00, 1.00),"color":Color(0.45, 0.48, 0.52)},
 			# Housekeeping helpers (used WITH the blower): a corner CollectionZone
 			# (frees film_scrap that drifts in) and a test PILE of loose scraps to
 			# practice blowing them around the floor.
@@ -398,6 +414,14 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 		"kufferath_sieve":_m_kufferath(p, size, color, ghost)
 		"mengsilo":       _m_mengsilo(p, size, color, ghost)
 		"zss_water":      _m_zss(p, size, color, ghost)
+		# ── Hoses & Air (visual placeables, do NOT enter LineFlow / the HMI) ──
+		"reel_water_thick_yellow": _m_hose_reel(p, size, color, ghost, 0.045)
+		"reel_water_black":        _m_hose_reel(p, size, color, ghost, 0.025)
+		"reel_fire_red":           _m_hose_reel(p, size, color, ghost, 0.028)
+		"hook_air_hose":           _m_air_hose_hook(p, size, ghost)
+		"washer_hp_mobile":        _m_washer_hp_mobile(p, size, ghost)
+		"compressor_a":            _m_compressor_a(p, size, color, ghost)
+		"compressor_b":            _m_compressor_b(p, size, color, ghost)
 		"plasmaq":        _m_plasmaq(p, size, color, ghost)
 		"laser_filter":   _m_laser_filter(p, size, color, ghost)
 		"melt_pump":      _m_melt_pump(p, size, color, ghost)
@@ -2498,6 +2522,223 @@ static func _m_zss(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
 	# dosing pump + motor on the skid
 	_box(p, Vector3(size.x * 0.18, size.y * 0.22, size.z * 0.2), Vector3(size.x * 0.08, size.y * 0.24, -size.z * 0.32), steel)
 	_motor_unit(p, size.y * 0.1, size.x * 0.2, Vector3(size.x * 0.08, size.y * 0.5, -size.z * 0.32), "x", ghost)
+
+# ── Hoses & Air (visual placeables) ─────────────────────────────────────────
+## Wall-mount hose reel ("haspel"): bracket + axle + drum + a stack of torus rings
+## representing the coiled hose. `hose_r` is the hose tube radius (0.045 m for the
+## thick yellow water hose; 0.025 m for the thin black water hose; 0.028 m for the
+## red fire hose). A ball valve sits at the base (where the supply pipe joins the
+## reel) and another at the loose hose-tip dangling off the side — both ball valves
+## per the operator spec (open-a-little / open-a-lot).
+static func _m_hose_reel(p: Node3D, size: Vector3, color: Color, ghost: bool, hose_r: float) -> void:
+	var hose := _mat(color, ghost, 0.05, 0.7)
+	var dark := _mat(_DARK, ghost, 0.55, 0.55)
+	var steel := _mat(_STEEL, ghost, 0.6, 0.4)
+	var brass := _mat(Color(0.76, 0.62, 0.20), ghost, 0.85, 0.30)
+	var valve_red := _mat(Color(0.82, 0.18, 0.16), ghost, 0.2, 0.45)
+	# Wall mount + bracket (the back plate that bolts to the wall + 2 arms).
+	_box(p, Vector3(size.x * 0.85, size.y * 0.9, 0.05), Vector3(0.0, size.y * 0.5, -size.z * 0.45), dark)
+	for sx in [-1.0, 1.0]:
+		_box(p, Vector3(0.06, 0.06, size.z * 0.7),
+			Vector3(sx * size.x * 0.32, size.y * 0.5, -size.z * 0.10), steel)
+	# Horizontal axle through the drum (axis along X, perpendicular to the wall — drum spins on it).
+	var axle_y := size.y * 0.55
+	_cyl(p, 0.035, 0.035, size.x * 0.7, Vector3(0.0, axle_y, 0.0), steel, "x")
+	# Drum body (squat cylinder, axis along X).
+	var drum_r := size.y * 0.30
+	_cyl(p, drum_r, drum_r, size.x * 0.55, Vector3(0.0, axle_y, 0.0), dark, "x")
+	# Coiled hose: stack many torus rings, each at a different X position along the
+	# drum so they read as a thick coil. Rings sit JUST outside the drum diameter.
+	var ring_outer := drum_r + hose_r * 1.1
+	var ring_inner := drum_r + hose_r * 0.1
+	var ring_count := int(round(size.x * 0.55 / (hose_r * 2.0)))
+	ring_count = clampi(ring_count, 4, 14)
+	var step := (size.x * 0.55) / float(ring_count)
+	for i in ring_count:
+		var rx := -size.x * 0.275 + step * (float(i) + 0.5)
+		# Torus default axis is +Y; we want the loop's plane perpendicular to +X.
+		var mi := MeshInstance3D.new()
+		var tm := TorusMesh.new()
+		tm.inner_radius = ring_inner
+		tm.outer_radius = ring_outer
+		tm.rings = 6
+		tm.ring_segments = 22
+		mi.mesh = tm
+		mi.material_override = hose
+		mi.position = Vector3(rx, axle_y, 0.0)
+		mi.rotation.z = PI / 2.0
+		p.add_child(mi)
+	# Hand-crank on the +X side of the drum.
+	_cyl(p, 0.04, 0.04, 0.14, Vector3(size.x * 0.36, axle_y, 0.0), steel, "x")
+	_cyl(p, 0.025, 0.025, 0.10, Vector3(size.x * 0.43, axle_y - 0.10, 0.0), steel, "y")
+	# Supply pipe + ball valve at the base where mains meets the spindle.
+	_cyl(p, 0.04, 0.04, 0.30, Vector3(0.0, 0.30, -size.z * 0.35), steel, "y")
+	_cyl(p, 0.06, 0.06, 0.10, Vector3(0.0, 0.18, -size.z * 0.35), brass, "y")    # ball-valve body
+	_box(p, Vector3(0.18, 0.02, 0.02), Vector3(0.0, 0.18, -size.z * 0.35), valve_red)   # ball-valve handle
+	# Loose hose tip hanging off the +X side (with the operator's end-of-hose valve).
+	_cyl(p, hose_r, hose_r, 0.6, Vector3(size.x * 0.48, axle_y - 0.50, 0.0), hose, "y")
+	_cyl(p, 0.045, 0.045, 0.08, Vector3(size.x * 0.48, axle_y - 0.85, 0.0), brass, "y")  # tip valve body
+	_box(p, Vector3(0.14, 0.02, 0.02), Vector3(size.x * 0.48, axle_y - 0.85, 0.0), valve_red)  # tip valve handle
+	_cyl(p, hose_r * 0.7, 0.012, 0.10, Vector3(size.x * 0.48, axle_y - 0.95, 0.0), steel, "y")  # nozzle taper
+
+## Wall hook for air hoses: a plate + an L-shaped hook + a coil of translucent
+## white hose draped over it. No drum mechanism — the operator just slings the
+## coil over the hook. (Simpler than a reel per the operator spec.)
+static func _m_air_hose_hook(p: Node3D, size: Vector3, ghost: bool) -> void:
+	var steel := _mat(_STEEL, ghost, 0.6, 0.4)
+	var dark := _mat(_DARK, ghost, 0.55, 0.55)
+	# Air hose visual: opaque-but-not-fully translucent whitish.
+	var hose_mat := _mat(Color(0.92, 0.93, 0.90, 0.85), ghost, 0.05, 0.55)
+	hose_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	# Wall plate.
+	_box(p, Vector3(size.x * 0.6, size.y * 0.4, 0.04), Vector3(0.0, size.y * 0.65, -size.z * 0.45), dark)
+	# L-hook: horizontal stub out from the wall + a vertical lip at the tip.
+	_cyl(p, 0.04, 0.04, size.z * 0.7, Vector3(0.0, size.y * 0.65, -size.z * 0.10), steel, "z")
+	_cyl(p, 0.04, 0.04, 0.20, Vector3(0.0, size.y * 0.65 + 0.10, size.z * 0.22), steel, "y")
+	# Coil of air hose (~20 m): a stack of torus rings hanging from the hook,
+	# centred just below the hook horizontal where the coil would rest.
+	var hose_r := 0.022
+	var coil_outer := size.y * 0.30
+	var coil_inner := coil_outer - hose_r * 1.6
+	var rings := 12
+	var step := 0.022
+	for i in rings:
+		var ry : float = size.y * 0.30 - float(i) * step
+		var mi := MeshInstance3D.new()
+		var tm := TorusMesh.new()
+		tm.inner_radius = coil_inner
+		tm.outer_radius = coil_outer
+		tm.rings = 6
+		tm.ring_segments = 20
+		mi.mesh = tm
+		mi.material_override = hose_mat
+		mi.position = Vector3(0.0, ry, size.z * 0.05)
+		# Torus default axis is +Y; tilt so the coil "hangs" forward off the hook.
+		mi.rotation.x = PI / 2.0
+		p.add_child(mi)
+	# Coupler / quick-connect fitting at the tip of the coil.
+	_cyl(p, 0.03, 0.03, 0.08, Vector3(0.0, size.y * 0.05, size.z * 0.08), steel, "y")
+
+## Mobile high-pressure washer cart: 2-wheel base + motor + small pressure tank +
+## ~4 m thin coiled hose hanging on the side + pistol nozzle with elongated barrel.
+## Sits on castors so the player can roll it around (collision is the bounding box).
+static func _m_washer_hp_mobile(p: Node3D, size: Vector3, ghost: bool) -> void:
+	var red := _mat(Color(0.86, 0.18, 0.16), ghost, 0.2, 0.5)
+	var dark := _mat(_DARK, ghost, 0.55, 0.55)
+	var steel := _mat(_STEEL, ghost, 0.6, 0.4)
+	# Hose mat: very thin (HP washer hoses are 2-3× thinner than the black water hose).
+	var hose_mat := _mat(Color(0.10, 0.10, 0.11), ghost, 0.1, 0.5)
+	# Cart base
+	_box(p, Vector3(size.x * 0.95, 0.10, size.z * 0.95), Vector3(0.0, 0.06, 0.0), dark)
+	# 2 wheels at the back, 2 castors at the front
+	for sx in [-1.0, 1.0]:
+		_cyl(p, 0.10, 0.10, 0.06, Vector3(sx * size.x * 0.42, 0.10, -size.z * 0.38), dark, "x")
+		_cyl(p, 0.05, 0.05, 0.04, Vector3(sx * size.x * 0.32,  0.04, size.z * 0.40), dark, "y")
+	# Main red housing (motor + pump enclosure).
+	_box(p, Vector3(size.x * 0.85, size.y * 0.55, size.z * 0.80), Vector3(0.0, size.y * 0.38, 0.0), red)
+	# Vent grille on top.
+	_box(p, Vector3(size.x * 0.50, 0.02, size.z * 0.50), Vector3(0.0, size.y * 0.66, 0.0), dark)
+	# Handle bar at the back, ergonomic push.
+	_cyl(p, 0.035, 0.035, size.x * 0.72, Vector3(0.0, size.y * 0.95, -size.z * 0.38), steel, "x")
+	for sx in [-1.0, 1.0]:
+		_cyl(p, 0.035, 0.035, 0.35, Vector3(sx * size.x * 0.36, size.y * 0.78, -size.z * 0.38), steel, "y")
+	# Small pressure tank tucked under the housing on the +X side.
+	_cyl(p, 0.12, 0.12, size.z * 0.50, Vector3(size.x * 0.30, size.y * 0.20, 0.0), steel, "z")
+	# Coiled HP hose hanging on the -X side (5 small torus rings).
+	for i in 5:
+		var mi := MeshInstance3D.new()
+		var tm := TorusMesh.new()
+		tm.inner_radius = 0.10
+		tm.outer_radius = 0.10 + 0.013
+		tm.rings = 6
+		tm.ring_segments = 18
+		mi.mesh = tm
+		mi.material_override = hose_mat
+		mi.position = Vector3(-size.x * 0.50, size.y * 0.30 + float(i) * 0.022, 0.0)
+		mi.rotation.z = PI / 2.0
+		p.add_child(mi)
+	# Pistol with elongated barrel — leans against the +Z face of the housing.
+	var pistol := Node3D.new()
+	pistol.position = Vector3(size.x * 0.25, size.y * 0.10, size.z * 0.45)
+	pistol.rotation.x = deg_to_rad(-12.0)
+	p.add_child(pistol)
+	_box(pistol, Vector3(0.06, 0.05, 0.16), Vector3(0.0, 0.06, 0.0), dark)     # pistol body
+	_box(pistol, Vector3(0.04, 0.12, 0.05), Vector3(0.0, -0.02, 0.0), dark)    # pistol grip
+	_cyl(pistol, 0.018, 0.012, 0.55, Vector3(0.0, 0.06, 0.36), steel, "z")     # elongated barrel
+	_cyl(pistol, 0.013, 0.013, 0.04, Vector3(0.0, 0.06, 0.66), dark, "z")      # nozzle tip
+	# A few meters of hose connecting the housing to the pistol — visual only.
+	_cyl(p, 0.013, 0.013, size.z * 0.20, Vector3(size.x * 0.25, size.y * 0.18, size.z * 0.30), hose_mat, "y")
+
+## Vertical industrial compressor (Model A): big upright pressure tank, motor with
+## a belt guard on top, pressure gauge cluster, outlet pipe + ball valve. 5 bar rated.
+## ~1.5 m wide × 3 m tall.
+static func _m_compressor_a(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
+	var blue := _mat(color, ghost, 0.35, 0.45)
+	var dark := _mat(_DARK, ghost, 0.55, 0.55)
+	var steel := _mat(_STEEL, ghost, 0.6, 0.4)
+	var brass := _mat(Color(0.76, 0.62, 0.20), ghost, 0.85, 0.30)
+	var red := _mat(Color(0.82, 0.18, 0.16), ghost, 0.2, 0.45)
+	# Stand legs / frame
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			_box(p, Vector3(0.06, 0.20, 0.06), Vector3(sx * size.x * 0.36, 0.10, sz * size.z * 0.36), dark)
+	# Main vertical pressure tank (~2/3 of the height).
+	var tank_r := size.x * 0.32
+	var tank_h := size.y * 0.70
+	_cyl(p, tank_r, tank_r, tank_h, Vector3(0.0, 0.20 + tank_h * 0.5, 0.0), blue)
+	# Domed ends (rounded top + bottom cap discs).
+	_cyl(p, tank_r * 0.95, tank_r, 0.10, Vector3(0.0, 0.20 + tank_h, 0.0), blue)
+	_cyl(p, tank_r, tank_r * 0.95, 0.10, Vector3(0.0, 0.20, 0.0), blue)
+	# Motor + belt drive on top of the tank.
+	var top_y := 0.20 + tank_h + 0.05
+	_box(p, Vector3(size.x * 0.55, 0.40, size.z * 0.55), Vector3(0.0, top_y + 0.20, 0.0), blue)   # motor enclosure
+	# Belt guard (a slim box leaning to the +Z side).
+	_box(p, Vector3(0.12, 0.40, size.z * 0.30), Vector3(size.x * 0.30, top_y + 0.20, size.z * 0.16), dark)
+	# Twin pistons / heads (two small cylinders sticking up from the motor block).
+	for sx in [-1.0, 1.0]:
+		_cyl(p, 0.10, 0.10, 0.18, Vector3(sx * 0.18, top_y + 0.50, 0.0), steel)
+		_cyl(p, 0.08, 0.08, 0.06, Vector3(sx * 0.18, top_y + 0.62, 0.0), dark)
+	# Pressure gauge cluster on the front face.
+	var gauge_y := 0.20 + tank_h * 0.6
+	for sx in [-1.0, 1.0]:
+		_cyl(p, 0.06, 0.06, 0.02, Vector3(sx * 0.12, gauge_y, size.z * 0.36), steel, "z")
+		_cyl(p, 0.055, 0.055, 0.01, Vector3(sx * 0.12, gauge_y, size.z * 0.37), brass, "z")
+	# Outlet pipe + ball valve.
+	_cyl(p, 0.04, 0.04, 0.35, Vector3(size.x * 0.36, 0.40, 0.0), steel, "y")
+	_cyl(p, 0.06, 0.06, 0.08, Vector3(size.x * 0.36, 0.20, 0.0), brass, "y")    # ball-valve body
+	_box(p, Vector3(0.16, 0.02, 0.02), Vector3(size.x * 0.36, 0.20, 0.0), red)  # ball-valve handle
+	# Label panel
+	_box(p, Vector3(0.30, 0.16, 0.005), Vector3(0.0, gauge_y - 0.20, size.z * 0.36), dark)
+
+## Compressor Model B: a taller, narrower enclosed cabinet (screw-compressor style).
+## ~1 m wide × 4 m tall. Different look from A: solid cabinet panels with vent
+## grilles at the bottom + air intake mesh near the top, plain instead of
+## belt-driven pistons. 5 bar rated.
+static func _m_compressor_b(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
+	var shell := _mat(color, ghost, 0.3, 0.5)
+	var dark := _mat(_DARK, ghost, 0.55, 0.55)
+	var steel := _mat(_STEEL, ghost, 0.6, 0.4)
+	var brass := _mat(Color(0.76, 0.62, 0.20), ghost, 0.85, 0.30)
+	var red := _mat(Color(0.82, 0.18, 0.16), ghost, 0.2, 0.45)
+	# Base plinth
+	_box(p, Vector3(size.x * 0.95, 0.20, size.z * 0.95), Vector3(0.0, 0.10, 0.0), dark)
+	# Main upright cabinet (full width, almost full height).
+	_box(p, Vector3(size.x * 0.92, size.y * 0.82, size.z * 0.92), Vector3(0.0, 0.20 + size.y * 0.41, 0.0), shell)
+	# Lower vent grille on the front face (3 horizontal slats).
+	for i in 3:
+		_box(p, Vector3(size.x * 0.55, 0.04, 0.01),
+			Vector3(0.0, 0.45 + float(i) * 0.10, size.z * 0.46), dark)
+	# Air intake mesh near the top (1 broad slat).
+	_box(p, Vector3(size.x * 0.70, 0.20, 0.01), Vector3(0.0, size.y * 0.85, size.z * 0.46), dark)
+	# Outlet pipe + ball valve down the side.
+	_cyl(p, 0.035, 0.035, size.y * 0.40, Vector3(size.x * 0.36, size.y * 0.30, 0.0), steel, "y")
+	_cyl(p, 0.06, 0.06, 0.08, Vector3(size.x * 0.36, 0.30, 0.0), brass, "y")
+	_box(p, Vector3(0.14, 0.02, 0.02), Vector3(size.x * 0.36, 0.30, 0.0), red)
+	# Pressure gauge near eye level on the front.
+	_cyl(p, 0.08, 0.08, 0.02, Vector3(-size.x * 0.18, 1.55, size.z * 0.46), steel, "z")
+	_cyl(p, 0.075, 0.075, 0.01, Vector3(-size.x * 0.18, 1.55, size.z * 0.47), brass, "z")
+	# Top fan grille
+	_box(p, Vector3(size.x * 0.65, 0.04, size.z * 0.65), Vector3(0.0, 0.20 + size.y * 0.82 + 0.04, 0.0), dark)
 
 ## Prints the origin name + unique code + a barcode (derived from the code) onto
 ## a placed bale's yellow label. Called once the bale's unique code is known.
