@@ -142,6 +142,11 @@ const _NOMINAL_RPM := {
 	"transport_1": 45.0,
 	"transport_2": 45.0,
 	"outlet":      30.0,
+	# Dosing-silo augers — motor RPMs, before the gearbox. Operator usually thinks
+	# in Hz (10 Hz ≈ 300 RPM on a 4-pole motor; 50 Hz ≈ 1500 RPM = full speed).
+	"auger_1":     1500.0,
+	"auger_2":     1500.0,
+	"auger_3":     1500.0,
 	# Conveyors / belts / screws (motor side, before any gearbox).
 	"drive":       1450.0,
 	# Shredder / mill rotors run far slower than the drive motor (post-gearbox).

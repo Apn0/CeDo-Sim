@@ -393,7 +393,14 @@ func is_line_starting() -> bool:
 static func _default_components_for(id: String) -> Dictionary:
 	var out := {}
 	var lid := id.to_lower()
-	if lid.find("flotation") >= 0 or lid.find("sink") >= 0 or lid.find("rotation_tank") >= 0:
+	if lid.find("doseersilo") >= 0:
+		# A dosing silo has 3 parallel augers. Each contributes independently to
+		# throughput — one running = 1/3 max, all three at the same Hz = 3× one.
+		# Topology (see _component_topology) treats this as PARALLEL.
+		out["auger_1"] = 1.0
+		out["auger_2"] = 1.0
+		out["auger_3"] = 1.0
+	elif lid.find("flotation") >= 0 or lid.find("sink") >= 0 or lid.find("rotation_tank") >= 0:
 		out["inlet"]       = 1.0
 		out["transport_1"] = 1.0
 		out["transport_2"] = 1.0
@@ -405,6 +412,24 @@ static func _default_components_for(id: String) -> Dictionary:
 	else:
 		out["drive"] = 1.0
 	return out
+
+## Component topology — how the per-component RPMs combine into a single machine
+## throughput multiplier:
+##
+##   "parallel"  — components add (each is an independent feeder; doseersilo
+##                 augers, parallel pumps). Effective multiplier = AVG, which
+##                 represents each component's 1/N share of the design throughput.
+##   "series"    — components bottleneck (a tank's inlet/paddles/outlet have to
+##                 all flow for material to move through; the slowest one limits
+##                 throughput). Effective multiplier = MIN.
+##   "single"    — only one component; min == avg, behaviour identical.
+static func _component_topology(id: String) -> String:
+	var lid := id.to_lower()
+	if lid.find("doseersilo") >= 0:
+		return "parallel"
+	if lid.find("flotation") >= 0 or lid.find("sink") >= 0 or lid.find("rotation_tank") >= 0:
+		return "series"
+	return "single"
 
 ## Lookup a machine node dict by its placeable id; returns the FIRST match (machines
 ## are unique per build). Empty dict if missing.
@@ -476,12 +501,21 @@ func machine_list() -> Array:
 		})
 	return out
 
-## Average of a node's component_pct entries (1.0 if none) — used by the eff_rate
-## calc in the tick to scale design rate by the operator's per-component settings.
-func _component_pct_avg(nd: Dictionary) -> float:
+## Combine a node's component_pct entries into a single throughput multiplier per
+## that machine's topology (parallel → avg = each component's 1/N contribution;
+## series → min = slowest component bottlenecks the whole flow; single → trivial).
+## 1.0 if no components defined.
+func _component_pct_multiplier(nd: Dictionary) -> float:
 	var c : Dictionary = nd.get("components", {})
 	if c.is_empty():
 		return 1.0
+	var top := _component_topology(String(nd.get("id", "")))
+	if top == "series":
+		var lo := 999.0
+		for k in c:
+			lo = minf(lo, float(c[k]))
+		return lo
+	# parallel + single both behave as avg (single has one element, so they match).
 	var s := 0.0
 	for k in c:
 		s += float(c[k])
@@ -701,7 +735,7 @@ func tick(delta: float) -> void:
 		# so material backs up in this machine's input buffer (#145).
 		# Effective rate = design × spin × mech × HMI overrides (rpm slider AND the
 		# avg of the per-component RPMs — inlet/transports/outlet for tanks).
-		var rate_mul : float = float(nd.get("rpm_pct", 1.0)) * _component_pct_avg(nd)
+		var rate_mul : float = float(nd.get("rpm_pct", 1.0)) * _component_pct_multiplier(nd)
 		var eff_rate: float = float(nd["rate"]) * float(nd["spin"]) * _mech_fraction(nd) * rate_mul
 		if eff_rate <= 0.0001:
 			nd["thru"] = lerpf(float(nd["thru"]), 0.0, 0.2)
