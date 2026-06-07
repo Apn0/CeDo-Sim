@@ -1,0 +1,21 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://src/operator/LeafBlower.gd" id="1_rl8qt"]
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_oo40e"]
+height = 10.0
+radius = 2.0
+
+[node name="LeafBlower" type="Node3D"]
+script = ExtResource("1_rl8qt")
+max_force = 50.0
+max_range = 10.0
+spool_time_seconds = 1.0
+
+[node name="WindArea" type="Area3D" parent="."]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="WindArea"]
+transform = Transform3D(1, 0, 0, 0, -4.37114e-08, -1, 0, 1, -4.37114e-08, 0, 0, -5)
+shape = SubResource("CylinderShape3D_oo40e")
+
+[node name="RayCast3D" type="RayCast3D" parent="."]
