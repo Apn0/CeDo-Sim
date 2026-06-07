@@ -88,11 +88,11 @@ func _test_hold_when_no_autoadvance() -> void:
 
 # ── 5. Load guard — a save left at the end must not reload frozen ─────────────
 func _test_load_guard_against_frozen_end() -> void:
-	print("[5] _roll_to_next_shift from a maxed clock starts fresh")
+	print("[5] roll_to_next_shift from a maxed clock starts fresh")
 	var c := _make_clock()
 	c.day_index = 0
 	c.shift_elapsed_seconds = c.shift_total_seconds   # simulate a save at 15:00
-	c._roll_to_next_shift()
+	c.roll_to_next_shift()
 	_ok(c.day_index >= 1, "day advanced past the frozen one")
 	_ok(c.shift_elapsed_seconds < 60.0, "elapsed reset (got %.1f)" % c.shift_elapsed_seconds)
 	_ok(c.get_time_string().begins_with("07"), "back to the 07:00 window (got %s)" % c.get_time_string())

@@ -2,10 +2,13 @@ extends Node
 
 class_name GameState
 
-# Save data file path
-const SAVE_FILE_PATH: String = "user://cedo_simulator_save.json"
+# Base save data file path (can be overridden)
+var save_file_path: String = "user://cedo_simulator_save.json"
 
 # Game state data
+var is_new_save: bool = true
+var factory_center: Vector3 = Vector3.ZERO
+
 var shift_data: Dictionary = {}
 var player_data: Dictionary = {}
 var npc_data: Dictionary = {}
@@ -17,8 +20,20 @@ signal game_loaded
 
 func _ready() -> void:
 	print("GameState initialized")
-	# Load game if save exists
-	if FileAccess.file_exists(SAVE_FILE_PATH):
+	
+	# Check if MainMenu passed a specific save name
+	if EventBus.has_meta("pending_save_name"):
+		var pending_name = EventBus.get_meta("pending_save_name")
+		if pending_name != "":
+			save_file_path = "user://%s_save.json" % pending_name
+			
+	if EventBus.has_meta("pending_is_new_save"):
+		is_new_save = EventBus.get_meta("pending_is_new_save")
+		# Clear it so it doesn't persist across reloads
+		EventBus.remove_meta("pending_is_new_save")
+		
+	# Load game if save exists AND we aren't explicitly starting a new one
+	if not is_new_save and FileAccess.file_exists(save_file_path):
 		load_game()
 
 func save_game() -> void:
@@ -26,6 +41,8 @@ func save_game() -> void:
 	var save_data = {
 		"version": 1,
 		"timestamp": Time.get_ticks_msec(),
+		"is_new_save": is_new_save,
+		"factory_center": {"x": factory_center.x, "y": factory_center.y, "z": factory_center.z},
 		"shift": shift_data,
 		"player": player_data,
 		"npcs": npc_data,
@@ -33,18 +50,18 @@ func save_game() -> void:
 	}
 
 	var json = JSON.stringify(save_data)
-	var file = FileAccess.open(SAVE_FILE_PATH, FileAccess.WRITE)
+	var file = FileAccess.open(save_file_path, FileAccess.WRITE)
 
 	if file:
 		file.store_string(json)
-		print("Game saved to: ", SAVE_FILE_PATH)
+		print("Game saved to: ", save_file_path)
 		emit_signal("game_saved")
 	else:
-		push_error("Failed to save game to: ", SAVE_FILE_PATH)
+		push_error("Failed to save game to: ", save_file_path)
 
 func load_game() -> void:
 	"""Load complete game state from file."""
-	var file = FileAccess.open(SAVE_FILE_PATH, FileAccess.READ)
+	var file = FileAccess.open(save_file_path, FileAccess.READ)
 
 	if file:
 		var json_string = file.get_as_text()
@@ -53,16 +70,27 @@ func load_game() -> void:
 
 		if error == OK:
 			var data = json.data
-			shift_data = data.get("shift", {})
-			player_data = data.get("player", {})
-			npc_data = data.get("npcs", {})
-			machine_data = data.get("machines", {})
-			print("Game loaded from: ", SAVE_FILE_PATH)
+			
+			if typeof(data) != TYPE_DICTIONARY:
+				push_error("Save file root is not a JSON object")
+				return
+
+			is_new_save = data.get("is_new_save", false)
+			
+			var fc = data.get("factory_center", {})
+			if typeof(fc) == TYPE_DICTIONARY and fc.has("x"):
+				factory_center = Vector3(fc["x"], fc.get("y", 0), fc.get("z", 0))
+				
+			shift_data = data.get("shift", {}) if typeof(data.get("shift")) == TYPE_DICTIONARY else {}
+			player_data = data.get("player", {}) if typeof(data.get("player")) == TYPE_DICTIONARY else {}
+			npc_data = data.get("npcs", {}) if typeof(data.get("npcs")) == TYPE_DICTIONARY else {}
+			machine_data = data.get("machines", {}) if typeof(data.get("machines")) == TYPE_DICTIONARY else {}
+			print("Game loaded from: ", save_file_path)
 			emit_signal("game_loaded")
 		else:
 			push_error("Failed to parse save file")
 	else:
-		push_warning("No save file found at: ", SAVE_FILE_PATH)
+		push_warning("No save file found at: ", save_file_path)
 
 func save_shift_state(data: Dictionary) -> void:
 	"""Save shift-specific state."""
@@ -106,10 +134,12 @@ func load_machine_state(machine_id: String) -> Dictionary:
 
 func clear_save() -> void:
 	"""Delete save file."""
-	if ResourceLoader.exists(SAVE_FILE_PATH):
-		var error = DirAccess.remove_absolute(SAVE_FILE_PATH)
+	if ResourceLoader.exists(save_file_path):
+		var error = DirAccess.remove_absolute(save_file_path)
 		if error == OK:
 			print("Save file deleted")
+			is_new_save = true
+			factory_center = Vector3.ZERO
 			shift_data.clear()
 			player_data.clear()
 			npc_data.clear()

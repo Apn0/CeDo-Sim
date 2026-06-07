@@ -224,9 +224,6 @@ func _ready() -> void:
 	_sync_pending_from_current()
 	apply()
 
-	# Listen for focus-loss to honour mute_unfocused
-	get_tree().root.connect("size_changed", _on_window_size_changed)
-
 # =============================================================================
 # PUBLIC API (consumers query these helpers — read live state from _current)
 # =============================================================================
@@ -284,7 +281,6 @@ func reset_all() -> void:
 func _apply_to_engine() -> void:
 	_apply_graphics()
 	_apply_audio()
-	_apply_gameplay()
 	_apply_keybinds()
 
 func _apply_graphics() -> void:
@@ -376,11 +372,6 @@ func _apply_audio() -> void:
 	_set_bus_db("Voices",   _current_audio.get("voices_db", 0.0))
 	_set_bus_db("Ambient",  _current_audio.get("ambient_db", -6.0))
 	_set_bus_db("UI",       _current_audio.get("ui_db", -3.0))
-
-func _apply_gameplay() -> void:
-	# Mouse sensitivity + FOV are consumed by PlayerController via SettingsManager.gameplay()
-	# This function is mostly here so the apply pipeline is uniform.
-	pass
 
 func _apply_keybinds() -> void:
 	for action in _current_keybinds:
@@ -553,6 +544,3 @@ func _sync_pending_from_current() -> void:
 	_pending_audio    = _current_audio.duplicate(true)
 	_pending_gameplay = _current_gameplay.duplicate(true)
 	_pending_keybinds = _duplicate_keybinds(_current_keybinds)
-
-func _on_window_size_changed() -> void:
-	pass  # placeholder hook for future window-resize logic

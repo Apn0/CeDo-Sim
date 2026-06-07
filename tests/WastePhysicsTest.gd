@@ -61,7 +61,7 @@ func _test_chute_spill() -> void:
 	var spill_at := Vector3(500.0, 2.0, 500.0)   # nothing within 40 m to catch it
 	var before := get_tree().get_nodes_in_group("floor_pile").size()
 	var w = MaterialBatchScript.new(60.0, 0.04, {"dirt": 1.0}, "reject", 0.0, 60.0)
-	lf._dump_waste(spill_at, w, 2)   # DIRT
+	lf._dump_waste(spill_at, w, get_tree().get_nodes_in_group("waste_container"), 2)   # DIRT
 	var piles := get_tree().get_nodes_in_group("floor_pile")
 	_ok(piles.size() == before + 1, "a new floor pile spawned under the chute (%d → %d)" % [before, piles.size()])
 	# The new pile is the one near the spill point.
@@ -83,7 +83,7 @@ func _test_container_catches() -> void:
 	bin.global_position = Vector3(200.0, 0.0, 0.0)
 	var before := get_tree().get_nodes_in_group("floor_pile").size()
 	var w = MaterialBatchScript.new(60.0, 0.04, {"dirt": 1.0}, "reject", 0.0, 60.0)
-	lf._dump_waste(Vector3(200.0, 2.0, 0.0), w, 2)
+	lf._dump_waste(Vector3(200.0, 2.0, 0.0), w, get_tree().get_nodes_in_group("waste_container"), 2)
 	_ok(bin.mass_kg + bin.overflow_mass_kg > 0.0,
 		"the container caught the reject (%.1f kg)" % (bin.mass_kg + bin.overflow_mass_kg))
 	_ok(get_tree().get_nodes_in_group("floor_pile").size() == before,

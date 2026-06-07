@@ -79,6 +79,30 @@ func _ready() -> void:
 	_path_total = deck_length + _incline_hyp
 	_build_visual()
 	_build_collision()
+	_build_container_area()
+
+func _build_container_area() -> void:
+	var area := Area3D.new()
+	area.name = "ContainerArea"
+	area.collision_mask = 1
+	var cs := CollisionShape3D.new()
+	var sp := SphereShape3D.new()
+	sp.radius = 3.0
+	cs.shape = sp
+	area.add_child(cs)
+	area.position = Vector3(0.0, 0.0, deck_length + incline_run + 1.5)
+	area.body_entered.connect(_on_container_entered)
+	area.body_exited.connect(_on_container_exited)
+	add_child(area)
+
+func _on_container_entered(body: Node3D) -> void:
+	if body.is_in_group("waste_container") and body.has_method("add"):
+		if not _cached_containers.has(body):
+			_cached_containers.append(body)
+
+func _on_container_exited(body: Node3D) -> void:
+	if _cached_containers.has(body):
+		_cached_containers.erase(body)
 
 func _build_visual() -> void:
 	var steel := StandardMaterial3D.new()
@@ -163,6 +187,8 @@ func _build_collision() -> void:
 func is_running() -> bool:
 	return fill < fill_setpoint and _shredder_ok()
 
+var _cached_shredder: Node3D = null
+
 ## #26/#27 — is there a present, non-faulted shredder at the discharge to feed? Drives
 ## both the PLC stop (is_running) and the no-pulverize gate (the digest in _process).
 func _shredder_ok() -> bool:
@@ -171,16 +197,28 @@ func _shredder_ok() -> bool:
 	if not is_inside_tree():
 		return false
 	var disc := _discharge_pos()
+
+	if _cached_shredder != null and is_instance_valid(_cached_shredder) and _cached_shredder.is_inside_tree() and _cached_shredder.global_position.distance_to(disc) <= shredder_reach:
+		if _cached_shredder.has_method("is_faulted") and bool(_cached_shredder.call("is_faulted")):
+			return false
+		if _cached_shredder.has_method("is_running"):
+			return bool(_cached_shredder.call("is_running"))
+		return true
+
+	_cached_shredder = null
 	for s in get_tree().get_nodes_in_group("shredder"):
 		if not (s is Node3D):
 			continue
-		if (s as Node3D).global_position.distance_to(disc) > shredder_reach:
+		var n3d := s as Node3D
+		if n3d.global_position.distance_to(disc) > shredder_reach:
 			continue
+
+		_cached_shredder = n3d
 		# Found one in reach — respect its run/fault state if it exposes them.
-		if s.has_method("is_faulted") and bool(s.call("is_faulted")):
+		if n3d.has_method("is_faulted") and bool(n3d.call("is_faulted")):
 			return false
-		if s.has_method("is_running"):
-			return bool(s.call("is_running"))
+		if n3d.has_method("is_running"):
+			return bool(n3d.call("is_running"))
 		return true
 	return false   # no shredder present → PLC keeps the belt stopped
 
@@ -298,10 +336,12 @@ func _place_rider(r: Dictionary) -> void:
 func _discharge_pos() -> Vector3:
 	return to_global(Vector3(0.0, 0.0, deck_length + incline_run + 1.5))
 
+var _cached_containers: Array[Node] = []
+
 ## A waste container parked at the discharge (fills inside), or null → floor pile.
 func _container_at(pos: Vector3) -> Node:
-	for c in get_tree().get_nodes_in_group("waste_container"):
-		if c is Node3D and (c as Node).has_method("add"):
+	for c in _cached_containers:
+		if is_instance_valid(c):
 			if (c as Node3D).global_position.distance_to(pos) < 3.0:
 				return c
 	return null

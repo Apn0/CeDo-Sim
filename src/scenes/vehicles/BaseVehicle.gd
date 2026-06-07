@@ -198,7 +198,6 @@ func _ready() -> void:
 	_camera_rig.name = "CameraRig"
 	# Vehicles are bigger than the player capsule so push the follow camera
 	# further back and higher.
-	_camera_rig.third_person_offset = Vector3(0.0, 3.5, -8.0)
 	_camera_rig.orbit_default_dist  = 9.0
 	_camera_rig.orbit_min_dist      = 3.0
 	_camera_rig.orbit_max_dist      = 40.0

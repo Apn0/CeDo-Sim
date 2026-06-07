@@ -13,39 +13,49 @@ set GODOT=godot
 where %GODOT% >nul 2>&1 || set GODOT="%LOCALAPPDATA%\Godot\godot.exe"
 pushd "%~dp0\.."
 
-echo === [1/7] BaleComplianceTest (script mode) ===
+echo === [1/8] BaleComplianceTest (script mode) ===
 %GODOT% --headless --path . --script res://tests/BaleComplianceTest.gd
 set RC1=%ERRORLEVEL%
 
 echo.
-echo === [2/7] BaleSheetsTest (script mode) ===
+echo === [2/8] BaleSheetsTest (script mode) ===
 %GODOT% --headless --path . --script res://tests/BaleSheetsTest.gd
 set RC2=%ERRORLEVEL%
 
 echo.
-echo === [3/7] WireFixAndCameraTest (script mode) ===
+echo === [3/8] WireFixAndCameraTest (script mode) ===
 %GODOT% --headless --path . --script res://tests/WireFixAndCameraTest.gd
 set RC3=%ERRORLEVEL%
 
 echo.
-echo === [4/7] OperatorLifecycleTest (script mode) ===
+echo === [4/8] OperatorLifecycleTest (script mode) ===
 %GODOT% --headless --path . --script res://tests/OperatorLifecycleTest.gd
 set RC4=%ERRORLEVEL%
 
 echo.
-echo === [5/7] VehicleDriveTest (script mode) ===
+echo === [5/8] VehicleDriveTest (script mode) ===
 %GODOT% --headless --path . --script res://tests/VehicleDriveTest.gd
 set RC5=%ERRORLEVEL%
 
 echo.
-echo === [6/7] SettingsParseTest (script mode) ===
+echo === [6/8] SettingsParseTest (script mode) ===
 %GODOT% --headless --path . --script res://tests/SettingsParseTest.gd
 set RC6=%ERRORLEVEL%
 
 echo.
-echo === [7/7] VehicleBaleTest (scene mode — needs Godot 4.6) ===
-%GODOT% --headless --path . res://tests/VehicleBaleTest.tscn
+echo === [7/8] ScanLogTest (script mode) ===
+%GODOT% --headless --path . --script res://tests/ScanLogTest.gd
 set RC7=%ERRORLEVEL%
+
+echo.
+echo === [8/9] VehicleBaleTest (scene mode — needs Godot 4.6) ===
+%GODOT% --headless --path . res://tests/VehicleBaleTest.tscn
+set RC8=%ERRORLEVEL%
+
+echo.
+echo === [9/9] SecuritySaveTest (script mode) ===
+%GODOT% --headless --path . --script res://tests/SecuritySaveTest.gd
+set RC9=%ERRORLEVEL%
 
 popd
 echo.
@@ -55,11 +65,15 @@ echo WireFixAndCameraTest   exit: %RC3%
 echo OperatorLifecycleTest  exit: %RC4%
 echo VehicleDriveTest       exit: %RC5%
 echo SettingsParseTest      exit: %RC6%
-echo VehicleBaleTest        exit: %RC7%
+echo ScanLogTest            exit: %RC7%
+echo VehicleBaleTest        exit: %RC8%
+echo SecuritySaveTest       exit: %RC9%
 if not "%RC1%"=="0" exit /b %RC1%
 if not "%RC2%"=="0" exit /b %RC2%
 if not "%RC3%"=="0" exit /b %RC3%
 if not "%RC4%"=="0" exit /b %RC4%
 if not "%RC5%"=="0" exit /b %RC5%
 if not "%RC6%"=="0" exit /b %RC6%
-exit /b %RC7%
+if not "%RC7%"=="0" exit /b %RC7%
+if not "%RC8%"=="0" exit /b %RC8%
+exit /b %RC9%
