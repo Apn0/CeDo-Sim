@@ -46,6 +46,18 @@ signal bale_consumed(bale: Node3D)
 @export var require_shredder : bool = true
 @export var shredder_reach   : float = 6.0   # m from the discharge to find the shredder
 
+# ── Optional shape extensions (opzetband variants) ─────────────────────────────
+## A short HORIZONTAL discharge piece at the very top, after the incline (e.g. the
+## 0.5 m horizontal section at the top of opzetband 3A/3B). 0 = none (default).
+@export var top_flat_m : float = 0.0
+## Funnel side walls (opzetband 1): straight-and-wide for funnel_start_m along the
+## incline, then narrow linearly over funnel_narrow_m to funnel_min_width, then
+## straight-and-narrow to the top. funnel_min_width<=0 disables the funnel and falls
+## back to the regular straight side guards.
+@export var funnel_start_m   : float = 0.0
+@export var funnel_narrow_m  : float = 0.0
+@export var funnel_min_width : float = 0.0
+
 var fill : float = 0.0
 
 # Cumulative counters (HUD / tests). bales_accepted only counts scanned bales
@@ -76,7 +88,7 @@ func _ready() -> void:
 	add_to_group("shredder_feed_belt")
 	_incline_angle = deg_to_rad(incline_deg)
 	_incline_hyp   = incline_run / maxf(cos(_incline_angle), 0.01)
-	_path_total = deck_length + _incline_hyp
+	_path_total = deck_length + _incline_hyp + maxf(top_flat_m, 0.0)
 	_build_visual()
 	_build_collision()
 	_build_container_area()
@@ -111,28 +123,29 @@ func _build_visual() -> void:
 	belt_mat.albedo_color = Color(0.12, 0.12, 0.13); belt_mat.roughness = 0.9
 	var guard := StandardMaterial3D.new()
 	guard.albedo_color = Color(0.92, 0.78, 0.18); guard.roughness = 0.7   # safety yellow
-	# Horizontal deck belt surface
-	var deck := MeshInstance3D.new()
-	var dm := BoxMesh.new(); dm.size = Vector3(deck_width, 0.10, deck_length)
-	deck.mesh = dm; deck.material_override = belt_mat
-	deck.position = Vector3(0.0, deck_height, deck_length * 0.5)
-	add_child(deck)
-	# Side guards along the deck
-	for sx in [-1.0, 1.0]:
-		var g := MeshInstance3D.new()
-		var gm := BoxMesh.new(); gm.size = Vector3(0.08, 0.30, deck_length)
-		g.mesh = gm; g.material_override = guard
-		g.position = Vector3(sx * deck_width * 0.5, deck_height + 0.18, deck_length * 0.5)
-		add_child(g)
-	# Support legs under the deck
-	for sz in [0.2, 0.8]:
+	# Horizontal deck belt surface — skipped when there is no flat section (Westa, opzetband 1).
+	if deck_length > 0.01:
+		var deck := MeshInstance3D.new()
+		var dm := BoxMesh.new(); dm.size = Vector3(deck_width, 0.10, deck_length)
+		deck.mesh = dm; deck.material_override = belt_mat
+		deck.position = Vector3(0.0, deck_height, deck_length * 0.5)
+		add_child(deck)
+		# Side guards along the deck
 		for sx in [-1.0, 1.0]:
-			var leg := MeshInstance3D.new()
-			var lm := BoxMesh.new(); lm.size = Vector3(0.10, deck_height, 0.10)
-			leg.mesh = lm; leg.material_override = steel
-			leg.position = Vector3(sx * deck_width * 0.45, deck_height * 0.5, deck_length * sz)
-			add_child(leg)
-	# Inclined belt (45°): a long box rotated about X, mounted at the deck end.
+			var g := MeshInstance3D.new()
+			var gm := BoxMesh.new(); gm.size = Vector3(0.08, 0.30, deck_length)
+			g.mesh = gm; g.material_override = guard
+			g.position = Vector3(sx * deck_width * 0.5, deck_height + 0.18, deck_length * 0.5)
+			add_child(g)
+		# Support legs under the deck
+		for sz in [0.2, 0.8]:
+			for sx in [-1.0, 1.0]:
+				var leg := MeshInstance3D.new()
+				var lm := BoxMesh.new(); lm.size = Vector3(0.10, deck_height, 0.10)
+				leg.mesh = lm; leg.material_override = steel
+				leg.position = Vector3(sx * deck_width * 0.45, deck_height * 0.5, deck_length * sz)
+				add_child(leg)
+	# Inclined belt section — a long box rotated about X, mounted at the deck end.
 	var inc := MeshInstance3D.new()
 	var hyp := _incline_hyp
 	var im := BoxMesh.new(); im.size = Vector3(deck_width * 0.8, 0.10, hyp)
@@ -144,19 +157,93 @@ func _build_visual() -> void:
 	add_child(inc_pivot)
 	inc.position = Vector3(0.0, 0.0, hyp * 0.5)
 	inc_pivot.add_child(inc)
-	# Incline side guards
+	# Support legs under the incline (every ~2 m along the slope) so the belt looks
+	# self-supported regardless of how high it ends up.
+	var leg_count : int = max(2, int(round(hyp / 2.0)))
+	for li in leg_count:
+		var s : float = float(li) / float(leg_count - 1) if leg_count > 1 else 0.0
+		var top_h : float = deck_height + s * hyp * sin(_incline_angle)
+		for sx in [-1.0, 1.0]:
+			var leg2 := MeshInstance3D.new()
+			var lm2 := BoxMesh.new(); lm2.size = Vector3(0.10, top_h, 0.10)
+			leg2.mesh = lm2; leg2.material_override = steel
+			leg2.position = Vector3(sx * deck_width * 0.45, top_h * 0.5,
+				deck_length + s * hyp * cos(_incline_angle))
+			add_child(leg2)
+	# Side guards along the incline. If funnel walls are configured we draw a tapering
+	# wall (parallel → narrowing → parallel-narrow) instead of straight guards.
+	if funnel_min_width > 0.0 and funnel_narrow_m > 0.0:
+		_build_funnel_walls(inc_pivot, guard, hyp)
+	else:
+		for sx in [-1.0, 1.0]:
+			var g2 := MeshInstance3D.new()
+			var gm2 := BoxMesh.new(); gm2.size = Vector3(0.08, 0.30, hyp)
+			g2.mesh = gm2; g2.material_override = guard
+			g2.position = Vector3(sx * deck_width * 0.4, 0.2, hyp * 0.5)
+			inc_pivot.add_child(g2)
+	# Top end: either a horizontal discharge tray (opzetband 3A/3B's 0.5 m flat top)
+	# OR the legacy drop snout. Only one — the flat tray is the realistic version.
+	if top_flat_m > 0.01:
+		var tray := MeshInstance3D.new()
+		var tm := BoxMesh.new(); tm.size = Vector3(deck_width * 0.8, 0.10, top_flat_m)
+		tray.mesh = tm; tray.material_override = belt_mat
+		var top_y : float = deck_height + hyp * sin(_incline_angle)
+		var top_z : float = deck_length + hyp * cos(_incline_angle)
+		tray.position = Vector3(0.0, top_y, top_z + top_flat_m * 0.5)
+		add_child(tray)
+		for sx in [-1.0, 1.0]:
+			var gt := MeshInstance3D.new()
+			var gtm := BoxMesh.new(); gtm.size = Vector3(0.08, 0.30, top_flat_m)
+			gt.mesh = gtm; gt.material_override = guard
+			gt.position = Vector3(sx * deck_width * 0.4, top_y + 0.18, top_z + top_flat_m * 0.5)
+			add_child(gt)
+	else:
+		# Drop snout at the top of the incline (where it dumps into the shredder).
+		var snout := MeshInstance3D.new()
+		var sm := BoxMesh.new(); sm.size = Vector3(deck_width * 0.7, 0.4, 0.8)
+		snout.mesh = sm; snout.material_override = steel
+		snout.position = Vector3(0.0, 0.0, hyp + 0.2)
+		inc_pivot.add_child(snout)
+
+## Funnel side walls along the incline (opzetband 1): parallel-and-wide for
+## funnel_start_m, then narrowing linearly over funnel_narrow_m to funnel_min_width,
+## then parallel-and-narrow to the top. Each section is a single box wall on each
+## side; the narrowing piece is tilted in-plane so it joins the two parallel runs.
+func _build_funnel_walls(inc_pivot: Node3D, guard_mat: StandardMaterial3D, hyp: float) -> void:
+	var w_full   : float = deck_width * 0.8           # wall x-offset at the wide end
+	var w_narrow : float = funnel_min_width * 0.5     # wall x-offset at the narrow end
+	var start_m  : float = clampf(funnel_start_m, 0.0, hyp)
+	var taper_m  : float = clampf(funnel_narrow_m, 0.0, hyp - start_m)
+	var tail_m   : float = maxf(hyp - start_m - taper_m, 0.0)
 	for sx in [-1.0, 1.0]:
-		var g2 := MeshInstance3D.new()
-		var gm2 := BoxMesh.new(); gm2.size = Vector3(0.08, 0.30, hyp)
-		g2.mesh = gm2; g2.material_override = guard
-		g2.position = Vector3(sx * deck_width * 0.4, 0.2, hyp * 0.5)
-		inc_pivot.add_child(g2)
-	# Drop snout at the top of the incline (where it dumps into the shredder).
-	var snout := MeshInstance3D.new()
-	var sm := BoxMesh.new(); sm.size = Vector3(deck_width * 0.7, 0.4, 0.8)
-	snout.mesh = sm; snout.material_override = steel
-	snout.position = Vector3(0.0, 0.0, hyp + 0.2)
-	inc_pivot.add_child(snout)
+		# Parallel-wide segment.
+		if start_m > 0.01:
+			var w1 := MeshInstance3D.new()
+			var wm1 := BoxMesh.new(); wm1.size = Vector3(0.08, 0.30, start_m)
+			w1.mesh = wm1; w1.material_override = guard_mat
+			w1.position = Vector3(sx * w_full * 0.5, 0.2, start_m * 0.5)
+			inc_pivot.add_child(w1)
+		# Narrowing segment — a wall tilted in-plane so its inner edge tracks the funnel.
+		if taper_m > 0.01:
+			var taper_z_mid : float = start_m + taper_m * 0.5
+			var x_mid : float = sx * (w_full * 0.5 + w_narrow) * 0.5
+			# Length of the slanted wall = sqrt(taper_m^2 + (w_full/2 - w_narrow)^2)
+			var dx : float = (w_full * 0.5 - w_narrow)
+			var seg_len : float = sqrt(taper_m * taper_m + dx * dx)
+			var yaw : float = atan2(sx * dx, taper_m)
+			var w2 := MeshInstance3D.new()
+			var wm2 := BoxMesh.new(); wm2.size = Vector3(0.08, 0.30, seg_len)
+			w2.mesh = wm2; w2.material_override = guard_mat
+			w2.position = Vector3(x_mid, 0.2, taper_z_mid)
+			w2.rotation.y = yaw
+			inc_pivot.add_child(w2)
+		# Parallel-narrow segment.
+		if tail_m > 0.01:
+			var w3 := MeshInstance3D.new()
+			var wm3 := BoxMesh.new(); wm3.size = Vector3(0.08, 0.30, tail_m)
+			w3.mesh = wm3; w3.material_override = guard_mat
+			w3.position = Vector3(sx * w_narrow, 0.2, start_m + taper_m + tail_m * 0.5)
+			inc_pivot.add_child(w3)
 
 ## Solid collision so the player + vehicles stand/walk ON the belt instead of
 ## falling THROUGH it — both the flat deck and the inclined section. (The belt was
@@ -165,12 +252,13 @@ func _build_collision() -> void:
 	var body := StaticBody3D.new()
 	body.name = "BeltBody"
 	add_child(body)
-	# Flat deck slab.
-	var dc := CollisionShape3D.new()
-	var dbs := BoxShape3D.new(); dbs.size = Vector3(deck_width, 0.22, deck_length)
-	dc.shape = dbs
-	dc.position = Vector3(0.0, deck_height, deck_length * 0.5)
-	body.add_child(dc)
+	# Flat deck slab (skip if no flat section).
+	if deck_length > 0.01:
+		var dc := CollisionShape3D.new()
+		var dbs := BoxShape3D.new(); dbs.size = Vector3(deck_width, 0.22, deck_length)
+		dc.shape = dbs
+		dc.position = Vector3(0.0, deck_height, deck_length * 0.5)
+		body.add_child(dc)
 	# Inclined slab — rotated + offset to lie along the visual incline.
 	var ic := CollisionShape3D.new()
 	var ibs := BoxShape3D.new(); ibs.size = Vector3(deck_width * 0.8, 0.22, _incline_hyp)
@@ -178,6 +266,15 @@ func _build_collision() -> void:
 	var t := Transform3D(Basis(Vector3.RIGHT, -_incline_angle), Vector3(0.0, deck_height, deck_length))
 	ic.transform = t.translated_local(Vector3(0.0, 0.0, _incline_hyp * 0.5))
 	body.add_child(ic)
+	# Top flat discharge tray (opzetband 3A/3B), if configured.
+	if top_flat_m > 0.01:
+		var tc := CollisionShape3D.new()
+		var tbs := BoxShape3D.new(); tbs.size = Vector3(deck_width * 0.8, 0.22, top_flat_m)
+		tc.shape = tbs
+		var top_y : float = deck_height + _incline_hyp * sin(_incline_angle)
+		var top_z : float = deck_length + _incline_hyp * cos(_incline_angle)
+		tc.position = Vector3(0.0, top_y, top_z + top_flat_m * 0.5)
+		body.add_child(tc)
 
 # =============================================================================
 # PUBLIC API
@@ -321,12 +418,18 @@ func _place_rider(r: Dictionary) -> void:
 	if dist <= deck_length:
 		# Horizontal deck run.
 		pos = Vector3(r["lane_x"], deck_height + 0.15, dist)
-	else:
+	elif dist <= deck_length + _incline_hyp:
 		# Up the incline at incline_deg.
 		var slope_d : float = dist - deck_length
 		pos = Vector3(r["lane_x"],
 			deck_height + 0.15 + slope_d * sin(_incline_angle),
 			deck_length + slope_d * cos(_incline_angle))
+	else:
+		# Horizontal discharge tray at the top (opzetband 3A/3B's 0.5 m flat).
+		var flat_d : float = dist - deck_length - _incline_hyp
+		pos = Vector3(r["lane_x"],
+			deck_height + 0.15 + _incline_hyp * sin(_incline_angle),
+			deck_length + _incline_hyp * cos(_incline_angle) + flat_d)
 	node.position = pos
 
 # =============================================================================

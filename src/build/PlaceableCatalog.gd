@@ -48,6 +48,13 @@ static func items() -> Array[Dictionary]:
 			{"id": "centrifuge",     "name": "Centrifuge",         "category": "Washing",    "size": Vector3(2.0, 2.4, 2.0),  "color": Color(0.45, 0.50, 0.58)},
 			# ── Conveyance ───────────────────────────────────────────────────
 			{"id": "transport_belt", "name": "Transport belt",     "category": "Conveyance", "size": Vector3(1.0, 0.9, 4.0),  "color": Color(0.34, 0.34, 0.38)},
+			# ── Opzetbanden (intake/feed belts to a shredder) ────────────────────
+			# Geometry is built procedurally by _build_opzetband from the id. The size
+			# here is the rough bounding box (W × H × L) for the build-mode footprint.
+			{"id": "opzetband_3a3b", "name": "Opzetband 3A/3B (4m flat + 6m@40° + 0.5m top)", "category": "Conveyance", "size": Vector3(2.5, 4.5, 10.5), "color": Color(0.20, 0.40, 0.80)},
+			{"id": "opzetband_3c6",  "name": "Opzetband 3C/6 (4m flat + 8m@35°)",            "category": "Conveyance", "size": Vector3(2.5, 5.4, 10.6), "color": Color(0.20, 0.40, 0.80)},
+			{"id": "westa_band_1",   "name": "Westa band 1 (8m@35°, no flat)",              "category": "Conveyance", "size": Vector3(2.0, 5.4, 7.0),  "color": Color(0.20, 0.40, 0.80)},
+			{"id": "opzetband_1",    "name": "Opzetband 1 (5m@25°, 3m wide, funnel walls)", "category": "Conveyance", "size": Vector3(3.0, 2.8, 5.0),  "color": Color(0.20, 0.40, 0.80)},
 			# Inclined belt — climbs 8 m vertically over 8 m horizontal (45°).
 			# Goes from Shredder 2's output up to the feed hopper at the top.
 			{"id": "inclined_belt_8m","name":"Inclined belt (45°, 8 m rise)","category":"Conveyance","size": Vector3(1.0, 8.5, 8.5),  "color": Color(0.34, 0.34, 0.38)},
@@ -196,6 +203,9 @@ static func build_node(id: String, ghost: bool = false) -> Node3D:
 	# Test pile of loose film scraps (so the operator can practice blowing them around).
 	if id == "film_scrap_pile":
 		return _build_scrap_pile(Vector3(item["size"]), ghost)
+	# Opzetbanden — feed-belt variants per operator spec (4 specific geometries).
+	if id == "opzetband_3a3b" or id == "opzetband_3c6" or id == "westa_band_1" or id == "opzetband_1":
+		return _build_opzetband(id, Vector3(item["size"]), ghost)
 
 	var size: Vector3 = item["size"]
 	var color: Color  = item["color"]
@@ -1335,6 +1345,50 @@ static func _build_tool(id: String, size: Vector3, ghost: bool) -> Node3D:
 		"tool_lpg_rack": return load("res://src/scenes/world/LPGRack.gd").new()
 		"tool_leafblower": return load("res://src/operator/LeafBlower.gd").new()
 	return null
+
+## Build one of the four operator-spec opzetband variants. Each is a ShredderFeedBelt
+## with the deck_length / incline_run / incline_deg / deck_width / top_flat_m / funnel
+## params set per the geometry the operator gave. Lengths the user gave are slope
+## lengths; we convert to horizontal run (incline_run = slope * cos(angle)).
+## Ghost preview falls back to a translucent box.
+##
+##   • opzetband_3a3b — 4 m flat + 6 m at 40° + 0.5 m horizontal top
+##   • opzetband_3c6  — 4 m flat + 8 m at 35°
+##   • westa_band_1   — 8 m at 35°, no flat
+##   • opzetband_1    — 5 m at 25°, 3 m wide, funnel walls
+##                     (0–0.75 m straight wide, 0.75–3.0 m narrowing to 1.5 m wide,
+##                      3.0–5.0 m straight narrow)
+static func _build_opzetband(id: String, size: Vector3, ghost: bool) -> Node3D:
+	if ghost:
+		return _simple_ghost(size)
+	var belt = load("res://src/scenes/world/ShredderFeedBelt.gd").new()
+	belt.require_shredder = false   # build-menu placements run standalone unless wired up
+	match id:
+		"opzetband_3a3b":
+			belt.deck_length = 4.0
+			belt.incline_deg = 40.0
+			belt.incline_run = 6.0 * cos(deg_to_rad(40.0))
+			belt.top_flat_m  = 0.5
+			belt.deck_width  = 2.0
+		"opzetband_3c6":
+			belt.deck_length = 4.0
+			belt.incline_deg = 35.0
+			belt.incline_run = 8.0 * cos(deg_to_rad(35.0))
+			belt.deck_width  = 2.5
+		"westa_band_1":
+			belt.deck_length = 0.0
+			belt.incline_deg = 35.0
+			belt.incline_run = 8.0 * cos(deg_to_rad(35.0))
+			belt.deck_width  = 2.0
+		"opzetband_1":
+			belt.deck_length = 0.0
+			belt.incline_deg = 25.0
+			belt.incline_run = 5.0 * cos(deg_to_rad(25.0))
+			belt.deck_width  = 3.0
+			belt.funnel_start_m   = 0.75   # parallel-and-wide for 0.75 m along the slope
+			belt.funnel_narrow_m  = 2.25   # then narrows linearly for 2.25 m
+			belt.funnel_min_width = 1.5    # to a 1.5 m passage, then straight to the top
+	return belt
 
 ## A placeable CollectionZone (Area3D): film scraps that enter are removed and the
 ## zone's scrap_count goes up. The visible footprint is a flat translucent slab so
