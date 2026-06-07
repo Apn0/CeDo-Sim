@@ -75,7 +75,7 @@ func _physics_process(delta: float) -> void:
 		shift_elapsed_seconds = shift_total_seconds
 		emit_signal("shift_ended")
 		if auto_advance:
-			_roll_to_next_shift()      # → next working day, fresh 07:00 window
+			roll_to_next_shift()       # → next working day, fresh 07:00 window
 		else:
 			shift_active = false       # hold at 15:00 (for a summary screen, etc.)
 
@@ -84,7 +84,7 @@ func _physics_process(delta: float) -> void:
 ## End of shift → advance the 2-2-2-4 calendar to the player ploeg's next
 ## WORKING day (skipping the 4-day rest block) and begin a fresh 07:00 window.
 ## Keeps the clock progressing day after day instead of freezing at 15:00.
-func _roll_to_next_shift() -> void:
+func roll_to_next_shift() -> void:
 	advance_day(1)
 	var guard := 0
 	while is_resting_today() and guard < 14:
