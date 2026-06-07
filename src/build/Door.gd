@@ -51,7 +51,7 @@ func _build_hinge_pivot() -> void:
 			width = maxf(width, ((ch as MeshInstance3D).mesh as BoxMesh).size.x)
 	# Hinge at the chosen edge — sign matches `hinge_side_idx`.
 	var hinge_sign : float = -1.0 if hinge_side_idx == 0 else 1.0
-	_pivot = Node3D.new()
+	_pivot = AnimatableBody3D.new()
 	_pivot.name = "HingePivot"
 	_pivot.position = Vector3(hinge_sign * width * 0.5, 0.0, 0.0)
 	add_child(_pivot)
@@ -81,7 +81,7 @@ func _build_trigger() -> void:
 	var box := BoxShape3D.new()
 	box.size = Vector3(2.6, 2.6, 3.0)   # cover both sides of the doorway
 	cs.shape = box
-	cs.position = Vector3(0.0, 1.2, 0.0)
+	cs.position = Vector3.ZERO
 	area.add_child(cs)
 	add_child(area)
 	area.body_entered.connect(_on_body_entered)
