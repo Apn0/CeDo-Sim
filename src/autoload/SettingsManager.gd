@@ -224,9 +224,6 @@ func _ready() -> void:
 	_sync_pending_from_current()
 	apply()
 
-	# Listen for focus-loss to honour mute_unfocused
-	get_tree().root.connect("size_changed", _on_window_size_changed)
-
 # =============================================================================
 # PUBLIC API (consumers query these helpers — read live state from _current)
 # =============================================================================
@@ -553,6 +550,3 @@ func _sync_pending_from_current() -> void:
 	_pending_audio    = _current_audio.duplicate(true)
 	_pending_gameplay = _current_gameplay.duplicate(true)
 	_pending_keybinds = _duplicate_keybinds(_current_keybinds)
-
-func _on_window_size_changed() -> void:
-	pass  # placeholder hook for future window-resize logic
