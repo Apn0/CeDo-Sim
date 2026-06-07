@@ -21,7 +21,7 @@ class_name HmiOverlay
 ## Owned globally — Hmi.gd lazy-loads one instance and reuses it. open_for(label)
 ## sets the station title and shows it; close returns the cursor to captured.
 
-enum Screen { HOOFDMENU, OVERZICHT, STORINGEN, HANDBEDIENING }
+enum Screen { HOOFDMENU, OVERZICHT, STORINGEN, HANDBEDIENING, MACHINES }
 
 # --- Plant colour scheme (Siemens-ish steel + signal lamps) -------------------
 const C_DIM        := Color(0.0, 0.0, 0.0, 0.62)
@@ -113,6 +113,24 @@ var _auto_btn     : Button = null
 var _fault_box    : VBoxContainer = null
 var _manual_rows  : Array = []           # [{section, lamp:ColorRect, btn:Button}]
 
+# --- MACHINES screen state ---------------------------------------------------
+var _selected_machine_id : String = ""
+var _machines_list_vb    : VBoxContainer = null   # left column: scrollable list
+var _machines_detail_vb  : VBoxContainer = null   # right column: live detail
+var _machines_list_rows  : Array = []             # [{id, btn, lamp}]
+# Rebuilt every time the selection changes; refresh() updates only the live widgets.
+var _md_title_lbl    : Label = null
+var _md_powered_lamp : ColorRect = null
+var _md_status_lbl   : Label = null
+var _md_buffer_bar   : ProgressBar = null
+var _md_thru_lbl     : Label = null
+var _md_hand_btn     : Button = null
+var _md_run_btn      : Button = null
+var _md_safeguard_lbl: Label = null
+var _md_rpm_slider   : HSlider = null
+var _md_rpm_pct_lbl  : Label = null
+var _md_comp_rows    : Array = []   # [{name, slider:HSlider, pct_lbl:Label, rpm_lbl:Label}]
+
 # =============================================================================
 func _ready() -> void:
 	add_to_group("esc_modal_overlay")
@@ -125,6 +143,10 @@ func _ready() -> void:
 	call_deferred("_find_line_flow")
 
 func _find_line_flow() -> void:
+	# Don't overwrite an already-resolved reference (the test harness assigns
+	# directly, and we shouldn't drop a live ref because of a transient tree state).
+	if _line_flow != null and is_instance_valid(_line_flow):
+		return
 	var root := get_tree().current_scene
 	if root:
 		_line_flow = root.find_child("LineFlow", true, false)
@@ -262,6 +284,7 @@ func _build_chrome() -> void:
 	frow.add_child(_nav_button("OVERZICHT", Screen.OVERZICHT))
 	frow.add_child(_nav_button("STORINGEN", Screen.STORINGEN))
 	frow.add_child(_nav_button("HANDBEDIENING", Screen.HANDBEDIENING))
+	frow.add_child(_nav_button("MACHINES", Screen.MACHINES))
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	frow.add_child(spacer)
@@ -279,17 +302,36 @@ func _nav_button(text: String, screen: int) -> Button:
 # SCREEN ROUTER
 # =============================================================================
 func _show_screen(screen: int) -> void:
+	# If we're invoked before _ready had a chance to build the chrome (headless
+	# test harnesses can do this when there's no main scene), build it now so the
+	# call doesn't blow up. Production hits this via Hmi.gd well after _ready.
+	if _content == null:
+		_build_chrome()
 	_screen = screen
 	# Clear dynamic refs + content
 	_stage_tiles.clear()
 	_section_tiles.clear()
 	_manual_rows.clear()
+	_machines_list_rows.clear()
+	_md_comp_rows.clear()
 	_ov_status = null
 	_ov_totals = null
 	_start_btn = null
 	_stop_btn = null
 	_auto_btn = null
 	_fault_box = null
+	_machines_list_vb = null
+	_machines_detail_vb = null
+	_md_title_lbl = null
+	_md_powered_lamp = null
+	_md_status_lbl = null
+	_md_buffer_bar = null
+	_md_thru_lbl = null
+	_md_hand_btn = null
+	_md_run_btn = null
+	_md_safeguard_lbl = null
+	_md_rpm_slider = null
+	_md_rpm_pct_lbl = null
 	for c in _content.get_children():
 		c.queue_free()
 	match screen:
@@ -297,6 +339,7 @@ func _show_screen(screen: int) -> void:
 		Screen.OVERZICHT:     _build_overzicht()
 		Screen.STORINGEN:     _build_storingen()
 		Screen.HANDBEDIENING: _build_handbediening()
+		Screen.MACHINES:      _build_machines()
 	# Highlight active nav tab
 	for s in _nav_btns:
 		var btn: Button = _nav_btns[s]
@@ -554,7 +597,7 @@ func _refresh() -> void:
 	# Header clock + title + alarm chip (always)
 	var t := Time.get_time_dict_from_system()
 	_clock_lbl.text = "%02d:%02d:%02d" % [t["hour"], t["minute"], t["second"]]
-	var screen_name : String = ["HOOFDMENU", "OVERZICHT", "STORINGEN", "HANDBEDIENING"][_screen]
+	var screen_name : String = ["HOOFDMENU", "OVERZICHT", "STORINGEN", "HANDBEDIENING", "MACHINES"][_screen]
 	_header_title.text = "%s  ·  %s" % [_station, screen_name]
 	var faults := _compute_faults()
 	var unacked := 0
@@ -573,6 +616,7 @@ func _refresh() -> void:
 		Screen.OVERZICHT:     _refresh_overzicht(faults)
 		Screen.STORINGEN:     _refresh_storingen(faults)
 		Screen.HANDBEDIENING: _refresh_handbediening()
+		Screen.MACHINES:      _refresh_machines()
 
 func _refresh_hoofdmenu(faults: Array) -> void:
 	for t in _section_tiles:
@@ -921,3 +965,331 @@ func _sb(bg: Color, radius: int, margin: int, border: Color = Color(0, 0, 0, 0),
 		s.border_width_bottom = border_w
 		s.border_color = border
 	return s
+
+# =============================================================================
+# SCREEN: MACHINES — per-machine HMI (overview + click-drill detail)
+# =============================================================================
+## Two-column screen: scrollable list of every LineFlow machine on the left,
+## the selected machine's live detail panel on the right (HAND/AUTO toggle, ON/
+## OFF, fill bar, master RPM%, per-component RPM sliders + live RPM readouts).
+## HAND mode bypasses the PLC + safeguards so the operator can start any
+## component (or a whole tank) directly — at their own responsibility.
+func _build_machines() -> void:
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 12)
+	h.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_content.add_child(h)
+
+	# Left: machine list
+	var left := VBoxContainer.new()
+	left.add_theme_constant_override("separation", 6)
+	left.custom_minimum_size = Vector2(280, 0)
+	h.add_child(left)
+	var lh := Label.new()
+	lh.text = "MACHINES"
+	lh.add_theme_font_size_override("font_size", 15)
+	lh.add_theme_color_override("font_color", C_TEXT_DARK)
+	left.add_child(lh)
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	left.add_child(scroll)
+	_machines_list_vb = VBoxContainer.new()
+	_machines_list_vb.add_theme_constant_override("separation", 4)
+	_machines_list_vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_machines_list_vb)
+	_populate_machine_list()
+
+	# Right: detail panel for the selected machine
+	_machines_detail_vb = VBoxContainer.new()
+	_machines_detail_vb.add_theme_constant_override("separation", 8)
+	_machines_detail_vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_machines_detail_vb.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	h.add_child(_machines_detail_vb)
+	# Pick an initial selection if none yet (and the line has machines).
+	if _selected_machine_id == "" and _line_flow != null and _line_flow.has_method("machine_list"):
+		var ml: Array = _line_flow.call("machine_list")
+		if not ml.is_empty():
+			_selected_machine_id = String(ml[0]["id"])
+	_build_machine_detail()
+
+func _populate_machine_list() -> void:
+	for c in _machines_list_vb.get_children():
+		c.queue_free()
+	_machines_list_rows.clear()
+	if _line_flow == null or not _line_flow.has_method("machine_list"):
+		var empty := Label.new()
+		empty.text = "(geen machines)"
+		empty.add_theme_color_override("font_color", C_TEXT_DARK)
+		_machines_list_vb.add_child(empty)
+		return
+	for m in _line_flow.call("machine_list"):
+		var mid := String(m["id"])
+		var btn := Button.new()
+		btn.custom_minimum_size = Vector2(0, 32)
+		btn.text = ""    # filled by children
+		btn.add_theme_stylebox_override("normal",
+			_sb(C_TILE if mid != _selected_machine_id else C_NAV_SEL, 4, 0, C_TILE_EDGE, 1))
+		btn.add_theme_stylebox_override("hover",
+			_sb(C_NAV_SEL.lightened(0.08), 4, 0, C_NAV_SEL, 1))
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 8)
+		row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		row.alignment = BoxContainer.ALIGNMENT_CENTER
+		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		btn.add_child(row)
+		var lamp := ColorRect.new()
+		lamp.custom_minimum_size = Vector2(14, 14)
+		lamp.color = LAMP_OFF
+		lamp.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(lamp)
+		var lbl := Label.new()
+		lbl.text = mid.replace("_", " ")
+		lbl.add_theme_font_size_override("font_size", 13)
+		lbl.add_theme_color_override("font_color",
+			C_TEXT_DARK if mid != _selected_machine_id else Color.WHITE)
+		lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(lbl)
+		btn.pressed.connect(_on_machine_picked.bind(mid))
+		_machines_list_vb.add_child(btn)
+		_machines_list_rows.append({"id": mid, "btn": btn, "lamp": lamp, "lbl": lbl})
+
+func _on_machine_picked(id: String) -> void:
+	_selected_machine_id = id
+	# Rebuild the list (so the selection highlight is correct) and the right pane.
+	if _machines_list_vb != null:
+		_populate_machine_list()
+	_build_machine_detail()
+
+## (Re)build the right-hand detail pane for `_selected_machine_id`. Called on
+## selection change. Live values are refreshed by _refresh_machines().
+func _build_machine_detail() -> void:
+	if _machines_detail_vb == null:
+		return
+	for c in _machines_detail_vb.get_children():
+		c.queue_free()
+	_md_comp_rows.clear()
+	_md_title_lbl = null
+	_md_powered_lamp = null
+	_md_status_lbl = null
+	_md_buffer_bar = null
+	_md_thru_lbl = null
+	_md_hand_btn = null
+	_md_run_btn = null
+	_md_safeguard_lbl = null
+	_md_rpm_slider = null
+	_md_rpm_pct_lbl = null
+
+	if _selected_machine_id == "":
+		var hint := Label.new()
+		hint.text = "Selecteer een machine links."
+		hint.add_theme_color_override("font_color", C_TEXT_DARK)
+		_machines_detail_vb.add_child(hint)
+		return
+	if _line_flow == null or not _line_flow.has_method("get_machine_info"):
+		return
+	var info : Dictionary = _line_flow.call("get_machine_info", _selected_machine_id)
+	if info.is_empty():
+		var miss := Label.new()
+		miss.text = "Machine '%s' niet gevonden (niet meer op de lijn?)" % _selected_machine_id
+		miss.add_theme_color_override("font_color", C_TEXT_DARK)
+		_machines_detail_vb.add_child(miss)
+		return
+
+	# Title row: name + powered lamp + status
+	var trow := HBoxContainer.new()
+	trow.add_theme_constant_override("separation", 10)
+	_machines_detail_vb.add_child(trow)
+	_md_powered_lamp = ColorRect.new()
+	_md_powered_lamp.custom_minimum_size = Vector2(18, 18)
+	_md_powered_lamp.color = LAMP_OFF
+	trow.add_child(_md_powered_lamp)
+	_md_title_lbl = Label.new()
+	_md_title_lbl.text = String(info["id"]).replace("_", " ").to_upper()
+	_md_title_lbl.add_theme_font_size_override("font_size", 18)
+	_md_title_lbl.add_theme_color_override("font_color", C_TEXT_DARK)
+	trow.add_child(_md_title_lbl)
+	_md_status_lbl = Label.new()
+	_md_status_lbl.add_theme_font_size_override("font_size", 13)
+	_md_status_lbl.add_theme_color_override("font_color", Color(0.25, 0.30, 0.27, 1))
+	trow.add_child(_md_status_lbl)
+
+	# HAND / AUTO + RUN row
+	var crow := HBoxContainer.new()
+	crow.add_theme_constant_override("separation", 8)
+	_machines_detail_vb.add_child(crow)
+	_md_hand_btn = _flat_button("AUTOMAAT", Vector2(150, 38), C_NAV_SEL, Color.WHITE)
+	_md_hand_btn.pressed.connect(_on_machine_toggle_hand)
+	crow.add_child(_md_hand_btn)
+	_md_run_btn = _flat_button("AAN/UIT", Vector2(120, 38), Color(0.40, 0.42, 0.45, 1), Color.WHITE)
+	_md_run_btn.pressed.connect(_on_machine_toggle_run)
+	crow.add_child(_md_run_btn)
+	_md_safeguard_lbl = Label.new()
+	_md_safeguard_lbl.text = ""
+	_md_safeguard_lbl.add_theme_font_size_override("font_size", 13)
+	_md_safeguard_lbl.add_theme_color_override("font_color", LAMP_FAULT)
+	crow.add_child(_md_safeguard_lbl)
+
+	# Buffer / fill bar + throughput
+	var brow := HBoxContainer.new()
+	brow.add_theme_constant_override("separation", 8)
+	_machines_detail_vb.add_child(brow)
+	var blbl := Label.new()
+	blbl.text = "Vul / buffer"
+	blbl.custom_minimum_size = Vector2(110, 0)
+	blbl.add_theme_color_override("font_color", C_TEXT_DARK)
+	brow.add_child(blbl)
+	_md_buffer_bar = ProgressBar.new()
+	_md_buffer_bar.min_value = 0.0
+	_md_buffer_bar.max_value = 250.0    # OVERLOAD_KG; visually saturates near e-stop
+	_md_buffer_bar.value = 0.0
+	_md_buffer_bar.custom_minimum_size = Vector2(0, 22)
+	_md_buffer_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	brow.add_child(_md_buffer_bar)
+	_md_thru_lbl = Label.new()
+	_md_thru_lbl.text = "—"
+	_md_thru_lbl.add_theme_font_size_override("font_size", 13)
+	_md_thru_lbl.add_theme_color_override("font_color", C_TEXT_DARK)
+	_md_thru_lbl.custom_minimum_size = Vector2(150, 0)
+	brow.add_child(_md_thru_lbl)
+
+	# Master RPM% slider
+	_machines_detail_vb.add_child(_md_make_rpm_row("RPM (master)", "__master__", float(info.get("rpm_pct", 1.0)),
+		float(info.get("rate", 0.0)), float(info.get("spin", 0.0))))
+
+	# Per-component RPM sliders (inlet / transport / outlet for tanks; drive
+	# for conveyors + ventilators; rotor for shredders/mills)
+	var comps : Dictionary = info.get("components", {})
+	for cname in comps.keys():
+		var row := _md_make_rpm_row(String(cname).replace("_", " "), String(cname),
+			float(comps[cname]), float(info.get("rate", 0.0)), float(info.get("spin", 0.0)))
+		_machines_detail_vb.add_child(row)
+
+	# Spacer at the bottom so the panel reads cleanly.
+	var sp := Control.new()
+	sp.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_machines_detail_vb.add_child(sp)
+
+func _md_make_rpm_row(label_text: String, comp_key: String, pct: float, design_rate: float, spin: float) -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	var lbl := Label.new()
+	lbl.text = label_text
+	lbl.custom_minimum_size = Vector2(110, 0)
+	lbl.add_theme_color_override("font_color", C_TEXT_DARK)
+	lbl.add_theme_font_size_override("font_size", 13)
+	row.add_child(lbl)
+	var slider := HSlider.new()
+	slider.min_value = 0.0
+	slider.max_value = 2.0
+	slider.step = 0.05
+	slider.value = pct
+	slider.custom_minimum_size = Vector2(0, 22)
+	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(slider)
+	var pct_lbl := Label.new()
+	pct_lbl.text = "%d %%" % int(round(pct * 100.0))
+	pct_lbl.custom_minimum_size = Vector2(60, 0)
+	pct_lbl.add_theme_color_override("font_color", C_TEXT_DARK)
+	pct_lbl.add_theme_font_size_override("font_size", 13)
+	row.add_child(pct_lbl)
+	var rpm_lbl := Label.new()
+	# Live "RPM" readout: scale the design rate by spin and the slider pct, then
+	# present as a relative kg/s figure (the sim doesn't expose RPM in N; this
+	# row is what a real operator panel would call the rotor RPM trend).
+	rpm_lbl.text = "— kg/s"
+	rpm_lbl.custom_minimum_size = Vector2(100, 0)
+	rpm_lbl.add_theme_color_override("font_color", Color(0.25, 0.30, 0.27, 1))
+	rpm_lbl.add_theme_font_size_override("font_size", 13)
+	row.add_child(rpm_lbl)
+	# Wire the slider write-back. __master__ goes to set_machine_rpm_pct; component
+	# keys go to set_machine_component_pct.
+	if comp_key == "__master__":
+		slider.value_changed.connect(_on_master_rpm_changed)
+		_md_rpm_slider = slider
+		_md_rpm_pct_lbl = pct_lbl
+	else:
+		slider.value_changed.connect(_on_component_rpm_changed.bind(comp_key))
+		_md_comp_rows.append({"name": comp_key, "slider": slider, "pct_lbl": pct_lbl, "rpm_lbl": rpm_lbl})
+	return row
+
+func _on_machine_toggle_hand() -> void:
+	if _line_flow == null or _selected_machine_id == "":
+		return
+	var info : Dictionary = _line_flow.call("get_machine_info", _selected_machine_id)
+	var was_hand := bool(info.get("hand_mode", false))
+	_line_flow.call("set_machine_hand_mode", _selected_machine_id, not was_hand)
+
+func _on_machine_toggle_run() -> void:
+	if _line_flow == null or _selected_machine_id == "":
+		return
+	var info : Dictionary = _line_flow.call("get_machine_info", _selected_machine_id)
+	if not bool(info.get("hand_mode", false)):
+		return   # AAN/UIT only works in HAND mode (PLC owns it in AUTO)
+	var was_on := bool(info.get("manual_on", false))
+	_line_flow.call("set_machine_manual_on", _selected_machine_id, not was_on)
+
+func _on_master_rpm_changed(value: float) -> void:
+	if _line_flow == null or _selected_machine_id == "":
+		return
+	_line_flow.call("set_machine_rpm_pct", _selected_machine_id, value)
+
+func _on_component_rpm_changed(value: float, comp_key: String) -> void:
+	if _line_flow == null or _selected_machine_id == "":
+		return
+	_line_flow.call("set_machine_component_pct", _selected_machine_id, comp_key, value)
+
+## 4 Hz live refresh of the MACHINES screen (list lamps + detail panel readouts).
+func _refresh_machines() -> void:
+	if _line_flow == null or not _line_flow.has_method("get_machine_info"):
+		return
+	# Update the list-row lamps (live powered state).
+	for r in _machines_list_rows:
+		var li : Dictionary = _line_flow.call("get_machine_info", String(r["id"]))
+		if li.is_empty():
+			continue
+		var c : Color = LAMP_OFF
+		if bool(li.get("powered", false)) and float(li.get("spin", 0.0)) > 0.05:
+			c = LAMP_RUN
+		elif float(li.get("buffer", 0.0)) > 1.0:
+			c = LAMP_IDLE
+		(r["lamp"] as ColorRect).color = c
+	# Update the detail panel.
+	if _md_title_lbl == null or _selected_machine_id == "":
+		return
+	var info : Dictionary = _line_flow.call("get_machine_info", _selected_machine_id)
+	if info.is_empty():
+		return
+	var hand := bool(info.get("hand_mode", false))
+	var powered := bool(info.get("powered", false))
+	var manual_on := bool(info.get("manual_on", false))
+	var spin := float(info.get("spin", 0.0))
+	var buffer := float(info.get("buffer", 0.0))
+	var thru := float(info.get("thru", 0.0))
+	var rate := float(info.get("rate", 0.0))
+	_md_powered_lamp.color = LAMP_RUN if (powered and spin > 0.05) else (LAMP_IDLE if buffer > 1.0 else LAMP_OFF)
+	_md_status_lbl.text = "%.1f%% spin · %.1f kg buffer · %.2f kg/s" % [spin * 100.0, buffer, thru]
+	_md_hand_btn.text = ("HAND  ●" if hand else "AUTOMAAT")
+	_md_hand_btn.add_theme_stylebox_override("normal",
+		_sb(Color(0.72, 0.52, 0.16, 1) if hand else C_NAV_SEL, 4, 6))
+	_md_run_btn.text = ("AAN" if manual_on else "UIT")
+	_md_run_btn.add_theme_stylebox_override("normal",
+		_sb(LAMP_RUN if (hand and manual_on) else Color(0.40, 0.42, 0.45, 1), 4, 6))
+	_md_run_btn.disabled = not hand
+	_md_safeguard_lbl.text = "⚠ Beveiligingen overruled (HAND)" if hand else ""
+	_md_buffer_bar.value = clampf(buffer, 0.0, _md_buffer_bar.max_value)
+	# Throughput / rate
+	_md_thru_lbl.text = "%.2f / %.2f kg/s" % [thru, rate]
+	# Master RPM label
+	var mpct := float(info.get("rpm_pct", 1.0))
+	if _md_rpm_pct_lbl != null:
+		_md_rpm_pct_lbl.text = "%d %%" % int(round(mpct * 100.0))
+	# Per-component readouts (label + live "rpm" = design_rate × spin × this_pct)
+	var comps : Dictionary = info.get("components", {})
+	for r in _md_comp_rows:
+		var cname := String(r["name"])
+		if not comps.has(cname):
+			continue
+		var cpct := float(comps[cname])
+		(r["pct_lbl"] as Label).text = "%d %%" % int(round(cpct * 100.0))
+		(r["rpm_lbl"] as Label).text = "%.2f kg/s" % (rate * spin * cpct * mpct)

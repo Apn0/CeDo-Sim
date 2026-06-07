@@ -209,6 +209,16 @@ func _discover() -> void:
 			"mech":    _find_mechanism(node3d),
 			"spin":    0.0,
 			"powered": false,
+			# Per-machine HMI override (#new-hmi). hand_mode bypasses the PLC and the
+			# safeguards (upstream-empty, e-stop, shredder interlock) — manual_on then
+			# decides whether the machine runs. component_pct stores per-component
+			# RPM overrides (inlet/paddles/outlet for tanks; "drive" for conveyors /
+			# ventilators / shredders); the effective rate is the design rate scaled
+			# by the AVERAGE of these and by rpm_pct. Defaults run the machine 100%.
+			"hand_mode":     false,
+			"manual_on":     false,
+			"rpm_pct":       1.0,
+			"components":    _default_components_for(id),
 			# #173 visual coupling: the machine's FilmFlakeField (if any), driven
 			# each tick from this node's live telemetry so the look matches the sim.
 			"view":    _find_film_field(node3d),
@@ -376,6 +386,107 @@ func stop_line() -> void:
 func is_line_starting() -> bool:
 	return _plc != null and _plc.is_busy()
 
+# ── HMI per-machine override + RPM controls (#new-hmi) ────────────────────────
+## The components a machine of this `id` exposes to the HMI as separate RPM
+## sliders. Tanks have 4 (inlet/two transports/outlet); conveyors + ventilators
+## + shredders have a single drive. Anything else falls back to "drive".
+static func _default_components_for(id: String) -> Dictionary:
+	var out := {}
+	var lid := id.to_lower()
+	if lid.find("flotation") >= 0 or lid.find("sink") >= 0 or lid.find("rotation_tank") >= 0:
+		out["inlet"]       = 1.0
+		out["transport_1"] = 1.0
+		out["transport_2"] = 1.0
+		out["outlet"]      = 1.0
+	elif lid.find("blower") >= 0 or lid.find("ventilator") >= 0 or lid.find("cyclone") >= 0 or lid.find("sifter") >= 0:
+		out["drive"] = 1.0
+	elif lid.find("shredder") >= 0 or lid.find("mill") >= 0:
+		out["rotor"] = 1.0
+	else:
+		out["drive"] = 1.0
+	return out
+
+## Lookup a machine node dict by its placeable id; returns the FIRST match (machines
+## are unique per build). Empty dict if missing.
+func _find_node_by_id(id: String) -> Dictionary:
+	for nd in _nodes:
+		if String(nd["id"]) == id:
+			return nd
+	return {}
+
+## Public HMI surface — every setter quietly noops on an unknown id so the panel
+## can be opened before the line has been built without crashing.
+func set_machine_hand_mode(id: String, on: bool) -> void:
+	var nd := _find_node_by_id(id)
+	if not nd.is_empty():
+		nd["hand_mode"] = on
+		if not on:
+			nd["manual_on"] = false   # leaving HAND drops the manual run
+
+func set_machine_manual_on(id: String, on: bool) -> void:
+	var nd := _find_node_by_id(id)
+	if not nd.is_empty() and bool(nd["hand_mode"]):
+		nd["manual_on"] = on
+
+func set_machine_rpm_pct(id: String, pct: float) -> void:
+	var nd := _find_node_by_id(id)
+	if not nd.is_empty():
+		nd["rpm_pct"] = clampf(pct, 0.0, 2.0)
+
+func set_machine_component_pct(id: String, component: String, pct: float) -> void:
+	var nd := _find_node_by_id(id)
+	if nd.is_empty():
+		return
+	var c : Dictionary = nd["components"]
+	if c.has(component):
+		c[component] = clampf(pct, 0.0, 2.0)
+
+## Returns a snapshot the HMI can render: live state + override state + components.
+func get_machine_info(id: String) -> Dictionary:
+	var nd := _find_node_by_id(id)
+	if nd.is_empty():
+		return {}
+	return {
+		"id":         String(nd["id"]),
+		"role":       String(nd["role"]),
+		"process":    String(nd["process"]),
+		"rate":       float(nd["rate"]),
+		"spin":       float(nd["spin"]),
+		"powered":    bool(nd["powered"]),
+		"buffer":     float(nd["buffer"]),
+		"thru":       float(nd["thru"]),
+		"moist":      float(nd["moist"]),
+		"contam":     float(nd["contam"]),
+		"quality":    float(nd["quality"]),
+		"amps":       float(nd["amps"]),
+		"hand_mode":  bool(nd.get("hand_mode", false)),
+		"manual_on":  bool(nd.get("manual_on", false)),
+		"rpm_pct":    float(nd.get("rpm_pct", 1.0)),
+		"components": (nd.get("components", {}) as Dictionary).duplicate(),
+	}
+
+## Every machine on the line as a flat list for the MACHINES screen list.
+func machine_list() -> Array:
+	var out : Array = []
+	for nd in _nodes:
+		out.append({
+			"id":      String(nd["id"]),
+			"role":    String(nd["role"]),
+			"process": String(nd["process"]),
+		})
+	return out
+
+## Average of a node's component_pct entries (1.0 if none) — used by the eff_rate
+## calc in the tick to scale design rate by the operator's per-component settings.
+func _component_pct_avg(nd: Dictionary) -> float:
+	var c : Dictionary = nd.get("components", {})
+	if c.is_empty():
+		return 1.0
+	var s := 0.0
+	for k in c:
+		s += float(c[k])
+	return s / float(c.size())
+
 # ── #9 overflow / emergency-stop ───────────────────────────────────────────────
 func is_estopped() -> bool:
 	return _estop_active
@@ -513,6 +624,13 @@ func tick(delta: float) -> void:
 		for stage in _plc_stage_node.size():
 			var ni : int = int(_plc_stage_node[stage])
 			_nodes[ni]["powered"] = _plc.is_powered(stage)
+	# HMI HAND-mode override (#new-hmi): when the operator has switched a machine to
+	# HAND on the per-machine HMI screen, the PLC + safeguards are BYPASSED for that
+	# machine — `manual_on` directly drives powered. Operator's responsibility (the
+	# panel shows a warning lamp + amber stripe to make that explicit).
+	for nd_h in _nodes:
+		if bool(nd_h.get("hand_mode", false)):
+			nd_h["powered"] = bool(nd_h.get("manual_on", false))
 	# #9 — overflow/e-stop override: trip on an overloaded buffer, then force the
 	# fault + upstream OFF (downstream keeps its PLC power and drains).
 	_estop_step()
@@ -581,7 +699,10 @@ func tick(delta: float) -> void:
 		# Effective conveying rate is GATED by live rotation: design rate × spin-up
 		# × rotor rpm-fraction. A stopped or still-spinning-up rotor moves nothing,
 		# so material backs up in this machine's input buffer (#145).
-		var eff_rate: float = float(nd["rate"]) * float(nd["spin"]) * _mech_fraction(nd)
+		# Effective rate = design × spin × mech × HMI overrides (rpm slider AND the
+		# avg of the per-component RPMs — inlet/transports/outlet for tanks).
+		var rate_mul : float = float(nd.get("rpm_pct", 1.0)) * _component_pct_avg(nd)
+		var eff_rate: float = float(nd["rate"]) * float(nd["spin"]) * _mech_fraction(nd) * rate_mul
 		if eff_rate <= 0.0001:
 			nd["thru"] = lerpf(float(nd["thru"]), 0.0, 0.2)
 			continue
