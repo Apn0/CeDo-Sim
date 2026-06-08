@@ -147,6 +147,10 @@ static func items() -> Array[Dictionary]:
 			{"id": "tool_scanner",   "name": "Barcode scanner",    "category": "Tools",      "size": Vector3(0.22, 0.3, 0.22), "color": Color(0.95, 0.78, 0.10)},
 			{"id": "tool_lpg_rack",  "name": "LPG cylinder rack",  "category": "Tools",      "size": Vector3(1.2, 1.4, 0.6),   "color": Color(0.85, 0.55, 0.20)},
 			{"id": "tool_leafblower","name": "Leaf blower",        "category": "Tools",      "size": Vector3(0.30, 0.40, 0.90),"color": Color(0.96, 0.42, 0.10)},
+			# Jerry can — places a refuel station for the leaf blower (and any future
+			# fuel-burning held tool). Infinite supply per the operator's spec;
+			# operator just has to walk to it with the blower in their hotbar + press E.
+			{"id": "tool_jerrycan",  "name": "Jerry can (fuel)",   "category": "Tools",      "size": Vector3(0.32, 0.42, 0.20),"color": Color(0.78, 0.16, 0.14)},
 			# ── Hoses, reels, compressors (housekeeping + process air supply) ────
 			# Wall-mount reel holding a ~10 m thick YELLOW water hose; ball valve at the
 			# base and at the nozzle tip. Used for floor wash-down.
@@ -1570,6 +1574,7 @@ static func _build_tool(id: String, size: Vector3, ghost: bool) -> Node3D:
 		"tool_scanner":  return load("res://src/scenes/world/BarcodeScanner.gd").new()
 		"tool_lpg_rack": return load("res://src/scenes/world/LPGRack.gd").new()
 		"tool_leafblower": return load("res://src/operator/LeafBlower.gd").new()
+		"tool_jerrycan":   return load("res://src/scenes/world/JerryCan.gd").new()
 	return null
 
 ## Build one of the four operator-spec opzetband variants. Each is a ShredderFeedBelt

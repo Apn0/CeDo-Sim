@@ -27,9 +27,28 @@ const PICKUP_RANGE   : float = 1.6
 @export var spool_time_seconds : float = 1.0     # full-throttle ramp time
 @export var cone_radius        : float = 2.0     # half-radius of the wind cone at its tip
 
+# ── Fuel (#leafblower-fuel) ─────────────────────────────────────────────────
+## A full tank gives RUN_SECONDS_FULL seconds of continuous full-throttle
+## operation; half-throttle burns at half-rate (proportional to _spool), so
+## holding the trigger lightly stretches the tank linearly. Burn rate is
+## computed from these two numbers so changing either still works out.
+@export var fuel_capacity_l : float = 0.5
+const RUN_SECONDS_FULL : float = 30.0 * 60.0    # 30 real minutes on a full tank
+var fuel_l : float = 0.5
+
+# Banner-thresholds so we warn the operator before the engine starves.
+var _warned_25 : bool = false
+var _warned_10 : bool = false
+var _warned_empty : bool = false
+
 enum State { OFF, SPOOLING_UP, FULL_THROTTLE, SPOOLING_DOWN }
 var _state : int = State.OFF
 var _spool : float = 0.0
+
+# Fuel LED on the housing — colour changes with the remaining fuel fraction so
+# the operator can see at a glance whether the tank is full or low. Updated
+# each frame; emission energy nudged so it reads under work-lights too.
+var _fuel_led_mat : StandardMaterial3D = null
 
 var _held_by     : Node3D = null
 var _player_near : bool   = false
@@ -44,9 +63,11 @@ var _active_bodies : Array[RigidBody3D] = []
 # =============================================================================
 func _ready() -> void:
 	add_to_group("leaf_blower")
+	fuel_l = fuel_capacity_l   # ships with a full tank
 	_build_visual()
 	_build_pickup_trigger()
 	_build_wind_volume()
+	_refresh_fuel_led()
 
 ## Orange housing + dark grip + dark nozzle. Sized so a held pose reads cleanly.
 func _build_visual() -> void:
@@ -92,6 +113,20 @@ func _build_visual() -> void:
 	vent.mesh = vm; vent.material_override = dark
 	vent.position = Vector3(0, 0.06, 0.19)
 	add_child(vent)
+	# Fuel-level LED on the side of the housing — green=full, amber=low, red=empty.
+	# Mat ref stored so _refresh_fuel_led can recolor it as fuel burns down.
+	_fuel_led_mat = StandardMaterial3D.new()
+	_fuel_led_mat.albedo_color = Color(0.27, 0.78, 0.32)
+	_fuel_led_mat.emission_enabled = true
+	_fuel_led_mat.emission = Color(0.27, 0.78, 0.32)
+	_fuel_led_mat.emission_energy_multiplier = 1.8
+	var led := MeshInstance3D.new()
+	led.name = "FuelLED"
+	var lm := SphereMesh.new(); lm.radius = 0.018; lm.height = 0.036
+	led.mesh = lm
+	led.material_override = _fuel_led_mat
+	led.position = Vector3(0.12, 0.13, 0.05)
+	add_child(led)
 	# Bounding collision so it rests on the floor when dropped.
 	var col := CollisionShape3D.new()
 	var cb := BoxShape3D.new(); cb.size = Vector3(0.24, 0.30, 0.85)
@@ -266,6 +301,12 @@ func _physics_process(delta: float) -> void:
 	var inv := get_node_or_null("/root/Inventory")
 	var is_active := (inv == null) or bool(inv.call("is_active", self))
 	var pressed := is_active and Input.is_action_pressed("tool_use")
+	# Empty tank gates the engine — no spool-up while dry, and a running engine
+	# coasts to a stop the moment the last drop is gone (banner already warned).
+	if fuel_l <= 0.0:
+		if _state == State.SPOOLING_UP or _state == State.FULL_THROTTLE:
+			_state = State.SPOOLING_DOWN
+		pressed = false
 	match _state:
 		State.OFF:
 			if pressed: _state = State.SPOOLING_UP
@@ -278,7 +319,13 @@ func _physics_process(delta: float) -> void:
 		State.SPOOLING_DOWN:
 			_spool = maxf(0.0, _spool - delta / maxf(spool_time_seconds, 0.001))
 			if _spool <= 0.0: _state = State.OFF
-			if pressed:       _state = State.SPOOLING_UP
+			if pressed and fuel_l > 0.0: _state = State.SPOOLING_UP
+	# Burn fuel proportional to live spool — half-throttle uses half-rate.
+	if _spool > 0.0001:
+		var burn := (fuel_capacity_l / RUN_SECONDS_FULL) * _spool * delta
+		fuel_l = maxf(0.0, fuel_l - burn)
+		_check_fuel_warnings()
+		_refresh_fuel_led()
 	if _spool <= 0.0:
 		return
 
@@ -306,3 +353,61 @@ func _physics_process(delta: float) -> void:
 		# scrap is pushed FORWARD (in the blow direction), the way a real blower works.
 		var atten := 1.0 / (1.0 + dist * dist)
 		body.apply_central_force(aim * force_mag * atten)
+
+# =============================================================================
+# FUEL — public API + UX
+# =============================================================================
+## 0..1 fraction of the tank remaining. HUD / jerry-can / banner read this.
+func fuel_pct() -> float:
+	if fuel_capacity_l <= 0.0:
+		return 0.0
+	return clampf(fuel_l / fuel_capacity_l, 0.0, 1.0)
+
+## Pour `litres` of fuel in (or default: top all the way up). Caller-side check
+## of capacity is unnecessary — overflow is clamped here. Resets the low-fuel
+## warnings so a refill silences the banner spam until it dips again. Emits a
+## one-shot scanner banner so the operator knows the refill landed.
+func refuel(litres: float = -1.0) -> void:
+	if litres < 0.0:
+		fuel_l = fuel_capacity_l
+	else:
+		fuel_l = minf(fuel_capacity_l, fuel_l + litres)
+	_warned_25 = false
+	_warned_10 = false
+	_warned_empty = false
+	_refresh_fuel_led()
+	_banner("Bladblazer bijgevuld — %d%%" % int(round(fuel_pct() * 100.0)))
+
+## Recolor the housing LED so the operator sees the tank state at a glance.
+##   ≥50% green   ·   25–50% yellow   ·   10–25% orange   ·   <10% red   ·   0% off
+func _refresh_fuel_led() -> void:
+	if _fuel_led_mat == null:
+		return
+	var f := fuel_pct()
+	var c : Color
+	if f >= 0.50:    c = Color(0.27, 0.78, 0.32)
+	elif f >= 0.25:  c = Color(0.95, 0.85, 0.20)
+	elif f >= 0.10:  c = Color(0.96, 0.55, 0.15)
+	elif f > 0.0:    c = Color(0.86, 0.22, 0.18)
+	else:            c = Color(0.18, 0.18, 0.20)
+	_fuel_led_mat.albedo_color = c
+	_fuel_led_mat.emission = c
+	_fuel_led_mat.emission_energy_multiplier = (1.8 if f > 0.0 else 0.0)
+
+## Banner the operator at 25%, 10%, and 0% so they know to head to a jerry can.
+func _check_fuel_warnings() -> void:
+	var f := fuel_pct()
+	if not _warned_25 and f <= 0.25:
+		_warned_25 = true
+		_banner("Bladblazer brandstof 25% — overweeg bij te vullen")
+	if not _warned_10 and f <= 0.10:
+		_warned_10 = true
+		_banner("Bladblazer brandstof 10% — bij een jerrycan bijvullen")
+	if not _warned_empty and f <= 0.0:
+		_warned_empty = true
+		_banner("Bladblazer leeg — vul bij bij een jerrycan")
+
+func _banner(text: String) -> void:
+	var bus := get_node_or_null("/root/EventBus")
+	if bus and bus.has_signal("scanner_banner"):
+		bus.emit_signal("scanner_banner", text)
