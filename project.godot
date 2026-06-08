@@ -30,6 +30,7 @@ SettingsManager="*res://src/autoload/SettingsManager.gd"
 AudioManager="*res://src/autoload/AudioManager.gd"
 Walkie="*res://src/autoload/Walkie.gd"
 Inventory="*res://src/autoload/Inventory.gd"
+WorldLayout="*res://src/autoload/WorldLayout.gd"
 
 [debug]
 
