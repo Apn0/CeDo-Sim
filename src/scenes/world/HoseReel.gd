@@ -21,6 +21,10 @@ class_name HoseReel
 @export var nozzle_cone_deg     : float = 18.0
 @export var nozzle_tint         : Color = Color(0.82, 0.18, 0.16)
 @export var prompt_label        : String = "Take hose tip"
+## Air mode: deployed nozzle blows RigidBody3D film_scrap instead of scooping
+## floor piles. Used by the air-hose hook (no shovel, no water — pure blow).
+@export var nozzle_air_mode     : bool = false
+@export var nozzle_hose_length_m: float = 10.0
 
 var base_valve_state : int = 0   # 0=closed 1=little 2=lot
 var _deployed_nozzle : Node = null
@@ -99,6 +103,8 @@ func _deploy_to_player() -> void:
 	n.max_range_m  = nozzle_range_m
 	n.cone_half_angle_deg = nozzle_cone_deg
 	n.nozzle_tint  = nozzle_tint
+	n.air_mode     = nozzle_air_mode
+	n.hose_length_m = nozzle_hose_length_m
 	var scene := get_tree().current_scene
 	(scene if scene else get_tree().root).add_child(n)
 	n.global_position = global_position + Vector3(0.0, 1.0, 0.0)

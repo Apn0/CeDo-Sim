@@ -47,6 +47,11 @@ enum Mode     { ON_REEL, HELD, GROUNDED }
 @export var hose_radius         : float = 0.022   # visual hose tube radius
 @export var pickup_radius       : float = 1.4     # how close to a grounded tip you must stand
 @export var reel_dock_radius    : float = 1.6     # how close to the reel to auto-return
+## Air-mode (blow gun): sprays AIR rather than water — pushes RigidBody3D nodes in
+## group "film_scrap" forward instead of scooping FloorPile. Used by the air hose
+## hook (20 m translucent hose) — same chain mechanism, different effect.
+@export var air_mode : bool = false
+@export var air_force : float = 12.0      # N at the muzzle (before inverse-square attenuation)
 ## Floor level the auto-dropped anchors rest on. The reel spout sits 1 m above
 ## this; subsequent anchors lie on the ground so the hose properly drops down.
 @export var floor_y             : float = 0.0
@@ -384,6 +389,23 @@ func _process(_delta: float) -> void:
 		fwd = -global_transform.basis.z.normalized()
 	var cos_half := cos(deg_to_rad(cone_half_angle_deg))
 	var dt := _delta
+	# AIR MODE: blow film scraps forward (no floor-pile scoop). The "rate" still
+	# scales linearly with valve openings, but now drives a per-frame impulse on
+	# any RigidBody3D in group "film_scrap" inside the cone.
+	if air_mode:
+		var f_now := air_force * (rate / max_kg_per_s)   # rate is already throttled by valves
+		for body in get_tree().get_nodes_in_group("film_scrap"):
+			if not (body is RigidBody3D) or not is_instance_valid(body):
+				continue
+			var to_b : Vector3 = (body as Node3D).global_position - origin
+			var d_b := to_b.length()
+			if d_b > max_range_m or d_b < 0.05:
+				continue
+			if to_b.normalized().dot(fwd) < cos_half:
+				continue
+			var atten := 1.0 / (1.0 + d_b * d_b)
+			(body as RigidBody3D).apply_central_force(fwd * f_now * atten)
+		return
 	for p in get_tree().get_nodes_in_group("floor_pile"):
 		if not (p is Node3D) or not is_instance_valid(p):
 			continue

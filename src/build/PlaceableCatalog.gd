@@ -2832,6 +2832,19 @@ static func _m_air_hose_hook(p: Node3D, size: Vector3, ghost: bool) -> void:
 		p.add_child(mi)
 	# Coupler / quick-connect fitting at the tip of the coil.
 	_cyl(p, 0.03, 0.03, 0.08, Vector3(0.0, size.y * 0.05, size.z * 0.08), steel, "y")
+	# HoseReel controller — proximity prompt + E deploys the AIR blow gun (20 m
+	# tether, no water, blows film_scrap forward).
+	if not ghost:
+		var ctrl : Node = load("res://src/scenes/world/HoseReel.gd").new()
+		ctrl.name = "HoseReelController"
+		ctrl.set("nozzle_air_mode", true)
+		ctrl.set("nozzle_hose_length_m", 20.0)   # 20 m air hose per spec
+		ctrl.set("nozzle_max_kg_per_s", 5.0)
+		ctrl.set("nozzle_range_m", 5.0)
+		ctrl.set("nozzle_cone_deg", 14.0)
+		ctrl.set("nozzle_tint", Color(0.92, 0.93, 0.90))
+		ctrl.set("prompt_label", "Take air hose tip")
+		p.add_child(ctrl)
 
 ## Mobile high-pressure washer cart: 2-wheel base + motor + small pressure tank +
 ## ~4 m thin coiled hose hanging on the side + pistol nozzle with elongated barrel.

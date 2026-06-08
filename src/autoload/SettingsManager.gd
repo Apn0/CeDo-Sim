@@ -504,7 +504,36 @@ func _ensure_aux_actions() -> void:
 		"tool_place_mode":   KEY_G,
 		"freecam_save":      KEY_F5,
 		"hose_advance_back": KEY_F,
+		# P opens the pause / settings card. We register it here in addition to the
+		# project.godot binding so a player who never reloaded the project (the
+		# in-editor InputMap stays stale) still gets P working at runtime.
+		"menu_toggle":       KEY_P,
+		# C also opens the crew assignment panel — Numpad . is the legacy default
+		# but many keyboards don't have a numpad, so we add a second route.
+		"crew_panel":        KEY_C,
 	}
+	# Anything in INSTALL_AND_PURGE first has ALL its key events removed so the
+	# new binding doesn't pile up next to the old one. Used to migrate keys that
+	# moved between actions (e.g. P moved off camera_toggle).
+	var purge := {
+		"camera_toggle": KEY_P,    # P was the legacy camera-cycle key; F4 owns it now
+	}
+	for action_name in purge:
+		if not InputMap.has_action(action_name):
+			continue
+		for ev in InputMap.action_get_events(action_name):
+			if ev is InputEventKey and (ev as InputEventKey).keycode == purge[action_name]:
+				InputMap.action_erase_event(action_name, ev)
+	# Make sure camera_toggle has F4 (the canonical binding now).
+	if InputMap.has_action("camera_toggle"):
+		var has_f4 := false
+		for ev in InputMap.action_get_events("camera_toggle"):
+			if ev is InputEventKey and (ev as InputEventKey).keycode == KEY_F4:
+				has_f4 = true; break
+		if not has_f4:
+			var k4 := InputEventKey.new()
+			k4.keycode = KEY_F4
+			InputMap.action_add_event("camera_toggle", k4)
 	for action_name in binds:
 		if not InputMap.has_action(action_name):
 			InputMap.add_action(action_name)
