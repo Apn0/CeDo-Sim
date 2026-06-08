@@ -36,10 +36,20 @@ const PICKUP_RANGE   : float = 1.6
 const RUN_SECONDS_FULL : float = 30.0 * 60.0    # 30 real minutes on a full tank
 var fuel_l : float = 0.5
 
-# Banner-thresholds so we warn the operator before the engine starves.
-var _warned_25 : bool = false
-var _warned_10 : bool = false
-var _warned_empty : bool = false
+# Below STUTTER_THRESHOLD of capacity the engine can't make full power — even
+# at full-trigger it sputters between idle and (a bit above) idle. Real
+# behaviour: the carb keeps gulping the last sips and can't sustain WOT.
+const STUTTER_THRESHOLD : float = 0.05
+const IDLE_SPOOL : float = 0.20
+
+# Primer bulb (the soft fuel-filled dome). Real two-stroke leaf blowers won't
+# start until you've pushed fuel into the carb with the primer; tank dry → air
+# in the line → needs priming again after refuel. Each press counts as one
+# "squeeze" of the bulb; PRIME_PUMPS_REQUIRED clears the prime requirement.
+const PRIME_PUMPS_REQUIRED : int = 3
+var _needs_prime : bool = true       # fresh-built blower or a tank that ran dry
+var _primer_pumps : int  = 0
+var _primer_pulse_t : float = 0.0    # visual squish countdown after a pump
 
 enum State { OFF, SPOOLING_UP, FULL_THROTTLE, SPOOLING_DOWN }
 var _state : int = State.OFF
@@ -49,6 +59,10 @@ var _spool : float = 0.0
 # the operator can see at a glance whether the tank is full or low. Updated
 # each frame; emission energy nudged so it reads under work-lights too.
 var _fuel_led_mat : StandardMaterial3D = null
+
+# Primer bulb on the housing — translucent yellow dome the operator pumps with
+# RMB. Squishes briefly on each pump so the player sees the pump landed.
+var _primer_dome : MeshInstance3D = null
 
 var _held_by     : Node3D = null
 var _player_near : bool   = false
@@ -127,6 +141,25 @@ func _build_visual() -> void:
 	led.material_override = _fuel_led_mat
 	led.position = Vector3(0.12, 0.13, 0.05)
 	add_child(led)
+	# Primer bulb — the soft yellow dome the operator pumps with RMB to push fuel
+	# into the carb before starting. Sits on top of the engine housing near the
+	# front (a typical spot on real two-stroke leaf blowers). Translucent so the
+	# operator sees the fuel sloshing inside.
+	var primer_mat := StandardMaterial3D.new()
+	primer_mat.albedo_color = Color(0.96, 0.86, 0.20, 0.60)
+	primer_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	primer_mat.roughness = 0.25
+	_primer_dome = MeshInstance3D.new()
+	var pdm := SphereMesh.new()
+	pdm.radius = 0.026
+	pdm.height = 0.042
+	pdm.radial_segments = 14
+	pdm.rings = 7
+	_primer_dome.mesh = pdm
+	_primer_dome.material_override = primer_mat
+	_primer_dome.position = Vector3(0.0, 0.18, -0.06)
+	_primer_dome.name = "PrimerBulb"
+	add_child(_primer_dome)
 	# Bounding collision so it rests on the floor when dropped.
 	var col := CollisionShape3D.new()
 	var cb := BoxShape3D.new(); cb.size = Vector3(0.24, 0.30, 0.85)
@@ -205,6 +238,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		_drop()
 		get_viewport().set_input_as_handled()
 		return
+	# RIGHT MOUSE BUTTON — primer pump. Squeezes the soft yellow dome to push
+	# fuel into the carb so the engine will catch. One press = one pump;
+	# PRIME_PUMPS_REQUIRED clears the needs_prime flag.
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.pressed and mb.button_index == MOUSE_BUTTON_RIGHT:
+			_pump_primer()
+			get_viewport().set_input_as_handled()
+			return
 	# Continuous fire — _physics_process reads Input.is_action_pressed("tool_use")
 	# directly so a HELD LMB ramps up the spool; release ramps it back down.
 
@@ -301,9 +343,19 @@ func _physics_process(delta: float) -> void:
 	var inv := get_node_or_null("/root/Inventory")
 	var is_active := (inv == null) or bool(inv.call("is_active", self))
 	var pressed := is_active and Input.is_action_pressed("tool_use")
-	# Empty tank gates the engine — no spool-up while dry, and a running engine
-	# coasts to a stop the moment the last drop is gone (banner already warned).
+	var was_running : bool = _spool > 0.0001
+	# Empty tank: engine just dies. No spool-up. If it was running, the next time
+	# the tank gets fuel the operator still has to PRIME — running dry pulls air
+	# into the carb line, exactly like a real two-stroke.
 	if fuel_l <= 0.0:
+		if was_running:
+			_needs_prime = true
+		if _state == State.SPOOLING_UP or _state == State.FULL_THROTTLE:
+			_state = State.SPOOLING_DOWN
+		pressed = false
+	# Cold engine / dry-out — startup requires priming first. While not primed,
+	# pulling the trigger does nothing (the carb has no fuel to ignite).
+	if _needs_prime:
 		if _state == State.SPOOLING_UP or _state == State.FULL_THROTTLE:
 			_state = State.SPOOLING_DOWN
 		pressed = false
@@ -319,13 +371,27 @@ func _physics_process(delta: float) -> void:
 		State.SPOOLING_DOWN:
 			_spool = maxf(0.0, _spool - delta / maxf(spool_time_seconds, 0.001))
 			if _spool <= 0.0: _state = State.OFF
-			if pressed and fuel_l > 0.0: _state = State.SPOOLING_UP
+			if pressed and fuel_l > 0.0 and not _needs_prime: _state = State.SPOOLING_UP
+	# Stutter: below 5% the carb can't sustain WOT — full-throttle requests get
+	# CAPPED at idle so the engine wheezes at low RPM until the operator refuels.
+	# Real two-stroke behaviour, replaces the old warning banners with feedback
+	# the operator can hear/feel.
+	var f := fuel_pct()
+	if f > 0.0 and f < STUTTER_THRESHOLD:
+		_spool = minf(_spool, IDLE_SPOOL)
 	# Burn fuel proportional to live spool — half-throttle uses half-rate.
 	if _spool > 0.0001:
 		var burn := (fuel_capacity_l / RUN_SECONDS_FULL) * _spool * delta
 		fuel_l = maxf(0.0, fuel_l - burn)
-		_check_fuel_warnings()
 		_refresh_fuel_led()
+	# Animate the primer bulb squish from the last pump (visual feedback).
+	if _primer_pulse_t > 0.0:
+		_primer_pulse_t = maxf(0.0, _primer_pulse_t - delta)
+		var k : float = _primer_pulse_t / 0.20      # 0..1
+		if _primer_dome != null:
+			_primer_dome.scale.y = 1.0 - 0.45 * k
+	elif _primer_dome != null and _primer_dome.scale.y != 1.0:
+		_primer_dome.scale.y = 1.0
 	if _spool <= 0.0:
 		return
 
@@ -364,19 +430,16 @@ func fuel_pct() -> float:
 	return clampf(fuel_l / fuel_capacity_l, 0.0, 1.0)
 
 ## Pour `litres` of fuel in (or default: top all the way up). Caller-side check
-## of capacity is unnecessary — overflow is clamped here. Resets the low-fuel
-## warnings so a refill silences the banner spam until it dips again. Emits a
-## one-shot scanner banner so the operator knows the refill landed.
+## of capacity is unnecessary — overflow is clamped here. Refuelling does NOT
+## clear _needs_prime — if the tank ran dry, the operator still has to prime
+## the carb (right-mouse pump) before the engine will catch. The LED recolours
+## immediately so the operator sees the refill landed; there's no banner.
 func refuel(litres: float = -1.0) -> void:
 	if litres < 0.0:
 		fuel_l = fuel_capacity_l
 	else:
 		fuel_l = minf(fuel_capacity_l, fuel_l + litres)
-	_warned_25 = false
-	_warned_10 = false
-	_warned_empty = false
 	_refresh_fuel_led()
-	_banner("Bladblazer bijgevuld — %d%%" % int(round(fuel_pct() * 100.0)))
 
 ## Recolor the housing LED so the operator sees the tank state at a glance.
 ##   ≥50% green   ·   25–50% yellow   ·   10–25% orange   ·   <10% red   ·   0% off
@@ -394,20 +457,17 @@ func _refresh_fuel_led() -> void:
 	_fuel_led_mat.emission = c
 	_fuel_led_mat.emission_energy_multiplier = (1.8 if f > 0.0 else 0.0)
 
-## Banner the operator at 25%, 10%, and 0% so they know to head to a jerry can.
-func _check_fuel_warnings() -> void:
-	var f := fuel_pct()
-	if not _warned_25 and f <= 0.25:
-		_warned_25 = true
-		_banner("Bladblazer brandstof 25% — overweeg bij te vullen")
-	if not _warned_10 and f <= 0.10:
-		_warned_10 = true
-		_banner("Bladblazer brandstof 10% — bij een jerrycan bijvullen")
-	if not _warned_empty and f <= 0.0:
-		_warned_empty = true
-		_banner("Bladblazer leeg — vul bij bij een jerrycan")
-
-func _banner(text: String) -> void:
-	var bus := get_node_or_null("/root/EventBus")
-	if bus and bus.has_signal("scanner_banner"):
-		bus.emit_signal("scanner_banner", text)
+## Pump the primer bulb once. After PRIME_PUMPS_REQUIRED pumps the engine is
+## ready to start; below that the trigger does nothing. Pumping with no fuel
+## in the tank is a no-op — you can't push what isn't there.
+func _pump_primer() -> void:
+	if not _needs_prime:
+		return
+	if fuel_l <= 0.0:
+		# Tank dry — pump does nothing. Operator needs to refuel at the can first.
+		return
+	_primer_pumps += 1
+	_primer_pulse_t = 0.20    # visual squish for ~200 ms
+	if _primer_pumps >= PRIME_PUMPS_REQUIRED:
+		_needs_prime = false
+		_primer_pumps = 0
