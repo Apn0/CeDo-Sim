@@ -920,6 +920,15 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 
+	# P opens the pause menu directly (skipping the modal-close path that ESC has
+	# to do because operators reach the Settings card from any state via P).
+	if event.is_action_pressed("menu_toggle") and (_settings_menu == null or not _settings_menu.visible):
+		get_viewport().set_input_as_handled()
+		if _pause_overlay.visible:
+			_do_resume()
+		else:
+			_do_pause()
+		return
 	if event.is_action_pressed("ui_cancel"):
 		if _end_of_shift_overlay and _end_of_shift_overlay.visible:
 			get_viewport().set_input_as_handled()

@@ -98,7 +98,7 @@ const ACTION_GROUPS := [
 	},
 	{
 		"label":   "Interaction & UI",
-		"actions": ["interact", "ui_cancel", "camera_toggle", "map_toggle", "crew_panel", "freecam_save", "debug_unstuck"],
+		"actions": ["interact", "ui_cancel", "menu_toggle", "camera_toggle", "map_toggle", "crew_panel", "freecam_save", "debug_unstuck"],
 	},
 	{
 		"label":   "Walkie-talkie",
@@ -151,7 +151,8 @@ const ACTION_LABELS := {
 	"prone_toggle":             "Lie down / prone (toggle) — Z",
 	"interact":                 "Interact / enter vehicle",
 	"ui_cancel":                "Pause / cancel",
-	"camera_toggle":            "Cycle camera mode (P — also F4-tap)\n  F4 + ←/→/↑/↓ pan orbit · F4 + scroll wheel zoom",
+	"menu_toggle":              "Open / close pause menu (P) — Resume · Settings · Save & Quit",
+	"camera_toggle":            "Cycle camera mode (F4-tap)\n  F4 + ←/→/↑/↓ pan orbit · F4 + scroll wheel zoom",
 	"map_toggle":               "Open / close the site map (M)",
 	"crew_panel":               "Open crew assignment panel — assign workers → posts (Numpad .)",
 	"debug_unstuck":            "Unstuck me — lift +2 m, else teleport to PlayerSpawn (F12)",
@@ -223,8 +224,50 @@ func _ready() -> void:
 	_current_keybinds = _duplicate_keybinds(_default_keybinds)
 
 	_load_from_disk()
+	_migrate_legacy_keybinds()
 	_sync_pending_from_current()
 	apply()
+
+## One-time keybind migration. The saved user://settings.cfg overlays defaults,
+## so a player who launched before this change still has the OLD P → camera_toggle
+## binding even after we rebound it to F4 in project.godot. Strip P from
+## camera_toggle if it's still there, and add P to menu_toggle if it's missing —
+## without touching any other custom rebinds the player has made.
+func _migrate_legacy_keybinds() -> void:
+	var ct : Array = _current_keybinds.get("camera_toggle", [])
+	var kept : Array = []
+	var had_p := false
+	for ev in ct:
+		if ev is InputEventKey and (ev as InputEventKey).keycode == KEY_P:
+			had_p = true
+			continue
+		kept.append(ev)
+	if had_p:
+		_current_keybinds["camera_toggle"] = kept
+		# If camera_toggle ended up with no key at all, restore the F4 default so
+		# the user doesn't lose the camera cycle entirely.
+		var has_any_key := false
+		for ev in kept:
+			if ev is InputEventKey:
+				has_any_key = true
+				break
+		if not has_any_key:
+			var f4 := InputEventKey.new()
+			f4.keycode = KEY_F4
+			_current_keybinds["camera_toggle"].append(f4)
+	# Ensure menu_toggle is bound to P if not already configured.
+	var mt : Array = _current_keybinds.get("menu_toggle", [])
+	var has_p := false
+	for ev in mt:
+		if ev is InputEventKey and (ev as InputEventKey).keycode == KEY_P:
+			has_p = true
+			break
+	if not has_p:
+		var p := InputEventKey.new()
+		p.keycode = KEY_P
+		if not _current_keybinds.has("menu_toggle"):
+			_current_keybinds["menu_toggle"] = []
+		_current_keybinds["menu_toggle"].append(p)
 
 # =============================================================================
 # PUBLIC API (consumers query these helpers — read live state from _current)
