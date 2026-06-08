@@ -78,7 +78,16 @@ func _ready() -> void:
 	_spawn_hud()
 	
 	if game_state and game_state.is_new_save:
-		_start_setup_mode()
+		# If the user has already run "Setup World Layout" from the main menu,
+		# skip the in-world walk-and-press-ENTER ritual and use those markers.
+		if WorldLayout.is_configured():
+			if game_state.factory_center == Vector3.ZERO:
+				game_state.factory_center = WorldLayout.factory_center
+			game_state.is_new_save = false
+			save_game()
+			_spawn_world_items()
+		else:
+			_start_setup_mode()
 	else:
 		_spawn_world_items()
 
@@ -259,9 +268,13 @@ func _spawn_player() -> void:
 			from_save   = true
 
 	if not from_save:
-		var marker := find_child("PlayerSpawn", false, false) as Node3D
-		spawn_pos = marker.global_position if marker else Vector3(0.0, 1.0, 0.0)
-		spawn_pos.y += 1.0   # lift above marker so capsule doesn't clip floor
+		# Priority: WorldLayout player_spawn (set in WorldSetup) → PlayerSpawn marker → origin
+		if WorldLayout.player_spawn != Vector3.ZERO:
+			spawn_pos = WorldLayout.player_spawn + Vector3(0.0, 1.0, 0.0)
+		else:
+			var marker := find_child("PlayerSpawn", false, false) as Node3D
+			spawn_pos = marker.global_position if marker else Vector3(0.0, 1.0, 0.0)
+			spawn_pos.y += 1.0   # lift above marker so capsule doesn't clip floor
 
 	var script := load("res://src/scenes/player/PlayerController.gd")
 	if not script:
@@ -470,15 +483,14 @@ func _spawn_forklift() -> void:
 		return
 	var fork := fork_scene.instantiate()
 	add_child(fork)
-	# Park 3 m to the player's side so it's the first thing they see on spawn. We
-	# anchor to where the PLAYER actually ended up (which may be a resumed save
-	# 500 m from the marker), NOT the marker — otherwise a saved game leaves the
-	# forklift stranded back at origin while the player is out by the pipeline.
-	var anchor := _get_factory_anchor()
-	anchor.x += 3.0      # 3 m to the side — close enough to reach immediately
-	anchor.y += 0.5      # small clearance so wheels settle without a hard bounce
-	fork.global_position = anchor
-	print("[MainWorld] Forklift A spawned 3 m from anchor at %s" % str(anchor))
+	# Priority: WorldLayout vehicle spawn → anchor + offset fallback
+	var fallback := _get_factory_anchor()
+	fallback.x += 3.0; fallback.y += 0.5
+	var pos := WorldLayout.get_vehicle_spawn("forklift", fallback)
+	if pos != fallback:
+		pos.y += 0.5   # always lift off the layout floor for wheel settle
+	fork.global_position = pos
+	print("[MainWorld] Forklift A spawned at %s" % str(pos))
 
 ## Anchor for the vehicle row — the player's actual spawn (marker OR resumed save),
 ## so every vehicle parks beside the player wherever they end up.
@@ -539,11 +551,12 @@ func _spawn_bale_clamp() -> void:
 		return
 	var v := scene.instantiate()
 	add_child(v)
-	var pos := _vehicle_anchor()
-	pos.x += 10.0     # next to the forklift, same reachable floor
-	pos.y += 0.5
+	var fallback := _vehicle_anchor()
+	fallback.x += 10.0; fallback.y += 0.5
+	var pos := WorldLayout.get_vehicle_spawn("bale_clamp", fallback)
+	if pos != fallback: pos.y += 0.5
 	v.global_position = pos
-	print("[MainWorld] Bale clamp spawned")
+	print("[MainWorld] Bale clamp spawned at %s" % str(pos))
 
 func _spawn_merlo() -> void:
 	var scene := load("res://src/scenes/vehicles/Merlo.tscn") as PackedScene
@@ -552,23 +565,23 @@ func _spawn_merlo() -> void:
 		return
 	var v := scene.instantiate()
 	add_child(v)
-	var pos := _vehicle_anchor()
-	pos.x += 15.0     # next in the row beside the bale clamp
-	pos.y += 0.5
+	var fallback := _vehicle_anchor()
+	fallback.x += 15.0; fallback.y += 0.5
+	var pos := WorldLayout.get_vehicle_spawn("merlo", fallback)
+	if pos != fallback: pos.y += 0.5
 	v.global_position = pos
-	print("[MainWorld] Merlo spawned")
-	# High-detail Merlo P40 variant from the imported FBX — parked alongside.
-	# The original procedural Merlo stays; this is a separate vehicle the
-	# operator can choose to drive.
+	print("[MainWorld] Merlo spawned at %s" % str(pos))
+	# High-detail Merlo P40 variant — parked at its own marker.
 	var scene2 := load("res://src/scenes/vehicles/MerloP40.tscn") as PackedScene
 	if scene2:
 		var v2 := scene2.instantiate()
 		add_child(v2)
-		var pos2 := _vehicle_anchor()
-		pos2.x += 22.0    # 7 m further along the vehicle row
-		pos2.y += 0.5
+		var fallback2 := _vehicle_anchor()
+		fallback2.x += 22.0; fallback2.y += 0.5
+		var pos2 := WorldLayout.get_vehicle_spawn("merlo_p40", fallback2)
+		if pos2 != fallback2: pos2.y += 0.5
 		v2.global_position = pos2
-		print("[MainWorld] Merlo P40 spawned")
+		print("[MainWorld] Merlo P40 spawned at %s" % str(pos2))
 
 func _spawn_scissor_lift() -> void:
 	var scene := load("res://src/scenes/vehicles/ScissorLift.tscn") as PackedScene
@@ -577,11 +590,12 @@ func _spawn_scissor_lift() -> void:
 		return
 	var v := scene.instantiate()
 	add_child(v)
-	var pos := _vehicle_anchor()
-	pos.x += 20.0     # next in the vehicle row after the Merlo at +15
-	pos.y += 0.5      # clearance so wheels settle without bouncing
+	var fallback := _vehicle_anchor()
+	fallback.x += 20.0; fallback.y += 0.5
+	var pos := WorldLayout.get_vehicle_spawn("scissor", fallback)
+	if pos != fallback: pos.y += 0.5
 	v.global_position = pos
-	print("[MainWorld] Scissor lift spawned")
+	print("[MainWorld] Scissor lift spawned at %s" % str(pos))
 
 # =============================================================================
 # BALE YARD — feedstock stacks (2-3 high) the vehicles pick up bottom-first
@@ -593,16 +607,20 @@ func _spawn_scissor_lift() -> void:
 ## frozen RigidBody3D in group "bale" with a unique printed label, identical to a
 ## build-placed bale, so grab / carry / drop and LineFlow feeding all just work.
 func _spawn_bale_yard() -> void:
-	# Anchor the yard to where the PLAYER actually spawned (which may be a resumed
-	# save far from the marker), so the stacks are always a few steps away to test
-	# with — not stranded back at the factory marker.
-	var base : Vector3 = _get_factory_anchor()
-	# A tidy yard 6 m to the player's side and a few metres ahead — next to the
-	# forklift (which parks at +3 on X), clear of the player capsule. Drop the
-	# FULL capsule half-height (0.9 m): the spawn anchor is the player capsule's
-	# CENTRE, which sits ~0.9 m above the floor, so subtracting it puts each bale
-	# base ON the floor instead of hovering.
-	base += Vector3(6.0, -0.9, 6.0)
+	# Anchor: WorldLayout bale-yard rectangle (first entry) if present; else the
+	# old factory-anchor + offset behaviour. WorldLayout origin is on the floor,
+	# so we don't subtract the player half-height in that path.
+	var base : Vector3
+	if WorldLayout.bale_yards.size() > 0:
+		base = (WorldLayout.bale_yards[0] as Dictionary)["origin"]
+	else:
+		base = _get_factory_anchor()
+		# A tidy yard 6 m to the player's side and a few metres ahead — next to the
+		# forklift (which parks at +3 on X), clear of the player capsule. Drop the
+		# FULL capsule half-height (0.9 m): the spawn anchor is the player capsule's
+		# CENTRE, which sits ~0.9 m above the floor, so subtracting it puts each bale
+		# base ON the floor instead of hovering.
+		base += Vector3(6.0, -0.9, 6.0)
 
 	var yard := Node3D.new()
 	yard.name = "BaleYard"

@@ -4,14 +4,19 @@ extends Control
 @onready var load_button: Button = $CenterContainer/VBoxContainer/LoadButton
 @onready var new_save_input: LineEdit = $CenterContainer/VBoxContainer/NewSaveInput
 @onready var new_save_button: Button = $CenterContainer/VBoxContainer/NewSaveButton
+@onready var world_setup_button: Button = $CenterContainer/VBoxContainer/WorldSetupButton
 
 var game_state_script = preload("res://src/scenes/world/GameState.gd")
 
 func _ready() -> void:
 	load_button.pressed.connect(_on_load_pressed)
 	new_save_button.pressed.connect(_on_new_save_pressed)
-	
+	world_setup_button.pressed.connect(_on_world_setup_pressed)
+
 	_refresh_save_list()
+
+func _on_world_setup_pressed() -> void:
+	get_tree().change_scene_to_file("res://src/scenes/world/WorldSetup.tscn")
 
 func _refresh_save_list() -> void:
 	save_list.clear()
