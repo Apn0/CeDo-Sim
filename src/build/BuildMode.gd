@@ -49,6 +49,14 @@ var _two_point_start : Vector3 = Vector3.ZERO
 var _has_two_point   : bool = false
 var _two_point_preview : MeshInstance3D = null
 
+# Smart-snap state for support poles. When the crosshair is aimed at a placed
+# belt's deck, _pole_snap_height holds the world-Y the pole should reach (so its
+# top kisses the deck) and _pole_snap_xz the floor-plane position to plant it at.
+var _pole_snap_height : float = 0.0          # 0 = no snap active; use default height
+var _pole_snap_xz     : Vector3 = Vector3.ZERO   # world position to plant the base
+const POLE_DEFAULT_H : float = 2.0           # matches the catalog size.y for poles
+const FLOOR_Y : float = 0.0
+
 # 4-point surface capture
 var _surf_points  : Array[Vector3] = []
 var _surf_markers : Node3D
@@ -277,6 +285,11 @@ func _update_placing_status() -> void:
 		_status.text = "Placing: %s   ·   %s   ·   height %.2fm   [G] grid: %s   [RMB] cancel   [Tab] catalog" \
 			% [nm, phase, _ghost_height, grid_txt]
 		return
+	if PlaceableCatalog.is_pole(_active_id):
+		var snap_hint : String = ("SNAP %.2fm" % _pole_snap_height) if _pole_snap_height > 0.0 else "free"
+		_status.text = "Placing: %s   ·   aim at a belt to snap, else place freely   ·   %s   ·   [G] grid: %s   [RMB] back   [Tab] catalog" \
+			% [nm, snap_hint, grid_txt]
+		return
 	_status.text = "Placing: %s   ·   [LMB] place   [Q]/[E] rotate   [R]/[F] height %.2fm   [G] grid: %s   [RMB] away   [X] delete   [Tab] catalog" \
 		% [nm, _ghost_height, grid_txt]
 
@@ -380,6 +393,23 @@ func _process(_delta: float) -> void:
 	if _grid_snap:
 		p.x = roundf(p.x / GRID) * GRID
 		p.z = roundf(p.z / GRID) * GRID
+	# Smart snap for poles: when aiming at a placed belt deck, the pole's base
+	# stays on the floor and the ghost stretches up to kiss the deck at the hit
+	# point. Outside a belt, the pole behaves like any other placeable.
+	_pole_snap_height = 0.0
+	if PlaceableCatalog.is_pole(_active_id):
+		var snap := _try_pole_snap(hit)
+		if not snap.is_empty():
+			_pole_snap_xz = Vector3(snap["x"], FLOOR_Y, snap["z"])
+			_pole_snap_height = float(snap["h"])
+			_ghost.global_position = _pole_snap_xz
+			_ghost.rotation.y = _ghost_rot_y
+			# Stretch the ghost's local Y so its top reaches the hit point.
+			_ghost.scale = Vector3(1.0, _pole_snap_height / POLE_DEFAULT_H, 1.0)
+			if _has_two_point and _two_point_preview != null:
+				_update_two_point_preview(p)
+			return
+		_ghost.scale = Vector3.ONE   # no snap → restore default
 	p.y += _ghost_height
 	_ghost.global_position = p
 	_ghost.rotation.y = _ghost_rot_y
@@ -387,6 +417,26 @@ func _process(_delta: float) -> void:
 	# line from the captured start to the current cursor each frame.
 	if _has_two_point and _two_point_preview != null:
 		_update_two_point_preview(p)
+
+## Walk the raycast hit collider up to find a placed object; if it's a belt,
+## return the snap point + the required pole height. Empty dict = not a belt.
+func _try_pole_snap(hit: Dictionary) -> Dictionary:
+	if not hit.has("collider"):
+		return {}
+	var c : Node = hit["collider"]
+	while c != null and not c.is_in_group("placed_object"):
+		c = c.get_parent()
+	if c == null:
+		return {}
+	var pid := String(c.get_meta("placeable_id", ""))
+	# Anything belt-like qualifies — extend this list as new belt placeables land.
+	var is_belt : bool = (pid == "variable_belt" or pid == "transport_belt"
+		or pid == "inclined_belt_8m" or pid == "compactorband")
+	if not is_belt:
+		return {}
+	var pos : Vector3 = hit["position"]
+	var h : float = maxf(0.15, pos.y - FLOOR_Y)
+	return {"x": pos.x, "z": pos.z, "h": h}
 
 func _spawn_ghost(id: String) -> void:
 	_clear_ghost()
@@ -415,6 +465,9 @@ func _place_current() -> void:
 		var node := PlaceableCatalog.build_variable_belt(_two_point_start, end_pos, false)
 		if node != null:
 			_placed_root.add_child(node)
+			# Auto-spawn the leg poles the variable belt recorded in its meta — one
+			# pole every ~2.5 m along the span at the correct world-vertical height.
+			_spawn_auto_legs(node)
 		_has_two_point = false
 		_two_point_start = Vector3.ZERO
 		_clear_two_point_preview()
@@ -422,6 +475,20 @@ func _place_current() -> void:
 		if line_flow:
 			line_flow.rebuild()
 		_update_placing_status()
+		return
+	# Poles use a custom-height build path so the smart snap height (or the
+	# default height when no belt is under the crosshair) actually lands as the
+	# pole's standing height — not a uniform Y-scaled mesh.
+	if PlaceableCatalog.is_pole(_active_id):
+		var height : float = _pole_snap_height if _pole_snap_height > 0.0 else POLE_DEFAULT_H
+		var base : Vector3 = _pole_snap_xz if _pole_snap_height > 0.0 else _ghost.global_position
+		var pole := PlaceableCatalog.build_pole(_active_id, height, false)
+		if pole != null:
+			_placed_root.add_child(pole)
+			pole.global_position = base
+			pole.rotation.y = _ghost_rot_y
+			_finalize_placed(pole, _active_id, 0.0)
+		_save_layout()
 		return
 	var node := PlaceableCatalog.build_node(_active_id, false)
 	if node == null:
@@ -434,6 +501,23 @@ func _place_current() -> void:
 	_save_layout()
 	if line_flow:
 		line_flow.rebuild()
+
+## Read the variable belt's `auto_legs` meta — a list of {pos, h} entries — and
+## spawn a pole_single at each one as a regular placed_object. The operator can
+## delete individual ones afterward, or replace them with a different pole type.
+func _spawn_auto_legs(vb: Node3D) -> void:
+	if vb == null or not vb.has_meta("auto_legs"):
+		return
+	var legs : Array = vb.get_meta("auto_legs")
+	for entry in legs:
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		var pos : Vector3 = entry.get("pos", Vector3.ZERO)
+		var h   : float   = float(entry.get("h", POLE_DEFAULT_H))
+		var pole := PlaceableCatalog.build_pole("pole_single", h, false)
+		if pole != null:
+			_placed_root.add_child(pole)
+			pole.global_position = pos
 
 ## Two-point placement helpers (variable_belt): a thin cyan cylinder drawn from
 ## the captured start to the current ghost cursor so the operator sees the span
@@ -722,6 +806,10 @@ func _save_layout() -> void:
 			}
 			if child.has_meta("bale_code"):
 				entry["code"] = String(child.get_meta("bale_code"))
+			# Custom-height support poles: stash the pole_height meta so reload
+			# rebuilds at the actual standing height (smart-snap or auto-leg).
+			if child.has_meta("pole_height"):
+				entry["pole_h"] = float(child.get_meta("pole_height"))
 			# Variable-length belts persist their two endpoints directly so reload
 			# rebuilds them via build_variable_belt(start, end) at the correct
 			# length, angle, and start/end height — not a generic placement.
@@ -797,6 +885,22 @@ func load_layout() -> void:
 			var vb := PlaceableCatalog.build_variable_belt(sv, ev, false)
 			if vb != null:
 				_placed_root.add_child(vb)
+				# The poles that auto-spawn with it are SEPARATE entries in the save
+				# (each persisted with its own pole_h), so we don't re-emit legs here.
+				count += 1
+			continue
+		# Support poles: build at the persisted custom standing height when one
+		# was stored (smart-snap or auto-leg); fall through to default otherwise.
+		var ld_id := String(dict.get("id", ""))
+		if PlaceableCatalog.is_pole(ld_id) and dict.has("pole_h"):
+			var pole := PlaceableCatalog.build_pole(ld_id, float(dict["pole_h"]), false)
+			if pole != null:
+				_placed_root.add_child(pole)
+				pole.global_position = Vector3(
+					float(dict.get("x", 0.0)),
+					float(dict.get("y", 0.0)),
+					float(dict.get("z", 0.0)))
+				pole.rotation.y = float(dict.get("rot_y", 0.0))
 				count += 1
 			continue
 

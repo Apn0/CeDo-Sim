@@ -53,6 +53,14 @@ static func items() -> Array[Dictionary]:
 			# + end height. Belt spans between the two with the correct angle + length.
 			# size here is the rough footprint for the first-click ghost only.
 			{"id": "variable_belt",  "name": "Conveyor (variable, 2-click)", "category": "Conveyance", "size": Vector3(1.0, 0.40, 1.0), "color": Color(0.34, 0.34, 0.38)},
+			# Support poles for variable belts (or anything else that needs holding up).
+			# Each is built at the size.y the catalog entry quotes (the default standing
+			# height); SMART SNAP in BuildMode auto-scales the ghost so the top of the
+			# pole sits exactly at whatever belt deck the crosshair is on, and rebuilds
+			# at that custom height when placed.
+			{"id": "pole_single",    "name": "Support pole (1 leg)",         "category": "Conveyance", "size": Vector3(0.30, 2.00, 0.30), "color": Color(0.55, 0.57, 0.61)},
+			{"id": "pole_double",    "name": "Support pole (2 legs)",        "category": "Conveyance", "size": Vector3(0.70, 2.00, 0.30), "color": Color(0.55, 0.57, 0.61)},
+			{"id": "pole_a_frame",   "name": "Support pole (A-frame)",       "category": "Conveyance", "size": Vector3(0.80, 2.00, 0.40), "color": Color(0.55, 0.57, 0.61)},
 			# ── Opzetbanden (intake/feed belts to a shredder) ────────────────────
 			# Geometry is built procedurally by _build_opzetband from the id. The size
 			# here is the rough bounding box (W × H × L) for the build-mode footprint.
@@ -246,6 +254,21 @@ static func build_variable_belt(start_pos: Vector3, end_pos: Vector3, ghost: boo
 	col.shape = bx
 	col.position = Vector3(0.0, 0.20, length * 0.5)
 	body.add_child(col)
+	# AUTO-LEGS — generate single-leg supports at ~2.5 m intervals along the span
+	# (world-vertical), each tall enough to reach the deck at its share of the
+	# diff.y rise. These spawn as SIBLINGS via a meta hook so BuildMode can add
+	# them to _placed_root (where they become independent placed_objects that the
+	# operator can delete, augment, or replace).
+	var legs : Array = []
+	var step_m : float = 2.5
+	var n_legs : int = max(2, int(round(length / step_m)) + 1)
+	for i in n_legs:
+		var t : float = float(i) / float(maxi(1, n_legs - 1))
+		var point : Vector3 = start_pos + diff * t                # belt-deck world pos
+		var leg_top_y : float = point.y + 0.20                    # match deck_y offset
+		var leg_h : float = maxf(0.15, leg_top_y)                 # floor assumed at y=0
+		legs.append({"pos": Vector3(point.x, 0.0, point.z), "h": leg_h})
+	body.set_meta("auto_legs", legs)
 	return body
 
 ## Internal: build the visual mesh for a variable belt in LOCAL space — deck +
@@ -508,6 +531,9 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 		"compressor_a":            _m_compressor_a(p, size, color, ghost)
 		"compressor_b":            _m_compressor_b(p, size, color, ghost)
 		"dirt_hotspot":            _m_dirt_hotspot(p, size, color, ghost)
+		"pole_single":             _m_pole_single(p, size, ghost)
+		"pole_double":             _m_pole_double(p, size, ghost)
+		"pole_a_frame":            _m_pole_a_frame(p, size, ghost)
 		"plasmaq":        _m_plasmaq(p, size, color, ghost)
 		"laser_filter":   _m_laser_filter(p, size, color, ghost)
 		"melt_pump":      _m_melt_pump(p, size, color, ghost)
@@ -2961,6 +2987,91 @@ static func _m_dirt_hotspot(p: Node3D, size: Vector3, color: Color, ghost: bool)
 		var ctrl : Node = load("res://src/sim/DirtHotspot.gd").new()
 		ctrl.name = "DirtHotspot"
 		p.add_child(ctrl)
+
+# ── Support poles (catalog + custom-height builder) ─────────────────────────
+## True for pole placeables. BuildMode reads this to trigger smart snap (raycast
+## hit on a belt deck → pole top aligns to the deck, height auto-stretches down
+## to the floor).
+static func is_pole(id: String) -> bool:
+	return id == "pole_single" or id == "pole_double" or id == "pole_a_frame"
+
+## Build a pole at a custom HEIGHT (overrides the catalog default size.y so the
+## same pole id can land at any required height — e.g. a tall pole under the top
+## of a steep inclined belt, a short one under a horizontal belt at deck level).
+## Returns a placed-object-tagged StaticBody3D ready for the build root.
+static func build_pole(id: String, height: float, ghost: bool = false) -> Node3D:
+	if not is_pole(id):
+		return null
+	var item := get_item(id)
+	if item.is_empty():
+		return null
+	var size : Vector3 = item["size"]
+	# Override the size.y so the model builder draws the right standing height.
+	size.y = maxf(0.10, height)
+	if ghost:
+		return _simple_ghost(size)
+	var body := StaticBody3D.new()
+	body.name = String(item["name"])
+	body.set_meta("placeable_id", id)
+	body.set_meta("pole_height", size.y)
+	body.add_to_group("placed_object")
+	var model := Node3D.new()
+	model.name = "Model"
+	body.add_child(model)
+	_build_model(model, id, "Conveyance", size, item.get("color", Color(0.55, 0.57, 0.61)), false)
+	var col := CollisionShape3D.new()
+	var bx := BoxShape3D.new()
+	bx.size = Vector3(size.x, size.y, size.z)
+	col.shape = bx
+	col.position = Vector3(0.0, size.y * 0.5, 0.0)
+	body.add_child(col)
+	return body
+
+## Single vertical post + base plate. Top of the post = size.y.
+static func _m_pole_single(p: Node3D, size: Vector3, ghost: bool) -> void:
+	var steel := _mat(_STEEL, ghost, 0.6, 0.4)
+	var dark := _mat(_DARK, ghost, 0.5, 0.6)
+	_box(p, Vector3(0.18, 0.02, 0.18), Vector3(0.0, 0.01, 0.0), dark)
+	_cyl(p, 0.04, 0.04, size.y, Vector3(0.0, size.y * 0.5, 0.0), steel)
+	# Saddle plate at the top so the belt rests cleanly.
+	_box(p, Vector3(0.18, 0.04, 0.08), Vector3(0.0, size.y - 0.02, 0.0), steel)
+
+## Two vertical posts side by side + cross-brace + saddle plate.
+static func _m_pole_double(p: Node3D, size: Vector3, ghost: bool) -> void:
+	var steel := _mat(_STEEL, ghost, 0.6, 0.4)
+	var dark := _mat(_DARK, ghost, 0.5, 0.6)
+	var half : float = size.x * 0.5 - 0.05
+	for sx in [-1.0, 1.0]:
+		_box(p, Vector3(0.16, 0.02, 0.18), Vector3(sx * half, 0.01, 0.0), dark)
+		_cyl(p, 0.04, 0.04, size.y, Vector3(sx * half, size.y * 0.5, 0.0), steel)
+	# Cross-brace at 60% of height.
+	_box(p, Vector3(half * 2.0, 0.04, 0.04), Vector3(0.0, size.y * 0.60, 0.0), steel)
+	# Saddle plate spanning both posts.
+	_box(p, Vector3(half * 2.0 + 0.08, 0.04, 0.10), Vector3(0.0, size.y - 0.02, 0.0), steel)
+
+## A-frame — two legs angled inward, joined at the top by a saddle plate.
+static func _m_pole_a_frame(p: Node3D, size: Vector3, ghost: bool) -> void:
+	var steel := _mat(_STEEL, ghost, 0.6, 0.4)
+	var dark := _mat(_DARK, ghost, 0.5, 0.6)
+	var half : float = size.x * 0.5 - 0.05
+	# Each leg's straight-line length (the longer the height, the more vertical).
+	var leg_len : float = sqrt(half * half + size.y * size.y)
+	var lean : float = atan2(half, size.y)
+	for sx in [-1.0, 1.0]:
+		_box(p, Vector3(0.16, 0.02, 0.18), Vector3(sx * half, 0.01, 0.0), dark)
+		var mi := MeshInstance3D.new()
+		var cm := CylinderMesh.new()
+		cm.top_radius = 0.04
+		cm.bottom_radius = 0.04
+		cm.height = leg_len
+		cm.radial_segments = 8
+		mi.mesh = cm
+		mi.material_override = steel
+		mi.position = Vector3(sx * half * 0.5, size.y * 0.5, 0.0)
+		mi.rotation.z = sx * lean
+		p.add_child(mi)
+	# Cross-brace at the apex.
+	_box(p, Vector3(0.16, 0.04, 0.10), Vector3(0.0, size.y - 0.02, 0.0), steel)
 
 ## Prints the origin name + unique code + a barcode (derived from the code) onto
 ## a placed bale's yellow label. Called once the bale's unique code is known.

@@ -120,6 +120,13 @@ static func profile(id: String) -> Dictionary:
 			pr["role"] = "conveyor"
 			pr["in"]   = Vector3(0.0, 0.85, -0.45)
 			pr["out"]  = Vector3(0.0, 0.85, 0.45)
+		"variable_belt":
+			# Variable-length conveyor — endpoints come from the placed instance's
+			# vb_start / vb_end meta; the in/out fractions here are placeholders
+			# that LineFlow._discover ignores for this id.
+			pr["role"] = "conveyor"
+			pr["in"]   = Vector3(0.0, 0.5, -0.5)
+			pr["out"]  = Vector3(0.0, 0.5, 0.5)
 		"inclined_belt_8m":
 			# Climbs (Y+Z) diagonal: input at the base (-Z is the low end), output
 			# at the top corner of the bounding box. y/z fractions match the 8.5 m

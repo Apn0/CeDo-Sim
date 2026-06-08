@@ -137,6 +137,20 @@ func rebuild() -> void:
 func granulaat_quality() -> float:
 	return _gran_q_accum / gran_mass if gran_mass > 0.0 else 0.0
 
+## Input port world position for `node3d`. Variable belts override the standard
+## bounding-box fraction with their persisted vb_start endpoint — without this,
+## the fractional `inf` would land in the wrong place for a span that's longer
+## than its catalog bounding-box size.
+func _node_win(node3d: Node3D, id: String, inf: Vector3, size: Vector3) -> Vector3:
+	if id == "variable_belt" and node3d.has_meta("vb_start"):
+		return node3d.get_meta("vb_start")
+	return node3d.to_global(Vector3(inf.x * size.x, inf.y * size.y, inf.z * size.z))
+
+func _node_wout(node3d: Node3D, id: String, outf: Vector3, size: Vector3) -> Vector3:
+	if id == "variable_belt" and node3d.has_meta("vb_end"):
+		return node3d.get_meta("vb_end")
+	return node3d.to_global(Vector3(outf.x * size.x, outf.y * size.y, outf.z * size.z))
+
 func _discover() -> void:
 	_nodes.clear()
 	for m in get_tree().get_nodes_in_group("placed_object"):
@@ -193,8 +207,8 @@ func _discover() -> void:
 			"l3c_code":      l3c_code,
 			"amps_nominal":  amps_nom,
 			"amps":          0.0,
-			"win":   node3d.to_global(Vector3(inf.x * size.x, inf.y * size.y, inf.z * size.z)),
-			"wout":  node3d.to_global(Vector3(outf.x * size.x, outf.y * size.y, outf.z * size.z)),
+			"win":   _node_win(node3d, id, inf, size),
+			"wout":  _node_wout(node3d, id, outf, size),
 			"in":    MaterialBatch.new(),
 			"out":   MaterialBatch.new(),
 			# Live telemetry, refreshed each tick so the HMI can read real operator
