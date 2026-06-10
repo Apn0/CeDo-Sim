@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/tests/test_new_world_wipe.gd" id="1_neww"]
+
+[node name="TestNewWorldWipe" type="Node3D"]
+script = ExtResource("1_neww")

@@ -1,6 +1,12 @@
 extends BaseVehicle
 
-class_name ScissorLift
+# The plant ran three JLG-style vertical-mast personnel lifts. "Mast lift" is
+# the correct industry term — the script was originally called ScissorLift
+# (and the vehicle_type string was "scissor_lift") in error. The class +
+# vehicle_type are now "MastLift" / "mast_lift" everywhere; legacy save data
+# carrying the old strings is migrated on load by WorldLayout, MapOverlay,
+# VehicleEnterArea, and BaseVehicle.
+class_name MastLift
 
 ## Ground rescue panel — a proximity Area3D around the GroundPanel mesh. While
 ## the player is on foot inside the zone, holding the interact key (E) LOWERS the
@@ -99,16 +105,26 @@ func _build_jib() -> void:
 ## Per-frame: rotate the two hinges and reposition the platform to track the tip.
 ## upper_pivot is the FIRST child of _jib_lower — we get it by name to keep the
 ## node-graph clean.
+# Orange-beam swing geometry (operator spec): the GRAY (steel, mast-side) beam
+# stays perfectly VERTICAL — it's a plumb riser. The ORANGE (basket-side) beam
+# carries ALL the rotation, swinging from straight-down (stowed → platform sits
+# at the mast top) out toward horizontal-forward (extended → platform reaches
+# out). Tunable so the swing can be dialled in after a visual check.
+const JIB_ORANGE_STOW_RAD  : float = -PI        # straight down (tip meets the riser base)
+const JIB_ORANGE_REACH_RAD : float = PI * 0.5   # how far it swings toward forward (90°)
+
 func _apply_jib_transforms() -> void:
 	if _jib_lower == null or _jib_upper == null or _jib_tip == null:
 		return
-	# Lower pivots from 0° (up) at fold=0 to -90° (forward) at fold=1.
-	_jib_lower.rotation.x = -jib_fold * PI * 0.5
-	# Upper local rotation: PI at fold=0 (folded back down so tip meets root,
-	# stowed) to 0 at fold=1 (aligned with lower, both pointing forward).
+	# GRAY (lower) beam: perfectly vertical, always. No tilt.
+	_jib_lower.rotation.x = 0.0
+	# ORANGE (upper) beam: carries the whole jib motion. swing_t maps the usable
+	# fold band [MIN,MAX] to 0..1; rotation goes stow → reach.
+	var swing_t : float = clampf(
+		(jib_fold - JIB_FOLD_MIN) / maxf(JIB_FOLD_MAX - JIB_FOLD_MIN, 0.0001), 0.0, 1.0)
 	var upper_pivot := _jib_lower.get_node_or_null("UpperPivot") as Node3D
 	if upper_pivot != null:
-		upper_pivot.rotation.x = (1.0 - jib_fold) * PI
+		upper_pivot.rotation.x = JIB_ORANGE_STOW_RAD + swing_t * JIB_ORANGE_REACH_RAD
 	# Platform follows the tip in WORLD position, but keeps its orientation level
 	# with the chassis — the operator on the deck doesn't get tilted.
 	if _platform_node:
@@ -204,7 +220,7 @@ func _ready() -> void:
 	has_lights = false
 	has_horn   = true
 	super._ready()
-	vehicle_type = "scissor_lift"   # legacy id — kept for save/HUD/map compatibility
+	vehicle_type = "mast_lift"   # JLG vertical-mast personnel lift
 	fuel_type    = "electric"
 	speed_limit_kmh = normal_speed_kmh
 	accumulate_steering = true      # JLG manual steer: angle persists when keys released

@@ -41,6 +41,11 @@ func save_game() -> void:
 	var save_data = {
 		"version": 1,
 		"timestamp": Time.get_ticks_msec(),
+		# Wall-clock save time (Unix seconds, UTC). The legacy `timestamp` above is
+		# engine-uptime ms and cannot express "when" — the main menu reads `saved_at`
+		# to show the last-saved date/time, falling back to the file mtime for older
+		# saves that predate this field.
+		"saved_at": int(Time.get_unix_time_from_system()),
 		"is_new_save": is_new_save,
 		"factory_center": {"x": factory_center.x, "y": factory_center.y, "z": factory_center.z},
 		"shift": shift_data,

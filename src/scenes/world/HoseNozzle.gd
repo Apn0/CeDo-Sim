@@ -78,6 +78,9 @@ var _chain_mat  : StandardMaterial3D = null
 # A small Area3D added when the tip is GROUNDED so the operator can walk to it
 # and press E to pick it back up. Re-removed on pickup.
 var _ground_pickup_area : Area3D = null
+# Spray particle emitter, parented at the nozzle TIP and oriented along local -Z
+# (the spray direction). Gated on/off + scaled by _spray_rate() each frame.
+var _spray_fx : CPUParticles3D = null
 
 # =============================================================================
 func _ready() -> void:
@@ -118,6 +121,41 @@ func _build_visual() -> void:
 	tip.position = Vector3(0.0, 0.0, -0.17)
 	tip.rotation.x = deg_to_rad(90.0)
 	add_child(tip)
+	# Spray emitter — sits at the nozzle TIP, fires along the tip's forward
+	# (local -Z). CPUParticles3D is robust (no shader needed) and cheap here.
+	# Gated on/off and scaled in _process via _spray_rate(). Tint is pale blue for
+	# water reels, lighter/near-white for air-mode blow guns.
+	_spray_fx = CPUParticles3D.new()
+	_spray_fx.name = "SprayFX"
+	_spray_fx.position = Vector3(0.0, 0.0, -0.21)   # just past the tapered tip
+	_spray_fx.emitting = false
+	_spray_fx.amount = 24
+	_spray_fx.lifetime = 0.35
+	_spray_fx.one_shot = false
+	_spray_fx.local_coords = false
+	_spray_fx.direction = Vector3(0.0, 0.0, -1.0)   # local -Z = spray direction
+	_spray_fx.spread = cone_half_angle_deg
+	_spray_fx.initial_velocity_min = 4.0
+	_spray_fx.initial_velocity_max = 6.0
+	_spray_fx.gravity = Vector3(0.0, -3.0, 0.0)     # slight droop, reads as spray
+	_spray_fx.scale_amount_min = 0.6
+	_spray_fx.scale_amount_max = 1.0
+	var spray_mesh := SphereMesh.new()
+	spray_mesh.radius = 0.018
+	spray_mesh.height = 0.036
+	spray_mesh.radial_segments = 6
+	spray_mesh.rings = 3
+	_spray_fx.mesh = spray_mesh
+	var spray_mat := StandardMaterial3D.new()
+	# Air mode reads as a faint white mist; water reels as pale blue.
+	var spray_tint : Color = Color(0.55, 0.78, 1.0, 0.7)
+	if air_mode:
+		spray_tint = Color(0.92, 0.95, 1.0, 0.55)
+	spray_mat.albedo_color = spray_tint
+	spray_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	spray_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	spray_mesh.material = spray_mat   # PrimitiveMesh single-surface material
+	add_child(_spray_fx)
 	# Bounding collision (used when grounded — disabled while held).
 	var col := CollisionShape3D.new()
 	var bx := BoxShape3D.new(); bx.size = Vector3(0.16, 0.10, 0.30)
@@ -136,8 +174,19 @@ func _ensure_chain_root() -> void:
 # =============================================================================
 # DEPLOY / RETURN / DROP / PICKUP — owned by mode transitions
 # =============================================================================
-## Move into the player's hand. Called by HoseReel.
-func attach_to_player(player: Node3D, owner_ref: Node) -> void:
+## Move into the player's hand. Called by HoseReel. Returns false (and frees this
+## freshly-spawned nozzle) when the hotbar is full, so the reel knows the deploy
+## was refused and can clear its reference. Otherwise the tip would parent under
+## Head in no inventory slot — never active, so none of its F/Q/E/LMB handlers
+## fire and it can never be returned to the reel (the stuck state).
+func attach_to_player(player: Node3D, owner_ref: Node) -> bool:
+	var inv := get_node_or_null("/root/Inventory")
+	if inv and bool(inv.call("is_full")):
+		var bus := get_node_or_null("/root/EventBus")
+		if bus and bus.has_signal("interaction_prompt_show"):
+			bus.emit_signal("interaction_prompt_show", owner_ref, "Hands full — drop something first")
+		queue_free()   # undo the reel's spawn so nothing is left orphaned
+		return false
 	_held_by = player
 	_owner_ref = owner_ref
 	_mode = Mode.HELD
@@ -158,11 +207,11 @@ func attach_to_player(player: Node3D, owner_ref: Node) -> void:
 	collision_layer = 0
 	collision_mask  = 0
 	_set_bounds_disabled(true)
-	var inv := get_node_or_null("/root/Inventory")
 	if inv:
 		inv.call("take", self)
 	_ensure_chain_root()
 	_remove_ground_pickup_area()
+	return true
 
 ## F — advance back. Pops the LAST anchor (closest to the tip) if any. If the
 ## chain is empty (only the reel anchor remains) and the operator is within
@@ -253,6 +302,15 @@ func _on_ground_player_exited(body: Node3D) -> void:
 func _pickup_from_ground(player: Node3D) -> void:
 	if _mode != Mode.GROUNDED:
 		return
+	# Refuse when the hotbar is full — otherwise the tip parents under Head in no
+	# slot, never active, and its input handlers (incl. drop/return) never fire.
+	# Leave it on the floor, untouched, and prompt the player.
+	var inv := get_node_or_null("/root/Inventory")
+	if inv and bool(inv.call("is_full")):
+		var bus := get_node_or_null("/root/EventBus")
+		if bus and bus.has_signal("interaction_prompt_show"):
+			bus.emit_signal("interaction_prompt_show", self, "Hands full — drop something first")
+		return
 	_held_by = player
 	_mode = Mode.HELD
 	if get_parent():
@@ -265,7 +323,6 @@ func _pickup_from_ground(player: Node3D) -> void:
 	collision_mask  = 0
 	_set_bounds_disabled(true)
 	_remove_ground_pickup_area()
-	var inv := get_node_or_null("/root/Inventory")
 	if inv:
 		inv.call("take", self)
 	# Chain stays exactly as it was — the operator's pick up resumes from the
@@ -361,6 +418,22 @@ func _spray_rate() -> float:
 	var lvl : int = min(base, _tip_valve)
 	return max_kg_per_s * (0.35 if lvl == 1 else 1.0)
 
+## Drive the tip spray emitter from the effective rate: emit only when rate > 0,
+## and scale particle count + initial velocity with how open the valves are so a
+## LITTLE-open trickle reads weaker than a fully-open blast. Cheap, no shader.
+func _update_spray_fx(rate: float) -> void:
+	if _spray_fx == null or not is_instance_valid(_spray_fx):
+		return
+	var on : bool = rate > 0.0001
+	_spray_fx.emitting = on
+	if not on:
+		return
+	# Normalise against the configured max so per-tier reels stay sensible.
+	var frac : float = clampf(rate / max(max_kg_per_s, 0.0001), 0.0, 1.0)
+	_spray_fx.amount = max(6, int(round(lerpf(8.0, 28.0, frac))))
+	_spray_fx.initial_velocity_min = lerpf(2.5, 4.5, frac)
+	_spray_fx.initial_velocity_max = lerpf(4.0, 7.0, frac)
+
 ## The world position the nozzle should sit at this frame: roughly the operator's
 ## hand (head + held_offset), clamped to within hose_segment_m of the last anchor
 ## so the rope stays "taut" between operator and last bend. Returns the operator's
@@ -372,9 +445,14 @@ func _process(_delta: float) -> void:
 	if _mode == Mode.HELD:
 		_tick_anchors_and_clamp_tip()
 	_redraw_chain()
+	# Spray visual — driven every frame by the effective rate so it turns on the
+	# moment both valves are open and off again when they close. _spray_rate()
+	# already returns 0.0 unless held with both valves open, so this also covers
+	# the not-held case below.
+	var rate := _spray_rate()
+	_update_spray_fx(rate)
 	if _mode != Mode.HELD:
 		return
-	var rate := _spray_rate()
 	if rate <= 0.0001:
 		return
 	# Aim from the camera forward (same convention as the leaf blower / scanner).
@@ -443,15 +521,25 @@ func _tick_anchors_and_clamp_tip() -> void:
 		_anchors.append(anchor_pos)
 	# WALL: when the chain is at max anchors, the hose is taut — the player can
 	# NOT walk further from the last anchor than hose_segment_m (a real wall). We
-	# project them back along the over-extension vector each frame. This is gentle
-	# because we only kick in once the chain is fully deployed.
-	if _anchors.size() >= max_anchors:
-		var diff_xz_after := Vector3((_held_by.global_position - _anchors.back()).x, 0.0,
-			(_held_by.global_position - _anchors.back()).z)
+	# project them back along the over-extension vector each frame, HORIZONTALLY
+	# ONLY. This is gentle because we only kick in once the chain is fully deployed.
+	#
+	# INVARIANT: the hose must NEVER move the player vertically or pin them to a
+	# plane. We capture the player's current Y BEFORE touching global_position and
+	# write that exact value back, so the correction can only ever shift X/Z. We
+	# also skip the clamp while only the reel seed anchor exists (<=1 anchor): that
+	# seed sits ~1 m above the floor, and projecting toward it would otherwise pull
+	# the player up onto an invisible ring in the sky.
+	if _anchors.size() > 1 and _anchors.size() >= max_anchors:
+		# Pre-write Y — never re-derived from anything this block writes.
+		var held_y : float = _held_by.global_position.y
+		var anchor_back : Vector3 = _anchors.back()
+		var to_player : Vector3 = _held_by.global_position - anchor_back
+		var diff_xz_after := Vector3(to_player.x, 0.0, to_player.z)
 		var d := diff_xz_after.length()
 		if d > hose_segment_m and d > 0.001:
-			var pushed : Vector3 = _anchors.back() + diff_xz_after / d * hose_segment_m
-			pushed.y = _held_by.global_position.y   # don't yank them vertically
+			var pushed : Vector3 = anchor_back + diff_xz_after / d * hose_segment_m
+			pushed.y = held_y   # horizontal-only: restore captured pre-write Y
 			_held_by.global_position = pushed
 
 func _clear_chain_visual() -> void:

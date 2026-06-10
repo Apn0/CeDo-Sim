@@ -143,7 +143,10 @@ func _draw() -> void:
 	for v in _vehicles():
 		var vp := _to_px(v.global_position, center_px, scale_px, origin)
 		var cl := _clamp_to(vp, panel)
-		var col := C_LIFT if String(v.vehicle_type) == "scissor_lift" else C_VEHICLE
+		# Accept both "mast_lift" (canonical) and legacy "scissor_lift" so older
+		# in-flight vehicles render with the lift colour after the rename.
+		var vt := String(v.vehicle_type)
+		var col := C_LIFT if (vt == "mast_lift" or vt == "scissor_lift") else C_VEHICLE
 		_draw_heading_tri(cl, _forward2(v), 7.0, col)
 		if cl == vp:
 			_text(cl + Vector2(7, 3), _vehicle_short(String(v.vehicle_type)), 10, col)
@@ -296,5 +299,6 @@ func _vehicle_short(vtype: String) -> String:
 		"forklift":     return "Forklift"
 		"bale_clamp":   return "Clamp"
 		"merlo":        return "Merlo"
-		"scissor_lift": return "Lift"
+		"mast_lift":    return "Lift"
+		"scissor_lift": return "Lift"   # legacy alias
 	return vtype

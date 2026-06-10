@@ -98,7 +98,7 @@ const ACTION_GROUPS := [
 	},
 	{
 		"label":   "Interaction & UI",
-		"actions": ["interact", "ui_cancel", "menu_toggle", "camera_toggle", "map_toggle", "crew_panel", "freecam_save", "debug_unstuck"],
+		"actions": ["interact", "flashlight", "ui_cancel", "menu_toggle", "camera_toggle", "map_toggle", "crew_panel", "freecam_save", "debug_unstuck"],
 	},
 	{
 		"label":   "Walkie-talkie",
@@ -150,6 +150,7 @@ const ACTION_LABELS := {
 	"crouch_toggle":            "Crouch (toggle) — Left Ctrl",
 	"prone_toggle":             "Lie down / prone (toggle) — Z",
 	"interact":                 "Interact / enter vehicle",
+	"flashlight":               "Toggle flashlight (F)",
 	"ui_cancel":                "Pause / cancel",
 	"menu_toggle":              "Open / close pause menu (P) — Resume · Settings · Save & Quit",
 	"camera_toggle":            "Cycle camera mode (F4-tap)\n  F4 + ←/→/↑/↓ pan orbit · F4 + scroll wheel zoom",
@@ -327,6 +328,49 @@ func _apply_to_engine() -> void:
 	_apply_graphics()
 	_apply_audio()
 	_apply_keybinds()
+	_apply_gameplay()
+
+## Apply the gameplay settings that have global side effects (input deadzone,
+## locale). Per-system gameplay settings (mouse sens, head bob, head bob, etc.)
+## live on their consumers — see PlayerController._refresh_settings.
+func _apply_gameplay() -> void:
+	# Gamepad deadzone — applied to every existing InputMap action.
+	var dz := float(_current_gameplay.get("gamepad_deadzone", 0.15))
+	for action in InputMap.get_actions():
+		InputMap.action_set_deadzone(action, dz)
+	# Locale — TranslationServer accepts any code; with no .po files loaded this
+	# is still a real apply (e.g. number formatting via tr() falls through).
+	var loc := String(_current_gameplay.get("language", "en"))
+	if loc != "":
+		TranslationServer.set_locale(loc)
+
+# Window-focus-aware muting. When `mute_unfocused` is true and the OS window
+# loses focus, drop the Master bus to silence; restore on focus-back. Cleanly
+# coexists with the user's chosen master_db.
+var _master_db_before_blur : float = 0.0
+var _is_blurred : bool = false
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		if bool(_current_audio.get("mute_unfocused", true)):
+			_blur_audio()
+	elif what == NOTIFICATION_APPLICATION_FOCUS_IN:
+		_unblur_audio()
+
+func _blur_audio() -> void:
+	if _is_blurred: return
+	var idx := AudioServer.get_bus_index("Master")
+	if idx < 0: return
+	_master_db_before_blur = AudioServer.get_bus_volume_db(idx)
+	AudioServer.set_bus_volume_db(idx, -80.0)
+	_is_blurred = true
+
+func _unblur_audio() -> void:
+	if not _is_blurred: return
+	var idx := AudioServer.get_bus_index("Master")
+	if idx >= 0:
+		AudioServer.set_bus_volume_db(idx, _master_db_before_blur)
+	_is_blurred = false
 
 func _apply_graphics() -> void:
 	# Display mode

@@ -72,6 +72,16 @@ func take(tool: Node3D) -> bool:
 		set_active(slot)
 	return true
 
+## True when every slot is occupied — no room to take another tool. Pickup paths
+## MUST check this BEFORE grabbing an item: take() returns false when full but a
+## caller that ignores the return and force-parents the item anyway strands it
+## (parented under Head, in no slot → never active → can't be dropped).
+func is_full() -> bool:
+	for i in NUM_SLOTS:
+		if slots[i] == null:
+			return false
+	return true
+
 ## Active tool node (or null).
 func active() -> Node3D:
 	return slots[active_idx]

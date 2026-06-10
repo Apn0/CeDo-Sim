@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://bcivmwvnai35n"
+
+[deps]
+
+files=["res://line_connection_audit.seq.translation", "res://line_connection_audit.from.translation", "res://line_connection_audit.to.translation", "res://line_connection_audit.from.translation", "res://line_connection_audit.to.translation", "res://line_connection_audit.gap.translation", "res://line_connection_audit.vertical.translation", "res://line_connection_audit.connection.translation", "res://line_connection_audit.feasible.translation", "res://line_connection_audit.note.translation"]
+
+source_file="res://line_connection_audit.csv"
+dest_files=["res://line_connection_audit.seq.translation", "res://line_connection_audit.from.translation", "res://line_connection_audit.to.translation", "res://line_connection_audit.from.translation", "res://line_connection_audit.to.translation", "res://line_connection_audit.gap.translation", "res://line_connection_audit.vertical.translation", "res://line_connection_audit.connection.translation", "res://line_connection_audit.feasible.translation", "res://line_connection_audit.note.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true

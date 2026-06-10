@@ -146,6 +146,107 @@ func _connect_signals() -> void:
 	EventBus.operator_entered_vehicle.connect(_on_operator_entered_vehicle)
 	EventBus.operator_exited_vehicle.connect(_on_operator_exited_vehicle)
 
+	# Settings — opacity / prompt visibility / hints / units. Apply now and on every change.
+	_refresh_hud_settings()
+	var sm := get_node_or_null("/root/SettingsManager")
+	if sm and sm.has_signal("settings_applied"):
+		sm.settings_applied.connect(_refresh_hud_settings)
+
+# =============================================================================
+# SETTINGS WIRING — Settings → Gameplay → HUD-related toggles
+# =============================================================================
+func _refresh_hud_settings() -> void:
+	if not has_node("/root/SettingsManager"): return
+	var g : Dictionary = SettingsManager.gameplay()
+	# HUD opacity — applied to every top-level Control child of this CanvasLayer.
+	var a := clampf(float(g.get("hud_opacity", 1.0)), 0.1, 1.0)
+	for c in get_children():
+		if c is Control:
+			c.modulate.a = a
+	# Interaction prompt visibility
+	if _prompt_panel:
+		var allow := bool(g.get("show_interaction_prompts", true))
+		# If the user turned prompts OFF, force-hide regardless of pending event.
+		# Turning back ON does not retroactively re-show a dismissed prompt;
+		# the next interaction_prompt_show event will appear normally.
+		if not allow and _prompt_panel.visible:
+			_prompt_panel.visible = false
+	# Tutorial hints + units — keep / refresh the hint label.
+	_refresh_tutorial_hint()
+
+func _hud_units_label() -> String:
+	# Read by any HUD widget that wants to show a unit. For now used only by
+	# _refresh_tutorial_hint; future displays (speed, distance, mass) should
+	# also consult this so "metric / imperial" actually swings them.
+	if not has_node("/root/SettingsManager"): return "m"
+	return "ft" if String(SettingsManager.gameplay().get("units", "metric")) == "imperial" else "m"
+
+var _hint_label : Label = null
+func _refresh_tutorial_hint() -> void:
+	var show := true
+	if has_node("/root/SettingsManager"):
+		show = bool(SettingsManager.gameplay().get("tutorial_hints", true))
+	# Lazily build the hint label so we don't touch the scene tree until needed.
+	if show and _hint_label == null:
+		_hint_label = Label.new()
+		_hint_label.name = "TutorialHint"
+		_hint_label.text = "Press P for menu  ·  E to interact  ·  units: %s" % _hud_units_label()
+		_hint_label.add_theme_font_size_override("font_size", 13)
+		_hint_label.modulate = Color(1, 1, 1, 0.7)
+		_hint_label.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+		_hint_label.offset_left = 12
+		_hint_label.offset_bottom = -10
+		_hint_label.offset_top = -28
+		add_child(_hint_label)
+	elif show and _hint_label:
+		_hint_label.text = "Press P for menu  ·  E to interact  ·  units: %s" % _hud_units_label()
+		_hint_label.visible = true
+	elif (not show) and _hint_label:
+		_hint_label.visible = false
+
+## In-hand control hint for the currently-held tool (leaf blower / hose nozzle).
+## Updated only on the Inventory active-tool-changed signal, never per-frame.
+##
+## Strategy: run the normal _refresh_tutorial_hint() first so the label is built,
+## shown/hidden, and seeded with the default text exactly as before — honouring the
+## "tutorial_hints" setting. Then, ONLY when the active tool is one we have a hint
+## for AND the label is actually visible (hints enabled), overwrite its text. When
+## the active tool is neither (or there is none) the label keeps the default text,
+## so the non-tool hint behaviour is completely unchanged.
+func _refresh_inhand_hint() -> void:
+	_refresh_tutorial_hint()
+	if _hint_label == null or not _hint_label.visible:
+		return   # hints disabled or no label — leave the default path untouched
+	var txt := _inhand_hint_text()
+	if txt != "":
+		_hint_label.text = txt
+
+## Returns the in-hand control hint for the active held tool, or "" if the active
+## tool is neither the leaf blower nor a hose nozzle (or there is no active tool).
+## All member access is guarded with has_method / `in` so it stays safe if a tool
+## drops a member.
+func _inhand_hint_text() -> String:
+	var inv := get_node_or_null("/root/Inventory")
+	if inv == null or not inv.has_method("active"):
+		return ""
+	var tool : Node = inv.call("active")
+	if tool == null:
+		return ""
+	# tool_id is a const String on each tool; fall back to type check below.
+	var tid := ""
+	if "tool_id" in tool:
+		tid = String(tool.get("tool_id"))
+	# ── Leaf blower ──────────────────────────────────────────────────────────
+	if tid == "leafblower" or tool is LeafBlower:
+		# When the engine isn't primed, steer the operator to the prime sequence.
+		if ("_needs_prime" in tool) and bool(tool.get("_needs_prime")):
+			return "Leaf blower NOT primed  —  right-click 3x to prime, then hold LMB to blow"
+		return "Leaf blower  —  LMB: blow  ·  RMB x3: prime engine  ·  E at jerry can: refuel"
+	# ── Hose nozzle ──────────────────────────────────────────────────────────
+	if tid == "hose_nozzle" or tid == "hose" or tool is HoseNozzle:
+		return "Hose  —  LMB: tip valve (spray)  ·  E at reel: base valve  ·  F: reel in  ·  Q: drop"
+	return ""
+
 # =============================================================================
 # BUILD UI
 # =============================================================================
@@ -640,7 +741,11 @@ func _build_interaction_prompt() -> void:
 func _on_prompt_show(source: Node, prompt: String) -> void:
 	_prompt_source = source
 	_prompt_label.text = "[E]  %s" % prompt
-	_prompt_panel.visible = true
+	# Settings → Gameplay → "Show interaction prompts": if off, swallow the show.
+	var allow := true
+	if has_node("/root/SettingsManager"):
+		allow = bool(SettingsManager.gameplay().get("show_interaction_prompts", true))
+	_prompt_panel.visible = allow
 
 func _on_prompt_hide(source: Node) -> void:
 	# Only clear if the source that hid is the one currently showing —
@@ -1088,6 +1193,7 @@ func _refresh_hotbar() -> void:
 
 func _on_inventory_active_changed(_idx: int) -> void:
 	_refresh_hotbar()
+	_refresh_inhand_hint()   # swap the bottom-left hint to held-tool controls
 
 func _on_inventory_slots_changed() -> void:
 	_refresh_hotbar()

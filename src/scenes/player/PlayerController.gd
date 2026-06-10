@@ -48,6 +48,14 @@ var _mouse_sens_x : float = 0.003
 var _mouse_sens_y : float = 0.003
 var _invert_y     : bool  = false
 var _mouse_smooth : float = 0.2
+# Head bob — Settings → Gameplay → "Head bob while walking". A small sinusoidal
+# offset added to the head's Y position when the player is walking on the floor.
+# The base eye height (STANCE_EYE_Y) is still owned by _update_stance; we add
+# the bob on top so crouch/prone interpolation is unaffected.
+var _head_bob   : bool  = true
+var _bob_phase  : float = 0.0
+const BOB_FREQ_HZ  : float = 1.9     # ~1.9 Hz at default speed feels like a brisk walk
+const BOB_AMP_M    : float = 0.035   # 3.5 cm peak — visible without being nauseating
 
 # Smoothing buffer
 var _smoothed_motion : Vector2 = Vector2.ZERO
@@ -99,6 +107,12 @@ func activate_camera() -> void:
 func _ready() -> void:
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 	floor_snap_length = 0.3   # stick to the ground when stepping down small ledges
+	# Godot 4 CharacterBody3D quicksand fix: with the building shell as a concave
+	# trimesh collider, the default safe_margin (1 mm) lets the capsule penetrate
+	# triangulated floor edges and oscillate between contacts → slow sink ("quicksand").
+	# 5 cm gives the solver enough room to resolve multi-contact cleanly. Standard
+	# Godot recommendation for trimesh-heavy levels (0.04 – 0.08 m).
+	safe_margin = 0.05
 	# Inventory autoload anchors itself to this player so it can re-parent picked-
 	# up tools under our Head node, and so it knows where to drop them.
 	var inv := get_node_or_null("/root/Inventory")
@@ -115,6 +129,7 @@ func _ready() -> void:
 	# a vehicle). OperatorContext flips this when they board / dismount.
 	_camera_rig.activate()
 	_refresh_settings()
+	_build_flashlight()
 	if Engine.has_singleton("SettingsManager") or has_node("/root/SettingsManager"):
 		var sm := get_node("/root/SettingsManager")
 		if sm.has_signal("settings_applied"):
@@ -128,6 +143,7 @@ func _refresh_settings() -> void:
 	_mouse_sens_y = float(g.get("mouse_sensitivity_y", 0.003))
 	_invert_y     = bool(g.get("invert_mouse_y", false))
 	_mouse_smooth = float(g.get("mouse_smoothing", 0.2))
+	_head_bob     = bool(g.get("head_bob", true))
 	# FOV
 	var fov := float(SettingsManager.graphics().get("fov", 75.0))
 	if camera_3d:
@@ -174,7 +190,24 @@ func _physics_process(delta: float) -> void:
 	_attempt_wedge_rescue(wish_dir, delta)
 	_update_stance(delta)
 	move_and_slide()
+	_apply_belt_carry(delta)
 	_update_crosshair_interaction()
+
+## Belt-carry: if we're standing on a body in group "belt", drag the player along
+## the belt's world-space carry velocity. Reads slide collisions from the last
+## move_and_slide(); additive, so WASD can still walk against the belt. Applied at
+## most once per frame even if several slide collisions report the same belt.
+func _apply_belt_carry(delta: float) -> void:
+	for i in get_slide_collision_count():
+		var collider := get_slide_collision(i).get_collider()
+		if collider != null and collider.is_in_group("belt"):
+			var v: Vector3
+			if collider.has_method("belt_velocity"):
+				v = collider.belt_velocity()
+			else:
+				v = collider.global_transform.basis.z.normalized() * float(collider.get_meta("belt_speed", 0.0))
+			global_position += v * delta
+			return
 
 # ── Stance morph + toggles ────────────────────────────────────────────────────
 ## Smoothly lerp the capsule height + eye height toward the current stance's
@@ -183,9 +216,19 @@ func _update_stance(delta: float) -> void:
 	if _collision == null:
 		_collision = get_node_or_null("Collision") as CollisionShape3D
 	var t := clampf(STANCE_LERP * delta, 0.0, 1.0)
-	# Eye height
+	# Eye height: stance target + (optional) walk-bob offset on top.
 	if head:
-		head.position.y = lerpf(head.position.y, float(STANCE_EYE_Y[_stance]), t)
+		var base_y := float(STANCE_EYE_Y[_stance])
+		var bob_y := 0.0
+		# Horizontal speed; bob fades to zero when not moving / not on floor / setting off.
+		var horiz := Vector2(velocity.x, velocity.z).length()
+		if _head_bob and is_on_floor() and horiz > 0.2:
+			_bob_phase = fposmod(_bob_phase + delta * BOB_FREQ_HZ * TAU * (horiz / 4.0), TAU)
+			bob_y = sin(_bob_phase) * BOB_AMP_M * clampf(horiz / 4.0, 0.3, 1.0)
+		else:
+			# Decay phase toward 0 when not bobbing so the offset doesn't snap on stop.
+			_bob_phase = lerpf(_bob_phase, 0.0, clampf(delta * 8.0, 0.0, 1.0))
+		head.position.y = lerpf(head.position.y, base_y + bob_y, t)
 	# Capsule height — shrink from the centre, then re-seat so the base stays put.
 	var cap := _collision.shape as CapsuleShape3D if _collision else null
 	if cap:
@@ -268,7 +311,40 @@ func _attempt_step_up() -> void:
 		if lift > 0.01:
 			global_position.y += lift            # set down exactly on the step top
 
+## #106 — Player flashlight. Mounted on the camera so its beam follows the
+## player's view. Toggle with F. The Input action "flashlight" is registered
+## on-the-fly (binds to KEY_F) so the project doesn't need a custom action set.
+var _flashlight : SpotLight3D = null
+
+func _build_flashlight() -> void:
+	if _flashlight != null:
+		return
+	_flashlight = SpotLight3D.new()
+	_flashlight.name = "Flashlight"
+	_flashlight.spot_range = 22.0
+	_flashlight.spot_angle = 32.0
+	_flashlight.spot_angle_attenuation = 0.85
+	_flashlight.light_energy = 4.0
+	_flashlight.light_color = Color(1.0, 0.96, 0.86)   # warm white
+	_flashlight.visible = false                          # off by default
+	camera_3d.add_child(_flashlight)
+	# Register the toggle keybind if it isn't already defined.
+	if not InputMap.has_action("flashlight"):
+		InputMap.add_action("flashlight")
+		var ev := InputEventKey.new()
+		ev.physical_keycode = KEY_F
+		InputMap.action_add_event("flashlight", ev)
+
+func _toggle_flashlight() -> void:
+	if _flashlight == null:
+		return
+	_flashlight.visible = not _flashlight.visible
+
 func _input(event: InputEvent) -> void:
+	# #106 — flashlight toggle on F. Check first so other keybinds don't swallow it.
+	if event.is_action_pressed("flashlight"):
+		_toggle_flashlight()
+		return
 	# Mouse look — only while captured (not paused).
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var rel: Vector2 = (event as InputEventMouseMotion).relative

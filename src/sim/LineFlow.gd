@@ -25,6 +25,13 @@ const MAX_LINK_DIST : float = 14.0
 const FEED_RATE     : float = 8.0     # kg/s drawn from a bale sitting on the feed point
 const FEED_DENSITY  : float = 320.0   # kg/m³ for the injected feed volume
 const FEED_RADIUS   : float = 5.0     # a bale must sit within this of a head input to feed it
+# #24 — a head node may use the nearest WorldLayout.line_starts marker as its
+# feed point instead of its own world position. The marker must sit within this
+# radius of the head node to count as that line's intake marker. Larger than
+# FEED_RADIUS so the user can place the marker reasonably far from the actual
+# head machine and still have it wired (typical bale-yard → opzetband layout has
+# 10-15 m between where bales drop and where the first machine sits).
+const LINE_START_MARKER_RADIUS : float = 25.0
 const DEFAULT_COMP  : Dictionary = {"LDPE": 0.78, "HDPE": 0.075, "other": 0.145}
 
 # ── #145 PHYSICALIZED TRANSPORT ───────────────────────────────────────────────
@@ -42,6 +49,21 @@ const PLCSequencerScript = preload("res://src/sim/PLCSequencer.gd")
 const FloorPileScript    = preload("res://src/sim/FloorPile.gd")
 const ProcessModelScript = preload("res://src/sim/ProcessModel.gd")
 const Line3CDefScript    = preload("res://src/sim/Line3CDef.gd")
+# ── #52 advanced-systems OBSERVERS (additive, conserving) ─────────────────────
+# These pure-sim modules run ALONGSIDE the material flow purely as observers: the
+# extruder thermal/rheology + MFI soft-sensor publish telemetry, the motor-overload
+# model can stop a jammed rotor conveying (mass just backs up — conserving), and the
+# air network gates air-driven consumers' rate gently (slowing flow, never dropping
+# mass). None of them re-route material, change the split math, or touch the
+# CutterCompactor's transform.
+const ExtruderScrewScript   = preload("res://src/sim/ExtruderScrew.gd")
+const MfiProxyScript        = preload("res://src/sim/MfiProxy.gd")
+const MotorOverloadScript   = preload("res://src/sim/MotorOverload.gd")
+const CutterCompactorScript = preload("res://src/sim/CutterCompactor.gd")
+# A spinning extruder screw's max rpm (ExtruderScrew.SCREW_RPM_MAX); rpm_pct scales it.
+const EXTRUDER_SCREW_MAX_RPM : float = 200.0
+# The cutter-compactor's NOMINAL_RPM (see CutterCompactor.gd) — rpm_pct scales it.
+const CC_NOMINAL_RPM         : float = 1500.0
 
 var _nodes : Array = []      # Array[Dictionary]
 var _edges : Array = []      # Array[Dictionary] {a:int, b:int}
@@ -89,6 +111,18 @@ var auto_start      : bool  = true
 # ── per-tick cache for performance ────────────────────────────────────────────
 var _floor_piles_cache : Array = []
 var _waste_containers_cache : Array = []
+
+# ── #52 advanced-systems wiring state ─────────────────────────────────────────
+# The AirNetwork is a plant-wide autoload, so its compressors are registered ONCE
+# (guarded by this flag) — rebuilding the line re-registers consumers in place
+# (register_consumer updates a duplicate id) but must NOT stack more compressors.
+var _air_compressors_registered : bool = false
+# SCADA push throttle (~6 Hz) so we don't spam set_param every physics frame.
+var _scada_push_accum : float = 0.0
+const SCADA_PUSH_DT : float = 0.16
+# The ScadaDashboard MainWorld instantiated (set via set_scada). Plain Node so this
+# stays version-safe and no-ops when SCADA isn't present (headless / tests).
+var _scada : Node = null
 
 # =============================================================================
 func _ready() -> void:
@@ -151,6 +185,16 @@ func _node_wout(node3d: Node3D, id: String, outf: Vector3, size: Vector3) -> Vec
 		return node3d.get_meta("vb_end")
 	return node3d.to_global(Vector3(outf.x * size.x, outf.y * size.y, outf.z * size.z))
 
+## #54 — splitter's second output port. Returns the wout's value when the
+## profile has no "out2" key (so non-splitters carry a copy of their main output
+## and the linker can safely read this without a null check; the splitter code
+## path is the only one that actually consumes wout2 separately).
+func _node_wout2(node3d: Node3D, prof: Dictionary, size: Vector3) -> Vector3:
+	if not prof.has("out2"):
+		return Vector3.ZERO
+	var o2 : Vector3 = prof["out2"]
+	return node3d.to_global(Vector3(o2.x * size.x, o2.y * size.y, o2.z * size.z))
+
 func _discover() -> void:
 	_nodes.clear()
 	for m in get_tree().get_nodes_in_group("placed_object"):
@@ -209,6 +253,10 @@ func _discover() -> void:
 			"amps":          0.0,
 			"win":   _node_win(node3d, id, inf, size),
 			"wout":  _node_wout(node3d, id, outf, size),
+			# #54 splitters carry a second output port — used by the linker to add
+			# a SECOND outgoing edge so the switch belt can route to both VSS and
+			# U-bay. Null world position when the profile didn't define one.
+			"wout2": _node_wout2(node3d, prof, size),
 			"in":    MaterialBatch.new(),
 			"out":   MaterialBatch.new(),
 			# Live telemetry, refreshed each tick so the HMI can read real operator
@@ -236,7 +284,146 @@ func _discover() -> void:
 			# #173 visual coupling: the machine's FilmFlakeField (if any), driven
 			# each tick from this node's live telemetry so the look matches the sim.
 			"view":    _find_film_field(node3d),
+			# ── #52 advanced-system observers (null unless this node qualifies) ───
+			# ex/mfi: extruder thermal+rheology model + its MFI soft-sensor (extruders).
+			# mol: motor-overload trip model (high-load mills/shredders/friction sep).
+			# air_id: the AirNetwork consumer key for air-driven machines (sorter/PCU).
+			# _backlog_kg/_moved_kg: per-tick load bookkeeping for the motor model
+			#   (pure OBSERVATIONS of the existing split — they change no flow math).
+			"ex":          null,
+			"mfi":         null,
+			"mol":         null,
+			"air_id":      "",
+			"die_pressure": 0.0,
+			"melt_temp":    0.0,
+			"viscosity":    0.0,
+			"mfi_value":    0.0,
+			"_backlog_kg":  0.0,
+			"_moved_kg":    0.0,
 		})
+	# Attach the advanced-system observers now that every node dict exists.
+	_attach_advanced_systems()
+
+# ── #52 advanced-system observers (attach + classify) ─────────────────────────
+## Set the ScadaDashboard MainWorld owns so tick() can push live state + params.
+## Plain Node + has_method guards keep this safe when SCADA is absent.
+func set_scada(scada: Node) -> void:
+	_scada = scada
+
+## True for any node whose id begins with "extruder" (extruder_1/3a/3b/3c/6/screw).
+static func _is_extruder(id: String) -> bool:
+	return id.begins_with("extruder")
+
+## True for the high mechanical-load process drives the motor-overload model covers:
+## the Maalmolen (mill), the shredders, and the friction separators/washers. Matched
+## by id substring OR the "shred" process tag so build-placed variants are caught too.
+static func _is_high_load_motor(id: String, process: String) -> bool:
+	var lid := id.to_lower()
+	if lid.find("mill") >= 0 or lid.find("shredder") >= 0 \
+			or lid.find("friction") >= 0:
+		return true
+	return process == "shred"
+
+## #52 — true for nodes that host a CutterCompactor thermo model: the explicit
+## "compactor" / "cutter_compactor" ids and anything tagged process="compact".
+static func _is_cutter_compactor(id: String, process: String) -> bool:
+	var lid := id.to_lower()
+	if lid == "cutter_compactor" or lid == "compactor":
+		return true
+	return process == "compact"
+
+## The AirNetwork consumer id for an air-driven machine, or "" if it taps no air.
+## The TITECH/TOMRA NIR sorter's ejector bank and the compactor/PCU pneumatic ram
+## are the real header consumers; matched by id substring or process tag.
+static func _air_consumer_id(id: String, process: String) -> String:
+	var lid := id.to_lower()
+	if lid.find("titech") >= 0 or lid.find("tomra") >= 0 or lid.find("nir") >= 0 \
+			or process == "optical":
+		return "titech_sort"
+	if lid.find("compactor") >= 0 or lid.find("pcu") >= 0 or process == "compact":
+		return "pcu_compactor"
+	return ""
+
+## Compose the per-node observer modules (run ALONGSIDE the flow — see header). Each
+## attachment is guarded so an absent system simply leaves the slot null and every
+## tick hook below no-ops for that node. Also registers the line's air consumers.
+func _attach_advanced_systems() -> void:
+	for nd in _nodes:
+		var id : String = String(nd["id"])
+		var proc : String = String(nd["process"])
+		# 1) Extruder thermal/rheology model + 2) its MFI soft-sensor.
+		if _is_extruder(id):
+			nd["ex"]  = ExtruderScrewScript.new()
+			nd["mfi"] = MfiProxyScript.new()
+		# #52 — Cutter-compactor thermo + Donut-stall model. One per compactor node;
+		# driven by rpm_pct and live throughput, publishes pot_temp + band to SCADA.
+		if _is_cutter_compactor(id, proc):
+			nd["cc"] = CutterCompactorScript.new(id)
+		# 3) Motor-overload (current-trip) model on the high-load process drives. Seed
+		#    its nominal current from the calibrated HMI amps when we have them, so a
+		#    metered Line 3C drive trips against realistic numbers.
+		if _is_high_load_motor(id, proc):
+			var nom : float = float(nd.get("amps_nominal", 0.0))
+			if nom <= 0.0:
+				nom = 90.0   # MotorOverload's own default full-load current
+			# Trip threshold sits a touch above nominal; locked-rotor ~5× nominal.
+			var mol = MotorOverloadScript.new(id, nom, nom * 5.0, maxf(nom * 1.5, 120.0), 3.0)
+			nd["mol"] = mol
+		# 4) Air consumer registration (one global header; consumers re-register in
+		#    place on rebuild, so this is safe to call every rebuild).
+		var air_id : String = _air_consumer_id(id, proc)
+		if air_id != "":
+			nd["air_id"] = air_id
+	_register_air_network()
+
+## Register the compressors ONCE and the line's air consumers (re-registering an
+## existing consumer id just updates it, so a rebuild never stacks duplicates). This
+## is what "turns on" the air header in-game (it won't pressurise until a compressor
+## exists), pairing with the menu-alarm fix (#77).
+func _register_air_network() -> void:
+	var air := _air_network()
+	if air == null:
+		return
+	# Collect the distinct air consumers present on the line FIRST. A plant with no
+	# air-using machine has nothing to pressurise — so it has NO running compressors
+	# and NO header pressure. We therefore skip the compressor bank entirely when
+	# there are zero consumers. This is why an empty new world has a dead air ring
+	# (no phantom 24 Nm³/min from nowhere) and never sounds a NO-AIR alarm.
+	var air_ids : Dictionary = {}
+	for nd in _nodes:
+		var aid : String = String(nd.get("air_id", ""))
+		if aid != "":
+			air_ids[aid] = true
+
+	# Compressors: only spin up the bank once there is at least one consumer, and
+	# only on the first build (guard so a rebuild never stacks duplicates).
+	if not air_ids.is_empty() and not _air_compressors_registered and air.has_method("register_compressor"):
+		# Two screw compressors charging the single ring main. Sized so the header
+		# holds nominal against the registered consumers' full draw with headroom.
+		air.call("register_compressor", 12.0, true)
+		air.call("register_compressor", 12.0, true)
+		_air_compressors_registered = true
+
+	# Consumers: register one per distinct air id present on the line.
+	if air.has_method("register_consumer"):
+		for aid in air_ids:
+			# Full-tilt demand (Nm³/min): the TITECH ejector bank is the thirsty one,
+			# the PCU ram a lighter intermittent draw.
+			var demand : float = 8.0 if aid == "titech_sort" else 4.0
+			air.call("register_consumer", aid, demand)
+
+## The plant-wide compressed-air autoload, or null when it isn't registered
+## (headless test / unit run). Reached via the tree root (LineFlow is a Node).
+func _air_network() -> Node:
+	return get_node_or_null("/root/AirNetwork")
+
+## The header's 0..1 capability factor (1.0 = full pressure, nothing slowed). 1.0
+## when AirNetwork is absent or lacks the query — air gating then never bites.
+func _air_factor() -> float:
+	var air := _air_network()
+	if air != null and air.has_method("consumer_air_factor"):
+		return float(air.call("consumer_air_factor"))
+	return 1.0
 
 func _link() -> void:
 	_edges.clear()
@@ -249,10 +436,48 @@ func _link() -> void:
 		var c : String = String(_nodes[i].get("l3c_code", ""))
 		if c != "":
 			code_idx[c] = i
+	# Node3D path → node index, so we can resolve the macro-builder's lf_explicit_outs
+	# meta (each entry references a downstream by its scene path). (#71)
+	var path_idx : Dictionary = {}
+	for i in n:
+		var n3d : Node3D = _nodes[i]["node"] as Node3D
+		if n3d != null:
+			path_idx[n3d.get_path()] = i
+	# #71 — MACRO BRANCH METADATA pass. A node placed by `_build_full_line`
+	# carries an `lf_explicit_outs` array of {path, recirc} dicts identifying
+	# its explicit downstream targets (split or recirc back-edge). These bypass
+	# the geometry fallback so the 3A dry loop closes and the 3B L-R split fans
+	# out to both dryers, regardless of placement spacing. Tagged sources are
+	# NOT considered by the geometry pass below — their downstreams are fully
+	# specified here.
+	var explicit_src : Dictionary = {}    # idx → true when this node's downstream is fully tagged
+	for i in n:
+		var n3d_i : Node3D = _nodes[i]["node"] as Node3D
+		if n3d_i == null or not n3d_i.has_meta("lf_explicit_outs"):
+			continue
+		var outs : Array = n3d_i.get_meta("lf_explicit_outs")
+		if not (outs is Array) or outs.is_empty():
+			continue
+		explicit_src[i] = true
+		for entry in outs:
+			if not (entry is Dictionary):
+				continue
+			var tpath = entry.get("path", null)
+			if tpath == null or not path_idx.has(tpath):
+				continue
+			var j : int = int(path_idx[tpath])
+			if j == i or _edge_exists(i, j):
+				continue
+			_edges.append({"a": i, "b": j, "recirc": bool(entry.get("recirc", false))})
 	for i in n:
 		var a: Dictionary = _nodes[i]
 		if String(a["role"]) == "sink":
 			continue                       # sinks consume, never feed downstream
+		# #71 — node was tagged with `lf_explicit_outs` by the macro builder:
+		# its downstreams are fully specified above. Skip geometry fallback to
+		# avoid adding a SPURIOUS third edge alongside an L-R split or recirc.
+		if explicit_src.has(i):
+			continue
 		# 1) EXPLICIT topology for Line 3C stages (handles splits + merges).
 		var code : String = String(a.get("l3c_code", ""))
 		var linked_explicitly := false
@@ -265,21 +490,107 @@ func _link() -> void:
 						linked_explicitly = true
 			if linked_explicitly:
 				continue   # this stage's downstream is fully defined by the graph
-		# 2) GEOMETRY fallback (build-mode objects / other lines): single nearest input.
-		var a_out: Vector3 = a["wout"]
-		var best := -1
-		var best_d := MAX_LINK_DIST
-		for j in n:
-			if j == i:
-				continue
-			var b: Dictionary = _nodes[j]
-			var d := a_out.distance_to(b["win"] as Vector3)
-			if d < best_d:
-				best_d = d
-				best = j
-		# Skip if the chosen target already feeds us (avoids trivial 2-cycles).
-		if best >= 0 and not _edge_exists(best, i):
-			_edges.append({"a": i, "b": best})
+		# 2) GEOMETRY fallback (build-mode objects / other lines).
+		#
+		# #78 fix: the original single-nearest picker would pick a WRONG-direction
+		# target (e.g. a silo's bottom output near a cyclone's high input) and the
+		# only safeguard — a 2-cycle check — fired too late to undo it. Result was
+		# silo→cyclone "back-links" that left the cyclone with no outgoing edge, so
+		# the line never reached the extruder.
+		#
+		# New approach: sort ALL in-range inputs by distance, then walk them in
+		# order and accept the first one that passes two filters:
+		#   (a) semantic process-direction (buffer cannot feed airsep, etc.) — a
+		#       small allow/deny table on the (a.process, b.process) pair
+		#   (b) full DAG cycle prevention via DFS reachability — picking this edge
+		#       must not create a cycle of any length, not just length 2
+		var a_proc : String = String(a.get("process", ""))
+		var b1 := _link_best_target(i, a["wout"], a_proc)
+		if b1 >= 0:
+			_edges.append({"a": i, "b": b1})
+		# #54 — role="splitter" (e.g. switch_belt) emits a SECOND outgoing edge
+		# from its alternate output port. Same filters (cycle / direction / range)
+		# apply. Excludes b1 so the splitter can't point both outputs at the same
+		# downstream — that would defeat the point of having two routes.
+		if String(a["role"]) == "splitter":
+			var b2 := _link_best_target(i, a["wout2"], a_proc, b1)
+			if b2 >= 0:
+				_edges.append({"a": i, "b": b2})
+
+## Geometry-fallback target picker. Returns the index of the best downstream
+## node from `source_port`, or -1 if none is reachable. `exclude` lets a
+## splitter's second edge avoid duplicating its first edge's target.
+func _link_best_target(src_idx: int, source_port: Vector3, src_proc: String, exclude: int = -1) -> int:
+	var candidates : Array = []
+	for j in _nodes.size():
+		if j == src_idx or j == exclude:
+			continue
+		var b: Dictionary = _nodes[j]
+		var d : float = source_port.distance_to(b["win"] as Vector3)
+		if d >= MAX_LINK_DIST:
+			continue
+		candidates.append([d, j])
+	candidates.sort_custom(func(x, y): return float(x[0]) < float(y[0]))
+	for cand in candidates:
+		var best : int = int(cand[1])
+		var b_proc : String = String(_nodes[best].get("process", ""))
+		if _is_invalid_flow_direction(src_proc, b_proc):
+			continue
+		if _creates_cycle(best, src_idx):
+			continue
+		return best
+	return -1
+
+## Semantic direction filter for the geometry-fallback linker (#78). Some
+## (upstream_process, downstream_process) pairs are physically impossible and
+## must NEVER be picked even if Euclidean-closest. Today this catches:
+##   buffer → airsep  : silos never feed cyclones. Cyclones are pneumatic
+##                      separators that drop material DOWN into silos under
+##                      gravity, so flow is cyclone → silo, never the reverse.
+##   buffer → buffer  : silo → silo would only ever be a misclick. Stop it.
+##   airsep → airsep  : two cyclones in a row is a sign the linker got lost.
+## Add more pairs here as new failure modes show up.
+func _is_invalid_flow_direction(a_proc: String, b_proc: String) -> bool:
+	if a_proc == "buffer" and b_proc == "airsep":
+		return true
+	if a_proc == "buffer" and b_proc == "buffer":
+		return true
+	if a_proc == "airsep" and b_proc == "airsep":
+		return true
+	return false
+
+## Would adding edge from_idx → to_idx close a cycle? DFS from to_idx, walking
+## existing _edges forward — if we can reach from_idx the new edge is rejected.
+## Replaces the old single-step `_edge_exists(best, i)` check that only caught
+## length-2 cycles and let longer ones (silo→A→cyclone→silo) through. (#78)
+##
+## #71 — recirc-flagged edges are INVISIBLE to this DFS. The 3A dry-loop closes
+## a real cycle (cyclone → mengsilo) on purpose; if cycle prevention saw it,
+## the main forward path out of mengsilo would also be blocked. Skipping
+## recirc edges lets the loop coexist with normal forward links.
+func _creates_cycle(from_idx: int, to_idx: int) -> bool:
+	# Outgoing-edge map built once per call; n is small so this is cheap.
+	var out_map : Dictionary = {}
+	for e in _edges:
+		if bool(e.get("recirc", false)):
+			continue
+		var src : int = int(e["a"])
+		if not out_map.has(src):
+			out_map[src] = []
+		(out_map[src] as Array).append(int(e["b"]))
+	var visited : Dictionary = {}
+	var stack : Array = [from_idx]
+	while not stack.is_empty():
+		var cur : int = int(stack.pop_back())
+		if cur == to_idx:
+			return true
+		if visited.has(cur):
+			continue
+		visited[cur] = true
+		if out_map.has(cur):
+			for nxt in out_map[cur]:
+				stack.append(int(nxt))
+	return false
 
 func _edge_exists(a: int, b: int) -> bool:
 	for e in _edges:
@@ -414,7 +725,7 @@ static func _default_components_for(id: String) -> Dictionary:
 		out["auger_1"] = 1.0
 		out["auger_2"] = 1.0
 		out["auger_3"] = 1.0
-	elif lid.find("flotation") >= 0 or lid.find("sink") >= 0 or lid.find("rotation_tank") >= 0:
+	elif lid.find("flotation") >= 0 or lid.find("sink") >= 0:
 		out["inlet"]       = 1.0
 		out["transport_1"] = 1.0
 		out["transport_2"] = 1.0
@@ -423,6 +734,20 @@ static func _default_components_for(id: String) -> Dictionary:
 		out["drive"] = 1.0
 	elif lid.find("shredder") >= 0 or lid.find("mill") >= 0:
 		out["rotor"] = 1.0
+	elif lid.find("bunker") >= 0:
+		# The bunker's floor extraction rollers (uittrekrol) meter material out of
+		# the buffer. One named drive turns all four rollers together (the catalog
+		# tags each roller's RotatingMechanism with comp == "uittrekrol").
+		out["uittrekrol"] = 1.0
+	elif lid.find("nir") >= 0 or lid.find("tomra") >= 0 or lid.find("titech") >= 0:
+		# NIR optical sorter — the acceleration belt drums are the driven part
+		# (catalog tags the end drums with comp == "belt").
+		out["belt"] = 1.0
+	elif lid.find("friction_washer") >= 0 or lid.find("frictiewasser") >= 0:
+		# Frictiewasser stirring tank — two independent vertical stirrer motors
+		# (the catalog tags the shafts comp == "stirrer_1" / "stirrer_2").
+		out["stirrer_1"] = 1.0
+		out["stirrer_2"] = 1.0
 	else:
 		out["drive"] = 1.0
 	return out
@@ -441,8 +766,10 @@ static func _component_topology(id: String) -> String:
 	var lid := id.to_lower()
 	if lid.find("doseersilo") >= 0:
 		return "parallel"
-	if lid.find("flotation") >= 0 or lid.find("sink") >= 0 or lid.find("rotation_tank") >= 0:
+	if lid.find("flotation") >= 0 or lid.find("sink") >= 0:
 		return "series"
+	if lid.find("friction_washer") >= 0 or lid.find("frictiewasser") >= 0:
+		return "parallel"
 	return "single"
 
 ## Lookup a machine node dict by its placeable id; returns the FIRST match (machines
@@ -470,7 +797,37 @@ func set_machine_manual_on(id: String, on: bool) -> void:
 func set_machine_rpm_pct(id: String, pct: float) -> void:
 	var nd := _find_node_by_id(id)
 	if not nd.is_empty():
-		nd["rpm_pct"] = clampf(pct, 0.0, 2.0)
+		nd["rpm_pct"] = clampf(pct, 0.0, 1.0)   # 1.0 = rated max rpm
+		_apply_rotor_rpm(nd)                     # physicalize: drive the visible spin
+
+## Physically drive every TOP-LEVEL rotor of a machine from its rpm setting, so
+## the VISIBLE spin speed matches the control (different setpoints → visibly
+## different speeds). Rotors nested under another rotor (e.g. a drive-band riding
+## a drum) are skipped — they ride their parent. The rotor list is cached per node.
+func _apply_rotor_rpm(nd: Dictionary) -> void:
+	var machine = nd.get("node")
+	if machine == null or not is_instance_valid(machine):
+		return
+	if not nd.has("rotors"):
+		var list : Array = []
+		for m in machine.find_children("*", "", true, false):
+			if not (m.is_in_group("mechanism") and ("nominal_rpm" in m)):
+				continue
+			# Skip rotors nested under another rotor (they ride their parent).
+			var anc = m.get_parent()
+			var nested := false
+			while anc != null and anc != machine:
+				if anc.is_in_group("mechanism"):
+					nested = true
+					break
+				anc = anc.get_parent()
+			if not nested:
+				list.append(m)
+		nd["rotors"] = list
+	var f : float = clampf(float(nd.get("rpm_pct", 1.0)), 0.0, 1.0)
+	for m in nd["rotors"]:
+		if is_instance_valid(m):
+			m.rpm = f * float(m.nominal_rpm)
 
 func set_machine_component_pct(id: String, component: String, pct: float) -> void:
 	var nd := _find_node_by_id(id)
@@ -478,7 +835,43 @@ func set_machine_component_pct(id: String, component: String, pct: float) -> voi
 		return
 	var c : Dictionary = nd["components"]
 	if c.has(component):
-		c[component] = clampf(pct, 0.0, 2.0)
+		c[component] = clampf(pct, 0.0, 1.0)
+		_apply_component_rotor(nd, component)   # physicalize THIS rotor only
+
+## Drive the rotor(s) belonging to one HMI component (one motor) from its
+## setting. Rotors tagged (meta "comp") with this component spin at pct × their
+## nominal. If the machine has a single untagged drive, this component drives all
+## its rotors (the single-motor case).
+func _apply_component_rotor(nd: Dictionary, comp: String) -> void:
+	var machine = nd.get("node")
+	if machine == null or not is_instance_valid(machine):
+		return
+	var pct : float = clampf(float((nd["components"] as Dictionary).get(comp, 1.0)), 0.0, 1.0)
+	var matched := false
+	for m in machine.find_children("*", "", true, false):
+		if not (m.is_in_group("mechanism") and ("nominal_rpm" in m)):
+			continue
+		if m.has_meta("comp") and String(m.get_meta("comp")) == comp:
+			m.rpm = pct * float(m.nominal_rpm)
+			matched = true
+	if not matched:
+		# Single-drive machine: this component governs all its rotors.
+		nd["rpm_pct"] = pct
+		_apply_rotor_rpm(nd)
+
+## {component → its rotor's rated max rpm}, for the HMI sliders. Untagged
+## components default to the machine's primary max.
+func _component_max_rpms(nd: Dictionary) -> Dictionary:
+	var out := {}
+	var default_max := _machine_max_rpm(nd)
+	for k in (nd.get("components", {}) as Dictionary).keys():
+		out[k] = default_max
+	var machine = nd.get("node")
+	if machine != null and is_instance_valid(machine):
+		for m in machine.find_children("*", "", true, false):
+			if m.is_in_group("mechanism") and m.has_meta("comp") and ("nominal_rpm" in m):
+				out[String(m.get_meta("comp"))] = maxf(float(m.nominal_rpm), 1.0)
+	return out
 
 ## Returns a snapshot the HMI can render: live state + override state + components.
 func get_machine_info(id: String) -> Dictionary:
@@ -501,8 +894,18 @@ func get_machine_info(id: String) -> Dictionary:
 		"hand_mode":  bool(nd.get("hand_mode", false)),
 		"manual_on":  bool(nd.get("manual_on", false)),
 		"rpm_pct":    float(nd.get("rpm_pct", 1.0)),
+		"max_rpm":    _machine_max_rpm(nd),
+		"comp_max_rpm": _component_max_rpms(nd),
 		"components": (nd.get("components", {}) as Dictionary).duplicate(),
 	}
+
+## The rated max rpm the HMI slider should top out at — the primary rotor's
+## nominal_rpm (the real visible spin rate). Falls back to 100 if no rotor.
+func _machine_max_rpm(nd: Dictionary) -> float:
+	var mech = nd.get("mech")
+	if mech != null and is_instance_valid(mech) and ("nominal_rpm" in mech):
+		return maxf(float(mech.nominal_rpm), 1.0)
+	return 100.0
 
 ## Every machine on the line as a flat list for the MACHINES screen list.
 func machine_list() -> Array:
@@ -707,13 +1110,21 @@ func tick(delta: float) -> void:
 	# 1) Feed — OFF unless deliberately enabled. When on, a head node draws from a
 	#    bale on its feed point and DEPLETES that bale (finite); the bale is removed
 	#    when empty, so the line can never feed from thin air or forever.
+	# #24 — a head node prefers the NEAREST WorldLayout.line_starts marker over its
+	#    own world position as the feed-point. This decouples the intake-marker
+	#    drop zone (where the forklift parks the bale) from the head machine itself,
+	#    which sits a few metres inside the building. If no marker is within
+	#    LINE_START_MARKER_RADIUS, fall back to the head machine's own position
+	#    (legacy behaviour — preserves the test rigs that just plopped a bale on a
+	#    machine).
 	if feed_enabled:
 		var bales := get_tree().get_nodes_in_group("bale")
 		for i in _nodes.size():
 			var nd: Dictionary = _nodes[i]
 			if String(nd["role"]) == "sink" or _has_incoming(i):
 				continue
-			var bale := _bale_at((nd["node"] as Node3D).global_position, bales)
+			var feed_point : Vector3 = _head_feed_point(nd["node"] as Node3D)
+			var bale := _bale_at(feed_point, bales)
 			if bale == null:
 				continue
 			var remaining := _bale_remaining(bale)
@@ -741,6 +1152,10 @@ func tick(delta: float) -> void:
 	for nd in _nodes:
 		var bin: MaterialBatch = nd["in"]
 		nd["buffer"] = bin.mass_kg
+		# #52 per-tick load bookkeeping for the motor-overload observer. These are
+		# pure OBSERVATIONS of the existing split (set below), never inputs to it.
+		nd["_backlog_kg"] = 0.0
+		nd["_moved_kg"]   = 0.0
 		if bin.mass_kg <= 0.0:
 			nd["thru"] = lerpf(float(nd["thru"]), 0.0, 0.2)   # spin down when starved
 			continue
@@ -751,10 +1166,21 @@ func tick(delta: float) -> void:
 		# avg of the per-component RPMs — inlet/transports/outlet for tanks).
 		var rate_mul : float = float(nd.get("rpm_pct", 1.0)) * _component_pct_multiplier(nd)
 		var eff_rate: float = float(nd["rate"]) * float(nd["spin"]) * _mech_fraction(nd) * rate_mul
+		# #52 air gating — an air-driven consumer (TITECH ejector / PCU ram) starved of
+		# header pressure conveys slower. This is a GENTLE rate multiplier only: it
+		# slows flow, the un-moved mass simply backs up in the buffer (conserving). At
+		# full pressure consumer_air_factor()==1.0 and nothing changes.
+		if String(nd.get("air_id", "")) != "":
+			eff_rate *= _air_factor()
 		if eff_rate <= 0.0001:
+			# Stopped/starved this tick: the whole buffer is un-passed backlog.
+			nd["_backlog_kg"] = bin.mass_kg
 			nd["thru"] = lerpf(float(nd["thru"]), 0.0, 0.2)
 			continue
 		var flow := bin.split_mass(minf(eff_rate * delta, bin.mass_kg))
+		# Observe (don't alter) the split: what moved on vs what stayed behind.
+		nd["_moved_kg"]   = flow.mass_kg
+		nd["_backlog_kg"] = bin.mass_kg
 
 		# a) contaminant stripped out → nearest scraper bin (DIRT stream)
 		var cr: float = nd["contam_remove"]
@@ -807,6 +1233,13 @@ func tick(delta: float) -> void:
 		else:
 			(nd["out"] as MaterialBatch).add(flow)
 
+	# 2.5) ADVANCED-SYSTEM OBSERVERS (#52) — run ALONGSIDE the flow now that each
+	#      node's throughput/backlog for this tick is known. Nothing here re-routes
+	#      material or changes the split; the extruder/MFI models publish telemetry,
+	#      the motor-overload model can only STOP a jammed rotor conveying (mass then
+	#      backs up — conserving), and air duty is reported to the header.
+	_tick_advanced_systems(delta)
+
 	# 3) Carry each output DOWN ITS CONNECTOR as a delay-line. Material entering a
 	#    link rides PIPE_STAGES slots that shift forward one slot every stage_dt,
 	#    so it takes the full transit_time to reach the downstream machine. Feeding
@@ -846,7 +1279,157 @@ func tick(delta: float) -> void:
 				pipe[s] = pipe[s - 1]
 			pipe[0] = MaterialBatch.new()
 
+	# #52 push live line state + key process params to the SCADA dashboard (throttled).
+	_push_scada(delta)
+
 	_update_label()
+
+# ── #52 advanced-system per-tick observers ────────────────────────────────────
+## Step each attached observer for one tick. Order matters for the extruder pair:
+## ExtruderScrew first (computes die_pressure/melt_temp/viscosity), THEN MfiProxy
+## reads those. MotorOverload consumes the per-tick backlog/moved bookkeeping. Air
+## duty is reported per air-driven consumer. Everything is guarded + conserving.
+func _tick_advanced_systems(delta: float) -> void:
+	# Per-consumer summed throughput (kg/s), so a duty is reported per air id even if
+	# several machines share it. duty is normalised against the machine design rate.
+	var air_duty : Dictionary = {}
+	for nd in _nodes:
+		# 1) EXTRUDER thermal/rheology — drive rpm from the live rpm_pct × screw max,
+		#    feed it the current throughput, integrate, then read its published melt
+		#    state onto the node (for the HMI / SCADA). Runs ALONGSIDE — the material
+		#    still flows through the extruder node exactly as before.
+		var ex = nd.get("ex")
+		if ex != null:
+			ex.call("set_rpm", float(nd.get("rpm_pct", 1.0)) * EXTRUDER_SCREW_MAX_RPM)
+			ex.call("set_throughput", float(nd["thru"]))
+			ex.call("tick", delta)
+			nd["die_pressure"] = float(ex.get("die_pressure"))
+			nd["melt_temp"]    = float(ex.get("melt_temp"))
+			nd["viscosity"]    = float(ex.get("viscosity"))
+			# 2) MFI soft-sensor — pure/instantaneous. Q in kg/h (thru kg/s × 3600);
+			#    the proxy reads the extruder's die pressure (bar) + melt temp (°C; it
+			#    treats a >20 value as a temperature and converts via η(T) internally).
+			var mfi = nd.get("mfi")
+			if mfi != null:
+				nd["mfi_value"] = float(mfi.call("update",
+					float(nd["thru"]) * 3600.0,
+					float(ex.get("die_pressure")),
+					float(ex.get("melt_temp"))))
+		# #52 CUTTER-COMPACTOR — drive disc rpm + dosing gate from rpm_pct, synthesise
+		# a feed batch sized to the LIVE throughput so the model's load fraction
+		# tracks reality (pure-RefCounted CutterCompactor is fed a snapshot batch and
+		# the discharge it produces is discarded — material accounting is already done
+		# by LineFlow's normal in→out path). Donut stall drops `powered` so the node
+		# stops conveying (the unmoved mass simply backs up — conserving). Motor amps
+		# come from the model so the HMI shows real load on the compactor's spindle.
+		var cc = nd.get("cc")
+		if cc != null:
+			var rpm_pct : float = float(nd.get("rpm_pct", 1.0))
+			cc.call("set_rpm", rpm_pct * CC_NOMINAL_RPM)
+			cc.call("set_dosing_gate", clampf(rpm_pct, 0.0, 1.0))
+			var thru_kg : float = float(nd["thru"]) * delta
+			if thru_kg > 0.0:
+				var batch : MaterialBatch = MaterialBatch.new(thru_kg,
+					thru_kg / FEED_DENSITY, DEFAULT_COMP.duplicate(), "cc_in",
+					thru_kg * 0.08, 0.0)
+				cc.call("feed", batch)
+			cc.call("tick", delta)
+			var _drained = cc.call("discharge", delta)   # discard — flow tracked by LineFlow
+			nd["pot_temp"]    = float(cc.get("pot_temperature"))
+			nd["cc_band"]     = String(cc.call("band"))
+			nd["cc_fill_eff"] = float(cc.get("screw_fill_efficiency"))
+			if bool(cc.get("stalled")):
+				nd["powered"] = false             # Donut stall halts the drive
+			nd["amps"] = float(cc.get("motor_amps"))
+		# 3) MOTOR-OVERLOAD — pile on the un-passed backlog, relieve what moved on,
+		#    advance the trip clock. A sustained overload trips the relay; we then drop
+		#    this node's `powered` so it stops CONVEYING (material backs up — conserving).
+		#    The model raises its own EventBus alarm on the trip edge.
+		var mol = nd.get("mol")
+		if mol != null:
+			# Keep the model's run-state in step with the node so a stopped/E-stopped
+			# drive accrues no trip time, and a re-powered one re-energises.
+			if mol.has_method("set_running") and not bool(mol.call("is_tripped")):
+				mol.call("set_running", bool(nd["powered"]))
+			mol.call("add_load", float(nd.get("_backlog_kg", 0.0)))
+			mol.call("relieve", float(nd.get("_moved_kg", 0.0)))
+			mol.call("tick", delta)
+			if bool(mol.call("is_tripped")):
+				nd["powered"] = false           # stop conveying (conserving)
+				nd["amps"]    = float(mol.get("current_amps"))   # 0 A while tripped
+			else:
+				# Mirror the live motor current onto the node so the HMI/SCADA amp
+				# readout reflects the binding load on these high-load drives.
+				nd["amps"] = float(mol.get("current_amps"))
+		# 4) AIR consumer duty — accumulate this consumer's load fraction (throughput
+		#    vs its design rate) so we can report a single duty per air id.
+		var aid : String = String(nd.get("air_id", ""))
+		if aid != "":
+			var rate : float = float(nd["rate"])
+			var load : float = clampf(float(nd["thru"]) / rate, 0.0, 1.0) if rate > 0.0 else 0.0
+			air_duty[aid] = maxf(float(air_duty.get(aid, 0.0)), load)
+	# Report the per-consumer duty to the header (drives its demand → pressure).
+	var air := _air_network()
+	if air != null and air.has_method("set_consumer_duty"):
+		for aid in air_duty:
+			air.call("set_consumer_duty", aid, float(air_duty[aid]))
+
+## Push live state + key process parameters to the SCADA dashboard MainWorld owns.
+## Throttled to ~6 Hz. Everything guarded so it no-ops without a dashboard or when a
+## system/node is absent. Bands are picked so a healthy line stays grey (ISA-101).
+func _push_scada(delta: float) -> void:
+	if _scada == null or not is_instance_valid(_scada):
+		return
+	_scada_push_accum += delta
+	if _scada_push_accum < SCADA_PUSH_DT:
+		return
+	_scada_push_accum = 0.0
+	# State: Fault (E-stop) > Starting (PLC sequencing) > Running (any machine
+	# powered) > Idle. set_state also drives the dashboard's micro-stop logger.
+	if _scada.has_method("set_state"):
+		var state := "Idle"
+		if is_estopped():
+			state = "Fault"
+		elif is_line_starting():
+			state = "Starting"
+		elif line_powered_fraction() > 0.0:
+			state = "Running"
+		_scada.call("set_state", state)
+	if not _scada.has_method("set_param"):
+		return
+	# Line amps — the summed live draw across every metered stage.
+	_scada.call("set_param", "line_amps", live_line_amps(), 0.0, 520.0, "Line Current  (A)")
+	# Granulaat quality — mass-weighted grade of all product this run.
+	_scada.call("set_param", "gran_q", granulaat_quality(), 80.0, 100.0, "Granulaat Q  (/100)")
+	# Extruder melt temp + MFI from the first extruder node that has the models.
+	var ex_nd := _first_extruder_node()
+	if not ex_nd.is_empty():
+		_scada.call("set_param", "melt_temp", float(ex_nd.get("melt_temp", 0.0)), 185.0, 205.0, "Melt Temp  (C)")
+		_scada.call("set_param", "mfi", float(ex_nd.get("mfi_value", 0.0)), 0.3, 2.0, "MFI  (g/10min)")
+	# Header air pressure from the AirNetwork autoload.
+	var air := _air_network()
+	if air != null and ("current_pressure_bar" in air):
+		_scada.call("set_param", "air_bar", float(air.get("current_pressure_bar")), 5.5, 8.0, "Air Header  (bar)")
+	# #52 — Cutter-compactor pot temperature from the first compactor node carrying
+	# the thermo model. The sweet-spot band (100..105 °C) is the green zone; cooler
+	# = UNDERHEATED, hotter = DONUT-STALL imminent. Operator's job is to keep it here.
+	var cc_nd := _first_cc_node()
+	if not cc_nd.is_empty():
+		_scada.call("set_param", "cc_pot", float(cc_nd.get("pot_temp", 0.0)), 100.0, 105.0, "Compactor Pot  (C)")
+
+## The first extruder node carrying the thermal/MFI models, or {} if none placed.
+func _first_extruder_node() -> Dictionary:
+	for nd in _nodes:
+		if nd.get("ex") != null:
+			return nd
+	return {}
+
+## #52 — first node carrying a CutterCompactor model, or {} if none placed.
+func _first_cc_node() -> Dictionary:
+	for nd in _nodes:
+		if nd.get("cc") != null:
+			return nd
+	return {}
 
 ## Remaining material in a bale (kg). Initialised from its weight on first use.
 func _bale_remaining(bale: Node3D) -> float:
@@ -859,6 +1442,31 @@ func _bale_remaining(bale: Node3D) -> float:
 			w = BaleDefs.estimated_weight(item["size"] as Vector3)
 	bale.set_meta("remaining_kg", w)
 	return w
+
+## #24 — resolve the head node's effective feed-point. Prefers the NEAREST
+## WorldLayout.line_starts marker within LINE_START_MARKER_RADIUS of the head
+## machine; falls back to the head's own world position when no marker is in
+## range. This is what lets a forklift drop a bale on the user-marked intake
+## (10-15 m from the actual head machine) and have the line consume it.
+func _head_feed_point(head: Node3D) -> Vector3:
+	var head_pos : Vector3 = head.global_position
+	var wl := get_node_or_null("/root/WorldLayout")
+	if wl == null:
+		return head_pos
+	var starts = wl.get("line_starts")
+	if not (starts is Dictionary) or (starts as Dictionary).is_empty():
+		return head_pos
+	var best_pos : Vector3 = head_pos
+	var best_d : float = LINE_START_MARKER_RADIUS
+	for v in (starts as Dictionary).values():
+		if not (v is Vector3):
+			continue
+		var marker : Vector3 = v
+		var d : float = marker.distance_to(head_pos)
+		if d < best_d:
+			best_d = d
+			best_pos = marker
+	return best_pos
 
 ## Returns the nearest bale within FEED_RADIUS of a feed point, or null.
 func _bale_at(pos: Vector3, bales: Array[Node] = []) -> Node3D:
@@ -969,7 +1577,7 @@ func _nearest_floor_pile(pos: Vector3) -> Node:
 ## only accept containers whose `accepted_streams` list explicitly includes cls
 ## (so a "FINES" bin won't catch our SLUDGE). When false we return the nearest
 ## catch-all (empty accepted_streams) for fallback routing.
-func _nearest_container(pos: Vector3, cls: int, stream_specific: bool, containers: Array) -> Node:
+func _nearest_container(pos: Vector3, cls: int, stream_specific: bool, _containers: Array) -> Node:
 	var best : Node = null
 	var best_d := 40.0
 	for c in _waste_containers_cache:
@@ -1028,40 +1636,228 @@ func _spawn_connectors() -> void:
 	for e in _edges:
 		var a: Dictionary = _nodes[int(e["a"])]
 		var b: Dictionary = _nodes[int(e["b"])]
-		_make_connector(a["wout"] as Vector3, b["win"] as Vector3)
+		_make_connector(a, b)
 
-func _make_connector(a_world: Vector3, b_world: Vector3) -> void:
+## #80 — type-aware connector picker. The geometry depends on the SOURCE
+## machine (and sometimes its destination): a screw of any kind always
+## discharges via a CHUTE per operator rule; everything else falls through to
+## the existing gravity-gutter behaviour (only drawn when there's a real >0.4 m
+## vertical drop, otherwise no visible connector). Future pairs (blower→cyclone
+## ducts, flotation→dewater inclined-screws, etc.) can be added as new
+## elif-branches without touching the rest of the chain.
+func _make_connector(a: Dictionary, b: Dictionary) -> void:
+	var a_world: Vector3 = a["wout"]
+	var b_world: Vector3 = b["win"]
+	var dir := b_world - a_world
+	var length := dir.length()
+	if length < 0.05:
+		return
+	var src_id : String = String(a.get("id", ""))
+	var tgt_id : String = String(b.get("id", ""))
+	# #106 — BELT → BELT never gets a connector. Two adjacent conveyors meet
+	# directly at the discharge roller; the gravity-gutter fallback was drawing
+	# an unwanted horizontal bar between them (visible between compactor_belt
+	# and compactorband even though they touched). Skip silently.
+	if _is_belt_id(src_id) and _is_belt_id(tgt_id):
+		return
+	# Rule 1 — SCREW DISCHARGE ALWAYS GETS A CHUTE. Per operator: when material
+	# leaves a screw conveyor / dewatering screw / dosing screw, it slides down a
+	# chute to whatever the screw is feeding. Auto-fitted between the screw's
+	# wout and the target machine's win.
+	if _is_screw_source(src_id):
+		_spawn_chute(a_world, b_world, 0.32, 0.08, false)
+		return
+	# Rule 2 — FRICTION SEPARATOR DISCHARGES THROUGH A CLOSED CHUTE. Per
+	# operator: the friction_sep throws so much wind + water spray that the
+	# downstream connector has to be sealed on top, otherwise the surrounding
+	# area gets soaked. Same chute shape as the screw rule but with a lid.
+	if _is_friction_sep_source(src_id):
+		_spawn_chute(a_world, b_world, 0.34, 0.14, true)
+		return
+	# Rule 3 — BLOWER ALWAYS PNEUMATICALLY CONVEYS TO A CYCLONE through a round
+	# steel duct. Per operator: blower output → cyclone is deterministic in this
+	# plant; the air-laden flake stream runs through a sealed round pipe between
+	# the blower discharge and the cyclone tangential inlet.
+	if src_id == "blower":
+		_spawn_round_duct(a_world, b_world, 0.18)
+		return
+	# #107 — CYCLONE → BLOWER is the suction-leg of a pneumatic loop (blower
+	# pulls air + flake OUT the bottom of the cyclone), same round-pipe geometry
+	# as the discharge leg above.
+	if src_id == "cyclone" and tgt_id == "blower":
+		_spawn_round_duct(a_world, b_world, 0.16)
+		return
+	# #107 — CYCLONE → SILO (or extruder_silo) is a vertical gravity drop: a
+	# tapered funnel from the cyclone's discharge spout into the silo's top
+	# inlet. Visualised as a steep narrow chute (closed-top, since cyclone
+	# discharge often carries fines that would otherwise drift on air currents).
+	if src_id == "cyclone" and (tgt_id == "silo" or tgt_id == "extruder_silo" or tgt_id == "mengsilo" or tgt_id == "doseersilo" or tgt_id == "vss_silo"):
+		_spawn_chute(a_world, b_world, 0.30, 0.18, true)
+		return
+	# Otherwise — fall through to the legacy gravity-gutter behaviour.
+	_spawn_gravity_gutter(a_world, b_world)
+
+## True when the source id is one of the conveying screws — the cases the
+## "screw → anything = chute" rule applies to. Extruder screws live INSIDE the
+## extruder unit and don't discharge to the outside, so they're excluded.
+static func _is_screw_source(id: String) -> bool:
+	return id == "transport_screw" or id == "dewater_screw" or id == "doseerschroef"
+
+## #106 — belt-family check used to suppress the gravity-gutter fallback when
+## one conveyor feeds directly into the next (no real gap to bridge). Covers
+## the standalone belts (transport / inclined / variable / metal / scraper)
+## AND the named intake belts + compactorband + compactor_belt that feed the
+## extruder hot end. Add new belt ids to this list as they're built.
+static func _is_belt_id(id: String) -> bool:
+	if id == "transport_belt" or id == "variable_belt" \
+			or id == "inclined_belt_8m" or id == "metal_belt" \
+			or id == "compactorband" or id == "compactor_belt" \
+			or id == "switch_belt":
+		return true
+	return id.begins_with("intake_belt_") or id.begins_with("opzetband") \
+			or id.begins_with("westa_band")
+
+## True when the source id is a friction separator — both the dry-process
+## frictiescheider and the wet-process frictiewasser kick up enough wind+water
+## spray to need a closed-top chute on the discharge.
+static func _is_friction_sep_source(id: String) -> bool:
+	return id == "friction_sep" or id == "friction_washer" or id == "intensive_washer"
+
+## Spawn a chute from a_world (source out) to b_world (target in). With
+## `closed_top = false` it's an open-top trough (floor + 2 side rails); with
+## `closed_top = true` it gets a lid on top so wind/water spray (friction
+## separators) is contained.
+func _spawn_chute(a_world: Vector3, b_world: Vector3, width: float, height: float, closed_top: bool) -> void:
+	var dir := b_world - a_world
+	var length := dir.length()
+	if length < 0.05:
+		return
+	var mid := (a_world + b_world) * 0.5
+	var floor_mat := StandardMaterial3D.new()
+	floor_mat.albedo_color = Color(0.55, 0.56, 0.58)
+	floor_mat.metallic = 0.55
+	floor_mat.roughness = 0.45
+	var rail_mat := StandardMaterial3D.new()
+	rail_mat.albedo_color = Color(0.34, 0.34, 0.36)
+	rail_mat.metallic = 0.55
+	rail_mat.roughness = 0.45
+	# Bundle parent — oriented so its local +Z axis points from a_world toward
+	# b_world; gives the chute its natural downward tilt where there's a drop.
+	var root := Node3D.new()
+	_connectors.add_child(root)
+	root.global_transform = Transform3D(_basis_along(dir, "z"), mid)
+	# Floor trough — sits at the bottom of the chute box.
+	var floor_mi := MeshInstance3D.new()
+	var fb := BoxMesh.new()
+	fb.size = Vector3(width, 0.04, length)
+	floor_mi.mesh = fb
+	floor_mi.material_override = floor_mat
+	floor_mi.position = Vector3(0.0, -height * 0.5, 0.0)
+	root.add_child(floor_mi)
+	# Two side rails along the length (keep material in the trough).
+	for sx in [-1.0, 1.0]:
+		var rail := MeshInstance3D.new()
+		var rb := BoxMesh.new()
+		rb.size = Vector3(0.04, height, length)
+		rail.mesh = rb
+		rail.material_override = rail_mat
+		rail.position = Vector3(float(sx) * (width * 0.5 - 0.02), 0.0, 0.0)
+		root.add_child(rail)
+	# Lid on top — only for closed-top variant (friction separator discharge).
+	# Same metal as the floor; sits flush with the top of the side rails.
+	if closed_top:
+		var lid := MeshInstance3D.new()
+		var lb := BoxMesh.new()
+		lb.size = Vector3(width, 0.04, length)
+		lid.mesh = lb
+		lid.material_override = floor_mat
+		lid.position = Vector3(0.0, height * 0.5, 0.0)
+		root.add_child(lid)
+	# Solid collider so the player can walk on top of the chute without falling
+	# through, and so other machines' floor-snap rays see it.
+	var col := StaticBody3D.new()
+	var cs := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(width, height * 1.1, length)
+	cs.shape = box
+	col.add_child(cs)
+	root.add_child(col)
+
+## Round steel duct from a_world to b_world — used for pneumatic conveying
+## (currently: blower→cyclone). Single cylinder oriented along the link with a
+## small flange at each end so it reads as bolted onto the source + target.
+func _spawn_round_duct(a_world: Vector3, b_world: Vector3, radius: float) -> void:
+	var dir := b_world - a_world
+	var length := dir.length()
+	if length < 0.05:
+		return
+	var mid := (a_world + b_world) * 0.5
+	var steel_mat := StandardMaterial3D.new()
+	steel_mat.albedo_color = Color(0.62, 0.63, 0.66)
+	steel_mat.metallic = 0.7
+	steel_mat.roughness = 0.35
+	var flange_mat := StandardMaterial3D.new()
+	flange_mat.albedo_color = Color(0.40, 0.41, 0.44)
+	flange_mat.metallic = 0.5
+	flange_mat.roughness = 0.45
+	var root := Node3D.new()
+	_connectors.add_child(root)
+	# Cylinder default is along +Y; orient the parent so local +Y points toward b.
+	root.global_transform = Transform3D(_basis_along(dir, "y"), mid)
+	# Main pipe.
+	var pipe := MeshInstance3D.new()
+	var cm := CylinderMesh.new()
+	cm.top_radius = radius
+	cm.bottom_radius = radius
+	cm.height = length
+	pipe.mesh = cm
+	pipe.material_override = steel_mat
+	root.add_child(pipe)
+	# Flanges at both ends (slightly proud of the pipe radius).
+	for fy in [-length * 0.5 + 0.03, length * 0.5 - 0.03]:
+		var fl := MeshInstance3D.new()
+		var fm := CylinderMesh.new()
+		fm.top_radius = radius * 1.30
+		fm.bottom_radius = radius * 1.30
+		fm.height = 0.06
+		fl.mesh = fm
+		fl.material_override = flange_mat
+		fl.position = Vector3(0.0, fy, 0.0)
+		root.add_child(fl)
+	# Solid collider so the player can't walk through the pipe.
+	var col := StaticBody3D.new()
+	var cs := CollisionShape3D.new()
+	var caps := CapsuleShape3D.new()
+	caps.radius = radius * 1.05
+	caps.height = length
+	cs.shape = caps
+	col.add_child(cs)
+	root.add_child(col)
+
+## Legacy: a 0.45 × 0.12 m gravity trough only drawn when the link drops more
+## than 0.4 m vertically. Used as the fallback for source machines that don't
+## yet have a dedicated connector type defined.
+func _spawn_gravity_gutter(a_world: Vector3, b_world: Vector3) -> void:
 	var dir := b_world - a_world
 	var length := dir.length()
 	if length < 0.05:
 		return
 	var mid := (a_world + b_world) * 0.5
 	var drop := a_world.y - b_world.y
+	if drop <= 0.4:
+		return
 	var mat := StandardMaterial3D.new()
 	mat.metallic = 0.4
 	mat.roughness = 0.5
+	mat.albedo_color = Color(0.56, 0.56, 0.60)
 	var mi := MeshInstance3D.new()
-	var which := "y"
-	if drop > 0.4:
-		# gravity gutter: a shallow trough (its length runs along local Z)
-		mat.albedo_color = Color(0.56, 0.56, 0.60)
-		var bm := BoxMesh.new()
-		bm.size = Vector3(0.45, 0.12, length)
-		mi.mesh = bm
-		which = "z"
-	else:
-		# pipe / pneumatic / screw run (cylinder along local Y)
-		mat.albedo_color = Color(0.50, 0.53, 0.58)
-		var cm := CylinderMesh.new()
-		cm.top_radius = 0.12
-		cm.bottom_radius = 0.12
-		cm.height = length
-		cm.radial_segments = 12
-		mi.mesh = cm
+	var bm := BoxMesh.new()
+	bm.size = Vector3(0.45, 0.12, length)
+	mi.mesh = bm
 	mi.material_override = mat
 	_connectors.add_child(mi)
-	mi.global_transform = Transform3D(_basis_along(dir, which), mid)
-	mi.create_convex_collision()   # #10 — pipes/gutters are solid (no walking through)
+	mi.global_transform = Transform3D(_basis_along(dir, "z"), mid)
+	mi.create_convex_collision()
 
 func _basis_along(axis_world: Vector3, which: String) -> Basis:
 	var n := axis_world.normalized()

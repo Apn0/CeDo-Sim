@@ -49,7 +49,7 @@ var _active_lpg_idx    : int    = 0
 
 # ── Lights + audio aux (see _install_vehicle_aux below) ───────────────────────
 # Subclasses override has_lights / has_horn before super._ready() runs:
-#   ScissorLift  : has_lights = false, has_horn = true
+#   MastLift  : has_lights = false, has_horn = true
 #   everything else: defaults
 @export var has_lights : bool = true
 @export var has_horn   : bool = false
@@ -351,20 +351,20 @@ func _ensure_cab_camera_debug_actions() -> void:
 func _handle_cab_camera_debug_input(event: InputEvent) -> bool:
 	if not occupied or _cab_camera == null or is_platform_ride():
 		return false
-	var basis := _cab_camera_debug_basis()
+	var cam_basis := _cab_camera_debug_basis()
 	var dir := Vector3.ZERO
 	if event.is_action_pressed("cab_cam_forward"):
-		dir += -basis.z
+		dir += -cam_basis.z
 	elif event.is_action_pressed("cab_cam_back"):
-		dir += basis.z
+		dir += cam_basis.z
 	elif event.is_action_pressed("cab_cam_left"):
-		dir += -basis.x
+		dir += -cam_basis.x
 	elif event.is_action_pressed("cab_cam_right"):
-		dir += basis.x
+		dir += cam_basis.x
 	elif event.is_action_pressed("cab_cam_up"):
-		dir += basis.y
+		dir += cam_basis.y
 	elif event.is_action_pressed("cab_cam_down"):
-		dir += -basis.y
+		dir += -cam_basis.y
 	else:
 		return false
 	_nudge_cab_camera_debug(dir.normalized() * CAB_CAMERA_DEBUG_STEP_M)
@@ -412,7 +412,7 @@ func _save_cab_camera_offset() -> void:
 		push_warning("[CabCameraDebug] Could not save %s (error %d)" % [CAB_CAMERA_OFFSETS_PATH, err])
 
 func _cab_camera_offset_key() -> String:
-	return vehicle_type if vehicle_type != "" else name
+	return vehicle_type if vehicle_type != "" else String(name)
 
 func _vec3_str(v: Vector3) -> String:
 	return "(%.2f, %.2f, %.2f)" % [v.x, v.y, v.z]
@@ -668,6 +668,10 @@ func _on_released() -> void:
 ## go, they unfreeze and re-collide with the world. StaticBody3D bales (legacy
 ## save data) take the old collision-toggle path.
 func _set_bale_grabbed(b: Node3D, grabbed: bool) -> void:
+	# LOD upgrade: yard bales spawn as a cheap single-box model; the moment one is
+	# grabbed, build its full sheet/wire detail so cutting + the film-pile work.
+	if grabbed and b != null and b.has_meta("simple_bale"):
+		PlaceableCatalog.detail_bale(b)
 	if b is RigidBody3D:
 		var rb := b as RigidBody3D
 		rb.freeze = grabbed
@@ -683,7 +687,7 @@ func _set_bale_grabbed(b: Node3D, grabbed: bool) -> void:
 
 ## Crosshair interaction protocol used by PlayerController. VehicleEnterArea still
 ## decides whether the cab is reachable; the player must also look at the vehicle.
-func crosshair_prompt(player: Node3D) -> String:
+func crosshair_prompt(_player: Node3D) -> String:
 	var op_ctx := _operator_context()
 	if op_ctx == null or op_ctx.get("current_mode") != "on_foot" or op_ctx.get("interactable_vehicle") != self:
 		return ""
@@ -692,7 +696,7 @@ func crosshair_prompt(player: Node3D) -> String:
 		return reason if reason != "" else "Cannot enter right now"
 	return "Enter %s" % _pretty_vehicle_type()
 
-func crosshair_interact(player: Node3D) -> void:
+func crosshair_interact(_player: Node3D) -> void:
 	var op_ctx := _operator_context()
 	if op_ctx != null and op_ctx.has_method("enter_interactable_vehicle"):
 		op_ctx.call("enter_interactable_vehicle", self)
@@ -706,7 +710,7 @@ func _pretty_vehicle_type() -> String:
 		"forklift": return "forklift"
 		"bale_clamp": return "bale clamp"
 		"merlo", "merlo_p40": return "Merlo"
-		"scissor_lift": return "scissor lift"
+		"mast_lift", "scissor_lift": return "mast lift"   # legacy alias preserved
 		_: return vehicle_type.capitalize().replace("_", " ")
 
 func can_exit() -> bool:
@@ -1357,7 +1361,7 @@ func _on_lpg_active_changed() -> void:
 # VEHICLE LIGHTS + AUDIO AUX  (lights, hazards, reverse beam + beeper, horn)
 # =============================================================================
 ## Build the procedural lights + audio rig on this vehicle. Called via
-## call_deferred from _ready so subclass-overridden flags (ScissorLift sets
+## call_deferred from _ready so subclass-overridden flags (MastLift sets
 ## has_lights = false + has_horn = true) take effect before we build.
 func _install_vehicle_aux() -> void:
 	if has_lights:
@@ -1368,7 +1372,7 @@ func _install_vehicle_aux() -> void:
 
 ## Light positions are keyed by vehicle_type. forklift + bale_clamp share the
 ## Mitsubishi chassis so they use the same layout. merlo + merlo_p40 sit on a
-## taller, longer rig — different mounts. ScissorLift / mast lift gets none.
+## taller, longer rig — different mounts. MastLift / mast lift gets none.
 func _vehicle_light_layout() -> Dictionary:
 	# Defaults aimed at a forklift-sized chassis (X≈1.2 W, Z≈2.5 L, top≈2.4 H).
 	var d := {
@@ -1556,7 +1560,7 @@ func _build_reverse_beeper() -> void:
 			_beep_double = true
 		"merlo", "merlo_p40":
 			_beep_tone_hz = 440.0; _beep_period_s = 0.55; _beep_on_ratio = 0.50
-		"scissor_lift":
+		"mast_lift", "scissor_lift":
 			_beep_tone_hz = 800.0; _beep_period_s = 0.45; _beep_on_ratio = 0.50
 		_:
 			_beep_tone_hz = 880.0; _beep_period_s = 0.40; _beep_on_ratio = 0.50

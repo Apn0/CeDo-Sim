@@ -1,8 +1,8 @@
 [gd_scene format=3 uid="uid://c8y8d6jo0x1a2"]
 
-[ext_resource type="Script" path="res://src/scenes/menus/main_menu/MainMenu.gd" id="1_mainmenu"]
+[ext_resource type="Script" uid="uid://dhca6c50nj628" path="res://src/scenes/menus/main_menu/MainMenu.gd" id="1_mainmenu"]
 
-[node name="MainMenu" type="Control"]
+[node name="MainMenu" type="Control" unique_id=507899914]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -11,7 +11,7 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_mainmenu")
 
-[node name="ColorRect" type="ColorRect" parent="."]
+[node name="ColorRect" type="ColorRect" parent="." unique_id=753915456]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -20,60 +20,86 @@ grow_horizontal = 2
 grow_vertical = 2
 color = Color(0.129412, 0.14902, 0.180392, 1)
 
-[node name="CenterContainer" type="CenterContainer" parent="."]
+[node name="CenterContainer" type="ScrollContainer" parent="." unique_id=990293644]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+horizontal_scroll_mode = 0
 
-[node name="VBoxContainer" type="VBoxContainer" parent="CenterContainer"]
+[node name="Centerer" type="HBoxContainer" parent="CenterContainer" unique_id=1569871510]
 layout_mode = 2
-theme_override_constants/separation = 20
+size_flags_horizontal = 3
 
-[node name="Label" type="Label" parent="CenterContainer/VBoxContainer"]
+[node name="LeftSpacer" type="Control" parent="CenterContainer/Centerer" unique_id=971910343]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="VBoxContainer" type="VBoxContainer" parent="CenterContainer/Centerer" unique_id=67358574]
+custom_minimum_size = Vector2(360, 0)
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 0
+theme_override_constants/separation = 14
+
+[node name="Label" type="Label" parent="CenterContainer/Centerer/VBoxContainer" unique_id=210645557]
 layout_mode = 2
 theme_override_font_sizes/font_size = 48
 text = "CeDo Simulator"
 horizontal_alignment = 1
 
-[node name="HSeparator" type="HSeparator" parent="CenterContainer/VBoxContainer"]
+[node name="HSeparator" type="HSeparator" parent="CenterContainer/Centerer/VBoxContainer" unique_id=1258439718]
 layout_mode = 2
 
-[node name="LoadSaveLabel" type="Label" parent="CenterContainer/VBoxContainer"]
+[node name="LoadSaveLabel" type="Label" parent="CenterContainer/Centerer/VBoxContainer" unique_id=707941133]
 layout_mode = 2
 text = "Load Save:"
 
-[node name="SaveList" type="ItemList" parent="CenterContainer/VBoxContainer"]
+[node name="SaveList" type="ItemList" parent="CenterContainer/Centerer/VBoxContainer" unique_id=923971669]
 custom_minimum_size = Vector2(300, 150)
 layout_mode = 2
 
-[node name="LoadButton" type="Button" parent="CenterContainer/VBoxContainer"]
+[node name="LoadButton" type="Button" parent="CenterContainer/Centerer/VBoxContainer" unique_id=681089067]
 custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
 text = "Load Selected"
 
-[node name="HSeparator2" type="HSeparator" parent="CenterContainer/VBoxContainer"]
+[node name="DeleteSelectedButton" type="Button" parent="CenterContainer/Centerer/VBoxContainer" unique_id=1585319077]
+custom_minimum_size = Vector2(0, 32)
+layout_mode = 2
+text = "Delete Selected"
+
+[node name="DeleteAllButton" type="Button" parent="CenterContainer/Centerer/VBoxContainer" unique_id=1588203845]
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+text = "Delete ALL save files"
+
+[node name="HSeparator2" type="HSeparator" parent="CenterContainer/Centerer/VBoxContainer" unique_id=92348993]
 layout_mode = 2
 
-[node name="NewSaveLabel" type="Label" parent="CenterContainer/VBoxContainer"]
+[node name="NewSaveLabel" type="Label" parent="CenterContainer/Centerer/VBoxContainer" unique_id=1811853636]
 layout_mode = 2
 text = "New Save:"
 
-[node name="NewSaveInput" type="LineEdit" parent="CenterContainer/VBoxContainer"]
+[node name="NewSaveInput" type="LineEdit" parent="CenterContainer/Centerer/VBoxContainer" unique_id=88968904]
 layout_mode = 2
 placeholder_text = "Enter save name..."
 
-[node name="NewSaveButton" type="Button" parent="CenterContainer/VBoxContainer"]
+[node name="NewSaveButton" type="Button" parent="CenterContainer/Centerer/VBoxContainer" unique_id=225093649]
 custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
 text = "Start New Save"
 
-[node name="HSeparator3" type="HSeparator" parent="CenterContainer/VBoxContainer"]
+[node name="HSeparator3" type="HSeparator" parent="CenterContainer/Centerer/VBoxContainer" unique_id=1342266394]
 layout_mode = 2
 
-[node name="WorldSetupButton" type="Button" parent="CenterContainer/VBoxContainer"]
+[node name="WorldSetupButton" type="Button" parent="CenterContainer/Centerer/VBoxContainer" unique_id=2044840359]
 custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
 text = "Setup World Layout"
+
+[node name="RightSpacer" type="Control" parent="CenterContainer/Centerer" unique_id=1754327296]
+layout_mode = 2
+size_flags_horizontal = 3

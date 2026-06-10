@@ -124,6 +124,11 @@ var _belt_mat_deck    : ShaderMaterial = null
 var _belt_mat_incline : ShaderMaterial = null
 var _belt_mat_top     : ShaderMaterial = null
 
+## The walkable StaticBody3D built in _build_collision(). Kept so the run-state
+## code can keep its "belt_speed" meta live (belt_speed while running, 0.0 while
+## stopped) — that's what the player's belt-carry contract reads off the collider.
+var _belt_body : StaticBody3D = null
+
 func _build_visual() -> void:
 	var steel := StandardMaterial3D.new()
 	steel.albedo_color = Color(0.42, 0.45, 0.48); steel.roughness = 0.6; steel.metallic = 0.3
@@ -157,6 +162,9 @@ func _build_visual() -> void:
 				leg.mesh = lm; leg.material_override = steel
 				leg.position = Vector3(sx * deck_width * 0.45, deck_height * 0.5, deck_length * sz)
 				add_child(leg)
+				# Simple vertical floor legs → lengthen to the floor when raised (#70).
+				leg.add_to_group("machine_leg")
+				leg.set_meta("leg_h", deck_height)
 	# Inclined belt section — a long box rotated about X, mounted at the deck end.
 	var inc := MeshInstance3D.new()
 	var hyp := _incline_hyp
@@ -184,6 +192,10 @@ func _build_visual() -> void:
 			leg2.position = Vector3(sx * deck_width * 0.45, top_h * 0.5,
 				deck_length + s * hyp * cos(_incline_angle))
 			add_child(leg2)
+			# Simple vertical floor legs (each runs straight down to the floor; only
+			# their height varies along the incline) → extend to the floor when raised (#70).
+			leg2.add_to_group("machine_leg")
+			leg2.set_meta("leg_h", top_h)
 	# Side guards along the incline. If funnel walls are configured we draw a tapering
 	# wall (parallel → narrowing → parallel-narrow) instead of straight guards.
 	if funnel_min_width > 0.0 and funnel_narrow_m > 0.0:
@@ -278,6 +290,12 @@ func _build_collision() -> void:
 	var body := StaticBody3D.new()
 	body.name = "BeltBody"
 	add_child(body)
+	# Belt-carry contract: the walkable collider is in group "belt", and its
+	# "belt_speed" meta is belt_speed while running / 0.0 while stopped. The player
+	# controller reads this off the body it's standing on and drags itself along.
+	_belt_body = body
+	body.add_to_group("belt")
+	body.set_meta("belt_speed", belt_speed if is_running() else 0.0)
 	# Flat deck slab (skip if no flat section).
 	if deck_length > 0.01:
 		var dc := CollisionShape3D.new()
@@ -413,6 +431,10 @@ func _process(delta: float) -> void:
 	# belt is OBVIOUSLY stopped (the slats freeze) and a running one is OBVIOUSLY
 	# moving. Scale by belt_speed so a slow belt scrolls slowly. (#texturedbelts)
 	_set_scroll_speed((belt_speed * 4.0) if running else 0.0)
+	# Keep the walkable collider's belt-carry meta in step with the PLC run-state so
+	# the player is carried only while the belt actually moves (0.0 when stopped).
+	if _belt_body != null and is_instance_valid(_belt_body):
+		_belt_body.set_meta("belt_speed", belt_speed if running else 0.0)
 	var i := _riders.size() - 1
 	while i >= 0:
 		var r : Dictionary = _riders[i]

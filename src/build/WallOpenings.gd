@@ -39,20 +39,69 @@ var _openings: Dictionary = {}
 var _ready_ok: bool = false
 
 # =============================================================================
-func setup(shell: MeshInstance3D) -> void:
+## #105 — `thin_collision_source` lets the caller hand in a separate (single-
+## face) mesh whose triangles drive collision while the visible shell stays
+## thick. The thick shell's wall faces alone would trap the player capsule
+## between inner + outer surfaces; the thin mesh has single-face walls so
+## there's no wedge gap. When `thin_collision_source` is null we fall back to
+## the visible shell's mesh — preserves the old behaviour for any caller that
+## doesn't have a separate thin source.
+func setup(shell: MeshInstance3D, thin_collision_source: Mesh = null) -> void:
 	_shell = shell
 	if _shell == null or _shell.mesh == null:
 		push_error("[WallOpenings] No shell mesh to cache")
 		return
-	_cache_original()                       # _orig_surfaces = clean thin mesh
+	# Build the collision-source triangle list (`_orig_surfaces`) — from the thin
+	# mesh when provided, otherwise from the visible shell. Visual triangles are
+	# always read from the visible shell so the lit, textured wall is what the
+	# player sees.
+	_cache_surfaces_from(thin_collision_source if thin_collision_source != null else _shell.mesh, _orig_surfaces)
 	if solidify_enabled:
 		_visual_surfaces = _solidify_surfaces(_orig_surfaces)
+	elif thin_collision_source != null:
+		# Visual triangles come from the SOLID shell (already thick), collision
+		# from the THIN mesh that was passed in. Independent arrays so each carve
+		# pass works on its own data.
+		_visual_surfaces = []
+		_cache_surfaces_from(_shell.mesh, _visual_surfaces)
 	else:
-		_visual_surfaces = _orig_surfaces
+		# Single source for both — copy so a future in-place edit can't corrupt
+		# the other pass. Defensive against the prior shared-reference pattern.
+		_visual_surfaces = _orig_surfaces.duplicate(true)
 	_ready_ok = true
-	print("[WallOpenings] Cached %d surfaces from building shell" % _orig_surfaces.size())
-	# Push the (now thick) mesh + collision immediately, even before any opening.
+	print("[WallOpenings] Cached %d collision surfaces and %d visual surfaces" \
+		% [_orig_surfaces.size(), _visual_surfaces.size()])
+	# Push the carved mesh + collision immediately, even before any opening.
 	rebuild()
+
+## Pull triangles out of any Mesh into the project's surface-dict layout.
+## Used twice in setup() — once for collision, once for the visual override.
+func _cache_surfaces_from(mesh: Mesh, dest: Array) -> void:
+	dest.clear()
+	if mesh == null:
+		return
+	for s in mesh.get_surface_count():
+		var arr: Array = mesh.surface_get_arrays(s)
+		var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+		var norms := PackedVector3Array()
+		if arr[Mesh.ARRAY_NORMAL] != null:
+			norms = arr[Mesh.ARRAY_NORMAL]
+		var indices := PackedInt32Array()
+		if arr[Mesh.ARRAY_INDEX] != null:
+			indices = arr[Mesh.ARRAY_INDEX]
+		var fv := PackedVector3Array()
+		var fn := PackedVector3Array()
+		var have_norm := norms.size() == verts.size()
+		if indices.size() > 0:
+			for i in indices:
+				fv.append(verts[i])
+				if have_norm:
+					fn.append(norms[i])
+		else:
+			fv = verts.duplicate()
+			if have_norm:
+				fn = norms.duplicate()
+		dest.append({"v": fv, "n": fn})
 
 func _cache_original() -> void:
 	_orig_surfaces.clear()
@@ -137,7 +186,21 @@ func rebuild() -> void:
 	if not _ready_ok:
 		return
 
-	var inv := _shell.global_transform.affine_inverse()
+	# Reset the per-rebuild carve budget. Shared across the visual + collision
+	# passes so the whole rebuild can't exceed the ceiling.
+	_carve_remaining = _CARVE_TRI_BUDGET
+
+	# global_transform requires the shell to be in the scene tree. setup() calls
+	# rebuild() immediately, which in some test/headless paths runs BEFORE _shell
+	# is tree-attached (causing "is_inside_tree()" warnings). Fall back to
+	# identity in that case — equivalent to assuming mesh-local == world, which
+	# is true for the test's origin-anchored shell. In-game the shell IS in the
+	# tree at this point, so the real transform applies.
+	var inv : Transform3D
+	if _shell.is_inside_tree():
+		inv = _shell.global_transform.affine_inverse()
+	else:
+		inv = Transform3D.IDENTITY
 	# Pre-compute each opening in MESH-LOCAL space (so we test triangles directly
 	# without transforming every vertex to world).
 	var boxes: Array = []
@@ -151,7 +214,11 @@ func rebuild() -> void:
 			"rot_y": float(op["rot_y"]),
 		})
 
-	# VISUAL: the (thick) solidified mesh, with openings carved out.
+	# VISUAL: the (thick) solidified mesh, with openings carved out. Triangles
+	# that PARTIALLY overlap an opening box are subdivided down to ~0.4 m so the
+	# surrounding wall survives the carve. The old code dropped the whole
+	# triangle on any overlap, which deleted the entire wall plane for a 1 m
+	# door hole.
 	var new_mesh := ArrayMesh.new()
 	for surf in _visual_surfaces:
 		var sv: PackedVector3Array = surf["v"]
@@ -163,11 +230,20 @@ func rebuild() -> void:
 			var a := sv[i0]
 			var b := sv[i0 + 1]
 			var c := sv[i0 + 2]
-			if _tri_in_any_box(a, b, c, boxes):
+			var kept := _carve_triangle(a, b, c, boxes, 0)
+			if kept.is_empty():
 				continue
-			out_v.append(a); out_v.append(b); out_v.append(c)
+			# Re-use the source triangle's normals for ALL sub-triangles (good
+			# enough — they all lie on the same source plane).
+			var na := Vector3.UP
+			var nb := Vector3.UP
+			var nc := Vector3.UP
 			if has_norm:
-				out_n.append(sn[i0]); out_n.append(sn[i0 + 1]); out_n.append(sn[i0 + 2])
+				na = sn[i0]; nb = sn[i0 + 1]; nc = sn[i0 + 2]
+			for j in range(0, kept.size(), 3):
+				out_v.append(kept[j]); out_v.append(kept[j + 1]); out_v.append(kept[j + 2])
+				if has_norm:
+					out_n.append(na); out_n.append(nb); out_n.append(nc)
 		if out_v.size() == 0:
 			continue
 		_emit_surface(new_mesh, out_v, out_n)
@@ -245,9 +321,9 @@ func _regen_collision(boxes: Array) -> void:
 			var a := sv[i0]
 			var b := sv[i0 + 1]
 			var c := sv[i0 + 2]
-			if _tri_in_any_box(a, b, c, boxes):
-				continue
-			faces.append(a); faces.append(b); faces.append(c)
+			var kept := _carve_triangle(a, b, c, boxes, 0)
+			for j in range(0, kept.size(), 3):
+				faces.append(kept[j]); faces.append(kept[j + 1]); faces.append(kept[j + 2])
 	if faces.is_empty():
 		return
 	var body := StaticBody3D.new()
@@ -259,8 +335,179 @@ func _regen_collision(boxes: Array) -> void:
 	_shell.add_child(body)
 
 # =============================================================================
-# TRIANGLE vs ORIENTED BOX  (Akenine-Möller SAT, reduced to Y-rotation only)
+# TRIANGLE CARVE — subdivide partial overlaps so doors don't delete whole walls
 # =============================================================================
+const _CARVE_MIN_EDGE_M  : float = 0.4    # stop subdividing below this edge length
+const _CARVE_MAX_DEPTH   : int   = 5      # safety cap on recursion (4^5 = 1024 leaves max/tri)
+const _CARVE_TRI_BUDGET  : int   = 120000 # hard global ceiling per rebuild — prevents freeze
+
+# Decremented as triangles are emitted during a rebuild. When it hits 0 the carve
+# stops subdividing and falls back to cheap centroid-drop, so a degenerate/huge
+# opening box can never lock the game up in the recursion.
+var _carve_remaining : int = 0
+
+## Returns a flat list of triangle vertices to KEEP (length always a multiple of
+## 3). Empty array = the whole triangle was inside an opening. Triangles fully
+## OUTSIDE all openings come back unchanged; partial overlaps are CLIPPED against
+## the opening's wall-plane rectangle by Sutherland-Hodgman polygon clipping, so
+## output edges land EXACTLY on the rectangle's perimeter (no teeth).
+##
+## Previously this used recursive midpoint subdivision which created a triangular
+## staircase along the rectangle boundary — 342 boundary edges instead of 8 on a
+## simple wall+door test (see src/tests/test_door_carve.gd).
+const _COPLANAR_TOL    : float = 0.05    # 5 cm; tri verts beyond this from the box mid-plane = non-wall
+const _SLIVER_AREA_TOL : float = 1e-6    # m²; drop triangles smaller than this
+func _carve_triangle(a: Vector3, b: Vector3, c: Vector3, boxes: Array, depth: int) -> Array:
+	# Classify against each box. Fully inside any → drop. Fully outside all → keep.
+	var first_partial_box : Variant = null
+	for box in boxes:
+		var st := _tri_box_status(a, b, c, box)
+		if st == 1:
+			return []
+		if st == 0 and first_partial_box == null:
+			first_partial_box = box
+	if first_partial_box == null:
+		return [a, b, c]   # fully outside all openings
+	# Safety budget — never normally needed with clip-based carve (each step
+	# produces a bounded number of triangles), but keeps a worst-case ceiling.
+	if _carve_remaining <= 0 or depth >= _CARVE_MAX_DEPTH:
+		var centre := (a + b + c) / 3.0
+		for box in boxes:
+			if _point_in_box(centre, box):
+				return []
+		return [a, b, c]
+	_carve_remaining -= 1
+	# Clip against the FIRST partial box. The output triangles are guaranteed
+	# strictly outside this box; recurse to handle any OTHER boxes that may
+	# still partially overlap one of the clip outputs.
+	var clipped : Array = _clip_triangle_against_box(a, b, c, first_partial_box)
+	if clipped.is_empty():
+		return []
+	var out : Array = []
+	var n_tris : int = clipped.size() / 3
+	for ti in n_tris:
+		var ta : Vector3 = clipped[ti * 3]
+		var tb : Vector3 = clipped[ti * 3 + 1]
+		var tc : Vector3 = clipped[ti * 3 + 2]
+		out.append_array(_carve_triangle(ta, tb, tc, boxes, depth + 1))
+	return out
+
+## Clip a triangle by ONE opening box and return a flat list of OUTSIDE
+## sub-triangle vertices. The opening box is a 3D oriented box; for the
+## common case (wall triangle coplanar with the box's Z=0 mid-plane), this
+## reduces to a clean 2D rectangle subtraction. Non-coplanar triangles (e.g.
+## a roof triangle merely brushing the door's vertical depth) are KEPT
+## unchanged so the carve only affects actual wall geometry.
+func _clip_triangle_against_box(a: Vector3, b: Vector3, c: Vector3, box: Dictionary) -> Array:
+	var c0   : Vector3 = box["c"]
+	var half : Vector3 = box["half"]
+	var rot_y: float   = box["rot_y"]
+	var cs := cos(-rot_y); var sn := sin(-rot_y)
+	var v0 := _to_box(a - c0, cs, sn)
+	var v1 := _to_box(b - c0, cs, sn)
+	var v2 := _to_box(c - c0, cs, sn)
+	# Coplanarity check — wall-plane carving only (the box's Z=0 is the wall).
+	if absf(v0.z) > _COPLANAR_TOL or absf(v1.z) > _COPLANAR_TOL or absf(v2.z) > _COPLANAR_TOL:
+		return [a, b, c]
+	var tri : Array = [Vector2(v0.x, v0.y), Vector2(v1.x, v1.y), Vector2(v2.x, v2.y)]
+	var hx : float = half.x; var hy : float = half.y
+	var avg_z : float = (v0.z + v1.z + v2.z) / 3.0
+	# Four DISJOINT outside-of-rectangle zones (N, S, E, W). Each is a clip of
+	# the triangle by 1-3 axis-aligned half-planes. Together they cover all of
+	# (R² ∖ [-hx,hx]×[-hy,hy]) without overlap.
+	#   N: y > hy   (full x range)
+	#   S: y < -hy  (full x range)
+	#   E: x > hx   AND -hy ≤ y ≤ hy
+	#   W: x < -hx  AND -hy ≤ y ≤ hy
+	var zones : Array = []
+	var n_poly := _clip_poly_halfplane(tri, 1, true,  hy)
+	if n_poly.size() >= 3: zones.append(n_poly)
+	var s_poly := _clip_poly_halfplane(tri, 1, false, -hy)
+	if s_poly.size() >= 3: zones.append(s_poly)
+	var e_poly := _clip_poly_halfplane(tri,   0, true,  hx)
+	e_poly      = _clip_poly_halfplane(e_poly, 1, false, hy)
+	e_poly      = _clip_poly_halfplane(e_poly, 1, true,  -hy)
+	if e_poly.size() >= 3: zones.append(e_poly)
+	var w_poly := _clip_poly_halfplane(tri,   0, false, -hx)
+	w_poly      = _clip_poly_halfplane(w_poly, 1, false, hy)
+	w_poly      = _clip_poly_halfplane(w_poly, 1, true,  -hy)
+	if w_poly.size() >= 3: zones.append(w_poly)
+	# Triangulate each zone (fan from vertex 0), transform back to world space.
+	var out : Array = []
+	for zone in zones:
+		for i in range(1, zone.size() - 1):
+			var pa : Vector2 = zone[0]
+			var pb : Vector2 = zone[i]
+			var pc : Vector2 = zone[i + 1]
+			var area : float = absf((pb.x - pa.x) * (pc.y - pa.y) - (pc.x - pa.x) * (pb.y - pa.y)) * 0.5
+			if area < _SLIVER_AREA_TOL:
+				continue   # drop slivers
+			var wa : Vector3 = _from_box(Vector3(pa.x, pa.y, avg_z), cs, sn) + c0
+			var wb : Vector3 = _from_box(Vector3(pb.x, pb.y, avg_z), cs, sn) + c0
+			var wc : Vector3 = _from_box(Vector3(pc.x, pc.y, avg_z), cs, sn) + c0
+			out.append(wa); out.append(wb); out.append(wc)
+	return out
+
+## Sutherland-Hodgman clip of a 2D polygon by ONE axis-aligned half-plane.
+##   axis : 0 = X, 1 = Y
+##   keep_gt : true = keep where coord > lim, false = keep where coord < lim
+## Returns the clipped polygon (possibly empty / degenerate).
+func _clip_poly_halfplane(poly: Array, axis: int, keep_gt: bool, lim: float) -> Array:
+	if poly.size() < 3:
+		return []
+	var out : Array = []
+	var n : int = poly.size()
+	for i in n:
+		var p : Vector2 = poly[i]
+		var q : Vector2 = poly[(i + 1) % n]
+		var p_coord : float = p.x if axis == 0 else p.y
+		var q_coord : float = q.x if axis == 0 else q.y
+		var p_in : bool = (p_coord > lim) if keep_gt else (p_coord < lim)
+		var q_in : bool = (q_coord > lim) if keep_gt else (q_coord < lim)
+		if p_in:
+			out.append(p)
+			if not q_in:
+				var t : float = (lim - p_coord) / (q_coord - p_coord)
+				out.append(p + (q - p) * t)
+		elif q_in:
+			var t : float = (lim - p_coord) / (q_coord - p_coord)
+			out.append(p + (q - p) * t)
+	return out
+
+## Inverse of _to_box: rotate a box-local vector back to world delta.
+func _from_box(v: Vector3, cs: float, sn: float) -> Vector3:
+	return Vector3(v.x * cs + v.z * sn, v.y, -v.x * sn + v.z * cs)
+
+## Classify a triangle against one oriented box:
+## returns 1 if fully INSIDE, -1 if fully OUTSIDE, 0 if PARTIAL.
+func _tri_box_status(a: Vector3, b: Vector3, c: Vector3, box: Dictionary) -> int:
+	var c0: Vector3 = box["c"]
+	var half: Vector3 = box["half"]
+	var rot_y: float = box["rot_y"]
+	var cs := cos(-rot_y)
+	var sn := sin(-rot_y)
+	var v0 := _to_box(a - c0, cs, sn)
+	var v1 := _to_box(b - c0, cs, sn)
+	var v2 := _to_box(c - c0, cs, sn)
+	var inside_count := 0
+	if absf(v0.x) <= half.x and absf(v0.y) <= half.y and absf(v0.z) <= half.z: inside_count += 1
+	if absf(v1.x) <= half.x and absf(v1.y) <= half.y and absf(v1.z) <= half.z: inside_count += 1
+	if absf(v2.x) <= half.x and absf(v2.y) <= half.y and absf(v2.z) <= half.z: inside_count += 1
+	if inside_count == 3:
+		return 1   # fully inside
+	if not _tri_box_overlap(a, b, c, box):
+		return -1  # fully outside
+	return 0       # partial
+
+func _point_in_box(p: Vector3, box: Dictionary) -> bool:
+	var c0: Vector3 = box["c"]
+	var half: Vector3 = box["half"]
+	var rot_y: float = box["rot_y"]
+	var cs := cos(-rot_y)
+	var sn := sin(-rot_y)
+	var v := _to_box(p - c0, cs, sn)
+	return absf(v.x) <= half.x and absf(v.y) <= half.y and absf(v.z) <= half.z
+
 func _tri_in_any_box(a: Vector3, b: Vector3, c: Vector3, boxes: Array) -> bool:
 	for box in boxes:
 		if _tri_box_overlap(a, b, c, box):

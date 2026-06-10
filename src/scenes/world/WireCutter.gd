@@ -125,7 +125,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 
-func crosshair_prompt(player: Node3D) -> String:
+func crosshair_prompt(_player: Node3D) -> String:
 	return "Take wire-cutter" if _held_by == null and _player_near else ""
 
 func crosshair_interact(player: Node3D) -> void:
@@ -133,12 +133,20 @@ func crosshair_interact(player: Node3D) -> void:
 		_pick_up(player)
 
 func _pick_up(player: Node3D) -> void:
+	# Refuse the grab when the hotbar is full — otherwise take() fails and the
+	# tool ends up force-parented under Head in no slot, never active, impossible
+	# to drop (the stuck state). Leave it on the floor and prompt the player.
+	var inv := get_node_or_null("/root/Inventory")
+	if inv and bool(inv.call("is_full")):
+		var busf := get_node_or_null("/root/EventBus")
+		if busf and busf.has_signal("interaction_prompt_show"):
+			busf.emit_signal("interaction_prompt_show", self, "Hands full — drop something first")
+		return
 	_held_by = player
 	# Inventory takes care of reparenting under Head + show/hide bookkeeping;
 	# if for whatever reason Inventory isn't available (e.g. headless test
 	# without the autoload), fall back to the old hard-parent behaviour so the
 	# tool still works.
-	var inv := get_node_or_null("/root/Inventory")
 	var took := false
 	if inv:
 		took = bool(inv.call("take", self))

@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://b2cedo_layout_load_test"]
+
+[ext_resource type="Script" path="res://src/tests/test_layout_load.gd" id="1_test"]
+
+[node name="TestLayoutLoad" type="Node3D"]
+script = ExtResource("1_test")

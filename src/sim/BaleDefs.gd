@@ -12,7 +12,10 @@ class_name BaleDefs
 ## origin weren't given, so weight is ESTIMATED as volume × BULK_DENSITY. Adjust
 ## BULK_DENSITY (or add a per-origin "weight_kg") once the real figures are known.
 
-const BULK_DENSITY : float = 320.0   # kg/m³ for baled LDPE film (ASSUMPTION)
+const BULK_DENSITY : float = 175.0   # kg/m³ for baled LDPE film
+# Calibrated from operator-reported weights: Alba Marl 1.60³ ≈ 700 kg → ~170 kg/m³;
+# Zwolle 1.50³ ≈ 625 kg → ~185 kg/m³. Split at 175. The bale is mostly trapped
+# air + loose film, NOT a solid LDPE block (which would be 920 kg/m³).
 
 static var _origins : Array[Dictionary] = []
 
@@ -21,13 +24,13 @@ static func origins() -> Array[Dictionary]:
 		_origins = [
 			{
 				"id": "rotterdam", "name": "Rotterdam",
-				"size": Vector3(1.30, 1.05, 1.05),          # L·H·D = 1.3·1.05·1.05
+				"size": Vector3(1.45, 1.25, 1.25),          # L·H·D = 1.45·1.25·1.25
 				"ldpe_min": 0.78, "ldpe_max": 0.86, "stack": 3,
 				"tint": Color(0.72, 0.71, 0.66), "dirt": 0.13, "moisture": 0.09, "blue": 0.05,
 			},
 			{
 				"id": "alba_marl", "name": "Alba Marl",
-				"size": Vector3(1.30, 1.30, 1.30),
+				"size": Vector3(1.60, 1.60, 1.60),
 				"ldpe_min": 0.72, "ldpe_max": 0.80, "stack": 2,
 				# the DIRTIEST feed (operator): brownish-grey with surface mud/sand, and
 				# stored outdoors so the wettest too — but still mostly LDPE under the
@@ -36,13 +39,13 @@ static func origins() -> Array[Dictionary]:
 			},
 			{
 				"id": "zwolle", "name": "Zwolle",
-				"size": Vector3(1.20, 1.20, 1.20),
+				"size": Vector3(1.50, 1.50, 1.50),
 				"ldpe_min": 0.80, "ldpe_max": 0.86, "stack": 2,
 				"tint": Color(0.79, 0.79, 0.75), "dirt": 0.07, "moisture": 0.05, "blue": 0.05,  # looks 'fresh' + dry
 			},
 			{
 				"id": "forstplus", "name": "Forst+ (Fostplus)",
-				"size": Vector3(1.30, 1.05, 1.01),
+				"size": Vector3(1.45, 1.15, 1.50),
 				# the CLEANEST feed (operator): clear-bluish, low dirt → the best yield.
 				"ldpe_min": 0.80, "ldpe_max": 0.92, "stack": 3,
 				"tint": Color(0.44, 0.60, 0.88), "dirt": 0.05, "moisture": 0.10, "blue": 0.62,

@@ -1,4 +1,4 @@
-[gd_scene load_steps=2 format=3 uid="uid://b1cedoworldsetup"]
+[gd_scene format=3 uid="uid://cla0srj48t70j"]
 
 [ext_resource type="Script" path="res://src/scenes/world/WorldSetup.gd" id="1_worldsetup"]
 

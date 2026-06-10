@@ -31,7 +31,9 @@ var operator_context: OperatorContext
 var build_mode      : BuildMode
 var wall_openings   : WallOpenings
 var line_flow       : LineFlow
+var container_guides: ContainerGuideManager   # holographic catch-container placement guides (#85)
 var crew_manager    : CrewManager
+var scada           : Node          # ScadaDashboard (ISA-101 overlay)
 var npcs            : Dictionary = {}
 
 # Where the player actually spawned this run (marker OR resumed save position).
@@ -74,9 +76,25 @@ func _ready() -> void:
 	_spawn_operator_context()
 	_spawn_build_mode()
 	_spawn_line_flow()
+	_spawn_container_guides()
 	_spawn_npcs()
 	_spawn_hud()
-	
+	# Performance overlay + auto-logger (F3 toggles; logs a [PERF] snapshot every
+	# 5 s so the lag can be diagnosed straight from the console).
+	var perf: Node = load("res://src/scenes/hud/PerfHud.gd").new()
+	perf.name = "PerfHud"
+	add_child(perf)
+	# ISA-101 SCADA dashboard (muted-grey nominal, colour only on alarm; logs
+	# micro-stops). Machines push set_state/set_param to it.
+	scada = load("res://src/scenes/hud/ScadaDashboard.gd").new()
+	scada.name = "ScadaDashboard"
+	add_child(scada)
+	# #52 — hand the dashboard to LineFlow so its tick pushes live line state +
+	# process params (amps / quality / melt temp / MFI / air pressure). LineFlow was
+	# spawned above by _spawn_line_flow(); guarded so it's a no-op if absent.
+	if line_flow and line_flow.has_method("set_scada"):
+		line_flow.set_scada(scada)
+
 	if game_state and game_state.is_new_save:
 		# If the user has already run "Setup World Layout" from the main menu,
 		# skip the in-world walk-and-press-ENTER ritual and use those markers.
@@ -117,36 +135,43 @@ func _input(event: InputEvent) -> void:
 			_spawn_world_items()
 
 func _spawn_world_items() -> void:
+	# Vehicles ALWAYS come from WorldLayout (or fall back to defaults if empty).
 	_spawn_forklift()
 	_spawn_bale_clamp()
 	_spawn_merlo()
-	_spawn_scissor_lift()
-	# Line 3C is no longer auto-built — the scene starts clean (#29). Only the 3C/6
-	# opzetband + shredder are spawned (in _spawn_feeder_line); build the rest from the
-	# menu. To bring the full demo line back, call _spawn_line_3c() here again.
-	# Utilities kept (charger / outlet+pump / scissors tool / LPG rack).
-	_spawn_battery_station()   # walkie-battery charger in the shift-leader office
-	_spawn_shift_leader_desk() # shift-leader PC: the bale scan log (#3)
-	_spawn_service_stations()  # wall outlet (electric lift) + diesel pump
-	_spawn_wire_cutter()       # concrete-scissors tool the player picks up on foot
-	_spawn_lpg_rack()          # outdoor LPG cylinder rack — full below, empty above
-	# CLEAN CANVAS (#2): the scattered TEST/DEMO props (standalone extruder 3B, the
-	# feedstock bale yard, the test intake bunker, the steel skip, the Wave-5 waste
-	# zones) are skipped so the scene is just the rebuilt Line 3C + vehicles + tools.
-	# Flip to false to bring the test props back.
-	if not CLEAN_CANVAS:
-		_spawn_extruder_3b()
-		_spawn_bale_yard()
-		_spawn_test_bunker()
-		_spawn_test_skip()
-		_spawn_test_waste_zones()
-	_spawn_feeder_line()       # (currently disabled — see FEEDERS_ENABLED)
-	# Final LineFlow discovery pass — AFTER every machine exists (demo pipeline +
-	# the test bunker). _spawn_demo_pipeline's own rebuild ran before the test
-	# bunker spawned, so this is the one that actually registers it as a feed point.
+	_spawn_mast_lift()
+
+	# When the user has configured a world via WorldSetup, treat it as
+	# authoritative: skip ALL legacy hardcoded clutter (utility props, feeder
+	# line, demo pipeline, default crew posts). Otherwise spawn the legacy
+	# layout for backward-compat / first-run experience.
+	var layout_authoritative := WorldLayout.is_configured()
+
+	if not layout_authoritative:
+		_spawn_battery_station()   # walkie-battery charger in the shift-leader office
+		_spawn_shift_leader_desk() # shift-leader PC: the bale scan log (#3)
+		_spawn_service_stations()  # wall outlet (electric lift) + diesel pump
+		_spawn_wire_cutter()       # concrete-scissors tool the player picks up on foot
+		_spawn_lpg_rack()          # outdoor LPG cylinder rack — full below, empty above
+		if not CLEAN_CANVAS:
+			_spawn_extruder_3b()
+			_spawn_bale_yard()
+			_spawn_test_bunker()
+			_spawn_test_skip()
+			_spawn_test_waste_zones()
+		_spawn_feeder_line()
+	else:
+		print("[MainWorld] WorldLayout is authoritative — skipping legacy utility/demo spawns")
+		_spawn_bale_yards_from_layout()
+
+	# Final LineFlow discovery pass — AFTER every machine exists.
 	if line_flow:
 		line_flow.rebuild()
-	_spawn_crew_manager()      # after NPCs + LineFlow (incl. demo pipeline) exist
+	# Crew manager ALWAYS spawns (even with an authoritative layout). It posts
+	# the 9 workers to whatever LineFlow machines exist (free-wander if none),
+	# and — critically — the HUD crew-assignment panel (C / Numpad-.) bails out
+	# when crew_manager is null, so skipping it broke that menu entirely.
+	_spawn_crew_manager()
 	_start_or_resume_shift()
 	_setup_autosave()
 
@@ -154,6 +179,8 @@ func _spawn_world_items() -> void:
 	# (SSAO / SDFGI / fog / brightness / shadow distance) onto them.
 	SettingsManager.refresh_environment()
 	_apply_textures()
+	_spawn_overhead_lights()
+	_spawn_plant_audio()
 
 	print("[MainWorld] Ready — %d NPCs, shift running: %s" \
 		% [npcs.size(), str(shift_clock.shift_active) if shift_clock else "?"])
@@ -166,8 +193,21 @@ func _load_building_shell() -> void:
 	if not mesh_instance:
 		push_error("[MainWorld] ShellMesh not found")
 		return
-	mesh_instance.create_trimesh_collision()
-	print("[MainWorld] Building collision generated")
+	# Use the SOLIDIFIED shell (real wall thickness, welded, closed seams) when it
+	# exists — kills the zero-thickness light leaks. Built by tools/solidify_building.gd;
+	# falls back to the raw thin shell if absent.
+	# #105 — collision must come from the THIN mesh, NOT the solid. The solid has
+	# 0.30 m wall thickness baked in (inner + outer surfaces), which traps the
+	# player capsule between the two faces ("stuck in wall on un-modified walls").
+	# WallOpenings does its own collision regen, sourced from a separate thin
+	# mesh below; we DON'T call create_trimesh_collision() here anymore so we
+	# don't add a thick collider that WallOpenings then has to fight.
+	if ResourceLoader.exists("res://assets/models/CeDo_building_solid.res"):
+		var solid = load("res://assets/models/CeDo_building_solid.res")
+		if solid is Mesh:
+			mesh_instance.mesh = solid
+			print("[MainWorld] Using solidified building shell (visual)")
+	print("[MainWorld] Building collision will be generated by WallOpenings (thin mesh)")
 	_generate_floor_from_shell(mesh_instance)
 	print("[MainWorld] Dynamic floor generated from building corners")
 
@@ -245,9 +285,95 @@ func _spawn_wall_openings() -> void:
 		return
 	wall_openings = WallOpenings.new()
 	wall_openings.name = "WallOpenings"
+	# #105 — when the visible shell is the pre-solid .res, load the THIN .obj
+	# separately and hand it to WallOpenings as the COLLISION source. The thin
+	# mesh has single-face walls so the player capsule can't wedge between an
+	# inner and outer surface, and the WallOpenings carve still drops walkable
+	# holes through the thin collision when gates / doors / windows are placed.
+	# Visual stays solid for no-light-leak.
+	var thin_source : Mesh = null
+	if ResourceLoader.exists("res://assets/models/CeDo_building_solid.res"):
+		# Disable WallOpenings's own solidify — the visible shell is already thick.
+		wall_openings.solidify_enabled = false
+		thin_source = load(building_shell_path) as Mesh
+		if thin_source != null:
+			print("[MainWorld] Pre-solid shell active; using thin .obj for collision")
+		else:
+			push_warning("[MainWorld] Thin .obj source not loaded; collision will be from solid mesh")
 	add_child(wall_openings)
-	wall_openings.setup(shell)
+	wall_openings.setup(shell, thin_source)
 	print("[MainWorld] WallOpenings ready")
+
+# =============================================================================
+# PLANT AUDIO — #60
+# =============================================================================
+## Spawn the PlantAudio system that streams each tagged clip from
+## assets/audio/audio_layout.json into a 3D AudioStreamPlayer at its recorded
+## position. See src/scenes/world/PlantAudio.gd for the full design.
+func _spawn_plant_audio() -> void:
+	var pa : PlantAudio = preload("res://src/scenes/world/PlantAudio.gd").new()
+	pa.name = "PlantAudio"
+	add_child(pa)
+
+# =============================================================================
+# OVERHEAD LIGHTS — #107
+# =============================================================================
+## Hang industrial-style bay lights from the ceiling in a 5×5 grid centred on
+## the player spawn so the production floor is no longer pitch-dark. Each
+## fixture has a visible white bar mesh (emissive so you can see it), a small
+## dark housing above, and an OmniLight3D with warm-white tint and 25 m range.
+## The flashlight is still available for inspecting machinery up close, but
+## you can now actually see the room without it.
+func _spawn_overhead_lights() -> void:
+	var root := Node3D.new()
+	root.name = "OverheadLights"
+	add_child(root)
+	var floor_y : float = _floor_top_y()
+	var ceil_y : float = floor_y + 8.0           # ~8 m bay-light height
+	var origin : Vector3 = WorldLayout.player_spawn
+	var spacing : float = 22.0                    # m between adjacent fixtures
+	var n : int = 5                                # 5×5 grid = 25 fixtures
+	for ix in range(n):
+		for iz in range(n):
+			var fx : float = (float(ix) - float(n - 1) * 0.5) * spacing
+			var fz : float = (float(iz) - float(n - 1) * 0.5) * spacing
+			_build_overhead_fixture(root, Vector3(origin.x + fx, ceil_y, origin.z + fz))
+
+func _build_overhead_fixture(parent: Node3D, pos: Vector3) -> void:
+	var fixture := Node3D.new()
+	fixture.position = pos
+	parent.add_child(fixture)
+	# Visible white emissive tube (the bay-light bar itself).
+	var bar := MeshInstance3D.new()
+	var bb := BoxMesh.new()
+	bb.size = Vector3(1.6, 0.10, 0.32)
+	bar.mesh = bb
+	var bar_mat := StandardMaterial3D.new()
+	bar_mat.albedo_color = Color(0.96, 0.97, 0.92)
+	bar_mat.emission_enabled = true
+	bar_mat.emission = Color(1.0, 0.95, 0.84)
+	bar_mat.emission_energy_multiplier = 2.5
+	bar.material_override = bar_mat
+	fixture.add_child(bar)
+	# Dark steel housing above the bar so you see it as a fixture, not a floating tube.
+	var hous := MeshInstance3D.new()
+	var hb := BoxMesh.new()
+	hb.size = Vector3(1.8, 0.16, 0.46)
+	hous.mesh = hb
+	hous.position = Vector3(0.0, 0.13, 0.0)
+	var hous_mat := StandardMaterial3D.new()
+	hous_mat.albedo_color = Color(0.22, 0.22, 0.24)
+	hous_mat.metallic = 0.4
+	hous_mat.roughness = 0.6
+	hous.material_override = hous_mat
+	fixture.add_child(hous)
+	# The actual omnidirectional light.
+	var light := OmniLight3D.new()
+	light.light_energy = 2.2
+	light.omni_range = 25.0
+	light.light_color = Color(1.0, 0.96, 0.86)
+	light.position = Vector3(0.0, -0.05, 0.0)
+	fixture.add_child(light)
 
 # =============================================================================
 # PLAYER
@@ -268,13 +394,20 @@ func _spawn_player() -> void:
 			from_save   = true
 
 	if not from_save:
-		# Priority: WorldLayout player_spawn (set in WorldSetup) → PlayerSpawn marker → origin
+		# Marker XZ is meaningful (where the operator's feet should land);
+		# marker Y is NOT — WorldSetup places markers on a y=0 click plane
+		# regardless of where the actual floor is. Override Y with the detected
+		# floor + capsule half-height so the player lands ON the floor.
+		var floor_top := _floor_top_y()
 		if WorldLayout.player_spawn != Vector3.ZERO:
-			spawn_pos = WorldLayout.player_spawn + Vector3(0.0, 1.0, 0.0)
+			var ps := WorldLayout.player_spawn
+			spawn_pos = Vector3(ps.x, floor_top + 1.0, ps.z)
 		else:
 			var marker := find_child("PlayerSpawn", false, false) as Node3D
-			spawn_pos = marker.global_position if marker else Vector3(0.0, 1.0, 0.0)
-			spawn_pos.y += 1.0   # lift above marker so capsule doesn't clip floor
+			if marker:
+				spawn_pos = Vector3(marker.global_position.x, floor_top + 1.0, marker.global_position.z)
+			else:
+				spawn_pos = Vector3(0.0, floor_top + 1.0, 0.0)
 
 	var script := load("res://src/scenes/player/PlayerController.gd")
 	if not script:
@@ -343,47 +476,79 @@ func freecam_save_now() -> void:
 		bus.emit_signal("scanner_banner", "[F5] Free-cam position saved")
 
 func _get_factory_anchor() -> Vector3:
+	# Take XZ from whichever source we have (factory_center / player spawn /
+	# scene marker), but ALWAYS pin Y to the detected operating floor — the
+	# Y component of those sources is set by WorldSetup's y=0 click plane,
+	# not the actual building floor, so trusting it leaves vehicles in the air
+	# (or buried). _on_floor() does the override.
 	if game_state and game_state.factory_center != Vector3.ZERO:
-		return game_state.factory_center
+		return _on_floor(game_state.factory_center)
 	if _player_spawn_pos != Vector3.ZERO:
-		return _player_spawn_pos
+		return _on_floor(_player_spawn_pos)
 	var marker := find_child("PlayerSpawn", false, false) as Node3D
 	if marker:
-		return marker.global_position
-	return Vector3.ZERO
+		return _on_floor(marker.global_position)
+	return _on_floor(Vector3.ZERO)
+
+## Force a position onto the detected operating-floor Y plane (with an optional
+## lift so wheels / capsule bases / machine bottoms can settle without clipping).
+## Use everywhere a saved layout (WorldLayout / GameState) supplies an XZ but a
+## meaningless Y.
+func _on_floor(pos: Vector3, lift: float = 0.0) -> Vector3:
+	return Vector3(pos.x, _floor_top_y() + lift, pos.z)
 
 # =============================================================================
 # NPCs
 # =============================================================================
 func _spawn_npcs() -> void:
-	var spawn_root := find_child("NPCSpawnPoints", false, false) as Node3D
-	var marker_map : Dictionary = {}
-
-	if spawn_root:
-		for child in spawn_root.get_children():
-			marker_map[child.name.to_lower()] = (child as Node3D).global_position
-	else:
-		push_warning("[MainWorld] NPCSpawnPoints not found — using fallback positions")
-
+	# Crew now spawns in a 2–20 m random ring around the PLAYER SPAWN marker, on
+	# the OUTSIDE of the building (rejected if the candidate point lands inside
+	# the shell's XZ AABB). The old NPCSpawnPoints markers / fallback dictionary
+	# placed workers at hardcoded coordinates that didn't follow the player_spawn
+	# the user calibrated in WorldSetup; in practice they appeared in the wrong
+	# spot (often inside the building). Now they cluster naturally near where the
+	# player starts the shift.
 	var npc_script := load("res://src/scenes/world/NPC.gd")
+	var humanoid_script := load("res://src/scenes/world/Humanoid.gd")
+	var npc_variant := 0
+
+	# Random-ring anchor — the player_spawn marker (canonical XZ reference).
+	var anchor : Vector3 = WorldLayout.player_spawn
+	# Building's XZ AABB so we can reject candidates that land INSIDE the shell.
+	var shell := find_child("ShellMesh", true, false) as MeshInstance3D
+	var bb_min := Vector2(INF, INF); var bb_max := Vector2(-INF, -INF)
+	if shell and shell.mesh:
+		var aabb := shell.global_transform * shell.mesh.get_aabb()
+		bb_min = Vector2(aabb.position.x, aabb.position.z)
+		bb_max = Vector2(aabb.position.x + aabb.size.x, aabb.position.z + aabb.size.z)
 
 	for npc_id in NPC_DATA.keys():
 		var data : Dictionary = NPC_DATA[npc_id]
-		var pos  : Vector3   = marker_map.get(npc_id, npc_spawn_fallback.get(npc_id, Vector3.ZERO))
-		pos.y += 1.0
+		# Try up to 30 candidates: random angle, random radius 2–20 m, must be
+		# OUTSIDE the building AABB. If none satisfies (player_spawn deep inside
+		# building footprint? shouldn't happen post-WorldSetup), keep the last one.
+		var pos : Vector3 = anchor
+		for attempt in 30:
+			var ang : float = randf() * TAU
+			var r   : float = randf_range(2.0, 20.0)
+			var cand := anchor + Vector3(cos(ang) * r, 0.0, sin(ang) * r)
+			pos = cand
+			var outside : bool = cand.x < bb_min.x or cand.x > bb_max.x \
+				or cand.z < bb_min.y or cand.z > bb_max.y
+			if outside:
+				break
+		# Y from floor detection + 1 m for capsule centre.
+		pos = _on_floor(pos, 1.0)
 
 		var npc := CharacterBody3D.new()
 		npc.name = data["name"]
 
-		var mi    := MeshInstance3D.new()
-		var cmesh := CapsuleMesh.new()
-		cmesh.radius = 0.3
-		cmesh.height = 1.8
-		mi.mesh = cmesh
-		var mat := StandardMaterial3D.new()
-		mat.albedo_color = data["color"]
-		mi.material_override = mat
-		npc.add_child(mi)
+		# Blocky humanoid body (feet/legs/torso/arms/hands/head/face/hair) instead
+		# of the old capsule pill. Its vertical centre sits at the node origin so
+		# it lines up with the CapsuleShape3D collider below.
+		var body : Node3D = humanoid_script.build(data["color"], npc_variant)
+		npc_variant += 1
+		npc.add_child(body)
 
 		var col := CollisionShape3D.new()
 		var cap := CapsuleShape3D.new()
@@ -445,11 +610,39 @@ func _spawn_operator_context() -> void:
 # =============================================================================
 # BUILD MODE (in-game factory builder — press Tab)
 # =============================================================================
+## #90 — per-save placed-build layout path. Derived from the active save name (the
+## same stem GameState uses), so every save has its own factory file and a brand-new
+## save starts empty. Falls back to the legacy stem when no save name was provided
+## (e.g. MainWorld launched directly without going through the menu).
+func _factory_layout_path() -> String:
+	var stem := "cedo_simulator"
+	if EventBus.has_meta("pending_save_name"):
+		var n := String(EventBus.get_meta("pending_save_name")).strip_edges()
+		if n != "":
+			stem = n
+	return "user://%s_factory.json" % stem
+
 func _spawn_build_mode() -> void:
+	# #90 — PER-SAVE placed-build layout. Each save gets its OWN factory file
+	# (user://<save>_factory.json), so a NEW world can NEVER inherit a previous run's
+	# machines, and one save's build never clobbers another's. BuildMode reads/writes
+	# this injected path; a CONTINUED save with no per-save file yet falls back ONCE to
+	# the legacy global user://factory_layout.json (migration), a NEW save never does —
+	# its per-save file simply doesn't exist, so it comes up empty. (The old approach
+	# wiped a shared global file on a runtime flag, which was fragile; this can't fail.)
+	var fpath := _factory_layout_path()
+	var is_new : bool = game_state != null and game_state.is_new_save
+	if is_new and FileAccess.file_exists(fpath):
+		# Same-named save reused after a delete: force it to truly start fresh.
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(fpath))
+		print("[MainWorld] New save — wiped stale %s" % fpath)
+	print("[MainWorld] Save factory layout: %s (new_save=%s)" % [fpath, str(is_new)])
 	build_mode = BuildMode.new()
 	build_mode.name = "BuildMode"
-	build_mode.player_body = player        # so placement rays ignore the capsule
-	build_mode.wall_openings = wall_openings   # set BEFORE add_child → load_layout
+	build_mode.player_body = player              # so placement rays ignore the capsule
+	build_mode.wall_openings = wall_openings     # set BEFORE add_child → load_layout
+	build_mode.layout_path = fpath               # per-save layout file (#90)
+	build_mode.allow_legacy_fallback = not is_new  # continue may migrate; new never inherits
 	add_child(build_mode)
 	print("[MainWorld] BuildMode ready — press Tab to build")
 	# Tool-placement mode (the build-mode sibling for hand-held items). Same
@@ -474,23 +667,84 @@ func _spawn_line_flow() -> void:
 	print("[MainWorld] LineFlow ready")
 
 # =============================================================================
-# VEHICLES — placeholder forklift parked near the entrance
+# CONTAINER GUIDES (#85) — holographic catch-container placement guides
 # =============================================================================
-func _spawn_forklift() -> void:
-	var fork_scene := load("res://src/scenes/vehicles/Forklift.tscn") as PackedScene
-	if not fork_scene:
-		push_warning("[MainWorld] Forklift.tscn missing — skipping")
+## Spawns the ContainerGuideManager as a world child. It scans placed_object
+## machines on a ~1 s timer and paints a translucent cyan hologram of the
+## correct catch container at each machine's eject/reject point (overband magnet
+## → steel skip, flotation/sink-float → waste container, compactor → fines bin).
+## A hologram hides when a real container is parked within 0.5 m of its slot.
+## Spawned AFTER LineFlow so the machine line already exists for the first scan;
+## later-spawned machines (Line 3C macro, demo pipeline, build-placed) are picked
+## up by the periodic rescan.
+func _spawn_container_guides() -> void:
+	container_guides = ContainerGuideManager.new()
+	container_guides.name = "ContainerGuideManager"
+	add_child(container_guides)
+	print("[MainWorld] ContainerGuideManager ready — eject-point holograms active")
+
+# =============================================================================
+# VEHICLES — the user can place N of each in WorldSetup; we instantiate one
+# scene per saved position, falling back to a single hardcoded "next to player"
+# slot if WorldLayout has no spawns for that vehicle id.
+# =============================================================================
+
+## Common helper: spawn instances of `scene_path` at every WorldLayout position
+## under `layout_id`. If the user hasn't placed any, fall back to a single
+## instance at `fallback_offset` from the factory anchor.
+func _spawn_vehicle_instances(layout_id: String, scene_path: String, fallback_offset: Vector3, label: String) -> void:
+	var scn := load(scene_path) as PackedScene
+	if scn == null:
+		push_warning("[MainWorld] %s missing — skipping" % scene_path); return
+	var positions : Array = WorldLayout.get_vehicle_spawns(layout_id)
+	if positions.is_empty():
+		# Fallback: spawn one next to the factory anchor.
+		var anchor := _get_factory_anchor()
+		var pos : Vector3 = _on_floor(anchor + fallback_offset, 0.5)
+		var v := scn.instantiate()
+		add_child(v); v.global_position = pos
+		print("[MainWorld] %s (fallback) spawned at %s" % [label, str(pos)])
 		return
-	var fork := fork_scene.instantiate()
-	add_child(fork)
-	# Priority: WorldLayout vehicle spawn → anchor + offset fallback
-	var fallback := _get_factory_anchor()
-	fallback.x += 3.0; fallback.y += 0.5
-	var pos := WorldLayout.get_vehicle_spawn("forklift", fallback)
-	if pos != fallback:
-		pos.y += 0.5   # always lift off the layout floor for wheel settle
-	fork.global_position = pos
-	print("[MainWorld] Forklift A spawned at %s" % str(pos))
+	# Markers are stored as player_spawn-relative offsets in north-up RD space.
+	# _layout_to_scene() rotates them by the floor-plan calibration angle (the
+	# RD→building rotation) and anchors them at the player's scene position.
+	for i in positions.size():
+		var rel : Vector3 = positions[i]
+		if not _layout_rel_sane(rel):
+			push_warning("[MainWorld] %s #%d marker is %.0f m from the anchor — corrupt layout data, skipping (re-place it in WorldSetup)" \
+				% [label, i + 1, Vector2(rel.x, rel.z).length()])
+			continue
+		var p : Vector3 = _on_floor(_layout_to_scene(rel), 0.5)
+		var v := scn.instantiate()
+		add_child(v); v.global_position = p
+		print("[MainWorld] %s #%d  placed at scene(%.1f,%.1f)" % [
+			label, i + 1, p.x, p.z])
+
+## Sanity guard for layout-relative markers (377 km bug): a marker more than
+## ~5 km from the anchor is corrupt RD-space leakage, not a real placement.
+## Spawning physics bodies that far out breaks float precision → NaN transforms
+## → tens of thousands of "!v.is_finite()" render errors that also tank the
+## framerate via log I/O. Skip the marker instead.
+func _layout_rel_sane(rel: Vector3) -> bool:
+	return Vector2(rel.x, rel.z).length() < 5000.0
+
+# Surfaced on the PerfHud overlay so the layout mapping can be sanity-checked.
+var layout_conv_summary : String = "Layout: markers placed at literal WorldSetup coordinates (no rotation, no anchor)"
+
+## Map a saved marker to its scene position. Markers are the EXACT Godot world
+## coordinates the user picked in WorldSetup, on the SAME building shell MainWorld
+## loads — so they are used DIRECTLY. floor_plan_rot_deg is ONLY a display rotation
+## for the satellite/PNG overlay in the editor; it must NOT transform picked
+## coordinates. (Earlier builds rotated by it and anchored to the live player,
+## which scrambled the layout and made it drift to the last save spot.) RD-scale
+## player_spawn is already localized to ~0 on load; the small building-frame
+## markers pass through untouched, so this passthrough is correct for both.
+func _layout_to_scene(rel: Vector3) -> Vector3:
+	return Vector3(rel.x, 0.0, rel.z)
+
+func _spawn_forklift() -> void:
+	_spawn_vehicle_instances("forklift", "res://src/scenes/vehicles/Forklift.tscn",
+		Vector3(3.0, 0.0, 0.0), "Forklift")
 
 ## Anchor for the vehicle row — the player's actual spawn (marker OR resumed save),
 ## so every vehicle parks beside the player wherever they end up.
@@ -545,57 +799,18 @@ func _fit_box_collider(body: Node3D) -> void:
 	body.add_child(cs)
 
 func _spawn_bale_clamp() -> void:
-	var scene := load("res://src/scenes/vehicles/BaleClamp.tscn") as PackedScene
-	if not scene:
-		push_warning("[MainWorld] BaleClamp.tscn missing — skipping")
-		return
-	var v := scene.instantiate()
-	add_child(v)
-	var fallback := _vehicle_anchor()
-	fallback.x += 10.0; fallback.y += 0.5
-	var pos := WorldLayout.get_vehicle_spawn("bale_clamp", fallback)
-	if pos != fallback: pos.y += 0.5
-	v.global_position = pos
-	print("[MainWorld] Bale clamp spawned at %s" % str(pos))
+	_spawn_vehicle_instances("bale_clamp", "res://src/scenes/vehicles/BaleClamp.tscn",
+		Vector3(10.0, 0.0, 0.0), "Bale clamp")
 
 func _spawn_merlo() -> void:
-	var scene := load("res://src/scenes/vehicles/Merlo.tscn") as PackedScene
-	if not scene:
-		push_warning("[MainWorld] Merlo.tscn missing — skipping")
-		return
-	var v := scene.instantiate()
-	add_child(v)
-	var fallback := _vehicle_anchor()
-	fallback.x += 15.0; fallback.y += 0.5
-	var pos := WorldLayout.get_vehicle_spawn("merlo", fallback)
-	if pos != fallback: pos.y += 0.5
-	v.global_position = pos
-	print("[MainWorld] Merlo spawned at %s" % str(pos))
-	# High-detail Merlo P40 variant — parked at its own marker.
-	var scene2 := load("res://src/scenes/vehicles/MerloP40.tscn") as PackedScene
-	if scene2:
-		var v2 := scene2.instantiate()
-		add_child(v2)
-		var fallback2 := _vehicle_anchor()
-		fallback2.x += 22.0; fallback2.y += 0.5
-		var pos2 := WorldLayout.get_vehicle_spawn("merlo_p40", fallback2)
-		if pos2 != fallback2: pos2.y += 0.5
-		v2.global_position = pos2
-		print("[MainWorld] Merlo P40 spawned at %s" % str(pos2))
+	_spawn_vehicle_instances("merlo", "res://src/scenes/vehicles/Merlo.tscn",
+		Vector3(15.0, 0.0, 0.0), "Merlo")
+	_spawn_vehicle_instances("merlo_p40", "res://src/scenes/vehicles/MerloP40.tscn",
+		Vector3(22.0, 0.0, 0.0), "Merlo P40")
 
-func _spawn_scissor_lift() -> void:
-	var scene := load("res://src/scenes/vehicles/ScissorLift.tscn") as PackedScene
-	if not scene:
-		push_warning("[MainWorld] ScissorLift.tscn missing — skipping")
-		return
-	var v := scene.instantiate()
-	add_child(v)
-	var fallback := _vehicle_anchor()
-	fallback.x += 20.0; fallback.y += 0.5
-	var pos := WorldLayout.get_vehicle_spawn("scissor", fallback)
-	if pos != fallback: pos.y += 0.5
-	v.global_position = pos
-	print("[MainWorld] Scissor lift spawned at %s" % str(pos))
+func _spawn_mast_lift() -> void:
+	_spawn_vehicle_instances("mast_lift", "res://src/scenes/vehicles/MastLift.tscn",
+		Vector3(20.0, 0.0, 0.0), "Mast lift")
 
 # =============================================================================
 # BALE YARD — feedstock stacks (2-3 high) the vehicles pick up bottom-first
@@ -606,21 +821,204 @@ func _spawn_scissor_lift() -> void:
 ## lift the whole column at once — exactly how it's done on the lot. Each bale is a
 ## frozen RigidBody3D in group "bale" with a unique printed label, identical to a
 ## build-placed bale, so grab / carry / drop and LineFlow feeding all just work.
+## Per-yard cap is effectively OFF — each yard now fills its FULL polygon so the
+## footprint reads as the drawn shape (the old 60 cap truncated the grid mid-fill
+## and left odd partial/triangular strips). A GLOBAL ceiling (MAX_BALES_TOTAL)
+## still guards against a runaway 200×200 m polygon re-triggering the RID-limit
+## freeze — realistic yards fill completely well under it; only a pathological
+## layout would ever hit it, and a truncated last yard beats a frozen game.
+const MAX_BALES_PER_YARD : int = 100000
+# Global ceiling on spawned yard bales. Each simple yard bale is now ~4 meshes
+# (down from ~10) and culls its body at 18 m, so the per-frame cost is bounded by
+# the cull radius, not the total — but the total still bounds physics RIDs, so we
+# keep a sane ceiling. 600 reads as a full pile without the RID-limit freeze.
+# Want denser yards? raise this AND/OR raise the body _lod_cull in _m_bale_simple.
+const MAX_BALES_TOTAL    : int = 600
+
+## Spawn bales inside each polygonal yard saved in WorldLayout, picking the
+## supplier_id from the yard. Bales are tiled across the polygon footprint in a
+## simple axis-aligned grid (rows × cols) clipped against the polygon — quick
+## first pass; the full grid-rotated fill is task #25.
+func _spawn_bale_yards_from_layout() -> void:
+	if WorldLayout.bale_yards.is_empty():
+		print("[MainWorld] No bale yards in layout"); return
+	var yards_root := Node3D.new()
+	yards_root.name = "BaleYards"
+	add_child(yards_root)
+	var total_bales := 0
+	var total_yards := 0
+	for y in WorldLayout.bale_yards:
+		var data : Dictionary = y
+		var corners : Array = data.get("corners", [])
+		if corners.size() < 3: continue
+		var supplier_id : String = data.get("supplier_id", "")
+		if supplier_id == "":
+			push_warning("[MainWorld] Bale yard has no supplier_id — skipping")
+			continue
+		var origin_def : Dictionary = BaleDefs.get_origin(supplier_id)
+		if origin_def.is_empty():
+			push_warning("[MainWorld] Unknown supplier_id '%s' — skipping yard" % supplier_id)
+			continue
+		var size : Vector3 = origin_def.get("size", Vector3(1.1, 0.7, 1.1))
+		var stack_high : int = int(origin_def.get("stack", 2))
+		# Convert the polygon corners from layout-space (player-relative, north-up
+		# RD) into scene-space via the same rotation-aware mapping the vehicles
+		# use, so the yard sits in the right place + orientation on the building.
+		var translated_corners : Array = []
+		var yard_corrupt := false
+		for c in corners:
+			if not _layout_rel_sane(c):
+				yard_corrupt = true
+				break
+			translated_corners.append(_layout_to_scene(c))
+		if yard_corrupt:
+			push_warning("[MainWorld] Yard '%s' has a corner km away from the anchor — corrupt layout data, skipping yard (redraw it in WorldSetup)" % supplier_id)
+			continue
+		corners = translated_corners
+		# FIX (footprint shows as a triangle): if the user clicked corners in
+		# Z-order (TL, TR, BL, BR) the polygon self-intersects into a bowtie and
+		# point-in-polygon only fills a triangle. Re-sort the corners by angle
+		# around their centroid so any 4 points form a proper convex quad.
+		corners = _sort_corners_ccw(corners)
+		# Fill the polygon along ITS OWN LONGEST EDGE direction, not world X/Z. This
+		# is what the user was missing: their rectangles are typically NOT axis-
+		# aligned, so an axis-aligned grid only filled the diamond inscribed in the
+		# polygon's AABB (the visible "diamond inside the rectangle" pattern). Now
+		# bales are laid out along the polygon's actual edges, rotated to match,
+		# filling the rectangle properly.
+		var le_a : Vector3 = corners[0]; var le_b : Vector3 = corners[0]
+		var le_len_sq : float = 0.0
+		for i in corners.size():
+			var ca : Vector3 = corners[i]
+			var cb : Vector3 = corners[(i + 1) % corners.size()]
+			var dd : float = (cb - ca).length_squared()
+			if dd > le_len_sq:
+				le_len_sq = dd; le_a = ca; le_b = cb
+		var u_axis : Vector3 = (le_b - le_a)
+		u_axis.y = 0.0
+		u_axis = u_axis.normalized() if u_axis.length() > 0.001 else Vector3.RIGHT
+		# #102 — final NaN guard: if the polygon is degenerate (collinear corners,
+		# zero-area, or any NaN-tainted coordinate that slipped past the sanity
+		# check), the normalize path can still produce a non-finite u_axis. Drop
+		# the yard rather than spawn bales with NaN transforms — those hit the
+		# renderer every frame and saturate the error log (~46k errors).
+		if not u_axis.is_finite() or u_axis.length_squared() < 0.5:
+			push_warning("[MainWorld] Yard '%s' has degenerate polygon — skipping (redraw it)" % supplier_id)
+			continue
+		var v_axis : Vector3 = Vector3(-u_axis.z, 0.0, u_axis.x)   # 90° CCW in XZ
+		# Polygon centroid (the grid pivot in WORLD space).
+		var centroid := Vector3.ZERO
+		for c in corners: centroid += c
+		centroid /= float(corners.size())
+		# Polygon UV extents in the (u,v) local basis (so the grid steps span the
+		# real polygon extent — no diamond clipping).
+		var min_u :=  INF; var max_u := -INF
+		var min_v :=  INF; var max_v := -INF
+		for c in corners:
+			var cv : Vector3 = c
+			var dv : Vector3 = cv - centroid
+			var u : float = dv.dot(u_axis)
+			var v : float = dv.dot(v_axis)
+			if u < min_u: min_u = u
+			if u > max_u: max_u = u
+			if v < min_v: min_v = v
+			if v > max_v: max_v = v
+		var poly2 : PackedVector2Array = _polygon_xz(corners)   # for point-in-poly check (world XZ)
+		var yard_w : float = max_u - min_u
+		var yard_d : float = max_v - min_v
+		print("[MainWorld]  Yard '%s'  polygon-aligned %.1f × %.1f m  (stack %d)" \
+			% [supplier_id, yard_w, yard_d, stack_high])
+		var step_x : float = size.x + 0.1
+		var step_z : float = size.z + 0.1
+		var floor_y : float = _floor_top_y()
+		var yard_node := Node3D.new()
+		yard_node.name = "Yard_%s" % supplier_id
+		yards_root.add_child(yard_node)
+		var nm : String = String(origin_def.get("name", supplier_id))
+		var prefix : String = nm.substr(0, 3).to_upper()
+		var bale_yaw : float = atan2(u_axis.x, u_axis.z)    # rotate each bale so its size.x aligns with the polygon edge
+		var bales_this_yard := 0
+		var u := min_u + step_x * 0.5
+		while u <= max_u:
+			var v := min_v + step_z * 0.5
+			while v <= max_v:
+				var world_xy : Vector3 = centroid + u_axis * u + v_axis * v
+				# #102 — last-line NaN gate. The renderer hits is_finite() once
+				# per frame on every transform; a single bad bale would saturate
+				# the error log. Drop the cell silently if the math went bad.
+				if not world_xy.is_finite():
+					v += step_z
+					continue
+				if Geometry2D.is_point_in_polygon(Vector2(world_xy.x, world_xy.z), poly2):
+					for level in stack_high:
+						# simple=true → cheap LOD model; upgraded to full detail when grabbed.
+						var bale := PlaceableCatalog.build_node(supplier_id, false, true) as Node3D
+						if bale == null: continue
+						yard_node.add_child(bale)
+						bale.global_position = Vector3(world_xy.x, floor_y + size.y * level, world_xy.z)
+						bale.rotation.y = bale_yaw if is_finite(bale_yaw) else 0.0
+						var code := "%s-%05d" % [prefix, (randi() % 100000)]
+						bale.set_meta("bale_code", code)
+						PlaceableCatalog.add_bale_label(bale, supplier_id, code)
+						total_bales += 1
+						bales_this_yard += 1
+				v += step_z
+			u += step_x
+		print("[MainWorld]  Yard '%s' filled with %d bales" % [supplier_id, bales_this_yard])
+		total_yards += 1
+	print("[MainWorld] Bale yards from layout: %d bales across %d yards" % [total_bales, total_yards])
+
+func _polygon_xz(corners: Array) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for c in corners:
+		out.append(Vector2(c.x, c.z))
+	return out
+
+## Re-orders polygon corners counter-clockwise around their centroid (in the XZ
+## plane) so a quad drawn in any click order becomes a simple, non-self-
+## intersecting polygon. Without this, corners clicked in Z-order produce a
+## bowtie and the yard fills as a triangle.
+func _sort_corners_ccw(corners: Array) -> Array:
+	if corners.size() < 3:
+		return corners
+	var cx := 0.0
+	var cz := 0.0
+	for c in corners:
+		cx += c.x; cz += c.z
+	cx /= float(corners.size()); cz /= float(corners.size())
+	var sorted := corners.duplicate()
+	sorted.sort_custom(func(a, b):
+		var aa := atan2(a.z - cz, a.x - cx)
+		var ab := atan2(b.z - cz, b.x - cx)
+		return aa < ab)
+	return sorted
+
 func _spawn_bale_yard() -> void:
-	# Anchor: WorldLayout bale-yard rectangle (first entry) if present; else the
-	# old factory-anchor + offset behaviour. WorldLayout origin is on the floor,
-	# so we don't subtract the player half-height in that path.
+	# Anchor: each bale yard in WorldLayout is now a 4-corner polygon with an
+	# associated supplier_id. For this initial pass we still spawn a single
+	# stack-column per supplier, anchored at the polygon centroid of the
+	# matching yard. Yards whose supplier doesn't match any BaleDefs origin
+	# get the default offset behaviour as a fallback.
+	# TODO follow-up: pack rows × columns into the polygon footprint so the
+	# user's drawn shape actually fills with bales (the original to-do #38).
+	var supplier_to_centroid : Dictionary = {}
+	for y in WorldLayout.bale_yards:
+		var corners : Array = (y as Dictionary).get("corners", [])
+		if corners.size() < 3: continue
+		var c := Vector3.ZERO
+		for v in corners: c += v
+		c /= float(corners.size())
+		supplier_to_centroid[(y as Dictionary).get("supplier_id", "")] = _on_floor(c)
 	var base : Vector3
-	if WorldLayout.bale_yards.size() > 0:
-		base = (WorldLayout.bale_yards[0] as Dictionary)["origin"]
+	if not supplier_to_centroid.is_empty():
+		# Use the first polygon's centroid as the legacy "yard origin" so the
+		# existing per-supplier column lay-out below still works for now.
+		base = supplier_to_centroid.values()[0]
 	else:
-		base = _get_factory_anchor()
-		# A tidy yard 6 m to the player's side and a few metres ahead — next to the
-		# forklift (which parks at +3 on X), clear of the player capsule. Drop the
-		# FULL capsule half-height (0.9 m): the spawn anchor is the player capsule's
-		# CENTRE, which sits ~0.9 m above the floor, so subtracting it puts each bale
-		# base ON the floor instead of hovering.
-		base += Vector3(6.0, -0.9, 6.0)
+		var anchor := _get_factory_anchor()
+		# A tidy yard 6 m to the player's side and a few metres ahead. _on_floor
+		# already pins Y to the detected floor.
+		base = _on_floor(anchor + Vector3(6.0, 0.0, 6.0))
 
 	var yard := Node3D.new()
 	yard.name = "BaleYard"
@@ -848,7 +1246,6 @@ func _spawn_demo_pipeline() -> void:
 		"friction_washer",      # friction scrubber
 		"intensive_washer",     # hot caustic intensive wash
 		"flotation_tank",       # sink/float: drop PET/PVC/sand
-		"rotation_tank",        # rotation wash + tumble
 		"waste_container",      # heavies/reject bin for the wash section
 		"kufferath_sieve",      # Kufferath wedge-wire sieve: drain + screen
 		"rafter",               # sieve deck: drain water, screen fines
@@ -861,7 +1258,6 @@ func _spawn_demo_pipeline() -> void:
 		"mas_bak",              # MAS trough (pre-extruder agglomeration)
 		"compactor",            # EREMA compactor
 		"extruder_1",           # extruder = the line sink → granulaat
-		"zss_water",            # ZSS water plant (services the wash loop)
 	]
 
 	const GAP : float = 1.6     # metres between adjacent machine ENDS
@@ -1213,7 +1609,8 @@ func _spawn_wire_cutter() -> void:
 	var anchor : Vector3 = _get_factory_anchor()
 	# Sit it on the floor between the bale clamp (+10 X) and the bale yard (+6 X,
 	# +6 Z), so it's right where the wire-cutting action happens.
-	var cutter_pos := anchor + Vector3(8.0, -0.85, 3.0)
+	# anchor.Y is now the floor surface (was the capsule centre); no Y fudge needed.
+	var cutter_pos := anchor + Vector3(8.0, 0.0, 3.0)
 	var cutter := WireCutter.new()
 	cutter.name = "WireCutter"
 	add_child(cutter)
@@ -1227,18 +1624,18 @@ func _spawn_wire_cutter() -> void:
 	var coffee : Node3D = prop_script.new()
 	coffee.prop_kind = "coffee"
 	add_child(coffee)
-	coffee.global_position = anchor + Vector3(8.6, -0.85, 3.4)
+	coffee.global_position = anchor + Vector3(8.6, 0.0, 3.4)
 	var sandwich : Node3D = prop_script.new()
 	sandwich.prop_kind = "sandwich"
 	add_child(sandwich)
-	sandwich.global_position = anchor + Vector3(8.9, -0.85, 3.4)
+	sandwich.global_position = anchor + Vector3(8.9, 0.0, 3.4)
 	print("[MainWorld] Cabin props (coffee + sandwich) spawned")
 
 	# Drop a barcode scanner half a metre to the right of the scissors. The
 	# operator picks it up the same way (E), swaps to it with hotbar 1-4, and
 	# left-clicks to scan a bale / container label. Right-click peels the
 	# label off into a held LabelItem.
-	var scanner_pos := anchor + Vector3(8.6, -0.85, 3.0)
+	var scanner_pos := anchor + Vector3(8.6, 0.0, 3.0)
 	var scanner := BarcodeScanner.new()
 	scanner.name = "BarcodeScanner"
 	add_child(scanner)
@@ -1249,7 +1646,7 @@ func _spawn_wire_cutter() -> void:
 	var shovel := preload("res://src/scenes/world/ShovelTool.gd").new()
 	shovel.name = "ShovelTool"
 	add_child(shovel)
-	shovel.global_position = anchor + Vector3(9.2, -0.85, 3.0)
+	shovel.global_position = anchor + Vector3(9.2, 0.0, 3.0)
 	print("[MainWorld] ShovelTool @ %s" % str(shovel.global_position))
 
 # =============================================================================
@@ -1266,11 +1663,11 @@ func _spawn_test_skip() -> void:
 	var anchor : Vector3 = _get_factory_anchor()
 
 	# Steel skip — drop it 4 m to the +X side of the test bunker so the forklift
-	# can swing around to pick it up. Anchor.y - 0.9 grounds the skip base.
+	# can swing around to pick it up. anchor.Y is the floor surface now.
 	var skip := PlaceableCatalog.build_node("skip_steel", false) as Node3D
 	if skip != null:
 		add_child(skip)
-		skip.global_position = anchor + Vector3(6.0, -0.9, 18.0)
+		skip.global_position = anchor + Vector3(6.0, 0.0, 18.0)
 		# Configure as a COARSE_FILM-only catcher (Stream.COARSE_FILM = 0).
 		skip.set("accepted_streams", [0])
 		skip.set("capacity_m3", 2.4)
@@ -1287,7 +1684,7 @@ func _spawn_test_skip() -> void:
 	zone.name = "DumpZone_PLASTIC"
 	zone.add_to_group("dump_zone")
 	add_child(zone)
-	zone.global_position = anchor + Vector3(20.0, -0.9, 18.0)
+	zone.global_position = anchor + Vector3(20.0, 0.0, 18.0)
 	var pad := MeshInstance3D.new()
 	var pad_mat := StandardMaterial3D.new()
 	pad_mat.albedo_color = Color(0.88, 0.55, 0.10)
@@ -1321,7 +1718,8 @@ func _spawn_test_skip() -> void:
 ## Each is pre-seeded so the operator can see fills, mounds, valves immediately.
 func _spawn_test_waste_zones() -> void:
 	var anchor : Vector3 = _get_factory_anchor()
-	var floor_y := anchor.y - 0.9
+	# anchor.y is the floor top now (was the capsule centre, hence the legacy −0.9).
+	var floor_y := anchor.y
 
 	# ── Fines bay: 3 fines_bin in a row, +Z further out from the skip ──────────
 	for i in 3:
@@ -1445,11 +1843,30 @@ func save_and_quit() -> void:
 func _setup_autosave() -> void:
 	var timer := Timer.new()
 	timer.name       = "AutosaveTimer"
-	timer.wait_time  = 60.0
-	timer.autostart  = true
 	timer.one_shot   = false
 	timer.timeout.connect(_on_autosave)
 	add_child(timer)
+	_apply_autosave_interval()   # set wait_time / start / stop based on setting
+	# React to live edits in the Settings menu.
+	if has_node("/root/SettingsManager"):
+		var sm := get_node("/root/SettingsManager")
+		if sm.has_signal("settings_applied"):
+			sm.settings_applied.connect(_apply_autosave_interval)
+
+## Reads Settings → Gameplay → "Auto-save interval". 0 disables autosave.
+func _apply_autosave_interval() -> void:
+	var t := get_node_or_null("AutosaveTimer") as Timer
+	if t == null: return
+	var iv : float = 60.0
+	if has_node("/root/SettingsManager"):
+		iv = float(SettingsManager.gameplay().get("autosave_interval_s", 60))
+	if iv <= 0.0:
+		t.stop()
+		print("[MainWorld] Autosave disabled (interval 0)")
+		return
+	t.wait_time = iv
+	if t.is_stopped(): t.start()
+	print("[MainWorld] Autosave interval set to %.0fs" % iv)
 
 func _on_autosave() -> void:
 	save_game()
@@ -1460,99 +1877,129 @@ func _on_autosave() -> void:
 # =============================================================================
 # FLOOR GENERATION
 # =============================================================================
+# World-Y of the floor's top surface. Set by _generate_floor_from_shell from
+# the largest-area horizontal slab in the building shell mesh (the operating
+# floor — NOT the absolute lowest vertex, which would be foundations/below-grade).
 var _floor_min_y_cache: float = -9.0
 
+# Floor-detection tunables.
+const FLOOR_HORIZONTAL_DOT  := 0.9    # cos(~25°) — face counts as horizontal if up-normal ≥ this
+const FLOOR_Y_BUCKET_M      := 0.5    # 0.5 m bins for the area histogram
+const FLOOR_AREA_THRESHOLD  := 0.5    # candidate bucket must have ≥ 50% of the max bucket's area
+const FLOOR_BOX_SIZE_XZ     := 4000.0 # the collision floor is a huge flat slab; players can't walk off
+const FLOOR_BOX_THICKNESS   := 1.0
+# Quicksand fix (B): the shell mesh has its own horizontal floor triangles at the
+# operating-floor Y (that's how _detect_operating_floor_y finds it). If TempFloor's
+# top is at the SAME Y, the player's capsule sits on two coincident colliders, the
+# solver oscillates contacts, and the capsule slowly sinks ("quicksand"). Lifting
+# the TempFloor's top by 5 cm makes the shell's interior floor sit 5 cm BELOW the
+# walkable surface and never contact the capsule. Machines still seat correctly
+# because _floor_top_y() returns the LIFTED value.
+const FLOOR_LIFT_OFFSET     := 0.05
+
+# =============================================================================
+# Floor generation — replace TempFloor's mesh + collision with a simple flat
+# box positioned at the building's operating-floor Y.
+#
+# Why this is necessary: the building shell .obj is BLOSM-derived in real RD
+# coordinates (Y range 67.83 – 112.14 m above sea level). After BuildingShell's
+# parent transform shifts it down to world space, the operating floor sits at
+# world Y ≈ −9.33 and the roof at ≈ −0.83. The OLD code keyed off `min_y` of
+# ALL vertices, which picked the lowest mesh point (foundation level, world
+# Y ≈ −15) and built a 10-m-thick Delaunay surface above it. Players spawned
+# at the marker fell straight through the building, NPCs floated mid-air, and
+# every machine placement was off. This rewrite asks the .obj an empirical
+# question instead: "where is your biggest flat horizontal up-facing surface?"
+# — the answer is the operating floor.
 func _generate_floor_from_shell(shell_mesh: MeshInstance3D) -> void:
-	var mesh = shell_mesh.mesh as ArrayMesh
-	if not mesh:
-		return
+	var floor_y := _detect_operating_floor_y(shell_mesh)
+	if is_nan(floor_y) or is_inf(floor_y):
+		push_warning("[MainWorld] Could not detect operating floor; defaulting to world Y=0")
+		floor_y = 0.0
+	print("[MainWorld] Operating floor detected at world Y = %.3f" % floor_y)
 
-	var shell_xf = shell_mesh.global_transform
-	var xz_to_y = {}
-	var min_y = 1000000.0
+	var floor_node := find_child("TempFloor", true, false) as StaticBody3D
+	if floor_node == null:
+		push_error("[MainWorld] TempFloor node missing — cannot install floor"); return
 
-	# Extract vertices
-	for s in range(mesh.get_surface_count()):
-		var arr = mesh.surface_get_arrays(s)
-		var verts = arr[Mesh.ARRAY_VERTEX] as PackedVector3Array
-		for v in verts:
-			var world_v = shell_xf * v
-			var xz = Vector2(round(world_v.x * 10.0) / 10.0, round(world_v.z * 10.0) / 10.0)
-			if not xz_to_y.has(xz) or world_v.y < xz_to_y[xz]:
-				xz_to_y[xz] = world_v.y
-			if world_v.y < min_y:
-				min_y = world_v.y
+	# Position the box so its TOP surface is at floor_y + FLOOR_LIFT_OFFSET — the
+	# 5 cm gap lifts the walkable surface clear of the shell's coincident interior
+	# floor triangles (quicksand fix B; see FLOOR_LIFT_OFFSET comment).
+	var top_y : float = floor_y + FLOOR_LIFT_OFFSET
+	floor_node.global_position = Vector3(0.0, top_y - FLOOR_BOX_THICKNESS * 0.5, 0.0)
+	floor_node.global_rotation = Vector3.ZERO
 
-	# Filter for bottom corners
-	var bottom_pts = PackedVector2Array()
-	var bottom_ys = PackedFloat32Array()
-	for xz in xz_to_y.keys():
-		var y = xz_to_y[xz]
-		if y <= min_y + 10.0:
-			bottom_pts.push_back(xz)
-			bottom_ys.push_back(y)
-
-	# Add 4 large bounding corners to extend the floor
-	var extents = [
-		Vector2(-2000, -2000), Vector2(2000, -2000),
-		Vector2(2000, 2000), Vector2(-2000, 2000)
-	]
-	for ext in extents:
-		bottom_pts.push_back(ext)
-		bottom_ys.push_back(min_y)
-
-	var floor_node = find_child("TempFloor", true, false) as StaticBody3D
-	if not floor_node:
-		return
-
-	var floor_inv = floor_node.global_transform.affine_inverse()
-	var local_pts = PackedVector2Array()
-	var local_ys = PackedFloat32Array()
-	for i in range(bottom_pts.size()):
-		var xz = bottom_pts[i]
-		var y = bottom_ys[i]
-		var local_v = floor_inv * Vector3(xz.x, y, xz.y)
-		local_pts.push_back(Vector2(local_v.x, local_v.z))
-		local_ys.push_back(local_v.y)
-
-	var delaunay = Geometry2D.triangulate_delaunay(local_pts)
-
-	var st = SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-
-	for i in range(0, delaunay.size(), 3):
-		var i1 = delaunay[i]
-		var i2 = delaunay[i+1]
-		var i3 = delaunay[i+2]
-
-		var p1 = Vector3(local_pts[i1].x, local_ys[i1], local_pts[i1].y)
-		var p2 = Vector3(local_pts[i2].x, local_ys[i2], local_pts[i2].y)
-		var p3 = Vector3(local_pts[i3].x, local_ys[i3], local_pts[i3].y)
-
-		var normal = (p2 - p1).cross(p3 - p1)
-		if normal.y < 0:
-			st.add_vertex(p1)
-			st.add_vertex(p3)
-			st.add_vertex(p2)
-		else:
-			st.add_vertex(p1)
-			st.add_vertex(p2)
-			st.add_vertex(p3)
-
-	st.generate_normals()
-	var new_mesh = st.commit()
-
-	var mi = floor_node.find_child("MeshInstance3D", false, false) as MeshInstance3D
+	# Replace any prior mesh / collision (from the old Delaunay code or scene
+	# defaults) with a simple flat 4000×1×4000 box.
+	var mi := floor_node.find_child("MeshInstance3D", false, false) as MeshInstance3D
 	if mi:
-		mi.mesh = new_mesh
-
-	var cs = floor_node.find_child("CollisionShape3D", false, false) as CollisionShape3D
+		var bm := BoxMesh.new()
+		bm.size = Vector3(FLOOR_BOX_SIZE_XZ, FLOOR_BOX_THICKNESS, FLOOR_BOX_SIZE_XZ)
+		mi.mesh = bm
+		mi.transform = Transform3D()
+	var cs := floor_node.find_child("CollisionShape3D", false, false) as CollisionShape3D
 	if cs:
-		var shape = ConcavePolygonShape3D.new()
-		shape.set_faces(new_mesh.get_faces())
-		cs.shape = shape
+		var bx := BoxShape3D.new()
+		bx.size = Vector3(FLOOR_BOX_SIZE_XZ, FLOOR_BOX_THICKNESS, FLOOR_BOX_SIZE_XZ)
+		cs.shape = bx
+		cs.transform = Transform3D()
 
-	_floor_min_y_cache = min_y
+	_floor_min_y_cache = top_y    # the TempFloor's TOP — what _floor_top_y() must return
+
+## Detect the operating floor's world-Y by histogramming up-facing horizontal
+## triangle area in 0.5 m Y buckets, then picking the LOWEST bucket whose
+## area is at least 50 % of the maximum. The "≥ 50% of max" gate keeps small
+## terraces/mezzanines out; the "lowest among candidates" picks the ground
+## floor over a same-area roof. Returns +INF if no horizontal faces exist.
+func _detect_operating_floor_y(shell_mesh: MeshInstance3D) -> float:
+	var mesh := shell_mesh.mesh as ArrayMesh
+	if mesh == null: return INF
+	var xf := shell_mesh.global_transform
+	var area_by_y : Dictionary = {}
+
+	for s in range(mesh.get_surface_count()):
+		var arr : Array = mesh.surface_get_arrays(s)
+		var verts : PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+		if verts == null or verts.is_empty(): continue
+		var idx_raw : Variant = arr[Mesh.ARRAY_INDEX]
+		var idx : PackedInt32Array = idx_raw if idx_raw is PackedInt32Array else PackedInt32Array()
+		if idx.is_empty():
+			# Non-indexed mesh: triangles are sequential triples of vertices.
+			for i in range(0, verts.size() - 2, 3):
+				_floor_add_face(verts[i], verts[i + 1], verts[i + 2], xf, area_by_y)
+		else:
+			for i in range(0, idx.size() - 2, 3):
+				_floor_add_face(verts[idx[i]], verts[idx[i + 1]], verts[idx[i + 2]], xf, area_by_y)
+
+	if area_by_y.is_empty():
+		# No horizontal faces — degenerate mesh. Caller falls back to Y=0.
+		return INF
+
+	var max_area := 0.0
+	for b in area_by_y:
+		if float(area_by_y[b]) > max_area: max_area = float(area_by_y[b])
+	var threshold := max_area * FLOOR_AREA_THRESHOLD
+	var candidates : Array = []
+	for b in area_by_y:
+		if float(area_by_y[b]) >= threshold:
+			candidates.append(float(b))
+	candidates.sort()
+	return float(candidates[0])
+
+func _floor_add_face(v1: Vector3, v2: Vector3, v3: Vector3, xf: Transform3D, dict: Dictionary) -> void:
+	var p1 := xf * v1
+	var p2 := xf * v2
+	var p3 := xf * v3
+	var cross := (p2 - p1).cross(p3 - p1)
+	var len_cross := cross.length()
+	if len_cross < 1e-3: return
+	# Skip downward-facing triangles (ceilings, undersides) — we only want the
+	# floor's top surface. cross.y / len_cross is the up-component of the normal.
+	if cross.y / len_cross < FLOOR_HORIZONTAL_DOT: return
+	var area := len_cross * 0.5
+	var avg_y := (p1.y + p2.y + p3.y) / 3.0
+	var bucket := snappedf(avg_y, FLOOR_Y_BUCKET_M)
+	dict[bucket] = float(dict.get(bucket, 0.0)) + area
 
 # =============================================================================
 # Helpers
