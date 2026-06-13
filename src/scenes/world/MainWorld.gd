@@ -1342,9 +1342,51 @@ func _defer_yard_rb_batch(yard_node: Node3D, mmi: MultiMeshInstance3D,
 		# #73 — origin pose so Reset Bales can snap moved bales back.
 		rb.set_meta("yard_origin", spawn_pos)
 		rb.set_meta("yard_origin_yaw", yaw)
+		# #143 — proximity gate. Stash the spawn layer/mask, then turn collision
+		# OFF. The periodic _yard_rb_proximity_tick re-enables only the RBs near
+		# the player, so far yards (thousands of bales) don't churn collision
+		# pairs every physics tick.
+		rb.add_to_group("yard_bale_rb")
+		rb.set_meta("yard_rb_layer", rb.collision_layer)
+		rb.set_meta("yard_rb_mask",  rb.collision_mask)
+		rb.collision_layer = 0
+		rb.collision_mask  = 0
 	if end_idx < slots.size():
 		call_deferred("_defer_yard_rb_batch",
 			yard_node, mmi, supplier_id, prefix, slots, floor_y, size, yaw, end_idx)
+
+# =============================================================================
+# #143 — yard bale RB proximity sweep
+# =============================================================================
+# Yards can hold thousands of bales; even kinematic-frozen RBs cost something
+# every physics tick (broad-phase + sleeping bookkeeping). Bales >25 m from the
+# player can't possibly interact with the clamp anyway, so we strip their
+# collision and put it back when the player walks within range.
+const _YARD_RB_NEAR_M  : float = 25.0
+const _YARD_RB_TICK_S  : float = 0.5
+var   _yard_rb_tick_t  : float = 0.0
+
+func _process(delta: float) -> void:
+	_yard_rb_tick_t += delta
+	if _yard_rb_tick_t < _YARD_RB_TICK_S:
+		return
+	_yard_rb_tick_t = 0.0
+	if player == null or not is_instance_valid(player):
+		return
+	var ppos := player.global_position
+	var near_sq := _YARD_RB_NEAR_M * _YARD_RB_NEAR_M
+	for rb in get_tree().get_nodes_in_group("yard_bale_rb"):
+		if not is_instance_valid(rb):
+			continue
+		var d2 : float = (rb.global_position - ppos).length_squared()
+		var near : bool = d2 < near_sq
+		var on : bool = rb.collision_layer != 0
+		if near and not on:
+			rb.collision_layer = int(rb.get_meta("yard_rb_layer", 1))
+			rb.collision_mask  = int(rb.get_meta("yard_rb_mask",  1))
+		elif not near and on:
+			rb.collision_layer = 0
+			rb.collision_mask  = 0
 
 # =============================================================================
 # SHIFT-LEADER PC — bale yard maintenance buttons (#73, #74)
