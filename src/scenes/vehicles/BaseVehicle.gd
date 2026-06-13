@@ -713,15 +713,19 @@ func _can_grab_stack(_primary: Node3D, _stack: Array[Node3D]) -> bool:
 	return true
 ## Called when a grab is refused (e.g. give the bale a nudge). Default: nothing.
 func _on_grab_refused(_primary: Node3D, _stack: Array[Node3D]) -> void:
+	# Virtual hook intended to be overridden by subclasses.
 	pass
 ## Called after a successful grab. Default: nothing.
 func _on_grabbed(_primary: Node3D, _stack: Array[Node3D]) -> void:
+	# Virtual hook intended to be overridden by subclasses.
 	pass
 ## Called at the very start of _release, before the early-out. Default: nothing.
 func _on_pre_release() -> void:
+	# Virtual hook intended to be overridden by subclasses.
 	pass
 ## Called after everything has been dropped. Default: nothing.
 func _on_released() -> void:
+	# Virtual hook intended to be overridden by subclasses.
 	pass
 
 ## Toggle a bale's "grabbed" state. Bales are RigidBody3D — when grabbed they
