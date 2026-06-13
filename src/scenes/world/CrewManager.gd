@@ -338,6 +338,15 @@ func _break_candidate() -> NPC:
 # HELPERS
 # =============================================================================
 func _covers(w: NPC, station_id: String) -> bool:
+	# #173 — section-pinned workers cover their section first; otherwise fall
+	# back to the role-based zone match. A worker pinned to "section:wash_3a"
+	# answers wash_3a jams even if their role is something else.
+	var pin := String(_pinned.get(w, ""))
+	if pin.begins_with("section:"):
+		for tk in _zone_for_section(pin.substr(8)):
+			if station_id.find(String(tk)) != -1:
+				return true
+		return false
 	for tk in _zone_for(w.npc_role):
 		if station_id.find(String(tk)) != -1:
 			return true
@@ -437,8 +446,82 @@ const ROLE_POSTS := [
 	{"id": "role:production_manager", "label": "Production manager"},
 ]
 
+## #173 — section-level assignment. The operator can pin a worker to a NAMED
+## section of a specific line (e.g. "Line 3A · Feed area") instead of a single
+## machine or a coord. SECTION_ZONES maps each section id to the substrings
+## that match its machine ids — same matching style as ZONES uses for roles.
+## A section-pinned worker (a) is auto-posted to the NEAREST machine in that
+## section, (b) covers any machine in the section for incident response, and
+## (c) the FeederWorker reads "section:feed_*" pins to choose which feed belt
+## to deliver bales to.
+const SECTION_POSTS := [
+	{"id": "section:feed_3a",     "label": "Line 3A · Feed area"},
+	{"id": "section:feed_3b",     "label": "Line 3B · Feed area"},
+	{"id": "section:feed_1",      "label": "Line 1 · Feed area"},
+	{"id": "section:feed_3c",     "label": "Line 3C · Feed area"},
+	{"id": "section:feed_6",      "label": "Line 6 · Feed area"},
+	{"id": "section:intake_3a3b", "label": "Line 3A/3B · Intake conveyors"},
+	{"id": "section:sort_3a3b",   "label": "Line 3A/3B · Sorting (TOMRA / TITECH)"},
+	{"id": "section:wash_3a",     "label": "Line 3A · Wash"},
+	{"id": "section:wash_3b",     "label": "Line 3B · Wash"},
+	{"id": "section:wash_1",      "label": "Line 1 · Wash"},
+	{"id": "section:extruder_3a", "label": "Line 3A · Extruder"},
+	{"id": "section:extruder_3b", "label": "Line 3B · Extruder"},
+	{"id": "section:extruder_1",  "label": "Line 1 · Extruder"},
+	{"id": "section:extruder_3c", "label": "Line 3C · Extruder"},
+	{"id": "section:extruder_6",  "label": "Line 6 · Extruder"},
+]
+const SECTION_ZONES : Dictionary = {
+	"feed_3a":     ["bunker_3a", "shredder_1", "opzetband_3a3b"],
+	"feed_3b":     ["bunker_3b", "shredder_1", "opzetband_3a3b"],
+	"feed_1":      ["bunker_1",  "opzetband_1", "westa_band_1"],
+	"feed_3c":     ["bunker_3c", "opzetband_3c6"],
+	"feed_6":      ["bunker_6",  "opzetband_3c6"],
+	"intake_3a3b": ["intake_belt_", "switch_belt", "vss_silo", "u_bay"],
+	"sort_3a3b":   ["titech", "tomra", "ballistic", "trilzeef", "metal_belt", "wind_sifter"],
+	"wash_3a":     ["prewash_3a", "friction_3a", "intensive_3a", "flotation_3a",
+					"rotation_3a", "kufferath_3a", "dewater_3a", "mech_dryer_3a", "centrifuge_3a"],
+	"wash_3b":     ["prewash_3b", "friction_3b", "intensive_3b", "flotation_3b",
+					"rotation_3b", "kufferath_3b", "dewater_3b", "mech_dryer_3b", "centrifuge_3b"],
+	"wash_1":      ["prewash_1", "friction_1", "intensive_1", "flotation_1",
+					"rotation_1", "kufferath_1", "dewater_1", "mech_dryer_1", "centrifuge_1"],
+	"extruder_3a": ["extruder_3a", "mengsilo_3a", "compactor_3a", "mas_bak_3a"],
+	"extruder_3b": ["extruder_3b", "mengsilo_3b", "compactor_3b", "mas_bak_3b"],
+	"extruder_1":  ["extruder_1",  "mengsilo_1",  "compactor_1",  "mas_bak_1"],
+	"extruder_3c": ["extruder_3c", "mengsilo_3c", "compactor_3c", "mas_bak_3c", "plasmaq", "laser_filter", "melt_pump"],
+	"extruder_6":  ["extruder_6",  "mengsilo_6",  "compactor_6",  "mas_bak_6"],
+}
+
 static func role_posts() -> Array:
 	return ROLE_POSTS
+
+static func section_posts() -> Array:
+	return SECTION_POSTS
+
+func _zone_for_section(section_key: String) -> Array:
+	return SECTION_ZONES.get(section_key, [])
+
+## Like _nearest_in_zone but uses SECTION_ZONES instead of role zones.
+func _nearest_in_section(section_key: String, from: Vector3, machines: Array) -> Dictionary:
+	var tokens := _zone_for_section(section_key)
+	if tokens.is_empty():
+		return {}
+	var best : Dictionary = {}
+	var best_d := INF
+	for m in machines:
+		var id := String(m["id"])
+		var hit := false
+		for tk in tokens:
+			if id.find(String(tk)) != -1:
+				hit = true
+				break
+		if not hit:
+			continue
+		var d : float = from.distance_to(m["pos"])
+		if d < best_d:
+			best_d = d
+			best = m
+	return best
 
 ## Hand-assign `worker` to a post. Special ids: "__auto__" reverts to role-based
 ## auto-posting, "__off__" takes them off duty. "role:X" sets the worker's npc_role
@@ -469,6 +552,24 @@ func manual_assign(worker, station_id: String) -> void:
 		if not best.is_empty():
 			var apos : Vector3 = best["pos"]; apos.y = worker.global_position.y
 			worker.assign_post(String(best["id"]), apos)
+		return
+	# #173 — Section-based post: pin the worker to a NAMED zone of a line (Feed,
+	# Wash, Extruder, Sort area for that specific line). Auto-posts to the
+	# nearest machine in that section's token list. Coverage (_covers) treats
+	# any matching machine as in-scope so jam responses stay sectional.
+	if station_id.begins_with("section:"):
+		var section_key := station_id.substr(8)
+		_pinned.erase(worker)
+		_pin_meta.erase(worker)
+		_clear_pin_marker(worker)
+		if "home_facing_rad" in worker:
+			worker.home_facing_rad = NAN
+		var best_sec : Dictionary = _nearest_in_section(section_key, worker.global_position, _machine_list())
+		if not best_sec.is_empty():
+			var spos : Vector3 = best_sec["pos"]; spos.y = worker.global_position.y
+			worker.assign_post(String(best_sec["id"]), spos)
+		_pinned[worker] = station_id
+		_emit("npc_called_for_help", ["operator", String(worker.npc_name), station_id])
 		return
 	# Role-based post: switch the worker's RotA role, then auto-post by that role's zone.
 	if station_id.begins_with("role:"):

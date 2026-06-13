@@ -107,6 +107,14 @@ func _populate() -> void:
 	for rp in roles:
 		_post_ids.append(String(rp.get("id", "")))
 		_post_labels.append(String(rp.get("label", "")))
+	# #173 — Section posts AFTER roles: "Line 3A · Feed area", etc. The operator
+	# wanted to assign by a meaningful chunk of the plant rather than by raw
+	# coords or by one specific machine id — pinning to a section auto-posts to
+	# the nearest matching machine and covers any incident inside the section.
+	var sections : Array = _cm.section_posts() if _cm.has_method("section_posts") else []
+	for sp in sections:
+		_post_ids.append(String(sp.get("id", "")))
+		_post_labels.append(String(sp.get("label", "")))
 	# Then specific machine stations (the deduped legacy list) for fine-grained pinning.
 	var seen := {}
 	for s in _cm.station_list():

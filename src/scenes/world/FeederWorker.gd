@@ -65,6 +65,15 @@ var _leg_timer   : float = 0.0           # time spent on the current drive leg
 var _log_timer   : float = 0.0           # throttles the diagnostic print
 var _last_good_xf : Transform3D = Transform3D.IDENTITY   # NaN-transform watchdog
 var _xf_warned   : bool = false
+# #173 — state-transition diagnostic so the operator can pinpoint where the feed
+# loop stalls. Logged from _physics_process by comparing _state to _state_log.
+# Also fires a stuck-state warning if the same state runs for >30 s without a
+# transition (a watchdog for the "feeders don't feed" report).
+var _state_log         : int   = -1
+var _state_held_secs   : float = 0.0
+const _STATE_STUCK_S   : float = 30.0
+const _STATE_NAMES : Array[String] = ["SEEK","TO_BALE","GRAB","LIFT","PROCESS",
+	"CARRY","LOAD","WAIT","TO_BELT","SET_DOWN","DISMOUNT","CUT","SCAN","FEED","REMOUNT"]
 var _grab_tries  : int = 0               # real-grab attempts this approach (no teleport fallback)
 const STUCK_LIMIT : float = 14.0         # s before force-completing a stuck drive leg
 const GRAB_TRIES_MAX : int   = 5         # re-approaches before giving up on a bale
@@ -177,6 +186,22 @@ func _build_body() -> void:
 # MAIN LOOP
 # =============================================================================
 func _physics_process(delta: float) -> void:
+	# #173 — state-transition diagnostic. Logs every change so when the operator
+	# reports "feeders don't feed", the log shows the exact stuck state. Also
+	# pings a warning when one state holds >30 s (e.g. SEEK forever = no bales
+	# found; TO_BELT forever = pathing blocked).
+	if _state != _state_log:
+		var prev := _name_for_state(_state_log) if _state_log >= 0 else "<init>"
+		var nxt  := _name_for_state(_state)
+		print("[Feeder %s] %s → %s   (bales_fed=%d bale=%s)"
+				% [worker_name, prev, nxt, bales_fed, str(_bale)])
+		_state_log = _state
+		_state_held_secs = 0.0
+	else:
+		_state_held_secs += delta
+		if _state_held_secs > _STATE_STUCK_S and int(_state_held_secs) % 10 == 0:
+			push_warning("[Feeder %s] stuck in %s for %.0fs"
+					% [worker_name, _name_for_state(_state), _state_held_secs])
 	# NaN-transform watchdog (see BaseVehicle): a worker whose transform goes bad
 	# would spam instance_set_transform via its capsule + name tag + held tools. Snap
 	# back to the last good pose + report ONCE rather than flood the log.
@@ -734,3 +759,9 @@ func status_line() -> String:
 	var st : String = names[_state] if _state < names.size() else "?"
 	var line_tag := "" if assigned_line == "" else " [%s]" % assigned_line
 	return "%s%s — %s  (fed %d)" % [worker_name, line_tag, st, bales_fed]
+
+# #173 — pretty-print state ids for the transition log.
+func _name_for_state(s: int) -> String:
+	if s < 0 or s >= _STATE_NAMES.size():
+		return "?"
+	return _STATE_NAMES[s]
