@@ -1,4 +1,4 @@
-﻿extends RefCounted
+extends RefCounted
 class_name PlaceableCatalog
 ## Data-driven catalog of everything the player can place in build mode.
 ##
@@ -1967,7 +1967,7 @@ static func _m_dryer(p: Node3D, size: Vector3, color: Color, ghost: bool) -> voi
 	var galv      := _mat(color, ghost, 0.55, 0.5)                    # galvanised drum
 	var blue      := _mat(Color(0.12, 0.28, 0.55), ghost, 0.45, 0.45) # RAL-blue flanges/motors
 	var dark      := _mat(_DARK, ghost, 0.4, 0.6)
-	var stainless := _mat(Color(0.74, 0.76, 0.78), ghost, 0.7, 0.3)
+	var _stainless := _mat(Color(0.74, 0.76, 0.78), ghost, 0.7, 0.3)
 	var hz : float = size.z * 0.5
 	var rad : float = size.x * 0.42                  # drum radius
 	var clear : float = 0.7                          # frame clearance under the drum
