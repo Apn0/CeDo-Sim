@@ -1,12 +1,11 @@
 [gd_scene format=3 uid="uid://dudbhudo6vqa7"]
 
 ; JLG Toucan-style electric VERTICAL MAST lift — rebuilt from the operator's photos
-; (the plant ran three). Legacy node names (ScissorLift, Platform, CabCamera) are
-; kept so saves / HUD / map keep resolving; the mechanism is now a nested
-; telescoping mast, not scissor arms. Mast stages are Mast/Stage1..Stage3
-; (animated by ScissorLift.gd). Rear = rounded red battery/drive cowl.
+; (the plant ran three). Mechanism is a nested telescoping mast — Mast/Stage1..Stage3
+; (animated by MastLift.gd). Rear = rounded red battery/drive cowl. Root node name
+; "MastLift" matches the script's class_name; vehicle_type = "mast_lift".
 
-[ext_resource type="Script" path="res://src/scenes/vehicles/ScissorLift.gd" id="1_sl"]
+[ext_resource type="Script" path="res://src/scenes/vehicles/MastLift.gd" id="1_sl"]
 [ext_resource type="Script" path="res://src/scenes/vehicles/VehicleEnterArea.gd" id="2_enter"]
 
 ; ── Chassis + base ────────────────────────────────────────────────────────────
@@ -131,12 +130,12 @@ albedo_color = Color(0.92, 0.86, 0.12, 1)
 roughness = 0.7
 
 ; ═══════════════════════════════════════════════════════════════════════════════
-[node name="ScissorLift" type="VehicleBody3D"]
+[node name="MastLift" type="VehicleBody3D"]
 mass = 4200.0
 center_of_mass_mode = 1
 center_of_mass = Vector3(0, -0.2, -0.5)
 script = ExtResource("1_sl")
-vehicle_id = "scissor_lift_a"
+vehicle_id = "mast_lift_a"
 fuel_type = "electric"
 fuel_capacity_l = 100.0
 fuel_consumption_l_per_h = 0.0
@@ -179,8 +178,8 @@ mesh = SubResource("Mesh_decal")
 ; ── Wheels ────────────────────────────────────────────────────────────────────
 [node name="Wheel_FL" type="VehicleWheel3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.74, 0.33, 0.85)
-use_as_traction = false
-use_as_steering = true
+use_as_traction = true
+use_as_steering = false
 wheel_radius = 0.33
 wheel_friction_slip = 10.5
 suspension_max_force = 30000.0
@@ -193,8 +192,8 @@ mesh = SubResource("Mesh_wheel")
 
 [node name="Wheel_FR" type="VehicleWheel3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.74, 0.33, 0.85)
-use_as_traction = false
-use_as_steering = true
+use_as_traction = true
+use_as_steering = false
 wheel_radius = 0.33
 wheel_friction_slip = 10.5
 suspension_max_force = 30000.0
@@ -207,8 +206,8 @@ mesh = SubResource("Mesh_wheel")
 
 [node name="Wheel_RL" type="VehicleWheel3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.74, 0.33, -0.95)
-use_as_traction = true
-use_as_steering = false
+use_as_traction = false
+use_as_steering = true
 wheel_radius = 0.33
 wheel_friction_slip = 10.5
 suspension_max_force = 30000.0
@@ -221,8 +220,8 @@ mesh = SubResource("Mesh_wheel")
 
 [node name="Wheel_RR" type="VehicleWheel3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.74, 0.33, -0.95)
-use_as_traction = true
-use_as_steering = false
+use_as_traction = false
+use_as_steering = true
 wheel_radius = 0.33
 wheel_friction_slip = 10.5
 suspension_max_force = 30000.0
@@ -234,7 +233,7 @@ material_override = SubResource("Mat_tyre")
 mesh = SubResource("Mesh_wheel")
 
 ; ── Vertical mast (front of chassis). Fixed outer column + 3 nested stages that
-;    slide up under ScissorLift.gd. Stage meshes are centred so they overlap when
+;    slide up under MastLift.gd. Stage meshes are centred so they overlap when
 ;    retracted and telescope as the platform rises. ──────────────────────────────
 [node name="Mast" type="Node3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.55, 0.95)

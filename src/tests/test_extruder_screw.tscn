@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://b1cedo_extruder_screw_test"]
+
+[ext_resource type="Script" path="res://src/tests/test_extruder_screw.gd" id="1_exscrew"]
+
+[node name="TestExtruderScrew" type="Node"]
+script = ExtResource("1_exscrew")

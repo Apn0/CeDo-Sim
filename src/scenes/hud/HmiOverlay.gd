@@ -129,6 +129,8 @@ var _md_run_btn      : Button = null
 var _md_safeguard_lbl: Label = null
 var _md_rpm_slider   : HSlider = null
 var _md_rpm_pct_lbl  : Label = null
+var _md_master_max_rpm : float = 100.0   # (legacy) machine primary max rpm
+var _md_comp_max     : Dictionary = {}   # component → its rotor's rated max rpm
 var _md_comp_rows    : Array = []   # [{name, slider:HSlider, pct_lbl:Label, rpm_lbl:Label, nom_rpm}]
 var _md_amps_lbl     : Label = null
 
@@ -768,7 +770,9 @@ func _stage_status(tokens: Array, faults: Array = []) -> int:
 		return ST_OFF
 	if active:
 		return ST_RUN
-	return ST_IDLE if _feed_on() else ST_IDLE
+	# Was both arms ST_IDLE (copy-paste bug). Stopped + no feed pending → OFF
+	# (grey), feed pending → IDLE (amber). Audit-caught.
+	return ST_IDLE if _feed_on() else ST_OFF
 
 func _stage_value(tokens: Array) -> String:
 	# The line end shows banked granulaat + its run-average melt grade.
@@ -1186,12 +1190,10 @@ func _build_machine_detail() -> void:
 	_md_thru_lbl.custom_minimum_size = Vector2(150, 0)
 	brow.add_child(_md_thru_lbl)
 
-	# Master RPM% slider
-	_machines_detail_vb.add_child(_md_make_rpm_row("RPM (master)", "__master__", float(info.get("rpm_pct", 1.0)),
-		float(info.get("rate", 0.0)), float(info.get("spin", 0.0))))
-
-	# Per-component RPM sliders (inlet / transport / outlet for tanks; drive
-	# for conveyors + ventilators; rotor for shredders/mills)
+	# Per-rotor RPM sliders, each in REAL rpm (0..that rotor's rated max). Real
+	# machines have NO single "master" — each rotor/drive has its own motor
+	# (e.g. the dosing silo's 3 augers), so there is one slider PER component.
+	_md_comp_max = info.get("comp_max_rpm", {})
 	var comps : Dictionary = info.get("components", {})
 	for cname in comps.keys():
 		var row := _md_make_rpm_row(String(cname).replace("_", " "), String(cname),
@@ -1203,7 +1205,7 @@ func _build_machine_detail() -> void:
 	sp.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_machines_detail_vb.add_child(sp)
 
-func _md_make_rpm_row(label_text: String, comp_key: String, pct: float, design_rate: float, spin: float) -> Control:
+func _md_make_rpm_row(label_text: String, comp_key: String, pct: float, _design_rate: float, _spin: float) -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	var lbl := Label.new()
@@ -1238,14 +1240,25 @@ func _md_make_rpm_row(label_text: String, comp_key: String, pct: float, design_r
 	# Wire the slider write-back. __master__ goes to set_machine_rpm_pct; component
 	# keys go to set_machine_component_pct.
 	if comp_key == "__master__":
+		# Master is REAL RPM (0..rated max), not a percentage.
+		slider.max_value = _md_master_max_rpm
+		slider.step = maxf(_md_master_max_rpm / 40.0, 1.0)
+		slider.value = pct * _md_master_max_rpm
+		pct_lbl.text = "%d RPM" % int(round(pct * _md_master_max_rpm))
 		slider.value_changed.connect(_on_master_rpm_changed)
 		_md_rpm_slider = slider
 		_md_rpm_pct_lbl = pct_lbl
 	else:
+		# This component (one motor) is controlled in REAL rpm, 0..its rotor's max.
+		var cmax : float = float(_md_comp_max.get(comp_key, _nominal_rpm_for(comp_key)))
+		slider.max_value = cmax
+		slider.step = maxf(cmax / 40.0, 1.0)
+		slider.value = pct * cmax
+		pct_lbl.text = "%d RPM" % int(round(pct * cmax))
 		slider.value_changed.connect(_on_component_rpm_changed.bind(comp_key))
 		_md_comp_rows.append({
 			"name": comp_key, "slider": slider, "pct_lbl": pct_lbl, "rpm_lbl": rpm_lbl,
-			"nom_rpm": _nominal_rpm_for(comp_key),
+			"nom_rpm": cmax, "max_rpm": cmax,
 		})
 	return row
 
@@ -1268,12 +1281,22 @@ func _on_machine_toggle_run() -> void:
 func _on_master_rpm_changed(value: float) -> void:
 	if _line_flow == null or _selected_machine_id == "":
 		return
-	_line_flow.call("set_machine_rpm_pct", _selected_machine_id, value)
+	# Slider is in real RPM; LineFlow wants a 0..1 fraction of the rated max.
+	var frac : float = value / maxf(_md_master_max_rpm, 1.0)
+	_line_flow.call("set_machine_rpm_pct", _selected_machine_id, frac)
+	if _md_rpm_pct_lbl != null:
+		_md_rpm_pct_lbl.text = "%d RPM" % int(round(value))
 
 func _on_component_rpm_changed(value: float, comp_key: String) -> void:
 	if _line_flow == null or _selected_machine_id == "":
 		return
-	_line_flow.call("set_machine_component_pct", _selected_machine_id, comp_key, value)
+	# Slider is real rpm for this rotor; LineFlow wants a 0..1 fraction of its max.
+	var cmax : float = float(_md_comp_max.get(comp_key, 100.0))
+	_line_flow.call("set_machine_component_pct", _selected_machine_id, comp_key, value / maxf(cmax, 1.0))
+	for r in _md_comp_rows:
+		if String(r["name"]) == comp_key:
+			(r["pct_lbl"] as Label).text = "%d RPM" % int(round(value))
+			break
 
 ## 4 Hz live refresh of the MACHINES screen (list lamps + detail panel readouts).
 func _refresh_machines() -> void:
@@ -1316,24 +1339,21 @@ func _refresh_machines() -> void:
 	_md_buffer_bar.value = clampf(buffer, 0.0, _md_buffer_bar.max_value)
 	# Throughput / rate
 	_md_thru_lbl.text = "%.2f / %.2f kg/s" % [thru, rate]
-	# Master RPM label
-	var mpct := float(info.get("rpm_pct", 1.0))
-	if _md_rpm_pct_lbl != null:
-		_md_rpm_pct_lbl.text = "%d %%" % int(round(mpct * 100.0))
+	# (No master row anymore — each rotor is controlled per-component below.)
+	_md_comp_max = info.get("comp_max_rpm", _md_comp_max)
 	# Live current — non-zero whenever the rotor is spinning (even starved), which is
 	# the energy cost the operator was asking to see for "spinning empty."
 	if _md_amps_lbl != null:
 		var amps := float(info.get("amps", 0.0))
 		_md_amps_lbl.text = "Stroom: %.1f A" % amps
-	# Per-component readouts: RPM is the rotor's ACTUAL speed (independent of
-	# material) — nominal × spin × master_pct × this_component_pct.
+	# Per-component readouts: pct_lbl = the SETPOINT in rpm (fraction × this
+	# rotor's max); rpm_lbl = the LIVE actual rpm (with the spin-up ramp).
 	var comps : Dictionary = info.get("components", {})
 	for r in _md_comp_rows:
 		var cname := String(r["name"])
 		if not comps.has(cname):
 			continue
 		var cpct := float(comps[cname])
-		var nom_rpm := float(r.get("nom_rpm", 100.0))
-		var actual_rpm : float = nom_rpm * spin * cpct * mpct
-		(r["pct_lbl"] as Label).text = "%d %%" % int(round(cpct * 100.0))
-		(r["rpm_lbl"] as Label).text = "%.0f RPM" % actual_rpm
+		var cmax := float(r.get("max_rpm", 100.0))
+		(r["pct_lbl"] as Label).text = "%d RPM" % int(round(cpct * cmax))
+		(r["rpm_lbl"] as Label).text = "%.0f RPM" % (cmax * spin * cpct)

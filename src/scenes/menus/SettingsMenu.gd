@@ -337,6 +337,20 @@ func _build_controls_overview(parent: VBoxContainer) -> void:
 				grid.add_child(Control.new())
 			i += 2
 
+	# Build & Edit reference (factory builder — these keys are mode-specific and mostly
+	# hardcoded, so they're described here rather than listed as rebindable rows).
+	_add_section_header(parent, "Factory builder (Tab) & jog/edit mode (K)")
+	var build_note := Label.new()
+	build_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	build_note.add_theme_font_size_override("font_size", FONT_SMALL)
+	build_note.add_theme_color_override("font_color", Color(0.82, 0.82, 0.82, 1))
+	build_note.text = \
+		"[Tab] open / close the factory builder.   [G] toggle grid snap.\n" \
+		+ "PLACING an item:  [LMB] place   ·   [Q]/[E] rotate   ·   [R]/[F] raise / lower   ·   [X] delete under crosshair   ·   [RMB] put item away.\n" \
+		+ "[K] enter / exit JOG-EDIT to reposition already-placed machines:  aim + [LMB] to select, then  arrows = move   ·   [R]/[F] up / down   ·   [Q]/[E] rotate   ·   [+]/[-] scale   ·   hold [Shift] = fine step   ·   [X] delete   ·   [K] or [RMB] exit."
+	parent.add_child(build_note)
+	_spacer(parent, 10)
+
 	# Mouse-as-joystick note (a gesture, not a rebindable action — so it's described
 	# here rather than listed in the grid).
 	_add_section_header(parent, "Mouse joystick (while seated in a vehicle)")

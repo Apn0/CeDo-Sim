@@ -1,0 +1,134 @@
+[gd_scene format=3 uid="uid://csuzukiswiftglx01"]
+
+[ext_resource type="Script" path="res://src/scenes/vehicles/cars/SuzukiSwiftGLX.gd" id="1_swift"]
+[ext_resource type="Script" path="res://src/scenes/vehicles/VehicleEnterArea.gd" id="2_enter"]
+
+; =============================================================================
+;  SUZUKI SWIFT GLX 1998 — player's car (#134 / #135)
+;  -- Visual mesh comes from res://assets/models/suzuki_swift_glx/suzuki_swift_glx.fbx
+;     (imported on first editor open). SuzukiSwiftGLX.gd walks the tree at runtime
+;     and wires wheels / doors / glass / steering / passenger seat.
+;  -- Chassis collision is a single oversized box approximating the body shape
+;     (3.7 m × 1.4 m × 1.5 m for a Mk3 Swift 3-door).
+;  -- Painted RED via material override on the body sub-meshes after import.
+; =============================================================================
+
+[sub_resource type="BoxShape3D" id="BoxShape_body"]
+size = Vector3(1.5, 1.2, 3.7)
+
+[sub_resource type="CylinderMesh" id="Cyl_wheel"]
+top_radius = 0.27
+bottom_radius = 0.27
+height = 0.18
+radial_segments = 18
+
+[sub_resource type="StandardMaterial3D" id="Mat_dark"]
+albedo_color = Color(0.10, 0.10, 0.11, 1)
+roughness = 0.85
+
+[sub_resource type="SphereShape3D" id="SphereShape_enter"]
+radius = 1.8
+
+; =============================================================================
+;  ROOT VEHICLE
+; =============================================================================
+[node name="SuzukiSwiftGLX" type="VehicleBody3D"]
+mass = 950.0
+center_of_mass_mode = 1
+center_of_mass = Vector3(0, -0.25, 0.0)
+script = ExtResource("1_swift")
+vehicle_type = "suzuki_swift_glx"
+vehicle_id = "swift_player"
+fuel_type = "diesel"
+fuel_capacity_l = 35.0
+fuel_consumption_l_per_h = 4.0
+speed_limit_kmh = 60.0
+engine_power_kw = 50.0
+brake_torque_nm = 1800.0
+handbrake_torque_nm = 3500.0
+has_lights = true
+has_horn = true
+cab_camera_path = NodePath("CabCamera")
+dismount_offset = Vector3(-0.95, 0.0, 0.4)
+engine_idle_hz = 28.0
+engine_max_hz = 92.0
+
+; Chassis collision (proxy box; the FBX provides the visual)
+[node name="BodyCollision" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.55, 0)
+shape = SubResource("BoxShape_body")
+
+; ── Wheels (FL, FR, RL, RR). SuzukiSwiftGLX.gd reparents the FBX Wheel*
+;    meshes under these once the model imports; cylinders are fallback.
+[node name="Wheel_FL" type="VehicleWheel3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.71, 0.27, 1.18)
+use_as_traction = true
+use_as_steering = true
+wheel_radius = 0.27
+suspension_stiffness = 28.0
+suspension_max_force = 9000.0
+damping_compression = 0.40
+damping_relaxation = 0.40
+
+[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_FL"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 0, 0)
+material_override = SubResource("Mat_dark")
+mesh = SubResource("Cyl_wheel")
+
+[node name="Wheel_FR" type="VehicleWheel3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.71, 0.27, 1.18)
+use_as_traction = true
+use_as_steering = true
+wheel_radius = 0.27
+suspension_stiffness = 28.0
+suspension_max_force = 9000.0
+damping_compression = 0.40
+damping_relaxation = 0.40
+
+[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_FR"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 0, 0)
+material_override = SubResource("Mat_dark")
+mesh = SubResource("Cyl_wheel")
+
+[node name="Wheel_RL" type="VehicleWheel3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.71, 0.27, -1.18)
+use_as_traction = false
+wheel_radius = 0.27
+suspension_stiffness = 28.0
+suspension_max_force = 9000.0
+damping_compression = 0.40
+damping_relaxation = 0.40
+
+[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_RL"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 0, 0)
+material_override = SubResource("Mat_dark")
+mesh = SubResource("Cyl_wheel")
+
+[node name="Wheel_RR" type="VehicleWheel3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.71, 0.27, -1.18)
+use_as_traction = false
+wheel_radius = 0.27
+suspension_stiffness = 28.0
+suspension_max_force = 9000.0
+damping_compression = 0.40
+damping_relaxation = 0.40
+
+[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_RR"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 0, 0)
+material_override = SubResource("Mat_dark")
+mesh = SubResource("Cyl_wheel")
+
+; ── In-car camera (driver's POV). Subclass _ready() doesn't reposition it
+;    yet — operator can tune by editing the transform here.
+[node name="CabCamera" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.34, 1.15, -0.20)
+current = false
+fov = 70.0
+
+; ── Foot-proximity enter area: walk up to the car on foot, press E to board.
+[node name="EnterArea" type="Area3D" parent="."]
+collision_mask = 1
+script = ExtResource("2_enter")
+
+[node name="EnterCollision" type="CollisionShape3D" parent="EnterArea"]
+shape = SubResource("SphereShape_enter")

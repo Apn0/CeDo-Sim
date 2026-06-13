@@ -29,17 +29,45 @@ var _rpm_cur   : float = 0.0
 func _ready() -> void:
 	add_to_group("mechanism")
 	_base = transform.basis
+	# A degenerate parent (zero scale, NaN rotation from atan2 on a zero-length
+	# vector, etc.) makes _base non-finite or singular at spawn. Every later
+	# frame would then compute `_base * Basis(axis, angle)` and write a NaN
+	# basis back into transform.basis — the renderer reports that with
+	# "instance_set_transform !v.is_finite()" forever. Reset to identity so
+	# the spin can still run on a clean local frame; visuals are tied to the
+	# parent's position, not its scale/rotation.
+	if not (_base.x.is_finite() and _base.y.is_finite() and _base.z.is_finite()) \
+			or _base.determinant() < 1e-6:
+		push_warning("[RotatingMechanism] non-finite/singular parent basis on '%s' — resetting to identity" % name)
+		_base = Basis()
+		transform.basis = Basis()
 	_rpm_target = rpm if running else 0.0
 	_rpm_cur = _rpm_target
 
 func _process(delta: float) -> void:
-	# Ramp the live rpm toward target (motors don't snap to speed).
-	_rpm_target = rpm if running else 0.0
-	var ramp := (rpm / maxf(spin_up_s, 0.01)) * delta
+	# Ramp the live rpm toward target (motors don't snap to speed). The commanded
+	# rpm is CAPPED at the rated maximum (nominal_rpm) so a bad setpoint — e.g.
+	# 6000 on a 60-rpm screw — can never spin it past spec.
+	var capped : float = clampf(rpm, 0.0, nominal_rpm) if nominal_rpm > 0.0 else maxf(rpm, 0.0)
+	_rpm_target = capped if running else 0.0
+	var ramp := (maxf(capped, 1.0) / maxf(spin_up_s, 0.01)) * delta
 	_rpm_cur = move_toward(_rpm_cur, _rpm_target, ramp)
 	if absf(_rpm_cur) > 0.001:
 		angle = wrapf(angle + (_rpm_cur / 60.0) * TAU * delta, -TAU, TAU)
-		transform.basis = _base * Basis(axis.normalized(), angle)
+		# Defensive: a zero-length axis produces NaN in Basis(axis, angle), and
+		# any other route to NaN here cascades to every render frame for the
+		# rest of the session (~46k errors per minute). Bail out cleanly instead.
+		if axis.length_squared() < 1e-9 or not is_finite(angle):
+			if OS.is_debug_build():
+				push_warning("[RotatingMechanism] non-finite axis/angle on '%s' (parent: %s)" \
+					% [name, String(get_parent().name) if get_parent() else "<orphan>"])
+			return
+		var b := _base * Basis(axis.normalized(), angle)
+		if not b.x.is_finite() or not b.y.is_finite() or not b.z.is_finite():
+			if OS.is_debug_build():
+				push_warning("[RotatingMechanism] non-finite basis emitted by '%s'" % name)
+			return
+		transform.basis = b
 
 ## kg/s this mechanism can currently convey (0 while stopped / spun down).
 func throughput() -> float:

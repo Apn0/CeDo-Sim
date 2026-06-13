@@ -42,7 +42,7 @@ func _pretty_type(t: String) -> String:
 		"forklift":     return "forklift"
 		"bale_clamp":   return "bale clamp"
 		"merlo":        return "Merlo"
-		"scissor_lift": return "mast lift"   # legacy id — it's a JLG vertical mast lift
+		"mast_lift", "scissor_lift": return "mast lift"   # legacy alias for migration
 		_:              return t.capitalize()
 
 func _find_operator_context() -> OperatorContext:

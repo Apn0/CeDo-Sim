@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://b1cedo_mast_jib_test"]
+
+[ext_resource type="Script" path="res://src/tests/test_mast_jib.gd" id="1_test"]
+
+[node name="TestMastJib" type="Node"]
+script = ExtResource("1_test")

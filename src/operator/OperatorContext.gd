@@ -1,7 +1,7 @@
 extends Node
 
 ## Tracks which embodiment the player is currently "in" (on foot, forklift,
-## bale clamp, Merlo, scissor lift) and orchestrates switching between them.
+## bale clamp, Merlo, mast lift) and orchestrates switching between them.
 ##
 ## NOT an autoload — instanced by MainWorld as a child node, holds references
 ## to the on-foot CharacterBody3D + the camera, plus the currently-entered
@@ -16,7 +16,7 @@ extends Node
 ##   "forklift"    — VehicleBody3D, LPG, full fork hydraulics
 ##   "bale_clamp"  — VehicleBody3D, LPG, vertical clamp plates, no rotation
 ##   "merlo"       — VehicleBody3D, diesel, telescoping arm + grapple
-##   "scissor_lift" — special: platform that rises with player on it
+##   "mast_lift" — special: platform that rises with player on it
 
 class_name OperatorContext
 

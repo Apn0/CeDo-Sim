@@ -140,7 +140,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 
-func crosshair_prompt(player: Node3D) -> String:
+func crosshair_prompt(_player: Node3D) -> String:
 	return "Take barcode scanner" if _held_by == null and _player_near else ""
 
 func crosshair_interact(player: Node3D) -> void:
@@ -148,8 +148,14 @@ func crosshair_interact(player: Node3D) -> void:
 		_pick_up(player)
 
 func _pick_up(player: Node3D) -> void:
-	_held_by = player
 	var inv := get_node_or_null("/root/Inventory")
+	# Refuse the grab when the hotbar is full — otherwise take() fails and the
+	# tool ends up force-parented under Head in no slot, never active, impossible
+	# to drop (the stuck state). Leave it on the floor and prompt the player.
+	if inv and bool(inv.call("is_full")):
+		_emit_prompt("Hands full — drop something first")
+		return
+	_held_by = player
 	var took := false
 	if inv:
 		took = bool(inv.call("take", self))

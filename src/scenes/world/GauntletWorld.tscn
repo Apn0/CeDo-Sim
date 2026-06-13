@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://qs3jg3dafgtk"]
+
+[ext_resource type="Script" path="res://src/scenes/world/GauntletWorld.gd" id="1_gauntlet"]
+
+[node name="GauntletWorld" type="Node3D"]
+script = ExtResource("1_gauntlet")

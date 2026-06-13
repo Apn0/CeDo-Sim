@@ -144,14 +144,13 @@ func stow_personal_tool(tool: Node3D, side: float) -> void:
 	tool.transform = Transform3D(Basis(), Vector3(side * 0.18, 0.0, 0.0))
 
 func _build_body() -> void:
-	# Hi-vis worker capsule + a name billboard, so they read as crew on the lot.
-	var vest := StandardMaterial3D.new()
-	vest.albedo_color = Color(0.95, 0.55, 0.10); vest.roughness = 0.8
-	var cap := MeshInstance3D.new()
-	var cm := CapsuleMesh.new(); cm.radius = 0.35; cm.height = 1.8
-	cap.mesh = cm; cap.material_override = vest
-	cap.position = Vector3(0, 0.9, 0)
-	add_child(cap)
+	# Hi-vis blocky worker + a name billboard, so they read as crew on the lot.
+	# Humanoid is centred on its origin (feet at -0.9); this body sits at y=0.9
+	# so its feet land at the node origin, matching the capsule collider below.
+	var humanoid_script := load("res://src/scenes/world/Humanoid.gd")
+	var body : Node3D = humanoid_script.build(Color(0.95, 0.55, 0.10), 1)
+	body.position = Vector3(0, 0.9, 0)
+	add_child(body)
 	var col := CollisionShape3D.new()
 	var cs := CapsuleShape3D.new(); cs.radius = 0.35; cs.height = 1.8
 	col.shape = cs
@@ -621,12 +620,19 @@ func _locomote(delta: float) -> void:
 	if want_move and _horiz_dist(_target_pos) > arrive_dist:
 		var dir := _target_pos - global_position
 		dir.y = 0.0
-		dir = dir.normalized()
-		velocity.x = dir.x * walk_speed
-		velocity.z = dir.z * walk_speed
-		# Face travel direction
-		if dir.length() > 0.01:
+		# Guard: horiz_dist may pass with a non-zero distance but `dir.y = 0.0`
+		# can still leave a near-zero horizontal vector (target directly above /
+		# below). normalize-of-zero returns NaN, propagating through velocity
+		# and the look_at target.
+		if dir.length_squared() > 0.0001:
+			dir = dir.normalized()
+			velocity.x = dir.x * walk_speed
+			velocity.z = dir.z * walk_speed
+			# Face travel direction
 			look_at(global_position + dir, Vector3.UP)
+		else:
+			velocity.x = 0.0
+			velocity.z = 0.0
 	else:
 		velocity.x = 0.0
 		velocity.z = 0.0

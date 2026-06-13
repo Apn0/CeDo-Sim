@@ -109,8 +109,18 @@ func _deploy_to_player() -> void:
 	(scene if scene else get_tree().root).add_child(n)
 	n.global_position = global_position + Vector3(0.0, 1.0, 0.0)
 	_deployed_nozzle = n
+	# attach_to_player refuses (and frees the nozzle) when the hotbar is full —
+	# clear our ref so we don't think a tip is deployed, and don't strand a freed node.
 	if n.has_method("attach_to_player"):
-		n.call("attach_to_player", _player_node, self)
+		var ok : bool = bool(n.call("attach_to_player", _player_node, self))
+		if not ok:
+			_deployed_nozzle = null
+		else:
+			# Default the base valve to OPEN-LITTLE on a successful deploy so the
+			# operator can grab the hose, walk off, and spray with LMB (tip valve)
+			# alone — no return trip to crack the base valve first. E at the reel
+			# still cycles it (little → lot → closed → little).
+			base_valve_state = 1
 	_refresh_prompt()
 
 func _cycle_base_valve() -> void:

@@ -12,7 +12,17 @@ var factory_center: Vector3 = Vector3.ZERO
 var shift_data: Dictionary = {}
 var player_data: Dictionary = {}
 var npc_data: Dictionary = {}
+# #152 — Player customizer/wardrobe selections (shirt color, pants color, hair,
+# beard, cap, PPE). Loaded by PlayerController._build_player_body() on spawn so
+# the visible body matches what the operator picked in the wardrobe (#153).
+# Defaults match the existing NPC PPE convention (orange hi-vis + dark blue
+# pants, short hair, no beard, no cap) so an empty save reads as "fresh hire".
+var player_appearance: Dictionary = {}
+var npc_appearances: Dictionary = {}
 var machine_data: Dictionary = {}
+# #124 — operator-set crew pins (HIER + station/role pins) keyed by npc_name.
+# Empty on a fresh save; populated by CrewManager.save_pins_dict() each save.
+var crew_pins_data: Dictionary = {}
 
 # Signals
 signal game_saved
@@ -41,12 +51,20 @@ func save_game() -> void:
 	var save_data = {
 		"version": 1,
 		"timestamp": Time.get_ticks_msec(),
+		# Wall-clock save time (Unix seconds, UTC). The legacy `timestamp` above is
+		# engine-uptime ms and cannot express "when" — the main menu reads `saved_at`
+		# to show the last-saved date/time, falling back to the file mtime for older
+		# saves that predate this field.
+		"saved_at": int(Time.get_unix_time_from_system()),
 		"is_new_save": is_new_save,
 		"factory_center": {"x": factory_center.x, "y": factory_center.y, "z": factory_center.z},
 		"shift": shift_data,
 		"player": player_data,
 		"npcs": npc_data,
 		"machines": machine_data,
+		"crew_pins": crew_pins_data,
+		"player_appearance": player_appearance,
+		"npc_appearances": npc_appearances,
 	}
 
 	var json = JSON.stringify(save_data)
@@ -85,6 +103,9 @@ func load_game() -> void:
 			player_data = data.get("player", {}) if typeof(data.get("player")) == TYPE_DICTIONARY else {}
 			npc_data = data.get("npcs", {}) if typeof(data.get("npcs")) == TYPE_DICTIONARY else {}
 			machine_data = data.get("machines", {}) if typeof(data.get("machines")) == TYPE_DICTIONARY else {}
+			crew_pins_data = data.get("crew_pins", {}) if typeof(data.get("crew_pins")) == TYPE_DICTIONARY else {}
+			player_appearance = data.get("player_appearance", {}) if typeof(data.get("player_appearance")) == TYPE_DICTIONARY else {}
+			npc_appearances = data.get("npc_appearances", {}) if typeof(data.get("npc_appearances")) == TYPE_DICTIONARY else {}
 			print("Game loaded from: ", save_file_path)
 			emit_signal("game_loaded")
 		else:
@@ -144,5 +165,6 @@ func clear_save() -> void:
 			player_data.clear()
 			npc_data.clear()
 			machine_data.clear()
+			npc_appearances.clear()
 		else:
 			push_error("Failed to delete save file")

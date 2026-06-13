@@ -62,7 +62,7 @@ const STAGES : Array = [
 	{"code": "L3C.9R",  "name": "Frictiescheider R",      "id": "friction_sep",    "amps": 30.88},
 	{"code": "L3C.10L", "name": "Transportschroef L",     "id": "transport_screw", "amps": 4.30},
 	{"code": "L3C.10R", "name": "Transportschroef R",     "id": "transport_screw", "amps": 4.38},
-	{"code": "L3C.11",  "name": "Flotatietank",           "id": "flotation_tank",  "amps": 0.0},
+	{"code": "L3C.11",  "name": "Flotatietank",           "id": "flotation_tank_wide",  "amps": 0.0},
 	{"code": "L3C.12",  "name": "Transportschroef",       "id": "transport_screw", "amps": 2.52},
 	{"code": "L3C.13",  "name": "Frictiescheider L-R",    "id": "friction_sep",    "amps": 24.68},
 	{"code": "L3C.14L", "name": "Mechanische droger L",   "id": "mech_dryer",      "amps": 70.80},

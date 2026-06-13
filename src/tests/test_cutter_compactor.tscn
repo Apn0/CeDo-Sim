@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://b1cedo_cutcomp_test"]
+
+[ext_resource type="Script" path="res://src/tests/test_cutter_compactor.gd" id="1_cutcomp"]
+
+[node name="TestCutterCompactor" type="Node"]
+script = ExtResource("1_cutcomp")

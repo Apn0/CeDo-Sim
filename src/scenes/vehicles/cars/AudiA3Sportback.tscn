@@ -1,0 +1,100 @@
+[gd_scene format=3 uid="uid://caudia3sport001"]
+
+[ext_resource type="Script" path="res://src/scenes/vehicles/cars/AudiA3Sportback.gd" id="1_audi"]
+[ext_resource type="Script" path="res://src/scenes/vehicles/VehicleEnterArea.gd" id="2_enter"]
+
+[sub_resource type="BoxShape3D" id="BoxShape_body"]
+size = Vector3(1.78, 1.30, 4.29)
+
+[sub_resource type="CylinderMesh" id="Cyl_wheel"]
+top_radius = 0.33
+bottom_radius = 0.33
+height = 0.22
+radial_segments = 18
+
+[sub_resource type="StandardMaterial3D" id="Mat_dark"]
+albedo_color = Color(0.10, 0.10, 0.11, 1)
+roughness = 0.85
+
+[sub_resource type="SphereShape3D" id="SphereShape_enter"]
+radius = 2.0
+
+[node name="AudiA3Sportback" type="VehicleBody3D"]
+mass = 1330.0
+center_of_mass_mode = 1
+center_of_mass = Vector3(0, -0.25, 0.0)
+script = ExtResource("1_audi")
+cab_camera_path = NodePath("CabCamera")
+dismount_offset = Vector3(-1.05, 0.0, 0.4)
+
+[node name="BodyCollision" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.62, 0)
+shape = SubResource("BoxShape_body")
+
+[node name="Wheel_FL" type="VehicleWheel3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.81, 0.33, 1.32)
+use_as_traction = true
+use_as_steering = true
+wheel_radius = 0.33
+suspension_stiffness = 32.0
+suspension_max_force = 12000.0
+damping_compression = 0.4
+damping_relaxation = 0.4
+
+[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_FL"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 0, 0)
+material_override = SubResource("Mat_dark")
+mesh = SubResource("Cyl_wheel")
+
+[node name="Wheel_FR" type="VehicleWheel3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.81, 0.33, 1.32)
+use_as_traction = true
+use_as_steering = true
+wheel_radius = 0.33
+suspension_stiffness = 32.0
+suspension_max_force = 12000.0
+damping_compression = 0.4
+damping_relaxation = 0.4
+
+[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_FR"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 0, 0)
+material_override = SubResource("Mat_dark")
+mesh = SubResource("Cyl_wheel")
+
+[node name="Wheel_RL" type="VehicleWheel3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.81, 0.33, -1.32)
+wheel_radius = 0.33
+suspension_stiffness = 32.0
+suspension_max_force = 12000.0
+damping_compression = 0.4
+damping_relaxation = 0.4
+
+[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_RL"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 0, 0)
+material_override = SubResource("Mat_dark")
+mesh = SubResource("Cyl_wheel")
+
+[node name="Wheel_RR" type="VehicleWheel3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.81, 0.33, -1.32)
+wheel_radius = 0.33
+suspension_stiffness = 32.0
+suspension_max_force = 12000.0
+damping_compression = 0.4
+damping_relaxation = 0.4
+
+[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_RR"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 0, 0)
+material_override = SubResource("Mat_dark")
+mesh = SubResource("Cyl_wheel")
+
+[node name="CabCamera" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.38, 1.20, -0.25)
+current = false
+fov = 70.0
+
+[node name="EnterArea" type="Area3D" parent="."]
+collision_mask = 1
+script = ExtResource("2_enter")
+
+[node name="EnterCollision" type="CollisionShape3D" parent="EnterArea"]
+shape = SubResource("SphereShape_enter")

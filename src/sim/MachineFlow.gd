@@ -94,14 +94,18 @@ static func profile(id: String) -> Dictionary:
 			pr["in"]   = Vector3(0.0, 0.72, -0.45)
 			pr["out"]  = Vector3(0.0, 0.74, 0.45)
 			pr["waste"] = 0.12                       # sinkers + skimmed reject
-		"rotation_tank":
-			pr["in"]   = Vector3(0.0, 0.72, -0.45)
-			pr["out"]  = Vector3(0.0, 0.72, 0.45)
-			pr["waste"] = 0.06
 		"rafter":
 			pr["in"]   = Vector3(0.0, 0.7, 0.4)
 			pr["out"]  = Vector3(0.0, 0.4, -0.4)
 			pr["waste"] = 0.03
+		# #91 — trilzeef: top-fed at the +Z high end (a belt drops material in
+		# through the rubber flap), discharges OVERS out the -Z low end into the
+		# open-top chute. The THROUGHS (small fines) drop into a collection bin
+		# below — modelled as `waste` so they leave the line.
+		"trilzeef":
+			pr["in"]   = Vector3(0.0, 0.95, 0.40)
+			pr["out"]  = Vector3(0.0, 0.10, -0.45)
+			pr["waste"] = 0.08      # fines that drop through the holes
 		"friction_sep", "friction_washer", "intensive_washer":
 			pr["waste"] = 0.04
 		"sink_float":
@@ -120,6 +124,65 @@ static func profile(id: String) -> Dictionary:
 			pr["role"] = "conveyor"
 			pr["in"]   = Vector3(0.0, 0.85, -0.45)
 			pr["out"]  = Vector3(0.0, 0.85, 0.45)
+		# #54 — 3A/3B intake conveyor network. Twelve numbered belts ferry flake
+		# between the shredder-2 climb and the switch belt. All identical from a
+		# flow standpoint (conveyor, no waste); they're distinct only visually
+		# (length/height/incline/colour) in PlaceableCatalog.build_intake_belt().
+		"intake_belt_1", "intake_belt_2", "intake_belt_3", "intake_belt_4", \
+		"intake_belt_5", "intake_belt_6", "intake_belt_7", \
+		"intake_belt_9", "intake_belt_10", "intake_belt_11", "intake_belt_12":
+			pr["role"] = "conveyor"
+			pr["in"]   = Vector3(0.0, 0.85, -0.45)
+			pr["out"]  = Vector3(0.0, 0.85, 0.45)
+			pr["rate"] = 8.0
+		# #138 — C8 is bidirectional. Default forward to C9; when both VSSs report
+		# FULL, the Conveyor8 controller ramps the belt direction to reverse over
+		# 2 s, then ramps up to full reverse (another 2 s), feeding C8.5 → U-bay.
+		# Modelled as a splitter so the linker emits TWO outgoing edges: wout
+		# forward (to C9, nearest +Z input), wout2 reverse (to C8.5, nearest -Z).
+		"intake_belt_8":
+			pr["role"] = "splitter"
+			pr["in"]   = Vector3(0.0, 0.85, -0.45)
+			pr["out"]  = Vector3(0.0, 0.85,  0.45)   # forward end, feeds C9
+			pr["out2"] = Vector3(0.0, 0.85, -0.45)   # reverse end, feeds C8.5
+			pr["rate"] = 8.0
+		# C8.5 is the slightly-lower overflow belt that C8 discharges to when
+		# reversed. Plain conveyor — material flows in one direction toward the
+		# U-bay (which the LineFlow linker reaches by geometry).
+		"intake_belt_8_5":
+			pr["role"] = "conveyor"
+			pr["in"]   = Vector3(0.0, 0.75, -0.45)
+			pr["out"]  = Vector3(0.0, 0.75,  0.45)
+			pr["rate"] = 6.0
+		"switch_belt":
+			# Y-junction diverter — accepts one upstream input, has TWO outputs
+			# (the chute that feeds VSS and the alternate chute that feeds U-bay).
+			# LineFlow._link treats role="splitter" specially: it emits TWO outgoing
+			# edges, one to each output port's nearest input. Buffer-level routing
+			# (split fraction biased toward the less-full downstream) is handled in
+			# LineFlow._convey on a per-tick basis.
+			pr["role"] = "splitter"
+			pr["in"]   = Vector3(0.0, 0.85, -0.45)
+			pr["out"]  = Vector3(0.0, 0.55, 0.45)    # primary output (toward VSS)
+			pr["out2"] = Vector3(0.45, 0.55, 0.30)   # secondary output (toward U-bay)
+			pr["rate"] = 10.0
+		"vss_silo":
+			# Intake metering silo — primary destination from the switch belt. When
+			# its buffer fills past VSS_FULL_FRAC the switch sends the overflow to
+			# u_bay. Discharges to the wash-line head (vuilsnippersilo of the line).
+			pr["in"]   = Vector3(0.0, 0.9, 0.0)
+			pr["out"]  = Vector3(0.0, 0.12, 0.0)
+			pr["rate"] = 10.0
+			pr["process"] = "buffer"
+		"u_bay":
+			# Concrete overflow surge bay — the U-shaped poured concrete pit the
+			# Merlo scoops out of when VSS is full. Larger buffer, manual discharge
+			# (the front loader carries flake back to opzetband). For now LineFlow
+			# models it as a slow-discharging buffer feeding the wash-line head too.
+			pr["in"]   = Vector3(0.0, 0.85, 0.0)
+			pr["out"]  = Vector3(0.0, 0.15, 0.45)
+			pr["rate"] = 5.0
+			pr["process"] = "buffer"
 		"variable_belt":
 			# Variable-length conveyor — endpoints come from the placed instance's
 			# vb_start / vb_end meta; the in/out fractions here are placeholders
@@ -153,14 +216,21 @@ static func profile(id: String) -> Dictionary:
 		"cyclone":
 			pr["in"]  = Vector3(0.4, 0.8, 0.0)
 			pr["out"] = Vector3(0.0, 0.08, 0.0)
+		# #79 — same airsep process semantics as a chain cyclone, but the inlet
+		# sits HIGH (near the top of the 8 m tower) and the discharge spout drops
+		# DOWN to floor level so it can land on the top of a silo placed under
+		# the tower. Y fractions tuned to size = (2.4, 8.0, 2.4).
+		"cyclone_tower":
+			pr["in"]  = Vector3(0.4, 0.85, 0.0)
+			pr["out"] = Vector3(0.0, 0.02, 0.0)
 		# ── drying / prep / storage ──────────────────────────────────────────
 		"mech_dryer":
 			pr["in"]  = Vector3(0.0, 0.85, -0.3)
-			pr["out"] = Vector3(0.0, 0.5, 0.45)
+			pr["out"] = Vector3(0.0, 0.15, 0.45)
 		"mas_bak":
 			pr["in"]  = Vector3(0.0, 0.9, -0.3)
 			pr["out"] = Vector3(0.0, 0.5, 0.45)
-		"compactor":
+		"compactor", "cutter_compactor":
 			pr["in"]  = Vector3(0.0, 0.82, -0.3)
 			pr["out"] = Vector3(0.0, 0.4, 0.45)
 		"extruder_screw":
@@ -200,8 +270,17 @@ static func profile(id: String) -> Dictionary:
 		"silo", "doseersilo":
 			pr["in"]  = Vector3(0.0, 0.9, 0.0)
 			pr["out"] = Vector3(0.0, 0.12, 0.0)
+		# ── gravity connectors (funnel / transfer chute): passive pass-throughs, NOT
+		# throttles or operator machines. High rate so they never bottleneck; LineFlow's
+		# flow graph already routes machine→connector→machine by geometry. (#48) ──
+		"funnel", "transfer_chute":
+			pr["role"] = "conveyor"
+			pr["process"] = "convey"
+			pr["rate"] = 60.0
+			pr["in"]  = Vector3(0.0, 0.85, 0.0)
+			pr["out"] = Vector3(0.0, 0.12, 0.0)
 		# ── not part of the material flow ────────────────────────────────────
-		"door", "pcu_cabinet", "hmi_panel", "surface", "waste_container", "water_pump", "pump_large", "wash_line", "zss_water":
+		"door", "pcu_cabinet", "hmi_panel", "surface", "waste_container", "water_pump", "pump_large", "wash_line":
 			pr["role"] = "none"   # info screens / fixtures — NOT material-flow machines
 		_:
 			# Bales and anything unrecognised are not flow nodes (bales feed the
@@ -226,7 +305,7 @@ static func _apply_process(pr: Dictionary, id: String) -> void:
 		"shredder_3a3b", "shredder_1_3c6", "shredder_1", "shredder_2", "mill":
 			pr["process"] = "shred"
 		# ── buffers / silos: hold + meter, material unchanged ─────────────────
-		"vuilsnippersilo", "silo", "mas_bak", "bunker":
+		"vuilsnippersilo", "silo", "mas_bak", "bunker", "vss_silo", "u_bay":
 			pr["process"] = "buffer"
 		# ── friction wash: mechanical scrub, wets the film, strips a lot of dirt
 		"friction_washer", "friction_sep":
@@ -238,11 +317,6 @@ static func _apply_process(pr: Dictionary, id: String) -> void:
 			pr["process"] = "wash"
 			pr["water_add"]     = 0.30
 			pr["contam_remove"] = 0.55
-		# ── rotation tank: gentler wash + tumble ──────────────────────────────
-		"rotation_tank":
-			pr["process"] = "wash"
-			pr["water_add"]     = 0.20
-			pr["contam_remove"] = 0.35
 		# ── sink/float: heavies (PET/PVC/sand) drop out; film floats off clean ─
 		"flotation_tank", "sink_float":
 			pr["process"] = "float"
@@ -254,6 +328,11 @@ static func _apply_process(pr: Dictionary, id: String) -> void:
 			pr["process"] = "screen"
 			pr["water_remove"]  = 0.30
 			pr["contam_remove"] = 0.15
+		# Trilzeef: dry sieve, no water involved; strips a chunk of fine dirt
+		# (it falls through the holes with the small fraction).
+		"trilzeef":
+			pr["process"] = "screen"
+			pr["contam_remove"] = 0.20
 		# ── dewatering: mechanical water removal ──────────────────────────────
 		"dewater_screw":
 			pr["process"] = "dewater"
@@ -266,7 +345,7 @@ static func _apply_process(pr: Dictionary, id: String) -> void:
 			pr["process"] = "dry"
 			pr["water_remove"] = 0.80   # spin dryer — very effective
 		# ── compactor: friction heat densifies + drives off moisture ──────────
-		"compactor":
+		"compactor", "cutter_compactor":
 			pr["process"] = "compact"
 			pr["water_remove"] = 0.60
 		"extruder_screw":
@@ -291,7 +370,7 @@ static func _apply_process(pr: Dictionary, id: String) -> void:
 		"weegschaal", "voorraad_silo":
 			pr["process"] = "buffer"
 		# ── cyclone / air sep: pulls light fines + some moisture into the air ─
-		"cyclone":
+		"cyclone", "cyclone_tower":
 			pr["process"] = "airsep"
 			pr["water_remove"]  = 0.20
 			pr["contam_remove"] = 0.10
@@ -318,7 +397,7 @@ static func _apply_process(pr: Dictionary, id: String) -> void:
 			pr["reject_hdpe"]  = 0.20
 		"prewash_drum":
 			pr["process"] = "wash"
-			pr["water_add"]     = 0.35
+			pr["water_add"]     = 0.30
 			pr["contam_remove"] = 0.40
 		"kufferath_sieve":
 			pr["process"] = "screen"
