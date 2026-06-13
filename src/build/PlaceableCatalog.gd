@@ -1893,6 +1893,76 @@ static func _m_wardrobe_locker(p: Node3D, size: Vector3, color: Color, ghost: bo
 ## support cradle, blue side inspection covers, and a tall STAINLESS exhaust
 ## stack fed by a grey duct off the top. (The stack overshoots the bbox — that's
 ## fine; collision is the footprint box.)
+## X3/#182 — localized steam/smoke plume rising from the given local position.
+## Replaces what the mislabeled "Volumetric Fog" setting falsely promised: a
+## REAL volumetric effect attached to the source, not a global haze. Cheap
+## sphere-billboard GPUParticles; ~28 particles aloft at a time, drifting up
+## with a slight outward spread + opacity fade over their 2.5 s lifetime.
+## `radius` sizes the emission disc (~drum exhaust = 0.15, extruder die = 0.10).
+## `tint` is the steam colour (white-grey for water steam; warmer for extruder).
+## Skipped on ghost builds (placement preview shouldn't churn particles).
+static func _install_steam_plume(parent: Node3D, local_pos: Vector3,
+		radius: float, height: float, tint: Color, ghost: bool) -> void:
+	if ghost or parent == null:
+		return
+	var emitter := GPUParticles3D.new()
+	emitter.name = "SteamPlume"
+	emitter.amount = 28
+	emitter.lifetime = 2.5
+	emitter.one_shot = false
+	emitter.preprocess = 1.0
+	emitter.explosiveness = 0.0
+	emitter.fixed_fps = 30
+	emitter.visibility_aabb = AABB(
+		Vector3(-radius * 4.0, 0.0, -radius * 4.0),
+		Vector3( radius * 8.0, height + 2.0, radius * 8.0))
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_RING
+	pm.emission_ring_radius = radius
+	pm.emission_ring_inner_radius = 0.0
+	pm.emission_ring_axis = Vector3.UP
+	pm.emission_ring_height = 0.02
+	pm.direction = Vector3.UP
+	pm.spread = 18.0
+	pm.initial_velocity_min = height * 0.45
+	pm.initial_velocity_max = height * 0.75
+	pm.gravity = Vector3(0.0, 0.6, 0.0)            # buoyant — drifts up, not down
+	pm.scale_min = radius * 0.9
+	pm.scale_max = radius * 1.8
+	# Steam grows as it cools / mixes with air → larger blobs at end of life.
+	var sc := Curve.new()
+	sc.add_point(Vector2(0.0, 0.4))
+	sc.add_point(Vector2(0.6, 1.0))
+	sc.add_point(Vector2(1.0, 1.4))
+	pm.scale_curve = CurveTexture.new()
+	(pm.scale_curve as CurveTexture).curve = sc
+	# Opacity fades in then out so the plume reads as soft, not solid blobs.
+	var grad := Gradient.new()
+	grad.set_color(0, Color(tint.r, tint.g, tint.b, 0.0))
+	grad.set_color(1, Color(tint.r, tint.g, tint.b, 0.55))
+	grad.add_point(0.18, Color(tint.r, tint.g, tint.b, 0.55))
+	grad.add_point(0.85, Color(tint.r, tint.g, tint.b, 0.20))
+	var gt := GradientTexture1D.new()
+	gt.gradient = grad
+	pm.color_ramp = gt
+	emitter.process_material = pm
+	# Sphere mesh as the particle billboard — cheap, reads as a soft puff.
+	var sm := SphereMesh.new()
+	sm.radius = 0.5
+	sm.height = 1.0
+	sm.radial_segments = 8
+	sm.rings = 4
+	var pmat := StandardMaterial3D.new()
+	pmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	pmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	pmat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	pmat.albedo_color = tint
+	pmat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	sm.material = pmat
+	emitter.draw_pass_1 = sm
+	emitter.position = local_pos
+	parent.add_child(emitter)
+
 static func _m_dryer(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
 	var galv      := _mat(color, ghost, 0.55, 0.5)                    # galvanised drum
 	var blue      := _mat(Color(0.12, 0.28, 0.55), ghost, 0.45, 0.45) # RAL-blue flanges/motors
@@ -1951,6 +2021,12 @@ static func _m_dryer(p: Node3D, size: Vector3, color: Color, ghost: bool) -> voi
 	# face marks the duct connection point.
 	_cyl(p, rad * 0.22, rad * 0.22, 0.30,
 		Vector3(0.0, drum_cy - rad * 0.5, hz + 0.15), galv, "z")
+	# X3/#182 — water-vapour plume at the air outlet. Even though the blower
+	# pulls most of it downstream, a real CeDo dryer puffs a small visible
+	# steam halo at the outlet stub. Cool blue-white tint.
+	_install_steam_plume(p,
+		Vector3(0.0, drum_cy - rad * 0.5 + 0.05, hz + 0.30),
+		rad * 0.16, 1.4, Color(0.92, 0.94, 0.96), ghost)
 
 # ── washing line: long trough + access housings + legs + drive motor ──────────
 static func _m_washline(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
@@ -7047,6 +7123,13 @@ static func _m_extruder_unit(p: Node3D, size: Vector3, color: Color, ghost: bool
 		_cyl(p, drum_r * 1.04, drum_r * 1.04, size.y * 0.022, Vector3(0.0, drum_base + drum_h * ry, tw_z), steel)  # reinforcing rings
 	_cyl(p, drum_r * 1.06, drum_r * 1.06, size.y * 0.04, Vector3(0.0, drum_base + drum_h, tw_z), steel)            # bolted top flange
 	_cyl(p, drum_r * 0.40, drum_r * 0.40, size.y * 0.16, Vector3(0.0, drum_base + drum_h + size.y * 0.08, tw_z), steel)  # feed duct (feed_in)
+	# X3/#182 — warm steam plume above the cutter-compactor drum. This is the
+	# hot pot where shredded film softens to the doughy mass before screw-feed
+	# — real CeDo extruders puff a visible vapour column above it. Slightly
+	# warmer tint than the dryer (orange-tinged from the molten polymer glow).
+	_install_steam_plume(p,
+		Vector3(0.0, drum_base + drum_h + size.y * 0.20, tw_z),
+		drum_r * 0.25, 2.0, Color(0.96, 0.94, 0.88), ghost)
 	# oval sight-glass on +X (steel frame + pale flakes behind)
 	_box(p, Vector3(0.04, size.y * 0.16, size.y * 0.10), Vector3(drum_r * 1.0, drum_cy + size.y * 0.04, tw_z), dark)
 	_box(p, Vector3(0.05, size.y * 0.12, size.y * 0.07), Vector3(drum_r * 1.02, drum_cy + size.y * 0.04, tw_z), flakes)

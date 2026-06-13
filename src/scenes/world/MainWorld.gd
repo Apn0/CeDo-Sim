@@ -574,15 +574,43 @@ func _spawn_player() -> void:
 		# regardless of where the actual floor is. Override Y with the detected
 		# floor + capsule half-height so the player lands ON the floor.
 		var floor_top := _floor_top_y()
+		# X1/#180 — "I'm in a fucking neighborhood, not on the industrial
+		# terrain." Building shell footprint is the ground truth: if either
+		# the saved player_spawn or the scene marker lands outside (or far
+		# from) the actual building footprint, drop the player at the
+		# building centre instead so they don't have to walk 200 m to find
+		# the plant. Footprint reach must be resolvable for this to fire;
+		# falls through to the original logic otherwise.
+		var bldg_info := _building_center_and_footprint()
+		var bldg_center : Vector3 = bldg_info.get("center", Vector3.ZERO)
+		var bldg_fp : PackedVector2Array = bldg_info.get("footprint", PackedVector2Array())
+		var candidate : Vector3
 		if WorldLayout.player_spawn != Vector3.ZERO:
-			var ps := WorldLayout.player_spawn
-			spawn_pos = Vector3(ps.x, floor_top + 1.0, ps.z)
+			candidate = Vector3(WorldLayout.player_spawn.x, floor_top + 1.0,
+				WorldLayout.player_spawn.z)
 		else:
 			var marker := find_child("PlayerSpawn", false, false) as Node3D
 			if marker:
-				spawn_pos = Vector3(marker.global_position.x, floor_top + 1.0, marker.global_position.z)
+				candidate = Vector3(marker.global_position.x, floor_top + 1.0,
+					marker.global_position.z)
 			else:
-				spawn_pos = Vector3(0.0, floor_top + 1.0, 0.0)
+				candidate = Vector3(0.0, floor_top + 1.0, 0.0)
+		var snap_to_building : bool = false
+		if bldg_fp.size() >= 3:
+			var c2 := Vector2(candidate.x, candidate.z)
+			# If marker is outside the polygon AND >50 m from the centre, the
+			# spawn is in the wrong place — snap to building centre.
+			if not Geometry2D.is_point_in_polygon(c2, bldg_fp):
+				var d : float = c2.distance_to(Vector2(bldg_center.x, bldg_center.z))
+				if d > 50.0:
+					snap_to_building = true
+		if snap_to_building:
+			spawn_pos = Vector3(bldg_center.x, floor_top + 1.0, bldg_center.z)
+			print("[MainWorld] X1/#180 — spawn (%.0f,%.0f) was outside the building footprint (%.0f m from centre); snapped to building centre (%.0f,%.0f)"
+				% [candidate.x, candidate.z, candidate.distance_to(bldg_center),
+					bldg_center.x, bldg_center.z])
+		else:
+			spawn_pos = candidate
 
 	var script := load("res://src/scenes/player/PlayerController.gd")
 	if not script:
