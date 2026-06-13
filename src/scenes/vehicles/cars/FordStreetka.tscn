@@ -91,7 +91,7 @@ mesh = SubResource("Cyl_wheel")
 
 ; CabCamera lowered to track the squished cabin (0.85 * 1.10 = 0.94).
 [node name="CabCamera" type="Camera3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.34, 0.94, -0.20)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -0.34,0.94,-0.20)
 current = false
 fov = 70.0
 
