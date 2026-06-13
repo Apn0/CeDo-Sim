@@ -28,6 +28,15 @@ static func items() -> Array[Dictionary]:
 			# placard. Modelled from the real CeDo cabinet photo.
 			{"id": "pcu_cabinet",    "name": "E-kast (PCU control cabinet)", "category": "Structure", "size": Vector3(2.5, 2.0, 0.7), "color": Color(0.86, 0.84, 0.79)},
 			{"id": "silo",           "name": "Silo",               "category": "Structure",  "size": Vector3(3.0, 6.0, 3.0),  "color": Color(0.62, 0.63, 0.66)},
+			# #116 — door / gate / window placeables that DON'T require the 4-point
+			# Surface tool. Use these to drop furniture into a pre-carved hole
+			# (e.g. one baked by tools/solidify_building.py from captured_doors.json,
+			# or an F11 capture). Same underlying builders as the Surface variants,
+			# so they share interaction + collision + appearance. Size = nominal
+			# dimensions for a standard industrial opening; jog/edit (K) to resize.
+			{"id": "door_personnel", "name": "Personnel door (hinged)",  "category": "Structure", "size": Vector3(0.92, 2.10, 0.10), "color": Color(0.55, 0.40, 0.25)},
+			{"id": "gate_roller",    "name": "Roller gate (industrial)", "category": "Structure", "size": Vector3(3.50, 3.60, 0.20), "color": Color(0.14, 0.22, 0.40)},
+			{"id": "window_frame",   "name": "Window (alu frame + glass)","category": "Structure", "size": Vector3(1.40, 1.20, 0.08), "color": Color(0.72, 0.74, 0.78)},
 			# Elevated extruder feed silo: a light-grey box raised on a steel frame (~2.5 m
 			# clearance for the extruder + lump bin beneath), a yellow guardrail platform on
 			# top, 4 inspection windows in 2 column-pairs on the front, and TWO cyclones
@@ -694,6 +703,25 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 	# Hand tools — spawn the real tool node (or a translucent box for the ghost). #28
 	if id.begins_with("tool_"):
 		return _build_tool(id, Vector3(item["size"]), ghost)
+	# #116 — door / gate / window catalog placeables (NOT carved into a wall
+	# here; the operator drops them into a pre-existing hole). Builders are
+	# shared with the 4-point Surface tool, so behaviour + collision + paint
+	# are identical to the Surface variants.
+	if id == "door_personnel":
+		if ghost:
+			return _simple_ghost(Vector3(item["size"]))
+		var sz : Vector3 = item["size"]
+		return build_door(sz.x, sz.y, sz.z, "Door")
+	if id == "gate_roller":
+		if ghost:
+			return _simple_ghost(Vector3(item["size"]))
+		var gsz : Vector3 = item["size"]
+		return build_gate(gsz.x, gsz.y, "Gate")
+	if id == "window_frame":
+		if ghost:
+			return _simple_ghost(Vector3(item["size"]))
+		var wsz : Vector3 = item["size"]
+		return build_window(wsz.x, wsz.y, "Window")
 	# X2/#181 — Vehicles. The ghost is a translucent box (cheap); the real
 	# placement instantiates the scene so the operator gets a fully-driveable
 	# unit on the floor. Used for QA spawns — no need to walk to find a Merlo.
