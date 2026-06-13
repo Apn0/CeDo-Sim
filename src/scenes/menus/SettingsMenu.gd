@@ -198,7 +198,11 @@ func _build_graphics_tab() -> void:
 	_add_slider_row(tab, "graphics", "shadow_distance", "Shadow distance",
 		50.0, 500.0, 10.0, "%.0f m")
 
-	_add_check_row(tab, "graphics", "volumetric_fog", "Volumetric fog")
+	# #162 — relabel: the toggle drives Environment.volumetric_fog, but it reads
+	# as a 360° distance haze, not localized smoke. Calling it "Volumetric fog"
+	# misled the operator. Localized steam plumes at the extruder/dryers are a
+	# separate effort (X3 / #182). Save-key stays "volumetric_fog" for compat.
+	_add_check_row(tab, "graphics", "volumetric_fog", "Distance haze")
 	_add_check_row(tab, "graphics", "ssao", "Screen-space ambient occlusion")
 	_add_check_row(tab, "graphics", "sdfgi", "Global illumination (SDFGI) — heavy")
 

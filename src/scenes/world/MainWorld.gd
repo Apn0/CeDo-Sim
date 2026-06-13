@@ -539,18 +539,29 @@ func _spawn_player() -> void:
 		var saved := game_state.load_player_state()
 		if saved.has("x"):
 			var sp := Vector3(saved["x"], saved["y"], saved["z"])
-			# Stale-save guard: if the saved capsule sits more than 100 m from
-			# the current world layout's spawn marker AND from world origin
-			# (where the building is shifted to), the save was taken in a
-			# previous, differently-anchored world (e.g. building was at RD
-			# coords). Ignore it so we land on the actual floor near the
-			# building instead of in an empty field next to lights and crew
-			# anchored at origin.
-			var dist_to_marker : float = Vector2(sp.x - WorldLayout.player_spawn.x,
-				sp.z - WorldLayout.player_spawn.z).length()
-			var dist_to_origin : float = Vector2(sp.x, sp.z).length()
-			if dist_to_marker > 100.0 and dist_to_origin > 100.0:
-				print("[MainWorld] Stale saved player pos (%.0f,%.0f) — using marker instead"
+			# X4/#183 — only reject the saved position if the WORLD ANCHOR moved
+			# (the operator re-ran WorldSetup and re-placed player_spawn). When
+			# the anchor matches, trust the saved coords regardless of distance
+			# — the operator may have walked far across the industrial terrain
+			# before save. Old guard rejected legitimate 500 m saves and bounced
+			# everyone back to spawn.
+			var anchor_moved : bool = false
+			if saved.has("anchor_x") and saved.has("anchor_z"):
+				var ax : float = float(saved["anchor_x"])
+				var az : float = float(saved["anchor_z"])
+				var d_anchor : float = Vector2(
+					ax - WorldLayout.player_spawn.x,
+					az - WorldLayout.player_spawn.z).length()
+				anchor_moved = d_anchor > 5.0   # 5 m slop for operator nudges
+			else:
+				# Legacy save with no anchor snapshot — fall back to the old
+				# generous-but-not-absurd guard so RD-coord saves still get
+				# rejected but routine 500 m walks don't.
+				var d_marker : float = Vector2(sp.x - WorldLayout.player_spawn.x,
+					sp.z - WorldLayout.player_spawn.z).length()
+				anchor_moved = d_marker > 2000.0
+			if anchor_moved:
+				print("[MainWorld] World re-anchored since save — using spawn marker (was at %.0f,%.0f)"
 					% [sp.x, sp.z])
 			else:
 				spawn_pos   = sp
@@ -2817,6 +2828,13 @@ func save_game() -> void:
 			"y":     player.global_position.y,
 			"z":     player.global_position.z,
 			"rot_y": player.rotation.y,
+			# X4/#183 — snapshot the world anchor at save time so the loader can
+			# tell "save is still in the same world" (trust position) from "world
+			# was re-anchored" (must fall back to the spawn marker). The old
+			# fixed 100 m guard rejected legit far-from-spawn saves (the
+			# residential-vs-industrial-terrain bug).
+			"anchor_x": WorldLayout.player_spawn.x,
+			"anchor_z": WorldLayout.player_spawn.z,
 		}
 		# Persist the 3rd-person free-cam pose alongside the player position so the
 		# operator's preferred external viewpoint survives a save/load (#freecam).

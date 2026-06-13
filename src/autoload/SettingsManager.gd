@@ -433,6 +433,14 @@ func _apply_environment_settings() -> void:
 		# Default OFF — a stale save without this key was falling back to true and
 		# adding grey haze over everything.
 		env.volumetric_fog_enabled = bool(_current_graphics.get("volumetric_fog", false))
+		# #162 — when haze is on, double the visible distance and cut the density
+		# so it reads as far-field atmosphere, not soup the operator can't see
+		# through. Godot defaults (length 64m, density 0.05) read as "fog of war"
+		# in our wide outdoor layout. Length 128m + density 0.015 keeps depth
+		# cues without occluding the industrial terrain.
+		if env.volumetric_fog_enabled:
+			env.volumetric_fog_length  = 128.0
+			env.volumetric_fog_density = 0.015
 		env.fog_enabled            = bool(_current_graphics.get("fog", false))
 		# Brightness via colour-adjustment (only enable when non-neutral)
 		var b := float(_current_graphics.get("brightness", 1.0))

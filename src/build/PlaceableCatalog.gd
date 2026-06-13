@@ -327,6 +327,14 @@ static func items() -> Array[Dictionary]:
 			# practice blowing them around the floor.
 			{"id": "zone_collection","name": "Collection zone",    "category": "Tools",      "size": Vector3(5.0, 0.05, 5.0),  "color": Color(0.20, 0.60, 0.95)},
 			{"id": "film_scrap_pile","name": "Film scrap pile",    "category": "Tools",      "size": Vector3(2.0, 0.05, 2.0),  "color": Color(0.78, 0.82, 0.74)},
+			# ── Vehicles (X2/#181) — spawn from build menu for quick QA. id prefix
+			# "vehicle_" routes through the scene-instantiation branch in build_node().
+			{"id": "vehicle_forklift",   "name": "Forklift",            "category": "Vehicles", "size": Vector3(1.4, 2.4, 3.0), "color": Color(0.18, 0.40, 0.22), "scene": "res://src/scenes/vehicles/Forklift.tscn"},
+			{"id": "vehicle_baleclamp",  "name": "Bale clamp",          "category": "Vehicles", "size": Vector3(1.6, 2.6, 3.6), "color": Color(0.18, 0.42, 0.22), "scene": "res://src/scenes/vehicles/BaleClamp.tscn"},
+			{"id": "vehicle_merlo_p40",  "name": "Merlo P40 (far-reach)","category": "Vehicles", "size": Vector3(2.2, 2.8, 6.0), "color": Color(0.85, 0.55, 0.10), "scene": "res://src/scenes/vehicles/MerloP40.tscn"},
+			{"id": "vehicle_merlo",      "name": "Merlo (compact variant)","category": "Vehicles", "size": Vector3(2.0, 2.6, 5.5), "color": Color(0.82, 0.52, 0.10), "scene": "res://src/scenes/vehicles/Merlo.tscn"},
+			{"id": "vehicle_mast_lift",  "name": "Mast lift (worker platform)","category": "Vehicles", "size": Vector3(1.4, 2.2, 2.4), "color": Color(0.74, 0.40, 0.10), "scene": "res://src/scenes/vehicles/MastLift.tscn"},
+			{"id": "vehicle_swift",      "name": "Suzuki Swift GLX (player car)","category": "Vehicles", "size": Vector3(1.5, 1.4, 3.7), "color": Color(0.78, 0.10, 0.10), "scene": "res://src/scenes/vehicles/cars/SuzukiSwiftGLX.tscn"},
 		]
 		# ── Feedstock bales (data-driven from BaleDefs — single source of truth) ──
 		for b in BaleDefs.origins():
@@ -688,6 +696,25 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 	# Hand tools — spawn the real tool node (or a translucent box for the ghost). #28
 	if id.begins_with("tool_"):
 		return _build_tool(id, Vector3(item["size"]), ghost)
+	# X2/#181 — Vehicles. The ghost is a translucent box (cheap); the real
+	# placement instantiates the scene so the operator gets a fully-driveable
+	# unit on the floor. Used for QA spawns — no need to walk to find a Merlo.
+	if id.begins_with("vehicle_"):
+		if ghost:
+			return _simple_ghost(Vector3(item["size"]))
+		var scene_path : String = String(item.get("scene", ""))
+		if scene_path == "" or not ResourceLoader.exists(scene_path):
+			push_warning("[PlaceableCatalog] Vehicle scene missing: %s" % scene_path)
+			return _simple_ghost(Vector3(item["size"]))
+		var packed := load(scene_path) as PackedScene
+		if packed == null:
+			return _simple_ghost(Vector3(item["size"]))
+		var v : Node3D = packed.instantiate() as Node3D
+		if v == null:
+			return null
+		v.set_meta("placeable_id", id)
+		v.add_to_group("placed_object")
+		return v
 	# Shift-leader PC + QA bench — each is a self-contained StaticBody3D with its
 	# own model + collision + interaction trigger. Build the script-backed node
 	# directly and tag it as a placeable so save/load + delete handle it like any
