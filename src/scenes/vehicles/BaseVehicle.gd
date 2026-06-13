@@ -1527,6 +1527,13 @@ func _vehicle_light_layout() -> Dictionary:
 
 func _build_lights() -> void:
 	var layout := _vehicle_light_layout()
+	_build_work_lights(layout)
+	_build_hazard_lights(layout)
+	_build_reverse_beam(layout)
+	_build_blue_spots(layout)
+	_build_beacon_rig(layout)
+
+func _build_work_lights(layout: Dictionary) -> void:
 	# Work lights — bright white forward spotlights on the ROPS front corners.
 	for key in ["work_FL", "work_FR"]:
 		var sl := SpotLight3D.new()
@@ -1542,6 +1549,8 @@ func _build_lights() -> void:
 		sl.visible = false
 		add_child(sl)
 		_light_work.append(sl)
+
+func _build_hazard_lights(layout: Dictionary) -> void:
 	# Hazard corner lamps — amber omnis (one in each corner). Blinking is
 	# applied per-frame in _tick_vehicle_aux.
 	for key in ["haz_FL", "haz_FR", "haz_RL", "haz_RR"]:
@@ -1565,6 +1574,8 @@ func _build_lights() -> void:
 		hl.add_child(bulb)
 		add_child(hl)
 		_light_haz.append(hl)
+
+func _build_reverse_beam(layout: Dictionary) -> void:
 	# Reverse beam — white spotlight pointing down-rearward.
 	_light_rev = SpotLight3D.new()
 	_light_rev.name = "ReverseBeam"
@@ -1576,6 +1587,8 @@ func _build_lights() -> void:
 	_light_rev.spot_angle = 42.0
 	_light_rev.visible = false
 	add_child(_light_rev)
+
+func _build_blue_spots(layout: Dictionary) -> void:
 	# Linde-style blue safety spots — front and rear. Project a sharply-angled
 	# pool of blue light on the floor 2-3 m out so pedestrians see the vehicle
 	# approaching even around blind corners.
@@ -1584,6 +1597,7 @@ func _build_lights() -> void:
 	add_child(_light_blue_f)
 	add_child(_light_blue_r)
 
+func _build_beacon_rig(layout: Dictionary) -> void:
 	# Mini-lighthouse beacon rig.
 	# The mast lift gets no lights (has_lights is false), so it skips this.
 	# The Merlo variants specify a beacon position explicitly.
