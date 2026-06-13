@@ -93,6 +93,7 @@ func _build() -> void:
 	_mm.use_colors = true
 	_mm.mesh = flake
 	_mm.instance_count = flake_count
+	_mm.visible_instance_count = 0
 	_mmi = MultiMeshInstance3D.new()
 	_mmi.multimesh = _mm
 	add_child(_mmi)
@@ -181,7 +182,16 @@ func set_live_state(load01: float, moisture01: float, contam01: float, present01
 		return
 	present01 = clampf(present01, 0.0, 1.0)
 	_mat_present = present01
-	_mm.visible_instance_count = int(round(flake_count * present01))
+	# Flotation tank (mat mode) is NEVER visually empty during operation — a real
+	# float tank holds standing water + a thin floating mat from the moment it's
+	# wetted up, well before kg-level buffer fills. Floor the visible raft so the
+	# tank reads as "running" even when LineFlow's buffer hasn't ramped yet.
+	# Drift-mode fields (belts, sink separators) keep the old behaviour: empty
+	# until material actually arrives.
+	var present_eff : float = present01
+	if mat_mode and present01 > 0.0:
+		present_eff = maxf(present01, 0.45)
+	_mm.visible_instance_count = int(round(flake_count * present_eff))
 	# In mat mode the raft creeps; otherwise it drifts at the load-scaled design speed.
 	if mat_mode:
 		flow_speed = _base_flow * (0.15 + clampf(load01, 0.0, 1.0) * 0.5)

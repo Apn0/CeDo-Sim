@@ -56,6 +56,14 @@ var _break_until: Dictionary = {}   # NPC -> seconds of break remaining
 var _break_timer: float      = BREAK_INTERVAL
 var _break_rotation_idx: int = 0    # round-robin cursor so breaks ROTATE across crew
 var _pinned     : Dictionary = {}   # NPC -> station_id the OPERATOR pinned by hand (overrides auto-post)
+# #124 — for `pos:` (HIER) pins ONLY, store the full Vector3 position + facing
+# radians the operator picked. _pinned holds the string id used for the panel
+# dropdown ("pos:X,Y,Z"), _pin_meta holds the actual transform data needed for
+# saving, rebuilding the world marker, and re-applying after off-duty toggles.
+# Keyed by NPC node (same as _pinned) at runtime; (re)keyed by npc_name for the
+# save dict so the pin survives a save/load round-trip.
+var _pin_meta   : Dictionary = {}   # NPC -> {pos: Vector3, facing: float}
+var _pin_marker : Dictionary = {}   # NPC -> Node3D (visible flag in the world)
 
 # EventBus is an autoload at runtime, but autoloads aren't registered as global
 # identifiers when this script is compiled inside the headless harness. Resolve it
@@ -129,7 +137,17 @@ func tick(delta: float) -> void:
 		var pos : Vector3 = _node_pos(jam["node"])
 		var resp : NPC = _pick_responder(sid, pos)
 		if resp != null:
-			resp.dispatch_to(pos, sid, SERVICE_SECS)
+			# #155 / #147 — if the jam target is too high to reach from the floor
+			# (e.g. a stop button at the head of a 6-m conveyor), route via the
+			# operate-task planner instead of the legacy SERVICE state. The
+			# planner walks the responder to the nearest free mast lift, boards
+			# it (Phase 4), raises to the target, performs the dwell, returns.
+			# Falls back to the straight-line dispatch when reachable from foot.
+			if not resp.can_reach(pos):
+				var sid_capture : String = sid
+				resp.dispatch_to_operate(pos, func(_reason): _emit("npc_finished_helping", [String(resp.npc_name), "", sid_capture]), SERVICE_SECS)
+			else:
+				resp.dispatch_to(pos, sid, SERVICE_SECS)
 			_handling[sid] = resp
 			_emit("npc_called_for_help", ["crew", String(resp.npc_name), sid])
 			_emit("npc_started_helping", [String(resp.npc_name), "", sid])
@@ -305,12 +323,13 @@ func _pick_responder(station_id: String, pos: Vector3) -> NPC:
 func _break_candidate() -> NPC:
 	# Round-robin: start scanning from the rotation cursor so the SAME worker
 	# isn't picked every time (the "Romero is always on break" bug). The first
-	# available, non-floater worker from the cursor onward goes, and the cursor
-	# advances past them for next time.
+	# available, non-floater, NON-PINNED worker from the cursor onward goes
+	# (#124 — operator pins lock the worker to their spot, breaks rotate around
+	# them), and the cursor advances past them for next time.
 	var n := workers.size()
 	for k in n:
 		var w : NPC = workers[(_break_rotation_idx + k) % n]
-		if w.is_available() and not _is_floater(w):
+		if w.is_available() and not _is_floater(w) and not _pinned.has(w):
 			_break_rotation_idx = (_break_rotation_idx + k + 1) % n
 			return w
 	return null
@@ -430,7 +449,11 @@ func manual_assign(worker, station_id: String) -> void:
 	if worker == null:
 		return
 	if station_id == "__off__":
-		_pinned.erase(worker)
+		# #124 — DON'T erase the pin. Off-duty is a temporary state; the operator
+		# probably wants the pin preserved so flipping back to "Auto" later isn't
+		# the only way to recover from off-duty. (Old behaviour silently wiped
+		# the pin every off-duty press, surprising the operator.) Clear-pin is
+		# only done by unpin() or "__auto__" or a different post selection.
 		if worker.has_method("set_off_duty"):
 			worker.set_off_duty(true)
 		return
@@ -438,6 +461,10 @@ func manual_assign(worker, station_id: String) -> void:
 		worker.set_off_duty(false)   # bring them back on duty before re-posting
 	if station_id == "__auto__":
 		_pinned.erase(worker)
+		_pin_meta.erase(worker)
+		_clear_pin_marker(worker)
+		if "home_facing_rad" in worker:
+			worker.home_facing_rad = NAN
 		var best : Dictionary = _nearest_in_zone(worker.npc_role, worker.global_position, _machine_list())
 		if not best.is_empty():
 			var apos : Vector3 = best["pos"]; apos.y = worker.global_position.y
@@ -462,3 +489,124 @@ func manual_assign(worker, station_id: String) -> void:
 			_pinned[worker] = station_id
 			_emit("npc_called_for_help", ["operator", String(worker.npc_name), station_id])
 			return
+
+## #124 — pin `worker` to a raw WORLD POSITION (not a machine, not a role).
+## The worker walks to the exact spot, holds it, and faces `facing_rad`. The
+## full Vector3 is kept (Y too, so mezzanines work) and stored in _pin_meta so
+## the panel + marker + save can read it back. Pin id is the coordinate to 1 cm
+## precision (5 cm dedupes too aggressively for a real factory floor).
+func assign_to_position(worker, pos: Vector3, facing_rad: float = NAN) -> void:
+	if worker == null:
+		return
+	if worker.has_method("is_off_duty") and worker.is_off_duty() \
+			and worker.has_method("set_off_duty"):
+		worker.set_off_duty(false)
+	var pin_id := "pos:%.2f,%.2f,%.2f" % [pos.x, pos.y, pos.z]
+	worker.assign_post(pin_id, pos)
+	if "home_facing_rad" in worker:
+		worker.home_facing_rad = facing_rad
+	_pinned[worker] = pin_id
+	_pin_meta[worker] = {"pos": pos, "facing": facing_rad}
+	_rebuild_pin_marker(worker)
+	_emit("npc_called_for_help", ["operator", String(worker.npc_name), pin_id])
+
+## #124 — clear ANY pin (station, role, or coord) and revert this worker to
+## auto-posting. Off-duty workers stay off-duty.
+func unpin(worker) -> void:
+	if worker == null:
+		return
+	_pinned.erase(worker)
+	_pin_meta.erase(worker)
+	_clear_pin_marker(worker)
+	if "home_facing_rad" in worker:
+		worker.home_facing_rad = NAN
+	if worker.has_method("is_off_duty") and not worker.is_off_duty():
+		var best : Dictionary = _nearest_in_zone(worker.npc_role,
+			worker.global_position, _machine_list())
+		if not best.is_empty():
+			var apos : Vector3 = best["pos"]; apos.y = worker.global_position.y
+			worker.assign_post(String(best["id"]), apos)
+
+## #124 — read-only access to the position pin (or {} if none). The panel uses
+## this to decide whether to show "📍 PIN: X,Z" in the dropdown.
+func position_pin_for(worker) -> Dictionary:
+	return _pin_meta.get(worker, {}).duplicate()
+
+## #124 — Serialize ALL pins (station, role, AND coord) to a JSON-safe dict
+## keyed by `npc_name`. Called from MainWorld.save_game.
+func save_pins_dict() -> Dictionary:
+	var out : Dictionary = {}
+	for w in _pinned.keys():
+		if not is_instance_valid(w):
+			continue
+		var entry : Dictionary = {"pin_id": String(_pinned[w])}
+		if _pin_meta.has(w):
+			var m : Dictionary = _pin_meta[w]
+			var p : Vector3 = m.get("pos", Vector3.ZERO)
+			entry["pos"] = {"x": p.x, "y": p.y, "z": p.z}
+			entry["facing"] = float(m.get("facing", NAN))
+		out[String(w.npc_name)] = entry
+	return out
+
+## #124 — Restore pins saved by `save_pins_dict`. Called from MainWorld after
+## CrewManager.setup so every worker exists. Workers without a saved pin keep
+## their auto-assigned post.
+func restore_pins_dict(d: Dictionary) -> void:
+	if d.is_empty():
+		return
+	for w in workers:
+		var key := String(w.npc_name)
+		if not d.has(key):
+			continue
+		var entry : Dictionary = d[key]
+		var pin_id := String(entry.get("pin_id", ""))
+		if pin_id.begins_with("pos:") and entry.has("pos"):
+			var p : Dictionary = entry["pos"]
+			var pos := Vector3(float(p.get("x", 0.0)),
+				float(p.get("y", 0.0)), float(p.get("z", 0.0)))
+			var face := float(entry.get("facing", NAN))
+			assign_to_position(w, pos, face)
+		elif pin_id != "":
+			# Re-route through manual_assign so role/station pins go through
+			# their normal validation path.
+			manual_assign(w, pin_id)
+
+# ── Pin marker (visible flag in the world) ───────────────────────────────────
+func _rebuild_pin_marker(worker) -> void:
+	_clear_pin_marker(worker)
+	if not _pin_meta.has(worker):
+		return
+	var pos : Vector3 = (_pin_meta[worker] as Dictionary).get("pos", Vector3.ZERO)
+	var marker := Node3D.new()
+	marker.name = "PinMarker_%s" % String(worker.npc_name)
+	add_child(marker)
+	marker.global_position = pos + Vector3(0.0, 0.05, 0.0)
+	# Vertical pole — the operator can see it from across the line.
+	var pole := MeshInstance3D.new()
+	var pm := CylinderMesh.new()
+	pm.top_radius = 0.02; pm.bottom_radius = 0.02; pm.height = 2.0
+	pole.mesh = pm
+	var pole_mat := StandardMaterial3D.new()
+	pole_mat.albedo_color = Color(0.95, 0.78, 0.18)   # CeDo safety yellow
+	pole_mat.emission_enabled = true
+	pole_mat.emission = Color(0.95, 0.78, 0.18)
+	pole_mat.emission_energy_multiplier = 0.6
+	pole.material_override = pole_mat
+	pole.position = Vector3(0.0, 1.0, 0.0)
+	marker.add_child(pole)
+	# Worker name floats above the pole.
+	var lbl := Label3D.new()
+	lbl.text = "📍 %s" % String(worker.npc_name)
+	lbl.font_size = 32; lbl.outline_size = 6
+	lbl.position = Vector3(0.0, 2.25, 0.0)
+	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	lbl.pixel_size = 0.004
+	lbl.no_depth_test = true
+	marker.add_child(lbl)
+	_pin_marker[worker] = marker
+
+func _clear_pin_marker(worker) -> void:
+	var existing = _pin_marker.get(worker)
+	if existing is Node3D and is_instance_valid(existing):
+		existing.queue_free()
+	_pin_marker.erase(worker)

@@ -11,10 +11,16 @@ class_name PlayerController
 ## When the mouse cursor is visible (pause menu open) movement is suppressed.
 
 # Movement
-@export var walk_speed   : float = 5.0
-@export var acceleration : float = 20.0
-@export var friction     : float = 16.0
-@export var jump_speed   : float = 4.5
+@export var walk_speed         : float = 5.0
+@export var acceleration       : float = 20.0
+@export var friction           : float = 16.0
+@export var jump_speed         : float = 4.5
+# Sprint (#side-quest from operator): Shift while moving multiplies the walk
+# speed. Only fires while STANDING — crouched / prone keep their stance pace.
+@export var sprint_multiplier  : float = 1.7
+# Fast-traverse (Alt): 5× speed for cross-yard movement during testing.
+# Overrides sprint when both are held.
+@export var fast_run_multiplier : float = 5.0
 
 const GRAVITY: float = 9.8
 const STEP_HEIGHT: float = 0.4   # max ledge/curb height the player walks over
@@ -67,11 +73,23 @@ var _wedge_timer : float = 0.0
 const WEDGE_THRESHOLD   : float = 0.5    # s of "trying but stuck" before nudging
 const WEDGE_NUDGE       : float = 0.08   # m of sideways nudge per wedged frame
 
+# Fall fail-safe state — last position where is_on_floor() was true.
+var _last_floor_pos : Vector3 = Vector3.ZERO
+var _has_floor_pos  : bool = false
+const FALL_RESCUE_M : float = 25.0   # drop below last floor spot that triggers rescue
+
 ## F12 panic button — try to free a stuck player by lifting them straight up.
 ## If they're STILL inside geometry after a 2 m lift, teleport them to the
 ## PlayerSpawn marker (or world origin as a last resort).
 func _unstuck_me() -> void:
 	velocity = Vector3.ZERO
+	# In freefall (off the floor and dropping) a 2 m lift is useless — the test
+	# always passes in empty air. Go straight back to solid ground.
+	if not is_on_floor() and _has_floor_pos and global_position.y < _last_floor_pos.y - 3.0:
+		global_position = _last_floor_pos + Vector3.UP * 1.0
+		print("[Player] Unstuck: falling — returned to last floor position (%.1f, %.1f, %.1f)" \
+			% [global_position.x, global_position.y, global_position.z])
+		return
 	# First try just lifting up 2 m — clears the player from low collision
 	# slabs (door-cut SAT misses, curb edges, etc.) without losing position.
 	var lifted := global_transform.translated(Vector3.UP * 2.0)
@@ -155,6 +173,20 @@ func _physics_process(delta: float) -> void:
 	# Always apply gravity so the capsule rests on the floor.
 	if not is_on_floor():
 		velocity.y -= GRAVITY * delta
+	else:
+		# Remember the last spot we genuinely stood on — the fall fail-safe
+		# teleports back here if we ever drop through a floor hole.
+		_last_floor_pos = global_position
+		_has_floor_pos = true
+	# Fall fail-safe: dropped >FALL_RESCUE_M below the last stood-on spot means
+	# we fell through a hole in the world (e.g. walked out a wall opening past
+	# the dynamic floor's edge). Teleport back instead of falling forever —
+	# mashing F12 mid-air can't help (its 2 m lift always "succeeds" in the void).
+	if _has_floor_pos and global_position.y < _last_floor_pos.y - FALL_RESCUE_M:
+		velocity = Vector3.ZERO
+		global_position = _last_floor_pos + Vector3.UP * 1.0
+		print("[Player] Fall rescue: returned to last floor position (%.1f, %.1f, %.1f)" \
+			% [global_position.x, global_position.y, global_position.z])
 
 	# Suppress WASD when cursor is visible (pause menu / any UI overlay).
 	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
@@ -177,7 +209,16 @@ func _physics_process(delta: float) -> void:
 
 	wish_dir = wish_dir.normalized()
 
-	var target_xz := wish_dir * walk_speed * float(STANCE_SPEED_MUL[_stance])
+	# Speed multipliers (only while STANDING — crouched/prone ignore both):
+	#   Alt   → fast-traverse 5× (priority over sprint)
+	#   Shift → sprint ×1.7
+	var speed_mul : float = float(STANCE_SPEED_MUL[_stance])
+	if _stance == Stance.STANDING:
+		if Input.is_action_pressed("fast_run"):
+			speed_mul *= fast_run_multiplier
+		elif Input.is_action_pressed("sprint"):
+			speed_mul *= sprint_multiplier
+	var target_xz := wish_dir * walk_speed * speed_mul
 	var accel     := acceleration if wish_dir.length() > 0.0 else friction
 	velocity.x = move_toward(velocity.x, target_xz.x, accel * delta)
 	velocity.z = move_toward(velocity.z, target_xz.z, accel * delta)
@@ -309,7 +350,28 @@ func _attempt_step_up() -> void:
 	if test_move(probe, Vector3.DOWN * STEP_HEIGHT, hit):
 		var lift := STEP_HEIGHT - hit.get_travel().length()
 		if lift > 0.01:
-			global_position.y += lift            # set down exactly on the step top
+			# Only commit if the partially-lifted pose is actually clear —
+			# seating the capsule into an overlapping collider (stacked door
+			# frame / opening edge) lets depenetration shove us through the floor.
+			var seated := global_transform.translated(Vector3.UP * lift)
+			if not test_move(seated, Vector3.ZERO):
+				global_position.y += lift        # set down exactly on the step top
+
+## Two-corner opening capture — press F11 looking at the bottom-left corner of
+## where a door / gate / window should go, press F11 again looking at the top-
+## right corner. The crosshair raycasts onto whatever surface you're aiming at;
+## the two hit points define a rectangle on a wall plane. The capture prints a
+## `--door cx,cz,W,H,BY` spec already in RD coordinates so you can paste it
+## straight into `python tools/solidify_building.py --door ...`.
+##
+## Sanity checks:
+##   * Both hits must be on surfaces with similar normals (same wall).
+##   * The second hit must lie within OPENING_PLANE_TOL of the first hit's plane.
+## If either check fails the pair is discarded and a warning is printed.
+const OPENING_RAY_LEN  : float = 30.0   # crosshair raycast range (m)
+const OPENING_PLANE_TOL: float = 0.40   # max distance off the first hit's plane
+var _opening_p1        : Vector3 = Vector3.INF
+var _opening_p1_normal : Vector3 = Vector3.ZERO
 
 ## #106 — Player flashlight. Mounted on the camera so its beam follows the
 ## player's view. Toggle with F. The Input action "flashlight" is registered
@@ -334,16 +396,133 @@ func _build_flashlight() -> void:
 		var ev := InputEventKey.new()
 		ev.physical_keycode = KEY_F
 		InputMap.action_add_event("flashlight", ev)
+	# Register the opening-capture keybind (F11) the same lazy way.
+	if not InputMap.has_action("opening_capture"):
+		InputMap.add_action("opening_capture")
+		var ev_cap := InputEventKey.new()
+		ev_cap.physical_keycode = KEY_F11
+		InputMap.action_add_event("opening_capture", ev_cap)
+	# Register the sprint keybind (Shift) — same lazy pattern as flashlight.
+	if not InputMap.has_action("sprint"):
+		InputMap.add_action("sprint")
+		var ev_sprint := InputEventKey.new()
+		ev_sprint.physical_keycode = KEY_SHIFT
+		InputMap.action_add_event("sprint", ev_sprint)
+	# Register the fast-traverse keybind (Alt) — 5× speed for testing.
+	if not InputMap.has_action("fast_run"):
+		InputMap.add_action("fast_run")
+		var ev_alt := InputEventKey.new()
+		ev_alt.physical_keycode = KEY_ALT
+		InputMap.action_add_event("fast_run", ev_alt)
+	# Debug fault trigger (0 / Numpad-0) — aim at a machine and press to force
+	# the nearest MotorOverload to trip (or call .force_trip() / .force_fault()
+	# / .trip() on whatever ancestor of the hit collider exposes it). Lets the
+	# operator stress-test crew dispatch + cascade behaviour without waiting for
+	# a real overload to accumulate.
+	if not InputMap.has_action("debug_force_fault"):
+		InputMap.add_action("debug_force_fault")
+		var ev0 := InputEventKey.new()
+		ev0.physical_keycode = KEY_0
+		InputMap.action_add_event("debug_force_fault", ev0)
+		var evkp0 := InputEventKey.new()
+		evkp0.physical_keycode = KEY_KP_0
+		InputMap.action_add_event("debug_force_fault", evkp0)
 
 func _toggle_flashlight() -> void:
 	if _flashlight == null:
 		return
 	_flashlight.visible = not _flashlight.visible
 
+## F11 — capture one corner of an opening (door / gate / window) by raycasting
+## from the camera through the crosshair and recording the hit point on
+## whatever surface you're aiming at. First press stores the corner; second
+## press computes the W×H rectangle the two points define and prints a
+## ready-to-paste `--door` spec (in RD coords, the format solidify_building.py
+## expects). Mismatched-wall pairs are rejected with a warning so a stray hit
+## on a machine doesn't quietly produce a garbage door.
+func _capture_opening_corner() -> void:
+	if camera_3d == null:
+		print("[OpeningCapture] no camera, aborting")
+		return
+	var from := camera_3d.global_position
+	var to   := from - camera_3d.global_transform.basis.z * OPENING_RAY_LEN
+	var q := PhysicsRayQueryParameters3D.create(from, to)
+	q.collision_mask = 0xFFFFFFFF
+	q.collide_with_areas = false
+	q.collide_with_bodies = true
+	q.exclude = [get_rid()]
+	# Also exclude any actively-held tool so we don't capture its hitbox.
+	var inv := get_node_or_null("/root/Inventory")
+	if inv:
+		var active_tool := inv.call("active") as CollisionObject3D
+		if active_tool:
+			q.exclude.append(active_tool.get_rid())
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty():
+		print("[OpeningCapture] aim at a wall — no hit within %.0f m" % OPENING_RAY_LEN)
+		return
+	var pos : Vector3 = hit.position
+	var nrm : Vector3 = hit.normal
+	# Convert scene-world position to Dutch RD coords by inverting the
+	# BuildingShell parent transform (translated by -RD_origin in MainWorld.tscn).
+	# That gives the script numbers in the same frame as its --door input.
+	var rd := pos - _building_shell_offset()
+
+	# FIRST CORNER of the pair — store and prompt for the second.
+	if _opening_p1 == Vector3.INF:
+		_opening_p1 = pos
+		_opening_p1_normal = nrm
+		print("[OpeningCapture] corner 1: scene (%.2f, %.2f, %.2f)  RD (%.2f, %.2f, %.2f)  — aim at corner 2 + F11"
+			% [pos.x, pos.y, pos.z, rd.x, rd.y, rd.z])
+		return
+
+	# SECOND CORNER — sanity-check, compute, print, reset.
+	var p1 := _opening_p1
+	var n1 := _opening_p1_normal
+	_opening_p1 = Vector3.INF   # reset whether we accept or reject below
+	_opening_p1_normal = Vector3.ZERO
+	if n1.dot(nrm) < 0.80:
+		print("[OpeningCapture] CANCELLED — second hit faces a different wall (normal·normal=%.2f). Start over." % n1.dot(nrm))
+		return
+	var off := absf((pos - p1).dot(n1))
+	if off > OPENING_PLANE_TOL:
+		print("[OpeningCapture] CANCELLED — second hit is %.2fm off the first wall plane (tol %.2fm). Start over." % [off, OPENING_PLANE_TOL])
+		return
+	# Both hits clean. Compute opening rectangle.
+	var p2 := pos
+	var off1 := _building_shell_offset()
+	var p1_rd := p1 - off1
+	var p2_rd := p2 - off1
+	var cx       := (p1_rd.x + p2_rd.x) * 0.5
+	var cz       := (p1_rd.z + p2_rd.z) * 0.5
+	var width    := maxf(absf(p2_rd.x - p1_rd.x), absf(p2_rd.z - p1_rd.z))
+	var bottom_y := minf(p1_rd.y, p2_rd.y)
+	var height   := absf(p2_rd.y - p1_rd.y)
+	if width < 0.3 or height < 0.3:
+		print("[OpeningCapture] CANCELLED — rectangle is too small (%.2fw × %.2fh). Start over." % [width, height])
+		return
+	print("[OpeningCapture] opening %.2fw × %.2fh  at RD (cx=%.2f, cz=%.2f, bottom_y=%.2f)"
+		% [width, height, cx, cz, bottom_y])
+	print("                 paste:  --door %.2f,%.2f,%.2f,%.2f,%.2f" % [cx, cz, width, height, bottom_y])
+
+## Look up BuildingShell.position so the capture can invert its shift back to
+## the original RD coordinates the solidify script speaks. Returns ZERO if no
+## shell is present (e.g. a test scene), in which case the scene coords ARE
+## the RD coords already.
+func _building_shell_offset() -> Vector3:
+	var shell := get_tree().current_scene.find_child("BuildingShell", true, false) as Node3D
+	if shell == null:
+		return Vector3.ZERO
+	return shell.global_position
+
 func _input(event: InputEvent) -> void:
 	# #106 — flashlight toggle on F. Check first so other keybinds don't swallow it.
 	if event.is_action_pressed("flashlight"):
 		_toggle_flashlight()
+		return
+	# F11 — two-press opening-rectangle capture (door/gate/window dimensions).
+	if event.is_action_pressed("opening_capture"):
+		_capture_opening_corner()
 		return
 	# Mouse look — only while captured (not paused).
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
@@ -396,6 +575,15 @@ func _input(event: InputEvent) -> void:
 			_look_interactable.call("crosshair_interact", self)
 			get_viewport().set_input_as_handled()
 			return
+
+	# Debug fault trigger (0 / Numpad-0). Aim at any part of a machine and the
+	# nearest faultable component (MotorOverload child, or any ancestor with a
+	# force_trip / force_fault / trip method) gets tripped. Useful for testing
+	# crew dispatch + LineFlow cascade without waiting for an organic overload.
+	if event.is_action_pressed("debug_force_fault"):
+		_debug_trigger_fault_at_crosshair()
+		get_viewport().set_input_as_handled()
+		return
 
 	# Hotbar: 1-4 switch the active inventory slot, Q drops the active item.
 	# Tools (scissors / scanner) live under Head and Inventory handles the
@@ -499,3 +687,61 @@ func _interactable_from_hit(node: Node) -> Node:
 			return n
 		n = n.get_parent()
 	return null
+
+# =============================================================================
+# Debug — force a fault on the machine under the crosshair (0 / Numpad-0).
+# =============================================================================
+## Raycast from the crosshair the same way the interact prompt does, walk up the
+## hit collider's ancestor chain, and trip the nearest faultable component.
+## Resolution order:
+##   1. Any ancestor whose direct child is a MotorOverload node (or grandchild)
+##   2. Any ancestor with a force_trip() method
+##   3. Any ancestor with a force_fault() method
+##   4. Any ancestor with a trip() method
+## Logs the resolved target's name + reason; prints a clear "no fault target"
+## message when nothing matches (so operators know if the hit collider was
+## something unfaultable like a wall or the floor).
+func _debug_trigger_fault_at_crosshair() -> void:
+	if camera_3d == null:
+		return
+	var from := camera_3d.global_position
+	var to := from - camera_3d.global_transform.basis.z * INTERACT_RAY_RANGE
+	var q := PhysicsRayQueryParameters3D.create(from, to)
+	q.collision_mask = 0xFFFFFFFF
+	q.collide_with_areas = true
+	q.collide_with_bodies = true
+	q.exclude = [get_rid()]
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty():
+		print("[DEBUG] force-fault: crosshair hit nothing within %d m" % INTERACT_RAY_RANGE)
+		return
+	var hit_node : Node = hit["collider"]
+	# Walk up the ancestor chain looking for a faultable component.
+	var n : Node = hit_node
+	while n != null:
+		# 1) Scan children for a MotorOverload (typical machine wiring).
+		for c in n.get_children():
+			if c != null and c.has_method("force_trip") \
+					and String(c.get_class()) != "":
+				# MotorOverload exposes force_trip(); other classes might too,
+				# so prefer the explicitly-named one when it's a direct child.
+				if "MotorOverload" in String(c.get_script().get_path() if c.get_script() else "") \
+						or "motor_overload" in String(c.name).to_lower():
+					c.call("force_trip")
+					print("[DEBUG] force-fault: tripped MotorOverload on %s" % n.name)
+					return
+		# 2) Self has a fault method.
+		if n.has_method("force_trip"):
+			n.call("force_trip")
+			print("[DEBUG] force-fault: called force_trip() on %s" % n.name)
+			return
+		if n.has_method("force_fault"):
+			n.call("force_fault")
+			print("[DEBUG] force-fault: called force_fault() on %s" % n.name)
+			return
+		if n.has_method("trip"):
+			n.call("trip")
+			print("[DEBUG] force-fault: called trip() on %s" % n.name)
+			return
+		n = n.get_parent()
+	print("[DEBUG] force-fault: no faultable component found under %s" % String(hit_node.name))

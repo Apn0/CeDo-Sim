@@ -105,13 +105,15 @@ func _build_jib() -> void:
 ## Per-frame: rotate the two hinges and reposition the platform to track the tip.
 ## upper_pivot is the FIRST child of _jib_lower — we get it by name to keep the
 ## node-graph clean.
-# Orange-beam swing geometry (operator spec): the GRAY (steel, mast-side) beam
-# stays perfectly VERTICAL — it's a plumb riser. The ORANGE (basket-side) beam
-# carries ALL the rotation, swinging from straight-down (stowed → platform sits
-# at the mast top) out toward horizontal-forward (extended → platform reaches
-# out). Tunable so the swing can be dialled in after a visual check.
-const JIB_ORANGE_STOW_RAD  : float = -PI        # straight down (tip meets the riser base)
-const JIB_ORANGE_REACH_RAD : float = PI * 0.5   # how far it swings toward forward (90°)
+# Orange-beam swing geometry (operator spec, second pass): the GRAY (steel,
+# mast-side) beam stays perfectly VERTICAL. The ORANGE (basket-side) beam swings
+# through a 25°-from-DOWN (stow) → 135°-from-DOWN (full reach) arc — i.e. starts
+# at 25° forward of straight-down (basket folded against the mast on the +Z side)
+# and ends at 45° ABOVE horizontal (basket high + forward). Previous values had
+# the upper rotating through -Z (backward) instead of +Z (forward); the sign of
+# the swing is reversed below so it now reaches OUT-AND-UP as the operator asked.
+const JIB_ORANGE_STOW_RAD  : float = PI - deg_to_rad(25.0)      # 25° fwd of straight-down
+const JIB_ORANGE_REACH_RAD : float = -deg_to_rad(135.0 - 25.0)  # swing toward up by 110°
 
 func _apply_jib_transforms() -> void:
 	if _jib_lower == null or _jib_upper == null or _jib_tip == null:
@@ -192,6 +194,15 @@ func enter_refusal_reason() -> String:
 @export var jib_segment_m      : float = 1.7    # length of each of the two segments
 @export var jib_fold_speed_1_s : float = 0.2    # slow hydraulic creep (operator: was way too fast)
 
+# Slewing rotation around the mast's vertical axis (operator request). Rotates
+# the entire jib + platform assembly about the mast top so the basket can swing
+# left/right without driving the chassis. Z = rotate left, C = right (mapped
+# via the existing forklift_rotator_left/right input actions — those keys are
+# free on the mast lift's cab control set).
+const SLEW_SPEED_RAD_S : float = 0.6              # ~35°/s, comfortable hydraulic feel
+const SLEW_LIMIT_RAD   : float = PI               # ±180° travel (full swing)
+var   _slew_angle      : float = 0.0              # current slew (radians)
+
 # The jib's USABLE travel is a narrow band, not the full 0→1 swing. The full
 # range threw the platform "up and over and back down the other side" — way too
 # far. Rest at 10 % fold, and allow only ~1/3 of the total motion from there.
@@ -200,6 +211,14 @@ const JIB_FOLD_MAX : float = 0.43   # ≈ 10 % + 1/3 of the range
 
 var _platform_height : float = 0.0
 var _platform_base_y : float = 0.5   # saved from the .tscn on _ready
+
+# #147 Phase 3 — Autonomous control. When an NPC commands the lift, these are
+# set; _physics_process drives _platform_height toward the target each tick at
+# `platform_speed_m_s`. is_at_autonomous_target() returns true once we're inside
+# AUTONOMOUS_TOL of the goal so the NPC planner can advance to the next step.
+const AUTONOMOUS_TOL : float = 0.05
+var _autonomous_target_active : bool = false
+var _autonomous_target_local  : float = 0.0   # platform height in lift-local meters (0 = stowed)
 var jib_fold         : float = JIB_FOLD_MIN   # rest at 10 %
 
 # Node refs (resolved in _ready)
@@ -258,6 +277,12 @@ func _physics_process(delta: float) -> void:
 	# only fires when occupied, so this can't fight that path).
 	if _ground_panel_player_near and Input.is_action_pressed("interact"):
 		_platform_height = maxf(0.0, _platform_height - GROUND_LOWER_RATE_M_S * delta)
+	# #147 Phase 3 — autonomous lift target. When an NPC has commanded the lift
+	# to a specific world-Y, drive _platform_height toward the equivalent local
+	# height. Active regardless of `occupied` so an unoccupied lift can finish
+	# returning to ground after its NPC operator dismounts.
+	if _autonomous_target_active:
+		_drive_autonomous_height(delta)
 	_apply_platform_transforms()
 
 # How hard the mast was working this frame (0..1), for the battery drain model.
@@ -288,6 +313,18 @@ func _update_platform(delta: float) -> void:
 	if absf(jmove) > 0.0:
 		jib_fold = clampf(jib_fold + jmove, JIB_FOLD_MIN, JIB_FOLD_MAX)
 		_lift_load = maxf(_lift_load, clampf(absf(jmove) / maxf(jib_fold_speed_1_s * delta, 0.0001), 0.0, 1.0))
+	# SLEW — Z rotates the jib LEFT, C rotates RIGHT. Clamped to ±π so the
+	# basket can't wind around the mast endlessly.
+	var slew_axis : float = Input.get_action_strength("forklift_rotator_left") \
+						   - Input.get_action_strength("forklift_rotator_right")
+	if absf(slew_axis) > 0.0:
+		_slew_angle = clampf(_slew_angle + slew_axis * SLEW_SPEED_RAD_S * delta,
+			-SLEW_LIMIT_RAD, SLEW_LIMIT_RAD)
+		_lift_load = maxf(_lift_load, clampf(absf(slew_axis), 0.0, 1.0) * 0.4)
+	# Apply slew rotation to the jib root every frame (platform follows via the
+	# tip in _apply_jib_transforms; only the orientation has to be set here).
+	if _jib_root:
+		_jib_root.rotation.y = _slew_angle
 
 ## Raising the mast is the lift's heaviest electrical draw — report it so the
 ## drive battery drains faster while working up high.
@@ -325,3 +362,56 @@ func get_dismount_position() -> Vector3:
 	var base := global_position + global_transform.basis * dismount_offset
 	base.y = global_position.y + _platform_base_y + _platform_height + 0.1
 	return base
+
+# =============================================================================
+# #147 PHASE 3 — Autonomous height control (NPC mast-lift use)
+# =============================================================================
+## Where the platform's WALKING SURFACE sits in world Y right now. NPC planner
+## uses this to decide if its operator can reach the target after the lift has
+## raised the platform.
+func current_platform_top_y() -> float:
+	return global_position.y + _platform_base_y + _platform_height
+
+## Maximum world Y a worker standing on this lift's platform can reach with
+## arms extended (platform_top + standing reach). Used by the NPC planner to
+## confirm the chosen lift can actually get the worker high enough; if not,
+## the planner looks for a taller lift or aborts the task.
+func max_reach_top_y(reach_height: float = 2.2) -> float:
+	return global_position.y + _platform_base_y + platform_max_m + reach_height
+
+## Command the lift to raise / lower until the platform top sits at
+## `target_world_y`. The autonomous tick in _physics_process drives the
+## existing `_platform_height` toward the equivalent local target at
+## `platform_speed_m_s`, so all the existing visuals (telescoping stages,
+## jib, ground panel) continue to work without a parallel code path.
+func set_autonomous_target_top_world_y(target_world_y: float) -> void:
+	var target_local : float = target_world_y - global_position.y - _platform_base_y
+	_autonomous_target_local = clampf(target_local, 0.0, platform_max_m)
+	_autonomous_target_active = true
+
+## True once the platform has reached the autonomous target within tolerance.
+## NPC planner advances to the next step on this returning true.
+func is_at_autonomous_target() -> bool:
+	if not _autonomous_target_active:
+		return false
+	return absf(_platform_height - _autonomous_target_local) <= AUTONOMOUS_TOL
+
+## Release the autonomous lock — the lift becomes operator-driven again (or
+## just holds height if unoccupied).
+func release_autonomous_target() -> void:
+	_autonomous_target_active = false
+
+## Internal: per-tick drive toward _autonomous_target_local. Same speed as
+## the operator's R/F keys.
+func _drive_autonomous_height(delta: float) -> void:
+	if not _has_power():
+		return
+	var diff : float = _autonomous_target_local - _platform_height
+	if absf(diff) <= AUTONOMOUS_TOL:
+		_platform_height = _autonomous_target_local
+		return
+	var step : float = platform_speed_m_s * delta
+	if absf(diff) < step:
+		_platform_height = _autonomous_target_local
+	else:
+		_platform_height += sign(diff) * step

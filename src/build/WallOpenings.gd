@@ -82,7 +82,11 @@ func _cache_surfaces_from(mesh: Mesh, dest: Array) -> void:
 		return
 	for s in mesh.get_surface_count():
 		var arr: Array = mesh.surface_get_arrays(s)
-		var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+		# Variant-first guard: a surface with only index data (null vertex buffer)
+		# would throw 'Nil to PackedVector3Array' on a typed assign and crash the
+		# door carve. Same nil-PackedArray class fixed in WorldSetup/MainWorld.
+		var verts_raw0 : Variant = arr[Mesh.ARRAY_VERTEX]
+		var verts: PackedVector3Array = verts_raw0 if verts_raw0 is PackedVector3Array else PackedVector3Array()
 		var norms := PackedVector3Array()
 		if arr[Mesh.ARRAY_NORMAL] != null:
 			norms = arr[Mesh.ARRAY_NORMAL]
@@ -108,7 +112,8 @@ func _cache_original() -> void:
 	var mesh := _shell.mesh
 	for s in mesh.get_surface_count():
 		var arr: Array = mesh.surface_get_arrays(s)
-		var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+		var verts_raw1 : Variant = arr[Mesh.ARRAY_VERTEX]
+		var verts: PackedVector3Array = verts_raw1 if verts_raw1 is PackedVector3Array else PackedVector3Array()
 		var norms := PackedVector3Array()
 		if arr[Mesh.ARRAY_NORMAL] != null:
 			norms = arr[Mesh.ARRAY_NORMAL]
@@ -384,6 +389,7 @@ func _carve_triangle(a: Vector3, b: Vector3, c: Vector3, boxes: Array, depth: in
 	if clipped.is_empty():
 		return []
 	var out : Array = []
+	@warning_ignore("integer_division")
 	var n_tris : int = clipped.size() / 3
 	for ti in n_tris:
 		var ta : Vector3 = clipped[ti * 3]

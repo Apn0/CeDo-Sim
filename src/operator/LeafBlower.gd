@@ -333,15 +333,17 @@ func _physics_process(delta: float) -> void:
 	# (Always — including when stowed in the inventory but inactive — so a held
 	# tool that becomes active mid-frame already has its sensor in the right spot.)
 	if _wind_area != null and is_inside_tree():
-		var aim := _aim_direction()
-		var origin := _muzzle_origin() + aim * (max_range * 0.5)
-		# Build a basis whose local +Z (length axis) points along aim.
+		# Renamed from `aim` — a later `var aim` further down the same
+		# _physics_process triggered CONFUSABLE_LOCAL_DECLARATION.
+		var wind_aim := _aim_direction()
+		var origin := _muzzle_origin() + wind_aim * (max_range * 0.5)
+		# Build a basis whose local +Z (length axis) points along wind_aim.
 		var up := Vector3.UP
-		if absf(aim.dot(up)) > 0.95:
+		if absf(wind_aim.dot(up)) > 0.95:
 			up = Vector3.RIGHT
-		var right := up.cross(aim).normalized()
-		var nu := aim.cross(right).normalized()
-		_wind_area.global_transform = Transform3D(Basis(right, nu, aim), origin)
+		var right := up.cross(wind_aim).normalized()
+		var nu := wind_aim.cross(right).normalized()
+		_wind_area.global_transform = Transform3D(Basis(right, nu, wind_aim), origin)
 
 	# Drive the spool state.
 	if _held_by == null:

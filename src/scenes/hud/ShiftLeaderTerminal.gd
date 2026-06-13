@@ -109,10 +109,46 @@ func _build() -> void:
 	_foot.add_theme_color_override("font_color", C_DIM)
 	vb.add_child(_foot)
 
+	# #73 / #74 — Balen-beheer: reset misplaced/grabbed yard bales, or order a
+	# logistics restock that arrives at the start of the next shift. Both
+	# delegate to MainWorld (which owns the yard data).
+	var beheer := HBoxContainer.new()
+	beheer.add_theme_constant_override("separation", 12)
+	vb.add_child(beheer)
+	var resetb := Button.new()
+	resetb.text = "BALEN RESETTEN"
+	resetb.tooltip_text = "Zet alle binnenhof-balen terug op hun originele plek; alleen lege MM-slots blijven hetzelfde."
+	resetb.pressed.connect(_on_reset_pressed)
+	beheer.add_child(resetb)
+	var restockb := Button.new()
+	restockb.text = "BALEN BESTELLEN"
+	restockb.tooltip_text = "Logistieke bestelling: nieuwe balen arriveren bij de start van de volgende dienst."
+	restockb.pressed.connect(_on_restock_pressed)
+	beheer.add_child(restockb)
+
 	var closeb := Button.new()
 	closeb.text = "SLUITEN  (Esc)"
 	closeb.pressed.connect(close)
 	vb.add_child(closeb)
+
+func _on_reset_pressed() -> void:
+	var mw := get_tree().current_scene
+	if mw and mw.has_method("reset_yard_bales"):
+		var n : int = int(mw.call("reset_yard_bales"))
+		if _foot:
+			_foot.text = "%d balen teruggezet naar hun originele positie." % n
+	else:
+		push_warning("[ShiftLeaderTerminal] reset_yard_bales not available on current_scene")
+
+func _on_restock_pressed() -> void:
+	var mw := get_tree().current_scene
+	if mw and mw.has_method("restock_yard_bales"):
+		var n : int = int(mw.call("restock_yard_bales"))
+		if _foot:
+			_foot.text = ("Bestelling geplaatst — levering bij de volgende dienst." if n > 0 \
+				else "Bestelling stond al open — geen dubbele levering.")
+	else:
+		push_warning("[ShiftLeaderTerminal] restock_yard_bales not available on current_scene")
 
 func _cell(text: String, col: Color) -> Label:
 	var l := Label.new()

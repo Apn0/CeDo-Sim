@@ -1,4 +1,4 @@
-extends RefCounted
+﻿extends RefCounted
 class_name PlaceableCatalog
 ## Data-driven catalog of everything the player can place in build mode.
 ##
@@ -32,7 +32,10 @@ static func items() -> Array[Dictionary]:
 			# clearance for the extruder + lump bin beneath), a yellow guardrail platform on
 			# top, 4 inspection windows in 2 column-pairs on the front, and TWO cyclones
 			# (one over each window pair) discharging down into it. size = W × total H × D.
-			{"id": "extruder_silo",  "name": "Extruder feed silo (elevated, 2 cyclones)", "category": "Structure", "size": Vector3(3.6, 6.5, 3.2), "color": Color(0.78, 0.79, 0.80)},
+			# Photo-calibrated from assets/reference_photos/machines/_extruder_silo.png:
+			# the real elevated silo is painted in a warm cream-grey, not the cool
+			# off-white that was placeholder (0.78, 0.79, 0.80).
+			{"id": "extruder_silo",  "name": "Extruder feed silo (elevated, 2 cyclones)", "category": "Structure", "size": Vector3(3.6, 6.5, 3.2), "color": Color(0.80, 0.77, 0.71)},
 		{"id": "doseersilo",     "name": "Doseer Silo",        "category": "Structure",  "size": Vector3(3.6, 2.6, 5.5),  "color": Color(0.66, 0.67, 0.70)},
 			# ── Whole-line macros ────────────────────────────────────────────
 			# Placing one lays the ENTIRE line front-to-back from the click point,
@@ -45,6 +48,7 @@ static func items() -> Array[Dictionary]:
 			# VSS metering silo, and the U-bay overflow surge bay. Material flows
 			# through it INTO vuilsnippersilo (the head of LINE_3A_SEQ/LINE_3B_SEQ).
 			{"id": "line_intake_3a3b","name":"▶ Build 3A/3B intake (shared front-end)","category": "Lines", "size": Vector3(3.0, 2.0, 3.0), "color": Color(0.55, 0.30, 0.10)},
+			{"id": "line_sort",      "name": "▶ Build Sort line (2× trilzeef parallel)","category": "Lines", "size": Vector3(3.0, 2.0, 3.0),  "color": Color(0.12, 0.18, 0.34)},
 			# ── Extruders ────────────────────────────────────────────────────
 			{"id": "extruder_3a",    "name": "Extruder 3A",        "category": "Extruders",  "size": Vector3(2.6, 4.2, 14.0), "color": Color(0.26, 0.42, 0.70)},
 			{"id": "extruder_3b",    "name": "Extruder 3B",        "category": "Extruders",  "size": Vector3(2.6, 4.2, 14.0), "color": Color(0.26, 0.50, 0.70)},
@@ -113,24 +117,32 @@ static func items() -> Array[Dictionary]:
 			# colour). All routed via build_intake_belt(spec) where the spec dict
 			# encodes length/height/incline/colour. Macro-laid by BuildMode's
 			# INTAKE_3A3B_SEQ so the user doesn't have to place 12 manually.
-			{"id": "intake_belt_1",  "name": "Intake belt 1 (shredder dump, 2.5m)",       "category": "Intake-3A3B", "size": Vector3(1.0, 0.95, 2.5),  "color": Color(0.36, 0.38, 0.42)},
-			{"id": "intake_belt_2",  "name": "Intake belt 2 (transfer, 3m)",              "category": "Intake-3A3B", "size": Vector3(1.0, 0.95, 3.0),  "color": Color(0.40, 0.40, 0.44)},
-			{"id": "intake_belt_3",  "name": "Intake belt 3 (incline 10°, 4m)",           "category": "Intake-3A3B", "size": Vector3(1.0, 1.30, 4.0),  "color": Color(0.32, 0.34, 0.38)},
-			{"id": "intake_belt_4",  "name": "Intake belt 4 (flat, 5m, blue trim)",       "category": "Intake-3A3B", "size": Vector3(1.0, 1.10, 5.0),  "color": Color(0.22, 0.36, 0.62)},
-			{"id": "intake_belt_5",  "name": "Intake belt 5 (incline 15°, 4m)",           "category": "Intake-3A3B", "size": Vector3(1.0, 1.50, 4.0),  "color": Color(0.34, 0.34, 0.38)},
-			{"id": "intake_belt_6",  "name": "Intake belt 6 (cross-routing, 3.5m)",       "category": "Intake-3A3B", "size": Vector3(1.0, 1.10, 3.5),  "color": Color(0.42, 0.42, 0.46)},
-			{"id": "intake_belt_7",  "name": "Intake belt 7 (flat, 4m, yellow rail)",     "category": "Intake-3A3B", "size": Vector3(1.0, 1.15, 4.0),  "color": Color(0.60, 0.55, 0.20)},
-			{"id": "intake_belt_8",  "name": "Intake belt 8 (descent 8°, 4.5m)",          "category": "Intake-3A3B", "size": Vector3(1.0, 1.40, 4.5),  "color": Color(0.32, 0.34, 0.36)},
-			{"id": "intake_belt_9",  "name": "Intake belt 9 (long flat, 6m)",             "category": "Intake-3A3B", "size": Vector3(1.0, 1.10, 6.0),  "color": Color(0.38, 0.38, 0.42)},
-			{"id": "intake_belt_10", "name": "Intake belt 10 (flat, 4m, green trim)",     "category": "Intake-3A3B", "size": Vector3(1.0, 1.10, 4.0),  "color": Color(0.22, 0.50, 0.30)},
-			{"id": "intake_belt_11", "name": "Intake belt 11 (incline 12°, 3.5m)",        "category": "Intake-3A3B", "size": Vector3(1.0, 1.40, 3.5),  "color": Color(0.34, 0.34, 0.38)},
-			{"id": "intake_belt_12", "name": "Intake belt 12 (final approach, 3m)",       "category": "Intake-3A3B", "size": Vector3(1.0, 1.15, 3.0),  "color": Color(0.46, 0.46, 0.50)},
-			# Y-junction diverter feeding VSS primary + U-bay overflow.
-			{"id": "switch_belt",    "name": "Switch belt (Y-junction → VSS / U-bay)",    "category": "Intake-3A3B", "size": Vector3(2.4, 1.40, 4.0),  "color": Color(0.55, 0.30, 0.10)},
+			{"id": "intake_belt_1",  "name": "Transportband 1 (incline 5°, shredder dump, 5m)",   "category": "Intake-3A3B", "size": Vector3(1.0, 0.95, 5.0),  "color": Color(0.36, 0.38, 0.42)},
+			{"id": "intake_belt_2",  "name": "Transportband 2 (incline 5°, transfer, 6m)",         "category": "Intake-3A3B", "size": Vector3(1.0, 0.95, 6.0),  "color": Color(0.40, 0.40, 0.44)},
+			{"id": "intake_belt_3",  "name": "Transportband 3 (incline 10°, 8m)",                  "category": "Intake-3A3B", "size": Vector3(1.0, 1.30, 8.0),  "color": Color(0.32, 0.34, 0.38)},
+			{"id": "intake_belt_4",  "name": "Transportband 4 (incline 8°, 10m, blue trim)",       "category": "Intake-3A3B", "size": Vector3(1.0, 1.10, 10.0), "color": Color(0.22, 0.36, 0.62)},
+			{"id": "intake_belt_5",  "name": "Transportband 5 (incline 15°, 8m)",                  "category": "Intake-3A3B", "size": Vector3(1.0, 1.50, 8.0),  "color": Color(0.34, 0.34, 0.38)},
+			{"id": "intake_belt_6",  "name": "Transportband 6 (incline 6°, cross-routing, 7m)",    "category": "Intake-3A3B", "size": Vector3(1.0, 1.10, 7.0),  "color": Color(0.42, 0.42, 0.46)},
+			{"id": "intake_belt_7",  "name": "Transportband 7 (incline 5°, 8m, yellow rail)",      "category": "Intake-3A3B", "size": Vector3(1.0, 1.15, 8.0),  "color": Color(0.60, 0.55, 0.20)},
+			{"id": "intake_belt_8",  "name": "Transportband 8 (bi-directional, 9m)",               "category": "Intake-3A3B", "size": Vector3(1.0, 1.40, 9.0),  "color": Color(0.32, 0.34, 0.36)},
+			# #136 — C8.5 is the overflow-bypass belt. Sits BELOW + BESIDE C8 and only
+			# carries material when C8 reverses (both VSSs FULL → C8 ramps the other
+			# way and discharges down onto 8.5, which feeds the U-bay/stortvak).
+			{"id": "intake_belt_8_5","name": "Transportband 8.5 (overflow → U-bay, 6m)",          "category": "Intake-3A3B", "size": Vector3(1.0, 1.10, 6.0),  "color": Color(0.52, 0.36, 0.18)},
+			{"id": "intake_belt_9",  "name": "Transportband 9 (incline 4°, 12m)",                  "category": "Intake-3A3B", "size": Vector3(1.0, 1.10, 12.0), "color": Color(0.38, 0.38, 0.42)},
+			{"id": "intake_belt_10", "name": "Transportband 10 (incline 5°, 8m, green trim)",      "category": "Intake-3A3B", "size": Vector3(1.0, 1.10, 8.0),  "color": Color(0.22, 0.50, 0.30)},
+			{"id": "intake_belt_11", "name": "Transportband 11 (incline 12°, 7m)",                 "category": "Intake-3A3B", "size": Vector3(1.0, 1.40, 7.0),  "color": Color(0.34, 0.34, 0.38)},
+			# #136 — switch_belt IS conveyor 12. Catalog keeps both ids so legacy
+			# saves still resolve, but the macro uses switch_belt only (intake_belt_12
+			# is the same belt without the jog mechanism). Switch belt jogs along its
+			# OWN conveying axis (-1.5m..+1.5m), feeding 100% to VSS_3A at left,
+			# 100% to VSS_3B at right, ~50/50 at centre.
+			{"id": "intake_belt_12", "name": "Transportband 12 (= switch_belt, legacy id)",  "category": "Intake-3A3B", "size": Vector3(1.0, 1.15, 3.0),  "color": Color(0.46, 0.46, 0.50)},
+			{"id": "switch_belt",    "name": "Switch belt (= C12; jogs ±1.5m → VSS_3A / VSS_3B)",  "category": "Intake-3A3B", "size": Vector3(2.4, 1.40, 4.0),  "color": Color(0.55, 0.30, 0.10)},
 			# VSS metering silo — primary intake buffer for the wash line.
 			{"id": "vss_silo",       "name": "VSS intake silo (primary buffer)",          "category": "Intake-3A3B", "size": Vector3(3.0, 6.0, 3.0),   "color": Color(0.78, 0.78, 0.82)},
 			# U-bay — concrete overflow surge bay (Merlo scoops out of it).
-			{"id": "u_bay",          "name": "U-bay (overflow surge, Merlo-scoop)",       "category": "Intake-3A3B", "size": Vector3(8.0, 2.5, 8.0),   "color": Color(0.62, 0.60, 0.56)},
+			{"id": "u_bay",          "name": "U-bay / stortvak (overflow surge, Merlo-scoop)",       "category": "Intake-3A3B", "size": Vector3(8.0, 6.25, 8.0),   "color": Color(0.62, 0.60, 0.56)},
 			# Small feed hopper with 20 cm flanges — sits at the top of the
 			# inclined belt and dribbles material onto the next horizontal belt.
 			{"id": "feed_hopper",    "name": "Feed hopper (small)","category": "Conveyance", "size": Vector3(1.0, 1.2, 1.0),  "color": Color(0.50, 0.50, 0.55)},
@@ -154,7 +166,10 @@ static func items() -> Array[Dictionary]:
 			# ── Size reduction ───────────────────────────────────────────────
 			{"id": "mill",           "name": "Mill (granulator)",  "category": "Size reduction","size": Vector3(3.6, 4.8, 4.6), "color": Color(0.60, 0.36, 0.32)},
 			# ── Separation ───────────────────────────────────────────────────
-			{"id": "flotation_tank", "name": "Flotation tank (1.5x, Line 1/3A/3B)", "category": "Separation", "size": Vector3(4.5, 1.6, 9.0),  "color": Color(0.32, 0.46, 0.56)},
+			# Photo-calibrated from assets/reference_photos/machines/flotatietank_3A.png
+			# and flotatietank_3B_*.png: the real tank is weathered dirty stainless
+			# with heavy rust streaking, NOT the blue-grey the placeholder showed.
+			{"id": "flotation_tank", "name": "Flotation tank (1.5x, Line 1/3A/3B)", "category": "Separation", "size": Vector3(4.5, 1.6, 9.0),  "color": Color(0.50, 0.48, 0.45)},
 			{"id": "flotation_tank_wide", "name": "Flotation tank (wide 2x, Line 3C/6)", "category": "Separation", "size": Vector3(6.0, 1.6, 9.0),  "color": Color(0.32, 0.46, 0.56)},
 			{"id": "sink_float",     "name": "Bezinkafscheider",   "category": "Separation","size": Vector3(2.6, 2.0, 4.0),"color": Color(0.34, 0.46, 0.50)},
 			{"id": "friction_sep",   "name": "Friction separator", "category": "Separation", "size": Vector3(1.8, 2.0, 4.5),  "color": Color(0.52, 0.54, 0.58)},
@@ -237,6 +252,18 @@ static func items() -> Array[Dictionary]:
 			{"id": "fines_bin",      "name": "Fines bin (under-conveyor)",   "category": "Logistics","size": Vector3(0.9, 1.1, 0.9),  "color": Color(0.18, 0.18, 0.20)},
 			{"id": "cyclone_bin",    "name": "Cyclone underflow bin",        "category": "Logistics","size": Vector3(1.1, 1.1, 1.1),  "color": Color(0.50, 0.52, 0.54)},
 			{"id": "ibc_tote",       "name": "IBC tote (1 m³, fluids)",      "category": "Logistics","size": Vector3(1.0, 1.2, 1.2),  "color": Color(0.86, 0.86, 0.84)},
+			# #98 - Lumpenwagen (lump cart): wheeled blue steel dumpster the operator parks
+			# under the extruder's screen-changer outlet. Unmelted polymer agglomerates
+			# (gels, cross-linked chunks) drop into it as the screen pack catches them.
+			# From the operator photo (desktop/_lumbs_cart.jpg).
+			{"id": "lump_cart",      "name": "Lumpenwagen (extruder filter catch)", "category": "Logistics","size": Vector3(0.85, 0.95, 1.30), "color": Color(0.16, 0.30, 0.55)},
+			# #98 - Yellow floor marking each extruder has, where the lump_cart parks at
+			# shift start. Visual-only L-bracket outlines on the concrete.
+			{"id": "lump_cart_spot", "name": "Lumpenwagen parkeervak (gele vloermarkering)", "category": "Logistics","size": Vector3(1.10, 0.05, 1.55), "color": Color(0.94, 0.78, 0.14)},
+			# #154 — Wardrobe locker: walk up, press E, opens the character
+			# customizer (#153). Tall blue steel cabinet, hi-vis vest hanging
+			# inside the open door as a visual cue.
+			{"id": "wardrobe_locker", "name": "Kleedlocker (wardrobe)",        "category": "Logistics","size": Vector3(0.60, 2.00, 0.50), "color": Color(0.10, 0.20, 0.40)},
 			# U-shaped concrete buffer bay (3A/3B): when both VSS silos are full, belt
 			# 8.5 dumps film here; the Merlo drives in and scoops the pile.
 			{"id": "concrete_bay",   "name": "Concrete buffer bay (U, Merlo-scoop)","category": "Logistics","size": Vector3(8.0, 2.5, 8.0),  "color": Color(0.60, 0.60, 0.58)},
@@ -256,6 +283,15 @@ static func items() -> Array[Dictionary]:
 			# ── Control (HMIs) ───────────────────────────────────────────────
 			{"id": "hmi_panel",      "name": "HMI panel (stand)",  "category": "Control",    "size": Vector3(0.7, 1.5, 0.5),  "color": Color(0.30, 0.32, 0.36)},
 			{"id": "hmi_wall",       "name": "HMI panel (wall)",   "category": "Control",    "size": Vector3(0.6, 0.5, 0.16), "color": Color(0.30, 0.32, 0.36)},
+			# Shift-leader PC: walk up + E → Balen-scanlog + Reset/Restock buttons
+			# (#73 / #74). MainWorld also auto-spawns one for back-compat, but this
+			# entry lets the operator place additional desks or move them via K-edit.
+			{"id": "shift_leader_desk", "name": "Bedrijfsleider PC (scan log + balen)", "category": "Control",   "size": Vector3(1.60, 1.40, 0.85), "color": Color(0.30, 0.22, 0.16)},
+			# Quality-analysis bench: lab-style worktop with PC + precision scale +
+			# sample tray + magnifier. Walk up + E → quality terminal (live MFI /
+			# colour grade / sample submit). v1 terminal is a read-out stub; full
+			# wiring sits alongside #46 (MFI proxy) for a future pass.
+			{"id": "qa_bench",          "name": "Kwaliteitscontrole tafel (QA bench)",  "category": "Control",   "size": Vector3(2.00, 1.50, 0.90), "color": Color(0.85, 0.85, 0.88)},
 			# ── Hand tools (spawn from the menu instead of being pre-placed) ──
 			{"id": "tool_shovel",    "name": "Shovel",             "category": "Tools",      "size": Vector3(0.30, 1.4, 0.30), "color": Color(0.55, 0.40, 0.25)},
 			{"id": "tool_scissors",  "name": "Wire scissors",      "category": "Tools",      "size": Vector3(0.30, 0.9, 0.30), "color": Color(0.80, 0.30, 0.25)},
@@ -625,6 +661,20 @@ const _BELT_IDS : Array[String] = [
 	"transport_belt", "inclined_belt_8m", "compactorband", "metal_belt", "scraper_conveyor",
 ]
 const _BELT_CARRY_SPEED : float = 0.4   # m/s along the belt deck's local +Z
+# Single source of truth for intake transportband (1..12 + switch_belt) speed:
+# the player carry speed AND the shader scroll value below both derive from
+# this. Real CeDo intake belts run roughly 0.4–0.6 m/s; 0.5 m/s is the
+# operator-confirmed middle. Previously the shader ran at apparent 1.2 m/s
+# while the carry meta was never even set on intake belts (they weren't in
+# _BELT_IDS) — visual lied, physics didn't fire at all.
+const _INTAKE_BELT_SPEED_MPS : float = 0.5
+# Shader scroll value passed to make_belt_material for intake belts. The UV math
+# above predicts apparent_speed = -caller * 2.0, which would suggest a *0.5
+# factor, but operator-confirmed in-game perception: with *0.5 the belt scrolled
+# visibly 2× faster than the carry meta. Tightened to *0.25 so the slats march
+# at the same physical pace the player is being dragged at. (Likely the internal
+# slat period inside the texture adds another factor I didn't account for.)
+const _INTAKE_BELT_SHADER_SCROLL : float = -_INTAKE_BELT_SPEED_MPS * 0.25
 ## `simple` builds a cheap LOD model for bales (single box + minimal wire bands)
 ## instead of the full ~10-sheet + 24-wire-segment model — used to fill bale
 ## yards (hundreds of bales) without thousands of draw calls. A simple bale is
@@ -638,6 +688,22 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 	# Hand tools — spawn the real tool node (or a translucent box for the ghost). #28
 	if id.begins_with("tool_"):
 		return _build_tool(id, Vector3(item["size"]), ghost)
+	# Shift-leader PC + QA bench — each is a self-contained StaticBody3D with its
+	# own model + collision + interaction trigger. Build the script-backed node
+	# directly and tag it as a placeable so save/load + delete handle it like any
+	# other placed object. Ghost preview falls back to a translucent box because
+	# instantiating + tearing down the full body per cursor move is wasteful.
+	if id == "shift_leader_desk" or id == "qa_bench":
+		if ghost:
+			return _simple_ghost(Vector3(item["size"]))
+		var script_path : String = "res://src/scenes/world/ShiftLeaderDesk.gd" \
+			if id == "shift_leader_desk" else "res://src/scenes/world/QualityAnalysisBench.gd"
+		# Renamed from `body` — the outer build_node() reuses that name later for
+		# the generic PhysicsBody3D path; CONFUSABLE_LOCAL_DECLARATION fired here.
+		var desk_body : Node3D = load(script_path).new()
+		desk_body.set_meta("placeable_id", id)
+		desk_body.add_to_group("placed_object")
+		return desk_body
 	# Bale stack — a 5x5 footprint stacked to the origin's allowance. #33
 	if id.ends_with("_stack5"):
 		return _build_bale_stack(id.trim_suffix("_stack5"), ghost)
@@ -668,6 +734,27 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 		# accepts only its configured stream class(es), routes spillover to the
 		# nearest floor pile. See src/sim/WasteContainer.gd for the model.
 		body = load("res://src/sim/WasteContainer.gd").new()
+	elif id == "wardrobe_locker":
+		# #154 — wardrobe locker: StaticBody3D with a script that exposes
+		# crosshair_prompt + crosshair_interact, opening the customizer (#153)
+		# on E.
+		body = load("res://src/build/WardrobeLocker.gd").new()
+	elif id == "lump_cart":
+		# #98 — Real-life mass ~40 kg. Operator can either shove it by walking
+		# into it (slow at this weight), or grab the handle (crosshair + E) for
+		# active steering via LumpCart.gd — the script velocity-targets the
+		# handle to a point in front of the player and yaws the cart to match
+		# their facing. Friction stays high so it doesn't drift after release.
+		var rb_cart : RigidBody3D = load("res://src/sim/LumpCart.gd").new()
+		rb_cart.mass = 40.0
+		rb_cart.linear_damp = 0.9
+		rb_cart.angular_damp = 3.0
+		rb_cart.can_sleep = true
+		var pm_cart := PhysicsMaterial.new()
+		pm_cart.friction = 0.9
+		pm_cart.bounce = 0.02
+		rb_cart.physics_material_override = pm_cart
+		body = rb_cart
 	elif category == "Bales":
 		var rb := RigidBody3D.new()
 		# freeze=true at spawn so stacked bales sit still until something grabs
@@ -691,10 +778,25 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 
 	# Belt-type placeables: tag the walkable StaticBody3D so the player controller
 	# carries the player along the deck's local +Z when standing on it (#59). Only
-	# belts get this — non-belt machines stay solid ground.
-	if not ghost and id in _BELT_IDS:
+	# belts get this — non-belt machines stay solid ground. Intake transportbands
+	# (1..12) and the switch belt run a different m/s than the generic belts and
+	# are detected by id prefix so we don't have to list all 13 explicitly.
+	var _is_intake : bool = id.begins_with("intake_belt_") or id == "switch_belt"
+	if not ghost and (id in _BELT_IDS or _is_intake):
 		body.add_to_group("belt")
-		body.set_meta("belt_speed", _BELT_CARRY_SPEED)
+		var carry : float = _INTAKE_BELT_SPEED_MPS if _is_intake else _BELT_CARRY_SPEED
+		body.set_meta("belt_speed", carry)
+		# #conveyorphysics — attach BeltSurface so Godot's built-in
+		# StaticBody3D.constant_linear_velocity actually drags any RigidBody3D
+		# (bales, lump_cart, dropped tools) sitting on the deck. Previously the
+		# belt visual moved but the surface was physically static; only the
+		# player carry hack masked that. The script refreshes the surface
+		# velocity from the body's live transform each tick, so a yawed belt
+		# carries rigid bodies in the right world direction.
+		var belt_script : Resource = load("res://src/sim/BeltSurface.gd")
+		if belt_script != null:
+			body.set_script(belt_script)
+			body.set("belt_speed_mps", carry)
 
 	# Composite procedural model (base sits at the local origin), not a plain box.
 	var model := Node3D.new()
@@ -709,21 +811,25 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 		_build_model(model, id, category, size, color, ghost)
 
 	if not ghost:
-		var col := CollisionShape3D.new()
-		var shape := BoxShape3D.new()
-		# Bales have ~10% HORIZONTAL "give": the collision shape is shrunk on X/Z
-		# by 10% (5% each side) so a forklift, bale-clamp or Merlo can press into
-		# the compressed-film block slightly before colliding — gives the soft
-		# feel of stacked LDPE film rather than a steel brick. Y stays full so
-		# stacks settle on each other and the player can walk on top without
-		# sinking into the bale.
-		if category == "Bales":
-			shape.size = Vector3(size.x * 0.9, size.y, size.z * 0.9)
-		else:
-			shape.size = size
-		col.shape = shape
-		col.position = Vector3(0.0, size.y * 0.5, 0.0)
-		body.add_child(col)
+		# Floor-paint placeables (lump_cart_spot, etc.) are purely visual — skip
+		# collision so wheels/carts don't ride up on the paint stripe.
+		var skip_collision : bool = id == "lump_cart_spot"
+		if not skip_collision:
+			var col := CollisionShape3D.new()
+			var shape := BoxShape3D.new()
+			# Bales have ~10% HORIZONTAL "give": the collision shape is shrunk on X/Z
+			# by 10% (5% each side) so a forklift, bale-clamp or Merlo can press into
+			# the compressed-film block slightly before colliding — gives the soft
+			# feel of stacked LDPE film rather than a steel brick. Y stays full so
+			# stacks settle on each other and the player can walk on top without
+			# sinking into the bale.
+			if category == "Bales":
+				shape.size = Vector3(size.x * 0.9, size.y, size.z * 0.9)
+			else:
+				shape.size = size
+			col.shape = shape
+			col.position = Vector3(0.0, size.y * 0.5, 0.0)
+			body.add_child(col)
 		body.add_to_group("placed_object")
 		# Bales also carry a physics material with high friction so stacked bales
 		# grip each other (so the clamp picks up multiple at once when held firmly)
@@ -814,12 +920,20 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 # =============================================================================
 const _STEEL : Color = Color(0.60, 0.63, 0.67)
 const _DARK  : Color = Color(0.24, 0.25, 0.28)
-const _SAFETY: Color = Color(0.86, 0.70, 0.16)
+# Photo-calibrated safety yellow from assets/reference_photos/building/
+# yellow_ladders_railings_lines.png (handrails) and _wooden_V_shape_support_beams.png
+# (caution cage). Slightly more saturated than the previous (0.86, 0.70, 0.16);
+# the real CeDo paint reads as a vivid green-leaning industrial yellow, not the
+# orange-leaning amber the old value gave.
+const _SAFETY: Color = Color(0.94, 0.78, 0.14)
 
 static func _build_model(p: Node3D, id: String, category: String, size: Vector3, color: Color, ghost: bool) -> void:
 	match id:
 		"silo":           _m_silo(p, size, color, ghost)
 		"extruder_silo":  _m_extruder_silo(p, size, color, ghost)
+		"lump_cart":      _m_lump_cart(p, size, color, ghost)
+		"lump_cart_spot": _m_lump_cart_spot(p, size, color, ghost)
+		"wardrobe_locker": _m_wardrobe_locker(p, size, color, ghost)
 		"doseersilo":     _m_doseersilo(p, size, color, ghost)
 		"transport_belt": _m_belt(p, size, color, ghost)
 		"cyclone":        _m_cyclone(p, size, color, ghost)
@@ -867,7 +981,7 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 		"feed_hopper":    _m_feed_hopper(p, size, color, ghost)
 		# #54 intake conveyor network — 12 distinct belts + diverter + buffers.
 		"intake_belt_1", "intake_belt_2", "intake_belt_3", "intake_belt_4", \
-		"intake_belt_5", "intake_belt_6", "intake_belt_7", "intake_belt_8", \
+		"intake_belt_5", "intake_belt_6", "intake_belt_7", "intake_belt_8", "intake_belt_8_5", \
 		"intake_belt_9", "intake_belt_10", "intake_belt_11", "intake_belt_12":
 			_m_intake_belt(p, id, size, color, ghost)
 		"switch_belt":    _m_switch_belt(p, size, color, ghost)
@@ -1009,7 +1123,13 @@ static func make_belt_material(scroll_speed: float = 0.8,
 	m.set_shader_parameter("belt_albedo",    _belt_albedo_texture())
 	m.set_shader_parameter("belt_roughness", _belt_roughness_texture())
 	m.set_shader_parameter("belt_normal",    _belt_normal_texture())
-	m.set_shader_parameter("scroll_speed",   scroll_speed)
+	# #140 — Godot's BoxMesh +Y face has V increasing in -Z, so a POSITIVE
+	# scroll_speed scrolled the visible texture toward the upstream end (away
+	# from the downstream/macro-forward direction). Operator confirmed every
+	# intake belt was rotating backward, which is exactly that sign error.
+	# Negate here so callers can stay with intuitive positive speeds (the
+	# belt visually moves toward the downstream end).
+	m.set_shader_parameter("scroll_speed",   -scroll_speed)
 	m.set_shader_parameter("uv_tile",        tile)
 	m.set_shader_parameter("uv_offset",      Vector2.ZERO)
 	return m
@@ -1490,6 +1610,225 @@ static func _m_silo(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void
 	_cyl(p, r, r, size.y * 0.5, Vector3(0.0, leg_top + size.y * 0.25, 0.0), shell)
 	# Domed/short top.
 	_cyl(p, r * 0.25, r, size.y * 0.10, Vector3(0.0, leg_top + size.y * 0.55, 0.0), shell)
+	# #101 — hanging plastic-cloth/rag enclosure around the discharge area.
+	# Per operator: the extraction screws themselves are NOT visible from outside;
+	# what's actually seen is a rectangular cloth skirt hung from partway up the
+	# cone down to where it touches the compactor belt under the silo. Cloth is
+	# the only visible part — the screws (plural, hidden behind it) are out of
+	# scope.
+	#
+	# Material is alpha-translucent off-white so the rag reads as soft fabric
+	# instead of a sheet-steel wall, and the panels are 1.2 cm thick so they
+	# don't dominate at grazing angles. Sides (±X) stay panel-free so the
+	# silo's horizontal discharge has somewhere to actually go.
+	var cloth_mat := StandardMaterial3D.new()
+	cloth_mat.albedo_color = Color(0.88, 0.84, 0.74, 0.78)
+	cloth_mat.metallic = 0.0
+	cloth_mat.roughness = 0.95
+	cloth_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	cloth_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var cloth_half_w : float = r * 0.90
+	var cloth_half_d : float = r * 0.90
+	var cloth_top_y : float = floor_clear + cone_h * 0.45
+	var cloth_bot_y : float = 0.02
+	var cloth_h : float = cloth_top_y - cloth_bot_y
+	var cloth_cy : float = (cloth_top_y + cloth_bot_y) * 0.5
+	# Only the +Z and -Z facing rag panels are hung (the ones perpendicular to
+	# the screw's conveying axis). The ±X sides stay open — the screws are
+	# horizontal and discharge OUT the side onto a compactor belt; blocking
+	# them with cloth would defeat the whole point. Top + bottom stay open
+	# so material falls down through the enclosure.
+	_box(p, Vector3(cloth_half_w * 2.0, cloth_h, 0.012),
+		Vector3(0.0, cloth_cy, -cloth_half_d), cloth_mat)   # front (-Z)
+	_box(p, Vector3(cloth_half_w * 2.0, cloth_h, 0.012),
+		Vector3(0.0, cloth_cy,  cloth_half_d), cloth_mat)   # back  (+Z)
+
+# ── #98 lumps cart (lumpenwagen): wheeled blue steel dumpster the operator
+# parks under the extruder's screen-changer / melt-filter outlet. The screen
+# pack catches unmelted polymer agglomerates (gels, cross-linked chunks); they
+# drop into this cart. Modelled from operator photo desktop/_lumbs_cart.jpg —
+# blue paint, open top, reinforced corners, steel handle bar across the front
+# face, yellow hot-surface warning sticker, sits on a wooden pallet so a
+# forklift can shift it once full.
+static func _m_lump_cart(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> void:
+	# Per operator's paint sketch: wooden pallet was wrong. The cart sits on a
+	# metal under-frame plate (painted the same blue as the body) carrying TWO
+	# horizontal forklift-fork pockets (one on each lateral side) and rolls on
+	# 4 wheels. A push-handle made of two angled risers + a horizontal grip bar
+	# sticks up off the back face so the operator can wheel the cart around.
+	var blue   := _mat(Color(0.16, 0.30, 0.55), ghost, 0.30, 0.55)  # cart paint
+	var steel  := _mat(_STEEL, ghost, 0.55, 0.35)
+	var rubber := _mat(Color(0.08, 0.08, 0.10), ghost, 0.15, 0.85)  # hard rubber wheels
+	var dark   := _mat(_DARK, ghost, 0.40, 0.60)                    # pocket bores
+	var yellow := _mat(_SAFETY, ghost, 0.25, 0.70)
+	var wheel_r  : float = 0.07
+	var wheel_d  : float = 0.05
+	var frame_h  : float = 0.10
+	var frame_y0 : float = wheel_r * 2.0          # frame bottom rides above wheel diameters
+	var cart_w   : float = size.x * 0.88
+	var cart_d   : float = size.z * 0.88
+	var cart_base_y : float = frame_y0 + frame_h  # top of frame = bottom of cart body
+	var cart_h   : float = size.y * 0.52
+	var cart_cy  : float = cart_base_y + cart_h * 0.5
+	var wall_t   : float = 0.025
+	var post_t   : float = 0.05
+	# ── 4 hard-rubber wheels at frame corners ────────────────────────────────
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			_cyl(p, wheel_r, wheel_r, wheel_d,
+				Vector3(float(sx) * (cart_w * 0.42), wheel_r,
+					float(sz) * (cart_d * 0.42)), rubber, "x")
+	# ── Metal under-frame plate (the "red rectangle" in the sketch, painted blue) ─
+	_box(p, Vector3(cart_w + 0.10, frame_h, cart_d + 0.10),
+		Vector3(0.0, frame_y0 + frame_h * 0.5, 0.0), blue)
+	# ── Two forklift fork pockets running ALONG the length (±Z faces open)
+	#    so the forklift approaches from the short end. Modelled as dark
+	#    recessed slots. One left of centre, one right. ────────────────────────
+	var pocket_h : float = 0.055
+	var pocket_w : float = 0.08
+	for sx in [-1.0, 1.0]:
+		_box(p, Vector3(pocket_w, pocket_h, cart_d + 0.14),
+			Vector3(float(sx) * cart_w * 0.28, frame_y0 + frame_h * 0.55,
+				0.0), dark)
+	# ── Cart body: blue steel, open top, 4 walls + 1 bottom ──────────────────
+	_box(p, Vector3(cart_w, wall_t, cart_d),
+		Vector3(0.0, cart_base_y + wall_t * 0.5, 0.0), blue)
+	_box(p, Vector3(cart_w, cart_h - wall_t, wall_t),
+		Vector3(0.0, cart_cy, -cart_d * 0.5 + wall_t * 0.5), blue)   # front (-Z)
+	_box(p, Vector3(cart_w, cart_h - wall_t, wall_t),
+		Vector3(0.0, cart_cy,  cart_d * 0.5 - wall_t * 0.5), blue)   # back  (+Z)
+	_box(p, Vector3(wall_t, cart_h - wall_t, cart_d - wall_t * 2.0),
+		Vector3(-cart_w * 0.5 + wall_t * 0.5, cart_cy, 0.0), blue)   # left  (-X)
+	_box(p, Vector3(wall_t, cart_h - wall_t, cart_d - wall_t * 2.0),
+		Vector3( cart_w * 0.5 - wall_t * 0.5, cart_cy, 0.0), blue)   # right (+X)
+	# ── 4 reinforced corner posts ─────────────────────────────────────────────
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			_box(p, Vector3(post_t, cart_h, post_t),
+				Vector3(float(sx) * (cart_w * 0.5 - post_t * 0.3),
+					cart_cy,
+					float(sz) * (cart_d * 0.5 - post_t * 0.3)), steel)
+	# ── Push handle: two angled risers off the back (+Z) of the cart, meeting
+	#    a horizontal grip bar above. Anchored via a Node3D so the rotation
+	#    handles the local-frame axis math cleanly. ──────────────────────────
+	var handle_root := Node3D.new()
+	handle_root.name = "Handle"
+	handle_root.position = Vector3(0.0, cart_base_y + cart_h - 0.05, cart_d * 0.5 + 0.04)
+	handle_root.rotation.x = deg_to_rad(-32.0)
+	p.add_child(handle_root)
+	var riser_len : float = size.y * 0.45
+	for sx in [-1.0, 1.0]:
+		_box(handle_root, Vector3(0.028, 0.028, riser_len),
+			Vector3(float(sx) * cart_w * 0.40, 0.0, riser_len * 0.5), steel)
+	_cyl(handle_root, 0.024, 0.024, cart_w * 0.95,
+		Vector3(0.0, 0.0, riser_len), steel, "x")
+	# ── Hot-surface warning decal (ISO 7010 W017): yellow triangle with black
+	#    border + flame/hand icon. 18 cm — readable at arm's length. Mounted on
+	#    the back (+Z) face where operator approaches the handle.
+	var deco_y : float = cart_cy
+	var deco_z : float = cart_d * 0.5 + wall_t * 0.5 + 0.004
+	var sticker_w : float = 0.18
+	# Yellow triangular base
+	var sticker := MeshInstance3D.new()
+	var prism_y := PrismMesh.new()
+	prism_y.size = Vector3(sticker_w, sticker_w, 0.006)
+	sticker.mesh = prism_y
+	sticker.material_override = yellow
+	sticker.position = Vector3(0.0, deco_y, deco_z)
+	p.add_child(sticker)
+	# Black border triangle (slightly smaller, sits proud)
+	var border := MeshInstance3D.new()
+	var prism_border := PrismMesh.new()
+	prism_border.size = Vector3(sticker_w * 0.88, sticker_w * 0.88, 0.007)
+	border.mesh = prism_border
+	var black_mat := _mat(Color(0.05, 0.05, 0.06), ghost, 0.20, 0.70)
+	border.material_override = black_mat
+	border.position = Vector3(0.0, deco_y - sticker_w * 0.03, deco_z + 0.002)
+	p.add_child(border)
+	# Inner yellow triangle (the ISO "field")
+	var field := MeshInstance3D.new()
+	var prism_field := PrismMesh.new()
+	prism_field.size = Vector3(sticker_w * 0.72, sticker_w * 0.72, 0.008)
+	field.mesh = prism_field
+	field.material_override = yellow
+	field.position = Vector3(0.0, deco_y - sticker_w * 0.06, deco_z + 0.004)
+	p.add_child(field)
+	# Flame icon: tall narrow box (flame body) + small wavy top
+	var flame_h : float = sticker_w * 0.30
+	var flame_w : float = sticker_w * 0.14
+	_box(p, Vector3(flame_w, flame_h, 0.009),
+		Vector3(0.0, deco_y - sticker_w * 0.18, deco_z + 0.005), black_mat)
+	# Flame tip (narrower box on top)
+	_box(p, Vector3(flame_w * 0.6, flame_h * 0.35, 0.009),
+		Vector3(0.0, deco_y - sticker_w * 0.18 + flame_h * 0.55, deco_z + 0.005), black_mat)
+	# Hand silhouette above the flame (flat box = palm)
+	var hand_w : float = sticker_w * 0.18
+	_box(p, Vector3(hand_w, hand_w * 0.6, 0.009),
+		Vector3(0.0, deco_y - sticker_w * 0.02, deco_z + 0.005), black_mat)
+
+# ── #98 lump_cart_spot: yellow L-bracket floor marking where the lump_cart
+# is parked at shift start. Every extruder in the centre hall has one near
+# its screen-changer / laser_filter discharge. Operator (extruder op) checks
+# this is filled before starting the extruders.
+static func _m_lump_cart_spot(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> void:
+	var yellow := _mat(_SAFETY, ghost, 0.10, 0.85)
+	# 4 L-shaped corner brackets — thin painted stripes on concrete (4 mm tall,
+	# 12 mm wide). Collision removed at build_node level so the cart rolls over.
+	var bar_len : float = 0.32
+	var bar_thk : float = 0.06
+	var paint_h : float = 0.004
+	var hx : float = size.x * 0.5
+	var hz : float = size.z * 0.5
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			_box(p, Vector3(bar_len, paint_h, bar_thk),
+				Vector3(float(sx) * (hx - bar_len * 0.5), paint_h * 0.5,
+					float(sz) * (hz - bar_thk * 0.5)), yellow)
+			_box(p, Vector3(bar_thk, paint_h, bar_len),
+				Vector3(float(sx) * (hx - bar_thk * 0.5), paint_h * 0.5,
+					float(sz) * (hz - bar_len * 0.5)), yellow)
+
+# ── #154 wardrobe locker: tall blue steel cabinet with a hi-vis vest hanging ──
+## Body is a thin upright box (the size.x × size.y × size.z catalog dims).
+## Right edge is the door — a slightly proud slab so the silhouette reads as
+## "openable" even though we keep it static for now. A small orange rectangle
+## hangs inside the upper third as a stand-in for the hi-vis vest peeking out.
+static func _m_wardrobe_locker(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
+	var paint  := _mat(color, ghost, 0.45, 0.45)                       # cabinet blue
+	var dark   := _mat(_DARK, ghost, 0.45, 0.55)
+	var orange := _mat(Color(0.96, 0.45, 0.12), ghost, 0.10, 0.85)     # hi-vis vest
+	var hinge  := _mat(Color(0.65, 0.65, 0.68), ghost, 0.55, 0.4)      # galv hinges
+	# Cabinet shell — back + 2 sides + top + bottom + (slightly recessed) front.
+	# All built as a single box for now; a hollow shell is the polish pass.
+	_box(p, Vector3(size.x, size.y, size.z),
+		Vector3(0.0, size.y * 0.5, 0.0), paint)
+	# Door slab on the +Z face, proud by ~1 cm so the seam is readable.
+	var door_thk : float = 0.012
+	_box(p, Vector3(size.x * 0.96, size.y * 0.96, door_thk),
+		Vector3(0.0, size.y * 0.5, size.z * 0.5 + door_thk * 0.5), paint)
+	# Two galvanised hinges on the right edge of the door.
+	for hy in [size.y * 0.20, size.y * 0.80]:
+		_box(p, Vector3(0.025, 0.05, 0.025),
+			Vector3(size.x * 0.46, float(hy), size.z * 0.5 + door_thk + 0.013), hinge)
+	# Dark grille slot at top (ventilation) — a thin recessed strip.
+	_box(p, Vector3(size.x * 0.45, 0.035, 0.012),
+		Vector3(0.0, size.y * 0.94, size.z * 0.5 + door_thk + 0.006), dark)
+	# Door handle — small horizontal grip on the left edge.
+	_box(p, Vector3(0.045, 0.08, 0.025),
+		Vector3(-size.x * 0.36, size.y * 0.50, size.z * 0.5 + door_thk + 0.013), dark)
+	# Hi-vis vest stand-in: orange rectangle floating just inside the door at
+	# shoulder height. Visual cue this is the wardrobe locker.
+	_box(p, Vector3(size.x * 0.45, size.y * 0.22, 0.010),
+		Vector3(0.0, size.y * 0.65, size.z * 0.5 + door_thk + 0.018), orange)
+	# Small label plate above the door.
+	var lbl := Label3D.new()
+	lbl.text = "WARDROBE"
+	lbl.font_size = 24
+	lbl.outline_size = 4
+	lbl.pixel_size = 0.0025
+	lbl.position = Vector3(0.0, size.y + 0.05, size.z * 0.5 + 0.02)
+	lbl.billboard = BaseMaterial3D.BILLBOARD_DISABLED
+	p.add_child(lbl)
 
 # ── mechanical dryer: tank cylinder + top duct + base ─────────────────────────
 ## Mechanical dryer — modelled from operator photos (Line 3A/3B drying section):
@@ -1545,21 +1884,18 @@ static func _m_dryer(p: Node3D, size: Vector3, color: Color, ghost: bool) -> voi
 	_box(p, Vector3(0.5, 0.5, 0.5), Vector3(0.0, drum_cy - rad * 1.25, hz * 0.66), blue)
 	_cyl(p, 0.18, 0.18, 0.4, Vector3(0.0, drum_cy - rad * 1.25, hz * 0.9), dark, "z")
 
-	# ── Blue side inspection covers along the drum (+X) ──────────────────────
-	for i in 3:
-		var iz : float = -drum_len * 0.3 + float(i) * (drum_len * 0.3)
-		_box(p, Vector3(0.1, rad * 0.5, rad * 0.6), Vector3(rad * 1.0, drum_cy, iz), blue)
+	# ── Blue side inspection covers along BOTH sides of the drum (±X) ────────
+	for sx in [-1.0, 1.0]:
+		for i in 3:
+			var iz : float = -drum_len * 0.3 + float(i) * (drum_len * 0.3)
+			_box(p, Vector3(0.1, rad * 0.5, rad * 0.6), Vector3(float(sx) * rad * 1.0, drum_cy, iz), blue)
 
-	# ── Grey duct off the top → tall stainless exhaust stack (-X side) ───────
-	var stack_x : float = -size.x * 0.5
-	_cyl(p, rad * 0.22, rad * 0.22, size.x * 0.6,
-		Vector3(-size.x * 0.25, drum_cy + rad * 0.9, hz * 0.1), galv, "x")
-	var stack_h : float = size.y * 1.8
-	_cyl(p, rad * 0.26, rad * 0.26, stack_h,
-		Vector3(stack_x, drum_cy + rad * 0.9 + stack_h * 0.5, hz * 0.1), stainless)
-	for i in 3:
-		_cyl(p, rad * 0.28, rad * 0.28, 0.06,
-			Vector3(stack_x, drum_cy + rad * 0.9 + float(i + 1) * (stack_h * 0.28), hz * 0.1), dark)
+	# ── Air outlet stub (+Z face, low) — connects to blower suction duct ────
+	# Mechanical dryers have no exhaust chimney (no combustion heat); air is
+	# pulled through by the downstream blower. A short round stub on the +Z
+	# face marks the duct connection point.
+	_cyl(p, rad * 0.22, rad * 0.22, 0.30,
+		Vector3(0.0, drum_cy - rad * 0.5, hz + 0.15), galv, "z")
 
 # ── washing line: long trough + access housings + legs + drive motor ──────────
 static func _m_washline(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
@@ -1687,16 +2023,25 @@ static func _intake_belt_spec(id: String) -> Dictionary:
 	# Incline is applied as a rotation about the X axis of the deck assembly so
 	# the upstream end (-Z) sits lower or higher than the downstream end (+Z).
 	match id:
-		"intake_belt_1":  return {"incline": 0.0,   "rail": Color(0.65, 0.55, 0.18)}
-		"intake_belt_2":  return {"incline": 0.0,   "rail": Color(0.20, 0.20, 0.22)}
+		# Operator note (#141): EVERY transport belt needs some incline to actually
+		# convey loose film — a truly flat belt won't push material forward. The
+		# "flat" 0° values used to be wrong. Switch belt (12) stays at 0° because
+		# its whole deck slides along its conveying axis for the VSS feed-split,
+		# and an incline would fight that mechanism.
+		"intake_belt_1":  return {"incline": 5.0,   "rail": Color(0.65, 0.55, 0.18)}
+		"intake_belt_2":  return {"incline": 5.0,   "rail": Color(0.20, 0.20, 0.22)}
 		"intake_belt_3":  return {"incline": 10.0,  "rail": Color(0.20, 0.20, 0.22)}
-		"intake_belt_4":  return {"incline": 0.0,   "rail": Color(0.25, 0.50, 0.80)}
+		"intake_belt_4":  return {"incline": 8.0,   "rail": Color(0.25, 0.50, 0.80)}
 		"intake_belt_5":  return {"incline": 15.0,  "rail": Color(0.20, 0.20, 0.22)}
-		"intake_belt_6":  return {"incline": 0.0,   "rail": Color(0.40, 0.40, 0.42)}
-		"intake_belt_7":  return {"incline": 0.0,   "rail": Color(0.85, 0.75, 0.18)}
+		"intake_belt_6":  return {"incline": 6.0,   "rail": Color(0.40, 0.40, 0.42)}
+		"intake_belt_7":  return {"incline": 5.0,   "rail": Color(0.85, 0.75, 0.18)}
 		"intake_belt_8":  return {"incline": -8.0,  "rail": Color(0.30, 0.30, 0.32)}
-		"intake_belt_9":  return {"incline": 0.0,   "rail": Color(0.42, 0.42, 0.46)}
-		"intake_belt_10": return {"incline": 0.0,   "rail": Color(0.25, 0.60, 0.35)}
+		# C8.5: slight DOWNHILL toward the U-bay (material is dropped on by C8 and
+		# slides toward the bay). Brown rail matches the catalog colour so it reads
+		# as a different belt from the numbered chain even at distance.
+		"intake_belt_8_5":return {"incline": -6.0,  "rail": Color(0.52, 0.36, 0.18)}
+		"intake_belt_9":  return {"incline": 4.0,   "rail": Color(0.42, 0.42, 0.46)}
+		"intake_belt_10": return {"incline": 5.0,   "rail": Color(0.25, 0.60, 0.35)}
 		"intake_belt_11": return {"incline": 12.0,  "rail": Color(0.20, 0.20, 0.22)}
 		"intake_belt_12": return {"incline": 0.0,   "rail": Color(0.55, 0.55, 0.60)}
 	return {"incline": 0.0, "rail": Color(0.30, 0.30, 0.34)}
@@ -1713,20 +2058,30 @@ static func _m_intake_belt(p: Node3D, id: String, size: Vector3, _color: Color, 
 	# Static support legs (vertical) — the deck above them tilts, the legs don't.
 	_legs(p, size, deck_y, steel)
 	# Deck pivot — rotated child carries the rollers, slats, and rails together
-	# so the whole moving assembly tilts as one rigid body.
+	# so the whole moving assembly tilts as one rigid body. Sign convention: a
+	# positive incline_deg means the +Z (downstream / outlet) end goes UP, so
+	# material conveyed in +Z rises. Earlier `+deg_to_rad(incline_deg)` was the
+	# wrong sign and tilted the outlet DOWN — the user spotted it as "the
+	# incline is also not correct" on belts 3/5/11.
 	var deck_pivot := Node3D.new()
 	deck_pivot.name = "DeckPivot"
 	deck_pivot.position = Vector3(0.0, deck_y, 0.0)
-	deck_pivot.rotation = Vector3(deg_to_rad(incline_deg), 0.0, 0.0)
+	deck_pivot.rotation = Vector3(-deg_to_rad(incline_deg), 0.0, 0.0)
 	p.add_child(deck_pivot)
 	# End rollers
 	_cyl(deck_pivot, size.y * 0.20, size.y * 0.20, size.x * 0.9, Vector3(0.0, 0.0,  hz), dark, "x")
 	_cyl(deck_pivot, size.y * 0.20, size.y * 0.20, size.x * 0.9, Vector3(0.0, 0.0, -hz), dark, "x")
-	# Belt deck — textured rubber-slat scrolling material, like _m_belt.
+	# Belt deck — textured rubber-slat scrolling material, like _m_belt. The
+	# shader scroll is derived from _INTAKE_BELT_SPEED_MPS so the visible
+	# surface speed equals what the player-carry meta says it does (0.5 m/s
+	# downstream). Was -0.6 (apparent 1.2 m/s) and the carry meta wasn't even
+	# set — visual lied, physics didn't fire. uv_tile.y = size.z * 0.5 keeps
+	# the apparent m/s constant regardless of belt length.
 	var deck := _box(deck_pivot, Vector3(size.x * 0.82, 0.05, size.z * 0.9),
 		Vector3(0.0, size.y * 0.22, 0.0), dark)
 	if not ghost:
-		deck.material_override = make_belt_material(0.6, Vector2(1.0, size.z * 0.5))
+		deck.material_override = make_belt_material(_INTAKE_BELT_SHADER_SCROLL,
+			Vector2(1.0, size.z * 0.5))
 	# Side rails in the per-belt accent colour — what makes each belt distinct.
 	_box(deck_pivot, Vector3(0.08, size.y * 0.22, size.z * 0.95),
 		Vector3( size.x * 0.44, size.y * 0.28, 0.0), rail_m)
@@ -1735,40 +2090,80 @@ static func _m_intake_belt(p: Node3D, id: String, size: Vector3, _color: Color, 
 	# A small motor housing on the upstream end for visual variety per belt.
 	_box(deck_pivot, Vector3(size.x * 0.20, size.y * 0.30, size.x * 0.25),
 		Vector3(size.x * 0.55, size.y * 0.10, -hz * 0.6), steel)
+	# #141 — discharge chute at the +Z (outlet) end. Four thin steel walls,
+	# OPEN top AND open bottom (~25 cm), so material drops out of this belt
+	# down into the next one's inlet. The chute is parented to `p` (not the
+	# deck_pivot) so it hangs vertically regardless of the deck's tilt — same
+	# way a real plant chute is bolted to the belt frame, not the moving deck.
+	var chute_w  : float = 0.30
+	var chute_d  : float = 0.30
+	var chute_h_local : float = 0.25
+	var chute_t  : float = 0.015
+	# Chute sits AT the belt's +Z end (just past the outlet pulley), not 10 %
+	# inside the body — that way it hangs over empty space and visibly drops
+	# material into whatever is placed next, instead of clipping into the deck.
+	var outlet_z : float = size.z * 0.50
+	# The deck end at +Z rises by hz * sin(incline) when the deck pivots; the
+	# chute top sits a bit below that level so material clears the pulley.
+	var outlet_y_off : float = hz * sin(deg_to_rad(incline_deg))
+	var chute_top_y  : float = deck_y + outlet_y_off + size.y * 0.22 - 0.04
+	var chute_cy     : float = chute_top_y - chute_h_local * 0.5
+	# Left + right walls along X
+	for sx in [-1.0, 1.0]:
+		_box(p, Vector3(chute_t, chute_h_local, chute_d),
+			Vector3(float(sx) * chute_w * 0.5, chute_cy, outlet_z), steel)
+	# Front + back walls along Z
+	for sz_off in [-1.0, 1.0]:
+		_box(p, Vector3(chute_w + chute_t * 2.0, chute_h_local, chute_t),
+			Vector3(0.0, chute_cy, outlet_z + float(sz_off) * chute_d * 0.5), steel)
 
-# ── switch_belt: Y-junction diverter — single input on -Z, two outputs (one
-#    straight ahead +Z toward the VSS silo, one to the side +X toward U-bay).
-#    Visually a flat belt with a HORIZONTAL hinged flap above the discharge end
-#    that swings to route material left/right. Two output chutes drop the flake.
+# ── switch_belt (= conveyor 12, operator-spec #137): flat belt whose ENTIRE
+#    DECK slides along its conveying axis ±1.5 m, feeding either VSS_3A
+#    (at -1.5 m) or VSS_3B (at +1.5 m), with a smooth blend at intermediate
+#    positions. The legs / pulleys stay put; only the deck assembly under the
+#    "Deck" node moves. A pair of position-rail markers along the chassis
+#    show how far the deck has jogged off-centre.
 static func _m_switch_belt(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> void:
 	var dark   := _mat(_DARK, ghost, 0.3, 0.7)
 	var steel  := _mat(_STEEL, ghost, 0.5, 0.45)
 	var orange := _mat(Color(0.85, 0.45, 0.10), ghost, 0.4, 0.5)
 	var deck_y := size.y * 0.72
+	# Static chassis bits (legs + position-rail housing). These DON'T jog —
+	# they stay rigid while the deck slides through them.
 	_legs(p, size, deck_y, steel)
-	# Flat belt deck.
-	_cyl(p, size.y * 0.18, size.y * 0.18, size.x * 0.9, Vector3(0.0, deck_y,  size.z * 0.45), dark, "x")
-	_cyl(p, size.y * 0.18, size.y * 0.18, size.x * 0.9, Vector3(0.0, deck_y, -size.z * 0.45), dark, "x")
-	var deck := _box(p, Vector3(size.x * 0.85, 0.05, size.z * 0.92),
+	# Rail housings the deck slides on (chassis-side rails). Wider than the deck
+	# travel so the operator can see the jog at a glance.
+	_box(p, Vector3(0.08, size.y * 0.10, size.z * 1.30),
+		Vector3( size.x * 0.48, deck_y - 0.05, 0.0), orange)
+	_box(p, Vector3(0.08, size.y * 0.10, size.z * 1.30),
+		Vector3(-size.x * 0.48, deck_y - 0.05, 0.0), orange)
+
+	# All moving parts go under "Deck" so SwitchBelt.gd can shift them as one.
+	# That includes the two pulleys, the belt skin, and the side rails.
+	var deck_root := Node3D.new()
+	deck_root.name = "Deck"
+	p.add_child(deck_root)
+	_cyl(deck_root, size.y * 0.18, size.y * 0.18, size.x * 0.9,
+		Vector3(0.0, deck_y,  size.z * 0.45), dark, "x")
+	_cyl(deck_root, size.y * 0.18, size.y * 0.18, size.x * 0.9,
+		Vector3(0.0, deck_y, -size.z * 0.45), dark, "x")
+	var deck_skin := _box(deck_root, Vector3(size.x * 0.85, 0.05, size.z * 0.92),
 		Vector3(0.0, deck_y + size.y * 0.20, 0.0), dark)
+	deck_skin.name = "DeckSkin"
 	if not ghost:
-		deck.material_override = make_belt_material(0.6, Vector2(1.0, size.z * 0.5))
-	# Side rails.
-	_box(p, Vector3(0.08, size.y * 0.20, size.z * 0.95),
+		deck_skin.material_override = make_belt_material(0.6, Vector2(1.0, size.z * 0.5))
+	# Side rails on the deck — these move WITH the deck.
+	_box(deck_root, Vector3(0.08, size.y * 0.20, size.z * 0.95),
 		Vector3( size.x * 0.46, deck_y + size.y * 0.26, 0.0), steel)
-	_box(p, Vector3(0.08, size.y * 0.20, size.z * 0.95),
+	_box(deck_root, Vector3(0.08, size.y * 0.20, size.z * 0.95),
 		Vector3(-size.x * 0.46, deck_y + size.y * 0.26, 0.0), steel)
-	# Hinged diverter flap (orange industrial paint) above the discharge end.
-	var flap := _box(p, Vector3(size.x * 0.7, size.y * 0.05, size.x * 0.6),
-		Vector3(0.0, deck_y + size.y * 0.55, size.z * 0.35), orange)
-	flap.rotation = Vector3(0.0, deg_to_rad(20.0), 0.0)   # default leaning toward +X (U-bay route)
-	# Twin discharge chutes — primary (+Z toward VSS) and secondary (+X toward U-bay).
-	var chute_z := _box(p, Vector3(size.x * 0.5, size.y * 0.4, 0.08),
-		Vector3(0.0, deck_y - size.y * 0.15, size.z * 0.48), steel)
-	chute_z.rotation = Vector3(deg_to_rad(-30.0), 0.0, 0.0)
-	var chute_x := _box(p, Vector3(0.08, size.y * 0.4, size.x * 0.4),
-		Vector3(size.x * 0.46, deck_y - size.y * 0.15, size.z * 0.30), steel)
-	chute_x.rotation = Vector3(0.0, 0.0, deg_to_rad(30.0))
+
+	# Tag the body so LineFlow can find this switch belt and drive its jog.
+	# The script attaches itself to whatever Node3D ancestor BuildMode chose
+	# (StaticBody3D by default for Conveyance) — we just leave the marker meta
+	# here; LineFlow attaches the script at machine-register time.
+	if not ghost:
+		p.set_meta("switch_belt", true)
 
 # ── vss_silo: tall round metering silo with a conical bottom and side feed
 #    ports near the top. Smaller cousin of the main extruder silo. ─────────────
@@ -1796,24 +2191,115 @@ static func _m_vss_silo(p: Node3D, size: Vector3, color: Color, ghost: bool) -> 
 	# Discharge stub at the bottom of the cone.
 	_cyl(p, 0.14, 0.14, 0.3, Vector3(0.0, leg_h - 0.05, 0.0), dark)
 
-# ── u_bay: 3-sided concrete pit (open +Z) the Merlo backs into to scoop overflow
-#    flake out. Same look as the existing concrete_bay but lower walls (2.5 m
-#    instead of 4 m) and a poured-concrete floor with a drain in the centre. ──
+# ── u_bay (stortvak): operator-spec 6.25 m tall stacked-concrete-block surge pit.
+#    Walls are built BRICK-BY-BRICK with the standard 1/2 overlap pattern (each
+#    course offset by half a block from the one below) so the masonry reads as
+#    real building-code stacked concrete, not a smooth box. The two outer ends
+#    of the side walls are removed (per operator) — the side walls only extend
+#    ~50% of the depth from the back wall, giving the "small u" silhouette while
+#    keeping the same overall X width. Floor still a poured-concrete slab with a
+#    centre drain so washing water has somewhere to go. ──
+## Block + wall geometry (operator-tuned, second pass). Blocks are 150 % larger
+## in every dimension than the first pass — that's the Legioblock / industrial
+## precast-concrete size (~1.5 m × 0.6 m × 0.9 m) you'd actually build a surge
+## pit with. Wall heights differ per face: BACK is the retaining wall (taller),
+## SIDES are lower so a Merlo can scoop over them; both fractions are of the
+## catalog size.y. SIDE_FRAC is the proportion of the bay depth each side wall
+## covers from the back inward — leaving the front and a chunk of the sides
+## open ("small u" silhouette per operator).
+const _UBAY_BRICK_W       : float = 1.50
+const _UBAY_BRICK_H       : float = 0.60
+const _UBAY_WALL_T        : float = 0.90
+const _UBAY_SIDE_FRAC     : float = 0.575   # 50% × 1.15 (sides extended 15%)
+const _UBAY_BACK_HEIGHT_F : float = 0.85    # back wall is 15% lower than size.y
+const _UBAY_SIDE_HEIGHT_F : float = 0.60    # side walls are 40% lower
+
 static func _m_u_bay(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
 	var c1 := _mat(color, ghost, 0.15, 0.95)
 	var c2 := _mat(Color(color.r * 0.9, color.g * 0.9, color.b * 0.88), ghost, 0.15, 0.95)
-	var wall_t : float = 0.6
 	var hx : float = size.x * 0.5
 	var hz : float = size.z * 0.5
 	# Poured-concrete floor slab.
 	_box(p, Vector3(size.x, 0.25, size.z), Vector3(0.0, 0.125, 0.0), c2)
-	# A drain grate in the centre of the floor.
+	# Drain grate in the centre.
 	var drain := _mat(Color(0.35, 0.35, 0.38), ghost, 0.6, 0.4)
 	_box(p, Vector3(0.5, 0.05, 0.5), Vector3(0.0, 0.255, 0.0), drain)
-	# Three walls (back -Z, left -X, right +X). Front (+Z) left open for Merlo.
-	_bay_wall(p, size.x, size.y, wall_t, Vector3(0.0, 0.0, -hz + wall_t * 0.5), false, c1, c2)
-	_bay_wall(p, size.z - wall_t * 2.0, size.y, wall_t, Vector3(-hx + wall_t * 0.5, 0.0, 0.0), true, c1, c2)
-	_bay_wall(p, size.z - wall_t * 2.0, size.y, wall_t, Vector3( hx - wall_t * 0.5, 0.0, 0.0), true, c1, c2)
+	# BACK wall (full width along X, the bottom of the letter u). Centred on -Z
+	# edge. Taller than the sides so material doesn't slosh out the back.
+	var back_h : float = size.y * _UBAY_BACK_HEIGHT_F
+	var back_centre := Vector3(0.0, 0.25, -hz + _UBAY_WALL_T * 0.5)
+	_ubay_brick_wall(p, size.x, back_h, _UBAY_WALL_T, back_centre, true,  c1, c2, ghost)
+	# SIDE walls — 40% lower than back, and only cover SIDE_FRAC of the depth
+	# (front portion of each side stays open). Operator's "small u" silhouette.
+	var side_h : float = size.y * _UBAY_SIDE_HEIGHT_F
+	var side_len : float = (size.z - _UBAY_WALL_T) * _UBAY_SIDE_FRAC
+	# Place the side wall so its NEAR end is flush with the back wall, then it
+	# extends forward (+Z) by side_len.
+	var side_centre_z : float = -hz + _UBAY_WALL_T + side_len * 0.5
+	var left_centre  := Vector3(-hx + _UBAY_WALL_T * 0.5, 0.25, side_centre_z)
+	var right_centre := Vector3( hx - _UBAY_WALL_T * 0.5, 0.25, side_centre_z)
+	_ubay_brick_wall(p, _UBAY_WALL_T, side_h, side_len, left_centre,  false, c1, c2, ghost)
+	_ubay_brick_wall(p, _UBAY_WALL_T, side_h, side_len, right_centre, false, c1, c2, ghost)
+
+## Procedural stacked-block wall. `x_aligned` true → wall runs along X (back
+## wall, narrow on Z); false → wall runs along Z (side wall, narrow on X). Rows
+## alternate offset by half a block, matching real masonry. Per-row tone
+## alternates between the two materials so the joints read even at distance.
+static func _ubay_brick_wall(parent: Node3D, sx: float, sy: float, sz: float,
+		centre: Vector3, x_aligned: bool,
+		mat_light: StandardMaterial3D, mat_dark: StandardMaterial3D, _ghost: bool) -> void:
+	var brick_w : float = _UBAY_BRICK_W
+	var brick_h : float = _UBAY_BRICK_H
+	# Number of rows; round up so we cover sy fully (the top row clips slightly).
+	var n_rows : int = int(ceil(sy / brick_h))
+	var wall_length : float = sx if x_aligned else sz
+	var wall_thick  : float = sz if x_aligned else sx
+	for row in n_rows:
+		var row_y : float = brick_h * (float(row) + 0.5)
+		# Row top can't poke above sy — clip the topmost row.
+		var h_used : float = brick_h * 0.95
+		if row_y + brick_h * 0.5 > sy:
+			h_used = (sy - brick_h * float(row)) * 0.95
+			if h_used <= 0.0:
+				continue
+		# Half-block offset on alternating rows ─ that's the building-code 1/2
+		# overlap pattern the operator asked for.
+		var offset : float = brick_w * 0.5 if row % 2 == 1 else 0.0
+		var row_mat : StandardMaterial3D = mat_dark if row % 2 == 1 else mat_light
+		# Lay bricks across the wall length; clip the end bricks so the wall ends
+		# stay square rather than poking out.
+		var pos : float = -wall_length * 0.5 + offset
+		# Pre-roll: a half-brick stub at the START of odd rows so the row begins
+		# flush with the wall's edge.
+		if offset > 0.0:
+			var stub : float = offset
+			var stub_pos : float = -wall_length * 0.5 + stub * 0.5
+			_ubay_lay_brick(parent, stub * 0.96, h_used, wall_thick,
+				centre, stub_pos, row_y, x_aligned, row_mat)
+		while pos + brick_w <= wall_length * 0.5:
+			var bw : float = brick_w
+			_ubay_lay_brick(parent, bw * 0.96, h_used, wall_thick,
+				centre, pos + bw * 0.5, row_y, x_aligned, row_mat)
+			pos += brick_w
+		# Tail half-brick at the END of the row if a partial fits.
+		var tail : float = wall_length * 0.5 - pos
+		if tail > 0.05:
+			var tail_pos : float = pos + tail * 0.5
+			_ubay_lay_brick(parent, tail * 0.96, h_used, wall_thick,
+				centre, tail_pos, row_y, x_aligned, row_mat)
+
+static func _ubay_lay_brick(parent: Node3D, length: float, h_used: float, thick: float,
+		centre: Vector3, pos_along: float, row_y: float, x_aligned: bool,
+		mat: StandardMaterial3D) -> void:
+	var brick_size : Vector3
+	var brick_pos : Vector3
+	if x_aligned:
+		brick_size = Vector3(length, h_used, thick)
+		brick_pos  = centre + Vector3(pos_along, row_y, 0.0)
+	else:
+		brick_size = Vector3(thick, h_used, length)
+		brick_pos  = centre + Vector3(0.0, row_y, pos_along)
+	_box(parent, brick_size, brick_pos, mat)
 
 # ── cyclone: cylinder body + downward cone + top outlet + tangential inlet ─────
 static func _m_cyclone(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
@@ -2187,7 +2673,7 @@ static func _m_compactor_belt(p: Node3D, size: Vector3, _color: Color, ghost: bo
 	var steel     := _mat(_STEEL, ghost, 0.72, 0.28)                    # stainless hood + ducts
 	var motor     := _mat(Color(0.32, 0.34, 0.36), ghost, 0.40, 0.45)   # blower drive motor
 	var dark      := _mat(_DARK, ghost, 0.25, 0.55)                     # bolt heads + shadows
-	var W := size.x; var H := size.y; var D := size.z
+	var W := size.x; var H := size.y; var _D := size.z
 	var belt_w   : float = 0.80                                          # belt strip width
 	var body_thk : float = 0.40                                          # side-panel height
 	var feed_y   : float = 0.30                                          # belt low-end Y
@@ -2442,6 +2928,28 @@ static func _m_flotation(p: Node3D, size: Vector3, color: Color, ghost: bool) ->
 	if not ghost:
 		fl_outlet.set_meta("comp", "outlet")
 	_motor_unit(p, size.y * 0.14, size.x * 0.24, Vector3(size.x * 0.5, roll_y + size.y * 0.04, hz * 0.85), "x", ghost)
+	# #100 — weir-scoop overflow chute hung on the OUTSIDE of the +Z wall. The
+	# outlet roll drags the mat against the wall; the mat overflows the wall's
+	# top edge and falls into this chute, which tilts forward + down to dump it
+	# into a downstream dewater_screw's catch bowl. Open top, 3-sided (floor +
+	# left + right) so material slides forward instead of pooling. Materials use
+	# the tank's own stainless palette.
+	if not ghost:
+		var wall_top_y : float = wall_y + size.y * 0.25
+		var chute_root := Node3D.new()
+		chute_root.name = "WeirChute"
+		chute_root.position = Vector3(0.0, wall_top_y - 0.02, hz * 0.96 + 0.04)
+		chute_root.rotation.x = deg_to_rad(35.0)
+		p.add_child(chute_root)
+		var chute_l : float = 0.90
+		var chute_w : float = size.x * 0.78
+		var chute_t : float = 0.03
+		_box(chute_root, Vector3(chute_w, chute_t, chute_l),
+			Vector3(0.0, 0.0, chute_l * 0.5), tank)
+		_box(chute_root, Vector3(chute_t, 0.22, chute_l),
+			Vector3( chute_w * 0.5, 0.11, chute_l * 0.5), tank)
+		_box(chute_root, Vector3(chute_t, 0.22, chute_l),
+			Vector3(-chute_w * 0.5, 0.11, chute_l * 0.5), tank)
 	# ── PHYSICALIZED FILM (#161, #82) ─────────────────────────────────────────
 	# A flotation tank floats clean LDPE as a packed MAT on the water surface and
 	# skims it off at the +Z outlet, while heavies (PET/sand) SINK to the floor.
@@ -2689,17 +3197,48 @@ static func _m_dewater(p: Node3D, size: Vector3, color: Color, ghost: bool) -> v
 	var steel := _mat(color, ghost, 0.5, 0.4)
 	var dark := _mat(_DARK, ghost, 0.5, 0.5)
 	var tilt := deg_to_rad(20.0)
-	# A-frame supports: short at the low (-Z) end, tall at the high (+Z) end
-	_box(p, Vector3(0.1, size.y * 0.4, 0.1), Vector3(size.x * 0.3, size.y * 0.2, -size.z * 0.35), dark)
-	_box(p, Vector3(0.1, size.y * 0.4, 0.1), Vector3(-size.x * 0.3, size.y * 0.2, -size.z * 0.35), dark)
-	_box(p, Vector3(0.1, size.y * 0.9, 0.1), Vector3(size.x * 0.3, size.y * 0.45, size.z * 0.35), dark)
-	_box(p, Vector3(0.1, size.y * 0.9, 0.1), Vector3(-size.x * 0.3, size.y * 0.45, size.z * 0.35), dark)
-	# inclined dewatering tube (low at -Z, high at +Z)
-	_tube(p, size.x * 0.3, size.z * 0.95, Vector3(0.0, size.y * 0.55, 0.0), steel, PI / 2.0 + tilt)
+	# A-frame supports: short legs at -Z (low/inlet), tall at +Z (high/outlet)
+	var lo_h : float = size.y * 0.28
+	var hi_h : float = size.y * 0.80
+	_box(p, Vector3(0.1, lo_h, 0.1), Vector3( size.x * 0.3, lo_h * 0.5, -size.z * 0.35), dark)
+	_box(p, Vector3(0.1, lo_h, 0.1), Vector3(-size.x * 0.3, lo_h * 0.5, -size.z * 0.35), dark)
+	_box(p, Vector3(0.1, hi_h, 0.1), Vector3( size.x * 0.3, hi_h * 0.5, size.z * 0.35), dark)
+	_box(p, Vector3(0.1, hi_h, 0.1), Vector3(-size.x * 0.3, hi_h * 0.5, size.z * 0.35), dark)
+	# inclined dewatering tube (low at -Z, high at +Z) — the encapsulated screw
+	# lives INSIDE this tube (not visible from outside, per the operator's spec
+	# for plant screws). The tube IS the encapsulation. Tilts UPWARD (+Z end is
+	# the high/discharge end; -Z is the low/inlet where the catch bowl sits).
+	_tube(p, size.x * 0.3, size.z * 0.95, Vector3(0.0, size.y * 0.55, 0.0), steel, PI / 2.0 - tilt)
 	# water collection trough at the bottom end
 	_box(p, Vector3(size.x * 0.55, 0.15, size.z * 0.35), Vector3(0.0, size.y * 0.18, -size.z * 0.3), dark)
-	# drive motor at the top (+Z) end
-	_motor_unit(p, size.x * 0.18, size.z * 0.18, Vector3(0.0, size.y * 0.9, size.z * 0.42), "z", ghost)
+	# drive motor at the top (+Z) end — uses _spinning_cyl so the motor coupling
+	# visibly TURNS via RotatingMechanism, matching the other powered screws on
+	# the line (rafter, transport_screw). Was a static _motor_unit cylinder
+	# before; the dewater_screw is one of the line's driven machines so a still
+	# motor reads as "broken" to the operator.
+	_spinning_cyl(p, size.x * 0.18, size.x * 0.18, size.z * 0.18,
+		Vector3(0.0, size.y * 0.9, size.z * 0.42),
+		_mat(_DARK, ghost, 0.55, 0.5), "z", Vector3.BACK, ghost, 60.0)
+	# Junction box on top of the motor (same as _motor_unit gave).
+	_box(p, Vector3(size.x * 0.15, size.x * 0.09, size.z * 0.08),
+		Vector3(0.0, size.y * 0.9 + size.x * 0.17, size.z * 0.42),
+		_mat(Color(0.12, 0.12, 0.13), ghost, 0.3, 0.6))
+	# #100 — weir-scoop catch bowl at the inlet (-Z, low) end. Sits BELOW the
+	# flotation tank's outlet wall so overflow actually drops into it by gravity.
+	var scoop_z      : float = -size.z * 0.42
+	var scoop_y_lo   : float = size.y * 0.12
+	var scoop_h      : float = size.y * 0.35
+	var scoop_w      : float = size.x * 0.95
+	var scoop_d      : float = size.z * 0.22
+	var scoop_t      : float = 0.03
+	_box(p, Vector3(scoop_w, scoop_t, scoop_d),
+		Vector3(0.0, scoop_y_lo, scoop_z), steel)                                # floor
+	_box(p, Vector3(scoop_w, scoop_h, scoop_t),
+		Vector3(0.0, scoop_y_lo + scoop_h * 0.5, scoop_z - scoop_d * 0.5), steel)  # back wall (-Z)
+	_box(p, Vector3(scoop_t, scoop_h, scoop_d),
+		Vector3( scoop_w * 0.5, scoop_y_lo + scoop_h * 0.5, scoop_z), steel)     # right wall
+	_box(p, Vector3(scoop_t, scoop_h, scoop_d),
+		Vector3(-scoop_w * 0.5, scoop_y_lo + scoop_h * 0.5, scoop_z), steel)     # left wall
 
 # ── centrifugal pump: baseplate + volute + motor + coupling guard + piping ─────
 static func _m_pump(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
@@ -3090,13 +3629,6 @@ static func _m_bale_simple(p: Node3D, id: String, size: Vector3, color: Color, g
 		_lod_cull(box, 54.0)
 
 	# ── CLOSE-LOD layered stack (compressed-film slabs) ──────────────────────
-	# Real LDPE bales are visibly stratified — the press stacks ~5 layers of
-	# compressed film and the seams show as grooves on every side. Below
-	# CLOSE_LOD_M (28 m) we render the bale as N_LAYERS thin horizontal slabs
-	# stacked floor-to-top. Each slab gets a small per-layer tint jitter so the
-	# bale reads as compressed strata, not a uniform painted block. The slabs
-	# sit slightly recessed (0.985× footprint) so the corner edges of the FAR
-	# body box read as the press frame around the stack.
 	if not ghost:
 		var N_LAYERS : int = 5
 		var CLOSE_LOD_M : float = 28.0
@@ -3113,7 +3645,7 @@ static func _m_bale_simple(p: Node3D, id: String, size: Vector3, color: Color, g
 			# Per-layer tint jitter: alternate slightly darker / lighter so seams
 			# read even on a single-colour supplier (e.g. all-white film). The
 			# jitter amount is small (±6%) so the bale still reads as one colour.
-			var t_off : float = (float(li) - float(N_LAYERS - 1) * 0.5) / float(N_LAYERS)
+			var _t_off : float = (float(li) - float(N_LAYERS - 1) * 0.5) / float(N_LAYERS)
 			# Two-tone pattern: even layers slightly darker, odd layers slightly
 			# lighter — gives clean visible seams without random sparkle.
 			var jitter : float = -0.08 if li % 2 == 0 else 0.04
@@ -3158,15 +3690,36 @@ static func _m_bale_simple(p: Node3D, id: String, size: Vector3, color: Color, g
 ## when a bale is grabbed, so the cut→film-pile feature works on any bale the
 ## player actually handles while idle yard bales stay cheap. No-op for bales that
 ## are already detailed.
+##
+## #61 yard-multimesh path: a yard bale has NO Model children of its own — its
+## visible body is one instance inside a per-yard MultiMesh. detail_bale here
+## also hides the multimesh slot (transform → identity-scaled-to-zero) and
+## rebuilds the full visual into the body's empty Model node, so a grabbed
+## bale becomes a normal full-detail node and the yard's draw call shrinks
+## by one instance (effectively the same cost: the buffer slot stays).
 static func detail_bale(body: Node3D) -> void:
 	if body == null or not body.has_meta("simple_bale"):
 		return
 	if not bool(body.get_meta("simple_bale")):
 		return
 	body.set_meta("simple_bale", false)
+	# Hide our slot in the yard multimesh, if we're a multimesh-backed bale.
+	if body.has_meta("yard_mm_inst") and body.has_meta("yard_mm_idx"):
+		var mmi := body.get_meta("yard_mm_inst") as MultiMeshInstance3D
+		var idx := int(body.get_meta("yard_mm_idx"))
+		if mmi != null and mmi.multimesh != null \
+				and idx >= 0 and idx < mmi.multimesh.instance_count:
+			# Collapse the instance to a zero-scale transform at the same origin —
+			# render-cheap and avoids reallocating the multimesh buffer.
+			mmi.multimesh.set_instance_transform(idx, Transform3D(
+				Basis.IDENTITY.scaled(Vector3.ZERO), Vector3.ZERO))
 	var model := body.get_node_or_null("Model")
 	if model == null:
-		return
+		# Yard-multimesh bales spawn without a Model node — create one now so the
+		# detailed builder has somewhere to put its meshes.
+		model = Node3D.new()
+		model.name = "Model"
+		body.add_child(model)
 	for ch in model.get_children():
 		ch.queue_free()
 	var id := String(body.get_meta("placeable_id", ""))
@@ -3174,6 +3727,216 @@ static func detail_bale(body: Node3D) -> void:
 	if item.is_empty():
 		return
 	_m_bale(model, id, Vector3(item["size"]), false)
+
+# =============================================================================
+# YARD MULTIMESH  (#61)
+# =============================================================================
+## Build a MultiMeshInstance3D pre-sized to hold every body box for one yard,
+## using the supplier's bale-size + tint. Each yard gets ONE of these instead
+## of N×13 MeshInstance3Ds — collapses 30k draw calls (one per bale-piece) into
+## one per yard.
+static func build_yard_multimesh(id: String, instance_count: int) -> MultiMeshInstance3D:
+	var item := get_item(id)
+	if item.is_empty():
+		return null
+	var size: Vector3 = item["size"]
+	var color: Color = item["color"]
+	var o := BaleDefs.get_origin(id)
+	var tint: Color = o.get("tint", color)
+	var bm := BoxMesh.new()
+	# Match the close-LOD body proportions (`_m_bale_simple` uses 0.98).
+	bm.size = Vector3(size.x * 0.98, size.y * 0.98, size.z * 0.98)
+	var mat := _mat(tint, false, 0.0, 0.9)
+	bm.material = mat
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = false
+	mm.use_custom_data = false
+	mm.mesh = bm
+	mm.instance_count = instance_count
+	var mmi := MultiMeshInstance3D.new()
+	mmi.name = "BaleMM"
+	mmi.multimesh = mm
+	return mmi
+
+# #117 — Close-LOD bale multimesh. Same box footprint as the far MM (so we can
+# share transform writes), but its material has a procedural normal map with
+# three horizontal wire-shadow grooves baked in — visible only at near range
+# thanks to the visibility-range swap MainWorld sets on the two MMs. At
+# distance the far MM (flat shaded box) wins; under ~35 m the close MM (groove-
+# shaded box) takes over. One extra draw call per yard for the closer detail.
+const _BALE_CLOSE_TEX_W : int = 32
+const _BALE_CLOSE_TEX_H : int = 128
+const _BALE_CLOSE_WIRE_COUNT : int = 3
+static var _bale_close_normal_tex : ImageTexture = null
+
+## Generate (once) a normal-map texture with `_BALE_CLOSE_WIRE_COUNT` thin dark
+## grooves running horizontally across the bale's face — reads as wire-shadow
+## bindings at close range. Shared across every supplier so memory is cheap.
+static func _bale_close_normal_texture() -> ImageTexture:
+	if _bale_close_normal_tex != null:
+		return _bale_close_normal_tex
+	var img := Image.create(_BALE_CLOSE_TEX_W, _BALE_CLOSE_TEX_H, false, Image.FORMAT_RGB8)
+	var groove_band : int = 3
+	for y in _BALE_CLOSE_TEX_H:
+		var ny : float = 0.5
+		# Wire centres at 25 %, 50 %, 75 % of the texture height.
+		for w in _BALE_CLOSE_WIRE_COUNT:
+			var centre : int = int(float(_BALE_CLOSE_TEX_H)
+				* (float(w + 1) / float(_BALE_CLOSE_WIRE_COUNT + 1)))
+			var dy : int = abs(y - centre)
+			if dy < groove_band:
+				# Sharp dark groove dip: bias the normal Y down slightly (reads
+				# as shadow). Falls off across `groove_band` pixels each side.
+				var k : float = 1.0 - float(dy) / float(groove_band)
+				ny = 0.5 - 0.30 * k
+				break
+		for x in _BALE_CLOSE_TEX_W:
+			img.set_pixel(x, y, Color(0.5, ny, 1.0))
+	_bale_close_normal_tex = ImageTexture.create_from_image(img)
+	return _bale_close_normal_tex
+
+static func build_yard_multimesh_close(id: String, instance_count: int) -> MultiMeshInstance3D:
+	var item := get_item(id)
+	if item.is_empty():
+		return null
+	var size: Vector3 = item["size"]
+	var color: Color = item["color"]
+	var o := BaleDefs.get_origin(id)
+	var tint: Color = o.get("tint", color)
+	var bm := BoxMesh.new()
+	bm.size = Vector3(size.x * 0.98, size.y * 0.98, size.z * 0.98)
+	# Slightly darker tint + groove normal map so wires "show" at close range.
+	var mat := _mat(tint.darkened(0.06), false, 0.0, 0.85)
+	mat.normal_enabled = true
+	mat.normal_texture = _bale_close_normal_texture()
+	bm.material = mat
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = false
+	mm.use_custom_data = false
+	mm.mesh = bm
+	mm.instance_count = instance_count
+	var mmi := MultiMeshInstance3D.new()
+	mmi.name = "BaleMM_Close"
+	mmi.multimesh = mm
+	return mmi
+
+## #125 — Proximity-loaded sticker MultiMesh per yard. One QuadMesh per bale,
+## placed on the bale's +Z face (the side that faces the aisle in our yards),
+## shown only within ~12 m of the player so far yards don't pay any sticker
+## cost. A single shared off-white sticker texture for all instances (per-bale
+## unique batch codes are unreadable at distance anyway; the operator gets the
+## real code via the detail-bale promotion when they walk up and grab one).
+const _BALE_STICKER_TEX_W : int = 64
+const _BALE_STICKER_TEX_H : int = 48
+static var _bale_sticker_tex : ImageTexture = null
+
+static func _bale_sticker_texture() -> ImageTexture:
+	if _bale_sticker_tex != null:
+		return _bale_sticker_tex
+	var img := Image.create(_BALE_STICKER_TEX_W, _BALE_STICKER_TEX_H, false, Image.FORMAT_RGB8)
+	var paper := Color(0.93, 0.91, 0.83)
+	var ink   := Color(0.18, 0.18, 0.20)
+	img.fill(paper)
+	# Header band: dark strip across the top — reads as "shipping label" at a glance.
+	for y in range(2, 8):
+		for x in range(_BALE_STICKER_TEX_W):
+			img.set_pixel(x, y, ink)
+	# Two faint horizontal text lines below the band — fake-printed batch info.
+	for line in [16, 24]:
+		for x in range(6, _BALE_STICKER_TEX_W - 6):
+			if (x / 3) % 2 == 0:
+				img.set_pixel(x, line,     ink.lerp(paper, 0.4))
+				img.set_pixel(x, line + 1, ink.lerp(paper, 0.4))
+	# Barcode band at the bottom — alternating black bars of varying width.
+	var bx : int = 6
+	while bx < _BALE_STICKER_TEX_W - 6:
+		var w : int = 1 + (bx * 7919) % 3
+		for x in range(bx, mini(bx + w, _BALE_STICKER_TEX_W - 6)):
+			for y in range(34, 44):
+				img.set_pixel(x, y, ink)
+		bx += w + 1 + (bx * 3) % 2
+	_bale_sticker_tex = ImageTexture.create_from_image(img)
+	return _bale_sticker_tex
+
+static func build_yard_sticker_multimesh(id: String, instance_count: int) -> MultiMeshInstance3D:
+	var item := get_item(id)
+	if item.is_empty():
+		return null
+	var size: Vector3 = item["size"]
+	# Sticker is ~10 cm wide × 7 cm tall — same proportion the detail bale uses.
+	var qm := QuadMesh.new()
+	qm.size = Vector2(min(size.x, size.z) * 0.30, size.y * 0.30)
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(1.0, 1.0, 1.0)
+	mat.albedo_texture = _bale_sticker_texture()
+	mat.roughness = 0.9
+	mat.metallic = 0.0
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED       # readable from either side
+	qm.material = mat
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = false
+	mm.use_custom_data = false
+	mm.mesh = qm
+	mm.instance_count = instance_count
+	var mmi := MultiMeshInstance3D.new()
+	mmi.name = "BaleStickerMM"
+	mmi.multimesh = mm
+	return mmi
+
+## Spawn the COLLIDER-ONLY RigidBody3D for a single yard bale and bind it to
+## its slot in the shared MultiMesh. The body has no visual children — its
+## look comes from the multimesh; only when the player grabs it does
+## detail_bale() promote it to a full-detail node.
+static func build_yard_bale_mm(id: String, mmi: MultiMeshInstance3D, idx: int) -> Node3D:
+	var item := get_item(id)
+	if item.is_empty():
+		return null
+	var size: Vector3 = item["size"]
+	var rb := RigidBody3D.new()
+	rb.freeze = true
+	rb.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+	rb.gravity_scale = 1.0
+	rb.can_sleep = true
+	rb.sleeping = true
+	rb.contact_monitor = false
+	rb.mass = maxf(BaleDefs.estimated_weight(size), 1.0)
+	rb.linear_damp = 0.4
+	rb.angular_damp = 1.2
+	rb.name = String(item["name"])
+	rb.set_meta("placeable_id", id)
+	rb.set_meta("simple_bale", true)
+	rb.set_meta("yard_mm_inst", mmi)
+	rb.set_meta("yard_mm_idx", idx)
+	# Same meta the regular Bales-path in build_node() sets — the rest of the
+	# game (BaleClamp, BarcodeScanner, wire cutter, feeder workers) reads these
+	# off every bale, so the MM-yard bales need them too or they look "unscanned"
+	# or "wire-cut" by accident.
+	rb.set_meta("material_origin", id)
+	rb.set_meta("wires_cut", false)
+	rb.set_meta("wire_compliance", 0.55)
+	rb.set_meta("scanned", false)
+	rb.set_meta("sheet_count", _sheet_count_for(size))
+	rb.set_meta("clamp_force_needed", 0.30)
+	# Physics material — high friction so stacks grip + tiny bounce so dropped
+	# bales settle softly. Same values as build_node() Bales path.
+	var pm := PhysicsMaterial.new()
+	pm.friction = 0.85
+	pm.bounce   = 0.05
+	rb.physics_material_override = pm
+	# Collision — same shape as in build_node()'s Bales path (slight X/Z give).
+	var col := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(size.x * 0.9, size.y, size.z * 0.9)
+	col.shape = shape
+	col.position = Vector3(0.0, size.y * 0.5, 0.0)
+	rb.add_child(col)
+	rb.add_to_group("placed_object")
+	# `bale` group — feeders, scanners, LineFlow, vehicle grab all look it up here.
+	rb.add_to_group("bale")
+	return rb
 
 ##       Strapping / patches / yellow sticker (unchanged from before)
 static func _m_bale(p: Node3D, id: String, size: Vector3, ghost: bool) -> void:
@@ -5729,7 +6492,7 @@ static func _m_metaaldetector(p: Node3D, size: Vector3, color: Color, ghost: boo
 	var coil_inner_w : float = belt_w + 0.20
 	var coil_inner_h : float = size.y * 0.50
 	var coil_outer_w : float = coil_inner_w + coil_thick * 2.0
-	var coil_outer_h : float = coil_inner_h + coil_thick * 2.0
+	var _coil_outer_h : float = coil_inner_h + coil_thick * 2.0
 	var coil_depth   : float = size.z * 0.20
 	var coil_cy      : float = deck_y + coil_inner_h * 0.5 + 0.05
 	# Top of the coil casing.
@@ -6108,33 +6871,15 @@ static func _m_extruder_silo(p: Node3D, size: Vector3, color: Color, ghost: bool
 	_box(p, Vector3(bw + 0.10, 0.05, bd + 0.10), Vector3(0.0, box_top + 0.03, 0.0), steel)
 	_railing(p, (bw + 0.10) * 0.5, (bd + 0.10) * 0.5, box_top + 0.05, yellow)
 
-	# ── DISCHARGE: downward outlet cone at the box bottom centre → extruder below ─
-	_cyl(p, size.x * 0.22, 0.10, frame_top * 0.30,
-		Vector3(0.0, frame_top - frame_top * 0.15, 0.0), dark)
+	# ── DISCHARGE: previously a downward outlet cone at the box bottom centre.
+	# Operator-corrected: the silo has a FLAT bottom — no protruding cone tip.
+	# Material drops straight down to the extruder beneath the elevated box.
 
-	# ── #89 LUMP BIN: side-mounted cylindrical catch-bin on the -X side, hinged
-	# door so operators can pull out agglomerations / clumps too big for the
-	# discharge throat. Smaller than the silo box, dark steel, with a yellow
-	# CAUTION label by the handle. Bin sits on its own short bracket coming off
-	# the silo wall, mid-height.
-	var lump_r : float = size.x * 0.16
-	var lump_h : float = box_h * 0.32
-	var lump_cy : float = box_cy - box_h * 0.10
-	var lump_x : float = -hw - lump_r * 0.85
-	_cyl(p, lump_r, lump_r, lump_h, Vector3(lump_x, lump_cy, 0.0), dark)
-	# Top + bottom flanges + a hinged front door panel + handle + caution label.
-	_cyl(p, lump_r * 1.06, lump_r * 1.06, 0.04, Vector3(lump_x, lump_cy + lump_h * 0.5, 0.0), steel)
-	_cyl(p, lump_r * 1.06, lump_r * 1.06, 0.04, Vector3(lump_x, lump_cy - lump_h * 0.5, 0.0), steel)
-	_box(p, Vector3(0.05, lump_h * 0.62, lump_r * 1.5),
-		Vector3(lump_x - lump_r * 0.95, lump_cy, 0.0), steel)         # hinged door
-	_box(p, Vector3(0.10, 0.08, 0.20),
-		Vector3(lump_x - lump_r * 1.05, lump_cy, lump_r * 0.5), dark) # door handle
-	_box(p, Vector3(0.02, lump_h * 0.18, lump_h * 0.20),
-		Vector3(lump_x - lump_r * 1.01, lump_cy + lump_h * 0.20, 0.0), yellow)  # CAUTION label
-	# Short support brackets bolted to the silo wall.
-	for sb in [-lump_h * 0.32, lump_h * 0.32]:
-		_box(p, Vector3(lump_r * 1.0, 0.05, 0.10),
-			Vector3(lump_x + lump_r * 0.45, lump_cy + sb, 0.0), steel)
+	# #98 — Lumps belong on a SEPARATE placeable (the wheeled `lump_cart`), parked
+	# under the extruder's screen-changer outlet — NOT on the feed silo. Earlier
+	# this block modelled a side-mounted catch bin + lump samples on the silo
+	# itself, which was operator-corrected. Removed; place a `lump_cart` from the
+	# build menu at the extruder filter discharge instead.
 
 	# ── #89 FILM-LEVEL VIEW: sparse off-white flake fill ONLY visible behind the
 	# windows (no point rendering bulk fill the user can't see — saves draw calls
@@ -6199,7 +6944,7 @@ static func _m_extruder_unit(p: Node3D, size: Vector3, color: Color, ghost: bool
 	var gold   := _mat(Color(0.78, 0.62, 0.22), ghost, 0.5, 0.4)    # Wave-Cut roundel gold
 	var teal   := _mat(Color(0.16, 0.55, 0.55), ghost, 0.4, 0.4)    # EIRENE / Wave-Cut accent
 
-	var hz : float = size.z * 0.5
+	var _hz : float = size.z * 0.5
 	var barrel_cy : float = size.y * 0.31                  # barrel centreline ≈ 1.30 m
 	var barrel_leg_h : float = barrel_cy - size.y * 0.10   # skid leg top, just under the cabinet
 	var hood_r : float = size.x * 0.33

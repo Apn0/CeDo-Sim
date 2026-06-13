@@ -71,6 +71,10 @@ const SURF_TYPES  : Array[String] = ["door", "gate", "window", "sign", "panel"]
 # → left+right mech_dryer → recombine at the ventilator. frictiewasser (3A only) is
 # the friction_washer id (now a stirring tank, not a separator).
 const LINE_3A_SEQ : Array[Dictionary] = [
+	# #136 — VSS is the FIRST machine in the wash line, not the intake macro.
+	# The switch belt (intake macro) feeds material into here; the wash chain
+	# then continues into vuilsnippersilo → transport_screw → ... → extruder.
+	{"id": "vss_silo"},
 	{"id": "vuilsnippersilo"},
 	{"id": "transport_screw"},
 	{"id": "friction_washer"},          # frictiewasser — stirring tank, 3A only
@@ -116,6 +120,12 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 	# not a generic dosing silo. Same change applied to 3B and Line 1 below.
 	{"id": "extruder_silo"},
 	{"id": "extruder_3a"},
+	# #98 — Lump cart parking spot next to the extruder's screen-changer
+	# discharge. Operator's responsibility to make sure a lump_cart is parked
+	# here BEFORE the extruder starts. Spot is at +X offset, partway along the
+	# extruder's length so the laser_filter outlet is above the cart.
+	{"id": "lump_cart_spot", "x": 2.8, "z": -5.0},
+	{"id": "lump_cart",      "x": 2.8, "z": -5.0},
 ]
 # #54 — shared dry FRONT-END for Lines 3A and 3B. Lays the Shredder-2 climb,
 # the 12 numbered intake belts in series, the switch-belt diverter, and the VSS
@@ -124,6 +134,32 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 # LineFlow's geometry linker will then auto-connect intake → vuilsnippersilo →
 # wash trains. Numbers belts 1..12 in their natural placement order (each tilts
 # its own deck via _intake_belt_spec — no extra geometry needed in the macro).
+## #136 — operator-spec second pass.
+##
+## Three structural changes from the original (#54) layout:
+##   1. C8.5 is the OVERFLOW belt. It branches off C8 on the -X side, sits
+##      slightly LOWER, and points away from the main chain. C8 normally feeds
+##      C9 (forward); when both VSS_3A + VSS_3B report FULL, C8 ramps the other
+##      way and discharges DOWN onto 8.5, which feeds the U-bay (stortvak).
+##      The C8 reversal + ramp logic is task #138; the LAYOUT here just puts
+##      the geometry in the right place so LineFlow can wire the edges.
+##   2. switch_belt IS conveyor 12 — the duplicate intake_belt_12 entry is
+##      gone. The switch belt jogs along its own conveying axis to feed either
+##      VSS_3A, VSS_3B, or both (task #137).
+##   3. VSS is REMOVED from this macro. It belongs to the wash macro as its
+##      FIRST machine (line_3a / line_3b spawn vss_silo at index 0).
+# Sort line — two trilzeef vibrating sieves running in PARALLEL (operator
+# spec: bales feed into the head end, material splits left+right across two
+# screens running side-by-side, dual outputs at the tail). x = ±2.5 m puts
+# them on either side of the centreline with ~1m clear lane between them
+# (each trilzeef is 1.8 m wide). Both at z=0 so they run as siblings, not in
+# series. _build_full_line treats x≠0 entries as branches; using a PARALLEL
+# split (both at the same z, opposite x) matches the 3B L-R split pattern.
+const LINE_SORT_SEQ : Array[Dictionary] = [
+	{"id": "trilzeef", "x": -2.5, "z": 0.0},
+	{"id": "trilzeef", "x":  2.5, "z": 0.0},
+]
+
 const INTAKE_3A3B_SEQ : Array[Dictionary] = [
 	{"id": "shredder_2"},
 	{"id": "inclined_belt_8m"},      # the climb out of shredder-2's discharge
@@ -135,18 +171,20 @@ const INTAKE_3A3B_SEQ : Array[Dictionary] = [
 	{"id": "intake_belt_6"},
 	{"id": "intake_belt_7"},
 	{"id": "intake_belt_8"},
+	# ── BRANCH (overflow path): C8.5 → U-bay on the -X side lane. The branch
+	#    is NOT a parallel sibling — it's the C8-reverse discharge target. C8
+	#    sends material here only when both VSSs are FULL (task #138).
+	{"id": "intake_belt_8_5", "x": -3.5, "z": -1.5},
+	{"id": "u_bay",           "x": -8.0, "z": -2.0},
+	# ── Main forward chain continues. ──
 	{"id": "intake_belt_9"},
 	{"id": "intake_belt_10"},
 	{"id": "intake_belt_11"},
-	{"id": "intake_belt_12"},
-	{"id": "switch_belt"},
-	# VSS sits on the main centreline (primary route from the switch);
-	# U-bay is the overflow on the +X side lane, fed by the switch belt's
-	# second output port. LineFlow's splitter logic adds both edges.
-	{"id": "vss_silo"},
-	{"id": "u_bay", "x": 6.0, "z": -2.0},
+	{"id": "switch_belt"},           # = conveyor 12; jogs ±1.5m to feed VSS_3A / VSS_3B
 ]
 const LINE_3B_SEQ : Array[Dictionary] = [
+	# #136 — VSS is the FIRST machine in the wash line (not the intake macro).
+	{"id": "vss_silo"},
 	{"id": "vuilsnippersilo"},
 	{"id": "transport_screw"},
 	{"id": "rafter"},
@@ -161,8 +199,8 @@ const LINE_3B_SEQ : Array[Dictionary] = [
 	# to each dryer) and both dryers with an explicit edge to the next main entry
 	# (the recombine blower). Geometry-fallback would only pick the nearest dryer
 	# without these tags, so only ONE side would carry material.
-	{"id": "mech_dryer", "x": -3.5, "z": 2.0, "parallel_branch": true},
-	{"id": "mech_dryer", "x":  3.5, "z": 2.0, "parallel_branch": true, "main_advance": 6.0},
+	{"id": "mech_dryer", "x": -1.75, "z": 2.0, "parallel_branch": true},
+	{"id": "mech_dryer", "x":  1.75, "z": 2.0, "parallel_branch": true, "main_advance": 4.75},
 	{"id": "blower"},              # recombine
 	{"id": "cyclone"},
 	{"id": "plasmaq"},
@@ -171,6 +209,9 @@ const LINE_3B_SEQ : Array[Dictionary] = [
 	{"id": "cyclone"},
 	{"id": "extruder_silo"},
 	{"id": "extruder_3b"},
+	# #98 — Lump cart parking spot at the extruder's filter discharge.
+	{"id": "lump_cart_spot", "x": 2.8, "z": -5.0},
+	{"id": "lump_cart",      "x": 2.8, "z": -5.0},
 ]
 # Line 1 = its own intake (opzetband 1 → metal detector → westa band → shredder →
 # magnet → VW trommel → scheidingsgoot) then wash/dry/extrude; transcribed from the
@@ -744,12 +785,12 @@ func _place_current() -> void:
 				wall.set_meta("wall_end", end_pos)
 				_finalize_placed(wall, _active_id, _two_point_start.y - FLOOR_Y)
 		else:
-			var node := PlaceableCatalog.build_variable_belt(_two_point_start, end_pos, false)
-			if node != null:
-				_placed_root.add_child(node)
+			var belt_node := PlaceableCatalog.build_variable_belt(_two_point_start, end_pos, false)
+			if belt_node != null:
+				_placed_root.add_child(belt_node)
 				# Auto-spawn the leg poles the variable belt recorded in its meta — one
 				# pole every ~2.5 m along the span at the correct world-vertical height.
-				_spawn_auto_legs(node)
+				_spawn_auto_legs(belt_node)
 		_has_two_point = false
 		_two_point_start = Vector3.ZERO
 		_clear_two_point_preview()
@@ -797,6 +838,8 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 		seq = LINE_1_SEQ
 	elif line_id == "line_intake_3a3b":
 		seq = INTAKE_3A3B_SEQ
+	elif line_id == "line_sort":
+		seq = LINE_SORT_SEQ
 	# Forward = the ghost's local -Z; right = local +X (lateral lane for branches).
 	var fwd := Vector3(-sin(rot_y), 0.0, -cos(rot_y))
 	var rgt := Vector3(cos(rot_y), 0.0, -sin(rot_y))
@@ -843,7 +886,7 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 		if node != null:
 			_placed_root.add_child(node)
 			node.global_position = Vector3(start.x, start.y, start.z) + fwd * place_z + rgt * x
-			node.rotation.y = rot_y
+			node.rotation.y = rot_y + PI
 			_finalize_placed(node, mid, 0.0)
 			built += 1
 			# ── #71 branch state transitions ───────────────────────────────────
@@ -1449,6 +1492,14 @@ func _save_layout() -> void:
 				var we : Vector3 = child.get_meta("wall_end")
 				entry["sx"] = ws.x; entry["sy"] = ws.y; entry["sz"] = ws.z
 				entry["ex"] = we.x; entry["ey"] = we.y; entry["ez"] = we.z
+			# #72 — grating platforms persist their rectangle dimensions so reload
+			# rebuilds at the exact W×L the operator dragged out, not the catalog
+			# default. gp_size is set by build_grating_platform; absence means
+			# legacy save → load falls back to build_node's default size.
+			if pid_save == "grating_platform" and child.has_meta("gp_size"):
+				var gp : Vector2 = child.get_meta("gp_size")
+				entry["gw"] = gp.x
+				entry["gl"] = gp.y
 			# Walls go to the SHARED layer (site structure); other ids stay per-save.
 			if is_wall:
 				shared.append(entry)
@@ -1478,8 +1529,18 @@ func load_layout() -> void:
 	if have_file:
 		var f := FileAccess.open(path, FileAccess.READ)
 		if f != null:
-			var parsed: Variant = JSON.parse_string(f.get_as_text())
+			var raw := f.get_as_text()
 			f.close()
+			# Guard against empty / malformed legacy files. The legacy layout file
+			# from an early build was sometimes written as an empty placeholder,
+			# which raises "Parse JSON failed. Error at line 0" — survivable, just
+			# skip the migration and continue with the per-save layout (often the
+			# new save is also empty, so this just means starting clean).
+			var parsed : Variant = null
+			if raw.strip_edges() != "":
+				parsed = JSON.parse_string(raw)
+				if parsed == null:
+					push_warning("[BuildMode] Could not parse %s — skipping migration" % path)
 			if parsed is Array:
 				# #29 — entries without the current version marker are from before this patch.
 				var versioned := false
@@ -1557,6 +1618,22 @@ func _apply_layout_entry(entry: Variant) -> bool:
 			return true
 		return false
 
+	# #72 — Grating platforms: custom W×L build path. Older saves without gw/gl
+	# fall through to the generic build_node() at the bottom (catalog default size).
+	if String(dict.get("id", "")) == "grating_platform" and dict.has("gw") and dict.has("gl"):
+		var plat := PlaceableCatalog.build_grating_platform(
+			float(dict["gw"]), float(dict["gl"]), false)
+		if plat != null:
+			_placed_root.add_child(plat)
+			plat.global_position = Vector3(
+				float(dict.get("x", 0.0)),
+				float(dict.get("y", 0.0)),
+				float(dict.get("z", 0.0)))
+			plat.rotation.y = float(dict.get("rot_y", 0.0))
+			_finalize_placed(plat, "grating_platform", float(dict.get("h", 0.0)))
+			return true
+		return false
+
 	# Support poles: custom-height build path.
 	var ld_id := String(dict.get("id", ""))
 	if PlaceableCatalog.is_pole(ld_id) and dict.has("pole_h"):
@@ -1571,7 +1648,12 @@ func _apply_layout_entry(entry: Variant) -> bool:
 			return true
 		return false
 
-	var node := PlaceableCatalog.build_node(String(dict.get("id", "")), false)
+	var entry_id := String(dict.get("id", ""))
+	if entry_id == "":
+		# Legacy / corrupt save entry — skip silently instead of pushing the
+		# "Unknown id:" warning from PlaceableCatalog.build_node.
+		return false
+	var node := PlaceableCatalog.build_node(entry_id, false)
 	if node == null:
 		return false
 	_placed_root.add_child(node)

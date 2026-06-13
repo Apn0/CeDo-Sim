@@ -281,6 +281,7 @@ func _build_building_shell() -> void:
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mi.material_override = m
 	add_child(mi)
+	_shell_mesh_inst = mi
 	# Scene-open camera centres on the player-spawn marker when one is set
 	# (it's the user's canonical anchor for THIS scene — same XZ used by the
 	# satellite fetch); falls back to the building/terrain centre on a fresh
@@ -305,6 +306,224 @@ func _build_building_shell() -> void:
 	cam_size = clampf(maxf(aabb.size.x, aabb.size.z) * 0.9, CAM_SIZE_MIN, CAM_SIZE_MAX)
 	ground_quad.position = Vector3(shell_center.x, -0.05, shell_center.z)
 	_update_camera()
+	# #131 — Compute every connected component (~124 buildings in the tile) and
+	# overlay a translucent rectangle on each so the FACTORY_CENTER tool snaps
+	# the click onto the correct building's centroid, not the raw click point.
+	# Removes the "lights are over the wrong building" failure that's been
+	# bouncing back for multiple sessions.
+	_build_component_overlays()
+
+# =============================================================================
+# #131 — BUILDING-SELECTOR OVERLAY
+# =============================================================================
+## The source tile (`CeDo_building.obj`) contains ~124 separate buildings — each
+## an independent connected component of triangles. solidify_building.py picks
+## the factory by reading `factory_center` from world_layout.json and grabbing
+## the connected component containing or nearest to that point. Across multiple
+## sessions the marker drifted and the wrong building got isolated.
+##
+## This block computes every connected component on shell-load, draws a
+## translucent rectangle over each so the user can SEE the targets in the
+## top-down view, snaps any FACTORY_CENTER click onto the nearest component's
+## centroid (so a slightly-off click still hits the right building), and
+## highlights the currently-selected component in bright magenta.
+
+var _shell_mesh_inst      : MeshInstance3D = null
+var _components           : Array          = []   # [{centroid: V3, aabb: AABB, tris: int}]
+var _component_overlays   : Array          = []   # parallel MeshInstance3Ds
+var _picked_component_idx : int            = -1
+
+# Faint cream so the unpicked buildings are visible but unobtrusive; bright
+# magenta on the picked one so it can't be confused with the rest.
+const COMPONENT_BASE_COLOR   : Color = Color(0.85, 0.78, 0.62, 0.22)
+const COMPONENT_PICKED_COLOR : Color = Color(1.00, 0.10, 0.85, 0.55)
+
+func _build_component_overlays() -> void:
+	if _shell_mesh_inst == null:
+		return
+	_compute_components_from(_shell_mesh_inst)
+	# Build a translucent ground-plane quad over each component's XZ AABB.
+	for c in _components:
+		var aabb : AABB = c["aabb"]
+		var q := MeshInstance3D.new()
+		var qm := QuadMesh.new()
+		qm.size = Vector2(aabb.size.x, aabb.size.z)
+		q.mesh = qm
+		# QuadMesh faces +Z by default; rotate to lie flat (face +Y) and lift it
+		# just above the ground quad / satellite so it isn't z-fighting.
+		q.rotation_degrees = Vector3(-90.0, 0.0, 0.0)
+		q.position = aabb.position + Vector3(aabb.size.x * 0.5, 0.02, aabb.size.z * 0.5)
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = COMPONENT_BASE_COLOR
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		q.material_override = mat
+		q.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(q)
+		_component_overlays.append(q)
+	_refresh_component_highlight()
+
+## Walks the mesh's vertex / index arrays, welds verts within 1 mm, then runs
+## union-find over the triangle list — every triangle whose welded vertices
+## are reachable through shared verts lands in the same connected component.
+## One-shot at scene load; the ~124-component result is cached.
+func _compute_components_from(mesh_inst: MeshInstance3D) -> void:
+	if not _components.is_empty():
+		return
+	var mesh : Mesh = mesh_inst.mesh
+	if mesh == null:
+		return
+	var arrays : Array = mesh.surface_get_arrays(0)
+	if arrays.size() < Mesh.ARRAY_INDEX + 1:
+		return
+	# Guard against null/empty surface arrays — happens on meshes with no index
+	# buffer OR no vertex buffer. Strict-typed assignment of nil to PackedX
+	# throws "Trying to assign value of type 'Nil' to a variable of type 'PackedInt32Array'."
+	var verts_raw : Variant = arrays[Mesh.ARRAY_VERTEX]
+	var verts : PackedVector3Array = verts_raw if verts_raw is PackedVector3Array else PackedVector3Array()
+	var idx_raw : Variant = arrays[Mesh.ARRAY_INDEX]
+	var indices : PackedInt32Array = idx_raw if idx_raw is PackedInt32Array else PackedInt32Array()
+	if verts.size() == 0:
+		return
+	# If the mesh has no index buffer (triangle soup), synthesise sequential ids.
+	if indices.size() == 0:
+		indices = PackedInt32Array()
+		indices.resize(verts.size())
+		for i in verts.size():
+			indices[i] = i
+	# Weld verts by 1 mm rounding so 124 buildings sitting side-by-side in the
+	# tile resolve cleanly into distinct components.
+	var weld_table : Dictionary = {}
+	var welded : PackedInt32Array = PackedInt32Array()
+	welded.resize(verts.size())
+	for i in verts.size():
+		var v : Vector3 = verts[i]
+		var key := Vector3i(int(round(v.x * 1000.0)),
+							int(round(v.y * 1000.0)),
+							int(round(v.z * 1000.0)))
+		var w : int
+		if weld_table.has(key):
+			w = int(weld_table[key])
+		else:
+			w = int(weld_table.size())
+			weld_table[key] = w
+		welded[i] = w
+	var n_unique : int = weld_table.size()
+	var parent : PackedInt32Array = PackedInt32Array()
+	parent.resize(n_unique)
+	for i in n_unique:
+		parent[i] = i
+	@warning_ignore("integer_division")
+	var n_tri : int = indices.size() / 3
+	for ti in n_tri:
+		var a := welded[indices[ti * 3]]
+		var b := welded[indices[ti * 3 + 1]]
+		var c := welded[indices[ti * 3 + 2]]
+		_uf_union(parent, a, b)
+		_uf_union(parent, b, c)
+	# Group + accumulate per-component stats.
+	var groups : Dictionary = {}
+	for ti in n_tri:
+		var root := _uf_find(parent, welded[indices[ti * 3]])
+		var g : Dictionary
+		if groups.has(root):
+			g = groups[root]
+		else:
+			g = {"vsum": Vector3.ZERO, "vcnt": 0,
+				 "bb_min": Vector3(INF, INF, INF),
+				 "bb_max": Vector3(-INF, -INF, -INF),
+				 "tris": 0}
+			groups[root] = g
+		for k in 3:
+			var vi := indices[ti * 3 + k]
+			var v : Vector3 = verts[vi]
+			g["vsum"] = (g["vsum"] as Vector3) + v
+			g["vcnt"] = int(g["vcnt"]) + 1
+			g["bb_min"] = Vector3(minf(g["bb_min"].x, v.x),
+								  minf(g["bb_min"].y, v.y),
+								  minf(g["bb_min"].z, v.z))
+			g["bb_max"] = Vector3(maxf(g["bb_max"].x, v.x),
+								  maxf(g["bb_max"].y, v.y),
+								  maxf(g["bb_max"].z, v.z))
+		g["tris"] = int(g["tris"]) + 1
+	# Convert to scene-local centroid + AABB (mesh local + shell mesh.position).
+	var shift : Vector3 = mesh_inst.position
+	for root in groups.keys():
+		var g : Dictionary = groups[root]
+		var local_c : Vector3 = (g["vsum"] as Vector3) / float(g["vcnt"])
+		var local_aabb := AABB(g["bb_min"], (g["bb_max"] as Vector3) - (g["bb_min"] as Vector3))
+		_components.append({
+			"centroid": local_c + shift,
+			"aabb":     AABB(local_aabb.position + shift, local_aabb.size),
+			"tris":     int(g["tris"]),
+		})
+	# Largest-first so #0 is usually the biggest hall (helps the user spot the
+	# factory at a glance if factory_center hasn't been set yet).
+	_components.sort_custom(func(a, b): return int(a["tris"]) > int(b["tris"]))
+	print("[WorldSetup] Connected components: %d (largest = %d tris)" \
+		% [_components.size(), int(_components[0]["tris"]) if _components.size() > 0 else 0])
+
+func _uf_find(parent: PackedInt32Array, x: int) -> int:
+	while parent[x] != x:
+		parent[x] = parent[parent[x]]
+		x = parent[x]
+	return x
+
+func _uf_union(parent: PackedInt32Array, a: int, b: int) -> void:
+	var ra := _uf_find(parent, a)
+	var rb := _uf_find(parent, b)
+	if ra != rb:
+		parent[ra] = rb
+
+## Find the connected component whose XZ AABB contains the given world point.
+## Falls back to NEAREST-CENTROID when the click misses every AABB so the user
+## can still click roughly near a building they want.
+func _find_component_at_xz(world_pos: Vector3) -> int:
+	var px := world_pos.x
+	var pz := world_pos.z
+	# First pass: containment.
+	var best := -1
+	var best_d := INF
+	for i in _components.size():
+		var aabb : AABB = _components[i]["aabb"]
+		if px < aabb.position.x or px > aabb.position.x + aabb.size.x:
+			continue
+		if pz < aabb.position.z or pz > aabb.position.z + aabb.size.z:
+			continue
+		var cent : Vector3 = _components[i]["centroid"]
+		var d : float = Vector2(cent.x, cent.z).distance_to(Vector2(px, pz))
+		if d < best_d:
+			best_d = d
+			best = i
+	if best >= 0:
+		return best
+	# Fallback: nearest centroid.
+	best_d = INF
+	for i in _components.size():
+		var cent : Vector3 = _components[i]["centroid"]
+		var d : float = Vector2(cent.x, cent.z).distance_to(Vector2(px, pz))
+		if d < best_d:
+			best_d = d
+			best = i
+	return best
+
+## Recolour every overlay quad so the currently-picked one stands out. Called
+## on initial overlay build AND every time the user clicks FACTORY_CENTER.
+func _refresh_component_highlight() -> void:
+	var fc : Vector3 = WorldLayout.factory_center
+	_picked_component_idx = -1
+	if fc != Vector3.ZERO and not _components.is_empty():
+		_picked_component_idx = _find_component_at_xz(fc)
+	for i in _component_overlays.size():
+		var mi : MeshInstance3D = _component_overlays[i]
+		if mi == null:
+			continue
+		var mat := mi.material_override as StandardMaterial3D
+		if mat == null:
+			continue
+		mat.albedo_color = COMPONENT_PICKED_COLOR if i == _picked_component_idx \
+			else COMPONENT_BASE_COLOR
 
 ## Floor-plan overlay: a semi-transparent quad sitting just above the satellite
 ## quad, textured with assets/models/floor_plan.png (the cropped CeDo127 PDF).
@@ -970,6 +1189,7 @@ func _undo_last() -> void:
 				WorldLayout.player_spawn = p
 			elif tool_id == Tool.FACTORY_CENTER:
 				WorldLayout.factory_center = p   # ZERO when prev == null → cleared
+				_refresh_component_highlight()
 			elif LINE_TOOL_TO_ID.has(tool_id):
 				if prev == null: WorldLayout.line_starts.erase(LINE_TOOL_TO_ID[tool_id])
 				else:            WorldLayout.set_line_start(LINE_TOOL_TO_ID[tool_id], p)
@@ -1039,10 +1259,21 @@ func _place_point(tool_id: int, world_pos: Vector3) -> void:
 	# Persist to WorldLayout in-memory (saved on Save & Return). _place_point is
 	# only called for `kind == "point"` tools — player spawn + line starts.
 	var p := Vector3(world_pos.x, 0.0, world_pos.z)
+	# #131 — FACTORY_CENTER snaps onto the centroid of whichever connected
+	# component the click falls in. A slightly-off click still hits the right
+	# building, and the saved value is the building's TRUE centre so
+	# solidify_building.py picks the same component next time.
+	if tool_id == Tool.FACTORY_CENTER and not _components.is_empty():
+		var idx := _find_component_at_xz(p)
+		if idx >= 0:
+			var cent : Vector3 = _components[idx]["centroid"]
+			p = Vector3(cent.x, 0.0, cent.z)
+			node.position = p
 	if tool_id == Tool.PLAYER_SPAWN:
 		WorldLayout.player_spawn = p          # player spawn ONLY (decoupled from factory_center)
 	elif tool_id == Tool.FACTORY_CENTER:
 		WorldLayout.factory_center = p        # its own independent marker
+		_refresh_component_highlight()
 	elif LINE_TOOL_TO_ID.has(tool_id):
 		WorldLayout.set_line_start(LINE_TOOL_TO_ID[tool_id], p)
 	history.append({"kind": "point", "tool_id": tool_id, "prev_pos": prev_pos})

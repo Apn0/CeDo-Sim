@@ -144,7 +144,8 @@ func _build_visual() -> void:
 		var dm := BoxMesh.new(); dm.size = Vector3(deck_width, 0.10, deck_length)
 		deck.mesh = dm
 		_belt_mat_deck = load("res://src/build/PlaceableCatalog.gd").make_belt_material(0.0, Vector2(1.0, deck_length * 0.5))
-		deck.material_override = _belt_mat_deck if _belt_mat_deck != null else belt_mat
+		# Cast both arms to the common Material supertype so the ternary types unify.
+		deck.material_override = (_belt_mat_deck as Material) if _belt_mat_deck != null else (belt_mat as Material)
 		deck.position = Vector3(0.0, deck_height, deck_length * 0.5)
 		add_child(deck)
 		# Side guards along the deck
@@ -171,7 +172,7 @@ func _build_visual() -> void:
 	var im := BoxMesh.new(); im.size = Vector3(deck_width * 0.8, 0.10, hyp)
 	inc.mesh = im
 	_belt_mat_incline = load("res://src/build/PlaceableCatalog.gd").make_belt_material(0.0, Vector2(1.0, hyp * 0.5))
-	inc.material_override = _belt_mat_incline if _belt_mat_incline != null else belt_mat
+	inc.material_override = (_belt_mat_incline as Material) if _belt_mat_incline != null else (belt_mat as Material)
 	# Pivot the incline so its base sits at the deck's far end and it rises incline_deg.
 	var inc_pivot := Node3D.new()
 	inc_pivot.position = Vector3(0.0, deck_height, deck_length)
@@ -214,7 +215,7 @@ func _build_visual() -> void:
 		var tm := BoxMesh.new(); tm.size = Vector3(deck_width * 0.8, 0.10, top_flat_m)
 		tray.mesh = tm
 		_belt_mat_top = load("res://src/build/PlaceableCatalog.gd").make_belt_material(0.0, Vector2(1.0, top_flat_m * 0.5))
-		tray.material_override = _belt_mat_top if _belt_mat_top != null else belt_mat
+		tray.material_override = (_belt_mat_top as Material) if _belt_mat_top != null else (belt_mat as Material)
 		var top_y : float = deck_height + hyp * sin(_incline_angle)
 		var top_z : float = deck_length + hyp * cos(_incline_angle)
 		tray.position = Vector3(0.0, top_y, top_z + top_flat_m * 0.5)

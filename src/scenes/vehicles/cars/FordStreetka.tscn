@@ -1,0 +1,103 @@
+[gd_scene format=3 uid="uid://du8hddiwj4q8s"]
+
+[ext_resource type="Script" path="res://src/scenes/vehicles/cars/FordStreetka.gd" id="1_streetka"]
+[ext_resource type="Script" path="res://src/scenes/vehicles/VehicleEnterArea.gd" id="2_enter"]
+
+; Body box matches the Ford Ka 2003 chassis at Y=0.85 (1.20 -> 1.02).
+[sub_resource type="BoxShape3D" id="BoxShape_body"]
+size = Vector3(1.64, 1.02, 3.62)
+
+[sub_resource type="CylinderMesh" id="Cyl_wheel"]
+top_radius = 0.25
+bottom_radius = 0.25
+height = 0.16
+radial_segments = 18
+
+[sub_resource type="StandardMaterial3D" id="Mat_dark"]
+albedo_color = Color(0.10, 0.10, 0.11, 1)
+roughness = 0.85
+
+[sub_resource type="SphereShape3D" id="SphereShape_enter"]
+radius = 1.7
+
+[node name="FordStreetka" type="VehicleBody3D"]
+mass = 880.0
+center_of_mass_mode = 1
+center_of_mass = Vector3(0, -0.20, 0.0)
+script = ExtResource("1_streetka")
+cab_camera_path = NodePath("CabCamera")
+dismount_offset = Vector3(-0.95, 0.0, 0.4)
+
+; Collision Y centre shifts to half the new height: 1.02 * 0.5 = 0.51.
+[node name="BodyCollision" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.51, 0)
+shape = SubResource("BoxShape_body")
+
+[node name="Wheel_FL" type="VehicleWheel3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.72, 0.25, 1.12)
+use_as_traction = true
+use_as_steering = true
+wheel_radius = 0.25
+suspension_stiffness = 26.0
+suspension_max_force = 8000.0
+damping_compression = 0.4
+damping_relaxation = 0.4
+
+[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_FL"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 0, 0)
+material_override = SubResource("Mat_dark")
+mesh = SubResource("Cyl_wheel")
+
+[node name="Wheel_FR" type="VehicleWheel3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.72, 0.25, 1.12)
+use_as_traction = true
+use_as_steering = true
+wheel_radius = 0.25
+suspension_stiffness = 26.0
+suspension_max_force = 8000.0
+damping_compression = 0.4
+damping_relaxation = 0.4
+
+[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_FR"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 0, 0)
+material_override = SubResource("Mat_dark")
+mesh = SubResource("Cyl_wheel")
+
+[node name="Wheel_RL" type="VehicleWheel3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.72, 0.25, -1.12)
+wheel_radius = 0.25
+suspension_stiffness = 26.0
+suspension_max_force = 8000.0
+damping_compression = 0.4
+damping_relaxation = 0.4
+
+[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_RL"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 0, 0)
+material_override = SubResource("Mat_dark")
+mesh = SubResource("Cyl_wheel")
+
+[node name="Wheel_RR" type="VehicleWheel3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.72, 0.25, -1.12)
+wheel_radius = 0.25
+suspension_stiffness = 26.0
+suspension_max_force = 8000.0
+damping_compression = 0.4
+damping_relaxation = 0.4
+
+[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_RR"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 0, 0)
+material_override = SubResource("Mat_dark")
+mesh = SubResource("Cyl_wheel")
+
+; CabCamera lowered to track the squished cabin (0.85 * 1.10 = 0.94).
+[node name="CabCamera" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.34, 0.94, -0.20)
+current = false
+fov = 70.0
+
+[node name="EnterArea" type="Area3D" parent="."]
+collision_mask = 1
+script = ExtResource("2_enter")
+
+[node name="EnterCollision" type="CollisionShape3D" parent="EnterArea"]
+shape = SubResource("SphereShape_enter")

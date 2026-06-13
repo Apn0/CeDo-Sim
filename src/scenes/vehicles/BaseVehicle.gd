@@ -243,6 +243,68 @@ func on_operator_entered(operator: OperatorContext) -> void:
 		_camera_rig.set_mode(CameraRig.Mode.FIRST_PERSON)
 		_camera_rig.activate()           # take the viewport from the player
 
+# =============================================================================
+# #148 PHASE 4 — NPC vehicle entry/exit parity with the player
+# =============================================================================
+# Vehicles already expose occupied / dismount_offset / cab_camera_path. For
+# NPC parity we add a boarding-position getter (where they stop walking before
+# they "sit down"), and on_npc_entered / on_npc_exited so the NPC parents under
+# a SeatMarker (if present) and the vehicle's occupied flag flips like it does
+# for the player. Doors that animate (MerloP40, the cars) expose
+# request_door_open / close hooks; the NPC planner calls those when they exist
+# so the boarding sequence reads as "walk up → door swings → climb in".
+
+var _seated_npc : Node3D = null
+
+## World position the NPC should walk to BEFORE the sit-down animation runs.
+## Default: the dismount_offset point (driver-side step) — for most cars +
+## forklift that's a metre to the LEFT of the cab. Vehicles can override.
+func get_boarding_position() -> Vector3:
+	var base : Vector3 = global_position + global_transform.basis * dismount_offset
+	base.y = global_position.y
+	return base
+
+## NPC boarding — parents the NPC under a SeatMarker node if the vehicle has
+## one, otherwise pins to the chassis origin. Flips occupied=true so passersby
+## (and other NPC planners) see the vehicle as taken. Mirrors on_operator_entered
+## minus the camera takeover (NPC drives blind for now; the operator can still
+## board to override the camera).
+func on_npc_entered(npc: Node3D) -> void:
+	if npc == null:
+		return
+	_seated_npc = npc
+	occupied = true
+	handbrake_engaged = false
+	# Reparent NPC under the seat marker (if any) so it rides with the chassis.
+	var seat := get_node_or_null("SeatMarker") as Node3D
+	var parent_node : Node3D = seat if seat != null else self
+	if npc.get_parent():
+		npc.get_parent().remove_child(npc)
+	parent_node.add_child(npc)
+	npc.transform = Transform3D.IDENTITY    # snap to seat origin
+
+## NPC dismount — reverse of on_npc_entered. Reparents the NPC back to the
+## scene root and drops them at dismount_offset (world space). Flips occupied=false.
+func on_npc_exited(npc: Node3D) -> void:
+	if npc == null:
+		return
+	if _seated_npc == npc:
+		_seated_npc = null
+	occupied = false
+	_throttle = 0.0
+	_steering = 0.0
+	_brake    = 0.0
+	handbrake_engaged = true
+	# Reparent back to the world (scene root) at the dismount point.
+	var root := get_tree().current_scene
+	var dismount_pos : Vector3 = global_position + global_transform.basis * dismount_offset
+	if npc.get_parent():
+		npc.get_parent().remove_child(npc)
+	if root != null:
+		root.add_child(npc)
+		npc.global_position = Vector3(dismount_pos.x,
+			global_position.y, dismount_pos.z)
+
 func on_operator_exited() -> void:
 	_operator = null
 	occupied  = false
@@ -925,6 +987,11 @@ var _last_good_xf : Transform3D = Transform3D.IDENTITY   # NaN-transform watchdo
 var _xf_warned : bool = false
 
 func _physics_process(delta: float) -> void:
+	# ROOT FIX (NaN flood): kill the unused VehicleWheel3D sim on the first tick,
+	# after every subclass _ready has finished arranging wheel children.
+	if not _wheels_neutralized:
+		_wheels_neutralized = true
+		_neutralize_vehicle_wheels()
 	# NaN-transform watchdog: if the physics ever drives this body to a non-finite
 	# transform — the renderer's `instance_set_transform "!is_finite"` spam, which also
 	# corrupts a feeder riding in the cab — snap back to the last good pose, kill the
@@ -1145,6 +1212,7 @@ var _accum_steer_target : float = 0.0    # persistent target angle (-1..1 = -loc
 ## out of the wheel nodes so a NaN wheel transform can never reach a VisualInstance3D.
 @export var detach_wheel_visuals : bool = false
 var _detached_wheels : Array = []   # [{mesh, base_basis, is_rear, steering}] — see _detach_wheel_visuals
+var _wheels_neutralized : bool = false   # one-shot, set on the first physics tick
 
 func _rotate_steered_wheel_meshes(delta: float) -> void:
 	var target := _steering * 0.55     # max ~31° lock
@@ -1198,6 +1266,63 @@ func _detach_wheel_visuals() -> void:
 					"is_rear": is_rear,
 					"steering": w.use_as_steering,
 				})
+
+## ROOT FIX for the renderer "instance_set_transform !v.is_finite()" flood.
+## VehicleWheel3D nodes on this frozen kinematic body are still stepped by the
+## physics server every tick and their transforms go non-finite (#22 observed
+## it on the forklift and detached only ITS visuals — every other vehicle's
+## wheel meshes kept inheriting the NaN, ~26 renderer errors per tick across
+## the parked fleet). The wheel sim is entirely unused — drive is
+## move_and_collide + rotate_y + _settle_on_ground — so each VehicleWheel3D is
+## replaced by an inert Node3D anchor carrying the same children, and the
+## wheel node (the NaN factory) is removed from the tree. Runs on the FIRST
+## physics tick, after every subclass _ready has arranged its wheel children
+## (MerloP40._articulate_wheels reparents FBX wheels INTO the wheel nodes at
+## _ready, so doing this in BaseVehicle._ready would be too early).
+func _neutralize_vehicle_wheels() -> void:
+	var holder := get_node_or_null("WheelVisuals") as Node3D
+	for child in get_children().duplicate():
+		if not (child is VehicleWheel3D):
+			continue
+		var w := child as VehicleWheel3D
+		if holder == null:
+			holder = Node3D.new()
+			holder.name = "WheelVisuals"
+			add_child(holder)
+		# At the first physics tick the wheel still carries its scene-file
+		# transform (the server hasn't stepped it yet) — but guard anyway.
+		var w_xf := w.transform
+		if not w_xf.is_finite():
+			push_warning("[Vehicle %s] wheel %s already non-finite at neutralize — identity fallback" \
+				% [str(vehicle_id), String(w.name)])
+			w_xf = Transform3D()
+		var anchor := Node3D.new()
+		anchor.name = "WheelAnchor_" + String(w.name)
+		holder.add_child(anchor)
+		anchor.transform = w_xf
+		var is_rear := w_xf.origin.z < 0.0
+		for sub in w.get_children().duplicate():
+			if not (sub is Node3D):
+				continue
+			var n := sub as Node3D
+			var local := n.transform
+			n.reparent(anchor, false)   # anchor sits at the wheel's pose → keep LOCAL
+			n.transform = local if local.is_finite() else Transform3D()
+			if n is MeshInstance3D:
+				_detached_wheels.append({
+					"mesh": n,
+					"base_basis": n.transform.basis,
+					"is_rear": is_rear,
+					"steering": w.use_as_steering,
+				})
+		# Out of the tree immediately so the server never steps it again this
+		# tick; queue_free alone would leave it live for the current step.
+		remove_child(w)
+		w.queue_free()
+	# Visual steering now always uses the detached path (see
+	# _rotate_steered_wheel_meshes) — the VehicleWheel3D iteration path has no
+	# nodes left to find.
+	detach_wheel_visuals = true
 
 func _apply_brakes() -> void:
 	var b := _brake * brake_torque_nm
@@ -1624,11 +1749,24 @@ func _tick_vehicle_aux(delta: float) -> void:
 			on = true
 		(hl as OmniLight3D).visible = on and _haz_blink_on
 
-	# Mini-lighthouse beacons
+	# Mini-lighthouse beacons — guarded against a degenerate or non-finite parent
+	# basis (an FBX-imported beacon node can ship a zero-scale or NaN-rotation
+	# transform; once that gets read into `rotation.y` and += an offset, every
+	# subsequent frame writes NaN back, which the renderer reports as
+	# "instance_set_transform !v.is_finite()" forever). Reset to identity on
+	# bad input so the spin can recover; skip null entries entirely.
 	var beacons_active = hazards_on or blinker_left_on or blinker_right_on or occupied
 	for beacon in _beacons:
-		var br = beacon as Node3D
-		br.rotation.y += delta * TAU / 0.7  # 1 rev per 0.7s
+		var br := beacon as Node3D
+		if br == null or not br.is_inside_tree():
+			continue
+		var b := br.transform.basis
+		if not (b.x.is_finite() and b.y.is_finite() and b.z.is_finite()) \
+				or b.determinant() < 1e-6:
+			br.transform.basis = Basis()
+		# Use a wrapped assignment instead of `+=` so a sustained accumulator
+		# can't drift past Godot's float range or pick up rounding into NaN.
+		br.rotation.y = wrapf(br.rotation.y + delta * TAU / 0.7, -TAU, TAU)
 		for c in br.get_children():
 			if c is Light3D:
 				c.visible = beacons_active

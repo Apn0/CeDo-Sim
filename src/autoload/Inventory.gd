@@ -136,7 +136,7 @@ func slot_label(idx: int) -> String:
 	if idx < 0 or idx >= NUM_SLOTS:
 		return ""
 	var t : Node3D = slots[idx]
-	if t == null:
+	if t == null or not is_instance_valid(t):
 		return "—"
 	# Prefer the tool's `tool_id` (e.g. "scissors", "scanner"); fall back to node name.
 	if "tool_id" in t:

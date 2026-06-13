@@ -17,6 +17,11 @@ class_name PlantAudio
 ## machine ids, we'll reparent matching players under the machine's Node3D
 ## so the audio moves with the machine if the operator jogs it.
 
+## PlantAudio was originally disabled while hunting the renderer NaN errors —
+## those turned out to be from BaseVehicle's beacon spin + degenerate
+## RotatingMechanism bases, NOT this system. Re-enabled now.
+const ENABLED : bool = true
+
 const LAYOUT_PATH : String = "res://assets/audio/audio_layout.json"
 const CLIPS_DIR   : String = "res://assets/audio/clips/"
 
@@ -33,6 +38,9 @@ const VOLUME_DB       : float = -8.0      # baseline; loud clips can be lowered 
 var _players : Array[AudioStreamPlayer3D] = []
 
 func _ready() -> void:
+	if not ENABLED:
+		print("[PlantAudio] disabled — set ENABLED=true in PlantAudio.gd to re-enable")
+		return
 	_load_and_spawn()
 
 func _load_and_spawn() -> void:
@@ -126,8 +134,11 @@ func _clip_local_position(clip: Dictionary, anchor: Vector3) -> Vector3:
 func _stream_length(stream: AudioStream) -> float:
 	if stream is AudioStreamWAV:
 		var wav : AudioStreamWAV = stream
-		var sample_count : int = wav.data.size() / 2   # 16-bit mono
+		# 16-bit mono → 2 bytes per sample; stereo → halve again. Intentional ints.
+		@warning_ignore("integer_division")
+		var sample_count : int = wav.data.size() / 2
 		if wav.stereo:
+			@warning_ignore("integer_division")
 			sample_count = sample_count / 2
 		if wav.mix_rate > 0:
 			return float(sample_count) / float(wav.mix_rate)

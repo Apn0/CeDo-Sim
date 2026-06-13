@@ -271,8 +271,19 @@ func _articulate_wipers() -> void:
 
 func _articulate_beacon_and_steering() -> void:
 	if _parts.has("beacon") and not (_parts["beacon"] as Array).is_empty():
-		_beacon_node = (_parts["beacon"] as Array)[0]
-		_beacons.append(_beacon_node)
+		_beacon_node = (_parts["beacon"] as Array)[0] as Node3D
+		# Reset any degenerate/singular FBX-imported transform BEFORE handing the
+		# node to BaseVehicle's per-frame `rotation.y +=` spin. A zero-scale or
+		# NaN basis here propagates into every rotation update and the renderer
+		# floods is_finite() errors. Identity is safe because the part's
+		# meaningful pose comes from its position under the chassis, not its
+		# scale/basis.
+		if _beacon_node != null:
+			var b := _beacon_node.transform.basis
+			if not (b.x.is_finite() and b.y.is_finite() and b.z.is_finite()) \
+					or b.determinant() < 1e-6:
+				_beacon_node.transform.basis = Basis()
+			_beacons.append(_beacon_node)
 	if _parts.has("steering") and not (_parts["steering"] as Array).is_empty():
 		_steering_node = (_parts["steering"] as Array)[0]
 

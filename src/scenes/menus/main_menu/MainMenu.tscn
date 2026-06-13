@@ -38,7 +38,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 
 [node name="VBoxContainer" type="VBoxContainer" parent="CenterContainer/Centerer" unique_id=67358574]
-custom_minimum_size = Vector2(360, 0)
+custom_minimum_size = Vector2(900, 0)
 layout_mode = 2
 size_flags_horizontal = 4
 size_flags_vertical = 0
@@ -57,9 +57,15 @@ layout_mode = 2
 layout_mode = 2
 text = "Load Save:"
 
-[node name="SaveList" type="ItemList" parent="CenterContainer/Centerer/VBoxContainer" unique_id=923971669]
-custom_minimum_size = Vector2(300, 150)
+[node name="SaveList" type="Tree" parent="CenterContainer/Centerer/VBoxContainer" unique_id=923971669]
+custom_minimum_size = Vector2(880, 220)
 layout_mode = 2
+columns = 4
+column_titles_visible = true
+hide_root = true
+select_mode = 0
+allow_rmb_select = false
+allow_reselect = false
 
 [node name="LoadButton" type="Button" parent="CenterContainer/Centerer/VBoxContainer" unique_id=681089067]
 custom_minimum_size = Vector2(0, 40)
@@ -99,6 +105,11 @@ layout_mode = 2
 custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
 text = "Setup World Layout"
+
+[node name="GauntletButton" type="Button" parent="CenterContainer/Centerer/VBoxContainer" unique_id=2044840360]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+text = "TEST GAUNTLET (verify the backlog)"
 
 [node name="RightSpacer" type="Control" parent="CenterContainer/Centerer" unique_id=1754327296]
 layout_mode = 2

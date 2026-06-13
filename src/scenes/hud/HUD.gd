@@ -183,11 +183,13 @@ func _hud_units_label() -> String:
 
 var _hint_label : Label = null
 func _refresh_tutorial_hint() -> void:
-	var show := true
+	# Renamed from `show` — that shadowed CanvasLayer.show() and triggered the
+	# SHADOWED_VARIABLE_BASE_CLASS warning.
+	var show_hint := true
 	if has_node("/root/SettingsManager"):
-		show = bool(SettingsManager.gameplay().get("tutorial_hints", true))
+		show_hint = bool(SettingsManager.gameplay().get("tutorial_hints", true))
 	# Lazily build the hint label so we don't touch the scene tree until needed.
-	if show and _hint_label == null:
+	if show_hint and _hint_label == null:
 		_hint_label = Label.new()
 		_hint_label.name = "TutorialHint"
 		_hint_label.text = "Press P for menu  ·  E to interact  ·  units: %s" % _hud_units_label()
@@ -198,10 +200,10 @@ func _refresh_tutorial_hint() -> void:
 		_hint_label.offset_bottom = -10
 		_hint_label.offset_top = -28
 		add_child(_hint_label)
-	elif show and _hint_label:
+	elif show_hint and _hint_label:
 		_hint_label.text = "Press P for menu  ·  E to interact  ·  units: %s" % _hud_units_label()
 		_hint_label.visible = true
-	elif (not show) and _hint_label:
+	elif (not show_hint) and _hint_label:
 		_hint_label.visible = false
 
 ## In-hand control hint for the currently-held tool (leaf blower / hose nozzle).

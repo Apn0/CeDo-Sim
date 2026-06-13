@@ -262,6 +262,115 @@ def boundary_polygons_of_group(member_tris, tri_ids):
     return polys
 
 
+# ── DOOR CARVING ──────────────────────────────────────────────────────────────
+# Bake permanent factory entrances directly into the .obj instead of relying on
+# the brittle runtime WallOpenings polygon-clip. Each --door snaps to the
+# closest exterior wall (factory is axis-aligned, so we just take the smaller
+# of X-axis-distance vs Z-axis-distance), subdivides nearby shell triangles to
+# fine resolution so the centroid-drop produces a clean ~door-sized hole, and
+# adds the inner walls of the door tunnel as new triangles. No runtime carve =
+# the door cannot fail to appear.
+
+def _vec_sub(a, b): return (a[0]-b[0], a[1]-b[1], a[2]-b[2])
+def _vec_len(v): return math.sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2])
+def _vec_mid(a, b): return ((a[0]+b[0])/2, (a[1]+b[1])/2, (a[2]+b[2])/2)
+
+def subdivide_to_max_edge(tri, max_edge):
+    """Recursively split the longest edge until all edges <= max_edge.
+    Splitting the LONGEST edge (not a fixed midpoint scheme) means adjacent
+    triangles that share an edge produce the same midpoint, so the merge step
+    re-glues them into one wall n-gon — minus the dropped sub-triangles."""
+    stack = [tri]; out = []
+    while stack:
+        a, b, c = stack.pop()
+        el = (_vec_len(_vec_sub(b, a)), _vec_len(_vec_sub(c, b)), _vec_len(_vec_sub(a, c)))
+        me = max(el)
+        if me <= max_edge:
+            out.append((a, b, c)); continue
+        if el[0] == me:
+            m = _vec_mid(a, b); stack.append((a, m, c)); stack.append((m, b, c))
+        elif el[1] == me:
+            m = _vec_mid(b, c); stack.append((a, b, m)); stack.append((a, m, c))
+        else:
+            m = _vec_mid(c, a); stack.append((a, b, m)); stack.append((m, b, c))
+    return out
+
+def _tri_centroid(t):
+    return ((t[0][0]+t[1][0]+t[2][0])/3, (t[0][1]+t[1][1]+t[2][1])/3, (t[0][2]+t[1][2]+t[2][2])/3)
+
+def _tri_aabb_overlaps(t, box):
+    bx0, by0, bz0, bx1, by1, bz1 = box
+    tx_min = min(t[0][0], t[1][0], t[2][0]); tx_max = max(t[0][0], t[1][0], t[2][0])
+    ty_min = min(t[0][1], t[1][1], t[2][1]); ty_max = max(t[0][1], t[1][1], t[2][1])
+    tz_min = min(t[0][2], t[1][2], t[2][2]); tz_max = max(t[0][2], t[1][2], t[2][2])
+    return not (tx_max < bx0 or tx_min > bx1 or ty_max < by0 or ty_min > by1
+                or tz_max < bz0 or tz_min > bz1)
+
+def _point_in_box(p, box):
+    return (box[0] <= p[0] <= box[3] and box[1] <= p[1] <= box[4] and box[2] <= p[2] <= box[5])
+
+def door_kill_box(door, t_wall, slack=1.5):
+    """Build the 3D AABB whose interior every shell sub-triangle gets dropped.
+    Thicker than the wall (slack * t_wall) on the wall-normal axis so the
+    outer shell, inner shell, and bridge triangles all get cleared together.
+    `door` carries its own width / height / bottom_y so windows (lifted off
+    the floor) and any odd-sized opening work without globals."""
+    cx, cz, facing, width, height, bottom_y = door
+    if facing == 'x':
+        return (cx - t_wall * slack, bottom_y - 0.05, cz - width / 2,
+                cx + t_wall * slack, bottom_y + height, cz + width / 2)
+    return (cx - width / 2, bottom_y - 0.05, cz - t_wall * slack,
+            cx + width / 2, bottom_y + height, cz + t_wall * slack)
+
+def door_tunnel_tris(door, t_wall):
+    """Top header + two side jambs through the wall thickness. NO floor — the
+    door reaches the operating slab. Six triangles per door (3 quads × 2).
+    For a WINDOW (bottom_y > floor) a sill quad is added too."""
+    cx, cz, facing, width, height, bottom_y = door
+    floor_y = bottom_y
+    hw = width / 2
+    top_y = floor_y + height
+    tris = []
+    if facing == 'x':
+        outer_x = cx + 0.02
+        inner_x = cx - t_wall - 0.02
+        # Header (top of door, normal points DOWN into the tunnel).
+        v1 = (outer_x, top_y, cz - hw); v2 = (outer_x, top_y, cz + hw)
+        v3 = (inner_x, top_y, cz + hw); v4 = (inner_x, top_y, cz - hw)
+        tris += [(v1, v2, v3), (v1, v3, v4)]
+        # Left jamb (low-Z side, normal points +Z).
+        l1 = (outer_x, floor_y, cz - hw); l2 = (inner_x, floor_y, cz - hw)
+        l3 = (inner_x, top_y, cz - hw);   l4 = (outer_x, top_y, cz - hw)
+        tris += [(l1, l2, l3), (l1, l3, l4)]
+        # Right jamb (high-Z side, normal points -Z).
+        r1 = (outer_x, floor_y, cz + hw); r2 = (outer_x, top_y, cz + hw)
+        r3 = (inner_x, top_y, cz + hw);   r4 = (inner_x, floor_y, cz + hw)
+        tris += [(r1, r2, r3), (r1, r3, r4)]
+    else:
+        outer_z = cz + 0.02
+        inner_z = cz - t_wall - 0.02
+        v1 = (cx - hw, top_y, outer_z); v2 = (cx + hw, top_y, outer_z)
+        v3 = (cx + hw, top_y, inner_z); v4 = (cx - hw, top_y, inner_z)
+        tris += [(v1, v2, v3), (v1, v3, v4)]
+        l1 = (cx - hw, floor_y, outer_z); l2 = (cx - hw, top_y, outer_z)
+        l3 = (cx - hw, top_y, inner_z);   l4 = (cx - hw, floor_y, inner_z)
+        tris += [(l1, l2, l3), (l1, l3, l4)]
+        r1 = (cx + hw, floor_y, outer_z); r2 = (cx + hw, floor_y, inner_z)
+        r3 = (cx + hw, top_y, inner_z);   r4 = (cx + hw, top_y, outer_z)
+        tris += [(r1, r2, r3), (r1, r3, r4)]
+    return tris
+
+def snap_door_to_wall(cx, cz, bbx0, bbx1, bbz0, bbz1):
+    """Pick the nearest of the 4 perimeter walls and snap onto it.
+    Returns (cx, cz, facing) where facing is 'x' or 'z'."""
+    dW = abs(cx - bbx0); dE = abs(cx - bbx1)
+    dS = abs(cz - bbz0); dN = abs(cz - bbz1)
+    nearest = min(dW, dE, dS, dN)
+    if nearest == dW: return (bbx0, cz, 'x')
+    if nearest == dE: return (bbx1, cz, 'x')
+    if nearest == dS: return (cx, bbz0, 'z')
+    return (cx, bbz1, 'z')
+
 def boundary_edges(wt):
     present = set()
     for a, b, c in wt:
@@ -288,6 +397,19 @@ def main():
     ap.add_argument("--no-posts", action="store_true", help="skip the wooden structural posts entirely")
     ap.add_argument("--merge-deg", type=float, default=1.0, help="coplanar-merge angle threshold (degrees); 0 = disable merging")
     ap.add_argument("--merge-iter", type=int, default=10, help="max iterations for the coplanar merge")
+    ap.add_argument("--door", action="append", default=[],
+        help='Bake an entrance into the shell at "cx,cz" (RD coords). Snaps to the '
+             'nearest exterior wall. Repeatable: pass --door once per door.')
+    ap.add_argument("--scene-door", action="append", default=[],
+        help='Same as --door but coordinates are SCENE-LOCAL (what the player sees '
+             'in-game after the building is shifted to origin). The script converts '
+             'to RD internally using the source-tile AABB. Easier to use: stand at '
+             'the door spot in-game, note your X/Z, pass them here.')
+    ap.add_argument("--door-width", type=float, default=4.0, help="door width in metres (default 4 m)")
+    ap.add_argument("--door-height", type=float, default=3.0, help="door height in metres (default 3 m)")
+    ap.add_argument("--door-subdivide", type=float, default=0.4,
+        help="max edge length for subdividing wall triangles near a door (m). "
+             "Smaller = cleaner carve edge but more triangles.")
     args = ap.parse_args()
     t = args.thickness
 
@@ -346,6 +468,64 @@ def main():
         out_tris.append((oa, ib, ia))
     shell_tri_count = len(out_tris)   # everything beyond this index is "posts"
 
+    # ── Factory bounding box (used by both doors AND posts) ───────────────────
+    # Computed FROM FACTORY TRIANGLES ONLY so it doesn't span the whole 1.1km
+    # source tile.
+    f_idx_all = set()
+    for tri in wt:
+        f_idx_all.add(tri[0]); f_idx_all.add(tri[1]); f_idx_all.add(tri[2])
+    f_verts_all = [uniq[i] for i in f_idx_all]
+    fxs = [p[0] for p in f_verts_all]
+    fys = [p[1] for p in f_verts_all]
+    fzs = [p[2] for p in f_verts_all]
+    fac_x0, fac_x1 = min(fxs), max(fxs)
+    fac_y0, fac_y1 = min(fys), max(fys)
+    fac_z0, fac_z1 = min(fzs), max(fzs)
+
+    # ── Bake doors into the shell ─────────────────────────────────────────────
+    door_specs = list(args.door)
+    # Convert scene-local entries to RD by adding the source tile's AABB centre
+    # (the inverse of WorldSetup's local-origin shift).
+    if args.scene_door:
+        for s in args.scene_door:
+            sx, sz = (float(p) for p in s.split(","))
+            door_specs.append("%.4f,%.4f" % (sx + aabb_c[0], sz + aabb_c[2]))
+    if door_specs:
+        doors = []
+        for s in door_specs:
+            parts = s.split(",")
+            cx, cz = float(parts[0]), float(parts[1])
+            # Optional per-door overrides: "cx,cz" → defaults; "cx,cz,W,H[,BY]"
+            # → explicit dimensions. Bottom_y defaults to the factory floor.
+            w  = float(parts[2]) if len(parts) > 2 else args.door_width
+            h  = float(parts[3]) if len(parts) > 3 else args.door_height
+            by = float(parts[4]) if len(parts) > 4 else fac_y0
+            snap_x, snap_z, facing = snap_door_to_wall(cx, cz, fac_x0, fac_x1, fac_z0, fac_z1)
+            doors.append((snap_x, snap_z, facing, w, h, by))
+        kill_boxes = [door_kill_box(d, t) for d in doors]
+        shell_in = out_tris[:shell_tri_count]
+        carved = []
+        n_drop = 0
+        for tri in shell_in:
+            if not any(_tri_aabb_overlaps(tri, b) for b in kill_boxes):
+                carved.append(tri); continue
+            for sub in subdivide_to_max_edge(tri, args.door_subdivide):
+                if any(_point_in_box(_tri_centroid(sub), b) for b in kill_boxes):
+                    n_drop += 1
+                else:
+                    carved.append(sub)
+        # Add door-tunnel inner walls (header + 2 jambs per door; sill for windows).
+        tunnel = []
+        for d in doors:
+            tunnel += door_tunnel_tris(d, t)
+        out_tris = carved + tunnel
+        shell_tri_count = len(out_tris)
+        print("[solidify] doors: %d baked  (dropped %d sub-tris, added %d tunnel tris)"
+              % (len(doors), n_drop, len(tunnel)))
+        for d in doors:
+            print("           - %s wall  cx=%.0f cz=%.0f  %.1fw × %.1fh  bottom_y=%.2f" % (
+                {'x': 'east/west', 'z': 'north/south'}[d[2]], d[0], d[1], d[3], d[4], d[5]))
+
     # ── Wooden structural posts ────────────────────────────────────────────────
     # Stand vertical posts inside the factory: `args.posts` rows ACROSS the
     # building width (so we cover the 4 or 5 lowest roof points), each row spaced
@@ -355,17 +535,11 @@ def main():
     # any external viewer can colour them as wood.
     post_tris = []
     if not args.no_posts:
-        # AABB from FACTORY triangles only (wt), not the whole tile — uniq still
-        # holds all 124 buildings' verts so its bbox spans ~1.1 km. Earlier I used
-        # uniq's bbox and got 114 posts/row spanning the whole region.
-        f_idx = set()
-        for a, b, c in wt:
-            f_idx.add(a); f_idx.add(b); f_idx.add(c)
-        f_verts = [uniq[i] for i in f_idx]
-        xs = [p[0] for p in f_verts]; ys = [p[1] for p in f_verts]; zs = [p[2] for p in f_verts]
-        bbx0, bbx1 = min(xs), max(xs)
-        bby0, bby1 = min(ys), max(ys)
-        bbz0, bbz1 = min(zs), max(zs)
+        # Reuse the factory AABB we already computed for the door pass.
+        f_verts = f_verts_all
+        bbx0, bbx1 = fac_x0, fac_x1
+        bby0, bby1 = fac_y0, fac_y1
+        bbz0, bbz1 = fac_z0, fac_z1
         # Pick depth axis = whichever is longer (so spacing follows the long side).
         width_x = bbx1 - bbx0
         depth_z = bbz1 - bbz0
@@ -471,11 +645,27 @@ def main():
     def is_post_tri(ti): return ti >= shell_tri_count
     def is_shell_tri(ti): return ti < shell_tri_count
 
+    # ── Write the sidecar .mtl ────────────────────────────────────────────────
+    # Two named materials — Godot's OBJ importer reads `usemtl` declarations and
+    # creates ONE SURFACE PER MATERIAL on the imported mesh, which lets
+    # MainWorld._apply_textures land the calibrated mat_timber_dark on the
+    # `posts` surface and the cream shell paint on `shell`. Without these, the
+    # importer collapses everything to a single surface and the timber material
+    # has nowhere to go (the V-beams render as shell paint).
+    mtl_out = os.path.splitext(args.out)[0] + ".mtl"
+    with open(mtl_out, "w") as mf:
+        mf.write("# CeDo factory — material slot manifest. Values are placeholders;\n"
+                 "# real materials are applied at runtime by MaterialPalette + MainWorld.\n"
+                 "newmtl shell\nKa 0.7 0.68 0.63\nKd 0.7 0.68 0.63\nKs 0 0 0\nNs 10\n"
+                 "newmtl posts\nKa 0.30 0.22 0.14\nKd 0.30 0.22 0.14\nKs 0 0 0\nNs 10\n")
+    print("[solidify] wrote %s (mtllib for shell/posts slots)" % mtl_out)
+
     # ── Write the .obj ────────────────────────────────────────────────────────
     with open(args.out, "w") as f:
         f.write("# CeDo factory — solidified + coplanar-merged (thickness=%.2fm, merge=%.2f°).\n"
                 "# Standalone OBJ — no Godot required. Walls collapsed from triangle soup\n"
                 "# into clean N-gons by iterative coplanar merge.\n" % (t, args.merge_deg))
+        f.write("mtllib %s\n" % os.path.basename(mtl_out))
         # Vertices: one per unique position.
         for p in id_to_pos:
             f.write("v %.4f %.4f %.4f\n" % p)
@@ -499,8 +689,11 @@ def main():
         if args.merge_deg > 0.0:
             shell_polys = 0; post_polys = 0
             # Two passes so the .obj has a clean `g shell` then `g posts` ordering.
+            # `usemtl` per group makes Godot's importer create ONE SURFACE PER
+            # MATERIAL — surface 0 = shell, surface 1 = posts. MainWorld then
+            # overrides them independently.
             for label, predicate in (("shell", is_shell_tri), ("posts", is_post_tri)):
-                f.write("g %s\n" % label)
+                f.write("g %s\nusemtl %s\n" % (label, label))
                 for gid, members in groups.items():
                     members_in_group = [ti for ti in members if predicate(ti)]
                     if not members_in_group:
@@ -522,7 +715,7 @@ def main():
             vi = 1
             for label, sl in (("shell", out_tris), ("posts", post_tris)):
                 if not sl: continue
-                f.write("g %s\n" % label)
+                f.write("g %s\nusemtl %s\n" % (label, label))
                 for _ in sl:
                     f.write("f %d//%d %d//%d %d//%d\n" % (vi, vi, vi+1, vi+1, vi+2, vi+2))
                     vi += 3

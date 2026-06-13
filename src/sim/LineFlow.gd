@@ -45,10 +45,23 @@ const TARGET_STARTUP_S : float = 20.0 # whole-line power-up is capped near this,
 const TRANSPORT_MPS : float = 1.3     # how fast material rides a connector (m/s)
 const PIPE_STAGES   : int   = 6       # delay-line resolution per connector
 const MIN_TRANSIT_S : float = 0.6     # shortest connector still takes this long to cross
+# #97 — buffer-aware splitter routing. A splitter (switch_belt) weights each of
+# its two downstreams by remaining HEADROOM = 1 - buffer/CAP, so an empty silo
+# pulls more than a near-full one. CAP is the buffer level at which the share
+# falls to the eps floor (effectively "stop sending here"); EPS keeps the
+# splitter alive when both downstreams are saturated (falls back to ~even split
+# because two equal-eps weights normalise to 50/50).
+const SPLITTER_CAPACITY_KG : float = 200.0
+const SPLITTER_SHARE_EPS   : float = 0.01
 const PLCSequencerScript = preload("res://src/sim/PLCSequencer.gd")
 const FloorPileScript    = preload("res://src/sim/FloorPile.gd")
 const ProcessModelScript = preload("res://src/sim/ProcessModel.gd")
 const Line3CDefScript    = preload("res://src/sim/Line3CDef.gd")
+const SwitchBeltScript   = preload("res://src/sim/SwitchBelt.gd")   # #137
+const Conveyor8Script    = preload("res://src/sim/Conveyor8.gd")    # #138
+# #138 — VSS buffer over this fraction-of-capacity counts as "FULL" for the
+# overflow trip. When BOTH VSS_3A and VSS_3B are over this, C8 reverses.
+const VSS_FULL_KG       : float = 150.0
 # ── #52 advanced-systems OBSERVERS (additive, conserving) ─────────────────────
 # These pure-sim modules run ALONGSIDE the material flow purely as observers: the
 # extruder thermal/rheology + MFI soft-sensor publish telemetry, the motor-overload
@@ -300,7 +313,21 @@ func _discover() -> void:
 			"mfi_value":    0.0,
 			"_backlog_kg":  0.0,
 			"_moved_kg":    0.0,
+			# #137 — switch_belt jog controller. Populated below for switch_belt
+			# placeables only; everyone else carries null and the tick path skips
+			# the jog logic entirely.
+			"switch_ctrl":  null,
+			# #138 — conveyor-8 bidirectional controller. Populated below for
+			# intake_belt_8 only.
+			"c8_ctrl":      null,
 		})
+		# #137 — attach the jog controller to switch_belt bodies and stash it on
+		# the node dict so the tick can read jog_x without a per-frame find_child.
+		if id == "switch_belt":
+			_nodes[_nodes.size() - 1]["switch_ctrl"] = SwitchBeltScript.attach_to(node3d)
+		# #138 — attach the bidirectional ramp controller to C8.
+		elif id == "intake_belt_8":
+			_nodes[_nodes.size() - 1]["c8_ctrl"] = Conveyor8Script.attach_to(node3d)
 	# Attach the advanced-system observers now that every node dict exists.
 	_attach_advanced_systems()
 
@@ -540,6 +567,23 @@ func _link_best_target(src_idx: int, source_port: Vector3, src_proc: String, exc
 			continue
 		return best
 	return -1
+
+## #138 — return true when BOTH VSS_3A and VSS_3B input buffers are over the
+## VSS_FULL_KG cap. C8 reads this every tick to decide its target direction.
+## When only one VSS is full the switch belt's buffer-aware split (#137)
+## already biases against it, so there's no need to flip C8 in that case.
+func _both_vss_full() -> bool:
+	var vss_count : int = 0
+	var vss_full  : int = 0
+	for nd in _nodes:
+		if String(nd.get("id", "")) != "vss_silo":
+			continue
+		vss_count += 1
+		if float(nd.get("buffer", 0.0)) >= VSS_FULL_KG:
+			vss_full += 1
+	# Need at least two VSSs registered (3A + 3B). If only one is placed,
+	# overflow logic can't trigger — fall back to forward-only.
+	return vss_count >= 2 and vss_full == vss_count
 
 ## Semantic direction filter for the geometry-fallback linker (#78). Some
 ## (upstream_process, downstream_process) pairs are physically impossible and
@@ -1244,14 +1288,100 @@ func tick(delta: float) -> void:
 	#    link rides PIPE_STAGES slots that shift forward one slot every stage_dt,
 	#    so it takes the full transit_time to reach the downstream machine. Feeding
 	#    the head therefore CANNOT appear instantly at the sink (#145).
-	# Pre-count each source's outgoing edges so a SPLIT divides its output EVENLY
-	# across the branches (otherwise the first edge took everything). Conserving:
-	# the shares sum back to the original, and merges re-sum at the downstream input.
+	# Pre-compute per-edge take-fractions. Non-splitter sources keep the old
+	# even-split-by-branch-count behaviour (1/N per branch — first edge takes
+	# 1/N, second takes 1/(N-1) of what remains, last takes everything left).
+	# Splitter sources (#97) use a BUFFER-AWARE share instead: each downstream's
+	# share is weighted by its remaining headroom (capacity - current buffer),
+	# so an empty silo pulls more material than a near-full one. Falls back to
+	# the even split when BOTH downstreams are full (no preference).
+	#
+	# Share → take-fraction conversion: split_fraction() mutates the source,
+	# so the i'th edge takes `shares[i] / (1 - sum(shares[0..i-1]))` of what's
+	# left rather than `shares[i]` of the original. This keeps the per-branch
+	# bookkeeping the same as the old code while honouring biased shares.
+	var _edge_take : Array = []
+	_edge_take.resize(_edges.size())
+	for ti in _edges.size():
+		_edge_take[ti] = 1.0
+	var _src_to_edges : Dictionary = {}
+	for ti in _edges.size():
+		var src_id := int(_edges[ti]["a"])
+		var lst : Array = _src_to_edges.get(src_id, [])
+		lst.append(ti)
+		_src_to_edges[src_id] = lst
+	for src_id in _src_to_edges.keys():
+		var src_edges : Array = _src_to_edges[src_id]
+		var n_branches : int = src_edges.size()
+		if n_branches == 0:
+			continue
+		var src_node : Dictionary = _nodes[int(src_id)]
+		var is_splitter : bool = String(src_node.get("role", "")) == "splitter" and n_branches >= 2
+		var shares : Array = []
+		if is_splitter:
+			# weight_i = max(eps, 1 - downstream_buffer_kg / SPLITTER_CAP_KG)
+			# Empty downstream → weight 1.0, fully-loaded → weight eps. Linear in
+			# between. eps>0 keeps the splitter alive even when both downstreams
+			# are full (falls back to ~even split because both eps's are equal).
+			var weights : Array = []
+			var total : float = 0.0
+			for ei in src_edges:
+				var dst : Dictionary = _nodes[int(_edges[ei]["b"])]
+				var buf : float = float(dst.get("buffer", 0.0))
+				var w : float = maxf(SPLITTER_SHARE_EPS,
+					1.0 - buf / SPLITTER_CAPACITY_KG)
+				weights.append(w)
+				total += w
+			for wi in n_branches:
+				shares.append(float(weights[wi]) / total if total > 0.0 \
+					else 1.0 / float(n_branches))
+			# #137 — switch belt jog overlay. Only applies when the source has a
+			# SwitchBelt controller AND exactly two downstreams (the standard
+			# VSS_3A / VSS_3B Y). We write the target jog from the buffer-aware
+			# share above, but READ the CURRENT (lagged) jog position for the
+			# actual material split — so the deck has to physically slide before
+			# the routing changes. That's the operator's spec: "10 cm/s, smooth
+			# blend; the belt moves first, the flow follows."
+			var ctrl = src_node.get("switch_ctrl")
+			if ctrl != null and n_branches == 2:
+				ctrl.set_jog_target(SwitchBeltScript.jog_target_for_share(float(shares[0])))
+				var lagged : float = ctrl.share_to_first_from_jog()
+				shares[0] = lagged
+				shares[1] = 1.0 - lagged
+			# #138 — C8 bidirectional overlay. Forward edge takes share_forward()
+			# (= max(direction_x, 0)); reverse edge takes share_reverse(). Both
+			# sum to abs(direction_x), so when the belt is mid-ramp (direction_x
+			# ≈ 0) shares sum to <1 and material stalls in C8's buffer — that's
+			# the "belt stopped" moment the operator described. Target direction
+			# is read from VSS_3A + VSS_3B buffer levels: both above VSS_FULL_KG
+			# → reverse, else → forward.
+			var c8 = src_node.get("c8_ctrl")
+			if c8 != null and n_branches == 2:
+				var both_full : bool = _both_vss_full()
+				c8.set_direction_target(-1.0 if both_full else 1.0)
+				# By convention wout (the FORWARD port +Z) is edge index 0,
+				# wout2 (reverse) is edge index 1 — that's the order the linker
+				# emits them per #54.
+				shares[0] = c8.share_forward()
+				shares[1] = c8.share_reverse()
+		else:
+			for _wi in n_branches:
+				shares.append(1.0 / float(n_branches))
+		var cum : float = 0.0
+		for i in n_branches:
+			var s : float = float(shares[i])
+			if cum >= 0.99999:
+				_edge_take[src_edges[i]] = 1.0
+			else:
+				_edge_take[src_edges[i]] = clampf(s / (1.0 - cum), 0.0, 1.0)
+			cum += s
+
 	var _out_left : Dictionary = {}
 	for e2 in _edges:
 		var ai2 := int(e2["a"])
 		_out_left[ai2] = int(_out_left.get(ai2, 0)) + 1
-	for e in _edges:
+	for ei in _edges.size():
+		var e : Dictionary = _edges[ei]
 		var an: Dictionary = _nodes[int(e["a"])]
 		var bn: Dictionary = _nodes[int(e["b"])]
 		var pipe: Array = e["pipe"]
@@ -1259,12 +1389,13 @@ func tick(delta: float) -> void:
 		var rem : int = int(_out_left[src])
 		# Inject this branch's SHARE of the source's output into the entry slot.
 		var aout: MaterialBatch = an["out"]
+		var take : float = float(_edge_take[ei])
 		if aout.mass_kg > 0.0 and rem > 0:
-			if rem <= 1:
+			if rem <= 1 or take >= 0.99999:
 				(pipe[0] as MaterialBatch).add(aout)          # last/only branch takes the rest
 				an["out"] = MaterialBatch.new()
 			else:
-				(pipe[0] as MaterialBatch).add(aout.split_fraction(1.0 / float(rem)))
+				(pipe[0] as MaterialBatch).add(aout.split_fraction(take))
 		_out_left[src] = rem - 1
 		# Advance the belt: shift slots forward whenever a stage interval elapses.
 		e["stage_t"] = float(e["stage_t"]) + delta
@@ -1366,8 +1497,9 @@ func _tick_advanced_systems(delta: float) -> void:
 		var aid : String = String(nd.get("air_id", ""))
 		if aid != "":
 			var rate : float = float(nd["rate"])
-			var load : float = clampf(float(nd["thru"]) / rate, 0.0, 1.0) if rate > 0.0 else 0.0
-			air_duty[aid] = maxf(float(air_duty.get(aid, 0.0)), load)
+			# Renamed from `load` — that shadows the built-in load() function.
+			var air_load : float = clampf(float(nd["thru"]) / rate, 0.0, 1.0) if rate > 0.0 else 0.0
+			air_duty[aid] = maxf(float(air_duty.get(aid, 0.0)), air_load)
 	# Report the per-consumer duty to the header (drives its demand → pressure).
 	var air := _air_network()
 	if air != null and air.has_method("set_consumer_duty"):
@@ -1674,6 +1806,13 @@ func _make_connector(a: Dictionary, b: Dictionary) -> void:
 	if _is_friction_sep_source(src_id):
 		_spawn_chute(a_world, b_world, 0.34, 0.14, true)
 		return
+	# Rule 2b — DRYER → BLOWER gets an L-shaped round duct: a forward segment
+	# from the dryer's front-bottom discharge, then a 90° lateral turn into
+	# the blower inlet. Two parallel dryers each get their own pipe from
+	# opposite sides — the V-shape avoids intersection.
+	if src_id == "mech_dryer" and tgt_id == "blower":
+		_spawn_elbow_duct(a_world, b_world, 0.16)
+		return
 	# Rule 3 — BLOWER ALWAYS PNEUMATICALLY CONVEYS TO A CYCLONE through a round
 	# steel duct. Per operator: blower output → cyclone is deterministic in this
 	# plant; the air-laden flake stream runs through a sealed round pipe between
@@ -1834,6 +1973,67 @@ func _spawn_round_duct(a_world: Vector3, b_world: Vector3, radius: float) -> voi
 	col.add_child(cs)
 	root.add_child(col)
 
+## #99 — L-shaped round duct from a dryer's front-bottom discharge to the
+## blower inlet. Two straight pipe segments meet at a corner: forward from the
+## dryer, then lateral into the blower. Each parallel dryer routes its own pipe
+## from opposite sides, forming a V that doesn't intersect.
+func _spawn_elbow_duct(a_world: Vector3, b_world: Vector3, radius: float) -> void:
+	var corner := Vector3(a_world.x, b_world.y, b_world.z)
+	var steel_mat := StandardMaterial3D.new()
+	steel_mat.albedo_color = Color(0.62, 0.63, 0.66)
+	steel_mat.metallic = 0.7
+	steel_mat.roughness = 0.35
+	var flange_mat := StandardMaterial3D.new()
+	flange_mat.albedo_color = Color(0.40, 0.41, 0.44)
+	flange_mat.metallic = 0.5
+	flange_mat.roughness = 0.45
+	var segments : Array[Array] = [[a_world, corner], [corner, b_world]]
+	for seg in segments:
+		var s0 : Vector3 = seg[0]
+		var s1 : Vector3 = seg[1]
+		var d := s1 - s0
+		var slen := d.length()
+		if slen < 0.05:
+			continue
+		var mid := (s0 + s1) * 0.5
+		var root := Node3D.new()
+		_connectors.add_child(root)
+		root.global_transform = Transform3D(_basis_along(d, "y"), mid)
+		var pipe := MeshInstance3D.new()
+		var cm := CylinderMesh.new()
+		cm.top_radius = radius
+		cm.bottom_radius = radius
+		cm.height = slen
+		pipe.mesh = cm
+		pipe.material_override = steel_mat
+		root.add_child(pipe)
+		for fy in [-slen * 0.5 + 0.03, slen * 0.5 - 0.03]:
+			var fl := MeshInstance3D.new()
+			var fm := CylinderMesh.new()
+			fm.top_radius = radius * 1.30
+			fm.bottom_radius = radius * 1.30
+			fm.height = 0.06
+			fl.mesh = fm
+			fl.material_override = flange_mat
+			fl.position = Vector3(0.0, fy, 0.0)
+			root.add_child(fl)
+		var col := StaticBody3D.new()
+		var cs := CollisionShape3D.new()
+		var caps := CapsuleShape3D.new()
+		caps.radius = radius * 1.05
+		caps.height = slen
+		cs.shape = caps
+		col.add_child(cs)
+		root.add_child(col)
+	# Elbow joint sphere at the corner.
+	var elbow := MeshInstance3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = radius * 1.20
+	elbow.mesh = sm
+	elbow.material_override = flange_mat
+	elbow.position = corner
+	_connectors.add_child(elbow)
+
 ## Legacy: a 0.45 × 0.12 m gravity trough only drawn when the link drops more
 ## than 0.4 m vertically. Used as the fallback for source machines that don't
 ## yet have a dedicated connector type defined.
@@ -1859,23 +2059,37 @@ func _spawn_gravity_gutter(a_world: Vector3, b_world: Vector3) -> void:
 	mi.global_transform = Transform3D(_basis_along(dir, "z"), mid)
 	mi.create_convex_collision()
 
+## Build an orthonormal basis aligned to a world-space direction. Defensively
+## returns identity for any degenerate input — without these guards, a
+## near-zero or non-finite direction (zero-length link between coincident
+## ports, NaN from upstream math) makes .normalized() return NaN, the cross
+## products propagate it into every basis column, and the connector node's
+## transform sets Inf/NaN every frame for the renderer to scream about.
 func _basis_along(axis_world: Vector3, which: String) -> Basis:
+	if axis_world.length_squared() < 1e-6 or not axis_world.is_finite():
+		return Basis()
 	var n := axis_world.normalized()
 	var up := Vector3.UP
 	if absf(n.dot(up)) > 0.99:
 		up = Vector3.RIGHT
+	var cross_a := up.cross(n)
+	if cross_a.length_squared() < 1e-9:
+		return Basis()
 	var b := Basis()
 	if which == "y":
-		var x := up.cross(n).normalized()
+		var x := cross_a.normalized()
 		b.x = x
 		b.y = n
 		b.z = x.cross(n).normalized()
 	else:
-		var x2 := up.cross(n).normalized()
+		var x2 := cross_a.normalized()
 		b.x = x2
 		b.y = n.cross(x2).normalized()
 		b.z = n
-	return b.orthonormalized()
+	var out := b.orthonormalized()
+	if not (out.x.is_finite() and out.y.is_finite() and out.z.is_finite()):
+		return Basis()
+	return out
 
 # =============================================================================
 func _update_label() -> void:

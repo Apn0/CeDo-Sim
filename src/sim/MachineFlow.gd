@@ -129,12 +129,31 @@ static func profile(id: String) -> Dictionary:
 		# flow standpoint (conveyor, no waste); they're distinct only visually
 		# (length/height/incline/colour) in PlaceableCatalog.build_intake_belt().
 		"intake_belt_1", "intake_belt_2", "intake_belt_3", "intake_belt_4", \
-		"intake_belt_5", "intake_belt_6", "intake_belt_7", "intake_belt_8", \
+		"intake_belt_5", "intake_belt_6", "intake_belt_7", \
 		"intake_belt_9", "intake_belt_10", "intake_belt_11", "intake_belt_12":
 			pr["role"] = "conveyor"
 			pr["in"]   = Vector3(0.0, 0.85, -0.45)
 			pr["out"]  = Vector3(0.0, 0.85, 0.45)
 			pr["rate"] = 8.0
+		# #138 — C8 is bidirectional. Default forward to C9; when both VSSs report
+		# FULL, the Conveyor8 controller ramps the belt direction to reverse over
+		# 2 s, then ramps up to full reverse (another 2 s), feeding C8.5 → U-bay.
+		# Modelled as a splitter so the linker emits TWO outgoing edges: wout
+		# forward (to C9, nearest +Z input), wout2 reverse (to C8.5, nearest -Z).
+		"intake_belt_8":
+			pr["role"] = "splitter"
+			pr["in"]   = Vector3(0.0, 0.85, -0.45)
+			pr["out"]  = Vector3(0.0, 0.85,  0.45)   # forward end, feeds C9
+			pr["out2"] = Vector3(0.0, 0.85, -0.45)   # reverse end, feeds C8.5
+			pr["rate"] = 8.0
+		# C8.5 is the slightly-lower overflow belt that C8 discharges to when
+		# reversed. Plain conveyor — material flows in one direction toward the
+		# U-bay (which the LineFlow linker reaches by geometry).
+		"intake_belt_8_5":
+			pr["role"] = "conveyor"
+			pr["in"]   = Vector3(0.0, 0.75, -0.45)
+			pr["out"]  = Vector3(0.0, 0.75,  0.45)
+			pr["rate"] = 6.0
 		"switch_belt":
 			# Y-junction diverter — accepts one upstream input, has TWO outputs
 			# (the chute that feeds VSS and the alternate chute that feeds U-bay).
@@ -207,7 +226,7 @@ static func profile(id: String) -> Dictionary:
 		# ── drying / prep / storage ──────────────────────────────────────────
 		"mech_dryer":
 			pr["in"]  = Vector3(0.0, 0.85, -0.3)
-			pr["out"] = Vector3(0.0, 0.5, 0.45)
+			pr["out"] = Vector3(0.0, 0.15, 0.45)
 		"mas_bak":
 			pr["in"]  = Vector3(0.0, 0.9, -0.3)
 			pr["out"] = Vector3(0.0, 0.5, 0.45)

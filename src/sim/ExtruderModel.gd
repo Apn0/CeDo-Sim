@@ -41,6 +41,9 @@ var runtime_s        : float = 0.0           # total RUNNING seconds
 # Vacuum cascade
 var vacuum_alarm_remaining_s: float = 0.0
 var time_since_state_change : float = 0.0
+# #157 — last sim-time a fault lump was emitted, so the 3-second cadence fires
+# ONCE per interval instead of every frame for the whole integer-second window.
+var _last_lump_emit_s : float = -100.0
 
 # ── Construction ──────────────────────────────────────────────────────────────
 func _init(cfg: ExtruderConfig) -> void:
@@ -143,7 +146,11 @@ func _tick_fault(delta: float, inputs: Dictionary, events: Array[String]) -> voi
 
 	# Spawn lumps at a rate proportional to runaway severity
 	# (scene controller picks this up to spawn rigid-body lump props)
-	if int(time_since_state_change) % 3 == 0 and time_since_state_change > 0.5:
+	# Emit ONCE every 3 s of runaway, not every frame within each 3-aligned
+	# second. `int(t) % 3 == 0` was true for a full second (e.g. 3.0-3.999),
+	# firing hundreds of events/sec. Audit-caught.
+	if time_since_state_change > 0.5 and time_since_state_change - _last_lump_emit_s >= 3.0:
+		_last_lump_emit_s = time_since_state_change
 		events.append("fault_lump_produced")
 
 	if inputs.get("operator_clear_fault", false):
@@ -164,6 +171,9 @@ func _transition(new_state: State, events: Array[String]) -> void:
 	var old := state
 	state = new_state
 	time_since_state_change = 0.0
+	# Reset the lump-emit clock so a fresh fault state emits its first lump
+	# 3 s in (not stalled because the tracker still holds the old high time).
+	_last_lump_emit_s = -100.0
 	events.append("state_changed:%d:%d" % [old, new_state])
 
 # ── Queries ───────────────────────────────────────────────────────────────────

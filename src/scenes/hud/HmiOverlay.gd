@@ -770,7 +770,9 @@ func _stage_status(tokens: Array, faults: Array = []) -> int:
 		return ST_OFF
 	if active:
 		return ST_RUN
-	return ST_IDLE if _feed_on() else ST_IDLE
+	# Was both arms ST_IDLE (copy-paste bug). Stopped + no feed pending → OFF
+	# (grey), feed pending → IDLE (amber). Audit-caught.
+	return ST_IDLE if _feed_on() else ST_OFF
 
 func _stage_value(tokens: Array) -> String:
 	# The line end shows banked granulaat + its run-average melt grade.
