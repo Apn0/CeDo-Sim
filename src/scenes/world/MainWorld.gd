@@ -1252,7 +1252,13 @@ func _spawn_bale_yards_from_layout() -> void:
 				# Far MM kicks in past CLOSE_LOD_M; close MM fades out at the
 				# same threshold. 4 m margin = soft swap with no visible pop.
 				const CLOSE_LOD_M : float = 35.0
-				const STICKER_LOD_M : float = 12.0
+				# #170 — was 12 m, but visibility_range_end on a MultiMeshInstance3D
+				# culls the WHOLE INSTANCE, not per-bale. With a 30 m-wide yard the
+				# yard centre sits ~15 m from the operator standing AT a bale, so
+				# the entire sticker MM was already faded out (zero labels visible
+				# in 5+ runs). 80 m is the new threshold so the operator always
+				# sees stickers when within practical scan range of any yard.
+				const STICKER_LOD_M : float = 80.0
 				mmi.visibility_range_begin        = CLOSE_LOD_M
 				mmi.visibility_range_begin_margin = 4.0
 				mmi.visibility_range_fade_mode    = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF

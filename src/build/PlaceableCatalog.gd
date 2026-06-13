@@ -3863,8 +3863,11 @@ static func _bale_sticker_texture() -> ImageTexture:
 	if _bale_sticker_tex != null:
 		return _bale_sticker_tex
 	var img := Image.create(_BALE_STICKER_TEX_W, _BALE_STICKER_TEX_H, false, Image.FORMAT_RGB8)
-	var paper := Color(0.93, 0.91, 0.83)
-	var ink   := Color(0.18, 0.18, 0.20)
+	# #170 — yellow shipping label, matching the LabelItem sticker colour the
+	# operator confirmed earlier. Was an off-white paper (0.93, 0.91, 0.83)
+	# that read as "no sticker" against the pale bale tint.
+	var paper := Color(0.93, 0.82, 0.15)
+	var ink   := Color(0.10, 0.10, 0.10)
 	img.fill(paper)
 	# Header band: dark strip across the top — reads as "shipping label" at a glance.
 	for y in range(2, 8):
