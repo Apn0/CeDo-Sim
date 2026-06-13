@@ -248,145 +248,170 @@ func _diag(delta: float) -> void:
 # =============================================================================
 func _brain_drive(delta: float) -> void:
 	match _state:
-		State.SEEK:
-			var b := _find_bale()
-			if b == null:
-				# Lot ran dry — refill the reserve so the feeder NEVER freezes, then
-				# re-seek shortly (it will find the restocked bales). #178
-				# (#32) no auto-restock: feedstock comes from the build menu now
-				vehicle.call("npc_stop")
-				_state = State.WAIT
-				_timer = 1.0
-			else:
-				_bale = b
-				b.set_meta("feeder_claimed", true)
-				vehicle.call("npc_set_target", (b as Node3D).global_position)
-				_state = State.TO_BALE
-				_leg_timer = 0.0
-		State.TO_BALE:
-			if _bale == null or not is_instance_valid(_bale):
-				_state = State.SEEK
-			else:
-				_leg_timer += delta
-				if bool(vehicle.call("npc_arrived")) or _leg_timer > STUCK_LIMIT:
-					# Arrived: stop and LOWER THE CARRIAGE to the bale (real control —
-					# drive lift_height_m down), then grab. No teleport.
-					vehicle.call("npc_stop")
-					if "lift_height_m" in vehicle and "lift_min_m" in vehicle:
-						vehicle.set("lift_height_m", vehicle.get("lift_min_m"))
-					_grab_tries = 0
-					_timer = 0.7                 # let the carriage settle onto the bale
-					_state = State.GRAB
-		State.GRAB:
-			_timer -= delta
-			if _timer <= 0.0:
-				# REAL grip: squeeze the plates (clamp_force is the SAME control the
-				# player ramps with B) and fire the SAME _try_grab their release calls.
-				# It latches whatever bale is within GRAB_RANGE of the carry point —
-				# geometry + force gate, never a from-distance teleport.
-				if "clamp_force" in vehicle:
-					vehicle.set("clamp_force", CLAMP_SQUEEZE)
-				vehicle.call("_try_grab")
-				if _vehicle_holding():
-					_timer = 0.6
-					_state = State.LIFT
-				else:
-					_grab_tries += 1
-					if _grab_tries >= GRAB_TRIES_MAX:
-						if _bale != null and is_instance_valid(_bale):
-							_bale.set_meta("feeder_claimed", false)
-						_state = State.SEEK      # can't reach it — never deadlock
-					else:
-						# Re-approach and retry (real driving, not a teleport).
-						if _bale != null and is_instance_valid(_bale):
-							vehicle.call("npc_set_target", (_bale as Node3D).global_position)
-						_leg_timer = 0.0
-						_state = State.TO_BALE
-		State.LIFT:
-			_timer -= delta
-			if "lift_height_m" in vehicle:
-				vehicle.set("lift_height_m", LIFT_CARRY_M)   # raise the load on the mast (real control)
-			if _timer <= 0.0:
-				if is_supplier and supplier_target != Vector3.ZERO:
-					vehicle.call("npc_set_target", supplier_target)   # ferry to the feeder's staging
-					_state = State.TO_BELT
-					_leg_timer = 0.0
-				elif _belt != null:
-					vehicle.call("npc_set_target", _work_spot())
-					_state = State.TO_BELT
-					_leg_timer = 0.0
-				else:
-					_state = State.WAIT
-					_timer = 1.0
-		State.TO_BELT:
-			_leg_timer += delta
-			if bool(vehicle.call("npc_arrived")) or _leg_timer > STUCK_LIMIT:
-				vehicle.call("npc_stop")
-				# Lower the carriage to set the bale down beside the belt (real control).
-				if "lift_height_m" in vehicle and "lift_min_m" in vehicle:
-					vehicle.set("lift_height_m", vehicle.get("lift_min_m"))
-				_timer = 0.7
-				_state = State.SET_DOWN
-		State.SET_DOWN:
-			_timer -= delta
-			if _timer <= 0.0:
-				# Open the clamp + release (real controls) — the bale drops at the
-				# lowered carry point on the ground beside the belt.
-				if _set_bale_on_ground():
-					if is_supplier:
-						# Supplier STAGES the bale: clear the claim so the feeder (Mohammed)
-						# can grab it, then fetch the next. No cut/scan from the supplier.
-						if _bale != null and is_instance_valid(_bale):
-							_bale.set_meta("feeder_claimed", false)
-							_bale.set_meta("delivered", false)
-						_bale = null
-						bales_processed += 1
-						_state = State.SEEK
-					else:
-						_state = State.DISMOUNT
-				else:
-					_state = State.SEEK
-		State.DISMOUNT:
-			# Hop OUT of the cab and stand at the grounded bale, scissors in hand. #176
-			_dismount_worker()
-			_state = State.CUT
-			_timer = maxf(process_secs * 0.5, 0.3)
-		State.CUT:
-			# On foot: cut + REMOVE the 3 wires. We no longer explode the bale into
-			# loose sheets here — that dropped an empty husk + wires onto the belt and
-			# spilled film on the floor in the wrong direction. The de-wired, de-labelled
-			# block now rides the belt whole + centred. #176
-			_timer -= delta
-			if _timer <= 0.0:
+		State.SEEK:     _drive_state_seek()
+		State.TO_BALE:  _drive_state_to_bale(delta)
+		State.GRAB:     _drive_state_grab(delta)
+		State.LIFT:     _drive_state_lift(delta)
+		State.TO_BELT:  _drive_state_to_belt(delta)
+		State.SET_DOWN: _drive_state_set_down(delta)
+		State.DISMOUNT: _drive_state_dismount()
+		State.CUT:      _drive_state_cut(delta)
+		State.SCAN:     _drive_state_scan(delta)
+		State.FEED:     _drive_state_feed()
+		State.REMOUNT:  _drive_state_remount()
+		State.WAIT:     _drive_state_wait(delta)
+
+func _drive_state_seek() -> void:
+	var b := _find_bale()
+	if b == null:
+		# Lot ran dry — refill the reserve so the feeder NEVER freezes, then
+		# re-seek shortly (it will find the restocked bales). #178
+		# (#32) no auto-restock: feedstock comes from the build menu now
+		vehicle.call("npc_stop")
+		_state = State.WAIT
+		_timer = 1.0
+	else:
+		_bale = b
+		b.set_meta("feeder_claimed", true)
+		vehicle.call("npc_set_target", (b as Node3D).global_position)
+		_state = State.TO_BALE
+		_leg_timer = 0.0
+
+func _drive_state_to_bale(delta: float) -> void:
+	if _bale == null or not is_instance_valid(_bale):
+		_state = State.SEEK
+	else:
+		_leg_timer += delta
+		if bool(vehicle.call("npc_arrived")) or _leg_timer > STUCK_LIMIT:
+			# Arrived: stop and LOWER THE CARRIAGE to the bale (real control —
+			# drive lift_height_m down), then grab. No teleport.
+			vehicle.call("npc_stop")
+			if "lift_height_m" in vehicle and "lift_min_m" in vehicle:
+				vehicle.set("lift_height_m", vehicle.get("lift_min_m"))
+			_grab_tries = 0
+			_timer = 0.7                 # let the carriage settle onto the bale
+			_state = State.GRAB
+
+func _drive_state_grab(delta: float) -> void:
+	_timer -= delta
+	if _timer <= 0.0:
+		# REAL grip: squeeze the plates (clamp_force is the SAME control the
+		# player ramps with B) and fire the SAME _try_grab their release calls.
+		# It latches whatever bale is within GRAB_RANGE of the carry point —
+		# geometry + force gate, never a from-distance teleport.
+		if "clamp_force" in vehicle:
+			vehicle.set("clamp_force", CLAMP_SQUEEZE)
+		vehicle.call("_try_grab")
+		if _vehicle_holding():
+			_timer = 0.6
+			_state = State.LIFT
+		else:
+			_grab_tries += 1
+			if _grab_tries >= GRAB_TRIES_MAX:
 				if _bale != null and is_instance_valid(_bale):
-					_bale.set_meta("wires_cut", true)
-					_strip_wires(_bale)
-				_state = State.SCAN
-				_timer = maxf(process_secs * 0.5, 0.3)
-		State.SCAN:
-			# On foot: scan the yellow label, then PEEL it off so the bale that rides
-			# the belt has no label left on it (and no stack of them). #177
-			_timer -= delta
-			if _timer <= 0.0:
-				if _bale != null and is_instance_valid(_bale) and _bale.is_in_group("bale"):
-					_bale.set_meta("scanned", true)
-					_peel_label(_bale)
+					_bale.set_meta("feeder_claimed", false)
+				_state = State.SEEK      # can't reach it — never deadlock
+			else:
+				# Re-approach and retry (real driving, not a teleport).
+				if _bale != null and is_instance_valid(_bale):
+					vehicle.call("npc_set_target", (_bale as Node3D).global_position)
+				_leg_timer = 0.0
+				_state = State.TO_BALE
+
+func _drive_state_lift(delta: float) -> void:
+	_timer -= delta
+	if "lift_height_m" in vehicle:
+		vehicle.set("lift_height_m", LIFT_CARRY_M)   # raise the load on the mast (real control)
+	if _timer <= 0.0:
+		if is_supplier and supplier_target != Vector3.ZERO:
+			vehicle.call("npc_set_target", supplier_target)   # ferry to the feeder's staging
+			_state = State.TO_BELT
+			_leg_timer = 0.0
+		elif _belt != null:
+			vehicle.call("npc_set_target", _work_spot())
+			_state = State.TO_BELT
+			_leg_timer = 0.0
+		else:
+			_state = State.WAIT
+			_timer = 1.0
+
+func _drive_state_to_belt(delta: float) -> void:
+	_leg_timer += delta
+	if bool(vehicle.call("npc_arrived")) or _leg_timer > STUCK_LIMIT:
+		vehicle.call("npc_stop")
+		# Lower the carriage to set the bale down beside the belt (real control).
+		if "lift_height_m" in vehicle and "lift_min_m" in vehicle:
+			vehicle.set("lift_height_m", vehicle.get("lift_min_m"))
+		_timer = 0.7
+		_state = State.SET_DOWN
+
+func _drive_state_set_down(delta: float) -> void:
+	_timer -= delta
+	if _timer <= 0.0:
+		# Open the clamp + release (real controls) — the bale drops at the
+		# lowered carry point on the ground beside the belt.
+		if _set_bale_on_ground():
+			if is_supplier:
+				# Supplier STAGES the bale: clear the claim so the feeder (Mohammed)
+				# can grab it, then fetch the next. No cut/scan from the supplier.
+				if _bale != null and is_instance_valid(_bale):
+					_bale.set_meta("feeder_claimed", false)
+					_bale.set_meta("delivered", false)
+				_bale = null
 				bales_processed += 1
-				_state = State.FEED
-		State.FEED:
-			# Put the cut, scanned, opened material onto the conveyor — but ONLY once the
-			# belt's loading end is clear, so bales never land inside one another. Until
-			# then the worker just stands beside the belt holding it (re-checks each frame).
-			_feed_ground_bale()
-			_state = State.REMOUNT
-		State.REMOUNT:
-			# Climb back into the cab and go again.
-			_remount_worker()
-			_state = State.SEEK
-		State.WAIT:
-			_timer -= delta
-			if _timer <= 0.0:
 				_state = State.SEEK
+			else:
+				_state = State.DISMOUNT
+		else:
+			_state = State.SEEK
+
+func _drive_state_dismount() -> void:
+	# Hop OUT of the cab and stand at the grounded bale, scissors in hand. #176
+	_dismount_worker()
+	_state = State.CUT
+	_timer = maxf(process_secs * 0.5, 0.3)
+
+func _drive_state_cut(delta: float) -> void:
+	# On foot: cut + REMOVE the 3 wires. We no longer explode the bale into
+	# loose sheets here — that dropped an empty husk + wires onto the belt and
+	# spilled film on the floor in the wrong direction. The de-wired, de-labelled
+	# block now rides the belt whole + centred. #176
+	_timer -= delta
+	if _timer <= 0.0:
+		if _bale != null and is_instance_valid(_bale):
+			_bale.set_meta("wires_cut", true)
+			_strip_wires(_bale)
+		_state = State.SCAN
+		_timer = maxf(process_secs * 0.5, 0.3)
+
+func _drive_state_scan(delta: float) -> void:
+	# On foot: scan the yellow label, then PEEL it off so the bale that rides
+	# the belt has no label left on it (and no stack of them). #177
+	_timer -= delta
+	if _timer <= 0.0:
+		if _bale != null and is_instance_valid(_bale) and _bale.is_in_group("bale"):
+			_bale.set_meta("scanned", true)
+			_peel_label(_bale)
+		bales_processed += 1
+		_state = State.FEED
+
+func _drive_state_feed() -> void:
+	# Put the cut, scanned, opened material onto the conveyor — but ONLY once the
+	# belt's loading end is clear, so bales never land inside one another. Until
+	# then the worker just stands beside the belt holding it (re-checks each frame).
+	_feed_ground_bale()
+	_state = State.REMOUNT
+
+func _drive_state_remount() -> void:
+	# Climb back into the cab and go again.
+	_remount_worker()
+	_state = State.SEEK
+
+func _drive_state_wait(delta: float) -> void:
+	_timer -= delta
+	if _timer <= 0.0:
+		_state = State.SEEK
+
 
 ## Lower the clamped bale from the vehicle onto the GROUND at the work spot beside
 ## the belt (still bound — cut + scan happen on foot, next). False if nothing held.
