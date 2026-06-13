@@ -2997,7 +2997,6 @@ static func _m_sinkfloat(p: Node3D, size: Vector3, color: Color, ghost: bool) ->
 	var dark := _mat(_DARK, ghost, 0.5, 0.6)
 	var safety := _mat(Color(0.92, 0.78, 0.18), ghost, 0.0, 0.85)
 	var grating := _mat(Color(0.38, 0.42, 0.40), ghost, 0.0, 0.85)
-	var _motor_mat := _mat(Color(0.20, 0.36, 0.55), ghost, 0.35, 0.45)
 
 	# ── Dimensions / anchors ──────────────────────────────────────────────────
 	var hx     := size.x * 0.5
