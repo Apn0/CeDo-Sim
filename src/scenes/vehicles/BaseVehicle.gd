@@ -1512,6 +1512,12 @@ func _vehicle_light_layout() -> Dictionary:
 		"blue_rear":  Vector3( 0.00, 1.05,-1.55),
 		"beacon":     Vector3( 0.00, 2.40, 0.00),
 	}
+	# #169 — bale clamp wants the orange beacon further back on the cab roof.
+	# Default forklift position (z=0.00, dead-centre) put it visually above the
+	# operator's head; the operator wanted it shifted toward the rear of the
+	# ROPS so it doesn't overlap the steering-view sightline.
+	if vehicle_type == "bale_clamp":
+		d["beacon"] = Vector3(0.0, 2.50, -0.55)
 	if vehicle_type == "merlo" or vehicle_type == "merlo_p40":
 		d["work_FL"]    = Vector3(-0.85, 2.30, 1.20)
 		d["work_FR"]    = Vector3( 0.85, 2.30, 1.20)
