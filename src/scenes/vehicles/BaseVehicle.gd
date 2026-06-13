@@ -498,23 +498,31 @@ func _try_grab() -> void:
 	# bales — the forklift just lifts whatever heavy thing is in its forks.
 	var best : Node3D = null
 	var best_d := GRAB_RANGE
-	for b in get_tree().get_nodes_in_group("bale"):
-		var bn := b as Node3D
-		if bn == null:
-			continue
-		var d := bn.global_position.distance_to(cp.global_position)
-		if d < best_d:
-			best_d = d
-			best = bn
-	# Also consider movable skips (steel skip, fines bin on castors).
-	for c in get_tree().get_nodes_in_group("waste_container"):
-		var cn := c as Node3D
-		if cn == null or not bool(cn.get("movable")):
-			continue
-		var d := cn.global_position.distance_to(cp.global_position)
-		if d < best_d:
-			best_d = d
-			best = cn
+
+	# Use a physics shape query to find nearby items instead of iterating the entire scene
+	var space_state := cp.get_world_3d().direct_space_state
+	if space_state:
+		var query := PhysicsShapeQueryParameters3D.new()
+		var sphere := SphereShape3D.new()
+		sphere.radius = GRAB_RANGE
+		query.shape = sphere
+		query.transform = Transform3D(Basis(), cp.global_position)
+		query.collision_mask = 0xFFFFFFFF # Match all collision layers
+
+		var results := space_state.intersect_shape(query)
+		for res in results:
+			var collider := res.collider as Node3D
+			if collider == null:
+				continue
+
+			var is_bale := collider.is_in_group("bale")
+			var is_movable_container := collider.is_in_group("waste_container") and bool(collider.get("movable"))
+
+			if is_bale or is_movable_container:
+				var d := collider.global_position.distance_to(cp.global_position)
+				if d < best_d:
+					best_d = d
+					best = collider
 	if best == null:
 		return
 	# Pick up the bottom of a yard stack: collect every bale resting above it in
