@@ -983,6 +983,9 @@ const TURN_RATE   : float = 1.6    # rad/s yaw at full steer
 # speed, tracked frame-to-frame because freeze=true means linear_velocity is no
 # longer meaningful for movement (only contact response).
 var _current_speed_mps : float = 0.0
+# #175 — 1-Hz log throttle/steering/speed/handbrake while occupied so the
+# operator can confirm the drive loop's response to input.
+var _drive_log_t : float = 0.0
 var _last_good_xf : Transform3D = Transform3D.IDENTITY   # NaN-transform watchdog
 var _xf_warned : bool = false
 
@@ -1042,12 +1045,28 @@ func _drive(delta: float) -> void:
 		# Coast / brake to 0
 		var decel := DRIVE_ACCEL * (3.0 if handbrake_engaged or _brake > 0.1 else 1.0)
 		_current_speed_mps = move_toward(_current_speed_mps, 0.0, decel * delta)
+		# #175 — kill numerical drift below 5 cm/s. Operator reported "shows
+		# 0.5 km/h while standing still" — the move_toward residue + the
+		# 0.139 m/s first-tick acceleration could leave a flickering nonzero
+		# readout. Below the dismount-threshold it should read exactly zero.
+		if absf(_current_speed_mps) < 0.05:
+			_current_speed_mps = 0.0
 	else:
 		# Max speed is derated when the DEF tank is dry (diesel SCR limp-home).
 		var max_mps := (speed_limit_kmh / 3.6) * _power_factor()
 		var target_speed := _throttle * max_mps
 		_current_speed_mps = move_toward(_current_speed_mps, target_speed, accel * delta)
 	_rotate_steered_wheel_meshes(delta)
+	# #175 — periodic diagnostic so the operator can confirm the drive loop
+	# from the log. Once a second while occupied: input throttle/steering,
+	# resulting speed, handbrake state. If "W does nothing" recurs the log will
+	# show throttle=1 but speed not climbing (or handbrake=true).
+	_drive_log_t += delta
+	if _drive_log_t > 1.0:
+		_drive_log_t = 0.0
+		print("[Vehicle %s] throttle=%+.2f steer=%+.2f speed=%.2fm/s (%.1f km/h) handbrake=%s pos=%s"
+			% [str(vehicle_id), _throttle, _steering, _current_speed_mps,
+				_current_speed_mps * 3.6, str(handbrake_engaged), str(global_position.round())])
 
 ## Apply the frame's translation + yaw + a downward gravity probe. Runs whether
 ## occupied or not so a parked vehicle still rests on the floor instead of
