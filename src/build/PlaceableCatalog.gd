@@ -3001,7 +3001,6 @@ static func _m_sinkfloat(p: Node3D, size: Vector3, color: Color, ghost: bool) ->
 
 	# ── Dimensions / anchors ──────────────────────────────────────────────────
 	var hx     := size.x * 0.5
-	var _hz     := size.z * 0.5
 	var trough_inner_w  := size.x * 0.30   # each trough is 30% of total width
 	var center_w        := size.x * 0.22   # central drive cabinet
 	var deck_w          := size.x * 0.09   # outer walkways
@@ -6944,7 +6943,6 @@ static func _m_extruder_unit(p: Node3D, size: Vector3, color: Color, ghost: bool
 	var gold   := _mat(Color(0.78, 0.62, 0.22), ghost, 0.5, 0.4)    # Wave-Cut roundel gold
 	var teal   := _mat(Color(0.16, 0.55, 0.55), ghost, 0.4, 0.4)    # EIRENE / Wave-Cut accent
 
-	var _hz : float = size.z * 0.5
 	var barrel_cy : float = size.y * 0.31                  # barrel centreline ≈ 1.30 m
 	var barrel_leg_h : float = barrel_cy - size.y * 0.10   # skid leg top, just under the cabinet
 	var hood_r : float = size.x * 0.33
