@@ -138,34 +138,40 @@ func _build_visual() -> void:
 	belt_mat.albedo_color = Color(0.12, 0.12, 0.13); belt_mat.roughness = 0.9
 	var guard := StandardMaterial3D.new()
 	guard.albedo_color = Color(0.92, 0.78, 0.18); guard.roughness = 0.7   # safety yellow
-	# Horizontal deck belt surface — skipped when there is no flat section (Westa, opzetband 1).
-	if deck_length > 0.01:
-		var deck := MeshInstance3D.new()
-		var dm := BoxMesh.new(); dm.size = Vector3(deck_width, 0.10, deck_length)
-		deck.mesh = dm
-		_belt_mat_deck = load("res://src/build/PlaceableCatalog.gd").make_belt_material(0.0, Vector2(1.0, deck_length * 0.5))
-		# Cast both arms to the common Material supertype so the ternary types unify.
-		deck.material_override = (_belt_mat_deck as Material) if _belt_mat_deck != null else (belt_mat as Material)
-		deck.position = Vector3(0.0, deck_height, deck_length * 0.5)
-		add_child(deck)
-		# Side guards along the deck
+	_build_deck_visual(steel, belt_mat, guard)
+	var inc_pivot := _build_incline_visual(steel, belt_mat, guard)
+	_build_top_end_visual(inc_pivot, steel, belt_mat, guard)
+
+func _build_top_end_visual(inc_pivot: Node3D, steel: StandardMaterial3D, belt_mat: StandardMaterial3D, guard: StandardMaterial3D) -> void:
+	var hyp := _incline_hyp
+	# Top end: either a horizontal discharge tray (opzetband 3A/3B's 0.5 m flat top)
+	# OR the legacy drop snout. Only one — the flat tray is the realistic version.
+	if top_flat_m > 0.01:
+		var tray := MeshInstance3D.new()
+		var tm := BoxMesh.new(); tm.size = Vector3(deck_width * 0.8, 0.10, top_flat_m)
+		tray.mesh = tm
+		_belt_mat_top = load("res://src/build/PlaceableCatalog.gd").make_belt_material(0.0, Vector2(1.0, top_flat_m * 0.5))
+		tray.material_override = (_belt_mat_top as Material) if _belt_mat_top != null else (belt_mat as Material)
+		var top_y : float = deck_height + hyp * sin(_incline_angle)
+		var top_z : float = deck_length + hyp * cos(_incline_angle)
+		tray.position = Vector3(0.0, top_y, top_z + top_flat_m * 0.5)
+		add_child(tray)
 		for sx in [-1.0, 1.0]:
-			var g := MeshInstance3D.new()
-			var gm := BoxMesh.new(); gm.size = Vector3(0.08, 0.30, deck_length)
-			g.mesh = gm; g.material_override = guard
-			g.position = Vector3(sx * deck_width * 0.5, deck_height + 0.18, deck_length * 0.5)
-			add_child(g)
-		# Support legs under the deck
-		for sz in [0.2, 0.8]:
-			for sx in [-1.0, 1.0]:
-				var leg := MeshInstance3D.new()
-				var lm := BoxMesh.new(); lm.size = Vector3(0.10, deck_height, 0.10)
-				leg.mesh = lm; leg.material_override = steel
-				leg.position = Vector3(sx * deck_width * 0.45, deck_height * 0.5, deck_length * sz)
-				add_child(leg)
-				# Simple vertical floor legs → lengthen to the floor when raised (#70).
-				leg.add_to_group("machine_leg")
-				leg.set_meta("leg_h", deck_height)
+			var gt := MeshInstance3D.new()
+			var gtm := BoxMesh.new(); gtm.size = Vector3(0.08, 0.30, top_flat_m)
+			gt.mesh = gtm; gt.material_override = guard
+			gt.position = Vector3(sx * deck_width * 0.4, top_y + 0.18, top_z + top_flat_m * 0.5)
+			add_child(gt)
+	else:
+		# Drop snout at the top of the incline (where it dumps into the shredder).
+		var snout := MeshInstance3D.new()
+		var sm := BoxMesh.new(); sm.size = Vector3(deck_width * 0.7, 0.4, 0.8)
+		snout.mesh = sm; snout.material_override = steel
+		snout.position = Vector3(0.0, 0.0, hyp + 0.2)
+		inc_pivot.add_child(snout)
+
+
+func _build_incline_visual(steel: StandardMaterial3D, belt_mat: StandardMaterial3D, guard: StandardMaterial3D) -> Node3D:
 	# Inclined belt section — a long box rotated about X, mounted at the deck end.
 	var inc := MeshInstance3D.new()
 	var hyp := _incline_hyp
@@ -208,31 +214,38 @@ func _build_visual() -> void:
 			g2.mesh = gm2; g2.material_override = guard
 			g2.position = Vector3(sx * deck_width * 0.4, 0.2, hyp * 0.5)
 			inc_pivot.add_child(g2)
-	# Top end: either a horizontal discharge tray (opzetband 3A/3B's 0.5 m flat top)
-	# OR the legacy drop snout. Only one — the flat tray is the realistic version.
-	if top_flat_m > 0.01:
-		var tray := MeshInstance3D.new()
-		var tm := BoxMesh.new(); tm.size = Vector3(deck_width * 0.8, 0.10, top_flat_m)
-		tray.mesh = tm
-		_belt_mat_top = load("res://src/build/PlaceableCatalog.gd").make_belt_material(0.0, Vector2(1.0, top_flat_m * 0.5))
-		tray.material_override = (_belt_mat_top as Material) if _belt_mat_top != null else (belt_mat as Material)
-		var top_y : float = deck_height + hyp * sin(_incline_angle)
-		var top_z : float = deck_length + hyp * cos(_incline_angle)
-		tray.position = Vector3(0.0, top_y, top_z + top_flat_m * 0.5)
-		add_child(tray)
+	return inc_pivot
+
+func _build_deck_visual(steel: StandardMaterial3D, belt_mat: StandardMaterial3D, guard: StandardMaterial3D) -> void:
+	# Horizontal deck belt surface — skipped when there is no flat section (Westa, opzetband 1).
+	if deck_length <= 0.01:
+		return
+	var deck := MeshInstance3D.new()
+	var dm := BoxMesh.new(); dm.size = Vector3(deck_width, 0.10, deck_length)
+	deck.mesh = dm
+	_belt_mat_deck = load("res://src/build/PlaceableCatalog.gd").make_belt_material(0.0, Vector2(1.0, deck_length * 0.5))
+	# Cast both arms to the common Material supertype so the ternary types unify.
+	deck.material_override = (_belt_mat_deck as Material) if _belt_mat_deck != null else (belt_mat as Material)
+	deck.position = Vector3(0.0, deck_height, deck_length * 0.5)
+	add_child(deck)
+	# Side guards along the deck
+	for sx in [-1.0, 1.0]:
+		var g := MeshInstance3D.new()
+		var gm := BoxMesh.new(); gm.size = Vector3(0.08, 0.30, deck_length)
+		g.mesh = gm; g.material_override = guard
+		g.position = Vector3(sx * deck_width * 0.5, deck_height + 0.18, deck_length * 0.5)
+		add_child(g)
+	# Support legs under the deck
+	for sz in [0.2, 0.8]:
 		for sx in [-1.0, 1.0]:
-			var gt := MeshInstance3D.new()
-			var gtm := BoxMesh.new(); gtm.size = Vector3(0.08, 0.30, top_flat_m)
-			gt.mesh = gtm; gt.material_override = guard
-			gt.position = Vector3(sx * deck_width * 0.4, top_y + 0.18, top_z + top_flat_m * 0.5)
-			add_child(gt)
-	else:
-		# Drop snout at the top of the incline (where it dumps into the shredder).
-		var snout := MeshInstance3D.new()
-		var sm := BoxMesh.new(); sm.size = Vector3(deck_width * 0.7, 0.4, 0.8)
-		snout.mesh = sm; snout.material_override = steel
-		snout.position = Vector3(0.0, 0.0, hyp + 0.2)
-		inc_pivot.add_child(snout)
+			var leg := MeshInstance3D.new()
+			var lm := BoxMesh.new(); lm.size = Vector3(0.10, deck_height, 0.10)
+			leg.mesh = lm; leg.material_override = steel
+			leg.position = Vector3(sx * deck_width * 0.45, deck_height * 0.5, deck_length * sz)
+			add_child(leg)
+			# Simple vertical floor legs → lengthen to the floor when raised (#70).
+			leg.add_to_group("machine_leg")
+			leg.set_meta("leg_h", deck_height)
 
 ## Funnel side walls along the incline (opzetband 1): parallel-and-wide for
 ## funnel_start_m, then narrowing linearly over funnel_narrow_m to funnel_min_width,
