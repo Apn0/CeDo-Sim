@@ -73,6 +73,37 @@ const NPC_DATA: Dictionary = {
 # #155 — Player's car. Swift goes to the player; Yasin (yassine) rides shotgun.
 const PLAYER_CAR_SCENE : String = "res://src/scenes/vehicles/cars/SuzukiSwiftGLX.tscn"
 
+# ── #166 Pre-shift arrival sequence ──────────────────────────────────────────
+# A fresh game starts PRE_SHIFT_WINDOW_S game-seconds before the bell so the
+# arrival sequence has room to play out. ShiftClock seeds to -1800 and ticks
+# up to 0; the bell fires shift_started again at that moment.
+const PRE_SHIFT_WINDOW_S : float = 30.0 * 60.0   # 30 minutes
+
+# Per-NPC schedule, expressed in seconds RELATIVE to the bell (negative = before).
+# `pre_changed` = arrives already in PPE/boots (skips dressing-room loop).
+# `dress_time_s` = how long they spend in the locker room (-1 → use random
+#                  uniform 2..6 min default).
+# `smokes_at_s`  = if set, NPC stands at SMOKE_SPOT smoking from that time until
+#                  3 min later. Only Pascal has this.
+# Order corresponds to NPC_DATA keys above. Unlisted NPCs default to T-15 +
+# random-dressing (so Mohammed / Peter / Vincent fallback work cleanly).
+const PRE_SHIFT_SCHEDULE : Dictionary = {
+	"emrah":      {"arrives_at_s": -35.0 * 60.0, "pre_changed": false, "dress_time_s": -1.0},
+	"pascal":     {"arrives_at_s": -40.0 * 60.0, "pre_changed": true,  "dress_time_s": 0.0, "smokes_at_s": -33.0 * 60.0},
+	"vincent":    {"arrives_at_s": -40.0 * 60.0, "pre_changed": true,  "dress_time_s": 0.0},
+	"romain":     {"arrives_at_s": -25.0 * 60.0, "pre_changed": false, "dress_time_s": -1.0},
+	"yassine":    {"arrives_at_s": -20.0 * 60.0, "pre_changed": false, "dress_time_s": -1.0, "rides_with": "player"},
+	"abdellilah": {"arrives_at_s": -17.0 * 60.0, "pre_changed": false, "dress_time_s":  8.0 * 60.0},
+	"kevin":      {"arrives_at_s": -10.0 * 60.0, "pre_changed": false, "dress_time_s": -1.0},
+}
+
+# Placeholder dressing room + smoke spot — operator can refine via WorldSetup
+# markers later. For now we anchor relative to the player spawn so the loop
+# works against the same building shell as everything else (#34 lesson).
+const DRESSING_ROOM_OFFSET : Vector3 = Vector3(-8.0, 0.0,  6.0)   # inside, near canteen
+const CANTEEN_OFFSET       : Vector3 = Vector3( 0.0, 0.0, 25.0)   # matches MainWorld:771 fallback
+const SMOKE_SPOT_OFFSET    : Vector3 = Vector3( 4.0, 0.0,-12.0)   # outside, near parking
+
 # =============================================================================
 ## When true, the scattered test/demo props are NOT spawned — a clean canvas of just
 ## the rebuilt Line 3C + vehicles + utilities. Set false to restore the test props.
@@ -2770,8 +2801,11 @@ func _start_or_resume_shift() -> void:
 		shift_clock.resume_shift()
 		print("[MainWorld] Shift resumed at %s" % shift_clock.get_time_string())
 	else:
-		shift_clock.start_shift()
-		print("[MainWorld] New shift started")
+		# #166 — Fresh game starts 30 min BEFORE the bell so the pre-shift arrival
+		# sequence (Emrah at T-35, Pascal smoking at T-33, …, Kevin at T-10) has
+		# room to play out. The bell still emits shift_started at T=0.
+		shift_clock.start_pre_shift(PRE_SHIFT_WINDOW_S)
+		print("[MainWorld] Pre-shift started (%.0f min until bell)" % (PRE_SHIFT_WINDOW_S / 60.0))
 
 # =============================================================================
 # SAVE / QUIT
