@@ -77,12 +77,47 @@ static func _denim_material() -> StandardMaterial3D:
 		_ppe_denim_mat = _ppe_material(PPE_DENIM_BASE, Color(0.18, 0.22, 0.34), 0.85)
 	return _ppe_denim_mat
 
+## #166 — Runtime wardrobe swap. The Humanoid rig is rebuilt from scratch each
+## call to build(), so the cheapest correct approach to "change clothes mid-game"
+## is: build a fresh body with the new appearance dict, swap it in under the
+## same parent, then free the old one. `holder` is the Node3D that currently
+## holds the Body as a child (NPC root, or the player capsule). `shirt` and
+## `variant` should be the same values the original build() got — preserve them
+## via meta on the holder when you first spawn the NPC.
+static func rebuild_appearance(holder: Node3D, shirt: Color, variant: int, new_appearance: Dictionary) -> Node3D:
+	if holder == null or not is_instance_valid(holder):
+		return null
+	# MainWorld._spawn_npcs renames the rig "HumanoidBody" after attaching, but
+	# the player + customizer keep the default "Body" name. Find either.
+	var old : Node3D = holder.get_node_or_null("HumanoidBody") as Node3D
+	if old == null:
+		old = holder.get_node_or_null("Body") as Node3D
+	var fresh : Node3D = Humanoid.build(shirt, variant, new_appearance)
+	if fresh == null:
+		return null
+	# Match whatever the old name was so the NPC's per-frame body-scaling lookup
+	# (#146 crouch/prone) still finds it after the swap.
+	if old != null:
+		fresh.name = old.name
+	holder.add_child(fresh)
+	if old:
+		# Copy the world transform so the swap is visually seamless if `Body`
+		# was offset/rotated by the NPC (most aren't — Body sits at origin).
+		fresh.transform = old.transform
+		old.queue_free()
+	return fresh
+
 ## #133 — per-NPC appearance dict. Recognised keys:
 ##   "hair"       : "short" (default), "mid", "bald"
 ##   "cap"        : true → a dark-blue work cap replaces the hair on top
 ##   "beard"      : "none" / "thin" / "thick" / "full" / "mustache" / "goatee"
 ##   "hair_color" : optional Color, overrides the variant-driven default
 ##   "skin_color" : optional Color, overrides the variant-driven skin tone
+##   "shirt_type" : "t_shirt" (default) / "sweatshirt" / "hi_vis_coat"
+##   "footwear"   : "work_boots" (default) / "shoes"
+##   "ppe"        : "hi_vis" (default for crew) / "operator" / "none"
+##                  → "none" reads as a casual t-shirt; use during pre-shift
+##                    arrival so workers walk in wearing personal clothes.
 static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -> Node3D:
 	var skin_raw : Variant = appearance.get("skin_color", null)
 	if skin_raw is Dictionary and skin_raw.has("r"):

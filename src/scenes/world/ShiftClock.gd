@@ -19,6 +19,15 @@ var shift_elapsed_seconds: float = 0.0
 var shift_total_seconds  : float = (SHIFT_END_HOUR - SHIFT_START_HOUR) * 3600.0
 var shift_active         : bool  = false
 
+# ── #166 Pre-shift window ────────────────────────────────────────────────────
+# When start_pre_shift(window_s) is called, shift_elapsed_seconds is seeded to
+# `-window_s` and ticks UP through zero. The bell rings (shift_started emitted
+# a second time) when elapsed crosses 0. During the negative window the clock
+# advances with the same time_scale; get_time_string() shows e.g. "06:30" when
+# the dienst is Vroege and elapsed is -1800. PreShiftSequence in MainWorld
+# reads is_pre_shift() and dispatches NPC arrival actions off this clock.
+var _pre_shift_bell_pending : bool = false   # emit shift_started when elapsed crosses 0
+
 # Time COMPRESSION. The clock used to run 1:1 with real time — an 8-hour shift
 # took 8 REAL hours, so the display barely crept off 07:00 (and a save left at
 # the end reloaded frozen at 15:00, which is the bug the operator hit). With a
@@ -69,7 +78,14 @@ func _physics_process(delta: float) -> void:
 		return
 
 	# Compressed time — `time_scale` game-seconds per real second.
+	var prev := shift_elapsed_seconds
 	shift_elapsed_seconds += delta * time_scale
+
+	# #166 — pre-shift bell: when elapsed crosses 0 from below, fire shift_started
+	# once and clear the pending flag. CrewManager/PreShiftSequence both listen.
+	if _pre_shift_bell_pending and prev < 0.0 and shift_elapsed_seconds >= 0.0:
+		_pre_shift_bell_pending = false
+		emit_signal("shift_started")
 
 	if shift_elapsed_seconds >= shift_total_seconds:
 		shift_elapsed_seconds = shift_total_seconds
@@ -101,7 +117,18 @@ func roll_to_next_shift() -> void:
 func start_shift() -> void:
 	shift_active          = true
 	shift_elapsed_seconds = 0.0
+	_pre_shift_bell_pending = false
 	emit_signal("shift_started")
+
+## #166 — Begin a pre-shift window of `window_seconds` game-seconds. The clock
+## seeds to -window_seconds, ticks forward, and emits shift_started a second
+## time when it crosses 0. Callers that care about "the shift bell" should
+## subscribe to shift_started; callers that want the wider on-site window (i.e.
+## NPC dispatch loops) should poll is_pre_shift() / is_active().
+func start_pre_shift(window_seconds: float) -> void:
+	shift_active          = true
+	shift_elapsed_seconds = -absf(window_seconds)
+	_pre_shift_bell_pending = true
 
 func pause_shift() -> void:
 	shift_active = false
@@ -113,12 +140,15 @@ func resume_shift() -> void:
 # QUERIES
 # =============================================================================
 func get_time_string() -> String:
+	# #166 — handle negative (pre-shift) time. Offset hour/minute backwards from
+	# the dienst start, wrapping into the previous day if necessary (so -30 min
+	# before 07:00 reads as 06:30, and -60 min before 23:00 reads as 22:00).
 	var total_s : int = int(shift_elapsed_seconds)
-	# Start hour follows the DIENST (Vroege 07:00 / Late 15:00 / Nacht 23:00),
-	# not a fixed 07:00 — so Day 3 (a Late dienst for Ploeg A) reads 15:00, and
-	# the night shift wraps past midnight.
-	var hours   : int = (shift_start_hour() + int(total_s / 3600.0)) % 24
-	var minutes : int = int((total_s % 3600) / 60.0)
+	var base_minutes : int = shift_start_hour() * 60 + int(total_s / 60.0)
+	# Modulo into [0, 1440) so negative totals wrap to "yesterday evening".
+	base_minutes = ((base_minutes % 1440) + 1440) % 1440
+	var hours   : int = base_minutes / 60
+	var minutes : int = base_minutes % 60
 	return "%02d:%02d" % [hours, minutes]
 
 ## The clock start hour for the dienst this playable window represents.
@@ -136,10 +166,20 @@ func get_remaining_seconds() -> float:
 	return maxf(0.0, shift_total_seconds - shift_elapsed_seconds)
 
 func get_progress_percent() -> float:
-	return shift_elapsed_seconds / shift_total_seconds
+	# Pre-shift reads 0%; only the productive 07–15 window fills the bar.
+	return clampf(shift_elapsed_seconds / shift_total_seconds, 0.0, 1.0)
 
 func is_in_shift() -> bool:
-	return shift_active and shift_elapsed_seconds < shift_total_seconds
+	# Active and past the bell. Excludes the pre-shift window.
+	return shift_active and shift_elapsed_seconds >= 0.0 and shift_elapsed_seconds < shift_total_seconds
+
+## #166 — True while the clock is ticking but the bell hasn't rung yet.
+func is_pre_shift() -> bool:
+	return shift_active and shift_elapsed_seconds < 0.0
+
+## Seconds remaining until the bell. Returns 0 once the shift has started.
+func get_pre_shift_remaining_seconds() -> float:
+	return maxf(0.0, -shift_elapsed_seconds)
 
 # =============================================================================
 # CALENDAR (2-2-2-4 rota context for the played shift)

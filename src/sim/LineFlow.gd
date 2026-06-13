@@ -570,6 +570,37 @@ func _link_best_target(src_idx: int, source_port: Vector3, src_proc: String, exc
 
 ## #138 — return true when BOTH VSS_3A and VSS_3B input buffers are over the
 ## VSS_FULL_KG cap. C8 reads this every tick to decide its target direction.
+## #139 — Pack-up cascade state. When both VSS_3A and VSS_3B are full there is
+## nowhere for the intake to send material, so the upstream conveyors have to
+## stop in sequence (one per ~1 s) all the way back up to the trilzeef. Track
+## how long the both-full condition has held; the per-belt update routine pauses
+## belt N once _pack_up_t exceeds N seconds (C11 first, then C10, …, then C1,
+## finally the trilzeef and bunker paddle). The same timer drives the reverse:
+## as soon as either VSS unblocks, the timer resets and belts restart in the
+## opposite order (C1 first, working back down toward C11).
+var _pack_up_t : float = 0.0
+const _PACK_UP_GAP_S : float = 1.0           # seconds between successive belt pauses
+const _PACK_UP_ORDER : Array[String] = [
+	"intake_belt_11", "intake_belt_10", "intake_belt_9", "intake_belt_8_5",
+	"intake_belt_8", "intake_belt_7", "intake_belt_6", "intake_belt_5",
+	"intake_belt_4", "intake_belt_3", "intake_belt_2", "intake_belt_1",
+	"trilzeef", "bunker",
+]
+
+## Whether belt id `bid` is currently in the pack-up paused zone, given the
+## elapsed both-full duration. Belts come to a stop one-by-one from the head
+## (C11) backwards toward the trilzeef + bunker.
+func _is_pack_up_paused(bid: String) -> bool:
+	if _pack_up_t <= 0.0:
+		return false
+	for i in _PACK_UP_ORDER.size():
+		var when : float = float(i) * _PACK_UP_GAP_S
+		if _pack_up_t < when:
+			return false
+		if bid == _PACK_UP_ORDER[i] or bid.begins_with(_PACK_UP_ORDER[i] + "_"):
+			return true
+	return false
+
 ## When only one VSS is full the switch belt's buffer-aware split (#137)
 ## already biases against it, so there's no need to flip C8 in that case.
 func _both_vss_full() -> bool:
@@ -1101,6 +1132,14 @@ func tick(delta: float) -> void:
 	if _nodes.is_empty():
 		_update_label()
 		return
+	# #139 — pack-up cascade timer. Tick UP while both VSSs are full so the
+	# downstream pause sequence (C11 → … → C1 → trilzeef → bunker) marches one
+	# belt per _PACK_UP_GAP_S. Reset to 0 the moment either VSS frees up so the
+	# belts restart in reverse order (C1 first → C11 last → trilzeef + bunker).
+	if _both_vss_full():
+		_pack_up_t += delta
+	else:
+		_pack_up_t = 0.0
 
 	# Cache spatial queries once per tick for heavy inner loops like _dump_waste
 	var tree = get_tree()
@@ -1488,6 +1527,11 @@ func _tick_advanced_systems(delta: float) -> void:
 			if bool(mol.call("is_tripped")):
 				nd["powered"] = false           # stop conveying (conserving)
 				nd["amps"]    = float(mol.get("current_amps"))   # 0 A while tripped
+		# #139 — pack-up cascade: when both VSSs full, conveyors pause one-per-
+		# second from the head (C11) back toward the bunker. This is the actual
+		# pause application — _is_pack_up_paused() advances with _pack_up_t.
+		if _is_pack_up_paused(String(nd.get("id", ""))):
+			nd["powered"] = false
 			else:
 				# Mirror the live motor current onto the node so the HMI/SCADA amp
 				# readout reflects the binding load on these high-load drives.

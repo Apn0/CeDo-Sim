@@ -73,6 +73,37 @@ const NPC_DATA: Dictionary = {
 # #155 — Player's car. Swift goes to the player; Yasin (yassine) rides shotgun.
 const PLAYER_CAR_SCENE : String = "res://src/scenes/vehicles/cars/SuzukiSwiftGLX.tscn"
 
+# ── #166 Pre-shift arrival sequence ──────────────────────────────────────────
+# A fresh game starts PRE_SHIFT_WINDOW_S game-seconds before the bell so the
+# arrival sequence has room to play out. ShiftClock seeds to -1800 and ticks
+# up to 0; the bell fires shift_started again at that moment.
+const PRE_SHIFT_WINDOW_S : float = 30.0 * 60.0   # 30 minutes
+
+# Per-NPC schedule, expressed in seconds RELATIVE to the bell (negative = before).
+# `pre_changed` = arrives already in PPE/boots (skips dressing-room loop).
+# `dress_time_s` = how long they spend in the locker room (-1 → use random
+#                  uniform 2..6 min default).
+# `smokes_at_s`  = if set, NPC stands at SMOKE_SPOT smoking from that time until
+#                  3 min later. Only Pascal has this.
+# Order corresponds to NPC_DATA keys above. Unlisted NPCs default to T-15 +
+# random-dressing (so Mohammed / Peter / Vincent fallback work cleanly).
+const PRE_SHIFT_SCHEDULE : Dictionary = {
+	"emrah":      {"arrives_at_s": -35.0 * 60.0, "pre_changed": false, "dress_time_s": -1.0},
+	"pascal":     {"arrives_at_s": -40.0 * 60.0, "pre_changed": true,  "dress_time_s": 0.0, "smokes_at_s": -33.0 * 60.0},
+	"vincent":    {"arrives_at_s": -40.0 * 60.0, "pre_changed": true,  "dress_time_s": 0.0},
+	"romain":     {"arrives_at_s": -25.0 * 60.0, "pre_changed": false, "dress_time_s": -1.0},
+	"yassine":    {"arrives_at_s": -20.0 * 60.0, "pre_changed": false, "dress_time_s": -1.0, "rides_with": "player"},
+	"abdellilah": {"arrives_at_s": -17.0 * 60.0, "pre_changed": false, "dress_time_s":  8.0 * 60.0},
+	"kevin":      {"arrives_at_s": -10.0 * 60.0, "pre_changed": false, "dress_time_s": -1.0},
+}
+
+# Placeholder dressing room + smoke spot — operator can refine via WorldSetup
+# markers later. For now we anchor relative to the player spawn so the loop
+# works against the same building shell as everything else (#34 lesson).
+const DRESSING_ROOM_OFFSET : Vector3 = Vector3(-8.0, 0.0,  6.0)   # inside, near canteen
+const CANTEEN_OFFSET       : Vector3 = Vector3( 0.0, 0.0, 25.0)   # matches MainWorld:771 fallback
+const SMOKE_SPOT_OFFSET    : Vector3 = Vector3( 4.0, 0.0,-12.0)   # outside, near parking
+
 # =============================================================================
 ## When true, the scattered test/demo props are NOT spawned — a clean canvas of just
 ## the rebuilt Line 3C + vehicles + utilities. Set false to restore the test props.
@@ -103,6 +134,10 @@ func _ready() -> void:
 	_spawn_line_flow()
 	_spawn_container_guides()
 	_spawn_npcs()
+	# #166 Phase B — if we're in pre-shift, intercept the freshly-spawned NPCs
+	# and run them through the arrival → dress → canteen loop. Resumed saves
+	# (where the shift bell already rang) skip this entirely.
+	_spawn_pre_shift_sequence()
 	# #155 — spawn the shift's cars + put the player in their Swift + seat Yasin.
 	# MUST come after _spawn_npcs (needs npcs["yassine"] to exist to seat as
 	# passenger) AND _spawn_operator_context (needs operator_context to board the
@@ -508,18 +543,29 @@ func _spawn_player() -> void:
 		var saved := game_state.load_player_state()
 		if saved.has("x"):
 			var sp := Vector3(saved["x"], saved["y"], saved["z"])
-			# Stale-save guard: if the saved capsule sits more than 100 m from
-			# the current world layout's spawn marker AND from world origin
-			# (where the building is shifted to), the save was taken in a
-			# previous, differently-anchored world (e.g. building was at RD
-			# coords). Ignore it so we land on the actual floor near the
-			# building instead of in an empty field next to lights and crew
-			# anchored at origin.
-			var dist_to_marker : float = Vector2(sp.x - WorldLayout.player_spawn.x,
-				sp.z - WorldLayout.player_spawn.z).length()
-			var dist_to_origin : float = Vector2(sp.x, sp.z).length()
-			if dist_to_marker > 100.0 and dist_to_origin > 100.0:
-				print("[MainWorld] Stale saved player pos (%.0f,%.0f) — using marker instead"
+			# X4/#183 — only reject the saved position if the WORLD ANCHOR moved
+			# (the operator re-ran WorldSetup and re-placed player_spawn). When
+			# the anchor matches, trust the saved coords regardless of distance
+			# — the operator may have walked far across the industrial terrain
+			# before save. Old guard rejected legitimate 500 m saves and bounced
+			# everyone back to spawn.
+			var anchor_moved : bool = false
+			if saved.has("anchor_x") and saved.has("anchor_z"):
+				var ax : float = float(saved["anchor_x"])
+				var az : float = float(saved["anchor_z"])
+				var d_anchor : float = Vector2(
+					ax - WorldLayout.player_spawn.x,
+					az - WorldLayout.player_spawn.z).length()
+				anchor_moved = d_anchor > 5.0   # 5 m slop for operator nudges
+			else:
+				# Legacy save with no anchor snapshot — fall back to the old
+				# generous-but-not-absurd guard so RD-coord saves still get
+				# rejected but routine 500 m walks don't.
+				var d_marker : float = Vector2(sp.x - WorldLayout.player_spawn.x,
+					sp.z - WorldLayout.player_spawn.z).length()
+				anchor_moved = d_marker > 2000.0
+			if anchor_moved:
+				print("[MainWorld] World re-anchored since save — using spawn marker (was at %.0f,%.0f)"
 					% [sp.x, sp.z])
 			else:
 				spawn_pos   = sp
@@ -532,15 +578,43 @@ func _spawn_player() -> void:
 		# regardless of where the actual floor is. Override Y with the detected
 		# floor + capsule half-height so the player lands ON the floor.
 		var floor_top := _floor_top_y()
+		# X1/#180 — "I'm in a fucking neighborhood, not on the industrial
+		# terrain." Building shell footprint is the ground truth: if either
+		# the saved player_spawn or the scene marker lands outside (or far
+		# from) the actual building footprint, drop the player at the
+		# building centre instead so they don't have to walk 200 m to find
+		# the plant. Footprint reach must be resolvable for this to fire;
+		# falls through to the original logic otherwise.
+		var bldg_info := _building_center_and_footprint()
+		var bldg_center : Vector3 = bldg_info.get("center", Vector3.ZERO)
+		var bldg_fp : PackedVector2Array = bldg_info.get("footprint", PackedVector2Array())
+		var candidate : Vector3
 		if WorldLayout.player_spawn != Vector3.ZERO:
-			var ps := WorldLayout.player_spawn
-			spawn_pos = Vector3(ps.x, floor_top + 1.0, ps.z)
+			candidate = Vector3(WorldLayout.player_spawn.x, floor_top + 1.0,
+				WorldLayout.player_spawn.z)
 		else:
 			var marker := find_child("PlayerSpawn", false, false) as Node3D
 			if marker:
-				spawn_pos = Vector3(marker.global_position.x, floor_top + 1.0, marker.global_position.z)
+				candidate = Vector3(marker.global_position.x, floor_top + 1.0,
+					marker.global_position.z)
 			else:
-				spawn_pos = Vector3(0.0, floor_top + 1.0, 0.0)
+				candidate = Vector3(0.0, floor_top + 1.0, 0.0)
+		var snap_to_building : bool = false
+		if bldg_fp.size() >= 3:
+			var c2 := Vector2(candidate.x, candidate.z)
+			# If marker is outside the polygon AND >50 m from the centre, the
+			# spawn is in the wrong place — snap to building centre.
+			if not Geometry2D.is_point_in_polygon(c2, bldg_fp):
+				var d : float = c2.distance_to(Vector2(bldg_center.x, bldg_center.z))
+				if d > 50.0:
+					snap_to_building = true
+		if snap_to_building:
+			spawn_pos = Vector3(bldg_center.x, floor_top + 1.0, bldg_center.z)
+			print("[MainWorld] X1/#180 — spawn (%.0f,%.0f) was outside the building footprint (%.0f m from centre); snapped to building centre (%.0f,%.0f)"
+				% [candidate.x, candidate.z, candidate.distance_to(bldg_center),
+					bldg_center.x, bldg_center.z])
+		else:
+			spawn_pos = candidate
 
 	var script := load("res://src/scenes/player/PlayerController.gd")
 	if not script:
@@ -1210,7 +1284,13 @@ func _spawn_bale_yards_from_layout() -> void:
 				# Far MM kicks in past CLOSE_LOD_M; close MM fades out at the
 				# same threshold. 4 m margin = soft swap with no visible pop.
 				const CLOSE_LOD_M : float = 35.0
-				const STICKER_LOD_M : float = 12.0
+				# #170 — was 12 m, but visibility_range_end on a MultiMeshInstance3D
+				# culls the WHOLE INSTANCE, not per-bale. With a 30 m-wide yard the
+				# yard centre sits ~15 m from the operator standing AT a bale, so
+				# the entire sticker MM was already faded out (zero labels visible
+				# in 5+ runs). 80 m is the new threshold so the operator always
+				# sees stickers when within practical scan range of any yard.
+				const STICKER_LOD_M : float = 80.0
 				mmi.visibility_range_begin        = CLOSE_LOD_M
 				mmi.visibility_range_begin_margin = 4.0
 				mmi.visibility_range_fade_mode    = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
@@ -1294,9 +1374,51 @@ func _defer_yard_rb_batch(yard_node: Node3D, mmi: MultiMeshInstance3D,
 		# #73 — origin pose so Reset Bales can snap moved bales back.
 		rb.set_meta("yard_origin", spawn_pos)
 		rb.set_meta("yard_origin_yaw", yaw)
+		# #143 — proximity gate. Stash the spawn layer/mask, then turn collision
+		# OFF. The periodic _yard_rb_proximity_tick re-enables only the RBs near
+		# the player, so far yards (thousands of bales) don't churn collision
+		# pairs every physics tick.
+		rb.add_to_group("yard_bale_rb")
+		rb.set_meta("yard_rb_layer", rb.collision_layer)
+		rb.set_meta("yard_rb_mask",  rb.collision_mask)
+		rb.collision_layer = 0
+		rb.collision_mask  = 0
 	if end_idx < slots.size():
 		call_deferred("_defer_yard_rb_batch",
 			yard_node, mmi, supplier_id, prefix, slots, floor_y, size, yaw, end_idx)
+
+# =============================================================================
+# #143 — yard bale RB proximity sweep
+# =============================================================================
+# Yards can hold thousands of bales; even kinematic-frozen RBs cost something
+# every physics tick (broad-phase + sleeping bookkeeping). Bales >25 m from the
+# player can't possibly interact with the clamp anyway, so we strip their
+# collision and put it back when the player walks within range.
+const _YARD_RB_NEAR_M  : float = 25.0
+const _YARD_RB_TICK_S  : float = 0.5
+var   _yard_rb_tick_t  : float = 0.0
+
+func _process(delta: float) -> void:
+	_yard_rb_tick_t += delta
+	if _yard_rb_tick_t < _YARD_RB_TICK_S:
+		return
+	_yard_rb_tick_t = 0.0
+	if player == null or not is_instance_valid(player):
+		return
+	var ppos := player.global_position
+	var near_sq := _YARD_RB_NEAR_M * _YARD_RB_NEAR_M
+	for rb in get_tree().get_nodes_in_group("yard_bale_rb"):
+		if not is_instance_valid(rb):
+			continue
+		var d2 : float = (rb.global_position - ppos).length_squared()
+		var near : bool = d2 < near_sq
+		var on : bool = rb.collision_layer != 0
+		if near and not on:
+			rb.collision_layer = int(rb.get_meta("yard_rb_layer", 1))
+			rb.collision_mask  = int(rb.get_meta("yard_rb_mask",  1))
+		elif not near and on:
+			rb.collision_layer = 0
+			rb.collision_mask  = 0
 
 # =============================================================================
 # SHIFT-LEADER PC — bale yard maintenance buttons (#73, #74)
@@ -2346,6 +2468,41 @@ func _spawn_car_in_bay(scene_path: String, side: int, idx: int, label: String) -
 	car.set_meta("display_label", label)
 	return car
 
+## #166 Phase B — install the pre-shift arrival sequence if (and only if) we
+## are currently in the pre-shift window. Resumed mid-shift saves skip this
+## (CrewManager + standard NPC behaviour take over from the moment of load).
+func _spawn_pre_shift_sequence() -> void:
+	if shift_clock == null:
+		return
+	if not shift_clock.has_method("is_pre_shift") or not bool(shift_clock.is_pre_shift()):
+		return
+	if npcs.is_empty():
+		return
+	var seq_script := load("res://src/scenes/world/PreShiftSequence.gd")
+	if seq_script == null:
+		push_warning("[MainWorld] PreShiftSequence.gd missing — pre-shift skipped")
+		return
+	var seq : Node = seq_script.new()
+	seq.name = "PreShiftSequence"
+	add_child(seq)
+	# Anchor offsets are defined as constants at the top of the file. Convert
+	# to world positions by adding the resolved player spawn. Y is irrelevant
+	# (NPCs land on the navmesh-baked floor).
+	var anchor : Vector3 = _player_spawn_pos
+	var dress_pos   : Vector3 = anchor + DRESSING_ROOM_OFFSET
+	var canteen_pos : Vector3 = anchor + CANTEEN_OFFSET
+	var smoke_pos   : Vector3 = anchor + SMOKE_SPOT_OFFSET
+	# Arrival anchor — for Phase B the NPC just APPEARS at the parking-lot
+	# pedestrian exit when their arrives_at_s passes. Phase C can swap this
+	# for a drive-in animation tied to the per-NPC car.
+	var arrival : Vector3 = anchor
+	if staff_parking and "global_position" in staff_parking:
+		arrival = staff_parking.global_position
+	seq.call("setup", self, shift_clock, PRE_SHIFT_SCHEDULE,
+			dress_pos, canteen_pos, smoke_pos, arrival)
+	print("[MainWorld] Pre-shift sequence active (T-%.0f min)" \
+			% (-shift_clock.shift_elapsed_seconds / 60.0))
+
 ## Player's red Suzuki Swift parked on De Asselen Kuil at the south end,
 ## facing NORTH so a forward drive brings the operator straight into the lot.
 func _spawn_player_swift_on_road() -> Node3D:
@@ -2770,8 +2927,11 @@ func _start_or_resume_shift() -> void:
 		shift_clock.resume_shift()
 		print("[MainWorld] Shift resumed at %s" % shift_clock.get_time_string())
 	else:
-		shift_clock.start_shift()
-		print("[MainWorld] New shift started")
+		# #166 — Fresh game starts 30 min BEFORE the bell so the pre-shift arrival
+		# sequence (Emrah at T-35, Pascal smoking at T-33, …, Kevin at T-10) has
+		# room to play out. The bell still emits shift_started at T=0.
+		shift_clock.start_pre_shift(PRE_SHIFT_WINDOW_S)
+		print("[MainWorld] Pre-shift started (%.0f min until bell)" % (PRE_SHIFT_WINDOW_S / 60.0))
 
 # =============================================================================
 # SAVE / QUIT
@@ -2783,6 +2943,13 @@ func save_game() -> void:
 			"y":     player.global_position.y,
 			"z":     player.global_position.z,
 			"rot_y": player.rotation.y,
+			# X4/#183 — snapshot the world anchor at save time so the loader can
+			# tell "save is still in the same world" (trust position) from "world
+			# was re-anchored" (must fall back to the spawn marker). The old
+			# fixed 100 m guard rejected legit far-from-spawn saves (the
+			# residential-vs-industrial-terrain bug).
+			"anchor_x": WorldLayout.player_spawn.x,
+			"anchor_z": WorldLayout.player_spawn.z,
 		}
 		# Persist the 3rd-person free-cam pose alongside the player position so the
 		# operator's preferred external viewpoint survives a save/load (#freecam).

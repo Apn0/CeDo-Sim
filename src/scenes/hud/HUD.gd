@@ -1079,7 +1079,13 @@ func _do_resume() -> void:
 # =============================================================================
 func _on_time_updated(time_string: String) -> void:
 	if _time_label:
-		_time_label.text = time_string
+		# #166 — during the pre-shift window prepend a countdown so the player
+		# knows the bell hasn't rung yet. "Shift starts in 12:34 · 06:48"
+		if shift_clock and shift_clock.is_pre_shift():
+			var s : int = int(ceilf(shift_clock.get_pre_shift_remaining_seconds()))
+			_time_label.text = "Shift starts in %02d:%02d · %s" % [s / 60, s % 60, time_string]
+		else:
+			_time_label.text = time_string
 	if _progress_bar and shift_clock:
 		_progress_bar.value = shift_clock.get_progress_percent() * 100.0
 

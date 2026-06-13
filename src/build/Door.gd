@@ -106,8 +106,14 @@ func crosshair_interact(_player: Node3D) -> void:
 	if _player_near and not _moving:
 		toggle()
 
+## #176 — append a remove-this-door hint so the operator discovers the delete
+## flow on the very door they want gone. The actual delete still happens via
+## BuildMode (Tab → aim → X) which already handles the wall-uncarve via
+## opening_id meta. Was: only Open/Close shown, leaving "how do I remove this?"
+## as a guessing game.
 func _prompt_text() -> String:
-	return "Close door" if _is_open else "Open door"
+	var base := "Close door" if _is_open else "Open door"
+	return base + "   ·   [Tab] then [X] to remove"
 
 func _unhandled_input(event: InputEvent) -> void:
 	# Toggle is driven by PlayerController's crosshair interaction ray.

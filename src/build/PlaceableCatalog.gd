@@ -28,6 +28,15 @@ static func items() -> Array[Dictionary]:
 			# placard. Modelled from the real CeDo cabinet photo.
 			{"id": "pcu_cabinet",    "name": "E-kast (PCU control cabinet)", "category": "Structure", "size": Vector3(2.5, 2.0, 0.7), "color": Color(0.86, 0.84, 0.79)},
 			{"id": "silo",           "name": "Silo",               "category": "Structure",  "size": Vector3(3.0, 6.0, 3.0),  "color": Color(0.62, 0.63, 0.66)},
+			# #116 — door / gate / window placeables that DON'T require the 4-point
+			# Surface tool. Use these to drop furniture into a pre-carved hole
+			# (e.g. one baked by tools/solidify_building.py from captured_doors.json,
+			# or an F11 capture). Same underlying builders as the Surface variants,
+			# so they share interaction + collision + appearance. Size = nominal
+			# dimensions for a standard industrial opening; jog/edit (K) to resize.
+			{"id": "door_personnel", "name": "Personnel door (hinged)",  "category": "Structure", "size": Vector3(0.92, 2.10, 0.10), "color": Color(0.55, 0.40, 0.25)},
+			{"id": "gate_roller",    "name": "Roller gate (industrial)", "category": "Structure", "size": Vector3(3.50, 3.60, 0.20), "color": Color(0.14, 0.22, 0.40)},
+			{"id": "window_frame",   "name": "Window (alu frame + glass)","category": "Structure", "size": Vector3(1.40, 1.20, 0.08), "color": Color(0.72, 0.74, 0.78)},
 			# Elevated extruder feed silo: a light-grey box raised on a steel frame (~2.5 m
 			# clearance for the extruder + lump bin beneath), a yellow guardrail platform on
 			# top, 4 inspection windows in 2 column-pairs on the front, and TWO cyclones
@@ -327,6 +336,14 @@ static func items() -> Array[Dictionary]:
 			# practice blowing them around the floor.
 			{"id": "zone_collection","name": "Collection zone",    "category": "Tools",      "size": Vector3(5.0, 0.05, 5.0),  "color": Color(0.20, 0.60, 0.95)},
 			{"id": "film_scrap_pile","name": "Film scrap pile",    "category": "Tools",      "size": Vector3(2.0, 0.05, 2.0),  "color": Color(0.78, 0.82, 0.74)},
+			# ── Vehicles (X2/#181) — spawn from build menu for quick QA. id prefix
+			# "vehicle_" routes through the scene-instantiation branch in build_node().
+			{"id": "vehicle_forklift",   "name": "Forklift",            "category": "Vehicles", "size": Vector3(1.4, 2.4, 3.0), "color": Color(0.18, 0.40, 0.22), "scene": "res://src/scenes/vehicles/Forklift.tscn"},
+			{"id": "vehicle_baleclamp",  "name": "Bale clamp",          "category": "Vehicles", "size": Vector3(1.6, 2.6, 3.6), "color": Color(0.18, 0.42, 0.22), "scene": "res://src/scenes/vehicles/BaleClamp.tscn"},
+			{"id": "vehicle_merlo_p40",  "name": "Merlo P40 (far-reach)","category": "Vehicles", "size": Vector3(2.2, 2.8, 6.0), "color": Color(0.85, 0.55, 0.10), "scene": "res://src/scenes/vehicles/MerloP40.tscn"},
+			{"id": "vehicle_merlo",      "name": "Merlo (compact variant)","category": "Vehicles", "size": Vector3(2.0, 2.6, 5.5), "color": Color(0.82, 0.52, 0.10), "scene": "res://src/scenes/vehicles/Merlo.tscn"},
+			{"id": "vehicle_mast_lift",  "name": "Mast lift (worker platform)","category": "Vehicles", "size": Vector3(1.4, 2.2, 2.4), "color": Color(0.74, 0.40, 0.10), "scene": "res://src/scenes/vehicles/MastLift.tscn"},
+			{"id": "vehicle_swift",      "name": "Suzuki Swift GLX (player car)","category": "Vehicles", "size": Vector3(1.5, 1.4, 3.7), "color": Color(0.78, 0.10, 0.10), "scene": "res://src/scenes/vehicles/cars/SuzukiSwiftGLX.tscn"},
 		]
 		# ── Feedstock bales (data-driven from BaleDefs — single source of truth) ──
 		for b in BaleDefs.origins():
@@ -668,13 +685,11 @@ const _BELT_CARRY_SPEED : float = 0.4   # m/s along the belt deck's local +Z
 # while the carry meta was never even set on intake belts (they weren't in
 # _BELT_IDS) — visual lied, physics didn't fire at all.
 const _INTAKE_BELT_SPEED_MPS : float = 0.5
-# Shader scroll value passed to make_belt_material for intake belts. The UV math
-# above predicts apparent_speed = -caller * 2.0, which would suggest a *0.5
-# factor, but operator-confirmed in-game perception: with *0.5 the belt scrolled
-# visibly 2× faster than the carry meta. Tightened to *0.25 so the slats march
-# at the same physical pace the player is being dragged at. (Likely the internal
-# slat period inside the texture adds another factor I didn't account for.)
-const _INTAKE_BELT_SHADER_SCROLL : float = -_INTAKE_BELT_SPEED_MPS * 0.25
+# Shader scroll value passed to make_belt_material for intake belts. With the
+# #140 fix below (make_belt_material no longer negates), positive caller value
+# = downstream flow. *0.25 keeps the apparent slat march matching the carry
+# meta (0.5 m/s) — the texture's internal slat period adds the missing factor.
+const _INTAKE_BELT_SHADER_SCROLL : float = _INTAKE_BELT_SPEED_MPS * 0.25
 ## `simple` builds a cheap LOD model for bales (single box + minimal wire bands)
 ## instead of the full ~10-sheet + 24-wire-segment model — used to fill bale
 ## yards (hundreds of bales) without thousands of draw calls. A simple bale is
@@ -688,6 +703,44 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 	# Hand tools — spawn the real tool node (or a translucent box for the ghost). #28
 	if id.begins_with("tool_"):
 		return _build_tool(id, Vector3(item["size"]), ghost)
+	# #116 — door / gate / window catalog placeables (NOT carved into a wall
+	# here; the operator drops them into a pre-existing hole). Builders are
+	# shared with the 4-point Surface tool, so behaviour + collision + paint
+	# are identical to the Surface variants.
+	if id == "door_personnel":
+		if ghost:
+			return _simple_ghost(Vector3(item["size"]))
+		var sz : Vector3 = item["size"]
+		return build_door(sz.x, sz.y, sz.z, "Door")
+	if id == "gate_roller":
+		if ghost:
+			return _simple_ghost(Vector3(item["size"]))
+		var gsz : Vector3 = item["size"]
+		return build_gate(gsz.x, gsz.y, "Gate")
+	if id == "window_frame":
+		if ghost:
+			return _simple_ghost(Vector3(item["size"]))
+		var wsz : Vector3 = item["size"]
+		return build_window(wsz.x, wsz.y, "Window")
+	# X2/#181 — Vehicles. The ghost is a translucent box (cheap); the real
+	# placement instantiates the scene so the operator gets a fully-driveable
+	# unit on the floor. Used for QA spawns — no need to walk to find a Merlo.
+	if id.begins_with("vehicle_"):
+		if ghost:
+			return _simple_ghost(Vector3(item["size"]))
+		var scene_path : String = String(item.get("scene", ""))
+		if scene_path == "" or not ResourceLoader.exists(scene_path):
+			push_warning("[PlaceableCatalog] Vehicle scene missing: %s" % scene_path)
+			return _simple_ghost(Vector3(item["size"]))
+		var packed := load(scene_path) as PackedScene
+		if packed == null:
+			return _simple_ghost(Vector3(item["size"]))
+		var v : Node3D = packed.instantiate() as Node3D
+		if v == null:
+			return null
+		v.set_meta("placeable_id", id)
+		v.add_to_group("placed_object")
+		return v
 	# Shift-leader PC + QA bench — each is a self-contained StaticBody3D with its
 	# own model + collision + interaction trigger. Build the script-backed node
 	# directly and tag it as a placeable so save/load + delete handle it like any
@@ -1124,12 +1177,14 @@ static func make_belt_material(scroll_speed: float = 0.8,
 	m.set_shader_parameter("belt_roughness", _belt_roughness_texture())
 	m.set_shader_parameter("belt_normal",    _belt_normal_texture())
 	# #140 — Godot's BoxMesh +Y face has V increasing in -Z, so a POSITIVE
-	# scroll_speed scrolled the visible texture toward the upstream end (away
-	# from the downstream/macro-forward direction). Operator confirmed every
-	# intake belt was rotating backward, which is exactly that sign error.
-	# Negate here so callers can stay with intuitive positive speeds (the
-	# belt visually moves toward the downstream end).
-	m.set_shader_parameter("scroll_speed",   -scroll_speed)
+	# #140 — convention: POSITIVE caller value = belt flows DOWNSTREAM. The
+	# previous negation here was a one-shot fix for the intake belts but left
+	# every other caller (variable_belt 0.5, opzetband 0.6, conveyor_8 0.6,
+	# the wash-line belts) flowing UPSTREAM, which is what the operator was
+	# reporting "across the board." Dropping the negation here + flipping the
+	# leading minus on _INTAKE_BELT_SHADER_SCROLL together restore consistency
+	# without changing any callsite's sign.
+	m.set_shader_parameter("scroll_speed",   scroll_speed)
 	m.set_shader_parameter("uv_tile",        tile)
 	m.set_shader_parameter("uv_offset",      Vector2.ZERO)
 	return m
@@ -1838,6 +1893,76 @@ static func _m_wardrobe_locker(p: Node3D, size: Vector3, color: Color, ghost: bo
 ## support cradle, blue side inspection covers, and a tall STAINLESS exhaust
 ## stack fed by a grey duct off the top. (The stack overshoots the bbox — that's
 ## fine; collision is the footprint box.)
+## X3/#182 — localized steam/smoke plume rising from the given local position.
+## Replaces what the mislabeled "Volumetric Fog" setting falsely promised: a
+## REAL volumetric effect attached to the source, not a global haze. Cheap
+## sphere-billboard GPUParticles; ~28 particles aloft at a time, drifting up
+## with a slight outward spread + opacity fade over their 2.5 s lifetime.
+## `radius` sizes the emission disc (~drum exhaust = 0.15, extruder die = 0.10).
+## `tint` is the steam colour (white-grey for water steam; warmer for extruder).
+## Skipped on ghost builds (placement preview shouldn't churn particles).
+static func _install_steam_plume(parent: Node3D, local_pos: Vector3,
+		radius: float, height: float, tint: Color, ghost: bool) -> void:
+	if ghost or parent == null:
+		return
+	var emitter := GPUParticles3D.new()
+	emitter.name = "SteamPlume"
+	emitter.amount = 28
+	emitter.lifetime = 2.5
+	emitter.one_shot = false
+	emitter.preprocess = 1.0
+	emitter.explosiveness = 0.0
+	emitter.fixed_fps = 30
+	emitter.visibility_aabb = AABB(
+		Vector3(-radius * 4.0, 0.0, -radius * 4.0),
+		Vector3( radius * 8.0, height + 2.0, radius * 8.0))
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_RING
+	pm.emission_ring_radius = radius
+	pm.emission_ring_inner_radius = 0.0
+	pm.emission_ring_axis = Vector3.UP
+	pm.emission_ring_height = 0.02
+	pm.direction = Vector3.UP
+	pm.spread = 18.0
+	pm.initial_velocity_min = height * 0.45
+	pm.initial_velocity_max = height * 0.75
+	pm.gravity = Vector3(0.0, 0.6, 0.0)            # buoyant — drifts up, not down
+	pm.scale_min = radius * 0.9
+	pm.scale_max = radius * 1.8
+	# Steam grows as it cools / mixes with air → larger blobs at end of life.
+	var sc := Curve.new()
+	sc.add_point(Vector2(0.0, 0.4))
+	sc.add_point(Vector2(0.6, 1.0))
+	sc.add_point(Vector2(1.0, 1.4))
+	pm.scale_curve = CurveTexture.new()
+	(pm.scale_curve as CurveTexture).curve = sc
+	# Opacity fades in then out so the plume reads as soft, not solid blobs.
+	var grad := Gradient.new()
+	grad.set_color(0, Color(tint.r, tint.g, tint.b, 0.0))
+	grad.set_color(1, Color(tint.r, tint.g, tint.b, 0.55))
+	grad.add_point(0.18, Color(tint.r, tint.g, tint.b, 0.55))
+	grad.add_point(0.85, Color(tint.r, tint.g, tint.b, 0.20))
+	var gt := GradientTexture1D.new()
+	gt.gradient = grad
+	pm.color_ramp = gt
+	emitter.process_material = pm
+	# Sphere mesh as the particle billboard — cheap, reads as a soft puff.
+	var sm := SphereMesh.new()
+	sm.radius = 0.5
+	sm.height = 1.0
+	sm.radial_segments = 8
+	sm.rings = 4
+	var pmat := StandardMaterial3D.new()
+	pmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	pmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	pmat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	pmat.albedo_color = tint
+	pmat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	sm.material = pmat
+	emitter.draw_pass_1 = sm
+	emitter.position = local_pos
+	parent.add_child(emitter)
+
 static func _m_dryer(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
 	var galv      := _mat(color, ghost, 0.55, 0.5)                    # galvanised drum
 	var blue      := _mat(Color(0.12, 0.28, 0.55), ghost, 0.45, 0.45) # RAL-blue flanges/motors
@@ -1896,6 +2021,12 @@ static func _m_dryer(p: Node3D, size: Vector3, color: Color, ghost: bool) -> voi
 	# face marks the duct connection point.
 	_cyl(p, rad * 0.22, rad * 0.22, 0.30,
 		Vector3(0.0, drum_cy - rad * 0.5, hz + 0.15), galv, "z")
+	# X3/#182 — water-vapour plume at the air outlet. Even though the blower
+	# pulls most of it downstream, a real CeDo dryer puffs a small visible
+	# steam halo at the outlet stub. Cool blue-white tint.
+	_install_steam_plume(p,
+		Vector3(0.0, drum_cy - rad * 0.5 + 0.05, hz + 0.30),
+		rad * 0.16, 1.4, Color(0.92, 0.94, 0.96), ghost)
 
 # ── washing line: long trough + access housings + legs + drive motor ──────────
 static func _m_washline(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
@@ -3835,8 +3966,11 @@ static func _bale_sticker_texture() -> ImageTexture:
 	if _bale_sticker_tex != null:
 		return _bale_sticker_tex
 	var img := Image.create(_BALE_STICKER_TEX_W, _BALE_STICKER_TEX_H, false, Image.FORMAT_RGB8)
-	var paper := Color(0.93, 0.91, 0.83)
-	var ink   := Color(0.18, 0.18, 0.20)
+	# #170 — yellow shipping label, matching the LabelItem sticker colour the
+	# operator confirmed earlier. Was an off-white paper (0.93, 0.91, 0.83)
+	# that read as "no sticker" against the pale bale tint.
+	var paper := Color(0.93, 0.82, 0.15)
+	var ink   := Color(0.10, 0.10, 0.10)
 	img.fill(paper)
 	# Header band: dark strip across the top — reads as "shipping label" at a glance.
 	for y in range(2, 8):
@@ -6986,6 +7120,13 @@ static func _m_extruder_unit(p: Node3D, size: Vector3, color: Color, ghost: bool
 		_cyl(p, drum_r * 1.04, drum_r * 1.04, size.y * 0.022, Vector3(0.0, drum_base + drum_h * ry, tw_z), steel)  # reinforcing rings
 	_cyl(p, drum_r * 1.06, drum_r * 1.06, size.y * 0.04, Vector3(0.0, drum_base + drum_h, tw_z), steel)            # bolted top flange
 	_cyl(p, drum_r * 0.40, drum_r * 0.40, size.y * 0.16, Vector3(0.0, drum_base + drum_h + size.y * 0.08, tw_z), steel)  # feed duct (feed_in)
+	# X3/#182 — warm steam plume above the cutter-compactor drum. This is the
+	# hot pot where shredded film softens to the doughy mass before screw-feed
+	# — real CeDo extruders puff a visible vapour column above it. Slightly
+	# warmer tint than the dryer (orange-tinged from the molten polymer glow).
+	_install_steam_plume(p,
+		Vector3(0.0, drum_base + drum_h + size.y * 0.20, tw_z),
+		drum_r * 0.25, 2.0, Color(0.96, 0.94, 0.88), ghost)
 	# oval sight-glass on +X (steel frame + pale flakes behind)
 	_box(p, Vector3(0.04, size.y * 0.16, size.y * 0.10), Vector3(drum_r * 1.0, drum_cy + size.y * 0.04, tw_z), dark)
 	_box(p, Vector3(0.05, size.y * 0.12, size.y * 0.07), Vector3(drum_r * 1.02, drum_cy + size.y * 0.04, tw_z), flakes)

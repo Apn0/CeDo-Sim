@@ -355,9 +355,13 @@ func _build_voice_plan(text: String) -> Array:
 			syl_vowels = ["e"]                       # every word is at least one syllable
 		for v in syl_vowels:
 			var f : Vector2 = VOWEL_FORMANTS.get(v, Vector2(500.0, 1500.0))
-			plan.append({"f1": f.x, "f2": f.y, "dur": 0.15, "voiced": true})
+			# #159 — was 0.15s syllables, 0.07s word gaps. Each sound rushed past
+			# before the formant filter could even settle, so the whole transmission
+			# read as continuous noise (the "alien rush" operator complaint).
+			# 0.22s gives the band-pass time to actually resonate on the vowel.
+			plan.append({"f1": f.x, "f2": f.y, "dur": 0.22, "voiced": true})
 		if wi < words.size() - 1:
-			plan.append({"f1": 500.0, "f2": 1500.0, "dur": 0.07, "voiced": false})  # word gap
+			plan.append({"f1": 500.0, "f2": 1500.0, "dur": 0.10, "voiced": false})  # word gap
 	return plan
 
 func _plan_duration(plan: Array) -> float:
@@ -405,8 +409,10 @@ func _fill_radio(_delta: float) -> void:
 			var seg : Dictionary = _radio_plan[_radio_seg_idx] if _radio_seg_idx < _radio_plan.size() \
 				else {"f1": 500.0, "f2": 1500.0, "dur": 0.1, "voiced": false}
 			# Glide the formant centres toward the syllable's vowel → speech-like motion.
-			_f1_cur = move_toward(_f1_cur, float(seg["f1"]), 9000.0 * dt)
-			_f2_cur = move_toward(_f2_cur, float(seg["f2"]), 14000.0 * dt)
+			# #159 — was 9000/14000 (too fast: formants never settled, sounding rushed).
+			# Halved them so the vowels actually park before sliding to the next one.
+			_f1_cur = move_toward(_f1_cur, float(seg["f1"]), 4500.0 * dt)
+			_f2_cur = move_toward(_f2_cur, float(seg["f2"]), 7500.0 * dt)
 			# Raised-cosine envelope within the syllable (smooth — no clicky gates).
 			var seg_pos : float = (voice_t - _radio_seg_start) / maxf(float(seg["dur"]), 0.001)
 			var seg_env := sin(clampf(seg_pos, 0.0, 1.0) * PI)
@@ -426,9 +432,13 @@ func _fill_radio(_delta: float) -> void:
 			_svf2_band += f2c * (src - _svf2_low - 0.17 * _svf2_band)
 			var v := _svf1_band * 0.6 + _svf2_band * 0.5 + src * 0.04
 			v *= seg_env * voiced_amp
+			# #159 — noise mix was drowning the formants (0.10 burst + 0.04 hiss
+			# was the dominant signal, so the listener heard "rush" not "voice").
+			# Cut both substantially; the formant-shaped voice now sits above the
+			# noise instead of underneath it.
 			if not bool(seg["voiced"]):
-				v += (randf() * 2.0 - 1.0) * 0.10 * seg_env   # consonant noise burst
-			v += (randf() * 2.0 - 1.0) * 0.04                 # radio compression hiss
+				v += (randf() * 2.0 - 1.0) * 0.04 * seg_env   # consonant noise burst
+			v += (randf() * 2.0 - 1.0) * 0.015                # radio compression hiss
 			s = v
 		# Radio band character: soft-clip compression + route level + master gain.
 		s = tanh(s * 1.6) * 0.7

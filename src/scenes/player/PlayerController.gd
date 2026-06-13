@@ -236,12 +236,24 @@ func _physics_process(delta: float) -> void:
 
 ## Belt-carry: if we're standing on a body in group "belt", drag the player along
 ## the belt's world-space carry velocity. Reads slide collisions from the last
-## move_and_slide(); additive, so WASD can still walk against the belt. Applied at
-## most once per frame even if several slide collisions report the same belt.
+## move_and_slide(); additive, so WASD can still walk against the belt. Applied
+## at most once per frame even if several slide collisions report the same belt.
+##
+## #172 — Operator reported 2× carry speed + wrong direction. Root cause: every
+## belt now ships with BeltSurface (#conveyorphysics), which writes
+## constant_linear_velocity. In Godot 4 CharacterBody3D's move_and_slide() ALSO
+## inherits a moving platform's constant_linear_velocity, so the carry was being
+## applied twice. Fix: skip the manual hack for belts that have BeltSurface — let
+## Godot's built-in moving-platform inheritance do the work. The fallback path
+## stays for legacy belts that only carry the meta `belt_speed`.
 func _apply_belt_carry(delta: float) -> void:
 	for i in get_slide_collision_count():
 		var collider := get_slide_collision(i).get_collider()
 		if collider != null and collider.is_in_group("belt"):
+			# BeltSurface-equipped belt → Godot inherits its velocity already.
+			if collider.get_script() != null and "belt_speed_mps" in collider:
+				return
+			# Legacy belt fallback — apply the manual drag.
 			var v: Vector3
 			if collider.has_method("belt_velocity"):
 				v = collider.belt_velocity()

@@ -86,6 +86,10 @@ var clamp_gap_m   : float = 1.35
 var clamp_force        : float = 0.5
 ## True while the operator is holding B and the force is ramping up.
 var _force_ramping     : bool  = false
+# #161 — V key triggers a smooth force decay instead of a snap to 0. The plate
+# gap follows clamp_force, so this gives the operator a visible "let go" — was
+# instant zero before, which looked like nothing happened.
+var _force_unramping   : bool  = false
 var _ramp_started_at   : float = 0.0
 var _ramp_start_force  : float = 0.0
 
@@ -145,6 +149,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	# wire individually before re-entering the clamp to place + open the bale.)
 	if event.is_action_pressed("forklift_forks_pinch"):
 		_force_ramping    = true
+		_force_unramping  = false   # #161 — pressing B mid-decay cancels the V un-ramp
 		_ramp_started_at  = Time.get_ticks_msec() / 1000.0
 		_ramp_start_force = clamp_force
 		get_viewport().set_input_as_handled()
@@ -175,6 +180,12 @@ func _physics_process(delta: float) -> void:
 		if _force_ramping:
 			var dt := Time.get_ticks_msec() / 1000.0 - _ramp_started_at
 			clamp_force = clampf(_ramp_start_force + dt / CLAMP_RAMP_S, 0.0, 1.0)
+	# #161 — V triggers a smooth force decay rather than snap-to-zero. Runs even
+	# when un-occupied so a quit-out mid-clamp still relaxes naturally.
+	if _force_unramping:
+		clamp_force = maxf(0.0, clamp_force - delta / CLAMP_RAMP_S)
+		if clamp_force <= 0.0:
+			_force_unramping = false
 	_update_plate_gap(delta)
 	_apply_mast_lift_tilt()
 	_update_wire_bulge()
@@ -229,6 +240,13 @@ func _update_plate_gap(delta: float) -> void:
 		# compressed-film deformation.
 		var bale_x_collision := size.x * 0.9
 		target_gap = clampf(bale_x_collision - squeeze, clamp_closed_m, clamp_open_m)
+	elif clamp_force > 0.01:
+		# #161 fix: plates track clamp_force even when no bale is being carried.
+		# Was: only closed while the pinch button was physically held, so
+		# releasing B with 94% force still showing snapped the plates back open
+		# — the operator's "94%" felt fake. Now the gap follows the force value:
+		# 0 = wide open, 1 = fully closed, so the visible state matches the HUD.
+		target_gap = lerpf(clamp_open_m, clamp_closed_m, clamp_force)
 	elif Input.is_action_pressed("forklift_forks_pinch"):
 		target_gap = clamp_closed_m
 	clamp_gap_m = lerpf(clamp_gap_m, target_gap, clampf(PLATE_TRACK_RATE * delta, 0.0, 1.0))
@@ -264,18 +282,19 @@ func _on_grabbed(_primary: Node3D, _stack: Array[Node3D]) -> void:
 	# Tell the wire-bulge logic to start checking against the primary bale.
 	_update_plate_gap(0.001)
 
-## Drop the squeeze immediately so the HUD bar visibly opens up. Runs BEFORE the
-## carried-bale early-out so V works as "release pressure" even on empty air
-## (e.g. the operator over-clamped on nothing).
+## V pressed: start the gradual force decay (#161). Was: instant 0, which felt
+## like nothing happened because the plates had already snapped open. Now the
+## bale is released immediately (you let go), but clamp_force ramps DOWN over
+## CLAMP_RAMP_S, so the plates visibly relax. _physics_process ticks the decay.
 func _on_pre_release() -> void:
-	clamp_force = 0.0
 	_force_ramping = false
+	_force_unramping = true
 
-## After everything is dropped, fan any wires-cut bales into their sheet arc and
-## make sure the squeeze is fully released so the HUD bar drops back.
+## Bale fully dropped — keep the decay running so the plates open the rest of
+## the way; clamp_force has already started its descent from _on_pre_release.
 func _on_released() -> void:
-	clamp_force = 0.0
 	_force_ramping = false
+	_force_unramping = true
 
 ## Hook into BaseVehicle._drop_bale: after a normal drop, a cut bale opens into
 ## the sheet arc. (BaseVehicle calls _drop_bale for every bale in the column.)

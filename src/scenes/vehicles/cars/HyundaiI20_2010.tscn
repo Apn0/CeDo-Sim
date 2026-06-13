@@ -88,7 +88,7 @@ material_override = SubResource("Mat_dark")
 mesh = SubResource("Cyl_wheel")
 
 [node name="CabCamera" type="Camera3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.36, 1.20, -0.20)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -0.36,1.20,-0.20)
 current = false
 fov = 70.0
 
