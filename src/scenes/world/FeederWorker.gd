@@ -175,6 +175,12 @@ func _build_body() -> void:
 
 # =============================================================================
 # MAIN LOOP
+static var _cached_belts: Array[Node] = []
+static var _last_belt_cache_frame: int = -1
+
+static var _cached_bales: Array[Node] = []
+static var _last_bale_cache_frame: int = -1
+
 # =============================================================================
 func _physics_process(delta: float) -> void:
 	# NaN-transform watchdog (see BaseVehicle): a worker whose transform goes bad
@@ -519,7 +525,12 @@ func _peel_label(bale: Node3D) -> void:
 ## feeder keeps running instead of stopping dead when the lot empties. #178
 func _restock_lot() -> void:
 	var n := 0
-	for b in get_tree().get_nodes_in_group("bale"):
+	var current_frame := Engine.get_physics_frames()
+	if current_frame != _last_bale_cache_frame:
+		_cached_bales = get_tree().get_nodes_in_group("bale")
+		_last_bale_cache_frame = current_frame
+
+	for b in _cached_bales:
 		var bn := b as Node3D
 		if bn == null or not is_instance_valid(bn):
 			continue
@@ -551,9 +562,16 @@ func _resolve_belt() -> void:
 		return
 	# Pick the NEAREST feed belt to this worker (a worker feeds the belt by
 	# their lot — and it keeps multi-belt scenes / tests unambiguous).
+	var current_frame := Engine.get_physics_frames()
+	if current_frame != _last_belt_cache_frame:
+		_cached_belts = get_tree().get_nodes_in_group("shredder_feed_belt")
+		_last_belt_cache_frame = current_frame
+
 	var best : Node = null
 	var best_d := 1e9
-	for b in get_tree().get_nodes_in_group("shredder_feed_belt"):
+	for b in _cached_belts:
+		if not is_instance_valid(b):
+			continue
 		var bn := b as Node3D
 		if bn == null:
 			continue
@@ -645,7 +663,13 @@ func _locomote(delta: float) -> void:
 func _find_bale() -> Node3D:
 	var best : Node3D = null
 	var best_d := lot_radius
-	for b in get_tree().get_nodes_in_group("bale"):
+
+	var current_frame := Engine.get_physics_frames()
+	if current_frame != _last_bale_cache_frame:
+		_cached_bales = get_tree().get_nodes_in_group("bale")
+		_last_bale_cache_frame = current_frame
+
+	for b in _cached_bales:
 		var bn := b as Node3D
 		if bn == null or not is_instance_valid(bn):
 			continue
