@@ -87,10 +87,18 @@ static func _denim_material() -> StandardMaterial3D:
 static func rebuild_appearance(holder: Node3D, shirt: Color, variant: int, new_appearance: Dictionary) -> Node3D:
 	if holder == null or not is_instance_valid(holder):
 		return null
-	var old : Node3D = holder.get_node_or_null("Body") as Node3D
+	# MainWorld._spawn_npcs renames the rig "HumanoidBody" after attaching, but
+	# the player + customizer keep the default "Body" name. Find either.
+	var old : Node3D = holder.get_node_or_null("HumanoidBody") as Node3D
+	if old == null:
+		old = holder.get_node_or_null("Body") as Node3D
 	var fresh : Node3D = Humanoid.build(shirt, variant, new_appearance)
 	if fresh == null:
 		return null
+	# Match whatever the old name was so the NPC's per-frame body-scaling lookup
+	# (#146 crouch/prone) still finds it after the swap.
+	if old != null:
+		fresh.name = old.name
 	holder.add_child(fresh)
 	if old:
 		# Copy the world transform so the swap is visually seamless if `Body`

@@ -134,6 +134,10 @@ func _ready() -> void:
 	_spawn_line_flow()
 	_spawn_container_guides()
 	_spawn_npcs()
+	# #166 Phase B — if we're in pre-shift, intercept the freshly-spawned NPCs
+	# and run them through the arrival → dress → canteen loop. Resumed saves
+	# (where the shift bell already rang) skip this entirely.
+	_spawn_pre_shift_sequence()
 	# #155 — spawn the shift's cars + put the player in their Swift + seat Yasin.
 	# MUST come after _spawn_npcs (needs npcs["yassine"] to exist to seat as
 	# passenger) AND _spawn_operator_context (needs operator_context to board the
@@ -2463,6 +2467,41 @@ func _spawn_car_in_bay(scene_path: String, side: int, idx: int, label: String) -
 	car.transform = staff_parking.bay_world_transform(side, idx)
 	car.set_meta("display_label", label)
 	return car
+
+## #166 Phase B — install the pre-shift arrival sequence if (and only if) we
+## are currently in the pre-shift window. Resumed mid-shift saves skip this
+## (CrewManager + standard NPC behaviour take over from the moment of load).
+func _spawn_pre_shift_sequence() -> void:
+	if shift_clock == null:
+		return
+	if not shift_clock.has_method("is_pre_shift") or not bool(shift_clock.is_pre_shift()):
+		return
+	if npcs.is_empty():
+		return
+	var seq_script := load("res://src/scenes/world/PreShiftSequence.gd")
+	if seq_script == null:
+		push_warning("[MainWorld] PreShiftSequence.gd missing — pre-shift skipped")
+		return
+	var seq : Node = seq_script.new()
+	seq.name = "PreShiftSequence"
+	add_child(seq)
+	# Anchor offsets are defined as constants at the top of the file. Convert
+	# to world positions by adding the resolved player spawn. Y is irrelevant
+	# (NPCs land on the navmesh-baked floor).
+	var anchor : Vector3 = _player_spawn_pos
+	var dress_pos   : Vector3 = anchor + DRESSING_ROOM_OFFSET
+	var canteen_pos : Vector3 = anchor + CANTEEN_OFFSET
+	var smoke_pos   : Vector3 = anchor + SMOKE_SPOT_OFFSET
+	# Arrival anchor — for Phase B the NPC just APPEARS at the parking-lot
+	# pedestrian exit when their arrives_at_s passes. Phase C can swap this
+	# for a drive-in animation tied to the per-NPC car.
+	var arrival : Vector3 = anchor
+	if staff_parking and "global_position" in staff_parking:
+		arrival = staff_parking.global_position
+	seq.call("setup", self, shift_clock, PRE_SHIFT_SCHEDULE,
+			dress_pos, canteen_pos, smoke_pos, arrival)
+	print("[MainWorld] Pre-shift sequence active (T-%.0f min)" \
+			% (-shift_clock.shift_elapsed_seconds / 60.0))
 
 ## Player's red Suzuki Swift parked on De Asselen Kuil at the south end,
 ## facing NORTH so a forward drive brings the operator straight into the lot.
