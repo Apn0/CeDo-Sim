@@ -493,7 +493,7 @@ func _process(_delta: float) -> void:
 			continue
 		if to_p.normalized().dot(fwd) < cos_half:
 			continue
-		var _scooped : float = float(p.call("scoop", rate * dt))
+		p.call("scoop", rate * dt)
 
 ## Each held-frame: maybe drop a new auto-anchor (if walked past last by >
 ## hose_segment_m AND below max anchor cap); then clamp the visible nozzle tip
