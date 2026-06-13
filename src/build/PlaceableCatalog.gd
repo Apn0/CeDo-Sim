@@ -3962,7 +3962,6 @@ static func _m_bale(p: Node3D, id: String, size: Vector3, ghost: bool) -> void:
 	for i in thicks.size():
 		thicks[i] = thicks[i] / tsum * inner_len
 	# Lay sheets out from -X to +X
-	var _film_base := _mat(tint, ghost, 0.0, 0.9)
 	var patch_blue := _mat(Color(0.30, 0.45, 0.85), ghost, 0.0, 0.85)
 	var patch_warm := _mat(Color(tint.r * 0.8, tint.g * 0.8, tint.b * 0.72), ghost, 0.0, 0.9)
 	var x := -inner_len * 0.5
