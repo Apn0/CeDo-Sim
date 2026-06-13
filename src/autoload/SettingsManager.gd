@@ -439,8 +439,8 @@ func _apply_environment_settings() -> void:
 		# in our wide outdoor layout. Length 128m + density 0.015 keeps depth
 		# cues without occluding the industrial terrain.
 		if env.volumetric_fog_enabled:
-			env.volumetric_fog_length  = 128.0
-			env.volumetric_fog_density = 0.015
+			env.volumetric_fog_length  = 500.0
+			env.volumetric_fog_density = 0.004
 		env.fog_enabled            = bool(_current_graphics.get("fog", false))
 		# Brightness via colour-adjustment (only enable when non-neutral)
 		var b := float(_current_graphics.get("brightness", 1.0))
