@@ -1527,15 +1527,17 @@ func _tick_advanced_systems(delta: float) -> void:
 			if bool(mol.call("is_tripped")):
 				nd["powered"] = false           # stop conveying (conserving)
 				nd["amps"]    = float(mol.get("current_amps"))   # 0 A while tripped
+			else:
+				# Mirror the live motor current onto the node so the HMI/SCADA amp
+				# readout reflects the binding load on these high-load drives.
+				nd["amps"] = float(mol.get("current_amps"))
+
 		# #139 — pack-up cascade: when both VSSs full, conveyors pause one-per-
 		# second from the head (C11) back toward the bunker. This is the actual
 		# pause application — _is_pack_up_paused() advances with _pack_up_t.
 		if _is_pack_up_paused(String(nd.get("id", ""))):
 			nd["powered"] = false
-			else:
-				# Mirror the live motor current onto the node so the HMI/SCADA amp
-				# readout reflects the binding load on these high-load drives.
-				nd["amps"] = float(mol.get("current_amps"))
+
 		# 4) AIR consumer duty — accumulate this consumer's load fraction (throughput
 		#    vs its design rate) so we can report a single duty per air id.
 		var aid : String = String(nd.get("air_id", ""))
