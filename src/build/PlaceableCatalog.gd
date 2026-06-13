@@ -676,13 +676,11 @@ const _BELT_CARRY_SPEED : float = 0.4   # m/s along the belt deck's local +Z
 # while the carry meta was never even set on intake belts (they weren't in
 # _BELT_IDS) — visual lied, physics didn't fire at all.
 const _INTAKE_BELT_SPEED_MPS : float = 0.5
-# Shader scroll value passed to make_belt_material for intake belts. The UV math
-# above predicts apparent_speed = -caller * 2.0, which would suggest a *0.5
-# factor, but operator-confirmed in-game perception: with *0.5 the belt scrolled
-# visibly 2× faster than the carry meta. Tightened to *0.25 so the slats march
-# at the same physical pace the player is being dragged at. (Likely the internal
-# slat period inside the texture adds another factor I didn't account for.)
-const _INTAKE_BELT_SHADER_SCROLL : float = -_INTAKE_BELT_SPEED_MPS * 0.25
+# Shader scroll value passed to make_belt_material for intake belts. With the
+# #140 fix below (make_belt_material no longer negates), positive caller value
+# = downstream flow. *0.25 keeps the apparent slat march matching the carry
+# meta (0.5 m/s) — the texture's internal slat period adds the missing factor.
+const _INTAKE_BELT_SHADER_SCROLL : float = _INTAKE_BELT_SPEED_MPS * 0.25
 ## `simple` builds a cheap LOD model for bales (single box + minimal wire bands)
 ## instead of the full ~10-sheet + 24-wire-segment model — used to fill bale
 ## yards (hundreds of bales) without thousands of draw calls. A simple bale is
@@ -1151,12 +1149,14 @@ static func make_belt_material(scroll_speed: float = 0.8,
 	m.set_shader_parameter("belt_roughness", _belt_roughness_texture())
 	m.set_shader_parameter("belt_normal",    _belt_normal_texture())
 	# #140 — Godot's BoxMesh +Y face has V increasing in -Z, so a POSITIVE
-	# scroll_speed scrolled the visible texture toward the upstream end (away
-	# from the downstream/macro-forward direction). Operator confirmed every
-	# intake belt was rotating backward, which is exactly that sign error.
-	# Negate here so callers can stay with intuitive positive speeds (the
-	# belt visually moves toward the downstream end).
-	m.set_shader_parameter("scroll_speed",   -scroll_speed)
+	# #140 — convention: POSITIVE caller value = belt flows DOWNSTREAM. The
+	# previous negation here was a one-shot fix for the intake belts but left
+	# every other caller (variable_belt 0.5, opzetband 0.6, conveyor_8 0.6,
+	# the wash-line belts) flowing UPSTREAM, which is what the operator was
+	# reporting "across the board." Dropping the negation here + flipping the
+	# leading minus on _INTAKE_BELT_SHADER_SCROLL together restore consistency
+	# without changing any callsite's sign.
+	m.set_shader_parameter("scroll_speed",   scroll_speed)
 	m.set_shader_parameter("uv_tile",        tile)
 	m.set_shader_parameter("uv_offset",      Vector2.ZERO)
 	return m
