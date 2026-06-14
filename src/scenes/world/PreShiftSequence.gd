@@ -204,6 +204,92 @@ func _tick_entry(npc_id: String, e: Dictionary, elapsed: float) -> void:
 	# IDLE_CANTEEN, DONE — nothing to do; CrewManager picks up at the bell.
 
 # =============================================================================
+# Deterministic state recomputer — call when ShiftClock seeks to a new wall
+# time so every NPC snaps to the state they SHOULD be in at the new elapsed
+# value. Without this, a time-jump leaves NPCs frozen in whatever forward-only
+# state the last _tick produced (Pascal stuck at smoke, Emrah halfway to the
+# dressing room) instead of matching the operator's new instant.
+#
+# Determinism note: NPCs with dress_time_s = -1 use a RANDOM 2-6 min uniform.
+# Recomputing against that randomness means Apply→Cancel→Apply could land
+# different states. We use the MEAN (4 min) here so a time-jump is stable.
+# Pre_changed workers (Vincent, Pascal) have a deterministic dress_time of 0.
+func recompute_for(elapsed: float) -> void:
+	_bell_handled = false   # un-stick the bell so we can serve another pre-shift
+	for npc_id in _entries.keys():
+		var e : Dictionary = _entries[npc_id]
+		var npc : Node3D = e["node"]
+		if npc == null or not is_instance_valid(npc):
+			continue
+		var sched : Dictionary = e["schedule"]
+		var arrives_at : float = float(sched.get("arrives_at_s", -60.0))
+		var pre_changed : bool = bool(sched.get("pre_changed", false))
+		var smokes_at  : float = float(sched.get("smokes_at_s", -9e9))
+		var dress_time : float = float(sched.get("dress_time_s", 240.0))
+		if dress_time < 0.0:
+			dress_time = 4.0 * 60.0   # mean of 2-6 min uniform
+		# (1) Before arrival — hide + reset to personal clothes.
+		if elapsed < arrives_at:
+			_swap_humanoid(npc, e["color"], int(e["variant"]), e["personal"])
+			npc.visible = false
+			npc.global_position = e["arrival_pos"]
+			_stop_walking(npc)
+			if npc.has_method("set_off_duty"):
+				npc.call("set_off_duty", true)
+			e["state"] = _STATE_PENDING
+			e["smoked"] = false
+			continue
+		# (2) Past arrival — visible + on-duty handling. Smoking branch first
+		# because pre_changed + smokes_at is Pascal-specific.
+		npc.visible = true
+		if npc.has_method("set_off_duty"):
+			npc.call("set_off_duty", true)   # PreShiftSequence still owns them until bell
+		if pre_changed and smokes_at > -9e8:
+			# Pascal: arrived → walk smoke → smoke → walk canteen → idle canteen.
+			if elapsed < -_SMOKE_END_BEFORE_BELL_S:
+				# Still smoking.
+				_swap_humanoid(npc, e["color"], int(e["variant"]), e["work"])
+				npc.global_position = e["smoke_pos"]
+				_stop_walking(npc)
+				e["state"] = _STATE_SMOKING
+				e["smoked"] = true
+			else:
+				# Smoke done → canteen.
+				_swap_humanoid(npc, e["color"], int(e["variant"]), e["work"])
+				npc.global_position = e["canteen_pos"]
+				_stop_walking(npc)
+				e["state"] = _STATE_IDLE_CANTEEN
+				e["smoked"] = true
+		elif pre_changed:
+			# Vincent: arrived already in PPE → canteen immediately.
+			_swap_humanoid(npc, e["color"], int(e["variant"]), e["work"])
+			npc.global_position = e["canteen_pos"]
+			_stop_walking(npc)
+			e["state"] = _STATE_IDLE_CANTEEN
+		else:
+			# Default flow: arrived → dress → canteen.
+			var dress_done_at : float = arrives_at + dress_time
+			if elapsed < dress_done_at:
+				# Still in dressing room (or walking there — we collapse to "at
+				# the dressing pos" because the wall-clock recompute doesn't have
+				# a fine-grained walk timer).
+				_swap_humanoid(npc, e["color"], int(e["variant"]), e["personal"])
+				npc.global_position = e["dress_pos"]
+				_stop_walking(npc)
+				e["state"] = _STATE_DRESSING
+				e["timer_due"] = dress_done_at
+			else:
+				_swap_humanoid(npc, e["color"], int(e["variant"]), e["work"])
+				npc.global_position = e["canteen_pos"]
+				_stop_walking(npc)
+				e["state"] = _STATE_IDLE_CANTEEN
+	# (3) Past the bell — hand back to CrewManager once after the loop. _on_bell()
+	# is idempotent on subsequent calls (early-return on _bell_handled), but we
+	# only need it the FIRST time the recompute crosses zero.
+	if elapsed >= 0.0:
+		_on_bell()
+
+# =============================================================================
 # Bell handler — invoked by ShiftClock.shift_started.
 func _on_bell() -> void:
 	if _bell_handled:

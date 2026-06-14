@@ -14,7 +14,19 @@ extends StaticBody3D
 ## Everything else — bales, the lump_cart, dropped tools, any RB body the
 ## operator parks on the belt — is now physicalized.
 
-## Speed along the belt's local +Z in metres per second.
+## Speed along the belt's FORWARD direction (line march direction) in m/s.
+## CANONICAL CONVENTION: downstream = body LOCAL +Z. This is consistent with:
+##   • BeltBuilder.build_chute() puts the discharge chute at local +Z (size.z * 0.50).
+##   • ShredderFeedBelt deck/incline geometry extends along local +Z.
+##   • belt_scroll.gdshader with positive scroll_speed scrolls texture toward +Z.
+##   • BuildMode._build_full_line marches ghost along ghost-local -Z, but adds
+##     `rot_y + PI` to each placed node so the placed body's local +Z = world
+##     march direction (i.e. downstream).
+##   • Gauntlet station 210 placard expects the test cube to travel toward +Z
+##     (away from the sign side) — and the chute on the gauntlet's no-rotation
+##     placement is at local +Z.
+## So carry must drive along +basis.z. (Was flipped to -basis.z this session
+## from a mis-read of the macro; restored here.)
 var belt_speed_mps : float = 0.0
 
 func _physics_process(_delta: float) -> void:

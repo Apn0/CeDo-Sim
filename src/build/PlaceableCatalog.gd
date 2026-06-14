@@ -57,7 +57,9 @@ static func items() -> Array[Dictionary]:
 			# VSS metering silo, and the U-bay overflow surge bay. Material flows
 			# through it INTO vuilsnippersilo (the head of LINE_3A_SEQ/LINE_3B_SEQ).
 			{"id": "line_intake_3a3b","name":"▶ Build 3A/3B intake (shared front-end)","category": "Lines", "size": Vector3(3.0, 2.0, 3.0), "color": Color(0.55, 0.30, 0.10)},
-			{"id": "line_sort",      "name": "▶ Build Sort line (2× trilzeef parallel)","category": "Lines", "size": Vector3(3.0, 2.0, 3.0),  "color": Color(0.12, 0.18, 0.34)},
+			{"id": "line_sort",      "name": "▶ Build Sort line (opzetband + 2× trilzeef)","category": "Lines", "size": Vector3(3.0, 2.0, 3.0),  "color": Color(0.12, 0.18, 0.34)},
+			# D4 — Lines 3C + 6 share a front end (opzetband_3c6 + shredder + climb + trilzeef).
+			{"id": "line_intake_3c6","name":"▶ Build 3C/6 intake (shared front-end)","category": "Lines", "size": Vector3(3.0, 2.0, 3.0), "color": Color(0.32, 0.46, 0.56)},
 			# ── Extruders ────────────────────────────────────────────────────
 			{"id": "extruder_3a",    "name": "Extruder 3A",        "category": "Extruders",  "size": Vector3(2.6, 4.2, 14.0), "color": Color(0.26, 0.42, 0.70)},
 			{"id": "extruder_3b",    "name": "Extruder 3B",        "category": "Extruders",  "size": Vector3(2.6, 4.2, 14.0), "color": Color(0.26, 0.50, 0.70)},
@@ -126,32 +128,32 @@ static func items() -> Array[Dictionary]:
 			# colour). All routed via build_intake_belt(spec) where the spec dict
 			# encodes length/height/incline/colour. Macro-laid by BuildMode's
 			# INTAKE_3A3B_SEQ so the user doesn't have to place 12 manually.
-			{"id": "intake_belt_1",  "name": "Transportband 1 (incline 5°, shredder dump, 5m)",   "category": "Intake-3A3B", "size": Vector3(1.0, 0.95, 5.0),  "color": Color(0.36, 0.38, 0.42)},
-			{"id": "intake_belt_2",  "name": "Transportband 2 (incline 5°, transfer, 6m)",         "category": "Intake-3A3B", "size": Vector3(1.0, 0.95, 6.0),  "color": Color(0.40, 0.40, 0.44)},
-			{"id": "intake_belt_3",  "name": "Transportband 3 (incline 10°, 8m)",                  "category": "Intake-3A3B", "size": Vector3(1.0, 1.30, 8.0),  "color": Color(0.32, 0.34, 0.38)},
-			{"id": "intake_belt_4",  "name": "Transportband 4 (incline 8°, 10m, blue trim)",       "category": "Intake-3A3B", "size": Vector3(1.0, 1.10, 10.0), "color": Color(0.22, 0.36, 0.62)},
-			{"id": "intake_belt_5",  "name": "Transportband 5 (incline 15°, 8m)",                  "category": "Intake-3A3B", "size": Vector3(1.0, 1.50, 8.0),  "color": Color(0.34, 0.34, 0.38)},
-			{"id": "intake_belt_6",  "name": "Transportband 6 (incline 6°, cross-routing, 7m)",    "category": "Intake-3A3B", "size": Vector3(1.0, 1.10, 7.0),  "color": Color(0.42, 0.42, 0.46)},
-			{"id": "intake_belt_7",  "name": "Transportband 7 (incline 5°, 8m, yellow rail)",      "category": "Intake-3A3B", "size": Vector3(1.0, 1.15, 8.0),  "color": Color(0.60, 0.55, 0.20)},
-			{"id": "intake_belt_8",  "name": "Transportband 8 (bi-directional, 9m)",               "category": "Intake-3A3B", "size": Vector3(1.0, 1.40, 9.0),  "color": Color(0.32, 0.34, 0.36)},
+			{"id": "transportband_1",  "name": "Transportband 1 (incline 5°, shredder dump, 5m)",   "category": "Transportbanden-3A3B", "size": Vector3(1.0, 0.95, 5.0),  "color": Color(0.36, 0.38, 0.42)},
+			{"id": "transportband_2",  "name": "Transportband 2 (incline 5°, transfer, 6m)",         "category": "Transportbanden-3A3B", "size": Vector3(1.0, 0.95, 6.0),  "color": Color(0.40, 0.40, 0.44)},
+			{"id": "transportband_3",  "name": "Transportband 3 (incline 10°, 8m)",                  "category": "Transportbanden-3A3B", "size": Vector3(1.0, 1.30, 8.0),  "color": Color(0.32, 0.34, 0.38)},
+			{"id": "transportband_4",  "name": "Transportband 4 (incline 8°, 10m, blue trim)",       "category": "Transportbanden-3A3B", "size": Vector3(1.0, 1.10, 10.0), "color": Color(0.22, 0.36, 0.62)},
+			{"id": "transportband_5",  "name": "Transportband 5 (incline 15°, 8m)",                  "category": "Transportbanden-3A3B", "size": Vector3(1.0, 1.50, 8.0),  "color": Color(0.34, 0.34, 0.38)},
+			{"id": "transportband_6",  "name": "Transportband 6 (incline 6°, cross-routing, 7m)",    "category": "Transportbanden-3A3B", "size": Vector3(1.0, 1.10, 7.0),  "color": Color(0.42, 0.42, 0.46)},
+			{"id": "transportband_7",  "name": "Transportband 7 (incline 5°, 8m, yellow rail)",      "category": "Transportbanden-3A3B", "size": Vector3(1.0, 1.15, 8.0),  "color": Color(0.60, 0.55, 0.20)},
+			{"id": "transportband_8",  "name": "Transportband 8 (bi-directional, 9m)",               "category": "Transportbanden-3A3B", "size": Vector3(1.0, 1.40, 9.0),  "color": Color(0.32, 0.34, 0.36)},
 			# #136 — C8.5 is the overflow-bypass belt. Sits BELOW + BESIDE C8 and only
 			# carries material when C8 reverses (both VSSs FULL → C8 ramps the other
 			# way and discharges down onto 8.5, which feeds the U-bay/stortvak).
-			{"id": "intake_belt_8_5","name": "Transportband 8.5 (overflow → U-bay, 6m)",          "category": "Intake-3A3B", "size": Vector3(1.0, 1.10, 6.0),  "color": Color(0.52, 0.36, 0.18)},
-			{"id": "intake_belt_9",  "name": "Transportband 9 (incline 4°, 12m)",                  "category": "Intake-3A3B", "size": Vector3(1.0, 1.10, 12.0), "color": Color(0.38, 0.38, 0.42)},
-			{"id": "intake_belt_10", "name": "Transportband 10 (incline 5°, 8m, green trim)",      "category": "Intake-3A3B", "size": Vector3(1.0, 1.10, 8.0),  "color": Color(0.22, 0.50, 0.30)},
-			{"id": "intake_belt_11", "name": "Transportband 11 (incline 12°, 7m)",                 "category": "Intake-3A3B", "size": Vector3(1.0, 1.40, 7.0),  "color": Color(0.34, 0.34, 0.38)},
+			{"id": "transportband_8_5","name": "Transportband 8.5 (overflow → U-bay, 6m)",          "category": "Transportbanden-3A3B", "size": Vector3(1.0, 1.10, 6.0),  "color": Color(0.52, 0.36, 0.18)},
+			{"id": "transportband_9",  "name": "Transportband 9 (incline 4°, 12m)",                  "category": "Transportbanden-3A3B", "size": Vector3(1.0, 1.10, 12.0), "color": Color(0.38, 0.38, 0.42)},
+			{"id": "transportband_10", "name": "Transportband 10 (incline 5°, 8m, green trim)",      "category": "Transportbanden-3A3B", "size": Vector3(1.0, 1.10, 8.0),  "color": Color(0.22, 0.50, 0.30)},
+			{"id": "transportband_11", "name": "Transportband 11 (incline 12°, 7m)",                 "category": "Transportbanden-3A3B", "size": Vector3(1.0, 1.40, 7.0),  "color": Color(0.34, 0.34, 0.38)},
 			# #136 — switch_belt IS conveyor 12. Catalog keeps both ids so legacy
-			# saves still resolve, but the macro uses switch_belt only (intake_belt_12
+			# saves still resolve, but the macro uses switch_belt only (transportband_12
 			# is the same belt without the jog mechanism). Switch belt jogs along its
 			# OWN conveying axis (-1.5m..+1.5m), feeding 100% to VSS_3A at left,
 			# 100% to VSS_3B at right, ~50/50 at centre.
-			{"id": "intake_belt_12", "name": "Transportband 12 (= switch_belt, legacy id)",  "category": "Intake-3A3B", "size": Vector3(1.0, 1.15, 3.0),  "color": Color(0.46, 0.46, 0.50)},
-			{"id": "switch_belt",    "name": "Switch belt (= C12; jogs ±1.5m → VSS_3A / VSS_3B)",  "category": "Intake-3A3B", "size": Vector3(2.4, 1.40, 4.0),  "color": Color(0.55, 0.30, 0.10)},
+			{"id": "transportband_12", "name": "Transportband 12 (= switch_belt, legacy id)",  "category": "Transportbanden-3A3B", "size": Vector3(1.0, 1.15, 3.0),  "color": Color(0.46, 0.46, 0.50)},
+			{"id": "switch_belt",    "name": "Switch belt (= C12; jogs ±1.5m → VSS_3A / VSS_3B)",  "category": "Transportbanden-3A3B", "size": Vector3(2.4, 1.40, 4.0),  "color": Color(0.55, 0.30, 0.10)},
 			# VSS metering silo — primary intake buffer for the wash line.
-			{"id": "vss_silo",       "name": "VSS intake silo (primary buffer)",          "category": "Intake-3A3B", "size": Vector3(3.0, 6.0, 3.0),   "color": Color(0.78, 0.78, 0.82)},
+			{"id": "vss_silo",       "name": "VSS intake silo (primary buffer)",          "category": "Transportbanden-3A3B", "size": Vector3(3.0, 6.0, 3.0),   "color": Color(0.78, 0.78, 0.82)},
 			# U-bay — concrete overflow surge bay (Merlo scoops out of it).
-			{"id": "u_bay",          "name": "U-bay / stortvak (overflow surge, Merlo-scoop)",       "category": "Intake-3A3B", "size": Vector3(8.0, 6.25, 8.0),   "color": Color(0.62, 0.60, 0.56)},
+			{"id": "u_bay",          "name": "U-bay / stortvak (overflow surge, Merlo-scoop)",       "category": "Transportbanden-3A3B", "size": Vector3(8.0, 6.25, 8.0),   "color": Color(0.62, 0.60, 0.56)},
 			# Small feed hopper with 20 cm flanges — sits at the top of the
 			# inclined belt and dribbles material onto the next horizontal belt.
 			{"id": "feed_hopper",    "name": "Feed hopper (small)","category": "Conveyance", "size": Vector3(1.0, 1.2, 1.0),  "color": Color(0.50, 0.50, 0.55)},
@@ -178,8 +180,8 @@ static func items() -> Array[Dictionary]:
 			# Photo-calibrated from assets/reference_photos/machines/flotatietank_3A.png
 			# and flotatietank_3B_*.png: the real tank is weathered dirty stainless
 			# with heavy rust streaking, NOT the blue-grey the placeholder showed.
-			{"id": "flotation_tank", "name": "Flotation tank (1.5x, Line 1/3A/3B)", "category": "Separation", "size": Vector3(4.5, 1.6, 9.0),  "color": Color(0.50, 0.48, 0.45)},
-			{"id": "flotation_tank_wide", "name": "Flotation tank (wide 2x, Line 3C/6)", "category": "Separation", "size": Vector3(6.0, 1.6, 9.0),  "color": Color(0.32, 0.46, 0.56)},
+			{"id": "flotation_tank", "name": "Flotation tank (1.5x, Line 1/3A/3B)", "category": "Separation", "size": Vector3(4.5, 5.0, 9.0),  "color": Color(0.50, 0.48, 0.45)},
+			{"id": "flotation_tank_wide", "name": "Flotation tank (wide 2x, Line 3C/6)", "category": "Separation", "size": Vector3(6.0, 5.0, 9.0),  "color": Color(0.32, 0.46, 0.56)},
 			{"id": "sink_float",     "name": "Bezinkafscheider",   "category": "Separation","size": Vector3(2.6, 2.0, 4.0),"color": Color(0.34, 0.46, 0.50)},
 			{"id": "friction_sep",   "name": "Friction separator", "category": "Separation", "size": Vector3(1.8, 2.0, 4.5),  "color": Color(0.52, 0.54, 0.58)},
 			{"id": "dewater_screw",  "name": "Dewatering screw",   "category": "Separation", "size": Vector3(1.2, 2.6, 4.5),  "color": Color(0.56, 0.58, 0.62)},
@@ -364,9 +366,18 @@ static func items() -> Array[Dictionary]:
 			})
 	return _items
 
+## Map any legacy ID to its current canonical ID. Returned unchanged if no alias.
+## Used so existing saves that wrote `intake_belt_3` keep loading after the
+## #141 rename to `transportband_3`. Add a single line here for any future rename.
+static func _canonical_id(id: String) -> String:
+	if id.begins_with("intake_belt_"):
+		return "transportband_" + id.substr("intake_belt_".length())
+	return id
+
 static func get_item(id: String) -> Dictionary:
+	var canon : String = _canonical_id(id)
 	for it in items():
-		if it["id"] == id:
+		if it["id"] == canon:
 			return it
 	return {}
 
@@ -701,8 +712,24 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 		return null
 
 	# Hand tools — spawn the real tool node (or a translucent box for the ghost). #28
+	# Mirrors the opzetband fix at line ~786: tag placeable_id + placed_object so
+	# BuildMode's K-edit / delete / save-load can find tools after placement.
+	# Belt-carry tag + BeltSurface only attach if the catalog item actually marks
+	# this tool as a belt (none currently do, but the guard keeps the path safe).
 	if id.begins_with("tool_"):
-		return _build_tool(id, Vector3(item["size"]), ghost)
+		var tn : Node3D = _build_tool(id, Vector3(item["size"]), ghost)
+		if tn != null and not ghost:
+			tn.set_meta("placeable_id", id)
+			tn.add_to_group("placed_object")
+			if bool(item.get("belt", false)):
+				if not tn.is_in_group("belt"):
+					tn.add_to_group("belt")
+				var deck : StaticBody3D = tn.get_node_or_null("Deck") as StaticBody3D
+				if deck != null and deck.get_node_or_null("BeltSurface") == null:
+					var bs : Node = load("res://src/build/BeltSurface.gd").new()
+					bs.name = "BeltSurface"
+					deck.add_child(bs)
+		return tn
 	# #116 — door / gate / window catalog placeables (NOT carved into a wall
 	# here; the operator drops them into a pre-existing hole). Builders are
 	# shared with the 4-point Surface tool, so behaviour + collision + paint
@@ -761,14 +788,69 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 	if id.ends_with("_stack5"):
 		return _build_bale_stack(id.trim_suffix("_stack5"), ghost)
 	# Collection zone for the leaf blower (just an Area3D; ghost is a flat translucent slab).
+	# D4 fix (mirrors the opzetband patch ~line 802): tag the returned node
+	# with placeable_id + placed_object group BEFORE returning, otherwise
+	# BuildMode's K-edit / delete / save-load pipelines can't see the zone.
+	# Not a belt — no group("belt") or BeltSurface attachment needed.
 	if id == "zone_collection":
-		return _build_collection_zone(Vector3(item["size"]), ghost)
+		var cz : Node3D = _build_collection_zone(Vector3(item["size"]), ghost)
+		if cz != null and not ghost:
+			cz.set_meta("placeable_id", id)
+			cz.add_to_group("placed_object")
+		return cz
 	# Test pile of loose film scraps (so the operator can practice blowing them around).
+	# D4 fix (mirrors opzetband / zone_collection pattern): tag the returned
+	# node with placeable_id + placed_object group BEFORE returning, otherwise
+	# BuildMode's K-edit / delete / save-load pipelines can't see the pile at
+	# all (the early return skipped the generic body's tagging at line ~895).
+	# Not a belt — no group("belt") or BeltSurface attachment needed.
 	if id == "film_scrap_pile":
-		return _build_scrap_pile(Vector3(item["size"]), ghost)
+		var pile : Node3D = _build_scrap_pile(Vector3(item["size"]), ghost)
+		if pile != null and not ghost:
+			pile.set_meta("placeable_id", id)
+			pile.add_to_group("placed_object")
+		return pile
 	# Opzetbanden — feed-belt variants per operator spec (4 specific geometries).
+	# D4 fix: tag the returned node with placeable_id + placed_object group
+	# BEFORE returning. Without these, BuildMode's K-edit / delete / save-load
+	# pipelines can't see the opzetband at all (the early return skipped the
+	# generic body's tagging at line ~895). Also attach a BeltSurface so dropped
+	# material is physically carried.
 	if id == "opzetband_3a3b" or id == "opzetband_3c6" or id == "westa_band_1" or id == "opzetband_1":
-		return _build_opzetband(id, Vector3(item["size"]), ghost)
+		var op : Node3D = _build_opzetband(id, Vector3(item["size"]), ghost)
+		if op != null and not ghost:
+			op.set_meta("placeable_id", id)
+			op.add_to_group("placed_object")
+			# Light belt carry tag so the legacy belt-carry fallback in
+			# PlayerController.gd:249 also drags the operator. Real belt
+			# surfaces are inside the opzetband sub-tree (deck StaticBody3D).
+			if not op.is_in_group("belt"):
+				op.add_to_group("belt")
+			# #conveyorphysics — attach BeltSurface to the deck StaticBody3D
+			# inside the opzetband sub-tree so RigidBody3Ds dropped on the belt
+			# get dragged by constant_linear_velocity (same treatment as the
+			# generic belt path at ~line 867-877). The deck is exposed by the
+			# ShredderFeedBelt script as `_belt_body`. Skip if already scripted.
+			#
+			# #172-opzetband — DO NOT use the generic _BELT_CARRY_SPEED (0.4 m/s)
+			# here: opzetband is a portion-feeder ramp tuned to a slow creep
+			# (ShredderFeedBelt.belt_speed = 0.12 m/s per operator). The previous
+			# override was ~3.3× too fast and the player was getting dragged at
+			# transport-belt speed while the slat shader scrolled at the creep
+			# speed — visual lied, physics lied differently, three sources of
+			# truth. Read the live belt_speed off the ShredderFeedBelt so the
+			# BeltSurface physical carry, the legacy meta, the rider-bale travel,
+			# and the shader scroll all come from a single number.
+			var deck_body : StaticBody3D = op.get("_belt_body") as StaticBody3D
+			if deck_body != null and is_instance_valid(deck_body) and deck_body.get_script() == null:
+				var belt_script_op : Resource = load("res://src/sim/BeltSurface.gd")
+				if belt_script_op != null:
+					var op_speed : float = float(op.get("belt_speed"))
+					deck_body.set_script(belt_script_op)
+					deck_body.set("belt_speed_mps", op_speed)
+					deck_body.add_to_group("belt")
+					deck_body.set_meta("belt_speed", op_speed)
+		return op
 
 	var size: Vector3 = item["size"]
 	var color: Color  = item["color"]
@@ -834,7 +916,7 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 	# belts get this — non-belt machines stay solid ground. Intake transportbands
 	# (1..12) and the switch belt run a different m/s than the generic belts and
 	# are detected by id prefix so we don't have to list all 13 explicitly.
-	var _is_intake : bool = id.begins_with("intake_belt_") or id == "switch_belt"
+	var _is_intake : bool = id.begins_with("transportband_") or id == "switch_belt"
 	if not ghost and (id in _BELT_IDS or _is_intake):
 		body.add_to_group("belt")
 		var carry : float = _INTAKE_BELT_SPEED_MPS if _is_intake else _BELT_CARRY_SPEED
@@ -1033,9 +1115,9 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 		"inclined_belt_8m":_m_inclined_belt(p, size, color, ghost)
 		"feed_hopper":    _m_feed_hopper(p, size, color, ghost)
 		# #54 intake conveyor network — 12 distinct belts + diverter + buffers.
-		"intake_belt_1", "intake_belt_2", "intake_belt_3", "intake_belt_4", \
-		"intake_belt_5", "intake_belt_6", "intake_belt_7", "intake_belt_8", "intake_belt_8_5", \
-		"intake_belt_9", "intake_belt_10", "intake_belt_11", "intake_belt_12":
+		"transportband_1", "transportband_2", "transportband_3", "transportband_4", \
+		"transportband_5", "transportband_6", "transportband_7", "transportband_8", "transportband_8_5", \
+		"transportband_9", "transportband_10", "transportband_11", "transportband_12":
 			_m_intake_belt(p, id, size, color, ghost)
 		"switch_belt":    _m_switch_belt(p, size, color, ghost)
 		"vss_silo":       _m_vss_silo(p, size, color, ghost)
@@ -1187,6 +1269,54 @@ static func make_belt_material(scroll_speed: float = 0.8,
 	m.set_shader_parameter("scroll_speed",   scroll_speed)
 	m.set_shader_parameter("uv_tile",        tile)
 	m.set_shader_parameter("uv_offset",      Vector2.ZERO)
+	return m
+
+# ── Roller stripe texture (#214 spin visibility) ──────────────────────────────
+## Procedural radial-stripe texture for end rollers. CylinderMesh's default UV
+## wraps U around the circumference, so vertical stripes in the texture become
+## RADIAL stripes around the cylinder — exactly what the operator asked for so
+## that roller spin is visible at any distance. 6 dark + 6 light bands give
+## ~30° of arc per stripe: chunky enough to read across the floor without
+## reading as moiré on close-up. The texture is cached statically, shared by
+## every belt's roller mesh.
+static var _roller_stripe_tex : ImageTexture = null
+const _ROLLER_STRIPE_TEX_W : int = 96    # circumferential resolution (12 bands × 8 px)
+const _ROLLER_STRIPE_TEX_H : int = 8     # axial resolution (small — stripes are vertical so axial is constant)
+const _ROLLER_STRIPE_COUNT : int = 6     # 6 dark stripes around the drum (12 bands total counting the light gaps)
+
+static func _roller_stripe_texture() -> ImageTexture:
+	if _roller_stripe_tex != null:
+		return _roller_stripe_tex
+	var img := Image.create(_ROLLER_STRIPE_TEX_W, _ROLLER_STRIPE_TEX_H, false, Image.FORMAT_RGB8)
+	var bands : int = _ROLLER_STRIPE_COUNT * 2   # alternating dark/light bands
+	var band_w : int = _ROLLER_STRIPE_TEX_W / bands
+	# Dark = nearly-black rubber drum surface; light = exposed metal stripe paint.
+	# High contrast so spin reads from across the gauntlet platform.
+	var dark : Color = Color(0.06, 0.06, 0.07)
+	var light : Color = Color(0.94, 0.94, 0.92)
+	for x in _ROLLER_STRIPE_TEX_W:
+		var band_idx : int = x / band_w
+		var is_dark : bool = (band_idx % 2) == 0
+		var col : Color = dark if is_dark else light
+		for y in _ROLLER_STRIPE_TEX_H:
+			img.set_pixel(x, y, col)
+	_roller_stripe_tex = ImageTexture.create_from_image(img)
+	return _roller_stripe_tex
+
+## A StandardMaterial3D that paints the end-roller cylinder with 6 radial
+## dark/light stripes so the operator can SEE the roller spinning. Used by
+## BeltBuilder.build_rollers() in place of the plain dark material.
+static func make_roller_stripe_material(ghost: bool = false) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = _roller_stripe_texture()
+	m.metallic = 0.35
+	m.roughness = 0.55
+	# Texture filter — nearest gives crisp stripe edges; linear washes them out
+	# at distance into a uniform mid-grey that hides the spin entirely.
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	if ghost:
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.albedo_color = Color(1, 1, 1, 0.40)
 	return m
 
 static func _mat(c: Color, ghost: bool, metallic: float = 0.15, rough: float = 0.7) -> StandardMaterial3D:
@@ -1467,6 +1597,38 @@ static func _spinning_cyl(parent: Node3D, r_top: float, r_bot: float, length: fl
 	_cyl(rm, r_top, r_bot, length, Vector3.ZERO, mat, cyl_axis)
 	return rm
 
+## Attach N radial blades to a spinning shaft node (returned by _spinning_cyl).
+## Shaft axis is X (matches the flotation paddle layout). Blades are flat slats
+## oriented along the shaft length, spaced evenly around the shaft, anchored at
+## the shaft centre so a quarter-turn flips them through the water surface.
+##   shaft           — the parent RotatingMechanism node from _spinning_cyl
+##   n               — number of blades (typically 4)
+##   blade_len_x     — slat length along the shaft (X)
+##   blade_t         — slat thickness (radial direction at the blade plane)
+##   blade_radial    — how far the blade extends from the shaft centreline
+##   mat             — material to use
+static func _attach_paddle_blades(shaft: Node3D, n: int, blade_len_x: float,
+		blade_t: float, blade_radial: float, mat: StandardMaterial3D) -> void:
+	if shaft == null or n <= 0:
+		return
+	for i in n:
+		var ang : float = TAU * float(i) / float(n)
+		# Blade local frame: shaft is along X. Each blade is a thin slab in the
+		# Y-Z plane (size along X = blade_len_x, thickness in radial dir, span = 2 * blade_radial).
+		var b := _box(shaft, Vector3(blade_len_x, blade_t, blade_radial * 2.0),
+				Vector3.ZERO, mat)
+		# Offset along the radial direction so the blade's inner edge sits at the
+		# shaft surface (centre + half-span outward). Combined with rotation_x = ang,
+		# the blades fan out evenly around the X axis.
+		b.position = Vector3(0.0, 0.0, 0.0)
+		b.rotation.x = ang
+		# Push the blade outward along the post-rotation Y so it's centred on its
+		# own half-span (otherwise the blade straddles the shaft instead of
+		# extending out from it).
+		b.position = Vector3(0.0,
+				cos(ang) * blade_radial * 0.5,
+				sin(ang) * blade_radial * 0.5)
+
 ## Like _spinning_cyl but for a _tube (closed drum shell, e.g. a trommel). Returns
 ## the RotatingMechanism so the caller can parent drive-bands/cleats under it.
 static func _spinning_tube(parent: Node3D, radius: float, length: float, pos: Vector3, mat: StandardMaterial3D, rot_x: float, spin_axis: Vector3, ghost: bool, rpm: float = 30.0) -> Node3D:
@@ -1518,6 +1680,48 @@ static func _m_overband_magnet(p: Node3D, size: Vector3, _color: Color, ghost: b
 # ── Coarse scraper conveyor (#156): submerged horizontal drag along a tank
 #    bottom, climbing a ~50° incline, discharging off the top into a chute ──────
 static func _m_scraper_conveyor(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> void:
+	# Migrated to BeltBuilder. The scraper-conveyor is a bespoke combo geometry
+	# (submerged horizontal trough at -Z half + ~50° inclined upper section +
+	# discharge chute + two RotatingMechanism sprockets with flight bars). The
+	# 'submerged_trough' deck_kind and 'submerged_trough_water'/'scraper_flight_bars'
+	# decoration tokens are reserved in BeltBuilder for a future revision but
+	# are currently stubs in apply_decorations — so all visual geometry is
+	# delivered through a single `extras` callable that replays the legacy
+	# build verbatim. Standard pipeline parts (legs/deck-skin/rollers/rails/
+	# motor/chute) are forced to no-op via the spec; deck_kind='none' makes
+	# build_deck() early-return (no degenerate deck_skin box) so build_internal
+	# emits ONLY the geometry our extras callable spawns. Visual result is
+	# byte-equivalent to the pre-migration function. tag_as_belt = true
+	# preserves the 'belt' group + BeltSurface script + belt_speed meta wiring
+	# (matches the legacy _BELT_IDS dispatch path).
+	var spec : Dictionary = BeltBuilder.make_spec()
+	# Suppress every standard pipeline part — extras builds everything.
+	spec.deck_kind = "none"           # build_deck() early-returns; no deck_skin box
+	spec.rollers = "none"
+	spec.side_rails = "none"
+	spec.has_legs = false
+	spec.motor = "none"
+	spec.chute = "none"
+	# Standard tagging — same belt_speed as before (_BELT_CARRY_SPEED via _BELT_IDS).
+	spec.belt_speed_mps = _BELT_CARRY_SPEED
+	spec.tag_as_belt = true
+	# Legacy verbatim geometry — submerged trough + water slab + inclined upper
+	# section + discharge chute + scraper sprockets with flight bars + legs.
+	# Verifier blocker: `self` is invalid in a static func. Must bind to the
+	# class itself, matching switch_belt/compactor_belt/inclined_belt — otherwise
+	# the Callable resolves to null and BeltBuilder silently skips the entire
+	# bespoke scraper geometry (trough/water/sprockets/flights/chute), leaving
+	# only an invisible collision body.
+	spec.extras = [Callable(PlaceableCatalog, "_scraper_conveyor_extras")]
+	BeltBuilder.build(p, "scraper_conveyor", size, spec, ghost)
+
+# Extras callable for scraper_conveyor — invoked by BeltBuilder after standard
+# (here all-suppressed) geometry. Signature: (p, deck_root, size, spec, ghost).
+# Reproduces the legacy _m_scraper_conveyor body byte-for-byte: legs, submerged
+# horizontal trough (-Z half), shallow water slab, inclined steel deck climbing
+# +Z at 50°, discharge chute at the top, two RotatingMechanism sprockets with
+# 3-arm flight bars.
+static func _scraper_conveyor_extras(p: Node3D, _deck_root: Node3D, size: Vector3, _spec: Dictionary, ghost: bool) -> void:
 	var steel := _mat(_STEEL, ghost, 0.5, 0.4)
 	var dark := _mat(_DARK, ghost, 0.4, 0.6)
 	var water := _mat(Color(0.20, 0.40, 0.34, 0.6), ghost, 0.0, 0.2)
@@ -1905,17 +2109,19 @@ static func _install_steam_plume(parent: Node3D, local_pos: Vector3,
 		radius: float, height: float, tint: Color, ghost: bool) -> void:
 	if ghost or parent == null:
 		return
+	# #182 — overhauled per operator: opaque white "burning blob" became soft
+	# light-grey volumetric puffs that respond to the player walking through.
 	var emitter := GPUParticles3D.new()
 	emitter.name = "SteamPlume"
-	emitter.amount = 28
-	emitter.lifetime = 2.5
+	emitter.amount = 40
+	emitter.lifetime = 5.0                          # longer-lived → more overlap → reads as volumetric
 	emitter.one_shot = false
-	emitter.preprocess = 1.0
+	emitter.preprocess = 2.0
 	emitter.explosiveness = 0.0
 	emitter.fixed_fps = 30
 	emitter.visibility_aabb = AABB(
-		Vector3(-radius * 4.0, 0.0, -radius * 4.0),
-		Vector3( radius * 8.0, height + 2.0, radius * 8.0))
+		Vector3(-radius * 6.0, 0.0, -radius * 6.0),
+		Vector3( radius * 12.0, height + 4.0, radius * 12.0))
 	var pm := ParticleProcessMaterial.new()
 	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_RING
 	pm.emission_ring_radius = radius
@@ -1923,45 +2129,96 @@ static func _install_steam_plume(parent: Node3D, local_pos: Vector3,
 	pm.emission_ring_axis = Vector3.UP
 	pm.emission_ring_height = 0.02
 	pm.direction = Vector3.UP
-	pm.spread = 18.0
-	pm.initial_velocity_min = height * 0.45
-	pm.initial_velocity_max = height * 0.75
-	pm.gravity = Vector3(0.0, 0.6, 0.0)            # buoyant — drifts up, not down
-	pm.scale_min = radius * 0.9
-	pm.scale_max = radius * 1.8
-	# Steam grows as it cools / mixes with air → larger blobs at end of life.
+	pm.spread = 22.0
+	pm.initial_velocity_min = height * 0.18         # SLOWER rise → fluffier column
+	pm.initial_velocity_max = height * 0.32
+	pm.gravity = Vector3(0.0, 0.35, 0.0)            # gentle buoyancy
+	pm.damping_min = 0.4
+	pm.damping_max = 0.8
+	pm.scale_min = radius * 1.2
+	pm.scale_max = radius * 2.4
+	# Expanding scale curve — fluffier at the end of life.
 	var sc := Curve.new()
-	sc.add_point(Vector2(0.0, 0.4))
-	sc.add_point(Vector2(0.6, 1.0))
-	sc.add_point(Vector2(1.0, 1.4))
+	sc.add_point(Vector2(0.0, 0.35))
+	sc.add_point(Vector2(0.5, 1.0))
+	sc.add_point(Vector2(1.0, 1.8))
 	pm.scale_curve = CurveTexture.new()
 	(pm.scale_curve as CurveTexture).curve = sc
-	# Opacity fades in then out so the plume reads as soft, not solid blobs.
+	# Operator note: light grey (NOT pure white) with a soft alpha gradient that
+	# fades to 0 across the lifetime — the previous 0.55 plateau read as opaque.
+	var col_tint := Color(0.85, 0.88, 0.92)         # cool light-grey water-steam
+	# Caller's `tint` is honoured as a slight nudge so extruder vs dryer still
+	# read differently, but only at low weight so they stay translucent.
+	col_tint = col_tint.lerp(tint, 0.25)
 	var grad := Gradient.new()
-	grad.set_color(0, Color(tint.r, tint.g, tint.b, 0.0))
-	grad.set_color(1, Color(tint.r, tint.g, tint.b, 0.55))
-	grad.add_point(0.18, Color(tint.r, tint.g, tint.b, 0.55))
-	grad.add_point(0.85, Color(tint.r, tint.g, tint.b, 0.20))
+	grad.set_color(0, Color(col_tint.r, col_tint.g, col_tint.b, 0.0))
+	grad.set_color(1, Color(col_tint.r, col_tint.g, col_tint.b, 0.0))
+	grad.add_point(0.15, Color(col_tint.r, col_tint.g, col_tint.b, 0.22))
+	grad.add_point(0.55, Color(col_tint.r, col_tint.g, col_tint.b, 0.18))
+	grad.add_point(0.90, Color(col_tint.r, col_tint.g, col_tint.b, 0.06))
 	var gt := GradientTexture1D.new()
 	gt.gradient = grad
 	pm.color_ramp = gt
 	emitter.process_material = pm
-	# Sphere mesh as the particle billboard — cheap, reads as a soft puff.
+	# Soft sphere puffs.
 	var sm := SphereMesh.new()
 	sm.radius = 0.5
 	sm.height = 1.0
-	sm.radial_segments = 8
-	sm.rings = 4
+	sm.radial_segments = 10
+	sm.rings = 5
 	var pmat := StandardMaterial3D.new()
 	pmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	pmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	pmat.blend_mode = BaseMaterial3D.BLEND_MODE_MIX
 	pmat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	pmat.albedo_color = tint
+	pmat.albedo_color = col_tint
+	pmat.albedo_color.a = 1.0                       # gradient controls per-particle alpha
 	pmat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	# depth_test stays on so geometry occludes correctly; the soft-particle fade
+	# below keeps the plume from showing a sharp seam where it intersects walls.
+	pmat.no_depth_test = false
+	# Camera-side fade — close puffs fade out so flying through doesn't render a
+	# wall-of-white right on the lens.
+	pmat.distance_fade_mode = BaseMaterial3D.DISTANCE_FADE_PIXEL_ALPHA
+	pmat.distance_fade_min_distance = 0.4
+	pmat.distance_fade_max_distance = 1.6
 	sm.material = pmat
 	emitter.draw_pass_1 = sm
 	emitter.position = local_pos
 	parent.add_child(emitter)
+	# Player-passage disturbance: an Area3D that, while a body is inside, bumps
+	# the emitter's spread + radial velocity outward so the column visibly
+	# breaks. Cheaper than a real fluid sim and answers "not volumetric".
+	var disturb := Area3D.new()
+	disturb.name = "PlumeDisturb"
+	disturb.position = Vector3(local_pos.x, local_pos.y + height * 0.5, local_pos.z)
+	disturb.collision_mask = 1
+	disturb.monitoring = true
+	var dcs := CollisionShape3D.new()
+	var dsh := SphereShape3D.new()
+	dsh.radius = maxf(radius * 4.0, 1.2)
+	dcs.shape = dsh
+	disturb.add_child(dcs)
+	parent.add_child(disturb)
+	disturb.body_entered.connect(func(_b: Node3D) -> void:
+		if not is_instance_valid(emitter):
+			return
+		var ppm : ParticleProcessMaterial = emitter.process_material as ParticleProcessMaterial
+		if ppm == null:
+			return
+		ppm.spread = 60.0
+		ppm.radial_accel_min = 1.2
+		ppm.radial_accel_max = 2.2
+		emitter.amount_ratio = 1.0)
+	disturb.body_exited.connect(func(_b: Node3D) -> void:
+		if not is_instance_valid(emitter):
+			return
+		var ppm : ParticleProcessMaterial = emitter.process_material as ParticleProcessMaterial
+		if ppm == null:
+			return
+		ppm.spread = 22.0
+		ppm.radial_accel_min = 0.0
+		ppm.radial_accel_max = 0.0)
 
 static func _m_dryer(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
 	var galv      := _mat(color, ghost, 0.55, 0.5)                    # galvanised drum
@@ -2060,24 +2317,37 @@ static func _m_centrifuge(p: Node3D, size: Vector3, color: Color, ghost: bool) -
 
 # ── transport belt: end rollers + belt surface + side rails + legs ────────────
 static func _m_belt(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> void:
-	var dark := _mat(_DARK, ghost, 0.3, 0.7)
-	var steel := _mat(_STEEL, ghost, 0.5, 0.45)
-	var hz := size.z * 0.45
-	var deck_y := size.y * 0.75
-	_legs(p, size, deck_y, steel)
-	# end rollers (crosswise along X)
-	_cyl(p, size.y * 0.22, size.y * 0.22, size.x * 0.9, Vector3(0.0, deck_y, hz), dark, "x")
-	_cyl(p, size.y * 0.22, size.y * 0.22, size.x * 0.9, Vector3(0.0, deck_y, -hz), dark, "x")
-	# Belt deck — textured rubber-slat scrolling material so a running belt is
-	# obviously moving and a stopped one is obviously not. Tile.y scales with belt
-	# length so the slat spacing reads consistently across different sizes.
-	var deck := _box(p, Vector3(size.x * 0.82, 0.05, size.z * 0.9),
-		Vector3(0.0, deck_y + size.y * 0.22, 0.0), dark)
-	if not ghost:
-		deck.material_override = make_belt_material(0.6, Vector2(1.0, size.z * 0.5))
-	# side rails
-	_box(p, Vector3(0.06, size.y * 0.18, size.z * 0.95), Vector3(size.x * 0.44, deck_y + size.y * 0.28, 0.0), steel)
-	_box(p, Vector3(0.06, size.y * 0.18, size.z * 0.95), Vector3(-size.x * 0.44, deck_y + size.y * 0.28, 0.0), steel)
+	# Migrated to BeltBuilder — the spec below captures every parameter the
+	# legacy in-function geometry hardcoded:
+	#   deck_kind = 'flat'            (no incline pivot — flat deck)
+	#   deck_y_frac = 0.75            (deck top = size.y * 0.75)
+	#   deck_width_frac = 0.82        (skin = size.x * 0.82 wide)
+	#   deck_thickness_m = 0.05       (skin = 0.05 m tall)
+	#   deck_material = 'DARK'        (legacy used _DARK directly)
+	#   deck_scroll = 0.6             (legacy make_belt_material(0.6, ...))
+	#   deck_uv_tile_y_frac = 0.5     (legacy Vector2(1.0, size.z * 0.5))
+	#   rollers = 'spinning_cyl'      (end rollers spin at omega = v / r)
+	#   roller_radius_frac = 0.22     (legacy size.y * 0.22)
+	#   side_rails = 'steel_simple'   (legacy used _STEEL → _resolve_mat 'STEEL')
+	#   side_rail_thickness_m = 0.06  (legacy 0.06)
+	#   side_rail_height_frac = 0.18  (legacy size.y * 0.18)
+	#   has_legs = true               (legacy _legs(p, size, deck_y, steel))
+	#   leg_style = 'simple'          (standard 4-leg frame)
+	#   leg_material = 'STEEL'        (legacy used _STEEL)
+	#   motor = 'none' / chute = 'none' / decorations = []  (legacy had none)
+	#   belt_speed_mps = _BELT_CARRY_SPEED (0.4 m/s — roller rpm matches)
+	# Every field above is the BeltBuilder.make_spec() default — so the entire
+	# transport_belt visual collapses to the bare default spec.
+	#
+	# _m_belt is called from _build_model with `p` = the Model Node3D (NOT the
+	# body). build_node() handles the 'belt' group + 'belt_speed' meta + the
+	# BeltSurface script attachment on the BODY at a higher scope, so we use
+	# build_internal() here — which builds the visual only and skips
+	# apply_tagging() / placeable_id meta. Result is byte-for-byte equivalent
+	# to the legacy in-function geometry: 4 legs, 2 spinning end rollers,
+	# 1 scrolling deck skin, 2 steel side rails.
+	var spec : Dictionary = BeltBuilder.make_spec()
+	BeltBuilder.build_internal(p, "transport_belt", size, spec, ghost)
 
 # ── funnel: wide top cone narrowing to a spout — drops material from a machine
 # outlet into the next machine's inlet. Base at the local origin. ──────────────
@@ -2149,7 +2419,7 @@ static func _bay_wall(p: Node3D, length: float, height: float, thick: float, cen
 # to the switch belt. Each is a shared frame (rollers + slats + side rails)
 # whose length, height, incline, and trim colour comes from the id-keyed spec
 # table — that's what makes them visually distinct without 12 separate builders.
-static func _intake_belt_spec(id: String) -> Dictionary:
+static func _transportband_spec(id: String) -> Dictionary:
 	# (incline_deg, side_trim_color)
 	# Incline is applied as a rotation about the X axis of the deck assembly so
 	# the upstream end (-Z) sits lower or higher than the downstream end (+Z).
@@ -2159,94 +2429,70 @@ static func _intake_belt_spec(id: String) -> Dictionary:
 		# "flat" 0° values used to be wrong. Switch belt (12) stays at 0° because
 		# its whole deck slides along its conveying axis for the VSS feed-split,
 		# and an incline would fight that mechanism.
-		"intake_belt_1":  return {"incline": 5.0,   "rail": Color(0.65, 0.55, 0.18)}
-		"intake_belt_2":  return {"incline": 5.0,   "rail": Color(0.20, 0.20, 0.22)}
-		"intake_belt_3":  return {"incline": 10.0,  "rail": Color(0.20, 0.20, 0.22)}
-		"intake_belt_4":  return {"incline": 8.0,   "rail": Color(0.25, 0.50, 0.80)}
-		"intake_belt_5":  return {"incline": 15.0,  "rail": Color(0.20, 0.20, 0.22)}
-		"intake_belt_6":  return {"incline": 6.0,   "rail": Color(0.40, 0.40, 0.42)}
-		"intake_belt_7":  return {"incline": 5.0,   "rail": Color(0.85, 0.75, 0.18)}
-		"intake_belt_8":  return {"incline": -8.0,  "rail": Color(0.30, 0.30, 0.32)}
+		"transportband_1":  return {"incline": 5.0,   "rail": Color(0.65, 0.55, 0.18)}
+		"transportband_2":  return {"incline": 5.0,   "rail": Color(0.20, 0.20, 0.22)}
+		"transportband_3":  return {"incline": 10.0,  "rail": Color(0.20, 0.20, 0.22)}
+		"transportband_4":  return {"incline": 8.0,   "rail": Color(0.25, 0.50, 0.80)}
+		"transportband_5":  return {"incline": 15.0,  "rail": Color(0.20, 0.20, 0.22)}
+		"transportband_6":  return {"incline": 6.0,   "rail": Color(0.40, 0.40, 0.42)}
+		"transportband_7":  return {"incline": 5.0,   "rail": Color(0.85, 0.75, 0.18)}
+		"transportband_8":  return {"incline": -8.0,  "rail": Color(0.30, 0.30, 0.32)}
 		# C8.5: slight DOWNHILL toward the U-bay (material is dropped on by C8 and
 		# slides toward the bay). Brown rail matches the catalog colour so it reads
 		# as a different belt from the numbered chain even at distance.
-		"intake_belt_8_5":return {"incline": -6.0,  "rail": Color(0.52, 0.36, 0.18)}
-		"intake_belt_9":  return {"incline": 4.0,   "rail": Color(0.42, 0.42, 0.46)}
-		"intake_belt_10": return {"incline": 5.0,   "rail": Color(0.25, 0.60, 0.35)}
-		"intake_belt_11": return {"incline": 12.0,  "rail": Color(0.20, 0.20, 0.22)}
-		"intake_belt_12": return {"incline": 0.0,   "rail": Color(0.55, 0.55, 0.60)}
+		"transportband_8_5":return {"incline": -6.0,  "rail": Color(0.52, 0.36, 0.18)}
+		"transportband_9":  return {"incline": 4.0,   "rail": Color(0.42, 0.42, 0.46)}
+		"transportband_10": return {"incline": 5.0,   "rail": Color(0.25, 0.60, 0.35)}
+		"transportband_11": return {"incline": 12.0,  "rail": Color(0.20, 0.20, 0.22)}
+		"transportband_12": return {"incline": 0.0,   "rail": Color(0.55, 0.55, 0.60)}
 	return {"incline": 0.0, "rail": Color(0.30, 0.30, 0.34)}
 
 static func _m_intake_belt(p: Node3D, id: String, size: Vector3, _color: Color, ghost: bool) -> void:
-	var spec : Dictionary = _intake_belt_spec(id)
-	var incline_deg : float = float(spec["incline"])
-	var rail_color : Color = spec["rail"]
-	var dark   := _mat(_DARK, ghost, 0.3, 0.7)
-	var steel  := _mat(_STEEL, ghost, 0.5, 0.45)
-	var rail_m := _mat(rail_color, ghost, 0.5, 0.45)
-	var hz := size.z * 0.45
-	var deck_y := size.y * 0.75
-	# Static support legs (vertical) — the deck above them tilts, the legs don't.
-	_legs(p, size, deck_y, steel)
-	# Deck pivot — rotated child carries the rollers, slats, and rails together
-	# so the whole moving assembly tilts as one rigid body. Sign convention: a
-	# positive incline_deg means the +Z (downstream / outlet) end goes UP, so
-	# material conveyed in +Z rises. Earlier `+deg_to_rad(incline_deg)` was the
-	# wrong sign and tilted the outlet DOWN — the user spotted it as "the
-	# incline is also not correct" on belts 3/5/11.
-	var deck_pivot := Node3D.new()
-	deck_pivot.name = "DeckPivot"
-	deck_pivot.position = Vector3(0.0, deck_y, 0.0)
-	deck_pivot.rotation = Vector3(-deg_to_rad(incline_deg), 0.0, 0.0)
-	p.add_child(deck_pivot)
-	# End rollers
-	_cyl(deck_pivot, size.y * 0.20, size.y * 0.20, size.x * 0.9, Vector3(0.0, 0.0,  hz), dark, "x")
-	_cyl(deck_pivot, size.y * 0.20, size.y * 0.20, size.x * 0.9, Vector3(0.0, 0.0, -hz), dark, "x")
-	# Belt deck — textured rubber-slat scrolling material, like _m_belt. The
-	# shader scroll is derived from _INTAKE_BELT_SPEED_MPS so the visible
-	# surface speed equals what the player-carry meta says it does (0.5 m/s
-	# downstream). Was -0.6 (apparent 1.2 m/s) and the carry meta wasn't even
-	# set — visual lied, physics didn't fire. uv_tile.y = size.z * 0.5 keeps
-	# the apparent m/s constant regardless of belt length.
-	var deck := _box(deck_pivot, Vector3(size.x * 0.82, 0.05, size.z * 0.9),
-		Vector3(0.0, size.y * 0.22, 0.0), dark)
-	if not ghost:
-		deck.material_override = make_belt_material(_INTAKE_BELT_SHADER_SCROLL,
-			Vector2(1.0, size.z * 0.5))
-	# Side rails in the per-belt accent colour — what makes each belt distinct.
-	_box(deck_pivot, Vector3(0.08, size.y * 0.22, size.z * 0.95),
-		Vector3( size.x * 0.44, size.y * 0.28, 0.0), rail_m)
-	_box(deck_pivot, Vector3(0.08, size.y * 0.22, size.z * 0.95),
-		Vector3(-size.x * 0.44, size.y * 0.28, 0.0), rail_m)
-	# A small motor housing on the upstream end for visual variety per belt.
-	_box(deck_pivot, Vector3(size.x * 0.20, size.y * 0.30, size.x * 0.25),
-		Vector3(size.x * 0.55, size.y * 0.10, -hz * 0.6), steel)
-	# #141 — discharge chute at the +Z (outlet) end. Four thin steel walls,
-	# OPEN top AND open bottom (~25 cm), so material drops out of this belt
-	# down into the next one's inlet. The chute is parented to `p` (not the
-	# deck_pivot) so it hangs vertically regardless of the deck's tilt — same
-	# way a real plant chute is bolted to the belt frame, not the moving deck.
-	var chute_w  : float = 0.30
-	var chute_d  : float = 0.30
-	var chute_h_local : float = 0.25
-	var chute_t  : float = 0.015
-	# Chute sits AT the belt's +Z end (just past the outlet pulley), not 10 %
-	# inside the body — that way it hangs over empty space and visibly drops
-	# material into whatever is placed next, instead of clipping into the deck.
-	var outlet_z : float = size.z * 0.50
-	# The deck end at +Z rises by hz * sin(incline) when the deck pivots; the
-	# chute top sits a bit below that level so material clears the pulley.
-	var outlet_y_off : float = hz * sin(deg_to_rad(incline_deg))
-	var chute_top_y  : float = deck_y + outlet_y_off + size.y * 0.22 - 0.04
-	var chute_cy     : float = chute_top_y - chute_h_local * 0.5
-	# Left + right walls along X
-	for sx in [-1.0, 1.0]:
-		_box(p, Vector3(chute_t, chute_h_local, chute_d),
-			Vector3(float(sx) * chute_w * 0.5, chute_cy, outlet_z), steel)
-	# Front + back walls along Z
-	for sz_off in [-1.0, 1.0]:
-		_box(p, Vector3(chute_w + chute_t * 2.0, chute_h_local, chute_t),
-			Vector3(0.0, chute_cy, outlet_z + float(sz_off) * chute_d * 0.5), steel)
+	# Migrated to BeltBuilder. The legacy _transportband_spec() table still
+	# supplies the per-id incline + rail accent colour; here we translate that
+	# into a BeltSpec dict that the central builder consumes.
+	#
+	# Legacy behaviour preserved 1:1 — same legs (simple steel, deck_y = size.y *
+	# 0.75), same DeckPivot (tilted about X by -incline_deg), same spinning end
+	# rollers (radius 0.20 * size.y, rpm tracking _INTAKE_BELT_SPEED_MPS), same
+	# 0.82-width deck with the _INTAKE_BELT_SHADER_SCROLL scrolling material,
+	# same painted-accent rails (0.08 thick × 0.22 high × 0.95 length, at ±0.44 *
+	# size.x), same upstream motor housing, same four-wall discharge chute
+	# parented under `p` so it hangs vertical.
+	#
+	# Tagging is left to the existing build_node() block (line 862) which
+	# already adds the body to the 'belt' group, sets belt_speed meta, and
+	# attaches BeltSurface for intake belts. We therefore set tag_as_belt=false
+	# AND has_legs=false would skip BOTH — but we still want legs, so we keep
+	# has_legs=true and only mute tagging to avoid double-tagging.
+	var tspec : Dictionary = _transportband_spec(id)
+	var s : Dictionary = BeltBuilder.make_spec()
+	s.deck_kind = "tilted"
+	s.incline_deg = float(tspec["incline"])
+	s.deck_y_frac = 0.75
+	s.deck_width_frac = 0.82
+	s.deck_thickness_m = 0.05
+	s.deck_material = "DARK"
+	s.deck_scroll = _INTAKE_BELT_SHADER_SCROLL
+	s.deck_uv_tile_y_frac = 0.5
+	s.rollers = "spinning_cyl"
+	s.roller_radius_frac = 0.20
+	s.side_rails = "painted_accent"
+	s.rail_color = tspec["rail"]
+	s.side_rail_thickness_m = 0.08
+	s.side_rail_height_frac = 0.22
+	s.has_legs = true
+	s.leg_style = "simple"
+	s.leg_material = "STEEL"
+	s.motor = "small_housing"
+	s.chute = "discharge_intake"
+	s.chute_size_m = Vector3(0.30, 0.25, 0.30)
+	s.belt_speed_mps = _INTAKE_BELT_SPEED_MPS
+	# Caller (build_node) already tags the body as a belt and attaches
+	# BeltSurface — disable the builder's tagging path so we don't run the same
+	# work twice and (incidentally) overwrite metas the caller already set.
+	s.tag_as_belt = false
+	BeltBuilder.build(p, id, size, s, ghost)
 
 # ── switch_belt (= conveyor 12, operator-spec #137): flat belt whose ENTIRE
 #    DECK slides along its conveying axis ±1.5 m, feeding either VSS_3A
@@ -2255,46 +2501,63 @@ static func _m_intake_belt(p: Node3D, id: String, size: Vector3, _color: Color, 
 #    "Deck" node moves. A pair of position-rail markers along the chassis
 #    show how far the deck has jogged off-centre.
 static func _m_switch_belt(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> void:
-	var dark   := _mat(_DARK, ghost, 0.3, 0.7)
-	var steel  := _mat(_STEEL, ghost, 0.5, 0.45)
+	# Migrated to BeltBuilder (see BeltBuilder.gd). The spec captures every
+	# legacy magic number 1:1 — deck_y_frac 0.72, deck_width_frac 0.85, deck_t
+	# 0.05, scrolling belt material (scroll 0.6, uv_y_frac 0.5), static cyl
+	# rollers of radius 0.18 * size.y, deck-side steel rails (0.08 ×
+	# 0.20 * size.y × 0.95 * size.z), standard 4-leg steel frame, sliding inner
+	# 'Deck' Node3D for SwitchBelt.gd, and the 'switch_belt' marker meta via
+	# the decoration token.
+	#
+	# Two switch-belt features are NOT covered by BeltBuilder primitives and
+	# run through the `extras` callable below:
+	#   1. Orange position-rail chassis housings (parented to `p`, NOT the
+	#      sliding Deck — they stay rigid while the deck jogs through them).
+	#
+	# Tagging contract is left to PlaceableCatalog.build_node()'s existing
+	# belt-tagging block (around line 862) — tag_as_belt=false here avoids
+	# double-tagging while the rest of the belt family is still on the legacy
+	# path. The 'switch_belt' marker meta IS written by BeltBuilder via the
+	# 'switch_belt_marker_meta' decoration, preserving the legacy contract for
+	# LineFlow.
+	var spec := BeltBuilder.make_spec()
+	spec.deck_kind = "flat"
+	spec.deck_y_frac = 0.72
+	spec.deck_width_frac = 0.85
+	spec.deck_thickness_m = 0.05
+	spec.deck_material = "DARK"
+	spec.deck_scroll = 0.6
+	spec.deck_uv_tile_y_frac = 0.5
+	spec.sliding_deck = true            # builds inner 'Deck' Node3D
+	spec.rollers = "static_cyl"         # legacy used non-spinning _cyl
+	spec.roller_radius_frac = 0.18
+	spec.side_rails = "steel_simple"
+	spec.side_rail_thickness_m = 0.08
+	spec.side_rail_height_frac = 0.20
+	spec.has_legs = true
+	spec.leg_style = "simple"
+	spec.leg_material = "STEEL"
+	spec.motor = "none"
+	spec.chute = "none"
+	spec.decorations = ["switch_belt_marker_meta"]   # sets meta('switch_belt')
+	spec.extras = [Callable(PlaceableCatalog, "_switch_belt_chassis_extras")]
+	spec.tag_as_belt = false            # build_node() still owns belt tagging
+	BeltBuilder.build(p, "switch_belt", size, spec, ghost)
+
+# `extras` callable for switch_belt — builds the two orange position-rail
+# chassis housings under `p` (NOT the sliding Deck root). These are wider than
+# the deck travel range so the operator can see the jog at a glance, and they
+# stay rigid while SwitchBelt.gd translates the Deck child ±1.5 m through them.
+# Signature matches BeltBuilder.build_internal's extras dispatch:
+#   f(p, deck_root, size, spec, ghost).
+static func _switch_belt_chassis_extras(p: Node3D, _deck_root: Node3D,
+		size: Vector3, spec: Dictionary, ghost: bool) -> void:
 	var orange := _mat(Color(0.85, 0.45, 0.10), ghost, 0.4, 0.5)
-	var deck_y := size.y * 0.72
-	# Static chassis bits (legs + position-rail housing). These DON'T jog —
-	# they stay rigid while the deck slides through them.
-	_legs(p, size, deck_y, steel)
-	# Rail housings the deck slides on (chassis-side rails). Wider than the deck
-	# travel so the operator can see the jog at a glance.
+	var deck_y : float = size.y * float(spec.get("deck_y_frac", 0.72))
 	_box(p, Vector3(0.08, size.y * 0.10, size.z * 1.30),
 		Vector3( size.x * 0.48, deck_y - 0.05, 0.0), orange)
 	_box(p, Vector3(0.08, size.y * 0.10, size.z * 1.30),
 		Vector3(-size.x * 0.48, deck_y - 0.05, 0.0), orange)
-
-	# All moving parts go under "Deck" so SwitchBelt.gd can shift them as one.
-	# That includes the two pulleys, the belt skin, and the side rails.
-	var deck_root := Node3D.new()
-	deck_root.name = "Deck"
-	p.add_child(deck_root)
-	_cyl(deck_root, size.y * 0.18, size.y * 0.18, size.x * 0.9,
-		Vector3(0.0, deck_y,  size.z * 0.45), dark, "x")
-	_cyl(deck_root, size.y * 0.18, size.y * 0.18, size.x * 0.9,
-		Vector3(0.0, deck_y, -size.z * 0.45), dark, "x")
-	var deck_skin := _box(deck_root, Vector3(size.x * 0.85, 0.05, size.z * 0.92),
-		Vector3(0.0, deck_y + size.y * 0.20, 0.0), dark)
-	deck_skin.name = "DeckSkin"
-	if not ghost:
-		deck_skin.material_override = make_belt_material(0.6, Vector2(1.0, size.z * 0.5))
-	# Side rails on the deck — these move WITH the deck.
-	_box(deck_root, Vector3(0.08, size.y * 0.20, size.z * 0.95),
-		Vector3( size.x * 0.46, deck_y + size.y * 0.26, 0.0), steel)
-	_box(deck_root, Vector3(0.08, size.y * 0.20, size.z * 0.95),
-		Vector3(-size.x * 0.46, deck_y + size.y * 0.26, 0.0), steel)
-
-	# Tag the body so LineFlow can find this switch belt and drive its jog.
-	# The script attaches itself to whatever Node3D ancestor BuildMode chose
-	# (StaticBody3D by default for Conveyance) — we just leave the marker meta
-	# here; LineFlow attaches the script at machine-register time.
-	if not ghost:
-		p.set_meta("switch_belt", true)
 
 # ── vss_silo: tall round metering silo with a conical bottom and side feed
 #    ports near the top. Smaller cousin of the main extruder silo. ─────────────
@@ -2796,6 +3059,42 @@ static func _m_ringleiding_3a(p: Node3D, size: Vector3, _color: Color, ghost: bo
 ##   feed end at x = -size.x*0.5 (low), discharge at x = +size.x*0.30 (high)
 ##   belt runs along the local X axis, inclined ~28° from horizontal
 static func _m_compactor_belt(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> void:
+	# Migrated to BeltBuilder. The compactor_belt is a Z-axis-rotated inclined
+	# conveyor with bespoke I-beam legs, yellow wire-mesh guard rail, stainless
+	# dust hood + flue, and a blue blower with ducts. None of these match the
+	# stock BeltBuilder deck/leg/rail/chute primitives 1:1 (the belt runs along
+	# local X, not Z; legs sit at fractional-W intervals along the inclined
+	# axis; the guard rail is a free-standing mesh in front of the belt).
+	#
+	# Rather than balloon BeltBuilder's decoration vocabulary for a single-id
+	# placeable, we use deck_kind='none' + every component 'none' and route
+	# ALL legacy geometry through an `extras` callable that produces the same
+	# byte-for-byte primitives as the legacy builder.
+	#
+	# tag_as_belt=false preserves the legacy contract: compactor_belt is not in
+	# _BELT_IDS (line 688) and not _is_intake, so it was never tagged 'belt' /
+	# never got meta('belt_speed') / never got BeltSurface — it's a static
+	# visual. BeltBuilder still writes meta('placeable_id') and adds the body
+	# to 'placed_object' so K-edit / delete / save-load find it.
+	var spec := BeltBuilder.make_spec()
+	spec.deck_kind = "none"           # caller owns the deck (built in extras)
+	spec.has_legs = false             # bespoke I-beam legs in extras
+	spec.rollers = "none"             # head/tail pulley housings in extras
+	spec.side_rails = "none"          # wire-mesh guard rail is in extras
+	spec.motor = "none"               # drive motor box in extras
+	spec.chute = "none"
+	spec.tag_as_belt = false          # static visual — preserve legacy no-carry
+	spec.extras = [Callable(PlaceableCatalog, "_compactor_belt_extras")]
+	BeltBuilder.build(p, "compactor_belt", size, spec, ghost)
+
+# `extras` callable for compactor_belt — builds the full bespoke geometry
+# (Z-rotated belt body + I-beam legs + drive-motor box + wire-mesh guard rail +
+# stainless dust hood + blue blower with ducts). Signature matches
+# BeltBuilder.build_internal's extras dispatch:
+#   f(p, deck_root, size, spec, ghost).
+# `_deck_root` and `_spec` are unused — the geometry below is identical to the
+# pre-migration _m_compactor_belt body, just relocated.
+static func _compactor_belt_extras(p: Node3D, _deck_root: Node3D, size: Vector3, _spec: Dictionary, ghost: bool) -> void:
 	var black     := _mat(Color(0.10, 0.10, 0.11), ghost, 0.05, 0.85)   # belt side panels
 	var rubber    := _mat(Color(0.06, 0.06, 0.07), ghost, 0.00, 0.95)   # belt rubber surface
 	var galv      := _mat(Color(0.56, 0.59, 0.63), ghost, 0.65, 0.32)   # galvanized I-beam legs
@@ -3024,49 +3323,201 @@ static func _m_doseersilo(p: Node3D, size: Vector3, color: Color, ghost: bool) -
 	_motor_unit(p, radius * 0.16, radius * 0.4, Vector3(0, axis_y - radius + clr, length * 0.5 + radius * 0.3), "z", ghost)
 
 # ── flotation tank: long water bath, inlet roll, transport rolls, big outlet roll
+# Survey-fixed (#230): raised on a real ~3.5 m stand, side profile tapered inward
+# to a ~6 m flat bottom ~1 m above ground, slow paddles (≈4× slower than the old
+# default 45 rpm), bespoke per-position paddles (small inlet / 9 transport with
+# subtle variation / large drum-style outlet), a slow scraper bar above the +Z
+# outlet that drags floating material into a discharge container, and a visible
+# chain+sprocket drive on the outlet paddle (other paddles get small motor stubs).
 static func _m_flotation(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
 	var tank := _mat(color, ghost, 0.4, 0.4)
 	var water := _mat(Color(0.20, 0.45, 0.60, 0.55), ghost, 0.0, 0.1)
 	var roller := _mat(_DARK, ghost, 0.4, 0.6)
 	var legmat := _mat(_DARK, ghost, 0.5, 0.6)
+	var chainmat := _mat(Color(0.18, 0.18, 0.20), ghost, 0.4, 0.6)
 	var hz := size.z * 0.5
-	var ty := size.y * 0.5                 # tank floor height
-	var wall_y := ty + size.y * 0.22
-	_legs(p, size, ty, legmat)
-	# tank: floor + 4 walls (open top)
-	_box(p, Vector3(size.x * 0.92, 0.08, size.z * 0.96), Vector3(0.0, ty, 0.0), tank)
-	_box(p, Vector3(0.08, size.y * 0.5, size.z * 0.96), Vector3(size.x * 0.46, wall_y, 0.0), tank)
-	_box(p, Vector3(0.08, size.y * 0.5, size.z * 0.96), Vector3(-size.x * 0.46, wall_y, 0.0), tank)
-	_box(p, Vector3(size.x * 0.92, size.y * 0.5, 0.08), Vector3(0.0, wall_y, hz * 0.96), tank)
-	_box(p, Vector3(size.x * 0.92, size.y * 0.5, 0.08), Vector3(0.0, wall_y, -hz * 0.96), tank)
-	# water surface
-	_box(p, Vector3(size.x * 0.85, 0.04, size.z * 0.9), Vector3(0.0, ty + size.y * 0.34, 0.0), water)
-	var roll_y := ty + size.y * 0.44
-	# inlet roll (small) at -Z — spinning, driven by the "inlet" HMI slider.
-	var fl_inlet := _spinning_cyl(p, size.y * 0.12, size.y * 0.12, size.x * 0.82, Vector3(0.0, roll_y, -hz * 0.85), roller, "x", Vector3.RIGHT, ghost)
+	# ── HEIGHT PROFILE (operator survey #230) ─────────────────────────────────
+	# Stand top at 3.5 m; tank rim ~0.6 m higher; flat tank bottom ~1 m above
+	# ground. Side walls taper inward from rim to flat bottom.
+	var flat_bot_y : float = 1.0
+	var stand_top_y : float = 3.5
+	var rim_y : float = stand_top_y + 0.6
+	var tank_depth : float = rim_y - flat_bot_y
+	var roll_y : float = rim_y - 0.35         # paddle shafts just under the rim
+	# ── RAISED STAND (4 heavy posts + cross braces + top ring) ────────────────
+	var hx_l : float = size.x * 0.45
+	var hz_l : float = size.z * 0.45
+	var leg_w : float = 0.18
+	var leg_signs : Array[Vector2] = [
+		Vector2(-1.0, -1.0), Vector2(1.0, -1.0),
+		Vector2(-1.0,  1.0), Vector2(1.0,  1.0),
+	]
+	for s in leg_signs:
+		var lg := _box(p, Vector3(leg_w, stand_top_y, leg_w),
+				Vector3(s.x * hx_l, stand_top_y * 0.5, s.y * hz_l), legmat)
+		lg.add_to_group("machine_leg")
+		lg.set_meta("leg_h", stand_top_y)
+	# X-direction cross braces (low & mid) at -Z and +Z ends
+	for sz in [-1.0, 1.0]:
+		_box(p, Vector3(hx_l * 2.0, 0.06, 0.06),
+				Vector3(0.0, stand_top_y * 0.35, sz * hz_l), legmat)
+		_box(p, Vector3(hx_l * 2.0, 0.06, 0.06),
+				Vector3(0.0, stand_top_y * 0.70, sz * hz_l), legmat)
+	# Z-direction cross braces along the long sides
+	for sx in [-1.0, 1.0]:
+		_box(p, Vector3(0.06, 0.06, hz_l * 2.0),
+				Vector3(sx * hx_l, stand_top_y * 0.35, 0.0), legmat)
+		_box(p, Vector3(0.06, 0.06, hz_l * 2.0),
+				Vector3(sx * hx_l, stand_top_y * 0.70, 0.0), legmat)
+	# Perimeter top ring beam at the stand top
+	_box(p, Vector3(hx_l * 2.0 + leg_w, 0.12, 0.16),
+			Vector3(0.0, stand_top_y + 0.06, -hz_l), legmat)
+	_box(p, Vector3(hx_l * 2.0 + leg_w, 0.12, 0.16),
+			Vector3(0.0, stand_top_y + 0.06,  hz_l), legmat)
+	_box(p, Vector3(0.16, 0.12, hz_l * 2.0),
+			Vector3(-hx_l, stand_top_y + 0.06, 0.0), legmat)
+	_box(p, Vector3(0.16, 0.12, hz_l * 2.0),
+			Vector3( hx_l, stand_top_y + 0.06, 0.0), legmat)
+	# ── TAPERED TANK BODY ─────────────────────────────────────────────────────
+	# Narrow flat bottom band (~6 m × ~30 % of size.x) sits at flat_bot_y.
+	var flat_bot_x : float = size.x * 0.30
+	var flat_bot_z : float = 6.0
+	_box(p, Vector3(flat_bot_x, 0.08, flat_bot_z),
+			Vector3(0.0, flat_bot_y, 0.0), tank)
+	# End walls (vertical) close the flat-bottom ends and rise to the rim
+	_box(p, Vector3(flat_bot_x, tank_depth, 0.08),
+			Vector3(0.0, flat_bot_y + tank_depth * 0.5,  flat_bot_z * 0.5), tank)
+	_box(p, Vector3(flat_bot_x, tank_depth, 0.08),
+			Vector3(0.0, flat_bot_y + tank_depth * 0.5, -flat_bot_z * 0.5), tank)
+	# Tapered side panels: long thin _boxes rotated about Z so their inside face
+	# slopes from the rim (full size.x*0.92 width) down to flat_bot_x.
+	var top_hx : float = size.x * 0.46         # half-width at rim
+	var bot_hx : float = flat_bot_x * 0.5      # half-width at flat bottom
+	var panel_dx : float = top_hx - bot_hx
+	var panel_dy : float = tank_depth
+	var panel_len : float = sqrt(panel_dx * panel_dx + panel_dy * panel_dy)
+	var slope_ang : float = atan2(panel_dx, panel_dy)
+	for sx in [-1.0, 1.0]:
+		var panel := _box(p, Vector3(0.08, panel_len, size.z * 0.96),
+				Vector3(sx * (bot_hx + panel_dx * 0.5),
+						flat_bot_y + panel_dy * 0.5,
+						0.0), tank)
+		panel.rotation.z = sx * slope_ang
+	# Outer rim cap boxes — short vertical lips at the rim
+	for sx in [-1.0, 1.0]:
+		_box(p, Vector3(0.10, 0.18, size.z * 0.96),
+				Vector3(sx * top_hx, rim_y + 0.05, 0.0), tank)
+	for sz in [-1.0, 1.0]:
+		_box(p, Vector3(size.x * 0.92, 0.18, 0.10),
+				Vector3(0.0, rim_y + 0.05, sz * hz * 0.96), tank)
+	# Water surface — ~10 cm below the rim
+	var surf_y : float = rim_y - 0.10
+	_box(p, Vector3(size.x * 0.85, 0.04, size.z * 0.9),
+			Vector3(0.0, surf_y, 0.0), water)
+	# ── PADDLE LAYOUT — bespoke per position, slow RPM (≈4× slower than 45) ──
+	var blade_t : float = 0.025
+	# Inlet paddle (small, 3 narrow blades) at -Z, 6 rpm
+	var fl_inlet := _spinning_cyl(p, 0.06, 0.06, size.x * 0.82,
+			Vector3(0.0, roll_y, -hz * 0.85), roller, "x", Vector3.RIGHT, ghost, 6.0)
 	if not ghost:
 		fl_inlet.set_meta("comp", "inlet")
-	# transport rolls (small, in the middle) — count differs per line; ~4 typical.
-	# Each is a spinning roll; the first two are driven by "transport_1", the last
-	# two by "transport_2" (two HMI sliders for the middle transport bank).
-	for i in 4:
-		var zz := -hz * 0.5 + float(i) * (size.z * 0.25)
-		var fl_t := _spinning_cyl(p, size.y * 0.1, size.y * 0.1, size.x * 0.82, Vector3(0.0, roll_y, zz), roller, "x", Vector3.RIGHT, ghost)
+		_attach_paddle_blades(fl_inlet, 3, size.x * 0.72, blade_t, 0.28, roller)
+	# 9 transport paddles with subtle variation: blade count + rpm vary by group
+	for i in 9:
+		var t : float = float(i) / 8.0
+		var zz : float = lerp(-hz * 0.65, hz * 0.65, t)
+		var grp : String = "transport_1"
+		var rpm_grp : float = 4.0
+		var n_blades : int = 4
+		if i >= 6:
+			grp = "transport_3"; rpm_grp = 6.0; n_blades = 3
+		elif i >= 3:
+			grp = "transport_2"; rpm_grp = 5.0; n_blades = 4
+		var fl_t := _spinning_cyl(p, 0.06, 0.06, size.x * 0.82,
+				Vector3(0.0, roll_y, zz), roller, "x", Vector3.RIGHT, ghost, rpm_grp)
 		if not ghost:
-			fl_t.set_meta("comp", "transport_1" if i < 2 else "transport_2")
-	# outlet roll (LARGER) at +Z — drags the floating film out; "outlet" slider.
-	var fl_outlet := _spinning_cyl(p, size.y * 0.2, size.y * 0.2, size.x * 0.86, Vector3(0.0, roll_y + size.y * 0.04, hz * 0.85), roller, "x", Vector3.RIGHT, ghost)
+			fl_t.set_meta("comp", grp)
+			_attach_paddle_blades(fl_t, n_blades, size.x * 0.72, blade_t, 0.28, roller)
+			# Subtle phase offset per paddle so they don't all flap in unison
+			fl_t.rotation.x = TAU * (float(i) * 0.13)
+	# Outlet drag paddle (LARGE drum-style) at +Z — 6 wide blades, 9 rpm
+	var fl_outlet := _spinning_cyl(p, 0.14, 0.14, size.x * 0.86,
+			Vector3(0.0, roll_y + 0.05, hz * 0.85), roller, "x", Vector3.RIGHT, ghost, 9.0)
 	if not ghost:
 		fl_outlet.set_meta("comp", "outlet")
-	_motor_unit(p, size.y * 0.14, size.x * 0.24, Vector3(size.x * 0.5, roll_y + size.y * 0.04, hz * 0.85), "x", ghost)
-	# #100 — weir-scoop overflow chute hung on the OUTSIDE of the +Z wall. The
-	# outlet roll drags the mat against the wall; the mat overflows the wall's
-	# top edge and falls into this chute, which tilts forward + down to dump it
-	# into a downstream dewater_screw's catch bowl. Open top, 3-sided (floor +
-	# left + right) so material slides forward instead of pooling. Materials use
-	# the tank's own stainless palette.
+		_attach_paddle_blades(fl_outlet, 6, size.x * 0.78, 0.035, 0.42, roller)
+	# ── DRIVE: motor box + visible chain + sprockets on the outlet paddle ─────
+	# Other 10 paddles get small motor stubs at the +X end (visual only).
 	if not ghost:
-		var wall_top_y : float = wall_y + size.y * 0.25
+		var drive_x : float = size.x * 0.5 + 0.05
+		var drive_z : float = hz * 0.85
+		var motor_y : float = roll_y + 0.05 + 0.55
+		# Motor cabinet
+		_box(p, Vector3(0.35, 0.45, 0.40),
+				Vector3(drive_x + 0.20, motor_y, drive_z), tank)
+		# Drive sprocket (small, on motor shaft)
+		_cyl(p, 0.10, 0.10, 0.05,
+				Vector3(drive_x, motor_y, drive_z), chainmat, "x")
+		# Driven sprocket (larger, on paddle shaft tip)
+		_cyl(p, 0.22, 0.22, 0.05,
+				Vector3(drive_x, roll_y + 0.05, drive_z), chainmat, "x")
+		# Chain loop: 4 thin boxes wrapping the two sprockets
+		var sprk_dy : float = motor_y - (roll_y + 0.05)
+		_box(p, Vector3(0.03, sprk_dy, 0.04),
+				Vector3(drive_x, (motor_y + roll_y + 0.05) * 0.5, drive_z + 0.22), chainmat)
+		_box(p, Vector3(0.03, sprk_dy, 0.04),
+				Vector3(drive_x, (motor_y + roll_y + 0.05) * 0.5, drive_z - 0.22), chainmat)
+		_box(p, Vector3(0.03, 0.04, 0.22),
+				Vector3(drive_x, motor_y + 0.10, drive_z), chainmat)
+		_box(p, Vector3(0.03, 0.04, 0.44),
+				Vector3(drive_x, roll_y + 0.05 - 0.22, drive_z), chainmat)
+		# Small motor stubs on the other paddles (visual only)
+		_motor_unit(p, 0.08, 0.20,
+				Vector3(drive_x + 0.10, roll_y + 0.02, -hz * 0.85), "x", ghost)
+		for i in 9:
+			var t2 : float = float(i) / 8.0
+			var zz2 : float = lerp(-hz * 0.65, hz * 0.65, t2)
+			_motor_unit(p, 0.07, 0.16,
+					Vector3(drive_x + 0.08, roll_y + 0.02, zz2), "x", ghost)
+	# ── SCRAPER ABOVE +Z END ──────────────────────────────────────────────────
+	# Slow scraper bar with 6 perpendicular fingers, mounted above the water at
+	# the +Z (outlet) end. Drags floating material over the weir into the
+	# discharge container on the floor.
+	if not ghost:
+		var scrap_y : float = rim_y + 0.50
+		var scrap_z : float = hz * 0.97
+		_box(p, Vector3(0.30, 0.30, 0.30),
+				Vector3(size.x * 0.46, scrap_y, scrap_z), tank)
+		var scraper := _spinning_cyl(p, 0.05, 0.05, size.x * 0.80,
+				Vector3(0.0, scrap_y, scrap_z), roller, "x", Vector3.RIGHT, ghost, 3.0)
+		_attach_paddle_blades(scraper, 6, size.x * 0.74, 0.03, 0.40, roller)
+		scraper.set_meta("comp", "scraper")
+	# ── DISCHARGE CONTAINER (~1.2 × 1.2 × 1.0 m, open top) ───────────────────
+	# Sits on the floor at the +Z end. 4 walls + floor.
+	if not ghost:
+		var cont_root := Node3D.new()
+		cont_root.name = "DischargeContainer"
+		var cont_w : float = 1.2
+		var cont_h : float = 1.0
+		var cont_d : float = 1.2
+		var cont_y : float = cont_h * 0.5
+		cont_root.position = Vector3(0.0, 0.0, hz + cont_d * 0.5 + 0.10)
+		p.add_child(cont_root)
+		var bin_mat := _mat(Color(0.55, 0.42, 0.20), ghost, 0.5, 0.5)
+		_box(cont_root, Vector3(cont_w, 0.06, cont_d),
+				Vector3(0.0, 0.03, 0.0), bin_mat)
+		_box(cont_root, Vector3(0.06, cont_h, cont_d),
+				Vector3( cont_w * 0.5, cont_y, 0.0), bin_mat)
+		_box(cont_root, Vector3(0.06, cont_h, cont_d),
+				Vector3(-cont_w * 0.5, cont_y, 0.0), bin_mat)
+		_box(cont_root, Vector3(cont_w, cont_h, 0.06),
+				Vector3(0.0, cont_y,  cont_d * 0.5), bin_mat)
+		_box(cont_root, Vector3(cont_w, cont_h, 0.06),
+				Vector3(0.0, cont_y, -cont_d * 0.5), bin_mat)
+	# ── WEIR-SCOOP OVERFLOW CHUTE (kept; #100) ────────────────────────────────
+	# On the OUTSIDE of the +Z wall — overflow path to the downstream dewater_screw.
+	if not ghost:
+		var wall_top_y : float = rim_y + 0.10
 		var chute_root := Node3D.new()
 		chute_root.name = "WeirChute"
 		chute_root.position = Vector3(0.0, wall_top_y - 0.02, hz * 0.96 + 0.04)
@@ -3082,24 +3533,18 @@ static func _m_flotation(p: Node3D, size: Vector3, color: Color, ghost: bool) ->
 		_box(chute_root, Vector3(chute_t, 0.22, chute_l),
 			Vector3(-chute_w * 0.5, 0.11, chute_l * 0.5), tank)
 	# ── PHYSICALIZED FILM (#161, #82) ─────────────────────────────────────────
-	# A flotation tank floats clean LDPE as a packed MAT on the water surface and
-	# skims it off at the +Z outlet, while heavies (PET/sand) SINK to the floor.
-	# So we run the FilmField in MAT MODE (surface-pinned raft, no dunking) with a
-	# sinker sub-stream for the heavies. Density + width scale off the footprint so
-	# the 4.5 m and 6.0 m wide variants both read right. Ghost previews skip it.
+	# Float-raft + sinkers, pinned to the new water surface y.
 	if not ghost:
-		var surf_y := ty + size.y * 0.34 + 0.04   # anchor the mat to the water plane
+		var field_surf_y : float = surf_y + 0.04
 		var field : Node3D = preload("res://src/sim/FilmFlakeField.gd").new()
 		field.name = "FilmField"
-		# Flake count scales with width (≈ proportional to size.x) so the wide tank
-		# carries a fuller raft; clamp keeps it cheap.
 		field.flake_count = clampi(int(round(size.x * 26.0)), 80, 200)
 		field.area = Vector2(size.x * 0.78, size.z * 0.85)
-		field.surface_y = surf_y
+		field.surface_y = field_surf_y
 		field.flow_speed = 0.4
 		field.flake_size = 0.075
-		field.set_floor_y(ty + 0.06)              # heavies fall to the tank floor
-		field.set_mat_mode(true)                  # float raft + sinkers (no dunk zones)
+		field.set_floor_y(flat_bot_y + 0.06)      # heavies fall to the narrow flat bottom
+		field.set_mat_mode(true)
 		p.add_child(field)
 
 # ── sink/float separator (bezinkbakscheider) ────────────────────────────────
@@ -3750,7 +4195,17 @@ static func _m_bale_simple(p: Node3D, id: String, size: Vector3, color: Color, g
 	# A single tinted box, visible from spawn to LOD_CULL_FAR_M. Past CLOSE_LOD
 	# the layered stack below is invisible and only this box renders, so far-
 	# away yards stay cheap (1 box per bale).
-	var body_mat := _mat(tint, ghost, 0.0, 0.9)
+	# #243 — pull a hint of the dominant slab tint into the far box. The
+	# close-LOD slabs use alternating ±jitter around `tint`, so the far box
+	# was reading slightly flatter / greyer than the slabs averaged. A
+	# saturation nudge (×1.08 around the mid) keeps the bale's supplier
+	# colour identifiable from a distance instead of fading to a uniform grey.
+	var body_tint := Color(
+		clampf(0.5 + (tint.r - 0.5) * 1.08, 0.0, 1.0),
+		clampf(0.5 + (tint.g - 0.5) * 1.08, 0.0, 1.0),
+		clampf(0.5 + (tint.b - 0.5) * 1.08, 0.0, 1.0),
+		1.0)
+	var body_mat := _mat(body_tint, ghost, 0.0, 0.9)
 	var box := _box(p, Vector3(size.x * 0.98, size.y * 0.98, size.z * 0.98), \
 		Vector3(0.0, size.y * 0.5, 0.0), body_mat)
 	box.name = "SimpleBody"
@@ -3764,12 +4219,14 @@ static func _m_bale_simple(p: Node3D, id: String, size: Vector3, color: Color, g
 		var slab_h : float = size.y * 0.965 / float(N_LAYERS)
 		var slab_w : float = size.x * 0.985
 		var slab_d : float = size.z * 0.985
-		# Tag the simple body so the far-LOD box and the close-LOD stack don't
-		# Z-fight at the crossover band; the FAR box culls IN as the slabs fade
-		# OUT thanks to engine-side VisibilityRangeFade.
-		box.visibility_range_begin = CLOSE_LOD_M * 0.85
-		box.visibility_range_begin_margin = 3.0
-		box.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+		# #243 — far-LOD body stays VISIBLE at ALL distances (begin = 0). The
+		# close-LOD slabs render OVER it under CLOSE_LOD_M and fade out past it,
+		# so there's no longer a "disappears at ~20 m" gap between the slabs
+		# fading out and the body box fading in. Z-fighting is avoided because
+		# the slabs sit at +0.015 y offset and are 0.985× the body box scale.
+		box.visibility_range_begin = 0.0
+		box.visibility_range_begin_margin = 0.0
+		box.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 		for li in N_LAYERS:
 			# Per-layer tint jitter: alternate slightly darker / lighter so seams
 			# read even on a single-colour supplier (e.g. all-white film). The
@@ -3804,16 +4261,110 @@ static func _m_bale_simple(p: Node3D, id: String, size: Vector3, color: Color, g
 				seam.visibility_range_end_margin = 3.0
 				seam.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 
-	# ── TOP STRAPS (very-close LOD) ──────────────────────────────────────────
+	# ── WIRES (very-close LOD) ───────────────────────────────────────────────
+	# #243 — wire direction now MATCHES the detail-LOD bale's _build_wires:
+	# 3 loops in the XY-plane (Top/Bottom run the FULL LENGTH along X, Side
+	# caps along Y on the ±X end faces), spaced across Z (the width). The
+	# old code laid 3 horizontal bands in the XZ-plane stacked along Y AND
+	# 3 stray top-straps running across the width — both visually
+	# orthogonal to the detail-LOD wires. Now the simple bale's wires look
+	# the same as the detail bale's, just with no knots/sag.
 	if not ghost:
 		var wire := _mat(Color(0.18, 0.17, 0.16), ghost, 0.85, 0.30)
-		for fx in [0.25, 0.5, 0.75]:
-			var x : float = -size.x * 0.5 + size.x * fx
-			# Just the TOP strap over each third (the +Z/−Z side-drop bands were
-			# dropped to cut draw calls). Culled at 15 m; the body box stays
-			# visible so the bale never disappears.
-			var b_top := _box(p, Vector3(0.035, 0.035, size.z * 1.0), Vector3(x, size.y * 0.99, 0.0), wire)
-			_lod_cull(b_top, 15.0)
+		var band_r : float = 0.018
+		var top_y : float = size.y + band_r * 0.5
+		var bot_y : float = -band_r * 0.5
+		var end_x : float = size.x * 0.5 + band_r * 0.5
+		var horiz_len : float = size.x + band_r * 2.0
+		var vert_len  : float = size.y + band_r * 2.0
+		for wz in [-size.z * 0.30, 0.0, size.z * 0.30]:
+			# Top — runs the full LENGTH (X) over every sheet edge.
+			var b_top := _cyl(p, band_r, band_r, horiz_len,
+				Vector3(0.0, top_y, wz), wire, "x")
+			b_top.name = "SimpleWireTop_%d" % int((wz / size.z) * 100.0)
+			_lod_cull(b_top, 24.0)
+			# Bottom — runs the full LENGTH (X) under every sheet edge.
+			var b_bot := _cyl(p, band_r, band_r, horiz_len,
+				Vector3(0.0, bot_y, wz), wire, "x")
+			_lod_cull(b_bot, 24.0)
+			# Right end cap — along Y on the +X face.
+			var b_r := _cyl(p, band_r, band_r, vert_len,
+				Vector3(end_x, size.y * 0.5, wz), wire, "y")
+			_lod_cull(b_r, 24.0)
+			# Left end cap — along Y on the -X face.
+			var b_l := _cyl(p, band_r, band_r, vert_len,
+				Vector3(-end_x, size.y * 0.5, wz), wire, "y")
+			_lod_cull(b_l, 24.0)
+		# #243 — film-piece overlays on ALL faces, not just +Z. Operator: small
+		# slabs randomly oriented within ±10° of the face plane, varying tints
+		# derived from the supplier color. The +Z face has fewer overlays so
+		# the paper sticker stays readable; the opposite face (-Z) is also
+		# reduced for symmetry; top, bottom, and ±X get the full 12-18 count.
+		var overlay_rng := RandomNumberGenerator.new()
+		overlay_rng.seed = hash(id + "_overlay_v2")
+		# Six faces: +Z (front, sticker face), -Z (back), +X, -X, +Y (top), -Y (bottom).
+		# Each entry: face_name, normal, in_plane_axis_a, in_plane_axis_b, count, half_size_a, half_size_b
+		var face_specs := [
+			{"name":"px", "n":Vector3(1,0,0),  "a":Vector3(0,1,0), "b":Vector3(0,0,1), "count":14,
+				"ha":size.y * 0.5, "hb":size.z * 0.5, "skin":size.x * 0.5},
+			{"name":"nx", "n":Vector3(-1,0,0), "a":Vector3(0,1,0), "b":Vector3(0,0,1), "count":14,
+				"ha":size.y * 0.5, "hb":size.z * 0.5, "skin":size.x * 0.5},
+			{"name":"pz", "n":Vector3(0,0,1),  "a":Vector3(1,0,0), "b":Vector3(0,1,0), "count":6,
+				"ha":size.x * 0.5, "hb":size.y * 0.5, "skin":size.z * 0.5},
+			{"name":"nz", "n":Vector3(0,0,-1), "a":Vector3(1,0,0), "b":Vector3(0,1,0), "count":6,
+				"ha":size.x * 0.5, "hb":size.y * 0.5, "skin":size.z * 0.5},
+			{"name":"py", "n":Vector3(0,1,0),  "a":Vector3(1,0,0), "b":Vector3(0,0,1), "count":14,
+				"ha":size.x * 0.5, "hb":size.z * 0.5, "skin":size.y * 0.5},
+			{"name":"ny", "n":Vector3(0,-1,0), "a":Vector3(1,0,0), "b":Vector3(0,0,1), "count":14,
+				"ha":size.x * 0.5, "hb":size.z * 0.5, "skin":size.y * 0.5},
+		]
+		for fs in face_specs:
+			var n_count : int = int(fs["count"])
+			for _k in n_count:
+				# Random in-plane position, 70 % covers the face skin.
+				var u : float = overlay_rng.randf_range(-0.7, 0.7) * float(fs["ha"])
+				var v : float = overlay_rng.randf_range(-0.7, 0.7) * float(fs["hb"])
+				# Face center: half-size along the face normal + lift bale to y∈[0,size.y].
+				var face_center : Vector3 = (fs["n"] as Vector3) * float(fs["skin"]) \
+					+ Vector3(0.0, size.y * 0.5, 0.0)
+				var pos : Vector3 = face_center \
+					+ (fs["a"] as Vector3) * u \
+					+ (fs["b"] as Vector3) * v \
+					+ (fs["n"] as Vector3) * 0.003   # 3 mm proud so it doesn't z-fight
+				# Small thin slab: random size 4-12 cm on each in-plane axis,
+				# 4 mm thick along the face normal.
+				var sx : float = overlay_rng.randf_range(0.04, 0.12)
+				var sy : float = overlay_rng.randf_range(0.04, 0.12)
+				var thk : float = 0.004
+				# Tint variation derived from supplier color (±10 % per channel).
+				var ot := Color(
+					clampf(tint.r + overlay_rng.randf_range(-0.10, 0.10), 0.0, 1.0),
+					clampf(tint.g + overlay_rng.randf_range(-0.10, 0.10), 0.0, 1.0),
+					clampf(tint.b + overlay_rng.randf_range(-0.10, 0.10), 0.0, 1.0),
+					1.0)
+				var omat := _mat(ot, ghost, 0.0, 0.85)
+				var mi := MeshInstance3D.new()
+				var bm := BoxMesh.new()
+				# Box size in local (in-plane × thickness) frame. We then orient
+				# via a basis built from the face's in-plane axes + normal.
+				bm.size = Vector3(sx, sy, thk)
+				mi.mesh = bm
+				mi.material_override = omat
+				# Face basis: x = in-plane a, y = in-plane b, z = face normal.
+				var fb := Basis((fs["a"] as Vector3), (fs["b"] as Vector3), (fs["n"] as Vector3))
+				# Random twist within ±10° around the face normal.
+				var twist : float = overlay_rng.randf_range(-PI / 18.0, PI / 18.0)
+				fb = fb * Basis(Vector3(0, 0, 1), twist)
+				mi.transform = Transform3D(fb, pos)
+				p.add_child(mi)
+				_lod_cull(mi, 24.0)
+		# #117 — paper sticker quad on the +Z face. Small off-white card so the
+		# close-LOD bale reads like one of the labelled ones from the detail tier.
+		var sticker_mat := _mat(Color(0.93, 0.90, 0.78), ghost, 0.0, 0.85)
+		var sticker := _box(p, Vector3(size.x * 0.18, size.y * 0.12, 0.004),
+			Vector3(size.x * 0.18, size.y * 0.62, size.z * 0.5 + 0.005), sticker_mat)
+		sticker.name = "CloseLODSticker"
+		_lod_cull(sticker, 24.0)
 
 ## Upgrade a simple (LOD) yard bale to the full sheet/wire model on demand. Called
 ## when a bale is grabbed, so the cut→film-pile feature works on any bale the
@@ -3875,7 +4426,16 @@ static func build_yard_multimesh(id: String, instance_count: int) -> MultiMeshIn
 	var bm := BoxMesh.new()
 	# Match the close-LOD body proportions (`_m_bale_simple` uses 0.98).
 	bm.size = Vector3(size.x * 0.98, size.y * 0.98, size.z * 0.98)
-	var mat := _mat(tint, false, 0.0, 0.9)
+	# #243 — saturation-boost tint by 1.08 around mid-gray so the far MM
+	# picks up the dominant supplier colour instead of reading flat / grey
+	# at distance. Matches the saturation lift applied to the close MM and
+	# the standalone simple bale body.
+	var body_tint := Color(
+		clampf(0.5 + (tint.r - 0.5) * 1.08, 0.0, 1.0),
+		clampf(0.5 + (tint.g - 0.5) * 1.08, 0.0, 1.0),
+		clampf(0.5 + (tint.b - 0.5) * 1.08, 0.0, 1.0),
+		1.0)
+	var mat := _mat(body_tint, false, 0.0, 0.9)
 	bm.material = mat
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
@@ -3935,10 +4495,22 @@ static func build_yard_multimesh_close(id: String, instance_count: int) -> Multi
 	var tint: Color = o.get("tint", color)
 	var bm := BoxMesh.new()
 	bm.size = Vector3(size.x * 0.98, size.y * 0.98, size.z * 0.98)
-	# Slightly darker tint + groove normal map so wires "show" at close range.
-	var mat := _mat(tint.darkened(0.06), false, 0.0, 0.85)
+	# #243 — was `tint.darkened(0.06)` which made the close MM look duller
+	# than the standalone _m_bale_simple body (operator: "far LOD reads
+	# grayscale"). Use the same saturation-boosted body tint as the
+	# standalone simple bale so they match perfectly across the LOD swap.
+	# Reduced normal_scale so the wire grooves still read but don't bake
+	# in a strong specular hit that desaturates the bale's colour at
+	# distance.
+	var body_tint := Color(
+		clampf(0.5 + (tint.r - 0.5) * 1.08, 0.0, 1.0),
+		clampf(0.5 + (tint.g - 0.5) * 1.08, 0.0, 1.0),
+		clampf(0.5 + (tint.b - 0.5) * 1.08, 0.0, 1.0),
+		1.0)
+	var mat := _mat(body_tint, false, 0.0, 0.85)
 	mat.normal_enabled = true
 	mat.normal_texture = _bale_close_normal_texture()
+	mat.normal_scale = 0.35
 	bm.material = mat
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
@@ -3957,8 +4529,56 @@ static func build_yard_multimesh_close(id: String, instance_count: int) -> Multi
 ## cost. A single shared off-white sticker texture for all instances (per-bale
 ## unique batch codes are unreadable at distance anyway; the operator gets the
 ## real code via the detail-bale promotion when they walk up and grab one).
-const _BALE_STICKER_TEX_W : int = 64
-const _BALE_STICKER_TEX_H : int = 48
+const _BALE_STICKER_TEX_W : int = 192
+const _BALE_STICKER_TEX_H : int = 128
+
+## D2 — Tiny 3×5 bitmap font for A-Z, 0-9 and a few symbols. Each glyph is 5
+## packed uint8 rows; bit 2 = leftmost column, bit 0 = rightmost. Drawn into
+## the bale sticker so the operator sees actual letterforms instead of the
+## dashed-pixel placeholders that read as "MMM" from any distance.
+const _STICKER_FONT_3x5 : Dictionary = {
+	"A":[0b010,0b101,0b111,0b101,0b101], "B":[0b110,0b101,0b110,0b101,0b110],
+	"C":[0b011,0b100,0b100,0b100,0b011], "D":[0b110,0b101,0b101,0b101,0b110],
+	"E":[0b111,0b100,0b110,0b100,0b111], "F":[0b111,0b100,0b110,0b100,0b100],
+	"G":[0b011,0b100,0b101,0b101,0b011], "H":[0b101,0b101,0b111,0b101,0b101],
+	"I":[0b111,0b010,0b010,0b010,0b111], "J":[0b001,0b001,0b001,0b101,0b010],
+	"K":[0b101,0b110,0b100,0b110,0b101], "L":[0b100,0b100,0b100,0b100,0b111],
+	"M":[0b101,0b111,0b111,0b101,0b101], "N":[0b101,0b111,0b111,0b111,0b101],
+	"O":[0b010,0b101,0b101,0b101,0b010], "P":[0b110,0b101,0b110,0b100,0b100],
+	"Q":[0b010,0b101,0b101,0b110,0b011], "R":[0b110,0b101,0b110,0b101,0b101],
+	"S":[0b011,0b100,0b010,0b001,0b110], "T":[0b111,0b010,0b010,0b010,0b010],
+	"U":[0b101,0b101,0b101,0b101,0b011], "V":[0b101,0b101,0b101,0b010,0b010],
+	"W":[0b101,0b101,0b111,0b111,0b101], "X":[0b101,0b101,0b010,0b101,0b101],
+	"Y":[0b101,0b101,0b010,0b010,0b010], "Z":[0b111,0b001,0b010,0b100,0b111],
+	"0":[0b010,0b101,0b101,0b101,0b010], "1":[0b010,0b110,0b010,0b010,0b111],
+	"2":[0b110,0b001,0b010,0b100,0b111], "3":[0b110,0b001,0b010,0b001,0b110],
+	"4":[0b101,0b101,0b111,0b001,0b001], "5":[0b111,0b100,0b110,0b001,0b110],
+	"6":[0b011,0b100,0b110,0b101,0b010], "7":[0b111,0b001,0b010,0b010,0b010],
+	"8":[0b010,0b101,0b010,0b101,0b010], "9":[0b010,0b101,0b011,0b001,0b110],
+	"-":[0b000,0b000,0b111,0b000,0b000], ".":[0b000,0b000,0b000,0b000,0b010],
+	" ":[0b000,0b000,0b000,0b000,0b000], "/":[0b001,0b001,0b010,0b100,0b100],
+}
+
+## Draw `text` into `img` at top-left (x0, y0), scaled by `scale` (1 = native
+## 3px×5px, 2 = 6×10, etc.) using `ink` colour. Characters outside the font
+## render as a blank space. Used by _bale_sticker_texture; safe to call with
+## any string length — caller is responsible for sizing the texture wide enough.
+static func _draw_text_into_image(img: Image, x0: int, y0: int, text: String, scale: int, ink: Color) -> void:
+	var cx : int = x0
+	for ci in text.length():
+		var ch : String = text[ci].to_upper()
+		var glyph : Array = _STICKER_FONT_3x5.get(ch, [0,0,0,0,0])
+		for row in 5:
+			var bits : int = int(glyph[row])
+			for col in 3:
+				if (bits >> (2 - col)) & 1 == 1:
+					for dy in scale:
+						for dx in scale:
+							var px : int = cx + col * scale + dx
+							var py : int = y0 + row * scale + dy
+							if px >= 0 and py >= 0 and px < img.get_width() and py < img.get_height():
+								img.set_pixel(px, py, ink)
+		cx += 4 * scale       # 3px char + 1px gap
 static var _bale_sticker_tex : ImageTexture = null
 
 static func _bale_sticker_texture() -> ImageTexture:
@@ -3966,29 +4586,36 @@ static func _bale_sticker_texture() -> ImageTexture:
 		return _bale_sticker_tex
 	var img := Image.create(_BALE_STICKER_TEX_W, _BALE_STICKER_TEX_H, false, Image.FORMAT_RGB8)
 	# #170 — yellow shipping label, matching the LabelItem sticker colour the
-	# operator confirmed earlier. Was an off-white paper (0.93, 0.91, 0.83)
-	# that read as "no sticker" against the pale bale tint.
+	# operator confirmed earlier.
 	var paper := Color(0.93, 0.82, 0.15)
 	var ink   := Color(0.10, 0.10, 0.10)
 	img.fill(paper)
-	# Header band: dark strip across the top — reads as "shipping label" at a glance.
-	for y in range(2, 8):
+	# Header band: dark strip with white-on-black supplier name, reads as a
+	# shipping label even at 20 m camera distance.
+	for y in range(4, 22):
 		for x in range(_BALE_STICKER_TEX_W):
 			img.set_pixel(x, y, ink)
-	# Two faint horizontal text lines below the band — fake-printed batch info.
-	for line in [16, 24]:
-		for x in range(6, _BALE_STICKER_TEX_W - 6):
-			if (x / 3) % 2 == 0:
-				img.set_pixel(x, line,     ink.lerp(paper, 0.4))
-				img.set_pixel(x, line + 1, ink.lerp(paper, 0.4))
+	# D2 — REAL letterforms instead of dashed-pixel placeholders. Default to
+	# generic copy ("ROTTERDAM" supplier, batch id, mass, grade) — every bale
+	# in the MultiMesh shares one bake, so this stands in for "a sticker that
+	# reads as text" rather than per-bale unique IDs. Per-bale uniqueness is
+	# its own task (would need a per-instance UV offset into a sprite atlas).
+	# #203 — operator: scale-2 text overflowed the sticker bounds AND the
+	# dimensions/grade line ("LDPE FILM PE") doesn't belong on a shipping
+	# label. Dropped that line; scale 1 (native 3×5 glyphs, 4px char-cell)
+	# leaves the longest line ("250 KG NETTO" = 48 px) well inside the 192 px
+	# texture width with plenty of horizontal margin.
+	_draw_text_into_image(img, 10,  8, "ROTTERDAM",     1, paper)   # white on header strip
+	_draw_text_into_image(img,  8, 30, "ID B-00482",    1, ink)
+	_draw_text_into_image(img,  8, 50, "250 KG NETTO",  1, ink)
 	# Barcode band at the bottom — alternating black bars of varying width.
-	var bx : int = 6
-	while bx < _BALE_STICKER_TEX_W - 6:
-		var w : int = 1 + (bx * 7919) % 3
-		for x in range(bx, mini(bx + w, _BALE_STICKER_TEX_W - 6)):
-			for y in range(34, 44):
+	var bx : int = 8
+	while bx < _BALE_STICKER_TEX_W - 8:
+		var w : int = 1 + (bx * 7919) % 4
+		for x in range(bx, mini(bx + w, _BALE_STICKER_TEX_W - 8)):
+			for y in range(95, 120):
 				img.set_pixel(x, y, ink)
-		bx += w + 1 + (bx * 3) % 2
+		bx += w + 1 + (bx * 3) % 3
 	_bale_sticker_tex = ImageTexture.create_from_image(img)
 	return _bale_sticker_tex
 
@@ -4123,12 +4750,48 @@ static func _m_bale(p: Node3D, id: String, size: Vector3, ghost: bool) -> void:
 		# while still reading as a solid block in the mid range.
 		if not ghost:
 			_lod_cull(sheet, 15.0 if col.a < 0.99 else 28.0)
-		# Roughly every 3rd sheet picks up a face patch (recycled = never uniform)
+		# Roughly every 3rd sheet picks up a face patch (recycled = never uniform).
+		# #243 — patches now spawn on ALL faces, not just +Z. The patch face is
+		# chosen by `i % 6` so each sheet contributes to a different face, and
+		# the +Z face (which gets the paper label) is skipped on the sheets
+		# whose stack-x position would put a patch right on the label. The
+		# patch's normal becomes the face normal, with a 4 mm proud-of-skin
+		# offset to avoid z-fighting the sheet body.
 		if not ghost and (i % 3) == 1:
 			var use_blue := rng.randf() < blue
 			var pm := patch_blue if use_blue else patch_warm
-			_box(sheets_root, Vector3(t * 0.7, size.y * 0.12, 0.008), \
-				Vector3(x + t * 0.5, size.y * (0.25 + rng.randf() * 0.55), size.z * 0.495), pm)
+			var face_pick : int = i % 6
+			var patch_y : float = size.y * (0.25 + rng.randf() * 0.55)
+			var patch_size : Vector3
+			var patch_pos : Vector3
+			match face_pick:
+				0:   # +Z front — keep as before
+					patch_size = Vector3(t * 0.7, size.y * 0.12, 0.008)
+					patch_pos  = Vector3(x + t * 0.5, patch_y, size.z * 0.495)
+				1:   # -Z back
+					patch_size = Vector3(t * 0.7, size.y * 0.12, 0.008)
+					patch_pos  = Vector3(x + t * 0.5, patch_y, -size.z * 0.495)
+				2:   # +Y top — patch in XZ plane, thin in Y
+					patch_size = Vector3(t * 0.7, 0.008, size.z * 0.18)
+					patch_pos  = Vector3(x + t * 0.5, size.y * 0.985, \
+						(rng.randf() - 0.5) * size.z * 0.7)
+				3:   # -Y bottom — patch in XZ plane, thin in Y
+					patch_size = Vector3(t * 0.7, 0.008, size.z * 0.18)
+					patch_pos  = Vector3(x + t * 0.5, size.y * 0.015, \
+						(rng.randf() - 0.5) * size.z * 0.7)
+				4:   # +X end — patch in YZ plane, thin in X (only on the
+				     # first/last sheets does this hit the actual bale skin;
+				     # for inner sheets it sits inside but is hidden by the
+				     # opaque outer sheets, so cost is wasted there. Keep it
+				     # for the i % 6 cadence simplicity)
+					patch_size = Vector3(0.008, size.y * 0.12, size.z * 0.18)
+					patch_pos  = Vector3(x + t * 0.495, patch_y, \
+						(rng.randf() - 0.5) * size.z * 0.7)
+				_:   # -X end
+					patch_size = Vector3(0.008, size.y * 0.12, size.z * 0.18)
+					patch_pos  = Vector3(x - t * 0.005 + t * 0.5, patch_y, \
+						(rng.randf() - 0.5) * size.z * 0.7)
+			_box(sheets_root, patch_size, patch_pos, pm)
 		x += t
 
 	# ── Three iron wires wrapping in the YZ plane, evenly spaced along X ─────
@@ -4814,30 +5477,73 @@ static func _m_vacuum_degas(p: Node3D, size: Vector3, color: Color, ghost: bool)
 #    Silo up into the compactor's top funnel. Inclined deck + end rollers +
 #    side skirts + a discharge lip at the high (+Z) end. ────────────────────────
 static func _m_compactorband(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
-	var dark := _mat(_DARK, ghost, 0.3, 0.7)
-	var steel := _mat(_STEEL, ghost, 0.5, 0.45)
-	var skirt := _mat(color, ghost, 0.3, 0.6)
-	var hz := size.z * 0.45
-	# Frame legs — taller at the +Z (discharge) end so the belt climbs.
-	var signs : Array[float] = [-1.0, 1.0]
-	for sx in signs:
-		_box(p, Vector3(0.09, size.y * 0.42, 0.09), Vector3(sx * size.x * 0.4, size.y * 0.21, -hz * 0.8), steel)
-		_box(p, Vector3(0.09, size.y * 0.78, 0.09), Vector3(sx * size.x * 0.4, size.y * 0.39, hz * 0.8), steel)
-	# Inclined belt frame: a box tilted about X so it rises toward +Z.
-	var inc := Node3D.new()
-	inc.position = Vector3(0.0, size.y * 0.55, 0.0)
-	inc.rotation.x = -deg_to_rad(20.0)
-	p.add_child(inc)
-	_box(inc, Vector3(size.x * 0.78, 0.06, size.z * 0.96), Vector3.ZERO, dark)           # belt deck
-	_box(inc, Vector3(0.05, size.y * 0.16, size.z * 0.96), Vector3(size.x * 0.4, size.y * 0.1, 0.0), skirt)
-	_box(inc, Vector3(0.05, size.y * 0.16, size.z * 0.96), Vector3(-size.x * 0.4, size.y * 0.1, 0.0), skirt)
-	# End rollers (crosswise) at each end of the incline.
-	_cyl(inc, size.y * 0.12, size.y * 0.12, size.x * 0.84, Vector3(0.0, 0.0, hz * 0.94), dark, "x")
-	_cyl(inc, size.y * 0.12, size.y * 0.12, size.x * 0.84, Vector3(0.0, 0.0, -hz * 0.94), dark, "x")
-	# Discharge lip at the top that drops flake into the compactor funnel.
-	_box(p, Vector3(size.x * 0.5, size.y * 0.12, 0.4), Vector3(0.0, size.y * 0.82, hz * 0.85), steel)
-	# Drive motor at the head pulley.
-	_motor_unit(p, size.y * 0.1, size.x * 0.22, Vector3(size.x * 0.42, size.y * 0.7, hz * 0.8), "x", ghost)
+	# Migrated to BeltBuilder. The legacy geometry is fully bespoke (deck box
+	# sits AT the pivot origin not +0.22*size.y above it; rollers at ±hz*0.94
+	# not ±hz; tapered legs; custom-radius motor at a specific Y; discharge lip
+	# at Y=size.y*0.82). BeltBuilder's primitive deck/rollers/rails/legs/motor/
+	# chute hardcode positions that don't match this belt, so we set every
+	# component to 'none'/false and build the entire visual inside the `extras`
+	# callable. BeltBuilder still owns the placeable_id meta + 'placed_object'
+	# group + 'belt' group + 'belt_speed' meta + BeltSurface script (the single
+	# tagging path — see judge spec). Geometry is byte-for-byte equivalent.
+	var spec : Dictionary = BeltBuilder.make_spec()
+	spec.deck_kind          = "none"                  # skip BeltBuilder's deck box (wrong Y/length)
+	spec.rollers            = "none"                  # legacy uses ±hz*0.94, length 0.84 (generic = ±hz, 0.9)
+	spec.side_rails         = "none"                  # legacy skirts in `color` at unique offsets
+	spec.has_legs           = false                   # legacy uses tapered legs (short -Z, tall +Z)
+	spec.motor              = "none"                  # legacy motor has custom r/length and position
+	spec.chute              = "none"                  # legacy discharge lip at Y=size.y*0.82 (not relative to deck_y)
+	spec.belt_speed_mps     = _BELT_CARRY_SPEED       # legacy tagging at build_node line 862-877 already handles this
+	# NB call-site at line 1100 still passes the child Model node (not the
+	# StaticBody3D). The parent body is already tagged at build_node (lines
+	# 862-877) so we go through build_internal (geometry only) — calling
+	# BeltBuilder.build here would re-tag the Model child with 'placed_object'
+	# / 'placeable_id', polluting group iteration. The full single-tagging-path
+	# collapse waits until build_node itself moves to BELT_SPECS dispatch.
+
+	# One-off geometry callable — reproduces the legacy primitives 1:1.
+	var build_extras : Callable = func(body: Node3D, _deck_root: Node3D, eff_size: Vector3, _spec: Dictionary, is_ghost: bool) -> void:
+		var ldark : StandardMaterial3D = PlaceableCatalog._mat(PlaceableCatalog._DARK, is_ghost, 0.3, 0.7)
+		var lsteel : StandardMaterial3D = PlaceableCatalog._mat(PlaceableCatalog._STEEL, is_ghost, 0.5, 0.45)
+		var lskirt : StandardMaterial3D = PlaceableCatalog._mat(color, is_ghost, 0.3, 0.6)
+		var hz : float = eff_size.z * 0.45
+		# Frame legs — taller at the +Z (discharge) end so the belt climbs.
+		var leg_signs : Array[float] = [-1.0, 1.0]
+		for sx in leg_signs:
+			PlaceableCatalog._box(body, Vector3(0.09, eff_size.y * 0.42, 0.09),
+				Vector3(sx * eff_size.x * 0.4, eff_size.y * 0.21, -hz * 0.8), lsteel)
+			PlaceableCatalog._box(body, Vector3(0.09, eff_size.y * 0.78, 0.09),
+				Vector3(sx * eff_size.x * 0.4, eff_size.y * 0.39, hz * 0.8), lsteel)
+		# Inclined belt frame: a Node3D tilted -20° about X so it rises toward +Z.
+		var inc := Node3D.new()
+		inc.position = Vector3(0.0, eff_size.y * 0.55, 0.0)
+		inc.rotation.x = -deg_to_rad(20.0)
+		body.add_child(inc)
+		PlaceableCatalog._box(inc, Vector3(eff_size.x * 0.78, 0.06, eff_size.z * 0.96),
+			Vector3.ZERO, ldark)                                                       # belt deck
+		PlaceableCatalog._box(inc, Vector3(0.05, eff_size.y * 0.16, eff_size.z * 0.96),
+			Vector3(eff_size.x * 0.4, eff_size.y * 0.1, 0.0), lskirt)
+		PlaceableCatalog._box(inc, Vector3(0.05, eff_size.y * 0.16, eff_size.z * 0.96),
+			Vector3(-eff_size.x * 0.4, eff_size.y * 0.1, 0.0), lskirt)
+		# End rollers (crosswise) at each end of the incline. D4 — spin at v/r.
+		var cb_r : float = eff_size.y * 0.12
+		var cb_rpm : float = (_BELT_CARRY_SPEED * 60.0) / (TAU * cb_r)
+		PlaceableCatalog._spinning_cyl(inc, cb_r, cb_r, eff_size.x * 0.84,
+			Vector3(0.0, 0.0,  hz * 0.94), ldark, "x", Vector3.RIGHT, is_ghost, cb_rpm)
+		PlaceableCatalog._spinning_cyl(inc, cb_r, cb_r, eff_size.x * 0.84,
+			Vector3(0.0, 0.0, -hz * 0.94), ldark, "x", Vector3.RIGHT, is_ghost, cb_rpm)
+		# Discharge lip at the top that drops flake into the compactor funnel.
+		PlaceableCatalog._box(body, Vector3(eff_size.x * 0.5, eff_size.y * 0.12, 0.4),
+			Vector3(0.0, eff_size.y * 0.82, hz * 0.85), lsteel)
+		# Drive motor at the head pulley.
+		PlaceableCatalog._motor_unit(body, eff_size.y * 0.1, eff_size.x * 0.22,
+			Vector3(eff_size.x * 0.42, eff_size.y * 0.7, hz * 0.8), "x", is_ghost)
+	spec.extras = [build_extras]
+
+	# Geometry-only path — build_node already tagged the parent StaticBody3D at
+	# lines 862-877. Calling BeltBuilder.build here would re-tag the child Model
+	# node passed as `p`, polluting 'placed_object' / 'belt' group iteration.
+	BeltBuilder.build_internal(p, "compactorband", size, spec, ghost)
 
 # ── Kopfilter: the die-head screen-changer — a heated melt block with a
 #    horizontal slide-plate (carries the screen pack) + melt pipe in/out. ───────
@@ -5217,6 +5923,48 @@ static func _m_shredder_2(p: Node3D, size: Vector3, color: Color, ghost: bool) -
 ## of horizontal travel. Use to bring Shredder 2's flake stream up to the small
 ## feed hopper that drops onto the washing-line belts.
 static func _m_inclined_belt(p: Node3D, _size: Vector3, _color: Color, ghost: bool) -> void:
+	# Migrated to BeltBuilder. The diagonal deck_kind path in BeltBuilder.build_deck
+	# is not yet fully implemented (it builds a flat horizontal box rather than the
+	# Y+Z rotated diagonal one this belt needs), so all visual geometry is delivered
+	# through a single `extras` callable that replays the legacy build verbatim.
+	# Standard pipeline parts are forced to no-op via the spec (rollers/side_rails/
+	# motor/chute = none, has_legs = false, deck_width_frac = 0, deck_thickness_m = 0)
+	# so build_internal only emits a degenerate (zero-volume, invisible) deck-skin
+	# box plus the geometry our extras callable spawns. Visual result is byte-
+	# equivalent to the pre-migration function.
+	#
+	# `p` here is the Model Node3D (build_node passes the Model child, NOT the
+	# body). build_node already tags the body — _BELT_IDS membership at line 863
+	# adds 'belt' group, belt_speed meta, and BeltSurface script to the StaticBody3D.
+	# So we use build_internal() directly (NOT build()), which builds geometry only
+	# without re-running tagging or stamping placeable_id/placed_object onto the
+	# Model node (which would duplicate the body's tagging).
+	var spec : Dictionary = BeltBuilder.make_spec()
+	spec.deck_kind = "diagonal"
+	spec.rise = 8.0
+	spec.horizontal_run = 8.0
+	spec.length_override_m = sqrt(8.0 * 8.0 + 8.0 * 8.0)  # ~11.31 m diagonal
+	# Suppress standard pipeline parts — the extras callable below builds everything.
+	spec.deck_width_frac = 0.0
+	spec.deck_thickness_m = 0.0
+	spec.deck_scroll = 0.0
+	spec.rollers = "none"
+	spec.side_rails = "none"
+	spec.has_legs = false
+	spec.motor = "none"
+	spec.chute = "none"
+	# Legacy verbatim geometry — diagonal deck + rails, A-frame legs + cross-braces,
+	# spinning end rollers, top motor, and bottom catch-pan.
+	# Callable must reference the class (not `self` — this is a static func, so
+	# `self` is null). PlaceableCatalog._inclined_belt_extras is itself static.
+	spec.extras = [Callable(PlaceableCatalog, "_inclined_belt_extras")]
+	BeltBuilder.build_internal(p, "inclined_belt_8m", _size, spec, ghost)
+
+# Extras callable for inclined_belt_8m — invoked by BeltBuilder after standard
+# geometry. Signature: (p, deck_root, size, spec, ghost). We don't need
+# deck_root / size / spec here because the legacy build uses hardcoded 8 m
+# rise / 8 m run; we just reproduce it as-was.
+static func _inclined_belt_extras(p: Node3D, _deck_root: Node3D, _size: Vector3, _spec: Dictionary, ghost: bool) -> void:
 	var dark := _mat(_DARK, ghost, 0.3, 0.7)
 	var steel := _mat(_STEEL, ghost, 0.5, 0.45)
 	var rise := 8.0
@@ -5236,9 +5984,10 @@ static func _m_inclined_belt(p: Node3D, _size: Vector3, _color: Color, ghost: bo
 		var rail := _box(p, Vector3(0.06, 0.18, diag), \
 			mid + Vector3(sx * 0.42, 0.10, 0.0), steel)
 		rail.rotation = Vector3(angle, 0.0, 0.0)
-	# End rollers (axis along X, crossing the belt)
-	_cyl(p, 0.22, 0.22, 0.95, Vector3(0.0, 0.25, 0.25), dark, "x")               # bottom roller
-	_cyl(p, 0.22, 0.22, 0.95, Vector3(0.0, rise - 0.25, horiz - 0.25), dark, "x")  # top roller
+	# End rollers (axis along X, crossing the belt). D4 — spin at v/r.
+	var ib_rpm : float = (_BELT_CARRY_SPEED * 60.0) / (TAU * 0.22)
+	_spinning_cyl(p, 0.22, 0.22, 0.95, Vector3(0.0, 0.25, 0.25), dark, "x", Vector3.RIGHT, ghost, ib_rpm)               # bottom roller
+	_spinning_cyl(p, 0.22, 0.22, 0.95, Vector3(0.0, rise - 0.25, horiz - 0.25), dark, "x", Vector3.RIGHT, ghost, ib_rpm)  # top roller
 	# A-frame support legs at 1/4, 1/2, 3/4 along the diagonal
 	for i in [1, 2, 3]:
 		var t: float = float(i) / 4.0
@@ -5305,6 +6054,48 @@ static func _m_sga_drum(p: Node3D, size: Vector3, color: Color, ghost: bool) -> 
 
 # ── overband metal separator: belt + suspended magnet gantry + tramp-metal box ─
 static func _m_metal_belt(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
+	# Migrated to BeltBuilder. The metal_belt is a low-deck (deck_y = size.y * 0.45)
+	# bespoke combo: standard 4-legs at the catalog color (NOT the generic _STEEL
+	# token — that would shift the leg shade), two STATIC end rollers parented at
+	# the SAME y as deck_y (not below it like the default flat path), a thin deck
+	# skin at deck_y + size.y * 0.12 (not the flat-path default of +0.22), and the
+	# overband-magnet decoration (2 posts + magnet block + tramp-metal catch box).
+	#
+	# These positional offsets and the bespoke leg color don't map cleanly onto
+	# the current BeltSpec dispatch (build_deck hard-codes skin Y at deck_y+0.22,
+	# leg_material token resolves to a different color, and the 'overband_magnet_
+	# gantry' decoration token is reserved but a no-op in apply_decorations()).
+	# So every standard pipeline part is suppressed (has_legs=false, deck_kind=
+	# "none", rollers="none", side_rails="none", motor="none", chute="none") and
+	# all visual geometry is delivered through a single `extras` callable that
+	# replays the legacy build verbatim. The body's belt-group / belt_speed /
+	# BeltSurface tagging is handled by build_node() (metal_belt is in _BELT_IDS),
+	# so we use build_internal() — the builder's apply_tagging() path isn't
+	# invoked from build_internal regardless of tag_as_belt's value.
+	var spec : Dictionary = BeltBuilder.make_spec()
+	spec.deck_kind = "none"          # extras builds the deck skin at the bespoke +0.12 y
+	spec.deck_width_frac = 0.0
+	spec.deck_thickness_m = 0.0
+	spec.deck_scroll = 0.0
+	spec.rollers = "none"
+	spec.side_rails = "none"
+	spec.has_legs = false            # extras builds legs in the catalog color
+	spec.motor = "none"
+	spec.chute = "none"
+	spec.belt_speed_mps = _BELT_CARRY_SPEED   # matches legacy _BELT_IDS dispatch
+	# Same `self`-in-static-func blocker as scraper_conveyor — must bind to the
+	# class so the magnet gantry / posts / catch box / end rollers actually build.
+	spec.extras = [Callable(PlaceableCatalog, "_metal_belt_extras").bind(color)]
+	BeltBuilder.build_internal(p, "metal_belt", size, spec, ghost)
+
+# Extras callable for metal_belt — invoked by BeltBuilder after standard
+# (here all-suppressed) geometry. Signature with the bound color is:
+#   (color, p, deck_root, size, spec, ghost) — `color` is bound at the call site
+# so the legs can use the catalog's steel shade (Color(0.40, 0.42, 0.48)) instead
+# of the generic _STEEL constant. Reproduces the legacy _m_metal_belt body
+# byte-for-byte: 4 legs, 2 static end rollers (axis X), thin deck skin, overband-
+# magnet gantry (2 posts + magnet block), and tramp-metal catch box off +Z end.
+static func _metal_belt_extras(color: Color, p: Node3D, _deck_root: Node3D, size: Vector3, _spec: Dictionary, ghost: bool) -> void:
 	var dark := _mat(_DARK, ghost, 0.3, 0.7)
 	var steel := _mat(color, ghost, 0.5, 0.45)
 	var magnet := _mat(Color(0.18, 0.20, 0.24), ghost, 0.55, 0.45)
@@ -6957,25 +7748,36 @@ static func _m_extruder_silo(p: Node3D, size: Vector3, color: Color, ghost: bool
 		var rib_y : float = frame_top + box_h * (0.18 + 0.21 * float(i))
 		_box(p, Vector3(bw + 0.06, 0.07, bd + 0.06), Vector3(0.0, rib_y, 0.0), steel)
 
-	# ── WINDOWS: 4 tall thin recessed dark rectangles on the FRONT (+Z) face ─────
-	# Two columns — LEFT pair at -X, RIGHT pair at +X — each column two stacked.
+	# ── WINDOWS: tall thin recessed dark rectangles on BOTH ±Z faces ─────────────
+	# Two columns per face — LEFT pair at -X, RIGHT pair at +X — top row narrow
+	# (`win_h`) and bottom row 2× tall per operator photo (you see more of the
+	# accumulated film through the lower port, less near the top).
+	# #98 — was front-face only; mirrored to the -Z face per operator.
 	var win_w : float = size.x * 0.16
-	var win_h : float = box_h * 0.26
-	var win_z : float = bd * 0.5 + 0.015                    # just proud of the +Z skin
-	for col_x in [-size.x * 0.22, size.x * 0.22]:
-		for row in [-1.0, 1.0]:
-			var win_y : float = box_cy + row * box_h * 0.22
-			# Light surround makes the dark glass read as recessed.
+	var win_h : float = box_h * 0.22
+	var win_h_bottom : float = win_h * 2.0
+	for face_sz in [1.0, -1.0]:
+		var face_z : float = face_sz * (bd * 0.5 + 0.015)
+		# `out_n` is the local +Z direction of the surround/glass meshes so the
+		# light frame sits BEHIND the glass relative to the face normal on both
+		# sides. Without this the back-face windows render inside-out.
+		var surround_offset : float = -0.01 * face_sz
+		for col_x in [-size.x * 0.22, size.x * 0.22]:
+			# TOP window — narrow.
+			var top_y : float = box_cy + box_h * 0.22
 			_box(p, Vector3(win_w + 0.08, win_h + 0.08, 0.02),
-				Vector3(col_x, win_y, win_z - 0.01), steel)
-			_box(p, Vector3(win_w, win_h, 0.03), Vector3(col_x, win_y, win_z), glass)
-
-	# ── DANGER SIGN: small white plate with a red strip, low on the +Z face ──────
-	var sign_y : float = frame_top + box_h * 0.10
-	_box(p, Vector3(size.x * 0.16, size.x * 0.12, 0.03),
-		Vector3(size.x * 0.04, sign_y, win_z), white)
-	_box(p, Vector3(size.x * 0.16, size.x * 0.035, 0.035),
-		Vector3(size.x * 0.04, sign_y + size.x * 0.03, win_z + 0.005), red)
+				Vector3(col_x, top_y, face_z + surround_offset), steel)
+			_box(p, Vector3(win_w, win_h, 0.03), Vector3(col_x, top_y, face_z), glass)
+			# BOTTOM window — 2× height. Centre lowered so the bigger pane fits
+			# without overlapping the top row.
+			var bot_cy : float = box_cy - box_h * 0.22 - (win_h_bottom - win_h) * 0.5
+			_box(p, Vector3(win_w + 0.08, win_h_bottom + 0.08, 0.02),
+				Vector3(col_x, bot_cy, face_z + surround_offset), steel)
+			_box(p, Vector3(win_w, win_h_bottom, 0.03), Vector3(col_x, bot_cy, face_z), glass)
+	# #98 — operator: the previous arbitrary white-and-black stripe with a red
+	# centre line on the +Z face is NOT on the reference photo. Removed.
+	var _ignored_red := red
+	var _ignored_white := white
 
 	# ── TWO CYCLONES on top, one centred over each window column ─────────────────
 	# Reuse the _m_cyclone silhouette (cylindrical body + cone) but mounted so the
@@ -7024,6 +7826,7 @@ static func _m_extruder_silo(p: Node3D, size: Vector3, color: Color, ghost: bool
 	# material has piled up here near the outlet" through the glass. Tuned to
 	# match the four-window layout above (two columns × two rows on +Z).
 	var flake_mat := _mat(Color(0.86, 0.84, 0.78), ghost, 0.05, 0.85)
+	var win_z : float = bd * 0.5 + 0.015   # restored for the flake-pile block below
 	for col_x in [-size.x * 0.22, size.x * 0.22]:
 		for row in [-1.0, 1.0]:
 			var w_cy : float = box_cy + row * box_h * 0.22

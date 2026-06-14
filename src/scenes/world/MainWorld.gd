@@ -51,23 +51,27 @@ var setup_overlay : CanvasLayer = null
 ##   beard : "none" (default), "thin", "thick"
 ##   hair_color: optional Color override (defaults to a variant-driven choice)
 const NPC_DATA: Dictionary = {
-	"romain":     {"name": "Romain",     "role": "shift_leader",       "color": Color.CYAN,             "appearance": {},
+	# #126 — per-NPC body proportions + facial-hair flavor. height_mul scales the
+	# whole body in Y (0.85=short, 1.15=tall), width_mul scales torso/limbs in
+	# X/Z (0.85=skinny, 1.20=heavyset). moustache/goatee are independent of
+	# beard so you can have moustache-only or goatee-only.
+	"romain":     {"name": "Romain",     "role": "shift_leader",       "color": Color.CYAN,             "appearance": {"height_mul": 1.0, "width_mul": 1.0, "moustache": true},
 		"car": "res://src/scenes/vehicles/cars/HyundaiI20_2010.tscn"},
-	"vincent":    {"name": "Vincent",    "role": "asst_shift_leader",  "color": Color.CORNFLOWER_BLUE,  "appearance": {},
+	"vincent":    {"name": "Vincent",    "role": "asst_shift_leader",  "color": Color.CORNFLOWER_BLUE,  "appearance": {"height_mul": 1.12, "width_mul": 0.88},
 		"car": "res://src/scenes/vehicles/cars/VolvoV40Placeholder.tscn"},   # PLACEHOLDER: black Astra-as-Volvo until real GLB lands
-	"pascal":     {"name": "Pascal",     "role": "extruder_op",        "color": Color.YELLOW,           "appearance": {"hair": "bald"},
-		"car": "res://src/scenes/vehicles/cars/FordStreetka.tscn"},   # black Streetka — Ford Ka GLB Y-squished + repainted
-	"kevin":      {"name": "Kevin",      "role": "extruder_op",        "color": Color.GREEN,            "appearance": {"cap": true},
+	"pascal":     {"name": "Pascal",     "role": "extruder_op",        "color": Color.YELLOW,           "appearance": {"hair": "bald", "height_mul": 0.90, "width_mul": 1.15},
+		"car": "res://src/scenes/vehicles/cars/FordKa2003.tscn"},   # Ford Ka 2003 — per-NPC Y-shrink 0.85 (body only) applied in _spawn_car_in_bay for "pascal"
+	"kevin":      {"name": "Kevin",      "role": "extruder_op",        "color": Color.GREEN,            "appearance": {"cap": true, "hair_under_cap": true, "height_mul": 1.0, "width_mul": 1.0},
 		"car": ""},   # not assigned a car yet
-	"emrah":      {"name": "Emrah",      "role": "all_rounder",        "color": Color.WHITE,            "appearance": {"beard": "thin"},
+	"emrah":      {"name": "Emrah",      "role": "all_rounder",        "color": Color.WHITE,            "appearance": {"goatee": true, "height_mul": 1.13, "width_mul": 0.87},
 		"car": "res://src/scenes/vehicles/cars/AudiA3Sportback.tscn"},
-	"yassine":    {"name": "Yassine",    "role": "transitional",       "color": Color.LIGHT_GRAY,       "appearance": {},
+	"yassine":    {"name": "Yassine",    "role": "transitional",       "color": Color.LIGHT_GRAY,       "appearance": {"height_mul": 1.0, "width_mul": 0.95},
 		"car": "passenger:player"},   # rides shotgun in the player's Swift
-	"abdellilah": {"name": "Abdellilah", "role": "permanent_feeder",   "color": Color.ORANGE,           "appearance": {"cap": true},
+	"abdellilah": {"name": "Abdellilah", "role": "permanent_feeder",   "color": Color.ORANGE,           "appearance": {"cap": true, "hair_under_cap": true, "height_mul": 1.0, "width_mul": 1.05},
 		"car": "res://src/scenes/vehicles/cars/FordKa2003.tscn"},
-	"mohammed":   {"name": "Mohammed",   "role": "permanent_feeder",   "color": Color.TOMATO,           "appearance": {"beard": "thick", "hair": "mid", "hair_color": Color(0.10, 0.07, 0.05)},
+	"mohammed":   {"name": "Mohammed",   "role": "permanent_feeder",   "color": Color.TOMATO,           "appearance": {"beard": "full", "hair": "mid", "hair_color": Color(0.10, 0.07, 0.05), "height_mul": 1.0, "width_mul": 1.0},
 		"car": "res://src/scenes/vehicles/cars/VWGolfMk6.tscn"},
-	"peter":      {"name": "Peter",      "role": "production_manager", "color": Color.MEDIUM_ORCHID,    "appearance": {},
+	"peter":      {"name": "Peter",      "role": "production_manager", "color": Color.MEDIUM_ORCHID,    "appearance": {"height_mul": 0.98, "width_mul": 1.20},
 		"car": "res://src/scenes/vehicles/cars/BMWX1Placeholder.tscn"},   # PLACEHOLDER: white AClass-as-BMW until real GLB lands
 }
 # #155 — Player's car. Swift goes to the player; Yasin (yassine) rides shotgun.
@@ -531,6 +535,64 @@ func _set_body_render_layer(root: Node, layer_mask: int) -> void:
 	for c in root.get_children():
 		_set_body_render_layer(c, layer_mask)
 
+## #200 — Head/body split tagging so the first-person camera hides ONLY the
+## head (which would poke into the operator's FOV) while keeping neck, shoulders,
+## arms, torso and legs visible when the player looks down. Humanoid builds
+## boxes in local space with head_y ≈ 0.68 — anything with local y ≥ HEAD_Y_THRESHOLD
+## is treated as head (eyes/nose/mouth/ears/hair/cap) and tagged onto the "head"
+## layer; everything below is tagged onto the "body" layer.
+##   layer 2 (1<<1) = "body visible to FP"
+##   layer 3 (1<<2) = "head — hidden from FP only"
+## The wardrobe mirror & third-person cameras see BOTH layers.
+const _PLAYER_BODY_LAYER : int = 1 << 1
+const _PLAYER_HEAD_LAYER : int = 1 << 2
+const _HEAD_Y_THRESHOLD  : float = 0.55
+
+func _set_body_render_layer_split(root: Node) -> void:
+	if root is MeshInstance3D:
+		var mi := root as MeshInstance3D
+		# Local position relative to the Humanoid rig root tells us if this is a
+		# head-region box. Walk up from the mesh summing Node3D y positions until
+		# we hit the PlayerBody root (orientations are identity inside Humanoid,
+		# so summing y is correct).
+		var y_local : float = mi.position.y
+		var p : Node = mi.get_parent()
+		while p != null and (not (p is Node3D) or p.name != "PlayerBody"):
+			if p is Node3D:
+				y_local += (p as Node3D).position.y
+			p = p.get_parent()
+		mi.layers = _PLAYER_HEAD_LAYER if y_local >= _HEAD_Y_THRESHOLD else _PLAYER_BODY_LAYER
+	for c in root.get_children():
+		_set_body_render_layer_split(c)
+
+## T8 — Toggle the player's footwear when the shift starts / ends. Rebuilds the
+## visible Humanoid under the player capsule using the cached appearance dict
+## with the new footwear value. The customizer's other choices (shirt, hair,
+## beard, cap) are preserved because we mutate the same dict.
+func _player_apply_footwear(player_node: Node, on_shift: bool) -> void:
+	if player_node == null or not is_instance_valid(player_node):
+		return
+	var appearance : Dictionary = player_node.get_meta("appearance", {})
+	appearance["footwear"] = "work_boots" if on_shift else "shoes"
+	player_node.set_meta("appearance", appearance)
+	# Humanoid.rebuild_appearance swaps the body subtree without re-spawning the
+	# capsule, so the player's position / camera / inputs are untouched.
+	var humanoid_script = load("res://src/scenes/world/Humanoid.gd")
+	if humanoid_script == null or not humanoid_script.has_method("rebuild_appearance"):
+		return
+	var shirt : Color = Color(0.96, 0.45, 0.12)
+	if appearance.has("shirt_color"):
+		var sc = appearance["shirt_color"]
+		if sc is Color: shirt = sc
+		elif sc is Dictionary and sc.has("r"):
+			shirt = Color(float(sc["r"]), float(sc["g"]), float(sc["b"]))
+	humanoid_script.rebuild_appearance(player_node, shirt, 0, appearance)
+	# Re-tag freshly-built MeshInstances onto the body / head render layers
+	# (#200 — body visible to FP cam, head hidden from FP only).
+	var body : Node = player_node.find_child("PlayerBody", true, false)
+	if body != null:
+		_set_body_render_layer_split(body)
+
 func _spawn_player() -> void:
 	## Tries saved position first; falls back to the PlayerSpawn marker.
 	## Saved position is the actual capsule centre (no +1.0 lift needed on load).
@@ -634,12 +696,16 @@ func _spawn_player() -> void:
 	camera.name = "Camera3D"
 	camera.current = true   # explicitly own the viewport so vehicle CabCameras
 							# added later don't accidentally win the fallback.
-	# #152 — Render layer 1 = world (default for everything), layer 2 = "self"
-	# (the player's own visible body). The first-person camera ignores layer 2
-	# so the operator doesn't see their own torso poking up into the FOV; the
-	# wardrobe mirror (#153) and any third-person camera include layer 2 to
-	# see the body.
-	camera.cull_mask &= ~(1 << 1)   # drop layer 2
+	# #200 — Render layers:
+	#   layer 1 = world (default for everything)
+	#   layer 2 = player body (neck + shoulders + arms + torso + legs)
+	#   layer 3 = player head (head, ears, eyes, nose, mouth, hair, cap)
+	# The FIRST-PERSON camera keeps layer 2 (so when the operator looks down
+	# they see their own torso/legs/arms — they have a visible body) and
+	# drops ONLY layer 3, hiding the head that would otherwise poke up into
+	# the FOV. The wardrobe mirror (#153) and any third-person camera see
+	# both layers and render the whole body + head.
+	camera.cull_mask &= ~(1 << 2)   # drop layer 3 (head only)
 	head.add_child(camera)
 
 	var col := CollisionShape3D.new()
@@ -663,6 +729,13 @@ func _spawn_player() -> void:
 			shirt = Color(float(sc["r"]), float(sc["g"]), float(sc["b"]))
 	var humanoid_script = load("res://src/scenes/world/Humanoid.gd")
 	if humanoid_script:
+		# T8 — auto-switch player footwear by shift state. On-shift = work_boots,
+		# off-shift = shoes. The operator's customizer choice still wins for the
+		# OTHER appearance fields (shirt, hair, beard, cap); only footwear is
+		# overridden so the player matches the NPC behaviour (PreShiftSequence
+		# swaps NPCs at the bell — the player now follows the same rule).
+		var on_shift : bool = shift_clock != null and bool(shift_clock.get("shift_active"))
+		appearance["footwear"] = "work_boots" if on_shift else "shoes"
 		var body : Node3D = humanoid_script.build(shirt, 0, appearance)
 		body.name = "PlayerBody"
 		# Tag every MeshInstance3D in the body subtree onto render layer 2
@@ -670,6 +743,14 @@ func _spawn_player() -> void:
 		# it but the wardrobe mirror sees it.
 		_set_body_render_layer(body, 1 << 1)
 		player.add_child(body)
+		# Auto-switch when the shift bell rings (or ends). Stored on the player
+		# so a later customizer reload reads the freshly-applied value.
+		player.set_meta("appearance", appearance)
+		if shift_clock != null:
+			if shift_clock.has_signal("shift_started"):
+				shift_clock.shift_started.connect(_player_apply_footwear.bind(player, true))
+			if shift_clock.has_signal("shift_ended"):
+				shift_clock.shift_ended.connect(_player_apply_footwear.bind(player, false))
 
 	add_child(player)
 	player.global_position = spawn_pos
@@ -730,6 +811,70 @@ func _get_factory_anchor() -> Vector3:
 ## meaningless Y.
 func _on_floor(pos: Vector3, lift: float = 0.0) -> Vector3:
 	return Vector3(pos.x, _floor_top_y() + lift, pos.z)
+
+# =============================================================================
+# BUILDING YAW — canonical rotation convention (#5xx: exterior orientation)
+# =============================================================================
+# Cached principal yaw of the building shell (top-down longest-edge angle).
+# Computed once, reused by every exterior subsystem that wraps the building
+# (fence, parking, roads, floodlights, ceiling lights, trees, power poles,
+# neighbour buildings, street signs).
+#
+# Convention copied from `_spawn_bale_yards_from_layout` (lines ~1234-1292):
+#   walk the polygon corners, find the LONGEST EDGE, then
+#   yaw = atan2(u_axis.x, u_axis.z) from that edge.
+#
+# Every exterior helper that previously used world-axis Vector3 offsets now
+# rotates that offset through `Basis(Vector3.UP, _building_yaw())` before
+# adding it to the anchor. When the building shell is axis-aligned the yaw
+# is 0 (or ±90°) and the helpers degenerate to the old behaviour — so this
+# fix is a no-op for axis-aligned shells but correctly wraps a rotated one.
+var _building_yaw_cache : float = NAN
+
+func _building_yaw() -> float:
+	if not is_nan(_building_yaw_cache):
+		return _building_yaw_cache
+	_building_yaw_cache = _compute_building_yaw()
+	print("[MainWorld] building_yaw = %.1f deg" % rad_to_deg(_building_yaw_cache))
+	return _building_yaw_cache
+
+## Derive the building's principal yaw from the ShellMesh AABB longest top-down
+## edge. The bale-yard convention proper would walk the actual wall polygon,
+## but the AABB longest-edge gives us 0° for shells that are world-axis aligned
+## (X-long) and ±90° for shells whose long axis is Z; sufficient for the
+## current building. Picks up any yaw baked into shell.global_transform too.
+func _compute_building_yaw() -> float:
+	var shell := get_node_or_null("BuildingShell/ShellMesh") as MeshInstance3D
+	if shell == null:
+		shell = find_child("ShellMesh", true, false) as MeshInstance3D
+	if shell == null or shell.mesh == null:
+		return 0.0
+	var local_aabb : AABB = shell.mesh.get_aabb()
+	# Transform the LOCAL AABB's four floor corners into world space so any
+	# yaw inside shell.global_transform shows up in the longest edge.
+	var x0 := local_aabb.position.x; var x1 := x0 + local_aabb.size.x
+	var z0 := local_aabb.position.z; var z1 := z0 + local_aabb.size.z
+	var y_mid := local_aabb.position.y + local_aabb.size.y * 0.5
+	var c00 : Vector3 = shell.global_transform * Vector3(x0, y_mid, z0)
+	var c01 : Vector3 = shell.global_transform * Vector3(x0, y_mid, z1)
+	var c10 : Vector3 = shell.global_transform * Vector3(x1, y_mid, z0)
+	# Pick the longer of the two unique adjacent edges (00→01 vs 00→10).
+	var e1 : Vector3 = c01 - c00; e1.y = 0.0
+	var e2 : Vector3 = c10 - c00; e2.y = 0.0
+	var u_axis : Vector3
+	if e1.length_squared() >= e2.length_squared():
+		u_axis = e1.normalized() if e1.length() > 0.001 else Vector3.RIGHT
+	else:
+		u_axis = e2.normalized() if e2.length() > 0.001 else Vector3.RIGHT
+	# atan2(x, z) — same convention as bale yard `bale_yaw` so rotating a
+	# local +X offset by this yaw aligns with the building's long edge.
+	return atan2(u_axis.x, u_axis.z)
+
+## Rotate a local-frame offset vector through the building's principal yaw and
+## anchor it onto `ga`. Single helper used everywhere fence / parking / roads /
+## lights / props previously added a raw Vector3 to the spawn anchor.
+func _bo(ga: Vector3, offset: Vector3) -> Vector3:
+	return ga + Basis(Vector3.UP, _building_yaw()) * offset
 
 # =============================================================================
 # NPCs
@@ -1281,9 +1426,16 @@ func _spawn_bale_yards_from_layout() -> void:
 			var mmi_sticker := PlaceableCatalog.build_yard_sticker_multimesh(supplier_id, bales_this_yard)
 			if mmi != null:
 				yard_node.add_child(mmi)
-				# Far MM kicks in past CLOSE_LOD_M; close MM fades out at the
-				# same threshold. 4 m margin = soft swap with no visible pop.
-				const CLOSE_LOD_M : float = 35.0
+				# #243 — was 35 m with FADE_SELF (which fades both MMs to
+				# fully TRANSPARENT around the threshold — operator saw bales
+				# briefly disappear at the swap band, not swap). Now 25 m
+				# with FADE_DISABLED for a hard cut: close MM hard-ends at
+				# 25 m, far MM hard-begins at 25 m, no margin = no
+				# transparent window. The close MM's per-bale slabs and wire
+				# overlays inside _m_bale_simple already cap at 24 m, so the
+				# 25 m hard-cut lines up with their cull and no double-render
+				# is visible.
+				const CLOSE_LOD_M : float = 25.0
 				# #170 — was 12 m, but visibility_range_end on a MultiMeshInstance3D
 				# culls the WHOLE INSTANCE, not per-bale. With a 30 m-wide yard the
 				# yard centre sits ~15 m from the operator standing AT a bale, so
@@ -1292,13 +1444,13 @@ func _spawn_bale_yards_from_layout() -> void:
 				# sees stickers when within practical scan range of any yard.
 				const STICKER_LOD_M : float = 80.0
 				mmi.visibility_range_begin        = CLOSE_LOD_M
-				mmi.visibility_range_begin_margin = 4.0
-				mmi.visibility_range_fade_mode    = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+				mmi.visibility_range_begin_margin = 0.0
+				mmi.visibility_range_fade_mode    = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 				if mmi_close != null:
 					yard_node.add_child(mmi_close)
 					mmi_close.visibility_range_end        = CLOSE_LOD_M
-					mmi_close.visibility_range_end_margin = 4.0
-					mmi_close.visibility_range_fade_mode  = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+					mmi_close.visibility_range_end_margin = 0.0
+					mmi_close.visibility_range_fade_mode  = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 				if mmi_sticker != null:
 					yard_node.add_child(mmi_sticker)
 					mmi_sticker.visibility_range_end        = STICKER_LOD_M
@@ -2100,40 +2252,55 @@ func _spawn_lpg_rack() -> void:
 var staff_parking : StaffParking = null
 
 func _spawn_road_and_parking() -> void:
-	# Anchor everything to the captured player spawn. Operator tunes
-	# PARKING_OFFSET / ROAD_OFFSET below if the satellite-aligned layout
-	# wants different relative positions.
+	# Anchor everything to the captured player spawn. Every local-frame offset
+	# below is rotated by the building's principal yaw before being added to
+	# the anchor — that's what makes fence/parking/roads wrap a rotated shell
+	# correctly instead of running parallel to world X/Z. (Adopts the bale-
+	# yard rotation convention; see `_building_yaw`.)
 	var anchor : Vector3 = _player_spawn_pos
 	var ground_y : float = anchor.y - 1.0      # capsule centre - half-height
+	var by : float = _building_yaw()
+	var basis_y := Basis(Vector3.UP, by)
 	# Wide exterior ground plane around the anchor so the player can walk
 	# outside the building without falling into void.
 	_spawn_exterior_ground(anchor, ground_y)
-	# Parking lot — 25 m west, 8 m north of the spawn (roughly behind the
-	# building's south face, where the operator's satellite shows it).
+	# Parking lot — 25 m local-west, 8 m local-north of the spawn. The local
+	# offset is rotated through `by` so the lot lands beside the building's
+	# south face regardless of shell yaw; the parking node's own yaw is set
+	# to `by` so its internal local-X (bay rows) × local-Z (length) align
+	# with the building wall.
 	const PARKING_OFFSET := Vector3(-25.0, 0.0, 8.0)
+	var parking_world : Vector3 = basis_y * PARKING_OFFSET
 	staff_parking = preload("res://src/scenes/world/StaffParking.gd").new()
 	staff_parking.name = "StaffParking"
 	add_child(staff_parking)
 	staff_parking.global_position = Vector3(
-		anchor.x + PARKING_OFFSET.x,
+		anchor.x + parking_world.x,
 		ground_y + 0.02,
-		anchor.z + PARKING_OFFSET.z)
+		anchor.z + parking_world.z)
+	staff_parking.rotation.y = by
 	_spawn_parking_lamps(staff_parking, ground_y)
-	# Road — De Asselen Kuil — runs north-south ~15 m west of the parking
-	# lot, then turns east into the parking aisle. All waypoints anchored
-	# to the player spawn so the layout survives any shell re-anchoring.
+	# Road — De Asselen Kuil — runs along the building's local west edge
+	# (negative local-X), then turns east into the parking aisle. Waypoints
+	# are expressed in BUILDING-local coords and rotated by `by`.
+	var ga := Vector3(anchor.x, ground_y, anchor.z)
 	var road : Road = preload("res://src/scenes/world/Road.gd").new()
 	road.name = "DeAsselenKuil"
 	road.surface_y = ground_y
 	road.setup([
-		anchor + Vector3(-42.0, 0.0, -40.0),   # south end on De Asselen Kuil
-		anchor + Vector3(-42.0, 0.0,   0.0),   # straight north along west edge
-		anchor + Vector3(-42.0, 0.0,  20.0),   # past parking entry, continues north
-		anchor + Vector3(-25.0, 0.0,  30.0),   # turn east toward plant entry pad
-		anchor + Vector3(  0.0, 0.0,  30.0),   # plant entry pad
+		# Far south end of De Asselen Kuil — extended ~400 m local-south so the
+		# player Swift sits at a real "FAR end of the road" approach instead of
+		# right next to the parking entry. Long northbound straight gives a
+		# clear drive-in cinematic before the east turn into the lot.
+		_bo(ga, Vector3(-42.0, 0.0, -440.0)),  # FAR south spawn end
+		_bo(ga, Vector3(-42.0, 0.0, -40.0)),   # original south end (now mid-road)
+		_bo(ga, Vector3(-42.0, 0.0,   0.0)),   # straight north along west edge
+		_bo(ga, Vector3(-42.0, 0.0,  20.0)),   # past parking entry, continues north
+		_bo(ga, Vector3(-25.0, 0.0,  30.0)),   # turn east toward plant entry pad
+		_bo(ga, Vector3(  0.0, 0.0,  30.0)),   # plant entry pad
 	])
 	add_child(road)
-	_spawn_street_sign(anchor + Vector3(-43.5, 0.0, 0.0), "De Asselen Kuil")
+	_spawn_street_sign(_bo(ga, Vector3(-43.5, 0.0, 0.0)), "De Asselen Kuil")
 	# Extended road network + perimeter + exterior props. Each helper is a
 	# self-contained orchestrator that prints its own one-line tally so we can
 	# tell at a glance which exterior layer actually landed.
@@ -2141,7 +2308,8 @@ func _spawn_road_and_parking() -> void:
 	_spawn_perimeter_fence(anchor, ground_y)
 	_spawn_exterior_props(anchor, ground_y)
 	_spawn_floodlights(anchor)
-	print("[MainWorld] Road + parking anchored to player spawn %s" % anchor)
+	print("[MainWorld] Road + parking anchored to player spawn %s (yaw %.1f deg)" \
+		% [anchor, rad_to_deg(by)])
 
 ## Extra road polylines branching off De Asselen Kuil:
 ##   1. South E-W extension along the south boundary
@@ -2151,34 +2319,38 @@ func _spawn_road_and_parking() -> void:
 ## Each segment instantiates its own Road via the same preload pattern as the
 ## main De Asselen Kuil road so they all share the surface_y / paint pipeline.
 func _spawn_road_extensions(anchor: Vector3, ground_y: float) -> void:
+	# All offsets below are in BUILDING-local space; _bo rotates them through
+	# the building's principal yaw so each segment runs parallel to the right
+	# wall instead of the world axes. (Adopts the bale-yard rotation convention.)
+	var ga := Vector3(anchor.x, ground_y, anchor.z)
 	var road_script := preload("res://src/scenes/world/Road.gd")
 	var segments : Array = [
 		{
 			"name": "DeAsselenKuil_SouthExt",
 			"waypoints": [
-				anchor + Vector3(-42.0, 0.0, -40.0),
-				anchor + Vector3(  5.0, 0.0, -40.0),
+				_bo(ga, Vector3(-42.0, 0.0, -40.0)),
+				_bo(ga, Vector3(  5.0, 0.0, -40.0)),
 			],
 		},
 		{
 			"name": "EastServiceRoad",
 			"waypoints": [
-				anchor + Vector3( 35.0, 0.0, -30.0),
-				anchor + Vector3( 35.0, 0.0,  20.0),
+				_bo(ga, Vector3( 35.0, 0.0, -30.0)),
+				_bo(ga, Vector3( 35.0, 0.0,  20.0)),
 			],
 		},
 		{
 			"name": "NorthBaleYardAccess",
 			"waypoints": [
-				anchor + Vector3(  5.0, 0.0,  35.0),
-				anchor + Vector3( 40.0, 0.0,  35.0),
+				_bo(ga, Vector3(  5.0, 0.0,  35.0)),
+				_bo(ga, Vector3( 40.0, 0.0,  35.0)),
 			],
 		},
 		{
 			"name": "InternalPlantAisle",
 			"waypoints": [
-				anchor + Vector3(-15.0, 0.0,  -5.0),
-				anchor + Vector3( -5.0, 0.0,  -5.0),
+				_bo(ga, Vector3(-15.0, 0.0,  -5.0)),
+				_bo(ga, Vector3( -5.0, 0.0,  -5.0)),
 			],
 		},
 	]
@@ -2198,12 +2370,16 @@ func _spawn_perimeter_fence(anchor: Vector3, ground_y: float) -> void:
 	# `anchor` is the spawn capsule centre (Y ≈ floor + 1.0). Build a
 	# ground-level base so XZ comes from the anchor but Y comes from ground_y —
 	# avoids the double-Y bug the audit caught (anchor.y + ground_y ≈ 6m up).
+	# All offsets are in BUILDING-local space; _bo rotates them through the
+	# building's principal yaw so the fence wraps the shell instead of running
+	# along world ±X / ±Z. (Adopts the bale-yard rotation convention.)
 	var ga := Vector3(anchor.x, ground_y, anchor.z)
+	var by : float = _building_yaw()
 	var fence_script := preload("res://src/scenes/world/exterior/ChainLinkFence.gd")
 	var perimeters : Array = [
-		{"name": "PerimeterFence_North",     "waypoints": [ga + Vector3(-30.0, 0.0,  38.0), ga + Vector3( 40.0, 0.0,  38.0)]},
-		{"name": "PerimeterFence_East",      "waypoints": [ga + Vector3( 40.0, 0.0,  38.0), ga + Vector3( 40.0, 0.0, -35.0)]},
-		{"name": "PerimeterFence_SouthEast", "waypoints": [ga + Vector3( 40.0, 0.0, -35.0), ga + Vector3(  8.0, 0.0, -35.0)]},
+		{"name": "PerimeterFence_North",     "waypoints": [_bo(ga, Vector3(-30.0, 0.0,  38.0)), _bo(ga, Vector3( 40.0, 0.0,  38.0))]},
+		{"name": "PerimeterFence_East",      "waypoints": [_bo(ga, Vector3( 40.0, 0.0,  38.0)), _bo(ga, Vector3( 40.0, 0.0, -35.0))]},
+		{"name": "PerimeterFence_SouthEast", "waypoints": [_bo(ga, Vector3( 40.0, 0.0, -35.0)), _bo(ga, Vector3(  8.0, 0.0, -35.0))]},
 	]
 	for p in perimeters:
 		var f = fence_script.new()
@@ -2213,12 +2389,14 @@ func _spawn_perimeter_fence(anchor: Vector3, ground_y: float) -> void:
 		f.setup(p["waypoints"])
 		add_child(f)
 	# Gate barrier at the south plant entry — closed by default; opens via
-	# set_open(true) when the gate logic eventually wires up.
+	# set_open(true) when the gate logic eventually wires up. Rotate the gate
+	# itself by `by` so its boom arm sweeps along the perimeter, not world-X.
 	var gate = preload("res://src/scenes/world/exterior/GateBarrier.gd").new()
 	gate.name = "PlantEntryGate"
 	gate.setup(0.0)
 	add_child(gate)
-	gate.global_position = ga + Vector3(0.0, 0.0, 25.0)
+	gate.global_position = _bo(ga, Vector3(0.0, 0.0, 25.0))
+	gate.rotation.y = by
 	print("[MainWorld] Perimeter fence: %d runs + 1 gate barrier (south entry)" % perimeters.size())
 
 ## Sidewalk + crosswalk + road markings + trees + power line + transformer +
@@ -2227,40 +2405,45 @@ func _spawn_perimeter_fence(anchor: Vector3, ground_y: float) -> void:
 func _spawn_exterior_props(anchor: Vector3, ground_y: float) -> void:
 	# Ground-level base anchor (XZ from spawn, Y from ground). Avoids the
 	# anchor.y + ground_y double-count the audit caught.
+	# All offsets below are BUILDING-LOCAL and rotated through `_bo` so the
+	# sidewalk / power line / trees / neighbour buildings wrap a yawed shell
+	# correctly. (Adopts the bale-yard rotation convention.)
 	var ga := Vector3(anchor.x, ground_y, anchor.z)
-	# Sidewalk hugs the west side of De Asselen Kuil, parallel to the main road.
+	var by : float = _building_yaw()
+	# Sidewalk hugs the local-west side of De Asselen Kuil, parallel to the road.
 	var sidewalk = preload("res://src/scenes/world/exterior/Sidewalk.gd").new()
 	sidewalk.name = "Sidewalk_DeAsselenKuil"
 	sidewalk.surface_y = ground_y
 	# setup() BEFORE add_child so _ready() sees populated waypoints.
 	sidewalk.setup([
-		ga + Vector3(-45.0, 0.0, -40.0),
-		ga + Vector3(-45.0, 0.0,  20.0),
+		_bo(ga, Vector3(-45.0, 0.0, -40.0)),
+		_bo(ga, Vector3(-45.0, 0.0,  20.0)),
 	])
 	add_child(sidewalk)
 	# Crosswalk at the bend where De Asselen Kuil turns east. Y comes from
 	# global_position; surface_y=0 keeps the stripes flush (was double-anchored).
+	# Rotated to face along the local road direction.
 	var crosswalk = preload("res://src/scenes/world/exterior/Crosswalk.gd").new()
 	crosswalk.name = "Crosswalk_DeAsselenKuil"
 	crosswalk.surface_y = 0.0
 	crosswalk.setup(6)
 	add_child(crosswalk)
-	crosswalk.global_position = ga + Vector3(-42.0, 0.0, 0.0)
+	crosswalk.global_position = _bo(ga, Vector3(-42.0, 0.0, 0.0))
+	crosswalk.rotation.y = by
 	# Road markings — STOP bar at the gate, give-way triangles approaching it,
-	# directional arrows in the parking aisles. Kind strings MUST match
-	# RoadMarking.gd's match arms exactly (audit caught: was "stop"/"give_way"/"arrow",
-	# silently queue_free'd as unknown).
+	# directional arrows in the parking aisles. Position offsets AND each
+	# marking's local-yaw arg are rotated by `by`.
 	var marking_script := preload("res://src/scenes/world/exterior/RoadMarking.gd")
 	var markings = marking_script.new()
 	markings.name = "RoadMarkings"
 	markings.surface_y = ground_y
 	add_child(markings)
-	markings.build_at("stop_text",          ga + Vector3(0.0, 0.0, 22.0), 0.0, "white")
-	markings.build_at("give_way_triangle",  ga + Vector3(0.0, 0.0, 19.0), 0.0, "white")
-	markings.build_at("give_way_triangle",  ga + Vector3(2.0, 0.0, 19.0), 0.0, "white")
-	markings.build_at("arrow_straight",     ga + Vector3(-25.0, 0.0, 5.0),  0.0, "white")
-	markings.build_at("arrow_straight",     ga + Vector3(-25.0, 0.0, 11.0), 0.0, "white")
-	# Tree clusters spaced along the west side of De Asselen Kuil.
+	markings.build_at("stop_text",          _bo(ga, Vector3(0.0, 0.0, 22.0)),    by, "white")
+	markings.build_at("give_way_triangle",  _bo(ga, Vector3(0.0, 0.0, 19.0)),    by, "white")
+	markings.build_at("give_way_triangle",  _bo(ga, Vector3(2.0, 0.0, 19.0)),    by, "white")
+	markings.build_at("arrow_straight",     _bo(ga, Vector3(-25.0, 0.0, 5.0)),   by, "white")
+	markings.build_at("arrow_straight",     _bo(ga, Vector3(-25.0, 0.0, 11.0)),  by, "white")
+	# Tree clusters spaced along the local-west side of De Asselen Kuil.
 	var tree_script := preload("res://src/scenes/world/exterior/TreeCluster.gd")
 	var tree_offsets : Array = [
 		Vector3(-50.0, 0.0, -30.0),
@@ -2272,16 +2455,16 @@ func _spawn_exterior_props(anchor: Vector3, ground_y: float) -> void:
 		var tc = tree_script.new()
 		tc.name = "TreeCluster_%d" % i
 		add_child(tc)
-		tc.cluster_at(ga + tree_offsets[i], 3.5, 5, i * 17 + 3)
+		tc.cluster_at(_bo(ga, tree_offsets[i]), 3.5, 5, i * 17 + 3)
 	# Power poles every ~30 m along De Asselen Kuil, with wires strung between
-	# consecutive poles.
+	# consecutive poles. Pole positions are local-frame then rotated.
 	var pole_script := preload("res://src/scenes/world/exterior/PowerPole.gd")
 	var pole_positions : Array = [
-		ga + Vector3(-46.0, 0.0, -38.0),
-		ga + Vector3(-46.0, 0.0, -10.0),
-		ga + Vector3(-46.0, 0.0,  18.0),
-		ga + Vector3(-30.0, 0.0,  33.0),
-		ga + Vector3(  0.0, 0.0,  33.0),
+		_bo(ga, Vector3(-46.0, 0.0, -38.0)),
+		_bo(ga, Vector3(-46.0, 0.0, -10.0)),
+		_bo(ga, Vector3(-46.0, 0.0,  18.0)),
+		_bo(ga, Vector3(-30.0, 0.0,  33.0)),
+		_bo(ga, Vector3(  0.0, 0.0,  33.0)),
 	]
 	var poles : Array = []
 	for i in pole_positions.size():
@@ -2297,31 +2480,34 @@ func _spawn_exterior_props(anchor: Vector3, ground_y: float) -> void:
 	var transformer = preload("res://src/scenes/world/exterior/TransformerCabinet.gd").new()
 	transformer.name = "TransformerCabinet"
 	add_child(transformer)
-	transformer.global_position = ga + Vector3(10.0, 0.0, -10.0)
+	transformer.global_position = _bo(ga, Vector3(10.0, 0.0, -10.0))
+	transformer.rotation.y = by
 	transformer.setup()
 	# Neighbour buildings — SW solar-roof neighbour + NW smaller workshop.
+	# Pass yaw_rad = by so each building's front face is parallel to De
+	# Asselen Kuil (which now runs along the building's local Z, not world Z).
 	var nb_script := preload("res://src/scenes/world/exterior/NeighborBuilding.gd")
 	var nb_sw = nb_script.new()
 	nb_sw.name = "NeighborBuilding_SW"
 	add_child(nb_sw)
 	nb_sw.build_at(
-		ga + Vector3(-60.0, 0.0, -55.0),
+		_bo(ga, Vector3(-60.0, 0.0, -55.0)),
 		Vector3(18.0, 6.0, 14.0),
 		Color(0.82, 0.78, 0.70),
 		"Recyclepartner BV",
 		Color(0.18, 0.22, 0.36),
-		0.0,
+		by,
 		11)
 	var nb_nw = nb_script.new()
 	nb_nw.name = "NeighborBuilding_NW"
 	add_child(nb_nw)
 	nb_nw.build_at(
-		ga + Vector3(-55.0, 0.0, 25.0),
+		_bo(ga, Vector3(-55.0, 0.0, 25.0)),
 		Vector3(12.0, 4.5, 10.0),
 		Color(0.74, 0.70, 0.62),
 		"Werkplaats",
 		Color(0.20, 0.18, 0.18),
-		0.0,
+		by,
 		23)
 	print("[MainWorld] Exterior props: sidewalk + crosswalk + %d markings + %d tree clusters + %d power poles + transformer + 2 neighbour buildings" \
 		% [5, tree_offsets.size(), pole_positions.size()])
@@ -2331,13 +2517,21 @@ func _spawn_exterior_props(anchor: Vector3, ground_y: float) -> void:
 ## tilts down by `tilt_down_deg`; we set yaw so the cone points away from the
 ## wall it hangs on.
 func _spawn_floodlights(anchor: Vector3) -> void:
+	# Mount positions are BUILDING-LOCAL offsets from the spawn anchor, and
+	# yaw values are local-frame ("south face" = pointing along local -Z).
+	# Both the position offset AND the yaw are rotated by the building's
+	# principal yaw, so the floodlight lands flush with the right wall and
+	# its cone points away from THAT wall — not at some bit of sky.
+	# (Adopts the bale-yard rotation convention.)
+	var by : float = _building_yaw()
+	var basis_y := Basis(Vector3.UP, by)
 	var fl_script := preload("res://src/scenes/world/exterior/Floodlight.gd")
-	# (local_offset_from_anchor, yaw_deg_pointing_outward)
+	# (local_offset_from_anchor in BUILDING frame, local_yaw_deg)
 	var mounts : Array = [
-		{"pos": Vector3(-5.0, 5.0,  5.0), "yaw": 180.0},  # south face, west side
-		{"pos": Vector3( 5.0, 5.0,  5.0), "yaw": 180.0},  # south face, east side
-		{"pos": Vector3(15.0, 5.0,  5.0), "yaw": 180.0},  # south face, far east
-		{"pos": Vector3(-8.0, 5.0, 15.0), "yaw":  90.0},  # west face, mid
+		{"pos": Vector3(-5.0, 5.0,  5.0), "yaw": 180.0},  # local-south face, west side
+		{"pos": Vector3( 5.0, 5.0,  5.0), "yaw": 180.0},  # local-south face, east side
+		{"pos": Vector3(15.0, 5.0,  5.0), "yaw": 180.0},  # local-south face, far east
+		{"pos": Vector3(-8.0, 5.0, 15.0), "yaw":  90.0},  # local-west face, mid
 	]
 	for i in mounts.size():
 		var m : Dictionary = mounts[i]
@@ -2348,9 +2542,10 @@ func _spawn_floodlights(anchor: Vector3) -> void:
 		# default by the time setup() ran post-add_child).
 		fl.setup(25.0)
 		add_child(fl)
-		fl.global_position = anchor + (m["pos"] as Vector3)
-		fl.rotation.y = deg_to_rad(float(m["yaw"]))
-	print("[MainWorld] Floodlights: %d wall-mounted (south + west building faces)" % mounts.size())
+		fl.global_position = anchor + basis_y * (m["pos"] as Vector3)
+		fl.rotation.y = deg_to_rad(float(m["yaw"])) + by
+	print("[MainWorld] Floodlights: %d wall-mounted (south + west building faces, yaw %.1f deg)" \
+		% [mounts.size(), rad_to_deg(by)])
 
 ## #145 Phase 1 — Bake a NavigationRegion3D from the interior floor + the
 ## exterior ground plane. NPCs route through this region instead of walking
@@ -2430,7 +2625,7 @@ func _spawn_shift_cars_and_player_drive_in() -> void:
 			continue
 		var slot : Dictionary = _CAR_SLOTS[npc_id]
 		_spawn_car_in_bay(car_path, int(slot["side"]), int(slot["idx"]),
-			"%s's car" % String(data["name"]))
+			"%s's car" % String(data["name"]), String(npc_id))
 		spawned_cars += 1
 	# (D) Player's Swift on the south end of De Asselen Kuil, facing north
 	# (so the operator drives forward into the lot). Parked alongside the
@@ -2455,7 +2650,7 @@ func _spawn_shift_cars_and_player_drive_in() -> void:
 	print("[MainWorld] #155 shift-start: %d NPC cars in lot, player in Swift on road, %d assets missing (%s)" \
 		% [spawned_cars, missing_assets.size(), str(missing_assets)])
 
-func _spawn_car_in_bay(scene_path: String, side: int, idx: int, label: String) -> Node3D:
+func _spawn_car_in_bay(scene_path: String, side: int, idx: int, label: String, npc_id: String = "") -> Node3D:
 	var ps := load(scene_path) as PackedScene
 	if ps == null:
 		push_warning("[MainWorld] #155: car scene missing: %s" % scene_path)
@@ -2466,17 +2661,56 @@ func _spawn_car_in_bay(scene_path: String, side: int, idx: int, label: String) -
 	add_child(car)
 	car.transform = staff_parking.bay_world_transform(side, idx)
 	car.set_meta("display_label", label)
+	# Per-NPC body-only overrides. Pascal drives the same Ford Ka 2003 GLB as
+	# Abdellilah but his is the lower-slung "Streetka"-style variant: shrink
+	# 15 % on Y. Body-only: wheels are reparented to VehicleWheel3D nodes that
+	# are children of the Car (not of the scaled imported subtree) by
+	# Car._articulate_wheels, so they stay round.
+	if npc_id == "pascal":
+		# Pre-set _model_scale BEFORE the deferred load_model finishes if it
+		# hasn't already run (subclass _ready calls load_model synchronously
+		# in our Car flow, so this is set as a follow-up rescale of the body
+		# subtree). Walks the immediate children, applies Y=0.85 to anything
+		# that's not a VehicleWheel3D / Area3D / Camera3D / CollisionShape3D
+		# (i.e. just the imported GLB body root). Safe because Car treats
+		# `_model_scale` as a one-shot — re-applying via Node3D.scale is
+		# additive only on the body, not the wheels.
+		call_deferred("_apply_pascal_body_squish", car)
 	return car
+
+## Pascal's Ford Ka rides lower than Abdellilah's — squish the imported GLB
+## body subtree on Y only. Wheels live under VehicleWheel3D nodes (siblings of
+## the body), so they stay perfectly round.
+func _apply_pascal_body_squish(car: Node3D) -> void:
+	if car == null or not is_instance_valid(car):
+		return
+	for child in car.get_children():
+		if child is VehicleWheel3D:
+			continue
+		if child is Camera3D or child is Area3D or child is CollisionShape3D:
+			continue
+		if child is Node3D:
+			var n : Node3D = child
+			# Body / imported-GLB root: Y-shrink 15 %.
+			n.scale = Vector3(n.scale.x, n.scale.y * 0.85, n.scale.z)
 
 ## #166 Phase B — install the pre-shift arrival sequence if (and only if) we
 ## are currently in the pre-shift window. Resumed mid-shift saves skip this
 ## (CrewManager + standard NPC behaviour take over from the moment of load).
+## Idempotent: a re-call (e.g. after a time-jump back into pre-shift) reuses
+## the existing PreShiftSequence node by calling its recompute_for() and
+## returning, instead of spawning a second copy.
 func _spawn_pre_shift_sequence() -> void:
 	if shift_clock == null:
 		return
 	if not shift_clock.has_method("is_pre_shift") or not bool(shift_clock.is_pre_shift()):
 		return
 	if npcs.is_empty():
+		return
+	var existing := get_node_or_null("PreShiftSequence")
+	if existing != null:
+		if existing.has_method("recompute_for"):
+			existing.call("recompute_for", float(shift_clock.shift_elapsed_seconds))
 		return
 	var seq_script := load("res://src/scenes/world/PreShiftSequence.gd")
 	if seq_script == null:
@@ -2514,10 +2748,11 @@ func _spawn_player_swift_on_road() -> Node3D:
 	if swift == null:
 		return null
 	add_child(swift)
-	# Park on the road. Road south waypoint is (anchor + (-42, _, -40));
-	# put the Swift a bit north of that with a heading of +Z (north).
+	# Park at the FAR south end of De Asselen Kuil (the new ~440 m south
+	# waypoint). Gives the operator a long clear approach northbound before
+	# the east turn into the lot — what was missing was distance.
 	var anchor : Vector3 = _player_spawn_pos
-	var pos := Vector3(anchor.x - 42.0, anchor.y - 1.0 + 0.3, anchor.z - 35.0)
+	var pos := Vector3(anchor.x - 42.0, anchor.y - 1.0 + 0.3, anchor.z - 435.0)
 	swift.global_position = pos
 	# Face north (+Z) — driver looks UP De Asselen Kuil toward the parking turn.
 	swift.rotation.y = 0.0
@@ -2932,6 +3167,150 @@ func _start_or_resume_shift() -> void:
 		# room to play out. The bell still emits shift_started at T=0.
 		shift_clock.start_pre_shift(PRE_SHIFT_WINDOW_S)
 		print("[MainWorld] Pre-shift started (%.0f min until bell)" % (PRE_SHIFT_WINDOW_S / 60.0))
+	# Apply the operator's "Starting time / Starting date" settings (gameplay
+	# tab). Empty strings = no-op (use the just-loaded shift state as-is). The
+	# call may seek the clock backwards into pre-shift OR forwards past the
+	# bell; either way it emits time_jumped which MainWorld handles below.
+	if shift_clock.has_method("apply_starting_settings"):
+		shift_clock.apply_starting_settings()
+	# Wire the recomputer so future Apply clicks in the Settings menu (or a
+	# live debug seek) reposition NPCs + cars without a save/reload round-trip.
+	if shift_clock.has_signal("time_jumped") \
+			and not shift_clock.time_jumped.is_connected(_on_time_jumped):
+		shift_clock.time_jumped.connect(_on_time_jumped)
+	# Pre-position cars + NPC pre-shift state to the now-canonical elapsed.
+	# This handles both the "operator picked a time" path and the "fresh game
+	# with no time override" path (elapsed == -PRE_SHIFT_WINDOW_S) uniformly.
+	_on_time_jumped(shift_clock.shift_elapsed_seconds)
+
+## ShiftClock.time_jumped handler. Re-evaluate every NPC + their car at the
+## new elapsed value. If the new instant is BEFORE a given NPC's arrival, the
+## NPC is hidden + their car is repositioned along De Asselen Kuil at the
+## distance corresponding to (arrives_at_s - elapsed) * NPC_DRIVE_SPEED_MPS
+## back from the parking-lot entry. If the new instant is AT-OR-AFTER, the
+## car teleports into its parking bay and the NPC's pre-shift state recomputes.
+func _on_time_jumped(new_elapsed: float) -> void:
+	# Ensure a PreShiftSequence exists if the new time is in pre-shift; if we
+	# landed past the bell, force any existing sequence to hand off.
+	if new_elapsed < 0.0:
+		var pss := get_node_or_null("PreShiftSequence")
+		if pss == null:
+			_spawn_pre_shift_sequence()
+		else:
+			if pss.has_method("recompute_for"):
+				pss.call("recompute_for", new_elapsed)
+	else:
+		var pss2 := get_node_or_null("PreShiftSequence")
+		if pss2 != null and pss2.has_method("_on_bell"):
+			pss2.call("_on_bell")
+	# Reposition cars along the road / into bays per NPC arrival time vs new
+	# elapsed value. Safe to call mid-shift (everyone has already arrived).
+	_position_cars_for_elapsed(new_elapsed)
+
+## Average car-driving speed on De Asselen Kuil for the NPC drive-in. ~28 km/h
+## (residential road). Used by _position_cars_for_elapsed to backsolve a
+## starting position on the road polyline so a car arrives at its bay exactly
+## at arrives_at_s. Phase B minimal-first: cars are TELEPORTED to that position
+## but not yet driven forward — a future Phase C can animate them along the
+## polyline. The teleport alone already cures the "car appears in bay before
+## the operator's set time" complaint.
+const NPC_DRIVE_SPEED_MPS : float = 8.0
+
+## Reposition every NPC car according to whether their arrives_at_s has passed.
+## - elapsed >= arrives_at_s → car parked in its bay (default state).
+## - elapsed < arrives_at_s  → car positioned on De Asselen Kuil at distance
+##   (arrives_at_s - elapsed) * NPC_DRIVE_SPEED_MPS back from the parking entry.
+##
+## The road waypoints are anchor + (-42,_,-40) → (-42,_,0) → (-42,_,20) →
+## (-25,_,30) → (0,_,30) (lines 2174-2180). The parking entry is roughly the
+## (-25,_,30) waypoint; we walk the polyline backwards from there.
+func _position_cars_for_elapsed(elapsed: float) -> void:
+	if staff_parking == null:
+		return
+	var anchor : Vector3 = _player_spawn_pos
+	var ground_y : float = anchor.y
+	# Road polyline IN ORDER FROM PARKING ENTRY BACK TO SOUTH END — so the
+	# "distance d along here" walk gives us how far back along the road the
+	# car still has to travel before its arrives_at_s.
+	var poly : Array[Vector3] = [
+		Vector3(anchor.x - 25.0, ground_y - 1.0 + 0.3, anchor.z + 30.0),  # parking entry
+		Vector3(anchor.x - 42.0, ground_y - 1.0 + 0.3, anchor.z + 20.0),
+		Vector3(anchor.x - 42.0, ground_y - 1.0 + 0.3, anchor.z + 0.0),
+		Vector3(anchor.x - 42.0, ground_y - 1.0 + 0.3, anchor.z - 40.0),  # south end
+	]
+	for npc_id in NPC_DATA.keys():
+		var data : Dictionary = NPC_DATA[npc_id]
+		var car_path : String = String(data.get("car", ""))
+		if car_path == "" or car_path == "passenger:player":
+			continue
+		if not _CAR_SLOTS.has(npc_id):
+			continue
+		var sched : Dictionary = PRE_SHIFT_SCHEDULE.get(npc_id, {})
+		var arrives_at : float = float(sched.get("arrives_at_s", -1.0e9))
+		var car : Node3D = _find_car_for(npc_id, data)
+		if car == null:
+			continue
+		if elapsed >= arrives_at:
+			# Past arrival → park in bay (canonical state).
+			var slot : Dictionary = _CAR_SLOTS[npc_id]
+			car.transform = staff_parking.bay_world_transform(
+				int(slot["side"]), int(slot["idx"]))
+		else:
+			# Still en-route → place on the road polyline at distance back
+			# from the parking entry. The car points forward (toward the entry).
+			var d : float = (arrives_at - elapsed) * NPC_DRIVE_SPEED_MPS
+			var pos_on_road : Vector3 = _point_along_polyline(poly, d)
+			car.global_position = pos_on_road
+			var face_to : Vector3 = _heading_toward_entry(poly, d)
+			if face_to.length() > 0.001:
+				car.look_at(car.global_position + face_to, Vector3.UP)
+
+## Walk a polyline from index 0 forward by `dist` metres, returning the world
+## position. If `dist` exceeds the polyline length, returns the last point.
+func _point_along_polyline(poly: Array[Vector3], dist: float) -> Vector3:
+	if poly.size() < 2:
+		return poly[0] if poly.size() == 1 else Vector3.ZERO
+	var remaining : float = maxf(0.0, dist)
+	for i in poly.size() - 1:
+		var a : Vector3 = poly[i]
+		var b : Vector3 = poly[i + 1]
+		var seg : float = a.distance_to(b)
+		if remaining <= seg:
+			var t : float = remaining / maxf(seg, 0.0001)
+			return a.lerp(b, t)
+		remaining -= seg
+	return poly[poly.size() - 1]
+
+## Heading vector pointing from the car's road position TOWARD the parking
+## entry (poly[0]). Walks the polyline by `dist`, finds the segment, returns
+## the vector from THAT point back to the segment's start (toward poly[0]).
+func _heading_toward_entry(poly: Array[Vector3], dist: float) -> Vector3:
+	if poly.size() < 2:
+		return Vector3.ZERO
+	var remaining : float = maxf(0.0, dist)
+	for i in poly.size() - 1:
+		var a : Vector3 = poly[i]
+		var b : Vector3 = poly[i + 1]
+		var seg : float = a.distance_to(b)
+		if remaining <= seg:
+			var dir : Vector3 = (a - b)
+			dir.y = 0.0
+			return dir.normalized() if dir.length() > 0.001 else Vector3.ZERO
+		remaining -= seg
+	var dir2 : Vector3 = poly[poly.size() - 2] - poly[poly.size() - 1]
+	dir2.y = 0.0
+	return dir2.normalized() if dir2.length() > 0.001 else Vector3.ZERO
+
+## Locate the spawned car node for an NPC. Cars are tagged with
+## set_meta("display_label", "<name>'s car") at spawn (line 2514), so we scan
+## MainWorld's children for that tag. Returns null if absent (car not spawned).
+func _find_car_for(_npc_id: String, data: Dictionary) -> Node3D:
+	var wanted : String = "%s's car" % String(data.get("name", ""))
+	for child in get_children():
+		if child is Node3D and child.has_meta("display_label"):
+			if String(child.get_meta("display_label")) == wanted:
+				return child as Node3D
+	return null
 
 # =============================================================================
 # SAVE / QUIT

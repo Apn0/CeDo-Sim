@@ -137,28 +137,54 @@ func receive_call(from_name: String, text: String) -> void:
 # =============================================================================
 # OUTGOING PTT — operator keys up to talk back to the crew
 # =============================================================================
-## Canned response lines, cycled by repeated PTT presses (real walkies don't
-## type — the simulator picks from a short repertoire).
+## Canned response lines. Real walkies don't type — the simulator picks from a
+## short repertoire. The operator opens the radio menu (U) and chooses one by
+## number (1..9) or arrow keys + Enter. The HUD owns the menu widget; this
+## autoload only knows the list and the send/audio routing.
 const PTT_LINES : Array[String] = [
 	"Copy that.",
 	"On my way.",
 	"Need a hand here.",
 	"Tank swap, give me five.",
 	"Standby.",
+	# ── Common shift radio phrases ───────────────────────────────────────────
+	# Real CeDo shift comms: start/stop a shift, break in/out, line pack-up
+	# announcements, silo swap requests, and the short-form acknowledgements
+	# you actually hear over the portagofoon. Order matches the menu's number
+	# keys, so don't reorder without also rebinding the HUD shortcuts.
+	"Start shift",
+	"Stop shift",
+	"Going on break",
+	"Back from break",
+	"Line 3A pack-up",
+	"Line 3B pack-up",
+	"Swap silo full",
+	"Tank swap, give me 5",
+	"Roger",
+	"Copy that",
+	"Wait one",
 ]
-var _ptt_idx : int = 0
 
-## Operator presses PTT. Plays the uplink chirp + emits transmit_sent so the
-## HUD can show "you: <line>" and any future NPC subscribers (crew AI) can
-## react. Returns false if the radio is dead — your colleagues won't hear you
-## either, same as in real life.
-func transmit() -> bool:
+## Send the canned line at `index`. Plays the uplink chirp + emits
+## transmit_sent so the HUD can show "you: <line>" and any future NPC subscribers
+## (crew AI) can react. Returns false if the radio is dead — your colleagues
+## won't hear you either, same as in real life. Out-of-range `index` is clamped
+## (defensive — the menu always passes a valid index).
+func transmit_line(index: int) -> bool:
+	if PTT_LINES.is_empty():
+		return false
+	var clamped : int = clampi(index, 0, PTT_LINES.size() - 1)
 	var heard := battery_alive()
-	var line := PTT_LINES[_ptt_idx]
-	_ptt_idx = (_ptt_idx + 1) % PTT_LINES.size()
+	var line := PTT_LINES[clamped]
 	if heard:
 		var am := get_node_or_null("/root/AudioManager")
 		if am and am.has_method("play_radio_uplink"):
 			am.call("play_radio_uplink", line, headset_on)   # the keyed-up line drives the voice (#163)
 	emit_signal("transmit_sent", line, heard)
 	return heard
+
+## Legacy alias — sends the FIRST canned line ("Copy that."). Kept so any
+## test harness or future code path that still calls `transmit()` keeps working,
+## but the in-game UI now goes through the menu + `transmit_line(index)`.
+func transmit() -> bool:
+	return transmit_line(0)

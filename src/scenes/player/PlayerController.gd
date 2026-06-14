@@ -258,6 +258,12 @@ func _apply_belt_carry(delta: float) -> void:
 			if collider.has_method("belt_velocity"):
 				v = collider.belt_velocity()
 			else:
+				# CANONICAL CONVENTION: downstream = body LOCAL +Z (see BeltSurface.gd
+				# docstring). BeltBuilder builds the discharge chute at local +Z,
+				# ShredderFeedBelt builds the deck along local +Z, the shader scrolls
+				# texture toward +Z on positive speed, and BuildMode adds rot_y + PI
+				# to each macro-placed body so its local +Z matches the world march
+				# (downstream). Carry the operator along +basis.z.
 				v = collider.global_transform.basis.z.normalized() * float(collider.get_meta("belt_speed", 0.0))
 			global_position += v * delta
 			return

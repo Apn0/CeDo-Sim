@@ -30,7 +30,7 @@ const DEFAULTS_GRAPHICS := {
 	"fxaa":             true,
 	"shadow_quality":   2,                # 0=off, 1=low, 2=med, 3=high, 4=ultra
 	"shadow_distance":  150.0,            # metres
-	"volumetric_fog":   false,            # off by default — adds haze; opt-in via menu
+	"volumetric_fog":   true,             # on by default — distance haze at 500m so far silos read crisp
 	"ssao":             true,
 	"sdfgi":            true,             # real-time global illumination (fills shadow/back faces)
 	"brightness":       1.0,              # 0.5 – 1.5
@@ -62,6 +62,16 @@ const DEFAULTS_GAMEPLAY := {
 	# shift plays out in ~20 real min. 1 = true real-time (8 real h); raise for a
 	# faster shift. ShiftClock reads this so the operator sets the pace they want.
 	"shift_time_scale":         24.0,
+	# Starting time-of-day (HH:MM, 24h). Empty string = "use shift bell start
+	# (07:00 / 15:00 / 23:00 per dienst)". ShiftClock reads on _ready; if the
+	# wall clock has already passed this today, it rolls forward to the next
+	# working day before seeking to the time. The Settings tab edits these.
+	"starting_time":            "07:00",
+	# Starting date (YYYY-MM-DD). Empty string = "use today (system date)".
+	# Day-of-week is what places the player on the 2-2-2-4 rota; the rota uses
+	# day_index (absolute day count) so the setting maps to a calendar day
+	# offset from today's date.
+	"starting_date":            "",
 	"subtitles":                true,
 	"subtitle_size":            "medium", # small / medium / large
 	"tutorial_hints":           true,
@@ -168,7 +178,7 @@ const ACTION_LABELS := {
 	"hotbar_4":                 "Hand: slot 4 (4)",
 	"hotbar_drop":              "Drop held tool (Q)",
 	"hose_advance_back":        "Hose: unanchor last ground point / return tip to reel (F)",
-	"walkie_ptt":               "Walkie: push-to-talk (U)",
+	"walkie_ptt":               "Walkie: open message menu (U)",
 	"freecam_save":             "Free camera: save current position to savefile (F5)",
 	"vehicle_lights":           "Vehicle: work lights (L)",
 	"vehicle_hazards":          "Vehicle: hazard blinkers (K)",

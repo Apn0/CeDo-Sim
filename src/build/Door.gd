@@ -116,8 +116,22 @@ func _prompt_text() -> String:
 	return base + "   ·   [Tab] then [X] to remove"
 
 func _unhandled_input(event: InputEvent) -> void:
-	# Toggle is driven by PlayerController's crosshair interaction ray.
-	return
+	# #122 — accept a direct E press whenever the player is inside the trigger
+	# zone, so the door is interactive even when the crosshair isn't on the leaf
+	# (operator complaint: E did nothing). The PlayerController's crosshair path
+	# still works the same — this is an additional fallback, not a replacement.
+	if not _player_near or _moving:
+		return
+	var is_interact : bool = false
+	if InputMap.has_action("interact"):
+		is_interact = event.is_action_pressed("interact")
+	if (not is_interact) and event is InputEventKey:
+		var k := event as InputEventKey
+		if k.pressed and not k.echo and k.keycode == KEY_E:
+			is_interact = true
+	if is_interact:
+		toggle()
+		get_viewport().set_input_as_handled()
 
 # =============================================================================
 func toggle() -> void:

@@ -318,7 +318,7 @@ func _discover() -> void:
 			# the jog logic entirely.
 			"switch_ctrl":  null,
 			# #138 — conveyor-8 bidirectional controller. Populated below for
-			# intake_belt_8 only.
+			# transportband_8 only.
 			"c8_ctrl":      null,
 		})
 		# #137 — attach the jog controller to switch_belt bodies and stash it on
@@ -326,7 +326,7 @@ func _discover() -> void:
 		if id == "switch_belt":
 			_nodes[_nodes.size() - 1]["switch_ctrl"] = SwitchBeltScript.attach_to(node3d)
 		# #138 — attach the bidirectional ramp controller to C8.
-		elif id == "intake_belt_8":
+		elif id == "transportband_8":
 			_nodes[_nodes.size() - 1]["c8_ctrl"] = Conveyor8Script.attach_to(node3d)
 	# Attach the advanced-system observers now that every node dict exists.
 	_attach_advanced_systems()
@@ -581,9 +581,9 @@ func _link_best_target(src_idx: int, source_port: Vector3, src_proc: String, exc
 var _pack_up_t : float = 0.0
 const _PACK_UP_GAP_S : float = 1.0           # seconds between successive belt pauses
 const _PACK_UP_ORDER : Array[String] = [
-	"intake_belt_11", "intake_belt_10", "intake_belt_9", "intake_belt_8_5",
-	"intake_belt_8", "intake_belt_7", "intake_belt_6", "intake_belt_5",
-	"intake_belt_4", "intake_belt_3", "intake_belt_2", "intake_belt_1",
+	"transportband_11", "transportband_10", "transportband_9", "transportband_8_5",
+	"transportband_8", "transportband_7", "transportband_6", "transportband_5",
+	"transportband_4", "transportband_3", "transportband_2", "transportband_1",
 	"trilzeef", "bunker",
 ]
 
@@ -1899,7 +1899,7 @@ static func _is_belt_id(id: String) -> bool:
 			or id == "compactorband" or id == "compactor_belt" \
 			or id == "switch_belt":
 		return true
-	return id.begins_with("intake_belt_") or id.begins_with("opzetband") \
+	return id.begins_with("transportband_") or id.begins_with("opzetband") \
 			or id.begins_with("westa_band")
 
 ## True when the source id is a friction separator — both the dry-process

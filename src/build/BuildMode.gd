@@ -133,7 +133,7 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 # `line_3b` so their vuilsnippersilo heads sit next to the VSS/U-bay discharge —
 # LineFlow's geometry linker will then auto-connect intake → vuilsnippersilo →
 # wash trains. Numbers belts 1..12 in their natural placement order (each tilts
-# its own deck via _intake_belt_spec — no extra geometry needed in the macro).
+# its own deck via _transportband_spec — no extra geometry needed in the macro).
 ## #136 — operator-spec second pass.
 ##
 ## Three structural changes from the original (#54) layout:
@@ -143,7 +143,7 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 ##      way and discharges DOWN onto 8.5, which feeds the U-bay (stortvak).
 ##      The C8 reversal + ramp logic is task #138; the LAYOUT here just puts
 ##      the geometry in the right place so LineFlow can wire the edges.
-##   2. switch_belt IS conveyor 12 — the duplicate intake_belt_12 entry is
+##   2. switch_belt IS conveyor 12 — the duplicate transportband_12 entry is
 ##      gone. The switch belt jogs along its own conveying axis to feed either
 ##      VSS_3A, VSS_3B, or both (task #137).
 ##   3. VSS is REMOVED from this macro. It belongs to the wash macro as its
@@ -156,30 +156,49 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 # series. _build_full_line treats x≠0 entries as branches; using a PARALLEL
 # split (both at the same z, opposite x) matches the 3B L-R split pattern.
 const LINE_SORT_SEQ : Array[Dictionary] = [
-	{"id": "trilzeef", "x": -2.5, "z": 0.0},
-	{"id": "trilzeef", "x":  2.5, "z": 0.0},
+	# D4 — operator: real plant feeds the trilzeef pair from an opzetband_3a3b
+	# at the head. Without it the macro just drops two parallel screens with no
+	# upstream feed surface.
+	{"id": "opzetband_3a3b"},
+	{"id": "trilzeef", "x": -2.5, "z": 1.0},
+	{"id": "trilzeef", "x":  2.5, "z": 1.0},
+]
+
+## D4 — Lines 3C + 6 share a front-end (opzetband_3c6 → shredder → climb belt →
+## trilzeef → wash chain). Previously placeable existed in the catalog but no
+## macro chained it, so the operator couldn't build the 3C/6 intake from the
+## "Lines" group. This is the shared 3C/6 front end; downstream wash diverges
+## per line (use LINE_3A/3B-style macros for that, with the wider flotation_tank_wide).
+const LINE_3C6_SEQ : Array[Dictionary] = [
+	{"id": "opzetband_3c6"},
+	{"id": "shredder_2"},
+	{"id": "inclined_belt_8m"},
+	{"id": "trilzeef"},
 ]
 
 const INTAKE_3A3B_SEQ : Array[Dictionary] = [
+	# D4 — opzetband_3a3b at the head feeds the shredder. Was missing; macro
+	# previously assumed bales arrived at the shredder by hand.
+	{"id": "opzetband_3a3b"},
 	{"id": "shredder_2"},
 	{"id": "inclined_belt_8m"},      # the climb out of shredder-2's discharge
-	{"id": "intake_belt_1"},
-	{"id": "intake_belt_2"},
-	{"id": "intake_belt_3"},
-	{"id": "intake_belt_4"},
-	{"id": "intake_belt_5"},
-	{"id": "intake_belt_6"},
-	{"id": "intake_belt_7"},
-	{"id": "intake_belt_8"},
+	{"id": "transportband_1"},
+	{"id": "transportband_2"},
+	{"id": "transportband_3"},
+	{"id": "transportband_4"},
+	{"id": "transportband_5"},
+	{"id": "transportband_6"},
+	{"id": "transportband_7"},
+	{"id": "transportband_8"},
 	# ── BRANCH (overflow path): C8.5 → U-bay on the -X side lane. The branch
 	#    is NOT a parallel sibling — it's the C8-reverse discharge target. C8
 	#    sends material here only when both VSSs are FULL (task #138).
-	{"id": "intake_belt_8_5", "x": -3.5, "z": -1.5},
+	{"id": "transportband_8_5", "x": -3.5, "z": -1.5},
 	{"id": "u_bay",           "x": -8.0, "z": -2.0},
 	# ── Main forward chain continues. ──
-	{"id": "intake_belt_9"},
-	{"id": "intake_belt_10"},
-	{"id": "intake_belt_11"},
+	{"id": "transportband_9"},
+	{"id": "transportband_10"},
+	{"id": "transportband_11"},
 	{"id": "switch_belt"},           # = conveyor 12; jogs ±1.5m to feed VSS_3A / VSS_3B
 ]
 const LINE_3B_SEQ : Array[Dictionary] = [
@@ -284,6 +303,15 @@ var _two_point_preview : MeshInstance3D = null
 # top kisses the deck) and _pole_snap_xz the floor-plane position to plant it at.
 var _pole_snap_height : float = 0.0          # 0 = no snap active; use default height
 var _pole_snap_xz     : Vector3 = Vector3.ZERO   # world position to plant the base
+
+# ── Machine-to-machine edge snap ──────────────────────────────────────────────
+# When the ghost's nearest face center is within SNAP_MAX_DIST_M of an already-
+# placed machine's nearest face center, the ghost JUMPS to the alignment
+# position so its edge butts up against the placed machine's edge. A green
+# vertical marker shows where the join lands; LMB places at that snap.
+const SNAP_MAX_DIST_M : float = 2.0
+var _snap_marker : Node3D = null
+var _snap_active : bool   = false
 const POLE_DEFAULT_H : float = 2.0           # matches the catalog size.y for poles
 const FLOOR_Y : float = 0.0
 
@@ -670,6 +698,26 @@ func _process(delta: float) -> void:
 	p.y += _ghost_height
 	_ghost.global_position = p
 	_ghost.rotation.y = _ghost_rot_y
+	# Machine-to-machine edge snap. Skipped for poles (own snap path), line
+	# macros, and two-point placeables (they snap by other means).
+	_snap_active = false
+	if (not _active_id.begins_with("line_")
+			and not PlaceableCatalog.is_pole(_active_id)
+			and not PlaceableCatalog.is_two_point(_active_id)):
+		var snap_info := _find_machine_snap(_ghost.global_position)
+		if not snap_info.is_empty():
+			var sp : Vector3 = snap_info["snap_pos"]
+			sp.y = _ghost.global_position.y
+			_ghost.global_position = sp
+			_snap_active = true
+			if _snap_marker == null:
+				_snap_marker = _build_snap_marker()
+				add_child(_snap_marker)
+			_snap_marker.visible = true
+			var mp : Vector3 = snap_info["midpoint"]
+			_snap_marker.global_position = Vector3(mp.x, FLOOR_Y, mp.z)
+	if not _snap_active and _snap_marker != null:
+		_snap_marker.visible = false
 	# Preview floor-reaching legs live: a raised machine's ghost shows its legs
 	# stretched to the ground (and hidden where they'd punch through a machine),
 	# matching what actually gets placed. No-op for ghosts without tagged legs. (#69)
@@ -678,6 +726,89 @@ func _process(delta: float) -> void:
 	# line from the captured start to the current cursor each frame.
 	if _has_two_point and _two_point_preview != null:
 		_update_two_point_preview(p)
+
+## A tall thin green vertical cylinder used as the edge-snap indicator.
+## Hangs above the snap point so the operator can spot it across the floor.
+func _build_snap_marker() -> Node3D:
+	var m := MeshInstance3D.new()
+	m.name = "SnapMarker"
+	var cm := CylinderMesh.new()
+	cm.top_radius = 0.06
+	cm.bottom_radius = 0.06
+	cm.height = 4.0
+	cm.radial_segments = 8
+	m.mesh = cm
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.20, 1.0, 0.30)
+	mat.emission_enabled = true
+	mat.emission = Color(0.20, 1.0, 0.30)
+	mat.emission_energy_multiplier = 2.0
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.no_depth_test = true              # always visible, never occluded by walls
+	m.material_override = mat
+	# Centre the cylinder so its base sits at the placement point and it points up.
+	m.position = Vector3(0.0, 2.0, 0.0)
+	var root := Node3D.new()
+	root.name = "SnapMarkerRoot"
+	root.add_child(m)
+	return root
+
+## Return the 4 face centers of an axis-aligned-then-Y-rotated box, in world XZ.
+## Faces are: [+local_z, -local_z, +local_x, -local_x]. Y is the box centre's Y.
+func _face_centers_xz(center: Vector3, rot_y: float, sx: float, sz: float) -> Array:
+	var c := cos(rot_y); var s := sin(rot_y)
+	# Godot Y-up rotation about Y by rot_y. World vectors of local axes:
+	var axis_x := Vector3(c, 0.0, -s)
+	var axis_z := Vector3(s, 0.0,  c)
+	return [
+		center + axis_z * sz * 0.5,
+		center - axis_z * sz * 0.5,
+		center + axis_x * sx * 0.5,
+		center - axis_x * sx * 0.5,
+	]
+
+## Search for the nearest placed-machine face within SNAP_MAX_DIST_M of any
+## ghost face center. Returns a dict with `snap_pos` (where ghost.global_position
+## should land so its closest face glues to the placed face), `midpoint` (world
+## XZ of the join — where the green marker goes), and `dist`. Empty dict = no
+## candidate in range.
+func _find_machine_snap(ghost_pos: Vector3) -> Dictionary:
+	var item : Dictionary = PlaceableCatalog.get_item(_active_id)
+	if item.is_empty():
+		return {}
+	var gsz : Vector3 = item.get("size", Vector3.ONE)
+	var ghost_faces : Array = _face_centers_xz(ghost_pos, _ghost_rot_y, gsz.x, gsz.z)
+	var best : Dictionary = {}
+	var best_d : float = SNAP_MAX_DIST_M
+	for child in _placed_root.get_children():
+		if not (child is Node3D):
+			continue
+		var pid : String = String(child.get_meta("placeable_id", ""))
+		if pid == "":
+			continue
+		var pitem : Dictionary = PlaceableCatalog.get_item(pid)
+		if pitem.is_empty():
+			continue
+		var psize : Vector3 = pitem.get("size", Vector3.ONE)
+		var n3 : Node3D = child as Node3D
+		var pfaces : Array = _face_centers_xz(n3.global_position, n3.rotation.y, psize.x, psize.z)
+		for gi in 4:
+			for pi in 4:
+				var gf : Vector3 = ghost_faces[gi]
+				var pf : Vector3 = pfaces[pi]
+				var dx : float = gf.x - pf.x
+				var dz : float = gf.z - pf.z
+				var d : float = sqrt(dx * dx + dz * dz)
+				if d < best_d:
+					best_d = d
+					var gf_off : Vector3 = (ghost_faces[gi] as Vector3) - ghost_pos
+					var snap_pos : Vector3 = pf - gf_off
+					best = {
+						"snap_pos": snap_pos,
+						"midpoint": pf,
+						"dist": d,
+					}
+	return best
 
 ## Walk the raycast hit collider up to find a placed object; if it's a belt,
 ## return the snap point + the required pole height. Empty dict = not a belt.
@@ -732,6 +863,10 @@ func _clear_ghost() -> void:
 	if _ghost and is_instance_valid(_ghost):
 		_ghost.queue_free()
 	_ghost = null
+	# Snap marker is shared across ghosts — just hide it.
+	_snap_active = false
+	if _snap_marker != null and is_instance_valid(_snap_marker):
+		_snap_marker.visible = false
 
 func _place_current() -> void:
 	if _ghost == null or not _ghost.visible:
@@ -840,6 +975,8 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 		seq = INTAKE_3A3B_SEQ
 	elif line_id == "line_sort":
 		seq = LINE_SORT_SEQ
+	elif line_id == "line_intake_3c6":
+		seq = LINE_3C6_SEQ
 	# Forward = the ghost's local -Z; right = local +X (lateral lane for branches).
 	var fwd := Vector3(-sin(rot_y), 0.0, -cos(rot_y))
 	var rgt := Vector3(cos(rot_y), 0.0, -sin(rot_y))
@@ -861,6 +998,14 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 	var branch_recirc : bool = false
 	var parallel_siblings : Array = [] # nodes flagged "parallel_branch"
 	var parallel_source : Node3D = null
+	# #141 — transportband chain Y-stacking + head-to-tail spacing. Consecutive
+	# transportband_* IDs stack vertically (each belt's inlet sits CHUTE_DROP_M
+	# below the previous belt's outlet, so the chutes baked into the belt body
+	# actually bridge to the next inlet) and sit head-to-tail in Z (no
+	# LINE_GAP_M between them). Anything else in the SEQ resets the chain.
+	const TB_CHUTE_DROP_M : float = 0.22
+	var prev_tb_outlet_y : float = -1.0   # sentinel = first belt sits on floor
+	var last_main_was_tb : bool = false
 	for entry in seq:
 		var mid : String = String(entry.get("id", ""))
 		if mid == "":
@@ -872,20 +1017,55 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 		var depth : float = 2.0
 		if not item.is_empty():
 			depth = maxf((item["size"] as Vector3).z, 0.5)
+		var is_tb : bool = mid.begins_with("transportband_")
+		# #141 — Y-stacking for transportbands. Compute this belt's base_y from
+		# the previous transportband's outlet height, so the chutes baked into
+		# each belt's outlet bridge into the next belt's inlet.
+		var tb_y_offset : float = 0.0
+		var tb_outlet_y_after : float = -1.0   # -1 = don't update chain state
+		if is_tb and not item.is_empty():
+			var bsize : Vector3 = item["size"]
+			var blen : float = bsize.z
+			var spec : Dictionary = PlaceableCatalog._transportband_spec(mid)
+			var incline_rad : float = deg_to_rad(float(spec.get("incline", 0.0)))
+			var deck_top : float = bsize.y * 0.97
+			var lift_at_end : float = (blen * 0.45) * sin(incline_rad)
+			var inlet_top_off : float = deck_top - lift_at_end
+			var outlet_top_off : float = deck_top + lift_at_end
+			var base_y : float = 0.0
+			if prev_tb_outlet_y > 0.0:
+				base_y = maxf(0.0, prev_tb_outlet_y - TB_CHUTE_DROP_M - inlet_top_off)
+			tb_y_offset = base_y
+			tb_outlet_y_after = base_y + outlet_top_off
 		var place_z : float
 		if not is_branch:
 			# Main-centreline machine — advances the main cursor.
+			# Head-to-tail spacing for consecutive transportbands: undo the
+			# LINE_GAP_M that the previous main entry added, so this belt's
+			# inlet butts directly against the prior belt's outlet.
+			if last_main_was_tb and is_tb:
+				main_z -= LINE_GAP_M
 			main_z += depth * 0.5
 			place_z = main_z
 			main_z += depth * 0.5 + LINE_GAP_M
+			last_main_was_tb = is_tb
 		else:
 			# Branch machine — sits beside the line at (current cursor + z offset) and
 			# does NOT advance the main cursor (the main flow runs past it).
 			place_z = main_z + float(entry.get("z", 0.0))
+		# Update transportband chain state AFTER we've used prev_tb_outlet_y for
+		# this belt's base. Branches like transportband_8_5 read from the chain
+		# (so they stack from belt 8's outlet) but do NOT overwrite it — main
+		# transportband_9 still picks up from belt 8, not 8_5.
+		if is_tb and not is_branch and tb_outlet_y_after > 0.0:
+			prev_tb_outlet_y = tb_outlet_y_after
+		elif not is_tb and not is_branch:
+			# Leaving the chain — reset.
+			prev_tb_outlet_y = -1.0
 		var node := PlaceableCatalog.build_node(mid, false)
 		if node != null:
 			_placed_root.add_child(node)
-			node.global_position = Vector3(start.x, start.y, start.z) + fwd * place_z + rgt * x
+			node.global_position = Vector3(start.x, start.y + tb_y_offset, start.z) + fwd * place_z + rgt * x
 			node.rotation.y = rot_y + PI
 			_finalize_placed(node, mid, 0.0)
 			built += 1

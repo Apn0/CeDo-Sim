@@ -221,20 +221,56 @@ func visible_count() -> int:
 func sinker_count() -> int:
 	return _sk_mm.visible_instance_count if _sk_mm != null else 0
 
+## Perf gates — top CPU hog before this patch was every FilmFlakeField iterating
+## its full flake_count every frame regardless of visibility, camera distance, or
+## whether the machine was even running. With ~80 fields × ~80 flakes that's
+## thousands of set_instance_transform RID calls + Basis/Transform3D allocations
+## per frame. Now:
+##   • Tick at most every TICK_PERIOD_S (~20 Hz) — drift is purely cosmetic.
+##   • Skip entirely when the machine is idle (visible_instance_count == 0).
+##   • Skip when the camera is > CULL_DIST_M away (off-screen tanks animate nothing).
+##   • Loop only the visible_instance_count, not the full flake_count.
+const TICK_PERIOD_S : float = 0.05      # 20 Hz
+const CULL_DIST_M   : float = 30.0
+var _tick_acc       : float = 0.0
+
 func _process(delta: float) -> void:
 	if _mm == null:
 		return
+	_tick_acc += delta
+	if _tick_acc < TICK_PERIOD_S:
+		return
+	var dt : float = _tick_acc
+	_tick_acc = 0.0
+	# Idle gate: no visible flakes means LineFlow has starved the unit — nothing
+	# to animate, skip the whole iteration.
+	if _mm.visible_instance_count <= 0:
+		# Sinkers can still animate when contam is high even with no surface raft,
+		# so handle them independently below.
+		if mat_mode and _sk_mm != null and _sk_visible > 0:
+			_process_sinkers(dt)
+		return
+	# Distance cull: don't burn CPU on tanks the camera can't see. Cheap viewport
+	# camera lookup; falls through (animates) if no camera (e.g. headless tests).
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if cam != null:
+		var d2 : float = (cam.global_position - global_position).length_squared()
+		if d2 > CULL_DIST_M * CULL_DIST_M:
+			return
 	if mat_mode:
-		_process_mat(delta)
+		_process_mat(dt)
 	else:
-		_process_drift(delta)
+		_process_drift(dt)
 	if mat_mode and _sk_mm != null:
-		_process_sinkers(delta)
+		_process_sinkers(dt)
 
 ## Original behaviour: flakes drift downstream and get dunked by paddle zones.
+## Iterates visible_instance_count only — invisible flakes are LineFlow-starved
+## and don't need a transform write.
 func _process_drift(delta: float) -> void:
 	var half_z := area.y * 0.5
-	for i in flake_count:
+	var n : int = mini(_mm.visible_instance_count, flake_count)
+	for i in n:
 		# Drift downstream.
 		_pz[i] += flow_speed * delta
 		if _pz[i] > half_z:
@@ -258,7 +294,8 @@ func _process_drift(delta: float) -> void:
 ## the far edge. Lateral spread is gently compressed so the raft reads as packed.
 func _process_mat(delta: float) -> void:
 	var half_z := area.y * 0.5
-	for i in flake_count:
+	var n : int = mini(_mm.visible_instance_count, flake_count)
+	for i in n:
 		_pz[i] += flow_speed * delta
 		if _pz[i] > half_z:
 			# Skimmed off at the outlet — recycle to the inlet end.

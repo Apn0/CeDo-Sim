@@ -268,6 +268,20 @@ func _build_gameplay_tab() -> void:
 		[1.0, 6.0, 12.0, 24.0, 48.0, 96.0],
 		["Real-time (8 h)", "6× (80 min)", "12× (40 min)", "24× (20 min)", "48× (10 min)", "96× (5 min)"])
 
+	# Time & Date — operator-set starting time / day. Empty = "use the shift
+	# bell" (07:00 / 15:00 / 23:00) and today's calendar. Applied on next
+	# scene-load OR via the live "Apply" path which fires ShiftClock.time_jumped
+	# so NPCs + cars reposition to match the new wall-clock instant.
+	_add_section_header(tab, "Time & Date")
+	_add_time_row(tab, "gameplay", "starting_time", "Starting time")
+	_add_date_row(tab, "gameplay", "starting_date", "Starting date")
+	var time_hint := Label.new()
+	time_hint.text = "Sets the wall-clock when the world starts or reloads. Past times today roll to the next working day. Leave blank to use the shift bell + today."
+	time_hint.add_theme_font_size_override("font_size", FONT_SMALL)
+	time_hint.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7, 1))
+	time_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	tab.add_child(time_hint)
+
 	# Accessibility
 	_add_section_header(tab, "Accessibility")
 	_add_check_row(tab, "gameplay", "subtitles", "Subtitles")
@@ -544,6 +558,107 @@ func _add_check_row(parent: VBoxContainer, category: String, key: String,
 	row.add_child(cb)
 	_widgets[category + "/" + key] = cb
 
+# ── HH:MM time row ────────────────────────────────────────────────────────────
+## Two SpinBoxes (hour 0-23, minute 0-59). The pending value is a string
+## "HH:MM" so it round-trips through the existing string-keyed settings save
+## path. The hour/min widgets share one update lambda so editing either pushes
+## the combined string back to SettingsManager.
+func _add_time_row(parent: VBoxContainer, category: String, key: String,
+		label_text: String) -> void:
+	var row := _new_row(parent, label_text)
+	var hour_box := SpinBox.new()
+	hour_box.min_value = 0
+	hour_box.max_value = 23
+	hour_box.step = 1
+	hour_box.custom_minimum_size = Vector2(70, 0)
+	hour_box.add_theme_font_size_override("font_size", FONT_BODY)
+	var colon := Label.new()
+	colon.text = ":"
+	colon.add_theme_font_size_override("font_size", FONT_BODY)
+	var min_box := SpinBox.new()
+	min_box.min_value = 0
+	min_box.max_value = 59
+	min_box.step = 1
+	min_box.custom_minimum_size = Vector2(70, 0)
+	min_box.add_theme_font_size_override("font_size", FONT_BODY)
+	var push := func() -> void:
+		var s : String = "%02d:%02d" % [int(hour_box.value), int(min_box.value)]
+		SettingsManager.set_pending(category, key, s)
+	hour_box.value_changed.connect(func(_v): push.call())
+	min_box.value_changed.connect(func(_v): push.call())
+	row.add_child(hour_box)
+	row.add_child(colon)
+	row.add_child(min_box)
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(spacer)
+	_widgets[category + "/" + key] = hour_box
+	_widgets[category + "/" + key + "/min"] = min_box
+
+# ── YYYY-MM-DD date row ───────────────────────────────────────────────────────
+## Three SpinBoxes — year / month / day. Day max is 31 (the calendar math in
+## ShiftClock handles 30-day / Feb edge cases by serial-day diff, so an
+## "April 31" round-trips as May 1; we keep the UI simple). Default year is
+## the current system year so a fresh boot lands on a sane window.
+func _add_date_row(parent: VBoxContainer, category: String, key: String,
+		label_text: String) -> void:
+	var row := _new_row(parent, label_text)
+	var today : Dictionary = Time.get_date_dict_from_system()
+	var year_box := SpinBox.new()
+	year_box.min_value = 1970
+	year_box.max_value = 2099
+	year_box.step = 1
+	year_box.value = int(today.get("year", 2026))
+	year_box.custom_minimum_size = Vector2(90, 0)
+	year_box.add_theme_font_size_override("font_size", FONT_BODY)
+	var dash1 := Label.new()
+	dash1.text = "-"
+	dash1.add_theme_font_size_override("font_size", FONT_BODY)
+	var month_box := SpinBox.new()
+	month_box.min_value = 1
+	month_box.max_value = 12
+	month_box.step = 1
+	month_box.value = int(today.get("month", 1))
+	month_box.custom_minimum_size = Vector2(70, 0)
+	month_box.add_theme_font_size_override("font_size", FONT_BODY)
+	var dash2 := Label.new()
+	dash2.text = "-"
+	dash2.add_theme_font_size_override("font_size", FONT_BODY)
+	var day_box := SpinBox.new()
+	day_box.min_value = 1
+	day_box.max_value = 31
+	day_box.step = 1
+	day_box.value = int(today.get("day", 1))
+	day_box.custom_minimum_size = Vector2(70, 0)
+	day_box.add_theme_font_size_override("font_size", FONT_BODY)
+	var clear_btn := Button.new()
+	clear_btn.text = "Use today"
+	clear_btn.add_theme_font_size_override("font_size", FONT_SMALL)
+	var push := func() -> void:
+		var s : String = "%04d-%02d-%02d" % [int(year_box.value), int(month_box.value), int(day_box.value)]
+		SettingsManager.set_pending(category, key, s)
+	var on_clear := func() -> void:
+		# Empty string means "use today" — ShiftClock.apply_starting_settings
+		# treats a blank starting_date as a 0-day delta from system date.
+		SettingsManager.set_pending(category, key, "")
+		var td : Dictionary = Time.get_date_dict_from_system()
+		year_box.set_value_no_signal(int(td.get("year", 2026)))
+		month_box.set_value_no_signal(int(td.get("month", 1)))
+		day_box.set_value_no_signal(int(td.get("day", 1)))
+	year_box.value_changed.connect(func(_v): push.call())
+	month_box.value_changed.connect(func(_v): push.call())
+	day_box.value_changed.connect(func(_v): push.call())
+	clear_btn.pressed.connect(on_clear)
+	row.add_child(year_box)
+	row.add_child(dash1)
+	row.add_child(month_box)
+	row.add_child(dash2)
+	row.add_child(day_box)
+	row.add_child(clear_btn)
+	_widgets[category + "/" + key] = year_box
+	_widgets[category + "/" + key + "/month"] = month_box
+	_widgets[category + "/" + key + "/day"] = day_box
+
 # ── Keybind row ───────────────────────────────────────────────────────────────
 func _add_keybind_row(parent: VBoxContainer, action: String) -> void:
 	var label_text: String = SettingsManager.ACTION_LABELS.get(action, action)
@@ -589,6 +704,29 @@ func _refresh_category(category: String, values: Dictionary) -> void:
 				if vals[i] == v:
 					opt.select(i)
 					break
+		elif widget is SpinBox:
+			# Time + date rows store the primary SpinBox under the category/key
+			# slot and the secondary SpinBox(es) under "/min" "/month" "/day"
+			# sub-slots. Parse the string value and populate each accordingly.
+			var sv : String = String(v)
+			var min_w := _widgets.get(w_key + "/min", null) as SpinBox
+			if min_w != null:
+				# HH:MM time row
+				if sv.length() >= 4 and sv.find(":") != -1:
+					var parts : PackedStringArray = sv.split(":")
+					if parts.size() == 2:
+						(widget as SpinBox).set_value_no_signal(float(int(parts[0])))
+						min_w.set_value_no_signal(float(int(parts[1])))
+			else:
+				var month_w := _widgets.get(w_key + "/month", null) as SpinBox
+				var day_w := _widgets.get(w_key + "/day", null) as SpinBox
+				if month_w != null and day_w != null and sv != "":
+					# YYYY-MM-DD date row
+					var p2 : PackedStringArray = sv.split("-")
+					if p2.size() == 3:
+						(widget as SpinBox).set_value_no_signal(float(int(p2[0])))
+						month_w.set_value_no_signal(float(int(p2[1])))
+						day_w.set_value_no_signal(float(int(p2[2])))
 
 func _refresh_resolution_widget() -> void:
 	var opt := _widgets.get("graphics/resolution", null) as OptionButton

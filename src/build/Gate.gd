@@ -26,12 +26,55 @@ var _open_t      : float = 0.0   # 0.0 closed, 1.0 fully open
 var _scaler      : Node3D = null
 var _opened_min  : float = 0.04  # minimum visible leaf when fully rolled up
 
+var _player_near : bool = false
+
 # =============================================================================
 func _ready() -> void:
 	add_to_group("gate")
 	_scaler = get_node_or_null("LeafScaler") as Node3D
 	# Default state = fully closed. Drive remains 0 until a button is pressed.
 	_apply_open_t(0.0)
+	_build_interact_trigger()
+
+# #122 — wall-button station is the realistic interface but operators expect
+# E-on-gate to also work for the gauntlet walk-through. Add a proximity Area3D
+# that catches E and toggles the drive direction (open if closed, close if open,
+# stop if mid-travel).
+func _build_interact_trigger() -> void:
+	var area := Area3D.new()
+	area.name = "InteractTrigger"
+	area.collision_mask = 1
+	var cs := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(4.5, 4.0, 4.0)
+	cs.shape = box
+	area.add_child(cs)
+	add_child(area)
+	area.body_entered.connect(func(b: Node3D) -> void:
+		if b.name == "Player": _player_near = true)
+	area.body_exited.connect(func(b: Node3D) -> void:
+		if b.name == "Player": _player_near = false)
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not _player_near:
+		return
+	var fired : bool = false
+	if InputMap.has_action("interact"):
+		fired = event.is_action_pressed("interact")
+	if (not fired) and event is InputEventKey:
+		var k := event as InputEventKey
+		if k.pressed and not k.echo and k.keycode == KEY_E:
+			fired = true
+	if not fired:
+		return
+	# Toggle: opening / closing reverses, idle picks the opposite of current state.
+	if _drive != 0:
+		_drive = 0
+	elif _open_t < 0.5:
+		_drive = 1
+	else:
+		_drive = -1
+	get_viewport().set_input_as_handled()
 
 func _physics_process(delta: float) -> void:
 	if _drive == 0:

@@ -15,13 +15,23 @@ class_name CharacterCustomizer
 ##   (b) In-game wardrobe locker (#154) — crosshair_interact opens it overlaid
 ##       on the world (mouse mode visible, game still paused).
 ##
-## Persistence: GameState.player_appearance — Dictionary of:
-##   shirt_color : Color (or {r,g,b} dict on disk after JSON roundtrip)
+## Persistence (#186): per-character wardrobe keyed by display name. Each
+## character carries TWO outfits — on_duty (with PPE) + off_duty (personal
+## clothes) — and MainWorld picks the active one from ShiftClock.shift_active.
+##   GameState.player_name      : String                — "Arno" by default
+##   GameState.player_wardrobes : Dictionary[name → {on_duty, off_duty}]
+##   GameState.player_appearance: Dictionary            — flat dict reflecting
+##       the currently-active outfit; kept in sync with the wardrobe so legacy
+##       readers (Humanoid.build) still work without re-querying the wardrobe.
+##
+## Appearance dict shape (one outfit slot):
+##   shirt_color : Color (or {r,g,b} dict on disk after JSON roundtrip) — TINT
 ##   pants_color : Color
-##   hair        : "short" / "mid" / "bald"
-##   beard       : "none" / "thin" / "thick"
-##   cap         : bool
-##   ppe         : "hi_vis" / "operator" / "none"
+##   hair        : "bald" / "buzz" / "short" / "mid" / "long" / "ponytail" / "mullet"
+##   beard       : "none" / "thin" (stubble dots) / "thick" / "full"
+##                 / "mustache" / "goatee"
+##   cap         : bool  — layered OVER the hair (no longer replaces it)
+##   ppe         : "hi_vis" / "operator" / "none" — additive vest overlay
 
 signal saved(appearance: Dictionary)
 signal cancelled()
@@ -36,12 +46,22 @@ var _preview_body   : Node3D = null
 var _preview_camera : Camera3D = null
 var _preview_turntable : Node3D = null
 
-# Edits (live preview), committed to GameState on save
+# Edits (live preview), committed to GameState on save. `_appearance` is the
+# FLAT dict for whichever {character, wear_state} slot is currently being
+# edited. `_all_outfits` holds the full structure so flipping the wear_state
+# selector doesn't lose the other slot's edits.
 var _appearance : Dictionary = {}
 
 # Multi-character: which character is being edited
 var _character_id : String = "player"
-var _all_appearances : Dictionary = {}   # npc_id → appearance dict
+# #186 — for the player slot we now keep TWO outfits per character (on_duty +
+# off_duty). NPCs keep ONE outfit (their shift outfit) since the off-shift
+# story for NPCs isn't surfaced yet. Shape:
+#   _all_outfits["player"] = { "on_duty": {...}, "off_duty": {...} }
+#   _all_outfits["romain"] = { "on_duty": {...} }     # NPC, one slot
+var _all_outfits : Dictionary = {}
+# Currently-selected wear_state for the active character. Defaults to on_duty.
+var _wear_state  : String = "on_duty"
 
 # Mouse drag for the preview rotation
 var _drag_active : bool = false
@@ -184,8 +204,16 @@ func _populate_form() -> void:
 	title.add_theme_font_size_override("font_size", 32)
 	parent.add_child(title)
 	# Character selector — always available so all NPCs can be customised.
+	# #186 — player display name comes from GameState.player_name (default "Arno")
+	# instead of the hardcoded "Player" string. Real operators have real names.
+	var gs : Node = get_node_or_null("/root/GameState")
+	var player_display_name : String = "Arno"
+	if gs and "player_name" in gs:
+		var pn = gs.get("player_name")
+		if pn is String and String(pn) != "":
+			player_display_name = String(pn)
 	var char_ids : Array = ["player"]
-	var char_labels : Array = ["Player"]
+	var char_labels : Array = [player_display_name]
 	var npc_data : Dictionary = {}
 	var mw_script = load("res://src/scenes/world/MainWorld.gd")
 	if mw_script and "NPC_DATA" in mw_script:
@@ -213,6 +241,42 @@ func _populate_form() -> void:
 		cmenu.item_selected.connect(func(idx): _switch_character(String(ids_copy[idx])))
 		char_row.add_child(cmenu)
 		parent.add_child(char_row)
+	# #186 — Player NAME field (only when the active character is the player).
+	# The node name in MainWorld stays "Player" (other systems look it up by that
+	# string), but this drives the display-name meta + every UI that shows it.
+	if _character_id == "player":
+		var name_row := HBoxContainer.new()
+		name_row.add_theme_constant_override("separation", 12)
+		var nlbl := Label.new()
+		nlbl.text = "Name"
+		nlbl.custom_minimum_size = Vector2(140, 0)
+		name_row.add_child(nlbl)
+		var name_edit := LineEdit.new()
+		name_edit.text = player_display_name
+		name_edit.placeholder_text = "Arno"
+		name_edit.custom_minimum_size = Vector2(220, 36)
+		name_edit.text_changed.connect(func(t):
+			# Stash on the appearance dict so _commit_to_gamestate writes it.
+			_appearance["_player_name"] = String(t) if String(t).strip_edges() != "" else "Arno"
+		)
+		name_row.add_child(name_edit)
+		parent.add_child(name_row)
+	# #186 — wear_state toggle (on_duty / off_duty). The customizer edits one
+	# outfit slot at a time; flipping this switches the form binding without
+	# closing/reopening. MainWorld picks the active slot from shift_active.
+	var ws_row := HBoxContainer.new()
+	ws_row.add_theme_constant_override("separation", 12)
+	var wslbl := Label.new()
+	wslbl.text = "Editing"
+	wslbl.custom_minimum_size = Vector2(140, 0)
+	ws_row.add_child(wslbl)
+	var ws_menu := OptionButton.new()
+	ws_menu.add_item("On-duty (PPE)", 0)
+	ws_menu.add_item("Off-duty (personal)", 1)
+	ws_menu.select(0 if _wear_state == "on_duty" else 1)
+	ws_menu.item_selected.connect(func(idx): _switch_wear_state("on_duty" if idx == 0 else "off_duty"))
+	ws_row.add_child(ws_menu)
+	parent.add_child(ws_row)
 	# Skin colour
 	parent.add_child(_make_color_row("Skin", "skin_color",
 		_appearance.get("skin_color", Color(0.94, 0.78, 0.66))))
@@ -233,17 +297,22 @@ func _populate_form() -> void:
 	parent.add_child(_make_option_row("Footwear", "footwear",
 		["shoes", "work_boots"],
 		_appearance.get("footwear", "work_boots")))
-	# Hair style
+	# Hair style — #186 expanded list: bald / buzz / short / mid / long /
+	# ponytail / mullet. Order matches the visual length/shortness scale so the
+	# operator can scan it without re-reading every option.
 	parent.add_child(_make_option_row("Hair style", "hair",
-		["short", "mid", "bald"], _appearance.get("hair", "short")))
+		["bald", "buzz", "short", "mid", "long", "ponytail", "mullet"],
+		_appearance.get("hair", "short")))
 	# Beard
 	parent.add_child(_make_option_row("Beard", "beard",
 		["none", "thin", "thick", "full", "mustache", "goatee"],
 		_appearance.get("beard", "none")))
-	# Cap
+	# Cap (#186 — now LAYERED over hair instead of replacing it)
 	parent.add_child(_make_check_row("Wear cap", "cap",
 		bool(_appearance.get("cap", false))))
-	# PPE class
+	# PPE class — #186: dropdown now actually drives clothing. "hi_vis" adds a
+	# yellow vest, "operator" adds an orange vest + hardhat, "none" leaves
+	# personal clothes alone. Independent of shirt_type — both stack.
 	parent.add_child(_make_option_row("PPE class", "ppe",
 		["hi_vis", "operator", "none"], _appearance.get("ppe", "hi_vis")))
 	# Spacer
@@ -493,20 +562,4 @@ func _rebuild_world_bodies() -> void:
 		if old_body:
 			old_body.get_parent().remove_child(old_body)
 			old_body.queue_free()
-		var ap : Dictionary = _all_appearances.get(npc_id, data.get("appearance", {}))
-		var body : Node3D = humanoid_script.build(data["color"], variant, ap)
-		body.name = "HumanoidBody"
-		npc_node.add_child(body)
-
-static func _set_render_layers_recursive(node: Node, mask: int) -> void:
-	if node is MeshInstance3D:
-		(node as MeshInstance3D).layers = mask
-	for c in node.get_children():
-		_set_render_layers_recursive(c, mask)
-
-func _input(event: InputEvent) -> void:
-	# ESC cancels.
-	if event is InputEventKey and event.pressed:
-		if (event as InputEventKey).keycode == KEY_ESCAPE:
-			close(false)
-			get_viewport().set_input_as_handled()
+		

@@ -37,6 +37,7 @@ NaNSentinel="*res://src/autoload/NaNSentinel.gd"
 
 [debug]
 
+settings/stdout/verbose_stdout=true
 gdscript/warnings/unused_signal=0
 gdscript/warnings/unused_argument=1
 

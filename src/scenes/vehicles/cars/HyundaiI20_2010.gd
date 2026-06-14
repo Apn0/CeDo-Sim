@@ -15,4 +15,5 @@ func _ready() -> void:
 	_model_path    = MODEL_PATH
 	_part_names    = DEFAULT_PART_NAMES
 	_paint_color   = Color(0.92, 0.93, 0.93)   # off-white
+	_real_world_length_m = 3.94   # Hyundai i20 PB (2010) = 3.94 m
 	load_model()

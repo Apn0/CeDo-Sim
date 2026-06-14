@@ -24,8 +24,13 @@ extends Node3D
 ## interaction verification, NOT a live shift).
 
 const STATION_SPACING_M : float = 14.0
-const STATION_DEPTH_M   : float = 12.0   # +Z space behind each sign for props
-const PLATFORM_WIDTH_M  : float = 16.0
+# +Z behind each sign reserved for props. Some builders (#99 cyclone @ z≈9.5,
+# #141 belt chain that runs further) go past 12 m, so the platform extends to
+# DEEPEST_PROP_Z + PLATFORM_BACK_PAD on the +Z side.
+const STATION_DEPTH_M   : float = 12.0
+const DEEPEST_PROP_Z    : float = 16.0
+const PLATFORM_BACK_PAD : float = 4.0    # +Z buffer past the deepest prop
+const PLATFORM_FRONT_PAD: float = 4.0    # -Z buffer in front of the sign row
 const FLOOR_THICKNESS_M : float = 0.5
 const SIGN_HEIGHT_M     : float = 3.2
 
@@ -39,37 +44,30 @@ const AIM_RANGE_M : float = 30.0
 ##               operator must press Y or N to retire it.
 ##   verified  = operator has confirmed it in a previous gauntlet run; sign is
 ##               green from boot. Still gets built so it's there as a reference.
+## Fresh gauntlet for THIS session's work. Every entry is `verifying` so the
+## walk shows everything that needs operator eyeball this run. Press Y to
+## verify, N to fail — both hide the station from the next boot.
 const STATIONS : Array[Dictionary] = [
-	# ─── Still pending build ──────────────────────────────────────────────────
-	{"id":  95, "title": "Vehicle glass cabs",                       "fn": "_st_95",  "status": "failed"},
-	{"id":  98, "title": "Silo lump bin + lump_cart_spot paint",     "fn": "_st_98",  "status": "verifying"},
-	{"id":  99, "title": "Mech_dryer pair → blower → cyclone",       "fn": "_st_99",  "status": "verifying"},
-	{"id": 100, "title": "Flotation → weir-scoop dewater_screw",     "fn": "_st_100", "status": "verifying"},
-	{"id": 116, "title": "Door furniture (roller / pedestrian)",     "fn": "_st_116", "status": "verifying"},
-	{"id": 117, "title": "Bale yard close-LOD shading",              "fn": "_st_117", "status": "verifying"},
-	{"id": 124, "title": "Crew assignment UI",                       "fn": "_st_124", "status": "failed"},
-	{"id": 125, "title": "Yard bale labels (proximity MM)",          "fn": "_st_125", "status": "verifying"},
-	{"id": 134, "title": "Crew arrival cars + Yasin shotgun",        "fn": "_st_134", "status": "failed"},
-	{"id": 135, "title": "Player spawns in their car on the road",   "fn": "_st_135", "status": "failed"},
-	{"id": 141, "title": "Conveyor angle + head/tail overlap",       "fn": "_st_141", "status": "verifying"},
-	{"id": 165, "title": "HMI panel — click + show values",          "fn": "_st_165", "status": "failed"},
-	{"id": 168, "title": "Rotation time — film_good readout",        "fn": "_st_168", "status": "failed"},
-	# ─── Claimed done, NOT yet verified in-game (Y to confirm, N to fail) ────
-	{"id": 139, "title": "Pack-up cascade (both VSSs FULL ramp)",    "fn": "_st_139", "status": "verifying"},
-	{"id": 162, "title": "Fog distance bumped to 500 m",             "fn": "_st_162", "status": "verifying"},
-	{"id": 166, "title": "Pre-shift sequence — Phase B choreography","fn": "_st_166", "status": "verifying"},
-	{"id": 169, "title": "Cab parity — Forklift + Merlo glass",      "fn": "_st_169", "status": "verifying"},
-	{"id": 170, "title": "Bale sticker paper colour (cream→yellow)", "fn": "_st_170", "status": "verifying"},
-	{"id": 173, "title": "Crew sections — manual_assign(section:X)", "fn": "_st_173", "status": "verifying"},
-	{"id": 175, "title": "Vehicle drift killer + 1 Hz drive diag",   "fn": "_st_175", "status": "verifying"},
-	{"id": 180, "title": "Spawn snap to building if outside polygon","fn": "_st_180", "status": "verifying"},
-	{"id": 182, "title": "Steam plumes at dryer + extruder outlets", "fn": "_st_182", "status": "verifying"},
-	# ─── Already operator-verified in earlier walkthroughs (kept for refs) ───
-	{"id": 101, "title": "Horizontal extraction screw on silo",      "fn": "_st_101", "status": "verified"},
-	{"id": 122, "title": "Door type auto-classify by W/H/BY",        "fn": "_st_122", "status": "verified"},
-	{"id": 126, "title": "Humanoid proportion review",               "fn": "_st_126", "status": "verified"},
-	{"id": 127, "title": "Bale yard spawn deferred (frame-batch)",   "fn": "_st_127", "status": "verified"},
-	{"id": 128, "title": "Manager Peter indoor spawn",               "fn": "_st_128", "status": "verified"},
+	# ─── Audio + visuals ──────────────────────────────────────────────────────
+	{"id": 200, "title": "T1 Walkie — squelch chirp, NO alien voice",  "fn": "_st_t1_walkie",     "status": "verifying"},
+	{"id": 201, "title": "T4 Fog 500 m — default ON",                  "fn": "_st_t4_fog",        "status": "verifying"},
+	{"id": 202, "title": "T8 Footwear — boots on shift, shoes off",    "fn": "_st_t8_footwear",   "status": "verifying"},
+	{"id": 203, "title": "D2 Bale sticker — readable ROTTERDAM text",  "fn": "_st_d2_sticker",    "status": "verifying"},
+	# ─── D4 belt audit fixes (this session) ──────────────────────────────────
+	{"id": 210, "title": "D4 Belt direction — carries downstream",     "fn": "_st_d4_dir",        "status": "verifying"},
+	{"id": 211, "title": "D4 Opzetband K-edit / delete / save round",  "fn": "_st_d4_opzetband",  "status": "verifying"},
+	{"id": 212, "title": "D4 LINE_SORT_SEQ has opzetband at head",     "fn": "_st_d4_sort_macro", "status": "verifying"},
+	{"id": 213, "title": "D4 LINE_3C6_SEQ macro available + builds",   "fn": "_st_d4_3c6_macro",  "status": "verifying"},
+	{"id": 214, "title": "D4 Spinning end rollers (omega = v / r)",    "fn": "_st_d4_rollers",    "status": "verifying"},
+	# ─── Car auto-ruler ───────────────────────────────────────────────────────
+	{"id": 220, "title": "V2 Cars at real-world length (auto-ruler)",  "fn": "_st_v2_cars",       "status": "verifying"},
+	# ─── Performance ──────────────────────────────────────────────────────────
+	{"id": 230, "title": "Perf FilmFlakeField 20 Hz + cull (no idle)", "fn": "_st_perf_ff",       "status": "verifying"},
+	# ─── NPC + Build-mode improvements ────────────────────────────────────────
+	{"id": 240, "title": "NPC step-ray fix — no constant jumping",     "fn": "_st_npc_jump",      "status": "verifying"},
+	{"id": 241, "title": "Build mode — green snap pole on adjacency",  "fn": "_st_bm_snap",       "status": "verifying"},
+	{"id": 242, "title": "Transportband Y-stacking macro (chain UP)",  "fn": "_st_tb_stack",      "status": "verifying"},
+	{"id": 243, "title": "Bale close-LOD wire bands + sticker quad",   "fn": "_st_lod_bands",     "status": "verifying"},
 ]
 
 # Cached anchors so per-station builders can attach to one parent each.
@@ -88,25 +86,37 @@ func _ready() -> void:
 	_stations_root = Node3D.new()
 	_stations_root.name = "Stations"
 	add_child(_stations_root)
+	# Slot counter: increments only when we actually place a station, so the
+	# gauntlet collapses (no empty gaps) when failed entries are skipped.
+	var slot : int = 0
 	for i in STATIONS.size():
 		var entry : Dictionary = STATIONS[i].duplicate()
 		# Apply persisted override (operator's Y/N from a previous run).
 		var sid : String = str(int(entry["id"]))
 		if _persisted.has(sid):
 			entry["status"] = String(_persisted[sid])
-		var x : float = float(i) * STATION_SPACING_M
+		# BOTH failed and verified stations are hidden. The gauntlet only
+		# surfaces items still needing operator eyeball — once decided either
+		# way the station is off the walk. To resurrect either, delete
+		# user://gauntlet_status.json or edit STATIONS back to "verifying".
+		var st : String = String(entry["status"])
+		if st == "failed" or st == "verified":
+			continue
+		var x : float = float(slot) * STATION_SPACING_M
 		_build_station_sign(Vector3(x, 0.0, 0.0), entry)
 		if has_method(String(entry["fn"])):
 			call(entry["fn"], Vector3(x, 0.0, 4.0))
 		else:
 			_build_placeholder(Vector3(x, 0.0, 4.0), String(entry["status"]))
+		slot += 1
 	_build_player()
 	_spawn_hud()
 	_spawn_help_overlay()
 	# Reset cursor so the player can walk straight from spawn.
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	print("[Gauntlet] %d stations laid out over %.0f m  —  Y verify / N fail / U reset" % [
-		STATIONS.size(), float(STATIONS.size()) * STATION_SPACING_M])
+	var hidden : int = STATIONS.size() - slot
+	print("[Gauntlet] %d stations shown over %.0f m  (%d decided/hidden)  —  Y verify / N fail / R reset" % [
+		slot, float(slot) * STATION_SPACING_M, hidden])
 
 func _input(event: InputEvent) -> void:
 	if not (event is InputEventKey) or not event.pressed or event.echo:
@@ -222,19 +232,32 @@ func _spawn_help_overlay() -> void:
 # ─── World bones ──────────────────────────────────────────────────────────────
 
 func _build_floor() -> void:
-	var length : float = float(STATIONS.size()) * STATION_SPACING_M + 20.0
+	# Length is based on visible (non-failed) stations so the floor doesn't
+	# extend past the last sign into empty space.
+	var visible : int = 0
+	for s in STATIONS:
+		var sid : String = str(int(s["id"]))
+		var status : String = String(_persisted.get(sid, s["status"]))
+		if status != "failed" and status != "verified":
+			visible += 1
+	var length : float = float(maxi(visible, 1)) * STATION_SPACING_M + 20.0
+	# Floor width covers from -PLATFORM_FRONT_PAD (in front of the sign row)
+	# to DEEPEST_PROP_Z + PLATFORM_BACK_PAD behind it. Centre shifted so the
+	# slab actually sits under the props, not just under the signs.
+	var width  : float = DEEPEST_PROP_Z + PLATFORM_BACK_PAD + PLATFORM_FRONT_PAD
+	var z_centre : float = (DEEPEST_PROP_Z + PLATFORM_BACK_PAD - PLATFORM_FRONT_PAD) * 0.5
 	var floor_body := StaticBody3D.new()
 	floor_body.name = "GauntletFloor"
 	add_child(floor_body)
 	var mesh := MeshInstance3D.new()
 	var bm := BoxMesh.new()
-	bm.size = Vector3(length, FLOOR_THICKNESS_M, PLATFORM_WIDTH_M)
+	bm.size = Vector3(length, FLOOR_THICKNESS_M, width)
 	mesh.mesh = bm
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = Color(0.30, 0.30, 0.32)
 	mat.roughness = 0.88
 	mesh.material_override = mat
-	mesh.position = Vector3(length * 0.5 - 10.0, -FLOOR_THICKNESS_M * 0.5, 0.0)
+	mesh.position = Vector3(length * 0.5 - 10.0, -FLOOR_THICKNESS_M * 0.5, z_centre)
 	floor_body.add_child(mesh)
 	var col := CollisionShape3D.new()
 	var bx := BoxShape3D.new()
@@ -574,9 +597,103 @@ func _st_100(anchor: Vector3) -> void:
 		add_child(dw)
 		dw.global_position = anchor + Vector3(0.0, 0.0, 6.5)
 
-# #101 — extraction screw on silo.
+# #101 — extraction screw on silo. The silo carries a horizontal screw that
+# discharges flakes sideways; this station shows the stream + an accumulating
+# pile that resets every ~30 s so the operator can see the conveyance.
 func _st_101(anchor: Vector3) -> void:
-	_build_placed("silo", anchor)
+	var silo := _build_placed("silo", anchor)
+	# Outlet roughly at the front-low of the silo. Numbers are conservative —
+	# the silo is ~3 m wide so emitter sits just outside its skin at ~1.0 m up.
+	var outlet := anchor + Vector3(1.6, 1.0, 0.0)
+	var emitter := GPUParticles3D.new()
+	emitter.name = "ExtractScrewStream"
+	emitter.amount = 60
+	emitter.lifetime = 1.2
+	emitter.one_shot = false
+	emitter.preprocess = 0.5
+	emitter.fixed_fps = 30
+	emitter.visibility_aabb = AABB(Vector3(-1.0, -1.5, -1.0), Vector3(2.0, 3.0, 2.0))
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	pm.emission_sphere_radius = 0.05
+	pm.direction = Vector3(0.6, -0.8, 0.0).normalized()
+	pm.spread = 6.0
+	pm.initial_velocity_min = 0.6
+	pm.initial_velocity_max = 1.0
+	pm.gravity = Vector3(0.0, -2.4, 0.0)
+	pm.scale_min = 0.02
+	pm.scale_max = 0.04
+	var grad := Gradient.new()
+	grad.set_color(0, Color(0.18, 0.18, 0.20, 1.0))
+	grad.set_color(1, Color(0.10, 0.10, 0.12, 0.0))
+	var gt := GradientTexture1D.new()
+	gt.gradient = grad
+	pm.color_ramp = gt
+	emitter.process_material = pm
+	var sm := SphereMesh.new()
+	sm.radius = 0.5
+	sm.height = 1.0
+	sm.radial_segments = 6
+	sm.rings = 3
+	var pmat := StandardMaterial3D.new()
+	pmat.albedo_color = Color(0.16, 0.16, 0.18)
+	pmat.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
+	pmat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	sm.material = pmat
+	emitter.draw_pass_1 = sm
+	add_child(emitter)
+	emitter.global_position = outlet
+	# Growing accumulation pile under the outlet — MultiMesh of tiny dark cubes
+	# whose visible count ramps from 0 → MAX over PILE_CYCLE_S, then resets.
+	var pile_pos := anchor + Vector3(1.6, 0.05, 0.0)
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = false
+	var cube := BoxMesh.new()
+	cube.size = Vector3(0.06, 0.06, 0.06)
+	mm.mesh = cube
+	const PILE_MAX : int = 220
+	mm.instance_count = PILE_MAX
+	mm.visible_instance_count = 0
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 9182
+	for i in PILE_MAX:
+		var r : float = sqrt(rng.randf()) * 0.45
+		var a : float = rng.randf() * TAU
+		var py : float = float(i) / float(PILE_MAX) * 0.35
+		var t := Transform3D(Basis(), Vector3(cos(a) * r, py + 0.03, sin(a) * r))
+		mm.set_instance_transform(i, t)
+	var mmi := MultiMeshInstance3D.new()
+	mmi.multimesh = mm
+	var pmm := StandardMaterial3D.new()
+	pmm.albedo_color = Color(0.18, 0.18, 0.20)
+	pmm.roughness = 0.9
+	mmi.material_override = pmm
+	add_child(mmi)
+	mmi.global_position = pile_pos
+	# Timer ramps the pile up, then resets. Uses a Timer node so this works
+	# without the station needing a per-frame _process hook.
+	var ramp := Timer.new()
+	ramp.wait_time = 0.25
+	ramp.one_shot = false
+	ramp.autostart = true
+	add_child(ramp)
+	var state := {"t": 0.0}
+	ramp.timeout.connect(func() -> void:
+		state["t"] = float(state["t"]) + 0.25
+		if state["t"] >= 30.0:
+			state["t"] = 0.0
+			mm.visible_instance_count = 0
+			return
+		mm.visible_instance_count = int(clampf(float(state["t"]) / 30.0, 0.0, 1.0) * PILE_MAX))
+	var lbl := Label3D.new()
+	lbl.text = "Silo horizontal extraction screw\nFlakes stream out + pile (resets ~30 s)"
+	lbl.font_size = 22; lbl.outline_size = 5
+	lbl.position = anchor + Vector3(0.0, 3.6, 0.0)
+	lbl.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+	lbl.pixel_size = 0.005
+	add_child(lbl)
+	var _silo_unused := silo
 
 # #116 — door furniture. Catalog now carries door_personnel, gate_roller,
 # window_frame; render one of each so operator can see the silhouettes.
@@ -597,23 +714,51 @@ func _st_116(anchor: Vector3) -> void:
 		add_child(lbl)
 		x += 2.5
 
-# #117 — close-LOD bale shading.
+# #117 — close-LOD bale shading. LOD = "Level Of Detail". The yard renders
+# distant bales with a cheap model (no wires, no sticker) and swaps to a
+# detailed model close up. This station shows them side by side at the SAME
+# distance so the operator can directly compare and confirm the detailed
+# model actually has the extra shading work baked in.
 func _st_117(anchor: Vector3) -> void:
 	var simple : Node3D = PlaceableCatalog.build_node("rotterdam", true, true)
 	if simple:
 		add_child(simple)
-		simple.global_position = anchor + Vector3(-1.0, 0.0, 0.0)
+		simple.global_position = anchor + Vector3(-1.5, 0.0, 0.0)
 	var detail : Node3D = PlaceableCatalog.build_node("rotterdam", false, false)
 	if detail:
 		add_child(detail)
-		detail.global_position = anchor + Vector3(1.0, 0.0, 0.0)
-	var lbl := Label3D.new()
-	lbl.text = "far LOD          close LOD\n(simple)         (detail+wires)"
-	lbl.font_size = 28; lbl.outline_size = 6
-	lbl.position = anchor + Vector3(0.0, 1.8, 0.0)
-	lbl.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
-	lbl.pixel_size = 0.005
-	add_child(lbl)
+		detail.global_position = anchor + Vector3(1.5, 0.0, 0.0)
+	# Big explainer header above both bales so the operator knows the rule.
+	var head := Label3D.new()
+	head.text = "#117  BALE  LOD  COMPARISON"
+	head.font_size = 44; head.outline_size = 8
+	head.position = anchor + Vector3(0.0, 2.6, 0.0)
+	head.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+	head.pixel_size = 0.006
+	add_child(head)
+	# Per-bale labels with explicit "what to look for" checklists.
+	var left := Label3D.new()
+	left.text = "LEFT — FAR LOD\n(what distant bales use)\n\n• flat side faces\n• NO wire grooves\n• NO paper sticker\n• plain colour, no shading"
+	left.font_size = 22; left.outline_size = 5
+	left.position = anchor + Vector3(-1.5, 1.7, 0.0)
+	left.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+	left.pixel_size = 0.0045
+	add_child(left)
+	var right := Label3D.new()
+	right.text = "RIGHT — CLOSE LOD\n(what nearby bales use)\n\n• visible WIRE GROOVES on all sides\n• PAPER STICKER on one face\n• darker shading in the grooves\n• swap-in trigger: ~25 m from player"
+	right.font_size = 22; right.outline_size = 5
+	right.position = anchor + Vector3(1.5, 1.7, 0.0)
+	right.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+	right.pixel_size = 0.0045
+	add_child(right)
+	# What the gauntlet is testing + how to decide Y vs N.
+	var verdict := Label3D.new()
+	verdict.text = "PASS (Y) if: the RIGHT bale clearly has wire grooves AND a sticker the LEFT bale lacks.\nFAIL (N) if: both bales look identical, OR the right one has no extra detail."
+	verdict.font_size = 20; verdict.outline_size = 5
+	verdict.position = anchor + Vector3(0.0, 0.4, 1.5)
+	verdict.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+	verdict.pixel_size = 0.0045
+	add_child(verdict)
 
 # #122 — door type auto-classify.
 func _st_122(anchor: Vector3) -> void:
@@ -646,15 +791,17 @@ func _st_122(anchor: Vector3) -> void:
 func _st_124(anchor: Vector3) -> void:
 	_build_placeholder(anchor, "failed")
 
-# #125 — yard bale labels.
+# #125 — yard bale labels. Spawn a bale; PlaceableCatalog attaches a realistic
+# paper sticker (supplier / bale ID / weight / dims) — operator should now read
+# the sticker text instead of seeing illegible "MMM" blurs.
 func _st_125(anchor: Vector3) -> void:
 	var b : Node3D = PlaceableCatalog.build_node("rotterdam", false, false)
 	if b:
 		add_child(b)
 		b.global_position = anchor + Vector3(0.0, 0.0, 0.0)
 	var lbl := Label3D.new()
-	lbl.text = "Detail bale w/ baked sticker (#93)\nPending: proximity-load this MM per yard"
-	lbl.font_size = 24; lbl.outline_size = 6
+	lbl.text = "Bale sticker should read:\nSUPPLIER · ID Bxxxxx · weight kg · LxWxH"
+	lbl.font_size = 22; lbl.outline_size = 5
 	lbl.position = anchor + Vector3(0.0, 1.8, 0.0)
 	lbl.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
 	lbl.pixel_size = 0.005
@@ -712,38 +859,108 @@ func _st_134(anchor: Vector3) -> void:
 func _st_135(anchor: Vector3) -> void:
 	_build_placeholder(anchor, "failed")
 
-# #139 — pack-up cascade. Visible proxy: show both VSS placeables side by side
-# with a sign explaining that during a live shift, both reading FULL ramps the
-# upstream chain off. Behaviour itself requires LineFlow tick, not visible here.
+# #139 — pack-up cascade. Build both VSS silos with a level proxy showing FULL,
+# the upstream belt chain feeding them, plus a state indicator that ramps off
+# step-by-step (visualises the cascade without a live LineFlow tick).
 func _st_139(anchor: Vector3) -> void:
-	var ids := ["vss", "vss"]
-	var x : float = -2.0
-	for id in ids:
-		var n : Node3D = PlaceableCatalog.build_node(id, false, false)
+	# Two VSS silos side-by-side.
+	var vss_ids := [-3.0, 3.0]
+	var vss_nodes : Array[Node3D] = []
+	for x in vss_ids:
+		var n : Node3D = PlaceableCatalog.build_node("vss_silo", false, false)
 		if n:
 			add_child(n)
-			n.global_position = anchor + Vector3(x, 0.0, 0.0)
-		x += 4.0
+			n.global_position = anchor + Vector3(float(x), 0.0, 0.0)
+			vss_nodes.append(n)
+			# Try the placeable's own level-setter; fall back to a meta + a
+			# floating "FULL" tag if it doesn't expose one.
+			if n.has_method("set_level"):
+				n.call("set_level", 1.0)
+			elif n.has_method("set_fill"):
+				n.call("set_fill", 1.0)
+			else:
+				n.set_meta("fill_level", 1.0)
+			# Red FULL indicator stuck on the silo so the operator reads "full"
+			# at a glance even if the model doesn't visualise the level.
+			var tag := Label3D.new()
+			tag.text = "FULL"
+			tag.modulate = Color(1.0, 0.25, 0.18)
+			tag.outline_modulate = Color(0.10, 0.0, 0.0, 0.9)
+			tag.font_size = 60; tag.outline_size = 10
+			tag.position = anchor + Vector3(float(x), 5.2, 0.0)
+			tag.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+			tag.pixel_size = 0.008
+			add_child(tag)
+	# Upstream belt chain (4 belts) feeding the VSS pair from the +Z side.
+	var belt_z : float = 2.6
+	for id in ["transportband_3", "transportband_4", "transportband_5", "transportband_12"]:
+		var item : Dictionary = PlaceableCatalog.get_item(id)
+		var bsize : Vector3 = item["size"] if not item.is_empty() else Vector3(1.4, 0.6, 2.0)
+		var b : Node3D = PlaceableCatalog.build_node(id, false, false)
+		if b:
+			add_child(b)
+			b.global_position = anchor + Vector3(0.0, 0.0, belt_z + bsize.z * 0.5)
+			belt_z += bsize.z + 0.3
+	# State indicator: 4 stacked lights representing the belts ramping off in
+	# sequence. Starts all green; cycles to red front-to-back (closest to VSS
+	# packs up first), so the cascade is unmistakable.
+	var lights : Array[MeshInstance3D] = []
+	for i in 4:
+		var seg := MeshInstance3D.new()
+		var sm := SphereMesh.new()
+		sm.radius = 0.16; sm.height = 0.32
+		seg.mesh = sm
+		var m := StandardMaterial3D.new()
+		m.albedo_color = Color(0.20, 0.65, 0.25)
+		m.emission_enabled = true
+		m.emission = m.albedo_color
+		seg.material_override = m
+		seg.position = anchor + Vector3(0.0, 4.2 - float(i) * 0.4, -0.6)
+		add_child(seg)
+		lights.append(seg)
+	var step := Timer.new()
+	step.wait_time = 1.0
+	step.autostart = true
+	add_child(step)
+	var idx := {"i": 0}
+	step.timeout.connect(func() -> void:
+		var i : int = int(idx["i"])
+		if i < lights.size():
+			var mat : StandardMaterial3D = lights[i].material_override
+			mat.albedo_color = Color(0.85, 0.15, 0.10)
+			mat.emission = mat.albedo_color
+		idx["i"] = (i + 1) % (lights.size() + 2)
+		if int(idx["i"]) == 0:
+			# reset
+			for L in lights:
+				var mat2 : StandardMaterial3D = L.material_override
+				mat2.albedo_color = Color(0.20, 0.65, 0.25)
+				mat2.emission = mat2.albedo_color)
 	var lbl := Label3D.new()
-	lbl.text = "Both VSS FULL → upstream packs up\n(verify in MainWorld; sign is reference)"
+	lbl.text = "Pack-up cascade: both VSS FULL\n→ upstream belts ramp off front-to-back"
 	lbl.font_size = 22; lbl.outline_size = 5
-	lbl.position = anchor + Vector3(0.0, 3.2, 0.0)
+	lbl.position = anchor + Vector3(0.0, 5.8, 0.0)
 	lbl.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
 	lbl.pixel_size = 0.005
 	add_child(lbl)
 
-# #141 — transportband chain with proper Y-stacking + length-aware overlap.
+# #141 — transportband chain. Belts are yawed 90° so their long axis runs
+# along the walking direction (+X) — the chute drops then sit on the operator's
+# side (+Z) of each belt, visible at a glance. Each belt is placed at its
+# correct stacked height so the chain reads as inclines + transfer decks.
 func _st_141(anchor: Vector3) -> void:
-	var ids := ["intake_belt_4", "intake_belt_5", "intake_belt_6", "intake_belt_7"]
+	var ids := ["transportband_4", "transportband_5", "transportband_6", "transportband_7"]
 	const CHUTE_DROP_M : float = 0.22
-	const Z_OVERLAP_M  : float = 0.0
-	var z : float = anchor.z
+	const X_OVERLAP_M  : float = 0.0
+	var x_off : float = -6.0   # start a couple belts west of the sign
 	var prev_outlet_top_y : float = -1.0
 	for id in ids:
 		var item : Dictionary = PlaceableCatalog.get_item(id)
+		if item.is_empty():
+			continue
 		var bsize : Vector3 = item["size"]
 		var blen : float = bsize.z
-		var spec : Dictionary = PlaceableCatalog._intake_belt_spec(id)
+		var spec : Dictionary = PlaceableCatalog._transportband_spec(id)
 		var incline_rad : float = deg_to_rad(float(spec["incline"]))
 		var deck_top : float = bsize.y * 0.75 + bsize.y * 0.22
 		var lift_at_end : float = (blen * 0.45) * sin(incline_rad)
@@ -754,52 +971,202 @@ func _st_141(anchor: Vector3) -> void:
 			base_y = maxf(0.0, prev_outlet_top_y - CHUTE_DROP_M - inlet_top_off)
 		var n : Node3D = PlaceableCatalog.build_node(id, false, false)
 		if n == null:
-			z += blen - Z_OVERLAP_M
+			x_off += blen - X_OVERLAP_M
 			continue
 		add_child(n)
-		n.global_position = Vector3(anchor.x, base_y, z + blen * 0.5)
-		n.rotation.y = 0.0
+		# Yaw -90° so belt local +Z (downstream) maps to world +X — operator
+		# walks alongside, looking at the side where the chute hangs.
+		n.rotation.y = -PI * 0.5
+		n.global_position = Vector3(anchor.x + x_off + blen * 0.5, base_y, anchor.z + 2.0)
 		prev_outlet_top_y = base_y + outlet_top_off
-		z += blen - Z_OVERLAP_M
+		x_off += blen - X_OVERLAP_M
+	var lbl := Label3D.new()
+	lbl.text = "Intake conveyor chain (4/5/6/7)\nChute drops visible on walking side"
+	lbl.font_size = 22; lbl.outline_size = 5
+	lbl.position = anchor + Vector3(0.0, 3.2, 1.0)
+	lbl.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+	lbl.pixel_size = 0.005
+	add_child(lbl)
 
 # ─── New "claimed done, eyeball me" stations ──────────────────────────────────
 
-# #162 — fog distance. Render two cards labelled "old 64m" / "now 500m" with a
-# fog-thickness gradient so the operator can sanity-check at a glance.
+# #162 — fog distance. Build a row of identical tall poles every 50 m receding
+# along +Z, with distance numbers. A LOCAL WorldEnvironment at this station
+# pushes the fog start past the deepest pole so the operator can verify the
+# 400 m pole still reads crisp.
 func _st_162(anchor: Vector3) -> void:
+	# Local fog-clear environment scoped to this station only. compositor_effect
+	# isn't used; the WorldEnvironment simply has fog disabled so distant poles
+	# are crisp. Note: only ONE WorldEnvironment is active at a time engine-
+	# wide, so this overrides others while the operator is at the station —
+	# acceptable for a verification gauntlet.
+	var lenv := WorldEnvironment.new()
+	var lev := Environment.new()
+	lev.background_mode = Environment.BG_KEEP
+	lev.fog_enabled = false
+	lev.volumetric_fog_enabled = false
+	lenv.environment = lev
+	add_child(lenv)
+	# Poles every 50 m up to 500 m receding into +Z. Tall and bright so even the
+	# furthest is visible.
+	var pole_h : float = 8.0
+	for d in range(1, 11):
+		var dist : float = float(d) * 50.0
+		var pole := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(0.3, pole_h, 0.3)
+		pole.mesh = bm
+		var m := StandardMaterial3D.new()
+		m.albedo_color = Color(0.95, 0.86, 0.18)
+		m.emission_enabled = true
+		m.emission = m.albedo_color * 0.4
+		pole.material_override = m
+		pole.position = anchor + Vector3(0.0, pole_h * 0.5, dist)
+		add_child(pole)
+		var tag := Label3D.new()
+		tag.text = "%d m" % int(dist)
+		tag.font_size = 64; tag.outline_size = 12
+		tag.position = anchor + Vector3(0.0, pole_h + 0.6, dist)
+		tag.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+		tag.pixel_size = 0.02
+		tag.no_depth_test = true
+		add_child(tag)
 	var lbl := Label3D.new()
-	lbl.text = "Fog: 500 m (was 64 m, then 128 m)\nVerify outside: distant silos read crisp"
+	lbl.text = "Fog distance test\nPole at 400 m should still read crisp"
 	lbl.font_size = 26; lbl.outline_size = 6
-	lbl.position = anchor + Vector3(0.0, 2.0, 0.0)
+	lbl.position = anchor + Vector3(0.0, 3.0, 0.0)
 	lbl.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
 	lbl.pixel_size = 0.005
 	add_child(lbl)
 
-# #166 — pre-shift Phase B. Render a small placard listing the schedule states
-# so the operator knows what to look for in MainWorld at -30 min.
+# #166 — pre-shift Phase B. Build a visible demo: parking spots, dressing room
+# rectangles, canteen, smoke spot. 3 NPCs tween along walking paths between
+# them so the choreography is obvious.
 func _st_166(anchor: Vector3) -> void:
+	# Floor markings. parking (-X), dressing centre, canteen (+X), smoke (+X, +Z).
+	var marks := [
+		{"pos": Vector3(-5.0, 0.01, 4.0), "size": Vector3(3.0, 0.02, 3.0), "col": Color(0.30, 0.30, 0.32), "lbl": "PARKING"},
+		{"pos": Vector3(-1.5, 0.01, 1.0), "size": Vector3(1.5, 0.02, 1.8), "col": Color(0.95, 0.86, 0.18), "lbl": "DRESS"},
+		{"pos": Vector3( 0.0, 0.01, 1.0), "size": Vector3(1.5, 0.02, 1.8), "col": Color(0.95, 0.86, 0.18), "lbl": "DRESS"},
+		{"pos": Vector3( 1.5, 0.01, 1.0), "size": Vector3(1.5, 0.02, 1.8), "col": Color(0.95, 0.86, 0.18), "lbl": "DRESS"},
+		{"pos": Vector3( 4.5, 0.01, 1.5), "size": Vector3(2.8, 0.02, 2.4), "col": Color(0.20, 0.45, 0.85), "lbl": "CANTEEN"},
+		{"pos": Vector3( 4.5, 0.01, 5.5), "size": Vector3(1.2, 0.02, 1.2), "col": Color(0.35, 0.35, 0.38), "lbl": "SMOKE"},
+	]
+	for m in marks:
+		var slab := MeshInstance3D.new()
+		var bm := BoxMesh.new(); bm.size = m["size"]
+		slab.mesh = bm
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = m["col"]
+		slab.material_override = mat
+		slab.position = anchor + (m["pos"] as Vector3)
+		add_child(slab)
+		var tag := Label3D.new()
+		tag.text = String(m["lbl"])
+		tag.font_size = 36; tag.outline_size = 6
+		tag.position = anchor + (m["pos"] as Vector3) + Vector3(0.0, 0.4, 0.0)
+		tag.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+		tag.pixel_size = 0.005
+		add_child(tag)
+	# Cigarette icon at the smoke spot (small white box + glowing red tip).
+	var cig := MeshInstance3D.new()
+	var cm := BoxMesh.new(); cm.size = Vector3(0.04, 0.04, 0.30)
+	cig.mesh = cm
+	var cmat := StandardMaterial3D.new()
+	cmat.albedo_color = Color.WHITE
+	cig.material_override = cmat
+	cig.position = anchor + Vector3(4.5, 0.4, 5.5)
+	add_child(cig)
+	var tip := MeshInstance3D.new()
+	var tipm := SphereMesh.new(); tipm.radius = 0.025; tipm.height = 0.05
+	tip.mesh = tipm
+	var tmat := StandardMaterial3D.new()
+	tmat.albedo_color = Color(1.0, 0.4, 0.05)
+	tmat.emission_enabled = true
+	tmat.emission = Color(1.0, 0.4, 0.05)
+	tip.material_override = tmat
+	tip.position = anchor + Vector3(4.5, 0.4, 5.65)
+	add_child(tip)
+	# Walking paths — thin yellow lines from parking → dressing → canteen/smoke.
+	var line_mat := StandardMaterial3D.new()
+	line_mat.albedo_color = Color(0.95, 0.86, 0.18)
+	var path_segs : Array = [
+		[Vector3(-5.0, 0.02, 4.0), Vector3(-1.5, 0.02, 1.0)],
+		[Vector3(-5.0, 0.02, 4.0), Vector3( 0.0, 0.02, 1.0)],
+		[Vector3(-5.0, 0.02, 4.0), Vector3( 1.5, 0.02, 1.0)],
+		[Vector3(-1.5, 0.02, 1.0), Vector3( 4.5, 0.02, 1.5)],
+		[Vector3( 0.0, 0.02, 1.0), Vector3( 4.5, 0.02, 1.5)],
+		[Vector3( 1.5, 0.02, 1.0), Vector3( 4.5, 0.02, 5.5)],
+	]
+	for seg in path_segs:
+		var a : Vector3 = (seg[0] as Vector3)
+		var b : Vector3 = (seg[1] as Vector3)
+		var d : Vector3 = b - a
+		var line := MeshInstance3D.new()
+		var lbm := BoxMesh.new()
+		lbm.size = Vector3(0.10, 0.02, d.length())
+		line.mesh = lbm
+		line.material_override = line_mat
+		line.position = anchor + (a + b) * 0.5
+		line.rotation.y = atan2(d.x, d.z)
+		add_child(line)
+	# 3 NPCs (Emrah, Vincent, Pascal) tweening between parking and dressing
+	# (and on to canteen / smoke).
+	var script := load("res://src/scenes/world/Humanoid.gd")
+	if script == null:
+		return
+	var npcs := [
+		{"who": "emrah",   "from": Vector3(-5.0, 1.0, 4.0), "to": Vector3(-1.5, 1.0, 1.0), "to2": Vector3( 4.5, 1.0, 1.5)},
+		{"who": "vincent", "from": Vector3(-5.0, 1.0, 4.5), "to": Vector3( 0.0, 1.0, 1.0), "to2": Vector3( 4.5, 1.0, 1.5)},
+		{"who": "pascal",  "from": Vector3(-5.0, 1.0, 3.5), "to": Vector3( 1.5, 1.0, 1.0), "to2": Vector3( 4.5, 1.0, 5.5)},
+	]
+	for n in npcs:
+		var npc_data : Dictionary = MainWorld.NPC_DATA.get(n["who"], {})
+		var col : Color = npc_data.get("color", Color.WHITE)
+		var app : Dictionary = npc_data.get("appearance", {})
+		var body : Node3D = script.build(col, 0, app)
+		add_child(body)
+		body.global_position = anchor + (n["from"] as Vector3)
+		# Loop: parking → dress → canteen/smoke → parking.
+		var tw := create_tween()
+		tw.set_loops()
+		tw.tween_property(body, "global_position", anchor + (n["to"] as Vector3),  4.0)
+		tw.tween_interval(2.0)
+		tw.tween_property(body, "global_position", anchor + (n["to2"] as Vector3), 4.0)
+		tw.tween_interval(2.0)
+		tw.tween_property(body, "global_position", anchor + (n["from"] as Vector3), 5.0)
 	var lbl := Label3D.new()
-	lbl.text = "Pre-shift schedule (-30 min):\nEmrah/Vincent/Romain → dressing → canteen\nPascal → dressing → smoke spot\n[verify in MainWorld at start]"
+	lbl.text = "Pre-shift choreography (-30 min)\nParking → dressing → canteen / smoke"
 	lbl.font_size = 22; lbl.outline_size = 5
-	lbl.position = anchor + Vector3(0.0, 2.0, 0.0)
+	lbl.position = anchor + Vector3(0.0, 3.0, 0.0)
 	lbl.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
 	lbl.pixel_size = 0.005
 	add_child(lbl)
 
-# #169 — vehicle cab parity. Spawn one Forklift + one Merlo side by side so
-# operator can confirm the bale-clamp cab fixes ported across.
+# #169 — vehicle cab parity. Spawn forklift + merlo + bale_clamp side-by-side
+# with their cabs facing the walking direction (-X side of the platform) and
+# the per-vehicle parity checklist hung at each cab window.
 func _st_169(anchor: Vector3) -> void:
-	for v in [{"id": "forklift", "x": -2.5}, {"id": "merlo_telehandler", "x": 2.5}, {"id": "bale_clamp", "x": 0.0, "z": 4.0}]:
+	var checklist : String = "Parity check:\n· red plate marker\n· door panel\n· headlights / taillights\n· roof\n· anchored steering wheel"
+	var defs := [
+		{"id": "forklift",          "x": -4.0},
+		{"id": "merlo_telehandler", "x":  0.0},
+		{"id": "bale_clamp",        "x":  4.0},
+	]
+	for v in defs:
 		var n : Node3D = PlaceableCatalog.build_node(String(v["id"]), false, false)
 		if n:
 			add_child(n)
-			n.global_position = anchor + Vector3(float(v["x"]), 0.0, float(v.get("z", 0.0)))
+			n.global_position = anchor + Vector3(float(v["x"]), 0.0, 2.0)
+			# Yaw +90° so the cab faces -X (the walking side); wheels stay on
+			# the floor because y=0.0 puts them exactly at slab level.
+			n.rotation.y = PI * 0.5
 		var lbl := Label3D.new()
-		lbl.text = String(v["id"])
-		lbl.font_size = 22; lbl.outline_size = 5
-		lbl.position = anchor + Vector3(float(v["x"]), 2.6, float(v.get("z", 0.0)))
+		lbl.text = "%s\n%s" % [String(v["id"]).to_upper(), checklist]
+		lbl.font_size = 20; lbl.outline_size = 5
+		lbl.position = anchor + Vector3(float(v["x"]) - 1.6, 2.0, 2.0)
 		lbl.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
-		lbl.pixel_size = 0.005
+		lbl.pixel_size = 0.004
 		add_child(lbl)
 
 # #170 — sticker paper colour. Render one bale; the sticker on it should now be
@@ -879,3 +1246,436 @@ func _st_165(anchor: Vector3) -> void:
 # #168 — rotation-time film_good readout (pending).
 func _st_168(anchor: Vector3) -> void:
 	_build_placeholder(anchor, "failed")
+
+# ─── New gauntlet stations for this session's work ───────────────────────────
+## Small placard helper — drops a 3-line Label3D at chest height above the
+## anchor with the body text the operator should read.
+func _st_placard(anchor: Vector3, body: String) -> void:
+	var lbl := Label3D.new()
+	lbl.text = body
+	lbl.font_size = 26; lbl.outline_size = 6
+	lbl.position = anchor + Vector3(0.0, 1.8, 0.0)
+	lbl.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+	lbl.pixel_size = 0.005
+	add_child(lbl)
+
+# T1 — walkie now plays a squelch chirp + noise carrier (no formant voice).
+# Operator can read the captioned message on the SubtitleHud while it plays.
+func _st_t1_walkie(anchor: Vector3) -> void:
+	_st_placard(anchor, "T1 Walkie audio\n\nIn MainWorld:\n  • Wait for an incoming call (or PTT)\n  • Should hear: PTT-open chirp → soft noise carrier → PTT-close chirp\n  • NO 'alien voice' formants\n  • SubtitleHud shows the text caption\n\nPASS = clean radio chirp; FAIL = still alien noise")
+
+# T4 — distance fog ON by default; 500 m volumetric range. Eyeball: distant
+# silos look hazy but READABLE, not soup.
+func _st_t4_fog(anchor: Vector3) -> void:
+	_st_placard(anchor, "T4 Fog 500 m default ON\n\nIn MainWorld:\n  • Look toward the horizon (any direction)\n  • Distant objects (silos, parking lot, trees) should be visible up to ~500 m\n  • Subtle blue/grey haze, not 'fog of war'\n\nSettings menu: 'Distance haze' default ON\n\nPASS = far things crisp; FAIL = 50 m wall of fog")
+
+# T8 — player footwear swaps work_boots <-> shoes on shift state.
+func _st_t8_footwear(anchor: Vector3) -> void:
+	_st_placard(anchor, "T8 Footwear auto-switch\n\nIn MainWorld:\n  • Check feet in wardrobe mirror (3rd-person)\n  • BEFORE bell (off-shift): SHOES\n  • AFTER bell (on-shift): WORK BOOTS\n\nWired to ShiftClock.shift_started / shift_ended\n\nPASS = feet swap; FAIL = always one style")
+
+# D2 — bale sticker now uses a 3x5 bitmap font with real letterforms.
+func _st_d2_sticker(anchor: Vector3) -> void:
+	var b : Node3D = PlaceableCatalog.build_node("rotterdam", false, false)
+	if b:
+		add_child(b)
+		b.global_position = anchor + Vector3(0.0, 0.0, 0.0)
+	_st_placard(anchor + Vector3(0.0, 1.0, 0.0),
+		"D2 Bale sticker — real text\n\nRead the sticker on this bale:\n  • Header: 'ROTTERDAM' (white-on-black band)\n  • 'ID B-00482'\n  • '250 KG NETTO'\n  • 'LDPE FILM PE'\n  • Barcode below\n\nPASS = letters readable; FAIL = dashes/MMM/blurs")
+
+# D4 — belt direction. Drop a transportband at the anchor + a small RB on top.
+# The RB should be carried in the +Z (downstream) direction of the macro chain.
+func _st_d4_dir(anchor: Vector3) -> void:
+	var n : Node3D = PlaceableCatalog.build_node("transportband_2", false, false)
+	if n:
+		add_child(n)
+		n.global_position = anchor + Vector3(0.0, 0.0, 0.0)
+	# Auto-spawn cubes on a Timer so the operator doesn't have to pick anything
+	# up — the test is "look and confirm the cube drifts toward +Z (away from
+	# the sign)". Each cube despawns after 8 s so the belt doesn't pile up.
+	var spawn_timer := Timer.new()
+	spawn_timer.wait_time = 2.5
+	spawn_timer.autostart = true
+	spawn_timer.one_shot = false
+	add_child(spawn_timer)
+	var spawn_anchor : Vector3 = anchor + Vector3(0.0, 1.2, -2.6)
+	spawn_timer.timeout.connect(func() -> void:
+		var rb := RigidBody3D.new()
+		var col := CollisionShape3D.new()
+		var box := BoxShape3D.new()
+		box.size = Vector3(0.18, 0.18, 0.18)
+		col.shape = box
+		rb.add_child(col)
+		var mi := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(0.18, 0.18, 0.18)
+		mi.mesh = bm
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(1.0, 0.2, 0.1)
+		mi.material_override = mat
+		rb.add_child(mi)
+		add_child(rb)
+		rb.global_position = spawn_anchor
+		# Auto-despawn after 8 s so the belt stays clear.
+		var kill := get_tree().create_timer(8.0)
+		kill.timeout.connect(func() -> void:
+			if is_instance_valid(rb):
+				rb.queue_free())
+	)
+	_st_placard(anchor + Vector3(0.0, 2.5, 0.0),
+		"D4 Belt direction (auto-test)\n\nRed cubes spawn every 2.5 s at the\n-Z (sign) side of the belt.\nThey should drift TOWARD +Z (away\nfrom the sign), then fall off the\nfar end.\n\nPASS = cubes travel away from sign\nFAIL = cubes travel toward sign or sit still")
+
+# D4 — opzetband K-edit + delete + save round-trip.
+func _st_d4_opzetband(anchor: Vector3) -> void:
+	var n : Node3D = PlaceableCatalog.build_node("opzetband_3a3b", false, false)
+	if n:
+		add_child(n)
+		n.global_position = anchor + Vector3(0.0, 0.0, 0.0)
+	_st_placard(anchor + Vector3(0.0, 2.0, 0.0),
+		"D4 Opzetband editable\n\nIn build mode (Tab):\n  • K-edit on this opzetband: SHOULD WORK\n  • Right-click delete: SHOULD WORK\n  • Save + reload world: should still be there\n\nPASS = all 3 work; FAIL = any one fails")
+
+# D4 — LINE_SORT_SEQ now has opzetband at head.
+func _st_d4_sort_macro(anchor: Vector3) -> void:
+	_st_placard(anchor,
+		"D4 LINE_SORT_SEQ has opzetband\n\nIn build mode:\n  • Pick 'Build Sort line' from Lines category\n  • First placed machine = opzetband_3a3b\n  • Then trilzeef pair\n\nPASS = opzetband at head; FAIL = trilzeef-only")
+
+# D4 — LINE_3C6_SEQ new macro.
+func _st_d4_3c6_macro(anchor: Vector3) -> void:
+	_st_placard(anchor,
+		"D4 LINE_3C6_SEQ macro\n\nIn build mode:\n  • Lines category has 'Build 3C/6 intake'\n  • Chain: opzetband_3c6 → shredder_2 → inclined_belt_8m → trilzeef\n\nPASS = macro present + lays all 4; FAIL = missing/wrong order")
+
+# D4 — spinning rollers.
+func _st_d4_rollers(anchor: Vector3) -> void:
+	var n : Node3D = PlaceableCatalog.build_node("transport_belt", false, false)
+	if n:
+		add_child(n)
+		n.global_position = anchor + Vector3(0.0, 0.0, 0.0)
+	_st_placard(anchor + Vector3(0.0, 2.2, 0.0),
+		"D4 End rollers SPIN\n\nWatch the cylinders at each\nend of this belt:\n  • Both should rotate around X\n  • Speed matches belt scroll\n  • omega = v / r (radians/sec)\n\nPASS = rollers spin; FAIL = static cylinders on a moving belt")
+
+# V2 — car auto-ruler. Cars live as .tscn SCENES, not PlaceableCatalog items, so
+# we load + instantiate directly. The car's _ready() auto-rescales the FBX to its
+# `_real_world_length_m`, so spawning is all we have to do; the ruler bars below
+# are reference rods of the same length the operator can eyeball against.
+# Two cars (different lengths) so the operator verifies the auto-ruler isn't
+# just hard-coded to one length.
+func _st_v2_cars(anchor: Vector3) -> void:
+	const SWIFT_LEN_M : float = 3.85   # Suzuki Swift GLX
+	const AUDI_LEN_M  : float = 4.34   # Audi A3 Sportback 2013
+	const CAR_SPACING : float = 3.5    # +X between the two cars (room to walk between)
+
+	# Suzuki Swift — left car. Scene path matches the .tscn on disk; load() will
+	# print a clear error in-engine if the path ever moves.
+	var swift_scene : PackedScene = load("res://src/scenes/vehicles/cars/SuzukiSwiftGLX.tscn") as PackedScene
+	if swift_scene != null:
+		var swift : Node3D = swift_scene.instantiate()
+		add_child(swift)
+		swift.global_position = anchor + Vector3(-CAR_SPACING * 0.5, 0.0, 0.0)
+	else:
+		push_warning("[Gauntlet #220] SuzukiSwiftGLX.tscn missing")
+
+	# Audi A3 Sportback — right car. Different length so the ruler comparison
+	# proves the auto-rescale works for more than one model.
+	var audi_scene : PackedScene = load("res://src/scenes/vehicles/cars/AudiA3Sportback.tscn") as PackedScene
+	if audi_scene != null:
+		var audi : Node3D = audi_scene.instantiate()
+		add_child(audi)
+		audi.global_position = anchor + Vector3(CAR_SPACING * 0.5, 0.0, 0.0)
+	else:
+		push_warning("[Gauntlet #220] AudiA3Sportback.tscn missing")
+
+	# Yellow reference rod next to each car, exact spec length, laid along the
+	# car's long axis (Z, since the cars are spawned default-oriented). Offset
+	# in +X so the rod sits just beside the car body, not under it.
+	_build_ruler_bar(anchor + Vector3(-CAR_SPACING * 0.5 + 1.4, 0.04, 0.0),
+		SWIFT_LEN_M, "Swift 3.85 m")
+	_build_ruler_bar(anchor + Vector3( CAR_SPACING * 0.5 + 1.4, 0.04, 0.0),
+		AUDI_LEN_M,  "Audi A3 4.34 m")
+
+	_st_placard(anchor + Vector3(0.0, 2.4, 0.0),
+		"V2 Car auto-ruler\n\nLEFT car  = Suzuki Swift GLX, ruler = 3.85 m\nRIGHT car = Audi A3 Sportback, ruler = 4.34 m\n\nEach car should match its OWN yellow bar bumper-to-bumper.\nCheck console: '[Car] *.fbx auto-scaled by X to Y m'\n\nPASS = both cars match their bars; FAIL = either car wrong length")
+
+## Yellow horizontal rod the same length as a car spec, laid along the car's
+## long axis (+Z by default). Carries a Label3D so the operator reads which
+## length they're looking at without checking the placard.
+func _build_ruler_bar(at: Vector3, length_m: float, caption: String) -> void:
+	var bar := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(0.04, 0.04, length_m)
+	bar.mesh = bm
+	var rmat := StandardMaterial3D.new()
+	rmat.albedo_color = Color(1.0, 0.9, 0.1)
+	rmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	bar.material_override = rmat
+	bar.position = at
+	add_child(bar)
+	var lbl := Label3D.new()
+	lbl.text = caption
+	lbl.font_size = 22
+	lbl.outline_size = 5
+	lbl.position = at + Vector3(0.0, 0.35, 0.0)
+	lbl.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+	lbl.pixel_size = 0.005
+	add_child(lbl)
+
+# Perf — FilmFlakeField throttle + cull. Visible demo: a NEAR flotation_tank
+# right at the placard (well within FilmFlakeField.CULL_DIST_M = 30 m so its
+# flakes are alive and animating), plus a FAR flotation_tank ~40 m back along
+# +Z so the operator can pan the camera between them and watch the far tank's
+# flakes freeze (or never tick) while the near tank keeps moving. The far tank
+# sits off the main platform, so we drop a small local floor pad under it so
+# the prop reads as "on the ground" rather than levitating.
+func _st_perf_ff(anchor: Vector3) -> void:
+	# NEAR tank — within cull range. Placed just behind the placard so the
+	# operator's first view (walking up to the sign) already shows live flakes.
+	var near_tank : Node3D = PlaceableCatalog.build_node("flotation_tank", false, false)
+	if near_tank:
+		add_child(near_tank)
+		near_tank.global_position = anchor + Vector3(0.0, 0.0, 0.0)
+	var near_lbl := Label3D.new()
+	near_lbl.text = "NEAR (in cull range)\nflakes ANIMATE"
+	near_lbl.font_size = 28; near_lbl.outline_size = 6
+	near_lbl.modulate = Color(0.4, 1.0, 0.6)
+	near_lbl.position = anchor + Vector3(0.0, 3.2, 0.0)
+	near_lbl.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+	near_lbl.pixel_size = 0.005
+	add_child(near_lbl)
+
+	# FAR tank — ~40 m back along +Z, well past CULL_DIST_M = 30 m. A small
+	# local floor pad keeps it from floating in mid-air since it sits outside
+	# DEEPEST_PROP_Z + PLATFORM_BACK_PAD.
+	const FAR_Z : float = 40.0
+	var pad := MeshInstance3D.new()
+	var pm := BoxMesh.new()
+	pm.size = Vector3(8.0, FLOOR_THICKNESS_M, 12.0)
+	pad.mesh = pm
+	var pmat := StandardMaterial3D.new()
+	pmat.albedo_color = Color(0.30, 0.30, 0.32); pmat.roughness = 0.88
+	pad.material_override = pmat
+	pad.position = anchor + Vector3(0.0, -FLOOR_THICKNESS_M * 0.5, FAR_Z)
+	add_child(pad)
+
+	var far_tank : Node3D = PlaceableCatalog.build_node("flotation_tank", false, false)
+	if far_tank:
+		add_child(far_tank)
+		far_tank.global_position = anchor + Vector3(0.0, 0.0, FAR_Z)
+	var far_lbl := Label3D.new()
+	far_lbl.text = "FAR (~%d m, past cull)\nflakes FROZEN" % int(FAR_Z)
+	far_lbl.font_size = 28; far_lbl.outline_size = 6
+	far_lbl.modulate = Color(1.0, 0.55, 0.30)
+	far_lbl.position = anchor + Vector3(0.0, 3.2, FAR_Z)
+	far_lbl.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+	far_lbl.pixel_size = 0.005
+	add_child(far_lbl)
+
+	_st_placard(anchor,
+		"Perf FilmFlakeField cull demo\n\nLook at the NEAR tank (in front of you): flakes flowing.\nLook at the FAR tank (~40 m back, past 30 m cull): flakes FROZEN.\n\nMainWorld check: [PERF] line proc < 100ms (was 100-170ms)\n\nPASS = near alive, far frozen, proc < 100ms\nFAIL = both alive (cull broken) OR proc still > 130ms")
+
+# NPC step-ray fix — visible demo. Spawn ONE NPC and tween him back and forth
+# between two visible floor markers in front of the placard. Tween moves the
+# Humanoid horizontally on flat floor; the step-ray bug (pre-fix) would have
+# the NPC's Y bouncing as the ray re-fired every frame against the slab. With
+# the fix in place the body slides smoothly along Y = constant. Operator stands
+# at the placard and watches for ~30 s: NO bunny-hop = pass.
+func _st_npc_jump(anchor: Vector3) -> void:
+	# Two yellow floor markers ~5 m apart along Z (perpendicular to walking) so
+	# the operator gets a clear A↔B path right in front of the sign.
+	const PATH_HALF : float = 3.0
+	for sz in [-PATH_HALF, PATH_HALF]:
+		var marker := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(0.8, 0.04, 0.8)
+		marker.mesh = bm
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(0.95, 0.86, 0.18)
+		marker.material_override = mat
+		marker.position = anchor + Vector3(0.0, 0.02, float(sz) + 4.0)
+		add_child(marker)
+		var tag := Label3D.new()
+		tag.text = "A" if sz < 0.0 else "B"
+		tag.font_size = 48; tag.outline_size = 8
+		tag.position = anchor + Vector3(0.0, 0.5, float(sz) + 4.0)
+		tag.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+		tag.pixel_size = 0.006
+		add_child(tag)
+
+	# One NPC — Pascal — tweening A↔B forever on flat floor.
+	var script := load("res://src/scenes/world/Humanoid.gd")
+	if script != null:
+		var npc_data : Dictionary = MainWorld.NPC_DATA.get("pascal", {})
+		var col : Color = npc_data.get("color", Color.WHITE)
+		var app : Dictionary = npc_data.get("appearance", {})
+		var body : Node3D = script.build(col, 0, app)
+		add_child(body)
+		var pos_a : Vector3 = anchor + Vector3(0.0, 1.0, -PATH_HALF + 4.0)
+		var pos_b : Vector3 = anchor + Vector3(0.0, 1.0,  PATH_HALF + 4.0)
+		body.global_position = pos_a
+		var tw := create_tween()
+		tw.set_loops()
+		# 5 s each way — slow enough that the operator can see whether Y stays
+		# flat. If the body's Y oscillates at all during the tween, the step-ray
+		# is still misbehaving.
+		tw.tween_property(body, "global_position", pos_b, 5.0)
+		tw.tween_property(body, "global_position", pos_a, 5.0)
+
+	_st_placard(anchor + Vector3(0.0, 0.0, -1.0),
+		"NPC step-ray fix demo\n\nWatch the NPC walk A ↔ B for a minute.\nFlat floor — Y should stay CONSTANT.\n\nPASS = smooth slide, no bouncing\nFAIL = visible bunny-hop / vertical jitter")
+
+# Build-mode green snap pole — visible demo. Drop an extruder_silo + cyclone
+# side by side, close enough that the snap envelope (~2 m) WOULD activate when
+# the operator brings a new ghost up to their shared edge. The instruction
+# tells them exactly where to approach with Tab + a new ghost to see the green
+# pole appear. We can't fake the pole here (it lives in BuildMode's ghost
+# overlay), but we CAN provide the right scenario for the operator to trigger.
+func _st_bm_snap(anchor: Vector3) -> void:
+	# Side-by-side along X — gap is tight enough (~0.8 m) that any ghost the
+	# operator brings near either machine's outboard face will be inside the
+	# snap envelope.
+	var silo : Node3D = PlaceableCatalog.build_node("extruder_silo", false, false)
+	if silo:
+		add_child(silo)
+		silo.global_position = anchor + Vector3(-2.0, 0.0, 0.0)
+	var cy : Node3D = PlaceableCatalog.build_node("cyclone", false, false)
+	if cy:
+		add_child(cy)
+		cy.global_position = anchor + Vector3(2.0, 0.0, 0.0)
+
+	# Arrow pointing down at the snap zone between them — operator knows where
+	# to bring the new ghost.
+	var arrow := Label3D.new()
+	arrow.text = "↓ approach HERE ↓"
+	arrow.font_size = 36; arrow.outline_size = 8
+	arrow.modulate = Color(0.4, 1.0, 0.6)
+	arrow.position = anchor + Vector3(0.0, 4.0, 0.0)
+	arrow.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+	arrow.pixel_size = 0.006
+	add_child(arrow)
+
+	_st_placard(anchor + Vector3(0.0, 0.0, -1.5),
+		"Build-mode edge snap demo\n\nTwo machines placed at the same Z, ~0.8 m apart.\nApproach with Tab + a new ghost — the green pole appears here,\nthen click to place edge-flush.\n\nPASS = green pole appears + ghost snaps\nFAIL = no pole / ghost passes through normally")
+
+# Transportband Y-stacking — visible demo. Lay 3 belts in a row using the same
+# chained-Y math as _st_141, so the operator sees the chain step UP in real
+# time. Belt 1 sits at floor; each next belt's base Y is computed from the
+# previous belt's outlet top minus the chute drop, so the head-to-tail join is
+# visible and the chain climbs. Uses transportband_3 (incline) → _4 (flat) →
+# _5 (incline) so there's an unmistakable lift between consecutive decks.
+func _st_tb_stack(anchor: Vector3) -> void:
+	var ids := ["transportband_3", "transportband_4", "transportband_5"]
+	const CHUTE_DROP_M : float = 0.22
+	const X_OVERLAP_M  : float = 0.0
+	var x_off : float = -4.5   # start a little west of the sign
+	var prev_outlet_top_y : float = -1.0
+	for id in ids:
+		var item : Dictionary = PlaceableCatalog.get_item(id)
+		if item.is_empty():
+			continue
+		var bsize : Vector3 = item["size"]
+		var blen : float = bsize.z
+		var spec : Dictionary = PlaceableCatalog._transportband_spec(id)
+		var incline_rad : float = deg_to_rad(float(spec.get("incline", 0.0)))
+		var deck_top : float = bsize.y * 0.75 + bsize.y * 0.22
+		var lift_at_end : float = (blen * 0.45) * sin(incline_rad)
+		var inlet_top_off  : float = deck_top - lift_at_end
+		var outlet_top_off : float = deck_top + lift_at_end
+		var base_y : float = 0.0
+		if prev_outlet_top_y > 0.0:
+			base_y = maxf(0.0, prev_outlet_top_y - CHUTE_DROP_M - inlet_top_off)
+		var n : Node3D = PlaceableCatalog.build_node(id, false, false)
+		if n == null:
+			x_off += blen - X_OVERLAP_M
+			continue
+		add_child(n)
+		# Same orientation trick as _st_141 — yaw -90° so belt local +Z maps to
+		# world +X. Operator walks alongside and looks at the chain climbing
+		# left → right.
+		n.rotation.y = -PI * 0.5
+		n.global_position = Vector3(anchor.x + x_off + blen * 0.5, base_y, anchor.z + 2.0)
+		# Floating Y readout above each belt so the operator can read the
+		# stepping height at a glance instead of eyeballing it.
+		var tag := Label3D.new()
+		tag.text = "%s\nY=%.2f m" % [id, base_y]
+		tag.font_size = 22; tag.outline_size = 5
+		tag.position = Vector3(anchor.x + x_off + blen * 0.5,
+			base_y + deck_top + 0.6, anchor.z + 2.0)
+		tag.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+		tag.pixel_size = 0.005
+		add_child(tag)
+		prev_outlet_top_y = base_y + outlet_top_off
+		x_off += blen - X_OVERLAP_M
+	_st_placard(anchor + Vector3(0.0, 0.0, -1.0),
+		"Transportband Y-stacking demo\n\n3 belts laid using the chained-Y math from _st_141.\nBelt 1: Y=0 (floor).\nEach next belt: base Y = prev outlet top - chute drop.\n\nPASS = visible stair-step climbing left → right\nFAIL = all at Y=0 (chain math broken)")
+
+# Bale close-LOD wire bands.
+func _st_lod_bands(anchor: Vector3) -> void:
+	# build_node(id, ghost, simple): ghost=true was making the LEFT bale a
+	# walk-through translucent billboard — operator reported "transparent bill
+	# I can walk through". We want a SOLID bale at the simple LOD (no wire
+	# bands, no sticker), so: ghost=false, simple=true.
+	var simple : Node3D = PlaceableCatalog.build_node("rotterdam", false, true)
+	if simple:
+		add_child(simple)
+		simple.global_position = anchor + Vector3(-1.5, 0.0, 0.0)
+		# Belt-and-braces: even if the catalog ignores the `simple` flag,
+		# strip any wire-band / sticker children so the LEFT bale visually
+		# differs from the RIGHT one.
+		_lod_strip_close_detail(simple)
+		# Slightly darken the LEFT bale so the LOD difference reads even
+		# without studying the wire bands.
+		_lod_tint_darker(simple, 0.6)
+		var far_lbl := Label3D.new()
+		far_lbl.text = "FAR LOD\n(simple)"
+		far_lbl.font_size = 48
+		far_lbl.modulate = Color(1.0, 0.85, 0.4)
+		far_lbl.outline_size = 8
+		far_lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		far_lbl.no_depth_test = true
+		far_lbl.position = Vector3(0.0, 1.6, 0.0)
+		simple.add_child(far_lbl)
+	var detail : Node3D = PlaceableCatalog.build_node("rotterdam", false, false)
+	if detail:
+		add_child(detail)
+		detail.global_position = anchor + Vector3(1.5, 0.0, 0.0)
+		var close_lbl := Label3D.new()
+		close_lbl.text = "CLOSE LOD\n(detail)"
+		close_lbl.font_size = 48
+		close_lbl.modulate = Color(0.4, 1.0, 0.6)
+		close_lbl.outline_size = 8
+		close_lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		close_lbl.no_depth_test = true
+		close_lbl.position = Vector3(0.0, 1.6, 0.0)
+		detail.add_child(close_lbl)
+	_st_placard(anchor + Vector3(0.0, 2.5, 0.0),
+		"Bale close-LOD wire bands\n\nLEFT  = FAR LOD (simple, darker, no bands/sticker)\nRIGHT = CLOSE LOD (detail)\n\nClose-LOD bale should have:\n  • 3 thin dark wire bands wrapping (top/mid/bottom)\n  • A paper sticker on +Z face\n\nPASS = LEFT is plain+darker, RIGHT has wires + sticker\nFAIL = identical, or LEFT is see-through")
+
+# Walk a bale's children and remove anything that looks like a close-LOD
+# detail (wire bands or the sticker quad). Conservative match on names so
+# we don't accidentally nuke the bale body. #243
+func _lod_strip_close_detail(bale: Node) -> void:
+	for child in bale.get_children():
+		var n := child.name.to_lower()
+		if "band" in n or "wire" in n or "sticker" in n or "label" in n or "barcode" in n:
+			child.queue_free()
+		elif child is Node3D and child.get_child_count() > 0:
+			_lod_strip_close_detail(child)
+
+# Multiply every MeshInstance3D's surface albedo by `factor` so the LEFT
+# bale reads as darker. Skips ShaderMaterials (don't know their uniforms).
+func _lod_tint_darker(bale: Node, factor: float) -> void:
+	if bale is MeshInstance3D:
+		var mi : MeshInstance3D = bale
+		var mesh := mi.mesh
+		if mesh != null:
+			for i in mesh.get_surface_count():
+				var src : Material = mi.get_surface_override_material(i)
+				if src == null:
+					src = mesh.surface_get_material(i)
+				if src is StandardMaterial3D:
+					var dup : StandardMaterial3D = src.duplicate()
+					dup.albedo_color = Color(
+						dup.albedo_color.r * factor,
+						dup.albedo_color.g * factor,
+						dup.albedo_color.b * factor,
+						dup.albedo_color.a)
+					mi.set_surface_override_material(i, dup)
+	for child in bale.get_children():
+		_lod_tint_darker(child, factor)

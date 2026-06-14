@@ -79,6 +79,7 @@ func _ready() -> void:
 	# largest-mesh fallback so red paint actually applies.
 	_paint_color = Color(0.78, 0.10, 0.10)              # red Swift GLX 1998
 	_paint_fallback_largest_mesh = true
+	_real_world_length_m = 3.85   # real Swift = 3.85 m bumper-to-bumper
 	_load_and_classify()
 
 func _load_and_classify() -> void:

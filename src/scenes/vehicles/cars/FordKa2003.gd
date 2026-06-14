@@ -17,4 +17,5 @@ func _ready() -> void:
 	_part_names    = DEFAULT_PART_NAMES
 	# Sunset orange (warm, not vibrant — Ford "Tango Red" / "Magma" feel).
 	_paint_color   = Color(0.92, 0.46, 0.18)
+	_real_world_length_m = 3.62   # Ford Ka Mk1 = 3.62 m
 	load_model()

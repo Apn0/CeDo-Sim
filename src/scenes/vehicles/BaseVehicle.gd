@@ -1089,7 +1089,13 @@ func _kinematic_move(delta: float) -> void:
 	var max_mps := speed_limit_kmh / 3.6
 	var steer_scale := clampf(absf(_current_speed_mps) / maxf(max_mps, 0.01), 0.0, 1.0)
 	var dir_sign := 1.0 if _current_speed_mps >= 0.0 else -1.0
-	var yaw_rate := -_steering * TURN_RATE * steer_scale * dir_sign
+	# #FIX A/D reversed: Positive _steering (D) must rotate the chassis RIGHT
+	# to match the wheel-mesh visual at _rotate_steered_wheel_meshes (line ~1249),
+	# which uses `_steering * 0.55` with NO negation. With +Z forward
+	# (basis.z = fwd, see line 1087 above), Godot's rotate_y(+θ) rotates the
+	# forward vector from +Z toward +X = world RIGHT. So positive _steering
+	# must produce a POSITIVE yaw_rate — drop the stray minus sign.
+	var yaw_rate := _steering * TURN_RATE * steer_scale * dir_sign
 	# Horizontal motion — SWEPT, not teleported, so the chassis collides with and
 	# slides along static geometry (machines, the bunker, walls) instead of driving
 	# straight through it. move_and_collide on a frozen-kinematic RigidBody3D is the
@@ -1640,13 +1646,13 @@ func _build_beacon_rig(layout: Dictionary) -> void:
 	# The Merlo variants specify a beacon position explicitly.
 	var beacon_rig := Node3D.new()
 	beacon_rig.name = "BeaconRig"
-	
+
 	if vehicle_type == "merlo":
 		# Base Merlo has a beacon node explicitly in the cab at local 0,0,0
 		var existing_beacon = get_node_or_null("Cab/Beacon")
 		if existing_beacon:
 			existing_beacon.queue_free()
-	
+
 	# The parent Cab node on Merlo
 	var target_parent: Node = self
 	if (vehicle_type == "merlo" or vehicle_type == "merlo_p40") and has_node("Cab"):

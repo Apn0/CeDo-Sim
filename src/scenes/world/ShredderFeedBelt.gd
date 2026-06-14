@@ -443,12 +443,24 @@ func _process(delta: float) -> void:
 	var running := is_running()
 	# Drive the textured belt scroll speed from the live PLC state so a stopped
 	# belt is OBVIOUSLY stopped (the slats freeze) and a running one is OBVIOUSLY
-	# moving. Scale by belt_speed so a slow belt scrolls slowly. (#texturedbelts)
-	_set_scroll_speed((belt_speed * 4.0) if running else 0.0)
+	# moving. Scale by belt_speed so a slow belt scrolls slowly. Multiplier 0.25
+	# matches the intake-belt convention (PlaceableCatalog._INTAKE_BELT_SHADER_SCROLL
+	# = _INTAKE_BELT_SPEED_MPS * 0.25) — operator: previous 4.0 made the opzetband
+	# visual scroll 16× faster than the rest of the plant.
+	_set_scroll_speed((belt_speed * 0.25) if running else 0.0)
 	# Keep the walkable collider's belt-carry meta in step with the PLC run-state so
 	# the player is carried only while the belt actually moves (0.0 when stopped).
 	if _belt_body != null and is_instance_valid(_belt_body):
 		_belt_body.set_meta("belt_speed", belt_speed if running else 0.0)
+		# #172-opzetband — when the deck has the BeltSurface script attached
+		# (opzetband path in PlaceableCatalog.build_node), keep BeltSurface's
+		# belt_speed_mps in step with the live PLC state. Without this the
+		# physical carry would freeze at whatever value was set at construction
+		# time and would NOT stop when is_running() goes false. Now shader
+		# scroll, rider-bale progress, legacy meta, and BeltSurface carry all
+		# come from the single belt_speed value.
+		if "belt_speed_mps" in _belt_body:
+			_belt_body.set("belt_speed_mps", belt_speed if running else 0.0)
 	var i := _riders.size() - 1
 	while i >= 0:
 		var r : Dictionary = _riders[i]

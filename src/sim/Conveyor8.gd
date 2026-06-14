@@ -19,9 +19,11 @@ class_name Conveyor8
 ## direction during the transition.
 
 const DIR_RAMP_RATE : float = 0.5      # 1.0 / 2.0 s — matches operator's "2 s ramp"
-const FWD_SHADER_SPEED : float = -0.6  # what _m_intake_belt's call gave the shader
-                                        # (make_belt_material already negates so the
-                                        #  caller's positive 0.6 became -0.6 in shader)
+const FWD_SHADER_SPEED : float = 0.6   # POSITIVE = belt visually scrolls toward +Z
+                                        # (the canonical downstream direction; see
+                                        #  BeltSurface.gd docstring). make_belt_material
+                                        #  no longer negates as of #140, so caller
+                                        #  passes positive for downstream flow.
 
 var direction_x      : float = 1.0     # start running forward
 var direction_target : float = 1.0

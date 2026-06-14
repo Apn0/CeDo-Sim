@@ -176,11 +176,56 @@ static func attach_to(host: Node3D, info: Dictionary, local_position: Vector3, l
 	var qm := BoxMesh.new(); qm.size = Vector3(card_w, card_h, 0.003)
 	label.mesh = qm
 	label.material_override = card
-	label.transform = Transform3D(local_basis, local_position)
+
+	# ── PLACEMENT JITTER (#170 follow-up) ────────────────────────────────────
+	# Real CeDo bales don't have the sticker dead-centre under the middle wire
+	# band — they're slapped on by a wet glove and end up shifted left or
+	# right, biased to sit BETWEEN two of the three wires (where there's clear
+	# poly to stick to). We recreate that here.
+	#
+	# Wire bands wrap the bale at 25 % / 50 % / 75 % of bale height (see
+	# `_m_bale_detail` in PlaceableCatalog → `_build_wires`). The wire pitch is
+	# therefore 25 % of bale height; the target sweet spot for the label is
+	# midway between bands 1 and 2 → 37.5 % of bale height (NOT under the
+	# centre wire at 50 %).
+	#
+	# The caller passes `local_position.y = bale_h * 0.55` for the old
+	# centred placement, so we back out the bale height from it (this keeps
+	# `attach_to` ignorant of the bale size without changing the call site
+	# signature). If the caller ever stops doing that, we fall back to the
+	# raw y value and just add the offsets in place.
+	var local_basis_x : Vector3 = local_basis.x       # card horizontal in bale-local space
+	var bale_h : float = 0.0
+	if absf(local_position.y) > 0.0001:
+		bale_h = local_position.y / 0.55
+	# Same bale → same offset, every time (seed off batch id so the sticker
+	# doesn't dance between frames or after a reload).
+	var jitter_rng := RandomNumberGenerator.new()
+	jitter_rng.seed = hash(String(info.get("batch", "")))
+	var wire_pitch : float = bale_h * 0.25            # vertical spacing between wires
+	var half_pitch : float = wire_pitch * 0.5
+	# Horizontal: uniform ±25 % of half the wire-band spacing, applied along
+	# the card's own horizontal axis (= `local_basis.x` in bale-local coords).
+	var h_off : float = jitter_rng.randf_range(-0.25, 0.25) * half_pitch
+	# Vertical: normal(0, π/10) clamped to ±33 % of bale height — the std-dev
+	# of ~0.314 m means most stickers land within ~30 cm of the sweet spot,
+	# the clamp prevents the rare tail from punching through the wire bands.
+	var v_off : float = jitter_rng.randfn(0.0, PI / 10.0)
+	var v_clamp : float = bale_h * 0.33
+	v_off = clampf(v_off, -v_clamp, v_clamp)
+	# Sweet spot Y = midway between band 1 (25 %) and band 2 (50 %) = 37.5 %
+	# of bale height from the bale's bottom. Replace the centred Y the caller
+	# gave us, then add the random jitters along bale-local Y (vertical) and
+	# along the card's local +X (horizontal across the sticker).
+	var jittered_pos : Vector3 = local_position
+	jittered_pos.y = bale_h * 0.375 + v_off
+	jittered_pos += local_basis_x * h_off
+	label.transform = Transform3D(local_basis, jittered_pos)
 
 	# ── PRINTED TEXT (flat on the card, not a billboard) ──────────────────────
-	# Top line: supplier / item name. Middle: weight + batch. Below: dimensions.
-	# All lines small, dark grey ink, lying flat on the paper.
+	# Top: supplier. Middle: bale ID. Bottom: weight. Dark grey ink, flat on the
+	# paper. #203 — dimensions/grade line dropped per operator (doesn't belong
+	# on a real CeDo shipping sticker), and sizing reduced so the block fits.
 	var nm   : String = String(info.get("item", ""))
 	# Drop a redundant trailing "bale" word — it's obviously a bale, so the
 	# sticker just shows the supplier (e.g. "FORST+ (FOSTPLUS)").
@@ -190,18 +235,32 @@ static func attach_to(host: Node3D, info: Dictionary, local_position: Vector3, l
 			break
 	var kg   : int    = int(info.get("weight_kg", 0))
 	var lot  : String = String(info.get("batch", ""))
-	var dim  : String = String(info.get("dimensions", ""))
+	# #203 — `dim` (dimensions/grade) intentionally dropped from the rendered
+	# label. Operator said multiple times it doesn't belong on a shipping
+	# sticker; the field is still in `info` for any non-visual lookup that
+	# wants it.
+	var sup_text : String = nm if nm != "" else "UNKNOWN"
+	var bale_id  : String = lot if lot != "" else "B-00000"
 	var text := Label3D.new()
 	text.name = "PrintedText"
-	text.text = "%s\n%d kg   %s\n%s" % [nm.to_upper(), kg, lot, dim]
-	text.font_size = 28
+	# Anchored to TOP so the 3-line block starts at the card's top edge and grows
+	# downward toward (but never INTO) the barcode band. Operator saw the previous
+	# centered block bleed its bottom line into the barcode at station 203 —
+	# `vertical_alignment = TOP` + a fixed top-anchor position pins the bottom of
+	# the text block at a known Y, no matter how many lines or how big the font.
+	# Card top = +card_h/2 = +7 cm. Barcode top sits at -2.4 cm (bc_y + bc_h/2).
+	# 3 lines × ~2.0 cm at font 22 / pixel 0.0008 = ~6 cm, fits comfortably with
+	# ~3 cm clear space above the barcode.
+	text.text = "%s\nID %s\n%d kg" % [sup_text.to_upper(), bale_id, kg]
+	text.font_size = 22
 	text.outline_size = 0
-	text.pixel_size = 0.0007
-	text.modulate = Color(0.10, 0.10, 0.10)
+	text.pixel_size = 0.0008
+	text.modulate = Color(0.08, 0.08, 0.08)
 	text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	text.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	text.billboard = BaseMaterial3D.BILLBOARD_DISABLED
 	text.no_depth_test = false
-	text.position = Vector3(0.0, 0.012, 0.0018)   # tiny offset so it doesn't z-fight
+	text.position = Vector3(0.0, card_h * 0.42, 0.0018)   # anchor at card top, +1.8 mm forward
 	label.add_child(text)
 
 	# ── BARCODE STRIPES (lower band of the card) ──────────────────────────────

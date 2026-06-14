@@ -164,12 +164,17 @@ func _install_locomotion_state_machine() -> void:
 	_ray_chest.target_position = Vector3(0.0, 0.0, -0.9)
 	_ray_chest.add_exception(self)
 	add_child(_ray_chest)
-	# Step-up / gap ray — angled forward + down. Miss far ⇒ gap ⇒ JUMP. Hit
-	# above floor level ⇒ tall step ⇒ JUMP.
+	# Step-up / gap ray — angled forward + down. Probes ahead of the NPC and
+	# below the feet so a flat floor 0.5 m forward DEFINITELY hits the cast.
+	# The previous geometry ended 0.1 m ABOVE the feet, so on flat factory floor
+	# the ray missed every tick, the no-hit branch returned JUMP, and NPCs
+	# jumped continuously. New cast: start at body center (≈0.9 m above feet),
+	# end 1.5 m below body center + 0.8 m forward — well below floor level so
+	# `not is_colliding()` only fires on a REAL gap.
 	_ray_step = RayCast3D.new()
 	_ray_step.name = "RayStep"
-	_ray_step.position = Vector3(0.0, -0.4, 0.0)            # near feet
-	_ray_step.target_position = Vector3(0.0, -0.4, -1.0)    # 1.0 m forward, 0.4 m below feet
+	_ray_step.position = Vector3(0.0, 0.0, 0.0)             # body centre
+	_ray_step.target_position = Vector3(0.0, -1.5, -0.8)    # 0.8 m forward, 1.5 m down — reaches floor
 	_ray_step.add_exception(self)
 	add_child(_ray_step)
 

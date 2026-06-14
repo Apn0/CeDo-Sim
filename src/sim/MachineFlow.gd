@@ -128,9 +128,9 @@ static func profile(id: String) -> Dictionary:
 		# between the shredder-2 climb and the switch belt. All identical from a
 		# flow standpoint (conveyor, no waste); they're distinct only visually
 		# (length/height/incline/colour) in PlaceableCatalog.build_intake_belt().
-		"intake_belt_1", "intake_belt_2", "intake_belt_3", "intake_belt_4", \
-		"intake_belt_5", "intake_belt_6", "intake_belt_7", \
-		"intake_belt_9", "intake_belt_10", "intake_belt_11", "intake_belt_12":
+		"transportband_1", "transportband_2", "transportband_3", "transportband_4", \
+		"transportband_5", "transportband_6", "transportband_7", \
+		"transportband_9", "transportband_10", "transportband_11", "transportband_12":
 			pr["role"] = "conveyor"
 			pr["in"]   = Vector3(0.0, 0.85, -0.45)
 			pr["out"]  = Vector3(0.0, 0.85, 0.45)
@@ -140,7 +140,7 @@ static func profile(id: String) -> Dictionary:
 		# 2 s, then ramps up to full reverse (another 2 s), feeding C8.5 → U-bay.
 		# Modelled as a splitter so the linker emits TWO outgoing edges: wout
 		# forward (to C9, nearest +Z input), wout2 reverse (to C8.5, nearest -Z).
-		"intake_belt_8":
+		"transportband_8":
 			pr["role"] = "splitter"
 			pr["in"]   = Vector3(0.0, 0.85, -0.45)
 			pr["out"]  = Vector3(0.0, 0.85,  0.45)   # forward end, feeds C9
@@ -149,7 +149,7 @@ static func profile(id: String) -> Dictionary:
 		# C8.5 is the slightly-lower overflow belt that C8 discharges to when
 		# reversed. Plain conveyor — material flows in one direction toward the
 		# U-bay (which the LineFlow linker reaches by geometry).
-		"intake_belt_8_5":
+		"transportband_8_5":
 			pr["role"] = "conveyor"
 			pr["in"]   = Vector3(0.0, 0.75, -0.45)
 			pr["out"]  = Vector3(0.0, 0.75,  0.45)

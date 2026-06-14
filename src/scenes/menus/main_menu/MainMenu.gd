@@ -26,6 +26,11 @@ func _ready() -> void:
 	# the main menu's button column.
 	var customize_btn := Button.new()
 	customize_btn.text = "Customise character"
+	customize_btn.custom_minimum_size = Vector2(0, 40)
+	# Make sure the mouse can actually click this — Control nodes added at
+	# runtime sometimes inherit theme defaults that leave them invisible to
+	# clicks. STOP is the explicit "swallow this click" filter Buttons need.
+	customize_btn.mouse_filter = Control.MOUSE_FILTER_STOP
 	customize_btn.pressed.connect(_on_customize_pressed)
 	var col : Node = gauntlet_button.get_parent()
 	if col != null:
@@ -34,8 +39,15 @@ func _ready() -> void:
 		col.move_child(customize_btn, gauntlet_button.get_index() + 1)
 	# #158 — "Macro sandbox" button. Flat grass + all 5 line macros laid out
 	# for fast walkthrough (F8 prev / F9 next station).
+	# Operator report (post-#158): could only reach it via Tab+Enter, mouse
+	# clicks were eaten by overlapping Controls / inherited mouse_filter.
+	# Force STOP + match the other buttons' minimum height so it has a real
+	# clickable rect (Buttons with no min height collapse under the scroll
+	# viewport's bottom edge).
 	var sandbox_btn := Button.new()
 	sandbox_btn.text = "Macro sandbox"
+	sandbox_btn.custom_minimum_size = Vector2(0, 40)
+	sandbox_btn.mouse_filter = Control.MOUSE_FILTER_STOP
 	sandbox_btn.pressed.connect(_on_sandbox_pressed)
 	if col != null:
 		col.add_child(sandbox_btn)
@@ -312,5 +324,5 @@ func _start_game(save_name: String, is_new: bool) -> void:
 	else:
 		EventBus.set_meta("pending_save_name", save_name)
 		EventBus.set_meta("pending_is_new_save", is_new)
-		
+
 	get_tree().change_scene_to_file("res://src/scenes/world/MainWorld.tscn")

@@ -15,4 +15,5 @@ func _ready() -> void:
 	_model_path    = MODEL_PATH
 	_part_names    = DEFAULT_PART_NAMES
 	_paint_color   = Color(1, 1, 1, 0)         # leave factory paint
+	_real_world_length_m = 4.34   # Audi A3 Sportback 2013 = 4.34 m
 	load_model()

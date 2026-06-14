@@ -18,6 +18,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+mouse_filter = 2
 color = Color(0.129412, 0.14902, 0.180392, 1)
 
 [node name="CenterContainer" type="ScrollContainer" parent="." unique_id=990293644]
@@ -36,6 +37,7 @@ size_flags_horizontal = 3
 [node name="LeftSpacer" type="Control" parent="CenterContainer/Centerer" unique_id=971910343]
 layout_mode = 2
 size_flags_horizontal = 3
+mouse_filter = 2
 
 [node name="VBoxContainer" type="VBoxContainer" parent="CenterContainer/Centerer" unique_id=67358574]
 custom_minimum_size = Vector2(900, 0)
@@ -114,3 +116,4 @@ text = "TEST GAUNTLET (verify the backlog)"
 [node name="RightSpacer" type="Control" parent="CenterContainer/Centerer" unique_id=1754327296]
 layout_mode = 2
 size_flags_horizontal = 3
+mouse_filter = 2

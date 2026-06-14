@@ -88,6 +88,93 @@ func setup(npc_dict: Dictionary, lf: Node, sc: Node, break_pos: Vector3) -> void
 	shift_clock    = sc
 	break_room_pos = break_pos
 	assign_posts()
+	_hook_walkie()
+
+## Subscribe to Walkie.transmit_sent so the crew brain reacts to the operator's
+## keyed-up canned lines (skeletal — currently only "Need a hand here" picks the
+## closest feeder NPC, sends them to the operator, and has them echo "On my way"
+## on arrival). Best-effort: silently does nothing in the headless harness where
+## the autoload isn't present.
+func _hook_walkie() -> void:
+	var ml := Engine.get_main_loop()
+	if not (ml is SceneTree):
+		return
+	var walkie := (ml as SceneTree).root.get_node_or_null("Walkie")
+	if walkie == null or not walkie.has_signal("transmit_sent"):
+		return
+	# Avoid double-connecting if setup() is called more than once (e.g. on reload).
+	if not walkie.is_connected("transmit_sent", Callable(self, "_on_walkie_transmit")):
+		walkie.connect("transmit_sent", Callable(self, "_on_walkie_transmit"))
+
+## Operator keyed up a canned line over the walkie. Skeletal listener: only
+## "Need a hand here" triggers a response right now — pick the closest available
+## feeder NPC and dispatch them to walk to the operator. On arrival they echo
+## "On my way" back over the radio (handled by _on_helper_arrived, queued via the
+## NPC's existing dispatch_to callback path).
+func _on_walkie_transmit(text: String, heard: bool) -> void:
+	if not heard:
+		return                     # battery flat — colleagues didn't hear it
+	if text == null:
+		return
+	var t := String(text).strip_edges().to_lower()
+	if t.begins_with("need a hand"):
+		_dispatch_helper_to_operator()
+
+## Find the closest available feeder NPC, walk them to the player's position,
+## and arrange for them to echo "On my way" via the walkie once they arrive.
+## No-op when the player isn't in the scene yet, or when no feeder is free.
+func _dispatch_helper_to_operator() -> void:
+	var ml := Engine.get_main_loop()
+	if not (ml is SceneTree):
+		return
+	var scene := (ml as SceneTree).current_scene
+	if scene == null:
+		return
+	# Resolve the operator's position. The player node is conventionally named
+	# "Player" under MainWorld; fall back to the group lookup if a future scene
+	# moves it.
+	var player_node : Node3D = scene.find_child("Player", true, false) as Node3D
+	if player_node == null:
+		for n in (ml as SceneTree).get_nodes_in_group("player"):
+			if n is Node3D:
+				player_node = n
+				break
+	if player_node == null:
+		return
+	var op_pos := player_node.global_position
+	# Pick the nearest available feeder. permanent_feeder and feeder both count;
+	# transitional is a feeder→extruder swing role so we include it too.
+	var helper : NPC = null
+	var best_d := INF
+	for w in workers:
+		if not (w is NPC):
+			continue
+		if not w.is_available():
+			continue
+		var role := String(w.npc_role)
+		if role != "feeder" and role != "permanent_feeder" and role != "transitional":
+			continue
+		var d : float = w.global_position.distance_to(op_pos)
+		if d < best_d:
+			best_d = d
+			helper = w
+	if helper == null:
+		return                     # no feeder free right now — operator's on their own
+	# Re-use the standard dispatch path so the helper walks via the navmesh and
+	# the brain transitions back to AT_POST when done. SERVICE_SECS gives a brief
+	# "stood by" dwell at the operator's spot before they head back.
+	helper.dispatch_to(op_pos, "operator_help", SERVICE_SECS)
+	_handling["operator_help"] = helper
+	_emit("npc_called_for_help", ["operator", String(helper.npc_name), "operator_help"])
+	_emit("npc_started_helping", [String(helper.npc_name), "", "operator_help"])
+	# Echo "On my way" via the walkie. Skeletal: we send it on dispatch (the
+	# real arrival callback lives in step_brain → service-complete, which already
+	# emits npc_finished_helping; a fuller implementation would defer the radio
+	# call until arrival, but the operator hearing it immediately is acceptable
+	# for the first cut — the helper IS on their way as of this tick).
+	var walkie := (ml as SceneTree).root.get_node_or_null("Walkie")
+	if walkie != null and walkie.has_method("receive_call"):
+		walkie.receive_call(String(helper.npc_name), "On my way.")
 
 # =============================================================================
 # POSTING
@@ -477,7 +564,7 @@ const SECTION_ZONES : Dictionary = {
 	"feed_1":      ["bunker_1",  "opzetband_1", "westa_band_1"],
 	"feed_3c":     ["bunker_3c", "opzetband_3c6"],
 	"feed_6":      ["bunker_6",  "opzetband_3c6"],
-	"intake_3a3b": ["intake_belt_", "switch_belt", "vss_silo", "u_bay"],
+	"intake_3a3b": ["transportband_", "switch_belt", "vss_silo", "u_bay"],
 	"sort_3a3b":   ["titech", "tomra", "ballistic", "trilzeef", "metal_belt", "wind_sifter"],
 	"wash_3a":     ["prewash_3a", "friction_3a", "intensive_3a", "flotation_3a",
 					"rotation_3a", "kufferath_3a", "dewater_3a", "mech_dryer_3a", "centrifuge_3a"],

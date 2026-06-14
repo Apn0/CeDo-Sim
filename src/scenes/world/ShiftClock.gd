@@ -54,6 +54,11 @@ signal shift_started
 signal shift_ended
 signal shift_rolled_over(new_day_index: int)   # auto-advanced to a new working day
 signal time_updated(time_string: String)
+## Emitted when seek_to_wall_time() / set_day_index() jumps the clock.
+## MainWorld + PreShiftSequence listen so they can re-evaluate NPC / car state
+## at the new instant instead of being stuck in whatever the last forward tick
+## produced. payload: new elapsed_seconds.
+signal time_jumped(new_elapsed_seconds: float)
 
 # =============================================================================
 func _ready() -> void:
@@ -63,7 +68,32 @@ func _ready() -> void:
 	var sm := get_node_or_null("/root/SettingsManager")
 	if sm and sm.has_signal("settings_applied"):
 		sm.settings_applied.connect(_apply_time_scale_setting)
+		# Live-apply starting time/date when the operator clicks Apply in the
+		# Settings menu. _last_applied_* gate prevents the in-shift "save +
+		# reload was fine, my real shift moved on and I just bumped Render
+		# scale" case from yanking the clock backwards — only a CHANGED
+		# starting_time / starting_date triggers a re-seek.
+		sm.settings_applied.connect(_on_settings_applied)
 	emit_signal("time_updated", get_time_string())
+
+# Last-applied starting_time / starting_date. apply_starting_settings() and
+# _on_settings_applied() update these; the latter only re-seeks when they
+# CHANGE, so the operator can edit graphics/audio without their shift jumping.
+var _last_applied_start_time : String = ""
+var _last_applied_start_date : String = ""
+
+func _on_settings_applied() -> void:
+	var sm := get_node_or_null("/root/SettingsManager")
+	if sm == null or not sm.has_method("gameplay"):
+		return
+	var gp : Dictionary = sm.gameplay()
+	var t : String = String(gp.get("starting_time", ""))
+	var d : String = String(gp.get("starting_date", ""))
+	if t == _last_applied_start_time and d == _last_applied_start_date:
+		return
+	_last_applied_start_time = t
+	_last_applied_start_date = d
+	apply_starting_settings()
 
 ## Pull the time-compression rate from the gameplay settings (#166), so the
 ## operator picks the shift pace. Falls back to the @export default when the
@@ -135,6 +165,107 @@ func pause_shift() -> void:
 
 func resume_shift() -> void:
 	shift_active = true
+
+## Seek the clock so its wall-clock readout shows HH:MM. Solves "operator set
+## a starting time — make NPCs / cars match that instant" without bolting on
+## a separate save/load round-trip. The math is the inverse of get_time_string():
+##   target_minutes - shift_start_minutes → elapsed seconds (can be negative
+##   for pre-shift, e.g. 06:30 on a Vroege day is -1800).
+## If allow_day_rollover is true and the target is BEHIND the current elapsed,
+## advance the day so we land on the NEXT instance of HH:MM (skipping the
+## team's rest block). emit time_jumped so MainWorld / PreShiftSequence can
+## reposition cars + NPC state machines.
+func seek_to_wall_time(hour: int, minute: int, allow_day_rollover: bool = true) -> void:
+	var target_min : int = hour * 60 + minute
+	var start_min  : int = shift_start_hour() * 60 + SHIFT_START_MINUTE
+	# Offset in minutes from this dienst's start. Wrap into the symmetric
+	# [-12h .. +12h] window so 03:00 on a Vroege day reads as 4 h INTO last
+	# night's shift, not 20 h ago.
+	var delta_min : int = target_min - start_min
+	while delta_min < -12 * 60: delta_min += 24 * 60
+	while delta_min >  12 * 60: delta_min -= 24 * 60
+	var new_elapsed : float = float(delta_min) * 60.0
+	if allow_day_rollover and new_elapsed < shift_elapsed_seconds:
+		advance_day(1)
+		var guard := 0
+		while is_resting_today() and guard < 14:
+			advance_day(1)
+			guard += 1
+	shift_elapsed_seconds = new_elapsed
+	_pre_shift_bell_pending = (new_elapsed < 0.0)
+	shift_active = true
+	emit_signal("time_updated", get_time_string())
+	emit_signal("time_jumped", shift_elapsed_seconds)
+
+## Move directly to a specific calendar day_index (cannot go BACK — the rota
+## models a forward-only timeline; pass d <= day_index for a no-op).
+func set_day_index(d: int) -> void:
+	if d > day_index:
+		advance_day(d - day_index)
+		emit_signal("time_jumped", shift_elapsed_seconds)
+
+## Apply the operator's "Starting time" / "Starting date" settings (gameplay).
+## Called once at MainWorld bootstrap AFTER load_shift_state(): if the operator
+## set a time/date in the Settings UI, this overrides the saved/default state.
+## A blank "starting_time" leaves the loaded state untouched; a blank
+## "starting_date" treats the offset as 0 days from today.
+##
+## Date handling: starting_date is YYYY-MM-DD. We treat it as a number-of-days
+## delta from today's system date, then convert that delta to day_index by
+## advancing the rota that many days. This keeps the existing 2-2-2-4 rota
+## semantics (day_index = absolute working-day count) intact.
+func apply_starting_settings() -> void:
+	var sm := get_node_or_null("/root/SettingsManager")
+	if sm == null or not sm.has_method("gameplay"):
+		return
+	var gp : Dictionary = sm.gameplay()
+	var time_s : String = String(gp.get("starting_time", "")).strip_edges()
+	var date_s : String = String(gp.get("starting_date", "")).strip_edges()
+	# Date first — sets the calendar day before we seek to the time within it.
+	if date_s != "":
+		var parts : PackedStringArray = date_s.split("-")
+		if parts.size() == 3:
+			var y := int(parts[0]); var mo := int(parts[1]); var d := int(parts[2])
+			var picked : Dictionary = {"year": y, "month": mo, "day": d}
+			var today_d : Dictionary = Time.get_date_dict_from_system()
+			var delta_days : int = _days_between(today_d, picked)
+			if delta_days > 0:
+				set_day_index(day_index + delta_days)
+	# Time second — apply HH:MM as wall-clock, with day-rollover semantics so
+	# "set 07:00 at 13:00 on a Vroege day" lands on tomorrow's 07:00 not
+	# yesterday's. With no day set explicitly the rollover handles overnight
+	# correctly for the player.
+	if time_s != "":
+		var hm : PackedStringArray = time_s.split(":")
+		if hm.size() == 2:
+			var h := int(hm[0]); var m := int(hm[1])
+			h = clampi(h, 0, 23)
+			m = clampi(m, 0, 59)
+			# When the operator also picked a date, don't roll over again —
+			# the date already locked the day_index.
+			var allow_rollover : bool = (date_s == "")
+			seek_to_wall_time(h, m, allow_rollover)
+
+## Days between two date dicts (today → target). Negative means target is in
+## the past (we clamp to 0 above). Uses the proleptic Gregorian calendar via
+## a serial-day count — cheap and accurate enough for the rota window.
+func _days_between(a: Dictionary, b: Dictionary) -> int:
+	return _serial_day(b) - _serial_day(a)
+
+func _serial_day(d: Dictionary) -> int:
+	var y : int = int(d.get("year", 1970))
+	var m : int = int(d.get("month", 1))
+	var dd : int = int(d.get("day", 1))
+	# Shift Jan/Feb into the previous year so leap-day math lines up.
+	if m <= 2:
+		y -= 1
+		m += 12
+	# Howard Hinnant's days_from_civil — handles all proleptic Gregorian dates.
+	var era : int = (y if y >= 0 else y - 399) / 400
+	var yoe : int = y - era * 400                # [0, 399]
+	var doy : int = (153 * (m - 3) + 2) / 5 + dd - 1     # [0, 365]
+	var doe : int = yoe * 365 + yoe / 4 - yoe / 100 + doy
+	return era * 146097 + doe - 719468           # offset so 1970-01-01 → 0
 
 # =============================================================================
 # QUERIES
