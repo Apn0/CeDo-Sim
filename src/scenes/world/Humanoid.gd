@@ -828,7 +828,13 @@ static func _install_skeleton_rig(root: Node3D) -> void:
 	sm.add_node("crouch",     n_crouch,  Vector2( 200.0, 120.0))
 	sm.add_node("prone",      n_prone,   Vector2( 400.0, 120.0))
 	sm.add_node("seated",     n_seated,  Vector2( 600.0, 120.0))
-	sm.set_start_node("locomotion")
+	# Godot 4.6 has no set_start_node() — the initial state is selected by
+	# adding a transition from the built-in "Start" pseudonode (it always
+	# exists, alongside "End"). SWITCH_MODE_IMMEDIATE so locomotion is active
+	# from frame 0 with no hold on the Start node.
+	var t_start := AnimationNodeStateMachineTransition.new()
+	t_start.switch_mode = AnimationNodeStateMachineTransition.SWITCH_MODE_IMMEDIATE
+	sm.add_transition("Start", "locomotion", t_start)
 	# Bi-directional transitions between locomotion and each pose state, plus
 	# pose-to-pose so the operator can rebind crouch→prone without first standing.
 	var pose_states := ["crouch", "prone", "seated"]
