@@ -49,26 +49,32 @@ const BM = preload("res://src/build/BuildMode.gd")
 ## walk shows everything that needs operator eyeball this run. Press Y to
 ## verify, N to fail — both hide the station from the next boot.
 const STATIONS : Array[Dictionary] = [
-	# ─── Audio + visuals ──────────────────────────────────────────────────────
-	{"id": 200, "title": "T1 Walkie — squelch chirp, NO alien voice",  "fn": "_st_t1_walkie",     "status": "verifying"},
-	{"id": 201, "title": "T4 Fog 500 m — default ON",                  "fn": "_st_t4_fog",        "status": "verifying"},
-	{"id": 202, "title": "T8 Footwear — boots on shift, shoes off",    "fn": "_st_t8_footwear",   "status": "verifying"},
-	{"id": 203, "title": "D2 Bale sticker — readable ROTTERDAM text",  "fn": "_st_d2_sticker",    "status": "verifying"},
-	# ─── D4 belt audit fixes (this session) ──────────────────────────────────
-	{"id": 210, "title": "D4 Belt direction — carries downstream",     "fn": "_st_d4_dir",        "status": "verifying"},
-	{"id": 211, "title": "D4 Opzetband K-edit / delete / save round",  "fn": "_st_d4_opzetband",  "status": "verifying"},
-	{"id": 212, "title": "D4 LINE_SORT_SEQ has opzetband at head",     "fn": "_st_d4_sort_macro", "status": "verifying"},
-	{"id": 213, "title": "D4 LINE_3C6_SEQ macro available + builds",   "fn": "_st_d4_3c6_macro",  "status": "verifying"},
-	{"id": 214, "title": "D4 Spinning end rollers (omega = v / r)",    "fn": "_st_d4_rollers",    "status": "verifying"},
-	# ─── Car auto-ruler ───────────────────────────────────────────────────────
-	{"id": 220, "title": "V2 Cars at real-world length (auto-ruler)",  "fn": "_st_v2_cars",       "status": "verifying"},
-	# ─── Performance ──────────────────────────────────────────────────────────
-	{"id": 230, "title": "Perf FilmFlakeField 20 Hz + cull (no idle)", "fn": "_st_perf_ff",       "status": "verifying"},
-	# ─── NPC + Build-mode improvements ────────────────────────────────────────
-	{"id": 240, "title": "NPC step-ray fix — no constant jumping",     "fn": "_st_npc_jump",      "status": "verifying"},
-	{"id": 241, "title": "Build mode — green snap pole on adjacency",  "fn": "_st_bm_snap",       "status": "verifying"},
-	{"id": 242, "title": "Transportband Y-stacking macro (chain UP)",  "fn": "_st_tb_stack",      "status": "verifying"},
-	{"id": 243, "title": "Bale close-LOD wire bands + sticker quad",   "fn": "_st_lod_bands",     "status": "verifying"},
+	# ─── THIS SESSION'S PATCH (commit 6e7b91e) ────────────────────────────────
+	# Cars + steering
+	{"id": 250, "title": "Cars upright — Pascal Ford Ka + Suzuki Swift",      "fn": "_st_cars_upright",   "status": "verifying"},
+	{"id": 251, "title": "Steering ramp — 55° max, 18.33°/s rate",            "fn": "_st_steer_ramp",     "status": "verifying"},
+	# Layout markers regression (#34)
+	{"id": 252, "title": "Layout markers — PerfHud reports yaw + anchor",     "fn": "_st_layout_xform",   "status": "verifying"},
+	# Clock pre-shift respawn
+	{"id": 253, "title": "Clock pre-shift — set 06:35 → NPCs arriving",       "fn": "_st_clock_preshift", "status": "verifying"},
+	# HMI scoping (12 panels)
+	{"id": 254, "title": "HMI scopes — 12 panels, each shows only its set",   "fn": "_st_hmi_scopes",     "status": "verifying"},
+	# Vault/climb
+	{"id": 255, "title": "Vault/climb — W+Space onto a chest-high ledge",     "fn": "_st_vault_climb",    "status": "verifying"},
+	# Macro save-back
+	{"id": 256, "title": "Macro save-back — jog + Shift+S, round-trip",       "fn": "_st_macro_save",     "status": "verifying"},
+	# Trousers mirrored
+	{"id": 257, "title": "Trousers — L+R legs visibly distinct",              "fn": "_st_trousers",       "status": "verifying"},
+	# Extruder silo windows/beams/ladder/gate
+	{"id": 258, "title": "Extruder silo — windows, beams, ladder, push-gate", "fn": "_st_extruder_silo",  "status": "verifying"},
+	# Voorraad silo ladder + gate
+	{"id": 259, "title": "Voorraad silo — round tank ladder + push-gate",     "fn": "_st_voorraad_silo",  "status": "verifying"},
+	# Animation Phase 1
+	{"id": 260, "title": "Animation — Skeleton3D rig + BlendSpace2D",         "fn": "_st_anim_phase1",    "status": "verifying"},
+	# AI/Voice settings
+	{"id": 261, "title": "Voice & AI — Settings tab, cloud OFF default",      "fn": "_st_voice_ai",       "status": "verifying"},
+	# Lines complete audit
+	{"id": 262, "title": "Lines 1 / 3A / 3B — whiteboard audit",              "fn": "_st_lines_audit",    "status": "verifying"},
 ]
 
 # Cached anchors so per-station builders can attach to one parent each.
@@ -1747,3 +1753,218 @@ func _lod_tint_darker(bale: Node, factor: float) -> void:
 					mi.set_surface_override_material(i, dup)
 	for child in bale.get_children():
 		_lod_tint_darker(child, factor)
+
+# ═════════════════════════════════════════════════════════════════════════════
+# THIS-SESSION STATIONS (commit 6e7b91e — cars/clock/HMI/layout/anim/voice etc.)
+# Most are placards; a few spawn real demo instances (cars, ledge, silos) so
+# the operator can interact with the verb being tested.
+# ═════════════════════════════════════════════════════════════════════════════
+
+# 250 — Cars upright. Spawn a Pascal Ford Ka + a Suzuki Swift side-by-side. With
+# the squish fix (MainWorld._apply_pascal_body_squish drilling into the
+# FrontAxisCorrection wrap's child via Transform3D.basis.scaled) and Suzuki
+# routed through Car.load_model(), both should sit wheels-down. Pre-fix they
+# lay on their LEFT SIDE in the lot.
+func _st_cars_upright(anchor: Vector3) -> void:
+	var ford_scn := load("res://src/scenes/vehicles/cars/FordKa2003.gd")
+	var swift_scn := load("res://src/scenes/vehicles/cars/SuzukiSwiftGLX.gd")
+	if ford_scn != null:
+		var ford : Node3D = (ford_scn.new() as Node3D)
+		ford.position = anchor + Vector3(-2.0, 0.5, 0.0)
+		add_child(ford)
+		# Mimic MainWorld's Pascal hook: call_deferred so the FBX wrap exists.
+		ford.call_deferred("set_meta", "is_pascal", true)
+	if swift_scn != null:
+		var swift : Node3D = (swift_scn.new() as Node3D)
+		swift.position = anchor + Vector3( 2.0, 0.5, 0.0)
+		add_child(swift)
+	_st_placard(anchor + Vector3(0.0, 2.4, -2.0),
+		"Cars upright\n\nBefore: Pascal Ford Ka + Suzuki Swift lay on their LEFT side\n"
+		+ "After: both sit wheels-down\n\n"
+		+ "Fix: _apply_pascal_body_squish uses Transform3D.basis.scaled()\n"
+		+ "Suzuki routed through Car.load_model() (FrontAxisCorrection + auto-ruler)\n\n"
+		+ "PASS = both upright with round wheels\nFAIL = either lying on side")
+
+# 251 — Steering ramp. Read the spec; for the actual physical check the operator
+# drives the Swift from MainWorld.
+func _st_steer_ramp(anchor: Vector3) -> void:
+	_st_placard(anchor,
+		"Steering ramp — BaseVehicle\n\n"
+		+ "MAX_STEER_RAD = 0.95993 (55 deg)\n"
+		+ "STEER_RATE_RAD_PER_SEC = 0.31991 (18.33 deg/s)\n\n"
+		+ "In MainWorld: enter the Swift, hold D for ~3 s.\n"
+		+ "Wheels + steering-wheel + body yaw ramp together\n"
+		+ "from 0 → -55 deg, body turn rate ramps with them.\n\n"
+		+ "PASS = smooth 3-second ramp to full lock\n"
+		+ "FAIL = instant slam or no rotation")
+
+# 252 — Layout markers regression. Reads the PerfHud's layout_conv_summary.
+func _st_layout_xform(anchor: Vector3) -> void:
+	_st_placard(anchor,
+		"Layout markers — rotation + anchor\n\n"
+		+ "Task #34 regressed: _layout_to_scene was a passthrough.\n"
+		+ "Restored to Basis(UP, _world_yaw()) * offset + anchor.\n\n"
+		+ "In MainWorld, PerfHud should now read:\n"
+		+ "  'Layout: markers rotated by NN.N deg + anchored at (X,Z)'\n"
+		+ "(was: 'no rotation, no anchor')\n\n"
+		+ "PASS = real numbers in the PerfHud string\n"
+		+ "FAIL = the old 'no rotation, no anchor' message")
+
+# 253 — Clock pre-shift respawn.
+func _st_clock_preshift(anchor: Vector3) -> void:
+	_st_placard(anchor,
+		"Clock pre-shift respawn\n\n"
+		+ "In MainWorld at 07:00+:\n"
+		+ "  Settings → Gameplay → set time to 06:35 (today)\n"
+		+ "On Apply:\n"
+		+ "  • All NPCs despawn from posts\n"
+		+ "  • Early arrivers spawn in cars on De Asselen Kuil\n"
+		+ "  • Mid-window NPCs spawn in canteen/locker dressing\n"
+		+ "  • Late arrivers spawn at posts\n\n"
+		+ "PASS = NPCs visibly arriving\n"
+		+ "FAIL = everyone still at posts OR clock jumped to tomorrow")
+
+# 254 — HMI scoping. 12 panels per operator whiteboard list.
+func _st_hmi_scopes(anchor: Vector3) -> void:
+	_st_placard(anchor,
+		"HMI scopes — 12 panels (HmiScopes.gd)\n\n"
+		+ " 1. Shredder L1            5. Sorting L3A/3B    9. Extruder all\n"
+		+ " 2. Shredder1 L3A/3B       6. Transport L3A/3B 10. Water L3C/6\n"
+		+ " 3. Shredder2 L3A/3B       7. Transport L3C/6  11. Water-extr 1/3A/3B\n"
+		+ " 4. Shredder L3C/6         8. Washing all      12. Indaver water\n\n"
+		+ "Open each via Build catalog → HMI variants. Each should show\n"
+		+ "ONLY its scoped machine rows on every HMI screen.\n\n"
+		+ "PASS = each panel filters correctly + header reads [bereik: ...]\n"
+		+ "FAIL = any panel shows out-of-scope machine controls")
+
+# 255 — Vault/climb. Spawn a chest-high block so the operator can W+Space it.
+func _st_vault_climb(anchor: Vector3) -> void:
+	var ledge := StaticBody3D.new()
+	ledge.position = anchor + Vector3(0.0, 0.55, 0.0)
+	var mi := MeshInstance3D.new()
+	var bx := BoxMesh.new(); bx.size = Vector3(2.0, 1.1, 1.0)
+	mi.mesh = bx
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.55, 0.45, 0.30)
+	mi.material_override = mat
+	ledge.add_child(mi)
+	var cs := CollisionShape3D.new()
+	var bs := BoxShape3D.new(); bs.size = Vector3(2.0, 1.1, 1.0)
+	cs.shape = bs
+	ledge.add_child(cs)
+	add_child(ledge)
+	_st_placard(anchor + Vector3(0.0, 0.0, -2.2),
+		"Vault / climb\n\n"
+		+ "Walk into the brown block. Press W + SPACE.\n"
+		+ "Player should mantle ONTO the top (0.5 s lerp).\n\n"
+		+ "Implementation: PlayerController three raycasts (waist + chest hit,\n"
+		+ "head clear) → 0.5 s ease-out lerp by CLIMB_MAX_HEIGHT=1.4 m.\n\n"
+		+ "PASS = lands on top of block\n"
+		+ "FAIL = just a normal jump / stuck")
+
+# 256 — Macro save-back. Placard only (operator drives a build session).
+func _st_macro_save(anchor: Vector3) -> void:
+	_st_placard(anchor,
+		"Macro save-back\n\n"
+		+ "1. Build → 'Lines' → line_3a (places ~30 machines)\n"
+		+ "2. EDIT mode (K) → select one machine, jog it 1 m\n"
+		+ "3. Shift+S → saves to user://macros/line_3a.json\n"
+		+ "4. Reload world → machine spawns at the jogged spot\n"
+		+ "5. Downstream machines follow the chain-delta\n\n"
+		+ "Implementation: LineMacroStore.gd autoload, save in BuildMode.gd\n\n"
+		+ "PASS = jogged transform persists across reload\n"
+		+ "FAIL = jog lost OR downstream chain doesn't follow")
+
+# 257 — Trousers L+R mirrored. Spawn an NPC body so operator can walk around.
+func _st_trousers(anchor: Vector3) -> void:
+	var hum := load("res://src/scenes/world/Humanoid.gd")
+	if hum != null:
+		var body : Node3D = hum.build(Color(0.20, 0.30, 0.60), 0, {})
+		body.position = anchor + Vector3(0.0, 0.0, 0.0)
+		add_child(body)
+	_st_placard(anchor + Vector3(0.0, 0.0, -1.5),
+		"Trousers — L+R distinct\n\n"
+		+ "Walk around the figure.\n"
+		+ "Left leg: mirrored UV (uv1_scale.x = -1, uv1_offset.y +0.5)\n"
+		+ "Right leg: original denim photo\n\n"
+		+ "Operator complaint: legs were a copy-paste pair.\n\n"
+		+ "PASS = visible weave / shading difference between legs\n"
+		+ "FAIL = legs read identical")
+
+# 258 — Extruder silo. Spawn one and let the operator climb it.
+func _st_extruder_silo(anchor: Vector3) -> void:
+	var cat := load("res://src/build/PlaceableCatalog.gd")
+	if cat != null and cat.has_method("build_node"):
+		var silo : Node3D = cat.build_node("extruder_silo", false) as Node3D
+		if silo != null:
+			silo.position = anchor + Vector3(0.0, 0.0, 0.0)
+			add_child(silo)
+	_st_placard(anchor + Vector3(0.0, 0.0, -3.0),
+		"Extruder silo — windows, beams, ladder, gate\n\n"
+		+ "Check:\n"
+		+ "  • Body widened x1.5 radially\n"
+		+ "  • Top + bottom window widths HALVED\n"
+		+ "  • Bottom windows lifted +0.37 m, beam ring at that Y removed\n"
+		+ "  • Top window top edge flush with the next beam up\n"
+		+ "  • Caged industrial ladder on -X face → push-open self-closing\n"
+		+ "    gate at the top, E to open going down (2 s auto-close)\n\n"
+		+ "PASS = climb up, push through, E at top to climb down\n"
+		+ "FAIL = beams through windows OR can't climb OR gate stuck")
+
+# 259 — Voorraad (round) silo with the same ladder + gate.
+func _st_voorraad_silo(anchor: Vector3) -> void:
+	var cat := load("res://src/build/PlaceableCatalog.gd")
+	if cat != null and cat.has_method("build_node"):
+		var silo : Node3D = cat.build_node("voorraad_silo", false) as Node3D
+		if silo != null:
+			silo.position = anchor + Vector3(0.0, 0.0, 0.0)
+			add_child(silo)
+	_st_placard(anchor + Vector3(0.0, 0.0, -3.0),
+		"Voorraad silo — ladder + push-gate\n\n"
+		+ "Round storage tank (no window/widen changes — extruder-silo-only).\n"
+		+ "ONLY check: caged ladder + landing platform + push-gate.\n"
+		+ "Same ladder model + PushGate.gd logic as the extruder silo.\n\n"
+		+ "PASS = ladder + gate present and functional\n"
+		+ "FAIL = no ladder OR gate broken")
+
+# 260 — Animation Phase 1.
+func _st_anim_phase1(anchor: Vector3) -> void:
+	_st_placard(anchor,
+		"Animation Phase 1 — Skeleton3D + BlendSpace2D\n\n"
+		+ "Humanoid box-rig replaced with Skeleton3D (19 bones).\n"
+		+ "AnimationPlayer: procedural idle / walk / run via Quaternion tracks.\n"
+		+ "AnimationTree.tree_root = BlendSpace2D (X = speed 0..walk..run).\n"
+		+ "Player + NPC feed velocity to parameters/blend_position.\n\n"
+		+ "In MainWorld: third-person view (F1?), walk + sprint.\n\n"
+		+ "PASS = visible leg + arm swing, smooth walk→run blend\n"
+		+ "FAIL = sliding puppet OR pose-snap between speeds")
+
+# 261 — Voice & AI Settings tab.
+func _st_voice_ai(anchor: Vector3) -> void:
+	_st_placard(anchor,
+		"Voice & AI — Settings\n\n"
+		+ "VoiceService autoload (local / cloud / mock backends).\n"
+		+ "Cloud DISABLED by default (no OpenAI calls until you toggle).\n"
+		+ "Walkie.gd routes through it.\n\n"
+		+ "In MainWorld: ESC → Settings → 'Voice & AI' tab\n"
+		+ "  • Backend dropdown defaults to 'local'\n"
+		+ "  • 'Test voice' button is wired\n"
+		+ "  • Cloud requires OPENAI_API_KEY in user://api_keys.cfg\n\n"
+		+ "PASS = tab visible, default = local, test fires\n"
+		+ "FAIL = tab missing OR cloud silently enabled")
+
+# 262 — Lines 1 / 3A / 3B audit against the whiteboard.
+func _st_lines_audit(anchor: Vector3) -> void:
+	_st_placard(anchor,
+		"Lines 1 / 3A / 3B — whiteboard audit (BuildMode.gd)\n\n"
+		+ "LINE_1_SEQ (line 238): 40 entries — every whiteboard machine ✓\n"
+		+ "  (Intrekschroef/Schoepen/Uitdraairol are INSIDE flotation_tank)\n"
+		+ "LINE_3A_SEQ (line 73): 30 entries incl. recirc-drying branch ✓\n"
+		+ "LINE_3B_SEQ (line 204): 23 entries incl. L-R parallel dryers ✓\n"
+		+ "LINE_3C6_SEQ (line 172): shared 3C/6 front end ✓\n"
+		+ "INTAKE_3A3B_SEQ (line 179): C1-C12 + C8.5 + switch_belt ✓\n\n"
+		+ "Build any line from the catalog and walk it. All four extruder\n"
+		+ "feeds (extruder_silo for 1/3A/3B + 3C/6 wide variant) wire to\n"
+		+ "their respective extruder + lump_cart_spot.\n\n"
+		+ "PASS = full chain end-to-end, no gaps in LineFlow\n"
+		+ "FAIL = any whiteboard machine missing from a placed line")
