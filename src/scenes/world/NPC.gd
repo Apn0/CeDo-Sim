@@ -919,6 +919,10 @@ func _resolve_anim_tree(body_node: Node) -> AnimationTree:
 ## When the rig got rebuilt by Humanoid.rebuild_appearance (wardrobe swap), the
 ## old AnimationTree was freed with the body; refresh the cached reference if
 ## the previously-cached one is no longer valid.
+## Phase 2: travel the AnimationTree's StateMachine to match locomotion. Same
+## param layout as PlayerController._update_animation_blend.
+var _last_anim_state : String = "locomotion"
+
 func _update_animation_blend() -> void:
 	if _anim_tree == null or not is_instance_valid(_anim_tree):
 		# Rebuilt by Humanoid.rebuild_appearance — re-resolve under the (possibly
@@ -927,17 +931,35 @@ func _update_animation_blend() -> void:
 		_anim_tree = _resolve_anim_tree(_body_node)
 		if _anim_tree == null:
 			return
+	# Map NPC.Locomotion → state name. CROUCH_WALK = held crouch pose (Phase 3
+	# would author a crouch-walk locomotion BlendSpace row). PRONE_CRAWL = prone.
+	# VAULT and JUMP keep using the locomotion state (the vault tween runs on
+	# the capsule, the visible body just keeps walking through the motion).
+	var want_state : String = "locomotion"
+	match locomotion:
+		Locomotion.CROUCH_WALK: want_state = "crouch"
+		Locomotion.PRONE_CRAWL: want_state = "prone"
+		_:                      want_state = "locomotion"
+	# NPC sitting in vehicle — set via assign_vehicle / clear_vehicle in the
+	# vehicle entry code.
+	if npc_autopilot_seated:
+		want_state = "seated"
+	if want_state != _last_anim_state:
+		var pb := _anim_tree.get("parameters/playback") as AnimationNodeStateMachinePlayback
+		if pb != null:
+			pb.travel(want_state)
+		_last_anim_state = want_state
+	if want_state != "locomotion":
+		return
 	var horiz : float = Vector2(velocity.x, velocity.z).length()
-	# Speed → BlendSpace X axis. walk_speed (≈2 m/s) maps to X=1; the run point
-	# at X=2 corresponds to _ANIM_RUN_SPEED_NPC m/s. Clamp to the BlendSpace's
-	# authored space (0..2).
 	var walk_t : float = horiz / maxf(walk_speed, 0.1)
 	var bx : float = clampf(walk_t, 0.0, 2.0)
-	# Below 5 cm/s the BlendSpace should ride the idle pose entirely — without
-	# the floor, friction noise oscillates the legs by a hair when "stopped."
 	if horiz < 0.05:
 		bx = 0.0
-	_anim_tree.set("parameters/blend_position", Vector2(bx, 0.0))
+	_anim_tree.set("parameters/locomotion/blend_position", Vector2(bx, 0.0))
+
+## Flagged by FeederWorker / vehicle entry code when the NPC sits down.
+var npc_autopilot_seated : bool = false
 
 # =============================================================================
 # Sine-based walking gait (audit item 2)

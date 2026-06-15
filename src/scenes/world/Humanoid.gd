@@ -548,21 +548,25 @@ static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -
 	if wears_cap:
 		var cap_mat := _mat(Color(0.18, 0.22, 0.36), 0.78)
 		_box(root, Vector3(0.28, 0.09, 0.28), Vector3(0.0, head_y + 0.135, 0.0), cap_mat)   # crown
-		# Brim sticks out FORWARD of the face plane → more negative Z than fz.
-		_box(root, Vector3(0.26, 0.02, 0.10), Vector3(0.0, head_y + 0.09, fz - 0.04), cap_mat)  # brim
+		# BUG FIX: this rig is authored face-on-LOCAL-+Z (see ORIENTATION CONTRACT
+		# at the top of build()). "Forward of the face plane" therefore means MORE
+		# POSITIVE local Z, not more negative. Previous code had `fz - 0.04` which
+		# tucked the brim INSIDE the head on the wrong side — that's why the cap
+		# read as 180° turned in-game.
+		_box(root, Vector3(0.26, 0.02, 0.10), Vector3(0.0, head_y + 0.09, fz + 0.04), cap_mat)  # brim (forward of face)
 		# Optional fringe under the cap — auto-enabled whenever hair != bald so
 		# the customizer (which doesn't expose hair_under_cap directly) just
 		# does the right thing. Legacy NPC presets that set hair_under_cap=true
 		# also still light up.
 		if hair_style != "bald":
-			# Forehead fringe sits in front of the face plane (more negative Z).
+			# Forehead fringe sits IN FRONT of the face plane (more positive local Z).
 			_box(root, Vector3(0.24, 0.025, 0.02),
-				Vector3(0.0, head_y + 0.075, fz - 0.05), m_hair)
+				Vector3(0.0, head_y + 0.075, fz + 0.05), m_hair)
 			for sx in [-1.0, 1.0]:
 				# Side temple strands tucked slightly BEHIND the face plane
-				# (less negative Z) so they sit between the ear and the brim.
+				# (less positive local Z) so they sit between the ear and the brim.
 				_box(root, Vector3(0.025, 0.05, 0.04),
-					Vector3(sx * 0.115, head_y + 0.04, fz + 0.01), m_hair)
+					Vector3(sx * 0.115, head_y + 0.04, fz - 0.01), m_hair)
 
 	# Hardhat overlay if ppe_class == "operator" (drawn AFTER cap so it wins).
 	if ppe_class == "operator" and wear_state != "off_duty":
@@ -768,6 +772,11 @@ static func _install_skeleton_rig(root: Node3D) -> void:
 	lib.add_animation("idle", _build_anim_idle(skel))
 	lib.add_animation("walk", _build_anim_walk(skel))
 	lib.add_animation("run",  _build_anim_run(skel))
+	# Phase 2 stance poses (single-frame holds). The state machine below travels
+	# between locomotion / crouch / prone / seated based on the controller's stance.
+	lib.add_animation("crouch_pose", _build_anim_crouch(skel))
+	lib.add_animation("prone_pose",  _build_anim_prone(skel))
+	lib.add_animation("seated_pose", _build_anim_seated(skel))
 	ap.add_animation_library("", lib)
 	# We do NOT call ap.play("idle") here — the rig root isn't in the scene
 	# tree yet, and play() requires the player to be active. The AnimationTree
@@ -803,7 +812,41 @@ static func _install_skeleton_rig(root: Node3D) -> void:
 	bs.add_blend_point(n_idle, Vector2(0.0, 0.0))
 	bs.add_blend_point(n_walk, Vector2(1.0, 0.0))
 	bs.add_blend_point(n_run,  Vector2(2.0, 0.0))
-	atree.tree_root = bs
+	# Phase 2: wrap the locomotion BlendSpace + three pose animations in a
+	# StateMachine. The controller (PlayerController._update_animation_blend and
+	# NPC._update_animation_blend) travels between states by writing
+	# parameters/playback. Locomotion still receives speed via
+	# parameters/locomotion/blend_position (note the new nested path).
+	var n_crouch := AnimationNodeAnimation.new()
+	n_crouch.animation = "crouch_pose"
+	var n_prone := AnimationNodeAnimation.new()
+	n_prone.animation = "prone_pose"
+	var n_seated := AnimationNodeAnimation.new()
+	n_seated.animation = "seated_pose"
+	var sm := AnimationNodeStateMachine.new()
+	sm.add_node("locomotion", bs,        Vector2(   0.0,   0.0))
+	sm.add_node("crouch",     n_crouch,  Vector2( 200.0, 120.0))
+	sm.add_node("prone",      n_prone,   Vector2( 400.0, 120.0))
+	sm.add_node("seated",     n_seated,  Vector2( 600.0, 120.0))
+	sm.set_start_node("locomotion")
+	# Bi-directional transitions between locomotion and each pose state, plus
+	# pose-to-pose so the operator can rebind crouch→prone without first standing.
+	var pose_states := ["crouch", "prone", "seated"]
+	for to in pose_states:
+		var t_to := AnimationNodeStateMachineTransition.new()
+		t_to.xfade_time = 0.25
+		sm.add_transition("locomotion", to, t_to)
+		var t_back := AnimationNodeStateMachineTransition.new()
+		t_back.xfade_time = 0.25
+		sm.add_transition(to, "locomotion", t_back)
+	for a_state in pose_states:
+		for b_state in pose_states:
+			if a_state == b_state:
+				continue
+			var t_ab := AnimationNodeStateMachineTransition.new()
+			t_ab.xfade_time = 0.25
+			sm.add_transition(a_state, b_state, t_ab)
+	atree.tree_root = sm
 	atree.active = true
 	root.add_child(atree)
 
@@ -1107,3 +1150,76 @@ static func _add_rot_track(a: Animation, bone_name: String, keys: Array) -> void
 		var t : float = float(k[0])
 		var q : Quaternion = k[1] as Quaternion
 		a.rotation_track_insert_key(ti, t, q)
+
+## Add one TYPE_POSITION_3D track. Used by the stance poses below to lower the
+## Hips when crouching / proning / sitting.
+static func _add_pos_track(a: Animation, bone_name: String, keys: Array) -> void:
+	var ti : int = a.add_track(Animation.TYPE_POSITION_3D)
+	a.track_set_path(ti, NodePath("Skeleton3D:" + bone_name))
+	a.track_set_interpolation_loop_wrap(ti, true)
+	a.track_set_interpolation_type(ti, Animation.INTERPOLATION_LINEAR)
+	for k in keys:
+		var t : float = float(k[0])
+		var p : Vector3 = k[1] as Vector3
+		a.position_track_insert_key(ti, t, p)
+
+# ── Phase 2 stance poses ──────────────────────────────────────────────────────
+# Each is a 0.5 s loop holding a single static pose. The AnimationTree state
+# machine in _install_skeleton_rig travels between locomotion ↔ crouch / prone
+# / seated based on the controller's _stance / vehicle-occupied state, with a
+# 0.25 s crossfade. Procedurally generated so no external rig data is needed.
+
+## Crouch pose — hips drop ~20 cm via the Hips position track, knees bend
+## forward, thighs rotate back, mild forward Spine lean. Holds statically.
+static func _build_anim_crouch(_skel: Skeleton3D) -> Animation:
+	var a := Animation.new()
+	a.length = 0.5
+	a.loop_mode = Animation.LOOP_LINEAR
+	_add_pos_track(a, "Hips", [
+		[0.0, Vector3(0.0, -0.22, 0.0)],
+		[0.5, Vector3(0.0, -0.22, 0.0)],
+	])
+	_add_rot_track(a, "LUpperLeg", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 70.0))]])
+	_add_rot_track(a, "RUpperLeg", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 70.0))]])
+	_add_rot_track(a, "LLowerLeg", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-90.0))]])
+	_add_rot_track(a, "RLowerLeg", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-90.0))]])
+	_add_rot_track(a, "Spine",     [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 15.0))]])
+	return a
+
+## Prone pose — face-down. The Hips bone rotates -90° around X so the whole
+## kinematic chain lays horizontal, plus a downward position so the body settles
+## near floor level instead of floating where the capsule centre was. Arms
+## stretched forward (Superman-style) so they don't poke through the chest.
+static func _build_anim_prone(_skel: Skeleton3D) -> Animation:
+	var a := Animation.new()
+	a.length = 0.5
+	a.loop_mode = Animation.LOOP_LINEAR
+	_add_pos_track(a, "Hips", [[0.0, Vector3(0.0, -0.75, 0.0)]])
+	_add_rot_track(a, "Hips",     [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-90.0))]])
+	_add_rot_track(a, "Spine",    [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-5.0))]])
+	_add_rot_track(a, "Head",     [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 30.0))]])
+	_add_rot_track(a, "LUpperArm",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-100.0))]])
+	_add_rot_track(a, "RUpperArm",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-100.0))]])
+	_add_rot_track(a, "LUpperLeg",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( -5.0))]])
+	_add_rot_track(a, "RUpperLeg",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( -5.0))]])
+	return a
+
+## Seated pose — used when entering any vehicle. Hips slightly lowered, hips
+## flexed 90° (legs forward), knees bent 90° (shins down), elbows bent so the
+## hands rest near the lap (close enough to a steering wheel for a placeholder
+## seated-driving look). Per-vehicle bespoke seated poses are Phase 3 work.
+static func _build_anim_seated(_skel: Skeleton3D) -> Animation:
+	var a := Animation.new()
+	a.length = 0.5
+	a.loop_mode = Animation.LOOP_LINEAR
+	_add_pos_track(a, "Hips",     [[0.0, Vector3(0.0, -0.12, 0.0)]])
+	_add_rot_track(a, "LUpperLeg",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 90.0))]])
+	_add_rot_track(a, "RUpperLeg",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 90.0))]])
+	_add_rot_track(a, "LLowerLeg",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-90.0))]])
+	_add_rot_track(a, "RLowerLeg",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-90.0))]])
+	_add_rot_track(a, "LUpperArm",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 30.0))]])
+	_add_rot_track(a, "RUpperArm",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 30.0))]])
+	_add_rot_track(a, "LLowerArm",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-60.0))]])
+	_add_rot_track(a, "RLowerArm",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-60.0))]])
+	_add_rot_track(a, "Spine",    [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(  8.0))]])
+	return a

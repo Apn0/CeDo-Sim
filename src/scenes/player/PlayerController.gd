@@ -974,22 +974,55 @@ func _find_anim_tree_recursive(n: Node) -> AnimationTree:
 ## point matches walk_speed (≈5 m/s); the run point corresponds to
 ## walk_speed × sprint_multiplier (≈8.5 m/s). Fast-traverse (5×) is clamped to
 ## the same run pose — no separate "sprint" animation for Phase 1.
+## Phase 2: the AnimationTree's tree_root is now an AnimationNodeStateMachine
+## wrapping the locomotion BlendSpace2D + crouch / prone / seated pose states.
+## Locomotion blend_position is now NESTED inside the state name —
+## parameters/locomotion/blend_position. State transitions are driven via
+## parameters/playback.travel(name) with a 0.25 s xfade configured on the rig.
+var _last_anim_state : String = "locomotion"
+
 func _update_animation_blend() -> void:
 	if _anim_tree == null or not is_instance_valid(_anim_tree):
 		_anim_tree = _resolve_player_anim_tree()
 		if _anim_tree == null:
 			return
-	var horiz : float = Vector2(velocity.x, velocity.z).length()
-	# Below 5 cm/s = idle. Avoids hairline leg twitching on stopped friction.
-	if horiz < 0.05:
-		_anim_tree.set("parameters/blend_position", Vector2(0.0, 0.0))
+	# Travel to the state that matches our stance. _stance is the operator's
+	# crouch/prone toggle; in-vehicle is owned elsewhere and pushed via
+	# set_in_vehicle_animation(...) below.
+	var want_state : String
+	match _stance:
+		Stance.CROUCHING: want_state = "crouch"
+		Stance.PRONE:     want_state = "prone"
+		_:                want_state = "locomotion"
+	# in-vehicle wins over any stance — driver-seat pose
+	if _in_vehicle_seated:
+		want_state = "seated"
+	if want_state != _last_anim_state:
+		var pb := _anim_tree.get("parameters/playback") as AnimationNodeStateMachinePlayback
+		if pb != null:
+			pb.travel(want_state)
+		_last_anim_state = want_state
+	# Locomotion BlendSpace2D only receives speed when we're in the locomotion
+	# state. While crouch / prone / seated are holding a static pose, blend
+	# position is irrelevant.
+	if want_state != "locomotion":
 		return
-	# Walk pace = walk_speed (≈5 m/s) → X=1. Run pace = walk_speed × sprint_mul
-	# (≈8.5 m/s) → X=2. Linear between.
+	var horiz : float = Vector2(velocity.x, velocity.z).length()
+	if horiz < 0.05:
+		_anim_tree.set("parameters/locomotion/blend_position", Vector2(0.0, 0.0))
+		return
 	var run_speed : float = walk_speed * sprint_multiplier
 	var bx : float
 	if horiz <= walk_speed:
 		bx = horiz / maxf(walk_speed, 0.1)
 	else:
 		bx = 1.0 + clampf((horiz - walk_speed) / maxf(run_speed - walk_speed, 0.1), 0.0, 1.0)
-	_anim_tree.set("parameters/blend_position", Vector2(clampf(bx, 0.0, 2.0), 0.0))
+	_anim_tree.set("parameters/locomotion/blend_position", Vector2(clampf(bx, 0.0, 2.0), 0.0))
+
+## Vehicles call this when the player enters / exits the driver seat so the
+## skeleton swaps to the seated pose. Per-vehicle bespoke seated poses (mast
+## lift vs car vs forklift) are Phase 3; for now everything routes to the
+## single "seated" state.
+var _in_vehicle_seated : bool = false
+func set_in_vehicle_animation(seated: bool) -> void:
+	_in_vehicle_seated = seated
