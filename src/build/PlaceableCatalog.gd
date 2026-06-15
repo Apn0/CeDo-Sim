@@ -72,8 +72,11 @@ static func items() -> Array[Dictionary]:
 			{"id": "laser_filter",   "name": "Laserfilter",        "category": "Extruders",  "size": Vector3(1.4, 1.6, 2.0),  "color": Color(0.34, 0.38, 0.46)},
 			{"id": "melt_pump",      "name": "Meltpump",           "category": "Extruders",  "size": Vector3(1.0, 1.2, 1.2),  "color": Color(0.42, 0.40, 0.44)},
 			# ── Shredders ────────────────────────────────────────────────────
-			{"id": "shredder_3a3b",  "name": "Shredder 3A/3B",     "category": "Shredders",  "size": Vector3(3.0, 2.5, 3.0),  "color": Color(0.66, 0.34, 0.30)},
-			{"id": "shredder_1_3c6", "name": "Shredder 1 · 3C/6",  "category": "Shredders",  "size": Vector3(3.0, 2.5, 3.0),  "color": Color(0.72, 0.40, 0.30)},
+			# REMOVED: shredder_3a3b + shredder_1_3c6 were the old generic 3x2.5x3
+			# blobs (built via the fallback _m_shredder). Both are superseded by
+			# the bespoke shredder_1 / shredder_2 models from #50 (4x9x5 + rotor/
+			# stators + discharge conveyor). Catalog now has ONE shredder per
+			# actual machine, not duplicate old/new pairs.
 			# Per-position shredders the line actually has — Shredder 1 is the
 			# big coarse pre-shredder (≤10×10 cm output), Shredder 2 is a smaller
 			# compact unit that takes it down to ~1-2 cm flakes.
@@ -81,7 +84,11 @@ static func items() -> Array[Dictionary]:
 			{"id": "shredder_2",     "name": "Shredder 2 (fine)",  "category": "Shredders",  "size": Vector3(2.4, 2.4, 2.8),  "color": Color(0.62, 0.30, 0.22)},
 			# ── Washing / drying ─────────────────────────────────────────────
 			{"id": "mech_dryer",     "name": "Mechanical dryer",   "category": "Washing",    "size": Vector3(2.4, 3.0, 4.5),  "color": Color(0.62, 0.63, 0.65)},
-			{"id": "wash_line",      "name": "Washing line",       "category": "Washing",    "size": Vector3(2.0, 2.2, 8.0),  "color": Color(0.35, 0.55, 0.62)},
+			# REMOVED: wash_line was the old monolithic Washing-line placeable
+			# (8m long generic box). Replaced by the actual chain — friction_washer
+			# / friction_sep / flotation_tank / dewater_screw / mech_dryer — laid
+			# by LINE_3A_SEQ + LINE_3B_SEQ + LINE_1_SEQ. The catalog no longer
+			# offers the old monolith.
 			{"id": "centrifuge",     "name": "Centrifuge",         "category": "Washing",    "size": Vector3(2.0, 2.4, 2.0),  "color": Color(0.45, 0.50, 0.58)},
 			{"id": "thermal_dryer",  "name": "Thermal dryer (thermische droger)","category": "Washing","size": Vector3(2.6, 4.5, 3.0),"color": Color(0.60, 0.60, 0.64)},
 			# ── Conveyance ───────────────────────────────────────────────────
@@ -194,17 +201,24 @@ static func items() -> Array[Dictionary]:
 			# Small floor-mounted centrifugal pump (Wilo-style): teal-painted volute
 			# + motor end-cap, grey finned motor, junction box, stainless base plate,
 			# vertical stainless discharge stub. Modelled from the real CeDo photo.
-			{"id": "waterpomp",      "name": "Waterpomp (small pump)", "category": "Pumps",  "size": Vector3(0.8, 0.5, 0.4),  "color": Color(0.18, 0.55, 0.50)},
+			# REMOVED: waterpomp was the bespoke small Wilo-style pump model
+			# (_m_waterpomp). No macro referenced it — Line 3A's Pomp C1 uses
+			# `water_pump` (generic _m_pump). Catalog now offers ONE pump id.
 			# Line-3A ring main: serpentine of off-white plastic pipes inside a yellow
 			# steel safety cage (5 horizontal U-loops + vertical riser, stainless
 			# band clamps at intervals). Modelled from the real CeDo photos.
-			{"id": "ringleiding_3a", "name": "Ringleiding 3A (ring main, caged)",  "category": "Conveyance", "size": Vector3(2.4, 2.6, 1.0), "color": Color(0.88, 0.85, 0.78)},
+			# REMOVED: ringleiding_3a was a Line-3A-specific ring main variant
+			# (caged). The generic `ringleiding` (_m_ringleiding) already covers
+			# this — LINE_3A_SEQ uses the generic id. Catalog now offers ONE
+			# ringleiding id.
 			# Compactor feed belt: heavy inclined conveyor (~28°) with black side panels,
 			# yellow wire-mesh side guard, galvanized I-beam legs, stainless dust hood at
 			# the discharge end, blue blower + duct routing dust up to the hood. From the
 			# two CeDo photos (ground-level front-right + top rear-left).
 			{"id": "compactor_belt", "name": "Compactor feed belt (inclined, dust-hooded)", "category": "Conveyance", "size": Vector3(8.0, 3.5, 2.4), "color": Color(0.10, 0.10, 0.11)},
-			{"id": "pump_large",     "name": "Process pump (large)","category": "Pumps",     "size": Vector3(1.2, 1.4, 2.0),  "color": Color(0.28, 0.40, 0.58)},
+			# REMOVED: pump_large was a generic-large alias that routed to the same
+			# _m_pump builder as `water_pump`. Two ids, one model. Operator's
+			# uniqueness rule — only `water_pump` remains for pumps.
 			# ── Line 3B wash train ───────────────────────────────────────────
 			{"id": "vuilsnippersilo","name": "Wet film silo (vuilsnipper)","category": "Size reduction","size": Vector3(3.0, 4.0, 3.0),"color": Color(0.50, 0.50, 0.55)},
 			{"id": "friction_washer","name": "Frictiewasser (stirring tank)","category": "Washing","size": Vector3(1.5, 1.5, 3.0),  "color": Color(0.62, 0.64, 0.68)},
@@ -1116,7 +1130,7 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 		"transfer_chute": _m_chute(p, size, color, ghost)
 		"blower":         _m_blower(p, size, color, ghost)
 		"centrifuge":     _m_centrifuge(p, size, color, ghost)
-		"wash_line":      _m_washline(p, size, color, ghost)
+		# wash_line catalog id removed — see comment at the catalog entry
 		"mech_dryer":     _m_dryer(p, size, color, ghost)
 		"pcu_cabinet":    _m_cabinet(p, size, color, ghost)
 		"door":           _m_door(p, size, color, ghost)
@@ -1127,9 +1141,9 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 		"friction_sep":   _m_friction(p, size, color, ghost)
 		"dewater_screw":  _m_dewater(p, size, color, ghost)
 		"water_pump":     _m_pump(p, size, color, ghost)
-		"pump_large":     _m_pump(p, size, color, ghost)
-		"waterpomp":      _m_waterpomp(p, size, color, ghost)
-		"ringleiding_3a": _m_ringleiding_3a(p, size, color, ghost)
+		# pump_large / waterpomp / ringleiding_3a removed — see comments at
+		# their (formerly) catalog entries. water_pump + ringleiding are the
+		# canonical singletons.
 		"compactor_belt": _m_compactor_belt(p, size, color, ghost)
 		"hmi_panel":      _m_hmi(p, size, color, ghost)
 		"hmi_wall":       _m_hmi_wall(p, size, color, ghost)
@@ -2398,22 +2412,9 @@ static func _m_dryer(p: Node3D, size: Vector3, color: Color, ghost: bool) -> voi
 		Vector3(0.0, drum_cy - rad * 0.5 + 0.05, hz + 0.30),
 		rad * 0.16, 1.4, Color(0.92, 0.94, 0.96), ghost)
 
-# ── washing line: long trough + access housings + legs + drive motor ──────────
-static func _m_washline(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
-	var body_mat := _mat(color, ghost, 0.25, 0.5)
-	var steel := _mat(_STEEL, ghost, 0.5, 0.45)
-	var dark := _mat(_DARK, ghost, 0.4, 0.6)
-	var hz := size.z * 0.5
-	_legs(p, size, size.y * 0.45, dark)
-	# main trough
-	_box(p, Vector3(size.x * 0.7, size.y * 0.4, size.z * 0.96), Vector3(0.0, size.y * 0.62, 0.0), body_mat)
-	# access / paddle housings along the length
-	for i in 4:
-		var zz := -hz * 0.7 + float(i) * (size.z * 0.45)
-		_box(p, Vector3(size.x * 0.55, size.y * 0.22, size.z * 0.12), Vector3(0.0, size.y * 0.92, zz), steel)
-	# drive: motor + guard at the +Z end
-	_motor_unit(p, size.y * 0.16, size.x * 0.3, Vector3(size.x * 0.18, size.y * 0.55, hz * 0.96), "x", ghost)
-	_guard(p, Vector3(size.x * 0.26, size.y * 0.3, size.z * 0.1), Vector3(-size.x * 0.12, size.y * 0.6, hz * 0.9), ghost)
+# ── _m_washline DELETED — wash_line catalog id removed (no macro used it).
+#    See the wash chain ids: friction_washer, friction_sep, flotation_tank,
+#    dewater_screw, mech_dryer — each its own bespoke builder.
 
 # ── centrifuge: frame + big horizontal drum + motor + outlet ──────────────────
 static func _m_centrifuge(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
@@ -3025,141 +3026,12 @@ static func _m_cabinet(p: Node3D, size: Vector3, color: Color, ghost: bool) -> v
 	# ── Top rim / shadow line (thin dark cap) ─────────────────────────────────
 	_box(p, Vector3(W * 1.005, 0.025, D * 1.005), Vector3(0.0, H - 0.012, 0.0), dark)
 
-# ── waterpomp (small centrifugal pump — Wilo-style, teal + grey) ──────────────
-## Floor-mounted block pump modelled from the real CeDo photo: stainless base
-## plate, teal-painted volute + motor end-cap, grey finned motor body, junction
-## box on top of the motor, vertical stainless discharge stub. Procedural only.
-static func _m_waterpomp(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
-	# size.x = total length (along Z in local space), size.y = top of discharge,
-	# size.z = base plate width. Defaults: 0.8 × 0.5 × 0.4 m.
-	var teal     := _mat(color, ghost, 0.20, 0.45)                       # painted teal castings
-	var motor    := _mat(Color(0.33, 0.34, 0.36), ghost, 0.25, 0.55)     # finned grey motor
-	var dark     := _mat(_DARK, ghost, 0.30, 0.55)                       # junction box / hardware
-	var steel    := _mat(_STEEL, ghost, 0.85, 0.18)                      # stainless plate + pipe
-	var label    := _mat(Color(0.92, 0.92, 0.92), ghost, 0.05, 0.85)     # name-plate stickers
-	# Lay the unit "lengthwise along Z": motor at -Z end, volute + pipe at +Z end.
-	var L := size.x                       # full length
-	var plate_thk := 0.04
-	# ── stainless base plate (slightly larger than the pump, sits on the floor) ─
-	_box(p, Vector3(size.z, plate_thk, L), Vector3(0.0, plate_thk * 0.5, 0.0), steel)
-	# Four hold-down bolt heads at the corners of the plate.
-	var bxz := size.z * 0.42; var bzz := L * 0.42
-	for sx in [-1.0, 1.0]:
-		for sz in [-1.0, 1.0]:
-			_cyl(p, 0.018, 0.018, 0.015, Vector3(sx * bxz, plate_thk + 0.008, sz * bzz), dark)
-			_cyl(p, 0.012, 0.012, 0.010, Vector3(sx * bxz, plate_thk + 0.020, sz * bzz), steel)
-	# ── motor: grey finned cylinder lying lengthwise ──────────────────────────
-	var motor_r := 0.13
-	var motor_y := plate_thk + motor_r + 0.02
-	var motor_len := L * 0.55
-	var motor_centre_z := -L * 0.18
-	_cyl(p, motor_r, motor_r, motor_len, Vector3(0.0, motor_y, motor_centre_z), motor, "z")
-	# Cooling fins (5 thin discs) along the motor body for the ribbed look.
-	for i in 5:
-		var fz : float = motor_centre_z - motor_len * 0.45 + float(i) * (motor_len * 0.22)
-		_cyl(p, motor_r + 0.012, motor_r + 0.012, 0.010, Vector3(0.0, motor_y, fz), motor, "z")
-	# Teal motor end-cap (the round teal disc on the far end of the motor).
-	var cap_z : float = motor_centre_z - motor_len * 0.5 - 0.025
-	_cyl(p, motor_r * 1.02, motor_r * 1.02, 0.05, Vector3(0.0, motor_y, cap_z), teal, "z")
-	# Name-plate sticker on the end cap.
-	_box(p, Vector3(0.08, 0.05, 0.004), Vector3(0.0, motor_y, cap_z - 0.028), label)
-	# Junction box on top of the motor (small grey block with terminal cover).
-	_box(p, Vector3(0.10, 0.07, 0.13), Vector3(0.0, motor_y + motor_r + 0.035, motor_centre_z + 0.06), dark)
-	_box(p, Vector3(0.06, 0.014, 0.04), Vector3(0.0, motor_y + motor_r + 0.073, motor_centre_z + 0.06), label)
-	# ── pump volute (teal castings on the +Z end of the motor) ────────────────
-	var vol_z : float = motor_centre_z + motor_len * 0.5 + 0.025
-	# Coupling/adapter housing between motor and volute.
-	_cyl(p, motor_r * 0.95, motor_r * 0.95, 0.06, Vector3(0.0, motor_y, vol_z), teal, "z")
-	# Volute body — slightly fatter teal cylinder (the pump casing).
-	var v_r := 0.16
-	_cyl(p, v_r, v_r, 0.14, Vector3(0.0, motor_y, vol_z + 0.10), teal, "z")
-	# Discharge flange (stainless) on top of the volute, then a short vertical pipe.
-	var disc_x := 0.0
-	var disc_z := vol_z + 0.10
-	_cyl(p, 0.085, 0.085, 0.022, Vector3(disc_x, motor_y + v_r + 0.020, disc_z), steel)
-	_cyl(p, 0.065, 0.065, 0.020, Vector3(disc_x, motor_y + v_r + 0.040, disc_z), steel)
-	# 4 bolt heads ringing the flange.
-	for k in 4:
-		var ang : float = float(k) * PI * 0.5 + PI * 0.25
-		_cyl(p, 0.010, 0.010, 0.014, Vector3(disc_x + cos(ang) * 0.075, motor_y + v_r + 0.029, disc_z + sin(ang) * 0.075), dark)
-	# Stainless discharge stub rising vertically out of the flange.
-	_cyl(p, 0.055, 0.055, maxf(size.y - (motor_y + v_r + 0.05), 0.18), \
-		Vector3(disc_x, motor_y + v_r + 0.05 + maxf(size.y - (motor_y + v_r + 0.05), 0.18) * 0.5, disc_z), steel)
+# ── _m_waterpomp + _m_ringleiding_3a DELETED ─────────────────────────────────
+# Both builders had no live caller after the catalog dedupe (waterpomp + ringleiding_3a
+# catalog ids removed). The canonical ids are water_pump (→ _m_pump) and ringleiding
+# (→ _m_ringleiding). The detailed teal/grey Wilo pump model and the caged Line-3A
+# ring-main model are in git history at this file if a future variant ever needs them.
 
-# ── Ringleiding 3A (Line-3A ring main, caged) ─────────────────────────────────
-## Serpentine of off-white plastic pipes inside a yellow steel safety cage:
-## five horizontal U-loops stacked vertically (alternating direction) connected
-## by 90° corner joints with sphere fittings, stainless band clamps every ~0.5 m
-## along each pipe run, vertical riser entering from the top, yellow caution
-## placard and "Global Spiral Chutes" ID tag on the cage. Modelled from the real
-## CeDo photos. Fully procedural — no external textures needed.
-static func _m_ringleiding_3a(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> void:
-	var pipe_mat := _mat(Color(0.88, 0.85, 0.78), ghost, 0.05, 0.40)      # dirty off-white pipe
-	var cage     := _mat(_SAFETY, ghost, 0.20, 0.70)                       # yellow steel cage
-	var steel    := _mat(_STEEL, ghost, 0.85, 0.20)                        # stainless clamps + risers
-	var dark     := _mat(_DARK, ghost, 0.35, 0.55)                         # joint shadows / fittings
-	var sign_y   := _mat(Color(0.95, 0.85, 0.10), ghost, 0.10, 0.85)       # yellow caution placard
-	var id_plate := _mat(Color(0.20, 0.21, 0.24), ghost, 0.50, 0.40)       # "GLOBAL SPIRAL CHUTES" plate
-	var W := size.x; var H := size.y; var D := size.z
-	var pipe_r : float = 0.14                                              # ~280 mm OD pipe
-	var n_loops : int  = 5                                                 # 5 stacked U-loops
-	# ── Yellow steel cage frame: 4 vertical corners + top/bottom rails + 1 mid rail ─
-	var post_t : float = 0.05
-	for sx in [-1.0, 1.0]:
-		for sz in [-1.0, 1.0]:
-			_box(p, Vector3(post_t, H, post_t),
-				Vector3(sx * (W * 0.5 - post_t * 0.5), H * 0.5, sz * (D * 0.5 - post_t * 0.5)), cage)
-	for ry in [post_t * 0.5, H * 0.5, H - post_t * 0.5]:
-		_box(p, Vector3(W, post_t, post_t), Vector3(0, ry,  D * 0.5 - post_t * 0.5), cage)
-		_box(p, Vector3(W, post_t, post_t), Vector3(0, ry, -D * 0.5 + post_t * 0.5), cage)
-		_box(p, Vector3(post_t, post_t, D), Vector3( W * 0.5 - post_t * 0.5, ry, 0), cage)
-		_box(p, Vector3(post_t, post_t, D), Vector3(-W * 0.5 + post_t * 0.5, ry, 0), cage)
-	# Thin wire-mesh stand-in: 6 vertical bars per long face, no collision needed.
-	for sz in [-1.0, 1.0]:
-		for k in 7:
-			var bx : float = -W * 0.5 + post_t + (W - 2.0 * post_t) * float(k) / 6.0
-			_box(p, Vector3(0.012, H * 0.92, 0.008), Vector3(bx, H * 0.5, sz * (D * 0.5 - 0.01)), steel)
-	# ── Serpentine pipes: five U-loops alternating direction. Each loop is two
-	# horizontal runs in opposite X directions joined at one end; loops are joined
-	# to each other at the OTHER end so the path snakes top-to-bottom. ──────────
-	var y0 : float = 0.30
-	var y_step : float = (H - 0.50) / float(n_loops)
-	var run_len : float = W - 0.55                                          # horizontal pipe length
-	var run_z_front : float = -D * 0.18
-	var run_z_back  : float =  D * 0.18
-	for i in n_loops:
-		var y : float = y0 + float(i) * y_step
-		# Two parallel horizontal pipes (front + back) at this loop's height.
-		for zz in [run_z_front, run_z_back]:
-			_cyl(p, pipe_r, pipe_r, run_len, Vector3(0.0, y, zz), pipe_mat, "x")
-			# Stainless band clamps every ~0.5 m.
-			var n_clamps : int = int(run_len / 0.5)
-			for cb in n_clamps:
-				var cx : float = -run_len * 0.5 + 0.3 + float(cb) * 0.5
-				_cyl(p, pipe_r * 1.07, pipe_r * 1.07, 0.028, Vector3(cx, y, zz), steel, "x")
-		# U-bend: short cross-pipe connecting front + back at the "open" end. Even
-		# loops bend at +X; odd loops bend at -X (so the path snakes).
-		var bend_x : float = (run_len * 0.5 + pipe_r) * (1.0 if i % 2 == 0 else -1.0)
-		_cyl(p, pipe_r, pipe_r, (run_z_back - run_z_front) + pipe_r * 1.2,
-			Vector3(bend_x, y, 0.0), pipe_mat, "z")
-		# Sphere fittings at the two 90° corners.
-		_cyl(p, pipe_r * 1.05, pipe_r * 1.05, pipe_r * 1.4, Vector3(bend_x, y, run_z_front), dark, "z")
-		_cyl(p, pipe_r * 1.05, pipe_r * 1.05, pipe_r * 1.4, Vector3(bend_x, y, run_z_back),  dark, "z")
-		# Connector to the loop BELOW (vertical drop on the OPPOSITE end). Skip
-		# for the last loop (its bottom pipe is the system outlet).
-		if i < n_loops - 1:
-			var conn_x : float = -bend_x
-			_cyl(p, pipe_r, pipe_r, y_step, Vector3(conn_x, y + y_step * 0.5, run_z_front), pipe_mat, "y")
-			_cyl(p, pipe_r * 1.05, pipe_r * 1.05, pipe_r * 1.4, Vector3(conn_x, y, run_z_front), dark, "z")
-	# ── Vertical riser entering from the top (system inlet) ───────────────────
-	var riser_x : float = -W * 0.40
-	var riser_z : float =  run_z_back
-	var top_y   : float = y0 + float(n_loops - 1) * y_step
-	_cyl(p, pipe_r, pipe_r, H - top_y + 0.20, Vector3(riser_x, (H + top_y) * 0.5 + 0.10, riser_z), pipe_mat, "y")
-	_cyl(p, pipe_r * 1.07, pipe_r * 1.07, 0.028, Vector3(riser_x, H - 0.10, riser_z), steel, "y")
-	# Yellow "STEP CLEAR" caution sign + black ID plate on the front of the cage.
-	_box(p, Vector3(0.36, 0.14, 0.006), Vector3(-W * 0.30, H * 0.88, D * 0.5 + 0.006), sign_y)
-	_box(p, Vector3(0.22, 0.08, 0.004), Vector3( W * 0.30, H - 0.16, D * 0.5 + 0.006), id_plate)
 
 # ── Compactor feed belt (inclined, dust-hooded) ───────────────────────────────
 ## Heavy inclined conveyor that feeds material UP into a compactor: black side

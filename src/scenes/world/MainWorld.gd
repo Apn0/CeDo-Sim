@@ -3202,9 +3202,12 @@ func _spawn_feeder_line() -> void:
 	# Abdullah is Line 1 — that line doesn't exist yet, so he has NO station
 	# and stays with the regular crew (idle/chill). Do NOT give him a station
 	# until Line 1 is actually built.
+	# #50 — switched from the legacy "shredder_3a3b" id (generic 3x2.5x3 _m_shredder
+	# blob) to the bespoke "shredder_1" model (4x9x5 with rotor + stators + discharge
+	# conveyor). The old id was removed from the catalog as part of the dedupe pass.
 	_spawn_feeder_station(base + Vector3( 12.0, -0.9, 24.0), "Mohammed",
 			"Line 3A/3B", "res://src/scenes/vehicles/BaleClamp.tscn",
-			"shredder_3a3b")
+			"shredder_1")
 
 ## Build one station: belt + lot + worker + the worker's personal vehicle +
 ## personal scissors & scanner. `shredder_id` picks which catalog shredder

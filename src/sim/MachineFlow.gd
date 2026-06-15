@@ -47,7 +47,10 @@ static func profile(id: String) -> Dictionary:
 			pr["in"]   = Vector3(0.0, 0.9, 0.45)
 			pr["rate"] = 8.0
 		# ── size reduction ───────────────────────────────────────────────────
-		"shredder_3a3b", "shredder_1_3c6", "shredder_1", "shredder_2", "mill":
+		# Dedupe: shredder_3a3b + shredder_1_3c6 removed — they were legacy ids
+		# for the old generic _m_shredder model. shredder_1 (#50 bespoke) and
+		# shredder_2 cover lines 3A/3B and the fine pass.
+		"shredder_1", "shredder_2", "mill":
 			pr["in"]  = Vector3(0.0, 0.85, 0.0)
 			pr["out"] = Vector3(0.0, 0.15, 0.0)
 			pr["waste"] = 0.01
@@ -280,7 +283,10 @@ static func profile(id: String) -> Dictionary:
 			pr["in"]  = Vector3(0.0, 0.85, 0.0)
 			pr["out"] = Vector3(0.0, 0.12, 0.0)
 		# ── not part of the material flow ────────────────────────────────────
-		"door", "pcu_cabinet", "hmi_panel", "hmi_wall", "surface", "waste_container", "water_pump", "pump_large", "wash_line":
+		# Dedupe: pump_large + wash_line removed from the catalog. water_pump
+		# is the canonical pump id and stays as a role-none fixture (it doesn't
+		# carry material — it pushes water through the wash loop).
+		"door", "pcu_cabinet", "hmi_panel", "hmi_wall", "surface", "waste_container", "water_pump":
 			pr["role"] = "none"   # info screens / fixtures — NOT material-flow machines
 		_:
 			# #165 — every scoped HMI id (`hmi_shredder_l1`, etc.) is a control
@@ -307,7 +313,7 @@ static func _apply_process(pr: Dictionary, id: String) -> void:
 			pr["contam_remove"] = 0.85   # screen-pack catches gels / black specks
 			pr["water_remove"]  = 0.95   # vacuum degassing vents off residual moisture
 		# ── size reduction: no cleaning, just smaller flake ───────────────────
-		"shredder_3a3b", "shredder_1_3c6", "shredder_1", "shredder_2", "mill":
+		"shredder_1", "shredder_2", "mill":
 			pr["process"] = "shred"
 		# ── buffers / silos: hold + meter, material unchanged ─────────────────
 		"vuilsnippersilo", "silo", "mas_bak", "bunker", "vss_silo", "u_bay":
