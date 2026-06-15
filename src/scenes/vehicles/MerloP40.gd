@@ -257,14 +257,16 @@ func _articulate_wipers() -> void:
 	# include front/rear keywords (since _classify returns on first match and
 	# wiper_f / wiper_r are tested before the generic "wiper", there's no
 	# overlap with the lists above — no dedup needed). Sort each into front/rear
-	# by world Z (+Z = boom/front side, -Z = rear).
+	# by world Z. Canonical CeDo direction: forward = -Z, so the BOOM/FRONT
+	# side sits at NEGATIVE world Z relative to the body centre, and the REAR
+	# (cab counterweight) sits at POSITIVE Z.
 	if _parts.has("wiper"):
 		for w in _parts["wiper"]:
 			var wn := w as Node3D
 			var pivot := _wrap_pivot(wn, Vector3.DOWN, 0.15)
 			if pivot == null:
 				continue
-			if wn.global_position.z >= global_position.z:
+			if wn.global_position.z <= global_position.z:
 				_wiper_pivots_front.append(pivot)
 			else:
 				_wiper_pivots_rear.append(pivot)
@@ -569,9 +571,11 @@ func _process(delta: float) -> void:
 			(p as Node3D).rotation.z = sweep_front
 		for p in _wiper_pivots_rear:
 			(p as Node3D).rotation.z = sweep_rear
-	# Steering wheel mirrors the chassis steering.
+	# Steering wheel mirrors the chassis steering. Sign matches Godot
+	# VehicleWheel3D convention: positive `steering` (A pressed) = wheels left,
+	# steering column rotates +Z (CCW from driver) = wheel held left.
 	if _steering_node != null and "steering" in self:
-		_steering_node.rotation.z = -(self.steering as float) * 3.0
+		_steering_node.rotation.z = (self.steering as float) * 3.0
 	# Door interpolates to its target angle. Once it passes the OPEN
 	# threshold, can_enter() returns true.
 	if _door_pivot != null:

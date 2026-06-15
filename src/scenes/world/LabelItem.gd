@@ -204,15 +204,21 @@ static func attach_to(host: Node3D, info: Dictionary, local_position: Vector3, l
 	jitter_rng.seed = hash(String(info.get("batch", "")))
 	var wire_pitch : float = bale_h * 0.25            # vertical spacing between wires
 	var half_pitch : float = wire_pitch * 0.5
-	# Horizontal: uniform ±25 % of half the wire-band spacing, applied along
-	# the card's own horizontal axis (= `local_basis.x` in bale-local coords).
-	var h_off : float = jitter_rng.randf_range(-0.25, 0.25) * half_pitch
-	# Vertical: normal(0, π/10) clamped to ±33 % of bale height — the std-dev
-	# of ~0.314 m means most stickers land within ~30 cm of the sweet spot,
-	# the clamp prevents the rare tail from punching through the wire bands.
-	var v_off : float = jitter_rng.randfn(0.0, PI / 10.0)
-	var v_clamp : float = bale_h * 0.33
-	v_off = clampf(v_off, -v_clamp, v_clamp)
+	# Horizontal (X): NORMAL(0, half_pitch * 0.15) along the card's own
+	# horizontal axis (= `local_basis.x` in bale-local coords), clamped to
+	# ±half_pitch * 0.25 so the tail can't punch the sticker past the wire-band
+	# spacing. Operator spec: the wet-glove slap-on biases the sticker toward
+	# the centre of the clear-poly window between bands 1 and 2 — a Gaussian
+	# centred there matches the real-world pattern better than a flat range.
+	var h_off : float = jitter_rng.randfn(0.0, half_pitch * 0.15)
+	var h_clamp : float = half_pitch * 0.25
+	h_off = clampf(h_off, -h_clamp, h_clamp)
+	# Vertical (Y): UNIFORM ±half_pitch (one wire-band's worth of spread).
+	# Only the X axis is normally-distributed per operator spec; Y stays a flat
+	# range so the sticker reads as "somewhere between the wires" rather than
+	# strongly biased to the centre. The wire clamp is implicit (the range is
+	# already bounded by ±half_pitch).
+	var v_off : float = jitter_rng.randf_range(-half_pitch, half_pitch)
 	# Sweet spot Y = midway between band 1 (25 %) and band 2 (50 %) = 37.5 %
 	# of bale height from the bale's bottom. Replace the centred Y the caller
 	# gave us, then add the random jitters along bale-local Y (vertical) and

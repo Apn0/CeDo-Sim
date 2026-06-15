@@ -1,6 +1,8 @@
 extends CanvasLayer
 class_name HmiOverlay
 
+const _SCOPES := preload("res://src/build/HmiScopes.gd")
+
 ## Reconstruction of the real CeDo line PLC touchscreen.
 ##
 ## Modelled on the actual operator panels documented in the Cedo-PROD-SWI work
@@ -84,6 +86,13 @@ var _line_flow : Node = null
 var _station   : String = "LIJN 1"
 var _screen    : int = Screen.HOOFDMENU
 var _refresh_acc : float = 0.0
+
+# Scope this panel is bound to (#165). Set by open_for(label, scope); empty =
+# "see everything" (generic / pre-#165 behaviour).
+#   lines  : Array[String]   line tags this panel may control
+#   tokens : Array[String]   id-substrings of in-scope machines
+#   label  : String          friendly title shown in the header
+var _scope : Dictionary = {}
 
 # Operating state (local to the panel; START/STOP/AUTOMAAT drive the sim)
 var _automaat       : bool = true
@@ -180,8 +189,21 @@ func _find_line_flow() -> void:
 # =============================================================================
 # OPEN / CLOSE
 # =============================================================================
-func open_for(label: String) -> void:
+## Open this overlay scoped to a specific HMI's machine subset (#165). `scope`
+## is the dictionary from HmiScopes.gd (lines + tokens + label); pass an empty
+## dict (or omit) to see everything — the legacy / generic behaviour.
+##
+## Re-opening on a different HMI always re-applies the new scope and clears
+## stale selection state so HMI-A's MACHINES selection never leaks into HMI-B.
+func open_for(label: String, scope: Dictionary = {}) -> void:
 	_station = label.to_upper()
+	# Replace scope wholesale (don't merge) so closing/re-opening a generic
+	# panel after a scoped one fully drops the filter.
+	_scope = scope.duplicate(true) if not scope.is_empty() else {}
+	# Drop the previous MACHINES selection — the new scope likely doesn't
+	# include the previously-selected id, and the rebuild below picks a
+	# fresh in-scope default.
+	_selected_machine_id = ""
 	_find_line_flow()
 	if _line_flow and "fed_mass" in _line_flow:
 		_last_fed_mass = float(_line_flow.fed_mass)
@@ -394,11 +416,21 @@ func _build_hoofdmenu() -> void:
 	grid.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	v.add_child(grid)
 
+	# #165 — only render sections this physical HMI controls. Out-of-scope
+	# tiles are dropped entirely (NOT greyed-out, to keep the panel readable
+	# for the single-line HMIs that own only one section).
 	for s in SECTIONS:
+		if not _scope_has_tile(s["tokens"]):
+			continue
 		var tile := _section_tile(String(s["name"]))
 		tile["btn"].pressed.connect(_show_screen.bind(Screen.OVERZICHT))
 		grid.add_child(tile["btn"])
 		_section_tiles.append({"def": s, "lamp": tile["lamp"]})
+	if _section_tiles.is_empty():
+		var empty := Label.new()
+		empty.text = "(geen secties binnen het bereik van dit paneel)"
+		empty.add_theme_color_override("font_color", C_TEXT_DARK)
+		grid.add_child(empty)
 
 func _section_tile(tile_name: String) -> Dictionary:
 	var btn := Button.new()
@@ -446,7 +478,10 @@ func _build_overzicht() -> void:
 	grid.add_theme_constant_override("v_separation", 8)
 	grid.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	v.add_child(grid)
+	# #165 — only render stages this physical HMI controls.
 	for st in STAGES:
+		if not _scope_has_tile(st["tokens"]):
+			continue
 		var tile := _stage_tile(String(st["name"]))
 		grid.add_child(tile["box"])
 		_stage_tiles.append({"def": st, "lamp": tile["lamp"], "val": tile["val"]})
@@ -554,6 +589,9 @@ func _build_handbediening() -> void:
 	v.add_child(h)
 
 	for s in SECTIONS:
+		# #165 — manual rows are gated by scope, same rule as the dashboard.
+		if not _scope_has_tile(s["tokens"]):
+			continue
 		var sec_name := String(s["name"])
 		var row := PanelContainer.new()
 		row.add_theme_stylebox_override("panel", _sb(C_TILE, 6, 0, C_TILE_EDGE, 1))
@@ -651,14 +689,23 @@ func _refresh_hoofdmenu(faults: Array) -> void:
 
 func _refresh_overzicht(faults: Array) -> void:
 	var feed_on := _feed_on()
+	# #165 — show which lines this physical HMI owns, so the operator
+	# understands what START / STOP scopes to.
+	var scope_lines : Array = _scope.get("lines", []) if not _scope.is_empty() else []
+	var scope_tag := ""
+	if not scope_lines.is_empty():
+		var parts : PackedStringArray = PackedStringArray()
+		for ln in scope_lines:
+			parts.append(String(ln).to_upper())
+		scope_tag = "  [bereik: %s]" % ", ".join(parts)
 	if _leegdraaien:
-		_ov_status.text = "STATUS:  LEEGDRAAIEN ACTIEF — lijn loopt leeg (%.0f kg in lijn)" % _in_transit()
+		_ov_status.text = "STATUS:  LEEGDRAAIEN ACTIEF — lijn loopt leeg (%.0f kg in lijn)%s" % [_in_transit(), scope_tag]
 		_ov_status.add_theme_color_override("font_color", Color(0.62, 0.42, 0.10, 1))
 	elif feed_on:
-		_ov_status.text = "STATUS:  LOPEND" + ("" if faults.is_empty() else "  ▲ met storing")
+		_ov_status.text = "STATUS:  LOPEND%s%s" % ["" if faults.is_empty() else "  ▲ met storing", scope_tag]
 		_ov_status.add_theme_color_override("font_color", Color(0.13, 0.42, 0.16, 1))
 	else:
-		_ov_status.text = "STATUS:  GESTOPT"
+		_ov_status.text = "STATUS:  GESTOPT%s" % scope_tag
 		_ov_status.add_theme_color_override("font_color", Color(0.55, 0.20, 0.16, 1))
 	for t in _stage_tiles:
 		var sc := _stage_status(t["def"]["tokens"], faults)
@@ -892,6 +939,59 @@ func _id_matches(id: String, tokens: Array) -> bool:
 			return true
 	return false
 
+# =============================================================================
+# SCOPE FILTERING (#165)
+# =============================================================================
+## True iff the LineFlow node id is INSIDE this panel's scope. Empty scope =
+## see everything (generic panel / pre-#165 back-compat).
+func _scope_has_node(node_id: String, node_line: String = "") -> bool:
+	if _scope.is_empty():
+		return true
+	return _SCOPES.matches(_scope, node_id, node_line)
+
+## True iff a STAGES / SECTIONS / HANDBEDIENING tile (defined by a token list)
+## overlaps the scope. For empty scope, everything is in. For a non-empty
+## scope, the tile is in if any of its tokens overlaps any scope token AND at
+## least one in-scope node matches the tile.
+func _scope_has_tile(tile_tokens: Array) -> bool:
+	if _scope.is_empty():
+		return true
+	# __sink__ (the granulaat tile) is line-end, controllable only by the
+	# extruder HMI(s).
+	if tile_tokens.size() == 1 and String(tile_tokens[0]) == "__sink__":
+		var scope_tokens : Array = _scope.get("tokens", [])
+		for st in scope_tokens:
+			if String(st) == "extruder" or String(st).begins_with("extruder"):
+				return true
+		return false
+	# Token overlap first (cheap rule-out).
+	var scope_tokens2 : Array = _scope.get("tokens", [])
+	if not scope_tokens2.is_empty():
+		var overlap := false
+		for tt in tile_tokens:
+			var ts := String(tt)
+			for st in scope_tokens2:
+				var s := String(st)
+				if ts.find(s) != -1 or s.find(ts) != -1:
+					overlap = true
+					break
+			if overlap:
+				break
+		if not overlap:
+			return false
+	# At least one live LineFlow node must intersect both the tile AND the
+	# scope's line filter — keeps off-line sections out of the dashboard.
+	if _line_flow == null or not ("_nodes" in _line_flow):
+		return true   # no line yet; show the tile so the panel isn't blank
+	for nd in _line_flow._nodes:
+		var nid := String(nd.get("id", ""))
+		if not _id_matches(nid, tile_tokens):
+			continue
+		if _scope_has_node(nid, String(nd.get("line", ""))):
+			return true
+	# No in-scope node found — hide the tile.
+	return false
+
 func _section_def(section_name: String) -> Dictionary:
 	for s in SECTIONS:
 		if String(s["name"]) == section_name:
@@ -1035,11 +1135,14 @@ func _build_machines() -> void:
 	_machines_detail_vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_machines_detail_vb.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	h.add_child(_machines_detail_vb)
-	# Pick an initial selection if none yet (and the line has machines).
+	# Pick an initial selection if none yet — and only within scope (#165).
 	if _selected_machine_id == "" and _line_flow != null and _line_flow.has_method("machine_list"):
 		var ml: Array = _line_flow.call("machine_list")
-		if not ml.is_empty():
-			_selected_machine_id = String(ml[0]["id"])
+		for entry in ml:
+			var eid := String(entry["id"])
+			if _scope_has_node(eid, String(entry.get("line", ""))):
+				_selected_machine_id = eid
+				break
 	_build_machine_detail()
 
 func _populate_machine_list() -> void:
@@ -1054,6 +1157,12 @@ func _populate_machine_list() -> void:
 		return
 	for m in _line_flow.call("machine_list"):
 		var mid := String(m["id"])
+		# #165 — drop out-of-scope machines so a sorting HMI never lists the
+		# washing line, etc. `line` is optional on machine_list (LineFlow
+		# doesn't carry it yet) — HmiScopes falls back to id-suffix sniffing.
+		var node_line := String(m.get("line", ""))
+		if not _scope_has_node(mid, node_line):
+			continue
 		var btn := Button.new()
 		btn.custom_minimum_size = Vector2(0, 32)
 		btn.text = ""    # filled by children
@@ -1265,6 +1374,11 @@ func _md_make_rpm_row(label_text: String, comp_key: String, pct: float, _design_
 func _on_machine_toggle_hand() -> void:
 	if _line_flow == null or _selected_machine_id == "":
 		return
+	# #165 — refuse scope-violating writes. Belt-and-braces: the UI already
+	# filters the list, but a stale selection from a previous panel could
+	# survive an open_for() race. This is the hard gate.
+	if not _scope_has_node(_selected_machine_id):
+		return
 	var info : Dictionary = _line_flow.call("get_machine_info", _selected_machine_id)
 	var was_hand := bool(info.get("hand_mode", false))
 	_line_flow.call("set_machine_hand_mode", _selected_machine_id, not was_hand)
@@ -1272,6 +1386,8 @@ func _on_machine_toggle_hand() -> void:
 func _on_machine_toggle_run() -> void:
 	if _line_flow == null or _selected_machine_id == "":
 		return
+	if not _scope_has_node(_selected_machine_id):
+		return   # #165 — scope guard
 	var info : Dictionary = _line_flow.call("get_machine_info", _selected_machine_id)
 	if not bool(info.get("hand_mode", false)):
 		return   # AAN/UIT only works in HAND mode (PLC owns it in AUTO)
@@ -1281,6 +1397,8 @@ func _on_machine_toggle_run() -> void:
 func _on_master_rpm_changed(value: float) -> void:
 	if _line_flow == null or _selected_machine_id == "":
 		return
+	if not _scope_has_node(_selected_machine_id):
+		return   # #165 — scope guard
 	# Slider is in real RPM; LineFlow wants a 0..1 fraction of the rated max.
 	var frac : float = value / maxf(_md_master_max_rpm, 1.0)
 	_line_flow.call("set_machine_rpm_pct", _selected_machine_id, frac)
@@ -1290,6 +1408,8 @@ func _on_master_rpm_changed(value: float) -> void:
 func _on_component_rpm_changed(value: float, comp_key: String) -> void:
 	if _line_flow == null or _selected_machine_id == "":
 		return
+	if not _scope_has_node(_selected_machine_id):
+		return   # #165 — scope guard
 	# Slider is real rpm for this rotor; LineFlow wants a 0..1 fraction of its max.
 	var cmax : float = float(_md_comp_max.get(comp_key, 100.0))
 	_line_flow.call("set_machine_component_pct", _selected_machine_id, comp_key, value / maxf(cmax, 1.0))

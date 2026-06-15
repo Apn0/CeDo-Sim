@@ -34,6 +34,9 @@ WorldLayout="*res://src/autoload/WorldLayout.gd"
 SubtitleHud="*res://src/autoload/SubtitleHud.gd"
 AirNetwork="*res://src/autoload/AirNetwork.gd"
 NaNSentinel="*res://src/autoload/NaNSentinel.gd"
+ApiKeys="*res://src/autoload/ApiKeys.gd"
+VoiceService="*res://src/autoload/VoiceService.gd"
+LineMacroStore="*res://src/autoload/LineMacroStore.gd"
 
 [debug]
 

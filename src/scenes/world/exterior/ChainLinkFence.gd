@@ -108,35 +108,66 @@ func _build_one_segment(a: Vector3, b: Vector3, post_mat: Material,
 
 # ── Per-element builders ──────────────────────────────────────────────────────
 func _build_post(base_pos: Vector3, mat: Material, seg_idx: int, idx: int) -> void:
+	# StaticBody3D wrapper so the post itself blocks the player + vehicles —
+	# the panels between posts now have collision (see _build_panel), and the
+	# posts get a matching slim cylinder shape so a player can't squeeze
+	# between them at the corner.
+	var body := StaticBody3D.new()
+	body.name = "Post_%d_%d" % [seg_idx, idx]
+	# CylinderMesh is centred on origin, so lift by half-height to sit on base_pos.y.
+	body.position = base_pos + Vector3(0.0, fence_height * 0.5, 0.0)
+	add_child(body)
 	var post := MeshInstance3D.new()
-	post.name = "Post_%d_%d" % [seg_idx, idx]
+	post.name = "PostMesh"
 	var cm := CylinderMesh.new()
 	cm.top_radius = post_radius
 	cm.bottom_radius = post_radius
 	cm.height = fence_height
 	post.mesh = cm
 	post.material_override = mat
-	add_child(post)
-	# CylinderMesh is centred on origin, so lift by half-height to sit on base_pos.y.
-	post.position = base_pos + Vector3(0.0, fence_height * 0.5, 0.0)
+	body.add_child(post)
+	var col := CollisionShape3D.new()
+	col.name = "PostCollision"
+	var cy := CylinderShape3D.new()
+	cy.radius = post_radius
+	cy.height = fence_height
+	col.shape = cy
+	body.add_child(col)
 
 func _build_panel(mid: Vector3, basis: Basis, span: float, mat: Material,
 		seg_idx: int, idx: int) -> void:
+	# Wrap the visible quad in a StaticBody3D + thin BoxShape3D so the player
+	# + vehicles can't walk through the fence — the panel was previously a
+	# plain MeshInstance3D (collision audit caught this would surface as soon
+	# as the operator noticed the fence at all).
+	var body := StaticBody3D.new()
+	body.name = "PanelBody_%d_%d" % [seg_idx, idx]
+	add_child(body)
 	var panel := MeshInstance3D.new()
 	panel.name = "Mesh_%d_%d" % [seg_idx, idx]
 	var qm := QuadMesh.new()
 	qm.size = Vector2(span, fence_height)
 	panel.mesh = qm
 	panel.material_override = mat
-	add_child(panel)
+	body.add_child(panel)
 	# QuadMesh faces +Z in its local space — basis already aligns local +Z with
 	# the segment direction, so the panel naturally runs along the segment with
 	# its plane standing vertical.
 	var centre : Vector3 = Vector3(mid.x, mid.y + fence_height * 0.5, mid.z)
-	# Rotate the quad so its width (local X) lies along the segment and its
-	# height (local Y) points up: yaw-rotate by 90deg around Y on top of basis.
-	var quad_basis := basis * Basis(Vector3.UP, deg_to_rad(90.0))
-	panel.transform = Transform3D(quad_basis, centre)
+	# Body carries `basis` (segment direction along local +Z) and sits at
+	# `centre`. The quad mesh INSIDE the body needs the extra Y-90° so its
+	# width (local +X in mesh space) ends up along the body's +Z (= segment).
+	body.transform = Transform3D(basis, centre)
+	panel.transform = Transform3D(Basis(Vector3.UP, deg_to_rad(90.0)), Vector3.ZERO)
+	# Thin slab collider matching the panel dims. Local +Z = along the
+	# segment (body's +Z), local +Y = up. Thickness 0.05 m so the player
+	# bumps the fence but vehicles don't snag on a too-thick wall.
+	var col := CollisionShape3D.new()
+	col.name = "PanelCollision_%d_%d" % [seg_idx, idx]
+	var bs := BoxShape3D.new()
+	bs.size = Vector3(0.05, fence_height, span)
+	col.shape = bs
+	body.add_child(col)
 
 func _build_rail(mid: Vector3, basis: Basis, span: float, mat: Material,
 		seg_idx: int, idx: int, is_top: bool) -> void:

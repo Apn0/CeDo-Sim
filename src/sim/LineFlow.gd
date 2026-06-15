@@ -1639,12 +1639,28 @@ func _head_feed_point(head: Node3D) -> Vector3:
 	for v in (starts as Dictionary).values():
 		if not (v is Vector3):
 			continue
-		var marker : Vector3 = v
+		# Marker lives in LAYOUT FRAME (player_spawn-relative, north-up); convert
+		# to the SCENE FRAME (rotated by world_yaw + anchored on player spawn)
+		# before measuring distance to the world-frame head_pos.
+		var marker : Vector3 = _layout_marker_to_scene(v)
 		var d : float = marker.distance_to(head_pos)
 		if d < best_d:
 			best_d = d
 			best_pos = marker
 	return best_pos
+
+## Map a raw WorldLayout marker (player_spawn-relative offset in WorldSetup's
+## north-up frame) to its scene position. Routes through MainWorld's
+## `_layout_to_scene` (which applies the canonical world_yaw rotation + anchor
+## translation, see MainWorld.gd:_layout_to_scene). Without this conversion the
+## line_starts markers compare a layout-frame Vector3 to head_pos in WORLD frame
+## — they will never match within LINE_START_MARKER_RADIUS, so the head silently
+## falls back to its own position and the operator's intake marker is ignored.
+func _layout_marker_to_scene(marker: Vector3) -> Vector3:
+	var p := get_parent()
+	if p != null and p.has_method("_layout_to_scene"):
+		return p.call("_layout_to_scene", marker)
+	return marker
 
 ## Returns the nearest bale within FEED_RADIUS of a feed point, or null.
 func _bale_at(pos: Vector3, bales: Array[Node] = []) -> Node3D:

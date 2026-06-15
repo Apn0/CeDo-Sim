@@ -59,6 +59,16 @@ signal time_updated(time_string: String)
 ## at the new instant instead of being stuck in whatever the last forward tick
 ## produced. payload: new elapsed_seconds.
 signal time_jumped(new_elapsed_seconds: float)
+## Emitted by set_time_and_date() — the canonical operator-driven setter. Carries
+## BOTH the old and new (date, time-of-day) so listeners can decide what kind of
+## reset to do (CrewManager despawns at-post NPCs only when the new time is
+## BEFORE shift_start on the same/earlier day, MainWorld repositions cars).
+## `prev_*` / `new_*` time-of-day values are seconds-of-day (0..86399);
+## `prev_*` / `new_*` day values are day_index. Listeners can compute
+## "same day" via (prev_day == new_day) and "is rewind" via (new_seconds_of_day
+## < shift_start_hour()*3600).
+signal time_set(prev_day_index: int, prev_seconds_of_day: int,
+		new_day_index: int, new_seconds_of_day: int)
 
 # =============================================================================
 func _ready() -> void:
@@ -91,8 +101,8 @@ func _on_settings_applied() -> void:
 	var d : String = String(gp.get("starting_date", ""))
 	if t == _last_applied_start_time and d == _last_applied_start_date:
 		return
-	_last_applied_start_time = t
-	_last_applied_start_date = d
+	# apply_starting_settings() updates the cache itself — don't pre-set here
+	# (the A2 guard inside it needs to inspect the new values).
 	apply_starting_settings()
 
 ## Pull the time-compression rate from the gameplay settings (#166), so the
@@ -210,10 +220,10 @@ func set_day_index(d: int) -> void:
 ## A blank "starting_time" leaves the loaded state untouched; a blank
 ## "starting_date" treats the offset as 0 days from today.
 ##
-## Date handling: starting_date is YYYY-MM-DD. We treat it as a number-of-days
-## delta from today's system date, then convert that delta to day_index by
-## advancing the rota that many days. This keeps the existing 2-2-2-4 rota
-## semantics (day_index = absolute working-day count) intact.
+## All the heavy lifting now lives in set_time_and_date() — this is just the
+## settings-bridge that pulls the two strings off SettingsManager and forwards
+## them. Keeping the bridge thin means the SettingsMenu Apply path, the
+## bootstrap path, and any future debug seek all funnel through ONE setter.
 func apply_starting_settings() -> void:
 	var sm := get_node_or_null("/root/SettingsManager")
 	if sm == null or not sm.has_method("gameplay"):
@@ -221,7 +231,54 @@ func apply_starting_settings() -> void:
 	var gp : Dictionary = sm.gameplay()
 	var time_s : String = String(gp.get("starting_time", "")).strip_edges()
 	var date_s : String = String(gp.get("starting_date", "")).strip_edges()
-	# Date first — sets the calendar day before we seek to the time within it.
+	# A2 / defense-in-depth — respect an ACTIVE pre-shift window even when an
+	# old user://settings.cfg has the legacy "07:00" default persisted. The
+	# default was changed to "" in SettingsManager (#PRIMARY fix) but stale
+	# saves still carry "07:00"; without this guard the bootstrap would
+	# annihilate the 30-minute arrival window on every fresh launch of an
+	# existing save.
+	if time_s == "07:00" and date_s == "" \
+			and shift_elapsed_seconds < 0.0 and _pre_shift_bell_pending:
+		_last_applied_start_time = time_s
+		_last_applied_start_date = date_s
+		return
+	# C3 — prime the cache so a subsequent settings_applied with the SAME
+	# values is a no-op. Without this, the first operator Apply (even a no-op
+	# click) would re-seek and snap NPCs/cars unnecessarily.
+	_last_applied_start_time = time_s
+	_last_applied_start_date = date_s
+	# Empty time AND empty date → respect whatever state load_shift_state /
+	# start_pre_shift just put us in.
+	if time_s == "" and date_s == "":
+		return
+	set_time_and_date(date_s, time_s)
+
+## CANONICAL operator-driven time setter. Single entry point for both the
+## bootstrap-from-settings path AND the live Apply-from-settings-menu path.
+##
+## `date_s` is YYYY-MM-DD or empty ("" = today's date — same-day rewind).
+## `time_s` is HH:MM or empty ("" = leave current time-of-day alone — i.e. only
+## the date changed; the wall clock stays put inside that day).
+##
+## Behaviour matrix:
+##   date="" + time="HH:MM" — REWIND/seek within THE CURRENT DAY (never roll to
+##     tomorrow; if the operator types 06:35 and the clock is at 09:00, the
+##     clock goes BACK to 06:35 today). This is the fix for the operator's
+##     complaint: "time-set bumps to next day".
+##   date=YYYY-MM-DD + time="" — move calendar forward by N days, keep wall
+##     clock at the same time-of-day (effectively "skip to tomorrow's 09:00 if
+##     you set the date to tomorrow at the current 09:00").
+##   date=YYYY-MM-DD + time="HH:MM" — set day_index from the date, then place
+##     wall clock at HH:MM with NO further day-rollover.
+##
+## Emits `time_set(prev_day, prev_seconds_of_day, new_day, new_seconds_of_day)`
+## AND `time_jumped(new_elapsed_seconds)` for back-compat with PreShiftSequence
+## + MainWorld._on_time_jumped.
+func set_time_and_date(date_s: String, time_s: String) -> void:
+	var prev_day : int = day_index
+	var prev_secs_of_day : int = _seconds_of_day_for_elapsed(shift_elapsed_seconds)
+	# (1) Resolve the calendar day. Blank date = same day (no change). A date
+	# in the future advances day_index; a date in the past / today is a no-op.
 	if date_s != "":
 		var parts : PackedStringArray = date_s.split("-")
 		if parts.size() == 3:
@@ -230,21 +287,44 @@ func apply_starting_settings() -> void:
 			var today_d : Dictionary = Time.get_date_dict_from_system()
 			var delta_days : int = _days_between(today_d, picked)
 			if delta_days > 0:
-				set_day_index(day_index + delta_days)
-	# Time second — apply HH:MM as wall-clock, with day-rollover semantics so
-	# "set 07:00 at 13:00 on a Vroege day" lands on tomorrow's 07:00 not
-	# yesterday's. With no day set explicitly the rollover handles overnight
-	# correctly for the player.
+				# Don't emit time_jumped from inside set_day_index — we emit a
+				# single coalesced time_jumped at the END of this method.
+				advance_day(delta_days)
+	# (2) Resolve the wall clock within that day.
+	#     Blank time = leave the time-of-day alone (only the date moved).
+	#     Non-blank time = HH:MM → seek WITHIN today (no day-rollover).
 	if time_s != "":
 		var hm : PackedStringArray = time_s.split(":")
 		if hm.size() == 2:
 			var h := int(hm[0]); var m := int(hm[1])
 			h = clampi(h, 0, 23)
 			m = clampi(m, 0, 59)
-			# When the operator also picked a date, don't roll over again —
-			# the date already locked the day_index.
-			var allow_rollover : bool = (date_s == "")
-			seek_to_wall_time(h, m, allow_rollover)
+			# allow_day_rollover = FALSE so an operator typing "06:35" at 09:00
+			# REWINDS to 06:35 today instead of jumping to tomorrow's pre-shift
+			# (the actual operator complaint).
+			seek_to_wall_time(h, m, false)
+	else:
+		# Date-only change still needs a time_jumped so CrewManager + MainWorld
+		# re-evaluate.
+		emit_signal("time_updated", get_time_string())
+		emit_signal("time_jumped", shift_elapsed_seconds)
+	var new_secs_of_day : int = _seconds_of_day_for_elapsed(shift_elapsed_seconds)
+	emit_signal("time_set", prev_day, prev_secs_of_day, day_index, new_secs_of_day)
+
+## Convert a signed elapsed-seconds value (which can be negative for pre-shift)
+## into seconds-of-day [0..86400). Used by time_set so listeners get an
+## unambiguous wall-clock value to compare against shift_start.
+func _seconds_of_day_for_elapsed(elapsed: float) -> int:
+	var total_s : int = int(elapsed)
+	var base_seconds : int = shift_start_hour() * 3600 + total_s
+	# Modulo into [0, 86400) so negative totals wrap to "yesterday evening".
+	base_seconds = ((base_seconds % 86400) + 86400) % 86400
+	return base_seconds
+
+## Convenience: shift start as seconds-of-day. Listeners use this to decide if
+## the new time is BEFORE the bell (i.e. pre-shift / arrivals territory).
+func shift_start_seconds_of_day() -> int:
+	return shift_start_hour() * 3600 + SHIFT_START_MINUTE * 60
 
 ## Days between two date dicts (today → target). Negative means target is in
 ## the past (we clamp to 0 above). Uses the proleptic Gregorian calendar via
@@ -377,3 +457,25 @@ func _get_game_state() -> GameState:
 		# (current_scene may still be null during MainWorld._ready(), when this runs).
 		_game_state = get_node_or_null("../GameState") as GameState
 	return _game_state
+
+# ── Outdoor temperature model (audit item 26) ────────────────────────────────
+## Simple sinusoidal seasonal model of outdoor temperature in degrees Celsius,
+## evaluated at the current `day_index`. Models a mild northern-European year
+## (CeDo Genk, BE): mean ≈ +10 °C, swing ≈ ±9 °C with the peak around
+## day-of-year 200 (mid-July). Used by the wardrobe pipeline to decide whether
+## an off-duty NPC shows up in a t-shirt or in a sweatshirt/coat — so the
+## operator's customizer choice still drives style, but cold weather will
+## upgrade them to insulated clothes without overriding intent on warm days.
+##
+## day_index is "absolute calendar day, 0-based" — day 0 maps to day-of-year 0
+## (1 Jan) for the simplest reading. Real-calendar callers can pass an explicit
+## doy override instead.
+func get_outdoor_temp_c(day_of_year_override: int = -1) -> float:
+	var doy : int
+	if day_of_year_override >= 0:
+		doy = day_of_year_override
+	else:
+		doy = posmod(day_index, 365)
+	# Peak summer near day 200, trough near day 17 (mid-Jan).
+	var phase : float = (float(doy) - 200.0) / 365.0 * TAU
+	return 10.0 + 9.0 * cos(phase)

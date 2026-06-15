@@ -75,16 +75,30 @@ func _ensure_materials() -> void:
 # ── Pole shaft (vertical creosote cylinder) ───────────────────────────────────
 
 func _build_pole_shaft() -> void:
+	# StaticBody3D wrapper so the pole has WALK-THROUGH-BLOCKING collision —
+	# previously plain MeshInstance3D and the player phased right through
+	# (collision audit caught this). Mesh + CollisionShape3D both parent
+	# under the body so they share the lift to pole_h * 0.5.
+	var body := StaticBody3D.new()
+	body.name = "PoleShaft"
+	body.position = Vector3(0.0, pole_h * 0.5, 0.0)
+	add_child(body)
 	var shaft := MeshInstance3D.new()
-	shaft.name = "PoleShaft"
+	shaft.name = "ShaftMesh"
 	var cm := CylinderMesh.new()
 	cm.top_radius = 0.13
 	cm.bottom_radius = 0.16
 	cm.height = pole_h
 	shaft.mesh = cm
-	shaft.position = Vector3(0.0, pole_h * 0.5, 0.0)
 	shaft.material_override = _wood_mat
-	add_child(shaft)
+	body.add_child(shaft)
+	var col := CollisionShape3D.new()
+	col.name = "ShaftCollision"
+	var cy := CylinderShape3D.new()
+	cy.radius = 0.16            # match base radius — generous enough to feel solid
+	cy.height = pole_h
+	col.shape = cy
+	body.add_child(col)
 
 # ── Crossarm (horizontal box near the top, oriented along local X) ────────────
 

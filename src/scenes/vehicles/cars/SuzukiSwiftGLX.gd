@@ -4,11 +4,11 @@ class_name SuzukiSwiftGLX
 ## Red 1998 Suzuki Swift GLX — the player's personal car (#134 / #135).
 ## High-detail variant built from the imported FBX in
 ## res://assets/models/suzuki_swift_glx/. The FBX ships as a single mesh
-## scene; this script walks the imported tree at runtime and wires the
+## scene; Car.load_model() walks the imported tree at runtime and wires the
 ## doors / wheels / glass / steering wheel / dashboard / passenger seat,
-## mirroring the MerloP40.gd pattern.
+## via the SHARED loader path (no per-subclass duplicate walker).
 ##
-## RUNTIME WIRING:
+## RUNTIME WIRING (delegated to Car.gd):
 ##  • Wheels: 4 sub-meshes (FL/FR/RL/RR) reparented under the matching
 ##    VehicleWheel3D anchors AND local transform zeroed.
 ##  • Doors: front L/R hinged at front-edge so they swing open like real
@@ -20,9 +20,20 @@ class_name SuzukiSwiftGLX
 ##  • Yasin passenger seat: marker placed on the right-side seat after
 ##    classify; CrewManager parents Yasin under it at shift start.
 ##
+## SWIFT-SPECIFIC additions (installed via Car._post_load_hook):
+##  • Driver / passenger door proximity Area3Ds, enabling E-to-toggle
+##    door behaviour from outside the car.
+##
 ## EDITOR-IMPORT REQUIREMENT — same as MerloP40: the editor has to ingest
 ## the FBX once. Until then the script logs a warning and the car still
 ## functions as a driveable box (proxy collision in the .tscn).
+##
+## ORIENTATION: the canonical CeDo direction is forward = local -Z. The
+## inherited _model_front_axis_correction_deg = 180.0 wraps the imported
+## FBX in a Node3D with rotation.y = π so the asset's visible front lands
+## on -Z (matches BaseVehicle._kinematic_move which reads
+## `fwd := -global_transform.basis.z`). All car FBXes/GLBs in the project
+## are authored facing +Z, so the default 180° correction is right.
 
 const FBX_PATH := "res://assets/models/suzuki_swift_glx/suzuki_swift_glx.fbx"
 
@@ -35,7 +46,7 @@ const PART_NAMES := {
 	"door_fl":   ["door_fl", "door_lf", "door_front_l", "door_frontl", "frontleftdoor", "leftfrontdoor"],
 	"door_fr":   ["door_fr", "door_rf", "door_front_r", "door_frontr", "frontrightdoor", "rightfrontdoor"],
 	"door_rl":   ["door_rl", "door_lr", "door_rear_l", "door_rearl", "rearleftdoor", "leftreardoor"],
-	"door_rr":   ["door_rr", "door_rr", "door_rear_r", "door_rearr", "rearrightdoor", "rightreardoor"],
+	"door_rr":   ["door_rr", "door_rear_r", "door_rearr", "rearrightdoor", "rightreardoor"],
 	"door":      ["door", "porte", "tuer"],   # generic fallback
 	"wheel_fl":  ["wheel_fl", "wheel_lf", "wheel_front_l", "front_left_wheel", "wheelfl"],
 	"wheel_fr":  ["wheel_fr", "wheel_rf", "wheel_front_r", "front_right_wheel", "wheelfr"],
@@ -55,14 +66,11 @@ const PART_NAMES := {
 	"body":      ["body", "chassis", "carrosserie", "shell"],
 }
 
-var _door_pivots  : Array  = []     # ordered: FL, FR, RL, RR (whichever exist)
 var _driver_door_trigger   : Area3D = null
 var _passenger_door_trigger: Area3D = null
 var _player_near_driver_door    : bool = false
 var _player_near_passenger_door : bool = false
 var _player_node                : Node = null
-
-const STEERING_GAIN := 6.0      # chassis steering → wheel rotation multiplier
 
 # =============================================================================
 func _ready() -> void:
@@ -80,151 +88,43 @@ func _ready() -> void:
 	_paint_color = Color(0.78, 0.10, 0.10)              # red Swift GLX 1998
 	_paint_fallback_largest_mesh = true
 	_real_world_length_m = 3.85   # real Swift = 3.85 m bumper-to-bumper
-	_load_and_classify()
+	# Funnel through the canonical Car.load_model() path: wraps in
+	# FrontAxisCorrection (180° yaw -> visible front lands on -Z), auto-rulers
+	# to _real_world_length_m on the LONGEST HORIZONTAL axis only (Y excluded
+	# so a Z-up authored FBX gets rescaled to its true length not its height),
+	# walks + classifies, articulates wheels/doors/glass/steering, paints, and
+	# finally calls _post_load_hook() below for Swift-specific extras.
+	_model_path = FBX_PATH
+	_part_names = PART_NAMES
+	load_model()
 
-func _load_and_classify() -> void:
-	if not ResourceLoader.exists(FBX_PATH):
-		push_warning("[SuzukiSwiftGLX] FBX not imported yet at %s — using proxy box." % FBX_PATH)
+# ── Swift-specific extras (door proximity triggers) ─────────────────────────
+## Called by Car.load_model() after the shared articulation path has wired
+## wheels / doors / glass / steering / seat. The Swift needs two extra Area3D
+## proximity triggers on the front-left and front-right door pivots so that
+## pressing E from outside the car toggles the nearest door.
+func _post_load_hook() -> void:
+	var wrapped : Array = get_door_pivots()
+	if wrapped.is_empty():
 		return
-	var packed := load(FBX_PATH)
-	if packed == null or not (packed is PackedScene):
-		push_warning("[SuzukiSwiftGLX] FBX resource not a PackedScene; reopen editor to re-import.")
-		return
-	var fbx_root : Node = (packed as PackedScene).instantiate()
-	if fbx_root == null:
-		return
-	add_child(fbx_root)
-	# Walk + classify every Node3D under the FBX root.
-	_walk(fbx_root)
-	_wire_articulation()
-	# #157 — apply paint AFTER articulation so the glass alpha-blend doesn't get
-	# tinted (glass is handled by _articulate_glass first; the fallback picks
-	# the largest mesh which is the body, not the windows).
-	if _paint_color.a > 0.001:
-		_paint_hit_any = false
-		_paint_body(self)
-		_paint_fallback_apply(fbx_root)
-
-func _walk(n: Node) -> void:
-	if n is Node3D:
-		_classify(n as Node3D)
-	for c in n.get_children():
-		_walk(c)
-
-func _classify(n: Node3D) -> void:
-	var nm := n.name.to_lower()
-	for category in PART_NAMES:
-		for needle in PART_NAMES[category]:
-			if nm.contains(needle):
-				var arr : Array = _parts.get(category, [])
-				arr.append(n)
-				_parts[category] = arr
-				return
-
-# ── Articulation orchestration ────────────────────────────────────────────────
-func _wire_articulation() -> void:
-	_articulate_wheels()
-	_articulate_doors()
-	_articulate_glass()
-	_articulate_steering()
-	_place_passenger_seat()
-
-func _articulate_wheels() -> void:
-	# Prefer specific FL/FR/RL/RR; fall back to generic "wheel" matched by
-	# nearest-VW3D when the FBX uses plain "Wheel001..." names.
-	var vwheels : Array = []
-	for c in get_children():
-		if c is VehicleWheel3D:
-			vwheels.append(c)
-	if vwheels.is_empty():
-		return
-	# Build a flat list of all wheel meshes the classifier found.
-	var found : Array = []
-	for key in ["wheel_fl", "wheel_fr", "wheel_rl", "wheel_rr", "wheel"]:
-		if _parts.has(key):
-			for w in _parts[key]:
-				if not found.has(w):
-					found.append(w)
-	# Nearest-VW3D match in world XZ.
-	for w in found:
-		var wn := w as Node3D
-		if wn == null:
+	var driver_door : Node3D = null
+	var pax_door    : Node3D = null
+	for p in wrapped:
+		var pn := p as Node3D
+		if pn == null:
 			continue
-		var best : VehicleWheel3D = null
-		var best_d := 1e9
-		for vw in vwheels:
-			var d : float = (vw as Node3D).global_position.distance_to(wn.global_position)
-			if d < best_d:
-				best_d = d
-				best = vw
-		if best == null:
-			continue
-		if wn.get_parent():
-			wn.get_parent().remove_child(wn)
-		best.add_child(wn)
-		wn.transform = Transform3D.IDENTITY
-		var proc_mesh := best.get_node_or_null("WheelMesh")
-		if proc_mesh:
-			(proc_mesh as Node3D).visible = false
-
-func _articulate_doors() -> void:
-	# Collect door pivots from specific keys first.
-	var doors : Array = []
-	for key in ["door_fl", "door_fr", "door_rl", "door_rr"]:
-		if _parts.has(key):
-			for d in _parts[key]:
-				doors.append(d)
-	# Generic "door" fallback ONLY if we found nothing specific — avoids
-	# double-counting a Door_FL that also matched "door".
-	if doors.is_empty() and _parts.has("door"):
-		for d in _parts["door"]:
-			doors.append(d)
-	# Wrap each in a hinge pivot at the FRONT EDGE of the door panel so it
-	# swings open like a real car door (open AWAY from the cabin centre).
-	var wrapped : Array = []
-	for d in doors:
-		var p := _wrap_door_pivot(d as Node3D)
-		if p != null:
-			wrapped.append(p)
-	_door_pivots = wrapped
-	articulate_doors(wrapped, 65.0)
-	# Driver-side proximity trigger (left front door). Find by world X < self.
-	if wrapped.size() > 0:
-		var driver_door : Node3D = null
-		var pax_door    : Node3D = null
-		for p in wrapped:
-			var pn := p as Node3D
-			if driver_door == null or pn.global_position.x < driver_door.global_position.x:
-				driver_door = pn
-			if pax_door == null or pn.global_position.x > pax_door.global_position.x:
-				pax_door = pn
-		_driver_door_trigger    = _install_door_trigger(driver_door, "_on_driver_door_enter", "_on_driver_door_exit")
-		if pax_door != driver_door:
-			_passenger_door_trigger = _install_door_trigger(pax_door,    "_on_pax_door_enter",    "_on_pax_door_exit")
-
-## Reparent `panel` under a fresh Node3D pivot placed at the FORWARD edge of
-## the panel (its +Z side in panel-local space — front of the car). Swinging
-## the pivot's Y rotation now hinges the door at that edge.
-func _wrap_door_pivot(panel: Node3D) -> Node3D:
-	if panel == null or panel.get_parent() == null:
-		return null
-	var parent := panel.get_parent()
-	var pivot := Node3D.new()
-	pivot.name = "%s_Pivot" % panel.name
-	# Pivot sits at the panel's world transform, then we shift the panel
-	# inside the pivot so its FRONT edge is at pivot origin.
-	var panel_w : Transform3D = panel.global_transform
-	parent.add_child(pivot)
-	pivot.global_transform = panel_w
-	parent.remove_child(panel)
-	pivot.add_child(panel)
-	panel.transform = Transform3D.IDENTITY
-	# Approximate offset: car doors are ~0.8m long fore-aft, hinge at the
-	# front edge. Shift the panel BACK by half its length so the FRONT edge
-	# sits at the pivot origin. If a given FBX is rotated 90° the swing
-	# will look wrong — operator can tune per car later.
-	panel.position.z = -0.40
-	return pivot
+		# Canonical convention: car-local +X is right, -X is left. Driver
+		# door = leftmost (smallest world X); passenger door = rightmost.
+		if driver_door == null or pn.global_position.x < driver_door.global_position.x:
+			driver_door = pn
+		if pax_door == null or pn.global_position.x > pax_door.global_position.x:
+			pax_door = pn
+	if driver_door != null:
+		_driver_door_trigger = _install_door_trigger(
+			driver_door, "_on_driver_door_enter", "_on_driver_door_exit")
+	if pax_door != null and pax_door != driver_door:
+		_passenger_door_trigger = _install_door_trigger(
+			pax_door, "_on_pax_door_enter", "_on_pax_door_exit")
 
 func _install_door_trigger(at: Node3D, enter_cb: String, exit_cb: String) -> Area3D:
 	if at == null:
@@ -240,56 +140,6 @@ func _install_door_trigger(at: Node3D, enter_cb: String, exit_cb: String) -> Are
 	area.body_entered.connect(Callable(self, enter_cb))
 	area.body_exited.connect(Callable(self, exit_cb))
 	return area
-
-func _articulate_glass() -> void:
-	if not _parts.has("glass"):
-		return
-	for g in _parts["glass"]:
-		var gm := g as MeshInstance3D
-		if gm == null or gm.mesh == null:
-			continue
-		for i in gm.mesh.get_surface_count():
-			var base_mat := gm.mesh.surface_get_material(i)
-			var mat : StandardMaterial3D
-			if base_mat is StandardMaterial3D:
-				mat = (base_mat as StandardMaterial3D).duplicate() as StandardMaterial3D
-			else:
-				mat = StandardMaterial3D.new()
-				mat.albedo_color = Color(0.80, 0.86, 0.90)
-			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-			var c := mat.albedo_color
-			c.a = 0.28
-			mat.albedo_color = c
-			mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-			mat.metallic = 0.10
-			mat.roughness = 0.06
-			gm.set_surface_override_material(i, mat)
-
-func _articulate_steering() -> void:
-	if _parts.has("steering") and not (_parts["steering"] as Array).is_empty():
-		_steering_node = (_parts["steering"] as Array)[0]
-		# Reset basis if FBX delivered a degenerate transform.
-		if _steering_node != null:
-			var b := _steering_node.transform.basis
-			if not (b.x.is_finite() and b.y.is_finite() and b.z.is_finite()) \
-					or b.determinant() < 1e-6:
-				_steering_node.transform.basis = Basis()
-
-## Snap the passenger seat marker to the right-side seat the FBX provides.
-## If no "seat" is found, the default (0.40, 0.65, 0.10) from Car._install_passenger_seat
-## stays in place.
-func _place_passenger_seat() -> void:
-	if _passenger_seat == null or not _parts.has("seat"):
-		return
-	var right_seat : Node3D = null
-	for s in _parts["seat"]:
-		var sn := s as Node3D
-		if sn == null:
-			continue
-		if right_seat == null or sn.global_position.x > right_seat.global_position.x:
-			right_seat = sn
-	if right_seat != null:
-		_passenger_seat.global_position = right_seat.global_position + Vector3(0.0, 0.45, 0.0)
 
 # ── Door interaction callbacks ────────────────────────────────────────────────
 func _on_driver_door_enter(body: Node) -> void:
@@ -318,9 +168,3 @@ func _unhandled_input(event: InputEvent) -> void:
 			toggle_door(0)
 		elif _player_near_passenger_door and _car_doors.size() >= 2:
 			toggle_door(1)
-
-func _process(delta: float) -> void:
-	super._process(delta)
-	# Steering-wheel mirror.
-	if _steering_node != null and is_inside_tree():
-		_steering_node.rotation.z = -steering * STEERING_GAIN

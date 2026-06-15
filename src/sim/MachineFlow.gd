@@ -280,12 +280,17 @@ static func profile(id: String) -> Dictionary:
 			pr["in"]  = Vector3(0.0, 0.85, 0.0)
 			pr["out"] = Vector3(0.0, 0.12, 0.0)
 		# ── not part of the material flow ────────────────────────────────────
-		"door", "pcu_cabinet", "hmi_panel", "surface", "waste_container", "water_pump", "pump_large", "wash_line":
+		"door", "pcu_cabinet", "hmi_panel", "hmi_wall", "surface", "waste_container", "water_pump", "pump_large", "wash_line":
 			pr["role"] = "none"   # info screens / fixtures — NOT material-flow machines
 		_:
+			# #165 — every scoped HMI id (`hmi_shredder_l1`, etc.) is a control
+			# fixture, NOT a material-flow node. Catch them all by prefix so we
+			# don't have to enumerate the 12 ids here AND in HmiScopes.gd.
+			if id.begins_with("hmi_"):
+				pr["role"] = "none"
 			# Bales and anything unrecognised are not flow nodes (bales feed the
 			# head node's composition instead — see LineFlow).
-			if BaleDefs.get_origin(id.trim_suffix("_stack5")).size() > 0:
+			elif BaleDefs.get_origin(id.trim_suffix("_stack5")).size() > 0:
 				pr["role"] = "none"
 	_apply_process(pr, id)
 	return pr

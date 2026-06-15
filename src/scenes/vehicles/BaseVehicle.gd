@@ -137,7 +137,7 @@ var _carried_natural_local_y : Dictionary = {}
 
 # Input axes (set each frame by _gather_input when occupied)
 var _throttle: float = 0.0    # -1 reverse … +1 forward
-var _steering: float = 0.0    # -1 left … +1 right
+var _steering: float = 0.0    # +1 left … -1 right (Godot VehicleWheel3D convention: positive steer = wheels rotate CCW from above = LEFT)
 var _brake   : float = 0.0    # 0 … 1
 
 # ── Mouse-as-joystick tool control ────────────────────────────────────────────
@@ -847,9 +847,10 @@ func _npc_drive(delta: float) -> void:
 	if dist <= NPC_ARRIVE_TOL:
 		_current_speed_mps = move_toward(_current_speed_mps, 0.0, DRIVE_ACCEL * 4.0 * delta)
 		return
-	# Forward is +basis.z; in Godot basis.z = (sinθ, 0, cosθ) for a Y-rotation θ.
-	# So the yaw that points basis.z along `to` is atan2(to.x, to.z).
-	var desired_yaw := atan2(to.x, to.z)
+	# Canonical CeDo direction: forward = -basis.z. In Godot, -basis.z for a
+	# Y-rotation θ is (-sinθ, 0, -cosθ). So the yaw that points -basis.z along
+	# `to` is atan2(-to.x, -to.z) (equivalently atan2(to.x, to.z) + PI).
+	var desired_yaw := atan2(-to.x, -to.z)
 	rotation.y = _approach_angle(rotation.y, desired_yaw, NPC_TURN_RATE * delta)
 	# Speed scales with alignment (don't barrel forward while still turning).
 	var yaw_err := _angle_diff(rotation.y, desired_yaw)
@@ -991,6 +992,25 @@ func _tool_axes() -> Dictionary:
 const DRIVE_ACCEL : float = 8.0    # m/s² toward target speed
 const TURN_RATE   : float = 1.6    # rad/s yaw at full steer
 
+# Steering ramp — single source of truth for every BaseVehicle subclass on the
+# live auto-centre path. Spec is exact: ±55° max lock at 18.33°/s ramp.
+#
+# ARCHITECTURE NOTE: this project does NOT drive VehicleWheel3D.steering — the
+# wheels are deliberately neutralised on the first physics tick by
+# _neutralize_vehicle_wheels() (task #112 root-cause fix for the NaN-flood that
+# corrupted frozen kinematic vehicles). The wheel-friction integrator never
+# runs. Instead, _current_steer_rad is the canonical angle and it drives:
+#   • body yaw via _kinematic_move (yaw_rate = steer_frac * TURN_RATE * …)
+#   • visual wheel angle via _rotate_steered_wheel_meshes (basis rotation on the
+#     detached WheelMesh / WheelVisuals nodes)
+#   • the in-cabin steering-wheel mirror (Car.gd reads _current_steer_rad * 6.0)
+# Writing _current_steer_rad to VehicleWheel3D.steering would be a no-op (the
+# wheels are gone), so we don't bother. Future re-enablement of the friction
+# model would only need to add that one write here.
+const MAX_STEER_RAD          : float = 0.95993108859688   # 55 deg
+const STEER_RATE_RAD_PER_SEC : float = 0.31991378286563   # 18.33 deg/s
+var _current_steer_rad : float = 0.0
+
 # Kinematic-drive runtime state — _current_speed is the body's actual forward
 # speed, tracked frame-to-frame because freeze=true means linear_velocity is no
 # longer meaningful for movement (only contact response).
@@ -1035,13 +1055,18 @@ func _physics_process(delta: float) -> void:
 		# Parked — coast to a stop on the horizontal axis, gravity still applies
 		# via the kinematic move below (we always test a small downward step).
 		_current_speed_mps = move_toward(_current_speed_mps, 0.0, DRIVE_ACCEL * delta)
+	# Single steering ramp — body yaw, visual wheel mesh, and any VehicleWheel3D
+	# .steering writes all read _current_steer_rad downstream. Runs every frame
+	# (occupied, autopilot, AND parked) so parked vehicles re-centre on their own.
+	_update_steer_ramp(delta)
 	_kinematic_move(delta)
 	# Lights + reverse beeper + horn audio fill. Runs both occupied + parked
 	# (a vehicle rolling backward down a slope still needs the beeper).
 	_tick_vehicle_aux(delta)
 
 ## Direct kinematic drive — sets _current_speed_mps (forward speed along
-## global_transform.basis.z) and a yaw rate based on throttle + steering.
+## -global_transform.basis.z, canonical CeDo -Z forward) and a yaw rate based
+## on throttle + steering.
 ## Body movement happens in _kinematic_move, which both vehicles and parked
 ## bodies call so the gravity tick stays in one place.
 func _drive(delta: float) -> void:
@@ -1084,18 +1109,27 @@ func _drive(delta: float) -> void:
 ## occupied or not so a parked vehicle still rests on the floor instead of
 ## floating where it spawned.
 func _kinematic_move(delta: float) -> void:
-	var fwd := global_transform.basis.z
+	# Canonical CeDo direction convention: forward = local -Z (Godot's universal
+	# convention, matches Camera3D default and the player controller). Throttle
+	# pushes the body along -basis.z; reverse along +basis.z. See the convention
+	# block at the top of the file / project memory.
+	var fwd := -global_transform.basis.z
 	# Steering — only effective while rolling (no in-place pivots)
 	var max_mps := speed_limit_kmh / 3.6
 	var steer_scale := clampf(absf(_current_speed_mps) / maxf(max_mps, 0.01), 0.0, 1.0)
 	var dir_sign := 1.0 if _current_speed_mps >= 0.0 else -1.0
-	# #FIX A/D reversed: Positive _steering (D) must rotate the chassis RIGHT
-	# to match the wheel-mesh visual at _rotate_steered_wheel_meshes (line ~1249),
-	# which uses `_steering * 0.55` with NO negation. With +Z forward
-	# (basis.z = fwd, see line 1087 above), Godot's rotate_y(+θ) rotates the
-	# forward vector from +Z toward +X = world RIGHT. So positive _steering
-	# must produce a POSITIVE yaw_rate — drop the stray minus sign.
-	var yaw_rate := _steering * TURN_RATE * steer_scale * dir_sign
+	# Canonical -Z forward + Godot VehicleWheel3D convention: positive
+	# VehicleWheel3D.steering rotates the front wheels LEFT (CCW from above), so
+	# the input sign is now A (left) = +1, D (right) = -1 (see _gather_input).
+	# Godot's rotate_y(+θ) rotates -basis.z (forward) from -Z toward -X (world
+	# LEFT), so to yaw LEFT on positive _steering the yaw_rate keeps the same
+	# sign as _steering — no negation needed once the input sign is flipped.
+	#
+	# Body yaw scales by the actual ramped angle (_current_steer_rad / 55°),
+	# NOT raw input — so pressing D doesn't instantly slam yaw to TURN_RATE.
+	# It ramps from 0 to TURN_RATE over ~3 s (55°/18.33°/s) at full lock.
+	var steer_frac := _current_steer_rad / MAX_STEER_RAD
+	var yaw_rate := steer_frac * TURN_RATE * steer_scale * dir_sign
 	# Horizontal motion — SWEPT, not teleported, so the chassis collides with and
 	# slides along static geometry (machines, the bunker, walls) instead of driving
 	# straight through it. move_and_collide on a frozen-kinematic RigidBody3D is the
@@ -1182,14 +1216,18 @@ func _gather_input() -> void:
 	#   accumulating  (mast lift): integrates while a key is held, PERSISTS when
 	#                              you let go — overshooting is real, you must
 	#                              actively counter-steer to get back to straight.
+	# Godot VehicleWheel3D convention: positive `steering` rotates wheels LEFT
+	# (CCW from above). The spec is A=left=+1, D=right=-1, so left minus right —
+	# pressing A produces +1 and the wheel turns LEFT. Pair with the +_steering
+	# yaw_rate in _kinematic_move (no extra negation needed).
 	if accumulate_steering:
-		var ax := Input.get_action_strength("vehicle_steer_right") \
-				- Input.get_action_strength("vehicle_steer_left")
+		var ax := Input.get_action_strength("vehicle_steer_left") \
+				- Input.get_action_strength("vehicle_steer_right")
 		_accum_steer_target = clampf(_accum_steer_target + ax * ACCUM_STEER_RATE * get_physics_process_delta_time(), -1.0, 1.0)
 		_steering = _accum_steer_target
 	else:
-		_steering = Input.get_action_strength("vehicle_steer_right") \
-				  - Input.get_action_strength("vehicle_steer_left")
+		_steering = Input.get_action_strength("vehicle_steer_left") \
+				  - Input.get_action_strength("vehicle_steer_right")
 
 	# Brake (foot brake — separate from handbrake)
 	_brake = Input.get_action_strength("vehicle_brake")
@@ -1217,6 +1255,29 @@ func _apply_steering() -> void:
 	# Rear-wheel steering on real forklifts — subclass overrides this for Merlos
 	# (which have different geometry). Default = front-wheel for now.
 	steering = lerpf(steering, _steering * 0.6, 0.15)
+
+## Single source of truth for the body's effective steering angle, in radians.
+##   • A held → target_rad = +MAX_STEER_RAD  ( +0.95993 = +55° )
+##   • D held → target_rad = -MAX_STEER_RAD  ( -0.95993 = -55° )
+##   • neither / parked → target_rad = 0
+## _current_steer_rad ramps toward target at STEER_RATE_RAD_PER_SEC (0.31991 rad/s
+## = 18.33°/s). Body yaw, wheel-mesh visual, and any (non-neutralised) front
+## VehicleWheel3D .steering writes all read _current_steer_rad downstream — never
+## raw _steering. accumulate_steering vehicles (JLG mast lift) carry their own
+## integrated lock in _steering and bypass the ramp.
+func _update_steer_ramp(delta: float) -> void:
+	if not occupied and not (npc_autopilot and _npc_target_active):
+		# Parked → wheels straighten on their own (operator dismounted mid-turn).
+		_current_steer_rad = move_toward(_current_steer_rad, 0.0, STEER_RATE_RAD_PER_SEC * delta)
+		return
+	if accumulate_steering:
+		# Mast lift / hold-on-release: _steering is the persisted lock from
+		# _gather_input (rate-limited there by ACCUM_STEER_RATE). Track instantly
+		# so we don't double-rate. -1..1 maps directly to ±MAX_STEER_RAD.
+		_current_steer_rad = _steering * MAX_STEER_RAD
+		return
+	var target_rad := _steering * MAX_STEER_RAD
+	_current_steer_rad = move_toward(_current_steer_rad, target_rad, STEER_RATE_RAD_PER_SEC * delta)
 
 # Cached visual steering angle (smoothed) so we don't snap the wheel meshes.
 var _visual_steer_rad : float = 0.0
@@ -1251,9 +1312,12 @@ var _accum_steer_target : float = 0.0    # persistent target angle (-1..1 = -loc
 var _detached_wheels : Array = []   # [{mesh, base_basis, is_rear, steering}] — see _detach_wheel_visuals
 var _wheels_neutralized : bool = false   # one-shot, set on the first physics tick
 
-func _rotate_steered_wheel_meshes(delta: float) -> void:
-	var target := _steering * 0.55     # max ~31° lock
-	_visual_steer_rad = lerpf(_visual_steer_rad, target, clampf(8.0 * delta, 0.0, 1.0))
+func _rotate_steered_wheel_meshes(_delta: float) -> void:
+	# Visual wheel mesh follows the SAME ramp as the body yaw — _current_steer_rad
+	# is already rate-limited (18.33°/s, capped at ±55°) by _update_steer_ramp,
+	# so no separate lerp / cap here. Keeps the rendered wheel angle in lock-step
+	# with whatever the body is actually doing.
+	_visual_steer_rad = _current_steer_rad
 	var yaw_front := Basis(Vector3.UP, _visual_steer_rad)
 	var yaw_rear  := Basis(Vector3.UP, -_visual_steer_rad if all_wheel_steer else _visual_steer_rad)
 	# Detached path (#22): the meshes now live under WheelVisuals, not the wheel nodes.
@@ -1266,8 +1330,8 @@ func _rotate_steered_wheel_meshes(delta: float) -> void:
 		return
 	for child in get_children():
 		if child is VehicleWheel3D and (child as VehicleWheel3D).use_as_steering:
-			# Rear wheels sit at negative local Z (behind the centre).
-			var is_rear := (child as Node3D).position.z < 0.0
+			# Canonical -Z forward → rear wheels sit at POSITIVE local Z.
+			var is_rear := (child as Node3D).position.z > 0.0
 			var yaw := yaw_rear if is_rear else yaw_front
 			for sub in child.get_children():
 				if sub is MeshInstance3D:
@@ -1292,7 +1356,8 @@ func _detach_wheel_visuals() -> void:
 		if not (child is VehicleWheel3D):
 			continue
 		var w := child as VehicleWheel3D
-		var is_rear := w.position.z < 0.0
+		# Canonical -Z forward → rear wheels sit at POSITIVE local Z.
+		var is_rear := w.position.z > 0.0
 		for sub in w.get_children():
 			if sub is MeshInstance3D:
 				var mi := sub as MeshInstance3D
@@ -1337,7 +1402,8 @@ func _neutralize_vehicle_wheels() -> void:
 		anchor.name = "WheelAnchor_" + String(w.name)
 		holder.add_child(anchor)
 		anchor.transform = w_xf
-		var is_rear := w_xf.origin.z < 0.0
+		# Canonical -Z forward → rear wheels sit at POSITIVE local Z.
+		var is_rear := w_xf.origin.z > 0.0
 		for sub in w.get_children().duplicate():
 			if not (sub is Node3D):
 				continue
@@ -1537,35 +1603,38 @@ func _install_vehicle_aux() -> void:
 ## taller, longer rig — different mounts. MastLift / mast lift gets none.
 func _vehicle_light_layout() -> Dictionary:
 	# Defaults aimed at a forklift-sized chassis (X≈1.2 W, Z≈2.5 L, top≈2.4 H).
+	# Canonical CeDo direction: forward = -Z, rear = +Z. FRONT-mounted features
+	# get a NEGATIVE z; REAR-mounted features get a POSITIVE z.
 	var d := {
-		"work_FL":    Vector3(-0.55, 2.32, 0.85),
-		"work_FR":    Vector3( 0.55, 2.32, 0.85),
-		"haz_FL":     Vector3(-0.62, 1.50, 0.95),
-		"haz_FR":     Vector3( 0.62, 1.50, 0.95),
-		"haz_RL":     Vector3(-0.62, 1.50,-1.70),
-		"haz_RR":     Vector3( 0.62, 1.50,-1.70),
-		"reverse":    Vector3( 0.00, 1.50,-1.85),
-		"blue_front": Vector3( 0.00, 1.05, 1.20),
-		"blue_rear":  Vector3( 0.00, 1.05,-1.55),
+		"work_FL":    Vector3(-0.55, 2.32,-0.85),
+		"work_FR":    Vector3( 0.55, 2.32,-0.85),
+		"haz_FL":     Vector3(-0.62, 1.50,-0.95),
+		"haz_FR":     Vector3( 0.62, 1.50,-0.95),
+		"haz_RL":     Vector3(-0.62, 1.50, 1.70),
+		"haz_RR":     Vector3( 0.62, 1.50, 1.70),
+		"reverse":    Vector3( 0.00, 1.50, 1.85),
+		"blue_front": Vector3( 0.00, 1.05,-1.20),
+		"blue_rear":  Vector3( 0.00, 1.05, 1.55),
 		"beacon":     Vector3( 0.00, 2.40, 0.00),
 	}
 	# #169 — bale clamp wants the orange beacon further back on the cab roof.
 	# Default forklift position (z=0.00, dead-centre) put it visually above the
 	# operator's head; the operator wanted it shifted toward the rear of the
-	# ROPS so it doesn't overlap the steering-view sightline.
+	# ROPS so it doesn't overlap the steering-view sightline. Rear = +Z under
+	# canonical -Z-forward convention.
 	if vehicle_type == "bale_clamp":
-		d["beacon"] = Vector3(0.0, 2.50, -0.55)
+		d["beacon"] = Vector3(0.0, 2.50, 0.55)
 	if vehicle_type == "merlo" or vehicle_type == "merlo_p40":
-		d["work_FL"]    = Vector3(-0.85, 2.30, 1.20)
-		d["work_FR"]    = Vector3( 0.85, 2.30, 1.20)
-		d["haz_FL"]     = Vector3(-0.95, 1.40, 2.20)
-		d["haz_FR"]     = Vector3( 0.95, 1.40, 2.20)
-		d["haz_RL"]     = Vector3(-0.95, 1.40,-2.20)
-		d["haz_RR"]     = Vector3( 0.95, 1.40,-2.20)
-		d["reverse"]    = Vector3( 0.00, 1.40,-2.40)
-		d["blue_front"] = Vector3( 0.00, 1.00, 2.40)
-		d["blue_rear"]  = Vector3( 0.00, 1.00,-2.40)
-		d["beacon"]     = Vector3( 0.30, 1.50,-0.60)
+		d["work_FL"]    = Vector3(-0.85, 2.30,-1.20)
+		d["work_FR"]    = Vector3( 0.85, 2.30,-1.20)
+		d["haz_FL"]     = Vector3(-0.95, 1.40,-2.20)
+		d["haz_FR"]     = Vector3( 0.95, 1.40,-2.20)
+		d["haz_RL"]     = Vector3(-0.95, 1.40, 2.20)
+		d["haz_RR"]     = Vector3( 0.95, 1.40, 2.20)
+		d["reverse"]    = Vector3( 0.00, 1.40, 2.40)
+		d["blue_front"] = Vector3( 0.00, 1.00,-2.40)
+		d["blue_rear"]  = Vector3( 0.00, 1.00, 2.40)
+		d["beacon"]     = Vector3( 0.30, 1.50, 0.60)
 	return d
 
 func _build_lights() -> void:
@@ -1582,8 +1651,10 @@ func _build_work_lights(layout: Dictionary) -> void:
 		var sl := SpotLight3D.new()
 		sl.name = "WorkLight_%s" % key
 		sl.position = layout[key]
-		# Aim slightly down and forward (-Z is forward in vehicle local frame).
-		sl.rotation_degrees = Vector3(-18.0, 180.0, 0.0)
+		# Aim slightly down and forward. Canonical -Z forward → a SpotLight3D
+		# with rotation.y = 0 already points along -Z (Godot's default
+		# Camera3D/SpotLight3D convention), which IS forward. No yaw needed.
+		sl.rotation_degrees = Vector3(-18.0, 0.0, 0.0)
 		sl.light_color = Color(1.0, 0.96, 0.88)
 		sl.light_energy = 4.0
 		sl.spot_range = 22.0
@@ -1619,11 +1690,13 @@ func _build_hazard_lights(layout: Dictionary) -> void:
 		_light_haz.append(hl)
 
 func _build_reverse_beam(layout: Dictionary) -> void:
-	# Reverse beam — white spotlight pointing down-rearward.
+	# Reverse beam — white spotlight pointing down-rearward. Canonical -Z
+	# forward → SpotLight3D default points along -Z (forward); yaw 180° flips
+	# it to +Z (rear) so the beam casts BEHIND the vehicle when reversing.
 	_light_rev = SpotLight3D.new()
 	_light_rev.name = "ReverseBeam"
 	_light_rev.position = layout["reverse"]
-	_light_rev.rotation_degrees = Vector3(-22.0, 0.0, 0.0)
+	_light_rev.rotation_degrees = Vector3(-22.0, 180.0, 0.0)
 	_light_rev.light_color = Color(1.0, 0.97, 0.88)
 	_light_rev.light_energy = 3.2
 	_light_rev.spot_range = 14.0
@@ -1635,8 +1708,10 @@ func _build_blue_spots(layout: Dictionary) -> void:
 	# Linde-style blue safety spots — front and rear. Project a sharply-angled
 	# pool of blue light on the floor 2-3 m out so pedestrians see the vehicle
 	# approaching even around blind corners.
-	_light_blue_f = _make_blue_spot(layout["blue_front"], 180.0)
-	_light_blue_r = _make_blue_spot(layout["blue_rear"],  0.0)
+	# Canonical -Z forward: SpotLight3D's default orientation (yaw=0) already
+	# points along -Z = forward. yaw=180 flips to +Z = rear.
+	_light_blue_f = _make_blue_spot(layout["blue_front"],   0.0)
+	_light_blue_r = _make_blue_spot(layout["blue_rear"],  180.0)
 	add_child(_light_blue_f)
 	add_child(_light_blue_r)
 
@@ -1714,8 +1789,8 @@ func _build_beacon_rig(layout: Dictionary) -> void:
 	_beacons.append(beacon_rig)
 
 ## A Linde-style blue floor spot — aimed steeply down, narrow cone. `yaw_deg`
-## chooses which side: 180 = forward (the FRONT of the vehicle, since -Z = fwd)
-## / 0 = rear.
+## chooses which side: 0 = forward (the FRONT of the vehicle, since canonical
+## -Z = fwd and SpotLight3D default points -Z) / 180 = rear.
 func _make_blue_spot(pos: Vector3, yaw_deg: float) -> SpotLight3D:
 	var sl := SpotLight3D.new()
 	sl.name = "BlueSpot_%d" % int(yaw_deg)
@@ -1755,7 +1830,8 @@ func _build_reverse_beeper() -> void:
 	_beeper.max_db = 6.0
 	_beeper.unit_size = 8.0
 	# Mount at the rear of the vehicle so distance attenuation reads right.
-	_beeper.position = Vector3(0.0, 1.0, -1.7)
+	# Canonical -Z forward → rear = +Z.
+	_beeper.position = Vector3(0.0, 1.0, 1.7)
 	add_child(_beeper)
 	_beeper.play()
 	_beeper_pb = _beeper.get_stream_playback() as AudioStreamGeneratorPlayback

@@ -66,7 +66,15 @@ const DEFAULTS_GAMEPLAY := {
 	# (07:00 / 15:00 / 23:00 per dienst)". ShiftClock reads on _ready; if the
 	# wall clock has already passed this today, it rolls forward to the next
 	# working day before seeking to the time. The Settings tab edits these.
-	"starting_time":            "07:00",
+	#
+	# DEFAULT IS BLANK (not "07:00"). A non-blank default was collapsing the
+	# 30-minute PRE-SHIFT window every fresh launch: ShiftClock.start_pre_shift
+	# seeded elapsed = -1800 (06:30), then apply_starting_settings ran with
+	# "07:00" and seek_to_wall_time slammed elapsed back to 0.0 — the bell
+	# pre-rang, PreShiftSequence skipped (is_pre_shift() = false), and every
+	# scheduled NPC walked to a post instead of arriving. With "" the clock
+	# short-circuits and the pre-shift survives. See ShiftClock.apply_starting_settings.
+	"starting_time":            "",
 	# Starting date (YYYY-MM-DD). Empty string = "use today (system date)".
 	# Day-of-week is what places the player on the 2-2-2-4 rota; the rota uses
 	# day_index (absolute day count) so the setting maps to a calendar day
@@ -77,6 +85,12 @@ const DEFAULTS_GAMEPLAY := {
 	"tutorial_hints":           true,
 	"language":                 "en",     # en / nl
 	"units":                    "metric", # metric / imperial
+	# Voice & AI — local-first, cloud DISABLED by default. See
+	# VoiceService.gd. Values: "local" (whisper.cpp / llama.cpp / piper via
+	# OS.execute — silent degrade if binaries missing), "cloud" (OpenAI APIs —
+	# only used when explicitly selected here AND OPENAI_API_KEY is present),
+	# "mock" (dev/test only).
+	"voice_backend":            "local",
 }
 
 # ── Working state ─────────────────────────────────────────────────────────────

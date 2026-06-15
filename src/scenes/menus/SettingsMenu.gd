@@ -138,6 +138,7 @@ func _build_ui() -> void:
 	_build_graphics_tab()
 	_build_audio_tab()
 	_build_gameplay_tab()
+	_build_voice_tab()
 	_build_controls_tab()
 
 	# Footer
@@ -295,6 +296,56 @@ func _build_gameplay_tab() -> void:
 		["en", "nl"], ["English", "Nederlands"])
 	_add_option_row(tab, "gameplay", "units", "Units",
 		["metric", "imperial"], ["Metric (m, km/h)", "Imperial (ft, mph)"])
+
+# =============================================================================
+# VOICE & AI TAB — local-first, cloud disabled by default
+# =============================================================================
+## All three backends are described on the panel: Local (whisper.cpp / llama.cpp
+## / piper via OS.execute, paths in user://voice_paths.cfg — SILENT degrade
+## when binaries missing), Cloud (OpenAI whisper-1 / gpt-4o-mini / tts-1, only
+## used when explicitly selected AND OPENAI_API_KEY is present), Mock (canned
+## strings for dev/testing). NEVER silently use the cloud.
+func _build_voice_tab() -> void:
+	var tab := _make_tab("Voice & AI")
+
+	_add_section_header(tab, "Backend")
+	_add_option_row(tab, "gameplay", "voice_backend", "Voice backend",
+		["local", "cloud", "mock"],
+		["Local (whisper.cpp / llama.cpp / piper)",
+		 "Cloud (OpenAI — opt-in, requires key)",
+		 "Mock (canned strings — dev only)"])
+
+	var hint := Label.new()
+	hint.text = "LOCAL is the default. Drop binaries into user://tools/ — see voice_paths.cfg. Missing tools silently degrade to text-only walkie. CLOUD requires OPENAI_API_KEY in your Desktop .env and is OFF by default. We never silently send audio to the cloud."
+	hint.add_theme_font_size_override("font_size", FONT_SMALL)
+	hint.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7, 1))
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	tab.add_child(hint)
+
+	_spacer(tab, 12)
+	_add_section_header(tab, "Test")
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	var btn := Button.new()
+	btn.text = "Test voice"
+	btn.custom_minimum_size = Vector2(140, 30)
+	btn.pressed.connect(_on_test_voice_pressed)
+	row.add_child(btn)
+	var status := Label.new()
+	status.text = "  Plays a short line through the selected backend (check godot.log for the result)."
+	status.add_theme_font_size_override("font_size", FONT_SMALL)
+	status.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7, 1))
+	row.add_child(status)
+	tab.add_child(row)
+
+# Button handler — defers to VoiceService.test_voice(). Test must be triggered
+# AFTER the operator's voice_backend selection has been applied, so we Apply
+# first and then test. This keeps the "test what I picked" behaviour intuitive.
+func _on_test_voice_pressed() -> void:
+	SettingsManager.apply()
+	var vs := get_node_or_null("/root/VoiceService")
+	if vs != null and vs.has_method("test_voice"):
+		vs.test_voice()
 
 # =============================================================================
 # CONTROLS TAB
@@ -832,8 +883,57 @@ func _finalise_capture(ev: InputEvent) -> void:
 # FOOTER BUTTONS
 # =============================================================================
 func _on_apply() -> void:
+	# Snapshot the PENDING Time & Date values BEFORE SettingsManager.apply()
+	# promotes pending → current, so we can detect whether the operator
+	# actually edited them (vs. clicking Apply with only graphics/audio
+	# changes). The explicit ShiftClock.set_time_and_date() call below is the
+	# end-to-end wire the operator requested: don't ONLY persist to disk for
+	# next launch; act on the live ShiftClock right now.
+	var pending_gp : Dictionary = SettingsManager.pending_gameplay()
+	var t : String = String(pending_gp.get("starting_time", "")).strip_edges()
+	var d : String = String(pending_gp.get("starting_date", "")).strip_edges()
+	var current_gp : Dictionary = SettingsManager.gameplay()
+	var cur_t : String = String(current_gp.get("starting_time", "")).strip_edges()
+	var cur_d : String = String(current_gp.get("starting_date", "")).strip_edges()
+	var time_changed : bool = (t != cur_t) or (d != cur_d)
 	SettingsManager.apply()
+	# Explicit ShiftClock wire — when the operator EDITED time/date, drive the
+	# canonical setter directly so the chain (despawn at-post NPCs, reposition
+	# cars, route arriving NPCs from the road, hand control to PreShiftSequence)
+	# runs immediately.
+	# Order matters: SettingsManager.apply() above has ALREADY fired
+	# settings_applied which fires ShiftClock._on_settings_applied →
+	# apply_starting_settings → set_time_and_date. That's the right behaviour
+	# for stale-launch / reload-from-disk paths, and `_last_applied_*` was
+	# primed inside apply_starting_settings so the chain doesn't loop. We
+	# therefore RELY on that chain and DON'T double-fire here — the explicit
+	# wire is preserved as a guard for the case where the autoload signal is
+	# missed (e.g. SettingsManager temporarily disconnected mid-session).
+	if time_changed and (t != "" or d != ""):
+		var sc := _find_shift_clock()
+		if sc != null and sc.has_method("set_time_and_date") \
+				and sc.has_method("apply_starting_settings"):
+			# Detect whether _on_settings_applied already ran the seek for us.
+			# It updates last_applied_start_time/date to match current; if those
+			# DON'T match the new t/d we just applied, the chain didn't run and
+			# we need to call set_time_and_date ourselves.
+			var last_t : String = String(sc.get("_last_applied_start_time")) \
+					if "_last_applied_start_time" in sc else ""
+			var last_d : String = String(sc.get("_last_applied_start_date")) \
+					if "_last_applied_start_date" in sc else ""
+			if last_t != t or last_d != d:
+				sc.call("set_time_and_date", d, t)
 	close()
+
+## Locate the live ShiftClock instance. Lives under MainWorld at runtime; the
+## settings menu is layered on top so we walk the scene tree to find it.
+## Returns null cleanly when the menu is opened from the main menu (no shift
+## in flight).
+func _find_shift_clock() -> Node:
+	var root := get_tree().root
+	if root == null:
+		return null
+	return root.find_child("ShiftClock", true, false)
 
 func _on_cancel() -> void:
 	SettingsManager.cancel()

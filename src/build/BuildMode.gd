@@ -409,6 +409,12 @@ func _build_ui() -> void:
 	surf_help.add_theme_color_override("font_color", Color(0.6, 0.6, 0.66))
 	vbox.add_child(surf_help)
 
+	# #MSB — Macro Save-Back panel: after placing a line macro and jogging
+	# machines in EDIT mode (K), the operator can save the new layout back
+	# so future placements emit it. Reset wipes the override file and
+	# restores the const seed.
+	_build_macro_saveback_panel(vbox)
+
 	for cat in PlaceableCatalog.categories():
 		var header := Label.new()
 		header.text = "— %s —" % cat
@@ -484,6 +490,50 @@ func _build_popup() -> void:
 	cancel_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	cancel_btn.pressed.connect(_cancel_surface)
 	row.add_child(cancel_btn)
+
+# #MSB — build a Save-as-spec / Reset-to-default pair of buttons per macro.
+# Place once into the catalog; presses route into save_macro_overrides() /
+# reset_macro_overrides(). Tracks the user://macros/<macro>.json status so the
+# operator can capture the in-world layout as the new spec or roll back to the
+# const seed in BuildMode.gd.
+func _build_macro_saveback_panel(parent: VBoxContainer) -> void:
+	var sep := Label.new()
+	sep.text = "— MACRO SAVE-BACK —"
+	sep.add_theme_font_size_override("font_size", 13)
+	sep.add_theme_color_override("font_color", Color(1.0, 0.85, 0.45))
+	parent.add_child(sep)
+
+	var hint := Label.new()
+	hint.text = "  Place a line, jog with [K], then Save."
+	hint.add_theme_font_size_override("font_size", 11)
+	hint.add_theme_color_override("font_color", Color(0.65, 0.65, 0.70))
+	parent.add_child(hint)
+
+	var hint2 := Label.new()
+	hint2.text = "  EDIT mode: Shift+S saves selected macro."
+	hint2.add_theme_font_size_override("font_size", 11)
+	hint2.add_theme_color_override("font_color", Color(0.65, 0.65, 0.70))
+	parent.add_child(hint2)
+
+	for mid in LineMacroStore.MACRO_IDS:
+		var hrow := HBoxContainer.new()
+		hrow.add_theme_constant_override("separation", 6)
+		parent.add_child(hrow)
+		var lbl := Label.new()
+		lbl.text = "  %s" % mid
+		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		lbl.add_theme_font_size_override("font_size", 12)
+		hrow.add_child(lbl)
+		var save_btn := Button.new()
+		save_btn.text = "Save"
+		save_btn.tooltip_text = "Save current in-world placement of %s back to user://macros/%s.json" % [mid, mid]
+		save_btn.pressed.connect(save_macro_overrides.bind(mid))
+		hrow.add_child(save_btn)
+		var reset_btn := Button.new()
+		reset_btn.text = "Reset"
+		reset_btn.tooltip_text = "Reset to default macro — delete user://macros/%s.json" % mid
+		reset_btn.pressed.connect(reset_macro_overrides.bind(mid))
+		hrow.add_child(reset_btn)
 
 # =============================================================================
 # STATE TRANSITIONS
@@ -589,6 +639,15 @@ func _input(event: InputEvent) -> void:
 
 	if _state == State.EDIT:
 		# Discrete edit actions; continuous jog is polled in _process.
+		# #MSB — Shift+S saves the SELECTED machine's macro back to disk.
+		# (Plain K already toggles edit mode; SHIFT+K would collide with the
+		# "fine jog" Shift modifier polled in _edit_process, so we pick S.)
+		if event is InputEventKey and event.pressed and not event.echo \
+				and (event as InputEventKey).keycode == KEY_S \
+				and (event as InputEventKey).shift_pressed:
+			_save_macro_for_selected()
+			get_viewport().set_input_as_handled()
+			return
 		if event.is_action_pressed("build_place"):
 			_edit_select_pointed()
 			get_viewport().set_input_as_handled()
@@ -780,9 +839,19 @@ func _find_machine_snap(ghost_pos: Vector3) -> Dictionary:
 	var ghost_faces : Array = _face_centers_xz(ghost_pos, _ghost_rot_y, gsz.x, gsz.z)
 	var best : Dictionary = {}
 	var best_d : float = SNAP_MAX_DIST_M
-	for child in _placed_root.get_children():
+	# Scan EVERY placed machine in the world, not just children of `_placed_root`.
+	# SandboxWorld pre-spawns its 5 macros via `add_child` on the world root,
+	# GauntletWorld station #241 spawns silo+cyclone the same way, and MainWorld's
+	# Line 3C builder parents L3C nodes under MainWorld itself. All of them get
+	# tagged with the `placed_object` group + `placeable_id` meta by
+	# PlaceableCatalog.build_node, so the group is the canonical entry point.
+	# The ghost is parented under BuildMode and is NOT in this group — build_node(
+	# id, true) intentionally skips the group for ghosts — so it can't self-snap.
+	for child in get_tree().get_nodes_in_group("placed_object"):
 		if not (child is Node3D):
 			continue
+		if child == _ghost:
+			continue   # defensive: never snap to the ghost itself
 		var pid : String = String(child.get_meta("placeable_id", ""))
 		if pid == "":
 			continue
@@ -965,6 +1034,19 @@ func _place_current() -> void:
 ## own depth (size.z) + LINE_GAP_M, and added as an individual placed_object so
 ## it persists and can be jogged (K mode). Material wiring is the LineFlow
 ## follow-up (#48); this lays the geometry.
+##
+## MACRO SAVE-BACK (#MSB): every machine spawned here is tagged with
+##   macro_id          — e.g. "line_3a", lets save-back find sibling members.
+##   macro_index       — its 0-based index in the SEQ; lets save-back compute
+##                       the per-index delta and the load path inherit the
+##                       upstream chain drift.
+##   macro_anchor      — {"start": Vector3, "rot_y": float} stamped at
+##                       placement time; the inverse transform uses it to
+##                       recover the local-frame offset from world pose.
+## On placement, any saved overrides from LineMacroStore are applied as a
+## chain-style cumulative delta (machine N's drift is the sum of all earlier
+## indices' explicit overrides; an unmoved machine inherits its previous
+## machine's accumulated drift).
 func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 	var seq : Array[Dictionary] = LINE_3A_SEQ
 	if line_id == "line_3b":
@@ -977,6 +1059,10 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 		seq = LINE_SORT_SEQ
 	elif line_id == "line_intake_3c6":
 		seq = LINE_3C6_SEQ
+	# #MSB — pull operator-saved deltas (chain-accumulated) from the store.
+	# Each index's delta is added in the macro's LOCAL frame (x/z lateral,
+	# y vertical, rot_y around vertical). Empty dict = use const seed verbatim.
+	var macro_deltas : Dictionary = LineMacroStore.accumulated_chain(line_id, seq.size())
 	# Forward = the ghost's local -Z; right = local +X (lateral lane for branches).
 	var fwd := Vector3(-sin(rot_y), 0.0, -cos(rot_y))
 	var rgt := Vector3(cos(rot_y), 0.0, -sin(rot_y))
@@ -1006,7 +1092,8 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 	const TB_CHUTE_DROP_M : float = 0.22
 	var prev_tb_outlet_y : float = -1.0   # sentinel = first belt sits on floor
 	var last_main_was_tb : bool = false
-	for entry in seq:
+	for entry_idx in range(seq.size()):
+		var entry : Dictionary = seq[entry_idx]
 		var mid : String = String(entry.get("id", ""))
 		if mid == "":
 			continue
@@ -1065,9 +1152,27 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 		var node := PlaceableCatalog.build_node(mid, false)
 		if node != null:
 			_placed_root.add_child(node)
-			node.global_position = Vector3(start.x, start.y + tb_y_offset, start.z) + fwd * place_z + rgt * x
-			node.rotation.y = rot_y + PI
+			# #MSB — apply operator-saved chain delta (in macro local frame).
+			# dx → lateral (rgt), dz → forward (fwd), dy → vertical.
+			var d : Dictionary = macro_deltas.get(entry_idx, {})
+			var d_dx : float = float(d.get("dx", 0.0))
+			var d_dy : float = float(d.get("dy", 0.0))
+			var d_dz : float = float(d.get("dz", 0.0))
+			var d_drot : float = float(d.get("drot_y", 0.0))
+			var d_scale : Vector3 = Vector3.ONE
+			if d.has("scale") and d["scale"] is Vector3:
+				d_scale = d["scale"]
+			node.global_position = Vector3(start.x, start.y + tb_y_offset, start.z) \
+				+ fwd * (place_z + d_dz) + rgt * (x + d_dx) + Vector3.UP * d_dy
+			node.rotation.y = rot_y + PI + d_drot
+			if d_scale != Vector3.ONE:
+				node.scale = d_scale
 			_finalize_placed(node, mid, 0.0)
+			# #MSB — stamp macro-membership metas so save-back can find this
+			# node and recover its local-frame pose later.
+			node.set_meta("macro_id", line_id)
+			node.set_meta("macro_index", entry_idx)
+			node.set_meta("macro_anchor", {"start": start, "rot_y": rot_y})
 			built += 1
 			# ── #71 branch state transitions ───────────────────────────────────
 			if is_branch:
@@ -1125,6 +1230,206 @@ func _add_explicit_out(src: Node3D, tgt: Node3D, recirc: bool) -> void:
 		outs = []
 	outs.append({"path": tgt.get_path(), "recirc": recirc})
 	src.set_meta("lf_explicit_outs", outs)
+
+# =============================================================================
+# MACRO SAVE-BACK (#MSB) — capture in-world edits to a placed macro back into
+# user://macros/<macro_id>.json so future placements emit the corrected layout.
+# Triggered by a HUD button (per "Lines" macro) or by SHIFT+K while in EDIT
+# mode if a placed_object with `macro_id` meta is selected.
+# =============================================================================
+
+## Pull the const seed used by _build_full_line so we can re-run the same
+## cursor math and recover each machine's NOMINAL local pose.
+func _macro_seed(macro_id: String) -> Array[Dictionary]:
+	if macro_id == "line_3a":          return LINE_3A_SEQ
+	if macro_id == "line_3b":          return LINE_3B_SEQ
+	if macro_id == "line_1":           return LINE_1_SEQ
+	if macro_id == "line_intake_3a3b": return INTAKE_3A3B_SEQ
+	if macro_id == "line_sort":        return LINE_SORT_SEQ
+	if macro_id == "line_intake_3c6":  return LINE_3C6_SEQ
+	return [] as Array[Dictionary]
+
+## Re-walk the seed SEQ (no spawning) and emit an Array of {x, z, rot_y_extra}
+## NOMINAL local-frame placements per index. Mirrors the cursor advancement
+## inside _build_full_line so the per-index nominal pose lines up exactly with
+## what the original placement put in world. Branch nodes inherit a y offset
+## of 0; transportband Y stacking is captured via tb_y_offset.
+func _macro_nominal_poses(seed: Array[Dictionary]) -> Array:
+	var poses : Array = []
+	var main_z := 0.0
+	const TB_CHUTE_DROP_M : float = 0.22
+	const _LINE_GAP_M : float = LINE_GAP_M
+	var prev_tb_outlet_y : float = -1.0
+	var last_main_was_tb : bool = false
+	for entry in seed:
+		var mid : String = String(entry.get("id", ""))
+		if mid == "":
+			poses.append({"x": 0.0, "y": 0.0, "z": 0.0})
+			continue
+		var x : float = float(entry.get("x", 0.0))
+		var is_branch : bool = not is_equal_approx(x, 0.0)
+		var item := PlaceableCatalog.get_item(mid)
+		var depth : float = 2.0
+		if not item.is_empty():
+			depth = maxf((item["size"] as Vector3).z, 0.5)
+		var is_tb : bool = mid.begins_with("transportband_")
+		var tb_y_offset : float = 0.0
+		var tb_outlet_y_after : float = -1.0
+		if is_tb and not item.is_empty():
+			var bsize : Vector3 = item["size"]
+			var blen : float = bsize.z
+			var spec : Dictionary = PlaceableCatalog._transportband_spec(mid)
+			var incline_rad : float = deg_to_rad(float(spec.get("incline", 0.0)))
+			var deck_top : float = bsize.y * 0.97
+			var lift_at_end : float = (blen * 0.45) * sin(incline_rad)
+			var inlet_top_off : float = deck_top - lift_at_end
+			var outlet_top_off : float = deck_top + lift_at_end
+			var base_y : float = 0.0
+			if prev_tb_outlet_y > 0.0:
+				base_y = maxf(0.0, prev_tb_outlet_y - TB_CHUTE_DROP_M - inlet_top_off)
+			tb_y_offset = base_y
+			tb_outlet_y_after = base_y + outlet_top_off
+		var place_z : float
+		if not is_branch:
+			if last_main_was_tb and is_tb:
+				main_z -= _LINE_GAP_M
+			main_z += depth * 0.5
+			place_z = main_z
+			main_z += depth * 0.5 + _LINE_GAP_M
+			last_main_was_tb = is_tb
+		else:
+			place_z = main_z + float(entry.get("z", 0.0))
+		if is_tb and not is_branch and tb_outlet_y_after > 0.0:
+			prev_tb_outlet_y = tb_outlet_y_after
+		elif not is_tb and not is_branch:
+			prev_tb_outlet_y = -1.0
+		poses.append({"x": x, "y": tb_y_offset, "z": place_z})
+		if entry.has("main_advance"):
+			main_z += float(entry["main_advance"])
+	return poses
+
+## Walk placed_object children tagged with `macro_id`, compute the local-frame
+## delta for each one vs the const seed's nominal pose, accumulate chain-style
+## (so machine N stores ONLY the explicit drift NOT already explained by
+## upstream changes), and hand the dict to LineMacroStore. Returns the number
+## of overrides written.
+func save_macro_overrides(macro_id: String) -> int:
+	var seed : Array[Dictionary] = _macro_seed(macro_id)
+	if seed.is_empty():
+		push_warning("[BuildMode] Unknown macro id %s" % macro_id)
+		return 0
+	var nominal : Array = _macro_nominal_poses(seed)
+	# Gather siblings: every placed_object whose macro_id meta matches.
+	var members : Dictionary = {}   # int_index -> Node3D
+	var anchor : Dictionary = {}
+	for child in _placed_root.get_children():
+		if not (child is Node3D): continue
+		if not child.has_meta("macro_id"): continue
+		if String(child.get_meta("macro_id")) != macro_id: continue
+		if not child.has_meta("macro_index"): continue
+		var idx : int = int(child.get_meta("macro_index"))
+		members[idx] = child
+		if anchor.is_empty() and child.has_meta("macro_anchor"):
+			anchor = child.get_meta("macro_anchor")
+	if members.is_empty() or anchor.is_empty():
+		if _status:
+			_status.text = "No placed %s macro to save back." % macro_id.to_upper()
+		return 0
+	var a_start : Vector3 = anchor.get("start", Vector3.ZERO)
+	var a_rot   : float   = float(anchor.get("rot_y", 0.0))
+	# Inverse-basis vectors (same fwd/rgt as _build_full_line).
+	var fwd := Vector3(-sin(a_rot), 0.0, -cos(a_rot))
+	var rgt := Vector3(cos(a_rot), 0.0, -sin(a_rot))
+	# Build the chain accumulator: for each index the operator MOVED (or any
+	# index <= max moved), compute its local delta vs nominal, then subtract
+	# the upstream accumulated drift so the on-disk value is the operator's
+	# EXPLICIT contribution at that index.
+	var deltas : Dictionary = {}
+	var acc := Vector3.ZERO
+	var acc_rot := 0.0
+	var acc_scale := Vector3.ONE
+	for i in range(seed.size()):
+		if not members.has(i):
+			continue
+		var node : Node3D = members[i]
+		var nom : Dictionary = {"x": 0.0, "y": 0.0, "z": 0.0}
+		if i < nominal.size() and nominal[i] is Dictionary:
+			nom = nominal[i]
+		# Inverse transform: local = inverse_basis * (world_pos - start).
+		# Basis is rotation-only around Y, so dot products recover x_local
+		# (along rgt) and z_local (along fwd).
+		var rel : Vector3 = node.global_position - a_start
+		var x_local : float = rel.dot(rgt)
+		var z_local : float = rel.dot(fwd)
+		var y_local : float = rel.y
+		var dx : float = x_local - float(nom.get("x", 0.0))
+		var dy : float = y_local - float(nom.get("y", 0.0))
+		var dz : float = z_local - float(nom.get("z", 0.0))
+		var drot : float = node.rotation.y - (a_rot + PI)
+		# Wrap rotation into (-PI, PI] so saved deltas are minimal.
+		drot = wrapf(drot, -PI, PI)
+		var sc : Vector3 = node.scale
+		# Quick "is this machine actually moved?" check — within 1cm / 1°
+		# of the upstream-inherited drift means no explicit override here.
+		var explicit_dx : float = dx - acc.x
+		var explicit_dy : float = dy - acc.y
+		var explicit_dz : float = dz - acc.z
+		var explicit_drot : float = wrapf(drot - acc_rot, -PI, PI)
+		var pose_moved : bool = absf(explicit_dx) > 0.01 \
+			or absf(explicit_dy) > 0.01 \
+			or absf(explicit_dz) > 0.01 \
+			or absf(explicit_drot) > 0.017
+		var scale_changed : bool = not (
+			is_equal_approx(sc.x, acc_scale.x)
+			and is_equal_approx(sc.y, acc_scale.y)
+			and is_equal_approx(sc.z, acc_scale.z))
+		if pose_moved or scale_changed:
+			deltas[i] = {
+				"dx":     explicit_dx,
+				"dy":     explicit_dy,
+				"dz":     explicit_dz,
+				"drot_y": explicit_drot,
+				"scale":  [sc.x, sc.y, sc.z],
+			}
+			# Roll the accumulator forward — downstream-unmoved siblings
+			# inherit this new drift implicitly (sparse storage), per the
+			# operator's chain-style rule.
+			acc.x = dx; acc.y = dy; acc.z = dz
+			acc_rot = drot
+			acc_scale = sc
+	if deltas.is_empty():
+		if _status:
+			_status.text = "No edits detected for %s — nothing to save." % macro_id.to_upper()
+		return 0
+	var ok : bool = LineMacroStore.save_overrides(macro_id, deltas, seed.size())
+	if ok and _status:
+		_status.text = "Saved %d overrides for %s → user://macros/%s.json" % [
+			deltas.size(), macro_id.to_upper(), macro_id]
+	return deltas.size() if ok else 0
+
+## Convenience wrapper called from the HUD "Reset to Default Macro" button.
+func reset_macro_overrides(macro_id: String) -> void:
+	LineMacroStore.reset(macro_id)
+	if _status:
+		_status.text = "Reset %s — next placement uses the const seed." % macro_id.to_upper()
+
+## EDIT mode SHIFT+S shortcut: look at the currently selected machine, read
+## its `macro_id` meta, and save back the whole macro it belongs to.
+func _save_macro_for_selected() -> void:
+	if _edit_selected == null or not is_instance_valid(_edit_selected):
+		if _status:
+			_status.text = "Select a macro-placed machine first, then Shift+S to save back."
+		return
+	if not _edit_selected.has_meta("macro_id"):
+		if _status:
+			_status.text = "Selected machine is not part of a macro — nothing to save."
+		return
+	# Persist any pending jog changes so the world poses match the save target.
+	if _edit_dirty:
+		_save_layout()
+		_edit_dirty = false
+	var mid : String = String(_edit_selected.get_meta("macro_id"))
+	save_macro_overrides(mid)
 
 ## Read the variable belt's `auto_legs` meta — a list of {pos, h} entries — and
 ## spawn a pole_single at each one as a regular placed_object. The operator can
@@ -1650,6 +1955,19 @@ func _save_layout() -> void:
 				entry["scale"] = [sc_v.x, sc_v.y, sc_v.z]
 			if child.has_meta("bale_code"):
 				entry["code"] = String(child.get_meta("bale_code"))
+			# #MSB — round-trip macro membership so a reopened save can still
+			# invoke save-back on previously placed macro members.
+			if child.has_meta("macro_id"):
+				entry["macro_id"] = String(child.get_meta("macro_id"))
+			if child.has_meta("macro_index"):
+				entry["macro_index"] = int(child.get_meta("macro_index"))
+			if child.has_meta("macro_anchor"):
+				var anc : Dictionary = child.get_meta("macro_anchor")
+				var anc_start : Vector3 = anc.get("start", Vector3.ZERO)
+				entry["macro_anchor"] = {
+					"sx": anc_start.x, "sy": anc_start.y, "sz": anc_start.z,
+					"rot_y": float(anc.get("rot_y", 0.0)),
+				}
 			# Custom-height support poles: stash the pole_height meta so reload
 			# rebuilds at the actual standing height (smart-snap or auto-leg).
 			if child.has_meta("pole_height"):
@@ -1853,6 +2171,20 @@ func _apply_layout_entry(entry: Variant) -> bool:
 			node.scale = Vector3(sc, sc, sc)
 	_finalize_placed(node, String(dict.get("id", "")), float(dict.get("h", 0.0)))
 	_finalize_bale(node, String(dict.get("code", "")))
+	# #MSB — restore macro membership metas from disk so save-back still works
+	# after a reload of a save that placed a macro previously.
+	if dict.has("macro_id"):
+		node.set_meta("macro_id", String(dict["macro_id"]))
+	if dict.has("macro_index"):
+		node.set_meta("macro_index", int(dict["macro_index"]))
+	if dict.has("macro_anchor"):
+		var anc_raw : Variant = dict["macro_anchor"]
+		if anc_raw is Dictionary:
+			var d_anc : Dictionary = anc_raw
+			node.set_meta("macro_anchor", {
+				"start": Vector3(float(d_anc.get("sx", 0.0)), float(d_anc.get("sy", 0.0)), float(d_anc.get("sz", 0.0))),
+				"rot_y": float(d_anc.get("rot_y", 0.0)),
+			})
 	return true
 
 ## Converts a legacy box-door entry {id:"door", x,y,z,rot_y} into the new

@@ -114,8 +114,10 @@ func _fill_engine_buffer() -> void:
 
 func _physics_process(delta: float) -> void:
 	# CRITICAL: BaseVehicle._physics_process runs the whole drive/steer/move/fuel
-	# loop. Earlier this override skipped super(), silently making every passenger
-	# car undriveable. Call it FIRST, then layer the engine-audio fill on top.
+	# loop including the canonical steer ramp (_update_steer_ramp → MAX_STEER_RAD
+	# 55° / STEER_RATE_RAD_PER_SEC 18.33°/s). Earlier this override skipped super(),
+	# silently making every passenger car undriveable. Call it FIRST, then layer
+	# the engine-audio fill on top.
 	super._physics_process(delta)
 	if engine_on:
 		_fill_engine_buffer()
@@ -187,8 +189,13 @@ func _process(delta: float) -> void:
 		door_dict["current"] = lerpf(door_dict["current"], target, clampf(delta * 6.0, 0.0, 1.0))
 		pivot.rotation.y = deg_to_rad(door_dict["current"])
 	# Steering wheel mirror (set by _articulate_steering if the model has one).
+	# Reads BaseVehicle._current_steer_rad (the canonical ramped angle, ±55° max,
+	# 18.33°/s rate). Multiplied by ~6 so a full ±55° wheel-lock spins the
+	# in-cabin steering wheel ~±330° (typical car wheel travel ~1.5 turns each way).
+	# Positive _current_steer_rad = wheels LEFT = steering column CCW seen from
+	# above = +Z rotation visually held left.
 	if _steering_node != null and is_inside_tree():
-		_steering_node.rotation.z = -steering * 6.0
+		_steering_node.rotation.z = _current_steer_rad * 6.0
 
 # =============================================================================
 # SHARED FBX/GLB LOADER + CLASSIFIER + ARTICULATION
@@ -218,6 +225,14 @@ var _paint_extra_match : Array = []
 var _parts      : Dictionary = {}
 var _steering_node: Node3D = null
 
+## VISUAL FRONT RULE compliance. Canonical CeDo direction = forward is local -Z.
+## Most car FBX/GLB assets in this project are authored facing +Z, so the
+## default loader applies a +180° yaw to the imported model root so the visible
+## front face lands on -Z (matching the driving math at BaseVehicle._kinematic_move,
+## which uses `fwd := -global_transform.basis.z`). Any car whose source asset is
+## already authored facing -Z can opt out by setting this to 0.0 in _ready().
+var _model_front_axis_correction_deg : float = 180.0
+
 func load_model() -> void:
 	if _model_path == "" or not ResourceLoader.exists(_model_path):
 		push_warning("[Car] model not imported yet at %s — using proxy box." % _model_path)
@@ -226,6 +241,20 @@ func load_model() -> void:
 	if packed == null or not (packed is PackedScene):
 		return
 	var root : Node = (packed as PackedScene).instantiate()
+	# VISUAL FRONT RULE — wrap the imported model in a Node3D carrying the
+	# correction yaw so the visible front face lands on local -Z (canonical
+	# CeDo forward). Default 180° handles assets authored facing +Z (most of
+	# them). A subclass can set _model_front_axis_correction_deg = 0.0 to opt
+	# out. The wrap keeps the imported tree's INTERNAL coords intact, so the
+	# part walker, paint matcher, door pivots, and wheel articulation see the
+	# same geometry they always did — only the entire assembly is yawed under
+	# self.
+	if root is Node3D and not is_zero_approx(_model_front_axis_correction_deg):
+		var wrap := Node3D.new()
+		wrap.name = "FrontAxisCorrection"
+		wrap.rotation.y = deg_to_rad(_model_front_axis_correction_deg)
+		wrap.add_child(root)
+		root = wrap
 	# V2 — auto-ruler. Measure the imported model's AABB and rescale uniformly so
 	# its longest horizontal extent equals _real_world_length_m. This fixes the
 	# "huge cars" complaint without needing per-car magic-number scales; subclasses
@@ -271,6 +300,27 @@ func load_model() -> void:
 	_articulate_glass()
 	_articulate_steering()
 	_place_passenger_seat()
+	# Per-subclass post-load hook. Lets a subclass that needs extra wiring
+	# (e.g. Swift's driver-door / passenger-door proximity triggers) plug in
+	# AFTER the canonical wrap + auto-ruler + classify path has finished —
+	# so each car script no longer has to duplicate the whole loader/walker.
+	_post_load_hook()
+
+## Subclass override point — called by load_model() after wheels/doors/glass/
+## steering/seat have all been wired. Default no-op.
+func _post_load_hook() -> void:
+	pass
+
+## Look up the wrapped door pivots that were created by _articulate_doors_generic.
+## Subclasses use this to install door-proximity triggers without re-walking
+## the imported tree themselves.
+func get_door_pivots() -> Array:
+	var out : Array = []
+	for d in _car_doors:
+		var p := d.get("pivot")
+		if p is Node3D:
+			out.append(p)
+	return out
 
 ## V2 — Walk every MeshInstance3D under root, compute the union AABB in the
 ## root's local frame, return the uniform-scale factor needed so the longest

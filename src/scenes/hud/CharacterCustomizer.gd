@@ -387,36 +387,67 @@ func _make_check_row(label_text: String, key: String, initial: bool) -> HBoxCont
 # ── State management ────────────────────────────────────────────────────────
 func _load_initial_appearance() -> void:
 	var gs : Node = get_node_or_null("/root/GameState")
-	# Load player appearance
-	if gs and "player_appearance" in gs:
+	# #186 — Load player wardrobe (two outfits per character) from
+	# GameState.player_wardrobes if present, else fall back to the flat
+	# player_appearance for backward compat.
+	var player_display_name : String = "Arno"
+	if gs and "player_name" in gs:
+		var pn = gs.get("player_name")
+		if pn is String and String(pn) != "":
+			player_display_name = String(pn)
+	var player_wardrobe : Dictionary = {}
+	if gs and "player_wardrobes" in gs:
+		var pw = gs.get("player_wardrobes")
+		if pw is Dictionary and pw.has(player_display_name):
+			var entry = pw[player_display_name]
+			if entry is Dictionary:
+				player_wardrobe = entry.duplicate(true)
+	if player_wardrobe.is_empty() and gs and "player_appearance" in gs:
 		var stored = gs.get("player_appearance")
-		if stored is Dictionary:
-			_all_appearances["player"] = (stored as Dictionary).duplicate()
-	# Load NPC appearances from GameState
+		if stored is Dictionary and not (stored as Dictionary).is_empty():
+			# Migration: seed both wear states from the flat dict so the operator
+			# isn't stuck staring at a default-orange off_duty outfit on first open.
+			player_wardrobe = {
+				"on_duty":  (stored as Dictionary).duplicate(true),
+				"off_duty": (stored as Dictionary).duplicate(true),
+			}
+	if player_wardrobe.is_empty():
+		player_wardrobe = {"on_duty": {}, "off_duty": {}}
+	if not player_wardrobe.has("on_duty"):
+		player_wardrobe["on_duty"] = {}
+	if not player_wardrobe.has("off_duty"):
+		player_wardrobe["off_duty"] = {}
+	_all_outfits["player"] = player_wardrobe
+	# Load NPC appearances from GameState (one-outfit shape — on_duty only).
 	if gs and "npc_appearances" in gs:
 		var npc_ap = gs.get("npc_appearances")
 		if npc_ap is Dictionary:
 			for k in npc_ap:
-				_all_appearances[String(k)] = (npc_ap[k] as Dictionary).duplicate()
+				var saved = npc_ap[k]
+				if saved is Dictionary:
+					_all_outfits[String(k)] = {"on_duty": (saved as Dictionary).duplicate(true)}
 	# Seed NPC defaults from MainWorld.NPC_DATA if not yet customized
 	var mw : Node = get_tree().current_scene
 	if mw and "NPC_DATA" in mw:
 		var npc_data = mw.get("NPC_DATA")
 		if npc_data is Dictionary:
 			for npc_id in npc_data:
-				if not _all_appearances.has(npc_id):
+				if not _all_outfits.has(npc_id):
 					var d : Dictionary = npc_data[npc_id]
-					_all_appearances[npc_id] = d.get("appearance", {}).duplicate()
-	# Apply defaults for player
-	if not _all_appearances.has("player"):
-		_all_appearances["player"] = {}
+					_all_outfits[npc_id] = {"on_duty": d.get("appearance", {}).duplicate(true)}
 	_character_id = "player"
-	_appearance = _all_appearances["player"]
-	_ensure_defaults(_appearance)
+	_wear_state = "on_duty"
+	_appearance = _all_outfits["player"][_wear_state]
+	_ensure_defaults(_appearance, _wear_state)
 
-static func _ensure_defaults(ap: Dictionary) -> void:
+# #186 — Defaults are now wear-state-aware. On-duty defaults pull PPE + hi-vis
+# yellow; off-duty defaults pull personal clothes (sweatshirt, no PPE) so the
+# operator's "Editing: off-duty" tab doesn't look like a clone of the on-duty
+# one.
+static func _ensure_defaults(ap: Dictionary, wear_state: String = "on_duty") -> void:
+	var is_off_duty := wear_state == "off_duty"
 	if not ap.has("shirt_color"):
-		ap["shirt_color"] = Color(0.96, 0.45, 0.12)
+		ap["shirt_color"] = Color(0.40, 0.45, 0.55) if is_off_duty else Color(0.95, 0.92, 0.10)
 	if not ap.has("pants_color"):
 		ap["pants_color"] = Color(0.10, 0.15, 0.32)
 	if not ap.has("hair"):
@@ -426,24 +457,55 @@ static func _ensure_defaults(ap: Dictionary) -> void:
 	if not ap.has("cap"):
 		ap["cap"] = false
 	if not ap.has("ppe"):
-		ap["ppe"] = "hi_vis"
+		ap["ppe"] = "none" if is_off_duty else "hi_vis"
+	if not ap.has("shirt_type"):
+		ap["shirt_type"] = "sweatshirt" if is_off_duty else "hi_vis_coat"
+	if not ap.has("footwear"):
+		ap["footwear"] = "shoes" if is_off_duty else "work_boots"
 	if not ap.has("hair_color"):
 		ap["hair_color"] = Color(0.09, 0.07, 0.06)
 	if not ap.has("skin_color"):
 		ap["skin_color"] = Color(0.94, 0.78, 0.66)
+	ap["wear_state"] = wear_state
 
 func _set_appearance(key: String, value) -> void:
 	_appearance[key] = value
-	_all_appearances[_character_id] = _appearance
+	# Stash back to the wardrobe so wear-state flip / character switch round-trips.
+	if _all_outfits.has(_character_id):
+		_all_outfits[_character_id][_wear_state] = _appearance
 	_rebuild_preview_body()
 
 func _switch_character(char_id: String) -> void:
-	_all_appearances[_character_id] = _appearance
+	# Stash current edits before swapping.
+	if _all_outfits.has(_character_id):
+		_all_outfits[_character_id][_wear_state] = _appearance
 	_character_id = char_id
-	if not _all_appearances.has(char_id):
-		_all_appearances[char_id] = {}
-	_appearance = _all_appearances[char_id]
-	_ensure_defaults(_appearance)
+	if not _all_outfits.has(char_id):
+		_all_outfits[char_id] = {"on_duty": {}}
+	# NPCs only have on_duty; force back to on_duty when switching to an NPC.
+	if char_id != "player":
+		_wear_state = "on_duty"
+	if not _all_outfits[char_id].has(_wear_state):
+		_all_outfits[char_id][_wear_state] = {}
+	_appearance = _all_outfits[char_id][_wear_state]
+	_ensure_defaults(_appearance, _wear_state)
+	_rebuild_form()
+	_rebuild_preview_body()
+
+# #186 — flip the wear_state binding without closing the customizer. The other
+# slot's edits are preserved.
+func _switch_wear_state(new_state: String) -> void:
+	if new_state == _wear_state:
+		return
+	if _all_outfits.has(_character_id):
+		_all_outfits[_character_id][_wear_state] = _appearance
+	_wear_state = new_state
+	if not _all_outfits.has(_character_id):
+		_all_outfits[_character_id] = {}
+	if not _all_outfits[_character_id].has(_wear_state):
+		_all_outfits[_character_id][_wear_state] = {}
+	_appearance = _all_outfits[_character_id][_wear_state]
+	_ensure_defaults(_appearance, _wear_state)
 	_rebuild_form()
 	_rebuild_preview_body()
 
@@ -451,21 +513,55 @@ func _commit_to_gamestate() -> void:
 	var gs : Node = get_node_or_null("/root/GameState")
 	if gs == null:
 		return
-	_all_appearances[_character_id] = _appearance
+	# Stash the in-flight edits.
+	if _all_outfits.has(_character_id):
+		_all_outfits[_character_id][_wear_state] = _appearance
 	var color_keys : Array = ["shirt_color", "pants_color", "hair_color", "skin_color"]
-	# Save player appearance
-	var player_save : Dictionary = _all_appearances.get("player", {}).duplicate()
-	for ck in color_keys:
-		var c = player_save.get(ck)
-		if c is Color:
-			player_save[ck] = {"r": c.r, "g": c.g, "b": c.b}
-	gs.set("player_appearance", player_save)
-	# Save NPC appearances
+	# #186 — Persist the player NAME if the LineEdit wrote one. The stash key
+	# `_player_name` lives on the appearance dict during the edit session only;
+	# strip it out before the appearance dict goes to disk.
+	var new_player_name : String = ""
+	for ws in ["on_duty", "off_duty"]:
+		var slot = _all_outfits.get("player", {}).get(ws, {})
+		if slot is Dictionary and slot.has("_player_name"):
+			new_player_name = String(slot["_player_name"])
+			slot.erase("_player_name")
+	if new_player_name != "":
+		gs.set("player_name", new_player_name)
+	# Save player wardrobe (two outfits) — keyed by display name so multiple
+	# characters keep separate wardrobes.
+	var current_player_name : String = "Arno"
+	if "player_name" in gs:
+		var pn = gs.get("player_name")
+		if pn is String and String(pn) != "":
+			current_player_name = String(pn)
+	var player_save : Dictionary = {}
+	for ws in ["on_duty", "off_duty"]:
+		var slot : Dictionary = _all_outfits.get("player", {}).get(ws, {})
+		var slot_save : Dictionary = (slot as Dictionary).duplicate()
+		for ck in color_keys:
+			var c = slot_save.get(ck)
+			if c is Color:
+				slot_save[ck] = {"r": c.r, "g": c.g, "b": c.b}
+		player_save[ws] = slot_save
+	var wardrobes : Dictionary = {}
+	if "player_wardrobes" in gs:
+		var existing = gs.get("player_wardrobes")
+		if existing is Dictionary:
+			wardrobes = existing
+	wardrobes[current_player_name] = player_save
+	gs.set("player_wardrobes", wardrobes)
+	# Legacy flat dict — kept in sync so any system that reads
+	# `gs.player_appearance` directly (Humanoid.build, MainWorld._spawn_player)
+	# sees the on_duty slot. MainWorld will override wear_state per shift.
+	gs.set("player_appearance", player_save.get("on_duty", {}).duplicate())
+	# Save NPC appearances — REPLACE wholesale (no NPC_DATA merge anymore) so
+	# the operator can actually remove preset keys (e.g. turn Kevin's cap off).
 	var npc_save : Dictionary = {}
-	for k in _all_appearances:
+	for k in _all_outfits:
 		if k == "player":
 			continue
-		var ap : Dictionary = _all_appearances[k].duplicate()
+		var ap : Dictionary = (_all_outfits[k].get("on_duty", {}) as Dictionary).duplicate()
 		for ck in color_keys:
 			var c = ap.get(ck)
 			if c is Color:
@@ -487,14 +583,11 @@ func _rebuild_preview_body() -> void:
 	var script = load(HUMANOID_SCRIPT_PATH)
 	if script == null:
 		return
-	var shirt : Color = _appearance.get("shirt_color", Color(0.96, 0.45, 0.12))
-	# Humanoid.build takes a `shirt` Color + an `appearance` Dictionary it
-	# already knows how to read (hair / beard / cap). We pass through the
-	# colour keys it understands.
-	var ap_for_humanoid : Dictionary = _appearance.duplicate()
-	# Humanoid currently reads only hair/beard/cap from appearance; pants tint
-	# would need a Humanoid extension. Pass it through so the future hook
-	# lights up automatically.
+	# #186 — Default tint is yellow hi-vis (operator spec). The preview shows
+	# the slot currently being edited so wear_state flips reflect immediately.
+	var shirt : Color = _appearance.get("shirt_color", Color(0.95, 0.92, 0.10))
+	var ap_for_humanoid : Dictionary = _appearance.duplicate(true)
+	ap_for_humanoid.erase("_player_name")   # never pass the edit-only stash through
 	_preview_body = script.build(shirt, 0, ap_for_humanoid)
 	_preview_body.position = Vector3(0.0, 0.92, 0.0)   # capsule-centre origin
 	_preview_turntable.add_child(_preview_body)
@@ -526,15 +619,30 @@ func _rebuild_world_bodies() -> void:
 	var scene_root : Node = get_tree().current_scene
 	if scene_root == null:
 		return
+	# #186 — Resolve which player outfit to apply right now based on the active
+	# shift state. ShiftClock lives under the world scene at /root/.../ShiftClock
+	# but MainWorld also keeps the same reference; reach for the autoload-style
+	# lookup first, fall back to the world node.
+	var on_shift : bool = false
+	var sc_node = scene_root.find_child("ShiftClock", true, false)
+	if sc_node and "shift_active" in sc_node:
+		on_shift = bool(sc_node.get("shift_active"))
+	var active_ws := "on_duty" if on_shift else "off_duty"
 	# Rebuild player body
 	var player_node : Node = scene_root.get("player")
+	if player_node == null:
+		# Fallback to name lookup for scenes that don't expose a `player` var.
+		player_node = scene_root.find_child("Player", true, false)
 	if player_node:
 		var old_body := player_node.find_child("PlayerBody", false, false)
 		if old_body:
 			old_body.get_parent().remove_child(old_body)
 			old_body.queue_free()
-		var ap : Dictionary = _all_appearances.get("player", {})
-		var shirt : Color = Color(0.96, 0.45, 0.12)
+		var player_wardrobe : Dictionary = _all_outfits.get("player", {})
+		var ap : Dictionary = (player_wardrobe.get(active_ws, player_wardrobe.get("on_duty", {})) as Dictionary).duplicate(true)
+		# Strip the in-edit name stash before passing to Humanoid.
+		ap.erase("_player_name")
+		var shirt : Color = Color(0.95, 0.92, 0.10)   # yellow hi-vis default
 		var sc = ap.get("shirt_color", shirt)
 		if sc is Color: shirt = sc
 		elif sc is Dictionary and sc.has("r"):
@@ -543,8 +651,11 @@ func _rebuild_world_bodies() -> void:
 		body.name = "PlayerBody"
 		_set_render_layers_recursive(body, 1 << 1)
 		player_node.add_child(body)
-	# Rebuild NPC bodies
-	for npc_id in _all_appearances:
+		# Keep the meta dict in sync so MainWorld._player_apply_footwear etc.
+		# read the freshest appearance.
+		player_node.set_meta("appearance", ap)
+	# Rebuild NPC bodies (single outfit)
+	for npc_id in _all_outfits:
 		if npc_id == "player":
 			continue
 		var mw = scene_root
@@ -562,4 +673,20 @@ func _rebuild_world_bodies() -> void:
 		if old_body:
 			old_body.get_parent().remove_child(old_body)
 			old_body.queue_free()
-		
+		var ap : Dictionary = (_all_outfits[npc_id].get("on_duty", data.get("appearance", {})) as Dictionary).duplicate(true)
+		var body : Node3D = humanoid_script.build(data["color"], variant, ap)
+		body.name = "HumanoidBody"
+		npc_node.add_child(body)
+
+static func _set_render_layers_recursive(node: Node, mask: int) -> void:
+	if node is MeshInstance3D:
+		(node as MeshInstance3D).layers = mask
+	for c in node.get_children():
+		_set_render_layers_recursive(c, mask)
+
+func _input(event: InputEvent) -> void:
+	# ESC cancels.
+	if event is InputEventKey and event.pressed:
+		if (event as InputEventKey).keycode == KEY_ESCAPE:
+			close(false)
+			get_viewport().set_input_as_handled()

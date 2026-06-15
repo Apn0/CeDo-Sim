@@ -131,12 +131,28 @@ static func _apply_clothing_material(clothing_class: String, tint: Color, hivis_
 		"t_shirt", _:
 			return _mat(tint, 0.55)
 
-static func _apply_pants_material(tint: Variant, use_denim_texture: bool) -> StandardMaterial3D:
-	if use_denim_texture and tint is Color == false:
-		return _denim_material()
-	if tint is Color:
-		return _mat(tint, 0.85)
-	return _denim_material()
+static func _apply_pants_material(tint: Variant, use_denim_texture: bool, mirror_uv: bool = false) -> StandardMaterial3D:
+	# No operator override → denim photo material if we're supposed to use it.
+	# Override present → tinted flat colour (override wins so the colour picker
+	# is never a no-op, matching the new shirt rule).
+	# mirror_uv=true → left-leg variant: same photo, horizontally flipped + vertical
+	# half-phase shift, so left + right legs no longer read as a copy-paste pair.
+	# Operator complaint: trouser texture was identical on both legs.
+	var has_override := tint is Color
+	var base : StandardMaterial3D
+	if not has_override and use_denim_texture:
+		base = _denim_material()
+	elif has_override:
+		base = _mat(tint, 0.85)
+	else:
+		base = _denim_material()
+	if not mirror_uv:
+		return base
+	# Per-side variant — duplicate so we don't poison the shared cache.
+	var mirrored : StandardMaterial3D = base.duplicate() as StandardMaterial3D
+	mirrored.uv1_scale  = Vector3(-base.uv1_scale.x, base.uv1_scale.y, base.uv1_scale.z)
+	mirrored.uv1_offset = Vector3(base.uv1_offset.x + 1.0, base.uv1_offset.y + 0.5, base.uv1_offset.z)
+	return mirrored
 
 ## #166 — Runtime wardrobe swap. The Humanoid rig is rebuilt from scratch each
 ## call to build(), so the cheapest correct approach to "change clothes mid-game"
@@ -193,6 +209,17 @@ static func rebuild_appearance(holder: Node3D, shirt: Color, variant: int, new_a
 ##   "hivis_color": "yellow" (default — operator spec) / "orange" (legacy
 ##                  texture set) — picks which photo set the hi-vis vest/coat
 ##                  uses.
+##
+## IMPORTANT — ORIENTATION CONTRACT:
+##   This rig is authored with the visible front (face/eyes/nose/chest/beard)
+##   on LOCAL +Z, NOT the Godot canonical -Z. Internal coordinates (face plane
+##   fz = +0.122, hair back at z = -0.11, cap brim at +Z + 0.04, beard pushed
+##   outward via +0.015) are all consistent with face = +Z; do NOT flip them.
+##   Callers that parent the result to a CharacterBody3D, vehicle seat, NPC,
+##   or any node whose forward is -basis.z (per CeDo convention) MUST apply
+##   `rig.rotation.y = PI` immediately after add_child(rig). Failing to do
+##   so makes the body walk / drive / face tail-first. Reference attach sites
+##   that do this correctly: MainWorld._spawn_player, GauntletWorld._build_player.
 static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -> Node3D:
 	var skin_raw : Variant = appearance.get("skin_color", null)
 	if skin_raw is Dictionary and skin_raw.has("r"):
@@ -250,6 +277,25 @@ static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -
 	# worker reads as "civilian" on arrival / after the bell.
 	if wear_state == "off_duty" and shirt_type == "hi_vis_coat":
 		shirt_type = "sweatshirt"
+	# Audit item 26 — TEMPERATURE-DEPENDENT off-duty clothing. The wear_state
+	# toggle (on_duty/off_duty) is what the operator chose in the customizer,
+	# but the season should still drive whether an off-duty worker arrives in
+	# a t-shirt or in a sweatshirt/coat. The temperature comes from
+	# ShiftClock.get_outdoor_temp_c() (autoload sibling) so the wardrobe
+	# pipeline reads it without depending on a static singleton. Cold (< 5 °C)
+	# upgrades a t-shirt to a sweatshirt and a sweatshirt to a hi-vis coat;
+	# warm (> 22 °C) downgrades the off-duty look to a t-shirt regardless of
+	# what was stored. The customizer's intent (style/colour) is preserved on
+	# the slot the operator wrote; only the SHIRT CLASS gets adjusted.
+	if wear_state == "off_duty":
+		var temp_c : float = _resolve_outdoor_temp_c()
+		if temp_c < 5.0:
+			if shirt_type == "t_shirt":
+				shirt_type = "sweatshirt"
+			elif shirt_type == "sweatshirt":
+				shirt_type = "hi_vis_coat"
+		elif temp_c > 22.0:
+			shirt_type = "t_shirt"
 
 	# Resolve final shirt tint. shirt_color_override is now a TINT (it modulates
 	# textured paths AND directly colours flat ones) — it no longer kills the
@@ -287,13 +333,29 @@ static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -
 
 	# ── LEGS ──────────────────────────────────────────────────────────────────
 	# Feet at y≈-0.9. Boots, shins, thighs stacked up to the pelvis at y≈-0.18.
+	# Wrapped in a HIP PIVOT Node3D at the hip joint (y=-0.06) so the gait
+	# animator in NPC.gd can rotate the whole leg about X without offsetting
+	# the foot in world space (rotating about the actual hip joint, not about
+	# the rig origin). The pivot's local Y + each mesh's local Y still sum to
+	# the same world Y the boxes had before — _set_body_render_layer_split
+	# (which sums parent Node3D Y to classify head-vs-body) is unaffected.
+	# Pivot names: HipPivot_L / HipPivot_R (NPC gait reads these).
+	var _hip_y : float = -0.06
 	for sx in [-1.0, 1.0]:
 		var x : float = float(sx) * 0.12
-		_box(root, Vector3(0.16, 0.08, 0.30), Vector3(x, -0.86, 0.04), m_shoe)    # foot
+		var hip := Node3D.new()
+		hip.name = "HipPivot_R" if sx > 0.0 else "HipPivot_L"
+		hip.position = Vector3(x, _hip_y, 0.0)
+		root.add_child(hip)
+		_box(hip, Vector3(0.16, 0.08, 0.30), Vector3(0.0, -0.86 - _hip_y, 0.04), m_shoe)    # foot
 		if footwear == "work_boots":
-			_box(root, Vector3(0.15, 0.12, 0.16), Vector3(x, -0.78, 0.0), m_boots)  # ankle boot cuff
-		_box(root, Vector3(0.13, 0.40, 0.13), Vector3(x, -0.62, 0.0),  m_pants)   # lower leg (shin)
-		_box(root, Vector3(0.16, 0.40, 0.16), Vector3(x, -0.24, 0.0),  m_pants)   # upper leg (thigh)
+			_box(hip, Vector3(0.15, 0.12, 0.16), Vector3(0.0, -0.78 - _hip_y, 0.0), m_boots)  # ankle boot cuff
+		# Per-side denim variant — left leg (sx < 0) gets a mirrored + phase-shifted
+		# UV so left + right legs don't read as a copy-paste pair. Fixes operator
+		# complaint that the trouser texture was identical on both legs.
+		var m_pants_side : StandardMaterial3D = _apply_pants_material(pants_color_override, true, sx < 0.0)
+		_box(hip, Vector3(0.13, 0.40, 0.13), Vector3(0.0, -0.62 - _hip_y, 0.0),  m_pants_side)   # lower leg (shin)
+		_box(hip, Vector3(0.16, 0.40, 0.16), Vector3(0.0, -0.24 - _hip_y, 0.0),  m_pants_side)   # upper leg (thigh)
 
 	# ── CORE ──────────────────────────────────────────────────────────────────
 	_box(root, Vector3(0.36, 0.16, 0.20), Vector3(0.0, -0.06, 0.0), m_pants)      # pelvis
@@ -329,11 +391,21 @@ static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -
 				pass
 
 	# ── ARMS ──────────────────────────────────────────────────────────────────
+	# Wrapped in a SHOULDER PIVOT Node3D at the shoulder joint (y=+0.47, top of
+	# the upper-arm box) so the gait animator in NPC.gd can swing the whole arm
+	# from the shoulder. Same Y-sum invariant as legs: pivot.y + mesh.y == old
+	# mesh.y, so render-layer classification stays put.
+	# Pivot names: ShoulderPivot_L / ShoulderPivot_R (NPC gait reads these).
+	var _shoulder_y : float = 0.47
 	for sx in [-1.0, 1.0]:
 		var x : float = float(sx) * 0.27
-		_box(root, Vector3(0.11, 0.26, 0.12), Vector3(x, 0.34, 0.0), m_shirt)     # upper arm
-		_box(root, Vector3(0.10, 0.26, 0.11), Vector3(x, 0.08, 0.0), m_forearm)   # forearm
-		_box(root, Vector3(0.10, 0.10, 0.12), Vector3(x, -0.08, 0.02), m_skin)    # hand
+		var sh := Node3D.new()
+		sh.name = "ShoulderPivot_R" if sx > 0.0 else "ShoulderPivot_L"
+		sh.position = Vector3(x, _shoulder_y, 0.0)
+		root.add_child(sh)
+		_box(sh, Vector3(0.11, 0.26, 0.12), Vector3(0.0, 0.34 - _shoulder_y, 0.0), m_shirt)     # upper arm
+		_box(sh, Vector3(0.10, 0.26, 0.11), Vector3(0.0, 0.08 - _shoulder_y, 0.0), m_forearm)   # forearm
+		_box(sh, Vector3(0.10, 0.10, 0.12), Vector3(0.0, -0.08 - _shoulder_y, 0.02), m_skin)    # hand
 
 	# ── NECK + HEAD ─────────────────────────────────────────────────────────────
 	_box(root, Vector3(0.12, 0.08, 0.12), Vector3(0.0, 0.53, 0.0), m_skin)        # neck
@@ -344,16 +416,18 @@ static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -
 	for sx in [-1.0, 1.0]:
 		_box(root, Vector3(0.03, 0.07, 0.06), Vector3(sx * 0.135, head_y, 0.0), m_skin)
 
-	# Face features on the +Z face of the head.
-	var fz := 0.122
+	# Face features on the -Z face of the head (VISUAL FRONT RULE — visible
+	# front MUST sit on local -Z to match the canonical convention). `fz` is
+	# negative so eyes/nose/mouth/eyebrows all land on the canonical-forward side.
+	var fz := -0.122
 	# Eyebrows
 	for sx in [-1.0, 1.0]:
 		_box(root, Vector3(0.06, 0.015, 0.01), Vector3(sx * 0.055, head_y + 0.07, fz), m_hair)
 	# Eyes
 	for sx in [-1.0, 1.0]:
 		_box(root, Vector3(0.045, 0.03, 0.01), Vector3(sx * 0.055, head_y + 0.04, fz), m_dark)
-	# Nose
-	_box(root, Vector3(0.04, 0.07, 0.05), Vector3(0.0, head_y - 0.01, fz + 0.01), m_skin)
+	# Nose — pokes further forward, so MORE negative Z (fz - 0.01).
+	_box(root, Vector3(0.04, 0.07, 0.05), Vector3(0.0, head_y - 0.01, fz - 0.01), m_skin)
 	# Mouth
 	_box(root, Vector3(0.09, 0.02, 0.01), Vector3(0.0, head_y - 0.08, fz), m_dark)
 
@@ -381,18 +455,20 @@ static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -
 	var _is_stubble : bool = beard_style == "thin"
 	if beard_style != "none":
 		var beard_mat : StandardMaterial3D = m_hair
-		var bfz : float = fz + 0.015   # pushed outward to avoid Z-fight with face
+		# Beard is pushed FURTHER FORWARD than the face plane to avoid Z-fight.
+		# With face on -Z, "further forward" = more negative Z → fz - 0.015.
+		var bfz : float = fz - 0.015
 		if _is_stubble:
 			# Deterministic stubble: ~38 ~3mm boxes seeded by variant + skin so the
 			# same NPC always looks the same across reloads, but different NPCs
 			# don't share the exact pattern. Region: chin + lower cheeks +
-			# moustache strip on the +Z face of the head.
+			# moustache strip on the -Z (front) face of the head.
 			var rng := RandomNumberGenerator.new()
 			rng.seed = (variant * 9973) ^ int(skin.r * 1000.0) ^ int(skin.g * 100.0) ^ int(skin.b * 10.0)
 			var dot_size := Vector3(0.005, 0.005, 0.005)
 			for _i in 38:
 				# Region: x in [-0.10, 0.10], y in [head_y - 0.16, head_y - 0.04],
-				# pushed onto the face plane (z = bfz).
+				# pushed onto the face plane (z = bfz, which is negative).
 				var dx : float = rng.randf_range(-0.10, 0.10)
 				var dy : float = rng.randf_range(head_y - 0.16, head_y - 0.04)
 				# Skip the mouth opening (a small ellipse) so the stubble doesn't
@@ -400,26 +476,28 @@ static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -
 				var mouth_dy := dy - (head_y - 0.08)
 				if abs(dx) < 0.045 and abs(mouth_dy) < 0.012:
 					continue
-				_box(root, dot_size, Vector3(dx, dy, bfz + 0.001), beard_mat)
+				# Push 0.001 further forward (more negative Z) than bfz.
+				_box(root, dot_size, Vector3(dx, dy, bfz - 0.001), beard_mat)
 		if _has_chin:
 			_box(root, Vector3(0.13, 0.05, 0.02),
 				Vector3(0.0, head_y - 0.13, bfz), beard_mat)
 		if _has_cheeks:
+			# Cheek + jaw beard: same forward-of-face plane → negative Z.
 			for sx in [-1.0, 1.0]:
 				_box(root, Vector3(0.025, 0.10, 0.18),
-					Vector3(sx * 0.125, head_y - 0.06, 0.015), beard_mat)
+					Vector3(sx * 0.125, head_y - 0.06, -0.015), beard_mat)
 			_box(root, Vector3(0.18, 0.025, 0.18),
-				Vector3(0.0, head_y - 0.15, 0.015), beard_mat)
+				Vector3(0.0, head_y - 0.15, -0.015), beard_mat)
 		if _has_stache:
 			_box(root, Vector3(0.10, 0.022, 0.02),
 				Vector3(0.0, head_y - 0.06, bfz), beard_mat)
 		if _has_neck:
 			_box(root, Vector3(0.10, 0.06, 0.12),
-				Vector3(0.0, head_y - 0.20, 0.015), beard_mat)
+				Vector3(0.0, head_y - 0.20, -0.015), beard_mat)
 		if _has_full:
 			for sx in [-1.0, 1.0]:
 				_box(root, Vector3(0.03, 0.08, 0.14),
-					Vector3(sx * 0.13, head_y - 0.02, 0.02), beard_mat)
+					Vector3(sx * 0.13, head_y - 0.02, -0.02), beard_mat)
 
 	# ── HAIR (#186) — supports bald, buzz, short, mid, long, ponytail, mullet.
 	#     Drawn FIRST so the cap (if any) layers OVER it. Old behaviour replaced
@@ -427,6 +505,8 @@ static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -
 	#     on." Now the cap brim covers the front while the back/sides of the
 	#     hair still poke through.
 	if hair_style != "bald":
+		# With face on -Z, the BACK of the head is on +Z. All "back-of-head"
+		# hair pieces sit at positive Z.
 		match hair_style:
 			"buzz":
 				# Buzz-cut: thin crown only, no back piece. Reads as "fresh
@@ -434,32 +514,33 @@ static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -
 				_box(root, Vector3(0.255, 0.04, 0.255), Vector3(0.0, head_y + 0.11, 0.0), m_hair)
 			"short":
 				_box(root, Vector3(0.26, 0.09, 0.26), Vector3(0.0, head_y + 0.135, 0.0), m_hair)   # top
-				_box(root, Vector3(0.26, 0.22, 0.06), Vector3(0.0, head_y + 0.03, -0.11), m_hair)  # back
+				_box(root, Vector3(0.26, 0.22, 0.06), Vector3(0.0, head_y + 0.03, 0.11), m_hair)   # back
 			"mid":
 				_box(root, Vector3(0.26, 0.09, 0.26), Vector3(0.0, head_y + 0.135, 0.0), m_hair)
-				_box(root, Vector3(0.26, 0.30, 0.06), Vector3(0.0, head_y - 0.01, -0.11), m_hair)
+				_box(root, Vector3(0.26, 0.30, 0.06), Vector3(0.0, head_y - 0.01, 0.11), m_hair)
 			"long":
 				# Crown + a long back piece reaching the shoulders + small side
 				# strands so it doesn't read as a bib stuck to the head.
 				_box(root, Vector3(0.26, 0.09, 0.26), Vector3(0.0, head_y + 0.135, 0.0), m_hair)
-				_box(root, Vector3(0.26, 0.45, 0.06), Vector3(0.0, head_y - 0.12, -0.11), m_hair)
+				_box(root, Vector3(0.26, 0.45, 0.06), Vector3(0.0, head_y - 0.12, 0.11), m_hair)
 				for sx in [-1.0, 1.0]:
+					# Side strands hang BEHIND the ears (slightly +Z).
 					_box(root, Vector3(0.05, 0.32, 0.06),
-						Vector3(sx * 0.115, head_y - 0.05, -0.04), m_hair)
+						Vector3(sx * 0.115, head_y - 0.05, 0.04), m_hair)
 			"ponytail":
-				# Short crown + a slender vertical tail hanging off the back.
+				# Short crown + a slender vertical tail hanging off the back (+Z).
 				_box(root, Vector3(0.26, 0.09, 0.26), Vector3(0.0, head_y + 0.135, 0.0), m_hair)
-				_box(root, Vector3(0.26, 0.22, 0.06), Vector3(0.0, head_y + 0.03, -0.11), m_hair)
-				_box(root, Vector3(0.06, 0.35, 0.06), Vector3(0.0, head_y - 0.10, -0.14), m_hair)
+				_box(root, Vector3(0.26, 0.22, 0.06), Vector3(0.0, head_y + 0.03, 0.11), m_hair)
+				_box(root, Vector3(0.06, 0.35, 0.06), Vector3(0.0, head_y - 0.10, 0.14), m_hair)
 			"mullet":
-				# Business-in-the-front: short crown + long back-only piece.
+				# Business-in-the-front: short crown + long back-only piece (+Z).
 				_box(root, Vector3(0.26, 0.09, 0.26), Vector3(0.0, head_y + 0.135, 0.0), m_hair)
-				_box(root, Vector3(0.26, 0.32, 0.06), Vector3(0.0, head_y - 0.04, -0.11), m_hair)
+				_box(root, Vector3(0.26, 0.32, 0.06), Vector3(0.0, head_y - 0.04, 0.11), m_hair)
 			_:
 				# Unknown style — fall back to "short" so a stale save doesn't
 				# render a bald NPC silently.
 				_box(root, Vector3(0.26, 0.09, 0.26), Vector3(0.0, head_y + 0.135, 0.0), m_hair)
-				_box(root, Vector3(0.26, 0.22, 0.06), Vector3(0.0, head_y + 0.03, -0.11), m_hair)
+				_box(root, Vector3(0.26, 0.22, 0.06), Vector3(0.0, head_y + 0.03, 0.11), m_hair)
 
 	# ── CAP (#186) — layered ON TOP of hair (not instead of). Cap brim covers
 	#     the front, hair still pokes out the back/sides for everyone except
@@ -467,17 +548,21 @@ static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -
 	if wears_cap:
 		var cap_mat := _mat(Color(0.18, 0.22, 0.36), 0.78)
 		_box(root, Vector3(0.28, 0.09, 0.28), Vector3(0.0, head_y + 0.135, 0.0), cap_mat)   # crown
-		_box(root, Vector3(0.26, 0.02, 0.10), Vector3(0.0, head_y + 0.09,  fz + 0.04), cap_mat)  # brim
+		# Brim sticks out FORWARD of the face plane → more negative Z than fz.
+		_box(root, Vector3(0.26, 0.02, 0.10), Vector3(0.0, head_y + 0.09, fz - 0.04), cap_mat)  # brim
 		# Optional fringe under the cap — auto-enabled whenever hair != bald so
 		# the customizer (which doesn't expose hair_under_cap directly) just
 		# does the right thing. Legacy NPC presets that set hair_under_cap=true
 		# also still light up.
 		if hair_style != "bald":
+			# Forehead fringe sits in front of the face plane (more negative Z).
 			_box(root, Vector3(0.24, 0.025, 0.02),
-				Vector3(0.0, head_y + 0.075, fz + 0.05), m_hair)
+				Vector3(0.0, head_y + 0.075, fz - 0.05), m_hair)
 			for sx in [-1.0, 1.0]:
+				# Side temple strands tucked slightly BEHIND the face plane
+				# (less negative Z) so they sit between the ear and the brim.
 				_box(root, Vector3(0.025, 0.05, 0.04),
-					Vector3(sx * 0.115, head_y + 0.04, fz - 0.01), m_hair)
+					Vector3(sx * 0.115, head_y + 0.04, fz + 0.01), m_hair)
 
 	# Hardhat overlay if ppe_class == "operator" (drawn AFTER cap so it wins).
 	if ppe_class == "operator" and wear_state != "off_duty":
@@ -485,7 +570,42 @@ static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -
 		_box(root, Vector3(0.30, 0.08, 0.30), Vector3(0.0, head_y + 0.16, 0.0), m_hard)
 		_box(root, Vector3(0.34, 0.02, 0.36), Vector3(0.0, head_y + 0.115, 0.02), m_hard)   # brim ring
 
+	# ── ANIMATION PHASE 1 (cluster: Skeleton3D rig + locomotion BlendSpace) ──
+	# After the box meshes are placed at their anatomical positions, install a
+	# Skeleton3D rig + AnimationPlayer + AnimationTree alongside them.  Each
+	# existing MeshInstance3D gets reparented under the BoneAttachment3D for the
+	# bone that anatomically owns it (decided by its local position).  That way
+	# the rig is BONE-DRIVEN: when the AnimationTree poses bones (idle / walk /
+	# run blend), the visible boxes follow along — no skin resource required.
+	#
+	# NOTE: the existing `_set_body_render_layer_split` walker (MainWorld) and
+	# `_set_render_layers_recursive` (CharacterCustomizer) both recurse over all
+	# MeshInstance3D descendants of the rig root, so reparenting under
+	# BoneAttachment3D nodes preserves the FP-vs-mirror render-layer behaviour.
+	#
+	# TODO Phase 2: steering + hose + portofoon attachment slots, foot-IK pass.
+	# TODO Phase 3: Mixamo import path (load .glb skeleton + animations instead
+	# of authoring them procedurally).
+	_install_skeleton_rig(root)
+
 	return root
+
+# Audit item 26 — outdoor temperature resolver. Reads ShiftClock.get_outdoor_temp_c()
+# via the autoload-sibling path used elsewhere in the codebase. Returns a mild
+# +12 °C "neither warm nor cold" fallback when ShiftClock isn't reachable (test
+# scenes, character customizer preview), so off-duty wardrobe choices land on
+# whatever the operator picked instead of being silently overridden.
+static func _resolve_outdoor_temp_c() -> float:
+	# Engine.get_main_loop() is the safe way to reach the SceneTree from a static
+	# function (we don't have a `self` to read get_tree() from).
+	var ml := Engine.get_main_loop()
+	if ml is SceneTree:
+		var root := (ml as SceneTree).root
+		if root != null:
+			var sc := root.get_node_or_null("MainWorld/ShiftClock")
+			if sc != null and sc.has_method("get_outdoor_temp_c"):
+				return float(sc.call("get_outdoor_temp_c"))
+	return 12.0   # mild fallback — outside the cold/warm thresholds
 
 static func _box(parent: Node3D, size: Vector3, pos: Vector3, mat: StandardMaterial3D) -> void:
 	var mi := MeshInstance3D.new()
@@ -502,3 +622,488 @@ static func _mat(c: Color, rough: float) -> StandardMaterial3D:
 	m.roughness = rough
 	m.metallic = 0.0
 	return m
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ANIMATION PHASE 1 — Skeleton3D rig + AnimationPlayer + AnimationTree
+# ═════════════════════════════════════════════════════════════════════════════
+# Bone REST positions, expressed in PARENT bone's local space. (For root bone
+# Hips the parent is the Skeleton3D origin, which lives at the rig's local
+# origin = capsule centre.) Y axis is up; -Z is the canonical forward of the
+# rig AFTER the +PI yaw applied at attach sites — internally bones are authored
+# face-on-+Z (matching the box layout), and the attach-site yaw flips it.
+#
+# Numbers are anatomical centres of rotation, NOT the centres of the visible
+# box meshes. The boxes get reparented under BoneAttachment3D nodes; their
+# local position becomes (box_centre - bone_centre) so the visual layout is
+# untouched at the rest pose.
+const _BONE_NAMES : Array[String] = [
+	"Hips", "Spine", "Chest", "Neck", "Head",
+	"LShoulder", "LUpperArm", "LLowerArm", "LHand",
+	"RShoulder", "RUpperArm", "RLowerArm", "RHand",
+	"LUpperLeg", "LLowerLeg", "LFoot",
+	"RUpperLeg", "RLowerLeg", "RFoot",
+]
+# parent_index for each bone (matches the order above; -1 = root)
+const _BONE_PARENTS : Array[int] = [
+	-1, 0, 1, 2, 3,
+	2, 5, 6, 7,
+	2, 9, 10, 11,
+	0, 13, 14,
+	0, 16, 17,
+]
+# Bone REST origin in PARENT-bone space (rotation rest = identity).
+# Derived from the box-mesh anatomical layout above; see comments in build()
+# (feet at y=-0.86, knee joint ≈ y=-0.44, hip joint ≈ y=-0.04, etc.).
+# Each entry mirrors L→R via the x-sign on shoulder/leg bones.
+const _BONE_REST_ORIGIN : Dictionary = {
+	"Hips":       Vector3( 0.00, -0.06, 0.00),    # capsule-centre offset
+	"Spine":      Vector3( 0.00,  0.16, 0.00),    # → spine pivot at y = 0.10
+	"Chest":      Vector3( 0.00,  0.16, 0.00),    # → chest pivot at y = 0.26
+	"Neck":       Vector3( 0.00,  0.27, 0.00),    # → neck pivot at y = 0.53
+	"Head":       Vector3( 0.00,  0.15, 0.00),    # → head pivot at y = 0.68
+	"LShoulder":  Vector3( 0.18,  0.21, 0.00),    # → shoulder at y = 0.47
+	"LUpperArm":  Vector3( 0.00, -0.13, 0.00),    # → upper-arm pivot at y = 0.34
+	"LLowerArm":  Vector3( 0.00, -0.13, 0.00),    # → elbow at y = 0.21
+	"LHand":      Vector3( 0.00, -0.13, 0.00),    # → wrist at y = 0.08
+	"RShoulder":  Vector3(-0.18,  0.21, 0.00),
+	"RUpperArm":  Vector3( 0.00, -0.13, 0.00),
+	"RLowerArm":  Vector3( 0.00, -0.13, 0.00),
+	"RHand":      Vector3( 0.00, -0.13, 0.00),
+	"LUpperLeg":  Vector3( 0.12, -0.18, 0.00),    # → hip joint at y = -0.24
+	"LLowerLeg":  Vector3( 0.00, -0.20, 0.00),    # → knee at y = -0.44
+	"LFoot":      Vector3( 0.00, -0.38, 0.00),    # → ankle at y = -0.82
+	"RUpperLeg":  Vector3(-0.12, -0.18, 0.00),
+	"RLowerLeg":  Vector3( 0.00, -0.20, 0.00),
+	"RFoot":      Vector3( 0.00, -0.38, 0.00),
+}
+
+## Install a Skeleton3D + per-bone BoneAttachment3D + AnimationPlayer +
+## AnimationTree(BlendSpace2D "Locomotion") under `root`, and reparent each
+## existing MeshInstance3D direct child of `root` under the BoneAttachment3D
+## for the bone that anatomically owns it.
+##
+## NOTE: The vertical scale of `root` (#126 height_mul) does NOT apply to the
+## skeleton's own pose-space transforms — bones are authored at the unit-height
+## anatomical positions and the whole skeleton then inherits the root scale.
+## So a 1.10× tall NPC's hips rest at y = -0.06 × 1.10 = -0.066 in WORLD space,
+## but the bone rest itself stays at -0.06. The box meshes were authored the
+## same way (root-relative), so they line up after reparenting.
+static func _install_skeleton_rig(root: Node3D) -> void:
+	if root == null:
+		return
+	# Build the Skeleton3D first, with all bones at their REST poses.
+	var skel := Skeleton3D.new()
+	skel.name = "Skeleton3D"
+	var bone_index : Dictionary = {}
+	for i in _BONE_NAMES.size():
+		var bname : String = _BONE_NAMES[i]
+		var bi : int = skel.add_bone(bname)
+		bone_index[bname] = bi
+		var parent_i : int = _BONE_PARENTS[i]
+		if parent_i >= 0:
+			skel.set_bone_parent(bi, parent_i)
+		var rest_origin : Vector3 = _BONE_REST_ORIGIN.get(bname, Vector3.ZERO)
+		var rest := Transform3D(Basis(), rest_origin)
+		skel.set_bone_rest(bi, rest)
+		skel.set_bone_pose_position(bi, rest_origin)
+		skel.set_bone_pose_rotation(bi, Quaternion.IDENTITY)
+		skel.set_bone_pose_scale(bi, Vector3.ONE)
+	root.add_child(skel)
+	# One BoneAttachment3D per bone — children of the Skeleton3D, named after
+	# the bone so the AnimationPlayer track resolver can find them by path.
+	# We cache them in a dict so the box-reparent step is O(1) per mesh.
+	#
+	# We ALSO seed each attachment's transform to the bone's rest world-position
+	# BEFORE the first frame. That's so MainWorld._set_body_render_layer_split
+	# (called right after add_child) can sum position.y up the chain and get the
+	# original anatomical y immediately — Godot otherwise leaves the attachment
+	# at (0,0,0) until its first physics/process tick syncs from the bone.
+	var attach_by_bone : Dictionary = {}
+	for bname in _BONE_NAMES:
+		var att := BoneAttachment3D.new()
+		att.name = "BA_" + bname
+		att.bone_name = bname
+		# Seed the rest-pose transform so the splitter walker reads correct y
+		# on the first call. The bone auto-sync overwrites this with the SAME
+		# value (rest pose) once the animation tree starts driving the bones.
+		att.position = _bone_world_origin(bname)
+		skel.add_child(att)
+		attach_by_bone[bname] = att
+	# ── Reparent every NON-LIMB MeshInstance3D descendant of root under its bone ──
+	# Two animation systems coexist:
+	#   1) NPC.gd's sine-based gait (audit item 2) — drives LIMBS via the
+	#      HipPivot_L/R and ShoulderPivot_L/R Node3Ds. _collect_meshes_recursive
+	#      INTENTIONALLY skips those four subtrees so the leg/arm meshes stay
+	#      parented to the pivots and follow the gait rotation.
+	#   2) The Skeleton3D + AnimationTree walk cycle — drives everything else
+	#      (head/torso/pelvis/neck) via BoneAttachment3D.
+	# Meshes outside the four pivot subtrees still need their root-local
+	# position to classify by bone, which _local_in_root computes by summing
+	# Node3D origins up the parent chain.
+	var all_meshes : Array = []
+	_collect_meshes_recursive(root, all_meshes)
+	for mi in all_meshes:
+		var mi3d : MeshInstance3D = mi
+		var local_in_root : Vector3 = _local_in_root(mi3d, root)
+		var owner_bone : String = _classify_bone_owner(local_in_root)
+		var att : BoneAttachment3D = attach_by_bone[owner_bone]
+		# Bone REST origin in rig-root space.
+		var bone_world : Vector3 = _bone_world_origin(owner_bone)
+		var local_offset : Vector3 = local_in_root - bone_world
+		# Reparent. Preserve the visual position — the BoneAttachment3D sits at
+		# the bone's posed origin, so subtracting bone_world keeps the mesh
+		# exactly where it was when the bone is at its rest pose.
+		var prev_parent : Node = mi3d.get_parent()
+		if prev_parent != null:
+			prev_parent.remove_child(mi3d)
+		att.add_child(mi3d)
+		mi3d.position = local_offset
+		mi3d.rotation = Vector3.ZERO   # legacy pivots applied rotations to the
+		mi3d.scale = Vector3.ONE       # parent; the mesh transform stays clean
+	# ── AnimationPlayer ──────────────────────────────────────────────────────
+	var ap := AnimationPlayer.new()
+	ap.name = "AnimationPlayer"
+	root.add_child(ap)
+	var lib := AnimationLibrary.new()
+	lib.add_animation("idle", _build_anim_idle(skel))
+	lib.add_animation("walk", _build_anim_walk(skel))
+	lib.add_animation("run",  _build_anim_run(skel))
+	ap.add_animation_library("", lib)
+	# We do NOT call ap.play("idle") here — the rig root isn't in the scene
+	# tree yet, and play() requires the player to be active. The AnimationTree
+	# (added next, active=true) drives playback the instant the rig is added
+	# to a parent. If for some reason the tree is disabled, the NPC just
+	# stands in its rest pose, which is anatomically correct (not a T-pose).
+	# ── AnimationTree with BlendSpace2D locomotion node ──────────────────────
+	# X axis: speed (0 = idle, 1 = walk, 2 = run). Y axis: strafe (reserved for
+	# Phase 2 — we author one row at Y=0 for now).  We DON'T bake a
+	# AnimationNodeStateMachine here; the BlendSpace2D is the single root node,
+	# which is the minimum surface area for NPC.gd / PlayerController.gd to
+	# update via `set("parameters/blend_position", v2)`.
+	var atree := AnimationTree.new()
+	atree.name = "AnimationTree"
+	# Both AnimationPlayer and AnimationTree are children of `root` (the rig
+	# Body node). NodePath("../AnimationPlayer") resolves from the tree node up
+	# to root then back down to ap — works whether or not `root` is currently
+	# parented (get_path() would return a useless path while root is detached).
+	atree.anim_player = NodePath("../AnimationPlayer")
+	var bs := AnimationNodeBlendSpace2D.new()
+	bs.blend_mode = AnimationNodeBlendSpace2D.BLEND_MODE_INTERPOLATED
+	bs.min_space = Vector2(0.0, -1.0)
+	bs.max_space = Vector2(2.0,  1.0)
+	bs.snap = Vector2(0.1, 0.1)
+	# Three points along the speed axis. Y=0 is "straight forward"; strafe rows
+	# are Phase 2.
+	var n_idle := AnimationNodeAnimation.new()
+	n_idle.animation = "idle"
+	var n_walk := AnimationNodeAnimation.new()
+	n_walk.animation = "walk"
+	var n_run := AnimationNodeAnimation.new()
+	n_run.animation = "run"
+	bs.add_blend_point(n_idle, Vector2(0.0, 0.0))
+	bs.add_blend_point(n_walk, Vector2(1.0, 0.0))
+	bs.add_blend_point(n_run,  Vector2(2.0, 0.0))
+	atree.tree_root = bs
+	atree.active = true
+	root.add_child(atree)
+
+## Bone-owner heuristic — picks a bone name from a box's LOCAL-to-RIG-ROOT
+## position so each mesh gets parented under the right bone. The Humanoid is
+## authored at known anatomical Y bands, so a simple piecewise classifier is
+## enough.
+##  · y < -0.78  (foot box ≈ -0.86, boot cuff ≈ -0.78)               → Foot
+##  · -0.78 ≤ y < -0.44 (shin ≈ -0.62)                                → LowerLeg
+##  · -0.44 ≤ y < -0.10 (thigh ≈ -0.24)                               → UpperLeg
+##  · -0.10 ≤ y <  0.16 (pelvis ≈ -0.06, waist bands ≈ 0.08, 0.12)    → Hips
+##  ·  0.16 ≤ y <  0.50 (chest ≈ 0.26, vest bands ≈ 0.36, 0.38)       → Chest
+##  ·  0.50 ≤ y <  0.58 (neck ≈ 0.53)                                 → Neck
+##  ·  y ≥  0.58 (head ≈ 0.68, ears, face features, hair, cap, hardhat) → Head
+## The arm-region split is x-sign based: |x| > 0.20 = arm (further split by Y
+## into UpperArm / LowerArm / Hand), |x| ≤ 0.20 = trunk.
+##
+## NOTE on edge cases: the MOUTH sits at y ≈ 0.60 (head_y - 0.08), so the
+## Head threshold is 0.58 (not 0.62) so face features that hang below the head
+## centre still ride with the head. The CHIN/BEARD plates go as low as
+## y ≈ 0.48 (head_y - 0.20), which classify as Neck — close enough to the head
+## that they still read correctly during a head-nod animation; Phase 2 will
+## stuff them under Head explicitly.
+static func _classify_bone_owner(local: Vector3) -> String:
+	var x : float = local.x
+	var y : float = local.y
+	# ── ARMS (off-centre torso boxes) ──
+	# Upper-arm/forearm/hand boxes are placed at |x| ≈ 0.27 (see ARMS section
+	# in build()); torso/PPE bands are at x ≈ 0.0. A clean split at |x| > 0.20.
+	if absf(x) > 0.20:
+		if y >= 0.20:
+			return "LUpperArm" if x > 0.0 else "RUpperArm"
+		elif y >= -0.02:
+			return "LLowerArm" if x > 0.0 else "RLowerArm"
+		else:
+			return "LHand" if x > 0.0 else "RHand"
+	# ── LEGS (off-centre lower-body boxes) ──
+	# Foot/shin/thigh boxes are at |x| ≈ 0.12; pelvis+waist bands at x ≈ 0.0.
+	# Split: y < -0.10 AND |x| > 0.05 = a leg box.
+	if y < -0.10 and absf(x) > 0.05:
+		if y < -0.74:
+			return "LFoot" if x > 0.0 else "RFoot"
+		elif y < -0.44:
+			return "LLowerLeg" if x > 0.0 else "RLowerLeg"
+		else:
+			return "LUpperLeg" if x > 0.0 else "RUpperLeg"
+	# ── TRUNK / HEAD ──
+	# Everything centred (or near-centred) drops through to the spine column.
+	# Head threshold lowered to 0.58 so the mouth box (≈0.60) still rides
+	# with the head rotation.
+	if y >= 0.58:
+		return "Head"
+	elif y >= 0.50:
+		return "Neck"
+	elif y >= 0.16:
+		return "Chest"
+	# Pelvis / waist band region — sits on the hips bone.
+	return "Hips"
+
+## Recursively collect every MeshInstance3D under `node` into `out`. Skips
+## anything that's already under a BoneAttachment3D (in case _install_skeleton_rig
+## is ever re-entered on a partially-rigged tree).
+static func _collect_meshes_recursive(node: Node, out: Array) -> void:
+	for c in node.get_children():
+		if c is BoneAttachment3D:
+			continue   # already rigged — don't re-collect its descendants
+		# Audit item 2 — the sine-based walking gait drives limb meshes via
+		# HipPivot_L/R and ShoulderPivot_L/R Node3Ds. Skipping their subtrees
+		# here keeps the meshes parented to those pivots so NPC._apply_gait()
+		# rotates the visible limb instead of an empty pivot. The bones
+		# corresponding to those limbs remain in the skeleton (for future
+		# Skeleton3D-driven secondary motion); they just don't own these
+		# specific meshes.
+		var cn := String(c.name) if c is Node else ""
+		if cn == "HipPivot_L" or cn == "HipPivot_R" \
+				or cn == "ShoulderPivot_L" or cn == "ShoulderPivot_R":
+			continue
+		if c is MeshInstance3D:
+			out.append(c)
+		if c is Node:
+			_collect_meshes_recursive(c, out)
+
+## Express a node's transform-origin in the rig ROOT's local space by walking
+## up the parent chain summing positions. Used to classify a mesh by its
+## anatomical position regardless of whether it's under an intermediate pivot
+## (HipPivot_*, ShoulderPivot_*) or directly under root.
+static func _local_in_root(node: Node3D, root: Node3D) -> Vector3:
+	var acc : Vector3 = node.position
+	var p : Node = node.get_parent()
+	# Limit the walk to a sane depth so a malformed tree can't infinite-loop.
+	for _i in 16:
+		if p == null or p == root or not (p is Node3D):
+			break
+		acc += (p as Node3D).position
+		p = p.get_parent()
+	return acc
+
+## Compute a bone's REST origin in SKELETON-local space (= rig root space) by
+## walking up the parent chain and accumulating origins. Used to convert each
+## box's pre-rig local position into a post-rig bone-local offset.
+static func _bone_world_origin(bone_name: String) -> Vector3:
+	var acc : Vector3 = Vector3.ZERO
+	var cur : String = bone_name
+	# Hard cap to avoid an infinite loop if the constants ever get mis-edited.
+	for _i in 32:
+		if not _BONE_REST_ORIGIN.has(cur):
+			break
+		acc += _BONE_REST_ORIGIN[cur] as Vector3
+		var idx : int = _BONE_NAMES.find(cur)
+		if idx < 0:
+			break
+		var parent_i : int = _BONE_PARENTS[idx]
+		if parent_i < 0:
+			break
+		cur = _BONE_NAMES[parent_i]
+	return acc
+
+# ─── Procedural animation authoring ──────────────────────────────────────────
+# Each animation is a small set of bone-rotation tracks targeting the
+# Skeleton3D via the path "Skeleton3D:<bone_name>". TYPE_ROTATION_3D keys take
+# Quaternion values; we author 4 keyframes per bone (0, 1/4, 1/2, 3/4 of the
+# loop) and let Godot's loop interpolation close the cycle.
+#
+# Convention reminder: the rig is authored face-on-+Z internally, and attach
+# sites yaw the whole rig by +PI to align face with -basis.z. That means
+# "swing the leg FORWARD" in animation space is a rotation around X by a
+# NEGATIVE angle (forward = +Z internally → bone tip rotates toward +Z by
+# tilting around the +X axis NEGATIVELY in right-handed Y-up). We pick the
+# signs so the rendered result reads as "walk forward" after the +PI yaw.
+
+const _IDLE_LOOP_S : float = 2.0
+const _WALK_LOOP_S : float = 1.2
+const _RUN_LOOP_S  : float = 0.8
+
+## Subtle breathing — chest tilts back a few degrees on inhale, neck nods. No
+## limb motion; this is what plays when the operator is standing at a HMI.
+static func _build_anim_idle(_skel: Skeleton3D) -> Animation:
+	var a := Animation.new()
+	a.length = _IDLE_LOOP_S
+	a.loop_mode = Animation.LOOP_LINEAR
+	# Spine tilt — ±2° on a slow sine.
+	_add_rot_track(a, "Spine", [
+		[0.00, Quaternion.IDENTITY],
+		[0.50, Quaternion(Vector3.RIGHT, deg_to_rad(-2.0))],
+		[1.00, Quaternion.IDENTITY],
+		[1.50, Quaternion(Vector3.RIGHT, deg_to_rad( 1.0))],
+	])
+	# Head sway — tiny yaw left/right so the head doesn't read as locked.
+	_add_rot_track(a, "Head", [
+		[0.00, Quaternion.IDENTITY],
+		[0.50, Quaternion(Vector3.UP, deg_to_rad( 2.5))],
+		[1.00, Quaternion.IDENTITY],
+		[1.50, Quaternion(Vector3.UP, deg_to_rad(-2.5))],
+	])
+	# Arms hang with a faint inward bias so they don't look pinned to T.
+	_add_rot_track(a, "LUpperArm", [
+		[0.00, Quaternion(Vector3.FORWARD, deg_to_rad( 5.0))],
+		[1.00, Quaternion(Vector3.FORWARD, deg_to_rad( 3.0))],
+	])
+	_add_rot_track(a, "RUpperArm", [
+		[0.00, Quaternion(Vector3.FORWARD, deg_to_rad(-5.0))],
+		[1.00, Quaternion(Vector3.FORWARD, deg_to_rad(-3.0))],
+	])
+	return a
+
+## Walk cycle — alternating leg swing, arms counter-swing, slight hip
+## counter-rotation. 1.2 s loop matches a 2 m/s gait at ~80 SPM.
+static func _build_anim_walk(_skel: Skeleton3D) -> Animation:
+	var a := Animation.new()
+	a.length = _WALK_LOOP_S
+	a.loop_mode = Animation.LOOP_LINEAR
+	# Leg swing: ±25° around X (forward/back), 180° out of phase L vs R.
+	# Knee bends on the back-swing return so the foot lifts cleanly.
+	_add_rot_track(a, "LUpperLeg", [
+		[0.0,  Quaternion(Vector3.RIGHT, deg_to_rad( 25.0))],   # forward
+		[0.3,  Quaternion(Vector3.RIGHT, deg_to_rad(  0.0))],
+		[0.6,  Quaternion(Vector3.RIGHT, deg_to_rad(-25.0))],   # back
+		[0.9,  Quaternion(Vector3.RIGHT, deg_to_rad(  0.0))],
+	])
+	_add_rot_track(a, "LLowerLeg", [
+		[0.0,  Quaternion.IDENTITY],
+		[0.3,  Quaternion(Vector3.RIGHT, deg_to_rad(-10.0))],
+		[0.6,  Quaternion(Vector3.RIGHT, deg_to_rad(-35.0))],   # knee lifts on rear pass
+		[0.9,  Quaternion(Vector3.RIGHT, deg_to_rad(-15.0))],
+	])
+	_add_rot_track(a, "RUpperLeg", [
+		[0.0,  Quaternion(Vector3.RIGHT, deg_to_rad(-25.0))],
+		[0.3,  Quaternion(Vector3.RIGHT, deg_to_rad(  0.0))],
+		[0.6,  Quaternion(Vector3.RIGHT, deg_to_rad( 25.0))],
+		[0.9,  Quaternion(Vector3.RIGHT, deg_to_rad(  0.0))],
+	])
+	_add_rot_track(a, "RLowerLeg", [
+		[0.0,  Quaternion(Vector3.RIGHT, deg_to_rad(-35.0))],
+		[0.3,  Quaternion(Vector3.RIGHT, deg_to_rad(-15.0))],
+		[0.6,  Quaternion.IDENTITY],
+		[0.9,  Quaternion(Vector3.RIGHT, deg_to_rad(-10.0))],
+	])
+	# Arms swing opposite the same-side leg (Left arm forward when Right leg
+	# forward) — that's how humans walk.
+	_add_rot_track(a, "LUpperArm", [
+		[0.0,  Quaternion(Vector3.RIGHT, deg_to_rad(-22.0))],
+		[0.3,  Quaternion(Vector3.RIGHT, deg_to_rad(  0.0))],
+		[0.6,  Quaternion(Vector3.RIGHT, deg_to_rad( 22.0))],
+		[0.9,  Quaternion(Vector3.RIGHT, deg_to_rad(  0.0))],
+	])
+	_add_rot_track(a, "RUpperArm", [
+		[0.0,  Quaternion(Vector3.RIGHT, deg_to_rad( 22.0))],
+		[0.3,  Quaternion(Vector3.RIGHT, deg_to_rad(  0.0))],
+		[0.6,  Quaternion(Vector3.RIGHT, deg_to_rad(-22.0))],
+		[0.9,  Quaternion(Vector3.RIGHT, deg_to_rad(  0.0))],
+	])
+	# Faint elbow bend so arms aren't sticks.
+	_add_rot_track(a, "LLowerArm", [
+		[0.0,  Quaternion(Vector3.RIGHT, deg_to_rad(-12.0))],
+		[0.6,  Quaternion(Vector3.RIGHT, deg_to_rad(-22.0))],
+	])
+	_add_rot_track(a, "RLowerArm", [
+		[0.0,  Quaternion(Vector3.RIGHT, deg_to_rad(-22.0))],
+		[0.6,  Quaternion(Vector3.RIGHT, deg_to_rad(-12.0))],
+	])
+	# Hip counter-rotation around Y — the pelvis twists opposite the chest.
+	_add_rot_track(a, "Hips", [
+		[0.0,  Quaternion(Vector3.UP, deg_to_rad( 4.0))],
+		[0.6,  Quaternion(Vector3.UP, deg_to_rad(-4.0))],
+	])
+	_add_rot_track(a, "Chest", [
+		[0.0,  Quaternion(Vector3.UP, deg_to_rad(-4.0))],
+		[0.6,  Quaternion(Vector3.UP, deg_to_rad( 4.0))],
+	])
+	return a
+
+## Run cycle — same shape as walk, larger amplitudes, faster (0.8 s loop) and
+## more forward lean on the torso.
+static func _build_anim_run(_skel: Skeleton3D) -> Animation:
+	var a := Animation.new()
+	a.length = _RUN_LOOP_S
+	a.loop_mode = Animation.LOOP_LINEAR
+	_add_rot_track(a, "LUpperLeg", [
+		[0.0,  Quaternion(Vector3.RIGHT, deg_to_rad( 40.0))],
+		[0.2,  Quaternion(Vector3.RIGHT, deg_to_rad(  0.0))],
+		[0.4,  Quaternion(Vector3.RIGHT, deg_to_rad(-35.0))],
+		[0.6,  Quaternion(Vector3.RIGHT, deg_to_rad(  0.0))],
+	])
+	_add_rot_track(a, "LLowerLeg", [
+		[0.0,  Quaternion(Vector3.RIGHT, deg_to_rad(-15.0))],
+		[0.2,  Quaternion(Vector3.RIGHT, deg_to_rad(-25.0))],
+		[0.4,  Quaternion(Vector3.RIGHT, deg_to_rad(-60.0))],
+		[0.6,  Quaternion(Vector3.RIGHT, deg_to_rad(-30.0))],
+	])
+	_add_rot_track(a, "RUpperLeg", [
+		[0.0,  Quaternion(Vector3.RIGHT, deg_to_rad(-35.0))],
+		[0.2,  Quaternion(Vector3.RIGHT, deg_to_rad(  0.0))],
+		[0.4,  Quaternion(Vector3.RIGHT, deg_to_rad( 40.0))],
+		[0.6,  Quaternion(Vector3.RIGHT, deg_to_rad(  0.0))],
+	])
+	_add_rot_track(a, "RLowerLeg", [
+		[0.0,  Quaternion(Vector3.RIGHT, deg_to_rad(-60.0))],
+		[0.2,  Quaternion(Vector3.RIGHT, deg_to_rad(-30.0))],
+		[0.4,  Quaternion(Vector3.RIGHT, deg_to_rad(-15.0))],
+		[0.6,  Quaternion(Vector3.RIGHT, deg_to_rad(-25.0))],
+	])
+	_add_rot_track(a, "LUpperArm", [
+		[0.0,  Quaternion(Vector3.RIGHT, deg_to_rad(-45.0))],
+		[0.4,  Quaternion(Vector3.RIGHT, deg_to_rad( 45.0))],
+	])
+	_add_rot_track(a, "RUpperArm", [
+		[0.0,  Quaternion(Vector3.RIGHT, deg_to_rad( 45.0))],
+		[0.4,  Quaternion(Vector3.RIGHT, deg_to_rad(-45.0))],
+	])
+	# Elbows held bent (~90°) like a real running arm — fixed pose.
+	_add_rot_track(a, "LLowerArm", [
+		[0.0,  Quaternion(Vector3.RIGHT, deg_to_rad(-85.0))],
+	])
+	_add_rot_track(a, "RLowerArm", [
+		[0.0,  Quaternion(Vector3.RIGHT, deg_to_rad(-85.0))],
+	])
+	# Forward lean of the spine on a run.
+	_add_rot_track(a, "Spine", [
+		[0.0,  Quaternion(Vector3.RIGHT, deg_to_rad(  8.0))],
+	])
+	# Stronger hip counter-rotation than walk.
+	_add_rot_track(a, "Hips", [
+		[0.0,  Quaternion(Vector3.UP, deg_to_rad(  7.0))],
+		[0.4,  Quaternion(Vector3.UP, deg_to_rad( -7.0))],
+	])
+	_add_rot_track(a, "Chest", [
+		[0.0,  Quaternion(Vector3.UP, deg_to_rad( -7.0))],
+		[0.4,  Quaternion(Vector3.UP, deg_to_rad(  7.0))],
+	])
+	return a
+
+## Add one TYPE_ROTATION_3D track to `a` for the given bone, keyed at the
+## supplied (time, quaternion) pairs. The path resolves against the
+## Skeleton3D named "Skeleton3D" added by _install_skeleton_rig.
+static func _add_rot_track(a: Animation, bone_name: String, keys: Array) -> void:
+	var ti : int = a.add_track(Animation.TYPE_ROTATION_3D)
+	a.track_set_path(ti, NodePath("Skeleton3D:" + bone_name))
+	a.track_set_interpolation_loop_wrap(ti, true)
+	a.track_set_interpolation_type(ti, Animation.INTERPOLATION_LINEAR)
+	for k in keys:
+		var t : float = float(k[0])
+		var q : Quaternion = k[1] as Quaternion
+		a.rotation_track_insert_key(ti, t, q)

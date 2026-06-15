@@ -41,7 +41,25 @@ func _ready() -> void:
 	_build_player()
 	_build_hud()
 	_build_stations()
+	_spawn_build_mode()
 	_register_walkthrough_keys()
+
+# ── BuildMode (Tab to open the catalog, K to jog) ────────────────────────────
+## The sandbox is for walking around macros AND for the operator to drop
+## additional placeables on top — same wiring MainWorld uses, with a sandbox-
+## scoped layout file so it never clobbers a real save's factory.
+func _spawn_build_mode() -> void:
+	if _player == null:
+		push_warning("[Sandbox] BuildMode skipped — no player")
+		return
+	var bm := BM.new()
+	bm.name = "BuildMode"
+	bm.player_body = _player                    # placement rays ignore the capsule
+	bm.wall_openings = null                     # no building shell in sandbox
+	bm.layout_path = "user://sandbox_layout.json"   # separate from MainWorld saves
+	bm.allow_legacy_fallback = false             # sandbox never inherits real saves
+	add_child(bm)
+	print("[Sandbox] BuildMode ready — press Tab to build")
 
 # ── Environment: sun + sky + ambient ──────────────────────────────────────────
 func _build_environment() -> void:
@@ -109,6 +127,9 @@ func _build_player() -> void:
 	var cam := Camera3D.new()
 	cam.name = "Camera3D"
 	cam.current = true
+	# #200 — drop layer 3 (head only) so the FP camera doesn't see the player's
+	# own head poking up; layer 2 (body) stays visible so they can look down.
+	cam.cull_mask &= ~(1 << 2)
 	head.add_child(cam)
 	var col := CollisionShape3D.new()
 	col.name = "Collision"
@@ -119,7 +140,31 @@ func _build_player() -> void:
 	p.add_child(col)
 	add_child(p)
 	p.global_position = Vector3(0.0, 1.0, 12.0)
+	# #200 — Visible Humanoid body so the operator can look down and see
+	# themselves. Head is on layer 3 (hidden from the FP camera); rest of the
+	# body on layer 2 (visible).
+	var humanoid_script = load("res://src/scenes/world/Humanoid.gd")
+	if humanoid_script:
+		var body : Node3D = humanoid_script.build(Color(0.96, 0.45, 0.12), 0, {})
+		body.name = "PlayerBody"
+		p.add_child(body)
+		_tag_body_layers(body)
 	_player = p
+
+## Local copy of MainWorld._set_body_render_layer_split — sandbox doesn't share
+## the autoload, so we re-implement the local-y walk inline.
+func _tag_body_layers(root: Node) -> void:
+	if root is MeshInstance3D:
+		var mi := root as MeshInstance3D
+		var y_local : float = mi.position.y
+		var par : Node = mi.get_parent()
+		while par != null and (not (par is Node3D) or par.name != "PlayerBody"):
+			if par is Node3D:
+				y_local += (par as Node3D).position.y
+			par = par.get_parent()
+		mi.layers = (1 << 2) if y_local >= 0.55 else (1 << 1)
+	for c in root.get_children():
+		_tag_body_layers(c)
 
 # ── HUD: bottom-centre banner showing the current station ────────────────────
 var _hud_label : Label = null

@@ -36,6 +36,7 @@ const SIGN_HEIGHT_M     : float = 3.2
 
 const STATUS_PATH : String = "user://gauntlet_status.json"
 const AIM_RANGE_M : float = 30.0
+const BM = preload("res://src/build/BuildMode.gd")
 
 ## task_id, title, builder method name, default status.
 ##   pending   = nothing built, placeholder pole
@@ -110,6 +111,7 @@ func _ready() -> void:
 			_build_placeholder(Vector3(x, 0.0, 4.0), String(entry["status"]))
 		slot += 1
 	_build_player()
+	_spawn_build_mode()
 	_spawn_hud()
 	_spawn_help_overlay()
 	# Reset cursor so the player can walk straight from spawn.
@@ -301,6 +303,10 @@ func _build_player() -> void:
 	var cam := Camera3D.new()
 	cam.name = "Camera3D"
 	cam.current = true
+	# #200 — drop layer 3 (head only) so the FP camera hides the player's own
+	# head; layer 2 (body) stays visible so the operator can look down and see
+	# themselves walking the gauntlet.
+	cam.cull_mask &= ~(1 << 2)
 	head.add_child(cam)
 	var col := CollisionShape3D.new()
 	col.name = "Collision"
@@ -315,8 +321,53 @@ func _build_player() -> void:
 	# is owned by the body's rotation.y (camera rolls under it).
 	p.global_position = Vector3(-10.0, 1.0, 0.0)
 	p.rotation.y = -PI * 0.5
+	# #200 — Visible Humanoid body. Head on layer 3 (hidden from FP cam),
+	# everything else on layer 2 (visible).
+	var humanoid_script = load("res://src/scenes/world/Humanoid.gd")
+	if humanoid_script:
+		var body : Node3D = humanoid_script.build(Color(0.96, 0.45, 0.12), 0, {})
+		body.name = "PlayerBody"
+		p.add_child(body)
+		# Humanoid.build() authors the rig face-on-+Z (see Humanoid.gd:200 docstring).
+		# The capsule's own yaw (p.rotation.y = -PI*0.5 above) aims its -basis.z at
+		# the first station; this 180° wrap aligns the body's face with that forward,
+		# so the operator sees the gauntlet ahead instead of walking backward into it.
+		body.rotation.y = PI
+		_tag_body_layers(body)
 	_player = p
 	_camera = cam
+
+## BuildMode wiring — Tab to open the catalog, K to jog. Sandboxed to a
+## gauntlet-only layout file so nothing the operator builds during the gauntlet
+## clobbers a real save's factory.
+func _spawn_build_mode() -> void:
+	if _player == null:
+		push_warning("[Gauntlet] BuildMode skipped — no player")
+		return
+	var bm := BM.new()
+	bm.name = "BuildMode"
+	bm.player_body = _player                       # placement rays ignore the capsule
+	bm.wall_openings = null                        # no building shell in gauntlet
+	bm.layout_path = "user://gauntlet_layout.json"  # never touches real saves
+	bm.allow_legacy_fallback = false
+	add_child(bm)
+	print("[Gauntlet] BuildMode ready — press Tab to build")
+
+## Local copy of MainWorld._set_body_render_layer_split — same logic, no shared
+## autoload. Walks the Humanoid mesh tree summing local-y to detect head-region
+## meshes (y >= 0.55) and routes them onto layer 3, body parts onto layer 2.
+func _tag_body_layers(root: Node) -> void:
+	if root is MeshInstance3D:
+		var mi := root as MeshInstance3D
+		var y_local : float = mi.position.y
+		var par : Node = mi.get_parent()
+		while par != null and (not (par is Node3D) or par.name != "PlayerBody"):
+			if par is Node3D:
+				y_local += (par as Node3D).position.y
+			par = par.get_parent()
+		mi.layers = (1 << 2) if y_local >= 0.55 else (1 << 1)
+	for c in root.get_children():
+		_tag_body_layers(c)
 
 func _build_station_sign(pos: Vector3, entry: Dictionary) -> void:
 	# The board's long axis runs along Z (perpendicular to the walking direction)
@@ -1300,6 +1351,20 @@ func _st_d4_dir(anchor: Vector3) -> void:
 	var spawn_anchor : Vector3 = anchor + Vector3(0.0, 1.2, -2.6)
 	spawn_timer.timeout.connect(func() -> void:
 		var rb := RigidBody3D.new()
+		# Critical for the belt-drag test: WITHOUT a physics material the cube
+		# coasts on whatever spawn-jitter velocity it lands with and the belt's
+		# constant_linear_velocity never grabs it. friction=1.0 + bounce=0 +
+		# rough=true forces the contact solver to lock the cube's surface
+		# velocity to the belt's constant_linear_velocity — that's what the
+		# operator wants when they say "physicalize, not puppetry".
+		var pmat := PhysicsMaterial.new()
+		pmat.friction = 1.0
+		pmat.bounce   = 0.0
+		pmat.rough    = true
+		rb.physics_material_override = pmat
+		# Damp the spawn-jitter so any tiny lateral velocity from the drop dies
+		# before it can be misread as "belt carry at the wrong speed".
+		rb.linear_damp = 0.6
 		var col := CollisionShape3D.new()
 		var box := BoxShape3D.new()
 		box.size = Vector3(0.18, 0.18, 0.18)
@@ -1315,6 +1380,9 @@ func _st_d4_dir(anchor: Vector3) -> void:
 		rb.add_child(mi)
 		add_child(rb)
 		rb.global_position = spawn_anchor
+		# Pre-zero any velocity from add_child reparenting so the test is clean.
+		rb.linear_velocity  = Vector3.ZERO
+		rb.angular_velocity = Vector3.ZERO
 		# Auto-despawn after 8 s so the belt stays clear.
 		var kill := get_tree().create_timer(8.0)
 		kill.timeout.connect(func() -> void:

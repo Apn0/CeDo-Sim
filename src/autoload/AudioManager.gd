@@ -315,6 +315,32 @@ func play_radio_call(text: String, loudness: float, headset: bool) -> void:
 func play_radio_uplink(text: String, headset: bool) -> void:
 	_start_radio(text, 0.7, headset)
 
+## Play a real-voice TTS stream (produced by VoiceService) ON TOP of the squelch
+## carrier currently arming the radio. `stream` is the wav loaded from Piper or
+## OpenAI tts-1. When `stream` is null this is a no-op — the squelch carrier
+## alone carries the message (the existing pre-VoiceService behaviour). Volume
+## tracks the Walkie's effective loudness so headset/speaker routing still
+## applies. Plays on the Voices bus, side-by-side with the carrier.
+func play_radio_voice_stream(stream, loudness: float, headset: bool) -> void:
+	if stream == null:
+		return
+	# Reuse a single voice player so consecutive lines pre-empt each other
+	# (a fresh transmission cuts off the previous one — same as a real radio).
+	if not has_node("_RadioTTSVoice"):
+		var p := AudioStreamPlayer.new()
+		p.name = "_RadioTTSVoice"
+		p.bus  = BUS_VOICES
+		add_child(p)
+	var player := get_node("_RadioTTSVoice") as AudioStreamPlayer
+	player.stream = stream
+	# Headset is intimate/quiet — give it a small attenuation so it doesn't
+	# blow out the earpiece. Loudness already includes volume × route_cap.
+	var db := linear_to_db(clampf(loudness, 0.001, 1.0))
+	if headset:
+		db -= 4.0
+	player.volume_db = db
+	player.play()
+
 ## Begin a radio transmission: build the syllable plan from the text and arm the
 ## voice synth. Length scales with the message, so "Copy that" is a short blip
 ## and "Tank swap, give me five" runs longer — the rhythm tracks the words.

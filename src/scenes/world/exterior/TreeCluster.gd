@@ -100,8 +100,10 @@ func _build_tree(pos: Vector3, idx: int, trunk_mat: Material, canopy_mat: Materi
 	var scale_f : float = rng.randf_range(0.8, 1.25)
 	var yaw : float = rng.randf() * TAU
 	var basis := Basis(Vector3.UP, yaw).scaled(Vector3(scale_f, scale_f, scale_f))
-	# Group node so trunk + canopy share one transform.
-	var tree := Node3D.new()
+	# Group node — StaticBody3D so the trunk has WALK-THROUGH-BLOCKING collision
+	# without needing a separate Area3D. Previously plain Node3D → the player
+	# phased right through the trunk (collision audit caught this).
+	var tree := StaticBody3D.new()
 	tree.name = "Tree_%d" % idx
 	add_child(tree)
 	tree.transform = Transform3D(basis, pos)
@@ -126,3 +128,14 @@ func _build_tree(pos: Vector3, idx: int, trunk_mat: Material, canopy_mat: Materi
 	canopy.material_override = canopy_mat
 	tree.add_child(canopy)
 	canopy.position = Vector3(0.0, trunk_h + canopy_r * 0.6, 0.0)
+	# Collider — single capsule snug to the trunk so the player + vehicles
+	# bump it instead of phasing through. Radius bigger than the cylinder so
+	# the canopy bumps too (good enough for navmesh-blocking).
+	var col := CollisionShape3D.new()
+	col.name = "TreeCollision"
+	var cap := CapsuleShape3D.new()
+	cap.radius = max(0.18, canopy_r * 0.45)
+	cap.height = trunk_h + canopy_r * 1.2
+	col.shape = cap
+	col.position = Vector3(0.0, (trunk_h + canopy_r * 1.2) * 0.5, 0.0)
+	tree.add_child(col)

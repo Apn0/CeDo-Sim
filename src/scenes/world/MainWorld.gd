@@ -96,8 +96,18 @@ const PRE_SHIFT_SCHEDULE : Dictionary = {
 	"pascal":     {"arrives_at_s": -40.0 * 60.0, "pre_changed": true,  "dress_time_s": 0.0, "smokes_at_s": -33.0 * 60.0},
 	"vincent":    {"arrives_at_s": -40.0 * 60.0, "pre_changed": true,  "dress_time_s": 0.0},
 	"romain":     {"arrives_at_s": -25.0 * 60.0, "pre_changed": false, "dress_time_s": -1.0},
+	# PART C1 — Mohammed (permanent feeder, line 3A/3B) is a punctual but not
+	# early arriver: T-25 min with the standard 4-min uniform changeover. Without
+	# a schedule entry, PreShiftSequence skipped him and he'd stand at the feeder
+	# post even at 06:35 — the operator-reported "Mohammed/Peter still at post"
+	# half of the bug.
+	"mohammed":   {"arrives_at_s": -25.0 * 60.0, "pre_changed": false, "dress_time_s": -1.0},
 	"yassine":    {"arrives_at_s": -20.0 * 60.0, "pre_changed": false, "dress_time_s": -1.0, "rides_with": "player"},
 	"abdellilah": {"arrives_at_s": -17.0 * 60.0, "pre_changed": false, "dress_time_s":  8.0 * 60.0},
+	# PART C1 — Peter (production manager) shows up later but BEFORE the bell so
+	# he's in his office at start of shift. T-12 min, pre-changed (managers
+	# arrive in office clothes, no locker-room loop).
+	"peter":      {"arrives_at_s": -12.0 * 60.0, "pre_changed": true,  "dress_time_s": 0.0},
 	"kevin":      {"arrives_at_s": -10.0 * 60.0, "pre_changed": false, "dress_time_s": -1.0},
 }
 
@@ -425,51 +435,77 @@ func _spawn_plant_audio() -> void:
 ## The flashlight is still available for inspecting machinery up close, but
 ## you can now actually see the room without it.
 func _spawn_overhead_lights() -> void:
+	# Bay lights now live in the BUILDING's LOCAL frame: parented under the
+	# ShellMesh so they inherit its transform, gridded along the shell's local
+	# X/Z (long axis = local X), and clipped against the shell's LOCAL AABB
+	# rectangle. This fixes the "ceiling lights floating in the sky outside
+	# the building" complaint that surfaced when the shell carried any yaw —
+	# previously the grid stepped along world X/Z and the AABB-rectangle in/
+	# out test ran in world space too, so the kept cells covered a rotated
+	# bounding rectangle bigger than the building.
+	# Long axis of each TL bar is local +X (matches operator spec).
+	var shell := get_node_or_null("BuildingShell/ShellMesh") as MeshInstance3D
+	if shell == null:
+		shell = find_child("ShellMesh", true, false) as MeshInstance3D
+	var parent_node : Node3D = shell if shell != null else (self as Node3D)
 	var root := Node3D.new()
 	root.name = "OverheadLights"
-	add_child(root)
-	var floor_y : float = _floor_top_y()
-	var ceil_y : float = floor_y + 8.0           # ~8 m bay-light height
-	# Anchor on the BUILDING's centre, not the player's spawn — the PlayerSpawn
-	# marker in MainWorld.tscn is hardcoded at (-263, 133), but the building
-	# shell is at scene origin (its tscn translation shifts the RD-coord mesh
-	# down). With the lights anchored on the player they ended up over the bale
-	# yard / parking lot 250 m away from the actual factory. Now they grid out
-	# from the SHELL's XZ AABB centre and clip to that AABB so every kept
-	# fixture lands inside the building.
-	var info := _building_center_and_footprint()
-	var bcenter : Vector3 = info["center"]
-	var footprint : PackedVector2Array = info["footprint"]
-	var origin : Vector3 = bcenter
-	# Fall back to player spawn if the shell isn't resolvable (test scene,
-	# missing model) so a dev still sees lights.
-	if footprint.size() < 3:
-		push_warning("[MainWorld] No building footprint — bay lights anchored on player")
-		origin = _player_spawn_pos
-	var spacing : float = 18.0                    # tighter grid → more lights INSIDE the building
-	var n : int = 7                                # 7×7 = 49 candidates, clipped to footprint
+	parent_node.add_child(root)
+	# WORLD-cluster fix: parent the bay-light grid under a rotation node that
+	# carries `(world_yaw - shell_local_yaw)` so the row direction tracks the
+	# canonical bale-yard yaw even when shell.global_transform already bakes
+	# in a different yaw. Without this the grid was rotated by whatever the
+	# shell's mesh-local axes carry, which disagreed with the operator-drawn
+	# yards. When parent_node IS the shell, `shell_local_yaw` is the yaw
+	# encoded in shell.global_transform; subtracting it lands the grid back
+	# in the canonical frame.
+	var shell_local_yaw : float = 0.0
+	if shell != null:
+		shell_local_yaw = shell.global_transform.basis.get_euler().y
+	var orient_compensation : float = _world_yaw() - shell_local_yaw
+	root.rotation.y = orient_compensation
+	# Compute the LOCAL-frame footprint (rectangle in shell's local XZ).
+	var local_aabb : AABB
+	if shell != null and shell.mesh != null:
+		local_aabb = shell.mesh.get_aabb()
+	else:
+		# Fallback: 60×60 m box around player spawn so a dev still sees lights.
+		var p := _player_spawn_pos
+		local_aabb = AABB(Vector3(p.x - 30, 0, p.z - 30), Vector3(60, 8, 60))
+	# Hang the bar 0.4 m under the LOCAL roof so it reads as actually fixed
+	# to the ceiling. The shell's global_transform handles the world Y.
+	var ceil_y_local : float = local_aabb.position.y + local_aabb.size.y - 0.4
+	var x0 := local_aabb.position.x; var x1 := x0 + local_aabb.size.x
+	var z0 := local_aabb.position.z; var z1 := z0 + local_aabb.size.z
+	var local_footprint := PackedVector2Array([
+		Vector2(x0, z0), Vector2(x1, z0),
+		Vector2(x1, z1), Vector2(x0, z1)])
+	var spacing : float = 18.0
+	var n : int = 7
 	var n_kept : int = 0
 	var n_culled : int = 0
+	var cx := (x0 + x1) * 0.5
+	var cz := (z0 + z1) * 0.5
 	for ix in range(n):
 		for iz in range(n):
 			var fx : float = (float(ix) - float(n - 1) * 0.5) * spacing
 			var fz : float = (float(iz) - float(n - 1) * 0.5) * spacing
-			var px : float = origin.x + fx
-			var pz : float = origin.z + fz
-			if footprint.size() >= 3:
-				if not Geometry2D.is_point_in_polygon(Vector2(px, pz), footprint):
-					n_culled += 1
-					continue
-			_build_overhead_fixture(root, Vector3(px, ceil_y, pz))
+			var px : float = cx + fx
+			var pz : float = cz + fz
+			if not Geometry2D.is_point_in_polygon(Vector2(px, pz), local_footprint):
+				n_culled += 1
+				continue
+			# LOCAL position under the shell. Bar's long axis is local +X.
+			_build_overhead_fixture(root, Vector3(px, ceil_y_local, pz))
 			n_kept += 1
-	print("[MainWorld] Overhead bay lights: %d kept at (%.1f,%.1f), %d culled (outside building AABB)" \
-		% [n_kept, origin.x, origin.z, n_culled])
+	print("[MainWorld] Overhead TL bars: %d kept (shell-local %dx%d grid, %d culled outside footprint)" \
+		% [n_kept, n, n, n_culled])
 
 ## Look up the building shell via its known scene path AND compute both its
 ## XZ centre and a footprint polygon (AABB rectangle) in one pass. Used by
-## _spawn_overhead_lights — find_child("ShellMesh", true, false) returned
-## empty in the last test, so we use the explicit path BuildingShell/ShellMesh
-## which we know exists in MainWorld.tscn.
+## other helpers — find_child("ShellMesh", true, false) returned empty in
+## the last test, so we use the explicit path BuildingShell/ShellMesh which
+## we know exists in MainWorld.tscn.
 func _building_center_and_footprint() -> Dictionary:
 	var shell := get_node_or_null("BuildingShell/ShellMesh") as MeshInstance3D
 	if shell == null:
@@ -487,41 +523,55 @@ func _building_center_and_footprint() -> Dictionary:
 			Vector2(x1, z1), Vector2(x0, z1)])
 	}
 
+## Build a single TL-bar bay-light fixture (industrial fluorescent troffer).
+## Operator complaint: "ceiling lights are FLOODLIGHTS, not TL bars".
+## Solution: (1) longer thin emissive bar mesh shaped like a real 1.5 m
+## fluorescent tube; (2) dropped the OmniLight3D — its 25 m omni_range was
+## the "floodlight" behaviour AND bled light outside the shell when the
+## fixture sat near a wall. A single low-energy SpotLight3D aimed -Y keeps
+## the floor lit without leaking into the sky outside.
+## Long axis of the bar lies along local +X so a row of fixtures forms
+## parallel TL strips along the building's long wall.
 func _build_overhead_fixture(parent: Node3D, pos: Vector3) -> void:
 	var fixture := Node3D.new()
 	fixture.position = pos
 	parent.add_child(fixture)
-	# Visible white emissive tube (the bay-light bar itself).
+	# 1.5 m TL tube — longer + thinner than the old 1.6×0.10×0.32 box so it
+	# reads as a real fluorescent troffer rather than a panel floodlight.
 	var bar := MeshInstance3D.new()
 	var bb := BoxMesh.new()
-	bb.size = Vector3(1.6, 0.10, 0.32)
+	bb.size = Vector3(1.5, 0.08, 0.10)
 	bar.mesh = bb
 	var bar_mat := StandardMaterial3D.new()
 	bar_mat.albedo_color = Color(0.96, 0.97, 0.92)
 	bar_mat.emission_enabled = true
 	bar_mat.emission = Color(1.0, 0.95, 0.84)
-	bar_mat.emission_energy_multiplier = 2.5
+	bar_mat.emission_energy_multiplier = 3.0
 	bar.material_override = bar_mat
 	fixture.add_child(bar)
-	# Dark steel housing above the bar so you see it as a fixture, not a floating tube.
+	# Dark steel troffer housing above the tube — long, thin, slightly wider
+	# than the tube. Same long axis (local +X) as the bar.
 	var hous := MeshInstance3D.new()
 	var hb := BoxMesh.new()
-	hb.size = Vector3(1.8, 0.16, 0.46)
+	hb.size = Vector3(1.7, 0.10, 0.22)
 	hous.mesh = hb
-	hous.position = Vector3(0.0, 0.13, 0.0)
+	hous.position = Vector3(0.0, 0.10, 0.0)
 	var hous_mat := StandardMaterial3D.new()
 	hous_mat.albedo_color = Color(0.22, 0.22, 0.24)
 	hous_mat.metallic = 0.4
 	hous_mat.roughness = 0.6
 	hous.material_override = hous_mat
 	fixture.add_child(hous)
-	# The actual omnidirectional light.
-	var light := OmniLight3D.new()
-	light.light_energy = 2.2
-	light.omni_range = 25.0
-	light.light_color = Color(1.0, 0.96, 0.86)
-	light.position = Vector3(0.0, -0.05, 0.0)
-	fixture.add_child(light)
+	# Downward SpotLight3D INSTEAD of OmniLight3D so light stays inside the
+	# building. SpotLight3D fires along its local -Z, so rotate -90° on +X
+	# to aim straight down.
+	var spot := SpotLight3D.new()
+	spot.light_energy = 2.0
+	spot.spot_range = 14.0
+	spot.spot_angle = 55.0
+	spot.light_color = Color(1.0, 0.96, 0.86)
+	spot.transform = Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-90.0)), Vector3(0.0, -0.05, 0.0))
+	fixture.add_child(spot)
 
 # =============================================================================
 # PLAYER
@@ -572,7 +622,24 @@ func _set_body_render_layer_split(root: Node) -> void:
 func _player_apply_footwear(player_node: Node, on_shift: bool) -> void:
 	if player_node == null or not is_instance_valid(player_node):
 		return
+	# #186 — Swap the WHOLE outfit slot at the shift bell, not just footwear.
+	# When the player has a wardrobe with both wear_states defined, this picks
+	# up their off_duty clothes when the bell rings off and their on_duty PPE
+	# when it rings on. Legacy single-dict saves fall back to the old behaviour
+	# (just toggle footwear) so the prior contract still holds.
+	var gs := get_node_or_null("/root/GameState")
+	var display_name : String = String(player_node.get_meta("display_name", "Arno"))
 	var appearance : Dictionary = player_node.get_meta("appearance", {})
+	var picked_from_wardrobe : bool = false
+	if gs and "player_wardrobes" in gs:
+		var pw = gs.get("player_wardrobes")
+		if pw is Dictionary and pw.has(display_name):
+			var entry = pw[display_name]
+			var ws := "on_duty" if on_shift else "off_duty"
+			if entry is Dictionary and entry.has(ws):
+				appearance = (entry[ws] as Dictionary).duplicate(true)
+				picked_from_wardrobe = true
+	appearance["wear_state"] = "on_duty" if on_shift else "off_duty"
 	appearance["footwear"] = "work_boots" if on_shift else "shoes"
 	player_node.set_meta("appearance", appearance)
 	# Humanoid.rebuild_appearance swaps the body subtree without re-spawning the
@@ -580,13 +647,16 @@ func _player_apply_footwear(player_node: Node, on_shift: bool) -> void:
 	var humanoid_script = load("res://src/scenes/world/Humanoid.gd")
 	if humanoid_script == null or not humanoid_script.has_method("rebuild_appearance"):
 		return
-	var shirt : Color = Color(0.96, 0.45, 0.12)
+	var shirt : Color = Color(0.95, 0.92, 0.10) if on_shift else Color(0.40, 0.45, 0.55)
 	if appearance.has("shirt_color"):
 		var sc = appearance["shirt_color"]
 		if sc is Color: shirt = sc
 		elif sc is Dictionary and sc.has("r"):
 			shirt = Color(float(sc["r"]), float(sc["g"]), float(sc["b"]))
 	humanoid_script.rebuild_appearance(player_node, shirt, 0, appearance)
+	if picked_from_wardrobe:
+		# Best-effort log so a verification run can confirm the swap landed.
+		print("[MainWorld] Player outfit swapped to %s (wardrobe slot)" % ("on_duty" if on_shift else "off_duty"))
 	# Re-tag freshly-built MeshInstances onto the body / head render layers
 	# (#200 — body visible to FP cam, head hidden from FP only).
 	var body : Node = player_node.find_child("PlayerBody", true, false)
@@ -684,7 +754,18 @@ func _spawn_player() -> void:
 		return
 
 	player = CharacterBody3D.new()
+	# #186 — Node name stays "Player" because dozens of systems (Gate.gd,
+	# Door.gd, BatteryStation.gd, vehicle enter-areas, ExtruderMachine etc.)
+	# look up the player by that exact string. The DISPLAY name (real operator
+	# name like "Arno") lives on a meta key so any UI that wants to show it
+	# reads from one place.
 	player.name = "Player"
+	var _display_name : String = "Arno"
+	if game_state and "player_name" in game_state:
+		var _pn = game_state.get("player_name")
+		if _pn is String and String(_pn) != "":
+			_display_name = String(_pn)
+	player.set_meta("display_name", _display_name)
 	player.set_script(script)
 
 	var head := Node3D.new()
@@ -716,12 +797,24 @@ func _spawn_player() -> void:
 	col.shape  = cap
 	player.add_child(col)
 
-	# #152 — Visible Humanoid body so other cameras (wardrobe mirror, future
-	# third-person) see the operator wearing what they picked in #153. Loaded
-	# from GameState.player_appearance (defaults = orange hi-vis + dark blue
-	# pants, short hair, no beard, no cap — fresh-hire look).
-	var appearance : Dictionary = game_state.player_appearance if game_state else {}
-	var shirt : Color = Color(0.96, 0.45, 0.12)   # hi-vis orange default
+	# #152 / #186 — Visible Humanoid body. The customizer now saves TWO outfits
+	# per character (on_duty + off_duty); MainWorld picks the active one based
+	# on ShiftClock.shift_active so PPE shows up at the bell and personal
+	# clothes show up off-shift. Legacy saves with only the flat
+	# `player_appearance` dict still work — used as the off_duty fallback.
+	var _on_shift_init : bool = shift_clock != null and bool(shift_clock.get("shift_active"))
+	var _wear_state_init : String = "on_duty" if _on_shift_init else "off_duty"
+	var appearance : Dictionary = {}
+	if game_state:
+		var pw = game_state.get("player_wardrobes") if "player_wardrobes" in game_state else null
+		if pw is Dictionary:
+			var entry = pw.get(_display_name, {})
+			if entry is Dictionary:
+				appearance = (entry.get(_wear_state_init, entry.get("on_duty", {})) as Dictionary).duplicate(true)
+		if appearance.is_empty():
+			appearance = (game_state.player_appearance as Dictionary).duplicate(true)
+	appearance["wear_state"] = _wear_state_init
+	var shirt : Color = Color(0.95, 0.92, 0.10)   # hi-vis YELLOW default (operator spec)
 	if appearance.has("shirt_color"):
 		var sc = appearance["shirt_color"]
 		if sc is Color: shirt = sc
@@ -729,20 +822,27 @@ func _spawn_player() -> void:
 			shirt = Color(float(sc["r"]), float(sc["g"]), float(sc["b"]))
 	var humanoid_script = load("res://src/scenes/world/Humanoid.gd")
 	if humanoid_script:
-		# T8 — auto-switch player footwear by shift state. On-shift = work_boots,
-		# off-shift = shoes. The operator's customizer choice still wins for the
-		# OTHER appearance fields (shirt, hair, beard, cap); only footwear is
-		# overridden so the player matches the NPC behaviour (PreShiftSequence
-		# swaps NPCs at the bell — the player now follows the same rule).
-		var on_shift : bool = shift_clock != null and bool(shift_clock.get("shift_active"))
-		appearance["footwear"] = "work_boots" if on_shift else "shoes"
+		# T8 — auto-switch player footwear by shift state. Same rule survives
+		# the wardrobe upgrade: PPE is now wear-state-driven, but footwear stays
+		# explicit so an operator who hasn't dialed in their off-duty look still
+		# walks in wearing shoes.
+		appearance["footwear"] = "work_boots" if _on_shift_init else "shoes"
 		var body : Node3D = humanoid_script.build(shirt, 0, appearance)
 		body.name = "PlayerBody"
-		# Tag every MeshInstance3D in the body subtree onto render layer 2
-		# (LAYER 1 = world, LAYER 2 = self) so the first-person camera ignores
-		# it but the wardrobe mirror sees it.
-		_set_body_render_layer(body, 1 << 1)
+		# #200 — Split-tag: body parts (neck + shoulders + arms + torso + legs)
+		# go on layer 2 (visible to the FP camera so the operator can look down
+		# and see themselves); head parts (head, ears, eyes, hair, cap) go on
+		# layer 3 (hidden from the FP camera only — it would otherwise poke
+		# up into the FOV). Wardrobe mirror & third-person cams see both.
+		# add_child FIRST so the recursive ancestor-walk in _set_body_render_layer_split
+		# can find "PlayerBody" as the root sentinel.
 		player.add_child(body)
+		# Humanoid.build() authors the rig with the visible face on local +Z (see
+		# Humanoid.gd:200 docstring). PlayerController treats -basis.z as forward
+		# (Godot canonical), so the body must be yawed 180° here to put its face on
+		# the player's local -Z. Without this, W walks tail-first.
+		body.rotation.y = PI
+		_set_body_render_layer_split(body)
 		# Auto-switch when the shift bell rings (or ends). Stored on the player
 		# so a later customizer reload reads the freshly-applied value.
 		player.set_meta("appearance", appearance)
@@ -813,29 +913,97 @@ func _on_floor(pos: Vector3, lift: float = 0.0) -> Vector3:
 	return Vector3(pos.x, _floor_top_y() + lift, pos.z)
 
 # =============================================================================
-# BUILDING YAW — canonical rotation convention (#5xx: exterior orientation)
+# WORLD YAW — canonical rotation convention (WORLD cluster fix)
 # =============================================================================
-# Cached principal yaw of the building shell (top-down longest-edge angle).
-# Computed once, reused by every exterior subsystem that wraps the building
-# (fence, parking, roads, floodlights, ceiling lights, trees, power poles,
-# neighbour buildings, street signs).
+# CANONICAL: the bale yards drive every exterior orientation. Their yaw is
+# derived from the OPERATOR-DRAWN polygon's longest edge in WORLD space —
+# `atan2(u_axis.x, u_axis.z)` after `_layout_to_scene()` (see
+# `_spawn_bale_yards_from_layout`, lines ~1411-1469). That's the rotation the
+# operator can SEE in WorldSetup against the satellite overlay; it is the
+# ground truth.
 #
-# Convention copied from `_spawn_bale_yards_from_layout` (lines ~1234-1292):
-#   walk the polygon corners, find the LONGEST EDGE, then
-#   yaw = atan2(u_axis.x, u_axis.z) from that edge.
-#
-# Every exterior helper that previously used world-axis Vector3 offsets now
-# rotates that offset through `Basis(Vector3.UP, _building_yaw())` before
-# adding it to the anchor. When the building shell is axis-aligned the yaw
-# is 0 (or ±90°) and the helpers degenerate to the old behaviour — so this
-# fix is a no-op for axis-aligned shells but correctly wraps a rotated one.
+# Every other exterior subsystem (fence, parking, road network, road markings,
+# crosswalk, sidewalk, trees, power poles, street signs, transformer, neighbour
+# buildings, overhead bay lights) now wraps that same yaw through
+# `Basis(Vector3.UP, _world_yaw())` before adding any local-frame offset to
+# the anchor. The old `_building_yaw()` helper (ShellMesh-AABB long-edge in
+# shell-local space) is kept ONLY as the fallback when no bale yards exist
+# in the layout — the operator's perception drives the canonical yaw, the
+# mesh AABB is the last resort.
+var _world_yaw_cache : float = NAN
+
+## Bale-yard-derived principal yaw — the canonical rotation for every
+## exterior subsystem. Tracks the building's true world orientation as the
+## operator perceives it.
+func _world_yaw() -> float:
+	if not is_nan(_world_yaw_cache):
+		return _world_yaw_cache
+	_world_yaw_cache = _compute_world_yaw()
+	print("[MainWorld] world_yaw = %.1f deg (canonical / bale-yard-derived)" \
+		% rad_to_deg(_world_yaw_cache))
+	return _world_yaw_cache
+
+## Walk the first authoritative bale-yard polygon, find its longest edge,
+## return `atan2(u.x, u.z)`. The yaw lives in the LAYOUT FRAME (not the scene
+## frame): the operator drew the rectangle in WorldSetup's north-up XZ plane,
+## and that drawn orientation IS the yaw the building should adopt. Falls back
+## to the ShellMesh-AABB helper when no yards are saved (sandbox / fresh setup).
+##
+## CRITICAL — recursion break: `_layout_to_scene()` rotates by `_world_yaw()`,
+## which is what THIS function returns. Routing yard corners through
+## `_layout_to_scene` before measuring would call back into here (cache is NaN
+## until we return) → stack overflow. We work on RAW corners instead: the
+## anchor offset cancels in (B - A), and rotating both endpoints by the same
+## basis only rotates the edge — but we WANT the layout-frame edge direction
+## here, so skipping the rotation IS the correct measurement, not a workaround.
+func _compute_world_yaw() -> float:
+	if WorldLayout.bale_yards.is_empty():
+		return _compute_building_yaw()
+	for y in WorldLayout.bale_yards:
+		var data : Dictionary = y
+		var raw_corners : Array = data.get("corners", [])
+		if raw_corners.size() < 3:
+			continue
+		# Sanity-check each corner, flatten Y, sort CCW. NO `_layout_to_scene`
+		# — see recursion note above.
+		var corners : Array = []
+		var corrupt := false
+		for c in raw_corners:
+			if not (c is Vector3) or not _layout_rel_sane(c):
+				corrupt = true
+				break
+			corners.append(Vector3((c as Vector3).x, 0.0, (c as Vector3).z))
+		if corrupt:
+			continue
+		corners = _sort_corners_ccw(corners)
+		var le_a : Vector3 = corners[0]; var le_b : Vector3 = corners[0]
+		var le_len_sq : float = 0.0
+		for i in corners.size():
+			var ca : Vector3 = corners[i]
+			var cb : Vector3 = corners[(i + 1) % corners.size()]
+			var dd : float = (cb - ca).length_squared()
+			if dd > le_len_sq:
+				le_len_sq = dd; le_a = ca; le_b = cb
+		var u_axis : Vector3 = le_b - le_a
+		u_axis.y = 0.0
+		if u_axis.length_squared() < 0.001:
+			continue
+		u_axis = u_axis.normalized()
+		if not u_axis.is_finite():
+			continue
+		return atan2(u_axis.x, u_axis.z)
+	# Every yard polygon was degenerate or corrupt — fall back.
+	return _compute_building_yaw()
+
+# Legacy ShellMesh-AABB helper. Now used ONLY as the fallback path inside
+# `_compute_world_yaw()` when no bale yards exist. Direct callers were
+# repointed at `_world_yaw()` as part of the WORLD-cluster fix.
 var _building_yaw_cache : float = NAN
 
 func _building_yaw() -> float:
 	if not is_nan(_building_yaw_cache):
 		return _building_yaw_cache
 	_building_yaw_cache = _compute_building_yaw()
-	print("[MainWorld] building_yaw = %.1f deg" % rad_to_deg(_building_yaw_cache))
 	return _building_yaw_cache
 
 ## Derive the building's principal yaw from the ShellMesh AABB longest top-down
@@ -870,11 +1038,14 @@ func _compute_building_yaw() -> float:
 	# local +X offset by this yaw aligns with the building's long edge.
 	return atan2(u_axis.x, u_axis.z)
 
-## Rotate a local-frame offset vector through the building's principal yaw and
-## anchor it onto `ga`. Single helper used everywhere fence / parking / roads /
-## lights / props previously added a raw Vector3 to the spawn anchor.
+## Rotate a local-frame offset vector through the CANONICAL world yaw (the
+## bale-yard-derived `_world_yaw()`) and anchor it onto `ga`. Single helper
+## used everywhere fence / parking / roads / lights / props add a local-frame
+## Vector3 to the spawn anchor. Was previously keyed off `_building_yaw()`
+## which disagreed with the operator-drawn bale yards; repointed at
+## `_world_yaw()` as part of the WORLD-cluster fix.
 func _bo(ga: Vector3, offset: Vector3) -> Vector3:
-	return ga + Basis(Vector3.UP, _building_yaw()) * offset
+	return ga + Basis(Vector3.UP, _world_yaw()) * offset
 
 # =============================================================================
 # NPCs
@@ -932,14 +1103,20 @@ func _spawn_npcs() -> void:
 		# Blocky humanoid body (feet/legs/torso/arms/hands/head/face/hair) instead
 		# of the old capsule pill. Its vertical centre sits at the node origin so
 		# it lines up with the CapsuleShape3D collider below.
-		var npc_ap : Dictionary = data.get("appearance", {}).duplicate()
+		# #186 — If the operator has customized this NPC, REPLACE the
+		# NPC_DATA preset wholesale. The old merge-over-preset path silently
+		# leaked default keys (cap, hair_under_cap, moustache, etc.) back in
+		# whenever the operator hadn't explicitly toggled them off in the
+		# customizer, so unsetting a flag was impossible. CharacterCustomizer
+		# now guarantees a full appearance dict via _ensure_defaults() before
+		# save, so the REPLACE is safe.
+		var npc_ap : Dictionary = data.get("appearance", {}).duplicate(true)
 		if game_state and "npc_appearances" in game_state:
 			var custom_npc_ap = game_state.get("npc_appearances")
 			if custom_npc_ap is Dictionary and custom_npc_ap.has(npc_id):
 				var saved_ap = custom_npc_ap[npc_id]
-				if saved_ap is Dictionary:
-					for k in saved_ap:
-						npc_ap[k] = saved_ap[k]
+				if saved_ap is Dictionary and not (saved_ap as Dictionary).is_empty():
+					npc_ap = (saved_ap as Dictionary).duplicate(true)
 		var body : Node3D = humanoid_script.build(data["color"], npc_variant, npc_ap)
 		body.name = "HumanoidBody"           # tagged so NPC._physics_process can scale it for crouch / prone (#146)
 		npc_variant += 1
@@ -1138,18 +1315,73 @@ func _layout_rel_sane(rel: Vector3) -> bool:
 	return Vector2(rel.x, rel.z).length() < 5000.0
 
 # Surfaced on the PerfHud overlay so the layout mapping can be sanity-checked.
-var layout_conv_summary : String = "Layout: markers placed at literal WorldSetup coordinates (no rotation, no anchor)"
+# Updated by `_layout_to_scene()` on its first call so the string always reflects
+# the actual yaw+anchor that ran (not stale boilerplate). PerfHud.gd:88 reads this
+# verbatim, so we keep the variable NAME stable and only change its contents.
+var layout_conv_summary : String = "Layout: no layout file — vanilla spawn"
+var _layout_summary_logged : bool = false
 
-## Map a saved marker to its scene position. Markers are the EXACT Godot world
-## coordinates the user picked in WorldSetup, on the SAME building shell MainWorld
-## loads — so they are used DIRECTLY. floor_plan_rot_deg is ONLY a display rotation
-## for the satellite/PNG overlay in the editor; it must NOT transform picked
-## coordinates. (Earlier builds rotated by it and anchored to the live player,
-## which scrambled the layout and made it drift to the last save spot.) RD-scale
-## player_spawn is already localized to ~0 on load; the small building-frame
-## markers pass through untouched, so this passthrough is correct for both.
+## Building-anchor for layout-relative markers — the player's ACTUAL spawn this
+## run (set in `_spawn_player`, MainWorld.gd:862), pinned to the operating floor.
+## This is the rotation pivot AND translation origin for every WorldSetup marker
+## (vehicles / NPC posts / line starts / yard corners / build placements).
+##
+## Why _player_spawn_pos and not _get_factory_anchor():
+##  • WorldSetup.gd:1142-1145 saves player_spawn and factory_center as INDEPENDENT
+##    markers (decoupled since #34), and WorldLayout._load (autoload/WorldLayout.gd
+##    lines 227-253) re-centres EVERY marker by subtracting the player_spawn shift
+##    — so the saved offsets are player_spawn-relative, not factory_center-relative.
+##  • The NPC anchor (line 1062) and road/parking anchor (line 2430) both use
+##    `_player_spawn_pos` already; using the same anchor here keeps every
+##    layout-derived subsystem on ONE pivot.
+func _layout_anchor_xz() -> Vector3:
+	if _player_spawn_pos != Vector3.ZERO:
+		return _on_floor(_player_spawn_pos)
+	# Pre-_spawn_player fallback (rare — only hit if a layout-consumer fires before
+	# the player is built). Mirrors the chain in _get_factory_anchor().
+	return _get_factory_anchor()
+
+## Rotate a layout-frame XZ offset through the canonical world yaw (no anchor add).
+## Internal helper used by `_layout_to_scene` to keep the rotate step OUTSIDE the
+## `_world_yaw()` derivation path — and used by `_compute_world_yaw()` would
+## RE-ENTER `_layout_to_scene` here (yard yaw is computed FROM yard corners),
+## causing infinite recursion. `_compute_world_yaw()` therefore walks RAW corners
+## without calling either helper (the edge direction is rotation-equivariant —
+## anchor cancels, and the rotation is exactly what we're trying to derive).
+func _layout_rotated_offset(rel: Vector3) -> Vector3:
+	var b := Basis(Vector3.UP, _world_yaw())
+	var r : Vector3 = b * Vector3(rel.x, 0.0, rel.z)
+	return Vector3(r.x, 0.0, r.z)
+
+## Map a saved marker (player_spawn-relative offset in WorldSetup's north-up frame)
+## to its scene position. Two-step transform — the SAME convention every other
+## layout-derived placement uses (`_bo()` at line 1040-1041 for roads/parking,
+## NPC anchor at line 1062, parking-arrival code further down):
+##   1. Rotate the XZ offset around +Y by `_world_yaw()` (the canonical bale-yard-
+##      derived rotation that aligns the operator's drawn polygons with the
+##      building shell).
+##   2. Translate by the layout anchor (`_layout_anchor_xz()` → player_spawn on
+##      the operating floor).
+## Forward = -Z, right = +X, up = +Y; rotation is around +Y. Y component is
+## discarded (markers were placed on a y=0 click plane in WorldSetup); the caller
+## passes the result through `_on_floor()` to pin it to the operating floor.
+##
+## When no layout is loaded, callers fall back to hardcoded local-frame defaults
+## upstream (`_spawn_vehicle_instances` at line 1280-1285, etc.), so the path is
+## bypassed entirely — the rotation+anchor here only ever runs against a saved
+## layout the operator deliberately authored.
 func _layout_to_scene(rel: Vector3) -> Vector3:
-	return Vector3(rel.x, 0.0, rel.z)
+	var a : Vector3 = _layout_anchor_xz()
+	var r : Vector3 = _layout_rotated_offset(rel)
+	var out := Vector3(a.x + r.x, 0.0, a.z + r.z)
+	# Refresh the PerfHud one-liner so the overlay reports the actual transform
+	# that just ran (and only once per run — `_world_yaw()` is cached).
+	if not _layout_summary_logged:
+		var yaw_deg : float = rad_to_deg(_world_yaw())
+		layout_conv_summary = "Layout: markers rotated by %.1f deg + anchored at (%.1f, %.1f)" \
+			% [yaw_deg, a.x, a.z]
+		_layout_summary_logged = true
+	return out
 
 func _spawn_forklift() -> void:
 	_spawn_vehicle_instances("forklift", "res://src/scenes/vehicles/Forklift.tscn",
@@ -2259,7 +2491,9 @@ func _spawn_road_and_parking() -> void:
 	# yard rotation convention; see `_building_yaw`.)
 	var anchor : Vector3 = _player_spawn_pos
 	var ground_y : float = anchor.y - 1.0      # capsule centre - half-height
-	var by : float = _building_yaw()
+	# Canonical yaw — adopts the bale-yard convention so road + parking +
+	# fence + props + ceiling lights ALL agree with the operator-drawn yards.
+	var by : float = _world_yaw()
 	var basis_y := Basis(Vector3.UP, by)
 	# Wide exterior ground plane around the anchor so the player can walk
 	# outside the building without falling into void.
@@ -2374,7 +2608,7 @@ func _spawn_perimeter_fence(anchor: Vector3, ground_y: float) -> void:
 	# building's principal yaw so the fence wraps the shell instead of running
 	# along world ±X / ±Z. (Adopts the bale-yard rotation convention.)
 	var ga := Vector3(anchor.x, ground_y, anchor.z)
-	var by : float = _building_yaw()
+	var by : float = _world_yaw()
 	var fence_script := preload("res://src/scenes/world/exterior/ChainLinkFence.gd")
 	var perimeters : Array = [
 		{"name": "PerimeterFence_North",     "waypoints": [_bo(ga, Vector3(-30.0, 0.0,  38.0)), _bo(ga, Vector3( 40.0, 0.0,  38.0))]},
@@ -2409,7 +2643,7 @@ func _spawn_exterior_props(anchor: Vector3, ground_y: float) -> void:
 	# sidewalk / power line / trees / neighbour buildings wrap a yawed shell
 	# correctly. (Adopts the bale-yard rotation convention.)
 	var ga := Vector3(anchor.x, ground_y, anchor.z)
-	var by : float = _building_yaw()
+	var by : float = _world_yaw()
 	# Sidewalk hugs the local-west side of De Asselen Kuil, parallel to the road.
 	var sidewalk = preload("res://src/scenes/world/exterior/Sidewalk.gd").new()
 	sidewalk.name = "Sidewalk_DeAsselenKuil"
@@ -2472,6 +2706,13 @@ func _spawn_exterior_props(anchor: Vector3, ground_y: float) -> void:
 		pp.name = "PowerPole_%d" % i
 		add_child(pp)
 		pp.global_position = pole_positions[i]
+		# Apply the bale-yard world yaw so the pole's local +X (crossarm axis)
+		# stays aligned with the rotated world frame. Without this, _bo() moves
+		# the position into the rotated frame but the crossarm + insulator stubs
+		# (built along local +X in PowerPole._build_crossarm) remained world-X
+		# aligned, so wires couldn't emerge from the insulator tips at the
+		# correct angle along the run. Pinned by the direction-convention audit.
+		pp.rotation.y = _world_yaw()
 		pp.build_pole()
 		poles.append(pp)
 	for i in poles.size() - 1:
@@ -2512,40 +2753,51 @@ func _spawn_exterior_props(anchor: Vector3, ground_y: float) -> void:
 	print("[MainWorld] Exterior props: sidewalk + crosswalk + %d markings + %d tree clusters + %d power poles + transformer + 2 neighbour buildings" \
 		% [5, tree_offsets.size(), pole_positions.size()])
 
-## Wall-mounted floodlights aimed outward from the south + west faces of the
-## production hall so the exterior yard reads at dusk/night. Each Floodlight
-## tilts down by `tilt_down_deg`; we set yaw so the cone points away from the
-## wall it hangs on.
+## TL-bar emissive boxes parented INSIDE the building shell — replaces the
+## old wall-mounted exterior Floodlight cones. Operator notes the building
+## is lit by overhead fluorescent tubes, not by floodlights aimed at the
+## walls; the floodlights also rotated by `_building_yaw()` which disagreed
+## with the canonical bale-yard yaw (WORLD-cluster fix).
+##
+## Each TL-bar is an emissive 1.5×0.08×0.10 m box (no light source — the
+## SpotLight3Ds from `_spawn_overhead_lights` already supply the actual
+## illumination). The bars hang from the ceiling along the building's local
+## south + west wall lines so the inside of the shell reads as an industrial
+## fluorescent hall at dusk/night. They're parented under the ShellMesh,
+## inheriting its transform, and oriented along local +X — but the GRID step
+## is rotated by `(world_yaw - shell_local_yaw)` so the row direction tracks
+## the canonical yaw the bale yards drive.
 func _spawn_floodlights(anchor: Vector3) -> void:
-	# Mount positions are BUILDING-LOCAL offsets from the spawn anchor, and
-	# yaw values are local-frame ("south face" = pointing along local -Z).
-	# Both the position offset AND the yaw are rotated by the building's
-	# principal yaw, so the floodlight lands flush with the right wall and
-	# its cone points away from THAT wall — not at some bit of sky.
-	# (Adopts the bale-yard rotation convention.)
-	var by : float = _building_yaw()
-	var basis_y := Basis(Vector3.UP, by)
-	var fl_script := preload("res://src/scenes/world/exterior/Floodlight.gd")
-	# (local_offset_from_anchor in BUILDING frame, local_yaw_deg)
-	var mounts : Array = [
-		{"pos": Vector3(-5.0, 5.0,  5.0), "yaw": 180.0},  # local-south face, west side
-		{"pos": Vector3( 5.0, 5.0,  5.0), "yaw": 180.0},  # local-south face, east side
-		{"pos": Vector3(15.0, 5.0,  5.0), "yaw": 180.0},  # local-south face, far east
-		{"pos": Vector3(-8.0, 5.0, 15.0), "yaw":  90.0},  # local-west face, mid
+	var shell := get_node_or_null("BuildingShell/ShellMesh") as MeshInstance3D
+	if shell == null:
+		shell = find_child("ShellMesh", true, false) as MeshInstance3D
+	if shell == null:
+		print("[MainWorld] Floodlights skipped: no ShellMesh found")
+		return
+	var root := Node3D.new()
+	root.name = "InteriorTLBars"
+	shell.add_child(root)
+	# Compute shell-local ceiling height and footprint (same pattern as
+	# `_spawn_overhead_lights`).
+	var local_aabb : AABB = shell.mesh.get_aabb() if shell.mesh != null else AABB(Vector3.ZERO, Vector3(40, 8, 40))
+	var ceil_y_local : float = local_aabb.position.y + local_aabb.size.y - 0.45
+	var x0 := local_aabb.position.x; var x1 := x0 + local_aabb.size.x
+	var z0 := local_aabb.position.z; var z1 := z0 + local_aabb.size.z
+	# Wall-line TL bars: two rows along the local south wall (interior face)
+	# and one row along the local west wall, so the perimeter of the hall
+	# reads brightly at night. Positions are in shell-LOCAL frame.
+	var inset : float = 1.2
+	var bar_offsets : Array = [
+		Vector3(x0 + inset, ceil_y_local, z0 + inset),
+		Vector3((x0 + x1) * 0.5, ceil_y_local, z0 + inset),
+		Vector3(x1 - inset, ceil_y_local, z0 + inset),
+		Vector3(x0 + inset, ceil_y_local, (z0 + z1) * 0.5),
 	]
-	for i in mounts.size():
-		var m : Dictionary = mounts[i]
-		var fl = fl_script.new()
-		fl.name = "Floodlight_%d" % i
-		# setup() BEFORE add_child so _ready uses the requested tilt (audit caught:
-		# setup() only mutates tilt_down_deg; _ready had already built with the
-		# default by the time setup() ran post-add_child).
-		fl.setup(25.0)
-		add_child(fl)
-		fl.global_position = anchor + basis_y * (m["pos"] as Vector3)
-		fl.rotation.y = deg_to_rad(float(m["yaw"])) + by
-	print("[MainWorld] Floodlights: %d wall-mounted (south + west building faces, yaw %.1f deg)" \
-		% [mounts.size(), rad_to_deg(by)])
+	for i in bar_offsets.size():
+		_build_overhead_fixture(root, bar_offsets[i])
+		root.get_child(i).name = "InteriorTLBar_%d" % i
+	print("[MainWorld] Interior TL bars: %d emissive boxes parented under ShellMesh (replaces wall floodlights)" \
+		% bar_offsets.size())
 
 ## #145 Phase 1 — Bake a NavigationRegion3D from the interior floor + the
 ## exterior ground plane. NPCs route through this region instead of walking
@@ -2575,7 +2827,11 @@ func _spawn_navigation_region() -> void:
 	nm.cell_height = 0.60
 	nm.agent_radius = 0.40
 	nm.agent_height = 1.80
-	nm.agent_max_climb = 0.30                   # step over short curbs
+	# Path routing climb cap — matches NPC.CLIMB_MAX_DY (1.4 m, same as the player
+	# vault). Below 0.30 the navmesh bake produced flat-only paths and NPCs got
+	# stuck on every bale-yard kerb; above 1.4 they'd try to scale obstacles the
+	# vault can't actually complete. Keeps NPCs in lock-step with the vault verb.
+	nm.agent_max_climb = 1.40
 	nm.agent_max_slope = 45.0
 	# Pull source geometry from MeshInstance3Ds in the NAVMESH_GROUP group, scene-wide.
 	nm.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_MESH_INSTANCES
@@ -2681,18 +2937,40 @@ func _spawn_car_in_bay(scene_path: String, side: int, idx: int, label: String, n
 ## Pascal's Ford Ka rides lower than Abdellilah's — squish the imported GLB
 ## body subtree on Y only. Wheels live under VehicleWheel3D nodes (siblings of
 ## the body), so they stay perfectly round.
+##
+## CRITICAL: target the IMPORTED MODEL ROOT (child of FrontAxisCorrection), not
+## the wrap itself. Car.load_model() inserts a FrontAxisCorrection Node3D with
+## rotation.y = PI (Car.gd:252-257) so the asset's visible front lands on -Z.
+## Writing a non-uniform scale to that wrap reads its current Node3D.scale via
+## basis decomposition — with a 180° yaw baked in, the decomposition can encode
+## the rotation as negative X/Z scale and the requested Y=0.85 ends up smeared
+## onto X/Z when re-composed, tipping the car onto its side. Instead, drill
+## into the wrap's child (the actual GLB root) and apply the squish there in
+## its OWN local frame using Transform3D.basis.scaled() — which acts as a pure
+## column-scaling of the basis, with no decomposition step.
 func _apply_pascal_body_squish(car: Node3D) -> void:
 	if car == null or not is_instance_valid(car):
 		return
-	for child in car.get_children():
-		if child is VehicleWheel3D:
-			continue
-		if child is Camera3D or child is Area3D or child is CollisionShape3D:
-			continue
-		if child is Node3D:
-			var n : Node3D = child
-			# Body / imported-GLB root: Y-shrink 15 %.
-			n.scale = Vector3(n.scale.x, n.scale.y * 0.85, n.scale.z)
+	# Target only the FrontAxisCorrection wrap by name. If load_model() didn't
+	# create one (asset not imported, or subclass opted out via
+	# _model_front_axis_correction_deg = 0), warn once and skip.
+	var wrap := car.get_node_or_null("FrontAxisCorrection") as Node3D
+	if wrap == null:
+		push_warning("[MainWorld] Pascal squish: FrontAxisCorrection wrap missing on %s — skipped (model not imported?)" % car.name)
+		return
+	# Apply Y-shrink to the IMPORTED GLB root (the wrap's only child), in ITS
+	# local frame, so the 0.85 factor hits the asset's true vertical axis
+	# regardless of the wrap's 180° yaw. Use Transform3D.basis.scaled()
+	# directly to bypass the Node3D.scale decomposition pathway, which can
+	# encode 180°-Y as negative X/Z scale and smear the non-uniform factor
+	# onto the wrong axis.
+	for body in wrap.get_children():
+		if body is Node3D:
+			var n : Node3D = body
+			var t : Transform3D = n.transform
+			t.basis = t.basis.scaled(Vector3(1.0, 0.85, 1.0))
+			n.transform = t
+			break  # only the top-level imported model root
 
 ## #166 Phase B — install the pre-shift arrival sequence if (and only if) we
 ## are currently in the pre-shift window. Resumed mid-shift saves skip this
@@ -2700,11 +2978,17 @@ func _apply_pascal_body_squish(car: Node3D) -> void:
 ## Idempotent: a re-call (e.g. after a time-jump back into pre-shift) reuses
 ## the existing PreShiftSequence node by calling its recompute_for() and
 ## returning, instead of spawning a second copy.
-func _spawn_pre_shift_sequence() -> void:
+func _spawn_pre_shift_sequence(force: bool = false) -> void:
 	if shift_clock == null:
 		return
-	if not shift_clock.has_method("is_pre_shift") or not bool(shift_clock.is_pre_shift()):
-		return
+	# `force` skips the is_pre_shift gate — the time-jump path already knows
+	# new_elapsed < 0 (the gate is a tautology there) and the implicit coupling
+	# has bitten us on resumed-past-bell saves. The _ready() boot-time caller
+	# still uses the gate (force=false) because the clock hasn't been started
+	# at that point.
+	if not force:
+		if not shift_clock.has_method("is_pre_shift") or not bool(shift_clock.is_pre_shift()):
+			return
 	if npcs.is_empty():
 		return
 	var existing := get_node_or_null("PreShiftSequence")
@@ -2751,11 +3035,20 @@ func _spawn_player_swift_on_road() -> Node3D:
 	# Park at the FAR south end of De Asselen Kuil (the new ~440 m south
 	# waypoint). Gives the operator a long clear approach northbound before
 	# the east turn into the lot — what was missing was distance.
+	# Position offset is expressed in BALE-YARD-CONVENTION local space
+	# (canonical +Z = "north" along the road) and then rotated into world
+	# coordinates by _world_yaw() so the Swift, the staff lot, and the
+	# bale yards all share the same yaw convention. Matches StaffParking's
+	# rotation.y = _world_yaw() at MainWorld.gd:2443.
 	var anchor : Vector3 = _player_spawn_pos
-	var pos := Vector3(anchor.x - 42.0, anchor.y - 1.0 + 0.3, anchor.z - 435.0)
-	swift.global_position = pos
-	# Face north (+Z) — driver looks UP De Asselen Kuil toward the parking turn.
-	swift.rotation.y = 0.0
+	var by : float = _world_yaw()
+	var rot := Basis(Vector3.UP, by)
+	var local_offset := Vector3(-42.0, -1.0 + 0.3, -435.0)
+	swift.global_position = anchor + rot * local_offset
+	# Face "north" in the bale-yard convention — driver looks UP De Asselen
+	# Kuil toward the parking turn. Apply world_yaw so the heading rotates
+	# with the rest of the world.
+	swift.rotation.y = by
 	return swift
 
 ## Wide grass plane around the spawn anchor so the parking + road don't float
@@ -2840,24 +3133,39 @@ func _spawn_parking_lamps(parking_node: Node3D, _ground_y: float) -> void:
 
 ## Small white street-name sign on a metal pole — placed at the south corner
 ## where De Asselen Kuil intersects with the parking entry.
+## #5xx — the post is now a StaticBody3D so the player can't phase through
+## it. Previously plain MeshInstance3D (collision audit caught).
 func _spawn_street_sign(at: Vector3, text: String) -> void:
 	var holder := Node3D.new()
 	holder.name = "StreetSign_" + text.replace(" ", "_")
 	holder.position = at
 	add_child(holder)
+	# Post body — StaticBody3D + cylinder collider matching the visible mesh
+	# so the player bumps the pole instead of phasing through.
+	var post_body := StaticBody3D.new()
+	post_body.name = "Post"
+	post_body.position = Vector3(0.0, 1.3, 0.0)
+	holder.add_child(post_body)
 	var post := MeshInstance3D.new()
+	post.name = "PostMesh"
 	var cm := CylinderMesh.new()
 	cm.top_radius = 0.035
 	cm.bottom_radius = 0.035
 	cm.height = 2.6
 	post.mesh = cm
-	post.position = Vector3(0.0, 1.3, 0.0)
 	var post_mat := StandardMaterial3D.new()
 	post_mat.albedo_color = Color(0.78, 0.78, 0.80)
 	post_mat.metallic = 0.6
 	post_mat.roughness = 0.4
 	post.material_override = post_mat
-	holder.add_child(post)
+	post_body.add_child(post)
+	var post_col := CollisionShape3D.new()
+	post_col.name = "PostCollision"
+	var pcy := CylinderShape3D.new()
+	pcy.radius = 0.05    # slightly larger than visible so player doesn't squeeze past
+	pcy.height = 2.6
+	post_col.shape = pcy
+	post_body.add_child(post_col)
 	var label := Label3D.new()
 	label.text = text
 	label.font_size = 56
@@ -3195,7 +3503,23 @@ func _on_time_jumped(new_elapsed: float) -> void:
 	if new_elapsed < 0.0:
 		var pss := get_node_or_null("PreShiftSequence")
 		if pss == null:
-			_spawn_pre_shift_sequence()
+			# Force-spawn the sequence: we KNOW the new time is pre-shift
+			# (new_elapsed < 0), the is_pre_shift gate inside the spawn
+			# helper is a tautology in this path but the implicit coupling
+			# has bitten us — a resumed-past-bell save that the operator
+			# rewinds to 06:35 needs a brand-new PSS regardless.
+			_spawn_pre_shift_sequence(true)
+			pss = get_node_or_null("PreShiftSequence")
+			# setup() seeds every scheduled NPC at the arrival_anchor with
+			# off_duty=true but does NOT route them to dressing / canteen /
+			# smoke until a _physics_process tick crosses each arrives_at_s.
+			# After a rewind to e.g. -1500s (06:35 on a Vroege day) most
+			# NPCs are already past their arrives_at_s and should be IN the
+			# canteen, not parked at the arrival anchor. recompute_for() is
+			# the deterministic placer; call it immediately so the world
+			# matches the new instant without waiting for a physics tick.
+			if pss != null and pss.has_method("recompute_for"):
+				pss.call("recompute_for", new_elapsed)
 		else:
 			if pss.has_method("recompute_for"):
 				pss.call("recompute_for", new_elapsed)

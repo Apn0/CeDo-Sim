@@ -53,19 +53,30 @@ func _build_body(size: Vector3, paint_color: Color, seed_in: int) -> void:
 		clamp(paint_color.b + jitter_b, 0.0, 1.0),
 		1.0
 	)
-	var body := MeshInstance3D.new()
+	# StaticBody3D wrapper so the neighbour building has WALK-THROUGH-BLOCKING
+	# collision — previously plain MeshInstance3D and the player phased right
+	# through the wall (collision audit caught this).
+	var body := StaticBody3D.new()
 	body.name = "Body"
+	body.position = Vector3(0.0, size.y * 0.5, 0.0)
+	add_child(body)
+	var mi := MeshInstance3D.new()
+	mi.name = "BodyMesh"
 	var bm := BoxMesh.new()
 	bm.size = size
-	body.mesh = bm
-	# Body sits on its base — translate up by half-height so pos is the ground anchor.
-	body.position = Vector3(0.0, size.y * 0.5, 0.0)
+	mi.mesh = bm
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = varied
 	mat.roughness = 0.7
 	mat.metallic = 0.35
-	body.material_override = mat
-	add_child(body)
+	mi.material_override = mat
+	body.add_child(mi)
+	var col := CollisionShape3D.new()
+	col.name = "BodyCollision"
+	var bs := BoxShape3D.new()
+	bs.size = size
+	col.shape = bs
+	body.add_child(col)
 
 # ── Flat bitumen roof slab ────────────────────────────────────────────────────
 func _build_roof(size: Vector3, roof_color: Color) -> void:

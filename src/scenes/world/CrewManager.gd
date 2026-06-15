@@ -89,6 +89,75 @@ func setup(npc_dict: Dictionary, lf: Node, sc: Node, break_pos: Vector3) -> void
 	break_room_pos = break_pos
 	assign_posts()
 	_hook_walkie()
+	# Subscribe to ShiftClock.time_set so an operator rewinding the wall clock
+	# to a pre-shift instant despawns the at-post crew and hands them back to
+	# PreShiftSequence (which spawns them in arriving cars / dressing room /
+	# canteen per their per-NPC arrives_at_s). Without this CrewManager keeps
+	# every NPC pinned at their machine even when the clock reads 06:35 —
+	# exactly the operator's complaint.
+	if shift_clock != null and shift_clock.has_signal("time_set") \
+			and not shift_clock.time_set.is_connected(_on_time_set):
+		shift_clock.time_set.connect(_on_time_set)
+
+## ShiftClock.time_set handler. Cooperates with PreShiftSequence + MainWorld:
+##   - PreShiftSequence.recompute_for() (triggered by the time_jumped signal
+##     emitted from inside set_time_and_date) places NPCs at arrival /
+##     dressing / canteen / smoke for the scheduled crew.
+##   - MainWorld._on_time_jumped repositions parked NPC CARS along the
+##     De Asselen Kuil polyline so they arrive at their bay at arrives_at_s.
+##   - WE OWN the worker-state reset on a backward jump. The pre-shift branch
+##     used to be a no-op trusting PreShiftSequence to flip off-duty for us,
+##     but PSS isn't guaranteed to exist (resumed-past-bell save) and even
+##     when it does, scheduled NPCs whose node can't be resolved leave the
+##     stale AT_POST flag stuck. Owning the despawn here makes the operator's
+##     "set time to 06:35" deterministic regardless of PSS state.
+##   - At-or-after the bell we re-run assign_posts() so workers PSS had set
+##     off-duty (or whose at-post pos got teleported) are brought back on duty.
+func _on_time_set(_prev_day: int, _prev_secs: int, _new_day: int, new_secs: int) -> void:
+	if shift_clock == null:
+		return
+	var bell_secs : int = int(shift_clock.shift_start_seconds_of_day()) \
+			if shift_clock.has_method("shift_start_seconds_of_day") else 7 * 3600
+	# Treat the time-of-day comparison as a "wall clock is before the bell"
+	# check. A rewind from 09:00 → 06:35 lands new_secs < bell_secs.
+	if new_secs < bell_secs:
+		# Pre-shift: drop our in-flight dispatch + break state so we don't try
+		# to dispatch a worker PreShiftSequence has hidden, and so the break
+		# rotation re-starts fresh once the bell fires.
+		_handling.clear()
+		_break_until.clear()
+		_break_timer = BREAK_INTERVAL
+		# Explicitly despawn the at-post crew. clear_post() sets the worker
+		# off-duty AND wipes assigned_station_id so current_task() returns
+		# "vrij (rust)" instead of a stale "post: …". PreShiftSequence (when
+		# it exists) will then teleport each scheduled NPC to arrival /
+		# dressing / canteen on its recompute_for pass. Non-scheduled NPCs
+		# (Mohammed if PSS lacked them, floaters) stay off-duty until the
+		# bell — symmetric to a fresh pre-shift bootstrap.
+		for w in workers:
+			if not (w is NPC):
+				continue
+			# Don't touch pinned workers — the operator wants them locked
+			# even across a time rewind (#124).
+			if _pinned.has(w):
+				continue
+			if w.has_method("clear_post"):
+				w.clear_post()
+			elif w.has_method("set_off_duty"):
+				w.set_off_duty(true)
+	else:
+		# Past the bell: re-run posting so any worker PreShiftSequence had set
+		# off-duty (or whose at-post-position got teleported by recompute_for)
+		# is brought on-duty + sent back to their machine. _handling is cleared
+		# so the next tick re-evaluates jams against the now-canonical state.
+		_handling.clear()
+		for w in workers:
+			if not (w is NPC):
+				continue
+			if w.has_method("is_off_duty") and w.has_method("set_off_duty") \
+					and w.is_off_duty():
+				w.set_off_duty(false)
+		assign_posts()
 
 ## Subscribe to Walkie.transmit_sent so the crew brain reacts to the operator's
 ## keyed-up canned lines (skeletal — currently only "Need a hand here" picks the

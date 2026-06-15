@@ -491,7 +491,11 @@ static func build_belt_loop(deck_parent: Node3D, size: Vector3, deck_y: float, s
 	# no gap, but pulls back ~10% on each axial side so the striped roller ends
 	# still peek out and the operator can read the spin. Was size.x * 0.62 which
 	# left the wrap visibly NARROWER than the deck — looked like a small belt
-	# over wide rollers.
+	# over wide rollers. deck_w_for_roller is recomputed here (different scope
+	# from build_rollers): same formula so both functions resolve identically.
+	var deck_w_for_roller : float = float(spec.get("override_deck_width", 0.0))
+	if deck_w_for_roller <= 0.0:
+		deck_w_for_roller = size.x * float(spec.get("deck_width_frac", 0.82))
 	var wrap_len : float = deck_w_for_roller * 0.80
 	# Belt material tile.y for a wrap is the circumference / texture height
 	# (2πr ≈ slat_period) so the slat pitch matches the deck — a single drum
@@ -644,6 +648,16 @@ static func apply_tagging(p: Node3D, spec: Dictionary, ghost: bool) -> void:
 		p.add_to_group("belt")
 	var speed : float = float(spec.get("belt_speed_mps", _BELT_CARRY_SPEED))
 	p.set_meta("belt_speed", speed)
+	# Audit item 6 — belt-to-belt projectile receiver zones. Every belt is a
+	# potential receiver for an upstream belt's discharge: the calibrated aim
+	# point lands inside a SAFE_ZONE of ±0.15 m along local Z (no jitter),
+	# surrounded by a SPREAD_ZONE of ±0.30 m where dropped material may scatter
+	# (normal distribution, see BeltSurface.compute_belt_to_belt_landing).
+	# These metas let the projectile helper read the bands at runtime; specs
+	# can override them via `safe_zone_m` / `spread_zone_m` for belts with
+	# bespoke geometry (e.g. switch-belt where the spread is wider).
+	p.set_meta("safe_zone_m",   float(spec.get("safe_zone_m",   0.15)))
+	p.set_meta("spread_zone_m", float(spec.get("spread_zone_m", 0.30)))
 	# BeltSurface script — only meaningful on a StaticBody3D. The script
 	# uses +global_transform.basis.z, which is the project's convention
 	# (downstream = local +Z, see BeltSurface.gd docstring). The carry_axis

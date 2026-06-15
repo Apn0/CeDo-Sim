@@ -90,12 +90,15 @@ func _ready() -> void:
 	_build_body()
 	_carry_point = Node3D.new()
 	_carry_point.name = "CarryPoint"
-	_carry_point.position = Vector3(0.0, 1.7, 0.6)   # held in front, chest-high
+	# CANONICAL: "in front" = local -Z (matches the Humanoid face plane and the
+	# look_at-driven yaw at line 700). Bale rides in front of the worker's chest.
+	_carry_point.position = Vector3(0.0, 1.7, -0.6)
 	add_child(_carry_point)
 	# Holster behind the worker where their personal scissors + scanner ride.
+	# CANONICAL: "behind" = local +Z (back side of the canonical-front face).
 	_holster = Node3D.new()
 	_holster.name = "Holster"
-	_holster.position = Vector3(0.0, 1.0, -0.35)
+	_holster.position = Vector3(0.0, 1.0, 0.35)
 	add_child(_holster)
 
 # =============================================================================

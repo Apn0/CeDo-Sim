@@ -292,8 +292,30 @@ static func items() -> Array[Dictionary]:
 			{"id": "weegschaal",     "name": "Weegschaal (25 kg batch weigh)","category": "Logistics",   "size": Vector3(1.2, 2.2, 1.2),  "color": Color(0.55, 0.57, 0.60)},
 			{"id": "voorraad_silo",  "name": "Voorraad silo (granulate)",    "category": "Structure",    "size": Vector3(3.0, 6.5, 3.0),  "color": Color(0.66, 0.68, 0.72)},
 			# ── Control (HMIs) ───────────────────────────────────────────────
-			{"id": "hmi_panel",      "name": "HMI panel (stand)",  "category": "Control",    "size": Vector3(0.7, 1.5, 0.5),  "color": Color(0.30, 0.32, 0.36)},
-			{"id": "hmi_wall",       "name": "HMI panel (wall)",   "category": "Control",    "size": Vector3(0.6, 0.5, 0.16), "color": Color(0.30, 0.32, 0.36)},
+			# 12 scoped HMI panels — one per operator-listed control panel (#165).
+			# The scope table lives in HmiScopes.gd; each entry below carries the
+			# hmi_id meta (Hmi.gd reads it on _ready) so the overlay knows which
+			# subset of machines to expose. `mesh` selects the stand- vs
+			# wall-mount geometry — both physical builds remain available.
+			# The legacy cosmetic ids `hmi_panel` / `hmi_wall` are kept as
+			# aliases at the end of the list so saves written before #165 still
+			# load (they map to a generic see-all scope in HmiScopes.gd).
+			{"id": "hmi_shredder_l1",       "name": "HMI — Shredder lijn 1",            "category": "Control", "size": Vector3(0.7, 1.5, 0.5),  "color": Color(0.30, 0.32, 0.36), "hmi_id": "hmi_shredder_l1",       "mesh": "hmi_panel"},
+			{"id": "hmi_shredder1_l3ab",    "name": "HMI — Shredder 1 lijn 3A/3B",      "category": "Control", "size": Vector3(0.7, 1.5, 0.5),  "color": Color(0.30, 0.32, 0.36), "hmi_id": "hmi_shredder1_l3ab",    "mesh": "hmi_panel"},
+			{"id": "hmi_shredder2_l3ab",    "name": "HMI — Shredder 2 lijn 3A/3B",      "category": "Control", "size": Vector3(0.7, 1.5, 0.5),  "color": Color(0.30, 0.32, 0.36), "hmi_id": "hmi_shredder2_l3ab",    "mesh": "hmi_panel"},
+			{"id": "hmi_shredder_l3c6",     "name": "HMI — Shredder lijn 3C/6",         "category": "Control", "size": Vector3(0.7, 1.5, 0.5),  "color": Color(0.30, 0.32, 0.36), "hmi_id": "hmi_shredder_l3c6",     "mesh": "hmi_panel"},
+			{"id": "hmi_sorting_l3ab",      "name": "HMI — Sorteerlijn 3A/3B",          "category": "Control", "size": Vector3(0.7, 1.5, 0.5),  "color": Color(0.26, 0.38, 0.30), "hmi_id": "hmi_sorting_l3ab",      "mesh": "hmi_panel"},
+			{"id": "hmi_transport_l3ab",    "name": "HMI — Transportbanden 3A/3B",      "category": "Control", "size": Vector3(0.7, 1.5, 0.5),  "color": Color(0.36, 0.30, 0.18), "hmi_id": "hmi_transport_l3ab",    "mesh": "hmi_panel"},
+			{"id": "hmi_transport_l3c6",    "name": "HMI — Transportbanden 3C/6",       "category": "Control", "size": Vector3(0.7, 1.5, 0.5),  "color": Color(0.36, 0.30, 0.18), "hmi_id": "hmi_transport_l3c6",    "mesh": "hmi_panel"},
+			{"id": "hmi_washing_all",       "name": "HMI — Waslijn (alle lijnen)",      "category": "Control", "size": Vector3(0.7, 1.5, 0.5),  "color": Color(0.16, 0.30, 0.40), "hmi_id": "hmi_washing_all",       "mesh": "hmi_panel"},
+			{"id": "hmi_extruder_all",      "name": "HMI — Extruder (alle lijnen)",     "category": "Control", "size": Vector3(0.7, 1.5, 0.5),  "color": Color(0.30, 0.16, 0.34), "hmi_id": "hmi_extruder_all",      "mesh": "hmi_panel"},
+			{"id": "hmi_water_l3c6",        "name": "HMI — Water lijn 3C/6",            "category": "Control", "size": Vector3(0.7, 1.5, 0.5),  "color": Color(0.14, 0.34, 0.40), "hmi_id": "hmi_water_l3c6",        "mesh": "hmi_panel"},
+			{"id": "hmi_water_extr_l1_3ab", "name": "HMI — Water extruder 1/3A/3B",     "category": "Control", "size": Vector3(0.7, 1.5, 0.5),  "color": Color(0.14, 0.34, 0.40), "hmi_id": "hmi_water_extr_l1_3ab", "mesh": "hmi_panel"},
+			{"id": "hmi_indaver_water",     "name": "HMI — Indaver waterzuivering",     "category": "Control", "size": Vector3(0.6, 0.5, 0.16), "color": Color(0.22, 0.40, 0.46), "hmi_id": "hmi_indaver_water",     "mesh": "hmi_wall"},
+			# Legacy back-compat aliases — pre-#165 saves keep loading. Both map
+			# to a generic "see every machine" scope in HmiScopes.gd.
+			{"id": "hmi_panel",      "name": "HMI panel (stand, generiek)", "category": "Control",    "size": Vector3(0.7, 1.5, 0.5),  "color": Color(0.30, 0.32, 0.36), "hmi_id": "generic", "mesh": "hmi_panel"},
+			{"id": "hmi_wall",       "name": "HMI panel (wand, generiek)",  "category": "Control",    "size": Vector3(0.6, 0.5, 0.16), "color": Color(0.30, 0.32, 0.36), "hmi_id": "generic", "mesh": "hmi_wall"},
 			# Shift-leader PC: walk up + E → Balen-scanlog + Reset/Restock buttons
 			# (#73 / #74). MainWorld also auto-spawns one for back-compat, but this
 			# entry lets the operator place additional desks or move them via K-edit.
@@ -910,6 +932,12 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 		body = StaticBody3D.new()
 	body.name = String(item["name"])
 	body.set_meta("placeable_id", id)
+	# #165 — Control category placeables (HMI panels) carry a scope id so the
+	# Hmi.gd interaction script and HmiOverlay can look up which subset of the
+	# plant this physical panel governs. Legacy `hmi_panel` / `hmi_wall` saves
+	# get the "generic" scope (see HmiScopes.gd) and behave like before.
+	if category == "Control" and item.has("hmi_id"):
+		body.set_meta("hmi_id", String(item["hmi_id"]))
 
 	# Belt-type placeables: tag the walkable StaticBody3D so the player controller
 	# carries the player along the deck's local +Z when standing on it (#59). Only
@@ -1063,6 +1091,17 @@ const _DARK  : Color = Color(0.24, 0.25, 0.28)
 const _SAFETY: Color = Color(0.94, 0.78, 0.14)
 
 static func _build_model(p: Node3D, id: String, category: String, size: Vector3, color: Color, ghost: bool) -> void:
+	# #165 — scoped HMI ids ("hmi_shredder_l1" etc.) route to the mesh chosen
+	# by their catalog `mesh` field ("hmi_panel" stand or "hmi_wall" wall). The
+	# legacy `hmi_panel` / `hmi_wall` ids stay in the match below for back-compat.
+	if category == "Control" and id.begins_with("hmi_") and id != "hmi_panel" and id != "hmi_wall":
+		var hmi_item := get_item(id)
+		var mesh_key := String(hmi_item.get("mesh", "hmi_panel"))
+		if mesh_key == "hmi_wall":
+			_m_hmi_wall(p, size, color, ghost)
+		else:
+			_m_hmi(p, size, color, ghost)
+		return
 	match id:
 		"silo":           _m_silo(p, size, color, ghost)
 		"extruder_silo":  _m_extruder_silo(p, size, color, ghost)
@@ -1901,6 +1940,80 @@ static func _m_silo(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void
 		Vector3(0.0, cloth_cy, -cloth_half_d), cloth_mat)   # front (-Z)
 	_box(p, Vector3(cloth_half_w * 2.0, cloth_h, 0.012),
 		Vector3(0.0, cloth_cy,  cloth_half_d), cloth_mat)   # back  (+Z)
+
+	# ── voorraad_silo: industrial caged ladder + self-closing push-gate ─────────
+	# Mirrors the proven _m_extruder_silo treatment (#98 block, see lines 7822+):
+	# operators need a modelled climb to the top of this 6.5 m tank, with a
+	# safety gate at the landing edge. Round-silo geometry forces a small
+	# landing platform hugging the shell (no flat top deck like the box silo).
+	# Climber side = -X.
+	var steel  := _mat(_STEEL,  ghost, 0.6, 0.4)
+	var yellow := _mat(_SAFETY, ghost, 0.2, 0.6)
+	# Top of the main cylindrical body — sits just below the dome. We anchor
+	# the landing platform here so the ladder lands at the highest practical
+	# point on the shell that's still flush with vertical sheet.
+	var body_top : float = leg_top + size.y * 0.50
+	# Small steel landing platform cantilevered off the -X face of the shell.
+	# Roughly 0.8 m × 0.8 m, sits with its inner edge tucked against the shell
+	# (shell radius r at this Y), outer edge clear for the climber to step on.
+	var deck_half : float = 0.40                                # half-extent X & Z
+	var deck_x : float = -r - deck_half - 0.05                  # outer edge tucked against shell
+	_box(p, Vector3(deck_half * 2.0, 0.05, deck_half * 2.0),
+		Vector3(deck_x, body_top, 0.0), steel)
+	# Safety-yellow guardrails on three sides — open on -X where the ladder
+	# lands (the push-gate covers the fall-protection job there).
+	_railing(p, deck_half, deck_half, body_top + 0.025, yellow, ["-x"])
+	# Caged ladder climbing from the floor to just above the landing. Same
+	# rotated-root trick as the extruder silo: _caged_ladder builds the cage
+	# opening toward +Z by default, so we yaw the parent -90° about Y so the
+	# cage opens toward +X (the direction the climber steps off onto the deck).
+	var ladder_h : float = body_top + 0.10
+	var ladder_x : float = -r - 0.30                            # clear of the shell
+	var ladder_root := Node3D.new()
+	ladder_root.name = "VoorraadSiloAccessLadder"
+	ladder_root.rotation.y = -PI * 0.5
+	ladder_root.position = Vector3(ladder_x, 0.0, 0.0)
+	p.add_child(ladder_root)
+	_caged_ladder(ladder_root, Vector3.ZERO, ladder_h, steel)
+	# Self-closing push-gate at the landing edge directly above the ladder
+	# top. Pushes open into +X (onto the deck) and auto-closes behind the
+	# climber. Free side index 1 = -X (the ladder side, free to swing
+	# through); platform side +X requires E to open.
+	var gate_y : float = body_top + 0.05                        # deck top
+	var gate_x_edge : float = -r - 0.05                         # at the shell-side edge
+	var gate_root : Node3D
+	if ghost:
+		gate_root = Node3D.new()
+	else:
+		var pg_script := load("res://src/build/PushGate.gd")
+		gate_root = StaticBody3D.new()
+		if pg_script != null:
+			(gate_root as StaticBody3D).set_script(pg_script)
+			gate_root.set("free_side_idx", 1)
+	gate_root.name = "VoorraadSiloPushGate"
+	gate_root.position = Vector3(gate_x_edge, gate_y, 0.0)
+	p.add_child(gate_root)
+	# Two yellow vertical posts at ±Z half-width, one mid-rail + one top-rail.
+	_box(gate_root, Vector3(0.05, 1.05, 0.05),
+		Vector3(0.0, 0.525,  0.23), yellow)
+	_box(gate_root, Vector3(0.05, 1.05, 0.05),
+		Vector3(0.0, 0.525, -0.23), yellow)
+	_box(gate_root, Vector3(0.04, 0.04, 0.46),
+		Vector3(0.0, 1.00, 0.0), yellow)
+	_box(gate_root, Vector3(0.04, 0.04, 0.46),
+		Vector3(0.0, 0.55, 0.0), yellow)
+	# Small spring-hinge cue at the hinge edge (visual only).
+	_cyl(gate_root, 0.02, 0.02, 0.10,
+		Vector3(0.0, 0.20, 0.23), steel)
+	# Collision body for the gate leaf so the player can't walk through it
+	# closed (PushGate re-parents this under HingePivot on _ready).
+	if not ghost:
+		var col := CollisionShape3D.new()
+		var col_box := BoxShape3D.new()
+		col_box.size = Vector3(0.08, 1.05, 0.46)
+		col.shape = col_box
+		col.position = Vector3(0.0, 0.525, 0.0)
+		gate_root.add_child(col)
 
 # ── #98 lumps cart (lumpenwagen): wheeled blue steel dumpster the operator
 # parks under the extruder's screen-changer / melt-filter outlet. The screen
@@ -7708,19 +7821,31 @@ static func _m_extruder_silo(p: Node3D, size: Vector3, color: Color, ghost: bool
 	var white  := _mat(Color(0.92, 0.92, 0.90), ghost, 0.1, 0.7)  # danger-sign plate
 	var red    := _mat(Color(0.82, 0.14, 0.12), ghost, 0.2, 0.6)  # danger-sign strip
 
-	var hw : float = size.x * 0.5
-	var hd : float = size.z * 0.5
+	# #99 — hw/hd retained as comments; the legs/braces now use bw/bd half-extents
+	# so the support frame catches the widened silo body.
 	var frame_top : float = size.y * 0.40    # silo underside / leg top ≈ 2.6 m
 	var box_top   : float = size.y * 0.92     # top of the silo box ≈ 5.98 m
 	var box_h     : float = box_top - frame_top
 	var box_cy    : float = (frame_top + box_top) * 0.5
-	var bw : float = size.x * 0.96            # box width  (X)
-	var bd : float = size.z * 0.96            # box depth  (Z)
+	# #98 — operator: silo body 50% wider. Followed by #99 — operator: widen the
+	# whole silo by ANOTHER 50% (radius * 1.5) WITHOUT changing window dimensions
+	# or column positions in world units. Cumulative scale = 1.5 * 1.5 = 2.25,
+	# applied RADIALLY (both X and Z) so the cylindrical body bulks out symmetrically
+	# around the fixed inspection-port layout. Scale ONLY the shell box + ribs +
+	# top deck (via bw/bd), NOT the frame legs / cyclone columns / window column
+	# spacing — those keep size.x calibration so windows stay at their absolute
+	# width and X position in world units regardless of how fat the body gets.
+	var body_scale_x : float = 2.25
+	var bw : float = size.x * 0.96 * body_scale_x   # box width (X) — widened (radial)
+	var bd : float = size.z * 0.96 * body_scale_x   # box depth (Z) — widened (radial)
 
 	# ── SUPPORT FRAME: 4 vertical corner legs floor→underside, tagged machine_leg ──
+	# #99 — leg footprint follows the widened body (bw/bd) so the frame catches the
+	# fatter silo at the corners rather than collapsing inside it. Half-extents come
+	# from bw/bd not hw/hd.
 	var leg_w : float = 0.14
-	var lx : float = hw - leg_w * 0.6
-	var lz : float = hd - leg_w * 0.6
+	var lx : float = bw * 0.5 - leg_w * 0.6
+	var lz : float = bd * 0.5 - leg_w * 0.6
 	for sx in [-1.0, 1.0]:
 		for sz in [-1.0, 1.0]:
 			var lg := _box(p, Vector3(leg_w, frame_top, leg_w),
@@ -7743,19 +7868,50 @@ static func _m_extruder_silo(p: Node3D, size: Vector3, color: Color, ghost: bool
 
 	# ── SILO BOX: light-grey body occupying the upper portion, full W×D ──────────
 	_box(p, Vector3(bw, box_h, bd), Vector3(0.0, box_cy, 0.0), shell)
-	# 4 thin horizontal stiffener ribs wrapping the box faces (proud of the skin).
+	# Horizontal stiffener ribs wrapping the box faces (proud of the skin).
+	# #99 — rib 2 (i=2, Y≈4.628) is OMITTED because the lifted bottom window
+	# (#99 lift +0.37) now spans 4.339..4.947 and would be cut in half by it.
+	# Ribs 0, 1, 3 remain; rib 3 (i=3, Y≈5.338, topmost) doubles as the top
+	# frame edge of the top window (see WINDOWS block below).
 	for i in 4:
+		if i == 2:
+			continue  # #99: rib 2 crosses the lifted bottom window — omit
 		var rib_y : float = frame_top + box_h * (0.18 + 0.21 * float(i))
 		_box(p, Vector3(bw + 0.06, 0.07, bd + 0.06), Vector3(0.0, rib_y, 0.0), steel)
 
 	# ── WINDOWS: tall thin recessed dark rectangles on BOTH ±Z faces ─────────────
-	# Two columns per face — LEFT pair at -X, RIGHT pair at +X — top row narrow
-	# (`win_h`) and bottom row 2× tall per operator photo (you see more of the
-	# accumulated film through the lower port, less near the top).
+	# Two columns per face — LEFT pair at -X, RIGHT pair at +X.
 	# #98 — was front-face only; mirrored to the -Z face per operator.
-	var win_w : float = size.x * 0.16
-	var win_h : float = box_h * 0.22
-	var win_h_bottom : float = win_h * 2.0
+	# #98 — operator: window WIDTHS halved. #99 — operator: HALVE THEM AGAIN
+	# (cumulative 0.04 = 25% of original 0.16). Window widths are in world-unit
+	# size.x terms so they stay constant when the body widens (#99).
+	# #99 — operator: LIFT bottom windows by +0.37 m (half the gap between
+	# top-of-bottom-window and bottom-of-top-window in the prior layout). After
+	# the lift, rib 2 at Y=4.628 now CROSSES the bottom window (window spans
+	# 4.339..4.947, rib spans 4.593..4.663), so rib 2 is REMOVED in the rib loop
+	# above (now 3 ribs not 4).
+	# #99 — operator: keep the TOPMOST rib (rib 3, Y=5.338) and use its bottom
+	# edge (5.303) as the TOP edge of the top window. The top window is REPOSITIONED
+	# below rib 3 (was tucked above it under the box ceiling). Its bottom must
+	# clear the lifted bottom window top (4.947) — a 0.05 m steel separator gives
+	# bottom-window-top → top-window-bottom = 5.000. Top window height = 0.303
+	# (shrunk from 0.608) so it spans 5.000..5.303 cleanly between bottom window
+	# and rib 3 used-as-frame-top.
+	var win_w_top : float = size.x * 0.04         # #99: halved again from 0.08
+	var win_w_bot : float = size.x * 0.04         # #99: halved again from 0.08
+	# Bottom window keeps its prior height; it just rises by 0.37.
+	var win_h_bottom : float = box_h * 0.18        # 0.608 — unchanged
+	# Top window shrinks so its TOP aligns with rib 3 bottom and its BOTTOM clears
+	# the lifted bottom window top with a 0.05 m frame gap.
+	var win_h_top : float = 0.303                  # #99: top window shrunk to fit
+	# Bottom window center: prior 4.273 + 0.370 = 4.643.
+	var rib_mid_y : float = frame_top + box_h * (0.18 + 0.21 * 1.0)   # 3.918 — still present
+	var rib_upper_y : float = frame_top + box_h * (0.18 + 0.21 * 2.0) # 4.628 — REMOVED in rib loop
+	var bot_cy : float = (rib_mid_y + rib_upper_y) * 0.5 + 0.37       # 4.273 + 0.37 = 4.643
+	# Top window center: top edge = rib_top_y - rib_half (5.338 - 0.035 = 5.303),
+	# so center = 5.303 - win_h_top * 0.5 = 5.303 - 0.1515 = 5.1515.
+	var rib_top_y : float = frame_top + box_h * (0.18 + 0.21 * 3.0)   # 5.338
+	var top_y : float = (rib_top_y - 0.035) - win_h_top * 0.5         # ≈ 5.1515
 	for face_sz in [1.0, -1.0]:
 		var face_z : float = face_sz * (bd * 0.5 + 0.015)
 		# `out_n` is the local +Z direction of the surround/glass meshes so the
@@ -7763,17 +7919,17 @@ static func _m_extruder_silo(p: Node3D, size: Vector3, color: Color, ghost: bool
 		# sides. Without this the back-face windows render inside-out.
 		var surround_offset : float = -0.01 * face_sz
 		for col_x in [-size.x * 0.22, size.x * 0.22]:
-			# TOP window — narrow.
-			var top_y : float = box_cy + box_h * 0.22
-			_box(p, Vector3(win_w + 0.08, win_h + 0.08, 0.02),
+			# TOP window — narrow, halved width, top edge flush under topmost rib.
+			_box(p, Vector3(win_w_top + 0.08, win_h_top + 0.08, 0.02),
 				Vector3(col_x, top_y, face_z + surround_offset), steel)
-			_box(p, Vector3(win_w, win_h, 0.03), Vector3(col_x, top_y, face_z), glass)
-			# BOTTOM window — 2× height. Centre lowered so the bigger pane fits
-			# without overlapping the top row.
-			var bot_cy : float = box_cy - box_h * 0.22 - (win_h_bottom - win_h) * 0.5
-			_box(p, Vector3(win_w + 0.08, win_h_bottom + 0.08, 0.02),
+			_box(p, Vector3(win_w_top, win_h_top, 0.03),
+				Vector3(col_x, top_y, face_z), glass)
+			# BOTTOM window — halved width, shrunk + lifted to sit between
+			# the two middle ribs (3.918 and 4.628) with no overlap.
+			_box(p, Vector3(win_w_bot + 0.08, win_h_bottom + 0.08, 0.02),
 				Vector3(col_x, bot_cy, face_z + surround_offset), steel)
-			_box(p, Vector3(win_w, win_h_bottom, 0.03), Vector3(col_x, bot_cy, face_z), glass)
+			_box(p, Vector3(win_w_bot, win_h_bottom, 0.03),
+				Vector3(col_x, bot_cy, face_z), glass)
 	# #98 — operator: the previous arbitrary white-and-black stripe with a red
 	# centre line on the +Z face is NOT on the reference photo. Removed.
 	var _ignored_red := red
@@ -7802,7 +7958,65 @@ static func _m_extruder_silo(p: Node3D, size: Vector3, color: Color, ghost: bool
 
 	# ── TOP PLATFORM: flat deck at the silo top + safety-yellow guardrails ───────
 	_box(p, Vector3(bw + 0.10, 0.05, bd + 0.10), Vector3(0.0, box_top + 0.03, 0.0), steel)
-	_railing(p, (bw + 0.10) * 0.5, (bd + 0.10) * 0.5, box_top + 0.05, yellow)
+	# #98 — guardrail leaves the -X side OPEN so the ladder lands cleanly on the
+	# deck. The push-gate (built below) takes over the fall-protection job there.
+	_railing(p, (bw + 0.10) * 0.5, (bd + 0.10) * 0.5, box_top + 0.05, yellow, ["-x"])
+
+	# ── #98 INDUSTRIAL CAGED LADDER + SELF-CLOSING PUSH-GATE ─────────────────────
+	# Industrial caged access ladder mounted on the -X face of the (widened) silo
+	# body, climbing from floor (Y=0) up to just above the deck. The cage hoops
+	# in `_caged_ladder` open toward the climber's chest (+Z by default), so we
+	# wrap the ladder in a Node3D rotated -90° about Y → cage now opens toward
+	# +X, which is exactly the direction the climber needs to step OFF the
+	# ladder and ONTO the deck. The push-gate sits at the deck edge directly
+	# above the ladder top, swinging into +X (onto the deck) so the climber
+	# pushes through it on the way up, and it auto-closes behind them.
+	var ladder_h : float = box_top + 0.10            # floor → just above deck
+	var ladder_x : float = -bw * 0.5 - 0.30          # clear of the silo shell
+	var ladder_root := Node3D.new()
+	ladder_root.name = "SiloAccessLadder"
+	ladder_root.rotation.y = -PI * 0.5               # cage now faces +X (toward deck)
+	ladder_root.position = Vector3(ladder_x, 0.0, 0.0)
+	p.add_child(ladder_root)
+	_caged_ladder(ladder_root, Vector3.ZERO, ladder_h, steel)
+	# Push-gate body — built inline so build_node()'s ghost path stays cheap, then
+	# attached to a PushGate script at the end. In ghost-mode we skip the script.
+	var gate_y : float = box_top + 0.05                     # deck top
+	var gate_x_edge : float = -bw * 0.5 - 0.05              # at -X deck edge
+	var gate_root : Node3D
+	if ghost:
+		gate_root = Node3D.new()
+	else:
+		var pg_script := load("res://src/build/PushGate.gd")
+		gate_root = StaticBody3D.new()
+		if pg_script != null:
+			(gate_root as StaticBody3D).set_script(pg_script)
+			# Free side = -X (the ladder side); platform side = +X (requires E).
+			gate_root.set("free_side_idx", 1)
+	gate_root.name = "SiloPushGate"
+	gate_root.position = Vector3(gate_x_edge, gate_y, 0.0)
+	p.add_child(gate_root)
+	# Two yellow vertical posts at ±Z half-width, one mid-rail + one top-rail.
+	_box(gate_root, Vector3(0.05, 1.05, 0.05),
+		Vector3(0.0, 0.525,  0.23), yellow)
+	_box(gate_root, Vector3(0.05, 1.05, 0.05),
+		Vector3(0.0, 0.525, -0.23), yellow)
+	_box(gate_root, Vector3(0.04, 0.04, 0.46),
+		Vector3(0.0, 1.00, 0.0), yellow)
+	_box(gate_root, Vector3(0.04, 0.04, 0.46),
+		Vector3(0.0, 0.55, 0.0), yellow)
+	# Small spring-hinge cue at the hinge edge (visual only).
+	_cyl(gate_root, 0.02, 0.02, 0.10,
+		Vector3(0.0, 0.20, 0.23), steel)
+	# Collision body for the gate leaf so the player can't walk through it
+	# closed (PushGate re-parents this under HingePivot on _ready).
+	if not ghost:
+		var col := CollisionShape3D.new()
+		var col_box := BoxShape3D.new()
+		col_box.size = Vector3(0.08, 1.05, 0.46)
+		col.shape = col_box
+		col.position = Vector3(0.0, 0.525, 0.0)
+		gate_root.add_child(col)
 
 	# ── DISCHARGE: previously a downward outlet cone at the box bottom centre.
 	# Operator-corrected: the silo has a FLAT bottom — no protruding cone tip.
@@ -7827,23 +8041,31 @@ static func _m_extruder_silo(p: Node3D, size: Vector3, color: Color, ghost: bool
 	# match the four-window layout above (two columns × two rows on +Z).
 	var flake_mat := _mat(Color(0.86, 0.84, 0.78), ghost, 0.05, 0.85)
 	var win_z : float = bd * 0.5 + 0.015   # restored for the flake-pile block below
+	# #98 — windows were resized + repositioned above; references to the old
+	# `win_h` / `win_w` are now to the per-row split values.
+	var row_data := [
+		{"cy": bot_cy, "win_h": win_h_bottom, "win_w": win_w_bot, "factor": 0.70},
+		{"cy": top_y,  "win_h": win_h_top,    "win_w": win_w_top, "factor": 0.30},
+	]
 	for col_x in [-size.x * 0.22, size.x * 0.22]:
-		for row in [-1.0, 1.0]:
-			var w_cy : float = box_cy + row * box_h * 0.22
+		for row in row_data:
+			var w_cy : float = float((row as Dictionary)["cy"])
+			var row_win_h : float = float((row as Dictionary)["win_h"])
+			var row_win_w : float = float((row as Dictionary)["win_w"])
 			# Flake pile thicker for the LOWER window row (more accumulation toward
 			# the bottom of the silo where the cone narrows) — also closer to the
 			# glass surface to read clearly through it.
-			var pile_h : float = win_h * (0.70 if row < 0.0 else 0.30)
+			var pile_h : float = row_win_h * float((row as Dictionary)["factor"])
 			var pile_z_offset : float = -0.05         # 5 cm behind the +Z window plane
 			# Small cluster of flake clumps spanning the window width, with a slight
 			# downward slope from the back (-Z side, into the box) toward the
 			# compactor-belt face (+Z, the discharge side). 4 clumps per window.
-			var clump_w : float = win_w * 0.22
+			var clump_w : float = row_win_w * 0.22
 			var clump_h : float = pile_h * 0.55
-			var base_y : float = w_cy - win_h * 0.5 + clump_h * 0.5
+			var base_y : float = w_cy - row_win_h * 0.5 + clump_h * 0.5
 			for ci in 4:
 				var t : float = float(ci) / 3.0   # 0..1 across the window width
-				var clump_x : float = col_x - win_w * 0.5 * 0.7 + win_w * 0.7 * t
+				var clump_x : float = col_x - row_win_w * 0.5 * 0.7 + row_win_w * 0.7 * t
 				# Slope: the back of the silo (deeper -Z) holds slightly LESS flake
 				# (it slid forward toward the discharge) — the front clumps sit
 				# slightly higher, riding on top of the settled cone toward outlet.
