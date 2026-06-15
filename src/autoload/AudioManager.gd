@@ -71,7 +71,6 @@ var _radio_plan      : Array = []     # [{f1,f2,dur,voiced}] syllable plan from 
 var _radio_seg_idx   : int   = 0
 var _radio_seg_start : float = 0.0
 var _radio_seg_end   : float = 0.1
-var _radio_src_ph    := 0.0           # glottal source phase
 var _f1_cur          := 500.0         # gliding formant centres
 var _f2_cur          := 1500.0
 var _svf1_low := 0.0                  # state-variable bandpass states (F1)
@@ -418,7 +417,6 @@ func _fill_radio(_delta: float) -> void:
 			_radio_pb.push_frame(Vector2.ZERO)
 		return
 	var dt := 1.0 / SAMPLE_RATE
-	var fund : float = 135.0 if _radio_close else 115.0
 	for _i in n:
 		var elapsed : float = _radio_len - _radio_t
 		var s := 0.0
