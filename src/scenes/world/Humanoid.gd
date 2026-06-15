@@ -235,7 +235,7 @@ static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -
 	# in-world torso / arms now always use the company hi-vis material so the
 	# crew reads as on-shift regardless of which NPC they are. Per-person
 	# distinguishing features come from the head (#133).
-	var boots : Color = Color(0.10, 0.10, 0.11)
+	var _boots : Color = Color(0.10, 0.10, 0.11)   # legacy palette anchor, no longer applied — kept for API compat
 	var _shirt_ignored := shirt   # silence "unused" — kept for API compat
 	# Resolve appearance flags up front so the head builder reads them once.
 	var hair_style : String = String(appearance.get("hair", "short"))
