@@ -115,6 +115,7 @@ func _ready() -> void:
 	# and run them through the arrival → dress → canteen loop. Resumed saves
 	# (where the shift bell already rang) skip this entirely. (#195 extraction)
 	var pre_shift := PreShiftSpawner.new()
+	pre_shift.name = "PreShiftSpawner"   # #206 — explicit name so ShiftLifecycleManager._on_time_jumped's find_child("PreShiftSpawner") resolves deterministically (Godot's auto-name for class_name'd scripts can become "@PreShiftSpawner@id", which find_child misses)
 	add_child(pre_shift)
 	pre_shift.setup(self, npcs, shift_clock, staff_parking, _player_spawn_pos)
 	# #155 — spawn the shift's cars + put the player in their Swift + seat Yasin.
@@ -122,7 +123,9 @@ func _ready() -> void:
 	# passenger) AND _spawn_operator_context (needs operator_context to board the
 	# player into the Swift). Was previously called at line ~105 BEFORE both —
 	# Yasin silently never got seated. Audit-caught (#157 follow-up).
-	var car_spawner := ShiftCarSpawner.new(); add_child(car_spawner); car_spawner.setup(self, staff_parking, npcs, operator_context, player, _player_spawn_pos)
+	var car_spawner := ShiftCarSpawner.new()
+	car_spawner.name = "ShiftCarSpawner"   # #206 — same fix, named explicitly so downstream find_child lookups work
+	add_child(car_spawner); car_spawner.setup(self, staff_parking, npcs, operator_context, player, _player_spawn_pos)
 	_spawn_hud()
 	# Performance overlay + auto-logger (F3 toggles; logs a [PERF] snapshot every
 	# 5 s so the lag can be diagnosed straight from the console).
