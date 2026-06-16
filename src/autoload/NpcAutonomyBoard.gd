@@ -146,7 +146,9 @@ func _choose_lumps_destination(tree: SceneTree) -> Node3D:
 ## the tool. Detect dirty patches by "dirty_floor" group nodes the
 ## flotation/scheidingsgoot drips into (each tick adds a "dirtiness" float;
 ## task fires above a threshold).
-const CLEAN_COOLDOWN_S : float = 60.0 * 60.0   # 1 sim-hour between cleaning cycles per blower
+const CLEAN_COOLDOWN_S       : float = 60.0 * 60.0   # 1 h between leaf-blower cycles per blower
+const WATER_HOSE_COOLDOWN_S  : float = 90.0 * 60.0   # 1.5 h between water hose-down cycles
+const AIR_HOSE_COOLDOWN_S    : float = 40.0 * 60.0   # 40 min between air-hose blast cycles
 func _scan_dirty_floor(tree: SceneTree, seen: Dictionary) -> void:
 	# #198 followup — Leaf blower cleaning cycle. Emit one BlowLeavesTask per
 	# leaf blower that hasn't been used in the last CLEAN_COOLDOWN_S. Without
@@ -175,6 +177,28 @@ func _scan_dirty_floor(tree: SceneTree, seen: Dictionary) -> void:
 			continue
 		var task : NpcAutonomyTask = script.new(blower as Node3D, mw_ref)
 		_open_tasks[tid] = task
+	# Hose nozzles (water + air, same group, distinguished by `air_mode` flag).
+	# Emit one HoseSweepTask per nozzle whose mode-specific cooldown is met.
+	var hose_script := load("res://src/scenes/world/tasks/HoseSweepTask.gd")
+	for nz in tree.get_nodes_in_group("hose_nozzle"):
+		if not is_instance_valid(nz):
+			continue
+		var nz_tid : int = nz.get_instance_id()
+		seen[nz_tid] = true
+		if _open_tasks.has(nz_tid):
+			continue
+		if nz.has_meta("autonomy_claimed_by"):
+			continue
+		var is_air : bool = bool(nz.get("air_mode")) if "air_mode" in nz else false
+		var cooldown : float = AIR_HOSE_COOLDOWN_S if is_air else WATER_HOSE_COOLDOWN_S
+		var nz_last : float = float(nz.get_meta("last_cleaned_at", -INF))
+		var nz_now : float = _now_sim_s_global(mw_ref)
+		if (nz_now - nz_last) < cooldown:
+			continue
+		if hose_script == null:
+			continue
+		var nz_task : NpcAutonomyTask = hose_script.new(nz as Node3D, mw_ref)
+		_open_tasks[nz_tid] = nz_task
 
 func _find_main_world(tree: SceneTree) -> Node:
 	for c in tree.get_root().get_children():
