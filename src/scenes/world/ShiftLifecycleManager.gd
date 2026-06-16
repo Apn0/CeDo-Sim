@@ -5,12 +5,13 @@ const PRE_SHIFT_WINDOW_S : float = 30.0 * 60.0
 const NPC_DRIVE_SPEED_MPS : float = 8.0
 
 # How long BEFORE arrives_at_s the NPC car is visible on the road, driving in.
-# The drive-in polyline is ~120 m long; at NPC_DRIVE_SPEED_MPS = 8 m/s that
-# traverses in ~15 s. Use 30 s so the car appears at the far end of the polyline
-# (mid-road, well south of the lot) and rolls in to the bay entry over half a
-# minute. Outside this window the car is HIDDEN so it doesn't sit floating at
-# the polyline endpoint thousands of metres from the schedule's arrives_at.
-const DRIVE_IN_WINDOW_S : float = 30.0
+# The drive-in polyline is ~119 m long; NPC_DRIVE_SPEED_MPS = 8 m/s traverses
+# it in ~15 s, so the window matches the polyline length / speed exactly. With
+# a longer window the car would just sit at the polyline endpoint for the lead
+# time before actually moving — bad. With a shorter window the car would pop
+# in mid-segment instead of at the far entry. Outside the window the car is
+# HIDDEN so it isn't floating motionless waiting for its slot.
+const DRIVE_IN_WINDOW_S : float = 15.0
 
 var _world : Node = null
 var _shift_clock : Node = null
