@@ -1713,11 +1713,14 @@ static func _m_overband_magnet(p: Node3D, size: Vector3, _color: Color, ghost: b
 	var dark := _mat(_DARK, ghost, 0.4, 0.6)
 	var magnet_mat := _mat(Color(0.15, 0.15, 0.18), ghost, 0.3, 0.6)
 	var hz := size.z * 0.5
+	var leg_h := size.y * 0.82
 	# Four uprights holding the belt above where the conveyor below would run.
 	for sx in [-0.45, 0.45]:
 		for sz in [-0.4, 0.4]:
-			_box(p, Vector3(0.08, size.y * 0.82, 0.08),
-				Vector3(sx * size.x, size.y * 0.41, sz * size.z), dark)
+			var lg := _box(p, Vector3(0.08, leg_h, 0.08),
+				Vector3(sx * size.x, leg_h * 0.5, sz * size.z), dark)
+			lg.add_to_group("machine_leg")
+			lg.set_meta("leg_h", leg_h)
 	# Overband belt housing (the magnet box) up high, spanning Z.
 	_box(p, Vector3(size.x * 0.6, size.y * 0.18, size.z * 0.85),
 		Vector3(0.0, size.y * 0.82, 0.0), magnet_mat)
@@ -1787,7 +1790,9 @@ static func _scraper_conveyor_extras(p: Node3D, _deck_root: Node3D, size: Vector
 	var dark := _mat(_DARK, ghost, 0.4, 0.6)
 	var water := _mat(Color(0.20, 0.40, 0.34, 0.6), ghost, 0.0, 0.2)
 	var hz := size.z * 0.5
-	_legs(p, size, size.y * 0.2, dark)
+	# Trough underside sits at size.y*0.2 - (size.y*0.3)*0.5 = size.y*0.05; legs meet
+	# it there instead of piercing into the trough's vertical center.
+	_legs(p, size, size.y * 0.05, dark)
 	# Submerged horizontal trough (the underwater drag run, -Z half).
 	_box(p, Vector3(size.x * 0.9, size.y * 0.3, size.z * 0.6), Vector3(0.0, size.y * 0.2, -hz * 0.4), steel)
 	_box(p, Vector3(size.x * 0.72, 0.04, size.z * 0.55), Vector3(0.0, size.y * 0.34, -hz * 0.4), water)
@@ -1835,7 +1840,7 @@ static func _m_laser_filter(p: Node3D, size: Vector3, color: Color, ghost: bool)
 	var body := _mat(color, ghost, 0.4, 0.45)
 	var steel := _mat(_STEEL, ghost, 0.6, 0.3)
 	var dark := _mat(_DARK, ghost, 0.5, 0.6)
-	_legs(p, size, size.y * 0.45, dark)
+	_legs(p, size, size.y * 0.14, dark)
 	var cy : float = size.y * 0.6
 	var disc_r : float = size.y * 0.46
 	# Concentric disc faces toward ±X (the big circle), built from nested rings.
@@ -1857,7 +1862,7 @@ static func _m_laser_filter(p: Node3D, size: Vector3, color: Color, ghost: bool)
 static func _m_melt_pump(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
 	var body := _mat(color, ghost, 0.4, 0.5)
 	var steel := _mat(_STEEL, ghost, 0.6, 0.3)
-	_legs(p, size, size.y * 0.5, _mat(_DARK, ghost, 0.5, 0.6))
+	_legs(p, size, size.y * 0.3, _mat(_DARK, ghost, 0.5, 0.6))
 	_box(p, Vector3(size.x * 0.85, size.y * 0.6, size.z * 0.85), Vector3(0, size.y * 0.6, 0), body)
 	for sx in [-0.18, 0.18]:
 		_cyl(p, size.x * 0.16, size.x * 0.16, size.z * 0.5, Vector3(sx * size.x, size.y * 0.85, 0), steel, "z")
@@ -2691,11 +2696,8 @@ static func _m_vss_silo(p: Node3D, size: Vector3, color: Color, ghost: bool) -> 
 	var body_h : float = size.y * 0.65
 	var cone_h : float = size.y * 0.20
 	var leg_h  : float = size.y * 0.15
-	# Four legs holding the cone up off the floor.
-	for sx in [-1.0, 1.0]:
-		for sz in [-1.0, 1.0]:
-			_box(p, Vector3(0.12, leg_h, 0.12),
-				Vector3(sx * r * 0.7, leg_h * 0.5, sz * r * 0.7), dark)
+	# Four legs holding the cone up off the floor (tagged 'machine_leg' so extend_machine_legs() can raise the silo for a discharge cart).
+	_legs(p, size, leg_h, dark)
 	# Cone bottom — narrow at the bottom (discharge), wide at the top.
 	_cyl(p, r, 0.12, cone_h, Vector3(0.0, leg_h + cone_h * 0.5, 0.0), shell)
 	# Cylindrical body.
@@ -3750,7 +3752,9 @@ static func _m_friction(p: Node3D, size: Vector3, color: Color, ghost: bool) -> 
 	var body_mat := _mat(color, ghost, 0.4, 0.45)
 	var dark := _mat(_DARK, ghost, 0.5, 0.5)
 	var tilt := deg_to_rad(15.0)
-	_legs(p, size, size.y * 0.5, dark)
+	# Tube underside sits at ~size.y*0.25 (center size.y*0.62 minus radius size.x*0.42).
+	# Legs were running half a metre up THROUGH the tube and motor — terminate at the underside.
+	_legs(p, size, size.y * 0.25, dark)
 	# inclined housing (fatter, runs much faster than the dewatering screw)
 	_tube(p, size.x * 0.42, size.z * 0.82, Vector3(0.0, size.y * 0.62, 0.0), body_mat, PI / 2.0 + tilt)
 	# inlet hopper at the low (-Z) end
@@ -3765,12 +3769,21 @@ static func _m_dewater(p: Node3D, size: Vector3, color: Color, ghost: bool) -> v
 	var dark := _mat(_DARK, ghost, 0.5, 0.5)
 	var tilt := deg_to_rad(20.0)
 	# A-frame supports: short legs at -Z (low/inlet), tall at +Z (high/outlet)
-	var lo_h : float = size.y * 0.28
-	var hi_h : float = size.y * 0.80
-	_box(p, Vector3(0.1, lo_h, 0.1), Vector3( size.x * 0.3, lo_h * 0.5, -size.z * 0.35), dark)
-	_box(p, Vector3(0.1, lo_h, 0.1), Vector3(-size.x * 0.3, lo_h * 0.5, -size.z * 0.35), dark)
-	_box(p, Vector3(0.1, hi_h, 0.1), Vector3( size.x * 0.3, hi_h * 0.5, size.z * 0.35), dark)
-	_box(p, Vector3(0.1, hi_h, 0.1), Vector3(-size.x * 0.3, hi_h * 0.5, size.z * 0.35), dark)
+	# Leg heights match the tilted tube's underside at each end: at z=±size.z*0.35
+	# the tube bottom sits at size.y*0.55 + z*tan(20°) - (size.x*0.3)/cos(20°), which
+	# for size.y=2.6 lands at y≈0.47 (low) and y≈1.62 (high) → fractions 0.18 / 0.62.
+	var lo_h : float = size.y * 0.18
+	var hi_h : float = size.y * 0.62
+	var lg_lo_r := _box(p, Vector3(0.1, lo_h, 0.1), Vector3( size.x * 0.3, lo_h * 0.5, -size.z * 0.35), dark)
+	var lg_lo_l := _box(p, Vector3(0.1, lo_h, 0.1), Vector3(-size.x * 0.3, lo_h * 0.5, -size.z * 0.35), dark)
+	var lg_hi_r := _box(p, Vector3(0.1, hi_h, 0.1), Vector3( size.x * 0.3, hi_h * 0.5, size.z * 0.35), dark)
+	var lg_hi_l := _box(p, Vector3(0.1, hi_h, 0.1), Vector3(-size.x * 0.3, hi_h * 0.5, size.z * 0.35), dark)
+	for _lg in [lg_lo_r, lg_lo_l]:
+		_lg.add_to_group("machine_leg")
+		_lg.set_meta("leg_h", lo_h)
+	for _lg in [lg_hi_r, lg_hi_l]:
+		_lg.add_to_group("machine_leg")
+		_lg.set_meta("leg_h", hi_h)
 	# inclined dewatering tube (low at -Z, high at +Z) — the encapsulated screw
 	# lives INSIDE this tube (not visible from outside, per the operator's spec
 	# for plant screws). The tube IS the encapsulation. Tilts UPWARD (+Z end is
@@ -5498,7 +5511,7 @@ static func _m_mas_bak(p: Node3D, size: Vector3, color: Color, ghost: bool) -> v
 	var body_mat := _mat(color, ghost, 0.3, 0.5)
 	var dark := _mat(_DARK, ghost, 0.5, 0.6)
 	var steel := _mat(_STEEL, ghost, 0.5, 0.45)
-	_legs(p, size, size.y * 0.5, dark)
+	_legs(p, size, size.y * 0.435, dark)
 	_box(p, Vector3(size.x * 0.8, size.y * 0.45, size.z * 0.92), Vector3(0.0, size.y * 0.66, 0.0), body_mat)
 	# top access covers
 	for i in 3:
@@ -5571,7 +5584,7 @@ static func _m_vacuum_degas(p: Node3D, size: Vector3, color: Color, ghost: bool)
 	var body := _mat(color, ghost, 0.4, 0.4)
 	var steel := _mat(_STEEL, ghost, 0.6, 0.3)
 	var dark := _mat(_DARK, ghost, 0.5, 0.6)
-	_legs(p, size, size.y * 0.4, dark)
+	_legs(p, size, size.y * 0.35, dark)
 	# Melt channel housing (horizontal, along Z) the melt flows through.
 	_box(p, Vector3(size.x * 0.5, size.y * 0.3, size.z * 0.95), Vector3(0.0, size.y * 0.5, 0.0), body)
 	# Tall vacuum chamber/dome rising off the channel.
@@ -5623,12 +5636,23 @@ static func _m_compactorband(p: Node3D, size: Vector3, color: Color, ghost: bool
 		var lskirt : StandardMaterial3D = PlaceableCatalog._mat(color, is_ghost, 0.3, 0.6)
 		var hz : float = eff_size.z * 0.45
 		# Frame legs — taller at the +Z (discharge) end so the belt climbs.
+		# Leg tops meet the inclined deck centerline at z=±hz*0.8:
+		#   deck Y(z) = eff_size.y*0.55 + sin(-20°)*z  →  at z=-hz*0.8 we lose hz*0.8*sin(20°),
+		#   at z=+hz*0.8 we gain it. Tag both pairs so extend_machine_legs() lengthens them
+		#   when the machine is raised.
+		var _incline_drop : float = hz * 0.8 * sin(deg_to_rad(20.0))   # >=0
+		var _short_h : float = maxf(0.05, eff_size.y * 0.55 - _incline_drop)
+		var _tall_h : float  = eff_size.y * 0.55 + _incline_drop
 		var leg_signs : Array[float] = [-1.0, 1.0]
 		for sx in leg_signs:
-			PlaceableCatalog._box(body, Vector3(0.09, eff_size.y * 0.42, 0.09),
-				Vector3(sx * eff_size.x * 0.4, eff_size.y * 0.21, -hz * 0.8), lsteel)
-			PlaceableCatalog._box(body, Vector3(0.09, eff_size.y * 0.78, 0.09),
-				Vector3(sx * eff_size.x * 0.4, eff_size.y * 0.39, hz * 0.8), lsteel)
+			var _lg_s : MeshInstance3D = PlaceableCatalog._box(body, Vector3(0.09, _short_h, 0.09),
+				Vector3(sx * eff_size.x * 0.4, _short_h * 0.5, -hz * 0.8), lsteel)
+			_lg_s.add_to_group("machine_leg")
+			_lg_s.set_meta("leg_h", _short_h)
+			var _lg_t : MeshInstance3D = PlaceableCatalog._box(body, Vector3(0.09, _tall_h, 0.09),
+				Vector3(sx * eff_size.x * 0.4, _tall_h * 0.5, hz * 0.8), lsteel)
+			_lg_t.add_to_group("machine_leg")
+			_lg_t.set_meta("leg_h", _tall_h)
 		# Inclined belt frame: a Node3D tilted -20° about X so it rises toward +Z.
 		var inc := Node3D.new()
 		inc.position = Vector3(0.0, eff_size.y * 0.55, 0.0)
@@ -5666,7 +5690,7 @@ static func _m_kopfilter(p: Node3D, size: Vector3, color: Color, ghost: bool) ->
 	var body := _mat(color, ghost, 0.4, 0.45)
 	var steel := _mat(_STEEL, ghost, 0.6, 0.3)
 	var dark := _mat(_DARK, ghost, 0.5, 0.6)
-	_legs(p, size, size.y * 0.5, dark)
+	_legs(p, size, size.y * 0.325, dark)
 	# Heated melt-adapter block. NB single-Laserfilter TVEplus has NO die-head screen
 	# changer (the Laserfilter replaced it), so this is just the die head — no slide bar.
 	_box(p, Vector3(size.x * 0.7, size.y * 0.55, size.z * 0.6), Vector3(0.0, size.y * 0.6, -size.z * 0.1), body)
@@ -5689,6 +5713,8 @@ static func _m_heetafslag(p: Node3D, size: Vector3, color: Color, ghost: bool) -
 	var dark := _mat(_DARK, ghost, 0.5, 0.6)
 	var water := _mat(Color(0.22, 0.44, 0.52, 0.6), ghost, 0.0, 0.2)
 	_legs(p, size, size.y * 0.45, dark)
+	# Sub-frame deck that bridges the 4 leg-tops and carries the slurry tank + cutting chamber.
+	_box(p, Vector3(size.x * 0.92, size.y * 0.04, size.z * 0.92), Vector3(0.0, size.y * 0.45 - size.y * 0.02, 0.0), steel)
 	# Die plate / adapter where the melt arrives (-Z face).
 	_cyl(p, size.x * 0.22, size.x * 0.22, size.z * 0.18, Vector3(0.0, size.y * 0.58, -size.z * 0.4), steel, "z")
 	# Round cutting-chamber housing (the water box around the blade head).
@@ -5709,7 +5735,7 @@ static func _m_ontwaterzeef(p: Node3D, size: Vector3, color: Color, ghost: bool)
 	var dark := _mat(_DARK, ghost, 0.5, 0.6)
 	var water := _mat(Color(0.22, 0.42, 0.5, 0.55), ghost, 0.0, 0.2)
 	var hz := size.z * 0.5
-	_legs(p, size, size.y * 0.4, dark)
+	_legs(p, size, size.y * 0.31, dark)
 	# Sump tray under the deck that catches the drained water.
 	_box(p, Vector3(size.x * 0.86, size.y * 0.22, size.z * 0.9), Vector3(0.0, size.y * 0.42, 0.0), frame)
 	_box(p, Vector3(size.x * 0.78, 0.04, size.z * 0.82), Vector3(0.0, size.y * 0.5, 0.0), water)
@@ -6140,11 +6166,16 @@ static func _m_feed_hopper(p: Node3D, size: Vector3, color: Color, ghost: bool) 
 	# Small under-flange catch tray
 	_box(p, Vector3(size.x * 0.45, 0.04, size.z * 0.45), \
 		Vector3(0.0, size.y * 0.04, size.z * 0.1), dark)
-	# 4 support legs from the funnel base down to the ground
+	# 4 support legs from the funnel base down to the ground.
+	# Tagged 'machine_leg' + leg_h meta so extend_machine_legs() lengthens them
+	# when the hopper is placed on a raised pad (catalog convention; matches _legs()).
+	var _hopper_leg_h := size.y * 0.1
 	for sx in [-1.0, 1.0]:
 		for sz in [-1.0, 1.0]:
-			_box(p, Vector3(0.06, size.y * 0.1, 0.06), \
-				Vector3(sx * size.x * 0.35, size.y * 0.05, sz * size.z * 0.35), dark)
+			var lg := _box(p, Vector3(0.06, _hopper_leg_h, 0.06), \
+				Vector3(sx * size.x * 0.35, _hopper_leg_h * 0.5, sz * size.z * 0.35), dark)
+			lg.add_to_group("machine_leg")
+			lg.set_meta("leg_h", _hopper_leg_h)
 
 # ── SGA opener drum: large inclined trommel + feed hopper + fines tray + drive ─
 static func _m_sga_drum(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
@@ -6152,7 +6183,7 @@ static func _m_sga_drum(p: Node3D, size: Vector3, color: Color, ghost: bool) -> 
 	var dark := _mat(_DARK, ghost, 0.5, 0.6)
 	var steel := _mat(_STEEL, ghost, 0.5, 0.4)
 	var tilt := deg_to_rad(6.0)
-	_legs(p, size, size.y * 0.5, dark)
+	_legs(p, size, size.y * 0.2, dark)
 	# rotating trommel drum (slightly inclined, runs along Z) — SPINS about ~Z
 	var drum_rm := _spinning_tube(p, size.x * 0.4, size.z * 0.84, Vector3(0.0, size.y * 0.62, 0.0), shell, PI / 2.0 + tilt, Vector3.BACK, ghost, 16.0)
 	# raised drive bands around the drum (ride with it)
@@ -6233,7 +6264,7 @@ static func _m_ballistic(p: Node3D, size: Vector3, color: Color, ghost: bool) ->
 	var body_mat := _mat(color, ghost, 0.3, 0.5)
 	var dark := _mat(_DARK, ghost, 0.5, 0.6)
 	var steel := _mat(_STEEL, ghost, 0.5, 0.4)
-	_legs(p, size, size.y * 0.45, dark)
+	_legs(p, size, size.y * 0.25, dark)
 	# main inclined housing
 	var house := _box(p, Vector3(size.x * 0.8, size.y * 0.5, size.z * 0.84), Vector3(0.0, size.y * 0.66, 0.0), body_mat)
 	house.rotation = Vector3(deg_to_rad(-10.0), 0.0, 0.0)
@@ -6505,7 +6536,12 @@ static func _m_nir_sorter(p: Node3D, size: Vector3, color: Color, ghost: bool) -
 	# the operator. Stainless, slightly sloped toward the +Z far edge so the
 	# material naturally migrates onto whatever downstream conveyor is placed
 	# at the catch's discharge edge.
-	var catch_y : float = deck_y - 1.50
+	# The operator describes the catch deck as ~1.5 m below the main belt, but the
+	# machine sits on a flat floor at y=0 and deck_y is only ~1.0 m up, so a literal
+	# 1.5 m drop puts the deck and its legs UNDERGROUND. Clamp the drop so the catch
+	# deck always sits at least 0.25 m above the floor (still reads as a clear
+	# lower-level catch relative to the main belt at deck_y ~ 1.0 m). #leg-fix
+	var catch_y : float = maxf(deck_y - 1.50, 0.25)
 	var catch_z : float = chute_cz + size.z * 0.42
 	var catch_d : float = size.z * 0.30
 	var catch_deck := _box(p, Vector3(size.x * 0.96, 0.06, catch_d),
@@ -6583,7 +6619,9 @@ static func _m_mengsilo(p: Node3D, size: Vector3, color: Color, ghost: bool) -> 
 	var signs: Array[float] = [-1.0, 1.0]
 	for sx in signs:
 		for sz in signs:
-			_box(p, Vector3(0.14, leg_h, 0.14), Vector3(sx * r * 0.72, leg_h * 0.5, sz * r * 0.72), dark)
+			var lg := _box(p, Vector3(0.14, leg_h, 0.14), Vector3(sx * r * 0.72, leg_h * 0.5, sz * r * 0.72), dark)
+			lg.add_to_group("machine_leg")
+			lg.set_meta("leg_h", leg_h)
 	# conical bottom + cylindrical body + short top
 	_cyl(p, r, 0.16, size.y * 0.24, Vector3(0.0, leg_h + size.y * 0.12, 0.0), shell)
 	_cyl(p, r, r, size.y * 0.46, Vector3(0.0, leg_h + size.y * 0.47, 0.0), shell)
@@ -7573,7 +7611,7 @@ static func _m_metaaldetector(p: Node3D, size: Vector3, color: Color, ghost: boo
 	# short legs. Yellow REJECT placard mounted on the +Z face so the operator
 	# sees it from the inspection side.
 	var bin_w : float = belt_w + 0.30
-	var bin_h : float = size.y * 0.40
+	var bin_h : float = size.y * 0.28
 	var bin_d : float = size.z * 0.18
 	var bin_y : float = deck_y - bin_h - 0.05
 	var bin_z : float = -belt_l * 0.5 - bin_d * 0.55
@@ -7714,8 +7752,10 @@ static func _m_vw_trommel(p: Node3D, size: Vector3, _color: Color, ghost: bool) 
 		Vector3(thrust_x + 0.16, thrust_y, thrust_z), placard)
 
 	# ── FOUNDATION SLAB + DRAIN GRATING TRAY underneath the drum ───────────────
-	_box(p, Vector3(W * 0.95, 0.10, D * 0.92),
+	var slab := _box(p, Vector3(W * 0.95, 0.10, D * 0.92),
 		Vector3(0.0, 0.07, 0.0), aged)                          # slab base
+	slab.add_to_group("machine_foot")
+	slab.set_meta("foot_y", 0.07)
 	# Grating bars running along Z, ten parallel bars across the X span.
 	var n_bars : int = 11
 	for k in n_bars:
@@ -7782,7 +7822,7 @@ static func _m_scheidingsgoot(p: Node3D, size: Vector3, color: Color, ghost: boo
 	_box(p, Vector3(size.x * 0.86, wall_h * 0.5, 0.06),
 		Vector3(0.0, trough_y - size.z * 0.5 * sin(tilt) + wall_h * 0.25, -size.z * 0.46), dark)
 	# Four floor legs that lengthen to the floor when raised (#70).
-	_legs(p, size, trough_y - wall_h * 0.5, dark)
+	_legs(p, size, trough_y, dark)
 
 # ── MAS droger (dryer): a compact horizontal drying drum unit (smaller / different
 #    proportions than mech_dryer). Drum SPINS about its long (Z) axis. End flanges,
@@ -8120,7 +8160,7 @@ static func _m_extruder_unit(p: Node3D, size: Vector3, color: Color, ghost: bool
 	var teal   := _mat(Color(0.16, 0.55, 0.55), ghost, 0.4, 0.4)    # EIRENE / Wave-Cut accent
 
 	var barrel_cy : float = size.y * 0.31                  # barrel centreline ≈ 1.30 m
-	var barrel_leg_h : float = barrel_cy - size.y * 0.10   # skid leg top, just under the cabinet
+	var barrel_leg_h : float = barrel_cy * 0.15            # skid leg top, just under the navy cabinet (cabinet underside = barrel_cy*0.56 - barrel_cy*0.41)
 	var hood_r : float = size.x * 0.33
 	var hood_cy : float = barrel_cy * 0.95
 	var hood_top : float = hood_cy + hood_r                # top surface of the clad barrel
