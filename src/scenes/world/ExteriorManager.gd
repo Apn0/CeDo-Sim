@@ -123,6 +123,45 @@ func _bo(ga: Vector3, offset: Vector3) -> Vector3:
 func _world_yaw() -> float:
 	return _world.call("_world_yaw")
 
+# #199 — Per-item ground Y sampling. The old build_exterior assumed a single
+# flat ground_y across the whole plant footprint, which is fine on the bare
+# exterior_ground plane but flat-out wrong on top of an OSM/PDOK terrain
+# where the woods, road shoulder and bale-yard plinths all sit at different
+# elevations. Fences, poles and trees that share one Y end up floating over
+# dips (woods area) or buried in mounds.
+#
+# Casts a 200 m vertical ray at the requested XZ. Hits the first body with
+# collision — exterior_ground, terrain.glb, road decks, bale-yard fills,
+# whatever's there. Returns the hit Y; fall back to `fallback_y` if nothing
+# was hit (e.g. the XZ is over the void).
+func _sample_ground_y(world_xz: Vector3, fallback_y: float) -> float:
+	if _world == null:
+		return fallback_y
+	var w3d := (_world as Node3D).get_world_3d() if _world is Node3D else null
+	if w3d == null:
+		return fallback_y
+	var space : PhysicsDirectSpaceState3D = w3d.direct_space_state
+	if space == null:
+		return fallback_y
+	var from := Vector3(world_xz.x, fallback_y + 200.0, world_xz.z)
+	var to   := Vector3(world_xz.x, fallback_y - 200.0, world_xz.z)
+	var q := PhysicsRayQueryParameters3D.create(from, to)
+	q.collide_with_areas = false
+	q.collide_with_bodies = true
+	var hit := space.intersect_ray(q)
+	if hit.is_empty():
+		return fallback_y
+	return float((hit["position"] as Vector3).y)
+
+## Rotates `offset` through the world yaw, adds it to `ga` (anchor at the plant-
+## floor Y), AND OVERRIDES the Y with the ground sampled at the resulting XZ.
+## Use this in place of `_bo()` for items that need to plant on real terrain
+## (fence posts, poles, trees) instead of riding the fixed plant-floor plane.
+func _bo_grounded(ga: Vector3, offset: Vector3) -> Vector3:
+	var p : Vector3 = _bo(ga, offset)
+	p.y = _sample_ground_y(p, ga.y)
+	return p
+
 # ── Road network branches (south ext, east service, north access, aisle) ────
 func _spawn_road_extensions(anchor: Vector3, ground_y: float) -> void:
 	var ga := Vector3(anchor.x, ground_y, anchor.z)
@@ -155,15 +194,18 @@ func _spawn_perimeter_fence(anchor: Vector3, ground_y: float) -> void:
 		var f = _FENCE_SCRIPT.new()
 		f.name = p["name"]
 		# setup() must come BEFORE add_child so _ready() sees populated waypoints.
+		# #199 — each endpoint Y is sampled from the actual ground at its XZ, so
+		# a fence that crosses a dip (woods) follows the terrain instead of
+		# floating at the plant-floor plane.
 		var pts : Array = p["pts"]
-		f.setup([_bo(ga, pts[0]), _bo(ga, pts[1])])
+		f.setup([_bo_grounded(ga, pts[0]), _bo_grounded(ga, pts[1])])
 		_world.add_child(f)
 	# Gate barrier — closed by default; set_open(true) when gate logic wires up.
 	var gate = _GATE_SCRIPT.new()
 	gate.name = "PlantEntryGate"
 	gate.setup(0.0)
 	_world.add_child(gate)
-	gate.global_position = _bo(ga, GATE_OFFSET)
+	gate.global_position = _bo_grounded(ga, GATE_OFFSET)
 	gate.rotation.y = by
 	print("[ExteriorManager] Perimeter fence: %d runs + 1 gate barrier (south entry)" % perimeters.size())
 
@@ -193,16 +235,20 @@ func _spawn_exterior_props(anchor: Vector3, ground_y: float) -> void:
 	_world.add_child(markings)
 	for m in ROAD_MARKINGS:
 		markings.build_at(m[0] as String, _bo(ga, m[1] as Vector3), by, "white")
-	# Tree clusters along the west road shoulder.
+	# Tree clusters along the west road shoulder. #199 — sample the ground at
+	# each cluster centre so trees plant on real terrain (the road shoulder is
+	# slightly lower than the plant floor in the OSM/PDOK strip).
 	for i in TREE_OFFSETS.size():
 		var tc = _TREE_SCRIPT.new()
 		tc.name = "TreeCluster_%d" % i
 		_world.add_child(tc)
-		tc.cluster_at(_bo(ga, TREE_OFFSETS[i]), TREE_RADIUS, TREE_COUNT, i * 17 + 3)
-	# Power poles with wires strung between consecutive poles.
+		tc.cluster_at(_bo_grounded(ga, TREE_OFFSETS[i]), TREE_RADIUS, TREE_COUNT, i * 17 + 3)
+	# Power poles with wires strung between consecutive poles. #199 — each pole
+	# samples its own ground; wires between them then connect at their real
+	# crossarm heights (which is what gives the line its visible droop).
 	var pole_positions : Array = []
 	for offset in POWER_POLE_OFFSETS:
-		pole_positions.append(_bo(ga, offset))
+		pole_positions.append(_bo_grounded(ga, offset))
 	var poles : Array = []
 	for i in pole_positions.size():
 		var pp = _POLE_SCRIPT.new()
@@ -216,23 +262,24 @@ func _spawn_exterior_props(anchor: Vector3, ground_y: float) -> void:
 		poles.append(pp)
 	for i in poles.size() - 1:
 		poles[i].build_to(pole_positions[i + 1])
-	# Transformer cabinet.
+	# Transformer cabinet — also gets the ground sample so the box sits on the
+	# yard surface, not floating in air over the south plinth.
 	var transformer = _TRANSFORMER_SCRIPT.new()
 	transformer.name = "TransformerCabinet"
 	_world.add_child(transformer)
-	transformer.global_position = _bo(ga, TRANSFORMER_OFFSET)
+	transformer.global_position = _bo_grounded(ga, TRANSFORMER_OFFSET)
 	transformer.rotation.y = by
 	transformer.setup()
 	# Neighbour buildings — SW solar-roof + NW workshop.
 	var nb_sw = _NEIGHBOR_SCRIPT.new()
 	nb_sw.name = "NeighborBuilding_SW"
 	_world.add_child(nb_sw)
-	nb_sw.build_at(_bo(ga, NEIGHBOR_SW["offset"]), NEIGHBOR_SW["size"],
+	nb_sw.build_at(_bo_grounded(ga, NEIGHBOR_SW["offset"]), NEIGHBOR_SW["size"],
 		NEIGHBOR_SW["body"], NEIGHBOR_SW["text"], NEIGHBOR_SW["sign"], by, NEIGHBOR_SW["seed"])
 	var nb_nw = _NEIGHBOR_SCRIPT.new()
 	nb_nw.name = "NeighborBuilding_NW"
 	_world.add_child(nb_nw)
-	nb_nw.build_at(_bo(ga, NEIGHBOR_NW["offset"]), NEIGHBOR_NW["size"],
+	nb_nw.build_at(_bo_grounded(ga, NEIGHBOR_NW["offset"]), NEIGHBOR_NW["size"],
 		NEIGHBOR_NW["body"], NEIGHBOR_NW["text"], NEIGHBOR_NW["sign"], by, NEIGHBOR_NW["seed"])
 	print("[ExteriorManager] Exterior props: sidewalk + crosswalk + %d markings + %d tree clusters + %d power poles + transformer + 2 neighbour buildings" \
 		% [ROAD_MARKINGS.size(), TREE_OFFSETS.size(), POWER_POLE_OFFSETS.size()])
