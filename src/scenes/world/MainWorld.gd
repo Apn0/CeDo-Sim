@@ -2,25 +2,16 @@ extends Node3D
 
 class_name MainWorld
 
+# ── Cross-module forwarders (#195) ───────────────────────────────────────────
+# Some extracted modules read these off _world (the MainWorld instance) by name.
+# Keep thin aliases here so the dynamic lookups in ShiftCarSpawner /
+# ShiftLifecycleManager / etc. resolve without coupling to the new module names
+# at every call site.
+const NPC_DATA           : Dictionary = NPCSpawner.NPC_DATA
+const _CAR_SLOTS         : Dictionary = ShiftCarSpawner.CAR_SLOTS
+
 # ── Export ────────────────────────────────────────────────────────────────────
 @export var building_shell_path: String = "res://assets/models/CeDo_building.obj"
-
-# #171 — show a small driven rotor on each Line 3C machine (its spin is the one
-# that gates flow). Flip to false if the rotors read too busy with the flakes.
-const SHOW_LINE_ROTORS := true
-
-# ── Fallback spawn positions (used only if NPCSpawnPoints markers are missing)
-var npc_spawn_fallback: Dictionary = {
-	"romain":     Vector3(0,   0,  5),
-	"vincent":    Vector3(5,   0,  5),
-	"pascal":     Vector3(-5,  0,  0),
-	"kevin":      Vector3(-5,  0, -5),
-	"emrah":      Vector3(0,   0,-10),
-	"yassine":    Vector3(5,   0, -5),
-	"abdellilah": Vector3(10,  0,  0),
-	"mohammed":   Vector3(10,  0, -5),
-	"peter":      Vector3(15,  0, 10),
-}
 
 # ── Runtime references ────────────────────────────────────────────────────────
 var player          : CharacterBody3D
@@ -34,6 +25,7 @@ var line_flow       : LineFlow
 var container_guides: ContainerGuideManager   # holographic catch-container placement guides (#85)
 var crew_manager    : CrewManager
 var scada           : Node          # ScadaDashboard (ISA-101 overlay)
+var bale_yard_manager : BaleYardManager   # #195 — yards/spawn-queue/proximity-sweep/reset/restock
 var npcs            : Dictionary = {}
 
 # ── Cached scene-tree lookups ────────────────────────────────────────────────
@@ -42,6 +34,13 @@ var npcs            : Dictionary = {}
 # nodes every helper needed and re-resolve only if the cached one was freed.
 var _shell_mesh_cache    : MeshInstance3D = null
 var _player_spawn_cache  : Node3D         = null
+
+# #195 — Canonical world-yaw math + layout transforms extracted to WorldFrame.
+# Created at the very start of `_ready()` (before any helper that may need
+# `_world_yaw()` / `_bo()` / `_layout_to_scene()` fires). MainWorld keeps thin
+# forwarders below that delegate into this child node so the scene tree shape
+# and call signatures are preserved.
+var _world_frame : WorldFrame = null
 
 func _shell() -> MeshInstance3D:
 	if _shell_mesh_cache != null and is_instance_valid(_shell_mesh_cache):
@@ -68,78 +67,14 @@ var is_setup_mode : bool = false
 var setup_overlay : CanvasLayer = null
 
 # ── NPC catalogue ─────────────────────────────────────────────────────────────
-## #133 — operator spec. Per-NPC appearance overrides:
-##   hair  : "short" (default), "mid", "bald"
-##   cap   : if true, a dark-blue work cap replaces the hair on top of the head
-##   beard : "none" (default), "thin", "thick"
-##   hair_color: optional Color override (defaults to a variant-driven choice)
-const NPC_DATA: Dictionary = {
-	# #126 — per-NPC body proportions + facial-hair flavor. height_mul scales the
-	# whole body in Y (0.85=short, 1.15=tall), width_mul scales torso/limbs in
-	# X/Z (0.85=skinny, 1.20=heavyset). moustache/goatee are independent of
-	# beard so you can have moustache-only or goatee-only.
-	"romain":     {"name": "Romain",     "role": "shift_leader",       "color": Color.CYAN,             "appearance": {"height_mul": 1.0, "width_mul": 1.0, "moustache": true},
-		"car": "res://src/scenes/vehicles/cars/HyundaiI20_2010.tscn"},
-	"vincent":    {"name": "Vincent",    "role": "asst_shift_leader",  "color": Color.CORNFLOWER_BLUE,  "appearance": {"height_mul": 1.12, "width_mul": 0.88},
-		"car": "res://src/scenes/vehicles/cars/VolvoV40Placeholder.tscn"},   # PLACEHOLDER: black Astra-as-Volvo until real GLB lands
-	"pascal":     {"name": "Pascal",     "role": "extruder_op",        "color": Color.YELLOW,           "appearance": {"hair": "bald", "height_mul": 0.90, "width_mul": 1.15},
-		"car": "res://src/scenes/vehicles/cars/FordKa2003.tscn"},   # Ford Ka 2003 — per-NPC Y-shrink 0.85 (body only) applied in _spawn_car_in_bay for "pascal"
-	"kevin":      {"name": "Kevin",      "role": "extruder_op",        "color": Color.GREEN,            "appearance": {"cap": true, "hair_under_cap": true, "height_mul": 1.0, "width_mul": 1.0},
-		"car": ""},   # not assigned a car yet
-	"emrah":      {"name": "Emrah",      "role": "all_rounder",        "color": Color.WHITE,            "appearance": {"goatee": true, "height_mul": 1.13, "width_mul": 0.87},
-		"car": "res://src/scenes/vehicles/cars/AudiA3Sportback.tscn"},
-	"yassine":    {"name": "Yassine",    "role": "transitional",       "color": Color.LIGHT_GRAY,       "appearance": {"height_mul": 1.0, "width_mul": 0.95},
-		"car": "passenger:player"},   # rides shotgun in the player's Swift
-	"abdellilah": {"name": "Abdellilah", "role": "permanent_feeder",   "color": Color.ORANGE,           "appearance": {"cap": true, "hair_under_cap": true, "height_mul": 1.0, "width_mul": 1.05},
-		"car": "res://src/scenes/vehicles/cars/FordKa2003.tscn"},
-	"mohammed":   {"name": "Mohammed",   "role": "permanent_feeder",   "color": Color.TOMATO,           "appearance": {"beard": "full", "hair": "mid", "hair_color": Color(0.10, 0.07, 0.05), "height_mul": 1.0, "width_mul": 1.0},
-		"car": "res://src/scenes/vehicles/cars/VWGolfMk6.tscn"},
-	"peter":      {"name": "Peter",      "role": "production_manager", "color": Color.MEDIUM_ORCHID,    "appearance": {"height_mul": 0.98, "width_mul": 1.20},
-		"car": "res://src/scenes/vehicles/cars/BMWX1Placeholder.tscn"},   # PLACEHOLDER: white AClass-as-BMW until real GLB lands
-}
-# #155 — Player's car. Swift goes to the player; Yasin (yassine) rides shotgun.
-const PLAYER_CAR_SCENE : String = "res://src/scenes/vehicles/cars/SuzukiSwiftGLX.tscn"
+# #195 — NPC_DATA + the _spawn_npcs / _register_lifts_for_booking / get_npc /
+# get_all_npcs implementations live on NPCSpawner (src/scenes/world/NPCSpawner.gd).
+# Other call sites here read the roster via `NPCSpawner.NPC_DATA`.
 
-# ── #166 Pre-shift arrival sequence ──────────────────────────────────────────
-# A fresh game starts PRE_SHIFT_WINDOW_S game-seconds before the bell so the
-# arrival sequence has room to play out. ShiftClock seeds to -1800 and ticks
-# up to 0; the bell fires shift_started again at that moment.
-const PRE_SHIFT_WINDOW_S : float = 30.0 * 60.0   # 30 minutes
-
-# Per-NPC schedule, expressed in seconds RELATIVE to the bell (negative = before).
-# `pre_changed` = arrives already in PPE/boots (skips dressing-room loop).
-# `dress_time_s` = how long they spend in the locker room (-1 → use random
-#                  uniform 2..6 min default).
-# `smokes_at_s`  = if set, NPC stands at SMOKE_SPOT smoking from that time until
-#                  3 min later. Only Pascal has this.
-# Order corresponds to NPC_DATA keys above. Unlisted NPCs default to T-15 +
-# random-dressing (so Mohammed / Peter / Vincent fallback work cleanly).
-const PRE_SHIFT_SCHEDULE : Dictionary = {
-	"emrah":      {"arrives_at_s": -35.0 * 60.0, "pre_changed": false, "dress_time_s": -1.0},
-	"pascal":     {"arrives_at_s": -40.0 * 60.0, "pre_changed": true,  "dress_time_s": 0.0, "smokes_at_s": -33.0 * 60.0},
-	"vincent":    {"arrives_at_s": -40.0 * 60.0, "pre_changed": true,  "dress_time_s": 0.0},
-	"romain":     {"arrives_at_s": -25.0 * 60.0, "pre_changed": false, "dress_time_s": -1.0},
-	# PART C1 — Mohammed (permanent feeder, line 3A/3B) is a punctual but not
-	# early arriver: T-25 min with the standard 4-min uniform changeover. Without
-	# a schedule entry, PreShiftSequence skipped him and he'd stand at the feeder
-	# post even at 06:35 — the operator-reported "Mohammed/Peter still at post"
-	# half of the bug.
-	"mohammed":   {"arrives_at_s": -25.0 * 60.0, "pre_changed": false, "dress_time_s": -1.0},
-	"yassine":    {"arrives_at_s": -20.0 * 60.0, "pre_changed": false, "dress_time_s": -1.0, "rides_with": "player"},
-	"abdellilah": {"arrives_at_s": -17.0 * 60.0, "pre_changed": false, "dress_time_s":  8.0 * 60.0},
-	# PART C1 — Peter (production manager) shows up later but BEFORE the bell so
-	# he's in his office at start of shift. T-12 min, pre-changed (managers
-	# arrive in office clothes, no locker-room loop).
-	"peter":      {"arrives_at_s": -12.0 * 60.0, "pre_changed": true,  "dress_time_s": 0.0},
-	"kevin":      {"arrives_at_s": -10.0 * 60.0, "pre_changed": false, "dress_time_s": -1.0},
-}
-
-# Placeholder dressing room + smoke spot — operator can refine via WorldSetup
-# markers later. For now we anchor relative to the player spawn so the loop
-# works against the same building shell as everything else (#34 lesson).
-const DRESSING_ROOM_OFFSET : Vector3 = Vector3(-8.0, 0.0,  6.0)   # inside, near canteen
-const CANTEEN_OFFSET       : Vector3 = Vector3( 0.0, 0.0, 25.0)   # matches MainWorld:771 fallback
-const SMOKE_SPOT_OFFSET    : Vector3 = Vector3( 4.0, 0.0,-12.0)   # outside, near parking
+# Per-NPC schedule + dressing-room / canteen / smoke-spot offsets are now
+# owned by PreShiftSpawner.gd (#195 extraction). Forwarder kept so the
+# _position_cars_for_elapsed() call site downstream still resolves.
+const PRE_SHIFT_SCHEDULE : Dictionary = PreShiftSpawner.PRE_SHIFT_SCHEDULE
 
 # =============================================================================
 ## When true, the scattered test/demo props are NOT spawned — a clean canvas of just
@@ -148,15 +83,22 @@ const CLEAN_CANVAS : bool = true
 
 func _ready() -> void:
 	# Children's _ready() has already run — GameState has loaded its save file.
+	# #195 — Spawn the WorldFrame BEFORE anything else so the earliest helpers
+	# that look up `_world_yaw()` / `_bo()` / `_layout_to_scene()` (overhead bay
+	# lights, vehicles, NPCs) see a live child manager.
+	if _world_frame == null:
+		_world_frame = WorldFrame.new()
+		_world_frame.name = "WorldFrame"
+		_world_frame.setup(self)
+		add_child(_world_frame)
 	shift_clock = find_child("ShiftClock", false, false) as ShiftClock
 	game_state  = find_child("GameState",  false, false) as GameState
 
 	if not shift_clock: push_error("[MainWorld] ShiftClock node missing")
 	if not game_state:  push_error("[MainWorld] GameState node missing")
 
-	_load_building_shell()
-	_spawn_wall_openings()
-	_spawn_player()
+	var shell_loader := BuildingShellLoader.new(); add_child(shell_loader); shell_loader.setup(self, building_shell_path); shell_loader.load_shell_and_openings()
+	var player_spawner := PlayerSpawner.new(); add_child(player_spawner); player_spawner.setup(self); player = player_spawner.spawn()
 	# Road + parking must come AFTER the player spawn so we anchor them relative
 	# to `_player_spawn_pos` instead of world origin. The building shell is
 	# re-anchored from RD coords at runtime — world origin is meaningless;
@@ -166,21 +108,21 @@ func _ready() -> void:
 	# exterior ground so NPCs (NavigationAgent3D) can route around obstacles
 	# instead of walking in straight lines through machines and walls.
 	_spawn_navigation_region()
-	_spawn_operator_context()
-	_spawn_build_mode()
-	_spawn_line_flow()
+	var sys_spawner := SystemsSpawner.new(); add_child(sys_spawner); sys_spawner.setup(self)
 	_spawn_container_guides()
-	_spawn_npcs()
+	var npc_spawner := NPCSpawner.new(); add_child(npc_spawner); npc_spawner.setup(self, _player_spawn_pos); npcs = npc_spawner.spawn_all()
 	# #166 Phase B — if we're in pre-shift, intercept the freshly-spawned NPCs
 	# and run them through the arrival → dress → canteen loop. Resumed saves
-	# (where the shift bell already rang) skip this entirely.
-	_spawn_pre_shift_sequence()
+	# (where the shift bell already rang) skip this entirely. (#195 extraction)
+	var pre_shift := PreShiftSpawner.new()
+	add_child(pre_shift)
+	pre_shift.setup(self, npcs, shift_clock, staff_parking, _player_spawn_pos)
 	# #155 — spawn the shift's cars + put the player in their Swift + seat Yasin.
 	# MUST come after _spawn_npcs (needs npcs["yassine"] to exist to seat as
 	# passenger) AND _spawn_operator_context (needs operator_context to board the
 	# player into the Swift). Was previously called at line ~105 BEFORE both —
 	# Yasin silently never got seated. Audit-caught (#157 follow-up).
-	_spawn_shift_cars_and_player_drive_in()
+	var car_spawner := ShiftCarSpawner.new(); add_child(car_spawner); car_spawner.setup(self, staff_parking, npcs, operator_context, player, _player_spawn_pos)
 	_spawn_hud()
 	# Performance overlay + auto-logger (F3 toggles; logs a [PERF] snapshot every
 	# 5 s so the lag can be diagnosed straight from the console).
@@ -239,10 +181,8 @@ func _input(event: InputEvent) -> void:
 
 func _spawn_world_items() -> void:
 	# Vehicles ALWAYS come from WorldLayout (or fall back to defaults if empty).
-	_spawn_forklift()
-	_spawn_bale_clamp()
+	var veh_spawner := VehicleSpawner.new(); add_child(veh_spawner); veh_spawner.setup(self, _player_spawn_pos)
 	_spawn_merlo()
-	_spawn_mast_lift()
 
 	# When the user has configured a world via WorldSetup, treat it as
 	# authoritative: skip ALL legacy hardcoded clutter (utility props, feeder
@@ -251,21 +191,14 @@ func _spawn_world_items() -> void:
 	var layout_authoritative := WorldLayout.is_configured()
 
 	if not layout_authoritative:
-		_spawn_battery_station()   # walkie-battery charger in the shift-leader office
-		_spawn_shift_leader_desk() # shift-leader PC: the bale scan log (#3)
-		_spawn_service_stations()  # wall outlet (electric lift) + diesel pump
-		_spawn_wire_cutter()       # concrete-scissors tool the player picks up on foot
-		_spawn_lpg_rack()          # outdoor LPG cylinder rack — full below, empty above
+		LegacyPropsSpawner.spawn_all(self, _get_factory_anchor(), _vehicle_anchor(), _floor_top_y())
 		if not CLEAN_CANVAS:
-			_spawn_extruder_3b()
-			_spawn_bale_yard()
-			_spawn_test_bunker()
-			_spawn_test_skip()
-			_spawn_test_waste_zones()
-		_spawn_feeder_line()
+			_spawn_bale_yard()   # stays on MainWorld (not in LegacyPropsSpawner spec)
 	else:
 		print("[MainWorld] WorldLayout is authoritative — skipping legacy utility/demo spawns")
-		_spawn_bale_yards_from_layout()
+		bale_yard_manager = BaleYardManager.new()
+		add_child(bale_yard_manager)
+		bale_yard_manager.setup(self, shift_clock)
 
 	# Final LineFlow discovery pass — AFTER every machine exists.
 	if line_flow:
@@ -275,167 +208,21 @@ func _spawn_world_items() -> void:
 	# and — critically — the HUD crew-assignment panel (C / Numpad-.) bails out
 	# when crew_manager is null, so skipping it broke that menu entirely.
 	_spawn_crew_manager()
-	_start_or_resume_shift()
-	_setup_autosave()
+	var shift_lc := ShiftLifecycleManager.new(); add_child(shift_lc); shift_lc.setup(self, shift_clock, staff_parking, _player_spawn_pos)
+	var save_coord := SaveCoordinator.new(); add_child(save_coord); save_coord.setup(self, player, game_state, shift_clock, crew_manager)
 
 	# WorldEnvironment + sun are now in the tree — push saved graphics prefs
 	# (SSAO / SDFGI / fog / brightness / shadow distance) onto them.
 	SettingsManager.refresh_environment()
-	_apply_textures()
-	_spawn_overhead_lights()
+	TextureKit.apply_textures(self, _shell())
+	# #195 — overhead lights now built by InteriorLightingManager via build_all()
+	# inside the road-and-parking spawn block (mounts under ShellMesh once it exists).
 	_spawn_plant_audio()
 
 	print("[MainWorld] Ready — %d NPCs, shift running: %s" \
 		% [npcs.size(), str(shift_clock.shift_active) if shift_clock else "?"])
 
-# =============================================================================
-# BUILDING SHELL
-# =============================================================================
-func _load_building_shell() -> void:
-	var mesh_instance := _shell()
-	if not mesh_instance:
-		push_error("[MainWorld] ShellMesh not found")
-		return
-	# Use the SOLIDIFIED shell (real wall thickness, welded, closed seams) when it
-	# exists — kills the zero-thickness light leaks. Built by tools/solidify_building.gd;
-	# falls back to the raw thin shell if absent.
-	# #105 — collision must come from the THIN mesh, NOT the solid. The solid has
-	# 0.30 m wall thickness baked in (inner + outer surfaces), which traps the
-	# player capsule between the two faces ("stuck in wall on un-modified walls").
-	# WallOpenings does its own collision regen, sourced from a separate thin
-	# mesh below; we DON'T call create_trimesh_collision() here anymore so we
-	# don't add a thick collider that WallOpenings then has to fight.
-	if ResourceLoader.exists("res://assets/models/CeDo_building_solid.res"):
-		var solid = load("res://assets/models/CeDo_building_solid.res")
-		if solid is Mesh:
-			mesh_instance.mesh = solid
-			print("[MainWorld] Using solidified building shell (visual)")
-	print("[MainWorld] Building collision will be generated by WallOpenings (thin mesh)")
-	_generate_floor_from_shell(mesh_instance)
-	print("[MainWorld] Dynamic floor generated from building corners")
 
-# Caches the building mesh so doors/windows can carve real, walkable openings
-# at runtime (never touches the source .obj). Must exist BEFORE BuildMode loads
-# its layout, since saved doors/windows re-cut their holes on load.
-# =============================================================================
-# PROCEDURAL TEXTURES  (no image assets exist — surface detail is generated)
-# =============================================================================
-func _apply_textures() -> void:
-	# Floor — worn concrete. Photo-calibrated from assets/reference_photos/
-	# building/hal_0_*.png + yellow_ladders_railings_lines.png. The real CeDo
-	# floor is a warm-grey-brown worn polished concrete, NOT a neutral mid-grey;
-	# the previous (0.42, 0.41, 0.39) was too lifted and too neutral.
-	var floor_node := find_child("TempFloor", true, false)
-	if floor_node:
-		var fm := floor_node.find_child("MeshInstance3D", false, false) as MeshInstance3D
-		if fm:
-			# Photo-extracted hall-floor texture (assets/textures/floor/) when
-			# local assets are present; procedural noise otherwise.
-			var floor_mat := MaterialPalette.mat_concrete_worn()
-			if floor_mat.albedo_texture == null:
-				floor_mat = _industrial_mat(Color(0.34, 0.32, 0.30), 0.55, 0.92, false)
-			fm.material_override = floor_mat
-	# Building shell — painted concrete/steel. Use a SIMPLE flat material rather
-	# than the triplanar-noise one: the noise normal-map combined with the .obj's
-	# mixed winding was making some wall/roof faces render black on one side.
-	# WallOpenings now regenerates normals from winding AND flips inward-facing
-	# tris (see WallOpenings._fix_winding_outward), so the shell can use a clean
-	# matte pass without the noise normal-map trickery.
-	# Calibrated cream-grey from _e_kast.png (background wall) — the real walls
-	# are not pure-white painted, they're a dusty cream from years of service.
-	var shell := _shell()
-	if shell:
-		var sm := StandardMaterial3D.new()
-		sm.albedo_color = Color(0.70, 0.68, 0.63)
-		sm.roughness    = 0.94          # matte — kills bright specular hot-spots
-		sm.metallic     = 0.0
-		# CULL_DISABLED so back faces still render (single-sided walls would
-		# disappear from one side otherwise). Godot auto-flips the normal on
-		# the back face, so both sides light correctly.
-		sm.cull_mode    = BaseMaterial3D.CULL_DISABLED
-		# #111 — the solidified .obj now emits `usemtl shell` and `usemtl posts`
-		# as separate surfaces (surface 0 = walls/roof, surface 1 = wooden
-		# V-beams). If the imported mesh has multiple surfaces, override per
-		# surface so the V-beams pick up the photo-calibrated timber material
-		# instead of inheriting the cream shell paint. Falls back to
-		# material_override on a single-surface mesh (old .obj).
-		var surface_count : int = 0
-		if shell.mesh != null:
-			surface_count = shell.mesh.get_surface_count()
-		if surface_count >= 2:
-			shell.material_override = null
-			shell.set_surface_override_material(0, sm)
-			var timber := MaterialPalette.mat_timber_dark()
-			# Apply CULL_DISABLED to timber too — posts are baked as proper
-			# 6-sided boxes by solidify_building.py, but the photo material is
-			# triplanar with a normal map, and CULL_DISABLED matches the shell
-			# behaviour so lighting reads identically across both surfaces.
-			timber.cull_mode = BaseMaterial3D.CULL_DISABLED
-			shell.set_surface_override_material(1, timber)
-		else:
-			shell.material_override = sm
-	print("[MainWorld] Procedural textures applied (floor + building)")
-
-## Procedural surface material: world-triplanar bump + roughness noise so the
-## surface has real texture under light, without needing any image files.
-func _industrial_mat(base: Color, tex_scale: float, rough: float, cull_off: bool) -> StandardMaterial3D:
-	var rn := FastNoiseLite.new()
-	rn.frequency = 0.5
-	var rough_tex := NoiseTexture2D.new()
-	rough_tex.width = 256
-	rough_tex.height = 256
-	rough_tex.seamless = true
-	rough_tex.noise = rn
-
-	var nn := FastNoiseLite.new()
-	nn.frequency = 0.9
-	var normal_tex := NoiseTexture2D.new()
-	normal_tex.width = 256
-	normal_tex.height = 256
-	normal_tex.seamless = true
-	normal_tex.as_normal_map = true
-	normal_tex.bump_strength = 1.5
-	normal_tex.noise = nn
-
-	var m := StandardMaterial3D.new()
-	m.albedo_color = base
-	m.roughness = rough
-	m.roughness_texture = rough_tex
-	m.normal_enabled = true
-	m.normal_texture = normal_tex
-	m.normal_scale = 0.7
-	m.uv1_triplanar = true            # works without mesh UVs (the carved shell has none)
-	m.uv1_world_triplanar = true      # consistent real-world tiling
-	m.uv1_scale = Vector3(tex_scale, tex_scale, tex_scale)
-	if cull_off:
-		m.cull_mode = BaseMaterial3D.CULL_DISABLED
-	return m
-
-func _spawn_wall_openings() -> void:
-	var shell := _shell()
-	if not shell:
-		push_error("[MainWorld] ShellMesh not found — wall openings disabled")
-		return
-	wall_openings = WallOpenings.new()
-	wall_openings.name = "WallOpenings"
-	# #105 — when the visible shell is the pre-solid .res, load the THIN .obj
-	# separately and hand it to WallOpenings as the COLLISION source. The thin
-	# mesh has single-face walls so the player capsule can't wedge between an
-	# inner and outer surface, and the WallOpenings carve still drops walkable
-	# holes through the thin collision when gates / doors / windows are placed.
-	# Visual stays solid for no-light-leak.
-	var thin_source : Mesh = null
-	if ResourceLoader.exists("res://assets/models/CeDo_building_solid.res"):
-		# Disable WallOpenings's own solidify — the visible shell is already thick.
-		wall_openings.solidify_enabled = false
-		thin_source = load(building_shell_path) as Mesh
-		if thin_source != null:
-			print("[MainWorld] Pre-solid shell active; using thin .obj for collision")
-		else:
-			push_warning("[MainWorld] Thin .obj source not loaded; collision will be from solid mesh")
-	add_child(wall_openings)
-	wall_openings.setup(shell, thin_source)
-	print("[MainWorld] WallOpenings ready")
 
 # =============================================================================
 # PLANT AUDIO — #60
@@ -447,80 +234,6 @@ func _spawn_plant_audio() -> void:
 	var pa : PlantAudio = preload("res://src/scenes/world/PlantAudio.gd").new()
 	pa.name = "PlantAudio"
 	add_child(pa)
-
-# =============================================================================
-# OVERHEAD LIGHTS — #107
-# =============================================================================
-## Hang industrial-style bay lights from the ceiling in a 5×5 grid centred on
-## the player spawn so the production floor is no longer pitch-dark. Each
-## fixture has a visible white bar mesh (emissive so you can see it), a small
-## dark housing above, and an OmniLight3D with warm-white tint and 25 m range.
-## The flashlight is still available for inspecting machinery up close, but
-## you can now actually see the room without it.
-func _spawn_overhead_lights() -> void:
-	# Bay lights now live in the BUILDING's LOCAL frame: parented under the
-	# ShellMesh so they inherit its transform, gridded along the shell's local
-	# X/Z (long axis = local X), and clipped against the shell's LOCAL AABB
-	# rectangle. This fixes the "ceiling lights floating in the sky outside
-	# the building" complaint that surfaced when the shell carried any yaw —
-	# previously the grid stepped along world X/Z and the AABB-rectangle in/
-	# out test ran in world space too, so the kept cells covered a rotated
-	# bounding rectangle bigger than the building.
-	# Long axis of each TL bar is local +X (matches operator spec).
-	var shell := _shell()
-	var parent_node : Node3D = shell if shell != null else (self as Node3D)
-	var root := Node3D.new()
-	root.name = "OverheadLights"
-	parent_node.add_child(root)
-	# WORLD-cluster fix: parent the bay-light grid under a rotation node that
-	# carries `(world_yaw - shell_local_yaw)` so the row direction tracks the
-	# canonical bale-yard yaw even when shell.global_transform already bakes
-	# in a different yaw. Without this the grid was rotated by whatever the
-	# shell's mesh-local axes carry, which disagreed with the operator-drawn
-	# yards. When parent_node IS the shell, `shell_local_yaw` is the yaw
-	# encoded in shell.global_transform; subtracting it lands the grid back
-	# in the canonical frame.
-	var shell_local_yaw : float = 0.0
-	if shell != null:
-		shell_local_yaw = shell.global_transform.basis.get_euler().y
-	var orient_compensation : float = _world_yaw() - shell_local_yaw
-	root.rotation.y = orient_compensation
-	# Compute the LOCAL-frame footprint (rectangle in shell's local XZ).
-	var local_aabb : AABB
-	if shell != null and shell.mesh != null:
-		local_aabb = shell.mesh.get_aabb()
-	else:
-		# Fallback: 60×60 m box around player spawn so a dev still sees lights.
-		var p := _player_spawn_pos
-		local_aabb = AABB(Vector3(p.x - 30, 0, p.z - 30), Vector3(60, 8, 60))
-	# Hang the bar 0.4 m under the LOCAL roof so it reads as actually fixed
-	# to the ceiling. The shell's global_transform handles the world Y.
-	var ceil_y_local : float = local_aabb.position.y + local_aabb.size.y - 0.4
-	var x0 := local_aabb.position.x; var x1 := x0 + local_aabb.size.x
-	var z0 := local_aabb.position.z; var z1 := z0 + local_aabb.size.z
-	var local_footprint := PackedVector2Array([
-		Vector2(x0, z0), Vector2(x1, z0),
-		Vector2(x1, z1), Vector2(x0, z1)])
-	var spacing : float = 18.0
-	var n : int = 7
-	var n_kept : int = 0
-	var n_culled : int = 0
-	var cx := (x0 + x1) * 0.5
-	var cz := (z0 + z1) * 0.5
-	for ix in range(n):
-		for iz in range(n):
-			var fx : float = (float(ix) - float(n - 1) * 0.5) * spacing
-			var fz : float = (float(iz) - float(n - 1) * 0.5) * spacing
-			var px : float = cx + fx
-			var pz : float = cz + fz
-			if not Geometry2D.is_point_in_polygon(Vector2(px, pz), local_footprint):
-				n_culled += 1
-				continue
-			# LOCAL position under the shell. Bar's long axis is local +X.
-			_build_overhead_fixture(root, Vector3(px, ceil_y_local, pz))
-			n_kept += 1
-	print("[MainWorld] Overhead TL bars: %d kept (shell-local %dx%d grid, %d culled outside footprint)" \
-		% [n_kept, n, n, n_culled])
 
 ## Look up the building shell via its known scene path AND compute both its
 ## XZ centre and a footprint polygon (AABB rectangle) in one pass. Used by
@@ -542,77 +255,6 @@ func _building_center_and_footprint() -> Dictionary:
 			Vector2(x1, z1), Vector2(x0, z1)])
 	}
 
-## Build a single TL-bar bay-light fixture (industrial fluorescent troffer).
-## Operator complaint: "ceiling lights are FLOODLIGHTS, not TL bars".
-## Solution: (1) longer thin emissive bar mesh shaped like a real 1.5 m
-## fluorescent tube; (2) dropped the OmniLight3D — its 25 m omni_range was
-## the "floodlight" behaviour AND bled light outside the shell when the
-## fixture sat near a wall. A single low-energy SpotLight3D aimed -Y keeps
-## the floor lit without leaking into the sky outside.
-## Long axis of the bar lies along local +X so a row of fixtures forms
-## parallel TL strips along the building's long wall.
-func _build_overhead_fixture(parent: Node3D, pos: Vector3) -> void:
-	var fixture := Node3D.new()
-	fixture.position = pos
-	parent.add_child(fixture)
-	# 1.5 m TL tube — longer + thinner than the old 1.6×0.10×0.32 box so it
-	# reads as a real fluorescent troffer rather than a panel floodlight.
-	var bar := MeshInstance3D.new()
-	var bb := BoxMesh.new()
-	bb.size = Vector3(1.5, 0.08, 0.10)
-	bar.mesh = bb
-	var bar_mat := StandardMaterial3D.new()
-	bar_mat.albedo_color = Color(0.96, 0.97, 0.92)
-	bar_mat.emission_enabled = true
-	bar_mat.emission = Color(1.0, 0.95, 0.84)
-	bar_mat.emission_energy_multiplier = 3.0
-	bar.material_override = bar_mat
-	fixture.add_child(bar)
-	# Dark steel troffer housing above the tube — long, thin, slightly wider
-	# than the tube. Same long axis (local +X) as the bar.
-	var hous := MeshInstance3D.new()
-	var hb := BoxMesh.new()
-	hb.size = Vector3(1.7, 0.10, 0.22)
-	hous.mesh = hb
-	hous.position = Vector3(0.0, 0.10, 0.0)
-	var hous_mat := StandardMaterial3D.new()
-	hous_mat.albedo_color = Color(0.22, 0.22, 0.24)
-	hous_mat.metallic = 0.4
-	hous_mat.roughness = 0.6
-	hous.material_override = hous_mat
-	fixture.add_child(hous)
-	# Downward SpotLight3D INSTEAD of OmniLight3D so light stays inside the
-	# building. SpotLight3D fires along its local -Z, so rotate -90° on +X
-	# to aim straight down.
-	var spot := SpotLight3D.new()
-	spot.light_energy = 2.0
-	spot.spot_range = 14.0
-	spot.spot_angle = 55.0
-	spot.light_color = Color(1.0, 0.96, 0.86)
-	spot.transform = Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-90.0)), Vector3(0.0, -0.05, 0.0))
-	fixture.add_child(spot)
-
-# =============================================================================
-# PLAYER
-# =============================================================================
-## Recursively set `layers` on every MeshInstance3D under `root`. Used to put
-## the player's own Humanoid body on render layer 2 so the first-person camera
-## (mask drops layer 2) hides it, while wardrobe-mirror cameras see it.
-func _set_body_render_layer(root: Node, layer_mask: int) -> void:
-	if root is MeshInstance3D:
-		(root as MeshInstance3D).layers = layer_mask
-	for c in root.get_children():
-		_set_body_render_layer(c, layer_mask)
-
-## #200 — Head/body split tagging so the first-person camera hides ONLY the
-## head (which would poke into the operator's FOV) while keeping neck, shoulders,
-## arms, torso and legs visible when the player looks down. Humanoid builds
-## boxes in local space with head_y ≈ 0.68 — anything with local y ≥ HEAD_Y_THRESHOLD
-## is treated as head (eyes/nose/mouth/ears/hair/cap) and tagged onto the "head"
-## layer; everything below is tagged onto the "body" layer.
-##   layer 2 (1<<1) = "body visible to FP"
-##   layer 3 (1<<2) = "head — hidden from FP only"
-## The wardrobe mirror & third-person cameras see BOTH layers.
 const _PLAYER_BODY_LAYER : int = 1 << 1
 const _PLAYER_HEAD_LAYER : int = 1 << 2
 const _HEAD_Y_THRESHOLD  : float = 0.55
@@ -633,273 +275,6 @@ func _set_body_render_layer_split(root: Node) -> void:
 		mi.layers = _PLAYER_HEAD_LAYER if y_local >= _HEAD_Y_THRESHOLD else _PLAYER_BODY_LAYER
 	for c in root.get_children():
 		_set_body_render_layer_split(c)
-
-## T8 — Toggle the player's footwear when the shift starts / ends. Rebuilds the
-## visible Humanoid under the player capsule using the cached appearance dict
-## with the new footwear value. The customizer's other choices (shirt, hair,
-## beard, cap) are preserved because we mutate the same dict.
-func _player_apply_footwear(player_node: Node, on_shift: bool) -> void:
-	if player_node == null or not is_instance_valid(player_node):
-		return
-	# #186 — Swap the WHOLE outfit slot at the shift bell, not just footwear.
-	# When the player has a wardrobe with both wear_states defined, this picks
-	# up their off_duty clothes when the bell rings off and their on_duty PPE
-	# when it rings on. Legacy single-dict saves fall back to the old behaviour
-	# (just toggle footwear) so the prior contract still holds.
-	var gs := get_node_or_null("/root/GameState")
-	var display_name : String = String(player_node.get_meta("display_name", "Arno"))
-	var appearance : Dictionary = player_node.get_meta("appearance", {})
-	var picked_from_wardrobe : bool = false
-	if gs and "player_wardrobes" in gs:
-		var pw = gs.get("player_wardrobes")
-		if pw is Dictionary and pw.has(display_name):
-			var entry = pw[display_name]
-			var ws := "on_duty" if on_shift else "off_duty"
-			if entry is Dictionary and entry.has(ws):
-				appearance = (entry[ws] as Dictionary).duplicate(true)
-				picked_from_wardrobe = true
-	appearance["wear_state"] = "on_duty" if on_shift else "off_duty"
-	appearance["footwear"] = "work_boots" if on_shift else "shoes"
-	player_node.set_meta("appearance", appearance)
-	# Humanoid.rebuild_appearance swaps the body subtree without re-spawning the
-	# capsule, so the player's position / camera / inputs are untouched.
-	var humanoid_script = load("res://src/scenes/world/Humanoid.gd")
-	if humanoid_script == null or not humanoid_script.has_method("rebuild_appearance"):
-		return
-	var shirt : Color = Color(0.95, 0.92, 0.10) if on_shift else Color(0.40, 0.45, 0.55)
-	if appearance.has("shirt_color"):
-		var sc = appearance["shirt_color"]
-		if sc is Color: shirt = sc
-		elif sc is Dictionary and sc.has("r"):
-			shirt = Color(float(sc["r"]), float(sc["g"]), float(sc["b"]))
-	humanoid_script.rebuild_appearance(player_node, shirt, 0, appearance)
-	if picked_from_wardrobe:
-		# Best-effort log so a verification run can confirm the swap landed.
-		print("[MainWorld] Player outfit swapped to %s (wardrobe slot)" % ("on_duty" if on_shift else "off_duty"))
-	# Re-tag freshly-built MeshInstances onto the body / head render layers
-	# (#200 — body visible to FP cam, head hidden from FP only).
-	var body : Node = player_node.find_child("PlayerBody", true, false)
-	if body != null:
-		_set_body_render_layer_split(body)
-
-func _spawn_player() -> void:
-	## Tries saved position first; falls back to the PlayerSpawn marker.
-	## Saved position is the actual capsule centre (no +1.0 lift needed on load).
-
-	var spawn_pos  : Vector3 = Vector3.ZERO
-	var spawn_rot_y: float   = 0.0
-	var from_save  : bool    = false
-
-	if game_state:
-		var saved := game_state.load_player_state()
-		if saved.has("x"):
-			var sp := Vector3(saved["x"], saved["y"], saved["z"])
-			# X4/#183 — only reject the saved position if the WORLD ANCHOR moved
-			# (the operator re-ran WorldSetup and re-placed player_spawn). When
-			# the anchor matches, trust the saved coords regardless of distance
-			# — the operator may have walked far across the industrial terrain
-			# before save. Old guard rejected legitimate 500 m saves and bounced
-			# everyone back to spawn.
-			var anchor_moved : bool = false
-			if saved.has("anchor_x") and saved.has("anchor_z"):
-				var ax : float = float(saved["anchor_x"])
-				var az : float = float(saved["anchor_z"])
-				var d_anchor : float = Vector2(
-					ax - WorldLayout.player_spawn.x,
-					az - WorldLayout.player_spawn.z).length()
-				anchor_moved = d_anchor > 5.0   # 5 m slop for operator nudges
-			else:
-				# Legacy save with no anchor snapshot — fall back to the old
-				# generous-but-not-absurd guard so RD-coord saves still get
-				# rejected but routine 500 m walks don't.
-				var d_marker : float = Vector2(sp.x - WorldLayout.player_spawn.x,
-					sp.z - WorldLayout.player_spawn.z).length()
-				anchor_moved = d_marker > 2000.0
-			if anchor_moved:
-				print("[MainWorld] World re-anchored since save — using spawn marker (was at %.0f,%.0f)"
-					% [sp.x, sp.z])
-			else:
-				spawn_pos   = sp
-				spawn_rot_y = saved.get("rot_y", 0.0)
-				from_save   = true
-
-	if not from_save:
-		# Marker XZ is meaningful (where the operator's feet should land);
-		# marker Y is NOT — WorldSetup places markers on a y=0 click plane
-		# regardless of where the actual floor is. Override Y with the detected
-		# floor + capsule half-height so the player lands ON the floor.
-		var floor_top := _floor_top_y()
-		# X1/#180 — "I'm in a fucking neighborhood, not on the industrial
-		# terrain." Building shell footprint is the ground truth: if either
-		# the saved player_spawn or the scene marker lands outside (or far
-		# from) the actual building footprint, drop the player at the
-		# building centre instead so they don't have to walk 200 m to find
-		# the plant. Footprint reach must be resolvable for this to fire;
-		# falls through to the original logic otherwise.
-		var bldg_info := _building_center_and_footprint()
-		var bldg_center : Vector3 = bldg_info.get("center", Vector3.ZERO)
-		var bldg_fp : PackedVector2Array = bldg_info.get("footprint", PackedVector2Array())
-		var candidate : Vector3
-		if WorldLayout.player_spawn != Vector3.ZERO:
-			candidate = Vector3(WorldLayout.player_spawn.x, floor_top + 1.0,
-				WorldLayout.player_spawn.z)
-		else:
-			var marker := _player_spawn_node()
-			if marker:
-				candidate = Vector3(marker.global_position.x, floor_top + 1.0,
-					marker.global_position.z)
-			else:
-				candidate = Vector3(0.0, floor_top + 1.0, 0.0)
-		var snap_to_building : bool = false
-		if bldg_fp.size() >= 3:
-			var c2 := Vector2(candidate.x, candidate.z)
-			# If marker is outside the polygon AND >50 m from the centre, the
-			# spawn is in the wrong place — snap to building centre.
-			if not Geometry2D.is_point_in_polygon(c2, bldg_fp):
-				var d : float = c2.distance_to(Vector2(bldg_center.x, bldg_center.z))
-				if d > 50.0:
-					snap_to_building = true
-		if snap_to_building:
-			spawn_pos = Vector3(bldg_center.x, floor_top + 1.0, bldg_center.z)
-			print("[MainWorld] X1/#180 — spawn (%.0f,%.0f) was outside the building footprint (%.0f m from centre); snapped to building centre (%.0f,%.0f)"
-				% [candidate.x, candidate.z, candidate.distance_to(bldg_center),
-					bldg_center.x, bldg_center.z])
-		else:
-			spawn_pos = candidate
-
-	var script := load("res://src/scenes/player/PlayerController.gd")
-	if not script:
-		push_error("[MainWorld] PlayerController.gd not found")
-		return
-
-	player = CharacterBody3D.new()
-	# #186 — Node name stays "Player" because dozens of systems (Gate.gd,
-	# Door.gd, BatteryStation.gd, vehicle enter-areas, ExtruderMachine etc.)
-	# look up the player by that exact string. The DISPLAY name (real operator
-	# name like "Arno") lives on a meta key so any UI that wants to show it
-	# reads from one place.
-	player.name = "Player"
-	var _display_name : String = "Arno"
-	if game_state and "player_name" in game_state:
-		var _pn = game_state.get("player_name")
-		if _pn is String and String(_pn) != "":
-			_display_name = String(_pn)
-	player.set_meta("display_name", _display_name)
-	player.set_script(script)
-
-	var head := Node3D.new()
-	head.name     = "Head"
-	head.position = Vector3(0.0, 0.7, 0.0)   # eye level above capsule centre
-	player.add_child(head)
-
-	var camera := Camera3D.new()
-	camera.name = "Camera3D"
-	camera.current = true   # explicitly own the viewport so vehicle CabCameras
-							# added later don't accidentally win the fallback.
-	# #200 — Render layers:
-	#   layer 1 = world (default for everything)
-	#   layer 2 = player body (neck + shoulders + arms + torso + legs)
-	#   layer 3 = player head (head, ears, eyes, nose, mouth, hair, cap)
-	# The FIRST-PERSON camera keeps layer 2 (so when the operator looks down
-	# they see their own torso/legs/arms — they have a visible body) and
-	# drops ONLY layer 3, hiding the head that would otherwise poke up into
-	# the FOV. The wardrobe mirror (#153) and any third-person camera see
-	# both layers and render the whole body + head.
-	camera.cull_mask &= ~(1 << 2)   # drop layer 3 (head only)
-	head.add_child(camera)
-
-	var col := CollisionShape3D.new()
-	col.name = "Collision"          # PlayerController resizes this for crouch/prone
-	var cap := CapsuleShape3D.new()
-	cap.radius = 0.4
-	cap.height = 1.8
-	col.shape  = cap
-	player.add_child(col)
-
-	# #152 / #186 — Visible Humanoid body. The customizer now saves TWO outfits
-	# per character (on_duty + off_duty); MainWorld picks the active one based
-	# on ShiftClock.shift_active so PPE shows up at the bell and personal
-	# clothes show up off-shift. Legacy saves with only the flat
-	# `player_appearance` dict still work — used as the off_duty fallback.
-	var _on_shift_init : bool = shift_clock != null and bool(shift_clock.get("shift_active"))
-	var _wear_state_init : String = "on_duty" if _on_shift_init else "off_duty"
-	var appearance : Dictionary = {}
-	if game_state:
-		var pw = game_state.get("player_wardrobes") if "player_wardrobes" in game_state else null
-		if pw is Dictionary:
-			var entry = pw.get(_display_name, {})
-			if entry is Dictionary:
-				appearance = (entry.get(_wear_state_init, entry.get("on_duty", {})) as Dictionary).duplicate(true)
-		if appearance.is_empty():
-			appearance = (game_state.player_appearance as Dictionary).duplicate(true)
-	appearance["wear_state"] = _wear_state_init
-	var shirt : Color = Color(0.95, 0.92, 0.10)   # hi-vis YELLOW default (operator spec)
-	if appearance.has("shirt_color"):
-		var sc = appearance["shirt_color"]
-		if sc is Color: shirt = sc
-		elif sc is Dictionary and sc.has("r"):
-			shirt = Color(float(sc["r"]), float(sc["g"]), float(sc["b"]))
-	var humanoid_script = load("res://src/scenes/world/Humanoid.gd")
-	if humanoid_script:
-		# T8 — auto-switch player footwear by shift state. Same rule survives
-		# the wardrobe upgrade: PPE is now wear-state-driven, but footwear stays
-		# explicit so an operator who hasn't dialed in their off-duty look still
-		# walks in wearing shoes.
-		appearance["footwear"] = "work_boots" if _on_shift_init else "shoes"
-		var body : Node3D = humanoid_script.build(shirt, 0, appearance)
-		body.name = "PlayerBody"
-		# #200 — Split-tag: body parts (neck + shoulders + arms + torso + legs)
-		# go on layer 2 (visible to the FP camera so the operator can look down
-		# and see themselves); head parts (head, ears, eyes, hair, cap) go on
-		# layer 3 (hidden from the FP camera only — it would otherwise poke
-		# up into the FOV). Wardrobe mirror & third-person cams see both.
-		# add_child FIRST so the recursive ancestor-walk in _set_body_render_layer_split
-		# can find "PlayerBody" as the root sentinel.
-		player.add_child(body)
-		# Humanoid.build() authors the rig with the visible face on local +Z (see
-		# Humanoid.gd:200 docstring). PlayerController treats -basis.z as forward
-		# (Godot canonical), so the body must be yawed 180° here to put its face on
-		# the player's local -Z. Without this, W walks tail-first.
-		body.rotation.y = PI
-		_set_body_render_layer_split(body)
-		# Auto-switch when the shift bell rings (or ends). Stored on the player
-		# so a later customizer reload reads the freshly-applied value.
-		player.set_meta("appearance", appearance)
-		if shift_clock != null:
-			if shift_clock.has_signal("shift_started"):
-				shift_clock.shift_started.connect(_player_apply_footwear.bind(player, true))
-			if shift_clock.has_signal("shift_ended"):
-				shift_clock.shift_ended.connect(_player_apply_footwear.bind(player, false))
-
-	add_child(player)
-	player.global_position = spawn_pos
-	if from_save:
-		player.rotation.y = spawn_rot_y
-
-	# Remember where the player actually ended up so the forklift can park right
-	# beside them — whether they spawned at the marker or resumed a save 500 m away.
-	_player_spawn_pos = player.global_position
-
-	print("[MainWorld] Player spawned at %s%s" \
-		% [player.global_position, " (resumed)" if from_save else ""])
-	# Restore the saved free-cam pose if there is one. Defer one frame so PlayerController._ready
-	# has built its CameraRig before we hand it the saved state. (#freecam)
-	if from_save and game_state:
-		var saved_player := game_state.load_player_state()
-		var fc = saved_player.get("freecam", null)
-		if fc != null:
-			call_deferred("_restore_freecam_state", fc)
-
-## Walk to the player's CameraRig (built lazily by PlayerController._ready).
-func _freecam_rig() -> Node:
-	if player == null:
-		return null
-	return player.find_child("CameraRig", true, false)
-
-func _restore_freecam_state(d: Dictionary) -> void:
-	var rig := _freecam_rig()
-	if rig != null and rig.has_method("load_freecam_state"):
-		rig.call("load_freecam_state", d)
 
 func freecam_save_now() -> void:
 	# Trigger an immediate save when the operator presses F5 — the rig's current pose
@@ -932,235 +307,21 @@ func _on_floor(pos: Vector3, lift: float = 0.0) -> Vector3:
 	return Vector3(pos.x, _floor_top_y() + lift, pos.z)
 
 # =============================================================================
-# WORLD YAW — canonical rotation convention (WORLD cluster fix)
+# WORLD YAW + LAYOUT TRANSFORMS — moved to WorldFrame.gd (#195).
 # =============================================================================
-# CANONICAL: the bale yards drive every exterior orientation. Their yaw is
-# derived from the OPERATOR-DRAWN polygon's longest edge in WORLD space —
-# `atan2(u_axis.x, u_axis.z)` after `_layout_to_scene()` (see
-# `_spawn_bale_yards_from_layout`, lines ~1411-1469). That's the rotation the
-# operator can SEE in WorldSetup against the satellite overlay; it is the
-# ground truth.
-#
-# Every other exterior subsystem (fence, parking, road network, road markings,
-# crosswalk, sidewalk, trees, power poles, street signs, transformer, neighbour
-# buildings, overhead bay lights) now wraps that same yaw through
-# `Basis(Vector3.UP, _world_yaw())` before adding any local-frame offset to
-# the anchor. The old `_building_yaw()` helper (ShellMesh-AABB long-edge in
-# shell-local space) is kept ONLY as the fallback when no bale yards exist
-# in the layout — the operator's perception drives the canonical yaw, the
-# mesh AABB is the last resort.
-var _world_yaw_cache : float = NAN
+# These thin forwarders preserve every existing call site in MainWorld and its
+# children (ExteriorManager calls `_world.call("_bo", ...)` etc.) while the
+# canonical yaw math + layout-frame translation now live in the child manager
+# spawned at the top of `_ready()` (see `_world_frame`).
 
-## Bale-yard-derived principal yaw — the canonical rotation for every
-## exterior subsystem. Tracks the building's true world orientation as the
-## operator perceives it.
 func _world_yaw() -> float:
-	if not is_nan(_world_yaw_cache):
-		return _world_yaw_cache
-	_world_yaw_cache = _compute_world_yaw()
-	print("[MainWorld] world_yaw = %.1f deg (canonical / bale-yard-derived)" \
-		% rad_to_deg(_world_yaw_cache))
-	return _world_yaw_cache
-
-## Walk the first authoritative bale-yard polygon, find its longest edge,
-## return `atan2(u.x, u.z)`. The yaw lives in the LAYOUT FRAME (not the scene
-## frame): the operator drew the rectangle in WorldSetup's north-up XZ plane,
-## and that drawn orientation IS the yaw the building should adopt. Falls back
-## to the ShellMesh-AABB helper when no yards are saved (sandbox / fresh setup).
-##
-## CRITICAL — recursion break: `_layout_to_scene()` rotates by `_world_yaw()`,
-## which is what THIS function returns. Routing yard corners through
-## `_layout_to_scene` before measuring would call back into here (cache is NaN
-## until we return) → stack overflow. We work on RAW corners instead: the
-## anchor offset cancels in (B - A), and rotating both endpoints by the same
-## basis only rotates the edge — but we WANT the layout-frame edge direction
-## here, so skipping the rotation IS the correct measurement, not a workaround.
-func _compute_world_yaw() -> float:
-	if WorldLayout.bale_yards.is_empty():
-		return _compute_building_yaw()
-	for y in WorldLayout.bale_yards:
-		var data : Dictionary = y
-		var raw_corners : Array = data.get("corners", [])
-		if raw_corners.size() < 3:
-			continue
-		# Sanity-check each corner, flatten Y, sort CCW. NO `_layout_to_scene`
-		# — see recursion note above.
-		var corners : Array = []
-		var corrupt := false
-		for c in raw_corners:
-			if not (c is Vector3) or not _layout_rel_sane(c):
-				corrupt = true
-				break
-			corners.append(Vector3((c as Vector3).x, 0.0, (c as Vector3).z))
-		if corrupt:
-			continue
-		corners = _sort_corners_ccw(corners)
-		var le_a : Vector3 = corners[0]; var le_b : Vector3 = corners[0]
-		var le_len_sq : float = 0.0
-		for i in corners.size():
-			var ca : Vector3 = corners[i]
-			var cb : Vector3 = corners[(i + 1) % corners.size()]
-			var dd : float = (cb - ca).length_squared()
-			if dd > le_len_sq:
-				le_len_sq = dd; le_a = ca; le_b = cb
-		var u_axis : Vector3 = le_b - le_a
-		u_axis.y = 0.0
-		if u_axis.length_squared() < 0.001:
-			continue
-		u_axis = u_axis.normalized()
-		if not u_axis.is_finite():
-			continue
-		return atan2(u_axis.x, u_axis.z)
-	# Every yard polygon was degenerate or corrupt — fall back.
-	return _compute_building_yaw()
-
-# Legacy ShellMesh-AABB helper. Now used ONLY as the fallback path inside
-# `_compute_world_yaw()` when no bale yards exist. Direct callers were
-# repointed at `_world_yaw()` as part of the WORLD-cluster fix.
-var _building_yaw_cache : float = NAN
+	return _world_frame._world_yaw()
 
 func _building_yaw() -> float:
-	if not is_nan(_building_yaw_cache):
-		return _building_yaw_cache
-	_building_yaw_cache = _compute_building_yaw()
-	return _building_yaw_cache
+	return _world_frame._building_yaw()
 
-## Derive the building's principal yaw from the ShellMesh AABB longest top-down
-## edge. The bale-yard convention proper would walk the actual wall polygon,
-## but the AABB longest-edge gives us 0° for shells that are world-axis aligned
-## (X-long) and ±90° for shells whose long axis is Z; sufficient for the
-## current building. Picks up any yaw baked into shell.global_transform too.
-func _compute_building_yaw() -> float:
-	var shell := _shell()
-	if shell == null or shell.mesh == null:
-		return 0.0
-	var local_aabb : AABB = shell.mesh.get_aabb()
-	# Transform the LOCAL AABB's four floor corners into world space so any
-	# yaw inside shell.global_transform shows up in the longest edge.
-	var x0 := local_aabb.position.x; var x1 := x0 + local_aabb.size.x
-	var z0 := local_aabb.position.z; var z1 := z0 + local_aabb.size.z
-	var y_mid := local_aabb.position.y + local_aabb.size.y * 0.5
-	var c00 : Vector3 = shell.global_transform * Vector3(x0, y_mid, z0)
-	var c01 : Vector3 = shell.global_transform * Vector3(x0, y_mid, z1)
-	var c10 : Vector3 = shell.global_transform * Vector3(x1, y_mid, z0)
-	# Pick the longer of the two unique adjacent edges (00→01 vs 00→10).
-	var e1 : Vector3 = c01 - c00; e1.y = 0.0
-	var e2 : Vector3 = c10 - c00; e2.y = 0.0
-	var u_axis : Vector3
-	if e1.length_squared() >= e2.length_squared():
-		u_axis = e1.normalized() if e1.length() > 0.001 else Vector3.RIGHT
-	else:
-		u_axis = e2.normalized() if e2.length() > 0.001 else Vector3.RIGHT
-	# atan2(x, z) — same convention as bale yard `bale_yaw` so rotating a
-	# local +X offset by this yaw aligns with the building's long edge.
-	return atan2(u_axis.x, u_axis.z)
-
-## Rotate a local-frame offset vector through the CANONICAL world yaw (the
-## bale-yard-derived `_world_yaw()`) and anchor it onto `ga`. Single helper
-## used everywhere fence / parking / roads / lights / props add a local-frame
-## Vector3 to the spawn anchor. Was previously keyed off `_building_yaw()`
-## which disagreed with the operator-drawn bale yards; repointed at
-## `_world_yaw()` as part of the WORLD-cluster fix.
 func _bo(ga: Vector3, offset: Vector3) -> Vector3:
-	return ga + Basis(Vector3.UP, _world_yaw()) * offset
-
-# =============================================================================
-# NPCs
-# =============================================================================
-func _spawn_npcs() -> void:
-	# Crew now spawns in a 2–20 m random ring around the PLAYER SPAWN marker, on
-	# the OUTSIDE of the building (rejected if the candidate point lands inside
-	# the shell's XZ AABB). The old NPCSpawnPoints markers / fallback dictionary
-	# placed workers at hardcoded coordinates that didn't follow the player_spawn
-	# the user calibrated in WorldSetup; in practice they appeared in the wrong
-	# spot (often inside the building). Now they cluster naturally near where the
-	# player starts the shift.
-	var npc_script := load("res://src/scenes/world/NPC.gd")
-	var humanoid_script := load("res://src/scenes/world/Humanoid.gd")
-	var npc_variant := 0
-
-	# Random-ring anchor — the PLAYER's actual spawn this run (set in
-	# _spawn_player). Was WorldLayout.player_spawn, but that's the WorldSetup
-	# marker, not where the player actually lands; a stale save or building
-	# shift can put the actual player metres away from the marker.
-	var anchor : Vector3 = _player_spawn_pos
-	# Building's XZ AABB so we can reject candidates that land INSIDE the shell.
-	var shell := _shell()
-	var bb_min := Vector2(INF, INF); var bb_max := Vector2(-INF, -INF)
-	if shell and shell.mesh:
-		var aabb := shell.global_transform * shell.mesh.get_aabb()
-		bb_min = Vector2(aabb.position.x, aabb.position.z)
-		bb_max = Vector2(aabb.position.x + aabb.size.x, aabb.position.z + aabb.size.z)
-
-	for npc_id in NPC_DATA.keys():
-		var data : Dictionary = NPC_DATA[npc_id]
-		# #128 — the production manager works INSIDE the office on the operating
-		# floor; field crew spawn OUTSIDE the building AABB. The role-flag below
-		# inverts the containment check for `production_manager` so Peter ends
-		# up at the indoor desk by design, not as a fall-through retry.
-		var indoor_role : bool = String(data.get("role", "")) == "production_manager"
-		var pos : Vector3 = anchor
-		for attempt in 30:
-			var ang : float = randf() * TAU
-			var r   : float = randf_range(2.0, 20.0)
-			var cand := anchor + Vector3(cos(ang) * r, 0.0, sin(ang) * r)
-			pos = cand
-			var outside : bool = cand.x < bb_min.x or cand.x > bb_max.x \
-				or cand.z < bb_min.y or cand.z > bb_max.y
-			# Accept candidate when its INSIDE/OUTSIDE matches the role's
-			# preference. Field crew want outside; the manager wants inside.
-			if outside != indoor_role:
-				break
-		# Y from floor detection + 1 m for capsule centre.
-		pos = _on_floor(pos, 1.0)
-
-		var npc := CharacterBody3D.new()
-		npc.name = data["name"]
-
-		# Blocky humanoid body (feet/legs/torso/arms/hands/head/face/hair) instead
-		# of the old capsule pill. Its vertical centre sits at the node origin so
-		# it lines up with the CapsuleShape3D collider below.
-		# #186 — If the operator has customized this NPC, REPLACE the
-		# NPC_DATA preset wholesale. The old merge-over-preset path silently
-		# leaked default keys (cap, hair_under_cap, moustache, etc.) back in
-		# whenever the operator hadn't explicitly toggled them off in the
-		# customizer, so unsetting a flag was impossible. CharacterCustomizer
-		# now guarantees a full appearance dict via _ensure_defaults() before
-		# save, so the REPLACE is safe.
-		var npc_ap : Dictionary = data.get("appearance", {}).duplicate(true)
-		if game_state and "npc_appearances" in game_state:
-			var custom_npc_ap = game_state.get("npc_appearances")
-			if custom_npc_ap is Dictionary and custom_npc_ap.has(npc_id):
-				var saved_ap = custom_npc_ap[npc_id]
-				if saved_ap is Dictionary and not (saved_ap as Dictionary).is_empty():
-					npc_ap = (saved_ap as Dictionary).duplicate(true)
-		var body : Node3D = humanoid_script.build(data["color"], npc_variant, npc_ap)
-		body.name = "HumanoidBody"           # tagged so NPC._physics_process can scale it for crouch / prone (#146)
-		npc_variant += 1
-		npc.add_child(body)
-
-		var col := CollisionShape3D.new()
-		col.name = "BodyCollision"           # tagged so NPC can resize the capsule for crouch / prone (#146)
-		var cap := CapsuleShape3D.new()
-		cap.radius = 0.3
-		cap.height = 1.8
-		col.shape  = cap
-		npc.add_child(col)
-
-		if npc_script:
-			npc.set_script(npc_script)
-
-		npc.set_meta("map_color", data["color"])   # MapOverlay draws crew in this colour
-
-		add_child(npc)
-		npc.global_position = pos
-		# #147 / #148 — hand the lift booking to every NPC so the operate planner
-		# can claim a mast lift when its target is too high to reach from the
-		# floor. Null until _register_lifts_for_booking has run; the planner
-		# guards against that case.
-		if lift_booking != null:
-			npc.set("lift_booking", lift_booking)
-		npcs[npc_id] = npc
+	return _world_frame._bo(ga, offset)
 
 # =============================================================================
 # CREW MANAGER — posts the shift crew, dispatches them to jams, rotates breaks
@@ -1199,75 +360,6 @@ func _spawn_crew_manager() -> void:
 		print("[MainWorld] Restored %d crew pin(s) from save"
 			% game_state.crew_pins_data.size())
 
-# =============================================================================
-# OPERATOR CONTEXT (embodiment switcher: on_foot ↔ forklift ↔ ...)
-# =============================================================================
-func _spawn_operator_context() -> void:
-	operator_context = OperatorContext.new()
-	operator_context.name = "OperatorContext"
-	operator_context.on_foot_body = player
-	operator_context.foot_camera  = player.find_child("Camera3D", true, false) as Camera3D
-	add_child(operator_context)
-	print("[MainWorld] OperatorContext ready")
-
-# =============================================================================
-# BUILD MODE (in-game factory builder — press Tab)
-# =============================================================================
-## #90 — per-save placed-build layout path. Derived from the active save name (the
-## same stem GameState uses), so every save has its own factory file and a brand-new
-## save starts empty. Falls back to the legacy stem when no save name was provided
-## (e.g. MainWorld launched directly without going through the menu).
-func _factory_layout_path() -> String:
-	var stem := "cedo_simulator"
-	if EventBus.has_meta("pending_save_name"):
-		var n := String(EventBus.get_meta("pending_save_name")).strip_edges()
-		if n != "":
-			stem = n
-	return "user://%s_factory.json" % stem
-
-func _spawn_build_mode() -> void:
-	# #90 — PER-SAVE placed-build layout. Each save gets its OWN factory file
-	# (user://<save>_factory.json), so a NEW world can NEVER inherit a previous run's
-	# machines, and one save's build never clobbers another's. BuildMode reads/writes
-	# this injected path; a CONTINUED save with no per-save file yet falls back ONCE to
-	# the legacy global user://factory_layout.json (migration), a NEW save never does —
-	# its per-save file simply doesn't exist, so it comes up empty. (The old approach
-	# wiped a shared global file on a runtime flag, which was fragile; this can't fail.)
-	var fpath := _factory_layout_path()
-	var is_new : bool = game_state != null and game_state.is_new_save
-	if is_new and FileAccess.file_exists(fpath):
-		# Same-named save reused after a delete: force it to truly start fresh.
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(fpath))
-		print("[MainWorld] New save — wiped stale %s" % fpath)
-	print("[MainWorld] Save factory layout: %s (new_save=%s)" % [fpath, str(is_new)])
-	build_mode = BuildMode.new()
-	build_mode.name = "BuildMode"
-	build_mode.player_body = player              # so placement rays ignore the capsule
-	build_mode.wall_openings = wall_openings     # set BEFORE add_child → load_layout
-	build_mode.layout_path = fpath               # per-save layout file (#90)
-	build_mode.allow_legacy_fallback = not is_new  # continue may migrate; new never inherits
-	add_child(build_mode)
-	print("[MainWorld] BuildMode ready — press Tab to build")
-	# Tool-placement mode (the build-mode sibling for hand-held items). Same
-	# UX as BuildMode (ghost preview + rotate + confirm) but operates on the
-	# active Inventory tool — never spawns from catalog, so accidental tap
-	# can't drop a machine into the world.
-	var tool_place := preload("res://src/build/ToolPlacementMode.gd").new()
-	tool_place.name = "ToolPlacementMode"
-	tool_place.main_world = self
-	add_child(tool_place)
-	print("[MainWorld] ToolPlacementMode ready — press G to place held tool")
-
-# =============================================================================
-# LINE FLOW (auto-links placed machines + simulates material through them)
-# =============================================================================
-func _spawn_line_flow() -> void:
-	line_flow = LineFlow.new()
-	line_flow.name = "LineFlow"
-	add_child(line_flow)                   # _ready() discovers machines already placed
-	if build_mode:
-		build_mode.line_flow = line_flow   # so placing/deleting re-links the line
-	print("[MainWorld] LineFlow ready")
 
 # =============================================================================
 # CONTAINER GUIDES (#85) — holographic catch-container placement guides
@@ -1292,37 +384,6 @@ func _spawn_container_guides() -> void:
 # slot if WorldLayout has no spawns for that vehicle id.
 # =============================================================================
 
-## Common helper: spawn instances of `scene_path` at every WorldLayout position
-## under `layout_id`. If the user hasn't placed any, fall back to a single
-## instance at `fallback_offset` from the factory anchor.
-func _spawn_vehicle_instances(layout_id: String, scene_path: String, fallback_offset: Vector3, label: String) -> void:
-	var scn := load(scene_path) as PackedScene
-	if scn == null:
-		push_warning("[MainWorld] %s missing — skipping" % scene_path); return
-	var positions : Array = WorldLayout.get_vehicle_spawns(layout_id)
-	if positions.is_empty():
-		# Fallback: spawn one next to the factory anchor.
-		var anchor := _get_factory_anchor()
-		var pos : Vector3 = _on_floor(anchor + fallback_offset, 0.5)
-		var v := scn.instantiate()
-		add_child(v); v.global_position = pos
-		print("[MainWorld] %s (fallback) spawned at %s" % [label, str(pos)])
-		return
-	# Markers are stored as player_spawn-relative offsets in north-up RD space.
-	# _layout_to_scene() rotates them by the floor-plan calibration angle (the
-	# RD→building rotation) and anchors them at the player's scene position.
-	for i in positions.size():
-		var rel : Vector3 = positions[i]
-		if not _layout_rel_sane(rel):
-			push_warning("[MainWorld] %s #%d marker is %.0f m from the anchor — corrupt layout data, skipping (re-place it in WorldSetup)" \
-				% [label, i + 1, Vector2(rel.x, rel.z).length()])
-			continue
-		var p : Vector3 = _on_floor(_layout_to_scene(rel), 0.5)
-		var v := scn.instantiate()
-		add_child(v); v.global_position = p
-		print("[MainWorld] %s #%d  placed at scene(%.1f,%.1f)" % [
-			label, i + 1, p.x, p.z])
-
 ## Sanity guard for layout-relative markers (377 km bug): a marker more than
 ## ~5 km from the anchor is corrupt RD-space leakage, not a real placement.
 ## Spawning physics bodies that far out breaks float precision → NaN transforms
@@ -1338,74 +399,22 @@ func _layout_rel_sane(rel: Vector3) -> bool:
 var layout_conv_summary : String = "Layout: no layout file — vanilla spawn"
 var _layout_summary_logged : bool = false
 
-## Building-anchor for layout-relative markers — the player's ACTUAL spawn this
-## run (set in `_spawn_player`, MainWorld.gd:862), pinned to the operating floor.
-## This is the rotation pivot AND translation origin for every WorldSetup marker
-## (vehicles / NPC posts / line starts / yard corners / build placements).
-##
-## Why _player_spawn_pos and not _get_factory_anchor():
-##  • WorldSetup.gd:1142-1145 saves player_spawn and factory_center as INDEPENDENT
-##    markers (decoupled since #34), and WorldLayout._load (autoload/WorldLayout.gd
-##    lines 227-253) re-centres EVERY marker by subtracting the player_spawn shift
-##    — so the saved offsets are player_spawn-relative, not factory_center-relative.
-##  • The NPC anchor (line 1062) and road/parking anchor (line 2430) both use
-##    `_player_spawn_pos` already; using the same anchor here keeps every
-##    layout-derived subsystem on ONE pivot.
+# Layout transforms now live in WorldFrame. Thin forwarders preserve callers.
+# `_layout_rel_sane`, `layout_conv_summary` and `_layout_summary_logged` stay
+# in MainWorld (PerfHud reads the summary directly; the sanity check is also
+# used in _spawn_bale_yards_from_layout()).
 func _layout_anchor_xz() -> Vector3:
-	if _player_spawn_pos != Vector3.ZERO:
-		return _on_floor(_player_spawn_pos)
-	# Pre-_spawn_player fallback (rare — only hit if a layout-consumer fires before
-	# the player is built). Mirrors the chain in _get_factory_anchor().
-	return _get_factory_anchor()
+	return _world_frame._layout_anchor_xz()
 
-## Rotate a layout-frame XZ offset through the canonical world yaw (no anchor add).
-## Internal helper used by `_layout_to_scene` to keep the rotate step OUTSIDE the
-## `_world_yaw()` derivation path — and used by `_compute_world_yaw()` would
-## RE-ENTER `_layout_to_scene` here (yard yaw is computed FROM yard corners),
-## causing infinite recursion. `_compute_world_yaw()` therefore walks RAW corners
-## without calling either helper (the edge direction is rotation-equivariant —
-## anchor cancels, and the rotation is exactly what we're trying to derive).
 func _layout_rotated_offset(rel: Vector3) -> Vector3:
-	var b := Basis(Vector3.UP, _world_yaw())
-	var r : Vector3 = b * Vector3(rel.x, 0.0, rel.z)
-	return Vector3(r.x, 0.0, r.z)
+	return _world_frame._layout_rotated_offset(rel)
 
-## Map a saved marker (player_spawn-relative offset in WorldSetup's north-up frame)
-## to its scene position. Two-step transform — the SAME convention every other
-## layout-derived placement uses (`_bo()` at line 1040-1041 for roads/parking,
-## NPC anchor at line 1062, parking-arrival code further down):
-##   1. Rotate the XZ offset around +Y by `_world_yaw()` (the canonical bale-yard-
-##      derived rotation that aligns the operator's drawn polygons with the
-##      building shell).
-##   2. Translate by the layout anchor (`_layout_anchor_xz()` → player_spawn on
-##      the operating floor).
-## Forward = -Z, right = +X, up = +Y; rotation is around +Y. Y component is
-## discarded (markers were placed on a y=0 click plane in WorldSetup); the caller
-## passes the result through `_on_floor()` to pin it to the operating floor.
-##
-## When no layout is loaded, callers fall back to hardcoded local-frame defaults
-## upstream (`_spawn_vehicle_instances` at line 1280-1285, etc.), so the path is
-## bypassed entirely — the rotation+anchor here only ever runs against a saved
-## layout the operator deliberately authored.
 func _layout_to_scene(rel: Vector3) -> Vector3:
-	var a : Vector3 = _layout_anchor_xz()
-	var r : Vector3 = _layout_rotated_offset(rel)
-	var out := Vector3(a.x + r.x, 0.0, a.z + r.z)
-	# Refresh the PerfHud one-liner so the overlay reports the actual transform
-	# that just ran (and only once per run — `_world_yaw()` is cached).
-	if not _layout_summary_logged:
-		var yaw_deg : float = rad_to_deg(_world_yaw())
-		layout_conv_summary = "Layout: markers rotated by %.1f deg + anchored at (%.1f, %.1f)" \
-			% [yaw_deg, a.x, a.z]
-		_layout_summary_logged = true
-	return out
+	return _world_frame._layout_to_scene(rel)
 
-func _spawn_forklift() -> void:
-	_spawn_vehicle_instances("forklift", "res://src/scenes/vehicles/Forklift.tscn",
-		Vector3(3.0, 0.0, 0.0), "Forklift")
-
-## Anchor for the vehicle row — the player's actual spawn (marker OR resumed save),
-## so every vehicle parks beside the player wherever they end up.
+## #195 — _vehicle_anchor moved to VehicleSpawner.vehicle_anchor. Forwarder
+## kept here so _spawn_lpg_rack (which stays in MainWorld) still gets the same
+## anchor it always used.
 func _vehicle_anchor() -> Vector3:
 	return _get_factory_anchor()
 
@@ -1414,552 +423,55 @@ func _vehicle_anchor() -> Vector3:
 func _floor_top_y() -> float:
 	return _floor_min_y_cache
 
-## Combined AABB of all of `node`'s mesh descendants, expressed in `node`'s OWN
-## local space (accounts for nested child transforms). Used to seat a machine's
-## bottom on the floor regardless of where its origin sits in the geometry.
-func _local_aabb(node: Node3D) -> AABB:
-	var bb := AABB()
-	var started := false
-	var inv := node.global_transform.affine_inverse()
-	for c in node.find_children("*", "MeshInstance3D", true, false):
-		var mi := c as MeshInstance3D
-		if mi.mesh == null:
-			continue
-		var a : AABB = mi.get_aabb()
-		var xf : Transform3D = inv * mi.global_transform
-		for ix in [0.0, 1.0]:
-			for iy in [0.0, 1.0]:
-				for iz in [0.0, 1.0]:
-					var corner : Vector3 = a.position + Vector3(a.size.x * ix, a.size.y * iy, a.size.z * iz)
-					var p : Vector3 = xf * corner
-					if not started:
-						bb = AABB(p, Vector3.ZERO); started = true
-					else:
-						bb = bb.expand(p)
-	return bb
-
-## #10 collision audit — give a procedurally-modelled body a SOLID collider sized
-## to its visible meshes, so the player & vehicles can't walk through it. The body
-## is already a StaticBody3D (BatteryStation / ServiceStation); it only ever had an
-## Area3D proximity trigger, so we add the missing solid shape here.
-func _fit_box_collider(body: Node3D) -> void:
-	if body == null or body.has_node("SolidCollision"):
-		return
-	var bb := _local_aabb(body)
-	if bb.size.x < 0.02 or bb.size.y < 0.02 or bb.size.z < 0.02:
-		return
-	var cs := CollisionShape3D.new()
-	cs.name = "SolidCollision"
-	var box := BoxShape3D.new()
-	box.size = bb.size
-	cs.shape = box
-	cs.position = bb.position + bb.size * 0.5
-	body.add_child(cs)
-
-func _spawn_bale_clamp() -> void:
-	_spawn_vehicle_instances("bale_clamp", "res://src/scenes/vehicles/BaleClamp.tscn",
-		Vector3(10.0, 0.0, 0.0), "Bale clamp")
-
 func _spawn_merlo() -> void:
-	_spawn_vehicle_instances("merlo", "res://src/scenes/vehicles/Merlo.tscn",
+	# #195 — _spawn_vehicle_instances moved to VehicleSpawner. _spawn_merlo stays
+	# in MainWorld (not in source_functions list), so dispatch through the spawner
+	# instance the integration call added under MainWorld.
+	var vs : Node = find_child("VehicleSpawner", false, false)
+	if vs == null:
+		push_warning("[MainWorld] VehicleSpawner not present — _spawn_merlo skipped")
+		return
+	vs.call("spawn_vehicle_instances", "merlo", "res://src/scenes/vehicles/Merlo.tscn",
 		Vector3(15.0, 0.0, 0.0), "Merlo")
-	_spawn_vehicle_instances("merlo_p40", "res://src/scenes/vehicles/MerloP40.tscn",
+	vs.call("spawn_vehicle_instances", "merlo_p40", "res://src/scenes/vehicles/MerloP40.tscn",
 		Vector3(22.0, 0.0, 0.0), "Merlo P40")
-
-func _spawn_mast_lift() -> void:
-	_spawn_vehicle_instances("mast_lift", "res://src/scenes/vehicles/MastLift.tscn",
-		Vector3(20.0, 0.0, 0.0), "Mast lift")
-	# #147 Phase 3 / #148 Phase 4 — register every mast lift with the booking
-	# registry so NPC operate planners can claim one when a target is too high
-	# to reach from the floor. Created lazily so non-mast-lift worlds skip it.
-	_register_lifts_for_booking()
 
 ## Walk the scene tree, build a LiftBooking, register every mast lift instance.
 ## Called after _spawn_mast_lift; the booking is then handed to every NPC during
 ## _spawn_crew_manager so the planner can claim lifts at runtime.
 var lift_booking : LiftBooking = null
 
-func _register_lifts_for_booking() -> void:
-	if lift_booking == null:
-		lift_booking = LiftBooking.new()
-		lift_booking.name = "LiftBooking"
-		add_child(lift_booking)
-	var count : int = 0
-	for v in get_tree().get_nodes_in_group("vehicle"):
-		if v != null and String(v.get("vehicle_type")) == "mast_lift":
-			lift_booking.register_lift(v)
-			count += 1
-	# Some MastLift instances may not be in the "vehicle" group (depends on the
-	# .tscn). Fallback: find by class.
-	if count == 0:
-		for v in find_children("", "VehicleBody3D", true, false):
-			if v != null and String(v.get("vehicle_type")) == "mast_lift":
-				lift_booking.register_lift(v)
-				count += 1
-	print("[MainWorld] LiftBooking: registered %d mast lift(s)" % count)
-	# NPCs spawn BEFORE mast lifts in _ready order, so the booking ref they got
-	# was null. Backfill it now so the operate planner can claim a lift on its
-	# next tick.
-	for npc_id in npcs.keys():
-		var npc = npcs[npc_id]
-		if npc != null and is_instance_valid(npc):
-			npc.set("lift_booking", lift_booking)
 
-# =============================================================================
-# BALE YARD — feedstock stacks (2-3 high) the vehicles pick up bottom-first
-# =============================================================================
-## Lays out one stack per feedstock origin in a row beside the vehicle line. Each
-## stack is `origin.stack` bales tall (Rotterdam/Forst+ = 3, Alba/Zwolle = 2) so the
-## operator can drive a forklift / bale-clamp / Merlo in, grip the BOTTOM bale, and
-## lift the whole column at once — exactly how it's done on the lot. Each bale is a
-## frozen RigidBody3D in group "bale" with a unique printed label, identical to a
-## build-placed bale, so grab / carry / drop and LineFlow feeding all just work.
-## Per-yard cap is effectively OFF — each yard now fills its FULL polygon so the
-## footprint reads as the drawn shape (the old 60 cap truncated the grid mid-fill
-## and left odd partial/triangular strips). A GLOBAL ceiling (MAX_BALES_TOTAL)
-## still guards against a runaway 200×200 m polygon re-triggering the RID-limit
-## freeze — realistic yards fill completely well under it; only a pathological
-## layout would ever hit it, and a truncated last yard beats a frozen game.
-const MAX_BALES_PER_YARD : int = 100000
-# Global ceiling on spawned yard bales. Each simple yard bale is now ~4 meshes
-# (down from ~10) and culls its body at 18 m, so the per-frame cost is bounded by
-# the cull radius, not the total — but the total still bounds physics RIDs, so we
-# keep a sane ceiling. 600 reads as a full pile without the RID-limit freeze.
-# Want denser yards? raise this AND/OR raise the body _lod_cull in _m_bale_simple.
-const MAX_BALES_TOTAL    : int = 600
 
-## Spawn bales inside each polygonal yard saved in WorldLayout, picking the
-## supplier_id from the yard. Bales are tiled across the polygon footprint in a
-## simple axis-aligned grid (rows × cols) clipped against the polygon — quick
-## first pass; the full grid-rotated fill is task #25.
-func _spawn_bale_yards_from_layout() -> void:
-	if WorldLayout.bale_yards.is_empty():
-		print("[MainWorld] No bale yards in layout"); return
-	var yards_root := Node3D.new()
-	yards_root.name = "BaleYards"
-	add_child(yards_root)
-	var total_bales := 0
-	var total_yards := 0
-	for y in WorldLayout.bale_yards:
-		var data : Dictionary = y
-		var corners : Array = data.get("corners", [])
-		if corners.size() < 3: continue
-		var supplier_id : String = data.get("supplier_id", "")
-		if supplier_id == "":
-			push_warning("[MainWorld] Bale yard has no supplier_id — skipping")
-			continue
-		var origin_def : Dictionary = BaleDefs.get_origin(supplier_id)
-		if origin_def.is_empty():
-			push_warning("[MainWorld] Unknown supplier_id '%s' — skipping yard" % supplier_id)
-			continue
-		var size : Vector3 = origin_def.get("size", Vector3(1.1, 0.7, 1.1))
-		var stack_high : int = int(origin_def.get("stack", 2))
-		# Convert the polygon corners from layout-space (player-relative, north-up
-		# RD) into scene-space via the same rotation-aware mapping the vehicles
-		# use, so the yard sits in the right place + orientation on the building.
-		var translated_corners : Array = []
-		var yard_corrupt := false
-		for c in corners:
-			if not _layout_rel_sane(c):
-				yard_corrupt = true
-				break
-			translated_corners.append(_layout_to_scene(c))
-		if yard_corrupt:
-			push_warning("[MainWorld] Yard '%s' has a corner km away from the anchor — corrupt layout data, skipping yard (redraw it in WorldSetup)" % supplier_id)
-			continue
-		corners = translated_corners
-		# FIX (footprint shows as a triangle): if the user clicked corners in
-		# Z-order (TL, TR, BL, BR) the polygon self-intersects into a bowtie and
-		# point-in-polygon only fills a triangle. Re-sort the corners by angle
-		# around their centroid so any 4 points form a proper convex quad.
-		corners = _sort_corners_ccw(corners)
-		# Fill the polygon along ITS OWN LONGEST EDGE direction, not world X/Z. This
-		# is what the user was missing: their rectangles are typically NOT axis-
-		# aligned, so an axis-aligned grid only filled the diamond inscribed in the
-		# polygon's AABB (the visible "diamond inside the rectangle" pattern). Now
-		# bales are laid out along the polygon's actual edges, rotated to match,
-		# filling the rectangle properly.
-		var le_a : Vector3 = corners[0]; var le_b : Vector3 = corners[0]
-		var le_len_sq : float = 0.0
-		for i in corners.size():
-			var ca : Vector3 = corners[i]
-			var cb : Vector3 = corners[(i + 1) % corners.size()]
-			var dd : float = (cb - ca).length_squared()
-			if dd > le_len_sq:
-				le_len_sq = dd; le_a = ca; le_b = cb
-		var u_axis : Vector3 = (le_b - le_a)
-		u_axis.y = 0.0
-		u_axis = u_axis.normalized() if u_axis.length() > 0.001 else Vector3.RIGHT
-		# #102 — final NaN guard: if the polygon is degenerate (collinear corners,
-		# zero-area, or any NaN-tainted coordinate that slipped past the sanity
-		# check), the normalize path can still produce a non-finite u_axis. Drop
-		# the yard rather than spawn bales with NaN transforms — those hit the
-		# renderer every frame and saturate the error log (~46k errors).
-		if not u_axis.is_finite() or u_axis.length_squared() < 0.5:
-			push_warning("[MainWorld] Yard '%s' has degenerate polygon — skipping (redraw it)" % supplier_id)
-			continue
-		var v_axis : Vector3 = Vector3(-u_axis.z, 0.0, u_axis.x)   # 90° CCW in XZ
-		# Polygon centroid (the grid pivot in WORLD space).
-		var centroid := Vector3.ZERO
-		for c in corners: centroid += c
-		centroid /= float(corners.size())
-		# Polygon UV extents in the (u,v) local basis (so the grid steps span the
-		# real polygon extent — no diamond clipping).
-		var min_u :=  INF; var max_u := -INF
-		var min_v :=  INF; var max_v := -INF
-		for c in corners:
-			var cv : Vector3 = c
-			var dv : Vector3 = cv - centroid
-			# Renamed from u/v — same names are reused as the row-walking cursors
-			# later in this function and the inner shadowing tripped
-			# CONFUSABLE_LOCAL_DECLARATION.
-			var pu : float = dv.dot(u_axis)
-			var pv : float = dv.dot(v_axis)
-			if pu < min_u: min_u = pu
-			if pu > max_u: max_u = pu
-			if pv < min_v: min_v = pv
-			if pv > max_v: max_v = pv
-		var poly2 : PackedVector2Array = _polygon_xz(corners)   # for point-in-poly check (world XZ)
-		var yard_w : float = max_u - min_u
-		var yard_d : float = max_v - min_v
-		print("[MainWorld]  Yard '%s'  polygon-aligned %.1f × %.1f m  (stack %d)" \
-			% [supplier_id, yard_w, yard_d, stack_high])
-		# #61 follow-up — slightly wider step so adjacent bales read as
-		# individual blocks rather than one continuous wall (operator: "Rotterdam
-		# stack looks like a continuous super-long bale"). The MM body box is
-		# size×0.98, so 0.25 m extra leaves a visible ~20 cm air-gap between
-		# bales while keeping pack-density realistic.
-		var step_x : float = size.x + 0.25
-		var step_z : float = size.z + 0.25
-		var floor_y : float = _floor_top_y()
-		var yard_node := Node3D.new()
-		yard_node.name = "Yard_%s" % supplier_id
-		yards_root.add_child(yard_node)
-		var nm : String = String(origin_def.get("name", supplier_id))
-		var prefix : String = nm.substr(0, 3).to_upper()
-		var bale_yaw : float = atan2(u_axis.x, u_axis.z)    # rotate each bale so its size.x aligns with the polygon edge
-		# #61 — collect every (world_xy, level) the polygon would fill, FIRST,
-		# so we can size the per-yard MultiMesh once before spawning bales. The
-		# old per-bale build_node() + 13 MeshInstance3D children gave us ~30k
-		# draw calls and 50-100k objs when yards were in view; the new path is
-		# one MultiMesh per yard (= 1 draw call) plus colliders.
-		var slots : Array = []   # each entry = [Vector3 pos, int level]
-		var u := min_u + step_x * 0.5
-		while u <= max_u:
-			var v := min_v + step_z * 0.5
-			while v <= max_v:
-				var world_xy : Vector3 = centroid + u_axis * u + v_axis * v
-				# #102 — last-line NaN gate. The renderer hits is_finite() once
-				# per frame on every transform; a single bad bale would saturate
-				# the error log. Drop the cell silently if the math went bad.
-				if not world_xy.is_finite():
-					v += step_z
-					continue
-				if Geometry2D.is_point_in_polygon(Vector2(world_xy.x, world_xy.z), poly2):
-					for level in stack_high:
-						slots.append([world_xy, level])
-				v += step_z
-			u += step_x
-		var bales_this_yard : int = slots.size()
-		if bales_this_yard > 0:
-			# One MultiMesh sized to the whole yard.
-			var mmi := PlaceableCatalog.build_yard_multimesh(supplier_id, bales_this_yard)
-			# #117 — Close-LOD MM with groove-shaded bale material; visibility-
-			# range swap with the far MM hides it past ~35 m so far-distance
-			# draw count stays at 1 per yard. Close-range yards now show wire
-			# shadow grooves on every bale face.
-			var mmi_close := PlaceableCatalog.build_yard_multimesh_close(supplier_id, bales_this_yard)
-			# #125 — Proximity-loaded paper sticker MM per yard. Stickers vanish
-			# beyond STICKER_LOD_M (12 m) so far yards pay zero sticker cost; close
-			# yards get the one-draw-call label pass.
-			var mmi_sticker := PlaceableCatalog.build_yard_sticker_multimesh(supplier_id, bales_this_yard)
-			if mmi != null:
-				yard_node.add_child(mmi)
-				# #243 — was 35 m with FADE_SELF (which fades both MMs to
-				# fully TRANSPARENT around the threshold — operator saw bales
-				# briefly disappear at the swap band, not swap). Now 25 m
-				# with FADE_DISABLED for a hard cut: close MM hard-ends at
-				# 25 m, far MM hard-begins at 25 m, no margin = no
-				# transparent window. The close MM's per-bale slabs and wire
-				# overlays inside _m_bale_simple already cap at 24 m, so the
-				# 25 m hard-cut lines up with their cull and no double-render
-				# is visible.
-				const CLOSE_LOD_M : float = 25.0
-				# #170 — was 12 m, but visibility_range_end on a MultiMeshInstance3D
-				# culls the WHOLE INSTANCE, not per-bale. With a 30 m-wide yard the
-				# yard centre sits ~15 m from the operator standing AT a bale, so
-				# the entire sticker MM was already faded out (zero labels visible
-				# in 5+ runs). 80 m is the new threshold so the operator always
-				# sees stickers when within practical scan range of any yard.
-				const STICKER_LOD_M : float = 80.0
-				mmi.visibility_range_begin        = CLOSE_LOD_M
-				mmi.visibility_range_begin_margin = 0.0
-				mmi.visibility_range_fade_mode    = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
-				if mmi_close != null:
-					yard_node.add_child(mmi_close)
-					mmi_close.visibility_range_end        = CLOSE_LOD_M
-					mmi_close.visibility_range_end_margin = 0.0
-					mmi_close.visibility_range_fade_mode  = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
-				if mmi_sticker != null:
-					yard_node.add_child(mmi_sticker)
-					mmi_sticker.visibility_range_end        = STICKER_LOD_M
-					mmi_sticker.visibility_range_end_margin = 2.0
-					mmi_sticker.visibility_range_fade_mode  = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
-				var safe_yaw : float = bale_yaw if is_finite(bale_yaw) else 0.0
-				var bale_basis := Basis(Vector3.UP, safe_yaw)
-				var size_y_half : float = size.y * 0.5
-				# Pass 1 — populate the MultiMesh transforms IMMEDIATELY. These are
-				# just integer transform writes to the shared buffer and finish in
-				# a fraction of a second even for 2940 instances. Bales render at
-				# correct positions the moment the yard appears. Same transforms
-				# go into BOTH MMs so far / close stay perfectly aligned during
-				# the fade swap.
-				for i in bales_this_yard:
-					var entry : Array = slots[i]
-					var pos : Vector3 = entry[0]
-					var level : int = int(entry[1])
-					var inst_origin := Vector3(
-						pos.x,
-						floor_y + size.y * float(level) + size_y_half,
-						pos.z)
-					var xf := Transform3D(bale_basis, inst_origin)
-					mmi.multimesh.set_instance_transform(i, xf)
-					if mmi_close != null:
-						mmi_close.multimesh.set_instance_transform(i, xf)
-					if mmi_sticker != null:
-						# Sticker rides the +Z face at mid-height, 4 mm proud of the
-						# bale skin so it doesn't z-fight. QuadMesh faces +Z by
-						# default, which lines up with the bale's +Z face.
-						var sticker_local := Vector3(0.0, 0.0, size.z * 0.49 + 0.004)
-						var sticker_xf := Transform3D(bale_basis,
-							inst_origin + bale_basis * sticker_local)
-						mmi_sticker.multimesh.set_instance_transform(i, sticker_xf)
-				# #127 — Pass 2: per-bale collider creation is the actual cost
-				# (2940 RigidBody3D + CollisionShape3D + meta + group joins). The
-				# old loop blocked >60 s. Push the job onto a time-sliced queue
-				# that _process drains within a fixed per-frame budget — bounded
-				# stutter regardless of total yard count, instead of a fan-out of
-				# self-rescheduling call_deferred batches that can stack up.
-				total_bales += bales_this_yard
-				_yard_spawn_queue.push_back({
-					"yard":     yard_node,
-					"mmi":      mmi,
-					"supplier": supplier_id,
-					"prefix":   prefix,
-					"slots":    slots,
-					"floor_y":  floor_y,
-					"size":     size,
-					"yaw":      safe_yaw,
-					"idx":      0,
-				})
-		print("[MainWorld]  Yard '%s' filled with %d bales  (1 multimesh draw call)" % [supplier_id, bales_this_yard])
-		total_yards += 1
-	print("[MainWorld] Bale yards from layout: %d bales across %d yards (RBs deferred)" % [total_bales, total_yards])
 
-# #127 / #192 — yard collider drain queue. One job per yard goes onto
-# _yard_spawn_queue; _process spends at most _YARD_SPAWN_BUDGET_USEC per frame
-# spawning RBs from the front of that queue, regardless of how many yards (or
-# how large) are pending. Bounded stutter, no recursive call_deferred chain.
-const _YARD_SPAWN_BUDGET_USEC : int = 2000   # 2 ms / frame cap
-var   _yard_spawn_queue       : Array = []   # of Dictionary jobs
 
-func _spawn_one_yard_bale(job: Dictionary) -> void:
-	var yard_node : Node3D = job["yard"]
-	var slots     : Array  = job["slots"]
-	var i         : int    = int(job["idx"])
-	var entry     : Array  = slots[i]
-	var pos       : Vector3 = entry[0]
-	var level     : int    = int(entry[1])
-	var size      : Vector3 = job["size"]
-	var yaw       : float  = job["yaw"]
-	var rb := PlaceableCatalog.build_yard_bale_mm(
-		job["supplier"] as String, job["mmi"] as MultiMeshInstance3D, i)
-	if rb == null:
-		return
-	yard_node.add_child(rb)
-	var spawn_pos := Vector3(pos.x, float(job["floor_y"]) + size.y * float(level), pos.z)
-	rb.global_position = spawn_pos
-	rb.rotation.y = yaw
-	var code := "%s-%05d" % [job["prefix"] as String, (randi() % 100000)]
-	rb.set_meta("bale_code", code)
-	# #73 — origin pose so Reset Bales can snap moved bales back.
-	rb.set_meta("yard_origin", spawn_pos)
-	rb.set_meta("yard_origin_yaw", yaw)
-	# #143 — proximity gate. Stash the spawn layer/mask, then turn collision
-	# OFF. The periodic proximity sweep below re-enables only the RBs near
-	# the player, so far yards (thousands of bales) don't churn collision
-	# pairs every physics tick.
-	rb.add_to_group("yard_bale_rb")
-	rb.set_meta("yard_rb_layer", rb.collision_layer)
-	rb.set_meta("yard_rb_mask",  rb.collision_mask)
-	rb.collision_layer = 0
-	rb.collision_mask  = 0
 
-func _drain_yard_spawn_queue() -> void:
-	if _yard_spawn_queue.is_empty():
-		return
-	var start_usec := Time.get_ticks_usec()
-	while not _yard_spawn_queue.is_empty() \
-			and (Time.get_ticks_usec() - start_usec) < _YARD_SPAWN_BUDGET_USEC:
-		var job : Dictionary = _yard_spawn_queue[0]
-		var yard_node : Node3D = job["yard"]
-		# Yard may have been freed (world reload, save load) — drop the job.
-		if yard_node == null or not is_instance_valid(yard_node):
-			_yard_spawn_queue.pop_front()
-			continue
-		var slots : Array = job["slots"]
-		if int(job["idx"]) >= slots.size():
-			_yard_spawn_queue.pop_front()
-			continue
-		_spawn_one_yard_bale(job)
-		job["idx"] = int(job["idx"]) + 1
-		if int(job["idx"]) >= slots.size():
-			_yard_spawn_queue.pop_front()
-
-# =============================================================================
-# #143 — yard bale RB proximity sweep
-# =============================================================================
-# Yards can hold thousands of bales; even kinematic-frozen RBs cost something
-# every physics tick (broad-phase + sleeping bookkeeping). Bales >25 m from the
-# player can't possibly interact with the clamp anyway, so we strip their
-# collision and put it back when the player walks within range.
-const _YARD_RB_NEAR_M  : float = 25.0
-const _YARD_RB_TICK_S  : float = 0.5
-var   _yard_rb_tick_t  : float = 0.0
 
 func _process(delta: float) -> void:
-	# #192 — first, drain the bale-spawn backlog within our frame budget. This
-	# is independent of the proximity tick cadence; we want to keep spawning
-	# even between the 0.5 s proximity sweeps.
-	_drain_yard_spawn_queue()
-	_yard_rb_tick_t += delta
-	if _yard_rb_tick_t < _YARD_RB_TICK_S:
-		return
-	_yard_rb_tick_t = 0.0
-	if player == null or not is_instance_valid(player):
-		return
-	var ppos := player.global_position
-	var near_sq := _YARD_RB_NEAR_M * _YARD_RB_NEAR_M
-	for rb in get_tree().get_nodes_in_group("yard_bale_rb"):
-		if not is_instance_valid(rb):
-			continue
-		var d2 : float = (rb.global_position - ppos).length_squared()
-		var near : bool = d2 < near_sq
-		var on : bool = rb.collision_layer != 0
-		if near and not on:
-			rb.collision_layer = int(rb.get_meta("yard_rb_layer", 1))
-			rb.collision_mask  = int(rb.get_meta("yard_rb_mask",  1))
-		elif not near and on:
-			rb.collision_layer = 0
-			rb.collision_mask  = 0
+	# #195 — the only per-frame work MainWorld owned was the bale-yard drain
+	# queue + proximity sweep; both moved to BaleYardManager.tick(). Forward
+	# every tick so the spawn queue keeps draining and far yards stay culled.
+	if bale_yard_manager != null:
+		bale_yard_manager.tick(delta)
 
 # =============================================================================
 # SHIFT-LEADER PC — bale yard maintenance buttons (#73, #74)
 # =============================================================================
-## Snap every yard bale back to its spawn pose. Called from the shift-leader's
-## "Reset bales" button. Cleans up: bales pushed off stacks by physics, bales
-## still in their grabbed (detailed) form, bales that drifted >0.5 m from their
-## original yard slot. Restores the multimesh slot for detailed bales so the
-## yard renders normally again.
+## #195 — Forwarder to BaleYardManager.reset_yard_bales. Kept on MainWorld
+## because ShiftLeaderTerminal.gd calls mw.call("reset_yard_bales") on the
+## current scene root, so the public name stays here.
 func reset_yard_bales() -> int:
-	var n_reset : int = 0
-	for b in get_tree().get_nodes_in_group("bale"):
-		var rb := b as Node3D
-		if rb == null or not is_instance_valid(rb):
-			continue
-		if not rb.has_meta("yard_origin"):
-			continue   # not a yard-MM bale (forklift-placed elsewhere)
-		var origin : Vector3 = rb.get_meta("yard_origin")
-		var yaw    : float   = float(rb.get_meta("yard_origin_yaw", 0.0))
-		var drift  : float   = rb.global_position.distance_to(origin)
-		var was_detailed : bool = not bool(rb.get_meta("simple_bale", true))
-		if drift < 0.05 and not was_detailed:
-			continue   # already at rest
-		# Snap pose.
-		if rb is RigidBody3D:
-			var rbody := rb as RigidBody3D
-			rbody.linear_velocity = Vector3.ZERO
-			rbody.angular_velocity = Vector3.ZERO
-			rbody.freeze = true
-			rbody.sleeping = true
-			rbody.collision_layer = 1
-			rbody.collision_mask = 1
-		rb.global_position = origin
-		rb.rotation.y = yaw
-		# If the bale was promoted to a detailed visual (Model children), strip it
-		# and reveal the multimesh slot again — back to the cheap representation.
-		if rb.has_meta("yard_mm_inst") and rb.has_meta("yard_mm_idx"):
-			var mmi := rb.get_meta("yard_mm_inst") as MultiMeshInstance3D
-			var idx := int(rb.get_meta("yard_mm_idx"))
-			if mmi != null and mmi.multimesh != null \
-					and idx >= 0 and idx < mmi.multimesh.instance_count:
-				var bale_basis := Basis(Vector3.UP, yaw)
-				# MM instances are CENTRE-positioned, body is BASE-positioned; the
-				# half-height offset matches what _spawn_yards does at spawn.
-				var size : Vector3 = BaleDefs.get_origin(
-					String(rb.get_meta("material_origin", ""))).get("size", Vector3(1.1, 0.7, 1.1))
-				var inst_origin := origin + Vector3(0.0, size.y * 0.5, 0.0)
-				mmi.multimesh.set_instance_transform(idx,
-					Transform3D(bale_basis, inst_origin))
-		var model := rb.get_node_or_null("Model")
-		if model != null:
-			for ch in model.get_children():
-				ch.queue_free()
-			model.queue_free()   # detail_bale recreates it next time
-		# Reset gameplay meta to "fresh bale" state.
-		rb.set_meta("simple_bale", true)
-		rb.set_meta("scanned", false)
-		rb.set_meta("wires_cut", false)
-		n_reset += 1
-	print("[MainWorld] Reset %d yard bales" % n_reset)
-	return n_reset
+	if bale_yard_manager != null:
+		return bale_yard_manager.reset_yard_bales()
+	return 0
 
-## Order a fresh yard restock from the shift-leader PC. v1 implementation: emit
-## a walkie "logistiek" call NOW confirming the order, set a pending flag, and
-## subscribe to ShiftClock.shift_started. On the next shift start the delivery
-## confirmation fires and reset_yard_bales() runs to clear any drift / grabs
-## that happened during the shift — net effect, the next shift opens with a
-## "freshly stocked" yard.
-##
-## Persistence: _restock_pending is in-memory only; closing the game cancels a
-## pending order. Wire to GameState in a v2 if persistence matters.
+## #195 — Forwarder to BaleYardManager.restock_yard_bales. Kept on MainWorld
+## because ShiftLeaderTerminal.gd calls mw.call("restock_yard_bales") on the
+## current scene root, so the public name stays here.
 func restock_yard_bales() -> int:
-	if _restock_pending:
-		var walkie_dup := get_node_or_null("/root/Walkie")
-		if walkie_dup and walkie_dup.has_method("receive_call"):
-			walkie_dup.call("receive_call", "Logistiek",
-				"Bestelling al ingepland voor de volgende dienst — geen dubbele levering.")
-		return 0
-	var walkie := get_node_or_null("/root/Walkie")
-	if walkie and walkie.has_method("receive_call"):
-		walkie.call("receive_call", "Logistiek",
-			"Bestelling ontvangen — nieuwe balen worden geleverd bij de start van de volgende dienst.")
-	if shift_clock and shift_clock.has_signal("shift_started"):
-		var c := Callable(self, "_on_shift_started_restock")
-		if not shift_clock.shift_started.is_connected(c):
-			shift_clock.shift_started.connect(c)
-	_restock_pending = true
-	print("[MainWorld] Restock ordered — delivery on next shift_started")
-	return 1
-
-var _restock_pending : bool = false
-
-func _on_shift_started_restock() -> void:
-	if not _restock_pending:
-		return
-	_restock_pending = false
-	var n := reset_yard_bales()
-	var walkie := get_node_or_null("/root/Walkie")
-	if walkie and walkie.has_method("receive_call"):
-		walkie.call("receive_call", "Logistiek",
-			"Levering aangekomen — %d balen aangevuld voor de nieuwe dienst." % n)
-	print("[MainWorld] Restock delivered — %d bales refreshed" % n)
-
-func _polygon_xz(corners: Array) -> PackedVector2Array:
-	var out := PackedVector2Array()
-	for c in corners:
-		out.append(Vector2(c.x, c.z))
-	return out
+	if bale_yard_manager != null:
+		return bale_yard_manager.restock_yard_bales()
+	return 0
 
 ## Re-orders polygon corners counter-clockwise around their centroid (in the XZ
 ## plane) so a quad drawn in any click order becomes a simple, non-self-
@@ -2039,27 +551,6 @@ func _spawn_bale_yard() -> void:
 	print("[MainWorld] Bale yard: %d bales in %d stacks" % [total, origins.size()])
 
 # =============================================================================
-# TEST BUNKER — an intake pit beside the player to dump carried bales into
-# =============================================================================
-## Drops a single intake bunker a short distance from the player's spawn so the
-## full loop is testable on the spot: grab a stack from the yard → carry it over →
-## release it at the bunker → LineFlow picks up the delivered bale and meters it in.
-## Tagged "placed_object" + "feed_machine" like a build-placed one so LineFlow's
-## scan treats it as a real feed point.
-func _spawn_test_bunker() -> void:
-	var base : Vector3 = _get_factory_anchor()
-	# In front of the player, past the bale yard, clear of the vehicle row.
-	# -0.9 grounds the base (anchor is the player capsule centre, ~0.9 m up).
-	base += Vector3(2.0, -0.9, 14.0)
-	var bunker := PlaceableCatalog.build_node("bunker", false) as Node3D
-	if bunker == null:
-		push_warning("[MainWorld] test bunker build failed")
-		return
-	add_child(bunker)
-	bunker.global_position = base
-	print("[MainWorld] Test bunker spawned at %s" % str(base))
-
-# =============================================================================
 # DEMO PIPELINE — a full feeding-belt → extruder line, 300 m down the road
 # =============================================================================
 ## A single-file straight-line layout of every catalog machine in process order
@@ -2067,444 +558,12 @@ func _spawn_test_bunker() -> void:
 ## the line themselves. Sits ~300 m west of the player spawn (out of the way of
 ## the factory's build zone).
 ##
-## Order mirrors the real plant flow described in project_plastic_film_recycling_sim.md:
-##   bunker → SGA opener → overband magnet → ballistic sep → windshifter →
-##   TITECH NIR sort → shredders → feed hopper → wash (pre / friction /
-##   intensive) → flotation → rotation → Kufferath sieve → rafter → dewater
-##   screw → dryers → mengsilo → MAS trough → compactor → extruder (sink).
-## A waste bin sits at the wash section; the ZSS water plant anchors the tail.
-# =============================================================================
-# LINE 3C — built in the EXACT machine order from the plant HMI (Line3CDef).
-# =============================================================================
-## Replaces the old generic demo pipeline. Lays L3C.1 → … → Meltpump head-to-
-## tail along +Z within reach of the player. Each machine carries a billboard
-## "L3C.x  Name" label + meta (l3c_code / l3c_order) and joins placed_object so
-## LineFlow discovers the real flow nodes and feeds ONLY the head (Doseer Silo) —
-## you can never feed straight into the extruder (#144). Waste baskets omitted
-## (per the operator) — they're placed separately off the separators/dryers.
-func _spawn_line_3c() -> void:
-	var marker := _player_spawn_node()
-	var base : Vector3 = (marker.global_position if marker else Vector3.ZERO) \
-		+ Vector3(-20.0, 0.0, -8.0)
-	# Sit the machines ON the floor. The old code used marker.y - 0.9 which landed
-	# ~1 m UNDER the floor (the floor top is ~marker.y + 0.15, not 0.9 below it).
-	base.y = _floor_top_y()
-	var z : float = 0.0
-	const GAP : float = 1.4
-	const ROW_OFFSET : float = 3.5     # X spacing of the L/R parallel trains
-	var built := 0
-	var intake_node : Node3D = null
-	for i in Line3CDef.STAGES.size():
-		var st : Dictionary = Line3CDef.STAGES[i]
-		var id : String = st["id"]
-		var item := PlaceableCatalog.get_item(id)
-		if item.is_empty():
-			push_warning("[Line3C] missing catalog item '%s' for %s" % [id, st["code"]])
-			continue
-		var size : Vector3 = item["size"]
-		var node := PlaceableCatalog.build_node(id, false) as Node3D
-		if node == null:
-			continue
-		add_child(node)
-		# L/R stages stand side by side as two PARALLEL trains (the real splits); single
-		# stages run down the centre. The R partner reuses its L partner's Z slot so the
-		# pair is abreast; Z advances once the pair (or a single stage) is placed.
-		var code : String = String(st["code"])
-		var lane := 0
-		# R = RIGHT looking from the line START → END; L = LEFT. (Sides swapped
-		# from the original mapping per operator: R sits on -X, L on +X.)
-		if code.ends_with("L"):   lane = 1
-		elif code.ends_with("R"): lane = -1
-		# Seat the machine's BOTTOM on the floor. These machines are CENTRE-origin
-		# (geometry spans -h/2..+h/2 around the node), and the catalog size.y does
-		# NOT match the built height, so measure the real AABB and offset by it.
-		var local_bb : AABB = _local_aabb(node)
-		node.global_position = Vector3(
-			base.x + float(lane) * ROW_OFFSET,
-			base.y - local_bb.position.y,
-			base.z + z + size.z * 0.5)
-		if not code.ends_with("L"):
-			z += size.z + GAP
-		# Tag for flow + identification.
-		node.set_meta("placeable_id", id)        # so LineFlow.discover() sees it
-		node.set_meta("l3c_code", st["code"])
-		node.set_meta("l3c_order", i)
-		node.set_meta("l3c_amps", st["amps"])
-		if not node.is_in_group("placed_object"):
-			node.add_to_group("placed_object")
-		if Line3CDef.is_intake(st["code"]):
-			node.set_meta("is_line_intake", true)
-			intake_node = node
-		# Billboard "L3C.x  Name" label above the machine.
-		var lbl := Label3D.new()
-		lbl.text = "%s  %s" % [st["code"], st["name"]]
-		lbl.position = Vector3(0.0, size.y + 0.5, 0.0)
-		lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		lbl.font_size = 40
-		lbl.outline_size = 8
-		lbl.modulate = Color(0.92, 0.95, 1.0)
-		node.add_child(lbl)
-		# #173 — a live flake layer riding this machine's deck. LineFlow finds it by
-		# the "film_field" group each tick and drives its density (material present),
-		# drift speed (throughput) and wet/dirty tint from the baked process state,
-		# so the flakes you SEE reflect the kg/moisture/contam the model COMPUTES.
-		var field = preload("res://src/sim/FilmFlakeField.gd").new()
-		field.flake_count = 60
-		field.area = Vector2(maxf(size.x * 0.7, 0.6), maxf(size.z * 0.7, 0.6))
-		field.surface_y = size.y * 0.72
-		field.flake_size = 0.06
-		field.flow_speed = 0.4
-		node.add_child(field)
-		# #171 — a small visible drive rotor whose spin IS the one that gates flow:
-		# LineFlow drives its set_running() from the PLC power-up, and reads its rpm
-		# back into the throughput (_mech_fraction), so a turning rotor literally
-		# means material is moving. SHOW_LINE_ROTORS flips them all off if it reads
-		# too busy alongside the flake fields.
-		if SHOW_LINE_ROTORS:
-			_attach_drive_rotor(node, size)
-		built += 1
-	print("[MainWorld] Line 3C built: %d machines, head=%s" % \
-		[built, str(intake_node.name) if intake_node else "?"])
 
-## #171 — attach a small visible DRIVE ROTOR to a Line 3C machine. It's a real
-## RotatingMechanism (joins group "mechanism"), so LineFlow already drives it: the
-## PLC powers it (set_running) and its live rpm feeds back into the flow rate. A
-## dark drum with safety-yellow flight fins makes the rotation read at a glance,
-## so a turning rotor literally means material is moving through that machine.
-func _attach_drive_rotor(machine: Node3D, size: Vector3) -> void:
-	var rm = preload("res://src/sim/RotatingMechanism.gd").new()
-	rm.axis = Vector3.RIGHT
-	rm.rpm = 42.0
-	rm.nominal_rpm = 42.0
-	rm.running = false          # starts stopped; the line PLC spins it up
-	rm.spin_up_s = 2.5
-	rm.position = Vector3(0.0, size.y * 0.6, size.z * 0.42)
-	machine.add_child(rm)
-	var span : float = clampf(size.x * 0.5, 0.25, 1.0)
-	var dark := StandardMaterial3D.new()
-	dark.albedo_color = Color(0.16, 0.16, 0.18); dark.metallic = 0.6; dark.roughness = 0.4
-	var stripe := StandardMaterial3D.new()
-	stripe.albedo_color = Color(0.95, 0.78, 0.20); stripe.roughness = 0.6
-	# Drum — a cylinder laid along local X (the spin axis).
-	var drum := MeshInstance3D.new()
-	var dcm := CylinderMesh.new()
-	dcm.top_radius = 0.12; dcm.bottom_radius = 0.12; dcm.height = span; dcm.radial_segments = 14
-	drum.mesh = dcm
-	drum.rotation.z = deg_to_rad(90.0)
-	drum.material_override = dark
-	rm.add_child(drum)
-	# Three flight fins around the drum so the rotation is unmistakable.
-	for a in [0.0, TAU / 3.0, TAU * 2.0 / 3.0]:
-		var fin := MeshInstance3D.new()
-		var fbm := BoxMesh.new(); fbm.size = Vector3(span * 0.92, 0.03, 0.07)
-		fin.mesh = fbm
-		fin.material_override = stripe
-		fin.position = Vector3(0.0, sin(a) * 0.12, cos(a) * 0.12)
-		rm.add_child(fin)
 
-func _spawn_demo_pipeline() -> void:
-	var marker := _player_spawn_node()
-	if marker == null:
-		push_warning("[MainWorld] PlayerSpawn marker missing — demo pipeline anchored at origin")
-	# RELOCATED from 300 m west (far too far to walk to for testing) to ~18 m
-	# west of the player spawn, running along +Z. Close enough to reach on foot
-	# in a few seconds. The documented machine ORDER in `sequence` below doubles
-	# as the line's design doc. (The full physicalised rebuild — real transport
-	# rates + the photo-accurate sink separator — is tracked as #145/#147; this
-	# is the existing layout, just brought into reach.)
-	var origin: Vector3 = (marker.global_position if marker else Vector3.ZERO) \
-		+ Vector3(-18.0, 0.0, -6.0)
 
-	var sequence: Array[String] = [
-		# ── intake + dry sorting line (TITECH/TOMRA front end) ───────────────
-		"bunker",               # bale bunker: forklift dumps, meters onto line
-		"sga_drum",             # SGA opener drum: tears bales open, screens fines
-		"metal_belt",           # overband magnet: pulls ferrous metal
-		"ballistic_sep",        # ballistic separator: 2D film vs 3D rigids
-		"wind_sifter",          # zig-zag windshifter: blows off light film
-		"titech_sort",          # TITECH NIR sorter: ejects off-spec polymers
-		# ── size reduction ──────────────────────────────────────────────────
-		"shredder_1",           # coarse pre-shred
-		"shredder_2",           # fine shred to flake
-		"inclined_belt_8m",     # climb to the washing deck
-		"feed_hopper",          # meter flake into the wash
-		# ── wet washing + separation ────────────────────────────────────────
-		"prewash_drum",         # pre-wash drum: knock off bulk dirt
-		"friction_washer",      # friction scrubber
-		"intensive_washer",     # hot caustic intensive wash
-		"flotation_tank",       # sink/float: drop PET/PVC/sand
-		"waste_container",      # heavies/reject bin for the wash section
-		"kufferath_sieve",      # Kufferath wedge-wire sieve: drain + screen
-		"rafter",               # sieve deck: drain water, screen fines
-		# ── dewater + dry ───────────────────────────────────────────────────
-		"dewater_screw",        # squeeze out free water
-		"mech_dryer",           # thermal dryer: drive off the bulk moisture
-		"centrifuge",           # spin dryer: final moisture
-		# ── extrusion prep + pelletise ──────────────────────────────────────
-		"mengsilo",             # mixing silo: homogenise dry flake
-		"mas_bak",              # MAS trough (pre-extruder agglomeration)
-		"compactor",            # EREMA compactor
-		"extruder_1",           # extruder = the line sink → granulaat
-	]
 
-	const GAP : float = 1.6     # metres between adjacent machine ENDS
-	var z: float = 0.0          # cursor along +Z (process direction)
-	var count: int = 0
-	for id in sequence:
-		var item := PlaceableCatalog.get_item(id)
-		if item.is_empty():
-			push_warning("[MainWorld] Demo pipeline: missing catalog item '%s'" % id)
-			continue
-		var size: Vector3 = item["size"]
-		var node := PlaceableCatalog.build_node(id, false) as Node3D
-		if node == null:
-			continue
-		add_child(node)
-		# Centre each machine at z + half its length so it sits flush against
-		# the previous one's tail.
-		node.global_position = origin + Vector3(0.0, 0.0, z + size.z * 0.5)
-		z += size.z + GAP
-		count += 1
-	# Tall sky-blue beacon at the start of the pipeline so the player can spot
-	# it from inside the factory — 60 m tall, visible from anywhere on the lot.
-	_spawn_pipeline_beacon(origin, z)
 
-	var bearing := "300 m WEST"
-	if marker:
-		bearing = "%.0f m WEST of PlayerSpawn (world XYZ = %.0f, %.0f, %.0f → %.0f)" % \
-			[300.0, origin.x, origin.y, origin.z, origin.z + z]
-	print("[MainWorld] Demo pipeline spawned: %d machines, total length %.0f m, %s"
-		% [count, z, bearing])
 
-	# LineFlow's discovery only runs in rebuild() — push it to register the
-	# new machines + draw their auto-link connectors.
-	if line_flow:
-		line_flow.rebuild()
-
-## Big bright pole at the start AND end of the pipeline so the player can find
-## the demo line from anywhere on the lot. Sky-blue base + safety-orange top so
-## it reads against both ground and sky.
-func _spawn_pipeline_beacon(origin: Vector3, length: float) -> void:
-	var beacon_root := Node3D.new()
-	beacon_root.name = "DemoPipelineBeacons"
-	add_child(beacon_root)
-	for end_z in [-2.0, length + 2.0]:    # one at the head, one at the tail
-		var pole := MeshInstance3D.new()
-		var pm := CylinderMesh.new()
-		pm.top_radius = 0.4
-		pm.bottom_radius = 0.4
-		pm.height = 60.0
-		pole.mesh = pm
-		var blue_mat := StandardMaterial3D.new()
-		blue_mat.albedo_color = Color(0.20, 0.55, 0.95)
-		blue_mat.emission_enabled = true
-		blue_mat.emission = Color(0.20, 0.55, 0.95)
-		blue_mat.emission_energy_multiplier = 0.6
-		pole.material_override = blue_mat
-		pole.position = origin + Vector3(0.0, 30.0, end_z)
-		beacon_root.add_child(pole)
-		# Orange flag on top
-		var flag := MeshInstance3D.new()
-		var fm := BoxMesh.new()
-		fm.size = Vector3(4.0, 1.5, 0.1)
-		flag.mesh = fm
-		var orange_mat := StandardMaterial3D.new()
-		orange_mat.albedo_color = Color(1.0, 0.55, 0.05)
-		orange_mat.emission_enabled = true
-		orange_mat.emission = Color(1.0, 0.55, 0.05)
-		orange_mat.emission_energy_multiplier = 0.8
-		flag.material_override = orange_mat
-		flag.position = origin + Vector3(2.0, 58.0, end_z)
-		beacon_root.add_child(flag)
-
-# =============================================================================
-# MACHINES — Extruder 3B (first machine sim, drives the 120s cascade test)
-# =============================================================================
-func _spawn_extruder_3b() -> void:
-	var ext_scene := load("res://src/scenes/machines/Extruder3B.tscn") as PackedScene
-	if not ext_scene:
-		push_warning("[MainWorld] Extruder3B.tscn missing — skipping")
-		return
-	var ext := ext_scene.instantiate()
-	add_child(ext)
-	# Park 15 m forward of player spawn so they can walk to it
-	var marker := _player_spawn_node()
-	if marker:
-		var pos := marker.global_position
-		pos.z -= 15.0
-		pos.y += 0.0
-		ext.global_position = pos
-	print("[MainWorld] Extruder 3B placed")
-
-# =============================================================================
-# BATTERY STATION — walkie-battery charger bench in the shift-leader office
-# =============================================================================
-## A small bench (charger + drawer + shelf) near the extruders, where the player
-## swaps walkie packs. The single charger is the social bottleneck (see
-## BatteryStation.gd). Modeled procedurally so no .tscn is needed.
-func _spawn_battery_station() -> void:
-	var station := BatteryStation.new()
-	station.name = "BatteryStation"
-	# Near the extruder (which sits ~15 m -Z of spawn), offset to the side so it
-	# reads as a corner office bench rather than blocking the machine.
-	var anchor : Vector3 = _get_factory_anchor()
-	anchor += Vector3(-6.0, 0.0, -15.0)
-	add_child(station)
-	station.global_position = anchor
-	_build_battery_station_model(station)
-	_fit_box_collider(station)   # #10 — solid bench, not just a proximity trigger
-	print("[MainWorld] Battery station (walkie charger) @ %s" % str(anchor))
-
-## #3 — the shift-leader's desk + computer in the office, beside the walkie-battery
-## bench. Walk up + E opens the bale scan-log terminal (ScanLog → ShiftLeaderTerminal).
-func _spawn_shift_leader_desk() -> void:
-	var desk : Node3D = load("res://src/scenes/world/ShiftLeaderDesk.gd").new()
-	desk.name = "ShiftLeaderDesk"
-	var anchor : Vector3 = _get_factory_anchor()
-	add_child(desk)
-	desk.global_position = anchor + Vector3(-9.0, 0.0, -14.0)
-	print("[MainWorld] Shift-leader desk (scan log) @ %s" % str(desk.global_position))
-
-## A procedural bench: worktop, a charger block with a status LED, a drawer, and a
-## shelf — just enough to read as "the charging corner". Cosmetic; the logic lives
-## in BatteryStation.gd.
-func _build_battery_station_model(station: Node3D) -> void:
-	var steel := StandardMaterial3D.new()
-	steel.albedo_color = Color(0.42, 0.44, 0.48)
-	steel.metallic = 0.5
-	steel.roughness = 0.4
-	var dark := StandardMaterial3D.new()
-	dark.albedo_color = Color(0.16, 0.16, 0.18)
-	var led := StandardMaterial3D.new()
-	led.albedo_color = Color(0.2, 0.9, 0.3)
-	led.emission_enabled = true
-	led.emission = Color(0.2, 0.9, 0.3)
-	led.emission_energy_multiplier = 2.0
-
-	# Worktop
-	var top := MeshInstance3D.new()
-	var topm := BoxMesh.new(); topm.size = Vector3(1.8, 0.08, 0.7)
-	top.mesh = topm; top.material_override = steel
-	top.position = Vector3(0, 0.9, 0)
-	station.add_child(top)
-	# Legs
-	for sx in [-0.8, 0.8]:
-		for sz in [-0.28, 0.28]:
-			var leg := MeshInstance3D.new()
-			var lm := BoxMesh.new(); lm.size = Vector3(0.07, 0.9, 0.07)
-			leg.mesh = lm; leg.material_override = dark
-			leg.position = Vector3(sx, 0.45, sz)
-			station.add_child(leg)
-	# Charger block (left) with status LED
-	var charger := MeshInstance3D.new()
-	var cm := BoxMesh.new(); cm.size = Vector3(0.34, 0.22, 0.34)
-	charger.mesh = cm; charger.material_override = dark
-	charger.position = Vector3(-0.55, 1.05, 0)
-	station.add_child(charger)
-	var lamp := MeshInstance3D.new()
-	var lampm := SphereMesh.new(); lampm.radius = 0.03; lampm.height = 0.06
-	lamp.mesh = lampm; lamp.material_override = led
-	lamp.position = Vector3(-0.55, 1.19, 0.14)
-	station.add_child(lamp)
-	# Fresh drawer (centre) + empty shelf (right) as labelled trays
-	for data in [{"x": 0.05, "c": Color(0.2, 0.5, 0.25)}, {"x": 0.6, "c": Color(0.5, 0.35, 0.2)}]:
-		var tray := MeshInstance3D.new()
-		var tm := BoxMesh.new(); tm.size = Vector3(0.4, 0.06, 0.46)
-		var trm := StandardMaterial3D.new(); trm.albedo_color = data["c"]
-		tray.mesh = tm; tray.material_override = trm
-		tray.position = Vector3(data["x"], 0.97, 0)
-		station.add_child(tray)
-
-# =============================================================================
-# SERVICE STATIONS — wall outlet (electric lift) + diesel pump
-# =============================================================================
-## A power outlet beside the lift's parking spot, and a diesel bowser by the
-## vehicle row. Both anchor to the player's actual spawn so they're reachable.
-func _spawn_service_stations() -> void:
-	var anchor : Vector3 = _get_factory_anchor()
-
-	# Wall outlet — near the lift (which parks at +20 on X).
-	var outlet := ServiceStation.new()
-	outlet.name = "PowerOutlet"
-	outlet.mode = "outlet"
-	add_child(outlet)
-	outlet.global_position = anchor + Vector3(22.5, 0.0, 0.0)
-	_build_outlet_model(outlet)
-	_fit_box_collider(outlet)   # #10 — solid post
-
-	# Diesel pump — near the Merlo (which parks at +15 on X).
-	var pump := ServiceStation.new()
-	pump.name = "FuelPump"
-	pump.mode = "pump"
-	add_child(pump)
-	pump.global_position = anchor + Vector3(13.0, 0.0, -3.0)
-	_build_pump_model(pump)
-	_fit_box_collider(pump)   # #10 — solid bowser
-	print("[MainWorld] Service stations: outlet @ %s · pump @ %s"
-		% [str(outlet.global_position), str(pump.global_position)])
-
-func _build_outlet_model(st: Node3D) -> void:
-	var box := StandardMaterial3D.new(); box.albedo_color = Color(0.85, 0.82, 0.2)
-	var dark := StandardMaterial3D.new(); dark.albedo_color = Color(0.12, 0.12, 0.13)
-	# Yellow industrial outlet box on a short post.
-	var post := MeshInstance3D.new()
-	var pm := BoxMesh.new(); pm.size = Vector3(0.12, 1.1, 0.12)
-	post.mesh = pm; post.material_override = dark; post.position = Vector3(0, 0.55, 0)
-	st.add_child(post)
-	var bx := MeshInstance3D.new()
-	var bm := BoxMesh.new(); bm.size = Vector3(0.34, 0.4, 0.22)
-	bx.mesh = bm; bx.material_override = box; bx.position = Vector3(0, 1.15, 0)
-	st.add_child(bx)
-	# Two socket dots.
-	for sx in [-0.07, 0.07]:
-		var s := MeshInstance3D.new()
-		var sm := CylinderMesh.new(); sm.top_radius = 0.04; sm.bottom_radius = 0.04
-		sm.height = 0.04; sm.radial_segments = 10
-		s.mesh = sm; s.material_override = dark
-		s.transform = Transform3D(Basis(Vector3(1,0,0), PI/2.0), Vector3(sx, 1.15, 0.12))
-		st.add_child(s)
-
-func _build_pump_model(st: Node3D) -> void:
-	var red := StandardMaterial3D.new(); red.albedo_color = Color(0.6, 0.13, 0.1)
-	var dark := StandardMaterial3D.new(); dark.albedo_color = Color(0.14, 0.14, 0.15)
-	var blue := StandardMaterial3D.new(); blue.albedo_color = Color(0.2, 0.4, 0.7)
-	# Diesel bowser body.
-	var body := MeshInstance3D.new()
-	var bm := BoxMesh.new(); bm.size = Vector3(0.8, 1.5, 0.6)
-	body.mesh = bm; body.material_override = red; body.position = Vector3(0, 0.75, 0)
-	st.add_child(body)
-	# A small blue AdBlue can beside it.
-	var can := MeshInstance3D.new()
-	var cm := BoxMesh.new(); cm.size = Vector3(0.35, 0.5, 0.35)
-	can.mesh = cm; can.material_override = blue; can.position = Vector3(0.6, 0.25, 0)
-	st.add_child(can)
-	# Hose reel.
-	var reel := MeshInstance3D.new()
-	var rm := CylinderMesh.new(); rm.top_radius = 0.18; rm.bottom_radius = 0.18
-	rm.height = 0.12; rm.radial_segments = 14
-	reel.mesh = rm; reel.material_override = dark
-	reel.transform = Transform3D(Basis(Vector3(0,0,1), PI/2.0), Vector3(-0.46, 1.0, 0))
-	st.add_child(reel)
-
-# =============================================================================
-# WIRE-CUTTER TOOL — the "concrete scissors" the operator carries on foot
-# =============================================================================
-## Drop a single WireCutter near the bale clamp's parking spot. The operator
-## walks up, presses E to pick it up, then can left-click on bales to cut wires
-## one at a time. The in-cab Shift+B cut was removed — this is the real flow.
-# =============================================================================
-# LPG CYLINDER RACK — outside near the vehicle row
-# =============================================================================
-func _spawn_lpg_rack() -> void:
-	var rack_script := preload("res://src/scenes/world/LPGRack.gd")
-	var rack := rack_script.new()
-	rack.name = "LPGRack"
-	add_child(rack)
-	var anchor : Vector3 = _vehicle_anchor()
-	# A few metres in front of the vehicle row, broadside on so the operator
-	# can walk a tank straight from the rack to the forklift cab.
-	rack.global_position = anchor + Vector3(-6.0, 0.0, 4.0)
-	print("[MainWorld] LPGRack @ %s" % str(rack.global_position))
 
 # =============================================================================
 # FEEDER LINE — wide shredder feed belt + a bale lot + autonomous NPC feeders
@@ -2593,53 +652,18 @@ func _spawn_road_and_parking() -> void:
 	exterior_mgr.name = "ExteriorManager"
 	add_child(exterior_mgr)
 	exterior_mgr.build_exterior(anchor, ground_y)
-	_spawn_floodlights(anchor)
+	# #195 — interior lighting (overhead grid + wall-line TL bars) extracted to
+	# InteriorLightingManager. Spawns its children under MainWorld so the scene
+	# shape is unchanged (OverheadLights node under ShellMesh; InteriorTLBars
+	# node under ShellMesh). build_all() runs _spawn_overhead_lights() first
+	# then _spawn_floodlights(anchor) to preserve the original side-effect order.
+	var lighting := InteriorLightingManager.new()
+	lighting.name = "InteriorLightingManager"
+	add_child(lighting)
+	lighting.setup(self)
+	lighting.build_all(anchor)
 	print("[MainWorld] Road + parking anchored to player spawn %s (yaw %.1f deg)" \
 		% [anchor, rad_to_deg(by)])
-
-## TL-bar emissive boxes parented INSIDE the building shell — replaces the
-## old wall-mounted exterior Floodlight cones. Operator notes the building
-## is lit by overhead fluorescent tubes, not by floodlights aimed at the
-## walls; the floodlights also rotated by `_building_yaw()` which disagreed
-## with the canonical bale-yard yaw (WORLD-cluster fix).
-##
-## Each TL-bar is an emissive 1.5×0.08×0.10 m box (no light source — the
-## SpotLight3Ds from `_spawn_overhead_lights` already supply the actual
-## illumination). The bars hang from the ceiling along the building's local
-## south + west wall lines so the inside of the shell reads as an industrial
-## fluorescent hall at dusk/night. They're parented under the ShellMesh,
-## inheriting its transform, and oriented along local +X — but the GRID step
-## is rotated by `(world_yaw - shell_local_yaw)` so the row direction tracks
-## the canonical yaw the bale yards drive.
-func _spawn_floodlights(anchor: Vector3) -> void:
-	var shell := _shell()
-	if shell == null:
-		print("[MainWorld] Floodlights skipped: no ShellMesh found")
-		return
-	var root := Node3D.new()
-	root.name = "InteriorTLBars"
-	shell.add_child(root)
-	# Compute shell-local ceiling height and footprint (same pattern as
-	# `_spawn_overhead_lights`).
-	var local_aabb : AABB = shell.mesh.get_aabb() if shell.mesh != null else AABB(Vector3.ZERO, Vector3(40, 8, 40))
-	var ceil_y_local : float = local_aabb.position.y + local_aabb.size.y - 0.45
-	var x0 := local_aabb.position.x; var x1 := x0 + local_aabb.size.x
-	var z0 := local_aabb.position.z; var z1 := z0 + local_aabb.size.z
-	# Wall-line TL bars: two rows along the local south wall (interior face)
-	# and one row along the local west wall, so the perimeter of the hall
-	# reads brightly at night. Positions are in shell-LOCAL frame.
-	var inset : float = 1.2
-	var bar_offsets : Array = [
-		Vector3(x0 + inset, ceil_y_local, z0 + inset),
-		Vector3((x0 + x1) * 0.5, ceil_y_local, z0 + inset),
-		Vector3(x1 - inset, ceil_y_local, z0 + inset),
-		Vector3(x0 + inset, ceil_y_local, (z0 + z1) * 0.5),
-	]
-	for i in bar_offsets.size():
-		_build_overhead_fixture(root, bar_offsets[i])
-		root.get_child(i).name = "InteriorTLBar_%d" % i
-	print("[MainWorld] Interior TL bars: %d emissive boxes parented under ShellMesh (replaces wall floodlights)" \
-		% bar_offsets.size())
 
 ## #145 Phase 1 — Bake a NavigationRegion3D from the interior floor + the
 ## exterior ground plane. NPCs route through this region instead of walking
@@ -2686,13 +710,6 @@ func _spawn_navigation_region() -> void:
 	print("[MainWorld] NavRegion baking (group '%s', %d source meshes)" % \
 		[NAVMESH_GROUP, get_tree().get_nodes_in_group(NAVMESH_GROUP).size()])
 
-# =============================================================================
-# #155 — Shift-start: spawn cars in lot + player in Swift on road + Yasin shotgun
-# =============================================================================
-## Slot assignment matching the operator's Google Maps satellite of the lot.
-## side: -1 = left row, +1 = right row. idx: 0 = north end, 9 = south end.
-## Player Swift sits in right-row slot 2 (operator-identified in the photo).
-const _CAR_SLOTS : Dictionary = {
 	"abdellilah": {"side": -1, "idx": 0},   # left row, slot 1 (Ka sunset orange)
 	"emrah":      {"side": -1, "idx": 1},   # left row, slot 2 (Audi A3 sunroof)
 	"mohammed":   {"side": -1, "idx": 2},   # left row, slot 3 (VW Golf)
@@ -2703,199 +720,8 @@ const _CAR_SLOTS : Dictionary = {
 	# Player Swift: right row, slot 3 (operator's car)
 	# Vincent / Pascal / Peter: GLB assets pending — slots reserved when those land.
 }
-const _PLAYER_SWIFT_SLOT : Dictionary = {"side": 1, "idx": 2}
 
-func _spawn_shift_cars_and_player_drive_in() -> void:
-	if staff_parking == null:
-		push_warning("[MainWorld] #155: staff_parking missing — cars not spawned")
-		return
-	# (B) NPC cars — one per NPC that has an asset, parked in their satellite slot.
-	var spawned_cars : int = 0
-	var missing_assets : Array = []
-	for npc_id in NPC_DATA.keys():
-		var data : Dictionary = NPC_DATA[npc_id]
-		var car_path : String = String(data.get("car", ""))
-		if car_path == "" or car_path == "passenger:player":
-			# All 7 NPC cars have asset paths now (real GLB or placeholder).
-			# Missing-asset tracking kept for any future additions.
-			continue
-		if not _CAR_SLOTS.has(npc_id):
-			continue
-		var slot : Dictionary = _CAR_SLOTS[npc_id]
-		_spawn_car_in_bay(car_path, int(slot["side"]), int(slot["idx"]),
-			"%s's car" % String(data["name"]), String(npc_id))
-		spawned_cars += 1
-	# (D) Player's Swift on the south end of De Asselen Kuil, facing north
-	# (so the operator drives forward into the lot). Parked alongside the
-	# road's south waypoint anchor + spawn_pos offset.
-	var swift : Node3D = _spawn_player_swift_on_road()
-	# (C) Yasin in the Swift's passenger seat.
-	if swift != null and npcs.has("yassine"):
-		var yasin : Node3D = npcs["yassine"] as Node3D
-		if yasin != null and swift.has_method("seat_passenger"):
-			swift.call("seat_passenger", yasin)
-	# Programmatic boarding — put the player in the driver seat so they
-	# start the shift sitting in the car (per #155 spec). Uses
-	# OperatorContext.enter_interactable_vehicle so the camera takes the
-	# CabCamera and the player gets the throttle/steer inputs straight away.
-	if swift != null and player != null:
-		if operator_context and operator_context.has_method("enter_interactable_vehicle"):
-			operator_context.call("enter_interactable_vehicle", swift)
-		elif swift.has_method("get_boarding_position"):
-			# Fallback: teleport the player next to the driver door so they
-			# can board with E themselves. Not autopilot, just positioning.
-			player.global_position = swift.call("get_boarding_position")
-	print("[MainWorld] #155 shift-start: %d NPC cars in lot, player in Swift on road, %d assets missing (%s)" \
-		% [spawned_cars, missing_assets.size(), str(missing_assets)])
 
-func _spawn_car_in_bay(scene_path: String, side: int, idx: int, label: String, npc_id: String = "") -> Node3D:
-	var ps := load(scene_path) as PackedScene
-	if ps == null:
-		push_warning("[MainWorld] #155: car scene missing: %s" % scene_path)
-		return null
-	var car : Node3D = ps.instantiate() as Node3D
-	if car == null:
-		return null
-	add_child(car)
-	car.transform = staff_parking.bay_world_transform(side, idx)
-	car.set_meta("display_label", label)
-	# Per-NPC body-only overrides. Pascal drives the same Ford Ka 2003 GLB as
-	# Abdellilah but his is the lower-slung "Streetka"-style variant: shrink
-	# 15 % on Y. Body-only: wheels are reparented to VehicleWheel3D nodes that
-	# are children of the Car (not of the scaled imported subtree) by
-	# Car._articulate_wheels, so they stay round.
-	if npc_id == "pascal":
-		# Pre-set _model_scale BEFORE the deferred load_model finishes if it
-		# hasn't already run (subclass _ready calls load_model synchronously
-		# in our Car flow, so this is set as a follow-up rescale of the body
-		# subtree). Walks the immediate children, applies Y=0.85 to anything
-		# that's not a VehicleWheel3D / Area3D / Camera3D / CollisionShape3D
-		# (i.e. just the imported GLB body root). Safe because Car treats
-		# `_model_scale` as a one-shot — re-applying via Node3D.scale is
-		# additive only on the body, not the wheels.
-		call_deferred("_apply_pascal_body_squish", car)
-	return car
-
-## Pascal's Ford Ka rides lower than Abdellilah's — squish the imported GLB
-## body subtree on Y only. Wheels live under VehicleWheel3D nodes (siblings of
-## the body), so they stay perfectly round.
-##
-## CRITICAL: target the IMPORTED MODEL ROOT (child of FrontAxisCorrection), not
-## the wrap itself. Car.load_model() inserts a FrontAxisCorrection Node3D with
-## rotation.y = PI (Car.gd:252-257) so the asset's visible front lands on -Z.
-## Writing a non-uniform scale to that wrap reads its current Node3D.scale via
-## basis decomposition — with a 180° yaw baked in, the decomposition can encode
-## the rotation as negative X/Z scale and the requested Y=0.85 ends up smeared
-## onto X/Z when re-composed, tipping the car onto its side. Instead, drill
-## into the wrap's child (the actual GLB root) and apply the squish there in
-## its OWN local frame using Transform3D.basis.scaled() — which acts as a pure
-## column-scaling of the basis, with no decomposition step.
-func _apply_pascal_body_squish(car: Node3D) -> void:
-	if car == null or not is_instance_valid(car):
-		return
-	# Target only the FrontAxisCorrection wrap by name. If load_model() didn't
-	# create one (asset not imported, or subclass opted out via
-	# _model_front_axis_correction_deg = 0), warn once and skip.
-	var wrap := car.get_node_or_null("FrontAxisCorrection") as Node3D
-	if wrap == null:
-		push_warning("[MainWorld] Pascal squish: FrontAxisCorrection wrap missing on %s — skipped (model not imported?)" % car.name)
-		return
-	# Apply Y-shrink to the IMPORTED GLB root (the wrap's only child), in ITS
-	# local frame, so the 0.85 factor hits the asset's true vertical axis
-	# regardless of the wrap's 180° yaw. Use Transform3D.basis.scaled()
-	# directly to bypass the Node3D.scale decomposition pathway, which can
-	# encode 180°-Y as negative X/Z scale and smear the non-uniform factor
-	# onto the wrong axis.
-	for body in wrap.get_children():
-		if body is Node3D:
-			var n : Node3D = body
-			var t : Transform3D = n.transform
-			t.basis = t.basis.scaled(Vector3(1.0, 0.85, 1.0))
-			n.transform = t
-			break  # only the top-level imported model root
-
-## #166 Phase B — install the pre-shift arrival sequence if (and only if) we
-## are currently in the pre-shift window. Resumed mid-shift saves skip this
-## (CrewManager + standard NPC behaviour take over from the moment of load).
-## Idempotent: a re-call (e.g. after a time-jump back into pre-shift) reuses
-## the existing PreShiftSequence node by calling its recompute_for() and
-## returning, instead of spawning a second copy.
-func _spawn_pre_shift_sequence(force: bool = false) -> void:
-	if shift_clock == null:
-		return
-	# `force` skips the is_pre_shift gate — the time-jump path already knows
-	# new_elapsed < 0 (the gate is a tautology there) and the implicit coupling
-	# has bitten us on resumed-past-bell saves. The _ready() boot-time caller
-	# still uses the gate (force=false) because the clock hasn't been started
-	# at that point.
-	if not force:
-		if not shift_clock.has_method("is_pre_shift") or not bool(shift_clock.is_pre_shift()):
-			return
-	if npcs.is_empty():
-		return
-	var existing := get_node_or_null("PreShiftSequence")
-	if existing != null:
-		if existing.has_method("recompute_for"):
-			existing.call("recompute_for", float(shift_clock.shift_elapsed_seconds))
-		return
-	var seq_script := load("res://src/scenes/world/PreShiftSequence.gd")
-	if seq_script == null:
-		push_warning("[MainWorld] PreShiftSequence.gd missing — pre-shift skipped")
-		return
-	var seq : Node = seq_script.new()
-	seq.name = "PreShiftSequence"
-	add_child(seq)
-	# Anchor offsets are defined as constants at the top of the file. Convert
-	# to world positions by adding the resolved player spawn. Y is irrelevant
-	# (NPCs land on the navmesh-baked floor).
-	var anchor : Vector3 = _player_spawn_pos
-	var dress_pos   : Vector3 = anchor + DRESSING_ROOM_OFFSET
-	var canteen_pos : Vector3 = anchor + CANTEEN_OFFSET
-	var smoke_pos   : Vector3 = anchor + SMOKE_SPOT_OFFSET
-	# Arrival anchor — for Phase B the NPC just APPEARS at the parking-lot
-	# pedestrian exit when their arrives_at_s passes. Phase C can swap this
-	# for a drive-in animation tied to the per-NPC car.
-	var arrival : Vector3 = anchor
-	if staff_parking and "global_position" in staff_parking:
-		arrival = staff_parking.global_position
-	seq.call("setup", self, shift_clock, PRE_SHIFT_SCHEDULE,
-			dress_pos, canteen_pos, smoke_pos, arrival)
-	print("[MainWorld] Pre-shift sequence active (T-%.0f min)" \
-			% (-shift_clock.shift_elapsed_seconds / 60.0))
-
-## Player's red Suzuki Swift parked on De Asselen Kuil at the south end,
-## facing NORTH so a forward drive brings the operator straight into the lot.
-func _spawn_player_swift_on_road() -> Node3D:
-	var ps := load(PLAYER_CAR_SCENE) as PackedScene
-	if ps == null:
-		push_warning("[MainWorld] #155: SuzukiSwiftGLX.tscn missing")
-		return null
-	var swift : Node3D = ps.instantiate() as Node3D
-	if swift == null:
-		return null
-	add_child(swift)
-	# Park at the FAR south end of De Asselen Kuil (the new ~440 m south
-	# waypoint). Gives the operator a long clear approach northbound before
-	# the east turn into the lot — what was missing was distance.
-	# Position offset is expressed in BALE-YARD-CONVENTION local space
-	# (canonical +Z = "north" along the road) and then rotated into world
-	# coordinates by _world_yaw() so the Swift, the staff lot, and the
-	# bale yards all share the same yaw convention. Matches StaffParking's
-	# rotation.y = _world_yaw() at MainWorld.gd:2443.
-	var anchor : Vector3 = _player_spawn_pos
-	var by : float = _world_yaw()
-	var rot := Basis(Vector3.UP, by)
-	var local_offset := Vector3(-42.0, -1.0 + 0.3, -435.0)
-	swift.global_position = anchor + rot * local_offset
-	# Face "north" in the bale-yard convention — driver looks UP De Asselen
-	# Kuil toward the parking turn. Apply world_yaw so the heading rotates
-	# with the rest of the world.
-	swift.rotation.y = by
-	return swift
-
-## Wide grass plane around the spawn anchor so the parking + road don't float
-## in void. 200x200m centred at the anchor XZ, sits at the same Y as the
-## interior floor so there's no visible step at the wall.
 func _spawn_exterior_ground(anchor: Vector3, ground_y: float) -> void:
 	var ground := MeshInstance3D.new()
 	ground.name = "ExteriorGround"
@@ -3029,265 +855,7 @@ func _spawn_street_sign(at: Vector3, text: String) -> void:
 	plate.position = Vector3(0.0, 2.45, -0.01)
 	holder.add_child(plate)
 
-const FEEDERS_ENABLED : bool = true   # #11 — rebuilt to drive the REAL clamp controls (no teleport-grab)
 
-func _spawn_feeder_line() -> void:
-	if not FEEDERS_ENABLED:
-		print("[MainWorld] Feeders DISABLED (rebuilding with real clamp physics) — clean scene.")
-		return
-	var base : Vector3 = _get_factory_anchor()
-	# Two autonomous feed stations — one per shred line. Each has its own
-	# opzetband (feed belt) + shredder + bale-clamp vehicle + worker with
-	# scissors & scanner. Stations are placed on opposite sides of the base
-	# anchor so the approach lanes don't overlap.
-	# ONE feeder station: Mohammed on Line 3A/3B (operator-confirmed, twice).
-	# Abdullah is Line 1 — that line doesn't exist yet, so he has NO station
-	# and stays with the regular crew (idle/chill). Do NOT give him a station
-	# until Line 1 is actually built.
-	# #50 — switched from the legacy "shredder_3a3b" id (generic 3x2.5x3 _m_shredder
-	# blob) to the bespoke "shredder_1" model (4x9x5 with rotor + stators + discharge
-	# conveyor). The old id was removed from the catalog as part of the dedupe pass.
-	_spawn_feeder_station(base + Vector3( 12.0, -0.9, 24.0), "Mohammed",
-			"Line 3A/3B", "res://src/scenes/vehicles/BaleClamp.tscn",
-			"shredder_1")
-
-## Build one station: belt + lot + worker + the worker's personal vehicle +
-## personal scissors & scanner. `shredder_id` picks which catalog shredder
-## sits at the belt's discharge — different per line so the right LineFlow
-## machine receives the shredded film.
-func _spawn_feeder_station(station: Vector3, worker_name: String,
-		line_name: String, vehicle_scene_path: String,
-		shredder_id: String) -> FeederWorker:
-	# 1) Wide feed belt.
-	var belt = preload("res://src/scenes/world/ShredderFeedBelt.gd").new()
-	belt.name = "ShredderFeedBelt_%s" % worker_name
-	add_child(belt)
-	belt.global_position = station
-
-	# 2) The SHREDDER at the belt's discharge. Tagged "shredder" so the belt's
-	#    PLC interlock is satisfied and the opzetband runs (#30/#31). Seated on
-	#    the floor. `shredder_id` is per-station so Line 3A/3B vs Line 3C/6 each
-	#    get their own machine.
-	var shredder := PlaceableCatalog.build_node(shredder_id, false) as Node3D
-	if shredder != null:
-		add_child(shredder)
-		shredder.add_to_group("shredder")
-		var disc := (belt as Node3D).to_global(Vector3(0.0, 0.0, belt.deck_length + belt.incline_run + 2.0))
-		disc.y = _floor_top_y()
-		var sbb := _local_aabb(shredder)
-		shredder.global_position = Vector3(disc.x, disc.y - sbb.position.y, disc.z)
-
-	# (No bale lot / prepped bales — feedstock is built from the build menu now. #32)
-	var lot_center := station + Vector3(7.0, 0.0, 0.0)
-
-	# 3) The worker.
-	var worker = preload("res://src/scenes/world/FeederWorker.gd").new()
-	worker.worker_name = worker_name
-	worker.assigned_line = line_name
-	worker.lot_center = lot_center
-	worker.lot_radius = 16.0
-	add_child(worker)
-	worker.global_position = station + Vector3(3.0, 1.0, 2.0)
-
-	# 4) Their personal vehicle (NPC-owned), parked behind the worker.
-	var vscene := load(vehicle_scene_path) as PackedScene
-	if vscene:
-		var v := vscene.instantiate() as Node3D
-		add_child(v)
-		v.global_position = station + Vector3(2.0, 0.5, -3.0)
-		worker.assign_vehicle(v)
-
-	# 5) Personal scissors + scanner on the holster (not player-grabbable).
-	var scissors := WireCutter.new()
-	add_child(scissors)
-	scissors.global_position = worker.global_position
-	worker.stow_personal_tool(scissors, -1.0)
-	var scanner := preload("res://src/scenes/world/BarcodeScanner.gd").new()
-	add_child(scanner)
-	scanner.global_position = worker.global_position
-	worker.stow_personal_tool(scanner, 1.0)
-	worker.personal_scissors = scissors
-	worker.personal_scanner = scanner
-
-	print("[MainWorld] Feeder station: %s on %s (vehicle %s)" % \
-			[worker_name, line_name, vehicle_scene_path.get_file()])
-	return worker
-
-func _spawn_wire_cutter() -> void:
-	var anchor : Vector3 = _get_factory_anchor()
-	# Sit it on the floor between the bale clamp (+10 X) and the bale yard (+6 X,
-	# +6 Z), so it's right where the wire-cutting action happens.
-	# anchor.Y is now the floor surface (was the capsule centre); no Y fudge needed.
-	var cutter_pos := anchor + Vector3(8.0, 0.0, 3.0)
-	var cutter := WireCutter.new()
-	cutter.name = "WireCutter"
-	add_child(cutter)
-	cutter.global_position = cutter_pos
-	print("[MainWorld] WireCutter (concrete scissors) @ %s" % str(cutter_pos))
-
-	# Personal cabin props (#162): a coffee + a sandwich on the floor near the
-	# scissors. Pick up with E, hotbar-swap to them, then G to place into a cab
-	# slot — the coffee snaps into the cup holder, the sandwich onto a surface.
-	var prop_script := preload("res://src/scenes/world/CabinProp.gd")
-	var coffee : Node3D = prop_script.new()
-	coffee.prop_kind = "coffee"
-	add_child(coffee)
-	coffee.global_position = anchor + Vector3(8.6, 0.0, 3.4)
-	var sandwich : Node3D = prop_script.new()
-	sandwich.prop_kind = "sandwich"
-	add_child(sandwich)
-	sandwich.global_position = anchor + Vector3(8.9, 0.0, 3.4)
-	print("[MainWorld] Cabin props (coffee + sandwich) spawned")
-
-	# Drop a barcode scanner half a metre to the right of the scissors. The
-	# operator picks it up the same way (E), swaps to it with hotbar 1-4, and
-	# left-clicks to scan a bale / container label. Right-click peels the
-	# label off into a held LabelItem.
-	var scanner_pos := anchor + Vector3(8.6, 0.0, 3.0)
-	var scanner := BarcodeScanner.new()
-	scanner.name = "BarcodeScanner"
-	add_child(scanner)
-	scanner.global_position = scanner_pos
-	print("[MainWorld] BarcodeScanner @ %s" % str(scanner_pos))
-
-	# Shovel (#154) — for cleaning up chute-spill floor piles into a container.
-	var shovel := preload("res://src/scenes/world/ShovelTool.gd").new()
-	shovel.name = "ShovelTool"
-	add_child(shovel)
-	shovel.global_position = anchor + Vector3(9.2, 0.0, 3.0)
-	print("[MainWorld] ShovelTool @ %s" % str(shovel.global_position))
-
-# =============================================================================
-# TEST SKIP + DUMP ZONE — Wave 5 MVP
-# =============================================================================
-## A single PLASTIC steel skip near the test bunker so the operator can:
-##   1. Forklift up to it (skip has forklift pockets at base)
-##   2. Press B to grab it onto the forks
-##   3. Drive to the orange-striped dump zone
-##   4. Press V to release — the skip's contents are emptied at the tip area
-## Skip is configured for the COARSE_FILM stream so LineFlow routes plastic
-## rejects into it automatically.
-func _spawn_test_skip() -> void:
-	var anchor : Vector3 = _get_factory_anchor()
-
-	# Steel skip — drop it 4 m to the +X side of the test bunker so the forklift
-	# can swing around to pick it up. anchor.Y is the floor surface now.
-	var skip := PlaceableCatalog.build_node("skip_steel", false) as Node3D
-	if skip != null:
-		add_child(skip)
-		skip.global_position = anchor + Vector3(6.0, 0.0, 18.0)
-		# Configure as a COARSE_FILM-only catcher (Stream.COARSE_FILM = 0).
-		skip.set("accepted_streams", [0])
-		skip.set("capacity_m3", 2.4)
-		skip.set("safe_fill", 0.8)
-		# Seed with some material so the operator can see the dump-empty cycle work.
-		if skip.has_method("add"):
-			skip.call("add", 80.0, 90.0, 0)
-		print("[MainWorld] Steel skip (PLASTIC, COARSE_FILM) @ %s, fill=%.0f%%"
-			% [str(skip.global_position), float(skip.call("fill_fraction")) * 100.0])
-
-	# Dump zone — a flat orange-striped pad ~10 m further out. Tag with the
-	# dump_zone group so BaseVehicle._drop_bale empties any skip released over it.
-	var zone := Node3D.new()
-	zone.name = "DumpZone_PLASTIC"
-	zone.add_to_group("dump_zone")
-	add_child(zone)
-	zone.global_position = anchor + Vector3(20.0, 0.0, 18.0)
-	var pad := MeshInstance3D.new()
-	var pad_mat := StandardMaterial3D.new()
-	pad_mat.albedo_color = Color(0.88, 0.55, 0.10)
-	pad_mat.roughness = 0.85
-	var pad_mesh := BoxMesh.new()
-	pad_mesh.size = Vector3(6.0, 0.04, 6.0)
-	pad.mesh = pad_mesh
-	pad.material_override = pad_mat
-	pad.position = Vector3(0.0, 0.05, 0.0)
-	zone.add_child(pad)
-	# A label so the operator can see it from afar.
-	var lbl := Label3D.new()
-	lbl.text = "DUMP — PLASTIC"
-	lbl.font_size = 64
-	lbl.pixel_size = 0.012
-	lbl.modulate = Color(0.10, 0.10, 0.10)
-	lbl.position = Vector3(0.0, 0.2, 0.0)
-	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	zone.add_child(lbl)
-	print("[MainWorld] Dump zone (PLASTIC) @ %s" % str(zone.global_position))
-
-# =============================================================================
-# TEST WASTE ZONES — Wave 5: bay + cyclone bin + IBC + floor pile
-# =============================================================================
-## Spawn one of each remaining waste-buffer type beside the test skip so the
-## complete Wave 5 model is visible on first launch:
-##   • Fines bay     — 3 black bins on castors under a fake conveyor (FINES stream)
-##   • Cyclone bin   — grey steel bin sat under a virtual cyclone chute (SLUDGE)
-##   • IBC tote      — caged 1 m³ for process water (EFFLUENT) with valve drain
-##   • Floor pile    — bounded zone for spillover when bins overflow + no skip nearby
-## Each is pre-seeded so the operator can see fills, mounds, valves immediately.
-func _spawn_test_waste_zones() -> void:
-	var anchor : Vector3 = _get_factory_anchor()
-	# anchor.y is the floor top now (was the capsule centre, hence the legacy −0.9).
-	var floor_y := anchor.y
-
-	# ── Fines bay: 3 fines_bin in a row, +Z further out from the skip ──────────
-	for i in 3:
-		var bin := PlaceableCatalog.build_node("fines_bin", false) as Node3D
-		if bin == null:
-			continue
-		add_child(bin)
-		bin.global_position = Vector3(anchor.x + 9.0 + float(i) * 1.1, floor_y, anchor.z + 22.0)
-		bin.set("accepted_streams", [1])   # Stream.FINES
-		bin.set("capacity_m3", 0.7)
-		bin.set("safe_fill", 0.8)
-		# Seed the LAST bin past its safe-fill so the mound visualisation is live.
-		if i == 2 and bin.has_method("add"):
-			bin.call("add", 180.0, 180.0, 1)   # 1 m³ of fines @180 kg/m³ → bin is full + spilling
-	print("[MainWorld] Fines bay (3× FINES bins) seeded — last one over safe-fill")
-
-	# ── Cyclone bin: grey steel cube under a virtual cyclone discharge (SLUDGE) ─
-	var cb := PlaceableCatalog.build_node("cyclone_bin", false) as Node3D
-	if cb != null:
-		add_child(cb)
-		cb.global_position = Vector3(anchor.x + 13.0, floor_y, anchor.z + 25.0)
-		cb.set("accepted_streams", [4])    # Stream.SLUDGE
-		cb.set("capacity_m3", 1.3)
-		cb.set("safe_fill", 0.85)
-		cb.set("mound_color", Color(0.32, 0.30, 0.26))
-		# Pre-seed so a small visible mound appears on top of the bin.
-		if cb.has_method("add"):
-			cb.call("add", 1200.0, 800.0, 4)
-		print("[MainWorld] Cyclone bin (SLUDGE) @ %s, fill=%.0f%%"
-			% [str(cb.global_position), float(cb.call("fill_fraction")) * 100.0])
-
-	# ── IBC tote: caged 1 m³ for process water (EFFLUENT) with on-foot valve ───
-	var ibc := PlaceableCatalog.build_node("ibc_tote", false) as Node3D
-	if ibc != null:
-		add_child(ibc)
-		ibc.global_position = Vector3(anchor.x + 17.0, floor_y, anchor.z + 25.0)
-		ibc.set("accepted_streams", [5])   # Stream.EFFLUENT
-		ibc.set("capacity_m3", 1.0)
-		ibc.set("safe_fill", 0.9)
-		ibc.set("movable", false)
-		ibc.set("fluid_valve", true)        # operator opens on foot with E
-		if ibc.has_method("add"):
-			ibc.call("add", 720.0, 1000.0, 5)
-		print("[MainWorld] IBC tote (EFFLUENT, valve-drain) @ %s, fill=%.0f%%"
-			% [str(ibc.global_position), float(ibc.call("fill_fraction")) * 100.0])
-
-	# ── Floor pile: a bounded zone for bin-overflow spillover. Sits beside the
-	#    skip's dump zone so it's where excess material would actually end up. ──
-	var pile_script := load("res://src/sim/FloorPile.gd")
-	if pile_script != null:
-		var pile = pile_script.new()
-		pile.name = "FloorPile_PLASTIC"
-		add_child(pile)
-		pile.global_position = Vector3(anchor.x + 12.0, floor_y, anchor.z + 14.0)
-		pile.max_radius_m = 3.0
-		pile.pile_color = Color(0.48, 0.45, 0.38)
-		# Seed a visible mound so the operator can see what it looks like.
-		pile.add(220.0, 90.0)
-		print("[MainWorld] Floor pile @ %s seeded — visible cone overflow"
-			% str(pile.global_position))
 
 # =============================================================================
 # HUD
@@ -3301,257 +869,8 @@ func _spawn_hud() -> void:
 	add_child(hud)
 	print("[MainWorld] HUD instantiated")
 
-# =============================================================================
-# SHIFT START / RESUME
-# =============================================================================
-func _start_or_resume_shift() -> void:
-	## MainWorld is the single authority for starting or resuming the shift.
-	## ShiftClock._ready() deliberately does NOT self-load to avoid the sibling
-	## ordering race (ShiftClock is child[0]; GameState is child[1]).
-	if not shift_clock:
-		return
-	if game_state and game_state.has_shift_data():
-		shift_clock.load_shift_state()
-		shift_clock.resume_shift()
-		print("[MainWorld] Shift resumed at %s" % shift_clock.get_time_string())
-	else:
-		# #166 — Fresh game starts 30 min BEFORE the bell so the pre-shift arrival
-		# sequence (Emrah at T-35, Pascal smoking at T-33, …, Kevin at T-10) has
-		# room to play out. The bell still emits shift_started at T=0.
-		shift_clock.start_pre_shift(PRE_SHIFT_WINDOW_S)
-		print("[MainWorld] Pre-shift started (%.0f min until bell)" % (PRE_SHIFT_WINDOW_S / 60.0))
-	# Apply the operator's "Starting time / Starting date" settings (gameplay
-	# tab). Empty strings = no-op (use the just-loaded shift state as-is). The
-	# call may seek the clock backwards into pre-shift OR forwards past the
-	# bell; either way it emits time_jumped which MainWorld handles below.
-	if shift_clock.has_method("apply_starting_settings"):
-		shift_clock.apply_starting_settings()
-	# Wire the recomputer so future Apply clicks in the Settings menu (or a
-	# live debug seek) reposition NPCs + cars without a save/reload round-trip.
-	if shift_clock.has_signal("time_jumped") \
-			and not shift_clock.time_jumped.is_connected(_on_time_jumped):
-		shift_clock.time_jumped.connect(_on_time_jumped)
-	# Pre-position cars + NPC pre-shift state to the now-canonical elapsed.
-	# This handles both the "operator picked a time" path and the "fresh game
-	# with no time override" path (elapsed == -PRE_SHIFT_WINDOW_S) uniformly.
-	_on_time_jumped(shift_clock.shift_elapsed_seconds)
 
-## ShiftClock.time_jumped handler. Re-evaluate every NPC + their car at the
-## new elapsed value. If the new instant is BEFORE a given NPC's arrival, the
-## NPC is hidden + their car is repositioned along De Asselen Kuil at the
-## distance corresponding to (arrives_at_s - elapsed) * NPC_DRIVE_SPEED_MPS
-## back from the parking-lot entry. If the new instant is AT-OR-AFTER, the
-## car teleports into its parking bay and the NPC's pre-shift state recomputes.
-func _on_time_jumped(new_elapsed: float) -> void:
-	# Ensure a PreShiftSequence exists if the new time is in pre-shift; if we
-	# landed past the bell, force any existing sequence to hand off.
-	if new_elapsed < 0.0:
-		var pss := get_node_or_null("PreShiftSequence")
-		if pss == null:
-			# Force-spawn the sequence: we KNOW the new time is pre-shift
-			# (new_elapsed < 0), the is_pre_shift gate inside the spawn
-			# helper is a tautology in this path but the implicit coupling
-			# has bitten us — a resumed-past-bell save that the operator
-			# rewinds to 06:35 needs a brand-new PSS regardless.
-			_spawn_pre_shift_sequence(true)
-			pss = get_node_or_null("PreShiftSequence")
-			# setup() seeds every scheduled NPC at the arrival_anchor with
-			# off_duty=true but does NOT route them to dressing / canteen /
-			# smoke until a _physics_process tick crosses each arrives_at_s.
-			# After a rewind to e.g. -1500s (06:35 on a Vroege day) most
-			# NPCs are already past their arrives_at_s and should be IN the
-			# canteen, not parked at the arrival anchor. recompute_for() is
-			# the deterministic placer; call it immediately so the world
-			# matches the new instant without waiting for a physics tick.
-			if pss != null and pss.has_method("recompute_for"):
-				pss.call("recompute_for", new_elapsed)
-		else:
-			if pss.has_method("recompute_for"):
-				pss.call("recompute_for", new_elapsed)
-	else:
-		var pss2 := get_node_or_null("PreShiftSequence")
-		if pss2 != null and pss2.has_method("_on_bell"):
-			pss2.call("_on_bell")
-	# Reposition cars along the road / into bays per NPC arrival time vs new
-	# elapsed value. Safe to call mid-shift (everyone has already arrived).
-	_position_cars_for_elapsed(new_elapsed)
 
-## Average car-driving speed on De Asselen Kuil for the NPC drive-in. ~28 km/h
-## (residential road). Used by _position_cars_for_elapsed to backsolve a
-## starting position on the road polyline so a car arrives at its bay exactly
-## at arrives_at_s. Phase B minimal-first: cars are TELEPORTED to that position
-## but not yet driven forward — a future Phase C can animate them along the
-## polyline. The teleport alone already cures the "car appears in bay before
-## the operator's set time" complaint.
-const NPC_DRIVE_SPEED_MPS : float = 8.0
-
-## Reposition every NPC car according to whether their arrives_at_s has passed.
-## - elapsed >= arrives_at_s → car parked in its bay (default state).
-## - elapsed < arrives_at_s  → car positioned on De Asselen Kuil at distance
-##   (arrives_at_s - elapsed) * NPC_DRIVE_SPEED_MPS back from the parking entry.
-##
-## The road waypoints are anchor + (-42,_,-40) → (-42,_,0) → (-42,_,20) →
-## (-25,_,30) → (0,_,30) (lines 2174-2180). The parking entry is roughly the
-## (-25,_,30) waypoint; we walk the polyline backwards from there.
-func _position_cars_for_elapsed(elapsed: float) -> void:
-	if staff_parking == null:
-		return
-	var anchor : Vector3 = _player_spawn_pos
-	var ground_y : float = anchor.y
-	# Road polyline IN ORDER FROM PARKING ENTRY BACK TO SOUTH END — so the
-	# "distance d along here" walk gives us how far back along the road the
-	# car still has to travel before its arrives_at_s.
-	var poly : Array[Vector3] = [
-		Vector3(anchor.x - 25.0, ground_y - 1.0 + 0.3, anchor.z + 30.0),  # parking entry
-		Vector3(anchor.x - 42.0, ground_y - 1.0 + 0.3, anchor.z + 20.0),
-		Vector3(anchor.x - 42.0, ground_y - 1.0 + 0.3, anchor.z + 0.0),
-		Vector3(anchor.x - 42.0, ground_y - 1.0 + 0.3, anchor.z - 40.0),  # south end
-	]
-	for npc_id in NPC_DATA.keys():
-		var data : Dictionary = NPC_DATA[npc_id]
-		var car_path : String = String(data.get("car", ""))
-		if car_path == "" or car_path == "passenger:player":
-			continue
-		if not _CAR_SLOTS.has(npc_id):
-			continue
-		var sched : Dictionary = PRE_SHIFT_SCHEDULE.get(npc_id, {})
-		var arrives_at : float = float(sched.get("arrives_at_s", -1.0e9))
-		var car : Node3D = _find_car_for(npc_id, data)
-		if car == null:
-			continue
-		if elapsed >= arrives_at:
-			# Past arrival → park in bay (canonical state).
-			var slot : Dictionary = _CAR_SLOTS[npc_id]
-			car.transform = staff_parking.bay_world_transform(
-				int(slot["side"]), int(slot["idx"]))
-		else:
-			# Still en-route → place on the road polyline at distance back
-			# from the parking entry. The car points forward (toward the entry).
-			var d : float = (arrives_at - elapsed) * NPC_DRIVE_SPEED_MPS
-			var pos_on_road : Vector3 = _point_along_polyline(poly, d)
-			car.global_position = pos_on_road
-			var face_to : Vector3 = _heading_toward_entry(poly, d)
-			if face_to.length() > 0.001:
-				car.look_at(car.global_position + face_to, Vector3.UP)
-
-## Walk a polyline from index 0 forward by `dist` metres, returning the world
-## position. If `dist` exceeds the polyline length, returns the last point.
-func _point_along_polyline(poly: Array[Vector3], dist: float) -> Vector3:
-	if poly.size() < 2:
-		return poly[0] if poly.size() == 1 else Vector3.ZERO
-	var remaining : float = maxf(0.0, dist)
-	for i in poly.size() - 1:
-		var a : Vector3 = poly[i]
-		var b : Vector3 = poly[i + 1]
-		var seg : float = a.distance_to(b)
-		if remaining <= seg:
-			var t : float = remaining / maxf(seg, 0.0001)
-			return a.lerp(b, t)
-		remaining -= seg
-	return poly[poly.size() - 1]
-
-## Heading vector pointing from the car's road position TOWARD the parking
-## entry (poly[0]). Walks the polyline by `dist`, finds the segment, returns
-## the vector from THAT point back to the segment's start (toward poly[0]).
-func _heading_toward_entry(poly: Array[Vector3], dist: float) -> Vector3:
-	if poly.size() < 2:
-		return Vector3.ZERO
-	var remaining : float = maxf(0.0, dist)
-	for i in poly.size() - 1:
-		var a : Vector3 = poly[i]
-		var b : Vector3 = poly[i + 1]
-		var seg : float = a.distance_to(b)
-		if remaining <= seg:
-			var dir : Vector3 = (a - b)
-			dir.y = 0.0
-			return dir.normalized() if dir.length() > 0.001 else Vector3.ZERO
-		remaining -= seg
-	var dir2 : Vector3 = poly[poly.size() - 2] - poly[poly.size() - 1]
-	dir2.y = 0.0
-	return dir2.normalized() if dir2.length() > 0.001 else Vector3.ZERO
-
-## Locate the spawned car node for an NPC. Cars are tagged with
-## set_meta("display_label", "<name>'s car") at spawn (line 2514), so we scan
-## MainWorld's children for that tag. Returns null if absent (car not spawned).
-func _find_car_for(_npc_id: String, data: Dictionary) -> Node3D:
-	var wanted : String = "%s's car" % String(data.get("name", ""))
-	for child in get_children():
-		if child is Node3D and child.has_meta("display_label"):
-			if String(child.get_meta("display_label")) == wanted:
-				return child as Node3D
-	return null
-
-# =============================================================================
-# SAVE / QUIT
-# =============================================================================
-func save_game() -> void:
-	if player and game_state:
-		var ps := {
-			"x":     player.global_position.x,
-			"y":     player.global_position.y,
-			"z":     player.global_position.z,
-			"rot_y": player.rotation.y,
-			# X4/#183 — snapshot the world anchor at save time so the loader can
-			# tell "save is still in the same world" (trust position) from "world
-			# was re-anchored" (must fall back to the spawn marker). The old
-			# fixed 100 m guard rejected legit far-from-spawn saves (the
-			# residential-vs-industrial-terrain bug).
-			"anchor_x": WorldLayout.player_spawn.x,
-			"anchor_z": WorldLayout.player_spawn.z,
-		}
-		# Persist the 3rd-person free-cam pose alongside the player position so the
-		# operator's preferred external viewpoint survives a save/load (#freecam).
-		var rig := _freecam_rig()
-		if rig != null and rig.has_method("serialize_freecam"):
-			ps["freecam"] = rig.call("serialize_freecam")
-		game_state.save_player_state(ps)
-	if shift_clock:
-		shift_clock.save_shift_state()
-	# #124 — flush crew pins (HIER + station/role) so they survive save/load.
-	if crew_manager and game_state and crew_manager.has_method("save_pins_dict"):
-		game_state.crew_pins_data = crew_manager.save_pins_dict()
-	if game_state:
-		game_state.save_game()
-	print("[MainWorld] Game saved")
-
-func save_and_quit() -> void:
-	save_game()
-	get_tree().change_scene_to_file("res://src/scenes/menus/main_menu/MainMenu.tscn")
-
-# =============================================================================
-# AUTOSAVE (every 60 s of real play time)
-# =============================================================================
-func _setup_autosave() -> void:
-	var timer := Timer.new()
-	timer.name       = "AutosaveTimer"
-	timer.one_shot   = false
-	timer.timeout.connect(_on_autosave)
-	add_child(timer)
-	_apply_autosave_interval()   # set wait_time / start / stop based on setting
-	# React to live edits in the Settings menu.
-	if has_node("/root/SettingsManager"):
-		var sm := get_node("/root/SettingsManager")
-		if sm.has_signal("settings_applied"):
-			sm.settings_applied.connect(_apply_autosave_interval)
-
-## Reads Settings → Gameplay → "Auto-save interval". 0 disables autosave.
-func _apply_autosave_interval() -> void:
-	var t := get_node_or_null("AutosaveTimer") as Timer
-	if t == null: return
-	var iv : float = 60.0
-	if has_node("/root/SettingsManager"):
-		iv = float(SettingsManager.gameplay().get("autosave_interval_s", 60))
-	if iv <= 0.0:
-		t.stop()
-		print("[MainWorld] Autosave disabled (interval 0)")
-		return
-	t.wait_time = iv
-	if t.is_stopped(): t.start()
-	print("[MainWorld] Autosave interval set to %.0fs" % iv)
-
-func _on_autosave() -> void:
-	save_game()
-	print("[MainWorld] Autosave")
 
 # =============================================================================
 
@@ -3563,138 +882,27 @@ func _on_autosave() -> void:
 # floor — NOT the absolute lowest vertex, which would be foundations/below-grade).
 var _floor_min_y_cache: float = -9.0
 
-# Floor-detection tunables.
-const FLOOR_HORIZONTAL_DOT  := 0.9    # cos(~25°) — face counts as horizontal if up-normal ≥ this
-const FLOOR_Y_BUCKET_M      := 0.5    # 0.5 m bins for the area histogram
-const FLOOR_AREA_THRESHOLD  := 0.5    # candidate bucket must have ≥ 50% of the max bucket's area
-const FLOOR_BOX_SIZE_XZ     := 4000.0 # the collision floor is a huge flat slab; players can't walk off
-const FLOOR_BOX_THICKNESS   := 1.0
-# Quicksand fix (B): the shell mesh has its own horizontal floor triangles at the
-# operating-floor Y (that's how _detect_operating_floor_y finds it). If TempFloor's
-# top is at the SAME Y, the player's capsule sits on two coincident colliders, the
-# solver oscillates contacts, and the capsule slowly sinks ("quicksand"). Lifting
-# the TempFloor's top by 5 cm makes the shell's interior floor sit 5 cm BELOW the
-# walkable surface and never contact the capsule. Machines still seat correctly
-# because _floor_top_y() returns the LIFTED value.
-const FLOOR_LIFT_OFFSET     := 0.05
 
-# =============================================================================
-# Floor generation — replace TempFloor's mesh + collision with a simple flat
-# box positioned at the building's operating-floor Y.
-#
-# Why this is necessary: the building shell .obj is BLOSM-derived in real RD
-# coordinates (Y range 67.83 – 112.14 m above sea level). After BuildingShell's
-# parent transform shifts it down to world space, the operating floor sits at
-# world Y ≈ −9.33 and the roof at ≈ −0.83. The OLD code keyed off `min_y` of
-# ALL vertices, which picked the lowest mesh point (foundation level, world
-# Y ≈ −15) and built a 10-m-thick Delaunay surface above it. Players spawned
-# at the marker fell straight through the building, NPCs floated mid-air, and
-# every machine placement was off. This rewrite asks the .obj an empirical
-# question instead: "where is your biggest flat horizontal up-facing surface?"
-# — the answer is the operating floor.
-func _generate_floor_from_shell(shell_mesh: MeshInstance3D) -> void:
-	var floor_y := _detect_operating_floor_y(shell_mesh)
-	if is_nan(floor_y) or is_inf(floor_y):
-		push_warning("[MainWorld] Could not detect operating floor; defaulting to world Y=0")
-		floor_y = 0.0
-	print("[MainWorld] Operating floor detected at world Y = %.3f" % floor_y)
-
-	var floor_node := find_child("TempFloor", true, false) as StaticBody3D
-	if floor_node == null:
-		push_error("[MainWorld] TempFloor node missing — cannot install floor"); return
-
-	# Position the box so its TOP surface is at floor_y + FLOOR_LIFT_OFFSET — the
-	# 5 cm gap lifts the walkable surface clear of the shell's coincident interior
-	# floor triangles (quicksand fix B; see FLOOR_LIFT_OFFSET comment).
-	var top_y : float = floor_y + FLOOR_LIFT_OFFSET
-	floor_node.global_position = Vector3(0.0, top_y - FLOOR_BOX_THICKNESS * 0.5, 0.0)
-	floor_node.global_rotation = Vector3.ZERO
-
-	# Replace any prior mesh / collision (from the old Delaunay code or scene
-	# defaults) with a simple flat 4000×1×4000 box.
-	var mi := floor_node.find_child("MeshInstance3D", false, false) as MeshInstance3D
-	if mi:
-		var bm := BoxMesh.new()
-		bm.size = Vector3(FLOOR_BOX_SIZE_XZ, FLOOR_BOX_THICKNESS, FLOOR_BOX_SIZE_XZ)
-		mi.mesh = bm
-		mi.transform = Transform3D()
-	var cs := floor_node.find_child("CollisionShape3D", false, false) as CollisionShape3D
-	if cs:
-		var bx := BoxShape3D.new()
-		bx.size = Vector3(FLOOR_BOX_SIZE_XZ, FLOOR_BOX_THICKNESS, FLOOR_BOX_SIZE_XZ)
-		cs.shape = bx
-		cs.transform = Transform3D()
-
-	_floor_min_y_cache = top_y    # the TempFloor's TOP — what _floor_top_y() must return
-
-## Detect the operating floor's world-Y by histogramming up-facing horizontal
-## triangle area in 0.5 m Y buckets, then picking the LOWEST bucket whose
-## area is at least 50 % of the maximum. The "≥ 50% of max" gate keeps small
-## terraces/mezzanines out; the "lowest among candidates" picks the ground
-## floor over a same-area roof. Returns +INF if no horizontal faces exist.
-func _detect_operating_floor_y(shell_mesh: MeshInstance3D) -> float:
-	var mesh := shell_mesh.mesh as ArrayMesh
-	if mesh == null: return INF
-	var xf := shell_mesh.global_transform
-	var area_by_y : Dictionary = {}
-
-	for s in range(mesh.get_surface_count()):
-		var arr : Array = mesh.surface_get_arrays(s)
-		# Variant-first: a null vertex buffer assigned straight to a typed
-		# PackedVector3Array THROWS before the null check below can run (the
-		# 'verts == null' line was dead — a typed var can't hold null). Guard
-		# with `is` so floor detection survives a degenerate surface instead of
-		# crashing and leaving the floor cache at its -9 m sentinel (whole scene
-		# spawns underground).
-		var verts_raw : Variant = arr[Mesh.ARRAY_VERTEX]
-		var verts : PackedVector3Array = verts_raw if verts_raw is PackedVector3Array else PackedVector3Array()
-		if verts.is_empty(): continue
-		var idx_raw : Variant = arr[Mesh.ARRAY_INDEX]
-		var idx : PackedInt32Array = idx_raw if idx_raw is PackedInt32Array else PackedInt32Array()
-		if idx.is_empty():
-			# Non-indexed mesh: triangles are sequential triples of vertices.
-			for i in range(0, verts.size() - 2, 3):
-				_floor_add_face(verts[i], verts[i + 1], verts[i + 2], xf, area_by_y)
-		else:
-			for i in range(0, idx.size() - 2, 3):
-				_floor_add_face(verts[idx[i]], verts[idx[i + 1]], verts[idx[i + 2]], xf, area_by_y)
-
-	if area_by_y.is_empty():
-		# No horizontal faces — degenerate mesh. Caller falls back to Y=0.
-		return INF
-
-	var max_area := 0.0
-	for b in area_by_y:
-		if float(area_by_y[b]) > max_area: max_area = float(area_by_y[b])
-	var threshold := max_area * FLOOR_AREA_THRESHOLD
-	var candidates : Array = []
-	for b in area_by_y:
-		if float(area_by_y[b]) >= threshold:
-			candidates.append(float(b))
-	candidates.sort()
-	return float(candidates[0])
-
-func _floor_add_face(v1: Vector3, v2: Vector3, v3: Vector3, xf: Transform3D, dict: Dictionary) -> void:
-	var p1 := xf * v1
-	var p2 := xf * v2
-	var p3 := xf * v3
-	var cross := (p2 - p1).cross(p3 - p1)
-	var len_cross := cross.length()
-	if len_cross < 1e-3: return
-	# Skip downward-facing triangles (ceilings, undersides) — we only want the
-	# floor's top surface. cross.y / len_cross is the up-component of the normal.
-	if cross.y / len_cross < FLOOR_HORIZONTAL_DOT: return
-	var area := len_cross * 0.5
-	var avg_y := (p1.y + p2.y + p3.y) / 3.0
-	var bucket := snappedf(avg_y, FLOOR_Y_BUCKET_M)
-	dict[bucket] = float(dict.get(bucket, 0.0)) + area
 
 # =============================================================================
 # Helpers
 # =============================================================================
 
 func get_npc(npc_id: String) -> Node:
-	return npcs.get(npc_id, null)
+	return npcs.get(npc_id, null)   # forwarded — implementation lives on NPCSpawner (#195)
 
 func get_all_npcs() -> Array:
-	return npcs.values()
+	return npcs.values()            # forwarded — implementation lives on NPCSpawner (#195)
+
+# ── Save forwarders (#195) — SaveCoordinator owns the real impl. ────────────
+func save_game() -> void:
+	var sc := find_child("SaveCoordinator", false, false)
+	if sc and sc.has_method("save_game"):
+		sc.save_game()
+
+func save_and_quit() -> void:
+	var sc := find_child("SaveCoordinator", false, false)
+	if sc and sc.has_method("save_and_quit"):
+		sc.save_and_quit()
+	else:
+		get_tree().change_scene_to_file("res://src/scenes/menus/main_menu/MainMenu.tscn")
