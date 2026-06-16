@@ -181,6 +181,7 @@ func _build_incline_visual(steel: StandardMaterial3D, belt_mat: StandardMaterial
 	inc.material_override = (_belt_mat_incline as Material) if _belt_mat_incline != null else (belt_mat as Material)
 	# Pivot the incline so its base sits at the deck's far end and it rises incline_deg.
 	var inc_pivot := Node3D.new()
+	inc_pivot.name = "InclinePivot"   # #196 — let post-build grafts (metaaldetector head) find it
 	inc_pivot.position = Vector3(0.0, deck_height, deck_length)
 	inc_pivot.rotation.x = -_incline_angle   # tilt up toward +Z/+Y
 	add_child(inc_pivot)

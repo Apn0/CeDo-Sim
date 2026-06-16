@@ -257,8 +257,12 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	{"id": "westa_band_1"},                            # 45° incline to drum top
 	{"id": "prewash_drum"},
 	{"id": "scheidingsgoot"},
-	{"id": "friction_sep", "x": -2.5, "z": 1.0},
-	{"id": "friction_sep", "x":  2.5, "z": 1.0, "main_advance": 5.0},
+	# #196 — parallel L/R friction split. parallel_branch tells the macro
+	# builder these two siblings BOTH receive from the upstream scheidingsgoot
+	# (the "glijgoot" slide-chute connector). Without it, only the first sibling
+	# was wired up and the right-side friction ran dry on reload.
+	{"id": "friction_sep", "x": -2.5, "z": 1.0, "parallel_branch": true},
+	{"id": "friction_sep", "x":  2.5, "z": 1.0, "parallel_branch": true, "main_advance": 5.0},
 	{"id": "mech_dryer",  "x": -2.5, "z": 1.0},
 	{"id": "mech_dryer",  "x":  2.5, "z": 1.0, "main_advance": 5.0},
 	{"id": "blower",      "x": -2.0, "z": 0.5},
@@ -1701,6 +1705,22 @@ func _edit_process(delta: float) -> void:
 		_edit_selected.scale = Vector3(sx, sy, sz)
 		moved = true
 		ds = 1.0   # signal "scale changed" so legs re-extend below
+	# #196 — PER-AXIS TILT: pitch (X-rot) on 1/2, roll (Z-rot) on 3/0. Both
+	# top-row digits and numpad equivalents are honoured. Yaw stays on the
+	# existing build_rotate_cw/ccw bindings (operator preference: rotation
+	# stays mapped to whatever they bound for yaw, only pitch + roll added).
+	var dtx := 0.0
+	if Input.is_key_pressed(KEY_1) or Input.is_key_pressed(KEY_KP_1): dtx += 1.0
+	if Input.is_key_pressed(KEY_2) or Input.is_key_pressed(KEY_KP_2): dtx -= 1.0
+	var dtz := 0.0
+	if Input.is_key_pressed(KEY_3) or Input.is_key_pressed(KEY_KP_3): dtz += 1.0
+	if Input.is_key_pressed(KEY_0) or Input.is_key_pressed(KEY_KP_0): dtz -= 1.0
+	if dtx != 0.0 or dtz != 0.0:
+		_edit_selected.rotation.x = clampf(_edit_selected.rotation.x + dtx * rv,
+			-PI * 0.5, PI * 0.5)
+		_edit_selected.rotation.z = clampf(_edit_selected.rotation.z + dtz * rv,
+			-PI * 0.5, PI * 0.5)
+		moved = true
 	if moved:
 		if dy != 0.0 or ds != 0.0:
 			# Height or scale changed — keep this machine's own legs planted on the floor.
@@ -1956,6 +1976,13 @@ func _save_layout() -> void:
 				"rot_y": child.rotation.y,
 				"h":     h,
 			}
+			# #196 — round-trip pitch (X) + roll (Z) only when non-zero, so legacy
+			# saves stay backward-compatible. Tilt is applied by the K-menu jog
+			# (1/2 pitch, 3/0 roll); without these keys the values stay at 0.0.
+			if not is_zero_approx(child.rotation.x):
+				entry["rot_x"] = child.rotation.x
+			if not is_zero_approx(child.rotation.z):
+				entry["rot_z"] = child.rotation.z
 			# Persist EDIT-mode scale. If uniform → write as a single float (back-compat
 			# with older saves). If per-axis (X/Y/Z differ) → write as [sx, sy, sz].
 			var sc_v : Vector3 = child.scale
@@ -2185,6 +2212,11 @@ func _apply_layout_entry(entry: Variant) -> bool:
 		float(dict.get("y", 0.0)),
 		float(dict.get("z", 0.0)))
 	node.rotation.y = float(dict.get("rot_y", 0.0))
+	# #196 — restore K-menu tilt (pitch/roll). Older saves omit these → 0.
+	if dict.has("rot_x"):
+		node.rotation.x = float(dict["rot_x"])
+	if dict.has("rot_z"):
+		node.rotation.z = float(dict["rot_z"])
 	if dict.has("scale"):
 		var sc_raw : Variant = dict["scale"]
 		if sc_raw is Array and (sc_raw as Array).size() >= 3:

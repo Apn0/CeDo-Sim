@@ -124,7 +124,7 @@ static func items() -> Array[Dictionary]:
 			# here is the rough bounding box (W × H × L) for the build-mode footprint.
 			{"id": "opzetband_3a3b", "name": "Opzetband 3A/3B (8m flat + 10m@25° + 1m top)", "category": "Conveyance", "size": Vector3(2.0, 4.93, 18.06), "color": Color(0.20, 0.40, 0.80)},
 			{"id": "opzetband_3c6",  "name": "Opzetband 3C/6 (4m flat + 8m@35°)",            "category": "Conveyance", "size": Vector3(2.5, 5.4, 10.6), "color": Color(0.20, 0.40, 0.80)},
-			{"id": "westa_band_1",   "name": "Westa band 1 (8m@35°, no flat)",              "category": "Conveyance", "size": Vector3(2.0, 5.4, 7.0),  "color": Color(0.20, 0.40, 0.80)},
+			{"id": "westa_band_1",   "name": "Westa band 1 (45° feeder to prewash drum top)", "category": "Conveyance", "size": Vector3(1.6, 7.0, 9.5),  "color": Color(0.20, 0.40, 0.80)},
 			{"id": "opzetband_1",    "name": "Opzetband 1 (10m@25°, 4m wide, integrated magnet head)", "category": "Conveyance", "size": Vector3(4.0, 5.0, 10.0),  "color": Color(0.20, 0.40, 0.80)},
 			# Inclined belt — climbs 8 m vertically over 8 m horizontal (45°).
 			# Goes from Shredder 2's output up to the feed hopper at the top.
@@ -3932,10 +3932,19 @@ static func _build_opzetband(id: String, size: Vector3, ghost: bool) -> Node3D:
 			belt.incline_run = 8.0 * cos(deg_to_rad(35.0))
 			belt.deck_width  = 2.5
 		"westa_band_1":
+			# #196 — re-spec'd as the 45° feeder belt that takes uitvoerband
+			# output and lifts it to the TOP of the 2.5× prewash drum.
+			# Drum top is ~6.5 m off the floor; 45° with no flat deck means
+			# horizontal run = vertical rise, so incline_run = 6.5 m and
+			# slope hyp ≈ 9.2 m. deck_width kept slim (1.2 m) — this is a
+			# discharge feeder, not a wide intake.
 			belt.deck_length = 0.0
-			belt.incline_deg = 35.0
-			belt.incline_run = 8.0 * cos(deg_to_rad(35.0))
-			belt.deck_width  = 2.0
+			belt.incline_deg = 45.0
+			belt.incline_run = 6.5
+			belt.deck_width  = 1.2
+			# Short flat at the top so material drops cleanly INTO the drum's
+			# top feed port rather than skidding off the end of the slope.
+			belt.top_flat_m  = 0.6
 		"opzetband_1":
 			# #196 — 2× scale: 10 m @ 25° (was 5 m), 4 m wide (was 3 m). Metal
 			# detector + reverse-reject head is built INTO this belt at 3/4 along
@@ -3951,7 +3960,113 @@ static func _build_opzetband(id: String, size: Vector3, ghost: bool) -> Node3D:
 			# Marker meta so the post-build pass knows to graft on the metal-detector
 			# head at 3/4 along the slope. Read by the caller in build_node().
 			belt.set_meta("attach_metaaldetector_head_at_frac", 0.75)
+	# #196 — if this belt asked for an integrated metal-detector head (currently
+	# only opzetband_1), graft it onto the incline at the requested fraction.
+	if not ghost and belt.has_meta("attach_metaaldetector_head_at_frac"):
+		_attach_metaaldetector_head_to_opzetband(belt,
+			float(belt.get_meta("attach_metaaldetector_head_at_frac")))
 	return belt
+
+## #196 — Build a simplified search-coil + reverse-reject head and parent it onto
+## the inclined section of a ShredderFeedBelt so the belt passes THROUGH the coil
+## tunnel. `frac` ∈ (0,1) selects how far along the slope the head sits (0.75 =
+## three-quarters of the way to the top — the operator-specified location). The
+## belt itself is the conveyor; the head adds only the coil tunnel, indicator
+## cabinet, REJECT placard, and a small side-reject chute that throws ferrous
+## off the belt to the local +X side.
+static func _attach_metaaldetector_head_to_opzetband(belt: Node, frac: float) -> void:
+	# Compute slope-local position of the head along the incline.
+	# The belt's inc_pivot is rotated about X by -incline_deg and lives at
+	# (0, deck_height, deck_length). Mesh runs along its local +Z for
+	# _incline_hyp metres. So a point at fraction `frac` along the slope is at
+	# inc_pivot-local (0, 0, frac * _incline_hyp). We parent the head under
+	# inc_pivot so its X-tilt matches the slope.
+	var inc_pivot : Node3D = belt.get_node_or_null("InclinePivot") as Node3D
+	if inc_pivot == null:
+		# Fallback: scan children for the rotated pivot. ShredderFeedBelt names it
+		# "InclinePivot" by convention, but some forks may differ.
+		for c in belt.get_children():
+			if c is Node3D and absf(c.rotation.x) > 0.01:
+				inc_pivot = c as Node3D
+				break
+	if inc_pivot == null:
+		return
+	var slope_hyp : float = float(belt.get("incline_run")) / maxf(cos(deg_to_rad(float(belt.get("incline_deg")))), 0.01)
+	var deck_w   : float  = float(belt.get("deck_width"))
+	var z_along  : float  = clampf(frac, 0.05, 0.95) * slope_hyp
+	# Parent for all head parts; sits ABOVE the belt deck (which is at y≈0 in the
+	# pivot's local frame; belt mesh thickness ~0.10).
+	var head := Node3D.new()
+	head.name = "MetaalDetectorHead"
+	inc_pivot.add_child(head)
+	head.position = Vector3(0.0, 0.0, z_along)
+	# Materials.
+	var coil_b := _mat(Color(0.12, 0.14, 0.18), false, 0.35, 0.55)
+	var copper := _mat(Color(0.78, 0.42, 0.18), false, 0.65, 0.50)
+	var steel  := _mat(_STEEL, false, 0.55, 0.4)
+	var dark   := _mat(_DARK, false, 0.4, 0.6)
+	var yellow := _mat(_SAFETY, false, 0.2, 0.6)
+	var screen := _mat(Color(0.07, 0.10, 0.14), false, 0.1, 0.25)
+	# ── Search-coil tunnel: 4 thick coil tubes forming a rectangle the belt runs
+	# through. Coil tube radius scales with belt width so the tunnel always
+	# clears the slats. ───────────────────────────────────────────────────────
+	var coil_r : float = 0.12
+	var tunnel_w : float = deck_w + 0.4   # slightly wider than belt for clearance
+	var tunnel_h : float = 0.9            # vertical opening above the belt
+	var coil_len : float = 0.4            # tube length along the belt
+	# Top + bottom rails (along X).
+	for sy in [0.0, tunnel_h]:
+		_cyl(head, coil_r, coil_r, tunnel_w,
+			Vector3(0.0, float(sy), 0.0), coil_b, "x")
+	# Left + right rails (along Y).
+	for sx in [-tunnel_w * 0.5, tunnel_w * 0.5]:
+		_cyl(head, coil_r, coil_r, tunnel_h,
+			Vector3(float(sx), tunnel_h * 0.5, 0.0), coil_b, "y")
+	# Copper-wrap visual band on the top rail — gives the head its "coil" read.
+	_cyl(head, coil_r * 1.05, coil_r * 1.05, tunnel_w * 0.85,
+		Vector3(0.0, tunnel_h, 0.0), copper, "x")
+	# ── Coil casing box wrapped around the rails — solid frame that pops as the
+	# inspection head. ─────────────────────────────────────────────────────
+	_box(head, Vector3(tunnel_w + 0.18, 0.18, coil_len),
+		Vector3(0.0, tunnel_h + 0.10, 0.0), steel)
+	_box(head, Vector3(0.18, tunnel_h + 0.18, coil_len),
+		Vector3(-(tunnel_w * 0.5) - 0.10, tunnel_h * 0.5, 0.0), steel)
+	_box(head, Vector3(0.18, tunnel_h + 0.18, coil_len),
+		Vector3( (tunnel_w * 0.5) + 0.10, tunnel_h * 0.5, 0.0), steel)
+	# ── REJECT placard on the +X coil leg, facing the operator side. ──────────
+	_box(head, Vector3(0.5, 0.3, 0.04),
+		Vector3((tunnel_w * 0.5) + 0.20, tunnel_h * 0.6, 0.0), yellow)
+	# ── Indicator cabinet ahead of the coil on +X (HMI face). ─────────────────
+	var cab_w : float = 0.5; var cab_h : float = 0.7; var cab_d : float = 0.35
+	_box(head, Vector3(cab_w, cab_h, cab_d),
+		Vector3((tunnel_w * 0.5) + 0.45, tunnel_h * 0.5, -coil_len * 0.5 - cab_d * 0.5), dark)
+	_box(head, Vector3(cab_w * 0.7, cab_h * 0.45, 0.02),
+		Vector3((tunnel_w * 0.5) + 0.45, tunnel_h * 0.55, -coil_len * 0.5 - cab_d - 0.011), screen)
+	# Two indicator dots (CLEAR / METAL) below the screen.
+	var green_mat := _mat(Color(0.20, 0.78, 0.30), false, 0.0, 0.5)
+	var red_mat   := _mat(Color(0.82, 0.16, 0.14), false, 0.0, 0.5)
+	_box(head, Vector3(0.07, 0.07, 0.03),
+		Vector3((tunnel_w * 0.5) + 0.45 - 0.10, tunnel_h * 0.25, -coil_len * 0.5 - cab_d - 0.016), green_mat)
+	_box(head, Vector3(0.07, 0.07, 0.03),
+		Vector3((tunnel_w * 0.5) + 0.45 + 0.10, tunnel_h * 0.25, -coil_len * 0.5 - cab_d - 0.016), red_mat)
+	# ── Side-reject chute: a small angled gutter on +X just past the coil that
+	# catches the ferrous reject when the belt reverses momentarily. ──────────
+	var chute_l : float = 1.0
+	var chute := Node3D.new()
+	chute.name = "RejectChute"
+	head.add_child(chute)
+	chute.position = Vector3((tunnel_w * 0.5) + 0.4, 0.15, coil_len * 0.5 + 0.2)
+	chute.rotation.z = deg_to_rad(-25.0)   # tilt toward +X (operator side)
+	_box(chute, Vector3(0.6, 0.04, chute_l), Vector3.ZERO, dark)
+	for sx in [-0.3, 0.3]:
+		_box(chute, Vector3(0.04, 0.18, chute_l),
+			Vector3(float(sx), 0.08, 0.0), steel)
+	# Small reject bin under the chute end (on the floor).
+	# Bin sits in world coords; positioning under the rotated chute is a
+	# rough approximation — operator can jog it post-place if it reads wrong.
+	# Skipped here to avoid double-anchoring; the chute end + side-reject placard
+	# already telegraph the function.
+
 
 ## A placeable CollectionZone (Area3D): film scraps that enter are removed and the
 ## zone's scrap_count goes up. The visible footprint is a flat translucent slab so

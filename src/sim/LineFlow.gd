@@ -1854,6 +1854,12 @@ func _make_connector(a: Dictionary, b: Dictionary) -> void:
 	# and compactorband even though they touched). Skip silently.
 	if _is_belt_id(src_id) and _is_belt_id(tgt_id):
 		return
+	# #196 — SHREDDER → BELT: the operator's spec is that the uitvoerband sits
+	# DIRECTLY UNDER the shredder discharge (the shredder drops material
+	# straight onto the horizontal collector belt). No chute / gutter between
+	# them — the belt deck IS the catch surface. Skip the connector.
+	if src_id.begins_with("shredder") and _is_belt_id(tgt_id):
+		return
 	# Rule 1 — SCREW DISCHARGE ALWAYS GETS A CHUTE. Per operator: when material
 	# leaves a screw conveyor / dewatering screw / dosing screw, it slides down a
 	# chute to whatever the screw is feeding. Auto-fitted between the screw's
@@ -1894,6 +1900,14 @@ func _make_connector(a: Dictionary, b: Dictionary) -> void:
 	# discharge often carries fines that would otherwise drift on air currents).
 	if src_id == "cyclone" and (tgt_id == "silo" or tgt_id == "extruder_silo" or tgt_id == "mengsilo" or tgt_id == "doseersilo" or tgt_id == "vss_silo"):
 		_spawn_chute(a_world, b_world, 0.30, 0.18, true)
+		return
+	# #196 — SCHEIDINGSGOOT → FRICTION_SEP: the "glijgoot" slide-chute the
+	# operator described. Wide-bottom, open-top, mild slope. Same shape as the
+	# screw chute but a wider trough so it visually reads as a real slide
+	# instead of a thin gutter. One spawn per sibling fan-out (the macro
+	# builder fires this rule once per scheidingsgoot→friction_sep edge).
+	if src_id == "scheidingsgoot" and tgt_id == "friction_sep":
+		_spawn_chute(a_world, b_world, 0.55, 0.12, false)
 		return
 	# Otherwise — fall through to the legacy gravity-gutter behaviour.
 	_spawn_gravity_gutter(a_world, b_world)
