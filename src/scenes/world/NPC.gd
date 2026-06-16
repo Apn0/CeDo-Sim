@@ -17,6 +17,81 @@ var target_position: Vector3 = Vector3.ZERO
 var is_walking: bool = false
 var wander_timer: float = 0.0
 
+# ── #198 NPC autonomy task hook ─────────────────────────────────────────────
+# `npc_id` is the catalogue key (romain / pascal / abdellilah / ...). Set by
+# NPCSpawner when this NPC is instantiated. Used by NpcAutonomyBoard to look
+# up the role and decide which tasks this NPC can accept.
+var npc_id : String = ""
+# Currently-running autonomy task (or null = idle). When non-null the NPC's
+# physics step routes through _autonomy_tick instead of the free-wander.
+var _autonomy_task : RefCounted = null
+# Cooldown so an idle NPC only polls the board every 3 s, not every frame.
+var _autonomy_poll_t : float = 0.0
+const _AUTONOMY_POLL_INTERVAL_S : float = 3.0
+# Destination an active task is steering the NPC toward. The NPC's existing
+# pathfinding consumes this; the task only sets it.
+var _autonomy_destination_active : bool = false
+
+## Called by NpcAutonomyTask (or its subclasses) to steer the NPC toward a
+## world position. Hooks into the existing target_position field so the rest
+## of the NPC's locomotion code drives the body the same way it would for a
+## free-wander target.
+func set_autonomy_destination(pos: Vector3) -> void:
+	target_position = pos
+	is_walking = true
+	_autonomy_destination_active = true
+
+func clear_autonomy_destination() -> void:
+	_autonomy_destination_active = false
+	is_walking = false
+
+## Called by tasks that need to move the NPC into a vehicle's driver seat.
+## Reuses the #148 vehicle-entry parity (NPCs board vehicles the same way the
+## player does via OperatorContext).
+func board_vehicle(vehicle: Node) -> void:
+	if vehicle == null:
+		return
+	var op_ctx := get_tree().get_root().find_child("OperatorContext", true, false)
+	if op_ctx and op_ctx.has_method("npc_board_vehicle"):
+		op_ctx.call("npc_board_vehicle", self, vehicle)
+
+func disembark_vehicle() -> void:
+	var op_ctx := get_tree().get_root().find_child("OperatorContext", true, false)
+	if op_ctx and op_ctx.has_method("npc_disembark_vehicle"):
+		op_ctx.call("npc_disembark_vehicle", self)
+
+## Per-tick autonomy tick: poll the board when idle, tick the active task
+## otherwise. Called from _physics_process before the wander/walk logic.
+func _autonomy_tick(delta: float) -> void:
+	# Already on a task — tick it.
+	if _autonomy_task != null:
+		var t : NpcAutonomyTask = _autonomy_task
+		if t == null or t.is_done():
+			_autonomy_task = null
+			clear_autonomy_destination()
+			return
+		if t.tick(self, delta):
+			t.release(self)
+			_autonomy_task = null
+			clear_autonomy_destination()
+		return
+	# Idle — poll the board on cadence.
+	_autonomy_poll_t += delta
+	if _autonomy_poll_t < _AUTONOMY_POLL_INTERVAL_S:
+		return
+	_autonomy_poll_t = 0.0
+	if not Engine.has_singleton("NpcAutonomyBoard"):
+		# Autoload not configured (e.g. unit-test scene). Fall back to wander.
+		return
+	# Direct autoload access — Engine.has_singleton is a heuristic; the real
+	# call goes through the engine's autoload table.
+	var board := get_node_or_null("/root/NpcAutonomyBoard")
+	if board == null:
+		return
+	var task : NpcAutonomyTask = board.call("take_next_task", self)
+	if task != null:
+		_autonomy_task = task
+
 # Social state (mutual-aid economy)
 var relationship_points: Dictionary = {}  # NPC ID -> points
 var is_helping: bool = false
@@ -278,10 +353,17 @@ func _physics_process(delta: float) -> void:
 	if _vault_locked:
 		_advance_vault(delta)
 		return
-	# Pick where the body should be heading this frame. Unmanaged NPCs free-wander
-	# exactly as before; managed NPCs head to the target their brain has set, idling
-	# in a small wander around their post and standing still while servicing/on break.
-	if not managed:
+	# #198 — autonomy tick has highest priority. If an autonomy task is active
+	# (or the board hands one out this tick), it owns the target_position.
+	# Falls through to the legacy wander/managed code path only when idle.
+	_autonomy_tick(delta)
+	if _autonomy_destination_active:
+		# Task is steering the NPC; skip the free-wander / managed-post motion
+		# decisions and let the locomotion code drive the body toward
+		# target_position. The task's tick() will clear the destination when
+		# it advances or completes.
+		pass
+	elif not managed:
 		_update_wander(delta)            # legacy free wander
 	else:
 		_managed_motion(delta)

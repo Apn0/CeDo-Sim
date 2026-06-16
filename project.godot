@@ -37,6 +37,7 @@ NaNSentinel="*res://src/autoload/NaNSentinel.gd"
 ApiKeys="*res://src/autoload/ApiKeys.gd"
 VoiceService="*res://src/autoload/VoiceService.gd"
 LineMacroStore="*res://src/autoload/LineMacroStore.gd"
+NpcAutonomyBoard="*res://src/autoload/NpcAutonomyBoard.gd"
 
 [debug]
 

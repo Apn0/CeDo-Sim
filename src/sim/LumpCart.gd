@@ -19,6 +19,73 @@ const MAX_SPEED    : float = 3.5
 
 var _grabbed_by : Node3D = null
 
+# =============================================================================
+# #198 — Fill + cool-down state.
+# =============================================================================
+# Lumps drop in from the laser-filter discharge hose (operator's spec). Each
+# lump is hot (~120-180 °C) when extruded; the cart sits under the discharge
+# accumulating lumps until either (a) it's full or (b) the line stops pushing.
+# Once a lump is in the cart it cools to ambient over COOL_TIME_S (1-3 hours
+# sim time). When ALL contents are cool AND the cart has at least
+# EMPTY_THRESHOLD_KG of lumps in it, the NpcAutonomyBoard emits an
+# "empty_lump_cart" task — an idle NPC will then grab a forklift, drive over,
+# lift the cart, transport it to the indoor lumps_container, and dump.
+const CAPACITY_KG       : float = 240.0   # cart fills up around this mass
+const FULL_THRESHOLD_KG : float = 200.0   # above this → "is_full" → block more lumps
+const EMPTY_THRESHOLD_KG: float = 40.0    # above this → worth emptying (don't haul ~empty carts)
+const COOL_TIME_S_MIN   : float = 60.0 * 60.0   #  1 sim-hour minimum cool-down
+const COOL_TIME_S_MAX   : float = 3.0 * 60.0 * 60.0   # 3 sim-hour worst case
+
+var lumps_kg          : float = 0.0
+var _last_received_at : float = -INF     # sim-time of the most recent lump
+var _cool_time_s      : float = COOL_TIME_S_MIN   # randomised per receive
+
+func is_full() -> bool:
+	return lumps_kg >= FULL_THRESHOLD_KG
+
+func has_lumps_worth_emptying() -> bool:
+	return lumps_kg >= EMPTY_THRESHOLD_KG
+
+## Lumps are cool when at least _cool_time_s has passed since the last lump
+## landed. Returns false if there's nothing in the cart (no point emptying).
+func is_cool() -> bool:
+	if lumps_kg <= 0.001:
+		return false
+	var now_s : float = _now_sim_s()
+	return (now_s - _last_received_at) >= _cool_time_s
+
+## Called by the laser-filter discharge when a lump drops into this cart.
+func receive_lump(mass_kg: float) -> void:
+	if mass_kg <= 0.0:
+		return
+	if is_full():
+		# Operator spec: when full, the discharge backs up / overflows on the
+		# floor — but the simulator doesn't model that yet. For now we hard-cap
+		# the cart's mass and the upstream filter will see is_full() and stop
+		# pushing.
+		return
+	lumps_kg = clampf(lumps_kg + mass_kg, 0.0, CAPACITY_KG)
+	_last_received_at = _now_sim_s()
+	# Each receive resets the cool-down with a fresh random sample in [min,max].
+	_cool_time_s = randf_range(COOL_TIME_S_MIN, COOL_TIME_S_MAX)
+
+## Called by the EmptyLumpCartTask after the forklift dumps the cart into the
+## lumps_container. Returns how many kg were dumped (so the receiving container
+## can grow its own fill level by that amount).
+func empty() -> float:
+	var dumped : float = lumps_kg
+	lumps_kg = 0.0
+	_last_received_at = -INF
+	return dumped
+
+## Sim time in seconds since the ShiftClock's day-zero epoch. Falls back to the
+## wall-clock if the shift clock isn't reachable (test scenes).
+func _now_sim_s() -> float:
+	var sc := get_tree().get_root().find_child("ShiftClock", true, false)
+	if sc and "shift_elapsed_seconds" in sc:
+		return float(sc.shift_elapsed_seconds)
+	return Time.get_ticks_msec() / 1000.0
+
 func crosshair_prompt(_p: Node3D) -> String:
 	if _grabbed_by != null:
 		return "Lumpenwagen loslaten [E]"

@@ -933,6 +933,8 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 		pm_cart.friction = 0.9
 		pm_cart.bounce = 0.02
 		rb_cart.physics_material_override = pm_cart
+		# #198 — tag so NpcAutonomyBoard's lump-cart scanner finds this cart.
+		rb_cart.add_to_group("lump_cart")
 		body = rb_cart
 	elif category == "Bales":
 		var rb := RigidBody3D.new()
