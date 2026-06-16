@@ -2087,6 +2087,19 @@ func _apply_layout_entry(entry: Variant) -> bool:
 		_load_legacy_door(dict)
 		return true
 
+	# #194 — single-click structure placeables (door_personnel / gate_roller /
+	# window_frame) carry both their visual model AND a matching wall carve.
+	# Save records only the catalog id + pose; on load we re-instantiate the
+	# placeable AND replay the WallOpenings.add_opening call so the hole reappears.
+	# Legacy id="surface" (saves written before this fix) is routed as a default
+	# personnel door — same dims as the door_personnel catalog entry — so the
+	# user's pre-fix doors come back instead of silently dropping.
+	var sid := String(dict.get("id", ""))
+	if sid == "door_personnel" or sid == "gate_roller" or sid == "window_frame" or sid == "surface":
+		var resolved_id := sid if sid != "surface" else "door_personnel"
+		_load_structure_placeable(resolved_id, dict)
+		return true
+
 	# Variable belts: rebuild via build_variable_belt(start, end) from the
 	# persisted endpoints. Transform is derived from the span, not from an anchor.
 	if String(dict.get("id", "")) == "variable_belt" \
@@ -2186,6 +2199,45 @@ func _apply_layout_entry(entry: Variant) -> bool:
 				"rot_y": float(d_anc.get("rot_y", 0.0)),
 			})
 	return true
+
+## #194 — Re-instantiate a single-click structure placeable (door_personnel /
+## gate_roller / window_frame) AND replay the wall carve so the hole the door
+## sits in reappears on reload. Catalog gives us the footprint (W,H,T); the
+## save record gives us pose (x,y,z,rot_y). Together they reconstruct the same
+## placement + opening the operator made by clicking once in build mode.
+##
+## Legacy id="surface" entries (saves written before this fix) come in here
+## resolved to "door_personnel" — best-effort: we don't have their original
+## type recorded, so we treat them as personnel doors at the catalog default
+## size. The user can delete + replace if they wanted a roller gate instead.
+func _load_structure_placeable(resolved_id: String, dict: Dictionary) -> void:
+	var node := PlaceableCatalog.build_node(resolved_id, false)
+	if node == null:
+		push_warning("[BuildMode] _load_structure_placeable: build_node returned null for %s" % resolved_id)
+		return
+	_placed_root.add_child(node)
+	var pos := Vector3(
+		float(dict.get("x", 0.0)),
+		float(dict.get("y", 0.0)),
+		float(dict.get("z", 0.0)))
+	node.global_position = pos
+	node.rotation.y = float(dict.get("rot_y", 0.0))
+	_finalize_placed(node, resolved_id, float(dict.get("h", 0.0)))
+	# Carve the matching wall opening. Centre = leaf centre (Y = pos.y + H/2 so
+	# the bottom of the cut sits on the floor). Rotation = node yaw. Catalog
+	# size gives W×H; depth (2.0 m) is generous so the cut always punches the
+	# wall regardless of its thickness.
+	if wall_openings == null:
+		return
+	var item := PlaceableCatalog.get_item(resolved_id)
+	var size : Vector3 = item.get("size", Vector3(1.2, 2.4, 0.18)) if not item.is_empty() else Vector3(1.2, 2.4, 0.18)
+	var ow := clampf(size.x, 0.5, 6.0)
+	var oh := clampf(size.y, 0.5, 8.0)
+	var cut_centre := pos + Vector3(0.0, oh * 0.5, 0.0)
+	_opening_seq += 1
+	var oid := "op_%d" % _opening_seq
+	wall_openings.add_opening(oid, cut_centre, Vector3(ow, oh, 2.0), float(dict.get("rot_y", 0.0)))
+	node.set_meta("opening_id", oid)
 
 ## Converts a legacy box-door entry {id:"door", x,y,z,rot_y} into the new
 ## interactive roller door with a carved opening, by reconstructing its 4

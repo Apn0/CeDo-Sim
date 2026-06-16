@@ -774,17 +774,25 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 		if ghost:
 			return _simple_ghost(Vector3(item["size"]))
 		var sz : Vector3 = item["size"]
-		return build_door(sz.x, sz.y, sz.z, "Door")
+		var d := build_door(sz.x, sz.y, sz.z, "Door")
+		# #194 — stamp the real catalog id so the save records "door_personnel",
+		# not the previous generic "surface" that was un-routable on reload.
+		d.set_meta("placeable_id", "door_personnel")
+		return d
 	if id == "gate_roller":
 		if ghost:
 			return _simple_ghost(Vector3(item["size"]))
 		var gsz : Vector3 = item["size"]
-		return build_gate(gsz.x, gsz.y, "Gate")
+		var g := build_gate(gsz.x, gsz.y, "Gate")
+		g.set_meta("placeable_id", "gate_roller")
+		return g
 	if id == "window_frame":
 		if ghost:
 			return _simple_ghost(Vector3(item["size"]))
 		var wsz : Vector3 = item["size"]
-		return build_window(wsz.x, wsz.y, "Window")
+		var w := build_window(wsz.x, wsz.y, "Window")
+		w.set_meta("placeable_id", "window_frame")
+		return w
 	# X2/#181 — Vehicles. The ghost is a translucent box (cheap); the real
 	# placement instantiates the scene so the operator gets a fully-driveable
 	# unit on the floor. Used for QA spawns — no need to walk to find a Merlo.
@@ -6860,7 +6868,14 @@ static func build_door(width: float, height: float, thickness: float, label: Str
 	# Door.gd no longer needs `open_height` (it swings on a hinge now, not
 	# slides up). Keep the height arg so callers don't have to be updated, we
 	# just don't pass it into the door.
-	door.set_meta("placeable_id", "surface")
+	# #194 — placeable_id intentionally NOT set here. Two callers:
+	#   • the 4-point Surface tool (_make_surface in BuildMode) — uses
+	#     surface_data meta and ignores placeable_id at save time.
+	#   • the single-click "door_personnel" catalog branch — overrides the
+	#     meta to "door_personnel" so the loader can reproduce the placement.
+	# Stamping "surface" here was the root cause of #194's silent door loss.
+	door.set_meta("door_w", width)
+	door.set_meta("door_h", height)
 	door.add_to_group("placed_object")
 
 	var mesh := MeshInstance3D.new()
@@ -6894,7 +6909,10 @@ static func build_door(width: float, height: float, thickness: float, label: Str
 static func build_gate(width: float, height: float, label: String) -> StaticBody3D:
 	var gate: StaticBody3D = load("res://src/build/Gate.gd").new()
 	gate.name = "Gate" if label.is_empty() else label
-	gate.set_meta("placeable_id", "surface")
+	# #194 — see build_door note; the catalog "gate_roller" branch sets
+	# placeable_id, the 4-point Surface tool uses surface_data instead.
+	gate.set_meta("door_w", width)
+	gate.set_meta("door_h", height)
 	gate.add_to_group("placed_object")
 
 	# ── Leaf material: dark industrial blue, painted steel ────────────────────
@@ -7089,7 +7107,9 @@ static func build_panel(width: float, height: float, thickness: float, \
 static func build_window(width: float, height: float, label: String) -> StaticBody3D:
 	var body := StaticBody3D.new()
 	body.name = "Window" if label.is_empty() else label
-	body.set_meta("placeable_id", "surface")
+	# #194 — see build_door note; "window_frame" catalog branch stamps the id.
+	body.set_meta("door_w", width)
+	body.set_meta("door_h", height)
 	body.add_to_group("placed_object")
 
 	# ── Materials ─────────────────────────────────────────────────────────────

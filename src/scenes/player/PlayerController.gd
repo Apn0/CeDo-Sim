@@ -694,9 +694,57 @@ func _capture_opening_corner() -> void:
 	if width < 0.3 or height < 0.3:
 		print("[OpeningCapture] CANCELLED — rectangle is too small (%.2fw × %.2fh). Start over." % [width, height])
 		return
-	print("[OpeningCapture] opening %.2fw × %.2fh  at RD (cx=%.2f, cz=%.2f, bottom_y=%.2f)"
-		% [width, height, cx, cz, bottom_y])
+	# #122 auto-classify by W/H/bottom_y. Personnel door (≤1.2 m wide AND
+	# bottom ~0 m), roller gate (≥2.0 m wide), bay (≥3.0 m wide, low BY),
+	# window (BY ≥ 0.8 m), otherwise generic "door". Thresholds picked from
+	# the real CeDo doorways the operator measured.
+	var kind := "door"
+	if bottom_y >= 0.8:
+		kind = "window"
+	elif width >= 3.0 and bottom_y < 0.5:
+		kind = "bay"
+	elif width >= 2.0:
+		kind = "gate"
+	elif width <= 1.2 and bottom_y < 0.5:
+		kind = "door"
+	print("[OpeningCapture] %s %.2fw × %.2fh  at RD (cx=%.2f, cz=%.2f, bottom_y=%.2f)"
+		% [kind, width, height, cx, cz, bottom_y])
 	print("                 paste:  --door %.2f,%.2f,%.2f,%.2f,%.2f" % [cx, cz, width, height, bottom_y])
+	# #119 — Append to user://captured_doors.json so the operator doesn't have
+	# to scrape the console. tools/solidify_building.py can read this file
+	# directly when baking the next building shell.
+	_append_captured_door({
+		"kind":     kind,
+		"cx":       cx,
+		"cz":       cz,
+		"width":    width,
+		"height":   height,
+		"bottom_y": bottom_y,
+		"captured_at": Time.get_unix_time_from_system(),
+	})
+
+## #119 — persist a captured door spec to user://captured_doors.json. Reads
+## the existing file (if any), appends the new entry, writes back. Print a
+## one-liner with the file path so the operator can find it without digging.
+func _append_captured_door(entry: Dictionary) -> void:
+	const PATH := "user://captured_doors.json"
+	var arr : Array = []
+	if FileAccess.file_exists(PATH):
+		var rf := FileAccess.open(PATH, FileAccess.READ)
+		if rf:
+			var parsed : Variant = JSON.parse_string(rf.get_as_text())
+			rf.close()
+			if parsed is Array:
+				arr = parsed
+	arr.append(entry)
+	var wf := FileAccess.open(PATH, FileAccess.WRITE)
+	if wf == null:
+		print("[OpeningCapture] WARN — could not open %s for writing (%d)" \
+			% [PATH, FileAccess.get_open_error()])
+		return
+	wf.store_string(JSON.stringify(arr, "\t"))
+	wf.close()
+	print("[OpeningCapture] saved → %s  (%d total entries)" % [PATH, arr.size()])
 
 ## Look up BuildingShell.position so the capture can invert its shift back to
 ## the original RD coordinates the solidify script speaks. Returns ZERO if no
