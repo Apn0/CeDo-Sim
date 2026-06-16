@@ -52,7 +52,7 @@ class_name BaleClamp
 @export var right_plate_path   : NodePath
 
 @export_group("Lift")
-@export var lift_min_m     : float = 0.1
+@export var lift_min_m     : float = -0.2    # Lowered to hit the ground
 @export var lift_max_m     : float = 3.0
 @export var lift_speed_m_s : float = 0.6
 
@@ -77,7 +77,7 @@ const PLATE_TRACK_RATE   : float = 6.0
 const WIRE_BULGE_M       : float = 0.04
 
 # ── Runtime state ─────────────────────────────────────────────────────────────
-var lift_height_m : float = 0.1
+var lift_height_m : float = -0.2   # Start at floor level
 var tilt_deg      : float = 0.0
 var clamp_gap_m   : float = 1.35
 
@@ -174,6 +174,13 @@ func _unhandled_input(event: InputEvent) -> void:
 # =============================================================================
 func _physics_process(delta: float) -> void:
 	super._physics_process(delta)
+
+	# Achterwielbesturing = A/D draait de neus de "verkeerde" kant op t.o.v. de auto logica.
+	# We flippen de stuurhoek van alle sturende wielen om de BaseVehicle logica recht te trekken.
+	for c in get_children():
+		if c is VehicleWheel3D and c.use_as_steering:
+			c.steering = -c.steering
+
 	if occupied:
 		_update_lift_tilt(delta)
 		# While ramping, update clamp_force live so the HUD bar climbs

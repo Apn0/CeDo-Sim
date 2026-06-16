@@ -40,7 +40,6 @@ LineMacroStore="*res://src/autoload/LineMacroStore.gd"
 
 [debug]
 
-settings/stdout/verbose_stdout=true
 gdscript/warnings/unused_signal=0
 gdscript/warnings/unused_argument=1
 
@@ -377,6 +376,9 @@ hotbar_drop={
 [physics]
 
 3d/physics_engine="GodotPhysics3D"
+jolt_physics_3d/joints/world_node=1
+jolt_physics_3d/limits/temporary_memory_buffer_size=64
+3d/default_gravity=9.810000000000002
 
 [rendering]
 

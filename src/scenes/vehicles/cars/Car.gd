@@ -211,7 +211,7 @@ var _model_scale: Vector3 = Vector3.ONE                # subclass override (e.g.
 ## car subclass overrides to its actual length. Set to 0.0 to disable rescaling.
 var _real_world_length_m : float = 3.85
 var _part_names : Dictionary = {}
-var _paint_color: Color = Color(1.0, 1.0, 1.0, 0.0)   # alpha=0 means "don't paint"
+var _paint_color: Color = Color(1.0, 1.0, 1.0, 0.0)    # alpha=0 means "don't paint"
 # #157 — Swift's FBX has no carpaint-named material, so the name-based matcher
 # can't tint it. When this is true and the matcher didn't apply anywhere, we
 # fall back to tinting the largest visible mesh in the imported body (heuristic
@@ -317,7 +317,7 @@ func _post_load_hook() -> void:
 func get_door_pivots() -> Array:
 	var out : Array = []
 	for d in _car_doors:
-		var p := d.get("pivot")
+		var p = d.get("pivot")
 		if p is Node3D:
 			out.append(p)
 	return out
@@ -328,9 +328,6 @@ func get_door_pivots() -> Array:
 ## tree has no meshes or zero size. Y is excluded so very-tall cars (campers)
 ## don't pull the wrong axis.
 func _measure_model_scale(root: Node3D, target_length_m: float) -> float:
-	var aabb : AABB = AABB()
-	var has_any : bool = false
-	_walk_for_aabb(root, root.global_transform.affine_inverse(), aabb, has_any)
 	# The recursive helper can't mutate `has_any` via return-by-reference in GDScript;
 	# do the walk again with a wrapper Dictionary to get the result back.
 	var acc : Dictionary = {"aabb": AABB(), "any": false}
@@ -361,10 +358,6 @@ func _aabb_walk(node: Node, xf: Transform3D, acc: Dictionary) -> void:
 			acc["aabb"] = (acc["aabb"] as AABB).merge(world_box)
 	for c in node.get_children():
 		_aabb_walk(c, child_xf, acc)
-
-## Stub kept for the call above; the real recursion happens in _aabb_walk.
-func _walk_for_aabb(_root: Node3D, _inv: Transform3D, _aabb: AABB, _has_any: bool) -> void:
-	pass
 
 ## Apply the FBX auto-rescale factor to every VehicleWheel3D under this Car so
 ## the wheels match the new body length. Each wheel's local position scales

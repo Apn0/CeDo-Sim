@@ -36,6 +36,29 @@ var crew_manager    : CrewManager
 var scada           : Node          # ScadaDashboard (ISA-101 overlay)
 var npcs            : Dictionary = {}
 
+# ── Cached scene-tree lookups ────────────────────────────────────────────────
+# find_child(..., true, false) walks the whole subtree; calling it dozens of
+# times per spawn is a measurable cost on a 1400+ child scene. Cache the two
+# nodes every helper needed and re-resolve only if the cached one was freed.
+var _shell_mesh_cache    : MeshInstance3D = null
+var _player_spawn_cache  : Node3D         = null
+
+func _shell() -> MeshInstance3D:
+	if _shell_mesh_cache != null and is_instance_valid(_shell_mesh_cache):
+		return _shell_mesh_cache
+	# Prefer the direct path first (cheapest), fall back to subtree search.
+	var sh := get_node_or_null("BuildingShell/ShellMesh") as MeshInstance3D
+	if sh == null:
+		sh = find_child("ShellMesh", true, false) as MeshInstance3D
+	_shell_mesh_cache = sh
+	return sh
+
+func _player_spawn_node() -> Node3D:
+	if _player_spawn_cache != null and is_instance_valid(_player_spawn_cache):
+		return _player_spawn_cache
+	_player_spawn_cache = find_child("PlayerSpawn", false, false) as Node3D
+	return _player_spawn_cache
+
 # Where the player actually spawned this run (marker OR resumed save position).
 # The forklift parks 3 m from here so it's always within reach on spawn.
 var _player_spawn_pos : Vector3 = Vector3.ZERO
@@ -269,7 +292,7 @@ func _spawn_world_items() -> void:
 # BUILDING SHELL
 # =============================================================================
 func _load_building_shell() -> void:
-	var mesh_instance := find_child("ShellMesh", true, false) as MeshInstance3D
+	var mesh_instance := _shell()
 	if not mesh_instance:
 		push_error("[MainWorld] ShellMesh not found")
 		return
@@ -320,7 +343,7 @@ func _apply_textures() -> void:
 	# matte pass without the noise normal-map trickery.
 	# Calibrated cream-grey from _e_kast.png (background wall) — the real walls
 	# are not pure-white painted, they're a dusty cream from years of service.
-	var shell := find_child("ShellMesh", true, false) as MeshInstance3D
+	var shell := _shell()
 	if shell:
 		var sm := StandardMaterial3D.new()
 		sm.albedo_color = Color(0.70, 0.68, 0.63)
@@ -389,7 +412,7 @@ func _industrial_mat(base: Color, tex_scale: float, rough: float, cull_off: bool
 	return m
 
 func _spawn_wall_openings() -> void:
-	var shell := find_child("ShellMesh", true, false) as MeshInstance3D
+	var shell := _shell()
 	if not shell:
 		push_error("[MainWorld] ShellMesh not found — wall openings disabled")
 		return
@@ -444,9 +467,7 @@ func _spawn_overhead_lights() -> void:
 	# out test ran in world space too, so the kept cells covered a rotated
 	# bounding rectangle bigger than the building.
 	# Long axis of each TL bar is local +X (matches operator spec).
-	var shell := get_node_or_null("BuildingShell/ShellMesh") as MeshInstance3D
-	if shell == null:
-		shell = find_child("ShellMesh", true, false) as MeshInstance3D
+	var shell := _shell()
 	var parent_node : Node3D = shell if shell != null else (self as Node3D)
 	var root := Node3D.new()
 	root.name = "OverheadLights"
@@ -507,9 +528,7 @@ func _spawn_overhead_lights() -> void:
 ## the last test, so we use the explicit path BuildingShell/ShellMesh which
 ## we know exists in MainWorld.tscn.
 func _building_center_and_footprint() -> Dictionary:
-	var shell := get_node_or_null("BuildingShell/ShellMesh") as MeshInstance3D
-	if shell == null:
-		shell = find_child("ShellMesh", true, false) as MeshInstance3D
+	var shell := _shell()
 	if shell == null or shell.mesh == null:
 		return {"center": Vector3.ZERO, "footprint": PackedVector2Array()}
 	var aabb : AABB = shell.global_transform * shell.mesh.get_aabb()
@@ -725,7 +744,7 @@ func _spawn_player() -> void:
 			candidate = Vector3(WorldLayout.player_spawn.x, floor_top + 1.0,
 				WorldLayout.player_spawn.z)
 		else:
-			var marker := find_child("PlayerSpawn", false, false) as Node3D
+			var marker := _player_spawn_node()
 			if marker:
 				candidate = Vector3(marker.global_position.x, floor_top + 1.0,
 					marker.global_position.z)
@@ -900,7 +919,7 @@ func _get_factory_anchor() -> Vector3:
 		return _on_floor(game_state.factory_center)
 	if _player_spawn_pos != Vector3.ZERO:
 		return _on_floor(_player_spawn_pos)
-	var marker := find_child("PlayerSpawn", false, false) as Node3D
+	var marker := _player_spawn_node()
 	if marker:
 		return _on_floor(marker.global_position)
 	return _on_floor(Vector3.ZERO)
@@ -1012,9 +1031,7 @@ func _building_yaw() -> float:
 ## (X-long) and ±90° for shells whose long axis is Z; sufficient for the
 ## current building. Picks up any yaw baked into shell.global_transform too.
 func _compute_building_yaw() -> float:
-	var shell := get_node_or_null("BuildingShell/ShellMesh") as MeshInstance3D
-	if shell == null:
-		shell = find_child("ShellMesh", true, false) as MeshInstance3D
+	var shell := _shell()
 	if shell == null or shell.mesh == null:
 		return 0.0
 	var local_aabb : AABB = shell.mesh.get_aabb()
@@ -1068,7 +1085,7 @@ func _spawn_npcs() -> void:
 	# shift can put the actual player metres away from the marker.
 	var anchor : Vector3 = _player_spawn_pos
 	# Building's XZ AABB so we can reject candidates that land INSIDE the shell.
-	var shell := find_child("ShellMesh", true, false) as MeshInstance3D
+	var shell := _shell()
 	var bb_min := Vector2(INF, INF); var bb_max := Vector2(-INF, -INF)
 	if shell and shell.mesh:
 		var aabb := shell.global_transform * shell.mesh.get_aabb()
@@ -1719,57 +1736,85 @@ func _spawn_bale_yards_from_layout() -> void:
 						mmi_sticker.multimesh.set_instance_transform(i, sticker_xf)
 				# #127 — Pass 2: per-bale collider creation is the actual cost
 				# (2940 RigidBody3D + CollisionShape3D + meta + group joins). The
-				# old loop blocked >60 s. Defer the RBs into call_deferred batches
-				# so the main thread can return to the shift right away, and the
-				# yards finish stocking themselves over the next ~1 s of frames.
+				# old loop blocked >60 s. Push the job onto a time-sliced queue
+				# that _process drains within a fixed per-frame budget — bounded
+				# stutter regardless of total yard count, instead of a fan-out of
+				# self-rescheduling call_deferred batches that can stack up.
 				total_bales += bales_this_yard
-				call_deferred("_defer_yard_rb_batch",
-					yard_node, mmi, supplier_id, prefix, slots, floor_y, size, safe_yaw, 0)
+				_yard_spawn_queue.push_back({
+					"yard":     yard_node,
+					"mmi":      mmi,
+					"supplier": supplier_id,
+					"prefix":   prefix,
+					"slots":    slots,
+					"floor_y":  floor_y,
+					"size":     size,
+					"yaw":      safe_yaw,
+					"idx":      0,
+				})
 		print("[MainWorld]  Yard '%s' filled with %d bales  (1 multimesh draw call)" % [supplier_id, bales_this_yard])
 		total_yards += 1
 	print("[MainWorld] Bale yards from layout: %d bales across %d yards (RBs deferred)" % [total_bales, total_yards])
 
-# #127 — yard collider batch worker. Creates BALE_RB_BATCH RigidBody3Ds per
-# call, then re-queues itself via call_deferred until the slot list is drained.
-# A single 2940-slot yard finishes in ~12 batches over the first ~1 s of frames
-# — invisible under a steady 60 fps and the player gets control instantly
-# instead of after a one-minute freeze.
-const BALE_RB_BATCH : int = 250
+# #127 / #192 — yard collider drain queue. One job per yard goes onto
+# _yard_spawn_queue; _process spends at most _YARD_SPAWN_BUDGET_USEC per frame
+# spawning RBs from the front of that queue, regardless of how many yards (or
+# how large) are pending. Bounded stutter, no recursive call_deferred chain.
+const _YARD_SPAWN_BUDGET_USEC : int = 2000   # 2 ms / frame cap
+var   _yard_spawn_queue       : Array = []   # of Dictionary jobs
 
-func _defer_yard_rb_batch(yard_node: Node3D, mmi: MultiMeshInstance3D,
-		supplier_id: String, prefix: String, slots: Array,
-		floor_y: float, size: Vector3, yaw: float, start_idx: int) -> void:
-	if yard_node == null or not is_instance_valid(yard_node):
+func _spawn_one_yard_bale(job: Dictionary) -> void:
+	var yard_node : Node3D = job["yard"]
+	var slots     : Array  = job["slots"]
+	var i         : int    = int(job["idx"])
+	var entry     : Array  = slots[i]
+	var pos       : Vector3 = entry[0]
+	var level     : int    = int(entry[1])
+	var size      : Vector3 = job["size"]
+	var yaw       : float  = job["yaw"]
+	var rb := PlaceableCatalog.build_yard_bale_mm(
+		job["supplier"] as String, job["mmi"] as MultiMeshInstance3D, i)
+	if rb == null:
 		return
-	var end_idx : int = mini(start_idx + BALE_RB_BATCH, slots.size())
-	for i in range(start_idx, end_idx):
-		var entry : Array = slots[i]
-		var pos : Vector3 = entry[0]
-		var level : int = int(entry[1])
-		var rb := PlaceableCatalog.build_yard_bale_mm(supplier_id, mmi, i)
-		if rb == null:
+	yard_node.add_child(rb)
+	var spawn_pos := Vector3(pos.x, float(job["floor_y"]) + size.y * float(level), pos.z)
+	rb.global_position = spawn_pos
+	rb.rotation.y = yaw
+	var code := "%s-%05d" % [job["prefix"] as String, (randi() % 100000)]
+	rb.set_meta("bale_code", code)
+	# #73 — origin pose so Reset Bales can snap moved bales back.
+	rb.set_meta("yard_origin", spawn_pos)
+	rb.set_meta("yard_origin_yaw", yaw)
+	# #143 — proximity gate. Stash the spawn layer/mask, then turn collision
+	# OFF. The periodic proximity sweep below re-enables only the RBs near
+	# the player, so far yards (thousands of bales) don't churn collision
+	# pairs every physics tick.
+	rb.add_to_group("yard_bale_rb")
+	rb.set_meta("yard_rb_layer", rb.collision_layer)
+	rb.set_meta("yard_rb_mask",  rb.collision_mask)
+	rb.collision_layer = 0
+	rb.collision_mask  = 0
+
+func _drain_yard_spawn_queue() -> void:
+	if _yard_spawn_queue.is_empty():
+		return
+	var start_usec := Time.get_ticks_usec()
+	while not _yard_spawn_queue.is_empty() \
+			and (Time.get_ticks_usec() - start_usec) < _YARD_SPAWN_BUDGET_USEC:
+		var job : Dictionary = _yard_spawn_queue[0]
+		var yard_node : Node3D = job["yard"]
+		# Yard may have been freed (world reload, save load) — drop the job.
+		if yard_node == null or not is_instance_valid(yard_node):
+			_yard_spawn_queue.pop_front()
 			continue
-		yard_node.add_child(rb)
-		var spawn_pos := Vector3(pos.x, floor_y + size.y * float(level), pos.z)
-		rb.global_position = spawn_pos
-		rb.rotation.y = yaw
-		var code := "%s-%05d" % [prefix, (randi() % 100000)]
-		rb.set_meta("bale_code", code)
-		# #73 — origin pose so Reset Bales can snap moved bales back.
-		rb.set_meta("yard_origin", spawn_pos)
-		rb.set_meta("yard_origin_yaw", yaw)
-		# #143 — proximity gate. Stash the spawn layer/mask, then turn collision
-		# OFF. The periodic _yard_rb_proximity_tick re-enables only the RBs near
-		# the player, so far yards (thousands of bales) don't churn collision
-		# pairs every physics tick.
-		rb.add_to_group("yard_bale_rb")
-		rb.set_meta("yard_rb_layer", rb.collision_layer)
-		rb.set_meta("yard_rb_mask",  rb.collision_mask)
-		rb.collision_layer = 0
-		rb.collision_mask  = 0
-	if end_idx < slots.size():
-		call_deferred("_defer_yard_rb_batch",
-			yard_node, mmi, supplier_id, prefix, slots, floor_y, size, yaw, end_idx)
+		var slots : Array = job["slots"]
+		if int(job["idx"]) >= slots.size():
+			_yard_spawn_queue.pop_front()
+			continue
+		_spawn_one_yard_bale(job)
+		job["idx"] = int(job["idx"]) + 1
+		if int(job["idx"]) >= slots.size():
+			_yard_spawn_queue.pop_front()
 
 # =============================================================================
 # #143 — yard bale RB proximity sweep
@@ -1783,6 +1828,10 @@ const _YARD_RB_TICK_S  : float = 0.5
 var   _yard_rb_tick_t  : float = 0.0
 
 func _process(delta: float) -> void:
+	# #192 — first, drain the bale-spawn backlog within our frame budget. This
+	# is independent of the proximity tick cadence; we want to keep spawning
+	# even between the 0.5 s proximity sweeps.
+	_drain_yard_spawn_queue()
 	_yard_rb_tick_t += delta
 	if _yard_rb_tick_t < _YARD_RB_TICK_S:
 		return
@@ -2034,7 +2083,7 @@ func _spawn_test_bunker() -> void:
 ## you can never feed straight into the extruder (#144). Waste baskets omitted
 ## (per the operator) — they're placed separately off the separators/dryers.
 func _spawn_line_3c() -> void:
-	var marker := find_child("PlayerSpawn", false, false) as Node3D
+	var marker := _player_spawn_node()
 	var base : Vector3 = (marker.global_position if marker else Vector3.ZERO) \
 		+ Vector3(-20.0, 0.0, -8.0)
 	# Sit the machines ON the floor. The old code used marker.y - 0.9 which landed
@@ -2154,7 +2203,7 @@ func _attach_drive_rotor(machine: Node3D, size: Vector3) -> void:
 		rm.add_child(fin)
 
 func _spawn_demo_pipeline() -> void:
-	var marker := find_child("PlayerSpawn", false, false) as Node3D
+	var marker := _player_spawn_node()
 	if marker == null:
 		push_warning("[MainWorld] PlayerSpawn marker missing — demo pipeline anchored at origin")
 	# RELOCATED from 300 m west (far too far to walk to for testing) to ~18 m
@@ -2279,7 +2328,7 @@ func _spawn_extruder_3b() -> void:
 	var ext := ext_scene.instantiate()
 	add_child(ext)
 	# Park 15 m forward of player spawn so they can walk to it
-	var marker := find_child("PlayerSpawn", false, false) as Node3D
+	var marker := _player_spawn_node()
 	if marker:
 		var pos := marker.global_position
 		pos.z -= 15.0
@@ -2768,9 +2817,7 @@ func _spawn_exterior_props(anchor: Vector3, ground_y: float) -> void:
 ## is rotated by `(world_yaw - shell_local_yaw)` so the row direction tracks
 ## the canonical yaw the bale yards drive.
 func _spawn_floodlights(anchor: Vector3) -> void:
-	var shell := get_node_or_null("BuildingShell/ShellMesh") as MeshInstance3D
-	if shell == null:
-		shell = find_child("ShellMesh", true, false) as MeshInstance3D
+	var shell := _shell()
 	if shell == null:
 		print("[MainWorld] Floodlights skipped: no ShellMesh found")
 		return

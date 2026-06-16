@@ -65,9 +65,6 @@ layout_mode = 2
 columns = 4
 column_titles_visible = true
 hide_root = true
-select_mode = 0
-allow_rmb_select = false
-allow_reselect = false
 
 [node name="LoadButton" type="Button" parent="CenterContainer/Centerer/VBoxContainer" unique_id=681089067]
 custom_minimum_size = Vector2(0, 40)

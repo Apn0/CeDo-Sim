@@ -4765,10 +4765,10 @@ static func _m_bale(p: Node3D, id: String, size: Vector3, ghost: bool) -> void:
 					patch_pos  = Vector3(x + t * 0.5, size.y * 0.015, \
 						(rng.randf() - 0.5) * size.z * 0.7)
 				4:   # +X end — patch in YZ plane, thin in X (only on the
-				     # first/last sheets does this hit the actual bale skin;
-				     # for inner sheets it sits inside but is hidden by the
-				     # opaque outer sheets, so cost is wasted there. Keep it
-				     # for the i % 6 cadence simplicity)
+					 # first/last sheets does this hit the actual bale skin;
+					 # for inner sheets it sits inside but is hidden by the
+					 # opaque outer sheets, so cost is wasted there. Keep it
+					 # for the i % 6 cadence simplicity)
 					patch_size = Vector3(0.008, size.y * 0.12, size.z * 0.18)
 					patch_pos  = Vector3(x + t * 0.495, patch_y, \
 						(rng.randf() - 0.5) * size.z * 0.7)

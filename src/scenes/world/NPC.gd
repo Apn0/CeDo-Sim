@@ -500,8 +500,8 @@ const BOARDING_DWELL_S : float = 1.2
 # point if a non-lift task needs the NPC to board a forklift / car / clamp.
 # Same state machine as the lift path: WALK_TO_BOARDING_POS → BOARDING →
 # (caller-controlled) → DISMOUNTING. on_done fires after dismount with reason.
-var _board_target_vehicle : Node = null
-var _board_callback       : Callable = Callable()
+var board_target_vehicle : Node = null
+var board_callback       : Callable = Callable()
 
 func dispatch_to_operate(target_world_pos: Vector3, on_done: Callable,
 		dwell_s: float = 4.0) -> void:
