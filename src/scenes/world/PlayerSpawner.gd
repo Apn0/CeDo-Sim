@@ -52,7 +52,7 @@ func _spawn_player() -> CharacterBody3D:
 	var from_save  : bool    = false
 
 	if game_state:
-		var saved := game_state.load_player_state()
+		var saved = game_state.load_player_state()
 		if saved.has("x"):
 			var sp := Vector3(saved["x"], saved["y"], saved["z"])
 			# X4/#183 — only reject the saved position if the WORLD ANCHOR moved
@@ -84,49 +84,46 @@ func _spawn_player() -> CharacterBody3D:
 				spawn_rot_y = saved.get("rot_y", 0.0)
 				from_save   = true
 
+	# #200 — Compute the building anchor in BOTH paths (fresh AND resumed).
+	# Previously this only ran in the `not from_save` branch and the resumed
+	# branch let _player_spawn_pos pick up the player's saved position — so
+	# road/fence/yard placement followed the player wherever they walked,
+	# and on save+quit+reload the whole plant respawned beside them.
+	var floor_top : float = _world.call("_floor_top_y")
+	var bldg_info : Dictionary = _world.call("_building_center_and_footprint")
+	var bldg_center : Vector3 = bldg_info.get("center", Vector3.ZERO)
+	var bldg_fp : PackedVector2Array = bldg_info.get("footprint", PackedVector2Array())
+	var anchor_candidate : Vector3
+	if WorldLayout.player_spawn != Vector3.ZERO:
+		anchor_candidate = Vector3(WorldLayout.player_spawn.x, floor_top + 1.0,
+			WorldLayout.player_spawn.z)
+	else:
+		var marker : Node3D = _world.call("_player_spawn_node")
+		if marker:
+			anchor_candidate = Vector3(marker.global_position.x, floor_top + 1.0,
+				marker.global_position.z)
+		else:
+			anchor_candidate = Vector3(0.0, floor_top + 1.0, 0.0)
+	# X1/#180 building-footprint snap: if the candidate anchor is outside the
+	# building footprint AND >50 m from the centre, snap to the centre.
+	var plant_anchor : Vector3 = anchor_candidate
+	if bldg_fp.size() >= 3:
+		var c2 := Vector2(anchor_candidate.x, anchor_candidate.z)
+		if not Geometry2D.is_point_in_polygon(c2, bldg_fp):
+			var d : float = c2.distance_to(Vector2(bldg_center.x, bldg_center.z))
+			if d > 50.0:
+				plant_anchor = Vector3(bldg_center.x, floor_top + 1.0, bldg_center.z)
+				print("[PlayerSpawner] #200 — plant anchor candidate (%.0f,%.0f) was outside the building footprint (%.0f m from centre); snapped to centre (%.0f,%.0f)"
+					% [anchor_candidate.x, anchor_candidate.z,
+						anchor_candidate.distance_to(bldg_center),
+						bldg_center.x, bldg_center.z])
+
 	if not from_save:
 		# Marker XZ is meaningful (where the operator's feet should land);
 		# marker Y is NOT — WorldSetup places markers on a y=0 click plane
-		# regardless of where the actual floor is. Override Y with the detected
-		# floor + capsule half-height so the player lands ON the floor.
-		var floor_top : float = _world.call("_floor_top_y")
-		# X1/#180 — "I'm in a fucking neighborhood, not on the industrial
-		# terrain." Building shell footprint is the ground truth: if either
-		# the saved player_spawn or the scene marker lands outside (or far
-		# from) the actual building footprint, drop the player at the
-		# building centre instead so they don't have to walk 200 m to find
-		# the plant. Footprint reach must be resolvable for this to fire;
-		# falls through to the original logic otherwise.
-		var bldg_info : Dictionary = _world.call("_building_center_and_footprint")
-		var bldg_center : Vector3 = bldg_info.get("center", Vector3.ZERO)
-		var bldg_fp : PackedVector2Array = bldg_info.get("footprint", PackedVector2Array())
-		var candidate : Vector3
-		if WorldLayout.player_spawn != Vector3.ZERO:
-			candidate = Vector3(WorldLayout.player_spawn.x, floor_top + 1.0,
-				WorldLayout.player_spawn.z)
-		else:
-			var marker : Node3D = _world.call("_player_spawn_node")
-			if marker:
-				candidate = Vector3(marker.global_position.x, floor_top + 1.0,
-					marker.global_position.z)
-			else:
-				candidate = Vector3(0.0, floor_top + 1.0, 0.0)
-		var snap_to_building : bool = false
-		if bldg_fp.size() >= 3:
-			var c2 := Vector2(candidate.x, candidate.z)
-			# If marker is outside the polygon AND >50 m from the centre, the
-			# spawn is in the wrong place — snap to building centre.
-			if not Geometry2D.is_point_in_polygon(c2, bldg_fp):
-				var d : float = c2.distance_to(Vector2(bldg_center.x, bldg_center.z))
-				if d > 50.0:
-					snap_to_building = true
-		if snap_to_building:
-			spawn_pos = Vector3(bldg_center.x, floor_top + 1.0, bldg_center.z)
-			print("[PlayerSpawner] X1/#180 — spawn (%.0f,%.0f) was outside the building footprint (%.0f m from centre); snapped to building centre (%.0f,%.0f)"
-				% [candidate.x, candidate.z, candidate.distance_to(bldg_center),
-					bldg_center.x, bldg_center.z])
-		else:
-			spawn_pos = candidate
+		# regardless of where the actual floor is. Use the resolved plant
+		# anchor with the detected floor Y.
+		spawn_pos = plant_anchor
 
 	var script := load("res://src/scenes/player/PlayerController.gd")
 	if not script:
@@ -237,16 +234,20 @@ func _spawn_player() -> CharacterBody3D:
 	if from_save:
 		player.rotation.y = spawn_rot_y
 
-	# Remember where the player actually ended up so the forklift can park right
-	# beside them — whether they spawned at the marker or resumed a save 500 m away.
-	_world._player_spawn_pos = player.global_position
+	# #200 — _player_spawn_pos is the PLANT ANCHOR, not the player's current
+	# position. On a resumed save the player may be a kilometre east of the
+	# plant; the road / fences / parking lot / bale yards must still anchor
+	# to the BUILDING, not to wherever the player wandered to. The old code
+	# set this to player.global_position which dragged the entire plant
+	# infrastructure with the player on every save+quit+reload.
+	_world._player_spawn_pos = plant_anchor
 
 	print("[PlayerSpawner] Player spawned at %s%s" \
 		% [player.global_position, " (resumed)" if from_save else ""])
 	# Restore the saved free-cam pose if there is one. Defer one frame so PlayerController._ready
 	# has built its CameraRig before we hand it the saved state. (#freecam)
 	if from_save and game_state:
-		var saved_player := game_state.load_player_state()
+		var saved_player = game_state.load_player_state()
 		var fc = saved_player.get("freecam", null)
 		if fc != null:
 			# Cache on the world so the existing serializer / call site stays valid,
