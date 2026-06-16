@@ -710,18 +710,6 @@ func _spawn_navigation_region() -> void:
 	print("[MainWorld] NavRegion baking (group '%s', %d source meshes)" % \
 		[NAVMESH_GROUP, get_tree().get_nodes_in_group(NAVMESH_GROUP).size()])
 
-	"abdellilah": {"side": -1, "idx": 0},   # left row, slot 1 (Ka sunset orange)
-	"emrah":      {"side": -1, "idx": 1},   # left row, slot 2 (Audi A3 sunroof)
-	"mohammed":   {"side": -1, "idx": 2},   # left row, slot 3 (VW Golf)
-	"vincent":    {"side": -1, "idx": 3},   # left row, slot 4 (Volvo V40 placeholder)
-	"pascal":     {"side":  1, "idx": 0},   # right row, slot 1 (black Streetka)
-	"romain":     {"side":  1, "idx": 1},   # right row, slot 2 (Hyundai i20 — Roman)
-	"peter":      {"side":  1, "idx": 3},   # right row, slot 4 (BMW X1 placeholder)
-	# Player Swift: right row, slot 3 (operator's car)
-	# Vincent / Pascal / Peter: GLB assets pending — slots reserved when those land.
-}
-
-
 func _spawn_exterior_ground(anchor: Vector3, ground_y: float) -> void:
 	var ground := MeshInstance3D.new()
 	ground.name = "ExteriorGround"
