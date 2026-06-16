@@ -125,7 +125,7 @@ static func items() -> Array[Dictionary]:
 			{"id": "opzetband_3a3b", "name": "Opzetband 3A/3B (8m flat + 10m@25° + 1m top)", "category": "Conveyance", "size": Vector3(2.0, 4.93, 18.06), "color": Color(0.20, 0.40, 0.80)},
 			{"id": "opzetband_3c6",  "name": "Opzetband 3C/6 (4m flat + 8m@35°)",            "category": "Conveyance", "size": Vector3(2.5, 5.4, 10.6), "color": Color(0.20, 0.40, 0.80)},
 			{"id": "westa_band_1",   "name": "Westa band 1 (8m@35°, no flat)",              "category": "Conveyance", "size": Vector3(2.0, 5.4, 7.0),  "color": Color(0.20, 0.40, 0.80)},
-			{"id": "opzetband_1",    "name": "Opzetband 1 (5m@25°, 3m wide, funnel walls)", "category": "Conveyance", "size": Vector3(3.0, 2.8, 5.0),  "color": Color(0.20, 0.40, 0.80)},
+			{"id": "opzetband_1",    "name": "Opzetband 1 (10m@25°, 4m wide, integrated magnet head)", "category": "Conveyance", "size": Vector3(4.0, 5.0, 10.0),  "color": Color(0.20, 0.40, 0.80)},
 			# Inclined belt — climbs 8 m vertically over 8 m horizontal (45°).
 			# Goes from Shredder 2's output up to the feed hopper at the top.
 			{"id": "inclined_belt_8m","name":"Inclined belt (45°, 8 m rise)","category":"Conveyance","size": Vector3(1.0, 8.5, 8.5),  "color": Color(0.34, 0.34, 0.38)},
@@ -265,7 +265,7 @@ static func items() -> Array[Dictionary]:
 			# safety cage with embossed capacity placard. Modelled from CeDo photos.
 			{"id": "vw_trommel",     "name": "VW trommel (voorwastrommel, 50,000L)","category": "Sorting","size": Vector3(3.6, 4.5, 8.0),  "color": Color(0.62, 0.62, 0.60)},
 			# ── Wash line (wet section additions) ────────────────────────────
-			{"id": "prewash_drum",   "name": "Pre-wash drum",      "category": "Washing",    "size": Vector3(2.4, 2.6, 4.5),  "color": Color(0.40, 0.54, 0.58)},
+			{"id": "prewash_drum",   "name": "Pre-wash drum (2.5x scale)", "category": "Washing",    "size": Vector3(6.0, 6.5, 11.25), "color": Color(0.40, 0.54, 0.58)},
 			{"id": "mas_droger",     "name": "MAS droger (dryer)", "category": "Washing",    "size": Vector3(2.0, 2.4, 3.0),  "color": Color(0.60, 0.62, 0.64)},
 			{"id": "kufferath_sieve","name": "Kufferath sieve",    "category": "Separation", "size": Vector3(1.8, 2.0, 3.4),  "color": Color(0.56, 0.58, 0.60)},
 			# ── Extrusion prep ───────────────────────────────────────────────
@@ -3937,13 +3937,20 @@ static func _build_opzetband(id: String, size: Vector3, ghost: bool) -> Node3D:
 			belt.incline_run = 8.0 * cos(deg_to_rad(35.0))
 			belt.deck_width  = 2.0
 		"opzetband_1":
+			# #196 — 2× scale: 10 m @ 25° (was 5 m), 4 m wide (was 3 m). Metal
+			# detector + reverse-reject head is built INTO this belt at 3/4 along
+			# (see _attach_metaaldetector_head below) so the legacy standalone
+			# metaaldetector entry was dropped from LINE_1_SEQ.
 			belt.deck_length = 0.0
 			belt.incline_deg = 25.0
-			belt.incline_run = 5.0 * cos(deg_to_rad(25.0))
-			belt.deck_width  = 3.0
-			belt.funnel_start_m   = 0.75   # parallel-and-wide for 0.75 m along the slope
-			belt.funnel_narrow_m  = 2.25   # then narrows linearly for 2.25 m
-			belt.funnel_min_width = 1.5    # to a 1.5 m passage, then straight to the top
+			belt.incline_run = 10.0 * cos(deg_to_rad(25.0))
+			belt.deck_width  = 4.0
+			belt.funnel_start_m   = 1.5    # parallel-and-wide for the first 1.5 m
+			belt.funnel_narrow_m  = 4.5    # then narrows linearly for 4.5 m
+			belt.funnel_min_width = 2.0    # to a 2.0 m passage, then straight to the top
+			# Marker meta so the post-build pass knows to graft on the metal-detector
+			# head at 3/4 along the slope. Read by the caller in build_node().
+			belt.set_meta("attach_metaaldetector_head_at_frac", 0.75)
 	return belt
 
 ## A placeable CollectionZone (Area3D): film scraps that enter are removed and the
@@ -7637,7 +7644,12 @@ static func _m_vw_trommel(p: Node3D, size: Vector3, _color: Color, ghost: bool) 
 static func _m_scheidingsgoot(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
 	var steel := _mat(color, ghost, 0.5, 0.4)
 	var dark := _mat(_DARK, ghost, 0.5, 0.6)
-	var tilt : float = deg_to_rad(-8.0)               # downhill toward +Z
+	# #196 — operator-flagged direction. Original slope dropped toward +Z; in
+	# the wash-line layout the discharge end is the -Z end (the chute hands
+	# off into the glijgoot that feeds the friction L/R washers). Flipped
+	# the tilt sign + moved the cross-lip to the -Z end so the trough now
+	# runs downhill toward -Z and reads as feeding the right neighbour.
+	var tilt : float = deg_to_rad(8.0)                # downhill toward -Z
 	var trough_y : float = size.y * 0.58
 	var wall_h : float = size.y * 0.36
 	var floor_t : float = 0.06
@@ -7651,9 +7663,9 @@ static func _m_scheidingsgoot(p: Node3D, size: Vector3, color: Color, ghost: boo
 		var wall := _box(p, Vector3(0.06, wall_h, size.z * 0.96),
 			Vector3(float(sx) * size.x * 0.42, trough_y + wall_h * 0.5, 0.0), steel)
 		wall.rotation.x = tilt
-	# Low cross-lip at the discharge (+Z) end so the channel reads as open-ended.
+	# Low cross-lip at the discharge (-Z) end so the channel reads as open-ended.
 	_box(p, Vector3(size.x * 0.86, wall_h * 0.5, 0.06),
-		Vector3(0.0, trough_y - size.z * 0.5 * sin(tilt) + wall_h * 0.25, size.z * 0.46), dark)
+		Vector3(0.0, trough_y - size.z * 0.5 * sin(tilt) + wall_h * 0.25, -size.z * 0.46), dark)
 	# Four floor legs that lengthen to the floor when raised (#70).
 	_legs(p, size, trough_y - wall_h * 0.5, dark)
 

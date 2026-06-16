@@ -236,13 +236,25 @@ const LINE_3B_SEQ : Array[Dictionary] = [
 # magnet → VW trommel → scheidingsgoot) then wash/dry/extrude; transcribed from the
 # operator's LIJN 1 sheet; 2x machines laid as side-by-side pairs (jog with K to finalize).
 const LINE_1_SEQ : Array[Dictionary] = [
+	# #196 — operator rework. Old head (metaaldetector + 45° westa_band) gone:
+	# metal-detector head is now built INTO opzetband_1 at 3/4 along; the 45°
+	# westa_band_1 moves to the END of the wash-feed group so it dumps into the
+	# TOP of the pre-wash drum. New flow:
+	#   opzetband_1 (intake + magnet head 3/4 along)
+	#   → shredder_1 (no chute between shredder and uitvoerband, sits directly
+	#                 above the horizontal collector belt)
+	#   → transport_belt (= uitvoerband: horizontal, runs under shredder)
+	#   → overband_magnet (near end of uitvoerband — captures ferrous)
+	#   → transport_belt (short 1 m horizontal, 30 cm down + 90° L turn — handled
+	#                     visually by the K-menu jog after placement)
+	#   → westa_band_1 (45° incline up to the top of the pre-wash drum)
+	#   → prewash_drum  (now scaled 2.5×, top-fed)
 	{"id": "opzetband_1"},
-	{"id": "metaaldetector"},
-	{"id": "westa_band_1"},
 	{"id": "shredder_1"},
-	{"id": "transport_belt"},
+	{"id": "transport_belt"},                          # uitvoerband
 	{"id": "overband_magnet"},
-	{"id": "transport_belt"},
+	{"id": "transport_belt", "main_advance": 1.0},     # short 1m after 90° L
+	{"id": "westa_band_1"},                            # 45° incline to drum top
 	{"id": "prewash_drum"},
 	{"id": "scheidingsgoot"},
 	{"id": "friction_sep", "x": -2.5, "z": 1.0},
