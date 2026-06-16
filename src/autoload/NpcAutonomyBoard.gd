@@ -146,12 +146,48 @@ func _choose_lumps_destination(tree: SceneTree) -> Node3D:
 ## the tool. Detect dirty patches by "dirty_floor" group nodes the
 ## flotation/scheidingsgoot drips into (each tick adds a "dirtiness" float;
 ## task fires above a threshold).
-func _scan_dirty_floor(_tree: SceneTree, _seen: Dictionary) -> void:
-	# TODO #198-followup: SprayFloorTask + BlowLeavesTask. The hose + blower
-	# tools already exist in src/operator/. What's missing: a DirtyFloorPatch
-	# placeable + per-tick dirtiness accumulator driven by the nearby
-	# flotation/scheidingsgoot mass-balance.
-	pass
+const CLEAN_COOLDOWN_S : float = 60.0 * 60.0   # 1 sim-hour between cleaning cycles per blower
+func _scan_dirty_floor(tree: SceneTree, seen: Dictionary) -> void:
+	# #198 followup — Leaf blower cleaning cycle. Emit one BlowLeavesTask per
+	# leaf blower that hasn't been used in the last CLEAN_COOLDOWN_S. Without
+	# a true DirtyFloorPatch + dirtiness accumulator, this is the "always-on"
+	# fallback that gives the operator visible NPC cleaning behaviour. When
+	# the dirty-patch system arrives, this generator gets gated on
+	# patch.dirtiness > threshold instead of a flat cooldown.
+	# SprayFloorTask (hose) follows the same pattern — add a sibling generator
+	# when the hose's water-supply state is wired up.
+	var mw_ref : Node = _find_main_world(tree)
+	for blower in tree.get_nodes_in_group("leaf_blower"):
+		if not is_instance_valid(blower):
+			continue
+		var tid : int = blower.get_instance_id()
+		seen[tid] = true
+		if _open_tasks.has(tid):
+			continue
+		var last : float = float(blower.get_meta("last_cleaned_at", -INF))
+		var now : float = _now_sim_s_global(mw_ref)
+		if (now - last) < CLEAN_COOLDOWN_S:
+			continue
+		if blower.has_meta("autonomy_claimed_by"):
+			continue
+		var script := load("res://src/scenes/world/tasks/BlowLeavesTask.gd")
+		if script == null:
+			continue
+		var task : NpcAutonomyTask = script.new(blower as Node3D, mw_ref)
+		_open_tasks[tid] = task
+
+func _find_main_world(tree: SceneTree) -> Node:
+	for c in tree.get_root().get_children():
+		if c is Node3D and "_player_spawn_pos" in c:
+			return c
+	return null
+
+func _now_sim_s_global(mw: Node) -> float:
+	if mw != null:
+		var sc = mw.get("shift_clock")
+		if sc != null and "shift_elapsed_seconds" in sc:
+			return float(sc.shift_elapsed_seconds)
+	return Time.get_ticks_msec() / 1000.0
 
 ## When the indoor lumps_container crosses is_full(), an NPC drives a forklift
 ## load of bulk lumps from indoor → outdoor shipping_container instead.
