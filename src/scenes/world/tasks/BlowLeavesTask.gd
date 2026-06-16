@@ -26,14 +26,17 @@ const APPROACH_DIST_M : float = 1.4     # close enough to grab the blower
 const WAYPOINT_DIST_M : float = 1.8     # "arrived" tolerance at each circuit point
 const DWELL_S         : float = 6.0     # seconds standing at each waypoint blowing
 # Circuit waypoints in PLANT-LOCAL (X, Z) frame — rotated into world by _bo()
-# when used. Chosen to walk the operator-typical route past the prewash drum,
-# the friction-sep duo, the flotation tank and back round to the extruder bay.
+# when used. #198 (operator clarification): leaf blower is INEFFECTIVE in the
+# wash-line area because water makes the film foil HEAVY and STICKY — blowing
+# just smears it. Circuit stays on the DRY side: bale-yard intake, sorting
+# aisle, extruder bay, silo apron. Wet equipment (prewash drum, friction L/R,
+# scheidingsgoot, dewater bay, flotation tank) is the water hose's job.
 const CIRCUIT_POINTS : Array = [
-	Vector3( 6.0,  0.0,  10.0),
-	Vector3(12.0,  0.0,   0.0),
-	Vector3(12.0,  0.0, -15.0),
-	Vector3(-4.0,  0.0, -15.0),
-	Vector3(-8.0,  0.0,   0.0),
+	Vector3(-2.0,  0.0,  18.0),    # opzetband foot (bale-yard intake side)
+	Vector3(-6.0,  0.0,   4.0),    # sorting belt aisle
+	Vector3(-12.0, 0.0,  -4.0),    # extruder bay 1
+	Vector3(-12.0, 0.0, -14.0),    # extruder bay 2
+	Vector3( -2.0, 0.0, -20.0),    # silo apron
 ]
 
 var leaf_blower : Node3D = null

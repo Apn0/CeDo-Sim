@@ -19,6 +19,22 @@ extends Node
 
 const SCAN_INTERVAL_S : float = 5.0
 
+# #198 — Shift-phase windows (sim-time, relative to shift_clock's elapsed).
+# Drives the operator's stated cleaning cadence: NPCs prep the floor at the
+# very start (catch-up from the previous shift's leftovers) and again in the
+# last 3 hours (so team B inherits a clean workspace), but mostly sit on
+# their hands in the middle because cleaning earlier just gets undone before
+# bell. Outside both windows, the cooldown timer alone still allows a task
+# if a tool genuinely hasn't been used in ages — a low-priority background
+# fallback that line problems will preempt.
+const STARTUP_WINDOW_S        : float = 30.0 * 60.0           # first 30 sim-min of shift
+const HANDOVER_WINDOW_S       : float = 3.0 * 60.0 * 60.0     # last 3 sim-hours of shift
+const PRIORITY_BOOST_HANDOVER : int   = 30                    # << bumps cleaning above line-routine
+const PRIORITY_BOOST_STARTUP  : int   = 15                    # << smaller boost, still well below line-down
+const PRIORITY_PENALTY_PROBLEM: int   = 50                    # << line-down kills cleaning preference
+
+enum ShiftPhase { OFF_SHIFT, STARTUP, MID, HANDOVER }
+
 # Pending tasks, keyed by their target_node's instance_id so a re-scan that
 # re-discovers the same work item updates priority/dest in place instead of
 # spawning duplicates.
@@ -97,17 +113,35 @@ func _rescan() -> void:
 			_open_tasks.erase(tid)
 
 func _scan_lump_carts(tree: SceneTree, seen: Dictionary) -> void:
+	# #198 dynamic — Operator's spec: cooled lump carts go into the indoor
+	# container, which holds ~8-10. End-of-shift, the goal is to leave that
+	# container as empty as possible for team B, so we relax the "must be
+	# cool + worth-emptying" gate during the handover window: even a
+	# half-full cart gets emptied if cooled. Mid-shift, only full+cool
+	# carts emit (so the crew isn't constantly chasing tiny loads).
+	var mw_ref : Node = _find_main_world(tree)
+	var phase : int = _shift_phase(mw_ref)
+	var pri_mod : int = _cleaning_priority_modifier(mw_ref)
+	var is_handover_push : bool = (phase == ShiftPhase.HANDOVER or phase == ShiftPhase.STARTUP)
 	for cart in tree.get_nodes_in_group("lump_cart"):
 		if not is_instance_valid(cart):
 			continue
-		if not cart.has_method("is_cool") or not cart.has_method("has_lumps_worth_emptying"):
+		if not cart.has_method("is_cool"):
 			continue
-		if not bool(cart.call("is_cool")) or not bool(cart.call("has_lumps_worth_emptying")):
+		# Always require lumps to be cool (operator: 1-3 sim-hour cool-down
+		# before they're safe to move).
+		if not bool(cart.call("is_cool")):
 			continue
+		# Mid-shift: also require the cart to be worth a forklift run.
+		# Handover push: any cooled lumps go.
+		if not is_handover_push:
+			if not cart.has_method("has_lumps_worth_emptying"):
+				continue
+			if not bool(cart.call("has_lumps_worth_emptying")):
+				continue
 		var tid : int = cart.get_instance_id()
 		seen[tid] = true
 		if _open_tasks.has(tid):
-			# Task already pending for this cart — leave it.
 			continue
 		var dest : Node3D = _choose_lumps_destination(tree)
 		if dest == null:
@@ -116,21 +150,39 @@ func _scan_lump_carts(tree: SceneTree, seen: Dictionary) -> void:
 		if script == null:
 			continue
 		var task : NpcAutonomyTask = script.new(cart, dest)
+		task.priority += pri_mod
 		_open_tasks[tid] = task
 
-## Pick the indoor lumps_container by default; if it's full, fall back to the
-## outdoor shipping_container per operator spec.
+## #198 — Operator's container policy: indoor lumps container holds ~8-10
+## lumps; we always WANT it as close to empty as possible at handover. So
+## the destination logic:
+##   1. If indoor container has room AND we're not in handover, use it
+##      (normal "cool a few, dump them inside, continue" flow).
+##   2. If we ARE in handover AND indoor already holds >= 3, route this load
+##      to the outdoor shipping container instead — the operator's goal is
+##      to leave the indoor container at most 1-3 deep for team B.
+##   3. If indoor is full (>=8) at any time, route to outdoor.
+##   4. Outdoor shipping container is the ultimate fallback (open-top, takes
+##      bulk overflow).
+const INDOOR_HANDOVER_TARGET : int = 3    # leave at most this many for team B
+const INDOOR_HARD_CAP        : int = 8    # absolute "container is full"
 func _choose_lumps_destination(tree: SceneTree) -> Node3D:
+	var mw_ref : Node = _find_main_world(tree)
+	var in_handover : bool = _shift_phase(mw_ref) == ShiftPhase.HANDOVER
 	var indoor : Node3D = null
 	for c in tree.get_nodes_in_group("lumps_container_indoor"):
 		if c is Node3D and is_instance_valid(c):
 			indoor = c
 			break
 	if indoor != null:
-		var full : bool = false
+		var fill : int = 0
+		if "lumps_count" in indoor:
+			fill = int(indoor.get("lumps_count"))
+		var hard_full : bool = fill >= INDOOR_HARD_CAP
 		if indoor.has_method("is_full"):
-			full = bool(indoor.call("is_full"))
-		if not full:
+			hard_full = hard_full or bool(indoor.call("is_full"))
+		var handover_full : bool = in_handover and fill >= INDOOR_HANDOVER_TARGET
+		if not (hard_full or handover_full):
 			return indoor
 	for c in tree.get_nodes_in_group("shipping_container_outdoor"):
 		if c is Node3D and is_instance_valid(c):
@@ -159,6 +211,14 @@ func _scan_dirty_floor(tree: SceneTree, seen: Dictionary) -> void:
 	# SprayFloorTask (hose) follows the same pattern — add a sibling generator
 	# when the hose's water-supply state is wired up.
 	var mw_ref : Node = _find_main_world(tree)
+	# Dynamic scheduling: outside the startup + handover windows AND with no
+	# line problem to react to, don't bother emitting cleaning tasks unless
+	# the cooldown timer says the tool genuinely hasn't been touched in ages.
+	# Inside the windows we use a shortened "handover_cooldown" so a fresh
+	# blower can be re-grabbed sooner during the end-of-shift push.
+	var phase : int = _shift_phase(mw_ref)
+	var pri_mod : int = _cleaning_priority_modifier(mw_ref)
+	var handover_cooldown_s : float = CLEAN_COOLDOWN_S * 0.25   # 15 min instead of 60
 	for blower in tree.get_nodes_in_group("leaf_blower"):
 		if not is_instance_valid(blower):
 			continue
@@ -168,7 +228,8 @@ func _scan_dirty_floor(tree: SceneTree, seen: Dictionary) -> void:
 			continue
 		var last : float = float(blower.get_meta("last_cleaned_at", -INF))
 		var now : float = _now_sim_s_global(mw_ref)
-		if (now - last) < CLEAN_COOLDOWN_S:
+		var cooldown_s : float = handover_cooldown_s if phase == ShiftPhase.HANDOVER or phase == ShiftPhase.STARTUP else CLEAN_COOLDOWN_S
+		if (now - last) < cooldown_s:
 			continue
 		if blower.has_meta("autonomy_claimed_by"):
 			continue
@@ -176,6 +237,7 @@ func _scan_dirty_floor(tree: SceneTree, seen: Dictionary) -> void:
 		if script == null:
 			continue
 		var task : NpcAutonomyTask = script.new(blower as Node3D, mw_ref)
+		task.priority += pri_mod
 		_open_tasks[tid] = task
 	# Hose nozzles (water + air, same group, distinguished by `air_mode` flag).
 	# Emit one HoseSweepTask per nozzle whose mode-specific cooldown is met.
@@ -191,6 +253,10 @@ func _scan_dirty_floor(tree: SceneTree, seen: Dictionary) -> void:
 			continue
 		var is_air : bool = bool(nz.get("air_mode")) if "air_mode" in nz else false
 		var cooldown : float = AIR_HOSE_COOLDOWN_S if is_air else WATER_HOSE_COOLDOWN_S
+		# Cooldown shrinks during the cleaning windows (startup + handover) so
+		# crews can re-grab a tool sooner on the end-of-shift push.
+		if phase == ShiftPhase.HANDOVER or phase == ShiftPhase.STARTUP:
+			cooldown *= 0.33
 		var nz_last : float = float(nz.get_meta("last_cleaned_at", -INF))
 		var nz_now : float = _now_sim_s_global(mw_ref)
 		if (nz_now - nz_last) < cooldown:
@@ -198,6 +264,7 @@ func _scan_dirty_floor(tree: SceneTree, seen: Dictionary) -> void:
 		if hose_script == null:
 			continue
 		var nz_task : NpcAutonomyTask = hose_script.new(nz as Node3D, mw_ref)
+		nz_task.priority += pri_mod
 		_open_tasks[nz_tid] = nz_task
 
 func _find_main_world(tree: SceneTree) -> Node:
@@ -212,6 +279,59 @@ func _now_sim_s_global(mw: Node) -> float:
 		if sc != null and "shift_elapsed_seconds" in sc:
 			return float(sc.shift_elapsed_seconds)
 	return Time.get_ticks_msec() / 1000.0
+
+# #198 dynamic scheduling — return the current shift phase so generators can
+# decide whether to emit, and so they can boost/penalise task priority based
+# on the operator's stated cleaning cadence.
+func _shift_phase(mw: Node) -> int:
+	if mw == null:
+		return ShiftPhase.OFF_SHIFT
+	var sc = mw.get("shift_clock")
+	if sc == null or not bool(sc.get("shift_active")):
+		return ShiftPhase.OFF_SHIFT
+	var el : float = float(sc.get("shift_elapsed_seconds"))
+	var total : float = float(sc.get("shift_total_seconds"))
+	if el < 0.0:
+		return ShiftPhase.OFF_SHIFT     # pre-shift, NPCs are arriving/dressing
+	if el < STARTUP_WINDOW_S:
+		return ShiftPhase.STARTUP
+	if total > 0.0 and (total - el) < HANDOVER_WINDOW_S:
+		return ShiftPhase.HANDOVER
+	return ShiftPhase.MID
+
+# Active line problems preempt cleaning — operator made the point that these
+# behaviours are dynamic, not static schedules. Returns true if any line is
+# down/faulted right now (ScadaDashboard active alarm list, or fallback to
+# any node in group "line_fault"). When true, generators DROP their cleaning
+# task priority by PRIORITY_PENALTY_PROBLEM so line-fix tasks (when those
+# exist) easily out-bid the cleaners.
+func _line_problem_active(mw: Node) -> bool:
+	if mw == null:
+		return false
+	var scada = mw.get("scada")
+	if scada != null and scada.has_method("any_active_alarm"):
+		if bool(scada.call("any_active_alarm")):
+			return true
+	# Fallback: any node tagged with the convention group "line_fault".
+	var t := get_tree() if has_method("get_tree") else null
+	if t != null:
+		var faults : Array = t.get_nodes_in_group("line_fault")
+		if not faults.is_empty():
+			return true
+	return false
+
+# Returns the priority modifier to apply on top of a task's base priority,
+# combining shift-phase boost with line-problem penalty. Cleaning generators
+# call this once at emit time.
+func _cleaning_priority_modifier(mw: Node) -> int:
+	var mod : int = 0
+	match _shift_phase(mw):
+		ShiftPhase.STARTUP:  mod += PRIORITY_BOOST_STARTUP
+		ShiftPhase.HANDOVER: mod += PRIORITY_BOOST_HANDOVER
+		_: pass
+	if _line_problem_active(mw):
+		mod -= PRIORITY_PENALTY_PROBLEM
+	return mod
 
 ## When the indoor lumps_container crosses is_full(), an NPC drives a forklift
 ## load of bulk lumps from indoor → outdoor shipping_container instead.
