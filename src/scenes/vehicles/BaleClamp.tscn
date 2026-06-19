@@ -34,6 +34,9 @@ size = Vector3(0.08, 3.0, 0.1)
 [sub_resource type="BoxMesh" id="BoxMesh_plate"]
 size = Vector3(0.12, 1.04, 1.1)
 
+[sub_resource type="BoxShape3D" id="BoxShape_plate"]
+size = Vector3(0.12, 1.04, 1.1)
+
 [sub_resource type="CylinderMesh" id="CylMesh_plate_cap"]
 top_radius = 0.06
 bottom_radius = 0.06
@@ -346,12 +349,18 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 0.05)
 [node name="CarryPoint" type="Node3D" parent="MastPivot/LiftCarriage"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.55, 0.55)
 
-[node name="LeftPlate" type="Node3D" parent="MastPivot/LiftCarriage"]
+[node name="LeftPlate" type="AnimatableBody3D" parent="MastPivot/LiftCarriage"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.6, 0.55, 0.55)
+sync_to_physics = true
+collision_layer = 1
+collision_mask = 1
 
 [node name="LeftPlateMesh" type="MeshInstance3D" parent="MastPivot/LiftCarriage/LeftPlate"]
 mesh = SubResource("BoxMesh_plate")
 material_override = SubResource("Mat_dark")
+
+[node name="LeftPlateCollision" type="CollisionShape3D" parent="MastPivot/LiftCarriage/LeftPlate"]
+shape = SubResource("BoxShape_plate")
 
 ; #169 — front 35° lead-in bevel (top half of front face) and 25° top slant so
 ; the plate doesn't square-edge into the bale. ~25% of the 1.10 m plate length
@@ -366,12 +375,18 @@ transform = Transform3D(1, 0, 0, 0, 0.906, 0.423, 0, -0.423, 0.906, 0, 0.55, 0.4
 mesh = SubResource("Prism_plate_top_slant")
 material_override = SubResource("Mat_dark")
 
-[node name="RightPlate" type="Node3D" parent="MastPivot/LiftCarriage"]
+[node name="RightPlate" type="AnimatableBody3D" parent="MastPivot/LiftCarriage"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.6, 0.55, 0.55)
+sync_to_physics = true
+collision_layer = 1
+collision_mask = 1
 
 [node name="RightPlateMesh" type="MeshInstance3D" parent="MastPivot/LiftCarriage/RightPlate"]
 mesh = SubResource("BoxMesh_plate")
 material_override = SubResource("Mat_dark")
+
+[node name="RightPlateCollision" type="CollisionShape3D" parent="MastPivot/LiftCarriage/RightPlate"]
+shape = SubResource("BoxShape_plate")
 
 [node name="RightPlateFrontBevel" type="MeshInstance3D" parent="MastPivot/LiftCarriage/RightPlate"]
 transform = Transform3D(1, 0, 0, 0, 0.819, -0.574, 0, 0.574, 0.819, 0, 0.0, 0.41)

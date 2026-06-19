@@ -1,67 +1,90 @@
 [gd_scene format=3 uid="uid://dudbhudo6vqa7"]
 
-; JLG Toucan-style electric VERTICAL MAST lift — rebuilt from the operator's photos
-; (the plant ran three). Mechanism is a nested telescoping mast — Mast/Stage1..Stage3
-; (animated by MastLift.gd). Rear = rounded red battery/drive cowl. Root node name
-; "MastLift" matches the script's class_name; vehicle_type = "mast_lift".
+[ext_resource type="Script" uid="uid://bxq4g0c8p2dqm" path="res://src/scenes/vehicles/MastLift.gd" id="1_sl"]
+[ext_resource type="Script" uid="uid://cnyyqnqvhcoae" path="res://src/scenes/vehicles/VehicleEnterArea.gd" id="2_enter"]
 
-[ext_resource type="Script" path="res://src/scenes/vehicles/MastLift.gd" id="1_sl"]
-[ext_resource type="Script" path="res://src/scenes/vehicles/VehicleEnterArea.gd" id="2_enter"]
-
-; ── Chassis + base ────────────────────────────────────────────────────────────
 [sub_resource type="BoxShape3D" id="Shape_chassis"]
 size = Vector3(1.5, 0.55, 2.4)
+
+[sub_resource type="StandardMaterial3D" id="Mat_jlg_orange"]
+albedo_color = Color(0.85, 0.33, 0.06, 1)
+roughness = 0.55
 
 [sub_resource type="BoxMesh" id="Mesh_chassis"]
 size = Vector3(1.5, 0.5, 2.4)
 
+[sub_resource type="StandardMaterial3D" id="Mat_dark"]
+albedo_color = Color(0.11, 0.11, 0.12, 1)
+roughness = 0.8
+
 [sub_resource type="BoxMesh" id="Mesh_skirt"]
 size = Vector3(1.56, 0.22, 2.46)
 
-; Rounded battery/drive cowl at the rear (the red fibreglass hump in the photos).
+[sub_resource type="StandardMaterial3D" id="Mat_red_cowl"]
+albedo_color = Color(0.74, 0.13, 0.1, 1)
+roughness = 0.4
+
 [sub_resource type="CapsuleMesh" id="Mesh_cowl"]
 radius = 0.66
 height = 1.7
 radial_segments = 20
-rings = 8
 
 [sub_resource type="BoxMesh" id="Mesh_counter"]
 size = Vector3(1.4, 0.6, 0.7)
 
-; ── Wheels (solid, no rim spokes on a Toucan) ─────────────────────────────────
+[sub_resource type="StandardMaterial3D" id="Mat_decal"]
+albedo_color = Color(0.92, 0.86, 0.12, 1)
+roughness = 0.7
+
+[sub_resource type="BoxMesh" id="Mesh_decal"]
+size = Vector3(0.012, 0.16, 0.22)
+
+[sub_resource type="StandardMaterial3D" id="Mat_tyre"]
+albedo_color = Color(0.08, 0.08, 0.09, 1)
+roughness = 0.9
+
 [sub_resource type="CylinderMesh" id="Mesh_wheel"]
 top_radius = 0.33
 bottom_radius = 0.33
 height = 0.26
 radial_segments = 20
 
-; ── Vertical mast: fixed outer column + 3 nested telescoping stages ───────────
+[sub_resource type="StandardMaterial3D" id="Mat_mast"]
+albedo_color = Color(0.78, 0.78, 0.74, 1)
+metallic = 0.5
+roughness = 0.4
+
 [sub_resource type="BoxMesh" id="Mesh_mast_outer"]
-size = Vector3(0.5, 2.0, 0.34)
+size = Vector3(0.5, 2, 0.34)
+
+[sub_resource type="BoxMesh" id="Mesh_chain"]
+size = Vector3(0.08, 2, 0.06)
+
+[sub_resource type="StandardMaterial3D" id="Mat_mast2"]
+albedo_color = Color(0.62, 0.63, 0.6, 1)
+metallic = 0.55
+roughness = 0.38
 
 [sub_resource type="BoxMesh" id="Mesh_stage1"]
-size = Vector3(0.42, 3.0, 0.28)
+size = Vector3(0.42, 3, 0.28)
 
 [sub_resource type="BoxMesh" id="Mesh_stage2"]
-size = Vector3(0.34, 3.0, 0.24)
+size = Vector3(0.34, 3, 0.24)
 
 [sub_resource type="BoxMesh" id="Mesh_stage3"]
-size = Vector3(0.27, 3.0, 0.20)
+size = Vector3(0.27, 3, 0.2)
 
-; Energy-chain / cable carrier running up the mast face.
-[sub_resource type="BoxMesh" id="Mesh_chain"]
-size = Vector3(0.08, 2.0, 0.06)
-
-; Short jib linking the top of the mast forward to the platform.
 [sub_resource type="BoxMesh" id="Mesh_jib"]
 size = Vector3(0.26, 0.18, 0.7)
 
-; ── Platform + guard rails ────────────────────────────────────────────────────
 [sub_resource type="BoxMesh" id="Mesh_platform"]
-size = Vector3(0.9, 0.1, 1.0)
+size = Vector3(0.9, 0.1, 1)
 
 [sub_resource type="BoxShape3D" id="Shape_platform"]
-size = Vector3(0.9, 0.1, 1.0)
+size = Vector3(0.9, 0.1, 1)
+
+[sub_resource type="BoxMesh" id="Mesh_toeboard"]
+size = Vector3(0.9, 0.14, 1)
 
 [sub_resource type="BoxMesh" id="Mesh_rail_post"]
 size = Vector3(0.05, 1.1, 0.05)
@@ -70,67 +93,24 @@ size = Vector3(0.05, 1.1, 0.05)
 size = Vector3(0.9, 0.05, 0.05)
 
 [sub_resource type="BoxMesh" id="Mesh_rail_z"]
-size = Vector3(0.05, 0.05, 1.0)
+size = Vector3(0.05, 0.05, 1)
 
-[sub_resource type="BoxMesh" id="Mesh_toeboard"]
-size = Vector3(0.9, 0.14, 1.0)
-
-; Control console on the platform rail.
 [sub_resource type="BoxMesh" id="Mesh_console"]
 size = Vector3(0.42, 0.22, 0.16)
 
-; Ground control panel (safety: lets someone on the floor lower the platform if
-; the operator is incapacitated up top).
-[sub_resource type="BoxMesh" id="Mesh_ground_panel"]
-size = Vector3(0.34, 0.46, 0.14)
-
-; The two big mushroom buttons (UP green, DOWN red) on either console.
 [sub_resource type="CylinderMesh" id="Mesh_button"]
 top_radius = 0.035
 bottom_radius = 0.04
 height = 0.05
 radial_segments = 12
 
-; ── Hazard / asset decals ─────────────────────────────────────────────────────
-[sub_resource type="BoxMesh" id="Mesh_decal"]
-size = Vector3(0.012, 0.16, 0.22)
+[sub_resource type="BoxMesh" id="Mesh_ground_panel"]
+size = Vector3(0.34, 0.46, 0.14)
 
 [sub_resource type="SphereShape3D" id="Shape_enter"]
 radius = 2.2
 
-; ── Materials ─────────────────────────────────────────────────────────────────
-[sub_resource type="StandardMaterial3D" id="Mat_jlg_orange"]
-albedo_color = Color(0.85, 0.33, 0.06, 1)
-roughness = 0.55
-
-[sub_resource type="StandardMaterial3D" id="Mat_red_cowl"]
-albedo_color = Color(0.74, 0.13, 0.10, 1)
-roughness = 0.4
-
-[sub_resource type="StandardMaterial3D" id="Mat_mast"]
-albedo_color = Color(0.78, 0.78, 0.74, 1)
-metallic = 0.5
-roughness = 0.4
-
-[sub_resource type="StandardMaterial3D" id="Mat_mast2"]
-albedo_color = Color(0.62, 0.63, 0.6, 1)
-metallic = 0.55
-roughness = 0.38
-
-[sub_resource type="StandardMaterial3D" id="Mat_dark"]
-albedo_color = Color(0.11, 0.11, 0.12, 1)
-roughness = 0.8
-
-[sub_resource type="StandardMaterial3D" id="Mat_tyre"]
-albedo_color = Color(0.08, 0.08, 0.09, 1)
-roughness = 0.9
-
-[sub_resource type="StandardMaterial3D" id="Mat_decal"]
-albedo_color = Color(0.92, 0.86, 0.12, 1)
-roughness = 0.7
-
-; ═══════════════════════════════════════════════════════════════════════════════
-[node name="MastLift" type="VehicleBody3D"]
+[node name="MastLift" type="VehicleBody3D" unique_id=1878631190]
 mass = 4200.0
 center_of_mass_mode = 1
 center_of_mass = Vector3(0, -0.2, -0.5)
@@ -142,243 +122,220 @@ fuel_consumption_l_per_h = 0.0
 speed_limit_kmh = 6.0
 engine_power_kw = 12.0
 cab_camera_path = NodePath("Platform/CabCamera")
-dismount_offset = Vector3(1.2, 0.0, 0.0)
 
-[node name="BodyCollision" type="CollisionShape3D" parent="."]
+[node name="BodyCollision" type="CollisionShape3D" parent="." unique_id=345930746]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.28, 0)
 shape = SubResource("Shape_chassis")
 
-[node name="ChassisMesh" type="MeshInstance3D" parent="."]
+[node name="ChassisMesh" type="MeshInstance3D" parent="." unique_id=1013416224]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.3, 0)
 material_override = SubResource("Mat_jlg_orange")
 mesh = SubResource("Mesh_chassis")
 
-[node name="Skirt" type="MeshInstance3D" parent="."]
+[node name="Skirt" type="MeshInstance3D" parent="." unique_id=2064837246]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.16, 0)
 material_override = SubResource("Mat_dark")
 mesh = SubResource("Mesh_skirt")
 
-; Rounded red battery/drive cowl over the rear half.
-[node name="Cowl" type="MeshInstance3D" parent="."]
+[node name="Cowl" type="MeshInstance3D" parent="." unique_id=173223028]
 transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0.78, -0.78)
 material_override = SubResource("Mat_red_cowl")
 mesh = SubResource("Mesh_cowl")
 
-[node name="CounterBlock" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, -1.0)
+[node name="CounterBlock" type="MeshInstance3D" parent="." unique_id=1170936787]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, -1)
 material_override = SubResource("Mat_dark")
 mesh = SubResource("Mesh_counter")
 
-; Hazard decal cluster on the rear cowl.
-[node name="DecalHazard" type="MeshInstance3D" parent="."]
+[node name="DecalHazard" type="MeshInstance3D" parent="." unique_id=6765679]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.62, 0.95, -0.4)
 material_override = SubResource("Mat_decal")
 mesh = SubResource("Mesh_decal")
 
-; ── Wheels ────────────────────────────────────────────────────────────────────
-[node name="Wheel_FL" type="VehicleWheel3D" parent="."]
+[node name="Wheel_FL" type="VehicleWheel3D" parent="." unique_id=1112941834]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.74, 0.33, 0.85)
 use_as_traction = true
-use_as_steering = false
 wheel_radius = 0.33
-wheel_friction_slip = 10.5
-suspension_max_force = 30000.0
 suspension_stiffness = 12.0
+suspension_max_force = 30000.0
 
-[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_FL"]
+[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_FL" unique_id=1799925216]
 transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0)
 material_override = SubResource("Mat_tyre")
 mesh = SubResource("Mesh_wheel")
 
-[node name="Wheel_FR" type="VehicleWheel3D" parent="."]
+[node name="Wheel_FR" type="VehicleWheel3D" parent="." unique_id=25032302]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.74, 0.33, 0.85)
 use_as_traction = true
-use_as_steering = false
 wheel_radius = 0.33
-wheel_friction_slip = 10.5
-suspension_max_force = 30000.0
 suspension_stiffness = 12.0
+suspension_max_force = 30000.0
 
-[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_FR"]
+[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_FR" unique_id=217041411]
 transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0)
 material_override = SubResource("Mat_tyre")
 mesh = SubResource("Mesh_wheel")
 
-[node name="Wheel_RL" type="VehicleWheel3D" parent="."]
+[node name="Wheel_RL" type="VehicleWheel3D" parent="." unique_id=1734455139]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.74, 0.33, -0.95)
-use_as_traction = false
 use_as_steering = true
 wheel_radius = 0.33
-wheel_friction_slip = 10.5
-suspension_max_force = 30000.0
 suspension_stiffness = 12.0
+suspension_max_force = 30000.0
 
-[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_RL"]
+[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_RL" unique_id=576458228]
 transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0)
 material_override = SubResource("Mat_tyre")
 mesh = SubResource("Mesh_wheel")
 
-[node name="Wheel_RR" type="VehicleWheel3D" parent="."]
+[node name="Wheel_RR" type="VehicleWheel3D" parent="." unique_id=1140930925]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.74, 0.33, -0.95)
-use_as_traction = false
 use_as_steering = true
 wheel_radius = 0.33
-wheel_friction_slip = 10.5
-suspension_max_force = 30000.0
 suspension_stiffness = 12.0
+suspension_max_force = 30000.0
 
-[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_RR"]
+[node name="WheelMesh" type="MeshInstance3D" parent="Wheel_RR" unique_id=1968720995]
 transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0)
 material_override = SubResource("Mat_tyre")
 mesh = SubResource("Mesh_wheel")
 
-; ── Vertical mast (front of chassis). Fixed outer column + 3 nested stages that
-;    slide up under MastLift.gd. Stage meshes are centred so they overlap when
-;    retracted and telescope as the platform rises. ──────────────────────────────
-[node name="Mast" type="Node3D" parent="."]
+[node name="Mast" type="Node3D" parent="." unique_id=2126301833]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.55, 0.95)
 
-[node name="OuterColumn" type="MeshInstance3D" parent="Mast"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.0, 0)
+[node name="OuterColumn" type="MeshInstance3D" parent="Mast" unique_id=157467724]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
 material_override = SubResource("Mat_mast")
 mesh = SubResource("Mesh_mast_outer")
 
-[node name="EnergyChain" type="MeshInstance3D" parent="Mast"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.0, 0.2)
+[node name="EnergyChain" type="MeshInstance3D" parent="Mast" unique_id=2101866174]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0.2)
 material_override = SubResource("Mat_dark")
 mesh = SubResource("Mesh_chain")
 
-[node name="Stage1" type="MeshInstance3D" parent="Mast"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.0, 0.005)
+[node name="Stage1" type="MeshInstance3D" parent="Mast" unique_id=1375264932]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0.005)
 material_override = SubResource("Mat_mast2")
 mesh = SubResource("Mesh_stage1")
 
-[node name="Stage2" type="MeshInstance3D" parent="Mast"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.0, 0.01)
+[node name="Stage2" type="MeshInstance3D" parent="Mast" unique_id=1232642226]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0.01)
 material_override = SubResource("Mat_mast")
 mesh = SubResource("Mesh_stage2")
 
-[node name="Stage3" type="MeshInstance3D" parent="Mast"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.0, 0.015)
+[node name="Stage3" type="MeshInstance3D" parent="Mast" unique_id=1798834249]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0.015)
 material_override = SubResource("Mat_mast2")
 mesh = SubResource("Mesh_stage3")
 
-; ── Platform (rides up with _platform_height) ─────────────────────────────────
-[node name="Platform" type="Node3D" parent="."]
+[node name="Platform" type="Node3D" parent="." unique_id=381389090]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.55, 1.55)
 
-; Short jib from the mast top across to the platform deck.
-[node name="Jib" type="MeshInstance3D" parent="Platform"]
+[node name="Jib" type="MeshInstance3D" parent="Platform" unique_id=2066025137]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.02, -0.55)
 material_override = SubResource("Mat_jlg_orange")
 mesh = SubResource("Mesh_jib")
 
-[node name="PlatformMesh" type="MeshInstance3D" parent="Platform"]
+[node name="PlatformMesh" type="MeshInstance3D" parent="Platform" unique_id=1424099265]
 material_override = SubResource("Mat_jlg_orange")
 mesh = SubResource("Mesh_platform")
 
-[node name="PlatformCollision" type="CollisionShape3D" parent="Platform"]
+[node name="PlatformCollision" type="CollisionShape3D" parent="Platform" unique_id=1985941805]
 shape = SubResource("Shape_platform")
 
-[node name="Toeboard" type="MeshInstance3D" parent="Platform"]
+[node name="Toeboard" type="MeshInstance3D" parent="Platform" unique_id=1233568387]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.12, 0)
 material_override = SubResource("Mat_dark")
 mesh = SubResource("Mesh_toeboard")
 
-[node name="Post_FL" type="MeshInstance3D" parent="Platform"]
+[node name="Post_FL" type="MeshInstance3D" parent="Platform" unique_id=1085437178]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.42, 0.6, 0.47)
 material_override = SubResource("Mat_jlg_orange")
 mesh = SubResource("Mesh_rail_post")
 
-[node name="Post_FR" type="MeshInstance3D" parent="Platform"]
+[node name="Post_FR" type="MeshInstance3D" parent="Platform" unique_id=1169355480]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.42, 0.6, 0.47)
 material_override = SubResource("Mat_jlg_orange")
 mesh = SubResource("Mesh_rail_post")
 
-[node name="Post_RL" type="MeshInstance3D" parent="Platform"]
+[node name="Post_RL" type="MeshInstance3D" parent="Platform" unique_id=313846276]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.42, 0.6, -0.47)
 material_override = SubResource("Mat_jlg_orange")
 mesh = SubResource("Mesh_rail_post")
 
-[node name="Post_RR" type="MeshInstance3D" parent="Platform"]
+[node name="Post_RR" type="MeshInstance3D" parent="Platform" unique_id=409397791]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.42, 0.6, -0.47)
 material_override = SubResource("Mat_jlg_orange")
 mesh = SubResource("Mesh_rail_post")
 
-[node name="RailTop_F" type="MeshInstance3D" parent="Platform"]
+[node name="RailTop_F" type="MeshInstance3D" parent="Platform" unique_id=1832131737]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.12, 0.47)
 material_override = SubResource("Mat_jlg_orange")
 mesh = SubResource("Mesh_rail_x")
 
-[node name="RailTop_B" type="MeshInstance3D" parent="Platform"]
+[node name="RailTop_B" type="MeshInstance3D" parent="Platform" unique_id=540613792]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.12, -0.47)
 material_override = SubResource("Mat_jlg_orange")
 mesh = SubResource("Mesh_rail_x")
 
-[node name="RailTop_L" type="MeshInstance3D" parent="Platform"]
+[node name="RailTop_L" type="MeshInstance3D" parent="Platform" unique_id=2124052004]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.42, 1.12, 0)
 material_override = SubResource("Mat_jlg_orange")
 mesh = SubResource("Mesh_rail_z")
 
-[node name="RailTop_R" type="MeshInstance3D" parent="Platform"]
+[node name="RailTop_R" type="MeshInstance3D" parent="Platform" unique_id=260691980]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.42, 1.12, 0)
 material_override = SubResource("Mat_jlg_orange")
 mesh = SubResource("Mesh_rail_z")
 
-[node name="RailMid_F" type="MeshInstance3D" parent="Platform"]
+[node name="RailMid_F" type="MeshInstance3D" parent="Platform" unique_id=75291265]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.62, 0.47)
 material_override = SubResource("Mat_jlg_orange")
 mesh = SubResource("Mesh_rail_x")
 
-[node name="Console" type="MeshInstance3D" parent="Platform"]
+[node name="Console" type="MeshInstance3D" parent="Platform" unique_id=635115872]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.3, 0.7, 0.42)
 material_override = SubResource("Mat_dark")
 mesh = SubResource("Mesh_console")
 
-; Two mushroom buttons on the platform console — green UP, red DOWN. Visual
-; only (R/F keys + mouse joystick still drive the platform); the buttons sell
-; that this is a control surface, not a featureless block.
-[node name="ConsoleBtnUp" type="MeshInstance3D" parent="Platform"]
+[node name="ConsoleBtnUp" type="MeshInstance3D" parent="Platform" unique_id=188808990]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.22, 0.84, 0.45)
 material_override = SubResource("Mat_jlg_orange")
 mesh = SubResource("Mesh_button")
 
-[node name="ConsoleBtnDown" type="MeshInstance3D" parent="Platform"]
+[node name="ConsoleBtnDown" type="MeshInstance3D" parent="Platform" unique_id=854686681]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.38, 0.84, 0.45)
 material_override = SubResource("Mat_red_cowl")
 mesh = SubResource("Mesh_button")
 
-; ── Ground control panel (safety: someone on the floor can lower the platform
-;    if the operator up top is incapacitated). Sits low on the chassis side. ──
-[node name="GroundPanel" type="MeshInstance3D" parent="."]
+[node name="CabCamera" type="Camera3D" parent="Platform" unique_id=272339928]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6, -0.1)
+
+[node name="GroundPanel" type="MeshInstance3D" parent="." unique_id=1796578259]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.78, 0.65, 0)
 material_override = SubResource("Mat_dark")
 mesh = SubResource("Mesh_ground_panel")
 
-[node name="GroundBtnUp" type="MeshInstance3D" parent="."]
+[node name="GroundBtnUp" type="MeshInstance3D" parent="." unique_id=370843033]
 transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0.86, 0.78, 0)
 material_override = SubResource("Mat_jlg_orange")
 mesh = SubResource("Mesh_button")
 
-[node name="GroundBtnDown" type="MeshInstance3D" parent="."]
+[node name="GroundBtnDown" type="MeshInstance3D" parent="." unique_id=412652986]
 transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0.86, 0.55, 0)
 material_override = SubResource("Mat_red_cowl")
 mesh = SubResource("Mesh_button")
 
-[node name="GroundPanelLabel" type="Label3D" parent="."]
+[node name="GroundPanelLabel" type="Label3D" parent="." unique_id=72244626]
 transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0.87, 0.92, 0)
 pixel_size = 0.0018
 modulate = Color(0.92, 0.92, 0.92, 1)
 text = "GROUND CTRL"
 font_size = 28
 
-[node name="CabCamera" type="Camera3D" parent="Platform"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6, -0.1)
-
-; ── Enter zone ────────────────────────────────────────────────────────────────
-[node name="EnterArea" type="Area3D" parent="."]
+[node name="EnterArea" type="Area3D" parent="." unique_id=909875294]
 script = ExtResource("2_enter")
 
-[node name="EnterAreaShape" type="CollisionShape3D" parent="EnterArea"]
+[node name="EnterAreaShape" type="CollisionShape3D" parent="EnterArea" unique_id=4768097]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 0)
 shape = SubResource("Shape_enter")

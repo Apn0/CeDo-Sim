@@ -16,25 +16,33 @@ class_name Merlo
 @export var bucket_tilt_path : NodePath   # the whole bucket assembly (curl)
 @export var grapple_arm_path : NodePath   # the tine grapple (opens/closes)
 
+# #201 — Spec calibration against real Merlo telehandlers (TF42.7 / P40.17 class
+# — what CeDo actually runs). Telehandlers are big diesel hydraulic machines:
+# boom cylinders are slow and powerful, telescope reaches 6+ m, the grapple
+# bucket curls past 90° for clean rollback dumping.
 @export_group("Boom")
-@export var boom_min_deg     : float = -5.0
-@export var boom_max_deg     : float = 55.0
-@export var boom_speed_deg_s : float = 12.0
+@export var boom_min_deg            : float = -5.0    # slight crouch for digging at ground
+@export var boom_max_deg            : float = 70.0    # P40.17 reaches ~72°; was 55° (couldn't tip top of stack)
+@export var boom_speed_deg_s        : float = 10.0    # spec: 8–12°/s — these cylinders are slow
 
 @export_group("Telescope")
-@export var extend_min_m     : float = 0.0
-@export var extend_max_m     : float = 3.0           # bumped from 2.5 — boom2 is 5 m long now
-@export var extend_speed_m_s : float = 0.6
+@export var extend_min_m            : float = 0.0
+@export var extend_max_m            : float = 6.0     # P40.17 telescopes ~7 m worth at ground reach; was 3 m
+@export var extend_speed_m_s        : float = 0.50    # spec: 0.40–0.60 m/s under load (was 0.6 — a touch optimistic)
 
 @export_group("Bucket curl")
-@export var curl_min_deg     : float = -45.0
-@export var curl_max_deg     : float = 40.0
-@export var curl_speed_deg_s : float = 25.0
+# Bucket needs ~110° rollback for clean dumping; -45° to +40° couldn't tip a load.
+@export var curl_min_deg            : float = -45.0   # forks-down / digging crowd
+@export var curl_max_deg            : float = 110.0   # full rollback dump (was 40°)
+@export var curl_speed_deg_s        : float =  35.0   # spec: 30–45°/s (was 25 — sluggish)
 
 @export_group("Grapple")
-@export var grapple_closed_deg  : float = 0.0
-@export var grapple_open_deg    : float = 75.0
-@export var grapple_speed_deg_s : float = 45.0
+@export var grapple_closed_deg      : float =  0.0    # tines flush against bucket
+@export var grapple_open_deg        : float = 90.0    # tines straight up (was 75° — didn't fully clear)
+@export var grapple_speed_deg_s     : float = 70.0    # spec: 60–80°/s (was 45)
+
+@export_group("Load")
+@export var max_safe_load_kg        : float = 4000.0  # P40.17 rated at ground; derate applies past 50 % reach
 
 var boom_deg    : float = 0.0
 var extend_m    : float = 0.0
@@ -57,6 +65,22 @@ func _ready() -> void:
 		if _boom_extend: _boom_ext_rest = _boom_extend.position
 	if bucket_tilt_path: _bucket_tilt = get_node_or_null(bucket_tilt_path) as Node3D
 	if grapple_arm_path: _grapple_arm = get_node_or_null(grapple_arm_path) as Node3D
+	# #201 — physical bucket + grapple. The .tscn switched both nodes to
+	# AnimatableBody3D with sync_to_physics + collision shapes mirroring the
+	# visible meshes. PhysicsMaterial gives the bucket an honest contact feel
+	# (painted-steel bowl μ ≈ 0.9, rubber-faced tines μ ≈ 1.6 so a clamp grip
+	# really holds). Loads sit in the bowl and stay there via friction × gravity;
+	# the grapple presses DOWN to add a normal force on top.
+	var bucket_pm := PhysicsMaterial.new()
+	bucket_pm.friction = 0.9
+	bucket_pm.bounce   = 0.05
+	if _bucket_tilt is PhysicsBody3D:
+		(_bucket_tilt as PhysicsBody3D).physics_material_override = bucket_pm
+	var grapple_pm := PhysicsMaterial.new()
+	grapple_pm.friction = 1.6
+	grapple_pm.bounce   = 0.02
+	if _grapple_arm is PhysicsBody3D:
+		(_grapple_arm as PhysicsBody3D).physics_material_override = grapple_pm
 
 func _physics_process(delta: float) -> void:
 	super._physics_process(delta)
@@ -121,15 +145,26 @@ func _update_boom(delta: float) -> void:
 	# One full drag ≈ a couple of seconds of the keyboard hydraulics.
 	var m := _tool_axes()
 
+	# #201 — load-aware boom + telescope: a carried load slows the hydraulics.
+	# Telehandlers feel this strongly on extension (long cylinder, low pressure
+	# margin) and a bit on raise. Multiplier from 1.0 unloaded down to 0.55 at
+	# rated load, applied to both speeds.
+	var load_ratio : float = 0.0
+	if _carried_bale != null and is_instance_valid(_carried_bale) and "mass" in _carried_bale:
+		load_ratio = clampf(float(_carried_bale.mass) / max_safe_load_kg, 0.0, 1.0)
+	var load_mult : float = lerpf(1.0, 0.55, load_ratio)
+	var bsp : float = boom_speed_deg_s * load_mult
+	var esp : float = extend_speed_m_s * load_mult
+
 	var b := Input.get_action_strength("forklift_lift_up") \
 		   - Input.get_action_strength("forklift_lift_down")
-	boom_deg = clampf(boom_deg + b * boom_speed_deg_s * delta
-		+ float(m["b"]) * boom_speed_deg_s * delta * MOUSE_TOOL_MULT, boom_min_deg, boom_max_deg)
+	boom_deg = clampf(boom_deg + b * bsp * delta
+		+ float(m["b"]) * bsp * delta * MOUSE_TOOL_MULT, boom_min_deg, boom_max_deg)
 
 	var e := Input.get_action_strength("forklift_tilt_back") \
 		   - Input.get_action_strength("forklift_tilt_fwd")
-	extend_m = clampf(extend_m + e * extend_speed_m_s * delta
-		+ float(m["c"]) * extend_speed_m_s * delta * MOUSE_TOOL_MULT, extend_min_m, extend_max_m)
+	extend_m = clampf(extend_m + e * esp * delta
+		+ float(m["c"]) * esp * delta * MOUSE_TOOL_MULT, extend_min_m, extend_max_m)
 
 	var c := Input.get_action_strength("forklift_rotator_right") \
 		   - Input.get_action_strength("forklift_rotator_left")

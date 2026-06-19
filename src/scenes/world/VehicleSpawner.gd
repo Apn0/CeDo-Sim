@@ -25,6 +25,8 @@ var _world : Node = null
 # manager so future call-sites can avoid the extra hop).
 var _player_spawn_pos : Vector3 = Vector3.ZERO
 
+var lift_booking: Node = null
+
 func _ready() -> void:
 	if _world == null:
 		_world = get_parent()
@@ -98,7 +100,29 @@ func spawn_bale_clamp() -> void:
 func spawn_mast_lift() -> void:
 	spawn_vehicle_instances("mast_lift", "res://src/scenes/vehicles/MastLift.tscn",
 		Vector3(20.0, 0.0, 0.0), "Mast lift")
-	# #147 Phase 3 / #148 Phase 4 — register every mast lift with the booking
-	# registry so NPC operate planners can claim one when a target is too high
-	# to reach from the floor. Created lazily so non-mast-lift worlds skip it.
-	_world.call("_register_lifts_for_booking")
+	_register_lifts_for_booking()
+
+func _register_lifts_for_booking() -> void:
+	if lift_booking == null:
+		lift_booking = LiftBooking.new()
+		lift_booking.name = "LiftBooking"
+		_world.add_child(lift_booking)
+
+	var count : int = 0
+	for v in get_tree().get_nodes_in_group("vehicle"):
+		if v != null and String(v.get("vehicle_type")) == "mast_lift":
+			lift_booking.register_lift(v)
+			count += 1
+
+	if count == 0:
+		for v in _world.find_children("", "VehicleBody3D", true, false):
+			if v != null and String(v.get("vehicle_type")) == "mast_lift":
+				lift_booking.register_lift(v)
+				count += 1
+
+	print("[VehicleSpawner] LiftBooking: registered %d mast lift(s)" % count)
+
+	for npc_id in _world.npcs.keys():
+		var npc = _world.npcs[npc_id]
+		if npc != null and is_instance_valid(npc):
+			npc.set("lift_booking", lift_booking)

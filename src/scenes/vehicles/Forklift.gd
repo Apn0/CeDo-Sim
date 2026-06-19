@@ -24,32 +24,40 @@ class_name Forklift
 @export var right_fork_path     : NodePath          # Node3D — mirror
 
 # ── Hydraulic limits & speeds ─────────────────────────────────────────────────
+# #201 — lift_min_m / lift_max_m are the carriage Y offset in the FORKLIFT-LOCAL
+# frame. With MastPivot at chassis-local Y = 0.40 m and the fork-tip mesh
+# half-thickness = 0.025 m, fork-tip world Y above the floor = lift_height_m + 0.375.
+# Real spec for a 2.5 t LPG counterbalance forklift:
+#   - Carriage fully DOWN → tine bottoms FLAT on the floor (~no clearance);
+#     achieved with lift_min_m = -0.375.
+#   - Carriage fully UP   → 3.00 m fork-tip height (standard simplex mast);
+#     achieved with lift_max_m = 2.625.
 @export_group("Lift (vertical carriage)")
-@export var lift_min_m              : float = 0.05    # ground clearance
-@export var lift_max_m              : float = 3.0     # standard forklift mast
-@export var lift_speed_no_load_m_s  : float = 0.6
-@export var lift_speed_full_load_m_s: float = 0.25    # ~half as fast under max load
+@export var lift_min_m              : float = -0.375   # tine flat on floor
+@export var lift_max_m              : float =  2.625   # fork tip 3.00 m above floor
+@export var lift_speed_no_load_m_s  : float = 0.60     # spec: 0.55–0.65 m/s unloaded
+@export var lift_speed_full_load_m_s: float = 0.40     # spec: 0.40–0.55 m/s at rated load
 
 @export_group("Mast tilt")
-@export var tilt_min_deg            : float = -10.0   # forward
-@export var tilt_max_deg            : float = 12.0    # backward
-@export var tilt_speed_deg_s        : float = 8.0
+@export var tilt_min_deg            : float = -6.0     # forward — industry spec 3–6°; was -10° (unsafe)
+@export var tilt_max_deg            : float = 12.0     # backward — standard
+@export var tilt_speed_deg_s        : float = 8.0      # spec: 6–10°/s
 
-@export_group("Rotator")
+@export_group("Rotator (lump-dump head)")
 @export var rotator_min_deg         : float = -180.0
-@export var rotator_max_deg         : float = 180.0
-@export var rotator_speed_deg_s     : float = 30.0
+@export var rotator_max_deg         : float =  180.0
+@export var rotator_speed_deg_s     : float = 60.0     # CeDo-spec dumper: ~60°/s (was 30 — too sluggish for a 3 s dump)
 
-@export_group("Fork spread (pinch/widen)")
-@export var fork_spread_min_m       : float = 0.20    # forks touching
-@export var fork_spread_max_m       : float = 1.10    # widest
-@export var fork_spread_speed_m_s   : float = 0.15
+@export_group("Fork spread (positioner)")
+@export var fork_spread_min_m       : float = 0.20     # = fork centres ±0.10 m → lump_cart pocket centres
+@export var fork_spread_max_m       : float = 1.10     # widest pallet
+@export var fork_spread_speed_m_s   : float = 0.10     # spec: 0.08–0.12 m/s (was 0.15 — too fast)
 
 @export_group("Load")
-@export var max_safe_load_kg        : float = 2000.0
+@export var max_safe_load_kg        : float = 2500.0   # 2.5 t rated capacity (bale handling needs the headroom)
 
 # ── Runtime hydraulic state (setpoints — meshes lerp toward these) ────────────
-var lift_height_m  : float = 0.05
+var lift_height_m  : float = -0.375
 var tilt_deg       : float = 0.0
 var rotator_deg    : float = 0.0
 var fork_spread_m  : float = 0.45    # neutral spread (closer together by default)
@@ -131,3 +139,4 @@ func _apply_hydraulic_transforms() -> void:
 		_left_fork.position.x  = -fork_spread_m * 0.5
 	if _right_fork:
 		_right_fork.position.x =  fork_spread_m * 0.5
+
