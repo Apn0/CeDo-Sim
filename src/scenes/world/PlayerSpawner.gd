@@ -214,11 +214,14 @@ func _spawn_player() -> CharacterBody3D:
 		# add_child FIRST so the recursive ancestor-walk in _set_body_render_layer_split
 		# can find "PlayerBody" as the root sentinel.
 		player.add_child(body)
-		# Humanoid.build() authors the rig with the visible face on local +Z (see
-		# Humanoid.gd:200 docstring). PlayerController treats -basis.z as forward
-		# (Godot canonical), so the body must be yawed 180° here to put its face on
-		# the player's local -Z. Without this, W walks tail-first.
-		body.rotation.y = PI
+		# #205 — Humanoid.build() actually authors the rig with the visible face
+		# on local -Z (see Humanoid.gd:419 inside the head-build block:
+		# "VISUAL FRONT RULE — visible front MUST sit on local -Z to match the
+		# canonical convention"). The stale docstring at Humanoid.gd:213-222
+		# was telling callers to flip by PI, which made the operator see the
+		# BACK of their own head in the wardrobe mirror + any third-party view.
+		# No body rotation needed: face-on-(-Z) already aligns with PlayerController's
+		# -basis.z forward.
 		_world.call("_set_body_render_layer_split", body)
 		# Auto-switch when the shift bell rings (or ends). Stored on the player
 		# so a later customizer reload reads the freshly-applied value.

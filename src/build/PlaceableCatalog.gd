@@ -1002,21 +1002,32 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 		# collision so wheels/carts don't ride up on the paint stripe.
 		var skip_collision : bool = id == "lump_cart_spot"
 		if not skip_collision:
-			var col := CollisionShape3D.new()
-			var shape := BoxShape3D.new()
-			# Bales have ~10% HORIZONTAL "give": the collision shape is shrunk on X/Z
-			# by 10% (5% each side) so a forklift, bale-clamp or Merlo can press into
-			# the compressed-film block slightly before colliding — gives the soft
-			# feel of stacked LDPE film rather than a steel brick. Y stays full so
-			# stacks settle on each other and the player can walk on top without
-			# sinking into the bale.
-			if category == "Bales":
-				shape.size = Vector3(size.x * 0.9, size.y, size.z * 0.9)
+			if id == "lump_cart":
+				# #201 — operator spec: the cart's underframe has TWO 150 × 80 mm
+				# fork pockets (left + right) running the full length so a forklift
+				# enters from either short end. A single AABB box can't model a
+				# hole, so build the collision as a compound: 3 underframe strips
+				# (outer-left | between-pockets | outer-right), the cart floor, 4
+				# walls, and 4 corner posts. Forks slide into the cavities; the
+				# spreader widens from 0.20 m centerline to clamp the outer pocket
+				# walls. NOTHING is parented under the fork — pure contact physics.
+				_lump_cart_compound_collision(body, size)
 			else:
-				shape.size = size
-			col.shape = shape
-			col.position = Vector3(0.0, size.y * 0.5, 0.0)
-			body.add_child(col)
+				var col := CollisionShape3D.new()
+				var shape := BoxShape3D.new()
+				# Bales have ~10% HORIZONTAL "give": the collision shape is shrunk on X/Z
+				# by 10% (5% each side) so a forklift, bale-clamp or Merlo can press into
+				# the compressed-film block slightly before colliding — gives the soft
+				# feel of stacked LDPE film rather than a steel brick. Y stays full so
+				# stacks settle on each other and the player can walk on top without
+				# sinking into the bale.
+				if category == "Bales":
+					shape.size = Vector3(size.x * 0.9, size.y, size.z * 0.9)
+				else:
+					shape.size = size
+				col.shape = shape
+				col.position = Vector3(0.0, size.y * 0.5, 0.0)
+				body.add_child(col)
 		body.add_to_group("placed_object")
 		# Bales also carry a physics material with high friction so stacked bales
 		# grip each other (so the clamp picks up multiple at once when held firmly)
@@ -2044,6 +2055,75 @@ static func _m_silo(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void
 		col.position = Vector3(0.0, 0.525, 0.0)
 		gate_root.add_child(col)
 
+# ── #201 lump_cart compound collision: real fork-pocket cavities ────────────
+# The lump_cart body needs 2 horizontal tunnels (150 × 80 mm) in its underframe
+# so a forklift can slide its tines straight through and then widen the
+# spreader to clamp the outer pocket walls. A single AABB collision can't
+# express a hole, so we synthesize the cart shape out of multiple boxes that
+# COLLECTIVELY occupy the cart's volume EVERYWHERE EXCEPT the two pocket
+# cavities. Dimensions match _m_lump_cart's visual mesh code so the player
+# sees what the physics is doing. Pure contact physics — no joints, no
+# parent-of-load magic.
+static func _lump_cart_compound_collision(body: PhysicsBody3D, size: Vector3) -> void:
+	# Mirror of _m_lump_cart's local frame (origin = bottom-centre of the cart).
+	var wheel_r  : float = 0.07
+	var frame_h  : float = 0.10
+	var frame_y0 : float = wheel_r * 2.0
+	var cart_w   : float = size.x * 0.88
+	var cart_d   : float = size.z * 0.88
+	var cart_base_y : float = frame_y0 + frame_h
+	var cart_h   : float = size.y * 0.52
+	var wall_t   : float = 0.025
+	var pocket_w : float = 0.150
+	var pocket_h : float = 0.080
+	var pocket_cx : float = 0.10                       # ±0.10 m
+	# ── Underframe split into 3 longitudinal strips (outer-L | between | outer-R)
+	#    leaving the 2 pocket lanes open. ───────────────────────────────────────
+	var fy : float = frame_y0 + frame_h * 0.5
+	var l_outer_x : float = -cart_w * 0.5
+	var l_inner_x : float = -pocket_cx - pocket_w * 0.5
+	var r_inner_x : float =  pocket_cx + pocket_w * 0.5
+	var r_outer_x : float =  cart_w * 0.5
+	var mid_l_x   : float = -pocket_cx + pocket_w * 0.5
+	var mid_r_x   : float =  pocket_cx - pocket_w * 0.5
+	_col_box(body, Vector3(l_inner_x - l_outer_x, frame_h, cart_d + 0.10),
+		Vector3((l_outer_x + l_inner_x) * 0.5, fy, 0.0))
+	_col_box(body, Vector3(mid_r_x - mid_l_x, frame_h, cart_d + 0.10),
+		Vector3((mid_l_x + mid_r_x) * 0.5, fy, 0.0))
+	_col_box(body, Vector3(r_outer_x - r_inner_x, frame_h, cart_d + 0.10),
+		Vector3((r_inner_x + r_outer_x) * 0.5, fy, 0.0))
+	# ── Top cap of the underframe above the pocket cavity. The pocket is only
+	#    80 mm tall; anything above pocket_h within frame_h is solid so a fork
+	#    inserted in the slot bottoms out on the cavity roof. ─────────────────
+	var cap_h : float = max(frame_h - pocket_h, 0.001)
+	var cap_y : float = frame_y0 + pocket_h + cap_h * 0.5
+	# Two cap strips, one over each pocket lane.
+	_col_box(body, Vector3(pocket_w, cap_h, cart_d + 0.10),
+		Vector3(-pocket_cx, cap_y, 0.0))
+	_col_box(body, Vector3(pocket_w, cap_h, cart_d + 0.10),
+		Vector3( pocket_cx, cap_y, 0.0))
+	# ── Cart floor ───────────────────────────────────────────────────────────
+	_col_box(body, Vector3(cart_w, wall_t, cart_d),
+		Vector3(0.0, cart_base_y + wall_t * 0.5, 0.0))
+	# ── Cart walls (4 sides) ─────────────────────────────────────────────────
+	var cart_cy : float = cart_base_y + cart_h * 0.5
+	_col_box(body, Vector3(cart_w, cart_h - wall_t, wall_t),
+		Vector3(0.0, cart_cy, -cart_d * 0.5 + wall_t * 0.5))
+	_col_box(body, Vector3(cart_w, cart_h - wall_t, wall_t),
+		Vector3(0.0, cart_cy,  cart_d * 0.5 - wall_t * 0.5))
+	_col_box(body, Vector3(wall_t, cart_h - wall_t, cart_d - wall_t * 2.0),
+		Vector3(-cart_w * 0.5 + wall_t * 0.5, cart_cy, 0.0))
+	_col_box(body, Vector3(wall_t, cart_h - wall_t, cart_d - wall_t * 2.0),
+		Vector3( cart_w * 0.5 - wall_t * 0.5, cart_cy, 0.0))
+
+static func _col_box(parent: PhysicsBody3D, size: Vector3, pos: Vector3) -> void:
+	var col := CollisionShape3D.new()
+	var sh := BoxShape3D.new()
+	sh.size = size
+	col.shape = sh
+	col.position = pos
+	parent.add_child(col)
+
 # ── #98 lumps cart (lumpenwagen): wheeled blue steel dumpster the operator
 # parks under the extruder's screen-changer / melt-filter outlet. The screen
 # pack catches unmelted polymer agglomerates (gels, cross-linked chunks); they
@@ -2083,13 +2163,17 @@ static func _m_lump_cart(p: Node3D, size: Vector3, _color: Color, ghost: bool) -
 	_box(p, Vector3(cart_w + 0.10, frame_h, cart_d + 0.10),
 		Vector3(0.0, frame_y0 + frame_h * 0.5, 0.0), blue)
 	# ── Two forklift fork pockets running ALONG the length (±Z faces open)
-	#    so the forklift approaches from the short end. Modelled as dark
-	#    recessed slots. One left of centre, one right. ────────────────────────
-	var pocket_h : float = 0.055
-	var pocket_w : float = 0.08
+	#    so the forklift approaches from the short end. Per operator spec
+	#    (#201): 150 × 80 mm cavity, centred at ±0.10 m so the forklift's
+	#    minimum spread (0.20 m → fork centres ±0.10 m) slides cleanly in,
+	#    and widening the spreader clamps the outer pocket walls. The actual
+	#    collision cavities are built in _lump_cart_compound_collision() —
+	#    this is the visible dark recess painted into the underframe.
+	var pocket_h : float = 0.080
+	var pocket_w : float = 0.150
 	for sx in [-1.0, 1.0]:
 		_box(p, Vector3(pocket_w, pocket_h, cart_d + 0.14),
-			Vector3(float(sx) * cart_w * 0.28, frame_y0 + frame_h * 0.55,
+			Vector3(float(sx) * 0.10, frame_y0 + frame_h * 0.55,
 				0.0), dark)
 	# ── Cart body: blue steel, open top, 4 walls + 1 bottom ──────────────────
 	_box(p, Vector3(cart_w, wall_t, cart_d),

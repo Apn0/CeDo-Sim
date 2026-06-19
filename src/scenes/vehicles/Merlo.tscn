@@ -125,6 +125,29 @@ size = Vector3(1.55, 0.12, 0.14)
 [sub_resource type="BoxMesh" id="Mesh_tine"]
 size = Vector3(0.06, 0.5, 0.62)
 
+; #201 — collision shapes mirroring the visible bucket/grapple meshes. The
+; bucket assembly becomes a real AnimatableBody3D so it scoops/holds loads via
+; contact, and the grapple becomes its own AnimatableBody3D so the tines clamp
+; down on whatever sits in the bucket. Ribs + Headstock skipped: ribs are
+; INSIDE the bowl (no useful load contact) and the headstock is a mount bracket.
+[sub_resource type="BoxShape3D" id="Shape_bbottom"]
+size = Vector3(1.9, 0.1, 1.05)
+
+[sub_resource type="BoxShape3D" id="Shape_bback"]
+size = Vector3(1.9, 0.6, 0.1)
+
+[sub_resource type="BoxShape3D" id="Shape_bside"]
+size = Vector3(0.09, 0.55, 1.05)
+
+[sub_resource type="BoxShape3D" id="Shape_blip"]
+size = Vector3(1.9, 0.06, 0.18)
+
+[sub_resource type="BoxShape3D" id="Shape_armbar"]
+size = Vector3(1.55, 0.12, 0.14)
+
+[sub_resource type="BoxShape3D" id="Shape_tine"]
+size = Vector3(0.06, 0.5, 0.62)
+
 ; ── Detail: fuel filler port (right engine deck) ──────────────────────────────
 [sub_resource type="BoxMesh" id="Mesh_fuel_surround"]
 size = Vector3(0.34, 0.12, 0.34)
@@ -545,8 +568,11 @@ mesh = SubResource("Mesh_boom2")
 
 ; ── Bucket assembly (curl) — re-centred ahead of the vehicle. With the boom
 ;    mirrored to vehicle -X, the bucket re-centring X also flips. ─────────────
-[node name="BucketTilt" type="Node3D" parent="BoomPivot/BoomExtend"]
+[node name="BucketTilt" type="AnimatableBody3D" parent="BoomPivot/BoomExtend"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.62, -0.15, 5.0)
+sync_to_physics = true
+collision_layer = 1
+collision_mask = 1
 
 [node name="CarryPoint" type="Node3D" parent="BoomPivot/BoomExtend/BucketTilt"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.05, 0.4)
@@ -607,8 +633,33 @@ material_override = SubResource("Mat_steel")
 mesh = SubResource("Mesh_blip")
 
 ; ── Grapple (top tines that clamp down) ───────────────────────────────────────
-[node name="GrappleArm" type="Node3D" parent="BoomPivot/BoomExtend/BucketTilt"]
+; #201 — collision shapes for the bucket bowl (parented under BucketTilt so they
+; ride the curl rotation kinematically thanks to sync_to_physics).
+[node name="Col_BucketBottom" type="CollisionShape3D" parent="BoomPivot/BoomExtend/BucketTilt"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.45, 0.38)
+shape = SubResource("Shape_bbottom")
+
+[node name="Col_BucketBack" type="CollisionShape3D" parent="BoomPivot/BoomExtend/BucketTilt"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.18, -0.12)
+shape = SubResource("Shape_bback")
+
+[node name="Col_BucketLeft" type="CollisionShape3D" parent="BoomPivot/BoomExtend/BucketTilt"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.9, -0.18, 0.38)
+shape = SubResource("Shape_bside")
+
+[node name="Col_BucketRight" type="CollisionShape3D" parent="BoomPivot/BoomExtend/BucketTilt"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9, -0.18, 0.38)
+shape = SubResource("Shape_bside")
+
+[node name="Col_BucketLip" type="CollisionShape3D" parent="BoomPivot/BoomExtend/BucketTilt"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.47, 0.9)
+shape = SubResource("Shape_blip")
+
+[node name="GrappleArm" type="AnimatableBody3D" parent="BoomPivot/BoomExtend/BucketTilt"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.12, -0.05)
+sync_to_physics = true
+collision_layer = 1
+collision_mask = 1
 
 [node name="ArmBar" type="MeshInstance3D" parent="BoomPivot/BoomExtend/BucketTilt/GrappleArm"]
 material_override = SubResource("Mat_steel")
@@ -638,6 +689,31 @@ mesh = SubResource("Mesh_tine")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.62, -0.2, 0.34)
 material_override = SubResource("Mat_steel")
 mesh = SubResource("Mesh_tine")
+
+; #201 — grapple collision: ArmBar + 5 tines mirror the visible meshes so the
+; tines clamp down on whatever's in the bucket.
+[node name="Col_ArmBar" type="CollisionShape3D" parent="BoomPivot/BoomExtend/BucketTilt/GrappleArm"]
+shape = SubResource("Shape_armbar")
+
+[node name="Col_Tine1" type="CollisionShape3D" parent="BoomPivot/BoomExtend/BucketTilt/GrappleArm"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.62, -0.2, 0.34)
+shape = SubResource("Shape_tine")
+
+[node name="Col_Tine2" type="CollisionShape3D" parent="BoomPivot/BoomExtend/BucketTilt/GrappleArm"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.31, -0.2, 0.34)
+shape = SubResource("Shape_tine")
+
+[node name="Col_Tine3" type="CollisionShape3D" parent="BoomPivot/BoomExtend/BucketTilt/GrappleArm"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.2, 0.34)
+shape = SubResource("Shape_tine")
+
+[node name="Col_Tine4" type="CollisionShape3D" parent="BoomPivot/BoomExtend/BucketTilt/GrappleArm"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.31, -0.2, 0.34)
+shape = SubResource("Shape_tine")
+
+[node name="Col_Tine5" type="CollisionShape3D" parent="BoomPivot/BoomExtend/BucketTilt/GrappleArm"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.62, -0.2, 0.34)
+shape = SubResource("Shape_tine")
 
 ; ── Cab camera + enter area ───────────────────────────────────────────────────
 [node name="CabCamera" type="Camera3D" parent="."]

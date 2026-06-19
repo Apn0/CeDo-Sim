@@ -37,6 +37,15 @@ var _autonomy_destination_active : bool = false
 ## of the NPC's locomotion code drives the body the same way it would for a
 ## free-wander target.
 func set_autonomy_destination(pos: Vector3) -> void:
+	# #202 — if this NPC is currently boarded into a vehicle, route the
+	# destination to the vehicle's autopilot (BaseVehicle.npc_set_target) so the
+	# CHASSIS drives toward the waypoint, not the hidden walking body.
+	var op_ctx := get_tree().get_root().find_child("OperatorContext", true, false)
+	if op_ctx and op_ctx.has_method("npc_vehicle_of"):
+		var v = op_ctx.call("npc_vehicle_of", self)
+		if v != null and v.has_method("npc_set_target"):
+			v.call("npc_set_target", pos)
+			return
 	target_position = pos
 	is_walking = true
 	_autonomy_destination_active = true

@@ -210,16 +210,20 @@ static func rebuild_appearance(holder: Node3D, shirt: Color, variant: int, new_a
 ##                  texture set) — picks which photo set the hi-vis vest/coat
 ##                  uses.
 ##
-## IMPORTANT — ORIENTATION CONTRACT:
+## IMPORTANT — ORIENTATION CONTRACT (corrected #205):
 ##   This rig is authored with the visible front (face/eyes/nose/chest/beard)
-##   on LOCAL +Z, NOT the Godot canonical -Z. Internal coordinates (face plane
-##   fz = +0.122, hair back at z = -0.11, cap brim at +Z + 0.04, beard pushed
-##   outward via +0.015) are all consistent with face = +Z; do NOT flip them.
-##   Callers that parent the result to a CharacterBody3D, vehicle seat, NPC,
-##   or any node whose forward is -basis.z (per CeDo convention) MUST apply
-##   `rig.rotation.y = PI` immediately after add_child(rig). Failing to do
-##   so makes the body walk / drive / face tail-first. Reference attach sites
-##   that do this correctly: MainWorld._spawn_player, GauntletWorld._build_player.
+##   on LOCAL -Z — the Godot canonical forward. See line 419 inside the head
+##   block: `var fz := -0.122` and the comment "VISUAL FRONT RULE — visible
+##   front MUST sit on local -Z to match the canonical convention".
+##   Callers that parent the result to a CharacterBody3D / NPC / vehicle seat
+##   whose forward is -basis.z (CeDo convention) DO NOT need to rotate the
+##   rig. NPCSpawner.gd attaches without rotation and the NPCs face the
+##   right way; PlayerSpawner.gd was wrongly applying `rotation.y = PI` per
+##   the OLD docstring (which had face on +Z) and the operator was seeing
+##   the back of their own head in the wardrobe mirror. Fixed in #205.
+##   GauntletWorld._build_player keeps a `rotation.y = PI` because its
+##   capsule's own yaw cancels into the right gauntlet-station orientation;
+##   that's a self-contained test scene quirk, not a contract.
 static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -> Node3D:
 	var skin_raw : Variant = appearance.get("skin_color", null)
 	if skin_raw is Dictionary and skin_raw.has("r"):

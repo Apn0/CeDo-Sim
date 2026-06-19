@@ -489,17 +489,20 @@ func _carry_point() -> Node3D:
 			return n
 	return self
 
+# #201 Step 5 — auto-snap REMOVED. Vehicles no longer reparent or freeze bales /
+# containers. The clamp/forks/grapple are real AnimatableBody3D physics bodies
+# (see #201 steps 1–4); a bale sits in a bucket or between plates because of
+# gravity + friction + clamp normal force, NOT because the script teleported it
+# under the carry point.
+#
+# What _try_grab() still does: pure SENSOR. It polls bodies in the carry-point
+# sphere and sets `_carried_bale` to the closest qualifying body so consumers
+# (load-aware speed, HUD, _on_grabbed hooks) keep working. No state mutation
+# on the load itself beyond a one-time LOD-detail upgrade.
 func _try_grab() -> void:
-	if _carried_bale != null:
-		return
 	var cp := _carry_point()
-	# Closest bale or skip to the carry point, within reach. Skips (movable waste
-	# containers with forklift pockets) use the same grab/carry/drop plumbing as
-	# bales — the forklift just lifts whatever heavy thing is in its forks.
 	var best : Node3D = null
 	var best_d := GRAB_RANGE
-
-	# Use a physics shape query to find nearby items instead of iterating the entire scene
 	var space_state := cp.get_world_3d().direct_space_state
 	if space_state:
 		var query := PhysicsShapeQueryParameters3D.new()
@@ -507,77 +510,54 @@ func _try_grab() -> void:
 		sphere.radius = GRAB_RANGE
 		query.shape = sphere
 		query.transform = Transform3D(Basis(), cp.global_position)
-		query.collision_mask = 0xFFFFFFFF # Match all collision layers
-
+		query.collision_mask = 0xFFFFFFFF
 		var results := space_state.intersect_shape(query)
 		for res in results:
 			var collider := res.collider as Node3D
 			if collider == null:
 				continue
-
 			var is_bale := collider.is_in_group("bale")
 			var is_movable_container := collider.is_in_group("waste_container") and bool(collider.get("movable"))
-
 			if is_bale or is_movable_container:
 				var d := collider.global_position.distance_to(cp.global_position)
 				if d < best_d:
 					best_d = d
 					best = collider
 	if best == null:
+		# No qualifying body in range. If we were holding a reference, drop it —
+		# the operator pressed grab but nothing is there to grab.
+		if _carried_bale != null:
+			_carried_bale = null
+			_on_released()
 		return
-	# Pick up the bottom of a yard stack: collect every bale resting above it in
-	# the same column. Subclasses can VETO the whole grab (e.g. the bale clamp
-	# refuses if the operator isn't squeezing hard enough for this stack height).
-	var stack := _find_stack_above(best)
-	if not _can_grab_stack(best, stack):
-		_on_grab_refused(best, stack)
+	# Subclasses can still veto via the grip-strength gate (bale clamp refuses
+	# if clamp_force is too low for this stack height).
+	if not _can_grab_stack(best, []):
+		_on_grab_refused(best, [])
 		return
-	# Latch the primary bale onto the tool.
+	# First-time LOD-detail upgrade so cutting/sheet behaviours work the moment
+	# a yard bale becomes a carried load. No freeze, no collision toggle, no
+	# reparent — pure physics from here on.
+	if best.has_meta("simple_bale"):
+		PlaceableCatalog.detail_bale(best)
 	_carried_bale = best
-	_bale_orig_parent = best.get_parent()
-	best.set_meta("delivered", false)        # carried bales don't feed the line
-	_set_bale_grabbed(best, true)
-	_reparent_keep_world(best, cp)
-	# Capture the on-grab LOCAL Y so the positional collision-clamp can reset to
-	# this every frame before computing the upward push (so the bale drops back to
-	# its natural carry-point position when an obstacle is removed).
-	_carried_natural_local_y[best.get_instance_id()] = best.position.y
-	# Latch each stacked bale, PRESERVING its offset above the primary bale so the
-	# column rides intact instead of collapsing onto the carry point.
+	_bale_orig_parent = null
 	_carried_stack.clear()
 	_carried_stack_orig_parents.clear()
-	for sb in stack:
-		_carried_stack.append(sb)
-		_carried_stack_orig_parents.append(sb.get_parent())
-		sb.set_meta("delivered", false)
-		_set_bale_grabbed(sb, true)
-		_reparent_keep_world(sb, cp)
-		_carried_natural_local_y[sb.get_instance_id()] = sb.position.y
-	_on_grabbed(best, stack)
+	_carried_natural_local_y.clear()
+	_on_grabbed(best, [])
 
+## #201 Step 5 — clears the carried-bale reference. The load itself stays where
+## physics put it (in the bucket / between plates / on the forks). No reparent,
+## no settlement ray — gravity + contact already handled that.
 func _release() -> void:
 	_on_pre_release()
 	if _carried_bale == null:
 		return
-	# Drop the stacked bales first (top of the pile), then the primary, each back
-	# at its current world position and settled onto whatever is below.
-	for i in _carried_stack.size():
-		var sb := _carried_stack[i] as Node3D
-		if sb == null or not is_instance_valid(sb):
-			continue
-		var dest_s : Node = _carried_stack_orig_parents[i] \
-			if (i < _carried_stack_orig_parents.size() and _carried_stack_orig_parents[i] \
-				and is_instance_valid(_carried_stack_orig_parents[i])) \
-			else get_tree().current_scene
-		_drop_bale(sb, dest_s)
-	_carried_stack.clear()
-	_carried_stack_orig_parents.clear()
-
-	var b := _carried_bale
-	var dest : Node = _bale_orig_parent if (_bale_orig_parent and is_instance_valid(_bale_orig_parent)) else get_tree().current_scene
-	_drop_bale(b, dest)
 	_carried_bale = null
 	_bale_orig_parent = null
+	_carried_stack.clear()
+	_carried_stack_orig_parents.clear()
 	_carried_natural_local_y.clear()
 	_on_released()
 
@@ -649,6 +629,11 @@ func _find_stack_above(base: Node3D) -> Array[Node3D]:
 ## bale's centre, 3) if the bale's bottom would be below the obstacle's top, push
 ## the entire stack up by that penetration depth.
 func _clamp_carried_against_obstacles() -> void:
+	# #201 Step 5 — DEAD. This was a positional kludge to keep auto-parented
+	# bales from clipping into stacks; with the snap gone, gravity + contact
+	# solve this for free. Body kept for save-compat and stays a no-op.
+	return
+	# legacy path below is unreachable but kept verbatim for review.
 	if _carried_bale == null:
 		return
 	var space := get_world_3d().direct_space_state
@@ -741,23 +726,15 @@ func _on_released() -> void:
 ## drop their collision layer so they don't push the vehicle around. When let
 ## go, they unfreeze and re-collide with the world. StaticBody3D bales (legacy
 ## save data) take the old collision-toggle path.
+## #201 Step 5 — kept ONLY for the LOD upgrade. The freeze/collision-disable
+## branch was the heart of the auto-snap: it took a bale's physics offline so
+## the script could move it manually. With the clamp/forks/grapple now being
+## real AnimatableBody3D bodies, the bale's own RB stays live and contact
+## physics handles the carry. NPC helpers that still call this end up with a
+## detail upgrade and nothing else — which is what we want.
 func _set_bale_grabbed(b: Node3D, grabbed: bool) -> void:
-	# LOD upgrade: yard bales spawn as a cheap single-box model; the moment one is
-	# grabbed, build its full sheet/wire detail so cutting + the film-pile work.
 	if grabbed and b != null and b.has_meta("simple_bale"):
 		PlaceableCatalog.detail_bale(b)
-	if b is RigidBody3D:
-		var rb := b as RigidBody3D
-		rb.freeze = grabbed
-		rb.sleeping = grabbed
-		rb.linear_velocity = Vector3.ZERO
-		rb.angular_velocity = Vector3.ZERO
-		rb.collision_layer = 0 if grabbed else 1
-		rb.collision_mask  = 0 if grabbed else 1
-	elif b is StaticBody3D:
-		var sb := b as StaticBody3D
-		sb.collision_layer = 1 if not grabbed else 0
-		sb.collision_mask  = 1 if not grabbed else 0
 
 ## Crosshair interaction protocol used by PlayerController. VehicleEnterArea still
 ## decides whether the cab is reachable; the player must also look at the vehicle.
@@ -872,20 +849,16 @@ func _approach_angle(from: float, to: float, step: float) -> float:
 		return to
 	return from + signf(d) * step
 
-## NPC clamps a bale onto its carry point (bypasses the player grab minigame).
+## #201 Step 5 — NPC snap path stripped to match the player's pure-physics
+## flow. Now only records the reference; the feeder NPC code is responsible
+## for actually driving the vehicle into contact with the bale (see #173).
+## Previously this froze the bale + zeroed its collision + reparented it
+## under the carry point — a textbook auto-snap.
 func npc_carry_bale(bale: Node3D) -> void:
 	if bale == null:
 		return
-	if bale is RigidBody3D:
-		(bale as RigidBody3D).freeze = true
-	if bale is CollisionObject3D:
-		(bale as CollisionObject3D).collision_layer = 0
-		(bale as CollisionObject3D).collision_mask  = 0
-	var cp := _carry_point()
-	if bale.get_parent():
-		bale.get_parent().remove_child(bale)
-	cp.add_child(bale)
-	bale.transform = Transform3D.IDENTITY
+	if bale.has_meta("simple_bale"):
+		PlaceableCatalog.detail_bale(bale)
 	_carried_bale = bale
 
 ## Hand the carried bale back to the world at a target transform (for the belt).
