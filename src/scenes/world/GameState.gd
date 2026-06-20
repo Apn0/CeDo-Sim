@@ -33,9 +33,12 @@ func _ready() -> void:
 	
 	# Check if MainMenu passed a specific save name
 	if EventBus.has_meta("pending_save_name"):
-		var pending_name = EventBus.get_meta("pending_save_name")
+		var pending_name = str(EventBus.get_meta("pending_save_name"))
 		if pending_name != "":
-			save_file_path = "user://%s_save.json" % pending_name
+			# Sanitize the save name to prevent path traversal
+			var safe_name = pending_name.get_file().validate_filename()
+			if safe_name != "":
+				save_file_path = "user://%s_save.json" % safe_name
 			
 	if EventBus.has_meta("pending_is_new_save"):
 		is_new_save = EventBus.get_meta("pending_is_new_save")
