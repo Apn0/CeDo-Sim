@@ -1630,6 +1630,7 @@ func _on_fetch_satellite() -> void:
 	status_label.text = "Fetching satellite tile…"
 	print("[WorldSetup] WMS GET: %s" % url)
 	var req := HTTPRequest.new()
+	req.set_tls_options(TLSOptions.client())
 	add_child(req)
 	req.request_completed.connect(_on_satellite_fetched.bind(req, extent_m, rd))
 	var err := req.request(url)

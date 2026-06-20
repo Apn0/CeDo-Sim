@@ -173,11 +173,15 @@ func _compute_slot_transforms() -> void:
 	var fp := footprint()
 	for i in bay_count:
 		var z : float = -fp.y * 0.5 + (float(i) + 0.5) * bay_width
-		# LEFT row: bays open toward +X (aisle). Car parked facing the aisle
-		# means the car's front (-Z car-local) points AT the wall — i.e. car's
-		# +Z (rear) points TOWARD the aisle. So yaw = atan2(+X, 0) = π/2. After
-		# Y-up rotation by π/2, car's local +Z (rear) ends up pointing +X.
-		# That's what we want: rear bumper facing the aisle, front against the curb.
+		# Canonical CeDo direction (matches BaseVehicle._kinematic_move, which
+		# uses `fwd := -global_transform.basis.z`, i.e. car-local -Z IS its
+		# driving forward direction).
+		#   LEFT row sits at world -X; aisle is at +X. Yaw -90° rotates
+		#   car-local -Z onto world +X — nose points OUT into the aisle, rear
+		#   against the curb. Driver can pull straight out of the bay forward.
+		#   RIGHT row sits at world +X; aisle is at -X. Yaw +90° rotates
+		#   car-local -Z onto world -X — nose points OUT into the aisle,
+		#   mirror of left.
 		var left_xf := Transform3D(
 			Basis(Vector3.UP, deg_to_rad(-90.0)),
 			Vector3(-aisle_width * 0.5 - bay_length * 0.5, surface_y, z))

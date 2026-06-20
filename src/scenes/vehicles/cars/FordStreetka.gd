@@ -22,4 +22,5 @@ func _ready() -> void:
 	_model_scale    = Vector3(1.0, 0.85, 1.0)
 	# Black paint — Pascal's car.
 	_paint_color    = Color(0.05, 0.05, 0.06)
+	_real_world_length_m = 3.62   # Ford Streetka = Ka chassis = 3.62 m
 	load_model()

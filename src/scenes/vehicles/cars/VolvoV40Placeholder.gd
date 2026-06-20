@@ -23,6 +23,7 @@ func _ready() -> void:
 	_model_path     = MODEL_PATH
 	_part_names     = DEFAULT_PART_NAMES
 	_paint_color    = Color(0.05, 0.05, 0.06)   # black
+	_real_world_length_m = 4.37   # Volvo V40 II = 4.37 m
 	_paint_extra_match = ["astra"]               # pack labels body material by car name
 	load_model()
 

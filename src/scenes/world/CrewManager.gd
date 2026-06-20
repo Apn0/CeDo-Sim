@@ -88,6 +88,162 @@ func setup(npc_dict: Dictionary, lf: Node, sc: Node, break_pos: Vector3) -> void
 	shift_clock    = sc
 	break_room_pos = break_pos
 	assign_posts()
+	_hook_walkie()
+	# Subscribe to ShiftClock.time_set so an operator rewinding the wall clock
+	# to a pre-shift instant despawns the at-post crew and hands them back to
+	# PreShiftSequence (which spawns them in arriving cars / dressing room /
+	# canteen per their per-NPC arrives_at_s). Without this CrewManager keeps
+	# every NPC pinned at their machine even when the clock reads 06:35 —
+	# exactly the operator's complaint.
+	if shift_clock != null and shift_clock.has_signal("time_set") \
+			and not shift_clock.time_set.is_connected(_on_time_set):
+		shift_clock.time_set.connect(_on_time_set)
+
+## ShiftClock.time_set handler. Cooperates with PreShiftSequence + MainWorld:
+##   - PreShiftSequence.recompute_for() (triggered by the time_jumped signal
+##     emitted from inside set_time_and_date) places NPCs at arrival /
+##     dressing / canteen / smoke for the scheduled crew.
+##   - MainWorld._on_time_jumped repositions parked NPC CARS along the
+##     De Asselen Kuil polyline so they arrive at their bay at arrives_at_s.
+##   - WE OWN the worker-state reset on a backward jump. The pre-shift branch
+##     used to be a no-op trusting PreShiftSequence to flip off-duty for us,
+##     but PSS isn't guaranteed to exist (resumed-past-bell save) and even
+##     when it does, scheduled NPCs whose node can't be resolved leave the
+##     stale AT_POST flag stuck. Owning the despawn here makes the operator's
+##     "set time to 06:35" deterministic regardless of PSS state.
+##   - At-or-after the bell we re-run assign_posts() so workers PSS had set
+##     off-duty (or whose at-post pos got teleported) are brought back on duty.
+func _on_time_set(_prev_day: int, _prev_secs: int, _new_day: int, new_secs: int) -> void:
+	if shift_clock == null:
+		return
+	var bell_secs : int = int(shift_clock.shift_start_seconds_of_day()) \
+			if shift_clock.has_method("shift_start_seconds_of_day") else 7 * 3600
+	# Treat the time-of-day comparison as a "wall clock is before the bell"
+	# check. A rewind from 09:00 → 06:35 lands new_secs < bell_secs.
+	if new_secs < bell_secs:
+		# Pre-shift: drop our in-flight dispatch + break state so we don't try
+		# to dispatch a worker PreShiftSequence has hidden, and so the break
+		# rotation re-starts fresh once the bell fires.
+		_handling.clear()
+		_break_until.clear()
+		_break_timer = BREAK_INTERVAL
+		# Explicitly despawn the at-post crew. clear_post() sets the worker
+		# off-duty AND wipes assigned_station_id so current_task() returns
+		# "vrij (rust)" instead of a stale "post: …". PreShiftSequence (when
+		# it exists) will then teleport each scheduled NPC to arrival /
+		# dressing / canteen on its recompute_for pass. Non-scheduled NPCs
+		# (Mohammed if PSS lacked them, floaters) stay off-duty until the
+		# bell — symmetric to a fresh pre-shift bootstrap.
+		for w in workers:
+			if not (w is NPC):
+				continue
+			# Don't touch pinned workers — the operator wants them locked
+			# even across a time rewind (#124).
+			if _pinned.has(w):
+				continue
+			if w.has_method("clear_post"):
+				w.clear_post()
+			elif w.has_method("set_off_duty"):
+				w.set_off_duty(true)
+	else:
+		# Past the bell: re-run posting so any worker PreShiftSequence had set
+		# off-duty (or whose at-post-position got teleported by recompute_for)
+		# is brought on-duty + sent back to their machine. _handling is cleared
+		# so the next tick re-evaluates jams against the now-canonical state.
+		_handling.clear()
+		for w in workers:
+			if not (w is NPC):
+				continue
+			if w.has_method("is_off_duty") and w.has_method("set_off_duty") \
+					and w.is_off_duty():
+				w.set_off_duty(false)
+		assign_posts()
+
+## Subscribe to Walkie.transmit_sent so the crew brain reacts to the operator's
+## keyed-up canned lines (skeletal — currently only "Need a hand here" picks the
+## closest feeder NPC, sends them to the operator, and has them echo "On my way"
+## on arrival). Best-effort: silently does nothing in the headless harness where
+## the autoload isn't present.
+func _hook_walkie() -> void:
+	var ml := Engine.get_main_loop()
+	if not (ml is SceneTree):
+		return
+	var walkie := (ml as SceneTree).root.get_node_or_null("Walkie")
+	if walkie == null or not walkie.has_signal("transmit_sent"):
+		return
+	# Avoid double-connecting if setup() is called more than once (e.g. on reload).
+	if not walkie.is_connected("transmit_sent", Callable(self, "_on_walkie_transmit")):
+		walkie.connect("transmit_sent", Callable(self, "_on_walkie_transmit"))
+
+## Operator keyed up a canned line over the walkie. Skeletal listener: only
+## "Need a hand here" triggers a response right now — pick the closest available
+## feeder NPC and dispatch them to walk to the operator. On arrival they echo
+## "On my way" back over the radio (handled by _on_helper_arrived, queued via the
+## NPC's existing dispatch_to callback path).
+func _on_walkie_transmit(text: String, heard: bool) -> void:
+	if not heard:
+		return                     # battery flat — colleagues didn't hear it
+	if text == null:
+		return
+	var t := String(text).strip_edges().to_lower()
+	if t.begins_with("need a hand"):
+		_dispatch_helper_to_operator()
+
+## Find the closest available feeder NPC, walk them to the player's position,
+## and arrange for them to echo "On my way" via the walkie once they arrive.
+## No-op when the player isn't in the scene yet, or when no feeder is free.
+func _dispatch_helper_to_operator() -> void:
+	var ml := Engine.get_main_loop()
+	if not (ml is SceneTree):
+		return
+	var scene := (ml as SceneTree).current_scene
+	if scene == null:
+		return
+	# Resolve the operator's position. The player node is conventionally named
+	# "Player" under MainWorld; fall back to the group lookup if a future scene
+	# moves it.
+	var player_node : Node3D = scene.find_child("Player", true, false) as Node3D
+	if player_node == null:
+		for n in (ml as SceneTree).get_nodes_in_group("player"):
+			if n is Node3D:
+				player_node = n
+				break
+	if player_node == null:
+		return
+	var op_pos := player_node.global_position
+	# Pick the nearest available feeder. permanent_feeder and feeder both count;
+	# transitional is a feeder→extruder swing role so we include it too.
+	var helper : NPC = null
+	var best_d := INF
+	for w in workers:
+		if not (w is NPC):
+			continue
+		if not w.is_available():
+			continue
+		var role := String(w.npc_role)
+		if role != "feeder" and role != "permanent_feeder" and role != "transitional":
+			continue
+		var d : float = w.global_position.distance_to(op_pos)
+		if d < best_d:
+			best_d = d
+			helper = w
+	if helper == null:
+		return                     # no feeder free right now — operator's on their own
+	# Re-use the standard dispatch path so the helper walks via the navmesh and
+	# the brain transitions back to AT_POST when done. SERVICE_SECS gives a brief
+	# "stood by" dwell at the operator's spot before they head back.
+	helper.dispatch_to(op_pos, "operator_help", SERVICE_SECS)
+	_handling["operator_help"] = helper
+	_emit("npc_called_for_help", ["operator", String(helper.npc_name), "operator_help"])
+	_emit("npc_started_helping", [String(helper.npc_name), "", "operator_help"])
+	# Echo "On my way" via the walkie. Skeletal: we send it on dispatch (the
+	# real arrival callback lives in step_brain → service-complete, which already
+	# emits npc_finished_helping; a fuller implementation would defer the radio
+	# call until arrival, but the operator hearing it immediately is acceptable
+	# for the first cut — the helper IS on their way as of this tick).
+	var walkie := (ml as SceneTree).root.get_node_or_null("Walkie")
+	if walkie != null and walkie.has_method("receive_call"):
+		walkie.receive_call(String(helper.npc_name), "On my way.")
 
 # =============================================================================
 # POSTING
@@ -338,6 +494,15 @@ func _break_candidate() -> NPC:
 # HELPERS
 # =============================================================================
 func _covers(w: NPC, station_id: String) -> bool:
+	# #173 — section-pinned workers cover their section first; otherwise fall
+	# back to the role-based zone match. A worker pinned to "section:wash_3a"
+	# answers wash_3a jams even if their role is something else.
+	var pin := String(_pinned.get(w, ""))
+	if pin.begins_with("section:"):
+		for tk in _zone_for_section(pin.substr(8)):
+			if station_id.find(String(tk)) != -1:
+				return true
+		return false
 	for tk in _zone_for(w.npc_role):
 		if station_id.find(String(tk)) != -1:
 			return true
@@ -437,8 +602,82 @@ const ROLE_POSTS := [
 	{"id": "role:production_manager", "label": "Production manager"},
 ]
 
+## #173 — section-level assignment. The operator can pin a worker to a NAMED
+## section of a specific line (e.g. "Line 3A · Feed area") instead of a single
+## machine or a coord. SECTION_ZONES maps each section id to the substrings
+## that match its machine ids — same matching style as ZONES uses for roles.
+## A section-pinned worker (a) is auto-posted to the NEAREST machine in that
+## section, (b) covers any machine in the section for incident response, and
+## (c) the FeederWorker reads "section:feed_*" pins to choose which feed belt
+## to deliver bales to.
+const SECTION_POSTS := [
+	{"id": "section:feed_3a",     "label": "Line 3A · Feed area"},
+	{"id": "section:feed_3b",     "label": "Line 3B · Feed area"},
+	{"id": "section:feed_1",      "label": "Line 1 · Feed area"},
+	{"id": "section:feed_3c",     "label": "Line 3C · Feed area"},
+	{"id": "section:feed_6",      "label": "Line 6 · Feed area"},
+	{"id": "section:intake_3a3b", "label": "Line 3A/3B · Intake conveyors"},
+	{"id": "section:sort_3a3b",   "label": "Line 3A/3B · Sorting (TOMRA / TITECH)"},
+	{"id": "section:wash_3a",     "label": "Line 3A · Wash"},
+	{"id": "section:wash_3b",     "label": "Line 3B · Wash"},
+	{"id": "section:wash_1",      "label": "Line 1 · Wash"},
+	{"id": "section:extruder_3a", "label": "Line 3A · Extruder"},
+	{"id": "section:extruder_3b", "label": "Line 3B · Extruder"},
+	{"id": "section:extruder_1",  "label": "Line 1 · Extruder"},
+	{"id": "section:extruder_3c", "label": "Line 3C · Extruder"},
+	{"id": "section:extruder_6",  "label": "Line 6 · Extruder"},
+]
+const SECTION_ZONES : Dictionary = {
+	"feed_3a":     ["bunker_3a", "shredder_1", "opzetband_3a3b"],
+	"feed_3b":     ["bunker_3b", "shredder_1", "opzetband_3a3b"],
+	"feed_1":      ["bunker_1",  "opzetband_1", "westa_band_1"],
+	"feed_3c":     ["bunker_3c", "opzetband_3c6"],
+	"feed_6":      ["bunker_6",  "opzetband_3c6"],
+	"intake_3a3b": ["transportband_", "switch_belt", "vss_silo", "u_bay"],
+	"sort_3a3b":   ["titech", "tomra", "ballistic", "trilzeef", "metal_belt", "wind_sifter"],
+	"wash_3a":     ["prewash_3a", "friction_3a", "intensive_3a", "flotation_3a",
+					"rotation_3a", "kufferath_3a", "dewater_3a", "mech_dryer_3a", "centrifuge_3a"],
+	"wash_3b":     ["prewash_3b", "friction_3b", "intensive_3b", "flotation_3b",
+					"rotation_3b", "kufferath_3b", "dewater_3b", "mech_dryer_3b", "centrifuge_3b"],
+	"wash_1":      ["prewash_1", "friction_1", "intensive_1", "flotation_1",
+					"rotation_1", "kufferath_1", "dewater_1", "mech_dryer_1", "centrifuge_1"],
+	"extruder_3a": ["extruder_3a", "mengsilo_3a", "compactor_3a", "mas_bak_3a"],
+	"extruder_3b": ["extruder_3b", "mengsilo_3b", "compactor_3b", "mas_bak_3b"],
+	"extruder_1":  ["extruder_1",  "mengsilo_1",  "compactor_1",  "mas_bak_1"],
+	"extruder_3c": ["extruder_3c", "mengsilo_3c", "compactor_3c", "mas_bak_3c", "plasmaq", "laser_filter", "melt_pump"],
+	"extruder_6":  ["extruder_6",  "mengsilo_6",  "compactor_6",  "mas_bak_6"],
+}
+
 static func role_posts() -> Array:
 	return ROLE_POSTS
+
+static func section_posts() -> Array:
+	return SECTION_POSTS
+
+func _zone_for_section(section_key: String) -> Array:
+	return SECTION_ZONES.get(section_key, [])
+
+## Like _nearest_in_zone but uses SECTION_ZONES instead of role zones.
+func _nearest_in_section(section_key: String, from: Vector3, machines: Array) -> Dictionary:
+	var tokens := _zone_for_section(section_key)
+	if tokens.is_empty():
+		return {}
+	var best : Dictionary = {}
+	var best_d := INF
+	for m in machines:
+		var id := String(m["id"])
+		var hit := false
+		for tk in tokens:
+			if id.find(String(tk)) != -1:
+				hit = true
+				break
+		if not hit:
+			continue
+		var d : float = from.distance_to(m["pos"])
+		if d < best_d:
+			best_d = d
+			best = m
+	return best
 
 ## Hand-assign `worker` to a post. Special ids: "__auto__" reverts to role-based
 ## auto-posting, "__off__" takes them off duty. "role:X" sets the worker's npc_role
@@ -469,6 +708,24 @@ func manual_assign(worker, station_id: String) -> void:
 		if not best.is_empty():
 			var apos : Vector3 = best["pos"]; apos.y = worker.global_position.y
 			worker.assign_post(String(best["id"]), apos)
+		return
+	# #173 — Section-based post: pin the worker to a NAMED zone of a line (Feed,
+	# Wash, Extruder, Sort area for that specific line). Auto-posts to the
+	# nearest machine in that section's token list. Coverage (_covers) treats
+	# any matching machine as in-scope so jam responses stay sectional.
+	if station_id.begins_with("section:"):
+		var section_key := station_id.substr(8)
+		_pinned.erase(worker)
+		_pin_meta.erase(worker)
+		_clear_pin_marker(worker)
+		if "home_facing_rad" in worker:
+			worker.home_facing_rad = NAN
+		var best_sec : Dictionary = _nearest_in_section(section_key, worker.global_position, _machine_list())
+		if not best_sec.is_empty():
+			var spos : Vector3 = best_sec["pos"]; spos.y = worker.global_position.y
+			worker.assign_post(String(best_sec["id"]), spos)
+		_pinned[worker] = station_id
+		_emit("npc_called_for_help", ["operator", String(worker.npc_name), station_id])
 		return
 	# Role-based post: switch the worker's RotA role, then auto-post by that role's zone.
 	if station_id.begins_with("role:"):

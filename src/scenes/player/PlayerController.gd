@@ -26,6 +26,31 @@ const GRAVITY: float = 9.8
 const STEP_HEIGHT: float = 0.4   # max ledge/curb height the player walks over
 const INTERACT_RAY_RANGE: float = 3.75
 
+# ── Vault / climb (#cluster VAULT_CLIMB) ──────────────────────────────────────
+# When the player presses Space while walking forward (W) into a chest-height
+# obstacle that has clear headroom above it, mantle up onto it instead of
+# bouncing a useless vertical jump off the wall face. Three forward raycasts
+# under Head detect "can I vault this?" each tick:
+#   _ray_player_waist (~0.9 m above feet, 0.9 m forward) — must HIT (there is a low obstacle)
+#   _ray_player_chest (~1.4 m above feet, 0.9 m forward) — must HIT (obstacle reaches chest)
+#   _ray_player_head  (~1.7 m above feet, 0.9 m forward) — must MISS (headroom clear over top)
+# Plus the player must be (a) on the floor, (b) standing, (c) pressing W (wish_dir
+# aimed along -basis.z), (d) jumping NOW (action just_pressed). All five must
+# match — otherwise the jump branch falls through to the normal vertical impulse.
+const CLIMB_MAX_HEIGHT      : float = 1.4   # ceiling on ledges we can mantle over (~chest)
+const CLIMB_DURATION        : float = 0.5   # seconds to lerp from start pose to top
+const CLIMB_FORWARD_DIST    : float = 1.2   # how far forward we land on top of the ledge
+const CLIMB_FORWARD_RAY_LEN : float = 0.9
+# TODO: real climb animation goes through AnimationTree once Phase 1 lands.
+enum VaultState { NONE, CLIMBING }
+var _vault_state    : int     = VaultState.NONE
+var _vault_timer    : float   = 0.0
+var _vault_start    : Vector3 = Vector3.ZERO
+var _vault_end      : Vector3 = Vector3.ZERO
+var _ray_player_waist : RayCast3D = null
+var _ray_player_chest : RayCast3D = null
+var _ray_player_head  : RayCast3D = null
+
 var _look_interactable: Node = null
 var _look_prompt: String = ""
 
@@ -148,6 +173,7 @@ func _ready() -> void:
 	_camera_rig.activate()
 	_refresh_settings()
 	_build_flashlight()
+	_build_vault_rays()
 	if Engine.has_singleton("SettingsManager") or has_node("/root/SettingsManager"):
 		var sm := get_node("/root/SettingsManager")
 		if sm.has_signal("settings_applied"):
@@ -170,6 +196,12 @@ func _refresh_settings() -> void:
 		_camera_rig._camera.fov = fov
 
 func _physics_process(delta: float) -> void:
+	# Vault/climb override (#cluster VAULT_CLIMB): while the mantle tween is
+	# active we own the transform directly — gravity, WASD, jump, step-up and
+	# wedge-rescue all step aside until we drop the player on top of the ledge.
+	if _vault_state == VaultState.CLIMBING:
+		_advance_vault(delta)
+		return
 	# Always apply gravity so the capsule rests on the floor.
 	if not is_on_floor():
 		velocity.y -= GRAVITY * delta
@@ -194,9 +226,18 @@ func _physics_process(delta: float) -> void:
 		velocity.x = move_toward(velocity.x, 0.0, friction * delta)
 		velocity.z = move_toward(velocity.z, 0.0, friction * delta)
 		move_and_slide()
+		# Animation Phase 1: keep the rig in idle while UI is open. Velocity
+		# already decays via friction above, but resolve + push 0 explicitly
+		# so the legs visibly settle even if velocity is still drifting down.
+		_update_animation_blend()
 		return
 
-	# WASD — relative to body facing direction.
+	# WASD — relative to body facing direction. CANONICAL Godot convention:
+	# forward = -basis.z. The Humanoid model is authored face-on-+Z (see
+	# Humanoid.gd:200 docstring); attach sites (MainWorld._spawn_player,
+	# GauntletWorld._build_player) apply rotation.y = PI to align the visible
+	# face with -basis.z. Do not "fix" an apparent backward-W by flipping signs
+	# here — that would re-break A/D and break vehicle attach sites too.
 	var wish_dir := Vector3.ZERO
 	if Input.is_action_pressed("move_forward"):
 		wish_dir -= global_transform.basis.z
@@ -224,8 +265,14 @@ func _physics_process(delta: float) -> void:
 	velocity.z = move_toward(velocity.z, target_xz.z, accel * delta)
 
 	# Jump — only from the ground AND only while standing (can't hop when crouched).
+	# Combo-aware: W (forward wish_dir) + Space against a chest-height obstacle
+	# with clear headroom = vault/mantle onto the ledge instead of a vertical hop.
+	# Otherwise, the normal jump impulse fires.
 	if Input.is_action_just_pressed("jump") and is_on_floor() and _stance == Stance.STANDING:
-		velocity.y = jump_speed
+		if _try_start_vault(wish_dir):
+			pass    # vault tween consumes this tick's velocity
+		else:
+			velocity.y = jump_speed
 
 	_attempt_step_up()
 	_attempt_wedge_rescue(wish_dir, delta)
@@ -233,19 +280,41 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 	_apply_belt_carry(delta)
 	_update_crosshair_interaction()
+	# Animation Phase 1: feed the body's BlendSpace2D so 3rd-person/orbit shows
+	# a real walk cycle. No-op for first-person (the body's head is on a
+	# hidden layer + the FP eye sits between the body's shoulders).
+	_update_animation_blend()
 
 ## Belt-carry: if we're standing on a body in group "belt", drag the player along
 ## the belt's world-space carry velocity. Reads slide collisions from the last
-## move_and_slide(); additive, so WASD can still walk against the belt. Applied at
-## most once per frame even if several slide collisions report the same belt.
+## move_and_slide(); additive, so WASD can still walk against the belt. Applied
+## at most once per frame even if several slide collisions report the same belt.
+##
+## #172 — Operator reported 2× carry speed + wrong direction. Root cause: every
+## belt now ships with BeltSurface (#conveyorphysics), which writes
+## constant_linear_velocity. In Godot 4 CharacterBody3D's move_and_slide() ALSO
+## inherits a moving platform's constant_linear_velocity, so the carry was being
+## applied twice. Fix: skip the manual hack for belts that have BeltSurface — let
+## Godot's built-in moving-platform inheritance do the work. The fallback path
+## stays for legacy belts that only carry the meta `belt_speed`.
 func _apply_belt_carry(delta: float) -> void:
 	for i in get_slide_collision_count():
 		var collider := get_slide_collision(i).get_collider()
 		if collider != null and collider.is_in_group("belt"):
+			# BeltSurface-equipped belt → Godot inherits its velocity already.
+			if collider.get_script() != null and "belt_speed_mps" in collider:
+				return
+			# Legacy belt fallback — apply the manual drag.
 			var v: Vector3
 			if collider.has_method("belt_velocity"):
 				v = collider.belt_velocity()
 			else:
+				# CANONICAL CONVENTION: downstream = body LOCAL +Z (see BeltSurface.gd
+				# docstring). BeltBuilder builds the discharge chute at local +Z,
+				# ShredderFeedBelt builds the deck along local +Z, the shader scrolls
+				# texture toward +Z on positive speed, and BuildMode adds rot_y + PI
+				# to each macro-placed body so its local +Z matches the world march
+				# (downstream). Carry the operator along +basis.z.
 				v = collider.global_transform.basis.z.normalized() * float(collider.get_meta("belt_speed", 0.0))
 			global_position += v * delta
 			return
@@ -357,6 +426,117 @@ func _attempt_step_up() -> void:
 			if not test_move(seated, Vector3.ZERO):
 				global_position.y += lift        # set down exactly on the step top
 
+# =============================================================================
+# VAULT / CLIMB  (#cluster VAULT_CLIMB)
+# =============================================================================
+## Add three forward raycasts under Head so we can detect "is there a chest-
+## height obstacle in front of me with clear headroom above?". Mounted in code
+## (no scene edit required) so any existing scene picks the capability up at
+## runtime — mirrors how _build_flashlight registers nodes on-the-fly.
+##
+## Geometry (Y is measured from the body origin, which sits at the capsule
+## centre; the standing capsule is 1.8 m tall, so the floor is at -0.9 and the
+## top is at +0.9):
+##   waist ~0.9 m above feet (Y = 0.0)  → -Z forward 0.9 m
+##   chest ~1.4 m above feet (Y = 0.5)  → -Z forward 0.9 m
+##   head  ~1.7 m above feet (Y = 0.8)  → -Z forward 0.9 m
+## All three exclude self.
+func _build_vault_rays() -> void:
+	if _ray_player_waist != null:
+		return
+	_ray_player_waist = RayCast3D.new()
+	_ray_player_waist.name = "RayVaultWaist"
+	_ray_player_waist.position = Vector3(0.0, 0.0, 0.0)
+	_ray_player_waist.target_position = Vector3(0.0, 0.0, -CLIMB_FORWARD_RAY_LEN)
+	_ray_player_waist.collide_with_areas = false
+	_ray_player_waist.collide_with_bodies = true
+	_ray_player_waist.add_exception(self)
+	add_child(_ray_player_waist)
+
+	_ray_player_chest = RayCast3D.new()
+	_ray_player_chest.name = "RayVaultChest"
+	_ray_player_chest.position = Vector3(0.0, 0.5, 0.0)
+	_ray_player_chest.target_position = Vector3(0.0, 0.0, -CLIMB_FORWARD_RAY_LEN)
+	_ray_player_chest.collide_with_areas = false
+	_ray_player_chest.collide_with_bodies = true
+	_ray_player_chest.add_exception(self)
+	add_child(_ray_player_chest)
+
+	_ray_player_head = RayCast3D.new()
+	_ray_player_head.name = "RayVaultHead"
+	_ray_player_head.position = Vector3(0.0, 0.8, 0.0)
+	_ray_player_head.target_position = Vector3(0.0, 0.0, -CLIMB_FORWARD_RAY_LEN)
+	_ray_player_head.collide_with_areas = false
+	_ray_player_head.collide_with_bodies = true
+	_ray_player_head.add_exception(self)
+	add_child(_ray_player_head)
+
+## Combo gate: W (forward wish_dir) + Space against a low-but-not-too-low
+## obstacle = vault. Returns true if the vault was started this frame (and the
+## caller should skip the normal jump impulse). Otherwise the caller falls
+## through to the regular vertical hop.
+##
+## Conditions (all must be true):
+##   1. wish_dir is non-trivial and points along -basis.z (the player is
+##      walking forward, not strafing or stationary)
+##   2. waist ray HITS         — there IS a low obstacle 0.9 m ahead
+##   3. chest ray HITS         — the obstacle reaches at least chest height
+##   4. head ray MISSES        — headroom above the ledge is clear
+##   5. landing pose is clear  — test_move at the target stance succeeds
+func _try_start_vault(wish_dir: Vector3) -> bool:
+	if _ray_player_waist == null or _ray_player_chest == null or _ray_player_head == null:
+		return false
+	# (1) Combo check: walking forward, not just standing in front of a wall.
+	if wish_dir.length() < 0.1:
+		return false
+	var forward := -global_transform.basis.z
+	if wish_dir.dot(forward) < 0.5:
+		return false
+	# (2) Force a refresh — we just added these rays in _ready, so on the very
+	# first physics tick they may not have a valid is_colliding() snapshot yet.
+	_ray_player_waist.force_raycast_update()
+	_ray_player_chest.force_raycast_update()
+	_ray_player_head.force_raycast_update()
+	# (3) Obstacle profile: waist + chest hit, head clear.
+	if not _ray_player_waist.is_colliding():
+		return false
+	if not _ray_player_chest.is_colliding():
+		return false
+	if _ray_player_head.is_colliding():
+		return false
+	# (4) Compute the landing pose — lift by CLIMB_MAX_HEIGHT, push forward
+	# CLIMB_FORWARD_DIST along the walk direction. Verify it's clear so we
+	# don't drop the player into geometry.
+	var land_offset := forward.normalized() * CLIMB_FORWARD_DIST + Vector3.UP * CLIMB_MAX_HEIGHT
+	var landing := global_transform.translated(land_offset)
+	if test_move(landing, Vector3.ZERO):
+		return false
+	# All clear — start the climb tween.
+	_vault_state = VaultState.CLIMBING
+	_vault_timer = 0.0
+	_vault_start = global_position
+	_vault_end   = global_position + land_offset
+	velocity = Vector3.ZERO
+	return true
+
+## Advance the vault tween. Lerps the capsule from _vault_start → _vault_end
+## over CLIMB_DURATION seconds, then releases control back to normal walking.
+## Input is implicitly disabled because _physics_process early-returns while
+## _vault_state == CLIMBING (gravity, WASD, jump, step-up all skipped).
+## TODO: real climb animation goes through AnimationTree once Phase 1 lands.
+func _advance_vault(delta: float) -> void:
+	_vault_timer += delta
+	var t := clampf(_vault_timer / CLIMB_DURATION, 0.0, 1.0)
+	# Ease-out so the player decelerates as they set down on top of the ledge.
+	var eased := 1.0 - pow(1.0 - t, 2.0)
+	global_position = _vault_start.lerp(_vault_end, eased)
+	if t >= 1.0:
+		_vault_state = VaultState.NONE
+		_vault_timer = 0.0
+		# Give the body to gravity again with zero velocity; move_and_slide on
+		# the next normal physics tick re-seats it on the ledge top.
+		velocity = Vector3.ZERO
+
 ## Two-corner opening capture — press F11 looking at the bottom-left corner of
 ## where a door / gate / window should go, press F11 again looking at the top-
 ## right corner. The crosshair raycasts onto whatever surface you're aiming at;
@@ -377,6 +557,19 @@ var _opening_p1_normal : Vector3 = Vector3.ZERO
 ## player's view. Toggle with F. The Input action "flashlight" is registered
 ## on-the-fly (binds to KEY_F) so the project doesn't need a custom action set.
 var _flashlight : SpotLight3D = null
+
+# ── Animation Phase 1 (cluster: Skeleton3D rig + locomotion BlendSpace) ──
+# Cached AnimationTree on the player's visible Humanoid rig ("PlayerBody").
+# Updated each physics tick with horizontal velocity so the third-person /
+# orbit camera shows a real walk cycle instead of a sliding box rig. Null
+# until _resolve_anim_tree finds it (the rig is built by MainWorld /
+# GauntletWorld AFTER the controller's _ready, so we resolve lazily).
+# TODO Phase 2: feed BlendSpace2D Y axis with strafe (wish_dir decomposed
+# into local right vs forward). For Phase 1 we keep Y at 0.
+# TODO Phase 3: state-machine (walk → climb / vault / portofoon raise)
+# replaces the BlendSpace2D once Mixamo clips are wired.
+var _anim_tree : AnimationTree = null
+const _ANIM_RUN_SPEED_PLAYER : float = 10.0   # m/s mapped to BlendSpace X=2
 
 func _build_flashlight() -> void:
 	if _flashlight != null:
@@ -501,9 +694,57 @@ func _capture_opening_corner() -> void:
 	if width < 0.3 or height < 0.3:
 		print("[OpeningCapture] CANCELLED — rectangle is too small (%.2fw × %.2fh). Start over." % [width, height])
 		return
-	print("[OpeningCapture] opening %.2fw × %.2fh  at RD (cx=%.2f, cz=%.2f, bottom_y=%.2f)"
-		% [width, height, cx, cz, bottom_y])
+	# #122 auto-classify by W/H/bottom_y. Personnel door (≤1.2 m wide AND
+	# bottom ~0 m), roller gate (≥2.0 m wide), bay (≥3.0 m wide, low BY),
+	# window (BY ≥ 0.8 m), otherwise generic "door". Thresholds picked from
+	# the real CeDo doorways the operator measured.
+	var kind := "door"
+	if bottom_y >= 0.8:
+		kind = "window"
+	elif width >= 3.0 and bottom_y < 0.5:
+		kind = "bay"
+	elif width >= 2.0:
+		kind = "gate"
+	elif width <= 1.2 and bottom_y < 0.5:
+		kind = "door"
+	print("[OpeningCapture] %s %.2fw × %.2fh  at RD (cx=%.2f, cz=%.2f, bottom_y=%.2f)"
+		% [kind, width, height, cx, cz, bottom_y])
 	print("                 paste:  --door %.2f,%.2f,%.2f,%.2f,%.2f" % [cx, cz, width, height, bottom_y])
+	# #119 — Append to user://captured_doors.json so the operator doesn't have
+	# to scrape the console. tools/solidify_building.py can read this file
+	# directly when baking the next building shell.
+	_append_captured_door({
+		"kind":     kind,
+		"cx":       cx,
+		"cz":       cz,
+		"width":    width,
+		"height":   height,
+		"bottom_y": bottom_y,
+		"captured_at": Time.get_unix_time_from_system(),
+	})
+
+## #119 — persist a captured door spec to user://captured_doors.json. Reads
+## the existing file (if any), appends the new entry, writes back. Print a
+## one-liner with the file path so the operator can find it without digging.
+func _append_captured_door(entry: Dictionary) -> void:
+	const PATH := "user://captured_doors.json"
+	var arr : Array = []
+	if FileAccess.file_exists(PATH):
+		var rf := FileAccess.open(PATH, FileAccess.READ)
+		if rf:
+			var parsed : Variant = JSON.parse_string(rf.get_as_text())
+			rf.close()
+			if parsed is Array:
+				arr = parsed
+	arr.append(entry)
+	var wf := FileAccess.open(PATH, FileAccess.WRITE)
+	if wf == null:
+		print("[OpeningCapture] WARN — could not open %s for writing (%d)" \
+			% [PATH, FileAccess.get_open_error()])
+		return
+	wf.store_string(JSON.stringify(arr, "\t"))
+	wf.close()
+	print("[OpeningCapture] saved → %s  (%d total entries)" % [PATH, arr.size()])
 
 ## Look up BuildingShell.position so the capture can invert its shift back to
 ## the original RD coordinates the solidify script speaks. Returns ZERO if no
@@ -745,3 +986,91 @@ func _debug_trigger_fault_at_crosshair() -> void:
 			return
 		n = n.get_parent()
 	print("[DEBUG] force-fault: no faultable component found under %s" % String(hit_node.name))
+
+# =============================================================================
+# Animation Phase 1 — push horizontal speed into the rig's BlendSpace2D
+# =============================================================================
+## Locate the AnimationTree node Humanoid._install_skeleton_rig parents under
+## "PlayerBody". MainWorld._spawn_player names the rig "PlayerBody" (see
+## MainWorld.gd:821); GauntletWorld._build_player uses the same name. Returns
+## null until the rig is attached (controller _ready runs BEFORE the world
+## attaches the body), so we resolve lazily on first use.
+func _resolve_player_anim_tree() -> AnimationTree:
+	var body := get_node_or_null("PlayerBody")
+	if body == null:
+		# Some test scenes attach the rig under the default Humanoid name "Body".
+		body = get_node_or_null("Body")
+	if body == null:
+		return null
+	var direct := body.get_node_or_null("AnimationTree")
+	if direct is AnimationTree:
+		return direct as AnimationTree
+	# Recursive fallback in case a future patch nests the rig deeper.
+	return _find_anim_tree_recursive(body)
+
+func _find_anim_tree_recursive(n: Node) -> AnimationTree:
+	for c in n.get_children():
+		if c is AnimationTree:
+			return c as AnimationTree
+		if c is Node:
+			var hit := _find_anim_tree_recursive(c)
+			if hit != null:
+				return hit
+	return null
+
+## Map horizontal speed to BlendSpace X (0 = idle, 1 = walk, 2 = run). The walk
+## point matches walk_speed (≈5 m/s); the run point corresponds to
+## walk_speed × sprint_multiplier (≈8.5 m/s). Fast-traverse (5×) is clamped to
+## the same run pose — no separate "sprint" animation for Phase 1.
+## Phase 2: the AnimationTree's tree_root is now an AnimationNodeStateMachine
+## wrapping the locomotion BlendSpace2D + crouch / prone / seated pose states.
+## Locomotion blend_position is now NESTED inside the state name —
+## parameters/locomotion/blend_position. State transitions are driven via
+## parameters/playback.travel(name) with a 0.25 s xfade configured on the rig.
+var _last_anim_state : String = "locomotion"
+
+func _update_animation_blend() -> void:
+	if _anim_tree == null or not is_instance_valid(_anim_tree):
+		_anim_tree = _resolve_player_anim_tree()
+		if _anim_tree == null:
+			return
+	# Travel to the state that matches our stance. _stance is the operator's
+	# crouch/prone toggle; in-vehicle is owned elsewhere and pushed via
+	# set_in_vehicle_animation(...) below.
+	var want_state : String
+	match _stance:
+		Stance.CROUCHING: want_state = "crouch"
+		Stance.PRONE:     want_state = "prone"
+		_:                want_state = "locomotion"
+	# in-vehicle wins over any stance — driver-seat pose
+	if _in_vehicle_seated:
+		want_state = "seated"
+	if want_state != _last_anim_state:
+		var pb := _anim_tree.get("parameters/playback") as AnimationNodeStateMachinePlayback
+		if pb != null:
+			pb.travel(want_state)
+		_last_anim_state = want_state
+	# Locomotion BlendSpace2D only receives speed when we're in the locomotion
+	# state. While crouch / prone / seated are holding a static pose, blend
+	# position is irrelevant.
+	if want_state != "locomotion":
+		return
+	var horiz : float = Vector2(velocity.x, velocity.z).length()
+	if horiz < 0.05:
+		_anim_tree.set("parameters/locomotion/blend_position", Vector2(0.0, 0.0))
+		return
+	var run_speed : float = walk_speed * sprint_multiplier
+	var bx : float
+	if horiz <= walk_speed:
+		bx = horiz / maxf(walk_speed, 0.1)
+	else:
+		bx = 1.0 + clampf((horiz - walk_speed) / maxf(run_speed - walk_speed, 0.1), 0.0, 1.0)
+	_anim_tree.set("parameters/locomotion/blend_position", Vector2(clampf(bx, 0.0, 2.0), 0.0))
+
+## Vehicles call this when the player enters / exits the driver seat so the
+## skeleton swaps to the seated pose. Per-vehicle bespoke seated poses (mast
+## lift vs car vs forklift) are Phase 3; for now everything routes to the
+## single "seated" state.
+var _in_vehicle_seated : bool = false
+func set_in_vehicle_animation(seated: bool) -> void:
+	_in_vehicle_seated = seated

@@ -34,6 +34,9 @@ size = Vector3(0.08, 3.0, 0.1)
 [sub_resource type="BoxMesh" id="BoxMesh_plate"]
 size = Vector3(0.12, 1.04, 1.1)
 
+[sub_resource type="BoxShape3D" id="BoxShape_plate"]
+size = Vector3(0.12, 1.04, 1.1)
+
 [sub_resource type="CylinderMesh" id="CylMesh_plate_cap"]
 top_radius = 0.06
 bottom_radius = 0.06
@@ -145,12 +148,53 @@ roughness = 0.20
 albedo_color = Color(0.78, 0.18, 0.14, 1)
 roughness = 0.55
 
+; #169 — was bright red emission ON THE FRONT, which the operator read as a
+; "reverse" or "danger" indicator and triggered the "feels like driving
+; backwards" confusion. Re-purposed as a neutral white badge.
 [sub_resource type="StandardMaterial3D" id="Mat_sticker"]
+albedo_color = Color(0.92, 0.92, 0.92, 1)
+roughness = 0.45
+
+; #169 — Headlight (white, FRONT), taillight (red, REAR). Emission on so they
+; read as lights at a glance.
+[sub_resource type="StandardMaterial3D" id="Mat_headlight"]
+albedo_color = Color(0.98, 0.96, 0.85, 1)
+roughness = 0.20
+emission_enabled = true
+emission = Color(1.0, 0.96, 0.80, 1)
+emission_energy_multiplier = 0.9
+
+[sub_resource type="StandardMaterial3D" id="Mat_taillight"]
 albedo_color = Color(0.85, 0.10, 0.10, 1)
 roughness = 0.30
 emission_enabled = true
-emission = Color(0.5, 0.05, 0.05, 1)
-emission_energy_multiplier = 0.4
+emission = Color(0.85, 0.05, 0.05, 1)
+emission_energy_multiplier = 0.7
+
+[sub_resource type="BoxMesh" id="BoxMesh_headlight"]
+size = Vector3(0.18, 0.12, 0.04)
+
+[sub_resource type="BoxMesh" id="BoxMesh_taillight"]
+size = Vector3(0.20, 0.12, 0.04)
+
+; #169 — solid cab roof panel (covers the ROPS cage; was an open cage that read
+; as "no roof"). Sits flush with the existing roof bars.
+[sub_resource type="BoxMesh" id="BoxMesh_roof_panel"]
+size = Vector3(1.18, 0.04, 1.95)
+
+[sub_resource type="StandardMaterial3D" id="Mat_roof_panel"]
+albedo_color = Color(0.14, 0.30, 0.18, 1)
+metallic = 0.0
+roughness = 0.70
+
+; #169 — front 35° lead-in bevel + top 25° slant on the clamp plates so they
+; ride around the bale instead of square-edging into it. ~25% of the 1.10 m
+; plate length on the +Z (front) face = 0.275 m wedge.
+[sub_resource type="PrismMesh" id="Prism_plate_front_bevel"]
+size = Vector3(0.12, 1.04, 0.275)
+
+[sub_resource type="PrismMesh" id="Prism_plate_top_slant"]
+size = Vector3(0.12, 0.16, 0.275)
 
 ; #95 — Same cab-glass treatment as the Forklift (BaleClamp shares its chassis):
 ; front windshield + rear window between the ROPS posts; sides stay open.
@@ -182,6 +226,11 @@ roughness = 0.32
 ; #95 side glass + doors (matches Forklift treatment).
 [sub_resource type="BoxMesh" id="BoxMesh_glass_side_door"]
 size = Vector3(0.018, 1.04, 1.82)
+; #169 — solid lower door panel (metal bottom 50 cm of each side door) so the
+; door reads as an actual door from outside, not just floating glass. Painted
+; in the body green via Mat_orange.
+[sub_resource type="BoxMesh" id="BoxMesh_door_lower_panel"]
+size = Vector3(0.022, 0.50, 1.82)
 [sub_resource type="BoxShape3D" id="BoxShape_glass_side_door"]
 size = Vector3(0.030, 1.04, 1.82)
 [sub_resource type="BoxMesh" id="BoxMesh_frame_side_h"]
@@ -300,28 +349,53 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 0.05)
 [node name="CarryPoint" type="Node3D" parent="MastPivot/LiftCarriage"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.55, 0.55)
 
-[node name="LeftPlate" type="Node3D" parent="MastPivot/LiftCarriage"]
+[node name="LeftPlate" type="AnimatableBody3D" parent="MastPivot/LiftCarriage"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.6, 0.55, 0.55)
+sync_to_physics = true
+collision_layer = 1
+collision_mask = 1
 
 [node name="LeftPlateMesh" type="MeshInstance3D" parent="MastPivot/LiftCarriage/LeftPlate"]
 mesh = SubResource("BoxMesh_plate")
 material_override = SubResource("Mat_dark")
 
-[node name="LeftPlateCap" type="MeshInstance3D" parent="MastPivot/LiftCarriage/LeftPlate"]
-transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 0.52, 0)
-mesh = SubResource("CylMesh_plate_cap")
+[node name="LeftPlateCollision" type="CollisionShape3D" parent="MastPivot/LiftCarriage/LeftPlate"]
+shape = SubResource("BoxShape_plate")
+
+; #169 — front 35° lead-in bevel (top half of front face) and 25° top slant so
+; the plate doesn't square-edge into the bale. ~25% of the 1.10 m plate length
+; on the +Z (front, toward bale) side.
+[node name="LeftPlateFrontBevel" type="MeshInstance3D" parent="MastPivot/LiftCarriage/LeftPlate"]
+transform = Transform3D(1, 0, 0, 0, 0.819, -0.574, 0, 0.574, 0.819, 0, 0.0, 0.41)
+mesh = SubResource("Prism_plate_front_bevel")
 material_override = SubResource("Mat_dark")
 
-[node name="RightPlate" type="Node3D" parent="MastPivot/LiftCarriage"]
+[node name="LeftPlateTopSlant" type="MeshInstance3D" parent="MastPivot/LiftCarriage/LeftPlate"]
+transform = Transform3D(1, 0, 0, 0, 0.906, 0.423, 0, -0.423, 0.906, 0, 0.55, 0.41)
+mesh = SubResource("Prism_plate_top_slant")
+material_override = SubResource("Mat_dark")
+
+[node name="RightPlate" type="AnimatableBody3D" parent="MastPivot/LiftCarriage"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.6, 0.55, 0.55)
+sync_to_physics = true
+collision_layer = 1
+collision_mask = 1
 
 [node name="RightPlateMesh" type="MeshInstance3D" parent="MastPivot/LiftCarriage/RightPlate"]
 mesh = SubResource("BoxMesh_plate")
 material_override = SubResource("Mat_dark")
 
-[node name="RightPlateCap" type="MeshInstance3D" parent="MastPivot/LiftCarriage/RightPlate"]
-transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 0.52, 0)
-mesh = SubResource("CylMesh_plate_cap")
+[node name="RightPlateCollision" type="CollisionShape3D" parent="MastPivot/LiftCarriage/RightPlate"]
+shape = SubResource("BoxShape_plate")
+
+[node name="RightPlateFrontBevel" type="MeshInstance3D" parent="MastPivot/LiftCarriage/RightPlate"]
+transform = Transform3D(1, 0, 0, 0, 0.819, -0.574, 0, 0.574, 0.819, 0, 0.0, 0.41)
+mesh = SubResource("Prism_plate_front_bevel")
+material_override = SubResource("Mat_dark")
+
+[node name="RightPlateTopSlant" type="MeshInstance3D" parent="MastPivot/LiftCarriage/RightPlate"]
+transform = Transform3D(1, 0, 0, 0, 0.906, 0.423, 0, -0.423, 0.906, 0, 0.55, 0.41)
+mesh = SubResource("Prism_plate_top_slant")
 material_override = SubResource("Mat_dark")
 
 ; ── Counterweight (rear) + LPG cylinder strapped on top ──────────────────────
@@ -368,10 +442,36 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.50, 0.85)
 mesh = SubResource("BoxMesh_hood")
 material_override = SubResource("Mat_hood")
 
+; #169 — was a bright RED emissive Mitsubishi sticker on the FRONT, which the
+; operator read as a "reverse" indicator and made driving feel inverted. Now a
+; neutral white badge. Real lighting is the HeadlightL/R (front, white) and
+; TaillightL/R (rear, red) pairs below.
 [node name="MitsubishiSticker" type="MeshInstance3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.52, 1.06)
 mesh = SubResource("BoxMesh_sticker")
 material_override = SubResource("Mat_sticker")
+
+; #169 — Front headlights on the hood, low + outboard.
+[node name="HeadlightL" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.40, 1.32, 1.07)
+mesh = SubResource("BoxMesh_headlight")
+material_override = SubResource("Mat_headlight")
+
+[node name="HeadlightR" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.40, 1.32, 1.07)
+mesh = SubResource("BoxMesh_headlight")
+material_override = SubResource("Mat_headlight")
+
+; #169 — Rear taillights on the counterweight back face.
+[node name="TaillightL" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.45, 0.85, -1.92)
+mesh = SubResource("BoxMesh_taillight")
+material_override = SubResource("Mat_taillight")
+
+[node name="TaillightR" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.45, 0.85, -1.92)
+mesh = SubResource("BoxMesh_taillight")
+material_override = SubResource("Mat_taillight")
 
 ; ── Operator seat ────────────────────────────────────────────────────────────
 [node name="SeatBase" type="MeshInstance3D" parent="."]
@@ -385,18 +485,21 @@ mesh = SubResource("BoxMesh_seat_back")
 material_override = SubResource("Mat_seat")
 
 ; ── Steering column + wheel ──────────────────────────────────────────────────
+; #169 — steering column now ENDS at the dashboard (y=1.55), wheel sits
+; immediately above the dash on the operator side rather than floating in
+; midair. Was: column y=1.45, wheel y=1.62 (5 cm gap above dash top).
 [node name="SteeringColumn" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.927, -0.375, 0, 0.375, 0.927, 0, 1.45, 0.10)
+transform = Transform3D(1, 0, 0, 0, 0.927, -0.375, 0, 0.375, 0.927, 0, 1.40, 0.18)
 mesh = SubResource("Cyl_steer_col")
 material_override = SubResource("Mat_dark")
 
 [node name="SteeringWheel" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.375, 0.927, 0, -0.927, 0.375, 0, 1.62, 0.18)
+transform = Transform3D(1, 0, 0, 0, 0.375, 0.927, 0, -0.927, 0.375, 0, 1.58, 0.26)
 mesh = SubResource("Torus_steer_wheel")
 material_override = SubResource("Mat_dark")
 
 [node name="SteeringHubChrome" type="MeshInstance3D" parent="."]
-transform = Transform3D(0.10, 0, 0, 0, 0.10, 0, 0, 0, 0.10, 0, 1.62, 0.18)
+transform = Transform3D(0.10, 0, 0, 0, 0.10, 0, 0, 0, 0.10, 0, 1.58, 0.26)
 mesh = SubResource("Sph_lever_knob")
 material_override = SubResource("Mat_chrome")
 
@@ -473,70 +576,85 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.40, -1.05)
 mesh = SubResource("BoxMesh_roof_cross")
 material_override = SubResource("Mat_dark")
 
+; #169 — Solid roof panel covering the ROPS cage (was an open cage, operator
+; reported "no roof"). Sits flush with the cross bars at y=2.42, slightly
+; proud of the top so it reads as a real roof from inside the cab.
+[node name="RoofPanel" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.42, -0.10)
+mesh = SubResource("BoxMesh_roof_panel")
+material_override = SubResource("Mat_roof_panel")
+
 ; ── #95 Cab glass: windshield + rear window. #95-fix: 12° forward tilt on
 ;     the front, 8° back tilt on the rear, collision shapes added.
 [node name="WindshieldFront" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.978, -0.208, 0, 0.208, 0.978, 0, 1.92, 0.83)
+transform = Transform3D(1, 0, 0, 0, 0.978, 0.208, 0, -0.208, 0.978, 0, 1.92, 0.83)
 mesh = SubResource("BoxMesh_glass_fr")
 material_override = SubResource("Mat_glass")
 
 [node name="WindshieldFrontCollision" type="CollisionShape3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.978, -0.208, 0, 0.208, 0.978, 0, 1.92, 0.83)
+transform = Transform3D(1, 0, 0, 0, 0.978, 0.208, 0, -0.208, 0.978, 0, 1.92, 0.83)
 shape = SubResource("BoxShape_glass_fr")
 
 [node name="WindshieldRear" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.990, 0.139, 0, -0.139, 0.990, 0, 1.92, -1.03)
+transform = Transform3D(1, 0, 0, 0, 0.990, -0.139, 0, 0.139, 0.990, 0, 1.92, -1.03)
 mesh = SubResource("BoxMesh_glass_fr")
 material_override = SubResource("Mat_glass")
 
 [node name="WindshieldRearCollision" type="CollisionShape3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.990, 0.139, 0, -0.139, 0.990, 0, 1.92, -1.03)
+transform = Transform3D(1, 0, 0, 0, 0.990, -0.139, 0, 0.139, 0.990, 0, 1.92, -1.03)
 shape = SubResource("BoxShape_glass_fr")
 
 ; #95-fix — Aluminium frame perimeter around both windshields.
 [node name="FrameFrontTop" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.978, -0.208, 0, 0.208, 0.978, 0, 2.44, 0.72)
+transform = Transform3D(1, 0, 0, 0, 0.978, 0.208, 0, -0.208, 0.978, 0, 2.44, 0.72)
 mesh = SubResource("BoxMesh_frame_h")
 material_override = SubResource("Mat_alu_frame")
 
 [node name="FrameFrontBot" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.978, -0.208, 0, 0.208, 0.978, 0, 1.40, 0.94)
+transform = Transform3D(1, 0, 0, 0, 0.978, 0.208, 0, -0.208, 0.978, 0, 1.40, 0.94)
 mesh = SubResource("BoxMesh_frame_h")
 material_override = SubResource("Mat_alu_frame")
 
 [node name="FrameFrontL" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.978, -0.208, 0, 0.208, 0.978, -0.52, 1.92, 0.83)
+transform = Transform3D(1, 0, 0, 0, 0.978, 0.208, 0, -0.208, 0.978, -0.52, 1.92, 0.83)
 mesh = SubResource("BoxMesh_frame_v")
 material_override = SubResource("Mat_alu_frame")
 
 [node name="FrameFrontR" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.978, -0.208, 0, 0.208, 0.978, 0.52, 1.92, 0.83)
+transform = Transform3D(1, 0, 0, 0, 0.978, 0.208, 0, -0.208, 0.978, 0.52, 1.92, 0.83)
 mesh = SubResource("BoxMesh_frame_v")
 material_override = SubResource("Mat_alu_frame")
 
 [node name="FrameRearTop" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.990, 0.139, 0, -0.139, 0.990, 0, 2.44, -0.96)
+transform = Transform3D(1, 0, 0, 0, 0.990, -0.139, 0, 0.139, 0.990, 0, 2.44, -0.96)
 mesh = SubResource("BoxMesh_frame_h")
 material_override = SubResource("Mat_alu_frame")
 
 [node name="FrameRearBot" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.990, 0.139, 0, -0.139, 0.990, 0, 1.40, -1.10)
+transform = Transform3D(1, 0, 0, 0, 0.990, -0.139, 0, 0.139, 0.990, 0, 1.40, -1.10)
 mesh = SubResource("BoxMesh_frame_h")
 material_override = SubResource("Mat_alu_frame")
 
 [node name="FrameRearL" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.990, 0.139, 0, -0.139, 0.990, -0.52, 1.92, -1.03)
+transform = Transform3D(1, 0, 0, 0, 0.990, -0.139, 0, 0.139, 0.990, -0.52, 1.92, -1.03)
 mesh = SubResource("BoxMesh_frame_v")
 material_override = SubResource("Mat_alu_frame")
 
 [node name="FrameRearR" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.990, 0.139, 0, -0.139, 0.990, 0.52, 1.92, -1.03)
+transform = Transform3D(1, 0, 0, 0, 0.990, -0.139, 0, 0.139, 0.990, 0.52, 1.92, -1.03)
 mesh = SubResource("BoxMesh_frame_v")
 material_override = SubResource("Mat_alu_frame")
 
 ; #95 — LEFT door + glass.
 [node name="DoorL" type="Node3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.55, 1.92, 0.85)
+
+; #169 — solid lower panel makes the door read as an actual door from outside
+; (was just glass + frame + handle, no body). Painted body green.
+[node name="DoorLLowerPanel" type="MeshInstance3D" parent="DoorL"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.002, -0.26, -0.95)
+mesh = SubResource("BoxMesh_door_lower_panel")
+material_override = SubResource("Mat_orange")
 
 [node name="DoorLGlass" type="MeshInstance3D" parent="DoorL"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.95)
@@ -565,6 +683,11 @@ material_override = SubResource("Mat_dark")
 ; #95 — RIGHT door + glass (mirror).
 [node name="DoorR" type="Node3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.55, 1.92, 0.85)
+
+[node name="DoorRLowerPanel" type="MeshInstance3D" parent="DoorR"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.002, -0.26, -0.95)
+mesh = SubResource("BoxMesh_door_lower_panel")
+material_override = SubResource("Mat_orange")
 
 [node name="DoorRGlass" type="MeshInstance3D" parent="DoorR"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.95)

@@ -34,6 +34,10 @@ WorldLayout="*res://src/autoload/WorldLayout.gd"
 SubtitleHud="*res://src/autoload/SubtitleHud.gd"
 AirNetwork="*res://src/autoload/AirNetwork.gd"
 NaNSentinel="*res://src/autoload/NaNSentinel.gd"
+ApiKeys="*res://src/autoload/ApiKeys.gd"
+VoiceService="*res://src/autoload/VoiceService.gd"
+LineMacroStore="*res://src/autoload/LineMacroStore.gd"
+NpcAutonomyBoard="*res://src/autoload/NpcAutonomyBoard.gd"
 
 [debug]
 
@@ -207,7 +211,6 @@ build_cancel={
 "events": [Object(InputEventMouseButton,"resource_local_to_scene":false,"resource_name":"","device":0,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"button_mask":0,"position":Vector2(0, 0),"global_position":Vector2(0, 0),"factor":1.0,"button_index":2,"canceled":false,"pressed":false,"double_click":false,"script":null)
 ]
 }
-; #156 — `build_rotate` (was R) removed; replaced years ago by build_rotate_cw/ccw.
 build_delete={
 "deadzone": 0.5,
 "events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":0,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":88,"physical_keycode":0,"key_label":0,"unicode":120,"location":0,"echo":false,"script":null)
@@ -295,9 +298,6 @@ tool_use={
 "events": [Object(InputEventMouseButton,"resource_local_to_scene":false,"resource_name":"","device":0,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"button_mask":0,"position":Vector2(0, 0),"global_position":Vector2(0, 0),"factor":1.0,"button_index":1,"canceled":false,"pressed":false,"double_click":false,"script":null)
 ]
 }
-; ── #156 keybind cleanup: actions that were in the Settings menu but had no
-;     event attached. Each promised a specific key in its menu label; binding
-;     that key here so the documented control actually works.
 crew_panel={
 "deadzone": 0.5,
 "events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":0,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":4194418,"physical_keycode":0,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
@@ -377,6 +377,9 @@ hotbar_drop={
 [physics]
 
 3d/physics_engine="GodotPhysics3D"
+jolt_physics_3d/joints/world_node=1
+jolt_physics_3d/limits/temporary_memory_buffer_size=64
+3d/default_gravity=9.810000000000002
 
 [rendering]
 

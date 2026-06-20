@@ -210,6 +210,30 @@ func _run() -> void:
 				"at least some sheet meshes are distance-culled (%d of %d)" \
 					% [sheets_finite, sheet_meshes.size()])
 
+	# ── (5) #243 — simple-bale SimpleBody stays VISIBLE at all distances ──────
+	# The body box must NOT have a non-zero visibility_range_begin: that's the
+	# bug that produced the 20 m "disappears" gap (slabs faded out at 28 m but
+	# the body box only faded in at 0.85 × 28 = 23.8 m, leaving a hole). The
+	# slabs handle the close-up detail; the body sits behind them at all
+	# distances so the bale always renders something.
+	# NOTE: simple has been upgraded by detail_bale() in section (3) and no
+	# longer has a SimpleBody — re-build a fresh simple bale for this check.
+	print("\n[5] #243 — simple bale SimpleBody is always visible (begin == 0)")
+	var simple2 := PlaceableCatalog.build_node(id, false, true) as Node3D
+	if simple2 != null:
+		var simple_model2 := simple2.get_node_or_null("Model")
+		var body : MeshInstance3D = null
+		if simple_model2 != null:
+			body = simple_model2.find_child("SimpleBody", true, false) as MeshInstance3D
+		_ok(body != null, "simple bale has a 'SimpleBody' mesh")
+		if body != null:
+			_ok(body.visibility_range_begin == 0.0,
+				"SimpleBody.visibility_range_begin == 0 (was 23.8 = bug #243); got %.2f" \
+					% body.visibility_range_begin)
+			_ok(body.visibility_range_fade_mode == GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED,
+				"SimpleBody.visibility_range_fade_mode == DISABLED for hard always-on render")
+		simple2.free()
+
 	# Clean up the procedurally-built nodes (never entered the tree).
 	simple.free()
 	full.free()

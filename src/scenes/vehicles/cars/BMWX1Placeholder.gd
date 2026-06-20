@@ -19,6 +19,7 @@ func _ready() -> void:
 	_model_path     = MODEL_PATH
 	_part_names     = DEFAULT_PART_NAMES
 	_paint_color    = Color(0.94, 0.94, 0.93)   # off-white
+	_real_world_length_m = 4.46   # BMW X1 E84 = 4.46 m
 	_paint_extra_match = ["aclass"]              # pack labels body material by car name
 	load_model()
 

@@ -1,0 +1,63 @@
+# Force LF line endings on source files so a Windows operator and a Linux
+# CI runner never disagree about what's on disk. Without this, git's
+# core.autocrlf will silently rewrite LF → CRLF on stage, which can stale
+# Godot's per-script parse-tree cache when only some children of a
+# class_name parent get touched in the same edit window (root cause of the
+# "Could not resolve class 'Car'" parse error after the Jun 15 steering
+# refactor — Car.gd was rewritten and re-bound for Suzuki, but six other
+# car subclasses still pointed at the invalidated old class slot because
+# autocrlf put them back to CRLF and they were never re-parsed).
+
+* text=auto eol=lf
+
+# Source code — always LF.
+*.gd       text eol=lf
+*.tscn     text eol=lf
+*.tres     text eol=lf
+*.cfg      text eol=lf
+*.import   text eol=lf
+*.gd.uid   text eol=lf
+*.shader   text eol=lf
+*.gdshader text eol=lf
+*.gdshaderinc text eol=lf
+*.godot    text eol=lf
+*.json     text eol=lf
+*.md       text eol=lf
+*.py       text eol=lf
+*.sh       text eol=lf
+
+# Windows-native — leave CRLF.
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+*.ps1   text eol=crlf
+
+# Binary assets — never touch.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.webp  binary
+*.tga   binary
+*.svg   binary
+*.exr   binary
+*.hdr   binary
+*.fbx   binary
+*.glb   binary
+*.gltf  binary
+*.obj   binary
+*.blend binary
+*.dae   binary
+*.wav   binary
+*.ogg   binary
+*.mp3   binary
+*.flac  binary
+*.ttf   binary
+*.otf   binary
+*.ctex  binary
+*.mesh  binary
+*.scn   binary
+*.res   binary
+*.pck   binary
+*.zip   binary
+*.gz    binary
+*.tar   binary
+*.7z    binary

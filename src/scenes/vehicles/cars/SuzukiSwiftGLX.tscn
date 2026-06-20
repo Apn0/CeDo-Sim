@@ -121,7 +121,7 @@ mesh = SubResource("Cyl_wheel")
 ; ── In-car camera (driver's POV). Subclass _ready() doesn't reposition it
 ;    yet — operator can tune by editing the transform here.
 [node name="CabCamera" type="Camera3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.34, 1.15, -0.20)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -0.34,1.15,-0.20)
 current = false
 fov = 70.0
 

@@ -62,6 +62,11 @@ const PART_NAMES := {
 	"beacon":    ["girophare"],
 	"steering":  ["volant"],
 	"grille":    ["grille"],
+	# Fork carriage / pallet-tablier sub-meshes — get HIDDEN once the procedural
+	# grapple bucket is mounted (P40 ships with forks; CeDo runs it with a
+	# basket+clamp like the other Merlo). Order: must come before generic
+	# fallbacks so a "fourche_tablier" gets pinned here, not "chassis".
+	"fork":      ["fork", "fourche", "tablier", "carriage", "pallet"],
 	"misc":      ["autre", "vis"],
 }
 
@@ -82,7 +87,7 @@ var wipers_on        : bool   = false
 const DOOR_OPEN_DEG : float = 75.0
 const WIPER_RATE    : float = 3.5  # rad/s
 const DOOR_OPEN_THRESHOLD : float = 25.0   # door must be at least 25° open to board
-const BOOM_EXTEND_MAX_M : float = 3.0      # how far the inner sections slide out at extend_m = max
+const BOOM_EXTEND_MAX_M : float = 6.0      # #201 — matches Merlo.gd extend_max_m (P40.17 ~7 m reach)
 
 # Door interaction (on-foot proximity prompt + E to toggle)
 var _door_trigger    : Area3D = null
@@ -257,14 +262,16 @@ func _articulate_wipers() -> void:
 	# include front/rear keywords (since _classify returns on first match and
 	# wiper_f / wiper_r are tested before the generic "wiper", there's no
 	# overlap with the lists above — no dedup needed). Sort each into front/rear
-	# by world Z (+Z = boom/front side, -Z = rear).
+	# by world Z. Canonical CeDo direction: forward = -Z, so the BOOM/FRONT
+	# side sits at NEGATIVE world Z relative to the body centre, and the REAR
+	# (cab counterweight) sits at POSITIVE Z.
 	if _parts.has("wiper"):
 		for w in _parts["wiper"]:
 			var wn := w as Node3D
 			var pivot := _wrap_pivot(wn, Vector3.DOWN, 0.15)
 			if pivot == null:
 				continue
-			if wn.global_position.z >= global_position.z:
+			if wn.global_position.z <= global_position.z:
 				_wiper_pivots_front.append(pivot)
 			else:
 				_wiper_pivots_rear.append(pivot)
@@ -403,8 +410,115 @@ func _articulate_boom() -> void:
 		_boom_sections.append({"node": infos[i]["node"], "rest": (infos[i]["node"] as Node3D).position, "w": weight})
 	print("[MerloP40] boom = '%s' (%d telescoping sections, rear→front weighted)" % [pivot.name, _boom_sections.size()])
 	# No _boom_extend: base Merlo.gd's single-node slide is skipped; _process()
-	# does the multi-section telescope. No procedural basket — the model carries
-	# its own fork attachment on the boom.
+	# does the multi-section telescope. The FBX ships with a fork carriage; CeDo
+	# runs the P40 with a basket+clamp like the other Merlo (per operator's spec).
+	# Hide the FBX forks and mount a procedural bucket+grapple on the boom tip.
+	_hide_fbx_forks()
+	_install_basket_clamp()
+
+## Hide every FBX sub-mesh classified as "fork" so the procedural bucket/clamp
+## is the only visible attachment on the boom tip.
+func _hide_fbx_forks() -> void:
+	if not _parts.has("fork"):
+		return
+	for nd in _parts["fork"]:
+		var n3 := nd as Node3D
+		if n3 != null:
+			n3.visible = false
+
+## Mount a procedural grapple-bucket on the front-most (innermost) boom section
+## of the FBX telescope. Dimensions cloned from Merlo.tscn so this P40 ends up
+## with the SAME visible attachment as the standard Merlo, and the base Merlo
+## script's _apply_boom() drives BOTH the bucket-curl (Z/C) and the grapple
+## clamp (V/B) without modification.
+##
+## Frame: the frontmost boom section is a MeshInstance3D whose local origin
+## sits at the boom-tip pivot. We parent the bucket-tilt at that origin with a
+## small forward offset so it visually overhangs the section's tip.
+func _install_basket_clamp() -> void:
+	if _boom_sections.is_empty():
+		return
+	var tip : Node3D = _boom_sections[-1]["node"] as Node3D
+	if tip == null:
+		return
+	# Compute the tip section's local AABB so we know where its forward face is.
+	var tip_aabb : AABB = _subtree_aabb_local(tip)
+	# The bucket should hang BELOW the section tip and a touch forward of it.
+	# These offsets match the base Merlo's BucketTilt local transform
+	# (0.62, -0.15, 5.0 in that scene's BoomExtend frame). For P40 the section
+	# IS the tip, so we just push slightly forward of the AABB centre.
+	var tip_z : float = tip_aabb.position.z + tip_aabb.size.z
+	# Materials — colours match base Merlo's Mat_grapple_red / Mat_steel / Mat_dark.
+	var mat_red   := StandardMaterial3D.new()
+	mat_red.albedo_color = Color(0.78, 0.10, 0.12); mat_red.roughness = 0.55; mat_red.metallic = 0.20
+	var mat_steel := StandardMaterial3D.new()
+	mat_steel.albedo_color = Color(0.62, 0.65, 0.68); mat_steel.roughness = 0.45; mat_steel.metallic = 0.70
+	var mat_dark  := StandardMaterial3D.new()
+	mat_dark.albedo_color = Color(0.20, 0.20, 0.22); mat_dark.roughness = 0.65; mat_dark.metallic = 0.40
+	# BucketTilt body — rotated by curl_deg from Merlo._apply_boom(). #201 makes
+	# it a real AnimatableBody3D with sync_to_physics so loads sit in the bowl
+	# via contact, not by being parented to it.
+	var bucket := AnimatableBody3D.new()
+	bucket.name = "BucketTilt_P40"
+	bucket.position = Vector3(0.0, -0.15, tip_z + 0.30)
+	bucket.sync_to_physics = true
+	bucket.collision_layer = 1
+	bucket.collision_mask  = 1
+	tip.add_child(bucket)
+	# Headstock + ribs: visual only (mount bracket / inside-bowl ribs — no useful
+	# load contact, so no collision sibling).
+	_p40_box(bucket, "Headstock",   Vector3(1.5, 0.6, 0.18),  Vector3( 0.0,  0.00, -0.18), mat_dark, false)
+	_p40_box(bucket, "BucketBottom",Vector3(1.9, 0.1, 1.05),  Vector3( 0.0, -0.45,  0.38), mat_red,  true)
+	_p40_box(bucket, "BucketBack",  Vector3(1.9, 0.6, 0.1),   Vector3( 0.0, -0.18, -0.12), mat_red,  true)
+	var rib_size := Vector3(0.06, 0.16, 1.0)
+	var rib_y    : float = -0.36
+	var rib_z    : float =  0.40
+	for i in range(5):
+		var rx : float = (-0.6) + 0.3 * i
+		_p40_box(bucket, "Rib%d" % (i + 1), rib_size, Vector3(rx, rib_y, rib_z), mat_red, false)
+	_p40_box(bucket, "BucketLeft", Vector3(0.09, 0.55, 1.05), Vector3(-0.9, -0.18, 0.38), mat_red,   true)
+	_p40_box(bucket, "BucketRight",Vector3(0.09, 0.55, 1.05), Vector3( 0.9, -0.18, 0.38), mat_red,   true)
+	_p40_box(bucket, "BucketLip",  Vector3(1.9, 0.06, 0.18),  Vector3( 0.0, -0.47, 0.90), mat_steel, true)
+	# GrappleArm body — rotated by grapple_deg from Merlo._apply_boom() (V/B clamp).
+	var grapple := AnimatableBody3D.new()
+	grapple.name = "GrappleArm_P40"
+	grapple.position = Vector3(0.0, 0.12, -0.05)
+	grapple.sync_to_physics = true
+	grapple.collision_layer = 1
+	grapple.collision_mask  = 1
+	bucket.add_child(grapple)
+	_p40_box(grapple, "ArmBar", Vector3(1.55, 0.12, 0.14), Vector3.ZERO, mat_steel, true)
+	var tine_size := Vector3(0.06, 0.5, 0.62)
+	for i in range(5):
+		var tx : float = (-0.62) + 0.31 * i
+		_p40_box(grapple, "Tine%d" % (i + 1), tine_size, Vector3(tx, -0.20, 0.34), mat_steel, true)
+	# Hand the new nodes to the base Merlo script. The inherited _apply_boom()
+	# rotates them every frame; Merlo._ready (called via super) already set the
+	# PhysicsMaterial overrides for friction.
+	_bucket_tilt = bucket
+	_grapple_arm = grapple
+
+## Helper: spawn a BoxMesh at `pos` with `size`, parented under `parent`.
+## If `solid` is true, also add a matching CollisionShape3D sibling so the
+## kinematic body around `parent` actually carries that piece's collision.
+func _p40_box(parent: Node3D, n: String, size: Vector3, pos: Vector3, mat: StandardMaterial3D, solid: bool = false) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	mi.name = n
+	var bm := BoxMesh.new()
+	bm.size = size
+	mi.mesh = bm
+	mi.material_override = mat
+	mi.position = pos
+	parent.add_child(mi)
+	if solid:
+		var col := CollisionShape3D.new()
+		col.name = n + "_Col"
+		var sh := BoxShape3D.new()
+		sh.size = size
+		col.shape = sh
+		col.position = pos
+		parent.add_child(col)
+	return mi
 
 ## Move CabCamera into the actual cabin interior — its tscn default of
 ## (0, 2.1, -0.3) puts the eye-line above the machine. We use the Cabine
@@ -569,9 +683,11 @@ func _process(delta: float) -> void:
 			(p as Node3D).rotation.z = sweep_front
 		for p in _wiper_pivots_rear:
 			(p as Node3D).rotation.z = sweep_rear
-	# Steering wheel mirrors the chassis steering.
+	# Steering wheel mirrors the chassis steering. Sign matches Godot
+	# VehicleWheel3D convention: positive `steering` (A pressed) = wheels left,
+	# steering column rotates +Z (CCW from driver) = wheel held left.
 	if _steering_node != null and "steering" in self:
-		_steering_node.rotation.z = -(self.steering as float) * 3.0
+		_steering_node.rotation.z = (self.steering as float) * 3.0
 	# Door interpolates to its target angle. Once it passes the OPEN
 	# threshold, can_enter() returns true.
 	if _door_pivot != null:

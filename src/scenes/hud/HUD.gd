@@ -32,6 +32,17 @@ var _walkie_vol    : Label
 var _walkie_call   : Label      # last received call (fades)
 var _walkie_call_t : float = 0.0
 
+# Walkie message-picker overlay (#179 fix). U opens a small panel listing the
+# canned PTT lines with numeric hotkeys; the operator chooses one with 1..9 or
+# arrow + Enter, and the second U press (or Esc) closes it without sending.
+# The overlay is HUD-scoped (top-right) so it doesn't interfere with the
+# bottom-left walkie status panel.
+var _walkie_menu_panel : PanelContainer = null
+var _walkie_menu_vbox  : VBoxContainer  = null
+var _walkie_menu_rows  : Array          = []      # Array[Label]
+var _walkie_menu_open  : bool           = false
+var _walkie_menu_sel   : int            = 0
+
 # Crew / rota panel (top-left, beneath the clock) — Wave 4 shift context
 var crew_manager   : CrewManager
 var _crew_panel    : PanelContainer
@@ -86,6 +97,7 @@ func _ready() -> void:
 	_build_line_panel()
 	_build_map_overlay()
 	_build_walkie_panel()
+	_build_walkie_menu()
 	_build_pause_menu()
 	_build_end_of_shift_overlay()
 	_build_interaction_prompt()
@@ -549,6 +561,122 @@ func _on_walkie_transmit(text: String, heard: bool) -> void:
 		_walkie_call.add_theme_color_override("font_color", Color(0.7, 0.4, 0.4, 1.0))
 	_walkie_call_t = 4.0
 
+# =============================================================================
+# WALKIE MESSAGE PICKER (#179) — top-right panel populated from Walkie.PTT_LINES
+# =============================================================================
+## Build a hidden panel listing the canned PTT lines with numeric hotkeys (1..N).
+## Stays hidden until the operator presses U; selection is highlighted live.
+func _build_walkie_menu() -> void:
+	var w := get_node_or_null("/root/Walkie")
+	if w == null:
+		return
+	var lines : Array = []
+	# PTT_LINES is a typed Array[String] constant on the Walkie autoload.
+	var raw = w.get("PTT_LINES")
+	if raw is Array:
+		lines = raw
+	if lines.is_empty():
+		return
+
+	_walkie_menu_panel = PanelContainer.new()
+	_walkie_menu_panel.name = "WalkieMenu"
+	# Top-right anchor (clear of bottom-left walkie status + map button).
+	_walkie_menu_panel.anchor_left = 1.0
+	_walkie_menu_panel.anchor_right = 1.0
+	_walkie_menu_panel.anchor_top = 0.0
+	_walkie_menu_panel.anchor_bottom = 0.0
+	_walkie_menu_panel.offset_left = -300.0
+	_walkie_menu_panel.offset_right = -12.0
+	_walkie_menu_panel.offset_top = 60.0
+	_walkie_menu_panel.offset_bottom = 60.0
+	_walkie_menu_panel.visible = false
+
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.05, 0.06, 0.05, 0.86)
+	style.border_color = Color(0.55, 0.78, 0.95, 0.85)
+	style.border_width_left = 1
+	style.border_width_right = 1
+	style.border_width_top = 1
+	style.border_width_bottom = 1
+	style.corner_radius_top_left = 6
+	style.corner_radius_top_right = 6
+	style.corner_radius_bottom_left = 6
+	style.corner_radius_bottom_right = 6
+	style.content_margin_left = 10.0
+	style.content_margin_right = 10.0
+	style.content_margin_top = 8.0
+	style.content_margin_bottom = 8.0
+	_walkie_menu_panel.add_theme_stylebox_override("panel", style)
+	add_child(_walkie_menu_panel)
+
+	_walkie_menu_vbox = VBoxContainer.new()
+	_walkie_menu_vbox.add_theme_constant_override("separation", 2)
+	_walkie_menu_panel.add_child(_walkie_menu_vbox)
+
+	var title := Label.new()
+	title.text = "PORTOFOON — kies bericht"
+	title.add_theme_font_size_override("font_size", 11)
+	title.add_theme_color_override("font_color", Color(0.55, 0.78, 0.95, 1.0))
+	_walkie_menu_vbox.add_child(title)
+
+	_walkie_menu_rows.clear()
+	for i in range(lines.size()):
+		var row := Label.new()
+		row.add_theme_font_size_override("font_size", 13)
+		_walkie_menu_vbox.add_child(row)
+		_walkie_menu_rows.append(row)
+
+	var footer := Label.new()
+	footer.text = "1-%d / ↑↓+Enter to send · U or Esc to close" % lines.size()
+	footer.add_theme_font_size_override("font_size", 10)
+	footer.add_theme_color_override("font_color", Color(0.7, 0.7, 0.65, 0.9))
+	_walkie_menu_vbox.add_child(footer)
+
+	_refresh_walkie_menu()
+
+## Repaint the row labels — bold + highlight the currently selected line.
+func _refresh_walkie_menu() -> void:
+	var w := get_node_or_null("/root/Walkie")
+	if w == null or _walkie_menu_rows.is_empty():
+		return
+	var lines : Array = []
+	var raw = w.get("PTT_LINES")
+	if raw is Array:
+		lines = raw
+	for i in range(_walkie_menu_rows.size()):
+		var row : Label = _walkie_menu_rows[i]
+		if i >= lines.size():
+			row.text = ""
+			continue
+		var prefix : String = "▶ " if i == _walkie_menu_sel else "  "
+		row.text = "%s%d. %s" % [prefix, i + 1, String(lines[i])]
+		if i == _walkie_menu_sel:
+			row.add_theme_color_override("font_color", Color(1.0, 0.95, 0.55, 1.0))
+		else:
+			row.add_theme_color_override("font_color", Color(0.85, 0.85, 0.82, 1.0))
+
+func _open_walkie_menu() -> void:
+	if _walkie_menu_panel == null:
+		_build_walkie_menu()
+	if _walkie_menu_panel == null:
+		return
+	_walkie_menu_open = true
+	_walkie_menu_sel = 0
+	_walkie_menu_panel.visible = true
+	_refresh_walkie_menu()
+
+func _close_walkie_menu() -> void:
+	_walkie_menu_open = false
+	if _walkie_menu_panel:
+		_walkie_menu_panel.visible = false
+
+## Send the currently selected canned line and close the menu.
+func _send_walkie_menu_selection() -> void:
+	var w := get_node_or_null("/root/Walkie")
+	if w != null and w.has_method("transmit_line"):
+		w.call("transmit_line", _walkie_menu_sel)
+	_close_walkie_menu()
+
 ## Guarantee newly-added actions exist at runtime. When an action is added to
 ## project.godot while the editor is already open, the running game keeps the old
 ## in-memory InputMap and the new action silently does nothing — so we register
@@ -562,7 +690,7 @@ func _ensure_map_action() -> void:
 		"walkie_headset":  KEY_J,
 		"walkie_vol_down": KEY_COMMA,
 		"walkie_vol_up":   KEY_PERIOD,
-		"walkie_ptt":      KEY_U,    # push-to-talk — cycles canned responses.
+		"walkie_ptt":      KEY_U,    # opens the canned-message picker (#179 fix).
 		"crew_panel":      KEY_KP_PERIOD,   # Numpad "." — open the crew assignment panel
 		# Was V, but V = forklift_forks_widen (clamp release) in the cab, so
 		# releasing the clamp also keyed the radio. Moved to U (unused) so the
@@ -978,9 +1106,53 @@ func _toggle_crew_panel() -> void:
 		_crew_assign_panel.call("toggle_for", crew_manager)
 
 func _input(event: InputEvent) -> void:
-	# ── Walkie-talkie (J = headset/speaker, , / . = volume) ───────────────────
+	# ── Walkie-talkie (J = headset/speaker, , / . = volume, U = message menu) ─
 	var w := get_node_or_null("/root/Walkie")
 	if w != null:
+		# Message picker is modal-ish — when open it swallows nav/select keys so
+		# vehicle/player controls (W/S, arrow keys, Enter) don't double-fire.
+		if _walkie_menu_open:
+			if event.is_action_pressed("walkie_ptt"):
+				_close_walkie_menu()
+				get_viewport().set_input_as_handled()
+				return
+			if event.is_action_pressed("ui_cancel"):
+				_close_walkie_menu()
+				get_viewport().set_input_as_handled()
+				return
+			if event.is_action_pressed("ui_accept"):
+				_send_walkie_menu_selection()
+				get_viewport().set_input_as_handled()
+				return
+			if event.is_action_pressed("ui_up"):
+				if not _walkie_menu_rows.is_empty():
+					_walkie_menu_sel = (_walkie_menu_sel - 1 + _walkie_menu_rows.size()) % _walkie_menu_rows.size()
+					_refresh_walkie_menu()
+				get_viewport().set_input_as_handled()
+				return
+			if event.is_action_pressed("ui_down"):
+				if not _walkie_menu_rows.is_empty():
+					_walkie_menu_sel = (_walkie_menu_sel + 1) % _walkie_menu_rows.size()
+					_refresh_walkie_menu()
+				get_viewport().set_input_as_handled()
+				return
+			# Numeric hotkeys 1..9 — fire and close immediately.
+			if event is InputEventKey and (event as InputEventKey).pressed and not (event as InputEventKey).echo:
+				var kc : int = (event as InputEventKey).keycode
+				if kc >= KEY_1 and kc <= KEY_9:
+					var idx : int = kc - KEY_1
+					if idx < _walkie_menu_rows.size():
+						_walkie_menu_sel = idx
+						_send_walkie_menu_selection()
+					get_viewport().set_input_as_handled()
+					return
+			# Other KEY/BUTTON presses while open are swallowed so they can't leak
+			# through to vehicle / player controls behind the overlay. Mouse motion
+			# is intentionally let through — the menu is non-modal cursor-wise, so
+			# the operator can keep looking around while choosing a message.
+			if event is InputEventKey or event is InputEventMouseButton:
+				get_viewport().set_input_as_handled()
+			return
 		if event.is_action_pressed("walkie_headset"):
 			w.toggle_headset()
 			get_viewport().set_input_as_handled()
@@ -994,7 +1166,9 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 		if event.is_action_pressed("walkie_ptt"):
-			w.call("transmit")
+			# U now opens the message picker instead of firing a canned line
+			# blindly. Second U (or Esc) closes; number keys / Enter send.
+			_open_walkie_menu()
 			get_viewport().set_input_as_handled()
 			return
 
@@ -1079,7 +1253,13 @@ func _do_resume() -> void:
 # =============================================================================
 func _on_time_updated(time_string: String) -> void:
 	if _time_label:
-		_time_label.text = time_string
+		# #166 — during the pre-shift window prepend a countdown so the player
+		# knows the bell hasn't rung yet. "Shift starts in 12:34 · 06:48"
+		if shift_clock and shift_clock.is_pre_shift():
+			var s : int = int(ceilf(shift_clock.get_pre_shift_remaining_seconds()))
+			_time_label.text = "Shift starts in %02d:%02d · %s" % [s / 60, s % 60, time_string]
+		else:
+			_time_label.text = time_string
 	if _progress_bar and shift_clock:
 		_progress_bar.value = shift_clock.get_progress_percent() * 100.0
 

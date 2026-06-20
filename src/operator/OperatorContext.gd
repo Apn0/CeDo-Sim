@@ -174,3 +174,70 @@ func register_interactable(vehicle: Node3D) -> void:
 func unregister_interactable(vehicle: Node3D) -> void:
 	if interactable_vehicle == vehicle:
 		interactable_vehicle = null
+
+# =============================================================================
+# #202 — NPC vehicle boarding. Autonomous NPCs drive operator-grade vehicles
+# (forklift, bale clamp, Merlo) via BaseVehicle.npc_autopilot. The player's
+# embodiment is untouched: NPCs and the operator can be in different vehicles
+# simultaneously. EmptyLumpCartTask uses this to drive a forklift to a full
+# lump cart, then disembark and walk back.
+# =============================================================================
+var _npc_vehicles : Dictionary = {}    # instance_id -> Node3D vehicle
+
+## Board an NPC into a vehicle. Hides the walking body, flips the chassis'
+## occupied flag via BaseVehicle.on_npc_entered, and registers the link so
+## set_autonomy_destination() can route through to npc_set_target().
+## Returns true on success.
+func npc_board_vehicle(npc: Node, vehicle: Node) -> bool:
+	if npc == null or vehicle == null \
+			or not is_instance_valid(npc) or not is_instance_valid(vehicle):
+		return false
+	if not vehicle.has_method("on_npc_entered"):
+		push_warning("[OperatorContext] vehicle %s lacks on_npc_entered()" % vehicle.name)
+		return false
+	if vehicle.has_method("can_enter") and not bool(vehicle.call("can_enter")):
+		return false
+	if "visible" in npc:
+		npc.visible = false
+	if npc.has_method("set_physics_process"):
+		npc.set_physics_process(false)
+	vehicle.call("on_npc_entered", npc)
+	_npc_vehicles[npc.get_instance_id()] = vehicle
+	return true
+
+## Reverse of npc_board_vehicle. No-op if the NPC isn't seated.
+func npc_disembark_vehicle(npc: Node) -> void:
+	if npc == null:
+		return
+	var key : int = npc.get_instance_id()
+	if not _npc_vehicles.has(key):
+		return
+	var vehicle : Node = _npc_vehicles[key]
+	_npc_vehicles.erase(key)
+	if vehicle != null and is_instance_valid(vehicle):
+		# Stop autopilot before the reparent so the chassis doesn't keep
+		# creeping toward its last waypoint for one tick.
+		if vehicle.has_method("npc_stop"):
+			vehicle.call("npc_stop")
+		if "npc_autopilot" in vehicle:
+			vehicle.set("npc_autopilot", false)
+		if vehicle.has_method("on_npc_exited"):
+			vehicle.call("on_npc_exited", npc)
+	if is_instance_valid(npc):
+		if npc.has_method("set_physics_process"):
+			npc.set_physics_process(true)
+		if "visible" in npc:
+			npc.visible = true
+
+## Vehicle an NPC is currently seated in, or null.
+func npc_vehicle_of(npc: Node) -> Node:
+	if npc == null:
+		return null
+	var key : int = npc.get_instance_id()
+	if not _npc_vehicles.has(key):
+		return null
+	var v : Node = _npc_vehicles[key]
+	if v == null or not is_instance_valid(v):
+		_npc_vehicles.erase(key)
+		return null
+	return v

@@ -81,14 +81,39 @@ var _ground_pickup_area : Area3D = null
 # Spray particle emitter, parented at the nozzle TIP and oriented along local -Z
 # (the spray direction). Gated on/off + scaled by _spray_rate() each frame.
 var _spray_fx : CPUParticles3D = null
+# Area3D to rely on Godot's physics broadphase for cone checks instead of O(N) script iterations.
+var _spray_area : Area3D = null
 
 # =============================================================================
 func _ready() -> void:
 	add_to_group("hose_nozzle")
 	_build_visual()
+	_build_spray_area()
 	_chain_mat = StandardMaterial3D.new()
 	_chain_mat.albedo_color = Color(0.10, 0.10, 0.12)
 	_chain_mat.roughness = 0.6
+
+
+func _build_spray_area() -> void:
+	_spray_area = Area3D.new()
+	_spray_area.name = "SprayArea"
+	# Detect bodies on layer 1 (world/static/default physics)
+	_spray_area.collision_layer = 0
+	_spray_area.collision_mask = 1
+	var col := CollisionShape3D.new()
+	var shape := ConvexPolygonShape3D.new()
+	var pts := PackedVector3Array()
+	pts.append(Vector3.ZERO)
+	var r := max_range_m * tan(deg_to_rad(cone_half_angle_deg))
+	for i in range(8):
+		var a := float(i) / 8.0 * TAU
+		pts.append(Vector3(cos(a) * r, sin(a) * r, -max_range_m))
+	shape.points = pts
+	col.shape = shape
+	_spray_area.add_child(col)
+	# Add to root so its transform doesn't inherit unexpectedly, or just add as child
+	# since we update global_transform manually in _process.
+	add_child(_spray_area)
 
 func _build_visual() -> void:
 	var brass := StandardMaterial3D.new()
@@ -467,13 +492,22 @@ func _process(_delta: float) -> void:
 		fwd = -global_transform.basis.z.normalized()
 	var cos_half := cos(deg_to_rad(cone_half_angle_deg))
 	var dt := _delta
+
+	# Update broadphase area transform to match the current spray origin and direction.
+	# We align the Area3D's local -Z with `fwd` and its origin with `origin`.
+	if is_instance_valid(_spray_area):
+		var up := Vector3.UP
+		if absf(fwd.dot(up)) > 0.99:
+			up = Vector3.RIGHT
+		_spray_area.global_transform = Transform3D(Basis.looking_at(fwd, up), origin)
+
 	# AIR MODE: blow film scraps forward (no floor-pile scoop). The "rate" still
 	# scales linearly with valve openings, but now drives a per-frame impulse on
 	# any RigidBody3D in group "film_scrap" inside the cone.
 	if air_mode:
 		var f_now := air_force * (rate / max_kg_per_s)   # rate is already throttled by valves
-		for body in get_tree().get_nodes_in_group("film_scrap"):
-			if not (body is RigidBody3D) or not is_instance_valid(body):
+		for body in _spray_area.get_overlapping_bodies():
+			if not (body is RigidBody3D) or not is_instance_valid(body) or not body.is_in_group("film_scrap"):
 				continue
 			var to_b : Vector3 = (body as Node3D).global_position - origin
 			var d_b := to_b.length()
@@ -493,7 +527,7 @@ func _process(_delta: float) -> void:
 			continue
 		if to_p.normalized().dot(fwd) < cos_half:
 			continue
-		var _scooped : float = float(p.call("scoop", rate * dt))
+		p.call("scoop", rate * dt)
 
 ## Each held-frame: maybe drop a new auto-anchor (if walked past last by >
 ## hose_segment_m AND below max anchor cap); then clamp the visible nozzle tip

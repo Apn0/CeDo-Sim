@@ -114,8 +114,10 @@ func _fill_engine_buffer() -> void:
 
 func _physics_process(delta: float) -> void:
 	# CRITICAL: BaseVehicle._physics_process runs the whole drive/steer/move/fuel
-	# loop. Earlier this override skipped super(), silently making every passenger
-	# car undriveable. Call it FIRST, then layer the engine-audio fill on top.
+	# loop including the canonical steer ramp (_update_steer_ramp → MAX_STEER_RAD
+	# 55° / STEER_RATE_RAD_PER_SEC 18.33°/s). Earlier this override skipped super(),
+	# silently making every passenger car undriveable. Call it FIRST, then layer
+	# the engine-audio fill on top.
 	super._physics_process(delta)
 	if engine_on:
 		_fill_engine_buffer()
@@ -187,8 +189,13 @@ func _process(delta: float) -> void:
 		door_dict["current"] = lerpf(door_dict["current"], target, clampf(delta * 6.0, 0.0, 1.0))
 		pivot.rotation.y = deg_to_rad(door_dict["current"])
 	# Steering wheel mirror (set by _articulate_steering if the model has one).
+	# Reads BaseVehicle._current_steer_rad (the canonical ramped angle, ±55° max,
+	# 18.33°/s rate). Multiplied by ~6 so a full ±55° wheel-lock spins the
+	# in-cabin steering wheel ~±330° (typical car wheel travel ~1.5 turns each way).
+	# Positive _current_steer_rad = wheels LEFT = steering column CCW seen from
+	# above = +Z rotation visually held left.
 	if _steering_node != null and is_inside_tree():
-		_steering_node.rotation.z = -steering * 6.0
+		_steering_node.rotation.z = _current_steer_rad * 6.0
 
 # =============================================================================
 # SHARED FBX/GLB LOADER + CLASSIFIER + ARTICULATION
@@ -198,8 +205,13 @@ func _process(delta: float) -> void:
 # =============================================================================
 var _model_path : String = ""
 var _model_scale: Vector3 = Vector3.ONE                # subclass override (e.g. Streetka squish)
+## V2 — Real-world bumper-to-bumper length in metres. The FBX-import auto-ruler
+## (see load_model) measures the loaded model's AABB and rescales it so its
+## longest horizontal extent matches this. Default 3.85 m ≈ Suzuki Swift; each
+## car subclass overrides to its actual length. Set to 0.0 to disable rescaling.
+var _real_world_length_m : float = 3.85
 var _part_names : Dictionary = {}
-var _paint_color: Color = Color(1.0, 1.0, 1.0, 0.0)   # alpha=0 means "don't paint"
+var _paint_color: Color = Color(1.0, 1.0, 1.0, 0.0)    # alpha=0 means "don't paint"
 # #157 — Swift's FBX has no carpaint-named material, so the name-based matcher
 # can't tint it. When this is true and the matcher didn't apply anywhere, we
 # fall back to tinting the largest visible mesh in the imported body (heuristic
@@ -213,6 +225,14 @@ var _paint_extra_match : Array = []
 var _parts      : Dictionary = {}
 var _steering_node: Node3D = null
 
+## VISUAL FRONT RULE compliance. Canonical CeDo direction = forward is local -Z.
+## Most car FBX/GLB assets in this project are authored facing +Z, so the
+## default loader applies a +180° yaw to the imported model root so the visible
+## front face lands on -Z (matching the driving math at BaseVehicle._kinematic_move,
+## which uses `fwd := -global_transform.basis.z`). Any car whose source asset is
+## already authored facing -Z can opt out by setting this to 0.0 in _ready().
+var _model_front_axis_correction_deg : float = 180.0
+
 func load_model() -> void:
 	if _model_path == "" or not ResourceLoader.exists(_model_path):
 		push_warning("[Car] model not imported yet at %s — using proxy box." % _model_path)
@@ -221,11 +241,47 @@ func load_model() -> void:
 	if packed == null or not (packed is PackedScene):
 		return
 	var root : Node = (packed as PackedScene).instantiate()
+	# VISUAL FRONT RULE — wrap the imported model in a Node3D carrying the
+	# correction yaw so the visible front face lands on local -Z (canonical
+	# CeDo forward). Default 180° handles assets authored facing +Z (most of
+	# them). A subclass can set _model_front_axis_correction_deg = 0.0 to opt
+	# out. The wrap keeps the imported tree's INTERNAL coords intact, so the
+	# part walker, paint matcher, door pivots, and wheel articulation see the
+	# same geometry they always did — only the entire assembly is yawed under
+	# self.
+	if root is Node3D and not is_zero_approx(_model_front_axis_correction_deg):
+		var wrap := Node3D.new()
+		wrap.name = "FrontAxisCorrection"
+		wrap.rotation.y = deg_to_rad(_model_front_axis_correction_deg)
+		wrap.add_child(root)
+		root = wrap
+	# V2 — auto-ruler. Measure the imported model's AABB and rescale uniformly so
+	# its longest horizontal extent equals _real_world_length_m. This fixes the
+	# "huge cars" complaint without needing per-car magic-number scales; subclasses
+	# just declare their real-world length and the rescale falls out from geometry.
+	# Combined with subclass _model_scale (a per-axis multiplier for stylistic
+	# squishes like Streetka's 0.85 Y), so order matters: AUTO-RULER FIRST, then
+	# the artistic squish on top.
+	if root is Node3D and _real_world_length_m > 0.01:
+		var auto : float = _measure_model_scale(root as Node3D, _real_world_length_m)
+		if auto > 0.01 and not is_equal_approx(auto, 1.0):
+			(root as Node3D).scale = (root as Node3D).scale * auto
+			# The VehicleWheel3D nodes are CHILDREN OF self (the Car), not of the
+			# imported model root. Scaling the imported model alone leaves the
+			# wheels (and their procedural WheelMesh placeholders) at full
+			# FBX-tuned size, which renders as huge dark cylinders at the corners
+			# of an undersized car body. Apply the same scale to the wheel
+			# transforms (position pulls in toward the scaled body's corners),
+			# their wheel_radius (so physics matches visuals), and any
+			# WheelMesh child (so the procedural placeholder shrinks too).
+			_scale_vehicle_wheels(auto)
+			print("[Car] %s auto-scaled by %.3f to %.2f m" % [_model_path.get_file(), auto, _real_world_length_m])
 	# #155 — subclass can override _model_scale (default 1,1,1) to squish the
 	# imported GLB vertically — e.g. Pascal's Streetka uses the Ka GLB at
-	# y=0.85 to read as the lower droptop convertible variant.
+	# y=0.85 to read as the lower droptop convertible variant. Multiplied ON TOP of
+	# the auto-rescale so the AABB still ends at _real_world_length_m horizontally.
 	if root is Node3D and (_model_scale != Vector3.ONE):
-		(root as Node3D).scale = _model_scale
+		(root as Node3D).scale = (root as Node3D).scale * _model_scale
 	add_child(root)
 	# #157 — pre-classify hook. Pack-car placeholders (Golf / Volvo-as-Astra /
 	# BMW-as-AClass) override this to prune the 9 unwanted cars FIRST, so the
@@ -244,6 +300,87 @@ func load_model() -> void:
 	_articulate_glass()
 	_articulate_steering()
 	_place_passenger_seat()
+	# Per-subclass post-load hook. Lets a subclass that needs extra wiring
+	# (e.g. Swift's driver-door / passenger-door proximity triggers) plug in
+	# AFTER the canonical wrap + auto-ruler + classify path has finished —
+	# so each car script no longer has to duplicate the whole loader/walker.
+	_post_load_hook()
+
+## Subclass override point — called by load_model() after wheels/doors/glass/
+## steering/seat have all been wired. Default no-op.
+func _post_load_hook() -> void:
+	pass
+
+## Look up the wrapped door pivots that were created by _articulate_doors_generic.
+## Subclasses use this to install door-proximity triggers without re-walking
+## the imported tree themselves.
+func get_door_pivots() -> Array:
+	var out : Array = []
+	for d in _car_doors:
+		var p = d.get("pivot")
+		if p is Node3D:
+			out.append(p)
+	return out
+
+## V2 — Walk every MeshInstance3D under root, compute the union AABB in the
+## root's local frame, return the uniform-scale factor needed so the longest
+## horizontal extent (max of X, Z) equals target_length_m. Returns 1.0 if the
+## tree has no meshes or zero size. Y is excluded so very-tall cars (campers)
+## don't pull the wrong axis.
+func _measure_model_scale(root: Node3D, target_length_m: float) -> float:
+	# The recursive helper can't mutate `has_any` via return-by-reference in GDScript;
+	# do the walk again with a wrapper Dictionary to get the result back.
+	var acc : Dictionary = {"aabb": AABB(), "any": false}
+	_aabb_walk(root, Transform3D.IDENTITY, acc)
+	if not bool(acc["any"]):
+		return 1.0
+	var box : AABB = acc["aabb"]
+	var extent_x : float = box.size.x
+	var extent_z : float = box.size.z
+	var longest : float = maxf(extent_x, extent_z)
+	if longest < 0.01:
+		return 1.0
+	return target_length_m / longest
+
+## Recursive AABB accumulator. `xf` is the cumulative transform from root to
+## node. acc["aabb"] is built up, acc["any"] flips true on first hit.
+func _aabb_walk(node: Node, xf: Transform3D, acc: Dictionary) -> void:
+	var child_xf : Transform3D = xf
+	if node is Node3D:
+		child_xf = xf * (node as Node3D).transform
+	if node is MeshInstance3D and (node as MeshInstance3D).mesh != null:
+		var local : AABB = (node as MeshInstance3D).mesh.get_aabb()
+		var world_box : AABB = child_xf * local
+		if not bool(acc["any"]):
+			acc["aabb"] = world_box
+			acc["any"] = true
+		else:
+			acc["aabb"] = (acc["aabb"] as AABB).merge(world_box)
+	for c in node.get_children():
+		_aabb_walk(c, child_xf, acc)
+
+## Apply the FBX auto-rescale factor to every VehicleWheel3D under this Car so
+## the wheels match the new body length. Each wheel's local position scales
+## (so they sit at the new corner positions), its wheel_radius / suspension
+## travel scales (so physics matches the visuals), and any procedural WheelMesh
+## child scales uniformly. Imported tyre meshes attached later by
+## _articulate_wheels inherit the parent VehicleWheel3D's scale via add_child +
+## Transform3D.IDENTITY, so they end up right-sized for free.
+func _scale_vehicle_wheels(factor: float) -> void:
+	if factor <= 0.01 or is_equal_approx(factor, 1.0):
+		return
+	for c in get_children():
+		if c is VehicleWheel3D:
+			var vw : VehicleWheel3D = c
+			vw.position *= factor
+			vw.wheel_radius = vw.wheel_radius * factor
+			vw.suspension_travel = vw.suspension_travel * factor
+			vw.wheel_rest_length = vw.wheel_rest_length * factor
+			# Scale the procedural placeholder mesh (visible only when
+			# _articulate_wheels can't find an FBX wheel to attach).
+			var wheel_mesh := vw.get_node_or_null("WheelMesh") as Node3D
+			if wheel_mesh != null:
+				wheel_mesh.scale = wheel_mesh.scale * factor
 
 ## #157 — pre-classify hook called between the GLB instantiation and the
 ## wheel/door classifier walk. Default no-op; pack-car placeholders override.

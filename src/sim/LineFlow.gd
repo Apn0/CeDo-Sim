@@ -318,7 +318,7 @@ func _discover() -> void:
 			# the jog logic entirely.
 			"switch_ctrl":  null,
 			# #138 — conveyor-8 bidirectional controller. Populated below for
-			# intake_belt_8 only.
+			# transportband_8 only.
 			"c8_ctrl":      null,
 		})
 		# #137 — attach the jog controller to switch_belt bodies and stash it on
@@ -326,7 +326,7 @@ func _discover() -> void:
 		if id == "switch_belt":
 			_nodes[_nodes.size() - 1]["switch_ctrl"] = SwitchBeltScript.attach_to(node3d)
 		# #138 — attach the bidirectional ramp controller to C8.
-		elif id == "intake_belt_8":
+		elif id == "transportband_8":
 			_nodes[_nodes.size() - 1]["c8_ctrl"] = Conveyor8Script.attach_to(node3d)
 	# Attach the advanced-system observers now that every node dict exists.
 	_attach_advanced_systems()
@@ -570,6 +570,37 @@ func _link_best_target(src_idx: int, source_port: Vector3, src_proc: String, exc
 
 ## #138 — return true when BOTH VSS_3A and VSS_3B input buffers are over the
 ## VSS_FULL_KG cap. C8 reads this every tick to decide its target direction.
+## #139 — Pack-up cascade state. When both VSS_3A and VSS_3B are full there is
+## nowhere for the intake to send material, so the upstream conveyors have to
+## stop in sequence (one per ~1 s) all the way back up to the trilzeef. Track
+## how long the both-full condition has held; the per-belt update routine pauses
+## belt N once _pack_up_t exceeds N seconds (C11 first, then C10, …, then C1,
+## finally the trilzeef and bunker paddle). The same timer drives the reverse:
+## as soon as either VSS unblocks, the timer resets and belts restart in the
+## opposite order (C1 first, working back down toward C11).
+var _pack_up_t : float = 0.0
+const _PACK_UP_GAP_S : float = 1.0           # seconds between successive belt pauses
+const _PACK_UP_ORDER : Array[String] = [
+	"transportband_11", "transportband_10", "transportband_9", "transportband_8_5",
+	"transportband_8", "transportband_7", "transportband_6", "transportband_5",
+	"transportband_4", "transportband_3", "transportband_2", "transportband_1",
+	"trilzeef", "bunker",
+]
+
+## Whether belt id `bid` is currently in the pack-up paused zone, given the
+## elapsed both-full duration. Belts come to a stop one-by-one from the head
+## (C11) backwards toward the trilzeef + bunker.
+func _is_pack_up_paused(bid: String) -> bool:
+	if _pack_up_t <= 0.0:
+		return false
+	for i in _PACK_UP_ORDER.size():
+		var when : float = float(i) * _PACK_UP_GAP_S
+		if _pack_up_t < when:
+			return false
+		if bid == _PACK_UP_ORDER[i] or bid.begins_with(_PACK_UP_ORDER[i] + "_"):
+			return true
+	return false
+
 ## When only one VSS is full the switch belt's buffer-aware split (#137)
 ## already biases against it, so there's no need to flip C8 in that case.
 func _both_vss_full() -> bool:
@@ -1101,6 +1132,14 @@ func tick(delta: float) -> void:
 	if _nodes.is_empty():
 		_update_label()
 		return
+	# #139 — pack-up cascade timer. Tick UP while both VSSs are full so the
+	# downstream pause sequence (C11 → … → C1 → trilzeef → bunker) marches one
+	# belt per _PACK_UP_GAP_S. Reset to 0 the moment either VSS frees up so the
+	# belts restart in reverse order (C1 first → C11 last → trilzeef + bunker).
+	if _both_vss_full():
+		_pack_up_t += delta
+	else:
+		_pack_up_t = 0.0
 
 	# Cache spatial queries once per tick for heavy inner loops like _dump_waste
 	var tree = get_tree()
@@ -1492,6 +1531,13 @@ func _tick_advanced_systems(delta: float) -> void:
 				# Mirror the live motor current onto the node so the HMI/SCADA amp
 				# readout reflects the binding load on these high-load drives.
 				nd["amps"] = float(mol.get("current_amps"))
+
+		# #139 — pack-up cascade: when both VSSs full, conveyors pause one-per-
+		# second from the head (C11) back toward the bunker. This is the actual
+		# pause application — _is_pack_up_paused() advances with _pack_up_t.
+		if _is_pack_up_paused(String(nd.get("id", ""))):
+			nd["powered"] = false
+
 		# 4) AIR consumer duty — accumulate this consumer's load fraction (throughput
 		#    vs its design rate) so we can report a single duty per air id.
 		var aid : String = String(nd.get("air_id", ""))
@@ -1593,12 +1639,28 @@ func _head_feed_point(head: Node3D) -> Vector3:
 	for v in (starts as Dictionary).values():
 		if not (v is Vector3):
 			continue
-		var marker : Vector3 = v
+		# Marker lives in LAYOUT FRAME (player_spawn-relative, north-up); convert
+		# to the SCENE FRAME (rotated by world_yaw + anchored on player spawn)
+		# before measuring distance to the world-frame head_pos.
+		var marker : Vector3 = _layout_marker_to_scene(v)
 		var d : float = marker.distance_to(head_pos)
 		if d < best_d:
 			best_d = d
 			best_pos = marker
 	return best_pos
+
+## Map a raw WorldLayout marker (player_spawn-relative offset in WorldSetup's
+## north-up frame) to its scene position. Routes through MainWorld's
+## `_layout_to_scene` (which applies the canonical world_yaw rotation + anchor
+## translation, see MainWorld.gd:_layout_to_scene). Without this conversion the
+## line_starts markers compare a layout-frame Vector3 to head_pos in WORLD frame
+## — they will never match within LINE_START_MARKER_RADIUS, so the head silently
+## falls back to its own position and the operator's intake marker is ignored.
+func _layout_marker_to_scene(marker: Vector3) -> Vector3:
+	var p := get_parent()
+	if p != null and p.has_method("_layout_to_scene"):
+		return p.call("_layout_to_scene", marker)
+	return marker
 
 ## Returns the nearest bale within FEED_RADIUS of a feed point, or null.
 func _bale_at(pos: Vector3, bales: Array[Node] = []) -> Node3D:
@@ -1792,6 +1854,12 @@ func _make_connector(a: Dictionary, b: Dictionary) -> void:
 	# and compactorband even though they touched). Skip silently.
 	if _is_belt_id(src_id) and _is_belt_id(tgt_id):
 		return
+	# #196 — SHREDDER → BELT: the operator's spec is that the uitvoerband sits
+	# DIRECTLY UNDER the shredder discharge (the shredder drops material
+	# straight onto the horizontal collector belt). No chute / gutter between
+	# them — the belt deck IS the catch surface. Skip the connector.
+	if src_id.begins_with("shredder") and _is_belt_id(tgt_id):
+		return
 	# Rule 1 — SCREW DISCHARGE ALWAYS GETS A CHUTE. Per operator: when material
 	# leaves a screw conveyor / dewatering screw / dosing screw, it slides down a
 	# chute to whatever the screw is feeding. Auto-fitted between the screw's
@@ -1833,6 +1901,14 @@ func _make_connector(a: Dictionary, b: Dictionary) -> void:
 	if src_id == "cyclone" and (tgt_id == "silo" or tgt_id == "extruder_silo" or tgt_id == "mengsilo" or tgt_id == "doseersilo" or tgt_id == "vss_silo"):
 		_spawn_chute(a_world, b_world, 0.30, 0.18, true)
 		return
+	# #196 — SCHEIDINGSGOOT → FRICTION_SEP: the "glijgoot" slide-chute the
+	# operator described. Wide-bottom, open-top, mild slope. Same shape as the
+	# screw chute but a wider trough so it visually reads as a real slide
+	# instead of a thin gutter. One spawn per sibling fan-out (the macro
+	# builder fires this rule once per scheidingsgoot→friction_sep edge).
+	if src_id == "scheidingsgoot" and tgt_id == "friction_sep":
+		_spawn_chute(a_world, b_world, 0.55, 0.12, false)
+		return
 	# Otherwise — fall through to the legacy gravity-gutter behaviour.
 	_spawn_gravity_gutter(a_world, b_world)
 
@@ -1853,7 +1929,7 @@ static func _is_belt_id(id: String) -> bool:
 			or id == "compactorband" or id == "compactor_belt" \
 			or id == "switch_belt":
 		return true
-	return id.begins_with("intake_belt_") or id.begins_with("opzetband") \
+	return id.begins_with("transportband_") or id.begins_with("opzetband") \
 			or id.begins_with("westa_band")
 
 ## True when the source id is a friction separator — both the dry-process

@@ -52,19 +52,29 @@ class_name BaleClamp
 @export var right_plate_path   : NodePath
 
 @export_group("Lift")
-@export var lift_min_m     : float = 0.1
-@export var lift_max_m     : float = 3.0
-@export var lift_speed_m_s : float = 0.6
+# #201 — Geometry: chassis origin sits at ground (wheel attach Y = 0.4, radius = 0.4).
+# Plate chain: MastPivot(+0.40) → LiftCarriage(+lift_height_m) → LeftPlate
+# (local +0.55) → mesh half-height 0.52 → plate-bottom local Y = 0.43 + lift_height_m.
+# lift_min_m = -0.43 → plate flat on floor.
+# lift_max_m =  2.57 → plate bottom 3.0 m up (reach for top of a 3-bale stack).
+@export var lift_min_m              : float = -0.43
+@export var lift_max_m              : float =  2.57
+@export var lift_speed_no_load_m_s  : float = 0.60   # spec: 0.50–0.65 m/s unloaded
+@export var lift_speed_full_load_m_s: float = 0.40   # spec: 0.30–0.45 m/s at rated 2 t
 
 @export_group("Tilt")
-@export var tilt_min_deg     : float = -8.0
+@export var tilt_min_deg     : float = -6.0    # forward — was -8°, real-spec 3–6°
 @export var tilt_max_deg     : float = 12.0
-@export var tilt_speed_deg_s : float = 8.0
+@export var tilt_speed_deg_s : float = 8.0     # spec: 6–10°/s
 
 @export_group("Clamp")
-@export var clamp_open_m    : float = 1.35
-@export var clamp_closed_m  : float = 0.6     # plates can squeeze tighter than before
-@export var clamp_speed_m_s : float = 0.6
+# Bales ~1.1 × 1.2 × 1.4 m. Plates must clear 1.4 m wide bales with travel allowance.
+@export var clamp_open_m    : float = 1.70
+@export var clamp_closed_m  : float = 0.6
+@export var clamp_speed_m_s : float = 0.15     # spec: 0.10–0.20 m/s (was 0.6 — way too fast)
+
+@export_group("Load")
+@export var max_safe_load_kg: float = 2000.0   # Cascade R-series class rated capacity
 
 # ── Tunables ──────────────────────────────────────────────────────────────────
 ## Time to ramp clamp_force from 0 → 1 while B is held. Long on purpose — the
@@ -77,7 +87,7 @@ const PLATE_TRACK_RATE   : float = 6.0
 const WIRE_BULGE_M       : float = 0.04
 
 # ── Runtime state ─────────────────────────────────────────────────────────────
-var lift_height_m : float = 0.1
+var lift_height_m : float = -0.43   # plate flat on floor (#201)
 var tilt_deg      : float = 0.0
 var clamp_gap_m   : float = 1.35
 
@@ -86,6 +96,10 @@ var clamp_gap_m   : float = 1.35
 var clamp_force        : float = 0.5
 ## True while the operator is holding B and the force is ramping up.
 var _force_ramping     : bool  = false
+# #161 — V key triggers a smooth force decay instead of a snap to 0. The plate
+# gap follows clamp_force, so this gives the operator a visible "let go" — was
+# instant zero before, which looked like nothing happened.
+var _force_unramping   : bool  = false
 var _ramp_started_at   : float = 0.0
 var _ramp_start_force  : float = 0.0
 
@@ -106,6 +120,19 @@ func _ready() -> void:
 	if lift_carriage_path: _lift_carriage = get_node_or_null(lift_carriage_path) as Node3D
 	if left_plate_path:    _left_plate    = get_node_or_null(left_plate_path)    as Node3D
 	if right_plate_path:   _right_plate   = get_node_or_null(right_plate_path)   as Node3D
+	# #201 — physicalize the plates. .tscn changed them to AnimatableBody3D with a
+	# CollisionShape3D sibling matching the plate mesh (0.12 × 1.04 × 1.10).
+	# Real bale-clamp plates have a heavy rubber/steel-stud face for grip; a
+	# friction of ~1.6 lets clamp_force ≈ rated load hold a 250 kg bale via
+	# normal-force × μ alone (no script-attach magic). Bounce is near zero so
+	# the bale doesn't kick out when first squeezed.
+	var plate_pm := PhysicsMaterial.new()
+	plate_pm.friction = 1.6
+	plate_pm.bounce   = 0.02
+	if _left_plate is PhysicsBody3D:
+		(_left_plate as PhysicsBody3D).physics_material_override = plate_pm
+	if _right_plate is PhysicsBody3D:
+		(_right_plate as PhysicsBody3D).physics_material_override = plate_pm
 
 # =============================================================================
 # INPUT — override the BaseVehicle V/B handlers so we get the force-ramp + cut
@@ -145,6 +172,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	# wire individually before re-entering the clamp to place + open the bale.)
 	if event.is_action_pressed("forklift_forks_pinch"):
 		_force_ramping    = true
+		_force_unramping  = false   # #161 — pressing B mid-decay cancels the V un-ramp
 		_ramp_started_at  = Time.get_ticks_msec() / 1000.0
 		_ramp_start_force = clamp_force
 		get_viewport().set_input_as_handled()
@@ -169,12 +197,25 @@ func _unhandled_input(event: InputEvent) -> void:
 # =============================================================================
 func _physics_process(delta: float) -> void:
 	super._physics_process(delta)
+
+	# Achterwielbesturing = A/D draait de neus de "verkeerde" kant op t.o.v. de auto logica.
+	# We flippen de stuurhoek van alle sturende wielen om de BaseVehicle logica recht te trekken.
+	for c in get_children():
+		if c is VehicleWheel3D and c.use_as_steering:
+			c.steering = -c.steering
+
 	if occupied:
 		_update_lift_tilt(delta)
 		# While ramping, update clamp_force live so the HUD bar climbs
 		if _force_ramping:
 			var dt := Time.get_ticks_msec() / 1000.0 - _ramp_started_at
 			clamp_force = clampf(_ramp_start_force + dt / CLAMP_RAMP_S, 0.0, 1.0)
+	# #161 — V triggers a smooth force decay rather than snap-to-zero. Runs even
+	# when un-occupied so a quit-out mid-clamp still relaxes naturally.
+	if _force_unramping:
+		clamp_force = maxf(0.0, clamp_force - delta / CLAMP_RAMP_S)
+		if clamp_force <= 0.0:
+			_force_unramping = false
 	_update_plate_gap(delta)
 	_apply_mast_lift_tilt()
 	_update_wire_bulge()
@@ -186,8 +227,13 @@ func _update_lift_tilt(delta: float) -> void:
 
 	var lift_axis := Input.get_action_strength("forklift_lift_up") \
 				   - Input.get_action_strength("forklift_lift_down")
-	lift_height_m = clampf(lift_height_m + lift_axis * lift_speed_m_s * delta
-		+ float(m["b"]) * lift_speed_m_s * delta * MOUSE_TOOL_MULT, lift_min_m, lift_max_m)
+	# #201 — load-aware lift speed: a clamped bale slows the hydraulic.
+	var load_ratio : float = 0.0
+	if _carried_bale != null and is_instance_valid(_carried_bale) and "mass" in _carried_bale:
+		load_ratio = clampf(float(_carried_bale.mass) / max_safe_load_kg, 0.0, 1.0)
+	var lift_speed : float = lerpf(lift_speed_no_load_m_s, lift_speed_full_load_m_s, load_ratio)
+	lift_height_m = clampf(lift_height_m + lift_axis * lift_speed * delta
+		+ float(m["b"]) * lift_speed * delta * MOUSE_TOOL_MULT, lift_min_m, lift_max_m)
 
 	var tilt_axis := Input.get_action_strength("forklift_tilt_back") \
 				   - Input.get_action_strength("forklift_tilt_fwd")
@@ -222,13 +268,24 @@ func _update_lift_tilt(delta: float) -> void:
 func _update_plate_gap(delta: float) -> void:
 	var target_gap := clamp_open_m
 	if _carried_bale != null:
+		# #201 Step 5 — plates are now real AnimatableBody3D bodies that push the
+		# bale's rigid body via contact. Target gap converges to the bale's
+		# collision width (no further squeeze geometry); friction × normal force
+		# from PhysicsMaterial does the grip, and a higher clamp_force still
+		# feels different at the HUD because the operator chose to hold harder.
+		# The old `bale_x_collision - squeeze` math drove plates INTO the bale's
+		# collision volume, which with real plate collision would shove the
+		# bale rigid body around — visible jitter / ejection.
 		var size := _bale_size(_carried_bale)
-		var squeeze := lerpf(0.0, 0.06, clamp_force)
-		# Bale collision is 90% of visual on X (the 10% give). Closing plates land
-		# exactly on the collision boundary; further squeeze (up to 6 cm) is the
-		# compressed-film deformation.
 		var bale_x_collision := size.x * 0.9
-		target_gap = clampf(bale_x_collision - squeeze, clamp_closed_m, clamp_open_m)
+		target_gap = clampf(bale_x_collision, clamp_closed_m, clamp_open_m)
+	elif clamp_force > 0.01:
+		# #161 fix: plates track clamp_force even when no bale is being carried.
+		# Was: only closed while the pinch button was physically held, so
+		# releasing B with 94% force still showing snapped the plates back open
+		# — the operator's "94%" felt fake. Now the gap follows the force value:
+		# 0 = wide open, 1 = fully closed, so the visible state matches the HUD.
+		target_gap = lerpf(clamp_open_m, clamp_closed_m, clamp_force)
 	elif Input.is_action_pressed("forklift_forks_pinch"):
 		target_gap = clamp_closed_m
 	clamp_gap_m = lerpf(clamp_gap_m, target_gap, clampf(PLATE_TRACK_RATE * delta, 0.0, 1.0))
@@ -264,18 +321,19 @@ func _on_grabbed(_primary: Node3D, _stack: Array[Node3D]) -> void:
 	# Tell the wire-bulge logic to start checking against the primary bale.
 	_update_plate_gap(0.001)
 
-## Drop the squeeze immediately so the HUD bar visibly opens up. Runs BEFORE the
-## carried-bale early-out so V works as "release pressure" even on empty air
-## (e.g. the operator over-clamped on nothing).
+## V pressed: start the gradual force decay (#161). Was: instant 0, which felt
+## like nothing happened because the plates had already snapped open. Now the
+## bale is released immediately (you let go), but clamp_force ramps DOWN over
+## CLAMP_RAMP_S, so the plates visibly relax. _physics_process ticks the decay.
 func _on_pre_release() -> void:
-	clamp_force = 0.0
 	_force_ramping = false
+	_force_unramping = true
 
-## After everything is dropped, fan any wires-cut bales into their sheet arc and
-## make sure the squeeze is fully released so the HUD bar drops back.
+## Bale fully dropped — keep the decay running so the plates open the rest of
+## the way; clamp_force has already started its descent from _on_pre_release.
 func _on_released() -> void:
-	clamp_force = 0.0
 	_force_ramping = false
+	_force_unramping = true
 
 ## Hook into BaseVehicle._drop_bale: after a normal drop, a cut bale opens into
 ## the sheet arc. (BaseVehicle calls _drop_bale for every bale in the column.)

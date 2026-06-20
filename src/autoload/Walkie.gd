@@ -51,6 +51,13 @@ func _ready() -> void:
 	# Start with a fresh pack in the unit.
 	battery = BatteryT.new(1.0, "pack_player_start")
 	_last_percent = battery.percent()
+	# Subscribe to VoiceService TTS results so when a real-voice stream lands we
+	# route it through AudioManager at the current effective loudness. Best-effort
+	# — silently skipped headless when the autoload isn't present.
+	var vs := get_node_or_null("/root/VoiceService")
+	if vs != null and vs.has_signal("voice_done"):
+		if not vs.is_connected("voice_done", Callable(self, "_on_voice_done")):
+			vs.connect("voice_done", Callable(self, "_on_voice_done"))
 
 ## Resolve the ShiftClock lazily — it lives under MainWorld, which doesn't exist
 ## yet when this autoload's _ready() runs.
@@ -125,6 +132,14 @@ func effective_loudness() -> float:
 ## A colleague keys up. If the battery is alive the call is HEARD (routed to
 ## AudioManager at the effective loudness); if dead, it's missed. Either way we
 ## emit call_received so the HUD can log it (and show "missed" when not heard).
+##
+## If VoiceService is available and the active backend supports speech synthesis
+## (local piper / cloud TTS), we ask it to produce a real-voice stream for
+## `text` IN PARALLEL with arming the squelch carrier. The carrier still plays
+## (sidetone is part of the radio feel), and the synthesised voice plays on the
+## Voices bus when it's ready. When VoiceService returns null (no backend tools
+## installed) the squelch carrier alone carries the message — exactly the
+## behaviour pre-VoiceService.
 func receive_call(from_name: String, text: String) -> void:
 	var loud := effective_loudness()
 	var heard := battery_alive()
@@ -132,33 +147,117 @@ func receive_call(from_name: String, text: String) -> void:
 		var am := get_node_or_null("/root/AudioManager")
 		if am != null and am.has_method("play_radio_call"):
 			am.play_radio_call(text, loud, headset_on)   # text drives the formant voice (#163)
+		_request_voice(text, _voice_id_for(from_name))
 	emit_signal("call_received", from_name, text, heard)
 
 # =============================================================================
 # OUTGOING PTT — operator keys up to talk back to the crew
 # =============================================================================
-## Canned response lines, cycled by repeated PTT presses (real walkies don't
-## type — the simulator picks from a short repertoire).
+## Canned response lines. Real walkies don't type — the simulator picks from a
+## short repertoire. The operator opens the radio menu (U) and chooses one by
+## number (1..9) or arrow keys + Enter. The HUD owns the menu widget; this
+## autoload only knows the list and the send/audio routing.
 const PTT_LINES : Array[String] = [
 	"Copy that.",
 	"On my way.",
 	"Need a hand here.",
 	"Tank swap, give me five.",
 	"Standby.",
+	# ── Common shift radio phrases ───────────────────────────────────────────
+	# Real CeDo shift comms: start/stop a shift, break in/out, line pack-up
+	# announcements, silo swap requests, and the short-form acknowledgements
+	# you actually hear over the portagofoon. Order matches the menu's number
+	# keys, so don't reorder without also rebinding the HUD shortcuts.
+	"Start shift",
+	"Stop shift",
+	"Going on break",
+	"Back from break",
+	"Line 3A pack-up",
+	"Line 3B pack-up",
+	"Swap silo full",
+	"Tank swap, give me 5",
+	"Roger",
+	"Copy that",
+	"Wait one",
 ]
-var _ptt_idx : int = 0
 
-## Operator presses PTT. Plays the uplink chirp + emits transmit_sent so the
-## HUD can show "you: <line>" and any future NPC subscribers (crew AI) can
-## react. Returns false if the radio is dead — your colleagues won't hear you
-## either, same as in real life.
-func transmit() -> bool:
+## Send the canned line at `index`. Plays the uplink chirp + emits
+## transmit_sent so the HUD can show "you: <line>" and any future NPC subscribers
+## (crew AI) can react. Returns false if the radio is dead — your colleagues
+## won't hear you either, same as in real life. Out-of-range `index` is clamped
+## (defensive — the menu always passes a valid index).
+func transmit_line(index: int) -> bool:
+	if PTT_LINES.is_empty():
+		return false
+	var clamped : int = clampi(index, 0, PTT_LINES.size() - 1)
+	return transmit_freeform(PTT_LINES[clamped])
+
+## Send an arbitrary `text` line over the radio (used by the local STT pipeline
+## once it lands, and by tests). Mirrors transmit_line for the canned route, but
+## bypasses PTT_LINES entirely. Returns false if the radio is dead.
+##
+## Routing: the squelch + carrier blip always plays on AudioManager (sidetone
+## the operator hears in their own earpiece). If VoiceService is wired, we also
+## request a real-voice render of the line in the OPERATOR voice; when it
+## comes back the listener side (NPCs) will hear actual words. When VoiceService
+## isn't wired, the existing squelch-only carrier path keeps working.
+func transmit_freeform(text: String) -> bool:
+	var line : String = String(text).strip_edges()
+	if line.is_empty():
+		return false
 	var heard := battery_alive()
-	var line := PTT_LINES[_ptt_idx]
-	_ptt_idx = (_ptt_idx + 1) % PTT_LINES.size()
 	if heard:
 		var am := get_node_or_null("/root/AudioManager")
 		if am and am.has_method("play_radio_uplink"):
 			am.call("play_radio_uplink", line, headset_on)   # the keyed-up line drives the voice (#163)
+		_request_voice(line, "operator")
 	emit_signal("transmit_sent", line, heard)
 	return heard
+
+## Legacy alias — sends the FIRST canned line ("Copy that."). Kept so any
+## test harness or future code path that still calls `transmit()` keeps working,
+## but the in-game UI now goes through the menu + `transmit_line(index)`.
+func transmit() -> bool:
+	return transmit_line(0)
+
+# =============================================================================
+# VOICE SERVICE INTEGRATION (#179 follow-up — real TTS optional)
+# =============================================================================
+## Ask VoiceService to synthesise `text` in the given voice. Best-effort: when
+## the autoload isn't present (headless tests, stripped builds) or the active
+## backend can't produce audio, this is a no-op and the existing AudioManager
+## squelch carrier alone carries the message — no regression.
+func _request_voice(text: String, voice_id: String) -> void:
+	var vs := get_node_or_null("/root/VoiceService")
+	if vs == null or not vs.has_method("speak"):
+		return
+	vs.speak(text, voice_id, voice_id)
+
+## VoiceService finished synthesising a line — route the wav through
+## AudioManager at the current loudness / headset routing. Null stream means
+## synth failed: do nothing (squelch carrier alone carries the message).
+func _on_voice_done(audio_stream) -> void:
+	if audio_stream == null:
+		return
+	var am := get_node_or_null("/root/AudioManager")
+	if am == null or not am.has_method("play_radio_voice_stream"):
+		return
+	am.play_radio_voice_stream(audio_stream, effective_loudness(), headset_on)
+
+## Map an NPC display name onto a VoiceService voice_id. Falls back to the
+## "_default" voice if the name isn't in the table. Operator-side keying always
+## uses voice_id="operator" — that's hard-wired in transmit_freeform.
+func _voice_id_for(from_name: String) -> String:
+	var key := String(from_name).strip_edges().to_lower()
+	if key.is_empty():
+		return "_default"
+	# Use the first space-separated token as the lookup key so "Mohammed (feeder)"
+	# still resolves to the mohammed voice. Keep this list mirrored with
+	# VoiceService.CLOUD_VOICE_MAP for the cloud backend.
+	var parts := key.split(" ", false)
+	var first : String = parts[0] if parts.size() > 0 else key
+	const KNOWN : Array[String] = ["mohammed", "pascal", "kevin", "emrah", "yasin",
+									"peter", "abdellilah", "shift_lead", "operator"]
+	if KNOWN.has(first):
+		return first
+	return "_default"

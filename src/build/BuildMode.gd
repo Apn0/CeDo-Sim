@@ -133,7 +133,7 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 # `line_3b` so their vuilsnippersilo heads sit next to the VSS/U-bay discharge —
 # LineFlow's geometry linker will then auto-connect intake → vuilsnippersilo →
 # wash trains. Numbers belts 1..12 in their natural placement order (each tilts
-# its own deck via _intake_belt_spec — no extra geometry needed in the macro).
+# its own deck via _transportband_spec — no extra geometry needed in the macro).
 ## #136 — operator-spec second pass.
 ##
 ## Three structural changes from the original (#54) layout:
@@ -143,7 +143,7 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 ##      way and discharges DOWN onto 8.5, which feeds the U-bay (stortvak).
 ##      The C8 reversal + ramp logic is task #138; the LAYOUT here just puts
 ##      the geometry in the right place so LineFlow can wire the edges.
-##   2. switch_belt IS conveyor 12 — the duplicate intake_belt_12 entry is
+##   2. switch_belt IS conveyor 12 — the duplicate transportband_12 entry is
 ##      gone. The switch belt jogs along its own conveying axis to feed either
 ##      VSS_3A, VSS_3B, or both (task #137).
 ##   3. VSS is REMOVED from this macro. It belongs to the wash macro as its
@@ -156,30 +156,49 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 # series. _build_full_line treats x≠0 entries as branches; using a PARALLEL
 # split (both at the same z, opposite x) matches the 3B L-R split pattern.
 const LINE_SORT_SEQ : Array[Dictionary] = [
-	{"id": "trilzeef", "x": -2.5, "z": 0.0},
-	{"id": "trilzeef", "x":  2.5, "z": 0.0},
+	# D4 — operator: real plant feeds the trilzeef pair from an opzetband_3a3b
+	# at the head. Without it the macro just drops two parallel screens with no
+	# upstream feed surface.
+	{"id": "opzetband_3a3b"},
+	{"id": "trilzeef", "x": -2.5, "z": 1.0},
+	{"id": "trilzeef", "x":  2.5, "z": 1.0},
+]
+
+## D4 — Lines 3C + 6 share a front-end (opzetband_3c6 → shredder → climb belt →
+## trilzeef → wash chain). Previously placeable existed in the catalog but no
+## macro chained it, so the operator couldn't build the 3C/6 intake from the
+## "Lines" group. This is the shared 3C/6 front end; downstream wash diverges
+## per line (use LINE_3A/3B-style macros for that, with the wider flotation_tank_wide).
+const LINE_3C6_SEQ : Array[Dictionary] = [
+	{"id": "opzetband_3c6"},
+	{"id": "shredder_2"},
+	{"id": "inclined_belt_8m"},
+	{"id": "trilzeef"},
 ]
 
 const INTAKE_3A3B_SEQ : Array[Dictionary] = [
+	# D4 — opzetband_3a3b at the head feeds the shredder. Was missing; macro
+	# previously assumed bales arrived at the shredder by hand.
+	{"id": "opzetband_3a3b"},
 	{"id": "shredder_2"},
 	{"id": "inclined_belt_8m"},      # the climb out of shredder-2's discharge
-	{"id": "intake_belt_1"},
-	{"id": "intake_belt_2"},
-	{"id": "intake_belt_3"},
-	{"id": "intake_belt_4"},
-	{"id": "intake_belt_5"},
-	{"id": "intake_belt_6"},
-	{"id": "intake_belt_7"},
-	{"id": "intake_belt_8"},
+	{"id": "transportband_1"},
+	{"id": "transportband_2"},
+	{"id": "transportband_3"},
+	{"id": "transportband_4"},
+	{"id": "transportband_5"},
+	{"id": "transportband_6"},
+	{"id": "transportband_7"},
+	{"id": "transportband_8"},
 	# ── BRANCH (overflow path): C8.5 → U-bay on the -X side lane. The branch
 	#    is NOT a parallel sibling — it's the C8-reverse discharge target. C8
 	#    sends material here only when both VSSs are FULL (task #138).
-	{"id": "intake_belt_8_5", "x": -3.5, "z": -1.5},
+	{"id": "transportband_8_5", "x": -3.5, "z": -1.5},
 	{"id": "u_bay",           "x": -8.0, "z": -2.0},
 	# ── Main forward chain continues. ──
-	{"id": "intake_belt_9"},
-	{"id": "intake_belt_10"},
-	{"id": "intake_belt_11"},
+	{"id": "transportband_9"},
+	{"id": "transportband_10"},
+	{"id": "transportband_11"},
 	{"id": "switch_belt"},           # = conveyor 12; jogs ±1.5m to feed VSS_3A / VSS_3B
 ]
 const LINE_3B_SEQ : Array[Dictionary] = [
@@ -217,17 +236,33 @@ const LINE_3B_SEQ : Array[Dictionary] = [
 # magnet → VW trommel → scheidingsgoot) then wash/dry/extrude; transcribed from the
 # operator's LIJN 1 sheet; 2x machines laid as side-by-side pairs (jog with K to finalize).
 const LINE_1_SEQ : Array[Dictionary] = [
+	# #196 — operator rework. Old head (metaaldetector + 45° westa_band) gone:
+	# metal-detector head is now built INTO opzetband_1 at 3/4 along; the 45°
+	# westa_band_1 moves to the END of the wash-feed group so it dumps into the
+	# TOP of the pre-wash drum. New flow:
+	#   opzetband_1 (intake + magnet head 3/4 along)
+	#   → shredder_1 (no chute between shredder and uitvoerband, sits directly
+	#                 above the horizontal collector belt)
+	#   → transport_belt (= uitvoerband: horizontal, runs under shredder)
+	#   → overband_magnet (near end of uitvoerband — captures ferrous)
+	#   → transport_belt (short 1 m horizontal, 30 cm down + 90° L turn — handled
+	#                     visually by the K-menu jog after placement)
+	#   → westa_band_1 (45° incline up to the top of the pre-wash drum)
+	#   → prewash_drum  (now scaled 2.5×, top-fed)
 	{"id": "opzetband_1"},
-	{"id": "metaaldetector"},
-	{"id": "westa_band_1"},
 	{"id": "shredder_1"},
-	{"id": "transport_belt"},
+	{"id": "transport_belt"},                          # uitvoerband
 	{"id": "overband_magnet"},
-	{"id": "transport_belt"},
+	{"id": "transport_belt", "main_advance": 1.0},     # short 1m after 90° L
+	{"id": "westa_band_1"},                            # 45° incline to drum top
 	{"id": "prewash_drum"},
 	{"id": "scheidingsgoot"},
-	{"id": "friction_sep", "x": -2.5, "z": 1.0},
-	{"id": "friction_sep", "x":  2.5, "z": 1.0, "main_advance": 5.0},
+	# #196 — parallel L/R friction split. parallel_branch tells the macro
+	# builder these two siblings BOTH receive from the upstream scheidingsgoot
+	# (the "glijgoot" slide-chute connector). Without it, only the first sibling
+	# was wired up and the right-side friction ran dry on reload.
+	{"id": "friction_sep", "x": -2.5, "z": 1.0, "parallel_branch": true},
+	{"id": "friction_sep", "x":  2.5, "z": 1.0, "parallel_branch": true, "main_advance": 5.0},
 	{"id": "mech_dryer",  "x": -2.5, "z": 1.0},
 	{"id": "mech_dryer",  "x":  2.5, "z": 1.0, "main_advance": 5.0},
 	{"id": "blower",      "x": -2.0, "z": 0.5},
@@ -284,6 +319,15 @@ var _two_point_preview : MeshInstance3D = null
 # top kisses the deck) and _pole_snap_xz the floor-plane position to plant it at.
 var _pole_snap_height : float = 0.0          # 0 = no snap active; use default height
 var _pole_snap_xz     : Vector3 = Vector3.ZERO   # world position to plant the base
+
+# ── Machine-to-machine edge snap ──────────────────────────────────────────────
+# When the ghost's nearest face center is within SNAP_MAX_DIST_M of an already-
+# placed machine's nearest face center, the ghost JUMPS to the alignment
+# position so its edge butts up against the placed machine's edge. A green
+# vertical marker shows where the join lands; LMB places at that snap.
+const SNAP_MAX_DIST_M : float = 2.0
+var _snap_marker : Node3D = null
+var _snap_active : bool   = false
 const POLE_DEFAULT_H : float = 2.0           # matches the catalog size.y for poles
 const FLOOR_Y : float = 0.0
 
@@ -381,6 +425,12 @@ func _build_ui() -> void:
 	surf_help.add_theme_color_override("font_color", Color(0.6, 0.6, 0.66))
 	vbox.add_child(surf_help)
 
+	# #MSB — Macro Save-Back panel: after placing a line macro and jogging
+	# machines in EDIT mode (K), the operator can save the new layout back
+	# so future placements emit it. Reset wipes the override file and
+	# restores the const seed.
+	_build_macro_saveback_panel(vbox)
+
 	for cat in PlaceableCatalog.categories():
 		var header := Label.new()
 		header.text = "— %s —" % cat
@@ -456,6 +506,50 @@ func _build_popup() -> void:
 	cancel_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	cancel_btn.pressed.connect(_cancel_surface)
 	row.add_child(cancel_btn)
+
+# #MSB — build a Save-as-spec / Reset-to-default pair of buttons per macro.
+# Place once into the catalog; presses route into save_macro_overrides() /
+# reset_macro_overrides(). Tracks the user://macros/<macro>.json status so the
+# operator can capture the in-world layout as the new spec or roll back to the
+# const seed in BuildMode.gd.
+func _build_macro_saveback_panel(parent: VBoxContainer) -> void:
+	var sep := Label.new()
+	sep.text = "— MACRO SAVE-BACK —"
+	sep.add_theme_font_size_override("font_size", 13)
+	sep.add_theme_color_override("font_color", Color(1.0, 0.85, 0.45))
+	parent.add_child(sep)
+
+	var hint := Label.new()
+	hint.text = "  Place a line, jog with [K], then Save."
+	hint.add_theme_font_size_override("font_size", 11)
+	hint.add_theme_color_override("font_color", Color(0.65, 0.65, 0.70))
+	parent.add_child(hint)
+
+	var hint2 := Label.new()
+	hint2.text = "  EDIT mode: Shift+S saves selected macro."
+	hint2.add_theme_font_size_override("font_size", 11)
+	hint2.add_theme_color_override("font_color", Color(0.65, 0.65, 0.70))
+	parent.add_child(hint2)
+
+	for mid in LineMacroStore.MACRO_IDS:
+		var hrow := HBoxContainer.new()
+		hrow.add_theme_constant_override("separation", 6)
+		parent.add_child(hrow)
+		var lbl := Label.new()
+		lbl.text = "  %s" % mid
+		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		lbl.add_theme_font_size_override("font_size", 12)
+		hrow.add_child(lbl)
+		var save_btn := Button.new()
+		save_btn.text = "Save"
+		save_btn.tooltip_text = "Save current in-world placement of %s back to user://macros/%s.json" % [mid, mid]
+		save_btn.pressed.connect(save_macro_overrides.bind(mid))
+		hrow.add_child(save_btn)
+		var reset_btn := Button.new()
+		reset_btn.text = "Reset"
+		reset_btn.tooltip_text = "Reset to default macro — delete user://macros/%s.json" % mid
+		reset_btn.pressed.connect(reset_macro_overrides.bind(mid))
+		hrow.add_child(reset_btn)
 
 # =============================================================================
 # STATE TRANSITIONS
@@ -561,6 +655,15 @@ func _input(event: InputEvent) -> void:
 
 	if _state == State.EDIT:
 		# Discrete edit actions; continuous jog is polled in _process.
+		# #MSB — Shift+S saves the SELECTED machine's macro back to disk.
+		# (Plain K already toggles edit mode; SHIFT+K would collide with the
+		# "fine jog" Shift modifier polled in _edit_process, so we pick S.)
+		if event is InputEventKey and event.pressed and not event.echo \
+				and (event as InputEventKey).keycode == KEY_S \
+				and (event as InputEventKey).shift_pressed:
+			_save_macro_for_selected()
+			get_viewport().set_input_as_handled()
+			return
 		if event.is_action_pressed("build_place"):
 			_edit_select_pointed()
 			get_viewport().set_input_as_handled()
@@ -670,6 +773,26 @@ func _process(delta: float) -> void:
 	p.y += _ghost_height
 	_ghost.global_position = p
 	_ghost.rotation.y = _ghost_rot_y
+	# Machine-to-machine edge snap. Skipped for poles (own snap path), line
+	# macros, and two-point placeables (they snap by other means).
+	_snap_active = false
+	if (not _active_id.begins_with("line_")
+			and not PlaceableCatalog.is_pole(_active_id)
+			and not PlaceableCatalog.is_two_point(_active_id)):
+		var snap_info := _find_machine_snap(_ghost.global_position)
+		if not snap_info.is_empty():
+			var sp : Vector3 = snap_info["snap_pos"]
+			sp.y = _ghost.global_position.y
+			_ghost.global_position = sp
+			_snap_active = true
+			if _snap_marker == null:
+				_snap_marker = _build_snap_marker()
+				add_child(_snap_marker)
+			_snap_marker.visible = true
+			var mp : Vector3 = snap_info["midpoint"]
+			_snap_marker.global_position = Vector3(mp.x, FLOOR_Y, mp.z)
+	if not _snap_active and _snap_marker != null:
+		_snap_marker.visible = false
 	# Preview floor-reaching legs live: a raised machine's ghost shows its legs
 	# stretched to the ground (and hidden where they'd punch through a machine),
 	# matching what actually gets placed. No-op for ghosts without tagged legs. (#69)
@@ -678,6 +801,99 @@ func _process(delta: float) -> void:
 	# line from the captured start to the current cursor each frame.
 	if _has_two_point and _two_point_preview != null:
 		_update_two_point_preview(p)
+
+## A tall thin green vertical cylinder used as the edge-snap indicator.
+## Hangs above the snap point so the operator can spot it across the floor.
+func _build_snap_marker() -> Node3D:
+	var m := MeshInstance3D.new()
+	m.name = "SnapMarker"
+	var cm := CylinderMesh.new()
+	cm.top_radius = 0.06
+	cm.bottom_radius = 0.06
+	cm.height = 4.0
+	cm.radial_segments = 8
+	m.mesh = cm
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.20, 1.0, 0.30)
+	mat.emission_enabled = true
+	mat.emission = Color(0.20, 1.0, 0.30)
+	mat.emission_energy_multiplier = 2.0
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.no_depth_test = true              # always visible, never occluded by walls
+	m.material_override = mat
+	# Centre the cylinder so its base sits at the placement point and it points up.
+	m.position = Vector3(0.0, 2.0, 0.0)
+	var root := Node3D.new()
+	root.name = "SnapMarkerRoot"
+	root.add_child(m)
+	return root
+
+## Return the 4 face centers of an axis-aligned-then-Y-rotated box, in world XZ.
+## Faces are: [+local_z, -local_z, +local_x, -local_x]. Y is the box centre's Y.
+func _face_centers_xz(center: Vector3, rot_y: float, sx: float, sz: float) -> Array:
+	var c := cos(rot_y); var s := sin(rot_y)
+	# Godot Y-up rotation about Y by rot_y. World vectors of local axes:
+	var axis_x := Vector3(c, 0.0, -s)
+	var axis_z := Vector3(s, 0.0,  c)
+	return [
+		center + axis_z * sz * 0.5,
+		center - axis_z * sz * 0.5,
+		center + axis_x * sx * 0.5,
+		center - axis_x * sx * 0.5,
+	]
+
+## Search for the nearest placed-machine face within SNAP_MAX_DIST_M of any
+## ghost face center. Returns a dict with `snap_pos` (where ghost.global_position
+## should land so its closest face glues to the placed face), `midpoint` (world
+## XZ of the join — where the green marker goes), and `dist`. Empty dict = no
+## candidate in range.
+func _find_machine_snap(ghost_pos: Vector3) -> Dictionary:
+	var item : Dictionary = PlaceableCatalog.get_item(_active_id)
+	if item.is_empty():
+		return {}
+	var gsz : Vector3 = item.get("size", Vector3.ONE)
+	var ghost_faces : Array = _face_centers_xz(ghost_pos, _ghost_rot_y, gsz.x, gsz.z)
+	var best : Dictionary = {}
+	var best_d : float = SNAP_MAX_DIST_M
+	# Scan EVERY placed machine in the world, not just children of `_placed_root`.
+	# SandboxWorld pre-spawns its 5 macros via `add_child` on the world root,
+	# GauntletWorld station #241 spawns silo+cyclone the same way, and MainWorld's
+	# Line 3C builder parents L3C nodes under MainWorld itself. All of them get
+	# tagged with the `placed_object` group + `placeable_id` meta by
+	# PlaceableCatalog.build_node, so the group is the canonical entry point.
+	# The ghost is parented under BuildMode and is NOT in this group — build_node(
+	# id, true) intentionally skips the group for ghosts — so it can't self-snap.
+	for child in get_tree().get_nodes_in_group("placed_object"):
+		if not (child is Node3D):
+			continue
+		if child == _ghost:
+			continue   # defensive: never snap to the ghost itself
+		var pid : String = String(child.get_meta("placeable_id", ""))
+		if pid == "":
+			continue
+		var pitem : Dictionary = PlaceableCatalog.get_item(pid)
+		if pitem.is_empty():
+			continue
+		var psize : Vector3 = pitem.get("size", Vector3.ONE)
+		var n3 : Node3D = child as Node3D
+		var pfaces : Array = _face_centers_xz(n3.global_position, n3.rotation.y, psize.x, psize.z)
+		for gi in 4:
+			for pi in 4:
+				var gf : Vector3 = ghost_faces[gi]
+				var pf : Vector3 = pfaces[pi]
+				var dx : float = gf.x - pf.x
+				var dz : float = gf.z - pf.z
+				var d : float = sqrt(dx * dx + dz * dz)
+				if d < best_d:
+					best_d = d
+					var gf_off : Vector3 = (ghost_faces[gi] as Vector3) - ghost_pos
+					var snap_pos : Vector3 = pf - gf_off
+					best = {
+						"snap_pos": snap_pos,
+						"midpoint": pf,
+						"dist": d,
+					}
+	return best
 
 ## Walk the raycast hit collider up to find a placed object; if it's a belt,
 ## return the snap point + the required pole height. Empty dict = not a belt.
@@ -732,6 +948,10 @@ func _clear_ghost() -> void:
 	if _ghost and is_instance_valid(_ghost):
 		_ghost.queue_free()
 	_ghost = null
+	# Snap marker is shared across ghosts — just hide it.
+	_snap_active = false
+	if _snap_marker != null and is_instance_valid(_snap_marker):
+		_snap_marker.visible = false
 
 func _place_current() -> void:
 	if _ghost == null or not _ghost.visible:
@@ -830,6 +1050,19 @@ func _place_current() -> void:
 ## own depth (size.z) + LINE_GAP_M, and added as an individual placed_object so
 ## it persists and can be jogged (K mode). Material wiring is the LineFlow
 ## follow-up (#48); this lays the geometry.
+##
+## MACRO SAVE-BACK (#MSB): every machine spawned here is tagged with
+##   macro_id          — e.g. "line_3a", lets save-back find sibling members.
+##   macro_index       — its 0-based index in the SEQ; lets save-back compute
+##                       the per-index delta and the load path inherit the
+##                       upstream chain drift.
+##   macro_anchor      — {"start": Vector3, "rot_y": float} stamped at
+##                       placement time; the inverse transform uses it to
+##                       recover the local-frame offset from world pose.
+## On placement, any saved overrides from LineMacroStore are applied as a
+## chain-style cumulative delta (machine N's drift is the sum of all earlier
+## indices' explicit overrides; an unmoved machine inherits its previous
+## machine's accumulated drift).
 func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 	var seq : Array[Dictionary] = LINE_3A_SEQ
 	if line_id == "line_3b":
@@ -840,6 +1073,12 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 		seq = INTAKE_3A3B_SEQ
 	elif line_id == "line_sort":
 		seq = LINE_SORT_SEQ
+	elif line_id == "line_intake_3c6":
+		seq = LINE_3C6_SEQ
+	# #MSB — pull operator-saved deltas (chain-accumulated) from the store.
+	# Each index's delta is added in the macro's LOCAL frame (x/z lateral,
+	# y vertical, rot_y around vertical). Empty dict = use const seed verbatim.
+	var macro_deltas : Dictionary = LineMacroStore.accumulated_chain(line_id, seq.size())
 	# Forward = the ghost's local -Z; right = local +X (lateral lane for branches).
 	var fwd := Vector3(-sin(rot_y), 0.0, -cos(rot_y))
 	var rgt := Vector3(cos(rot_y), 0.0, -sin(rot_y))
@@ -861,7 +1100,16 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 	var branch_recirc : bool = false
 	var parallel_siblings : Array = [] # nodes flagged "parallel_branch"
 	var parallel_source : Node3D = null
-	for entry in seq:
+	# #141 — transportband chain Y-stacking + head-to-tail spacing. Consecutive
+	# transportband_* IDs stack vertically (each belt's inlet sits CHUTE_DROP_M
+	# below the previous belt's outlet, so the chutes baked into the belt body
+	# actually bridge to the next inlet) and sit head-to-tail in Z (no
+	# LINE_GAP_M between them). Anything else in the SEQ resets the chain.
+	const TB_CHUTE_DROP_M : float = 0.22
+	var prev_tb_outlet_y : float = -1.0   # sentinel = first belt sits on floor
+	var last_main_was_tb : bool = false
+	for entry_idx in range(seq.size()):
+		var entry : Dictionary = seq[entry_idx]
 		var mid : String = String(entry.get("id", ""))
 		if mid == "":
 			continue
@@ -872,22 +1120,75 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 		var depth : float = 2.0
 		if not item.is_empty():
 			depth = maxf((item["size"] as Vector3).z, 0.5)
+		var is_tb : bool = mid.begins_with("transportband_")
+		# #141 — Y-stacking for transportbands. Compute this belt's base_y from
+		# the previous transportband's outlet height, so the chutes baked into
+		# each belt's outlet bridge into the next belt's inlet.
+		var tb_y_offset : float = 0.0
+		var tb_outlet_y_after : float = -1.0   # -1 = don't update chain state
+		if is_tb and not item.is_empty():
+			var bsize : Vector3 = item["size"]
+			var blen : float = bsize.z
+			var spec : Dictionary = PlaceableCatalog._transportband_spec(mid)
+			var incline_rad : float = deg_to_rad(float(spec.get("incline", 0.0)))
+			var deck_top : float = bsize.y * 0.97
+			var lift_at_end : float = (blen * 0.45) * sin(incline_rad)
+			var inlet_top_off : float = deck_top - lift_at_end
+			var outlet_top_off : float = deck_top + lift_at_end
+			var base_y : float = 0.0
+			if prev_tb_outlet_y > 0.0:
+				base_y = maxf(0.0, prev_tb_outlet_y - TB_CHUTE_DROP_M - inlet_top_off)
+			tb_y_offset = base_y
+			tb_outlet_y_after = base_y + outlet_top_off
 		var place_z : float
 		if not is_branch:
 			# Main-centreline machine — advances the main cursor.
+			# Head-to-tail spacing for consecutive transportbands: undo the
+			# LINE_GAP_M that the previous main entry added, so this belt's
+			# inlet butts directly against the prior belt's outlet.
+			if last_main_was_tb and is_tb:
+				main_z -= LINE_GAP_M
 			main_z += depth * 0.5
 			place_z = main_z
 			main_z += depth * 0.5 + LINE_GAP_M
+			last_main_was_tb = is_tb
 		else:
 			# Branch machine — sits beside the line at (current cursor + z offset) and
 			# does NOT advance the main cursor (the main flow runs past it).
 			place_z = main_z + float(entry.get("z", 0.0))
+		# Update transportband chain state AFTER we've used prev_tb_outlet_y for
+		# this belt's base. Branches like transportband_8_5 read from the chain
+		# (so they stack from belt 8's outlet) but do NOT overwrite it — main
+		# transportband_9 still picks up from belt 8, not 8_5.
+		if is_tb and not is_branch and tb_outlet_y_after > 0.0:
+			prev_tb_outlet_y = tb_outlet_y_after
+		elif not is_tb and not is_branch:
+			# Leaving the chain — reset.
+			prev_tb_outlet_y = -1.0
 		var node := PlaceableCatalog.build_node(mid, false)
 		if node != null:
 			_placed_root.add_child(node)
-			node.global_position = Vector3(start.x, start.y, start.z) + fwd * place_z + rgt * x
-			node.rotation.y = rot_y + PI
+			# #MSB — apply operator-saved chain delta (in macro local frame).
+			# dx → lateral (rgt), dz → forward (fwd), dy → vertical.
+			var d : Dictionary = macro_deltas.get(entry_idx, {})
+			var d_dx : float = float(d.get("dx", 0.0))
+			var d_dy : float = float(d.get("dy", 0.0))
+			var d_dz : float = float(d.get("dz", 0.0))
+			var d_drot : float = float(d.get("drot_y", 0.0))
+			var d_scale : Vector3 = Vector3.ONE
+			if d.has("scale") and d["scale"] is Vector3:
+				d_scale = d["scale"]
+			node.global_position = Vector3(start.x, start.y + tb_y_offset, start.z) \
+				+ fwd * (place_z + d_dz) + rgt * (x + d_dx) + Vector3.UP * d_dy
+			node.rotation.y = rot_y + PI + d_drot
+			if d_scale != Vector3.ONE:
+				node.scale = d_scale
 			_finalize_placed(node, mid, 0.0)
+			# #MSB — stamp macro-membership metas so save-back can find this
+			# node and recover its local-frame pose later.
+			node.set_meta("macro_id", line_id)
+			node.set_meta("macro_index", entry_idx)
+			node.set_meta("macro_anchor", {"start": start, "rot_y": rot_y})
 			built += 1
 			# ── #71 branch state transitions ───────────────────────────────────
 			if is_branch:
@@ -945,6 +1246,206 @@ func _add_explicit_out(src: Node3D, tgt: Node3D, recirc: bool) -> void:
 		outs = []
 	outs.append({"path": tgt.get_path(), "recirc": recirc})
 	src.set_meta("lf_explicit_outs", outs)
+
+# =============================================================================
+# MACRO SAVE-BACK (#MSB) — capture in-world edits to a placed macro back into
+# user://macros/<macro_id>.json so future placements emit the corrected layout.
+# Triggered by a HUD button (per "Lines" macro) or by SHIFT+K while in EDIT
+# mode if a placed_object with `macro_id` meta is selected.
+# =============================================================================
+
+## Pull the const seed used by _build_full_line so we can re-run the same
+## cursor math and recover each machine's NOMINAL local pose.
+func _macro_seed(macro_id: String) -> Array[Dictionary]:
+	if macro_id == "line_3a":          return LINE_3A_SEQ
+	if macro_id == "line_3b":          return LINE_3B_SEQ
+	if macro_id == "line_1":           return LINE_1_SEQ
+	if macro_id == "line_intake_3a3b": return INTAKE_3A3B_SEQ
+	if macro_id == "line_sort":        return LINE_SORT_SEQ
+	if macro_id == "line_intake_3c6":  return LINE_3C6_SEQ
+	return [] as Array[Dictionary]
+
+## Re-walk the seed SEQ (no spawning) and emit an Array of {x, z, rot_y_extra}
+## NOMINAL local-frame placements per index. Mirrors the cursor advancement
+## inside _build_full_line so the per-index nominal pose lines up exactly with
+## what the original placement put in world. Branch nodes inherit a y offset
+## of 0; transportband Y stacking is captured via tb_y_offset.
+func _macro_nominal_poses(seed: Array[Dictionary]) -> Array:
+	var poses : Array = []
+	var main_z := 0.0
+	const TB_CHUTE_DROP_M : float = 0.22
+	const _LINE_GAP_M : float = LINE_GAP_M
+	var prev_tb_outlet_y : float = -1.0
+	var last_main_was_tb : bool = false
+	for entry in seed:
+		var mid : String = String(entry.get("id", ""))
+		if mid == "":
+			poses.append({"x": 0.0, "y": 0.0, "z": 0.0})
+			continue
+		var x : float = float(entry.get("x", 0.0))
+		var is_branch : bool = not is_equal_approx(x, 0.0)
+		var item := PlaceableCatalog.get_item(mid)
+		var depth : float = 2.0
+		if not item.is_empty():
+			depth = maxf((item["size"] as Vector3).z, 0.5)
+		var is_tb : bool = mid.begins_with("transportband_")
+		var tb_y_offset : float = 0.0
+		var tb_outlet_y_after : float = -1.0
+		if is_tb and not item.is_empty():
+			var bsize : Vector3 = item["size"]
+			var blen : float = bsize.z
+			var spec : Dictionary = PlaceableCatalog._transportband_spec(mid)
+			var incline_rad : float = deg_to_rad(float(spec.get("incline", 0.0)))
+			var deck_top : float = bsize.y * 0.97
+			var lift_at_end : float = (blen * 0.45) * sin(incline_rad)
+			var inlet_top_off : float = deck_top - lift_at_end
+			var outlet_top_off : float = deck_top + lift_at_end
+			var base_y : float = 0.0
+			if prev_tb_outlet_y > 0.0:
+				base_y = maxf(0.0, prev_tb_outlet_y - TB_CHUTE_DROP_M - inlet_top_off)
+			tb_y_offset = base_y
+			tb_outlet_y_after = base_y + outlet_top_off
+		var place_z : float
+		if not is_branch:
+			if last_main_was_tb and is_tb:
+				main_z -= _LINE_GAP_M
+			main_z += depth * 0.5
+			place_z = main_z
+			main_z += depth * 0.5 + _LINE_GAP_M
+			last_main_was_tb = is_tb
+		else:
+			place_z = main_z + float(entry.get("z", 0.0))
+		if is_tb and not is_branch and tb_outlet_y_after > 0.0:
+			prev_tb_outlet_y = tb_outlet_y_after
+		elif not is_tb and not is_branch:
+			prev_tb_outlet_y = -1.0
+		poses.append({"x": x, "y": tb_y_offset, "z": place_z})
+		if entry.has("main_advance"):
+			main_z += float(entry["main_advance"])
+	return poses
+
+## Walk placed_object children tagged with `macro_id`, compute the local-frame
+## delta for each one vs the const seed's nominal pose, accumulate chain-style
+## (so machine N stores ONLY the explicit drift NOT already explained by
+## upstream changes), and hand the dict to LineMacroStore. Returns the number
+## of overrides written.
+func save_macro_overrides(macro_id: String) -> int:
+	var seed : Array[Dictionary] = _macro_seed(macro_id)
+	if seed.is_empty():
+		push_warning("[BuildMode] Unknown macro id %s" % macro_id)
+		return 0
+	var nominal : Array = _macro_nominal_poses(seed)
+	# Gather siblings: every placed_object whose macro_id meta matches.
+	var members : Dictionary = {}   # int_index -> Node3D
+	var anchor : Dictionary = {}
+	for child in _placed_root.get_children():
+		if not (child is Node3D): continue
+		if not child.has_meta("macro_id"): continue
+		if String(child.get_meta("macro_id")) != macro_id: continue
+		if not child.has_meta("macro_index"): continue
+		var idx : int = int(child.get_meta("macro_index"))
+		members[idx] = child
+		if anchor.is_empty() and child.has_meta("macro_anchor"):
+			anchor = child.get_meta("macro_anchor")
+	if members.is_empty() or anchor.is_empty():
+		if _status:
+			_status.text = "No placed %s macro to save back." % macro_id.to_upper()
+		return 0
+	var a_start : Vector3 = anchor.get("start", Vector3.ZERO)
+	var a_rot   : float   = float(anchor.get("rot_y", 0.0))
+	# Inverse-basis vectors (same fwd/rgt as _build_full_line).
+	var fwd := Vector3(-sin(a_rot), 0.0, -cos(a_rot))
+	var rgt := Vector3(cos(a_rot), 0.0, -sin(a_rot))
+	# Build the chain accumulator: for each index the operator MOVED (or any
+	# index <= max moved), compute its local delta vs nominal, then subtract
+	# the upstream accumulated drift so the on-disk value is the operator's
+	# EXPLICIT contribution at that index.
+	var deltas : Dictionary = {}
+	var acc := Vector3.ZERO
+	var acc_rot := 0.0
+	var acc_scale := Vector3.ONE
+	for i in range(seed.size()):
+		if not members.has(i):
+			continue
+		var node : Node3D = members[i]
+		var nom : Dictionary = {"x": 0.0, "y": 0.0, "z": 0.0}
+		if i < nominal.size() and nominal[i] is Dictionary:
+			nom = nominal[i]
+		# Inverse transform: local = inverse_basis * (world_pos - start).
+		# Basis is rotation-only around Y, so dot products recover x_local
+		# (along rgt) and z_local (along fwd).
+		var rel : Vector3 = node.global_position - a_start
+		var x_local : float = rel.dot(rgt)
+		var z_local : float = rel.dot(fwd)
+		var y_local : float = rel.y
+		var dx : float = x_local - float(nom.get("x", 0.0))
+		var dy : float = y_local - float(nom.get("y", 0.0))
+		var dz : float = z_local - float(nom.get("z", 0.0))
+		var drot : float = node.rotation.y - (a_rot + PI)
+		# Wrap rotation into (-PI, PI] so saved deltas are minimal.
+		drot = wrapf(drot, -PI, PI)
+		var sc : Vector3 = node.scale
+		# Quick "is this machine actually moved?" check — within 1cm / 1°
+		# of the upstream-inherited drift means no explicit override here.
+		var explicit_dx : float = dx - acc.x
+		var explicit_dy : float = dy - acc.y
+		var explicit_dz : float = dz - acc.z
+		var explicit_drot : float = wrapf(drot - acc_rot, -PI, PI)
+		var pose_moved : bool = absf(explicit_dx) > 0.01 \
+			or absf(explicit_dy) > 0.01 \
+			or absf(explicit_dz) > 0.01 \
+			or absf(explicit_drot) > 0.017
+		var scale_changed : bool = not (
+			is_equal_approx(sc.x, acc_scale.x)
+			and is_equal_approx(sc.y, acc_scale.y)
+			and is_equal_approx(sc.z, acc_scale.z))
+		if pose_moved or scale_changed:
+			deltas[i] = {
+				"dx":     explicit_dx,
+				"dy":     explicit_dy,
+				"dz":     explicit_dz,
+				"drot_y": explicit_drot,
+				"scale":  [sc.x, sc.y, sc.z],
+			}
+			# Roll the accumulator forward — downstream-unmoved siblings
+			# inherit this new drift implicitly (sparse storage), per the
+			# operator's chain-style rule.
+			acc.x = dx; acc.y = dy; acc.z = dz
+			acc_rot = drot
+			acc_scale = sc
+	if deltas.is_empty():
+		if _status:
+			_status.text = "No edits detected for %s — nothing to save." % macro_id.to_upper()
+		return 0
+	var ok : bool = LineMacroStore.save_overrides(macro_id, deltas, seed.size())
+	if ok and _status:
+		_status.text = "Saved %d overrides for %s → user://macros/%s.json" % [
+			deltas.size(), macro_id.to_upper(), macro_id]
+	return deltas.size() if ok else 0
+
+## Convenience wrapper called from the HUD "Reset to Default Macro" button.
+func reset_macro_overrides(macro_id: String) -> void:
+	LineMacroStore.reset(macro_id)
+	if _status:
+		_status.text = "Reset %s — next placement uses the const seed." % macro_id.to_upper()
+
+## EDIT mode SHIFT+S shortcut: look at the currently selected machine, read
+## its `macro_id` meta, and save back the whole macro it belongs to.
+func _save_macro_for_selected() -> void:
+	if _edit_selected == null or not is_instance_valid(_edit_selected):
+		if _status:
+			_status.text = "Select a macro-placed machine first, then Shift+S to save back."
+		return
+	if not _edit_selected.has_meta("macro_id"):
+		if _status:
+			_status.text = "Selected machine is not part of a macro — nothing to save."
+		return
+	# Persist any pending jog changes so the world poses match the save target.
+	if _edit_dirty:
+		_save_layout()
+		_edit_dirty = false
+	var mid : String = String(_edit_selected.get_meta("macro_id"))
+	save_macro_overrides(mid)
 
 ## Read the variable belt's `auto_legs` meta — a list of {pos, h} entries — and
 ## spawn a pole_single at each one as a regular placed_object. The operator can
@@ -1204,6 +1705,22 @@ func _edit_process(delta: float) -> void:
 		_edit_selected.scale = Vector3(sx, sy, sz)
 		moved = true
 		ds = 1.0   # signal "scale changed" so legs re-extend below
+	# #196 — PER-AXIS TILT: pitch (X-rot) on 1/2, roll (Z-rot) on 3/0. Both
+	# top-row digits and numpad equivalents are honoured. Yaw stays on the
+	# existing build_rotate_cw/ccw bindings (operator preference: rotation
+	# stays mapped to whatever they bound for yaw, only pitch + roll added).
+	var dtx := 0.0
+	if Input.is_key_pressed(KEY_1) or Input.is_key_pressed(KEY_KP_1): dtx += 1.0
+	if Input.is_key_pressed(KEY_2) or Input.is_key_pressed(KEY_KP_2): dtx -= 1.0
+	var dtz := 0.0
+	if Input.is_key_pressed(KEY_3) or Input.is_key_pressed(KEY_KP_3): dtz += 1.0
+	if Input.is_key_pressed(KEY_0) or Input.is_key_pressed(KEY_KP_0): dtz -= 1.0
+	if dtx != 0.0 or dtz != 0.0:
+		_edit_selected.rotation.x = clampf(_edit_selected.rotation.x + dtx * rv,
+			-PI * 0.5, PI * 0.5)
+		_edit_selected.rotation.z = clampf(_edit_selected.rotation.z + dtz * rv,
+			-PI * 0.5, PI * 0.5)
+		moved = true
 	if moved:
 		if dy != 0.0 or ds != 0.0:
 			# Height or scale changed — keep this machine's own legs planted on the floor.
@@ -1459,6 +1976,13 @@ func _save_layout() -> void:
 				"rot_y": child.rotation.y,
 				"h":     h,
 			}
+			# #196 — round-trip pitch (X) + roll (Z) only when non-zero, so legacy
+			# saves stay backward-compatible. Tilt is applied by the K-menu jog
+			# (1/2 pitch, 3/0 roll); without these keys the values stay at 0.0.
+			if not is_zero_approx(child.rotation.x):
+				entry["rot_x"] = child.rotation.x
+			if not is_zero_approx(child.rotation.z):
+				entry["rot_z"] = child.rotation.z
 			# Persist EDIT-mode scale. If uniform → write as a single float (back-compat
 			# with older saves). If per-axis (X/Y/Z differ) → write as [sx, sy, sz].
 			var sc_v : Vector3 = child.scale
@@ -1470,6 +1994,19 @@ func _save_layout() -> void:
 				entry["scale"] = [sc_v.x, sc_v.y, sc_v.z]
 			if child.has_meta("bale_code"):
 				entry["code"] = String(child.get_meta("bale_code"))
+			# #MSB — round-trip macro membership so a reopened save can still
+			# invoke save-back on previously placed macro members.
+			if child.has_meta("macro_id"):
+				entry["macro_id"] = String(child.get_meta("macro_id"))
+			if child.has_meta("macro_index"):
+				entry["macro_index"] = int(child.get_meta("macro_index"))
+			if child.has_meta("macro_anchor"):
+				var anc : Dictionary = child.get_meta("macro_anchor")
+				var anc_start : Vector3 = anc.get("start", Vector3.ZERO)
+				entry["macro_anchor"] = {
+					"sx": anc_start.x, "sy": anc_start.y, "sz": anc_start.z,
+					"rot_y": float(anc.get("rot_y", 0.0)),
+				}
 			# Custom-height support poles: stash the pole_height meta so reload
 			# rebuilds at the actual standing height (smart-snap or auto-leg).
 			if child.has_meta("pole_height"):
@@ -1589,6 +2126,19 @@ func _apply_layout_entry(entry: Variant) -> bool:
 		_load_legacy_door(dict)
 		return true
 
+	# #194 — single-click structure placeables (door_personnel / gate_roller /
+	# window_frame) carry both their visual model AND a matching wall carve.
+	# Save records only the catalog id + pose; on load we re-instantiate the
+	# placeable AND replay the WallOpenings.add_opening call so the hole reappears.
+	# Legacy id="surface" (saves written before this fix) is routed as a default
+	# personnel door — same dims as the door_personnel catalog entry — so the
+	# user's pre-fix doors come back instead of silently dropping.
+	var sid := String(dict.get("id", ""))
+	if sid == "door_personnel" or sid == "gate_roller" or sid == "window_frame" or sid == "surface":
+		var resolved_id := sid if sid != "surface" else "door_personnel"
+		_load_structure_placeable(resolved_id, dict)
+		return true
+
 	# Variable belts: rebuild via build_variable_belt(start, end) from the
 	# persisted endpoints. Transform is derived from the span, not from an anchor.
 	if String(dict.get("id", "")) == "variable_belt" \
@@ -1662,6 +2212,11 @@ func _apply_layout_entry(entry: Variant) -> bool:
 		float(dict.get("y", 0.0)),
 		float(dict.get("z", 0.0)))
 	node.rotation.y = float(dict.get("rot_y", 0.0))
+	# #196 — restore K-menu tilt (pitch/roll). Older saves omit these → 0.
+	if dict.has("rot_x"):
+		node.rotation.x = float(dict["rot_x"])
+	if dict.has("rot_z"):
+		node.rotation.z = float(dict["rot_z"])
 	if dict.has("scale"):
 		var sc_raw : Variant = dict["scale"]
 		if sc_raw is Array and (sc_raw as Array).size() >= 3:
@@ -1673,7 +2228,60 @@ func _apply_layout_entry(entry: Variant) -> bool:
 			node.scale = Vector3(sc, sc, sc)
 	_finalize_placed(node, String(dict.get("id", "")), float(dict.get("h", 0.0)))
 	_finalize_bale(node, String(dict.get("code", "")))
+	# #MSB — restore macro membership metas from disk so save-back still works
+	# after a reload of a save that placed a macro previously.
+	if dict.has("macro_id"):
+		node.set_meta("macro_id", String(dict["macro_id"]))
+	if dict.has("macro_index"):
+		node.set_meta("macro_index", int(dict["macro_index"]))
+	if dict.has("macro_anchor"):
+		var anc_raw : Variant = dict["macro_anchor"]
+		if anc_raw is Dictionary:
+			var d_anc : Dictionary = anc_raw
+			node.set_meta("macro_anchor", {
+				"start": Vector3(float(d_anc.get("sx", 0.0)), float(d_anc.get("sy", 0.0)), float(d_anc.get("sz", 0.0))),
+				"rot_y": float(d_anc.get("rot_y", 0.0)),
+			})
 	return true
+
+## #194 — Re-instantiate a single-click structure placeable (door_personnel /
+## gate_roller / window_frame) AND replay the wall carve so the hole the door
+## sits in reappears on reload. Catalog gives us the footprint (W,H,T); the
+## save record gives us pose (x,y,z,rot_y). Together they reconstruct the same
+## placement + opening the operator made by clicking once in build mode.
+##
+## Legacy id="surface" entries (saves written before this fix) come in here
+## resolved to "door_personnel" — best-effort: we don't have their original
+## type recorded, so we treat them as personnel doors at the catalog default
+## size. The user can delete + replace if they wanted a roller gate instead.
+func _load_structure_placeable(resolved_id: String, dict: Dictionary) -> void:
+	var node := PlaceableCatalog.build_node(resolved_id, false)
+	if node == null:
+		push_warning("[BuildMode] _load_structure_placeable: build_node returned null for %s" % resolved_id)
+		return
+	_placed_root.add_child(node)
+	var pos := Vector3(
+		float(dict.get("x", 0.0)),
+		float(dict.get("y", 0.0)),
+		float(dict.get("z", 0.0)))
+	node.global_position = pos
+	node.rotation.y = float(dict.get("rot_y", 0.0))
+	_finalize_placed(node, resolved_id, float(dict.get("h", 0.0)))
+	# Carve the matching wall opening. Centre = leaf centre (Y = pos.y + H/2 so
+	# the bottom of the cut sits on the floor). Rotation = node yaw. Catalog
+	# size gives W×H; depth (2.0 m) is generous so the cut always punches the
+	# wall regardless of its thickness.
+	if wall_openings == null:
+		return
+	var item := PlaceableCatalog.get_item(resolved_id)
+	var size : Vector3 = item.get("size", Vector3(1.2, 2.4, 0.18)) if not item.is_empty() else Vector3(1.2, 2.4, 0.18)
+	var ow := clampf(size.x, 0.5, 6.0)
+	var oh := clampf(size.y, 0.5, 8.0)
+	var cut_centre := pos + Vector3(0.0, oh * 0.5, 0.0)
+	_opening_seq += 1
+	var oid := "op_%d" % _opening_seq
+	wall_openings.add_opening(oid, cut_centre, Vector3(ow, oh, 2.0), float(dict.get("rot_y", 0.0)))
+	node.set_meta("opening_id", oid)
 
 ## Converts a legacy box-door entry {id:"door", x,y,z,rot_y} into the new
 ## interactive roller door with a carved opening, by reconstructing its 4

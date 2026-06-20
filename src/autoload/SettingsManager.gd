@@ -30,7 +30,7 @@ const DEFAULTS_GRAPHICS := {
 	"fxaa":             true,
 	"shadow_quality":   2,                # 0=off, 1=low, 2=med, 3=high, 4=ultra
 	"shadow_distance":  150.0,            # metres
-	"volumetric_fog":   false,            # off by default — adds haze; opt-in via menu
+	"volumetric_fog":   true,             # on by default — distance haze at 500m so far silos read crisp
 	"ssao":             true,
 	"sdfgi":            true,             # real-time global illumination (fills shadow/back faces)
 	"brightness":       1.0,              # 0.5 – 1.5
@@ -62,11 +62,35 @@ const DEFAULTS_GAMEPLAY := {
 	# shift plays out in ~20 real min. 1 = true real-time (8 real h); raise for a
 	# faster shift. ShiftClock reads this so the operator sets the pace they want.
 	"shift_time_scale":         24.0,
+	# Starting time-of-day (HH:MM, 24h). Empty string = "use shift bell start
+	# (07:00 / 15:00 / 23:00 per dienst)". ShiftClock reads on _ready; if the
+	# wall clock has already passed this today, it rolls forward to the next
+	# working day before seeking to the time. The Settings tab edits these.
+	#
+	# DEFAULT IS BLANK (not "07:00"). A non-blank default was collapsing the
+	# 30-minute PRE-SHIFT window every fresh launch: ShiftClock.start_pre_shift
+	# seeded elapsed = -1800 (06:30), then apply_starting_settings ran with
+	# "07:00" and seek_to_wall_time slammed elapsed back to 0.0 — the bell
+	# pre-rang, PreShiftSequence skipped (is_pre_shift() = false), and every
+	# scheduled NPC walked to a post instead of arriving. With "" the clock
+	# short-circuits and the pre-shift survives. See ShiftClock.apply_starting_settings.
+	"starting_time":            "",
+	# Starting date (YYYY-MM-DD). Empty string = "use today (system date)".
+	# Day-of-week is what places the player on the 2-2-2-4 rota; the rota uses
+	# day_index (absolute day count) so the setting maps to a calendar day
+	# offset from today's date.
+	"starting_date":            "",
 	"subtitles":                true,
 	"subtitle_size":            "medium", # small / medium / large
 	"tutorial_hints":           true,
 	"language":                 "en",     # en / nl
 	"units":                    "metric", # metric / imperial
+	# Voice & AI — local-first, cloud DISABLED by default. See
+	# VoiceService.gd. Values: "local" (whisper.cpp / llama.cpp / piper via
+	# OS.execute — silent degrade if binaries missing), "cloud" (OpenAI APIs —
+	# only used when explicitly selected here AND OPENAI_API_KEY is present),
+	# "mock" (dev/test only).
+	"voice_backend":            "local",
 }
 
 # ── Working state ─────────────────────────────────────────────────────────────
@@ -168,7 +192,7 @@ const ACTION_LABELS := {
 	"hotbar_4":                 "Hand: slot 4 (4)",
 	"hotbar_drop":              "Drop held tool (Q)",
 	"hose_advance_back":        "Hose: unanchor last ground point / return tip to reel (F)",
-	"walkie_ptt":               "Walkie: push-to-talk (U)",
+	"walkie_ptt":               "Walkie: open message menu (U)",
 	"freecam_save":             "Free camera: save current position to savefile (F5)",
 	"vehicle_lights":           "Vehicle: work lights (L)",
 	"vehicle_hazards":          "Vehicle: hazard blinkers (K)",
@@ -433,6 +457,14 @@ func _apply_environment_settings() -> void:
 		# Default OFF — a stale save without this key was falling back to true and
 		# adding grey haze over everything.
 		env.volumetric_fog_enabled = bool(_current_graphics.get("volumetric_fog", false))
+		# #162 — when haze is on, double the visible distance and cut the density
+		# so it reads as far-field atmosphere, not soup the operator can't see
+		# through. Godot defaults (length 64m, density 0.05) read as "fog of war"
+		# in our wide outdoor layout. Length 128m + density 0.015 keeps depth
+		# cues without occluding the industrial terrain.
+		if env.volumetric_fog_enabled:
+			env.volumetric_fog_length  = 500.0
+			env.volumetric_fog_density = 0.004
 		env.fog_enabled            = bool(_current_graphics.get("fog", false))
 		# Brightness via colour-adjustment (only enable when non-neutral)
 		var b := float(_current_graphics.get("brightness", 1.0))

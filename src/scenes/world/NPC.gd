@@ -17,6 +17,90 @@ var target_position: Vector3 = Vector3.ZERO
 var is_walking: bool = false
 var wander_timer: float = 0.0
 
+# ── #198 NPC autonomy task hook ─────────────────────────────────────────────
+# `npc_id` is the catalogue key (romain / pascal / abdellilah / ...). Set by
+# NPCSpawner when this NPC is instantiated. Used by NpcAutonomyBoard to look
+# up the role and decide which tasks this NPC can accept.
+var npc_id : String = ""
+# Currently-running autonomy task (or null = idle). When non-null the NPC's
+# physics step routes through _autonomy_tick instead of the free-wander.
+var _autonomy_task : RefCounted = null
+# Cooldown so an idle NPC only polls the board every 3 s, not every frame.
+var _autonomy_poll_t : float = 0.0
+const _AUTONOMY_POLL_INTERVAL_S : float = 3.0
+# Destination an active task is steering the NPC toward. The NPC's existing
+# pathfinding consumes this; the task only sets it.
+var _autonomy_destination_active : bool = false
+
+## Called by NpcAutonomyTask (or its subclasses) to steer the NPC toward a
+## world position. Hooks into the existing target_position field so the rest
+## of the NPC's locomotion code drives the body the same way it would for a
+## free-wander target.
+func set_autonomy_destination(pos: Vector3) -> void:
+	# #202 — if this NPC is currently boarded into a vehicle, route the
+	# destination to the vehicle's autopilot (BaseVehicle.npc_set_target) so the
+	# CHASSIS drives toward the waypoint, not the hidden walking body.
+	var op_ctx := get_tree().get_root().find_child("OperatorContext", true, false)
+	if op_ctx and op_ctx.has_method("npc_vehicle_of"):
+		var v = op_ctx.call("npc_vehicle_of", self)
+		if v != null and v.has_method("npc_set_target"):
+			v.call("npc_set_target", pos)
+			return
+	target_position = pos
+	is_walking = true
+	_autonomy_destination_active = true
+
+func clear_autonomy_destination() -> void:
+	_autonomy_destination_active = false
+	is_walking = false
+
+## Called by tasks that need to move the NPC into a vehicle's driver seat.
+## Reuses the #148 vehicle-entry parity (NPCs board vehicles the same way the
+## player does via OperatorContext).
+func board_vehicle(vehicle: Node) -> void:
+	if vehicle == null:
+		return
+	var op_ctx := get_tree().get_root().find_child("OperatorContext", true, false)
+	if op_ctx and op_ctx.has_method("npc_board_vehicle"):
+		op_ctx.call("npc_board_vehicle", self, vehicle)
+
+func disembark_vehicle() -> void:
+	var op_ctx := get_tree().get_root().find_child("OperatorContext", true, false)
+	if op_ctx and op_ctx.has_method("npc_disembark_vehicle"):
+		op_ctx.call("npc_disembark_vehicle", self)
+
+## Per-tick autonomy tick: poll the board when idle, tick the active task
+## otherwise. Called from _physics_process before the wander/walk logic.
+func _autonomy_tick(delta: float) -> void:
+	# Already on a task — tick it.
+	if _autonomy_task != null:
+		var t : NpcAutonomyTask = _autonomy_task
+		if t == null or t.is_done():
+			_autonomy_task = null
+			clear_autonomy_destination()
+			return
+		if t.tick(self, delta):
+			t.release(self)
+			_autonomy_task = null
+			clear_autonomy_destination()
+		return
+	# Idle — poll the board on cadence.
+	_autonomy_poll_t += delta
+	if _autonomy_poll_t < _AUTONOMY_POLL_INTERVAL_S:
+		return
+	_autonomy_poll_t = 0.0
+	if not Engine.has_singleton("NpcAutonomyBoard"):
+		# Autoload not configured (e.g. unit-test scene). Fall back to wander.
+		return
+	# Direct autoload access — Engine.has_singleton is a heuristic; the real
+	# call goes through the engine's autoload table.
+	var board := get_node_or_null("/root/NpcAutonomyBoard")
+	if board == null:
+		return
+	var task : NpcAutonomyTask = board.call("take_next_task", self)
+	if task != null:
+		_autonomy_task = task
+
 # Social state (mutual-aid economy)
 var relationship_points: Dictionary = {}  # NPC ID -> points
 var is_helping: bool = false
@@ -81,13 +165,14 @@ var reach_height_max   : float   = 2.2
 #                                                        — hit far ⇒ step-up to JUMP
 # Default state is WALK when moving and IDLE when not. JUMP locks until the
 # capsule re-lands (is_on_floor), after which the obstacle check resumes.
-enum Locomotion { IDLE, WALK, CROUCH_WALK, JUMP, PRONE_CRAWL }
+enum Locomotion { IDLE, WALK, CROUCH_WALK, JUMP, PRONE_CRAWL, VAULT }
 const _SPEED_MULT := {
 	Locomotion.IDLE: 0.0,
 	Locomotion.WALK: 1.0,
 	Locomotion.CROUCH_WALK: 0.55,
 	Locomotion.JUMP: 1.0,
 	Locomotion.PRONE_CRAWL: 0.30,
+	Locomotion.VAULT: 0.0,    # capsule driven by lerp, not by walk speed
 }
 const _CAPSULE_HEIGHT := {
 	Locomotion.IDLE: 1.8,
@@ -95,6 +180,7 @@ const _CAPSULE_HEIGHT := {
 	Locomotion.CROUCH_WALK: 1.20,
 	Locomotion.JUMP: 1.8,
 	Locomotion.PRONE_CRAWL: 0.55,
+	Locomotion.VAULT: 1.8,
 }
 const _BODY_Y_SCALE := {
 	Locomotion.IDLE: 1.0,
@@ -102,9 +188,25 @@ const _BODY_Y_SCALE := {
 	Locomotion.CROUCH_WALK: 0.66,
 	Locomotion.JUMP: 1.0,
 	Locomotion.PRONE_CRAWL: 0.30,
+	Locomotion.VAULT: 1.0,
 }
 const _JUMP_VELOCITY  : float = 5.5
 const _OBSTACLE_CHECK_INTERVAL : float = 0.20
+
+# ── Vault / climb (#cluster VAULT_CLIMB) ─────────────────────────────────────
+# When the NavigationAgent3D's next path segment steps up by more than CLIMB_MIN_DY
+# but no more than CLIMB_MAX_DY, the NPC mantles up to that segment instead of
+# getting stuck against the ledge. Below CLIMB_MIN_DY the existing step-up /
+# physics carries it; above CLIMB_MAX_DY the obstacle is too tall to vault.
+#
+# TODO: real climb animation goes through AnimationTree once Phase 1 lands.
+const CLIMB_MIN_DY     : float = 0.30   # navmesh agent_max_climb threshold
+const CLIMB_MAX_DY     : float = 1.4    # matches player's CLIMB_MAX_HEIGHT
+const CLIMB_DURATION_S : float = 0.5    # lerp time for the mantle
+var _vault_locked  : bool    = false
+var _vault_timer   : float   = 0.0
+var _vault_start   : Vector3 = Vector3.ZERO
+var _vault_end     : Vector3 = Vector3.ZERO
 
 var locomotion : int = Locomotion.IDLE
 var _capsule_shape : CapsuleShape3D = null
@@ -112,6 +214,37 @@ var _body_node     : Node3D = null
 var _ray_head      : RayCast3D = null
 var _ray_chest     : RayCast3D = null
 var _ray_step      : RayCast3D = null
+# ── Animation Phase 1 (cluster: Skeleton3D rig + locomotion BlendSpace) ──
+# Cached AnimationTree under the HumanoidBody — the locomotion blend node's
+# blend_position is updated every physics tick from horizontal velocity so the
+# walk cycle (legs / arms / torso) ramps in as the NPC starts moving and ramps
+# back to idle when stationary. See Humanoid._install_skeleton_rig().
+# TODO Phase 2: feed the BlendSpace2D Y axis with strafe (velocity decomposed
+# into local right vs facing direction). For Phase 1 we keep Y at 0.
+# TODO Phase 3: state-machine (walk → climb / vault / push / portofoon raise)
+# replaces the bare BlendSpace2D once Mixamo clips are wired.
+var _anim_tree     : AnimationTree = null
+const _ANIM_RUN_SPEED_NPC : float = 4.0    # m/s that maps to BlendSpace X=2 (run)
+
+# ── Sine-based walking gait (audit item 2) ────────────────────────────────────
+# Procedural leg + arm swing driven by ground-plane velocity. The Humanoid rig
+# wraps each leg under a HipPivot_L / HipPivot_R Node3D and each arm under a
+# ShoulderPivot_L / ShoulderPivot_R Node3D, so rotating those nodes about
+# local X swings the whole limb around the hip/shoulder joint. _walk_phase
+# accumulates at TAU / GAIT_STRIDE_M radians per metre walked, so one full
+# L-then-R-then-L cycle covers GAIT_STRIDE_M metres of ground. Arms swing
+# opposite their same-side leg (real human gait — left arm forward when right
+# leg is forward). Resets toward 0 in IDLE so the limbs settle.
+const GAIT_STRIDE_M       : float = 0.90   # one full cycle per 0.90 m
+const GAIT_SWING_LEGS_RAD : float = 0.35   # ±~20° hip swing
+const GAIT_SWING_ARMS_RAD : float = 0.25   # ±~14° shoulder swing
+var _walk_phase     : float = 0.0
+var _hip_pivot_l    : Node3D = null
+var _hip_pivot_r    : Node3D = null
+var _shoul_pivot_l  : Node3D = null
+var _shoul_pivot_r  : Node3D = null
+var _gait_cached    : bool   = false
+
 var _obstacle_check_timer : float = 0.0
 var _jump_locked   : bool  = false
 var assigned_station_id: String  = ""
@@ -147,6 +280,11 @@ func _install_locomotion_state_machine() -> void:
 	if col_node and col_node.shape is CapsuleShape3D:
 		_capsule_shape = col_node.shape as CapsuleShape3D
 	_body_node = get_node_or_null("HumanoidBody") as Node3D
+	# Animation Phase 1: cache the AnimationTree on the HumanoidBody rig so
+	# _physics_process can push the speed → blend_position update every tick.
+	# Safe if the rig isn't present (test scenes) — _update_animation_blend
+	# guards against null.
+	_anim_tree = _resolve_anim_tree(_body_node)
 	# Head-level forward ray — hit ⇒ overhead obstacle ⇒ CROUCH_WALK.
 	_ray_head = RayCast3D.new()
 	_ray_head.name = "RayHead"
@@ -164,12 +302,17 @@ func _install_locomotion_state_machine() -> void:
 	_ray_chest.target_position = Vector3(0.0, 0.0, -0.9)
 	_ray_chest.add_exception(self)
 	add_child(_ray_chest)
-	# Step-up / gap ray — angled forward + down. Miss far ⇒ gap ⇒ JUMP. Hit
-	# above floor level ⇒ tall step ⇒ JUMP.
+	# Step-up / gap ray — angled forward + down. Probes ahead of the NPC and
+	# below the feet so a flat floor 0.5 m forward DEFINITELY hits the cast.
+	# The previous geometry ended 0.1 m ABOVE the feet, so on flat factory floor
+	# the ray missed every tick, the no-hit branch returned JUMP, and NPCs
+	# jumped continuously. New cast: start at body center (≈0.9 m above feet),
+	# end 1.5 m below body center + 0.8 m forward — well below floor level so
+	# `not is_colliding()` only fires on a REAL gap.
 	_ray_step = RayCast3D.new()
 	_ray_step.name = "RayStep"
-	_ray_step.position = Vector3(0.0, -0.4, 0.0)            # near feet
-	_ray_step.target_position = Vector3(0.0, -0.4, -1.0)    # 1.0 m forward, 0.4 m below feet
+	_ray_step.position = Vector3(0.0, 0.0, 0.0)             # body centre
+	_ray_step.target_position = Vector3(0.0, -1.5, -0.8)    # 0.8 m forward, 1.5 m down — reaches floor
 	_ray_step.add_exception(self)
 	add_child(_ray_step)
 
@@ -213,10 +356,23 @@ func _build_name_tag() -> void:
 	add_child(tag)
 
 func _physics_process(delta: float) -> void:
-	# Pick where the body should be heading this frame. Unmanaged NPCs free-wander
-	# exactly as before; managed NPCs head to the target their brain has set, idling
-	# in a small wander around their post and standing still while servicing/on break.
-	if not managed:
+	# Vault/climb override (#cluster VAULT_CLIMB): while a mantle tween is
+	# active, we own the transform directly — gravity, walk, nav, jump all stand
+	# aside until we set the NPC down on top of the ledge.
+	if _vault_locked:
+		_advance_vault(delta)
+		return
+	# #198 — autonomy tick has highest priority. If an autonomy task is active
+	# (or the board hands one out this tick), it owns the target_position.
+	# Falls through to the legacy wander/managed code path only when idle.
+	_autonomy_tick(delta)
+	if _autonomy_destination_active:
+		# Task is steering the NPC; skip the free-wander / managed-post motion
+		# decisions and let the locomotion code drive the body toward
+		# target_position. The task's tick() will clear the destination when
+		# it advances or completes.
+		pass
+	elif not managed:
 		_update_wander(delta)            # legacy free wander
 	else:
 		_managed_motion(delta)
@@ -226,6 +382,14 @@ func _physics_process(delta: float) -> void:
 	# impulse apply this tick. The state machine also resizes the capsule + the
 	# body's Y-scale to match the pose (taller for stand, shorter for crouch).
 	_update_locomotion(delta)
+
+	# Audit item 2 — sine-based walking gait. _walk_phase advances by the ground
+	# distance walked this tick (TAU per GAIT_STRIDE_M), then _apply_gait pushes
+	# sin(phase)*amp onto the Humanoid's HipPivot_L/R and ShoulderPivot_L/R
+	# nodes so the legs and arms visibly swing. The cache is lazy so a fresh
+	# spawn whose body hasn't entered the tree yet won't bind to null.
+	_advance_walk_phase(delta)
+	_apply_gait()
 
 	# Apply gravity
 	if not is_on_floor():
@@ -264,6 +428,15 @@ func _physics_process(delta: float) -> void:
 				# so the NPC still moves instead of standing frozen.
 				direction = target_position - global_position
 			else:
+				# Vault / climb (#cluster VAULT_CLIMB): if the next path
+				# waypoint is meaningfully higher than the NPC's current Y
+				# (more than agent_max_climb but no more than the player's
+				# max mantle), the agent is trying to walk us up onto a ledge.
+				# Trigger a vault tween instead of fighting the physics.
+				var dy : float = next_wp.y - global_position.y
+				if not _vault_locked and dy > CLIMB_MIN_DY and dy <= CLIMB_MAX_DY:
+					_start_vault(next_wp)
+					return        # vault tween consumes the rest of this tick
 				direction = next_wp - global_position
 		else:
 			direction = target_position - global_position
@@ -275,8 +448,13 @@ func _physics_process(delta: float) -> void:
 			var spd : float = walk_speed * float(_SPEED_MULT.get(locomotion, 1.0))
 			current_velocity.x = direction.x * spd
 			current_velocity.z = direction.z * spd
-			# Face the walk direction so the body turns naturally as they move.
-			rotation.y = atan2(direction.x, direction.z)
+			# Face the walk direction. CANONICAL CONVENTION: forward = local -Z,
+			# so we want -basis.z to point along `direction`. atan2(-x, -z) makes
+			# the body yaw so that its -Z axis aligns with the walk vector — the
+			# Humanoid's face (built on -Z per VISUAL FRONT RULE) then correctly
+			# leads motion. Previously this was atan2(x, z), which inverted the
+			# convention and made the body walk backwards relative to its face.
+			rotation.y = atan2(-direction.x, -direction.z)
 		else:
 			current_velocity.x = 0
 			current_velocity.z = 0
@@ -291,6 +469,10 @@ func _physics_process(delta: float) -> void:
 
 	velocity = current_velocity
 	move_and_slide()
+
+	# Animation Phase 1: feed horizontal velocity into the locomotion
+	# BlendSpace2D so the walk / run pose blends with idle as the NPC moves.
+	_update_animation_blend()
 
 ## Managed body motion: AT_POST idles in a small wander around the post; GOING
 ## heads to its target; SERVICING / ON_BREAK / OFF_DUTY stand still. The brain
@@ -409,8 +591,8 @@ const BOARDING_DWELL_S : float = 1.2
 # point if a non-lift task needs the NPC to board a forklift / car / clamp.
 # Same state machine as the lift path: WALK_TO_BOARDING_POS → BOARDING →
 # (caller-controlled) → DISMOUNTING. on_done fires after dismount with reason.
-var _board_target_vehicle : Node = null
-var _board_callback       : Callable = Callable()
+var board_target_vehicle : Node = null
+var board_callback       : Callable = Callable()
 
 func dispatch_to_operate(target_world_pos: Vector3, on_done: Callable,
 		dwell_s: float = 4.0) -> void:
@@ -601,8 +783,41 @@ func set_off_duty(off: bool) -> void:
 	if off:
 		task_state = Task.OFF_DUTY
 		is_walking = false
+		# Cancel any in-flight operate (mast-lift / reach plan) so the worker
+		# doesn't keep driving a lift platform after being yanked off-duty by
+		# the time-rewind path. Releasing the lift booking + nullifying the
+		# callback keeps the lift available for the next dispatch instead of
+		# staying claimed by a frozen off-duty worker.
+		if _operate_callback.is_valid():
+			_operate_callback = Callable()
+		if _claimed_lift != null and is_instance_valid(_claimed_lift):
+			if _claimed_lift.has_method("release_autonomous_target"):
+				_claimed_lift.call("release_autonomous_target")
+			if _claimed_lift.has_method("on_npc_exited"):
+				_claimed_lift.call("on_npc_exited", self)
+			# Release the booking via the runtime autoload (matches the path the
+			# normal _finish_operate cleanup at NPC.gd:626-630 uses). Resolved
+			# lazily so the headless test harness — which has no autoload —
+			# still parses + runs without crashing on a missing singleton.
+			var lb := get_node_or_null("/root/lift_booking")
+			if lb != null and lb.has_method("release"):
+				lb.call("release", _claimed_lift, npc_name)
+			_claimed_lift = null
 	elif task_state == Task.OFF_DUTY:
 		return_to_post()
+
+## Clear the worker's post assignment WITHOUT requiring a re-post.
+## Used by CrewManager._on_time_set when the operator rewinds the clock into
+## pre-shift territory: the worker needs to be off-duty AND have its stale
+## assigned_station_id wiped so current_task() doesn't print "post: …" for an
+## NPC that PreShiftSequence is about to teleport to arrival_anchor / dressing.
+## Symmetric to assign_post (which sets all three). Safe to call on an
+## already-off-duty worker.
+func clear_post() -> void:
+	assigned_station_id = ""
+	service_station_id  = ""
+	managed             = true   # CrewManager still owns them, just not posted
+	set_off_duty(true)
 
 ## Free to be dispatched: managed, on duty, and standing at its post.
 func is_available() -> bool:
@@ -660,6 +875,44 @@ func get_role_string() -> String:
 		"production_manager": "Production Manager",
 	}
 	return roles.get(npc_role, npc_role)
+
+# =============================================================================
+# Vault / climb  (#cluster VAULT_CLIMB)
+# =============================================================================
+## Begin a mantle from current position up to `dest_world` (a navmesh waypoint
+## that is CLIMB_MIN_DY..CLIMB_MAX_DY higher than the NPC's current Y). Owns
+## the transform until the lerp completes — no walk velocity, no gravity. The
+## locomotion state flips to VAULT so the pose/scale matches a "climbing up"
+## body instead of a "walking" body.
+## TODO: real climb animation goes through AnimationTree once Phase 1 lands.
+func _start_vault(dest_world: Vector3) -> void:
+	_vault_locked = true
+	_vault_timer  = 0.0
+	_vault_start  = global_position
+	# Bias the landing slightly past the ledge edge so we don't fall back off.
+	var planar_dir := Vector3(dest_world.x - global_position.x, 0.0,
+		dest_world.z - global_position.z)
+	if planar_dir.length_squared() > 0.0001:
+		planar_dir = planar_dir.normalized() * 0.4
+	else:
+		planar_dir = Vector3.ZERO
+	_vault_end = Vector3(dest_world.x, dest_world.y, dest_world.z) + planar_dir
+	current_velocity = Vector3.ZERO
+	locomotion = Locomotion.VAULT
+
+## Advance the vault tween. Lerps from _vault_start → _vault_end over
+## CLIMB_DURATION_S seconds with ease-out. When the tween completes, hand
+## control back to the normal locomotion / pathfinding loop.
+func _advance_vault(delta: float) -> void:
+	_vault_timer += delta
+	var t := clampf(_vault_timer / CLIMB_DURATION_S, 0.0, 1.0)
+	var eased := 1.0 - pow(1.0 - t, 2.0)
+	global_position = _vault_start.lerp(_vault_end, eased)
+	if t >= 1.0:
+		_vault_locked = false
+		_vault_timer = 0.0
+		current_velocity = Vector3.ZERO
+		locomotion = Locomotion.WALK
 
 # =============================================================================
 # Phase 2 (#146) — locomotion state machine
@@ -727,3 +980,149 @@ func _apply_locomotion_pose() -> void:
 			# so we have to shift it DOWN by half the height loss.
 			var origin_drop : float = (1.8 - h) * 0.5
 			_body_node.position.y = -origin_drop
+
+# =============================================================================
+# Animation Phase 1 — feed velocity into the AnimationTree's BlendSpace2D
+# =============================================================================
+## Look for the AnimationTree node Humanoid._install_skeleton_rig parented
+## directly under the rig root ("HumanoidBody"). Returns null if the body has
+## no rig (test scenes / legacy NPC.tscn without a Humanoid child).
+func _resolve_anim_tree(body_node: Node) -> AnimationTree:
+	if body_node == null:
+		return null
+	# Direct child first — that's where _install_skeleton_rig puts it.
+	var direct := body_node.get_node_or_null("AnimationTree")
+	if direct is AnimationTree:
+		return direct as AnimationTree
+	# Fallback: recursive scan, in case a future patch nests the rig.
+	for c in body_node.get_children():
+		if c is AnimationTree:
+			return c as AnimationTree
+		if c is Node:
+			var hit := _resolve_anim_tree(c)
+			if hit != null:
+				return hit
+	return null
+
+## Map the NPC's horizontal speed onto the BlendSpace2D's X axis so the rig
+## blends idle (0) → walk (1) → run (2). Y is reserved for strafe in Phase 2.
+##
+## When the rig got rebuilt by Humanoid.rebuild_appearance (wardrobe swap), the
+## old AnimationTree was freed with the body; refresh the cached reference if
+## the previously-cached one is no longer valid.
+## Phase 2: travel the AnimationTree's StateMachine to match locomotion. Same
+## param layout as PlayerController._update_animation_blend.
+var _last_anim_state : String = "locomotion"
+
+func _update_animation_blend() -> void:
+	if _anim_tree == null or not is_instance_valid(_anim_tree):
+		# Rebuilt by Humanoid.rebuild_appearance — re-resolve under the (possibly
+		# replaced) body node. Safe no-op if still not present.
+		_body_node = get_node_or_null("HumanoidBody") as Node3D
+		_anim_tree = _resolve_anim_tree(_body_node)
+		if _anim_tree == null:
+			return
+	# Map NPC.Locomotion → state name. CROUCH_WALK = held crouch pose (Phase 3
+	# would author a crouch-walk locomotion BlendSpace row). PRONE_CRAWL = prone.
+	# VAULT and JUMP keep using the locomotion state (the vault tween runs on
+	# the capsule, the visible body just keeps walking through the motion).
+	var want_state : String = "locomotion"
+	match locomotion:
+		Locomotion.CROUCH_WALK: want_state = "crouch"
+		Locomotion.PRONE_CRAWL: want_state = "prone"
+		_:                      want_state = "locomotion"
+	# NPC sitting in vehicle — set via assign_vehicle / clear_vehicle in the
+	# vehicle entry code.
+	if npc_autopilot_seated:
+		want_state = "seated"
+	if want_state != _last_anim_state:
+		var pb := _anim_tree.get("parameters/playback") as AnimationNodeStateMachinePlayback
+		if pb != null:
+			pb.travel(want_state)
+		_last_anim_state = want_state
+	if want_state != "locomotion":
+		return
+	var horiz : float = Vector2(velocity.x, velocity.z).length()
+	var walk_t : float = horiz / maxf(walk_speed, 0.1)
+	var bx : float = clampf(walk_t, 0.0, 2.0)
+	if horiz < 0.05:
+		bx = 0.0
+	_anim_tree.set("parameters/locomotion/blend_position", Vector2(bx, 0.0))
+
+## Flagged by FeederWorker / vehicle entry code when the NPC sits down.
+var npc_autopilot_seated : bool = false
+
+# =============================================================================
+# Sine-based walking gait (audit item 2)
+# =============================================================================
+## Resolve the four limb-pivot Node3Ds the gait animator rotates. Humanoid.build
+## adds them as named children of the rig root ("HipPivot_L", "HipPivot_R",
+## "ShoulderPivot_L", "ShoulderPivot_R"). Called lazily so a body that hasn't
+## entered the scene tree yet doesn't poison the cache with null lookups.
+func _cache_gait_pivots() -> void:
+	# Invalidate if the previously-cached pivots were freed (Humanoid.rebuild_appearance
+	# swaps the body out and the old pivots are queue_freed). Cheap is_instance_valid
+	# check per-tick keeps the cache honest without a signal subscription.
+	if _gait_cached:
+		var all_ok : bool = true
+		if _hip_pivot_l != null and not is_instance_valid(_hip_pivot_l):
+			all_ok = false
+		if _hip_pivot_r != null and not is_instance_valid(_hip_pivot_r):
+			all_ok = false
+		if _shoul_pivot_l != null and not is_instance_valid(_shoul_pivot_l):
+			all_ok = false
+		if _shoul_pivot_r != null and not is_instance_valid(_shoul_pivot_r):
+			all_ok = false
+		if all_ok:
+			return
+		# At least one pivot was freed — drop the cache and re-resolve below.
+		_hip_pivot_l = null
+		_hip_pivot_r = null
+		_shoul_pivot_l = null
+		_shoul_pivot_r = null
+		_gait_cached = false
+	if _body_node == null or not is_instance_valid(_body_node):
+		_body_node = get_node_or_null("HumanoidBody") as Node3D
+		if _body_node == null:
+			return
+	_hip_pivot_l   = _body_node.get_node_or_null("HipPivot_L")    as Node3D
+	_hip_pivot_r   = _body_node.get_node_or_null("HipPivot_R")    as Node3D
+	_shoul_pivot_l = _body_node.get_node_or_null("ShoulderPivot_L") as Node3D
+	_shoul_pivot_r = _body_node.get_node_or_null("ShoulderPivot_R") as Node3D
+	# Cache only when we found at least one pivot — otherwise re-try next tick.
+	if _hip_pivot_l != null or _hip_pivot_r != null \
+			or _shoul_pivot_l != null or _shoul_pivot_r != null:
+		_gait_cached = true
+
+## Advance the gait phase by the ground distance travelled this tick (only
+## while we're meant to be walking and the locomotion state is one of the
+## moving ones). Maps TAU of phase per GAIT_STRIDE_M of ground, so the cycle
+## naturally scales with speed: faster walk = faster swing.
+func _advance_walk_phase(delta: float) -> void:
+	var moving := is_walking and (locomotion == Locomotion.WALK \
+			or locomotion == Locomotion.CROUCH_WALK \
+			or locomotion == Locomotion.PRONE_CRAWL)
+	if not moving:
+		# Settle phase toward 0 over ~0.3s when stopped so the limbs come to rest
+		# at neutral instead of freezing mid-swing.
+		_walk_phase = move_toward(_walk_phase, 0.0, delta * TAU * 2.0)
+		return
+	var horiz : float = Vector2(velocity.x, velocity.z).length()
+	# Distance walked this tick → phase delta (TAU per GAIT_STRIDE_M metres).
+	var phase_d : float = (horiz * delta / maxf(GAIT_STRIDE_M, 0.01)) * TAU
+	_walk_phase = fposmod(_walk_phase + phase_d, TAU)
+
+## DEPRECATED (Animation Phase 1): the legacy sine-gait drove the four limb
+## pivots (HipPivot_*, ShoulderPivot_*) directly. Phase 1 reparents every limb
+## mesh OUT from under those pivots and under a BoneAttachment3D bound to a
+## Skeleton3D, then drives the bones via an AnimationTree BlendSpace2D. The
+## pivots are still emitted by Humanoid.build() but their children are now empty,
+## so rotating them would do nothing. This stub is kept so any future caller
+## that still invokes _apply_gait() is a clean no-op (not a script error and
+## NOT a competing pose source vs the AnimationTree). The whole sine-gait block
+## (constants, vars, _cache_gait_pivots, _advance_walk_phase, _apply_gait) is
+## slated for removal once Phase 1 lands in-game. The animation surface is now
+## _update_animation_blend() / Humanoid._install_skeleton_rig().
+func _apply_gait() -> void:
+	# Intentionally empty — driven by the AnimationTree BlendSpace2D now.
+	pass

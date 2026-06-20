@@ -71,7 +71,6 @@ var _radio_plan      : Array = []     # [{f1,f2,dur,voiced}] syllable plan from 
 var _radio_seg_idx   : int   = 0
 var _radio_seg_start : float = 0.0
 var _radio_seg_end   : float = 0.1
-var _radio_src_ph    := 0.0           # glottal source phase
 var _f1_cur          := 500.0         # gliding formant centres
 var _f2_cur          := 1500.0
 var _svf1_low := 0.0                  # state-variable bandpass states (F1)
@@ -315,6 +314,32 @@ func play_radio_call(text: String, loudness: float, headset: bool) -> void:
 func play_radio_uplink(text: String, headset: bool) -> void:
 	_start_radio(text, 0.7, headset)
 
+## Play a real-voice TTS stream (produced by VoiceService) ON TOP of the squelch
+## carrier currently arming the radio. `stream` is the wav loaded from Piper or
+## OpenAI tts-1. When `stream` is null this is a no-op — the squelch carrier
+## alone carries the message (the existing pre-VoiceService behaviour). Volume
+## tracks the Walkie's effective loudness so headset/speaker routing still
+## applies. Plays on the Voices bus, side-by-side with the carrier.
+func play_radio_voice_stream(stream, loudness: float, headset: bool) -> void:
+	if stream == null:
+		return
+	# Reuse a single voice player so consecutive lines pre-empt each other
+	# (a fresh transmission cuts off the previous one — same as a real radio).
+	if not has_node("_RadioTTSVoice"):
+		var p := AudioStreamPlayer.new()
+		p.name = "_RadioTTSVoice"
+		p.bus  = BUS_VOICES
+		add_child(p)
+	var player := get_node("_RadioTTSVoice") as AudioStreamPlayer
+	player.stream = stream
+	# Headset is intimate/quiet — give it a small attenuation so it doesn't
+	# blow out the earpiece. Loudness already includes volume × route_cap.
+	var db := linear_to_db(clampf(loudness, 0.001, 1.0))
+	if headset:
+		db -= 4.0
+	player.volume_db = db
+	player.play()
+
 ## Begin a radio transmission: build the syllable plan from the text and arm the
 ## voice synth. Length scales with the message, so "Copy that" is a short blip
 ## and "Tank swap, give me five" runs longer — the rhythm tracks the words.
@@ -323,12 +348,21 @@ func _start_radio(text: String, gain: float, headset: bool) -> void:
 		return
 	_radio_gain  = gain
 	_radio_close = headset
-	_radio_plan  = _build_voice_plan(text)
-	_radio_len   = SQUELCH_IN + _plan_duration(_radio_plan) + SQUELCH_OUT
+	# #159 / T1 — formant voice synth always sounded alien (no real glottal
+	# pitch contour, no articulation). The honest fix: don't fake voice. Play
+	# realistic squelch chirps bracketing a brief carrier hiss; the SubtitleHud
+	# already displays the spoken line so the player READS the message — that's
+	# how a real operator copes with a bad radio in a noisy plant anyway.
+	# Carrier length scales gently with word count so longer messages get a
+	# longer hiss, but capped so we don't burn 10s on a paragraph.
+	var word_count : int = text.strip_edges().split(" ", false).size()
+	var carrier_dur : float = clampf(0.35 + 0.12 * float(word_count), 0.40, 1.40)
+	_radio_plan  = [{"f1": 0.0, "f2": 0.0, "dur": carrier_dur, "voiced": false}]
+	_radio_len   = SQUELCH_IN + carrier_dur + SQUELCH_OUT
 	_radio_t     = _radio_len
 	_radio_seg_idx   = 0
 	_radio_seg_start = 0.0
-	_radio_seg_end   = float(_radio_plan[0]["dur"]) if not _radio_plan.is_empty() else 0.1
+	_radio_seg_end   = carrier_dur
 	_svf1_low = 0.0; _svf1_band = 0.0
 	_svf2_low = 0.0; _svf2_band = 0.0
 	_f1_cur = 500.0; _f2_cur = 1500.0
@@ -355,9 +389,13 @@ func _build_voice_plan(text: String) -> Array:
 			syl_vowels = ["e"]                       # every word is at least one syllable
 		for v in syl_vowels:
 			var f : Vector2 = VOWEL_FORMANTS.get(v, Vector2(500.0, 1500.0))
-			plan.append({"f1": f.x, "f2": f.y, "dur": 0.15, "voiced": true})
+			# #159 — was 0.15s syllables, 0.07s word gaps. Each sound rushed past
+			# before the formant filter could even settle, so the whole transmission
+			# read as continuous noise (the "alien rush" operator complaint).
+			# 0.22s gives the band-pass time to actually resonate on the vowel.
+			plan.append({"f1": f.x, "f2": f.y, "dur": 0.22, "voiced": true})
 		if wi < words.size() - 1:
-			plan.append({"f1": 500.0, "f2": 1500.0, "dur": 0.07, "voiced": false})  # word gap
+			plan.append({"f1": 500.0, "f2": 1500.0, "dur": 0.10, "voiced": false})  # word gap
 	return plan
 
 func _plan_duration(plan: Array) -> float:
@@ -379,7 +417,6 @@ func _fill_radio(_delta: float) -> void:
 			_radio_pb.push_frame(Vector2.ZERO)
 		return
 	var dt := 1.0 / SAMPLE_RATE
-	var fund : float = 135.0 if _radio_close else 115.0
 	for _i in n:
 		var elapsed : float = _radio_len - _radio_t
 		var s := 0.0
@@ -396,39 +433,32 @@ func _fill_radio(_delta: float) -> void:
 			_radio_ph = fmod(_radio_ph + bf2 * dt, 1.0)
 			s = sin(_radio_ph * TAU) * sin((1.0 - e2) * PI * 0.5) * 0.35
 		else:
-			# ── VOICE: glottal source → two gliding formant band-passes ──────────
+			# ── CARRIER: open-channel hiss between squelch chirps ────────────────
+			# T1 — voice synthesis was killed (always sounded alien). Instead play
+			# a soft band-limited noise carrier so the radio reads as "open
+			# channel, someone's talking" while the SubtitleHud shows the actual
+			# words. Two filtered noise sources mixed (lows + highs) give that
+			# squashed AM-radio character without trying to fake speech.
 			var voice_t := elapsed - SQUELCH_IN
-			while _radio_seg_idx < _radio_plan.size() - 1 and voice_t >= _radio_seg_end:
-				_radio_seg_idx += 1
-				_radio_seg_start = _radio_seg_end
-				_radio_seg_end += float(_radio_plan[_radio_seg_idx]["dur"])
-			var seg : Dictionary = _radio_plan[_radio_seg_idx] if _radio_seg_idx < _radio_plan.size() \
-				else {"f1": 500.0, "f2": 1500.0, "dur": 0.1, "voiced": false}
-			# Glide the formant centres toward the syllable's vowel → speech-like motion.
-			_f1_cur = move_toward(_f1_cur, float(seg["f1"]), 9000.0 * dt)
-			_f2_cur = move_toward(_f2_cur, float(seg["f2"]), 14000.0 * dt)
-			# Raised-cosine envelope within the syllable (smooth — no clicky gates).
-			var seg_pos : float = (voice_t - _radio_seg_start) / maxf(float(seg["dur"]), 0.001)
-			var seg_env := sin(clampf(seg_pos, 0.0, 1.0) * PI)
-			var voiced_amp : float = 1.0 if bool(seg["voiced"]) else 0.12
-			# Glottal source: a soft sawtooth (rich in harmonics for the formants to shape).
-			_radio_src_ph = fmod(_radio_src_ph + fund * dt, 1.0)
-			var src := 0.0
-			for k in range(1, 5):
-				src += sin(_radio_src_ph * float(k) * TAU) / float(k)
-			src *= 0.5
-			# State-variable band-pass at F1 then F2 (Chamberlin form).
-			var f1c : float = 2.0 * sin(PI * clampf(_f1_cur, 80.0, 4000.0) / SAMPLE_RATE)
-			_svf1_low += f1c * _svf1_band
-			_svf1_band += f1c * (src - _svf1_low - 0.13 * _svf1_band)
-			var f2c : float = 2.0 * sin(PI * clampf(_f2_cur, 80.0, 4000.0) / SAMPLE_RATE)
-			_svf2_low += f2c * _svf2_band
-			_svf2_band += f2c * (src - _svf2_low - 0.17 * _svf2_band)
-			var v := _svf1_band * 0.6 + _svf2_band * 0.5 + src * 0.04
-			v *= seg_env * voiced_amp
-			if not bool(seg["voiced"]):
-				v += (randf() * 2.0 - 1.0) * 0.10 * seg_env   # consonant noise burst
-			v += (randf() * 2.0 - 1.0) * 0.04                 # radio compression hiss
+			var dur : float = maxf(_radio_seg_end - _radio_seg_start, 0.001)
+			# Soft attack/decay envelope across the whole carrier so it doesn't
+			# slam on/off right next to the squelch chirps.
+			var env_pos : float = clampf(voice_t / dur, 0.0, 1.0)
+			var carrier_env : float = clampf(env_pos / 0.08, 0.0, 1.0)        # 80 ms attack
+			carrier_env *= clampf((1.0 - env_pos) / 0.10, 0.0, 1.0)            # 100 ms release
+			# Two band-pass noise streams: low (300-700 Hz) and mid (1200-2400 Hz)
+			# — the typical "tinny radio" voice band without the formant motion.
+			var noise : float = randf() * 2.0 - 1.0
+			_svf1_low += 0.18 * _svf1_band
+			_svf1_band += 0.18 * (noise - _svf1_low - 0.4 * _svf1_band)
+			var noise2 : float = randf() * 2.0 - 1.0
+			_svf2_low += 0.42 * _svf2_band
+			_svf2_band += 0.42 * (noise2 - _svf2_low - 0.5 * _svf2_band)
+			var v : float = _svf1_band * 0.45 + _svf2_band * 0.30
+			# A slow tremolo gives the carrier some rhythm so it doesn't sit dead-
+			# flat (real operators' breath modulates the carrier slightly).
+			var trem : float = 0.85 + 0.15 * sin(voice_t * TAU * 4.5)
+			v *= carrier_env * trem * 0.45
 			s = v
 		# Radio band character: soft-clip compression + route level + master gain.
 		s = tanh(s * 1.6) * 0.7
