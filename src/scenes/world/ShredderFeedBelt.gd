@@ -27,6 +27,13 @@ class_name ShredderFeedBelt
 signal bale_accepted(bale: Node3D)
 signal bale_rejected(bale: Node3D, reason: String)
 signal bale_consumed(bale: Node3D)
+## #211a — operator-spec feeding rules raise these so LineFlow's pack-up
+## cascade + HMI can react. belt_id is the node's name so the operator can
+## tell which belt jammed when several lines feed shredders. All three are
+## faults that latch on the belt (is_faulted() == true) until cleared.
+signal belt_jam(belt_id: String)             # #211a — a bale rode cross-wise too long
+signal intake_overfill(belt_id: String)      # #211b — bales packed too tight
+signal thermal_shutdown(belt_id: String)     # #211c — sustained over-occupancy
 
 @export var deck_length   : float = 5.0     # horizontal run (m)
 @export var deck_width    : float = 2.5     # wide enough for 2 bales side by side
@@ -45,6 +52,13 @@ signal bale_consumed(bale: Node3D)
 ## behaviour for test scenes that have no machine downstream.
 @export var require_shredder : bool = true
 @export var shredder_reach   : float = 6.0   # m from the discharge to find the shredder
+## #218 — Sandbox/mid-shift default: the belt comes up RUNNING because the
+## real-plant shift-lead has already executed the morning SWI-049 routine by
+## the time a sandbox world spawns. Cold-commission (fresh world boot) will
+## flip this to false via the EventBus shift_started gate in a follow-up;
+## existing saves keep working because the runtime value persists once set.
+## request_start() / request_stop() still drive it from the HMI at runtime.
+@export var start_requested  : bool  = true
 
 # ── Optional shape extensions (opzetband variants) ─────────────────────────────
 ## A short HORIZONTAL discharge piece at the very top, after the incline (e.g. the
@@ -89,6 +103,11 @@ func _ready() -> void:
 	_incline_angle = deg_to_rad(incline_deg)
 	_incline_hyp   = incline_run / maxf(cos(_incline_angle), 0.01)
 	_path_total = deck_length + _incline_hyp + maxf(top_flat_m, 0.0)
+	# #214 belt-speed ramp — start at the live PLC state. is_running() reads
+	# fault latches + fill + _shredder_ok(); at construction these all default
+	# to a stopped belt (no shredder cached yet) so initial value is 0 and the
+	# belt will smoothly ramp up the first frame the interlock clears.
+	_belt_speed_smooth = SmoothedRate.new(0.0, belt_ramp_tau_s)
 	_build_visual()
 	_build_collision()
 	_build_container_area()
@@ -128,6 +147,17 @@ var _belt_mat_top     : ShaderMaterial = null
 ## code can keep its "belt_speed" meta live (belt_speed while running, 0.0 while
 ## stopped) — that's what the player's belt-carry contract reads off the collider.
 var _belt_body : StaticBody3D = null
+
+# ── #214 belt-speed ramp ──────────────────────────────────────────────────────
+## Heavy intake belt — slat conveyor with a loaded incline + drive motor inertia
+## coasts down over a couple of seconds when the PLC commands stop. Without this
+## ramp the carry meta, BeltSurface drag, shader scroll, and rider progress all
+## snapped from belt_speed → 0 in a single frame on fault / throat-full / shredder-
+## loss — which felt teleport-y on bales mid-ride and made the player jolt off the
+## deck. The setpoint (is_running ? belt_speed : 0) is sent through a SmoothedRate
+## with tau ≈ 2.5 s so the physical decay matches real induction-motor coast-down.
+@export var belt_ramp_tau_s : float = 2.5
+var _belt_speed_smooth : SmoothedRate = null
 
 func _build_visual() -> void:
 	var steel := StandardMaterial3D.new()
@@ -306,11 +336,13 @@ func _build_collision() -> void:
 	body.name = "BeltBody"
 	add_child(body)
 	# Belt-carry contract: the walkable collider is in group "belt", and its
-	# "belt_speed" meta is belt_speed while running / 0.0 while stopped. The player
-	# controller reads this off the body it's standing on and drags itself along.
+	# "belt_speed" meta is the LIVE (ramped) belt speed each tick — 0 at construction
+	# (slats not turning yet), then walked toward `belt_speed` or back to 0 via the
+	# SmoothedRate in _process. The player controller reads this off the body it's
+	# standing on and drags itself along.
 	_belt_body = body
 	body.add_to_group("belt")
-	body.set_meta("belt_speed", belt_speed if is_running() else 0.0)
+	body.set_meta("belt_speed", 0.0)
 	# Flat deck slab (skip if no flat section).
 	if deck_length > 0.01:
 		var dc := CollisionShape3D.new()
@@ -338,10 +370,25 @@ func _build_collision() -> void:
 # =============================================================================
 # PUBLIC API
 # =============================================================================
-## Is the belt currently moving? False while the throat is full, AND false when the
-## PLC interlock trips because there's no healthy shredder downstream (#27).
+## Is the belt currently moving? False while the throat is full, false when the
+## PLC interlock trips because there's no healthy shredder downstream (#27), AND
+## false while any #211 fault latch is set (belt_jam / intake_overfill /
+## thermal_shutdown). The fault latch wins over fill state — a jammed belt
+## stays dead even if the throat would otherwise call for material.
 func is_running() -> bool:
+	if is_faulted():
+		return false
+	if not start_requested:
+		return false
 	return fill < fill_setpoint and _shredder_ok()
+
+## #218 — HMI hook: SWI-049 green-button press routes here to release the belt.
+func request_start() -> void:
+	start_requested = true
+
+## #218 — HMI hook: STOP / fault clear / shift-end routes here to park the belt.
+func request_stop() -> void:
+	start_requested = false
 
 var _cached_shredder: Node3D = null
 
@@ -356,6 +403,8 @@ func _shredder_ok() -> bool:
 
 	if _cached_shredder != null and is_instance_valid(_cached_shredder) and _cached_shredder.is_inside_tree() and _cached_shredder.global_position.distance_to(disc) <= shredder_reach:
 		if _cached_shredder.has_method("is_faulted") and bool(_cached_shredder.call("is_faulted")):
+			return false
+		if _shredder_b_gordijn_blocked(_cached_shredder):
 			return false
 		if _cached_shredder.has_method("is_running"):
 			return bool(_cached_shredder.call("is_running"))
@@ -373,14 +422,148 @@ func _shredder_ok() -> bool:
 		# Found one in reach — respect its run/fault state if it exposes them.
 		if n3d.has_method("is_faulted") and bool(n3d.call("is_faulted")):
 			return false
+		# #211c — the b_gordijn (rubber curtain hanging in front of the
+		# shredder mouth) acts as a downstream interlock: when it's down or
+		# jammed, material can't enter the throat, so the feed belt must
+		# refuse to push. We accept either a `b_gordijn_jam` bool / property
+		# or a `b_gordijn_state` string ("down"/"jammed"). Missing on legacy
+		# shredders → treated as clear, so this stays a no-op until a
+		# shredder model adds the curtain state.
+		if _shredder_b_gordijn_blocked(n3d):
+			return false
 		if n3d.has_method("is_running"):
 			return bool(n3d.call("is_running"))
 		return true
 	return false   # no shredder present → PLC keeps the belt stopped
 
+## #211c — true when the downstream shredder reports a closed/jammed b_gordijn
+## (intake curtain). Defensive: any of (is property + value, has_method, getter)
+## is accepted, and the curtain check is silently SKIPPED when the shredder
+## doesn't expose it (legacy models keep working unchanged).
+func _shredder_b_gordijn_blocked(shred: Node) -> bool:
+	if shred == null:
+		return false
+	# Prefer a bool flag if present (jammed = true → blocked).
+	if "b_gordijn_jam" in shred and bool(shred.get("b_gordijn_jam")):
+		return true
+	if shred.has_method("is_b_gordijn_jammed") and bool(shred.call("is_b_gordijn_jammed")):
+		return true
+	# Or a string state — "down" / "jammed" both close the path.
+	if "b_gordijn_state" in shred:
+		var st := String(shred.get("b_gordijn_state"))
+		if st == "down" or st == "jammed":
+			return true
+	return false
+
 ## Minimum clear distance at the loading end before another bale may be dropped —
 ## roughly a bale length + a gap, so bales never land inside one another.
 const LOAD_ZONE_M : float = 1.7
+
+# ── #211 Operator-spec feeding rules ──────────────────────────────────────────
+## #211a — A bale's long axis must be within this many degrees of the belt
+## travel direction. Anything beyond is "cross-wise" and will jam the
+## throat if it isn't corrected.
+const CROSS_WISE_ANGLE_DEG : float = 35.0
+## #211a — Seconds a cross-wise bale may ride before the belt jams. Real
+## operator window — they have a couple of beats to slap it straight
+## before the shredder mouth chews on a sideways bale.
+const JAM_TIMER_S          : float = 5.0
+## #211b — Minimum centre-to-centre spacing between successive bales (m). A
+## tighter gap means feed is being dropped before the previous bale has
+## advanced — overfilling the intake.
+const MIN_SPACING_M        : float = 0.5
+## #211b — Frames the spacing violation must hold (~0.5s at 60fps) before
+## intake_overfill latches. Brief crowding from a single drop is fine;
+## sustained crowding is a real overfill.
+const SPACING_VIOLATION_FRAMES : int = 30
+## #211c — Maximum fraction of the path that bales may occupy before the
+## belt is considered packed. Beyond this the rotor/drive overheats.
+const MAX_BELT_OCCUPANCY   : float = 0.80
+## #211c — Seconds occupancy may exceed MAX_BELT_OCCUPANCY before the
+## thermal cutout drops the drive.
+const THERMAL_GRACE_S      : float = 2.0
+## A bale's nominal long-axis length on the belt (m). Used by the occupancy
+## estimate — real CeDo bales are ~1.4 m long.
+const BALE_LENGTH_M        : float = 1.4
+
+# ── #211 fault latches ────────────────────────────────────────────────────────
+# A latched fault halts is_running() AND the bale_accepted gate (accept_bale
+# refuses new bales while faulted). Crew clears via reset_faults() (or a
+# future HMI button); the bus mirrors each raise/clear onto EventBus alarms
+# so the HUD siren reacts identically to a LineFlow E-stop.
+var _fault_belt_jam          : bool  = false   # #211a
+var _fault_intake_overfill   : bool  = false   # #211b
+var _fault_thermal_shutdown  : bool  = false   # #211c
+## Frames of sustained spacing violation accrued so far. Resets the instant a
+## tick passes with no pair tighter than MIN_SPACING_M.
+var _spacing_violation_frames : int  = 0
+## Seconds of sustained over-occupancy accrued so far. Resets to 0 on any
+## tick where occupancy is back under MAX_BELT_OCCUPANCY.
+var _thermal_grace_t          : float = 0.0
+
+## True when ANY of the three #211 fault latches is set. LineFlow polls this
+## via getter methods so its pack-up cascade can stop everything upstream of
+## a jammed feeder. Mirrors the LineFlow E-stop pattern: a latched belt fault
+## kills is_running() so the belt sits dead until the crew resets it.
+func is_faulted() -> bool:
+	return _fault_belt_jam or _fault_intake_overfill or _fault_thermal_shutdown
+## Per-fault getters so the LineFlow walker (#211d) doesn't poke private state.
+func belt_jam_active() -> bool:          return _fault_belt_jam
+func intake_overfill_active() -> bool:   return _fault_intake_overfill
+func thermal_shutdown_active() -> bool:  return _fault_thermal_shutdown
+
+const _ALARM_BELT_JAM         : String = "BELT-JAM"
+const _ALARM_INTAKE_OVERFILL  : String = "INTAKE-OVERFILL"
+const _ALARM_THERMAL_SHUTDOWN : String = "THERMAL-SHUTDOWN"
+
+func _belt_id_for_bus() -> String:
+	return name if name != "" else "shredder_feed_belt"
+
+func _raise_fault(kind: String, alarm_id: String) -> void:
+	var bid := _belt_id_for_bus()
+	match kind:
+		"belt_jam":
+			if _fault_belt_jam: return
+			_fault_belt_jam = true
+			belt_jam.emit(bid)
+		"intake_overfill":
+			if _fault_intake_overfill: return
+			_fault_intake_overfill = true
+			intake_overfill.emit(bid)
+		"thermal_shutdown":
+			if _fault_thermal_shutdown: return
+			_fault_thermal_shutdown = true
+			thermal_shutdown.emit(bid)
+	var bus := get_node_or_null("/root/EventBus")
+	if bus and bus.has_signal("machine_alarm_raised"):
+		bus.emit_signal("machine_alarm_raised", bid, alarm_id, 3)
+	print("[ShredderFeedBelt] FAULT %s on '%s'" % [alarm_id, bid])
+
+## Crew/HMI hook — clear every latched #211 fault and reset the supporting
+## counters/timers so the belt resumes the next tick. Pairs with the EventBus
+## alarm_cleared mirror so the HUD siren goes quiet.
+func reset_faults() -> void:
+	var bid := _belt_id_for_bus()
+	var bus := get_node_or_null("/root/EventBus")
+	if _fault_belt_jam:
+		_fault_belt_jam = false
+		if bus and bus.has_signal("machine_alarm_cleared"):
+			bus.emit_signal("machine_alarm_cleared", bid, _ALARM_BELT_JAM)
+	if _fault_intake_overfill:
+		_fault_intake_overfill = false
+		if bus and bus.has_signal("machine_alarm_cleared"):
+			bus.emit_signal("machine_alarm_cleared", bid, _ALARM_INTAKE_OVERFILL)
+	if _fault_thermal_shutdown:
+		_fault_thermal_shutdown = false
+		if bus and bus.has_signal("machine_alarm_cleared"):
+			bus.emit_signal("machine_alarm_cleared", bid, _ALARM_THERMAL_SHUTDOWN)
+	_spacing_violation_frames = 0
+	_thermal_grace_t = 0.0
+	# Clear any lingering cross-wise timers on remaining riders — once the
+	# crew reset the belt the orientation slate goes blank too.
+	for r in _riders:
+		r["cross_wise"] = false
+		r["cross_wise_t"] = 0.0
 
 ## True when the loading end is clear enough to drop another bale. The feeder checks
 ## this and HOLDS its bale until the belt advances the last one clear.
@@ -394,6 +577,13 @@ func can_accept() -> bool:
 ## bale_rejected) if the bale hasn't been scanned — the scan gate (#152) — or if the
 ## loading end is still occupied (the spacing guard that stops bales stacking inside
 ## one another). `lane` 0 or 1 picks which side-by-side lane on the wide deck.
+## #211a — also computes the bale's yaw relative to the belt travel axis. The
+## bale is still ACCEPTED at any orientation (an operator slapping it sideways
+## is the failure mode we want to model), but the rider is tagged cross_wise
+## when |yaw| > CROSS_WISE_ANGLE_DEG so the per-tick timer can run it down to
+## belt_jam if nobody corrects it. The pre-reparent bale.global_transform is
+## sampled so the angle math sees the operator's last-set orientation, not the
+## post-reparent local pose.
 func accept_bale(bale: Node3D, lane: int = 0) -> bool:
 	if bale == null:
 		return false
@@ -401,9 +591,21 @@ func accept_bale(bale: Node3D, lane: int = 0) -> bool:
 		bales_rejected += 1
 		bale_rejected.emit(bale, "not scanned")
 		return false
+	if is_faulted():
+		# #211 — a latched fault on the belt has to clear before another bale
+		# may be dropped. Otherwise the operator could keep stacking onto a
+		# jammed/overfilled belt and the fault would never recover.
+		bale_rejected.emit(bale, "belt fault")
+		return false
 	if not can_accept():
 		bale_rejected.emit(bale, "load zone occupied")
 		return false
+	# #211a — yaw of the bale's long axis vs the belt's travel direction. The
+	# belt's local +Z is the travel axis (deck runs +Z; the incline pivot is at
+	# z=deck_length). The bale's long axis is its local +Z too (1.4 m length
+	# along its local Z). We sample the bale's world basis BEFORE reparent, then
+	# project onto the belt's XZ plane and compare with the belt's +Z.
+	var bale_yaw_deg : float = _bale_yaw_deviation_deg(bale)
 	# Re-parent onto the belt; freeze it so it rides as a kinematic prop.
 	if bale.get_parent():
 		bale.get_parent().remove_child(bale)
@@ -413,14 +615,59 @@ func accept_bale(bale: Node3D, lane: int = 0) -> bool:
 	# lane 0 = CENTRE of the deck (the feeders feed here so bales ride down the
 	# middle, not the old left/right zigzag); lane 1 = offset right if ever needed.
 	var lane_x : float = (0.0 if lane == 0 else 0.5 * deck_width * 0.5)
+	var cross_wise : bool = absf(bale_yaw_deg) > CROSS_WISE_ANGLE_DEG
 	_riders.append({
 		"node": bale, "progress": 0.0, "mass": 1.0,
 		"feeding": false, "lane_x": lane_x,
+		# #211a — orientation rider state. cross_wise = true means the rider is
+		# accumulating jam time; the 5s window matches the operator slap-it-
+		# straight window before the shredder mouth chokes.
+		"cross_wise": cross_wise,
+		"cross_wise_t": JAM_TIMER_S if cross_wise else 0.0,
+		"yaw_deg": bale_yaw_deg,
 	})
 	_place_rider(_riders.back())
 	bales_accepted += 1
 	bale_accepted.emit(bale)
 	return true
+
+## #211a/#211e — bale yaw deviation (degrees, [-180, +180]) of the bale's long
+## axis vs the belt's local +Z travel direction, evaluated in the XZ plane of
+## the belt. Used by accept_bale to tag cross-wise riders AND by the forklift
+## alignment ghost (#211e) to colour the ghost green/red. 0° = perfectly
+## lengthwise, ±90° = cross-wise. Returns 0.0 for null or invalid bales.
+func _bale_yaw_deviation_deg(bale: Node3D) -> float:
+	if bale == null or not is_instance_valid(bale):
+		return 0.0
+	# Bale's world +Z (its long axis) projected into the belt's local frame.
+	var bale_z_world : Vector3 = bale.global_transform.basis.z
+	var to_local : Basis = global_transform.basis.inverse()
+	var bale_z_local : Vector3 = to_local * bale_z_world
+	# Drop Y so we only compare yaw on the XZ plane.
+	bale_z_local.y = 0.0
+	if bale_z_local.length_squared() < 1e-6:
+		return 0.0
+	bale_z_local = bale_z_local.normalized()
+	# Belt's travel axis in belt-local = +Z. Angle to it (XZ).
+	var ang : float = atan2(bale_z_local.x, bale_z_local.z)
+	# Fold to ±90° — a bale rotated 180° is still "lengthwise", just facing
+	# the other way; both ends look the same to the shredder mouth.
+	var deg : float = rad_to_deg(ang)
+	if deg > 90.0:
+		deg -= 180.0
+	elif deg < -90.0:
+		deg += 180.0
+	return deg
+
+## #211e — convenience for the forklift alignment ghost: the belt's travel
+## axis as a world-space direction (deck +Z). Used by the ghost projector to
+## lay the lengthwise pose onto the deck without copying belt internals.
+func belt_travel_dir_world() -> Vector3:
+	var d : Vector3 = global_transform.basis.z
+	d.y = 0.0
+	if d.length_squared() < 1e-6:
+		return Vector3.FORWARD
+	return d.normalized()
 
 ## How many bales are currently on the belt.
 func rider_count() -> int:
@@ -442,26 +689,39 @@ func _process(delta: float) -> void:
 		if digested > 0.0:
 			_emit_output(digested * OUTPUT_KG_PER_FILL, delta)
 	var running := is_running()
-	# Drive the textured belt scroll speed from the live PLC state so a stopped
-	# belt is OBVIOUSLY stopped (the slats freeze) and a running one is OBVIOUSLY
-	# moving. Scale by belt_speed so a slow belt scrolls slowly. Multiplier 0.25
-	# matches the intake-belt convention (PlaceableCatalog._INTAKE_BELT_SHADER_SCROLL
-	# = _INTAKE_BELT_SPEED_MPS * 0.25) — operator: previous 4.0 made the opzetband
-	# visual scroll 16× faster than the rest of the plant.
-	_set_scroll_speed((belt_speed * 0.25) if running else 0.0)
-	# Keep the walkable collider's belt-carry meta in step with the PLC run-state so
-	# the player is carried only while the belt actually moves (0.0 when stopped).
+	# #214 belt-speed ramp — the PLC setpoint is binary (running ? belt_speed : 0)
+	# but the physical belt coasts smoothly between those two states. Push the
+	# setpoint through the SmoothedRate so a stop intent decays over ~2.5 s of
+	# motor coast-down instead of snapping in one frame. The cascade-stop
+	# behaviour upstream is preserved — is_running() flipping false IS the
+	# stop intent, the ramp just stretches its physical effect.
+	var setpoint : float = belt_speed if running else 0.0
+	var live_speed : float = _belt_speed_smooth.approach(setpoint, delta) if _belt_speed_smooth != null else setpoint
+	# Drive the textured belt scroll speed from the live RAMPED state so a stopping
+	# belt is OBVIOUSLY winding down (the slats slow visibly) and a starting one
+	# is OBVIOUSLY winding up. Scale by live_speed so a slow belt scrolls slowly.
+	# Multiplier 0.25 matches the intake-belt convention.
+	_set_scroll_speed(live_speed * 0.25)
+	# Keep the walkable collider's belt-carry meta in step with the LIVE (ramped)
+	# belt speed (NOT the binary run-state) so the player is carried at the actual
+	# slat speed during coast-down. Bales mid-ride keep moving until the belt
+	# physically stops, matching what an operator sees on a real coast-down.
 	if _belt_body != null and is_instance_valid(_belt_body):
-		_belt_body.set_meta("belt_speed", belt_speed if running else 0.0)
+		_belt_body.set_meta("belt_speed", live_speed)
 		# #172-opzetband — when the deck has the BeltSurface script attached
 		# (opzetband path in PlaceableCatalog.build_node), keep BeltSurface's
-		# belt_speed_mps in step with the live PLC state. Without this the
-		# physical carry would freeze at whatever value was set at construction
-		# time and would NOT stop when is_running() goes false. Now shader
-		# scroll, rider-bale progress, legacy meta, and BeltSurface carry all
-		# come from the single belt_speed value.
+		# belt_speed_mps in step. BeltSurface itself ALSO low-passes its own
+		# setpoint, but since we feed it the already-ramped live_speed the
+		# inner ramp is a near-no-op (target tracks within its tau) — shader
+		# scroll, rider-bale progress, legacy meta, and the physical carry all
+		# converge on the same coast-down curve.
 		if "belt_speed_mps" in _belt_body:
-			_belt_body.set("belt_speed_mps", belt_speed if running else 0.0)
+			_belt_body.set("belt_speed_mps", live_speed)
+	# #214 — rider advance uses the LIVE (ramped) belt speed so a bale already
+	# on the belt coasts forward during stop, instead of teleport-freezing the
+	# instant the cascade trips. Feeding (at-top mass transfer) still gates on
+	# the binary `running` flag — once the throat is full it should NOT drip more
+	# in just because the belt slats are still creeping.
 	var i := _riders.size() - 1
 	while i >= 0:
 		var r : Dictionary = _riders[i]
@@ -479,13 +739,78 @@ func _process(delta: float) -> void:
 					if is_instance_valid(node):
 						node.queue_free()
 		else:
-			# Riding the belt toward the top — only while the belt runs.
-			if running:
-				r["progress"] = minf(1.0, r["progress"] + (belt_speed * delta) / maxf(_path_total, 0.001))
+			# Riding the belt toward the top — at the live (ramped) speed so the
+			# rider keeps gliding during coast-down even though `running` may
+			# already be false.
+			if live_speed > 0.0001:
+				r["progress"] = minf(1.0, r["progress"] + (live_speed * delta) / maxf(_path_total, 0.001))
 				_place_rider(r)
 				if r["progress"] >= 1.0:
 					r["feeding"] = true
 		i -= 1
+	# ── #211 per-tick rule enforcement ────────────────────────────────────────
+	# These run AFTER the rider advance so the orientation timer, pairwise
+	# spacing, and occupancy heuristics see this tick's positions. Skip when
+	# already faulted — the latch holds until reset_faults() and we don't
+	# want to keep re-raising the same alarm every frame.
+	_tick_feeding_rules(delta)
+
+## #211a/#211b/#211c — per-tick enforcement of the three operator-spec feeding
+## rules. Returns early when already faulted (the latch holds until reset). Each
+## rule is independent: cross-wise bales each count down their own timer; the
+## spacing violation is a single belt-wide counter; the thermal grace is a
+## single belt-wide accumulator. They produce three distinct fault signals so
+## the HMI can tell the operator WHAT went wrong, not just THAT something did.
+func _tick_feeding_rules(delta: float) -> void:
+	if is_faulted():
+		return
+	# ── #211a — cross-wise rider timer ─────────────────────────────────────
+	for r in _riders:
+		if not bool(r.get("cross_wise", false)):
+			continue
+		r["cross_wise_t"] = float(r.get("cross_wise_t", JAM_TIMER_S)) - delta
+		if float(r["cross_wise_t"]) <= 0.0:
+			_raise_fault("belt_jam", _ALARM_BELT_JAM)
+			return   # one fault per tick — let the latch settle
+	# ── #211b — pairwise spacing along the path ────────────────────────────
+	# Sort a working copy by progress (riders advance asynchronously when
+	# feeding=true) and walk consecutive pairs. Anything tighter than
+	# MIN_SPACING_M counts as a violation for this tick; the per-belt counter
+	# trips after SPACING_VIOLATION_FRAMES of sustained crowding (~0.5s @ 60fps).
+	var sorted_riders : Array = _riders.duplicate()
+	sorted_riders.sort_custom(func(a, b): return float(a["progress"]) < float(b["progress"]))
+	var any_tight : bool = false
+	for k in range(1, sorted_riders.size()):
+		var prev_p : float = float(sorted_riders[k - 1]["progress"])
+		var next_p : float = float(sorted_riders[k]["progress"])
+		var gap_m : float = (next_p - prev_p) * _path_total
+		if gap_m < MIN_SPACING_M:
+			any_tight = true
+			break
+	if any_tight:
+		_spacing_violation_frames += 1
+		if _spacing_violation_frames > SPACING_VIOLATION_FRAMES:
+			_raise_fault("intake_overfill", _ALARM_INTAKE_OVERFILL)
+			return
+	else:
+		_spacing_violation_frames = 0
+	# ── #211c — sustained belt occupancy → thermal shutdown ────────────────
+	# rider_length defaults to BALE_LENGTH_M (1.4 m) so a single bale on a 6 m
+	# path counts as ~23% occupancy. Beyond MAX_BELT_OCCUPANCY for THERMAL_GRACE_S
+	# the drive overheats and trips. Path-length check guards against /0 on a
+	# zero-length belt (test scene with deck_length = incline_run = 0).
+	if _path_total > 0.01:
+		var total_len : float = 0.0
+		for r2 in _riders:
+			total_len += float(r2.get("rider_length", BALE_LENGTH_M))
+		var occupancy : float = total_len / _path_total
+		if occupancy > MAX_BELT_OCCUPANCY:
+			_thermal_grace_t += delta
+			if _thermal_grace_t >= THERMAL_GRACE_S:
+				_raise_fault("thermal_shutdown", _ALARM_THERMAL_SHUTDOWN)
+				return
+		else:
+			_thermal_grace_t = 0.0
 
 ## Position a rider bale along the path from its progress (0..1).
 func _place_rider(r: Dictionary) -> void:

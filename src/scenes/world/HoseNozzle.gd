@@ -288,16 +288,11 @@ func drop_in_place() -> void:
 
 func _build_ground_pickup_area() -> void:
 	_remove_ground_pickup_area()
-	_ground_pickup_area = Area3D.new()
-	_ground_pickup_area.name = "GroundPickup"
-	_ground_pickup_area.collision_mask = 1
-	var cs := CollisionShape3D.new()
-	var sp := SphereShape3D.new(); sp.radius = pickup_radius
-	cs.shape = sp
-	_ground_pickup_area.add_child(cs)
-	add_child(_ground_pickup_area)
-	_ground_pickup_area.body_entered.connect(_on_ground_player_entered)
-	_ground_pickup_area.body_exited.connect(_on_ground_player_exited)
+	_ground_pickup_area = InteractionTriggers.make_pickup_trigger(
+		self, pickup_radius,
+		_on_ground_player_entered,
+		_on_ground_player_exited,
+		"GroundPickup")
 
 func _remove_ground_pickup_area() -> void:
 	if _ground_pickup_area != null and is_instance_valid(_ground_pickup_area):

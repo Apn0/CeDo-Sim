@@ -20,6 +20,11 @@ var player_spawn   : Vector3 = Vector3.ZERO
 # multiple forklifts / bale clamps / Merlos / mast lifts.
 var vehicle_spawns : Dictionary = {}   # id → Array[Vector3]
 var line_starts    : Dictionary = {}   # id → Vector3
+# Optional marker for the visible compressor pair (compressor_a / compressor_b
+# placeables LineFlow spawns alongside the abstract air-network compressors).
+# Vector3.ZERO means "no marker placed" — LineFlow then falls back to a default
+# offset from player_spawn. TODO: hook WorldSetup UI for placing this marker.
+var compressor_spawn : Vector3 = Vector3.ZERO
 # Polygonal bale yards — each yard is a closed 4-corner polygon tagged with the
 # supplier whose bales stack there (BaleDefs ids: rotterdam / alba_marl / zwolle
 # / forstplus). Old single-rectangle format is discarded on load.
@@ -106,6 +111,7 @@ func clear() -> void:
 	player_spawn = Vector3.ZERO
 	vehicle_spawns.clear()
 	line_starts.clear()
+	compressor_spawn = Vector3.ZERO
 	bale_yards.clear()
 	# NB: structure_items is intentionally NOT cleared here. The building structure
 	# (walls/doors/gates/windows) belongs to the SITE — clearing markers in WorldSetup
@@ -119,6 +125,7 @@ func save() -> void:
 		"player_spawn":   _v3(player_spawn),
 		"vehicle_spawns": _dict_v3(vehicle_spawns),
 		"line_starts":    _dict_v3_single(line_starts),
+		"compressor_spawn": _v3(compressor_spawn),
 		"bale_yards":     _yards_to_json(),
 		"satellite": {
 			"center_rd_x": satellite_center_rd.x,
@@ -191,6 +198,9 @@ func _load() -> void:
 	# line); _read_dict_v3 wraps everything as arrays for vehicles, so we use a
 	# dedicated reader here.
 	line_starts    = _read_dict_v3_single(parsed.get("line_starts", {}))
+	# Optional visible-compressor marker (additive to the abstract air bank).
+	# Missing → Vector3.ZERO → LineFlow uses its default offset from player_spawn.
+	compressor_spawn = _read_v3(parsed.get("compressor_spawn", {}))
 	bale_yards     = _read_yards(parsed.get("bale_yards", []))
 	var sat = parsed.get("satellite", {})
 	if typeof(sat) == TYPE_DICTIONARY:
@@ -237,6 +247,7 @@ func _load() -> void:
 		print("[WorldLayout] Detected RD-scale coordinates — converting RD markers to local offsets (anchor %.0f, %.0f)" % [shift.x, shift.z])
 		player_spawn   = _localized(player_spawn, shift)
 		factory_center = _localized(factory_center, shift)
+		compressor_spawn = _localized(compressor_spawn, shift)
 		for k in vehicle_spawns.keys():
 			var arr : Array = vehicle_spawns[k]
 			var out : Array = []

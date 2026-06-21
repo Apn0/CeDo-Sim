@@ -66,6 +66,13 @@ var _player_spawn_pos : Vector3 = Vector3.ZERO
 var is_setup_mode : bool = false
 var setup_overlay : CanvasLayer = null
 
+# #218 — was this run a RESUMED save (vs a NEW game)? Captured BEFORE the
+# WorldLayout / setup-mode branches flip game_state.is_new_save to false on a
+# new run, so the first LineFlow.rebuild() in _spawn_world_items() can tell
+# resume-from-save (warm boot — preserve powered state) from new-game (cold
+# start — operator commissions the line via the HMI).
+var _is_resumed_save : bool = false
+
 # ── NPC catalogue ─────────────────────────────────────────────────────────────
 # #195 — NPC_DATA + the _spawn_npcs / _register_lifts_for_booking / get_npc /
 # get_all_npcs implementations live on NPCSpawner (src/scenes/world/NPCSpawner.gd).
@@ -96,6 +103,12 @@ func _ready() -> void:
 
 	if not shift_clock: push_error("[MainWorld] ShiftClock node missing")
 	if not game_state:  push_error("[MainWorld] GameState node missing")
+
+	# #218 — capture the resume-vs-new flag NOW, before _spawn_world_items() or
+	# the setup-mode branch flips is_new_save to false on a fresh world. Used by
+	# _spawn_world_items() to call line_flow.mark_warm_boot() ahead of the first
+	# rebuild() so a resumed save's PLC powered-state survives the topology pass.
+	_is_resumed_save = (game_state != null and not game_state.is_new_save)
 
 	var shell_loader := BuildingShellLoader.new(); add_child(shell_loader); shell_loader.setup(self, building_shell_path); shell_loader.load_shell_and_openings()
 	var player_spawner := PlayerSpawner.new(); add_child(player_spawner); player_spawner.setup(self); player = player_spawner.spawn()
@@ -136,6 +149,10 @@ func _ready() -> void:
 	# micro-stops). Machines push set_state/set_param to it.
 	scada = load("res://src/scenes/hud/ScadaDashboard.gd").new()
 	scada.name = "ScadaDashboard"
+	# #scada-discovery — group tag so ExtruderMachine + other scene controllers
+	# can find the dashboard via a single group lookup instead of walking the
+	# tree or being explicitly handed a reference.
+	scada.add_to_group("scada_dashboard")
 	add_child(scada)
 	# #52 — hand the dashboard to LineFlow so its tick pushes live line state +
 	# process params (amps / quality / melt temp / MFI / air pressure). LineFlow was
@@ -204,7 +221,13 @@ func _spawn_world_items() -> void:
 		bale_yard_manager.setup(self, shift_clock)
 
 	# Final LineFlow discovery pass — AFTER every machine exists.
+	# #218 — RESUMED save: flip the warm-boot flag BEFORE the first rebuild() so
+	# the PLC's powered/spin state survives the topology pass and the line keeps
+	# running. NEW games skip this on purpose — operator must commission the
+	# line via the HMI (cold start), matching real plant power-up procedure.
 	if line_flow:
+		if _is_resumed_save and line_flow.has_method("mark_warm_boot"):
+			line_flow.mark_warm_boot()
 		line_flow.rebuild()
 	# Crew manager ALWAYS spawns (even with an authoritative layout). It posts
 	# the 9 workers to whatever LineFlow machines exist (free-wander if none),

@@ -17,6 +17,16 @@ var target_position: Vector3 = Vector3.ZERO
 var is_walking: bool = false
 var wander_timer: float = 0.0
 
+# Walk-speed ramp (anti-snap audit). The horizontal velocity components target
+# `direction.normalized() * spd` while walking, or 0 while idle. Previously both
+# transitions snapped in one tick — start/stop popped the gait animation and
+# blended the locomotion BlendSpace2D discontinuously. SmoothedRate low-passes
+# the X/Z target with tau≈0.18 s → start/stop transitions over ~0.4 s, matching
+# the audit recommendation. Vertical (gravity, jump) stays direct.
+const _NPC_WALK_TAU_S : float = 0.18
+var _walk_x_smooth : SmoothedRate = null
+var _walk_z_smooth : SmoothedRate = null
+
 # ── #198 NPC autonomy task hook ─────────────────────────────────────────────
 # `npc_id` is the catalogue key (romain / pascal / abdellilah / ...). Set by
 # NPCSpawner when this NPC is instantiated. Used by NpcAutonomyBoard to look
@@ -267,6 +277,10 @@ func _ready() -> void:
 	_build_name_tag()
 	_install_nav_agent()
 	_install_locomotion_state_machine()
+	# Walk-speed ramp smoothers (anti-snap audit). Init to zero — fresh-spawned
+	# NPC is stationary, so the first walk frame ramps in over ~0.4 s.
+	_walk_x_smooth = SmoothedRate.new(0.0, _NPC_WALK_TAU_S)
+	_walk_z_smooth = SmoothedRate.new(0.0, _NPC_WALK_TAU_S)
 	# Defer so global_position is valid after the node fully enters the tree
 	call_deferred("_choose_random_wander_target")
 
@@ -356,6 +370,12 @@ func _build_name_tag() -> void:
 	add_child(tag)
 
 func _physics_process(delta: float) -> void:
+	# Defensive lazy-init for the walk-speed smoothers — _ready() builds them
+	# but test scenes / hand-instantiated bodies may bypass it. Cheap nil check.
+	if _walk_x_smooth == null:
+		_walk_x_smooth = SmoothedRate.new(0.0, _NPC_WALK_TAU_S)
+	if _walk_z_smooth == null:
+		_walk_z_smooth = SmoothedRate.new(0.0, _NPC_WALK_TAU_S)
 	# Vault/climb override (#cluster VAULT_CLIMB): while a mantle tween is
 	# active, we own the transform directly — gravity, walk, nav, jump all stand
 	# aside until we set the NPC down on top of the ledge.
@@ -441,13 +461,18 @@ func _physics_process(delta: float) -> void:
 		else:
 			direction = target_position - global_position
 		direction.y = 0
+		# Audit anti-snap: instead of writing current_velocity.x/.z directly, derive
+		# a target XZ vector and let the SmoothedRate pair below ramp the live
+		# velocity toward it (tau≈0.18 s → ~0.4 s start/stop). Vertical stays direct.
+		var target_x : float = 0.0
+		var target_z : float = 0.0
 		if direction.length_squared() > 0.0001:
 			direction = direction.normalized()
 			# Phase 2 (#146): apply per-state speed multiplier so crouching and
 			# prone-crawling actually look slow, jump preserves run pace.
 			var spd : float = walk_speed * float(_SPEED_MULT.get(locomotion, 1.0))
-			current_velocity.x = direction.x * spd
-			current_velocity.z = direction.z * spd
+			target_x = direction.x * spd
+			target_z = direction.z * spd
 			# Face the walk direction. CANONICAL CONVENTION: forward = local -Z,
 			# so we want -basis.z to point along `direction`. atan2(-x, -z) makes
 			# the body yaw so that its -Z axis aligns with the walk vector — the
@@ -455,17 +480,19 @@ func _physics_process(delta: float) -> void:
 			# leads motion. Previously this was atan2(x, z), which inverted the
 			# convention and made the body walk backwards relative to its face.
 			rotation.y = atan2(-direction.x, -direction.z)
-		else:
-			current_velocity.x = 0
-			current_velocity.z = 0
+		current_velocity.x = _walk_x_smooth.approach(target_x, delta)
+		current_velocity.z = _walk_z_smooth.approach(target_z, delta)
 	else:
-		current_velocity.x = 0
 		# #124 — arrived at post AND the operator specified a facing direction
 		# (HIER pin): snap rotation so the worker holds that orientation. Default
 		# stays NAN for everyone else so this is a no-op for the regular crew.
 		if not is_nan(home_facing_rad):
 			rotation.y = home_facing_rad
-		current_velocity.z = 0
+		# Audit anti-snap: idle still ramps to zero through the smoother — a
+		# walking NPC that arrives at a target glides to a stop over ~0.4 s
+		# instead of locking in one frame (which jerked the gait BlendSpace2D).
+		current_velocity.x = _walk_x_smooth.approach(0.0, delta)
+		current_velocity.z = _walk_z_smooth.approach(0.0, delta)
 
 	velocity = current_velocity
 	move_and_slide()
@@ -898,6 +925,11 @@ func _start_vault(dest_world: Vector3) -> void:
 		planar_dir = Vector3.ZERO
 	_vault_end = Vector3(dest_world.x, dest_world.y, dest_world.z) + planar_dir
 	current_velocity = Vector3.ZERO
+	# Audit anti-snap: sync the walk-speed smoothers to zero so when the vault
+	# completes and walk resumes, we ramp up from a stationary baseline rather
+	# than continuing the pre-vault gait velocity.
+	if _walk_x_smooth: _walk_x_smooth.snap_to(0.0)
+	if _walk_z_smooth: _walk_z_smooth.snap_to(0.0)
 	locomotion = Locomotion.VAULT
 
 ## Advance the vault tween. Lerps from _vault_start → _vault_end over
@@ -912,6 +944,10 @@ func _advance_vault(delta: float) -> void:
 		_vault_locked = false
 		_vault_timer = 0.0
 		current_velocity = Vector3.ZERO
+		# Audit anti-snap: keep the smoothers at zero on vault exit so the next
+		# walk frame ramps from a stationary baseline.
+		if _walk_x_smooth: _walk_x_smooth.snap_to(0.0)
+		if _walk_z_smooth: _walk_z_smooth.snap_to(0.0)
 		locomotion = Locomotion.WALK
 
 # =============================================================================

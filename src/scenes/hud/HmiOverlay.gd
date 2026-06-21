@@ -2,6 +2,8 @@ extends CanvasLayer
 class_name HmiOverlay
 
 const _SCOPES := preload("res://src/build/HmiScopes.gd")
+const _ZONE_PANEL := preload("res://src/scenes/hud/ExtruderZonePanel.gd")
+const _EREMA_FAULTS := preload("res://src/sim/EremaFaultRegistry.gd")
 
 ## Reconstruction of the real CeDo line PLC touchscreen.
 ##
@@ -24,6 +26,53 @@ const _SCOPES := preload("res://src/build/HmiScopes.gd")
 ## sets the station title and shows it; close returns the cursor to captured.
 
 enum Screen { HOOFDMENU, OVERZICHT, STORINGEN, HANDBEDIENING, MACHINES }
+
+# Signal emitted when a tile on the new HOOFDMENU grid is pressed.
+# Carries a scope_id string that open_subscope() can route to a panel.
+signal request_subscope(scope_id)
+
+# Storingen sub-tab routing.
+enum FaultTab { HISTORY, ACTIVE, ACKNOWLEDGE, SHIELD }
+
+# Sub-scope screen tile definitions for the new HOOFDMENU grid (#207b).
+# Two rows × five columns; nulls render as empty placeholders.
+const HOME_TILES := [
+	[
+		{"label": "Devicon",                 "scope_id": "devicon",             "icon": "D"},
+		{"label": "Material Feeding Unit",   "scope_id": "mfu",                 "icon": "M"},
+		{"label": "Extruder 1",              "scope_id": "extruder_1_blueport", "icon": "E"},
+		{"label": "Filter Unit 1",           "scope_id": "filter_unit_1",       "icon": "F1"},
+		{"label": "Complete Systems",        "scope_id": "complete_systems",    "icon": "CS"},
+	],
+	[
+		{"label": "Dryven Controller",       "scope_id": "drive_controller",    "icon": "DC"},
+		null,
+		null,
+		{"label": "Filter Unit 2",           "scope_id": "filter_unit_2",       "icon": "F2"},
+		null,
+	],
+]
+
+# Icon navbar items — replaces the 5 footer buttons (#207b). Each entry has:
+#   glyph : Unicode/text label shown on the button
+#   kind  : "close"   → triggers close_overlay
+#           "screen"  → switches to a built-in screen (set `screen`)
+#           "alarm"   → bell icon, badged by active-fault count
+#           "noop"    → reserved/placeholder (still tap-able, does nothing)
+const NAVBAR_ITEMS := [
+	{"glyph": "X",     "kind": "close",  "tip": "Sluiten"},
+	{"glyph": "GRID",  "kind": "screen", "screen": Screen.HOOFDMENU, "tip": "Hoofdmenu"},
+	{"glyph": "HOME",  "kind": "screen", "screen": Screen.OVERZICHT, "tip": "Overzicht"},
+	{"glyph": "BELL",  "kind": "alarm",  "tip": "Storingen"},
+	{"glyph": "FAV",   "kind": "noop",   "tip": "Favoriet"},
+	{"glyph": "EDIT",  "kind": "screen", "screen": Screen.HANDBEDIENING, "tip": "Handbediening"},
+	{"glyph": "TREND", "kind": "noop",   "tip": "Trend"},
+	{"glyph": "Rx",    "kind": "noop",   "tip": "Recept"},
+	{"glyph": "PWR",   "kind": "noop",   "tip": "Energie"},
+	{"glyph": "ECO",   "kind": "noop",   "tip": "Eco / save"},
+	{"glyph": "PLC",   "kind": "screen", "screen": Screen.MACHINES, "tip": "Machines"},
+	{"glyph": ">",     "kind": "noop",   "tip": "Start"},
+]
 
 # --- Plant colour scheme (Siemens-ish steel + signal lamps) -------------------
 const C_DIM        := Color(0.0, 0.0, 0.0, 0.62)
@@ -67,7 +116,7 @@ const STAGES := [
 	{"name": "ONTWATEREN",  "tokens": ["dewater"]},
 	{"name": "DROGEN",      "tokens": ["mech_dryer", "dryer", "droger", "centrifuge"]},
 	{"name": "MENGSILO",    "tokens": ["mengsilo", "mas_bak", "compactor", "silo"]},
-	{"name": "EXTRUDER",    "tokens": ["extruder", "intarema", "erema"]},
+	{"name": "EXTRUDER",    "tokens": ["extruder", "intarema", "erema", "pelletizer", "heetafslag"]},
 	{"name": "GRANULAAT",   "tokens": ["__sink__"]},
 ]
 
@@ -77,7 +126,7 @@ const SECTIONS := [
 	{"name": "SHREDDERS",    "tokens": ["shredder"]},
 	{"name": "WASLIJN",      "tokens": ["prewash", "friction", "intensive", "wash", "was", "flotation", "rotation", "kufferath", "rafter", "dewater", "sieve"]},
 	{"name": "MAS DROGERS",  "tokens": ["mech_dryer", "dryer", "droger", "centrifuge", "mas"]},
-	{"name": "EXTRUDER",     "tokens": ["extruder", "intarema", "erema", "mengsilo", "compactor", "silo"]},
+	{"name": "EXTRUDER",     "tokens": ["extruder", "intarema", "erema", "mengsilo", "compactor", "silo", "pelletizer", "heetafslag"]},
 	{"name": "WATER / ZSS",  "tokens": ["zss", "eop", "water", "tank", "pomp", "pump"]},
 ]
 
@@ -109,7 +158,27 @@ var _header_title : Label
 var _clock_lbl    : Label
 var _alarm_chip   : Label
 var _content      : MarginContainer
-var _nav_btns     : Dictionary = {}      # screen -> Button
+var _nav_btns     : Dictionary = {}      # screen -> Button (built-in screens still navigable)
+
+# Icon navbar (#207b) — built once, refreshed for the bell badge.
+var _navbar_btns      : Array = []        # all 12 Buttons in display order
+var _alarm_bell_btn   : Button = null     # the BELL button (bg flashes when faults > 0)
+var _alarm_bell_flash : float = 0.0       # 0..1 sin-driven flash amount
+
+# Fault timestamp + history (#207c).
+# Active fault scope -> first-seen tijd_s (s, in-game wall clock from Time.get_ticks_msec).
+var _fault_first_seen : Dictionary = {}
+# Ring buffer of every fault transition (cap 256). Each entry: {code, tijd_s, msg, state, suppressed}
+# state: "active" | "cleared". Most-recent at the END.
+var _fault_history : Array = []
+const FAULT_HISTORY_CAP : int = 256
+# User-suppressed fault codes (#207c — shield sub-tab).
+var _shielded_faults : Dictionary = {}
+# Currently selected sub-tab inside the STORINGEN screen.
+var _fault_tab : int = FaultTab.ACTIVE
+# Active sub-scope screen (#207d) — when set, hides _content's HOOFDMENU.
+var _subscope_node : Control = null
+var _subscope_id   : String = ""
 
 # --- Per-screen dynamic widgets (rebuilt on screen change) ---
 var _stage_tiles  : Array = []           # [{def, lamp:ColorRect, val:Label}]
@@ -214,14 +283,99 @@ func is_open() -> bool:
 	return visible
 
 func close_overlay() -> void:
+	# Closing the whole HMI also tears down any active sub-scope.
+	close_subscope()
 	visible = false
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+
+# =============================================================================
+# SUB-SCOPE ROUTING (#207d) — tile press on HOOFDMENU opens a per-scope screen
+# =============================================================================
+const _SUBSCOPE_SCRIPTS := {
+	"extruder_1_blueport": "res://src/scenes/hud/scopes/ExtruderBluPortScope.gd",
+	"filter_unit_1":       "res://src/scenes/hud/scopes/LaserFilterScope.gd",
+	"filter_unit_2":       "res://src/scenes/hud/scopes/LaserFilterScope.gd",
+	# The remaining tiles don't have a finished scope file yet — open_subscope()
+	# bails cleanly (returns false) so the operator stays on HOOFDMENU.
+	"devicon":             "",
+	"mfu":                 "",
+	"complete_systems":    "",
+	"drive_controller":    "",
+}
+
+## Mount a per-scope screen as a child of the bezel. Returns true on success.
+func open_subscope(scope_id: String) -> bool:
+	# Always tear down any previous sub-scope first — never stack.
+	close_subscope()
+	if not _SUBSCOPE_SCRIPTS.has(scope_id):
+		push_warning("[HmiOverlay] Unknown subscope id: %s" % scope_id)
+		return false
+	var script_path := String(_SUBSCOPE_SCRIPTS[scope_id])
+	if script_path == "":
+		# Placeholder tile (Devicon / MFU / Complete Systems / Drive Controller).
+		return false
+	if not ResourceLoader.exists(script_path):
+		push_warning("[HmiOverlay] Subscope script missing: %s" % script_path)
+		return false
+	var script := load(script_path)
+	if script == null:
+		return false
+	var inst : Object = script.new()
+	if not (inst is Control):
+		push_warning("[HmiOverlay] Subscope %s is not a Control" % scope_id)
+		return false
+	var ctrl := inst as Control
+	# Anchor full-rect over the bezel so the navbar/header still show through
+	# only if the subscope leaves gaps — most subscopes own the whole glass.
+	ctrl.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_bezel.add_child(ctrl)
+	_subscope_node = ctrl
+	_subscope_id = scope_id
+	# Hide the main content area while a sub-scope owns the glass.
+	if _content != null:
+		_content.visible = false
+	# Standard signal contract — every scope file emits request_close(); wire
+	# it back into close_subscope() so the X / Esc returns to HOOFDMENU.
+	if ctrl.has_signal("request_close"):
+		ctrl.connect("request_close", Callable(self, "close_subscope"))
+	# Best-effort context binding: ExtruderBluPortScope wants a line_id; the
+	# laser filter scopes want a filter_id. Probe via property name; if the
+	# property isn't there the assignment is a no-op (via `in` check).
+	if "line_id" in ctrl:
+		ctrl.set("line_id", _line_id_from_scope())
+	if "filter_id" in ctrl:
+		ctrl.set("filter_id", "MPF1" if scope_id == "filter_unit_1" else "MPF2")
+	return true
+
+func close_subscope() -> void:
+	if _subscope_node != null and is_instance_valid(_subscope_node):
+		_subscope_node.queue_free()
+	_subscope_node = null
+	_subscope_id = ""
+	if _content != null:
+		_content.visible = true
+
+# Best-effort: derive a Lijn id from the current scope's `lines` list. Returns
+# "1" / "3a" / "3c" / "6" etc., or the first entry if multiple — the subscope's
+# header just needs *a* tag.
+func _line_id_from_scope() -> String:
+	if _scope.is_empty():
+		return ""
+	var lines : Array = _scope.get("lines", [])
+	if lines.is_empty():
+		return ""
+	return String(lines[0])
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not visible:
 		return
 	if event.is_action_pressed("ui_cancel") or event.is_action_pressed("interact"):
-		close_overlay()
+		# #207d — a single Esc unwinds one level. If a sub-scope is mounted,
+		# Esc returns to the main HOOFDMENU; otherwise it closes the overlay.
+		if _subscope_node != null and is_instance_valid(_subscope_node):
+			close_subscope()
+		else:
+			close_overlay()
 		get_viewport().set_input_as_handled()
 
 func _process(delta: float) -> void:
@@ -320,27 +474,48 @@ func _build_chrome() -> void:
 	_content.add_theme_constant_override("margin_bottom", 14)
 	glass.add_child(_content)
 
-	# ---- Footer nav -------------------------------------------------------
+	# ---- Footer navbar (#207b) — 12-icon strip -----------------------------
 	var footer := PanelContainer.new()
-	footer.add_theme_stylebox_override("panel", _sb(C_HEADER, 6, 8))
+	footer.add_theme_stylebox_override("panel", _sb(C_HEADER, 6, 6))
 	outer.add_child(footer)
 	var frow := HBoxContainer.new()
-	frow.add_theme_constant_override("separation", 8)
+	frow.add_theme_constant_override("separation", 4)
 	footer.add_child(frow)
 	_nav_btns.clear()
-	frow.add_child(_nav_button("HOOFDMENU", Screen.HOOFDMENU))
-	frow.add_child(_nav_button("OVERZICHT", Screen.OVERZICHT))
-	frow.add_child(_nav_button("STORINGEN", Screen.STORINGEN))
-	frow.add_child(_nav_button("HANDBEDIENING", Screen.HANDBEDIENING))
-	frow.add_child(_nav_button("MACHINES", Screen.MACHINES))
-	var spacer := Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	frow.add_child(spacer)
-	var close_b := _flat_button("AFSLUITEN  ✕", Vector2(120, 42), Color(0.55, 0.20, 0.18, 1), Color.WHITE)
-	close_b.pressed.connect(close_overlay)
-	frow.add_child(close_b)
+	_navbar_btns.clear()
+	_alarm_bell_btn = null
+	for entry in NAVBAR_ITEMS:
+		var b := _build_navbar_item(entry as Dictionary)
+		frow.add_child(b)
+		_navbar_btns.append(b)
+
+func _build_navbar_item(entry: Dictionary) -> Button:
+	var kind := String(entry.get("kind", "noop"))
+	var glyph := String(entry.get("glyph", "?"))
+	var bg : Color = C_NAV
+	var fg : Color = Color(0.92, 0.95, 0.97, 1)
+	if kind == "close":
+		bg = Color(0.55, 0.20, 0.18, 1)
+	var b := _flat_button(glyph, Vector2(64, 42), bg, fg)
+	b.add_theme_font_size_override("font_size", 13)
+	b.tooltip_text = String(entry.get("tip", glyph))
+	match kind:
+		"close":
+			b.pressed.connect(close_overlay)
+		"screen":
+			var screen : int = int(entry["screen"])
+			b.pressed.connect(_show_screen.bind(screen))
+			_nav_btns[screen] = b
+		"alarm":
+			_alarm_bell_btn = b
+			b.pressed.connect(_show_screen.bind(Screen.STORINGEN))
+		"noop":
+			pass
+	return b
 
 func _nav_button(text: String, screen: int) -> Button:
+	# Retained for back-compat / tests that drive nav by screen id. The chrome no
+	# longer instantiates these, but headless callers can still ask for one.
 	var b := _flat_button(text, Vector2(150, 42), C_NAV, Color(0.92, 0.95, 0.97, 1))
 	b.pressed.connect(_show_screen.bind(screen))
 	_nav_btns[screen] = b
@@ -399,38 +574,88 @@ func _show_screen(screen: int) -> void:
 # SCREEN: HOOFDMENU — section dashboard
 # =============================================================================
 func _build_hoofdmenu() -> void:
+	# #207b — replace the previous 3-col SECTIONS dashboard with a 2-row × 5-col
+	# tile grid that routes each tile to a sub-scope screen via request_subscope.
+	# Existing built-in screens (OVERZICHT / STORINGEN / HANDBEDIENING / MACHINES)
+	# are still reachable from the icon navbar at the bottom.
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 12)
 	_content.add_child(v)
 
 	var h := Label.new()
-	h.text = "HOOFDMENU — kies een sectie"
+	h.text = "HOOFDMENU"
 	h.add_theme_font_size_override("font_size", 16)
 	h.add_theme_color_override("font_color", C_TEXT_DARK)
 	v.add_child(h)
 
 	var grid := GridContainer.new()
-	grid.columns = 3
-	grid.add_theme_constant_override("h_separation", 12)
-	grid.add_theme_constant_override("v_separation", 12)
+	grid.columns = 5
+	grid.add_theme_constant_override("h_separation", 10)
+	grid.add_theme_constant_override("v_separation", 10)
+	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	grid.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	v.add_child(grid)
 
-	# #165 — only render sections this physical HMI controls. Out-of-scope
-	# tiles are dropped entirely (NOT greyed-out, to keep the panel readable
-	# for the single-line HMIs that own only one section).
-	for s in SECTIONS:
-		if not _scope_has_tile(s["tokens"]):
-			continue
-		var tile := _section_tile(String(s["name"]))
-		tile["btn"].pressed.connect(_show_screen.bind(Screen.OVERZICHT))
-		grid.add_child(tile["btn"])
-		_section_tiles.append({"def": s, "lamp": tile["lamp"]})
-	if _section_tiles.is_empty():
-		var empty := Label.new()
-		empty.text = "(geen secties binnen het bereik van dit paneel)"
-		empty.add_theme_color_override("font_color", C_TEXT_DARK)
-		grid.add_child(empty)
+	for row in HOME_TILES:
+		for entry in row:
+			if entry == null:
+				grid.add_child(_home_tile_placeholder())
+			else:
+				grid.add_child(_home_tile(entry as Dictionary))
+
+func _home_tile(entry: Dictionary) -> Button:
+	var label_text := String(entry.get("label", "?"))
+	var scope_id := String(entry.get("scope_id", ""))
+	var icon_text := String(entry.get("icon", ""))
+	var btn := Button.new()
+	btn.custom_minimum_size = Vector2(150, 110)
+	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	btn.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var bg_idle  := Color(0.18, 0.20, 0.25, 1)
+	var bg_hover := Color(0.30, 0.55, 0.85, 1)
+	var bg_press := Color(0.22, 0.42, 0.70, 1)
+	btn.add_theme_stylebox_override("normal", _sb(bg_idle, 6, 4, C_TILE_EDGE, 1))
+	btn.add_theme_stylebox_override("hover",  _sb(bg_hover, 6, 4, C_TILE_EDGE, 1))
+	btn.add_theme_stylebox_override("pressed",_sb(bg_press, 6, 4, C_TILE_EDGE, 1))
+	btn.text = ""
+	var col := VBoxContainer.new()
+	col.alignment = BoxContainer.ALIGNMENT_CENTER
+	col.add_theme_constant_override("separation", 6)
+	col.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	btn.add_child(col)
+	var name_lbl := Label.new()
+	name_lbl.text = label_text
+	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_lbl.add_theme_font_size_override("font_size", 13)
+	name_lbl.add_theme_color_override("font_color", Color(0.92, 0.95, 0.97, 1))
+	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	name_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+	name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	col.add_child(name_lbl)
+	var icon_lbl := Label.new()
+	icon_lbl.text = icon_text
+	icon_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	icon_lbl.add_theme_font_size_override("font_size", 28)
+	icon_lbl.add_theme_color_override("font_color", Color(0.85, 0.90, 0.95, 1))
+	icon_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(icon_lbl)
+	btn.pressed.connect(_on_home_tile_pressed.bind(scope_id))
+	return btn
+
+func _home_tile_placeholder() -> Control:
+	var box := PanelContainer.new()
+	box.custom_minimum_size = Vector2(150, 110)
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.add_theme_stylebox_override("panel",
+		_sb(Color(0.14, 0.15, 0.18, 1), 6, 4, Color(0.22, 0.25, 0.30, 1), 1))
+	return box
+
+func _on_home_tile_pressed(scope_id: String) -> void:
+	emit_signal("request_subscope", scope_id)
+	if scope_id != "":
+		open_subscope(scope_id)
 
 func _section_tile(tile_name: String) -> Dictionary:
 	var btn := Button.new()
@@ -545,34 +770,83 @@ func _stage_tile(tile_name: String) -> Dictionary:
 # SCREEN: STORINGEN — active alarm list
 # =============================================================================
 func _build_storingen() -> void:
+	# #207c — 4 sub-tabs (history / active / acknowledge / shield) + 3-col table
+	# (Nr. | Tijd | Storingtabel). Active is default. Header chip stays static
+	# (alarm indicator moved to the navbar bell).
 	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 10)
+	v.add_theme_constant_override("separation", 8)
 	_content.add_child(v)
 
 	var h := Label.new()
-	h.text = "ACTIEVE STORINGEN"
+	h.text = "STORINGEN"
 	h.add_theme_font_size_override("font_size", 16)
 	h.add_theme_color_override("font_color", C_TEXT_DARK)
 	v.add_child(h)
+
+	# Sub-tab bar
+	var tabs := HBoxContainer.new()
+	tabs.add_theme_constant_override("separation", 4)
+	v.add_child(tabs)
+	tabs.add_child(_fault_tab_btn("clock history",     FaultTab.HISTORY))
+	tabs.add_child(_fault_tab_btn("warn active",       FaultTab.ACTIVE))
+	tabs.add_child(_fault_tab_btn("bell acknowledge",  FaultTab.ACKNOWLEDGE))
+	tabs.add_child(_fault_tab_btn("shield shield",     FaultTab.SHIELD))
+
+	# 3-col table header
+	var hdr := PanelContainer.new()
+	hdr.add_theme_stylebox_override("panel", _sb(Color(0.20, 0.27, 0.34, 1), 4, 4))
+	v.add_child(hdr)
+	var hdr_row := HBoxContainer.new()
+	hdr_row.add_theme_constant_override("separation", 6)
+	hdr.add_child(hdr_row)
+	_add_fault_col_header(hdr_row, "Nr.",          90,  HORIZONTAL_ALIGNMENT_RIGHT)
+	_add_fault_col_header(hdr_row, "Tijd",         110, HORIZONTAL_ALIGNMENT_CENTER)
+	_add_fault_col_header(hdr_row, "Storingtabel", 0,   HORIZONTAL_ALIGNMENT_LEFT)
 
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	v.add_child(scroll)
 	_fault_box = VBoxContainer.new()
-	_fault_box.add_theme_constant_override("separation", 6)
+	_fault_box.add_theme_constant_override("separation", 4)
 	_fault_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(_fault_box)
 
 	var ctrl := HBoxContainer.new()
 	ctrl.add_theme_constant_override("separation", 10)
 	v.add_child(ctrl)
-	var ack := _flat_button("KWITTEREN", Vector2(180, 50), Color(0.20, 0.40, 0.55, 1), Color.WHITE)
+	var ack := _flat_button("KWITTEREN", Vector2(180, 44), Color(0.20, 0.40, 0.55, 1), Color.WHITE)
 	ack.pressed.connect(_on_kwitteren)
 	ctrl.add_child(ack)
-	var reset := _flat_button("RESETTEN", Vector2(180, 50), Color(0.40, 0.42, 0.45, 1), Color.WHITE)
+	var reset := _flat_button("RESETTEN", Vector2(180, 44), Color(0.40, 0.42, 0.45, 1), Color.WHITE)
 	reset.pressed.connect(_on_reset_faults)
 	ctrl.add_child(reset)
+
+func _fault_tab_btn(text: String, tab: int) -> Button:
+	var active := (tab == _fault_tab)
+	var bg := C_NAV_SEL if active else C_NAV
+	var b := _flat_button(text, Vector2(140, 32), bg, Color.WHITE)
+	b.add_theme_font_size_override("font_size", 12)
+	b.pressed.connect(_on_fault_tab_picked.bind(tab))
+	return b
+
+func _on_fault_tab_picked(tab: int) -> void:
+	_fault_tab = tab
+	# Rebuild only the storingen screen — keep navbar + chrome intact.
+	if _screen == Screen.STORINGEN:
+		_show_screen(Screen.STORINGEN)
+
+func _add_fault_col_header(row: HBoxContainer, text: String, min_w: int, align: int) -> void:
+	var lbl := Label.new()
+	lbl.text = text
+	lbl.add_theme_font_size_override("font_size", 13)
+	lbl.add_theme_color_override("font_color", Color(0.92, 0.95, 0.97, 1))
+	lbl.horizontal_alignment = align
+	if min_w > 0:
+		lbl.custom_minimum_size = Vector2(min_w, 0)
+	else:
+		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(lbl)
 
 # =============================================================================
 # SCREEN: HANDBEDIENING — per-section manual run/stop
@@ -669,12 +943,15 @@ func _refresh() -> void:
 	for f in faults:
 		if not _acked_faults.has(String(f["code"])):
 			unacked += 1
+	# #207c — header chip is now a small static text label; the live alarm
+	# indicator lives on the navbar bell (CHANGE A).
 	if faults.is_empty():
-		_alarm_chip.text = "● GEEN STORING"
-		_alarm_chip.add_theme_color_override("font_color", Color(0.6, 0.95, 0.6, 1))
+		_alarm_chip.text = "geen storing"
+		_alarm_chip.add_theme_color_override("font_color", Color(0.55, 0.78, 0.55, 1))
 	else:
-		_alarm_chip.text = "▲ %d STORING%s" % [faults.size(), "EN" if faults.size() != 1 else ""]
-		_alarm_chip.add_theme_color_override("font_color", Color(1.0, 0.55, 0.45, 1) if unacked > 0 else C_AMBER)
+		_alarm_chip.text = "%d storing%s" % [faults.size(), "en" if faults.size() != 1 else ""]
+		_alarm_chip.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85, 1))
+	_refresh_alarm_bell(faults.size(), unacked)
 
 	match _screen:
 		Screen.HOOFDMENU:     _refresh_hoofdmenu(faults)
@@ -682,6 +959,32 @@ func _refresh() -> void:
 		Screen.STORINGEN:     _refresh_storingen(faults)
 		Screen.HANDBEDIENING: _refresh_handbediening()
 		Screen.MACHINES:      _refresh_machines()
+
+# #207b/207c — recolour the navbar BELL when faults are active. Red + animated
+# flash when any fault is un-acked; amber + steady when all are acked; default
+# nav blue when the active list is empty.
+func _refresh_alarm_bell(total: int, unacked: int) -> void:
+	if _alarm_bell_btn == null:
+		return
+	var bg : Color
+	if total == 0:
+		_alarm_bell_flash = 0.0
+		bg = C_NAV
+		_alarm_bell_btn.text = "BELL"
+	elif unacked > 0:
+		# Pulse between red and brightened red so the bell visibly draws the eye.
+		var phase := fmod(Time.get_ticks_msec() / 1000.0 * 2.0, TAU)
+		var t : float = 0.5 + 0.5 * sin(phase)
+		_alarm_bell_flash = t
+		bg = LAMP_FAULT.lerp(Color(1.0, 0.40, 0.30, 1), t)
+		_alarm_bell_btn.text = "BELL %d" % total
+	else:
+		_alarm_bell_flash = 0.0
+		bg = LAMP_IDLE
+		_alarm_bell_btn.text = "BELL %d" % total
+	_alarm_bell_btn.add_theme_stylebox_override("normal", _sb(bg, 4, 6))
+	_alarm_bell_btn.add_theme_stylebox_override("hover", _sb(bg.lightened(0.10), 4, 6))
+	_alarm_bell_btn.add_theme_stylebox_override("pressed", _sb(bg.darkened(0.15), 4, 6))
 
 func _refresh_hoofdmenu(faults: Array) -> void:
 	for t in _section_tiles:
@@ -724,38 +1027,142 @@ func _refresh_storingen(faults: Array) -> void:
 		return
 	for c in _fault_box.get_children():
 		c.queue_free()
-	if faults.is_empty():
+	# #207c — pick the row set per sub-tab. Always render the same 3-column table.
+	var rows : Array = _rows_for_tab(faults)
+	if rows.is_empty():
 		var ok := Label.new()
-		ok.text = "Geen actieve storingen."
-		ok.add_theme_font_size_override("font_size", 15)
-		ok.add_theme_color_override("font_color", Color(0.13, 0.42, 0.16, 1))
+		ok.text = "Geen invoeren in deze weergave."
+		ok.add_theme_font_size_override("font_size", 14)
+		ok.add_theme_color_override("font_color", C_TEXT_DARK)
 		_fault_box.add_child(ok)
 		return
-	for f in faults:
-		var acked := _acked_faults.has(String(f["code"]))
-		var line := PanelContainer.new()
-		var bg := Color(0.93, 0.86, 0.62, 1) if acked else Color(0.95, 0.74, 0.70, 1)
-		line.add_theme_stylebox_override("panel", _sb(bg, 4, 0, Color(0.5, 0.3, 0.25, 1), 1))
-		var hr := HBoxContainer.new()
-		hr.add_theme_constant_override("separation", 10)
-		line.add_child(hr)
-		var dot := Label.new()
-		dot.text = "✓" if acked else "▲"
-		dot.add_theme_color_override("font_color", Color(0.3, 0.5, 0.2, 1) if acked else Color(0.7, 0.15, 0.1, 1))
-		dot.add_theme_font_size_override("font_size", 16)
-		hr.add_child(dot)
-		var code := Label.new()
-		code.text = String(f["code"])
-		code.add_theme_font_size_override("font_size", 13)
-		code.add_theme_color_override("font_color", Color(0.3, 0.25, 0.2, 1))
-		code.custom_minimum_size = Vector2(70, 0)
-		hr.add_child(code)
-		var txt := Label.new()
-		txt.text = String(f["text"]) + ("   (gekwiteerd)" if acked else "")
-		txt.add_theme_font_size_override("font_size", 14)
-		txt.add_theme_color_override("font_color", C_TEXT_DARK)
-		hr.add_child(txt)
+	for entry in rows:
+		var line := _build_fault_row(entry as Dictionary)
 		_fault_box.add_child(line)
+
+# Build one of the 3-col fault rows from a uniform dict:
+#   {code, tijd_s, msg, state, suppressed, acked}
+func _build_fault_row(f: Dictionary) -> PanelContainer:
+	var acked := bool(f.get("acked", false))
+	var suppressed := bool(f.get("suppressed", false))
+	var state := String(f.get("state", "active"))
+	var bg : Color
+	if suppressed:
+		bg = Color(0.78, 0.78, 0.82, 1)
+	elif state == "cleared":
+		bg = Color(0.86, 0.90, 0.86, 1)
+	elif acked:
+		bg = Color(0.93, 0.86, 0.62, 1)
+	else:
+		bg = Color(0.95, 0.74, 0.70, 1)
+	var line := PanelContainer.new()
+	line.add_theme_stylebox_override("panel", _sb(bg, 4, 4, Color(0.5, 0.3, 0.25, 1), 1))
+	var hr := HBoxContainer.new()
+	hr.add_theme_constant_override("separation", 6)
+	line.add_child(hr)
+	var code := Label.new()
+	code.text = String(f.get("code", ""))
+	code.add_theme_font_size_override("font_size", 13)
+	code.add_theme_color_override("font_color", Color(0.3, 0.25, 0.2, 1))
+	code.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	code.custom_minimum_size = Vector2(90, 0)
+	hr.add_child(code)
+	var tijd := Label.new()
+	tijd.text = _format_tijd(float(f.get("tijd_s", 0.0)))
+	tijd.add_theme_font_size_override("font_size", 13)
+	tijd.add_theme_color_override("font_color", C_TEXT_DARK)
+	tijd.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	tijd.custom_minimum_size = Vector2(110, 0)
+	hr.add_child(tijd)
+	var txt := Label.new()
+	var msg := String(f.get("msg", ""))
+	if suppressed:
+		msg = "[shield] %s" % msg
+	elif acked:
+		msg = "%s   (gekwiteerd)" % msg
+	elif state == "cleared":
+		msg = "%s   (hersteld)" % msg
+	txt.text = msg
+	txt.add_theme_font_size_override("font_size", 13)
+	txt.add_theme_color_override("font_color", C_TEXT_DARK)
+	txt.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	txt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hr.add_child(txt)
+	return line
+
+# Format a tijd_s (seconds since boot) as HH:MM:SS for the storingen table.
+func _format_tijd(tijd_s: float) -> String:
+	var ts := int(max(tijd_s, 0.0))
+	var hh := (ts / 3600) % 100
+	var mm := (ts / 60) % 60
+	var ss := ts % 60
+	return "%02d:%02d:%02d" % [hh, mm, ss]
+
+# Compose the active row set for the chosen sub-tab.
+func _rows_for_tab(active_faults: Array) -> Array:
+	var rows : Array = []
+	match _fault_tab:
+		FaultTab.ACTIVE:
+			for f in active_faults:
+				var code := String(f.get("code", ""))
+				if _shielded_faults.has(code):
+					continue
+				if _acked_faults.has(code):
+					continue
+				rows.append({
+					"code": code,
+					"tijd_s": _fault_first_seen.get(code, 0.0),
+					"msg": String(f.get("text", "")),
+					"state": "active",
+					"suppressed": false,
+					"acked": false,
+				})
+		FaultTab.ACKNOWLEDGE:
+			# Recently acknowledged — uses the history ring + ack table.
+			var seen := {}
+			for i in range(_fault_history.size() - 1, -1, -1):
+				var h : Dictionary = _fault_history[i]
+				var code := String(h.get("code", ""))
+				if seen.has(code):
+					continue
+				if not _acked_faults.has(code):
+					continue
+				seen[code] = true
+				rows.append({
+					"code": code,
+					"tijd_s": h.get("tijd_s", 0.0),
+					"msg": String(h.get("msg", "")),
+					"state": String(h.get("state", "active")),
+					"suppressed": bool(h.get("suppressed", false)),
+					"acked": true,
+				})
+				if rows.size() >= 50:
+					break
+		FaultTab.HISTORY:
+			# Full ring buffer (newest first).
+			for i in range(_fault_history.size() - 1, -1, -1):
+				var h : Dictionary = _fault_history[i]
+				var code := String(h.get("code", ""))
+				rows.append({
+					"code": code,
+					"tijd_s": h.get("tijd_s", 0.0),
+					"msg": String(h.get("msg", "")),
+					"state": String(h.get("state", "active")),
+					"suppressed": bool(h.get("suppressed", false)),
+					"acked": _acked_faults.has(code),
+				})
+		FaultTab.SHIELD:
+			for code_v in _shielded_faults.keys():
+				var code := String(code_v)
+				rows.append({
+					"code": code,
+					"tijd_s": _fault_first_seen.get(code, 0.0),
+					"msg": String(_shielded_faults[code_v]),
+					"state": "shielded",
+					"suppressed": true,
+					"acked": _acked_faults.has(code),
+				})
+	return rows
 
 func _refresh_handbediening() -> void:
 	for r in _manual_rows:
@@ -1008,6 +1415,7 @@ func _compute_faults() -> Array:
 	var out : Array = []
 	if _line_flow == null:
 		out.append({"code": "PLC-000", "text": "Geen lijn-PLC gekoppeld in deze scene", "scope": ""})
+		_record_fault_transitions(out)
 		return out
 	# --- operating state ---------------------------------------------------
 	if _feed_on() and _no_feed_secs > 3.0:
@@ -1048,7 +1456,66 @@ func _compute_faults() -> Array:
 		out.append({"code": "QUA-400",
 			"text": "Granulaatkwaliteit %.0f/100 onder norm (min %d)" % [q, int(QUALITY_MIN)],
 			"scope": "__sink__"})
+
+	# 5) EREMA canonical fault labels (from operator-style HMI emulator).
+	# Walks every extruder_machine in the scene, asks the registry for live
+	# trip detections and appends them in the standard {code, text, scope} form.
+	for em in get_tree().get_nodes_in_group("extruder_machine"):
+		var model : Object = null
+		if "model" in em and em.model != null:
+			model = em.model
+		var line_id : String = ""
+		if "line_id" in em:
+			line_id = String(em.line_id)
+		for f in _EREMA_FAULTS.detect_active(model):
+			out.append({
+				"code":  "EREMA-%04d" % int(f.get("nr", 0)),
+				"text":  String(f.get("msg", "")),
+				"scope": "extruder" if line_id.is_empty() else "extruder_" + line_id,
+			})
+	# #207c — persistent tijd_s + ring buffer of fault transitions.
+	_record_fault_transitions(out)
 	return out
+
+# Tags each active fault with its first-seen tijd_s (seconds since boot), pushes
+# new-active / new-cleared transitions onto the ring buffer (cap 256).
+func _record_fault_transitions(active: Array) -> void:
+	var now_s := float(Time.get_ticks_msec()) / 1000.0
+	var active_codes := {}
+	for f in active:
+		var code := String(f.get("code", ""))
+		active_codes[code] = true
+		if not _fault_first_seen.has(code):
+			_fault_first_seen[code] = now_s
+			_push_fault_history({
+				"code": code,
+				"tijd_s": now_s,
+				"msg": String(f.get("text", "")),
+				"state": "active",
+				"suppressed": _shielded_faults.has(code),
+			})
+		# Stamp tijd_s on the entry so consumers (rows builder, refresh) can read it.
+		f["tijd_s"] = float(_fault_first_seen.get(code, now_s))
+	# Detect transitions to cleared: drop the first-seen on the way out so a
+	# future re-trip carries a fresh tijd_s.
+	for code_v in _fault_first_seen.keys():
+		var code := String(code_v)
+		if active_codes.has(code):
+			continue
+		# Was active last tick, now gone — record the clear and forget the timestamp.
+		_push_fault_history({
+			"code": code,
+			"tijd_s": now_s,
+			"msg": "Hersteld",
+			"state": "cleared",
+			"suppressed": _shielded_faults.has(code),
+		})
+		_fault_first_seen.erase(code)
+
+func _push_fault_history(entry: Dictionary) -> void:
+	_fault_history.append(entry)
+	while _fault_history.size() > FAULT_HISTORY_CAP:
+		_fault_history.pop_front()
 
 # =============================================================================
 # HELPERS
@@ -1309,10 +1776,47 @@ func _build_machine_detail() -> void:
 			float(comps[cname]), float(info.get("rate", 0.0)), float(info.get("spin", 0.0)))
 		_machines_detail_vb.add_child(row)
 
+	# Extruder-only: append the 7-zone temperature setpoint panel bound to this
+	# line's ExtruderModel. Operator can drop individual zones to keep paper /
+	# cellulose contamination from burning at the screw (the matrix's "Drop
+	# Zone Temps" lever) — the model's motor_torque_pct climbs in response,
+	# eventually feeding lumps into the laser filter or tripping FAULT.
+	if String(info["id"]).begins_with("extruder"):
+		var ex_model := _find_extruder_model_for(String(info["id"]))
+		if ex_model != null:
+			var sep := HSeparator.new()
+			_machines_detail_vb.add_child(sep)
+			var zone_panel := _ZONE_PANEL.new()
+			zone_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			_machines_detail_vb.add_child(zone_panel)
+			zone_panel.bind(ex_model)
+
 	# Spacer at the bottom so the panel reads cleanly.
 	var sp := Control.new()
 	sp.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_machines_detail_vb.add_child(sp)
+
+## Resolve the ExtruderModel powering the LineFlow node `machine_id`. The id
+## convention from the catalog is `extruder_<line>` (e.g. "extruder_3a"); the
+## scene controller carries the line tag on `config_resource.line_id`. We walk
+## the "extruder_machine" group (joined by ExtruderMachine._ready) and match
+## case-insensitively against that line tag. Returns null when no controller
+## with a matching line is currently in the scene — caller skips the panel.
+func _find_extruder_model_for(machine_id: String) -> Object:
+	var prefix := "extruder_"
+	if not machine_id.begins_with(prefix):
+		return null
+	var want := machine_id.substr(prefix.length()).to_lower()
+	for em in get_tree().get_nodes_in_group("extruder_machine"):
+		if em == null or not is_instance_valid(em):
+			continue
+		var cfg = em.get("config_resource")
+		if cfg == null:
+			continue
+		var line_id := String(cfg.get("line_id")).to_lower()
+		if line_id == want:
+			return em.get("model")
+	return null
 
 func _md_make_rpm_row(label_text: String, comp_key: String, pct: float, _design_rate: float, _spin: float) -> Control:
 	var row := HBoxContainer.new()

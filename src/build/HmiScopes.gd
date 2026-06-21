@@ -69,12 +69,16 @@ const SCOPES := {
 		"tokens": ["shredder_1", "shredder1"],
 	},
 	# ── 3. Shredder 2, Lines 3A/3B ────────────────────────────────────────
+	# panel_type = "relay" — non-touchscreen 3-position key switch cabinet
+	# (#207h). Hmi.gd branches on this field at open time to load
+	# ShredderRelayPanel.gd instead of the touchscreen HmiOverlay.
 	"hmi_shredder2_l3ab": {
 		"label":  "Shredder 2 lijn 3A/3B",
 		"mesh":   "hmi_panel",
 		"color":  Color(0.30, 0.32, 0.36),
 		"lines":  ["3a", "3b"],
 		"tokens": ["shredder_2", "shredder2"],
+		"panel_type": "relay",
 	},
 	# ── 4. Shredder Lines 3C/6 ────────────────────────────────────────────
 	"hmi_shredder_l3c6": {
@@ -93,6 +97,7 @@ const SCOPES := {
 		"tokens": [
 			"bunker", "sga", "ballistic", "wind_sifter",
 			"titech", "tomra", "trilzeef", "metal_belt", "sorteer",
+			"bale_feed", "opzetband", "invoer",
 		],
 	},
 	# ── 6. Transportation belts 3A/3B ─────────────────────────────────────
@@ -104,6 +109,7 @@ const SCOPES := {
 		"tokens": [
 			"conveyor", "transport_belt", "transportband",
 			"opvoer", "inclined_belt", "belt_", "switch_belt",
+			"bale_feed", "opzetband", "invoer",
 		],
 	},
 	# ── 7. Transportation belts 3C/6 ──────────────────────────────────────
@@ -115,6 +121,7 @@ const SCOPES := {
 		"tokens": [
 			"conveyor", "transport_belt", "transportband",
 			"belt_", "compactorband",
+			"bale_feed", "opzetband", "invoer",
 		],
 	},
 	# ── 8. Washing lines 1 / 3A / 3B / 3C / 6 (one HMI, all lines) ────────
@@ -141,6 +148,8 @@ const SCOPES := {
 			"mengsilo", "mas_bak", "silo", "compactor",
 			"heetafslag", "kopfilter", "vacuum_degas",
 			"weegschaal", "voorraad_silo",
+			"pelletizer", "die_face",
+			"vacuum_unit", "vacuum_cabinet",
 		],
 	},
 	# ── 10. Water 3C / 6 ──────────────────────────────────────────────────

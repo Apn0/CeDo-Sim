@@ -9,6 +9,8 @@ class_name FordStreetka
 const MODEL_PATH := "res://assets/models/ford_ka_2003/ford_ka.glb"
 
 func _ready() -> void:
+	# Ford Streetka — same 44 kW small hatch engine as the Ka. Softer accel (5.0 m/s²).
+	throttle_accel_mps2 = 5.0
 	super._ready()
 	vehicle_type    = "ford_streetka"
 	speed_limit_kmh = 60.0
@@ -23,4 +25,9 @@ func _ready() -> void:
 	# Black paint — Pascal's car.
 	_paint_color    = Color(0.05, 0.05, 0.06)
 	_real_world_length_m = 3.62   # Ford Streetka = Ka chassis = 3.62 m
+	# Inherits the same GLB as FordKa2003. F10 feedback 20260621 showed it
+	# spawning pitched ~90° nose-down — the FBX/GLB exports Y-up and Godot
+	# expects Z-up, so a -90° X-rotation rights it. Keep this in sync with
+	# FordKa2003.gd which shares the asset.
+	_model_pitch_correction_deg = -90.0
 	load_model()

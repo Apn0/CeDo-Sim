@@ -9,19 +9,22 @@ class_name WorldFrame
 # `_layout_*` helpers that every exterior subsystem uses to rotate and anchor
 # building-local offsets into world space.
 # =============================================================================
-# CANONICAL: the bale yards drive every exterior orientation. Their yaw is
-# derived from the OPERATOR-DRAWN polygon's longest edge in WORLD space —
-# `atan2(u_axis.x, u_axis.z)`. That's the rotation the operator can SEE in
-# WorldSetup against the satellite overlay; it is the ground truth.
+# CANONICAL: `WorldLayout.floor_plan_rot_deg` — the floor-plan PDF rotation
+# slider in WorldSetup's right panel — drives every exterior orientation.
+# fence / parking / road network / road markings / crosswalk / sidewalk /
+# trees / power poles / street signs / transformer / neighbour buildings /
+# overhead bay lights / line_starts / vehicle spawns / NPC posts all align
+# to it.
 #
-# Every other exterior subsystem (fence, parking, road network, road markings,
-# crosswalk, sidewalk, trees, power poles, street signs, transformer, neighbour
-# buildings, overhead bay lights) now wraps that same yaw through
-# `Basis(Vector3.UP, _world_yaw())` before adding any local-frame offset to
-# the anchor. The old `_building_yaw()` helper (ShellMesh-AABB long-edge in
-# shell-local space) is kept ONLY as the fallback when no bale yards exist
-# in the layout — the operator's perception drives the canonical yaw, the
-# mesh AABB is the last resort.
+# That slider is the ONE rotation knob the operator owns: they tune it
+# visually until the PDF lays correctly on the satellite. Making it canonical
+# means tuning the slider tunes the entire game world's orientation, period.
+# Earlier attempts (bale-yard longest-edge derivation, shell-AABB derivation)
+# both moved the world out from under the operator without their input.
+#
+# Fallback: when floor_plan_rot_deg is 0 (operator hasn't touched it),
+# `_compute_building_yaw()` derives a sensible default from the shell mesh
+# AABB so a fresh save still aligns.
 
 # Reference back to MainWorld for _shell / _layout_rel_sane / _sort_corners_ccw
 # / _player_spawn_pos / _get_factory_anchor / _on_floor and the layout summary
@@ -47,15 +50,19 @@ func setup(world: Node) -> void:
 # WORLD YAW — canonical rotation convention (WORLD cluster fix)
 # =============================================================================
 
-## Bale-yard-derived principal yaw — the canonical rotation for every
-## exterior subsystem. Tracks the building's true world orientation as the
-## operator perceives it.
+## Floor-plan-PDF-rotation-derived principal yaw — the canonical rotation for
+## every exterior subsystem. Tracks the operator's calibrated PDF rotation
+## slider in WorldSetup. Falls back to shell-AABB when the slider is at 0
+## (operator hasn't tuned the PDF yet).
 func _world_yaw() -> float:
 	if not is_nan(_world_yaw_cache):
 		return _world_yaw_cache
 	_world_yaw_cache = _compute_world_yaw()
-	print("[WorldFrame] world_yaw = %.1f deg (canonical / bale-yard-derived)" \
-		% rad_to_deg(_world_yaw_cache))
+	var src : String = "floor_plan_rot_deg" \
+		if absf(WorldLayout.floor_plan_rot_deg) > 0.01 \
+		else "shell-AABB fallback (operator: tune the Floor plan Rotation slider)"
+	print("[WorldFrame] world_yaw = %.1f deg (canonical / %s)" \
+		% [rad_to_deg(_world_yaw_cache), src])
 	return _world_yaw_cache
 
 ## Walk the first authoritative bale-yard polygon, find its longest edge,
@@ -72,42 +79,36 @@ func _world_yaw() -> float:
 ## basis only rotates the edge — but we WANT the layout-frame edge direction
 ## here, so skipping the rotation IS the correct measurement, not a workaround.
 func _compute_world_yaw() -> float:
-	if WorldLayout.bale_yards.is_empty():
-		return _compute_building_yaw()
-	for y in WorldLayout.bale_yards:
-		var data : Dictionary = y
-		var raw_corners : Array = data.get("corners", [])
-		if raw_corners.size() < 3:
-			continue
-		# Sanity-check each corner, flatten Y, sort CCW. NO `_layout_to_scene`
-		# — see recursion note above.
-		var corners : Array = []
-		var corrupt := false
-		for c in raw_corners:
-			if not (c is Vector3) or not _world.call("_layout_rel_sane", c):
-				corrupt = true
-				break
-			corners.append(Vector3((c as Vector3).x, 0.0, (c as Vector3).z))
-		if corrupt:
-			continue
-		corners = _world.call("_sort_corners_ccw", corners)
-		var le_a : Vector3 = corners[0]; var le_b : Vector3 = corners[0]
-		var le_len_sq : float = 0.0
-		for i in corners.size():
-			var ca : Vector3 = corners[i]
-			var cb : Vector3 = corners[(i + 1) % corners.size()]
-			var dd : float = (cb - ca).length_squared()
-			if dd > le_len_sq:
-				le_len_sq = dd; le_a = ca; le_b = cb
-		var u_axis : Vector3 = le_b - le_a
-		u_axis.y = 0.0
-		if u_axis.length_squared() < 0.001:
-			continue
-		u_axis = u_axis.normalized()
-		if not u_axis.is_finite():
-			continue
-		return atan2(u_axis.x, u_axis.z)
-	# Every yard polygon was degenerate or corrupt — fall back.
+	# CANONICAL: the floor-plan PDF's calibrated rotation drives world yaw.
+	# That slider in WorldSetup (right panel → Floor plan → Rotation) is the
+	# operator's EXPLICIT statement of "this is how the building is oriented
+	# relative to north" — they aligned the PDF on the satellite by eye. Every
+	# exterior subsystem rotates to match it, and the bale-yard polygons /
+	# building-shell AABB / lat-lon overrides no longer steer global rotation
+	# behind the operator's back.
+	#
+	# History: bale-yard-derived yaw made everything rotate ~139° away from
+	# the building shell if the operator drew yards on the satellite (which
+	# they always did). Shell-AABB-derived yaw was identity-pinned to whatever
+	# the .obj's bake happened to be, which the operator can't tune.
+	# floor_plan_rot_deg is the one number the operator owns and can SEE —
+	# making it canonical removes the surprise.
+	#
+	# Convention: the floor_plan slider rotates the PDF around +Y, same axis
+	# as world_yaw, so the value transfers directly in radians. If the apparent
+	# rotation goes the wrong way at runtime, negate the return below — that
+	# tunes one sign for the whole project.
+	if absf(WorldLayout.floor_plan_rot_deg) > 0.01:
+		# Sign-flip: the operator-tuned `floor_plan_rot_deg` rotates the PDF
+		# CLOCKWISE (top-down view), while world_yaw is consumed as a
+		# Basis(Vector3.UP, …) which rotates CCW around +Y. The two
+		# conventions are mirrored, so the raw slider value lands the world
+		# at the 180°-mirror of where the operator drew. Negating bridges
+		# them — now the slider rotates the world the same direction the
+		# PDF visually rotates.
+		return -deg_to_rad(WorldLayout.floor_plan_rot_deg)
+	# Operator hasn't calibrated the floor plan yet — fall back to building
+	# shell AABB so a fresh save still produces a sensible alignment.
 	return _compute_building_yaw()
 
 # Legacy ShellMesh-AABB helper. Now used ONLY as the fallback path inside

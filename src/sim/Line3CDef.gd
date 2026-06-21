@@ -65,8 +65,11 @@ const STAGES : Array = [
 	{"code": "L3C.11",  "name": "Flotatietank",           "id": "flotation_tank_wide",  "amps": 0.0},
 	{"code": "L3C.12",  "name": "Transportschroef",       "id": "transport_screw", "amps": 2.52},
 	{"code": "L3C.13",  "name": "Frictiescheider L-R",    "id": "friction_sep",    "amps": 24.68},
-	{"code": "L3C.14L", "name": "Mechanische droger L",   "id": "mech_dryer",      "amps": 70.80},
-	{"code": "L3C.14R", "name": "Mechanische droger R",   "id": "mech_dryer",      "amps": 63.51},
+	# pair_id="dryer_pair" — LineFlow's MechDryerCycle controller groups L3C.14L/R
+	# under this key and routes 100% of upstream flake to whichever drum is
+	# currently in the BEFULLEN step (antiphase batch cycle, ~30s drying soak).
+	{"code": "L3C.14L", "name": "Mechanische droger L",   "id": "mech_dryer",      "amps": 70.80, "pair_id": "dryer_pair", "pair_side": "L"},
+	{"code": "L3C.14R", "name": "Mechanische droger R",   "id": "mech_dryer",      "amps": 63.51, "pair_id": "dryer_pair", "pair_side": "R"},
 	{"code": "L3C.15",  "name": "Transportventilator",    "id": "blower",          "amps": 0.0},
 	{"code": "L3C.16",  "name": "Plasmaq",                "id": "plasmaq",         "amps": 0.0},
 	{"code": "L3C.18",  "name": "Extruder Silo",          "id": "silo",            "amps": 0.0},
@@ -138,3 +141,20 @@ static func order_of(code: String) -> int:
 		if STAGES[i]["code"] == code:
 			return i
 	return -1
+
+## #99 — pair_id for a stage code ("" if the stage isn't part of a paired group).
+## L3C.14L/R both return "dryer_pair", which lets LineFlow route 100% of upstream
+## flow to whichever drum is currently in the BEFULLEN step.
+static func pair_id_for(code: String) -> String:
+	for s in STAGES:
+		if String(s["code"]) == code:
+			return String(s.get("pair_id", ""))
+	return ""
+
+## #99 — pair_side for a stage code ("L"/"R", or "" if not paired). Lets the
+## router know which slot of a pair this stage occupies without scanning twice.
+static func pair_side_for(code: String) -> String:
+	for s in STAGES:
+		if String(s["code"]) == code:
+			return String(s.get("pair_side", ""))
+	return ""

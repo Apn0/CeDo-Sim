@@ -1584,33 +1584,38 @@ func _refresh_auto_info(lbl: Label = null) -> void:
 	var rd : Vector2 = c["rd"]
 	node.text = "Auto-centre: %s\nRD (%.0f, %.0f)" % [c["label"], rd.x, rd.y]
 
-## Pick the RD centre for the satellite tile and the ground quad position.
-## Priority: explicit lat/lon override > PLAYER SPAWN marker > building shell AABB.
+## The satellite tile's centre is the FACTORY CENTER marker. Period.
 ##
-## player_spawn IS the canonical XZ reference for everything in WorldSetup —
-## the satellite tile is centred on wherever the operator's spawn point is.
-## If the marker hasn't been placed yet (Vector3.ZERO), we fall back to the
-## building shell so the first-Fetch experience still shows the plant.
+## Previously a priority chain (lat/lon override > player_spawn > building
+## shell AABB) silently picked whatever was available, which meant the
+## operator could place factory_center and the satellite would still land
+## somewhere else — the building-shell AABB centre, usually nowhere near
+## what the operator meant. The fix: factory_center is the single source of
+## truth. If it's not set, we tell the operator to set it; we do NOT fall
+## back to "best guess" centres that move the tile somewhere random.
+##
+## The only fallback is the building shell, used when factory_center has
+## never been placed (fresh save) — so the first Fetch shows the plant. Once
+## the operator clicks Factory Center even ONCE, that pin owns the tile.
 func _satellite_center() -> Dictionary:
-	# 1) Manual override wins.
-	var override_lat : float = float(lat_input.text) if lat_input else 0.0
-	var override_lon : float = float(lon_input.text) if lon_input else 0.0
-	if absf(override_lat) > 0.01 and absf(override_lon) > 0.01:
-		var rd_o := _wgs84_to_rd(override_lat, override_lon)
-		# RD x → world x, RD y → world -z (Godot right-handed).
-		return {"rd": rd_o, "world": Vector3(rd_o.x, 0.0, -rd_o.y), "label": "override (%.5f, %.5f)" % [override_lat, override_lon]}
-	# 2) Player-spawn marker — only if it's still in REAL RD scale (~1e5). After the
-	# layout is localized to a local frame, player_spawn is small and is NOT a valid
-	# geographic centre, so we skip it and use the building's true RD instead.
-	if absf(WorldLayout.player_spawn.x) > 10000.0 or absf(WorldLayout.player_spawn.z) > 10000.0:
-		var ps : Vector3 = WorldLayout.player_spawn
-		return {"rd": Vector2(ps.x, -ps.z), "world": Vector3(ps.x, 0.0, ps.z), "label": "player spawn (RD)"}
-	# 3) Building shell — fetch RD from the model's TRUE baked geometry centre (the
-	# plant's real Dutch RD location), but park the quad at the LOCAL shell centre
-	# (the model is shifted to the origin for display). Using shell_center for the RD
-	# after that shift would fetch RD (0,0) — an empty white tile, the bug reported.
+	var fc : Vector3 = WorldLayout.factory_center
+	if fc != Vector3.ZERO:
+		# Two sub-cases — both pin the satellite to the factory_center marker.
+		# a) Still in REAL RD scale (~1e5): the marker IS a valid Dutch coord.
+		if absf(fc.x) > 10000.0 or absf(fc.z) > 10000.0:
+			return {"rd": Vector2(fc.x, -fc.z), "world": Vector3(fc.x, 0.0, fc.z), "label": "factory center (RD)"}
+		# b) Already localized to a small frame: combine the marker's local XZ
+		# with the building's TRUE baked RD so the WMS query asks for the right
+		# patch of Dutch ground, and park the local quad where the operator
+		# placed the marker.
+		var rd_base : Vector3 = _shell_rd_center if _shell_rd_center != Vector3.ZERO else shell_center
+		var rd_fc : Vector2 = Vector2(rd_base.x + fc.x, -(rd_base.z + fc.z))
+		return {"rd": rd_fc, "world": Vector3(fc.x, 0.0, fc.z), "label": "factory center"}
+	# No factory_center placed yet — first-time fetch shows the building so
+	# the operator can place the marker on top of the right spot. After they
+	# place it, every subsequent fetch follows the marker.
 	var rd_src : Vector3 = _shell_rd_center if _shell_rd_center != Vector3.ZERO else shell_center
-	return {"rd": Vector2(rd_src.x, -rd_src.z), "world": Vector3(shell_center.x, 0.0, shell_center.z), "label": "building shell"}
+	return {"rd": Vector2(rd_src.x, -rd_src.z), "world": Vector3(shell_center.x, 0.0, shell_center.z), "label": "building shell (place Factory center to override)"}
 
 func _on_fetch_satellite() -> void:
 	var extent_m : float = float(extent_input.text) if extent_input else float(DEFAULT_EXTENT_M)

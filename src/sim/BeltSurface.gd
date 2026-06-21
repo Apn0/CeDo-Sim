@@ -29,6 +29,24 @@ extends StaticBody3D
 ## from a mis-read of the macro; restored here.)
 var belt_speed_mps : float = 0.0
 
+# ── #214 belt-speed ramp (induction motor coast-down model) ──────────────────
+# Real plant belts NEVER snap between full carry speed and zero — the motor
+# coasts to a stop over a few seconds, and rigid bodies sitting on the slats
+# decelerate with it instead of getting magically un-stuck. We model this with
+# a first-order low-pass between the commanded setpoint (`belt_speed_mps`,
+# written by upstream PLC / ShredderFeedBelt / LineFlow) and the actual surface
+# drag (`_smoothed_belt_speed`). `constant_linear_velocity` is driven from the
+# smoothed value, so a bale being carried sees the speed decay naturally rather
+# than freezing in place the instant the belt is told to stop.
+#
+# `belt_ramp_tau_s` is the time-constant. The default 1.5 s matches a typical
+# light transport belt; heavy intake belts (Shredder Feed, C3 climb) tag
+# themselves with 2.5 s via meta("belt_ramp_tau_s") in _ready(). Callers that
+# need to snap (E-stop, test scaffolding) can write `_smoothed_belt_speed`
+# directly or call snap_to_setpoint().
+var belt_ramp_tau_s : float = 1.5
+var _smoothed_belt_speed : float = 0.0
+
 # ── Audit item 6 — belt-to-belt projectile receiver zones ────────────────────
 # Calibrated belt-to-belt aim lands material inside a SAFE_ZONE of ±0.15 m
 # along the receiver's local Z (no jitter — this models the operator-calibrated
@@ -50,9 +68,40 @@ func _ready() -> void:
 		safe_zone_m = float(get_meta("safe_zone_m"))
 	if has_meta("spread_zone_m"):
 		spread_zone_m = float(get_meta("spread_zone_m"))
+	# #214 — per-belt ramp tau override. PlaceableCatalog tags heavy intake belts
+	# (Shredder Feed, C3 climb) with a longer tau so they coast down slower.
+	if has_meta("belt_ramp_tau_s"):
+		belt_ramp_tau_s = maxf(0.01, float(get_meta("belt_ramp_tau_s")))
+	# Start the smoothed value at the configured setpoint so spawn-time belts
+	# (built running at carry speed) don't visibly ramp up from zero the first
+	# frame after _ready(). Run-state control (ShredderFeedBelt) commands
+	# belt_speed_mps=0 explicitly to ramp DOWN; that's the path we want smoothed.
+	_smoothed_belt_speed = belt_speed_mps
 
-func _physics_process(_delta: float) -> void:
-	constant_linear_velocity = global_transform.basis.z.normalized() * belt_speed_mps
+func _physics_process(delta: float) -> void:
+	# Ramp the actual surface drag toward the commanded setpoint via a first-order
+	# low-pass. tau_s ≈ 1.5 s for normal belts, ≈ 2.5 s for heavy intake belts —
+	# real induction motors with loaded slat conveyors coast down over a few
+	# seconds rather than slamming to a stop. Callers that need an emergency
+	# instant cut can call snap_to_setpoint() to bypass the ramp.
+	if delta > 0.0 and belt_ramp_tau_s > 0.0001:
+		var k : float = 1.0 - exp(-delta / belt_ramp_tau_s)
+		_smoothed_belt_speed += (belt_speed_mps - _smoothed_belt_speed) * k
+	else:
+		_smoothed_belt_speed = belt_speed_mps
+	constant_linear_velocity = global_transform.basis.z.normalized() * _smoothed_belt_speed
+
+## Live (ramped) belt speed in m/s. Callers that want to drive their own physics
+## (rider-bale advance, player carry, etc.) off the actual moving speed of the
+## slats should read this, NOT belt_speed_mps (which is the commanded setpoint).
+func current_belt_speed_mps() -> float:
+	return _smoothed_belt_speed
+
+## E-stop / test escape hatch — instantly aligns the ramped value with the
+## commanded setpoint, bypassing the low-pass. Use sparingly; production callers
+## should let the ramp run.
+func snap_to_setpoint() -> void:
+	_smoothed_belt_speed = belt_speed_mps
 
 # ── Projectile arc helper ────────────────────────────────────────────────────
 ## Compute where a piece of material discharged at `exit_world` with horizontal

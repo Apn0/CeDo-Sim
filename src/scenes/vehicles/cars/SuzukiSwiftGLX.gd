@@ -74,6 +74,8 @@ var _player_node                : Node = null
 
 # =============================================================================
 func _ready() -> void:
+	# Suzuki Swift GLX 1998 — 50 kW small hatch, softer accel per the audit (5.0 m/s²).
+	throttle_accel_mps2 = 5.0
 	super._ready()
 	vehicle_type = "suzuki_swift_glx"
 	# Default tuning for a small 90s hatch.

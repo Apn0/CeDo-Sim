@@ -351,7 +351,7 @@ static func _apply_process(pr: Dictionary, id: String) -> void:
 		# ── dryers: drive off the bulk of the moisture ────────────────────────
 		"mech_dryer":
 			pr["process"] = "dry"
-			pr["water_remove"] = 0.70
+			pr["water_remove"] = _mech_dryer_water_remove()
 		"centrifuge":
 			pr["process"] = "dry"
 			pr["water_remove"] = 0.80   # spin dryer — very effective
@@ -416,3 +416,29 @@ static func _apply_process(pr: Dictionary, id: String) -> void:
 			pr["contam_remove"] = 0.20
 		"mengsilo":
 			pr["process"] = "buffer"
+
+# ── mech_dryer model registry (#99) ──────────────────────────────────────
+# Plug a MechDryerModel in via attach_mech_dryer_model(id, model). When the
+# id is "mech_dryer" we look up the FIRST attached model and let its
+# (temp_c vs setpoint_c) gap drive the water_remove fraction. Without an
+# attached model we fall back to the historical constant 0.70.
+static var _mech_dryer_models : Dictionary = {}
+
+static func attach_mech_dryer_model(key: String, model) -> void:
+	_mech_dryer_models[key] = model
+
+static func detach_mech_dryer_model(key: String) -> void:
+	_mech_dryer_models.erase(key)
+
+static func _mech_dryer_water_remove() -> float:
+	if _mech_dryer_models.is_empty():
+		return 0.70
+	for key in _mech_dryer_models.keys():
+		var m = _mech_dryer_models[key]
+		if m == null:
+			continue
+		var gap : float = m.temp_c - m.setpoint_c
+		var eff : float = clampf(0.70 + gap * 0.01, 0.10, 0.95)
+		var residual_factor : float = clampf(m.residual_moisture_pct / 100.0, 0.0, 1.0)
+		return eff * residual_factor
+	return 0.70

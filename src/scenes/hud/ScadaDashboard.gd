@@ -135,6 +135,28 @@ func set_param(key: String, value: float, nominal_low: float, nominal_high: floa
 	if is_inside_tree():
 		_refresh_param(key)
 
+## Push a live STRING-valued process param. Same row layout as set_param but
+## displays a text (e.g. fault_reason) instead of a float. is_alarming colours
+## the value chip in alarm red regardless of band semantics. Used for status
+## strings like "vacuum_lid_pushed_open" / "motor_torque_trip" that don't fit
+## a numeric band.
+func set_text_param(key: String, text: String, is_alarming: bool = false, label: String = "") -> void:
+	var rec : Dictionary = _params.get(key, {})
+	rec["text"] = text
+	rec["text_alarm"] = is_alarming
+	# Carry sentinel numeric so is_param_alarming() still works on the same key
+	# (matches the alarm flag the caller passed in).
+	rec["value"] = 1.0 if is_alarming else 0.0
+	rec["lo"] = 0.0
+	rec["hi"] = 0.5
+	if label != "":
+		rec["label"] = label
+	elif not rec.has("label"):
+		rec["label"] = key
+	_params[key] = rec
+	if is_inside_tree():
+		_refresh_param(key)
+
 ## True when `key`'s last value sits outside its nominal band.
 func is_param_alarming(key: String) -> bool:
 	if not _params.has(key):
@@ -311,6 +333,16 @@ func _refresh_param(key: String) -> void:
 	var name_lbl : Label = widgets["name_lbl"]
 	var value_lbl : Label = widgets["value_lbl"]
 	name_lbl.text = String(data.get("label", key))
+	# Text-valued param branch (status strings — see set_text_param).
+	if data.has("text"):
+		var t : String = String(data["text"])
+		value_lbl.text = t if t != "" else "—"
+		var alarm : bool = bool(data.get("text_alarm", false))
+		if alarm:
+			value_lbl.add_theme_color_override("font_color", COL_ALARM_HI)
+		else:
+			value_lbl.add_theme_color_override("font_color", COL_GREY_TEXT)
+		return
 	var v : float = data["value"]
 	value_lbl.text = _fmt(v)
 	# ISA-101: nominal stays grey; only a band breach earns colour.
