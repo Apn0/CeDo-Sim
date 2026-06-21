@@ -31,8 +31,8 @@ func _ready() -> void:
 ## Desktop again — that keeps the secret in user-only writable space and prevents
 ## accidental commits.
 func _bootstrap_from_env() -> void:
-	var env_path : String = "C:/Users/arnod/Desktop/.env"
-	if not FileAccess.file_exists(env_path):
+	var env_path : String = _desktop_env_path()
+	if env_path.is_empty() or not FileAccess.file_exists(env_path):
 		return
 	var f := FileAccess.open(env_path, FileAccess.READ)
 	if f == null:
@@ -56,6 +56,22 @@ func _bootstrap_from_env() -> void:
 	if wrote:
 		_cfg.save(CFG_PATH)
 		print("[ApiKeys] Bootstrapped API keys from Desktop .env into ", CFG_PATH)
+
+## Resolve "<operator's Desktop>/.env" without hardcoding a machine-specific
+## path. Uses the OS-reported Desktop dir (cross-platform, no embedded
+## username), falling back to the home dir via USERPROFILE (Windows) or HOME
+## (macOS/Linux). Returns "" when no home can be determined — caller skips the
+## bootstrap and the cfg simply stays empty (graceful no-cloud fallback).
+func _desktop_env_path() -> String:
+	var desktop : String = OS.get_system_dir(OS.SYSTEM_DIR_DESKTOP)
+	if desktop.is_empty():
+		var home : String = OS.get_environment("USERPROFILE")
+		if home.is_empty():
+			home = OS.get_environment("HOME")
+		if home.is_empty():
+			return ""
+		desktop = home.path_join("Desktop")
+	return desktop.path_join(".env")
 
 ## Google Cloud API key (used for Speech-to-Text + Text-to-Speech). Empty
 ## string means the cfg is missing or the key wasn't found — caller MUST
