@@ -1,2 +1,9 @@
 .godot/
 assets/
+
+# Editor + scratch temp files (some were committed by accident; see audit)
+*.tmp
+/tmp_layout.json
+/tmp_save.json
+/nan_scan_tmp.gd
+/nan_scan_tmp.gd.uid
