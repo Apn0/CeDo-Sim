@@ -57,6 +57,12 @@ const DEFAULT_WHISPER_MODEL: String = "user://tools/whisper/models/ggml-small.en
 const DEFAULT_LLAMA_MODEL  : String = "user://tools/llama/models/llama-3b.gguf"
 const DEFAULT_PIPER_VOICE  : String = "user://tools/piper/voices/en_US-amy-medium.onnx"
 
+# Allowlist root for everything handed to OS.execute. The whisper / llama / piper
+# binaries all live under user://tools/ by default; _exec_tool refuses to run
+# anything that resolves outside this directory, so a tampered or imported
+# voice_paths.cfg cannot redirect the exec at an arbitrary binary (local RCE).
+const TOOLS_ROOT : String = "user://tools/"
+
 # Cloud (OpenAI) endpoints.
 const OPENAI_STT_URL  : String = "https://api.openai.com/v1/audio/transcriptions"
 const OPENAI_CHAT_URL : String = "https://api.openai.com/v1/chat/completions"
@@ -271,7 +277,7 @@ func _speak_local(text: String, voice_id: String) -> AudioStream:
 		"--output_file", ProjectSettings.globalize_path(wav_path),
 		"--input_file", ProjectSettings.globalize_path(prompt_path),
 	]
-	var exit := OS.execute(ProjectSettings.globalize_path(piper), args, output, true)
+	var exit := _exec_tool(piper, args, output)
 	if exit != 0:
 		_log_clear("Piper exit=%d (text-only fallback). Install piper at %s and a voice model." % [exit, piper])
 		return null
@@ -303,7 +309,7 @@ func _reason_local(prompt: String, system: String) -> String:
 		"-n", "120",
 		"--no-display-prompt",
 	]
-	var exit := OS.execute(ProjectSettings.globalize_path(llama), args, output, true)
+	var exit := _exec_tool(llama, args, output)
 	if exit != 0:
 		_log_clear("llama.cpp exit=%d (mock fallback)." % exit)
 		return ""
@@ -332,7 +338,7 @@ func _transcribe_local(wav_path: String) -> String:
 		"-otxt", "-of", ProjectSettings.globalize_path(wav_path) + ".out",
 		"--no-prints",
 	]
-	var exit := OS.execute(ProjectSettings.globalize_path(whisper), args, output, true)
+	var exit := _exec_tool(whisper, args, output)
 	if exit != 0:
 		_log_clear("whisper.cpp exit=%d (text-only fallback)." % exit)
 		return ""
@@ -473,6 +479,30 @@ func _binary_present(path: String, label: String) -> bool:
 		return true
 	_log_clear("%s binary not found at %s — install the local tool or switch to cloud/mock backend." % [label, path])
 	return false
+
+## True when `path` resolves to a location inside TOOLS_ROOT after globalizing
+## and collapsing any ./ or ../ segments. Gates OS.execute so a configured tool
+## path can't escape the tools dir — e.g. an absolute C:/Windows/System32/cmd.exe
+## or a user://tools/../../payload.exe traversal. Fails closed: an empty or
+## unresolved path returns false.
+func _is_trusted_tool_path(path: String) -> bool:
+	if path.strip_edges() == "":
+		return false
+	var root := ProjectSettings.globalize_path(TOOLS_ROOT).simplify_path()
+	if not root.ends_with("/"):
+		root += "/"
+	var abs_path := ProjectSettings.globalize_path(path).simplify_path()
+	return abs_path.begins_with(root)
+
+## OS.execute gated by the TOOLS_ROOT allowlist. Returns the child exit code, or
+## -1 when `tool_path` is refused for resolving outside the allowlist. Callers
+## already treat any non-zero exit as "degrade to mock / text-only fallback", so
+## a refusal is a safe no-op rather than a hard failure.
+func _exec_tool(tool_path: String, args: Array, output: Array) -> int:
+	if not _is_trusted_tool_path(tool_path):
+		_log_clear("refusing to exec '%s' — outside the %s allowlist (check voice_paths.cfg)." % [tool_path, TOOLS_ROOT])
+		return -1
+	return OS.execute(ProjectSettings.globalize_path(tool_path), args, output, true)
 
 func _openai_key() -> String:
 	var ak := get_node_or_null("/root/ApiKeys")
