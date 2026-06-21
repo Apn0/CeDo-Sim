@@ -8,6 +8,14 @@ extends Node
 ##
 ## Register as autoload "ApiKeys".
 ##
+## Security note: keys are stored in PLAINTEXT at rest in user://api_keys.cfg
+## (and read from a plaintext .env on first run). That directory is user-only
+## writable and lives outside the repo, but any process running as the operator
+## can read it. This is an accepted tradeoff for a single-user desktop game. If
+## the threat model ever grows to include local malware or shared machines, move
+## the secret into the OS keychain / credential manager instead of a flat
+## ConfigFile.
+##
 ## Usage:
 ##   var key := ApiKeys.google()
 ##   if key.is_empty():
