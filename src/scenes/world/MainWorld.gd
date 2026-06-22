@@ -663,20 +663,29 @@ func _spawn_road_and_parking() -> void:
 	# Wide exterior ground plane around the anchor so the player can walk
 	# outside the building without falling into void.
 	_spawn_exterior_ground(anchor, ground_y)
-	# Parking lot — 25 m local-west, 8 m local-north of the spawn. The local
-	# offset is rotated through `by` so the lot lands beside the building's
-	# south face regardless of shell yaw; the parking node's own yaw is set
-	# to `by` so its internal local-X (bay rows) × local-Z (length) align
-	# with the building wall.
-	const PARKING_OFFSET := Vector3(-25.0, 0.0, 8.0)
-	var parking_world : Vector3 = basis_y * PARKING_OFFSET
+	# Parking lot — 25 m local-west, 8 m local-north of the building centre.
+	# #221-PC Phase 3 — the offset is now a PC coord (475, 508), i.e. 25 m west
+	# + 8 m south of factory centre PC(500,500). Plant.pc_to_scene_with_y applies
+	# the same `Basis(UP, world_yaw) * (offset)` math as before, anchored on
+	# scene_origin (which equals _get_factory_anchor()), so spawn position is
+	# bit-for-bit identical with the legacy `anchor + basis_y * PARKING_OFFSET`
+	# composition. (Phase 5 will replace this constant with a WorldSetup-author
+	# marker so the operator can drag the lot on the satellite.)
+	const PARKING_PC := Vector2(475.0, 508.0)
 	staff_parking = preload("res://src/scenes/world/StaffParking.gd").new()
 	staff_parking.name = "StaffParking"
 	add_child(staff_parking)
-	staff_parking.global_position = Vector3(
-		anchor.x + parking_world.x,
-		ground_y + 0.02,
-		anchor.z + parking_world.z)
+	if has_node("/root/Plant") and Plant.is_initialized():
+		# Y stays at the legacy `ground_y + 0.02 = anchor.y - 0.98` — parking
+		# surface is NOT pinned to floor_top_y. pc_to_scene_with_y respects that.
+		staff_parking.global_position = Plant.pc_to_scene_with_y(PARKING_PC, ground_y + 0.02)
+	else:
+		# Legacy fallback — exact pre-Phase-3 math.
+		var parking_world : Vector3 = basis_y * Vector3(PARKING_PC.x - 500.0, 0.0, PARKING_PC.y - 500.0)
+		staff_parking.global_position = Vector3(
+			anchor.x + parking_world.x,
+			ground_y + 0.02,
+			anchor.z + parking_world.z)
 	staff_parking.rotation.y = by
 	_spawn_parking_lamps(staff_parking, ground_y)
 	# Road — De Asselen Kuil — runs along the building's local west edge
