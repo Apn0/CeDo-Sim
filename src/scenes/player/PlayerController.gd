@@ -52,7 +52,6 @@ const CLIMB_MAX_HEIGHT      : float = 1.4   # ceiling on ledges we can mantle ov
 const CLIMB_DURATION        : float = 0.5   # seconds to lerp from start pose to top
 const CLIMB_FORWARD_DIST    : float = 1.2   # how far forward we land on top of the ledge
 const CLIMB_FORWARD_RAY_LEN : float = 0.9
-# TODO: real climb animation goes through AnimationTree once Phase 1 lands.
 enum VaultState { NONE, CLIMBING }
 var _vault_state    : int     = VaultState.NONE
 var _vault_timer    : float   = 0.0
@@ -573,7 +572,6 @@ func _try_start_vault(wish_dir: Vector3) -> bool:
 ## over CLIMB_DURATION seconds, then releases control back to normal walking.
 ## Input is implicitly disabled because _physics_process early-returns while
 ## _vault_state == CLIMBING (gravity, WASD, jump, step-up all skipped).
-## TODO: real climb animation goes through AnimationTree once Phase 1 lands.
 func _advance_vault(delta: float) -> void:
 	_vault_timer += delta
 	var t := clampf(_vault_timer / CLIMB_DURATION, 0.0, 1.0)
@@ -616,8 +614,6 @@ var _flashlight : SpotLight3D = null
 # GauntletWorld AFTER the controller's _ready, so we resolve lazily).
 # TODO Phase 2: feed BlendSpace2D Y axis with strafe (wish_dir decomposed
 # into local right vs forward). For Phase 1 we keep Y at 0.
-# TODO Phase 3: state-machine (walk → climb / vault / portofoon raise)
-# replaces the BlendSpace2D once Mixamo clips are wired.
 var _anim_tree : AnimationTree = null
 const _ANIM_RUN_SPEED_PLAYER : float = 10.0   # m/s mapped to BlendSpace X=2
 

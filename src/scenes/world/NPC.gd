@@ -231,8 +231,6 @@ var _ray_step      : RayCast3D = null
 # back to idle when stationary. See Humanoid._install_skeleton_rig().
 # TODO Phase 2: feed the BlendSpace2D Y axis with strafe (velocity decomposed
 # into local right vs facing direction). For Phase 1 we keep Y at 0.
-# TODO Phase 3: state-machine (walk → climb / vault / push / portofoon raise)
-# replaces the bare BlendSpace2D once Mixamo clips are wired.
 var _anim_tree     : AnimationTree = null
 const _ANIM_RUN_SPEED_NPC : float = 4.0    # m/s that maps to BlendSpace X=2 (run)
 

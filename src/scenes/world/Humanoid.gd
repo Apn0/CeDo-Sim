@@ -658,8 +658,6 @@ static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -
 	# BoneAttachment3D nodes preserves the FP-vs-mirror render-layer behaviour.
 	#
 	# TODO Phase 2: steering + hose + portofoon attachment slots, foot-IK pass.
-	# TODO Phase 3: Mixamo import path (load .glb skeleton + animations instead
-	# of authoring them procedurally).
 	_install_skeleton_rig(root)
 
 	return root
