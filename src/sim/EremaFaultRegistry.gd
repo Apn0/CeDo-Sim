@@ -50,18 +50,13 @@ static func detect_active(extruder_model : Object) -> Array:
 	elif extruder_model.has_method("is_motor_overloaded") and extruder_model.is_motor_overloaded():
 		out.append(F_MOTOR_E1_OVERLOAD)
 
-	# Vacuum pump failure — VACUUM_ALARM state on the model (field is `state`)
-	if "state" in extruder_model:
-		var st : int = int(extruder_model.state)
-		# State.VACUUM_ALARM is index 5 after STARTING/STOPPING were added; we
-		# don't hard-code that — match the enum by name via the State dictionary.
-		var enum_dict : Dictionary = extruder_model.get("State", {}) if extruder_model.has_method("get") else {}
-		# `State` is exposed as an enum constant on the script, not as a Dictionary,
-		# so the runtime lookup above will fail silently — fall back to comparing
-		# the `get_state_name()` accessor which is part of ExtruderModel's API.
-		if extruder_model.has_method("get_state_name"):
-			if String(extruder_model.get_state_name()) == "VACUUM_ALARM":
-				out.append(F_VACUUM_PUMP_FAIL)
+	# Vacuum pump failure — VACUUM_ALARM state on the model. The State enum's
+	# integer index shifted when STARTING/STOPPING were inserted, so we never
+	# hard-code it — match by NAME via the public get_state_name() accessor
+	# (part of ExtruderModel's API, returns State.keys()[state]).
+	if extruder_model.has_method("get_state_name"):
+		if String(extruder_model.get_state_name()) == "VACUUM_ALARM":
+			out.append(F_VACUUM_PUMP_FAIL)
 
 	# Melt-temp high
 	var setpt : float = 230.0

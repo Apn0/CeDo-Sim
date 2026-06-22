@@ -445,7 +445,9 @@ func _tick_starting(delta: float, _inputs: Dictionary, events: Array[String]) ->
 	var nominal := config.screw_rpm_nominal
 	var idle    := config.screw_rpm_idle
 	# Linear ramp: per-tick step keeps consumers (e.g. RotatingMechanism) smooth.
-	var step := (nominal - idle) * (delta / max(0.01, START_RAMP_S))
+	# Explicit `: float` + maxf (the float-typed variant) so the walrus inference
+	# doesn't fall back to Variant on the `max(float, float)` overload.
+	var step : float = (nominal - idle) * (delta / maxf(0.01, START_RAMP_S))
 	screw_rpm = clampf(screw_rpm + step, idle, nominal)
 	# Throughput scales with rpm fraction.
 	var rpm_frac : float = clampf(screw_rpm / max(nominal, 1.0), 0.0, 1.0)
