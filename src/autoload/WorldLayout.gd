@@ -30,6 +30,14 @@ var compressor_spawn : Vector3 = Vector3.ZERO
 # / forstplus). Old single-rectangle format is discarded on load.
 var bale_yards     : Array = []        # [{supplier_id:String, corners:Array[Vector3]}]
 
+# ── #221-PC Phase 5 — operator-draggable markers for previously-hardcoded
+# placements (parking lot, the player's parked Swift). When unset
+# (Vector3.ZERO / Vector2.ZERO), MainWorld and ShiftCarSpawner fall back to
+# the Phase 3 / Phase 4 PC constants. When set in WorldSetup, the marker
+# wins — drag in WorldSetup, the lot / Swift moves wherever you drop it.
+var staff_parking   : Vector3 = Vector3.ZERO
+var player_swift    : Vector3 = Vector3.ZERO
+
 # ── #221-PC Phase 2 — Plant Coordinate (PC) parallel fields ──────────────────
 # Mirror of the legacy fields above, but as Vector2 in the 1000×1000 PC grid
 # centred on the building (Plant.PC_CENTER = (500, 500)). Populated by
@@ -43,6 +51,9 @@ var vehicle_spawns_pc   : Dictionary = {}   # id → Array[Vector2]
 var line_starts_pc      : Dictionary = {}   # id → Vector2
 var compressor_spawn_pc : Vector2 = Vector2.ZERO
 var bale_yards_pc       : Array = []        # [{supplier_id:String, corners_pc:Array[Vector2]}]
+# #221-PC Phase 5 — PC parallels for the new operator markers above.
+var staff_parking_pc    : Vector2 = Vector2.ZERO
+var player_swift_pc     : Vector2 = Vector2.ZERO
 # True after migrate_to_pc has populated the PC fields (in-memory) OR after
 # a v2+ save was loaded from disk. Spawners can check this to decide whether
 # to read PC or fall back to legacy.
@@ -145,6 +156,9 @@ func save() -> void:
 		"line_starts":    _dict_v3_single(line_starts),
 		"compressor_spawn": _v3(compressor_spawn),
 		"bale_yards":     _yards_to_json(),
+		# #221-PC Phase 5 — operator-draggable markers (legacy Vector3).
+		"staff_parking":  _v3(staff_parking),
+		"player_swift":   _v3(player_swift),
 		# #221-PC Phase 2 — parallel PC fields. Only written when migrate_to_pc
 		# has populated them (has_pc_data == true). Older readers ignore the
 		# new keys; newer readers can fall back to legacy if these are absent.
@@ -154,6 +168,9 @@ func save() -> void:
 		"line_starts_pc":      _dict_v2_single(line_starts_pc) if has_pc_data else null,
 		"compressor_spawn_pc": _v2(compressor_spawn_pc) if has_pc_data else null,
 		"bale_yards_pc":       _yards_pc_to_json() if has_pc_data else null,
+		# #221-PC Phase 5 — PC parallels for the new operator markers.
+		"staff_parking_pc":    _v2(staff_parking_pc) if has_pc_data else null,
+		"player_swift_pc":     _v2(player_swift_pc) if has_pc_data else null,
 		"satellite": {
 			"center_rd_x": satellite_center_rd.x,
 			"center_rd_y": satellite_center_rd.y,
@@ -229,6 +246,9 @@ func _load() -> void:
 	# Missing → Vector3.ZERO → LineFlow uses its default offset from player_spawn.
 	compressor_spawn = _read_v3(parsed.get("compressor_spawn", {}))
 	bale_yards     = _read_yards(parsed.get("bale_yards", []))
+	# #221-PC Phase 5 — operator-draggable markers (legacy fields).
+	staff_parking  = _read_v3(parsed.get("staff_parking", {}))
+	player_swift   = _read_v3(parsed.get("player_swift", {}))
 	# #221-PC Phase 2 — read PC parallel fields if present (v2+ saves). When
 	# absent (v1 / fresh save), the fields stay Vector2.ZERO and has_pc_data
 	# stays false; MainWorld will call migrate_to_pc() right after Plant.init.
@@ -238,6 +258,9 @@ func _load() -> void:
 	line_starts_pc      = _read_dict_v2_single(parsed.get("line_starts_pc", {}))
 	compressor_spawn_pc = _read_v2(parsed.get("compressor_spawn_pc", {}))
 	bale_yards_pc       = _read_yards_pc(parsed.get("bale_yards_pc", []))
+	# #221-PC Phase 5 — PC parallels for the new operator markers.
+	staff_parking_pc    = _read_v2(parsed.get("staff_parking_pc", {}))
+	player_swift_pc     = _read_v2(parsed.get("player_swift_pc", {}))
 	# has_pc_data: any non-zero PC field signals v2+. factory_center_pc=(500,500)
 	# is the canonical "non-zero" marker since migrate_to_pc always sets it.
 	has_pc_data = (factory_center_pc != Vector2.ZERO)
@@ -287,6 +310,10 @@ func _load() -> void:
 		player_spawn   = _localized(player_spawn, shift)
 		factory_center = _localized(factory_center, shift)
 		compressor_spawn = _localized(compressor_spawn, shift)
+		# #221-PC Phase 5 — operator-draggable single-point markers ride the same
+		# RD→local shift so they end up in the same frame as the rest.
+		staff_parking  = _localized(staff_parking, shift)
+		player_swift   = _localized(player_swift, shift)
 		for k in vehicle_spawns.keys():
 			var arr : Array = vehicle_spawns[k]
 			var out : Array = []
@@ -444,6 +471,13 @@ func migrate_to_pc(layout_to_scene: Callable) -> void:
 	factory_center_pc   = to_pc.call(factory_center)
 	player_spawn_pc     = to_pc.call(player_spawn)
 	compressor_spawn_pc = to_pc.call(compressor_spawn)
+	# #221-PC Phase 5 — operator-draggable markers. Each is Vector3.ZERO when
+	# the operator hasn't placed it; to_pc(ZERO) maps to (500, 500), i.e. the
+	# building centre, which is not a meaningful "user-set" value. Caller is
+	# expected to check the LEGACY Vector3 for non-ZERO before reading the PC
+	# field (consumer in MainWorld / ShiftCarSpawner gates on it).
+	staff_parking_pc = to_pc.call(staff_parking)
+	player_swift_pc  = to_pc.call(player_swift)
 
 	vehicle_spawns_pc.clear()
 	var veh_total : int = 0

@@ -692,24 +692,26 @@ func _spawn_road_and_parking() -> void:
 	# outside the building without falling into void.
 	_spawn_exterior_ground(anchor, ground_y)
 	# Parking lot — 25 m local-west, 8 m local-north of the building centre.
-	# #221-PC Phase 3 — the offset is now a PC coord (475, 508), i.e. 25 m west
-	# + 8 m south of factory centre PC(500,500). Plant.pc_to_scene_with_y applies
-	# the same `Basis(UP, world_yaw) * (offset)` math as before, anchored on
-	# scene_origin (which equals _get_factory_anchor()), so spawn position is
-	# bit-for-bit identical with the legacy `anchor + basis_y * PARKING_OFFSET`
-	# composition. (Phase 5 will replace this constant with a WorldSetup-author
-	# marker so the operator can drag the lot on the satellite.)
-	const PARKING_PC := Vector2(475.0, 508.0)
+	# #221-PC Phase 5 — the position is now an operator-tunable PC marker
+	# (WorldLayout.staff_parking / staff_parking_pc), authored in WorldSetup.
+	# When unset, falls back to the Phase 3 PARKING_PC constant so existing
+	# saves spawn the lot where they always did.
+	const PARKING_PC_DEFAULT := Vector2(475.0, 508.0)
+	var parking_pc : Vector2 = PARKING_PC_DEFAULT
+	if WorldLayout.staff_parking != Vector3.ZERO and WorldLayout.has_pc_data \
+			and WorldLayout.staff_parking_pc != Vector2.ZERO:
+		parking_pc = WorldLayout.staff_parking_pc
+		print("[MainWorld] staff parking from operator marker PC(%.1f, %.1f)" % [parking_pc.x, parking_pc.y])
 	staff_parking = preload("res://src/scenes/world/StaffParking.gd").new()
 	staff_parking.name = "StaffParking"
 	add_child(staff_parking)
 	if has_node("/root/Plant") and Plant.is_initialized():
 		# Y stays at the legacy `ground_y + 0.02 = anchor.y - 0.98` — parking
 		# surface is NOT pinned to floor_top_y. pc_to_scene_with_y respects that.
-		staff_parking.global_position = Plant.pc_to_scene_with_y(PARKING_PC, ground_y + 0.02)
+		staff_parking.global_position = Plant.pc_to_scene_with_y(parking_pc, ground_y + 0.02)
 	else:
-		# Legacy fallback — exact pre-Phase-3 math.
-		var parking_world : Vector3 = basis_y * Vector3(PARKING_PC.x - 500.0, 0.0, PARKING_PC.y - 500.0)
+		# Legacy fallback — exact pre-Phase-3 math, scaled to whatever parking_pc is.
+		var parking_world : Vector3 = basis_y * Vector3(parking_pc.x - 500.0, 0.0, parking_pc.y - 500.0)
 		staff_parking.global_position = Vector3(
 			anchor.x + parking_world.x,
 			ground_y + 0.02,

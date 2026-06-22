@@ -64,6 +64,9 @@ enum Tool {
 	VEHICLE_MAST_LIFT,
 	LINE_1, LINE_3A, LINE_3B, LINE_3C, LINE_6,
 	BALE_YARD,
+	# #221-PC Phase 5 — operator-draggable previously-hardcoded placements.
+	STAFF_PARKING,
+	PLAYER_SWIFT,
 }
 
 # Tool metadata
@@ -81,6 +84,10 @@ const TOOL_DEFS := {
 	Tool.LINE_3C:            {"label": "Line 3C start",           "color": Color.AQUAMARINE,    "kind": "point"},
 	Tool.LINE_6:             {"label": "Line 6 start",            "color": Color.SEA_GREEN,     "kind": "point"},
 	Tool.BALE_YARD:          {"label": "Bale yard (4 corners)",   "color": Color.YELLOW,        "kind": "polygon"},
+	# #221-PC Phase 5 — single-click placement of the parking lot anchor and
+	# the player's parked Swift. Both formerly hardcoded; now draggable.
+	Tool.STAFF_PARKING:      {"label": "Staff parking",           "color": Color.DEEP_SKY_BLUE, "kind": "point"},
+	Tool.PLAYER_SWIFT:       {"label": "Player Swift (start)",    "color": Color.LIGHT_SALMON,  "kind": "point"},
 }
 
 # Tool → WorldLayout vehicle key. Map kept here so MainWorld's spawn code can
@@ -1145,6 +1152,11 @@ func _commit_to_layout() -> void:
 			WorldLayout.factory_center = p        # independent marker (decoupled from player spawn)
 		elif LINE_TOOL_TO_ID.has(tool_id):
 			WorldLayout.set_line_start(LINE_TOOL_TO_ID[tool_id], p)
+		# #221-PC Phase 5 — operator-draggable previously-hardcoded placements.
+		elif tool_id == Tool.STAFF_PARKING:
+			WorldLayout.staff_parking = p
+		elif tool_id == Tool.PLAYER_SWIFT:
+			WorldLayout.player_swift = p
 	# Finalised yards: refresh corners from their dot nodes.
 	for yard in finalized_yards:
 		var dots : Array = yard.get("dots", [])
@@ -1509,6 +1521,17 @@ func _apply_loaded_layout() -> void:
 		fc_node.position = Vector3(WorldLayout.factory_center.x, fc_node.position.y, WorldLayout.factory_center.z)
 		markers_root.add_child(fc_node)
 		point_markers[Tool.FACTORY_CENTER] = fc_node
+	# #221-PC Phase 5 — operator-draggable markers (parking + Swift).
+	if WorldLayout.staff_parking != Vector3.ZERO:
+		var sp_node := _make_dot(TOOL_DEFS[Tool.STAFF_PARKING]["color"])
+		sp_node.position = Vector3(WorldLayout.staff_parking.x, sp_node.position.y, WorldLayout.staff_parking.z)
+		markers_root.add_child(sp_node)
+		point_markers[Tool.STAFF_PARKING] = sp_node
+	if WorldLayout.player_swift != Vector3.ZERO:
+		var sw_node := _make_dot(TOOL_DEFS[Tool.PLAYER_SWIFT]["color"])
+		sw_node.position = Vector3(WorldLayout.player_swift.x, sw_node.position.y, WorldLayout.player_swift.z)
+		markers_root.add_child(sw_node)
+		point_markers[Tool.PLAYER_SWIFT] = sw_node
 	# Vehicles — arrays of positions per type
 	for k in VEHICLE_TOOL_TO_ID:
 		var vid : String = VEHICLE_TOOL_TO_ID[k]
