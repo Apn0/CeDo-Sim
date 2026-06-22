@@ -38,6 +38,8 @@ ApiKeys="*res://src/autoload/ApiKeys.gd"
 VoiceService="*res://src/autoload/VoiceService.gd"
 LineMacroStore="*res://src/autoload/LineMacroStore.gd"
 NpcAutonomyBoard="*res://src/autoload/NpcAutonomyBoard.gd"
+HotspotProfiler="*res://src/autoload/HotspotProfiler.gd"
+Plant="*res://src/autoload/Plant.gd"
 
 [debug]
 
