@@ -210,6 +210,27 @@ func _input(event: InputEvent) -> void:
 			_spawn_world_items()
 
 func _spawn_world_items() -> void:
+	# #221-PC Phase 2 — wire the Plant coordinate system here at the convergence
+	# point of all three boot paths (new+configured, resumed, in-world setup-
+	# mode-ENTER). By the time we get here:
+	#   • PlayerSpawner has set _player_spawn_pos (the layout anchor)
+	#   • WorldFrame._world_yaw() is cached and callable
+	#   • In setup-mode, game_state.factory_center has been set to
+	#     player.global_position (scene-space)
+	# scene_origin = _get_factory_anchor() because that's the same building-
+	# centre the rest of the codebase already uses. Phase 3+ migrates spawners
+	# to Plant; for now Plant just becomes live alongside the legacy path.
+	# Plant's init is idempotent (second call no-ops), so it's safe even when
+	# _spawn_world_items is re-entered.
+	if has_node("/root/Plant") and not Plant.is_initialized():
+		Plant.init(_get_factory_anchor(), _world_yaw(), _floor_top_y())
+		# Populate PC parallel fields from the existing legacy markers so a
+		# Phase 3 spawner can read PC directly without per-call legacy fallback.
+		# We hand WorldLayout the legacy converter callable so it doesn't have
+		# to know about MainWorld.
+		if WorldLayout.has_method("migrate_to_pc"):
+			WorldLayout.migrate_to_pc(Callable(self, "_layout_to_scene"))
+
 	# Vehicles ALWAYS come from WorldLayout (or fall back to defaults if empty).
 	var veh_spawner := VehicleSpawner.new(); add_child(veh_spawner); veh_spawner.setup(self, _player_spawn_pos)
 	_spawn_merlo()

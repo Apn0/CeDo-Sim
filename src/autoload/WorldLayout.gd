@@ -30,6 +30,24 @@ var compressor_spawn : Vector3 = Vector3.ZERO
 # / forstplus). Old single-rectangle format is discarded on load.
 var bale_yards     : Array = []        # [{supplier_id:String, corners:Array[Vector3]}]
 
+# ── #221-PC Phase 2 — Plant Coordinate (PC) parallel fields ──────────────────
+# Mirror of the legacy fields above, but as Vector2 in the 1000×1000 PC grid
+# centred on the building (Plant.PC_CENTER = (500, 500)). Populated by
+# `migrate_to_pc(layout_to_scene_callable)` after Plant.init() has run; loaded
+# from disk if a v2+ save wrote them. Spawners continue to read the legacy
+# fields until Phase 3 migrates them — having both means the migration can be
+# done one subsystem at a time without breaking saves.
+var factory_center_pc   : Vector2 = Vector2.ZERO
+var player_spawn_pc     : Vector2 = Vector2.ZERO
+var vehicle_spawns_pc   : Dictionary = {}   # id → Array[Vector2]
+var line_starts_pc      : Dictionary = {}   # id → Vector2
+var compressor_spawn_pc : Vector2 = Vector2.ZERO
+var bale_yards_pc       : Array = []        # [{supplier_id:String, corners_pc:Array[Vector2]}]
+# True after migrate_to_pc has populated the PC fields (in-memory) OR after
+# a v2+ save was loaded from disk. Spawners can check this to decide whether
+# to read PC or fall back to legacy.
+var has_pc_data : bool = false
+
 # WMS satellite reference (so we can re-fetch / re-project later if needed).
 var satellite_center_rd : Vector2 = Vector2.ZERO   # EPSG:28992 metres (Rijksdriehoek)
 var satellite_extent_m  : float   = 400.0          # bbox edge length in metres
@@ -120,13 +138,22 @@ func clear() -> void:
 
 func save() -> void:
 	var data := {
-		"version": 1,
+		"version": 2 if has_pc_data else 1,
 		"factory_center": _v3(factory_center),
 		"player_spawn":   _v3(player_spawn),
 		"vehicle_spawns": _dict_v3(vehicle_spawns),
 		"line_starts":    _dict_v3_single(line_starts),
 		"compressor_spawn": _v3(compressor_spawn),
 		"bale_yards":     _yards_to_json(),
+		# #221-PC Phase 2 — parallel PC fields. Only written when migrate_to_pc
+		# has populated them (has_pc_data == true). Older readers ignore the
+		# new keys; newer readers can fall back to legacy if these are absent.
+		"factory_center_pc":   _v2(factory_center_pc) if has_pc_data else null,
+		"player_spawn_pc":     _v2(player_spawn_pc)   if has_pc_data else null,
+		"vehicle_spawns_pc":   _dict_v2(vehicle_spawns_pc) if has_pc_data else null,
+		"line_starts_pc":      _dict_v2_single(line_starts_pc) if has_pc_data else null,
+		"compressor_spawn_pc": _v2(compressor_spawn_pc) if has_pc_data else null,
+		"bale_yards_pc":       _yards_pc_to_json() if has_pc_data else null,
 		"satellite": {
 			"center_rd_x": satellite_center_rd.x,
 			"center_rd_y": satellite_center_rd.y,
@@ -202,6 +229,18 @@ func _load() -> void:
 	# Missing → Vector3.ZERO → LineFlow uses its default offset from player_spawn.
 	compressor_spawn = _read_v3(parsed.get("compressor_spawn", {}))
 	bale_yards     = _read_yards(parsed.get("bale_yards", []))
+	# #221-PC Phase 2 — read PC parallel fields if present (v2+ saves). When
+	# absent (v1 / fresh save), the fields stay Vector2.ZERO and has_pc_data
+	# stays false; MainWorld will call migrate_to_pc() right after Plant.init.
+	factory_center_pc   = _read_v2(parsed.get("factory_center_pc", {}))
+	player_spawn_pc     = _read_v2(parsed.get("player_spawn_pc", {}))
+	vehicle_spawns_pc   = _read_dict_v2(parsed.get("vehicle_spawns_pc", {}))
+	line_starts_pc      = _read_dict_v2_single(parsed.get("line_starts_pc", {}))
+	compressor_spawn_pc = _read_v2(parsed.get("compressor_spawn_pc", {}))
+	bale_yards_pc       = _read_yards_pc(parsed.get("bale_yards_pc", []))
+	# has_pc_data: any non-zero PC field signals v2+. factory_center_pc=(500,500)
+	# is the canonical "non-zero" marker since migrate_to_pc always sets it.
+	has_pc_data = (factory_center_pc != Vector2.ZERO)
 	var sat = parsed.get("satellite", {})
 	if typeof(sat) == TYPE_DICTIONARY:
 		satellite_center_rd = Vector2(sat.get("center_rd_x", 0.0), sat.get("center_rd_y", 0.0))
@@ -375,5 +414,147 @@ func _read_yards(src) -> Array:
 		out.append({
 			"supplier_id": entry.get("supplier_id", entry.get("id", "")),
 			"corners":     corners,
+		})
+	return out
+
+# ─────────────────────────────────────────────────────────────────────────────
+# #221-PC Phase 2 — Plant Coordinate helpers + migration
+# ─────────────────────────────────────────────────────────────────────────────
+
+## Populate the PC parallel fields from the legacy Vector3 markers.
+##
+## `layout_to_scene` is the legacy converter from MainWorld (passed as a
+## Callable so this autoload doesn't have to reach across the scene tree to
+## find MainWorld). Each marker is converted layout-local → scene via the
+## caller, then scene → PC via Plant.scene_to_pc. Plant MUST be initialized
+## before this is called; we early-out with a warning if not.
+##
+## Safe to call multiple times: each call overwrites the PC fields with fresh
+## conversions of whatever the legacy fields currently hold. The next save()
+## will then write the PC fields to disk (version bumps to 2).
+func migrate_to_pc(layout_to_scene: Callable) -> void:
+	if not has_node("/root/Plant") or not Plant.is_initialized():
+		push_warning("[WorldLayout] migrate_to_pc called before Plant.init — skipping")
+		return
+	# Helper: layout-local Vector3 → PC Vector2
+	var to_pc := func(rel: Vector3) -> Vector2:
+		var scene : Vector3 = layout_to_scene.call(rel)
+		return Plant.scene_to_pc(scene)
+
+	factory_center_pc   = to_pc.call(factory_center)
+	player_spawn_pc     = to_pc.call(player_spawn)
+	compressor_spawn_pc = to_pc.call(compressor_spawn)
+
+	vehicle_spawns_pc.clear()
+	var veh_total : int = 0
+	for vid in vehicle_spawns.keys():
+		var arr : Array = vehicle_spawns[vid]
+		var arr_pc : Array = []
+		for p in arr:
+			if p is Vector3:
+				arr_pc.append(to_pc.call(p))
+				veh_total += 1
+		vehicle_spawns_pc[vid] = arr_pc
+
+	line_starts_pc.clear()
+	for lid in line_starts.keys():
+		var p = line_starts[lid]
+		if p is Vector3:
+			line_starts_pc[lid] = to_pc.call(p)
+
+	bale_yards_pc.clear()
+	var yard_corners_total : int = 0
+	for y in bale_yards:
+		var corners_raw : Array = (y as Dictionary).get("corners", [])
+		var corners_pc : Array = []
+		for c in corners_raw:
+			if c is Vector3:
+				corners_pc.append(to_pc.call(c))
+				yard_corners_total += 1
+		bale_yards_pc.append({
+			"supplier_id": (y as Dictionary).get("supplier_id", ""),
+			"corners_pc":  corners_pc,
+		})
+
+	has_pc_data = true
+	print("[WorldLayout] migrated to PC — factory_center_pc=(%.2f, %.2f) vehicles=%d yard_corners=%d lines=%d" % [
+		factory_center_pc.x, factory_center_pc.y,
+		veh_total, yard_corners_total, line_starts_pc.size()])
+
+# ── Vector2 JSON helpers (mirror of the v3 family above) ─────────────────────
+func _v2(v: Vector2) -> Dictionary:
+	return {"x": v.x, "y": v.y}
+
+func _read_v2(d) -> Vector2:
+	if typeof(d) != TYPE_DICTIONARY: return Vector2.ZERO
+	return Vector2(d.get("x", 0.0), d.get("y", 0.0))
+
+## Serialise a SINGLE-Vector2-per-key dictionary (line_starts_pc).
+func _dict_v2_single(src: Dictionary) -> Dictionary:
+	var out := {}
+	for k in src:
+		out[k] = _v2(src[k])
+	return out
+
+## Serialise the PC vehicle-spawn dictionary (keys → arrays of Vector2).
+func _dict_v2(src: Dictionary) -> Dictionary:
+	var out := {}
+	for k in src:
+		var arr_out : Array = []
+		var v = src[k]
+		if v is Array:
+			for p in v: arr_out.append(_v2(p))
+		elif v is Vector2:
+			arr_out.append(_v2(v))
+		out[k] = arr_out
+	return out
+
+func _read_dict_v2_single(src) -> Dictionary:
+	var out := {}
+	if typeof(src) != TYPE_DICTIONARY: return out
+	for k in src:
+		out[k] = _read_v2(src[k])
+	return out
+
+func _read_dict_v2(src) -> Dictionary:
+	var out := {}
+	if typeof(src) != TYPE_DICTIONARY: return out
+	for k in src:
+		var canonical_key : String = k
+		if LEGACY_VEHICLE_ALIASES.has(canonical_key):
+			canonical_key = LEGACY_VEHICLE_ALIASES[canonical_key]
+		var v = src[k]
+		var arr : Array = []
+		if v is Array:
+			for p in v: arr.append(_read_v2(p))
+		elif v is Dictionary:
+			arr.append(_read_v2(v))
+		out[canonical_key] = arr
+	return out
+
+func _yards_pc_to_json() -> Array:
+	var out := []
+	for y in bale_yards_pc:
+		var corners : Array = (y as Dictionary).get("corners_pc", [])
+		var corners_json : Array = []
+		for c in corners: corners_json.append(_v2(c))
+		out.append({
+			"supplier_id": (y as Dictionary).get("supplier_id", ""),
+			"corners_pc":  corners_json,
+		})
+	return out
+
+func _read_yards_pc(src) -> Array:
+	var out := []
+	if typeof(src) != TYPE_ARRAY: return out
+	for entry in src:
+		if typeof(entry) != TYPE_DICTIONARY: continue
+		var corners_raw = entry.get("corners_pc", [])
+		if typeof(corners_raw) != TYPE_ARRAY: continue
+		var corners : Array = []
+		for c in corners_raw: corners.append(_read_v2(c))
+		out.append({
+			"supplier_id": entry.get("supplier_id", ""),
+			"corners_pc":  corners,
 		})
 	return out
