@@ -295,6 +295,15 @@ const _SUBSCOPE_SCRIPTS := {
 	"extruder_1_blueport": "res://src/scenes/hud/scopes/ExtruderBluPortScope.gd",
 	"filter_unit_1":       "res://src/scenes/hud/scopes/LaserFilterScope.gd",
 	"filter_unit_2":       "res://src/scenes/hud/scopes/LaserFilterScope.gd",
+	# Sorteerlijn (3A/3B bunker) — P&ID + SWI-049 3-step startup FSM. The scope
+	# auto-wires its startup_completed signal to every ShredderFeedBelt in the
+	# scene on _ready(), so pressing the green hardware button actually starts
+	# material flow. No extra binding needed here.
+	"sorteerlijn":         "res://src/scenes/hud/scopes/SorteerlijnScope.gd",
+	# Kufferaths DRD dryer pair — 2-column anti-phase display. open_subscope()
+	# binds the local line's MechDryerCycle pair via set_dryer_pair() below.
+	"kufferaths_dryer":    "res://src/scenes/hud/scopes/KufferathsDryerScope.gd",
+	"washing":             "res://src/scenes/hud/scopes/WashingScope.gd",
 	# The remaining tiles don't have a finished scope file yet — open_subscope()
 	# bails cleanly (returns false) so the operator stays on HOOFDMENU.
 	"devicon":             "",
@@ -345,6 +354,12 @@ func open_subscope(scope_id: String) -> bool:
 		ctrl.set("line_id", _line_id_from_scope())
 	if "filter_id" in ctrl:
 		ctrl.set("filter_id", "MPF1" if scope_id == "filter_unit_1" else "MPF2")
+	# Kufferaths DRD scope needs the actual L/R MechDryerCycle refs so the
+	# Schritt / Motorlast / Schrittlaufzeit pills can read live state. Pulled
+	# from LineFlow._dryer_pairs by line_id; falls back to empty Array which
+	# the scope tolerates (pills sit at neutral).
+	if scope_id == "kufferaths_dryer" and ctrl.has_method("set_dryer_pair"):
+		ctrl.call("set_dryer_pair", _dryer_pair_for_line(_line_id_from_scope()))
 	return true
 
 func close_subscope() -> void:
@@ -365,6 +380,37 @@ func _line_id_from_scope() -> String:
 	if lines.is_empty():
 		return ""
 	return String(lines[0])
+
+# Resolve the L/R MechDryerCycle pair for a given line id from LineFlow's
+# _dryer_pairs registry. Returns [cycle_L, cycle_R] or [] when no pair is
+# discovered for that line. KufferathsDryerScope.set_dryer_pair() accepts the
+# empty case gracefully (pills sit at neutral).
+func _dryer_pair_for_line(line_id: String) -> Array:
+	if _line_flow == null or not is_instance_valid(_line_flow):
+		return []
+	if not "_dryer_pairs" in _line_flow:
+		return []
+	var pairs : Dictionary = _line_flow.get("_dryer_pairs")
+	if pairs == null or pairs.is_empty():
+		return []
+	# Pair ids are line-scoped (e.g. "dryer_pair" on Line 3C). If the registry
+	# carries multiple pairs (multi-line worlds), prefer the one whose pair_id
+	# contains the line_id; otherwise fall back to the first pair.
+	var key_lower : String = line_id.to_lower()
+	var picked : Dictionary = {}
+	for pid in pairs.keys():
+		var pid_lower : String = String(pid).to_lower()
+		if pid_lower.contains(key_lower) or key_lower.is_empty():
+			picked = pairs[pid]
+			break
+	if picked.is_empty():
+		# No line-id match — just take whichever pair exists.
+		picked = pairs.values()[0]
+	var c_l : Object = picked.get("cycle_L", null)
+	var c_r : Object = picked.get("cycle_R", null)
+	if c_l == null and c_r == null:
+		return []
+	return [c_l, c_r]
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not visible:
