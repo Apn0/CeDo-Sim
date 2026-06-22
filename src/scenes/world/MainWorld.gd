@@ -557,14 +557,42 @@ func _spawn_bale_yard() -> void:
 	# get the default offset behaviour as a fallback.
 	# TODO follow-up: pack rows × columns into the polygon footprint so the
 	# user's drawn shape actually fills with bales (the original to-do #38).
+	# #221-PC Phase 4 — when PC data exists, route the centroid through
+	# Plant.pc_to_scene so the legacy "missing yaw on bale-yard centroid" bug
+	# is fixed in the non-authoritative path too. The audit flagged this as a
+	# structural divergence from the vehicle pipeline (vehicles rotate, yards
+	# didn't); Plant unifies them.
+	var use_pc : bool = has_node("/root/Plant") and Plant.is_initialized() and WorldLayout.has_pc_data
 	var supplier_to_centroid : Dictionary = {}
-	for y in WorldLayout.bale_yards:
-		var corners : Array = (y as Dictionary).get("corners", [])
+	for yi in WorldLayout.bale_yards.size():
+		var y : Dictionary = WorldLayout.bale_yards[yi]
+		var corners : Array = y.get("corners", [])
 		if corners.size() < 3: continue
-		var c := Vector3.ZERO
-		for v in corners: c += v
-		c /= float(corners.size())
-		supplier_to_centroid[(y as Dictionary).get("supplier_id", "")] = _on_floor(c)
+		var sid : String = y.get("supplier_id", "")
+		# Pick the PC corner list when available + lengths match; else legacy.
+		var corners_pc : Array = []
+		var use_pc_for_this_yard : bool = use_pc
+		if use_pc_for_this_yard and yi < WorldLayout.bale_yards_pc.size():
+			corners_pc = (WorldLayout.bale_yards_pc[yi] as Dictionary).get("corners_pc", [])
+			if corners_pc.size() != corners.size():
+				use_pc_for_this_yard = false
+		else:
+			use_pc_for_this_yard = false
+		# Centroid: average then convert (Plant.pc_to_scene is affine, so
+		# averaging in PC space and converting once is equivalent to converting
+		# each corner and averaging in scene space — and cheaper).
+		var centroid_scene : Vector3
+		if use_pc_for_this_yard:
+			var avg_pc := Vector2.ZERO
+			for c_pc in corners_pc: avg_pc += (c_pc as Vector2)
+			avg_pc /= float(corners_pc.size())
+			centroid_scene = Plant.pc_to_scene(avg_pc)
+		else:
+			var c := Vector3.ZERO
+			for v in corners: c += v
+			c /= float(corners.size())
+			centroid_scene = _on_floor(c)
+		supplier_to_centroid[sid] = centroid_scene
 	var base : Vector3
 	if not supplier_to_centroid.is_empty():
 		# Use the first polygon's centroid as the legacy "yard origin" so the
@@ -689,26 +717,44 @@ func _spawn_road_and_parking() -> void:
 	staff_parking.rotation.y = by
 	_spawn_parking_lamps(staff_parking, ground_y)
 	# Road — De Asselen Kuil — runs along the building's local west edge
-	# (negative local-X), then turns east into the parking aisle. Waypoints
-	# are expressed in BUILDING-local coords and rotated by `by`.
+	# (negative local-X), then turns east into the parking aisle.
+	# #221-PC Phase 4 — waypoints expressed in PC coords. Each PC value is
+	# the building-local offset + PC_CENTER (500, 500). Plant.pc_to_scene_with_y
+	# applies the same rotation/anchor the legacy `_bo(ga, offset)` did, with
+	# Y forced to ground_y so the road plate sits below the operating floor.
+	# (Phase 5 will replace these constants with WorldSetup waypoint markers.)
 	var ga := Vector3(anchor.x, ground_y, anchor.z)
 	var road : Road = preload("res://src/scenes/world/Road.gd").new()
 	road.name = "DeAsselenKuil"
 	road.surface_y = ground_y
-	road.setup([
-		# Far south end of De Asselen Kuil — extended ~400 m local-south so the
-		# player Swift sits at a real "FAR end of the road" approach instead of
-		# right next to the parking entry. Long northbound straight gives a
-		# clear drive-in cinematic before the east turn into the lot.
-		_bo(ga, Vector3(-42.0, 0.0, -440.0)),  # FAR south spawn end
-		_bo(ga, Vector3(-42.0, 0.0, -40.0)),   # original south end (now mid-road)
-		_bo(ga, Vector3(-42.0, 0.0,   0.0)),   # straight north along west edge
-		_bo(ga, Vector3(-42.0, 0.0,  20.0)),   # past parking entry, continues north
-		_bo(ga, Vector3(-25.0, 0.0,  30.0)),   # turn east toward plant entry pad
-		_bo(ga, Vector3(  0.0, 0.0,  30.0)),   # plant entry pad
-	])
+	var use_plant : bool = has_node("/root/Plant") and Plant.is_initialized()
+	# Waypoints as PC (500 + local.x, 500 + local.z). Source values below
+	# match the legacy hardcoded offsets exactly.
+	const ROAD_WAYPOINTS_PC : Array = [
+		Vector2(458.0,  60.0),   # FAR south spawn end       (was -42, -440)
+		Vector2(458.0, 460.0),   # original south end        (was -42, -40)
+		Vector2(458.0, 500.0),   # straight north            (was -42,   0)
+		Vector2(458.0, 520.0),   # past parking entry        (was -42,  20)
+		Vector2(475.0, 530.0),   # turn east toward plant    (was -25,  30)
+		Vector2(500.0, 530.0),   # plant entry pad           (was   0,  30)
+	]
+	var waypoints : Array = []
+	for pc in ROAD_WAYPOINTS_PC:
+		if use_plant:
+			waypoints.append(Plant.pc_to_scene_with_y(pc, ground_y))
+		else:
+			waypoints.append(_bo(ga, Vector3(pc.x - 500.0, 0.0, pc.y - 500.0)))
+	road.setup(waypoints)
 	add_child(road)
-	_spawn_street_sign(_bo(ga, Vector3(-43.5, 0.0, 0.0)), "De Asselen Kuil")
+	# Street sign at PC(456.5, 500) = local (-43.5, 0) — half a metre west of
+	# the road's west edge so the sign post sits on the verge, not in traffic.
+	const STREET_SIGN_PC := Vector2(456.5, 500.0)
+	var sign_pos : Vector3
+	if use_plant:
+		sign_pos = Plant.pc_to_scene_with_y(STREET_SIGN_PC, ground_y)
+	else:
+		sign_pos = _bo(ga, Vector3(STREET_SIGN_PC.x - 500.0, 0.0, STREET_SIGN_PC.y - 500.0))
+	_spawn_street_sign(sign_pos, "De Asselen Kuil")
 	# #192 follow-up — road extensions / perimeter fence / exterior props are
 	# now owned by ExteriorManager (a child node); it parents its spawned items
 	# back under MainWorld so the runtime scene shape is unchanged. Interior
