@@ -25,6 +25,7 @@ var line_flow       : LineFlow
 var container_guides: ContainerGuideManager   # holographic catch-container placement guides (#85)
 var crew_manager    : CrewManager
 var scada           : Node          # ScadaDashboard (ISA-101 overlay)
+var inspect_mode    : Node3D        # #inspect — F8 diagnostic overlay (gizmos + sat/floor-plan + fly cam)
 var bale_yard_manager : BaleYardManager   # #195 — yards/spawn-queue/proximity-sweep/reset/restock
 var npcs            : Dictionary = {}
 
@@ -145,6 +146,15 @@ func _ready() -> void:
 	var perf: Node = load("res://src/scenes/hud/PerfHud.gd").new()
 	perf.name = "PerfHud"
 	add_child(perf)
+	# #inspect — F8 diagnostic overlay (gizmos on every WorldLayout marker +
+	# satellite / floor-plan ground textures + free-fly camera). Spawned hidden;
+	# PlayerController flips it on with `inspect_mode.toggle()` on the F8 press.
+	# Zero perf impact while OFF (no child nodes, no _process).
+	inspect_mode = load("res://src/scenes/world/InspectMode.gd").new()
+	inspect_mode.name = "InspectMode"
+	add_child(inspect_mode)
+	inspect_mode.setup(self)
+	inspect_mode.visible = false
 	# ISA-101 SCADA dashboard (muted-grey nominal, colour only on alarm; logs
 	# micro-stops). Machines push set_state/set_param to it.
 	scada = load("res://src/scenes/hud/ScadaDashboard.gd").new()

@@ -686,6 +686,16 @@ func _build_flashlight() -> void:
 		var evf10 := InputEventKey.new()
 		evf10.physical_keycode = KEY_F10
 		InputMap.action_add_event("feedback_capture", evf10)
+	# F8 — Inspect Mode toggle (#inspect): free-fly camera + layout-marker
+	# gizmos + satellite / floor-plan ground overlays. F8 is free in MainWorld
+	# (the SandboxWorld F8 binding is in a different top-level scene that never
+	# coexists with this one). Registered lazily so a stale InputMap from a
+	# pre-Inspect save still picks the action up.
+	if not InputMap.has_action("inspect_mode"):
+		InputMap.add_action("inspect_mode")
+		var evf8 := InputEventKey.new()
+		evf8.physical_keycode = KEY_F8
+		InputMap.action_add_event("inspect_mode", evf8)
 
 func _toggle_flashlight() -> void:
 	if _flashlight == null:
@@ -902,6 +912,20 @@ func _input(event: InputEvent) -> void:
 		_capture_feedback_at_crosshair()
 		get_viewport().set_input_as_handled()
 		return
+
+	# F8 — Inspect Mode toggle (#inspect): hand the viewport to a free-fly
+	# camera + show gizmos on every WorldLayout marker. Player input is
+	# suspended by InspectMode while it's ON; the toggle-OFF path lives on
+	# InspectMode itself (its _unhandled_input also listens for F8 / Esc) so
+	# the operator can always get back to walking around.
+	if event.is_action_pressed("inspect_mode"):
+		var world := get_tree().current_scene
+		if world and "inspect_mode" in world:
+			var im : Node = world.get("inspect_mode")
+			if im and im.has_method("toggle"):
+				im.call("toggle")
+				get_viewport().set_input_as_handled()
+				return
 
 	# Hotbar: 1-4 switch the active inventory slot, Q drops the active item.
 	# Tools (scissors / scanner) live under Head and Inventory handles the

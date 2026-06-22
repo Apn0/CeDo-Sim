@@ -239,6 +239,7 @@ const ACTION_LABELS := {
 	"debug_force_fault":        "Force the extruder line FAULT cascade — for testing (0 / Numpad 0)",
 	"opening_capture":          "Capture an opening corner for door/window editing (F11)",
 	"feedback_capture":         "Capture screenshot + context.json under user://feedback/ for chat handoff (F10)",
+	"inspect_mode":             "Toggle Inspect Mode — free-fly camera + layout-marker gizmos + PDOK overlay (F8)",
 }
 
 # =============================================================================
@@ -598,6 +599,11 @@ func _ensure_aux_actions() -> void:
 		# C also opens the crew assignment panel — Numpad . is the legacy default
 		# but many keyboards don't have a numpad, so we add a second route.
 		"crew_panel":        KEY_C,
+		# F8 toggles Inspect Mode (#inspect) — registered here so the Settings
+		# Controls tab knows about it and so the binding survives a fresh
+		# install with no user://settings.cfg. The runtime fallback in
+		# PlayerController re-adds it if a stale InputMap still lacks the action.
+		"inspect_mode":      KEY_F8,
 	}
 	# Anything in INSTALL_AND_PURGE first has ALL its key events removed so the
 	# new binding doesn't pile up next to the old one. Used to migrate keys that
