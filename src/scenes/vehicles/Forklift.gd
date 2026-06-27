@@ -72,6 +72,16 @@ var _right_fork    : Node3D
 # Load currently on the forks (kg) — set by FlatLumpDetector / pallet sensor.
 var current_load_kg: float = 0.0
 
+var _bulk_load_kg: float = 0.0
+
+func load_bulk(kg: float) -> void:
+	_bulk_load_kg += kg
+
+func unload_bulk() -> float:
+	var amt = _bulk_load_kg
+	_bulk_load_kg = 0.0
+	return amt
+
 # =============================================================================
 func _ready() -> void:
 	super._ready()
