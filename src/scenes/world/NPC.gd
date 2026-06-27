@@ -209,7 +209,7 @@ const _OBSTACLE_CHECK_INTERVAL : float = 0.20
 # getting stuck against the ledge. Below CLIMB_MIN_DY the existing step-up /
 # physics carries it; above CLIMB_MAX_DY the obstacle is too tall to vault.
 #
-# TODO: real climb animation goes through AnimationTree once Phase 1 lands.
+
 const CLIMB_MIN_DY     : float = 0.30   # navmesh agent_max_climb threshold
 const CLIMB_MAX_DY     : float = 1.4    # matches player's CLIMB_MAX_HEIGHT
 const CLIMB_DURATION_S : float = 0.5    # lerp time for the mantle
@@ -909,7 +909,6 @@ func get_role_string() -> String:
 ## the transform until the lerp completes — no walk velocity, no gravity. The
 ## locomotion state flips to VAULT so the pose/scale matches a "climbing up"
 ## body instead of a "walking" body.
-## TODO: real climb animation goes through AnimationTree once Phase 1 lands.
 func _start_vault(dest_world: Vector3) -> void:
 	_vault_locked = true
 	_vault_timer  = 0.0
@@ -1058,12 +1057,12 @@ func _update_animation_blend() -> void:
 			return
 	# Map NPC.Locomotion → state name. CROUCH_WALK = held crouch pose (Phase 3
 	# would author a crouch-walk locomotion BlendSpace row). PRONE_CRAWL = prone.
-	# VAULT and JUMP keep using the locomotion state (the vault tween runs on
-	# the capsule, the visible body just keeps walking through the motion).
+	# JUMP keeps using the locomotion state. VAULT uses the climb pose.
 	var want_state : String = "locomotion"
 	match locomotion:
 		Locomotion.CROUCH_WALK: want_state = "crouch"
 		Locomotion.PRONE_CRAWL: want_state = "prone"
+		Locomotion.VAULT:       want_state = "climb"
 		_:                      want_state = "locomotion"
 	# NPC sitting in vehicle — set via assign_vehicle / clear_vehicle in the
 	# vehicle entry code.
