@@ -25,6 +25,7 @@ var line_flow       : LineFlow
 var container_guides: ContainerGuideManager   # holographic catch-container placement guides (#85)
 var crew_manager    : CrewManager
 var scada           : Node          # ScadaDashboard (ISA-101 overlay)
+var inspect_mode    : Node3D        # #inspect — F8 diagnostic overlay (gizmos + sat/floor-plan + fly cam)
 var bale_yard_manager : BaleYardManager   # #195 — yards/spawn-queue/proximity-sweep/reset/restock
 var npcs            : Dictionary = {}
 
@@ -66,6 +67,13 @@ var _player_spawn_pos : Vector3 = Vector3.ZERO
 var is_setup_mode : bool = false
 var setup_overlay : CanvasLayer = null
 
+# #218 — was this run a RESUMED save (vs a NEW game)? Captured BEFORE the
+# WorldLayout / setup-mode branches flip game_state.is_new_save to false on a
+# new run, so the first LineFlow.rebuild() in _spawn_world_items() can tell
+# resume-from-save (warm boot — preserve powered state) from new-game (cold
+# start — operator commissions the line via the HMI).
+var _is_resumed_save : bool = false
+
 # ── NPC catalogue ─────────────────────────────────────────────────────────────
 # #195 — NPC_DATA + the _spawn_npcs / _register_lifts_for_booking / get_npc /
 # get_all_npcs implementations live on NPCSpawner (src/scenes/world/NPCSpawner.gd).
@@ -96,6 +104,12 @@ func _ready() -> void:
 
 	if not shift_clock: push_error("[MainWorld] ShiftClock node missing")
 	if not game_state:  push_error("[MainWorld] GameState node missing")
+
+	# #218 — capture the resume-vs-new flag NOW, before _spawn_world_items() or
+	# the setup-mode branch flips is_new_save to false on a fresh world. Used by
+	# _spawn_world_items() to call line_flow.mark_warm_boot() ahead of the first
+	# rebuild() so a resumed save's PLC powered-state survives the topology pass.
+	_is_resumed_save = (game_state != null and not game_state.is_new_save)
 
 	var shell_loader := BuildingShellLoader.new(); add_child(shell_loader); shell_loader.setup(self, building_shell_path); shell_loader.load_shell_and_openings()
 	var player_spawner := PlayerSpawner.new(); add_child(player_spawner); player_spawner.setup(self); player = player_spawner.spawn()
@@ -132,10 +146,23 @@ func _ready() -> void:
 	var perf: Node = load("res://src/scenes/hud/PerfHud.gd").new()
 	perf.name = "PerfHud"
 	add_child(perf)
+	# #inspect — F8 diagnostic overlay (gizmos on every WorldLayout marker +
+	# satellite / floor-plan ground textures + free-fly camera). Spawned hidden;
+	# PlayerController flips it on with `inspect_mode.toggle()` on the F8 press.
+	# Zero perf impact while OFF (no child nodes, no _process).
+	inspect_mode = load("res://src/scenes/world/InspectMode.gd").new()
+	inspect_mode.name = "InspectMode"
+	add_child(inspect_mode)
+	inspect_mode.setup(self)
+	inspect_mode.visible = false
 	# ISA-101 SCADA dashboard (muted-grey nominal, colour only on alarm; logs
 	# micro-stops). Machines push set_state/set_param to it.
 	scada = load("res://src/scenes/hud/ScadaDashboard.gd").new()
 	scada.name = "ScadaDashboard"
+	# #scada-discovery — group tag so ExtruderMachine + other scene controllers
+	# can find the dashboard via a single group lookup instead of walking the
+	# tree or being explicitly handed a reference.
+	scada.add_to_group("scada_dashboard")
 	add_child(scada)
 	# #52 — hand the dashboard to LineFlow so its tick pushes live line state +
 	# process params (amps / quality / melt temp / MFI / air pressure). LineFlow was
@@ -183,6 +210,27 @@ func _input(event: InputEvent) -> void:
 			_spawn_world_items()
 
 func _spawn_world_items() -> void:
+	# #221-PC Phase 2 — wire the Plant coordinate system here at the convergence
+	# point of all three boot paths (new+configured, resumed, in-world setup-
+	# mode-ENTER). By the time we get here:
+	#   • PlayerSpawner has set _player_spawn_pos (the layout anchor)
+	#   • WorldFrame._world_yaw() is cached and callable
+	#   • In setup-mode, game_state.factory_center has been set to
+	#     player.global_position (scene-space)
+	# scene_origin = _get_factory_anchor() because that's the same building-
+	# centre the rest of the codebase already uses. Phase 3+ migrates spawners
+	# to Plant; for now Plant just becomes live alongside the legacy path.
+	# Plant's init is idempotent (second call no-ops), so it's safe even when
+	# _spawn_world_items is re-entered.
+	if has_node("/root/Plant") and not Plant.is_initialized():
+		Plant.init(_get_factory_anchor(), _world_yaw(), _floor_top_y())
+		# Populate PC parallel fields from the existing legacy markers so a
+		# Phase 3 spawner can read PC directly without per-call legacy fallback.
+		# We hand WorldLayout the legacy converter callable so it doesn't have
+		# to know about MainWorld.
+		if WorldLayout.has_method("migrate_to_pc"):
+			WorldLayout.migrate_to_pc(Callable(self, "_layout_to_scene"))
+
 	# Vehicles ALWAYS come from WorldLayout (or fall back to defaults if empty).
 	var veh_spawner := VehicleSpawner.new(); add_child(veh_spawner); veh_spawner.setup(self, _player_spawn_pos)
 	_spawn_merlo()
@@ -204,7 +252,13 @@ func _spawn_world_items() -> void:
 		bale_yard_manager.setup(self, shift_clock)
 
 	# Final LineFlow discovery pass — AFTER every machine exists.
+	# #218 — RESUMED save: flip the warm-boot flag BEFORE the first rebuild() so
+	# the PLC's powered/spin state survives the topology pass and the line keeps
+	# running. NEW games skip this on purpose — operator must commission the
+	# line via the HMI (cold start), matching real plant power-up procedure.
 	if line_flow:
+		if _is_resumed_save and line_flow.has_method("mark_warm_boot"):
+			line_flow.mark_warm_boot()
 		line_flow.rebuild()
 	# Crew manager ALWAYS spawns (even with an authoritative layout). It posts
 	# the 9 workers to whatever LineFlow machines exist (free-wander if none),
@@ -503,14 +557,42 @@ func _spawn_bale_yard() -> void:
 	# get the default offset behaviour as a fallback.
 	# TODO follow-up: pack rows × columns into the polygon footprint so the
 	# user's drawn shape actually fills with bales (the original to-do #38).
+	# #221-PC Phase 4 — when PC data exists, route the centroid through
+	# Plant.pc_to_scene so the legacy "missing yaw on bale-yard centroid" bug
+	# is fixed in the non-authoritative path too. The audit flagged this as a
+	# structural divergence from the vehicle pipeline (vehicles rotate, yards
+	# didn't); Plant unifies them.
+	var use_pc : bool = has_node("/root/Plant") and Plant.is_initialized() and WorldLayout.has_pc_data
 	var supplier_to_centroid : Dictionary = {}
-	for y in WorldLayout.bale_yards:
-		var corners : Array = (y as Dictionary).get("corners", [])
+	for yi in WorldLayout.bale_yards.size():
+		var y : Dictionary = WorldLayout.bale_yards[yi]
+		var corners : Array = y.get("corners", [])
 		if corners.size() < 3: continue
-		var c := Vector3.ZERO
-		for v in corners: c += v
-		c /= float(corners.size())
-		supplier_to_centroid[(y as Dictionary).get("supplier_id", "")] = _on_floor(c)
+		var sid : String = y.get("supplier_id", "")
+		# Pick the PC corner list when available + lengths match; else legacy.
+		var corners_pc : Array = []
+		var use_pc_for_this_yard : bool = use_pc
+		if use_pc_for_this_yard and yi < WorldLayout.bale_yards_pc.size():
+			corners_pc = (WorldLayout.bale_yards_pc[yi] as Dictionary).get("corners_pc", [])
+			if corners_pc.size() != corners.size():
+				use_pc_for_this_yard = false
+		else:
+			use_pc_for_this_yard = false
+		# Centroid: average then convert (Plant.pc_to_scene is affine, so
+		# averaging in PC space and converting once is equivalent to converting
+		# each corner and averaging in scene space — and cheaper).
+		var centroid_scene : Vector3
+		if use_pc_for_this_yard:
+			var avg_pc := Vector2.ZERO
+			for c_pc in corners_pc: avg_pc += (c_pc as Vector2)
+			avg_pc /= float(corners_pc.size())
+			centroid_scene = Plant.pc_to_scene(avg_pc)
+		else:
+			var c := Vector3.ZERO
+			for v in corners: c += v
+			c /= float(corners.size())
+			centroid_scene = _on_floor(c)
+		supplier_to_centroid[sid] = centroid_scene
 	var base : Vector3
 	if not supplier_to_centroid.is_empty():
 		# Use the first polygon's centroid as the legacy "yard origin" so the
@@ -609,43 +691,72 @@ func _spawn_road_and_parking() -> void:
 	# Wide exterior ground plane around the anchor so the player can walk
 	# outside the building without falling into void.
 	_spawn_exterior_ground(anchor, ground_y)
-	# Parking lot — 25 m local-west, 8 m local-north of the spawn. The local
-	# offset is rotated through `by` so the lot lands beside the building's
-	# south face regardless of shell yaw; the parking node's own yaw is set
-	# to `by` so its internal local-X (bay rows) × local-Z (length) align
-	# with the building wall.
-	const PARKING_OFFSET := Vector3(-25.0, 0.0, 8.0)
-	var parking_world : Vector3 = basis_y * PARKING_OFFSET
+	# Parking lot — 25 m local-west, 8 m local-north of the building centre.
+	# #221-PC Phase 5 — the position is now an operator-tunable PC marker
+	# (WorldLayout.staff_parking / staff_parking_pc), authored in WorldSetup.
+	# When unset, falls back to the Phase 3 PARKING_PC constant so existing
+	# saves spawn the lot where they always did.
+	const PARKING_PC_DEFAULT := Vector2(475.0, 508.0)
+	var parking_pc : Vector2 = PARKING_PC_DEFAULT
+	if WorldLayout.staff_parking != Vector3.ZERO and WorldLayout.has_pc_data \
+			and WorldLayout.staff_parking_pc != Vector2.ZERO:
+		parking_pc = WorldLayout.staff_parking_pc
+		print("[MainWorld] staff parking from operator marker PC(%.1f, %.1f)" % [parking_pc.x, parking_pc.y])
 	staff_parking = preload("res://src/scenes/world/StaffParking.gd").new()
 	staff_parking.name = "StaffParking"
 	add_child(staff_parking)
-	staff_parking.global_position = Vector3(
-		anchor.x + parking_world.x,
-		ground_y + 0.02,
-		anchor.z + parking_world.z)
+	if has_node("/root/Plant") and Plant.is_initialized():
+		# Y stays at the legacy `ground_y + 0.02 = anchor.y - 0.98` — parking
+		# surface is NOT pinned to floor_top_y. pc_to_scene_with_y respects that.
+		staff_parking.global_position = Plant.pc_to_scene_with_y(parking_pc, ground_y + 0.02)
+	else:
+		# Legacy fallback — exact pre-Phase-3 math, scaled to whatever parking_pc is.
+		var parking_world : Vector3 = basis_y * Vector3(parking_pc.x - 500.0, 0.0, parking_pc.y - 500.0)
+		staff_parking.global_position = Vector3(
+			anchor.x + parking_world.x,
+			ground_y + 0.02,
+			anchor.z + parking_world.z)
 	staff_parking.rotation.y = by
 	_spawn_parking_lamps(staff_parking, ground_y)
 	# Road — De Asselen Kuil — runs along the building's local west edge
-	# (negative local-X), then turns east into the parking aisle. Waypoints
-	# are expressed in BUILDING-local coords and rotated by `by`.
+	# (negative local-X), then turns east into the parking aisle.
+	# #221-PC Phase 4 — waypoints expressed in PC coords. Each PC value is
+	# the building-local offset + PC_CENTER (500, 500). Plant.pc_to_scene_with_y
+	# applies the same rotation/anchor the legacy `_bo(ga, offset)` did, with
+	# Y forced to ground_y so the road plate sits below the operating floor.
+	# (Phase 5 will replace these constants with WorldSetup waypoint markers.)
 	var ga := Vector3(anchor.x, ground_y, anchor.z)
 	var road : Road = preload("res://src/scenes/world/Road.gd").new()
 	road.name = "DeAsselenKuil"
 	road.surface_y = ground_y
-	road.setup([
-		# Far south end of De Asselen Kuil — extended ~400 m local-south so the
-		# player Swift sits at a real "FAR end of the road" approach instead of
-		# right next to the parking entry. Long northbound straight gives a
-		# clear drive-in cinematic before the east turn into the lot.
-		_bo(ga, Vector3(-42.0, 0.0, -440.0)),  # FAR south spawn end
-		_bo(ga, Vector3(-42.0, 0.0, -40.0)),   # original south end (now mid-road)
-		_bo(ga, Vector3(-42.0, 0.0,   0.0)),   # straight north along west edge
-		_bo(ga, Vector3(-42.0, 0.0,  20.0)),   # past parking entry, continues north
-		_bo(ga, Vector3(-25.0, 0.0,  30.0)),   # turn east toward plant entry pad
-		_bo(ga, Vector3(  0.0, 0.0,  30.0)),   # plant entry pad
-	])
+	var use_plant : bool = has_node("/root/Plant") and Plant.is_initialized()
+	# Waypoints as PC (500 + local.x, 500 + local.z). Source values below
+	# match the legacy hardcoded offsets exactly.
+	const ROAD_WAYPOINTS_PC : Array = [
+		Vector2(458.0,  60.0),   # FAR south spawn end       (was -42, -440)
+		Vector2(458.0, 460.0),   # original south end        (was -42, -40)
+		Vector2(458.0, 500.0),   # straight north            (was -42,   0)
+		Vector2(458.0, 520.0),   # past parking entry        (was -42,  20)
+		Vector2(475.0, 530.0),   # turn east toward plant    (was -25,  30)
+		Vector2(500.0, 530.0),   # plant entry pad           (was   0,  30)
+	]
+	var waypoints : Array = []
+	for pc in ROAD_WAYPOINTS_PC:
+		if use_plant:
+			waypoints.append(Plant.pc_to_scene_with_y(pc, ground_y))
+		else:
+			waypoints.append(_bo(ga, Vector3(pc.x - 500.0, 0.0, pc.y - 500.0)))
+	road.setup(waypoints)
 	add_child(road)
-	_spawn_street_sign(_bo(ga, Vector3(-43.5, 0.0, 0.0)), "De Asselen Kuil")
+	# Street sign at PC(456.5, 500) = local (-43.5, 0) — half a metre west of
+	# the road's west edge so the sign post sits on the verge, not in traffic.
+	const STREET_SIGN_PC := Vector2(456.5, 500.0)
+	var sign_pos : Vector3
+	if use_plant:
+		sign_pos = Plant.pc_to_scene_with_y(STREET_SIGN_PC, ground_y)
+	else:
+		sign_pos = _bo(ga, Vector3(STREET_SIGN_PC.x - 500.0, 0.0, STREET_SIGN_PC.y - 500.0))
+	_spawn_street_sign(sign_pos, "De Asselen Kuil")
 	# #192 follow-up — road extensions / perimeter fence / exterior props are
 	# now owned by ExteriorManager (a child node); it parents its spawned items
 	# back under MainWorld so the runtime scene shape is unchanged. Interior

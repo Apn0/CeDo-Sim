@@ -22,6 +22,17 @@ class_name PlayerController
 # Overrides sprint when both are held.
 @export var fast_run_multiplier : float = 5.0
 
+# Walk-speed ramps (anti-snap audit). Two layers:
+#  1. DIRECTION ramp — handled by the existing `acceleration` + move_toward in
+#     _physics_process. With acceleration=20 m/s² and walk_speed=5, going from
+#     standstill to full walk takes 5 / 20 = 0.25 s → snappy FPS feel.
+#  2. MULTIPLIER ramp — smooths the speed_mul scalar (walk → sprint, walk →
+#     fast-traverse, stance multipliers) with a first-order low-pass so tapping
+#     Shift doesn't jerk the camera. tau≈0.12 s yields ~0.5 s for a 5× change
+#     to settle within 99% — matches the audit's "walk→sprint over ~0.5 s".
+const _SPEED_MUL_TAU_S : float = 0.12
+var _speed_mul_smooth : SmoothedRate = null
+
 const GRAVITY: float = 9.8
 const STEP_HEIGHT: float = 0.4   # max ledge/curb height the player walks over
 const INTERACT_RAY_RANGE: float = 3.75
@@ -52,6 +63,34 @@ var _ray_player_head  : RayCast3D = null
 
 var _look_interactable: Node = null
 var _look_prompt: String = ""
+
+# ── #210d Pelletizer knife replace — hold-E state ─────────────────────────────
+# When the camera ray hits a node with placeable_id == "pelletizer_knife" AND
+# the active inventory slot carries a SocketWrench7, we surface a "hold E to
+# replace" prompt and integrate progress in _physics_process while the player
+# keeps E held on the same knife. Released early → cancel. Reaches 1.0 →
+# PelletizerKnifeReplace.complete() flips both the model state and the visual.
+# Separate from _look_interactable because the knife body deliberately does
+# NOT implement crosshair_prompt/crosshair_interact (it'd require touching
+# every catalog-built body and stomp the simpler "tap E with wrench" feel).
+var _knife_target : Node3D = null   # node currently under the crosshair (knife body)
+var _knife_holding : bool = false   # E currently held + hold-E in flight
+var _knife_prompt_text : String = "" # last text we pushed to interaction_prompt_show
+const _KNIFE_REPLACE := preload("res://src/scenes/interactions/PelletizerKnifeReplace.gd")
+
+# ── TITECH/TOMRA shaft-wrap cut — hold-E state (sibling to knife replace) ─────
+# When the camera ray hits a NIR sorter body (placeable_id in
+# {nir_sorter, titech_sort, tomra_sort}) AND the active inventory slot carries
+# the WireCutter (tool_id == "scissors"), we surface a "hold E to cut wrap"
+# prompt and integrate progress in _physics_process while the player keeps E
+# held on the same sorter. Released early → cancel. Reaches 1.0 →
+# TitechShaftCut.complete() removes CUT_REMOVE_G of fibrous wrap.
+# Separate from _look_interactable for the same reason as the knife block —
+# the sorter body deliberately does NOT implement crosshair_prompt/interact.
+var _shaft_target : Node3D = null   # node currently under the crosshair (NIR sorter body)
+var _shaft_holding : bool = false   # E currently held + hold-E in flight
+var _shaft_prompt_text : String = "" # last text we pushed to interaction_prompt_show
+const _SHAFT_CUT := preload("res://src/scenes/interactions/TitechShaftCut.gd")
 
 @onready var head     : Node3D   = $Head
 @onready var camera_3d: Camera3D = $Head/Camera3D
@@ -173,6 +212,9 @@ func _ready() -> void:
 	_refresh_settings()
 	_build_flashlight()
 	_build_vault_rays()
+	# Speed multiplier smoother (anti-snap audit): walk→sprint over ~0.5 s.
+	# Start at 1.0 so a player who spawns standing still doesn't ramp from 0.
+	_speed_mul_smooth = SmoothedRate.new(1.0, _SPEED_MUL_TAU_S)
 	if Engine.has_singleton("SettingsManager") or has_node("/root/SettingsManager"):
 		var sm := get_node("/root/SettingsManager")
 		if sm.has_signal("settings_applied"):
@@ -252,12 +294,18 @@ func _physics_process(delta: float) -> void:
 	# Speed multipliers (only while STANDING — crouched/prone ignore both):
 	#   Alt   → fast-traverse 5× (priority over sprint)
 	#   Shift → sprint ×1.7
-	var speed_mul : float = float(STANCE_SPEED_MUL[_stance])
+	# Audit anti-snap: the TARGET multiplier is computed from the current input
+	# state, then _speed_mul_smooth low-passes it (tau≈0.12 s) so tapping Shift
+	# blends walk→sprint over ~0.5 s instead of teleporting the camera. The
+	# move_toward layer below still handles the wish_dir direction-change ramp
+	# at acceleration=20 m/s² → 0→walk in 0.25 s for snappy FPS feel.
+	var target_speed_mul : float = float(STANCE_SPEED_MUL[_stance])
 	if _stance == Stance.STANDING:
 		if Input.is_action_pressed("fast_run"):
-			speed_mul *= fast_run_multiplier
+			target_speed_mul *= fast_run_multiplier
 		elif Input.is_action_pressed("sprint"):
-			speed_mul *= sprint_multiplier
+			target_speed_mul *= sprint_multiplier
+	var speed_mul : float = _speed_mul_smooth.approach(target_speed_mul, delta)
 	var target_xz := wish_dir * walk_speed * speed_mul
 	var accel     := acceleration if wish_dir.length() > 0.0 else friction
 	velocity.x = move_toward(velocity.x, target_xz.x, accel * delta)
@@ -279,6 +327,8 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 	_apply_belt_carry(delta)
 	_update_crosshair_interaction()
+	_update_knife_replace_hold(delta)
+	_update_shaft_cut_hold(delta)
 	# Animation Phase 1: feed the body's BlendSpace2D so 3rd-person/orbit shows
 	# a real walk cycle. No-op for first-person (the body's head is on a
 	# hidden layer + the FP eye sits between the body's shoulders).
@@ -616,6 +666,32 @@ func _build_flashlight() -> void:
 		var evkp0 := InputEventKey.new()
 		evkp0.physical_keycode = KEY_KP_0
 		InputMap.action_add_event("debug_force_fault", evkp0)
+	# Secret debug — Numpad-9: instantly fill the extruder feed silo you're
+	# aiming at to 90 %. Lets the operator force-prime an extruder for a
+	# startup-test run without waiting for the wash chain to deliver flake.
+	if not InputMap.has_action("debug_fill_silo"):
+		InputMap.add_action("debug_fill_silo")
+		var ev9 := InputEventKey.new()
+		ev9.physical_keycode = KEY_KP_9
+		InputMap.action_add_event("debug_fill_silo", ev9)
+	# F10 — collaborative feedback capture: snapshots the current view +
+	# machine-readable context about whatever is under the crosshair into
+	# user://feedback/<timestamp>/ so it can be pasted into a chat and acted on.
+	if not InputMap.has_action("feedback_capture"):
+		InputMap.add_action("feedback_capture")
+		var evf10 := InputEventKey.new()
+		evf10.physical_keycode = KEY_F10
+		InputMap.action_add_event("feedback_capture", evf10)
+	# F8 — Inspect Mode toggle (#inspect): free-fly camera + layout-marker
+	# gizmos + satellite / floor-plan ground overlays. F8 is free in MainWorld
+	# (the SandboxWorld F8 binding is in a different top-level scene that never
+	# coexists with this one). Registered lazily so a stale InputMap from a
+	# pre-Inspect save still picks the action up.
+	if not InputMap.has_action("inspect_mode"):
+		InputMap.add_action("inspect_mode")
+		var evf8 := InputEventKey.new()
+		evf8.physical_keycode = KEY_F8
+		InputMap.action_add_event("inspect_mode", evf8)
 
 func _toggle_flashlight() -> void:
 	if _flashlight == null:
@@ -822,6 +898,31 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 
+	# Secret silo-fill cheat (Numpad-9). Aim at any part of an extruder feed
+	# silo and press to instantly fill it to 90 %.
+	if event.is_action_pressed("debug_fill_silo"):
+		_debug_fill_silo_at_crosshair()
+		get_viewport().set_input_as_handled()
+
+	if event.is_action_pressed("feedback_capture"):
+		_capture_feedback_at_crosshair()
+		get_viewport().set_input_as_handled()
+		return
+
+	# F8 — Inspect Mode toggle (#inspect): hand the viewport to a free-fly
+	# camera + show gizmos on every WorldLayout marker. Player input is
+	# suspended by InspectMode while it's ON; the toggle-OFF path lives on
+	# InspectMode itself (its _unhandled_input also listens for F8 / Esc) so
+	# the operator can always get back to walking around.
+	if event.is_action_pressed("inspect_mode"):
+		var world := get_tree().current_scene
+		if world and "inspect_mode" in world:
+			var im : Node = world.get("inspect_mode")
+			if im and im.has_method("toggle"):
+				im.call("toggle")
+				get_viewport().set_input_as_handled()
+				return
+
 	# Hotbar: 1-4 switch the active inventory slot, Q drops the active item.
 	# Tools (scissors / scanner) live under Head and Inventory handles the
 	# show/hide so only the active one is in your hand.
@@ -895,7 +996,17 @@ func _update_crosshair_interaction() -> void:
 		if active_tool:
 			q.exclude.append(active_tool.get_rid())
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
-	var target := _interactable_from_hit(hit.get("collider") if not hit.is_empty() else null)
+	var hit_collider : Node = hit.get("collider") if not hit.is_empty() else null
+	var target := _interactable_from_hit(hit_collider)
+	# #210d — also resolve a pelletizer-knife target so the hold-E branch in
+	# _update_knife_replace_hold knows what (if anything) is under the crosshair.
+	# Walks the same ancestor chain as _interactable_from_hit but matches a
+	# different contract (meta-tagged knife body, NO crosshair_* methods).
+	_knife_target = _knife_from_hit(hit_collider)
+	# TITECH/TOMRA shaft-wrap cut — same shape as the knife branch, different
+	# placeable_id set (nir_sorter / titech_sort / tomra_sort). The two contracts
+	# don't collide on a single hit because no sorter body carries the knife id.
+	_shaft_target = _shaft_from_hit(hit_collider)
 	if target != _look_interactable:
 		_clear_crosshair_interaction()
 		_look_interactable = target
@@ -909,6 +1020,12 @@ func _update_crosshair_interaction() -> void:
 			_look_prompt = prompt
 			if _look_prompt != "":
 				EventBus.interaction_prompt_show.emit(_look_interactable, _look_prompt)
+	# Knife prompt — driven separately so the wrench-not-held / wrench-held
+	# wording and the live "(X/4 vernieuwd)" counter both surface even though
+	# the knife body itself implements no crosshair_* methods.
+	_refresh_knife_prompt()
+	# Shaft-cut prompt — same reason, different contract (NIR sorter body).
+	_refresh_shaft_prompt()
 
 func _clear_crosshair_interaction() -> void:
 	if _look_interactable != null:
@@ -916,6 +1033,21 @@ func _clear_crosshair_interaction() -> void:
 			EventBus.interaction_prompt_hide.emit(_look_interactable)
 		_look_interactable = null
 		_look_prompt = ""
+	# Knife branch shares the same "look dropped" lifecycle.
+	if _knife_target != null:
+		_hide_knife_prompt()
+		_knife_target = null
+	# Cancel any in-flight hold the moment the ray loses its target.
+	if _knife_holding:
+		_KNIFE_REPLACE.cancel()
+		_knife_holding = false
+	# Shaft-cut branch — same lifecycle as the knife branch.
+	if _shaft_target != null:
+		_hide_shaft_prompt()
+		_shaft_target = null
+	if _shaft_holding:
+		_SHAFT_CUT.cancel()
+		_shaft_holding = false
 
 func _interactable_from_hit(node: Node) -> Node:
 	var n := node
@@ -924,6 +1056,318 @@ func _interactable_from_hit(node: Node) -> Node:
 			return n
 		n = n.get_parent()
 	return null
+
+# =============================================================================
+# #210d — Pelletizer knife replace (hold-E + wrench gated)
+# =============================================================================
+## Walk up the ray-hit ancestor chain looking for a node with
+## meta("placeable_id") == "pelletizer_knife". Returns that node as a Node3D, or
+## null if nothing in the chain qualifies. Cheap (only runs on hits) and keeps
+## the knife body free of crosshair_* methods so the contract stays clean.
+func _knife_from_hit(node: Node) -> Node3D:
+	var n := node
+	while n != null:
+		if n.has_meta("placeable_id") \
+				and String(n.get_meta("placeable_id")) == _KNIFE_REPLACE.KNIFE_PLACEABLE_ID:
+			return n as Node3D
+		n = n.get_parent()
+	return null
+
+## Returns true if the player is currently carrying the Maat-7 socket wrench in
+## the active inventory slot. Used to gate prompt text + the hold-begin path.
+func _player_has_wrench() -> bool:
+	var inv := get_node_or_null("/root/Inventory")
+	if inv == null or not inv.has_method("active"):
+		return false
+	var t = inv.call("active")
+	if t == null or not is_instance_valid(t):
+		return false
+	if "tool_id" in t and String(t.get("tool_id")) == _KNIFE_REPLACE.WRENCH_TOOL_ID:
+		return true
+	if t is Node and (t as Node).is_in_group(_KNIFE_REPLACE.WRENCH_TOOL_ID):
+		return true
+	return false
+
+## Number of knives on this pelletizer that have already been refreshed back
+## to NEW (state == 0). Reads each sibling knife body under the same cutter
+## rotor parent. Falls back to 0 if any meta is missing.
+func _knives_renewed_count(knife: Node3D) -> int:
+	if knife == null:
+		return 0
+	var rotor := knife.get_parent()
+	if rotor == null:
+		return 0
+	var n := 0
+	for c in rotor.get_children():
+		if c == null or not (c is Node):
+			continue
+		if not c.has_meta("placeable_id"):
+			continue
+		if String(c.get_meta("placeable_id")) != _KNIFE_REPLACE.KNIFE_PLACEABLE_ID:
+			continue
+		# Treat MISSING knife_state as NEW (matches the initial build state in
+		# PlaceableCatalog._m_heetafslag, where knife_state is only stamped
+		# after the first set_knife_state call).
+		var s : int = int(c.get_meta("knife_state", 0))
+		if s == 0:
+			n += 1
+	return n
+
+## Build + emit the prompt string for the knife currently under the crosshair.
+## Idempotent on the same string — re-emits only when the text changes.
+##
+## Cases:
+##   - No knife under the ray         → hide knife prompt (if any was showing)
+##   - Knife under ray, no wrench     → "Maat-7 dopsleutel nodig"
+##   - Knife + wrench + rotor spinning → "Stop eerst de rotor"
+##   - Knife + wrench, no hold        → "E — vervang mes <i+1> (X/4 vernieuwd)"
+##   - Hold in flight                 → "Vervangen... NN %"
+func _refresh_knife_prompt() -> void:
+	if _knife_target == null or not is_instance_valid(_knife_target):
+		_hide_knife_prompt()
+		return
+	var idx : int = int(_knife_target.get_meta("knife_index", 0))
+	var renewed : int = _knives_renewed_count(_knife_target)
+	var text : String
+	if _knife_holding:
+		var pct : int = int(round(_KNIFE_REPLACE.progress() * 100.0))
+		text = "Vervangen... %d %%" % pct
+	elif not _player_has_wrench():
+		text = "Maat-7 dopsleutel nodig"
+	elif not _KNIFE_REPLACE.is_rotor_safe(_knife_target):
+		# Wrench is in hand but the cut_rm disc is still spinning —
+		# try_begin() will refuse, so feed the operator the reason explicitly.
+		text = "Stop eerst de rotor"
+	else:
+		text = "E — vervang mes %d (%d/4 vernieuwd)" % [idx + 1, renewed]
+	if text == _knife_prompt_text:
+		return
+	_knife_prompt_text = text
+	EventBus.interaction_prompt_show.emit(_knife_target, text)
+
+func _hide_knife_prompt() -> void:
+	if _knife_prompt_text == "":
+		return
+	if _knife_target != null and is_instance_valid(_knife_target):
+		EventBus.interaction_prompt_hide.emit(_knife_target)
+	_knife_prompt_text = ""
+
+## Per-tick driver for the hold-E knife replace. Hooked into _physics_process
+## just after _update_crosshair_interaction so the per-frame target snapshot is
+## already current. State machine:
+##   - E pressed + knife in sight + wrench held + no hold yet → try_begin()
+##   - E held    + same knife still in sight                  → tick_hold()
+##   - E held    + target dropped / ray moved                 → cancel()
+##   - E released before progress >= 1                        → cancel()
+##   - progress >= 1                                          → complete()
+func _update_knife_replace_hold(delta: float) -> void:
+	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		if _knife_holding:
+			_KNIFE_REPLACE.cancel()
+			_knife_holding = false
+			_refresh_knife_prompt()
+		return
+	var e_held := Input.is_action_pressed("interact")
+	# Released → cancel any in-flight hold.
+	if not e_held:
+		if _knife_holding:
+			_KNIFE_REPLACE.cancel()
+			_knife_holding = false
+			_refresh_knife_prompt()
+		return
+	# E is held. We don't poach the single-tap interact branch (which fires in
+	# _unhandled_input on action_just_pressed and consumes its own viewport
+	# event); the begin condition below is satisfied on the FIRST physics tick
+	# after the press, by which time the tap branch has already returned. That
+	# tap branch only triggers when an _look_interactable is present — a bare
+	# knife body has none, so the two paths can't collide on the same target.
+	if not _knife_holding:
+		if _knife_target == null or not is_instance_valid(_knife_target):
+			return
+		if not _player_has_wrench():
+			return
+		if not _KNIFE_REPLACE.try_begin(self, _knife_target):
+			return
+		_knife_holding = true
+		_refresh_knife_prompt()
+		return
+	# Mid-hold guards: the ray must still be on the same knife and we must
+	# still be carrying the wrench. Either invalidation cancels.
+	if _knife_target == null or not is_instance_valid(_knife_target) \
+			or not _KNIFE_REPLACE.is_active_on(_knife_target) \
+			or not _player_has_wrench():
+		_KNIFE_REPLACE.cancel()
+		_knife_holding = false
+		_refresh_knife_prompt()
+		return
+	var p : float = _KNIFE_REPLACE.tick_hold(delta)
+	_refresh_knife_prompt()
+	if p >= 1.0:
+		var ok : bool = _KNIFE_REPLACE.complete(_knife_target)
+		_knife_holding = false
+		if ok:
+			print("[Player] Pelletizer knife %d replaced" \
+				% int(_knife_target.get_meta("knife_index", 0)))
+		else:
+			push_warning("[Player] Knife replace failed (model resolution)")
+		# Refresh the prompt — the (X/4 vernieuwd) counter just changed.
+		_refresh_knife_prompt()
+
+# =============================================================================
+# TITECH/TOMRA shaft-wrap cut (hold-E + wire-cutter gated)
+# =============================================================================
+## Walk up the ray-hit ancestor chain looking for a node whose placeable_id is
+## one of {nir_sorter, titech_sort, tomra_sort}. Returns that node as a Node3D,
+## or null if nothing in the chain qualifies. Cheap — only runs on hits — and
+## keeps the sorter body free of crosshair_* methods so the contract matches
+## the knife branch.
+func _shaft_from_hit(node: Node) -> Node3D:
+	var n := node
+	while n != null:
+		if n.has_meta("placeable_id") \
+				and _SHAFT_CUT.NIR_PLACEABLE_IDS.has(String(n.get_meta("placeable_id"))):
+			return n as Node3D
+		n = n.get_parent()
+	return null
+
+## True if the player is currently carrying the wire cutter (scissors) in the
+## active inventory slot. Used to gate prompt text + the hold-begin path.
+## Mirrors _player_has_wrench(): tool_id match wins, group fallback for variants.
+func _player_has_wire_cutter() -> bool:
+	var inv := get_node_or_null("/root/Inventory")
+	if inv == null or not inv.has_method("active"):
+		return false
+	var t = inv.call("active")
+	if t == null or not is_instance_valid(t):
+		return false
+	if "tool_id" in t and String(t.get("tool_id")) == _SHAFT_CUT.WIRE_CUTTER_TOOL_ID:
+		return true
+	if t is Node and (t as Node).is_in_group("wire_cutter"):
+		return true
+	return false
+
+## Peek the current shaft-wrap grams off the cached NirSorter controller without
+## starting a hold. Returns -1.0 if the controller isn't wired yet (LineFlow
+## hasn't rebuilt since placement) — caller treats that as "unknown / no wrap".
+func _shaft_wrap_g_of(target: Node3D) -> float:
+	if target == null or not is_instance_valid(target):
+		return -1.0
+	if not target.has_meta("nir_sorter_ctrl"):
+		return -1.0
+	var ctrl = target.get_meta("nir_sorter_ctrl")
+	if ctrl == null or not is_instance_valid(ctrl):
+		return -1.0
+	if ctrl.has_method("wrap_g"):
+		return float(ctrl.call("wrap_g"))
+	# Fallback: read the WrapModel field directly if the public accessor is gone.
+	if "shaft_wrap" in ctrl:
+		var wm = ctrl.get("shaft_wrap")
+		if wm != null and "wrap_g" in wm:
+			return float(wm.get("wrap_g"))
+	return -1.0
+
+## Build + emit the prompt string for the NIR sorter currently under the
+## crosshair. Idempotent on the same string — re-emits only when the text
+## changes (matches _refresh_knife_prompt's pattern).
+##
+## Cases:
+##   - No sorter under the ray             → hide shaft prompt
+##   - Sorter + wrap visible, no cutter    → "Schaartje nodig — kabel wikkel verwijderen"
+##   - Sorter + cutter + wrap > threshold  → "E — snij wikkel (XXg)"
+##   - Sorter + cutter + wrap <= threshold → "Geen wikkel zichtbaar"
+##   - Hold in flight                      → "Snijden... NN %"
+func _refresh_shaft_prompt() -> void:
+	if _shaft_target == null or not is_instance_valid(_shaft_target):
+		_hide_shaft_prompt()
+		return
+	var text : String
+	if _shaft_holding:
+		var pct : int = int(round(_SHAFT_CUT.progress() * 100.0))
+		text = "Snijden... %d %%" % pct
+	else:
+		var wrap_g : float = _shaft_wrap_g_of(_shaft_target)
+		var has_cutter : bool = _player_has_wire_cutter()
+		if not has_cutter:
+			# Only surface the "need a wire cutter" hint when there's actually
+			# wrap to cut. Sorters with a clean shaft should be silent.
+			if wrap_g > _SHAFT_CUT.MIN_WRAP_FOR_CUT:
+				text = "Schaartje nodig — kabel wikkel verwijderen"
+			else:
+				_hide_shaft_prompt()
+				return
+		else:
+			if wrap_g > _SHAFT_CUT.MIN_WRAP_FOR_CUT:
+				text = "E — snij wikkel (%dg)" % int(round(wrap_g))
+			else:
+				text = "Geen wikkel zichtbaar"
+	if text == _shaft_prompt_text:
+		return
+	_shaft_prompt_text = text
+	EventBus.interaction_prompt_show.emit(_shaft_target, text)
+
+func _hide_shaft_prompt() -> void:
+	if _shaft_prompt_text == "":
+		return
+	if _shaft_target != null and is_instance_valid(_shaft_target):
+		EventBus.interaction_prompt_hide.emit(_shaft_target)
+	_shaft_prompt_text = ""
+
+## Per-tick driver for the hold-E shaft-wrap cut. Same state machine as
+## _update_knife_replace_hold:
+##   - E pressed + sorter in sight + wire cutter held + wrap > threshold → try_begin()
+##   - E held    + same sorter still in sight + cutter still held       → tick_hold()
+##   - E held    + target dropped / ray moved / cutter dropped          → cancel()
+##   - E released before progress >= 1                                   → cancel()
+##   - progress >= 1                                                     → complete()
+func _update_shaft_cut_hold(delta: float) -> void:
+	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		if _shaft_holding:
+			_SHAFT_CUT.cancel()
+			_shaft_holding = false
+			_refresh_shaft_prompt()
+		return
+	var e_held := Input.is_action_pressed("interact")
+	# Released → cancel any in-flight hold.
+	if not e_held:
+		if _shaft_holding:
+			_SHAFT_CUT.cancel()
+			_shaft_holding = false
+			_refresh_shaft_prompt()
+		return
+	# E is held. The single-tap interact branch in _input only fires when an
+	# _look_interactable is present — the NIR sorter body has none, so the two
+	# paths can't collide on the same target (same reasoning as the knife block).
+	if not _shaft_holding:
+		if _shaft_target == null or not is_instance_valid(_shaft_target):
+			return
+		if not _player_has_wire_cutter():
+			return
+		if not _SHAFT_CUT.try_begin(self, _shaft_target):
+			return
+		_shaft_holding = true
+		_refresh_shaft_prompt()
+		return
+	# Mid-hold guards: ray must still be on the same sorter and we must still
+	# be carrying the wire cutter. Either invalidation cancels.
+	if _shaft_target == null or not is_instance_valid(_shaft_target) \
+			or not _SHAFT_CUT.is_active_on(_shaft_target) \
+			or not _player_has_wire_cutter():
+		_SHAFT_CUT.cancel()
+		_shaft_holding = false
+		_refresh_shaft_prompt()
+		return
+	var p : float = _SHAFT_CUT.tick_hold(delta)
+	_refresh_shaft_prompt()
+	if p >= 1.0:
+		var ok : bool = _SHAFT_CUT.complete(_shaft_target)
+		_shaft_holding = false
+		if ok:
+			print("[Player] TITECH shaft wrap cut (%.0f g removed)" \
+				% _SHAFT_CUT.CUT_REMOVE_G)
+		else:
+			push_warning("[Player] Shaft-wrap cut failed (controller resolution)")
+		# Refresh the prompt — wrap_g just dropped, idle text should follow.
+		_refresh_shaft_prompt()
 
 # =============================================================================
 # Debug — force a fault on the machine under the crosshair (0 / Numpad-0).
@@ -982,6 +1426,258 @@ func _debug_trigger_fault_at_crosshair() -> void:
 			return
 		n = n.get_parent()
 	print("[DEBUG] force-fault: no faultable component found under %s" % String(hit_node.name))
+
+## SECRET (Numpad-9) — raycast from the camera through the crosshair, walk up
+## the ancestor chain until we find an extruder_silo placeable, then drop a
+## "DebugFill" mesh inside it sized to 90 % of the inner body volume. Re-runs
+## REPLACE the mesh so the fill stays at 90 % regardless of how many times you
+## press the key. Sets a `fill_pct` meta on the silo so any future sim
+## integration can read it without scanning the visual.
+func _debug_fill_silo_at_crosshair() -> void:
+	if camera_3d == null:
+		return
+	var from := camera_3d.global_position
+	var to := from - camera_3d.global_transform.basis.z * INTERACT_RAY_RANGE
+	var q := PhysicsRayQueryParameters3D.create(from, to)
+	q.collision_mask = 0xFFFFFFFF
+	q.collide_with_areas = true
+	q.collide_with_bodies = true
+	q.exclude = [get_rid()]
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty():
+		print("[DEBUG] fill-silo: crosshair hit nothing within %d m" % INTERACT_RAY_RANGE)
+		return
+	# Find the nearest ancestor that's an extruder_silo placeable.
+	var n : Node = hit["collider"]
+	var silo : Node3D = null
+	while n != null:
+		if n is Node3D and n.has_meta("placeable_id") \
+				and String(n.get_meta("placeable_id")) == "extruder_silo":
+			silo = n as Node3D
+			break
+		n = n.get_parent()
+	if silo == null:
+		print("[DEBUG] fill-silo: %s is not part of an extruder_silo" % String(hit["collider"].name))
+		return
+	# Measure the body AABB by merging every mesh descendant in the silo's
+	# local frame. The extruder_silo model spans frame_top..box_top on Y
+	# (≈ 0.40..0.92 of size.y); the merged AABB captures that without
+	# hard-coding the constants.
+	var bb := _silo_local_aabb(silo)
+	if bb.size == Vector3.ZERO:
+		print("[DEBUG] fill-silo: couldn't measure %s body" % silo.name)
+		return
+	const FILL_PCT   : float = 0.90
+	const WALL_INSET : float = 0.06
+	# Clip the lower 42 % of the AABB — that's the support-frame zone below
+	# the actual silo box. The flake sits in the upper 50 % only.
+	var inner_y_low  : float = bb.position.y + bb.size.y * 0.42
+	var inner_y_high : float = bb.position.y + bb.size.y * 0.92
+	var inner_x  : float = max(0.05, bb.size.x - WALL_INSET * 2.0)
+	var inner_z  : float = max(0.05, bb.size.z - WALL_INSET * 2.0)
+	var inner_h  : float = max(0.05, inner_y_high - inner_y_low)
+	var fill_h   : float = inner_h * FILL_PCT
+	var fill_cy  : float = inner_y_low + fill_h * 0.5
+	# Remove any prior DebugFill so re-pressing keeps it at exactly 90 %.
+	var existing := silo.get_node_or_null("DebugFill") as Node3D
+	if existing != null:
+		existing.queue_free()
+	var mi := MeshInstance3D.new()
+	mi.name = "DebugFill"
+	var bm := BoxMesh.new()
+	bm.size = Vector3(inner_x, fill_h, inner_z)
+	mi.mesh = bm
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.85, 0.82, 0.70, 0.85)    # flake-coloured, slight translucency
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.roughness = 0.92
+	mat.metallic = 0.0
+	mi.material_override = mat
+	var bb_cx : float = bb.position.x + bb.size.x * 0.5
+	var bb_cz : float = bb.position.z + bb.size.z * 0.5
+	mi.position = Vector3(bb_cx, fill_cy, bb_cz)
+	silo.add_child(mi)
+	silo.set_meta("fill_pct", FILL_PCT)
+	print("[DEBUG] fill-silo: filled %s to %.0f %%" % [silo.name, FILL_PCT * 100.0])
+
+## Merge every descendant MeshInstance3D's AABB into the silo's local frame.
+## Skips the DebugFill mesh itself so re-runs don't grow the bounding box.
+func _silo_local_aabb(silo: Node3D) -> AABB:
+	var bb := AABB()
+	var started := false
+	var inv := silo.global_transform.affine_inverse()
+	var stack : Array = [silo]
+	while not stack.is_empty():
+		var nd : Node = stack.pop_back()
+		for c in nd.get_children():
+			if c.name == "DebugFill":
+				continue
+			if c is MeshInstance3D and (c as MeshInstance3D).mesh != null:
+				var a : AABB = (c as MeshInstance3D).get_aabb()
+				var x : Transform3D = inv * (c as Node3D).global_transform
+				for ix in [0.0, 1.0]:
+					for iy in [0.0, 1.0]:
+						for iz in [0.0, 1.0]:
+							var p : Vector3 = x * (a.position + Vector3(a.size.x * ix, a.size.y * iy, a.size.z * iz))
+							if not started:
+								bb = AABB(p, Vector3.ZERO); started = true
+							else:
+								bb = bb.expand(p)
+			if c is Node3D:
+				stack.append(c)
+	return bb
+
+# =============================================================================
+# F10 — collaborative feedback capture
+# =============================================================================
+## Snapshot the current view + machine-readable context about whatever the
+## crosshair is aimed at to `user://feedback/<timestamp>/`. The folder ends
+## up with `screenshot.png` and `context.json`; the operator pastes the path
+## into chat and the developer reads context.json to know exactly which
+## placeable_id / scene path / world position they meant. Reuses the
+## `scanner_banner` HUD toast for the "captured #N" confirmation.
+##
+## Why JSON over just a screenshot:
+##   * A picture of a silo doesn't say WHICH silo (extruder_3a vs 3b vs 1).
+##   * The catalog override system writes by `placeable_id`; the JSON makes
+##     the id discoverable without the developer having to read the photo.
+##   * Future bakes can replay the camera pose to verify the change landed.
+func _capture_feedback_at_crosshair() -> void:
+	var stamp := _feedback_timestamp()
+	var dir_path := "user://feedback/%s" % stamp
+	var err := DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(dir_path)) \
+		if not dir_path.begins_with("user://") else DirAccess.make_dir_recursive_absolute(dir_path)
+	if err != OK and not DirAccess.dir_exists_absolute(dir_path):
+		push_warning("[feedback] could not create %s" % dir_path)
+		return
+	# Screenshot — grab the active viewport's last frame as a PNG.
+	var img : Image = get_viewport().get_texture().get_image()
+	if img != null:
+		img.save_png("%s/screenshot.png" % dir_path)
+	# Build the JSON context dict.
+	var ctx : Dictionary = {
+		"format":      "cedo-feedback-v1",
+		"captured_at": Time.get_datetime_string_from_system(true),
+		"world": {
+			"scene": String(get_tree().current_scene.scene_file_path) \
+				if get_tree().current_scene else "",
+		},
+		"player": {
+			"position": _v3_to_arr(global_position),
+			"rotation_y": rotation.y,
+		},
+		"camera": _camera_pose_dict(),
+		"crosshair": _crosshair_context(),
+	}
+	# Shift clock state (if present) — helps answer "what was happening at the
+	# moment of capture" without a screenshot reverse-engineering session.
+	var sc := get_tree().root.get_node_or_null("/root/ShiftClock")
+	if sc != null and "current_time_label" in sc:
+		ctx["shift"] = {"time": String(sc.get("current_time_label"))}
+	# Stash any pending size overrides so the developer sees what's already
+	# been baked vs what remains to do.
+	PlaceableCatalog._ensure_overrides_loaded()
+	var overrides : Dictionary = PlaceableCatalog._size_overrides
+	if not overrides.is_empty():
+		var dump : Dictionary = {}
+		for k in overrides.keys():
+			var v : Vector3 = overrides[k]
+			dump[String(k)] = [v.x, v.y, v.z]
+		ctx["active_size_overrides"] = dump
+	var jf := FileAccess.open("%s/context.json" % dir_path, FileAccess.WRITE)
+	if jf != null:
+		jf.store_string(JSON.stringify(ctx, "\t"))
+		jf.close()
+	# Toast — uses the existing scanner banner channel so the message lands
+	# in the same HUD slot as bale scans / F5 saves.
+	var banner := "[F10] feedback #%s saved → %s" % [stamp, ProjectSettings.globalize_path(dir_path)]
+	var bus := get_tree().root.get_node_or_null("/root/EventBus")
+	if bus != null and bus.has_signal("scanner_banner"):
+		bus.emit_signal("scanner_banner", banner, false)
+	print("[feedback] %s" % banner)
+
+## yyyymmdd_hhmmss timestamp for the feedback folder name. Sortable + safe
+## across platforms (no colons, spaces, or path separators).
+func _feedback_timestamp() -> String:
+	var t := Time.get_datetime_dict_from_system()
+	return "%04d%02d%02d_%02d%02d%02d" % [
+		int(t["year"]), int(t["month"]), int(t["day"]),
+		int(t["hour"]), int(t["minute"]), int(t["second"])]
+
+func _v3_to_arr(v: Vector3) -> Array:
+	return [v.x, v.y, v.z]
+
+## Camera pose so the developer can later re-place the view at a key press
+## and verify the change.
+func _camera_pose_dict() -> Dictionary:
+	if camera_3d == null:
+		return {}
+	var fwd : Vector3 = -camera_3d.global_transform.basis.z
+	return {
+		"position":  _v3_to_arr(camera_3d.global_position),
+		"forward":   _v3_to_arr(fwd),
+		"fov_deg":   camera_3d.fov,
+	}
+
+## Raycast from camera through the crosshair, walk up to the nearest
+## `placed_object` ancestor (the same node K-mode edits), and serialise
+## everything that identifies it: id, name, scene path, world transform,
+## scale + base size + any active size override. When we don't hit a
+## `placed_object`, fall back to the raw collider info so the developer can
+## still see what the operator was aiming at.
+func _crosshair_context() -> Dictionary:
+	var ctx : Dictionary = {"hit": false}
+	if camera_3d == null:
+		return ctx
+	var from := camera_3d.global_position
+	var to := from - camera_3d.global_transform.basis.z * INTERACT_RAY_RANGE
+	var q := PhysicsRayQueryParameters3D.create(from, to)
+	q.collision_mask = 0xFFFFFFFF
+	q.collide_with_areas = true
+	q.collide_with_bodies = true
+	q.exclude = [get_rid()]
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty():
+		return ctx
+	ctx["hit"] = true
+	ctx["world_point"] = _v3_to_arr(hit["position"])
+	ctx["world_normal"] = _v3_to_arr(hit["normal"])
+	var collider : Node = hit["collider"]
+	ctx["collider_name"] = collider.name if collider else ""
+	# Climb to the nearest placed_object so the developer gets a stable
+	# placeable_id rather than e.g. "Model" or "Rib_2".
+	var n : Node = collider
+	var placed : Node3D = null
+	while n != null:
+		if n.is_in_group("placed_object"):
+			placed = n as Node3D
+			break
+		n = n.get_parent()
+	if placed == null:
+		return ctx
+	ctx["scene_path"] = String(placed.get_path())
+	ctx["node_name"] = placed.name
+	ctx["position"] = _v3_to_arr(placed.global_position)
+	ctx["rotation_y"] = placed.rotation.y
+	ctx["scale"] = _v3_to_arr(placed.scale)
+	if placed.has_meta("placeable_id"):
+		var pid := String(placed.get_meta("placeable_id"))
+		ctx["placeable_id"] = pid
+		var item := PlaceableCatalog.get_item(pid)
+		if not item.is_empty():
+			ctx["catalog_name"] = String(item.get("name", ""))
+			ctx["catalog_category"] = String(item.get("category", ""))
+			if item.has("size"):
+				var sz : Vector3 = item["size"]
+				ctx["effective_base_size"] = _v3_to_arr(sz)
+			if PlaceableCatalog.has_size_override(pid):
+				ctx["override_active"] = true
+	if placed.has_meta("macro_id"):
+		ctx["macro_id"] = String(placed.get_meta("macro_id"))
+	if placed.has_meta("hmi_id"):
+		ctx["hmi_id"] = String(placed.get_meta("hmi_id"))
+	return ctx
 
 # =============================================================================
 # Animation Phase 1 — push horizontal speed into the rig's BlendSpace2D

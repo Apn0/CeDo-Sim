@@ -17,15 +17,32 @@ class_name CutterCompactor
 ##
 ## THERMODYNAMICS (lumped single-capacity model, deliberately simple + deterministic):
 ##
-##     friction_heat_W  ∝  disc_rpm²  ·  (idle + load·dosing_gate)
+## FRICTION-ONLY HEAT SOURCE — there are NO external heating elements on the real
+## machine. Every joule of heat in the pot comes from the rotating disc/knives doing
+## mechanical work on the flake. The model encodes that as the assertion:
+##         friction_heat_W = FRICTION_GAIN · rpm² · (idle + load) · knife_dullness
+##   * No band heaters, no jacket steam, no preheat. Cooling is passive (jacket loss).
+##   * If the knives go DULL (#knife_sharpness), the friction multiplier climbs —
+##     more work for the same throughput, kW spikes, operator reaches for the
+##     emergency water injection. That cascade is the operator's whole job.
+##
+##     friction_heat_W  ∝  disc_rpm²  ·  (idle + load·dosing_gate) · KNIFE_MULT
 ##     cooling_W        =  (pot_T − ambient) · COOL_COEF
 ##     evap_sink_W      =  moisture flashing off the warm flake (a real heat sink)
+##                          → gated by air_flush_on; with the flush OFF the steam
+##                          re-condenses ("sauna effect") and adds back to the
+##                          internal thermal load — quality + motor both suffer.
 ##     dT/dt            =  (friction_heat − cooling − evap_sink) / THERMAL_MASS
 ##
 ## Heat scales with the SQUARE of rpm (friction power ≈ torque·ω, torque itself rising
 ## with ω) and with how much flake is in the pot (the dosing gate): more flake = more
 ## rubbing surfaces = more heat, up to a point, but also more cold mass + moisture to
 ## warm, which is why a slammed-open gate can actually STALL a cold pot.
+##
+## SETPOINT BAND — the operator targets pot_temperature 10–15 °C BELOW the polymer
+## melt point. For LDPE (the only resin this plant runs) melt is ~115 °C, so the
+## target band is 100–105 °C ("sticky, not melted"). The constants
+## TEMP_BELOW_MELT_C_MIN/MAX encode that distance for future per-polymer use.
 ##
 ## BEHAVIOUR BANDS (the operator's whole job, per the task spec):
 ##   • pot_T < 90 °C ............ UNDERHEATED. Flake hasn't softened, so it bridges the
@@ -60,6 +77,19 @@ const T_SWEET_LOW   : float = 100.0   # sweet-spot band lower edge (max throughp
 const T_SWEET_HIGH  : float = 105.0   # sweet-spot band upper edge
 const T_DONUT       : float = 110.0   # above this → Donut stall trips
 const T_RESET_BELOW : float = 80.0    # pot must cool below this before a reset takes
+const T_SEIZE       : float = 125.0   # operator anecdote: pot at 125 °C with motor OFF
+                                       # → charge solidifies into a single block fused to
+                                       # the knives → multi-day teardown to recover
+
+# ── Setpoint-band geometry (relative to polymer melt point) ────────────────────
+# Real operator rule: "10–15 °C below the polymer's melt point — sticky not melted".
+# For LDPE (the only resin CeDo runs) melt point is ~115 °C, so the target band is
+# 100–105 °C, which is exactly T_SWEET_LOW..T_SWEET_HIGH above. The constants are
+# kept separate so future per-polymer configs can derive the same band from a
+# different melt point (PA, PMMA, etc.) without re-hardcoding T_SWEET_*.
+const TEMP_BELOW_MELT_C_MIN : float = 10.0   # minimum °C below melt point
+const TEMP_BELOW_MELT_C_MAX : float = 15.0   # maximum °C below melt point
+const LDPE_MELT_POINT_C     : float = 115.0  # reference resin
 
 # ── Thermal model coefficients (tuned for a believable ~tens-of-seconds ramp) ──
 const AMBIENT_C       : float = 25.0      # cold-start / soak temperature (°C)
@@ -89,6 +119,128 @@ const POT_CAPACITY_KG : float = 60.0      # how much flake the pot holds before 
 # =============================================================================
 var disc_rpm_setpoint : float = 0.0        # commanded disc speed (0 = motor off)
 var dosing_gate       : float = 0.0        # 0..1 — how far the flake feed gate is open
+
+# =============================================================================
+# OPERATOR-ANECDOTE MECHANICS  (#A1 / #A2 / #A4)
+# =============================================================================
+# #A1 — Power-cap override + SOFTSTARTER trip (operator-confirmed mechanism)
+#
+# The compactor's documented limit is ~200 kW (manual ceiling). Operators on
+# elite runs push the setpoint well above that to keep a wet feed compacting.
+#
+# REAL-WORLD TRIP MECHANISM (corrected this turn): the hardware-rated CIRCUIT
+# BREAKER sits at 600+ kW and basically NEVER trips in practice. The real-world
+# motor stop comes from the motor SOFTSTARTER — a PLC safeguard that integrates
+# instantaneous overage above POWER_KW_SOFTSTARTER_BASELINE. When the integrated
+# budget exceeds POWER_KW_SOFTSTARTER_BUDGET_KWS the motor is stopped.
+#
+# Operator-confirmed data points for the trip curve:
+#   * 5 seconds at 300 kW → trip   ((300-240)·5 = 300 kW·s, exactly the budget)
+#   * 3 seconds at 350 kW → trip   ((350-240)·~3 = 330 kW·s, just over budget)
+#
+# Recovery: below POWER_KW_SOFTSTARTER_BASELINE the budget DRAINS at
+# SOFTSTARTER_DRAIN_KWS_PER_S kW·s/s, so brief spikes followed by cool draws
+# don't carry over forever.
+#
+# Both the hardware breaker (instant, basically never) and the softstarter
+# (gradual, common) set the legacy `breaker_tripped` flag so existing callers
+# keep working. The new `softstarter_tripped` flag distinguishes the cause so
+# the HMI can show the right reason on the alarm card.
+#
+# The power-cap slider's upper clamp is POWER_KW_BREAKER (== hardware ceiling,
+# 600 kW) — the slider isn't the safety device, the softstarter is. Operator
+# can set the cap anywhere up to the hardware ceiling; if they push too long
+# the softstarter pulls the plug.
+const POWER_KW_RATED                  : float = 200.0    # documented ceiling ("don't exceed")
+const POWER_KW_HARDWARE_BREAKER       : float = 600.0    # mechanical breaker — basically never trips
+# Back-compat alias. Existing code (and the set_power_cap_kw upper clamp) read
+# POWER_KW_BREAKER as "the slider's hard max". We point it at the hardware
+# breaker now (600 kW) — the softstarter is the real safety, not this number.
+const POWER_KW_BREAKER                : float = POWER_KW_HARDWARE_BREAKER
+const POWER_KW_SOFTSTARTER_BASELINE   : float = 240.0    # PLC accumulator threshold
+const POWER_KW_SOFTSTARTER_BUDGET_KWS : float = 300.0    # trip when accumulator >= this (kW·s)
+const SOFTSTARTER_DRAIN_KWS_PER_S     : float = 50.0     # drain rate below baseline (kW·s/s)
+const POWER_KW_MIN                    : float = 30.0     # below this, motor stalls regardless of setpoint
+const POWER_KW_RAMP_INCREMENT         : float = 5.0      # operator-facing step (manual procedure)
+# Legacy — preserved for any external reader. The softstarter is integral, not
+# a fixed-window timer, so this constant no longer drives the trip logic. Kept
+# at 1.0 s so anyone reading it still sees a sensible "sustained-overdraw" hint.
+const BREAKER_TRIP_HOLD_S             : float = 1.0
+# Operator setpoint: caps the MAX kW the motor is allowed to draw before the
+# controller chokes the disc RPM to stay under it. Default at the documented limit.
+var power_cap_kw_setpoint    : float = POWER_KW_RATED
+
+# #A2 — Feed moisture coupling
+# Wet feed forces the compactor into doing evaporation work BEFORE it can
+# compact. Higher moisture → more friction kW for the same throughput. Set by
+# the upstream dewatering screw each tick; when the de-water unit is poorly
+# tuned (or the operator's anecdote: "couldn't adjust the plus-mark"), this
+# climbs and the compactor's draw climbs to match.
+var feed_moisture_pct        : float = 4.0     # % water by mass in incoming flake (4 % typical, 12 % wet)
+const MOISTURE_KW_PER_PCT    : float = 2.5     # extra kW the motor must do per % moisture above DRY
+const MOISTURE_DRY_BASELINE  : float = 4.0     # at-and-below this, no penalty
+
+# Live derived
+var power_kw                 : float = 0.0     # live electrical input (motor_amps × line voltage / 1000)
+var breaker_tripped          : bool  = false   # legacy field — true on EITHER hardware OR softstarter trip
+var softstarter_tripped      : bool  = false   # NEW — true only when the PLC softstarter pulled the plug
+# Live softstarter accumulator (kW·s). Integrates (power_kw - baseline) above
+# baseline, drains at SOFTSTARTER_DRAIN_KWS_PER_S below it. Crossing
+# POWER_KW_SOFTSTARTER_BUDGET_KWS trips the motor. Exposed for HMI gauges.
+var softstarter_budget_kws   : float = 0.0
+
+# Cumulative shift-waste readout for the laser-filter RPM-strategy tradeoff
+# (#A3). Total kg of lumps the upstream laser filter ejected this shift, so
+# the SCADA can show "your low-RPM call saved X kg".
+var lumps_kg_this_shift      : float = 0.0
+
+# =============================================================================
+# KNIFE WEAR  (#PCU-K)
+# =============================================================================
+# Sharp knives are the operator's whole job per the manual. As they dull they
+# don't CUT the flake — they DRAG it — and the friction work to densify the
+# same kg of charge climbs. The motor compensates by drawing more kW, the pot
+# climbs toward overheating, the operator reaches for the emergency water
+# injection, and if they ignore the warning long enough the pot seizes.
+#
+# Decay is per RUNNING second (not wall-clock), so a paused or stopped
+# compactor doesn't shed sharpness. A full set lasts ~25 operating hours
+# under nominal load (matches the typical sharpen-cycle observed by maintenance).
+const KNIFE_DECAY_PER_H_NOMINAL   : float = 0.04   # 1/h at nominal load — 25 h to dull
+const KNIFE_FRICTION_MULT_FRESH   : float = 1.00
+const KNIFE_FRICTION_MULT_DULL    : float = 1.65   # +65 % friction work when fully dull
+const KNIFE_SHARPEN_TIME_S        : float = 1800.0 # 30 min off-line for the sharpen task
+var knife_sharpness              : float = 1.00    # 1.0 = brand-new, 0.0 = needs replacement
+var _knife_sharpen_remaining_s   : float = 0.0     # >0 while a sharpen task is running
+
+# =============================================================================
+# AIR-FLUSH MODULE  (#PCU-AF)
+# =============================================================================
+# Real machine: a small extractor fan that pulls the flash-steam out of the
+# pot HEAD-SPACE so it doesn't re-condense onto cooler incoming flake. With
+# the flush OFF you get the "sauna effect" — steam loops back into the
+# charge as liquid water, the evap heat sink stops being a real heat sink
+# (energy is just shuffled around inside the pot), motor load climbs, and
+# the resulting pellet has more residual moisture (downstream quality hit).
+const AIR_FLUSH_EVAP_BOOST      : float = 1.00    # with flush ON, full latent skim
+const AIR_FLUSH_EVAP_PENALTY    : float = 0.25    # with flush OFF, only 25 % of evap energy leaves
+var air_flush_on                : bool  = true    # operator setpoint; default ON
+
+# =============================================================================
+# EMERGENCY WATER INJECTION  (#PCU-EWI)
+# =============================================================================
+# The "fire extinguisher" of the compactor — a brief water spray straight
+# into the pot that converts surplus friction heat into steam (cooling the
+# charge instantly). Documented as a LAST RESORT; routine use means the
+# process is unstable. Each use bumps a per-shift counter; above
+# EWI_INSTABILITY_THRESHOLD the SCADA flags the compactor as unstable for
+# the shift report. Counter resets on shift handover.
+const EWI_COOL_C_PER_USE        : float = 18.0    # °C drop per injection event
+const EWI_COOLDOWN_S            : float = 12.0    # min seconds between uses (pot needs to re-soak)
+const EWI_INSTABILITY_THRESHOLD : int   = 5       # uses/shift above which we flag "unstable"
+var emergency_water_uses_shift  : int   = 0
+var _ewi_cooldown_remaining_s   : float = 0.0
+var process_unstable_flag       : bool  = false
 
 # =============================================================================
 # LIVE STATE (read back by the HMI / visuals / tests)
@@ -152,6 +304,81 @@ func set_rpm(rpm: float) -> void:
 func set_dosing_gate(g: float) -> void:
 	dosing_gate = clampf(g, 0.0, 1.0)
 
+# #A1 — operator-tunable power cap, intentionally NOT clamped to rated.
+# Lets the operator set a cap above POWER_KW_RATED to push throughput on a
+# wet/dirty feed. The upper clamp is the HARDWARE breaker (POWER_KW_BREAKER
+# == POWER_KW_HARDWARE_BREAKER == 600 kW) — the slider is NOT the safety
+# device. The motor SOFTSTARTER (integral budget, see POWER_KW_SOFTSTARTER_*)
+# is what actually stops the motor; an operator who dials the cap to 400 kW
+# and runs there will trip the softstarter long before they ever touch the
+# 600 kW hardware breaker.
+func set_power_cap_kw(kw: float) -> void:
+	power_cap_kw_setpoint = clampf(kw, POWER_KW_MIN, POWER_KW_BREAKER)
+
+# #A2 — upstream dewatering screw or wash-line module reports moisture here.
+func set_feed_moisture_pct(pct: float) -> void:
+	feed_moisture_pct = clampf(pct, 0.0, 30.0)
+
+# #A1 — manual reset for a tripped breaker (after the operator has un-seized
+# the pot per the existing Donut-stall reset protocol). Clears BOTH the
+# legacy breaker flag and the softstarter state — including the integrated
+# budget — so the motor starts the next run with a clean accumulator.
+func reset_breaker() -> void:
+	if breaker_tripped or softstarter_tripped:
+		breaker_tripped = false
+		softstarter_tripped = false
+		softstarter_budget_kws = 0.0
+
+# Power-cap ramp helpers — the manual prescribes raising the cap in 5 kW steps
+# while watching pot temperature climb. Operator HMI's up/down buttons should
+# bind to these so the discrete clicks match the procedure.
+func bump_power_cap_up_5kw() -> void:
+	set_power_cap_kw(power_cap_kw_setpoint + POWER_KW_RAMP_INCREMENT)
+func bump_power_cap_down_5kw() -> void:
+	set_power_cap_kw(power_cap_kw_setpoint - POWER_KW_RAMP_INCREMENT)
+
+# #PCU-AF — operator toggles the air-flush extractor fan from the HMI.
+func set_air_flush(on: bool) -> void:
+	air_flush_on = on
+
+# #PCU-EWI — emergency water injection. Returns true if the spray fired,
+# false if it's still on cooldown. Counter advances on every successful use;
+# above EWI_INSTABILITY_THRESHOLD the unstable-flag latches for the shift.
+func inject_emergency_water() -> bool:
+	if _ewi_cooldown_remaining_s > 0.0:
+		return false
+	if state == State.DONUT_STALL or state == State.OFF:
+		return false
+	pot_temperature = maxf(AMBIENT_C, pot_temperature - EWI_COOL_C_PER_USE)
+	emergency_water_uses_shift += 1
+	_ewi_cooldown_remaining_s = EWI_COOLDOWN_S
+	if emergency_water_uses_shift > EWI_INSTABILITY_THRESHOLD:
+		process_unstable_flag = true
+	return true
+
+## ShiftClock calls this at handover. Resets the per-shift EWI counter and the
+## instability flag (the new shift starts with a clean ledger).
+func reset_shift_counters() -> void:
+	emergency_water_uses_shift = 0
+	process_unstable_flag = false
+	lumps_kg_this_shift = 0.0
+
+# #PCU-K — sharpen-knife task. Takes the compactor offline for
+# KNIFE_SHARPEN_TIME_S seconds; on completion knife_sharpness resets to 1.0.
+# Called by the operator HMI / maintenance task; ticks down in tick().
+func start_sharpen_task() -> bool:
+	if state != State.OFF:
+		return false   # safety — operator must stop the motor first
+	if _knife_sharpen_remaining_s > 0.0:
+		return false   # already running
+	_knife_sharpen_remaining_s = KNIFE_SHARPEN_TIME_S
+	return true
+
+func sharpen_task_progress_pct() -> float:
+	if _knife_sharpen_remaining_s <= 0.0:
+		return 1.0
+	return clampf(1.0 - _knife_sharpen_remaining_s / KNIFE_SHARPEN_TIME_S, 0.0, 1.0)
+
 ## Pour a batch of flake into the pot (conserving — the batch is drained into the
 ## resident charge). Used by feed() from LineFlow's upstream connector.
 func feed(batch: MaterialBatch) -> void:
@@ -182,6 +409,14 @@ func reset() -> bool:
 func tick(delta: float) -> float:
 	delta = maxf(delta, 0.0)
 	_time_in_state += delta
+	# Cool-down + sharpen-task timers always advance regardless of state, so the
+	# operator's wait clocks tick during OFF / DONUT_STALL too.
+	if _ewi_cooldown_remaining_s > 0.0:
+		_ewi_cooldown_remaining_s = max(0.0, _ewi_cooldown_remaining_s - delta)
+	if _knife_sharpen_remaining_s > 0.0:
+		_knife_sharpen_remaining_s = max(0.0, _knife_sharpen_remaining_s - delta)
+		if _knife_sharpen_remaining_s == 0.0:
+			knife_sharpness = 1.0                       # crew finished — fresh knives
 
 	# ── 1. DONUT STALL is a hard latch: rotor seized, locked-rotor current ────────
 	if state == State.DONUT_STALL:
@@ -191,6 +426,8 @@ func tick(delta: float) -> float:
 		screw_fill_efficiency = 0.0
 		# The seized pot keeps cooling (no friction input) so the crew can eventually
 		# reset it. No discharge, no evaporation worth modelling while fused solid.
+		# But if pot is still above T_SEIZE with motor off, the charge has fused
+		# solid to the knives — operator anecdote says this is a 3–5 day teardown.
 		_integrate_temperature(delta, 0.0)
 		return 0.0
 
@@ -235,6 +472,66 @@ func tick(delta: float) -> float:
 	# ── 7. Motor current: idle → full across load, scaled by live rpm fraction ────
 	motor_amps = _motor_amps_for(load_frac)
 
+	# ── 7.5 #A1/A2/A4 — Power-cap override + moisture penalty + breaker trip ────
+	# kW = amps × line voltage / 1000. Industrial CeDo gear runs on a 400 V
+	# 3-phase feed (line-to-line) so kW ≈ I × √3 × 400 × cos(φ) / 1000 with
+	# cos(φ) ≈ 0.85 — collapsed to a single 0.59 factor for the sim. Add the
+	# moisture penalty: wet feed forces the motor to do evaporation work on top
+	# of compaction, raising kW at the same throughput.
+	const KW_PER_AMP : float = 0.59
+	var moisture_penalty_kw : float = max(0.0,
+		feed_moisture_pct - MOISTURE_DRY_BASELINE) * MOISTURE_KW_PER_PCT
+	power_kw = motor_amps * KW_PER_AMP + moisture_penalty_kw
+	# Power-cap override: if the operator has set the cap BELOW current draw,
+	# choke the disc RPM setpoint so the motor stops drawing more than the cap.
+	# Choke is gentle — 10 % per second — so the operator FEELS the cap pulling
+	# them back instead of an instant cliff. The "push past 150 kW" anecdote
+	# comes from operators raising the cap to 280+ before starting a run.
+	if power_kw > power_cap_kw_setpoint and disc_rpm_setpoint > 0.0:
+		var cap_choke : float = clampf(
+			(power_kw - power_cap_kw_setpoint) / max(power_cap_kw_setpoint, 1.0),
+			0.0, 0.20)
+		disc_rpm_setpoint = max(0.0, disc_rpm_setpoint * (1.0 - cap_choke * delta))
+	# SOFTSTARTER trip (the operator-confirmed real-world mechanism). The
+	# motor SOFTSTARTER (a PLC safeguard) integrates instantaneous overage
+	# above POWER_KW_SOFTSTARTER_BASELINE into softstarter_budget_kws (kW·s).
+	# When that budget exceeds POWER_KW_SOFTSTARTER_BUDGET_KWS the motor is
+	# stopped. Operator-confirmed data points: 5 s at 300 kW trips; 3 s at
+	# 350 kW trips. Below baseline the budget DRAINS at
+	# SOFTSTARTER_DRAIN_KWS_PER_S kW·s/s, so brief spikes followed by cool
+	# draws don't carry over forever.
+	if power_kw > POWER_KW_SOFTSTARTER_BASELINE:
+		softstarter_budget_kws += (power_kw - POWER_KW_SOFTSTARTER_BASELINE) * delta
+	else:
+		softstarter_budget_kws = max(0.0,
+			softstarter_budget_kws - SOFTSTARTER_DRAIN_KWS_PER_S * delta)
+	# Softstarter trip — the common, real-world way the motor stops on
+	# overdraw. Sets BOTH softstarter_tripped (the accurate cause flag) and
+	# breaker_tripped (the legacy flag downstream code already reads).
+	if softstarter_budget_kws >= POWER_KW_SOFTSTARTER_BUDGET_KWS \
+			and not softstarter_tripped:
+		softstarter_tripped = true
+		breaker_tripped = true
+		disc_rpm_setpoint = 0.0
+		dosing_gate = 0.0
+		# DONUT_STALL is the existing "frozen pot, no rotor" state — best
+		# match for the softstarter-stopped outcome (charge sits in the pot
+		# and will solidify until reset). The HMI can read softstarter_tripped
+		# to label the alarm "SOFTSTARTER TRIP" rather than "DONUT".
+		_set_state(State.DONUT_STALL)
+		donut_stall_triggered.emit(machine_id, pot_temperature, motor_amps)
+		_emit_bus("machine_alarm_raised", [machine_id, "SOFTSTARTER-TRIP", 3])
+	# Hardware breaker — the 600 kW mechanical safety. Basically never trips
+	# in real life (the softstarter pulls the plug long before this), but
+	# modelled as an instantaneous safety net for the pathological case.
+	elif power_kw > POWER_KW_HARDWARE_BREAKER and not breaker_tripped:
+		breaker_tripped = true
+		disc_rpm_setpoint = 0.0
+		dosing_gate = 0.0
+		_set_state(State.DONUT_STALL)
+		donut_stall_triggered.emit(machine_id, pot_temperature, motor_amps)
+		_emit_bus("machine_alarm_raised", [machine_id, "HARDWARE-BREAKER-TRIP", 3])
+
 	# ── 8. State (HEATING below the sweet spot, RUNNING once in/above the band) ───
 	if disc_rpm_setpoint <= 0.0 and disc_rpm < 1.0:
 		_set_state(State.OFF)
@@ -269,13 +566,25 @@ func ledger_residual() -> float:
 # THERMODYNAMICS
 # =============================================================================
 ## Friction power (W). Scales with disc_rpm² (friction power ≈ torque·ω, torque
-## itself rising with ω) and with pot load (idle floor + dosed flake rubbing).
+## itself rising with ω), pot load (idle floor + dosed flake rubbing), AND the
+## knife dullness multiplier (#PCU-K) — dull knives drag, so the same throughput
+## costs more friction work. Knife sharpness also DECAYS proportionally to the
+## work it's doing, so a faster-loaded run wears the edge faster.
 func _friction_watts(load_frac: float) -> float:
 	if disc_rpm <= 1.0:
 		_last_friction_w = 0.0
 		return 0.0
+	# Knife wear: decay scales with (disc_rpm/nominal) × load — heavier rubbing
+	# dulls the edge faster. Bounded so a stalled-and-spinning empty disc still
+	# loses sharpness at a low background rate.
+	var dt_to_h : float = 1.0 / 3600.0
+	var rpm_frac : float = clampf(disc_rpm / max(NOMINAL_RPM, 1.0), 0.0, 1.5)
+	var wear_rate : float = KNIFE_DECAY_PER_H_NOMINAL * rpm_frac * (IDLE_LOAD_FRAC + load_frac)
+	knife_sharpness = max(0.0, knife_sharpness - wear_rate * dt_to_h)   # tick-rate decay applied each call
+	var knife_mult : float = lerpf(KNIFE_FRICTION_MULT_DULL,
+		KNIFE_FRICTION_MULT_FRESH, clampf(knife_sharpness, 0.0, 1.0))
 	var rpm2 := disc_rpm * disc_rpm
-	_last_friction_w = FRICTION_GAIN * rpm2 * (IDLE_LOAD_FRAC + load_frac)
+	_last_friction_w = FRICTION_GAIN * rpm2 * (IDLE_LOAD_FRAC + load_frac) * knife_mult
 	return _last_friction_w
 
 ## Advance pot_temperature one step and flash off moisture. Returns kg of water
@@ -293,8 +602,14 @@ func _integrate_temperature(delta: float, friction_w: float) -> float:
 	var evap_w := 0.0
 	# Drying only runs once the flake is warm (>80 °C) AND there's surplus heat to
 	# drive it. It skims a fraction of the surplus into latent heat of vaporisation.
+	# #PCU-AF — with the air-flush extractor OFF, only a small fraction of the
+	# evap energy actually LEAVES the pot; the rest re-condenses on cooler
+	# incoming flake (the "sauna effect") and the steam loops back into the
+	# charge as liquid water. We model that by scaling the evap heat-sink:
+	# flush ON → full skim, flush OFF → mostly disabled.
+	var flush_factor : float = AIR_FLUSH_EVAP_BOOST if air_flush_on else AIR_FLUSH_EVAP_PENALTY
 	if pot_temperature >= 80.0 and charge.water_kg > 0.0 and surplus_w > 0.0 and delta > 0.0:
-		evap_w = surplus_w * EVAP_HEAT_FRAC
+		evap_w = surplus_w * EVAP_HEAT_FRAC * flush_factor
 		var evap_kg := (evap_w * delta) / EVAP_LATENT_J_KG          # kg the energy can flash
 		evap_kg = minf(evap_kg, charge.water_kg)                    # bounded by available water
 		flashed = charge.remove_water(
@@ -340,6 +655,37 @@ func band() -> String:
 	if pot_temperature > T_DONUT:
 		return "OVERHEAT"
 	return "OK"
+
+## Unified cause-of-stop status string for the HMI. Returns empty when the
+## compactor is running normally; a short ALL-CAPS phrase when it's halted
+## or alarmed. The SCADA dashboard reads this and colours the value chip
+## red when non-empty — same pattern as the extruder's fault_reason.
+##
+## Priority order matches what the operator most needs to see first:
+##   1. SOFTSTARTER TRIP — PLC pulled the plug because integrated kW·s
+##      exceeded 300 above the 240 kW baseline (or instant hardware breaker
+##      above 600 kW). Recovery: reset_breaker() after addressing the cause.
+##   2. DONUT STALL     — pot overheated past 110 °C, fused ring seized the
+##      rotor. Recovery: reset() after pot cools below 80 °C.
+##   3. PROCESS UNSTABLE — operator hit emergency water injection more than
+##      5 times this shift. Not a stop — but the SCADA flags it so the shift
+##      report calls it out. Returned only when no harder fault is active.
+##   4. OFF             — the operator stopped the disc deliberately. Empty
+##      string OK when no operator-set fault and disc is just idle/heating.
+##   Empty               — nominal, return "" so the dashboard stays grey.
+func cause_of_stop() -> String:
+	if softstarter_tripped:
+		return "SOFTSTARTER TRIP"
+	if state == State.DONUT_STALL:
+		return "DONUT STALL"
+	if process_unstable_flag:
+		return "PROCESS UNSTABLE"
+	return ""
+
+## True when cause_of_stop() returns a non-empty string — used by the HMI
+## to decide whether to paint the chip alarm-red.
+func is_alarming() -> bool:
+	return softstarter_tripped or state == State.DONUT_STALL or process_unstable_flag
 
 # =============================================================================
 # ELECTRICAL

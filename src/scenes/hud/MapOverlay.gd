@@ -26,6 +26,7 @@ const ZOOM_STEP   : float = 0.82      # multiply/divide per wheel notch
 const C_PANEL   := Color(0.06, 0.07, 0.06, 0.93)
 const C_BORDER  := Color(0.32, 0.52, 0.34, 0.9)
 const C_RING    := Color(0.30, 0.42, 0.32, 0.5)
+const C_BUILDING := Color(0.84, 0.82, 0.74, 0.9)   # cream — CeDo building outline
 const C_MACHINE := Color(0.62, 0.66, 0.70, 1.0)
 const C_BALE    := Color(0.78, 0.70, 0.45, 1.0)
 const C_VEHICLE := Color(0.30, 0.78, 0.34, 1.0)
@@ -108,6 +109,11 @@ func _draw() -> void:
 	var origin    := _player_xz()
 
 	_draw_rings(center_px, scale_px, m)
+	# CeDo building outline — drawn first so machines / vehicles / crew render
+	# ON TOP of it. The shell mesh's AABB projected to ground gives a
+	# rectangle that bounds the factory; good enough as a "where is the
+	# building" reference at site-map scale.
+	_draw_building_outline(center_px, scale_px, origin, panel)
 
 	# Machines (steel squares; ids only when zoomed in enough to be legible)
 	var label_machines := scale_px > 3.0
@@ -179,6 +185,157 @@ func _draw_rings(center_px: Vector2, scale_px: float, m: float) -> void:
 			draw_arc(center_px, rp, 0.0, TAU, 64, C_RING, 1.0, true)
 		r += step
 
+## Cached footprint polygon (mesh-local XZ) of the building shell. Computed
+## once from the shell mesh's floor triangles unioned together — the shell
+## is static so the polygon is too. Preserves L-shapes / concavities that
+## the previous AABB-rectangle path lost.
+var _footprint_local : PackedVector2Array = PackedVector2Array()
+var _footprint_built : bool = false
+var _footprint_mesh_rid : RID
+
+## Draw the building shell's true XZ footprint (not its AABB) as a translucent
+## cream outline + label. Uses MainWorld._shell() to find the MeshInstance3D;
+## silently skips if the shell isn't loaded (sandbox world, headless test).
+func _draw_building_outline(center_px: Vector2, scale_px: float, origin: Vector2, panel: Rect2) -> void:
+	if main_world == null:
+		return
+	var shell : MeshInstance3D = main_world._shell() if main_world.has_method("_shell") else null
+	if shell == null or not is_instance_valid(shell) or shell.mesh == null:
+		return
+	# Invalidate the cache if the shell mesh changed (level reload, swap).
+	if _footprint_built and shell.mesh.get_rid() != _footprint_mesh_rid:
+		_footprint_built = false
+	if not _footprint_built:
+		_footprint_local = _compute_footprint_polygon(shell.mesh)
+		_footprint_mesh_rid = shell.mesh.get_rid()
+		_footprint_built = true
+	if _footprint_local.size() < 3:
+		return
+	# Project the polygon through the shell's world transform back to world XZ,
+	# then to screen pixels via _to_px.
+	var xfm := shell.global_transform
+	var pts := PackedVector2Array()
+	pts.resize(_footprint_local.size())
+	for i in _footprint_local.size():
+		var v : Vector2 = _footprint_local[i]
+		var world : Vector3 = xfm * Vector3(v.x, 0.0, v.y)
+		pts[i] = _to_px(world, center_px, scale_px, origin)
+	# Fill is subtle so yard markers stay visible through it.
+	var fill := C_BUILDING
+	fill.a = 0.10
+	draw_colored_polygon(pts, fill)
+	for i in pts.size():
+		var a : Vector2 = pts[i]
+		var b : Vector2 = pts[(i + 1) % pts.size()]
+		draw_line(a, b, C_BUILDING, 1.8, true)
+	# Label near the polygon's top-left vertex if it's inside the panel.
+	var top_left : Vector2 = pts[0]
+	for p in pts:
+		if p.y < top_left.y or (is_equal_approx(p.y, top_left.y) and p.x < top_left.x):
+			top_left = p
+	if panel.has_point(top_left):
+		_text(top_left + Vector2(4, -4), "CEDO", 11, C_BUILDING)
+
+## Walk the shell mesh's floor triangles, project to XZ, union them. The
+## result is the building footprint in mesh-local coordinates — handles
+## L-shapes / concavities the AABB lost. Runs once per shell mesh.
+##
+## Filtering: prefer triangles where all 3 vertices sit within FLOOR_EPS of
+## the mesh's min_y (the explicit floor face). If the mesh has no floor
+## triangles, fall back to ALL triangles whose XZ projection isn't
+## degenerate — the union still gives the right outline because vertical
+## walls project to zero-area lines that don't contribute.
+const _FOOTPRINT_FLOOR_EPS_M : float = 0.05
+const _FOOTPRINT_DEGENERATE_AREA : float = 0.0001
+func _compute_footprint_polygon(mesh: Mesh) -> PackedVector2Array:
+	if mesh.get_surface_count() == 0:
+		return PackedVector2Array()
+	var arrays := mesh.surface_get_arrays(0)
+	var verts : PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	if verts.is_empty():
+		return PackedVector2Array()
+	var idx : PackedInt32Array = PackedInt32Array()
+	if arrays.size() > Mesh.ARRAY_INDEX and arrays[Mesh.ARRAY_INDEX] != null:
+		idx = arrays[Mesh.ARRAY_INDEX]
+	var min_y : float = INF
+	for v in verts:
+		if v.y < min_y:
+			min_y = v.y
+	# Collect projected triangles in two buckets: floor (preferred) + all.
+	var tris_floor : Array = []
+	var tris_all : Array = []
+	if idx.size() > 0:
+		var n : int = idx.size()
+		var i : int = 0
+		while i < n:
+			var v1 : Vector3 = verts[idx[i]]
+			var v2 : Vector3 = verts[idx[i + 1]]
+			var v3 : Vector3 = verts[idx[i + 2]]
+			i += 3
+			var p1 := Vector2(v1.x, v1.z)
+			var p2 := Vector2(v2.x, v2.z)
+			var p3 := Vector2(v3.x, v3.z)
+			if absf((p2 - p1).cross(p3 - p1)) < _FOOTPRINT_DEGENERATE_AREA:
+				continue
+			var tri := PackedVector2Array([p1, p2, p3])
+			tris_all.append(tri)
+			if v1.y - min_y <= _FOOTPRINT_FLOOR_EPS_M \
+					and v2.y - min_y <= _FOOTPRINT_FLOOR_EPS_M \
+					and v3.y - min_y <= _FOOTPRINT_FLOOR_EPS_M:
+				tris_floor.append(tri)
+	else:
+		var n : int = verts.size()
+		var i : int = 0
+		while i + 2 < n:
+			var v1 : Vector3 = verts[i]
+			var v2 : Vector3 = verts[i + 1]
+			var v3 : Vector3 = verts[i + 2]
+			i += 3
+			var p1 := Vector2(v1.x, v1.z)
+			var p2 := Vector2(v2.x, v2.z)
+			var p3 := Vector2(v3.x, v3.z)
+			if absf((p2 - p1).cross(p3 - p1)) < _FOOTPRINT_DEGENERATE_AREA:
+				continue
+			var tri := PackedVector2Array([p1, p2, p3])
+			tris_all.append(tri)
+			if v1.y - min_y <= _FOOTPRINT_FLOOR_EPS_M \
+					and v2.y - min_y <= _FOOTPRINT_FLOOR_EPS_M \
+					and v3.y - min_y <= _FOOTPRINT_FLOOR_EPS_M:
+				tris_floor.append(tri)
+	var tris : Array = tris_floor if tris_floor.size() > 0 else tris_all
+	if tris.is_empty():
+		return PackedVector2Array()
+	# Union all triangle projections. After each merge keep the polygon with
+	# the largest area — multi-component meshes (detached props, attached
+	# fences) would otherwise grow into an Array of disjoint islands.
+	var acc : PackedVector2Array = tris[0]
+	for j in range(1, tris.size()):
+		var merged : Array = Geometry2D.merge_polygons(acc, tris[j])
+		if merged.is_empty():
+			continue
+		if merged.size() == 1:
+			acc = merged[0]
+			continue
+		var best : PackedVector2Array = merged[0]
+		var best_area : float = absf(_polygon_area(best))
+		for k in range(1, merged.size()):
+			var a_k : float = absf(_polygon_area(merged[k]))
+			if a_k > best_area:
+				best = merged[k]
+				best_area = a_k
+		acc = best
+	return acc
+
+static func _polygon_area(poly: PackedVector2Array) -> float:
+	if poly.size() < 3:
+		return 0.0
+	var s : float = 0.0
+	for i in poly.size():
+		var p := poly[i]
+		var q := poly[(i + 1) % poly.size()]
+		s += p.x * q.y - q.x * p.y
+	return s * 0.5
+
 func _draw_heading_tri(c: Vector2, dir: Vector2, s: float, col: Color) -> void:
 	var d := dir
 	if d.length() < 0.01:
@@ -214,6 +371,7 @@ func _draw_legend(panel: Rect2) -> void:
 		[C_LIFT,    "Scissor lift"],
 		[C_MACHINE, "Machine"],
 		[C_BALE,    "Bale"],
+		[C_BUILDING, "CeDo building"],
 	]
 	var x := panel.end.x - 132.0
 	var y := panel.position.y + 14.0

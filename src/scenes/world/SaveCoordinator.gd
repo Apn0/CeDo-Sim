@@ -71,6 +71,14 @@ func save_game() -> void:
 		_game_state.crew_pins_data = _crew_manager.save_pins_dict()
 	if _game_state:
 		_game_state.save_game()
+	# Defensive flush of the per-save factory layout (placed machines + grating
+	# platforms + signs). BuildMode normally writes on every place/edit, but if a
+	# K-bake / jog / rotate left dirty state in memory and the user save+quits,
+	# those edits would never reach disk. Mirror the save here so the layout
+	# round-trips exactly what the player sees.
+	var bm = _world.get_node_or_null("BuildMode") if _world else null
+	if bm != null and bm.has_method("_save_layout"):
+		bm._save_layout()
 	print("[SaveCoordinator] Game saved")
 
 func save_and_quit() -> void:

@@ -118,7 +118,7 @@ const ACTION_GROUPS := [
 	{
 		"label":   "Movement",
 		"actions": ["move_forward", "move_backward", "move_left", "move_right", "jump",
-					"crouch_toggle", "prone_toggle"],
+					"sprint", "fast_run", "crouch_toggle", "prone_toggle"],
 	},
 	{
 		"label":   "Interaction & UI",
@@ -162,6 +162,11 @@ const ACTION_GROUPS := [
 					"build_raise", "build_lower",
 					"build_grid_toggle", "build_delete"],
 	},
+	{
+		"label":   "Debug & capture",
+		"actions": ["debug_fill_silo", "debug_force_fault",
+					"opening_capture", "feedback_capture"],
+	},
 ]
 
 # Human-readable labels for actions in the Controls UI
@@ -170,7 +175,9 @@ const ACTION_LABELS := {
 	"move_backward":            "Walk backward",
 	"move_left":                "Strafe left",
 	"move_right":               "Strafe right",
-	"jump":                     "Jump",
+	"jump":                     "Jump (Space)",
+	"sprint":                   "Sprint (hold Shift)",
+	"fast_run":                 "Fast run (hold Alt)",
 	"crouch_toggle":            "Crouch (toggle) — Left Ctrl",
 	"prone_toggle":             "Lie down / prone (toggle) — Z",
 	"interact":                 "Interact / enter vehicle",
@@ -228,6 +235,11 @@ const ACTION_LABELS := {
 	"build_lower":              "Lower placement height (F)",
 	"build_grid_toggle":        "Toggle grid snap (G)",
 	"build_delete":             "Delete pointed object (X)",
+	"debug_fill_silo":          "Fill the silo/machine you're aiming at to 90% (Numpad 9)",
+	"debug_force_fault":        "Force the extruder line FAULT cascade — for testing (0 / Numpad 0)",
+	"opening_capture":          "Capture an opening corner for door/window editing (F11)",
+	"feedback_capture":         "Capture screenshot + context.json under user://feedback/ for chat handoff (F10)",
+	"inspect_mode":             "Toggle Inspect Mode — free-fly camera + layout-marker gizmos + PDOK overlay (F8)",
 }
 
 # =============================================================================
@@ -587,6 +599,11 @@ func _ensure_aux_actions() -> void:
 		# C also opens the crew assignment panel — Numpad . is the legacy default
 		# but many keyboards don't have a numpad, so we add a second route.
 		"crew_panel":        KEY_C,
+		# F8 toggles Inspect Mode (#inspect) — registered here so the Settings
+		# Controls tab knows about it and so the binding survives a fresh
+		# install with no user://settings.cfg. The runtime fallback in
+		# PlayerController re-adds it if a stale InputMap still lacks the action.
+		"inspect_mode":      KEY_F8,
 	}
 	# Anything in INSTALL_AND_PURGE first has ALL its key events removed so the
 	# new binding doesn't pile up next to the old one. Used to migrate keys that

@@ -114,13 +114,38 @@ func _spawn_bale_yards_from_layout() -> void:
 		# Convert the polygon corners from layout-space (player-relative, north-up
 		# RD) into scene-space via the same rotation-aware mapping the vehicles
 		# use, so the yard sits in the right place + orientation on the building.
+		# #221-PC Phase 3 — prefer the Plant PC path (single source of truth)
+		# when WorldLayout has been migrated; fall back to legacy _layout_to_scene
+		# otherwise. Math is equivalent for migrated saves; Plant guarantees the
+		# same converter every spawner uses.
+		var use_pc : bool = _world.has_node("/root/Plant") and Plant.is_initialized() and WorldLayout.has_pc_data
+		# Pull the per-yard PC corner list (if present) by matching index. The
+		# migrate_to_pc walk preserved order, so bale_yards_pc[idx] aligns with
+		# WorldLayout.bale_yards[idx].
+		var yard_idx : int = WorldLayout.bale_yards.find(y)
+		var corners_pc : Array = []
+		if use_pc and yard_idx >= 0 and yard_idx < WorldLayout.bale_yards_pc.size():
+			corners_pc = (WorldLayout.bale_yards_pc[yard_idx] as Dictionary).get("corners_pc", [])
+			if corners_pc.size() != corners.size():
+				# Size mismatch — fall back to legacy for this yard rather than
+				# index a PC array against a different polygon. Should only
+				# happen if migrate_to_pc was interrupted mid-walk.
+				push_warning("[BaleYardManager] Yard '%s' PC corner count %d ≠ legacy %d — using legacy path" % [supplier_id, corners_pc.size(), corners.size()])
+				use_pc = false
+		elif use_pc:
+			use_pc = false   # PC data is missing for THIS yard
+
 		var translated_corners : Array = []
 		var yard_corrupt := false
-		for c in corners:
+		for i in corners.size():
+			var c : Vector3 = corners[i]
 			if not _world.call("_layout_rel_sane", c):
 				yard_corrupt = true
 				break
-			translated_corners.append(_world.call("_layout_to_scene", c))
+			if use_pc:
+				translated_corners.append(Plant.pc_to_scene(corners_pc[i]))
+			else:
+				translated_corners.append(_world.call("_layout_to_scene", c))
 		if yard_corrupt:
 			push_warning("[BaleYardManager] Yard '%s' has a corner km away from the anchor — corrupt layout data, skipping yard (redraw it in WorldSetup)" % supplier_id)
 			continue

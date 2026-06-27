@@ -205,9 +205,22 @@ func _spawn_player_swift_on_road() -> Node3D:
 	# rotation.y = _world_yaw() at MainWorld.gd:2443.
 	var anchor : Vector3 = _player_spawn_pos
 	var by : float = _world.call("_world_yaw")
-	var rot := Basis(Vector3.UP, by)
-	var local_offset := Vector3(-42.0, -1.0 + 0.3, -435.0)
-	swift.global_position = anchor + rot * local_offset
+	# #221-PC Phase 5 — Swift parking position is now an operator-tunable PC
+	# marker (WorldLayout.player_swift / player_swift_pc). When unset, falls
+	# back to the Phase 3 default (458, 65) so existing saves keep their
+	# current FAR-south-end Swift placement unchanged.
+	const SWIFT_PC_DEFAULT := Vector2(458.0, 65.0)
+	var swift_pc : Vector2 = SWIFT_PC_DEFAULT
+	if WorldLayout.player_swift != Vector3.ZERO and WorldLayout.has_pc_data \
+			and WorldLayout.player_swift_pc != Vector2.ZERO:
+		swift_pc = WorldLayout.player_swift_pc
+		print("[ShiftCarSpawner] Swift parked from operator marker PC(%.1f, %.1f)" % [swift_pc.x, swift_pc.y])
+	if _world.has_node("/root/Plant") and Plant.is_initialized():
+		swift.global_position = Plant.pc_to_scene_with_y(swift_pc, anchor.y - 0.7)
+	else:
+		var rot := Basis(Vector3.UP, by)
+		var local_offset := Vector3(swift_pc.x - 500.0, -0.7, swift_pc.y - 500.0)
+		swift.global_position = anchor + rot * local_offset
 	# Face "north" in the bale-yard convention — driver looks UP De Asselen
 	# Kuil toward the parking turn. Apply world_yaw so the heading rotates
 	# with the rest of the world.

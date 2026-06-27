@@ -176,6 +176,15 @@ const LINE_3C6_SEQ : Array[Dictionary] = [
 	{"id": "trilzeef"},
 ]
 
+# Transportbanden 3A/3B (operator-correct term — was called "intake"). This is
+# STEP 2 in the plant 3A/3B work-flow:
+#   step 1: Sort line (LINE_SORT_SEQ — sorteerlijn)
+#   step 2: Transportbanden 3A/3B (this macro — the dry conveyor network that
+#           lifts trilzeef output through belts C1..C12 + switch belt to VSS)
+#   step 3a: Wash + extrude path A (LINE_3A_SEQ)
+#   step 3b: Wash + extrude path B (LINE_3B_SEQ)
+# Const name kept as INTAKE_3A3B_SEQ + id `line_intake_3a3b` for save-file
+# compat — only the operator-facing labels say "Transportbanden 3A/3B" now.
 const INTAKE_3A3B_SEQ : Array[Dictionary] = [
 	# D4 — opzetband_3a3b at the head feeds the shredder. Was missing; macro
 	# previously assumed bales arrived at the shredder by hand.
@@ -340,10 +349,48 @@ var _opening_seq  : int = 0
 var _ui          : CanvasLayer
 var _catalog     : PanelContainer
 var _status      : Label
+# Bottom-right readout shown ONLY in edit (K) mode: live W×H×D in metres for
+# the selected machine plus the applied per-axis scale factor. Lets the user
+# eyeball how an in-game tweak compares to the catalog's base size while jogging.
+var _dim_readout : Label
 var _crosshair   : ColorRect
 var _popup       : PanelContainer
 var _popup_type  : OptionButton
 var _popup_name  : LineEdit
+
+# =============================================================================
+## Whether placing/removing/jogging this placeable should rebuild LineFlow.
+## HMI panels, signs, lights, doors, decorations are observer/control fixtures
+## that don't change the material-flow graph and must NOT trigger a rebuild
+## (every rebuild forces a downstream-first staggered PLC restart over ~20 s
+## and wipes powered/spin/buffer state — that's #218).
+func _is_flow_relevant(id : String) -> bool:
+	if id.is_empty():
+		return false
+	if id.begins_with("hmi_"):
+		return false
+	# Hard-coded observer-only ids that don't carry a sim role.
+	const _OBSERVER_IDS : Array[String] = [
+		"hmi_wall", "hmi_panel", "pcu_cabinet", "e_kast", "door",
+		"door_personnel", "gate_roller", "window_frame",
+		"hazard_moving", "hazard_overhead", "hazard_hightemp",
+		"hazard_hardhat", "hazard_piralchute", "hazard_platformmaxload",
+		"fire_riser", "fire_extinguisher", "drainage_grating",
+		"riveted_steel_column", "concrete_v_beam", "overhead_crane",
+	]
+	if id in _OBSERVER_IDS:
+		return false
+	# Authoritative check: MachineFlow.profile(id).role != 'none' means
+	# the id participates in the material-flow graph. If profile() is
+	# absent or returns null, default to flow-relevant (rebuild on safety).
+	var MachineFlow := load("res://src/sim/MachineFlow.gd")
+	if MachineFlow == null or not MachineFlow.has_method("profile"):
+		return true
+	var pr : Dictionary = MachineFlow.profile(id)
+	if pr == null or pr.is_empty():
+		return true
+	var role : String = String(pr.get("role", ""))
+	return role != "none"
 
 # =============================================================================
 func _ready() -> void:
@@ -373,6 +420,24 @@ func _build_ui() -> void:
 	_status.add_theme_constant_override("outline_size", 6)
 	_status.visible = false
 	_ui.add_child(_status)
+
+	# Bottom-right dimension + scale readout (edit mode only).
+	_dim_readout = Label.new()
+	_dim_readout.add_theme_font_size_override("font_size", 14)
+	_dim_readout.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_dim_readout.anchor_left = 1.0
+	_dim_readout.anchor_right = 1.0
+	_dim_readout.anchor_top = 1.0
+	_dim_readout.anchor_bottom = 1.0
+	_dim_readout.offset_left = -360.0
+	_dim_readout.offset_right = -16.0
+	_dim_readout.offset_top = -80.0
+	_dim_readout.offset_bottom = -16.0
+	_dim_readout.add_theme_color_override("font_color", Color(0.85, 0.95, 1.0))
+	_dim_readout.add_theme_color_override("font_outline_color", Color.BLACK)
+	_dim_readout.add_theme_constant_override("outline_size", 5)
+	_dim_readout.visible = false
+	_ui.add_child(_dim_readout)
 
 	# Centre crosshair (only while placing)
 	_crosshair = ColorRect.new()
@@ -573,6 +638,8 @@ func _enter_inactive() -> void:
 	_catalog.visible = false
 	_status.visible = false
 	_crosshair.visible = false
+	if _dim_readout != null:
+		_dim_readout.visible = false
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 
 func _enter_browsing() -> void:
@@ -662,6 +729,19 @@ func _input(event: InputEvent) -> void:
 				and (event as InputEventKey).keycode == KEY_S \
 				and (event as InputEventKey).shift_pressed:
 			_save_macro_for_selected()
+			get_viewport().set_input_as_handled()
+			return
+		# In-sim 3D-model editor: B bakes the SELECTED machine's current scale
+		# into the catalog as its new base size. The override is persisted to
+		# user://placeable_size_overrides.json so every future placement of
+		# this id — in this world AND in any new world — comes out at the
+		# baked size. The live instance is reset to scale 1 and its Model
+		# subtree rebuilt at the new size, so saves of the current scene
+		# don't double-scale on reload.
+		if event is InputEventKey and event.pressed and not event.echo \
+				and (event as InputEventKey).keycode == KEY_B \
+				and _edit_selected != null:
+			_bake_selected_size_to_catalog()
 			get_viewport().set_input_as_handled()
 			return
 		if event.is_action_pressed("build_place"):
@@ -961,7 +1041,10 @@ func _place_current() -> void:
 	if _active_id.begins_with("line_"):
 		_build_full_line(_active_id, _ghost.global_position, _ghost_rot_y)
 		_save_layout()
-		if line_flow:
+		# Whole-line macros ALWAYS touch the material-flow graph (they're literally
+		# the line). No gating needed here, but use the helper for symmetry: a
+		# macro that somehow expanded to only observers would correctly skip.
+		if line_flow and _is_flow_relevant(_active_id):
 			line_flow.rebuild()
 		return
 	# Two-point placeables (variable_belt): first click stashes the START point,
@@ -1015,8 +1098,16 @@ func _place_current() -> void:
 		_two_point_start = Vector3.ZERO
 		_clear_two_point_preview()
 		_save_layout()
-		if line_flow:
+		# #218 — Walls/gratings are observer-only; only belts (variable_belt) feed
+		# the material-flow graph. Gate so dropping a wall doesn't restart the line.
+		if line_flow and _is_flow_relevant(_active_id):
 			line_flow.rebuild()
+		else:
+			# Observer-only placement (HMI, decoration). Skip the rebuild that
+			# would restart the whole line; let panel binders re-resolve via a
+			# signal if LineFlow provides one.
+			if line_flow and line_flow.has_signal("observer_placed"):
+				line_flow.emit_signal("observer_placed", _active_id)
 		_update_placing_status()
 		return
 	# Poles use a custom-height build path so the smart snap height (or the
@@ -1042,8 +1133,18 @@ func _place_current() -> void:
 	_finalize_placed(node, _active_id, _ghost_height)
 	_finalize_bale(node)
 	_save_layout()
-	if line_flow:
+	# #218 — Don't restart the whole line for observer-only fixtures (HMI panels,
+	# signs, doors, decorations). Rebuild wipes powered/spin/buffer and forces a
+	# ~20 s downstream-first PLC re-stagger; skip it when the placement can't have
+	# changed the material-flow graph.
+	if line_flow and _is_flow_relevant(_active_id):
 		line_flow.rebuild()
+	else:
+		# Observer-only placement (HMI, decoration). Skip the rebuild that
+		# would restart the whole line; let panel binders re-resolve via a
+		# signal if LineFlow provides one.
+		if line_flow and line_flow.has_signal("observer_placed"):
+			line_flow.emit_signal("observer_placed", _active_id)
 
 ## Lay a whole line front-to-back from `start`, marching along the ghost's local
 ## -Z (forward). Each machine is built, rotated to face the march, spaced by its
@@ -1431,6 +1532,52 @@ func reset_macro_overrides(macro_id: String) -> void:
 
 ## EDIT mode SHIFT+S shortcut: look at the currently selected machine, read
 ## its `macro_id` meta, and save back the whole macro it belongs to.
+## Bake the selected machine's current (size × scale) into the catalog as
+## the persistent base size for its placeable_id, then reset the live
+## instance's scale to 1 and rebuild its mesh at the new size. Triggered by
+## pressing B in edit mode while a machine is selected — the in-sim
+## 3D-model editor's "commit" key. The catalog override is written to
+## user://placeable_size_overrides.json and applies to every future
+## placement of this id (current world + new worlds).
+func _bake_selected_size_to_catalog() -> void:
+	if _edit_selected == null or not is_instance_valid(_edit_selected):
+		if _status:
+			_status.text = "Select a machine first, then press B to bake size."
+		return
+	var pid : String = String(_edit_selected.get_meta("placeable_id", ""))
+	if pid == "":
+		if _status:
+			_status.text = "Selected node has no placeable_id — nothing to bake."
+		return
+	var item := PlaceableCatalog.get_item(pid)
+	if item.is_empty() or not item.has("size"):
+		if _status:
+			_status.text = "Catalog entry for '%s' has no size — cannot bake." % pid
+		return
+	# Current effective size = catalog (possibly already overridden) × live scale.
+	var base : Vector3 = item["size"]
+	var sc : Vector3 = _edit_selected.scale
+	var new_size : Vector3 = Vector3(base.x * sc.x, base.y * sc.y, base.z * sc.z)
+	# Persist the new base size — survives reload and applies to new worlds.
+	var stored : Vector3 = PlaceableCatalog.set_size_override(pid, new_size)
+	# Reset the live instance to identity scale + rebuild its procedural Model
+	# so the visible mesh swaps to the new base size (and the save's scale
+	# round-trips as 1, preventing double-scaling on reload).
+	_edit_selected.scale = Vector3.ONE
+	var rebuilt : bool = PlaceableCatalog.rebuild_in_place(_edit_selected)
+	if _status:
+		if rebuilt:
+			_status.text = "Baked %s → %.2f × %.2f × %.2f m  (saved to user://placeable_size_overrides.json)" % [
+				pid, stored.x, stored.y, stored.z]
+		else:
+			# Override is still persisted for future placements; live instance
+			# couldn't be rebuilt in-place (bespoke construction path). Operator
+			# can delete + re-place this instance to see the new size.
+			_status.text = "Baked %s → %.2f × %.2f × %.2f m  (re-place this one to refresh — used bespoke build path)" % [
+				pid, stored.x, stored.y, stored.z]
+	# Refresh the dimension readout to show the new base + identity scale.
+	_update_edit_status()
+
 func _save_macro_for_selected() -> void:
 	if _edit_selected == null or not is_instance_valid(_edit_selected):
 		if _status:
@@ -1553,6 +1700,9 @@ func _delete_pointed() -> void:
 		target = target.get_parent()
 	if target == null:
 		return
+	# Capture the placeable id BEFORE we free the node — the gate decision below
+	# needs to know whether this was a flow-relevant machine or an observer.
+	var deleted_id : String = String(target.get_meta("placeable_id", "")) if target.has_meta("placeable_id") else ""
 	# If it owns a carved opening, restore that part of the wall first.
 	if target.has_meta("opening_id") and wall_openings:
 		wall_openings.remove_opening(String(target.get_meta("opening_id")))
@@ -1564,8 +1714,16 @@ func _delete_pointed() -> void:
 		par.remove_child(target)
 	target.queue_free()
 	_save_layout()
-	if line_flow:
+	# #218 — Only rebuild if the deleted node actually participated in the
+	# material-flow graph. Observer fixtures (HMI panels, doors, decorations)
+	# don't change topology and must not trigger the costly PLC re-stagger.
+	if line_flow and _is_flow_relevant(deleted_id):
 		line_flow.rebuild()
+	else:
+		# Observer-only removal. Skip the rebuild that would restart the whole
+		# line; let panel binders re-resolve via a signal if LineFlow provides one.
+		if line_flow and line_flow.has_signal("observer_placed"):
+			line_flow.emit_signal("observer_placed", deleted_id)
 
 # =============================================================================
 # JOG / EDIT MODE — select a placed machine and nudge it into place.
@@ -1578,6 +1736,8 @@ func _enter_edit_mode() -> void:
 	_state = State.EDIT
 	_status.visible = true
 	_crosshair.visible = true
+	if _dim_readout != null:
+		_dim_readout.visible = true
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 	_edit_selected = null
 	_clear_edit_highlight()
@@ -1585,7 +1745,35 @@ func _enter_edit_mode() -> void:
 
 func _exit_edit_mode() -> void:
 	_edit_deselect()
+	# Auto-save every macro the operator touched. Previously the K → exit flow
+	# silently discarded jog changes unless the operator remembered to press
+	# Shift+S on every machine. That trap cost a whole rework session of the
+	# sorting line — operator changed scales + positions, exited, reloaded,
+	# everything reverted. Persisting on exit removes the trap.
+	_auto_save_all_touched_macros()
 	_enter_inactive()
+
+## Walk every placed_object child carrying a `macro_id` meta, collect the
+## distinct macro ids, and call save_macro_overrides() on each one. Cheap (a
+## handful of macros at most, file I/O only on actual diffs internally).
+## Called from _exit_edit_mode so a K-mode session round-trips through disk
+## without the operator having to remember Shift+S.
+func _auto_save_all_touched_macros() -> void:
+	if _placed_root == null or not is_instance_valid(_placed_root):
+		return
+	var ids : Dictionary = {}
+	for child in _placed_root.get_children():
+		if child is Node3D and child.has_meta("macro_id"):
+			ids[String(child.get_meta("macro_id"))] = true
+	if ids.is_empty():
+		return
+	var total : int = 0
+	for mid in ids.keys():
+		total += save_macro_overrides(String(mid))
+	if _status:
+		_status.text = "Auto-saved %d macro override(s) across %d macro(s)." % [total, ids.size()]
+	print("[BuildMode] Auto-saved %d macro override(s) across %d macro(s) on K-mode exit" \
+		% [total, ids.size()])
 
 ## Raycast from the crosshair and climb to the nearest "placed_object" ancestor.
 func _pointed_placed_object() -> Node:
@@ -1610,7 +1798,20 @@ func _edit_select_pointed() -> void:
 func _edit_deselect() -> void:
 	if _edit_dirty:
 		_save_layout()
-		if line_flow: line_flow.rebuild()
+		# #218 — Jogging an observer fixture (HMI panel, sign, decoration) only
+		# updates its transform; the material-flow graph is unchanged. Gate the
+		# rebuild so a tiny nudge to a panel doesn't restart the whole line.
+		var jogged_id : String = ""
+		if _edit_selected != null and is_instance_valid(_edit_selected) \
+				and _edit_selected.has_meta("placeable_id"):
+			jogged_id = String(_edit_selected.get_meta("placeable_id"))
+		if line_flow and _is_flow_relevant(jogged_id):
+			line_flow.rebuild()
+		else:
+			# Observer-only jog. Skip the rebuild that would restart the whole
+			# line; let panel binders re-resolve via a signal if LineFlow provides one.
+			if line_flow and line_flow.has_signal("observer_placed"):
+				line_flow.emit_signal("observer_placed", jogged_id)
 		_edit_dirty = false
 	_clear_edit_highlight()
 	_edit_selected = null
@@ -1622,6 +1823,9 @@ func _edit_delete_selected() -> void:
 	var target := _edit_selected
 	_clear_edit_highlight()
 	_edit_selected = null
+	# Capture the placeable id BEFORE we free the node — the gate decision below
+	# needs to know whether this was a flow-relevant machine or an observer.
+	var deleted_id : String = String(target.get_meta("placeable_id", "")) if target.has_meta("placeable_id") else ""
 	if target.has_meta("opening_id") and wall_openings:
 		wall_openings.remove_opening(String(target.get_meta("opening_id")))
 	target.remove_from_group("placed_object")
@@ -1629,7 +1833,16 @@ func _edit_delete_selected() -> void:
 	if par != null: par.remove_child(target)
 	target.queue_free()
 	_save_layout()
-	if line_flow: line_flow.rebuild()
+	# #218 — Only rebuild if the deleted node actually participated in the
+	# material-flow graph. Observer fixtures don't change topology and must
+	# not trigger the costly PLC re-stagger.
+	if line_flow and _is_flow_relevant(deleted_id):
+		line_flow.rebuild()
+	else:
+		# Observer-only K-mode deletion. Skip the rebuild; let panel binders
+		# re-resolve via a signal if LineFlow provides one.
+		if line_flow and line_flow.has_signal("observer_placed"):
+			line_flow.emit_signal("observer_placed", deleted_id)
 	_update_edit_status()
 
 func _add_edit_highlight(obj: Node3D) -> void:
@@ -1733,14 +1946,31 @@ func _update_edit_status() -> void:
 		return
 	if _edit_selected == null or not is_instance_valid(_edit_selected):
 		_status.text = "EDIT MODE   ·   aim at a machine + [LMB] to select   ·   [K]/[RMB] exit"
+		if _dim_readout != null:
+			_dim_readout.text = ""
 		return
 	var nm := String(PlaceableCatalog.get_item(String(_edit_selected.get_meta("placeable_id",""))).get("name", _edit_selected.name))
 	var p := _edit_selected.global_position
 	var sc_v : Vector3 = _edit_selected.scale
 	var sc_str : String = ("scale %.2f" % sc_v.x) if (is_equal_approx(sc_v.x, sc_v.y) and is_equal_approx(sc_v.y, sc_v.z)) \
 		else ("scale (%.2f, %.2f, %.2f)" % [sc_v.x, sc_v.y, sc_v.z])
-	_status.text = "EDIT: %s   pos(%.2f, %.2f, %.2f)  rot %.0f°  %s\narrows=move  R/F=up/down  Q/E=rotate  +/-=uniform scale  7/4=X  8/5=Y  9/6=Z  Shift=fine  [X]delete  [K/RMB]exit" % [
+	_status.text = "EDIT: %s   pos(%.2f, %.2f, %.2f)  rot %.0f°  %s\narrows=move  R/F=up/down  Q/E=rotate  +/-=uniform scale  7/4=X  8/5=Y  9/6=Z  Shift=fine  [B]bake size→catalog  [X]delete  [K/RMB]exit" % [
 		nm, p.x, p.y, p.z, rad_to_deg(_edit_selected.rotation.y), sc_str]
+	# Bottom-right readout: catalog base size, current effective WxHxD (size *
+	# scale) in metres, and the per-axis scale factor so a jog session has a
+	# clear "what am I tweaking, and how far from the original" reference.
+	if _dim_readout != null:
+		var pid : String = String(_edit_selected.get_meta("placeable_id", ""))
+		var item : Dictionary = PlaceableCatalog.get_item(pid)
+		if not item.is_empty() and item.has("size"):
+			var base : Vector3 = item["size"]
+			var cur : Vector3 = Vector3(base.x * sc_v.x, base.y * sc_v.y, base.z * sc_v.z)
+			_dim_readout.text = "DIMENSIONS  (W × H × D, m)\n%.2f × %.2f × %.2f\nbase  %.2f × %.2f × %.2f\nscale  X %.2f   Y %.2f   Z %.2f" % [
+				cur.x, cur.y, cur.z,
+				base.x, base.y, base.z,
+				sc_v.x, sc_v.y, sc_v.z]
+		else:
+			_dim_readout.text = "scale  X %.2f   Y %.2f   Z %.2f" % [sc_v.x, sc_v.y, sc_v.z]
 
 # Camera-forward ray against the world (floor / building / placed objects),
 # excluding the player capsule and the (collision-less) ghost.

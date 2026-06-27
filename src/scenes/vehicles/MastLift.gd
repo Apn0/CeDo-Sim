@@ -8,6 +8,8 @@ extends BaseVehicle
 # VehicleEnterArea, and BaseVehicle.
 class_name MastLift
 
+const SmoothedRateScript = preload("res://src/sim/SmoothedRate.gd")
+
 ## Ground rescue panel — a proximity Area3D around the GroundPanel mesh. While
 ## the player is on foot inside the zone, holding the interact key (E) LOWERS the
 ## platform. This is the safety feature the operator asked for: if someone gets
@@ -16,17 +18,12 @@ var _ground_panel_player_near : bool = false
 const GROUND_LOWER_RATE_M_S : float = 0.55
 
 func _setup_ground_panel_trigger() -> void:
-	var area := Area3D.new()
-	area.name = "GroundPanelTrigger"
-	area.collision_mask = 1
-	var cs := CollisionShape3D.new()
-	var sp := SphereShape3D.new(); sp.radius = 1.4
-	cs.shape = sp
-	cs.position = Vector3(0.86, 0.7, 0)   # by the GroundPanel mesh
-	area.add_child(cs)
-	add_child(area)
-	area.body_entered.connect(_on_ground_panel_body_entered)
-	area.body_exited.connect(_on_ground_panel_body_exited)
+	# Offset by the GroundPanel mesh on the chassis side.
+	InteractionTriggers.make_pickup_trigger(
+		self, 1.4,
+		_on_ground_panel_body_entered,
+		_on_ground_panel_body_exited,
+		"GroundPanelTrigger", 1, Vector3(0.86, 0.7, 0))
 
 func _on_ground_panel_body_entered(body: Node3D) -> void:
 	if body.name != "Player":
@@ -166,8 +163,9 @@ func enter_refusal_reason() -> String:
 ## CeDo sorting floor (the plant ran three of them). Despite the legacy class name
 ## (kept so saves / HUD / map keep working), this is NOT a scissor lift: it's a
 ## compact self-propelled VERTICAL MAST lift — a nested telescoping mast at the
-## front raises a small work platform, with a rounded red battery/drive cowl at
-## the rear.
+## front raises a small work platform; a small CounterBlock represents the
+## battery / drive enclosure at the rear (the earlier 2 m³ red capsule "cowl"
+## was operator-rejected as not matching any real machine and was removed).
 ##
 ## The platform rises from chassis-top (0 m) to PLATFORM_MAX_M with R / F (or the
 ## mouse joystick — hold LMB, drag up/down). A safety interlock drops the travel
@@ -209,8 +207,18 @@ var   _slew_angle      : float = 0.0              # current slew (radians)
 const JIB_FOLD_MIN : float = 0.10
 const JIB_FOLD_MAX : float = 0.43   # ≈ 10 % + 1/3 of the range
 
+## Hydraulic ramp time constants. Telescopic mast + counterweight: 0.4–0.8 s.
+## Jib fold: slow hydraulic creep already by spec; small additional ramp keeps
+## input flicks from snapping the cylinder. Slew: similar feel to jib fold.
+const PLATFORM_RAMP_TAU_S : float = 0.60
+const JIB_FOLD_RAMP_TAU_S : float = 0.50
+const SLEW_RAMP_TAU_S     : float = 0.50
+
 var _platform_height : float = 0.0
 var _platform_base_y : float = 0.5   # saved from the .tscn on _ready
+var _platform_velocity : SmoothedRate = null
+var _jib_fold_velocity : SmoothedRate = null
+var _slew_velocity     : SmoothedRate = null
 
 # #147 Phase 3 — Autonomous control. When an NPC commands the lift, these are
 # set; _physics_process drives _platform_height toward the target each tick at
@@ -238,6 +246,16 @@ func _ready() -> void:
 	# alerting ground crew that someone's working overhead.
 	has_lights = false
 	has_horn   = true
+	# Drive-ramp tuning per the throttle/brake audit. JLG-style mast lifts are
+	# deliberately the slowest movers — full throttle from the platform should
+	# feel like a labored crawl. ~1.6 s to top speed (capped 12 km/h anyway),
+	# 12 m/s² brake is softer than the rest of the fleet because the operator
+	# stands on the platform and a jolt would be unpleasant.
+	throttle_accel_mps2 = 2.0
+	brake_decel_mps2    = 12.0
+	coast_decel_mps2    = 3.0
+	throttle_ramp_tau_s = 1.2
+	brake_ramp_tau_s    = 0.3
 	super._ready()
 	vehicle_type = "mast_lift"   # JLG vertical-mast personnel lift
 	fuel_type    = "electric"
@@ -263,6 +281,12 @@ func _ready() -> void:
 	# Build the folding jib at the top of the mast (procedurally — not in the
 	# .tscn, so the geometry follows jib_segment_m even if the export changes).
 	_build_jib()
+
+	# Hydraulic ramp smoothers — telescopic mast + jib fold + slew. Keeps key
+	# taps from snapping the cylinder from 0 to nominal velocity.
+	_platform_velocity = SmoothedRateScript.new(0.0, PLATFORM_RAMP_TAU_S)
+	_jib_fold_velocity = SmoothedRateScript.new(0.0, JIB_FOLD_RAMP_TAU_S)
+	_slew_velocity     = SmoothedRateScript.new(0.0, SLEW_RAMP_TAU_S)
 
 # =============================================================================
 func _physics_process(delta: float) -> void:
@@ -298,29 +322,31 @@ func _update_platform(delta: float) -> void:
 	var m := _tool_axes()
 	var axis := Input.get_action_strength("forklift_lift_up") \
 			  - Input.get_action_strength("forklift_lift_down")
-	var move: float = axis * platform_speed_m_s * delta \
-		+ float(m["b"]) * platform_speed_m_s * delta * MOUSE_TOOL_MULT
-	_lift_load = clampf(absf(move) / maxf(platform_speed_m_s * delta, 0.0001), 0.0, 1.0)
-	_platform_height = clampf(_platform_height + move, 0.0, platform_max_m)
+	var target_plat_v : float = axis * platform_speed_m_s + float(m["b"]) * platform_speed_m_s * MOUSE_TOOL_MULT
+	var cur_plat_v    : float = _platform_velocity.approach(target_plat_v, delta)
+	_lift_load = clampf(absf(cur_plat_v) / maxf(platform_speed_m_s, 0.0001), 0.0, 1.0)
+	_platform_height = clampf(_platform_height + cur_plat_v * delta, 0.0, platform_max_m)
 	# JIB FOLD — extend/retract the basket out over the edge. T = out
 	# (forklift_tilt_back), G = in (forklift_tilt_fwd); RIGHT-mouse drag up/down
 	# also folds it. This was the missing control: jib_fold was never driven by
 	# input, so T and RMB did nothing in-game (#12).
 	var jaxis := Input.get_action_strength("forklift_tilt_back") \
 			   - Input.get_action_strength("forklift_tilt_fwd")
-	var jmove : float = jaxis * jib_fold_speed_1_s * delta \
-		+ float(m["d"]) * jib_fold_speed_1_s * delta * MOUSE_TOOL_MULT
-	if absf(jmove) > 0.0:
-		jib_fold = clampf(jib_fold + jmove, JIB_FOLD_MIN, JIB_FOLD_MAX)
-		_lift_load = maxf(_lift_load, clampf(absf(jmove) / maxf(jib_fold_speed_1_s * delta, 0.0001), 0.0, 1.0))
+	var target_jib_v : float = jaxis * jib_fold_speed_1_s + float(m["d"]) * jib_fold_speed_1_s * MOUSE_TOOL_MULT
+	var cur_jib_v    : float = _jib_fold_velocity.approach(target_jib_v, delta)
+	if absf(cur_jib_v) > 0.0001:
+		jib_fold = clampf(jib_fold + cur_jib_v * delta, JIB_FOLD_MIN, JIB_FOLD_MAX)
+		_lift_load = maxf(_lift_load, clampf(absf(cur_jib_v) / maxf(jib_fold_speed_1_s, 0.0001), 0.0, 1.0))
 	# SLEW — Z rotates the jib LEFT, C rotates RIGHT. Clamped to ±π so the
 	# basket can't wind around the mast endlessly.
 	var slew_axis : float = Input.get_action_strength("forklift_rotator_left") \
 						   - Input.get_action_strength("forklift_rotator_right")
-	if absf(slew_axis) > 0.0:
-		_slew_angle = clampf(_slew_angle + slew_axis * SLEW_SPEED_RAD_S * delta,
+	var target_slew_v : float = slew_axis * SLEW_SPEED_RAD_S
+	var cur_slew_v    : float = _slew_velocity.approach(target_slew_v, delta)
+	if absf(cur_slew_v) > 0.0001:
+		_slew_angle = clampf(_slew_angle + cur_slew_v * delta,
 			-SLEW_LIMIT_RAD, SLEW_LIMIT_RAD)
-		_lift_load = maxf(_lift_load, clampf(absf(slew_axis), 0.0, 1.0) * 0.4)
+		_lift_load = maxf(_lift_load, clampf(absf(cur_slew_v) / SLEW_SPEED_RAD_S, 0.0, 1.0) * 0.4)
 	# Apply slew rotation to the jib root every frame (platform follows via the
 	# tip in _apply_jib_transforms; only the orientation has to be set here).
 	if _jib_root:

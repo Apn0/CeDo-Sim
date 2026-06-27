@@ -136,9 +136,37 @@ const STACK_VERTICAL_GAP  : float = 0.30
 var _carried_natural_local_y : Dictionary = {}
 
 # Input axes (set each frame by _gather_input when occupied)
-var _throttle: float = 0.0    # -1 reverse … +1 forward
+var _throttle: float = 0.0    # -1 reverse … +1 forward — SMOOTHED throttle command (post-ramp)
+var _throttle_raw : float = 0.0   # -1..+1 raw input axis BEFORE the SmoothedRate input ramp
 var _steering: float = 0.0    # +1 left … -1 right (Godot VehicleWheel3D convention: positive steer = wheels rotate CCW from above = LEFT)
-var _brake   : float = 0.0    # 0 … 1
+var _brake   : float = 0.0    # 0 … 1 — SMOOTHED brake command (post-ramp)
+var _brake_raw : float = 0.0      # 0..1 raw brake axis BEFORE the SmoothedRate input ramp
+
+# Throttle / brake ramps — input-side smoothing (#214 follow-up to #184).
+# The audit (RotatingMechanism + vehicle tap-snap pass) recommended replacing
+# the global DRIVE_ACCEL=8 m/s² + brake×3 hard-coded constants in _drive() with
+# per-vehicle @export overrides + an EXTRA input-side SmoothedRate so the very
+# THROTTLE COMMAND itself ramps (not just the resulting speed). Two stages:
+#
+#   1) Input ramp (SmoothedRate, tau seconds) — _throttle_raw → _throttle
+#      converts an instantaneous W/S key-press into a smooth pedal-press feel.
+#      tau ≈ 0.6 s for cars, 1.2 s for forklift / mast lift, 1.5 s for Merlo.
+#
+#   2) Speed ramp (move_toward in _drive) — _throttle * max_mps → _current_speed_mps
+#      at throttle_accel_mps2 / brake_decel_mps2 / coast_decel_mps2 m/s². This
+#      stage was already here as DRIVE_ACCEL * {1,3,3}; now @export so each
+#      subclass tunes its own mass + powertrain feel.
+#
+# Both stages preserve the existing W/A/S/D/Space input mapping verbatim —
+# only the engine_force / brake assignment changes downstream.
+@export_group("Drive ramps")
+@export var throttle_accel_mps2 : float = 8.0   # legacy DRIVE_ACCEL — accelerate-to-target rate
+@export var brake_decel_mps2    : float = 24.0  # legacy DRIVE_ACCEL * 3 — foot-brake / handbrake deceleration
+@export var coast_decel_mps2    : float = 8.0   # legacy DRIVE_ACCEL — passive (no throttle, no brake) deceleration
+@export var throttle_ramp_tau_s : float = 0.6   # input-side ramp tau (cars default)
+@export var brake_ramp_tau_s    : float = 0.3   # input-side brake ramp tau — fast but not instant
+var _throttle_smoother : SmoothedRate = null
+var _brake_smoother    : SmoothedRate = null
 
 # ── Mouse-as-joystick tool control ────────────────────────────────────────────
 # While the operator is seated, holding a mouse button turns the mouse into a tool
@@ -160,6 +188,13 @@ var engine_throttle: float = 0.0
 
 # =============================================================================
 func _ready() -> void:
+	# Drive-ramp smoothers — input-side SmoothedRate for throttle + brake (#214).
+	# Subclasses may override throttle_ramp_tau_s / brake_ramp_tau_s BEFORE
+	# super._ready() to get the right tau on first tick; otherwise they tune
+	# AFTER super._ready() and the smoothers pick up the new tau on the next
+	# approach() call via set_tau (see _retune_drive_smoothers).
+	_throttle_smoother = SmoothedRate.new(0.0, throttle_ramp_tau_s)
+	_brake_smoother    = SmoothedRate.new(0.0, brake_ramp_tau_s)
 	# Group membership: lets other systems (ChargingPlug, CrewManager, save
 	# code) find every vehicle in one query instead of walking the scene tree.
 	add_to_group("vehicle")
@@ -292,8 +327,14 @@ func on_npc_exited(npc: Node3D) -> void:
 		_seated_npc = null
 	occupied = false
 	_throttle = 0.0
+	_throttle_raw = 0.0
+	if _throttle_smoother:
+		_throttle_smoother.snap_to(0.0)
 	_steering = 0.0
 	_brake    = 0.0
+	_brake_raw = 0.0
+	if _brake_smoother:
+		_brake_smoother.snap_to(0.0)
 	handbrake_engaged = true
 	# Reparent back to the world (scene root) at the dismount point.
 	var root := get_tree().current_scene
@@ -309,8 +350,14 @@ func on_operator_exited() -> void:
 	_operator = null
 	occupied  = false
 	_throttle = 0.0
+	_throttle_raw = 0.0
+	if _throttle_smoother:
+		_throttle_smoother.snap_to(0.0)
 	_steering = 0.0
 	_brake    = 0.0
+	_brake_raw = 0.0
+	if _brake_smoother:
+		_brake_smoother.snap_to(0.0)
 	# Drop any held tool-joystick state so we don't resume mid-drag next time.
 	_lmb_held = false
 	_rmb_held = false
@@ -822,7 +869,9 @@ func _npc_drive(delta: float) -> void:
 	to.y = 0.0
 	var dist := to.length()
 	if dist <= NPC_ARRIVE_TOL:
-		_current_speed_mps = move_toward(_current_speed_mps, 0.0, DRIVE_ACCEL * 4.0 * delta)
+		# AI hard-stop on arrival — use brake_decel_mps2 so an NPC-driven Forklift /
+		# Merlo stops at the same per-vehicle deceleration as a player-driven one.
+		_current_speed_mps = move_toward(_current_speed_mps, 0.0, brake_decel_mps2 * delta)
 		return
 	# Canonical CeDo direction: forward = -basis.z. In Godot, -basis.z for a
 	# Y-rotation θ is (-sinθ, 0, -cosθ). So the yaw that points -basis.z along
@@ -836,7 +885,7 @@ func _npc_drive(delta: float) -> void:
 	var tgt_speed := cruise * align
 	if dist < 4.0:
 		tgt_speed *= clampf(dist / 4.0, 0.25, 1.0)   # ease in to the waypoint
-	_current_speed_mps = move_toward(_current_speed_mps, tgt_speed, DRIVE_ACCEL * delta)
+	_current_speed_mps = move_toward(_current_speed_mps, tgt_speed, throttle_accel_mps2 * delta)
 
 ## Smallest signed difference a→b, wrapped to [-PI, PI].
 func _angle_diff(a: float, b: float) -> float:
@@ -962,7 +1011,11 @@ func _tool_axes() -> Dictionary:
 # =============================================================================
 # DRIVING (run only when occupied)
 # =============================================================================
-const DRIVE_ACCEL : float = 8.0    # m/s² toward target speed
+## Legacy reference constant — kept so external callers / tests that compare
+## against the historical 8 m/s² value still see it. The live drive loop now
+## reads the @export throttle_accel_mps2 / brake_decel_mps2 / coast_decel_mps2
+## triple defined above; subclasses tune those in _ready().
+const DRIVE_ACCEL : float = 8.0    # m/s² — legacy default, see throttle_accel_mps2
 const TURN_RATE   : float = 1.6    # rad/s yaw at full steer
 
 # Steering ramp — single source of truth for every BaseVehicle subclass on the
@@ -1027,7 +1080,9 @@ func _physics_process(delta: float) -> void:
 	else:
 		# Parked — coast to a stop on the horizontal axis, gravity still applies
 		# via the kinematic move below (we always test a small downward step).
-		_current_speed_mps = move_toward(_current_speed_mps, 0.0, DRIVE_ACCEL * delta)
+		# Use coast_decel_mps2 so a parked car decelerates at the same per-vehicle
+		# rate the operator feels when releasing W mid-cruise.
+		_current_speed_mps = move_toward(_current_speed_mps, 0.0, coast_decel_mps2 * delta)
 	# Single steering ramp — body yaw, visual wheel mesh, and any VehicleWheel3D
 	# .steering writes all read _current_steer_rad downstream. Runs every frame
 	# (occupied, autopilot, AND parked) so parked vehicles re-centre on their own.
@@ -1045,15 +1100,18 @@ func _physics_process(delta: float) -> void:
 func _drive(delta: float) -> void:
 	# Out of energy (flat battery / empty tank) → no drive, just coast to a stop.
 	if not _has_power():
-		_current_speed_mps = move_toward(_current_speed_mps, 0.0, DRIVE_ACCEL * delta)
+		_current_speed_mps = move_toward(_current_speed_mps, 0.0, coast_decel_mps2 * delta)
 		_rotate_steered_wheel_meshes(delta)
 		return
 	# Foot brake — when no throttle is held but the brake action is down, the
-	# vehicle decelerates faster than coasting.
-	var accel := DRIVE_ACCEL
+	# vehicle decelerates faster than coasting. Per-vehicle @export drive ramp
+	# constants (throttle_accel_mps2 / brake_decel_mps2 / coast_decel_mps2) let
+	# each subclass tune mass + powertrain feel without forking _drive().
 	if handbrake_engaged or absf(_throttle) < 0.01:
-		# Coast / brake to 0
-		var decel := DRIVE_ACCEL * (3.0 if handbrake_engaged or _brake > 0.1 else 1.0)
+		# Coast (no brake) vs hard-brake (handbrake engaged OR brake pedal pressed).
+		# brake_decel_mps2 defaults to 24 m/s² (3× legacy DRIVE_ACCEL), coast to 8.
+		# Subclasses dial these down for industrial-machine inertia / softer cars.
+		var decel := brake_decel_mps2 if (handbrake_engaged or _brake > 0.1) else coast_decel_mps2
 		_current_speed_mps = move_toward(_current_speed_mps, 0.0, decel * delta)
 		# #175 — kill numerical drift below 5 cm/s. Operator reported "shows
 		# 0.5 km/h while standing still" — the move_toward residue + the
@@ -1065,7 +1123,7 @@ func _drive(delta: float) -> void:
 		# Max speed is derated when the DEF tank is dry (diesel SCR limp-home).
 		var max_mps := (speed_limit_kmh / 3.6) * _power_factor()
 		var target_speed := _throttle * max_mps
-		_current_speed_mps = move_toward(_current_speed_mps, target_speed, accel * delta)
+		_current_speed_mps = move_toward(_current_speed_mps, target_speed, throttle_accel_mps2 * delta)
 	_rotate_steered_wheel_meshes(delta)
 	# #175 — periodic diagnostic so the operator can confirm the drive loop
 	# from the log. Once a second while occupied: input throttle/steering,
@@ -1120,7 +1178,9 @@ func _kinematic_move(delta: float) -> void:
 		# Bleed speed when we run into something fairly square-on (a wall), but keep
 		# it on glancing contact (a kerb, a passing machine corner) so we can scrape by.
 		if fwd.dot(normal) < -0.5 or normal.dot(fwd) > 0.5:
-			_current_speed_mps = move_toward(_current_speed_mps, 0.0, DRIVE_ACCEL * delta * 4.0)
+			# Hit-wall bleed — same brake-decel rate as a panic stop, so a head-on
+			# scrape kills speed quickly without violating the per-vehicle ramp.
+			_current_speed_mps = move_toward(_current_speed_mps, 0.0, brake_decel_mps2 * delta * 1.33)
 	# Yaw
 	rotate_y(yaw_rate * delta)
 	# Gravity probe — drop the body until its underside touches the floor.
@@ -1179,10 +1239,21 @@ func _settle_on_ground() -> void:
 	global_position.y = lerpf(global_position.y, target_y, 0.25)
 
 func _gather_input() -> void:
-	# Forward / reverse — single rocker pedal convention (electric/LPG forklift)
+	# Forward / reverse — single rocker pedal convention (electric/LPG forklift).
+	# _throttle_raw is the instantaneous keyboard axis; _throttle is the
+	# SmoothedRate-ramped command actually consumed by _drive() downstream.
+	# tau (throttle_ramp_tau_s) is set per-subclass in _ready(): cars ~0.6 s,
+	# forklift / mast lift ~1.2 s, Merlo ~1.5 s.
 	var fwd := Input.get_action_strength("vehicle_forward")
 	var rev := Input.get_action_strength("vehicle_reverse")
-	_throttle = fwd - rev
+	_throttle_raw = fwd - rev
+	# Re-tune the smoother in case a subclass changed tau AFTER super._ready
+	# (Forklift._ready / MastLift._ready / Car subclasses bump tau in this style).
+	if _throttle_smoother:
+		_throttle_smoother.set_tau(throttle_ramp_tau_s)
+		_throttle = _throttle_smoother.approach(_throttle_raw, get_physics_process_delta_time())
+	else:
+		_throttle = _throttle_raw
 
 	# Steering — two flavours:
 	#   live wheel    (default): tracks the keys directly, auto-centres on release.
@@ -1202,8 +1273,15 @@ func _gather_input() -> void:
 		_steering = Input.get_action_strength("vehicle_steer_left") \
 				  - Input.get_action_strength("vehicle_steer_right")
 
-	# Brake (foot brake — separate from handbrake)
-	_brake = Input.get_action_strength("vehicle_brake")
+	# Brake (foot brake — separate from handbrake). Same two-stage shape as
+	# throttle: _brake_raw is the instantaneous key axis, _brake is the SmoothedRate
+	# ramp of it (brake_ramp_tau_s, default 0.3 s — fast but not instant).
+	_brake_raw = Input.get_action_strength("vehicle_brake")
+	if _brake_smoother:
+		_brake_smoother.set_tau(brake_ramp_tau_s)
+		_brake = _brake_smoother.approach(_brake_raw, get_physics_process_delta_time())
+	else:
+		_brake = _brake_raw
 
 	# Expose absolute throttle for AudioManager engine-pitch synthesis
 	engine_throttle = absf(_throttle)

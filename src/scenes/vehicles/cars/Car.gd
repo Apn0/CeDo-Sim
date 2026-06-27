@@ -47,6 +47,17 @@ var _car_doors : Array = []
 
 # =============================================================================
 func _ready() -> void:
+	# Drive-ramp tuning per the throttle/brake audit. Passenger cars accelerate
+	# much more briskly than industrial machines — ~3.7 s 0→80 km/h on the
+	# default 6 m/s². Per-model subclasses (BMW / Audi) can bump this higher
+	# in their own _ready() override; small hatchbacks (Ka / Swift) can lower
+	# it. 12 m/s² brake (~1.2 g) is closer to ABS-locked emergency stop than
+	# the legacy 24 m/s²/2.4 g teleport-feel the audit flagged.
+	throttle_accel_mps2 = 6.0
+	brake_decel_mps2    = 12.0
+	coast_decel_mps2    = 3.0   # cars coast much longer than they brake — drift to a stop
+	throttle_ramp_tau_s = 0.6
+	brake_ramp_tau_s    = 0.3
 	super._ready()
 	_ensure_car_actions()
 	_install_engine_audio()
@@ -232,6 +243,13 @@ var _steering_node: Node3D = null
 ## which uses `fwd := -global_transform.basis.z`). Any car whose source asset is
 ## already authored facing -Z can opt out by setting this to 0.0 in _ready().
 var _model_front_axis_correction_deg : float = 180.0
+## Pitch correction for source assets authored in a Z-up DCC (Blender, 3DS)
+## that ended up imported tipped onto their nose or tail. Default 0 = no
+## pitch correction (assets that import flat). Applied to the same
+## FrontAxisCorrection wrap that handles the front-axis yaw, so wheel
+## VehicleWheel3D nodes (children of self, NOT of the wrap) keep their
+## upright collision and don't tilt with the body.
+var _model_pitch_correction_deg : float = 0.0
 
 func load_model() -> void:
 	if _model_path == "" or not ResourceLoader.exists(_model_path):
@@ -249,10 +267,16 @@ func load_model() -> void:
 	# part walker, paint matcher, door pivots, and wheel articulation see the
 	# same geometry they always did — only the entire assembly is yawed under
 	# self.
-	if root is Node3D and not is_zero_approx(_model_front_axis_correction_deg):
+	if root is Node3D and (not is_zero_approx(_model_front_axis_correction_deg) \
+			or not is_zero_approx(_model_pitch_correction_deg)):
 		var wrap := Node3D.new()
 		wrap.name = "FrontAxisCorrection"
-		wrap.rotation.y = deg_to_rad(_model_front_axis_correction_deg)
+		# Assign rotation as a Vector3 in one shot — assigning .x then .y in
+		# sequence would clobber the first (rotation IS a Vector3 property).
+		wrap.rotation = Vector3(
+			deg_to_rad(_model_pitch_correction_deg),
+			deg_to_rad(_model_front_axis_correction_deg),
+			0.0)
 		wrap.add_child(root)
 		root = wrap
 	# V2 — auto-ruler. Measure the imported model's AABB and rescale uniformly so

@@ -21,6 +21,11 @@ class_name LineFlow
 ## density side effects beyond water mass aren't modelled; discrete bale
 ## consumption is by mass draw, not per-sheet.
 
+## Emitted by BuildMode when an OBSERVER (HMI, decoration) is placed.
+## Panel binders + topology-aware UI re-resolve their bindings via this
+## without forcing a rebuild() that would destroy node state.
+signal observer_placed(placeable_id : String)
+
 const MAX_LINK_DIST : float = 14.0
 const FEED_RATE     : float = 8.0     # kg/s drawn from a bale sitting on the feed point
 const FEED_DENSITY  : float = 320.0   # kg/m³ for the injected feed volume
@@ -73,6 +78,18 @@ const ExtruderScrewScript   = preload("res://src/sim/ExtruderScrew.gd")
 const MfiProxyScript        = preload("res://src/sim/MfiProxy.gd")
 const MotorOverloadScript   = preload("res://src/sim/MotorOverload.gd")
 const CutterCompactorScript = preload("res://src/sim/CutterCompactor.gd")
+# TITECH/TOMRA fibrous shaft-wrap fault state. Per-sorter controller; ticks the
+# wrap accumulator with the moved throughput each frame, slows eff_rate once
+# tripping, raises a SHAFT-WRAP alarm, and exposes cut_wrap() to the wire-cutter
+# interaction (TitechShaftCut). One controller per placed NIR sorter, kept in
+# the node dict under the "nir_ctrl" key.
+const NirSorterScript       = preload("res://src/sim/NirSorter.gd")
+# #99 — DRD batch dryer controller. The L+R mech_dryers run as a coordinated PAIR:
+# one fills (BEFULLEN) while the other dries (TROCKNEN ~30s); 100% of upstream
+# material is routed to whichever drum is currently in BEFULLEN. The pair starts
+# 180° antiphase so a fresh drum is always accepting flake.
+const MechDryerCycleScript  = preload("res://src/sim/MechDryerCycle.gd")
+const MechDryerModelScript  = preload("res://src/sim/MechDryerModel.gd")
 # A spinning extruder screw's max rpm (ExtruderScrew.SCREW_RPM_MAX); rpm_pct scales it.
 const EXTRUDER_SCREW_MAX_RPM : float = 200.0
 # The cutter-compactor's NOMINAL_RPM (see CutterCompactor.gd) — rpm_pct scales it.
@@ -83,6 +100,15 @@ var _edges : Array = []      # Array[Dictionary] {a:int, b:int}
 var _connectors : Node3D
 var _ui    : CanvasLayer
 var _label : Label
+
+# #A3 — per-rebuild lookup: target node3d → its SiloLevelSensor (if any). Used
+# by the per-edge delivery loop to ask each silo's sensor for its feed
+# multiplier this tick (normal cruise → 1.0, governor active → 0.0 closes the
+# damper, bridged → 1.5 surge until overflow). Populated once per rebuild from
+# the "silo_level_sensor" group; refreshed lazily when a sensor's silo_path
+# resolves late. Empty when no sensor is placed on the line — every multiplier
+# defaults to 1.0 so the wiring is a no-op for un-sensored silos.
+var _silo_sensor_by_node : Dictionary = {}
 
 # The line only feeds from bales a VEHICLE HAS DROPPED at the feed machine
 # (meta "delivered" = true). Bales merely placed in build mode are inert scenery
@@ -119,17 +145,50 @@ var _gran_q_accum  := 0.0
 # the existing demo keeps running; a caller can set it false to stage a cold start.
 var _plc            : Node  = null     # a PLCSequencer (typed as Node — version-safe)
 var _plc_stage_node : Array = []
-var auto_start      : bool  = true
+## When true, PLCSequencer.start() fires immediately after rebuild() and
+## walks the line tail-to-head, powering each node on stagger_s apart.
+## Defaults to FALSE — operator must press START on the HMI to begin
+## production. The save loader flips _warm_boot=true so an already-running
+## save resumes correctly on first rebuild without forcing a cold start.
+var auto_start : bool = false
+var _warm_boot : bool = false
 
 # ── per-tick cache for performance ────────────────────────────────────────────
 var _floor_piles_cache : Array = []
 var _waste_containers_cache : Array = []
+# Bales are scanned both in the feed loop (~line 1275) and the lazy fallback
+# inside _bale_at(). Both paths previously called
+# `get_tree().get_nodes_in_group("bale")` per tick — an O(N) scene-tree walk
+# over potentially thousands of RigidBody3D yard bales. Cache once per tick to
+# match the floor_pile / waste_container pattern above.
+var _bales_cache : Array = []
 
 # ── #52 advanced-systems wiring state ─────────────────────────────────────────
 # The AirNetwork is a plant-wide autoload, so its compressors are registered ONCE
 # (guarded by this flag) — rebuilding the line re-registers consumers in place
 # (register_consumer updates a duplicate id) but must NOT stack more compressors.
 var _air_compressors_registered : bool = false
+# #99 — DRD pair registry. Keyed by pair_id (e.g. "dryer_pair") → {
+#   "L": <node index>, "R": <node index>,
+#   "cycle_L": MechDryerCycle, "cycle_R": MechDryerCycle,
+#   "antiphase_done": bool,
+# }
+# When both L and R are present, the per-tick router (section 3 of tick()) sends
+# 100% of the upstream share to whichever side is currently in BEFULLEN, and
+# DRD2 (the R side) is started half a cycle ahead so the two drums never both
+# accept at the same time.
+var _dryer_pairs : Dictionary = {}
+# #218 — set by rebuild() just before _discover() reruns; consumed by
+# _build_dryer_pairs() so a surviving pair re-discovered after rebuild does
+# NOT get its R-side antiphase jump re-applied (would slam state mid-shift).
+var _dryer_pairs_prior_snapshot : Dictionary = {}
+# #218 — set by rebuild() BEFORE _discover() runs; consumed by
+# _attach_advanced_systems() so observer modules constructed for survivor
+# slots reuse their prior ex/mfi/cc/mol/nir_ctrl/dryer_cycle refs instead
+# of building fresh instances (which would re-parent the NirSorter under
+# the scene tree, etc.). The key matches the same `id @ scene path`
+# format the powered/spin rehydration uses. Empty between rebuilds.
+var _restore_state : Dictionary = {}
 # SCADA push throttle (~6 Hz) so we don't spam set_param every physics frame.
 var _scada_push_accum : float = 0.0
 const SCADA_PUSH_DT : float = 0.16
@@ -165,6 +224,106 @@ func _build_ui() -> void:
 # GRAPH
 # =============================================================================
 func rebuild() -> void:
+	# #218 — DO NOT reset cumulative telemetry counters here. Rebuild fires when
+	# the operator adds a single HMI panel mid-shift, and the shift's running
+	# totals (fed_mass, gran_mass, water_added, etc.) must survive that. Only
+	# the explicit shift-reset button calls reset_shift_telemetry().
+	# #218 — Snapshot SURVIVOR runtime state by (placeable_id @ scene path) so
+	# any node that re-discovers after rebuild keeps its powered/spin/buffer/
+	# in/out batches and its hand-mode HMI overrides. New nodes (no matching
+	# key in old_state) start at the defaults their fresh dict was built with.
+	var old_state : Dictionary = {}
+	for nd in _nodes:
+		var node3d : Node = nd.get("node", null)
+		var key : String = ""
+		if node3d != null and is_instance_valid(node3d):
+			key = String(nd.get("id", "")) + "@" + String(node3d.get_path())
+		else:
+			key = String(nd.get("id", "")) + "#" + str(nd.get("index", _nodes.find(nd)))
+		old_state[key] = {
+			"powered":     nd.get("powered", false),
+			"spin":        nd.get("spin", 0.0),
+			"buffer":      nd.get("buffer", 0.0),
+			"in":          nd.get("in", null),
+			"out":         nd.get("out", null),
+			"hand_mode":   nd.get("hand_mode", false),
+			"manual_on":   nd.get("manual_on", false),
+			"rpm_pct":     nd.get("rpm_pct", 1.0),
+			# #218 — preserve observer modules so _attach_advanced_systems()
+			# guards see existing instances and don't reconstruct them.
+			"ex":          nd.get("ex", null),
+			"mfi":         nd.get("mfi", null),
+			"mol":         nd.get("mol", null),
+			"cc":          nd.get("cc", null),
+			"nir_ctrl":    nd.get("nir_ctrl", null),
+			"dryer_cycle": nd.get("dryer_cycle", null),
+		}
+	# #99 — preserve the prior pair registry across the rebuild so freshly-
+	# rediscovered pairs are detected (not yet present here) but the L/R
+	# antiphase jump is NOT re-triggered on survivors.
+	var prior_pairs : Dictionary = _dryer_pairs.duplicate()
+	_dryer_pairs.clear()
+	# #218 — Publish the snapshot + prior_pairs to MEMBER vars BEFORE
+	# _discover() runs. _attach_advanced_systems() (called from inside
+	# _discover) reads _restore_state and skips constructing observer
+	# modules for slots where a survivor already exists — without this
+	# the NirSorter add_child path runs on every rebuild and stacks
+	# duplicate controller nodes under the sorter body.
+	_restore_state = old_state
+	_dryer_pairs_prior_snapshot = prior_pairs
+	_discover()
+	_link()
+	# #218 — Rehydrate survivors BEFORE _init_plc() (which used to slam
+	# powered=false / spin=0.0 unconditionally). Match by id @ scene path.
+	for nd in _nodes:
+		var node3d : Node = nd.get("node", null)
+		var key : String = ""
+		if node3d != null and is_instance_valid(node3d):
+			key = String(nd.get("id", "")) + "@" + String(node3d.get_path())
+		else:
+			key = String(nd.get("id", "")) + "#" + str(nd.get("index", _nodes.find(nd)))
+		if old_state.has(key):
+			var s : Dictionary = old_state[key]
+			nd["powered"]   = s["powered"]
+			nd["spin"]      = s["spin"]
+			nd["buffer"]    = s["buffer"]
+			if s["in"] != null:   nd["in"]  = s["in"]
+			if s["out"] != null:  nd["out"] = s["out"]
+			nd["hand_mode"] = s["hand_mode"]
+			nd["manual_on"] = s["manual_on"]
+			nd["rpm_pct"]   = s["rpm_pct"]
+			# #218 — survivor-PLC integration flag. The per-tick PLC
+			# override (`_nodes[ni]["powered"] = _plc.is_powered(stage)`)
+			# would otherwise immediately re-drop a survivor stage to
+			# false while the staggered ramp catches up — observable as
+			# every machine restart-flickering for ~20s after a rebuild.
+			# When true, the per-tick override defers to the rehydrated
+			# value; it's cleared once the PLC catches up to that stage.
+			nd["_survivor_powered"] = bool(s["powered"])
+			# #218 — re-attach surviving observer modules. Guards in
+			# _attach_advanced_systems() then skip construction for these slots.
+			if s["ex"]          != null: nd["ex"]          = s["ex"]
+			if s["mfi"]         != null: nd["mfi"]         = s["mfi"]
+			if s["mol"]         != null: nd["mol"]         = s["mol"]
+			if s["cc"]          != null: nd["cc"]          = s["cc"]
+			if s["nir_ctrl"]    != null and is_instance_valid(s["nir_ctrl"]):
+				nd["nir_ctrl"] = s["nir_ctrl"]
+			if s["dryer_cycle"] != null: nd["dryer_cycle"] = s["dryer_cycle"]
+	_init_pipes()       # #145: turn each link into a transit delay-line
+	_init_plc()         # #145: stage the downstream-first power-up;
+						# _init_plc reads _survivor_powered to pre-power
+						# survivor stages so they DON'T re-stagger.
+	_spawn_connectors()
+	_index_silo_sensors()    # #A3: build target-node → sensor lookup for surge wiring
+	# Consume the snapshot — one-shot for this rebuild. Subsequent reads
+	# (HMI placement scans, per-tick code) must see an empty dict.
+	_restore_state = {}
+	print("[LineFlow] %d machines, %d links (transport physicalized)" % [_nodes.size(), _edges.size()])
+
+## #218 — Explicit shift telemetry reset. The shift-reset button on the
+## supervisor HMI calls this; rebuild() must NOT touch these counters or a
+## mid-shift HMI placement would zero the operator's running totals.
+func reset_shift_telemetry() -> void:
 	fed_mass = 0.0
 	gran_mass = 0.0
 	waste_mass = 0.0
@@ -173,12 +332,73 @@ func rebuild() -> void:
 	contam_removed = 0.0
 	poly_rejected = 0.0
 	_gran_q_accum = 0.0
-	_discover()
-	_link()
-	_init_pipes()       # #145: turn each link into a transit delay-line
-	_init_plc()         # #145: stage the downstream-first power-up
-	_spawn_connectors()
-	print("[LineFlow] %d machines, %d links (transport physicalized)" % [_nodes.size(), _edges.size()])
+
+## Save-file loader must call this BEFORE the first rebuild() after a
+## resume so the line picks up where it left off rather than cold-starting.
+## auto_start stays false — only _warm_boot fires once.
+func mark_warm_boot() -> void:
+	_warm_boot = true
+
+# ── #A3 silo-level-sensor surge wiring ───────────────────────────────────────
+## Build a {silo_node3d → SiloLevelSensor} lookup so the per-edge delivery loop
+## can grab the right sensor in O(1). Sensors register via the
+## "silo_level_sensor" group and expose target_silo() to resolve their NodePath.
+## Sensors whose silo_path can't resolve yet (silo spawned later) just skip;
+## _silo_sensor_for_node() retries lazily on demand.
+func _index_silo_sensors() -> void:
+	_silo_sensor_by_node.clear()
+	var tree := get_tree()
+	if tree == null:
+		return
+	for s in tree.get_nodes_in_group("silo_level_sensor"):
+		if s == null or not is_instance_valid(s):
+			continue
+		var silo : Node3D = null
+		if s.has_method("target_silo"):
+			silo = s.call("target_silo")
+		if silo != null and is_instance_valid(silo):
+			_silo_sensor_by_node[silo] = s
+
+## Look up the sensor governing a given target node. Falls back to a one-shot
+## group scan if the cache misses — handles the case where a sensor's silo_path
+## resolved AFTER rebuild() ran (e.g. silo macro spawned its sensor child late).
+## Returns null when this silo has no sensor; the caller treats that as
+## multiplier = 1.0 (passthrough).
+func _silo_sensor_for_node(n: Node) -> Node:
+	if n == null:
+		return null
+	if _silo_sensor_by_node.has(n):
+		var s = _silo_sensor_by_node[n]
+		if s != null and is_instance_valid(s):
+			return s
+		_silo_sensor_by_node.erase(n)
+	# Cache miss — try once more by walking the group. Cheap (sensor count
+	# tops out at one per silo, ~half a dozen for a fully-built plant).
+	var tree := get_tree()
+	if tree == null:
+		return null
+	for s2 in tree.get_nodes_in_group("silo_level_sensor"):
+		if s2 == null or not is_instance_valid(s2) or not s2.has_method("target_silo"):
+			continue
+		var tgt : Node3D = s2.call("target_silo")
+		if tgt == n:
+			_silo_sensor_by_node[n] = s2
+			return s2
+	return null
+
+## #A3 — per-tick feed multiplier for an edge whose downstream is `dst_node`.
+## Bridging the level sensor (operator anecdote: "the wire was the governor;
+## we took it out") removes the soft throttle: this multiplier becomes 1.5,
+## upstream over-takes from its out-batch and the silo surges. Below
+## HIGH_LEVEL_PCT this is just 1.0 (normal cruise). Above HIGH_LEVEL_PCT
+## without bridging it drops to 0.0 — the parcel parks at the source and
+## material backs up there (conserving), exactly like the PLC closing the
+## metering damper. Returns 1.0 (no-op) when the destination has no sensor.
+func _silo_feed_multiplier(dst_node: Node) -> float:
+	var sensor := _silo_sensor_for_node(dst_node)
+	if sensor == null or not sensor.has_method("effective_feed_multiplier"):
+		return 1.0
+	return float(sensor.call("effective_feed_multiplier"))
 
 ## Mass-weighted average quality (0..100) of all granulaat produced this run.
 func granulaat_quality() -> float:
@@ -239,6 +459,11 @@ func _discover() -> void:
 		var p_rej_o    : float = float(prof["reject_other"])
 		var p_rej_h    : float = float(prof["reject_hdpe"])
 		var l3c_code   : String = String(node3d.get_meta("l3c_code")) if node3d.has_meta("l3c_code") else ""
+		# #99 — paired-stage tags. Empty for everything except L3C.14L/R (the
+		# mech-dryer pair). The router uses these to fan 100% of incoming material
+		# to the drum currently in BEFULLEN instead of splitting it evenly.
+		var pair_id   : String = Line3CDefScript.pair_id_for(l3c_code) if l3c_code != "" else ""
+		var pair_side : String = Line3CDefScript.pair_side_for(l3c_code) if l3c_code != "" else ""
 		var amps_nom   : float = 0.0
 		if l3c_code != "" and ProcessModelScript.has_stage(l3c_code):
 			var tf : Dictionary = ProcessModelScript.stage_transfer(l3c_code)
@@ -262,6 +487,12 @@ func _discover() -> void:
 			"reject_other":  p_rej_o,
 			"reject_hdpe":   p_rej_h,
 			"l3c_code":      l3c_code,
+			# #99 — paired-stage routing tags (mech-dryer L/R only).
+			"pair_id":       pair_id,
+			"pair_side":     pair_side,
+			# Populated in _attach_advanced_systems() with a MechDryerCycle for
+			# nodes whose pair_id == "dryer_pair". Null on everything else.
+			"dryer_cycle":   null,
 			"amps_nominal":  amps_nom,
 			"amps":          0.0,
 			"win":   _node_win(node3d, id, inf, size),
@@ -279,8 +510,14 @@ func _discover() -> void:
 			"contam":  0.0,    # % contamination of the stream leaving
 			"quality": 0.0,    # 0..100 melt-quality grade of the stream leaving
 			"buffer":  0.0,    # kg waiting in this machine's input buffer
-			# #145 transport: the machine's conveying rotor (if it has one), its
-			# live spin-up state (0..1), and whether the PLC has powered it.
+			# #145 transport: the machine's conveying rotor(s), its live spin-up
+			# state (0..1), and whether the PLC has powered it. `mechs` is the
+			# FULL list (doseersilo: 3 augers, frictiewasser: 2 stirrers);
+			# `mech` keeps the legacy primary-rotor pointer for HUD widgets
+			# that show a single RPM. The set_running cascade walks `mechs`
+			# so EVERY rotor responds to power-state changes, not just the
+			# first one listed.
+			"mechs":   _find_mechanisms(node3d),
 			"mech":    _find_mechanism(node3d),
 			"spin":    0.0,
 			"powered": false,
@@ -359,6 +596,17 @@ static func _is_cutter_compactor(id: String, process: String) -> bool:
 		return true
 	return process == "compact"
 
+## True for any node modelled as a TITECH / TOMRA NIR optical sorter. Matched by
+## id (titech_sort / tomra_sort) OR the "optical" process tag so the shaft-wrap
+## controller attaches to any future NIR variant that adopts the same flow tag.
+static func _is_nir_sorter(id: String, process: String) -> bool:
+	var lid := id.to_lower()
+	if lid == "titech_sort" or lid == "tomra_sort":
+		return true
+	if lid.find("nir") >= 0 or lid.find("titech") >= 0 or lid.find("tomra") >= 0:
+		return true
+	return process == "optical"
+
 ## The AirNetwork consumer id for an air-driven machine, or "" if it taps no air.
 ## The TITECH/TOMRA NIR sorter's ejector bank and the compactor/PCU pneumatic ram
 ## are the real header consumers; matched by id substring or process tag.
@@ -378,30 +626,90 @@ func _attach_advanced_systems() -> void:
 	for nd in _nodes:
 		var id : String = String(nd["id"])
 		var proc : String = String(nd["process"])
+		# #218 — observer construction is guarded by an existing-instance check so
+		# survivors keep their internal state (extruder thermal accumulator,
+		# motor-overload trip integrator, NIR wrap mass) across a rebuild. Only
+		# newly-discovered nodes (whose dict was just freshly constructed in
+		# _discover and so still has null observer slots) get fresh modules.
+		# We FIRST look the survivor refs up in _restore_state (published by
+		# rebuild() before _discover ran) so observers that add_child()
+		# themselves to the scene tree (NirSorter) are NEVER reconstructed
+		# for a survivor — without this, the controller node would be
+		# silently re-parented every rebuild and the scene tree leaks.
+		var rk : String = ""
+		var n3d : Node = nd.get("node", null)
+		if n3d != null and is_instance_valid(n3d):
+			rk = String(nd.get("id", "")) + "@" + String(n3d.get_path())
+		var prior : Dictionary = _restore_state.get(rk, {}) if rk != "" else {}
 		# 1) Extruder thermal/rheology model + 2) its MFI soft-sensor.
 		if _is_extruder(id):
-			nd["ex"]  = ExtruderScrewScript.new()
-			nd["mfi"] = MfiProxyScript.new()
+			if nd.get("ex", null) == null:
+				var prior_ex = prior.get("ex", null) if not prior.is_empty() else null
+				nd["ex"] = prior_ex if prior_ex != null else ExtruderScrewScript.new()
+			if nd.get("mfi", null) == null:
+				var prior_mfi = prior.get("mfi", null) if not prior.is_empty() else null
+				nd["mfi"] = prior_mfi if prior_mfi != null else MfiProxyScript.new()
 		# #52 — Cutter-compactor thermo + Donut-stall model. One per compactor node;
 		# driven by rpm_pct and live throughput, publishes pot_temp + band to SCADA.
 		if _is_cutter_compactor(id, proc):
-			nd["cc"] = CutterCompactorScript.new(id)
+			if nd.get("cc", null) == null:
+				var prior_cc = prior.get("cc", null) if not prior.is_empty() else null
+				nd["cc"] = prior_cc if prior_cc != null else CutterCompactorScript.new(id)
 		# 3) Motor-overload (current-trip) model on the high-load process drives. Seed
 		#    its nominal current from the calibrated HMI amps when we have them, so a
 		#    metered Line 3C drive trips against realistic numbers.
 		if _is_high_load_motor(id, proc):
-			var nom : float = float(nd.get("amps_nominal", 0.0))
-			if nom <= 0.0:
-				nom = 90.0   # MotorOverload's own default full-load current
-			# Trip threshold sits a touch above nominal; locked-rotor ~5× nominal.
-			var mol = MotorOverloadScript.new(id, nom, nom * 5.0, maxf(nom * 1.5, 120.0), 3.0)
-			nd["mol"] = mol
+			if nd.get("mol", null) == null:
+				var prior_mol = prior.get("mol", null) if not prior.is_empty() else null
+				if prior_mol != null:
+					nd["mol"] = prior_mol
+				else:
+					var nom : float = float(nd.get("amps_nominal", 0.0))
+					if nom <= 0.0:
+						nom = 90.0   # MotorOverload's own default full-load current
+					# Trip threshold sits a touch above nominal; locked-rotor ~5× nominal.
+					var mol = MotorOverloadScript.new(id, nom, nom * 5.0, maxf(nom * 1.5, 120.0), 3.0)
+					nd["mol"] = mol
 		# 4) Air consumer registration (one global header; consumers re-register in
 		#    place on rebuild, so this is safe to call every rebuild).
 		var air_id : String = _air_consumer_id(id, proc)
 		if air_id != "":
 			nd["air_id"] = air_id
+		# 5) NIR shaft-wrap controller (TITECH/TOMRA). Owns a fibrous-wrap
+		#    accumulator that grows with moved throughput, slows eff_rate above
+		#    TRIP_WRAP_G (350 g), and stamps a back-reference on the placed
+		#    Node3D so the wire-cutter interaction (TitechShaftCut) can resolve
+		#    us from a crosshair hit without scanning the whole tree. Parented
+		#    under the body so its lifetime tracks the placeable; freeing the
+		#    sorter (delete / rebuild) frees the controller too.
+		if _is_nir_sorter(id, proc):
+			var existing_ctrl = nd.get("nir_ctrl", null)
+			# Reuse the survivor's NirSorter controller BEFORE checking
+			# the freshly-constructed dict's slot — this controller is a
+			# Node parented under the sorter body via add_child(), so a
+			# new instance every rebuild leaks add_child calls into the
+			# scene tree (the survey flagged this explicitly).
+			var prior_nir = prior.get("nir_ctrl", null) if not prior.is_empty() else null
+			if (existing_ctrl == null or not is_instance_valid(existing_ctrl)) \
+					and prior_nir != null and is_instance_valid(prior_nir):
+				nd["nir_ctrl"] = prior_nir
+				existing_ctrl = prior_nir
+			if existing_ctrl == null or not is_instance_valid(existing_ctrl):
+				var nir_node : Node3D = nd["node"] as Node3D
+				if nir_node != null and is_instance_valid(nir_node):
+					var ctrl : NirSorterScript = NirSorterScript.new()
+					ctrl.name = "NirSorterCtrl"
+					nir_node.add_child(ctrl)
+					ctrl.bind(nir_node, id)
+					nd["nir_ctrl"] = ctrl
 	_register_air_network()
+	# 5) #99 — DRD pair build. Each mech_dryer node with a pair_id gets its own
+	#    MechDryerCycle (state machine over IDLE/BEFULLEN/TROCKNEN/ENTLEEREN); the
+	#    pair registry stores the L/R node indices + cycle refs so tick() can route
+	#    100% of incoming flake to whichever side is currently in BEFULLEN. The R
+	#    side is started half a cycle ahead so the two drums never both accept at
+	#    once (antiphase requirement).
+	_build_dryer_pairs()
 
 ## Register the compressors ONCE and the line's air consumers (re-registering an
 ## existing consumer id just updates it, so a rebuild never stacks duplicates). This
@@ -439,6 +747,63 @@ func _register_air_network() -> void:
 			var demand : float = 8.0 if aid == "titech_sort" else 4.0
 			air.call("register_consumer", aid, demand)
 
+	# Visible compressor pair — additive to the abstract air bank above. We spawn
+	# two physical placeables (compressor_a + compressor_b) so the operator can
+	# actually SEE the kit pressurising the header. Guarded by node-name lookups
+	# so a rebuild never stacks duplicates; only the first rebuild that finds at
+	# least one consumer actually spawns them (matches the air_bank guard).
+	if not air_ids.is_empty():
+		_spawn_visible_compressors()
+
+## Spawn the two visible compressor placeables next to the player_spawn (or at
+## the optional WorldLayout.compressor_spawn marker when the operator has placed
+## one). Idempotent: re-running it on every rebuild is safe because each spawn
+## is gated by a fixed node name lookup under the world root. The placeables are
+## additive — they don't enter LineFlow's material graph (Hoses & Air rows are
+## visual only) and don't change the abstract AirNetwork bank registered above.
+##
+## TODO: WorldSetup UI for placing the compressor_spawn marker. Until then the
+## default offset (20m east, 20m north of player_spawn) is fine.
+func _spawn_visible_compressors() -> void:
+	# World root is whoever owns this LineFlow (typically MainWorld). We attach
+	# directly under it so the placeables sit alongside the rest of the placed
+	# scene, are saved/loaded with the world, and survive a LineFlow rebuild.
+	var world : Node = get_parent()
+	if world == null:
+		return
+	# Marker → scene-space (applies MainWorld's world_yaw + anchor when present).
+	# WorldLayout.compressor_spawn == Vector3.ZERO means "no marker", fall back
+	# to a default offset from player_spawn. Both fallbacks go through the same
+	# _layout_marker_to_scene helper so the rotation/anchor stays consistent.
+	var layout := get_node_or_null("/root/WorldLayout")
+	var marker : Vector3 = Vector3.ZERO
+	if layout != null and "compressor_spawn" in layout:
+		marker = layout.get("compressor_spawn")
+	if marker == Vector3.ZERO:
+		# Default: 20m east, 20m north of the player spawn — clear of the plant
+		# core but close enough to walk to. Y stays at floor level.
+		var player_anchor : Vector3 = Vector3.ZERO
+		if layout != null and "player_spawn" in layout:
+			player_anchor = layout.get("player_spawn")
+		marker = player_anchor + Vector3(20.0, 0.0, 20.0)
+	var base_pos : Vector3 = _layout_marker_to_scene(marker)
+	# Spawn A on the marker, B 2m to the right (+X in scene space). Each is
+	# guarded by its node name so a rebuild reuses the existing instance.
+	_spawn_one_compressor(world, "compressor_a", "compressor_a_visible", base_pos)
+	_spawn_one_compressor(world, "compressor_b", "compressor_b_visible", base_pos + Vector3(2.0, 0.0, 0.0))
+
+func _spawn_one_compressor(world: Node, catalog_id: String, node_name: String, scene_pos: Vector3) -> void:
+	# Idempotent guard — a prior rebuild already placed this one.
+	if world.get_node_or_null(node_name) != null:
+		return
+	var n : Node3D = PlaceableCatalog.build_node(catalog_id, false, false)
+	if n == null:
+		push_warning("[LineFlow] Could not build %s for visible compressor spawn" % catalog_id)
+		return
+	n.name = node_name
+	world.add_child(n)
+	n.global_transform = Transform3D(Basis.IDENTITY, scene_pos)
+
 ## The plant-wide compressed-air autoload, or null when it isn't registered
 ## (headless test / unit run). Reached via the tree root (LineFlow is a Node).
 func _air_network() -> Node:
@@ -451,6 +816,149 @@ func _air_factor() -> float:
 	if air != null and air.has_method("consumer_air_factor"):
 		return float(air.call("consumer_air_factor"))
 	return 1.0
+
+# ── #99 DRD BATCH-DRYER PAIR ─────────────────────────────────────────────────
+## Walk every node and group those tagged with a pair_id into a {pair_id → {
+##   "L": idx, "R": idx, "cycle_L": MechDryerCycle, "cycle_R": MechDryerCycle,
+##   "antiphase_done": bool}}. Each mech_dryer node also gets its own
+## MechDryerCycle stashed on its node dict (nd["dryer_cycle"]) — so even a SINGLE
+## drum (only L placed, no pair partner) still cycles BEFULLEN/TROCKNEN locally.
+## Only when BOTH sides exist is the pair recorded as routable, and only then
+## is the R side jumped half a cycle ahead so the two never accept at once.
+func _build_dryer_pairs() -> void:
+	# Per-node cycle assignment first. Each mech_dryer in the topology gets one.
+	# Survivor reuse: pull from _restore_state when this node had a cycle
+	# attached before rebuild — preserves accumulated heater/fill state
+	# instead of slamming the drum back to IDLE on every HMI placement.
+	for i in _nodes.size():
+		var nd : Dictionary = _nodes[i]
+		if String(nd.get("pair_id", "")) == "":
+			continue
+		if nd.get("dryer_cycle") == null:
+			var rk : String = ""
+			var n3d : Node = nd.get("node", null)
+			if n3d != null and is_instance_valid(n3d):
+				rk = String(nd.get("id", "")) + "@" + String(n3d.get_path())
+			var prior_cycle = null
+			if rk != "" and _restore_state.has(rk):
+				prior_cycle = (_restore_state[rk] as Dictionary).get("dryer_cycle", null)
+			if prior_cycle != null:
+				nd["dryer_cycle"] = prior_cycle
+			else:
+				nd["dryer_cycle"] = MechDryerCycleScript.new(MechDryerModelScript.new())
+	# Now build pair records ({pair_id → {L,R,cycle_L,cycle_R,antiphase_done}}).
+	var pairs : Dictionary = {}
+	for i in _nodes.size():
+		var nd : Dictionary = _nodes[i]
+		var pid : String = String(nd.get("pair_id", ""))
+		if pid == "":
+			continue
+		var side : String = String(nd.get("pair_side", ""))
+		if side != "L" and side != "R":
+			continue
+		var rec : Dictionary = pairs.get(pid, {
+			"L": -1, "R": -1, "cycle_L": null, "cycle_R": null,
+			"antiphase_done": false,
+		})
+		rec[side] = i
+		rec["cycle_" + side] = nd.get("dryer_cycle")
+		pairs[pid] = rec
+	# First-start antiphase: the R side jumps half a cycle ahead so DRD2 begins
+	# in TROCKNEN already half-soaked. #218 — only fire for FRESHLY-DISCOVERED
+	# pairs (no entry in the prior snapshot). Surviving pairs carry their L/R
+	# antiphase forward in their preserved MechDryerCycle state.
+	for pid in pairs.keys():
+		var r : Dictionary = pairs[pid]
+		var pair_complete : bool = int(r["L"]) >= 0 and int(r["R"]) >= 0
+		var was_known_before : bool = _dryer_pairs_prior_snapshot.has(pid)
+		if was_known_before:
+			# Survivor — inherit the prior antiphase flag so a re-rebuild
+			# doesn't slam R back into the half-cycle jump.
+			var prior : Dictionary = _dryer_pairs_prior_snapshot[pid]
+			r["antiphase_done"] = bool(prior.get("antiphase_done", false))
+		if pair_complete and not bool(r["antiphase_done"]) and not was_known_before:
+			var c_r = r["cycle_R"]
+			if c_r != null and c_r.has_method("force_antiphase_start"):
+				c_r.call("force_antiphase_start")
+			r["antiphase_done"] = true
+		pairs[pid] = r
+	_dryer_pairs = pairs
+	# Consume the prior snapshot — it was a one-shot guard for this rebuild.
+	_dryer_pairs_prior_snapshot = {}
+
+## #99 — tick the L/R MechDryerCycle for every registered pair. The cycle
+## state machine swings IDLE → BEFULLEN → TROCKNEN → ENTLEEREN; its dryer model
+## just integrates fill_pct vs heater_on, so we drive its in/out flows from the
+## per-tick throughput of its node (already tracked in nd["thru"]). Skip rigs
+## that don't have a cycle attached (single-drum builds with no pair partner).
+func _tick_dryer_pairs(delta: float) -> void:
+	# First tick every per-node cycle (even unpaired drums get heat/level state).
+	for nd in _nodes:
+		var cyc = nd.get("dryer_cycle")
+		if cyc == null:
+			continue
+		# Drive the underlying drum model: inflow = the upstream branch's share
+		# that landed in this node's input buffer this tick; outflow = the
+		# throughput leaving (nd["thru"] kg/s). We approximate inflow from
+		# moved_kg + backlog change, but a defensive minimum just uses thru, so
+		# the drum cycles even when the bookkeeping is sparse.
+		var inflow : float = maxf(0.0, float(nd.get("_moved_kg", 0.0))) / maxf(delta, 0.0001)
+		var outflow : float = float(nd.get("thru", 0.0))
+		if cyc.dryer != null:
+			cyc.dryer.tick(delta, inflow, outflow)
+		cyc.tick(delta)
+
+## #99 — which side of a pair is currently in BEFULLEN (accepting flake).
+## Returns "L", "R", or "" when neither side is BEFULLEN (both drying / idle).
+## Falls back to whichever side has the LOWEST fill_pct so material is never
+## stranded when both happen to be in TROCKNEN at the same instant.
+func _dryer_pair_accept_side(rec: Dictionary) -> String:
+	var c_l = rec.get("cycle_L")
+	var c_r = rec.get("cycle_R")
+	var BEFULLEN := MechDryerCycle.Step.BEFULLEN
+	var l_befullen : bool = c_l != null and int(c_l.step) == BEFULLEN
+	var r_befullen : bool = c_r != null and int(c_r.step) == BEFULLEN
+	if l_befullen and not r_befullen:
+		return "L"
+	if r_befullen and not l_befullen:
+		return "R"
+	if l_befullen and r_befullen:
+		# Both somehow BEFULLEN — pick the emptier drum.
+		var lf : float = c_l.dryer.fill_pct if c_l.dryer != null else 100.0
+		var rf : float = c_r.dryer.fill_pct if c_r.dryer != null else 100.0
+		return "L" if lf <= rf else "R"
+	# Neither BEFULLEN — route to the emptier drum so it can transition to
+	# BEFULLEN on its own (the IDLE → BEFULLEN guard is fill_pct < 89%).
+	var lf2 : float = c_l.dryer.fill_pct if c_l != null and c_l.dryer != null else 100.0
+	var rf2 : float = c_r.dryer.fill_pct if c_r != null and c_r.dryer != null else 100.0
+	return "L" if lf2 <= rf2 else "R"
+
+## #99 — given the list of edge-indices emerging from source `src_idx` and the
+## per-branch shares array (in the same order), bias 100% of the share to the
+## paired drum that's currently in BEFULLEN. Returns the (possibly-overwritten)
+## shares array. Untouched when:
+##   * the source doesn't feed exactly two paired siblings, or
+##   * the two siblings don't belong to the same pair, or
+##   * the pair isn't registered in _dryer_pairs.
+func _maybe_apply_dryer_pair_routing(src_edges: Array, shares: Array) -> Array:
+	if src_edges.size() != 2 or shares.size() != 2:
+		return shares
+	var b0 : Dictionary = _nodes[int(_edges[int(src_edges[0])]["b"])]
+	var b1 : Dictionary = _nodes[int(_edges[int(src_edges[1])]["b"])]
+	var pid0 : String = String(b0.get("pair_id", ""))
+	var pid1 : String = String(b1.get("pair_id", ""))
+	if pid0 == "" or pid0 != pid1:
+		return shares
+	if not _dryer_pairs.has(pid0):
+		return shares
+	var rec : Dictionary = _dryer_pairs[pid0]
+	var accept : String = _dryer_pair_accept_side(rec)
+	if accept == "":
+		return shares
+	var side0 : String = String(b0.get("pair_side", ""))
+	# 100% to whichever edge points at the accepting drum.
+	var to_b0 : bool = (side0 == accept)
+	return [1.0 if to_b0 else 0.0, 0.0 if to_b0 else 1.0]
 
 func _link() -> void:
 	_edges.clear()
@@ -603,7 +1111,20 @@ func _is_pack_up_paused(bid: String) -> bool:
 
 ## When only one VSS is full the switch belt's buffer-aware split (#137)
 ## already biases against it, so there's no need to flip C8 in that case.
+## #211d — extended to ALSO trip pack-up when an upstream ShredderFeedBelt
+## has latched an intake_overfill, belt_jam, or thermal_shutdown fault. A
+## jammed/over-packed FEEDER stops being able to absorb material as fast as
+## the trilzeef + bunker can push it, so the same cascade that triggers on
+## "VSSs both full" must trigger on "feeder choked" — no new ordering, just
+## a wider predicate. Internal C8-reverse logic still asks the precise
+## VSS-only question through _both_vss_full_native().
 func _both_vss_full() -> bool:
+	return _both_vss_full_native() or _intake_overfilled() or _has_belt_jam_or_thermal()
+
+## The original VSS-only predicate, kept intact so C8's reverse-target choice
+## (per-edge loop ~line 1714) still asks the precise "both silos overfull"
+## question. The widened _both_vss_full() above is for the pack-up cascade.
+func _both_vss_full_native() -> bool:
 	var vss_count : int = 0
 	var vss_full  : int = 0
 	for nd in _nodes:
@@ -615,6 +1136,37 @@ func _both_vss_full() -> bool:
 	# Need at least two VSSs registered (3A + 3B). If only one is placed,
 	# overflow logic can't trigger — fall back to forward-only.
 	return vss_count >= 2 and vss_full == vss_count
+
+## #211d — any ShredderFeedBelt in the scene reporting intake_overfill_active.
+## Walks the "shredder_feed_belt" group (set in ShredderFeedBelt._ready) so the
+## predicate works whether the feeder is parented under LineFlow or in
+## arbitrary world-scene places (Line 3A vs sandbox vs macro-built layouts).
+func _intake_overfilled() -> bool:
+	var tree := get_tree()
+	if tree == null:
+		return false
+	for b in tree.get_nodes_in_group("shredder_feed_belt"):
+		if b == null or not is_instance_valid(b):
+			continue
+		if b.has_method("intake_overfill_active") and bool(b.call("intake_overfill_active")):
+			return true
+	return false
+
+## #211d — any ShredderFeedBelt reporting belt_jam OR thermal_shutdown. Belt
+## jams are mechanically equivalent to intake overfill for cascade purposes
+## (no material can leave the feeder either way) so we lump them in here.
+func _has_belt_jam_or_thermal() -> bool:
+	var tree := get_tree()
+	if tree == null:
+		return false
+	for b in tree.get_nodes_in_group("shredder_feed_belt"):
+		if b == null or not is_instance_valid(b):
+			continue
+		if b.has_method("belt_jam_active") and bool(b.call("belt_jam_active")):
+			return true
+		if b.has_method("thermal_shutdown_active") and bool(b.call("thermal_shutdown_active")):
+			return true
+	return false
 
 ## Semantic direction filter for the geometry-fallback linker (#78). Some
 ## (upstream_process, downstream_process) pairs are physically impossible and
@@ -680,14 +1232,25 @@ func _has_incoming(idx: int) -> bool:
 	return false
 
 # ── #145 transport helpers ────────────────────────────────────────────────────
-## The conveying rotor of a machine, if it has one: the first child in the
-## "mechanism" group that exposes current_rpm() (a RotatingMechanism). null when
-## the machine has no modelled rotor — those fall back to a spin-only gate.
-func _find_mechanism(machine: Node) -> Node:
+## ALL conveying rotors of a machine — every direct child in the "mechanism"
+## group that exposes current_rpm() (a RotatingMechanism). Multi-rotor
+## machines (doseersilo's 3 augers, frictiewasser's 2 stirrers) MUST get
+## set_running() driven on every one of them, otherwise only the first
+## listed mechanism spins. Returns [] when the machine has no modelled rotor.
+func _find_mechanisms(machine: Node) -> Array:
+	var out : Array = []
 	for c in machine.get_children():
 		if c.is_in_group("mechanism") and c.has_method("current_rpm"):
-			return c
-	return null
+			out.append(c)
+	return out
+
+## Backward-compat: the FIRST rotor in mechanism order. K-mode HUD widgets
+## that show a single "primary" RPM read this — preserving the legacy
+## "primary mechanism" semantics. Callers that need to drive ALL rotors
+## (set_running cascade, spin gate) walk nd["mechs"] instead.
+func _find_mechanism(machine: Node) -> Node:
+	var list := _find_mechanisms(machine)
+	return list[0] if not list.is_empty() else null
 
 ## The machine's FilmFlakeField visual layer (if it has one), for #173 coupling.
 func _find_film_field(machine: Node) -> Node:
@@ -738,11 +1301,38 @@ func _init_plc() -> void:
 	_plc.stagger_s = clampf(TARGET_STARTUP_S / float(maxi(_plc_stage_node.size(), 1)), 0.15, PLC_STAGGER)
 	for _i in _plc_stage_node:
 		_plc.add_stage(null)
-	for nd in _nodes:
-		nd["powered"] = false
-		nd["spin"]    = 0.0
-	if auto_start:
+	# #218 — DO NOT slam every node to powered=false / spin=0.0 here.
+	# Survivors were rehydrated by rebuild() above; newly-discovered nodes
+	# already carry the cold defaults from their fresh dict construction in
+	# _discover(). Forcing zero would re-trigger a PLC spin-up on every HMI
+	# placement, which is exactly what cold-spawn + state-preserving rebuild
+	# is meant to avoid.
+	#
+	# #218 — SURVIVOR PRE-POWER. Walk the freshly-built stage list and mark
+	# each PLC stage as already-powered when its node was running before
+	# the rebuild. Without this, the per-tick override
+	# `_nodes[ni]["powered"] = _plc.is_powered(stage)` would drop every
+	# survivor back to false on the next tick — observable as the whole
+	# line restart-flickering through a 20s downstream-first ramp every
+	# time the operator drops a single HMI panel mid-shift. With pre-
+	# power, the override returns true for survivor stages immediately
+	# and only the truly cold (newly-placed) stages wait for the ramp.
+	for stage in _plc_stage_node.size():
+		var ni : int = int(_plc_stage_node[stage])
+		if ni < 0 or ni >= _nodes.size():
+			continue
+		if bool(_nodes[ni].get("_survivor_powered", false)):
+			_plc.set_stage_powered(stage, true)
+	# Warm-boot path: the save loader called mark_warm_boot() so the line
+	# must come up hot, no stagger. force_all_powered() walks every stage
+	# and snaps it to running, matching the terminal state start() ends
+	# in. auto_start (without _warm_boot) keeps the legacy staggered cold
+	# start so a freshly built world still feels like a real power-up.
+	if _warm_boot:
+		_plc.force_all_powered()
+	elif auto_start:
 		_plc.start()
+	_warm_boot = false   # consume the warm-boot one-shot
 
 ## Topological head→tail ordering of the node indices (Kahn's algorithm over the
 ## directed links). Nodes caught in a cycle are appended last so they still power.
@@ -1142,13 +1732,16 @@ func tick(delta: float) -> void:
 		_pack_up_t = 0.0
 
 	# Cache spatial queries once per tick for heavy inner loops like _dump_waste
+	# and the feed bale-pickup scan.
 	var tree = get_tree()
 	if tree != null:
 		_floor_piles_cache = tree.get_nodes_in_group("floor_pile")
 		_waste_containers_cache = tree.get_nodes_in_group("waste_container")
+		_bales_cache = tree.get_nodes_in_group("bale")
 	else:
 		_floor_piles_cache.clear()
 		_waste_containers_cache.clear()
+		_bales_cache.clear()
 
 	# 0) PLC powers the line up DOWNSTREAM-FIRST; each powered machine then ramps
 	#    its rotor over SPIN_UP_S. The live spin (0..1) gates how fast it conveys,
@@ -1157,7 +1750,22 @@ func tick(delta: float) -> void:
 		_plc.tick(delta)
 		for stage in _plc_stage_node.size():
 			var ni : int = int(_plc_stage_node[stage])
-			_nodes[ni]["powered"] = _plc.is_powered(stage)
+			# #218 — SURVIVOR-AWARE override. A survivor stage carries
+			# `_survivor_powered = true` from rebuild() rehydration; we
+			# do NOT let the PLC override that until the PLC catches up
+			# (is_powered(stage) reports true on its own). Once it does,
+			# clear the flag and the stage falls back to normal PLC
+			# governance for the rest of its life. This is what keeps
+			# jogging / placing / deleting an unrelated machine from
+			# observably restarting the entire line.
+			var plc_says : bool = _plc.is_powered(stage)
+			var nd_t : Dictionary = _nodes[ni]
+			if bool(nd_t.get("_survivor_powered", false)):
+				if plc_says:
+					nd_t["_survivor_powered"] = false   # PLC caught up
+				nd_t["powered"] = true
+			else:
+				nd_t["powered"] = plc_says
 	# HMI HAND-mode override (#new-hmi): when the operator has switched a machine to
 	# HAND on the per-machine HMI screen, the PLC + safeguards are BYPASSED for that
 	# machine — `manual_on` directly drives powered. Operator's responsibility (the
@@ -1171,9 +1779,23 @@ func tick(delta: float) -> void:
 	for nd_s in _nodes:
 		var tgt : float = 1.0 if bool(nd_s["powered"]) else 0.0
 		nd_s["spin"] = move_toward(float(nd_s["spin"]), tgt, delta / maxf(SPIN_UP_S, 0.01))
-		var mech_s = nd_s.get("mech")
-		if mech_s != null and is_instance_valid(mech_s) and mech_s.has_method("set_running"):
-			mech_s.call("set_running", bool(nd_s["powered"]))
+		# Multi-rotor cascade: walk EVERY mechanism child, not just the
+		# first one. Without this, doseersilo (3 augers) + frictiewasser
+		# (2 stirrers) only see their primary rotor respond to PLC power,
+		# so e.g. only stirrer_1 visibly spins on a frictiewasser even
+		# though the LineFlow node is fully powered.
+		var mechs_s : Array = nd_s.get("mechs", [])
+		if mechs_s.is_empty():
+			# Survivor dict from a pre-mechs save — fall back to the
+			# legacy single-rotor pointer so we don't drop the cascade.
+			var single_mech = nd_s.get("mech")
+			if single_mech != null and is_instance_valid(single_mech) \
+					and single_mech.has_method("set_running"):
+				single_mech.call("set_running", bool(nd_s["powered"]))
+		else:
+			for m in mechs_s:
+				if m != null and is_instance_valid(m) and m.has_method("set_running"):
+					m.call("set_running", bool(nd_s["powered"]))
 		# Live current (#173): a stage draws its full HMI amps at full material
 		# load, sags to the motor idle current when starved, and 0 when stopped.
 		# Load is gauged against the machine's OWN design rate (self-consistent).
@@ -1201,7 +1823,7 @@ func tick(delta: float) -> void:
 	#    (legacy behaviour — preserves the test rigs that just plopped a bale on a
 	#    machine).
 	if feed_enabled:
-		var bales := get_tree().get_nodes_in_group("bale")
+		var bales := _bales_cache
 		for i in _nodes.size():
 			var nd: Dictionary = _nodes[i]
 			if String(nd["role"]) == "sink" or _has_incoming(i):
@@ -1255,8 +1877,34 @@ func tick(delta: float) -> void:
 		# full pressure consumer_air_factor()==1.0 and nothing changes.
 		if String(nd.get("air_id", "")) != "":
 			eff_rate *= _air_factor()
+		# NIR shaft-wrap penalty (TITECH/TOMRA only). Below TRIP_WRAP_G the
+		# multiplier is 1.0 and this is a no-op; once tripped it lerps 1.0 → 0.5
+		# as wrap fills to FULL_WRAP_G. Like the air gate, the un-moved mass
+		# simply backs up in the buffer (conserving). The controller's own tick
+		# runs AFTER the split below so it accumulates on what actually moved,
+		# not the design rate.
+		var nir_ctrl = nd.get("nir_ctrl")
+		if nir_ctrl != null and is_instance_valid(nir_ctrl):
+			eff_rate *= float(nir_ctrl.throughput_multiplier())
+		# ── STOP-WITH-RESIDUAL CONTRACT (operator-confirmed "leegdraaien" cascade) ──
+		# When a machine is stopped (PLC power off, HAND-mode manual_on=false, E-stop
+		# upstream cut, MotorOverload trip, CutterCompactor Donut stall, or the
+		# pack-up cascade), nd["powered"] flips false → nd["spin"] decays toward 0 →
+		# eff_rate falls through this threshold → we `continue` WITHOUT calling
+		# bin.split_mass(), so `bin` (the input buffer / residual material) is
+		# UNTOUCHED. Nothing flushes to nd["out"], nothing leaks downstream from
+		# this machine's buffer, no kg disappears. On restart, spin ramps back up
+		# and the same `bin` is processed first before the pipe delivers any new
+		# upstream material. This is what makes the operator's "leegdraaien" cascade
+		# emerge naturally from material conservation: input feed stops at the head
+		# (feed_enabled=false or upstream stopped) → each downstream machine keeps
+		# running and drains its OWN buffer through its discharge rate → the next
+		# machine downstream starves in sequence as the pipe between them empties.
+		# Do not "flush on stop" or "clear buffer on stop" — that would break both
+		# the conservation ledger AND the realistic empty-out behaviour.
 		if eff_rate <= 0.0001:
 			# Stopped/starved this tick: the whole buffer is un-passed backlog.
+			# bin is intentionally NOT modified — material is preserved for restart.
 			nd["_backlog_kg"] = bin.mass_kg
 			nd["thru"] = lerpf(float(nd["thru"]), 0.0, 0.2)
 			continue
@@ -1322,6 +1970,11 @@ func tick(delta: float) -> void:
 	#      the motor-overload model can only STOP a jammed rotor conveying (mass then
 	#      backs up — conserving), and air duty is reported to the header.
 	_tick_advanced_systems(delta)
+	# 2.6) #99 — DRD batch dryer cycles. Step both drums of every registered
+	#      pair (and any unpaired single drum) so the L/R BEFULLEN swap is
+	#      driven by real elapsed time. The router (section 3 below) reads
+	#      cycle.step on the same tick to decide which drum receives flake.
+	_tick_dryer_pairs(delta)
 
 	# 3) Carry each output DOWN ITS CONNECTOR as a delay-line. Material entering a
 	#    link rides PIPE_STAGES slots that shift forward one slot every stage_dt,
@@ -1396,7 +2049,11 @@ func tick(delta: float) -> void:
 			# → reverse, else → forward.
 			var c8 = src_node.get("c8_ctrl")
 			if c8 != null and n_branches == 2:
-				var both_full : bool = _both_vss_full()
+				# #211d — C8 reverses on the strict "both VSS full" condition,
+				# NOT on the widened pack-up predicate. A jammed feeder belt
+				# downstream of C8 shouldn't make C8 reverse — pack-up will
+				# stop its upstream feed (#139) and that's enough.
+				var both_full : bool = _both_vss_full_native()
 				c8.set_direction_target(-1.0 if both_full else 1.0)
 				# By convention wout (the FORWARD port +Z) is edge index 0,
 				# wout2 (reverse) is edge index 1 — that's the order the linker
@@ -1406,6 +2063,15 @@ func tick(delta: float) -> void:
 		else:
 			for _wi in n_branches:
 				shares.append(1.0 / float(n_branches))
+		# #99 — DRD pair routing overlay. If this source's two downstreams are
+		# the L/R mech-dryer pair, override the share so 100% goes to whichever
+		# drum is currently in BEFULLEN (instead of an even 50/50 split). This
+		# is what makes the antiphase batch cycle visible upstream: one dryer
+		# accepts the full feed while the other dries; they swap every soak.
+		# Applied AFTER the splitter/SwitchBelt/C8 overlays so the pair routing
+		# wins — none of those source types feed the dryer pair anyway, so this
+		# never conflicts with the upstream Y/jog mechanisms.
+		shares = _maybe_apply_dryer_pair_routing(src_edges, shares)
 		var cum : float = 0.0
 		for i in n_branches:
 			var s : float = float(shares[i])
@@ -1429,6 +2095,27 @@ func tick(delta: float) -> void:
 		# Inject this branch's SHARE of the source's output into the entry slot.
 		var aout: MaterialBatch = an["out"]
 		var take : float = float(_edge_take[ei])
+		# #A3 — SILO LEVEL SENSOR SURGE WIRING. If the downstream is a silo with
+		# a registered SiloLevelSensor, multiply this edge's take by the sensor's
+		# effective_feed_multiplier(). Operator anecdote: the sensor's wire IS the
+		# governor — when intact and the silo is climbing, it commands the wash-
+		# line PLC to throttle feed (multiplier → 0.0; parcel parks in `aout` and
+		# backs up at the source, conserving). When the operator bridges the
+		# sensor it never says full and the upstream runs wide open (multiplier
+		# → 1.5, surge ceiling, capped by the upstream's own mechanical max).
+		# We CAP the effective take at 1.0 so we can never pull more material
+		# than exists in `aout` this tick; the 1.5× expresses itself as this
+		# edge greedily consuming ALL of `aout` instead of its fair share,
+		# which propagates upstream-feed-rate increases tick by tick.
+		var silo_mul : float = _silo_feed_multiplier(bn.get("node"))
+		if silo_mul <= 0.0001:
+			# Governor closed: don't inject this tick. Parcel stays in `aout`
+			# and the SOURCE (e.g. the wash-line head) backs up — matches the
+			# real PLC interlock closing the silo's metering damper.
+			_out_left[src] = rem - 1
+			continue
+		if silo_mul > 1.0:
+			take = clampf(take * silo_mul, 0.0, 1.0)
 		if aout.mass_kg > 0.0 and rem > 0:
 			if rem <= 1 or take >= 0.99999:
 				(pipe[0] as MaterialBatch).add(aout)          # last/only branch takes the rest
@@ -1532,6 +2219,20 @@ func _tick_advanced_systems(delta: float) -> void:
 				# readout reflects the binding load on these high-load drives.
 				nd["amps"] = float(mol.get("current_amps"))
 
+		# NIR SHAFT-WRAP — accumulate fibrous wrap on the sorter shaft from the
+		# material that ACTUALLY MOVED this tick (_moved_kg). Using moved (not the
+		# design rate or the unmoved backlog) keeps the wrap honest: a stopped
+		# sorter accumulates nothing, a half-flow sorter grows wrap at half speed.
+		# tick() also updates the alarm edge + drives the visual cylinder
+		# catalog-side, so all the wrap state stays inside the controller.
+		var nir_ctrl_o = nd.get("nir_ctrl")
+		if nir_ctrl_o != null and is_instance_valid(nir_ctrl_o):
+			# `thru` is already EMA-smoothed kg/s and lives on the node; we use
+			# it instead of _moved_kg/dt so the wrap growth tracks the same
+			# throughput the HMI shows. `delta` here is the func parameter at
+			# the top of _tick_advanced_systems.
+			nir_ctrl_o.tick(delta, float(nd["thru"]))
+
 		# #139 — pack-up cascade: when both VSSs full, conveyors pause one-per-
 		# second from the head (C11) back toward the bunker. This is the actual
 		# pause application — _is_pack_up_paused() advances with _pack_up_t.
@@ -1594,6 +2295,31 @@ func _push_scada(delta: float) -> void:
 	var cc_nd := _first_cc_node()
 	if not cc_nd.is_empty():
 		_scada.call("set_param", "cc_pot", float(cc_nd.get("pot_temp", 0.0)), 100.0, 105.0, "Compactor Pot  (C)")
+		# #scada-surfacing — softstarter PLC budget gauge. Operator pushes
+		# kW past the 240 kW baseline and the budget integrates kW·s. Trip
+		# at 300 kW·s. Nominal band stays in the lower half (0..150 kW·s);
+		# above 150 → caution alarm so the operator notices BEFORE the trip.
+		var cc = cc_nd.get("cc")
+		if cc != null and "softstarter_budget_kws" in cc:
+			_scada.call("set_param", "cc_softstarter",
+				float(cc.softstarter_budget_kws),
+				0.0, 150.0,
+				"PCU Softstarter  (kW·s)")
+		# Unified PCU cause-of-stop status string. Sits alongside the extruder's
+		# fault_reason text param on the SCADA so the operator sees BOTH the
+		# extruder and the compactor cause-of-stop on the same panel — the
+		# "unified HMI" view. Empty when the compactor is running normally;
+		# "SOFTSTARTER TRIP" / "DONUT STALL" / "PROCESS UNSTABLE" when alarmed.
+		if cc != null and cc.has_method("cause_of_stop") \
+				and _scada.has_method("set_text_param"):
+			var cause : String = String(cc.call("cause_of_stop"))
+			var alarming : bool = false
+			if cc.has_method("is_alarming"):
+				alarming = bool(cc.call("is_alarming"))
+			else:
+				alarming = cause != ""
+			_scada.call("set_text_param", "cc_status",
+				cause, alarming, "PCU Status")
 
 ## The first extruder node carrying the thermal/MFI models, or {} if none placed.
 func _first_extruder_node() -> Dictionary:
@@ -1667,7 +2393,13 @@ func _bale_at(pos: Vector3, bales: Array[Node] = []) -> Node3D:
 	var best : Node3D = null
 	var best_d := FEED_RADIUS
 	if bales.is_empty():
-		bales = get_tree().get_nodes_in_group("bale")
+		# Fallback for callers that don't pass the per-tick cache (e.g. external
+		# callers outside tick()). The cache is empty when no tick has run yet
+		# or when the tree is null, so we still need the live group as a backstop.
+		if not _bales_cache.is_empty():
+			bales = _bales_cache
+		else:
+			bales = get_tree().get_nodes_in_group("bale")
 	for c in bales:
 		var cn := c as Node3D
 		if cn == null or not cn.has_meta("material_origin"):
@@ -1771,10 +2503,14 @@ func _nearest_floor_pile(pos: Vector3) -> Node:
 ## only accept containers whose `accepted_streams` list explicitly includes cls
 ## (so a "FINES" bin won't catch our SLUDGE). When false we return the nearest
 ## catch-all (empty accepted_streams) for fallback routing.
-func _nearest_container(pos: Vector3, cls: int, stream_specific: bool, _containers: Array) -> Node:
+func _nearest_container(pos: Vector3, cls: int, stream_specific: bool, containers: Array) -> Node:
 	var best : Node = null
 	var best_d := 40.0
-	for c in _waste_containers_cache:
+	# Honor the caller-supplied container list. Production passes
+	# `_waste_containers_cache` (so behaviour is unchanged in-game); direct
+	# callers (tests, one-shot dumps before the first tick populates the cache)
+	# pass a fresh group query and now actually get their containers searched.
+	for c in containers:
 		var cn := c as Node3D
 		if cn == null:
 			continue

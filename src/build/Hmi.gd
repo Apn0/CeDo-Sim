@@ -22,11 +22,23 @@ class_name Hmi
 const _OVERLAY_PATH := "res://src/scenes/hud/HmiOverlay.tscn"
 const _SCOPES := preload("res://src/build/HmiScopes.gd")
 
+# Path to the non-touchscreen relay panel for hmi_shredder2_l3ab (panel_type
+# "relay"). Loaded lazily via load() rather than preload() so the relay class
+# is optional — if the file is missing we still boot, the HMI just falls back
+# to the touchscreen overlay.
+const _RELAY_PANEL_PATH := "res://src/scenes/hud/panels/ShredderRelayPanel.gd"
+
 # One overlay instance is shared between every HMI in the world — opens for
 # whichever panel the player most recently interacted with. The overlay is
 # re-scoped on every open_for(), so opening HMI-A then HMI-B never leaks A's
 # selection or machine list into B.
 static var _overlay : CanvasLayer = null
+
+# Separate static slot for the relay-cabinet panel (panel_type == "relay").
+# Wrapped in a CanvasLayer so the Control floats over the world the same way
+# the touchscreen overlay does. Re-used across every relay HMI.
+static var _relay_layer : CanvasLayer = null
+static var _relay_panel : Control = null
 
 var _player_near : bool = false
 var _label       : String = "HMI"
@@ -79,7 +91,20 @@ func crosshair_interact(_player: Node3D) -> void:
 ## Lazy-loads the shared overlay on first use, then opens it scoped to THIS
 ## panel. Re-opening on a different HMI always re-applies its scope, so the
 ## list/sections never carry over from the previous panel.
+##
+## Branches on scope.panel_type (#207h):
+##   - "relay"      → load ShredderRelayPanel.gd (non-touchscreen cabinet)
+##   - otherwise    → load HmiOverlay.tscn (touchscreen — default)
 func _open_overlay() -> void:
+	var scope := _SCOPES.get_scope(_hmi_id)
+	var panel_type := String(scope.get("panel_type", "touchscreen"))
+	if panel_type == "relay":
+		_open_relay_panel(scope)
+		return
+	_open_touchscreen_overlay(scope)
+
+## Touchscreen path — the original HmiOverlay.tscn behaviour.
+func _open_touchscreen_overlay(scope: Dictionary) -> void:
 	if _overlay == null or not is_instance_valid(_overlay):
 		var scene := load(_OVERLAY_PATH) as PackedScene
 		if scene == null:
@@ -87,7 +112,6 @@ func _open_overlay() -> void:
 			return
 		_overlay = scene.instantiate() as CanvasLayer
 		get_tree().root.add_child(_overlay)
-	var scope := _SCOPES.get_scope(_hmi_id)
 	if _overlay.has_method("open_for"):
 		# Pass BOTH the scope and the label so the overlay can filter its
 		# screens. The overlay tolerates a missing scope arg (back-compat).
@@ -96,3 +120,92 @@ func _open_overlay() -> void:
 		_overlay.visible = true
 	# Free the mouse so the player can click the overlay buttons.
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+
+## Relay-cabinet path — ShredderRelayPanel.gd is a Control, so wrap it in a
+## CanvasLayer so it floats over the world the same way the touchscreen does.
+## The panel's `request_close` signal hides the layer and restores the mouse.
+func _open_relay_panel(_scope: Dictionary) -> void:
+	if _relay_panel == null or not is_instance_valid(_relay_panel):
+		var script := load(_RELAY_PANEL_PATH)
+		if script == null:
+			push_warning("[Hmi] relay panel script missing at %s — falling back to touchscreen" % _RELAY_PANEL_PATH)
+			_open_touchscreen_overlay(_scope)
+			return
+		_relay_layer = CanvasLayer.new()
+		_relay_layer.name = "HmiRelayLayer"
+		_relay_layer.layer = 50
+		get_tree().root.add_child(_relay_layer)
+		_relay_panel = script.new()
+		_relay_panel.name = "ShredderRelayPanel"
+		# Stretch to viewport so the cabinet face centres itself.
+		if _relay_panel is Control:
+			(_relay_panel as Control).set_anchors_preset(Control.PRESET_FULL_RECT)
+		_relay_layer.add_child(_relay_panel)
+		# Single shared close handler — hides the layer + restores mouse capture.
+		if _relay_panel.has_signal("request_close") and not _relay_panel.is_connected("request_close", Callable(self, "_on_relay_close")):
+			_relay_panel.connect("request_close", Callable(self, "_on_relay_close"))
+	# Tag this open with the panel's shredder_id so a debug overlay can tell
+	# which physical cabinet it belongs to (the panel itself doesn't need the
+	# full scope dict — it's a pure view widget).
+	if "shredder_id" in _relay_panel:
+		_relay_panel.set("shredder_id", _hmi_id)
+	# Locate the shredder_2 model so the panel reflects real run state and
+	# routes start/stop back to the machine. Mirrors how _open_touchscreen_overlay
+	# resolves its scope-target via the "shredder" group + scope token match.
+	_bind_relay_panel_to_shredder(_scope)
+	_relay_layer.visible = true
+	_relay_panel.visible = true
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+
+## Find the shredder controller this relay panel is scoped to and wire its
+## run state / start / stop into the panel. Tolerates a missing controller —
+## a placed cabinet without a backing model just stays as a static view.
+func _bind_relay_panel_to_shredder(scope: Dictionary) -> void:
+	if _relay_panel == null or not is_instance_valid(_relay_panel):
+		return
+	var tokens : Array = scope.get("tokens", [])
+	if tokens.is_empty():
+		# Fall back to the canonical token for the shredder_2 panel.
+		tokens = ["shredder_2"]
+	var shredder : Node = _find_scoped_shredder(tokens)
+	if shredder == null:
+		push_warning("[Hmi] No shredder controller found for scope %s — relay panel stays static. TODO: wire once shredder controller exists." % _hmi_id)
+		return
+	# Reflect the model's current run state on the panel face (best-effort).
+	if shredder.has_method("is_running") and _relay_panel.has_method("set_running"):
+		_relay_panel.call("set_running", bool(shredder.call("is_running")))
+	# Connect: shredder.running → panel.set_running (state lamp follows model).
+	if shredder.has_signal("running") and not shredder.is_connected("running", Callable(_relay_panel, "set_running")):
+		shredder.connect("running", Callable(_relay_panel, "set_running"))
+	# Connect: panel.start_pressed → shredder.start (operator wants run).
+	if shredder.has_method("start") and not _relay_panel.is_connected("start_pressed", Callable(shredder, "start")):
+		_relay_panel.connect("start_pressed", Callable(shredder, "start"))
+	# Connect: panel.stop_pressed → shredder.emergency_stop (mushroom = e-stop).
+	if shredder.has_method("emergency_stop") and not _relay_panel.is_connected("stop_pressed", Callable(shredder, "emergency_stop")):
+		_relay_panel.connect("stop_pressed", Callable(shredder, "emergency_stop"))
+
+## Walk the "shredder" group and pick the first node whose placeable_id (or
+## node name) contains any of the scope tokens. Returns null if none match.
+func _find_scoped_shredder(tokens: Array) -> Node:
+	var tree := get_tree()
+	if tree == null:
+		return null
+	for s in tree.get_nodes_in_group("shredder"):
+		if s == null or not is_instance_valid(s):
+			continue
+		var pid : String = ""
+		if s.has_meta("placeable_id"):
+			pid = String(s.get_meta("placeable_id"))
+		var nname : String = String(s.name)
+		for t in tokens:
+			var tok := String(t)
+			if tok.is_empty():
+				continue
+			if pid.find(tok) >= 0 or nname.find(tok) >= 0:
+				return s
+	return null
+
+func _on_relay_close() -> void:
+	if _relay_layer != null and is_instance_valid(_relay_layer):
+		_relay_layer.visible = false
+	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
