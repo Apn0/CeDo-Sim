@@ -1038,7 +1038,10 @@ func _update_animation_blend() -> void:
 		Stance.CROUCHING: want_state = "crouch"
 		Stance.PRONE:     want_state = "prone"
 		_:                want_state = "locomotion"
-	# in-vehicle wins over any stance — driver-seat pose
+	# vault wins over stance
+	if _vault_state == VaultState.CLIMBING:
+		want_state = "climb"
+	# in-vehicle wins over any stance/vault — driver-seat pose
 	if _in_vehicle_seated:
 		want_state = "seated"
 	if want_state != _last_anim_state:
