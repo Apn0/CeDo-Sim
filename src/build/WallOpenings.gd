@@ -562,12 +562,17 @@ func _to_box(d: Vector3, cs: float, sn: float) -> Vector3:
 	# Rotate around Y by the given cos/sin (already negated by caller).
 	return Vector3(d.x * cs - d.z * sn, d.y, d.x * sn + d.z * cs)
 
-func _axis_overlap(axis: Vector3, v0: Vector3, v1: Vector3, v2: Vector3, half: Vector3) -> bool:
+func _project_box_half_extents(axis: Vector3, half: Vector3) -> float:
+	return half.x * absf(axis.x) + half.y * absf(axis.y) + half.z * absf(axis.z)
+
+func _project_triangle_extents(axis: Vector3, v0: Vector3, v1: Vector3, v2: Vector3) -> Vector2:
 	var p0 := axis.dot(v0)
 	var p1 := axis.dot(v1)
 	var p2 := axis.dot(v2)
-	var r := half.x * absf(axis.x) + half.y * absf(axis.y) + half.z * absf(axis.z)
-	var tri_min := minf(p0, minf(p1, p2))
-	var tri_max := maxf(p0, maxf(p1, p2))
+	return Vector2(minf(p0, minf(p1, p2)), maxf(p0, maxf(p1, p2)))
+
+func _axis_overlap(axis: Vector3, v0: Vector3, v1: Vector3, v2: Vector3, half: Vector3) -> bool:
+	var r := _project_box_half_extents(axis, half)
+	var tri_extents := _project_triangle_extents(axis, v0, v1, v2)
 	# Separated if the triangle's projection is entirely outside [-r, r].
-	return not (tri_min > r or tri_max < -r)
+	return not (tri_extents.x > r or tri_extents.y < -r)
