@@ -311,8 +311,8 @@ func rebuild() -> void:
 			if s["dryer_cycle"] != null: nd["dryer_cycle"] = s["dryer_cycle"]
 	_init_pipes()       # #145: turn each link into a transit delay-line
 	_init_plc()         # #145: stage the downstream-first power-up;
-	                    # _init_plc reads _survivor_powered to pre-power
-	                    # survivor stages so they DON'T re-stagger.
+						# _init_plc reads _survivor_powered to pre-power
+						# survivor stages so they DON'T re-stagger.
 	_spawn_connectors()
 	_index_silo_sensors()    # #A3: build target-node → sensor lookup for surge wiring
 	# Consume the snapshot — one-shot for this rebuild. Subsequent reads
@@ -2503,10 +2503,14 @@ func _nearest_floor_pile(pos: Vector3) -> Node:
 ## only accept containers whose `accepted_streams` list explicitly includes cls
 ## (so a "FINES" bin won't catch our SLUDGE). When false we return the nearest
 ## catch-all (empty accepted_streams) for fallback routing.
-func _nearest_container(pos: Vector3, cls: int, stream_specific: bool, _containers: Array) -> Node:
+func _nearest_container(pos: Vector3, cls: int, stream_specific: bool, containers: Array) -> Node:
 	var best : Node = null
 	var best_d := 40.0
-	for c in _waste_containers_cache:
+	# Honor the caller-supplied container list. Production passes
+	# `_waste_containers_cache` (so behaviour is unchanged in-game); direct
+	# callers (tests, one-shot dumps before the first tick populates the cache)
+	# pass a fresh group query and now actually get their containers searched.
+	for c in containers:
 		var cn := c as Node3D
 		if cn == null:
 			continue

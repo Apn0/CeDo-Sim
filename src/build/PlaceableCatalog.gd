@@ -354,6 +354,7 @@ static func items() -> Array[Dictionary]:
 			# ── Extrusion prep ───────────────────────────────────────────────
 			{"id": "mengsilo",       "name": "Mixing silo (mengsilo)","category": "Extrusion prep","size": Vector3(3.0, 6.5, 3.0),"color": Color(0.60, 0.62, 0.66)},
 			# ── Water / utilities (closes the wash-water loop) ────────────────
+			{"id": "zss_water",      "name": "ZSS water tank (wash-water loop)","category": "Water / utilities","size": Vector3(2.4, 4.0, 2.4),"color": Color(0.40, 0.52, 0.60)},
 			# ── Logistics ────────────────────────────────────────────────────
 			{"id": "waste_container","name": "Waste container (schraperbak)","category": "Logistics","size": Vector3(1.2, 1.2, 1.6),"color": Color(0.72, 0.56, 0.20)},
 			{"id": "skip_steel",     "name": "Steel skip (PLASTIC, chute)",  "category": "Logistics","size": Vector3(1.6, 1.2, 1.4),  "color": Color(0.42, 0.46, 0.40)},
@@ -1512,6 +1513,7 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 		"prewash_drum":   _m_prewash_drum(p, size, color, ghost)
 		"kufferath_sieve":_m_kufferath(p, size, color, ghost)
 		"mengsilo":       _m_mengsilo(p, size, color, ghost)
+		"zss_water":      _m_zss_water(p, size, color, ghost)
 		# ── Hoses & Air (visual placeables, do NOT enter LineFlow / the HMI) ──
 		"reel_water_thick_yellow": _m_hose_reel(p, size, color, ghost, 0.045)
 		"reel_water_black":        _m_hose_reel(p, size, color, ghost, 0.025)
@@ -6934,13 +6936,18 @@ static func _m_metal_belt(p: Node3D, size: Vector3, color: Color, ghost: bool) -
 	BeltBuilder.build_internal(p, "metal_belt", size, spec, ghost)
 
 # Extras callable for metal_belt — invoked by BeltBuilder after standard
-# (here all-suppressed) geometry. Signature with the bound color is:
-#   (color, p, deck_root, size, spec, ghost) — `color` is bound at the call site
-# so the legs can use the catalog's steel shade (Color(0.40, 0.42, 0.48)) instead
-# of the generic _STEEL constant. Reproduces the legacy _m_metal_belt body
-# byte-for-byte: 4 legs, 2 static end rollers (axis X), thin deck skin, overband-
-# magnet gantry (2 posts + magnet block), and tramp-metal catch box off +Z end.
-static func _metal_belt_extras(color: Color, p: Node3D, _deck_root: Node3D, size: Vector3, _spec: Dictionary, ghost: bool) -> void:
+# (here all-suppressed) geometry. BeltBuilder calls the extra as
+#   (p, deck_root, size, spec, ghost)
+# and Callable.bind(color) APPENDS the bound color to the END of that list, so
+# the real invocation is (p, deck_root, size, spec, ghost, color) — `color` must
+# therefore be the LAST parameter. (It was declared first, which made `color`
+# receive the `p` Node3D → "Cannot convert argument from Object to Color".)
+# The bound color lets the legs use the catalog's steel shade
+# (Color(0.40, 0.42, 0.48)) instead of the generic _STEEL constant. Reproduces
+# the legacy _m_metal_belt body byte-for-byte: 4 legs, 2 static end rollers
+# (axis X), thin deck skin, overband-magnet gantry (2 posts + magnet block),
+# and tramp-metal catch box off +Z end.
+static func _metal_belt_extras(p: Node3D, _deck_root: Node3D, size: Vector3, _spec: Dictionary, ghost: bool, color: Color) -> void:
 	var dark := _mat(_DARK, ghost, 0.3, 0.7)
 	var steel := _mat(color, ghost, 0.5, 0.45)
 	var magnet := _mat(Color(0.18, 0.20, 0.24), ghost, 0.55, 0.45)
@@ -6957,6 +6964,25 @@ static func _metal_belt_extras(color: Color, p: Node3D, _deck_root: Node3D, size
 	_box(p, Vector3(size.x * 0.6, size.y * 0.2, size.z * 0.4), Vector3(0.0, deck_y + size.y * 0.58, 0.0), magnet)
 	# tramp-metal catch box off the +Z end
 	_box(p, Vector3(size.x * 0.5, size.y * 0.28, size.z * 0.14), Vector3(0.0, deck_y * 0.6, hz * 0.92), steel)
+
+# ── ZSS / water tank: closes the wash-water loop. A vertical cylindrical tank on
+# a short skirt, with a flat top cap, a side-mounted recirculation pump box and a
+# discharge pipe stub. Pure utility fixture — role "none" in MachineFlow, so it
+# never enters LineFlow / the material graph (it pushes water, not flake).
+static func _m_zss_water(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
+	var shell := _mat(color, ghost, 0.4, 0.4)
+	var steel := _mat(_STEEL, ghost, 0.5, 0.45)
+	var dark := _mat(_DARK, ghost, 0.4, 0.6)
+	# Main tank body (vertical cylinder) on a short skirt.
+	_cyl(p, size.x * 0.45, size.x * 0.45, size.y * 0.8, Vector3(0.0, size.y * 0.5, 0.0), shell)
+	# Flat top cap.
+	_cyl(p, size.x * 0.46, size.x * 0.46, size.y * 0.04, Vector3(0.0, size.y * 0.92, 0.0), steel)
+	# Skirt / base ring.
+	_cyl(p, size.x * 0.47, size.x * 0.47, size.y * 0.1, Vector3(0.0, size.y * 0.05, 0.0), dark)
+	# Side-mounted recirculation pump.
+	_box(p, Vector3(size.x * 0.3, size.y * 0.18, size.z * 0.3), Vector3(size.x * 0.5, size.y * 0.12, 0.0), steel)
+	# Discharge pipe stub off the +X side.
+	_cyl(p, size.x * 0.06, size.x * 0.06, size.x * 0.5, Vector3(size.x * 0.6, size.y * 0.3, 0.0), steel, "x")
 
 # ── ballistic separator: inclined paddle housing + feed hopper + 2 discharge lips
 static func _m_ballistic(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:

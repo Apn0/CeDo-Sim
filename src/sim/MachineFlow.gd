@@ -286,7 +286,7 @@ static func profile(id: String) -> Dictionary:
 		# Dedupe: pump_large + wash_line removed from the catalog. water_pump
 		# is the canonical pump id and stays as a role-none fixture (it doesn't
 		# carry material — it pushes water through the wash loop).
-		"door", "pcu_cabinet", "hmi_panel", "hmi_wall", "surface", "waste_container", "water_pump":
+		"door", "pcu_cabinet", "hmi_panel", "hmi_wall", "surface", "waste_container", "water_pump", "zss_water":
 			pr["role"] = "none"   # info screens / fixtures — NOT material-flow machines
 		_:
 			# #165 — every scoped HMI id (`hmi_shredder_l1`, etc.) is a control

@@ -1,0 +1,26 @@
+Godot Engine v4.6.3.stable.official.7d41c59c4 - https://godotengine.org
+
+[WorldLayout] loaded from user://world_layout.json
+  player_spawn   = (0.00, 0.00, 0.00)
+  vehicle_spawns = 5 entries
+  line_starts    = 3 entries
+  bale_yards     = 7 rectangle(s)
+  ── offsets from player_spawn (XZ horizontal m) ──
+    bale_clamp #1 : 278.7 m away  (-236.8, 147.1)
+    bale_clamp #2 : 129.7 m away  (-119.2, 51.1)
+    forklift #1 : 231.5 m away  (-212.3, 92.4)
+    forklift #2 : 229.2 m away  (-208.5, 95.0)
+    mast_lift #1 : 239.4 m away  (-220.1, 94.1)
+    mast_lift #2 : 238.9 m away  (-219.2, 95.1)
+    mast_lift #3 : 240.2 m away  (-221.4, 93.1)
+    merlo #1 : 142.0 m away  (-135.9, 41.0)
+    merlo_p40 #1 : 138.3 m away  (-125.0, 59.3)
+    yard 'forstplus' : 335.4 m away (centroid)
+    yard 'rotterdam' : 345.0 m away (centroid)
+    yard 'zwolle' : 354.6 m away (centroid)
+    yard 'alba_marl' : 325.2 m away (centroid)
+    yard 'alba_marl' : 315.0 m away (centroid)
+    yard 'rotterdam' : 303.8 m away (centroid)
+    yard 'forstplus' : 291.3 m away (centroid)
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2663)
