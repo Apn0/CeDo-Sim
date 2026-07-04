@@ -1,0 +1,348 @@
+{
+  "_meta": {
+    "extraction_date": "2026-07-04",
+    "sources": [
+      "C:/Users/arnod/Documents/CeDo_Simulator_data/Extruderlijst_3A.pdf",
+      "C:/Users/arnod/Documents/CeDo_Simulator_data/Extruderlijst_3A_clean_A4.pdf",
+      "C:/Users/arnod/Documents/CeDo_Simulator_data/Checklist_3A_3B.pdf"
+    ],
+    "notes": "The Extruderlijst 3A is a BLANK hourly shift-log form: it defines WHAT the operator measures each hour but contains no pre-printed numeric setpoints (those parameters have value=null here). All numeric targets/ranges come from Cedo-PROD-FORM-008 (Checklist line 3, rev 01, issue 14-1-2022) and cover the 3A extruder train plus the shared line-3 front end. 3B-only rows live in shift_checklists.json. Never treat null values as zero.",
+    "hourly_columns": ["uur 1", "uur 2", "uur 3", "uur 4", "uur 5", "uur 6", "uur 7", "uur 8"],
+    "form_header_fields": ["Datum (pre-printed 2024)", "Dienst: OD / MD / ND", "Ploeg: A / B / C / D / E", "Naam invuller", "Order nummer", "Werkelijke controle tijd invullen (per uur)"]
+  },
+  "parameters": [
+    {
+      "group": "hourly_log",
+      "name_nl": "Cummulatieve output kg",
+      "name_en": "Cumulative output",
+      "value": null,
+      "unit": "kg",
+      "range_min": null,
+      "range_max": null,
+      "notes": "Logged every hour (uur 1-8) on the Extruderlijst; blank form, no target printed."
+    },
+    {
+      "group": "hourly_log",
+      "name_nl": "Actuele snelheid kg/uur",
+      "name_en": "Current throughput speed",
+      "value": null,
+      "unit": "kg/h",
+      "range_min": null,
+      "range_max": null,
+      "notes": "Logged every hour; no target printed on the form."
+    },
+    {
+      "group": "hourly_log",
+      "name_nl": "stort gewicht meting",
+      "name_en": "Bulk density measurement",
+      "value": null,
+      "unit": null,
+      "range_min": null,
+      "range_max": null,
+      "notes": "Logged every hour; unit not printed (bulk density of granulate, presumably kg/l or g/l — confirm with operator). Shift average field on form: 'stortgewicht gemiddelde ='."
+    },
+    {
+      "group": "hourly_log",
+      "name_nl": "aantal korrels met gasvorming",
+      "name_en": "Number of pellets with gas formation (voids)",
+      "value": null,
+      "unit": "count",
+      "range_min": null,
+      "range_max": null,
+      "notes": "Logged every hour; sample size not printed on the form."
+    },
+    {
+      "group": "hourly_log",
+      "name_nl": "aantal korrels met aluminium",
+      "name_en": "Number of pellets with aluminium contamination",
+      "value": null,
+      "unit": "count",
+      "range_min": null,
+      "range_max": null,
+      "notes": "Logged every hour; sample size not printed on the form."
+    },
+    {
+      "group": "hourly_log",
+      "name_nl": "Vochtmeting",
+      "name_en": "Moisture measurement",
+      "value": null,
+      "unit": "%",
+      "range_min": null,
+      "range_max": null,
+      "notes": "One value per shift on the Extruderlijst ('Vochtmeting = ___ %')."
+    },
+    {
+      "group": "order_tracking",
+      "name_nl": "order wisselen bij",
+      "name_en": "Change order at (cumulative kg)",
+      "value": null,
+      "unit": "kg",
+      "range_min": null,
+      "range_max": null,
+      "notes": "Fill-in box on Extruderlijst header; kg mark at which the operator switches to the next order."
+    },
+    {
+      "group": "order_tracking",
+      "name_nl": "kilo's vorige order",
+      "name_en": "Kilos of previous order",
+      "value": null,
+      "unit": "kg",
+      "range_min": null,
+      "range_max": null,
+      "notes": "Fill-in box on Extruderlijst header."
+    },
+    {
+      "group": "front_end_shared",
+      "name_nl": "Shredder 1",
+      "name_en": "Shredder 1 speed",
+      "value": null,
+      "unit": "rpm",
+      "range_min": 35,
+      "range_max": 60,
+      "notes": "FORM-008 row 1. Guidance: 'Speed in rpm'. Shared line-3 front end feeding both 3A and 3B."
+    },
+    {
+      "group": "front_end_shared",
+      "name_nl": "Tomra perslucht",
+      "name_en": "Tomra (optical sorter) compressed air",
+      "value": null,
+      "unit": "bar",
+      "range_min": 3,
+      "range_max": 5,
+      "notes": "FORM-008 row 2. Guidance: 'Aflezen bij tomra's' (read off at the Tomra units)."
+    },
+    {
+      "group": "front_end_shared",
+      "name_nl": "Bunker speed",
+      "name_en": "Dosing bunker speed",
+      "value": null,
+      "unit": null,
+      "range_min": 200,
+      "range_max": 800,
+      "notes": "FORM-008 row 3. Unit not printed on the form — confirm with operator."
+    },
+    {
+      "group": "front_end_shared",
+      "name_nl": "Bunker height",
+      "name_en": "Dosing bunker fill height",
+      "value": null,
+      "unit": "cm",
+      "range_min": 100,
+      "range_max": 130,
+      "notes": "FORM-008 row 4."
+    },
+    {
+      "group": "front_end_shared",
+      "name_nl": "MAS bak 2 hoogte",
+      "name_en": "MAS bin 2 level",
+      "value": null,
+      "unit": "%",
+      "range_min": 73,
+      "range_max": 76,
+      "notes": "FORM-008 row 5."
+    },
+    {
+      "group": "drying_3a",
+      "name_nl": "Vuilsnipper silo 3a",
+      "name_en": "Dirt shredder silo 3A speed",
+      "value": null,
+      "unit": "rpm",
+      "range_min": 20,
+      "range_max": 50,
+      "notes": "FORM-008 row 6. Guidance: 'lager=betere droging' (lower = better drying)."
+    },
+    {
+      "group": "drying_3a",
+      "name_nl": "Druk vuilsnipper silo 3a vol",
+      "name_en": "Dirt shredder silo 3A pressure when full",
+      "value": null,
+      "unit": "bar",
+      "range_min": 12,
+      "range_max": 14,
+      "notes": "FORM-008 row 8."
+    },
+    {
+      "group": "drying_3a",
+      "name_nl": "Druk vuilsnipper silo 3a leeg",
+      "name_en": "Dirt shredder silo 3A pressure when empty",
+      "value": null,
+      "unit": "bar",
+      "range_min": 6,
+      "range_max": 8,
+      "notes": "FORM-008 row 9."
+    },
+    {
+      "group": "drying_3a",
+      "name_nl": "Mengsilo uittrekschoef 3a",
+      "name_en": "Mixing silo extraction screw 3A",
+      "value": null,
+      "unit": "%",
+      "range_min": 50,
+      "range_max": 85,
+      "notes": "FORM-008 row 12. Guidance: 'lager=betere droging'. 'uittrekschoef' sic on form (= uittrekschroef)."
+    },
+    {
+      "group": "compactor_3a",
+      "name_nl": "Compactor 3a temperatuur",
+      "name_en": "Compactor 3A temperature",
+      "value": 123,
+      "unit": "degC",
+      "range_min": null,
+      "range_max": null,
+      "notes": "FORM-008 row 19, RED-highlighted (critical). Guidance: 'Hoger=plastificeren' (higher = plastification risk)."
+    },
+    {
+      "group": "compactor_3a",
+      "name_nl": "Compactor 3a rand afzuiging EN reiniging",
+      "name_en": "Compactor 3A rim extraction AND cleaning",
+      "value": 55,
+      "unit": "%",
+      "range_min": null,
+      "range_max": null,
+      "notes": "FORM-008 row 21, parameter cell yellow-highlighted. Guidance: 'Lager=minder droging' (lower = less drying)."
+    },
+    {
+      "group": "extruder_3a_temperature_zones",
+      "name_nl": "Temperaturen zones onder en na laserfilter 3a - zone 1",
+      "name_en": "Temperature zones before and after laser filter 3A - zone 1",
+      "value": 200,
+      "unit": "degC",
+      "range_min": null,
+      "range_max": null,
+      "notes": "FORM-008 row 23; printed as chain '200-235-175-240-245-250-255'. Zone order as printed left to right; which zones are before vs after the laserfilter not specified on the form."
+    },
+    {
+      "group": "extruder_3a_temperature_zones",
+      "name_nl": "Temperaturen zones onder en na laserfilter 3a - zone 2",
+      "name_en": "Temperature zones before and after laser filter 3A - zone 2",
+      "value": 235,
+      "unit": "degC",
+      "range_min": null,
+      "range_max": null,
+      "notes": "FORM-008 row 23, 2nd value of '200-235-175-240-245-250-255'."
+    },
+    {
+      "group": "extruder_3a_temperature_zones",
+      "name_nl": "Temperaturen zones onder en na laserfilter 3a - zone 3",
+      "name_en": "Temperature zones before and after laser filter 3A - zone 3",
+      "value": 175,
+      "unit": "degC",
+      "range_min": null,
+      "range_max": null,
+      "notes": "FORM-008 row 23, 3rd value. Notably lower than neighbouring zones (235/240) — as printed, not a transcription error."
+    },
+    {
+      "group": "extruder_3a_temperature_zones",
+      "name_nl": "Temperaturen zones onder en na laserfilter 3a - zone 4",
+      "name_en": "Temperature zones before and after laser filter 3A - zone 4",
+      "value": 240,
+      "unit": "degC",
+      "range_min": null,
+      "range_max": null,
+      "notes": "FORM-008 row 23, 4th value."
+    },
+    {
+      "group": "extruder_3a_temperature_zones",
+      "name_nl": "Temperaturen zones onder en na laserfilter 3a - zone 5",
+      "name_en": "Temperature zones before and after laser filter 3A - zone 5",
+      "value": 245,
+      "unit": "degC",
+      "range_min": null,
+      "range_max": null,
+      "notes": "FORM-008 row 23, 5th value."
+    },
+    {
+      "group": "extruder_3a_temperature_zones",
+      "name_nl": "Temperaturen zones onder en na laserfilter 3a - zone 6",
+      "name_en": "Temperature zones before and after laser filter 3A - zone 6",
+      "value": 250,
+      "unit": "degC",
+      "range_min": null,
+      "range_max": null,
+      "notes": "FORM-008 row 23, 6th value."
+    },
+    {
+      "group": "extruder_3a_temperature_zones",
+      "name_nl": "Temperaturen zones onder en na laserfilter 3a - zone 7",
+      "name_en": "Temperature zones before and after laser filter 3A - zone 7",
+      "value": 255,
+      "unit": "degC",
+      "range_min": null,
+      "range_max": null,
+      "notes": "FORM-008 row 23, 7th (last) value."
+    },
+    {
+      "group": "extruder_3a_melt",
+      "name_nl": "Kopdruk kopfilter 3a extruder",
+      "name_en": "Head pressure at head filter, 3A extruder",
+      "value": null,
+      "unit": "bar",
+      "range_min": 120,
+      "range_max": 150,
+      "notes": "FORM-008 row 25, guidance cell yellow-highlighted: 'Hoger=backflush, lager=veel smelt' (higher triggers backflush, lower = much melt loss)."
+    },
+    {
+      "group": "extruder_3a_melt",
+      "name_nl": "Kopfilters 3a en 3b 1x per dienst minimaal wisselen",
+      "name_en": "Change head filters 3A and 3B at least once per shift",
+      "value": "1x per dienst minimaal",
+      "unit": null,
+      "range_min": null,
+      "range_max": null,
+      "notes": "FORM-008 row 27. Guidance: 'Anders loopt druk op en daardoor meer smelt !' (otherwise pressure builds and therefore more melt loss). Applies to both 3A and 3B."
+    },
+    {
+      "group": "extruder_3a_melt",
+      "name_nl": "Druk heetafslag 3a/3b messen",
+      "name_en": "Hot die-face pelletizer knife pressure 3A/3B",
+      "value": null,
+      "unit": "bar",
+      "range_min": 2.8,
+      "range_max": 3.2,
+      "notes": "FORM-008 row 28, RED-highlighted (critical). Guidance: 'Bar, hoger=slijtage' (higher = wear). Printed as '2,8-3,2 bar'. Applies to both 3A and 3B."
+    },
+    {
+      "group": "extruder_3a_melt",
+      "name_nl": "Antischuim pompjes 3a en 3b op automaat",
+      "name_en": "Anti-foam dosing pumps 3A and 3B on automatic",
+      "value": "Automaat",
+      "unit": null,
+      "range_min": null,
+      "range_max": null,
+      "notes": "FORM-008 row 29, RED-highlighted target 'Automaat !'. Applies to both 3A and 3B."
+    }
+  ],
+  "slow_running_reasons": [
+    {
+      "reason_nl": "Sorteerlijn (grondstof/shredder 1/2)",
+      "reason_en": "Sorting line (raw material / shredder 1/2)",
+      "notes": "Ticked per hour on the Extruderlijst under 'Slow running reden'."
+    },
+    {
+      "reason_nl": "Overblazen naar was 3a",
+      "reason_en": "Pneumatic transfer (blow-over) to wash 3A",
+      "notes": ""
+    },
+    {
+      "reason_nl": "Laserfilter druk",
+      "reason_en": "Laser filter pressure",
+      "notes": ""
+    },
+    {
+      "reason_nl": "Kwaliteit eind product",
+      "reason_en": "End product quality",
+      "notes": ""
+    },
+    {
+      "reason_nl": "anders",
+      "reason_en": "other",
+      "notes": "Free-text row on the form."
+    }
+  ],
+  "downtime_codes": {
+    "M": {"nl": "Messen wissel", "en": "Knife/blade change"},
+    "O": {"nl": "Onderhoud", "en": "Maintenance"},
+    "P": {"nl": "process storing", "en": "Process fault"},
+    "T": {"nl": "Technische storing", "en": "Technical fault"}
+  }
+}

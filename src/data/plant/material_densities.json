@@ -1,0 +1,78 @@
+{
+  "meta": {
+    "extracted": "2026-07-04",
+    "source": "C:/Users/arnod/Documents/CeDo_Simulator_data/for_claude_data_needed_densities.pdf",
+    "context": "Operator-supplied PCU (Preconditioning Unit / cutter-compactor, EREMA pre-extruder stage) documentation page. Table gives bulk density of loose cut film ENTERING the compactor ('Bulkdichtheid invoer') and of compacted crumb LEAVING it ('PCU uitvoer bulkdichtheid'). Function chain verbatim: 'Snijden -> Frictie -> Verwarmen: vlokken krimpen en plakken lichtjes aan elkaar - samenpersen'. No bale densities in this document.",
+    "unit": "kg/m3",
+    "sim_conflicts": [
+      {
+        "file": "src/sim/LineFlow.gd",
+        "line": 31,
+        "current": "FEED_DENSITY = 320.0",
+        "conflict": "320 matches neither state in the doc: loose cut film infeed is 25-180 kg/m3, PCU output crumb is 375-390 kg/m3. If FEED_DENSITY represents pre-compactor film use ~110-180; if it represents compactor output (cc_in) use ~375-390."
+      },
+      {
+        "file": "src/scenes/world/ShredderFeedBelt.gd",
+        "line": 93,
+        "current": "OUTPUT_DENSITY = 180.0",
+        "conflict": "Confirmed for LD-Pe film 100 um (180 kg/m3). Thin LLD-Pe 35 um film would be 110, BO-PP 10 um would be 25."
+      },
+      {
+        "file": "src/sim/BaleDefs.gd",
+        "line": 15,
+        "current": "BULK_DENSITY = 175.0 (baled LDPE film)",
+        "conflict": "No contradiction: document contains no bale densities. Bale density remains operator-calibrated estimate."
+      }
+    ]
+  },
+  "materials": [
+    {
+      "name_nl": "BO-PP folie 10 µm",
+      "name_en": "BOPP film 10 µm",
+      "state": "flake",
+      "density_kg_m3": 25,
+      "unit": "kg/m3",
+      "source_note": "Bulkdichtheid invoer (loose cut film entering PCU/compactor); table row 1"
+    },
+    {
+      "name_nl": "BO-PP folie 10 µm (PCU uitvoer)",
+      "name_en": "BOPP film 10 µm (PCU output crumb)",
+      "state": "other",
+      "density_kg_m3": 375,
+      "unit": "kg/m3",
+      "source_note": "PCU uitvoer bulkdichtheid (compacted crumb leaving cutter-compactor); table row 1"
+    },
+    {
+      "name_nl": "LD-Pe film 100 µm",
+      "name_en": "LDPE film 100 µm",
+      "state": "flake",
+      "density_kg_m3": 180,
+      "unit": "kg/m3",
+      "source_note": "Bulkdichtheid invoer (loose cut film entering PCU/compactor); table row 2"
+    },
+    {
+      "name_nl": "LD-Pe film 100 µm (PCU uitvoer)",
+      "name_en": "LDPE film 100 µm (PCU output crumb)",
+      "state": "other",
+      "density_kg_m3": 380,
+      "unit": "kg/m3",
+      "source_note": "PCU uitvoer bulkdichtheid (compacted crumb leaving cutter-compactor); table row 2"
+    },
+    {
+      "name_nl": "LLD-Pe film 35 µm",
+      "name_en": "LLDPE film 35 µm",
+      "state": "flake",
+      "density_kg_m3": 110,
+      "unit": "kg/m3",
+      "source_note": "Bulkdichtheid invoer (loose cut film entering PCU/compactor); table row 3"
+    },
+    {
+      "name_nl": "LLD-Pe film 35 µm (PCU uitvoer)",
+      "name_en": "LLDPE film 35 µm (PCU output crumb)",
+      "state": "other",
+      "density_kg_m3": 390,
+      "unit": "kg/m3",
+      "source_note": "PCU uitvoer bulkdichtheid (compacted crumb leaving cutter-compactor); table row 3"
+    }
+  ]
+}

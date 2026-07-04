@@ -1,0 +1,629 @@
+{
+ "extraction_date": "2026-07-04",
+ "source": "F:/Citizen/Documents/CeDo/Gegevens extruder 3A + 3B (EREMA/WinCC Archivspeicher CSV exports)",
+ "format_notes": [
+  "Raw CSV columns: VarName;TimeString;VarValue;Validity;Time_ms - delimiter varies per file (';' or ','), TimeString (d-m-Y H:M:S, Dutch) often empty; canonical clock reconstructed from Time_ms = Excel serial date (days since 1899-12-30) x 1e6, decimal comma.",
+  "Rows with VarName '$RT_OFF$' (Validity=2) are WinCC runtime-stop markers, excluded from stats and counted as rt_off_events.",
+  "Duplicate timestamps deduplicated (first value kept). operating_band = p5-p95 of nonzero valid samples.",
+  "For 3B 'Smeltdruk voor kopfilter', files Erema Archivspeicher_7_4.csv and _7_14.csv were missing on disk and were read from extruder_real_world_data.zip."
+ ],
+ "signals": [
+  {
+   "line": "3a",
+   "signal": "Compacter temperatuur beneden",
+   "var_name_raw": "DB-050-actual value\\Nr:20_cutter_compactor\\Actual Value DB.lower_temp_cutter_compac",
+   "unit_guess": "degC",
+   "gloss": "cutter/compactor lower zone temperature",
+   "files": 7,
+   "rows": 64981,
+   "valid_rows": 64979,
+   "unique_timestamps": 64979,
+   "mean_sample_interval_s": 11.6,
+   "time_span": {
+    "from": "2023-06-19T15:44:30",
+    "to": "2023-06-28T09:54:47"
+   },
+   "stats": {
+    "min": 30.0,
+    "max": 138.0,
+    "mean": 121.024,
+    "p5": 114.0,
+    "p50": 122.0,
+    "p95": 128.0
+   },
+   "time_of_max": "2023-06-21T03:08:42",
+   "operating_band": {
+    "low": 114.0,
+    "high": 128.0
+   },
+   "zero_or_idle_fraction": 0.0,
+   "rt_off_events": 2,
+   "quality": {
+    "malformed_rows": 0,
+    "bad_time_rows": 0,
+    "bad_value_rows": 0,
+    "max_timestring_vs_timems_diff_s": 1.0
+   },
+   "curve_file": "3a_compacter_temperatuur_beneden.json"
+  },
+  {
+   "line": "3a",
+   "signal": "Druk voor kopfilter",
+   "var_name_raw": "DB-050-actual value\\Nr:53_separate_functions\\Actual Value DB.MD_vor_SF2",
+   "unit_guess": "bar",
+   "gloss": "melt pressure before Siebfilter/kopfilter SF2 (MD = Melt Druck)",
+   "files": 17,
+   "rows": 312277,
+   "valid_rows": 312275,
+   "unique_timestamps": 312271,
+   "mean_sample_interval_s": 2.3,
+   "time_span": {
+    "from": "2023-06-19T22:48:04",
+    "to": "2023-06-28T09:54:53"
+   },
+   "stats": {
+    "min": 5.0,
+    "max": 211.0,
+    "mean": 136.554,
+    "p5": 103.0,
+    "p50": 140.0,
+    "p95": 173.0
+   },
+   "time_of_max": "2023-06-28T04:52:57",
+   "operating_band": {
+    "low": 103.0,
+    "high": 173.0
+   },
+   "zero_or_idle_fraction": 0.0,
+   "rt_off_events": 2,
+   "quality": {
+    "malformed_rows": 0,
+    "bad_time_rows": 0,
+    "bad_value_rows": 0,
+    "max_timestring_vs_timems_diff_s": 1.0
+   },
+   "curve_file": "3a_druk_voor_kopfilter.json"
+  },
+  {
+   "line": "3a",
+   "signal": "Output",
+   "var_name_raw": "DB-050-actual value\\Nr:40_scale\\Actual Value DB.throuhput_int",
+   "unit_guess": "kg/h",
+   "gloss": "EREMA scale throughput (VarName literally 'throuhput_int', typo in PLC tag)",
+   "files": 8,
+   "rows": 24000,
+   "valid_rows": 24000,
+   "unique_timestamps": 24000,
+   "mean_sample_interval_s": 10.9,
+   "time_span": {
+    "from": "2023-06-25T06:41:34",
+    "to": "2023-06-28T07:23:34"
+   },
+   "stats": {
+    "min": 4.0,
+    "max": 1644.0,
+    "mean": 874.061,
+    "p5": 595.0,
+    "p50": 908.0,
+    "p95": 1082.0
+   },
+   "time_of_max": "2023-06-26T15:13:07",
+   "operating_band": {
+    "low": 595.0,
+    "high": 1082.0
+   },
+   "zero_or_idle_fraction": 0.0,
+   "rt_off_events": 0,
+   "quality": {
+    "malformed_rows": 0,
+    "bad_time_rows": 0,
+    "bad_value_rows": 0,
+    "max_timestring_vs_timems_diff_s": 1.0
+   },
+   "curve_file": "3a_output.json",
+   "notes": "Only 3 days of data (25-28 Jun); idle floor ~4 kg/h when scale runs empty."
+  },
+  {
+   "line": "3a",
+   "signal": "Smelt temperatuur voor meltfilter",
+   "var_name_raw": "DB-050-actual value\\Nr:33_melt_pressure_temperature\\Actual Value DB.melt_temp_in_front_of_mf",
+   "unit_guess": "degC",
+   "gloss": "melt temperature in front of meltfilter",
+   "files": 7,
+   "rows": 64979,
+   "valid_rows": 64977,
+   "unique_timestamps": 64977,
+   "mean_sample_interval_s": 11.6,
+   "time_span": {
+    "from": "2023-06-19T15:44:50",
+    "to": "2023-06-28T09:54:47"
+   },
+   "stats": {
+    "min": 226.0,
+    "max": 279.0,
+    "mean": 256.344,
+    "p5": 247.0,
+    "p50": 257.0,
+    "p95": 265.0
+   },
+   "time_of_max": "2023-06-26T07:20:01",
+   "operating_band": {
+    "low": 247.0,
+    "high": 265.0
+   },
+   "zero_or_idle_fraction": 0.0,
+   "rt_off_events": 2,
+   "quality": {
+    "malformed_rows": 0,
+    "bad_time_rows": 0,
+    "bad_value_rows": 0,
+    "max_timestring_vs_timems_diff_s": 1.0
+   },
+   "curve_file": "3a_smelt_temperatuur_voor_meltfilter.json"
+  },
+  {
+   "line": "3a",
+   "signal": "Smeltdruk voor meltfilter",
+   "var_name_raw": "DB-050-actual value\\Nr:33_melt_pressure_temperature\\Actual Value DB.pressure_in_front_of_mf",
+   "unit_guess": "bar",
+   "gloss": "melt pressure in front of meltfilter",
+   "files": 7,
+   "rows": 2193,
+   "valid_rows": 2192,
+   "unique_timestamps": 2192,
+   "mean_sample_interval_s": 2.0,
+   "time_span": {
+    "from": "2023-06-28T08:41:25",
+    "to": "2023-06-28T09:54:53"
+   },
+   "stats": {
+    "min": 4.0,
+    "max": 293.0,
+    "mean": 211.293,
+    "p5": 6.0,
+    "p50": 271.0,
+    "p95": 280.0
+   },
+   "time_of_max": "2023-06-28T09:36:43",
+   "operating_band": {
+    "low": 6.0,
+    "high": 280.0
+   },
+   "zero_or_idle_fraction": 0.0,
+   "rt_off_events": 1,
+   "quality": {
+    "malformed_rows": 0,
+    "bad_time_rows": 0,
+    "bad_value_rows": 0,
+    "max_timestring_vs_timems_diff_s": 1.0
+   },
+   "curve_file": "3a_smeltdruk_voor_meltfilter.json",
+   "notes": "Single short export session: 73 min on 28 Jun 08:41-09:54 only."
+  },
+  {
+   "line": "3a",
+   "signal": "Snelheid hoofdmotor",
+   "var_name_raw": "DB-050-actual value\\Nr:26_extruder\\Actual Value DB.speed_extruder",
+   "unit_guess": "rpm",
+   "gloss": "extruder main-screw speed [unsure: could be % of max speed]",
+   "files": 9,
+   "rows": 124904,
+   "valid_rows": 124902,
+   "unique_timestamps": 124902,
+   "mean_sample_interval_s": 5.9,
+   "time_span": {
+    "from": "2023-06-19T22:48:43",
+    "to": "2023-06-28T09:54:52"
+   },
+   "stats": {
+    "min": 0.0,
+    "max": 130.0,
+    "mean": 90.529,
+    "p5": 60.0,
+    "p50": 95.0,
+    "p95": 118.0
+   },
+   "time_of_max": "2023-06-20T15:19:55",
+   "operating_band": {
+    "low": 60.0,
+    "high": 118.0
+   },
+   "zero_or_idle_fraction": 0.0289,
+   "rt_off_events": 2,
+   "quality": {
+    "malformed_rows": 0,
+    "bad_time_rows": 0,
+    "bad_value_rows": 0,
+    "max_timestring_vs_timems_diff_s": 1.0
+   },
+   "curve_file": "3a_snelheid_hoofdmotor.json"
+  },
+  {
+   "line": "3a",
+   "signal": "Vermogen compactor",
+   "var_name_raw": "DB-050-actual value\\Nr:20_cutter_compactor\\Actual Value DB.power_CC_Archive",
+   "unit_guess": "kW",
+   "gloss": "cutter/compactor drive power [unsure: could be A]",
+   "files": 17,
+   "rows": 312290,
+   "valid_rows": 312288,
+   "unique_timestamps": 312284,
+   "mean_sample_interval_s": 2.3,
+   "time_span": {
+    "from": "2023-06-19T22:47:38",
+    "to": "2023-06-28T09:54:53"
+   },
+   "stats": {
+    "min": 0.0,
+    "max": 300.0,
+    "mean": 192.744,
+    "p5": 123.0,
+    "p50": 204.0,
+    "p95": 229.0
+   },
+   "time_of_max": "2023-06-27T06:18:20",
+   "operating_band": {
+    "low": 128.0,
+    "high": 229.0
+   },
+   "zero_or_idle_fraction": 0.0061,
+   "rt_off_events": 2,
+   "quality": {
+    "malformed_rows": 0,
+    "bad_time_rows": 0,
+    "bad_value_rows": 0,
+    "max_timestring_vs_timems_diff_s": 1.0
+   },
+   "curve_file": "3a_vermogen_compactor.json"
+  },
+  {
+   "line": "3a",
+   "signal": "Vermogen hoofdmotor",
+   "var_name_raw": "DB-050-actual value\\Nr:26_extruder\\Actual Value DB.load_extruder",
+   "unit_guess": "%",
+   "gloss": "main motor load; values 0-119 suggest % of nominal [unsure: could be kW or A]",
+   "files": 9,
+   "rows": 124900,
+   "valid_rows": 124898,
+   "unique_timestamps": 109778,
+   "mean_sample_interval_s": 6.7,
+   "time_span": {
+    "from": "2023-06-19T22:49:03",
+    "to": "2023-06-28T09:54:52"
+   },
+   "stats": {
+    "min": 0.0,
+    "max": 119.0,
+    "mean": 63.268,
+    "p5": 47.0,
+    "p50": 65.0,
+    "p95": 79.0
+   },
+   "time_of_max": "2023-06-22T08:30:47",
+   "operating_band": {
+    "low": 53.0,
+    "high": 79.0
+   },
+   "zero_or_idle_fraction": 0.0328,
+   "rt_off_events": 2,
+   "quality": {
+    "malformed_rows": 0,
+    "bad_time_rows": 0,
+    "bad_value_rows": 0,
+    "max_timestring_vs_timems_diff_s": 1.0
+   },
+   "curve_file": "3a_vermogen_hoofdmotor.json"
+  },
+  {
+   "line": "3b",
+   "signal": "Compacter temperatuur beneden",
+   "var_name_raw": "DB-050-actual value\\Nr:20_cutter_compactor\\Actual Value DB.lower_temp_cutter_compac",
+   "unit_guess": "degC",
+   "gloss": "cutter/compactor lower zone temperature",
+   "files": 7,
+   "rows": 61395,
+   "valid_rows": 61394,
+   "unique_timestamps": 61394,
+   "mean_sample_interval_s": 11.8,
+   "time_span": {
+    "from": "2023-06-20T00:54:49",
+    "to": "2023-06-28T09:53:36"
+   },
+   "stats": {
+    "min": 32.0,
+    "max": 145.0,
+    "mean": 121.625,
+    "p5": 108.0,
+    "p50": 124.0,
+    "p95": 130.0
+   },
+   "time_of_max": "2023-06-26T03:49:42",
+   "operating_band": {
+    "low": 108.0,
+    "high": 130.0
+   },
+   "zero_or_idle_fraction": 0.0,
+   "rt_off_events": 1,
+   "quality": {
+    "malformed_rows": 0,
+    "bad_time_rows": 0,
+    "bad_value_rows": 0,
+    "max_timestring_vs_timems_diff_s": 1.0
+   },
+   "curve_file": "3b_compacter_temperatuur_beneden.json"
+  },
+  {
+   "line": "3b",
+   "signal": "Output",
+   "var_name_raw": "DB-050-actual value\\Nr:40_scale\\Actual Value DB.throuhput_int",
+   "unit_guess": "kg/h",
+   "gloss": "EREMA scale throughput (VarName literally 'throuhput_int', typo in PLC tag)",
+   "files": 9,
+   "rows": 26234,
+   "valid_rows": 26233,
+   "unique_timestamps": 26233,
+   "mean_sample_interval_s": 10.8,
+   "time_span": {
+    "from": "2023-06-25T03:19:38",
+    "to": "2023-06-28T09:53:36"
+   },
+   "stats": {
+    "min": 0.0,
+    "max": 2446.0,
+    "mean": 834.569,
+    "p5": 396.0,
+    "p50": 799.0,
+    "p95": 1262.0
+   },
+   "time_of_max": "2023-06-25T17:59:56",
+   "operating_band": {
+    "low": 534.0,
+    "high": 1263.0
+   },
+   "zero_or_idle_fraction": 0.0226,
+   "rt_off_events": 1,
+   "quality": {
+    "malformed_rows": 0,
+    "bad_time_rows": 0,
+    "bad_value_rows": 0,
+    "max_timestring_vs_timems_diff_s": 1.0
+   },
+   "curve_file": "3b_output.json",
+   "notes": "Dataset has 15 samples >1500 kg/h during otherwise ~800 kg/h operation, all batch dumps on the weigher: surge 25 Jun 17:59:46-18:00:06 (3 samples: 2065/2446/1788 kg/h); larger cluster 25 Jun 18:23:14-18:26:45 (7 samples, 1530-2282 kg/h); singles 26 Jun 19:34 (1996), 19:58 (1788), 20:26 (2146); plus 2 further samples within those windows. (Corrected 2026-07-04 after full recount.)"
+  },
+  {
+   "line": "3b",
+   "signal": "Smelt temperatuur voor meltfilter",
+   "var_name_raw": "DB-050-actual value\\Nr:33_melt_pressure_temperature\\Actual Value DB.melt_temp_in_front_of_mf",
+   "unit_guess": "degC",
+   "gloss": "melt temperature in front of meltfilter",
+   "files": 7,
+   "rows": 61395,
+   "valid_rows": 61394,
+   "unique_timestamps": 61394,
+   "mean_sample_interval_s": 11.8,
+   "time_span": {
+    "from": "2023-06-20T00:54:49",
+    "to": "2023-06-28T09:53:36"
+   },
+   "stats": {
+    "min": 0.0,
+    "max": 2237.0,
+    "mean": 243.024,
+    "p5": 229.0,
+    "p50": 246.0,
+    "p95": 257.0
+   },
+   "time_of_max": "2023-06-24T21:51:03",
+   "operating_band": {
+    "low": 230.0,
+    "high": 257.0
+   },
+   "zero_or_idle_fraction": 0.0109,
+   "rt_off_events": 1,
+   "quality": {
+    "malformed_rows": 0,
+    "bad_time_rows": 0,
+    "bad_value_rows": 0,
+    "max_timestring_vs_timems_diff_s": 1.0
+   },
+   "curve_file": "3b_smelt_temperatuur_voor_meltfilter.json",
+   "notes": "Faulty-sensor (loose thermocouple) signature: 155 samples >=300 degC across the dataset, interleaved with normal ~256 degC readings. Largest episode 23 Jun 03:18-07:59 (129 samples >=300; by hour 03h:5, 04h:61, 05h:23, 06h:14, 07h:26). Second episode 24 Jun 21:45-22:01 (17 samples 300-2237 degC plus 11 zero readings). Minor: 5 samples 25 Jun ~05h, 2 samples 26 Jun 13:06. (Corrected 2026-07-04 after full recount.)"
+  },
+  {
+   "line": "3b",
+   "signal": "Smeltdruk voor kopfilter",
+   "var_name_raw": "DB-050-actual value\\Nr:53_separate_functions\\Actual Value DB.MD_vor_SF2",
+   "unit_guess": "bar",
+   "gloss": "melt pressure before Siebfilter/kopfilter SF2 (MD = Melt Druck)",
+   "files": 17,
+   "rows": 305210,
+   "valid_rows": 305208,
+   "unique_timestamps": 275454,
+   "mean_sample_interval_s": 2.5,
+   "time_span": {
+    "from": "2023-06-20T08:12:54",
+    "to": "2023-06-28T09:53:40"
+   },
+   "stats": {
+    "min": 0.0,
+    "max": 217.0,
+    "mean": 134.826,
+    "p5": 7.0,
+    "p50": 143.0,
+    "p95": 165.0
+   },
+   "time_of_max": "2023-06-27T07:02:03",
+   "operating_band": {
+    "low": 106.0,
+    "high": 166.0
+   },
+   "zero_or_idle_fraction": 0.0346,
+   "rt_off_events": 2,
+   "quality": {
+    "malformed_rows": 0,
+    "bad_time_rows": 0,
+    "bad_value_rows": 0,
+    "max_timestring_vs_timems_diff_s": 1.0
+   },
+   "curve_file": "3b_smeltdruk_voor_kopfilter.json",
+   "files_added_from_zip": [
+    "Smeltdruk voor kopfilter/Erema Archivspeicher_7_14.csv",
+    "Smeltdruk voor kopfilter/Erema Archivspeicher_7_4.csv"
+   ]
+  },
+  {
+   "line": "3b",
+   "signal": "Smeltdruk voor meltfilter",
+   "var_name_raw": "DB-050-actual value\\Nr:33_melt_pressure_temperature\\Actual Value DB.pressure_in_front_of_mf",
+   "unit_guess": "bar",
+   "gloss": "melt pressure in front of meltfilter",
+   "files": 7,
+   "rows": 2138,
+   "valid_rows": 2137,
+   "unique_timestamps": 2137,
+   "mean_sample_interval_s": 2.0,
+   "time_span": {
+    "from": "2023-06-28T08:42:03",
+    "to": "2023-06-28T09:53:40"
+   },
+   "stats": {
+    "min": 6.0,
+    "max": 206.0,
+    "mean": 120.785,
+    "p5": 7.0,
+    "p50": 177.0,
+    "p95": 190.0
+   },
+   "time_of_max": "2023-06-28T09:27:13",
+   "operating_band": {
+    "low": 7.0,
+    "high": 190.0
+   },
+   "zero_or_idle_fraction": 0.0,
+   "rt_off_events": 1,
+   "quality": {
+    "malformed_rows": 0,
+    "bad_time_rows": 0,
+    "bad_value_rows": 0,
+    "max_timestring_vs_timems_diff_s": 1.0
+   },
+   "curve_file": "3b_smeltdruk_voor_meltfilter.json",
+   "notes": "Single short export session: 72 min on 28 Jun 08:42-09:53 only."
+  },
+  {
+   "line": "3b",
+   "signal": "Snelheid hoofdmotor",
+   "var_name_raw": "DB-050-actual value\\Nr:26_extruder\\Actual Value DB.speed_extruder",
+   "unit_guess": "rpm",
+   "gloss": "extruder main-screw speed [unsure: could be % of max speed]",
+   "files": 9,
+   "rows": 132858,
+   "valid_rows": 132857,
+   "unique_timestamps": 132857,
+   "mean_sample_interval_s": 5.9,
+   "time_span": {
+    "from": "2023-06-19T09:29:25",
+    "to": "2023-06-28T09:53:41"
+   },
+   "stats": {
+    "min": 0.0,
+    "max": 130.0,
+    "mean": 96.106,
+    "p5": 60.0,
+    "p50": 110.0,
+    "p95": 124.0
+   },
+   "time_of_max": "2023-06-24T13:24:51",
+   "operating_band": {
+    "low": 60.0,
+    "high": 124.0
+   },
+   "zero_or_idle_fraction": 0.0398,
+   "rt_off_events": 1,
+   "quality": {
+    "malformed_rows": 0,
+    "bad_time_rows": 0,
+    "bad_value_rows": 0,
+    "max_timestring_vs_timems_diff_s": 1.0
+   },
+   "curve_file": "3b_snelheid_hoofdmotor.json"
+  },
+  {
+   "line": "3b",
+   "signal": "Vermogen compacter",
+   "var_name_raw": "DB-050-actual value\\Nr:20_cutter_compactor\\Actual Value DB.power_CC_Archive",
+   "unit_guess": "kW",
+   "gloss": "cutter/compactor drive power [unsure: could be A]",
+   "files": 17,
+   "rows": 313255,
+   "valid_rows": 313254,
+   "unique_timestamps": 313254,
+   "mean_sample_interval_s": 2.4,
+   "time_span": {
+    "from": "2023-06-19T21:24:05",
+    "to": "2023-06-28T09:53:40"
+   },
+   "stats": {
+    "min": 0.0,
+    "max": 355.0,
+    "mean": 192.551,
+    "p5": 87.0,
+    "p50": 208.0,
+    "p95": 244.0
+   },
+   "time_of_max": "2023-06-23T18:33:48",
+   "operating_band": {
+    "low": 96.0,
+    "high": 245.0
+   },
+   "zero_or_idle_fraction": 0.0105,
+   "rt_off_events": 1,
+   "quality": {
+    "malformed_rows": 0,
+    "bad_time_rows": 0,
+    "bad_value_rows": 0,
+    "max_timestring_vs_timems_diff_s": 1.0
+   },
+   "curve_file": "3b_vermogen_compacter.json"
+  },
+  {
+   "line": "3b",
+   "signal": "Vermogen hoofdmotor",
+   "var_name_raw": "DB-050-actual value\\Nr:26_extruder\\Actual Value DB.load_extruder",
+   "unit_guess": "%",
+   "gloss": "main motor load; values 0-119 suggest % of nominal [unsure: could be kW or A]",
+   "files": 9,
+   "rows": 132855,
+   "valid_rows": 132854,
+   "unique_timestamps": 132854,
+   "mean_sample_interval_s": 5.9,
+   "time_span": {
+    "from": "2023-06-19T09:29:41",
+    "to": "2023-06-28T09:53:41"
+   },
+   "stats": {
+    "min": 0.0,
+    "max": 103.0,
+    "mean": 69.26,
+    "p5": 27.0,
+    "p50": 73.0,
+    "p95": 85.0
+   },
+   "time_of_max": "2023-06-23T21:46:32",
+   "operating_band": {
+    "low": 55.0,
+    "high": 85.0
+   },
+   "zero_or_idle_fraction": 0.0398,
+   "rt_off_events": 1,
+   "quality": {
+    "malformed_rows": 0,
+    "bad_time_rows": 0,
+    "bad_value_rows": 0,
+    "max_timestring_vs_timems_diff_s": 1.0
+   },
+   "curve_file": "3b_vermogen_hoofdmotor.json"
+  }
+ ]
+}

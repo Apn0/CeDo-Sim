@@ -1,0 +1,32 @@
+{
+  "meta": {
+    "extracted": "2026-07-04",
+    "source": "C:/Users/arnod/Documents/CeDo_Simulator_data/floor_plan_edits_needed.pdf",
+    "notes": "The page contains NO handwritten delta annotations; it is the operator's authoritative target layout of the whole complex. Edit list below = declarative target state the sim floor plan must match. No dimensions, scale, or compass on the drawing; only numbers are two tank volumes (8m3, 5m3). See docs/plant/floor_plan_edits.md for the full transcription and open questions.",
+    "orientation_convention": "north = top of drawing (drawing has no compass; convention only)"
+  },
+  "edits": [
+    { "seq": 1,  "area": "complex", "change_requested": "Structure the plant as two rows of adjoining halls sharing one long dividing wall: top row west-to-east Hal 4, Hal 5, Hal 6, Hal 7, Hal 8; bottom row Hal 0 (under Hal 4), Hal 1 (under Hal 5), Hal 2 (under Hal 6), Hal 3 (under Hal 7).", "priority_hint": "high" },
+    { "seq": 2,  "area": "complex", "change_requested": "Give Hal 4, Hal 5, Hal 6 and Hal 7 curved barrel-roof arches (drawn as arcs above each hall); Hal 8 has no arch.", "priority_hint": "medium" },
+    { "seq": 3,  "area": "hal_8", "change_requested": "Attach Hal 8 as a separate rectangle against the east wall of Hal 7, less deep than Hal 7 (south wall of Hal 8 aligns with south wall of Hal 7).", "priority_hint": "high" },
+    { "seq": 4,  "area": "hal_4", "change_requested": "Place 'Poort 4/5' gate opening in the west facade of Hal 4 (opening tick marks on the drawing).", "priority_hint": "medium" },
+    { "seq": 5,  "area": "hal_4", "change_requested": "Place 'lijn 5' block with 'shredder 5' east of it in the north strip of Hal 4; 'lijn 4' block with 'shredder 4' east of it in the middle strip. Both lines run west-to-east continuing into Hal 5.", "priority_hint": "high" },
+    { "seq": 6,  "area": "hal_4_hal_0_wall", "change_requested": "Place 'Magazijn' as a narrow vertical strip at the west wall on the Hal 4 / Hal 0 dividing wall (exact side unsure - ask operator).", "priority_hint": "low" },
+    { "seq": 7,  "area": "hal_4_hal_0_wall", "change_requested": "Place 'wasinstallatie 1' on/at the Hal 4 / Hal 0 dividing wall, centered under Hal 4 (label sits on the wall line; side unsure - ask operator).", "priority_hint": "medium" },
+    { "seq": 8,  "area": "hal_5", "change_requested": "Two parallel west-to-east equipment strips (continuations of lijn 5 north, lijn 4 south), each in order: trnsprtband (transportband), vw trommel (voorwas trommel), sga (SGA/HPS heavy-parts separator), mm (maalmolen).", "priority_hint": "high" },
+    { "seq": 9,  "area": "hal_6", "change_requested": "Place 'wasinstallatie 4' (northwest) and 'wasinstallatie 5' (east of it) in the upper part of Hal 6.", "priority_hint": "high" },
+    { "seq": 10, "area": "hal_6", "change_requested": "Place 'extruder 5' as a long east-west block against the south wall of Hal 6 (back-to-back with extruder 4 in Hal 2 across the wall).", "priority_hint": "high" },
+    { "seq": 11, "area": "hal_7", "change_requested": "Run 'sorteerlijn 3' as a long line just under the north wall of Hal 7, starting near Hal 7's west wall and continuing through the Hal 7/Hal 8 wall into Hal 8.", "priority_hint": "high" },
+    { "seq": 12, "area": "hal_7", "change_requested": "Place 'extruder 3B' as a long block against the south wall of Hal 7 (back-to-back with extruder 3A in Hal 3).", "priority_hint": "high" },
+    { "seq": 13, "area": "hal_8", "change_requested": "Place 'balen pers' as a small block against the west wall of Hal 8, under the east end of sorteerlijn 3; rest of Hal 8 drawn empty.", "priority_hint": "high" },
+    { "seq": 14, "area": "hal_0", "change_requested": "Against the east side of Hal 0 (near Hal 0/Hal 1 wall), top to bottom: 'zand contnr', 'zandcontnr' (second sand container), 'ZSS' (unexpanded abbreviation - ask operator).", "priority_hint": "medium" },
+    { "seq": 15, "area": "hal_0", "change_requested": "Unlabeled gate/door opening in the south wall of Hal 0 (toward the outdoor silo park).", "priority_hint": "medium" },
+    { "seq": 16, "area": "hal_1", "change_requested": "Place 'was3b' (wasinstallatie 3B) as two dashed blocks on the west side of Hal 1 in an L-shaped arrangement (one tall block upper-left, one block lower-right of it).", "priority_hint": "high" },
+    { "seq": 17, "area": "hal_1", "change_requested": "North side of Hal 1: '8m3' tank block (left of center, just under Hal 5 wall), 'blauw tank' below/right of it, 'ZSS' block below the blauw tank, and '5m3' tank block straddling the Hal 1/Hal 2 wall (side unsure - ask operator).", "priority_hint": "high" },
+    { "seq": 18, "area": "hal_2", "change_requested": "Place 'extruder 4' as a long block against the north wall of Hal 2 and 'extruder 1' as a long block against the south wall of Hal 2.", "priority_hint": "high" },
+    { "seq": 19, "area": "hal_3", "change_requested": "Place 'extruder 3A' as a long block against the north wall of Hal 3 with a small 'LAB' room east of it; 'Werkplaats TD' block in the middle/west of Hal 3.", "priority_hint": "high" },
+    { "seq": 20, "area": "south_annex", "change_requested": "Three small cells against the south wall of Hal 2, west to east: Laagspanningsruimte, Trafo Unit, Ketelhuis (each pointed at by an arrow from its label below the building).", "priority_hint": "medium" },
+    { "seq": 21, "area": "south_annex", "change_requested": "Wide low 'Kantoren' block along the south side of Hal 3, extending east past Hal 3, with a stepped notch in its southeast outline.", "priority_hint": "medium" },
+    { "seq": 22, "area": "outdoor_southwest", "change_requested": "Outdoor silo park south of Hal 0/Hal 1: 10 circles in two rows of 5 (unlabeled).", "priority_hint": "medium" }
+  ]
+}
