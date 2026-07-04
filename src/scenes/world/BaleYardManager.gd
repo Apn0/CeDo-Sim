@@ -89,6 +89,34 @@ func tick(delta: float) -> void:
 ## supplier_id from the yard. Bales are tiled across the polygon footprint in a
 ## simple axis-aligned grid (rows × cols) clipped against the polygon — quick
 ## first pass; the full grid-rotated fill is task #25.
+## Brick-paved pad under one yard polygon (triangle fan over the CCW-sorted
+## convex corners, 3 cm proud of the ground to avoid z-fighting). Operator
+## states the real bale lot is brick paving — Polyhaven brick_pavement_03.
+func _spawn_yard_pad(parent: Node3D, corners: Array, supplier_id: String) -> void:
+	if corners.size() < 3:
+		return
+	var pts : Array = corners.duplicate()
+	# Godot front faces wind clockwise; an upward-facing triangle's right-hand
+	# cross normal is +Y in that order. Flip if the sorted order faces down.
+	var n : Vector3 = (pts[1] - pts[0]).cross(pts[2] - pts[0])
+	if n.y < 0.0:
+		pts.reverse()
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var lift := Vector3.UP * 0.03
+	for i in range(1, pts.size() - 1):
+		st.add_vertex(pts[0] + lift)
+		st.add_vertex(pts[i] + lift)
+		st.add_vertex(pts[i + 1] + lift)
+	st.generate_normals()
+	var mi := MeshInstance3D.new()
+	mi.name = "YardPad_%s" % supplier_id
+	mi.mesh = st.commit()
+	var ph := get_node_or_null("/root/PolyhavenMaterials")
+	if ph != null:
+		mi.material_override = ph.call("ground_brick_pavement")
+	parent.add_child(mi)
+
 func _spawn_bale_yards_from_layout() -> void:
 	if WorldLayout.bale_yards.is_empty():
 		print("[BaleYardManager] No bale yards in layout"); return
@@ -155,6 +183,9 @@ func _spawn_bale_yards_from_layout() -> void:
 		# point-in-polygon only fills a triangle. Re-sort the corners by angle
 		# around their centroid so any 4 points form a proper convex quad.
 		corners = _world.call("_sort_corners_ccw", corners)
+		# Operator pick (2026-07): the real bale lot is brick-paved — lay a
+		# Polyhaven brick_pavement_03 pad under the yard polygon.
+		_spawn_yard_pad(yards_root, corners, supplier_id)
 		# Fill the polygon along ITS OWN LONGEST EDGE direction, not world X/Z. This
 		# is what the user was missing: their rectangles are typically NOT axis-
 		# aligned, so an axis-aligned grid only filled the diamond inscribed in the
@@ -206,13 +237,18 @@ func _spawn_bale_yards_from_layout() -> void:
 		var yard_d : float = max_v - min_v
 		print("[BaleYardManager]  Yard '%s'  polygon-aligned %.1f × %.1f m  (stack %d)" \
 			% [supplier_id, yard_w, yard_d, stack_high])
-		# #61 follow-up — slightly wider step so adjacent bales read as
-		# individual blocks rather than one continuous wall (operator: "Rotterdam
-		# stack looks like a continuous super-long bale"). The MM body box is
-		# size×0.98, so 0.25 m extra leaves a visible ~20 cm air-gap between
-		# bales while keeping pack-density realistic.
-		var step_x : float = size.x + 0.25
-		var step_z : float = size.z + 0.25
+		# Randomized 1–6 cm gap between adjacent bales (operator spec). Real yard
+		# bales are packed tight and irregular, not on an airy regular grid. Each
+		# grid step adds the bale footprint plus a small random gap; seeded per
+		# supplier so the layout is stable across reloads.
+		var gap_rng := RandomNumberGenerator.new()
+		gap_rng.seed = hash(supplier_id + "_yardgap")
+		var GAP_MIN : float = 0.01
+		var GAP_MAX : float = 0.06
+		# Nominal cell (used only for the starting half-cell offset; the per-step
+		# increments below are randomized within [GAP_MIN, GAP_MAX]).
+		var step_x : float = size.x + (GAP_MIN + GAP_MAX) * 0.5
+		var step_z : float = size.z + (GAP_MIN + GAP_MAX) * 0.5
 		var floor_y : float = float(_world.call("_floor_top_y"))
 		var yard_node := Node3D.new()
 		yard_node.name = "Yard_%s" % supplier_id
@@ -235,13 +271,13 @@ func _spawn_bale_yards_from_layout() -> void:
 				# per frame on every transform; a single bad bale would saturate
 				# the error log. Drop the cell silently if the math went bad.
 				if not world_xy.is_finite():
-					v += step_z
+					v += size.z + gap_rng.randf_range(GAP_MIN, GAP_MAX)
 					continue
 				if Geometry2D.is_point_in_polygon(Vector2(world_xy.x, world_xy.z), poly2):
 					for level in stack_high:
 						slots.append([world_xy, level])
-				v += step_z
-			u += step_x
+				v += size.z + gap_rng.randf_range(GAP_MIN, GAP_MAX)
+			u += size.x + gap_rng.randf_range(GAP_MIN, GAP_MAX)
 		var bales_this_yard : int = slots.size()
 		if bales_this_yard > 0:
 			# One MultiMesh sized to the whole yard.

@@ -33,6 +33,13 @@ const PBR_ASSETS: Dictionary = {
 	"interior_wall_light_var": "beige_wall_001",      # cached ✓
 	"steel_plate_variant":     "metal_plate",         # new download
 	"concrete_floor_variant":  "concrete_floor_02",   # new download
+	# Operator-picked surface set (2026-07-04, from the real plant's look):
+	"factory_floor_dirty":     "dirty_concrete",      # interior hall floor
+	"ground_gravel":           "gravel_floor_03",     # roads + staff parking
+	"ground_brick_pavement":   "brick_pavement_03",   # bale-lot yard paving
+	# Also operator-shortlisted, not yet assigned to a surface (wire by adding
+	# a kind + a consumer): rusty_metal_grid, rusty_metal_sheet, rusty_metal_03,
+	# green_metal_rust.
 }
 
 # [albedo_color, roughness, tile_metres]
@@ -43,6 +50,9 @@ const FALLBACK: Dictionary = {
 	"interior_wall_light_var": [Color(0.80, 0.76, 0.68), 0.88, 2.0],
 	"steel_plate_variant":     [Color(0.50, 0.51, 0.53), 0.60, 1.5],
 	"concrete_floor_variant":  [Color(0.40, 0.38, 0.35), 0.88, 2.5],
+	"factory_floor_dirty":     [Color(0.34, 0.32, 0.30), 0.92, 2.5],
+	"ground_gravel":           [Color(0.45, 0.43, 0.40), 0.97, 1.8],
+	"ground_brick_pavement":   [Color(0.47, 0.44, 0.41), 0.90, 1.6],
 }
 
 var _cache: Dictionary    = {}   # kind → StandardMaterial3D (standalone)
@@ -92,8 +102,11 @@ func _register_palette_upgrades() -> void:
 	_pu(MaterialPalette.mat_paint_safety_yellow_worn(), "painted_metal", 1.2, 0.5, false)
 	_pu(MaterialPalette.mat_paint_safety_yellow(),      "painted_metal", 1.2, 0.4, false)
 	_pu(MaterialPalette.mat_paint_yellow_peeling(),     "painted_metal", 1.0, 0.8, false)
-	_pu(MaterialPalette.mat_paint_blue_oxidised(),      "painted_metal", 1.0, 0.7, false)
-	_pu(MaterialPalette.mat_paint_blue_industrial(),    "painted_metal", 1.0, 0.5, false)
+	# Blue machine housings — operator pick (2026-07): blue_metal_plate's seam +
+	# rivet normal/roughness detail over the photo-calibrated CeDo blues
+	# (apply_albedo stays false, so the exact blue tints are untouched).
+	_pu(MaterialPalette.mat_paint_blue_oxidised(),      "blue_metal_plate", 1.0, 0.7, false)
+	_pu(MaterialPalette.mat_paint_blue_industrial(),    "blue_metal_plate", 1.0, 0.5, false)
 
 
 ## Register one MaterialPalette material for a Polyhaven upgrade.
@@ -173,3 +186,6 @@ func exterior_ground_grass()   -> StandardMaterial3D: return get_material("exter
 func interior_wall_light_var() -> StandardMaterial3D: return get_material("interior_wall_light_var")
 func steel_plate_variant()     -> StandardMaterial3D: return get_material("steel_plate_variant")
 func concrete_floor_variant()  -> StandardMaterial3D: return get_material("concrete_floor_variant")
+func factory_floor_dirty()     -> StandardMaterial3D: return get_material("factory_floor_dirty")
+func ground_gravel()           -> StandardMaterial3D: return get_material("ground_gravel")
+func ground_brick_pavement()   -> StandardMaterial3D: return get_material("ground_brick_pavement")

@@ -46,7 +46,7 @@ func footprint() -> Vector2:
 	var z : float = float(bay_count) * bay_width
 	return Vector2(x, z)
 
-# ── Asphalt slab ──────────────────────────────────────────────────────────────
+# ── Lot surface slab ──────────────────────────────────────────────────────────
 func _build_asphalt() -> void:
 	var fp := footprint()
 	var asphalt := MeshInstance3D.new()
@@ -55,10 +55,18 @@ func _build_asphalt() -> void:
 	bm.size = Vector3(fp.x, 0.05, fp.y)
 	asphalt.mesh = bm
 	asphalt.position = Vector3(0.0, surface_y - 0.025, 0.0)
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.13, 0.13, 0.135)   # worn asphalt, almost black
-	mat.roughness = 0.95
-	mat.metallic = 0.0
+	# Operator pick (2026-07): the staff lot is GRAVEL — Polyhaven
+	# gravel_floor_03 via PolyhavenMaterials; flat-colour fallback otherwise.
+	var mat : Material = null
+	var ph := get_node_or_null("/root/PolyhavenMaterials")
+	if ph != null:
+		mat = ph.call("ground_gravel")
+	if mat == null:
+		var flat := StandardMaterial3D.new()
+		flat.albedo_color = Color(0.45, 0.43, 0.40)
+		flat.roughness = 0.97
+		flat.metallic = 0.0
+		mat = flat
 	asphalt.material_override = mat
 	add_child(asphalt)
 
