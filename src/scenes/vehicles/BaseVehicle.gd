@@ -574,6 +574,9 @@ func _try_grab() -> void:
 		# No qualifying body in range. If we were holding a reference, drop it —
 		# the operator pressed grab but nothing is there to grab.
 		if _carried_bale != null:
+			# #9 — clear the carried flag so a let-go bale is feed-eligible again.
+			if is_instance_valid(_carried_bale):
+				_carried_bale.set_meta("carried", false)
 			_carried_bale = null
 			_on_released()
 		return
@@ -587,7 +590,16 @@ func _try_grab() -> void:
 	# reparent — pure physics from here on.
 	if best.has_meta("simple_bale"):
 		PlaceableCatalog.detail_bale(best)
+	# #9 — the sensor can latch a DIFFERENT body while we're still flagged on the
+	# old one (force-ramp / pinch re-fires _try_grab mid-carry). Un-mark the old
+	# load or it stays feed-ineligible forever (LineFlow._bale_at skips it).
+	if _carried_bale != null and _carried_bale != best and is_instance_valid(_carried_bale):
+		_carried_bale.set_meta("carried", false)
 	_carried_bale = best
+	# #9 — mark the bale as in-transit so LineFlow._bale_at won't feed from it
+	# while it's being carried (a re-grabbed, previously-delivered bale must not
+	# keep metering into the line as it's hauled away). Cleared on release.
+	best.set_meta("carried", true)
 	_bale_orig_parent = null
 	_carried_stack.clear()
 	_carried_stack_orig_parents.clear()
@@ -601,6 +613,19 @@ func _release() -> void:
 	_on_pre_release()
 	if _carried_bale == null:
 		return
+	# #9 — clear the in-transit flag so the released bale can feed again once it's
+	# set down. (We don't set delivered here — the feed-eligibility design is
+	# separate; this only undoes the carry guard.)
+	if is_instance_valid(_carried_bale):
+		_carried_bale.set_meta("carried", false)
+		# #201 Step 5 removed the only _drop_bale caller, orphaning the dump-zone
+		# tip check — re-attach it here so a movable skip released over a
+		# "dump_zone" marker still empties (LegacyPropsSpawner tip-zone flow).
+		if _carried_bale.is_in_group("waste_container") and _carried_bale.has_method("empty"):
+			var zone := _dump_zone_at(_carried_bale.global_position)
+			if zone != null:
+				var dumped: float = _carried_bale.call("empty")
+				print("[Dump] Skip emptied %.0f kg at %s" % [dumped, zone.name])
 	_carried_bale = null
 	_bale_orig_parent = null
 	_carried_stack.clear()
@@ -838,15 +863,26 @@ func can_enter() -> bool:
 var npc_autopilot      : bool    = false
 var _npc_target        : Vector3 = Vector3.ZERO
 var _npc_target_active : bool    = false
+var _npc_reverse       : bool    = false   # carry-first approach: back the carry gear onto the target
 const NPC_ARRIVE_TOL   : float   = 2.2     # m — "close enough" to the waypoint
 const NPC_TURN_RATE    : float   = 1.8     # rad/s yaw slew toward the heading
 const NPC_CRUISE_FRAC  : float   = 0.55    # fraction of speed_limit the AI cruises at
 
 ## Point the vehicle at a world position and start driving there.
-func npc_set_target(p: Vector3) -> void:
+## carry_first=true: approach with the carry gear leading. All fork vehicles
+## mount forks/plates at local +Z while canonical drive-forward is -Z, so an
+## NPC that noses in always parks the carry point on the FAR side of the load —
+## permanently outside GRAB_RANGE and the grab can never latch. Real clamp
+## drivers reverse onto the load; so does the autopilot in this mode.
+func npc_set_target(p: Vector3, carry_first: bool = false) -> void:
 	_npc_target = p
 	_npc_target_active = true
 	npc_autopilot = true
+	_npc_reverse = false
+	if carry_first:
+		var cp := _carry_point()
+		if cp != null and cp != self:
+			_npc_reverse = to_local(cp.global_position).z > 0.0
 
 ## Stop driving (hold position).
 func npc_stop() -> void:
@@ -876,7 +912,11 @@ func _npc_drive(delta: float) -> void:
 	# Canonical CeDo direction: forward = -basis.z. In Godot, -basis.z for a
 	# Y-rotation θ is (-sinθ, 0, -cosθ). So the yaw that points -basis.z along
 	# `to` is atan2(-to.x, -to.z) (equivalently atan2(to.x, to.z) + PI).
+	# Carry-first mode points +basis.z (the carry side) at the target instead
+	# and drives in reverse, so the forks/plates arrive ON the load.
 	var desired_yaw := atan2(-to.x, -to.z)
+	if _npc_reverse:
+		desired_yaw = atan2(to.x, to.z)
 	rotation.y = _approach_angle(rotation.y, desired_yaw, NPC_TURN_RATE * delta)
 	# Speed scales with alignment (don't barrel forward while still turning).
 	var yaw_err := _angle_diff(rotation.y, desired_yaw)
@@ -885,6 +925,8 @@ func _npc_drive(delta: float) -> void:
 	var tgt_speed := cruise * align
 	if dist < 4.0:
 		tgt_speed *= clampf(dist / 4.0, 0.25, 1.0)   # ease in to the waypoint
+	if _npc_reverse:
+		tgt_speed = -tgt_speed   # reverse along +basis.z (see _kinematic_move)
 	_current_speed_mps = move_toward(_current_speed_mps, tgt_speed, throttle_accel_mps2 * delta)
 
 ## Smallest signed difference a→b, wrapped to [-PI, PI].

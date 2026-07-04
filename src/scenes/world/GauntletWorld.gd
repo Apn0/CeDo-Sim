@@ -334,10 +334,11 @@ func _build_player() -> void:
 		var body : Node3D = humanoid_script.build(Color(0.96, 0.45, 0.12), 0, {})
 		body.name = "PlayerBody"
 		p.add_child(body)
-		# Humanoid.build() authors the rig face-on-+Z (see Humanoid.gd:200 docstring).
-		# The capsule's own yaw (p.rotation.y = -PI*0.5 above) aims its -basis.z at
-		# the first station; this 180° wrap aligns the body's face with that forward,
-		# so the operator sees the gauntlet ahead instead of walking backward into it.
+		# #205 fix — Humanoid.build() authors the rig with face-on-local-(-Z), the
+		# canonical forward. GauntletWorld's player capsule is rotated -PI/2 to point
+		# at the first station. Apply body.rotation.y = PI to align body's -Z (face)
+		# with the capsule's forward direction, so the operator sees the gauntlet
+		# ahead instead of walking backward.
 		body.rotation.y = PI
 		_tag_body_layers(body)
 	_player = p

@@ -193,17 +193,19 @@ func _test_mass_conservation() -> void:
 	var cc = CutterCompactorScript.new()
 	cc.start(700.0, 0.6)        # rpm chosen so the pot settles warm (>80 °C, so it dries)
 								# but BELOW the Donut threshold — a steady productive run
-	cc.feed(_flake(100.0))
-	for _i in range(300):       # 30 s of run
-		cc.tick(0.1)
-		cc.discharge(0.1)
+	# 40 kg — WITHIN the 60 kg pot so the gate trickle has room to add mass
+	# (a full pot leaves room=0 and the trickle can never register).
+	cc.feed(_flake(40.0))
+	for _i in range(3000):      # 300 s of run — the pot heats ~0.3 °C/s, so it
+		cc.tick(0.1)            # needs a few sim-minutes to reach the >80 °C
+		cc.discharge(0.1)       # band where drying + discharge actually engage
 	# total_fed == in pot + discharged crumb + water flashed off. No silent loss.
 	print("    fed=%.2f  in_pot=%.2f  discharged=%.2f  water_off=%.2f  residual=%.5f"
 		% [cc.total_fed_kg, cc.charge.mass_kg, cc.discharged_kg, cc.water_removed_kg,
 		   cc.ledger_residual()])
 	_ok(abs(cc.ledger_residual()) < 0.01,
 		"ledger balances (residual %.5f kg ≈ 0)" % cc.ledger_residual())
-	_ok(cc.total_fed_kg > 100.0, "ledger counted feed() + gate trickle (%.1f kg)" % cc.total_fed_kg)
+	_ok(cc.total_fed_kg > 40.0, "ledger counted feed() + gate trickle (%.1f kg)" % cc.total_fed_kg)
 	_ok(cc.discharged_kg > 0.0, "some crumb was discharged (%.1f kg)" % cc.discharged_kg)
 	_ok(cc.water_removed_kg > 0.0, "some moisture was flashed off (%.2f kg)" % cc.water_removed_kg)
 

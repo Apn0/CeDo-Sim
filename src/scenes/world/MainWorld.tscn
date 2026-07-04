@@ -3,7 +3,7 @@
 [ext_resource type="Script" uid="uid://c1ql4rdf71uvc" path="res://src/scenes/world/MainWorld.gd" id="1_mainworld"]
 [ext_resource type="Script" uid="uid://djarrwb3pw7v0" path="res://src/scenes/world/ShiftClock.gd" id="2_shiftclock"]
 [ext_resource type="Script" uid="uid://knba1io7mqjq" path="res://src/scenes/world/GameState.gd" id="3_gamestate"]
-[ext_resource type="ArrayMesh" uid="uid://drbb5wyjtfr22" path="res://assets/models/CeDo_factory_solid.obj" id="4_building"]
+[ext_resource type="ArrayMesh" uid="uid://bk82u0pr8gxp6" path="res://assets/models/CeDo_factory_solid.obj" id="4_building"]
 
 [sub_resource type="ProceduralSkyMaterial" id="SkyMat_main"]
 sky_top_color = Color(0.38, 0.46, 0.62, 1)

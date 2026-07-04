@@ -3,14 +3,14 @@ extends Control
 # #75 follow-up — SaveList is now a 4-column Tree (Name / Last Saved / In-game /
 # Play time + machines) instead of a single-column ItemList. The Tree's root is
 # hidden so each save shows as a top-level row.
-@onready var save_list: Tree = $CenterContainer/Centerer/VBoxContainer/SaveList
-@onready var load_button: Button = $CenterContainer/Centerer/VBoxContainer/LoadButton
-@onready var delete_selected_button: Button = $CenterContainer/Centerer/VBoxContainer/DeleteSelectedButton
-@onready var delete_all_button: Button = $CenterContainer/Centerer/VBoxContainer/DeleteAllButton
-@onready var new_save_input: LineEdit = $CenterContainer/Centerer/VBoxContainer/NewSaveInput
-@onready var new_save_button: Button = $CenterContainer/Centerer/VBoxContainer/NewSaveButton
-@onready var world_setup_button: Button = $CenterContainer/Centerer/VBoxContainer/WorldSetupButton
-@onready var gauntlet_button: Button = $CenterContainer/Centerer/VBoxContainer/GauntletButton
+@onready var save_list: Tree = $ScrollContainer/Centerer/Wrapper/SaveList
+@onready var load_button: Button = $ScrollContainer/Centerer/Wrapper/LoadButton
+@onready var delete_selected_button: Button = $ScrollContainer/Centerer/Wrapper/DeleteSelectedButton
+@onready var delete_all_button: Button = $ScrollContainer/Centerer/Wrapper/DeleteAllButton
+@onready var new_save_input: LineEdit = $ScrollContainer/Centerer/Wrapper/NewSaveInput
+@onready var new_save_button: Button = $ScrollContainer/Centerer/Wrapper/NewSaveButton
+@onready var world_setup_button: Button = $ScrollContainer/Centerer/Wrapper/WorldSetupButton
+@onready var gauntlet_button: Button = $ScrollContainer/Centerer/Wrapper/GauntletButton
 
 var game_state_script = preload("res://src/scenes/world/GameState.gd")
 
@@ -27,16 +27,12 @@ func _ready() -> void:
 	var customize_btn := Button.new()
 	customize_btn.text = "Customise character"
 	customize_btn.custom_minimum_size = Vector2(0, 40)
-	# Make sure the mouse can actually click this — Control nodes added at
-	# runtime sometimes inherit theme defaults that leave them invisible to
-	# clicks. STOP is the explicit "swallow this click" filter Buttons need.
 	customize_btn.mouse_filter = Control.MOUSE_FILTER_STOP
 	customize_btn.pressed.connect(_on_customize_pressed)
-	var col : Node = gauntlet_button.get_parent()
-	if col != null:
-		col.add_child(customize_btn)
-		# Sit it right under Gauntlet in the column order.
-		col.move_child(customize_btn, gauntlet_button.get_index() + 1)
+	var vbox : Node = gauntlet_button.get_parent()
+	if vbox != null:
+		vbox.add_child(customize_btn)
+		vbox.move_child(customize_btn, gauntlet_button.get_index() + 1)
 	# #158 — "Macro sandbox" button. Flat grass + all 5 line macros laid out
 	# for fast walkthrough (F8 prev / F9 next station).
 	# Operator report (post-#158): could only reach it via Tab+Enter, mouse
@@ -49,9 +45,27 @@ func _ready() -> void:
 	sandbox_btn.custom_minimum_size = Vector2(0, 40)
 	sandbox_btn.mouse_filter = Control.MOUSE_FILTER_STOP
 	sandbox_btn.pressed.connect(_on_sandbox_pressed)
-	if col != null:
-		col.add_child(sandbox_btn)
-		col.move_child(sandbox_btn, customize_btn.get_index() + 1)
+	if vbox != null:
+		vbox.add_child(sandbox_btn)
+		vbox.move_child(sandbox_btn, customize_btn.get_index() + 1)
+	# Feature Tester — sandbox with live dials for tuning a new feature's look
+	# (starts with the water-pipe + film stream).
+	var feature_btn := Button.new()
+	feature_btn.text = "Feature tester"
+	feature_btn.custom_minimum_size = Vector2(0, 40)
+	feature_btn.mouse_filter = Control.MOUSE_FILTER_STOP
+	feature_btn.pressed.connect(_on_feature_tester_pressed)
+	if vbox != null:
+		vbox.add_child(feature_btn)
+		vbox.move_child(feature_btn, sandbox_btn.get_index() + 1)
+	var dragger_btn := Button.new()
+	dragger_btn.text = "Line layout dragger"
+	dragger_btn.custom_minimum_size = Vector2(0, 40)
+	dragger_btn.mouse_filter = Control.MOUSE_FILTER_STOP
+	dragger_btn.pressed.connect(_on_line_dragger_pressed)
+	if vbox != null:
+		vbox.add_child(dragger_btn)
+		vbox.move_child(dragger_btn, feature_btn.get_index() + 1)
 	# Tree column titles + widths. column 0 (name) is the widest because save
 	# names can be long; the other three are sized for readable timestamps and
 	# the secondary metadata.
@@ -96,6 +110,13 @@ func _on_customize_pressed() -> void:
 ## #158 — Macro sandbox. Flat grass world with all 5 line macros pre-spawned.
 func _on_sandbox_pressed() -> void:
 	get_tree().change_scene_to_file("res://src/scenes/world/SandboxWorld.tscn")
+
+## Feature Tester — a dials sandbox for tuning a feature's look in real time.
+func _on_feature_tester_pressed() -> void:
+	get_tree().change_scene_to_file("res://src/scenes/menus/feature_tester/FeatureTester.tscn")
+
+func _on_line_dragger_pressed() -> void:
+	get_tree().change_scene_to_file("res://src/scenes/menus/line_dragger/LineDragger.tscn")
 
 ## Backlog-verification launcher. Loads GauntletWorld.tscn — a long platform
 ## with one station per pending / recently-finished task so the operator can

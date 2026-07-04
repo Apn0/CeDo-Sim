@@ -89,7 +89,7 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 	{"id": "dewater_screw"},
 	{"id": "friction_sep"},
 	{"id": "transport_screw"},
-	{"id": "mech_dryer"},
+	{"id": "mech_dryer", "gap": 1.2},   # wet→dry section break: wider access gap
 	{"id": "blower"},
 	{"id": "mengsilo"},
 	# ── RECIRC DRYING LOOP (branch, +X side, returns to the mengsilo top) ──
@@ -118,7 +118,7 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 	# #107 — was plain `silo`; the extruder's hot end has to be fed by the
 	# elevated extruder_silo (frame + 2 cyclones on top + lump bin + windows),
 	# not a generic dosing silo. Same change applied to 3B and Line 1 below.
-	{"id": "extruder_silo"},
+	{"id": "extruder_silo", "gap": 1.5},  # extruder needs maintenance clearance at both ends
 	{"id": "extruder_3a"},
 	# #98 — Lump cart parking spot next to the extruder's screen-changer
 	# discharge. Operator's responsibility to make sure a lump_cart is parked
@@ -300,7 +300,7 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	{"id": "extruder_silo"},
 	{"id": "extruder_1"},
 ]
-const LINE_GAP_M : float = 1.5   # clear space between consecutive machines
+const LINE_GAP_M : float = 0.5   # clear space between consecutive machines (process lines are tight)
 
 # Injected by MainWorld so placement rays can ignore the player capsule.
 var player_body : CharacterBody3D = null
@@ -1209,6 +1209,7 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 	const TB_CHUTE_DROP_M : float = 0.22
 	var prev_tb_outlet_y : float = -1.0   # sentinel = first belt sits on floor
 	var last_main_was_tb : bool = false
+	var prev_main_gap : float = LINE_GAP_M   # gap actually added after the previous main entry
 	for entry_idx in range(seq.size()):
 		var entry : Dictionary = seq[entry_idx]
 		var mid : String = String(entry.get("id", ""))
@@ -1242,16 +1243,20 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 			tb_y_offset = base_y
 			tb_outlet_y_after = base_y + outlet_top_off
 		var place_z : float
+		# Per-entry gap override: {"gap": 1.2} replaces LINE_GAP_M after this machine.
+		var gap_after : float = float(entry.get("gap", LINE_GAP_M))
 		if not is_branch:
 			# Main-centreline machine — advances the main cursor.
-			# Head-to-tail spacing for consecutive transportbands: undo the
-			# LINE_GAP_M that the previous main entry added, so this belt's
-			# inlet butts directly against the prior belt's outlet.
+			# Head-to-tail spacing for consecutive transportbands: undo the gap
+			# that the previous main entry actually added (a "gap" override may
+			# have replaced LINE_GAP_M), so this belt's inlet butts directly
+			# against the prior belt's outlet.
 			if last_main_was_tb and is_tb:
-				main_z -= LINE_GAP_M
+				main_z -= prev_main_gap
 			main_z += depth * 0.5
 			place_z = main_z
-			main_z += depth * 0.5 + LINE_GAP_M
+			main_z += depth * 0.5 + gap_after
+			prev_main_gap = gap_after
 			last_main_was_tb = is_tb
 		else:
 			# Branch machine — sits beside the line at (current cursor + z offset) and

@@ -2406,6 +2406,12 @@ func _bale_at(pos: Vector3, bales: Array[Node] = []) -> Node3D:
 			continue
 		if not (cn.has_meta("delivered") and bool(cn.get_meta("delivered"))):
 			continue   # only vehicle-delivered bales feed the line
+		# #9 — a bale CURRENTLY held by a vehicle must never feed, even if it was
+		# delivered earlier and then picked back up (it's being hauled away, not
+		# sitting at the feed point). BaseVehicle marks the carried bale; the grab
+		# is a pure sensor so this meta is the only signal that it's in transit.
+		if cn.has_meta("carried") and bool(cn.get_meta("carried")):
+			continue
 		var d := cn.global_position.distance_to(pos)
 		if d < best_d:
 			best_d = d

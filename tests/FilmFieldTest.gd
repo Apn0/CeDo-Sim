@@ -33,6 +33,7 @@ func _test_build_and_drift() -> void:
 	f.flow_speed = 1.0
 	await get_tree().process_frame    # let _ready build the MultiMesh
 	f.set_process(false)              # take manual control of ticking
+	f._mm.visible_instance_count = f._mm.instance_count   # wake the perf idle-gate (in-game LineFlow does this via set_live_state)
 	_ok(f._mm != null and f._mm.instance_count == 60, "60 flake instances built")
 	f._px[0] = 0.0
 	f._pz[0] = 0.0
@@ -47,6 +48,7 @@ func _test_dunk_zone() -> void:
 	f.dunk_depth = 0.4
 	await get_tree().process_frame
 	f.set_process(false)
+	f._mm.visible_instance_count = f._mm.instance_count   # wake the perf idle-gate
 	f._px[0] = 0.0
 	f._pz[0] = 0.0
 	f.add_dunk_zone(0.0, 0.0, 1.0)
@@ -62,6 +64,7 @@ func _test_wrap() -> void:
 	f.flow_speed = 5.0
 	await get_tree().process_frame
 	f.set_process(false)
+	f._mm.visible_instance_count = f._mm.instance_count   # wake the perf idle-gate
 	# Drive well past the far edge; every flake must wrap back into [-3, 3].
 	for i in range(20):
 		f._process(0.2)

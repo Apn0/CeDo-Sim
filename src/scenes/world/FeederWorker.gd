@@ -282,7 +282,7 @@ func _drive_state_seek() -> void:
 	else:
 		_bale = b
 		b.set_meta("feeder_claimed", true)
-		vehicle.call("npc_set_target", (b as Node3D).global_position)
+		vehicle.call("npc_set_target", (b as Node3D).global_position, true)   # carry-first: reverse the plates onto the bale
 		_state = State.TO_BALE
 		_leg_timer = 0.0
 
@@ -292,6 +292,21 @@ func _drive_state_to_bale(delta: float) -> void:
 	else:
 		_leg_timer += delta
 		if bool(vehicle.call("npc_arrived")) or _leg_timer > STUCK_LIMIT:
+			# npc_arrived tolerates NPC_ARRIVE_TOL (2.2 m) to the waypoint, which
+			# can park the CARRY POINT just outside GRAB_RANGE (2.5 m). Every
+			# grab then fails, and re-targeting the same bale pos "arrives"
+			# instantly without moving — an infinite TO_BALE→GRAB loop. If we
+			# stopped short, aim PAST the bale so the clamp pulls its carry
+			# point onto the load, and keep driving (STUCK_LIMIT still bounds it).
+			if _leg_timer <= STUCK_LIMIT and vehicle.has_method("_carry_point"):
+				var cp : Node3D = vehicle.call("_carry_point") as Node3D
+				var bpos : Vector3 = (_bale as Node3D).global_position
+				if cp != null and cp.global_position.distance_to(bpos) > 2.3:  # GRAB_RANGE − margin
+					var dir : Vector3 = bpos - (vehicle as Node3D).global_position
+					dir.y = 0.0
+					dir = dir.normalized() if dir.length() > 0.01 else Vector3.FORWARD
+					vehicle.call("npc_set_target", bpos + dir * 1.5, true)
+					return
 			# Arrived: stop and LOWER THE CARRIAGE to the bale (real control —
 			# drive lift_height_m down), then grab. No teleport.
 			vehicle.call("npc_stop")
@@ -323,7 +338,7 @@ func _drive_state_grab(delta: float) -> void:
 			else:
 				# Re-approach and retry (real driving, not a teleport).
 				if _bale != null and is_instance_valid(_bale):
-					vehicle.call("npc_set_target", (_bale as Node3D).global_position)
+					vehicle.call("npc_set_target", (_bale as Node3D).global_position, true)
 				_leg_timer = 0.0
 				_state = State.TO_BALE
 
@@ -333,11 +348,11 @@ func _drive_state_lift(delta: float) -> void:
 		vehicle.set("lift_height_m", LIFT_CARRY_M)   # raise the load on the mast (real control)
 	if _timer <= 0.0:
 		if is_supplier and supplier_target != Vector3.ZERO:
-			vehicle.call("npc_set_target", supplier_target)   # ferry to the feeder's staging
+			vehicle.call("npc_set_target", supplier_target, true)   # ferry to the feeder's staging, load leading
 			_state = State.TO_BELT
 			_leg_timer = 0.0
 		elif _belt != null:
-			vehicle.call("npc_set_target", _work_spot())
+			vehicle.call("npc_set_target", _work_spot(), true)   # deliver with the load leading
 			_state = State.TO_BELT
 			_leg_timer = 0.0
 		else:

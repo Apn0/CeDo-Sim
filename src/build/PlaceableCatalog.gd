@@ -1046,7 +1046,7 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 					tn.add_to_group("belt")
 				var deck : StaticBody3D = tn.get_node_or_null("Deck") as StaticBody3D
 				if deck != null and deck.get_node_or_null("BeltSurface") == null:
-					var bs : Node = load("res://src/build/BeltSurface.gd").new()
+					var bs : Node = load("res://src/sim/BeltSurface.gd").new()
 					bs.name = "BeltSurface"
 					deck.add_child(bs)
 		return tn
@@ -1925,30 +1925,56 @@ static func _railing(parent: Node3D, halfx: float, halfz: float, base_y: float, 
 
 ## A vertical caged access ladder rising `height` from its foot `base`. Two rails
 ## + rungs + a safety cage (horizontal hoops + vertical bars) on the climb-out (+Z) side.
-static func _caged_ladder(parent: Node3D, base: Vector3, height: float, mat: StandardMaterial3D) -> void:
+## A LadderZone Area3D is embedded so PlayerController.enter_ladder/exit_ladder fire
+## automatically — no manual wiring needed per-silo.
+static func _caged_ladder(parent: Node3D, base: Vector3, height: float, mat: StandardMaterial3D, ghost: bool = false) -> void:
 	var W := 0.46
 	_box(parent, Vector3(0.05, height, 0.05), base + Vector3(-W * 0.5, height * 0.5, 0.0), mat)
 	_box(parent, Vector3(0.05, height, 0.05), base + Vector3( W * 0.5, height * 0.5, 0.0), mat)
-	# Each rung becomes a tiny COLLIDABLE step (StaticBody3D + BoxShape3D) the
-	# player can stand on, with a small +Z extension so it acts as a ledge.
-	# Rungs sit 0.3 m apart vertically — below the default step_up_height — so
-	# move_and_slide cascades the capsule up rung by rung. The rails, hoops,
-	# and cage struts stay decorative (visual-only) so the player isn't boxed
-	# out by the cage geometry while climbing inside it.
-	const RUNG_TREAD_DEPTH : float = 0.18   # how far rung protrudes in +Z as a ledge
+	# Rungs are collidable ledges. Step-up alone can't drive a full ladder ascent;
+	# the LadderZone Area3D below switches the player to climb mode (W/S = vertical).
+	# Ghost previews get visual-only rungs — BuildMode assumes a collision-less ghost.
+	const RUNG_TREAD_DEPTH : float = 0.18
 	var rungs := int(height / 0.3)
 	for i in range(1, rungs):
-		_box_static_body(parent,
-			Vector3(W, 0.03, RUNG_TREAD_DEPTH),
-			base + Vector3(0.0, float(i) * 0.3, RUNG_TREAD_DEPTH * 0.5),
-			mat)
+		if ghost:
+			_box(parent,
+				Vector3(W, 0.03, RUNG_TREAD_DEPTH),
+				base + Vector3(0.0, float(i) * 0.3, RUNG_TREAD_DEPTH * 0.5),
+				mat)
+		else:
+			_box_static_body(parent,
+				Vector3(W, 0.03, RUNG_TREAD_DEPTH),
+				base + Vector3(0.0, float(i) * 0.3, RUNG_TREAD_DEPTH * 0.5),
+				mat)
+	# Cage hoops and bars — size increased 10% vs original for operator clearance.
 	var hoop_y := 2.2
 	while hoop_y < height - 0.1:
-		_torus(parent, 0.36, 0.44, base + Vector3(0.0, hoop_y, 0.30), mat)
+		_torus(parent, 0.396, 0.484, base + Vector3(0.0, hoop_y, 0.33), mat)
 		hoop_y += 0.5
 	var cage_h : float = maxf(height - 2.2, 0.2)
-	for bz in [Vector3(0.0, 0.0, 0.72), Vector3(-0.42, 0.0, 0.30), Vector3(0.42, 0.0, 0.30)]:
+	for bz in [Vector3(0.0, 0.0, 0.792), Vector3(-0.462, 0.0, 0.33), Vector3(0.462, 0.0, 0.33)]:
 		_box(parent, Vector3(0.03, cage_h, 0.03), base + bz + Vector3(0.0, 2.2 + cage_h * 0.5, 0.0), mat)
+
+	# LadderZone Area3D — PlayerController.enter_ladder / exit_ladder are called
+	# automatically when the player's CharacterBody3D overlaps this volume.
+	# NEVER in ghosts: a live zone inside the mouse-following preview flipped the
+	# player into gravity-off climb mode whenever the ghost swept over them.
+	if ghost:
+		return
+	var area := Area3D.new()
+	area.name = "LadderZone"
+	area.position = base + Vector3(0.0, height * 0.5, 0.20)
+	var col := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(W + 0.4, height + 0.2, 0.7)
+	col.shape = shape
+	area.add_child(col)
+	area.body_entered.connect(func(body: Node3D) -> void:
+		if body.has_method("enter_ladder"): body.enter_ladder())
+	area.body_exited.connect(func(body: Node3D) -> void:
+		if body.has_method("exit_ladder"): body.exit_ladder())
+	parent.add_child(area)
 
 ## A straight ground stair climbing `rise` in +Z from its foot `base`, `width`
 ## wide. Grating treads + side posts + sloped handrails.
@@ -2388,13 +2414,15 @@ static func _m_silo(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void
 	# Small steel landing platform cantilevered off the -X face of the shell.
 	# Roughly 0.8 m × 0.8 m, sits with its inner edge tucked against the shell
 	# (shell radius r at this Y), outer edge clear for the climber to step on.
-	var deck_half : float = 0.40                                # half-extent X & Z
-	var deck_x : float = -r - deck_half - 0.05                  # outer edge tucked against shell
+	# deck_half must exceed the dome base radius (r) so the player walks on flat
+	# steel AROUND the dome, not inside it.  r = size.x * 0.46 ≈ 1.38 m.
+	var deck_half : float = r + 0.70                            # e.g. ~2.08 m — clear of dome on all sides
+	var deck_x : float = 0.0                                    # centred on the silo top
 	_box(p, Vector3(deck_half * 2.0, 0.05, deck_half * 2.0),
 		Vector3(deck_x, body_top, 0.0), steel)
-	# Safety-yellow guardrails on three sides — open on -X where the ladder
-	# lands (the push-gate covers the fall-protection job there).
-	_railing(p, deck_half, deck_half, body_top + 0.025, yellow, ["-x"])
+	# Guardrail on ±Z sides only — leaves -X (ladder) and +X (walkthrough) open
+	# so the player can traverse the full silo top without hitting a wall.
+	_railing(p, deck_half, deck_half, body_top + 0.025, yellow, ["-x", "+x"])
 	# Caged ladder climbing from the floor to just above the landing. Same
 	# rotated-root trick as the extruder silo: _caged_ladder builds the cage
 	# opening toward +Z by default, so we yaw the parent -90° about Y so the
@@ -2406,7 +2434,7 @@ static func _m_silo(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void
 	ladder_root.rotation.y = -PI * 0.5
 	ladder_root.position = Vector3(ladder_x, 0.0, 0.0)
 	p.add_child(ladder_root)
-	_caged_ladder(ladder_root, Vector3.ZERO, ladder_h, steel)
+	_caged_ladder(ladder_root, Vector3.ZERO, ladder_h, steel, ghost)
 	# Self-closing push-gate at the landing edge directly above the ladder
 	# top. Pushes open into +X (onto the deck) and auto-closes behind the
 	# climber. Free side index 1 = -X (the ladder side, free to swing
@@ -2727,81 +2755,97 @@ static func _install_steam_plume(parent: Node3D, local_pos: Vector3,
 		radius: float, height: float, tint: Color, ghost: bool) -> void:
 	if ghost or parent == null:
 		return
-	# #182 — overhauled per operator: opaque white "burning blob" became soft
-	# light-grey volumetric puffs that respond to the player walking through.
 	var emitter := GPUParticles3D.new()
 	emitter.name = "SteamPlume"
-	emitter.amount = 40
-	emitter.lifetime = 5.0                          # longer-lived → more overlap → reads as volumetric
+	emitter.amount = 80                              # more puffs, lower alpha each → volumetric density
+	emitter.lifetime = 7.0                           # long life so column fills out
 	emitter.one_shot = false
-	emitter.preprocess = 2.0
+	emitter.preprocess = 3.5
 	emitter.explosiveness = 0.0
 	emitter.fixed_fps = 30
 	emitter.visibility_aabb = AABB(
 		Vector3(-radius * 6.0, 0.0, -radius * 6.0),
-		Vector3( radius * 12.0, height + 4.0, radius * 12.0))
+		Vector3( radius * 12.0, height + 5.0, radius * 12.0))
 	var pm := ParticleProcessMaterial.new()
 	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_RING
-	pm.emission_ring_radius = radius
+	pm.emission_ring_radius = radius * 0.6
 	pm.emission_ring_inner_radius = 0.0
 	pm.emission_ring_axis = Vector3.UP
-	pm.emission_ring_height = 0.02
+	pm.emission_ring_height = 0.05
 	pm.direction = Vector3.UP
-	pm.spread = 22.0
-	pm.initial_velocity_min = height * 0.18         # SLOWER rise → fluffier column
-	pm.initial_velocity_max = height * 0.32
-	pm.gravity = Vector3(0.0, 0.35, 0.0)            # gentle buoyancy
-	pm.damping_min = 0.4
-	pm.damping_max = 0.8
-	pm.scale_min = radius * 1.2
-	pm.scale_max = radius * 2.4
-	# Expanding scale curve — fluffier at the end of life.
+	pm.spread = 16.0
+	pm.initial_velocity_min = height * 0.14
+	pm.initial_velocity_max = height * 0.26
+	pm.gravity = Vector3(0.0, 0.20, 0.0)
+	pm.damping_min = 0.15
+	pm.damping_max = 0.40
+	# Per-puff rotation — critical for organic look; without this all puffs are identical.
+	pm.angular_velocity_min = -20.0
+	pm.angular_velocity_max = 20.0
+	pm.scale_min = radius * 0.9
+	pm.scale_max = radius * 1.8
+	# Puffs born tight, expand as they rise — mimics real smoke buoyancy.
 	var sc := Curve.new()
-	sc.add_point(Vector2(0.0, 0.35))
-	sc.add_point(Vector2(0.5, 1.0))
-	sc.add_point(Vector2(1.0, 1.8))
+	sc.add_point(Vector2(0.0, 0.18))
+	sc.add_point(Vector2(0.35, 0.85))
+	sc.add_point(Vector2(1.0, 2.2))
 	pm.scale_curve = CurveTexture.new()
 	(pm.scale_curve as CurveTexture).curve = sc
-	# Operator note: light grey (NOT pure white) with a soft alpha gradient that
-	# fades to 0 across the lifetime — the previous 0.55 plateau read as opaque.
-	var col_tint := Color(0.85, 0.88, 0.92)         # cool light-grey water-steam
-	# Caller's `tint` is honoured as a slight nudge so extruder vs dryer still
-	# read differently, but only at low weight so they stay translucent.
-	col_tint = col_tint.lerp(tint, 0.25)
+	# Turbulence breaks up the straight column into convincing wisps.
+	pm.turbulence_enabled = true
+	pm.turbulence_noise_strength = 1.4
+	pm.turbulence_noise_scale = 3.0
+	pm.turbulence_noise_speed_random = 0.4
+	# Color: born dark-grey at base (dense, shadowed), lightens as it rises and disperses.
+	var col_base := Color(0.80, 0.82, 0.86)
+	col_base = col_base.lerp(tint, 0.20)
+	var dark := Color(col_base.r * 0.55, col_base.g * 0.56, col_base.b * 0.60)
+	var mid  := Color(col_base.r * 0.78, col_base.g * 0.80, col_base.b * 0.84)
+	var lite := col_base
 	var grad := Gradient.new()
-	grad.set_color(0, Color(col_tint.r, col_tint.g, col_tint.b, 0.0))
-	grad.set_color(1, Color(col_tint.r, col_tint.g, col_tint.b, 0.0))
-	grad.add_point(0.15, Color(col_tint.r, col_tint.g, col_tint.b, 0.22))
-	grad.add_point(0.55, Color(col_tint.r, col_tint.g, col_tint.b, 0.18))
-	grad.add_point(0.90, Color(col_tint.r, col_tint.g, col_tint.b, 0.06))
+	grad.set_color(0, Color(dark.r, dark.g, dark.b, 0.0))
+	grad.set_color(1, Color(lite.r, lite.g, lite.b, 0.0))
+	grad.add_point(0.06, Color(dark.r, dark.g, dark.b, 0.10))
+	grad.add_point(0.25, Color(mid.r,  mid.g,  mid.b,  0.13))
+	grad.add_point(0.55, Color(lite.r, lite.g, lite.b, 0.09))
+	grad.add_point(0.82, Color(lite.r, lite.g, lite.b, 0.04))
 	var gt := GradientTexture1D.new()
 	gt.gradient = grad
 	pm.color_ramp = gt
 	emitter.process_material = pm
-	# Soft sphere puffs.
-	var sm := SphereMesh.new()
-	sm.radius = 0.5
-	sm.height = 1.0
-	sm.radial_segments = 10
-	sm.rings = 5
+	# Bake a radial-falloff smoke puff texture at runtime.
+	# Hard spheres were the "white circles" problem — a soft quad with a radial
+	# alpha gradient reads as a genuine volumetric puff.
+	var tex_sz := 64
+	var img := Image.create(tex_sz, tex_sz, false, Image.FORMAT_RGBA8)
+	var ctr := Vector2(tex_sz * 0.5, tex_sz * 0.5)
+	var max_r := tex_sz * 0.5
+	for py in range(tex_sz):
+		for px in range(tex_sz):
+			var d : float = Vector2(px, py).distance_to(ctr) / max_r
+			# Gaussian-ish falloff: full opacity at centre, zero at rim.
+			var a : float = clampf(exp(-d * d * 3.2) - 0.04, 0.0, 1.0)
+			# Subtle sine ripple breaks the perfect-circle silhouette.
+			var angle : float = atan2(py - ctr.y, px - ctr.x)
+			a *= 0.88 + 0.12 * sin(angle * 5.0 + d * 8.0)
+			img.set_pixel(px, py, Color(1.0, 1.0, 1.0, a))
+	var smoke_tex := ImageTexture.create_from_image(img)
+	var qm := QuadMesh.new()
+	qm.size = Vector2(1.0, 1.0)
 	var pmat := StandardMaterial3D.new()
 	pmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	pmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	pmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_DEPTH_PRE_PASS
 	pmat.blend_mode = BaseMaterial3D.BLEND_MODE_MIX
 	pmat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	pmat.albedo_color = col_tint
-	pmat.albedo_color.a = 1.0                       # gradient controls per-particle alpha
+	pmat.albedo_texture = smoke_tex
+	pmat.albedo_color = Color(1.0, 1.0, 1.0, 1.0)  # per-particle alpha comes from color_ramp × texture
 	pmat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	# depth_test stays on so geometry occludes correctly; the soft-particle fade
-	# below keeps the plume from showing a sharp seam where it intersects walls.
 	pmat.no_depth_test = false
-	# Camera-side fade — close puffs fade out so flying through doesn't render a
-	# wall-of-white right on the lens.
 	pmat.distance_fade_mode = BaseMaterial3D.DISTANCE_FADE_PIXEL_ALPHA
-	pmat.distance_fade_min_distance = 0.4
-	pmat.distance_fade_max_distance = 1.6
-	sm.material = pmat
-	emitter.draw_pass_1 = sm
+	pmat.distance_fade_min_distance = 0.5
+	pmat.distance_fade_max_distance = 2.0
+	qm.material = pmat
+	emitter.draw_pass_1 = qm
 	emitter.position = local_pos
 	parent.add_child(emitter)
 	# Player-passage disturbance: an Area3D that, while a body is inside, bumps
@@ -3799,7 +3843,7 @@ static func _m_mill(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> voi
 	_box(p, Vector3(0.5, 0.6, 0.5), Vector3(-hw * 0.30, 0.30,  hd + 0.45), blue)
 
 	# ── Caged access ladder on the +X face ────────────────────────────────────
-	_caged_ladder(p, Vector3(hw + 0.10, 0.0, hd * 0.35), deck_y + 0.9, steel)
+	_caged_ladder(p, Vector3(hw + 0.10, 0.0, hd * 0.35), deck_y + 0.9, steel, ghost)
 
 	# ── Ground stair to the right-rear (+X, -Z), ascending toward the deck ────
 	_stair(p, Vector3(hw * 0.55, 0.0, -hd - 1.0), deck_y, 0.9, grating, yellow)
@@ -4812,7 +4856,7 @@ static func _build_light_bale(origin: String, ghost: bool) -> Node3D:
 	var wires := Node3D.new()
 	wires.name = "Wires"
 	rb.add_child(wires)
-	_build_wires(wires, size, ghost)
+	_build_wires(wires, size, ghost, _wire_count_for(origin))
 	if not ghost:
 		var col := CollisionShape3D.new()
 		var bx := BoxShape3D.new()
@@ -4972,7 +5016,7 @@ static func _m_bale_simple(p: Node3D, id: String, size: Vector3, color: Color, g
 		var end_x : float = size.x * 0.5 + band_r * 0.5
 		var horiz_len : float = size.x + band_r * 2.0
 		var vert_len  : float = size.y + band_r * 2.0
-		for wz in [-size.z * 0.30, 0.0, size.z * 0.30]:
+		for wz in _wire_positions(size, _wire_count_for(id)):
 			# Top — runs the full LENGTH (X) over every sheet edge.
 			var b_top := _cyl(p, band_r, band_r, horiz_len,
 				Vector3(0.0, top_y, wz), wire, "x")
@@ -5497,7 +5541,7 @@ static func _m_bale(p: Node3D, id: String, size: Vector3, ghost: bool) -> void:
 	var wires_root := Node3D.new()
 	wires_root.name = "Wires"
 	p.add_child(wires_root)
-	_build_wires(wires_root, size, ghost)
+	_build_wires(wires_root, size, ghost, _wire_count_for(id))
 	# Distance-cull the metal wires beyond 15 m of the camera (engine-side, faded).
 	if not ghost:
 		for w in wires_root.find_children("*", "MeshInstance3D", true, false):
@@ -5524,17 +5568,41 @@ static func _m_bale(p: Node3D, id: String, size: Vector3, ghost: bool) -> void:
 ## continuous loop instead of disconnected sticks. Parented under a Node3D
 ## named "Wire_i" so the cutter can `queue_free` an entire wire, and the
 ## clamp-force bulge can lift the top segment alone.
-static func _build_wires(root: Node3D, size: Vector3, ghost: bool) -> void:
+## Number of binding wires for a supplier's bales. Rotterdam + Fostplus ship
+## 3-wire bales; Alba and Zwolle ship 5-wire bales (tighter-bound, more straps).
+## Anything else defaults to 3.
+static func _wire_count_for(id: String) -> int:
+	match id:
+		"alba_marl", "zwolle":
+			return 5
+		_:
+			return 3
+
+## Evenly-spaced wire-band Z positions for `count` wires across the bale width.
+## 3 wires keep the historical ±0.30·width spread; 5 wires use ±0.36·width so
+## they don't crowd. Single-wire degenerate case sits on the centreline.
+static func _wire_positions(size: Vector3, count: int) -> Array[float]:
+	var out : Array[float] = []
+	if count <= 1:
+		out.append(0.0)
+		return out
+	var span : float = 0.30 if count <= 3 else 0.36
+	for i in count:
+		var f : float = float(i) / float(count - 1)   # 0 .. 1
+		out.append((-span + f * (2.0 * span)) * size.z)
+	return out
+
+static func _build_wires(root: Node3D, size: Vector3, ghost: bool, count: int = 3) -> void:
 	var wire := _mat(Color(0.18, 0.17, 0.16), ghost, 0.85, 0.30)
 	# Thicker than the original 1.2 cm so the loops are clearly visible — real
 	# bale-binding wire is ~3-4 mm but visually it needs to read at 5+ metres.
 	var r := 0.018
-	# 3 wires spaced across the WIDTH (Z). Each is a full loop around the bale's
-	# length+height: Top and Bottom run the FULL LENGTH (X), crossing EVERY sheet's
-	# edge; Left and Right cap the two end faces (±X). So each wire binds the whole
-	# stack — cutting it releases all the sheets, not just one edge. (Was: a loop
-	# around a single YZ slice, which only wrapped one sheet's worth.)
-	var positions: Array[float] = [-size.z * 0.30, 0.0, size.z * 0.30]
+	# `count` wires spaced across the WIDTH (Z). Each is a full loop around the
+	# bale's length+height: Top and Bottom run the FULL LENGTH (X), crossing EVERY
+	# sheet's edge; Left and Right cap the two end faces (±X). So each wire binds
+	# the whole stack — cutting it releases all the sheets, not just one edge.
+	# (Was: a loop around a single YZ slice, which only wrapped one sheet's worth.)
+	var positions: Array[float] = _wire_positions(size, count)
 	var top_y  : float = size.y + r * 0.5              # sits on top, half-sunk
 	var bot_y  : float = -r * 0.5                       # sits under, half-sunk
 	var end_x  : float = size.x * 0.5 + r * 0.5         # sits on the ±X end faces
@@ -8933,7 +9001,7 @@ static func _m_extruder_silo(p: Node3D, size: Vector3, color: Color, ghost: bool
 	ladder_root.rotation.y = -PI * 0.5               # cage now faces +X (toward deck)
 	ladder_root.position = Vector3(ladder_x, 0.0, 0.0)
 	p.add_child(ladder_root)
-	_caged_ladder(ladder_root, Vector3.ZERO, ladder_h, steel)
+	_caged_ladder(ladder_root, Vector3.ZERO, ladder_h, steel, ghost)
 	# Push-gate body — built inline so build_node()'s ghost path stays cheap, then
 	# attached to a PushGate script at the end. In ghost-mode we skip the script.
 	var gate_y : float = box_top + 0.05                     # deck top

@@ -14,7 +14,7 @@ extends Node3D
 
 const FORKLIFT := "res://src/scenes/vehicles/Forklift.tscn"   # lpg
 const MERLO    := "res://src/scenes/vehicles/Merlo.tscn"      # diesel
-const SCISSOR  := "res://src/scenes/vehicles/ScissorLift.tscn" # electric
+const SCISSOR  := "res://src/scenes/vehicles/MastLift.tscn" # electric (ScissorLift was renamed to MastLift)
 const _Station := preload("res://src/scenes/world/ServiceStation.gd")
 
 var _pass := 0

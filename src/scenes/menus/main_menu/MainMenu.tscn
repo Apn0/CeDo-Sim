@@ -1,4 +1,4 @@
-[gd_scene format=3 uid="uid://c8y8d6jo0x1a2"]
+[gd_scene load_steps=2 format=3 uid="uid://c8y8d6jo0x1a2"]
 
 [ext_resource type="Script" uid="uid://dhca6c50nj628" path="res://src/scenes/menus/main_menu/MainMenu.gd" id="1_mainmenu"]
 
@@ -21,7 +21,7 @@ grow_vertical = 2
 mouse_filter = 2
 color = Color(0.129412, 0.14902, 0.180392, 1)
 
-[node name="CenterContainer" type="ScrollContainer" parent="." unique_id=990293644]
+[node name="ScrollContainer" type="ScrollContainer" parent="." unique_id=990293645]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -29,88 +29,92 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 horizontal_scroll_mode = 0
+vertical_scroll_mode = 1
+clip_contents = false
 
-[node name="Centerer" type="HBoxContainer" parent="CenterContainer" unique_id=1569871510]
+[node name="Centerer" type="HBoxContainer" parent="ScrollContainer" unique_id=990293644]
 layout_mode = 2
 size_flags_horizontal = 3
+size_flags_vertical = 3
 
-[node name="LeftSpacer" type="Control" parent="CenterContainer/Centerer" unique_id=971910343]
+[node name="LeftSpacer" type="Control" parent="ScrollContainer/Centerer" unique_id=971910343]
 layout_mode = 2
 size_flags_horizontal = 3
 mouse_filter = 2
 
-[node name="VBoxContainer" type="VBoxContainer" parent="CenterContainer/Centerer" unique_id=67358574]
-custom_minimum_size = Vector2(900, 0)
+[node name="Wrapper" type="VBoxContainer" parent="ScrollContainer/Centerer" unique_id=1569871510]
 layout_mode = 2
-size_flags_horizontal = 4
+size_flags_horizontal = 0
 size_flags_vertical = 0
+custom_minimum_size = Vector2(900, 0)
+alignment = 0
 theme_override_constants/separation = 14
 
-[node name="Label" type="Label" parent="CenterContainer/Centerer/VBoxContainer" unique_id=210645557]
+[node name="Label" type="Label" parent="ScrollContainer/Centerer/Wrapper" unique_id=210645557]
 layout_mode = 2
 theme_override_font_sizes/font_size = 48
 text = "CeDo Simulator"
 horizontal_alignment = 1
 
-[node name="HSeparator" type="HSeparator" parent="CenterContainer/Centerer/VBoxContainer" unique_id=1258439718]
+[node name="HSeparator" type="HSeparator" parent="ScrollContainer/Centerer/Wrapper" unique_id=1258439718]
 layout_mode = 2
 
-[node name="LoadSaveLabel" type="Label" parent="CenterContainer/Centerer/VBoxContainer" unique_id=707941133]
+[node name="LoadSaveLabel" type="Label" parent="ScrollContainer/Centerer/Wrapper" unique_id=707941133]
 layout_mode = 2
 text = "Load Save:"
 
-[node name="SaveList" type="Tree" parent="CenterContainer/Centerer/VBoxContainer" unique_id=923971669]
+[node name="SaveList" type="Tree" parent="ScrollContainer/Centerer/Wrapper" unique_id=923971669]
 custom_minimum_size = Vector2(880, 220)
 layout_mode = 2
 columns = 4
 column_titles_visible = true
 hide_root = true
 
-[node name="LoadButton" type="Button" parent="CenterContainer/Centerer/VBoxContainer" unique_id=681089067]
+[node name="LoadButton" type="Button" parent="ScrollContainer/Centerer/Wrapper" unique_id=681089067]
 custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
 text = "Load Selected"
 
-[node name="DeleteSelectedButton" type="Button" parent="CenterContainer/Centerer/VBoxContainer" unique_id=1585319077]
+[node name="DeleteSelectedButton" type="Button" parent="ScrollContainer/Centerer/Wrapper" unique_id=1585319077]
 custom_minimum_size = Vector2(0, 32)
 layout_mode = 2
 text = "Delete Selected"
 
-[node name="DeleteAllButton" type="Button" parent="CenterContainer/Centerer/VBoxContainer" unique_id=1588203845]
+[node name="DeleteAllButton" type="Button" parent="ScrollContainer/Centerer/Wrapper" unique_id=1588203845]
 custom_minimum_size = Vector2(0, 28)
 layout_mode = 2
 text = "Delete ALL save files"
 
-[node name="HSeparator2" type="HSeparator" parent="CenterContainer/Centerer/VBoxContainer" unique_id=92348993]
+[node name="HSeparator2" type="HSeparator" parent="ScrollContainer/Centerer/Wrapper" unique_id=92348993]
 layout_mode = 2
 
-[node name="NewSaveLabel" type="Label" parent="CenterContainer/Centerer/VBoxContainer" unique_id=1811853636]
+[node name="NewSaveLabel" type="Label" parent="ScrollContainer/Centerer/Wrapper" unique_id=1811853636]
 layout_mode = 2
 text = "New Save:"
 
-[node name="NewSaveInput" type="LineEdit" parent="CenterContainer/Centerer/VBoxContainer" unique_id=88968904]
+[node name="NewSaveInput" type="LineEdit" parent="ScrollContainer/Centerer/Wrapper" unique_id=88968904]
 layout_mode = 2
 placeholder_text = "Enter save name..."
 
-[node name="NewSaveButton" type="Button" parent="CenterContainer/Centerer/VBoxContainer" unique_id=225093649]
+[node name="NewSaveButton" type="Button" parent="ScrollContainer/Centerer/Wrapper" unique_id=225093649]
 custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
 text = "Start New Save"
 
-[node name="HSeparator3" type="HSeparator" parent="CenterContainer/Centerer/VBoxContainer" unique_id=1342266394]
+[node name="HSeparator3" type="HSeparator" parent="ScrollContainer/Centerer/Wrapper" unique_id=1342266394]
 layout_mode = 2
 
-[node name="WorldSetupButton" type="Button" parent="CenterContainer/Centerer/VBoxContainer" unique_id=2044840359]
+[node name="WorldSetupButton" type="Button" parent="ScrollContainer/Centerer/Wrapper" unique_id=2044840359]
 custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
 text = "Setup World Layout"
 
-[node name="GauntletButton" type="Button" parent="CenterContainer/Centerer/VBoxContainer" unique_id=2044840360]
+[node name="GauntletButton" type="Button" parent="ScrollContainer/Centerer/Wrapper" unique_id=2044840360]
 custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
 text = "TEST GAUNTLET (verify the backlog)"
 
-[node name="RightSpacer" type="Control" parent="CenterContainer/Centerer" unique_id=1754327296]
+[node name="RightSpacer" type="Control" parent="ScrollContainer/Centerer" unique_id=1754327296]
 layout_mode = 2
 size_flags_horizontal = 3
 mouse_filter = 2

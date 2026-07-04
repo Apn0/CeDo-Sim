@@ -16,6 +16,7 @@ func _init() -> void:
 	print("  CeDo Simulator — Wire-fix + CameraRig headless test")
 	print("============================================================")
 	_test_wire_visual_fix()
+	_test_wire_counts_per_supplier()
 	_test_camera_mode_cycle()
 	_test_camera_f4_modifier_orbit()
 	_test_camera_scroll_zoom_clamps()
@@ -90,6 +91,30 @@ func _test_wire_visual_fix() -> void:
 		_ok(top != null and top.position.y > size.y,
 			"%s top wire sits above the bale top (y=%.3f > size.y=%.3f)"
 				% [id, (top.position.y if top else -1.0), size.y])
+		bale.queue_free()
+
+# =============================================================================
+# (a2) WIRE COUNT PER SUPPLIER — Rotterdam/Fostplus = 3, Alba/Zwolle = 5
+# =============================================================================
+func _test_wire_counts_per_supplier() -> void:
+	print("[a2] Wire count per supplier (rotterdam/forstplus=3, alba_marl/zwolle=5)")
+	var expected := {"rotterdam": 3, "forstplus": 3, "alba_marl": 5, "zwolle": 5}
+	for id in expected.keys():
+		var bale = _Catalog.build_node(id, false)
+		if bale == null:
+			_ok(false, "%s bale builds" % id)
+			continue
+		var wires := bale.find_child("Wires", true, false)
+		if wires == null:
+			_ok(false, "%s has Wires node" % id)
+			bale.queue_free()
+			continue
+		var n := 0
+		for ch in wires.get_children():
+			if String(ch.name).begins_with("Wire_"):
+				n += 1
+		_ok(n == int(expected[id]),
+			"%s has %d wires (expected %d)" % [id, n, int(expected[id])])
 		bale.queue_free()
 
 # =============================================================================

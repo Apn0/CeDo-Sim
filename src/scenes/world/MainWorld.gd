@@ -232,7 +232,9 @@ func _spawn_world_items() -> void:
 			WorldLayout.migrate_to_pc(Callable(self, "_layout_to_scene"))
 
 	# Vehicles ALWAYS come from WorldLayout (or fall back to defaults if empty).
-	var veh_spawner := VehicleSpawner.new(); add_child(veh_spawner); veh_spawner.setup(self, _player_spawn_pos)
+	var veh_spawner := VehicleSpawner.new()
+	veh_spawner.name = "VehicleSpawner"   # #206 — explicit name so _spawn_merlo's find_child("VehicleSpawner") resolves (auto-name is "@Node3D@id")
+	add_child(veh_spawner); veh_spawner.setup(self, _player_spawn_pos)
 	_spawn_merlo()
 
 	# When the user has configured a world via WorldSetup, treat it as
@@ -265,8 +267,12 @@ func _spawn_world_items() -> void:
 	# and — critically — the HUD crew-assignment panel (C / Numpad-.) bails out
 	# when crew_manager is null, so skipping it broke that menu entirely.
 	_spawn_crew_manager()
-	var shift_lc := ShiftLifecycleManager.new(); add_child(shift_lc); shift_lc.setup(self, shift_clock, staff_parking, _player_spawn_pos)
-	var save_coord := SaveCoordinator.new(); add_child(save_coord); save_coord.setup(self, player, game_state, shift_clock, crew_manager)
+	var shift_lc := ShiftLifecycleManager.new()
+	shift_lc.name = "ShiftLifecycleManager"   # #206 — explicit name for find_child lookups
+	add_child(shift_lc); shift_lc.setup(self, shift_clock, staff_parking, _player_spawn_pos)
+	var save_coord := SaveCoordinator.new()
+	save_coord.name = "SaveCoordinator"   # #206 — explicit name so save_game()/save_and_quit()'s find_child("SaveCoordinator") resolves; auto-name broke Save & Quit (it changed scene WITHOUT saving)
+	add_child(save_coord); save_coord.setup(self, player, game_state, shift_clock, crew_manager)
 
 	# WorldEnvironment + sun are now in the tree — push saved graphics prefs
 	# (SSAO / SDFGI / fog / brightness / shadow distance) onto them.

@@ -408,7 +408,11 @@ static func _spawn_test_skip(world: Node) -> void:
 		world.add_child(skip)
 		skip.global_position = anchor + Vector3(6.0, 0.0, 18.0)
 		# Configure as a COARSE_FILM-only catcher (Stream.COARSE_FILM = 0).
-		skip.set("accepted_streams", [0])
+		# MUST be a typed Array[int]: set() with an untyped Array silently
+		# no-ops on the Array[int] export, leaving the bin an accept-everything
+		# catch-all.
+		var skip_streams : Array[int] = [0]
+		skip.set("accepted_streams", skip_streams)
 		skip.set("capacity_m3", 2.4)
 		skip.set("safe_fill", 0.8)
 		# Seed with some material so the operator can see the dump-empty cycle work.
@@ -467,7 +471,8 @@ static func _spawn_test_waste_zones(world: Node) -> void:
 			continue
 		world.add_child(bin)
 		bin.global_position = Vector3(anchor.x + 9.0 + float(i) * 1.1, floor_y, anchor.z + 22.0)
-		bin.set("accepted_streams", [1])   # Stream.FINES
+		var bin_streams : Array[int] = [1]   # Stream.FINES (typed — untyped no-ops on Array[int])
+		bin.set("accepted_streams", bin_streams)
 		bin.set("capacity_m3", 0.7)
 		bin.set("safe_fill", 0.8)
 		# Seed the LAST bin past its safe-fill so the mound visualisation is live.
@@ -480,7 +485,8 @@ static func _spawn_test_waste_zones(world: Node) -> void:
 	if cb != null:
 		world.add_child(cb)
 		cb.global_position = Vector3(anchor.x + 13.0, floor_y, anchor.z + 25.0)
-		cb.set("accepted_streams", [4])    # Stream.SLUDGE
+		var cb_streams : Array[int] = [4]    # Stream.SLUDGE (typed — untyped no-ops on Array[int])
+		cb.set("accepted_streams", cb_streams)
 		cb.set("capacity_m3", 1.3)
 		cb.set("safe_fill", 0.85)
 		cb.set("mound_color", Color(0.32, 0.30, 0.26))
@@ -495,7 +501,8 @@ static func _spawn_test_waste_zones(world: Node) -> void:
 	if ibc != null:
 		world.add_child(ibc)
 		ibc.global_position = Vector3(anchor.x + 17.0, floor_y, anchor.z + 25.0)
-		ibc.set("accepted_streams", [5])   # Stream.EFFLUENT
+		var ibc_streams : Array[int] = [5]   # Stream.EFFLUENT (typed — untyped no-ops on Array[int])
+		ibc.set("accepted_streams", ibc_streams)
 		ibc.set("capacity_m3", 1.0)
 		ibc.set("safe_fill", 0.9)
 		ibc.set("movable", false)

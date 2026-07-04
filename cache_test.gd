@@ -25,7 +25,10 @@ func _init():
         var best = null
         for c in containers:
             if c is Node3D and (c as Node).has_method("add"):
-                if (c as Node3D).global_position.distance_to(target_pos) < 3.0:
+                # position, not global_position: during SceneTree._init the nodes
+                # are not inside the tree yet, so global_position errors 100k×
+                # and the loop never finishes under any timeout.
+                if (c as Node3D).position.distance_to(target_pos) < 3.0:
                     best = c
                     break
     var t1 = Time.get_ticks_usec()

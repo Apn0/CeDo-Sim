@@ -33,6 +33,7 @@ func _test_rotation() -> void:
 	add_child(m)
 	await get_tree().process_frame   # _ready captures base basis
 	m.set_process(false)             # manual ticking
+	m.set_running(true)              # rotors now default to STOPPED (LineFlow drives them per-tick in-game); snap_to_rpm zeroes the target while not running
 	m.snap_to_rpm(60.0)              # explicit bypass for deterministic per-tick assertions
 	var a0 : float = m.angle
 	m._process(0.5)                  # 60 rpm = 1 rev/s → 0.5 s = π rad

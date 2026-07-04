@@ -36,6 +36,11 @@ var _speed_mul_smooth : SmoothedRate = null
 const GRAVITY: float = 9.8
 const STEP_HEIGHT: float = 0.4   # max ledge/curb height the player walks over
 const INTERACT_RAY_RANGE: float = 3.75
+const LADDER_CLIMB_SPEED : float = 2.5  # m/s vertical while on a ladder
+
+# Incremented by each overlapping LadderZone Area3D; 0 = normal movement.
+# Using a count (not bool) handles nested/adjacent ladders correctly.
+var _on_ladder_count : int = 0
 
 # ── Vault / climb (#cluster VAULT_CLIMB) ──────────────────────────────────────
 # When the player presses Space while walking forward (W) into a chest-height
@@ -236,6 +241,14 @@ func _refresh_settings() -> void:
 	if _camera_rig and _camera_rig._camera:
 		_camera_rig._camera.fov = fov
 
+## Called by LadderZone Area3D when the player's body enters a ladder.
+func enter_ladder() -> void:
+	_on_ladder_count += 1
+
+## Called by LadderZone Area3D when the player's body exits a ladder.
+func exit_ladder() -> void:
+	_on_ladder_count = maxi(_on_ladder_count - 1, 0)
+
 func _physics_process(delta: float) -> void:
 	# Vault/climb override (#cluster VAULT_CLIMB): while the mantle tween is
 	# active we own the transform directly — gravity, WASD, jump, step-up and
@@ -243,6 +256,37 @@ func _physics_process(delta: float) -> void:
 	if _vault_state == VaultState.CLIMBING:
 		_advance_vault(delta)
 		return
+
+	# Ladder climbing: gravity off, W climbs up, S climbs down.
+	# Area3D nodes on every _caged_ladder call enter_ladder/exit_ladder to set the count.
+	if _on_ladder_count > 0:
+		# Space hops off: reset the zone count so gravity resumes (exit_ladder()
+		# clamps at 0 when the body later leaves; walking back in re-arms climb
+		# mode). Without this + the A/D side-step below, the zone — its box
+		# reaches the plant floor at every ladder foot — captured any passer-by
+		# with zero horizontal mobility: a softlock.
+		if Input.is_action_just_pressed("jump"):
+			_on_ladder_count = 0
+			velocity.y = jump_speed * 0.6
+		else:
+			var climb := 0.0
+			if Input.is_action_pressed("move_forward"):
+				climb = 1.0
+			elif Input.is_action_pressed("move_backward"):
+				climb = -1.0
+			var lateral := Vector3.ZERO
+			if Input.is_action_pressed("move_left"):
+				lateral -= global_transform.basis.x
+			if Input.is_action_pressed("move_right"):
+				lateral += global_transform.basis.x
+			var target_xz := lateral.normalized() * walk_speed * 0.5
+			velocity.x = move_toward(velocity.x, target_xz.x, acceleration * delta)
+			velocity.z = move_toward(velocity.z, target_xz.z, acceleration * delta)
+			velocity.y = climb * LADDER_CLIMB_SPEED
+		move_and_slide()
+		_update_animation_blend()
+		return
+
 	# Always apply gravity so the capsule rests on the floor.
 	if not is_on_floor():
 		velocity.y -= GRAVITY * delta
