@@ -361,18 +361,19 @@ func _spawn_build_mode() -> void:
 	print("[Gauntlet] BuildMode ready — press Tab to build")
 
 ## Local copy of MainWorld._set_body_render_layer_split — same logic, no shared
-## autoload. Walks the Humanoid mesh tree summing local-y to detect head-region
-## meshes (y >= 0.55) and routes them onto layer 3, body parts onto layer 2.
+## autoload. Operator request 2026-07-05: FP shows ONLY the legs — meshes under
+## a HipPivot_* ancestor keep layer 2 (FP-visible); torso / arms / head / PPE
+## go to layer 3, which the FP camera culls. Orbit cameras render everything.
 func _tag_body_layers(root: Node) -> void:
 	if root is MeshInstance3D:
 		var mi := root as MeshInstance3D
-		var y_local : float = mi.position.y
+		var on_leg := false
 		var par : Node = mi.get_parent()
 		while par != null and (not (par is Node3D) or par.name != "PlayerBody"):
-			if par is Node3D:
-				y_local += (par as Node3D).position.y
+			if String(par.name).begins_with("HipPivot"):
+				on_leg = true
 			par = par.get_parent()
-		mi.layers = (1 << 2) if y_local >= 0.55 else (1 << 1)
+		mi.layers = (1 << 1) if on_leg else (1 << 2)
 	for c in root.get_children():
 		_tag_body_layers(c)
 

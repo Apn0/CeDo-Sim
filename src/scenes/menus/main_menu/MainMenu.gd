@@ -87,7 +87,8 @@ func _ready() -> void:
 	_refresh_save_list()
 
 func _on_world_setup_pressed() -> void:
-	get_tree().change_scene_to_file("res://src/scenes/world/WorldSetup.tscn")
+	_go_to_scene("res://src/scenes/world/WorldSetup.tscn",
+		"Loading world setup…", "")
 
 ## #153 — Character customizer / wardrobe. Opened from a button on the main
 ## menu OR from the in-game wardrobe locker (#154). Overlays the customizer
@@ -109,7 +110,8 @@ func _on_customize_pressed() -> void:
 
 ## #158 — Macro sandbox. Flat grass world with all 5 line macros pre-spawned.
 func _on_sandbox_pressed() -> void:
-	get_tree().change_scene_to_file("res://src/scenes/world/SandboxWorld.tscn")
+	_go_to_scene("res://src/scenes/world/SandboxWorld.tscn",
+		"Loading macro sandbox…", "")
 
 ## Feature Tester — a dials sandbox for tuning a feature's look in real time.
 func _on_feature_tester_pressed() -> void:
@@ -123,7 +125,8 @@ func _on_line_dragger_pressed() -> void:
 ## walk past each and confirm. NOT a real shift: crew + LineFlow + bale yards
 ## stay out so verification is fast.
 func _on_gauntlet_pressed() -> void:
-	get_tree().change_scene_to_file("res://src/scenes/world/GauntletWorld.tscn")
+	_go_to_scene("res://src/scenes/world/GauntletWorld.tscn",
+		"Loading gauntlet…", "")
 
 # ── Save-file deletion ───────────────────────────────────────────────────────
 ## Translate the display name back to the on-disk filename. "default" is the
@@ -346,4 +349,42 @@ func _start_game(save_name: String, is_new: bool) -> void:
 		EventBus.set_meta("pending_save_name", save_name)
 		EventBus.set_meta("pending_is_new_save", is_new)
 
-	get_tree().change_scene_to_file("res://src/scenes/world/MainWorld.tscn")
+	_go_to_scene("res://src/scenes/world/MainWorld.tscn",
+		"Loading shift…",
+		"Building the plant — this can take ~30 seconds. The window may say\n\"Not Responding\" while the world is built; it isn't stuck.")
+
+## Full-screen loading curtain, then the scene change. change_scene_to_file
+## loads + builds the target world in ONE main-thread frame (~27 s measured
+## for MainWorld on the GTX 1070) during which no new frame is presented —
+## whatever rendered LAST stays on screen and Windows flags the window
+## "Not Responding". Painting this curtain and awaiting two frames first
+## means the player stares at an honest loading screen instead of what
+## looks like a crashed menu.
+func _go_to_scene(path: String, headline: String, detail: String) -> void:
+	var curtain := ColorRect.new()
+	curtain.name = "LoadingCurtain"
+	curtain.color = Color(0.10, 0.11, 0.13, 1.0)
+	curtain.set_anchors_preset(Control.PRESET_FULL_RECT)
+	curtain.mouse_filter = Control.MOUSE_FILTER_STOP   # swallow stray clicks
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	curtain.add_child(center)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 12)
+	center.add_child(box)
+	var head := Label.new()
+	head.text = headline
+	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	head.add_theme_font_size_override("font_size", 40)
+	box.add_child(head)
+	var sub := Label.new()
+	sub.text = detail
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sub.modulate = Color(1.0, 1.0, 1.0, 0.65)
+	box.add_child(sub)
+	add_child(curtain)
+	# Two frames: one for layout, one so the curtain is actually PRESENTED
+	# before the load freezes the main thread.
+	await get_tree().process_frame
+	await get_tree().process_frame
+	get_tree().change_scene_to_file(path)

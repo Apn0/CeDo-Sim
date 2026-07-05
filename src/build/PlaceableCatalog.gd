@@ -3975,7 +3975,13 @@ static func _m_flotation(p: Node3D, size: Vector3, color: Color, ghost: bool) ->
 				Vector3(sx * (bot_hx + panel_dx * 0.5),
 						flat_bot_y + panel_dy * 0.5,
 						0.0), tank)
-		panel.rotation.z = sx * slope_ang
+		# Operator report 2026-07-05: the tank body read UPSIDE DOWN — the sign
+		# below was +sx, which tipped each panel TOP inward (wide at the floor,
+		# narrow at the rim). -sx tips the top OUTWARD: narrow flat bottom
+		# flaring to the wide rim, as surveyed (#230). Correction per panel =
+		# slope_ang (24.2° for the 4.5 m tank, 31.0° for the 6 m wide variant),
+		# flipped across vertical.
+		panel.rotation.z = -sx * slope_ang
 	# Outer rim cap boxes — short vertical lips at the rim
 	for sx in [-1.0, 1.0]:
 		_box(p, Vector3(0.10, 0.18, size.z * 0.96),
