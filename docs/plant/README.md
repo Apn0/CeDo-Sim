@@ -100,25 +100,41 @@ event replay, new percentiles, exact spike timestamps) must go back to the raw C
 
 ## Open questions for the operator
 
-1. **TITECH/TOMRA page 3 missing** — `Titech_Tomra_*.pdf` are pages 1–2 of a 3-page
-   binder document; page 3 was never scanned. Please scan it.
-2. **No filled-in Extruderlijst** — the Extruderlijst 3A is a blank form (no numeric
-   setpoints). A real filled-in hourly sheet would let us model actual EREMA setpoints
-   instead of deriving targets from Checklist FORM-008.
-3. **GUIexport CSVs are synthetic** — the 32 `powermeasurements_washer6_*` files are
-   placeholder ramps, not real measurements. Do real softstarter/frictiewasser power
-   exports exist anywhere?
-4. **[unsure] items needing eyes-on confirmation:** blue water-line routing on the three
-   line-flow "inclusief water" diagrams; 2 edges in the blauwe tank block diagram; meaning
-   of "ZSS" on the floor plan; wall-side of 3 floor-plan labels; scanner lettering on the
-   TITECH schematic; 3 spots in the checklist scans.
-5. **`3c` vs line 6 naming** — the SCADA tree is rooted `scada/3c` but the tags reference
-   line-6 wash equipment. Confirm whether "3C" historically meant the line-6 wash line.
-6. **`february_gap_filled.csv` is all-empty** and `Random Exports/Done/2024_09.csv` has a
-   mangled header — is there a clean source for Feb gap and Sep 2024?
-7. **Extracted_Images.zip** — 28 GUI frames inventoried, 2 described in detail; the other
-   26 are near-identical dashboard frames. Say the word if frame-by-frame transcription
-   is worth it.
+Status updated 2026-07-05 after digesting the full 379-PDF SWI/plant-doc corpus into
+`swi/` (see `swi/INDEX.md`). The broader operator open-questions **Q1–Q33** (ZSS, C1,
+water routing, HMI units, throughput, laserfilter zones, etc.) each have a resolved
+status + evidence in **`src/data/plant/question_answers.json`** (15 answered, 16 partial,
+2 unanswered). The seven data-scan items below are updated in place:
+
+1. **TITECH/TOMRA page 3** — **ANSWERED.** The full 3-page "Werking Titech tomra" set is
+   now digested (`Werking-Titech-tomra-p1/p2/p3__174/173/172`), incl. the page-3 PolySort
+   UHR NIR content and the AUTOSORT FLYING BEAM + EM-sensor principle. See Q28.
+2. **No filled-in Extruderlijst** — **STILL OPEN.** `FORM-extruderlijst-lijn3A-blank__233_CeDo43`
+   confirms the Lijn-3A Extruder lijst is a blank template only; real setpoints are still
+   derived from FORM-008 + EREMA trend envelopes. See Q33.
+3. **GUIexport CSVs are synthetic** — **STILL OPEN.** No real softstarter/frictiewasser
+   power export was found in the SWI corpus; live electrical data does exist on the LIJN 3C/6
+   BluPort panels (kW/A/kWh/kg/power-factor) but not as an exported file. See Q32.
+4. **[unsure] flow/floor-plan items** — **MOSTLY ANSWERED.** The line-flow "inclusief water"
+   diagrams and the water-circuit training slides decode the blue routing: **ZSS** =
+   plant-wide water-treatment/supply node feeding the Blauwe tank (Q1); full water routing
+   ZSS/EOP→Blauwe tank→wash pumps, La1/La2 circuits, pellet/koeltoren loops, Riool naar EOP
+   (Q5); **C1** = Pomp C1 (Q2). A few pixel-level `[unsure]` readings remain marked in the
+   individual digests. See Q1, Q2, Q5, Q11, Q12.
+5. **`3c` vs line 6 naming** — **ANSWERED.** LIJN 3C and LIJN 6 are two SEPARATE EREMA
+   BluPort **regranulation extruder lines** (identical HMIs, distinct engraved plates), NOT
+   a wash-line SCADA host. The wash line has its own SIMATIC WinCC SCADA (`256_CeDo51`). The
+   `scada/3c` tag-tree root is a tag-export naming artefact, not a physical wash host. See Q29.
+6. **`february_gap_filled.csv` empty / `2024_09.csv` mangled header** — **STILL OPEN.**
+   Data-provenance question on the F: raw trends; not resolvable from the SWI scans.
+7. **Extracted_Images.zip GUI frames** — **ANSWERED (superseded).** The EREMA HMI frames are
+   now transcribed frame-by-frame across the `OTHER-erema-hmi-*` / `PHOTO-erema-bluport-*`
+   digests (LIJN 3C 194–216, LIJN 6 219–226, melt-pump/trend frames), giving live values,
+   units, recipes and alarm ladders. See Q9, Q15, Q30, Q31.
+
+**See also:** `swi/INDEX.md` (human index of all digests, grouped by line then topic) ·
+`src/data/plant/swi_index.json` (machine index, ~190 entries) ·
+`src/data/plant/question_answers.json` (Q1–Q33 with evidence + confidence).
 
 ## Fidelity issues found and FIXED (2026-07-04)
 

@@ -1,0 +1,3130 @@
+[
+ {
+  "swi_id": "Cedo-PROD-SWI-009",
+  "title_nl": "Kalibreren Titech, Tomra NIR\" (Calibrating the Titech & Tomra NIR sensors)",
+  "title_en": "Calibrating the Titech / Tomra NIR (near-infrared) sorter",
+  "issue_date": "19-9-2023",
+  "line": "sorting",
+  "scope": "Titech/Tomra NIR sorter calibration procedure — this page covers steps 6–9 (enter parameters, log in with code, open calibration dialog, sensor-calibration check).",
+  "references": "barium plate (white barium surface, never touch). ; Cedo-PROD-SWI-011 (Reinigen van de scanner glaasjes) ; Cedo-PROD-SWI-010 — \"Controle lichtsterkte en lampen vervangen\" (check light intensity and replace lamps).",
+  "source_files": [
+   "369_CeDo131 (2).pdf",
+   "014_CeDo130 (2).pdf",
+   "154_CeDo132 (2).pdf",
+   "029_CeDo133 (2).pdf",
+   "162_CeDo134 (2).pdf",
+   "357_CeDo135 (2).pdf",
+   "091_CeDo137 (2).pdf",
+   "021_CeDo129 (2).pdf",
+   "043_CeDo136 (2).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/SWI-009-p1__369_CeDo131_2.md",
+   "docs/plant/swi/SWI-009-p2__014_CeDo130.md",
+   "docs/plant/swi/SWI-009-p3__154_CeDo132_2.md",
+   "docs/plant/swi/SWI-009-p4__029_CeDo133_2.md",
+   "docs/plant/swi/SWI-009-p5__162_CeDo134_2.md",
+   "docs/plant/swi/SWI-009-p6-kalibreren-titech-tomra-NIR__357_CeDo135_2.md",
+   "docs/plant/swi/SWI-009-p8__091_CeDo137_2.md",
+   "docs/plant/swi/SWI-009__021_CeDo129_2.md",
+   "docs/plant/swi/SWI-009__043_CeDo136_2.md"
+  ],
+  "summary": "SWI, 19-9-2023, 9 digest pages: Calibrating the Titech / Tomra NIR (near-infrared) sorter"
+ },
+ {
+  "swi_id": "Cedo-PROD-SWI-010",
+  "title_nl": "Wisselen Halogeen lampen NIRs *(replacing the halogen lamps of the NIR sorters)*",
+  "title_en": "Replacing the halogen lamps of the NIRs (near-infrared sorter lamps)",
+  "issue_date": "19-9-2023",
+  "line": "sorting",
+  "scope": "NIR (TITECH/TOMRA) halogen-lamp replacement — this page covers steps 5–8: do NOT loosen the borgschroef (locking screw), blow out the heat-exchanger zone, remove the 6 screws + heat exchanger, unplug the halogen-lamp power connection.",
+  "references": "Tomra Sorting calibration (implicit); figure captions from the Tomra manual reproduced in photos.",
+  "source_files": [
+   "340_CeDo123 (2).pdf",
+   "358_CeDo125 (2).pdf",
+   "341_CeDo128 (2).pdf",
+   "342_CeDo127 (2).pdf",
+   "087_CeDo124 (2).pdf",
+   "037_CeDo126 (2).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/SWI-010-p1-wisselen-halogeenlampen-NIR__340_CeDo123_2.md",
+   "docs/plant/swi/SWI-010-p3-wisselen-halogeenlampen-NIR__358_CeDo125_2.md",
+   "docs/plant/swi/SWI-010-p4-wisselen-halogeenlampen-NIR__341_CeDo128_2.md",
+   "docs/plant/swi/SWI-010-p4-wisselen-halogeenlampen-NIR__342_CeDo127_2_duplicate.md",
+   "docs/plant/swi/SWI-010_p2__087_CeDo124_2.md",
+   "docs/plant/swi/SWI-0xx-halogeen-lampen-NIR__037_CeDo126_2.md"
+  ],
+  "summary": "SWI, 19-9-2023, 6 digest pages: Replacing the halogen lamps of the NIRs (near-infrared sorter lamps)"
+ },
+ {
+  "swi_id": "Cedo-PROD-SWI-011",
+  "title_nl": "Reinigen glaasjes NIR lampen\" (Cleaning the little glasses/windows of the NIR lamps)",
+  "title_en": null,
+  "issue_date": "19-9-2023",
+  "line": "sorting",
+  "scope": "Correctly cleaning the NIR (near-infrared) lamp glasses of the TITECH/Tomra sorters.",
+  "references": null,
+  "source_files": [
+   "374_CeDo120 (2).pdf",
+   "275_CeDo121 (2).pdf",
+   "088_CeDo122 (2).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/SWI-011-p1-reinigen-glaasjes-NIR-lampen__374_CeDo120_2.md",
+   "docs/plant/swi/SWI-reinigen-glaasjes-NIR-lampen-p1__275_CeDo121_2.md",
+   "docs/plant/swi/SWI-reinigen-glaasjes-TITECH_p2__088_CeDo122_2.md"
+  ],
+  "summary": "SWI, 19-9-2023, 3 digest pages: Correctly cleaning the NIR (near-infrared) lamp glasses of the TITECH/Tomra sorters."
+ },
+ {
+  "swi_id": "Cedo-PROD-SWI-012",
+  "title_nl": "Lijn 1 Opstart (Line 1 start-up)",
+  "title_en": null,
+  "issue_date": "4-1-2022",
+  "line": "1",
+  "scope": "Start-up procedure for Line 1. This page carries a single step row (nr 11); the rest of the page is blank table grid.",
+  "references": "none explicit on this page (refers back to \"foto bij punt 6\").",
+  "source_files": [
+   "318_CeDo115 (2).pdf",
+   "034_CeDo114 (2).pdf",
+   "035_CeDo113 (2).pdf",
+   "036_CeDo118 (2).pdf",
+   "274_CeDo111 (2).pdf",
+   "267_CeDo112 (2).pdf",
+   "089_CeDo119 (2).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/SWI-012-p4__318_CeDo115_2.md",
+   "docs/plant/swi/SWI-012__034_CeDo114_2.md",
+   "docs/plant/swi/SWI-012__035_CeDo113_2_duplicate.md",
+   "docs/plant/swi/SWI-012__036_CeDo118_2_p7.md",
+   "docs/plant/swi/SWI-012_p1__274_CeDo111_2.md",
+   "docs/plant/swi/SWI-012_p2__267_CeDo112_2.md",
+   "docs/plant/swi/SWI-012_p8__089_CeDo119_2.md"
+  ],
+  "summary": "SWI, 4-1-2022, 7 digest pages: Start-up procedure for Line 1. This page carries a single step row (nr 11); the rest of the page is blank table grid."
+ },
+ {
+  "swi_id": "Cedo-PROD-SWI-013",
+  "title_nl": "Wisselen-Schoonmaken Antivliegen Nozzle Balenpers",
+  "title_en": "Changing/cleaning the anti-fly (anti-insect) nozzle at the bale press (balenpers)",
+  "issue_date": "11-4-2022",
+  "line": "3",
+  "scope": "Balenpers (bale press) anti-fly (\"antivliegen\") spray nozzle — cleaning/refit after the change; uses hoogwerker (aerial work platform) to reach it.",
+  "references": "none on this page.",
+  "source_files": [
+   "038_CeDo102 (2).pdf",
+   "094_CeDo101 (2).pdf",
+   "228_CeDo99 (2).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/SWI-013-antivliegen-nozzle__038_CeDo102_2.md",
+   "docs/plant/swi/SWI-013-p2__094_CeDo101_2.md",
+   "docs/plant/swi/SWI-013_p1__228_CeDo99_2.md"
+  ],
+  "summary": "SWI, 11-4-2022, 3 digest pages: Changing/cleaning the anti-fly (anti-insect) nozzle at the bale press (balenpers)"
+ },
+ {
+  "swi_id": "Cedo-PROD-SWI-015",
+  "title_nl": "Opstarten was 3A\" (Start up wash line 3A)",
+  "title_en": "Cleaning and checking the Tomra valves (ejector nozzles)",
+  "issue_date": "17-08-2021",
+  "line": "3A",
+  "scope": "Cleaning/checking the compressed-air ejector valves (nozzles) on the two Tomra sorters, steps 23-25",
+  "references": "numbered valve callouts (1) and (4) refer to photos on earlier pages of the same SWI. ; none on this page (UI menu paths given inline). ; Tomra technical docs ch. 9.5 p.51 and 11.3.5 p.72. (Ejected-fraction / EM sensor / belt width NOT covered on this page.)",
+  "source_files": [
+   "371_CeDo89 (2).pdf",
+   "370_CeDo90 (2).pdf",
+   "236_CeDo106 (2).pdf",
+   "093_CeDo109 (2).pdf",
+   "234_CeDo110 (2).pdf",
+   "028_CeDo104 (2).pdf",
+   "041_CeDo105 (2).pdf",
+   "045_CeDo107 (2).pdf",
+   "046_CeDo108 (2).pdf",
+   "273_CeDo103 (2).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/SWI-015-p2-opstarten-was3A__371_CeDo89_2.md",
+   "docs/plant/swi/SWI-015-p3-opstarten-was3A__370_CeDo90_2.md",
+   "docs/plant/swi/SWI-015-p4__236_CeDo106_2.md",
+   "docs/plant/swi/SWI-015-p7__093_CeDo109_2.md",
+   "docs/plant/swi/SWI-015-p8__234_CeDo110_2.md",
+   "docs/plant/swi/SWI-015__028_CeDo104_2.md",
+   "docs/plant/swi/SWI-015__041_CeDo105_2.md",
+   "docs/plant/swi/SWI-015_p5__045_CeDo107_2.md",
+   "docs/plant/swi/SWI-015_p6__046_CeDo108_2.md",
+   "docs/plant/swi/SWI-titech-tomra-ventielen-reinigen-p1__273_CeDo103_2.md"
+  ],
+  "summary": "SWI, 17-08-2021, 10 digest pages: Cleaning and checking the Tomra valves (ejector nozzles)"
+ },
+ {
+  "swi_id": "Cedo-PROD-SWI-017",
+  "title_nl": "Extruder 3a/3b leegdraaien/stoppen",
+  "title_en": "Emptying/stopping extruder 3a/3b",
+  "issue_date": "4-1-2022",
+  "line": "3A/3B",
+  "scope": "Shutdown/run-empty procedure for extruders on lines 3a and 3b. This closing page holds the last two steps (11, 12).",
+  "references": "p2 = SWI-017_p2__128_CeDo94_2.md; p3 = SWI-017_p3__129_CeDo97_2.md (+ duplicate 130_CeDo96_2).",
+  "source_files": [
+   "332_CeDo95 (2).pdf",
+   "319_CeDo98 (2).pdf",
+   "128_CeDo94.pdf",
+   "129_CeDo97.pdf",
+   "130_CeDo96.pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/SWI-017-p1__332_CeDo95_2.md",
+   "docs/plant/swi/SWI-017-p4__319_CeDo98_2.md",
+   "docs/plant/swi/SWI-017_p2__128_CeDo94_2.md",
+   "docs/plant/swi/SWI-017_p3__129_CeDo97_2.md",
+   "docs/plant/swi/SWI-017_p3__130_CeDo96_2_duplicate.md"
+  ],
+  "summary": "SWI, 4-1-2022, 5 digest pages: Emptying/stopping extruder 3a/3b"
+ },
+ {
+  "swi_id": "Cedo-PROD-SWI-018",
+  "title_nl": "Lijn 1 Opstart",
+  "title_en": "Line 1 Start-up",
+  "issue_date": "4-1-2022",
+  "line": "1",
+  "scope": "Line 1 start-up — this page covers steps 1–3 of a start-up section (weegschaal / water / heetafslag checks).",
+  "references": null,
+  "source_files": [
+   "153_CeDo116 (2).pdf",
+   "161_CeDo117 (2).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/SWI-018-p5__153_CeDo116_2.md",
+   "docs/plant/swi/SWI-018-p6__161_CeDo117_2.md"
+  ],
+  "summary": "SWI, 4-1-2022, 2 digest pages: Line 1 Start-up"
+ },
+ {
+  "swi_id": "Cedo-PROD-SWI-019",
+  "title_nl": "Perscontainer Wissel",
+  "title_en": "Press-container change (swapping the compaction/press container)",
+  "issue_date": "4-1-2022",
+  "line": "3",
+  "scope": "perscontainer / press container swap at the baler-press",
+  "references": null,
+  "source_files": [
+   "135_CeDo91.pdf",
+   "056_CeDo92 (2).pdf",
+   "090_CeDo93 (2).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/SWI-019__135_CeDo91_2.md",
+   "docs/plant/swi/SWI-019_p2__056_CeDo92_2.md",
+   "docs/plant/swi/SWI-019_p3__090_CeDo93_2.md"
+  ],
+  "summary": "SWI, 4-1-2022, 3 digest pages: Press-container change (swapping the compaction/press container)"
+ },
+ {
+  "swi_id": "Cedo-PROD-SWI-020",
+  "title_nl": "Opstarten was 3A",
+  "title_en": "Starting up wash line 3A (washing installation for line 3A)",
+  "issue_date": "4-1-2022",
+  "line": "3A",
+  "scope": null,
+  "references": "(Referentie naar / Definities blank on this page)",
+  "source_files": [
+   "334_CeDo88 (2).pdf"
+  ],
+  "md_path": "docs/plant/swi/SWI-020-p1-opstarten-was3A__334_CeDo88_2.md",
+  "summary": "SWI, 4-1-2022: Starting up wash line 3A (washing installation for line 3A)"
+ },
+ {
+  "swi_id": "Cedo-PROD-SWI-023",
+  "title_nl": "Wisselen brakerplates backflush filter lijn 3",
+  "title_en": "Changing the breaker plates of the backflush filter — line 3",
+  "issue_date": "4-1-2022",
+  "line": "3A/3B",
+  "scope": "3A and 3B (backflush filter breaker-plate change; \"elk kwartaal\" = every quarter)",
+  "references": null,
+  "source_files": [
+   "134_CeDo84.pdf"
+  ],
+  "md_path": "docs/plant/swi/SWI-023__134_CeDo84_2.md",
+  "summary": "SWI, 4-1-2022: Changing the breaker plates of the backflush filter — line 3"
+ },
+ {
+  "swi_id": "Cedo-PROD-SWI-025",
+  "title_nl": "Wisselen brakerplates backflush filter lijn 3",
+  "title_en": "Changing the breaker plates of the backflush filter, line 3",
+  "issue_date": "22 september 2021",
+  "line": "3",
+  "scope": "Breaker-plate (brakerplate) change on the backflush filter of line 3 (distinct from SWI-074 laserfilter LF 2-406). This concerns cleaning/removing breaker plates and their bolts.",
+  "references": "related brakerplate handling in SWI-074 (laserfilter) — see SWI-074-p17__327_CeDo154.md. Note SWI-025 was previously partly digested (SWI-025_p_unk__055_CeDo87_2.md); this is a different page (steps 3-5).",
+  "source_files": [
+   "331_CeDo85 (2).pdf",
+   "338_CeDo86 (2).pdf",
+   "055_CeDo87 (2).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/SWI-025-brakerplates-backflush-lijn3__331_CeDo85_2.md",
+   "docs/plant/swi/SWI-025-p3-brakerplates-backflush-lijn3__338_CeDo86_2.md",
+   "docs/plant/swi/SWI-025_p_unk__055_CeDo87_2.md"
+  ],
+  "summary": "SWI, 22 september 2021, 3 digest pages: Changing the breaker plates of the backflush filter, line 3"
+ },
+ {
+  "swi_id": "Cedo-PROD-SWI-026",
+  "title_nl": "Lijn 3 in – en afvoeren grondstoffen (\"Line 3 feeding-in and discharging raw materials\")",
+  "title_en": null,
+  "issue_date": "23-12-2022",
+  "line": "3",
+  "scope": "Lijn 3 infeed: opzetband/toevoerband sensor logic to shredder + reject bale handling.",
+  "references": "none on this page.",
+  "source_files": [
+   "279_CeDo80 (2).pdf",
+   "039_CeDo82 (2).pdf",
+   "044_CeDo81 (2).pdf",
+   "054_CeDo83 (2).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/SWI-026-p1__279_CeDo80_2.md",
+   "docs/plant/swi/SWI-026__039_CeDo82_2.md",
+   "docs/plant/swi/SWI-026_p2__044_CeDo81_2.md",
+   "docs/plant/swi/SWI-026_p4__054_CeDo83_2.md"
+  ],
+  "summary": "SWI, 23-12-2022, 4 digest pages: Lijn 3 infeed: opzetband/toevoerband sensor logic to shredder + reject bale handling."
+ },
+ {
+  "swi_id": "Cedo-PROD-SWI-027",
+  "title_nl": "Lijn 3 openen shredder 1 (Line 3 open shredder 1)",
+  "title_en": null,
+  "issue_date": "04-02-2022",
+  "line": "3",
+  "scope": "Final page of the shredder-1 opening procedure: safety pawl behaviour + follow-on SWI references.",
+  "references": null,
+  "source_files": [
+   "006_CeDo78 (2).pdf",
+   "057_CeDo79 (2).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/SWI-027__006_CeDo78.md",
+   "docs/plant/swi/SWI-027_p2__057_CeDo79_2.md"
+  ],
+  "summary": "SWI, 04-02-2022, 2 digest pages: Final page of the shredder-1 opening procedure: safety pawl behaviour + follow-on SWI references."
+ },
+ {
+  "swi_id": "Cedo-PROD-SWI-031",
+  "title_nl": "Lijn 3 balenpers draad controle",
+  "title_en": "Line 3 baler (bale press) wire check",
+  "issue_date": "15-7-2022",
+  "line": "3",
+  "scope": "balenpers / bale press wire/binding check",
+  "references": null,
+  "source_files": [
+   "133_CeDo76.pdf",
+   "048_CeDo77 (2).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/SWI-031__133_CeDo76_2.md",
+   "docs/plant/swi/SWI-031_p2__048_CeDo77_2.md"
+  ],
+  "summary": "SWI, 15-7-2022, 2 digest pages: Line 3 baler (bale press) wire check"
+ },
+ {
+  "swi_id": "Cedo-PROD-SWI-033",
+  "title_nl": "Lijn 3 rotor blokkeren shredder 1 (Line 3 block/lock shredder 1 rotor)",
+  "title_en": null,
+  "issue_date": "10-02-2022",
+  "line": "3",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "002_CeDo16 (2).pdf"
+  ],
+  "md_path": "docs/plant/swi/SWI-033__002_CeDo16.md",
+  "summary": "SWI, 10-02-2022"
+ },
+ {
+  "swi_id": "Cedo-PROD-SWI-034",
+  "title_nl": "Lijn 3 reinigen shredder 1",
+  "title_en": "Line 3 clean shredder 1",
+  "issue_date": "10-02-2022",
+  "line": "3",
+  "scope": "Restart/jog phase after cutting wires off the shredder-1 rotor: re-energize, switch to maintenance mode, jog rotor with two-hand control.",
+  "references": null,
+  "source_files": [
+   "158_CeDo2 (2).pdf",
+   "159_CeDo6 (2).pdf",
+   "163_CeDo5 (2).pdf",
+   "001_CeDo1 (2).pdf",
+   "050_CeDo11 (2).pdf",
+   "051_CeDo7 (2).pdf",
+   "052_CeDo8 (2).pdf",
+   "053_CeDo9 (2).pdf",
+   "150_CeDo10 (2).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/SWI-034-p1__158_CeDo2_2.md",
+   "docs/plant/swi/SWI-034-p1__159_CeDo6_2_duplicate.md",
+   "docs/plant/swi/SWI-034-p1__163_CeDo5_2_duplicate.md",
+   "docs/plant/swi/SWI-034__001_CeDo1.md",
+   "docs/plant/swi/SWI-034_p2__050_CeDo11_2.md",
+   "docs/plant/swi/SWI-034_p2__051_CeDo7_2.md",
+   "docs/plant/swi/SWI-034_p2__052_CeDo8_2.md",
+   "docs/plant/swi/SWI-034_p2__053_CeDo9_2.md",
+   "docs/plant/swi/SWI-034_p2__150_CeDo10_2.md"
+  ],
+  "summary": "SWI, 10-02-2022, 9 digest pages: Line 3 clean shredder 1"
+ },
+ {
+  "swi_id": "Cedo-PROD-SWI-035",
+  "title_nl": "Lijn 3 leegdraaien",
+  "title_en": "Draining/emptying line 3 (running it empty before maintenance)",
+  "issue_date": "04-02-2022",
+  "line": "3",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "339_CeDo64 (2).pdf",
+   "320_CeDo66 (2).pdf",
+   "005_CeDo65 (2).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/SWI-035-lijn3-leegdraaien__339_CeDo64_2.md",
+   "docs/plant/swi/SWI-035-p2__320_CeDo66_2.md",
+   "docs/plant/swi/SWI-035__005_CeDo65.md"
+  ],
+  "summary": "SWI, 04-02-2022, 3 digest pages: Draining/emptying line 3 (running it empty before maintenance)"
+ },
+ {
+  "swi_id": "Cedo-PROD-SWI-038",
+  "title_nl": "Veilig reinigen Tomra & Titech sorteer ruimte",
+  "title_en": "Safely cleaning the Tomra & Titech sorting room",
+  "issue_date": "14-2-22",
+  "line": "sorting",
+  "scope": "Sorting room housekeeping/cleaning around the TOMRA & TITECH NIR sorters (safety)",
+  "references": null,
+  "source_files": [
+   "231_CeDo75 (2).pdf",
+   "019_CeDo73 (2).pdf",
+   "136_CeDo72 (2).pdf",
+   "137_CeDo74 (2).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/SWI-038-dept_p1__231_CeDo75_2.md",
+   "docs/plant/swi/SWI-038__019_CeDo73_2.md",
+   "docs/plant/swi/SWI-038_p1__136_CeDo72_2.md",
+   "docs/plant/swi/SWI-038_p3__137_CeDo74_2.md"
+  ],
+  "summary": "SWI, 14-2-22, 4 digest pages: Safely cleaning the Tomra & Titech sorting room"
+ },
+ {
+  "swi_id": "Cedo-PROD-SWI-039",
+  "title_nl": "Lijn 3 Bunker rol reinigen",
+  "title_en": "Line 3 clean bunker roll(er)",
+  "issue_date": "11-04-2022",
+  "line": "3",
+  "scope": "Line 3 bunker-roller cleaning — this page covers steps 4–6 (remove film/wires from roller, clear loose film off belt, remove padlock/LOTO). Companion to p1 (existing SWI-039__004_CeDo70.md).",
+  "references": null,
+  "source_files": [
+   "164_CeDo71 (2).pdf",
+   "004_CeDo70 (2).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/SWI-039-p2__164_CeDo71_2.md",
+   "docs/plant/swi/SWI-039__004_CeDo70.md"
+  ],
+  "summary": "SWI, 11-04-2022, 2 digest pages: Line 3 clean bunker roll(er)"
+ },
+ {
+  "swi_id": "Cedo-PROD-SWI-040",
+  "title_nl": "Lijn 3 openen shredder 2",
+  "title_en": "Line 3 — opening shredder 2",
+  "issue_date": "10-02-2022",
+  "line": "3",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "013_CeDo69 (2).pdf",
+   "003_CeDo67 (2).pdf",
+   "140_CeDo68 (2).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/SWI-040-p3__013_CeDo69.md",
+   "docs/plant/swi/SWI-040__003_CeDo67.md",
+   "docs/plant/swi/SWI-040_p2__140_CeDo68_2.md"
+  ],
+  "summary": "SWI, 10-02-2022, 3 digest pages: Line 3 — opening shredder 2"
+ },
+ {
+  "swi_id": "Cedo-PROD-SWI-042",
+  "title_nl": "Leegdraaien lijn 3 voor meswissel",
+  "title_en": "Running line 3 empty for a knife/blade change (meswissel)",
+  "issue_date": "18-1-23",
+  "line": "1/3A/3B",
+  "scope": "lijn 3 (3A/3B wash + extruders), invoer operator + extruder operator roles, meswissel (knife change) preparation day.",
+  "references": "existing SWI-042 pages: SWI-042__031_CeDo27_2.md, SWI-042_p3__227_CeDo28_2.md, SWI-042-p4__283_CeDo29_2.md. Cross-refs inside: Cedo-PROC-011 LOTOTO; Cedo-PROD-SWI-027 and Cedo-PROD-SWI-034 (open & clean shredder 1). ; Cedo-TD-TBT-011 (voorbereidingen onderhoud toolbox), Cedo-PROD-SWI-040 (shredder 2 open/schoon maken), Cedo-PROD-SWI-017 (extruder 3a/3b leegdraaien/stoppen).",
+  "source_files": [
+   "333_CeDo26 (2).pdf",
+   "283_CeDo29 (2).pdf",
+   "031_CeDo27 (2).pdf",
+   "227_CeDo28 (2).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/SWI-042-p1__333_CeDo26_2.md",
+   "docs/plant/swi/SWI-042-p4__283_CeDo29_2.md",
+   "docs/plant/swi/SWI-042__031_CeDo27_2.md",
+   "docs/plant/swi/SWI-042_p3__227_CeDo28_2.md"
+  ],
+  "summary": "SWI, 18-1-23, 4 digest pages: Running line 3 empty for a knife/blade change (meswissel)"
+ },
+ {
+  "swi_id": "Cedo-PROD-SWI-046",
+  "title_nl": "Lijn 3 balenpers draad controle",
+  "title_en": "Line 3 bale press wire (baling-wire) check",
+  "issue_date": "15-7-2022",
+  "line": "3",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "337_CeDo55 (2).pdf",
+   "049_CeDo56 (2).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/SWI-046-p1-balenpers-draadcontrole__337_CeDo55_2.md",
+   "docs/plant/swi/SWI-046_p2__049_CeDo56_2.md"
+  ],
+  "summary": "SWI, 15-7-2022, 2 digest pages: Line 3 bale press wire (baling-wire) check"
+ },
+ {
+  "swi_id": "Cedo-PROD-SWI-048",
+  "title_nl": "Voor opstarten deel sorteerlijn",
+  "title_en": "Before starting up (a) part of the sorting line",
+  "issue_date": "20-07-2022",
+  "line": "3",
+  "scope": "Pre-startup of the sort-line section, control-panel steps 3-5 (final page)",
+  "references": "p2 already digested = SWI-048-p2__095_CeDo54_2.md.",
+  "source_files": [
+   "335_CeDo53 (2).pdf",
+   "095_CeDo54 (2).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/SWI-048-p1-opstarten-sorteerlijn__335_CeDo53_2.md",
+   "docs/plant/swi/SWI-048-p2__095_CeDo54_2.md"
+  ],
+  "summary": "SWI, 20-07-2022, 2 digest pages: Before starting up (a) part of the sorting line"
+ },
+ {
+  "swi_id": "Cedo-PROD-SWI-049",
+  "title_nl": "Opstarten sorteerlijn",
+  "title_en": "Starting up the sorting line",
+  "issue_date": "4-8-2022",
+  "line": "3",
+  "scope": null,
+  "references": "pairs with SWI-049 sortline start and the Titech calibration SWI-009.",
+  "source_files": [
+   "157_CeDo50 (2).pdf",
+   "321_CeDo51 (2).pdf",
+   "322_CeDo52 (2).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/SWI-049-p1__157_CeDo50_2.md",
+   "docs/plant/swi/SWI-049-p2__321_CeDo51_2.md",
+   "docs/plant/swi/SWI-049-p2__322_CeDo52_2_duplicate.md"
+  ],
+  "summary": "SWI, 4-8-2022, 3 digest pages: Starting up the sorting line"
+ },
+ {
+  "swi_id": "Cedo-PROD-SWI-054",
+  "title_nl": "Laserfilter wisselen lijn 3",
+  "title_en": "Changing the laser filter — line 3",
+  "issue_date": "19-7-2022",
+  "line": "3",
+  "scope": "laserfilter change on line 3 extruder",
+  "references": "none visible on this page. ; none on this page.",
+  "source_files": [
+   "012_CeDo41 (2).pdf",
+   "324_CeDo42 (2).pdf",
+   "010_CeDo43 (2).pdf",
+   "132_CeDo45.pdf",
+   "009_CeDo47 (2).pdf",
+   "323_CeDo49 (2).pdf",
+   "156_CeDo31 (2).pdf",
+   "011_CeDo34 (2).pdf",
+   "030_CeDo36 (2).pdf",
+   "008_CeDo37 (2).pdf",
+   "007_CeDo38 (2).pdf",
+   "151_CeDo40 (2).pdf",
+   "152_CeDo39 (2).pdf",
+   "017_CeDo35 (2).pdf",
+   "027_CeDo32 (2).pdf",
+   "033_CeDo46 (2).pdf",
+   "042_CeDo33 (2).pdf",
+   "139_CeDo48 (2).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/SWI-054-p10__012_CeDo41.md",
+   "docs/plant/swi/SWI-054-p11__324_CeDo42_2.md",
+   "docs/plant/swi/SWI-054-p12__010_CeDo43.md",
+   "docs/plant/swi/SWI-054-p13__132_CeDo45_2.md",
+   "docs/plant/swi/SWI-054-p15__009_CeDo47.md",
+   "docs/plant/swi/SWI-054-p17__323_CeDo49_2.md",
+   "docs/plant/swi/SWI-054-p1__156_CeDo31_2.md",
+   "docs/plant/swi/SWI-054-p4__011_CeDo34.md",
+   "docs/plant/swi/SWI-054-p6__030_CeDo36_2.md",
+   "docs/plant/swi/SWI-054-p7__008_CeDo37.md",
+   "docs/plant/swi/SWI-054-p8__007_CeDo38.md",
+   "docs/plant/swi/SWI-054-p9__151_CeDo40_2.md",
+   "docs/plant/swi/SWI-054-p9__152_CeDo39_2_duplicate.md",
+   "docs/plant/swi/SWI-054__017_CeDo35_2.md",
+   "docs/plant/swi/SWI-054__027_CeDo32_2.md",
+   "docs/plant/swi/SWI-054__033_CeDo46_2.md",
+   "docs/plant/swi/SWI-054__042_CeDo33_2_p3.md",
+   "docs/plant/swi/SWI-054_p16__139_CeDo48_2.md"
+  ],
+  "summary": "SWI, 19-7-2022, 18 digest pages: Changing the laser filter — line 3"
+ },
+ {
+  "swi_id": "Cedo-PROD-SWI-055",
+  "title_nl": "Frame heetafslag verwijderen lijn 1 3A-3B (EN: removing the hot die-face-cut [pelletizer] frame, lines 1 / 3A / 3B)",
+  "title_en": "Removing the heetafslag (hot die-face cutter) frame — line 1 / 3A-3B",
+  "issue_date": "12-10-2022",
+  "line": "1/3A/3B",
+  "scope": "1, 3A, 3B (extruder heetafslag / die-face cutter — mega-korrel clearing)",
+  "references": null,
+  "source_files": [
+   "020_CeDo62 (2).pdf",
+   "131_CeDo60.pdf",
+   "138_CeDo61 (2).pdf",
+   "058_CeDo63 (2).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/SWI-055__020_CeDo62_2.md",
+   "docs/plant/swi/SWI-055__131_CeDo60_2.md",
+   "docs/plant/swi/SWI-055_p2__138_CeDo61_2.md",
+   "docs/plant/swi/SWI-055_p4__058_CeDo63_2.md"
+  ],
+  "summary": "SWI, 12-10-2022, 4 digest pages: Removing the heetafslag (hot die-face cutter) frame — line 1 / 3A-3B"
+ },
+ {
+  "swi_id": "Cedo-PROD-SWI-061",
+  "title_nl": "Het reinigen van delen Nordson oven",
+  "title_en": "Cleaning of parts in the Nordson (vacuum) oven",
+  "issue_date": "19-12-2023",
+  "line": "general",
+  "scope": "Correct way to put the Nordson vacuum oven into use each time (used to burn out / clean laser-filter screens & other parts). Note: this is a cleaner re-scan of SWI-061 page 1; body pages already digested as SWI-061 p2/p5/p6 (__016/015/025/026/040/155/160 CeDo). Kept as distinct source stem.",
+  "references": "none on this page.",
+  "source_files": [
+   "311_CeDo18 (2).pdf",
+   "015_CeDo19 (2).pdf",
+   "160_CeDo22 (2).pdf",
+   "155_CeDo23 (2).pdf",
+   "016_CeDo24 (2).pdf",
+   "025_CeDo20 (2).pdf",
+   "026_CeDo25 (2).pdf",
+   "040_CeDo21 (2).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/SWI-061-p1__311_CeDo18_2.md",
+   "docs/plant/swi/SWI-061-p2__015_CeDo19.md",
+   "docs/plant/swi/SWI-061-p5__160_CeDo22_2.md",
+   "docs/plant/swi/SWI-061-p6__155_CeDo23_2.md",
+   "docs/plant/swi/SWI-061__016_CeDo24_2.md",
+   "docs/plant/swi/SWI-061__025_CeDo20_2.md",
+   "docs/plant/swi/SWI-061__026_CeDo25_2.md",
+   "docs/plant/swi/SWI-061__040_CeDo21_2.md"
+  ],
+  "summary": "SWI, 19-12-2023, 8 digest pages: Cleaning of parts in the Nordson (vacuum) oven"
+ },
+ {
+  "swi_id": "Cedo-PROD-SWI-062",
+  "title_nl": "Opstarten lijn 3 (\"Starting up line 3\"); subtitle \"Lijn 3 opstarten na onderhoud\" (start line 3 after maintenance)",
+  "title_en": "Starting up line 3 / Starting line 3 after maintenance",
+  "issue_date": "20-1-2023",
+  "line": "3",
+  "scope": "Startup of line 3 wash installation & sort line after maintenance, steps 06-11 (final page)",
+  "references": null,
+  "source_files": [
+   "281_CeDo57 (2).pdf",
+   "282_CeDo58 (2).pdf",
+   "092_CeDo59 (2).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/SWI-062-p1__281_CeDo57_2.md",
+   "docs/plant/swi/SWI-062-p1__282_CeDo58_2.md",
+   "docs/plant/swi/SWI-062-p2__092_CeDo59_2.md"
+  ],
+  "summary": "SWI, 20-1-2023, 3 digest pages: Starting up line 3 / Starting line 3 after maintenance"
+ },
+ {
+  "swi_id": "Cedo-PROD-SWI-074",
+  "title_nl": "Laserfilter wissel LF 2 – 406",
+  "title_en": "Laser filter change LF 2-406",
+  "issue_date": "26-07-2023",
+  "line": "3/3C",
+  "scope": "Laser filter (Britas-style melt filter LF 2-406) screen/plate change — this page covers the *Brakerplates* (breaker plate) removal sub-procedure.",
+  "references": "Part of the multi-page SWI-074 already digested (see SWI-074_p4/p8/p11/p12/p14/p15/p16/p18/p19/p20/p22/p24 etc.); this fills page 17. ; Cedo-PROD-SWI-017 (op de juiste manier leegdraaien en stoppen van machine).",
+  "source_files": [
+   "266_CeDo147.pdf",
+   "265_CeDo143.pdf",
+   "296_CeDo139.pdf",
+   "237_CeDo151.pdf",
+   "327_CeDo154.pdf",
+   "280_CeDo138 (2).pdf",
+   "326_CeDo158.pdf",
+   "325_CeDo160.pdf",
+   "235_CeDo145.pdf",
+   "018_CeDo144.pdf",
+   "022_CeDo142.pdf",
+   "023_CeDo146.pdf",
+   "024_CeDo150.pdf",
+   "032_CeDo140.pdf",
+   "142_CeDo148.pdf",
+   "144_CeDo149.pdf",
+   "143_CeDo152.pdf",
+   "149_CeDo153.pdf",
+   "146_CeDo155.pdf",
+   "141_CeDo156.pdf",
+   "147_CeDo157.pdf",
+   "047_CeDo159.pdf",
+   "148_CeDo161.pdf",
+   "145_CeDo141.pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/PROD-SWI-074-laserfilter-wissel-LF2-406-p10__266_CeDo147.md",
+   "docs/plant/swi/PROD-SWI-074-laserfilter-wissel-LF2-406-p6__265_CeDo143.md",
+   "docs/plant/swi/PROD-SWI-074__296_CeDo139.md",
+   "docs/plant/swi/SWI-074-p14__237_CeDo151.md",
+   "docs/plant/swi/SWI-074-p17__327_CeDo154.md",
+   "docs/plant/swi/SWI-074-p1__280_CeDo138_2.md",
+   "docs/plant/swi/SWI-074-p21-LF2-406__326_CeDo158.md",
+   "docs/plant/swi/SWI-074-p23-LF2-406__325_CeDo160.md",
+   "docs/plant/swi/SWI-074-p8__235_CeDo145.md",
+   "docs/plant/swi/SWI-074__018_CeDo144.md",
+   "docs/plant/swi/SWI-074__022_CeDo142.md",
+   "docs/plant/swi/SWI-074__023_CeDo146.md",
+   "docs/plant/swi/SWI-074__024_CeDo150.md",
+   "docs/plant/swi/SWI-074__032_CeDo140.md",
+   "docs/plant/swi/SWI-074_p11__142_CeDo148.md",
+   "docs/plant/swi/SWI-074_p12__144_CeDo149.md",
+   "docs/plant/swi/SWI-074_p15__143_CeDo152.md",
+   "docs/plant/swi/SWI-074_p16__149_CeDo153.md",
+   "docs/plant/swi/SWI-074_p18__146_CeDo155.md",
+   "docs/plant/swi/SWI-074_p19__141_CeDo156.md",
+   "docs/plant/swi/SWI-074_p20__147_CeDo157.md",
+   "docs/plant/swi/SWI-074_p22__047_CeDo159.md",
+   "docs/plant/swi/SWI-074_p24__148_CeDo161.md",
+   "docs/plant/swi/SWI-074_p4__145_CeDo141.md"
+  ],
+  "summary": "SWI, 26-07-2023, 24 digest pages: Laser filter change LF 2-406"
+ },
+ {
+  "swi_id": "Cedo-PROD-SWI-084",
+  "title_nl": "Momentsleutel tbv laserfilter type 406\" (Torque wrench for laser filter type 406)",
+  "title_en": null,
+  "issue_date": "18-12-2023",
+  "line": "3/3C",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "373_CeDo30 (2).pdf"
+  ],
+  "md_path": "docs/plant/swi/SWI-084-momentsleutel-laserfilter-406-uitzetschroef__373_CeDo30_2.md",
+  "summary": "SWI, 18-12-2023"
+ },
+ {
+  "swi_id": "Cedo-PROD-FORM-007",
+  "title_nl": "Midrange Checklist, critical items line 1 and 5",
+  "title_en": null,
+  "issue_date": "14-1-2022",
+  "line": "1",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "060_CeDo123.pdf"
+  ],
+  "md_path": "docs/plant/swi/FORM-007__060_CeDo123.md",
+  "summary": "FORM, 14-1-2022"
+ },
+ {
+  "swi_id": "Cedo-PROD-FORM-008",
+  "title_nl": "Midrange Checklist, critical items line 3",
+  "title_en": null,
+  "issue_date": "14-1-2022",
+  "line": "3",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "168_CeDo122.pdf"
+  ],
+  "md_path": "docs/plant/swi/FORM-008__168_CeDo122.md",
+  "summary": "FORM, 14-1-2022"
+ },
+ {
+  "swi_id": "Cedo-PROD-FORM-012",
+  "title_nl": "Eerste lijns onderhouds werkzaamheden lijn 1",
+  "title_en": "First-line (operator-level) maintenance tasks, line 1",
+  "issue_date": "14-1-2022",
+  "line": "1",
+  "scope": "The complete operator first-line maintenance walkdown for line 1 — a section-by-section cleaning/inspection checklist. This is the single best plant-topology document in this batch: it lists every major machine/section of line 1 in order.",
+  "references": null,
+  "source_files": [
+   "362_CeDo119.pdf"
+  ],
+  "md_path": "docs/plant/swi/FORM-012-eerste-lijns-onderhoud-lijn1__362_CeDo119.md",
+  "summary": "FORM, 14-1-2022: First-line (operator-level) maintenance tasks, line 1"
+ },
+ {
+  "swi_id": "Cedo-PROD-FORM-018",
+  "title_nl": "Lijn 3A & B grote stop week 16 2021 schoonmaaklijst",
+  "title_en": "Line 3A & B big-stop week 16 2021 cleaning list",
+  "issue_date": "14-1-2022",
+  "line": "3A/3B",
+  "scope": "Deep-clean checklist for wash lines 3A & 3B during a major shutdown",
+  "references": null,
+  "source_files": [
+   "064_CeDo120.pdf",
+   "084_CeDo121.pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/FORM-018__064_CeDo120.md",
+   "docs/plant/swi/FORM-018_p2__084_CeDo121.md"
+  ],
+  "summary": "FORM, 14-1-2022, 2 digest pages: Line 3A & B big-stop week 16 2021 cleaning list"
+ },
+ {
+  "swi_id": "Cedo-PROD-FORM-023",
+  "title_nl": "Dagelijkse controle voertuig",
+  "title_en": null,
+  "issue_date": "25-10-2022",
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "170_CeDo124.pdf"
+  ],
+  "md_path": "docs/plant/swi/FORM-023__170_CeDo124.md",
+  "summary": "FORM, 25-10-2022"
+ },
+ {
+  "swi_id": "Cedo-QESH-PLD-007",
+  "title_nl": "Instructie Boek",
+  "title_en": "Safety instruction handbook (Gouden Regels, PBM, LOTOTO, hoogwerker, heftruck, besloten ruimte, brand)",
+  "issue_date": "17-5-2022",
+  "line": "general",
+  "scope": "Continuation of Sectie 6 Hoogwerker (MEWP) from p9 — golden-rules tail, weather/heat restrictions, fall protection, general prohibitions, operating instructions.",
+  "references": "QESH-PLD-007 series (p9 = 306_CeDo96). Fills page 10. ; QESH-PLD-007 series. Fills page 14. ; QESH-PLD-007 series. Fills page 18. ; QESH-PLD-007 series. Fills page 2. (Note: existing QESH-PLD-007_p1 = 080_CeDo88; this is the distinct p2.) ; Cedo-QESH-PLD-007 Instructie Boek (32 pp). Note: distinct from existing QESH-PLD-007_p6__086_CeDo93 and _p9__306_CeDo96. ; Cedo-QESH-PLD-007 Instructie Boek (32 pp); direct continuation of _p7__378_CeDo94 (TRKV rule). ; QESH-PLD-007 series (many pages already digested: p1,p3–p6,p11–p13,p15–p17,p19,p21,p23,p25–p27,p29,p31). This fills page 9.",
+  "source_files": [
+   "302_CeDo111.pdf",
+   "301_CeDo115.pdf",
+   "299_CeDo117.pdf",
+   "313_CeDo97.pdf",
+   "071_CeDo98.pdf",
+   "082_CeDo99.pdf",
+   "070_CeDo100.pdf",
+   "310_CeDo101.pdf",
+   "059_CeDo102.pdf",
+   "083_CeDo103.pdf",
+   "076_CeDo104.pdf",
+   "312_CeDo105.pdf",
+   "075_CeDo106.pdf",
+   "080_CeDo88.pdf",
+   "375_CeDo107.pdf",
+   "072_CeDo108.pdf",
+   "315_CeDo109.pdf",
+   "077_CeDo110.pdf",
+   "079_CeDo112.pdf",
+   "081_CeDo113.pdf",
+   "073_CeDo114.pdf",
+   "078_CeDo116.pdf",
+   "314_CeDo89.pdf",
+   "068_CeDo118.pdf",
+   "069_CeDo90.pdf",
+   "085_CeDo91.pdf",
+   "074_CeDo92.pdf",
+   "086_CeDo93.pdf",
+   "378_CeDo94.pdf",
+   "379_CeDo95.pdf",
+   "306_CeDo96.pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/QESH-PLD-007-p24-goudenregels3-beslotenruimte__302_CeDo111.md",
+   "docs/plant/swi/QESH-PLD-007-p28-goudenregels-LOTOTO__301_CeDo115.md",
+   "docs/plant/swi/QESH-PLD-007-p30__299_CeDo117.md",
+   "docs/plant/swi/QESH-PLD-007_p10__313_CeDo97.md",
+   "docs/plant/swi/QESH-PLD-007_p11__071_CeDo98.md",
+   "docs/plant/swi/QESH-PLD-007_p12__082_CeDo99.md",
+   "docs/plant/swi/QESH-PLD-007_p13__070_CeDo100.md",
+   "docs/plant/swi/QESH-PLD-007_p14__310_CeDo101.md",
+   "docs/plant/swi/QESH-PLD-007_p15__059_CeDo102.md",
+   "docs/plant/swi/QESH-PLD-007_p16__083_CeDo103.md",
+   "docs/plant/swi/QESH-PLD-007_p17__076_CeDo104.md",
+   "docs/plant/swi/QESH-PLD-007_p18__312_CeDo105.md",
+   "docs/plant/swi/QESH-PLD-007_p19__075_CeDo106.md",
+   "docs/plant/swi/QESH-PLD-007_p1__080_CeDo88.md",
+   "docs/plant/swi/QESH-PLD-007_p20__375_CeDo107.md",
+   "docs/plant/swi/QESH-PLD-007_p21__072_CeDo108.md",
+   "docs/plant/swi/QESH-PLD-007_p22__315_CeDo109.md",
+   "docs/plant/swi/QESH-PLD-007_p23__077_CeDo110.md",
+   "docs/plant/swi/QESH-PLD-007_p25__079_CeDo112.md",
+   "docs/plant/swi/QESH-PLD-007_p26__081_CeDo113.md",
+   "docs/plant/swi/QESH-PLD-007_p27__073_CeDo114.md",
+   "docs/plant/swi/QESH-PLD-007_p29__078_CeDo116.md",
+   "docs/plant/swi/QESH-PLD-007_p2__314_CeDo89.md",
+   "docs/plant/swi/QESH-PLD-007_p31__068_CeDo118.md",
+   "docs/plant/swi/QESH-PLD-007_p3__069_CeDo90.md",
+   "docs/plant/swi/QESH-PLD-007_p4__085_CeDo91.md",
+   "docs/plant/swi/QESH-PLD-007_p5__074_CeDo92.md",
+   "docs/plant/swi/QESH-PLD-007_p6__086_CeDo93.md",
+   "docs/plant/swi/QESH-PLD-007_p7__378_CeDo94.md",
+   "docs/plant/swi/QESH-PLD-007_p8__379_CeDo95.md",
+   "docs/plant/swi/QESH-PLD-007_p9__306_CeDo96.md"
+  ],
+  "summary": "QESH handbook, 17-5-2022, 31 digest pages: Safety instruction handbook (Gouden Regels, PBM, LOTOTO, hoogwerker, heftruck, besloten ruimte, brand)"
+ },
+ {
+  "swi_id": "OTHER:BLANK-scan-artefact",
+  "title_nl": "BLANK / scan artefact — no readable content",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "336_CeDo100 (2).pdf",
+   "364_CeDo17 (2).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/BLANK-scan-artefact__336_CeDo100_2.md",
+   "docs/plant/swi/BLANK-scan-artefact__364_CeDo17_2.md"
+  ],
+  "summary": "reference, 2 digest pages"
+ },
+ {
+  "swi_id": "OTHER:DIAG-blauwe-watertank",
+  "title_nl": "Diagram — Blauwe watertank (blue water tank) connections (photo)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "3A/3B",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "232_CeDo138.pdf"
+  ],
+  "md_path": "docs/plant/swi/DIAG-blauwe-watertank__232_CeDo138.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:EREMA-air-flush-module",
+  "title_nl": "EREMA reference — \"Air Flush Module — Why necessary?\" (sauna effect)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "175_CeDo58.pdf"
+  ],
+  "md_path": "docs/plant/swi/EREMA-air-flush-module__175_CeDo58.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:EREMA-brochure-INTAREMA-built-to-perform-image",
+  "title_nl": "EREMA BROCHURE — INTAREMA® \"Built to perform\" (image brochure)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "Marketing overview of the INTAREMA® platform (the extruder family CeDo runs). No throughput table in this one (that's in the TVEplus brochure 352). Value here = the standard control-system feature list and the standby/automation behaviour relevant to modelling line auto-behaviour in the sim.",
+  "references": null,
+  "source_files": [
+   "353_intarema_image_08_2022_en.pdf"
+  ],
+  "md_path": "docs/plant/swi/EREMA-brochure-INTAREMA-built-to-perform-image__353_intarema_image_08_2022_en.md",
+  "summary": "reference: Marketing overview of the INTAREMA® platform (the extruder family CeDo runs). No throughput table in this one (that's in the TVEplus brochure 352). Value here ="
+ },
+ {
+  "swi_id": "OTHER:EREMA-brochure-INTAREMA-TVEplus-throughput-tables",
+  "title_nl": "EREMA BROCHURE — INTAREMA® TVEplus® (Recycling system with high-performance degassing)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "The INTAREMA® TVEplus® extruder family — the machine family CeDo Geleen runs on the extrusion lines. TVEplus = melt filtration UPSTREAM of extruder degassing. Contains the throughput capacity tables (kg/h) — the single most important data for Q9/Q21.",
+  "references": null,
+  "source_files": [
+   "352_intarema_tveplus_2024_11_en.pdf"
+  ],
+  "md_path": "docs/plant/swi/EREMA-brochure-INTAREMA-TVEplus-throughput-tables__352_intarema_tveplus_2024_11_en.md",
+  "summary": "reference: The INTAREMA® TVEplus® extruder family — the machine family CeDo Geleen runs on the extrusion lines. TVEplus = melt filtration UPSTREAM of extruder degassing. C"
+ },
+ {
+  "swi_id": "OTHER:EREMA-compactor-PCU",
+  "title_nl": "EREMA reference — \"Compactor – het hart van het Erema systeem\" (PCU explainer)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "171_CeDo52.pdf"
+  ],
+  "md_path": "docs/plant/swi/EREMA-compactor-PCU__171_CeDo52.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:EREMA-compactor-PCU-functie-bulkdichtheid",
+  "title_nl": "EREMA Compactor (PCU) — Functie & Bulkdichtheid tabel",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "Compactor stage on extruder line(s) (PCU feeds extruder screw)",
+  "references": null,
+  "source_files": [
+   "181_CeDo54.pdf"
+  ],
+  "md_path": "docs/plant/swi/EREMA-compactor-PCU-functie-bulkdichtheid__181_CeDo54.md",
+  "summary": "reference: Compactor stage on extruder line(s) (PCU feeds extruder screw)"
+ },
+ {
+  "swi_id": "OTHER:EREMA-compactor-temperatuur-circulatie",
+  "title_nl": "EREMA reference — Compactor temperatuur & materiaalcirculatie (afb. 87)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "176_CeDo56.pdf"
+  ],
+  "md_path": "docs/plant/swi/EREMA-compactor-temperatuur-circulatie__176_CeDo56.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:EREMA-compactor-vaste-messen-demonteren-naslijpen",
+  "title_nl": "Demonteren, monteren en afstellen van vaste messen / Naslijpen van de vaste messen / Scherpe-stompe messen in de Compactor",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "Compactor (EREMA pre-conditioning unit) fixed-knife (*vaste messen*) removal, fitting, adjustment, and regrinding; sharp vs blunt knife effects.",
+  "references": "Fig. 90 (knife/rotor cross-section), Fig. 91 (knife grind geometry), DIN ISO 1302 (surface quality). Part of EREMA compactor knife family (see messen-matrijsplaat, EREMA-compactor-PCU docs).",
+  "source_files": [
+   "305_CeDo64.pdf"
+  ],
+  "md_path": "docs/plant/swi/EREMA-compactor-vaste-messen-demonteren-naslijpen__305_CeDo64.md",
+  "summary": "reference: Compactor (EREMA pre-conditioning unit) fixed-knife (*vaste messen*) removal, fitting, adjustment, and regrinding; sharp vs blunt knife effects."
+ },
+ {
+  "swi_id": "OTHER:EREMA-compactor-waterinjectie",
+  "title_nl": "EREMA reference — \"Invloed van waterinjectie\" & \"Onderdelen voor de waterinjectie\" (Compactor)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "177_CeDo60.pdf"
+  ],
+  "md_path": "docs/plant/swi/EREMA-compactor-waterinjectie__177_CeDo60.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:EREMA-extruderscroef-temp",
+  "title_nl": "EREMA Extruderschroef & Temperatuurprofiel — reference sheet (INTAREMA / TVEplus)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "166_CeDo69.pdf"
+  ],
+  "md_path": "docs/plant/swi/EREMA-extruderscroef-temp__166_CeDo69.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:EREMA-geforceerde-voeding",
+  "title_nl": "EREMA reference — \"Geforceerde voeding\" (forced feed) + energy demand of the Compactor",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "180_CeDo57.pdf"
+  ],
+  "md_path": "docs/plant/swi/EREMA-geforceerde-voeding__180_CeDo57.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:EREMA-korrels-matrijsplaat",
+  "title_nl": "EREMA Pelletising reference — \"Korrels van de hete matrijsplaat tillen\" & \"Transport van de korrels",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "167_CeDo80.pdf"
+  ],
+  "md_path": "docs/plant/swi/EREMA-korrels-matrijsplaat__167_CeDo80.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:EREMA-manual-4.3.7-pelletiseersysteem",
+  "title_nl": "EREMA Operating Manual §4.3.7 — Pelletiseersysteem (HMI screen)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "169_CeDo84.pdf"
+  ],
+  "md_path": "docs/plant/swi/EREMA-manual-4.3.7-pelletiseersysteem__169_CeDo84.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:EREMA-manual-5.3.2-instelprocedure",
+  "title_nl": "EREMA Operating Manual §5.3.2 — Instelprocedure (Compactor kW vs output chart, Fig. 88)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "179_CeDo55.pdf"
+  ],
+  "md_path": "docs/plant/swi/EREMA-manual-5.3.2-instelprocedure__179_CeDo55.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:EREMA-manual-5.3.3-ingangsschuifregelaar-PCU",
+  "title_nl": "De ingangsschuifregelaar instellen in de PCU",
+  "title_en": "Setting the infeed-slider regulator (*ingangsschuifregelaar* / *invoerschuif* = infeed slider) in the PCU (Process Control Unit)",
+  "issue_date": null,
+  "line": "general",
+  "scope": "How the infeed slider between cutter-compactor and extruder screw controls material intake; adjust to material type to avoid overfeeding the extruder screw.",
+  "references": "Fig. 89 \"Compactor – invoerschijf\"; complements EREMA-manual-5.3.2-instelprocedure and EREMA-geforceerde-voeding; PCU family (EREMA-compactor-PCU).",
+  "source_files": [
+   "308_CeDo67.pdf"
+  ],
+  "md_path": "docs/plant/swi/EREMA-manual-5.3.3-ingangsschuifregelaar-PCU__308_CeDo67.md",
+  "summary": "reference: Setting the infeed-slider regulator (*ingangsschuifregelaar* / *invoerschuif* = infeed slider) in the PCU (Process Control Unit)"
+ },
+ {
+  "swi_id": "OTHER:EREMA-manual-laserfilter-HMI-M1speed-load-MFZ1",
+  "title_nl": "Laserfilter motor speed / motor load / temperatuur zone MF-Z1 (HMI field descriptions)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "EREMA touchscreen fields for the laser filter (*Laserfilter* = melt filter with rotating scraper disc, *schraperschijf*). Operator-level HMI.",
+  "references": "EREMA laserfilter family (SWI-074, LF2-406); MF1-Z1/MF1-Z2 temperature zones.",
+  "source_files": [
+   "304_CeDo71.pdf"
+  ],
+  "md_path": "docs/plant/swi/EREMA-manual-laserfilter-HMI-M1speed-load-MFZ1__304_CeDo71.md",
+  "summary": "reference: EREMA touchscreen fields for the laser filter (*Laserfilter* = melt filter with rotating scraper disc, *schraperschijf*). Operator-level HMI."
+ },
+ {
+  "swi_id": "OTHER:EREMA-procesaanpassingen-HMI-overview-1kW-per-10kg",
+  "title_nl": "Mogelijkheden voor procesaanpassingen (Options for process adjustments)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "Which levers the operator has to adjust the EREMA line (feeding setpoint, compactor disc speed, extruder speed, infeed-slider position) + annotated overview HMI mimic.",
+  "references": "EREMA Cutter-Compactor (CC) + extruder overview; overlaps PHOTO-erema-hmi-SV-extruder-livevalues, OTHER-erema-hmi-mimic-SV-compactor-extruder-zones.",
+  "source_files": [
+   "307_CeDo53.pdf"
+  ],
+  "md_path": "docs/plant/swi/EREMA-procesaanpassingen-HMI-overview-1kW-per-10kg__307_CeDo53.md",
+  "summary": "reference: Which levers the operator has to adjust the EREMA line (feeding setpoint, compactor disc speed, extruder speed, infeed-slider position) + annotated overview HMI"
+ },
+ {
+  "swi_id": "OTHER:EREMA-schrapers-schermwissel",
+  "title_nl": "EREMA reference — \"De schrapers zijn belangrijk!\" (scraper wear at screen change)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "178_CeDo73.pdf"
+  ],
+  "md_path": "docs/plant/swi/EREMA-schrapers-schermwissel__178_CeDo73.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:EREMA-TVE-plus-EX-schroefonderdelen-afdichtingsmanchet",
+  "title_nl": "EREMA TVE plus machine — EX schroefonderdelen + afdichtingsmanchet/bus",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "Extruder screw (EX = extrusie-schroef) component breakdown of the TVE plus machine; sealing manchet/bush function",
+  "references": "cilinderstuk 2 (VE-deel), laserfilter / zeefwisselaar (screen-changer)",
+  "source_files": [
+   "363_CeDo68.pdf"
+  ],
+  "md_path": "docs/plant/swi/EREMA-TVE-plus-EX-schroefonderdelen-afdichtingsmanchet__363_CeDo68.md",
+  "summary": "reference: Extruder screw (EX = extrusie-schroef) component breakdown of the TVE plus machine; sealing manchet/bush function"
+ },
+ {
+  "swi_id": "OTHER:extruder-vacuum-ontgassing",
+  "title_nl": "Extruder – Vacuüm ontgassingsunit\" + \"Vacuümontgassing",
+  "title_en": "Extruder — Vacuum degassing unit\" + \"Vacuum degassing",
+  "issue_date": null,
+  "line": "3A/3B",
+  "scope": "One machine-spec page describing the EREMA extruder vacuum degassing unit and the water-ring vacuum pump types used. Multiple photos + a pump cutaway. Tabbed binder (yellow/orange/red tabs at right).",
+  "references": null,
+  "source_files": [
+   "067_CeDo70.pdf"
+  ],
+  "md_path": "docs/plant/swi/extruder-vacuum-ontgassing__067_CeDo70.md",
+  "summary": "reference: Extruder — Vacuum degassing unit\" + \"Vacuum degassing"
+ },
+ {
+  "swi_id": "OTHER:FLOW-lijn1-flow-diagram",
+  "title_nl": "Lijn 1 flow diagram",
+  "title_en": null,
+  "issue_date": "11-04-2023",
+  "line": "1",
+  "scope": "full material path of Lijn 1 from metal-detection intake through wash/dry/float to extrusion, laserfilter, pelletizing and storage silo.",
+  "references": null,
+  "source_files": [
+   "239_CeDo125.pdf"
+  ],
+  "md_path": "docs/plant/swi/FLOW-lijn1-flow-diagram__239_CeDo125.md",
+  "summary": "reference, 11-04-2023: full material path of Lijn 1 from metal-detection intake through wash/dry/float to extrusion, laserfilter, pelletizing and storage silo."
+ },
+ {
+  "swi_id": "OTHER:FLOW-lijn1-flow-diagram-incl-waterloops",
+  "title_nl": "Lijn 1 flow diagram inclusief waterloops\" (\"Line 1 flow diagram including water loops\")",
+  "title_en": null,
+  "issue_date": "18-04-2023",
+  "line": "1",
+  "scope": "Full line 1 — infeed/metal detection → shredder → prewash → flotation → drying (Kufferath/MAS) → extrusion/compactor → pelletizing → weighing → MS/LS outdoor silo, PLUS the four water-treatment/supply subsystems and their routing.",
+  "references": null,
+  "source_files": [
+   "244_CeDo126.pdf"
+  ],
+  "md_path": "docs/plant/swi/FLOW-lijn1-flow-diagram-incl-waterloops__244_CeDo126.md",
+  "summary": "reference, 18-04-2023: Full line 1 — infeed/metal detection → shredder → prewash → flotation → drying (Kufferath/MAS) → extrusion/compactor → pelletizing → weighing → MS/LS outdoor si"
+ },
+ {
+  "swi_id": "OTHER:FLOW-lijn3a-flow-diagram",
+  "title_nl": "Lijn 3A flow diagram — 19-04-2023 (DUPLICATE photo of 261)",
+  "title_en": null,
+  "issue_date": "19-04-2023",
+  "line": "3A",
+  "scope": "Full line 3A — vuilsnipper silo → dosing → friction wash → flotation → drying (thermal + mechanical) → mixing silo (Mengsilo) → extrusion/compactor → pelletizing → weighing → MS/LS silo / bigbag station.",
+  "references": null,
+  "source_files": [
+   "262_CeDo132.pdf",
+   "245_CeDo131.pdf",
+   "246_CeDo136.pdf",
+   "261_CeDo130.pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/FLOW-lijn3a-flow-diagram-dup__262_CeDo132.md",
+   "docs/plant/swi/FLOW-lijn3a-flow-diagram__245_CeDo131.md",
+   "docs/plant/swi/FLOW-lijn3a-flow-diagram__246_CeDo136_duplicate.md",
+   "docs/plant/swi/FLOW-lijn3a-flow-diagram__261_CeDo130.md"
+  ],
+  "summary": "reference, 19-04-2023, 4 digest pages: Full line 3A — vuilsnipper silo → dosing → friction wash → flotation → drying (thermal + mechanical) → mixing silo (Mengsilo) → extrusion/compactor → pelletizin"
+ },
+ {
+  "swi_id": "OTHER:FLOW-lijn3a-flow-diagram-incl-waterloops",
+  "title_nl": "Lijn 3a flow diagram\" (\"Line 3a flow diagram\")",
+  "title_en": null,
+  "issue_date": "19-04-2023",
+  "line": "3A",
+  "scope": "The water-inclusive master of the 3A line — same material flow as 245_CeDo131/246_CeDo136 PLUS all water tanks, pumps, and routing. Answers Q1/Q5/Q6/Q7/Q11 for line 3A.",
+  "references": null,
+  "source_files": [
+   "253_CeDo135.pdf"
+  ],
+  "md_path": "docs/plant/swi/FLOW-lijn3a-flow-diagram-incl-waterloops__253_CeDo135.md",
+  "summary": "reference, 19-04-2023: The water-inclusive master of the 3A line — same material flow as 245_CeDo131/246_CeDo136 PLUS all water tanks, pumps, and routing. Answers Q1/Q5/Q6/Q7/Q11 for"
+ },
+ {
+  "swi_id": "OTHER:FLOW-lijn3b-flow-diagram",
+  "title_nl": "Lijn 3b flow diagram\" (\"Line 3b flow diagram\")",
+  "title_en": null,
+  "issue_date": "20-04-2023",
+  "line": "3B",
+  "scope": "Material + drying flow for wash/dry line 3B, from vuilsnipper silo through to MS/LS silo buiten (outside pellet silos)",
+  "references": "Companion to 241_CeDo128 (3B incl. waterloops) and 242_CeDo133 (3B material-only). This is a cleaner/updated variant.",
+  "source_files": [
+   "243_CeDo129.pdf"
+  ],
+  "md_path": "docs/plant/swi/FLOW-lijn3b-flow-diagram-v2__243_CeDo129.md",
+  "summary": "reference, 20-04-2023: Material + drying flow for wash/dry line 3B, from vuilsnipper silo through to MS/LS silo buiten (outside pellet silos)"
+ },
+ {
+  "swi_id": "OTHER:FLOW-lijn3b-flow-diagram-incl-waterloops",
+  "title_nl": "Lijn 3b flow diagram incl waterloops\" (\"Line 3b flow diagram including water loops\")",
+  "title_en": null,
+  "issue_date": "20-04-2023",
+  "line": "3B",
+  "scope": "full Line-3b material path (dry-fed vuilsnipper silo → wash/float/dry → extrude/laserfilter → pelletize → silo) PLUS the wash-water pump/tank loops and cooling/sewer circuits.",
+  "references": null,
+  "source_files": [
+   "241_CeDo128.pdf"
+  ],
+  "md_path": "docs/plant/swi/FLOW-lijn3b-flow-diagram-incl-waterloops__241_CeDo128.md",
+  "summary": "reference, 20-04-2023: full Line-3b material path (dry-fed vuilsnipper silo → wash/float/dry → extrude/laserfilter → pelletize → silo) PLUS the wash-water pump/tank loops and cooling/"
+ },
+ {
+  "swi_id": "OTHER:FLOW-lijn3b-flow-diagram-material-only",
+  "title_nl": "Lijn 3b flow diagram",
+  "title_en": null,
+  "issue_date": "20-04-2023",
+  "line": "3B",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "242_CeDo133.pdf"
+  ],
+  "md_path": "docs/plant/swi/FLOW-lijn3b-flow-diagram-material-only__242_CeDo133.md",
+  "summary": "reference, 20-04-2023"
+ },
+ {
+  "swi_id": "OTHER:FLOW-lijn3b-flow-diagram-waterloops",
+  "title_nl": "Lijn 3B flow diagram incl waterloops — 20-04-2023 (Cedo, official process flowchart)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "3B",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "264_CeDo134.pdf"
+  ],
+  "md_path": "docs/plant/swi/FLOW-lijn3b-flow-diagram-waterloops__264_CeDo134.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:FORM-extruderlijst-lijn3A-blank",
+  "title_nl": "Lijn 3A : Extruder lijst",
+  "title_en": null,
+  "issue_date": null,
+  "line": "3A",
+  "scope": "Lijn 3A extruder — hourly operator log (uur 1..uur 8)",
+  "references": null,
+  "source_files": [
+   "233_CeDo43.pdf"
+  ],
+  "md_path": "docs/plant/swi/FORM-extruderlijst-lijn3A-blank__233_CeDo43.md",
+  "summary": "FORM: Lijn 3A extruder — hourly operator log (uur 1..uur 8)"
+ },
+ {
+  "swi_id": "OTHER:GUIDE-compactor-luchtspoeltechniek-SAS-afzuigsysteem",
+  "title_nl": "GUIDE — Compactor luchtspoeltechniek + SAS afzuigsysteem (Compactor air-flush technique + SAS dust/moisture extraction)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "(1) Compactor air-flush technique = high-pressure blower blowing air into the PCU and flensbol; (2) SAS = dust & moisture extraction system, two sizes with airflow specs.",
+  "references": null,
+  "source_files": [
+   "355_CeDo59.pdf"
+  ],
+  "md_path": "docs/plant/swi/GUIDE-compactor-luchtspoeltechniek-SAS-afzuigsysteem__355_CeDo59.md",
+  "summary": "reference: (1) Compactor air-flush technique = high-pressure blower blowing air into the PCU and flensbol; (2) SAS = dust & moisture extraction system, two sizes with airf"
+ },
+ {
+  "swi_id": "OTHER:GUIDE-compactor-slijtage-schurend-corrosief",
+  "title_nl": "GUIDE — Slijtage (Compactor wear: abrasive + corrosive)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "Types of wear (Slijtage) on the compactor internals.",
+  "references": null,
+  "source_files": [
+   "359_CeDo65.pdf"
+  ],
+  "md_path": "docs/plant/swi/GUIDE-compactor-slijtage-schurend-corrosief__359_CeDo65.md",
+  "summary": "reference: Types of wear (Slijtage) on the compactor internals."
+ },
+ {
+  "swi_id": "OTHER:GUIDE-HDFP-werkingsprincipe-snijproces",
+  "title_nl": "Guide page — HDFP werkingsprincipe + Snijproces (hot-die-face pelletizing principle / cutting process)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "349_CeDo79.pdf"
+  ],
+  "md_path": "docs/plant/swi/GUIDE-HDFP-werkingsprincipe-snijproces__349_CeDo79.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:GUIDE-laserfilter-zeefplaten-reiniging-hergebruik",
+  "title_nl": "Aanbevolen reiniging van Laserfilter-zeefschijven",
+  "title_en": "Recommended cleaning of laser-filter (*Laserfilter*) sieve discs (*zeefschijven* = sieve/screen discs)",
+  "issue_date": null,
+  "line": "general",
+  "scope": "Cleaning procedure + reuse-evaluation criteria for laser-filter sieve plates (*zeefplaten*). Relates to SWI-074 laserfilter-wissel family.",
+  "references": "ties to laser filter (LF2-406) screen-change work instructions; *schrapers* (scrapers), *zeven* (screens).",
+  "source_files": [
+   "303_CeDo75.pdf"
+  ],
+  "md_path": "docs/plant/swi/GUIDE-laserfilter-zeefplaten-reiniging-hergebruik__303_CeDo75.md",
+  "summary": "reference: Recommended cleaning of laser-filter (*Laserfilter*) sieve discs (*zeefschijven* = sieve/screen discs)"
+ },
+ {
+  "swi_id": "OTHER:GUIDE-mes-kop-controleren-rupsband-ondersteuning",
+  "title_nl": "Guide page — Meskop controleren + Zijdelingse ondersteuning rupsband (knife-head check / crawler-track lateral support)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "348_CeDo83.pdf"
+  ],
+  "md_path": "docs/plant/swi/GUIDE-mes-kop-controleren-rupsband-ondersteuning__348_CeDo83.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:GUIDE-messen-messenhouders-schoksensor-PCK",
+  "title_nl": "GUIDE — Messen en messenhouders + Schoksensor eenheid (Compactor knives/holders + shock-sensor unit)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "(1) Messen en messenhouders (knives and knife holders in the Compactor); (2) Schoksensor eenheid (shock-sensor unit, type PCK) — detects metal parts stuck/flying in the Compactor and auto-stops the cutter + screw motors.",
+  "references": null,
+  "source_files": [
+   "356_CeDo61.pdf"
+  ],
+  "md_path": "docs/plant/swi/GUIDE-messen-messenhouders-schoksensor-PCK__356_CeDo61.md",
+  "summary": "reference: (1) Messen en messenhouders (knives and knife holders in the Compactor); (2) Schoksensor eenheid (shock-sensor unit, type PCK) — detects metal parts stuck/flyin"
+ },
+ {
+  "swi_id": "OTHER:GUIDE-messen-slijpen-en-smelttemperatuur-matrijsplaat",
+  "title_nl": "GUIDE — \"Messen slijpen doe je ook met plezier\" + Smelt temperatuur (knife grinding & melt-temperature diagnosis)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "Pelletiser cutting knives — how a worn knife damages the die plate (matrijsplaat); reading melt temperature from strand appearance at the die",
+  "references": null,
+  "source_files": [
+   "372_CeDo85.pdf"
+  ],
+  "md_path": "docs/plant/swi/GUIDE-messen-slijpen-en-smelttemperatuur-matrijsplaat__372_CeDo85.md",
+  "summary": "reference: Pelletiser cutting knives — how a worn knife damages the die plate (matrijsplaat); reading melt temperature from strand appearance at the die"
+ },
+ {
+  "swi_id": "OTHER:GUIDE-slowrunning-of-stopstand-notatie",
+  "title_nl": "Slowrunning of stopstand — how to log downtime/slowrunning (Cedo training sheet)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "263_CeDo137.pdf"
+  ],
+  "md_path": "docs/plant/swi/GUIDE-slowrunning-of-stopstand-notatie__263_CeDo137.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:GUIDE-snijgereedschap-opzet-verschillen-mesconfiguratie",
+  "title_nl": "GUIDE — snijgereedschap \"Opzet verschillen\" (cutter/knife-disc configuration differences)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "Compactor or laserfilter cutting-tool (snijgereedschap) disc setups — how blade layout differs by use-case",
+  "references": null,
+  "source_files": [
+   "367_CeDo62.pdf"
+  ],
+  "md_path": "docs/plant/swi/GUIDE-snijgereedschap-opzet-verschillen-mesconfiguratie__367_CeDo62.md",
+  "summary": "reference: Compactor or laserfilter cutting-tool (snijgereedschap) disc setups — how blade layout differs by use-case"
+ },
+ {
+  "swi_id": "OTHER:GUIDE-snijproces-juiste-contactdruk-matrijsplaat",
+  "title_nl": "contactdruk van het mes op de matrijsplaat (geïllustreerd met een spatel)\" *(contact pressure of the knife on the die plate, illustrated with a spatula.)*",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "350_CeDo81.pdf"
+  ],
+  "md_path": "docs/plant/swi/GUIDE-snijproces-juiste-contactdruk-matrijsplaat__350_CeDo81.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:GUIDE-wasinstallatie-werking-flotatietank",
+  "title_nl": "Wasinstallatie — werking flotatietank",
+  "title_en": "Wash plant — operation of the flotation (float/sink separation) tank",
+  "issue_date": null,
+  "line": "general",
+  "scope": "Explains the LA3 flotation tank in the wash line: film enters via friction screw M3 + inlet paddle; SG (specific gravity) >1.0 sinks to the bottom and is removed to a waste container; surface paddles/scoops (schoepen) push floating film forward; the tank out-screw (uitdraaischroef) transports washed film out of the tank.",
+  "references": null,
+  "source_files": [
+   "360_CeDo83 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/GUIDE-wasinstallatie-werking-flotatietank__360_CeDo83.md",
+  "summary": "reference: Wash plant — operation of the flotation (float/sink separation) tank"
+ },
+ {
+  "swi_id": "OTHER:GUIDE-zeefdrukschijven-evaluatie-hergebruik",
+  "title_nl": "GUIDE — Evaluatie van gebruikte zeefdrukschijven en criteria voor hergebruik",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "Visual criteria for judging whether a used laserfilter zeefdrukschijf (screen/sieve pressure disc — \"screen print disc\") can be reused or must be scrapped.",
+  "references": null,
+  "source_files": [
+   "351_CeDo77.pdf"
+  ],
+  "md_path": "docs/plant/swi/GUIDE-zeefdrukschijven-evaluatie-hergebruik__351_CeDo77.md",
+  "summary": "reference: Visual criteria for judging whether a used laserfilter zeefdrukschijf (screen/sieve pressure disc — \"screen print disc\") can be reused or must be scrapped."
+ },
+ {
+  "swi_id": "OTHER:laserfilter-smeltdrukverschil",
+  "title_nl": "Smeltdrukverschil ΔMP-MF\" (Melt-pressure differential ΔMP-MF)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "One HMI/SCADA reference page describing the melt-filter (smeltfilter / laserfilter) pressure-differential speed control and safety cutout. Tabbed binder (yellow/orange/red index tabs at right).",
+  "references": null,
+  "source_files": [
+   "062_CeDo72.pdf"
+  ],
+  "md_path": "docs/plant/swi/laserfilter-smeltdrukverschil__062_CeDo72.md",
+  "summary": "reference: One HMI/SCADA reference page describing the melt-filter (smeltfilter / laserfilter) pressure-differential speed control and safety cutout. Tabbed binder (yellow"
+ },
+ {
+  "swi_id": "OTHER:LAYOUT-plant-hall-floorplan-hal0-8",
+  "title_nl": "LAYOUT — CeDo Geleen plant hall floor plan (Hal 0–8)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "locates the numbered production halls (Hallen), each line's shredder/wash/extruder equipment, utilities, offices, lab, and the sorting line.",
+  "references": null,
+  "source_files": [
+   "240_CeDo127.pdf"
+  ],
+  "md_path": "docs/plant/swi/LAYOUT-plant-hall-floorplan-hal0-8__240_CeDo127.md",
+  "summary": "reference: locates the numbered production halls (Hallen), each line's shredder/wash/extruder equipment, utilities, offices, lab, and the sorting line."
+ },
+ {
+  "swi_id": "OTHER:messen-matrijsplaat-slijtage",
+  "title_nl": "Resultaten van foutief aangepaste messen\" + \"Hoe het er niet uit moet zien!",
+  "title_en": "Results of incorrectly adjusted knives\" + \"How it should NOT look!",
+  "issue_date": null,
+  "line": "general",
+  "scope": "One maintenance page on the pelletiser hot-cut knife (messen) setting and the wear it causes on the die/matrix plate (matrijsplaat). One line diagram + 2 photos. Tabbed binder (yellow/orange/red tabs at right).",
+  "references": null,
+  "source_files": [
+   "066_CeDo82.pdf"
+  ],
+  "md_path": "docs/plant/swi/messen-matrijsplaat-slijtage__066_CeDo82.md",
+  "summary": "reference: Results of incorrectly adjusted knives\" + \"How it should NOT look!"
+ },
+ {
+  "swi_id": "OTHER:OTHER-erema-bluport-alarmlist-LIJN-3C",
+  "title_nl": "EREMA BluPort HMI — alarm/fault list, panel labeled \"LIJN 3C",
+  "title_en": null,
+  "issue_date": null,
+  "line": "3C",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "187_CeDo87 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/OTHER-erema-bluport-alarmlist-LIJN-3C__187_CeDo87_3.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:OTHER-erema-bluport-modulegrid-LIJN-3C",
+  "title_nl": "EREMA BluPort HMI — module/menu grid, panel labeled \"LIJN 3C",
+  "title_en": null,
+  "issue_date": null,
+  "line": "3C",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "188_CeDo1.pdf"
+  ],
+  "md_path": "docs/plant/swi/OTHER-erema-bluport-modulegrid-LIJN-3C__188_CeDo1.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:OTHER-erema-hmi-bluport-lijn3C",
+  "title_nl": "EREMA BluPort HMI screenshot — LIJN 3C (main overview screen)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "3C",
+  "scope": "Live process values, main extruder+compactor overview mimic",
+  "references": null,
+  "source_files": [
+   "206_CeDo41 (3).pdf",
+   "207_CeDo51 (3).pdf",
+   "208_CeDo50 (3).pdf",
+   "209_CeDo58 (3).pdf",
+   "210_CeDo45 (3).pdf",
+   "211_CeDo49 (3).pdf",
+   "212_CeDo53 (3).pdf",
+   "213_CeDo57 (3).pdf",
+   "214_CeDo61 (3).pdf",
+   "215_CeDo60 (3).pdf",
+   "216_CeDo64 (3).pdf",
+   "219_CeDo22 (3).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/OTHER-erema-hmi-bluport-lijn3C__206_CeDo41_3.md",
+   "docs/plant/swi/OTHER-erema-hmi-bluport-lijn3C__207_CeDo51_3.md",
+   "docs/plant/swi/OTHER-erema-hmi-bluport-lijn3C__208_CeDo50_3.md",
+   "docs/plant/swi/OTHER-erema-hmi-bluport-lijn3C__209_CeDo58_3.md",
+   "docs/plant/swi/OTHER-erema-hmi-bluport-lijn3C__210_CeDo45_3.md",
+   "docs/plant/swi/OTHER-erema-hmi-bluport-lijn3C__211_CeDo49_3.md",
+   "docs/plant/swi/OTHER-erema-hmi-bluport-lijn3C__212_CeDo53_3.md",
+   "docs/plant/swi/OTHER-erema-hmi-bluport-lijn3C__213_CeDo57_3.md",
+   "docs/plant/swi/OTHER-erema-hmi-bluport-lijn3C__214_CeDo61_3.md",
+   "docs/plant/swi/OTHER-erema-hmi-bluport-lijn3C__215_CeDo60_3.md",
+   "docs/plant/swi/OTHER-erema-hmi-bluport-lijn3C__216_CeDo64_3.md",
+   "docs/plant/swi/OTHER-erema-hmi-bluport-lijn3C__219_CeDo22_3.md"
+  ],
+  "summary": "reference, 12 digest pages: Live process values, main extruder+compactor overview mimic"
+ },
+ {
+  "swi_id": "OTHER:OTHER-erema-hmi-bluport-lijn6",
+  "title_nl": "EREMA BluPort HMI screenshot — LIJN 6 overview (testrun recipe, 2-10-2024)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "6",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "220_CeDo25 (3).pdf",
+   "221_CeDo24 (3).pdf",
+   "222_CeDo26 (3).pdf",
+   "223_CeDo69 (3).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/OTHER-erema-hmi-bluport-lijn6__220_CeDo25_3.md",
+   "docs/plant/swi/OTHER-erema-hmi-bluport-lijn6__221_CeDo24_3.md",
+   "docs/plant/swi/OTHER-erema-hmi-bluport-lijn6__222_CeDo26_3.md",
+   "docs/plant/swi/OTHER-erema-hmi-bluport-lijn6__223_CeDo69_3.md"
+  ],
+  "summary": "reference, 4 digest pages"
+ },
+ {
+  "swi_id": "OTHER:OTHER-erema-hmi-lijn3C",
+  "title_nl": "EREMA BluPort HMI screenshot — LIJN 3C (extruder line 3C)",
+  "title_en": null,
+  "issue_date": "2:17:25 21-12-2024",
+  "line": "3C",
+  "scope": "Live process values for extruder line 3C, timestamp 21-12-2024 02:17:25",
+  "references": null,
+  "source_files": [
+   "196_CeDo37 (3).pdf",
+   "197_CeDo48 (3).pdf",
+   "198_CeDo43 (3).pdf",
+   "199_CeDo44 (3).pdf",
+   "200_CeDo55 (3).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/OTHER-erema-hmi-lijn3C__196_CeDo37.md",
+   "docs/plant/swi/OTHER-erema-hmi-lijn3C__197_CeDo48.md",
+   "docs/plant/swi/OTHER-erema-hmi-lijn3C__198_CeDo43.md",
+   "docs/plant/swi/OTHER-erema-hmi-lijn3C__199_CeDo44.md",
+   "docs/plant/swi/OTHER-erema-hmi-lijn3C__200_CeDo55.md"
+  ],
+  "summary": "reference, 2:17:25 21-12-2024, 5 digest pages: Live process values for extruder line 3C, timestamp 21-12-2024 02:17:25"
+ },
+ {
+  "swi_id": "OTHER:OTHER-erema-hmi-mimic-SV-compactor-extruder-zones",
+  "title_nl": "EREMA HMI mimic screen — Schneidverdichter (compactor) + extruder barrel zones",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "185_CeDo88 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/OTHER-erema-hmi-mimic-SV-compactor-extruder-zones__185_CeDo88_3.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:OTHER-erema-hmi-screenshot",
+  "title_nl": "— (operator photo of Erema extruder control screen)",
+  "title_en": "Erema extruder HMI trend/overview screen + hard-key panel",
+  "issue_date": null,
+  "line": "3",
+  "scope": "Line 3 Erema extruder operator HMI. A single photograph of the Erema control-panel touchscreen (blue bezel) showing a live trend graph, process readouts, and the bottom row of physical hard-keys. No instructional text, no step table, no pictogram footer — this is a reference photo, not an SWI procedure page.",
+  "references": null,
+  "source_files": [
+   "165_CeDo66 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/OTHER-erema-hmi-screenshot__165_CeDo66_3.md",
+  "summary": "reference: Erema extruder HMI trend/overview screen + hard-key panel"
+ },
+ {
+  "swi_id": "OTHER:OTHER-erema-hmi-screenshot-live-values",
+  "title_nl": "EREMA HMI screenshot — live process values (extruder line)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "182_CeDo18 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/OTHER-erema-hmi-screenshot-live-values__182_CeDo18_3.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:OTHER-erema-hmi-screenshot-live-values-2",
+  "title_nl": "EREMA HMI screenshot #2 — live process values + throughput bar scale",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "183_CeDo19.pdf"
+  ],
+  "md_path": "docs/plant/swi/OTHER-erema-hmi-screenshot-live-values-2__183_CeDo19.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:OTHER-erema-hmi-screenshot-live-values-3",
+  "title_nl": "EREMA HMI screenshot #3 — live values + specific energy 0,159 kWh/kg",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "184_CeDo20 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/OTHER-erema-hmi-screenshot-live-values-3__184_CeDo20_3.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:OTHER-erema-hmi-trend-graph",
+  "title_nl": "EREMA BluPort HMI screenshot — trend/history graph screen (rotated 90°)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "217_CeDo10 (3).pdf",
+   "218_CeDo11 (3).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/OTHER-erema-hmi-trend-graph__217_CeDo10_3.md",
+   "docs/plant/swi/OTHER-erema-hmi-trend-graph__218_CeDo11_3.md"
+  ],
+  "summary": "reference, 2 digest pages"
+ },
+ {
+  "swi_id": "OTHER:OTHER-training-centrifuge-6b",
+  "title_nl": "De centrifuge",
+  "title_en": "The centrifuge (dryer centrifuge)",
+  "issue_date": null,
+  "line": "general",
+  "scope": "Explains how the centrifuge dries re-granulate and conveys it onward",
+  "references": null,
+  "source_files": [
+   "097_CeDo38.pdf"
+  ],
+  "md_path": "docs/plant/swi/OTHER-training-centrifuge-6b__097_CeDo38.md",
+  "summary": "reference: The centrifuge (dryer centrifuge)"
+ },
+ {
+  "swi_id": "OTHER:OTHER-training-compactor-3",
+  "title_nl": "De Compactor",
+  "title_en": "The compactor (film agglomerator/densifier)",
+  "issue_date": null,
+  "line": "general",
+  "scope": "Explains the RPM/Temperature/Power (KW) balance triangle inside the compactor",
+  "references": null,
+  "source_files": [
+   "099_CeDo30.pdf"
+  ],
+  "md_path": "docs/plant/swi/OTHER-training-compactor-3__099_CeDo30.md",
+  "summary": "reference: The compactor (film agglomerator/densifier)"
+ },
+ {
+  "swi_id": "OTHER:OTHER-training-compactor-3b",
+  "title_nl": "De Compactor",
+  "title_en": "The compactor (film agglomerator/densifier) — cross-section & control",
+  "issue_date": null,
+  "line": "general",
+  "scope": "Purpose of the compactor, the KOUD/EVENWICHT/SMELT temperature-kW ladder, and a labelled schematic",
+  "references": null,
+  "source_files": [
+   "102_CeDo29.pdf"
+  ],
+  "md_path": "docs/plant/swi/OTHER-training-compactor-3b__102_CeDo29.md",
+  "summary": "reference: The compactor (film agglomerator/densifier) — cross-section & control"
+ },
+ {
+  "swi_id": "OTHER:OTHER-training-extruderen-4",
+  "title_nl": "Extruderen",
+  "title_en": "Extruding",
+  "issue_date": null,
+  "line": "general",
+  "scope": "Isometric illustration of the full EREMA extrusion line with the process stations numbered 1-6",
+  "references": null,
+  "source_files": [
+   "105_CeDo25.pdf"
+  ],
+  "md_path": "docs/plant/swi/OTHER-training-extruderen-4__105_CeDo25.md",
+  "summary": "reference: Extruding"
+ },
+ {
+  "swi_id": "OTHER:OTHER-training-extruderschroef-3",
+  "title_nl": "De extruderschroef",
+  "title_en": "The extruder screw",
+  "issue_date": null,
+  "line": "general",
+  "scope": "Full-length labelled diagram of the two-part extruder screw, showing zone layout and laserfilter position",
+  "references": null,
+  "source_files": [
+   "100_CeDo31.pdf"
+  ],
+  "md_path": "docs/plant/swi/OTHER-training-extruderschroef-3__100_CeDo31.md",
+  "summary": "reference: The extruder screw"
+ },
+ {
+  "swi_id": "OTHER:OTHER-training-frictiescheider-M3",
+  "title_nl": "Wasinstallatie — werking frictiescheider M3",
+  "title_en": "Wash installation — operation of friction separator M3",
+  "issue_date": null,
+  "line": "general",
+  "scope": "Labelled diagram + description of the M3 friction separator (frictiescheider) in the wash line",
+  "references": null,
+  "source_files": [
+   "101_CeDo14.pdf"
+  ],
+  "md_path": "docs/plant/swi/OTHER-training-frictiescheider-M3__101_CeDo14.md",
+  "summary": "reference: Wash installation — operation of friction separator M3"
+ },
+ {
+  "swi_id": "OTHER:OTHER-training-heetafslag-6",
+  "title_nl": "De Heetafslag",
+  "title_en": "The hot die-face cutter / hot-cut pelletizer (die-face pelletizer)",
+  "issue_date": null,
+  "line": "general",
+  "scope": "Explains melt pelletizing at the die plate and water-conveyed granulate",
+  "references": null,
+  "source_files": [
+   "098_CeDo36.pdf"
+  ],
+  "md_path": "docs/plant/swi/OTHER-training-heetafslag-6__098_CeDo36.md",
+  "summary": "reference: The hot die-face cutter / hot-cut pelletizer (die-face pelletizer)"
+ },
+ {
+  "swi_id": "OTHER:OTHER-training-ontwaterzeef-6a",
+  "title_nl": "Het ontwaterzeef",
+  "title_en": "The dewatering sieve / drainage screen",
+  "issue_date": null,
+  "line": "general",
+  "scope": "Explains water/re-granulate separation at the dewatering sieve",
+  "references": null,
+  "source_files": [
+   "096_CeDo37.pdf"
+  ],
+  "md_path": "docs/plant/swi/OTHER-training-ontwaterzeef-6a__096_CeDo37.md",
+  "summary": "reference: The dewatering sieve / drainage screen"
+ },
+ {
+  "swi_id": "OTHER:OTHER-training-wasinstallatie-VSM",
+  "title_nl": "De Wasinstallatie — \"ter plekke gaan waarnemen, iedereen maakt een VSM van de flow",
+  "title_en": "The wash installation — \"go observe on-site; everyone makes a VSM (Value Stream Map) of the flow",
+  "issue_date": null,
+  "line": "general",
+  "scope": "Lean training exercise prompt — no process/values on this slide",
+  "references": null,
+  "source_files": [
+   "103_CeDo18.pdf"
+  ],
+  "md_path": "docs/plant/swi/OTHER-training-wasinstallatie-VSM__103_CeDo18.md",
+  "summary": "reference: The wash installation — \"go observe on-site; everyone makes a VSM (Value Stream Map) of the flow"
+ },
+ {
+  "swi_id": "OTHER:OTHER-training-waterontharder",
+  "title_nl": "Water ontharder — \"Water op de heetafslagen",
+  "title_en": "Water softener — water for the hot-cut pelletizers (heetafslagen)",
+  "issue_date": null,
+  "line": "general",
+  "scope": "How the plant's ion-exchange water softeners work (they supply softened water to the granulation/heetafslag circuits)",
+  "references": null,
+  "source_files": [
+   "104_CeDo16.pdf"
+  ],
+  "md_path": "docs/plant/swi/OTHER-training-waterontharder__104_CeDo16.md",
+  "summary": "reference: Water softener — water for the hot-cut pelletizers (heetafslagen)"
+ },
+ {
+  "swi_id": "OTHER:OTHER-waterontharder-werking-RR",
+  "title_nl": "Werking van onze waterontharders — vendor diagram (R&R Dienstverlening & Service)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "Explains two ion-exchange water-softener (waterontharder) configurations. Relevant to plant water treatment / waterontharder referenced elsewhere in training docs (TRAIN-waterontharder__104_CeDo16.md).",
+  "references": null,
+  "source_files": [
+   "255_CeDo84 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/OTHER-waterontharder-werking-RR__255_CeDo84_3.md",
+  "summary": "reference: Explains two ion-exchange water-softener (waterontharder) configurations. Relevant to plant water treatment / waterontharder referenced elsewhere in training do"
+ },
+ {
+  "swi_id": "OTHER:pelletiseer-waterbassin-trilnaald",
+  "title_nl": "two settings on one page — \"Pelletiseersysteem - intervaltijd voor het spoelen van het waterbassin\" and \"Pelletiseersysteem - trilnaald follow-up tijd",
+  "title_en": "Pelletising system — interval time for flushing the water basin\" / \"Pelletising system — vibrating-needle follow-up time",
+  "issue_date": null,
+  "line": "general",
+  "scope": "One HMI reference page (same EREMA-style manual as 062_CeDo72). Tabbed binder (yellow/orange/red tabs at right).",
+  "references": null,
+  "source_files": [
+   "063_CeDo86.pdf"
+  ],
+  "md_path": "docs/plant/swi/pelletiseer-waterbassin-trilnaald__063_CeDo86.md",
+  "summary": "reference: Pelletising system — interval time for flushing the water basin\" / \"Pelletising system — vibrating-needle follow-up time"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-drainage-goot-riool-outlet",
+  "title_nl": "Photo — outdoor drainage channel / pipe outlet (yard / riool infrastructure)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "260_CeDo76 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-drainage-goot-riool-outlet__260_CeDo76_3.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-erema-bluport-hmi-lijn6-testrun-LDPE",
+  "title_nl": "PHOTO — EREMA BluPort HMI, LIJN 6, testrun LDPE (live-values screen)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "6",
+  "scope": "Live-values + trend-graph overview screen during an \"EREMA testrun LDPE 22.02.24\" recipe.",
+  "references": null,
+  "source_files": [
+   "316_CeDo21.pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-erema-bluport-hmi-lijn6-testrun-LDPE__316_CeDo21.md",
+  "summary": "reference: Live-values + trend-graph overview screen during an \"EREMA testrun LDPE 22.02.24\" recipe."
+ },
+ {
+  "swi_id": "OTHER:PHOTO-erema-bluport-hmi-lijn6-testrun-LDPE-2oct",
+  "title_nl": "PHOTO — EREMA BluPort HMI, LIJN 6, testrun LDPE (2-10-2024 01:04, live values)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "6",
+  "scope": "Live-values + trend-graph overview during \"EREMA testrun LDPE 22.02.24\" recipe.",
+  "references": null,
+  "source_files": [
+   "317_CeDo23 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-erema-bluport-hmi-lijn6-testrun-LDPE-2oct__317_CeDo23_3.md",
+  "summary": "reference: Live-values + trend-graph overview during \"EREMA testrun LDPE 22.02.24\" recipe."
+ },
+ {
+  "swi_id": "OTHER:PHOTO-erema-bluport-hmi-lijn6-trend-curvetable",
+  "title_nl": "EREMA BluPort HMI screenshot — LIJN 6 trend + curve table (photo)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "6",
+  "scope": "Lijn 6 EREMA extruder + Preconditioning Unit (PCU/compactor) + smeltfilter (laserfilter)",
+  "references": null,
+  "source_files": [
+   "225_CeDo70 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-erema-bluport-hmi-lijn6-trend-curvetable__225_CeDo70_3.md",
+  "summary": "reference: Lijn 6 EREMA extruder + Preconditioning Unit (PCU/compactor) + smeltfilter (laserfilter)"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-erema-bluport-hmi-lijn6-trend-smeltpomp-LDPE-testrun",
+  "title_nl": "PHOTO — EREMA Bluport HMI trend, LIJN 6, LDPE testrun (smeltpomp toerental + druk)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "6",
+  "scope": "Trend graph of melt-pump (smeltpomp) speed and pressures during an LDPE test run",
+  "references": null,
+  "source_files": [
+   "368_CeDo31 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-erema-bluport-hmi-lijn6-trend-smeltpomp-LDPE-testrun__368_CeDo31_3.md",
+  "summary": "reference: Trend graph of melt-pump (smeltpomp) speed and pressures during an LDPE test run"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-erema-bluport-hmi-trend-kgh-1082",
+  "title_nl": "Photo — EREMA Bluport HMI trend screen (Variabelenaanbinding), 10-04-2024",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "344_CeDo4 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-erema-bluport-hmi-trend-kgh-1082__344_CeDo4_3.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-erema-bluport-hmi-trend-kgh-IBN",
+  "title_nl": "PHOTO — EREMA BluPort HMI trend graph (kg/h, IBN) — frame 2",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "285_CeDo13 (3).pdf",
+   "284_CeDo12 (3).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/PHOTO-erema-bluport-hmi-trend-kgh-IBN-frame2__285_CeDo13_3.md",
+   "docs/plant/swi/PHOTO-erema-bluport-hmi-trend-kgh-IBN__284_CeDo12_3.md"
+  ],
+  "summary": "reference, 2 digest pages"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-erema-bluport-hmi-trend-LDPE-800kgh-IBN",
+  "title_nl": "EREMA BluPort trend curve screen — LDPE 800 kg/h testrun / IBN",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "Single photo of the EREMA BluPort SCADA/HMI trend-graph screen (dark screen, image rotated ~90° so trend curves run vertically). Multiple coloured trend curves against time.",
+  "references": "part of the PHOTO-erema-bluport-hmi-trend series (cf. __344_CeDo4, __345_CeDo7, __284/285 IBN frames, __316/317 lijn6 LDPE testrun). \"IBN\" = Inbedrijfname / commissioning (in-service start).",
+  "source_files": [
+   "377_CeDo9 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-erema-bluport-hmi-trend-LDPE-800kgh-IBN__377_CeDo9_3.md",
+  "summary": "reference: Single photo of the EREMA BluPort SCADA/HMI trend-graph screen (dark screen, image rotated ~90° so trend curves run vertically). Multiple coloured trend curves"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-erema-bluport-hmi-trend-LIJN3B-8curves",
+  "title_nl": "Photo — EREMA Bluport HMI trend, LIJN 3B, 8 curves, 13-05-2024",
+  "title_en": null,
+  "issue_date": null,
+  "line": "3B",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "345_CeDo7 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-erema-bluport-hmi-trend-LIJN3B-8curves__345_CeDo7_3.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-erema-bluport-hmi-trend-smeltpomp-LDPE-testrun",
+  "title_nl": "PHOTO — EREMA BluPort HMI trend graph (Smeltpomp 1 / massadruk, LDPE testrun) — frame 2 (clearer)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "290_CeDo30 (3).pdf",
+   "289_CeDo29 (3).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/PHOTO-erema-bluport-hmi-trend-smeltpomp-LDPE-testrun-frame2__290_CeDo30_3.md",
+   "docs/plant/swi/PHOTO-erema-bluport-hmi-trend-smeltpomp-LDPE-testrun__289_CeDo29_3.md"
+  ],
+  "summary": "reference, 2 digest pages"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-erema-bluport-lijn3C-elektrische-energie-trend",
+  "title_nl": "Elektrische energie +N1 (Electrical energy; \"+N1\" = extruder/module tag)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "3C",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "291_CeDo71 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-erema-bluport-lijn3C-elektrische-energie-trend__291_CeDo71_3.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-erema-bluport-lijn3C-meltpump1-EN",
+  "title_nl": "PHOTO — EREMA BluPort HMI (English), LIJN 3C, Melt pump 1 / Production (frame 2)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "3C",
+  "scope": "Melt pump 1, extruder line 3C",
+  "references": "EREMA BluPort; recipe \"LDPE 600 kg/h 22.04.2024 IBN\" ; EREMA BluPort; recipe \"LDPE 600 kg/h 22.04.2024 …\"",
+  "source_files": [
+   "192_CeDo28 (3).pdf",
+   "191_CeDo27 (3).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/PHOTO-erema-bluport-lijn3C-meltpump1-EN-frame2__192_CeDo28_3.md",
+   "docs/plant/swi/PHOTO-erema-bluport-lijn3C-meltpump1-EN__191_CeDo27_3.md"
+  ],
+  "summary": "reference, 2 digest pages: Melt pump 1, extruder line 3C"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-erema-bluport-lijn3C-overview-pcu-ex1",
+  "title_nl": "PHOTO — EREMA BluPort HMI (Dutch), LIJN 3C, Process overview (PCU / EX1) — frame 2",
+  "title_en": null,
+  "issue_date": null,
+  "line": "3C",
+  "scope": "LIJN 3C intake/compactor (PCU) + extruder EX1 + AIS + trend; LDPE production",
+  "references": "EREMA BluPort; recipe \"LDPE 800 kg/h 22.04.2024 IBN\"",
+  "source_files": [
+   "195_CeDo38 (3).pdf",
+   "201_CeDo42 (3).pdf",
+   "203_CeDo40 (3).pdf",
+   "204_CeDo54 (3).pdf",
+   "205_CeDo52 (3).pdf",
+   "194_CeDo36 (3).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/PHOTO-erema-bluport-lijn3C-overview-pcu-ex1-frame2__195_CeDo38_3.md",
+   "docs/plant/swi/PHOTO-erema-bluport-lijn3C-overview-pcu-ex1-frame3__201_CeDo42_3.md",
+   "docs/plant/swi/PHOTO-erema-bluport-lijn3C-overview-pcu-ex1-frame5__203_CeDo40_3.md",
+   "docs/plant/swi/PHOTO-erema-bluport-lijn3C-overview-pcu-ex1-frame6__204_CeDo54_3.md",
+   "docs/plant/swi/PHOTO-erema-bluport-lijn3C-overview-pcu-ex1-frame7__205_CeDo52_3.md",
+   "docs/plant/swi/PHOTO-erema-bluport-lijn3C-overview-pcu-ex1__194_CeDo36_3.md"
+  ],
+  "summary": "reference, 6 digest pages: LIJN 3C intake/compactor (PCU) + extruder EX1 + AIS + trend; LDPE production"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-erema-bluport-lijn3C-overview-pcu-ex1-frame4-navbar",
+  "title_nl": "PHOTO — EREMA BluPort HMI (Dutch), LIJN 3C, Process overview (PCU / EX1) — frame 4 + nav bar",
+  "title_en": null,
+  "issue_date": null,
+  "line": "3C",
+  "scope": "LIJN 3C intake/compactor (PCU) + extruder EX1 + AIS + trend + panel nav bar",
+  "references": "EREMA BluPort; recipe \"LDPE 800 kg/h 22.04.2024 IBN\"",
+  "source_files": [
+   "202_CeDo39 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-erema-bluport-lijn3C-overview-pcu-ex1-frame4-navbar__202_CeDo39_3.md",
+  "summary": "reference: LIJN 3C intake/compactor (PCU) + extruder EX1 + AIS + trend + panel nav bar"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-erema-bluport-lijn3C-smeltpomp1",
+  "title_nl": "PHOTO — EREMA BluPort HMI (Dutch), LIJN 3C, Smeltpomp 1 / Productie (clear frame)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "3C",
+  "scope": "Melt pump 1, extruder line 3C, LDPE production",
+  "references": "EREMA BluPort; recipe \"LDPE 800 kg/h 22.04.2024 IBN\" ; EREMA BluPort; recipe \"1-14-25 production program rke\"",
+  "source_files": [
+   "193_CeDo59 (3).pdf",
+   "190_CeDo63 (3).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/PHOTO-erema-bluport-lijn3C-smeltpomp1-frame2__193_CeDo59_3.md",
+   "docs/plant/swi/PHOTO-erema-bluport-lijn3C-smeltpomp1__190_CeDo63_3.md"
+  ],
+  "summary": "reference, 2 digest pages: Melt pump 1, extruder line 3C, LDPE production"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-erema-bluport-lijn3C-smeltpomp1-productie",
+  "title_nl": "PHOTO — EREMA BluPort HMI, LIJN 3C, \"Smeltpomp 1\" (melt pump) production screen",
+  "title_en": null,
+  "issue_date": null,
+  "line": "3C",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "295_CeDo62 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-erema-bluport-lijn3C-smeltpomp1-productie__295_CeDo62_3.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-erema-bluport-lijn3C-trend-8curves",
+  "title_nl": "PHOTO — EREMA BluPort HMI, LIJN 3C, 8-curve trend graph + legend table",
+  "title_en": null,
+  "issue_date": null,
+  "line": "3C",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "292_CeDo56 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-erema-bluport-lijn3C-trend-8curves__292_CeDo56_3.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-erema-bluport-lijn3C-trend-8curves-2",
+  "title_nl": "PHOTO — EREMA BluPort HMI, LIJN 3C, 8-curve trend graph + legend (2nd capture)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "3C",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "293_CeDo47 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-erema-bluport-lijn3C-trend-8curves-2__293_CeDo47_3.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-erema-bluport-lijn3C-trend-8curves-3",
+  "title_nl": "PHOTO — EREMA BluPort HMI, LIJN 3C, 8-curve trend (3rd capture, near-dup of 293)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "3C",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "294_CeDo46 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-erema-bluport-lijn3C-trend-8curves-3__294_CeDo46_3.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-erema-bluport-lijn6",
+  "title_nl": "EREMA BluPort SCADA screen — LIJN 6 (photo)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "6",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "226_CeDo68 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-erema-bluport-lijn6__226_CeDo68_3.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-erema-bluport-smeltpomp1-productie-MPU1",
+  "title_nl": "PHOTO — EREMA BluPort HMI: \"Smeltpomp 1 / Productie\" (MPU1, frame 2)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "330_CeDo32 (3).pdf",
+   "329_CeDo33 (3).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/PHOTO-erema-bluport-smeltpomp1-productie-MPU1-frame2__330_CeDo32_3.md",
+   "docs/plant/swi/PHOTO-erema-bluport-smeltpomp1-productie-MPU1__329_CeDo33_3.md"
+  ],
+  "summary": "reference, 2 digest pages"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-erema-bluport-trend-8curves-11aug2024",
+  "title_nl": "PHOTO — EREMA BluPort HMI, 8-curve trend (rotated capture, 11-8-2024)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "297_CeDo14 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-erema-bluport-trend-8curves-11aug2024__297_CeDo14_3.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-erema-hmi-bluport-lijn6-testrun",
+  "title_nl": "EREMA HMI screenshot — LIJN 6 testrun LDPE (photo)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "6",
+  "scope": "Lijn 6 (extrusieregeling / EREMA extruder + PCU compactor)",
+  "references": null,
+  "source_files": [
+   "224_CeDo65 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-erema-hmi-bluport-lijn6-testrun__224_CeDo65_3.md",
+  "summary": "reference: Lijn 6 (extrusieregeling / EREMA extruder + PCU compactor)"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-erema-hmi-elektrische-energie-kWh-per-kg",
+  "title_nl": "Actueel benodigde elektrische energie\" (currently required electrical energy)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "328_CeDo17 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-erema-hmi-elektrische-energie-kWh-per-kg__328_CeDo17_3.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-erema-hmi-laserfilter-trend",
+  "title_nl": "PHOTO — EREMA SIMATIC HMI, Laserfilter trend screen",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "Laserfilter (melt filter) monitoring screen — one filter unit (\"1\")",
+  "references": "EREMA laserfilter; SIMATIC HMI",
+  "source_files": [
+   "189_CeDo89 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-erema-hmi-laserfilter-trend__189_CeDo89_3.md",
+  "summary": "reference: Laserfilter (melt filter) monitoring screen — one filter unit (\"1\")"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-erema-hmi-panel-lijn6",
+  "title_nl": "PHOTO — EREMA HMI control panel, LIJN 6 (photo, frame 2 / near-duplicate of 268_CeDo15)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "6",
+  "scope": "Physical EREMA control panel for LIJN 6 (wash-line extruder), close-up of touchscreen HMI + operator control buttons.",
+  "references": null,
+  "source_files": [
+   "269_CeDo86 (3).pdf",
+   "268_CeDo15 (3).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/PHOTO-erema-hmi-panel-lijn6-frame2__269_CeDo86_3.md",
+   "docs/plant/swi/PHOTO-erema-hmi-panel-lijn6__268_CeDo15_3.md"
+  ],
+  "summary": "reference, 2 digest pages: Physical EREMA control panel for LIJN 6 (wash-line extruder), close-up of touchscreen HMI + operator control buttons."
+ },
+ {
+  "swi_id": "OTHER:PHOTO-erema-hmi-SV-extruder-livevalues",
+  "title_nl": "EREMA HMI — SV / extruder live values (frame 2, Dutch, screen photo)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "258_CeDo6 (3).pdf",
+   "257_CeDo5 (3).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/PHOTO-erema-hmi-SV-extruder-livevalues-frame2__258_CeDo6_3.md",
+   "docs/plant/swi/PHOTO-erema-hmi-SV-extruder-livevalues__257_CeDo5_3.md"
+  ],
+  "summary": "reference, 2 digest pages"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-erema-hmi-trend-graph-live-values",
+  "title_nl": "PHOTO — EREMA HMI trend graph with live values (durchsatz/throughput)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "Live extruder/melt-filter process values + curve legend. Line context = EREMA extruder line (likely 3C laser-filter line, matches other bluport HMI docs).",
+  "references": null,
+  "source_files": [
+   "247_CeDo3.pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-erema-hmi-trend-graph-live-values__247_CeDo3.md",
+  "summary": "reference: Live extruder/melt-filter process values + curve legend. Line context = EREMA extruder line (likely 3C laser-filter line, matches other bluport HMI docs)."
+ },
+ {
+  "swi_id": "OTHER:PHOTO-erema-hmi-trend-graph-SV-vermogen",
+  "title_nl": "PHOTO — EREMA HMI trend graph (SV-vermogen / SV-temperatuur / intrekschuif)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "Live extruder screw (SV) power/temperature + intrekschuif (draw-in slide) trend. EREMA line.",
+  "references": null,
+  "source_files": [
+   "248_CeDo16 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-erema-hmi-trend-graph-SV-vermogen__248_CeDo16_3.md",
+  "summary": "reference: Live extruder screw (SV) power/temperature + intrekschuif (draw-in slide) trend. EREMA line."
+ },
+ {
+  "swi_id": "OTHER:PHOTO-erema-hmi-trend-livevalues-units-1jun2024",
+  "title_nl": "PHOTO — EREMA Bluport HMI trend screen, live values with UNITS (1/06/2024)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "Directly answers Q30 (HMI variable units). Timestamp on screen: 20:09:15 1/06/2024 (trend cursor) and 20:39 1/06/2024 (right edge). Date stamp also bottom-left \"1/06/2024\".",
+  "references": null,
+  "source_files": [
+   "354_CeDo8 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-erema-hmi-trend-livevalues-units-1jun2024__354_CeDo8_3.md",
+  "summary": "reference: Directly answers Q30 (HMI variable units). Timestamp on screen: 20:09:15 1/06/2024 (trend cursor) and 20:39 1/06/2024 (right edge). Date stamp also bottom-left"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-kanaalwater-afsluiter-valve",
+  "title_nl": "PHOTO — Kanaalwater afsluiter (Canal-water shut-off valve)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "A gate/globe valve on a horizontal pipe run, with an engraved metal nameplate identifying it.",
+  "references": null,
+  "source_files": [
+   "361_CeDo75 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-kanaalwater-afsluiter-valve__361_CeDo75.md",
+  "summary": "reference: A gate/globe valve on a horizontal pipe run, with an engraved metal nameplate identifying it."
+ },
+ {
+  "swi_id": "OTHER:PHOTO-LA2-tank-pump",
+  "title_nl": "PHOTO — \"LA2 tank\" (labeled wash-water tank + pump)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "Identifies the physical LA2 tank (a wash-water / flotation-loop tank) and its associated recirculation pump on the wash line.",
+  "references": null,
+  "source_files": [
+   "272_CeDo74 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-LA2-tank-pump__272_CeDo74_3.md",
+  "summary": "reference: Identifies the physical LA2 tank (a wash-water / flotation-loop tank) and its associated recirculation pump on the wash line."
+ },
+ {
+  "swi_id": "OTHER:PHOTO-plant-floor-screwconveyor-washhall",
+  "title_nl": "PHOTO — Plant floor overview, screw-conveyor / wash-hall area (photo, no text)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "Interior of the recycling hall looking across a bank of parallel screw conveyors / dewatering augers toward the wash line and machinery in the background.",
+  "references": null,
+  "source_files": [
+   "270_CeDo67 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-plant-floor-screwconveyor-washhall__270_CeDo67_3.md",
+  "summary": "reference: Interior of the recycling hall looking across a bank of parallel screw conveyors / dewatering augers toward the wash line and machinery in the background."
+ },
+ {
+  "swi_id": "OTHER:PHOTO-qc-lab-weegbench-cedo",
+  "title_nl": "Photo — QC / lab weighing bench (Cedo, in-plant)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "259_CeDo2 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-qc-lab-weegbench-cedo__259_CeDo2_3.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-versleten-compactor-schijf",
+  "title_nl": "PHOTO — \"Versleten Compactor schijf\" (Worn compactor disc) — training binder page",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "Photographic examples of a worn EREMA compactor disc/schijf and its scraper/mixing blades — a maintenance/wear reference to help operators recognize when the compactor disc and blades are worn out and need replacement.",
+  "references": null,
+  "source_files": [
+   "271_CeDo66.pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-versleten-compactor-schijf__271_CeDo66.md",
+  "summary": "reference: Photographic examples of a worn EREMA compactor disc/schijf and its scraper/mixing blades — a maintenance/wear reference to help operators recognize when the co"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-washhall-frictiewasser-cyclone-units",
+  "title_nl": "PHOTO — wash-hall frictiewasser / dewatering + cyclone units (night)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "Wash line — friction washer / mechanical dewatering train with cyclone/blower housings and exhaust stack",
+  "references": null,
+  "source_files": [
+   "365_CeDo35 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-washhall-frictiewasser-cyclone-units__365_CeDo35_3.md",
+  "summary": "reference: Wash line — friction washer / mechanical dewatering train with cyclone/blower housings and exhaust stack"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-washline-frictiewasser-centrifuge",
+  "title_nl": "PHOTO — Wash line: friction washers / mechanical dryer / centrifuge (plant floor)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "186_CeDo34 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-washline-frictiewasser-centrifuge__186_CeDo34_3.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-washline-pump-frame-structure",
+  "title_nl": "PHOTO — wash-line pump & steel-frame structure (untitled plant photo)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "appears to be a wash/water area of a recycling line (ground-floor pump pit)",
+  "references": null,
+  "source_files": [
+   "238_CeDo72 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-washline-pump-frame-structure__238_CeDo72_3.md",
+  "summary": "reference: appears to be a wash/water area of a recycling line (ground-floor pump pit)"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-wasinstallatie-frictiescheider-M3",
+  "title_nl": "Wasinstallatie\" — subtitle \"werking fricktie scheider M3\" [sic: \"fricktie\" = frictie] (Wash installation — operating principle of friction separator M3)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "Explains how a frictiescheider (friction separator) works — the inclined perforated-screen dewatering/washing screw that separates dirty water + contaminants from the film before flotation.",
+  "references": "a frictiescheider is a counter-current dewatering screw — feed (dirty water+film) low end from pump C1, clean film out high end to flotation, dirty water out the bottom screen.",
+  "source_files": [
+   "276_CeDo82 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-wasinstallatie-frictiescheider-M3__276_CeDo82_3.md",
+  "summary": "reference: Explains how a frictiescheider (friction separator) works — the inclined perforated-screen dewatering/washing screw that separates dirty water + contaminants fr"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-wasinstallatie-frictiewasser",
+  "title_nl": "Wasinstallatie\" — subtitle \"werking frictiewasser\" (Wash installation — operating principle of the friction washer / intensive washer)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "Explains how the frictiewasser (friction/intensive washer) works — the twin-shaft paddle wash tank that scrubs the film between paddle shafts and a central separation plate before pushing it on toward the C1 pump and first flotation (LA3).",
+  "references": null,
+  "source_files": [
+   "277_CeDo81 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-wasinstallatie-frictiewasser__277_CeDo81_3.md",
+  "summary": "reference: Explains how the frictiewasser (friction/intensive washer) works — the twin-shaft paddle wash tank that scrubs the film between paddle shafts and a central sepa"
+ },
+ {
+  "swi_id": "OTHER:PHOTO-wasinstallatie-vuilsnippersilo",
+  "title_nl": "Wasinstallatie\" — subtitle \"werking vuilsnippersilo\" (Wash installation — operating principle of the dirty-shred silo)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "3A/3B",
+  "scope": "Explains how the vuilsnippersilo (dirty shredded-film buffer silo, one per line) is fed, keeps material from bridging, and doses it out onto the uittrekschroef → frictiewasser. Shows the silos for Lijn 3B and Lijn 3A side by side.",
+  "references": null,
+  "source_files": [
+   "278_CeDo80 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/PHOTO-wasinstallatie-vuilsnippersilo__278_CeDo80_3.md",
+  "summary": "reference: Explains how the vuilsnippersilo (dirty shredded-film buffer silo, one per line) is fed, keeps material from bridging, and doses it out onto the uittrekschroef"
+ },
+ {
+  "swi_id": "OTHER:REF-roterende-messen-HSS-HM-compactor",
+  "title_nl": "REFERENCE — Roterende messen (rotating cutter knives) HSS vs HM, for the Compactor",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "300_CeDo63.pdf"
+  ],
+  "md_path": "docs/plant/swi/REF-roterende-messen-HSS-HM-compactor__300_CeDo63.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:SCADA-wincc-waslijn-mimic-DE",
+  "title_nl": "SIMATIC WinCC — wash-line SCADA mimic (German labels)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "Full process mimic of the voorwas + wasstraat (pre-wash + wash line) — from Aufgabeband (infeed belt) through shredder, friction separators, washers, to the EREMA end. Highly relevant to Q5 (water routing) and general wash-line topology.",
+  "references": null,
+  "source_files": [
+   "256_CeDo51.pdf"
+  ],
+  "md_path": "docs/plant/swi/SCADA-wincc-waslijn-mimic-DE__256_CeDo51.md",
+  "summary": "reference: Full process mimic of the voorwas + wasstraat (pre-wash + wash line) — from Aufgabeband (infeed belt) through shredder, friction separators, washers, to the ERE"
+ },
+ {
+  "swi_id": "OTHER:schermwissel-FAQ",
+  "title_nl": "Een veel gestelde vraag: Hoe lang duurt de schermwissel?",
+  "title_en": "A frequently asked question: How long does a screen change take?",
+  "issue_date": null,
+  "line": "general",
+  "scope": "Single info page, part of a tabbed binder (yellow/orange/red index tabs visible at right edge). Faint mirror-through bleed of another page's text is visible behind (illegible).",
+  "references": null,
+  "source_files": [
+   "061_CeDo74.pdf"
+  ],
+  "md_path": "docs/plant/swi/schermwissel-FAQ__061_CeDo74.md",
+  "summary": "reference: A frequently asked question: How long does a screen change take?"
+ },
+ {
+  "swi_id": "OTHER:SLIDE-wasinstallatie-VSM-oefening",
+  "title_nl": "De Wasinstallatie (The wash installation / washing line)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "298_CeDo85 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/SLIDE-wasinstallatie-VSM-oefening__298_CeDo85_3.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:steunplaten-schade",
+  "title_nl": "Schade aan de steunplaten\" + \"Beschadiging van steunplaten",
+  "title_en": "Damage to the support plates\" + \"Damage of support plates",
+  "issue_date": null,
+  "line": "general",
+  "scope": "One maintenance/troubleshooting page on corrosion and rust damage to the melt-filter support plates (steunplaten) and screen/sieve plates (zeefplaten / schermplaten). 5 embedded close-up photos. Tabbed binder (yellow/orange/red tabs at right).",
+  "references": null,
+  "source_files": [
+   "065_CeDo78.pdf"
+  ],
+  "md_path": "docs/plant/swi/steunplaten-schade__065_CeDo78.md",
+  "summary": "reference: Damage to the support plates\" + \"Damage of support plates"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-de-compactorband-1",
+  "title_nl": "De Compactorband",
+  "title_en": "The Compactor feed belt",
+  "issue_date": null,
+  "line": "general",
+  "scope": "compactor feed belt on line 1",
+  "references": null,
+  "source_files": [
+   "122_CeDo28.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-de-compactorband-1__122_CeDo28.md",
+  "summary": "reference: The Compactor feed belt"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-de-flow-master-diagram",
+  "title_nl": "De Flow",
+  "title_en": "The Flow (material flow through the wash installation)",
+  "issue_date": null,
+  "line": "general",
+  "scope": "Full block-flow diagram of the entire material path from vuilsnipper silo through wash, drying, mengsilo, extruder+laserfilter, dewatering/centrifuge, weighing, to silo/bigbag. THE key plant-map slide. One large diagram (no photo). Small boxes; some readings tentative.",
+  "references": null,
+  "source_files": [
+   "116_CeDo7.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-de-flow-master-diagram__116_CeDo7.md",
+  "summary": "reference: The Flow (material flow through the wash installation)"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-de-flow-wasinstallatie",
+  "title_nl": "De Flow",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "230_CeDo77 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-de-flow-wasinstallatie__230_CeDo77_3.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-de-kopfilter-p5",
+  "title_nl": "De Kopfilter",
+  "title_en": "The head filter (die-head / screen-pack filter)",
+  "issue_date": null,
+  "line": "general",
+  "scope": "Explains the kopfilter (head/screen-pack filter) — the final melt filtration before pelletizing, using a piston with replaceable filters. Two photos. Related to the \"Kopfilter & smeltslang\" box in the De Flow diagram (116_CeDo7).",
+  "references": "https://www.youtube.com/watch?v=HtjRVhxv1yc",
+  "source_files": [
+   "119_CeDo35.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-de-kopfilter-p5__119_CeDo35.md",
+  "summary": "reference: The head filter (die-head / screen-pack filter)"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-de-laserfilter-3A-typen",
+  "title_nl": "De Laserfilter",
+  "title_en": "The Laser Filter",
+  "issue_date": null,
+  "line": "3A",
+  "scope": "laserfilter = rotary/laser melt filter on extrusion line 3A",
+  "references": null,
+  "source_files": [
+   "121_CeDo33.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-de-laserfilter-3A-typen__121_CeDo33.md",
+  "summary": "reference: The Laser Filter"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-de-vacuum-p4",
+  "title_nl": "De vacuüm",
+  "title_en": "The vacuum (extruder vacuum degassing)",
+  "issue_date": null,
+  "line": "general",
+  "scope": "Explains what the extruder vacuum pump removes from the melt. One slide, one photo (EREMA vacuum unit).",
+  "references": "https://www.youtube.com/watch?v=Yvl5iue0dhw",
+  "source_files": [
+   "120_CeDo34.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-de-vacuum-p4__120_CeDo34.md",
+  "summary": "reference: The vacuum (extruder vacuum degassing)"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-de-wasinstallatie-agenda-flow-La1",
+  "title_nl": "TRAIN — \"De Wasinstallatie\" (title/agenda slide) — flow folie + water circuit 1 (La1)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "Agenda slide introducing the wash-installation flow and water circuit 1",
+  "references": null,
+  "source_files": [
+   "366_CeDo73 (3).pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-de-wasinstallatie-agenda-flow-La1__366_CeDo73_3.md",
+  "summary": "reference: Agenda slide introducing the wash-installation flow and water circuit 1"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-de-wasinstallatie-inputs",
+  "title_nl": "De Wasinstallatie\" (\"The Wash Installation\")",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "Inventory of the inputs/utilities used across the wash installations and each one's purpose.",
+  "references": null,
+  "source_files": [
+   "251_CeDo2.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-de-wasinstallatie-inputs__251_CeDo2.md",
+  "summary": "reference: Inventory of the inputs/utilities used across the wash installations and each one's purpose."
+ },
+ {
+  "swi_id": "OTHER:TRAIN-de-wasinstallatie-watercircuits-agenda",
+  "title_nl": "De Wasinstallatie\" (\"The Wash Installation\")",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "Agenda of the wash-installation module — lists the folie flow + the water circuits to be covered. Photo captioned \"Proceswater\" (process water).",
+  "references": null,
+  "source_files": [
+   "254_CeDo5.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-de-wasinstallatie-watercircuits-agenda__254_CeDo5.md",
+  "summary": "reference: Agenda of the wash-installation module — lists the folie flow + the water circuits to be covered. Photo captioned \"Proceswater\" (process water)."
+ },
+ {
+  "swi_id": "OTHER:TRAIN-de-weegschaal-p6c",
+  "title_nl": "De weegschaal",
+  "title_en": "The weighing scale",
+  "issue_date": null,
+  "line": "general",
+  "scope": "Explains the granulate weighing scale used to measure production, with a SCADA screenshot showing live weight and the batch-valve logic. One slide, one screenshot. HIGH value — has real numbers.",
+  "references": null,
+  "source_files": [
+   "117_CeDo39.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-de-weegschaal-p6c__117_CeDo39.md",
+  "summary": "reference: The weighing scale"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-extruderen-erema-schematic-kopfilter",
+  "title_nl": "Extruderen (\"Extruding\")",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "288_CeDo26.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-extruderen-erema-schematic-kopfilter__288_CeDo26.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-extruderen-p1",
+  "title_nl": "Extruderen",
+  "title_en": "Extruding / Extrusion",
+  "issue_date": null,
+  "line": "general",
+  "scope": "Same EREMA extrusion-train diagram as slide -2-, describing material infeed to the compactor. One slide, one diagram.",
+  "references": null,
+  "source_files": [
+   "107_CeDo22.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-extruderen-p1__107_CeDo22.md",
+  "summary": "reference: Extruding / Extrusion"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-extruderen-p2",
+  "title_nl": "Extruderen",
+  "title_en": "Extruding / Extrusion",
+  "issue_date": null,
+  "line": "general",
+  "scope": "Overview of the EREMA extrusion train (compactor + counter-current + tangential extruder + screen changer + pelletizer). One slide, one photo/diagram.",
+  "references": null,
+  "source_files": [
+   "106_CeDo23.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-extruderen-p2__106_CeDo23.md",
+  "summary": "reference: Extruding / Extrusion"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-extruderen-p3",
+  "title_nl": "Extruderen",
+  "title_en": "Extruding / Extrusion",
+  "issue_date": null,
+  "line": "general",
+  "scope": "Same EREMA extrusion-train diagram; describes material entering the extruder screw and NAMES the laserfilter location. One slide, one diagram.",
+  "references": null,
+  "source_files": [
+   "108_CeDo24.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-extruderen-p3__108_CeDo24.md",
+  "summary": "reference: Extruding / Extrusion"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-extruderen-p6-erema-schematic",
+  "title_nl": "Extruderen _(Extruding)_",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "EREMA counter-current extruder line schematic with numbered callouts 1–6; this slide's caption explains callout -6- (the matrijs / die + heetafslag / hot-face pelletizer)",
+  "references": "part of the TRAIN-extruderen slide series (cf. TRAIN-extruderen-p1/p2/p3, EREMA schematic slides). This is page/callout 6.",
+  "source_files": [
+   "376_CeDo27.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-extruderen-p6-erema-schematic__376_CeDo27.md",
+  "summary": "reference: EREMA counter-current extruder line schematic with numbered callouts 1–6; this slide's caption explains callout -6- (the matrijs / die + heetafslag / hot-face p"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-extruderen-wat-is-extruderen",
+  "title_nl": "Extruderen (\"Extruding\")",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "287_CeDo20.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-extruderen-wat-is-extruderen__287_CeDo20.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-koelingsproces-korrels-slot",
+  "title_nl": "Koelingsproces van de korrels (Cooling process of the pellets)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "Physics of pellet (*korrel*) cooling in the pelletiser water; why cold-shock temperature matters (prevent pellets sticking); thermal-contraction mechanism.",
+  "references": "Companion to pelletiseer/heetafslag training (pelletiseer-waterbassin-trilnaald, OTHER-training-heetafslag-6, EREMA-korrels-matrijsplaat). This is the final slide of a training deck (\"Dank jullie wel... Zijn er nog vragen?\").",
+  "source_files": [
+   "309_CeDo87.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-koelingsproces-korrels-slot__309_CeDo87.md",
+  "summary": "reference: Physics of pellet (*korrel*) cooling in the pelletiser water; why cold-shock temperature matters (prevent pellets sticking); thermal-contraction mechanism."
+ },
+ {
+  "swi_id": "OTHER:TRAIN-laserfilter-p3A",
+  "title_nl": "De Laserfilter",
+  "title_en": "The Laser Filter (rotary melt filter / screen changer)",
+  "issue_date": null,
+  "line": "general",
+  "scope": "Explains the working principle of the laser filter (melt filter). Two photos. HIGH value for laser_filter project + Q15.",
+  "references": "https://www.youtube.com/watch?v=rTRxburRXTc",
+  "source_files": [
+   "112_CeDo32.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-laserfilter-p3A__112_CeDo32.md",
+  "summary": "reference: The Laser Filter (rotary melt filter / screen changer)"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-natriumhypochloriet",
+  "title_nl": "Natriumhypochloriet",
+  "title_en": "Sodium hypochlorite (chlorine)",
+  "issue_date": null,
+  "line": "general",
+  "scope": "Describes the sodium-hypochlorite (chlorine) dosing chemical used in the cooling/process water. One slide, one photo.",
+  "references": null,
+  "source_files": [
+   "118_CeDo17.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-natriumhypochloriet__118_CeDo17.md",
+  "summary": "reference: Sodium hypochlorite (chlorine)"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-schermen-wat-je-niet-moet-doen",
+  "title_nl": "Training slide — \"Wat je niet moet doen met schermen\" (what NOT to do with laserfilter screens)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "343_CeDo76.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-schermen-wat-je-niet-moet-doen__343_CeDo76.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-slot-bedankt",
+  "title_nl": "Bedank voor de aandacht",
+  "title_en": "Thanks for your attention",
+  "issue_date": null,
+  "line": "general",
+  "scope": "deck closer",
+  "references": null,
+  "source_files": [
+   "126_CeDo42.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-slot-bedankt__126_CeDo42.md",
+  "summary": "reference: Thanks for your attention"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-slow-running-definitie-oorzaken",
+  "title_nl": "Wat is dan Slow Running?\" (\"So what is Slow Running?\")",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "Defines slow running vs budget throughput on the extruder; lists possible causes.",
+  "references": null,
+  "source_files": [
+   "249_CeDo46.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-slow-running-definitie-oorzaken__249_CeDo46.md",
+  "summary": "reference: Defines slow running vs budget throughput on the extruder; lists possible causes."
+ },
+ {
+  "swi_id": "OTHER:TRAIN-slow-running-vs-stilstand-titleslide",
+  "title_nl": "Uitleg: Slow Running VS Stilstand\" (\"Explanation: Slow Running VS Downtime/Standstill\")",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "Divider introducing the section that contrasts Slow Running (running below budget speed, yellow loss) vs Stilstand (full stop/downtime, red loss). Precedes/relates to slide 249_CeDo46 (\"Wat is dan Slow Running?\").",
+  "references": null,
+  "source_files": [
+   "250_CeDo44.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-slow-running-vs-stilstand-titleslide__250_CeDo44.md",
+  "summary": "reference: Divider introducing the section that contrasts Slow Running (running below budget speed, yellow loss) vs Stilstand (full stop/downtime, red loss). Precedes/rela"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-stilstand-vs-slowrunning-1200kgh",
+  "title_nl": "Training slide — Verschil tussen Stilstand (Downtime) en Slow Running",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "346_CeDo45.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-stilstand-vs-slowrunning-1200kgh__346_CeDo45.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-stilstand-vs-slowrunning-voorbeeld",
+  "title_nl": "Training slide — \"Voorbeeld\" Stilstand vs Slow Running (with slow-running case)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "347_CeDo47.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-stilstand-vs-slowrunning-voorbeeld__347_CeDo47.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-tonnage-per-grade-locatie",
+  "title_nl": "De tonnage die gemaakt worden",
+  "title_en": "The tonnages that are produced",
+  "issue_date": null,
+  "line": "general",
+  "scope": "product grades L1/L3a/L3b and customer plant destinations Telford / Wroclaw",
+  "references": null,
+  "source_files": [
+   "123_CeDo41.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-tonnage-per-grade-locatie__123_CeDo41.md",
+  "summary": "reference: The tonnages that are produced"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-verdere-verloop-granulaat-silos",
+  "title_nl": "Het verdere verloop",
+  "title_en": "The further course (downstream of the extruder)",
+  "issue_date": null,
+  "line": "general",
+  "scope": "post-extruder pneumatic conveying + silo storage flow",
+  "references": null,
+  "source_files": [
+   "125_CeDo40.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-verdere-verloop-granulaat-silos__125_CeDo40.md",
+  "summary": "reference: The further course (downstream of the extruder)"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-wasinstallatie-flotatietank-LA3",
+  "title_nl": "Wasinstallatie — werking flotatietank",
+  "title_en": "Wash installation — operation of the flotation tank",
+  "issue_date": null,
+  "line": "general",
+  "scope": "flotation tank labelled \"LA3 flotatie tank\"; fed from Frictiescheider M3",
+  "references": null,
+  "source_files": [
+   "127_CeDo15.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-wasinstallatie-flotatietank-LA3__127_CeDo15.md",
+  "summary": "reference: Wash installation — operation of the flotation tank"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-wasinstallatie-flow-folie",
+  "title_nl": "De Wasinstallatie",
+  "title_en": "The Wash Installation",
+  "issue_date": null,
+  "line": "general",
+  "scope": "Section divider slide introducing the film-material flow (\"de flow, circuit van folie\") through the wash installation. Builds on the overview (109_CeDo6). One slide, one photo.",
+  "references": null,
+  "source_files": [
+   "110_CeDo4.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-wasinstallatie-flow-folie__110_CeDo4.md",
+  "summary": "reference: The Wash Installation"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-wasinstallatie-overview",
+  "title_nl": "De Wasinstallatie",
+  "title_en": "The Wash Installation / Washing Plant",
+  "issue_date": null,
+  "line": "general",
+  "scope": "Agenda/overview slide listing the topics of the wash-plant water section: the four water circuits and the sewer. High-value abbreviation key. One slide, one photo.",
+  "references": null,
+  "source_files": [
+   "109_CeDo6.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-wasinstallatie-overview__109_CeDo6.md",
+  "summary": "reference: The Wash Installation / Washing Plant"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-wasinstallatie-vuilsnippersilo-3A-3B",
+  "title_nl": "Wasinstallatie — werking vuilsnippersilo",
+  "title_en": "Wash installation — operation of the dirty-shred silo (vuilsnippersilo)",
+  "issue_date": null,
+  "line": "1/3A/3B",
+  "scope": "3A and 3B (two vuilsnippersilo's shown side by side)",
+  "references": null,
+  "source_files": [
+   "124_CeDo12.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-wasinstallatie-vuilsnippersilo-3A-3B__124_CeDo12.md",
+  "summary": "reference: Wash installation — operation of the dirty-shred silo (vuilsnippersilo)"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-wasinstallatie-werking-frictiewasser",
+  "title_nl": "Wasinstallatie\" — subtitle \"werking frictiewasser\" (\"Wash installation — friction washer operation\")",
+  "title_en": null,
+  "issue_date": null,
+  "line": "general",
+  "scope": "How the friction washer (Frictiewasser) works — twin-chamber scoop-shaft washer fed from vuilsnippersilo + pump P1, discharging via C1 pump to LA3 first flotation.",
+  "references": null,
+  "source_files": [
+   "252_CeDo13.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-wasinstallatie-werking-frictiewasser__252_CeDo13.md",
+  "summary": "reference: How the friction washer (Frictiewasser) works — twin-chamber scoop-shaft washer fed from vuilsnippersilo + pump P1, discharging via C1 pump to LA3 first flotati"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-water-circuit-1-La1-was3a",
+  "title_nl": "Water circuit 1 (La 1) was 3a",
+  "title_en": "Water circuit 1 (La1), wash line 3a",
+  "issue_date": null,
+  "line": "3A",
+  "scope": "Closed-loop cycle diagram of the La1 water circuit on wash line 3a, with 8 numbered stations. VERY high value — resolves Q2 (block C1) and Q11 (La1). One slide, one circular diagram.",
+  "references": null,
+  "source_files": [
+   "115_CeDo8.pdf",
+   "286_CeDo78 (3).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/TRAIN-water-circuit-1-La1-was3a__115_CeDo8.md",
+   "docs/plant/swi/TRAIN-water-circuit-1-La1-was3a__286_CeDo78_3.md"
+  ],
+  "summary": "reference, 2 digest pages: Water circuit 1 (La1), wash line 3a"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-water-circuit-2-La2-was3a",
+  "title_nl": "Water circuit 2 (La 2) was 3a",
+  "title_en": "Water circuit 2 (La2), wash line 3a",
+  "issue_date": null,
+  "line": "3A",
+  "scope": "Closed-loop cycle diagram of the La2 water circuit on wash line 3a, with 5 numbered stations. High value for Q5/Q11. One slide, one circular diagram (no photo).",
+  "references": null,
+  "source_files": [
+   "113_CeDo9.pdf",
+   "229_CeDo79 (3).pdf"
+  ],
+  "md_path": [
+   "docs/plant/swi/TRAIN-water-circuit-2-La2-was3a__113_CeDo9.md",
+   "docs/plant/swi/TRAIN-water-circuit-2-La2-was3a__229_CeDo79_3.md"
+  ],
+  "summary": "reference, 2 digest pages: Water circuit 2 (La2), wash line 3a"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-water-circuit-blauwe-tank",
+  "title_nl": "Water circuit blauwe tank",
+  "title_en": "Water circuit — blue tank",
+  "issue_date": null,
+  "line": "1/3A/3B",
+  "scope": "Full block-flow diagram of the blue-tank (EOP) water distribution network. VERY high value for water-routing questions. One slide, one large diagram (no photo). Faint greyed-out bullet text bleeds through from an underlying slide (see below).",
+  "references": null,
+  "source_files": [
+   "111_CeDo10.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-water-circuit-blauwe-tank__111_CeDo10.md",
+  "summary": "reference: Water circuit — blue tank"
+ },
+ {
+  "swi_id": "OTHER:TRAIN-water-circuit-vers-kanaalwater",
+  "title_nl": "Water circuit vers kanaal water",
+  "title_en": "Water circuit — fresh canal water (= Water circuit 4 \"Schoon\" from the overview 109_CeDo6)",
+  "issue_date": null,
+  "line": "general",
+  "scope": "Cycle diagram of the fresh-canal-water make-up circuit with 4 numbered stations. This is the source of the bleed-through legend seen faintly behind 111_CeDo10. One slide, one circular diagram.",
+  "references": null,
+  "source_files": [
+   "114_CeDo11.pdf"
+  ],
+  "md_path": "docs/plant/swi/TRAIN-water-circuit-vers-kanaalwater__114_CeDo11.md",
+  "summary": "reference: Water circuit — fresh canal water (= Water circuit 4 \"Schoon\" from the overview 109_CeDo6)"
+ },
+ {
+  "swi_id": "OTHER:Werking-Titech-tomra-p1",
+  "title_nl": "Werking Titech tomra\" — Pagina 1 van 3 (TOMRA AUTOSORT with FLYING BEAM, NIR+VIS)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "sorting",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "174_CeDo48.pdf"
+  ],
+  "md_path": "docs/plant/swi/Werking-Titech-tomra-p1__174_CeDo48.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:Werking-Titech-tomra-p2",
+  "title_nl": "Werking Titech tomra\" — Pagina 2 van 3 (AUTOSORT working principle + EM sensor)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "sorting",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "173_CeDo49.pdf"
+  ],
+  "md_path": "docs/plant/swi/Werking-Titech-tomra-p2__173_CeDo49.md",
+  "summary": "reference"
+ },
+ {
+  "swi_id": "OTHER:Werking-Titech-tomra-p3",
+  "title_nl": "Werking Titech tomra\" — Pagina 3 van 3 (TITECH/TOMRA PolySort UHR NIR sorter)",
+  "title_en": null,
+  "issue_date": null,
+  "line": "sorting",
+  "scope": null,
+  "references": null,
+  "source_files": [
+   "172_CeDo50.pdf"
+  ],
+  "md_path": "docs/plant/swi/Werking-Titech-tomra-p3__172_CeDo50.md",
+  "summary": "reference"
+ }
+]
