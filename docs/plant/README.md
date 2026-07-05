@@ -103,8 +103,8 @@ event replay, new percentiles, exact spike timestamps) must go back to the raw C
 Status updated 2026-07-05 after digesting the full 379-PDF SWI/plant-doc corpus into
 `swi/` (see `swi/INDEX.md`). The broader operator open-questions **Q1–Q33** (ZSS, C1,
 water routing, HMI units, throughput, laserfilter zones, etc.) each have a resolved
-status + evidence in **`src/data/plant/question_answers.json`** (15 answered, 16 partial,
-2 unanswered). The seven data-scan items below are updated in place:
+status + evidence in **`src/data/plant/question_answers.json`** (31 answered, 2 partial,
+0 unanswered — operator interview 2026-07-05 resolved 16 more). The seven data-scan items below are updated in place:
 
 1. **TITECH/TOMRA page 3** — **ANSWERED.** The full 3-page "Werking Titech tomra" set is
    now digested (`Werking-Titech-tomra-p1/p2/p3__174/173/172`), incl. the page-3 PolySort
