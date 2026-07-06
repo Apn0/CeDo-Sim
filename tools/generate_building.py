@@ -106,13 +106,33 @@ def wall_x(faces, z, x0, x1, h, y0=0.0):
 def wall_z(faces, x, z0, z1, h, y0=0.0):
     add_box(faces, x - T / 2, y0, z0, x + T / 2, h, z1)
 
-# gabled hall long walls (gable ends: profile trapezoids above the eave line)
+# ── Bay roof profile: ARCHED (barrel / bow-string) ────────────────────────────
+# Operator Google-3D captures (2026-07-06) show the four bays as barrel vaults;
+# the 3DBAG LOD2.2 had flattened them to trapezoids. Circular arc through the
+# measured eave (7.4 m) and crest (10.4 m): chord 30 m, rise 3 m -> R = 39 m.
+ARC_SEGS = 8
+ARC_RISE = CREST - EAVE                      # 3.0 m
+ARC_R = (15.0 ** 2 + ARC_RISE ** 2) / (2.0 * ARC_RISE)   # 39 m
+
+def arc_profile(b0, b1):
+    """[(x, y)] along the arc from eave to eave, ARC_SEGS segments."""
+    cx = (b0 + b1) / 2.0
+    cy = CREST - ARC_R
+    pts = []
+    for i in range(ARC_SEGS + 1):
+        x = b0 + (b1 - b0) * i / ARC_SEGS
+        pts.append((x, cy + math.sqrt(max(0.0, ARC_R * ARC_R - (x - cx) ** 2))))
+    return pts
+
+# gabled hall long walls (arch ends: profile segments above the eave line)
 wall_x(shell_faces, GABLE_Z0, 0.0, 120.0, EAVE)
 wall_x(shell_faces, GABLE_Z1, 0.0, 120.0, EAVE)
 for (b0, b1) in BAYS:
-    trap = [(b0, EAVE), (b1, EAVE), (b1 - CREST_IN, CREST), (b0 + CREST_IN, CREST)]
-    add_prism(shell_faces, trap, GABLE_Z0 - T / 2, GABLE_Z0 + T / 2)
-    add_prism(shell_faces, trap, GABLE_Z1 - T / 2, GABLE_Z1 + T / 2)
+    prof = arc_profile(b0, b1)
+    end_poly = [(b0, EAVE), (b1, EAVE)] + [(x, y) for x, y in reversed(prof)
+                if y > EAVE + 0.01]
+    add_prism(shell_faces, end_poly, GABLE_Z0 - T / 2, GABLE_Z0 + T / 2)
+    add_prism(shell_faces, end_poly, GABLE_Z1 - T / 2, GABLE_Z1 + T / 2)
 # west wall
 wall_z(shell_faces, 0.0, GABLE_Z0, GABLE_Z1, EAVE)
 # east wing: north, east, inner-south walls
@@ -137,10 +157,9 @@ def sloped_slab(faces, x0, y0, x1, y1, z0, z1, th):
     add_prism(faces, poly, z0, z1)
 
 for (b0, b1) in BAYS:
-    sloped_slab(shell_faces, b0, EAVE, b0 + CREST_IN, CREST, GABLE_Z0, GABLE_Z1, RT)
-    sloped_slab(shell_faces, b1 - CREST_IN, CREST, b1, EAVE, GABLE_Z0, GABLE_Z1, RT)
-    add_box(shell_faces, b0 + CREST_IN, CREST, GABLE_Z0,
-            b1 - CREST_IN, CREST + RT, GABLE_Z1)
+    prof = arc_profile(b0, b1)
+    for (xa, ya), (xb, yb) in zip(prof, prof[1:]):
+        sloped_slab(shell_faces, xa, ya, xb, yb, GABLE_Z0, GABLE_Z1, RT)
 add_box(shell_faces, EAST[0], EAST[4], EAST[2], EAST[1], EAST[4] + RT, EAST[3])
 add_box(shell_faces, SE_WING[0], SE_WING[4], SE_WING[2], SE_WING[1], SE_WING[4] + RT, SE_WING[3])
 add_box(shell_faces, ANNEX_W[0], ANNEX_W[4], ANNEX_W[2], ANNEX_W[1], ANNEX_W[4] + RT, ANNEX_W[3])
