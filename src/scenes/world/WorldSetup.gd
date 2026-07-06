@@ -9,10 +9,11 @@ extends Node3D
 ## tool. After Save the user returns to the main menu.
 ##
 
-# Prefer the solidified shell (tools/solidify_building.gd); the raw thin .obj is the
-# fallback. WorldSetup shifts whichever it loads to the local origin for display.
+# Prefer the PARAMETRIC shell (tools/generate_building.py); the raw thin .obj
+# tile is the fallback (still needed for the ~124-building component overlay).
+# CeDo_building_solid.res is retired — stale 3DBAG bake, see BuildingShellLoader.
 const BUILDING_OBJ        := "res://assets/models/CeDo_building.obj"
-const BUILDING_SOLID      := "res://assets/models/CeDo_building_solid.res"
+const BUILDING_SOLID      := "res://assets/models/CeDo_factory_solid.obj"
 const SATELLITE_CACHE     := "user://satellite.png"
 # PDOK Luchtfoto WMS — open Dutch aerial. EPSG:4326 keeps the bbox input simple
 # (paste lat/lon corners straight from Google Maps).
