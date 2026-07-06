@@ -699,13 +699,14 @@ func _spawn_road_and_parking() -> void:
 	# Wide exterior ground plane around the anchor so the player can walk
 	# outside the building without falling into void.
 	_spawn_exterior_ground(anchor, ground_y)
-	# Parking lot — georeferenced from the operator's north-up satellite capture
-	# (site_georeference.json, 2026-07-06): the real lot sits ~130 m local-west
-	# of the building centre, across the internal road (was 25 m — ~105 m short).
+	# Parking lot — operator correction 2026-07-06: staff cars (incl. the red
+	# Swift) park directly in front of the building's SW end wall, ~15-25 m out
+	# on the north half of the west wing. (An earlier georeference pass misread
+	# a far-west rectangle in the satellite close-up as the lot.)
 	# #221-PC Phase 5 — the position is now an operator-tunable PC marker
 	# (WorldLayout.staff_parking / staff_parking_pc), authored in WorldSetup.
-	# When unset, falls back to this georeferenced constant.
-	const PARKING_PC_DEFAULT := Vector2(370.5, 505.5)
+	# When unset, falls back to this constant.
+	const PARKING_PC_DEFAULT := Vector2(456.2, 584.6)
 	var parking_pc : Vector2 = PARKING_PC_DEFAULT
 	if WorldLayout.staff_parking != Vector3.ZERO and WorldLayout.has_pc_data \
 			and WorldLayout.staff_parking_pc != Vector2.ZERO:
@@ -725,10 +726,10 @@ func _spawn_road_and_parking() -> void:
 			anchor.x + parking_world.x,
 			ground_y + 0.02,
 			anchor.z + parking_world.z)
-	# Rows align with the access road they front (~57 deg compass azimuth from
-	# the satellite route trace), not the building (40 deg). Positive yaw is CCW
-	# = decreasing compass azimuth, so subtract the extra 17 deg.
-	staff_parking.rotation.y = by - deg_to_rad(17.0)
+	# Rows run parallel to the SW end wall they front (operator's Google-3D
+	# capture: cars line up along the dock facade) — cross axis of the
+	# building, so a quarter turn off the canonical yaw.
+	staff_parking.rotation.y = by - PI * 0.5
 	_spawn_parking_lamps(staff_parking, ground_y)
 	# Road — De Asselen Kuil — runs along the building's local west edge
 	# (negative local-X), then turns east into the parking aisle.

@@ -284,46 +284,46 @@
    ]
   },
   "staff_parking": {
-   "what": "car parking rows west of the building across the internal road (from close-up image)",
+   "what": "staff parking directly in front of the building's SW end wall (operator correction 2026-07-06: red Swift visible parked there in Google-3D capture; earlier far-west rectangle from the close-up was a misread). Rows parallel to the dock facade.",
    "rd": [
     [
-     183760.9,
-     329295.6
+     183880.2,
+     329204.8
     ],
     [
-     183799.6,
-     329295.6
+     183867.3,
+     329189.5
     ],
     [
-     183799.6,
-     329269.8
+     183852.0,
+     329202.3
     ],
     [
-     183760.9,
-     329269.8
+     183864.8,
+     329217.7
     ]
    ],
    "local_uv": [
     [
-     -91.4,
-     -123.1
+     -84.3,
+     26.6
     ],
     [
-     -66.5,
-     -93.5
+     -104.3,
+     26.6
     ],
     [
-     -86.3,
-     -76.9
+     -104.4,
+     6.6
     ],
     [
-     -111.2,
-     -106.6
+     -84.3,
+     6.5
     ]
    ],
    "centroid_local_uv": [
-    -88.8,
-    -100.0
+    -94.3,
+    16.6
    ]
   }
  }
