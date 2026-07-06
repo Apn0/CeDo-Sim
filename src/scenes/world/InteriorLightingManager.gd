@@ -77,9 +77,12 @@ func _spawn_overhead_lights() -> void:
 		# Fallback: 60×60 m box around player spawn so a dev still sees lights.
 		var p : Vector3 = _world.get("_player_spawn_pos")
 		local_aabb = AABB(Vector3(p.x - 30, 0, p.z - 30), Vector3(60, 8, 60))
-	# Hang the bar 0.4 m under the LOCAL roof so it reads as actually fixed
-	# to the ceiling. The shell's global_transform handles the world Y.
-	var ceil_y_local : float = local_aabb.position.y + local_aabb.size.y - 0.4
+	# Hang the bars under the EAVE line, not the AABB top: the AABB peaks at
+	# the rooftop penthouse (12.4 m) while the arched bays crest at 10.4 m —
+	# anchoring to the AABB floated the whole grid inside the vaults (the
+	# "grid blocking the top of each roof arc" the operator reported).
+	# 6.9 m = 0.5 m under the measured 7.4 m eave, clear of every roof plane.
+	var ceil_y_local : float = local_aabb.position.y + minf(local_aabb.size.y - 0.4, 6.9)
 	var x0 := local_aabb.position.x; var x1 := x0 + local_aabb.size.x
 	var z0 := local_aabb.position.z; var z1 := z0 + local_aabb.size.z
 	var local_footprint := PackedVector2Array([

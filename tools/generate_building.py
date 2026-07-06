@@ -174,23 +174,34 @@ add_box(shell_faces, px0, py0, pz1 - T, px1, py1, pz1)
 add_box(shell_faces, px0, py1, pz0, px1, py1 + RT, pz1)
 
 # ── V-splay columns + valley beams (reference photo) ─────────────────────────
-BEAM_TOP = EAVE - 0.10          # beam tucked under the valley skin
+# Operator corrections 2026-07-06: the V opens ACROSS the valley (each arm
+# carries the arc of one neighbouring hall), and the structure is a massive
+# SOLID timber Y, not two thin sticks. Solid base trunk to the crotch, then
+# two thick arms rising to the underside of each arc. The valley gutter beam
+# rests in the crotch. Timber photo material lands via the `posts` group
+# (TextureKit surface 1 = MaterialPalette.mat_timber_dark, calibrated from
+# the operator's wood-supports photo).
+BEAM_TOP = EAVE - 0.10          # gutter beam tucked under the valley line
 BEAM_H, BEAM_W = 0.55, 0.50
-COL_TOP = BEAM_TOP - BEAM_H     # legs carry the beam soffit
-PED_H = 1.1                     # pedestal
-SPLAY = 1.8                     # leg top offset from centre, along the beam
-LEG_SX, LEG_SZ = 0.24, 0.20
+CROTCH = 2.6                    # top of the solid trunk, arms fork here
+SPLAY = 1.8                     # arm top offset from the valley, across it
+ARM_SX, ARM_SZ = 0.35, 0.26     # arm cross-section (half-extents)
+# arc underside directly above an arm top: bay half-chord 15, x offset SPLAY
+ARM_TOP_Y = (CREST - ARC_R) + math.sqrt(ARC_R ** 2 - (15.0 - SPLAY) ** 2) - 0.15
 
 for vx in VALLEYS:
-    # longitudinal valley beam
-    add_box(post_faces, vx - BEAM_W / 2, COL_TOP, GABLE_Z0 + 0.4,
+    # longitudinal valley gutter beam, resting in the Y crotches
+    add_box(post_faces, vx - BEAM_W / 2, BEAM_TOP - BEAM_H, GABLE_Z0 + 0.4,
             vx + BEAM_W / 2, BEAM_TOP, GABLE_Z1 - 0.4)
     for vz in (6.0, 15.0, 24.0, 33.0, 42.0, 51.0):
-        add_box(post_faces, vx - 0.35, 0.0, vz - 0.35, vx + 0.35, PED_H, vz + 0.35)
-        add_skew_box(post_faces, (vx, PED_H, vz), (vx, COL_TOP, vz - SPLAY),
-                     LEG_SX, LEG_SZ)
-        add_skew_box(post_faces, (vx, PED_H, vz), (vx, COL_TOP, vz + SPLAY),
-                     LEG_SX, LEG_SZ)
+        # solid trunk from the floor to the crotch
+        add_box(post_faces, vx - 0.40, 0.0, vz - ARM_SZ,
+                vx + 0.40, CROTCH, vz + ARM_SZ)
+        # two solid arms fanning ACROSS the valley to the neighbouring arcs
+        add_skew_box(post_faces, (vx, CROTCH - 0.2, vz), (vx - SPLAY, ARM_TOP_Y, vz),
+                     ARM_SX, ARM_SZ)
+        add_skew_box(post_faces, (vx, CROTCH - 0.2, vz), (vx + SPLAY, ARM_TOP_Y, vz),
+                     ARM_SX, ARM_SZ)
 
 # ── Write OBJ (mesh RD frame, shell/posts groups, ASCII only) ────────────────
 def face_normal(pts):
