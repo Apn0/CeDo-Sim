@@ -73,7 +73,7 @@ material_override = SubResource("Mat_floor")
 mesh = SubResource("BoxMesh_floor")
 
 [node name="BuildingShell" type="Node3D" parent="." unique_id=846125031]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -184112.5, -83.49, 329382.28)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -184112.5, -83.02, 329382.28)
 
 [node name="ShellMesh" type="MeshInstance3D" parent="BuildingShell" unique_id=366167826]
 material_override = SubResource("Mat_building")

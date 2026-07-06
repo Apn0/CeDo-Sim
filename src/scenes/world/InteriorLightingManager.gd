@@ -76,28 +76,43 @@ func _spawn_overhead_lights() -> void:
 	var bar_yaw : float = float(_world.call("_world_yaw")) + PI * 0.5
 	# Realistic first pass — one row of 6 under each arc crest, plus rows in
 	# the flat west wing / SE wing / low annex. Operator tunes count later.
-	var spots : Array = []          # Vector3(bf_x, height, bf_z)
+	# Each spot: [bf_x, bar_height, bf_z, roof_underside_height]. The 4th value
+	# drives the mounting rod — the bar hangs from a visible drop rod to the
+	# roof skin instead of floating in mid-air (operator report).
+	var spots : Array = []
 	for bay in range(4):
 		var cx := 15.0 + 30.0 * float(bay)      # bay centreline (arc crest 10.4 m)
 		for i in range(6):
-			spots.append(Vector3(cx, 9.6, 5.0 + 10.2 * float(i)))
+			spots.append([cx, 9.6, 5.0 + 10.2 * float(i), 10.35])
 	for x in [128.0, 143.0]:                     # west wing (flat 7 m roof)
 		for z in [8.0, 16.0, 24.0]:
-			spots.append(Vector3(x, 6.5, z))
+			spots.append([x, 6.5, z, 6.95])
 	for z in [38.0, 46.0, 54.0]:                 # SE wing (7 m roof)
-		spots.append(Vector3(126.0, 6.5, z))
+		spots.append([126.0, 6.5, z, 6.95])
 	for i in range(6):                           # annex (4.6 m roof)
-		spots.append(Vector3(63.0 + 13.0 * float(i), 4.1, 66.0))
+		spots.append([63.0 + 13.0 * float(i), 4.1, 66.0, 4.55])
+	var rod_mat := StandardMaterial3D.new()
+	rod_mat.albedo_color = Color(0.16, 0.16, 0.17)
+	rod_mat.roughness = 0.7
 	var n_built : int = 0
 	for s in spots:
-		var pcv : Vector2 = BF_PC_O + BF_PC_X * s.x + BF_PC_Z * s.z
-		var pos : Vector3 = Plant.pc_to_scene_with_y(pcv, floor_y + s.y)
+		var pcv : Vector2 = BF_PC_O + BF_PC_X * float(s[0]) + BF_PC_Z * float(s[2])
+		var pos : Vector3 = Plant.pc_to_scene_with_y(pcv, floor_y + float(s[1]))
 		_build_overhead_fixture(root, pos)
 		var fixture := root.get_child(root.get_child_count() - 1) as Node3D
 		if fixture != null:
 			fixture.rotation.y = bar_yaw
+			# Mounting rod: thin steel drop from the roof underside to the bar.
+			var rod_len : float = maxf(float(s[3]) - float(s[1]), 0.15)
+			var rod := MeshInstance3D.new()
+			var rb := BoxMesh.new()
+			rb.size = Vector3(0.05, rod_len, 0.05)
+			rod.mesh = rb
+			rod.material_override = rod_mat
+			fixture.add_child(rod)
+			rod.position = Vector3(0.0, 0.12 + rod_len * 0.5, 0.0)
 		n_built += 1
-	print("[InteriorLightingManager] Overhead TL bars: %d placed per-hall (building-frame layout)" % n_built)
+	print("[InteriorLightingManager] Overhead TL bars: %d placed per-hall (building-frame layout, rod-mounted)" % n_built)
 
 ## Build a single TL-bar bay-light fixture (industrial fluorescent troffer).
 ## Operator complaint: "ceiling lights are FLOODLIGHTS, not TL bars".

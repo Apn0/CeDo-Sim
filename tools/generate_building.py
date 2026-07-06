@@ -188,7 +188,7 @@ BEAM_TOP = EAVE - 0.10          # gutter beam tucked under the valley line
 BEAM_H, BEAM_W = 0.55, 0.50
 CROTCH = 2.6                    # top of the solid trunk, arms fork here
 SPLAY = 1.8                     # arm top offset from the valley, across it
-ARM_SX, ARM_SZ = 0.35, 0.26     # arm cross-section (half-extents)
+ARM_SX, ARM_SZ = 0.35, 0.52     # arm cross-section (half-extents; operator: 2x wider)
 # arc underside directly above an arm top: bay half-chord 15, x offset SPLAY
 ARM_TOP_Y = (CREST - ARC_R) + math.sqrt(ARC_R ** 2 - (15.0 - SPLAY) ** 2) - 0.15
 

@@ -102,6 +102,20 @@ func _generate_floor_from_shell(shell_mesh: MeshInstance3D) -> void:
 		push_error("[BuildingShellLoader] TempFloor node missing — cannot install floor"); return
 
 	var top_y : float = floor_y + FLOOR_LIFT_OFFSET
+	# 2026-07-06 — ONE grade for the whole site: the concrete floor top sits
+	# 2 cm above the BUILDING BASE (the parametric shell is anchored with its
+	# base exactly at site grade, where the roads/grass/player feet live).
+	# The area-bucket detection is unreliable on the parametric mesh — the
+	# flat wing roofs out-area the floor and it "detects" the roof as floor
+	# (-2.0), which floated the slab 7 m up. Shell base is unambiguous.
+	if shell_mesh.mesh != null:
+		var aabb : AABB = shell_mesh.mesh.get_aabb()
+		var base_world : float = (shell_mesh.global_transform * aabb.position).y
+		var base_top : float = base_world + 0.02
+		if absf(base_top - top_y) > 0.10:
+			print("[BuildingShellLoader] Floor pinned to shell base %.2f (area-detect said %.2f)"
+				% [base_top, top_y])
+			top_y = base_top
 	floor_node.global_position = Vector3(0.0, top_y - FLOOR_BOX_THICKNESS * 0.5, 0.0)
 	floor_node.global_rotation = Vector3.ZERO
 
