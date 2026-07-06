@@ -84,3 +84,6 @@ scans into single entries, so the machine-readable index is duplicate-free regar
 raw digest files. Removing the 15 redundant + 2 junk **digest** files from `docs/plant/swi/`
 would only tidy the human-readable folder; the source PDFs on `D:/` are the operator's scan
 originals and are left untouched.
+
+## Cross-corpus duplicate (found 2026-07-06, consolidated)
+- `240_CeDo127.pdf` (archive p240) == `CeDo_Simulator_data/floor_plan_edits_needed.pdf` (byte-identical hash). The one and only floor plan in the corpus, digested twice. Canonical digest: `floor_plan_edits.md`; `swi/LAYOUT-plant-hall-floorplan-hal0-8__240_CeDo127.md` is now a pointer.

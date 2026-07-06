@@ -2,6 +2,7 @@
 
 **Bron:** `C:/Users/arnod/Documents/CeDo_Simulator_data/floor_plan_edits_needed.pdf` (1 pagina, liggend; foto van geprinte plattegrond in rode ordner)
 **Extractiedatum:** 2026-07-04
+**Duplicaat:** byte-identiek aan `D:/drive-download-20251124T130330Z-1-001/240_CeDo127.pdf` (archiefpagina 240). Dit bestand is de CANONIEKE digest; `swi/LAYOUT-plant-hall-floorplan-hal0-8__240_CeDo127.md` is een pointer hierheen (geconsolideerd 2026-07-06). Dit is de ENIGE plattegrond in het hele corpus.
 
 **Foto-artefacten (geen inhoud):** ringbandmechaniek boven, oranje tabblad onder, papierstapel-rand boven. Rechtsonder schemert de volgende ordnerpagina door (bleed-through, onleesbaar; vaag cedo-logo) — géén inhoud van deze pagina.
 
@@ -97,3 +98,11 @@ Dus: lijn 5 (noordstrook) én lijn 4 (zuidstrook) hebben elk hun eigen transport
 5. Zijn de **10 cirkels** buiten (2×5) inderdaad het buitensilopark, en wat zit erin (silo-inhoud/functie per silo)?
 6. Is de **Magazijn**-strook onderdeel van Hal 4 of Hal 0?
 7. Geen maten/schaal op de tekening — kloppen de relatieve halbreedtes (Hal 4 ≈ Hal 5 breed, Hal 6 breder, Hal 7 breedst + Hal 8 aanbouw)? Bestaat er een maatvaste tekening?
+
+## 5. Vraag-antwoorden (gemerged uit de archiefdigest, bijgewerkt met interview 2026-07-06)
+
+- **Q10 (blauwe tank):** de blauwe tank staat in **Hal 1**, naast een 8 m³- en 5 m³-tank. Interview-ruling: ~3 m³ extruder-KOELWATER-hub, geen groot procesreservoir.
+- **Q6 / ZSS:** ZSS staat in **Hal 0 én Hal 1**. Interview: ZSS = **Zand-Slib Scheider** (open vraag 2 hierboven is daarmee beantwoord).
+- **Lijn 4/5-nummering (open vraag 1):** interview-ruling — lijn 4 en 5 zijn GESLOOPT; **3C en 6 staan op hun plek**. De tekening toont dus de oude nummering; de hallen-geometrie blijft gezaghebbend.
+- **Geografie-samenvatting (sim-plaatsing):** extruder 1 = Hal 2; extruder 3A = Hal 3; extruder 3B + sorteerlijn 3 + LAB = Hal 7; balenpers = Hal 8; TD-werkplaats = Hal 3; Magazijn = westrand Hal 4/0; Kantoren = zuidoost-aanbouw.
+- Geen doorzet/waarden op de tekening (pure layout).
