@@ -139,8 +139,11 @@ wall_z(shell_faces, 0.0, GABLE_Z0, GABLE_Z1, EAVE)
 wall_x(shell_faces, EAST[2], EAST[0], EAST[1], EAST[4])
 wall_z(shell_faces, EAST[1], EAST[2], EAST[3], EAST[4])
 wall_x(shell_faces, EAST[3], SE_WING[1], EAST[1], EAST[4])       # notch north edge
-# SE wing east wall (continues to annex depth at lower height)
-wall_z(shell_faces, SE_WING[1], SE_WING[2], ANNEX_E[3], SE_WING[4])
+# SE wing west facade (7 m) and annex east end (4.6 m) — SEPARATE heights.
+# One 7 m wall across both left 2.4 m of naked wall sticking above the annex
+# roof next to the parking (operator playtest report).
+wall_z(shell_faces, SE_WING[1], SE_WING[2], ANNEX_E[2], SE_WING[4])
+wall_z(shell_faces, SE_WING[1], ANNEX_E[2], ANNEX_E[3], ANNEX_E[4])
 # spandrel closing the eave step between gabled hall (7.4) and east wings (7.0)
 wall_z(shell_faces, 120.0, GABLE_Z0, GABLE_Z1, EAVE, y0=SE_WING[4] - 0.3)
 # annex south + west step walls
@@ -189,19 +192,37 @@ ARM_SX, ARM_SZ = 0.35, 0.26     # arm cross-section (half-extents)
 # arc underside directly above an arm top: bay half-chord 15, x offset SPLAY
 ARM_TOP_Y = (CREST - ARC_R) + math.sqrt(ARC_R ** 2 - (15.0 - SPLAY) ** 2) - 0.15
 
+# Column cross-section: ONE filled piece, no air between the flanks
+# (operator: "a polygon that has no air inside it"). Flanks flare like a
+# hyperbola — near-vertical at the floor, curving toward horizontal at the
+# roof. half_w(t) interpolates trunk half-width -> full splay with a power
+# curve (t^FLARE_EXP keeps the profile tight low and flares it high).
+TRUNK_HW = 0.42
+TOP_HW = SPLAY + ARM_SX
+FLARE_EXP = 2.6
+FLARE_STEPS = 7
+
+def v_column_slices():
+    """The concave flared profile as a stack of CONVEX trapezoid slices
+    (Godot's OBJ importer fan-triangulates n-gons, which breaks on the
+    concave outline — a slice stack renders identically and stays safe)."""
+    pts = []
+    for i in range(FLARE_STEPS + 1):
+        t = i / FLARE_STEPS
+        pts.append((ARM_TOP_Y * t, TRUNK_HW + (TOP_HW - TRUNK_HW) * (t ** FLARE_EXP)))
+    slices = []
+    for (y0, hw0), (y1, hw1) in zip(pts, pts[1:]):
+        slices.append([(-hw0, y0), (hw0, y0), (hw1, y1), (-hw1, y1)])
+    return slices
+
 for vx in VALLEYS:
-    # longitudinal valley gutter beam, resting in the Y crotches
+    # longitudinal valley gutter beam, resting on the column tops
     add_box(post_faces, vx - BEAM_W / 2, BEAM_TOP - BEAM_H, GABLE_Z0 + 0.4,
             vx + BEAM_W / 2, BEAM_TOP, GABLE_Z1 - 0.4)
     for vz in (6.0, 15.0, 24.0, 33.0, 42.0, 51.0):
-        # solid trunk from the floor to the crotch
-        add_box(post_faces, vx - 0.40, 0.0, vz - ARM_SZ,
-                vx + 0.40, CROTCH, vz + ARM_SZ)
-        # two solid arms fanning ACROSS the valley to the neighbouring arcs
-        add_skew_box(post_faces, (vx, CROTCH - 0.2, vz), (vx - SPLAY, ARM_TOP_Y, vz),
-                     ARM_SX, ARM_SZ)
-        add_skew_box(post_faces, (vx, CROTCH - 0.2, vz), (vx + SPLAY, ARM_TOP_Y, vz),
-                     ARM_SX, ARM_SZ)
+        for sl in v_column_slices():
+            poly = [(vx + dx, y) for dx, y in sl]
+            add_prism(post_faces, poly, vz - ARM_SZ, vz + ARM_SZ)
 
 # ── Write OBJ (mesh RD frame, shell/posts groups, ASCII only) ────────────────
 def face_normal(pts):
