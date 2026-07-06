@@ -219,7 +219,13 @@ for vx in VALLEYS:
     # longitudinal valley gutter beam, resting on the column tops
     add_box(post_faces, vx - BEAM_W / 2, BEAM_TOP - BEAM_H, GABLE_Z0 + 0.4,
             vx + BEAM_W / 2, BEAM_TOP, GABLE_Z1 - 0.4)
-    for vz in (6.0, 15.0, 24.0, 33.0, 42.0, 51.0):
+    # Operator: half the column count, and the end columns sit FLUSH against
+    # the inside faces of the gable-end walls (not buried in them).
+    N_COLS = 3
+    z_first = GABLE_Z0 + T / 2 + ARM_SZ
+    z_last = GABLE_Z1 - T / 2 - ARM_SZ
+    for ci in range(N_COLS):
+        vz = z_first + (z_last - z_first) * ci / (N_COLS - 1)
         for sl in v_column_slices():
             poly = [(vx + dx, y) for dx, y in sl]
             add_prism(post_faces, poly, vz - ARM_SZ, vz + ARM_SZ)
