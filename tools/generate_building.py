@@ -221,7 +221,7 @@ for vx in VALLEYS:
             vx + BEAM_W / 2, BEAM_TOP, GABLE_Z1 - 0.4)
     # Operator: half the column count, and the end columns sit FLUSH against
     # the inside faces of the gable-end walls (not buried in them).
-    N_COLS = 3
+    N_COLS = 4
     z_first = GABLE_Z0 + T / 2 + ARM_SZ
     z_last = GABLE_Z1 - T / 2 - ARM_SZ
     for ci in range(N_COLS):
