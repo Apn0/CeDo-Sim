@@ -42,72 +42,62 @@ func build_all(anchor: Vector3) -> void:
 ## The flashlight is still available for inspecting machinery up close, but
 ## you can now actually see the room without it.
 func _spawn_overhead_lights() -> void:
-	# Bay lights now live in the BUILDING's LOCAL frame: parented under the
-	# ShellMesh so they inherit its transform, gridded along the shell's local
-	# X/Z (long axis = local X), and clipped against the shell's LOCAL AABB
-	# rectangle. This fixes the "ceiling lights floating in the sky outside
-	# the building" complaint that surfaced when the shell carried any yaw —
-	# previously the grid stepped along world X/Z and the AABB-rectangle in/
-	# out test ran in world space too, so the kept cells covered a rotated
-	# bounding rectangle bigger than the building.
-	# Long axis of each TL bar is local +X (matches operator spec).
-	var shell : MeshInstance3D = _world.call("_shell")
-	var parent_node : Node3D = shell if shell != null else (_world as Node3D)
+	# Rebuilt 2026-07-06 (operator request): per-hall placement in the
+	# georeferenced BUILDING FRAME instead of a grid over the shell AABB.
+	# The AABB of the 40-deg-rotated building is a much larger rectangle
+	# than the building itself, so the old 7x7 grid hung bars outside the
+	# walls ("TL bars floating in the yard") and its footprint cull (the
+	# same AABB rectangle) could never reject them.
+	#
+	# Building frame (tools/generate_building.py): origin at the NE corner
+	# of the gabled block, +X toward SW along the long axis (0..150.7),
+	# +Z toward NW across it (0..71.6). The affine below maps it to PC
+	# (derived from the survey georeference); Plant.pc_to_scene_with_y then
+	# lands each bar in the scene with the canonical yaw + anchor applied.
+	# Lighting spawns from _spawn_road_and_parking (early in world build) but
+	# Plant.init() runs later in the same build pass — wait for it. A few
+	# frames at most; bail out after 5 s so a broken init can't hang forever.
+	var waited : int = 0
+	while not (has_node("/root/Plant") and Plant.is_initialized()):
+		waited += 1
+		if waited > 300:
+			push_warning("[InteriorLightingManager] Plant never initialized — overhead lights skipped")
+			return
+		await get_tree().process_frame
 	var root := Node3D.new()
 	root.name = "OverheadLights"
-	parent_node.add_child(root)
-	# WORLD-cluster fix: parent the bay-light grid under a rotation node that
-	# carries `(world_yaw - shell_local_yaw)` so the row direction tracks the
-	# canonical bale-yard yaw even when shell.global_transform already bakes
-	# in a different yaw. Without this the grid was rotated by whatever the
-	# shell's mesh-local axes carry, which disagreed with the operator-drawn
-	# yards. When parent_node IS the shell, `shell_local_yaw` is the yaw
-	# encoded in shell.global_transform; subtracting it lands the grid back
-	# in the canonical frame.
-	var shell_local_yaw : float = 0.0
-	if shell != null:
-		shell_local_yaw = shell.global_transform.basis.get_euler().y
-	var orient_compensation : float = float(_world.call("_world_yaw")) - shell_local_yaw
-	root.rotation.y = orient_compensation
-	# Compute the LOCAL-frame footprint (rectangle in shell's local XZ).
-	var local_aabb : AABB
-	if shell != null and shell.mesh != null:
-		local_aabb = shell.mesh.get_aabb()
-	else:
-		# Fallback: 60×60 m box around player spawn so a dev still sees lights.
-		var p : Vector3 = _world.get("_player_spawn_pos")
-		local_aabb = AABB(Vector3(p.x - 30, 0, p.z - 30), Vector3(60, 8, 60))
-	# Hang the bars under the EAVE line, not the AABB top: the AABB peaks at
-	# the rooftop penthouse (12.4 m) while the arched bays crest at 10.4 m —
-	# anchoring to the AABB floated the whole grid inside the vaults (the
-	# "grid blocking the top of each roof arc" the operator reported).
-	# 6.9 m = 0.5 m under the measured 7.4 m eave, clear of every roof plane.
-	var ceil_y_local : float = local_aabb.position.y + minf(local_aabb.size.y - 0.4, 6.9)
-	var x0 := local_aabb.position.x; var x1 := x0 + local_aabb.size.x
-	var z0 := local_aabb.position.z; var z1 := z0 + local_aabb.size.z
-	var local_footprint := PackedVector2Array([
-		Vector2(x0, z0), Vector2(x1, z0),
-		Vector2(x1, z1), Vector2(x0, z1)])
-	var spacing : float = 18.0
-	var n : int = 7
-	var n_kept : int = 0
-	var n_culled : int = 0
-	var cx := (x0 + x1) * 0.5
-	var cz := (z0 + z1) * 0.5
-	for ix in range(n):
-		for iz in range(n):
-			var fx : float = (float(ix) - float(n - 1) * 0.5) * spacing
-			var fz : float = (float(iz) - float(n - 1) * 0.5) * spacing
-			var px : float = cx + fx
-			var pz : float = cz + fz
-			if not Geometry2D.is_point_in_polygon(Vector2(px, pz), local_footprint):
-				n_culled += 1
-				continue
-			# LOCAL position under the shell. Bar's long axis is local +X.
-			_build_overhead_fixture(root, Vector3(px, ceil_y_local, pz))
-			n_kept += 1
-	print("[InteriorLightingManager] Overhead TL bars: %d kept (shell-local %dx%d grid, %d culled outside footprint)" \
-		% [n_kept, n, n, n_culled])
+	(_world as Node3D).add_child(root)
+	const BF_PC_O := Vector2(573.404, 463.647)   # building-frame origin in PC
+	const BF_PC_X := Vector2(-0.64279, 0.76604)  # PC delta per +1 m building X
+	const BF_PC_Z := Vector2(-0.76604, -0.64279) # PC delta per +1 m building Z
+	var floor_y : float = Plant.pc_to_scene(Vector2(500.0, 500.0)).y
+	# Bar long axis runs along the halls (building Z): local +X rotated a
+	# quarter turn from the canonical yaw.
+	var bar_yaw : float = float(_world.call("_world_yaw")) + PI * 0.5
+	# Realistic first pass — one row of 6 under each arc crest, plus rows in
+	# the flat west wing / SE wing / low annex. Operator tunes count later.
+	var spots : Array = []          # Vector3(bf_x, height, bf_z)
+	for bay in range(4):
+		var cx := 15.0 + 30.0 * float(bay)      # bay centreline (arc crest 10.4 m)
+		for i in range(6):
+			spots.append(Vector3(cx, 9.6, 5.0 + 10.2 * float(i)))
+	for x in [128.0, 143.0]:                     # west wing (flat 7 m roof)
+		for z in [8.0, 16.0, 24.0]:
+			spots.append(Vector3(x, 6.5, z))
+	for z in [38.0, 46.0, 54.0]:                 # SE wing (7 m roof)
+		spots.append(Vector3(126.0, 6.5, z))
+	for i in range(6):                           # annex (4.6 m roof)
+		spots.append(Vector3(63.0 + 13.0 * float(i), 4.1, 66.0))
+	var n_built : int = 0
+	for s in spots:
+		var pcv : Vector2 = BF_PC_O + BF_PC_X * s.x + BF_PC_Z * s.z
+		var pos : Vector3 = Plant.pc_to_scene_with_y(pcv, floor_y + s.y)
+		_build_overhead_fixture(root, pos)
+		var fixture := root.get_child(root.get_child_count() - 1) as Node3D
+		if fixture != null:
+			fixture.rotation.y = bar_yaw
+		n_built += 1
+	print("[InteriorLightingManager] Overhead TL bars: %d placed per-hall (building-frame layout)" % n_built)
 
 ## Build a single TL-bar bay-light fixture (industrial fluorescent troffer).
 ## Operator complaint: "ceiling lights are FLOODLIGHTS, not TL bars".
