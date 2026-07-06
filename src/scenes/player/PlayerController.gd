@@ -1675,7 +1675,11 @@ func _crosshair_context() -> Dictionary:
 	if camera_3d == null:
 		return ctx
 	var from := camera_3d.global_position
-	var to := from - camera_3d.global_transform.basis.z * INTERACT_RAY_RANGE
+	# Feedback tagging ray is deliberately LONG (unlike the interact ray):
+	# the operator aims at a door / wall / feature from anywhere in the yard,
+	# presses F10, and world_point pins it to centimetres.
+	const FEEDBACK_RAY_RANGE := 250.0
+	var to := from - camera_3d.global_transform.basis.z * FEEDBACK_RAY_RANGE
 	var q := PhysicsRayQueryParameters3D.create(from, to)
 	q.collision_mask = 0xFFFFFFFF
 	q.collide_with_areas = true
@@ -1687,6 +1691,11 @@ func _crosshair_context() -> Dictionary:
 	ctx["hit"] = true
 	ctx["world_point"] = _v3_to_arr(hit["position"])
 	ctx["world_normal"] = _v3_to_arr(hit["normal"])
+	# PC coords of the aimed point — same frame as the layout markers, so a
+	# tagged door can be placed without any scene-frame conversion.
+	if has_node("/root/Plant") and Plant.is_initialized():
+		var pcv : Vector2 = Plant.scene_to_pc(hit["position"])
+		ctx["world_point_pc"] = [pcv.x, pcv.y]
 	var collider : Node = hit["collider"]
 	ctx["collider_name"] = collider.name if collider else ""
 	# Climb to the nearest placed_object so the developer gets a stable

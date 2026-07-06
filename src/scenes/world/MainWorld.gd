@@ -699,14 +699,13 @@ func _spawn_road_and_parking() -> void:
 	# Wide exterior ground plane around the anchor so the player can walk
 	# outside the building without falling into void.
 	_spawn_exterior_ground(anchor, ground_y)
-	# Parking lot — operator correction 2026-07-06: staff cars (incl. the red
-	# Swift) park directly in front of the building's SW end wall, ~15-25 m out
-	# on the north half of the west wing. (An earlier georeference pass misread
-	# a far-west rectangle in the satellite close-up as the lot.)
+	# Parking lot — operator-drawn rectangle on the georeferenced site map
+	# (2026-07-06, second correction): the lot sits in the yard NW of the west
+	# wing / west of the annex, by the access-road hook. ~39 x 31 m.
 	# #221-PC Phase 5 — the position is now an operator-tunable PC marker
 	# (WorldLayout.staff_parking / staff_parking_pc), authored in WorldSetup.
 	# When unset, falls back to this constant.
-	const PARKING_PC_DEFAULT := Vector2(456.2, 584.6)
+	const PARKING_PC_DEFAULT := Vector2(418.8, 541.1)
 	var parking_pc : Vector2 = PARKING_PC_DEFAULT
 	if WorldLayout.staff_parking != Vector3.ZERO and WorldLayout.has_pc_data \
 			and WorldLayout.staff_parking_pc != Vector2.ZERO:
@@ -726,10 +725,9 @@ func _spawn_road_and_parking() -> void:
 			anchor.x + parking_world.x,
 			ground_y + 0.02,
 			anchor.z + parking_world.z)
-	# Rows run parallel to the SW end wall they front (operator's Google-3D
-	# capture: cars line up along the dock facade) — cross axis of the
-	# building, so a quarter turn off the canonical yaw.
-	staff_parking.rotation.y = by - PI * 0.5
+	# Operator-drawn lot rectangle runs parallel to the building axes —
+	# canonical yaw.
+	staff_parking.rotation.y = by
 	_spawn_parking_lamps(staff_parking, ground_y)
 	# Road — De Asselen Kuil — runs along the building's local west edge
 	# (negative local-X), then turns east into the parking aisle.

@@ -284,46 +284,46 @@
    ]
   },
   "staff_parking": {
-   "what": "staff parking directly in front of the building's SW end wall (operator correction 2026-07-06: red Swift visible parked there in Google-3D capture; earlier far-west rectangle from the close-up was a misread). Rows parallel to the dock facade.",
+   "what": "staff parking, operator-drawn rectangle on the georeferenced site map (2026-07-06, final): the yard NW of the west wing / west of the annex, by the access-road hook. ~39 x 31 m, edges parallel to the building axes.",
    "rd": [
     [
-     183880.2,
-     329204.8
+     183853.3,
+     329252.1
     ],
     [
-     183867.3,
-     329189.5
+     183828.2,
+     329222.3
     ],
     [
-     183852.0,
-     329202.3
+     183804.5,
+     329242.2
     ],
     [
-     183864.8,
-     329217.7
+     183829.6,
+     329272.1
     ]
    ],
    "local_uv": [
     [
-     -84.3,
-     26.6
-    ],
-    [
-     -104.3,
-     26.6
+     -65.4,
+     -24.4
     ],
     [
      -104.4,
-     6.6
+     -24.4
     ],
     [
-     -84.3,
-     6.5
+     -104.3,
+     -55.4
+    ],
+    [
+     -65.3,
+     -55.3
     ]
    ],
    "centroid_local_uv": [
-    -94.3,
-    16.6
+    -84.8,
+    -39.9
    ]
   }
  }
