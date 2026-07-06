@@ -60,6 +60,11 @@ func open() -> void:
 	var vp := get_viewport()
 	if vp:
 		size = vp.get_visible_rect().size
+	# Cache the counter-rotation that makes the map genuinely north-up.
+	if main_world != null and main_world.has_method("_world_yaw"):
+		var yaw : float = float(main_world.call("_world_yaw"))
+		_yaw_cos = cos(yaw)
+		_yaw_sin = sin(yaw)
 	visible = true
 	set_process(true)
 	queue_redraw()
@@ -196,30 +201,49 @@ var _footprint_mesh_rid : RID
 ## Draw the building shell's true XZ footprint (not its AABB) as a translucent
 ## cream outline + label. Uses MainWorld._shell() to find the MeshInstance3D;
 ## silently skips if the shell isn't loaded (sandbox world, headless test).
+# Canonical building perimeter in the georeferenced BUILDING FRAME
+# (tools/generate_building.py): the parametric shell's wall-box bottoms defeat
+# the old floor-triangle union (it collapsed to one wall strip), and we KNOW
+# the exact outline anyway. Mapped to PC via the survey affine, then
+# Plant.pc_to_scene lands it in world space.
+const _BF_OUTLINE : Array = [
+	Vector2(0, 0), Vector2(150.7, 0), Vector2(150.7, 31.5), Vector2(131.5, 31.5),
+	Vector2(131.5, 71.5), Vector2(81, 71.5), Vector2(81, 66), Vector2(57, 66),
+	Vector2(57, 61), Vector2(0, 61)]
+const _BF_PC_O := Vector2(573.404, 463.647)
+const _BF_PC_X := Vector2(-0.64279, 0.76604)
+const _BF_PC_Z := Vector2(-0.76604, -0.64279)
+
 func _draw_building_outline(center_px: Vector2, scale_px: float, origin: Vector2, panel: Rect2) -> void:
 	if main_world == null:
 		return
-	var shell : MeshInstance3D = main_world._shell() if main_world.has_method("_shell") else null
-	if shell == null or not is_instance_valid(shell) or shell.mesh == null:
-		return
-	# Invalidate the cache if the shell mesh changed (level reload, swap).
-	if _footprint_built and shell.mesh.get_rid() != _footprint_mesh_rid:
-		_footprint_built = false
-	if not _footprint_built:
-		_footprint_local = _compute_footprint_polygon(shell.mesh)
-		_footprint_mesh_rid = shell.mesh.get_rid()
-		_footprint_built = true
-	if _footprint_local.size() < 3:
-		return
-	# Project the polygon through the shell's world transform back to world XZ,
-	# then to screen pixels via _to_px.
-	var xfm := shell.global_transform
 	var pts := PackedVector2Array()
-	pts.resize(_footprint_local.size())
-	for i in _footprint_local.size():
-		var v : Vector2 = _footprint_local[i]
-		var world : Vector3 = xfm * Vector3(v.x, 0.0, v.y)
-		pts[i] = _to_px(world, center_px, scale_px, origin)
+	if has_node("/root/Plant") and Plant.is_initialized():
+		pts.resize(_BF_OUTLINE.size())
+		for i in _BF_OUTLINE.size():
+			var b : Vector2 = _BF_OUTLINE[i]
+			var pcv : Vector2 = _BF_PC_O + _BF_PC_X * b.x + _BF_PC_Z * b.y
+			pts[i] = _to_px(Plant.pc_to_scene(pcv), center_px, scale_px, origin)
+	else:
+		# Fallback: mesh-derived union (legacy path, pre-Plant worlds/tests).
+		var shell : MeshInstance3D = main_world._shell() if main_world.has_method("_shell") else null
+		if shell == null or not is_instance_valid(shell) or shell.mesh == null:
+			return
+		if _footprint_built and shell.mesh.get_rid() != _footprint_mesh_rid:
+			_footprint_built = false
+		if not _footprint_built:
+			_footprint_local = _compute_footprint_polygon(shell.mesh)
+			_footprint_mesh_rid = shell.mesh.get_rid()
+			_footprint_built = true
+		if _footprint_local.size() < 3:
+			return
+		var xfm := shell.global_transform
+		pts.resize(_footprint_local.size())
+		for i in _footprint_local.size():
+			var v : Vector2 = _footprint_local[i]
+			pts[i] = _to_px(xfm * Vector3(v.x, 0.0, v.y), center_px, scale_px, origin)
+	if pts.size() < 3:
+		return
 	# Fill is subtle so yard markers stay visible through it.
 	var fill := C_BUILDING
 	fill.a = 0.10
@@ -391,9 +415,18 @@ func _text(pos: Vector2, s: String, fsize: int, col: Color) -> void:
 # =============================================================================
 # PROJECTION + ENTITY GATHERING
 # =============================================================================
-## World XZ → screen pixels, player-centred. +X right, +Z down (so -Z = north = up).
+## World XZ → screen pixels, player-centred, NORTH-UP. The scene frame is
+## rotated by the canonical world yaw (130.2 deg), so raw world axes put
+## north down-left; we counter-rotate into the layout (north-up) frame so
+## the "N" compass label is honest. Yaw is cached in open().
+var _yaw_cos : float = 1.0
+var _yaw_sin : float = 0.0
+
 func _to_px(world_pos: Vector3, center_px: Vector2, scale_px: float, origin: Vector2) -> Vector2:
-	return center_px + Vector2(world_pos.x - origin.x, world_pos.z - origin.y) * scale_px
+	var dx := world_pos.x - origin.x
+	var dz := world_pos.z - origin.y
+	return center_px + Vector2(dx * _yaw_cos - dz * _yaw_sin,
+		dx * _yaw_sin + dz * _yaw_cos) * scale_px
 
 func _clamp_to(px: Vector2, panel: Rect2) -> Vector2:
 	return Vector2(
@@ -406,10 +439,12 @@ func _player_xz() -> Vector2:
 		return Vector2(p.x, p.z)
 	return Vector2.ZERO
 
-## A node's forward direction projected to map space (x, z). Godot bodies face -Z.
+## A node's forward direction projected to map space (x, z), counter-rotated
+## into the north-up frame like _to_px. Godot bodies face -Z.
 func _forward2(n: Node3D) -> Vector2:
 	var f := -n.global_transform.basis.z
-	return Vector2(f.x, f.z)
+	return Vector2(f.x * _yaw_cos - f.z * _yaw_sin,
+		f.x * _yaw_sin + f.z * _yaw_cos)
 
 func _machines() -> Array:
 	if main_world and main_world.line_flow and "_nodes" in main_world.line_flow:
