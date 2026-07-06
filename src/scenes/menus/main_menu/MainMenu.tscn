@@ -30,7 +30,7 @@ grow_horizontal = 2
 grow_vertical = 2
 horizontal_scroll_mode = 0
 vertical_scroll_mode = 1
-clip_contents = false
+clip_contents = true
 
 [node name="Centerer" type="HBoxContainer" parent="ScrollContainer" unique_id=990293644]
 layout_mode = 2
@@ -48,7 +48,7 @@ size_flags_horizontal = 0
 size_flags_vertical = 0
 custom_minimum_size = Vector2(900, 0)
 alignment = 0
-theme_override_constants/separation = 14
+theme_override_constants/separation = 8
 
 [node name="Label" type="Label" parent="ScrollContainer/Centerer/Wrapper" unique_id=210645557]
 layout_mode = 2
@@ -64,7 +64,7 @@ layout_mode = 2
 text = "Load Save:"
 
 [node name="SaveList" type="Tree" parent="ScrollContainer/Centerer/Wrapper" unique_id=923971669]
-custom_minimum_size = Vector2(880, 220)
+custom_minimum_size = Vector2(880, 150)
 layout_mode = 2
 columns = 4
 column_titles_visible = true
