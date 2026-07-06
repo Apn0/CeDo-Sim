@@ -699,12 +699,13 @@ func _spawn_road_and_parking() -> void:
 	# Wide exterior ground plane around the anchor so the player can walk
 	# outside the building without falling into void.
 	_spawn_exterior_ground(anchor, ground_y)
-	# Parking lot — 25 m local-west, 8 m local-north of the building centre.
+	# Parking lot — georeferenced from the operator's north-up satellite capture
+	# (site_georeference.json, 2026-07-06): the real lot sits ~130 m local-west
+	# of the building centre, across the internal road (was 25 m — ~105 m short).
 	# #221-PC Phase 5 — the position is now an operator-tunable PC marker
 	# (WorldLayout.staff_parking / staff_parking_pc), authored in WorldSetup.
-	# When unset, falls back to the Phase 3 PARKING_PC constant so existing
-	# saves spawn the lot where they always did.
-	const PARKING_PC_DEFAULT := Vector2(475.0, 508.0)
+	# When unset, falls back to this georeferenced constant.
+	const PARKING_PC_DEFAULT := Vector2(370.5, 505.5)
 	var parking_pc : Vector2 = PARKING_PC_DEFAULT
 	if WorldLayout.staff_parking != Vector3.ZERO and WorldLayout.has_pc_data \
 			and WorldLayout.staff_parking_pc != Vector2.ZERO:
@@ -724,7 +725,10 @@ func _spawn_road_and_parking() -> void:
 			anchor.x + parking_world.x,
 			ground_y + 0.02,
 			anchor.z + parking_world.z)
-	staff_parking.rotation.y = by
+	# Rows align with the access road they front (~57 deg compass azimuth from
+	# the satellite route trace), not the building (40 deg). Positive yaw is CCW
+	# = decreasing compass azimuth, so subtract the extra 17 deg.
+	staff_parking.rotation.y = by - deg_to_rad(17.0)
 	_spawn_parking_lamps(staff_parking, ground_y)
 	# Road — De Asselen Kuil — runs along the building's local west edge
 	# (negative local-X), then turns east into the parking aisle.
@@ -738,15 +742,30 @@ func _spawn_road_and_parking() -> void:
 	road.name = "DeAsselenKuil"
 	road.surface_y = ground_y
 	var use_plant : bool = has_node("/root/Plant") and Plant.is_initialized()
-	# Waypoints as PC (500 + local.x, 500 + local.z). Source values below
-	# match the legacy hardcoded offsets exactly.
+	# Waypoints as PC (500 + local.x, 500 + local.z). Digitized from the
+	# operator's orange-route satellite trace (site_georeference.json,
+	# 2026-07-06, ~+/-10 m): southern access road up the west side, past the
+	# parking lot's south edge, hooking toward the site entrance.
 	const ROAD_WAYPOINTS_PC : Array = [
-		Vector2(458.0,  60.0),   # FAR south spawn end       (was -42, -440)
-		Vector2(458.0, 460.0),   # original south end        (was -42, -40)
-		Vector2(458.0, 500.0),   # straight north            (was -42,   0)
-		Vector2(458.0, 520.0),   # past parking entry        (was -42,  20)
-		Vector2(475.0, 530.0),   # turn east toward plant    (was -25,  30)
-		Vector2(500.0, 530.0),   # plant entry pad           (was   0,  30)
+		Vector2(494.0, 883.4),   # FAR south spawn end (southern access road)
+		Vector2(512.8, 856.5),
+		Vector2(523.5, 829.6),
+		Vector2(542.3, 789.3),
+		Vector2(550.4, 767.8),
+		Vector2(542.3, 743.6),   # bend north-west
+		Vector2(510.1, 719.4),
+		Vector2(483.2, 692.5),
+		Vector2(451.0, 665.6),   # long run along the bale lot's SW edge
+		Vector2(421.4, 638.7),
+		Vector2(402.6, 614.5),
+		Vector2(378.4, 595.7),
+		Vector2(362.2, 576.9),   # western corner
+		Vector2(370.3, 555.4),   # parking lot south edge
+		Vector2(391.8, 539.3),
+		Vector2(413.3, 528.5),
+		Vector2(429.4, 520.5),   # past parking entry
+		Vector2(437.5, 533.9),   # hook toward site entrance
+		Vector2(443.9, 550.0),
 	]
 	var waypoints : Array = []
 	for pc in ROAD_WAYPOINTS_PC:
@@ -756,9 +775,9 @@ func _spawn_road_and_parking() -> void:
 			waypoints.append(_bo(ga, Vector3(pc.x - 500.0, 0.0, pc.y - 500.0)))
 	road.setup(waypoints)
 	add_child(road)
-	# Street sign at PC(456.5, 500) = local (-43.5, 0) — half a metre west of
-	# the road's west edge so the sign post sits on the verge, not in traffic.
-	const STREET_SIGN_PC := Vector2(456.5, 500.0)
+	# Street sign on the verge of the western corner of the georeferenced
+	# route, where the road turns toward the parking lot.
+	const STREET_SIGN_PC := Vector2(365.0, 570.0)
 	var sign_pos : Vector3
 	if use_plant:
 		sign_pos = Plant.pc_to_scene_with_y(STREET_SIGN_PC, ground_y)
