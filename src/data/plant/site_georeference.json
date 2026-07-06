@@ -8,6 +8,11 @@
  "building_azimuth_deg": 40.0,
  "world_yaw_check": "sim floor_plan_rot_deg=130.2 == long-wall normal azimuth 130.0 (+/-0.2) \u2014 CORRECT, keep",
  "godot_frame": "sim-local X = RD east, Z = -RD north (north = -Z before world_yaw); local (u,v): u = along long axis toward NE, v = across toward SE",
+ "pc_to_rd": {
+  "_doc": "PC = Plant Coordinates (Plant.gd 1000x1000 m grid, north-up, +y = south, PC 500,500 = factory-centre marker). Exact affine to the Dutch national grid; operator-verified 2026-07-06. F10 feedback captures write world_point_pc in this frame.",
+  "rd_x = pc_x +": 183409.845,
+  "rd_y = c - pc_y, c =": 329788.205
+ },
  "images": {
   "closeup": {
    "wgs84": [
