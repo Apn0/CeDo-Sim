@@ -1,0 +1,330 @@
+{
+ "_doc": "Canonical site georeference for CeDo Geleen. Source: operator satellite screenshots 2026-07-06 (Google Maps, north-up; URLs carry WGS84 centers) cross-validated against the survey-derived mesh (CeDo_factory_solid.obj raw RD coords). Feature digitization accuracy ~\u00b110 m.",
+ "anchor_rd": {
+  "x_east": 183914.0,
+  "y_north": 329286.5,
+  "what": "building bbox center from the survey mesh"
+ },
+ "building_azimuth_deg": 40.0,
+ "world_yaw_check": "sim floor_plan_rot_deg=130.2 == long-wall normal azimuth 130.0 (+/-0.2) \u2014 CORRECT, keep",
+ "godot_frame": "sim-local X = RD east, Z = -RD north (north = -Z before world_yaw); local (u,v): u = along long axis toward NE, v = across toward SE",
+ "images": {
+  "closeup": {
+   "wgs84": [
+    50.9527258,
+    5.7985581
+   ],
+   "rd": [
+    183906.08161972527,
+    329305.3239566308
+   ],
+   "m_per_px": 0.21505376344086022
+  },
+  "wide": {
+   "wgs84": [
+    50.9513708,
+    5.7992016
+   ],
+   "rd": [
+    183952.14950108418,
+    329154.8368600028
+   ],
+   "m_per_px": 0.5376344086021505
+  }
+ },
+ "features": {
+  "entry_road_orange": {
+   "what": "the route everyone drives to the parking lot (operator-drawn orange line), from the southern access road up along the west side to the site entrance",
+   "rd": [
+    [
+     183903.8,
+     328904.8
+    ],
+    [
+     183922.6,
+     328931.7
+    ],
+    [
+     183933.3,
+     328958.6
+    ],
+    [
+     183952.1,
+     328998.9
+    ],
+    [
+     183960.2,
+     329020.4
+    ],
+    [
+     183952.1,
+     329044.6
+    ],
+    [
+     183919.9,
+     329068.8
+    ],
+    [
+     183893.0,
+     329095.7
+    ],
+    [
+     183860.8,
+     329122.6
+    ],
+    [
+     183831.2,
+     329149.5
+    ],
+    [
+     183812.4,
+     329173.7
+    ],
+    [
+     183788.2,
+     329192.5
+    ],
+    [
+     183772.0,
+     329211.3
+    ],
+    [
+     183780.1,
+     329232.8
+    ],
+    [
+     183801.6,
+     329248.9
+    ],
+    [
+     183823.1,
+     329259.7
+    ],
+    [
+     183839.2,
+     329267.7
+    ],
+    [
+     183847.3,
+     329254.3
+    ],
+    [
+     183841.9,
+     329238.2
+    ]
+   ],
+   "local_uv": [
+    [
+     -299.0,
+     237.5
+    ],
+    [
+     -266.3,
+     234.6
+    ],
+    [
+     -238.8,
+     225.6
+    ],
+    [
+     -195.8,
+     214.1
+    ],
+    [
+     -174.1,
+     206.4
+    ],
+    [
+     -160.8,
+     184.7
+    ],
+    [
+     -163.0,
+     144.4
+    ],
+    [
+     -159.7,
+     106.6
+    ],
+    [
+     -159.8,
+     64.6
+    ],
+    [
+     -158.2,
+     24.6
+    ],
+    [
+     -151.8,
+     -5.3
+    ],
+    [
+     -152.9,
+     -36.0
+    ],
+    [
+     -148.9,
+     -60.4
+    ],
+    [
+     -127.2,
+     -68.0
+    ],
+    [
+     -101.0,
+     -61.9
+    ],
+    [
+     -79.0,
+     -52.4
+    ],
+    [
+     -62.4,
+     -45.2
+    ],
+    [
+     -67.5,
+     -30.4
+    ],
+    [
+     -83.3,
+     -24.1
+    ]
+   ]
+  },
+  "bale_lot_pink": {
+   "what": "bale storage lot (operator-drawn pink polygon), paved apron SW of the main building",
+   "rd": [
+    [
+     183790.9,
+     329181.7
+    ],
+    [
+     183836.6,
+     329230.1
+    ],
+    [
+     183860.8,
+     329232.8
+    ],
+    [
+     183887.6,
+     329219.4
+    ],
+    [
+     183922.6,
+     329152.1
+    ],
+    [
+     183928.0,
+     329138.7
+    ],
+    [
+     183909.1,
+     329122.6
+    ],
+    [
+     183887.6,
+     329101.1
+    ],
+    [
+     183836.6,
+     329141.4
+    ],
+    [
+     183790.9,
+     329165.6
+    ]
+   ],
+   "local_uv": [
+    [
+     -159.4,
+     -27.0
+    ],
+    [
+     -93.0,
+     -23.1
+    ],
+    [
+     -75.4,
+     -6.3
+    ],
+    [
+     -68.4,
+     23.0
+    ],
+    [
+     -97.4,
+     92.9
+    ],
+    [
+     -104.2,
+     105.7
+    ],
+    [
+     -128.7,
+     101.6
+    ],
+    [
+     -159.0,
+     99.0
+    ],
+    [
+     -160.9,
+     33.9
+    ],
+    [
+     -171.8,
+     -16.6
+    ]
+   ],
+   "centroid_local_uv": [
+    -121.8,
+    38.3
+   ]
+  },
+  "staff_parking": {
+   "what": "car parking rows west of the building across the internal road (from close-up image)",
+   "rd": [
+    [
+     183760.9,
+     329295.6
+    ],
+    [
+     183799.6,
+     329295.6
+    ],
+    [
+     183799.6,
+     329269.8
+    ],
+    [
+     183760.9,
+     329269.8
+    ]
+   ],
+   "local_uv": [
+    [
+     -91.4,
+     -123.1
+    ],
+    [
+     -66.5,
+     -93.5
+    ],
+    [
+     -86.3,
+     -76.9
+    ],
+    [
+     -111.2,
+     -106.6
+    ]
+   ],
+   "centroid_local_uv": [
+    -88.8,
+    -100.0
+   ]
+  }
+ }
+}
