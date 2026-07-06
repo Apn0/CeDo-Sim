@@ -98,8 +98,12 @@ static func profile(id: String) -> Dictionary:
 			pr["out"]  = Vector3(0.0, 0.74, 0.45)
 			pr["waste"] = 0.12                       # sinkers + skimmed reject
 		"rafter":
-			pr["in"]   = Vector3(0.0, 0.7, 0.4)
-			pr["out"]  = Vector3(0.0, 0.4, -0.4)
+			# Port fractions recomputed 2026-07-06 for the raised-platform +
+			# water-tank model (bbox 1.8 × 4.8 × 3.6): inlet hopper mouth at
+			# ~4.57 m / +Z, discharge chute lip at ~2.7 m / -Z end.
+			# waste/screen/water_remove values unchanged — no new data.
+			pr["in"]   = Vector3(0.0, 0.95, 0.35)
+			pr["out"]  = Vector3(0.0, 0.55, -0.5)
 			pr["waste"] = 0.03
 		# #91 — trilzeef: top-fed at the +Z high end (a belt drops material in
 		# through the rubber flap), discharges OVERS out the -Z low end into the
@@ -206,12 +210,16 @@ static func profile(id: String) -> Dictionary:
 			pr["in"]   = Vector3(0.0, 0.95, 0.0)
 			pr["out"]  = Vector3(0.0, 0.12, 0.45)
 		"bunker":
-			# Receives bales/loose film from the top (where the forklift dumps it)
-			# and meters them out the +Z discharge mouth onto the next belt.
-			pr["in"]    = Vector3(0.0, 0.95, 0.0)
-			pr["out"]   = Vector3(0.0, 0.15, 0.45)
+			# Rebuilt 2026-07-06 (bunker.md §5): NOT an intake pit — a ~10 m
+			# buffer CONVEYOR downstream of shredder 1 (operator interview:
+			# shredder 1 bottom → belt → bunker → belt 1040). Material drops in
+			# over the -Z infeed-end wall top; the travelling deck discharges at
+			# the +Z end over the bunkerrol onto the next belt.
+			pr["role"]  = "conveyor"
+			pr["in"]    = Vector3(0.0, 0.95, -0.45)
+			pr["out"]   = Vector3(0.0, 0.27, 0.45)   # deck at 1.25/5.0 ≈ 0.25 bbox height
 			pr["waste"] = 0.0
-			pr["rate"]  = 10.0    # bunkers buffer + meter — high throughput
+			pr["rate"]  = 10.0    # kept — inside the derived 4.6-18.4 kg/s band (bunker.md §3)
 		"blower":
 			pr["role"] = "conveyor"
 			pr["in"]   = Vector3(0.0, 0.5, 0.0)
@@ -266,9 +274,15 @@ static func profile(id: String) -> Dictionary:
 		"weegschaal":
 			pr["in"]   = Vector3(0.0, 0.85, 0.0)
 			pr["out"]  = Vector3(0.0, 0.12, 0.45)
-		"voorraad_silo":
+		# Outdoor MS/LS pellet silos (silopark zuidwest, 2 rows of 5 — operator
+		# 2026-07-06 ruling B8 / floor plan 240_CeDo127): same passive sink
+		# treatment as voorraad_silo. They stand beyond MAX_LINK_DIST so in
+		# practice they are edge-less scenery until a pneumatic blower bridge is
+		# modelled (silos_ms_ls.md §7). rate copied from voorraad_silo —
+		# real pneumatic transfer rate UNDOCUMENTED (silos_ms_ls.md flag 14).
+		"voorraad_silo", "ms_silo_buiten", "ls_silo_buiten":
 			pr["role"] = "sink"
-			pr["in"]   = Vector3(0.0, 0.9, 0.0)
+			pr["in"]   = Vector3(0.0, 0.9, 0.0)   # pneumatic line lands on the silo TOP (125_CeDo40)
 			pr["rate"] = 12.0
 		"silo", "doseersilo":
 			pr["in"]  = Vector3(0.0, 0.9, 0.0)
@@ -286,7 +300,12 @@ static func profile(id: String) -> Dictionary:
 		# Dedupe: pump_large + wash_line removed from the catalog. water_pump
 		# is the canonical pump id and stays as a role-none fixture (it doesn't
 		# carry material — it pushes water through the wash loop).
-		"door", "pcu_cabinet", "hmi_panel", "hmi_wall", "surface", "waste_container", "water_pump", "zss_water":
+		# 2026-07-06 batch: the four small water fixtures (water_small.md) are
+		# role-none like water_pump/zss_water — they push WATER around the wash
+		# loops, not film. eop_endpoint is an external-entity endpoint (Indaver
+		# water treatment, eop_rafter.md Part A) — never a material-flow node.
+		"door", "pcu_cabinet", "hmi_panel", "hmi_wall", "surface", "waste_container", "water_pump", "zss_water", \
+		"kleine_la", "tankje_tussen_extruders", "pomp_c1", "pomp_zeefbocht", "eop_endpoint":
 			pr["role"] = "none"   # info screens / fixtures — NOT material-flow machines
 		_:
 			# #165 — every scoped HMI id (`hmi_shredder_l1`, etc.) is a control
@@ -378,7 +397,7 @@ static func _apply_process(pr: Dictionary, id: String) -> void:
 		"ontwaterzeef":
 			pr["process"] = "dewater"
 			pr["water_remove"] = 0.80
-		"weegschaal", "voorraad_silo":
+		"weegschaal", "voorraad_silo", "ms_silo_buiten", "ls_silo_buiten":
 			pr["process"] = "buffer"
 		# ── cyclone / air sep: pulls light fines + some moisture into the air ─
 		"cyclone", "cyclone_tower":

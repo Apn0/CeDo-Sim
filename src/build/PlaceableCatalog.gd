@@ -253,9 +253,15 @@ static func items() -> Array[Dictionary]:
 			{"id": "transfer_chute", "name": "Transfer chute",     "category": "Conveyance", "size": Vector3(0.8, 1.4, 1.8),  "color": Color(0.55, 0.57, 0.60)},
 			{"id": "blower",         "name": "Ventilator / blower","category": "Conveyance", "size": Vector3(1.0, 1.2, 1.2),  "color": Color(0.50, 0.46, 0.40)},
 			# ── Sorting (bunkers / scanners / pre-wash drum etc) ─────────────
-			# Bunker = the open-top steel pit material is dumped into, with
-			# bunker rollers at the bottom that meter the load onto Shredder 1.
-			{"id": "bunker",         "name": "Bunker (intake)",    "category": "Sorting",    "size": Vector3(4.2, 4.0, 3.4),  "color": Color(0.55, 0.55, 0.58)},
+			# Bunker REBUILT 2026-07-06 (bunker.md + operator rulings): NOT an
+			# intake pit — a ~10 m long × 4 m wide BUFFER CONVEYOR downstream of
+			# Shredder 1 (operator interview: shredder 1 bottom → belt → bunker →
+			# belt 1040; SWI-035 front-end order). Deck ~1.25 m up (placeholder,
+			# documented band 1.0-1.5 m — flag F1), walls ~3.75 m above it
+			# (band 3.5-4.0 m — flag F1). Id KEPT for save-file compat (every
+			# matcher substring-matches "bunker": HmiScopes/HmiOverlay/CrewManager/
+			# LineFlow). Colour undocumented — flag F14.
+			{"id": "bunker",         "name": "Bunker (buffer conveyor, lijn 3)", "category": "Sorting", "size": Vector3(4.0, 5.0, 10.0), "color": Color(0.55, 0.55, 0.58)},
 			# ── Size reduction ───────────────────────────────────────────────
 			# Mill = the fine-stage size reducer on lines 3C / 6. Lives in the
 		# "Shredders" category alongside Shredder 1 / Shredder 2 so the build
@@ -285,8 +291,23 @@ static func items() -> Array[Dictionary]:
 			# + motor end-cap, grey finned motor, junction box, stainless base plate,
 			# vertical stainless discharge stub. Modelled from the real CeDo photo.
 			# REMOVED: waterpomp was the bespoke small Wilo-style pump model
-			# (_m_waterpomp). No macro referenced it — Line 3A's Pomp C1 uses
-			# `water_pump` (generic _m_pump). Catalog now offers ONE pump id.
+			# (_m_waterpomp). No macro referenced it — Line 3A's Pomp C1 used
+			# `water_pump` (generic _m_pump) until 2026-07-06.
+			# ── Named pump stations (2026-07-06, water_small.md §3/§4) ────────
+			# Distinct ids for pumps that carry their OWN names on the plant's
+			# flow diagrams — the flotation_tank/_wide one-builder-many-ids
+			# precedent, NOT a violation of the pump dedupe rule above (these are
+			# distinct real-world stations, not model aliases; ruled in the
+			# 2026-07-06 batch, water_small.md flag F10). Both reuse _m_pump with
+			# a stencil station label; real pump size/appearance never
+			# photographed — generic Wilo model is a stand-in (flags F7/F8).
+			# Pomp C1 (3A only): glijgoot → C1 → frictiescheider M3; pumps the
+			# dirty water + film ("vuil water en folie") — M3 training 101_CeDo14.
+			{"id": "pomp_c1",       "name": "Pomp C1 (glijgoot → frictiescheider M3, 3A)", "category": "Pumps", "size": Vector3(0.8, 0.9, 1.3), "color": Color(0.30, 0.45, 0.62)},
+			# Pomp zeefbocht (3B only): utility cluster near Blauwe tank / Pomp
+			# was 3b / Pomp was 4. The ZEEFBOCHT screen it feeds is NOT drawn on
+			# any diagram and is NOT modeled — flag F9, needs operator photo.
+			{"id": "pomp_zeefbocht", "name": "Pomp zeefbocht (3B)",                        "category": "Pumps", "size": Vector3(0.8, 0.9, 1.3), "color": Color(0.30, 0.45, 0.62)},
 			# Line-3A ring main: serpentine of off-white plastic pipes inside a yellow
 			# steel safety cage (5 horizontal U-loops + vertical riser, stainless
 			# band clamps at intervals). Modelled from the real CeDo photos.
@@ -306,7 +327,13 @@ static func items() -> Array[Dictionary]:
 			{"id": "vuilsnippersilo","name": "Wet film silo (vuilsnipper)","category": "Size reduction","size": Vector3(3.0, 4.0, 3.0),"color": Color(0.50, 0.50, 0.55)},
 			{"id": "friction_washer","name": "Frictiewasser (stirring tank)","category": "Washing","size": Vector3(1.5, 1.5, 3.0),  "color": Color(0.62, 0.64, 0.68)},
 			{"id": "intensive_washer","name": "Intensive washer",  "category": "Washing",    "size": Vector3(1.6, 2.4, 2.0),  "color": Color(0.42, 0.55, 0.60)},
-			{"id": "rafter",         "name": "Rafter (sieve deck)","category": "Separation", "size": Vector3(1.8, 1.8, 3.6),  "color": Color(0.55, 0.57, 0.60)},
+			# Rafter refined 2026-07-06 (eop_rafter.md Part B + operator ruling B7):
+	# submerged mesh-cylinder sieve (~0.75 m ⌀) inside a ~1 m wide × 1 m high
+	# water tank on a platform; tank WATER LEVEL equals the 3B flotation-tank
+	# water level (connected vessels — rim 4.1 m, surface 4.0 m, survey #230).
+	# Size.y = platform 3.1 + tank 1.0 + inlet hopper headroom (derived
+	# placeholder — verify visually; tank dims themselves are ruling values).
+	{"id": "rafter",         "name": "Rafter (submerged mesh-cylinder sieve, 3B)","category": "Separation", "size": Vector3(1.8, 4.8, 3.6),  "color": Color(0.55, 0.57, 0.60)},
 			# #91 — Trilzeef (vibrating sieve / shaker screen): a steeply-sloped
 			# perforated deck with vertical side barriers, a rubber inlet flap at
 			# the top fed by a belt above, and an open-top discharge chute at the
@@ -355,6 +382,23 @@ static func items() -> Array[Dictionary]:
 			{"id": "mengsilo",       "name": "Mixing silo (mengsilo)","category": "Extrusion prep","size": Vector3(3.0, 6.5, 3.0),"color": Color(0.60, 0.62, 0.66)},
 			# ── Water / utilities (closes the wash-water loop) ────────────────
 			{"id": "zss_water",      "name": "ZSS water tank (wash-water loop)","category": "Water / utilities","size": Vector3(2.4, 4.0, 2.4),"color": Color(0.40, 0.52, 0.60)},
+			# Kleine LA (2026-07-06, water_small.md §1): separate small open-top
+			# water tank at the 3B flotation-tank material-EXIT side (towards
+			# Hal 0), floor-standing. Checklist row 16: tank level 90-92 cm =
+			# "Nét overlopen kleine LA I" — kept just barely overflowing. "LA"
+			# acronym unknown to the operator (flag F3). SIZE IS A PLACEHOLDER:
+			# documented only as "~half of LA1" and LA1 has no size anywhere
+			# (water_circuit_3a_la1.md:12 "geen volumes") — flag F1. Modeled
+			# DEAD-END (no outlet documented — flag F2).
+			{"id": "kleine_la",     "name": "Kleine LA (open waterbak, 3B uitloopzijde)", "category": "Water / utilities", "size": Vector3(1.5, 1.2, 1.5), "color": Color(0.40, 0.52, 0.60)},
+			# Tankje tussen extruders (2026-07-06, water_small.md §2): small water
+			# tank in the pellet/cooling-water cluster, ONE PER LINE (3A + 3B),
+			# each with its OWN pump directly below it (flow diagrams 261_CeDo130
+			# / 264_CeDo134 + interview). Composite: raised tankje + _m_pump
+			# underneath. ALL DIMENSIONS PLACEHOLDER (only "tankje" = small is
+			# documented — flags F4/F5); ontwaterzeef⇄tankje flow direction
+			# unsure on the source photos (flag F6).
+			{"id": "tankje_tussen_extruders", "name": "Tankje tussen extruders (+ pomp eronder)", "category": "Water / utilities", "size": Vector3(1.2, 2.2, 1.4), "color": Color(0.40, 0.52, 0.60)},
 			# ── Logistics ────────────────────────────────────────────────────
 			{"id": "waste_container","name": "Waste container (schraperbak)","category": "Logistics","size": Vector3(1.2, 1.2, 1.6),"color": Color(0.72, 0.56, 0.20)},
 			{"id": "skip_steel",     "name": "Steel skip (PLASTIC, chute)",  "category": "Logistics","size": Vector3(1.6, 1.2, 1.4),  "color": Color(0.42, 0.46, 0.40)},
@@ -389,6 +433,29 @@ static func items() -> Array[Dictionary]:
 			{"id": "ontwaterzeef",   "name": "Ontwaterzeef (dewater screen)","category": "Separation",   "size": Vector3(1.8, 1.8, 3.2),  "color": Color(0.50, 0.56, 0.60)},
 			{"id": "weegschaal",     "name": "Weegschaal (25 kg batch weigh)","category": "Logistics",   "size": Vector3(1.2, 2.2, 1.2),  "color": Color(0.55, 0.57, 0.60)},
 			{"id": "voorraad_silo",  "name": "Voorraad silo (granulate)",    "category": "Structure",    "size": Vector3(3.0, 6.5, 3.0),  "color": Color(0.66, 0.68, 0.72)},
+			# ── OUTDOOR PELLET SILOS MS/LS (2026-07-06, silos_ms_ls.md) ───────
+			# Silopark: 10 silos in 2 rows of 5 (operator ruling B8 2026-07-06,
+			# per the floor plan 240_CeDo127), Buitenterrein zuidwest below
+			# Hal 0/Hal 1. Per-line dedicated silos; operators never interact.
+			# MS = mengsilo: MIXING is a background recirculation LOOP — pellets
+			# pumped backward laadsilo → mengsilo and forward again, looping per
+			# pellet type (ruling B6); NO player controls, visual pipe stubs only.
+			# LS = laadsilo: truck lane underneath + discharge spout.
+			# Height 18.0 m + ~4 m footprint are SHELL-MESH-DERIVED PLACEHOLDERS
+			# (3DBAG cluster at world ≈ (-211, +53), silos_ms_ls.md §4 — flags
+			# 1/2/13); grey copied from voorraad_silo, RAL undocumented (flag 12).
+			# NOT the indoor 3A flake `mengsilo` — different machine, keep apart.
+			{"id": "ms_silo_buiten", "name": "Mengsilo buiten (MS — pellet blend)",   "category": "Structure", "size": Vector3(4.0, 18.0, 4.0), "color": Color(0.66, 0.68, 0.72)},
+			{"id": "ls_silo_buiten", "name": "Laadsilo buiten (LS — truck loadout)",  "category": "Structure", "size": Vector3(4.0, 18.0, 4.0), "color": Color(0.66, 0.68, 0.72)},
+			# EOP (End Of Pipe) — EXTERNAL ENTITY endpoint (2026-07-06,
+			# eop_rafter.md Part A). Indaver-operated on-site water-treatment
+			# mini-plant (sand / fine-film "paper pulp" / slib removal; goal =
+			# water REUSE, not river discharge — QA:Q12). NOT a working machine:
+			# role "none" in MachineFlow, no player interaction (control-room
+			# visibility is the separate hmi_indaver_water wall panel). Appearance
+			# UNDOCUMENTED — neutral 6×3×4 m building block + placard + the 3
+			# documented pipe-stub groups (water_circuits.json edges); flags 1-3.
+			{"id": "eop_endpoint",   "name": "EOP — Indaver waterzuivering (extern)", "category": "Structure", "size": Vector3(6.0, 3.0, 4.0),  "color": Color(0.55, 0.56, 0.58)},
 			# #A3 — Silo level sensor. A small panel that reads the linked silo's
 			# fill level and signals upstream throttle when it climbs high. The
 			# operator can BRIDGE it (E) to remove the governor — peak-performance
@@ -1474,6 +1541,10 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 		# pump_large / waterpomp / ringleiding_3a removed — see comments at
 		# their (formerly) catalog entries. water_pump + ringleiding are the
 		# canonical singletons.
+		# Named pump stations (2026-07-06): _m_pump + stencil station label —
+		# the flotation_tank/_wide shared-builder precedent (water_small.md §3/§4).
+		"pomp_c1":        _m_pump_labeled(p, size, color, ghost, "C1")
+		"pomp_zeefbocht": _m_pump_labeled(p, size, color, ghost, "ZEEFBOCHT")
 		"compactor_belt": _m_compactor_belt(p, size, color, ghost)
 		"hmi_panel":      _m_hmi(p, size, color, ghost)
 		"hmi_wall":       _m_hmi_wall(p, size, color, ghost)
@@ -1514,6 +1585,10 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 		"kufferath_sieve":_m_kufferath(p, size, color, ghost)
 		"mengsilo":       _m_mengsilo(p, size, color, ghost)
 		"zss_water":      _m_zss_water(p, size, color, ghost)
+		# Small water fixtures 2026-07-06 (water_small.md §1/§2) — role "none",
+		# never enter LineFlow / the HMI.
+		"kleine_la":               _m_kleine_la(p, size, color, ghost)
+		"tankje_tussen_extruders": _m_tankje_extruders(p, size, color, ghost)
 		# ── Hoses & Air (visual placeables, do NOT enter LineFlow / the HMI) ──
 		"reel_water_thick_yellow": _m_hose_reel(p, size, color, ghost, 0.045)
 		"reel_water_black":        _m_hose_reel(p, size, color, ghost, 0.025)
@@ -1548,6 +1623,10 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 		"ontwaterzeef":   _m_ontwaterzeef(p, size, color, ghost)
 		"weegschaal":     _m_weegschaal(p, size, color, ghost)
 		"voorraad_silo":  _m_silo(p, size, color, ghost)
+		# Outdoor MS/LS pellet silos + EOP endpoint (2026-07-06 batch).
+		"ms_silo_buiten": _m_silo_buiten(p, size, color, ghost, "ms")
+		"ls_silo_buiten": _m_silo_buiten(p, size, color, ghost, "ls")
+		"eop_endpoint":   _m_eop_endpoint(p, size, color, ghost)
 		# ── Line 1 machines (#62) ─────────────────────────────────────────────
 		"metaaldetector": _m_metaaldetector(p, size, color, ghost)
 		"vw_trommel":     _m_vw_trommel(p, size, color, ghost)
@@ -2474,6 +2553,156 @@ static func _m_silo(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void
 		col.shape = col_box
 		col.position = Vector3(0.0, 0.525, 0.0)
 		gate_root.add_child(col)
+
+# ── OUTDOOR MS/LS PELLET SILO (2026-07-06, silos_ms_ls.md §5/§6) ─────────────
+## Shared builder for `ms_silo_buiten` (variant "ms") and `ls_silo_buiten`
+## (variant "ls"). Skeleton = the proven _m_silo legs+cone+body+dome, MINUS the
+## #101 cloth discharge skirt (indoor extruder-feed dressing — not documented
+## outdoors), PLUS the voorraad_silo caged-ladder/landing/push-gate access
+## (photo 125_CeDo40: "tall grey outdoor silos with access stair/ladder and
+## ducting" — ladder-vs-stair ambiguous, ladder pattern reused; flag 10).
+##
+## Height 18.0 m + proportions are placeholders (shell-mesh measurement,
+## silos_ms_ls.md §4 — flags 1/2/3). Capacity is deliberately NOT modelled:
+## pellet bulk density undocumented (open Q19 stortgewicht — flag 11).
+##
+## Variant extras:
+##  "ms" — blower-transfer pipe stub at the TOP (the MS-defining feature):
+##         mixing = background meng⇄laad recirculation LOOP (operator ruling B6
+##         2026-07-06) — NO player controls, stub geometry only (flag 8/9).
+##  "ls" — legs lengthened for the drive-under truck lane (hopper tip clearance
+##         4.5 m = neutral EU-truck placeholder, flag 6) + discharge tube /
+##         slide-valve / flexible spout to truck-hatch height (mechanism type
+##         undocumented — neutral tube+valve+spout, flag 7) + top infeed elbow
+##         (pneumatic from the weegschaal line, 125_CeDo40) but NO silo-to-silo
+##         stub (MS→LS topology unconfirmed — flag 9).
+## Ghost-safe: _caged_ladder handles its own ghost mode (visual rungs, no
+## LadderZone); the push-gate collapses to a plain Node3D + meshes in ghosts.
+static func _m_silo_buiten(p: Node3D, size: Vector3, color: Color, ghost: bool, variant: String) -> void:
+	var shell := _mat(color, ghost, 0.3, 0.5)
+	var dark  := _mat(_DARK, ghost, 0.4, 0.6)
+	var steel := _mat(_STEEL, ghost, 0.6, 0.4)
+	var yellow := _mat(_SAFETY, ghost, 0.2, 0.6)
+	var r := size.x * 0.46
+	var is_ls : bool = variant == "ls"
+	# Vertical zones. MS keeps the _m_silo fractions; LS fixes the floor
+	# clearance at 4.5 m so a truck fits under the hopper tip (flag 6).
+	var floor_clear : float = 4.5 if is_ls else size.y * 0.16
+	var cone_h : float = size.y * 0.20
+	var dome_h : float = size.y * 0.08
+	var leg_top : float = floor_clear + cone_h
+	var body_h : float = size.y - leg_top - dome_h
+	var body_top : float = leg_top + body_h
+	# ── Legs + bracing (photo: "elevated steel platform structure" — brace
+	# pattern is a neutral placeholder). Tagged for floor-snap (#70).
+	var signs : Array[float] = [-1.0, 1.0]
+	for sx in signs:
+		for sz in signs:
+			var lg := _box(p, Vector3(0.16, leg_top, 0.16),
+				Vector3(sx * r * 0.72, leg_top * 0.5, sz * r * 0.72), dark)
+			lg.add_to_group("machine_leg")
+			lg.set_meta("leg_h", leg_top)
+	for frac in [0.35, 0.70]:
+		var by : float = floor_clear * frac
+		for sz2 in signs:
+			_box(p, Vector3(r * 1.44, 0.08, 0.08), Vector3(0.0, by, sz2 * r * 0.72), dark)
+		for sx2 in signs:
+			_box(p, Vector3(0.08, 0.08, r * 1.44), Vector3(sx2 * r * 0.72, by, 0.0), dark)
+	# ── Shell: conical hopper + main cylinder + domed top (_m_silo proportions,
+	# re-anchored — proportions at 18 m are placeholders, flag 3).
+	_cyl(p, r, 0.18, cone_h, Vector3(0.0, floor_clear + cone_h * 0.5, 0.0), shell)
+	_cyl(p, r, r, body_h, Vector3(0.0, leg_top + body_h * 0.5, 0.0), shell)
+	_cyl(p, r * 0.25, r, dome_h, Vector3(0.0, body_top + dome_h * 0.5, 0.0), shell)
+	# ── Access: landing deck + guardrail + caged ladder + self-closing push-gate
+	# (exact voorraad_silo block, body_top recomputed for the 18 m shell).
+	var deck_half : float = r + 0.70
+	_box(p, Vector3(deck_half * 2.0, 0.05, deck_half * 2.0),
+		Vector3(0.0, body_top, 0.0), steel)
+	_railing(p, deck_half, deck_half, body_top + 0.025, yellow, ["-x", "+x"])
+	var ladder_h : float = body_top + 0.10
+	var ladder_root := Node3D.new()
+	ladder_root.name = "SiloBuitenAccessLadder"
+	ladder_root.rotation.y = -PI * 0.5
+	ladder_root.position = Vector3(-r - 0.30, 0.0, 0.0)
+	p.add_child(ladder_root)
+	_caged_ladder(ladder_root, Vector3.ZERO, ladder_h, steel, ghost)
+	var gate_root : Node3D
+	if ghost:
+		gate_root = Node3D.new()
+	else:
+		var pg_script := load("res://src/build/PushGate.gd")
+		gate_root = StaticBody3D.new()
+		if pg_script != null:
+			(gate_root as StaticBody3D).set_script(pg_script)
+			gate_root.set("free_side_idx", 1)
+	gate_root.name = "SiloBuitenPushGate"
+	gate_root.position = Vector3(-r - 0.05, body_top + 0.05, 0.0)
+	p.add_child(gate_root)
+	_box(gate_root, Vector3(0.05, 1.05, 0.05), Vector3(0.0, 0.525,  0.23), yellow)
+	_box(gate_root, Vector3(0.05, 1.05, 0.05), Vector3(0.0, 0.525, -0.23), yellow)
+	_box(gate_root, Vector3(0.04, 0.04, 0.46), Vector3(0.0, 1.00, 0.0), yellow)
+	_box(gate_root, Vector3(0.04, 0.04, 0.46), Vector3(0.0, 0.55, 0.0), yellow)
+	_cyl(gate_root, 0.02, 0.02, 0.10, Vector3(0.0, 0.20, 0.23), steel)
+	if not ghost:
+		var gcol := CollisionShape3D.new()
+		var gcol_box := BoxShape3D.new()
+		gcol_box.size = Vector3(0.08, 1.05, 0.46)
+		gcol.shape = gcol_box
+		gcol.position = Vector3(0.0, 0.525, 0.0)
+		gate_root.add_child(gcol)
+	# ── Pneumatic top infeed elbow (both variants): the weegschaal line lands
+	# on the silo TOP (training slide 125_CeDo40: air blower → leidingwerk →
+	# silo). Pipe diameter/routing = placeholder (flag 8).
+	var apex_y : float = body_top + dome_h
+	_cyl(p, 0.12, 0.12, 1.0, Vector3(0.0, apex_y + 0.45, 0.0), steel)
+	_cyl(p, 0.12, 0.12, 0.9, Vector3(-0.45, apex_y + 0.90, 0.0), steel, "x")
+	if is_ls:
+		# ── LS discharge (documented existence only — neutral tube + slide-valve
+		# + hanging flexible spout to ~2.5 m truck-hatch height; flag 7).
+		_cyl(p, 0.14, 0.14, 0.50, Vector3(0.0, floor_clear - 0.25, 0.0), dark)
+		_box(p, Vector3(0.45, 0.25, 0.45), Vector3(0.0, floor_clear - 0.60, 0.0), steel)
+		var spout_top : float = floor_clear - 0.72
+		var spout_h : float = maxf(spout_top - 2.5, 0.3)
+		_cyl(p, 0.10, 0.16, spout_h, Vector3(0.0, spout_top - spout_h * 0.5, 0.0), dark)
+	else:
+		# ── MS blower-transfer stub at the top (the mengsilo-defining feature):
+		# pellets are blown from one silo INTO THE TOP of another; piping visible
+		# (interview + 125_CeDo40 "Leidingwerk"). Stub only — do NOT model a full
+		# inter-silo pipe run (routing undocumented, flag 8; mixing loop itself is
+		# background-only per ruling B6).
+		_cyl(p, 0.15, 0.15, 1.5, Vector3(0.9, apex_y + 0.90, 0.0), steel, "x")
+		_cyl(p, 0.19, 0.19, 0.05, Vector3(1.67, apex_y + 0.90, 0.0), steel, "x")   # open flange
+
+# ── EOP (End Of Pipe) — Indaver water-treatment EXTERNAL ENTITY endpoint ─────
+## 2026-07-06 (eop_rafter.md Part A). Appearance UNDOCUMENTED — every dimension
+## is a neutral placeholder (flags 1-3): one flat-roofed building block +
+## "EOP — INDAVER" placard + EXACTLY the 3 documented pipe-stub groups from
+## water_circuits.json / DIAG-blauwe-watertank 232_CeDo138:
+##   1. -Z low, largest ⌀ : "Riool naar EOP" dirty-water main IN (thick line)
+##   2. +Z              : purified return → Blauwe tank
+##   3. -X, 2 small     : ZSS exchange pair (2nd line marked unsure in the json)
+## No fence (a fence would be invented detail). No MachineFlow role, no player
+## interaction — the hmi_indaver_water wall panel is the control-room view.
+## EOP malfunction as a future plant-wide water event: backlog hook (QA:Q12).
+static func _m_eop_endpoint(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
+	var shell := _mat(color, ghost, 0.2, 0.7)
+	var dark  := _mat(_DARK, ghost, 0.5, 0.6)
+	var white := _mat(Color(0.92, 0.92, 0.90), ghost, 0.1, 0.7)
+	# Flat-roofed rectangular building block (container-cabin scale placeholder).
+	_box(p, Vector3(size.x, size.y, size.z), Vector3(0.0, size.y * 0.5, 0.0), shell)
+	# Placard on the +Z face — text is the documented name (QA:Q12 / HmiScopes
+	# "Indaver waterzuivering" wording).
+	_box(p, Vector3(1.7, 0.55, 0.03), Vector3(0.0, size.y * 0.72, size.z * 0.5 + 0.02), white)
+	if not ghost:
+		var lbl := _stencil_label(p, "EOP — INDAVER", Vector3(1.6, 0.45, 0.01), "+Z")
+		lbl.position = Vector3(0.0, size.y * 0.72, size.z * 0.5 + 0.045)
+	# 1. Sewer main IN (-Z face, low, largest diameter of the three).
+	_cyl(p, 0.18, 0.18, 0.60, Vector3(0.0, 0.45, -size.z * 0.5 - 0.30), dark, "z")
+	# 2. Purified-water return → Blauwe tank (+Z face).
+	_cyl(p, 0.10, 0.10, 0.60, Vector3(size.x * 0.28, 0.65, size.z * 0.5 + 0.30), dark, "z")
+	# 3. ZSS exchange pair (-X face; second stub = the `unsure` json edge).
+	_cyl(p, 0.07, 0.07, 0.50, Vector3(-size.x * 0.5 - 0.25, 0.75, -0.40), dark, "x")
+	_cyl(p, 0.07, 0.07, 0.50, Vector3(-size.x * 0.5 - 0.25, 0.75,  0.40), dark, "x")
 
 # ── #201 lump_cart compound collision: real fork-pocket cavities ────────────
 # The lump_cart body needs 2 horizontal tunnels (150 × 80 mm) in its underframe
@@ -4452,6 +4681,18 @@ static func _m_pump(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void
 			Vector3(size.x * 0.18, 0.04, 0.01), "+X")
 		wilo_lbl.position = Vector3(size.x * 0.22, size.y * 0.42, size.z * 0.3)
 
+# ── Named pump station: _m_pump + a stencil STATION label on the -X volute face
+# (2026-07-06, water_small.md shared note 1). Used by pomp_c1 ("C1") and
+# pomp_zeefbocht ("ZEEFBOCHT") so the stations are identifiable in-world while
+# sharing the photo-verified Wilo model — the real C1 / zeefbocht pumps were
+# never photographed (flags F7/F8), so the generic model is a marked stand-in.
+static func _m_pump_labeled(p: Node3D, size: Vector3, color: Color, ghost: bool, station: String) -> void:
+	_m_pump(p, size, color, ghost)
+	if not ghost:
+		var st_lbl := _stencil_label(p, station,
+			Vector3(size.x * 0.30, 0.05, 0.01), "-X")
+		st_lbl.position = Vector3(-size.x * 0.22, size.y * 0.42, size.z * 0.3)
+
 # ── HMI screen material (dark glass that glows faintly when "on") ─────────────
 static func _screen_mat(ghost: bool) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
@@ -5645,16 +5886,32 @@ static func _build_wires(root: Node3D, size: Vector3, ghost: bool, count: int = 
 		knot_mi.name = "Knot"
 		w.add_child(knot_mi)
 
-# ── rafter: inclined vibrating sieve deck (zeefdek) + scraper trough + drive ───
-## #87 — Rafter rebuilt as a horizontal ENCAPSULATED SCREW inside a 1.5 mm
-## steel-mesh cylinder. Material rides the auger from the +Z inlet end to the
-## -Z discharge end; water drains DOWN through the fine mesh into a collection
-## trough below, dewatered flake exits the -Z end into a chute. The mesh
-## cylinder is semi-transparent so the rotating auger is visible from outside.
+# ── rafter: SUBMERGED mesh-cylinder sieve in a water tank on a raised stand ──
+## Header fixed 2026-07-06 (the "inclined vibrating sieve deck (zeefdek)" text
+## was stale — QA:Q4 flags it explicitly).
+## #87 core kept: horizontal ENCAPSULATED SCREW inside a 1.5 mm steel-mesh
+## cylinder, semi-transparent so the rotating auger is visible.
+## Refinement 2026-07-06 (eop_rafter.md Part B + operator ruling B7):
+##  • Mesh cylinder ~0.75 m ⌀, encapsulated in a water tank ~1 m wide × 1 m
+##    high; everything below the tank is PLATFORM (ruling B7).
+##  • The tank + flotation-tank are connected vessels — the rafter tank WATER
+##    LEVEL equals the 3B flotation-tank water level: rim 4.1 m, surface
+##    rim − 0.10 = 4.0 m in _m_flotation terms (operator survey #230 values
+##    kept as-is; the operator's "3B flotation bottom ~50 cm above the floor,
+##    I think" CONFLICTS with #230's flat-bottom-at-1.0 m — keep #230 until
+##    re-surveyed, flagged in component_flags_review.md ruling B7).
+##  • Reliability: the operator NEVER saw the rafter malfunction (interview /
+##    QA:Q4) — exclude it from random-breakdown pools / lowest failure tier
+##    when a per-machine failure system lands (no such hook exists yet).
+## Material path: doseerschroef M11a → +Z inlet hopper → auger through the
+## submerged mesh → -Z discharge chute → ontwaterschroef van rafter.
 static func _m_rafter(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
 	var steel  := _mat(color, ghost, 0.5, 0.45)
 	var dark   := _mat(_DARK, ghost, 0.5, 0.6)
 	var bronze := _mat(Color(0.50, 0.40, 0.22), ghost, 0.4, 0.6)   # rusted-bronze auger
+	# Translucent water — same material family as _m_flotation so the shared
+	# water level reads as the same water.
+	var water := _mat(Color(0.20, 0.45, 0.60, 0.55), ghost, 0.0, 0.1)
 	# Steel-mesh cylinder material: pale grey, semi-transparent, slight wire-pattern
 	# look via lower roughness — reads as fine perforated metal screen.
 	var mesh_mat : StandardMaterial3D = StandardMaterial3D.new()
@@ -5668,86 +5925,92 @@ static func _m_rafter(p: Node3D, size: Vector3, color: Color, ghost: bool) -> vo
 		mesh_mat.albedo_color = Color(0.62, 0.64, 0.68, 0.30)
 		mesh_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 
-	# ── Frame: 4 corner legs + a cross-rail at deck height ───────────────────
-	var deck_y : float = size.y * 0.52
+	# ── Height ladder (world metres, ruling B7 + survey #230):
+	# platform top 3.1 → tank rim 3.1 + 1.0 = 4.1 = flotation rim →
+	# water surface 4.0 = flotation surface (connected vessels).
+	var plat_top : float = 3.1
+	var tank_h   : float = 1.0            # ruling B7: tank ~1 m high
+	var tank_w   : float = 1.0            # ruling B7: tank ~1 m wide
+	var rim_y    : float = plat_top + tank_h        # 4.1 — matches _m_flotation rim
+	var surf_y   : float = rim_y - 0.10             # 4.0 — flotation water-surface rule
 	var hx : float = size.x * 0.5
 	var hz : float = size.z * 0.5
-	var leg_w : float = 0.10
+
+	# ── RAISED STAND — _m_flotation pattern (4 heavy posts + braces + ring).
+	var leg_w : float = 0.18
+	var hx_l : float = size.x * 0.40
+	var hz_l : float = size.z * 0.45
 	for sx in [-1.0, 1.0]:
 		for sz in [-1.0, 1.0]:
-			var lg := _box(p, Vector3(leg_w, deck_y, leg_w),
-				Vector3(sx * (hx - leg_w * 0.6), deck_y * 0.5, sz * (hz - leg_w * 0.6)), dark)
+			var lg := _box(p, Vector3(leg_w, plat_top, leg_w),
+				Vector3(float(sx) * hx_l, plat_top * 0.5, float(sz) * hz_l), dark)
 			lg.add_to_group("machine_leg")
-			lg.set_meta("leg_h", deck_y)
-	# Cross-rails along the long axis (-Z and +Z sides) for the read of a built-up
-	# frame and to give the water trough something to hang from.
-	for sx2 in [-1.0, 1.0]:
-		_box(p, Vector3(0.06, 0.06, size.z * 0.94),
-			Vector3(sx2 * (hx - 0.06), deck_y - 0.04, 0.0), steel)
+			lg.set_meta("leg_h", plat_top)
+	for sz3 in [-1.0, 1.0]:
+		_box(p, Vector3(hx_l * 2.0, 0.06, 0.06), Vector3(0.0, plat_top * 0.35, float(sz3) * hz_l), dark)
+		_box(p, Vector3(hx_l * 2.0, 0.06, 0.06), Vector3(0.0, plat_top * 0.70, float(sz3) * hz_l), dark)
+	for sx3 in [-1.0, 1.0]:
+		_box(p, Vector3(0.06, 0.06, hz_l * 2.0), Vector3(float(sx3) * hx_l, plat_top * 0.35, 0.0), dark)
+		_box(p, Vector3(0.06, 0.06, hz_l * 2.0), Vector3(float(sx3) * hx_l, plat_top * 0.70, 0.0), dark)
+	# Platform plate at the stand top (tank bottom).
+	_box(p, Vector3(size.x * 0.9, 0.10, size.z * 0.98), Vector3(0.0, plat_top - 0.05, 0.0), steel)
 
-	# ── Water collection trough (below the mesh, catches dripping water) ─────
-	var trough_w : float = size.x * 0.82
-	var trough_h : float = size.y * 0.18
-	var trough_y : float = deck_y - trough_h * 0.5 + 0.02
-	_box(p, Vector3(trough_w, trough_h, size.z * 0.86),
-		Vector3(0.0, trough_y, 0.0), dark)
-	# A small drain stub on the -X side at the low end (water out).
-	_cyl(p, 0.05, 0.05, 0.30,
-		Vector3(-trough_w * 0.5 - 0.10, trough_y - trough_h * 0.20, hz * 0.40), dark, "x")
+	# ── WATER TANK (open top) enclosing the mesh cylinder — ruling B7 dims.
+	var tank_l : float = size.z * 0.96
+	var twt : float = 0.05
+	_box(p, Vector3(twt, tank_h, tank_l), Vector3(-tank_w * 0.5 + twt * 0.5, plat_top + tank_h * 0.5, 0.0), steel)
+	_box(p, Vector3(twt, tank_h, tank_l), Vector3( tank_w * 0.5 - twt * 0.5, plat_top + tank_h * 0.5, 0.0), steel)
+	_box(p, Vector3(tank_w, tank_h, twt), Vector3(0.0, plat_top + tank_h * 0.5, -tank_l * 0.5 + twt * 0.5), steel)
+	_box(p, Vector3(tank_w, tank_h, twt), Vector3(0.0, plat_top + tank_h * 0.5,  tank_l * 0.5 - twt * 0.5), steel)
+	# Water surface at 4.0 m — ABOVE the mesh-cylinder top so the cylinder is
+	# fully submerged (interview "SUBMERGED"); alpha ≈ 0.55 keeps the auger
+	# readable through water + mesh (#87 design intent preserved).
+	_box(p, Vector3(tank_w - twt * 2.0, 0.04, tank_l - twt * 2.0),
+		Vector3(0.0, surf_y, 0.0), water)
 
-	# ── 1.5 mm STEEL-MESH CYLINDER (the rafter's defining feature) ───────────
-	# Slightly tilted (~5° head-down toward -Z) so material progresses forward
-	# under gravity AND auger thrust. Axis along Z. Centered on Y above trough.
-	var cyl_r  : float = size.x * 0.32
-	var cyl_l  : float = size.z * 0.86
-	var cyl_y  : float = deck_y + cyl_r * 0.7
-	var cyl_tilt : float = deg_to_rad(-5.0)
+	# ── 1.5 mm STEEL-MESH CYLINDER, ~0.75 m ⌀ (ruling B7), axis LEVEL along Z.
+	# The old ~5° head-down tilt is dropped: a tilted cylinder would break the
+	# submerged read inside the 1 m tank (top would pierce the water surface).
+	var cyl_r : float = 0.375                      # ~0.75 m diameter, ruling B7
+	var cyl_l : float = size.z * 0.86
+	var cyl_y : float = plat_top + 0.45            # top at 3.925 < water 4.0 → submerged
 	var cyl_pivot := Node3D.new()
 	cyl_pivot.position = Vector3(0.0, cyl_y, 0.0)
-	cyl_pivot.rotation = Vector3(cyl_tilt, 0.0, 0.0)
 	p.add_child(cyl_pivot)
 	# Mesh cylinder shell (along Z axis).
 	_cyl(cyl_pivot, cyl_r, cyl_r, cyl_l, Vector3.ZERO, mesh_mat, "z")
-	# End caps — solid steel rings, not perforated. The +Z end has a feed inlet
-	# port (small cylinder protruding straight up); the -Z end is the discharge.
+	# End caps — solid steel rings, not perforated.
 	_cyl(cyl_pivot, cyl_r * 1.05, cyl_r * 1.05, 0.06, Vector3(0.0, 0.0,  cyl_l * 0.5 + 0.03), steel, "z")
 	_cyl(cyl_pivot, cyl_r * 1.05, cyl_r * 1.05, 0.06, Vector3(0.0, 0.0, -cyl_l * 0.5 - 0.03), steel, "z")
-	# Three reinforcing bands around the mesh (visual stiffeners + read of weld lines).
+	# Three reinforcing bands around the mesh (visual stiffeners / weld lines).
 	for rk in [-0.35, 0.0, 0.35]:
-		_cyl(cyl_pivot, cyl_r * 1.04, cyl_r * 1.04, 0.04, Vector3(0.0, 0.0, cyl_l * rk), steel, "z")
+		_cyl(cyl_pivot, cyl_r * 1.04, cyl_r * 1.04, 0.04, Vector3(0.0, 0.0, cyl_l * float(rk)), steel, "z")
 
-	# ── ROTATING AUGER inside the mesh (visible through transparent shell) ───
-	# Bronze-coloured to contrast against the pale steel mesh. Reuses the shared
-	# _spinning_auger helper so it picks up the live-RPM system. Tagged
-	# `comp: rafter_auger` for HMI control.
+	# ── ROTATING AUGER inside the mesh — unchanged from #87 (QA:Q4 confirms the
+	# auger + mesh cylinder match reality). comp "rafter_auger", 35 rpm.
 	_spinning_auger(cyl_pivot, cyl_l * 0.96, Vector3.ZERO,
 		cyl_r * 0.25, cyl_r * 0.78, dark, bronze, ghost, 35.0, "rafter_auger")
 
-	# ── INLET HOPPER at the +Z end (where the upstream machine drops material in)
-	# Mounted on TOP of the +Z end cap so the upstream chute drops straight down.
-	_cyl(cyl_pivot, cyl_r * 0.55, cyl_r * 0.20, cyl_r * 0.90,
-		Vector3(0.0, cyl_r * 0.65, cyl_l * 0.4), steel)
-	# A short rectangular flange on top of the hopper for the upstream chute lip.
-	_box(cyl_pivot, Vector3(cyl_r * 1.10, 0.04, cyl_r * 1.10),
-		Vector3(0.0, cyl_r * 1.10, cyl_l * 0.4), steel)
+	# ── INLET HOPPER above the tank rim at the +Z end (feed from doseerschroef
+	# M11a drops straight down through the water surface into the cylinder).
+	_cyl(p, cyl_r * 0.60, cyl_r * 0.22, 0.45, Vector3(0.0, rim_y + 0.22, cyl_l * 0.4), steel)
+	_box(p, Vector3(cyl_r * 1.2, 0.04, cyl_r * 1.2), Vector3(0.0, rim_y + 0.47, cyl_l * 0.4), steel)
 
-	# ── DRIVE MOTOR + GEARBOX at the +Z end of the auger shaft ───────────────
-	_motor_unit(cyl_pivot, cyl_r * 0.45, cyl_r * 0.6,
-		Vector3(0.0, 0.0, cyl_l * 0.5 + cyl_r * 0.45), "z", ghost)
+	# ── DRIVE MOTOR + GEARBOX at the +Z end, outside the tank end wall, at
+	# auger-shaft height.
+	_motor_unit(p, 0.17, 0.25, Vector3(0.0, cyl_y, tank_l * 0.5 + 0.18), "z", ghost)
 
-	# ── DISCHARGE CHUTE at the -Z end (matches MachineFlow's out port) ──────
-	# Material exits the -Z end of the cylinder, slides down a 35° chute to
-	# whatever the rafter feeds. Sized + positioned so its mouth sits at the
-	# "out" port (0.0, 0.4, -0.4).
+	# ── DISCHARGE CHUTE at the -Z end: dewatered flake exits over/through the
+	# -Z tank end down a 35° chute toward the ontwaterschroef van rafter.
 	var chute_w : float = cyl_r * 1.6
 	var chute_l : float = size.z * 0.30
-	var chute_y : float = deck_y - 0.05
-	var chute_z : float = -hz * 1.05
+	var chute_y : float = plat_top - 0.10
+	var chute_z : float = -hz * 1.02
 	var chute := _box(p, Vector3(chute_w, 0.06, chute_l), Vector3(0.0, chute_y, chute_z), steel)
 	chute.rotation = Vector3(deg_to_rad(-35.0), 0.0, 0.0)
 	for sxr in [-1.0, 1.0]:
-		var rail := _box(p, Vector3(0.04, size.y * 0.10, chute_l),
-			Vector3(sxr * chute_w * 0.5, chute_y + size.y * 0.04, chute_z), steel)
+		var rail := _box(p, Vector3(0.04, 0.22, chute_l),
+			Vector3(float(sxr) * chute_w * 0.5, chute_y + 0.09, chute_z), steel)
 		rail.rotation = Vector3(deg_to_rad(-35.0), 0.0, 0.0)
 	# Outlet lip at the bottom of the chute (the actual material drop point).
 	_box(p, Vector3(chute_w * 0.95, 0.05, 0.10),
@@ -6214,6 +6477,43 @@ static func _m_compactor(p: Node3D, size: Vector3, color: Color, ghost: bool) ->
 	# Flush top inlet — a short collar around a hole in the lid.
 	_cyl(p, drum_r * 0.32, drum_r * 0.32, size.y * 0.04,
 		Vector3(-size.x * 0.16, size.y * 0.91, -size.z * 0.16), steel)
+	# ── PCU AFZUIGING vent (operator ruling B5 2026-07-06 — OVERRIDES the
+	# kitchen-hood geometry in afzuiging.md): ONE ~30 cm ⌀ vent hole in the
+	# compactor's TOP CENTRE with the extraction fan visible inside behind a
+	# mesh. ONE unit per PCU (the checklist's "unit 2" reading is superseded).
+	# The % setpoint drives THIS fan: default 55 (FORM-008 rows 21/22 "Compactor
+	# rand afzuiging EN reiniging — 55%", extruder_3a_setpoints.json); forcing
+	# 0 % AND 100 % both harm drying (0 = sauna effect / moisture stays, 100 =
+	# moisture removed the wrong way — ruling B5). The vent SHAFT above the
+	# machine is a separate building system — out of scope. The "EN reiniging"
+	# cleaning half of the checklist row has no separate mechanic yet
+	# (afzuiging.md flag 7). Sits clear of the off-centre flush inlet collar
+	# above and keeps the #106 no-funnel silhouette (nothing rises off the lid).
+	var vent_r : float = 0.15                        # ~30 cm diameter (ruling B5)
+	var lid_top_y : float = size.y * 0.905
+	p.set_meta("afzuiging_pct", 55.0)                # HMI/sim hook — default 55 %
+	# Dark recess = the hole read (slightly proud so it doesn't z-fight the lid).
+	_cyl(p, vent_r, vent_r, size.y * 0.012, Vector3(0.0, lid_top_y + 0.005, 0.0),
+		_mat(Color(0.06, 0.06, 0.07), ghost, 0.2, 0.8))
+	# Fan: spinning hub + 4 blades just below the mesh, visible down the hole.
+	var fan := _spinning_cyl(p, 0.030, 0.030, 0.05,
+		Vector3(0.0, lid_top_y - 0.06, 0.0), dark, "y", Vector3.UP, ghost, 120.0)
+	if not ghost:
+		for fb in 4:
+			var fan_ang : float = TAU * float(fb) / 4.0
+			var blade := _box(fan, Vector3(vent_r * 0.85, 0.010, 0.055),
+				Vector3(cos(fan_ang) * vent_r * 0.45, 0.0, sin(fan_ang) * vent_r * 0.45), steel)
+			blade.rotation.y = -fan_ang
+	# Protective mesh disc over the hole (semi-transparent — fan visible behind it).
+	var vent_mesh_mat := StandardMaterial3D.new()
+	vent_mesh_mat.albedo_color = Color(0.55, 0.57, 0.60, 0.40 if not ghost else 0.22)
+	vent_mesh_mat.metallic = 0.6
+	vent_mesh_mat.roughness = 0.4
+	vent_mesh_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	vent_mesh_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_cyl(p, vent_r * 0.98, vent_r * 0.98, 0.008, Vector3(0.0, lid_top_y + 0.015, 0.0), vent_mesh_mat)
+	# Collar ring around the vent rim (torus — a solid disc would hide the mesh).
+	_torus(p, vent_r * 1.0, vent_r * 1.2, Vector3(0.0, lid_top_y + 0.01, 0.0), steel)
 	# Tangential outlet to the extruder screw (+Z side, low).
 	_cyl(p, size.x * 0.13, size.x * 0.13, size.z * 0.36, Vector3(0.0, size.y * 0.34, size.z * 0.44), dark, "z")
 	# Big cutter drive motor under the drum.
@@ -6614,52 +6914,178 @@ static func _m_waste_container(p: Node3D, size: Vector3, color: Color, ghost: bo
 	_box(p, Vector3(size.x * 0.25, 0.12, size.z * 1.0), Vector3(size.x * 0.22, 0.06, 0.0), dark)
 	_box(p, Vector3(size.x * 0.25, 0.12, size.z * 1.0), Vector3(-size.x * 0.22, 0.06, 0.0), dark)
 
-# ── bunker: open-top steel pit + 4 bunker rollers at the bottom + side motor ──
+# ── bunker: lijn-3 BUFFER CONVEYOR downstream of Shredder 1 (rebuilt 2026-07-06)
 ##
-## Bales are dumped into the top opening; the rollers at the floor meter the
-## load out the discharge end onto the feeding belt of Shredder 1. Sized for
-## one truck-bay of intake (~4 m × 3 m footprint, 4 m tall).
+## Full rebuild per bunker.md + the 2026-07-06 operator rulings. It is NOT an
+## intake pit: shredder 1 bottom → belt → BUNKER → belt 1040 (interview; SWI-035
+## front-end order; FORM-018_p2 sensor list "Shredder 1, Bunker, Shredder 2").
+## A ~10 m long × 4 m wide travelling DECK carries the bed toward the +Z
+## discharge; material drops in over the -Z infeed-end wall top. Local +Z =
+## conveying direction (belt convention).
+##
+## Documented numbers honoured here:
+##  • Speed setting 200-1000 hard cap (ruling B3: normal band 200-800 per
+##    FORM-008; overspeed 1000 = rush-to-outfeed after the bunker ran empty;
+##    real cap unknown, ≥1000). Settable BELOW 200 but causes relay trips /
+##    motor stalls ~every 15 min, worse the lower — see the fault-hook meta
+##    below (TODO: full relay-trip event needs LineFlow).
+##  • Calibration: setting 600 ≈ full 10 m traversal in 10 min ⇒ 600 mm per
+##    ~36 s interval, linear ⇒ m/s = setting / 36000 (interview). KNOWN
+##    inconsistency kept visible: operator memory "at 200 it takes ~15 min"
+##    (linear would give ~30 min) — calibration anchor stays 600 ≈ 10 min.
+##  • Fill LEVEL SETTING 100-130 cm, default 115 (FORM-008 row 4; ruling B4),
+##    read by a sensor ~3 m up — and MISCALIBRATED: actual bed ≈ setting
+##    +35-50 cm (setting 100 → ~130-140 actual). Reproduced as a fixed +40 cm
+##    offset meta (authentic operator knowledge, ruling B4). The "2.0 = full"
+##    startup scale + HMI "258" remain separate, unexplained scales (flag F6).
+##  • Doors (ruling B1, COMBINATION of both sources): barred/grated doors, each
+##    with a blurry plexiglass window in its own frame, on the -Z shredder-1
+##    infeed side. Count/size/position placeholders (flag F4); door-open must
+##    eventually block the startup FSM (SWI-049 step 4) — interaction TODO.
+##  • ONE bunkerrol at the discharge end (SWI-039: wraps with film/wire —
+##    cleaning target). Diameter/drive placeholder (flag F9).
+## Placeholders (flags F1/F10/F11/F12/F14): deck elevation 1.25 m (band
+## 1.0-1.5), wall height 3.75 m (band 3.5-4.0), wall thickness 0.10, motor
+## location, sensor mount, exterior colour.
+##
+## Save-compat: comp key stays the legacy "uittrekrol" (LineFlow
+## _default_components_for + old saves address it — bunker.md flag F15). The
+## documented component names are "belt" (deck drive) + "bunkerrol" (SWI-039);
+## rename both sides together in a future LineFlow pass.
 static func _m_bunker(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
 	var steel := _mat(color, ghost, 0.45, 0.5)
-	var dark := _mat(_DARK, ghost, 0.5, 0.6)
+	var dark  := _mat(_DARK, ghost, 0.5, 0.6)
 	var hx := size.x * 0.5
 	var hz := size.z * 0.5
-	var wall_h := size.y * 0.95
-	var wt := 0.10                                  # wall thickness
-	# Floor
-	_box(p, Vector3(size.x, 0.18, size.z), Vector3(0.0, 0.09, 0.0), dark)
-	# Four walls (open top) — the +Z wall is shorter so a discharge mouth is
-	# visible at the front.
-	_box(p, Vector3(wt, wall_h, size.z), Vector3(-hx + wt * 0.5, wall_h * 0.5 + 0.1, 0.0), steel)
-	_box(p, Vector3(wt, wall_h, size.z), Vector3( hx - wt * 0.5, wall_h * 0.5 + 0.1, 0.0), steel)
-	_box(p, Vector3(size.x, wall_h, wt), Vector3(0.0, wall_h * 0.5 + 0.1, -hz + wt * 0.5), steel)
-	# Front (discharge) wall — only the upper half, so the rollers + outgoing
-	# material are visible.
-	_box(p, Vector3(size.x, wall_h * 0.55, wt), \
-		Vector3(0.0, wall_h * 0.6 + 0.4, hz - wt * 0.5), steel)
-	# Bunker rollers — four chunky cylinders along X, evenly spaced along Z.
-	# They feed material outward (+Z direction) into the discharge mouth.
-	var roller_y := 0.4
-	var roller_r := 0.22
-	var roller_len := size.x * 0.88
-	for i in 4:
-		var t := float(i) / 3.0                     # 0, 1/3, 2/3, 1
-		var z_pos := -hz * 0.7 + t * (size.z * 1.0)
-		# Spinning extraction roller (axis X). All four share comp "uittrekrol" so a
-		# single HMI slider drives the whole roller bank together.
-		var bnk_roll := _spinning_cyl(p, roller_r, roller_r, roller_len, Vector3(0.0, roller_y, z_pos), dark, "x", Vector3.RIGHT, ghost)
-		if not ghost:
-			bnk_roll.set_meta("comp", "uittrekrol")
-	# Drive motor on the +X side, low — turns the bunker-roller chain.
-	_motor_unit(p, 0.28, 0.65, Vector3(hx + 0.05, roller_y, 0.0), "z", ghost)
-	_guard(p, Vector3(0.6, 0.35, 0.18), Vector3(hx + 0.05, roller_y + 0.45, 0.0), ghost)
-	# Top rim/lip walkway — narrow band around the top so the visual reads
-	# as "you can dump bales in here".
-	var rim_y := size.y - 0.05
-	_box(p, Vector3(size.x + 0.1, 0.04, 0.2), Vector3(0.0, rim_y, -hz), dark)
-	_box(p, Vector3(size.x + 0.1, 0.04, 0.2), Vector3(0.0, rim_y,  hz), dark)
-	_box(p, Vector3(0.2, 0.04, size.z + 0.1), Vector3(-hx, rim_y, 0.0), dark)
-	_box(p, Vector3(0.2, 0.04, size.z + 0.1), Vector3( hx, rim_y, 0.0), dark)
+	var wt := 0.10                       # wall thickness — "thin" only (flag F11)
+	var deck_y : float = 1.25            # deck elevation (flag F1, midpoint 1.0-1.5)
+	var wall_top : float = size.y        # 1.25 deck + 3.75 wall (flag F1) = 5.0
+	# ── Ruled operating metas (read by future HMI/LineFlow wiring) ───────────
+	# Speed: UI band 200-1000 (ruling B3), normal 200-800 (FORM-008), default
+	# 600 = calibration anecdote only (flag F8). m/s = setting / 36000.
+	p.set_meta("bunker_speed_setting", 600.0)
+	p.set_meta("bunker_speed_min", 200.0)        # below → relay trips (see fault hook)
+	p.set_meta("bunker_speed_max", 1000.0)       # sim hard cap, ruling B3
+	# TODO(fault hook): settings BELOW 200 are settable and must schedule
+	# relay-trip/motor-stall events ~every 15 min (more frequent the lower the
+	# setting) — needs a LineFlow event, not a catalog mesh. Ruling B3 2026-07-06.
+	p.set_meta("bunker_relay_trip_below", 200.0)
+	# Fill: level SETTING 100-130 cm, default 115 (ruling B4) + the authentic
+	# +40 cm sensor miscalibration (actual bed ≈ setting + 35-50 cm).
+	p.set_meta("bunker_fill_setting_cm", 115.0)
+	p.set_meta("bunker_fill_min_cm", 100.0)
+	p.set_meta("bunker_fill_max_cm", 130.0)
+	p.set_meta("bunker_fill_miscal_offset_cm", 40.0)
+	# ── Support legs (deck carried ~1.25 m above the floor) ──────────────────
+	var leg_zs : Array[float] = [-hz + 0.4, -hz * 0.5, 0.0, hz * 0.5, hz - 0.4]
+	for lz in leg_zs:
+		for sx in [-1.0, 1.0]:
+			var lg := _box(p, Vector3(0.12, deck_y, 0.12),
+				Vector3(float(sx) * (hx - 0.10), deck_y * 0.5, lz), dark)
+			lg.add_to_group("machine_leg")
+			lg.set_meta("leg_h", deck_y)
+	# Longitudinal frame beams under the deck edges.
+	for sx2 in [-1.0, 1.0]:
+		_box(p, Vector3(0.14, 0.14, size.z * 0.98),
+			Vector3(float(sx2) * (hx - 0.10), deck_y - 0.20, 0.0), dark)
+	# ── Travelling deck (the conveyor bed). Walkable belt body per bunker.md
+	# §5: group "belt" + belt_speed meta (setting/36000 → 600 ⇒ ~0.0167 m/s)
+	# so the player is carried along local +Z. Ghost gets a plain mesh — NEVER
+	# a live StaticBody3D in ghosts. NOTE: the placeable's outer box collider
+	# currently encases the interior; the deck body is the correct tagging
+	# surface for when interior access lands.
+	var deck_w : float = size.x - wt * 2.0
+	var belt_mat := _mat(Color(0.10, 0.10, 0.12), ghost, 0.85, 0.3)
+	if ghost:
+		_box(p, Vector3(deck_w, 0.12, size.z * 0.98), Vector3(0.0, deck_y - 0.06, 0.0), belt_mat)
+	else:
+		var deck_body := StaticBody3D.new()
+		deck_body.name = "BunkerDeck"
+		deck_body.position = Vector3(0.0, deck_y - 0.06, 0.0)
+		p.add_child(deck_body)
+		var dmi := MeshInstance3D.new()
+		var dbm := BoxMesh.new()
+		dbm.size = Vector3(deck_w, 0.12, size.z * 0.98)
+		dmi.mesh = dbm
+		dmi.material_override = belt_mat
+		deck_body.add_child(dmi)
+		var dcol := CollisionShape3D.new()
+		var dsh := BoxShape3D.new()
+		dsh.size = Vector3(deck_w, 0.12, size.z * 0.98)
+		dcol.shape = dsh
+		deck_body.add_child(dcol)
+		deck_body.add_to_group("belt")
+		var carry : float = 600.0 / 36000.0    # default setting 600 (flag F8)
+		deck_body.set_meta("belt_speed", carry)
+		deck_body.set_meta("belt_ramp_tau_s", 2.5)   # heavy loaded deck coast-down
+		var belt_script : Resource = load("res://src/sim/BeltSurface.gd")
+		if belt_script != null:
+			deck_body.set_script(belt_script)
+			deck_body.set("belt_speed_mps", carry)
+			deck_body.set("belt_ramp_tau_s", 2.5)
+	# ── Walls: thin, non-see-through, deck → wall_top (interview). ───────────
+	var wall_h : float = wall_top - deck_y
+	var wall_cy : float = deck_y + wall_h * 0.5
+	_box(p, Vector3(wt, wall_h, size.z), Vector3(-hx + wt * 0.5, wall_cy, 0.0), steel)
+	_box(p, Vector3(wt, wall_h, size.z), Vector3( hx - wt * 0.5, wall_cy, 0.0), steel)
+	# -Z INFEED-END wall (shredder-1 side; material drops in OVER its top —
+	# whether over-top or through an opening is undocumented, flag F4).
+	_box(p, Vector3(size.x, wall_h, wt), Vector3(0.0, wall_cy, -hz + wt * 0.5), steel)
+	# +Z DISCHARGE-END wall: upper panel only — a 1.0 m mouth above the deck
+	# lets the bed exit over the bunkerrol onto the next belt (belt 1040 per
+	# interview; numbering conflict flag F2).
+	var mouth_h : float = 1.0
+	_box(p, Vector3(size.x, wall_h - mouth_h, wt),
+		Vector3(0.0, deck_y + mouth_h + (wall_h - mouth_h) * 0.5, hz - wt * 0.5), steel)
+	# ── Doors on the -Z infeed wall (ruling B1): 2 barred/grated person-height
+	# panels, each with a blurry plexiglass window in its own frame. Count/size/
+	# position = placeholders (flag F4). "Bunkerdeuren gesloten" is a documented
+	# startup check (SWI-049 step 4) — open/close interaction is a TODO hook.
+	var door_w : float = 0.90
+	var door_h : float = 2.00
+	var plex := StandardMaterial3D.new()
+	plex.albedo_color = Color(0.75, 0.80, 0.84, 0.35)   # blurry plexiglass
+	plex.roughness = 0.85                                # frosted → "blurry" read
+	plex.metallic = 0.0
+	plex.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	if ghost:
+		plex.albedo_color = Color(0.75, 0.80, 0.84, 0.20)
+	var frame_mat := _mat(Color(0.30, 0.32, 0.35), ghost, 0.5, 0.5)
+	var door_z : float = -hz - 0.03                      # proud of the outside face
+	for dx in [-0.65, 0.65]:
+		var dcx := float(dx)
+		var dy0 : float = deck_y + 0.05                  # doors open onto the deck level
+		# Door frame (4 edges).
+		_box(p, Vector3(door_w + 0.10, 0.06, 0.06), Vector3(dcx, dy0 + door_h + 0.03, door_z), frame_mat)
+		_box(p, Vector3(door_w + 0.10, 0.06, 0.06), Vector3(dcx, dy0 - 0.03, door_z), frame_mat)
+		_box(p, Vector3(0.06, door_h + 0.12, 0.06), Vector3(dcx - door_w * 0.5 - 0.03, dy0 + door_h * 0.5, door_z), frame_mat)
+		_box(p, Vector3(0.06, door_h + 0.12, 0.06), Vector3(dcx + door_w * 0.5 + 0.03, dy0 + door_h * 0.5, door_z), frame_mat)
+		# Vertical bars (barred/grated read — SWI-049 photo).
+		for bi in 4:
+			var bx : float = dcx - door_w * 0.5 + (float(bi) + 1.0) * (door_w / 5.0)
+			_box(p, Vector3(0.03, door_h, 0.03), Vector3(bx, dy0 + door_h * 0.5, door_z), frame_mat)
+		# Blurry plexiglass window pane + its own frame (upper half of the door).
+		var win_y : float = dy0 + door_h * 0.70
+		_box(p, Vector3(door_w * 0.7 + 0.06, 0.05, 0.05), Vector3(dcx, win_y + door_h * 0.14, door_z - 0.02), frame_mat)
+		_box(p, Vector3(door_w * 0.7 + 0.06, 0.05, 0.05), Vector3(dcx, win_y - door_h * 0.14, door_z - 0.02), frame_mat)
+		var win := _box(p, Vector3(door_w * 0.7, door_h * 0.26, 0.015), Vector3(dcx, win_y, door_z - 0.02), plex)
+		win.name = "BunkerDoorWindow"
+	# ── ONE bunkerrol across the width at the +Z discharge end (SWI-039: the
+	# roller that wraps with shredded film + wires; cleaned under LOTO with a
+	# Stanley knife + betonschaar). Diameter/position placeholder (flag F9).
+	# Comp key = legacy "uittrekrol" (see header — bunker.md flag F15).
+	var roll := _spinning_cyl(p, 0.25, 0.25, size.x * 0.88,
+		Vector3(0.0, deck_y + 0.20, hz - 0.45), dark, "x", Vector3.RIGHT, ghost, 12.0)
+	if not ghost:
+		roll.set_meta("comp", "uittrekrol")
+	# ── Deck drive motor, low on the +X side at the discharge end (flag F10). ─
+	_motor_unit(p, 0.24, 0.60, Vector3(hx + 0.05, deck_y - 0.35, hz - 0.8), "z", ghost)
+	_guard(p, Vector3(0.5, 0.35, 0.18), Vector3(hx + 0.05, deck_y + 0.05, hz - 0.8), ghost)
+	# ── Fill sensor ("Bunker sensor", FORM-018_p2 wipe item): small box ~3 m
+	# above the deck at the discharge end (ruling B4 "sensor ~3 m up"; mount
+	# placeholder, flag F12).
+	_box(p, Vector3(0.18, 0.24, 0.12),
+		Vector3(hx - wt - 0.10, deck_y + 3.0, hz - 0.8), _mat(_SAFETY, ghost, 0.2, 0.6))
 
 # ── Shredder 1 (coarse pre-shredder): heavy + big throat + dual rotors ────────
 ##
@@ -7057,6 +7483,82 @@ static func _m_zss_water(p: Node3D, size: Vector3, color: Color, ghost: bool) ->
 	_box(p, Vector3(size.x * 0.3, size.y * 0.18, size.z * 0.3), Vector3(size.x * 0.5, size.y * 0.12, 0.0), steel)
 	# Discharge pipe stub off the +X side.
 	_cyl(p, size.x * 0.06, size.x * 0.06, size.x * 0.5, Vector3(size.x * 0.6, size.y * 0.3, 0.0), steel, "x")
+
+# ── Kleine LA: small open-top water basin, lijn 3B flotation-tank exit side ──
+## 2026-07-06 (water_small.md §1). Plain rectangular open-top steel tank,
+## floor-standing, NO internals (nothing documented — no agitators/ladders/
+## pumps). Water surface just below the rim because the documented operating
+## state is "just barely overflowing" (checklist row 16 "Nét overlopen kleine
+## LA I", FORM-008). Dimensions PLACEHOLDER — only "~half of LA1" is documented
+## and LA1 has no size anywhere (flag F1). Dead-end basin: no outlet documented
+## (flag F2) — one capped stub only. Deliberately NOT _m_zss_water (closed
+## cylinder + side pump contradicts "open-top", operator interview 2026-07-05).
+static func _m_kleine_la(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
+	var shell := _mat(color, ghost, 0.4, 0.45)
+	var dark  := _mat(_DARK, ghost, 0.5, 0.6)
+	# Translucent water material — same family as the flotation/sinkfloat tanks.
+	var water := _mat(Color(0.32, 0.40, 0.34, 0.78), ghost, 0.0, 0.2)
+	var hx := size.x * 0.5
+	var hz := size.z * 0.5
+	var wt := 0.05                       # wall thickness (placeholder)
+	# Floor plate.
+	_box(p, Vector3(size.x, 0.06, size.z), Vector3(0.0, 0.03, 0.0), dark)
+	# 4 thin walls, open top.
+	_box(p, Vector3(wt, size.y, size.z), Vector3(-hx + wt * 0.5, size.y * 0.5, 0.0), shell)
+	_box(p, Vector3(wt, size.y, size.z), Vector3( hx - wt * 0.5, size.y * 0.5, 0.0), shell)
+	_box(p, Vector3(size.x, size.y, wt), Vector3(0.0, size.y * 0.5, -hz + wt * 0.5), shell)
+	_box(p, Vector3(size.x, size.y, wt), Vector3(0.0, size.y * 0.5,  hz - wt * 0.5), shell)
+	# Water surface ~4 cm below the rim — "nét overlopen" read (checklist row 16).
+	_box(p, Vector3(size.x - wt * 2.0, 0.03, size.z - wt * 2.0),
+		Vector3(0.0, size.y - 0.04, 0.0), water)
+	# Capped stub low on the -X side — the UNDOCUMENTED outlet (flag F2): the
+	# LA1 analogy implies a circuit pump, but none is drawn on the 3B diagram.
+	_cyl(p, 0.05, 0.05, 0.16, Vector3(-hx - 0.08, 0.25, 0.0), dark, "x")
+	_cyl(p, 0.065, 0.065, 0.03, Vector3(-hx - 0.17, 0.25, 0.0), dark, "x")   # blind flange
+
+# ── Tankje tussen extruders: small raised tank + its OWN pump underneath ─────
+## 2026-07-06 (water_small.md §2). One per line (3A + 3B) — placed twice by the
+## operator. Diagram blocks: "Tankje tussen extruders" with a "Pomp" box below
+## it (lijn_3a_flow.md:117-118 / lijn_3b_flow.md:100-101); interview: each has
+## its own dedicated pump DIRECTLY BELOW it — physical stacking is the faithful
+## reading, flagged for confirmation (F5). Tank top style undocumented → plain
+## closed box (flag F4). Pipe stubs: up toward the ontwaterzeef (direction
+## UNSURE on the source photos — flag F6) and out toward the koeltoren circuit.
+static func _m_tankje_extruders(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
+	var shell := _mat(color, ghost, 0.4, 0.45)
+	var dark  := _mat(_DARK, ghost, 0.5, 0.6)
+	var steel := _mat(_STEEL, ghost, 0.5, 0.45)
+	# The photo-verified Wilo pump (water_pump catalog size 0.8 × 0.9 × 1.3)
+	# sits at floor level under the stand — _m_pump geometry reused verbatim.
+	var pump_size := Vector3(0.8, 0.9, 1.3)
+	var pump_root := Node3D.new()
+	pump_root.name = "TankjePomp"
+	p.add_child(pump_root)
+	_m_pump(pump_root, pump_size, color, ghost)
+	# 4-leg steel stand — tall enough for the pump below (stand top ~1.0 m,
+	# placeholder). Legs tagged machine_leg so floor-snap keeps working.
+	var stand_top := 1.0
+	var hx := size.x * 0.5
+	var hz := size.z * 0.5
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			var lg := _box(p, Vector3(0.08, stand_top, 0.08),
+				Vector3(float(sx) * (hx - 0.06), stand_top * 0.5, float(sz) * (hz - 0.06)), dark)
+			lg.add_to_group("machine_leg")
+			lg.set_meta("leg_h", stand_top)
+	# Tank body (plain closed box — top style undocumented, flag F4) above the stand.
+	var tank_h : float = size.y - stand_top - 0.05
+	_box(p, Vector3(size.x * 0.94, 0.05, size.z * 0.94), Vector3(0.0, stand_top + 0.025, 0.0), steel)
+	_box(p, Vector3(size.x * 0.9, tank_h, size.z * 0.9),
+		Vector3(0.0, stand_top + 0.05 + tank_h * 0.5, 0.0), shell)
+	# Pipe stub UP from the tank top toward the ontwaterzeef above/beside it
+	# (edge direction "richting onduidelijk op foto" — flag F6).
+	_cyl(p, 0.05, 0.05, 0.35, Vector3(0.0, size.y + 0.12, -size.z * 0.25), steel)
+	# Pump discharge stub toward the koeltoren circuit (+X, terminates open —
+	# the koeltoren itself is outside this batch, water_small.md §2).
+	_cyl(p, 0.05, 0.05, 0.40, Vector3(size.x * 0.55, 0.45, 0.0), steel, "x")
+	# Drop pipe tank → pump suction.
+	_cyl(p, 0.045, 0.045, stand_top, Vector3(0.0, stand_top * 0.5 + 0.05, hz * 0.75), steel)
 
 # ── ballistic separator: inclined paddle housing + feed hopper + 2 discharge lips
 static func _m_ballistic(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:

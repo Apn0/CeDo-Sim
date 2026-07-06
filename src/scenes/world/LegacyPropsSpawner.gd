@@ -36,25 +36,30 @@ static func spawn_all(world: Node, factory_anchor: Vector3, vehicle_anchor: Vect
 	_spawn_feeder_line(world)
 
 # =============================================================================
-# TEST BUNKER — an intake pit beside the player to dump carried bales into
+# TEST BALE INTAKE — an opzetband beside the player to dump carried bales onto
 # =============================================================================
-## Drops a single intake bunker a short distance from the player's spawn so the
-## full loop is testable on the spot: grab a stack from the yard → carry it over →
-## release it at the bunker → LineFlow picks up the delivered bale and meters it in.
-## Tagged "placed_object" + "feed_machine" like a build-placed one so LineFlow's
-## scan treats it as a real feed point.
+## Drops a single opzetband (bale feed belt) a short distance from the player's
+## spawn so the full loop is testable on the spot: grab a stack from the yard →
+## carry it over → release it at the intake → LineFlow picks up the delivered
+## bale and meters it in.
+## 2026-07-06 (bunker.md flag F16): this used to spawn a `bunker` as the
+## bale-dump target, but the rebuilt bunker is a buffer CONVEYOR downstream of
+## shredder 1 — bales feed the opzetband/shredder-1 head (SWI-042p1 "Stop met
+## balen invoeren"; SWI-035 front-end order), so the test flow retargets to
+## `opzetband_3a3b`. Function name kept: the spawn_all call site + save-less
+## test worlds reference it.
 static func _spawn_test_bunker(world: Node) -> void:
 	var base : Vector3 = world.call("_get_factory_anchor")
 	# In front of the player, past the bale yard, clear of the vehicle row.
 	# -0.9 grounds the base (anchor is the player capsule centre, ~0.9 m up).
 	base += Vector3(2.0, -0.9, 14.0)
-	var bunker := PlaceableCatalog.build_node("bunker", false) as Node3D
-	if bunker == null:
-		push_warning("[LegacyPropsSpawner] test bunker build failed")
+	var intake := PlaceableCatalog.build_node("opzetband_3a3b", false) as Node3D
+	if intake == null:
+		push_warning("[LegacyPropsSpawner] test bale-intake build failed")
 		return
-	world.add_child(bunker)
-	bunker.global_position = base
-	print("[LegacyPropsSpawner] Test bunker spawned at %s" % str(base))
+	world.add_child(intake)
+	intake.global_position = base
+	print("[LegacyPropsSpawner] Test bale intake (opzetband_3a3b) spawned at %s" % str(base))
 
 # =============================================================================
 # MACHINES — Extruder 3B (first machine sim, drives the 120s cascade test)

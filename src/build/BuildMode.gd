@@ -56,11 +56,20 @@ const SURF_TYPES  : Array[String] = ["door", "gate", "window", "sign", "panel"]
 # ── Whole-line macro sequences (front → back, in process order) ───────────────
 # Transcribed directly from the operator's hand-drawn LIJN 3A / LIJN 3B sheet.
 # IMPORTANT: these macros are the WASH + DRY + EXTRUSION train ONLY and START at
-# the vuilsnippersilo (wet-film buffer). The shared dry front-end (opzetband →
-# shredder → bunker → SGA → magnet → ballistic → windshifter → TITECH → VSS) is
-# the common intake that feeds BOTH lines — built separately (task #54), NOT here.
+# the vuilsnippersilo (wet-film buffer). The shared dry front-end is the common
+# intake that feeds BOTH lines — built separately (task #54), NOT here.
+# Operator 2026-07-06 (interview, ruling B2): the front-end is a "SNAIL", not a
+# straight line — feeder belt → 90° side-feed into shredder-1 funnel → belt 1040
+# at 90° → BUNKER top (bunker runs 180° vs the initial feeder) → roll at bunker
+# end → next belt at 90° (clockwise from above) → the LONG belt (number
+# unconfirmed) at another 90°, parallel to + between the feeder and the bunker →
+# SGA → magnet → ballistic → windshifter → TITECH → VSS. Operator explicitly
+# requests floor plans for the sorting/washing areas BEFORE any line-layout
+# macro encodes this — do not macro-ise the front end from this comment alone.
 # Kufferath, MAS bak/drogers and the 3-washer chain are LINE 1 — absent from 3A/3B.
-# Name→id: doseerschroef→transport_screw, glijgoot→transfer_chute, pomp→water_pump,
+# Name→id: doseerschroef→transport_screw, glijgoot→transfer_chute, pomp→pomp_c1
+# (the sheet's "pomp" IS Pomp C1 — water_circuit_3a_la1.md pos 6; generic
+# water_pump stays in the catalog for free placement),
 # ontwaterschroef→dewater_screw, intrekschroef+schoepen+uitdraairol flotatie→one
 # flotation_tank, thermische droger→thermal_dryer, (rondmeng) verdeelwals→verdeelwals,
 # ringleiding→ringleiding (verdeelwals/ringleiding/thermal_dryer are new machines).
@@ -79,11 +88,15 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 	{"id": "transport_screw"},
 	{"id": "friction_washer"},          # frictiewasser — stirring tank, 3A only
 	{"id": "transfer_chute"},
-	# #81 — water_pump moved OFF the centreline. It's a utility unit (water loop,
+	# #81 — pump moved OFF the centreline. It's a utility unit (water loop,
 	# not material flow; role="none" in MachineFlow) so placing it in the main
 	# chain just pushed every downstream machine further along Z for no reason.
 	# Now sits on the -X side lane next to the friction_sep it feeds water to.
-	{"id": "water_pump", "x": -3.5, "z": 0.0},
+	# 2026-07-06: this slot IS Pomp C1 (LA1doc positions 5-6-7: glijgoot →
+	# Pomp C1 → frictiescheider M3; water_circuit_3a_la1.md). In-place id swap
+	# keeps seq.size() and every macro_index stable, so operator-saved deltas
+	# in user://macros/line_3a.json stay valid. Mirror: LineDragger.LINE_3A_SEQ.
+	{"id": "pomp_c1", "x": -3.5, "z": 0.0},
 	{"id": "friction_sep"},
 	{"id": "flotation_tank"},
 	{"id": "dewater_screw"},
@@ -219,6 +232,15 @@ const LINE_3B_SEQ : Array[Dictionary] = [
 	{"id": "dewater_screw"},
 	{"id": "friction_sep"},
 	{"id": "flotation_tank"},
+	# Kleine LA — open waterbak at the 3B flotation-tank material-EXIT side
+	# (checklist row 16 "Nét overlopen kleine LA I" — water_small.md §1). Side
+	# lane like 3A's pomp_c1 (#81): role="none" water fixture, no flow edge
+	# (placement-only thanks to the I1 guard in _build_full_line).
+	# x/z are PLACEHOLDERS — "towards Hal 0" is a world-frame fact the macro
+	# local frame cannot express; flag for operator (water_small.md F1/F2).
+	# NOTE: this insertion shifts macro_index for entries 7+ — any operator-saved
+	# user://macros/line_3b.json chain must be re-saved (verified absent 2026-07-06).
+	{"id": "kleine_la", "x": -3.0, "z": -0.5},
 	{"id": "dewater_screw"},
 	{"id": "friction_sep"},        # frictiescheider L-R — throws material both ways
 	# ── L-R SPLIT: a mechanical dryer on each side, then recombine at the ventilator ──
@@ -1297,7 +1319,22 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 			node.set_meta("macro_anchor", {"start": start, "rot_y": rot_y})
 			built += 1
 			# ── #71 branch state transitions ───────────────────────────────────
-			if is_branch:
+			# I1 fix (component_flags_review.md, confirmed 2026-07-06): utilities
+			# whose MachineFlow role is "none" (water pumps, kleine LA, lump cart
+			# + spot, …) must NOT take part in branch/parallel bookkeeping.
+			# LineFlow marks any node with a non-empty lf_explicit_outs meta as
+			# explicit_src BEFORE checking that its targets resolve and then skips
+			# the geometry fallback for it — but a role-none target is never
+			# discovered, so the edge is dropped and the source machine ends the
+			# linker with ZERO outgoing edges (fresh line_3a: transfer_chute lost
+			# its edge because of the side-lane water_pump). Role-none entries are
+			# placement-only: no _add_explicit_out, no chain/sibling membership,
+			# and (symmetrically) a role-none MAIN entry never becomes
+			# last_main_node or closes an open branch.
+			var flow_relevant : bool = _is_flow_relevant(mid)
+			if not flow_relevant:
+				pass   # placement only — invisible to the flow topology
+			elif is_branch:
 				if is_parallel:
 					# Parallel sibling — share branch_source with peers, tag now.
 					if parallel_source == null:

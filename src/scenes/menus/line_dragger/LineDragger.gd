@@ -25,7 +25,9 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 	{"id": "transport_screw"},
 	{"id": "friction_washer"},
 	{"id": "transfer_chute"},
-	{"id": "water_pump", "x": -3.5, "z": 0.0},
+	# 2026-07-06: slot IS Pomp C1 (see BuildMode.LINE_3A_SEQ — both mirrors
+	# must change together; in-place id swap keeps every macro_index stable).
+	{"id": "pomp_c1", "x": -3.5, "z": 0.0},
 	{"id": "friction_sep"},
 	{"id": "flotation_tank"},
 	{"id": "dewater_screw"},

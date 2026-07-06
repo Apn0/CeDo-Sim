@@ -1400,9 +1400,21 @@ static func _default_components_for(id: String) -> Dictionary:
 	elif lid.find("shredder") >= 0 or lid.find("mill") >= 0:
 		out["rotor"] = 1.0
 	elif lid.find("bunker") >= 0:
-		# The bunker's floor extraction rollers (uittrekrol) meter material out of
-		# the buffer. One named drive turns all four rollers together (the catalog
-		# tags each roller's RotatingMechanism with comp == "uittrekrol").
+		# 2026-07-06 bunker rebuild (bunker.md): the machine is now a travelling
+		# buffer CONVEYOR with ONE discharge bunkerrol (SWI-039), not a 4-roller
+		# bank. The component KEY stays the legacy "uittrekrol" so old saves and
+		# existing HMI addressing keep working (bunker.md flag F15) — the catalog
+		# tags the new bunkerrol's RotatingMechanism with comp == "uittrekrol".
+		# Documented names are "belt" (deck drive) + "bunkerrol"; rename here and
+		# in the catalog together in a dedicated save-migration pass.
+		# TODO(bunker interlock, bunker.md §3.3 / operator interview): shredder-2
+		# `mol` trip → powered=false on the bunker's outfeed belt AND the bunker
+		# itself; TITECH/TOMRA keep running. Distinct from (in addition to) the
+		# #139 pack-up cascade where "bunker" stays last in _PACK_UP_ORDER.
+		# TODO(relay trips, ruling B3 2026-07-06): speed settings BELOW 200
+		# (settable, sim cap 1000) must fire relay-trip/motor-stall events
+		# ~every 15 min, worse the lower — needs an event hook in the tick; the
+		# catalog stamps `bunker_relay_trip_below` meta on the model meanwhile.
 		out["uittrekrol"] = 1.0
 	elif lid.find("nir") >= 0 or lid.find("tomra") >= 0 or lid.find("titech") >= 0:
 		# NIR optical sorter — the acceleration belt drums are the driven part
