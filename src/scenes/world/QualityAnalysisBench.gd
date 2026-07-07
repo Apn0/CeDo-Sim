@@ -82,6 +82,18 @@ func _build_model() -> void:
 	_box(Vector3(0.18, 0.04, 0.04), Vector3(0.76, 1.21, 0.30), steel)            # arm
 	_box(Vector3(0.10, 0.10, 0.02), Vector3(0.66, 1.22, 0.30), screen)           # lens (lit)
 
+## Box mesh helper (twin of ShiftLeaderDesk._box). Its absence is what made the
+## qa_bench placeable fail to build — _build_model() calls _box() throughout but
+## the helper was never defined, so PlaceableCatalog.build_node("qa_bench")
+## returned null. Surfaced by the #populate pass.
+func _box(size: Vector3, pos: Vector3, mat: StandardMaterial3D) -> void:
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new(); bm.size = size
+	mi.mesh = bm
+	mi.material_override = mat
+	mi.position = pos
+	add_child(mi)
+
 ## Solid body over the desk volume so the player can't walk through it.
 func _build_collision() -> void:
 	var cs := CollisionShape3D.new()

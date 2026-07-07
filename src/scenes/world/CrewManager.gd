@@ -64,6 +64,10 @@ var _pinned     : Dictionary = {}   # NPC -> station_id the OPERATOR pinned by h
 # save dict so the pin survives a save/load round-trip.
 var _pin_meta   : Dictionary = {}   # NPC -> {pos: Vector3, facing: float}
 var _pin_marker : Dictionary = {}   # NPC -> Node3D (visible flag in the world)
+# #173 feeder-brain — one autonomous FeederWorker per section the operator has
+# pinned a feeder to. Keyed by section_key ("feed_3a", …) so re-assigning the same
+# section reuses (and re-homes) the existing feeder instead of spawning duplicates.
+var _section_feeders : Dictionary = {}   # section_key -> FeederWorker
 
 # EventBus is an autoload at runtime, but autoloads aren't registered as global
 # identifiers when this script is compiled inside the headless harness. Resolve it
@@ -679,6 +683,102 @@ func _nearest_in_section(section_key: String, from: Vector3, machines: Array) ->
 			best = m
 	return best
 
+# =============================================================================
+# #173 — AUTONOMOUS FEEDER ENGAGEMENT
+# =============================================================================
+## Spawn (or re-home) a FeederWorker bound to a section's opzetband, so pinning a
+## feeder to a Feed section actually feeds the line. `key` is the section id
+## ("feed_3a") for a section pin, or "role:feeder" for the rota role (no belt
+## binding → nearest belt). One feeder per `key`; re-assigning re-homes it.
+func _ensure_section_feeder(key: String, near_pos: Vector3 = Vector3.ZERO) -> void:
+	var world := _feeder_world()
+	if world == null:
+		return   # headless / no world to parent into — nothing to spawn
+	# Resolve the target feed belt for this key. Section pins bind a specific
+	# opzetband by placeable_id; the rota role feeds the nearest belt.
+	var belt_id : String = ""
+	var belt : Node3D = null
+	if key.begins_with("feed_"):
+		belt_id = _opzetband_id_for_section(key)
+		belt = _feed_belt_by_id(belt_id)
+	if belt == null:
+		belt = _nearest_feed_belt(near_pos)
+		if belt != null:
+			belt_id = String(belt.get_meta("placeable_id", ""))
+	if belt == null:
+		# No feed belt exists in this world yet — can't bind a feeder. Bail quietly;
+		# the operator can re-pin once the opzetband is built.
+		return
+	# Reuse an existing feeder for this key if still alive; otherwise spawn one.
+	var feeder : FeederWorker = _section_feeders.get(key, null)
+	if feeder != null and not is_instance_valid(feeder):
+		feeder = null
+		_section_feeders.erase(key)
+	var lot : Vector3 = (belt as Node3D).global_position
+	if feeder == null:
+		feeder = preload("res://src/scenes/world/FeederWorker.gd").new()
+		feeder.worker_name = "Feeder %s" % key.replace("feed_", "").replace("role:", "").to_upper()
+		world.add_child(feeder)
+		feeder.global_position = lot + Vector3(3.0, 1.0, 2.0)
+		# Personal BaleClamp so it DRIVES the loop (the normal case) rather than the
+		# on-foot fallback. Parked behind the feeder; assign_vehicle tags it NPC-owned.
+		var vscene := load("res://src/scenes/vehicles/BaleClamp.tscn") as PackedScene
+		if vscene != null:
+			var v := vscene.instantiate() as Node3D
+			world.add_child(v)
+			v.global_position = lot + Vector3(2.0, 0.5, -3.0)
+			feeder.assign_vehicle(v)
+		_section_feeders[key] = feeder
+		print("[CrewManager] Feeder engaged for %s → belt %s" % [key, belt_id])
+	# (Re)bind the belt + lot every assignment so re-pinning updates the target.
+	feeder.assigned_section = key
+	feeder.section_belt_id = belt_id
+	feeder.lot_center = lot
+	feeder.lot_radius = 20.0
+	feeder._belt = null   # force _resolve_belt to re-pick the (possibly new) belt
+
+## The world node the feeders parent into — MainWorld (LineFlow's parent).
+func _feeder_world() -> Node:
+	if line_flow != null and is_instance_valid(line_flow):
+		var p := line_flow.get_parent()
+		if p != null:
+			return p
+	var tree := get_tree()
+	return tree.current_scene if tree != null else null
+
+## opzetband placeable_id that a Feed section feeds. Reads SECTION_ZONES tokens and
+## returns the first "opzetband*" / "westa_band*" token (the physical feed belt).
+func _opzetband_id_for_section(section_key: String) -> String:
+	for tk in _zone_for_section(section_key):
+		var t := String(tk)
+		if t.begins_with("opzetband") or t.begins_with("westa_band"):
+			return t
+	return ""
+
+## Feed belt (ShredderFeedBelt / opzetband) whose placeable_id matches `id`, or null.
+func _feed_belt_by_id(id: String) -> Node3D:
+	if id == "":
+		return null
+	for b in get_tree().get_nodes_in_group("shredder_feed_belt"):
+		var bn := b as Node3D
+		if bn != null and is_instance_valid(bn) and String(bn.get_meta("placeable_id", "")) == id:
+			return bn
+	return null
+
+## Nearest feed belt to `from` (fallback when no section belt id resolves).
+func _nearest_feed_belt(from: Vector3) -> Node3D:
+	var best : Node3D = null
+	var best_d := INF
+	for b in get_tree().get_nodes_in_group("shredder_feed_belt"):
+		var bn := b as Node3D
+		if bn == null or not is_instance_valid(bn):
+			continue
+		var d : float = from.distance_to(bn.global_position)
+		if d < best_d:
+			best_d = d
+			best = bn
+	return best
+
 ## Hand-assign `worker` to a post. Special ids: "__auto__" reverts to role-based
 ## auto-posting, "__off__" takes them off duty. "role:X" sets the worker's npc_role
 ## to X and auto-posts them as that role (the proper plant rota slots: shift leader,
@@ -725,6 +825,11 @@ func manual_assign(worker, station_id: String) -> void:
 			var spos : Vector3 = best_sec["pos"]; spos.y = worker.global_position.y
 			worker.assign_post(String(best_sec["id"]), spos)
 		_pinned[worker] = station_id
+		# #173 — a FEED section pin actually engages feeding behaviour: spawn (or
+		# re-home) an autonomous FeederWorker bound to that section's opzetband, so
+		# the line is fed for real instead of a generic NPC just standing there.
+		if section_key.begins_with("feed_"):
+			_ensure_section_feeder(section_key)
 		_emit("npc_called_for_help", ["operator", String(worker.npc_name), station_id])
 		return
 	# Role-based post: switch the worker's RotA role, then auto-post by that role's zone.
@@ -737,6 +842,11 @@ func manual_assign(worker, station_id: String) -> void:
 			var rpos : Vector3 = best_role["pos"]; rpos.y = worker.global_position.y
 			worker.assign_post(String(best_role["id"]), rpos)
 		_pinned[worker] = station_id   # remember the rota pin (the role, not a machine)
+		# #173 — the FEEDER rota role engages an autonomous feeder too. No section is
+		# bound, so it feeds the NEAREST belt (FeederWorker._resolve_belt fallback).
+		# Keyed by the role so a second feeder-role NPC doesn't spawn a duplicate.
+		if new_role == "feeder" or new_role == "permanent_feeder":
+			_ensure_section_feeder("role:" + new_role, worker.global_position)
 		_emit("npc_called_for_help", ["operator", String(worker.npc_name), station_id])
 		return
 	for m in _machine_list():

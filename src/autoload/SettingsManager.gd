@@ -514,7 +514,27 @@ func _apply_keybinds() -> void:
 		for ev in _current_keybinds[action]:
 			if ev is InputEvent:
 				InputMap.action_add_event(action, ev)
+	_reserve_feedback_key()
 	keybinds_changed.emit()
+
+## F10 is RESERVED for `feedback_capture` (the screenshot + context.json handoff).
+## A stale saved binding once had `camera_toggle` ALSO on F10, so a single F10
+## press both captured AND cycled the camera to third-person. Strip F10 from
+## every other action — in BOTH the live InputMap and the in-memory model, so it
+## is never re-saved — leaving F10 to feedback alone. Runs after every keybind
+## apply, so no saved config can reintroduce the collision.
+func _reserve_feedback_key() -> void:
+	for action in _current_keybinds.keys():
+		if action == "feedback_capture":
+			continue
+		var kept: Array = []
+		for ev in _current_keybinds[action]:
+			if ev is InputEventKey and (ev as InputEventKey).keycode == KEY_F10:
+				if InputMap.has_action(action):
+					InputMap.action_erase_event(action, ev)
+			else:
+				kept.append(ev)
+		_current_keybinds[action] = kept
 
 func _apply_fov_to_current_camera() -> void:
 	# Defer one frame so the camera is current after a display mode change.

@@ -144,10 +144,41 @@ func _tick_circuit(npc: Node, delta: float) -> void:
 	if not _close_enough(npc, wp_world, WAYPOINT_DIST_M):
 		_set_dest(npc, wp_world)
 		return
+	# Real effect during the dwell: the hose washes down / blasts loose dirt, so
+	# nearby FloorPiles shrink while the colleague is spraying. Water reduces more
+	# per beat than the lower-power air hose.
+	_wash_nearby(npc, delta)
 	_dwell_t += delta
 	if _dwell_t >= _dwell_s:
 		_dwell_t = 0.0
 		_circuit_idx += 1
+
+# Shrink any FloorPile within WASH_RADIUS_M of the NPC while the hose is running.
+# Water hose washes more mass per second than the air hose. Uses FloorPile.scoop
+# (the same "remove N kg" API the shovel uses) so the pile's cone + collider
+# shrink and the change is visible.
+const WASH_RADIUS_M       : float = 3.0
+const WATER_WASH_KG_PER_S : float = 8.0
+const AIR_WASH_KG_PER_S   : float = 3.0
+func _wash_nearby(npc: Node, delta: float) -> void:
+	if npc == null or not (npc is Node3D):
+		return
+	var tree := npc.get_tree() if npc.has_method("get_tree") else null
+	if tree == null:
+		return
+	var rate : float = AIR_WASH_KG_PER_S if _is_air else WATER_WASH_KG_PER_S
+	var remove_kg : float = rate * delta
+	if remove_kg <= 0.0:
+		return
+	var origin : Vector3 = npc.global_position
+	for p in tree.get_nodes_in_group("floor_pile"):
+		var pn := p as Node3D
+		if pn == null or not is_instance_valid(pn):
+			continue
+		if pn.global_position.distance_to(origin) > WASH_RADIUS_M:
+			continue
+		if pn.has_method("scoop"):
+			pn.call("scoop", remove_kg)
 
 func _tick_return_nozzle(npc: Node) -> void:
 	if not _close_enough(npc, _pickup_pos, APPROACH_DIST_M):

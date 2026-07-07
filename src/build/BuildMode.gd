@@ -321,6 +321,13 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	{"id": "cyclone"},
 	{"id": "extruder_silo"},
 	{"id": "extruder_1"},
+	# #98 — Lump cart parking spot at the extruder's filter discharge. Same
+	# +X / partway-back offset as 3A/3B so the laser_filter outlet sits above
+	# the cart (was missing — Line 1's LaserFilter had no cart under it and
+	# fell back to the nearest cart anywhere in the hall). APPEND-only: existing
+	# macro_index values are unchanged, so saved line_1.json deltas stay valid.
+	{"id": "lump_cart_spot", "x": 2.8, "z": -5.0},
+	{"id": "lump_cart",      "x": 2.8, "z": -5.0},
 ]
 const LINE_GAP_M : float = 0.5   # clear space between consecutive machines (process lines are tight)
 
@@ -1528,6 +1535,14 @@ func save_macro_overrides(macro_id: String) -> int:
 		# Wrap rotation into (-PI, PI] so saved deltas are minimal.
 		drot = wrapf(drot, -PI, PI)
 		var sc : Vector3 = node.scale
+		# #macro-sink corruption guard: if this machine has fallen through the
+		# world (physics sink) its absolute local delta is absurd — this is the
+		# line_3a dy≈-40 km bug, which compounded every save. Refuse to record
+		# it: skip the machine, do NOT roll the accumulator, leave the clean
+		# seed pose for it. Uses the same threshold the load path filters on.
+		if not LineMacroStore.delta_sane(dx, dy, dz, drot):
+			push_warning("[BuildMode] macro '%s' index %d pose implausible (dx=%.1f dy=%.1f dz=%.1f) — skipped, not saved" % [macro_id, i, dx, dy, dz])
+			continue
 		# Quick "is this machine actually moved?" check — within 1cm / 1°
 		# of the upstream-inherited drift means no explicit override here.
 		var explicit_dx : float = dx - acc.x

@@ -99,8 +99,10 @@ func _autonomy_tick(delta: float) -> void:
 	if _autonomy_poll_t < _AUTONOMY_POLL_INTERVAL_S:
 		return
 	_autonomy_poll_t = 0.0
-	if not Engine.has_singleton("NpcAutonomyBoard"):
+	if not (Engine.has_singleton("NpcAutonomyBoard") or has_node("/root/NpcAutonomyBoard")):
 		# Autoload not configured (e.g. unit-test scene). Fall back to wander.
+		# Engine.has_singleton() returns false for GDScript autoloads in Godot 4,
+		# so the has_node("/root/...") arm is the one that actually passes here.
 		return
 	# Direct autoload access — Engine.has_singleton is a heuristic; the real
 	# call goes through the engine's autoload table.

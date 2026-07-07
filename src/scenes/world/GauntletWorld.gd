@@ -117,6 +117,12 @@ func _ready() -> void:
 			_build_placeholder(Vector3(x, 0.0, 4.0), String(entry["status"]))
 		slot += 1
 	_build_player()
+	# #gauntlet-parity — spawn the SAME OperatorContext MainWorld uses so vehicle
+	# stations are actually boardable here. Without it, VehicleEnterArea couldn't
+	# find the "operator_context" group and boarding was silently dead (the bale
+	# clamp rendered but E did nothing). We spawn ONLY the OperatorContext, not the
+	# full SystemsSpawner (which would also pull in LineFlow the gauntlet omits).
+	OperatorContext.spawn_under(self, _player)
 	_spawn_build_mode()
 	_spawn_hud()
 	_spawn_help_overlay()

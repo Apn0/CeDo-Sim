@@ -124,10 +124,38 @@ func _tick_circuit(npc: Node, delta: float) -> void:
 		_set_dest(npc, wp_world)
 		return
 	# Arrived — dwell for DWELL_S seconds (the "blowing" beat), then advance.
+	# Real effect: the blast pushes nearby loose film scrap away from the NPC so
+	# the world visibly changes when a colleague cleans (not just a cosmetic walk).
+	_blow_nearby_scrap(npc)
 	_dwell_t += delta
 	if _dwell_t >= DWELL_S:
 		_dwell_t = 0.0
 		_circuit_idx += 1
+
+# Push any RigidBody3D in group "film_scrap" within BLOW_RADIUS_M away from the
+# NPC, low and outward, as if the leaf blower's air cone hit it. Cheap per-frame
+# radial impulse — the scraps are light (mass 0.05) so a small nudge scatters them.
+const BLOW_RADIUS_M   : float = 3.5
+const BLOW_IMPULSE    : float = 0.12
+func _blow_nearby_scrap(npc: Node) -> void:
+	if npc == null or not (npc is Node3D):
+		return
+	var tree := npc.get_tree() if npc.has_method("get_tree") else null
+	if tree == null:
+		return
+	var origin : Vector3 = npc.global_position
+	for s in tree.get_nodes_in_group("film_scrap"):
+		if not (s is RigidBody3D) or not is_instance_valid(s):
+			continue
+		var to : Vector3 = s.global_position - origin
+		var d : float = to.length()
+		if d > BLOW_RADIUS_M or d < 0.001:
+			continue
+		var dir : Vector3 = to / d
+		dir.y = maxf(dir.y, 0.25)   # bias slightly upward so scrap skips, not drags
+		# Falloff with distance so close scrap gets the strongest push.
+		var falloff : float = 1.0 - (d / BLOW_RADIUS_M)
+		s.apply_central_impulse(dir.normalized() * BLOW_IMPULSE * falloff)
 
 func _tick_return_blower(npc: Node) -> void:
 	if not _close_enough(npc, _pickup_pos, APPROACH_DIST_M):

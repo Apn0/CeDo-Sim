@@ -5569,11 +5569,21 @@ static func _draw_text_into_image(img: Image, x0: int, y0: int, text: String, sc
 							if px >= 0 and py >= 0 and px < img.get_width() and py < img.get_height():
 								img.set_pixel(px, py, ink)
 		cx += 4 * scale       # 3px char + 1px gap
-static var _bale_sticker_tex : ImageTexture = null
+static var _bale_sticker_tex_by_id : Dictionary = {}
 
-static func _bale_sticker_texture() -> ImageTexture:
-	if _bale_sticker_tex != null:
-		return _bale_sticker_tex
+static func _bale_sticker_texture(id: String = "rotterdam") -> ImageTexture:
+	if _bale_sticker_tex_by_id.has(id):
+		return _bale_sticker_tex_by_id[id]
+	# #labelyard — sticker text is now per-SUPPLIER (pulled from BaleDefs) instead
+	# of the old hardcoded "ROTTERDAM / ID B-00482 / 250 KG NETTO" baked into one
+	# shared texture. That global bake made every yard (Alba Marl, Zwolle, Forst+)
+	# read the Rotterdam sticker — and 250 kg was wrong even for Rotterdam. We
+	# still bake ONE texture per supplier (not per bale — the MultiMesh shares it);
+	# true per-instance ids would need a per-instance UV atlas.
+	var o := BaleDefs.get_origin(id)
+	var supplier_name : String = String(o.get("name", id)).to_upper()
+	var sz : Vector3 = o.get("size", Vector3(1.45, 1.25, 1.25))
+	var net_kg : int = int(round(BaleDefs.estimated_weight(sz)))
 	var img := Image.create(_BALE_STICKER_TEX_W, _BALE_STICKER_TEX_H, false, Image.FORMAT_RGB8)
 	# #170 — yellow shipping label, matching the LabelItem sticker colour the
 	# operator confirmed earlier.
@@ -5595,9 +5605,9 @@ static func _bale_sticker_texture() -> ImageTexture:
 	# label. Dropped that line; scale 1 (native 3×5 glyphs, 4px char-cell)
 	# leaves the longest line ("250 KG NETTO" = 48 px) well inside the 192 px
 	# texture width with plenty of horizontal margin.
-	_draw_text_into_image(img, 10,  8, "ROTTERDAM",     1, paper)   # white on header strip
-	_draw_text_into_image(img,  8, 30, "ID B-00482",    1, ink)
-	_draw_text_into_image(img,  8, 50, "250 KG NETTO",  1, ink)
+	_draw_text_into_image(img, 10,  8, supplier_name,                    1, paper)   # white on header strip
+	_draw_text_into_image(img,  8, 30, "ID B-%05d" % (hash(id) % 100000), 1, ink)
+	_draw_text_into_image(img,  8, 50, "%d KG NETTO" % net_kg,           1, ink)
 	# Barcode band at the bottom — alternating black bars of varying width.
 	var bx : int = 8
 	while bx < _BALE_STICKER_TEX_W - 8:
@@ -5606,8 +5616,9 @@ static func _bale_sticker_texture() -> ImageTexture:
 			for y in range(95, 120):
 				img.set_pixel(x, y, ink)
 		bx += w + 1 + (bx * 3) % 3
-	_bale_sticker_tex = ImageTexture.create_from_image(img)
-	return _bale_sticker_tex
+	var tex := ImageTexture.create_from_image(img)
+	_bale_sticker_tex_by_id[id] = tex
+	return tex
 
 static func build_yard_sticker_multimesh(id: String, instance_count: int) -> MultiMeshInstance3D:
 	var item := get_item(id)
@@ -5619,7 +5630,7 @@ static func build_yard_sticker_multimesh(id: String, instance_count: int) -> Mul
 	qm.size = Vector2(min(size.x, size.z) * 0.30, size.y * 0.30)
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = Color(1.0, 1.0, 1.0)
-	mat.albedo_texture = _bale_sticker_texture()
+	mat.albedo_texture = _bale_sticker_texture(id)
 	mat.roughness = 0.9
 	mat.metallic = 0.0
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED       # readable from either side
@@ -8006,8 +8017,11 @@ static func _m_hose_reel(p: Node3D, size: Vector3, color: Color, ghost: bool, ho
 		var tm := TorusMesh.new()
 		tm.inner_radius = ring_inner
 		tm.outer_radius = ring_outer
-		tm.rings = 6
-		tm.ring_segments = 22
+		# `rings` = slices around the main loop; 6 read as a literal hexagon.
+		# Bumped high so each coil reads as a smooth round hose. `ring_segments`
+		# is the tube cross-section roundness.
+		tm.rings = 48
+		tm.ring_segments = 24
 		mi.mesh = tm
 		mi.material_override = hose
 		mi.position = Vector3(rx, axle_y, 0.0)
@@ -8062,8 +8076,9 @@ static func _m_air_hose_hook(p: Node3D, size: Vector3, ghost: bool) -> void:
 		var tm := TorusMesh.new()
 		tm.inner_radius = coil_inner
 		tm.outer_radius = coil_outer
-		tm.rings = 6
-		tm.ring_segments = 20
+		# 6 slices around the loop looked like a hexagon — make the coil round.
+		tm.rings = 48
+		tm.ring_segments = 22
 		mi.mesh = tm
 		mi.material_override = hose_mat
 		mi.position = Vector3(0.0, ry, size.z * 0.05)

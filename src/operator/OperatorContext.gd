@@ -29,6 +29,20 @@ var current_mode    : String = "on_foot"
 var current_vehicle : Node3D = null    # null when on_foot
 var interactable_vehicle: Node3D = null # vehicle in range to enter (set by VehicleEnterArea)
 
+## Shared spawn helper — creates + wires an OperatorContext under `host`, using the
+## player capsule's own Camera3D. BOTH MainWorld (via SystemsSpawner) and
+## GauntletWorld call this so the two can never drift: the gauntlet used to skip
+## spawning an OperatorContext entirely, so vehicles rendered but could NOT be
+## boarded there (VehicleEnterArea + BaseVehicle gate boarding on the
+## "operator_context" group, which _ready() registers). #gauntlet-parity.
+static func spawn_under(host: Node, player_body: CharacterBody3D) -> OperatorContext:
+	var oc := OperatorContext.new()
+	oc.name = "OperatorContext"
+	oc.on_foot_body = player_body
+	oc.foot_camera  = player_body.find_child("Camera3D", true, false) as Camera3D
+	host.add_child(oc)
+	return oc
+
 # =============================================================================
 func _ready() -> void:
 	# Register in a group so VehicleEnterArea / AudioManager can find us without

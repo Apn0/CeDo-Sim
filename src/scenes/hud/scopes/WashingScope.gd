@@ -1,9 +1,14 @@
 extends Control
 class_name WashingScope
 
-## SOAO "Colm-Recycling Process Overview" — Washing line operator panel.
+## Waslijn (washing line) operator panel.
 ##
-## Reference photo: washing_3A.png (SOAO vendor screen, brand-yellow on dark blue).
+## Reference photo: washing_3A.png. NOTE: that file is AI-ENHANCED and most of
+## its screen text is hallucinated garble (hmi_reference.md:212 flags
+## "Colm-Recycling", "SOAO", "C.O.A.D." etc. as NOT documentation evidence), so
+## no brand/vendor mark is reproduced here. The one GENUINE element is the taped
+## startup note "Tijdens starten hoort de doseerschroef M1A op 0% te staan." and
+## the M1A dosing-screw box — those are kept.
 ##
 ## Scope: hmi_washing_all (see src/build/HmiScopes.gd:121).  This Control is
 ## a self-contained scope-specific screen module — the first one in
@@ -11,8 +16,7 @@ class_name WashingScope
 ## branch and call bind(scope, line_flow) once the LineFlow handle is known.
 ##
 ## Layout (top → bottom):
-##   - Title bar       "Colm-Recycling Process Overview" + AUTO / HAND toggle
-##                     + small "SOAO" vendor mark in the corner
+##   - Title bar       "Waslijn" + line tag + AUTO / HAND toggle
 ##   - Red banner      "Tijdens starten hoort de doseerschroef M1A op 0% te staan."
 ##   - Main P&ID strip Input → Dosing → Flotation → Centrifuge → Dryers → Output
 ##                     (flat rectangles, green when running, grey when stopped)
@@ -49,7 +53,7 @@ signal m1a_start_pressed()
 @export var line_id : String = "3A"
 
 # ---------------------------------------------------------------------------
-# SOAO palette (sampled from washing_3A.png)
+# Palette (generic process-screen blue; not a reproduction of any vendor brand)
 # ---------------------------------------------------------------------------
 
 const C_BG        : Color = Color(0.10, 0.22, 0.45, 1.0)   # process-screen blue
@@ -59,7 +63,7 @@ const C_PANEL_EDGE: Color = Color(0.05, 0.10, 0.22, 1.0)
 const C_GREY_OFF  : Color = Color(0.65, 0.65, 0.65, 1.0)   # stopped P&ID block
 const C_GREEN_RUN : Color = Color(0.30, 0.85, 0.30, 1.0)   # running P&ID block
 const C_RED_WARN  : Color = Color(0.92, 0.20, 0.20, 1.0)   # startup-rule banner
-const C_AMBER     : Color = Color(1.00, 0.78, 0.10, 1.0)   # SOAO brand mark
+const C_AMBER     : Color = Color(1.00, 0.78, 0.10, 1.0)   # process-value accent
 const C_TEXT      : Color = Color(0.95, 0.96, 0.98, 1.0)
 const C_TEXT_DIM  : Color = Color(0.70, 0.78, 0.90, 1.0)
 const C_TAB_BG    : Color = Color(0.08, 0.18, 0.36, 1.0)
@@ -181,15 +185,8 @@ func _build_title_bar(parent: Container) -> void:
 	bar.custom_minimum_size = Vector2(0, 36)
 	parent.add_child(bar)
 
-	# Vendor stamp (top-left small)
-	var vendor := Label.new()
-	vendor.text = "SOAO"
-	vendor.add_theme_color_override("font_color", C_AMBER)
-	vendor.add_theme_font_size_override("font_size", 14)
-	bar.add_child(vendor)
-
 	var title := Label.new()
-	title.text = "Colm-Recycling Process Overview"
+	title.text = "Waslijn"
 	title.add_theme_color_override("font_color", C_TEXT)
 	title.add_theme_font_size_override("font_size", 20)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL

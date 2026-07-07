@@ -29,6 +29,11 @@ class_name FeederWorker
 
 @export var worker_name   : String = "Feeder"
 @export var assigned_line : String = ""              # "Line 1", "Line 3A/3B", …
+# #173 — section pin the operator picked ("feed_3a", "feed_1", …). When set, the
+# worker feeds THAT section's opzetband (matched by belt placeable_id) instead of
+# just the nearest belt. Empty = legacy nearest-belt behaviour.
+@export var assigned_section : String = ""
+@export var section_belt_id  : String = ""           # opzetband placeable_id to feed (derived from the section)
 @export var walk_speed    : float = 3.2
 @export var arrive_dist   : float = 1.1
 @export var lot_center    : Vector3 = Vector3.ZERO   # where the feedstock bales sit
@@ -423,8 +428,10 @@ func _drive_state_feed() -> void:
 	# Put the cut, scanned, opened material onto the conveyor — but ONLY once the
 	# belt's loading end is clear, so bales never land inside one another. Until
 	# then the worker just stands beside the belt holding it (re-checks each frame).
-	_feed_ground_bale()
-	_state = State.REMOUNT
+	if not _belt_has_room():
+		return                      # hold: belt's load zone still occupied
+	if _feed_ground_bale():
+		_state = State.REMOUNT
 
 func _drive_state_remount() -> void:
 	# Climb back into the cab and go again.
@@ -539,28 +546,46 @@ func _remount_worker() -> void:
 		transform = Transform3D(Basis(), Vector3(0.0, 1.3, -0.2))
 	_dismounted = false
 
-## Put the cut + scanned + opened bale onto the feed belt (honours the scan gate).
-func _feed_ground_bale() -> void:
+## Put the cut + scanned + opened bale onto the feed belt via belt.accept_bale
+## (which honours the #152 scan gate and re-parents the bale onto the deck so the
+## belt sim + LineFlow head actually consume it). Returns true once the bale is on
+## the belt; false if there's nothing to feed or the belt refused it (scan gate /
+## load-zone), so the caller can retry.
+func _feed_ground_bale() -> bool:
 	var b := _bale
 	if b == null or not is_instance_valid(b):
 		_bale = null
-		return
+		return true
+	# No belt to feed (headless / mis-config): drop the ref so we don't deadlock.
+	if _belt == null or not is_instance_valid(_belt) or not _belt.has_method("accept_bale"):
+		_bale = null
+		return true
 	# Open the clamp NOW (real control) — the wires are already cut, so the instant the
-	# clamp lets go nothing holds the stack. Then move the de-wired bale to the belt
-	# infeed and burst it into 6 flexible pieces (#23).
+	# clamp lets go nothing holds the stack.
 	if vehicle != null and is_instance_valid(vehicle):
 		if "clamp_force" in vehicle:
 			vehicle.set("clamp_force", 0.0)
 		vehicle.call("_release")
+	# Detach from wherever the clamp/carry left it, then lay it on the belt infeed
+	# in the feed orientation so accept_bale can re-parent it cleanly onto the deck.
 	if b.get_parent():
 		b.get_parent().remove_child(b)
-	var scene := get_tree().current_scene
-	scene.add_child(b)
+	get_tree().current_scene.add_child(b)
 	b.global_transform = Transform3D(_bale_feed_basis(), _belt_load_point())
-	var pieces : Array = preload("res://src/sim/BaleBurst.gd").open(b, scene)
-	if not pieces.is_empty():
-		bales_fed += 1
+	var ok : bool = bool(_belt.call("accept_bale", b, 0))   # lane 0 = deck centre; honours scan gate
+	if not ok:
+		# Belt refused (unscanned / load zone busy). Keep the ref and try again next
+		# tick — the FEED state re-enters and _belt_has_room() paces the retry.
+		return false
+	# The bale now rides the belt and is consumed by the belt→shredder→LineFlow
+	# path. Clear any `delivered` flag the vehicle's _release set when it opened the
+	# clamp at the belt, so LineFlow's _bale_at head-draw can't ALSO meter from this
+	# same bale sitting on the deck (would double-feed the line).
+	if is_instance_valid(b):
+		b.set_meta("delivered", false)
+	bales_fed += 1
 	_bale = null
+	return true
 
 ## Ground work-spot beside the belt's loading end where bales are set down + cut.
 func _work_spot() -> Vector3:
@@ -628,13 +653,26 @@ func _restock_lot() -> void:
 func _resolve_belt() -> void:
 	if _belt != null and is_instance_valid(_belt):
 		return
-	# Pick the NEAREST feed belt to this worker (a worker feeds the belt by
-	# their lot — and it keeps multi-belt scenes / tests unambiguous).
 	var current_frame := Engine.get_physics_frames()
 	if current_frame != _last_belt_cache_frame:
 		_cached_belts = get_tree().get_nodes_in_group("shredder_feed_belt")
 		_last_belt_cache_frame = current_frame
 
+	# #173 — SECTION-PINNED: feed the specific opzetband the operator assigned this
+	# worker to (matched by placeable_id). This is the "reads section pins to choose
+	# which feed belt" behaviour the SECTION_ZONES comment advertises.
+	if section_belt_id != "":
+		for b in _cached_belts:
+			if not is_instance_valid(b):
+				continue
+			var bn := b as Node3D
+			if bn != null and String((bn as Node).get_meta("placeable_id", "")) == section_belt_id:
+				_belt = b
+				return
+		# Named belt not (yet) in the scene — fall through to nearest so we still feed.
+
+	# Legacy / fallback: nearest feed belt to this worker (a worker feeds the belt
+	# by their lot — and it keeps multi-belt scenes / tests unambiguous).
 	var best : Node = null
 	var best_d := 1e9
 	for b in _cached_belts:

@@ -35,20 +35,51 @@ signal request_subscope(scope_id)
 enum FaultTab { HISTORY, ACTIVE, ACKNOWLEDGE, SHIELD }
 
 # Sub-scope screen tile definitions for the new HOOFDMENU grid (#207b).
-# Two rows × five columns; nulls render as empty placeholders.
-const HOME_TILES := [
+# The tile set is chosen per panel scope by _home_tiles_for_scope() so a
+# washing panel doesn't show extruder module tiles and vice-versa.
+#
+# EXTRUDER grid (#bullet-10, FIX 3) — the documented EREMA BluPort module grid
+# from OTHER-erema-bluport-modulegrid-LIJN-3C (188_CeDo1) / hmi_reference.md:131.
+# Verbatim Dutch tile labels, in the photographed layout:
+#   Row 1: Doseren, Wateronthardheid, Extruder 1, Smeltfilter 1, Smeltpomp 1, Granulaatsysteem
+#   Row 2: Smeltfilter 2
+#   Row 3: (2e) Doseren
+# The invented "Devicon" / "Dryven Controller" tiles (in NO doc) are removed.
+const HOME_TILES_EXTRUDER := [
 	[
-		{"label": "Devicon",                 "scope_id": "devicon",             "icon": "D"},
-		{"label": "Material Feeding Unit",   "scope_id": "mfu",                 "icon": "M"},
-		{"label": "Extruder 1",              "scope_id": "extruder_1_blueport", "icon": "E"},
-		{"label": "Filter Unit 1",           "scope_id": "filter_unit_1",       "icon": "F1"},
-		{"label": "Complete Systems",        "scope_id": "complete_systems",    "icon": "CS"},
+		{"label": "Doseren",            "scope_id": "doseren",             "icon": "D"},
+		{"label": "Wateronthardheid",   "scope_id": "wateronthardheid",    "icon": "W"},
+		{"label": "Extruder 1",         "scope_id": "extruder_1_blueport", "icon": "E"},
+		{"label": "Smeltfilter 1",      "scope_id": "filter_unit_1",       "icon": "F1"},
+		{"label": "Smeltpomp 1",        "scope_id": "smeltpomp_1",         "icon": "P1"},
 	],
 	[
-		{"label": "Dryven Controller",       "scope_id": "drive_controller",    "icon": "DC"},
+		{"label": "Granulaatsysteem",   "scope_id": "granulaatsysteem",    "icon": "G"},
+		{"label": "Smeltfilter 2",      "scope_id": "filter_unit_2",       "icon": "F2"},
 		null,
 		null,
-		{"label": "Filter Unit 2",           "scope_id": "filter_unit_2",       "icon": "F2"},
+		{"label": "Doseren (2)",        "scope_id": "doseren_2",           "icon": "D2"},
+	],
+]
+
+# WASHING grid — routes to the finished wash-line + Kufferath dryer screens.
+const HOME_TILES_WASHING := [
+	[
+		{"label": "Waslijn",            "scope_id": "washing",             "icon": "W"},
+		{"label": "Kufferath drogers",  "scope_id": "kufferaths_dryer",    "icon": "K"},
+		null,
+		null,
+		null,
+	],
+]
+
+# SORTING grid — routes to the finished sorteerlijn screen.
+const HOME_TILES_SORTING := [
+	[
+		{"label": "Sorteerlijn",        "scope_id": "sorteerlijn",         "icon": "S"},
+		null,
+		null,
+		null,
 		null,
 	],
 ]
@@ -304,12 +335,15 @@ const _SUBSCOPE_SCRIPTS := {
 	# binds the local line's MechDryerCycle pair via set_dryer_pair() below.
 	"kufferaths_dryer":    "res://src/scenes/hud/scopes/KufferathsDryerScope.gd",
 	"washing":             "res://src/scenes/hud/scopes/WashingScope.gd",
-	# The remaining tiles don't have a finished scope file yet — open_subscope()
-	# bails cleanly (returns false) so the operator stays on HOOFDMENU.
-	"devicon":             "",
-	"mfu":                 "",
-	"complete_systems":    "",
-	"drive_controller":    "",
+	# The remaining BluPort module tiles (FIX 3) don't have a finished scope
+	# file yet — open_subscope() bails cleanly (returns false) so the operator
+	# stays on HOOFDMENU. The TILE labels are documented-correct (188_CeDo1);
+	# the screens are stubbed until built.
+	"doseren":             "",
+	"doseren_2":           "",
+	"wateronthardheid":    "",
+	"smeltpomp_1":         "",
+	"granulaatsysteem":    "",
 }
 
 ## Mount a per-scope screen as a child of the bezel. Returns true on success.
@@ -360,7 +394,85 @@ func open_subscope(scope_id: String) -> bool:
 	# the scope tolerates (pills sit at neutral).
 	if scope_id == "kufferaths_dryer" and ctrl.has_method("set_dryer_pair"):
 		ctrl.call("set_dryer_pair", _dryer_pair_for_line(_line_id_from_scope()))
+	# #bullet-10 (FIX 1) — the BluPort extruder scope and the laser-filter scope
+	# both ship a setter (set_model / set_filter) that had ZERO callers, so those
+	# screens rendered defaults/zeros. Resolve the scoped machine and bind it.
+	if scope_id == "extruder_1_blueport" and ctrl.has_method("set_model"):
+		var ex_model : Object = _find_extruder_model_for_scope()
+		if ex_model != null:
+			ctrl.call("set_model", ex_model)
+	if (scope_id == "filter_unit_1" or scope_id == "filter_unit_2") and ctrl.has_method("set_filter"):
+		var lf : Object = _find_laser_filter_for_scope()
+		if lf != null:
+			ctrl.call("set_filter", lf)
 	return true
+
+## Resolve the ExtruderModel for the panel's current scope line (#bullet-10).
+## Reuses _find_extruder_model_for() (which matches on the extruder machine's
+## config_resource.line_id). Falls back to the first extruder in the scene when
+## the scope carries no line tag so a generic panel still binds something live.
+func _find_extruder_model_for_scope() -> Object:
+	var line_id := _line_id_from_scope()
+	if line_id != "":
+		var m := _find_extruder_model_for("extruder_" + line_id.to_lower())
+		if m != null:
+			return m
+	# No line tag (or no match): take the first extruder machine's model.
+	for em in get_tree().get_nodes_in_group("extruder_machine"):
+		if em != null and is_instance_valid(em) and "model" in em and em.model != null:
+			return em.model
+	return null
+
+## Resolve the LaserFilter serving this scope's extruder line (#bullet-10). The
+## macros lay one laser_filter per extruder and ExtruderMachine caches the
+## closest member of the "laser_filter" group, so we mirror that: find the
+## in-scope extruder machine and return the laser_filter nearest to it. Falls
+## back to the first laser_filter in the scene when no extruder is resolvable.
+func _find_laser_filter_for_scope() -> Object:
+	var extruder_node : Node3D = _find_extruder_machine_for_scope()
+	var lf : Object = _closest_laser_filter_to(extruder_node)
+	if lf != null:
+		return lf
+	var filters : Array = get_tree().get_nodes_in_group("laser_filter")
+	return filters[0] if not filters.is_empty() else null
+
+## The LaserFilter nearest to `node` (mirrors ExtruderMachine's own
+## _closest_in_group). Returns null when no laser_filter is in the scene or when
+## `node` is null and the group is empty.
+func _closest_laser_filter_to(node: Node3D) -> Object:
+	var filters : Array = get_tree().get_nodes_in_group("laser_filter")
+	if filters.is_empty():
+		return null
+	if node == null or not is_instance_valid(node):
+		return filters[0]
+	var best : Node = null
+	var best_d2 : float = INF
+	for n in filters:
+		var n3 := n as Node3D
+		if n3 == null:
+			continue
+		var d2 : float = (n3.global_position - node.global_position).length_squared()
+		if d2 < best_d2:
+			best_d2 = d2
+			best = n
+	return best if best != null else filters[0]
+
+## The ExtruderMachine (scene node) matching this scope's line, or the first one.
+func _find_extruder_machine_for_scope() -> Node3D:
+	var want := _line_id_from_scope().to_lower()
+	var first : Node3D = null
+	for em in get_tree().get_nodes_in_group("extruder_machine"):
+		var n3 := em as Node3D
+		if n3 == null or not is_instance_valid(n3):
+			continue
+		if first == null:
+			first = n3
+		if want == "":
+			continue
+		var cfg = em.get("config_resource")
+		if cfg != null and String(cfg.get("line_id")).to_lower() == want:
+			return n3
+	return first
 
 func close_subscope() -> void:
 	if _subscope_node != null and is_instance_valid(_subscope_node):
@@ -642,12 +754,37 @@ func _build_hoofdmenu() -> void:
 	grid.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	v.add_child(grid)
 
-	for row in HOME_TILES:
+	# #bullet-10 (FIX 2/3) — the tile set depends on the panel scope so a wash
+	# panel routes to the wash/kufferath screens, a sorting panel to sorteerlijn,
+	# and an extruder panel shows the documented BluPort module grid.
+	for row in _home_tiles_for_scope():
 		for entry in row:
 			if entry == null:
 				grid.add_child(_home_tile_placeholder())
 			else:
 				grid.add_child(_home_tile(entry as Dictionary))
+
+## Pick the HOOFDMENU tile grid for the currently-bound scope (#bullet-10).
+## Uses the scope's tokens to decide: washing tokens → wash grid, sorting
+## tokens → sorting grid, otherwise the extruder BluPort module grid (also the
+## generic/no-scope default, matching the documented 3C panel).
+func _home_tiles_for_scope() -> Array:
+	var tokens : Array = _scope.get("tokens", []) if not _scope.is_empty() else []
+	var has := func(subs: Array) -> bool:
+		for tk in tokens:
+			var t := String(tk)
+			for s in subs:
+				if t.find(String(s)) != -1:
+					return true
+		return false
+	# Sorting panel — bunker / sga / titech / tomra tokens.
+	if has.call(["sga", "titech", "tomra", "ballistic", "wind_sifter", "sorteer", "bunker"]):
+		return HOME_TILES_SORTING
+	# Washing panel — wash / flotation / kufferath / dryer tokens.
+	if has.call(["wash", "was", "flotation", "kufferath", "dryer", "droger", "centrifuge", "dewater"]):
+		return HOME_TILES_WASHING
+	# Default: extruder BluPort module grid.
+	return HOME_TILES_EXTRUDER
 
 func _home_tile(entry: Dictionary) -> Button:
 	var label_text := String(entry.get("label", "?"))
@@ -1513,7 +1650,10 @@ func _compute_faults() -> Array:
 		var line_id : String = ""
 		if "line_id" in em:
 			line_id = String(em.line_id)
-		for f in _EREMA_FAULTS.detect_active(model):
+		# #bullet-10 (FIX 5) — hand the registry the laser_filter serving this
+		# extruder so the documented 6522/6557 alarms detect off live state.
+		var lf : Object = _closest_laser_filter_to(em as Node3D)
+		for f in _EREMA_FAULTS.detect_active(model, lf):
 			out.append({
 				"code":  "EREMA-%04d" % int(f.get("nr", 0)),
 				"text":  String(f.get("msg", "")),
@@ -1704,6 +1844,16 @@ func _populate_machine_list() -> void:
 		btn.pressed.connect(_on_machine_picked.bind(mid))
 		_machines_list_vb.add_child(btn)
 		_machines_list_rows.append({"id": mid, "btn": btn, "lamp": lamp, "lbl": lbl})
+
+	# LineFlow is wired but produced no rows — either nothing is placed yet, or
+	# none of the placed machines fall in this HMI's scope. Show a legible message
+	# so an empty line doesn't read as a BROKEN panel (the operator hit exactly
+	# this on a save with 0 placed line machines).
+	if _machines_list_rows.is_empty():
+		var none := Label.new()
+		none.text = "(geen machines geplaatst — bouw een lijn met Tab)"
+		none.add_theme_color_override("font_color", C_TEXT_DARK)
+		_machines_list_vb.add_child(none)
 
 func _on_machine_picked(id: String) -> void:
 	_selected_machine_id = id

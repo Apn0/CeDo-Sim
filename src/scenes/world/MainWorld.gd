@@ -262,6 +262,10 @@ func _spawn_world_items() -> void:
 		if _is_resumed_save and line_flow.has_method("mark_warm_boot"):
 			line_flow.mark_warm_boot()
 		line_flow.rebuild()
+		# Discoverable by group so a released bale can ask "am I at a feed point?"
+		# without a hard reference (BaseVehicle._release → is_near_line_feed_point).
+		if not line_flow.is_in_group("line_flow"):
+			line_flow.add_to_group("line_flow")
 	# Crew manager ALWAYS spawns (even with an authoritative layout). It posts
 	# the 9 workers to whatever LineFlow machines exist (free-wander if none),
 	# and — critically — the HUD crew-assignment panel (C / Numpad-.) bails out
@@ -487,6 +491,40 @@ func _vehicle_anchor() -> Vector3:
 ## at this Y seats it flush on the floor.
 func _floor_top_y() -> float:
 	return _floor_min_y_cache
+
+## True when `world_pos` is within LineFlow.FEED_RADIUS of a place the line will
+## draw feed from — i.e. an operator intake marker (WorldLayout.line_starts) or a
+## physical feed belt (opzetband). A bale SET DOWN here becomes feed-eligible;
+## BaseVehicle._release() calls this so a released bale is marked delivered=true
+## only at a real feed point, never blanket-marked wherever it's dropped.
+## Distance is measured in the XZ plane so a bale resting slightly below the marker
+## height still qualifies. Mirrors LineFlow's FEED_RADIUS (5 m) with a small margin
+## for the set-down settle so the gate isn't missed by a few cm.
+const _FEED_POINT_RANGE : float = 5.0
+func is_near_line_feed_point(world_pos: Vector3) -> bool:
+	# 1) Operator intake markers (the canonical bale drop zones).
+	var wl := get_node_or_null("/root/WorldLayout")
+	if wl != null:
+		var starts = wl.get("line_starts")
+		if starts is Dictionary:
+			for v in (starts as Dictionary).values():
+				if v is Vector3:
+					var m : Vector3 = _layout_to_scene(v)
+					if _xz_dist(world_pos, m) <= _FEED_POINT_RANGE:
+						return true
+	# 2) Physical feed belts (opzetbanden) — the line head a feeder delivers onto.
+	for b in get_tree().get_nodes_in_group("shredder_feed_belt"):
+		var bn := b as Node3D
+		if bn == null or not is_instance_valid(bn):
+			continue
+		if _xz_dist(world_pos, bn.global_position) <= _FEED_POINT_RANGE:
+			return true
+	return false
+
+func _xz_dist(a: Vector3, b: Vector3) -> float:
+	var da := a; da.y = 0.0
+	var db := b; db.y = 0.0
+	return da.distance_to(db)
 
 func _spawn_merlo() -> void:
 	# #195 — _spawn_vehicle_instances moved to VehicleSpawner. _spawn_merlo stays
@@ -785,18 +823,15 @@ func _spawn_road_and_parking() -> void:
 	_spawn_street_sign(sign_pos, "De Asselen Kuil")
 	# #192 follow-up — road extensions / perimeter fence / exterior props are
 	# now owned by ExteriorManager (a child node); it parents its spawned items
-	# back under MainWorld so the runtime scene shape is unchanged. Interior
-	# TL bars (misnamed "_spawn_floodlights" — actually inside the shell) stay
-	# in MainWorld because they belong to the building's interior lighting kit.
+	# back under MainWorld so the runtime scene shape is unchanged.
 	var exterior_mgr := preload("res://src/scenes/world/ExteriorManager.gd").new()
 	exterior_mgr.name = "ExteriorManager"
 	add_child(exterior_mgr)
 	exterior_mgr.build_exterior(anchor, ground_y)
-	# #195 — interior lighting (overhead grid + wall-line TL bars) extracted to
+	# #195 — interior lighting (georeferenced overhead TL bar grid) extracted to
 	# InteriorLightingManager. Spawns its children under MainWorld so the scene
-	# shape is unchanged (OverheadLights node under ShellMesh; InteriorTLBars
-	# node under ShellMesh). build_all() runs _spawn_overhead_lights() first
-	# then _spawn_floodlights(anchor) to preserve the original side-effect order.
+	# shape is unchanged (OverheadLights node under ShellMesh). build_all() runs
+	# _spawn_overhead_lights() to place the 39 per-hall fixtures.
 	var lighting := InteriorLightingManager.new()
 	lighting.name = "InteriorLightingManager"
 	add_child(lighting)

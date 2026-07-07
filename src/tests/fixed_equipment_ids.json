@@ -1,0 +1,282 @@
+[
+ {
+  "id": "water_pump",
+  "group": "water",
+  "name": "Pomp P1"
+ },
+ {
+  "id": "water_pump",
+  "group": "water",
+  "name": "Pomp P2"
+ },
+ {
+  "id": "pomp_c1",
+  "group": "water",
+  "name": "Pomp C1"
+ },
+ {
+  "id": "water_pump",
+  "group": "water",
+  "name": "Put & pomp was 1"
+ },
+ {
+  "id": "sink_float",
+  "group": "water",
+  "name": "Bezinkafscheider"
+ },
+ {
+  "id": "flotation_tank",
+  "group": "water",
+  "name": "Flotatietank (3A LA2)"
+ },
+ {
+  "id": "flotation_tank",
+  "group": "water",
+  "name": "Flotatietank (3B)"
+ },
+ {
+  "id": "zss_water",
+  "group": "water",
+  "name": "ZSS water tank"
+ },
+ {
+  "id": "eop_endpoint",
+  "group": "water",
+  "name": "EOP — Indaver waterzuivering"
+ },
+ {
+  "id": "kleine_la",
+  "group": "water",
+  "name": "Kleine LA"
+ },
+ {
+  "id": "tankje_tussen_extruders",
+  "group": "water",
+  "name": "Tankje tussen extruders"
+ },
+ {
+  "id": "ringleiding",
+  "group": "air",
+  "name": "Ringleiding (pneumatic ring main)"
+ },
+ {
+  "id": "compressor_a",
+  "group": "air",
+  "name": "Compressor A (vertical)"
+ },
+ {
+  "id": "compressor_b",
+  "group": "air",
+  "name": "Compressor B (cabinet screw)"
+ },
+ {
+  "id": "vacuum_unit",
+  "group": "air",
+  "name": "Vacuum unit (cabinet)"
+ },
+ {
+  "id": "vacuum_pump",
+  "group": "air",
+  "name": "Vacuum pump (liquid-ring)"
+ },
+ {
+  "id": "extruder_silo",
+  "group": "silo",
+  "name": "Extruder feed silo (elevated, 2 cyclones)"
+ },
+ {
+  "id": "doseersilo",
+  "group": "silo",
+  "name": "Doseer silo"
+ },
+ {
+  "id": "mengsilo",
+  "group": "silo",
+  "name": "Mixing silo (mengsilo, indoor)"
+ },
+ {
+  "id": "voorraad_silo",
+  "group": "silo",
+  "name": "Voorraad silo (indoor)"
+ },
+ {
+  "id": "ms_silo_buiten",
+  "group": "silo",
+  "name": "Mengsilo buiten (MS)"
+ },
+ {
+  "id": "ls_silo_buiten",
+  "group": "silo",
+  "name": "Laadsilo buiten (LS)"
+ },
+ {
+  "id": "pcu_cabinet",
+  "group": "control",
+  "name": "PCU control cabinet (E-kast)"
+ },
+ {
+  "id": "hmi_shredder_l1",
+  "group": "control",
+  "name": "HMI — Shredder lijn 1"
+ },
+ {
+  "id": "hmi_shredder1_l3ab",
+  "group": "control",
+  "name": "HMI — Shredder 1 lijn 3A/3B"
+ },
+ {
+  "id": "hmi_shredder2_l3ab",
+  "group": "control",
+  "name": "HMI — Shredder 2 lijn 3A/3B"
+ },
+ {
+  "id": "hmi_shredder_l3c6",
+  "group": "control",
+  "name": "HMI — Shredder lijn 3C/6"
+ },
+ {
+  "id": "hmi_sorting_l3ab",
+  "group": "control",
+  "name": "HMI — Sorteerlijn 3A/3B"
+ },
+ {
+  "id": "hmi_transport_l3ab",
+  "group": "control",
+  "name": "HMI — Transportbanden 3A/3B"
+ },
+ {
+  "id": "hmi_transport_l3c6",
+  "group": "control",
+  "name": "HMI — Transportbanden 3C/6"
+ },
+ {
+  "id": "hmi_washing_all",
+  "group": "control",
+  "name": "HMI — Waslijn (alle lijnen)"
+ },
+ {
+  "id": "hmi_extruder_all",
+  "group": "control",
+  "name": "HMI — Extruder (alle lijnen)"
+ },
+ {
+  "id": "hmi_water_l3c6",
+  "group": "control",
+  "name": "HMI — Water lijn 3C/6"
+ },
+ {
+  "id": "hmi_water_extr_l1_3ab",
+  "group": "control",
+  "name": "HMI — Water extruder 1/3A/3B"
+ },
+ {
+  "id": "hmi_indaver_water",
+  "group": "control",
+  "name": "HMI — Indaver water (wall-mount)"
+ },
+ {
+  "id": "shift_leader_desk",
+  "group": "control",
+  "name": "Shift-leader PC / Bedrijfsleider desk"
+ },
+ {
+  "id": "qa_bench",
+  "group": "control",
+  "name": "Quality-control bench (QA)"
+ },
+ {
+  "id": "pomp_zeefbocht",
+  "group": "water",
+  "name": "Pomp zeefbocht (3B)"
+ },
+ {
+  "id": "compactor_belt",
+  "group": "other",
+  "name": "Compactor feed belt"
+ },
+ {
+  "id": "water_pump",
+  "group": "other",
+  "name": "Water pump (generic Wilo-style)"
+ },
+ {
+  "id": "silo_level_sensor",
+  "group": "silo",
+  "name": "Silo level sensor (overbruggebaar)"
+ },
+ {
+  "id": "overhead_crane",
+  "group": "utility",
+  "name": "Overhead crane (PPE gantry)"
+ },
+ {
+  "id": "scissor_lift",
+  "group": "utility",
+  "name": "Scissor lift (yellow)"
+ },
+ {
+  "id": "fire_extinguisher",
+  "group": "utility",
+  "name": "Fire extinguisher (wall-mount)"
+ },
+ {
+  "id": "fire_riser",
+  "group": "utility",
+  "name": "Fire-suppression riser"
+ },
+ {
+  "id": "washer_hp_mobile",
+  "group": "utility",
+  "name": "High-pressure washer (mobile)"
+ },
+ {
+  "id": "reel_water_thick_yellow",
+  "group": "utility",
+  "name": "Hose reel — water yellow (10 m)"
+ },
+ {
+  "id": "reel_water_black",
+  "group": "utility",
+  "name": "Hose reel — water black (10 m)"
+ },
+ {
+  "id": "reel_fire_red",
+  "group": "utility",
+  "name": "Hose reel — fire red (10 m)"
+ },
+ {
+  "id": "hook_air_hose",
+  "group": "utility",
+  "name": "Air hose hook (20 m)"
+ },
+ {
+  "id": "drainage_grating",
+  "group": "utility",
+  "name": "Drainage grating section"
+ },
+ {
+  "id": "dirt_hotspot",
+  "group": "utility",
+  "name": "Dirt hot-spot (procedural)"
+ },
+ {
+  "id": "riveted_steel_column",
+  "group": "structure",
+  "name": "Riveted steel column"
+ },
+ {
+  "id": "concrete_v_beam",
+  "group": "structure",
+  "name": "Concrete V-beam"
+ },
+ {
+  "id": "gate_roller",
+  "group": "structure",
+  "name": "Poort 4/5 gate (west facade Hal 4)"
+ },
+ {
+  "id": "gate_roller",
+  "group": "silo",
+  "name": "Gate/door Hal 0 south wall (to silopark)"
+ }
+]

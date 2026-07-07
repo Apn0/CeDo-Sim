@@ -104,8 +104,9 @@ func _rescan() -> void:
 	var seen : Dictionary = {}   # instance_id → true (for dedup vs stale entries)
 	# Generator 1: empty cooled lump carts.
 	_scan_lump_carts(tree, seen)
-	# Generators 2-4 (stubs — see file footer for the planned generators).
+	# Generators 2-5.
 	_scan_dirty_floor(tree, seen)
+	_scan_floor_piles(tree, seen)
 	_scan_overflow_containers(tree, seen)
 	# Prune entries whose target has gone away.
 	for tid in _open_tasks.keys():
@@ -167,27 +168,42 @@ func _scan_lump_carts(tree: SceneTree, seen: Dictionary) -> void:
 const INDOOR_HANDOVER_TARGET : int = 3    # leave at most this many for team B
 const INDOOR_HARD_CAP        : int = 8    # absolute "container is full"
 func _choose_lumps_destination(tree: SceneTree) -> Node3D:
+	# Real destinations are WasteContainer nodes (group "waste_container"); nothing
+	# in the repo tags the old "lumps_container_indoor"/"shipping_container_outdoor"
+	# groups. We prefer a container that isn't full (has_method receive_lumps +
+	# not is_full); among those, take the emptiest. If every container is full we
+	# still return the emptiest so a forklift run at least moves the cart off the
+	# discharge (the container's own overflow model handles the spill).
 	var mw_ref : Node = _find_main_world(tree)
 	var in_handover : bool = _shift_phase(mw_ref) == ShiftPhase.HANDOVER
-	var indoor : Node3D = null
-	for c in tree.get_nodes_in_group("lumps_container_indoor"):
-		if c is Node3D and is_instance_valid(c):
-			indoor = c
-			break
-	if indoor != null:
-		var fill : int = 0
-		if "lumps_count" in indoor:
-			fill = int(indoor.get("lumps_count"))
-		var hard_full : bool = fill >= INDOOR_HARD_CAP
-		if indoor.has_method("is_full"):
-			hard_full = hard_full or bool(indoor.call("is_full"))
-		var handover_full : bool = in_handover and fill >= INDOOR_HANDOVER_TARGET
-		if not (hard_full or handover_full):
-			return indoor
-	for c in tree.get_nodes_in_group("shipping_container_outdoor"):
-		if c is Node3D and is_instance_valid(c):
-			return c as Node3D
-	return indoor   # nothing else — fall back to indoor even if full
+	var best_open : Node3D = null
+	var best_open_fill : float = INF
+	var best_any : Node3D = null
+	var best_any_fill : float = INF
+	for c in tree.get_nodes_in_group("waste_container"):
+		if not (c is Node3D and is_instance_valid(c)):
+			continue
+		if not c.has_method("receive_lumps"):
+			continue
+		var fill : float = 0.0
+		if c.has_method("fill_fraction"):
+			fill = float(c.call("fill_fraction"))
+		if fill < best_any_fill:
+			best_any_fill = fill
+			best_any = c as Node3D
+		# During handover we tighten what counts as "open" so the crew leaves the
+		# nearest bins emptier for team B (route to a less-loaded bin sooner).
+		var full : bool = false
+		if c.has_method("is_full"):
+			full = bool(c.call("is_full"))
+		if in_handover and fill >= 0.5:
+			full = true
+		if not full and fill < best_open_fill:
+			best_open_fill = fill
+			best_open = c as Node3D
+	if best_open != null:
+		return best_open
+	return best_any   # everything full — emptiest still beats leaving the cart
 
 # ── Stubs for future task generators (operator-described pipeline). ─────────
 # Each can be filled in by writing a new NpcAutonomyTask subclass under
@@ -267,6 +283,35 @@ func _scan_dirty_floor(tree: SceneTree, seen: Dictionary) -> void:
 		nz_task.priority += pri_mod
 		_open_tasks[nz_tid] = nz_task
 
+# ── Generator 3: shovel down FloorPiles that have built up. ──────────────────
+# A FloorPile (src/sim/FloorPile.gd, group "floor_pile") accumulates loose
+# material when bins overflow or LineFlow can't route a stream. Above
+# SHOVEL_PILE_MIN_KG the heap starts blocking lanes / intakes, so an idle NPC
+# grabs a shovel-worth of it into the nearest waste_container until it's low.
+const SHOVEL_PILE_MIN_KG : float = 60.0
+func _scan_floor_piles(tree: SceneTree, seen: Dictionary) -> void:
+	var mw_ref : Node = _find_main_world(tree)
+	var pri_mod : int = _cleaning_priority_modifier(mw_ref)
+	for pile in tree.get_nodes_in_group("floor_pile"):
+		if not is_instance_valid(pile):
+			continue
+		if not (pile is Node3D):
+			continue
+		if float(pile.get("mass_kg")) < SHOVEL_PILE_MIN_KG:
+			continue
+		var tid : int = pile.get_instance_id()
+		seen[tid] = true
+		if _open_tasks.has(tid):
+			continue
+		if pile.has_meta("autonomy_claimed_by"):
+			continue
+		var script := load("res://src/scenes/world/tasks/ShovelFloorPileTask.gd")
+		if script == null:
+			continue
+		var task : NpcAutonomyTask = script.new(pile as Node3D, mw_ref)
+		task.priority += pri_mod
+		_open_tasks[tid] = task
+
 func _find_main_world(tree: SceneTree) -> Node:
 	for c in tree.get_root().get_children():
 		if c is Node3D and "_player_spawn_pos" in c:
@@ -333,15 +378,34 @@ func _cleaning_priority_modifier(mw: Node) -> int:
 		mod -= PRIORITY_PENALTY_PROBLEM
 	return mod
 
-## When the indoor lumps_container crosses is_full(), an NPC drives a forklift
-## load of bulk lumps from indoor → outdoor shipping_container instead.
-func _scan_overflow_containers(_tree: SceneTree, _seen: Dictionary) -> void:
-	# TODO #198-followup: OverflowDumpTask. Triggered when
-	# lumps_container_indoor.is_full() AND shipping_container_outdoor exists
-	# AND there's at least one forklift idle. Phase pipeline mirrors
-	# EmptyLumpCartTask: walk_to_forklift → drive_to_indoor → scoop_bulk →
-	# drive_to_outdoor → dump.
-	pass
+## When a WasteContainer crosses needs_emptying(), an NPC walks over and empties
+## it (WasteContainer.empty()) so it stops spilling onto the floor. On-foot reset
+## rather than a forklift tip — cheap, and enough to keep the bin from staying
+## BLOCKED. One OverflowDumpTask per over-full container.
+func _scan_overflow_containers(tree: SceneTree, seen: Dictionary) -> void:
+	var mw_ref : Node = _find_main_world(tree)
+	var pri_mod : int = _cleaning_priority_modifier(mw_ref)
+	for bin in tree.get_nodes_in_group("waste_container"):
+		if not is_instance_valid(bin):
+			continue
+		if not (bin is Node3D):
+			continue
+		if not bin.has_method("needs_emptying"):
+			continue
+		if not bool(bin.call("needs_emptying")):
+			continue
+		var tid : int = bin.get_instance_id()
+		seen[tid] = true
+		if _open_tasks.has(tid):
+			continue
+		if bin.has_meta("autonomy_claimed_by"):
+			continue
+		var script := load("res://src/scenes/world/tasks/OverflowDumpTask.gd")
+		if script == null:
+			continue
+		var task : NpcAutonomyTask = script.new(bin as Node3D, mw_ref)
+		task.priority += pri_mod
+		_open_tasks[tid] = task
 
 func _role_of(npc: Node) -> String:
 	if npc == null:

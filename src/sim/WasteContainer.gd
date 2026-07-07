@@ -189,6 +189,28 @@ func empty() -> float:
 	_update_state()
 	return removed
 
+# ── #198 NPC-autonomy lumps API ──────────────────────────────────────────────
+# Thin aliases so EmptyLumpCartTask (and the board's destination logic) can treat
+# a WasteContainer as a lumps sink without knowing its SI add()/fill model. Lumps
+# from the laser filter are a coarse solid waste stream — route them through the
+# same POLY_REJECT bucket the container already understands (dense chunky reject).
+const _LUMPS_DENSITY_KG_M3 : float = 350.0   # cooled extruder lump density
+
+## Receive `kg` of cooled lumps dumped by a forklift. Returns the mass that could
+## NOT be accepted (overflowed / refused), matching add()'s ledger contract.
+func receive_lumps(kg: float) -> float:
+	return add(kg, _LUMPS_DENSITY_KG_M3, Stream.POLY_REJECT)
+
+## Approximate "how many carts' worth" this bin holds, for the board's fill-based
+## routing (LumpCart.FULL_THRESHOLD_KG ~ 200 kg per cart). Cheap integer estimate.
+func lumps_count() -> int:
+	return int(floor((mass_kg + overflow_mass_kg) / 200.0))
+
+## True once the bin is at/over its safe-fill point — the board reads this to
+## decide it should route the next load to a different (outdoor) container.
+func is_full() -> bool:
+	return needs_emptying()
+
 # =============================================================================
 # INTERNAL
 # =============================================================================

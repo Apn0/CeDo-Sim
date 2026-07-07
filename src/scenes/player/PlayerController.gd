@@ -97,6 +97,18 @@ var _shaft_holding : bool = false   # E currently held + hold-E in flight
 var _shaft_prompt_text : String = "" # last text we pushed to interaction_prompt_show
 const _SHAFT_CUT := preload("res://src/scenes/interactions/TitechShaftCut.gd")
 
+# ── #markers — in-world precise point marker tool (F10) ───────────────────────
+# F10 no longer fires a single-shot feedback capture; it toggles a live marker
+# mode. A cyan preview orb tracks the crosshair raycast; LMB drops a persistent
+# amber orb, G cycles snap (off → grid → edge-vertex), H clears them, RMB/F10
+# exits and writes every placed point to user://feedback/<stamp>/markers.json
+# (+ screenshot) so the exact coordinates the operator meant are readable — a
+# multi-point successor to the old capture. See MarkerTool.gd. The tool is
+# hosted under the WORLD (not the player) so placed orbs stay fixed in world
+# space instead of riding along under the capsule.
+const _MARKER_TOOL := preload("res://src/scenes/player/MarkerTool.gd")
+var _marker_tool : Node3D = null
+
 @onready var head     : Node3D   = $Head
 @onready var camera_3d: Camera3D = $Head/Camera3D
 
@@ -873,6 +885,10 @@ func _building_shell_offset() -> Vector3:
 	return shell.global_position
 
 func _input(event: InputEvent) -> void:
+	# #markers — while the F10 marker tool is active it owns LMB/RMB/G/H, so it
+	# must run before ANY gameplay bind (else H would toggle the LPG tank, etc.).
+	if _marker_input(event):
+		return
 	# #106 — flashlight toggle on F. Check first so other keybinds don't swallow it.
 	if event.is_action_pressed("flashlight"):
 		_toggle_flashlight()
@@ -948,8 +964,11 @@ func _input(event: InputEvent) -> void:
 		_debug_fill_silo_at_crosshair()
 		get_viewport().set_input_as_handled()
 
+	# F10 — enter the marker tool (was: one-shot feedback capture). While the
+	# tool is active, F10/RMB exit is handled up in _marker_input(); this branch
+	# only fires when the tool is OFF, so it always means "enter".
 	if event.is_action_pressed("feedback_capture"):
-		_capture_feedback_at_crosshair()
+		_marker_tool_enter()
 		get_viewport().set_input_as_handled()
 		return
 
@@ -983,6 +1002,60 @@ func _input(event: InputEvent) -> void:
 			return
 
 	# ESC is owned by HUD.gd — do NOT handle ui_cancel here.
+
+# =============================================================================
+# #markers — F10 in-world point marker tool routing
+# =============================================================================
+## Lazily build the MarkerTool and host it under the world (current scene) so
+## placed orbs stay fixed in world space rather than parented to the moving
+## capsule. Rebuilt if the previous instance was freed by a scene change.
+func _ensure_marker_tool() -> Node3D:
+	if _marker_tool != null and is_instance_valid(_marker_tool):
+		return _marker_tool
+	_marker_tool = _MARKER_TOOL.new()
+	_marker_tool.name = "MarkerTool"
+	var host : Node = get_tree().current_scene
+	if host == null:
+		host = get_tree().root
+	host.add_child(_marker_tool)
+	return _marker_tool
+
+## F10 (tool OFF) → enter marker mode, casting the crosshair ray from the eye
+## and excluding the player capsule so we never tag ourselves.
+func _marker_tool_enter() -> void:
+	var mt := _ensure_marker_tool()
+	mt.begin(camera_3d, [get_rid()])
+
+## Consume LMB/RMB/G/H/F10 while the marker tool is active. Returns true when the
+## event was handled (caller returns immediately). No-op when the tool is off.
+func _marker_input(event: InputEvent) -> bool:
+	if _marker_tool == null or not is_instance_valid(_marker_tool) or not _marker_tool.active:
+		return false
+	if event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
+		match (event as InputEventMouseButton).button_index:
+			MOUSE_BUTTON_LEFT:
+				_marker_tool.place()
+				get_viewport().set_input_as_handled()
+				return true
+			MOUSE_BUTTON_RIGHT:
+				_marker_tool.exit_and_save()
+				get_viewport().set_input_as_handled()
+				return true
+	if event is InputEventKey and (event as InputEventKey).pressed and not (event as InputEventKey).echo:
+		match (event as InputEventKey).physical_keycode:
+			KEY_G:
+				_marker_tool.cycle_snap()
+				get_viewport().set_input_as_handled()
+				return true
+			KEY_H:
+				_marker_tool.clear()
+				get_viewport().set_input_as_handled()
+				return true
+			KEY_F10:
+				_marker_tool.exit_and_save()   # F10 again = exit (toggle)
+				get_viewport().set_input_as_handled()
+				return true
+	return false
 
 # Register fallback Input actions for the hotbar — same trick as HUD's
 # _ensure_map_action, since users without a fresh .godot project may have a

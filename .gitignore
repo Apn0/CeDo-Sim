@@ -7,3 +7,5 @@ assets/
 /tmp_save.json
 /nan_scan_tmp.gd
 /nan_scan_tmp.gd.uid
+# Regression run artifacts (regenerated each run)
+tools/regression/out/

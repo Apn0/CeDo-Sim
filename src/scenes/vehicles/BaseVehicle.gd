@@ -614,10 +614,20 @@ func _release() -> void:
 	if _carried_bale == null:
 		return
 	# #9 — clear the in-transit flag so the released bale can feed again once it's
-	# set down. (We don't set delivered here — the feed-eligibility design is
-	# separate; this only undoes the carry guard.)
+	# set down.
 	if is_instance_valid(_carried_bale):
 		_carried_bale.set_meta("carried", false)
+		# FEED-ELIGIBILITY (narrow, correct path — #201 removed the blanket
+		# _drop_bale delivered flag because it fired at pickup/mid-air). Mark the
+		# bale delivered=true ONLY when it is SET DOWN within range of a real line
+		# feed point (an intake marker or a feed belt). LineFlow._bale_at then
+		# ingests it; a bale released anywhere else stays inert. Bales never fire
+		# this at pickup (that path is _try_grab, which sets carried=true, not
+		# delivered) nor mid-air (the vehicle drives the load to the feed point and
+		# opens the tool AT the belt).
+		if _carried_bale.is_in_group("bale") and _carried_bale.has_meta("material_origin"):
+			if _is_near_line_feed_point(_carried_bale.global_position):
+				_carried_bale.set_meta("delivered", true)
 		# #201 Step 5 removed the only _drop_bale caller, orphaning the dump-zone
 		# tip check — re-attach it here so a movable skip released over a
 		# "dump_zone" marker still empties (LegacyPropsSpawner tip-zone flow).
@@ -632,6 +642,19 @@ func _release() -> void:
 	_carried_stack_orig_parents.clear()
 	_carried_natural_local_y.clear()
 	_on_released()
+
+## True when `pos` is within range of a line feed point (intake marker / feed
+## belt). Delegates to MainWorld.is_near_line_feed_point — found by walking up the
+## ancestors (the vehicle lives under MainWorld). Returns false (no delivery) when
+## the world can't be reached (headless tests, no MainWorld), which is correct: a
+## test that wants a delivered bale sets the meta itself (see VehicleBaleTest).
+func _is_near_line_feed_point(pos: Vector3) -> bool:
+	var n : Node = self
+	while n != null:
+		if n.has_method("is_near_line_feed_point"):
+			return bool(n.call("is_near_line_feed_point", pos))
+		n = n.get_parent()
+	return false
 
 ## Reparent a bale under `dest` keeping its world transform, mark it delivered,
 ## un-grab it, and settle it onto the floor below.

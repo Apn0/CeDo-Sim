@@ -30,7 +30,6 @@ func build_all(anchor: Vector3) -> void:
 	if _world == null:
 		_world = get_parent()
 	_spawn_overhead_lights()
-	_spawn_floodlights(anchor)
 
 # =============================================================================
 # OVERHEAD LIGHTS — #107
@@ -71,9 +70,15 @@ func _spawn_overhead_lights() -> void:
 	const BF_PC_X := Vector2(-0.64279, 0.76604)  # PC delta per +1 m building X
 	const BF_PC_Z := Vector2(-0.76604, -0.64279) # PC delta per +1 m building Z
 	var floor_y : float = Plant.pc_to_scene(Vector2(500.0, 500.0)).y
-	# Bar long axis runs along the halls (building Z): local +X rotated a
-	# quarter turn from the canonical yaw.
-	var bar_yaw : float = float(_world.call("_world_yaw")) + PI * 0.5
+	# Bar long axis must run along the halls (building Z). Building Z is NOT
+	# aligned with the PC north axis — it bears -130 deg in PC (the 40 deg
+	# building azimuth) — so `world_yaw + PI/2` misses by 50 deg and lays the
+	# tubes diagonally (herringbone). Derive the yaw straight from BF_PC_Z:
+	# rotate that PC-frame axis into the scene the exact way pc_to_scene does
+	# (Basis(UP, world_yaw)), then take the yaw that rotates local +X onto it
+	# (atan2(-dir.z, dir.x) — Godot +Y rotation convention).
+	var _bz_scene : Vector3 = Plant.world_basis_y() * Vector3(BF_PC_Z.x, 0.0, BF_PC_Z.y)
+	var bar_yaw : float = atan2(-_bz_scene.z, _bz_scene.x)
 	# Realistic first pass — one row of 6 under each arc crest, plus rows in
 	# the flat west wing / SE wing / low annex. Operator tunes count later.
 	# Each spot: [bf_x, bar_height, bf_z, roof_underside_height]. The 4th value
@@ -90,7 +95,13 @@ func _spawn_overhead_lights() -> void:
 	for z in [38.0, 46.0, 54.0]:                 # SE wing (7 m roof)
 		spots.append([126.0, 6.5, z, 6.95])
 	for i in range(6):                           # annex (4.6 m roof)
-		spots.append([63.0 + 13.0 * float(i), 4.1, 66.0, 4.55])
+		var ax : float = 63.0 + 13.0 * float(i)
+		# ANNEX_W (x 57..81) is stepped and only reaches Z=66, so a bar centred
+		# ON z=66 straddles the south exterior wall. Pull the two west-annex
+		# bars (x<81) north to z=63.5 so they sit fully inside; the x>=81 bars
+		# stay at z=66 where the annex extends fully south.
+		var az : float = 63.5 if ax < 81.0 else 66.0
+		spots.append([ax, 4.1, az, 4.55])
 	var rod_mat := StandardMaterial3D.new()
 	rod_mat.albedo_color = Color(0.16, 0.16, 0.17)
 	rod_mat.roughness = 0.7
@@ -163,47 +174,3 @@ func _build_overhead_fixture(parent: Node3D, pos: Vector3) -> void:
 	spot.light_color = Color(1.0, 0.96, 0.86)
 	spot.transform = Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-90.0)), Vector3(0.0, -0.05, 0.0))
 	fixture.add_child(spot)
-
-## TL-bar emissive boxes parented INSIDE the building shell — replaces the
-## old wall-mounted exterior Floodlight cones. Operator notes the building
-## is lit by overhead fluorescent tubes, not by floodlights aimed at the
-## walls; the floodlights also rotated by `_building_yaw()` which disagreed
-## with the canonical bale-yard yaw (WORLD-cluster fix).
-##
-## Each TL-bar is an emissive 1.5×0.08×0.10 m box (no light source — the
-## SpotLight3Ds from `_spawn_overhead_lights` already supply the actual
-## illumination). The bars hang from the ceiling along the building's local
-## south + west wall lines so the inside of the shell reads as an industrial
-## fluorescent hall at dusk/night. They're parented under the ShellMesh,
-## inheriting its transform, and oriented along local +X — but the GRID step
-## is rotated by `(world_yaw - shell_local_yaw)` so the row direction tracks
-## the canonical yaw the bale yards drive.
-func _spawn_floodlights(anchor: Vector3) -> void:
-	var shell : MeshInstance3D = _world.call("_shell")
-	if shell == null:
-		print("[InteriorLightingManager] Floodlights skipped: no ShellMesh found")
-		return
-	var root := Node3D.new()
-	root.name = "InteriorTLBars"
-	shell.add_child(root)
-	# Compute shell-local ceiling height and footprint (same pattern as
-	# `_spawn_overhead_lights`).
-	var local_aabb : AABB = shell.mesh.get_aabb() if shell.mesh != null else AABB(Vector3.ZERO, Vector3(40, 8, 40))
-	var ceil_y_local : float = local_aabb.position.y + local_aabb.size.y - 0.45
-	var x0 := local_aabb.position.x; var x1 := x0 + local_aabb.size.x
-	var z0 := local_aabb.position.z; var z1 := z0 + local_aabb.size.z
-	# Wall-line TL bars: two rows along the local south wall (interior face)
-	# and one row along the local west wall, so the perimeter of the hall
-	# reads brightly at night. Positions are in shell-LOCAL frame.
-	var inset : float = 1.2
-	var bar_offsets : Array = [
-		Vector3(x0 + inset, ceil_y_local, z0 + inset),
-		Vector3((x0 + x1) * 0.5, ceil_y_local, z0 + inset),
-		Vector3(x1 - inset, ceil_y_local, z0 + inset),
-		Vector3(x0 + inset, ceil_y_local, (z0 + z1) * 0.5),
-	]
-	for i in bar_offsets.size():
-		_build_overhead_fixture(root, bar_offsets[i])
-		root.get_child(i).name = "InteriorTLBar_%d" % i
-	print("[InteriorLightingManager] Interior TL bars: %d emissive boxes parented under ShellMesh (replaces wall floodlights)" \
-		% bar_offsets.size())
