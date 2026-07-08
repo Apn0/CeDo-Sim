@@ -313,6 +313,15 @@ func _scan_floor_piles(tree: SceneTree, seen: Dictionary) -> void:
 		_open_tasks[tid] = task
 
 func _find_main_world(tree: SceneTree) -> Node:
+	# #audit-2026-07-08 — the root-children scan returned null in-game (autoload
+	# nodes precede the world under /root and the match was fragile), so mw_ref was
+	# null: BlowLeavesTask/HoseSweepTask fell back to raw plant-local waypoints near
+	# origin and every cleaning task timed out ("NPCs do nothing"). current_scene is
+	# the authoritative world node when loaded via change_scene — prefer it, keep the
+	# scan as a fallback for harness/embedded cases.
+	var cs := tree.current_scene
+	if cs != null and cs is Node3D and "_player_spawn_pos" in cs:
+		return cs
 	for c in tree.get_root().get_children():
 		if c is Node3D and "_player_spawn_pos" in c:
 			return c

@@ -183,6 +183,13 @@ func _spawn_npcs() -> void:
 
 		if npc_script:
 			npc.set_script(npc_script)
+			# #audit-2026-07-08 — assign identity at spawn (was NEVER set). Without
+			# npc_id, NpcAutonomyBoard._role_of() returned "" for every NPC so the
+			# autonomy role-gate was skipped (shift-leader Romain got cleaning tasks);
+			# without npc_role, CrewManager zone-posting + jam coverage collapsed (no
+			# worker manned its station). Set BEFORE add_child so _ready() sees them.
+			npc.set("npc_id", npc_id)
+			npc.set("npc_role", String(data.get("role", "")))
 
 		npc.set_meta("map_color", data["color"])   # MapOverlay draws crew in this colour
 
