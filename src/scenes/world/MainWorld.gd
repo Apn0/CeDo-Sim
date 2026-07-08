@@ -259,8 +259,13 @@ func _spawn_world_items() -> void:
 	# running. NEW games skip this on purpose — operator must commission the
 	# line via the HMI (cold start), matching real plant power-up procedure.
 	if line_flow:
-		if _is_resumed_save and line_flow.has_method("mark_warm_boot"):
-			line_flow.mark_warm_boot()
+		# #audit-2026-07-08 — COLD START ON LOAD (operator decision). The warm-boot
+		# path called LineFlow.force_all_powered() UNCONDITIONALLY for every resumed
+		# save, so loading ANY save started the whole line RUNNING — even a world the
+		# operator never commissioned. Loading must NOT start production; the operator
+		# commissions the line via the HMI START (matching real plant power-up). True
+		# mid-run resume (option B) would require persisting per-machine run state and
+		# is deferred; mark_warm_boot()/force_all_powered() remain in LineFlow for that.
 		line_flow.rebuild()
 		# Discoverable by group so a released bale can ask "am I at a feed point?"
 		# without a hard reference (BaseVehicle._release → is_near_line_feed_point).
