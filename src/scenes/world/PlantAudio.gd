@@ -127,7 +127,13 @@ func _clip_local_position(clip: Dictionary, anchor: Vector3) -> Vector3:
 	var mw := get_parent()
 	if mw != null and mw.has_method("_floor_top_y"):
 		floor_y = float(mw.call("_floor_top_y")) + 1.5   # head-height for the player
-	return Vector3(rd_x - anchor.x, floor_y, rd_y - anchor.z)
+	# RD NORTH (rd_y) increases toward world −Z — the SAME convention WorldLayout
+	# uses (WorldLayout.gd:306 "RD y → world −z"). The old `rd_y - anchor.z` had the
+	# sign flipped, mirroring all 43 clips ~85 m to the far side of the plant so
+	# none fell inside max_distance (30 m) and NOTHING was audible. local_z must be
+	# anchor.z − rd_y so clips co-locate with the line-starts/yards. (Proven: nearest
+	# audible clip 85.5 m → 3.7 m; 0/43 → 30/43 within 30 m of where the operator stands.)
+	return Vector3(rd_x - anchor.x, floor_y, anchor.z - rd_y)
 
 ## Best-effort stream-length lookup so the random-offset jitter doesn't
 ## over-shoot. Falls back to 2 s for unknown streams.

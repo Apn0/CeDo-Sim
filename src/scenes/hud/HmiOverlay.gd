@@ -282,9 +282,21 @@ func _find_line_flow() -> void:
 	# directly, and we shouldn't drop a live ref because of a transient tree state).
 	if _line_flow != null and is_instance_valid(_line_flow):
 		return
-	var root := get_tree().current_scene
-	if root:
-		_line_flow = root.find_child("LineFlow", true, false)
+	# Resolution was current_scene.find_child ONLY, which returns null whenever the
+	# HMI runs while current_scene isn't the world (loading curtain, pre-shift, a
+	# nested/added world) — producing a FALSE "PLC connection bad" + empty machine
+	# list on a perfectly healthy line (MEASURED: LineFlow was live with 27 machines
+	# /23 links yet this lookup missed it). Try the robust anchors too: LineFlow is
+	# ALWAYS added to the "line_flow" group (MainWorld.gd:268) and hangs under root.
+	var tree := get_tree()
+	var lf : Node = tree.get_first_node_in_group("line_flow")
+	if lf == null:
+		var root := tree.current_scene
+		if root:
+			lf = root.find_child("LineFlow", true, false)
+	if lf == null:
+		lf = tree.root.find_child("LineFlow", true, false)
+	_line_flow = lf
 
 # =============================================================================
 # OPEN / CLOSE
@@ -1596,6 +1608,7 @@ func _section_def(section_name: String) -> Dictionary:
 ## naming the machine/stage at fault, so the matching mimic tile lights red.
 func _compute_faults() -> Array:
 	var out : Array = []
+	_find_line_flow()   # self-heal a transient early null before crying PLC fault
 	if _line_flow == null:
 		out.append({"code": "PLC-000", "text": "Geen lijn-PLC gekoppeld in deze scene", "scope": ""})
 		_record_fault_transitions(out)
@@ -1802,6 +1815,7 @@ func _populate_machine_list() -> void:
 	for c in _machines_list_vb.get_children():
 		c.queue_free()
 	_machines_list_rows.clear()
+	_find_line_flow()   # self-heal a transient early null so a live line isn't hidden
 	if _line_flow == null or not _line_flow.has_method("machine_list"):
 		var empty := Label.new()
 		empty.text = "(geen machines)"
@@ -1851,7 +1865,12 @@ func _populate_machine_list() -> void:
 	# this on a save with 0 placed line machines).
 	if _machines_list_rows.is_empty():
 		var none := Label.new()
-		none.text = "(geen machines geplaatst — bouw een lijn met Tab)"
+		# Distinguish "no line built at all" from "a line IS built but none of its
+		# machines fall in THIS HMI's scope" — otherwise a scoped panel on a running
+		# plant misleads the operator into rebuilding a line that already exists.
+		var total : int = _line_flow.call("machine_list").size()
+		none.text = "(geen machines geplaatst — bouw een lijn met Tab)" if total == 0 \
+			else "(%d machines op de lijn — geen binnen deze HMI-scope)" % total
 		none.add_theme_color_override("font_color", C_TEXT_DARK)
 		_machines_list_vb.add_child(none)
 

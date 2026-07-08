@@ -9,3 +9,6 @@ assets/
 /nan_scan_tmp.gd.uid
 # Regression run artifacts (regenerated each run)
 tools/regression/out/
+
+# Backups kept until operator sign-off (audit remediation)
+*.bak
