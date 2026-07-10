@@ -44,6 +44,9 @@ var _edit_dirty     : bool = false
 const LEGACY_LAYOUT_PATH := "user://factory_layout.json"
 var layout_path : String = "user://factory_layout.json"
 var allow_legacy_fallback : bool = true
+# Overlay WorldLayout.structure_items (shared site walls/doors/gates) after the
+# per-save items. Default on; test benches without a building shell turn it off.
+var load_shared_structure : bool = true
 const LAYOUT_VERSION := 2   # #29 — bump to force a one-time wipe of pre-patch saved builds
 const GRID        := 0.5                  # metres — snap step for placement
 const ROT_STEP    := PI / 12.0            # 15° rotation increment per [Q]/[E]
@@ -2382,10 +2385,13 @@ func load_layout() -> void:
 			count += 1
 	# Always overlay the SHARED building structure (walls + doors + gates + windows)
 	# on top of per-save items, so a brand-new save still gets the factory's interior.
+	# Test benches (ExtruderGauntlet) opt out: they have no building shell, so site
+	# doors/gates would float in the void hundreds of metres from the bench floor.
 	var shared_count := 0
-	for s_entry in WorldLayout.structure_items:
-		if _apply_layout_entry(s_entry):
-			shared_count += 1
+	if load_shared_structure:
+		for s_entry in WorldLayout.structure_items:
+			if _apply_layout_entry(s_entry):
+				shared_count += 1
 	print("[BuildMode] Loaded %d placed objects (per-save) + %d shared structure" % [count, shared_count])
 
 ## Apply one persisted layout entry (from per-save or shared structure). Returns

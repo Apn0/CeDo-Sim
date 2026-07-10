@@ -20,18 +20,34 @@ extends "res://src/scenes/world/GauntletWorld.gd"
 ## replaces the station walk entirely — no signs, no Y/N/R status board.
 
 func _ready() -> void:
-	print("[ExtruderGauntlet] _ready start")
 	_build_bench_floor()
 	_build_sky_light()
-	print("[ExtruderGauntlet] floor+light done, building rig…")
 	_build_rig()
-	print("[ExtruderGauntlet] rig done, spawning player…")
 	_build_player()
 	OperatorContext.spawn_under(self, _player)
 	_spawn_build_mode()
 	_spawn_hud()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	print("[ExtruderGauntlet] bench ready — extruder_3a + cutter_compactor + lump cart; HMI + BuildMode live")
+
+## Override: the parent points BuildMode at user://gauntlet_layout.json, which
+## carries whatever was ever built in the WALK gauntlet (compressors, air tank,
+## pressure washer, dirt hot-spots…) — all of that spawned into the "empty"
+## bench on first boot. The bench gets its OWN layout file so it starts truly
+## empty and anything built here stays here.
+func _spawn_build_mode() -> void:
+	if _player == null:
+		push_warning("[ExtruderGauntlet] BuildMode skipped — no player")
+		return
+	var bm := BM.new()
+	bm.name = "BuildMode"
+	bm.player_body = _player
+	bm.wall_openings = null
+	bm.layout_path = "user://extruder_bench_layout.json"
+	bm.allow_legacy_fallback = false
+	bm.load_shared_structure = false   # no building shell → no site doors/gates
+	add_child(bm)
+	print("[ExtruderGauntlet] BuildMode ready — bench-local layout, Tab to build")
 
 ## Fixed 60×40 slab — the parent's floor sizes itself from STATIONS, which
 ## this bench doesn't use.
