@@ -23,9 +23,31 @@ extends StaticBody3D
 #      ΔP autoboost threshold and losing the strategy entirely.
 #
 # Filter change procedure (E-interaction at the unit while it's running or
-# scrap-flagged):
-#       STOP_SCRAPER → DEPRESSURIZE → OPEN → INSPECT → REMOVE → INSERT →
-#       CLOSE → REPRESSURIZE → RESTART
+# scrap-flagged) — follows Cedo PROD-SWI-074 "Laserfilter wissel LF 2-406"
+# (rev 01, 26-07-2023) for every documented step; the depressurize/repressurize
+# waits bridge the undocumented pages of the 24-page SWI:
+#
+#   STOP_SCRAPER → DEPRESSURIZE → LOTO → PLACE_BORDES → REMOVE_COMPACTBUIS →
+#   CAP_NUTS_OFF → SWING_KAP → OPEN → INSPECT → REMOVE → CLEAN_BRAKERPLATE →
+#   CLEAN_STAALBORSTEL → REPLACE_KOPEREN_RING → INSERT → REFIT_AFVOERVIJZEL →
+#   CLOSE → TORQUE_UITZETSCHROEF → REPRESSURIZE → REMOVE_LOTO → RESTART
+#
+#   SWI-sourced facts baked into the steps:
+#   * LOTO: werkschakelaar sits on the OTHER side of the filter; padlock on
+#     (SWI-074 step 14). Removed again at the end before restart.
+#   * Beschermkap comes free by removing the compactbuis + 3 dopmoeren with a
+#     13 mm steek/ringsleutel; pull straight toward you, then swing RIGHT —
+#     mind the cabling on the hinge side (steps 16-17).
+#   * Brakerplate + doorvoer opening cleaned with plamuurmes en buis, then the
+#     speciale staalborstel — makes refitting afvoervijzel II easier (30-31).
+#   * Koperen ring in the scraper's aandrijfopening is SINGLE-USE — discard
+#     every change, fit a new one (step 32).
+#   * Uitzetschroef is tightened to 500 Nm with the dedicated calibrated
+#     Stahlwille torque wrench — tighten-only, stop at the click (SWI-084).
+#   * Plates ≥ 1.40 mm go back to the cleaning cycle for reuse (vacuum-oven
+#     burn-out ≤400°C — off-screen); below 1.40 mm the nitriding layer is gone
+#     and the plate is scrap (zeefplaten-reiniging guide).
+#
 #   Each step is a single E press except STOP_SCRAPER / DEPRESSURIZE /
 #   REPRESSURIZE which auto-advance after a wait. While the procedure is
 #   running, is_line_down() returns true so an upstream ExtruderModel can
@@ -81,8 +103,16 @@ const T_DEPRESSURIZE_S    : float = 3.0
 const T_REPRESSURIZE_S    : float = 5.0
 
 enum Change {
-	IDLE, STOP_SCRAPER, DEPRESSURIZE, OPEN, INSPECT, REMOVE, INSERT, CLOSE,
-	REPRESSURIZE, RESTART
+	IDLE, STOP_SCRAPER, DEPRESSURIZE,
+	# SWI-074 steps 14-17: isolate + free the beschermkap
+	LOTO, PLACE_BORDES, REMOVE_COMPACTBUIS, CAP_NUTS_OFF, SWING_KAP,
+	OPEN, INSPECT, REMOVE,
+	# SWI-074 steps 30-32: internal cleaning + single-use wear ring
+	CLEAN_BRAKERPLATE, CLEAN_STAALBORSTEL, REPLACE_KOPEREN_RING,
+	INSERT, REFIT_AFVOERVIJZEL, CLOSE,
+	# SWI-084: 500 Nm click-wrench on the uitzetschroef
+	TORQUE_UITZETSCHROEF,
+	REPRESSURIZE, REMOVE_LOTO, RESTART
 }
 
 # ── Live state ───────────────────────────────────────────────────────────────
@@ -90,6 +120,13 @@ enum Change {
 # the operator how much waste their scraper-RPM strategy is actually saving
 # (low RPM → smaller number). Reset by ShiftClock at handover.
 var lumps_kg_this_shift  : float = 0.0
+# SWI-074/084 consumable + reuse bookkeeping (read by HMI / SCADA):
+#   * koperen ring is single-use — one consumed per completed change.
+#   * plates ≥1.40 mm at inspection go back to the cleaning cycle (reuse);
+#     thinner plates are scrap. Decided at the INSPECT step.
+var koperen_rings_used   : int   = 0
+var plates_to_cleaning   : int   = 0
+var plates_scrapped      : int   = 0
 var screen_mesh_um       : int   = 140
 var screen_thickness_mm  : float = FRESH_THICKNESS_MM
 var scraper_rpm          : float = NOMINAL_SCRAPER_RPM   # operator setpoint
@@ -485,19 +522,45 @@ func crosshair_prompt(_p: Node3D) -> String:
 				"boost actief" if auto_boost_active else "normaal"]
 		Change.STOP_SCRAPER:  return "Schraper stoppen…"
 		Change.DEPRESSURIZE:  return "Drukverlaging — wacht…"
+		# ── SWI-074 stap 14-17 ───────────────────────────────────────────────
+		Change.LOTO:
+			return "Werkschakelaar UIT (andere kant filter) + hangslot [E]"
+		Change.PLACE_BORDES:
+			return "Bordes plaatsen — let op het openen van de deur [E]"
+		Change.REMOVE_COMPACTBUIS:
+			return "Compactbuis verwijderen [E]"
+		Change.CAP_NUTS_OFF:
+			return "3× dopmoer losdraaien — steek/ringsleutel 13 mm [E]"
+		Change.SWING_KAP:
+			return "Kap recht naar je toe, dan naar rechts wegdraaien — let op bekabeling scharnierzijde [E]"
 		Change.OPEN:          return "Behuizing openen [E]"
 		Change.INSPECT:
 			# Screen plate itself is symmetric (single thickness + mesh value);
 			# the asymmetric model lives in LOADING, not the plate. So inspect
 			# still shows screen_mesh_um + screen_thickness_mm. Loading at the
 			# point of inspect is irrelevant because OPEN already vented it.
+			# ≥1.40 mm → cleaning cycle for reuse; below → nitreerlaag gone, scrap.
 			return "%d µm · %.2f mm — %s [E]" % [
 				screen_mesh_um, screen_thickness_mm,
-				SCRAP_LINE_TEXT if not is_usable() else OK_LINE_TEXT]
-		Change.REMOVE:        return "Oude filter verwijderen [E]"
-		Change.INSERT:        return "Nieuwe filter plaatsen [E]"
-		Change.CLOSE:         return "Behuizing sluiten [E]"
+				SCRAP_LINE_TEXT if not is_usable() else OK_LINE_TEXT + " → reiniging"]
+		Change.REMOVE:        return "Oude zeefplaat verwijderen [E]"
+		# ── SWI-074 stap 30-32 ───────────────────────────────────────────────
+		Change.CLEAN_BRAKERPLATE:
+			return "Brakerplate + doorvoeropening schoonmaken — plamuurmes en buis [E]"
+		Change.CLEAN_STAALBORSTEL:
+			return "Overtollig smelt verwijderen — speciale staalborstel [E]"
+		Change.REPLACE_KOPEREN_RING:
+			return "Koperen ring uit aandrijfopening schraper — EENMALIG gebruik, nieuwe plaatsen [E]"
+		Change.INSERT:        return "Nieuwe zeefplaat plaatsen [E]"
+		Change.REFIT_AFVOERVIJZEL:
+			return "Afvoervijzel II terugplaatsen [E]"
+		Change.CLOSE:         return "Kap terug + dopmoeren aandraaien [E]"
+		# ── SWI-084 ──────────────────────────────────────────────────────────
+		Change.TORQUE_UITZETSCHROEF:
+			return "Uitzetschroef aandraaien — Stahlwille momentsleutel 500 Nm, stop direct na klik [E]"
 		Change.REPRESSURIZE:  return "Druk opbouwen — wacht…"
+		Change.REMOVE_LOTO:
+			return "Hangslot verwijderen + werkschakelaar AAN [E]"
 		Change.RESTART:       return "Schraper herstarten [E]"
 	return ""
 
@@ -511,8 +574,13 @@ func crosshair_interact(_p: Node3D) -> void:
 		Change.IDLE:
 			_change_state = Change.STOP_SCRAPER
 			_change_step_t = 0.0
-		Change.OPEN, Change.INSPECT, Change.REMOVE, Change.INSERT, \
-		Change.CLOSE, Change.RESTART:
+		Change.LOTO, Change.PLACE_BORDES, Change.REMOVE_COMPACTBUIS, \
+		Change.CAP_NUTS_OFF, Change.SWING_KAP, \
+		Change.OPEN, Change.INSPECT, Change.REMOVE, \
+		Change.CLEAN_BRAKERPLATE, Change.CLEAN_STAALBORSTEL, \
+		Change.REPLACE_KOPEREN_RING, \
+		Change.INSERT, Change.REFIT_AFVOERVIJZEL, Change.CLOSE, \
+		Change.TORQUE_UITZETSCHROEF, Change.REMOVE_LOTO, Change.RESTART:
 			_advance_to_next_state()
 
 # =============================================================================
@@ -521,9 +589,30 @@ func crosshair_interact(_p: Node3D) -> void:
 func _advance_to_next_state() -> void:
 	_change_step_t = 0.0
 	match _change_state:
+		# SWI-074 steps 14-17: LOTO → bordes → compactbuis → dopmoeren → kap.
+		Change.LOTO:               _change_state = Change.PLACE_BORDES
+		Change.PLACE_BORDES:       _change_state = Change.REMOVE_COMPACTBUIS
+		Change.REMOVE_COMPACTBUIS: _change_state = Change.CAP_NUTS_OFF
+		Change.CAP_NUTS_OFF:       _change_state = Change.SWING_KAP
+		Change.SWING_KAP:          _change_state = Change.OPEN
 		Change.OPEN:    _change_state = Change.INSPECT
-		Change.INSPECT: _change_state = Change.REMOVE
-		Change.REMOVE:  _change_state = Change.INSERT
+		Change.INSPECT:
+			# Reuse decision happens HERE, while the operator can read the plate:
+			# ≥1.40 mm → cleaning cycle (vacuum-oven burn-out, off-screen);
+			# thinner → nitreerlaag gone, scrap. (zeefplaten-reiniging guide)
+			if is_usable():
+				plates_to_cleaning += 1
+			else:
+				plates_scrapped += 1
+			_change_state = Change.REMOVE
+		Change.REMOVE:  _change_state = Change.CLEAN_BRAKERPLATE
+		# SWI-074 steps 30-32: internal cleaning + single-use koperen ring.
+		Change.CLEAN_BRAKERPLATE:  _change_state = Change.CLEAN_STAALBORSTEL
+		Change.CLEAN_STAALBORSTEL: _change_state = Change.REPLACE_KOPEREN_RING
+		Change.REPLACE_KOPEREN_RING:
+			# The ring "kan niet meer gebruikt worden" — one consumed per change.
+			koperen_rings_used += 1
+			_change_state = Change.INSERT
 		Change.INSERT:
 			# Insert a fresh pack from stock. Resolution is whatever the
 			# stockroom happens to have today.
@@ -536,8 +625,14 @@ func _advance_to_next_state() -> void:
 			delta_p_front_psi = 0.0
 			delta_p_back_psi  = 0.0
 			auto_boost_active = false
-			_change_state = Change.CLOSE
-		Change.CLOSE:   _change_state = Change.REPRESSURIZE
+			_change_state = Change.REFIT_AFVOERVIJZEL
+		# Cleaning the doorvoeropening earlier makes this re-fit easier (the
+		# stated purpose of SWI-074 step 30) — in sim terms simply the next step.
+		Change.REFIT_AFVOERVIJZEL: _change_state = Change.CLOSE
+		Change.CLOSE:   _change_state = Change.TORQUE_UITZETSCHROEF
+		# SWI-084: dedicated calibrated click-wrench, tighten-only, 500 Nm.
+		Change.TORQUE_UITZETSCHROEF: _change_state = Change.REPRESSURIZE
+		Change.REMOVE_LOTO: _change_state = Change.RESTART
 		Change.RESTART:
 			scraper_rpm = NOMINAL_SCRAPER_RPM
 			_change_state = Change.IDLE
@@ -563,11 +658,13 @@ func _advance_change(delta: float) -> void:
 			delta_p_front_psi = maxf(0.0, delta_p_front_psi - bleed)
 			delta_p_back_psi  = maxf(0.0, delta_p_back_psi  - bleed)
 			if _change_step_t >= T_DEPRESSURIZE_S:
-				_change_state = Change.OPEN
+				# SWI-074: isolate + padlock BEFORE any mechanical work starts.
+				_change_state = Change.LOTO
 				_change_step_t = 0.0
 		Change.REPRESSURIZE:
 			if _change_step_t >= T_REPRESSURIZE_S:
-				_change_state = Change.RESTART
+				# Padlock comes off last, then the scraper restart.
+				_change_state = Change.REMOVE_LOTO
 				_change_step_t = 0.0
 		_:
 			# Operator-driven states: nothing to do here, waiting for E.
