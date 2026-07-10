@@ -47,6 +47,16 @@ func _ready() -> void:
 	sandbox_btn.pressed.connect(_on_sandbox_pressed)
 	if vbox != null:
 		vbox.add_child(sandbox_btn)
+	# Extruder test gauntlet — flat-floor live-editing bench: one detailed
+	# extruder + cutter-compactor + live ExtruderMachine sim. Meant to be run
+	# alongside the Godot editor so live scene editing applies in-session.
+	var extg_btn := Button.new()
+	extg_btn.text = "Extruder test gauntlet"
+	extg_btn.custom_minimum_size = Vector2(0, 40)
+	extg_btn.mouse_filter = Control.MOUSE_FILTER_STOP
+	extg_btn.pressed.connect(_on_extruder_gauntlet_pressed)
+	if vbox != null:
+		vbox.add_child(extg_btn)
 		vbox.move_child(sandbox_btn, customize_btn.get_index() + 1)
 	# Feature Tester — sandbox with live dials for tuning a new feature's look
 	# (starts with the water-pipe + film stream).
@@ -127,6 +137,12 @@ func _on_line_dragger_pressed() -> void:
 func _on_gauntlet_pressed() -> void:
 	_go_to_scene("res://src/scenes/world/GauntletWorld.tscn",
 		"Loading gauntlet…", "")
+
+## Flat-floor extruder bench (extruder + PCU + live sim) for editor-driven
+## live tuning. See ExtruderGauntlet.gd.
+func _on_extruder_gauntlet_pressed() -> void:
+	_go_to_scene("res://src/scenes/world/ExtruderGauntlet.tscn",
+		"Loading extruder bench…", "")
 
 # ── Save-file deletion ───────────────────────────────────────────────────────
 ## Translate the display name back to the on-disk filename. "default" is the
