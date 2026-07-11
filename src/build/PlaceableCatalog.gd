@@ -15,6 +15,13 @@ class_name PlaceableCatalog
 # (safe key access under this project's warnings-as-errors setting).
 static var _items: Array[Dictionary] = []
 
+# Floating billboard nameplate over each placed machine. It's a build-mode aid
+# ("what did I just place?"), NOT part of the simulated world — real plants have
+# no text floating over the machines. Contexts that want an immersive view (the
+# extruder test bench) set this false around their build_node() calls so nothing
+# stamps the label. Default true preserves build-mode / MainWorld behaviour.
+static var emit_name_labels : bool = true
+
 # ── #212 Stencil-label helper ─────────────────────────────────────────────────
 # Small white stencilled text decal used by brand-decal additions across this
 # file (EIRENE / WAVE-CUT / LINDNER POLARIS / PRESONA / WILO / TANK A …). Built
@@ -1475,8 +1482,9 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 		# barcode sticker is the wrong colour/size to look realistic — both have
 		# to be re-done as a true paper-style sticker before being added back.
 		# Non-bale placeables keep the small floating name label so build-mode
-		# users can still tell what they placed.
-		if category != "Bales":
+		# users can still tell what they placed — UNLESS emit_name_labels is off
+		# (immersive contexts like the extruder bench).
+		if category != "Bales" and emit_name_labels:
 			var label := Label3D.new()
 			label.text = String(item["name"])
 			label.position = Vector3(0.0, size.y + 0.45, 0.0)
@@ -2986,6 +2994,10 @@ static func _install_steam_plume(parent: Node3D, local_pos: Vector3,
 		return
 	var emitter := GPUParticles3D.new()
 	emitter.name = "SteamPlume"
+	# Group tag so a machine's run-state controller (or an immersive bench that
+	# wants a COLD machine) can find and gate every plume without knowing the
+	# model's internal node layout. A real extruder/dryer only steams when hot.
+	emitter.add_to_group("steam_plume")
 	emitter.amount = 80                              # more puffs, lower alpha each → volumetric density
 	emitter.lifetime = 7.0                           # long life so column fills out
 	emitter.one_shot = false

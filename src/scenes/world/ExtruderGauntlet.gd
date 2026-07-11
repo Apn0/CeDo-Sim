@@ -28,7 +28,7 @@ func _ready() -> void:
 	_spawn_build_mode()
 	_spawn_hud()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	print("[ExtruderGauntlet] bench ready — extruder_3a + cutter_compactor + lump cart; HMI + BuildMode live")
+	print("[ExtruderGauntlet] bench ready — extruder_3a (integrated compactor) + lump cart; no floating labels, cold (no steam); HMI + BuildMode live")
 
 ## Override: the parent points BuildMode at user://gauntlet_layout.json, which
 ## carries whatever was ever built in the WALK gauntlet (compressors, air tank,
@@ -73,25 +73,29 @@ func _build_bench_floor() -> void:
 	floor_body.add_child(col)
 
 func _build_rig() -> void:
-	# Detailed extruder unit — long axis on Z, intake (rear) at -Z.
+	# Immersive bench: no floating billboard nameplates over the machines (real
+	# plants have no text hovering in the air). Restore afterwards so build-mode
+	# elsewhere still shows them.
+	var prev_labels : bool = PlaceableCatalog.emit_name_labels
+	PlaceableCatalog.emit_name_labels = false
+
+	# ONE detailed extruder unit — long axis on Z, intake (rear) at -Z. The
+	# EIRENE/INTAREMA model ALREADY integrates the cutter-compactor tower at its
+	# rear (SECTION 1 in _m_extruder_unit), so we do NOT place a second standalone
+	# cutter_compactor — that was the doubled compactor the operator saw.
 	var ext : Node3D = PlaceableCatalog.build_node("extruder_3a", false, false)
 	if ext != null:
 		add_child(ext)
 		ext.global_position = Vector3(8.0, 0.0, 10.0)
-	# Cutter-compactor (PCU / agglomerator) at the intake side.
-	var pcu : Node3D = PlaceableCatalog.build_node("cutter_compactor", false, false)
-	if pcu != null:
-		add_child(pcu)
-		pcu.global_position = Vector3(8.0, 0.0, 0.5)
 	# Lump cart near the laser-filter discharge (front half of the unit).
 	var cart : Node3D = PlaceableCatalog.build_node("lump_cart", false, false)
 	if cart != null:
 		add_child(cart)
 		cart.global_position = Vector3(5.5, 0.0, 14.0)
 	# Sim brain: full ExtruderMachine (model + HMI binding + InteractionArea),
-	# co-located with the detailed model. Its placeholder box mesh is hidden so
-	# the catalog model is the only visible extruder; collision + interaction
-	# area + debug label stay live.
+	# co-located with the detailed model. Placeholder box mesh AND its debug
+	# billboard are hidden — the catalog model is the only visible extruder;
+	# collision + interaction area + sim tick stay live.
 	var brain_scene := load("res://src/scenes/machines/Extruder3B.tscn") as PackedScene
 	if brain_scene != null:
 		var brain := brain_scene.instantiate() as Node3D
@@ -103,6 +107,20 @@ func _build_rig() -> void:
 			body_mesh.visible = false
 		var lbl := brain.get_node_or_null("DebugLabel") as Label3D
 		if lbl != null:
-			lbl.text = "Extruder bench (live sim)"
+			lbl.visible = false   # no floating text in the immersive bench
 	else:
 		push_warning("[ExtruderGauntlet] Extruder3B.tscn missing — no live sim brain")
+
+	PlaceableCatalog.emit_name_labels = prev_labels
+
+	# Cold machine: the extruder model bakes an always-on steam plume above the
+	# cutter-compactor pot (X3/#182). At shift start the extruder is OFF (cold
+	# spawn, #218) — a cold pot doesn't steam. Silence every plume in the bench
+	# until run-state gating is wired plant-wide.
+	call_deferred("_silence_steam_plumes")
+
+## Stop every steam/vapour emitter under the bench (cold machine, no plume).
+func _silence_steam_plumes() -> void:
+	for n in get_tree().get_nodes_in_group("steam_plume"):
+		if n is GPUParticles3D and is_instance_valid(n):
+			(n as GPUParticles3D).emitting = false
