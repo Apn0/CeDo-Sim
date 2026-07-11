@@ -9814,6 +9814,28 @@ static func _m_extruder_unit(p: Node3D, size: Vector3, color: Color, ghost: bool
 	_box(p, Vector3(0.04, size.y * 0.26, 0.04), Vector3(size.x * 0.18, size.y * 0.98, c2_z), dark)             # overhead drop-rod
 	_box(p, Vector3(0.45, 0.06, 0.06), Vector3(size.x * 0.05, size.y * 0.88, c2_z), red)                       # red brake-release lever
 
+	# Laser-filter DISCHARGE (uitvoerschroef / afvoervijzel) — contaminant lumps
+	# scraped off the disc are augered straight DOWN a WIDE corrugated housing and
+	# drop out the bottom hole into the lump cart on the floor (operator: must go
+	# DOWN not sideways; screw too short; housing too narrow). Offset to +X so it
+	# clears the barrel and reaches near floor level.
+	var disch_x : float = c2_z * 0.0 + size.x * 0.42
+	var disch_r : float = size.x * 0.17
+	var disch_top : float = disc_cy - disc_r * 0.8
+	var disch_bot : float = 0.30
+	var disch_h : float = maxf(disch_top - disch_bot, 0.4)
+	var n_ring : int = int(disch_h / 0.12)
+	for dr in range(n_ring):
+		_cyl(p, disch_r, disch_r, 0.10, Vector3(disch_x, disch_bot + float(dr) * 0.12 + 0.05, c2_z), steel)
+	# long internal discharge screw, protruding past the bottom hole
+	_cyl(p, disch_r * 0.55, disch_r * 0.55, disch_h + 0.25, Vector3(disch_x, (disch_top + disch_bot) * 0.5, c2_z), dark)
+	# elbow from the disc bottom into the top of the housing
+	_cyl(p, disch_r * 0.7, disch_r * 0.7, disch_x, Vector3(disch_x * 0.5, disch_top, c2_z), steel, "x")
+	# bottom outlet hole pointing straight DOWN into the cart
+	_cyl(p, disch_r * 0.95, disch_r * 0.6, 0.14, Vector3(disch_x, disch_bot - 0.05, c2_z), dark)
+	# discharge drive motor on the housing side
+	_motor_unit(p, size.x * 0.07, size.x * 0.12, Vector3(disch_x + disch_r * 1.3, disch_top - 0.2, c2_z), "y", ghost)
+
 	# ═══ SECTION 5: HEAD FILTER MODULES A & B (white) — sit on the MELTPUMP zone ═══
 	# #107 — moved to the FRONT of the barrel near the meltpump (where head
 	# filters actually live in a real LDPE pelletizer). Previously they were
