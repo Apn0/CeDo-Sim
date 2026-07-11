@@ -160,9 +160,12 @@ var _brake_raw : float = 0.0      # 0..1 raw brake axis BEFORE the SmoothedRate 
 # Both stages preserve the existing W/A/S/D/Space input mapping verbatim —
 # only the engine_force / brake assignment changes downstream.
 @export_group("Drive ramps")
+# #223 audit: brake was 24 m/s² = 2.4 g — physically impossible for any tyre on
+# concrete (best road cars peak ~1.0-1.1 g). Realistic service-brake defaults;
+# subclasses override per machine (forklift/car below).
 @export var throttle_accel_mps2 : float = 8.0   # legacy DRIVE_ACCEL — accelerate-to-target rate
-@export var brake_decel_mps2    : float = 24.0  # legacy DRIVE_ACCEL * 3 — foot-brake / handbrake deceleration
-@export var coast_decel_mps2    : float = 8.0   # legacy DRIVE_ACCEL — passive (no throttle, no brake) deceleration
+@export var brake_decel_mps2    : float = 6.0   # was 24 (2.4g!) — strong service brake ~0.6 g
+@export var coast_decel_mps2    : float = 1.5   # was 8 — passive roll-down (drivetrain drag)
 @export var throttle_ramp_tau_s : float = 0.6   # input-side ramp tau (cars default)
 @export var brake_ramp_tau_s    : float = 0.3   # input-side brake ramp tau — fast but not instant
 var _throttle_smoother : SmoothedRate = null

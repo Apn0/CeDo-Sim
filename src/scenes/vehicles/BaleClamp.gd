@@ -159,9 +159,10 @@ func _ready() -> void:
 	# #201 — physicalize the plates. .tscn changed them to AnimatableBody3D with a
 	# CollisionShape3D sibling matching the plate mesh (0.12 × 1.04 × 1.10).
 	# Real bale-clamp plates have a heavy rubber/steel-stud face for grip; a
-	# friction of ~1.6 lets clamp_force ≈ rated load hold a 250 kg bale via
-	# normal-force × μ alone (no script-attach magic). Bounce is near zero so
-	# the bale doesn't kick out when first squeezed.
+	# friction of ~1.6 lets clamp_force ≈ rated load hold a real 400-717 kg CeDo
+	# film bale (BaleDefs BULK_DENSITY 175 kg/m³) via normal-force × μ alone (no
+	# script-attach magic). Bounce is near zero so the bale doesn't kick out when
+	# first squeezed. (#223: prior comment said 250 kg — real bales are heavier.)
 	var plate_pm := PhysicsMaterial.new()
 	plate_pm.friction = 1.6
 	plate_pm.bounce   = 0.02

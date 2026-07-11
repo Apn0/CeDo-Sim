@@ -9,7 +9,7 @@ const MODEL_PATH := "res://assets/models/hyundai_i20_2010/hyundai_i20_2010.glb"
 func _ready() -> void:
 	super._ready()
 	vehicle_type   = "hyundai_i20_2010"
-	speed_limit_kmh = 170.0
+	speed_limit_kmh = 90.0   # #223: was 170 — in-sim yard limiter, match the fleet 60-95 convention
 	engine_power_kw = 55.0
 	fuel_capacity_l = 45.0
 	_model_path    = MODEL_PATH

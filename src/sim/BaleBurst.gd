@@ -28,6 +28,19 @@ static func open(bale: Node3D, scene: Node) -> Array:
 	var tint := _tint(bale)
 	_cap_existing(scene)
 	var seg_len := size.x / float(PIECES)
+	# #223 audit (critical): mass conservation. The old hardcoded 4 kg/piece made
+	# a 400-717 kg bale collapse to 24 kg — a one-sixth chunk of ~65-120 kg of
+	# compressed film could be kicked across the floor like a box. Each piece now
+	# carries its real share of the source bale's mass (read the source RigidBody
+	# so per-origin weight overrides carry through; fall back to volume × bulk
+	# density).
+	var src_mass : float = 0.0
+	var src_rb := bale as RigidBody3D
+	if src_rb != null:
+		src_mass = src_rb.mass
+	if src_mass < 1.0:
+		src_mass = size.x * size.y * size.z * BaleDefs.BULK_DENSITY
+	var piece_mass : float = maxf(src_mass / float(PIECES), 1.0)
 	var out : Array = []
 	var prev : RigidBody3D = null
 	var prev_x := 0.0
@@ -36,7 +49,7 @@ static func open(bale: Node3D, scene: Node) -> Array:
 		var s := (float(i) - float(PIECES - 1) * 0.5) / float(PIECES - 1)
 		var seg := RigidBody3D.new()
 		seg.add_to_group("bale_piece")
-		seg.mass = 4.0
+		seg.mass = piece_mass
 		seg.angular_damp = 1.2          # calm the joint chain so it flexes, not jitters
 		var pm := PhysicsMaterial.new()
 		pm.friction = 0.95

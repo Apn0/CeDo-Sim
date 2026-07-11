@@ -1297,7 +1297,9 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 		# handle to a point in front of the player and yaws the cart to match
 		# their facing. Friction stays high so it doesn't drift after release.
 		var rb_cart : RigidBody3D = load("res://src/sim/LumpCart.gd").new()
-		rb_cart.mass = 40.0
+		# #223 audit: one source of truth for empty-cart mass. LumpCart._sync_mass
+		# sets mass = EMPTY_MASS_KG + lumps_kg; at spawn lumps_kg=0 → EMPTY_MASS_KG.
+		rb_cart.call("_sync_mass")
 		rb_cart.linear_damp = 0.9
 		rb_cart.angular_damp = 3.0
 		rb_cart.can_sleep = true
@@ -2772,6 +2774,22 @@ static func _lump_cart_compound_collision(body: PhysicsBody3D, size: Vector3) ->
 		Vector3(-cart_w * 0.5 + wall_t * 0.5, cart_cy, 0.0))
 	_col_box(body, Vector3(wall_t, cart_h - wall_t, cart_d - wall_t * 2.0),
 		Vector3( cart_w * 0.5 - wall_t * 0.5, cart_cy, 0.0))
+	# ── #223 audit (critical): WHEEL contact shapes ──────────────────────────
+	# Without these the lowest collision box was the underframe strip at local
+	# y ≈ 0.14 (= wheel_r*2), so a cart spawned with its origin on the floor
+	# free-fell 0.14 m until the underframe hit concrete — burying the visual
+	# wheels (which span y 0-0.14) ENTIRELY inside the floor. That is the
+	# "wheels embedded in concrete, yet draggable" bug. Four sphere contacts at
+	# the visual wheel centres put the compound's lowest point at y=0 so the
+	# cart rests ON the slab with wheels visible. Spheres = cheap 4-point roll.
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			var wcol := CollisionShape3D.new()
+			var wsh := SphereShape3D.new()
+			wsh.radius = wheel_r
+			wcol.shape = wsh
+			wcol.position = Vector3(sx * cart_w * 0.42, wheel_r, sz * cart_d * 0.42)
+			body.add_child(wcol)
 
 static func _col_box(parent: PhysicsBody3D, size: Vector3, pos: Vector3) -> void:
 	var col := CollisionShape3D.new()

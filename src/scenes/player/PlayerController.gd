@@ -19,13 +19,16 @@ class_name PlayerController
 var mass_kg : float = 88.1
 
 # Movement
-@export var walk_speed         : float = 5.0
-@export var acceleration       : float = 20.0
+# #223 audit — realistic operator locomotion (work boots, plant floor). Was
+# 5.0 m/s (3.5× real walking). These are the top candidates to feel-tune in the
+# gauntlet live-update round if a realistic pace reads as too slow to play.
+@export var walk_speed         : float = 1.5    # was 5.0 — brisk operator walk
+@export var acceleration       : float = 8.0    # reach full walk in ~1-2 steps
 @export var friction           : float = 16.0
-@export var jump_speed         : float = 4.5
+@export var jump_speed         : float = 2.6    # was 4.5 — ~0.34 m step-up hop
 # Sprint (#side-quest from operator): Shift while moving multiplies the walk
 # speed. Only fires while STANDING — crouched / prone keep their stance pace.
-@export var sprint_multiplier  : float = 1.7
+@export var sprint_multiplier  : float = 2.2    # was 1.7 — 3.3 m/s loaded jog
 # Fast-traverse (Alt): 5× speed for cross-yard movement during testing.
 # Overrides sprint when both are held.
 @export var fast_run_multiplier : float = 5.0
@@ -44,7 +47,7 @@ var _speed_mul_smooth : SmoothedRate = null
 const GRAVITY: float = 9.8
 const STEP_HEIGHT: float = 0.4   # max ledge/curb height the player walks over
 const INTERACT_RAY_RANGE: float = 3.75
-const LADDER_CLIMB_SPEED : float = 2.5  # m/s vertical while on a ladder
+const LADDER_CLIMB_SPEED : float = 0.5  # m/s vertical (#223: was 2.5, ~5× real caged-ladder pace)
 
 # Incremented by each overlapping LadderZone Area3D; 0 = normal movement.
 # Using a count (not bool) handles nested/adjacent ladders correctly.
@@ -62,7 +65,7 @@ var _on_ladder_count : int = 0
 # aimed along -basis.z), (d) jumping NOW (action just_pressed). All five must
 # match — otherwise the jump branch falls through to the normal vertical impulse.
 const CLIMB_MAX_HEIGHT      : float = 1.4   # ceiling on ledges we can mantle over (~chest)
-const CLIMB_DURATION        : float = 0.5   # seconds to lerp from start pose to top
+const CLIMB_DURATION        : float = 2.0   # #223: was 0.5 — mantling a chest-high ledge is a 2 s effort, not a vault
 const CLIMB_FORWARD_DIST    : float = 1.2   # how far forward we land on top of the ledge
 const CLIMB_FORWARD_RAY_LEN : float = 0.9
 enum VaultState { NONE, CLIMBING }
@@ -304,6 +307,7 @@ func _physics_process(delta: float) -> void:
 			velocity.z = move_toward(velocity.z, target_xz.z, acceleration * delta)
 			velocity.y = climb * LADDER_CLIMB_SPEED
 		move_and_slide()
+		_push_rigid_bodies(delta)   # #223: same mass-based push on the ladder path
 		_update_animation_blend()
 		return
 
@@ -331,6 +335,7 @@ func _physics_process(delta: float) -> void:
 		velocity.x = move_toward(velocity.x, 0.0, friction * delta)
 		velocity.z = move_toward(velocity.z, 0.0, friction * delta)
 		move_and_slide()
+		_push_rigid_bodies(delta)   # #223: mass-based push on the UI-open glide path too
 		# Animation Phase 1: keep the rig in idle while UI is open. Velocity
 		# already decays via friction above, but resolve + push 0 explicitly
 		# so the legs visibly settle even if velocity is still drifting down.
@@ -370,6 +375,11 @@ func _physics_process(delta: float) -> void:
 		elif Input.is_action_pressed("sprint"):
 			target_speed_mul *= sprint_multiplier
 	var speed_mul : float = _speed_mul_smooth.approach(target_speed_mul, delta)
+	# #223 audit: carried tool weight slows you. A ~40 kg cap (LPG + blower +
+	# hose) knocks off up to 40% of speed; empty-handed = full pace.
+	if has_node("/root/Inventory"):
+		var carried : float = get_node("/root/Inventory").call("total_carried_kg")
+		speed_mul *= clampf(1.0 - carried / 40.0 * 0.4, 0.6, 1.0)
 	var target_xz := wish_dir * walk_speed * speed_mul
 	var accel     := acceleration if wish_dir.length() > 0.0 else friction
 	velocity.x = move_toward(velocity.x, target_xz.x, accel * delta)
@@ -412,31 +422,7 @@ func _physics_process(delta: float) -> void:
 const _PUSH_ACCEL_TAU_S : float = 0.5   # time to accelerate the pushed body to your speed
 
 func _push_rigid_bodies(delta: float) -> void:
-	for i in get_slide_collision_count():
-		var col := get_slide_collision(i)
-		var rb := col.get_collider() as RigidBody3D
-		if rb == null or rb.freeze:
-			continue
-		if "_grabbed_by" in rb and rb.get("_grabbed_by") != null:
-			continue
-		# Push direction: horizontal component of "into the contact".
-		var push_dir : Vector3 = -col.get_normal()
-		push_dir.y = 0.0
-		if push_dir.length_squared() < 0.0001:
-			continue   # standing on top — no lateral shove
-		push_dir = push_dir.normalized()
-		var v_into : float = velocity.dot(push_dir)
-		if v_into <= 0.01:
-			continue
-		var ratio : float = mass_kg / (mass_kg + rb.mass)
-		# Impulse: accelerate the body toward the shared post-collision speed
-		# over ~tau. Applied at the contact point so off-centre shoves rotate.
-		var impulse : Vector3 = push_dir * (v_into * ratio) * rb.mass * (delta / _PUSH_ACCEL_TAU_S)
-		rb.apply_impulse(impulse, col.get_position() - rb.global_position)
-		# Reaction on the player: lose the blocked component scaled by how
-		# immovable the body is. 88 kg operator vs 100 kg full cart → keeps
-		# ~47% of speed; vs a 2,690 kg mast lift → effectively walled.
-		velocity -= push_dir * v_into * (1.0 - ratio)
+	KinematicPush.apply(self, mass_kg, _PUSH_ACCEL_TAU_S, delta)
 
 ## Belt-carry: if we're standing on a body in group "belt", drag the player along
 ## the belt's world-space carry velocity. Reads slide collisions from the last
@@ -751,12 +737,18 @@ func _build_flashlight() -> void:
 		var ev_sprint := InputEventKey.new()
 		ev_sprint.physical_keycode = KEY_SHIFT
 		InputMap.action_add_event("sprint", ev_sprint)
-	# Register the fast-traverse keybind (Alt) — 5× speed for testing.
+	# Register the fast-traverse keybind (Alt) — 5× speed. #223 audit: this is a
+	# DEV traverse aid (25 m/s = 90 km/h on foot), not a real ability. Always
+	# register the action so is_action_pressed at line 373 stays valid (an
+	# unregistered action spams a per-frame InputMap error), but only bind the
+	# Alt key in debug builds — shipping players can't accidentally sprint at
+	# 90 km/h across the yard.
 	if not InputMap.has_action("fast_run"):
 		InputMap.add_action("fast_run")
-		var ev_alt := InputEventKey.new()
-		ev_alt.physical_keycode = KEY_ALT
-		InputMap.action_add_event("fast_run", ev_alt)
+		if OS.is_debug_build():
+			var ev_alt := InputEventKey.new()
+			ev_alt.physical_keycode = KEY_ALT
+			InputMap.action_add_event("fast_run", ev_alt)
 	# Debug fault trigger (0 / Numpad-0) — aim at a machine and press to force
 	# the nearest MotorOverload to trip (or call .force_trip() / .force_fault()
 	# / .trip() on whatever ancestor of the hit collider exposes it). Lets the

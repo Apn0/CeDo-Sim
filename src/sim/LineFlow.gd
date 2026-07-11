@@ -1858,6 +1858,12 @@ func tick(delta: float) -> void:
 			fed_mass += draw
 			remaining -= draw
 			bale.set_meta("remaining_kg", remaining)
+			# #223 audit: as material feeds off the bale, its PHYSICS mass drops too
+			# — a half-consumed bale weighs half, so the clamp/forklift and any
+			# shove feel the depletion (not a full-weight husk). remaining_kg starts
+			# at the full estimated_weight, so this tracks it 1:1 down to a 1 kg floor.
+			if bale is RigidBody3D:
+				(bale as RigidBody3D).mass = maxf(remaining, 1.0)
 			if remaining <= 0.0:
 				bale.queue_free()
 

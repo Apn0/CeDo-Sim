@@ -8,6 +8,10 @@ var npc_role: String = ""  # shift_leader, extruder_op, feeder, etc.
 
 # Movement parameters
 var walk_speed: float = 2.0  # m/s (slower than player)
+# #223 audit: physical mass so a walking worker pushes carts/bales by real
+# momentum (not infinite kinematic mass). Average adult worker; per-NPC build
+# refinement can set this from appearance later.
+var mass_kg: float = 85.0
 var wander_radius: float = 10.0
 var wander_change_interval: float = 5.0  # seconds
 
@@ -496,6 +500,7 @@ func _physics_process(delta: float) -> void:
 
 	velocity = current_velocity
 	move_and_slide()
+	KinematicPush.apply(self, mass_kg, 0.5, delta)   # #223: mass-based cart/bale push
 
 	# Animation Phase 1: feed horizontal velocity into the locomotion
 	# BlendSpace2D so the walk / run pose blends with idle as the NPC moves.

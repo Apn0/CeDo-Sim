@@ -644,7 +644,9 @@ func _restock_lot() -> void:
 		if bale == null:
 			continue
 		get_tree().current_scene.add_child(bale)
-		bale.global_position = lot_center + Vector3(float(i) * 1.7, 0.6, 0.0)
+		# #223 audit: was +0.6 m then frozen → bales hovered in mid-air forever.
+		# Bale origin = bale bottom, so a floor-level Y rests it exactly on the slab.
+		bale.global_position = lot_center + Vector3(float(i) * 1.7, 0.0, 0.0)
 		bale.rotation.y = BALE_FEED_YAW   # length along the feed direction, like the belt (#orientation)
 		if bale is RigidBody3D:
 			(bale as RigidBody3D).freeze = true
@@ -761,6 +763,7 @@ func _locomote(delta: float) -> void:
 		velocity.x = 0.0
 		velocity.z = 0.0
 	move_and_slide()
+	KinematicPush.apply(self, 85.0, 0.5, get_physics_process_delta_time())   # #223: mass-based push
 
 # =============================================================================
 # BALE HANDLING

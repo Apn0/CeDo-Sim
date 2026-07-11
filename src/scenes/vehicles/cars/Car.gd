@@ -53,9 +53,9 @@ func _ready() -> void:
 	# in their own _ready() override; small hatchbacks (Ka / Swift) can lower
 	# it. 12 m/s² brake (~1.2 g) is closer to ABS-locked emergency stop than
 	# the legacy 24 m/s²/2.4 g teleport-feel the audit flagged.
-	throttle_accel_mps2 = 6.0
-	brake_decel_mps2    = 12.0
-	coast_decel_mps2    = 3.0   # cars coast much longer than they brake — drift to a stop
+	throttle_accel_mps2 = 2.5   # #223: was 6 — realistic mid-car 0-100 in ~11 s
+	brake_decel_mps2    = 8.0   # was 12 (1.2g, > best road car) — 0.8g panic stop
+	coast_decel_mps2    = 0.8   # was 3 — real engine-braking drift-to-stop
 	throttle_ramp_tau_s = 0.6
 	brake_ramp_tau_s    = 0.3
 	super._ready()

@@ -33,6 +33,26 @@ var slots       : Array = [null, null, null, null]   # Array[Node3D|null]
 var active_idx  : int   = 0
 var player_ref  : Node3D = null                       # set by PlayerController._ready
 
+# #223 audit: carried tools have real mass so a loaded belt slows the operator.
+# Per-tool weight (kg) by tool_id; default 1 kg for anything unlisted.
+const TOOL_MASS_KG : Dictionary = {
+	"leaf_blower": 9.0, "water_hose": 4.0, "lpg_cylinder": 20.0,
+	"wire_cutter": 0.6, "barcode_scanner": 0.5, "scissors": 0.3,
+	"charging_plug": 1.5, "putty_knife": 0.4, "steel_brush": 0.5,
+}
+const DEFAULT_TOOL_MASS_KG : float = 1.0
+
+## Total mass (kg) of everything currently in the four slots. PlayerController
+## scales walk/sprint speed by this so a full belt genuinely trudges.
+func total_carried_kg() -> float:
+	var total : float = 0.0
+	for t in slots:
+		if t == null or not is_instance_valid(t):
+			continue
+		var tid : String = String(t.get("tool_id")) if "tool_id" in t else ""
+		total += float(TOOL_MASS_KG.get(tid, DEFAULT_TOOL_MASS_KG))
+	return total
+
 # =============================================================================
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS

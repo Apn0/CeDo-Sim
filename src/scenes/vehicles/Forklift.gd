@@ -121,8 +121,8 @@ func _ready() -> void:
 	# Set BEFORE super._ready() so the SmoothedRate picks up the tau on its
 	# first approach() call.
 	throttle_accel_mps2 = 3.5
-	brake_decel_mps2    = 16.0
-	coast_decel_mps2    = 4.0
+	brake_decel_mps2    = 3.0   # #223: was 16 (1.6g) — a real forklift brakes ~2-3 m/s² or the load flies off
+	coast_decel_mps2    = 2.0   # was 4
 	throttle_ramp_tau_s = 1.2
 	brake_ramp_tau_s    = 0.3
 	super._ready()
