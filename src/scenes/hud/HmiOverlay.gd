@@ -982,10 +982,13 @@ func _build_storingen() -> void:
 	var tabs := HBoxContainer.new()
 	tabs.add_theme_constant_override("separation", 4)
 	v.add_child(tabs)
-	tabs.add_child(_fault_tab_btn("clock history",     FaultTab.HISTORY))
-	tabs.add_child(_fault_tab_btn("warn active",       FaultTab.ACTIVE))
-	tabs.add_child(_fault_tab_btn("bell acknowledge",  FaultTab.ACKNOWLEDGE))
-	tabs.add_child(_fault_tab_btn("shield shield",     FaultTab.SHIELD))
+	# Dutch alarm-filter tabs, ISA-18.2 order (Actief default → Gekwitteerd →
+	# Onderdrukt → Historie). Was unfinished "icon word" placeholders
+	# ("shield shield" etc.) while the rest of the HMI is Dutch.
+	tabs.add_child(_fault_tab_btn("Actief",       FaultTab.ACTIVE))
+	tabs.add_child(_fault_tab_btn("Gekwitteerd",  FaultTab.ACKNOWLEDGE))
+	tabs.add_child(_fault_tab_btn("Onderdrukt",   FaultTab.SHIELD))
+	tabs.add_child(_fault_tab_btn("Historie",     FaultTab.HISTORY))
 
 	# 3-col table header
 	var hdr := PanelContainer.new()
