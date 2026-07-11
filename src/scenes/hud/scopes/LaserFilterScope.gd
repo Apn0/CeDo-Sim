@@ -207,7 +207,15 @@ func _append_sample() -> void:
 		_motor_buf = _motor_buf.slice(over)
 
 # ── UI construction ──────────────────────────────────────────────────────────
+var _ui_built : bool = false
+
 func _build_ui() -> void:
+	# Idempotency guard: the scope can re-enter the tree (HmiOverlay reopen)
+	# and fire _ready() again, which re-ran the whole build and tried to re-add
+	# the already-parented _chart → "already has a parent" crash. Build once.
+	if _ui_built:
+		return
+	_ui_built = true
 	# Bezel background.
 	var bg := ColorRect.new()
 	bg.color = C_BEZEL
