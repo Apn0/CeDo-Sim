@@ -9740,13 +9740,41 @@ static func _m_extruder_unit(p: Node3D, size: Vector3, color: Color, ghost: bool
 	_install_steam_plume(p,
 		Vector3(0.0, drum_base + drum_h + size.y * 0.20, tw_z),
 		drum_r * 0.25, 2.0, Color(0.96, 0.94, 0.88), ghost)
-	# oval sight-glass on +X (steel frame + pale flakes behind)
-	_box(p, Vector3(0.04, size.y * 0.16, size.y * 0.10), Vector3(drum_r * 1.0, drum_cy + size.y * 0.04, tw_z), dark)
-	_box(p, Vector3(0.05, size.y * 0.12, size.y * 0.07), Vector3(drum_r * 1.02, drum_cy + size.y * 0.04, tw_z), flakes)
-	# grey control box + 2 round gauges on -X
-	_box(p, Vector3(0.12, size.y * 0.16, size.y * 0.18), Vector3(-drum_r * 1.0, drum_cy - size.y * 0.05, tw_z), body)
-	_cyl(p, 0.05, 0.05, 0.04, Vector3(-drum_r * 1.12, drum_cy - size.y * 0.01, tw_z - size.y * 0.045), dark, "x")
-	_cyl(p, 0.05, 0.05, 0.04, Vector3(-drum_r * 1.12, drum_cy - size.y * 0.01, tw_z + size.y * 0.045), dark, "x")
+	# ROUND sight-glass (Schauglas) on +X - operator spec: round, 10 cm dia,
+	# raised 15 cm vs the old oval box. Steel bezel + glass disc + flakes.
+	var glass_y : float = drum_cy + size.y * 0.04 + 0.15
+	_cyl(p, 0.062, 0.062, 0.03, Vector3(drum_r * 1.00, glass_y, tw_z), dark, "x")
+	_cyl(p, 0.050, 0.050, 0.02, Vector3(drum_r * 1.03, glass_y, tw_z), glass, "x")
+	_cyl(p, 0.044, 0.044, 0.01, Vector3(drum_r * 0.99, glass_y, tw_z), flakes, "x")
+	# PCU DRIVE: belt-driven cutter disc + side motor (operator: PCU motor +
+	# belt driven disc not present). EREMA cutter-compactor spins a horizontal
+	# disc at the pot bottom via V-belts from a big side motor.
+	var disc_y : float = drum_base + 0.10
+	_cyl(p, drum_r * 0.86, drum_r * 0.86, 0.07, Vector3(0.0, disc_y, tw_z), dark)
+	_cyl(p, drum_r * 0.10, drum_r * 0.10, drum_h * 0.5, Vector3(0.0, disc_y - drum_h * 0.2, tw_z), steel)
+	var mot_x : float = -drum_r * 1.35
+	var mot_y : float = drum_base - 0.05
+	_motor_unit(p, size.x * 0.14, size.z * 0.02, Vector3(mot_x, mot_y, tw_z), "y", ghost)
+	_cyl(p, 0.09, 0.09, 0.05, Vector3(mot_x, mot_y + 0.30, tw_z), dark, "x")
+	_cyl(p, 0.11, 0.11, 0.05, Vector3(0.0, disc_y - drum_h * 0.2, tw_z), dark, "x")
+	_box(p, Vector3(absf(mot_x) + drum_r * 0.10, 0.20, 0.03),
+		Vector3(mot_x * 0.5, (mot_y + 0.30 + disc_y - drum_h * 0.2) * 0.5, tw_z + 0.06), dark)
+	# SAFETY MESH GUARD boxing the belt run (operator: legs + mesh for if the
+	# drive belt snaps). Semi-transparent grid panels between the legs.
+	if not ghost:
+		var mesh_mat := _mat(Color(0.30, 0.32, 0.34), ghost, 0.2, 0.6)
+		mesh_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mesh_mat.albedo_color.a = 0.35
+		var guard_cy : float = (mot_y + disc_y) * 0.5 + 0.15
+		var guard_h : float = drum_h * 0.7
+		var guard_d : float = drum_r * 1.7
+		_box(p, Vector3(0.02, guard_h, guard_d), Vector3(mot_x - 0.02, guard_cy, tw_z), mesh_mat)
+		_box(p, Vector3(absf(mot_x), guard_h, 0.02), Vector3(mot_x * 0.5, guard_cy, tw_z - guard_d * 0.5), mesh_mat)
+		_box(p, Vector3(absf(mot_x), guard_h, 0.02), Vector3(mot_x * 0.5, guard_cy, tw_z + guard_d * 0.5), mesh_mat)
+	# grey control box + 2 round gauges on -X (past the guard)
+	_box(p, Vector3(0.12, size.y * 0.16, size.y * 0.18), Vector3(-drum_r * 1.55, drum_cy - size.y * 0.05, tw_z), body)
+	_cyl(p, 0.05, 0.05, 0.04, Vector3(-drum_r * 1.67, drum_cy - size.y * 0.01, tw_z - size.y * 0.045), dark, "x")
+	_cyl(p, 0.05, 0.05, 0.04, Vector3(-drum_r * 1.67, drum_cy - size.y * 0.01, tw_z + size.y * 0.045), dark, "x")
 	# tangential outlet + throat dropping into the barrel start
 	_cyl(p, size.x * 0.12, size.x * 0.12, drum_r * 1.1, Vector3(0.0, barrel_cy + size.y * 0.05, tw_z + drum_r * 0.8), dark, "z")
 	_cyl(p, size.x * 0.15, size.x * 0.10, barrel_cy * 0.5, Vector3(0.0, barrel_cy + size.y * 0.10, tw_z + drum_r * 1.5), steel)
