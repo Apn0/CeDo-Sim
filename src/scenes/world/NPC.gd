@@ -7,7 +7,7 @@ var npc_name: String = ""
 var npc_role: String = ""  # shift_leader, extruder_op, feeder, etc.
 
 # Movement parameters
-var walk_speed: float = 2.0  # m/s (slower than player)
+var walk_speed: float = 1.5  # m/s (operator-tuned — slower than the 2.0 player)
 # #223 audit: physical mass so a walking worker pushes carts/bales by real
 # momentum (not infinite kinematic mass). Average adult worker; per-NPC build
 # refinement can set this from appearance later.

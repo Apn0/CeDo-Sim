@@ -600,8 +600,12 @@ func _ensure_aux_actions() -> void:
 		"hotbar_2":          KEY_2,
 		"hotbar_3":          KEY_3,
 		"hotbar_4":          KEY_4,
+		"hotbar_5":          KEY_5,
 		"hotbar_drop":       KEY_Q,
-		"lpg_switch_active": KEY_H,
+		# #punch: was KEY_H, which double-bound with vehicle_handbrake (project.godot)
+		# — pressing H to switch LPG tank ALSO toggled the handbrake, stopping the
+		# machine ("keys weird / not working"). Moved to the free J key.
+		"lpg_switch_active": KEY_J,
 		"vehicle_lights":    KEY_L,
 		"vehicle_hazards":   KEY_K,
 		"vehicle_blinker_left": KEY_BRACKETLEFT,

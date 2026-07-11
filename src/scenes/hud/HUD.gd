@@ -1314,8 +1314,8 @@ func _build_hotbar() -> void:
 	_hotbar_row.anchor_right  = 0.5
 	_hotbar_row.anchor_top    = 1.0
 	_hotbar_row.anchor_bottom = 1.0
-	_hotbar_row.offset_left   = -270.0
-	_hotbar_row.offset_right  =  270.0
+	_hotbar_row.offset_left   = -330.0   # #punch: widened for the 5th slot (5×120 + 4×8)
+	_hotbar_row.offset_right  =  330.0
 	_hotbar_row.offset_top    = -76.0
 	_hotbar_row.offset_bottom = -16.0
 	_hotbar_row.add_theme_constant_override("separation", 8)
@@ -1323,7 +1323,8 @@ func _build_hotbar() -> void:
 	add_child(_hotbar_row)
 	_hotbar_boxes  = []
 	_hotbar_labels = []
-	for i in 4:
+	var _n_slots : int = int(get_node("/root/Inventory").NUM_SLOTS) if has_node("/root/Inventory") else 5
+	for i in _n_slots:
 		var box := PanelContainer.new()
 		box.custom_minimum_size = Vector2(120, 60)
 		var sb := StyleBoxFlat.new()
@@ -1356,7 +1357,7 @@ func _refresh_hotbar() -> void:
 	if inv == null:
 		return
 	var active : int = int(inv.get("active_idx"))
-	for i in 4:
+	for i in _hotbar_labels.size():
 		var lbl : Label = _hotbar_labels[i]
 		lbl.text = String(inv.call("slot_label", i))
 		var box : PanelContainer = _hotbar_boxes[i]

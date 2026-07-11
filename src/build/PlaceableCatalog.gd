@@ -2814,6 +2814,7 @@ static func _m_lump_cart(p: Node3D, size: Vector3, _color: Color, ghost: bool) -
 	# sticks up off the back face so the operator can wheel the cart around.
 	var blue   := _mat(Color(0.16, 0.30, 0.55), ghost, 0.30, 0.55)  # cart paint
 	var steel  := _mat(_STEEL, ghost, 0.55, 0.35)
+	var grip   := _mat(Color(0.72, 0.74, 0.77), ghost, 0.95, 0.12)  # #punch: shiny grey hand-grip
 	var rubber := _mat(Color(0.08, 0.08, 0.10), ghost, 0.15, 0.85)  # hard rubber wheels
 	var dark   := _mat(_DARK, ghost, 0.40, 0.60)                    # pocket bores
 	var yellow := _mat(_SAFETY, ghost, 0.25, 0.70)
@@ -2867,7 +2868,7 @@ static func _m_lump_cart(p: Node3D, size: Vector3, _color: Color, ghost: bool) -
 			_box(p, Vector3(post_t, cart_h, post_t),
 				Vector3(float(sx) * (cart_w * 0.5 - post_t * 0.3),
 					cart_cy,
-					float(sz) * (cart_d * 0.5 - post_t * 0.3)), steel)
+					float(sz) * (cart_d * 0.5 - post_t * 0.3)), blue)   # #punch: 4 side-pulls BLUE
 	# ── Push handle: two angled risers off the back (+Z) of the cart, meeting
 	#    a horizontal grip bar above. Anchored via a Node3D so the rotation
 	#    handles the local-frame axis math cleanly. ──────────────────────────
@@ -2879,9 +2880,9 @@ static func _m_lump_cart(p: Node3D, size: Vector3, _color: Color, ghost: bool) -
 	var riser_len : float = size.y * 0.45
 	for sx in [-1.0, 1.0]:
 		_box(handle_root, Vector3(0.028, 0.028, riser_len),
-			Vector3(float(sx) * cart_w * 0.40, 0.0, riser_len * 0.5), steel)
+			Vector3(float(sx) * cart_w * 0.40, 0.0, riser_len * 0.5), blue)   # #punch: handlebar risers BLUE
 	_cyl(handle_root, 0.024, 0.024, cart_w * 0.95,
-		Vector3(0.0, 0.0, riser_len), steel, "x")
+		Vector3(0.0, 0.0, riser_len), grip, "x")   # #punch: hand-grip = shiny grey metal
 	# ── Hot-surface warning decal (ISO 7010 W017): yellow triangle with black
 	#    border + flame/hand icon. 18 cm — readable at arm's length. Mounted on
 	#    the back (+Z) face where operator approaches the handle.

@@ -27,9 +27,9 @@ extends Node
 signal active_changed(new_idx: int)   # HUD listens; redraws the highlighted slot
 signal slots_changed                  # HUD listens; redraws the contents
 
-const NUM_SLOTS : int = 4
+const NUM_SLOTS : int = 5   # #punch: operator asked for +1 (was 4)
 
-var slots       : Array = [null, null, null, null]   # Array[Node3D|null]
+var slots       : Array = [null, null, null, null, null]   # Array[Node3D|null] — NUM_SLOTS wide
 var active_idx  : int   = 0
 var player_ref  : Node3D = null                       # set by PlayerController._ready
 

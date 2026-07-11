@@ -19,6 +19,9 @@ extends "res://src/scenes/world/GauntletWorld.gd"
 ## Inherits GauntletWorld for the floor/sun/player/HUD/BuildMode plumbing but
 ## replaces the station walk entirely — no signs, no Y/N/R status board.
 
+## Container that owns the whole rig so F6 can free + rebuild it in one call.
+var _rig_root : Node3D = null
+
 func _ready() -> void:
 	_build_bench_floor()
 	_build_sky_light()
@@ -28,7 +31,27 @@ func _ready() -> void:
 	_spawn_build_mode()
 	_spawn_hud()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	print("[ExtruderGauntlet] bench ready — extruder_3a (integrated compactor) + lump cart; no floating labels, cold (no steam); HMI + BuildMode live")
+	print("[ExtruderGauntlet] bench ready — F6 rebuilds the rig from current PlaceableCatalog code (live-edit loop)")
+
+## LIVE-EDIT LOOP (operator's #1 ask): run the bench FROM the Godot editor, edit
+## any _m_* geometry function in PlaceableCatalog.gd (hot-reloaded), then press
+## F6 — the rig is freed + rebuilt from the just-edited code, so the change shows
+## immediately. Geometry built in _ready() never rebuilds on hot-reload alone;
+## this is what makes edits visible without relaunching. F6 verified free.
+func _input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo \
+			and (event as InputEventKey).keycode == KEY_F6:
+		_rebuild_rig()
+		get_viewport().set_input_as_handled()
+		return
+	super._input(event)
+
+func _rebuild_rig() -> void:
+	if _rig_root != null and is_instance_valid(_rig_root):
+		_rig_root.queue_free()
+		_rig_root = null
+	_build_rig()
+	print("[ExtruderGauntlet] rig rebuilt from PlaceableCatalog (F6)")
 
 ## Override: the parent points BuildMode at user://gauntlet_layout.json, which
 ## carries whatever was ever built in the WALK gauntlet (compressors, air tank,
@@ -79,18 +102,23 @@ func _build_rig() -> void:
 	var prev_labels : bool = PlaceableCatalog.emit_name_labels
 	PlaceableCatalog.emit_name_labels = false
 
+	# Rig container so F6 (_rebuild_rig) can free the whole thing in one call.
+	_rig_root = Node3D.new()
+	_rig_root.name = "RigRoot"
+	add_child(_rig_root)
+
 	# ONE detailed extruder unit — long axis on Z, intake (rear) at -Z. The
-	# EIRENE/INTAREMA model ALREADY integrates the cutter-compactor tower at its
+	# EREMA/INTAREMA model ALREADY integrates the cutter-compactor tower at its
 	# rear (SECTION 1 in _m_extruder_unit), so we do NOT place a second standalone
 	# cutter_compactor — that was the doubled compactor the operator saw.
 	var ext : Node3D = PlaceableCatalog.build_node("extruder_3a", false, false)
 	if ext != null:
-		add_child(ext)
+		_rig_root.add_child(ext)
 		ext.global_position = Vector3(8.0, 0.0, 10.0)
 	# Lump cart near the laser-filter discharge (front half of the unit).
 	var cart : Node3D = PlaceableCatalog.build_node("lump_cart", false, false)
 	if cart != null:
-		add_child(cart)
+		_rig_root.add_child(cart)
 		cart.global_position = Vector3(5.5, 0.0, 14.0)
 	# Sim brain: full ExtruderMachine (model + HMI binding + InteractionArea),
 	# co-located with the detailed model. Placeholder box mesh AND its debug
@@ -100,7 +128,7 @@ func _build_rig() -> void:
 	if brain_scene != null:
 		var brain := brain_scene.instantiate() as Node3D
 		brain.name = "ExtruderBrain"
-		add_child(brain)
+		_rig_root.add_child(brain)
 		brain.global_position = Vector3(8.0, 0.0, 10.0)
 		var body_mesh := brain.get_node_or_null("Body/BodyMesh") as MeshInstance3D
 		if body_mesh != null:

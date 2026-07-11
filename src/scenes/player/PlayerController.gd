@@ -22,7 +22,7 @@ var mass_kg : float = 88.1
 # #223 audit — realistic operator locomotion (work boots, plant floor). Was
 # 5.0 m/s (3.5× real walking). These are the top candidates to feel-tune in the
 # gauntlet live-update round if a realistic pace reads as too slow to play.
-@export var walk_speed         : float = 1.5    # was 5.0 — brisk operator walk
+@export var walk_speed         : float = 2.0    # operator-tuned: brisk-but-realistic (was 5.0 → 1.5 → 2.0)
 @export var acceleration       : float = 8.0    # reach full walk in ~1-2 steps
 @export var friction           : float = 16.0
 @export var jump_speed         : float = 2.6    # was 4.5 — ~0.34 m step-up hop
@@ -1026,14 +1026,31 @@ func _input(event: InputEvent) -> void:
 				get_viewport().set_input_as_handled()
 				return
 
-	# Hotbar: 1-4 switch the active inventory slot, Q drops the active item.
+	# Hotbar: number keys switch the active inventory slot, Q drops the active item.
 	# Tools (scissors / scanner) live under Head and Inventory handles the
 	# show/hide so only the active one is in your hand.
 	var inv := get_node_or_null("/root/Inventory")
 	if inv:
-		for i in 4:
+		var n_slots : int = int(inv.get("NUM_SLOTS"))
+		for i in n_slots:
 			if event.is_action_pressed("hotbar_%d" % (i + 1)):
 				inv.call("set_active", i)
+				return
+		# #punch: mouse wheel cycles the active slot in NORMAL WALKING MODE only.
+		# Gated: cursor captured (excludes pause / settings / build-browse / HMI,
+		# which all release the cursor), FP camera current, and build mode inactive.
+		if event is InputEventMouseButton and event.pressed \
+				and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED \
+				and camera_3d != null and camera_3d.current \
+				and not _build_mode_active():
+			var mb := event as InputEventMouseButton
+			if mb.button_index == MOUSE_BUTTON_WHEEL_UP:
+				inv.call("set_active", (int(inv.get("active_idx")) - 1 + n_slots) % n_slots)
+				get_viewport().set_input_as_handled()
+				return
+			elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+				inv.call("set_active", (int(inv.get("active_idx")) + 1) % n_slots)
+				get_viewport().set_input_as_handled()
 				return
 		if event.is_action_pressed("hotbar_drop"):
 			var t := inv.call("active") as Node3D
@@ -1099,6 +1116,15 @@ func _marker_input(event: InputEvent) -> bool:
 
 # Register fallback Input actions for the hotbar — same trick as HUD's
 # _ensure_map_action, since users without a fresh .godot project may have a
+# True while BuildMode's placement UI is active — so the walk-mode wheel-scroll
+# slot cycling stays OUT of build mode (where the wheel does other things).
+func _build_mode_active() -> bool:
+	var mw := get_tree().current_scene
+	if mw == null or not ("build_mode" in mw):
+		return false
+	var bm = mw.get("build_mode")
+	return bm != null and "_state" in bm and int(bm.get("_state")) != 0
+
 # stale InputMap that doesn't know "hotbar_1" yet.
 func _ensure_hotbar_actions() -> void:
 	var binds := {
@@ -1106,10 +1132,11 @@ func _ensure_hotbar_actions() -> void:
 		"hotbar_2":          KEY_2,
 		"hotbar_3":          KEY_3,
 		"hotbar_4":          KEY_4,
+		"hotbar_5":          KEY_5,   # #punch: 5th inventory slot
 		"hotbar_drop":       KEY_Q,
-		# LPG dual-cylinder active-tank valve toggle (bale clamp only). Bound
-		# here as a fallback so a stale InputMap doesn't silently swallow H.
-		"lpg_switch_active": KEY_H,
+		# LPG dual-cylinder active-tank valve toggle (bale clamp only). #punch:
+		# moved off H (which collided with vehicle_handbrake) to the free J key.
+		"lpg_switch_active": KEY_J,
 		# Vehicle aux — work lamps, 4-way hazards, horn (mast lift only honks).
 		"vehicle_lights":    KEY_L,
 		"vehicle_hazards":   KEY_K,
