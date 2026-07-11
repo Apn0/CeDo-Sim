@@ -444,6 +444,28 @@ func _open_to_sheet_arc(bale: Node3D) -> void:
 	if scene_root == null:
 		scene_root = get_tree().root
 	var spawned : Array[RigidBody3D] = []
+	# ── Mass conservation (#223 audit) ───────────────────────────────────────
+	# Slicing a bale does not change its density: the opened pile must weigh
+	# exactly what the intact bale weighed. Apportion the source RigidBody's
+	# real mass across the sheets by volume fraction (survives per-origin
+	# weight overrides + the ±50 kg label jitter). The old hardcoded 80 kg/m³
+	# was less than half the calibrated BULK_DENSITY (175) — a 591 kg bale
+	# became a ~270 kg pile the moment the clamp opened it.
+	var bale_mass_kg : float = 0.0
+	var bale_rb := bale as RigidBody3D
+	if bale_rb != null:
+		bale_mass_kg = bale_rb.mass
+	var total_sheet_vol : float = 0.0
+	for sheet in sheets.get_children():
+		var mi0 := sheet as MeshInstance3D
+		if mi0 != null and mi0.mesh is BoxMesh:
+			var sv : Vector3 = (mi0.mesh as BoxMesh).size
+			total_sheet_vol += sv.x * sv.y * sv.z
+	# Fallback density if the source mass is unknown (non-RB bale): calibrated
+	# bale bulk density, NOT the old 80.
+	var density : float = BaleDefs.BULK_DENSITY
+	if bale_mass_kg > 1.0 and total_sheet_vol > 0.0001:
+		density = bale_mass_kg / total_sheet_vol
 	for sheet in sheets.get_children():
 		var mi := sheet as MeshInstance3D
 		if mi == null or mi.mesh == null:
@@ -451,8 +473,8 @@ func _open_to_sheet_arc(bale: Node3D) -> void:
 		var s_size: Vector3 = (mi.mesh as BoxMesh).size
 		var s_world := mi.global_transform
 		var sheet_rb := RigidBody3D.new()
-		# Each compressed-film slice is light — it's a thin slab, not a brick.
-		sheet_rb.mass = maxf(s_size.x * s_size.y * s_size.z * 80.0, 0.1)
+		# Sheet mass = its volume share of the intact bale's real mass.
+		sheet_rb.mass = maxf(s_size.x * s_size.y * s_size.z * density, 0.1)
 		sheet_rb.linear_damp  = 3.5       # was 1.2 — kills sliding so sheets stack
 		sheet_rb.angular_damp = 5.0       # was 2.5 — kills tumbling
 		var pm := PhysicsMaterial.new()

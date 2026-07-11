@@ -389,6 +389,7 @@ func _physics_process(delta: float) -> void:
 	_attempt_wedge_rescue(wish_dir, delta)
 	_update_stance(delta)
 	move_and_slide()
+	_push_rigid_bodies(delta)
 	_apply_belt_carry(delta)
 	_update_crosshair_interaction()
 	_update_knife_replace_hold(delta)
@@ -397,6 +398,45 @@ func _physics_process(delta: float) -> void:
 	# a real walk cycle. No-op for first-person (the body's head is on a
 	# hidden layer + the FP eye sits between the body's shoulders).
 	_update_animation_blend()
+
+# ── #223 audit (critical): mass-based RigidBody push ─────────────────────────
+# A CharacterBody3D is kinematic — Godot's solver displaces RigidBodies it walks
+# into with INFINITE effective mass, so a 140 kg loaded cart moved exactly like
+# an empty one. This helper restores momentum exchange: for every slide contact
+# with a free RigidBody, split momentum by the real mass ratio —
+#   * the rigid body receives an impulse toward the contact (F=ma over ~tau),
+#   * the PLAYER loses the blocked velocity component scaled by (1-ratio), so
+#     walking into a heavy machine actually stops you instead of bulldozing it.
+# Grabbed carts are skipped (LumpCart's handle controller owns them) and frozen
+# bodies are immovable by definition.
+const _PUSH_ACCEL_TAU_S : float = 0.5   # time to accelerate the pushed body to your speed
+
+func _push_rigid_bodies(delta: float) -> void:
+	for i in get_slide_collision_count():
+		var col := get_slide_collision(i)
+		var rb := col.get_collider() as RigidBody3D
+		if rb == null or rb.freeze:
+			continue
+		if "_grabbed_by" in rb and rb.get("_grabbed_by") != null:
+			continue
+		# Push direction: horizontal component of "into the contact".
+		var push_dir : Vector3 = -col.get_normal()
+		push_dir.y = 0.0
+		if push_dir.length_squared() < 0.0001:
+			continue   # standing on top — no lateral shove
+		push_dir = push_dir.normalized()
+		var v_into : float = velocity.dot(push_dir)
+		if v_into <= 0.01:
+			continue
+		var ratio : float = mass_kg / (mass_kg + rb.mass)
+		# Impulse: accelerate the body toward the shared post-collision speed
+		# over ~tau. Applied at the contact point so off-centre shoves rotate.
+		var impulse : Vector3 = push_dir * (v_into * ratio) * rb.mass * (delta / _PUSH_ACCEL_TAU_S)
+		rb.apply_impulse(impulse, col.get_position() - rb.global_position)
+		# Reaction on the player: lose the blocked component scaled by how
+		# immovable the body is. 88 kg operator vs 100 kg full cart → keeps
+		# ~47% of speed; vs a 2,690 kg mast lift → effectively walled.
+		velocity -= push_dir * v_into * (1.0 - ratio)
 
 ## Belt-carry: if we're standing on a body in group "belt", drag the player along
 ## the belt's world-space carry velocity. Reads slide collisions from the last

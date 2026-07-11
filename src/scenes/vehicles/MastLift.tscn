@@ -106,7 +106,7 @@ size = Vector3(0.34, 0.46, 0.14)
 radius = 2.2
 
 [node name="MastLift" type="VehicleBody3D" unique_id=1878631190]
-mass = 4200.0
+mass = 2690.0
 center_of_mass_mode = 1
 center_of_mass = Vector3(0, -0.2, -0.5)
 script = ExtResource("1_sl")
