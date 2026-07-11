@@ -248,3 +248,11 @@ func _recheck_all_cut(bale: Node3D) -> void:
 	var wires := bale.find_child("Wires", true, false)
 	if wires == null or wires.get_child_count() == 0:
 		bale.set_meta("wires_cut", true)
+		# The bale is compressed film held ONLY by the 3 iron wires — cut the last
+		# one and it springs open. Previously wires_cut just flipped a flag and
+		# nothing happened (operator: "bale no burst after 3 wires cut"). Burst it
+		# into the 6 fanned, mass-conserving pieces now.
+		var scene : Node = get_tree().current_scene
+		if scene == null:
+			scene = get_tree().root
+		BaleBurst.open(bale, scene)
