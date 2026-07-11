@@ -36,9 +36,18 @@ const EMPTY_THRESHOLD_KG: float = 40.0    # above this → worth emptying (don't
 const COOL_TIME_S_MIN   : float = 60.0 * 60.0   #  1 sim-hour minimum cool-down
 const COOL_TIME_S_MAX   : float = 3.0 * 60.0 * 60.0   # 3 sim-hour worst case
 
+const EMPTY_MASS_KG   : float = 40.0     # bare cart (steel dumpster + wheels)
+
 var lumps_kg          : float = 0.0
 var _last_received_at : float = -INF     # sim-time of the most recent lump
 var _cool_time_s      : float = COOL_TIME_S_MIN   # randomised per receive
+
+## Physics mass tracks the load: bare cart + whatever lumps are in it. A cart
+## with 200 kg of lumps genuinely pushes/steers like 240 kg, not like an empty
+## one. Called after every fill/dump so the RigidBody the player shoves and the
+## forklift lifts feels the real weight.
+func _sync_mass() -> void:
+	mass = EMPTY_MASS_KG + lumps_kg
 
 func is_full() -> bool:
 	return lumps_kg >= FULL_THRESHOLD_KG
@@ -65,6 +74,7 @@ func receive_lump(mass_kg: float) -> void:
 		# pushing.
 		return
 	lumps_kg = clampf(lumps_kg + mass_kg, 0.0, CAPACITY_KG)
+	_sync_mass()
 	_last_received_at = _now_sim_s()
 	# Each receive resets the cool-down with a fresh random sample in [min,max].
 	_cool_time_s = randf_range(COOL_TIME_S_MIN, COOL_TIME_S_MAX)
@@ -75,6 +85,7 @@ func receive_lump(mass_kg: float) -> void:
 func empty() -> float:
 	var dumped : float = lumps_kg
 	lumps_kg = 0.0
+	_sync_mass()
 	_last_received_at = -INF
 	return dumped
 
