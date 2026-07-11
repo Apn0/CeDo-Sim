@@ -30,9 +30,11 @@ var _grabbed_by : Node3D = null
 # EMPTY_THRESHOLD_KG of lumps in it, the NpcAutonomyBoard emits an
 # "empty_lump_cart" task — an idle NPC will then grab a forklift, drive over,
 # lift the cart, transport it to the indoor lumps_container, and dump.
-const CAPACITY_KG       : float = 240.0   # cart fills up around this mass
-const FULL_THRESHOLD_KG : float = 200.0   # above this → "is_full" → block more lumps
-const EMPTY_THRESHOLD_KG: float = 40.0    # above this → worth emptying (don't haul ~empty carts)
+# Operator-recalculated 2026-07-11: a full Lumpenwagen holds ~90 kg of lumps,
+# with a small heap over the rim before the discharge truly can't add more.
+const CAPACITY_KG       : float = 100.0   # hard cap — heaped a little over the top
+const FULL_THRESHOLD_KG : float = 90.0    # above this → "is_full" → block more lumps
+const EMPTY_THRESHOLD_KG: float = 20.0    # above this → worth emptying (don't haul ~empty carts)
 const COOL_TIME_S_MIN   : float = 60.0 * 60.0   #  1 sim-hour minimum cool-down
 const COOL_TIME_S_MAX   : float = 3.0 * 60.0 * 60.0   # 3 sim-hour worst case
 

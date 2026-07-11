@@ -214,6 +214,11 @@ func _spawn_player() -> CharacterBody3D:
 		# add_child FIRST so the recursive ancestor-walk in _set_body_render_layer_split
 		# can find "PlayerBody" as the root sentinel.
 		player.add_child(body)
+		# Physical body mass from the build sliders (50-150 kg range). One law
+		# for every human — see Humanoid.body_mass_kg. Wardrobe live-edits call
+		# the same helper when they re-apply appearance.
+		if "mass_kg" in player:
+			player.set("mass_kg", humanoid_script.body_mass_kg(appearance))
 		# #205 — Humanoid.build() actually authors the rig with the visible face
 		# on local -Z (see Humanoid.gd:419 inside the head-build block:
 		# "VISUAL FRONT RULE — visible front MUST sit on local -Z to match the

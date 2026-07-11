@@ -14,6 +14,27 @@ class_name Humanoid
 ## the NPC's map colour as `shirt` so each worker still reads as a distinct
 ## colour from a distance (and on the MapOverlay).
 
+# ── Body mass from build sliders ─────────────────────────────────────────────
+# Mass follows near-volume scaling: at constant tissue density, body mass is
+# proportional to height × width × depth. The exponent is slightly below 1.0
+# because real bodies don't scale density-perfectly with frame size (taller
+# people are not proportionally thicker through every tissue). Calibrated so
+# the customizer's slider extremes map exactly to the operator-specified range:
+#   smallest build (0.80 / 0.80 / 0.80) →  50 kg
+#   default build  (1.00 / 1.00 / 1.00) →  88 kg
+#   largest build  (1.20 / 1.25 / 1.25) → 150 kg
+const BODY_MASS_REF_KG   : float = 88.1
+const BODY_MASS_EXPONENT : float = 0.8463
+
+## Physical body mass (kg) for an appearance dict's build sliders. Used by the
+## player controller (push impulses, belt/vehicle physics) and available to
+## NPCs — one law for every human in the plant.
+static func body_mass_kg(appearance: Dictionary) -> float:
+	var h : float = clampf(float(appearance.get("height_mul", 1.0)), 0.80, 1.20)
+	var w : float = clampf(float(appearance.get("width_mul",  1.0)), 0.80, 1.25)
+	var d : float = clampf(float(appearance.get("depth_mul",  w)),   0.80, 1.25)
+	return BODY_MASS_REF_KG * pow(h * w * d, BODY_MASS_EXPONENT)
+
 const _SKIN_TONES : Array[Color] = [
 	Color(0.94, 0.78, 0.66), Color(0.86, 0.66, 0.52),
 	Color(0.72, 0.52, 0.38), Color(0.52, 0.36, 0.26),

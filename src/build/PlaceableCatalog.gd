@@ -15,12 +15,12 @@ class_name PlaceableCatalog
 # (safe key access under this project's warnings-as-errors setting).
 static var _items: Array[Dictionary] = []
 
-# Floating billboard nameplate over each placed machine. It's a build-mode aid
-# ("what did I just place?"), NOT part of the simulated world — real plants have
-# no text floating over the machines. Contexts that want an immersive view (the
-# extruder test bench) set this false around their build_node() calls so nothing
-# stamps the label. Default true preserves build-mode / MainWorld behaviour.
-static var emit_name_labels : bool = true
+# Floating billboard nameplate over each placed machine. Real plants have no
+# text floating over the machines, so this is OFF everywhere (operator decision
+# 2026-07-11: what passes in the test gauntlet IS the main-world behaviour —
+# no double bookkeeping). Kept as a flag so a debug tool can flip it on for a
+# session; nothing in the shipped flow sets it true.
+static var emit_name_labels : bool = false
 
 # ── #212 Stencil-label helper ─────────────────────────────────────────────────
 # Small white stencilled text decal used by brand-decal additions across this

@@ -10,6 +10,14 @@ class_name PlayerController
 ## ESC / pause is handled by HUD.gd — not here.
 ## When the mouse cursor is visible (pause menu open) movement is suppressed.
 
+# Physical body mass (kg). Set by PlayerSpawner from the wardrobe's build
+# sliders via Humanoid.body_mass_kg() — smallest build 50 kg, default ~88 kg,
+# largest 150 kg. Consumed wherever the player exchanges momentum with the
+# physics world (RigidBody push impulses, belts, vehicle interactions). A
+# CharacterBody3D has no engine-side mass, so this is the single source of
+# truth for "how heavy is the operator".
+var mass_kg : float = 88.1
+
 # Movement
 @export var walk_speed         : float = 5.0
 @export var acceleration       : float = 20.0
