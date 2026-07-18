@@ -67,6 +67,7 @@ enum Tool {
 	# #221-PC Phase 5 — operator-draggable previously-hardcoded placements.
 	STAFF_PARKING,
 	PLAYER_SWIFT,
+	COMPRESSOR_SPAWN,
 }
 
 # Tool metadata
@@ -88,6 +89,7 @@ const TOOL_DEFS := {
 	# the player's parked Swift. Both formerly hardcoded; now draggable.
 	Tool.STAFF_PARKING:      {"label": "Staff parking",           "color": Color.DEEP_SKY_BLUE, "kind": "point"},
 	Tool.PLAYER_SWIFT:       {"label": "Player Swift (start)",    "color": Color.LIGHT_SALMON,  "kind": "point"},
+	Tool.COMPRESSOR_SPAWN:   {"label": "Compressor spawn",        "color": Color.CYAN,          "kind": "point"},
 }
 
 # Tool → WorldLayout vehicle key. Map kept here so MainWorld's spawn code can
@@ -1157,6 +1159,8 @@ func _commit_to_layout() -> void:
 			WorldLayout.staff_parking = p
 		elif tool_id == Tool.PLAYER_SWIFT:
 			WorldLayout.player_swift = p
+		elif tool_id == Tool.COMPRESSOR_SPAWN:
+			WorldLayout.compressor_spawn = p
 	# Finalised yards: refresh corners from their dot nodes.
 	for yard in finalized_yards:
 		var dots : Array = yard.get("dots", [])
@@ -1202,6 +1206,8 @@ func _undo_last() -> void:
 			elif tool_id == Tool.FACTORY_CENTER:
 				WorldLayout.factory_center = p   # ZERO when prev == null → cleared
 				_refresh_component_highlight()
+			elif tool_id == Tool.COMPRESSOR_SPAWN:
+				WorldLayout.compressor_spawn = p
 			elif LINE_TOOL_TO_ID.has(tool_id):
 				if prev == null: WorldLayout.line_starts.erase(LINE_TOOL_TO_ID[tool_id])
 				else:            WorldLayout.set_line_start(LINE_TOOL_TO_ID[tool_id], p)
@@ -1286,6 +1292,8 @@ func _place_point(tool_id: int, world_pos: Vector3) -> void:
 	elif tool_id == Tool.FACTORY_CENTER:
 		WorldLayout.factory_center = p        # its own independent marker
 		_refresh_component_highlight()
+	elif tool_id == Tool.COMPRESSOR_SPAWN:
+		WorldLayout.compressor_spawn = p
 	elif LINE_TOOL_TO_ID.has(tool_id):
 		WorldLayout.set_line_start(LINE_TOOL_TO_ID[tool_id], p)
 	history.append({"kind": "point", "tool_id": tool_id, "prev_pos": prev_pos})
@@ -1532,6 +1540,11 @@ func _apply_loaded_layout() -> void:
 		sw_node.position = Vector3(WorldLayout.player_swift.x, sw_node.position.y, WorldLayout.player_swift.z)
 		markers_root.add_child(sw_node)
 		point_markers[Tool.PLAYER_SWIFT] = sw_node
+	if WorldLayout.compressor_spawn != Vector3.ZERO:
+		var cs_node := _make_dot(TOOL_DEFS[Tool.COMPRESSOR_SPAWN]["color"])
+		cs_node.position = Vector3(WorldLayout.compressor_spawn.x, cs_node.position.y, WorldLayout.compressor_spawn.z)
+		markers_root.add_child(cs_node)
+		point_markers[Tool.COMPRESSOR_SPAWN] = cs_node
 	# Vehicles — arrays of positions per type
 	for k in VEHICLE_TOOL_TO_ID:
 		var vid : String = VEHICLE_TOOL_TO_ID[k]
