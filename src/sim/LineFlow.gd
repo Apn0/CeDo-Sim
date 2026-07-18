@@ -761,9 +761,6 @@ func _register_air_network() -> void:
 ## is gated by a fixed node name lookup under the world root. The placeables are
 ## additive — they don't enter LineFlow's material graph (Hoses & Air rows are
 ## visual only) and don't change the abstract AirNetwork bank registered above.
-##
-## TODO: WorldSetup UI for placing the compressor_spawn marker. Until then the
-## default offset (20m east, 20m north of player_spawn) is fine.
 func _spawn_visible_compressors() -> void:
 	# World root is whoever owns this LineFlow (typically MainWorld). We attach
 	# directly under it so the placeables sit alongside the rest of the placed

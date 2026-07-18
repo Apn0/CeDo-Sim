@@ -13,49 +13,54 @@ set GODOT=godot
 where %GODOT% >nul 2>&1 || set GODOT="%LOCALAPPDATA%\Godot\godot.exe"
 pushd "%~dp0\.."
 
-echo === [1/8] BaleComplianceTest (script mode) ===
+echo === [1/10] BaleComplianceTest (script mode) ===
 %GODOT% --headless --path . --script res://tests/BaleComplianceTest.gd
 set RC1=%ERRORLEVEL%
 
 echo.
-echo === [2/8] BaleSheetsTest (script mode) ===
+echo === [2/10] BaleSheetsTest (script mode) ===
 %GODOT% --headless --path . --script res://tests/BaleSheetsTest.gd
 set RC2=%ERRORLEVEL%
 
 echo.
-echo === [3/8] WireFixAndCameraTest (script mode) ===
+echo === [3/10] WireFixAndCameraTest (script mode) ===
 %GODOT% --headless --path . --script res://tests/WireFixAndCameraTest.gd
 set RC3=%ERRORLEVEL%
 
 echo.
-echo === [4/8] OperatorLifecycleTest (script mode) ===
+echo === [4/10] OperatorLifecycleTest (script mode) ===
 %GODOT% --headless --path . --script res://tests/OperatorLifecycleTest.gd
 set RC4=%ERRORLEVEL%
 
 echo.
-echo === [5/8] VehicleDriveTest (script mode) ===
+echo === [5/10] VehicleDriveTest (script mode) ===
 %GODOT% --headless --path . --script res://tests/VehicleDriveTest.gd
 set RC5=%ERRORLEVEL%
 
 echo.
-echo === [6/8] SettingsParseTest (script mode) ===
+echo === [6/10] SettingsParseTest (script mode) ===
 %GODOT% --headless --path . --script res://tests/SettingsParseTest.gd
 set RC6=%ERRORLEVEL%
 
 echo.
-echo === [7/8] ScanLogTest (script mode) ===
+echo === [7/10] ScanLogTest (script mode) ===
 %GODOT% --headless --path . --script res://tests/ScanLogTest.gd
 set RC7=%ERRORLEVEL%
 
 echo.
-echo === [8/9] VehicleBaleTest (scene mode — needs Godot 4.6) ===
+echo === [8/10] VehicleBaleTest (scene mode — needs Godot 4.6) ===
 %GODOT% --headless --path . res://tests/VehicleBaleTest.tscn
 set RC8=%ERRORLEVEL%
 
 echo.
-echo === [9/9] SecuritySaveTest (script mode) ===
+echo === [9/10] SecuritySaveTest (script mode) ===
 %GODOT% --headless --path . --script res://tests/SecuritySaveTest.gd
 set RC9=%ERRORLEVEL%
+
+echo.
+echo === [10/10] WasteContainerTest (script mode) ===
+%GODOT% --headless --path . --script res://tests/WasteContainerTest.gd
+set RC10=%ERRORLEVEL%
 
 popd
 echo.
@@ -68,6 +73,7 @@ echo SettingsParseTest      exit: %RC6%
 echo ScanLogTest            exit: %RC7%
 echo VehicleBaleTest        exit: %RC8%
 echo SecuritySaveTest       exit: %RC9%
+echo WasteContainerTest     exit: %RC10%
 if not "%RC1%"=="0" exit /b %RC1%
 if not "%RC2%"=="0" exit /b %RC2%
 if not "%RC3%"=="0" exit /b %RC3%
@@ -76,4 +82,5 @@ if not "%RC5%"=="0" exit /b %RC5%
 if not "%RC6%"=="0" exit /b %RC6%
 if not "%RC7%"=="0" exit /b %RC7%
 if not "%RC8%"=="0" exit /b %RC8%
-exit /b %RC9%
+if not "%RC9%"=="0" exit /b %RC9%
+exit /b %RC10%

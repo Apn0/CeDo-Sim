@@ -1292,6 +1292,8 @@ func _place_point(tool_id: int, world_pos: Vector3) -> void:
 	elif tool_id == Tool.FACTORY_CENTER:
 		WorldLayout.factory_center = p        # its own independent marker
 		_refresh_component_highlight()
+	elif tool_id == Tool.COMPRESSOR_SPAWN:
+		WorldLayout.compressor_spawn = p
 	elif LINE_TOOL_TO_ID.has(tool_id):
 		WorldLayout.set_line_start(LINE_TOOL_TO_ID[tool_id], p)
 	history.append({"kind": "point", "tool_id": tool_id, "prev_pos": prev_pos})

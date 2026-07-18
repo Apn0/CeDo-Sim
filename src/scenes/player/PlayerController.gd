@@ -270,7 +270,7 @@ func _physics_process(delta: float) -> void:
 		# Animation Phase 1: keep the rig in idle while UI is open. Velocity
 		# already decays via friction above, but resolve + push 0 explicitly
 		# so the legs visibly settle even if velocity is still drifting down.
-		_update_animation_blend()
+		_update_animation_blend(Vector3.ZERO)
 		return
 
 	# WASD — relative to body facing direction. CANONICAL Godot convention:
@@ -332,7 +332,7 @@ func _physics_process(delta: float) -> void:
 	# Animation Phase 1: feed the body's BlendSpace2D so 3rd-person/orbit shows
 	# a real walk cycle. No-op for first-person (the body's head is on a
 	# hidden layer + the FP eye sits between the body's shoulders).
-	_update_animation_blend()
+	_update_animation_blend(wish_dir)
 
 ## Belt-carry: if we're standing on a body in group "belt", drag the player along
 ## the belt's world-space carry velocity. Reads slide collisions from the last
@@ -606,14 +606,12 @@ var _opening_p1_normal : Vector3 = Vector3.ZERO
 ## on-the-fly (binds to KEY_F) so the project doesn't need a custom action set.
 var _flashlight : SpotLight3D = null
 
-# ── Animation Phase 1 (cluster: Skeleton3D rig + locomotion BlendSpace) ──
+# ── Animation Phase 2 (cluster: Skeleton3D rig + locomotion BlendSpace) ──
 # Cached AnimationTree on the player's visible Humanoid rig ("PlayerBody").
 # Updated each physics tick with horizontal velocity so the third-person /
 # orbit camera shows a real walk cycle instead of a sliding box rig. Null
 # until _resolve_anim_tree finds it (the rig is built by MainWorld /
 # GauntletWorld AFTER the controller's _ready, so we resolve lazily).
-# TODO Phase 2: feed BlendSpace2D Y axis with strafe (wish_dir decomposed
-# into local right vs forward). For Phase 1 we keep Y at 0.
 var _anim_tree : AnimationTree = null
 const _ANIM_RUN_SPEED_PLAYER : float = 10.0   # m/s mapped to BlendSpace X=2
 
@@ -1721,7 +1719,7 @@ func _find_anim_tree_recursive(n: Node) -> AnimationTree:
 ## parameters/playback.travel(name) with a 0.25 s xfade configured on the rig.
 var _last_anim_state : String = "locomotion"
 
-func _update_animation_blend() -> void:
+func _update_animation_blend(wish_dir: Vector3 = Vector3.ZERO) -> void:
 	if _anim_tree == null or not is_instance_valid(_anim_tree):
 		_anim_tree = _resolve_player_anim_tree()
 		if _anim_tree == null:
@@ -1760,7 +1758,10 @@ func _update_animation_blend() -> void:
 		bx = horiz / maxf(walk_speed, 0.1)
 	else:
 		bx = 1.0 + clampf((horiz - walk_speed) / maxf(run_speed - walk_speed, 0.1), 0.0, 1.0)
-	_anim_tree.set("parameters/locomotion/blend_position", Vector2(clampf(bx, 0.0, 2.0), 0.0))
+
+	var right_dir := global_transform.basis.x.normalized()
+	var by := wish_dir.dot(right_dir)
+	_anim_tree.set("parameters/locomotion/blend_position", Vector2(clampf(bx, 0.0, 2.0), by))
 
 ## Vehicles call this when the player enters / exits the driver seat so the
 ## skeleton swaps to the seated pose. Per-vehicle bespoke seated poses (mast
