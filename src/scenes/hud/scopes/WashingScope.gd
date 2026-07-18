@@ -464,7 +464,7 @@ func _build_bottom_tabs(parent: Container) -> void:
 	_tabs.tab_alignment = TabBar.ALIGNMENT_LEFT
 	parent.add_child(_tabs)
 
-	_add_tab("Trends",    "Live trends placeholder — TODO bind to washing model history.")
+	_add_tab("Trends",    "Live trends niet beschikbaar (waslijn model ontbreekt).")
 	_add_tab("Alarma",    "Geen actieve storingen op de waslijn.")
 	_add_tab("Prc...",    "Procedures: opstart, doseren, reinigen — placeholder.")
 	_add_tab("Settings",  "Setpoints + grenswaarden — placeholder.")
