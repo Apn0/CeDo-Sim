@@ -476,34 +476,56 @@ func _cleaning_priority_modifier(mw: Node) -> int:
 		mod -= PRIORITY_PENALTY_PROBLEM
 	return mod
 
-## When a WasteContainer crosses needs_emptying(), an NPC walks over and empties
-## it (WasteContainer.empty()) so it stops spilling onto the floor. On-foot reset
-## rather than a forklift tip — cheap, and enough to keep the bin from staying
-## BLOCKED. One OverflowDumpTask per over-full container.
+## When the indoor lumps_container crosses is_full(), an NPC drives a forklift
+## load of bulk lumps from indoor → outdoor shipping_container instead.
 func _scan_overflow_containers(tree: SceneTree, seen: Dictionary) -> void:
+	var indoor : Node3D = null
+	for c in tree.get_nodes_in_group("lumps_container_indoor"):
+		if c is Node3D and is_instance_valid(c):
+			indoor = c
+			break
+	if indoor == null:
+		return
+
+	var is_full : bool = false
+	if indoor.has_method("is_full"):
+		is_full = bool(indoor.call("is_full"))
+	elif "lumps_count" in indoor:
+		is_full = int(indoor.get("lumps_count")) >= INDOOR_HARD_CAP
+
+	if not is_full:
+		return
+
+	var outdoor : Node3D = null
+	for c in tree.get_nodes_in_group("shipping_container_outdoor"):
+		if c is Node3D and is_instance_valid(c):
+			outdoor = c
+			break
+	if outdoor == null:
+		return
+
+	var has_idle_forklift : bool = false
+	for f in tree.get_nodes_in_group("forklift"):
+		if f is Node3D and is_instance_valid(f):
+			if not ("occupied" in f and bool(f.get("occupied"))):
+				has_idle_forklift = true
+				break
+	if not has_idle_forklift:
+		return
+
+	var tid : int = indoor.get_instance_id()
+	seen[tid] = true
+	if _open_tasks.has(tid):
+		return
+
+	var script := load("res://src/scenes/world/tasks/OverflowDumpTask.gd")
+	if script == null:
+		return
+
+	var task : NpcAutonomyTask = script.new(indoor, outdoor)
 	var mw_ref : Node = _find_main_world(tree)
-	var pri_mod : int = _cleaning_priority_modifier(mw_ref)
-	for bin in tree.get_nodes_in_group("waste_container"):
-		if not is_instance_valid(bin):
-			continue
-		if not (bin is Node3D):
-			continue
-		if not bin.has_method("needs_emptying"):
-			continue
-		if not bool(bin.call("needs_emptying")):
-			continue
-		var tid : int = bin.get_instance_id()
-		seen[tid] = true
-		if _open_tasks.has(tid):
-			continue
-		if bin.has_meta("autonomy_claimed_by"):
-			continue
-		var script := load("res://src/scenes/world/tasks/OverflowDumpTask.gd")
-		if script == null:
-			continue
-		var task : NpcAutonomyTask = script.new(bin as Node3D, mw_ref)
-		task.priority += pri_mod
-		_open_tasks[tid] = task
+	task.priority += _cleaning_priority_modifier(mw_ref)
+	_open_tasks[tid] = task
 
 # ── Generator 1b: refuel low-fuel leaf blowers. ─────────────────────────────
 # A two-stroke leaf blower runs dry (LeafBlower.fuel_pct()); once below

@@ -2,57 +2,45 @@ extends NpcAutonomyTask
 
 class_name OverflowDumpTask
 
-# =============================================================================
-# #198 — Empty an overflowing WasteContainer. When a container crosses its
-# safe-fill point (WasteContainer.needs_emptying()), an idle NPC walks over and
-# empties it (WasteContainer.empty()), the same reset a forklift-tip or manual
-# reset would produce. Keeps a full skip / fines bay / overflowing bin from
-# staying BLOCKED and spilling onto the floor.
-#
-# Cycle (2 sub-phases), same shape as the other cleaning tasks:
-#   WALK_TO_BIN   — walk into reach of the container.
-#   DUMP          — call empty(); stamp + release.
-# =============================================================================
+enum Phase { WALK_TO_FORKLIFT, DRIVE_TO_INDOOR, SCOOP_BULK, DRIVE_TO_OUTDOOR, DUMP }
 
-enum Phase { WALK_TO_BIN, DUMP }
+const PHASE_TIMEOUT_S    : float = 90.0
+const APPROACH_DIST_M    : float = 1.6
+const APPROACH_DIST_VEH  : float = 3.5
 
-const PHASE_TIMEOUT_S : float = 120.0
-const APPROACH_DIST_M : float = 2.2      # close enough to tip / reset the bin
+var indoor_container  : Node3D = null
+var outdoor_container : Node3D = null
+var _phase     : int    = Phase.WALK_TO_FORKLIFT
+var _phase_t   : float  = 0.0
+var _forklift  : Node3D = null
 
-var container   : Node3D = null
-var _phase      : int    = Phase.WALK_TO_BIN
-var _phase_t    : float  = 0.0
-var _world_ref  : Node   = null
-
-func _init(bin: Node3D, world_ref: Node) -> void:
+func _init(indoor: Node3D, outdoor: Node3D) -> void:
 	task_name = "overflow_dump"
-	# Above routine cleaning circuits (an overflowing bin is a real spill/block
-	# problem) but below the lump-cart haul.
-	priority = 45
-	target_node = bin
-	container = bin
-	_world_ref = world_ref
-	accept_roles = PackedStringArray(["all_rounder", "permanent_feeder", "transitional", "extruder_op"])
+	priority = 50
+	target_node = indoor
+	indoor_container = indoor
+	outdoor_container = outdoor
+	accept_roles = PackedStringArray(["all_rounder", "permanent_feeder", "transitional", "asst_shift_leader", "extruder_op"])
 
 func can_start(npc: Node) -> bool:
 	if not super.can_start(npc):
 		return false
-	if container == null or not is_instance_valid(container):
+	if indoor_container == null or not is_instance_valid(indoor_container):
 		return false
-	if container.has_meta("autonomy_claimed_by"):
-		var claimer = container.get_meta("autonomy_claimed_by")
-		if claimer != null and is_instance_valid(claimer) and claimer != npc:
+	if outdoor_container == null or not is_instance_valid(outdoor_container):
+		return false
+	if indoor_container.has_method("is_full"):
+		if not bool(indoor_container.call("is_full")):
 			return false
-	# Race-safe: skip if it was emptied between emit and accept.
-	if container.has_method("needs_emptying"):
-		return bool(container.call("needs_emptying"))
 	return true
 
 func start(npc: Node) -> void:
 	super.start(npc)
-	_phase = Phase.WALK_TO_BIN
+	_phase = Phase.WALK_TO_FORKLIFT
 	_phase_t = 0.0
-	container.set_meta("autonomy_claimed_by", npc)
+	_forklift = _find_nearest_idle_forklift(npc)
+	if _forklift == null:
+		mark_failed("no_forklift_available")
 
 func tick(npc: Node, delta: float) -> bool:
 	if _done:
@@ -60,50 +48,97 @@ func tick(npc: Node, delta: float) -> bool:
 	_phase_t += delta
 	if _phase_t > PHASE_TIMEOUT_S:
 		mark_failed("phase_timeout:%d" % _phase)
-		release(npc)
 		return true
 	match _phase:
-		Phase.WALK_TO_BIN: _tick_walk_to_bin(npc)
-		Phase.DUMP:        _tick_dump(npc)
+		Phase.WALK_TO_FORKLIFT:  _tick_walk_to_forklift(npc)
+		Phase.DRIVE_TO_INDOOR:   _tick_drive_to_indoor(npc)
+		Phase.SCOOP_BULK:        _tick_scoop_bulk(npc)
+		Phase.DRIVE_TO_OUTDOOR:  _tick_drive_to_outdoor(npc)
+		Phase.DUMP:              _tick_dump(npc)
 	return _done
 
-func _tick_walk_to_bin(npc: Node) -> void:
-	if container == null or not is_instance_valid(container):
-		mark_failed("container_gone")
-		release(npc)
+func _tick_walk_to_forklift(npc: Node) -> void:
+	if _forklift == null or not is_instance_valid(_forklift):
+		mark_failed("forklift_gone")
 		return
-	if not _close_enough(npc, container.global_position, APPROACH_DIST_M):
-		_set_dest(npc, container.global_position)
+	if not _close_enough(npc, _forklift, APPROACH_DIST_M):
+		_set_npc_destination(npc, _forklift.global_position)
+		return
+	if npc.has_method("board_vehicle"):
+		npc.call("board_vehicle", _forklift)
+	_phase = Phase.DRIVE_TO_INDOOR
+	_phase_t = 0.0
+
+func _tick_drive_to_indoor(npc: Node) -> void:
+	if indoor_container == null or not is_instance_valid(indoor_container):
+		mark_failed("indoor_gone")
+		return
+	if not _close_enough(_forklift, indoor_container, APPROACH_DIST_VEH):
+		_set_vehicle_destination(npc, indoor_container.global_position)
+		return
+	_phase = Phase.SCOOP_BULK
+	_phase_t = 0.0
+
+func _tick_scoop_bulk(npc: Node) -> void:
+	var amt : float = 0.0
+	if indoor_container.has_method("empty"):
+		amt = float(indoor_container.call("empty"))
+	elif "lumps_count" in indoor_container:
+		amt = float(indoor_container.get("lumps_count"))
+		if indoor_container.has_method("clear_lumps"):
+			indoor_container.call("clear_lumps")
+	if _forklift.has_method("load_bulk"):
+		_forklift.call("load_bulk", amt)
+	_phase = Phase.DRIVE_TO_OUTDOOR
+	_phase_t = 0.0
+
+func _tick_drive_to_outdoor(npc: Node) -> void:
+	if outdoor_container == null or not is_instance_valid(outdoor_container):
+		mark_failed("outdoor_gone")
+		return
+	if not _close_enough(_forklift, outdoor_container, APPROACH_DIST_VEH):
+		_set_vehicle_destination(npc, outdoor_container.global_position)
 		return
 	_phase = Phase.DUMP
 	_phase_t = 0.0
 
 func _tick_dump(npc: Node) -> void:
-	if container != null and is_instance_valid(container) and container.has_method("empty"):
-		container.call("empty")
-		container.set_meta("last_cleaned_at", _now_sim_s())
-	release(npc)
+	var amt : float = 0.0
+	if _forklift.has_method("unload_bulk"):
+		amt = float(_forklift.call("unload_bulk"))
+	if outdoor_container.has_method("add"):
+		outdoor_container.call("add", amt, 200.0, -1)
+	elif outdoor_container.has_method("receive_lumps") and amt > 0.0:
+		outdoor_container.call("receive_lumps", amt)
+	if npc.has_method("disembark_vehicle"):
+		npc.call("disembark_vehicle")
 	mark_done()
 
-func release(_npc: Node) -> void:
-	if container != null and is_instance_valid(container):
-		container.remove_meta("autonomy_claimed_by")
+func _find_nearest_idle_forklift(npc: Node) -> Node3D:
+	var tree := npc.get_tree() if npc.has_method("get_tree") else null
+	if tree == null:
+		return null
+	var best : Node3D = null
+	var best_d : float = INF
+	for v in tree.get_nodes_in_group("forklift"):
+		if v is Node3D and is_instance_valid(v):
+			if "occupied" in v and bool(v.occupied):
+				continue
+			var d : float = (v.global_position - npc.global_position).length()
+			if d < best_d:
+				best_d = d
+				best = v
+	return best
 
-# ── Helpers ─────────────────────────────────────────────────────────────────
+func _close_enough(a: Node, b: Node, r: float) -> bool:
+	if a == null or b == null: return false
+	if not (a is Node3D and b is Node3D): return false
+	return (a.global_position - b.global_position).length() <= r
 
-func _close_enough(npc: Node, target_pos: Vector3, r: float) -> bool:
-	if npc == null or not (npc is Node3D):
-		return false
-	return (npc.global_position - target_pos).length() <= r
-
-func _set_dest(npc: Node, pos: Vector3) -> void:
+func _set_npc_destination(npc: Node, pos: Vector3) -> void:
 	if npc.has_method("set_autonomy_destination"):
 		npc.call("set_autonomy_destination", pos)
 
-func _now_sim_s() -> float:
-	if _world_ref == null:
-		return Time.get_ticks_msec() / 1000.0
-	var sc = _world_ref.get("shift_clock")
-	if sc != null and "shift_elapsed_seconds" in sc:
-		return float(sc.shift_elapsed_seconds)
-	return Time.get_ticks_msec() / 1000.0
+func _set_vehicle_destination(npc: Node, pos: Vector3) -> void:
+	if npc.has_method("set_autonomy_destination"):
+		npc.call("set_autonomy_destination", pos)
