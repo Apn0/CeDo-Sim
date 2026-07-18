@@ -92,6 +92,49 @@ func take(tool: Node3D) -> bool:
 		set_active(slot)
 	return true
 
+## First-spawn loadout (operator 2026-07-16: starter tools already in the hotbar).
+## Instantiates the three starter hand tools and runs each tool's own _pick_up()
+## so the held pose / _held_by / take() bookkeeping is identical to a real E-grab.
+## Idempotent: self-heals freed slot refs (this autoload outlives the tool NODES
+## across a scene reload) and skips any tool_id already held, so calling it on
+## every spawn re-arms without duplicating.
+const STARTER_TOOL_SCRIPTS : Array = [
+	"res://src/scenes/world/WireCutter.gd",     # scissors
+	"res://src/scenes/world/BarcodeScanner.gd", # scanner
+	"res://src/scenes/world/ShovelTool.gd",     # shovel
+]
+
+func give_starter_tools() -> void:
+	if player_ref == null or not is_instance_valid(player_ref):
+		return
+	var scene_root : Node = player_ref.get_tree().current_scene
+	if scene_root == null:
+		return
+	# 1) Self-heal freed refs so is_full()/take() see the real free count.
+	for i in NUM_SLOTS:
+		if slots[i] != null and not is_instance_valid(slots[i]):
+			slots[i] = null
+	# 2) Which starter tool_ids are already held (live instances only)?
+	var have : Dictionary = {}
+	for t in slots:
+		if t != null and is_instance_valid(t) and "tool_id" in t:
+			have[String(t.get("tool_id"))] = true
+	for path in STARTER_TOOL_SCRIPTS:
+		var scr = load(path)
+		if scr == null:
+			continue
+		var tool_node : Node3D = scr.new()
+		var tid : String = String(tool_node.get("tool_id")) if "tool_id" in tool_node else ""
+		if (tid != "" and have.has(tid)) or is_full():
+			tool_node.free()   # already held, or belt full — don't duplicate
+			continue
+		scene_root.add_child(tool_node)   # runs _ready() (builds the tool)
+		if tool_node.has_method("_pick_up"):
+			tool_node.call("_pick_up", player_ref)
+		else:
+			take(tool_node)
+	slots_changed.emit()
+
 ## True when every slot is occupied — no room to take another tool. Pickup paths
 ## MUST check this BEFORE grabbing an item: take() returns false when full but a
 ## caller that ignores the return and force-parents the item anyway strands it
@@ -114,11 +157,20 @@ func set_active(idx: int) -> void:
 		return
 	if idx == active_idx:
 		return
-	var prev : Node3D = slots[active_idx]
+	# UNTYPED reads — slots[] can hold a FREED node (same crash class as
+	# slot_label; a typed Node3D assignment throws before is_instance_valid can
+	# guard it). Validate + self-heal the stale slot before touching it.
+	var prev = slots[active_idx]
+	if prev != null and not is_instance_valid(prev):
+		slots[active_idx] = null
+		prev = null
 	if prev != null and prev.has_method("on_holster"):
 		prev.call("on_holster")
 	active_idx = idx
-	var now : Node3D = slots[active_idx]
+	var now = slots[active_idx]
+	if now != null and not is_instance_valid(now):
+		slots[active_idx] = null
+		now = null
 	if now != null and now.has_method("on_draw"):
 		now.call("on_draw")
 	_apply_visibility()
@@ -155,8 +207,14 @@ func is_active(tool: Node3D) -> bool:
 func slot_label(idx: int) -> String:
 	if idx < 0 or idx >= NUM_SLOTS:
 		return ""
-	var t : Node3D = slots[idx]
+	# UNTYPED read: slots[idx] can hold a FREED node (a tool freed on scene
+	# teardown / gauntlet start without being removed from the slot). Assigning a
+	# freed instance to a typed `Node3D` var throws "invalid previously freed
+	# instance" BEFORE is_instance_valid can guard it (crash on extruder-gauntlet
+	# start, HUD.gd:1362). Read untyped, validate, and self-heal the stale slot.
+	var t = slots[idx]
 	if t == null or not is_instance_valid(t):
+		slots[idx] = null
 		return "—"
 	# Prefer the tool's `tool_id` (e.g. "scissors", "scanner"); fall back to node name.
 	if "tool_id" in t:
@@ -181,8 +239,11 @@ func slot_label(idx: int) -> String:
 ## _drop() (which sets layer/mask = 1 only once it's back on the floor).
 func _apply_visibility() -> void:
 	for i in NUM_SLOTS:
-		var t : Node3D = slots[i]
-		if t == null:
+		# UNTYPED read — a slot may hold a freed node (self-heal it rather than
+		# crash on the typed assignment, same as slot_label / set_active).
+		var t = slots[i]
+		if t == null or not is_instance_valid(t):
+			slots[i] = null
 			continue
 		t.visible = (i == active_idx)
 		if t is CollisionObject3D:

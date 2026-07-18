@@ -364,8 +364,8 @@ func _index_silo_sensors() -> void:
 ## resolved AFTER rebuild() ran (e.g. silo macro spawned its sensor child late).
 ## Returns null when this silo has no sensor; the caller treats that as
 ## multiplier = 1.0 (passthrough).
-func _silo_sensor_for_node(n: Node) -> Node:
-	if n == null:
+func _silo_sensor_for_node(n) -> Node:
+	if n == null or not is_instance_valid(n):
 		return null
 	if _silo_sensor_by_node.has(n):
 		var s = _silo_sensor_by_node[n]
@@ -394,7 +394,13 @@ func _silo_sensor_for_node(n: Node) -> Node:
 ## without bridging it drops to 0.0 — the parcel parks at the source and
 ## material backs up there (conserving), exactly like the PLC closing the
 ## metering damper. Returns 1.0 (no-op) when the destination has no sensor.
-func _silo_feed_multiplier(dst_node: Node) -> float:
+func _silo_feed_multiplier(dst_node) -> float:
+	# Guard: `_nodes` can hold a machine dict whose "node" was FREED since it was
+	# recorded (a placeable removed mid-run). A freed Object fails the typed-param
+	# check AND the downstream sensor lookup, spamming "previously freed is not a
+	# subclass" from the core tick. Untyped param + validity guard → no governor.
+	if dst_node == null or not is_instance_valid(dst_node):
+		return 1.0
 	var sensor := _silo_sensor_for_node(dst_node)
 	if sensor == null or not sensor.has_method("effective_feed_multiplier"):
 		return 1.0
@@ -534,6 +540,10 @@ func _discover() -> void:
 			# #173 visual coupling: the machine's FilmFlakeField (if any), driven
 			# each tick from this node's live telemetry so the look matches the sim.
 			"view":    _find_film_field(node3d),
+			# Flow-gated visuals: steam plume + extruder die-face melt strands only
+			# show while material is actually being processed (no invention from nothing).
+			"plume":       _find_steam_plume(node3d),
+			"die_switcher": _find_die_switcher(node3d),
 			# ── #52 advanced-system observers (null unless this node qualifies) ───
 			# ex/mfi: extruder thermal+rheology model + its MFI soft-sensor (extruders).
 			# mol: motor-overload trip model (high-load mills/shredders/friction sep).
@@ -1259,6 +1269,23 @@ func _find_film_field(machine: Node) -> Node:
 			return c
 	return null
 
+## The machine's steam plume (GPUParticles in group "steam_plume"), searched
+## recursively since it lives under the model subtree. Gated on real flow so an
+## idle machine never steams (operator 2026-07-16: "inventing water from nothing").
+func _find_steam_plume(machine: Node) -> Node:
+	for c in machine.find_children("*", "GPUParticles3D", true, false):
+		if c.is_in_group("steam_plume"):
+			return c
+	return null
+
+## The extruder's heetafslag die-face strand switcher (meta die_face_switcher),
+## searched recursively. Gated on real flow so an idle die shows no melt.
+func _find_die_switcher(machine: Node) -> Node:
+	for c in machine.find_children("*", "Node3D", true, false):
+		if c.has_meta("die_face_switcher"):
+			return c
+	return null
+
 ## Live conveying fraction (0..1.25) from a node's rotor rpm vs its nominal. 1.0
 ## when the node has no rotor (the spin gate alone then governs it).
 func _mech_fraction(nd: Dictionary) -> float:
@@ -1823,6 +1850,14 @@ func tick(delta: float) -> void:
 				clampf(float(nd_s["moist"]) / 40.0, 0.0, 1.0),
 				clampf(float(nd_s["contam"]) / 15.0, 0.0, 1.0),
 				clampf(float(nd_s["buffer"]) / 40.0, 0.0, 1.0))
+		# Flow-gated emitters: material actually moving through this machine?
+		var flowing_s : bool = float(nd_s["thru"]) > 0.001
+		var plume_s = nd_s.get("plume")
+		if plume_s != null and is_instance_valid(plume_s):
+			plume_s.emitting = flowing_s
+		var die_s = nd_s.get("die_switcher")
+		if die_s != null and is_instance_valid(die_s):
+			PlaceableCatalog.show_die_face_state(die_s, 1 if flowing_s else -1)
 
 	# 1) Feed — OFF unless deliberately enabled. When on, a head node draws from a
 	#    bale on its feed point and DEPLETES that bale (finite); the bale is removed

@@ -140,8 +140,36 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 	# discharge. Operator's responsibility to make sure a lump_cart is parked
 	# here BEFORE the extruder starts. Spot is at +X offset, partway along the
 	# extruder's length so the laser_filter outlet is above the cart.
-	{"id": "lump_cart_spot", "x": 2.8, "z": -5.0},
-	{"id": "lump_cart",      "x": 2.8, "z": -5.0},
+	# #225 — the LIVE laserfilter is a standalone machine beside the extruder
+	# (ExtruderMachine binds _closest_in_group("laser_filter"); the macros never
+	# placed one, so the 318-bar trip / wissel / lump sim were dead in macro
+	# worlds). #225.3 — the filter sits 3.5 m out to the side (matches NpcTaskBench
+	# FILTER_SIDE_X) with a lump_platform bordes under it, and a cart under EACH of
+	# the twin afvoerschroef nozzles (LaserFilter.gd eject_local_offset/eject_wall
+	# at filter-local ±1.30): AISLE (+X) at 3.5+1.30 = 4.80, WALL (-X) at 3.5-1.30 =
+	# 2.20. 3.5 out keeps the wall cart clear of the extruder edge (±1.30) so nothing
+	# overlaps the barrel (the old 2.6 filter put the wall nozzle onto the extruder).
+	{"id": "laser_filter",   "x": 3.5, "z": -5.0},
+	# Bordes on the REAR (wall, -X) side only — the rear afvoerschroef discharges
+	# HIGHER so its cart sits on the raised platform (y = deck top 0.12); the FRONT
+	# (aisle, +X, head-filter-access side) cart sits on the GROUND because the front
+	# discharge is lower. Operator 2026-07-15 (see docs/plant/extruder_line_layout.md).
+	{"id": "lump_platform",  "x": 2.2, "z": -5.0},
+	{"id": "lump_cart_spot", "x": 2.2, "z": -5.0, "y": 0.12},
+	{"id": "lump_cart",      "x": 2.2, "z": -5.0, "y": 0.12},
+	{"id": "lump_cart_spot", "x": 4.8, "z": -5.0},
+	{"id": "lump_cart",      "x": 4.8, "z": -5.0},
+	# #223 docs->code: swi/TRAIN-de-flow-master-diagram__116_CeDo7.md +
+	# swi/TRAIN-verdere-verloop-granulaat-silos__125_CeDo40.md — every extruder
+	# line runs extruder → heetafslag → ontwaterzeef → centrifuge → weegschaal →
+	# voorraad_silo. Back-end chain continues on the centreline past the extruder
+	# (lump carts above are branches — they don't advance the main cursor).
+	# +14.3 m over 5 main entries at the default 0.5 m gap; stays inside footprint.
+	{"id": "heetafslag"},
+	{"id": "ontwaterzeef"},
+	{"id": "centrifuge"},
+	{"id": "weegschaal"},
+	{"id": "voorraad_silo"},
 ]
 # #54 — shared dry FRONT-END for Lines 3A and 3B. Lays the Shredder-2 climb,
 # the 12 numbered intake belts in series, the switch-belt diverter, and the VSS
@@ -187,7 +215,7 @@ const LINE_SORT_SEQ : Array[Dictionary] = [
 ## per line (use LINE_3A/3B-style macros for that, with the wider flotation_tank_wide).
 const LINE_3C6_SEQ : Array[Dictionary] = [
 	{"id": "opzetband_3c6"},
-	{"id": "shredder_2"},
+	{"id": "shredder_1"},                # 3C/6 = the big-RED coarse shredder (operator 2026-07-14; was shredder_2, blue). Same id as Line 1.
 	{"id": "inclined_belt_8m"},
 	{"id": "trilzeef"},
 ]
@@ -263,8 +291,34 @@ const LINE_3B_SEQ : Array[Dictionary] = [
 	{"id": "extruder_silo"},
 	{"id": "extruder_3b"},
 	# #98 — Lump cart parking spot at the extruder's filter discharge.
-	{"id": "lump_cart_spot", "x": 2.8, "z": -5.0},
-	{"id": "lump_cart",      "x": 2.8, "z": -5.0},
+	# #225 — the LIVE laserfilter is a standalone machine beside the extruder
+	# (ExtruderMachine binds _closest_in_group("laser_filter"); the macros never
+	# placed one, so the 318-bar trip / wissel / lump sim were dead in macro
+	# worlds). #225.3 — the filter sits 3.5 m out to the side (matches NpcTaskBench
+	# FILTER_SIDE_X) with a lump_platform bordes under it, and a cart under EACH of
+	# the twin afvoerschroef nozzles (LaserFilter.gd eject_local_offset/eject_wall
+	# at filter-local ±1.30): AISLE (+X) at 3.5+1.30 = 4.80, WALL (-X) at 3.5-1.30 =
+	# 2.20. 3.5 out keeps the wall cart clear of the extruder edge (±1.30) so nothing
+	# overlaps the barrel (the old 2.6 filter put the wall nozzle onto the extruder).
+	{"id": "laser_filter",   "x": 3.5, "z": -5.0},
+	# Bordes on the REAR (wall, -X) side only — the rear afvoerschroef discharges
+	# HIGHER so its cart sits on the raised platform (y = deck top 0.12); the FRONT
+	# (aisle, +X, head-filter-access side) cart sits on the GROUND because the front
+	# discharge is lower. Operator 2026-07-15 (see docs/plant/extruder_line_layout.md).
+	{"id": "lump_platform",  "x": 2.2, "z": -5.0},
+	{"id": "lump_cart_spot", "x": 2.2, "z": -5.0, "y": 0.12},
+	{"id": "lump_cart",      "x": 2.2, "z": -5.0, "y": 0.12},
+	{"id": "lump_cart_spot", "x": 4.8, "z": -5.0},
+	{"id": "lump_cart",      "x": 4.8, "z": -5.0},
+	# #223 docs->code: swi/TRAIN-de-flow-master-diagram__116_CeDo7.md +
+	# swi/TRAIN-verdere-verloop-granulaat-silos__125_CeDo40.md — extruder →
+	# heetafslag → ontwaterzeef → centrifuge → weegschaal → voorraad_silo.
+	# Main-centreline chain past the extruder (+14.3 m at default 0.5 m gap).
+	{"id": "heetafslag"},
+	{"id": "ontwaterzeef"},
+	{"id": "centrifuge"},
+	{"id": "weegschaal"},
+	{"id": "voorraad_silo"},
 ]
 # Line 1 = its own intake (opzetband 1 → metal detector → westa band → shredder →
 # magnet → VW trommel → scheidingsgoot) then wash/dry/extrude; transcribed from the
@@ -329,8 +383,35 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	# the cart (was missing — Line 1's LaserFilter had no cart under it and
 	# fell back to the nearest cart anywhere in the hall). APPEND-only: existing
 	# macro_index values are unchanged, so saved line_1.json deltas stay valid.
-	{"id": "lump_cart_spot", "x": 2.8, "z": -5.0},
-	{"id": "lump_cart",      "x": 2.8, "z": -5.0},
+	# #225 — the LIVE laserfilter is a standalone machine beside the extruder
+	# (ExtruderMachine binds _closest_in_group("laser_filter"); the macros never
+	# placed one, so the 318-bar trip / wissel / lump sim were dead in macro
+	# worlds). #225.3 — the filter sits 3.5 m out to the side (matches NpcTaskBench
+	# FILTER_SIDE_X) with a lump_platform bordes under it, and a cart under EACH of
+	# the twin afvoerschroef nozzles (LaserFilter.gd eject_local_offset/eject_wall
+	# at filter-local ±1.30): AISLE (+X) at 3.5+1.30 = 4.80, WALL (-X) at 3.5-1.30 =
+	# 2.20. 3.5 out keeps the wall cart clear of the extruder edge (±1.30) so nothing
+	# overlaps the barrel (the old 2.6 filter put the wall nozzle onto the extruder).
+	{"id": "laser_filter",   "x": 3.5, "z": -5.0},
+	# Bordes on the REAR (wall, -X) side only — the rear afvoerschroef discharges
+	# HIGHER so its cart sits on the raised platform (y = deck top 0.12); the FRONT
+	# (aisle, +X, head-filter-access side) cart sits on the GROUND because the front
+	# discharge is lower. Operator 2026-07-15 (see docs/plant/extruder_line_layout.md).
+	{"id": "lump_platform",  "x": 2.2, "z": -5.0},
+	{"id": "lump_cart_spot", "x": 2.2, "z": -5.0, "y": 0.12},
+	{"id": "lump_cart",      "x": 2.2, "z": -5.0, "y": 0.12},
+	{"id": "lump_cart_spot", "x": 4.8, "z": -5.0},
+	{"id": "lump_cart",      "x": 4.8, "z": -5.0},
+	# #223 docs->code: swi/TRAIN-de-flow-master-diagram__116_CeDo7.md +
+	# swi/TRAIN-verdere-verloop-granulaat-silos__125_CeDo40.md — extruder →
+	# heetafslag → ontwaterzeef → centrifuge → weegschaal → voorraad_silo.
+	# Main-centreline chain past the extruder (+14.3 m at default 0.5 m gap).
+	# APPEND-only after the lump carts, so existing macro_index values are unchanged.
+	{"id": "heetafslag"},
+	{"id": "ontwaterzeef"},
+	{"id": "centrifuge"},
+	{"id": "weegschaal"},
+	{"id": "voorraad_silo"},
 ]
 const LINE_GAP_M : float = 0.5   # clear space between consecutive machines (process lines are tight)
 
@@ -1316,8 +1397,13 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 			var d_scale : Vector3 = Vector3.ONE
 			if d.has("scale") and d["scale"] is Vector3:
 				d_scale = d["scale"]
+			# #225.3 — optional per-entry "y" lifts a branch item onto a raised
+			# surface (e.g. lump carts resting on the lump_platform bordes deck at
+			# y=0.12, mirroring NpcTaskBench.PLATFORM_Y). Defaults to 0 so every
+			# existing macro entry is unchanged.
+			var entry_y : float = float(entry.get("y", 0.0))
 			node.global_position = Vector3(start.x, start.y + tb_y_offset, start.z) \
-				+ fwd * (place_z + d_dz) + rgt * (x + d_dx) + Vector3.UP * d_dy
+				+ fwd * (place_z + d_dz) + rgt * (x + d_dx) + Vector3.UP * (d_dy + entry_y)
 			node.rotation.y = rot_y + PI + d_drot
 			if d_scale != Vector3.ONE:
 				node.scale = d_scale

@@ -52,6 +52,7 @@ var enabled       : bool    = true
 
 # ── Runtime state ─────────────────────────────────────────────────────────────
 var _handling   : Dictionary = {}   # station_id -> NPC currently clearing it
+var _worst_jam_cache : Dictionary = {}   # #223 — worst jam this frame; needs_worker() reads it so the per-NPC autonomy poll doesn't re-scan LineFlow
 var _break_until: Dictionary = {}   # NPC -> seconds of break remaining
 var _break_timer: float      = BREAK_INTERVAL
 var _break_rotation_idx: int = 0    # round-robin cursor so breaks ROTATE across crew
@@ -68,6 +69,7 @@ var _pin_marker : Dictionary = {}   # NPC -> Node3D (visible flag in the world)
 # pinned a feeder to. Keyed by section_key ("feed_3a", …) so re-assigning the same
 # section reuses (and re-homes) the existing feeder instead of spawning duplicates.
 var _section_feeders : Dictionary = {}   # section_key -> FeederWorker
+var _feeder_owner    : Dictionary = {}   # #233 section_key -> the REAL crew NPC driving that feeder
 
 # EventBus is an autoload at runtime, but autoloads aren't registered as global
 # identifiers when this script is compiled inside the headless harness. Resolve it
@@ -83,6 +85,7 @@ func _physics_process(delta: float) -> void:
 
 ## Wire the crew up and post everyone. `npc_dict` is MainWorld.npcs (id -> NPC).
 func setup(npc_dict: Dictionary, lf: Node, sc: Node, break_pos: Vector3) -> void:
+	add_to_group("crew_manager")   # #223 — NPC._autonomy_tick finds us here to yield production-first
 	workers.clear()
 	for k in npc_dict:
 		var n = npc_dict[k]
@@ -292,6 +295,7 @@ func tick(delta: float) -> void:
 
 	# 2) Dispatch the nearest available responder to the worst un-handled jam.
 	var jam := _worst_jam()
+	_worst_jam_cache = jam   # #223 — publish for needs_worker() (production-first gate)
 	if not jam.is_empty() and not _handling.has(jam["id"]):
 		var sid : String  = String(jam["id"])
 		var pos : Vector3 = _node_pos(jam["node"])
@@ -479,6 +483,31 @@ func _pick_responder(station_id: String, pos: Vector3) -> NPC:
 				best_d = d
 				best = w
 	return best
+
+## #223 PRODUCTION-FIRST arbiter — read by NPC._autonomy_tick every frame. Returns
+## true when the crew brain has a claim on this worker, so autonomy housekeeping
+## (leaf blow / hose / shovel / lump cart) must yield: the worker is off-post /
+## servicing / on break / off duty, is already dispatched to a station or bin this
+## round, OR there's an un-handled jam inside this worker's coverage they should
+## answer. Keeps "keep the line running" strictly above cleaning.
+## (docs/plant/npc_rol_taak_prioriteit.md — Tier 1 > Tier 4.)
+func needs_worker(w) -> bool:
+	if w == null or not is_instance_valid(w):
+		return false
+	# Not standing free at post → a crew action / break / off-duty already owns them.
+	if not w.is_available():
+		return true
+	# Already claimed to service a jam or an over-full bin this round.
+	for handler in _handling.values():
+		if handler == w:
+			return true
+	# An un-handled jam this worker's zone covers → production wants them now, so an
+	# idle-LOOKING posted operator drops the leaf blower rather than wander off.
+	if not _worst_jam_cache.is_empty():
+		var jid := String(_worst_jam_cache.get("id", ""))
+		if jid != "" and not _handling.has(jid) and _covers(w, jid):
+			return true
+	return false
 
 func _break_candidate() -> NPC:
 	# Round-robin: start scanning from the rotation cursor so the SAME worker
@@ -690,7 +719,7 @@ func _nearest_in_section(section_key: String, from: Vector3, machines: Array) ->
 ## feeder to a Feed section actually feeds the line. `key` is the section id
 ## ("feed_3a") for a section pin, or "role:feeder" for the rota role (no belt
 ## binding → nearest belt). One feeder per `key`; re-assigning re-homes it.
-func _ensure_section_feeder(key: String, near_pos: Vector3 = Vector3.ZERO) -> void:
+func _ensure_section_feeder(key: String, near_pos: Vector3 = Vector3.ZERO, owner: Node = null) -> void:
 	var world := _feeder_world()
 	if world == null:
 		return   # headless / no world to parent into — nothing to spawn
@@ -709,6 +738,11 @@ func _ensure_section_feeder(key: String, near_pos: Vector3 = Vector3.ZERO) -> vo
 		# No feed belt exists in this world yet — can't bind a feeder. Bail quietly;
 		# the operator can re-pin once the opzetband is built.
 		return
+	# #233 — a section feeder is DRIVEN BY the real crew member the operator picked.
+	# If a DIFFERENT worker drove this section before, hand them back to normal duty.
+	var prev_owner = _feeder_owner.get(key, null)
+	if prev_owner != null and prev_owner != owner and is_instance_valid(prev_owner):
+		_restore_worker(prev_owner)
 	# Reuse an existing feeder for this key if still alive; otherwise spawn one.
 	var feeder : FeederWorker = _section_feeders.get(key, null)
 	if feeder != null and not is_instance_valid(feeder):
@@ -717,25 +751,102 @@ func _ensure_section_feeder(key: String, near_pos: Vector3 = Vector3.ZERO) -> vo
 	var lot : Vector3 = (belt as Node3D).global_position
 	if feeder == null:
 		feeder = preload("res://src/scenes/world/FeederWorker.gd").new()
-		feeder.worker_name = "Feeder %s" % key.replace("feed_", "").replace("role:", "").to_upper()
+		# #233 — the feeder IS the assigned crew member: adopt their name + colour so
+		# there's no generic "Feeder 3A" ghost, only the person the operator picked.
+		if owner != null and is_instance_valid(owner) and "npc_name" in owner:
+			feeder.worker_name = String(owner.get("npc_name"))
+		else:
+			feeder.worker_name = "Feeder %s" % key.replace("feed_", "").replace("role:", "").to_upper()
+		if owner != null and is_instance_valid(owner):
+			for cprop in ["npc_color", "body_color", "color", "suit_color"]:
+				if cprop in owner:
+					feeder.body_color = owner.get(cprop)
+					break
 		world.add_child(feeder)
-		feeder.global_position = lot + Vector3(3.0, 1.0, 2.0)
+		# Spawn AT the assigned worker's spot so they visibly WALK from their post to
+		# the parked clamp; the clamp waits at the feed area beside the belt.
+		if owner != null and is_instance_valid(owner) and owner is Node3D:
+			feeder.global_position = (owner as Node3D).global_position
+		else:
+			feeder.global_position = lot + Vector3(3.0, 1.0, 2.0)
 		# Personal BaleClamp so it DRIVES the loop (the normal case) rather than the
-		# on-foot fallback. Parked behind the feeder; assign_vehicle tags it NPC-owned.
+		# on-foot fallback. Parked at the feed area; assign_vehicle tags it NPC-owned
+		# and the feeder walks over to board it.
 		var vscene := load("res://src/scenes/vehicles/BaleClamp.tscn") as PackedScene
 		if vscene != null:
 			var v := vscene.instantiate() as Node3D
 			world.add_child(v)
 			v.global_position = lot + Vector3(2.0, 0.5, -3.0)
 			feeder.assign_vehicle(v)
+		# Kit every section feeder with its OWN scanner + wire-cutter (operator
+		# 2026-07-16: feeders scanned/cut with nothing in hand). Only the legacy
+		# LegacyPropsSpawner feeder got tools before; section/rota feeders had none.
+		if feeder.personal_scissors == null:
+			var sc := WireCutter.new()
+			world.add_child(sc)
+			sc.global_position = feeder.global_position
+			feeder.stow_personal_tool(sc, -1.0)
+			feeder.personal_scissors = sc
+		if feeder.personal_scanner == null:
+			var scan_scr = load("res://src/scenes/world/BarcodeScanner.gd")
+			if scan_scr != null:
+				var scn : Node3D = scan_scr.new()
+				world.add_child(scn)
+				scn.global_position = feeder.global_position
+				feeder.stow_personal_tool(scn, 1.0)
+				feeder.personal_scanner = scn
 		_section_feeders[key] = feeder
-		print("[CrewManager] Feeder engaged for %s → belt %s" % [key, belt_id])
+		var drv : String = String(owner.get("npc_name")) if (owner != null and "npc_name" in owner) else "auto"
+		print("[CrewManager] Feeder engaged for %s → belt %s (driver=%s)" % [key, belt_id, drv])
+	# #233 — retire the assigned worker's STANDING npc (hide + off-duty) so there's no
+	# idle duplicate; the FeederWorker now represents them on the floor. Re-applied
+	# every assignment (idempotent) so a re-pin keeps them retired.
+	if owner != null and is_instance_valid(owner):
+		_feeder_owner[key] = owner
+		if owner is Node3D:
+			(owner as Node3D).visible = false
+		if owner.has_method("set_off_duty"):
+			owner.set_off_duty(true)
 	# (Re)bind the belt + lot every assignment so re-pinning updates the target.
 	feeder.assigned_section = key
 	feeder.section_belt_id = belt_id
 	feeder.lot_center = lot
 	feeder.lot_radius = 20.0
 	feeder._belt = null   # force _resolve_belt to re-pick the (possibly new) belt
+
+## #233 — hand a worker who was driving a section feeder back to normal duty: show
+## their standing NPC again + clear the off-duty parking the feeder engagement set.
+func _restore_worker(worker) -> void:
+	if worker == null or not is_instance_valid(worker):
+		return
+	if worker is Node3D:
+		(worker as Node3D).visible = true
+	if worker.has_method("set_off_duty"):
+		worker.set_off_duty(false)
+
+## #233 — if `worker` currently drives a section feeder, tear that feeder (+ its
+## clamp) down and restore the worker. Called before any re-assignment so switching
+## a feeder to another post cleanly ends their feeding shift (no orphan ghost).
+func _release_owner(worker) -> void:
+	if worker == null:
+		return
+	var found_key := ""
+	for k in _feeder_owner.keys():
+		if _feeder_owner[k] == worker:
+			found_key = String(k)
+			break
+	if found_key == "":
+		return
+	var feeder = _section_feeders.get(found_key, null)
+	if feeder != null and is_instance_valid(feeder):
+		if "vehicle" in feeder:
+			var v = feeder.get("vehicle")
+			if v != null and is_instance_valid(v):
+				v.queue_free()
+		feeder.queue_free()
+	_section_feeders.erase(found_key)
+	_feeder_owner.erase(found_key)
+	_restore_worker(worker)
 
 ## The world node the feeders parent into — MainWorld (LineFlow's parent).
 func _feeder_world() -> Node:
@@ -787,6 +898,9 @@ func _nearest_feed_belt(from: Vector3) -> Node3D:
 func manual_assign(worker, station_id: String) -> void:
 	if worker == null:
 		return
+	# #233 — if this worker was driving a section feeder, end that feeding shift
+	# (tear down the feeder + clamp, restore them) before applying the new post.
+	_release_owner(worker)
 	if station_id == "__off__":
 		# #124 — DON'T erase the pin. Off-duty is a temporary state; the operator
 		# probably wants the pin preserved so flipping back to "Auto" later isn't
@@ -829,7 +943,7 @@ func manual_assign(worker, station_id: String) -> void:
 		# re-home) an autonomous FeederWorker bound to that section's opzetband, so
 		# the line is fed for real instead of a generic NPC just standing there.
 		if section_key.begins_with("feed_"):
-			_ensure_section_feeder(section_key)
+			_ensure_section_feeder(section_key, Vector3.ZERO, worker)
 		_emit("npc_called_for_help", ["operator", String(worker.npc_name), station_id])
 		return
 	# Role-based post: switch the worker's RotA role, then auto-post by that role's zone.
@@ -846,9 +960,19 @@ func manual_assign(worker, station_id: String) -> void:
 		# bound, so it feeds the NEAREST belt (FeederWorker._resolve_belt fallback).
 		# Keyed by the role so a second feeder-role NPC doesn't spawn a duplicate.
 		if new_role == "feeder" or new_role == "permanent_feeder":
-			_ensure_section_feeder("role:" + new_role, worker.global_position)
+			_ensure_section_feeder("role:" + new_role, worker.global_position, worker)
 		_emit("npc_called_for_help", ["operator", String(worker.npc_name), station_id])
 		return
+	# Operator posting someone onto a leaf blower means "go clean with it" — route
+	# it to the autonomy board's real blow-leaves task instead of a dead AT_POST
+	# stand-around (operator 2026-07-16: Mohammed just stood still).
+	if station_id == "tool_leafblower":
+		var board := get_node_or_null("/root/NpcAutonomyBoard")
+		if board != null and board.has_method("force_task"):
+			if bool(board.call("force_task", worker, "blow_leaves")):
+				_pinned[worker] = station_id
+				_emit("npc_called_for_help", ["operator", String(worker.npc_name), station_id])
+				return
 	for m in _machine_list():
 		if String(m["id"]) == station_id:
 			var pos : Vector3 = m["pos"]; pos.y = worker.global_position.y
@@ -882,6 +1006,7 @@ func assign_to_position(worker, pos: Vector3, facing_rad: float = NAN) -> void:
 func unpin(worker) -> void:
 	if worker == null:
 		return
+	_release_owner(worker)   # #233 — end any feeding shift + restore the worker
 	_pinned.erase(worker)
 	_pin_meta.erase(worker)
 	_clear_pin_marker(worker)

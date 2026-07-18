@@ -3,17 +3,20 @@ extends StaticBody3D
 
 # =============================================================================
 # Rotary-disc melt-filter ("Laserfilter") — the big concentric circle on the
-# 3C HMI. Filters polymer melt to 130 / 140 / 150 µm via two rotating discs
+# 3C HMI. Filters polymer melt through laser-drilled screen discs graded
+# L1 (130–150 µm) / L3a (150–180 µm) / L3b (180–210 µm) via two rotating discs
 # and a scraper that continuously sheds caught debris into the lump cart
 # parked at its discharge.
+# #223 docs->code — grades per docs/plant/swi/TRAIN-de-laserfilter-3A-typen__121_CeDo33.md
 #
 # Models four real-plant facts (operator-confirmed):
-#   1. Filter resolution is marked PHYSICALLY on the screen plate (130/140/150
-#      µm). The marking is invisible from the outside; the operator only reads
-#      it during a filter change, while the housing is open.
-#   2. Melt pressure differential ΔP (psi) rises with debris loading. Crossing
-#      ~300 psi automatically boosts scraper RPM × 1.5 to clear the pack.
-#      Releases when ΔP drops back below 250 psi (small hysteresis).
+#   1. Filter resolution is marked PHYSICALLY on the screen plate (grade +
+#      concrete µm). The marking is invisible from the outside; the operator
+#      only reads it during a filter change, while the housing is open.
+#   2. Melt pressure differential ΔMP rises with debris loading. Normal
+#      production runs a 175–235 bar sawtooth (docs/plant/hmi_reference.md);
+#      300 bar is the "needs attention" alarm, clearing below 250 bar
+#      (small hysteresis). ΔMP is a READOUT — it does not drive the disc.
 #   3. Screen plate thickness wears down each scrape. New plate ships at
 #      ~1.80 mm; below 1.40 mm the special knife-riding layer is gone and the
 #      plate is scrapped. Decay scales with effective scraper RPM.
@@ -55,11 +58,26 @@ extends StaticBody3D
 # =============================================================================
 
 # ── Tunables ─────────────────────────────────────────────────────────────────
-const SCRAPER_BOOST_PSI         : float = 300.0
-const SCRAPER_RELEASE_PSI       : float = 250.0    # hysteresis so it doesn't chatter
-const SCRAPER_BOOST_FACTOR      : float = 1.50
-const NOMINAL_SCRAPER_RPM       : float = 25.0
+# #223 docs→code — the disc + discharge are MOTOR-driven, NOT ΔP-driven.
+# ΔMP is a READOUT only (+ the 318-bar upstream trip below). EREMA LF 2/406 HMI:
+# M1-speed = disc-motor rpm (operator setpoint), M1-load = disc-motor load %.
+# SCRAPER_*_PSI are kept ONLY as ΔP alarm/attention thresholds — they no longer
+# drive disc speed (that ΔP→speed coupling was the operator-flagged error).
+# #223 docs->code — thresholds are on the bar-realistic ΔP scale (see item-13
+# calibration block below). docs/plant/hmi_reference.md: real ΔMP sawtooths
+# 175–235 bar in normal production; docs/plant/swi/laserfilter-smeltdrukverschil__062_CeDo72.md
+# gives the 0–300 bar setpoint band. 300 bar = the "needs attention" alarm.
+const SCRAPER_BOOST_PSI         : float = 4351.0   # ΔP "needs attention" alarm = 300 bar (readout only)
+const SCRAPER_RELEASE_PSI       : float = 3626.0   # alarm-clear hysteresis = 250 bar
+const NOMINAL_SCRAPER_RPM       : float = 25.0     # M1 disc-motor nominal rpm
 const MAX_SCRAPER_RPM           : float = 60.0
+const NOMINAL_VIJZEL_RPM        : float = 30.0     # afvoervijzel (discharge-screw) motor nominal rpm
+const MAX_VIJZEL_RPM            : float = 90.0
+# Upstream ABSOLUTE melt pressure that trips an immediate shutdown of the
+# compactor + extruder + pelletiser. Operator override: CeDo runs the trip at
+# 318 bar (the EREMA manual page lists 320; the plant is set to 318).
+const UPSTREAM_TRIP_BAR         : float = 318.0
+const PSI_PER_BAR               : float = 14.5038
 const FRESH_THICKNESS_MM        : float = 1.80
 const MIN_USABLE_THICKNESS_MM   : float = 1.40     # < this → scrap on next inspection
 const SCRAP_LINE_TEXT           : String = "SCRAP"
@@ -71,7 +89,24 @@ const THICKNESS_DECAY_MM_PER_H_NOMINAL : float = 0.05
 # ~10 sim minutes at nominal RPM, which matches the manual's typical ramp.
 const LOADING_PER_KG_THROUGHPUT : float = 0.18     # g loading per kg melt
 const LOADING_CLEAR_G_PER_RPM_S : float = 0.40     # g cleared per RPM per second
-const DELTA_P_PER_LOADING_G     : float = 0.20     # psi per g loading
+# ── #223 docs->code — item 13: bar-realistic ΔP model ────────────────────────
+# docs/plant/hmi_reference.md §1 shows the real ΔMP-MF gauge running a 175–235
+# bar sawtooth in normal production (MP<MF ~207 bar, ΔMP ~182 bar). The old
+# ΔP = loading * 0.20 psi/g model maxed out at ~34 bar, pinning the gauge low.
+# New model per face:  ΔP = CLEAN-SCREEN BASE + CAKE TERM.
+#   * BASE = clean-screen flow resistance, ∝ feed throughput. Calibrated so a
+#     steady 1000 kg/h reads ~170 bar (2465 psi) of clean-screen drop — the
+#     bottom of the documented sawtooth. Applies to BOTH faces equally.
+#   * CAKE = debris cake on THAT face's loading_g. Calibrated (2500 psi/g) so a
+#     nominal sawtooth (front loading 0.06→0.40 g between disc advances) swings
+#     the total ~180→239 bar — matching the doc's 175–235 bar band — and a
+#     heavy cake (≳0.9 g front) pushes past the 300 bar attention alarm toward
+#     the 350 bar clamp. Cake keeps the 85/15 front/back bias via loading_g.
+# Total ΔP (HMI / alarm) = max(front, back); clamped to 350 bar (5076 psi).
+const CLEAN_BASE_PSI_PER_KG_H   : float = 2.4656   # 170 bar / 1000 kg/h clean-screen resistance
+const CAKE_PSI_PER_G            : float = 2500.0   # debris-cake ΔP per g of face loading
+const DELTA_P_MAX_PSI           : float = 5076.0   # clamp = 350 bar (matches HMI 0–350 scale)
+const CAKE_FULL_LOAD_PSI        : float = 1886.0   # cake worth 130 bar = 100% M1 disc-motor load
 # ── Sawtooth disc-rotation cycle ─────────────────────────────────────────────
 # The rotary disc indexes in discrete steps rather than scraping continuously:
 # loading accumulates between advances (ΔP ramps up monotonically), then a
@@ -81,8 +116,16 @@ const DELTA_P_PER_LOADING_G     : float = 0.20     # psi per g loading
 const ROTATION_INTERVAL_S       : float = 8.0      # nominal seconds between disc advances
 const MIN_ROTATION_INTERVAL_S   : float = 2.0      # interval at full boost intensity
 const ROTATION_PURGE_FRACTION   : float = 0.85     # fraction of loading shed per advance
-# Stock of fresh screen plates, picked at random per insert.
-const SCREEN_MESH_OPTIONS_UM    : Array[int] = [130, 140, 150]
+# #223 docs->code — item 21: the three documented laserfilter grades.
+# docs/plant/swi/TRAIN-de-laserfilter-3A-typen__121_CeDo33.md: L1 130–150 µm,
+# L3a 150–180 µm, L3b 180–210 µm. Each grade is a µm band; a fresh insert picks
+# a random grade, then a concrete µm inside its band (kept as screen_mesh_um so
+# the HMI/SCADA readers still get a single concrete micron value).
+const SCREEN_GRADES : Dictionary = {
+	"L1":  Vector2i(130, 150),
+	"L3a": Vector2i(150, 180),
+	"L3b": Vector2i(180, 210),
+}
 
 # ── Asymmetric clog (operator-confirmed) ─────────────────────────────────────
 # >90% of the time the FRONT (inlet) face clogs first because it catches debris
@@ -127,11 +170,17 @@ var lumps_kg_this_shift  : float = 0.0
 var koperen_rings_used   : int   = 0
 var plates_to_cleaning   : int   = 0
 var plates_scrapped      : int   = 0
-var screen_mesh_um       : int   = 140
+var screen_mesh_um       : int   = 165                   # concrete µm (HMI/SCADA read this)
+var screen_grade         : String = "L3a"                # #223 item 21: L1 / L3a / L3b (docs)
 var screen_thickness_mm  : float = FRESH_THICKNESS_MM
-var scraper_rpm          : float = NOMINAL_SCRAPER_RPM   # operator setpoint
+var scraper_rpm          : float = NOMINAL_SCRAPER_RPM   # M1 disc-motor operator setpoint (rpm)
+var afvoervijzel_rpm     : float = NOMINAL_VIJZEL_RPM    # discharge-screw motor setpoint (rpm)
 var feed_throughput_kg_h : float = 0.0                   # set by ExtruderModel each tick
-var auto_boost_active    : bool  = false
+var m1_load_pct          : float = 0.0                   # HMI: disc-motor load % (from cake loading)
+var is_tripped           : bool  = false                 # latched by the 318-bar upstream shutdown
+# Emitted when upstream pressure crosses UPSTREAM_TRIP_BAR — ExtruderMachine
+# connects this to stop the compactor + extruder + pelletiser together.
+signal upstream_pressure_trip(bar)
 var _change_state        : int   = Change.IDLE
 var _change_step_t       : float = 0.0
 
@@ -144,7 +193,7 @@ var _last_advance_t      : float = 0.0   # sim-time of the most recent advance (
 
 # ── Asymmetric clog live state ───────────────────────────────────────────────
 # Front (inlet) face accumulates ~85% of debris; back face the remainder.
-# Each side has its own ΔP from the same DELTA_P_PER_LOADING_G mapping.
+# Each side has its own ΔP from the same _face_delta_p_psi() base+cake mapping.
 # Total ΔP for autoboost / HMI = max(front, back).
 var front_loading_g      : float = 0.0
 var back_loading_g       : float = 0.0
@@ -163,8 +212,12 @@ var lump_feed_rate_g_s              : float = 0.0
 # fires. Freezes the scraper and blocks the filter-change procedure.
 var is_halted : bool = false
 
-# Optional discharge target — when set, scraped lumps drop into this cart.
-var lump_cart            : Node  = null
+# Optional discharge targets — when set, scraped lumps drop into these carts.
+# #225.2 (operator 2026-07-14): the afvoervijzel discharges through a VERTICAL
+# nozzle on BOTH sides of the disc — one in front of the disc face (aisle/HMI
+# side, +X) and one behind it (wall side, -X). A lump cart sits under each.
+var lump_cart            : Node  = null   # aisle (+X, front-of-disc) — back-compat single ref
+var lump_cart_wall       : Node  = null   # wall (-X, behind-disc)
 
 # =============================================================================
 # BACKWARD-COMPAT COMPUTED PROPERTIES
@@ -201,18 +254,37 @@ var delta_p_imbalance_psi : float:
 # =============================================================================
 func _ready() -> void:
 	add_to_group("laser_filter")
-	# Pick a screen-mesh value at random per spawn (matches a real plant where
-	# the stock room contains a mix of 130/140/150 µm plates).
-	screen_mesh_um = SCREEN_MESH_OPTIONS_UM[randi() % SCREEN_MESH_OPTIONS_UM.size()]
+	# #223 docs->code — item 21: pick a documented grade (L1/L3a/L3b) + a concrete
+	# µm inside its band per spawn (stock room holds a mix of grades).
+	_pick_screen_grade()
+
+# #223 docs->code — item 21: pick a random screen grade and a concrete µm inside
+# its documented band. Sets both screen_grade (L1/L3a/L3b) and screen_mesh_um.
+# docs/plant/swi/TRAIN-de-laserfilter-3A-typen__121_CeDo33.md.
+func _pick_screen_grade() -> void:
+	var grades : Array = SCREEN_GRADES.keys()
+	screen_grade = grades[randi() % grades.size()]
+	var band : Vector2i = SCREEN_GRADES[screen_grade]
+	screen_mesh_um = band.x + (randi() % (band.y - band.x + 1))
 
 # =============================================================================
 func _physics_process(delta: float) -> void:
-	# Lazy lump-cart resolution: the cart parked at this extruder's
-	# `lump_cart_spot` is the closest "lump_cart" group member. Re-checked
-	# each tick only while we still don't have one, so a cart placed mid-game
-	# starts collecting on the next tick.
-	if lump_cart == null or not is_instance_valid(lump_cart):
-		lump_cart = _closest_lump_cart()
+	# #225 — Cart binding, re-checked on a 2 s cadence (not just while null):
+	# only a cart actually parked in the CATCH WINDOW under the discharge mouth
+	# binds; a hauled-away / freed cart unbinds so the next parked cart takes
+	# over. Prevents the old unbounded-nearest bug where a cart metres away
+	# (or on the NEIGHBOURING line) silently received the kg credit while the
+	# physical chunks piled on the floor.
+	# Rebind BOTH nozzle carts by their own catch window (aisle +X / wall -X).
+	_cart_recheck_t += delta
+	var _need_recheck : bool = _cart_recheck_t >= CART_RECHECK_S \
+		or lump_cart == null or not is_instance_valid(lump_cart) \
+		or lump_cart_wall == null or not is_instance_valid(lump_cart_wall)
+	if _need_recheck:
+		_cart_recheck_t = 0.0
+		lump_cart      = _rebind_cart(lump_cart,      eject_global())
+		lump_cart_wall = _rebind_cart(lump_cart_wall, eject_global_wall())
+	_absorb_settled_chunks(delta)
 	if _change_state != Change.IDLE:
 		_advance_change(delta)
 		return
@@ -222,13 +294,33 @@ func _physics_process(delta: float) -> void:
 	# only be started after cascade_resume() clears the halt.
 	if is_halted:
 		return
-	# Effective scraper RPM: operator setpoint × auto-boost factor if active.
-	# Capped at MAX_SCRAPER_RPM so a 250 rpm setpoint + boost doesn't run away.
-	# Still used for plate-wear scaling and as the sausage growth rate proxy
-	# (a faster disc index ⇒ thicker rope between break-offs).
-	var eff_rpm : float = clampf(
-		scraper_rpm * (SCRAPER_BOOST_FACTOR if auto_boost_active else 1.0),
-		0.0, MAX_SCRAPER_RPM)
+	# #223 — disc speed is the M1 MOTOR setpoint, full stop. No ΔP auto-boost:
+	# ΔMP does not drive the disc (operator correction). eff_rpm scales plate
+	# wear and the sausage index rate.
+	var eff_rpm : float = clampf(scraper_rpm, 0.0, MAX_SCRAPER_RPM)
+	# HMI M1-load %: disc-motor load rises with the cake on the more-clogged face.
+	# #223 docs->code — cake-scaled (item 13): 100% at CAKE_FULL_LOAD_PSI (130 bar cake).
+	m1_load_pct = clampf(max(front_loading_g, back_loading_g) * CAKE_PSI_PER_G / CAKE_FULL_LOAD_PSI * 100.0, 0.0, 100.0)
+	# NO-FLOW GATE (operator 2026-07-16 "pressure rising while everything reads 0"):
+	# ΔMP is a FLOW-driven pressure drop — with zero melt through the screen it must
+	# read ambient (0), not keep integrating a phantom cake. Hold ΔP + M1-load at 0
+	# and freeze loading/disc/wear while nothing is flowing; it all re-manifests the
+	# instant real melt returns. (Paired with the ExtruderMachine gate so an unfed /
+	# idle extruder forwards feed_throughput_kg_h = 0, not the 50 kg/h idle spin.)
+	if feed_throughput_kg_h <= 0.0:
+		delta_p_front_psi  = 0.0
+		delta_p_back_psi   = 0.0
+		m1_load_pct        = 0.0
+		lump_feed_rate_g_s = 0.0
+		return
+	# #223 — 320-bar UPSTREAM hard trip: immediate shutdown of compactor +
+	# extruder + pelletiser. Latches; halts the filter (is_line_down → the
+	# upstream ExtruderModel stops feeding) and signals ExtruderMachine to stop
+	# the trio together.
+	if not is_tripped and upstream_pressure_psi_indicator / PSI_PER_BAR > UPSTREAM_TRIP_BAR:
+		is_tripped = true
+		is_halted = true
+		upstream_pressure_trip.emit(upstream_pressure_psi_indicator / PSI_PER_BAR)
 	# Loading rises with melt throughput. Discrete disc advances purge it
 	# (see _disc_advance); BETWEEN advances loading rises monotonically so ΔP
 	# climbs in a sawtooth pattern.
@@ -249,26 +341,19 @@ func _physics_process(delta: float) -> void:
 	# happens in discrete steps inside _disc_advance).
 	front_loading_g = maxf(0.0, front_loading_g + front_add_g_s * delta)
 	back_loading_g  = maxf(0.0, back_loading_g  + back_add_g_s  * delta)
-	delta_p_front_psi = clampf(front_loading_g * DELTA_P_PER_LOADING_G, 0.0, 500.0)
-	delta_p_back_psi  = clampf(back_loading_g  * DELTA_P_PER_LOADING_G, 0.0, 500.0)
-	# ΔP autoboost gate with hysteresis — fires on TOTAL (max of front+back).
-	# So even a one-sided front clog will trigger the boost as it should.
-	var total_dp : float = max(delta_p_front_psi, delta_p_back_psi)
-	if not auto_boost_active and total_dp > SCRAPER_BOOST_PSI:
-		auto_boost_active = true
-	elif auto_boost_active and total_dp < SCRAPER_RELEASE_PSI:
-		auto_boost_active = false
-	# Boost intensity 0..1 — drives the rotation-interval lerp. While the
-	# autoboost is latched, intensity is 1.0 (fastest indexing); otherwise it
-	# scales with how close current ΔP is to the boost threshold so the disc
-	# already speeds up a bit as the cake approaches alarm.
-	var boost_intensity : float = 1.0 if auto_boost_active else \
-		clampf(total_dp / SCRAPER_BOOST_PSI, 0.0, 1.0)
+	# #223 docs->code — item 13: bar-realistic ΔP = clean-screen base + cake.
+	delta_p_front_psi = _face_delta_p_psi(front_loading_g)
+	delta_p_back_psi  = _face_delta_p_psi(back_loading_g)
+	# #223 — ΔMP is a READOUT ONLY now (front/back split, computed above). It no
+	# longer changes disc speed — the disc indexes at the M1 motor rpm.
 	# ── Sawtooth advance gate ───────────────────────────────────────────────
-	# Increment the timer; when it crosses the effective interval, step the
-	# disc (purge + sausage break-off). The interval shortens with boost.
+	# Increment the timer; when it crosses the effective interval, step the disc
+	# (purge + sausage break-off). Index rate is set by the DISC MOTOR rpm:
+	# faster motor → shorter interval. (Was driven by ΔP boost — removed.)
 	_rotation_timer += delta
-	var effective_interval : float = lerpf(ROTATION_INTERVAL_S, MIN_ROTATION_INTERVAL_S, boost_intensity)
+	var effective_interval : float = clampf(
+		ROTATION_INTERVAL_S * NOMINAL_SCRAPER_RPM / maxf(eff_rpm, 1.0),
+		MIN_ROTATION_INTERVAL_S, ROTATION_INTERVAL_S)
 	if _rotation_timer >= effective_interval:
 		_disc_advance()
 	# Plate wear: higher RPM = more contact with the scraper edge = faster
@@ -281,7 +366,11 @@ func _physics_process(delta: float) -> void:
 	# being caught on the disc). On _disc_advance the rope breaks off and a
 	# discrete LumpChunk RB drops. Cooling colour lerp stays continuous so
 	# slow extrusions land chunks that are already half-cool.
-	var growth_g_s : float = (front_add_g_s + back_add_g_s)
+	# #223 — the afvoervijzel (discharge-screw) MOTOR augers the shed cake out as
+	# the rope; its rpm sets the discharge rate. At nominal rpm this is unchanged;
+	# rpm 0 stops discharge (lumps back up in the housing).
+	var vijzel_factor : float = clampf(afvoervijzel_rpm / NOMINAL_VIJZEL_RPM, 0.0, MAX_VIJZEL_RPM / NOMINAL_VIJZEL_RPM)
+	var growth_g_s : float = (front_add_g_s + back_add_g_s) * vijzel_factor
 	_grow_sausage(delta, growth_g_s)
 
 # =============================================================================
@@ -336,6 +425,15 @@ func cascade_stop() -> void:
 func cascade_resume() -> void:
 	is_halted = false
 
+# #223 docs->code — item 13: bar-realistic ΔP for one filter face.
+# docs/plant/hmi_reference.md §1 (ΔMP 175–235 bar) + docs/plant/swi/laserfilter-
+# smeltdrukverschil__062_CeDo72.md (0–300 bar band). ΔP = clean-screen BASE
+# (flow resistance ∝ throughput, both faces) + CAKE (this face's loading_g).
+# Clamped to the 350 bar HMI scale.
+func _face_delta_p_psi(loading_g: float) -> float:
+	var base_psi : float = feed_throughput_kg_h * CLEAN_BASE_PSI_PER_KG_H
+	return clampf(base_psi + loading_g * CAKE_PSI_PER_G, 0.0, DELTA_P_MAX_PSI)
+
 # Sawtooth ΔMP cycle: purge most of the accumulated cake in one step and break off the in-progress sausage.
 func _disc_advance() -> void:
 	# Lumps shed in this purge are the fraction of the current cake we're
@@ -344,156 +442,283 @@ func _disc_advance() -> void:
 	var purged_g : float = (front_loading_g + back_loading_g) * ROTATION_PURGE_FRACTION
 	front_loading_g = maxf(0.0, front_loading_g * (1.0 - ROTATION_PURGE_FRACTION))
 	back_loading_g  = maxf(0.0, back_loading_g  * (1.0 - ROTATION_PURGE_FRACTION))
-	delta_p_front_psi = clampf(front_loading_g * DELTA_P_PER_LOADING_G, 0.0, 500.0)
-	delta_p_back_psi  = clampf(back_loading_g  * DELTA_P_PER_LOADING_G, 0.0, 500.0)
+	# #223 docs->code — item 13: recompute on the bar-realistic base+cake scale.
+	delta_p_front_psi = _face_delta_p_psi(front_loading_g)
+	delta_p_back_psi  = _face_delta_p_psi(back_loading_g)
 	var lumps_kg : float = purged_g * 0.001
+	var act : Array = _active_channels()
 	if lumps_kg > 1.0e-5:
 		lumps_kg_this_shift += lumps_kg
-		if lump_cart != null and is_instance_valid(lump_cart) \
-				and lump_cart.has_method("receive_lump"):
-			lump_cart.call("receive_lump", lumps_kg)
-	# Discharge the in-progress rope as a discrete chunk sized by what's grown
-	# since the last advance.
-	_break_off_sausage()
+		# Credit each ACTIVE nozzle's cart an equal share. Aisle-only (single-cart
+		# MainWorld line) → full credit, no regression; both carts (bench) → half
+		# each. kg stays on the receive_lump path (regression-safe).
+		var share_kg : float = lumps_kg / float(act.size())
+		for i in act:
+			var c : Node = lump_cart if i == 0 else lump_cart_wall
+			if c != null and is_instance_valid(c) and c.has_method("receive_lump"):
+				c.call("receive_lump", share_kg)
+	# Discharge each ACTIVE nozzle's in-progress rope as a discrete chunk.
+	for i in act:
+		_break_off_chan(i)
 	_last_advance_t += _rotation_timer
 	_rotation_timer = 0.0
 
 # =============================================================================
 # #B — Sausage extrusion from the scraper discharge
 # =============================================================================
-# The scraper sheds caught melt + grit through an eject port at the BOTTOM of
-# the filter disc. In real life it's a continuous ~70 mm rope that piles up on
-# the floor (or in a cart placed under it) and cools to a solid in a few
-# minutes. We model that as:
-#   * `_sausage` : the current in-progress rope, growing each tick by a length
-#                  proportional to `clear_g_s` (so a low-RPM scraper extrudes
-#                  a thinner rate). It's a single MeshInstance3D + tiny script-
-#                  hosted parent so the colour can lerp from hot to cool.
-#   * When length exceeds SAUSAGE_MAX_LEN_M OR vertical clearance below the
-#     eject port hits zero, the rope BREAKS OFF into a RigidBody3D chunk that
-#     falls under gravity and accumulates wherever the operator has set up
-#     the catch zone (floor, cart pocket area, drip pan, etc.).
+# The scraper sheds caught melt + grit through TWO eject ports (aisle +X /
+# wall -X) at the bottom sides of the filter disc. In real life it's a
+# continuous ~70 mm rope that piles into the cart under each nozzle and cools
+# to a solid in a few minutes. We model that as:
+#   * `_saus[i]` : channel i's in-progress rope (i=0 aisle, i=1 wall), growing
+#                  each tick by a length proportional to `clear_g_s` (so a
+#                  low-RPM scraper extrudes a thinner rate). Each is one
+#                  MeshInstance3D + material whose colour lerps hot→cool.
+#   * When a channel's length exceeds SAUSAGE_MAX_LEN_M (or the disc advances),
+#     that rope BREAKS OFF into a RigidBody3D chunk that falls under gravity
+#     into the bound cart (or onto the floor as honest litter).
 const SAUSAGE_DIAMETER_M     : float = 0.07
 const SAUSAGE_GROW_M_PER_G   : float = 0.002    # m of rope length per g of scraper output
 const SAUSAGE_MAX_LEN_M      : float = 0.55     # break off above this length
 const SAUSAGE_HOT_COLOR      : Color = Color(1.00, 0.32, 0.06)
 const SAUSAGE_COOL_COLOR     : Color = Color(0.18, 0.16, 0.14)
 const SAUSAGE_COOL_TIME_S    : float = 180.0    # rope cools over 3 sim-minutes
-const EJECT_LOCAL_OFFSET     : Vector3 = Vector3(0.0, -0.55, 0.0)  # ~ bottom of the filter disc
+# #225.2 — TWO outlet mouths of the afvoervijzel discharge, LOCAL to this node
+# (origin at FLOOR level). Operator (2026-07-14): a VERTICAL discharge nozzle
+# on BOTH sides of the disc — aisle (+X, in front of the disc face) and wall
+# (-X, behind it) — each dropping straight down into its own cart. Mirrors
+# _m_laser_filter's twin-spout geometry: lumps auger sideways just clear of the
+# disc housing, then drop from a mouth whose lip (~1.13 m) clears the 0.95 m
+# cart rim — so the rope/chunks land IN the bucket, never on the housing or the
+# extruder. Vars (not const) so a differently-plumbed placeable can re-aim them.
+# eject_local_offset keeps its name (external readers/tests use it) = the aisle.
+var eject_local_offset       : Vector3 = Vector3( 1.30, 1.13, 0.0)   # aisle (+X)
+var eject_wall_local         : Vector3 = Vector3(-1.30, 1.13, 0.0)   # wall  (-X)
 
-var _sausage         : MeshInstance3D = null
-var _sausage_len_m   : float = 0.0
-var _sausage_age_s   : float = 0.0
-var _sausage_mat     : StandardMaterial3D = null
+func eject_global() -> Vector3:        # aisle (+X) — back-compat
+	return to_global(eject_local_offset)
+func eject_global_wall() -> Vector3:   # wall (-X)
+	return to_global(eject_wall_local)
 
+# Local mouth for channel i (0 = aisle/+X, 1 = wall/-X).
+func _chan_eject_local(i: int) -> Vector3:
+	return eject_local_offset if i == 0 else eject_wall_local
+
+# Two independent discharge channels. Each keeps its own in-progress rope
+# (MeshInstance3D + material + length/age). Dicts are pass-by-ref so the helpers
+# below mutate them in place.
+var _saus : Array = [
+	{"mi": null, "len": 0.0, "age": 0.0, "mat": null},
+	{"mi": null, "len": 0.0, "age": 0.0, "mat": null},
+]
+
+## Which discharge nozzles are ACTIVE this tick: a nozzle only augers out if a
+## cart is parked under it. Aisle-only (a single-cart MainWorld line) → all
+## discharge routes to the aisle exactly as before; both carts (the bench) →
+## split evenly. If NO cart is parked anywhere, the aisle still extrudes so the
+## rope visibly piles as honest "no cart parked" feedback (as it did before).
+func _active_channels() -> Array:
+	var act : Array = []
+	if lump_cart != null and is_instance_valid(lump_cart):
+		act.append(0)
+	if lump_cart_wall != null and is_instance_valid(lump_cart_wall):
+		act.append(1)
+	if act.is_empty():
+		act.append(0)
+	return act
+
+## Grow the ACTIVE nozzle ropes. The augered output is split evenly across them.
+## Public 2-arg signature preserved (main loop + tests call it unchanged).
 func _grow_sausage(delta: float, clear_g_s: float) -> void:
-	_ensure_sausage()
-	# Length growth: proportional to the cleared-debris rate (low RPM ⇒ thin
-	# trickle, autoboost ⇒ thick rope). Capped per-tick so a giant time step
-	# from a hitch can't extrude metres of rope at once.
+	var act : Array = _active_channels()
+	var per : float = clear_g_s / float(act.size())
+	for i in act:
+		_grow_sausage_chan(i, delta, per)
+
+func _grow_sausage_chan(i: int, delta: float, clear_g_s: float) -> void:
+	_ensure_sausage(i)
+	var st : Dictionary = _saus[i]
+	# Length growth ∝ cleared-debris rate; per-tick cap so a hitch can't extrude
+	# metres at once.
 	var grow_m : float = min(0.05, clear_g_s * delta * SAUSAGE_GROW_M_PER_G)
-	_sausage_len_m += grow_m
-	_sausage_age_s += delta
-	# Rebuild the cylinder mesh + visual transform each tick. The rope hangs
-	# DOWN from the eject port (local -Y), so position the cylinder so its TOP
-	# sits at the port and it grows downward.
-	var cyl := _sausage.mesh as CylinderMesh
+	st["len"] = float(st["len"]) + grow_m
+	st["age"] = float(st["age"]) + delta
+	var ln : float = float(st["len"])
+	var mi : MeshInstance3D = st["mi"]
+	# Rope hangs DOWN from the eject port (local -Y): TOP sits at the port.
+	var cyl := mi.mesh as CylinderMesh
 	if cyl != null:
-		cyl.height = max(0.01, _sausage_len_m)
+		cyl.height = max(0.01, ln)
 		cyl.top_radius = SAUSAGE_DIAMETER_M * 0.5
 		cyl.bottom_radius = SAUSAGE_DIAMETER_M * 0.5
-	_sausage.position = EJECT_LOCAL_OFFSET + Vector3(0.0, -_sausage_len_m * 0.5, 0.0)
+	mi.position = _chan_eject_local(i) + Vector3(0.0, -ln * 0.5, 0.0)
 	# Colour lerp: hot orange-red → cool grey as the rope ages.
-	if _sausage_mat != null:
-		var t : float = clampf(_sausage_age_s / SAUSAGE_COOL_TIME_S, 0.0, 1.0)
-		_sausage_mat.albedo_color = SAUSAGE_HOT_COLOR.lerp(SAUSAGE_COOL_COLOR, t)
-		# Hot rope glows; faded rope doesn't.
-		_sausage_mat.emission_enabled = true
-		_sausage_mat.emission = SAUSAGE_HOT_COLOR
-		_sausage_mat.emission_energy_multiplier = lerpf(2.4, 0.0, t)
-	# Break off when too long. The rope reaches the floor naturally at length
-	# matching the eject-port-height-above-floor, which on a normal-height
-	# laser filter is ~SAUSAGE_MAX_LEN_M. Break event spawns a falling chunk
-	# and resets the in-progress rope to zero length.
-	if _sausage_len_m >= SAUSAGE_MAX_LEN_M:
-		_break_off_sausage()
+	var mat : StandardMaterial3D = st["mat"]
+	if mat != null:
+		var t : float = clampf(float(st["age"]) / SAUSAGE_COOL_TIME_S, 0.0, 1.0)
+		mat.albedo_color = SAUSAGE_HOT_COLOR.lerp(SAUSAGE_COOL_COLOR, t)
+		mat.emission_enabled = true
+		mat.emission = SAUSAGE_HOT_COLOR
+		mat.emission_energy_multiplier = lerpf(2.4, 0.0, t)
+	# Break off when too long (reaches the cart naturally at ~SAUSAGE_MAX_LEN_M).
+	if ln >= SAUSAGE_MAX_LEN_M:
+		_break_off_chan(i)
 
-func _ensure_sausage() -> void:
-	if _sausage != null and is_instance_valid(_sausage):
+func _ensure_sausage(i: int) -> void:
+	var st : Dictionary = _saus[i]
+	if st["mi"] != null and is_instance_valid(st["mi"]):
 		return
-	_sausage_mat = StandardMaterial3D.new()
-	_sausage_mat.albedo_color = SAUSAGE_HOT_COLOR
-	_sausage_mat.metallic = 0.0
-	_sausage_mat.roughness = 0.85
-	_sausage = MeshInstance3D.new()
-	_sausage.name = "ScraperSausage"
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = SAUSAGE_HOT_COLOR
+	mat.metallic = 0.0
+	mat.roughness = 0.85
+	var mi := MeshInstance3D.new()
+	mi.name = "ScraperSausage%d" % i
 	var cyl := CylinderMesh.new()
 	cyl.height = 0.01
 	cyl.top_radius = SAUSAGE_DIAMETER_M * 0.5
 	cyl.bottom_radius = SAUSAGE_DIAMETER_M * 0.5
-	_sausage.mesh = cyl
-	_sausage.material_override = _sausage_mat
-	add_child(_sausage)
+	mi.mesh = cyl
+	mi.material_override = mat
+	add_child(mi)
+	st["mi"] = mi
+	st["mat"] = mat
 
-## Break the in-progress rope off and spawn a fallen chunk under gravity. The
-## chunk inherits the rope's CURRENT colour (so a thin slow extrusion drops
-## chunks that are already half-cool) and lands wherever physics takes it.
-func _break_off_sausage() -> void:
-	if _sausage == null or not is_instance_valid(_sausage):
+## Break channel i's in-progress rope off and spawn a fallen chunk under gravity.
+## The chunk inherits the rope's CURRENT colour and lands wherever physics takes
+## it (into the bound cart under that nozzle, or on the floor as honest litter).
+func _break_off_chan(i: int) -> void:
+	var st : Dictionary = _saus[i]
+	var mi : MeshInstance3D = st["mi"]
+	if mi == null or not is_instance_valid(mi):
 		return
-	# Spawn a free-falling RB at the rope's current world position with the
-	# rope's current dimensions. It'll bounce / settle / be caught by a cart
-	# parked underneath via the cart's pocket + floor collision.
+	var ln : float = max(0.02, float(st["len"]))
 	var chunk := RigidBody3D.new()
 	chunk.name = "LumpChunk"
-	chunk.mass = max(0.05, _sausage_len_m * PI * (SAUSAGE_DIAMETER_M * 0.5) ** 2 * 950.0)
+	chunk.mass = max(0.05, ln * PI * (SAUSAGE_DIAMETER_M * 0.5) ** 2 * 950.0)
 	chunk.add_to_group("lump_chunk")
-	var mi := MeshInstance3D.new()
+	var cmi := MeshInstance3D.new()
 	var cyl := CylinderMesh.new()
-	cyl.height = _sausage_len_m
+	cyl.height = ln
 	cyl.top_radius = SAUSAGE_DIAMETER_M * 0.5
 	cyl.bottom_radius = SAUSAGE_DIAMETER_M * 0.5
-	mi.mesh = cyl
-	# Re-use the current rope material so the chunk picks up the same colour.
-	mi.material_override = _sausage_mat.duplicate() if _sausage_mat else null
-	chunk.add_child(mi)
+	cmi.mesh = cyl
+	var mat : StandardMaterial3D = st["mat"]
+	cmi.material_override = mat.duplicate() if mat else null
+	chunk.add_child(cmi)
 	var col := CollisionShape3D.new()
 	var sh := CylinderShape3D.new()
-	sh.height = _sausage_len_m
+	sh.height = ln
 	sh.radius = SAUSAGE_DIAMETER_M * 0.5
 	col.shape = sh
 	chunk.add_child(col)
-	# Parent the chunk to the world (our parent's parent — the MainWorld scene)
-	# at the rope's CURRENT world transform so it falls cleanly. Drop into our
-	# parent if the world chain isn't reachable.
+	# Parent to the world (our parent's parent — the MainWorld scene) at the
+	# rope's CURRENT world transform. Fall back to our parent if unreachable.
 	var dest : Node = get_parent().get_parent() if get_parent() != null and get_parent().get_parent() != null else get_parent()
 	if dest != null:
 		dest.add_child(chunk)
-		chunk.global_transform = _sausage.global_transform
-	# Reset the in-progress rope.
-	_sausage_len_m = 0.0
-	_sausage_age_s = 0.0
+		_live_chunks.append(chunk)   # tracked for absorb-into-cart + litter cap
+		chunk.global_transform = mi.global_transform
+	# Reset this channel's in-progress rope.
+	st["len"] = 0.0
+	st["age"] = 0.0
 
-## Nearest "lump_cart" group member, by world distance. Searched lazily from
-## _physics_process while we don't have one — that way the discharge wires up
-## the instant the operator parks a cart at the spot.
-func _closest_lump_cart() -> Node:
+# #225 — Catch window: how far the cart's centre may sit from the discharge
+# mouth (XZ) and still catch the drop. Cart bucket interior half-extents are
+# ~0.37 x 0.57 (0.85 x 1.30 outer); the slop lets a sloppily-parked cart still
+# bind — chunks near the rim may bounce out, which is honest.
+const CART_CATCH_DX : float = 0.55
+const CART_CATCH_DZ : float = 0.85
+const CART_RECHECK_S : float = 2.0
+var _cart_recheck_t : float = 0.0
+
+func _cart_in_catch_window(cart: Node, eject: Vector3) -> bool:
+	var c3 := cart as Node3D
+	if c3 == null:
+		return false
+	return absf(c3.global_position.x - eject.x) <= CART_CATCH_DX \
+		and absf(c3.global_position.z - eject.z) <= CART_CATCH_DZ
+
+## Keep the currently-bound cart if it's still in this nozzle's catch window;
+## otherwise re-scan for the nearest cart in the window. Called for BOTH nozzles
+## each recheck. The two windows are ~2.6 m apart in X (±1.30) vs a 0.55 m
+## half-window, so a cart can never satisfy both — no cross-binding.
+func _rebind_cart(current: Node, eject: Vector3) -> Node:
+	if current != null and is_instance_valid(current) and _cart_in_catch_window(current, eject):
+		return current
+	return _closest_lump_cart(eject)
+
+## Nearest "lump_cart" group member INSIDE the catch window under the given
+## discharge mouth (#225 — was unbounded nearest-anywhere, which credited carts
+## that could never physically catch the drop). Re-run from _physics_process on
+## a cadence so the discharge wires up the moment a cart is parked at the spot.
+func _closest_lump_cart(eject: Vector3) -> Node:
 	var best : Node = null
 	var best_d2 : float = INF
 	for n in get_tree().get_nodes_in_group("lump_cart"):
 		var n3 := n as Node3D
 		if n3 == null:
 			continue
-		var d2 : float = (n3.global_position - global_position).length_squared()
+		if absf(n3.global_position.x - eject.x) > CART_CATCH_DX \
+				or absf(n3.global_position.z - eject.z) > CART_CATCH_DZ:
+			continue
+		var d2 : float = (n3.global_position - eject).length_squared()
 		if d2 < best_d2:
 			best_d2 = d2
 			best = n
 	return best
 
+# =============================================================================
+# #225 — Chunk lifecycle. The kg accounting stays on the receive_lump() path
+# (credited at _disc_advance when a cart is bound — unchanged, regression-safe);
+# the RigidBody3D chunks are the VISUAL truth. A chunk that comes to rest inside
+# the bound cart's bucket is absorbed (freed — its kg is already in the cart),
+# a chunk that misses stays on the floor as honest litter for housekeeping.
+# Litter is capped so an unattended filter can't accumulate unbounded RBs.
+const CHUNK_ABSORB_CHECK_S : float = 1.0
+const CHUNK_REST_SPEED     : float = 0.30
+const MAX_LOOSE_CHUNKS     : int   = 16
+var _live_chunks : Array = []
+var _chunk_check_t : float = 0.0
+
+func _absorb_settled_chunks(delta: float) -> void:
+	_chunk_check_t += delta
+	if _chunk_check_t < CHUNK_ABSORB_CHECK_S:
+		return
+	_chunk_check_t = 0.0
+	var kept : Array = []
+	for c in _live_chunks:
+		var chunk := c as RigidBody3D
+		if chunk == null or not is_instance_valid(chunk):
+			continue
+		var absorbed : bool = false
+		# A chunk resting inside EITHER nozzle's bound cart is absorbed.
+		for cart in [lump_cart, lump_cart_wall]:
+			var cart3 := cart as Node3D
+			if cart3 == null or not is_instance_valid(cart3):
+				continue
+			var dp : Vector3 = chunk.global_position - cart3.global_position
+			# Inside the bucket footprint, below rim height, and settled.
+			if absf(dp.x) <= 0.42 and absf(dp.z) <= 0.64 and dp.y <= 1.05 \
+					and chunk.linear_velocity.length() < CHUNK_REST_SPEED:
+				chunk.queue_free()
+				absorbed = true
+				break
+		if not absorbed:
+			kept.append(chunk)
+	# Litter cap: free the OLDEST loose chunks beyond the cap.
+	while kept.size() > MAX_LOOSE_CHUNKS:
+		var old := kept.pop_front() as RigidBody3D
+		if old != null and is_instance_valid(old):
+			old.queue_free()
+	_live_chunks = kept
+
 ## Quick check used by autonomy / HMI to know whether a change is overdue.
 func filter_change_needed() -> bool:
+	# #223 docs->code — item 13: margin scaled to the bar-realistic ΔP (+725 psi
+	# = 50 bar above the 300 bar attention alarm, i.e. sustained ~350 bar).
 	return screen_thickness_mm < MIN_USABLE_THICKNESS_MM \
-		or delta_p_psi > SCRAPER_BOOST_PSI + 50.0
+		or delta_p_psi > SCRAPER_BOOST_PSI + 725.0
 
 func is_usable() -> bool:
 	return screen_thickness_mm >= MIN_USABLE_THICKNESS_MM
@@ -515,11 +740,14 @@ func crosshair_prompt(_p: Node3D) -> String:
 			if filter_change_needed():
 				# Show the asymmetric ΔP split — operator reads imbalance to
 				# spot upstream pressure / extruder-RPM issues at a glance.
-				return "Filterwissel — start [E]   (ΔP F%.0f / B%.0f psi · %.2f mm)" \
-					% [delta_p_front_psi, delta_p_back_psi, screen_thickness_mm]
-			return "Laserfilter ΔP F%.0f / B%.0f psi   (Δ%+.0f, %s)" % [
-				delta_p_front_psi, delta_p_back_psi, delta_p_imbalance_psi,
-				"boost actief" if auto_boost_active else "normaal"]
+				# #223 docs->code — item 13: operator thinks in BAR (÷ PSI_PER_BAR).
+				return "Filterwissel — start [E]   (ΔP F%.0f / B%.0f bar · %.2f mm)" \
+					% [delta_p_front_psi / PSI_PER_BAR, delta_p_back_psi / PSI_PER_BAR, screen_thickness_mm]
+			# #223 docs->code — item 13: ΔP shown in BAR (÷ PSI_PER_BAR).
+			return "Laserfilter ΔP F%.0f / B%.0f bar   (Δ%+.0f, %s)" % [
+				delta_p_front_psi / PSI_PER_BAR, delta_p_back_psi / PSI_PER_BAR,
+				delta_p_imbalance_psi / PSI_PER_BAR,
+				"GETRIPT" if is_tripped else "normaal"]
 		Change.STOP_SCRAPER:  return "Schraper stoppen…"
 		Change.DEPRESSURIZE:  return "Drukverlaging — wacht…"
 		# ── SWI-074 stap 14-17 ───────────────────────────────────────────────
@@ -617,14 +845,15 @@ func _advance_to_next_state() -> void:
 			# Insert a fresh pack from stock. Resolution is whatever the
 			# stockroom happens to have today.
 			screen_thickness_mm = FRESH_THICKNESS_MM
-			screen_mesh_um = SCREEN_MESH_OPTIONS_UM[randi() % SCREEN_MESH_OPTIONS_UM.size()]
+			# #223 docs->code — item 21: pick a documented grade + concrete µm.
+			_pick_screen_grade()
 			# Reset BOTH faces independently — a fresh pack is symmetric. The
 			# computed `filter_loading_g` and `delta_p_psi` will read zero.
 			front_loading_g = 0.0
 			back_loading_g  = 0.0
 			delta_p_front_psi = 0.0
 			delta_p_back_psi  = 0.0
-			auto_boost_active = false
+			is_tripped = false
 			_change_state = Change.REFIT_AFVOERVIJZEL
 		# Cleaning the doorvoeropening earlier makes this re-fit easier (the
 		# stated purpose of SWI-074 step 30) — in sim terms simply the next step.
@@ -654,7 +883,10 @@ func _advance_change(delta: float) -> void:
 			# (the bleed valve drains the whole housing). The setter on
 			# delta_p_psi would force both sides equal — we want each side to
 			# decay from its own current value.
-			var bleed : float = (SCRAPER_BOOST_PSI + 100.0) / T_DEPRESSURIZE_S * delta
+			# #223 docs->code — item 13: bleed rate on the bar-realistic scale.
+			# (SCRAPER_BOOST_PSI + 725) = 5076 psi = the 350 bar clamp, so the
+			# bleed drains a fully-pinned housing to zero within T_DEPRESSURIZE_S.
+			var bleed : float = (SCRAPER_BOOST_PSI + 725.0) / T_DEPRESSURIZE_S * delta
 			delta_p_front_psi = maxf(0.0, delta_p_front_psi - bleed)
 			delta_p_back_psi  = maxf(0.0, delta_p_back_psi  - bleed)
 			if _change_step_t >= T_DEPRESSURIZE_S:

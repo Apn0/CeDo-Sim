@@ -25,7 +25,7 @@ var mass_kg : float = 88.1
 @export var walk_speed         : float = 2.0    # operator-tuned: brisk-but-realistic (was 5.0 → 1.5 → 2.0)
 @export var acceleration       : float = 8.0    # reach full walk in ~1-2 steps
 @export var friction           : float = 16.0
-@export var jump_speed         : float = 2.6    # was 4.5 — ~0.34 m step-up hop
+@export var jump_speed         : float = 3.68   # DOUBLED apex (operator 2026-07-16): height=v²/2g, so 2× height = 2.6·√2 ≈ 3.68 → apex ~0.69 m
 # Sprint (#side-quest from operator): Shift while moving multiplies the walk
 # speed. Only fires while STANDING — crouched / prone keep their stance pace.
 @export var sprint_multiplier  : float = 2.2    # was 1.7 — 3.3 m/s loaded jog
@@ -585,7 +585,7 @@ func _build_vault_rays() -> void:
 		return
 	_ray_player_waist = RayCast3D.new()
 	_ray_player_waist.name = "RayVaultWaist"
-	_ray_player_waist.position = Vector3(0.0, 0.0, 0.0)
+	_ray_player_waist.position = Vector3(0.0, -0.45, 0.0)   # lower so knee/waist-high crates register (vaulting)
 	_ray_player_waist.target_position = Vector3(0.0, 0.0, -CLIMB_FORWARD_RAY_LEN)
 	_ray_player_waist.collide_with_areas = false
 	_ray_player_waist.collide_with_bodies = true
@@ -636,10 +636,11 @@ func _try_start_vault(wish_dir: Vector3) -> bool:
 	_ray_player_waist.force_raycast_update()
 	_ray_player_chest.force_raycast_update()
 	_ray_player_head.force_raycast_update()
-	# (3) Obstacle profile: waist + chest hit, head clear.
+	# (3) Obstacle profile (operator 2026-07-16 "allow vaulting"): waist hit + head
+	# clear is enough to MANTLE. The old code also required the CHEST ray to hit,
+	# so knee/waist-high crates + railings (which the chest ray sails over) never
+	# vaulted and fell through to a useless hop. Chest gate dropped.
 	if not _ray_player_waist.is_colliding():
-		return false
-	if not _ray_player_chest.is_colliding():
 		return false
 	if _ray_player_head.is_colliding():
 		return false
@@ -1944,13 +1945,18 @@ func _update_animation_blend() -> void:
 	if horiz < 0.05:
 		_anim_tree.set("parameters/locomotion/blend_position", Vector2(0.0, 0.0))
 		return
+	# #224 — decompose world velocity into the body's LOCAL forward/right (the body
+	# yaws with look, so basis carries facing). X = gait speed, Y = strafe.
+	var lv : Vector3 = global_transform.basis.inverse() * Vector3(velocity.x, 0.0, velocity.z)
+	var side : float = lv.x                    # right (+) / left (-)
 	var run_speed : float = walk_speed * sprint_multiplier
 	var bx : float
 	if horiz <= walk_speed:
 		bx = horiz / maxf(walk_speed, 0.1)
 	else:
 		bx = 1.0 + clampf((horiz - walk_speed) / maxf(run_speed - walk_speed, 0.1), 0.0, 1.0)
-	_anim_tree.set("parameters/locomotion/blend_position", Vector2(clampf(bx, 0.0, 2.0), 0.0))
+	var by : float = clampf(side / maxf(walk_speed, 0.1), -1.0, 1.0)   # #224 strafe
+	_anim_tree.set("parameters/locomotion/blend_position", Vector2(clampf(bx, 0.0, 2.0), by))
 
 ## Vehicles call this when the player enters / exits the driver seat so the
 ## skeleton swaps to the seated pose. Per-vehicle bespoke seated poses (mast

@@ -96,6 +96,90 @@ func release_task(npc: Node) -> void:
 			t.release(npc)
 		_active.erase(nid)
 
+## #198 operator override — CrewPanel task dropdown assigns a specific chore to
+## a specific worker. Builds the concrete task targeting the NEAREST relevant
+## node to the npc, hands it to the npc as a FORCED task (which overrides the
+## production gate + auto-poll in NPC._autonomy_tick), and returns true.
+## Returns false if npc is invalid or no valid target/dest exists for `kind`.
+## BYPASSES accept_roles + shift-window gating — the operator's word is law.
+func force_task(npc: Node, kind: String) -> bool:
+	if npc == null or not is_instance_valid(npc):
+		return false
+	if not npc.has_method("assign_forced_task"):
+		return false
+	var tree := get_tree()
+	if tree == null:
+		return false
+	var task : NpcAutonomyTask = _build_forced_task(tree, npc, kind)
+	if task == null:
+		return false
+	npc.call("assign_forced_task", task)
+	return true
+
+## Concrete task factory for force_task(). Nearest-node target resolution per
+## kind; returns null if the required target (or destination) is missing.
+func _build_forced_task(tree: SceneTree, npc: Node, kind: String) -> NpcAutonomyTask:
+	var mw_ref : Node = _find_main_world(tree)
+	match kind:
+		"blow_leaves":
+			var blower : Node3D = _nearest_in_group(tree, "leaf_blower", npc)
+			if blower == null:
+				return null
+			var s := load("res://src/scenes/world/tasks/BlowLeavesTask.gd")
+			if s == null:
+				return null
+			return s.new(blower, mw_ref)
+		"hose_sweep":
+			var nozzle : Node3D = _nearest_in_group(tree, "hose_nozzle", npc)
+			if nozzle == null:
+				return null
+			var s := load("res://src/scenes/world/tasks/HoseSweepTask.gd")
+			if s == null:
+				return null
+			return s.new(nozzle, mw_ref)
+		"shovel_pile":
+			var pile : Node3D = _nearest_in_group(tree, "floor_pile", npc)
+			if pile == null:
+				return null
+			var s := load("res://src/scenes/world/tasks/ShovelFloorPileTask.gd")
+			if s == null:
+				return null
+			return s.new(pile, mw_ref)
+		"empty_lump_cart":
+			var cart : Node3D = _nearest_in_group(tree, "lump_cart", npc)
+			if cart == null:
+				return null
+			var dest : Node3D = _choose_lumps_destination(tree)
+			if dest == null:
+				return null
+			var s := load("res://src/scenes/world/tasks/EmptyLumpCartTask.gd")
+			if s == null:
+				return null
+			return s.new(cart, dest)
+		"overflow_dump":
+			var bin : Node3D = _nearest_in_group(tree, "waste_container", npc)
+			if bin == null:
+				return null
+			var s := load("res://src/scenes/world/tasks/OverflowDumpTask.gd")
+			if s == null:
+				return null
+			return s.new(bin, mw_ref)
+		"refuel_blower":
+			# Target the blower that most needs it (lowest fuel), tie-broken by
+			# nearest; the can is the one nearest the operator-picked npc.
+			var blower : Node3D = _lowest_fuel_blower(tree, npc)
+			if blower == null:
+				return null
+			var can : Node3D = _nearest_in_group(tree, "jerrycan", npc)
+			if can == null:
+				return null
+			var s := load("res://src/scenes/world/tasks/RefuelBlowerTask.gd")
+			if s == null:
+				return null
+			return s.new(blower, can, mw_ref)
+		_:
+			return null
+
 # ── World scan: assemble the open task list from live state. ───────────────
 func _rescan() -> void:
 	var tree := get_tree()
@@ -104,6 +188,11 @@ func _rescan() -> void:
 	var seen : Dictionary = {}   # instance_id → true (for dedup vs stale entries)
 	# Generator 1: empty cooled lump carts.
 	_scan_lump_carts(tree, seen)
+	# Generator 1b: refuel low-fuel leaf blowers (only if a jerrycan exists).
+	# Runs BEFORE _scan_dirty_floor so a genuinely low blower claims its
+	# instance-id key with the refuel task before the blow-circuit generator
+	# would grab the same key (an empty blower can't blow, so refuelling wins).
+	_scan_low_fuel_blowers(tree, seen)
 	# Generators 2-5.
 	_scan_dirty_floor(tree, seen)
 	_scan_floor_piles(tree, seen)
@@ -416,16 +505,135 @@ func _scan_overflow_containers(tree: SceneTree, seen: Dictionary) -> void:
 		task.priority += pri_mod
 		_open_tasks[tid] = task
 
+# ── Generator 1b: refuel low-fuel leaf blowers. ─────────────────────────────
+# A two-stroke leaf blower runs dry (LeafBlower.fuel_pct()); once below
+# RefuelBlowerTask.FUEL_LOW_FRACTION it can't do useful work, so an idle NPC
+# fetches fuel from a jerrycan and tops it up. Only meaningful when at least
+# one "jerrycan" is placed in the scene — with no can there's nowhere to refuel
+# from, so we emit nothing. Deduped by the blower's instance id (shares the
+# _open_tasks keyspace with the blow-circuit generator, so a given blower holds
+# at most one of {refuel, blow} — refuel wins because this runs first).
+func _scan_low_fuel_blowers(tree: SceneTree, seen: Dictionary) -> void:
+	var jerrycans : Array = tree.get_nodes_in_group("jerrycan")
+	if jerrycans.is_empty():
+		return   # nowhere to refuel from — don't emit
+	var rb_script := load("res://src/scenes/world/tasks/RefuelBlowerTask.gd")
+	if rb_script == null:
+		return
+	# Read FUEL_LOW_FRACTION off the loaded script (avoids a hard class_name
+	# dependency at parse time). Fall back to 0.25 if the const isn't present.
+	var low_frac : float = 0.25
+	var consts : Dictionary = rb_script.get_script_constant_map()
+	if consts.has("FUEL_LOW_FRACTION"):
+		low_frac = float(consts["FUEL_LOW_FRACTION"])
+	var mw_ref : Node = _find_main_world(tree)
+	var pri_mod : int = _cleaning_priority_modifier(mw_ref)
+	for blower in tree.get_nodes_in_group("leaf_blower"):
+		if not (blower is Node3D and is_instance_valid(blower)):
+			continue
+		if _blower_fuel_fraction(blower) >= low_frac:
+			continue   # still has fuel — let the blow-circuit generator have it
+		var tid : int = blower.get_instance_id()
+		seen[tid] = true
+		if _open_tasks.has(tid):
+			continue
+		if blower.has_meta("autonomy_claimed_by"):
+			continue
+		var can : Node3D = _nearest_in_group(tree, "jerrycan", blower)
+		if can == null:
+			continue
+		var task : NpcAutonomyTask = rb_script.new(blower as Node3D, can, mw_ref)
+		task.priority += pri_mod
+		_open_tasks[tid] = task
+
 func _role_of(npc: Node) -> String:
 	if npc == null:
 		return ""
-	if not ("npc_id" in npc):
+	# Prefer the role set LIVE on the NPC node (the spawner / CrewManager set it).
+	# Reading it here decouples this autoload from the NPCSpawner class_name, whose
+	# script references the Plant autoload — so the board stays compilable and
+	# unit-testable headless (no NPCSpawner→Plant compile chain).
+	if "npc_role" in npc and String(npc.npc_role) != "":
+		return String(npc.npc_role)
+	# Fallback: NPCSpawner.NPC_DATA by npc_id, loaded at RUNTIME (not a compile-time
+	# class reference) so an un-tagged node still resolves in-game.
+	if not ("npc_id" in npc) or String(npc.npc_id) == "":
 		return ""
-	var npc_id : String = String(npc.npc_id)
-	if npc_id == "":
-		return ""
-	# Pull role out of NPCSpawner.NPC_DATA without coupling to MainWorld.
-	var npc_data : Dictionary = NPCSpawner.NPC_DATA if "NPC_DATA" in NPCSpawner else {}
-	if not npc_data.has(npc_id):
-		return ""
-	return String(npc_data[npc_id].get("role", ""))
+	var cat := _npc_role_catalog()
+	var nid : String = String(npc.npc_id)
+	if cat.has(nid):
+		return String((cat[nid] as Dictionary).get("role", ""))
+	return ""
+
+# Lazily load NPCSpawner.NPC_DATA once via load() so this autoload carries NO
+# compile-time dependency on NPCSpawner (which pulls in the Plant autoload).
+var _role_catalog_cache : Dictionary = {}
+var _role_catalog_tried : bool = false
+func _npc_role_catalog() -> Dictionary:
+	if _role_catalog_tried:
+		return _role_catalog_cache
+	_role_catalog_tried = true
+	var scr = load("res://src/scenes/world/NPCSpawner.gd")
+	if scr != null and scr.has_method("get_script_constant_map"):
+		var consts : Dictionary = scr.get_script_constant_map()
+		if consts.has("NPC_DATA") and consts["NPC_DATA"] is Dictionary:
+			_role_catalog_cache = consts["NPC_DATA"]
+	return _role_catalog_cache
+
+# ── Shared spatial helpers ──────────────────────────────────────────────────
+
+## Nearest live Node3D in `group` to `ref`'s global position. `ref` may be any
+## Node3D (an npc or another node such as a blower); a non-Node3D / null ref
+## degrades to distance-from-origin. Returns null if the group is empty.
+func _nearest_in_group(tree: SceneTree, group: String, ref: Node) -> Node3D:
+	if tree == null:
+		return null
+	var origin : Vector3 = Vector3.ZERO
+	if ref is Node3D and is_instance_valid(ref):
+		origin = (ref as Node3D).global_position
+	var best : Node3D = null
+	var best_d : float = INF
+	for n in tree.get_nodes_in_group(group):
+		if not (n is Node3D and is_instance_valid(n)):
+			continue
+		var d : float = ((n as Node3D).global_position - origin).length()
+		if d < best_d:
+			best_d = d
+			best = n as Node3D
+	return best
+
+## The leaf blower that most needs refuelling: lowest fuel fraction, ties broken
+## by proximity to `ref`. Returns null if no leaf blower exists.
+func _lowest_fuel_blower(tree: SceneTree, ref: Node) -> Node3D:
+	if tree == null:
+		return null
+	var origin : Vector3 = Vector3.ZERO
+	if ref is Node3D and is_instance_valid(ref):
+		origin = (ref as Node3D).global_position
+	var best : Node3D = null
+	var best_frac : float = INF
+	var best_d : float = INF
+	for b in tree.get_nodes_in_group("leaf_blower"):
+		if not (b is Node3D and is_instance_valid(b)):
+			continue
+		var frac : float = _blower_fuel_fraction(b)
+		var d : float = ((b as Node3D).global_position - origin).length()
+		if frac < best_frac - 0.0001 or (absf(frac - best_frac) <= 0.0001 and d < best_d):
+			best_frac = frac
+			best_d = d
+			best = b as Node3D
+	return best
+
+## Fuel fraction 0..1 for a leaf blower. Prefers the LeafBlower.fuel_pct() API;
+## falls back to fuel_l / fuel_capacity_l; defaults to 1.0 (treat as full, i.e.
+## "no refuel needed") when no fuel state is exposed.
+func _blower_fuel_fraction(b: Node) -> float:
+	if b == null:
+		return 1.0
+	if b.has_method("fuel_pct"):
+		return float(b.call("fuel_pct"))
+	var cap : float = float(b.get("fuel_capacity_l")) if "fuel_capacity_l" in b else 0.0
+	var lvl : float = float(b.get("fuel_l")) if "fuel_l" in b else 0.0
+	if cap > 0.0:
+		return clampf(lvl / cap, 0.0, 1.0)
+	return 1.0

@@ -13,6 +13,7 @@ class_name JerryCan
 ## pattern as the battery bench / shift-leader desk.
 
 const tool_id : String = "jerrycan"
+const REFUEL_RANGE : float = 3.5   # m — a parked vehicle within this fills up
 
 var _player_near : bool = false
 var _player_node : Node = null
@@ -117,8 +118,22 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if not event.is_action_pressed("interact"):
 		return
-	if _refuel_player_tools() > 0:
+	if _refuel_all() > 0:
 		get_viewport().set_input_as_handled()
+
+# Crosshair contract (parity with WireCutter) so aiming at the can shows a
+# prompt AND the E press is claimed on the crosshair path — which fires BEFORE
+# _unhandled_input, so a held tool no longer eats the E as a "drop" before the
+# can can refuel. (Operator 2026-07-16: "jerry can not working".)
+func crosshair_prompt(_player: Node3D) -> String:
+	return "Bijtanken (E)" if _player_near else ""
+
+func crosshair_interact(_player: Node3D) -> void:
+	if _player_near:
+		_refuel_all()
+
+func _refuel_all() -> int:
+	return _refuel_player_tools() + _refuel_nearby_vehicles()
 
 ## Top up every fuel-burning tool the player is carrying (in the Inventory
 ## autoload's slots). Returns how many tools were actually refuelled, so the
@@ -134,4 +149,22 @@ func _refuel_player_tools() -> int:
 		if t != null and is_instance_valid(t) and t.has_method("refuel"):
 			t.call("refuel")   # default = top off
 			refilled += 1
+	return refilled
+
+## Top up every combustion vehicle parked within REFUEL_RANGE (mirrors the
+## ServiceStation pump target scan). Electric machines are skipped — they charge,
+## they don't take fuel. Returns how many were topped up. The can is infinite.
+func _refuel_nearby_vehicles() -> int:
+	var scene := get_tree().current_scene
+	if scene == null:
+		return 0
+	var refilled := 0
+	for v in scene.get_children():
+		if v is BaseVehicle and is_instance_valid(v):
+			var bv := v as BaseVehicle
+			if bv.fuel_type == "electric":
+				continue
+			if bv.global_position.distance_to(global_position) <= REFUEL_RANGE:
+				bv.refuel(bv.fuel_capacity_l)   # positive litres → full; overflow clamped
+				refilled += 1
 	return refilled

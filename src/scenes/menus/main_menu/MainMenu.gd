@@ -58,6 +58,17 @@ func _ready() -> void:
 	if vbox != null:
 		vbox.add_child(extg_btn)
 		vbox.move_child(sandbox_btn, customize_btn.get_index() + 1)
+	# #225 — NPC task bench: flat 3-line world (feeder belt → shredder → wash →
+	# extruder → laserfilter + 2 lump carts) running the REAL crew systems:
+	# CrewManager, NpcAutonomyBoard auto-assignment, CrewPanel (C) manual
+	# role/task assignment, live lump discharge into the carts.
+	var npcbench_btn := Button.new()
+	npcbench_btn.text = "NPC task bench"
+	npcbench_btn.custom_minimum_size = Vector2(0, 40)
+	npcbench_btn.mouse_filter = Control.MOUSE_FILTER_STOP
+	npcbench_btn.pressed.connect(_on_npc_task_bench_pressed)
+	if vbox != null:
+		vbox.add_child(npcbench_btn)
 	# Feature Tester — sandbox with live dials for tuning a new feature's look
 	# (starts with the water-pipe + film stream).
 	var feature_btn := Button.new()
@@ -143,6 +154,11 @@ func _on_gauntlet_pressed() -> void:
 func _on_extruder_gauntlet_pressed() -> void:
 	_go_to_scene("res://src/scenes/world/ExtruderGauntlet.tscn",
 		"Loading extruder bench…", "")
+
+## #225 — NPC task bench: 3 flat lines + live crew systems. See NpcTaskBench.gd.
+func _on_npc_task_bench_pressed() -> void:
+	_go_to_scene("res://src/scenes/world/NpcTaskBench.tscn",
+		"Loading NPC task bench…", "")
 
 # ── Save-file deletion ───────────────────────────────────────────────────────
 ## Translate the display name back to the on-disk filename. "default" is the

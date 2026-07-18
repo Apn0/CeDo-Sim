@@ -42,11 +42,16 @@ HotspotProfiler="*res://src/autoload/HotspotProfiler.gd"
 Plant="*res://src/autoload/Plant.gd"
 TextureCache="*res://src/autoload/TextureCache.gd"
 PolyhavenMaterials="*res://src/autoload/PolyhavenMaterials.gd"
+AeroUnits="*uid://5vah4ayrdxci"
 
 [debug]
 
 gdscript/warnings/unused_signal=0
 gdscript/warnings/unused_argument=1
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/godot_aerodynamic_physics/plugin.cfg", "res://addons/waterbox/plugin.cfg")
 
 [input]
 
@@ -377,6 +382,10 @@ hotbar_drop={
 "events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":0,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":81,"physical_keycode":0,"key_label":0,"unicode":113,"location":0,"echo":false,"script":null)
 ]
 }
+
+[layer_names]
+
+3d_physics/layer_15="Atmosphere Areas"
 
 [physics]
 

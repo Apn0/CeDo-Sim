@@ -47,7 +47,13 @@ const IDLE_SPOOL : float = 0.20
 # in the line → needs priming again after refuel. Each press counts as one
 # "squeeze" of the bulb; PRIME_PUMPS_REQUIRED clears the prime requirement.
 const PRIME_PUMPS_REQUIRED : int = 3
-var _needs_prime : bool = true       # fresh-built blower or a tank that ran dry
+# Operator 2026-07-16 "leaf blower not working": it shipped needs-prime=true, so
+# LMB did NOTHING until the operator right-clicked the primer bulb 3× — an
+# undiscoverable ritual no other hand tool needs and nothing on screen prompts.
+# A fresh blower now starts PRIMED so LMB-hold blows immediately (parity with
+# WireCutter/ShovelTool). Running the tank dry still re-arms _needs_prime below
+# (air in the carb line), so the priming realism survives where it makes sense.
+var _needs_prime : bool = false      # fresh-built blower is ready; re-armed only after a dry-out
 var _primer_pumps : int  = 0
 var _primer_pulse_t : float = 0.0    # visual squish countdown after a pump
 

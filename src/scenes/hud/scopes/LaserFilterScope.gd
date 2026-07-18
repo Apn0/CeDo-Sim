@@ -55,13 +55,18 @@ const CHART_MAX_SAMPLES : int = 3700
 const TEMP_MIN_C : float = 0.0
 const TEMP_MAX_C : float = 350.0
 const PRESSURE_MIN_BAR : float = 0.0
-const PRESSURE_MAX_BAR : float = 10.0
+# #223 docs->code docs/plant/hmi_reference.md — photo chart axis is 0-350 bar
+# (real running values: MP<MF 207 bar, dMP 182 bar). Old 0-10 scale pinned the trace.
+const PRESSURE_MAX_BAR : float = 350.0
 const MOTOR_MIN_RPM : float = 0.0
 const MOTOR_MAX_RPM : float = 60.0           # LaserFilter.MAX_SCRAPER_RPM
 
-# Pressure colour bands (bar). Per spec: green < 100 bar, yellow 100-150, red > 150.
-const PRESS_GREEN_MAX  : float = 100.0
-const PRESS_YELLOW_MAX : float = 150.0
+# Pressure colour bands (bar).
+# #223 docs->code docs/plant/swi/laserfilter-smeltdrukverschil__062_CeDo72.md —
+# Grenswaarden 0-300 bar, upstream trip at 318 bar (plant setting; manual says 320).
+# Normal running is 182-207 bar (hmi_reference.md) so: green ≤250, yellow 250-300, red >300.
+const PRESS_GREEN_MAX  : float = 250.0
+const PRESS_YELLOW_MAX : float = 300.0
 
 # Trace colours.
 const COL_TEMP   : Color = Color(1.00, 0.85, 0.05, 1.0)  # yellow
@@ -97,6 +102,8 @@ var _legend       : Label = null
 var _press_inlet  : PressureBox = null
 var _press_delta  : PressureBox = null
 var _press_outlet : PressureBox = null
+# #223 docs->code swi/laserfilter-smeltdrukverschil__062_CeDo72.md — dMP-MF1 setpoint readout box.
+var _press_setpt  : PressureBox = null
 var _motor_lamp   : ColorRect = null
 var _motor_lbl    : Label = null
 var _title_lbl    : Label = null
@@ -152,9 +159,8 @@ func _pull_telemetry() -> void:
 	_cur_delta_bar = _filter.delta_p_psi * PSI_TO_BAR
 	# ── Inlet pressure (MP < MF) — upstream proxy reported by ExtruderMachine.
 	_cur_inlet_bar = _filter.upstream_pressure_psi_indicator * PSI_TO_BAR
-	# ── Motor 1 speed = scraper RPM (operator setpoint × boost factor when latched).
-	var boost : float = LaserFilter.SCRAPER_BOOST_FACTOR if _filter.auto_boost_active else 1.0
-	_cur_motor_rpm = clampf(_filter.scraper_rpm * boost, 0.0, LaserFilter.MAX_SCRAPER_RPM)
+	# ── Motor 1 speed = disc-motor rpm (operator setpoint; #223 — no ΔP boost).
+	_cur_motor_rpm = clampf(_filter.scraper_rpm, 0.0, LaserFilter.MAX_SCRAPER_RPM)
 	# ── Melt temperature: LaserFilter doesn't track this, so probe the parent
 	# ExtruderModel/ExtruderMachine via siblings. Fall back to a synthetic
 	# value tied to the boost state so the yellow trace still moves.
@@ -177,7 +183,7 @@ func _resolve_melt_temp_c() -> float:
 				return float(sib.call("get_melt_temp"))
 	# Synthetic fallback: the rotor purge cycle gives the trace its sawtooth.
 	# Base 210 °C, +15 °C while boost is latched, +2 °C noise from front loading.
-	var base : float = 225.0 if _filter.auto_boost_active else 210.0
+	var base : float = 210.0
 	var noise : float = sin(_sim_time_s * 0.6) * 2.0
 	# A high front_loading_g means the cake is packing → small temp rise as
 	# the melt has to push through tighter mesh.
@@ -271,6 +277,9 @@ func _build_ui() -> void:
 	right.add_child(_press_inlet)
 	right.add_child(_press_delta)
 	right.add_child(_press_outlet)
+	# #223 docs->code — dMP-MF1 setpoint the disc-motor strategy targets (SWI Grenswaarden 0-300 bar).
+	_press_setpt = _build_pressure_box("dMP-MF1 (0-300 bar)", Color(0.80, 0.75, 0.55, 1.0))
+	right.add_child(_press_setpt)
 	right.add_child(_build_schematic_placeholder())
 	# Bottom nav strip.
 	root.add_child(_build_nav_strip())
@@ -394,6 +403,9 @@ func _refresh_readouts() -> void:
 	if _press_outlet != null and is_instance_valid(_press_outlet):
 		# Outlet = inlet - ΔMP, clamped to zero (can't go negative).
 		_press_outlet.update(maxf(0.0, _cur_inlet_bar - _cur_delta_bar))
+	# #223 docs->code — dMP-MF1 setpoint = the dP alarm threshold (SCRAPER_BOOST_PSI) in bar.
+	if _press_setpt != null and is_instance_valid(_press_setpt):
+		_press_setpt.update(LaserFilter.SCRAPER_BOOST_PSI * PSI_TO_BAR)
 	# Motor lamp green when scraper is actually turning.
 	if _motor_lamp != null and is_instance_valid(_motor_lamp):
 		var running : bool = _cur_motor_rpm > 0.5 \
@@ -525,9 +537,12 @@ func _draw_schematic(canvas: Control) -> void:
 # Inner class — pressure read-out box (label + big number + bar gauge).
 # =============================================================================
 class PressureBox extends PanelContainer:
-	const PRESS_GREEN_MAX  : float = 100.0
-	const PRESS_YELLOW_MAX : float = 150.0
-	const PRESSURE_MAX_BAR : float = 10.0      # display scale of the bar gauge
+	# #223 docs->code docs/plant/hmi_reference.md + swi/laserfilter-smeltdrukverschil__062_CeDo72.md
+	# Grenswaarden 0-300 bar, upstream trip 318 bar; normal run 182-207 bar.
+	# Bands: green <=250, yellow 250-300, red >300 (approaching the 318-bar trip).
+	const PRESS_GREEN_MAX  : float = 250.0
+	const PRESS_YELLOW_MAX : float = 300.0
+	const PRESSURE_MAX_BAR : float = 350.0     # display scale of the bar gauge (photo axis 0-350)
 
 	const C_TILE     : Color = Color(0.18, 0.21, 0.23, 1.0)
 	const C_TILE_EDGE: Color = Color(0.40, 0.45, 0.45, 1.0)
@@ -595,7 +610,7 @@ class PressureBox extends PanelContainer:
 			_gauge.queue_redraw()
 
 	func _band_color() -> Color:
-		# Green < 100 bar, yellow 100-150, red > 150 (per spec).
+		# #223 docs->code hmi_reference.md: green <=250, yellow 250-300, red >300 bar (318-bar trip).
 		if _value_bar < PRESS_GREEN_MAX:
 			return Color(0.22, 0.78, 0.32, 1.0)
 		elif _value_bar < PRESS_YELLOW_MAX:

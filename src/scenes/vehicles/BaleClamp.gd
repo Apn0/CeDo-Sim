@@ -151,6 +151,11 @@ func _ready() -> void:
 	brake_ramp_tau_s    = 0.3
 	super._ready()
 	vehicle_type = "bale_clamp"
+	# Rear-wheel steer: switch A/D left↔right vs the front-steer default, and run a
+	# quicker rack — double the slew + auto-centre rate (operator 2026-07-17). This
+	# replaces the old no-op VehicleWheel3D.steering flip in _physics_process.
+	steer_sign = -1.0
+	steer_rate_rad_per_sec = STEER_RATE_RAD_PER_SEC * 2.0
 	if mast_pivot_path:    _mast_pivot    = get_node_or_null(mast_pivot_path)    as Node3D
 	if lift_carriage_path: _lift_carriage = get_node_or_null(lift_carriage_path) as Node3D
 	if left_plate_path:    _left_plate    = get_node_or_null(left_plate_path)    as Node3D
@@ -237,11 +242,9 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
 	super._physics_process(delta)
 
-	# Achterwielbesturing = A/D draait de neus de "verkeerde" kant op t.o.v. de auto logica.
-	# We flippen de stuurhoek van alle sturende wielen om de BaseVehicle logica recht te trekken.
-	for c in get_children():
-		if c is VehicleWheel3D and c.use_as_steering:
-			c.steering = -c.steering
+	# (Rear-wheel steer left↔right switch now handled by steer_sign=-1 in _ready —
+	# the old `c.steering = -c.steering` loop here was a NO-OP because body yaw is
+	# driven by _current_steer_rad, not VehicleWheel3D.steering. Removed.)
 
 	if occupied:
 		_update_lift_tilt(delta)

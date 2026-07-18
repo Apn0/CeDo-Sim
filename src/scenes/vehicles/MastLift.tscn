@@ -20,10 +20,6 @@ roughness = 0.8
 [sub_resource type="BoxMesh" id="Mesh_skirt"]
 size = Vector3(1.56, 0.22, 2.46)
 
-[sub_resource type="StandardMaterial3D" id="Mat_red_cowl"]
-albedo_color = Color(0.74, 0.13, 0.1, 1)
-roughness = 0.4
-
 [sub_resource type="BoxMesh" id="Mesh_counter"]
 size = Vector3(1.4, 0.6, 0.7)
 
@@ -98,6 +94,10 @@ top_radius = 0.035
 bottom_radius = 0.04
 height = 0.05
 radial_segments = 12
+
+[sub_resource type="StandardMaterial3D" id="Mat_red_cowl"]
+albedo_color = Color(0.74, 0.13, 0.1, 1)
+roughness = 0.4
 
 [sub_resource type="BoxMesh" id="Mesh_ground_panel"]
 size = Vector3(0.34, 0.46, 0.14)

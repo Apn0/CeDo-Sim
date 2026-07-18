@@ -75,6 +75,8 @@ const STATIONS : Array[Dictionary] = [
 	{"id": 261, "title": "Voice & AI — Settings tab, cloud OFF default",      "fn": "_st_voice_ai",       "status": "verifying"},
 	# Lines complete audit
 	{"id": 262, "title": "Lines 1 / 3A / 3B — whiteboard audit",              "fn": "_st_lines_audit",    "status": "verifying"},
+	# #227 — Shredder functional sim (ShredderMachine): throughput, overload trip, e-stop.
+	{"id": 263, "title": "Shredder — feed→shred, overfeed TRIPS, aim+E controls", "fn": "_st_shredder",    "status": "verifying"},
 ]
 
 # Cached anchors so per-station builders can attach to one parent each.
@@ -533,6 +535,42 @@ func _st_98(anchor: Vector3) -> void:
 	lbl.position = anchor + Vector3(1.4, 3.6, 0.0)
 	lbl.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
 	lbl.pixel_size = 0.005
+	add_child(lbl)
+
+# #227 — Shredder functional test stage. LEFT (shredder_1) fed a moderate rate →
+# runs (rotors spin, output tracks feed). RIGHT (shredder_2) deliberately OVERFED
+# → the motor-overload protection TRIPS it ~5 s after boot. Live readouts show
+# state / throughput / load / buffer. Aim at a unit + press E: start/stop, reset
+# the trip or e-stop, (in Onderhoud) open the housing, block the rotor.
+func _st_shredder(anchor: Vector3) -> void:
+	var RO : Resource = load("res://src/scenes/world/ShredderReadout.gd")
+	var sh1 : Node3D = _build_placed("shredder_1", anchor)
+	if sh1 != null and sh1.has_method("set_feed_throughput"):
+		sh1.call("set_feed_throughput", 3200.0)
+		sh1.call("start")
+		var r1 : Label3D = RO.new()
+		r1.font_size = 22; r1.outline_size = 6; r1.pixel_size = 0.006
+		r1.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+		r1.modulate = Color(0.75, 1.0, 0.80)
+		r1.position = anchor + Vector3(0.0, 4.4, -3.0)
+		r1.set("target", sh1)
+		add_child(r1)
+	var sh2 : Node3D = _build_placed("shredder_2", anchor + Vector3(7.5, 0.0, 0.0))
+	if sh2 != null and sh2.has_method("set_feed_throughput"):
+		sh2.call("set_feed_throughput", 5200.0)   # > fine rated 2200 kg/h → overload
+		sh2.call("start")
+		var r2 : Label3D = RO.new()
+		r2.font_size = 22; r2.outline_size = 6; r2.pixel_size = 0.006
+		r2.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+		r2.modulate = Color(1.0, 0.80, 0.70)
+		r2.position = anchor + Vector3(7.5, 3.6, -3.0)
+		r2.set("target", sh2)
+		add_child(r2)
+	var lbl := Label3D.new()
+	lbl.text = "SHREDDER sim (ShredderMachine) — LEFT fed 3200 kg/h runs · RIGHT overfed 5200 kg/h TRIPS.\nAim + E: start/stop · reset trip/e-stop · Onderhoud→open housing · block rotor. Rotors spin only while running."
+	lbl.font_size = 20; lbl.outline_size = 6; lbl.pixel_size = 0.005
+	lbl.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+	lbl.position = anchor + Vector3(3.5, 6.6, -3.0)
 	add_child(lbl)
 
 # #99 — mech_dryer pair → header → blower → cyclone. Flow: dryer drum tops →

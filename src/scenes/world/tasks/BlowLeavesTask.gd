@@ -107,7 +107,11 @@ func _tick_walk_to_blower(npc: Node) -> void:
 		var saved_xform : Transform3D = leaf_blower.global_transform
 		leaf_blower.get_parent().remove_child(leaf_blower)
 		npc.add_child(leaf_blower)
-		leaf_blower.transform = Transform3D(Basis.IDENTITY, Vector3(0.35, 0.95, 0.4))
+		# Operator 2026-07-16: the old (0.35, 0.95, 0.4) put the blower ~1.85 m up
+		# (NPC origin = capsule centre ~0.9 m + 0.95) = floating ABOVE the head, and
+		# +0.4 on Z = BEHIND him. NPC origin is the capsule centre, so hand height is
+		# ~y=0; forward is -Z. Seat it at his right side, hand height, nozzle forward.
+		leaf_blower.transform = Transform3D(Basis.IDENTITY, Vector3(0.25, -0.05, -0.30))
 		leaf_blower.set_meta("saved_world_xform", saved_xform)
 	_phase = Phase.CIRCUIT
 	_phase_t = 0.0

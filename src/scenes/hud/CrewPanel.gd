@@ -16,6 +16,30 @@ const C_TEXT  := Color(0.88, 0.92, 0.92, 1.0)
 const C_SUB   := Color(0.62, 0.68, 0.70, 1.0)
 const C_BTN   := Color(0.20, 0.32, 0.40, 1.0)
 
+# Per-worker TASK dropdown (operator override). Index 0 is a no-op placeholder;
+# each subsequent entry maps 1:1 to a board task kind via _TASK_KINDS. Selecting
+# a real task calls NpcAutonomyBoard.force_task(worker, kind), which BYPASSES the
+# production gate + role/shift gating so the operator can commandeer anyone.
+const _TASK_LABELS : Array = [
+	"— taak —",
+	"Blad blazen",
+	"Spuiten (slang)",
+	"Vegen (schep)",
+	"Lumpskar legen",
+	"Container legen",
+	"Bladblazer tanken",
+]
+# Index-aligned to _TASK_LABELS; index 0 has no kind (placeholder → "").
+const _TASK_KINDS : Array = [
+	"",
+	"blow_leaves",
+	"hose_sweep",
+	"shovel_pile",
+	"empty_lump_cart",
+	"overflow_dump",
+	"refuel_blower",
+]
+
 func _ready() -> void:
 	layer = 60
 	visible = false
@@ -171,6 +195,17 @@ func _add_worker_row(worker) -> void:
 	opt.item_selected.connect(_on_post_selected.bind(worker, has_pos_pin))
 	row.add_child(opt)
 
+	# TASK dropdown — operator override. Index 0 is a placeholder; picking a real
+	# task hands the worker straight to NpcAutonomyBoard.force_task(). Styled to
+	# match the post OptionButton so the row reads as one control group.
+	var task_opt := OptionButton.new()
+	task_opt.custom_minimum_size = Vector2(160, 0)
+	for i in _TASK_LABELS.size():
+		task_opt.add_item(String(_TASK_LABELS[i]))
+	task_opt.select(0)
+	task_opt.item_selected.connect(_on_task_selected.bind(worker, task_lbl))
+	row.add_child(task_opt)
+
 	# #124 — "HIER": pin to operator's current world position + facing.
 	var here_btn := _flat_button("HIER", Color(0.18, 0.36, 0.24, 1.0))
 	here_btn.add_theme_font_size_override("font_size", 13)
@@ -291,6 +326,26 @@ func _on_post_selected(idx: int, worker, has_pos_pin: bool) -> void:
 		sid = String(_post_ids[idx - 2])
 	_cm.manual_assign(worker, sid)
 	_refresh_row(worker)
+
+## Operator picks a housekeeping task for a worker from the TASK dropdown.
+## idx 0 is the "— taak —" placeholder → no-op. For idx>=1 we resolve the board
+## autoload and call force_task(worker, kind); a false return means no valid
+## target exists in the scene — flash the worker's task label + warn.
+func _on_task_selected(idx: int, worker, task_lbl: Label) -> void:
+	if idx < 1 or idx >= _TASK_KINDS.size():
+		return
+	var kind := String(_TASK_KINDS[idx])
+	if kind == "":
+		return
+	var board := get_node_or_null("/root/NpcAutonomyBoard")
+	var ok : bool = false
+	if board != null and board.has_method("force_task"):
+		ok = bool(board.force_task(worker, kind))
+	if not ok:
+		push_warning("geen doel gevonden voor taak")
+		if task_lbl != null and is_instance_valid(task_lbl):
+			task_lbl.text = "geen doel"
+			task_lbl.add_theme_color_override("font_color", Color(0.80, 0.36, 0.28, 1.0))
 
 func _process(_dt: float) -> void:
 	if not visible:

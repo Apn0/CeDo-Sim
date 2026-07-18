@@ -28,6 +28,7 @@ class_name FeederWorker
 ## open on the belt instead of staying shut or tearing.
 
 @export var worker_name   : String = "Feeder"
+@export var body_color    : Color  = Color(0.95, 0.55, 0.10)   # hi-vis; set to the assigned crew member's colour (#233)
 @export var assigned_line : String = ""              # "Line 1", "Line 3A/3B", …
 # #173 — section pin the operator picked ("feed_3a", "feed_1", …). When set, the
 # worker feeds THAT section's opzetband (matched by belt placeable_id) instead of
@@ -53,6 +54,7 @@ var vehicle           : Node3D = null
 var personal_scissors : Node3D = null
 var personal_scanner  : Node3D = null
 var _holster          : Node3D = null
+var _hand             : Node3D = null   # front-of-chest anchor a tool is pulled to while in use
 
 enum State { SEEK, TO_BALE, GRAB, LIFT, PROCESS, CARRY, LOAD, WAIT, TO_BELT,
 	SET_DOWN, DISMOUNT, CUT, SCAN, FEED, REMOUNT }
@@ -66,6 +68,7 @@ var _carry_point : Node3D = null
 var _timer       : float = 0.0
 var _gravity     : float = 9.8
 var _riding      : bool = false          # true once boarded into the assigned vehicle
+var _boarding_walk : bool = false        # #233 walking on foot to the parked clamp before boarding
 var _leg_timer   : float = 0.0           # time spent on the current drive leg
 var _log_timer   : float = 0.0           # throttles the diagnostic print
 var _last_good_xf : Transform3D = Transform3D.IDENTITY   # NaN-transform watchdog
@@ -105,6 +108,14 @@ func _ready() -> void:
 	_holster.name = "Holster"
 	_holster.position = Vector3(0.0, 1.0, 0.35)
 	add_child(_holster)
+	# In-use anchor: front of the chest (canonical front = local -Z), hand height.
+	# SCAN pulls the scanner here, CUT pulls the scissors here, so the worker is
+	# visibly USING the tool instead of scanning/cutting with empty hands (operator
+	# 2026-07-16). Between steps the tool returns to the back holster.
+	_hand = Node3D.new()
+	_hand.name = "Hand"
+	_hand.position = Vector3(0.28, 1.15, -0.30)
+	add_child(_hand)
 
 # =============================================================================
 # PERSONAL KIT (assigned by MainWorld)
@@ -119,8 +130,9 @@ func assign_vehicle(v: Node3D) -> void:
 		v.set("npc_owned", true)
 	if "npc_owner_name" in v:
 		v.set("npc_owner_name", worker_name)
-	# Board it next frame (both nodes need to be in the tree first).
-	call_deferred("_board_vehicle")
+	# #233 — the assigned worker WALKS to the parked clamp on foot and climbs in,
+	# rather than teleporting into the cab. _physics_process drives the approach.
+	_boarding_walk = true
 
 ## Climb into the assigned vehicle: re-parent under it (so we ride along), park
 ## at the cab, and disable our own capsule collision + on-foot locomotion. From
@@ -141,6 +153,35 @@ func _board_vehicle() -> void:
 	_state = State.SEEK
 	_bale = null
 	_riding = true
+
+## #233 — walk on foot to the parked assigned vehicle. Returns true once we're
+## close enough to climb in (the caller then boards). Same on-foot locomotion as
+## the no-vehicle fallback; the capsule is still enabled at this point (boarding
+## disables it), so move_and_slide + is_on_floor work.
+func _walk_to_vehicle(delta: float) -> bool:
+	if vehicle == null or not is_instance_valid(vehicle):
+		_boarding_walk = false
+		return true
+	var vp : Vector3 = (vehicle as Node3D).global_position
+	if _horiz_dist(vp) <= 2.4:
+		_boarding_walk = false
+		return true
+	if not is_on_floor():
+		velocity.y -= _gravity * delta
+	else:
+		velocity.y = 0.0
+	var dir : Vector3 = vp - global_position
+	dir.y = 0.0
+	if dir.length_squared() > 0.0001:
+		dir = dir.normalized()
+		velocity.x = dir.x * walk_speed
+		velocity.z = dir.z * walk_speed
+		look_at(global_position + dir, Vector3.UP)
+	else:
+		velocity.x = 0.0
+		velocity.z = 0.0
+	move_and_slide()
+	return false
 
 ## Stow a personal tool (scissors / scanner) on the holster. Disables its
 ## world-pickup so the player can't walk off with the crew's kit.
@@ -165,7 +206,7 @@ func _build_body() -> void:
 	# Humanoid is centred on its origin (feet at -0.9); this body sits at y=0.9
 	# so its feet land at the node origin, matching the capsule collider below.
 	var humanoid_script := load("res://src/scenes/world/Humanoid.gd")
-	var body : Node3D = humanoid_script.build(Color(0.95, 0.55, 0.10), 1)
+	var body : Node3D = humanoid_script.build(body_color, 1)
 	body.position = Vector3(0, 0.9, 0)
 	add_child(body)
 	var col := CollisionShape3D.new()
@@ -230,10 +271,14 @@ func _physics_process(delta: float) -> void:
 		return
 	_resolve_belt()
 	if vehicle != null and is_instance_valid(vehicle):
-		# DRIVE mode. RETRY boarding every frame until it sticks — the deferred
-		# board can miss if the vehicle wasn't ready yet, which would otherwise
-		# leave the feeder doing nothing forever (the in-game bug).
+		# DRIVE mode.
 		if not _riding:
+			# #233 — the assigned worker walks on foot to the parked clamp, THEN
+			# climbs in (the operator wants them to visibly go to the clamp + board,
+			# not spawn in the cab). Once boarded the drive brain takes over.
+			if _boarding_walk:
+				if not _walk_to_vehicle(delta):
+					return                 # still walking over to the clamp
 			_board_vehicle()
 		if _riding:
 			_brain_drive(delta)
@@ -278,9 +323,12 @@ func _brain_drive(delta: float) -> void:
 func _drive_state_seek() -> void:
 	var b := _find_bale()
 	if b == null:
-		# Lot ran dry — refill the reserve so the feeder NEVER freezes, then
-		# re-seek shortly (it will find the restocked bales). #178
-		# (#32) no auto-restock: feedstock comes from the build menu now
+		# Lot ran dry. Operator 2026-07-16 ("stationary bale / feeder does
+		# nothing"): the #32 "no auto-restock" left the feeder parked FOREVER on an
+		# empty lot. Re-enable a CAPPED restock so it keeps working without flooding
+		# the plant — after MAX_RESTOCKS refills it parks as before.
+		if _restocks < MAX_RESTOCKS:
+			_restock_lot()
 		vehicle.call("npc_stop")
 		_state = State.WAIT
 		_timer = 1.0
@@ -395,48 +443,69 @@ func _drive_state_set_down(delta: float) -> void:
 			_state = State.SEEK
 
 func _drive_state_dismount() -> void:
-	# Hop OUT of the cab and stand at the grounded bale, scissors in hand. #176
+	# Hop OUT of the cab and stand at the still-CLAMPED bale. #233 — the operator's
+	# real order is SCAN first (with the scanner), THEN cut the top wires, so the
+	# on-foot work starts at SCAN.
 	_dismount_worker()
-	_state = State.CUT
+	_state = State.SCAN
 	_timer = maxf(process_secs * 0.5, 0.3)
 
-func _drive_state_cut(delta: float) -> void:
-	# On foot: cut + REMOVE the 3 wires. We no longer explode the bale into
-	# loose sheets here — that dropped an empty husk + wires onto the belt and
-	# spilled film on the floor in the wrong direction. The de-wired, de-labelled
-	# block now rides the belt whole + centred. #176
-	_timer -= delta
-	if _timer <= 0.0:
-		if _bale != null and is_instance_valid(_bale):
-			_bale.set_meta("wires_cut", true)
-			_strip_wires(_bale)
-		_state = State.SCAN
-		_timer = maxf(process_secs * 0.5, 0.3)
-
 func _drive_state_scan(delta: float) -> void:
-	# On foot: scan the yellow label, then PEEL it off so the bale that rides
-	# the belt has no label left on it (and no stack of them). #177
+	# On foot, bale still CLAMPED: actually scan the yellow label (the belt's #152
+	# scan gate), then PEEL it off. #233 — scan comes BEFORE the wire-cut ("actually
+	# scan it, no magic"). The scanner is pulled to the hand for the duration so the
+	# worker is visibly scanning WITH the scanner (operator 2026-07-16).
+	_equip_tool(personal_scanner)
 	_timer -= delta
 	if _timer <= 0.0:
 		if _bale != null and is_instance_valid(_bale) and _bale.is_in_group("bale"):
 			_bale.set_meta("scanned", true)
 			_peel_label(_bale)
+		stow_personal_tool(personal_scanner, 1.0)
+		_state = State.CUT
+		_timer = maxf(process_secs * 0.5, 0.3)
+
+func _drive_state_cut(delta: float) -> void:
+	# On foot, bale still CLAMPED CORRECTLY: cut + remove the 3 top wires (scissors).
+	# #233 — cut happens AFTER the scan and while the clamp still holds the stack, so
+	# it can't open until the clamp finally releases it on the belt (see #4). Then the
+	# worker climbs back into the clamp to place it — cut → REMOUNT, not straight to feed.
+	# The scissors are pulled to the hand so the worker visibly cuts WITH the cutter.
+	_equip_tool(personal_scissors)
+	_timer -= delta
+	if _timer <= 0.0:
+		if _bale != null and is_instance_valid(_bale):
+			_bale.set_meta("wires_cut", true)
+			_strip_wires(_bale)
+		stow_personal_tool(personal_scissors, -1.0)
 		bales_processed += 1
-		_state = State.FEED
+		_state = State.REMOUNT
+
+## Pull a stowed personal tool from the back holster to the front-of-chest hand
+## anchor so the worker is seen USING it. No-op if the tool is missing.
+func _equip_tool(tool: Node3D) -> void:
+	if tool == null or not is_instance_valid(tool) or _hand == null:
+		return
+	if tool.get_parent() != _hand:
+		if tool.get_parent():
+			tool.get_parent().remove_child(tool)
+		_hand.add_child(tool)
+	tool.transform = Transform3D(Basis(), Vector3.ZERO)
+
+func _drive_state_remount() -> void:
+	# #233 — climb back INTO the clamp, THEN place the (scanned + de-wired) bale on
+	# the conveyor and release it. "Then and only then get back in the clamp…"
+	_remount_worker()
+	_state = State.FEED
 
 func _drive_state_feed() -> void:
-	# Put the cut, scanned, opened material onto the conveyor — but ONLY once the
-	# belt's loading end is clear, so bales never land inside one another. Until
-	# then the worker just stands beside the belt holding it (re-checks each frame).
+	# Back in the clamp: put the scanned, de-wired bale onto the conveyor + release —
+	# but ONLY once the belt's loading end is clear, so bales never land inside one
+	# another. Until then hold it in the clamp (re-checks each frame). #233
 	if not _belt_has_room():
 		return                      # hold: belt's load zone still occupied
 	if _feed_ground_bale():
-		_state = State.REMOUNT
-
-func _drive_state_remount() -> void:
-	# Climb back into the cab and go again.
-	_remount_worker()
-	_state = State.SEEK
+		_state = State.SEEK
 
 func _drive_state_wait(delta: float) -> void:
 	_timer -= delta
@@ -560,6 +629,12 @@ func _feed_ground_bale() -> bool:
 	if _belt == null or not is_instance_valid(_belt) or not _belt.has_method("accept_bale"):
 		_bale = null
 		return true
+	# #233 — the feeder is stationed AT this belt: if it has latched a fault (a jam),
+	# they clear it as part of loading so the feed loop can NEVER permanently deadlock
+	# waiting on a belt nobody resets. (accept_bale refuses while faulted.)
+	if _belt.has_method("is_faulted") and bool(_belt.call("is_faulted")):
+		if _belt.has_method("reset_faults"):
+			_belt.call("reset_faults")
 	# Open the clamp NOW (real control) — the wires are already cut, so the instant the
 	# clamp lets go nothing holds the stack.
 	if vehicle != null and is_instance_valid(vehicle):
@@ -572,7 +647,14 @@ func _feed_ground_bale() -> bool:
 		b.get_parent().remove_child(b)
 	get_tree().current_scene.add_child(b)
 	b.global_transform = Transform3D(_bale_feed_basis(), _belt_load_point())
-	var ok : bool = bool(_belt.call("accept_bale", b, 0))   # lane 0 = deck centre; honours scan gate
+	# #4 — on release the bale BURSTS into physical tumbling film pieces (nothing
+	# clamps it anymore). burst_bale still rides the bale's MASS to the shredder
+	# invisibly, so the line feeds as before. Fall back to accept_bale on older belts.
+	var ok : bool
+	if _belt.has_method("burst_bale"):
+		ok = bool(_belt.call("burst_bale", b))
+	else:
+		ok = bool(_belt.call("accept_bale", b, 0))   # lane 0 = deck centre; honours scan gate
 	if not ok:
 		# Belt refused (unscanned / load zone busy). Keep the ref and try again next
 		# tick — the FEED state re-enters and _belt_has_room() paces the retry.
@@ -616,6 +698,8 @@ func _peel_label(bale: Node3D) -> void:
 
 ## Refill an empty lot with a fresh side-by-side row of bales (the reserve), so the
 ## feeder keeps running instead of stopping dead when the lot empties. #178
+const MAX_RESTOCKS : int = 4   # capped auto-refills before the feeder parks (anti-flood; _restocks declared above)
+
 func _restock_lot() -> void:
 	var n := 0
 	var current_frame := Engine.get_physics_frames()

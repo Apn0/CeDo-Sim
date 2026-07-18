@@ -683,11 +683,13 @@ func _process(delta: float) -> void:
 			(p as Node3D).rotation.z = sweep_front
 		for p in _wiper_pivots_rear:
 			(p as Node3D).rotation.z = sweep_rear
-	# Steering wheel mirrors the chassis steering. Sign matches Godot
-	# VehicleWheel3D convention: positive `steering` (A pressed) = wheels left,
-	# steering column rotates +Z (CCW from driver) = wheel held left.
-	if _steering_node != null and "steering" in self:
-		_steering_node.rotation.z = (self.steering as float) * 3.0
+	# Steering wheel mirrors the chassis steering. Read the CANONICAL ramped angle
+	# _current_steer_rad — NOT VehicleBody3D.steering, which BaseVehicle never
+	# writes (it's a dead no-op, so the cab wheel sat frozen dead-centre;
+	# bughunt 2026-07-17). Positive _current_steer_rad = wheels left = column +Z
+	# (CCW from the driver). ×6 gives ~1.5 turns of travel like Car.gd.
+	if _steering_node != null:
+		_steering_node.rotation.z = _current_steer_rad * 6.0
 	# Door interpolates to its target angle. Once it passes the OPEN
 	# threshold, can_enter() returns true.
 	if _door_pivot != null:

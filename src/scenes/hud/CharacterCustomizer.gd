@@ -38,6 +38,29 @@ signal cancelled()
 
 const HUMANOID_SCRIPT_PATH := "res://src/scenes/world/Humanoid.gd"
 
+## #224 — Resolve the live GameState. GameState is NOT an autoload — it is a
+## child NODE of the world scene (MainWorld.tscn has `GameState` under the root,
+## and MainWorld exposes it as `game_state`). The customizer is added under
+## get_tree().root, so `/root/GameState` is ALWAYS null here and every commit
+## silently no-oped (gs == null → return) — the operator's edits never reached
+## disk ("customized, then reset to base"). Resolve the real node instead, with
+## the autoload path kept as a first try in case a future scene registers one.
+func _resolve_game_state() -> Node:
+	var gs : Node = get_node_or_null("/root/GameState")
+	if gs != null:
+		return gs
+	var scene : Node = get_tree().current_scene
+	if scene != null:
+		# MainWorld exposes the node as `game_state`; prefer that.
+		if "game_state" in scene:
+			var g = scene.get("game_state")
+			if g is Node:
+				return g
+		var found := scene.find_child("GameState", true, false)
+		if found != null:
+			return found
+	return null
+
 # UI roots
 var _root           : Control = null
 var _preview_vp     : SubViewport = null
@@ -206,7 +229,7 @@ func _populate_form() -> void:
 	# Character selector — always available so all NPCs can be customised.
 	# #186 — player display name comes from GameState.player_name (default "Arno")
 	# instead of the hardcoded "Player" string. Real operators have real names.
-	var gs : Node = get_node_or_null("/root/GameState")
+	var gs : Node = _resolve_game_state()
 	var player_display_name : String = "Arno"
 	if gs and "player_name" in gs:
 		var pn = gs.get("player_name")
@@ -423,7 +446,7 @@ func _make_check_row(label_text: String, key: String, initial: bool) -> HBoxCont
 
 # ── State management ────────────────────────────────────────────────────────
 func _load_initial_appearance() -> void:
-	var gs : Node = get_node_or_null("/root/GameState")
+	var gs : Node = _resolve_game_state()
 	# #186 — Load player wardrobe (two outfits per character) from
 	# GameState.player_wardrobes if present, else fall back to the flat
 	# player_appearance for backward compat.
@@ -547,7 +570,7 @@ func _switch_wear_state(new_state: String) -> void:
 	_rebuild_preview_body()
 
 func _commit_to_gamestate() -> void:
-	var gs : Node = get_node_or_null("/root/GameState")
+	var gs : Node = _resolve_game_state()
 	if gs == null:
 		return
 	# Stash the in-flight edits.

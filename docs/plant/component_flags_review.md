@@ -127,9 +127,10 @@ blower piping) • tankje tussen extruders. The operator's phone-photo archive
   operators never interact. Mixing = a recirculation LOOP: pellets pumped BACKWARD in the
   chain (laadsilo → mengsilo) and forward again, looping continuously per pellet type.
   Model as background system: fixed chain + meng⇄laad recirculation, no player controls.
-- **B7 rafter:** the WATER LEVELS equalize — rafter tank water level = flotation-tank
-  water level (connected vessels). Rafter mesh cylinder ~75 cm diameter, encapsulated in
-  a tank ~1 m wide × 1 m high; everything below the tank is platform. Also stated:
-  3B flotation-tank BOTTOM is ~50 cm above the concrete floor ("I think") — note this
-  CONFLICTS with survey #230's flat-bottom-at-1.0 m; keep #230 until re-surveyed, flag.
+- **B7 rafter:** ~~the WATER LEVELS equalize — rafter tank water level = flotation-tank
+  water level (connected vessels).~~ **CORRECTED 2026-07-17: the operator rejected the
+  "connected vessels" claim — the rafter and flotation tank are SEPARATE tanks; nothing
+  ties their water levels.** Rafter mesh cylinder ~75 cm diameter, encapsulated in a tank
+  ~1 m wide × 1 m high; everything below the tank is support platform. Platform top
+  lowered 3.1 → 1.9 m (operator: it was 1.2 m too high).
 - **B8 silos:** **10**, in 2 rows of 5, per the floor plan.

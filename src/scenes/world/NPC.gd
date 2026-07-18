@@ -39,12 +39,20 @@ var npc_id : String = ""
 # Currently-running autonomy task (or null = idle). When non-null the NPC's
 # physics step routes through _autonomy_tick instead of the free-wander.
 var _autonomy_task : RefCounted = null
+# #223b MANUAL TASK — operator-assigned task set from the CrewPanel task dropdown.
+# When non-null it OVERRIDES the production gate + auto-poll: the operator has
+# explicitly told this worker what to do, so it runs to completion above Tier 1.
+var _forced_task : NpcAutonomyTask = null
 # Cooldown so an idle NPC only polls the board every 3 s, not every frame.
 var _autonomy_poll_t : float = 0.0
 const _AUTONOMY_POLL_INTERVAL_S : float = 3.0
 # Destination an active task is steering the NPC toward. The NPC's existing
 # pathfinding consumes this; the task only sets it.
 var _autonomy_destination_active : bool = false
+# #223 — cached CrewManager (production arbiter). Resolved lazily via the
+# "crew_manager" group so NPC stays decoupled from MainWorld. Production work
+# (jams / dispatch / breaks) preempts autonomy housekeeping through it.
+var _crew_mgr : Node = null
 
 ## Called by NpcAutonomyTask (or its subclasses) to steer the NPC toward a
 ## world position. Hooks into the existing target_position field so the rest
@@ -86,6 +94,26 @@ func disembark_vehicle() -> void:
 ## Per-tick autonomy tick: poll the board when idle, tick the active task
 ## otherwise. Called from _physics_process before the wander/walk logic.
 func _autonomy_tick(delta: float) -> void:
+	# #223b MANUAL TASK — an operator-assigned forced task OVERRIDES the production
+	# gate + auto-poll below. If one is set, run it to completion and return before
+	# _production_needs_me() ever gets a look-in.
+	if _forced_task != null:
+		var ft := _forced_task
+		if ft == null or ft.is_done():
+			clear_forced_task()
+			return
+		if ft.tick(self, delta):
+			clear_forced_task()
+		return
+	# #223 PRODUCTION-FIRST — the crew brain (jams / dispatch / breaks) strictly
+	# outranks autonomy housekeeping (blow leaves / hose / shovel / empty lump cart).
+	# If production has a claim on this worker, drop any in-progress housekeeping
+	# task AND don't poll for a new one, so a posted operator is never off cleaning
+	# while his own line jams.
+	# (docs/plant/npc_rol_taak_prioriteit.md — Tier 1 keep-the-line-running > Tier 4.)
+	if _production_needs_me():
+		_abandon_autonomy_task()
+		return
 	# Already on a task — tick it.
 	if _autonomy_task != null:
 		var t : NpcAutonomyTask = _autonomy_task
@@ -116,6 +144,50 @@ func _autonomy_tick(delta: float) -> void:
 	var task : NpcAutonomyTask = board.call("take_next_task", self)
 	if task != null:
 		_autonomy_task = task
+
+## #223 — production-first arbiter lookup. True when CrewManager has a claim on
+## this worker right now (committed to a jam/bin/break/off-post, or a jam in this
+## worker's zone still needs answering). Cached CrewManager ref via the
+## "crew_manager" group. Absent (headless / unit-test scene) → never blocks.
+func _production_needs_me() -> bool:
+	if _crew_mgr == null or not is_instance_valid(_crew_mgr):
+		var tree := get_tree()
+		if tree == null:
+			return false                     # detached / despawning → nothing to yield to
+		_crew_mgr = tree.get_first_node_in_group("crew_manager")
+	if _crew_mgr == null or not _crew_mgr.has_method("needs_worker"):
+		return false
+	return bool(_crew_mgr.call("needs_worker", self))
+
+## #223 — abandon the current housekeeping task cleanly: hand it back to the board
+## (which calls the task's release() so tools are dropped / the forklift is exited)
+## and clear the steering destination so the crew brain can repost / dispatch us.
+func _abandon_autonomy_task() -> void:
+	if _autonomy_task == null:
+		return
+	var board := get_node_or_null("/root/NpcAutonomyBoard")
+	if board != null and board.has_method("release_task"):
+		board.call("release_task", self)
+	else:
+		(_autonomy_task as NpcAutonomyTask).release(self)
+	_autonomy_task = null
+	clear_autonomy_destination()
+
+## #223b — operator override: assign a forced task (from the CrewPanel task
+## dropdown via NpcAutonomyBoard.force_task). Starts it immediately; from the
+## next _autonomy_tick it runs above the production gate until it reports done.
+func assign_forced_task(task : NpcAutonomyTask) -> void:
+	_forced_task = task
+	if task != null:
+		task.start(self)
+
+## #223b — clear the forced task: release it (drops tools / exits the vehicle)
+## and clear the steering destination so autonomy/production can take over again.
+func clear_forced_task() -> void:
+	if _forced_task:
+		_forced_task.release(self)
+		_forced_task = null
+		clear_autonomy_destination()
 
 # Social state (mutual-aid economy)
 var relationship_points: Dictionary = {}  # NPC ID -> points

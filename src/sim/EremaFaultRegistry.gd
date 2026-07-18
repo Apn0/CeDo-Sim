@@ -39,6 +39,28 @@ const F_CABINET_OVERTEMP    := { "nr": 73,   "msg": "Schakelkast-oververhitting 
 ## sensor while 284-298 bar ran clean, so the trip sits just under 343.
 const MPF1_PRESSURE_TRIP_BAR : float = 335.0
 
+## #223 docs->code — laserfilter 318-bar UPSTREAM over-pressure trip (item 14).
+## docs/plant/swi/laserfilter-smeltdrukverschil__062_CeDo72.md: "Als de smeltdruk
+## stroomopwaarts van de smeltfilter boven een grenswaarde ... stijgt, worden de
+## Compactor (optie), de extruder en het pelletiseringssysteem onmiddellijk
+## uitgeschakeld." Plant is set to 318 bar (manual lists 320) — matches
+## LaserFilter.UPSTREAM_TRIP_BAR. This is SEPARATE from the 6557/335-bar MPF1
+## quick-change-filter alarm above (that one is the 3C before-filter sensor).
+const F_LF_UPSTREAM_OVERPRESSURE := { "nr": 5518, "msg": "Smeltdruk stroomopwaarts laserfilter te hoog (318 bar) - uitschakeling Compactor+extruder+pelletiser" }
+
+## #223 docs->code — pelletiser 160-bar MP<PEL melt-pressure interlock (item 17).
+## docs/plant/swi/EREMA-manual-4.3.7-pelletiseersysteem__169_CeDo84.md: "Als de
+## smeltdruk boven een grenswaarde (160 bar) stijgt, worden de Compactor
+## (configureerbaar), de extruder en het pelletiseersysteem onmiddellijk
+## uitgeschakeld." MP<PEL = smeltdruk stroomopwaarts van de pelletiseermachine
+## (the die-head / meltpump-outlet melt pressure the model computes).
+const F_PEL_MELT_PRESSURE_HI := { "nr": 5516, "msg": "Massadruk voor pelletiseermachine [MP<PEL] te hoog (160 bar) - uitschakeling" }
+
+## Pelletiser melt-pressure interlock trip (bar) — EREMA §4.3.7 (169_CeDo84).
+## "grenswaarde (160 bar) ... configureerbaar" — kept at the manual's 160 bar.
+## MP<PEL above this trips Compactor + extruder + pelletiser simultaneously.
+const PEL_MELT_PRESSURE_TRIP_BAR : float = 160.0
+
 ## The 5 verbatim documented alarms, in the order photographed on the 3C screen.
 ## Order matches the reference so a Storingstabel dump reads like the panel.
 const DOCUMENTED_ALARMS : Array = [
@@ -52,7 +74,7 @@ const DOCUMENTED_ALARMS : Array = [
 ## Tunable thresholds for the auto-detection helpers below.
 const MELT_TEMP_HIGH_OFFSET_C   := 25.0    # over setpoint
 const HOPPER_LEVEL_LOW_PCT      := 8.0
-const FILTER_DP_HIGH_BAR        := 318.0   # operator-chosen trip; ΔMP at 182 bar in the LIJN 3A photo had no alarm
+const FILTER_DP_HIGH_BAR        := 318.0   # #223 operator override: CeDo trip is 318 bar (manual lists 320); ΔMP 182 bar in the 3A photo had no alarm
 const KNIFE_WEAR_TRIP_COUNT     := 2       # of 4 knives
 
 ## Detects active EREMA-style faults from live model state. Each detector is a
@@ -81,9 +103,37 @@ static func detect_active(extruder_model : Object, laser_filter : Object = null)
 		# filter is halted / mid-change so operation isn't released.
 		if laser_filter.has_method("is_line_down") and bool(laser_filter.call("is_line_down")):
 			out.append(F_MPF1_NOT_RELEASED)
+		# #223 docs->code (item 14) — laserfilter 318-bar UPSTREAM over-pressure
+		# trip. is_tripped latches at LaserFilter.UPSTREAM_TRIP_BAR (318). Surface
+		# the documented shutdown row so the Storingstabel shows why the line died
+		# (ExtruderMachine performs the actual latching trio shutdown).
+		if "is_tripped" in laser_filter and bool(laser_filter.is_tripped):
+			out.append(F_LF_UPSTREAM_OVERPRESSURE)
 
 	if extruder_model == null:
 		return out
+
+	# #223 docs->code (item 17) — pelletiser 160-bar MP<PEL melt-pressure
+	# interlock. MP<PEL (smeltdruk stroomopwaarts van de pelletiseermachine) is
+	# the die-head pressure the model computes as die_pressure_psi. Convert to bar
+	# (same psi->bar factor the sibling detectors above use) and surface the
+	# documented row while the condition holds; ExtruderMachine latches + trips.
+	if "die_pressure_psi" in extruder_model:
+		var pel_bar : float = float(extruder_model.die_pressure_psi) * 0.0689
+		if pel_bar > PEL_MELT_PRESSURE_TRIP_BAR:
+			out.append(F_PEL_MELT_PRESSURE_HI)
+
+	# #223 docs->code (items 14/17) — persist the over-pressure trip rows via the
+	# latched fault_reason. Once ExtruderMachine hard-stops the line, die pressure
+	# drops to 0 (so the live-pressure branch above only catches the trip instant)
+	# and the laser filter may not be passed in; fault_reason keeps the row up on
+	# the Storingstabel until the operator resets the emergency stop.
+	if "fault_reason" in extruder_model:
+		var fr : String = String(extruder_model.fault_reason)
+		if fr == "laserfilter_upstream_overpressure_318bar" and not out.has(F_LF_UPSTREAM_OVERPRESSURE):
+			out.append(F_LF_UPSTREAM_OVERPRESSURE)
+		elif fr == "pelletiser_meltdruk_160bar" and not out.has(F_PEL_MELT_PRESSURE_HI):
+			out.append(F_PEL_MELT_PRESSURE_HI)
 
 	# Filter pressure high — laser filter ΔMP (psi) above a comfortable bar
 	if "primary_lf" in extruder_model and extruder_model.primary_lf != null:

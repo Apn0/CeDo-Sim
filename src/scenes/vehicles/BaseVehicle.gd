@@ -603,6 +603,17 @@ func _try_grab() -> void:
 	# while it's being carried (a re-grabbed, previously-delivered bale must not
 	# keep metering into the line as it's hauled away). Cleared on release.
 	best.set_meta("carried", true)
+	# MAGIC-BALE FIX (operator 2026-07-16): placed bales spawn freeze=true /
+	# FREEZE_MODE_KINEMATIC (PlaceableCatalog ~1329) so untouched yard stacks
+	# don't drift. That freeze=false flip on grab was orphaned in #201 Step 5, so
+	# a grabbed bale stayed a FROZEN kinematic body — it ignored gravity AND could
+	# not be pushed by the AnimatableBody3D plates (kinematic-vs-kinematic doesn't
+	# resolve), leaving it hovering detached as the clamp drove off. Unfreeze it
+	# the instant it's latched so gravity + the μ=1.6 plate friction do the carry
+	# (no joint reintroduced). Left unfrozen on release so it falls + rests. Never
+	# re-freeze while carried / on release — that is what made bales hover forever.
+	if best is RigidBody3D:
+		(best as RigidBody3D).freeze = false
 	_bale_orig_parent = null
 	_carried_stack.clear()
 	_carried_stack_orig_parents.clear()
@@ -1102,8 +1113,13 @@ const TURN_RATE   : float = 1.6    # rad/s yaw at full steer
 # wheels are gone), so we don't bother. Future re-enablement of the friction
 # model would only need to add that one write here.
 const MAX_STEER_RAD          : float = 0.95993108859688   # 55 deg
-const STEER_RATE_RAD_PER_SEC : float = 0.31991378286563   # 18.33 deg/s
+const STEER_RATE_RAD_PER_SEC : float = 0.31991378286563   # 18.33 deg/s (default rack speed)
 var _current_steer_rad : float = 0.0
+# Per-subclass steering tuning (operator 2026-07-17). steer_sign = -1 switches
+# left/right for a REAR-wheel-steer machine (the bale clamp). steer_rate is the
+# angle slew AND the auto-centre rate — subclasses raise it for a quicker rack.
+var steer_sign : float = 1.0
+var steer_rate_rad_per_sec : float = STEER_RATE_RAD_PER_SEC
 
 # Kinematic-drive runtime state — _current_speed is the body's actual forward
 # speed, tracked frame-to-frame because freeze=true means linear_velocity is no
@@ -1155,6 +1171,11 @@ func _physics_process(delta: float) -> void:
 	# .steering writes all read _current_steer_rad downstream. Runs every frame
 	# (occupied, autopilot, AND parked) so parked vehicles re-centre on their own.
 	_update_steer_ramp(delta)
+	# Visual steered wheels follow the ramp EVERY frame, not only while occupied —
+	# otherwise a parked or NPC-driven vehicle yaws its body while the front wheels
+	# stay dead-straight (bughunt 2026-07-17). Idempotent: just copies the ramped
+	# _current_steer_rad onto the wheel-mesh basis.
+	_rotate_steered_wheel_meshes(delta)
 	_kinematic_move(delta)
 	# Lights + reverse beeper + horn audio fill. Runs both occupied + parked
 	# (a vehicle rolling backward down a slope still needs the beeper).
@@ -1169,7 +1190,7 @@ func _drive(delta: float) -> void:
 	# Out of energy (flat battery / empty tank) → no drive, just coast to a stop.
 	if not _has_power():
 		_current_speed_mps = move_toward(_current_speed_mps, 0.0, coast_decel_mps2 * delta)
-		_rotate_steered_wheel_meshes(delta)
+		# (wheel-mesh steer is applied unconditionally in _physics_process now)
 		return
 	# Foot brake — when no throttle is held but the brake action is down, the
 	# vehicle decelerates faster than coasting. Per-vehicle @export drive ramp
@@ -1192,7 +1213,7 @@ func _drive(delta: float) -> void:
 		var max_mps := (speed_limit_kmh / 3.6) * _power_factor()
 		var target_speed := _throttle * max_mps
 		_current_speed_mps = move_toward(_current_speed_mps, target_speed, throttle_accel_mps2 * delta)
-	_rotate_steered_wheel_meshes(delta)
+	# (wheel-mesh steer is applied unconditionally in _physics_process now)
 	# #175 — periodic diagnostic so the operator can confirm the drive loop
 	# from the log. Once a second while occupied: input throttle/steering,
 	# resulting speed, handbrake state. If "W does nothing" recurs the log will
@@ -1387,16 +1408,16 @@ func _apply_steering() -> void:
 func _update_steer_ramp(delta: float) -> void:
 	if not occupied and not (npc_autopilot and _npc_target_active):
 		# Parked → wheels straighten on their own (operator dismounted mid-turn).
-		_current_steer_rad = move_toward(_current_steer_rad, 0.0, STEER_RATE_RAD_PER_SEC * delta)
+		_current_steer_rad = move_toward(_current_steer_rad, 0.0, steer_rate_rad_per_sec * delta)
 		return
 	if accumulate_steering:
 		# Mast lift / hold-on-release: _steering is the persisted lock from
 		# _gather_input (rate-limited there by ACCUM_STEER_RATE). Track instantly
 		# so we don't double-rate. -1..1 maps directly to ±MAX_STEER_RAD.
-		_current_steer_rad = _steering * MAX_STEER_RAD
+		_current_steer_rad = _steering * MAX_STEER_RAD * steer_sign
 		return
-	var target_rad := _steering * MAX_STEER_RAD
-	_current_steer_rad = move_toward(_current_steer_rad, target_rad, STEER_RATE_RAD_PER_SEC * delta)
+	var target_rad := _steering * MAX_STEER_RAD * steer_sign
+	_current_steer_rad = move_toward(_current_steer_rad, target_rad, steer_rate_rad_per_sec * delta)
 
 # Cached visual steering angle (smoothed) so we don't snap the wheel meshes.
 var _visual_steer_rad : float = 0.0
@@ -2033,9 +2054,11 @@ func _tick_vehicle_aux(delta: float) -> void:
 		_light_blue_r.visible = occupied
 	# Reverse beam + beeper — driven off ACTUAL forward speed, not throttle
 	# intent. Operator on a slope rolling backward still triggers the alarm.
-	var fwd_spd := 0.0
-	if has_method("get_speed_mps"):
-		fwd_spd = get_speed_mps()
+	# Use the SIGNED speed — get_speed_mps() returns absf() for the HUD readout, so
+	# comparing it to a negative threshold made `reversing` ALWAYS false and left
+	# the reverse beam + reverse beeper permanently dead on every vehicle (bughunt
+	# 2026-07-17). _current_speed_mps is signed (negative when reversing / rolling back).
+	var fwd_spd := _current_speed_mps
 	var reversing := occupied and fwd_spd < -0.20
 	if _light_rev:
 		_light_rev.visible = reversing

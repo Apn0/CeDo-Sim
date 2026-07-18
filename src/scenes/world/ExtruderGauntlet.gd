@@ -3,7 +3,7 @@ extends "res://src/scenes/world/GauntletWorld.gd"
 ## EXTRUDER TEST GAUNTLET — a minimal live-editing bench.
 ##
 ## Flat floor + sun + player + ONE extruder line rig:
-##   * detailed extruder unit (catalog "extruder_3a" — EIRENE/Wave-Cut model)
+##   * detailed extruder unit (catalog "extruder_3a" — EREMA/Wave-Cut model)
 ##   * cutter-compactor / PCU (catalog "cutter_compactor") at the intake side
 ##   * lump cart parked at the laser-filter discharge
 ##   * Extruder3B.tscn sim brain (ExtruderMachine + ExtruderConfig) placed at
@@ -69,6 +69,11 @@ func _spawn_build_mode() -> void:
 	bm.layout_path = "user://extruder_bench_layout.json"
 	bm.allow_legacy_fallback = false
 	bm.load_shared_structure = false   # no building shell → no site doors/gates
+	# #223 — TEST BENCH, not a save file: wipe any layout persisted from a prior
+	# session so each launch starts with ONLY the rig. A forklift (or anything)
+	# dropped here is GONE next launch — the operator does not want the extruder
+	# gauntlet treated like a save file.
+	DirAccess.remove_absolute("user://extruder_bench_layout.json")
 	add_child(bm)
 	print("[ExtruderGauntlet] BuildMode ready — bench-local layout, Tab to build")
 

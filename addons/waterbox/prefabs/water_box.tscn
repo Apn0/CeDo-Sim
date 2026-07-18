@@ -1,0 +1,30 @@
+[gd_scene load_steps=6 format=3 uid="uid://ctl5q72q18fuk"]
+
+[ext_resource type="Script" path="res://addons/waterbox/scripts/water_box.gd" id="1_ckfrs"]
+[ext_resource type="Shader" path="res://addons/waterbox/assets/shaders/water.gdshader" id="2_w3w0l"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_bw3l4"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_8t8x0"]
+render_priority = 0
+shader = ExtResource("2_w3w0l")
+shader_parameter/wave_speed = 0.5
+shader_parameter/wave_strength = 0.2
+shader_parameter/water_color = Color(0.1, 0.4, 0.8, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_t6dy7"]
+size = Vector3(10, 3, 10)
+
+[node name="WaterBox" type="Node3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+script = ExtResource("1_ckfrs")
+
+[node name="Area3D" type="Area3D" parent="."]
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Area3D"]
+transform = Transform3D(10, 0, 0, 0, 3, 0, 0, 0, 10, 0, 0, 0)
+mesh = SubResource("BoxMesh_bw3l4")
+surface_material_override/0 = SubResource("ShaderMaterial_8t8x0")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D"]
+shape = SubResource("BoxShape3D_t6dy7")

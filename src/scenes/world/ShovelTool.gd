@@ -13,7 +13,7 @@ const tool_id : String = "shovel"
 const PICKUP_RANGE   : float = 1.6
 const SCOOP_RANGE    : float = 2.2     # how close to the heap you must stand
 const DEPOSIT_RANGE  : float = 3.0     # a bin this close catches the scoop
-const SCOOP_KG       : float = 25.0    # mass lifted per scoop
+const SCOOP_KG       : float = 6.0     # mass lifted per scoop (a real shovelful of dirt ~5-8 kg, was an unrealistic 25)
 const SCOOP_COOLDOWN : float = 0.4
 
 var _held_by   : Node3D = null
@@ -152,14 +152,24 @@ func scoop_once() -> float:
 	var pile := _nearest_in_group("floor_pile", SCOOP_RANGE, true)
 	if pile == null:
 		return 0.0
+	# CONSERVATION (operator 2026-07-16): a shovelful can't vanish into nothing —
+	# it has to go SOMEWHERE. Require a container in reach BEFORE lifting anything
+	# off the pile; with no bin, the scoop is refused and the material stays on the
+	# pile (previously the mass was removed and silently deleted = mass→nothing).
+	var bin := _nearest_in_group("waste_container", DEPOSIT_RANGE, false)
+	if bin == null or not bin.has_method("add"):
+		return 0.0
+	# A FULL bin can't accept the scoop — lifting anyway would overflow into the
+	# void (mass deleted). Refuse the scoop so the pile keeps its material
+	# (bughunt 2026-07-17: bin.add() caps at capacity and drops the remainder).
+	if bin.has_method("is_full") and bool(bin.call("is_full")):
+		return 0.0
 	var got : float = pile.call("scoop", SCOOP_KG)
 	if got <= 0.0:
 		return 0.0
 	_last_scoop = now
-	# Deposit into a bin if one is parked in reach; else it's tossed clear.
-	var bin := _nearest_in_group("waste_container", DEPOSIT_RANGE, false)
-	if bin != null and bin.has_method("add"):
-		bin.call("add", got, 200.0, -1)
+	# Mass moved from the pile INTO the bin — conserved, not created/destroyed.
+	bin.call("add", got, 200.0, -1)
 	return got
 
 ## Nearest node of `group` within `range_m`. When `need_mass`, only piles that

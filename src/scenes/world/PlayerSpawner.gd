@@ -263,6 +263,13 @@ func _spawn_player() -> CharacterBody3D:
 			# its CameraRig before we hand it the saved state.
 			call_deferred("_restore_freecam_state", fc)
 
+	# First-spawn loadout: hand the operator the three starter tools already in the
+	# hotbar (scissors/scanner/shovel). Idempotent, so a reload re-arms cleanly.
+	# MainWorld-only (Gauntlet/Sandbox build their own player), which is what we want.
+	var inv := get_node_or_null("/root/Inventory")
+	if inv and inv.has_method("give_starter_tools"):
+		inv.call("give_starter_tools")
+
 	return player
 
 # ── Footwear / wardrobe swap on shift bell ──────────────────────────────────
@@ -278,7 +285,10 @@ func _player_apply_footwear(player_node: Node, on_shift: bool) -> void:
 	# up their off_duty clothes when the bell rings off and their on_duty PPE
 	# when it rings on. Legacy single-dict saves fall back to the old behaviour
 	# (just toggle footwear) so the prior contract still holds.
-	var gs = _world.get_node_or_null("/root/GameState")
+	# #224 — GameState is the world's child node (see _world.game_state at spawn),
+	# NOT the autoload path "/root/GameState" (which is always null here). The old
+	# lookup meant the shift-bell outfit swap never saw the player's wardrobe.
+	var gs = _world.game_state if "game_state" in _world else _world.get_node_or_null("/root/GameState")
 	var display_name : String = String(player_node.get_meta("display_name", "Arno"))
 	var appearance : Dictionary = player_node.get_meta("appearance", {})
 	var picked_from_wardrobe : bool = false

@@ -78,6 +78,7 @@ var fill : float = 0.0
 # that made it onto the belt; bales_rejected counts scan-gate refusals.
 var bales_accepted : int = 0
 var bales_rejected : int = 0
+var untraced_count : int = 0   # accepted but not scanned (traceability miss, not a physical reject)
 
 # Bales currently riding the belt. Each entry: {node, progress(0..1 along the
 # whole path), mass(0..1 remaining), feeding(bool)}.
@@ -494,6 +495,9 @@ const BALE_LENGTH_M        : float = 1.4
 var _fault_belt_jam          : bool  = false   # #211a
 var _fault_intake_overfill   : bool  = false   # #211b
 var _fault_thermal_shutdown  : bool  = false   # #211c
+# #4 — physical fall-apart: a released bale bursts into these tumbling film pieces.
+var _film_pieces : Array = []                  # [{node: RigidBody3D, life: float}]
+const FILM_PIECE_LIFE_S : float = 2.5
 ## Frames of sustained spacing violation accrued so far. Resets the instant a
 ## tick passes with no pair tighter than MIN_SPACING_M.
 var _spacing_violation_frames : int  = 0
@@ -588,9 +592,12 @@ func accept_bale(bale: Node3D, lane: int = 0) -> bool:
 	if bale == null:
 		return false
 	if not bool(bale.get_meta("scanned", false)):
-		bales_rejected += 1
-		bale_rejected.emit(bale, "not scanned")
-		return false
+		# Realism (operator 2026-07-16): a conveyor does NOT physically bounce a
+		# 700 kg bale over a missing paper scan. The scan is a TRACEABILITY step
+		# (MES logging), not a physical gate. Accept it onto the belt anyway and
+		# just flag the compliance miss so the shift-leader scanlog can show it.
+		bale.set_meta("untraced", true)
+		untraced_count += 1
 	if is_faulted():
 		# #211 — a latched fault on the belt has to clear before another bale
 		# may be dropped. Otherwise the operator could keep stacking onto a
@@ -606,12 +613,15 @@ func accept_bale(bale: Node3D, lane: int = 0) -> bool:
 	# along its local Z). We sample the bale's world basis BEFORE reparent, then
 	# project onto the belt's XZ plane and compare with the belt's +Z.
 	var bale_yaw_deg : float = _bale_yaw_deviation_deg(bale)
-	# Re-parent onto the belt; freeze it so it rides as a kinematic prop.
+	# Re-parent onto the belt. Operator 2026-07-16: a FROZEN kinematic bale ignores
+	# the deck's BeltSurface constant_linear_velocity, so it sat dead-still on a
+	# "moving" conveyor. Leave it DYNAMIC (freeze=false) so the belt physically
+	# drags it down the deck like real material.
 	if bale.get_parent():
 		bale.get_parent().remove_child(bale)
 	add_child(bale)
 	if bale is RigidBody3D:
-		(bale as RigidBody3D).freeze = true
+		(bale as RigidBody3D).freeze = false
 	# lane 0 = CENTRE of the deck (the feeders feed here so bales ride down the
 	# middle, not the old left/right zigzag); lane 1 = offset right if ever needed.
 	var lane_x : float = (0.0 if lane == 0 else 0.5 * deck_width * 0.5)
@@ -631,6 +641,88 @@ func accept_bale(bale: Node3D, lane: int = 0) -> bool:
 	bale_accepted.emit(bale)
 	return true
 
+## #4 — the operator's fall-apart. A released bale (wires cut, clamp let go) BURSTS
+## into N physical RigidBody3D film pieces that tumble on the moving deck, WHILE the
+## bale's mass still rides to the shredder via an (invisible) kinematic rider — so
+## the line keeps feeding exactly as before (no #2 regression). The visible whole
+## block is hidden; what the operator sees is the loose pieces falling open because
+## nothing clamps them anymore. Returns false if the belt refuses (scan gate / load
+## zone / fault) — same contract as accept_bale.
+func burst_bale(bale: Node3D) -> bool:
+	if bale == null:
+		return false
+	var n : int = int(bale.get_meta("sheet_count", 8))
+	n = clampi(n, 4, 12)
+	var tint : Color = bale.get_meta("bale_tint", Color(0.75, 0.72, 0.66))
+	var lp : Vector3 = _belt_load_point_world()
+	# Hide the block — it becomes the invisible MASS rider; the pieces are the visual.
+	bale.visible = false
+	var ok : bool = accept_bale(bale, 0)
+	if not ok:
+		bale.visible = true            # refused → undo the hide (no invisible orphan)
+		return false
+	_spawn_film_pieces(lp, n, tint)
+	return true
+
+## Deck load point in WORLD space (centred, near the loading end, just above the deck).
+func _belt_load_point_world() -> Vector3:
+	return to_global(Vector3(0.0, deck_height + 0.12, deck_length * 0.32))
+
+## Spawn `n` loose film pieces at `pos` with a soft "fall open" impulse + tumble.
+func _spawn_film_pieces(pos: Vector3, n: int, tint: Color) -> void:
+	var scene : Node = get_tree().current_scene
+	if scene == null:
+		scene = self
+	for k in n:
+		var rb := RigidBody3D.new()
+		rb.add_to_group("film_piece")
+		rb.mass = 0.3
+		rb.linear_damp = 2.2      # keep them from flying — they must SETTLE on the deck
+		rb.angular_damp = 1.6
+		var col := CollisionShape3D.new()
+		var bs := BoxShape3D.new()
+		bs.size = Vector3(0.35, 0.02, 0.45)
+		col.shape = bs
+		rb.add_child(col)
+		var mi := MeshInstance3D.new()
+		var bm := BoxMesh.new(); bm.size = bs.size
+		mi.mesh = bm
+		var m := StandardMaterial3D.new()
+		m.albedo_color = tint
+		m.roughness = 0.92
+		mi.material_override = m
+		rb.add_child(mi)
+		scene.add_child(rb)
+		var ang : float = TAU * float(k) / float(maxi(n, 1))
+		# Rest right ON the deck and fall open with only a GENTLE outward spread + slow
+		# tumble — NO upward launch (operator: the pieces were flying into the air). #4v2
+		rb.global_position = pos + Vector3(cos(ang) * 0.20, 0.015 * float(k), sin(ang) * 0.16)
+		rb.linear_velocity = Vector3(cos(ang) * 0.30, -0.1, sin(ang) * 0.22)
+		rb.angular_velocity = Vector3(randf_range(-1.1, 1.1), randf_range(-1.1, 1.1), randf_range(-1.1, 1.1))
+		_film_pieces.append({"node": rb, "life": FILM_PIECE_LIFE_S})
+
+## Per-tick: nudge the loose pieces along belt travel while the belt runs, and retire
+## them after their lifetime (they've ridden up / gone into the shredder). Mass has
+## already flowed via the invisible rider, so retiring the visuals is ledger-neutral.
+func _tick_film_pieces(delta: float, live_speed: float, running: bool) -> void:
+	if _film_pieces.is_empty():
+		return
+	var i : int = _film_pieces.size() - 1
+	while i >= 0:
+		var e : Dictionary = _film_pieces[i]
+		var rb = e["node"]
+		e["life"] = float(e["life"]) - delta
+		if rb == null or not is_instance_valid(rb) or float(e["life"]) <= 0.0:
+			if is_instance_valid(rb):
+				(rb as Node).queue_free()
+			_film_pieces.remove_at(i)
+			i -= 1
+			continue
+		# No conveyor nudge — pushing them up the 35° incline is what flung them into
+		# the air. They just fall open + tumble on the deck, then despawn (the bale's
+		# MASS still rides to the shredder via the invisible rider). #4v2
+		i -= 1
+
 ## #211a/#211e — bale yaw deviation (degrees, [-180, +180]) of the bale's long
 ## axis vs the belt's local +Z travel direction, evaluated in the XZ plane of
 ## the belt. Used by accept_bale to tag cross-wise riders AND by the forklift
@@ -639,17 +731,21 @@ func accept_bale(bale: Node3D, lane: int = 0) -> bool:
 func _bale_yaw_deviation_deg(bale: Node3D) -> float:
 	if bale == null or not is_instance_valid(bale):
 		return 0.0
-	# Bale's world +Z (its long axis) projected into the belt's local frame.
-	var bale_z_world : Vector3 = bale.global_transform.basis.z
+	# The bale's LONG axis is its local +X — the catalog size is (1.45, 1.25, 1.25)
+	# so X is the 1.45 m length, and the feeder aligns X onto belt travel. #233 — this
+	# previously sampled local +Z, which mis-read EVERY correctly-fed bale as ~90°
+	# cross-wise → a spurious BELT-JAM that latched and permanently deadlocked the
+	# feed loop (the feeders stuck in FEED, LINE FLOW fed 0 kg). Measure +X instead.
+	var bale_long_world : Vector3 = bale.global_transform.basis.x
 	var to_local : Basis = global_transform.basis.inverse()
-	var bale_z_local : Vector3 = to_local * bale_z_world
+	var bale_long_local : Vector3 = to_local * bale_long_world
 	# Drop Y so we only compare yaw on the XZ plane.
-	bale_z_local.y = 0.0
-	if bale_z_local.length_squared() < 1e-6:
+	bale_long_local.y = 0.0
+	if bale_long_local.length_squared() < 1e-6:
 		return 0.0
-	bale_z_local = bale_z_local.normalized()
+	bale_long_local = bale_long_local.normalized()
 	# Belt's travel axis in belt-local = +Z. Angle to it (XZ).
-	var ang : float = atan2(bale_z_local.x, bale_z_local.z)
+	var ang : float = atan2(bale_long_local.x, bale_long_local.z)
 	# Fold to ±90° — a bale rotated 180° is still "lengthwise", just facing
 	# the other way; both ends look the same to the shredder mouth.
 	var deg : float = rad_to_deg(ang)
@@ -754,6 +850,7 @@ func _process(delta: float) -> void:
 	# already faulted — the latch holds until reset_faults() and we don't
 	# want to keep re-raising the same alarm every frame.
 	_tick_feeding_rules(delta)
+	_tick_film_pieces(delta, live_speed, running)   # #4 — advance the physical fall-apart pieces
 
 ## #211a/#211b/#211c — per-tick enforcement of the three operator-spec feeding
 ## rules. Returns early when already faulted (the latch holds until reset). Each
