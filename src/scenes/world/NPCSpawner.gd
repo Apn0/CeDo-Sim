@@ -105,7 +105,16 @@ func _spawn_npcs() -> void:
 	# _spawn_player). Was WorldLayout.player_spawn, but that's the WorldSetup
 	# marker, not where the player actually lands; a stale save or building
 	# shift can put the actual player metres away from the marker.
+	# #221-PC Phase 4 — prefer Plant.factory_center_scene() so NPCs centre on
+	# the same building-centre every other layout-derived spawn uses. With
+	# scene_origin = _get_factory_anchor() = _on_floor(_player_spawn_pos, 0),
+	# this is the SAME XZ as _player_spawn_pos (just with Y = floor_top_y
+	# baked in); the random ring then re-applies _on_floor anyway, so net
+	# effect is identical to the legacy anchor. Migration is unification only.
 	var anchor : Vector3 = _player_spawn_pos
+	if _world.has_node("/root/Plant") and Plant.is_initialized():
+		var fc : Vector3 = Plant.factory_center_scene()
+		anchor = Vector3(fc.x, _player_spawn_pos.y, fc.z)
 	# Building's XZ AABB so we can reject candidates that land INSIDE the shell.
 	var shell := _world.call("_shell") as MeshInstance3D
 	var bb_min := Vector2(INF, INF); var bb_max := Vector2(-INF, -INF)

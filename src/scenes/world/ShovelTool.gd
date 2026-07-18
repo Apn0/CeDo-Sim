@@ -53,16 +53,8 @@ func _build_visual() -> void:
 	add_child(col)
 
 func _build_pickup_trigger() -> void:
-	var area := Area3D.new()
-	area.name = "PickupArea"
-	area.collision_mask = 1
-	var cs := CollisionShape3D.new()
-	var sp := SphereShape3D.new(); sp.radius = PICKUP_RANGE
-	cs.shape = sp
-	area.add_child(cs)
-	add_child(area)
-	area.body_entered.connect(_on_body_entered)
-	area.body_exited.connect(_on_body_exited)
+	InteractionTriggers.make_pickup_trigger(
+		self, PICKUP_RANGE, _on_body_entered, _on_body_exited)
 
 # =============================================================================
 # PICKUP / DROP (E)

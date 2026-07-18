@@ -25,6 +25,15 @@ var _accumulator: float = 0.0
 var _paused     : bool  = false
 var _tick_count : int   = 0
 
+# ── #221 perf instrumentation ────────────────────────────────────────────────
+# Wall-clock cost (µs) of the most recent sim_tick.emit() call, plus a rolling
+# EMA so HotspotProfiler can read an averaged figure. Touched by _process only
+# when probing is enabled (HotspotProfiler.profile_sim_tick) — zero overhead
+# when off, since the timer reads are cheap but the conditional is cheaper.
+var last_emit_us : int   = 0
+var avg_emit_us  : float = 0.0
+var probe_sim_tick : bool = false   # toggled by HotspotProfiler
+
 func _ready() -> void:
 	# Process even when the scene tree is paused — we want the option to keep
 	# simulating during menu screens for systems that need it. ShiftClock is
@@ -39,9 +48,21 @@ func _process(delta: float) -> void:
 	if _accumulator > 1.0:
 		_accumulator = 1.0
 	while _accumulator >= TICK_DT:
-		sim_tick.emit(TICK_DT)
+		if probe_sim_tick:
+			var t0 : int = Time.get_ticks_usec()
+			sim_tick.emit(TICK_DT)
+			last_emit_us = Time.get_ticks_usec() - t0
+			# First-order EMA, α = 0.1 (≈ last ~10 emits dominate)
+			avg_emit_us = avg_emit_us * 0.9 + float(last_emit_us) * 0.1
+		else:
+			sim_tick.emit(TICK_DT)
 		_accumulator -= TICK_DT
 		_tick_count += 1
+
+# Number of currently connected subscribers to sim_tick — useful for the
+# profiler readout (a tally that creeps up is itself a hotspot signal).
+func subscriber_count() -> int:
+	return sim_tick.get_connections().size()
 
 # ── Control ───────────────────────────────────────────────────────────────────
 func pause() -> void:

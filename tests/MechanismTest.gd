@@ -33,14 +33,14 @@ func _test_rotation() -> void:
 	add_child(m)
 	await get_tree().process_frame   # _ready captures base basis
 	m.set_process(false)             # manual ticking
-	m._rpm_cur = 60.0                # skip ramp
+	m.snap_to_rpm(60.0)              # explicit bypass for deterministic per-tick assertions
 	var a0 : float = m.angle
 	m._process(0.5)                  # 60 rpm = 1 rev/s → 0.5 s = π rad
 	_ok(absf(m.angle - (a0 + PI)) < 0.05, "spun ~π rad in 0.5 s at 60 rpm (Δ=%.2f)" % (m.angle - a0))
 	_ok(absf(m.throughput() - 10.0) < 0.1, "throughput = capacity at nominal rpm (%.1f)" % m.throughput())
-	m.rpm = 30.0; m._rpm_cur = 30.0
+	m.snap_to_rpm(30.0)
 	_ok(absf(m.throughput() - 5.0) < 0.1, "half rpm → half throughput (%.1f)" % m.throughput())
-	m.set_running(false); m._rpm_cur = 0.0
+	m.set_running(false); m.snap_to_rpm(0.0)
 	_ok(m.throughput() == 0.0, "stopped → zero throughput")
 	m.queue_free()
 

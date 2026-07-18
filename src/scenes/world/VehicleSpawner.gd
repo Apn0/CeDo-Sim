@@ -53,34 +53,77 @@ func setup(world: Node, player_spawn_pos: Vector3) -> void:
 ## instance at `fallback_offset` from the factory anchor.
 ## Kept PUBLIC because MainWorld._spawn_merlo (which stays in MainWorld) calls
 ## back into here for the Merlo + Merlo P40 spawn pair.
+##
+## #221-PC Phase 3 — when Plant is initialized + WorldLayout has PC data, this
+## reads from WorldLayout.vehicle_spawns_pc and routes through Plant. When PC
+## data isn't available (very first boot before migrate_to_pc runs, or sandbox/
+## test scenes without Plant), falls back to the legacy _layout_to_scene path.
+## Both paths are mathematically equivalent for already-saved layouts; the PC
+## path also applies world_yaw to the fallback offset, fixing the long-standing
+## "fallback spawns along world +X regardless of building rotation" bug.
 func spawn_vehicle_instances(layout_id: String, scene_path: String, fallback_offset: Vector3, label: String) -> void:
 	var scn := load(scene_path) as PackedScene
 	if scn == null:
 		push_warning("[VehicleSpawner] %s missing — skipping" % scene_path); return
+
+	# Decide which coord system this run uses. We pick once per call so all
+	# instances of the same vehicle share the same path (no mid-loop flip).
+	var use_pc : bool = _world.has_node("/root/Plant") and Plant.is_initialized() and WorldLayout.has_pc_data
+	var floor_y : float = _world.call("_floor_top_y")
+
+	# ── Fallback branch (no operator-placed markers for this id) ─────────────
 	var positions : Array = WorldLayout.get_vehicle_spawns(layout_id)
 	if positions.is_empty():
-		# Fallback: spawn one next to the factory anchor.
-		var anchor : Vector3 = _world.call("_get_factory_anchor")
-		var pos : Vector3 = _world.call("_on_floor", anchor + fallback_offset, 0.5)
+		var pos : Vector3
+		if use_pc:
+			# fallback_offset is a scene-metre-relative-to-anchor offset
+			# (e.g. (3,0,0) = "3 m east of factory anchor"). Convert to PC by
+			# adding to PC_CENTER. pc_to_scene then applies world_yaw — so a
+			# rotated building rotates the fallback vehicle with it. The old
+			# path skipped that yaw, leaving fallback vehicles in world-X
+			# alignment regardless of building rotation.
+			var pc : Vector2 = Plant.PC_CENTER + Vector2(fallback_offset.x, fallback_offset.z)
+			pos = Plant.pc_to_scene_with_y(pc, floor_y + 0.5)
+		else:
+			var anchor : Vector3 = _world.call("_get_factory_anchor")
+			pos = _world.call("_on_floor", anchor + fallback_offset, 0.5)
 		var v := scn.instantiate()
 		_world.add_child(v); v.global_position = pos
-		print("[VehicleSpawner] %s (fallback) spawned at %s" % [label, str(pos)])
+		print("[VehicleSpawner] %s (fallback%s) spawned at %s" % [
+			label, " PC" if use_pc else "", str(pos)])
 		return
-	# Markers are stored as player_spawn-relative offsets in north-up RD space.
-	# _layout_to_scene() rotates them by the floor-plan calibration angle (the
-	# RD→building rotation) and anchors them at the player's scene position.
+
+	# ── Canonical branch — every operator-placed marker becomes a spawn ──────
+	# Read PC-parallel array when available; index in lockstep with the legacy
+	# positions array (migrate_to_pc preserves order). When PC data is absent,
+	# walk the legacy Vector3 list through _layout_to_scene exactly as before.
+	var positions_pc : Array = []
+	if use_pc and WorldLayout.vehicle_spawns_pc.has(layout_id):
+		positions_pc = WorldLayout.vehicle_spawns_pc[layout_id]
+	# Treat "PC array length disagrees with legacy" as a soft fault — fall back
+	# to legacy for the whole call so we never mismatch a marker to the wrong
+	# vehicle. Reproduces only if migrate_to_pc was interrupted mid-walk.
+	if use_pc and positions_pc.size() != positions.size():
+		push_warning("[VehicleSpawner] %s: PC array size %d ≠ legacy %d — using legacy path" % [
+			layout_id, positions_pc.size(), positions.size()])
+		use_pc = false
+
 	for i in positions.size():
 		var rel : Vector3 = positions[i]
 		if not bool(_world.call("_layout_rel_sane", rel)):
 			push_warning("[VehicleSpawner] %s #%d marker is %.0f m from the anchor — corrupt layout data, skipping (re-place it in WorldSetup)" \
 				% [label, i + 1, Vector2(rel.x, rel.z).length()])
 			continue
-		var scene_pos : Vector3 = _world.call("_layout_to_scene", rel)
-		var p : Vector3 = _world.call("_on_floor", scene_pos, 0.5)
+		var p : Vector3
+		if use_pc:
+			p = Plant.pc_to_scene_with_y(positions_pc[i], floor_y + 0.5)
+		else:
+			var scene_pos : Vector3 = _world.call("_layout_to_scene", rel)
+			p = _world.call("_on_floor", scene_pos, 0.5)
 		var v := scn.instantiate()
 		_world.add_child(v); v.global_position = p
-		print("[VehicleSpawner] %s #%d  placed at scene(%.1f,%.1f)" % [
-			label, i + 1, p.x, p.z])
+		print("[VehicleSpawner] %s #%d %s placed at scene(%.1f,%.1f)" % [
+			label, i + 1, "PC" if use_pc else "legacy", p.x, p.z])
 
 func spawn_forklift() -> void:
 	spawn_vehicle_instances("forklift", "res://src/scenes/vehicles/Forklift.tscn",

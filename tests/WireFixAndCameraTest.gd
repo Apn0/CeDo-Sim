@@ -70,9 +70,13 @@ func _test_wire_visual_fix() -> void:
 			var cm := top.mesh as CylinderMesh
 			_ok_approx(cm.top_radius, 0.018, 0.001,
 				"%s wire radius = 1.8 cm (thicker, visible)" % id)
-			# Horizontal segments cross the bale's depth + a bit of overlap each side
-			_ok(cm.height > size.z,
-				"%s top segment length > bale depth (overlaps corners, =%.3f)" % [id, cm.height])
+			# The Top segment runs along the bale LENGTH (X) — see _build_wires:
+			# horiz_len = size.x + r*2. It must exceed the length it spans (with a
+			# little corner overlap), so the correct axis to compare is size.x, NOT
+			# size.z. (Was size.z, which only held for bales where x >= z and so
+			# failed on forstplus, the one bale whose depth exceeds its length.)
+			_ok(cm.height > size.x,
+				"%s top segment length > bale length (overlaps corners, =%.3f)" % [id, cm.height])
 		# Vertical segments should cross the bale's height + overlap
 		var right_seg := w0.get_node_or_null("Right") as MeshInstance3D
 		if right_seg and right_seg.mesh is CylinderMesh:

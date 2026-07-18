@@ -7,6 +7,8 @@ class_name AudiA3Sportback
 const MODEL_PATH := "res://assets/models/audi_a3_sportback/audi_a3_sportback.glb"
 
 func _ready() -> void:
+	# Audi A3 — premium hatch, bumped accel per the throttle/brake audit (7.5 m/s²).
+	throttle_accel_mps2 = 7.5
 	super._ready()
 	vehicle_type   = "audi_a3_sportback"
 	speed_limit_kmh = 90.0

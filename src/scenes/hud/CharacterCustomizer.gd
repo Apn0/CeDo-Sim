@@ -310,6 +310,17 @@ func _populate_form() -> void:
 	# Cap (#186 — now LAYERED over hair instead of replacing it)
 	parent.add_child(_make_check_row("Wear cap", "cap",
 		bool(_appearance.get("cap", false))))
+	# #C — Build proportions. Three independent axes so the operator can
+	# express tall/short × broad/narrow shoulders × thick/thin front-to-back.
+	# Previously width and depth shared a single uniform XZ scale, which
+	# forced "broad-shouldered AND thick chest" to move together.
+	parent.add_child(_make_slider_row("Height", "height_mul",
+		0.80, 1.20, float(_appearance.get("height_mul", 1.0))))
+	parent.add_child(_make_slider_row("Width (shoulders)", "width_mul",
+		0.80, 1.25, float(_appearance.get("width_mul", 1.0))))
+	parent.add_child(_make_slider_row("Depth (thickness)", "depth_mul",
+		0.80, 1.25, float(_appearance.get("depth_mul",
+			float(_appearance.get("width_mul", 1.0))))))
 	# PPE class — #186: dropdown now actually drives clothing. "hi_vis" adds a
 	# yellow vest, "operator" adds an orange vest + hardhat, "none" leaves
 	# personal clothes alone. Independent of shirt_type — both stack.
@@ -369,6 +380,32 @@ func _make_option_row(label_text: String, key: String, options: Array, initial: 
 			break
 	menu.item_selected.connect(func(idx): _set_appearance(key, String(options[idx])))
 	row.add_child(menu)
+	return row
+
+## #C — slider row for a numeric appearance field. Writes the float value
+## straight to `_appearance[key]` on every change so the live mirror redraws
+## with the new proportion — same pattern as the colour/option rows.
+func _make_slider_row(label_text: String, key: String, lo: float, hi: float, initial: float) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	var lbl := Label.new()
+	lbl.text = label_text
+	lbl.custom_minimum_size = Vector2(140, 0)
+	row.add_child(lbl)
+	var sl := HSlider.new()
+	sl.min_value = lo
+	sl.max_value = hi
+	sl.step = 0.01
+	sl.value = clampf(initial, lo, hi)
+	sl.custom_minimum_size = Vector2(180, 24)
+	row.add_child(sl)
+	var read := Label.new()
+	read.text = "%.2f" % sl.value
+	read.custom_minimum_size = Vector2(48, 0)
+	row.add_child(read)
+	sl.value_changed.connect(func(v):
+		read.text = "%.2f" % v
+		_set_appearance(key, v))
 	return row
 
 func _make_check_row(label_text: String, key: String, initial: bool) -> HBoxContainer:

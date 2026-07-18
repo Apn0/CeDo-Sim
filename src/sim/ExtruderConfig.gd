@@ -25,7 +25,20 @@ class_name ExtruderConfig
 @export var melt_temp_min_alarm : float = 195.0
 @export var melt_temp_max_alarm : float = 240.0
 @export var melt_temp_drift_per_s : float = 0.3   # passive drift toward setpoint
-@export var melt_temp_runaway_per_s : float = 0.8 # rate in FAULT state
+@export var melt_temp_runaway_per_s : float = 0.8 # rate in FAULT state (legacy; FAULT no longer runs away — see ExtruderModel.gd)
+
+## Per-zone melt-temp setpoints (size 7). Operator can drop a zone (e.g. to
+## avoid burning paper/cellulose contamination) which makes the local
+## viscosity climb and loads the screw motor. ExtruderModel.gd applies
+## `melt_temp_setpoint` to all zones at construction if this array is empty
+## or wrong-length; otherwise this overrides per-zone.
+@export var zone_temp_setpoints : Array[float] = []
+
+@export_group("Motor & torque")
+## Design-max motor torque is 100 %. Trip at TORQUE_TRIP_PCT (110 %) — sustained
+## > 2 s sends ExtruderModel to FAULT with fault_reason = "motor_torque_trip".
+@export var motor_torque_base_pct      : float = 60.0   # nominal-run baseline
+@export var motor_torque_per_10c_below : float = 20.0   # added per 10 °C below avg zone setpoint
 
 @export_group("Filter")
 @export var laser_filter_grams_between_swap : float = 8_000_000.0

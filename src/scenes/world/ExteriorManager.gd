@@ -200,14 +200,18 @@ func _spawn_perimeter_fence(anchor: Vector3, ground_y: float) -> void:
 		var pts : Array = p["pts"]
 		f.setup([_bo_grounded(ga, pts[0]), _bo_grounded(ga, pts[1])])
 		_world.add_child(f)
-	# Gate barrier — closed by default; set_open(true) when gate logic wires up.
-	var gate = _GATE_SCRIPT.new()
-	gate.name = "PlantEntryGate"
-	gate.setup(0.0)
-	_world.add_child(gate)
-	gate.global_position = _bo_grounded(ga, GATE_OFFSET)
-	gate.rotation.y = by
-	print("[ExteriorManager] Perimeter fence: %d runs + 1 gate barrier (south entry)" % perimeters.size())
+	# Per operator: no automatic boom barrier at the plant entry. The real
+	# CeDo gate is a manual roller, not an auto-boom; the barrier here was
+	# scaffolding from before that requirement was clear, and it ended up
+	# stuck closed forever because no gate-logic was ever wired (the comment
+	# at this site read "set_open(true) when gate logic wires up", which
+	# never happened). Removing it also unblocks fence-line vaulting along
+	# the entry stretch where the gate's collision footprint overlapped.
+	#
+	# If a manual entry placeable is later wanted, drop a `gate_roller` from
+	# the build catalog instead — that one is operator-spec'd and toggles
+	# correctly.
+	print("[ExteriorManager] Perimeter fence: %d runs (entry gate intentionally not spawned)" % perimeters.size())
 
 # ── Sidewalk, crosswalk, markings, trees, power line, transformer, neighbors ─
 func _spawn_exterior_props(anchor: Vector3, ground_y: float) -> void:

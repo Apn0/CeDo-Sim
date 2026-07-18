@@ -85,6 +85,13 @@ const CLAMP_RAMP_S       : float = 7.5
 const PLATE_TRACK_RATE   : float = 6.0
 ## How far above the bale the top wire segments rise when bulging.
 const WIRE_BULGE_M       : float = 0.04
+## Hydraulic cylinder pump-flow ramp for the lift carriage. 0.3–0.6 s on a
+## real LPG clamp. The plate-gap ramp (PLATE_TRACK_RATE) and clamp-force ramp
+## (CLAMP_RAMP_S) are separate and already smooth.
+const LIFT_RAMP_TAU_S : float = 0.45
+const TILT_RAMP_TAU_S : float = 0.40
+
+const SmoothedRateScript = preload("res://src/sim/SmoothedRate.gd")
 
 # ── Runtime state ─────────────────────────────────────────────────────────────
 var lift_height_m : float = -0.43   # plate flat on floor (#201)
@@ -103,6 +110,9 @@ var _force_unramping   : bool  = false
 var _ramp_started_at   : float = 0.0
 var _ramp_start_force  : float = 0.0
 
+var _lift_velocity : SmoothedRate = null
+var _tilt_velocity : SmoothedRate = null
+
 # (Stack pickup — _carried_stack / _carried_stack_orig_parents — now lives in
 #  BaseVehicle so every vehicle lifts the bottom of a yard stack, not just this one.)
 
@@ -112,14 +122,40 @@ var _lift_carriage : Node3D
 var _left_plate    : Node3D
 var _right_plate   : Node3D
 
+# ── #211e — Bale alignment ghost ──────────────────────────────────────────────
+# Mirror of the forklift's ghost (see Forklift.gd) so the operator sees the
+# same lengthwise-aligned target slab no matter which vehicle is carrying the
+# bale. The bale clamp is the PRIMARY tool for moving bales onto the feed
+# belt, so this is where the ghost matters most.
+const GHOST_BELT_REACH_M      : float = 5.0
+const GHOST_YAW_TOLERANCE_DEG : float = 15.0
+const GHOST_BALE_LEN_M        : float = 1.4
+const GHOST_BALE_WID_M        : float = 1.2
+const GHOST_BALE_HGT_M        : float = 0.10
+const GHOST_FLASH_HZ          : float = 2.5
+var _bale_alignment_ghost : Node3D = null
+var _ghost_mesh           : MeshInstance3D = null
+var _ghost_mat            : StandardMaterial3D = null
+var _ghost_flash_t        : float = 0.0
+
 # =============================================================================
 func _ready() -> void:
+	# Drive-ramp tuning per the throttle/brake audit. The clamp + LPG-twin tank
+	# rig is heavier than a bare forklift and operators drive it more cautiously
+	# when bales are aboard — slowest spool-up of the lift fleet, ~1.1 s to top
+	# speed. Brake matches the forklift's 16 m/s² (the load fights you).
+	throttle_accel_mps2 = 3.0
+	brake_decel_mps2    = 16.0
+	coast_decel_mps2    = 4.0
+	throttle_ramp_tau_s = 1.2
+	brake_ramp_tau_s    = 0.3
 	super._ready()
 	vehicle_type = "bale_clamp"
 	if mast_pivot_path:    _mast_pivot    = get_node_or_null(mast_pivot_path)    as Node3D
 	if lift_carriage_path: _lift_carriage = get_node_or_null(lift_carriage_path) as Node3D
 	if left_plate_path:    _left_plate    = get_node_or_null(left_plate_path)    as Node3D
 	if right_plate_path:   _right_plate   = get_node_or_null(right_plate_path)   as Node3D
+	_build_bale_alignment_ghost()
 	# #201 — physicalize the plates. .tscn changed them to AnimatableBody3D with a
 	# CollisionShape3D sibling matching the plate mesh (0.12 × 1.04 × 1.10).
 	# Real bale-clamp plates have a heavy rubber/steel-stud face for grip; a
@@ -133,6 +169,8 @@ func _ready() -> void:
 		(_left_plate as PhysicsBody3D).physics_material_override = plate_pm
 	if _right_plate is PhysicsBody3D:
 		(_right_plate as PhysicsBody3D).physics_material_override = plate_pm
+	_lift_velocity = SmoothedRateScript.new(0.0, LIFT_RAMP_TAU_S)
+	_tilt_velocity = SmoothedRateScript.new(0.0, TILT_RAMP_TAU_S)
 
 # =============================================================================
 # INPUT — override the BaseVehicle V/B handlers so we get the force-ramp + cut
@@ -219,6 +257,7 @@ func _physics_process(delta: float) -> void:
 	_update_plate_gap(delta)
 	_apply_mast_lift_tilt()
 	_update_wire_bulge()
+	_update_bale_alignment_ghost(delta)
 
 func _update_lift_tilt(delta: float) -> void:
 	# Mouse-as-joystick: hold LEFT, drag Y = lift up/down, X = mast tilt.
@@ -232,13 +271,15 @@ func _update_lift_tilt(delta: float) -> void:
 	if _carried_bale != null and is_instance_valid(_carried_bale) and "mass" in _carried_bale:
 		load_ratio = clampf(float(_carried_bale.mass) / max_safe_load_kg, 0.0, 1.0)
 	var lift_speed : float = lerpf(lift_speed_no_load_m_s, lift_speed_full_load_m_s, load_ratio)
-	lift_height_m = clampf(lift_height_m + lift_axis * lift_speed * delta
-		+ float(m["b"]) * lift_speed * delta * MOUSE_TOOL_MULT, lift_min_m, lift_max_m)
+	var target_lift_v : float = lift_axis * lift_speed + float(m["b"]) * lift_speed * MOUSE_TOOL_MULT
+	var cur_lift_v    : float = _lift_velocity.approach(target_lift_v, delta)
+	lift_height_m = clampf(lift_height_m + cur_lift_v * delta, lift_min_m, lift_max_m)
 
 	var tilt_axis := Input.get_action_strength("forklift_tilt_back") \
 				   - Input.get_action_strength("forklift_tilt_fwd")
-	tilt_deg = clampf(tilt_deg + tilt_axis * tilt_speed_deg_s * delta
-		+ float(m["a"]) * tilt_speed_deg_s * delta * MOUSE_TOOL_MULT, tilt_min_deg, tilt_max_deg)
+	var target_tilt_v : float = tilt_axis * tilt_speed_deg_s + float(m["a"]) * tilt_speed_deg_s * MOUSE_TOOL_MULT
+	var cur_tilt_v    : float = _tilt_velocity.approach(target_tilt_v, delta)
+	tilt_deg = clampf(tilt_deg + cur_tilt_v * delta, tilt_min_deg, tilt_max_deg)
 
 	# Mouse-as-joystick clamp control: RIGHT-drag X scales clamp_force live so the
 	# mouse joystick can open/close the plates (was: V/B keys only). Right = close
@@ -456,3 +497,82 @@ func _bale_size(b: Node) -> Vector3:
 		if c is CollisionShape3D and (c as CollisionShape3D).shape is BoxShape3D:
 			return ((c as CollisionShape3D).shape as BoxShape3D).size
 	return Vector3.ONE
+
+# =============================================================================
+# #211e — BALE ALIGNMENT GHOST (mirror of Forklift.gd)
+# =============================================================================
+## Spawn the ghost as a translucent slab parented to the scene root so its
+## world transform tracks the belt, not the vehicle. Hidden until the carry +
+## proximity check passes.
+func _build_bale_alignment_ghost() -> void:
+	_bale_alignment_ghost = Node3D.new()
+	_bale_alignment_ghost.name = "BaleAlignmentGhost"
+	_ghost_mesh = MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(GHOST_BALE_WID_M, GHOST_BALE_HGT_M, GHOST_BALE_LEN_M)
+	_ghost_mesh.mesh = bm
+	_ghost_mat = StandardMaterial3D.new()
+	_ghost_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_ghost_mat.albedo_color = Color(0.2, 0.95, 0.3, 0.5)
+	_ghost_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_ghost_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_ghost_mesh.material_override = _ghost_mat
+	_bale_alignment_ghost.add_child(_ghost_mesh)
+	_bale_alignment_ghost.visible = false
+	call_deferred("_deferred_attach_ghost")
+
+func _deferred_attach_ghost() -> void:
+	if _bale_alignment_ghost == null:
+		return
+	var scene := get_tree().current_scene
+	if scene != null:
+		scene.add_child(_bale_alignment_ghost)
+
+func _update_bale_alignment_ghost(delta: float) -> void:
+	if _bale_alignment_ghost == null or not is_instance_valid(_bale_alignment_ghost):
+		return
+	if _carried_bale == null:
+		_bale_alignment_ghost.visible = false
+		return
+	var belt := _nearest_shredder_feed_belt(GHOST_BELT_REACH_M)
+	if belt == null:
+		_bale_alignment_ghost.visible = false
+		return
+	_bale_alignment_ghost.visible = true
+	var deck_y : float = 0.7
+	if "deck_height" in belt:
+		deck_y = float(belt.get("deck_height"))
+	var local_pos := Vector3(0.0, deck_y + 0.15, 1.0)
+	var ghost_xf : Transform3D = (belt as Node3D).global_transform * Transform3D(Basis(), local_pos)
+	_bale_alignment_ghost.global_transform = ghost_xf
+	var yaw_dev_deg : float = 0.0
+	if belt.has_method("_bale_yaw_deviation_deg"):
+		yaw_dev_deg = float(belt.call("_bale_yaw_deviation_deg", _carried_bale))
+	if absf(yaw_dev_deg) <= GHOST_YAW_TOLERANCE_DEG:
+		_ghost_flash_t = 0.0
+		_ghost_mat.albedo_color = Color(0.2, 0.95, 0.3, 0.5)
+	else:
+		_ghost_flash_t += delta * GHOST_FLASH_HZ * TAU
+		var a : float = 0.5 + (sin(_ghost_flash_t) + 1.0) * 0.15
+		_ghost_mat.albedo_color = Color(0.95, 0.2, 0.2, a)
+
+func _nearest_shredder_feed_belt(reach: float) -> Node3D:
+	var tree := get_tree()
+	if tree == null:
+		return null
+	var here : Vector3 = global_transform.origin
+	var best : Node3D = null
+	var best_d : float = reach
+	for b in tree.get_nodes_in_group("shredder_feed_belt"):
+		if not (b is Node3D) or not is_instance_valid(b):
+			continue
+		var d : float = (b as Node3D).global_transform.origin.distance_to(here)
+		if d <= best_d:
+			best = b as Node3D
+			best_d = d
+	return best
+
+func _exit_tree() -> void:
+	if _bale_alignment_ghost != null and is_instance_valid(_bale_alignment_ghost):
+		_bale_alignment_ghost.queue_free()
+		_bale_alignment_ghost = null

@@ -90,17 +90,9 @@ func _build_collision() -> void:
 	add_child(col)
 
 func _build_trigger() -> void:
-	var area := Area3D.new()
-	area.name = "JerryCanTrigger"
-	area.collision_mask = 1
-	var cs := CollisionShape3D.new()
-	var sp := SphereShape3D.new(); sp.radius = 1.5
-	cs.shape = sp
-	cs.position = Vector3(0.0, 0.3, 0.0)
-	area.add_child(cs)
-	add_child(area)
-	area.body_entered.connect(_on_body_entered)
-	area.body_exited.connect(_on_body_exited)
+	InteractionTriggers.make_pickup_trigger(
+		self, 1.5, _on_body_entered, _on_body_exited,
+		"JerryCanTrigger", 1, Vector3(0.0, 0.3, 0.0))
 
 func _on_body_entered(body: Node3D) -> void:
 	if body.name != "Player":

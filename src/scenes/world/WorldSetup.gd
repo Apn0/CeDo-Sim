@@ -64,6 +64,10 @@ enum Tool {
 	VEHICLE_MAST_LIFT,
 	LINE_1, LINE_3A, LINE_3B, LINE_3C, LINE_6,
 	BALE_YARD,
+	# #221-PC Phase 5 — operator-draggable previously-hardcoded placements.
+	STAFF_PARKING,
+	PLAYER_SWIFT,
+	COMPRESSOR_SPAWN,
 }
 
 # Tool metadata
@@ -81,6 +85,11 @@ const TOOL_DEFS := {
 	Tool.LINE_3C:            {"label": "Line 3C start",           "color": Color.AQUAMARINE,    "kind": "point"},
 	Tool.LINE_6:             {"label": "Line 6 start",            "color": Color.SEA_GREEN,     "kind": "point"},
 	Tool.BALE_YARD:          {"label": "Bale yard (4 corners)",   "color": Color.YELLOW,        "kind": "polygon"},
+	# #221-PC Phase 5 — single-click placement of the parking lot anchor and
+	# the player's parked Swift. Both formerly hardcoded; now draggable.
+	Tool.STAFF_PARKING:      {"label": "Staff parking",           "color": Color.DEEP_SKY_BLUE, "kind": "point"},
+	Tool.PLAYER_SWIFT:       {"label": "Player Swift (start)",    "color": Color.LIGHT_SALMON,  "kind": "point"},
+	Tool.COMPRESSOR_SPAWN:   {"label": "Compressor spawn",        "color": Color.CYAN,          "kind": "point"},
 }
 
 # Tool → WorldLayout vehicle key. Map kept here so MainWorld's spawn code can
@@ -1145,6 +1154,13 @@ func _commit_to_layout() -> void:
 			WorldLayout.factory_center = p        # independent marker (decoupled from player spawn)
 		elif LINE_TOOL_TO_ID.has(tool_id):
 			WorldLayout.set_line_start(LINE_TOOL_TO_ID[tool_id], p)
+		# #221-PC Phase 5 — operator-draggable previously-hardcoded placements.
+		elif tool_id == Tool.STAFF_PARKING:
+			WorldLayout.staff_parking = p
+		elif tool_id == Tool.PLAYER_SWIFT:
+			WorldLayout.player_swift = p
+		elif tool_id == Tool.COMPRESSOR_SPAWN:
+			WorldLayout.compressor_spawn = p
 	# Finalised yards: refresh corners from their dot nodes.
 	for yard in finalized_yards:
 		var dots : Array = yard.get("dots", [])
@@ -1190,6 +1206,8 @@ func _undo_last() -> void:
 			elif tool_id == Tool.FACTORY_CENTER:
 				WorldLayout.factory_center = p   # ZERO when prev == null → cleared
 				_refresh_component_highlight()
+			elif tool_id == Tool.COMPRESSOR_SPAWN:
+				WorldLayout.compressor_spawn = p
 			elif LINE_TOOL_TO_ID.has(tool_id):
 				if prev == null: WorldLayout.line_starts.erase(LINE_TOOL_TO_ID[tool_id])
 				else:            WorldLayout.set_line_start(LINE_TOOL_TO_ID[tool_id], p)
@@ -1274,6 +1292,8 @@ func _place_point(tool_id: int, world_pos: Vector3) -> void:
 	elif tool_id == Tool.FACTORY_CENTER:
 		WorldLayout.factory_center = p        # its own independent marker
 		_refresh_component_highlight()
+	elif tool_id == Tool.COMPRESSOR_SPAWN:
+		WorldLayout.compressor_spawn = p
 	elif LINE_TOOL_TO_ID.has(tool_id):
 		WorldLayout.set_line_start(LINE_TOOL_TO_ID[tool_id], p)
 	history.append({"kind": "point", "tool_id": tool_id, "prev_pos": prev_pos})
@@ -1509,6 +1529,22 @@ func _apply_loaded_layout() -> void:
 		fc_node.position = Vector3(WorldLayout.factory_center.x, fc_node.position.y, WorldLayout.factory_center.z)
 		markers_root.add_child(fc_node)
 		point_markers[Tool.FACTORY_CENTER] = fc_node
+	# #221-PC Phase 5 — operator-draggable markers (parking + Swift).
+	if WorldLayout.staff_parking != Vector3.ZERO:
+		var sp_node := _make_dot(TOOL_DEFS[Tool.STAFF_PARKING]["color"])
+		sp_node.position = Vector3(WorldLayout.staff_parking.x, sp_node.position.y, WorldLayout.staff_parking.z)
+		markers_root.add_child(sp_node)
+		point_markers[Tool.STAFF_PARKING] = sp_node
+	if WorldLayout.player_swift != Vector3.ZERO:
+		var sw_node := _make_dot(TOOL_DEFS[Tool.PLAYER_SWIFT]["color"])
+		sw_node.position = Vector3(WorldLayout.player_swift.x, sw_node.position.y, WorldLayout.player_swift.z)
+		markers_root.add_child(sw_node)
+		point_markers[Tool.PLAYER_SWIFT] = sw_node
+	if WorldLayout.compressor_spawn != Vector3.ZERO:
+		var cs_node := _make_dot(TOOL_DEFS[Tool.COMPRESSOR_SPAWN]["color"])
+		cs_node.position = Vector3(WorldLayout.compressor_spawn.x, cs_node.position.y, WorldLayout.compressor_spawn.z)
+		markers_root.add_child(cs_node)
+		point_markers[Tool.COMPRESSOR_SPAWN] = cs_node
 	# Vehicles — arrays of positions per type
 	for k in VEHICLE_TOOL_TO_ID:
 		var vid : String = VEHICLE_TOOL_TO_ID[k]
@@ -1584,33 +1620,38 @@ func _refresh_auto_info(lbl: Label = null) -> void:
 	var rd : Vector2 = c["rd"]
 	node.text = "Auto-centre: %s\nRD (%.0f, %.0f)" % [c["label"], rd.x, rd.y]
 
-## Pick the RD centre for the satellite tile and the ground quad position.
-## Priority: explicit lat/lon override > PLAYER SPAWN marker > building shell AABB.
+## The satellite tile's centre is the FACTORY CENTER marker. Period.
 ##
-## player_spawn IS the canonical XZ reference for everything in WorldSetup —
-## the satellite tile is centred on wherever the operator's spawn point is.
-## If the marker hasn't been placed yet (Vector3.ZERO), we fall back to the
-## building shell so the first-Fetch experience still shows the plant.
+## Previously a priority chain (lat/lon override > player_spawn > building
+## shell AABB) silently picked whatever was available, which meant the
+## operator could place factory_center and the satellite would still land
+## somewhere else — the building-shell AABB centre, usually nowhere near
+## what the operator meant. The fix: factory_center is the single source of
+## truth. If it's not set, we tell the operator to set it; we do NOT fall
+## back to "best guess" centres that move the tile somewhere random.
+##
+## The only fallback is the building shell, used when factory_center has
+## never been placed (fresh save) — so the first Fetch shows the plant. Once
+## the operator clicks Factory Center even ONCE, that pin owns the tile.
 func _satellite_center() -> Dictionary:
-	# 1) Manual override wins.
-	var override_lat : float = float(lat_input.text) if lat_input else 0.0
-	var override_lon : float = float(lon_input.text) if lon_input else 0.0
-	if absf(override_lat) > 0.01 and absf(override_lon) > 0.01:
-		var rd_o := _wgs84_to_rd(override_lat, override_lon)
-		# RD x → world x, RD y → world -z (Godot right-handed).
-		return {"rd": rd_o, "world": Vector3(rd_o.x, 0.0, -rd_o.y), "label": "override (%.5f, %.5f)" % [override_lat, override_lon]}
-	# 2) Player-spawn marker — only if it's still in REAL RD scale (~1e5). After the
-	# layout is localized to a local frame, player_spawn is small and is NOT a valid
-	# geographic centre, so we skip it and use the building's true RD instead.
-	if absf(WorldLayout.player_spawn.x) > 10000.0 or absf(WorldLayout.player_spawn.z) > 10000.0:
-		var ps : Vector3 = WorldLayout.player_spawn
-		return {"rd": Vector2(ps.x, -ps.z), "world": Vector3(ps.x, 0.0, ps.z), "label": "player spawn (RD)"}
-	# 3) Building shell — fetch RD from the model's TRUE baked geometry centre (the
-	# plant's real Dutch RD location), but park the quad at the LOCAL shell centre
-	# (the model is shifted to the origin for display). Using shell_center for the RD
-	# after that shift would fetch RD (0,0) — an empty white tile, the bug reported.
+	var fc : Vector3 = WorldLayout.factory_center
+	if fc != Vector3.ZERO:
+		# Two sub-cases — both pin the satellite to the factory_center marker.
+		# a) Still in REAL RD scale (~1e5): the marker IS a valid Dutch coord.
+		if absf(fc.x) > 10000.0 or absf(fc.z) > 10000.0:
+			return {"rd": Vector2(fc.x, -fc.z), "world": Vector3(fc.x, 0.0, fc.z), "label": "factory center (RD)"}
+		# b) Already localized to a small frame: combine the marker's local XZ
+		# with the building's TRUE baked RD so the WMS query asks for the right
+		# patch of Dutch ground, and park the local quad where the operator
+		# placed the marker.
+		var rd_base : Vector3 = _shell_rd_center if _shell_rd_center != Vector3.ZERO else shell_center
+		var rd_fc : Vector2 = Vector2(rd_base.x + fc.x, -(rd_base.z + fc.z))
+		return {"rd": rd_fc, "world": Vector3(fc.x, 0.0, fc.z), "label": "factory center"}
+	# No factory_center placed yet — first-time fetch shows the building so
+	# the operator can place the marker on top of the right spot. After they
+	# place it, every subsequent fetch follows the marker.
 	var rd_src : Vector3 = _shell_rd_center if _shell_rd_center != Vector3.ZERO else shell_center
-	return {"rd": Vector2(rd_src.x, -rd_src.z), "world": Vector3(shell_center.x, 0.0, shell_center.z), "label": "building shell"}
+	return {"rd": Vector2(rd_src.x, -rd_src.z), "world": Vector3(shell_center.x, 0.0, shell_center.z), "label": "building shell (place Factory center to override)"}
 
 func _on_fetch_satellite() -> void:
 	var extent_m : float = float(extent_input.text) if extent_input else float(DEFAULT_EXTENT_M)

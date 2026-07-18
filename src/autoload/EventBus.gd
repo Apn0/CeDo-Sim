@@ -19,6 +19,23 @@ signal machine_lump_produced(machine_id: String, mass_kg: float, temp_c: float)
 ## remaining_s counts down from vacuum_alarm_grace_s → 0 (cascade failure).
 signal machine_vacuum_alarm_tick(machine_id: String, remaining_s: float)
 
+## Generic SCADA event channel — for higher-level operational events that don't
+## fit the per-machine alarm/state/lump signals above. Used for things like:
+##   * "cascade_stop_all_except_pcu" — emitted by ExtruderMachine on the edge
+##     into the extruder's FAULT state. The PCU/CutterCompactor keeps running
+##     (operator anecdote: stopping the PCU mid-charge lets the pot solidify
+##     at 125 °C, which is a multi-day teardown); everything else downstream
+##     of the extruder halts.
+##   * "cascade_resume" — emitted when the operator clears the upstream FAULT.
+##   * Future: "leegdraaien_started", "shift_handover", "td_blade_work_scheduled",
+##     etc. — anything the SCADA panel + ledger + audio mixer want to react to
+##     but isn't a simple per-machine state change.
+## `line_id` identifies which extruder line emitted it (e.g. "3A", "3B", "1");
+## `event_name` is a stable string key; `data` carries event-specific payload
+## (free-form Dictionary so we don't have to add a new signal for every
+## variation).
+signal scada_event(line_id: String, event_name: String, data: Dictionary)
+
 # ── Player actions ────────────────────────────────────────────────────────────
 signal player_interacted(target: Node, interaction: String)
 signal player_picked_up(item_id: String)

@@ -71,6 +71,33 @@ func _power_stage(i: int, on: bool) -> void:
 	if t != null and t.has_method("set_running"):
 		t.call("set_running", on)
 
+## Public per-stage power setter — additive API for the survivor-PLC
+## integration. The save loader / warm-boot path (LineFlow.mark_warm_boot)
+## and rebuild()'s survivor rehydration use this to mark stages that were
+## already powered BEFORE the rebuild so the per-tick override does NOT
+## drop them back to false while waiting for the staggered ramp to catch
+## up. Cleanly drives the existing `set_running` semantics, exactly like
+## `_power_stage`, so survivor downstream rotors stay live.
+func set_stage_powered(i: int, on: bool) -> void:
+	_power_stage(i, on)
+
+## Force every stage to powered=true and put the sequencer in its "fully
+## started" terminal phase. The save loader calls this on warm-boot so
+## the line resumes HOT instead of running through the staggered
+## downstream-first ramp. Idempotent — safe to call when already started.
+func force_all_powered() -> void:
+	if _stages.is_empty():
+		return
+	for s in _stages:
+		s["powered"] = true
+		var t = s["target"]
+		if t != null and t.has_method("set_running"):
+			t.call("set_running", true)
+	# Match the terminal state start() ends in: _phase 0, _idx past head.
+	_phase = 0
+	_idx = -1
+	_timer = 0.0
+
 # ── Queries ───────────────────────────────────────────────────────────────────
 func powered_count() -> int:
 	var n := 0

@@ -187,9 +187,15 @@ static func rebuild_appearance(holder: Node3D, shirt: Color, variant: int, new_a
 ## #133 / #186 — per-character appearance dict. Recognised keys:
 ##   "hair"       : "bald" / "buzz" / "short" (default) / "mid" / "long"
 ##                  / "ponytail" / "mullet"
-##   "cap"        : true → a dark-blue work cap layered OVER the hair (brim
+##   "cap"        : true → a work cap layered OVER the hair (brim
 ##                  covers the front, hair pokes through back/sides — no
-##                  longer a replacement)
+##                  longer a replacement). Default colour is dark navy; use
+##                  "cap_color" to override (e.g. a brighter company blue).
+##   "cap_color"  : optional Color — overrides the default dark-navy cap tint.
+##                  A {r,g,b} dict also accepted (JSON-roundtrip from
+##                  GameState). Use to express the brighter company blue
+##                  variant seen on Kevin / Abdellilah in the worker_outfit
+##                  photo (operator spec).
 ##   "beard"      : "none" / "thin" (rendered as sparse stubble dots, NOT
 ##                  planes) / "thick" / "full" / "mustache" / "goatee"
 ##   "hair_color" : optional Color, overrides the variant-driven default
@@ -199,10 +205,15 @@ static func rebuild_appearance(holder: Node3D, shirt: Color, variant: int, new_a
 ##                  textured sweatshirt path; flat colour for t_shirt). Does NOT
 ##                  override hi_vis_coat colour (safety yellow is safety yellow).
 ##   "footwear"   : "work_boots" (default) / "shoes"
-##   "ppe"        : "hi_vis" (default for crew → yellow vest + reflective bands)
-##                  / "operator" (orange vest + hardhat) / "none" (personal
-##                  clothes only). PPE is an ADDITIVE overlay — it shows over
-##                  whatever shirt you picked, so the dropdown is never a no-op.
+##   "ppe"        : "hi_vis" (default for crew → yellow vest + chest + shoulder
+##                  reflective bands + white work gloves) / "operator" (orange
+##                  vest + chest + shoulder bands + white work gloves +
+##                  hardhat) / "none" (personal clothes only, bare hands). PPE
+##                  is an ADDITIVE overlay — it shows over whatever shirt you
+##                  picked, so the dropdown is never a no-op. The shoulder
+##                  bands (#212 worker_outfit photo) sit just above the chest
+##                  band and wrap across both shoulders; the gloves sit at
+##                  the wrist on top of the existing hand mesh.
 ##   "wear_state" : "on_duty" (default — PPE shows) / "off_duty" (PPE hidden,
 ##                  hi_vis_coat downgrades to sweatshirt). Set automatically
 ##                  by MainWorld based on ShiftClock.shift_active.
@@ -257,15 +268,28 @@ static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -
 	if shirt_color_override is Dictionary and shirt_color_override.has("r"):
 		shirt_color_override = Color(float(shirt_color_override["r"]),
 			float(shirt_color_override["g"]), float(shirt_color_override["b"]))
+	# #212 — Optional explicit cap colour override. Mirrors the shirt/pants colour
+	# pattern so a JSON-roundtripped {r,g,b} dict also works (GameState save→load).
+	# When absent we fall back to the dark-navy default inside the cap branch.
+	var cap_color_override : Variant = appearance.get("cap_color", null)
+	if cap_color_override is Dictionary and cap_color_override.has("r"):
+		cap_color_override = Color(float(cap_color_override["r"]),
+			float(cap_color_override["g"]), float(cap_color_override["b"]))
 
 	var root := Node3D.new()
 	root.name = "Body"
 	# #126 — per-NPC proportions. Scale the whole body node so legs/torso/arms
 	# all stretch consistently; head + face features inherit but stay attached.
 	# Clamped so even an extreme value can't break collision badly.
+	# #C — `width_mul` (X = shoulder/hip width) and `depth_mul` (Z = chest
+	# thickness / front-to-back) are now independent axes so the customizer can
+	# express a broad-but-thin or narrow-but-stocky build. `depth_mul` falls
+	# back to `width_mul` for old appearance dicts that only carry width — so
+	# every existing NPC + save keeps its current proportions unchanged.
 	var height_mul : float = clampf(float(appearance.get("height_mul", 1.0)), 0.80, 1.20)
 	var width_mul  : float = clampf(float(appearance.get("width_mul",  1.0)), 0.80, 1.25)
-	root.scale = Vector3(width_mul, height_mul, width_mul)
+	var depth_mul  : float = clampf(float(appearance.get("depth_mul",  width_mul)), 0.80, 1.25)
+	root.scale = Vector3(width_mul, height_mul, depth_mul)
 
 	var shirt_type : String = String(appearance.get("shirt_type", "t_shirt"))
 	var footwear : String = String(appearance.get("footwear", "work_boots"))
@@ -370,6 +394,14 @@ static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -
 		var m_band := _mat(Color(0.80, 0.82, 0.84), 0.25)
 		_box(root, Vector3(0.43, 0.03, 0.25), Vector3(0.0, 0.38, 0.0), m_band)
 		_box(root, Vector3(0.43, 0.03, 0.25), Vector3(0.0, 0.08, 0.0), m_band)
+		# #212 — Shoulder reflective bands. Per the worker_outfit photo the
+		# CeDo coat has TWO additional cross-chest reflective strips sitting
+		# just above the existing chest band, hugging the shoulder line. We
+		# model them as two short horizontal strips (one per side) on top of
+		# the upper-chest at y ≈ 0.45, so they read as the shoulder pair
+		# rather than a single wide band continuous with the chest one.
+		_box(root, Vector3(0.20, 0.03, 0.25), Vector3(-0.12, 0.45, 0.0), m_band)
+		_box(root, Vector3(0.20, 0.03, 0.25), Vector3( 0.12, 0.45, 0.0), m_band)
 
 	# ── PPE ADDITIVE LAYER (#186) ──────────────────────────────────────────────
 	# PPE is now an OVERLAY independent of the shirt — fixes the operator complaint
@@ -385,12 +417,23 @@ static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -
 				var m_band_v := _mat(Color(0.80, 0.82, 0.84), 0.25)
 				_box(root, Vector3(0.44, 0.03, 0.27), Vector3(0.0, 0.36, 0.0), m_band_v)
 				_box(root, Vector3(0.44, 0.03, 0.27), Vector3(0.0, 0.12, 0.0), m_band_v)
+				# #212 — Shoulder reflective bands above the chest band.
+				# Two short cross-chest strips, one per shoulder, sized just
+				# wide enough to hug the upper-chest box (0.40 wide) without
+				# overlapping the chest band underneath them.
+				_box(root, Vector3(0.20, 0.03, 0.28), Vector3(-0.12, 0.43, 0.0), m_band_v)
+				_box(root, Vector3(0.20, 0.03, 0.28), Vector3( 0.12, 0.43, 0.0), m_band_v)
 			"operator":
 				var m_vest_op := _hivis_material("orange")
 				_box(root, Vector3(0.43, 0.42, 0.26), Vector3(0.0, 0.26, 0.0), m_vest_op)
 				var m_band_o := _mat(Color(0.80, 0.82, 0.84), 0.25)
 				_box(root, Vector3(0.44, 0.03, 0.27), Vector3(0.0, 0.36, 0.0), m_band_o)
 				_box(root, Vector3(0.44, 0.03, 0.27), Vector3(0.0, 0.12, 0.0), m_band_o)
+				# #212 — Shoulder reflective bands above the chest band
+				# (mirrors the hi_vis case so both PPE classes carry the
+				# upgraded reflective layout from the worker_outfit photo).
+				_box(root, Vector3(0.20, 0.03, 0.28), Vector3(-0.12, 0.43, 0.0), m_band_o)
+				_box(root, Vector3(0.20, 0.03, 0.28), Vector3( 0.12, 0.43, 0.0), m_band_o)
 			_:
 				pass
 
@@ -400,6 +443,17 @@ static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -
 	# from the shoulder. Same Y-sum invariant as legs: pivot.y + mesh.y == old
 	# mesh.y, so render-layer classification stays put.
 	# Pivot names: ShoulderPivot_L / ShoulderPivot_R (NPC gait reads these).
+	#
+	# #212 — White work gloves. When the NPC is in a hi-vis loadout (hi_vis or
+	# operator PPE, AND on duty) we layer a slightly-oversized white box over
+	# the bare-skin hand. It lives INSIDE the shoulder pivot so it swings with
+	# the arm. We skip the glove on the "none" PPE (off-shift attire) and any
+	# off_duty state — same suppression rule as the vest/bands above.
+	var _show_gloves : bool = (wear_state != "off_duty") \
+		and (ppe_class == "hi_vis" or ppe_class == "operator")
+	var m_glove : StandardMaterial3D = null
+	if _show_gloves:
+		m_glove = _mat(Color(0.92, 0.92, 0.92), 0.60)
 	var _shoulder_y : float = 0.47
 	for sx in [-1.0, 1.0]:
 		var x : float = float(sx) * 0.27
@@ -410,6 +464,10 @@ static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -
 		_box(sh, Vector3(0.11, 0.26, 0.12), Vector3(0.0, 0.34 - _shoulder_y, 0.0), m_shirt)     # upper arm
 		_box(sh, Vector3(0.10, 0.26, 0.11), Vector3(0.0, 0.08 - _shoulder_y, 0.0), m_forearm)   # forearm
 		_box(sh, Vector3(0.10, 0.10, 0.12), Vector3(0.0, -0.08 - _shoulder_y, 0.02), m_skin)    # hand
+		if _show_gloves:
+			# Glove is 1mm larger on every axis than the hand to avoid Z-fight
+			# while still reading as "wrapping" the hand from any camera angle.
+			_box(sh, Vector3(0.11, 0.11, 0.13), Vector3(0.0, -0.08 - _shoulder_y, 0.02), m_glove)
 
 	# ── NECK + HEAD ─────────────────────────────────────────────────────────────
 	_box(root, Vector3(0.12, 0.08, 0.12), Vector3(0.0, 0.53, 0.0), m_skin)        # neck
@@ -550,27 +608,35 @@ static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -
 	#     the front, hair still pokes out the back/sides for everyone except
 	#     a "bald" wearer. Independent of PPE class; the cap is a wardrobe item.
 	if wears_cap:
-		var cap_mat := _mat(Color(0.18, 0.22, 0.36), 0.78)
+		# #212 — Cap colour resolution: explicit override > default dark navy.
+		# A brighter company-blue (e.g. Color(0.13, 0.34, 0.78)) reproduces the
+		# Kevin / Abdellilah caps in the worker_outfit reference photo without
+		# breaking the legacy dark-navy look for NPCs that don't set the field.
+		var cap_color : Color = Color(0.18, 0.22, 0.36)
+		if cap_color_override is Color:
+			cap_color = cap_color_override
+		var cap_mat := _mat(cap_color, 0.78)
 		_box(root, Vector3(0.28, 0.09, 0.28), Vector3(0.0, head_y + 0.135, 0.0), cap_mat)   # crown
-		# BUG FIX: this rig is authored face-on-LOCAL-+Z (see ORIENTATION CONTRACT
-		# at the top of build()). "Forward of the face plane" therefore means MORE
-		# POSITIVE local Z, not more negative. Previous code had `fz - 0.04` which
-		# tucked the brim INSIDE the head on the wrong side — that's why the cap
-		# read as 180° turned in-game.
-		_box(root, Vector3(0.26, 0.02, 0.10), Vector3(0.0, head_y + 0.09, fz + 0.04), cap_mat)  # brim (forward of face)
+		# Rig is authored face-on-LOCAL-(-Z): `fz := -0.122` at line 432 places
+		# eyes/nose/mouth on the -Z face of the head box. "Forward of the face
+		# plane" therefore means MORE NEGATIVE local Z. A prior fix had this
+		# inverted (`fz + 0.04`), which tucked the brim INSIDE the head on the
+		# +Z side — making the cap read as 180° turned and the whole head look
+		# like it was facing backwards.
+		_box(root, Vector3(0.26, 0.02, 0.10), Vector3(0.0, head_y + 0.09, fz - 0.04), cap_mat)  # brim (forward of face)
 		# Optional fringe under the cap — auto-enabled whenever hair != bald so
 		# the customizer (which doesn't expose hair_under_cap directly) just
 		# does the right thing. Legacy NPC presets that set hair_under_cap=true
 		# also still light up.
 		if hair_style != "bald":
-			# Forehead fringe sits IN FRONT of the face plane (more positive local Z).
+			# Forehead fringe sits IN FRONT of the face plane (more negative local Z).
 			_box(root, Vector3(0.24, 0.025, 0.02),
-				Vector3(0.0, head_y + 0.075, fz + 0.05), m_hair)
+				Vector3(0.0, head_y + 0.075, fz - 0.05), m_hair)
 			for sx in [-1.0, 1.0]:
 				# Side temple strands tucked slightly BEHIND the face plane
-				# (less positive local Z) so they sit between the ear and the brim.
+				# (less negative local Z) so they sit between the ear and the brim.
 				_box(root, Vector3(0.025, 0.05, 0.04),
-					Vector3(sx * 0.115, head_y + 0.04, fz - 0.01), m_hair)
+					Vector3(sx * 0.115, head_y + 0.04, fz + 0.01), m_hair)
 
 	# Hardhat overlay if ppe_class == "operator" (drawn AFTER cap so it wins).
 	if ppe_class == "operator" and wear_state != "off_duty":
@@ -779,6 +845,7 @@ static func _install_skeleton_rig(root: Node3D) -> void:
 	lib.add_animation("crouch_pose", _build_anim_crouch(skel))
 	lib.add_animation("prone_pose",  _build_anim_prone(skel))
 	lib.add_animation("seated_pose", _build_anim_seated(skel))
+	lib.add_animation("climb_pose",  _build_anim_climb(skel))
 	ap.add_animation_library("", lib)
 	# We do NOT call ap.play("idle") here — the rig root isn't in the scene
 	# tree yet, and play() requires the player to be active. The AnimationTree
@@ -825,11 +892,14 @@ static func _install_skeleton_rig(root: Node3D) -> void:
 	n_prone.animation = "prone_pose"
 	var n_seated := AnimationNodeAnimation.new()
 	n_seated.animation = "seated_pose"
+	var n_climb := AnimationNodeAnimation.new()
+	n_climb.animation = "climb_pose"
 	var sm := AnimationNodeStateMachine.new()
 	sm.add_node("locomotion", bs,        Vector2(   0.0,   0.0))
 	sm.add_node("crouch",     n_crouch,  Vector2( 200.0, 120.0))
 	sm.add_node("prone",      n_prone,   Vector2( 400.0, 120.0))
 	sm.add_node("seated",     n_seated,  Vector2( 600.0, 120.0))
+	sm.add_node("climb",      n_climb,   Vector2( 800.0, 120.0))
 	# Godot 4.6 has no set_start_node() — the initial state is selected by
 	# adding a transition from the built-in "Start" pseudonode (it always
 	# exists, alongside "End"). SWITCH_MODE_IMMEDIATE so locomotion is active
@@ -839,7 +909,7 @@ static func _install_skeleton_rig(root: Node3D) -> void:
 	sm.add_transition("Start", "locomotion", t_start)
 	# Bi-directional transitions between locomotion and each pose state, plus
 	# pose-to-pose so the operator can rebind crouch→prone without first standing.
-	var pose_states := ["crouch", "prone", "seated"]
+	var pose_states := ["crouch", "prone", "seated", "climb"]
 	for to in pose_states:
 		var t_to := AnimationNodeStateMachineTransition.new()
 		t_to.xfade_time = 0.25
@@ -1210,6 +1280,23 @@ static func _build_anim_prone(_skel: Skeleton3D) -> Animation:
 	_add_rot_track(a, "RUpperArm",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-100.0))]])
 	_add_rot_track(a, "LUpperLeg",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( -5.0))]])
 	_add_rot_track(a, "RUpperLeg",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( -5.0))]])
+	return a
+
+## Climb pose — used during vault/mantle. Arms raised, one knee bent up.
+static func _build_anim_climb(_skel: Skeleton3D) -> Animation:
+	var a := Animation.new()
+	a.length = 0.5
+	a.loop_mode = Animation.LOOP_LINEAR
+	_add_pos_track(a, "Hips",     [[0.0, Vector3(0.0, -0.15, 0.0)]])
+	_add_rot_track(a, "LUpperLeg",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 80.0))]])
+	_add_rot_track(a, "RUpperLeg",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 10.0))]])
+	_add_rot_track(a, "LLowerLeg",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-80.0))]])
+	_add_rot_track(a, "RLowerLeg",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( -5.0))]])
+	_add_rot_track(a, "LUpperArm",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(130.0))]])
+	_add_rot_track(a, "RUpperArm",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(130.0))]])
+	_add_rot_track(a, "LLowerArm",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 40.0))]])
+	_add_rot_track(a, "RLowerArm",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 40.0))]])
+	_add_rot_track(a, "Spine",    [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 10.0))]])
 	return a
 
 ## Seated pose — used when entering any vehicle. Hips slightly lowered, hips

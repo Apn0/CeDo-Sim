@@ -18,17 +18,36 @@ class_name EmptyLumpCartTask
 # Phases advance based on proximity + a per-phase max-duration timeout so a
 # stuck NPC eventually gives up cleanly (priority drops, board re-emits).
 
+# Sub-phase 2 (LIFT) is broken out into 4 hydraulically-distinct steps so the
+# NPC actually drives the forks INTO the cart's pockets instead of just
+# pretending. Step values: lift_height_m setpoints for each beat.
+const LIFT_FLAT_M       : float = -0.375   # tine bottoms on the floor (pocket-insert pose)
+const LIFT_TRANSPORT_M  : float =  0.05    # cart cleared ~5 cm off the floor for hauling
+const SLIDE_IN_OFFSET_M : float =  1.40    # how far past the cart centre we drive to seat the forks
+const POCKET_APPROACH_M : float =  1.80    # standoff in front of cart when lining up
+
 enum Phase { WALK_TO_FORKLIFT, DRIVE_TO_CART, LIFT_AND_HAUL, DUMP_AND_RETURN }
+# Sub-states inside LIFT_AND_HAUL — explicit so a missed pocket cleanly times
+# out at the engage step rather than silently advancing.
+enum Lift { POSE_FORKS, APPROACH_POCKETS, SLIDE_IN, ENGAGE, HAUL }
 
 const PHASE_TIMEOUT_S    : float = 90.0    # per phase; long enough for any plausible drive
+const LIFT_STEP_TIMEOUT_S: float = 12.0    # per LIFT sub-state — short enough to retry quickly
+const POSE_SETTLE_S      : float = 1.2     # let hydraulics reach the pose before driving in
+const ENGAGE_HOLD_S      : float = 0.8     # raise + watch for cart actually riding the forks
+const ENGAGE_RISE_MIN    : float = 0.03    # cart Y must climb at least this much during ENGAGE
 const APPROACH_DIST_M    : float = 1.6     # close enough to interact (enter forklift / grab cart)
 const APPROACH_DIST_VEH  : float = 3.5     # close enough when DRIVING a forklift
+const SEATED_DIST_M      : float = 1.0     # tighter tolerance once aligned to pockets
 
 var lump_cart  : Node3D = null   # the target cart (set on init)
 var dest_node  : Node3D = null   # the lumps_container (or shipping_container if indoor is full)
 var _phase     : int    = Phase.WALK_TO_FORKLIFT
 var _phase_t   : float  = 0.0
 var _forklift  : Node3D = null
+var _lift_step : int    = Lift.POSE_FORKS
+var _step_t    : float  = 0.0
+var _cart_y_at_engage_start : float = 0.0
 
 func _init(cart: Node3D, dest: Node3D) -> void:
 	task_name = "empty_lump_cart"
@@ -67,6 +86,7 @@ func tick(npc: Node, delta: float) -> bool:
 	if _done:
 		return true
 	_phase_t += delta
+	_step_t  += delta
 	if _phase_t > PHASE_TIMEOUT_S:
 		mark_failed("phase_timeout:%d" % _phase)
 		return true
@@ -95,26 +115,100 @@ func _tick_drive_to_cart(npc: Node) -> void:
 	if lump_cart == null or not is_instance_valid(lump_cart):
 		mark_failed("cart_gone")
 		return
-	if not _close_enough(_forklift, lump_cart, APPROACH_DIST_VEH):
-		_set_vehicle_destination(npc, lump_cart.global_position)
+	# Drive to a STAND-OFF pose in front of the cart, lined up with its
+	# pocket axis. The lump cart's pockets open along its local ±Z (per the
+	# #201 compound-collision spec); approach from the +Z side so the forks
+	# slide in cleanly.
+	var approach_pos : Vector3 = _pocket_approach_position()
+	if not _close_enough(_forklift, _make_marker(approach_pos), APPROACH_DIST_VEH):
+		_set_vehicle_destination(npc, approach_pos)
 		return
-	# Engage forks. Phase 2 conceptually grabs the cart and attaches it to
-	# the forks; mechanically we just parent the cart node under the forklift's
-	# fork-tip so it moves with the truck.
-	if _forklift.has_method("attach_load"):
-		_forklift.call("attach_load", lump_cart)
 	_phase = Phase.LIFT_AND_HAUL
 	_phase_t = 0.0
+	_lift_step = Lift.POSE_FORKS
+	_step_t = 0.0
 
+# ── Phase 2: LIFT_AND_HAUL ────────────────────────────────────────────────────
+# Pure physics pickup. No attach_load / detach_load magic — the script just
+# drives the hydraulics + chassis through the same motions a real operator
+# would. The cart sits on the forks because of contact + gravity (the fork
+# tine collision and the cart's pocket cavities were both added in #201).
+#
+# Sub-steps:
+#   POSE_FORKS         hydraulics → tines flat on floor, spread = 0.20 m
+#                                   (forks centred at ±0.10 m → pocket centres)
+#   APPROACH_POCKETS   chassis    → stand-off ~1.8 m in front of cart's open side
+#   SLIDE_IN           chassis    → drive forward ~1.4 m so tines seat in pockets
+#   ENGAGE             hydraulics → raise lift; verify cart Y rose with the forks
+#   HAUL               chassis    → drive to dest_node with cart riding the forks
 func _tick_lift_and_haul(npc: Node) -> void:
+	if lump_cart == null or not is_instance_valid(lump_cart):
+		mark_failed("cart_gone")
+		return
 	if dest_node == null or not is_instance_valid(dest_node):
 		mark_failed("dest_gone")
 		return
-	if not _close_enough(_forklift, dest_node, APPROACH_DIST_VEH):
-		_set_vehicle_destination(npc, dest_node.global_position)
+	if _step_t > LIFT_STEP_TIMEOUT_S:
+		# Sub-step took too long — bail so the board can reissue and another
+		# attempt can try a fresh approach pose. Common cause: cart pinned
+		# against a wall; next NPC may pick the opposite side.
+		mark_failed("lift_step_timeout:%d" % _lift_step)
 		return
-	_phase = Phase.DUMP_AND_RETURN
-	_phase_t = 0.0
+	match _lift_step:
+		Lift.POSE_FORKS:
+			# Drop tines flat to the floor and pinch spread to pocket centres.
+			# _step_t buffers a brief settle window so the hydraulics physically
+			# reach the pose (lift speed ≈ 0.4 m/s loaded, spread ≈ 0.10 m/s)
+			# BEFORE we start nudging the chassis forward.
+			if _forklift.has_method("npc_pose_for_lump_cart"):
+				_forklift.call("npc_pose_for_lump_cart")
+			if _step_t >= POSE_SETTLE_S:
+				_lift_step = Lift.APPROACH_POCKETS
+				_step_t = 0.0
+		Lift.APPROACH_POCKETS:
+			var approach : Vector3 = _pocket_approach_position()
+			if not _close_enough(_forklift, _make_marker(approach), SEATED_DIST_M):
+				_set_vehicle_destination(npc, approach)
+				return
+			_lift_step = Lift.SLIDE_IN
+			_step_t = 0.0
+		Lift.SLIDE_IN:
+			# Drive forward THROUGH the cart's centre. The fork tines (real
+			# AnimatableBody3D collision, #201) slip into the cart's pocket
+			# cavities (real compound collision, #201). Target is just past
+			# the cart so the autopilot keeps nudging forward until the
+			# physical contact stops the chassis.
+			var seat_pos : Vector3 = _pocket_seat_position()
+			if not _close_enough(_forklift, _make_marker(seat_pos), 0.6):
+				_set_vehicle_destination(npc, seat_pos)
+				return
+			# Forks seated. Park the chassis and snapshot the cart Y so the
+			# next step can verify it actually rises with the carriage.
+			if _forklift.has_method("npc_stop"):
+				_forklift.call("npc_stop")
+			_cart_y_at_engage_start = lump_cart.global_position.y
+			_lift_step = Lift.ENGAGE
+			_step_t = 0.0
+		Lift.ENGAGE:
+			# Raise the carriage. After a short hold, check whether the cart
+			# came up with us. ≥ ENGAGE_RISE_MIN means the tines engaged the
+			# pocket cavities; otherwise we missed and the task fails so the
+			# board reissues and a fresh attempt can re-line-up.
+			if _forklift.has_method("npc_set_lift"):
+				_forklift.call("npc_set_lift", LIFT_TRANSPORT_M)
+			if _step_t >= ENGAGE_HOLD_S:
+				var rise : float = lump_cart.global_position.y - _cart_y_at_engage_start
+				if rise < ENGAGE_RISE_MIN:
+					mark_failed("forks_missed_pockets")
+					return
+				_lift_step = Lift.HAUL
+				_step_t = 0.0
+		Lift.HAUL:
+			if not _close_enough(_forklift, dest_node, APPROACH_DIST_VEH):
+				_set_vehicle_destination(npc, dest_node.global_position)
+				return
+			_phase = Phase.DUMP_AND_RETURN
+			_phase_t = 0.0
 
 func _tick_dump_and_return(npc: Node) -> void:
 	# Move the lumps mass from cart → dest. Cart returns to zero, dest grows.
@@ -123,16 +217,46 @@ func _tick_dump_and_return(npc: Node) -> void:
 		dumped = float(lump_cart.call("empty"))
 	if dest_node.has_method("receive_lumps") and dumped > 0.0:
 		dest_node.call("receive_lumps", dumped)
-	# Detach the cart, drop it back near the laser filter's discharge zone (where
-	# it lives between cycles).
-	if _forklift.has_method("detach_load"):
-		_forklift.call("detach_load")
-	# Exit the forklift — the NPC walks off, the next task will pick them up.
+	# Lower the carriage so the cart settles back on the floor — gravity does
+	# the parting work, no detach magic. Exit the forklift; the next task will
+	# pick the NPC up.
+	if _forklift.has_method("npc_set_lift"):
+		_forklift.call("npc_set_lift", LIFT_FLAT_M)
 	if npc.has_method("disembark_vehicle"):
 		npc.call("disembark_vehicle")
 	mark_done()
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
+
+## Stand-off pose in world space: POCKET_APPROACH_M out from the cart along
+## its pocket bearing (cart's local +Z, which is the side the pockets open
+## on per the #201 compound-collision spec).
+func _pocket_approach_position() -> Vector3:
+	if lump_cart == null or not is_instance_valid(lump_cart):
+		return Vector3.ZERO
+	var fwd : Vector3 = -lump_cart.global_transform.basis.z   # cart -Z = pocket-open face
+	return lump_cart.global_position - fwd * POCKET_APPROACH_M
+
+## Drive-through target so the chassis keeps nudging forward until the tines
+## physically bottom out in the pocket cavities. SLIDE_IN_OFFSET_M is "past
+## the cart centre," which the autopilot will never actually reach — that's
+## the point: the cart's collision walls stop the forklift at the right depth.
+func _pocket_seat_position() -> Vector3:
+	if lump_cart == null or not is_instance_valid(lump_cart):
+		return Vector3.ZERO
+	var fwd : Vector3 = -lump_cart.global_transform.basis.z
+	return lump_cart.global_position + fwd * SLIDE_IN_OFFSET_M
+
+## _close_enough() expects two Node3Ds, but we sometimes want to test against
+## a bare Vector3 target. Wrap the position in a tiny throwaway Node3D so the
+## existing helper keeps its single shape.
+func _make_marker(pos: Vector3) -> Node3D:
+	var n := Node3D.new()
+	n.global_position = pos
+	# Note: not added to the tree — _close_enough only reads global_position
+	# which is the local position for a parentless node, fine for our distance
+	# check and avoids polluting the scene with throwaway nodes.
+	return n
 
 func _find_nearest_idle_forklift(npc: Node) -> Node3D:
 	var tree := npc.get_tree() if npc.has_method("get_tree") else null

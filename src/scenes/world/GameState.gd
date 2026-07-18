@@ -19,16 +19,6 @@ var npc_data: Dictionary = {}
 # pants, short hair, no beard, no cap) so an empty save reads as "fresh hire".
 var player_appearance: Dictionary = {}
 var npc_appearances: Dictionary = {}
-# #186 — Player display name. Used by the wardrobe customizer + any UI that
-# shows "the operator". Node name is still "Player" (other systems lookup by it);
-# this is a meta/display string only. Defaults to "Arno" — the real operator.
-var player_name: String = "Arno"
-# #186 — Per-character wardrobes keyed by display name so the operator can keep
-# multiple personas (one per name) with separate outfit + per-shift wear state.
-# Keys: display name (e.g. "Arno"). Values: { "on_duty": {...}, "off_duty": {...} }
-# `player_appearance` above is treated as the current-active-character flat dict
-# (for backward compat with save files <#186). Migration runs in load_game().
-var player_wardrobes: Dictionary = {}
 var machine_data: Dictionary = {}
 # #124 — operator-set crew pins (HIER + station/role pins) keyed by npc_name.
 # Empty on a fresh save; populated by CrewManager.save_pins_dict() each save.
@@ -40,7 +30,7 @@ signal game_loaded
 
 func _ready() -> void:
 	print("GameState initialized")
-
+	
 	# Check if MainMenu passed a specific save name
 	if EventBus.has_meta("pending_save_name"):
 		var pending_name = str(EventBus.get_meta("pending_save_name"))
@@ -54,7 +44,7 @@ func _ready() -> void:
 		is_new_save = EventBus.get_meta("pending_is_new_save")
 		# Clear it so it doesn't persist across reloads
 		EventBus.remove_meta("pending_is_new_save")
-
+		
 	# Load game if save exists AND we aren't explicitly starting a new one
 	if not is_new_save and FileAccess.file_exists(save_file_path):
 		load_game()
@@ -78,8 +68,6 @@ func save_game() -> void:
 		"crew_pins": crew_pins_data,
 		"player_appearance": player_appearance,
 		"npc_appearances": npc_appearances,
-		"player_name": player_name,
-		"player_wardrobes": player_wardrobes,
 	}
 
 	var json = JSON.stringify(save_data)
@@ -103,17 +91,17 @@ func load_game() -> void:
 
 		if error == OK:
 			var data = json.data
-
+			
 			if typeof(data) != TYPE_DICTIONARY:
 				push_error("Save file root is not a JSON object")
 				return
 
 			is_new_save = data.get("is_new_save", false)
-
+			
 			var fc = data.get("factory_center", {})
 			if typeof(fc) == TYPE_DICTIONARY and fc.has("x"):
 				factory_center = Vector3(fc["x"], fc.get("y", 0), fc.get("z", 0))
-
+				
 			shift_data = data.get("shift", {}) if typeof(data.get("shift")) == TYPE_DICTIONARY else {}
 			player_data = data.get("player", {}) if typeof(data.get("player")) == TYPE_DICTIONARY else {}
 			npc_data = data.get("npcs", {}) if typeof(data.get("npcs")) == TYPE_DICTIONARY else {}
@@ -121,24 +109,6 @@ func load_game() -> void:
 			crew_pins_data = data.get("crew_pins", {}) if typeof(data.get("crew_pins")) == TYPE_DICTIONARY else {}
 			player_appearance = data.get("player_appearance", {}) if typeof(data.get("player_appearance")) == TYPE_DICTIONARY else {}
 			npc_appearances = data.get("npc_appearances", {}) if typeof(data.get("npc_appearances")) == TYPE_DICTIONARY else {}
-			# #186 — Player display name + per-character wardrobes. New saves
-			# carry both; legacy saves get default "Arno" + a wardrobe seeded
-			# from the flat player_appearance so on/off-duty don't both look
-			# like the same generic hi-vis on first load.
-			var pn = data.get("player_name", "")
-			player_name = String(pn) if typeof(pn) == TYPE_STRING and String(pn) != "" else "Arno"
-			var pw = data.get("player_wardrobes", null)
-			if typeof(pw) == TYPE_DICTIONARY:
-				player_wardrobes = pw
-			else:
-				player_wardrobes = {}
-			# Migration: seed the active character's wardrobe from the legacy
-			# flat player_appearance dict if no wardrobe entry exists yet.
-			if not player_wardrobes.has(player_name) and not player_appearance.is_empty():
-				player_wardrobes[player_name] = {
-					"on_duty":  player_appearance.duplicate(true),
-					"off_duty": player_appearance.duplicate(true),
-				}
 			print("Game loaded from: ", save_file_path)
 			emit_signal("game_loaded")
 		else:

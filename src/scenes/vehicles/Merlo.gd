@@ -1,6 +1,8 @@
 extends BaseVehicle
 class_name Merlo
 
+const SmoothedRateScript = preload("res://src/sim/SmoothedRate.gd")
+
 ## Diesel telehandler ("far reacher") with an MX-style grapple bucket: a wide
 ## scoop with a top grapple of tines that clamp down onto the bucket.
 ##
@@ -44,10 +46,23 @@ class_name Merlo
 @export_group("Load")
 @export var max_safe_load_kg        : float = 4000.0  # P40.17 rated at ground; derate applies past 50 % reach
 
+## Hydraulic ramp time constants. Telehandler boom cylinders are slow + powerful.
+## Spec: 0.5–1.0 s. Boom + telescope get the longer tau (more mass swung);
+## bucket curl + grapple ramp faster (smaller cylinders).
+const BOOM_RAMP_TAU_S    : float = 0.80
+const EXTEND_RAMP_TAU_S  : float = 0.70
+const CURL_RAMP_TAU_S    : float = 0.50
+const GRAPPLE_RAMP_TAU_S : float = 0.40
+
 var boom_deg    : float = 0.0
 var extend_m    : float = 0.0
 var curl_deg    : float = 0.0
 var grapple_deg : float = 60.0   # start open so the grapple reads as raised tines
+
+var _boom_velocity    : SmoothedRate = null
+var _extend_velocity  : SmoothedRate = null
+var _curl_velocity    : SmoothedRate = null
+var _grapple_velocity : SmoothedRate = null
 
 var _boom_pivot  : Node3D
 var _boom_extend : Node3D
@@ -56,6 +71,16 @@ var _bucket_tilt : Node3D
 var _grapple_arm : Node3D
 
 func _ready() -> void:
+	# Drive-ramp tuning per the throttle/brake audit. Telehandler diesel pulls
+	# harder than an electric forklift but the chassis is heavier and the
+	# operator carries the full mass with a long boom — longest input tau (1.5 s)
+	# so a full-load Merlo doesn't jerk the load on tap. 16 m/s² brake matches
+	# the rest of the lift fleet.
+	throttle_accel_mps2 = 4.0
+	brake_decel_mps2    = 16.0
+	coast_decel_mps2    = 4.0
+	throttle_ramp_tau_s = 1.5
+	brake_ramp_tau_s    = 0.3
 	super._ready()
 	vehicle_type = "merlo"
 	all_wheel_steer = true   # rear wheels counter-steer — the all-wheel look in the photo
@@ -81,6 +106,10 @@ func _ready() -> void:
 	grapple_pm.bounce   = 0.02
 	if _grapple_arm is PhysicsBody3D:
 		(_grapple_arm as PhysicsBody3D).physics_material_override = grapple_pm
+	_boom_velocity    = SmoothedRateScript.new(0.0, BOOM_RAMP_TAU_S)
+	_extend_velocity  = SmoothedRateScript.new(0.0, EXTEND_RAMP_TAU_S)
+	_curl_velocity    = SmoothedRateScript.new(0.0, CURL_RAMP_TAU_S)
+	_grapple_velocity = SmoothedRateScript.new(0.0, GRAPPLE_RAMP_TAU_S)
 
 func _physics_process(delta: float) -> void:
 	super._physics_process(delta)
@@ -158,24 +187,28 @@ func _update_boom(delta: float) -> void:
 
 	var b := Input.get_action_strength("forklift_lift_up") \
 		   - Input.get_action_strength("forklift_lift_down")
-	boom_deg = clampf(boom_deg + b * bsp * delta
-		+ float(m["b"]) * bsp * delta * MOUSE_TOOL_MULT, boom_min_deg, boom_max_deg)
+	var target_boom_v : float = b * bsp + float(m["b"]) * bsp * MOUSE_TOOL_MULT
+	var cur_boom_v    : float = _boom_velocity.approach(target_boom_v, delta)
+	boom_deg = clampf(boom_deg + cur_boom_v * delta, boom_min_deg, boom_max_deg)
 
 	var e := Input.get_action_strength("forklift_tilt_back") \
 		   - Input.get_action_strength("forklift_tilt_fwd")
-	extend_m = clampf(extend_m + e * esp * delta
-		+ float(m["c"]) * esp * delta * MOUSE_TOOL_MULT, extend_min_m, extend_max_m)
+	var target_extend_v : float = e * esp + float(m["c"]) * esp * MOUSE_TOOL_MULT
+	var cur_extend_v    : float = _extend_velocity.approach(target_extend_v, delta)
+	extend_m = clampf(extend_m + cur_extend_v * delta, extend_min_m, extend_max_m)
 
 	var c := Input.get_action_strength("forklift_rotator_right") \
 		   - Input.get_action_strength("forklift_rotator_left")
-	curl_deg = clampf(curl_deg + c * curl_speed_deg_s * delta
-		+ float(m["d"]) * curl_speed_deg_s * delta * MOUSE_TOOL_MULT, curl_min_deg, curl_max_deg)
+	var target_curl_v : float = c * curl_speed_deg_s + float(m["d"]) * curl_speed_deg_s * MOUSE_TOOL_MULT
+	var cur_curl_v    : float = _curl_velocity.approach(target_curl_v, delta)
+	curl_deg = clampf(curl_deg + cur_curl_v * delta, curl_min_deg, curl_max_deg)
 
 	# widen = open (lift tines), pinch = close (clamp onto the bucket)
 	var g := Input.get_action_strength("forklift_forks_widen") \
 		   - Input.get_action_strength("forklift_forks_pinch")
-	grapple_deg = clampf(grapple_deg + g * grapple_speed_deg_s * delta
-		+ float(m["a"]) * grapple_speed_deg_s * delta * MOUSE_TOOL_MULT, grapple_closed_deg, grapple_open_deg)
+	var target_grapple_v : float = g * grapple_speed_deg_s + float(m["a"]) * grapple_speed_deg_s * MOUSE_TOOL_MULT
+	var cur_grapple_v    : float = _grapple_velocity.approach(target_grapple_v, delta)
+	grapple_deg = clampf(grapple_deg + cur_grapple_v * delta, grapple_closed_deg, grapple_open_deg)
 
 func _apply_boom() -> void:
 	if _boom_pivot:
