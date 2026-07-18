@@ -58,8 +58,8 @@ echo === [9/10] SecuritySaveTest (script mode) ===
 set RC9=%ERRORLEVEL%
 
 echo.
-echo === [10/10] PLCSequencerTest (script mode) ===
-%GODOT% --headless --path . --script res://tests/PLCSequencerTest.gd
+echo === [10/10] WasteContainerTest (script mode) ===
+%GODOT% --headless --path . --script res://tests/WasteContainerTest.gd
 set RC10=%ERRORLEVEL%
 
 popd
@@ -73,7 +73,7 @@ echo SettingsParseTest      exit: %RC6%
 echo ScanLogTest            exit: %RC7%
 echo VehicleBaleTest        exit: %RC8%
 echo SecuritySaveTest       exit: %RC9%
-echo PLCSequencerTest       exit: %RC10%
+echo WasteContainerTest     exit: %RC10%
 if not "%RC1%"=="0" exit /b %RC1%
 if not "%RC2%"=="0" exit /b %RC2%
 if not "%RC3%"=="0" exit /b %RC3%
