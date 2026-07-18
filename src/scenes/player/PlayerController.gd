@@ -528,6 +528,7 @@ func _advance_vault(delta: float) -> void:
 	# Ease-out so the player decelerates as they set down on top of the ledge.
 	var eased := 1.0 - pow(1.0 - t, 2.0)
 	global_position = _vault_start.lerp(_vault_end, eased)
+	_update_animation_blend()
 	if t >= 1.0:
 		_vault_state = VaultState.NONE
 		_vault_timer = 0.0
@@ -1038,6 +1039,8 @@ func _update_animation_blend() -> void:
 		Stance.CROUCHING: want_state = "crouch"
 		Stance.PRONE:     want_state = "prone"
 		_:                want_state = "locomotion"
+	if _vault_state == VaultState.CLIMBING:
+		want_state = "vault"
 	# in-vehicle wins over any stance — driver-seat pose
 	if _in_vehicle_seated:
 		want_state = "seated"

@@ -779,6 +779,7 @@ static func _install_skeleton_rig(root: Node3D) -> void:
 	lib.add_animation("crouch_pose", _build_anim_crouch(skel))
 	lib.add_animation("prone_pose",  _build_anim_prone(skel))
 	lib.add_animation("seated_pose", _build_anim_seated(skel))
+	lib.add_animation("vault_pose",  _build_anim_vault(skel))
 	ap.add_animation_library("", lib)
 	# We do NOT call ap.play("idle") here — the rig root isn't in the scene
 	# tree yet, and play() requires the player to be active. The AnimationTree
@@ -825,11 +826,14 @@ static func _install_skeleton_rig(root: Node3D) -> void:
 	n_prone.animation = "prone_pose"
 	var n_seated := AnimationNodeAnimation.new()
 	n_seated.animation = "seated_pose"
+	var n_vault := AnimationNodeAnimation.new()
+	n_vault.animation = "vault_pose"
 	var sm := AnimationNodeStateMachine.new()
 	sm.add_node("locomotion", bs,        Vector2(   0.0,   0.0))
 	sm.add_node("crouch",     n_crouch,  Vector2( 200.0, 120.0))
 	sm.add_node("prone",      n_prone,   Vector2( 400.0, 120.0))
 	sm.add_node("seated",     n_seated,  Vector2( 600.0, 120.0))
+	sm.add_node("vault",      n_vault,   Vector2( 800.0, 120.0))
 	# Godot 4.6 has no set_start_node() — the initial state is selected by
 	# adding a transition from the built-in "Start" pseudonode (it always
 	# exists, alongside "End"). SWITCH_MODE_IMMEDIATE so locomotion is active
@@ -839,7 +843,7 @@ static func _install_skeleton_rig(root: Node3D) -> void:
 	sm.add_transition("Start", "locomotion", t_start)
 	# Bi-directional transitions between locomotion and each pose state, plus
 	# pose-to-pose so the operator can rebind crouch→prone without first standing.
-	var pose_states := ["crouch", "prone", "seated"]
+	var pose_states := ["crouch", "prone", "seated", "vault"]
 	for to in pose_states:
 		var t_to := AnimationNodeStateMachineTransition.new()
 		t_to.xfade_time = 0.25
@@ -1230,4 +1234,22 @@ static func _build_anim_seated(_skel: Skeleton3D) -> Animation:
 	_add_rot_track(a, "LLowerArm",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-60.0))]])
 	_add_rot_track(a, "RLowerArm",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-60.0))]])
 	_add_rot_track(a, "Spine",    [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(  8.0))]])
+	return a
+
+## Vault / climb pose — used during the vault tween over obstacles. Arms pushed
+## down (mantling up), legs tucked up (clearing the ledge).
+static func _build_anim_vault(_skel: Skeleton3D) -> Animation:
+	var a := Animation.new()
+	a.length = 0.5
+	a.loop_mode = Animation.LOOP_LINEAR
+	_add_pos_track(a, "Hips",     [[0.0, Vector3(0.0, 0.15, 0.0)]])
+	_add_rot_track(a, "Spine",    [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 20.0))]])
+	_add_rot_track(a, "LUpperArm",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-45.0))]])
+	_add_rot_track(a, "RUpperArm",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-45.0))]])
+	_add_rot_track(a, "LLowerArm",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-90.0))]])
+	_add_rot_track(a, "RLowerArm",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-90.0))]])
+	_add_rot_track(a, "LUpperLeg",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 80.0))]])
+	_add_rot_track(a, "RUpperLeg",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 80.0))]])
+	_add_rot_track(a, "LLowerLeg",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-100.0))]])
+	_add_rot_track(a, "RLowerLeg",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-100.0))]])
 	return a

@@ -906,6 +906,7 @@ func _advance_vault(delta: float) -> void:
 	var t := clampf(_vault_timer / CLIMB_DURATION_S, 0.0, 1.0)
 	var eased := 1.0 - pow(1.0 - t, 2.0)
 	global_position = _vault_start.lerp(_vault_end, eased)
+	_update_animation_blend()
 	if t >= 1.0:
 		_vault_locked = false
 		_vault_timer = 0.0
@@ -1022,12 +1023,12 @@ func _update_animation_blend() -> void:
 			return
 	# Map NPC.Locomotion → state name. CROUCH_WALK = held crouch pose (Phase 3
 	# would author a crouch-walk locomotion BlendSpace row). PRONE_CRAWL = prone.
-	# VAULT and JUMP keep using the locomotion state (the vault tween runs on
-	# the capsule, the visible body just keeps walking through the motion).
+	# VAULT uses the vault climbing pose. JUMP keeps using the locomotion state.
 	var want_state : String = "locomotion"
 	match locomotion:
 		Locomotion.CROUCH_WALK: want_state = "crouch"
 		Locomotion.PRONE_CRAWL: want_state = "prone"
+		Locomotion.VAULT:       want_state = "vault"
 		_:                      want_state = "locomotion"
 	# NPC sitting in vehicle — set via assign_vehicle / clear_vehicle in the
 	# vehicle entry code.
