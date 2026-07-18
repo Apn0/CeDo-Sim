@@ -89,7 +89,7 @@ const TOOL_DEFS := {
 	# the player's parked Swift. Both formerly hardcoded; now draggable.
 	Tool.STAFF_PARKING:      {"label": "Staff parking",           "color": Color.DEEP_SKY_BLUE, "kind": "point"},
 	Tool.PLAYER_SWIFT:       {"label": "Player Swift (start)",    "color": Color.LIGHT_SALMON,  "kind": "point"},
-	Tool.COMPRESSOR_SPAWN:   {"label": "Compressor spawn",        "color": Color.CYAN,          "kind": "point"},
+	Tool.COMPRESSOR_SPAWN:   {"label": "Compressor spawn",        "color": Color.SLATE_BLUE,    "kind": "point"},
 }
 
 # Tool → WorldLayout vehicle key. Map kept here so MainWorld's spawn code can
@@ -1540,11 +1540,12 @@ func _apply_loaded_layout() -> void:
 		sw_node.position = Vector3(WorldLayout.player_swift.x, sw_node.position.y, WorldLayout.player_swift.z)
 		markers_root.add_child(sw_node)
 		point_markers[Tool.PLAYER_SWIFT] = sw_node
+	# Compressor spawn (single)
 	if WorldLayout.compressor_spawn != Vector3.ZERO:
-		var cs_node := _make_dot(TOOL_DEFS[Tool.COMPRESSOR_SPAWN]["color"])
-		cs_node.position = Vector3(WorldLayout.compressor_spawn.x, cs_node.position.y, WorldLayout.compressor_spawn.z)
-		markers_root.add_child(cs_node)
-		point_markers[Tool.COMPRESSOR_SPAWN] = cs_node
+		var comp_node := _make_dot(TOOL_DEFS[Tool.COMPRESSOR_SPAWN]["color"])
+		comp_node.position = Vector3(WorldLayout.compressor_spawn.x, comp_node.position.y, WorldLayout.compressor_spawn.z)
+		markers_root.add_child(comp_node)
+		point_markers[Tool.COMPRESSOR_SPAWN] = comp_node
 	# Vehicles — arrays of positions per type
 	for k in VEHICLE_TOOL_TO_ID:
 		var vid : String = VEHICLE_TOOL_TO_ID[k]
