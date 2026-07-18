@@ -97,6 +97,7 @@ const CC_NOMINAL_RPM         : float = 1500.0
 
 var _nodes : Array = []      # Array[Dictionary]
 var _edges : Array = []      # Array[Dictionary] {a:int, b:int}
+var _placed_objects_cache : Array[Node] = []
 var _connectors : Node3D
 var _ui    : CanvasLayer
 var _label : Label
@@ -197,7 +198,19 @@ const SCADA_PUSH_DT : float = 0.16
 var _scada : Node = null
 
 # =============================================================================
+func _on_node_added(node: Node) -> void:
+	if node.is_in_group("placed_object"):
+		_placed_objects_cache.append(node)
+
+func _on_node_removed(node: Node) -> void:
+	_placed_objects_cache.erase(node)
+
 func _ready() -> void:
+	var tree := get_tree()
+	if tree != null:
+		tree.node_added.connect(_on_node_added)
+		tree.node_removed.connect(_on_node_removed)
+		_placed_objects_cache.assign(tree.get_nodes_in_group("placed_object"))
 	_connectors = Node3D.new()
 	_connectors.name = "Connectors"
 	add_child(_connectors)
@@ -430,7 +443,9 @@ func _node_wout2(node3d: Node3D, prof: Dictionary, size: Vector3) -> Vector3:
 
 func _discover() -> void:
 	_nodes.clear()
-	for m in get_tree().get_nodes_in_group("placed_object"):
+	for m in _placed_objects_cache:
+		if not is_instance_valid(m) or not m.is_inside_tree():
+			continue
 		var node3d := m as Node3D
 		if node3d == null or not node3d.has_meta("placeable_id"):
 			continue
