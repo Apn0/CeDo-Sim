@@ -124,7 +124,8 @@ func _tick_carry_to_can(npc: Node) -> void:
 	_phase_t = 0.0
 	_dwell_t = 0.0
 
-func _tick_refuel(npc: Node, delta: float) -> void:
+## `_npc` is unused — kept for signature symmetry with the other _tick_* handlers.
+func _tick_refuel(_npc: Node, delta: float) -> void:
 	# Dwell at the can (the "pouring fuel" beat), then top the tank to full.
 	_dwell_t += delta
 	if _dwell_t < REFUEL_DWELL_S:
