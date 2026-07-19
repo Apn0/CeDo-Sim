@@ -742,52 +742,10 @@ func _clamp_carried_against_obstacles() -> void:
 	# bales from clipping into stacks; with the snap gone, gravity + contact
 	# solve this for free. Body kept for save-compat and stays a no-op.
 	return
-	# legacy path below is unreachable but kept verbatim for review.
-	if _carried_bale == null:
-		return
-	var space := get_world_3d().direct_space_state
-	if space == null:
-		return
-	# Build the full list of carried bodies (primary + stack).
-	var all_carried : Array[Node3D] = [_carried_bale]
-	for sb in _carried_stack:
-		if sb != null and is_instance_valid(sb):
-			all_carried.append(sb)
-	# 1) Reset to natural local Y so the clamp is recomputed cleanly every frame.
-	for b in all_carried:
-		var key := b.get_instance_id()
-		if _carried_natural_local_y.has(key):
-			b.position.y = _carried_natural_local_y[key]
-	# 2) Find the LOWEST carried bale — that's the one whose bottom hits an
-	#    obstacle first when the carrier lowers the load.
-	var lowest := all_carried[0]
-	for b in all_carried:
-		if b.global_position.y < lowest.global_position.y:
-			lowest = b
-	# 3) Probe straight down from a hair above the bale's TOP, deep enough to
-	#    catch obstacles within reach. Exclude the vehicle + every carried body
-	#    (we don't want to "hit ourselves" with the carried stack).
-	var sz := _carry_size(lowest)
-	var bottom_y := lowest.global_position.y - sz.y * 0.5
-	var start := lowest.global_position + Vector3.UP * (sz.y * 0.5 + 0.05)
-	var probe := PhysicsRayQueryParameters3D.create(start, start + Vector3.DOWN * 6.0)
-	var excl : Array = [get_rid()]
-	for b in all_carried:
-		if b is PhysicsBody3D:
-			excl.append((b as PhysicsBody3D).get_rid())
-	probe.exclude = excl
-	var hit := space.intersect_ray(probe)
-	if hit.is_empty():
-		return
-	var obstacle_top_y : float = (hit["position"] as Vector3).y
-	var lift_needed := obstacle_top_y - bottom_y
-	if lift_needed <= 0.0:
-		return   # already above the obstacle — nothing to push
-	# 4) Push every carried bale up by the same amount so the stack stays intact.
-	#    (Local Y, since carried bales are parented under the carry point and we
-	#    care about the vertical world axis — small mast tilts are negligible.)
-	for b in all_carried:
-		b.position.y += lift_needed
+	# The legacy positional clamp that used to live here was deleted on
+	# 2026-07-20: it sat after the return, so it was unreachable code (a
+	# warning, and warnings are errors here). Recover it from git history if
+	# the contact solve ever proves insufficient.
 
 ## A box collision shape's size (m), or Vector3.ONE if the body has no BoxShape.
 ## Local helper so BaseVehicle doesn't depend on BaleClamp's identical _bale_size.

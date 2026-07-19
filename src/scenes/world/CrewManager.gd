@@ -719,7 +719,8 @@ func _nearest_in_section(section_key: String, from: Vector3, machines: Array) ->
 ## feeder to a Feed section actually feeds the line. `key` is the section id
 ## ("feed_3a") for a section pin, or "role:feeder" for the rota role (no belt
 ## binding → nearest belt). One feeder per `key`; re-assigning re-homes it.
-func _ensure_section_feeder(key: String, near_pos: Vector3 = Vector3.ZERO, owner: Node = null) -> void:
+## `driver` (was `owner`): the parameter shadowed Node.owner.
+func _ensure_section_feeder(key: String, near_pos: Vector3 = Vector3.ZERO, driver: Node = null) -> void:
 	var world := _feeder_world()
 	if world == null:
 		return   # headless / no world to parent into — nothing to spawn
@@ -741,7 +742,7 @@ func _ensure_section_feeder(key: String, near_pos: Vector3 = Vector3.ZERO, owner
 	# #233 — a section feeder is DRIVEN BY the real crew member the operator picked.
 	# If a DIFFERENT worker drove this section before, hand them back to normal duty.
 	var prev_owner = _feeder_owner.get(key, null)
-	if prev_owner != null and prev_owner != owner and is_instance_valid(prev_owner):
+	if prev_owner != null and prev_owner != driver and is_instance_valid(prev_owner):
 		_restore_worker(prev_owner)
 	# Reuse an existing feeder for this key if still alive; otherwise spawn one.
 	var feeder : FeederWorker = _section_feeders.get(key, null)
@@ -753,20 +754,20 @@ func _ensure_section_feeder(key: String, near_pos: Vector3 = Vector3.ZERO, owner
 		feeder = preload("res://src/scenes/world/FeederWorker.gd").new()
 		# #233 — the feeder IS the assigned crew member: adopt their name + colour so
 		# there's no generic "Feeder 3A" ghost, only the person the operator picked.
-		if owner != null and is_instance_valid(owner) and "npc_name" in owner:
-			feeder.worker_name = String(owner.get("npc_name"))
+		if driver != null and is_instance_valid(driver) and "npc_name" in driver:
+			feeder.worker_name = String(driver.get("npc_name"))
 		else:
 			feeder.worker_name = "Feeder %s" % key.replace("feed_", "").replace("role:", "").to_upper()
-		if owner != null and is_instance_valid(owner):
+		if driver != null and is_instance_valid(driver):
 			for cprop in ["npc_color", "body_color", "color", "suit_color"]:
-				if cprop in owner:
-					feeder.body_color = owner.get(cprop)
+				if cprop in driver:
+					feeder.body_color = driver.get(cprop)
 					break
 		world.add_child(feeder)
 		# Spawn AT the assigned worker's spot so they visibly WALK from their post to
 		# the parked clamp; the clamp waits at the feed area beside the belt.
-		if owner != null and is_instance_valid(owner) and owner is Node3D:
-			feeder.global_position = (owner as Node3D).global_position
+		if driver != null and is_instance_valid(driver) and driver is Node3D:
+			feeder.global_position = (driver as Node3D).global_position
 		else:
 			feeder.global_position = lot + Vector3(3.0, 1.0, 2.0)
 		# Personal BaleClamp so it DRIVES the loop (the normal case) rather than the
@@ -796,17 +797,17 @@ func _ensure_section_feeder(key: String, near_pos: Vector3 = Vector3.ZERO, owner
 				feeder.stow_personal_tool(scn, 1.0)
 				feeder.personal_scanner = scn
 		_section_feeders[key] = feeder
-		var drv : String = String(owner.get("npc_name")) if (owner != null and "npc_name" in owner) else "auto"
+		var drv : String = String(driver.get("npc_name")) if (driver != null and "npc_name" in driver) else "auto"
 		print("[CrewManager] Feeder engaged for %s → belt %s (driver=%s)" % [key, belt_id, drv])
 	# #233 — retire the assigned worker's STANDING npc (hide + off-duty) so there's no
 	# idle duplicate; the FeederWorker now represents them on the floor. Re-applied
 	# every assignment (idempotent) so a re-pin keeps them retired.
-	if owner != null and is_instance_valid(owner):
-		_feeder_owner[key] = owner
-		if owner is Node3D:
-			(owner as Node3D).visible = false
-		if owner.has_method("set_off_duty"):
-			owner.set_off_duty(true)
+	if driver != null and is_instance_valid(driver):
+		_feeder_owner[key] = driver
+		if driver is Node3D:
+			(driver as Node3D).visible = false
+		if driver.has_method("set_off_duty"):
+			driver.set_off_duty(true)
 	# (Re)bind the belt + lot every assignment so re-pinning updates the target.
 	feeder.assigned_section = key
 	feeder.section_belt_id = belt_id

@@ -975,15 +975,17 @@ func current_task() -> String:
 func _autonomy_task_label(tn: String) -> String:
 	return String(_AUTONOMY_TASK_LABELS_NL.get(tn, tn.replace("_", " ")))
 
-func add_relationship_points(npc_id: String, points: int) -> void:
+## `other_id`, not `npc_id`: this NPC's OWN npc_id is a class variable, and a
+## parameter of the same name shadowed it (and read as "my id" at a glance).
+func add_relationship_points(other_id: String, points: int) -> void:
 	"""Add relationship points with another NPC (mutual-aid)."""
-	if not relationship_points.has(npc_id):
-		relationship_points[npc_id] = 0
-	relationship_points[npc_id] += points
+	if not relationship_points.has(other_id):
+		relationship_points[other_id] = 0
+	relationship_points[other_id] += points
 
-func get_relationship_points(npc_id: String) -> int:
+func get_relationship_points(other_id: String) -> int:
 	"""Get relationship points with another NPC."""
-	return relationship_points.get(npc_id, 0)
+	return relationship_points.get(other_id, 0)
 
 func set_helping(target: Node) -> void:
 	"""Set this NPC to help another NPC/task."""

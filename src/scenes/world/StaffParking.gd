@@ -151,17 +151,18 @@ func _build_parking_sign() -> void:
 	post.position = Vector3(-fp.x * 0.5 - 0.6, post_h * 0.5, -fp.y * 0.5 + 0.5)
 	add_child(post)
 	# Square blue P sign on top.
-	var sign := MeshInstance3D.new()
-	sign.name = "ParkingSign"
+	# sign_mesh, not sign: `sign` shadows the built-in sign() function.
+	var sign_mesh := MeshInstance3D.new()
+	sign_mesh.name = "ParkingSign"
 	var qm := QuadMesh.new()
 	qm.size = Vector2(0.55, 0.55)
-	sign.mesh = qm
+	sign_mesh.mesh = qm
 	var sm := StandardMaterial3D.new()
 	sm.albedo_color = Color(0.05, 0.32, 0.78)   # NL parking-sign blue
 	sm.roughness = 0.6
-	sign.material_override = sm
-	sign.position = Vector3(-fp.x * 0.5 - 0.6, post_h - 0.20, -fp.y * 0.5 + 0.5 + 0.03)
-	add_child(sign)
+	sign_mesh.material_override = sm
+	sign_mesh.position = Vector3(-fp.x * 0.5 - 0.6, post_h - 0.20, -fp.y * 0.5 + 0.5 + 0.03)
+	add_child(sign_mesh)
 	# White P glyph — a thick PrismMesh stand-in (good enough at distance).
 	var p := MeshInstance3D.new()
 	p.name = "ParkingP"
