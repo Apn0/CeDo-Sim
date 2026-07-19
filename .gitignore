@@ -12,3 +12,4 @@ tools/regression/out/
 
 # Backups kept until operator sign-off (audit remediation)
 *.bak
+__pycache__/
