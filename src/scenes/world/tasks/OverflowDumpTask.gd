@@ -84,7 +84,7 @@ func _tick_drive_to_indoor(npc: Node) -> void:
 	_phase = Phase.SCOOP_BULK
 	_phase_t = 0.0
 
-func _tick_scoop_bulk(npc: Node) -> void:
+func _tick_scoop_bulk(_npc: Node) -> void:
 	var amt : float = 0.0
 	if indoor_container.has_method("empty"):
 		amt = float(indoor_container.call("empty"))

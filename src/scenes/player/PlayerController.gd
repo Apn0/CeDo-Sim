@@ -1839,7 +1839,9 @@ func _crosshair_context() -> Dictionary:
 		var pcv : Vector2 = Plant.scene_to_pc(hit["position"])
 		ctx["world_point_pc"] = [pcv.x, pcv.y]
 	var collider : Node = hit["collider"]
-	ctx["collider_name"] = collider.name if collider else ""
+	# String() cast is required: collider.name is a StringName, "" is a String, and
+	# the mismatch trips INCOMPATIBLE_TERNARY (warnings are errors in this project).
+	ctx["collider_name"] = String(collider.name) if collider != null else ""
 	# Climb to the nearest placed_object so the developer gets a stable
 	# placeable_id rather than e.g. "Model" or "Rib_2".
 	var n : Node = collider

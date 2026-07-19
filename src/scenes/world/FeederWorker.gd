@@ -79,7 +79,20 @@ var _xf_warned   : bool = false
 # transition (a watchdog for the "feeders don't feed" report).
 var _state_log         : int   = -1
 var _state_held_secs   : float = 0.0
+var _state_next_warn_s : float = 0.0     # de-spam: the old `int(held) % 10 == 0`
+										 # test was true for EVERY frame inside
+										 # that second (~60 warnings per hit).
 const _STATE_STUCK_S   : float = 30.0
+const _STATE_WARN_EVERY_S : float = 10.0
+# #233 boarding walk is straight-line steering with no navmesh — a machine or wall
+# between the worker and the parked clamp blocks it forever. While blocked
+# _physics_process returns BEFORE the state machine ticks, so _state freezes at
+# whatever it was (usually SEEK) and the stuck watchdog misreports the phase.
+var _board_walk_secs   : float = 0.0
+var _board_walk_best_d : float = INF     # closest we've ever gotten to the clamp
+var _board_walk_warned : bool  = false
+const BOARD_WALK_STUCK_S : float = 20.0  # no net progress for this long == blocked
+const BOARD_WALK_PROGRESS_M : float = 0.5   # counts as progress toward the clamp
 const _STATE_NAMES : Array[String] = ["SEEK","TO_BALE","GRAB","LIFT","PROCESS",
 	"CARRY","LOAD","WAIT","TO_BELT","SET_DOWN","DISMOUNT","CUT","SCAN","FEED","REMOUNT"]
 var _grab_tries  : int = 0               # real-grab attempts this approach (no teleport fallback)
@@ -133,6 +146,9 @@ func assign_vehicle(v: Node3D) -> void:
 	# #233 — the assigned worker WALKS to the parked clamp on foot and climbs in,
 	# rather than teleporting into the cab. _physics_process drives the approach.
 	_boarding_walk = true
+	_board_walk_secs = 0.0
+	_board_walk_best_d = INF
+	_board_walk_warned = false
 
 ## Climb into the assigned vehicle: re-parent under it (so we ride along), park
 ## at the cab, and disable our own capsule collision + on-foot locomotion. From
@@ -163,9 +179,29 @@ func _walk_to_vehicle(delta: float) -> bool:
 		_boarding_walk = false
 		return true
 	var vp : Vector3 = (vehicle as Node3D).global_position
-	if _horiz_dist(vp) <= 2.4:
+	var d : float = _horiz_dist(vp)
+	if d <= 2.4:
 		_boarding_walk = false
 		return true
+	# Blocked-walk watchdog. Straight-line steering has no way around an obstacle,
+	# and the caller returns while we're walking — so without this the worker
+	# presses into a wall for the whole shift and the feed loop never runs.
+	# Progress = getting meaningfully closer than our best-ever distance.
+	if d < _board_walk_best_d - BOARD_WALK_PROGRESS_M:
+		_board_walk_best_d = d
+		_board_walk_secs = 0.0
+	else:
+		_board_walk_secs += delta
+		if _board_walk_secs > BOARD_WALK_STUCK_S:
+			if not _board_walk_warned:
+				_board_walk_warned = true
+				push_warning(("[Feeder %s] boarding walk BLOCKED %.1f m from the clamp "
+					+ "for %.0fs — boarding directly so the feed loop can run")
+					% [worker_name, d, _board_walk_secs])
+			# Last resort only: #233 says the worker must normally WALK to the
+			# clamp, not appear in the cab. A permanently frozen feeder is worse.
+			_boarding_walk = false
+			return true
 	if not is_on_floor():
 		velocity.y -= _gravity * delta
 	else:
@@ -252,11 +288,19 @@ func _physics_process(delta: float) -> void:
 				% [worker_name, prev, nxt, bales_fed, str(_bale)])
 		_state_log = _state
 		_state_held_secs = 0.0
+		_state_next_warn_s = _STATE_STUCK_S
 	else:
 		_state_held_secs += delta
-		if _state_held_secs > _STATE_STUCK_S and int(_state_held_secs) % 10 == 0:
+		if _state_held_secs >= _state_next_warn_s:
+			_state_next_warn_s = _state_held_secs + _STATE_WARN_EVERY_S
+			# Name the phase that is ACTUALLY running. While _boarding_walk is set
+			# the state machine never ticks (see the early return below), so
+			# reporting _state here blamed SEEK for a blocked walk to the clamp.
+			var phase := _name_for_state(_state)
+			if _boarding_walk:
+				phase = "BOARDING_WALK(state %s frozen)" % phase
 			push_warning("[Feeder %s] stuck in %s for %.0fs"
-					% [worker_name, _name_for_state(_state), _state_held_secs])
+					% [worker_name, phase, _state_held_secs])
 	# NaN-transform watchdog (see BaseVehicle): a worker whose transform goes bad
 	# would spam instance_set_transform via its capsule + name tag + held tools. Snap
 	# back to the last good pose + report ONCE rather than flood the log.

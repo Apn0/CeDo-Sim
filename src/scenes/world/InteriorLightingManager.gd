@@ -26,7 +26,7 @@ func _ready() -> void:
 func setup(world: Node) -> void:
 	_world = world
 
-func build_all(anchor: Vector3) -> void:
+func build_all(_anchor: Vector3) -> void:
 	if _world == null:
 		_world = get_parent()
 	_spawn_overhead_lights()

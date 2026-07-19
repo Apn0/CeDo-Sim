@@ -152,7 +152,7 @@ func _test_load_finite(wl: Node) -> void:
 # =============================================================================
 # (2) + (3) MainWorld._layout_to_scene + the vehicles/yards it really spawns.
 # =============================================================================
-func _test_layout_to_scene_and_spawns(wl: Node) -> void:
+func _test_layout_to_scene_and_spawns(_wl: Node) -> void:
 	_section("MainWorld — instantiate real scene, check layout→scene mapping")
 
 	var scn := load("res://src/scenes/world/MainWorld.tscn") as PackedScene

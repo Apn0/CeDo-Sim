@@ -238,7 +238,7 @@ static func build(p: Node3D, id: String, size: Vector3, spec: Dictionary, ghost:
 ## Build the full belt primitive geometry under `p` (deck + rollers + rails +
 ## motor + chute + decorations + extras). Does NOT tag the body — call
 ## apply_tagging() separately, or use the top-level build() which does both.
-static func build_internal(p: Node3D, id: String, size: Vector3, spec: Dictionary, ghost: bool) -> Node3D:
+static func build_internal(p: Node3D, _id: String, size: Vector3, spec: Dictionary, ghost: bool) -> Node3D:
 	# Resolve effective conveying length (size.z, override, or 2-click distance).
 	var conv_len : float = float(spec.get("length_override_m", 0.0))
 	if conv_len <= 0.0:
@@ -613,7 +613,7 @@ static func build_chute(p: Node3D, size: Vector3, deck_y: float, spec: Dictionar
 
 ## Compose-extra decorations dispatched by token. Unknown tokens are silently
 ## ignored (they may be handled by a future BeltBuilder revision).
-static func apply_decorations(p: Node3D, size: Vector3, spec: Dictionary, ghost: bool) -> void:
+static func apply_decorations(p: Node3D, _size: Vector3, spec: Dictionary, ghost: bool) -> void:
 	var decorations : Array = spec.get("decorations", [])
 	for tok_raw in decorations:
 		var tok : String = String(tok_raw)

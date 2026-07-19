@@ -704,7 +704,7 @@ func _spawn_film_pieces(pos: Vector3, n: int, tint: Color) -> void:
 ## Per-tick: nudge the loose pieces along belt travel while the belt runs, and retire
 ## them after their lifetime (they've ridden up / gone into the shredder). Mass has
 ## already flowed via the invisible rider, so retiring the visuals is ledger-neutral.
-func _tick_film_pieces(delta: float, live_speed: float, running: bool) -> void:
+func _tick_film_pieces(delta: float, _live_speed: float, _running: bool) -> void:
 	if _film_pieces.is_empty():
 		return
 	var i : int = _film_pieces.size() - 1

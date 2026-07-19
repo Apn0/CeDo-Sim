@@ -342,7 +342,11 @@ func _on_task_selected(idx: int, worker, task_lbl: Label) -> void:
 	if board != null and board.has_method("force_task"):
 		ok = bool(board.force_task(worker, kind))
 	if not ok:
-		push_warning("geen doel gevonden voor taak")
+		# Name the worker AND the task kind: force_task() returns false for a dozen
+		# different missing-target reasons, and the bare message made it impossible
+		# to tell which one fired from the log alone.
+		push_warning("[CrewPanel] geen doel gevonden voor taak '%s' (werker: %s)"
+			% [kind, str(worker.get("worker_name")) if worker != null else "?"])
 		if task_lbl != null and is_instance_valid(task_lbl):
 			task_lbl.text = "geen doel"
 			task_lbl.add_theme_color_override("font_color", Color(0.80, 0.36, 0.28, 1.0))

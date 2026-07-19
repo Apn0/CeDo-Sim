@@ -23,6 +23,16 @@ mkdir -p "$OUT"
 echo "== importing =="
 "$GODOT" --headless --path "$PROJ" --import >/dev/null 2>&1
 
+# Warnings are errors here, but there is NO headless way to see GDScript
+# warnings (--check-only, runtime load(), and --headless --editor --quit all
+# print nothing — verified on 4.6.3). They only reach the operator in the
+# editor. This static check covers the one that keeps shipping.
+echo "== unused-parameter lint =="
+if ! python3 "$PROJ/tools/regression/lint_unused_params.py" "$PROJ/src"; then
+	echo "FAIL  : unused parameter(s) — would warn in the editor"
+	exit 1
+fi
+
 echo "== running regression =="
 "$GODOT" --headless --path "$PROJ" \
 	--main-scene res://src/tests/regression_world_save.tscn > "$OUT/last_run.log" 2>&1

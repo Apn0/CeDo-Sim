@@ -64,8 +64,10 @@ func _probe(nm: String, path: String, real: Array) -> void:
 		wy.append(snappedf((w as Node3D).position.y, 0.01))
 
 	# Front/back polarity from named meshes.
-	var front_z := _named_z(car, FRONT_WORDS)
-	var back_z  := _named_z(car, BACK_WORDS)
+	# Explicit Variant: _named_z returns a float OR null (no front/back-named mesh),
+	# so `:=` can't infer a type and the parser errors out.
+	var front_z : Variant = _named_z(car, FRONT_WORDS)
+	var back_z  : Variant = _named_z(car, BACK_WORDS)
 
 	print("\n[%s]" % nm)
 	print("  AABB size  L×W×H = %.2f × %.2f × %.2f m   (real ≈ %.2f × %.2f × %.2f)" % [

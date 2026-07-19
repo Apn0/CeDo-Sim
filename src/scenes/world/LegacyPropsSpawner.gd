@@ -20,7 +20,7 @@ const FEEDERS_ENABLED : bool = true
 # ── Public entry point ──────────────────────────────────────────────────────
 ## Call from MainWorld in place of the old inline legacy-prop block. Honours
 ## CLEAN_CANVAS on the world (the in-source toggle that hides the test props).
-static func spawn_all(world: Node, factory_anchor: Vector3, vehicle_anchor: Vector3, floor_top_y: float) -> void:
+static func spawn_all(world: Node, _factory_anchor: Vector3, _vehicle_anchor: Vector3, _floor_top_y: float) -> void:
 	_spawn_battery_station(world)
 	_spawn_shift_leader_desk(world)
 	_spawn_service_stations(world)

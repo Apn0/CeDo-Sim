@@ -95,7 +95,7 @@ func _pathish(n: Node) -> String:
 	if n == null: return "null"
 	return "%s   (%s)" % [n.name, String(n.get_path())]
 
-func _report_nearby(orb: Vector3, hit_col: Node) -> void:
+func _report_nearby(orb: Vector3, _hit_col: Node) -> void:
 	var best : Node3D = null
 	var best_d := 6.0
 	for n in get_tree().get_nodes_in_group("placed_object"):
