@@ -127,6 +127,12 @@ func _ready() -> void:
 	brake_ramp_tau_s    = 0.3
 	super._ready()
 	vehicle_type = "forklift"
+	# npc-02 — register the "forklift" group in PRODUCTION code. Every forklift
+	# task resolves its vehicle via get_nodes_in_group("forklift")
+	# (EmptyLumpCartTask/OverflowDumpTask._find_nearest_idle_forklift, the
+	# board's idle-forklift check); only NpcTaskBench used to tag the group, so
+	# the whole lump-cart haul chain was dead in MainWorld.
+	add_to_group("forklift")
 	if lift_carriage_path: _lift_carriage = get_node_or_null(lift_carriage_path) as Node3D
 	if mast_pivot_path:    _mast_pivot    = get_node_or_null(mast_pivot_path)    as Node3D
 	if rotator_path:       _rotator       = get_node_or_null(rotator_path)       as Node3D

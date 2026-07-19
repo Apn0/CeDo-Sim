@@ -18,6 +18,12 @@ extends Node
 ##      after the jerrycan is removed, refuel force fails cleanly.
 ##   S7 crew systems: CrewManager holds all 8 workers; manual_assign pins a
 ##      role post; station_list() (panel data source) is non-empty.
+##   S8 (#233) feeder shift adopts the REAL assigned NPC (no "Feeder X" ghost).
+##   S9 board lifecycle (npc-01): release un-claims; a FAILED task holds its
+##      key only for the retry cooldown, then the board re-emits a FRESH task
+##      for the still-qualifying target (no session-long wedge).
+##   S10 dump credit (phys-06): with the cart yanked off the forks the dump
+##      FAILS and the container gains nothing; with the cart riding, it credits.
 
 const BenchScene = preload("res://src/scenes/world/NpcTaskBench.tscn")
 
@@ -134,6 +140,12 @@ func _ready() -> void:
 		var spath : String = t_ar.get_script().resource_path
 		_check("EmptyLumpCart" in spath, "S4 ...and it IS the EmptyLumpCartTask (%s)" % spath.get_file())
 		board.call("release_task", vincent)
+		# npc-01 — release must UN-claim: the freed task is offerable to the
+		# next asker instead of being wedged behind a stale _claimed_by.
+		_check(t_ar.get("_claimed_by") == null, "S4 release_task clears the claim")
+		var t_again = board.call("take_next_task", vincent)
+		_check(t_again == t_ar, "S4 released task is re-offered to the next asker")
+		board.call("release_task", vincent)
 
 	# ── S5 autonomy: NPCs claim work WITHOUT manual calls ────────────────────
 	await get_tree().create_timer(8.0).timeout
@@ -184,6 +196,67 @@ func _ready() -> void:
 	_check(not (cm.get("_section_feeders") as Dictionary).has(fkey),
 		"S8 un-assign tears the feeder down (no orphan ghost)")
 	_check(bool(yassine.get("visible")) == true, "S8 un-assign restores the real NPC")
+
+	# ── S9 (npc-01) board lifecycle: a failure must not wedge the target ─────
+	# The cart task is open again after S4's releases. Fail it: inside the retry
+	# cooldown the failed entry HOLDS the key (negative control — no thrash);
+	# once the cooldown lapses, the reap frees the key and the generator
+	# re-emits a FRESH task for the same still-full cart on the same scan.
+	var cart_tid : int = cart0.get_instance_id()
+	var open_tasks : Dictionary = board.get("_open_tasks")
+	_check(open_tasks.has(cart_tid), "S9 open task exists for the full cooled cart")
+	var t_fail = open_tasks.get(cart_tid)
+	if t_fail != null:
+		t_fail.call("mark_failed", "test_injected")
+		board.call("_rescan")
+		open_tasks = board.get("_open_tasks")
+		_check(open_tasks.get(cart_tid) == t_fail,
+			"S9 CONTROL: failed task held as re-emit block inside the cooldown")
+		t_fail.set("_failed_at", -1.0e6)   # simulate the 30 s retry cooldown lapsing
+		board.call("_rescan")
+		open_tasks = board.get("_open_tasks")
+		var t_fresh = open_tasks.get(cart_tid)
+		_check(t_fresh != null and t_fresh != t_fail,
+			"S9 after the cooldown the board re-emits a FRESH task for the same cart")
+
+	# ── S10 (phys-06) dump credit requires the cart ON the forks ─────────────
+	# Unit-drive a task instance straight to the dump step (the full autopilot
+	# haul is minutes of bench time). Yank the cart away → the dump must FAIL
+	# and the container must NOT gain the mass; then the same step with the
+	# cart riding properly DOES credit (positive control — no vacuous green).
+	var elc = load("res://src/scenes/world/tasks/EmptyLumpCartTask.gd")
+	var phase_dump : int = int((elc.get_script_constant_map()["Phase"] as Dictionary)["DUMP_AND_RETURN"])
+	var fork_node = tree.get_nodes_in_group("forklift")[0] as Node3D
+	var bin0 = tree.get_nodes_in_group("waste_container")[0]
+	var yank_cart = fa.get("lump_cart_wall") as Node3D   # wall cart — unused by S4/S9
+	yank_cart.set("lumps_kg", 80.0)
+	yank_cart.set("_last_received_at", -INF)
+	if yank_cart.has_method("_sync_mass"): yank_cart.call("_sync_mass")
+	var t_yank = elc.new(yank_cart, bin0)
+	t_yank.set("_forklift", fork_node)
+	t_yank.set("_phase", phase_dump)
+	t_yank.set("_cart_ride_dy", yank_cart.global_position.y - fork_node.global_position.y)
+	# YANK: the cart "fell off" mid-haul — it lies far from the chassis.
+	yank_cart.global_position = fork_node.global_position + Vector3(10.0, 0.0, 0.0)
+	var bin_kg_before : float = float(bin0.get("mass_kg"))
+	t_yank.call("tick", vincent, 0.016)
+	_check(bool(t_yank.call("is_failed")), "S10 dump with the cart off the forks FAILS (cart_lost_in_transit)")
+	_check(absf(float(bin0.get("mass_kg")) - bin_kg_before) < 0.001,
+		"S10 NEGATIVE: container did NOT receive the lost cart's mass")
+	_check(absf(float(yank_cart.get("lumps_kg")) - 80.0) < 0.001,
+		"S10 the lost cart keeps its lumps (mass conserved where it fell)")
+	# Positive control: same step with the cart genuinely riding the forks.
+	yank_cart.global_position = fork_node.global_position + Vector3(0.0, 0.4, 1.0)
+	var t_ride = elc.new(yank_cart, bin0)
+	t_ride.set("_forklift", fork_node)
+	t_ride.set("_phase", phase_dump)
+	t_ride.set("_cart_ride_dy", yank_cart.global_position.y - fork_node.global_position.y)
+	t_ride.call("tick", vincent, 0.016)
+	_check(bool(t_ride.call("is_done")) and not bool(t_ride.call("is_failed")),
+		"S10 CONTROL: dump with the cart ON the forks completes")
+	_check(float(bin0.get("mass_kg")) - bin_kg_before >= 79.9,
+		"S10 CONTROL: container received the dumped mass")
+	_check(float(yank_cart.get("lumps_kg")) < 0.001, "S10 CONTROL: cart emptied")
 
 	if _fails == 0:
 		print("[TEST] npc task bench PASS")

@@ -123,12 +123,14 @@ func _tick_walk_to_nozzle(npc: Node) -> void:
 		_set_dest(npc, nozzle.global_position)
 		return
 	# Pick up — re-parent under NPC, same hand offset as the leaf blower so
-	# the rig reads consistently across tools.
+	# the rig reads consistently across tools (npc-11: now genuinely shared —
+	# the old local (0.35, 0.95, 0.4) was the operator-rejected float-above-
+	# the-head pose; see NpcAutonomyTask.TOOL_CARRY_OFFSET).
 	if nozzle.get_parent() != npc:
 		var saved_xform : Transform3D = nozzle.global_transform
 		nozzle.get_parent().remove_child(nozzle)
 		npc.add_child(nozzle)
-		nozzle.transform = Transform3D(Basis.IDENTITY, Vector3(0.35, 0.95, 0.4))
+		nozzle.transform = Transform3D(Basis.IDENTITY, TOOL_CARRY_OFFSET)
 		nozzle.set_meta("saved_world_xform", saved_xform)
 	_phase = Phase.CIRCUIT
 	_phase_t = 0.0
@@ -184,20 +186,17 @@ func _tick_return_nozzle(npc: Node) -> void:
 	if not _close_enough(npc, _pickup_pos, APPROACH_DIST_M):
 		_set_dest(npc, _pickup_pos)
 		return
+	# Drop the nozzle back at its saved station transform (shared npc-03 helper).
+	_drop_tool(npc, nozzle)
 	if nozzle != null and is_instance_valid(nozzle):
-		if nozzle.get_parent() == npc:
-			npc.remove_child(nozzle)
-			var mw : Node = npc.get_parent()
-			if mw != null:
-				mw.add_child(nozzle)
-				var saved : Transform3D = nozzle.get_meta("saved_world_xform",
-					Transform3D(Basis.IDENTITY, _pickup_pos))
-				nozzle.global_transform = saved
 		nozzle.set_meta("last_cleaned_at", _now_sim_s())
 	release(npc)
 	mark_done()
 
-func release(_npc: Node) -> void:
+func release(npc: Node) -> void:
+	# npc-03 — any abort must put the nozzle DOWN (same weld-to-hand failure as
+	# the leaf blower; see BlowLeavesTask.release).
+	_drop_tool(npc, nozzle)
 	if nozzle != null and is_instance_valid(nozzle):
 		nozzle.remove_meta("autonomy_claimed_by")
 

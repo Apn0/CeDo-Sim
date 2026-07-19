@@ -1322,6 +1322,8 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 		# (the fork-pocket rework shifted the auto-computed CoM and made the cart
 		# roll a little on spawn → save/reload drift). A real cart's mass is in its
 		# base/wheels anyway.
+		rb_cart.center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
+		rb_cart.center_of_mass = Vector3(0.0, 0.18, 0.0)   # just above the underframe
 		# #198 — tag so NpcAutonomyBoard's lump-cart scanner finds this cart.
 		rb_cart.add_to_group("lump_cart")
 		body = rb_cart
@@ -4071,9 +4073,17 @@ static func _m_blower(p: Node3D, size: Vector3, color: Color, ghost: bool) -> vo
 ## painted-steel bays on a dark plinth: left blank door, centre control panel with
 ## HMI screen + indicator-light bank + two analog gauges + big rotary selector,
 ## right blank door. Vertical door seams and stainless handles on every bay. The
-## yellow CAUTION placard is a thin proud-sticker. All procedural — no textures.
+## yellow CAUTION placard is a thin proud-sticker. Geometry all procedural; the
+## bay bodies carry the photo-extracted cream-steel palette mat, the rest stays
+## flat _mat colours (lenses / lamps / decals opt out per the palette doc).
 static func _m_cabinet(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
 	var body_mat  := _mat(color, ghost, 0.25, 0.55)               # off-white painted steel
+	if not ghost:
+		# Photo-extracted cream painted steel — MaterialPalette grounds the
+		# machines/paint_cream_steel triplet in _extruder_silo.png + _e_kast.png
+		# and names the E-kast as a consumer. Shared opaque singleton, so ghosts
+		# keep the translucent _mat above.
+		body_mat = MaterialPalette.mat_paint_cream_steel()
 	var plinth    := _mat(Color(0.28, 0.25, 0.22), ghost, 0.15, 0.85)  # dirty concrete-coloured base
 	var dark      := _mat(_DARK, ghost, 0.2, 0.4)                 # door seams + HMI bezel
 	var steel     := _mat(_STEEL, ghost, 0.7, 0.25)               # handles, screws, gauge bezels
@@ -4435,6 +4445,15 @@ static func _m_flotation(p: Node3D, size: Vector3, color: Color, ghost: bool, wi
 	var water := _mat(Color(0.20, 0.45, 0.60, 0.55), ghost, 0.0, 0.1)
 	var roller := _mat(_DARK, ghost, 0.4, 0.6)
 	var legmat := _mat(_DARK, ghost, 0.5, 0.6)
+	if not ghost:
+		# Photo-extracted weathered stainless (flotatietank_3A.png) — the palette
+		# triplet was calibrated for THIS tank (catalog colour == palette fallback,
+		# see MaterialPalette.mat_stainless_weathered). Palette mats are shared
+		# opaque singletons, so ghosts keep the translucent _mat above. The wide
+		# 3C/6 variant keeps its flat colour until it has photo grounding of its own.
+		if not wide:
+			tank = MaterialPalette.mat_stainless_weathered()
+		legmat = MaterialPalette.mat_steel_dark_aged()
 	var hz := size.z * 0.5
 	# ── HEIGHT PROFILE (operator survey #230) ─────────────────────────────────
 	# Stand top at 3.5 m; tank rim ~0.6 m higher; flat tank bottom ~1 m above
@@ -9750,6 +9769,14 @@ static func _m_extruder_silo(p: Node3D, size: Vector3, color: Color, ghost: bool
 	var yellow := _mat(_SAFETY, ghost, 0.2, 0.6)               # safety-yellow guardrails
 	var white  := _mat(Color(0.92, 0.92, 0.90), ghost, 0.1, 0.7)  # danger-sign plate
 	var red    := _mat(Color(0.82, 0.14, 0.12), ghost, 0.2, 0.6)  # danger-sign strip
+	if not ghost:
+		# Photo-extracted cream painted steel — the machines/paint_cream_steel
+		# triplet was cut from _extruder_silo.png, i.e. this exact machine's
+		# photo; guardrails get the calibrated equipment yellow (same colour as
+		# _SAFETY). Palette mats are shared opaque singletons, so ghosts keep
+		# the translucent _mat above.
+		shell = MaterialPalette.mat_paint_cream_steel()
+		yellow = MaterialPalette.mat_paint_safety_yellow()
 
 	# #99 — hw/hd retained as comments; the legs/braces now use bw/bd half-extents
 	# so the support frame catches the widened silo body.

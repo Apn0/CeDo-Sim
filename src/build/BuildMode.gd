@@ -2370,6 +2370,14 @@ func _save_layout() -> void:
 				entry["scale"] = [sc_v.x, sc_v.y, sc_v.z]
 			if child.has_meta("bale_code"):
 				entry["code"] = String(child.get_meta("bale_code"))
+			# phys-04 — lump_cart fill survives save/load. Persist kg + remaining
+			# cool-down seconds so a full 90 kg cart doesn't reload empty (mass
+			# conservation) and a hot cart stays hot across the save boundary.
+			# Written only when loaded; absence on load means an empty cart.
+			if child.is_in_group("lump_cart") and "lumps_kg" in child \
+					and float(child.get("lumps_kg")) > 0.001:
+				entry["lumps_kg"] = float(child.get("lumps_kg"))
+				entry["cool_left_s"] = float(child.call("cool_remaining_s"))
 			# #MSB — round-trip macro membership so a reopened save can still
 			# invoke save-back on previously placed macro members.
 			if child.has_meta("macro_id"):
@@ -2607,6 +2615,10 @@ func _apply_layout_entry(entry: Variant) -> bool:
 			node.scale = Vector3(sc, sc, sc)
 	_finalize_placed(node, String(dict.get("id", "")), float(dict.get("h", 0.0)))
 	_finalize_bale(node, String(dict.get("code", "")))
+	# phys-04 — restore lump_cart fill (kg + remaining cool-down) persisted by
+	# _save_layout; restore_fill re-syncs mass and re-anchors the cool timer.
+	if dict.has("lumps_kg") and node.is_in_group("lump_cart") and node.has_method("restore_fill"):
+		node.call("restore_fill", float(dict.get("lumps_kg", 0.0)), float(dict.get("cool_left_s", 0.0)))
 	# #MSB — restore macro membership metas from disk so save-back still works
 	# after a reload of a save that placed a macro previously.
 	if dict.has("macro_id"):

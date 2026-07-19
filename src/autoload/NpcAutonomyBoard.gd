@@ -94,6 +94,10 @@ func release_task(npc: Node) -> void:
 		var t : NpcAutonomyTask = _active[nid]
 		if t and not t.is_done():
 			t.release(npc)
+			# npc-01 — un-claim: the base release() never clears _claimed_by, so
+			# a shift-bell/production release left the still-open task pointing
+			# at a valid NPC and take_next_task skipped it for the session.
+			t._claimed_by = null
 		_active.erase(nid)
 
 ## #198 operator override — CrewPanel task dropdown assigns a specific chore to
@@ -160,10 +164,18 @@ func _build_forced_task(tree: SceneTree, npc: Node, kind: String) -> NpcAutonomy
 			var bin : Node3D = _nearest_in_group(tree, "waste_container", npc)
 			if bin == null:
 				return null
+			# npc-04 — resolve a REAL receiving container. This arm used to pass
+			# mw_ref (the whole MainWorld node) as the destination: the forklift
+			# drove to world origin and the scooped mass silently vanished (the
+			# root has neither add() nor receive_lumps()). No second container →
+			# no valid task → force_task returns false → CrewPanel "geen doel".
+			var dump_dest : Node3D = _choose_lumps_destination(tree, bin)
+			if dump_dest == null:
+				return null
 			var s := load("res://src/scenes/world/tasks/OverflowDumpTask.gd")
 			if s == null:
 				return null
-			return s.new(bin, mw_ref)
+			return s.new(bin, dump_dest)
 		"refuel_blower":
 			# Target the blower that most needs it (lowest fuel), tie-broken by
 			# nearest; the can is the one nearest the operator-picked npc.
@@ -181,10 +193,32 @@ func _build_forced_task(tree: SceneTree, npc: Node, kind: String) -> NpcAutonomy
 			return null
 
 # ── World scan: assemble the open task list from live state. ───────────────
+# npc-01 — how long a FAILED task blocks re-emission for its target. The failed
+# entry is kept in _open_tasks (take_next_task already skips done tasks) until
+# the cooldown lapses; then the reap below frees the key and the generator
+# re-emits a fresh task on the same scan. Prevents instant thrash against a
+# persistently-failing target (e.g. no forklift available yet).
+const FAIL_RETRY_COOLDOWN_S : float = 30.0
+
 func _rescan() -> void:
 	var tree := get_tree()
 	if tree == null:
 		return
+	# npc-01 — reap terminal tasks FIRST so a still-qualifying target gets a
+	# fresh task from its generator on this same scan. Previously a done task
+	# wedged its key in _open_tasks forever: one failure (phase_timeout,
+	# no_forklift_available, …) permanently blocked that cart/blower/pile.
+	var now_s : float = Time.get_ticks_msec() / 1000.0
+	for tid in _open_tasks.keys():
+		var t : NpcAutonomyTask = _open_tasks[tid]
+		if t == null:
+			_open_tasks.erase(tid)
+			continue
+		if not t.is_done():
+			continue
+		if t.is_failed() and (now_s - t._failed_at) < FAIL_RETRY_COOLDOWN_S:
+			continue   # hold as a re-emit block until the retry cooldown lapses
+		_open_tasks.erase(tid)
 	var seen : Dictionary = {}   # instance_id → true (for dedup vs stale entries)
 	# Generator 1: empty cooled lump carts.
 	_scan_lump_carts(tree, seen)
@@ -201,6 +235,20 @@ func _rescan() -> void:
 	for tid in _open_tasks.keys():
 		if not seen.has(tid):
 			_open_tasks.erase(tid)
+	# npc-09 — refresh open UNCLAIMED task priorities in place (what the header
+	# comment always promised): a task emitted mid-shift picks up the +30
+	# handover boost when the window opens, and a task emitted during a line
+	# fault sheds its -50 penalty once the fault clears — instead of losing
+	# every priority contest to fresher tasks for the rest of the shift.
+	var mw_ref : Node = _find_main_world(tree)
+	var pri_mod : int = _cleaning_priority_modifier(mw_ref)
+	for otid in _open_tasks.keys():
+		var ot : NpcAutonomyTask = _open_tasks[otid]
+		if ot == null or ot.is_done():
+			continue
+		if ot._claimed_by != null and is_instance_valid(ot._claimed_by):
+			continue
+		ot.priority = ot.base_priority + pri_mod
 
 func _scan_lump_carts(tree: SceneTree, seen: Dictionary) -> void:
 	# #198 dynamic — Operator's spec: cooled lump carts go into the indoor
@@ -240,6 +288,7 @@ func _scan_lump_carts(tree: SceneTree, seen: Dictionary) -> void:
 		if script == null:
 			continue
 		var task : NpcAutonomyTask = script.new(cart, dest)
+		task.base_priority = task.priority   # npc-09 — snapshot for in-place refresh
 		task.priority += pri_mod
 		_open_tasks[tid] = task
 
@@ -256,7 +305,9 @@ func _scan_lump_carts(tree: SceneTree, seen: Dictionary) -> void:
 ##      bulk overflow).
 const INDOOR_HANDOVER_TARGET : int = 3    # leave at most this many for team B
 const INDOOR_HARD_CAP        : int = 8    # absolute "container is full"
-func _choose_lumps_destination(tree: SceneTree) -> Node3D:
+## `exclude` (npc-04): skip this container when picking — a dump's SOURCE bin
+## must never be chosen as its own destination.
+func _choose_lumps_destination(tree: SceneTree, exclude: Node3D = null) -> Node3D:
 	# Real destinations are WasteContainer nodes (group "waste_container"); nothing
 	# in the repo tags the old "lumps_container_indoor"/"shipping_container_outdoor"
 	# groups. We prefer a container that isn't full (has_method receive_lumps +
@@ -272,6 +323,8 @@ func _choose_lumps_destination(tree: SceneTree) -> Node3D:
 	for c in tree.get_nodes_in_group("waste_container"):
 		if not (c is Node3D and is_instance_valid(c)):
 			continue
+		if exclude != null and c == exclude:
+			continue   # npc-04 — never dump a container into itself
 		if not c.has_method("receive_lumps"):
 			continue
 		var fill : float = 0.0
@@ -342,6 +395,7 @@ func _scan_dirty_floor(tree: SceneTree, seen: Dictionary) -> void:
 		if script == null:
 			continue
 		var task : NpcAutonomyTask = script.new(blower as Node3D, mw_ref)
+		task.base_priority = task.priority   # npc-09 — snapshot for in-place refresh
 		task.priority += pri_mod
 		_open_tasks[tid] = task
 	# Hose nozzles (water + air, same group, distinguished by `air_mode` flag).
@@ -369,6 +423,7 @@ func _scan_dirty_floor(tree: SceneTree, seen: Dictionary) -> void:
 		if hose_script == null:
 			continue
 		var nz_task : NpcAutonomyTask = hose_script.new(nz as Node3D, mw_ref)
+		nz_task.base_priority = nz_task.priority   # npc-09 — snapshot for in-place refresh
 		nz_task.priority += pri_mod
 		_open_tasks[nz_tid] = nz_task
 
@@ -398,6 +453,7 @@ func _scan_floor_piles(tree: SceneTree, seen: Dictionary) -> void:
 		if script == null:
 			continue
 		var task : NpcAutonomyTask = script.new(pile as Node3D, mw_ref)
+		task.base_priority = task.priority   # npc-09 — snapshot for in-place refresh
 		task.priority += pri_mod
 		_open_tasks[tid] = task
 
@@ -524,6 +580,7 @@ func _scan_overflow_containers(tree: SceneTree, seen: Dictionary) -> void:
 
 	var task : NpcAutonomyTask = script.new(indoor, outdoor)
 	var mw_ref : Node = _find_main_world(tree)
+	task.base_priority = task.priority   # npc-09 — snapshot for in-place refresh
 	task.priority += _cleaning_priority_modifier(mw_ref)
 	_open_tasks[tid] = task
 
@@ -565,6 +622,7 @@ func _scan_low_fuel_blowers(tree: SceneTree, seen: Dictionary) -> void:
 		if can == null:
 			continue
 		var task : NpcAutonomyTask = rb_script.new(blower as Node3D, can, mw_ref)
+		task.base_priority = task.priority   # npc-09 — snapshot for in-place refresh
 		task.priority += pri_mod
 		_open_tasks[tid] = task
 

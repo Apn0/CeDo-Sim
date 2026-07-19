@@ -107,11 +107,9 @@ func _tick_walk_to_blower(npc: Node) -> void:
 		var saved_xform : Transform3D = leaf_blower.global_transform
 		leaf_blower.get_parent().remove_child(leaf_blower)
 		npc.add_child(leaf_blower)
-		# Operator 2026-07-16: the old (0.35, 0.95, 0.4) put the blower ~1.85 m up
-		# (NPC origin = capsule centre ~0.9 m + 0.95) = floating ABOVE the head, and
-		# +0.4 on Z = BEHIND him. NPC origin is the capsule centre, so hand height is
-		# ~y=0; forward is -Z. Seat it at his right side, hand height, nozzle forward.
-		leaf_blower.transform = Transform3D(Basis.IDENTITY, Vector3(0.25, -0.05, -0.30))
+		# npc-11 — shared operator-corrected hand offset (2026-07-16 feedback);
+		# calibration note lives at NpcAutonomyTask.TOOL_CARRY_OFFSET.
+		leaf_blower.transform = Transform3D(Basis.IDENTITY, TOOL_CARRY_OFFSET)
 		leaf_blower.set_meta("saved_world_xform", saved_xform)
 	_phase = Phase.CIRCUIT
 	_phase_t = 0.0
@@ -165,23 +163,20 @@ func _tick_return_blower(npc: Node) -> void:
 	if not _close_enough(npc, _pickup_pos, APPROACH_DIST_M):
 		_set_dest(npc, _pickup_pos)
 		return
-	# Drop the blower back at its pickup location with its saved orientation.
+	# Drop the blower back at its saved station transform (shared npc-03 helper).
+	_drop_tool(npc, leaf_blower)
 	if leaf_blower != null and is_instance_valid(leaf_blower):
-		if leaf_blower.get_parent() == npc:
-			npc.remove_child(leaf_blower)
-			# Re-parent under MainWorld (npc's parent) so it stays in the scene.
-			var mw : Node = npc.get_parent()
-			if mw != null:
-				mw.add_child(leaf_blower)
-				var saved : Transform3D = leaf_blower.get_meta("saved_world_xform",
-					Transform3D(Basis.IDENTITY, _pickup_pos))
-				leaf_blower.global_transform = saved
 		# Stamp the cleaning time so the board doesn't immediately re-emit.
 		leaf_blower.set_meta("last_cleaned_at", _now_sim_s())
 	release(npc)
 	mark_done()
 
-func release(_npc: Node) -> void:
+func release(npc: Node) -> void:
+	# npc-03 — an abort (phase timeout, shift bell, production preemption,
+	# operator clear) must put the blower DOWN. Without this the tool stayed
+	# welded to the NPC's hand forever and — with the claim meta removed
+	# below — a later task could "pick it up" out of his hands.
+	_drop_tool(npc, leaf_blower)
 	if leaf_blower != null and is_instance_valid(leaf_blower):
 		leaf_blower.remove_meta("autonomy_claimed_by")
 

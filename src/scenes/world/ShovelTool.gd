@@ -15,9 +15,11 @@ const SCOOP_RANGE    : float = 2.2     # how close to the heap you must stand
 const DEPOSIT_RANGE  : float = 3.0     # a bin this close catches the scoop
 const SCOOP_KG       : float = 6.0     # mass lifted per scoop (a real shovelful of dirt ~5-8 kg, was an unrealistic 25)
 const SCOOP_COOLDOWN : float = 0.4
+const REFUSE_BANNER_COOLDOWN : float = 2.0   # held-LMB retries mustn't flicker the banner
 
 var _held_by   : Node3D = null
 var _last_scoop: float  = 0.0
+var _last_refuse_banner : float = -REFUSE_BANNER_COOLDOWN
 var _player_near : bool = false
 var _player_node : Node = null
 
@@ -151,6 +153,7 @@ func scoop_once() -> float:
 		return 0.0
 	var pile := _nearest_in_group("floor_pile", SCOOP_RANGE, true)
 	if pile == null:
+		_refuse_banner("Shovel: no pile within reach")
 		return 0.0
 	# CONSERVATION (operator 2026-07-16): a shovelful can't vanish into nothing —
 	# it has to go SOMEWHERE. Require a container in reach BEFORE lifting anything
@@ -158,11 +161,13 @@ func scoop_once() -> float:
 	# pile (previously the mass was removed and silently deleted = mass→nothing).
 	var bin := _nearest_in_group("waste_container", DEPOSIT_RANGE, false)
 	if bin == null or not bin.has_method("add"):
+		_refuse_banner("Shovel: need a waste container nearby — the scoop must go somewhere")
 		return 0.0
 	# A FULL bin can't accept the scoop — lifting anyway would overflow into the
 	# void (mass deleted). Refuse the scoop so the pile keeps its material
 	# (bughunt 2026-07-17: bin.add() caps at capacity and drops the remainder).
 	if bin.has_method("is_full") and bool(bin.call("is_full")):
+		_refuse_banner("Shovel: container is full — empty it first")
 		return 0.0
 	var got : float = pile.call("scoop", SCOOP_KG)
 	if got <= 0.0:
@@ -171,6 +176,18 @@ func scoop_once() -> float:
 	# Mass moved from the pile INTO the bin — conserved, not created/destroyed.
 	bin.call("add", got, 200.0, -1)
 	return got
+
+## Surface a scoop refusal REASON on the HUD scanner banner (qol: every refusal
+## used to be a silent "LMB does nothing"). Throttled — a held LMB retries every
+## SCOOP_COOLDOWN and the reason rarely changes within a couple of seconds.
+func _refuse_banner(reason: String) -> void:
+	var now := Time.get_ticks_msec() / 1000.0
+	if now - _last_refuse_banner < REFUSE_BANNER_COOLDOWN:
+		return
+	_last_refuse_banner = now
+	var bus := get_node_or_null("/root/EventBus")
+	if bus and bus.has_signal("scanner_banner"):
+		bus.emit_signal("scanner_banner", reason, true)
 
 ## Nearest node of `group` within `range_m`. When `need_mass`, only piles that
 ## actually hold material qualify (skip empty zones).

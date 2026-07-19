@@ -99,13 +99,15 @@ func _tick_walk_to_blower(npc: Node) -> void:
 	if not _close_enough(npc, leaf_blower.global_position, APPROACH_DIST_M):
 		_set_dest(npc, leaf_blower.global_position)
 		return
-	# Pick up: parent the blower under the NPC so it moves with them. Keep a
-	# small forward+up offset so it visually reads as "in hand".
+	# Pick up: parent the blower under the NPC so it moves with them, seated at
+	# the shared hand offset (npc-11: the old local (0.35, 0.95, 0.4) was the
+	# operator-rejected float-above-the-head pose that BlowLeavesTask already
+	# dropped on 2026-07-16; see NpcAutonomyTask.TOOL_CARRY_OFFSET).
 	if leaf_blower.get_parent() != npc:
 		var saved_xform : Transform3D = leaf_blower.global_transform
 		leaf_blower.get_parent().remove_child(leaf_blower)
 		npc.add_child(leaf_blower)
-		leaf_blower.transform = Transform3D(Basis.IDENTITY, Vector3(0.35, 0.95, 0.4))
+		leaf_blower.transform = Transform3D(Basis.IDENTITY, TOOL_CARRY_OFFSET)
 		leaf_blower.set_meta("saved_world_xform", saved_xform)
 	_phase = Phase.CARRY_TO_CAN
 	_phase_t = 0.0
@@ -144,23 +146,18 @@ func _tick_return(npc: Node) -> void:
 	if not _close_enough(npc, _pickup_pos, APPROACH_DIST_M):
 		_set_dest(npc, _pickup_pos)
 		return
-	# Drop the blower back at its pickup location with its saved orientation.
+	# Drop the blower back at its saved station transform (shared npc-03 helper).
+	_drop_tool(npc, leaf_blower)
 	if leaf_blower != null and is_instance_valid(leaf_blower):
-		if leaf_blower.get_parent() == npc:
-			npc.remove_child(leaf_blower)
-			# Re-parent under MainWorld (npc's parent) so it stays in the scene.
-			var mw : Node = npc.get_parent()
-			if mw != null:
-				mw.add_child(leaf_blower)
-				var saved : Transform3D = leaf_blower.get_meta("saved_world_xform",
-					Transform3D(Basis.IDENTITY, _pickup_pos))
-				leaf_blower.global_transform = saved
 		# Stamp the refuel time so the board doesn't immediately re-emit.
 		leaf_blower.set_meta("last_refuelled_at", _now_sim_s())
 	release(npc)
 	mark_done()
 
-func release(_npc: Node) -> void:
+func release(npc: Node) -> void:
+	# npc-03 — any abort must put the blower DOWN (same weld-to-hand failure as
+	# the blow-circuit task; see BlowLeavesTask.release).
+	_drop_tool(npc, leaf_blower)
 	if leaf_blower != null and is_instance_valid(leaf_blower):
 		leaf_blower.remove_meta("autonomy_claimed_by")
 

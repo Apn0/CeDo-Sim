@@ -169,7 +169,11 @@ func _abandon_autonomy_task() -> void:
 	if board != null and board.has_method("release_task"):
 		board.call("release_task", self)
 	else:
-		(_autonomy_task as NpcAutonomyTask).release(self)
+		var t := _autonomy_task as NpcAutonomyTask
+		t.release(self)
+		# npc-01 — un-claim (mirrors board.release_task) so the still-open task
+		# stays offerable instead of being wedged behind a stale _claimed_by.
+		t._claimed_by = null
 	_autonomy_task = null
 	clear_autonomy_destination()
 
@@ -931,8 +935,28 @@ func is_servicing() -> bool: return task_state == Task.SERVICING
 func is_on_break()  -> bool: return task_state == Task.ON_BREAK
 func is_off_duty()  -> bool: return task_state == Task.OFF_DUTY
 
+## npc-08 — autonomy task_name → the CrewPanel task dropdown's Dutch vocabulary
+## (lower-cased to match the other roster status strings below).
+const _AUTONOMY_TASK_LABELS_NL : Dictionary = {
+	"blow_leaves":       "blad blazen",
+	"water_hose_sweep":  "spuiten (slang)",
+	"air_hose_sweep":    "spuiten (slang)",
+	"shovel_floor_pile": "vegen (schep)",
+	"empty_lump_cart":   "lumpskar legen",
+	"overflow_dump":     "container legen",
+	"refuel_blower":     "bladblazer tanken",
+}
+
 ## Short human-readable status for the HUD crew roster.
 func current_task() -> String:
+	# npc-08 — an active forced/autonomy task outranks the crew-brain state:
+	# the roster used to show "rondlopen" for a worker mid-circuit, including
+	# tasks the operator himself had just forced from the CrewPanel dropdown.
+	# "!" marks an operator-forced task.
+	if _forced_task != null and not _forced_task.is_done():
+		return "! " + _autonomy_task_label(_forced_task.task_name)
+	if _autonomy_task is NpcAutonomyTask and not (_autonomy_task as NpcAutonomyTask).is_done():
+		return _autonomy_task_label((_autonomy_task as NpcAutonomyTask).task_name)
 	match task_state:
 		Task.AT_POST:
 			return "post: %s" % assigned_station_id
@@ -945,6 +969,11 @@ func current_task() -> String:
 		Task.ON_BREAK:  return "pauze"
 		Task.OFF_DUTY:  return "vrij (rust)"
 		_:              return "rondlopen"
+
+## npc-08 — Dutch roster label for an autonomy task name; unknown names fall
+## back to the raw name with underscores spaced (still readable in the panel).
+func _autonomy_task_label(tn: String) -> String:
+	return String(_AUTONOMY_TASK_LABELS_NL.get(tn, tn.replace("_", " ")))
 
 func add_relationship_points(npc_id: String, points: int) -> void:
 	"""Add relationship points with another NPC (mutual-aid)."""

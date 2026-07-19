@@ -91,6 +91,30 @@ func empty() -> float:
 	_last_received_at = -INF
 	return dumped
 
+# ── phys-04 — fill state survives save/load ──────────────────────────────────
+# BuildMode._save_layout persists lumps_kg + cool_remaining_s() per cart; the
+# load path calls restore_fill(). Without this a full 90 kg cart reloaded
+# empty: mass conservation violated, the "is_full → discharge blocked" state
+# reset, and the pending empty_lump_cart task chain evaporated.
+
+## Remaining cool-down seconds for the current load (0 = already cool or empty).
+func cool_remaining_s() -> float:
+	if lumps_kg <= 0.001 or _last_received_at == -INF:
+		return 0.0
+	return maxf(0.0, _cool_time_s - (_now_sim_s() - _last_received_at))
+
+## Put a persisted fill back after a reload. Re-anchors the cool timer at "now"
+## so exactly `cool_left_s` seconds remain (a hot cart reloads hot; a cool one
+## is immediately eligible for the empty_lump_cart task again).
+func restore_fill(kg: float, cool_left_s: float) -> void:
+	lumps_kg = clampf(kg, 0.0, CAPACITY_KG)
+	_sync_mass()
+	if lumps_kg <= 0.001:
+		_last_received_at = -INF
+		return
+	_cool_time_s = maxf(cool_left_s, 0.0)
+	_last_received_at = _now_sim_s()
+
 ## Sim time in seconds since the ShiftClock's day-zero epoch. Falls back to the
 ## wall-clock if the shift clock isn't reachable (test scenes).
 func _now_sim_s() -> float:
@@ -121,8 +145,19 @@ const GRAB_PUSH_FORCE_N  : float = 350.0   # sustained two-hand push/pull on a c
 const GRAB_YAW_TORQUE_NM : float = 120.0
 const ROLLING_FRICTION   : float = 0.04    # castor wheels rolling
 const GRAB_LINEAR_DAMP   : float = 0.3
-var _parked_friction : float = -1.0        # cached pre-grab values (restored on release)
+var _parked_friction : float = -1.0        # cached pre-roll values (restored on exit)
 var _parked_damp     : float = -1.0
+
+# ── phys-01 — body-shove enters the same rolling state as the grab ───────────
+# KinematicPush pokes notify_body_push() on slide contact. The parked friction
+# 0.9 caps a per-tick friction impulse of mu*g*dt = 0.147 m/s — more than the
+# push delivers at walk (0.046) or sprint (0.101) — so without this the
+# "shove it by walking into it" promised at the catalog spawn comment was a
+# bolted-down wall. The cart rolls while being pushed and re-parks
+# PUSH_ROLL_TIMEOUT_S after the last shove, keeping the belt/vehicle-nudge
+# creep protection the high parked friction exists for.
+const PUSH_ROLL_TIMEOUT_S : float = 0.5
+var _push_roll_left : float = 0.0
 
 func crosshair_interact(player: Node3D) -> void:
 	if _grabbed_by == null:
@@ -132,7 +167,18 @@ func crosshair_interact(player: Node3D) -> void:
 	else:
 		_release()
 
+## phys-01 — called by KinematicPush when a walking body (player / NPC /
+## feeder) shoves the cart. Grab keeps priority: its controller owns the state.
+func notify_body_push() -> void:
+	if _grabbed_by != null:
+		return
+	sleeping = false
+	_enter_rolling()
+	_push_roll_left = PUSH_ROLL_TIMEOUT_S
+
 func _enter_rolling() -> void:
+	if _parked_friction >= 0.0:
+		return   # already rolling — don't cache the rolling values as "parked"
 	if physics_material_override == null:
 		physics_material_override = PhysicsMaterial.new()
 	_parked_friction = physics_material_override.friction
@@ -142,10 +188,19 @@ func _enter_rolling() -> void:
 
 func _release() -> void:
 	_grabbed_by = null
+	_exit_rolling()
+
+## Restore the parked friction/damp cached by _enter_rolling (shared by grab
+## release and the phys-01 push-decay timer) and clear the caches so the next
+## _enter_rolling re-samples them.
+func _exit_rolling() -> void:
 	if _parked_friction >= 0.0 and physics_material_override != null:
 		physics_material_override.friction = _parked_friction
 	if _parked_damp >= 0.0:
 		linear_damp = _parked_damp
+	_parked_friction = -1.0
+	_parked_damp = -1.0
+	_push_roll_left = 0.0
 
 ## Loaded carts can't be walked as fast as empty ones: max towing speed
 ## derates from a brisk push (empty) to a heavy trudge (full).
@@ -153,6 +208,12 @@ func _max_speed_for_load() -> float:
 	return lerpf(1.8, 1.1, clampf(lumps_kg / CAPACITY_KG, 0.0, 1.0))
 
 func _physics_process(delta: float) -> void:
+	# phys-01 — decay the body-shove rolling window: once nothing has pushed
+	# for PUSH_ROLL_TIMEOUT_S the parked friction/damp come back.
+	if _grabbed_by == null and _push_roll_left > 0.0:
+		_push_roll_left -= delta
+		if _push_roll_left <= 0.0:
+			_exit_rolling()
 	if _grabbed_by == null or not is_instance_valid(_grabbed_by):
 		return
 	var fwd : Vector3 = -_grabbed_by.global_transform.basis.z

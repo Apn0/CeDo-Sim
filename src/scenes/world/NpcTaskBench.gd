@@ -226,12 +226,10 @@ func _build_rig() -> void:
 	pile.global_position = Vector3(1.6, 0.0, -14.0)
 	if pile.has_method("add"):
 		pile.call("add", 80.0, 40.0)   # 80 kg loose film — above the 60 kg shovel threshold
-	# forklift for the empty-lump-cart haul; nothing tags the group globally
-	# yet (#201/#202 pending) so the bench tags it for the task's availability
-	# check.
-	var fork : Node3D = _place("vehicle_forklift", Vector3(18.0, 0.0, -8.0))
-	if fork != null:
-		fork.add_to_group("forklift")
+	# forklift for the empty-lump-cart haul. The "forklift" group is registered
+	# by Forklift._ready() itself (npc-02) — no bench-local tag anymore, so the
+	# bench proves the PRODUCTION registration path instead of masking it.
+	_place("vehicle_forklift", Vector3(18.0, 0.0, -8.0))
 
 	PlaceableCatalog.emit_name_labels = prev_labels
 

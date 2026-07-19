@@ -29,6 +29,11 @@ func can_start(npc: Node) -> bool:
 		return false
 	if outdoor_container == null or not is_instance_valid(outdoor_container):
 		return false
+	# npc-04 — the destination must be able to RECEIVE material. A node with
+	# neither add() nor receive_lumps() (e.g. the world root the forced path
+	# used to pass) would silently vaporise the scooped mass in _tick_dump.
+	if not (outdoor_container.has_method("add") or outdoor_container.has_method("receive_lumps")):
+		return false
 	if indoor_container.has_method("is_full"):
 		if not bool(indoor_container.call("is_full")):
 			return false

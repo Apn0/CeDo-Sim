@@ -1136,8 +1136,9 @@ func _ensure_hotbar_actions() -> void:
 		"hotbar_5":          KEY_5,   # #punch: 5th inventory slot
 		"hotbar_drop":       KEY_Q,
 		# LPG dual-cylinder active-tank valve toggle (bale clamp only). #punch:
-		# moved off H (which collided with vehicle_handbrake) to the free J key.
-		"lpg_switch_active": KEY_J,
+		# moved off H (vehicle_handbrake collision), then off J (walkie_headset
+		# owns J — HUD._input swallows it before the clamp) to the free I key.
+		"lpg_switch_active": KEY_I,
 		# Vehicle aux — work lamps, 4-way hazards, horn (mast lift only honks).
 		"vehicle_lights":    KEY_L,
 		"vehicle_hazards":   KEY_K,

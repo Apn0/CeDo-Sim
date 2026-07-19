@@ -76,6 +76,9 @@ signal vehicle_collided(vehicle_a: String, vehicle_b: String, impulse: float)
 # ── Shift lifecycle ───────────────────────────────────────────────────────────
 signal shift_started
 signal shift_ended
+## Emitted by SaveCoordinator.save_game() after every flush — the 60 s autosave
+## tick, the pause-card Save button, and Save & Quit. HUD listens and pops a
+## short "✓ Saved" toast so the operator can see progress reached disk.
 signal autosave_completed
 
 # ── Social / mutual aid ───────────────────────────────────────────────────────

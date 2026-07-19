@@ -88,6 +88,12 @@ var _scanner_banner_panel : PanelContainer
 var _scanner_banner_label : Label
 var _scanner_banner_fade  : float = 0.0   # seconds remaining
 
+# "✓ Saved" toast (top-right, under the line banner) — confirms every save
+# (autosave tick, pause-card Save, Save & Quit) actually reached disk. Before
+# this, saving only print()ed to console — invisible in multi-hour shifts.
+var _save_toast_panel : PanelContainer
+var _save_toast_fade  : float = 0.0   # seconds remaining
+
 # =============================================================================
 func _ready() -> void:
 	layer = 10                       # above everything 3-D
@@ -104,6 +110,7 @@ func _ready() -> void:
 	_build_vehicle_hud()
 	_build_hotbar()
 	_build_scanner_banner()
+	_build_save_toast()
 	_build_crosshair()
 	call_deferred("_connect_signals")
 
@@ -143,6 +150,9 @@ func _connect_signals() -> void:
 	if bus and bus.has_signal("scanner_banner"):
 		bus.scanner_banner.connect(_on_scanner_banner)
 		_refresh_crew_panel()        # seed the roster immediately
+	# "✓ Saved" toast — SaveCoordinator emits after every flush (autosave + manual).
+	if bus and bus.has_signal("autosave_completed"):
+		bus.autosave_completed.connect(_on_autosave_completed)
 	if shift_clock:
 		shift_clock.time_updated.connect(_on_time_updated)
 		shift_clock.shift_ended.connect(_on_shift_ended)
@@ -824,6 +834,14 @@ func _build_pause_menu() -> void:
 	settings_btn.pressed.connect(_on_settings_pressed)
 	vbox.add_child(settings_btn)
 
+	# Manual save without quitting — before this the only mid-shift saves were
+	# the 60 s autosave and the undiscoverable F5 freecam_save.
+	var save_btn := Button.new()
+	save_btn.text = "Save"
+	save_btn.custom_minimum_size = Vector2(164.0, 36.0)
+	save_btn.pressed.connect(_on_save_pressed)
+	vbox.add_child(save_btn)
+
 	var quit_btn := Button.new()
 	quit_btn.text = "Save & Quit"
 	quit_btn.custom_minimum_size = Vector2(164.0, 36.0)
@@ -1001,12 +1019,17 @@ func _build_vehicle_hud() -> void:
 	_vehicle_clamp_bar.add_theme_stylebox_override("background", cbg)
 	_vehicle_clamp_row.add_child(_vehicle_clamp_bar)
 
-	# Wire-cut hint — shows when force ≥ wire compliance on the carried bale
+	# Wire-cut hint — shows when force ≥ wire compliance on the carried bale.
+	# (The Shift+B in-cab wire cut was REMOVED — cutting happens ON FOOT with the
+	# concrete scissors after dismounting, see BaleClamp.gd — so the hint teaches
+	# the real procedure instead of a dead control.)
 	_vehicle_clamp_hint = Label.new()
-	_vehicle_clamp_hint.text = "[Shift+B]  cut wires (bulging)"
+	_vehicle_clamp_hint.text = "Wires bulging — exit cab (E) and cut each wire with the concrete scissors"
 	_vehicle_clamp_hint.add_theme_font_size_override("font_size", 11)
 	_vehicle_clamp_hint.add_theme_color_override("font_color", Color(0.95, 0.78, 0.30, 1))
 	_vehicle_clamp_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_vehicle_clamp_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_vehicle_clamp_hint.custom_minimum_size = Vector2(200.0, 0.0)
 	_vehicle_clamp_hint.visible = false
 	vbox.add_child(_vehicle_clamp_hint)
 
@@ -1044,6 +1067,12 @@ func _process(delta: float) -> void:
 		_scanner_banner_fade -= delta
 		if _scanner_banner_fade <= 0.0 and _scanner_banner_panel:
 			_scanner_banner_panel.visible = false
+
+	# "✓ Saved" toast: same decay pattern as the scanner banner.
+	if _save_toast_fade > 0.0:
+		_save_toast_fade -= delta
+		if _save_toast_fade <= 0.0 and _save_toast_panel:
+			_save_toast_panel.visible = false
 
 	if _bound_vehicle == null or not _vehicle_panel.visible:
 		return
@@ -1298,6 +1327,12 @@ func _on_settings_closed() -> void:
 	# Return to the pause overlay (game still paused)
 	_pause_overlay.visible = true
 
+func _on_save_pressed() -> void:
+	# Stay paused — the operator just wants confirmation the shift is on disk.
+	# SaveCoordinator emits autosave_completed, which pops the "✓ Saved" toast.
+	if main_world:
+		main_world.save_game()
+
 func _on_save_quit_pressed() -> void:
 	if main_world:
 		main_world.save_and_quit()
@@ -1412,6 +1447,49 @@ func _build_scanner_banner() -> void:
 	_scanner_banner_panel.add_child(_scanner_banner_label)
 	_scanner_banner_panel.visible = false
 	add_child(_scanner_banner_panel)
+
+# =============================================================================
+# SAVE TOAST ("✓ Saved" — top-right, fades after ~1.5 s)
+# =============================================================================
+func _build_save_toast() -> void:
+	_save_toast_panel = PanelContainer.new()
+	_save_toast_panel.name = "SaveToast"
+	# Top-right, tucked under the line-power banner (y 12..44); the walkie menu
+	# opens at y 60 on the same edge but is user-toggled, so a 1.5 s overlap is
+	# acceptable in the rare save-while-choosing-a-message case.
+	_save_toast_panel.anchor_left   = 1.0
+	_save_toast_panel.anchor_right  = 1.0
+	_save_toast_panel.anchor_top    = 0.0
+	_save_toast_panel.anchor_bottom = 0.0
+	_save_toast_panel.offset_left   = -110.0
+	_save_toast_panel.offset_right  = -12.0
+	_save_toast_panel.offset_top    = 50.0
+	_save_toast_panel.offset_bottom = 50.0
+	# Same StyleBox recipe as the scanner banner — dark green + green border.
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.06, 0.10, 0.06, 0.88)
+	sb.border_color = Color(0.20, 1.00, 0.30, 1.0)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(6)
+	sb.content_margin_left = 14.0
+	sb.content_margin_right = 14.0
+	sb.content_margin_top = 8.0
+	sb.content_margin_bottom = 8.0
+	_save_toast_panel.add_theme_stylebox_override("panel", sb)
+	var lbl := Label.new()
+	lbl.text = "✓ Saved"
+	lbl.add_theme_color_override("font_color", Color(0.86, 0.95, 0.86, 1))
+	lbl.add_theme_font_size_override("font_size", 13)
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_save_toast_panel.add_child(lbl)
+	_save_toast_panel.visible = false
+	add_child(_save_toast_panel)
+
+func _on_autosave_completed() -> void:
+	if _save_toast_panel == null:
+		return
+	_save_toast_panel.visible = true
+	_save_toast_fade = 1.5
 
 func _on_scanner_banner(text: String, is_error: bool = false) -> void:
 	if _scanner_banner_label == null:
