@@ -250,13 +250,14 @@ func _spawn_help_overlay() -> void:
 func _build_floor() -> void:
 	# Length is based on visible (non-failed) stations so the floor doesn't
 	# extend past the last sign into empty space.
-	var visible : int = 0
+	# `visible_count`, not `visible`: the latter shadows Node3D.visible.
+	var visible_count : int = 0
 	for s in STATIONS:
 		var sid : String = str(int(s["id"]))
 		var status : String = String(_persisted.get(sid, s["status"]))
 		if status != "failed" and status != "verified":
-			visible += 1
-	var length : float = float(maxi(visible, 1)) * STATION_SPACING_M + 20.0
+			visible_count += 1
+	var length : float = float(maxi(visible_count, 1)) * STATION_SPACING_M + 20.0
 	# Floor width covers from -PLATFORM_FRONT_PAD (in front of the sign row)
 	# to DEEPEST_PROP_Z + PLATFORM_BACK_PAD behind it. Centre shifted so the
 	# slab actually sits under the props, not just under the signs.

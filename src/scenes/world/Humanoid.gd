@@ -261,12 +261,15 @@ static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -
 	if skin_raw is Dictionary and skin_raw.has("r"):
 		skin_raw = Color(float(skin_raw["r"]), float(skin_raw["g"]), float(skin_raw["b"]))
 	var skin  : Color = skin_raw if skin_raw is Color else _SKIN_TONES[variant % _SKIN_TONES.size()]
-	# Intentional: every two skin tones map to the next hair tone.
-	@warning_ignore("integer_division")
 	var hair_raw : Variant = appearance.get("hair_color", null)
 	if hair_raw is Dictionary and hair_raw.has("r"):
 		hair_raw = Color(float(hair_raw["r"]), float(hair_raw["g"]), float(hair_raw["b"]))
-	var hair  : Color = hair_raw if hair_raw is Color else _HAIR_TONES[(variant / 2) % _HAIR_TONES.size()]
+	# Intentional: every two skin tones map to the next hair tone. The annotation
+	# has to sit on the line that DOES the division — it was one line too high
+	# (attached to hair_raw), so the warning still fired.
+	@warning_ignore("integer_division")
+	var hair_idx : int = (variant / 2) % _HAIR_TONES.size()
+	var hair  : Color = hair_raw if hair_raw is Color else _HAIR_TONES[hair_idx]
 	# `shirt` is kept as the MapOverlay colour (set as meta by MainWorld); the
 	# in-world torso / arms now always use the company hi-vis material so the
 	# crew reads as on-shift regardless of which NPC they are. Per-person

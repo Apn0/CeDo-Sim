@@ -195,7 +195,9 @@ static func detect_active(extruder_model : Object, laser_filter : Object = null)
 static func format_row(fault : Dictionary, tijd_s : float = 0.0) -> Dictionary:
 	return {
 		"nr":   int(fault.get("nr", 0)),
-		"tijd": "%02d:%02d:%02d" % [int(tijd_s) / 3600 % 24, int(tijd_s) / 60 % 60, int(tijd_s) % 60],
+		# floori, not `/`: whole hours/minutes are the intent but a bare integer
+		# divide trips INTEGER_DIVISION and warnings are errors in this project.
+		"tijd": "%02d:%02d:%02d" % [floori(tijd_s / 3600.0) % 24, floori(tijd_s / 60.0) % 60, int(tijd_s) % 60],
 		"msg":  String(fault.get("msg", "")),
 	}
 

@@ -302,9 +302,11 @@ func _physics_process(delta: float) -> void:
 				lateral -= global_transform.basis.x
 			if Input.is_action_pressed("move_right"):
 				lateral += global_transform.basis.x
-			var target_xz := lateral.normalized() * walk_speed * 0.5
-			velocity.x = move_toward(velocity.x, target_xz.x, acceleration * delta)
-			velocity.z = move_toward(velocity.z, target_xz.z, acceleration * delta)
+			# `ladder_xz`, not `target_xz`: the walk path declares its own
+			# target_xz further down in the parent block (CONFUSABLE_LOCAL_DECLARATION).
+			var ladder_xz := lateral.normalized() * walk_speed * 0.5
+			velocity.x = move_toward(velocity.x, ladder_xz.x, acceleration * delta)
+			velocity.z = move_toward(velocity.z, ladder_xz.z, acceleration * delta)
 			velocity.y = climb * LADDER_CLIMB_SPEED
 		move_and_slide()
 		_push_rigid_bodies(delta)   # #223: same mass-based push on the ladder path

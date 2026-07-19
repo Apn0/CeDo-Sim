@@ -471,6 +471,10 @@ func _layout_rel_sane(rel: Vector3) -> bool:
 # the actual yaw+anchor that ran (not stale boilerplate). PerfHud.gd:88 reads this
 # verbatim, so we keep the variable NAME stable and only change its contents.
 var layout_conv_summary : String = "Layout: no layout file — vanilla spawn"
+# NOT dead — WorldFrame.gd:223/228 reads and writes it DYNAMICALLY via
+# _world.get()/set(), which the analyzer can't see, so it reports it as unused.
+# Deleting it would silently break the log-summary-once guard.
+@warning_ignore("unused_private_class_variable")
 var _layout_summary_logged : bool = false
 
 # Layout transforms now live in WorldFrame. Thin forwarders preserve callers.

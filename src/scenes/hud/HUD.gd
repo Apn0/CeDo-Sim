@@ -157,6 +157,10 @@ func _connect_signals() -> void:
 		shift_clock.time_updated.connect(_on_time_updated)
 		shift_clock.shift_ended.connect(_on_shift_ended)
 		_on_time_updated(shift_clock.get_time_string())  # seed the display now
+	elif main_world == null:
+		# Expected outside MainWorld (the gauntlet bench, probe scenes): there is
+		# no shift there, so a warning just cries wolf every boot.
+		print("[HUD] no MainWorld in this scene — clock/progress hidden (expected on the bench)")
 	else:
 		push_warning("[HUD] ShiftClock not found — time display will be blank")
 
@@ -1286,7 +1290,10 @@ func _on_time_updated(time_string: String) -> void:
 		# knows the bell hasn't rung yet. "Shift starts in 12:34 · 06:48"
 		if shift_clock and shift_clock.is_pre_shift():
 			var s : int = int(ceilf(shift_clock.get_pre_shift_remaining_seconds()))
-			_time_label.text = "Shift starts in %02d:%02d · %s" % [s / 60, s % 60, time_string]
+			# Whole minutes are the intent; floori keeps it explicit (a bare s / 60
+			# trips INTEGER_DIVISION, and warnings are errors here).
+			var mm : int = floori(s / 60.0)
+			_time_label.text = "Shift starts in %02d:%02d · %s" % [mm, s % 60, time_string]
 		else:
 			_time_label.text = time_string
 	if _progress_bar and shift_clock:

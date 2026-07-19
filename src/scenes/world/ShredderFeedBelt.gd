@@ -521,7 +521,9 @@ const _ALARM_INTAKE_OVERFILL  : String = "INTAKE-OVERFILL"
 const _ALARM_THERMAL_SHUTDOWN : String = "THERMAL-SHUTDOWN"
 
 func _belt_id_for_bus() -> String:
-	return name if name != "" else "shredder_feed_belt"
+	# String() cast: `name` is a StringName and the literal is a String, which
+	# trips INCOMPATIBLE_TERNARY.
+	return String(name) if name != StringName("") else "shredder_feed_belt"
 
 func _raise_fault(kind: String, alarm_id: String) -> void:
 	var bid := _belt_id_for_bus()
