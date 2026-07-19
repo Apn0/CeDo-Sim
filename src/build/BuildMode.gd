@@ -2118,10 +2118,32 @@ func _update_edit_status() -> void:
 		else:
 			_dim_readout.text = "scale  X %.2f   Y %.2f   Z %.2f" % [sc_v.x, sc_v.y, sc_v.z]
 
+## The camera build mode AIMS with — always the player's, never merely the one
+## that happens to be `current`.
+##
+## Operator report 2026-07-20 (NPC bench): "when I spawn a bale clamp / a film
+## pile it always lands in the exact centre of the middle shredder". Root cause:
+## _raycast() built its ray from `get_viewport().get_camera_3d()` along that
+## camera's FORWARD AXIS — the mouse is never involved. NpcTaskBench's O key
+## (_cycle_observer) makes a STATIC ObserverCam current, so with observer mode on
+## the ray is one fixed line in space and EVERY placeable of EVERY kind lands on
+## the single point that line first hits. Pre-placed bench bales looked fine
+## because the rig places them directly, not through build mode.
+##
+## Ruled out first, by measurement, not by argument: add_child-then-position
+## stranding RigidBody3D children at the origin — src/tests/test_spawn_transform.gd
+## shows both orderings land within 0.8 m of the aim point.
+func _aim_camera() -> Camera3D:
+	if player_body != null and is_instance_valid(player_body):
+		var pc := player_body.find_child("Camera3D", true, false) as Camera3D
+		if pc != null:
+			return pc
+	return get_viewport().get_camera_3d()
+
 # Camera-forward ray against the world (floor / building / placed objects),
 # excluding the player capsule and the (collision-less) ghost.
 func _raycast() -> Dictionary:
-	var cam := get_viewport().get_camera_3d()
+	var cam := _aim_camera()
 	if cam == null:
 		return {}
 	var from := cam.global_position

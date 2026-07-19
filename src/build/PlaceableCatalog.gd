@@ -10124,18 +10124,37 @@ static func _m_extruder_unit(p: Node3D, size: Vector3, color: Color, ghost: bool
 		var hbz : float = size.z * bz
 		_cyl(p, hood_r * 1.02, hood_r * 1.02, size.z * 0.012, Vector3(0.0, hood_cy, hbz), heat_band, "z")   # zone band collar
 		_box(p, Vector3(0.10, size.x * 0.12, size.z * 0.02), Vector3(hood_r * 0.75, hood_cy + hood_r * 0.70, hbz), dark)  # zone junction box
-	# ═══ SECTION 1: FEED / CUTTER-COMPACTOR TOWER (rear, -Z) ═══
-	var tw_z : float = -size.z * 0.42
+	# ═══ SECTION 1: FEED / CUTTER-COMPACTOR (PCU) — ABOVE THE BARREL ═══
+	# docs/plant/extruder_line_layout.md:10-12 (operator spec 2026-07-15):
+	#   "PCU — large unit sitting ABOVE the barrel near the motor end. Feeds
+	#    material DOWN into the barrel through an intake slider (intrek/
+	#    opzetschuif)."
+	# It used to stand on the floor BEHIND the barrel (tw_z = -size.z * 0.42) on
+	# four short legs, discharging through a tangential side throat — which is
+	# what the operator kept reporting as wrong. The drum now sits on a PORTAL
+	# frame that straddles the barrel, with a vertical intake chute + slider gate
+	# dropping into the barrel crown near the motor end.
+	var tw_z : float = -size.z * 0.20                      # over the barrel, just past the gearbox
 	var drum_r : float = size.x * 0.34
-	var tower_leg_h : float = barrel_cy * 0.5
+	# Portal legs clear the clad barrel: they land OUTSIDE the hood in X and run
+	# from the floor to just above hood_top, so the drum rides over the barrel.
+	var tower_leg_h : float = hood_top + 0.35
+	var portal_x : float = size.x * 0.42
 	for sx2 in [-1.0, 1.0]:
 		for sz2 in [-1.0, 1.0]:
 			var tl := _box(p, Vector3(0.14, tower_leg_h, 0.14),
-				Vector3(sx2 * drum_r * 0.72, tower_leg_h * 0.5, tw_z + sz2 * drum_r * 0.72), dark)
+				Vector3(sx2 * portal_x, tower_leg_h * 0.5, tw_z + sz2 * drum_r * 0.72), dark)
 			tl.add_to_group("machine_leg")
 			tl.set_meta("leg_h", tower_leg_h)
-	_box(p, Vector3(drum_r * 1.9, 0.12, drum_r * 1.9), Vector3(0.0, tower_leg_h + 0.06, tw_z), steel)  # base plate on the legs
-	var drum_h : float = size.y * 0.56
+		# cross-braces tying the two legs on this side together
+		_box(p, Vector3(0.10, 0.10, drum_r * 1.44),
+			Vector3(sx2 * portal_x, tower_leg_h * 0.55, tw_z), dark)
+	# Deck plate spanning the portal — the drum sits on this, over the barrel.
+	_box(p, Vector3(portal_x * 2.0 + 0.14, 0.12, drum_r * 1.9),
+		Vector3(0.0, tower_leg_h + 0.06, tw_z), steel)
+	# Shorter drum than the old floor tower: the deck already starts above the
+	# barrel, so the full size.y*0.56 would push the unit through its own bbox.
+	var drum_h : float = size.y * 0.42
 	var drum_base : float = tower_leg_h + 0.12
 	var drum_cy : float = drum_base + drum_h * 0.5
 	_cyl(p, drum_r, drum_r, drum_h, Vector3(0.0, drum_cy, tw_z), steel)                                # tall stainless drum
@@ -10184,21 +10203,52 @@ static func _m_extruder_unit(p: Node3D, size: Vector3, color: Color, ghost: bool
 		# #223 — mesh cage around the BOTTOM of the 4 support pillars (operator
 		# asked "where is the mesh around the bottom of the support pillars?").
 		# Floor-level guard wrapping the leg footprint, up toward the base plate.
-		var pcu_pillar_span : float = drum_r * 0.72
-		var pcu_cage_w : float = pcu_pillar_span * 2.0 + 0.14
-		var pcu_cage_h : float = tower_leg_h * 0.9
+		# The pillars now straddle the barrel, so the cage wraps the leg footprint
+		# at floor level on the OUTBOARD faces only — boxing in the inboard side
+		# would seal the barrel walkway shut.
+		var pcu_cage_d : float = drum_r * 1.44 + 0.14
+		var pcu_cage_h : float = barrel_leg_h + barrel_cy * 0.55
 		var pcu_cage_cy : float = pcu_cage_h * 0.5
-		_box(p, Vector3(0.02, pcu_cage_h, pcu_cage_w), Vector3(-pcu_pillar_span - 0.05, pcu_cage_cy, tw_z), mesh_mat)
-		_box(p, Vector3(0.02, pcu_cage_h, pcu_cage_w), Vector3( pcu_pillar_span + 0.05, pcu_cage_cy, tw_z), mesh_mat)
-		_box(p, Vector3(pcu_cage_w, pcu_cage_h, 0.02), Vector3(0.0, pcu_cage_cy, tw_z - pcu_pillar_span - 0.05), mesh_mat)
-		_box(p, Vector3(pcu_cage_w, pcu_cage_h, 0.02), Vector3(0.0, pcu_cage_cy, tw_z + pcu_pillar_span + 0.05), mesh_mat)
-	# grey control box + 2 round gauges on -X (past the guard)
-	_box(p, Vector3(0.12, size.y * 0.16, size.y * 0.18), Vector3(-drum_r * 1.55, drum_cy - size.y * 0.05, tw_z), body)
-	_cyl(p, 0.05, 0.05, 0.04, Vector3(-drum_r * 1.67, drum_cy - size.y * 0.01, tw_z - size.y * 0.045), dark, "x")
-	_cyl(p, 0.05, 0.05, 0.04, Vector3(-drum_r * 1.67, drum_cy - size.y * 0.01, tw_z + size.y * 0.045), dark, "x")
-	# tangential outlet + throat dropping into the barrel start
-	_cyl(p, size.x * 0.12, size.x * 0.12, drum_r * 1.1, Vector3(0.0, barrel_cy + size.y * 0.05, tw_z + drum_r * 0.8), dark, "z")
-	_cyl(p, size.x * 0.15, size.x * 0.10, barrel_cy * 0.5, Vector3(0.0, barrel_cy + size.y * 0.10, tw_z + drum_r * 1.5), steel)
+		_box(p, Vector3(0.02, pcu_cage_h, pcu_cage_d), Vector3(-portal_x - 0.09, pcu_cage_cy, tw_z), mesh_mat)
+		_box(p, Vector3(0.02, pcu_cage_h, pcu_cage_d), Vector3( portal_x + 0.09, pcu_cage_cy, tw_z), mesh_mat)
+		for sx3 in [-1.0, 1.0]:
+			_box(p, Vector3(0.18, pcu_cage_h, 0.02), Vector3(sx3 * portal_x, pcu_cage_cy, tw_z - pcu_cage_d * 0.5), mesh_mat)
+			_box(p, Vector3(0.18, pcu_cage_h, 0.02), Vector3(sx3 * portal_x, pcu_cage_cy, tw_z + pcu_cage_d * 0.5), mesh_mat)
+	# grey control box + 2 round gauges, mounted on the -X portal leg at standing
+	# height. NOT operator-specified: with the drum now up on the portal its old
+	# drum-mounted spot sat ~3.2 m in the air, unreachable. 1.45 m is the usual
+	# panel height — flagged in docs/plant/operator_issues_2026-07-20.md for
+	# confirmation rather than left floating.
+	var pcu_box_cy : float = 1.45
+	_box(p, Vector3(0.12, size.y * 0.16, size.y * 0.18), Vector3(-portal_x - 0.14, pcu_box_cy, tw_z), body)
+	_cyl(p, 0.05, 0.05, 0.04, Vector3(-portal_x - 0.24, pcu_box_cy + size.y * 0.04, tw_z - size.y * 0.045), dark, "x")
+	_cyl(p, 0.05, 0.05, 0.04, Vector3(-portal_x - 0.24, pcu_box_cy + size.y * 0.04, tw_z + size.y * 0.045), dark, "x")
+
+	# ═══ INTAKE SLIDER (intrek/opzetschuif) — PCU discharges DOWN into the barrel ═══
+	# extruder_line_layout.md:10-12. Previously ABSENT as geometry: the slider
+	# existed only as the HMI readout "AIS-positie" (ExtruderBluPortScope.gd:129),
+	# so the number on the panel referred to a part that wasn't in the world.
+	# Vertical chute from the drum floor down to the barrel crown, with a sliding
+	# gate plate + its actuator cylinder on the +X side.
+	var slider_top : float = drum_base
+	var slider_bot : float = hood_cy + hood_r * 0.55        # meets the barrel crown
+	var slider_h : float = maxf(slider_top - slider_bot, 0.15)
+	var slider_w : float = drum_r * 0.62
+	_box(p, Vector3(slider_w, slider_h, slider_w),
+		Vector3(0.0, slider_bot + slider_h * 0.5, tw_z), steel)                       # chute body
+	_box(p, Vector3(slider_w * 1.18, 0.06, slider_w * 1.18),
+		Vector3(0.0, slider_bot + slider_h * 0.62, tw_z), dark)                        # gate frame
+	# The gate plate itself, part-withdrawn so the slot reads as an opening.
+	_box(p, Vector3(slider_w * 1.05, 0.04, slider_w * 0.55),
+		Vector3(slider_w * 0.30, slider_bot + slider_h * 0.62, tw_z), steel)
+	# Pneumatic actuator driving the gate (body + rod), on +X.
+	_cyl(p, 0.055, 0.055, slider_w * 0.9,
+		Vector3(slider_w * 1.05, slider_bot + slider_h * 0.62, tw_z), dark, "x")
+	_cyl(p, 0.022, 0.022, slider_w * 0.5,
+		Vector3(slider_w * 0.62, slider_bot + slider_h * 0.62, tw_z), steel, "x")
+	# Saddle where the chute lands on the clad barrel.
+	_box(p, Vector3(slider_w * 1.30, 0.05, slider_w * 1.30),
+		Vector3(0.0, slider_bot, tw_z), dark)
 
 	# ═══ SECTION 2: GEARBOX + SCREW-DRIVE MOTOR + MAIN HMI ═══
 	var gb_z : float = -size.z * 0.27
