@@ -995,30 +995,166 @@ func _process(delta: float) -> void:
 	if _has_two_point and _two_point_preview != null:
 		_update_two_point_preview(p)
 
+# ── Standing placed-vehicle sentinel (see _arm_vehicle_watchdog below) ────────
+const VEH_SENTINEL_PERIOD_S : float = 30.0   # re-measure every placed vehicle this often
+const VEH_SENTINEL_TOL_M    : float = 10.0   # per-leg displacement that counts as "it moved by itself"
+const VEH_SENTINEL_NEAR_M   : float = 5.0    # radius of the "who was touching it" dump
+# One entry per placed vehicle:
+#   {"node": Node3D, "origin": Vector3 (current baseline), "label": String, "legs": int}
+var _veh_watch    : Array[Dictionary] = []
+var _veh_sentinel : Timer = null
+
 ## Tripwire for the unexplained 2026-07-20 relocation: the operator's five
 ## placed clamps were recorded 220+ m from the click point minutes later —
 ## not reproducible headlessly at a clean tickrate (src/tests/repro_clamp_spawn.gd:
 ## clamps stay within 3 m). One second after a vehicle placement, measure how
 ## far it actually got; a recurrence then logs who/when/where instead of
 ## leaving another mystery save file.
+##
+## 2026-07-21 — the one-second shot proved far too short. The transport measured
+## in src/tests/repro_feeder_drive.gd is a SMOOTH 0.27-1.56 m/s drift (185 m in
+## 150 s, zero per-frame jumps), and the operator's beads only surfaced in a
+## quit-save minutes later; a 1 s window can never see either. The watchdog is
+## now a STANDING sentinel: the 1 s shot stays (it is the only thing that
+## catches an instantaneous teleport) and the vehicle is ALSO registered with a
+## repeating VEH_SENTINEL_PERIOD_S check that runs for the rest of its life and
+## dumps full driving + neighbourhood state the moment a leg exceeds tolerance.
+## Purely diagnostic — nothing here changes vehicle behaviour.
 func _arm_vehicle_watchdog(node: Node3D) -> void:
 	var placed_at : Vector3 = node.global_position
+	_veh_watch.append({
+		"node": node,
+		"origin": placed_at,
+		"label": String(node.name),
+		"legs": 0,
+	})
+	_ensure_vehicle_sentinel()
 	get_tree().create_timer(1.0).timeout.connect(func() -> void:
 		if node == null or not is_instance_valid(node):
 			push_warning("[BuildMode] placed vehicle FREED within 1 s of placement")
 			return
 		var d := node.global_position.distance_to(placed_at)
 		if d > 10.0:
-			push_warning("[BuildMode] placed vehicle moved %.1f m within 1 s of placement: (%.1f, %.1f, %.1f) -> (%.1f, %.1f, %.1f)" % [
+			push_warning("[BuildMode] placed vehicle moved %.1f m within 1 s of placement: (%.1f, %.1f, %.1f) -> (%.1f, %.1f, %.1f)\n%s" % [
 				d, placed_at.x, placed_at.y, placed_at.z,
-				node.global_position.x, node.global_position.y, node.global_position.z]))
+				node.global_position.x, node.global_position.y, node.global_position.z,
+				_vehicle_diagnostic_dump(node)]))
+
+## Create the single repeating timer behind the standing sentinel, on first use.
+## Lazy (rather than in _ready) so a bench that never places a vehicle never
+## pays for it, and so the ordering inside _ready stays untouched.
+func _ensure_vehicle_sentinel() -> void:
+	if _veh_sentinel != null and is_instance_valid(_veh_sentinel):
+		return
+	_veh_sentinel = Timer.new()
+	_veh_sentinel.name = "VehicleSentinel"
+	_veh_sentinel.wait_time = VEH_SENTINEL_PERIOD_S
+	_veh_sentinel.one_shot = false
+	_veh_sentinel.autostart = true
+	_veh_sentinel.timeout.connect(_vehicle_sentinel_tick)
+	add_child(_veh_sentinel)
+
+## Re-measure every watched vehicle against its baseline. Freed / detached
+## vehicles are pruned. A vehicle that moved further than the tolerance reports
+## once and then RE-BASELINES, so a slow continuous drift leaves one warning per
+## 30 s leg — a readable trail with speeds — instead of the same line forever.
+func _vehicle_sentinel_tick() -> void:
+	var keep : Array[Dictionary] = []
+	for w in _veh_watch:
+		var node := w.get("node") as Node3D
+		if node == null or not is_instance_valid(node) or not node.is_inside_tree():
+			continue
+		keep.append(w)
+		var origin : Vector3 = w.get("origin", Vector3.ZERO)
+		var now : Vector3 = node.global_position
+		var d := origin.distance_to(now)
+		if d <= VEH_SENTINEL_TOL_M:
+			continue
+		var legs : int = int(w.get("legs", 0)) + 1
+		w["legs"] = legs
+		w["origin"] = now
+		push_warning("[BuildMode] SENTINEL leg %d — placed vehicle '%s' moved %.1f m (%.2f m/s avg) in the last %.0f s: (%.2f, %.2f, %.2f) -> (%.2f, %.2f, %.2f)\n%s" % [
+			legs, String(w.get("label", "?")), d, d / VEH_SENTINEL_PERIOD_S, VEH_SENTINEL_PERIOD_S,
+			origin.x, origin.y, origin.z, now.x, now.y, now.z,
+			_vehicle_diagnostic_dump(node)])
+	_veh_watch = keep
+
+## The state the 2026-07-20/21 investigation had to reconstruct after the fact:
+## was the autopilot on, where was it told to go, did an NPC own it, and what
+## else was standing in its hull. Built ONLY after the tolerance was already
+## exceeded, so the cost never lands on the normal path.
+func _vehicle_diagnostic_dump(node: Node3D) -> String:
+	var lines : Array[String] = []
+	lines.append("    npc_autopilot=%s  _npc_target_active=%s  _npc_target=%s" % [
+		str(node.get("npc_autopilot")), str(node.get("_npc_target_active")), str(node.get("_npc_target"))])
+	lines.append("    npc_owned=%s  npc_owner_name=%s  occupied=%s" % [
+		str(node.get("npc_owned")), str(node.get("npc_owner_name")), str(node.get("occupied"))])
+	lines.append("    rotation.y=%.4f  path=%s" % [node.rotation.y, str(node.get_path())])
+	lines.append("    bodies within %.0f m:" % VEH_SENTINEL_NEAR_M)
+	var space := get_world_3d().direct_space_state
+	if space == null:
+		lines.append("      (no space state)")
+		return "\n".join(lines)
+	var sh := SphereShape3D.new()
+	sh.radius = VEH_SENTINEL_NEAR_M
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = sh
+	q.transform = Transform3D(Basis.IDENTITY, node.global_position)
+	q.collide_with_areas = false
+	q.collide_with_bodies = true
+	# EVERY layer, not the vehicle's normal mask: ShiftCarSpawner parks its cars
+	# on the query-only layer 1<<19 with mask 0, so a default-mask probe would be
+	# blind to exactly the neighbour we most want named if one turns out to push.
+	q.collision_mask = 0xFFFFFFFF
+	var found := 0
+	for r in space.intersect_shape(q, 16):
+		var col := r.get("collider") as Node
+		if col == null or col == node or node.is_ancestor_of(col):
+			continue
+		found += 1
+		lines.append("      %s  vel=%s  path=%s" % [
+			String(col.name), _body_velocity_str(col), str(col.get_path())])
+	if found == 0:
+		lines.append("      (none)")
+	return "\n".join(lines)
+
+## Best-effort velocity readout for an arbitrary neighbouring body: RigidBody3D
+## exposes linear_velocity, CharacterBody3D exposes velocity, statics/animatables
+## expose neither (an AnimatableBody3D that teleports its transform every frame
+## reads "static" here — that absence is itself a useful signal).
+func _body_velocity_str(body: Node) -> String:
+	var lv : Variant = body.get("linear_velocity")
+	if lv is Vector3:
+		var a : Vector3 = lv
+		return "(%.2f, %.2f, %.2f)" % [a.x, a.y, a.z]
+	var v : Variant = body.get("velocity")
+	if v is Vector3:
+		var b : Vector3 = v
+		return "(%.2f, %.2f, %.2f)" % [b.x, b.y, b.z]
+	return "static"
 
 ## Any OTHER vehicle whose hull overlaps the would-be vehicle footprint at `at`.
 ## Returns its display name, or "" when the spot is clear. Only vehicles block:
 ## two nested dynamic hulls shove each other apart (the measured 2026-07-20
 ## stacked-clamp case); overlap rules for statics are unchanged on purpose.
 func _vehicle_spawn_blocker(at: Vector3) -> String:
-	var item : Dictionary = PlaceableCatalog.get_item(_active_id)
+	var skip : Array[Node] = []
+	if _ghost != null:
+		skip.append(_ghost)
+	return _vehicle_blocker_at(_active_id, at, _ghost_rot_y, skip)
+
+## Shared clearance probe behind _vehicle_spawn_blocker, parameterised so the
+## LOAD path can reuse it for a restored pose (which has its own id + rot_y and
+## no ghost). Every node in `ignore` is skipped together with its subtree: a
+## restored vehicle must not report itself, and the load pass additionally
+## ignores every vehicle it restored this pass, because a body added or moved
+## this frame has not been synced into the physics space yet and would be
+## reported at a stale pose. Those are resolved geometrically instead.
+func _vehicle_blocker_at(id: String, at: Vector3, rot_y: float, ignore: Array[Node]) -> String:
+	var space := get_world_3d().direct_space_state
+	if space == null:
+		return ""
+	var item : Dictionary = PlaceableCatalog.get_item(id)
 	var sz : Vector3 = item.get("size", Vector3(2.0, 2.5, 4.0)) if not item.is_empty() else Vector3(2.0, 2.5, 4.0)
 	var shape := BoxShape3D.new()
 	# 85 % footprint: brushing past a parked machine stays allowed; hull-on-hull
@@ -1026,18 +1162,28 @@ func _vehicle_spawn_blocker(at: Vector3) -> String:
 	shape.size = sz * 0.85
 	var q := PhysicsShapeQueryParameters3D.new()
 	q.shape = shape
-	q.transform = Transform3D(Basis(Vector3.UP, _ghost_rot_y),
+	q.transform = Transform3D(Basis(Vector3.UP, rot_y),
 		at + Vector3(0.0, sz.y * 0.5 + 0.1, 0.0))
 	q.collide_with_areas = false
-	var space := get_world_3d().direct_space_state
 	for r in space.intersect_shape(q, 8):
 		var col : Object = r.get("collider")
 		var cur : Node = col as Node
 		while cur != null:
 			if cur.is_in_group("vehicle"):
-				return cur.name
+				if _is_ignored(cur, ignore):
+					break
+				return String(cur.name)
 			cur = cur.get_parent()
 	return ""
+
+## True when `n` is one of `ignore` or sits inside one of their subtrees.
+func _is_ignored(n: Node, ignore: Array[Node]) -> bool:
+	for ig in ignore:
+		if ig == null or not is_instance_valid(ig):
+			continue
+		if ig == n or ig.is_ancestor_of(n):
+			return true
+	return false
 
 ## A tall thin green vertical cylinder used as the edge-snap indicator.
 ## Hangs above the snap point so the operator can spot it across the floor.
@@ -2514,10 +2660,37 @@ func _save_layout() -> void:
 		f.close()
 	# Push the SHARED structure list to WorldLayout and persist it so EVERY save
 	# (including brand-new ones) inherits the building's walls / doors / gates / windows.
-	WorldLayout.structure_items = shared
-	WorldLayout.save()
+	#
+	# ONLY when this instance actually loaded that structure. A BuildMode with
+	# load_shared_structure = false (test benches, ExtruderGauntlet) never
+	# instantiated the site's walls/doors, so `shared` is empty for reasons that
+	# have nothing to do with the operator deleting anything — writing it back
+	# would erase the real site structure for EVERY save. This is not
+	# hypothetical: SaveCoordinator's 60 s autosave routes
+	# save_game -> _save_layout -> WorldLayout.save(), so any booted bench would
+	# have wiped it on a timer, unattended.
+	if load_shared_structure:
+		WorldLayout.structure_items = shared
+		WorldLayout.save()
+
+# Vehicles restored by the CURRENT load_layout() pass — one entry per vehicle,
+# {node, id}. Rebuilt every load, consumed and cleared by
+# _denest_loaded_vehicles(). Saves written before the placement clearance gate
+# (BuildMode._vehicle_spawn_blocker) contain nested vehicle poses, and applying
+# those poses verbatim re-creates the overlap that made hulls translate forever.
+var _loaded_vehicles : Array[Dictionary] = []
+
+## De-nest search geometry. Fixed step + fixed angle count = deterministic: the
+## same save always yields the same corrected poses, so the regression harness
+## and the operator's world stay reproducible. 1.5 m clears a bale-clamp
+## footprint (1.6 × 3.6 m) in one or two rings; 8 rings reaches 12 m, past any
+## plausible ladder cluster without walking a vehicle across the plant.
+const DENEST_STEP_M : float = 1.5
+const DENEST_RINGS : int = 8
+const DENEST_ANGLES : int = 12
 
 func load_layout() -> void:
+	_loaded_vehicles.clear()
 	# Per-save data (machines, signs, plain panels — playthrough-specific items).
 	# Falls through with an empty `data` array so a new save (no per-save file) still
 	# loads the SHARED structure (walls / doors / gates / windows) below.
@@ -2568,7 +2741,128 @@ func load_layout() -> void:
 		for s_entry in WorldLayout.structure_items:
 			if _apply_layout_entry(s_entry):
 				shared_count += 1
+	# Restored vehicle poses are NOT clearance-checked on the way in (they were
+	# valid when saved, or predate the gate). Resolve any nesting before the
+	# first physics frame runs on them.
+	_denest_loaded_vehicles()
 	print("[BuildMode] Loaded %d placed objects (per-save) + %d shared structure" % [count, shared_count])
+
+## Move restored vehicles off each other so no two hulls start overlapped.
+##
+## Overlap is the ENTRY condition for the runaway-drift bug: Rapier's contact
+## recovery inside BaseVehicle's move_and_collide pushes two nested frozen-
+## kinematic hulls by the same vector every frame, so the overlap never resolves.
+## BaseVehicle._clamp_recovery_overshoot bounds that motion; this removes its
+## cause on the load path, the one path that still applies poses unchecked.
+##
+## A saved vehicle is NEVER dropped: if no clear spot is found inside the search
+## radius the original pose is kept and the conflict is reported.
+func _denest_loaded_vehicles() -> void:
+	if _loaded_vehicles.is_empty():
+		return
+	# Every vehicle restored this pass is invisible to the physics probe (not yet
+	# synced into the space), so they are resolved against each other with the
+	# same 85 % footprint the placement gate uses, and excluded from the probe.
+	var skip : Array[Node] = []
+	for v in _loaded_vehicles:
+		var vn : Node3D = v["node"]
+		if is_instance_valid(vn):
+			skip.append(vn)
+	var settled : Array[Dictionary] = []
+	var moved := 0
+	for v2 in _loaded_vehicles:
+		var node : Node3D = v2["node"]
+		if not is_instance_valid(node):
+			continue
+		var vid : String = v2["id"]
+		var size := _vehicle_footprint(vid)
+		var rot_y := node.rotation.y
+		var pos := node.global_position
+		var blocker := _denest_blocker(vid, pos, rot_y, size, settled, skip)
+		if blocker == "":
+			settled.append({"pos": pos, "rot": rot_y, "size": size})
+			continue
+		var found := false
+		for ring in range(1, DENEST_RINGS + 1):
+			var radius := float(ring) * DENEST_STEP_M
+			for a in DENEST_ANGLES:
+				var ang := TAU * float(a) / float(DENEST_ANGLES)
+				var cand := pos + Vector3(cos(ang) * radius, 0.0, sin(ang) * radius)
+				if _denest_blocker(vid, cand, rot_y, size, settled, skip) != "":
+					continue
+				push_warning("[BuildMode] de-nest on load: '%s' (%s) was inside '%s' at %s — offset %.2f m to %s"
+					% [String(node.name), vid, blocker, str(pos.round()),
+						(cand - pos).length(), str(cand.round())])
+				node.global_position = cand
+				settled.append({"pos": cand, "rot": rot_y, "size": size})
+				moved += 1
+				found = true
+				break
+			if found:
+				break
+		if not found:
+			push_warning("[BuildMode] de-nest on load: '%s' (%s) is inside '%s' at %s and NO clear spot was found within %.1f m — kept at its saved pose"
+				% [String(node.name), vid, blocker, str(pos.round()),
+					float(DENEST_RINGS) * DENEST_STEP_M])
+			settled.append({"pos": pos, "rot": rot_y, "size": size})
+	if moved > 0:
+		print("[BuildMode] de-nest on load: offset %d of %d restored vehicles" % [moved, _loaded_vehicles.size()])
+	_loaded_vehicles.clear()
+
+## Catalog hull size for a vehicle id, with the same fallback the placement gate
+## uses so both paths agree on what "overlapping" means.
+func _vehicle_footprint(id: String) -> Vector3:
+	var item : Dictionary = PlaceableCatalog.get_item(id)
+	if item.is_empty():
+		return Vector3(2.0, 2.5, 4.0)
+	return item.get("size", Vector3(2.0, 2.5, 4.0))
+
+## Name of whatever blocks `at`, or "" when the spot is clear. Two sources:
+## the live physics probe (world vehicles that predate this load) and a
+## geometric test against the vehicles already settled by this pass.
+func _denest_blocker(id: String, at: Vector3, rot_y: float, size: Vector3,
+		settled: Array[Dictionary], skip: Array[Node]) -> String:
+	var live := _vehicle_blocker_at(id, at, rot_y, skip)
+	if live != "":
+		return live
+	for i in settled.size():
+		var s : Dictionary = settled[i]
+		var s_pos : Vector3 = s["pos"]
+		var s_rot : float = s["rot"]
+		var s_size : Vector3 = s["size"]
+		if _hulls_overlap(at, rot_y, size, s_pos, s_rot, s_size):
+			return "restored vehicle #%d" % i
+	return ""
+
+## 85 %-footprint overlap test between two vehicle hulls, mirroring the placement
+## gate: box centres sit at pos.y + size.y * 0.5 + 0.1, extents are size * 0.85.
+## Separating-axis test on the four footprint axes plus a vertical interval test
+## — a nested "ladder" pair overlaps on both, a machine parked alongside on
+## neither.
+func _hulls_overlap(a_pos: Vector3, a_rot: float, a_size: Vector3,
+		b_pos: Vector3, b_rot: float, b_size: Vector3) -> bool:
+	var a_cy := a_pos.y + a_size.y * 0.5 + 0.1
+	var b_cy := b_pos.y + b_size.y * 0.5 + 0.1
+	var a_hy := a_size.y * 0.85 * 0.5
+	var b_hy := b_size.y * 0.85 * 0.5
+	if absf(a_cy - b_cy) >= a_hy + b_hy:
+		return false
+	var d := Vector2(b_pos.x - a_pos.x, b_pos.z - a_pos.z)
+	var axes : Array[Vector2] = [
+		Vector2(cos(a_rot), -sin(a_rot)), Vector2(sin(a_rot), cos(a_rot)),
+		Vector2(cos(b_rot), -sin(b_rot)), Vector2(sin(b_rot), cos(b_rot)),
+	]
+	for ax in axes:
+		var reach := _footprint_reach(ax, a_rot, a_size) + _footprint_reach(ax, b_rot, b_size)
+		if absf(d.dot(ax)) >= reach:
+			return false
+	return true
+
+## Half-extent of a Y-rotated 85 % footprint projected onto `axis`.
+func _footprint_reach(axis: Vector2, rot_y: float, size: Vector3) -> float:
+	var ux := Vector2(cos(rot_y), -sin(rot_y))
+	var uz := Vector2(sin(rot_y), cos(rot_y))
+	return absf(axis.dot(ux)) * size.x * 0.85 * 0.5 + absf(axis.dot(uz)) * size.z * 0.85 * 0.5
 
 ## Apply one persisted layout entry (from per-save or shared structure). Returns
 ## true when an object was actually placed in the scene.
@@ -2697,6 +2991,15 @@ func _apply_layout_entry(entry: Variant) -> bool:
 			node.scale = Vector3(sc, sc, sc)
 	_finalize_placed(node, String(dict.get("id", "")), float(dict.get("h", 0.0)))
 	_finalize_bale(node, String(dict.get("code", "")))
+	# A placed vehicle's life spans reloads — the 2026-07-20 clamps were only seen
+	# displaced in a LATER save, never at the moment of placement. So a restored
+	# vehicle joins the standing sentinel too, baselined on its restored pose.
+	if entry_id.begins_with("vehicle_"):
+		_arm_vehicle_watchdog(node)
+		# Queued for the post-load clearance pass (_denest_loaded_vehicles): a
+		# saved pose is applied verbatim here, and pre-gate saves contain nested
+		# pairs.
+		_loaded_vehicles.append({"node": node, "id": entry_id})
 	# phys-04 — restore lump_cart fill (kg + remaining cool-down) persisted by
 	# _save_layout; restore_fill re-syncs mass and re-anchors the cool timer.
 	if dict.has("lumps_kg") and node.is_in_group("lump_cart") and node.has_method("restore_fill"):

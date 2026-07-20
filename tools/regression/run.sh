@@ -58,5 +58,21 @@ if ! grep -q "Result: PASS" "$OUT/clamp_spawn.log"; then
 	[ $code -eq 0 ] && code=1
 fi
 
+# Fixes proven this session — each asserts the exact defect the operator hit, so
+# none of them can silently rot: map frame (player inside the shell renders
+# inside the drawn outline), nested-hull drift (parked vehicles do not travel),
+# NPC waypoint guard, feeder fetches its kit on foot instead of conjuring it.
+for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch; do
+	echo "== $t =="
+	"$GODOT" --headless --path "$PROJ" "res://src/tests/$t.tscn" > "$OUT/$t.log" 2>&1
+	grep -E "^  (ok|FAIL)|Result|RESULT" "$OUT/$t.log" || true
+	# Key off the printed verdict, not the exit code: Godot can segfault in
+	# teardown after a clean PASS (observed exit 139 with every check ok).
+	if ! grep -qE "Result: PASS|RESULT: PASS" "$OUT/$t.log"; then
+		echo "FAIL  : $t (see $OUT/$t.log)"
+		[ $code -eq 0 ] && code=1
+	fi
+done
+
 echo "== done (exit $code) — see $OUT/topdown.png =="
 exit $code

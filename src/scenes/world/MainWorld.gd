@@ -413,14 +413,31 @@ func _spawn_crew_manager() -> void:
 	crew_manager = CrewManager.new()
 	crew_manager.name = "CrewManager"
 
-	# Break room: use a BreakRoom/Canteen marker if the level has one, else a fixed
-	# spot near the factory entrance.
-	var break_pos := Vector3(0.0, 0.0, 25.0)
+	# Break room: a BreakRoom/Canteen marker if the level has one, else a spot
+	# derived from the MEASURED plant anchor.
+	#
+	# The old fallback was a bare `Vector3(0, 0, 25)` commented "near the factory
+	# entrance". That was true only while the world was origin-centred; since the
+	# plant became georeferenced (anchor ~(-202.7, -8, 94.0)) scene (0, 0, 25) is
+	# open exterior ground ~224 m away, and the operator's own boot log read
+	# "canteen @ (0.0, 0.0, 25.0)" — nine workers hiking a ~450 m round trip for a
+	# 30 s break. Same class of bug as the TL bars hung on stale constants: derive
+	# from what is measured, never from a baked origin.
+	#
+	# No canteen geometry is invented here (no-build-without-docs): the fallback is
+	# a standing spot beside the player/factory anchor until the operator places a
+	# real BreakRoom marker, which still wins when present.
 	var canteen := find_child("BreakRoom", false, false) as Node3D
 	if canteen == null:
 		canteen = find_child("Canteen", false, false) as Node3D
-	if canteen:
+	var break_pos : Vector3
+	if canteen != null:
 		break_pos = canteen.global_position
+	else:
+		# _get_factory_anchor already falls back factory_center -> player spawn ->
+		# marker and pins Y to the measured operating floor.
+		break_pos = _get_factory_anchor()
+		push_warning("[MainWorld] No BreakRoom/Canteen marker — breaks fall back to the plant anchor %s. Place a canteen marker in WorldSetup to give crew a real break room." % str(break_pos))
 
 	add_child(crew_manager)
 	crew_manager.setup(npcs, line_flow, shift_clock, break_pos)

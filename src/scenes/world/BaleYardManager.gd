@@ -36,6 +36,14 @@ var _yard_spawn_queue : Array = []   # of Dictionary jobs (see _spawn_one_yard_b
 var _yard_rb_tick_t   : float = 0.0
 var _restock_pending  : bool  = false
 
+## Yard perimeters in SCENE XZ, captured as each yard is built. These are the
+## positions the pad and bales were ACTUALLY spawned at, not a re-derivation
+## from layout data — a consumer drawing them (the site map's yard layer) can
+## therefore never disagree with the bales standing in them. Corrupt and
+## unknown-supplier yards are skipped before this point, so the list holds only
+## yards that exist in the world.
+var _yard_polys : Array[PackedVector2Array] = []
+
 # Reference back to MainWorld (parent) and the ShiftClock so we can wire the
 # restock-on-shift-start signal in the same way the old in-MainWorld code did.
 var _world       : Node = null
@@ -49,6 +57,12 @@ func setup(world: Node, shift_clock: Node) -> void:
 	_world = world
 	_shift_clock = shift_clock
 	_spawn_bale_yards_from_layout()
+
+## Scene-XZ yard perimeters, CCW-ordered, in spawn order. Empty before setup()
+## and on layouts with no yards; consumers must handle that rather than
+## substituting a guess.
+func get_yard_polygons() -> Array[PackedVector2Array]:
+	return _yard_polys
 
 # ── _process slice (drain queue + proximity sweep) ──────────────────────────
 ## Called from MainWorld._process so MainWorld controls the per-frame ordering.
@@ -183,6 +197,13 @@ func _spawn_bale_yards_from_layout() -> void:
 		# point-in-polygon only fills a triangle. Re-sort the corners by angle
 		# around their centroid so any 4 points form a proper convex quad.
 		corners = _world.call("_sort_corners_ccw", corners)
+		# Record the final scene-frame perimeter (post-sort, so it matches the pad
+		# and the fill grid exactly) for get_yard_polygons() consumers.
+		var yard_poly := PackedVector2Array()
+		for cs in corners:
+			var c3 : Vector3 = cs
+			yard_poly.append(Vector2(c3.x, c3.z))
+		_yard_polys.append(yard_poly)
 		# Operator pick (2026-07): the real bale lot is brick-paved — lay a
 		# Polyhaven brick_pavement_03 pad under the yard polygon.
 		_spawn_yard_pad(yards_root, corners, supplier_id)

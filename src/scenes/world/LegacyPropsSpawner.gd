@@ -333,17 +333,18 @@ static func _spawn_feeder_station(world: Node, station: Vector3, worker_name: St
 		v.global_position = station + Vector3(2.0, 0.5, -3.0)
 		worker.assign_vehicle(v)
 
-	# 5) Personal scissors + scanner on the holster (not player-grabbable).
+	# 5) Personal scissors + scanner. #241 — the kit is NOT conjured onto the
+	#    worker: it lies beside the belt frame at the loading end (the same "one
+	#    pickup point" rule CrewManager._kit_feeder_from_pickup applies) and the
+	#    worker WALKS over and picks it up before boarding.
+	var pickup : Vector3 = station + Vector3(1.4, 0.35, 0.0)
 	var scissors := WireCutter.new()
 	world.add_child(scissors)
-	scissors.global_position = worker.global_position
-	worker.stow_personal_tool(scissors, -1.0)
+	scissors.global_position = pickup + Vector3(-0.25, 0.0, 0.0)
 	var scanner := preload("res://src/scenes/world/BarcodeScanner.gd").new()
 	world.add_child(scanner)
-	scanner.global_position = worker.global_position
-	worker.stow_personal_tool(scanner, 1.0)
-	worker.personal_scissors = scissors
-	worker.personal_scanner = scanner
+	scanner.global_position = pickup + Vector3(0.25, 0.0, 0.0)
+	worker.begin_tool_fetch(pickup, scissors, scanner)
 
 	print("[LegacyPropsSpawner] Feeder station: %s on %s (vehicle %s)" % \
 			[worker_name, line_name, vehicle_scene_path.get_file()])

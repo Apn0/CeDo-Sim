@@ -431,3 +431,277 @@ HEADER frame is the intended one depends on what WorldSetup writes into
 audit with the WorldSetup writer before touching either side. Symptom if
 the spawn side is wrong: world vehicles stand rotated 130° around the plant
 from where their markers were placed.
+
+## M. Correction of the record + the canteen-in-the-void bug (2026-07-21)
+
+**I was wrong about the cars.** In the previous reply I named NPC commute cars
+as the prime suspect for placed clamps relocating onto the z~0 axis. A
+dedicated forensics pass REFUTED that on three independent axes, with cites:
+
+- *Geometry*: no road runs along scene z~0. The whole road network spans
+  x [-248, +94]; the commute-car drive-in polyline spans only x [-244.7,
+  -227.7], z [54, 124] (`ShiftLifecycleManager.gd:97-102`). The clamp beads
+  sit at x -763 .. +814 — between 45 m and 735 m from anything car-related.
+- *Physics*: commute cars are teleported, not driven
+  (`ShiftLifecycleManager._position_cars_for_elapsed:136` writes
+  `global_position` directly), and BOTH cars and placed clamps are
+  frozen-kinematic (`BaseVehicle.gd:269-270`). Kinematic-vs-kinematic
+  produces no push — stated in this codebase at `BaseVehicle.gd:618-621`.
+- *Budget*: each car is live-moving for 15 s max (~120 m), inside the
+  pre-shift window only. An 800 m transport does not fit.
+
+Lesson repeated from the F4/fence and car-marker episodes: name a cause only
+after measuring it. The bead pattern (pairs at four x values, z collapsed to
+~0, straight line through the scene ORIGIN) points at something targeting or
+emitting positions near (0,0,0), not at physical shoving.
+
+### The canteen is 224 m outside the plant, in an open field
+
+Measured, confirmed live in the operator's own boot log
+(`[MainWorld] CrewManager ready — 9 workers posted, canteen @ (0.0, 0.0, 25.0)`):
+
+`MainWorld.gd:418` — `var break_pos := Vector3(0.0, 0.0, 25.0)`, commented
+"a fixed spot near the factory entrance". That comment is stale: it dates
+from when the world was origin-centred. Since the plant became georeferenced
+(player spawn scene (-202.66, -8.0, 94.04)), scene (0, 0, 25) is bare
+exterior ground ~224 m from the building — the same open-field origin where
+the MerloP40 phantom colliders sit and where the clamp beads cluster.
+
+`MainWorld.gd:419-422` looks for a `BreakRoom` / `Canteen` child node first,
+but NO code anywhere creates one, so the fallback is always used.
+`CrewManager.gd:343` sends every break-taker there via `NPC.go_on_break`
+(`NPC.gd:877-881`). Nine workers walk a 450 m round trip for a 30 s break —
+which plausibly also explains earlier reports of workers "standing still" or
+the shift leader stuck "making rounds": they are mid-trek across the field.
+
+Fix shape (no invented geometry, per the no-build-without-docs rule): the
+fallback must be derived from the measured plant anchor rather than a stale
+origin constant, and the operator should be able to place a real canteen
+marker. Any code that walks or DRIVES crew to a destination must also refuse
+an absurd waypoint — see the guard being added to
+`BaseVehicle.npc_set_target`.
+
+## N. Clamp transport REPRODUCED — and it is not what either theory said
+
+`src/tests/repro_feeder_drive.gd` reproduced the relocation headlessly in a
+single 180 s run, loading the operator's own 8-clamp bead save. What the
+measurement shows, and it kills the second theory as well as the first:
+
+- The beads are **NESTED PAIRS** — two clamps at the same XZ within 0.02–0.05 m,
+  ~0.8 m apart in Y. They are the ladder stacks from the nested-spawn bug, not
+  two separate arrivals.
+- Each pair **translates as a rigid pair at constant velocity**, forever. The
+  pair at x=814 moved **185.1 m in 150 s** (0.551 m/s pure +X for ~35 s, then
+  bending to 1.56 m/s) and was **still moving when the test ended**.
+- `rotation.y` stayed **exactly 0.0000** for all 10800 physics frames.
+  `occupied=false`, `npc_autopilot=false`, no driver, **zero** >2 m/frame jumps,
+  zero reparents.
+- Other pairs drifted a few metres and **stopped dead**; one never moved at all.
+
+**Why that kills the self-driving theory** (independently of the exhaustive
+claiming-path audit, which found that `npc_set_target` is structurally
+unreachable for an operator-placed clamp): all vehicle motion goes through
+`BaseVehicle._kinematic_move`, which uses `fwd := -global_transform.basis.z`
+(`:1203`) and `motion := fwd * speed * delta` (`:1226`). With `rotation.y == 0`,
+`-basis.z` is exactly `(0,0,-1)` — a vehicle **cannot** self-propel along ±X
+while its yaw is zero. And `_npc_drive` writes `rotation.y` every frame it runs
+(`:925`), so a driven clamp could not have kept yaw at 0.0000.
+
+Remaining mechanism under measurement: **depenetration of overlapping
+frozen-kinematic hulls**. `_kinematic_move` runs every frame even when parked
+(it must, for the ground probe) and calls `move_and_collide` + a remainder
+slide. Two hulls sharing space get recovered apart a little each frame —
+constant velocity, zero rotation, pair-coherent, ending when the overlap
+finally clears (the stoppers) or never (the forever-drifters). That signature
+matches the evidence exactly, but it is not yet ATTRIBUTED to a specific
+statement, so it is not yet called fixed.
+
+**Already shipped regardless of that outcome:**
+- placement-time clearance gate, so new nesting cannot be created (`276d142`);
+- a standing 30 s sentinel on every placed vehicle (placed AND restored from
+  save) that reports displacement >10 m with a full diagnostic dump: autopilot
+  state, target, owner, yaw, and every body within 5 m with velocities;
+- an absurd-waypoint guard on `BaseVehicle.npc_set_target` (non-finite, or
+  beyond a 500 m plant radius derived from the 200×200 m apron + anchor
+  offset). No caller feeds it garbage today — it is a latent hole closed on its
+  own merits.
+
+**Process note (own it):** the agent that produced the reproduction rewrote
+`user://world_layout.json` as a side effect (`BuildMode._place_current` ends in
+`_save_layout()`). Content was verified afterwards field-by-field against the
+copy read earlier in the session — factory_center, player_spawn, floor_plan,
+7 yards, 3 line starts, 9 vehicle spawns, satellite georeference all identical,
+same 9884-byte size. No harm done, but the test now byte-backups and restores
+that file, and any future test touching build placement must do the same.
+
+## O. #5 answered — NPCs conjured tools, and also stole yours
+
+Operator: *"are the NPC's wizards or they have some kind of godly telekinesis
+power? they create scanner and scissors when assigned to feed area?"*
+
+No physics was involved — it was plain instantiation:
+
+- `CrewManager.gd:749` `WireCutter.new()`, positioned at `:751` **at the
+  feeder's feet**, holstered on the next line.
+- `CrewManager.gd:755-757` the `BarcodeScanner`, same.
+- `CrewManager.gd:739-744` an entire **BaleClamp materialised from nothing**
+  on assignment — same violation class, and that is the clamp population the
+  relocation evidence concerns.
+- Re-fired on **every world load** for saved feeder pins (`:1028`).
+
+The codebase already had the honest pattern and the feeder path just never used
+it: `BlowLeavesTask` walks to an EXISTING leaf blower and reparents it,
+`HoseSweepTask` the same for nozzles, and `NpcAutonomyBoard:618-619` refuses to
+emit a refuel task when no jerrycan exists ("no can = nowhere to refuel").
+
+**Fixed:** tools are now either borrowed from real world tools (claimed, with a
+25 m walkability limit, and returned to their exact original parent+transform at
+shift end) or laid out at a resolved pickup point on real furniture — the
+shift-leader desk, QA bench, locker, else the bound feed belt's frame. The
+feeder then WALKS there and picks them up. The pickup is split into two poses:
+`rest` (hand height, the tool visibly lies ON the surface) and `stand` (a
+floor-level standing spot, ray-dropped and clearance-validated, so the worker
+is never parked inside a belt deck or on a machine roof).
+
+### The bug found while proving it: NPCs were robbing the operator
+
+`_tool_is_held` rejected ancestors in groups `feeder_worker` / `npc` / `player`
+— but **nothing in the codebase ever joins the group `"player"`** (the node is
+class `PlayerController`). So tools **in the operator's own hands read as "loose
+in the world"**, and the feeder happily claimed them: the measured pickup point
+(-202.44, -7.54, 93.64) was the player's **Head anchor**, 1.46 m above the
+floor and moving with the player. The feeder was walking over to take the
+scissors off your body, and could never arrive because the target moved and sat
+behind the belt deck. Fixed with an explicit `is PlayerController` test.
+
+### Walking, not teleporting
+
+The first cut passed every "no conjuring" assertion but the feeder stalled
+**6.3 m short** and a 20 s watchdog force-completed the leg — a teleport in a
+smaller coat. Straight-line steering wedged it against the belt deck (slide
+normal exactly opposing the heading) and, on another run, against the building
+shell 1.1 m from spawn. A NavigationAgent3D would NOT have helped: the baked
+navmesh is **2 polygons / 4 vertices** — only floor planes are tagged
+`navmesh_source`, so no machine, belt or wall is an obstacle and
+`map_get_path` returns a straight line through the belt. (That navmesh is a
+separate latent problem worth its own pass.)
+
+Fix: a wall-follow side-step (tangent of the first slide normal, side committed
+for 3 s so it cannot rock in place). The watchdog stays as a deadlock guard but
+is now an ERROR path that logs the residual distance loudly — it is no longer
+how the leg normally ends. Verified 3/3 runs: arrival earned on foot, **0
+force-completions**, and the test was TIGHTENED (arrival 3.0 m -> 2.0 m) with
+anti-cheat asserts that the standing spot is within arm's reach of the kit and
+>3 m from the feeder's spawn, so the target cannot be moved to buy a green.
+
+## P. The clamp drift — ATTRIBUTED to one statement, and fixed (2026-07-21)
+
+Root cause, measured to the single line:
+
+```
+BaseVehicle.gd:1267   var hit := move_and_collide(motion)
+```
+
+reached every physics frame on every parked vehicle via the unconditional
+`_kinematic_move(delta)` at `:1185`. When a vehicle is parked, `motion` is
+**exactly `Vector3.ZERO`** — and Rapier3D 0.8.34's contact-recovery pass inside
+`move_and_collide` **still translates an overlapping hull, and returns null**.
+The displacement is therefore invisible to the calling code: `if hit != null`
+at `:1268` never fires, the slide never runs, the wall-bleed never runs,
+`_current_speed_mps` stays 0.0, and no existing guard can even observe the
+motion. 100 % of the horizontal drift comes from that one statement.
+
+Proven in a MINIMAL scene — one static floor plus paired BaleClamps, no
+MainWorld, no BuildMode, no NPCs, no save files. Per-statement attribution
+(temporary instrumentation, since removed): the `move_and_collide` call carried
+the entire XZ step; the remainder-slide, `rotate_y`,
+`_clamp_carried_against_obstacles` each contributed exactly (0,0,0), and
+`_settle_on_ground` contributed **Y only**. A direct out-of-band
+`move_and_collide(Vector3.ZERO)` moved a nested clamp up to 0.047 m and returned
+`false` every time.
+
+Why the pairs behaved differently: recovery persists only while a contact
+manifold exists. A near-symmetric manifold pushes BOTH hulls the same way, so
+the pair translates as a rigid unit and the overlap **never resolves** — that is
+the forever-drifter (measured 23 m in 15 s, still accelerating; separation
+constant to 0.02 m). An asymmetric or partial manifold has a net separating
+component, so contact clears after a few metres and motion stops in one frame —
+the stoppers. Poses that are merely close but not intersecting have no manifold
+at all — the pair that never moved.
+
+**Fix** (`BaseVehicle.gd:1266-1363`): a displacement-budget clamp. Capture the
+pose before the sweep; leave the sweep, slide and wall-bleed block byte-
+unchanged; afterwards, undo any XZ travel exceeding what the caller actually
+asked for (`|motion| * (1 + 0.001)`), proportionally. Y is untouched, so
+vertical depenetration and `_settle_on_ground` still own ride height. A parked
+vehicle's budget is exactly 0, so recovery-only drift is cancelled; a driven
+vehicle never exceeds its own sweep, so collision and sliding are bit-identical.
+
+The first attempt used an ABSOLUTE 1e-4 m per-frame slack and **failed
+honestly**: drift fell from 23 m to 0.36 m but the tail was exactly 1e-4 every
+frame in a fixed direction — bounded but never converging, the same bug 250×
+slower. An absolute slack is just a budget the recovery spends. Relative slack
+gives a parked vehicle zero budget.
+
+**Complementary hardening:** `BuildMode.load_layout` now de-nests restored
+vehicles (deterministic ring search, 8 rings × 12 angles at 1.5 m), warns naming
+both vehicles and the offset applied, and **never drops a saved vehicle** — old
+saves can no longer re-create the nested entry condition.
+
+**Verified:** `test_nested_vehicle_drift` PASS — 6 nested clamps over 3600
+frames: total XZ 0.0000 m, tail 0.0000 m, yaw 0.0000; a driven clamp still
+collides with a wall at 0.000 m penetration; 4/4 saved vehicles restored with 0
+overlapping pairs. Harness 15 ok / 0 fail / 2 skip.
+
+**Behaviour change to know about:** a parked vehicle can no longer be shoved
+aside by another vehicle driving into it — that shove was happening *through*
+this recovery pass. Defensible for a braked machine, but it is a real change.
+
+**Still open, logged not guessed:** something in a live BuildMode reaches
+`_save_layout` -> `WorldLayout.save()` and bumps `world_layout.json`'s mtime
+during tests; content stayed byte-identical and tests now backup/restore it,
+but the trigger is unexplained and deserves its own pass — a BuildMode with
+`load_shared_structure=false` would save an EMPTY structure list.
+
+### P2. The unexplained `world_layout.json` write — found, and it was a live footgun
+
+The drift fix flagged an unexplained writer of `world_layout.json` during
+headless tests. Traced: `SaveCoordinator`'s 60 s autosave routes
+`save_game` -> `BuildMode._save_layout` -> `WorldLayout.save()` (`:2664`).
+Nothing mysterious — but what it exposed is:
+
+`_save_layout` rebuilt the SHARED site structure (walls, doors, gates,
+windows) from its own `_placed_root` children and wrote that list back
+unconditionally. A BuildMode instance created with
+`load_shared_structure = false` — test benches, the ExtruderGauntlet — never
+instantiates those nodes, so its `shared` list is empty for reasons that have
+nothing to do with the operator deleting anything. Combined with the autosave
+timer, **any booted bench would have silently wiped the site's walls and doors
+from `world_layout.json` on a timer, unattended.**
+
+Note `structure_items` in the operator's current `world_layout.json` is already
+`[]`. Whether that is because he never placed shared structure, or because this
+already fired, cannot be told from the file alone — flagged rather than assumed.
+
+Fixed: the shared write is now gated on `load_shared_structure`, so an instance
+that never loaded the structure can never overwrite it.
+
+## Q. Regression coverage added this session
+
+`bash tools/regression/run.sh` now runs, on top of the existing 15 world/save
+checks and the clamp-spawn gate:
+
+| test | asserts the exact defect the operator hit |
+|---|---|
+| `test_map_frame` | player standing at the shell centroid renders INSIDE the drawn CEDO outline; a vehicle at the player's position projects onto the You marker (shared projection); outline mapping is rigid |
+| `test_nested_vehicle_drift` | 6 nested clamps travel 0.0000 m over 3600 frames; a DRIVEN clamp still stops at a wall with 0.000 m penetration; de-nest on load leaves 0 overlapping pairs |
+| `test_npc_target_guard` | absurd + non-finite waypoints refused, valid ones accepted, prior waypoint intact |
+| `test_feeder_fetch` | tools never spawn at the worker's feet, rest at the pickup, the worker ARRIVES on foot (0 force-completions), holds the SAME instances, idempotent on re-pin |
+
+Each keys off the printed verdict rather than the process exit code — Godot can
+segfault in teardown after a clean PASS (observed exit 139 with every check ok),
+and an exit-code gate would have reported that as a failure.
+
+The point of writing these as harness steps rather than one-off runs: every
+defect in this document was invisible to the previous harness, which is exactly
+why they kept coming back.

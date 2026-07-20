@@ -18,6 +18,18 @@ class_name InteriorLightingManager
 # is the canonical assignment path.
 var _world : Node = null
 
+## Measured building frame, cached from the one fit per boot (the shell is
+## static, so the mapping never changes while the world lives).
+## {"o": Vector2 scene-XZ of bf(0,0), "x"/"z": unit Vector2 axes, "err": mean
+## roof error m} — or {} until the fit lands / when it failed. Consumers
+## (MapOverlay building outline) MUST treat {} as "no frame: draw nothing",
+## never substitute a baked affine — that is the exact two-copies-of-one-
+## stale-mapping failure documented below.
+var _building_frame : Dictionary = {}
+
+func get_building_frame() -> Dictionary:
+	return _building_frame
+
 func _ready() -> void:
 	if _world == null:
 		_world = get_parent()
@@ -50,9 +62,9 @@ func _spawn_overhead_lights() -> void:
 	#
 	# Building frame (tools/generate_building.py): origin at the NE corner
 	# of the gabled block, +X toward SW along the long axis (0..150.7),
-	# +Z toward NW across it (0..71.6). The affine below maps it to PC
-	# (derived from the survey georeference); Plant.pc_to_scene_with_y then
-	# lands each bar in the scene with the canonical yaw + anchor applied.
+	# +Z toward NW across it (0..71.6). It reaches the scene ONLY through
+	# _fit_building_frame below (measured off the shell's collision faces) —
+	# the hand-baked BF->PC affine that used to live here is gone (2701275).
 	# Lighting spawns from _spawn_road_and_parking (early in world build) but
 	# Plant.init() runs later in the same build pass — wait for it. A few
 	# frames at most; bail out after 5 s so a broken init can't hang forever.
@@ -79,6 +91,7 @@ func _spawn_overhead_lights() -> void:
 	# if the fit fails it says so and falls back loudly.
 	await get_tree().physics_frame
 	var fit : Dictionary = _fit_building_frame(floor_y)
+	_building_frame = fit   # cache for external consumers (MapOverlay outline)
 	if fit.is_empty():
 		push_warning("[InteriorLightingManager] building-frame fit FAILED — overhead lights skipped (better absent than floating)")
 		return

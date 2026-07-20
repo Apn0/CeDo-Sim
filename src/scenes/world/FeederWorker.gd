@@ -69,6 +69,17 @@ var _timer       : float = 0.0
 var _gravity     : float = 9.8
 var _riding      : bool = false          # true once boarded into the assigned vehicle
 var _boarding_walk : bool = false        # #233 walking on foot to the parked clamp before boarding
+# #241 — TOOL FETCH leg. The kit does NOT materialise in the worker's hands: the
+# scissors + scanner lie at a real pickup point (a claimed world tool, the shift
+# leader's desk, the QA bench, the wardrobe locker, or the assigned feed belt) and
+# the worker WALKS there and picks them up before boarding. Gates _physics_process
+# exactly like _boarding_walk does, so no production state can half-run meanwhile.
+var _fetching         : bool    = false
+var _fetch_pos        : Vector3 = Vector3.ZERO   # floor spot the worker STANDS on to reach the kit
+var _tool_rest_pos    : Vector3 = Vector3.ZERO   # where the kit LIES (surface, hand height)
+var _pending_scissors : Node3D  = null
+var _pending_scanner  : Node3D  = null
+const FETCH_ARRIVE_M  : float   = 1.8    # close enough to reach the tools down
 var _leg_timer   : float = 0.0           # time spent on the current drive leg
 var _log_timer   : float = 0.0           # throttles the diagnostic print
 var _last_good_xf : Transform3D = Transform3D.IDENTITY   # NaN-transform watchdog
@@ -93,6 +104,29 @@ var _board_walk_best_d : float = INF     # closest we've ever gotten to the clam
 var _board_walk_warned : bool  = false
 const BOARD_WALK_STUCK_S : float = 20.0  # no net progress for this long == blocked
 const BOARD_WALK_PROGRESS_M : float = 0.5   # counts as progress toward the clamp
+# #241 audit — the on-foot legs have no navmesh to route around solids: MainWorld
+# bakes its NavigationRegion3D from group "navmesh_source", and only the interior
+# floor + the exterior ground are in it, so a path request comes back as a straight
+# line THROUGH the belt deck. Until machine collision meshes are nav sources, the
+# walk earns its way round obstacles itself: when move_and_slide reports we are
+# grinding on something, steer along the contact tangent for SIDESTEP_SECS before
+# re-aiming (a wall-follow), instead of pressing into it until the watchdog fires.
+var _sidestep_dir      : Vector3 = Vector3.ZERO
+var _sidestep_left     : float   = 0.0   # remaining side-step time
+var _sidestep_commit_s : float   = 0.0   # keep the same side while rounding one obstacle
+var _blocked_secs      : float   = 0.0
+const SIDESTEP_TRIGGER_S : float = 0.4   # grinding this long == a real obstacle
+const SIDESTEP_SECS      : float = 1.5   # ~4.8 m at walk_speed — clears a belt deck
+const SIDESTEP_COMMIT_S  : float = 3.0   # no left/right flip-flop inside this window
+const SIDESTEP_MIN_FRAC  : float = 0.35  # of the ground we should have covered this tick
+## Walk legs the deadlock guard had to force-complete. MUST stay 0: a force-complete
+## means the worker took possession of a tool they never physically reached, which is
+## exactly the #241 cheat. Tests assert it, the guard warns loudly when it happens.
+var walk_forced_completions : int = 0
+## Side-steps taken this run — how often the wall-follow had to earn a way round a
+## solid. Non-zero is normal on a cluttered plant; it is the counter above that
+## must stay at zero.
+var walk_sidesteps : int = 0
 const _STATE_NAMES : Array[String] = ["SEEK","TO_BALE","GRAB","LIFT","PROCESS",
 	"CARRY","LOAD","WAIT","TO_BELT","SET_DOWN","DISMOUNT","CUT","SCAN","FEED","REMOUNT"]
 var _grab_tries  : int = 0               # real-grab attempts this approach (no teleport fallback)
@@ -146,9 +180,7 @@ func assign_vehicle(v: Node3D) -> void:
 	# #233 — the assigned worker WALKS to the parked clamp on foot and climbs in,
 	# rather than teleporting into the cab. _physics_process drives the approach.
 	_boarding_walk = true
-	_board_walk_secs = 0.0
-	_board_walk_best_d = INF
-	_board_walk_warned = false
+	_reset_walk_watchdog()
 
 ## Climb into the assigned vehicle: re-parent under it (so we ride along), park
 ## at the cab, and disable our own capsule collision + on-foot locomotion. From
@@ -178,14 +210,21 @@ func _walk_to_vehicle(delta: float) -> bool:
 	if vehicle == null or not is_instance_valid(vehicle):
 		_boarding_walk = false
 		return true
-	var vp : Vector3 = (vehicle as Node3D).global_position
-	var d : float = _horiz_dist(vp)
-	if d <= 2.4:
+	if _walk_to_point((vehicle as Node3D).global_position, 2.4, delta, "boarding walk to the clamp"):
 		_boarding_walk = false
 		return true
-	# Blocked-walk watchdog. Straight-line steering has no way around an obstacle,
-	# and the caller returns while we're walking — so without this the worker
-	# presses into a wall for the whole shift and the feed loop never runs.
+	return false
+
+## #241 — shared on-foot leg used by BOTH the tool fetch and the boarding walk.
+## Steering + a side-step around whatever the body grinds on (see the SIDESTEP
+## block above), plus the #233 blocked-walk watchdog. Returns true once we've
+## ARRIVED — or, as a deadlock guard only, once the watchdog force-completes.
+## `leg` names the phase in the warning so the log points at the real culprit.
+func _walk_to_point(target: Vector3, arrive_r: float, delta: float, leg: String) -> bool:
+	var d : float = _horiz_dist(target)
+	if d <= arrive_r:
+		_clear_sidestep()
+		return true
 	# Progress = getting meaningfully closer than our best-ever distance.
 	if d < _board_walk_best_d - BOARD_WALK_PROGRESS_M:
 		_board_walk_best_d = d
@@ -193,31 +232,195 @@ func _walk_to_vehicle(delta: float) -> bool:
 	else:
 		_board_walk_secs += delta
 		if _board_walk_secs > BOARD_WALK_STUCK_S:
+			# DEADLOCK GUARD — NOT the normal way this leg ends. Getting here means
+			# the worker never physically reached the target, so anything they take
+			# on arrival was effectively teleported to them. Production must not
+			# wedge, so the leg still completes, but never silently: report the
+			# residual + where we jammed so a recurrence is visible in the log.
 			if not _board_walk_warned:
 				_board_walk_warned = true
-				push_warning(("[Feeder %s] boarding walk BLOCKED %.1f m from the clamp "
-					+ "for %.0fs — boarding directly so the feed loop can run")
-					% [worker_name, d, _board_walk_secs])
-			# Last resort only: #233 says the worker must normally WALK to the
-			# clamp, not appear in the cab. A permanently frozen feeder is worse.
-			_boarding_walk = false
+				walk_forced_completions += 1
+				push_warning(("[Feeder %s] ERROR: %s FORCE-COMPLETED %.1f m SHORT of "
+					+ "the target after %.0fs with no progress — the worker did NOT "
+					+ "reach it (deadlock guard; jammed at %s, target %s)")
+					% [worker_name, leg, d, _board_walk_secs,
+						str(global_position.round()), str(target.round())])
+			_clear_sidestep()
 			return true
 	if not is_on_floor():
 		velocity.y -= _gravity * delta
 	else:
 		velocity.y = 0.0
-	var dir : Vector3 = vp - global_position
-	dir.y = 0.0
-	if dir.length_squared() > 0.0001:
-		dir = dir.normalized()
-		velocity.x = dir.x * walk_speed
-		velocity.z = dir.z * walk_speed
-		look_at(global_position + dir, Vector3.UP)
-	else:
+	var desired : Vector3 = target - global_position
+	desired.y = 0.0
+	if desired.length_squared() <= 0.0001:
 		velocity.x = 0.0
 		velocity.z = 0.0
+		move_and_slide()
+		return false
+	desired = desired.normalized()
+	_sidestep_commit_s = maxf(0.0, _sidestep_commit_s - delta)
+	var step_dir : Vector3 = desired
+	if _sidestep_left > 0.0:
+		_sidestep_left -= delta
+		step_dir = _sidestep_dir
+	velocity.x = step_dir.x * walk_speed
+	velocity.z = step_dir.z * walk_speed
+	look_at(global_position + step_dir, Vector3.UP)
+	var before : Vector3 = global_position
 	move_and_slide()
+	_update_sidestep(before, desired, delta)
 	return false
+
+## Grinding check for one walk tick: if the body covered far less ground than the
+## walk speed says it should have, aim along the blocking surface instead of into
+## it. `before` is the position at the top of the tick, `desired` the normalised
+## straight-line heading we would have taken.
+func _update_sidestep(before: Vector3, desired: Vector3, delta: float) -> void:
+	var moved : float = Vector2(global_position.x - before.x,
+		global_position.z - before.z).length()
+	if moved >= walk_speed * delta * SIDESTEP_MIN_FRAC:
+		_blocked_secs = 0.0
+		return
+	_blocked_secs += delta
+	if _sidestep_left > 0.0 or _blocked_secs < SIDESTEP_TRIGGER_S:
+		return
+	# Tangent of the first horizontal contact. No contact reported (wedged on
+	# geometry we only touch diagonally) → step across our own heading instead.
+	var n : Vector3 = Vector3.ZERO
+	for i in range(get_slide_collision_count()):
+		var cn : Vector3 = get_slide_collision(i).get_normal()
+		cn.y = 0.0
+		if cn.length_squared() > 0.0001:
+			n = cn.normalized()
+			break
+	var tangent : Vector3 = Vector3(-desired.z, 0.0, desired.x) if n == Vector3.ZERO \
+		else Vector3(-n.z, 0.0, n.x)
+	if tangent.dot(desired) < 0.0:
+		tangent = -tangent
+	# One obstacle, one side: re-deciding per contact rocks the worker in place at
+	# a head-on wall, where the tangent sign is a coin flip.
+	if _sidestep_commit_s > 0.0 and tangent.dot(_sidestep_dir) < 0.0:
+		tangent = -tangent
+	_sidestep_dir = tangent.normalized()
+	_sidestep_left = SIDESTEP_SECS
+	_sidestep_commit_s = SIDESTEP_COMMIT_S
+	_blocked_secs = 0.0
+	walk_sidesteps += 1
+
+func _clear_sidestep() -> void:
+	_sidestep_left = 0.0
+	_sidestep_commit_s = 0.0
+	_blocked_secs = 0.0
+
+## Reset the shared walk watchdog at the START of a leg. The fetch and the
+## boarding walk are strictly sequential, so one counter set serves both.
+func _reset_walk_watchdog() -> void:
+	_board_walk_secs = 0.0
+	_board_walk_best_d = INF
+	_board_walk_warned = false
+	_sidestep_dir = Vector3.ZERO
+	_clear_sidestep()
+
+# =============================================================================
+# #241 — TOOL FETCH: the kit comes from somewhere
+# =============================================================================
+## Send this worker to collect the scissors + scanner that are ALREADY lying at
+## `rest_pos` (CrewManager / LegacyPropsSpawner resolved the point and put them
+## down). `stand_pos` is the floor spot to walk to — the rest pose is on a surface
+## and is usually INSIDE the collider of whatever holds it, so it is not a walkable
+## target. Callers with no resolved standing spot may omit it and keep the legacy
+## aim-at-the-kit behaviour. Idempotent: a re-pin on a worker that already carries a
+## tool will not queue a second one, and passing nothing is a no-op.
+func begin_tool_fetch(rest_pos: Vector3, scissors: Node3D, scanner: Node3D,
+		stand_pos: Vector3 = Vector3.INF) -> void:
+	if scissors != null and is_instance_valid(scissors) and personal_scissors == null:
+		_pending_scissors = scissors
+	if scanner != null and is_instance_valid(scanner) and personal_scanner == null:
+		_pending_scanner = scanner
+	if _pending_scissors == null and _pending_scanner == null:
+		return
+	_tool_rest_pos = rest_pos
+	_fetch_pos = stand_pos if stand_pos.is_finite() else rest_pos
+	_fetching = true
+	_reset_walk_watchdog()
+
+## One frame of the fetch leg. True once the kit is on the holster (or there was
+## nothing left to fetch); false while still walking.
+func _tick_tool_fetch(delta: float) -> bool:
+	if _pending_scissors == null and _pending_scanner == null:
+		_fetching = false
+		return true
+	# Already in a cab (re-kit mid-shift): we can't walk, so take the tools where
+	# we are rather than freeze the loop. Normal assignment fetches before boarding.
+	if _riding:
+		_finish_tool_fetch()
+		return true
+	if _walk_to_point(_fetch_pos, FETCH_ARRIVE_M, delta, "tool pickup walk"):
+		_finish_tool_fetch()
+		return true
+	return false
+
+## Pick the tools up off the pickup point and holster them.
+func _finish_tool_fetch() -> void:
+	_fetching = false
+	if _pending_scissors != null and is_instance_valid(_pending_scissors):
+		stow_personal_tool(_pending_scissors, -1.0)
+		personal_scissors = _pending_scissors
+	if _pending_scanner != null and is_instance_valid(_pending_scanner):
+		stow_personal_tool(_pending_scanner, 1.0)
+		personal_scanner = _pending_scanner
+	_pending_scissors = null
+	_pending_scanner = null
+	_reset_walk_watchdog()
+
+## True while this worker still has to go and collect their kit. Tests + the
+## stuck-state diagnostic read it.
+func is_fetching_tools() -> bool:
+	return _fetching
+
+## #241 — end of the feeding shift: put BORROWED world tools back where they came
+## from (mirrors BlowLeavesTask's drop-back) instead of letting queue_free take a
+## tool the operator built. Tools this feeder's kit SPAWNED carry no borrow meta
+## and are freed with the worker as before.
+func release_borrowed_tools() -> void:
+	for t in [personal_scissors, personal_scanner, _pending_scissors, _pending_scanner]:
+		var n := t as Node3D
+		if n == null or not is_instance_valid(n) or not n.has_meta("feeder_borrow_parent"):
+			continue
+		var par = n.get_meta("feeder_borrow_parent")
+		var xf : Transform3D = n.get_meta("feeder_borrow_xform", n.global_transform)
+		if par == null or not is_instance_valid(par) or not (par is Node):
+			continue
+		if n.get_parent():
+			n.get_parent().remove_child(n)
+		(par as Node).add_child(n)
+		n.global_transform = xf
+		_reactivate_tool(n)
+		n.remove_meta("feeder_borrow_parent")
+		n.remove_meta("feeder_borrow_xform")
+		if n.has_meta("autonomy_claimed_by"):
+			n.remove_meta("autonomy_claimed_by")
+		if n == personal_scissors:
+			personal_scissors = null
+		elif n == personal_scanner:
+			personal_scanner = null
+		elif n == _pending_scissors:
+			_pending_scissors = null
+		elif n == _pending_scanner:
+			_pending_scanner = null
+	_fetching = false
+
+## Undo what stow_personal_tool disabled, so a returned tool is grabbable again.
+func _reactivate_tool(tool: Node3D) -> void:
+	var area := tool.get_node_or_null("PickupArea") as Area3D
+	if area:
+		area.monitoring = true
+		area.monitorable = true
+	if tool is CollisionObject3D:
+		var body := tool as CollisionObject3D
+		body.collision_layer = int(tool.get_meta("prestow_layer", 1))
+		body.collision_mask  = int(tool.get_meta("prestow_mask", 1))
 
 ## Stow a personal tool (scissors / scanner) on the holster. Disables its
 ## world-pickup so the player can't walk off with the crew's kit.
@@ -230,8 +433,15 @@ func stow_personal_tool(tool: Node3D, side: float) -> void:
 		area.monitoring = false
 		area.monitorable = false
 	if tool is CollisionObject3D:
-		(tool as CollisionObject3D).collision_layer = 0
-		(tool as CollisionObject3D).collision_mask  = 0
+		var body := tool as CollisionObject3D
+		# #241 — remember the layers ONCE (SCAN/CUT re-stow every bale; without the
+		# guard the second stow would snapshot the zeroed values) so a borrowed tool
+		# can be handed back grabbable at the end of the shift.
+		if not tool.has_meta("prestow_layer"):
+			tool.set_meta("prestow_layer", body.collision_layer)
+			tool.set_meta("prestow_mask", body.collision_mask)
+		body.collision_layer = 0
+		body.collision_mask  = 0
 	if tool.get_parent():
 		tool.get_parent().remove_child(tool)
 	_holster.add_child(tool)
@@ -297,7 +507,9 @@ func _physics_process(delta: float) -> void:
 			# the state machine never ticks (see the early return below), so
 			# reporting _state here blamed SEEK for a blocked walk to the clamp.
 			var phase := _name_for_state(_state)
-			if _boarding_walk:
+			if _fetching:
+				phase = "TOOL_FETCH(state %s frozen)" % phase
+			elif _boarding_walk:
 				phase = "BOARDING_WALK(state %s frozen)" % phase
 			push_warning("[Feeder %s] stuck in %s for %.0fs"
 					% [worker_name, phase, _state_held_secs])
@@ -314,6 +526,12 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector3.ZERO
 		return
 	_resolve_belt()
+	# #241 — TOOL FETCH runs BEFORE anything else: the worker walks to where their
+	# scissors + scanner actually lie and picks them up. Freezes the rest of the
+	# machine the same way the boarding walk does, so nothing half-runs meanwhile.
+	if _fetching:
+		if not _tick_tool_fetch(delta):
+			return
 	if vehicle != null and is_instance_valid(vehicle):
 		# DRIVE mode.
 		if not _riding:

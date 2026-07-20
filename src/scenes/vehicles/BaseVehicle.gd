@@ -873,13 +873,51 @@ const NPC_ARRIVE_TOL   : float   = 2.2     # m — "close enough" to the waypoin
 const NPC_TURN_RATE    : float   = 1.8     # rad/s yaw slew toward the heading
 const NPC_CRUISE_FRAC  : float   = 0.55    # fraction of speed_limit the AI cruises at
 
+# NPC_TARGET_MAX_R — the sanity bound npc_set_target rejects beyond. Derived
+# from the world extent, not picked:
+#   · the drivable exterior apron is a 200 x 200 m slab centred on the plant
+#     anchor (MainWorld._spawn_exterior_ground, MainWorld.gd:918 / :933), so no
+#     drivable point is more than its half-diagonal, 141 m, from that anchor;
+#   · the plant anchor sits ~224 m from the scene origin (player_spawn is scene
+#     (-202.66, -8.0, 94.04), |xz| ~ 222 m);
+#   · 224 + 141 ~ 366 m bounds every real surface, so 500 m is that figure with
+#     ~35 % headroom for yard / macro extensions.
+# Deliberately NOT derived from the TempFloor slab (FloorDetector's
+# FLOOR_BOX_SIZE_XZ = 4000 m, i.e. +/-2000 m): that slab exists so nothing can
+# fall out of the world, it is not plant surface. The 2026-07-20 clamp beads at
+# x = +/-814 sat on that slab, hundreds of metres past anything drivable — which
+# is exactly the class of coordinate this radius rejects.
+const NPC_TARGET_MAX_R : float = 500.0   # m from the scene origin, XZ
+
 ## Point the vehicle at a world position and start driving there.
 ## carry_first=true: approach with the carry gear leading. All fork vehicles
 ## mount forks/plates at local +Z while canonical drive-forward is -Z, so an
 ## NPC that noses in always parks the carry point on the FAR side of the load —
 ## permanently outside GRAB_RANGE and the grab can never latch. Real clamp
 ## drivers reverse onto the load; so does the autopilot in this mode.
+##
+## SANITY GUARD (2026-07-21). This entry point accepted ANY Vector3 — no finite
+## check, no bounds check — so a NaN or a wild coordinate would have been driven
+## toward silently. No current caller does that (every FeederWorker target is
+## bounded to a few metres by _find_bale / _work_spot, and the 2026-07-20
+## relocation was proven NOT to come through here: those clamps held
+## rotation.y == 0.0000, which _npc_drive cannot produce because it rewrites
+## rotation.y every frame). The guard is defence-in-depth against a future
+## caller, and it turns a silent 800 m excursion into a named warning. The bound
+## itself (NPC_TARGET_MAX_R) is derived from the world extent just above.
+##
+## A refusal leaves the previous waypoint state untouched (it was valid) rather
+## than stopping the vehicle — the guard rejects the bad order, it does not
+## invent a new one.
 func npc_set_target(p: Vector3, carry_first: bool = false) -> void:
+	if not (is_finite(p.x) and is_finite(p.y) and is_finite(p.z)):
+		push_warning("[BaseVehicle] %s (%s): REFUSED non-finite npc target %s" % [name, vehicle_type, str(p)])
+		return
+	var r := Vector2(p.x, p.z).length()
+	if r > NPC_TARGET_MAX_R:
+		push_warning("[BaseVehicle] %s (%s): REFUSED npc target %.1f m from the scene origin (max %.0f m) — target %s, vehicle at %s" % [
+			name, vehicle_type, r, NPC_TARGET_MAX_R, str(p), str(global_position)])
+		return
 	_npc_target = p
 	_npc_target_active = true
 	npc_autopilot = true
@@ -1226,6 +1264,13 @@ func _kinematic_move(delta: float) -> void:
 	# freeze=true disables). If we hit something head-on, kill forward speed so we
 	# don't keep grinding into it.
 	var motion := fwd * (_current_speed_mps * delta)
+	# HORIZONTAL DISPLACEMENT BUDGET — see _clamp_recovery_overshoot below.
+	# Rapier's contact-recovery pass INSIDE move_and_collide translates an
+	# overlapping frozen-kinematic hull even when `motion` is exactly zero, and
+	# returns null while doing it (recovery is not reported as a collision), so
+	# nothing downstream can observe it. `pre` is the reference the achieved
+	# travel is measured against after the sweep + slide have run.
+	var pre := global_position
 	var hit := move_and_collide(motion)
 	if hit != null:
 		# Slide along the surface with whatever motion remains after the hit.
@@ -1238,6 +1283,7 @@ func _kinematic_move(delta: float) -> void:
 			# Hit-wall bleed — same brake-decel rate as a panic stop, so a head-on
 			# scrape kills speed quickly without violating the per-vehicle ramp.
 			_current_speed_mps = move_toward(_current_speed_mps, 0.0, brake_decel_mps2 * delta * 1.33)
+	_clamp_recovery_overshoot(pre, motion.length())
 	# Yaw
 	rotate_y(yaw_rate * delta)
 	# Gravity probe — drop the body until its underside touches the floor.
@@ -1260,6 +1306,62 @@ func _kinematic_move(delta: float) -> void:
 		linear_velocity = Vector3.ZERO
 		angular_velocity = Vector3.ZERO
 		_current_speed_mps = 0.0
+
+## Slack on top of the frame's requested travel before the horizontal
+## displacement is treated as engine-injected recovery. RELATIVE (0.1 % of the
+## requested travel), never absolute, and that distinction is load-bearing: an
+## absolute per-frame slack is a per-frame budget the recovery simply spends.
+## Measured 2026-07-21 with a 1e-4 m absolute slack, the nested pairs consumed
+## exactly 1e-4 m EVERY frame in a fixed direction — 0.006 m/s, bounded but
+## never converging, i.e. the same bug 250× slower. A relative slack gives a
+## parked vehicle (requested travel exactly 0) a budget of exactly 0, so the
+## drift stops dead, while a driven vehicle keeps float headroom proportional
+## to how far it actually asked to move.
+const RECOVERY_SLACK_REL : float = 0.001
+
+## Bound the HORIZONTAL travel achieved by the move_and_collide sweep + slide in
+## _kinematic_move to what the caller actually asked for — |motion| scaled by
+## the relative slack, so a parked vehicle's budget is exactly zero.
+##
+## WHY (measured 2026-07-21, src/tests/probe_drift_source.gd): two bale clamps
+## restored from a pre-clearance-gate save overlap. Rapier 0.8.34's contact
+## recovery runs inside move_and_collide and displaces BOTH hulls by the same
+## vector each frame, so the overlap never resolves and the pair translates
+## forever at constant speed (185 m in 150 s in MainWorld, 23 m in 15 s in the
+## probe) with rotation.y exactly 0. move_and_collide returns null on those
+## frames — recovery_as_collision defaults to false — so `hit != null` never
+## fires and no existing guard can see the motion. Clamping the ACHIEVED
+## displacement is the only signal available to the caller.
+##
+## PRESERVED ON PURPOSE:
+##   • The sweep at :1274, the remainder-slide at :1279 and the head-on speed
+##     bleed at :1285 all still run UNCHANGED, so a driven vehicle still
+##     collides with and slides along walls, machines and other vehicles
+##     instead of passing through them. For legitimate driving this clamp is a
+##     no-op: sweep displacement + slide displacement can never exceed |motion|
+##     (the slide only consumes the remainder), so the limit is never reached.
+##   • Y is untouched. Vertical depenetration (a hull spawned inside the floor)
+##     is legitimate physics, and ride height is owned by _settle_on_ground().
+##
+## ACCEPTED BEHAVIOUR CHANGE: a PARKED vehicle has budget 0, so it can no longer
+## be shoved sideways by its own recovery pass when another vehicle drives into
+## it — parked machines are now immovable obstacles. That is the physically
+## honest reading of a braked 8-tonne machine, and the previous "shove" was the
+## same unbounded recovery that caused this bug.
+##
+## This bounds the symptom; overlap itself is prevented at its two sources —
+## BuildMode._vehicle_spawn_blocker at placement time and _denest_loaded_vehicles
+## on load.
+func _clamp_recovery_overshoot(pre: Vector3, budget_m: float) -> void:
+	var d := global_position - pre
+	var xz := Vector2(d.x, d.z)
+	var travel := xz.length()
+	var limit := budget_m * (1.0 + RECOVERY_SLACK_REL)
+	# Non-finite is left alone: the post-move watchdog restores _last_good_xf.
+	if not is_finite(travel) or travel <= limit:
+		return
+	var k := limit / travel
+	global_position = Vector3(pre.x + d.x * k, global_position.y, pre.z + d.z * k)
 
 ## Ride-height target above the floor. Subclasses can change this to lift the
 ## chassis (e.g. Merlo's stabiliser-boom effect when the bucket presses ground).
