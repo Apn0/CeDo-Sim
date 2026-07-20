@@ -1272,20 +1272,44 @@ var _ride_height_target_m : float = DEFAULT_RIDE_HEIGHT
 ## stand-in for full wheel suspension — keeps the vehicle resting on whatever
 ## surface is below (floor, ramp, kerb). Subclasses can bias the ride height by
 ## writing to _ride_height_target_m before super._physics_process runs.
+##
+## Two constraints, both measured in the 2026-07-20 stacked-clamp session
+## (src/tests/repro_clamp_spawn.gd):
+##   • ANOTHER VEHICLE is not ground. Overlapping vehicles each treated the
+##     other's hull as floor and ratcheted upward ~2.1 m per rung (the save
+##     recorded ladders at y -0.65 / 1.54 / 3.57). Vehicle hits are skipped.
+##   • The probe reaches 40 m down (was 6 m) so a body boosted high — ladder
+##     rungs reached 13 m above the exterior floor in the measured session —
+##     still finds a floor below once vehicle hits are skipped, instead of
+##     stranding when the short ray comes up empty. (The measured stray was
+##     standing on a real shell overhang at y+1.09, a legitimate hit; the
+##     empty-ray strand is the adjacent failure this reach closes.)
 func _settle_on_ground() -> void:
 	var space := get_world_3d().direct_space_state
 	if space == null:
 		return
 	var origin_y := global_position.y + 2.0
-	var query := PhysicsRayQueryParameters3D.create(
-		Vector3(global_position.x, origin_y, global_position.z),
-		Vector3(global_position.x, origin_y - 6.0, global_position.z))
-	query.exclude = [get_rid()]
+	var from := Vector3(global_position.x, origin_y, global_position.z)
+	var to := Vector3(global_position.x, origin_y - 40.0, global_position.z)
+	var excl : Array = [get_rid()]
 	# Don't snap into bales being carried (their RID is already in the carry
 	# tree but might still be in the layer mask).
 	if _carried_bale and _carried_bale is PhysicsBody3D:
-		query.exclude.append((_carried_bale as PhysicsBody3D).get_rid())
-	var hit := space.intersect_ray(query)
+		excl.append((_carried_bale as PhysicsBody3D).get_rid())
+	var hit : Dictionary = {}
+	# Walk past vehicle hulls (max 4 stacked bodies) to the first REAL surface.
+	for _attempt in 4:
+		var query := PhysicsRayQueryParameters3D.create(from, to)
+		query.exclude = excl
+		hit = space.intersect_ray(query)
+		if hit.is_empty():
+			return
+		var col : Object = hit.get("collider")
+		if col is Node and _is_vehicle_hull(col as Node):
+			excl.append(hit["rid"])
+			hit = {}
+			continue
+		break
 	if hit.is_empty():
 		return
 	var ground_y := (hit["position"] as Vector3).y
@@ -1294,6 +1318,16 @@ func _settle_on_ground() -> void:
 	# instantly snapped flat.
 	var target_y := ground_y + _ride_height_target_m
 	global_position.y = lerpf(global_position.y, target_y, 0.25)
+
+## True when `n` or any ancestor is a vehicle body (group set in _ready above).
+## Used by the settle probe so one vehicle never treats another as floor.
+func _is_vehicle_hull(n: Node) -> bool:
+	var cur : Node = n
+	while cur != null:
+		if cur.is_in_group("vehicle"):
+			return true
+		cur = cur.get_parent()
+	return false
 
 func _gather_input() -> void:
 	# Forward / reverse — single rocker pedal convention (electric/LPG forklift).

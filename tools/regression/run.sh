@@ -43,5 +43,20 @@ echo "== rendering top-down =="
 cp "$UD/regression_positions.json" "$OUT/positions.json" 2>/dev/null || true
 python3 "$PROJ/tools/regression/topdown_render.py" "$OUT/positions.json" "$OUT/topdown.png" || true
 
+# Vehicle spawn regression (operator 2026-07-20: 5 clamp clicks nested 5 hulls
+# into a sky-ladder that read as "spawning is unsuccessful"). Boots its own
+# MainWorld: clearance gate must refuse nested clicks, the single clamp must
+# rest on the ground. ~2 min.
+echo "== vehicle spawn (clamp nesting) =="
+"$GODOT" --headless --path "$PROJ" \
+	res://src/tests/repro_clamp_spawn.tscn > "$OUT/clamp_spawn.log" 2>&1
+grep -E "ok    |FAIL  |Result:" "$OUT/clamp_spawn.log" || true
+# Key off the printed verdict, not the exit code: Godot occasionally segfaults
+# in engine teardown AFTER a clean PASS (observed exit 139 with all checks ok).
+if ! grep -q "Result: PASS" "$OUT/clamp_spawn.log"; then
+	echo "FAIL  : clamp spawn regression (see $OUT/clamp_spawn.log)"
+	[ $code -eq 0 ] && code=1
+fi
+
 echo "== done (exit $code) — see $OUT/topdown.png =="
 exit $code

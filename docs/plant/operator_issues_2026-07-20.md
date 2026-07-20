@@ -347,3 +347,87 @@ which is what a real forklift does.
 
 Verified: harness 15/0/2, npc bench PASS, feeder sequence PASS, merlo_p40 17/0,
 mast_jib 14/0. NEEDS an in-game drive to confirm feel (W = fork-first now).
+
+## L. "Bale clamps won't spawn" + 5th clamp at the F10 marker (session 19:13–19:27)
+
+Operator: placed an F10 marker; tried to spawn multiple bale clamps,
+"unsuccessful"; the 5th appeared exactly at the marker.
+
+**What the files say** (before any code was touched): the session's factory
+save `allernieuwste_factory.json` holds **five** `vehicle_baleclamp` entries —
+every click DID place a clamp. Their recorded positions are two vertical
+stacks far from the click point: three at scene (≈0, y, ≈0) with y −0.65 /
+1.54 / 3.57, two at (≈332, y, ≈0) with y 0.23 / 1.33. The F10 marker (and so
+the click point) was (−197.8, −9.0, 90.4) on the exterior ground.
+
+**Reproduced headlessly** (`src/tests/repro_clamp_spawn.gd`, real MainWorld,
+real BuildMode placement path, 5 clicks at the exact marker point):
+
+- Every click places a clamp INSIDE the previous one — there was no clearance
+  check. The nested hulls shove each other apart and, worse, upward.
+- Under the session's 5-FPS regime (`CLAMPREPRO_STALL_MS=200`), each new click
+  boosts the earlier clamps into a vertical ladder within ~1 second — up to
+  y +4.26, i.e. 13 m overhead, where they settle ON the building-shell
+  overhang (a real static at y +1.09 above that spot — measured by
+  `src/tests/probe_landing_spots.gd`). At night, 10 m overhead = invisible:
+  "spawning is unsuccessful". Only the newest clamp (no click after it)
+  stays grounded — "the 5th was exactly at the marker". The stacked-ladder
+  y-spacing (~2.1 m) matches the operator's save exactly.
+- The 220 m horizontal relocation to (0,0)/(332,0) did NOT reproduce at
+  either tickrate (clamps stay within 3 m XZ of the click). That mover is
+  still unidentified — see the tripwire below. One measured lead: any point
+  near the player anchor maps to pc≈(500,500), and pc (500,500) read back in
+  the wrong frame IS the scene origin — a yaw-in/translation-out coordinate
+  roundtrip collapses the whole anchor area onto (0,0), which is exactly
+  where the trio sat. No code path doing that roundtrip on placed vehicles
+  has been identified yet.
+
+**Fixes (this commit):**
+
+1. `BuildMode._place_current` — vehicle spawn clearance gate: a vehicle can
+   no longer materialise inside another vehicle. Refusal is LOUD (status
+   line: "SPAWN GEBLOKKEERD — <naam> staat op deze plek"), never silent.
+2. `BuildMode` vehicle placements get VehicleSpawner's +0.5 m drop cushion
+   (wheels no longer materialise exactly flush in the contact manifold).
+3. `BaseVehicle._settle_on_ground` — another vehicle is NOT ground: the
+   settle probe skips vehicle hulls (walks past up to 4 stacked bodies), so
+   the mutual-climb ladder is impossible; probe reach extended 6 m → 40 m so
+   a body stranded high finds the real floor again and glides down.
+4. Tripwire for the unexplained relocation: `_arm_vehicle_watchdog` measures
+   every placed vehicle 1 s after placement and push_warns with before/after
+   coordinates if it moved >10 m. If the 220 m mover ever fires again it
+   leaves an attributable trail instead of a mystery save.
+
+**Regression:** `repro_clamp_spawn.tscn` is now a lasting PASS/FAIL check
+(1 placed, 4 refused, resting on ground, no >2 m/frame teleports) and runs at
+both tickrates.
+
+**Operator save cleanup — NEEDS YOUR OK:** `allernieuwste_factory.json` still
+contains the five garbage entries; on the next load of that save they will
+spawn as two clamp stacks at (0,0) and (332,0). Say the word and I strip the
+five entries (backup kept). Alternatively delete them in-game with the
+build-mode delete key.
+
+**Separate find (measured, unfixed):** on a clean boot the MerloP40's
+grapple/bucket COLLISION bodies (`GrappleArm_P40`, `BucketTilt_P40`,
+AnimatableBody3D + sync_to_physics under Rapier) answer raycasts at the SCENE
+ORIGIN, 137+ m from the vehicle. CONFIRMED PERSISTENT: still answering
+raycasts at (0, −0.09, 0) / (0, −5.20, 0) ten seconds after boot
+(probe_landing_spots.gd, t=0 and t=10 s identical). The plant has standing
+invisible phantom colliders parked at (0,0) — and the operator's clamp trio
+came to rest exactly on top of them (ladder base −0.65 sits on the arm at
+−0.09). Likely mechanism: the sub-bodies only move via ANCESTOR transforms
+(boom chain), and the Rapier binding never re-syncs a sync_to_physics body
+whose own local transform never changes. Fix deferred — needs its own
+measured pass (force-sync in _apply_boom, or drop AnimatableBody3D there).
+
+**Separate find #2 (measured, unfixed — frame audit needed):** the boot
+header reports vehicle markers as offsets from player_spawn in the RAW
+layout frame ("bale_clamp #1 : 57.2 m away (-33.1, 46.7)"), but the actual
+PC-path spawn lands at scene (57.0, 183.2) = R(−130.2°)·marker + anchor —
+verified algebraically against the logged spawn. Whether the SPAWN or the
+HEADER frame is the intended one depends on what WorldSetup writes into
+`vehicle_spawns` (anchor-relative vs scene-absolute); needs a dedicated
+audit with the WorldSetup writer before touching either side. Symptom if
+the spawn side is wrong: world vehicles stand rotated 130° around the plant
+from where their markers were placed.

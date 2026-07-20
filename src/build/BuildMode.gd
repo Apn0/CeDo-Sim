@@ -995,6 +995,50 @@ func _process(delta: float) -> void:
 	if _has_two_point and _two_point_preview != null:
 		_update_two_point_preview(p)
 
+## Tripwire for the unexplained 2026-07-20 relocation: the operator's five
+## placed clamps were recorded 220+ m from the click point minutes later —
+## not reproducible headlessly at a clean tickrate (src/tests/repro_clamp_spawn.gd:
+## clamps stay within 3 m). One second after a vehicle placement, measure how
+## far it actually got; a recurrence then logs who/when/where instead of
+## leaving another mystery save file.
+func _arm_vehicle_watchdog(node: Node3D) -> void:
+	var placed_at : Vector3 = node.global_position
+	get_tree().create_timer(1.0).timeout.connect(func() -> void:
+		if node == null or not is_instance_valid(node):
+			push_warning("[BuildMode] placed vehicle FREED within 1 s of placement")
+			return
+		var d := node.global_position.distance_to(placed_at)
+		if d > 10.0:
+			push_warning("[BuildMode] placed vehicle moved %.1f m within 1 s of placement: (%.1f, %.1f, %.1f) -> (%.1f, %.1f, %.1f)" % [
+				d, placed_at.x, placed_at.y, placed_at.z,
+				node.global_position.x, node.global_position.y, node.global_position.z]))
+
+## Any OTHER vehicle whose hull overlaps the would-be vehicle footprint at `at`.
+## Returns its display name, or "" when the spot is clear. Only vehicles block:
+## two nested dynamic hulls shove each other apart (the measured 2026-07-20
+## stacked-clamp case); overlap rules for statics are unchanged on purpose.
+func _vehicle_spawn_blocker(at: Vector3) -> String:
+	var item : Dictionary = PlaceableCatalog.get_item(_active_id)
+	var sz : Vector3 = item.get("size", Vector3(2.0, 2.5, 4.0)) if not item.is_empty() else Vector3(2.0, 2.5, 4.0)
+	var shape := BoxShape3D.new()
+	# 85 % footprint: brushing past a parked machine stays allowed; hull-on-hull
+	# does not.
+	shape.size = sz * 0.85
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = shape
+	q.transform = Transform3D(Basis(Vector3.UP, _ghost_rot_y),
+		at + Vector3(0.0, sz.y * 0.5 + 0.1, 0.0))
+	q.collide_with_areas = false
+	var space := get_world_3d().direct_space_state
+	for r in space.intersect_shape(q, 8):
+		var col : Object = r.get("collider")
+		var cur : Node = col as Node
+		while cur != null:
+			if cur.is_in_group("vehicle"):
+				return cur.name
+			cur = cur.get_parent()
+	return ""
+
 ## A tall thin green vertical cylinder used as the edge-snap indicator.
 ## Hangs above the snap point so the operator can spot it across the floor.
 func _build_snap_marker() -> Node3D:
@@ -1237,11 +1281,27 @@ func _place_current() -> void:
 			_finalize_placed(pole, _active_id, 0.0)
 		_save_layout()
 		return
+	# Vehicle spawn clearance gate (operator 2026-07-20: five clamp clicks at one
+	# aim point nested five VehicleBody3Ds inside each other — the pile shoved
+	# itself apart/upward and read as "spawning is unsuccessful"). A vehicle may
+	# not materialize inside another vehicle; refuse LOUDLY instead of silently
+	# stacking. Statics keep the pre-existing free-placement rules.
+	if _active_id.begins_with("vehicle_"):
+		var blocker := _vehicle_spawn_blocker(_ghost.global_position)
+		if blocker != "":
+			_status.text = "SPAWN GEBLOKKEERD — %s staat op deze plek. Kies een vrije plek." % blocker
+			return
 	var node := PlaceableCatalog.build_node(_active_id, false)
 	if node == null:
 		return
 	_placed_root.add_child(node)
 	node.global_position = _ghost.global_position
+	# Vehicles get the same +0.5 m drop cushion VehicleSpawner uses — a
+	# VehicleBody3D whose wheels materialize exactly flush with the surface
+	# starts in contact-manifold ambiguity; a short drop settles it cleanly.
+	if _active_id.begins_with("vehicle_"):
+		node.global_position.y += 0.5
+		_arm_vehicle_watchdog(node)
 	node.rotation.y = _ghost_rot_y
 	_finalize_placed(node, _active_id, _ghost_height)
 	_finalize_bale(node)
