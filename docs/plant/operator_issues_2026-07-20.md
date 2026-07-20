@@ -142,11 +142,15 @@ drawn the polygons I asked for:
 - **Vacuum degassing is modelled as two small domes ON the barrel crown**
   (`PlaceableCatalog.gd` SECTION 5b). The photo shows **floor-standing vacuum
   pots with their own residue bin**, off the barrel entirely.
-- **The head filter is modelled as a slim housing on the barrel.** The photo
-  shows a **large floor-standing stainless cabinet** roughly the height of a
-  person, with its **control panel as a separate vertical unit beside it** — so
-  the "invented" mini panel is not just unplaced, it is the wrong object at the
-  wrong scale.
+- **The head filter cabinet was missing entirely** (BUILT 2026-07-20). Correcting
+  my own first reading: the piston screen-changer in the model is doc-correct and
+  is what you see with a door OPEN
+  (`head_filter_cabinet_open_top-cylinder_out_breaker-plate-in.jpg`). What was
+  missing is the **enclosure** — a large floor-standing brushed-stainless cabinet
+  on legs, chamfered top corner, two vertical door latches. Its **control was a
+  hand-sized push-button box bolted to the housing (invented); the photos show a
+  separate narrow floor-standing post with a green running lamp**, now rebuilt at
+  standing height.
 - **The pelletizer** (`pelletizer_closed_hatch.jpg`) is a **cylindrical housing
   with a clamped round hatch** on an EREMA-blue body — not the rectangular
   louvered cabinet currently modelled. That hatch is the "lid/latch" the operator
@@ -165,3 +169,17 @@ its own pass, machine by machine, with a render approval per step.
 `docs/plant/renders/` instead of `user://`. A render in
 `%APPDATA%\Godot\app_userdata\` is invisible to the operator and uncitable from
 these docs.
+
+
+## H. Annotation filename convention (operator, 2026-07-20)
+
+`<first 2 letters of the colour>-<description>`, joined by `_`, **ordered LEFT TO
+RIGHT as the polygons appear in the image**. The ordering is itself layout data.
+
+For `gr-HMI_or-laserfilter_bl-vacuumpots_ye-vacuumcatchresiduebin_pu-headfiltercontrol_pi-headfiltercabinetclosed.jpg`
+that reads, left to right: HMI, laser filter, vacuum pots, vacuum-catch residue
+bin, head-filter control, head-filter cabinet — with the extruder barrel + EREMA
+drive off the right-hand edge. So the real running order puts the laser filter
+and the vacuum pots as FLOOR-STANDING units on the far side of the head filter,
+not as a disc and two domes riding the barrel crown. Still to build, and the
+axis mapping (which way is +Z) needs confirming before anything is moved.

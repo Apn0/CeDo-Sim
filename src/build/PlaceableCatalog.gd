@@ -10332,10 +10332,56 @@ static func _m_extruder_unit(p: Node3D, size: Vector3, color: Color, ghost: bool
 	for gy in [kf_low_y + barrel_cy * 0.34, kf_up_y + barrel_cy * 0.34]:
 		_box(p, Vector3(0.02, 0.02, size.x * 0.14), Vector3(kf_house_w * 0.5, gy, kf_z), steel)
 		_cyl(p, 0.06, 0.06, 0.03, Vector3(kf_house_w * 0.5 + 0.01, gy, kf_z + size.x * 0.11), dark, "x")
-	# Local push-button station for the screen-change (SWAP / REPACK) E-interaction.
-	_box(p, Vector3(0.10, size.x * 0.16, 0.12), Vector3(kf_house_w * 0.5 + 0.02, kf_low_y - barrel_cy * 0.05, kf_z - kf_house_d * 0.3), body)
-	_cyl(p, 0.03, 0.03, 0.05, Vector3(kf_house_w * 0.5 + 0.10, kf_low_y + barrel_cy * 0.02, kf_z - kf_house_d * 0.3), red, "x")
-	_cyl(p, 0.02, 0.02, 0.04, Vector3(kf_house_w * 0.5 + 0.10, kf_low_y - barrel_cy * 0.05, kf_z - kf_house_d * 0.3 - 0.06), teal, "x")
+	# ── HEAD-FILTER CABINET (operator photos 2026-07-20) ──────────────────────
+	# docs/plant/photos/extruder_2026-07-20/head_filter_cabinet_closed.jpg and
+	# gr-HMI_or-laserfilter_bl-vacuumpots_ye-vacuumcatchresiduebin_pu-headfiltercontrol_
+	# pi-headfiltercabinetclosed.jpg (pink polygon).
+	#
+	# The piston screen-changer above is doc-correct and stays — what was missing
+	# is the ENCLOSURE around it. The photos show a large floor-standing brushed
+	# stainless cabinet, roughly person-height plus, standing clear of the floor on
+	# legs, with a chamfered top corner and two vertical door latches down one
+	# edge. The operator sees this cabinet, not the changer, unless a door is open
+	# (head_filter_cabinet_open_top-cylinder_out_breaker-plate-in.jpg).
+	var hfc_w : float = size.x * 1.02          # wider than the barrel — it stands beside it
+	var hfc_d : float = kf_house_d * 2.6
+	var hfc_leg : float = barrel_cy * 0.30     # cabinet floats clear of the floor
+	var hfc_top : float = size.y * 0.66
+	var hfc_h : float = hfc_top - hfc_leg
+	var hfc_cy : float = hfc_leg + hfc_h * 0.5
+	var hfc_mat := _mat(Color(0.72, 0.73, 0.75), ghost, 0.55, 0.42)   # brushed stainless
+	if not ghost:
+		for sx8 in [-1.0, 1.0]:
+			for sz8 in [-1.0, 1.0]:
+				var hl := _box(p, Vector3(0.09, hfc_leg, 0.09),
+					Vector3(sx8 * hfc_w * 0.42, hfc_leg * 0.5, kf_z + sz8 * hfc_d * 0.38), dark)
+				hl.add_to_group("machine_leg")
+				hl.set_meta("leg_h", hfc_leg)
+	# Main shell + the chamfered top band (the photo's cut corner, approximated as
+	# a narrower box on top rather than a true bevel).
+	_box(p, Vector3(hfc_w, hfc_h * 0.88, hfc_d), Vector3(0.0, hfc_cy - hfc_h * 0.06, kf_z), hfc_mat)
+	_box(p, Vector3(hfc_w * 0.86, hfc_h * 0.12, hfc_d * 0.86),
+		Vector3(0.0, hfc_top - hfc_h * 0.06, kf_z), hfc_mat)
+	# Two vertical door latches down the +X edge, and the door seam between them.
+	_box(p, Vector3(0.02, hfc_h * 0.92, 0.02), Vector3(hfc_w * 0.5 + 0.012, hfc_cy, kf_z - hfc_d * 0.18), dark)
+	for lz in [-0.22, 0.20]:
+		_box(p, Vector3(0.05, hfc_h * 0.16, 0.05),
+			Vector3(hfc_w * 0.5 + 0.03, hfc_cy + hfc_h * lz, kf_z + hfc_d * 0.30), dark)
+
+	# ── HEAD-FILTER CONTROL (purple polygon, same photo) ──────────────────────
+	# Was a hand-sized push-button box bolted to the changer housing — invented,
+	# no doc. The photos show a SEPARATE narrow FLOOR-STANDING post beside the
+	# cabinet, carrying a green running lamp. Rebuilt at standing height so the
+	# SWAP / REPACK E-interaction lands on something the operator can walk up to.
+	var hfp_x : float = -hfc_w * 0.5 - 0.28
+	var hfp_h : float = barrel_cy * 1.35
+	_box(p, Vector3(0.06, hfp_h, 0.06), Vector3(hfp_x, hfp_h * 0.5, kf_z - hfc_d * 0.30), dark)
+	_box(p, Vector3(0.16, size.x * 0.26, 0.13),
+		Vector3(hfp_x, hfp_h * 0.86, kf_z - hfc_d * 0.30), body)
+	_cyl(p, 0.028, 0.028, 0.04,
+		Vector3(hfp_x - 0.09, hfp_h * 0.94, kf_z - hfc_d * 0.30), teal, "x")   # green running lamp
+	_cyl(p, 0.030, 0.030, 0.05,
+		Vector3(hfp_x - 0.09, hfp_h * 0.80, kf_z - hfc_d * 0.30), red, "x")    # E-stop
 
 	# ═══ SECTION 5b: VACUUM DEGAS DOMES on the BARREL itself ═══════════════════
 	# Two upward-facing vacuum chambers tap the barrel on top — that's where
