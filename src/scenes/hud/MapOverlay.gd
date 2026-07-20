@@ -121,7 +121,15 @@ func _draw() -> void:
 	_draw_building_outline(center_px, scale_px, origin, panel)
 
 	# Machines (steel squares; ids only when zoomed in enough to be legible)
+	# Operator 2026-07-20 ("very poor, see?"): every machine and every parked car
+	# drew its label unconditionally, so the staff car park came out as one
+	# unreadable pile of overlapping text. Labels are now claimed against a
+	# collision list and dropped when they'd overlap something already drawn.
+	_label_rects.clear()
 	var label_machines := scale_px > 3.0
+	# Vehicle names are only legible once the map is zoomed in — at wide zoom the
+	# car park is a cluster a few pixels across and no label can be readable.
+	var label_vehicles := scale_px > 5.0
 	for nd in _machines():
 		var n = nd.get("node", null)
 		if n == null or not is_instance_valid(n):
@@ -130,7 +138,7 @@ func _draw() -> void:
 		var cl := _clamp_to(px, panel)
 		draw_rect(Rect2(cl - Vector2(2.5, 2.5), Vector2(5, 5)), C_MACHINE)
 		if label_machines and cl == px:
-			_text(cl + Vector2(5, 3), _short_id(String(nd.get("id", ""))), 10, C_DIM)
+			_text_nc(cl + Vector2(5, 3), _short_id(String(nd.get("id", ""))), 10, C_DIM)
 
 	# Loose bales (small tan squares)
 	for b in _bales():
@@ -159,8 +167,8 @@ func _draw() -> void:
 		var vt := String(v.vehicle_type)
 		var col := C_LIFT if (vt == "mast_lift" or vt == "scissor_lift") else C_VEHICLE
 		_draw_heading_tri(cl, _forward2(v), 7.0, col)
-		if cl == vp:
-			_text(cl + Vector2(7, 3), _vehicle_short(String(v.vehicle_type)), 10, col)
+		if label_vehicles and cl == vp:
+			_text_nc(cl + Vector2(7, 3), _vehicle_short(String(v.vehicle_type)), 10, col)
 
 	# Player (always dead-centre, heading arrow)
 	if main_world and main_world.player:
@@ -170,7 +178,9 @@ func _draw() -> void:
 	_text(Vector2(center_px.x - 5, panel.position.y + 16), "N", 14, C_DIM)
 	_draw_scalebar(panel, scale_px)
 	_draw_legend(panel)
-	_text(Vector2(panel.position.x, panel.position.y - 10),
+	# Inside the panel, not above it: at panel.position.y - 10 the title landed on
+	# top of the HUD shift clock ("Shift starts in ... · SITE MAP" overlapped).
+	_text(Vector2(panel.position.x + 8, panel.position.y + 20),
 		"SITE MAP", 18, Color(0.78, 0.92, 0.78, 1.0))
 	_text(Vector2(panel.end.x - 250, panel.position.y - 10),
 		"[M] close   ·   scroll to zoom", 13, C_DIM)
@@ -411,6 +421,24 @@ func _text(pos: Vector2, s: String, fsize: int, col: Color) -> void:
 	if _font == null:
 		return
 	draw_string(_font, pos, s, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize, col)
+
+## Rects already occupied by a label this frame (see _draw).
+var _label_rects : Array[Rect2] = []
+
+## Draw a label ONLY if it doesn't collide with one already placed this frame.
+## Returns false when the label was dropped. Cheap O(n^2) — n is a few dozen and
+## only while the map is open.
+func _text_nc(pos: Vector2, s: String, fsize: int, col: Color) -> bool:
+	if s == "":
+		return false
+	var w : float = _font.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize).x
+	var r := Rect2(pos - Vector2(2.0, float(fsize)), Vector2(w + 4.0, float(fsize) + 4.0))
+	for q in _label_rects:
+		if r.intersects(q):
+			return false
+	_label_rects.append(r)
+	_text(pos, s, fsize, col)
+	return true
 
 # =============================================================================
 # PROJECTION + ENTITY GATHERING
