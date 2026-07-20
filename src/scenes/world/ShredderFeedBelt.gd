@@ -73,6 +73,32 @@ signal thermal_shutdown(belt_id: String)     # #211c — sustained over-occupanc
 @export var funnel_min_width : float = 0.0
 
 var fill : float = 0.0
+## Kilograms currently in the throat. `fill` is the 0..1 geometric fill level;
+## this is what that volume actually weighs. Kept in step with `fill` so the
+## belt can hand REAL mass downstream instead of inventing it from a constant.
+var _throat_kg : float = 0.0
+
+## Total kg the belt is holding right now (riders still to feed + throat).
+## Exists so a conservation test can sum the belt without reaching into privates.
+func held_kg() -> float:
+	var total : float = _throat_kg
+	for r in _riders:
+		total += float(r.get("mass", 0.0)) * float(r.get("kg_total", 0.0))
+	return total
+
+## The bale's real weight, in the order of preference the codebase already uses.
+func _bale_kg(bale: Node) -> float:
+	if bale == null:
+		return 0.0
+	if bale.has_meta("remaining_kg"):
+		var rk : float = float(bale.get_meta("remaining_kg"))
+		if rk > 0.0:
+			return rk
+	if bale.has_meta("weight_kg"):
+		return float(bale.get_meta("weight_kg"))
+	if bale is RigidBody3D:
+		return float((bale as RigidBody3D).mass)
+	return 0.0
 
 # Cumulative counters (HUD / tests). bales_accepted only counts scanned bales
 # that made it onto the belt; bales_rejected counts scan-gate refusals.
@@ -628,8 +654,20 @@ func accept_bale(bale: Node3D, lane: int = 0) -> bool:
 	# middle, not the old left/right zigzag); lane 1 = offset right if ever needed.
 	var lane_x : float = (0.0 if lane == 0 else 0.5 * deck_width * 0.5)
 	var cross_wise : bool = absf(bale_yaw_deg) > CROSS_WISE_ANGLE_DEG
+	# REAL KILOGRAMS (operator 2026-07-20: "whatever obeys true physics is
+	# correct"). `mass` stays the 0..1 FRACTION of the bale still on the belt —
+	# the transport logic below is written in fractions — but `kg_total` carries
+	# what that fraction is actually worth, read from the bale itself. Before
+	# this, accept_bale hard-coded "mass": 1.0 and never looked at the weight, so
+	# every bale entered identically and 350 kg was invented downstream.
+	# The kg is DEBITED from the bale here: the material is now on the belt, so
+	# leaving remaining_kg on the node would double-count it (measured: a 420 kg
+	# bale produced 770 kg of ledger — see src/tests/test_mass_ledger.gd).
+	var bale_kg : float = _bale_kg(bale)
+	bale.set_meta("remaining_kg", 0.0)
+	bale.set_meta("on_belt", true)      # LineFlow must not also draw off it
 	_riders.append({
-		"node": bale, "progress": 0.0, "mass": 1.0,
+		"node": bale, "progress": 0.0, "mass": 1.0, "kg_total": bale_kg,
 		"feeding": false, "lane_x": lane_x,
 		# #211a — orientation rider state. cross_wise = true means the rider is
 		# accumulating jam time; the 5s window matches the operator slap-it-
@@ -784,8 +822,17 @@ func _process(delta: float) -> void:
 		var before_fill := fill
 		fill = maxf(0.0, fill - digest_rate * delta)
 		var digested : float = before_fill - fill
-		if digested > 0.0:
-			_emit_output(digested * OUTPUT_KG_PER_FILL, delta)
+		if digested > 0.0 and before_fill > 0.0:
+			# Draw the kilograms PROPORTIONALLY out of what is actually in the
+			# throat. The old line minted them: `digested * OUTPUT_KG_PER_FILL`
+			# turned a dimensionless fraction into 350 kg per unit fill with
+			# nothing debited, so one bale of any weight produced the same
+			# invented amount.
+			var kg_out : float = _throat_kg * (digested / before_fill)
+			kg_out = minf(kg_out, _throat_kg)
+			_throat_kg -= kg_out
+			if kg_out > 0.0:
+				_emit_output(kg_out, delta)
 	var running := is_running()
 	# #214 belt-speed ramp — the PLC setpoint is binary (running ? belt_speed : 0)
 	# but the physical belt coasts smoothly between those two states. Push the
@@ -827,9 +874,16 @@ func _process(delta: float) -> void:
 			# At the top: transfer mass into the throat, but only while there's
 			# room (running). This is the portioned drop.
 			if running:
-				var give : float = min(r["mass"], feed_rate * delta)
-				r["mass"] = r["mass"] - give
-				fill = minf(1.0, fill + give)
+				# Clamp the FRACTION by the room actually left in the throat, so
+				# the old `fill = minf(1.0, fill + give)` can no longer swallow
+				# the difference silently — that clamp destroyed mass.
+				var room : float = maxf(0.0, 1.0 - fill)
+				var give : float = min(min(r["mass"], feed_rate * delta), room)
+				if give > 0.0:
+					r["mass"] = r["mass"] - give
+					fill += give
+					# Carry the matching kilograms across with it.
+					_throat_kg += give * float(r.get("kg_total", 0.0))
 				if r["mass"] <= 0.0:
 					var node : Node3D = r["node"]
 					_riders.remove_at(i)
@@ -975,7 +1029,15 @@ func _emit_output(kg: float, delta: float) -> void:
 	if overflow > 0.0:
 		_ensure_output_pile(disc)
 		if _output_pile != null and is_instance_valid(_output_pile):
-			_output_pile.call("add", overflow, OUTPUT_DENSITY)
+			# FloorPile.add returns the kg it REFUSED once max_radius_m is hit.
+			# That return used to be discarded, so mass vanished silently at a
+			# full pile. Push it back into the throat instead — a full discharge
+			# backs the belt up, which is what a real one does.
+			var refused : float = float(_output_pile.call("add", overflow, OUTPUT_DENSITY))
+			if refused > 0.0:
+				_throat_kg += refused
+		else:
+			_throat_kg += overflow   # nowhere to put it: keep it, never drop it
 	_flake_t += delta
 	if _flake_t >= 0.12 and _flake_live < OUTPUT_FLAKE_MAX:
 		_flake_t = 0.0
