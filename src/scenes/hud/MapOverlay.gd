@@ -23,7 +23,10 @@ const MAX_RADIUS  : float = 600.0
 const ZOOM_STEP   : float = 0.82      # multiply/divide per wheel notch
 
 # Marker colours
-const C_PANEL   := Color(0.06, 0.07, 0.06, 0.93)
+# FULLY OPAQUE. At alpha 0.93 the 3D scene bled through the map — the operator's
+# screenshot shows an NPC and a red machine visible *through* the panel, which is
+# what made it unreadable. A map is a map, not a window.
+const C_PANEL   := Color(0.06, 0.07, 0.06, 1.0)
 const C_BORDER  := Color(0.32, 0.52, 0.34, 0.9)
 const C_RING    := Color(0.30, 0.42, 0.32, 0.5)
 const C_BUILDING := Color(0.84, 0.82, 0.74, 0.9)   # cream — CeDo building outline
@@ -101,7 +104,7 @@ func _draw() -> void:
 	if not visible:
 		return
 	# Full-screen dim
-	draw_rect(Rect2(Vector2.ZERO, size), Color(0, 0, 0, 0.55))
+	draw_rect(Rect2(Vector2.ZERO, size), Color(0, 0, 0, 0.72))
 
 	# Centred square map panel
 	var m := minf(size.x, size.y) * 0.82
