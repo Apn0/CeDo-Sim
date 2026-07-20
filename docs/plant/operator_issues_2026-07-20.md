@@ -25,9 +25,23 @@ and the reason it never moved is worse than a bad fix:
 - `f42b0d1`'s own commit body says: *HMI overhaul deferred ("ask me once we get
   there")*.
 
-**What I need, per panel (13 of them):** which machine or wall it mounts to, and
-on which face. Fastest path is F10 markers in-game — one orb where each panel
-belongs — rather than describing 13 positions in text.
+**CORRECTION 2026-07-20 (external review, and it is right):** filing A1 as
+"BLOCKED ON OPERATOR" was only half true, and the wrong half was the excuse.
+The operator's DATA is blocked. The ENGINEERING is not — and the engineering is
+a *prerequisite* for the data. There is no placement system for markers to feed
+into, so if he described all 13 positions right now, nothing could apply them.
+That work is mine and it is unblocked today:
+
+1. add `position` / `anchor` / `parent_machine` fields to the 13 catalog entries
+   (`PlaceableCatalog.gd:483-498`);
+2. make `Hmi.gd._ready()` apply a transform resolved from `HmiScopes`, so that
+   file becomes the single source of truth it already claims to be;
+3. build F10-marker capture -> catalog-entry export, so a dropped orb becomes
+   placement data.
+
+Only after that does asking him cost him ten minutes instead of being a ninth
+failed round. **What I then need, per panel:** which machine or wall it mounts
+to, and on which face — as F10 markers, not prose.
 
 ### A2. Cutter-compactor / PCU location vs the extruder + intake slit
 There IS a spec and the code contradicts it:
@@ -57,14 +71,23 @@ IS doc-cited (`:10231-10241`) and this one is not. **Blocked on operator.**
 
 ## B. Gauntlet bench — reported behaviour
 
-- **B1. Most spawns land at the centre of the middle shredder.** Bale clamp,
-  film-piece piles and others all appear at one fixed point; bales spawn
-  correctly. Because the clamp lands inside the shredder, NPCs cannot board it.
+- **B1. FIXED (`3eb1f38`).** Root cause was NOT a per-kind spawn fallback to a
+  default origin — that hypothesis was measured and DISPROVEN
+  (`src/tests/test_spawn_transform.gd`). `BuildMode._raycast()` aimed along
+  whichever camera was `current`, using its forward axis; the mouse never
+  entered into it. The O key makes a STATIC ObserverCam current, so the ray was
+  one fixed line and every kind landed on the single point it hit. Bench bales
+  looked fine because the rig places them directly, never through build mode.
+  Fix: `_aim_camera()` always uses the player's camera.
 - **B2. Phantom housekeeping tasks.** NPCs get auto-assigned a leaf-blower task
   with nothing to blow, and an exclamation mark shows for it.
 - **B3. Wrong verb/tool: "sweep with the shovel".** A shovel SCOOPS; a broom
   SWEEPS. The task name and the tool are mismatched.
-- **B4. Assigned NPCs stand still** instead of executing the task.
+- **B4. Assigned NPCs stand still** instead of executing the task. NOTE: B1
+  probably contaminates this — an NPC cannot board a clamp that spawned inside a
+  shredder, so some "standing still" may be downstream of the spawn bug. B1 is
+  fixed (`3eb1f38`); B4/B5 must be re-measured before they are trusted as
+  separate faults.
 - **B5. Shift leader stuck on "making rounds"** — task shown, no movement.
   (Related to the boarding-walk freeze fixed in `1cf15bf`? Not proven — the
   gauntlet has no vehicles for that path. Needs its own measurement.)
@@ -79,6 +102,65 @@ IS doc-cited (`:10231-10241`) and this one is not. **Blocked on operator.**
 - **C3.** A pile of fines forms at floor level — either from nothing, or from
   UNSHREDDED bales. Both are impossible. This is a ledger bug, not a cosmetic
   one, and it is the most serious item in this list: mass is being created.
+
+### C — ROOT CAUSE FOUND (traced 2026-07-20), not yet fixed
+
+**The belt never hands a single kg to the shredder.** `ShredderFeedBelt` runs its
+own private, *dimensionless* ledger (`fill` and `rider["mass"]`, both 0..1) and
+then invents kilograms from it with a hard-coded constant. The shredder's kg
+ledger is a parallel universe nothing upstream writes to: `set_feed_throughput`
+is never called from `ShredderFeedBelt.gd` at all — the shredder is used only as
+a boolean interlock.
+
+The mass source, exactly:
+```
+ShredderFeedBelt.gd:783-788   fill -= digest_rate * delta
+                              _emit_output(digested * OUTPUT_KG_PER_FILL, delta)
+ShredderFeedBelt.gd:93        const OUTPUT_KG_PER_FILL := 350.0
+```
+A dimensionless fill delta is multiplied into kg with **nothing debited anywhere**.
+One bale yields up to 350 kg of pile regardless of what it actually weighed —
+`accept_bale` hard-codes `"mass": 1.0` (`:632`) and never reads the bale's
+`weight_kg` / `remaining_kg` / `RigidBody3D.mass`.
+
+Why fines appear from **nothing**: `PlaceableCatalog.gd:5162` sets
+`require_shredder = false` on every catalog-built opzetband, so `_shredder_ok()`
+short-circuits true (`:399-400`) and the digest runs **with no shredder present**.
+
+Why the pile is on the **floor past the shredder** (C1): `_discharge_pos()`
+(`:942-943`) returns `y = 0.0` at a z beyond the top of the incline, using the
+horizontal `incline_run` instead of the hypotenuse and ignoring `top_flat_m`.
+
+Why **nothing is visible on the belt** (C2): `burst_bale` sets
+`bale.visible = false` (`:660`) to make it the invisible carrier, and
+`_place_rider` (`:936`) writes `position` every frame on a body left
+**non-frozen** (`:625-626`), so physics fights the write.
+
+Other conservation faults found in the same pass:
+- `:830-832` — `give` is subtracted from the rider but added into a
+  `minf(1.0, ...)` clamp; at the clamp the difference evaporates.
+- `:838` — the bale is `queue_free()`d still carrying its `remaining_kg`, and
+  `bale_consumed` has no kg payload, so nothing credits it.
+- `:978` — `FloorPile.add()`'s refused-kg return value is discarded, so mass
+  silently vanishes when the pile hits `max_radius_m`.
+- `:681,704` — 4..12 film pieces at 0.3 kg each are spawned and freed, never in
+  any ledger.
+- Possible DOUBLE-DRAW: a reparented bale keeps its `bale` group and `delivered`
+  meta, and `LineFlow._bale_at` (`:2445-2467`) filters on those, not on
+  parentage — so LineFlow can draw 8 kg/s off the same bale the belt is riding.
+
+**Bonus, explains "rides through the shredder":** `NpcTaskBench` advances the
+chain by footprint centre, but `ShredderFeedBelt` builds all its geometry on the
++Z side of its origin, so the belt is drawn ~9 m further +Z than the layout
+assumes and `shredder_1` lands *inside* the belt's span.
+
+**Next step (instrument first, per review):** a mass-ledger assertion summing
+bale kg + rider kg + belt fill kg + shredder buffer/overflow + FloorPile +
+WasteContainer against the initial bale kg, ticking `belt._process(dt)` and
+`sh._physics_process(dt)` directly for determinism, with `require_shredder`
+forced true so the test isn't vacuous. It will fail on the first run precisely
+because rider/fill **have no kg to read** — the unit conversion happens once, in
+the wrong direction, with a made-up constant.
 
 ## D. Editor warnings — DONE (`de7c9d1`, `1cf15bf`)
 
