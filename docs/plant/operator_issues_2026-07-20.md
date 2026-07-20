@@ -88,3 +88,32 @@ headlessly** on 4.6.3 (verified: `--check-only`, runtime `load()`, and
 They only surface in the editor, which is why they reach the operator and not
 CI. `tools/regression/lint_unused_params.py` now gates the unused-parameter
 class in `run.sh`; the other classes still need an editor session.
+
+## E. Operator photos 2026-07-20 — compactor conveyor before the PCU
+
+Two photos supplied in chat: a side view of the compactor conveyor carrying the
+finished shred, and a close-up of the same material. **They are not yet in the
+repo** — drop them into `docs/plant/photos/` so this entry can cite files rather
+than a chat message.
+
+What they establish:
+
+- **Flakes are NOT flat squares.** They are torn, curled, folded shreds at every
+  attitude, with lengths from specks to long ribbons. `FilmFlakeField` used
+  `BoxMesh(flake_size, flake_size * 0.15, flake_size)` — a flat square, yaw-only,
+  identical for every instance. Rebuilt (2026-07-20) as a folded 3-ribbon tuft
+  with per-flake tilt/roll/length/size. Before/after: `src/tests/shot_flakes.tscn`.
+- **Colour distribution.** The mass is overwhelmingly translucent white-grey with
+  a scatter of bright specks (blue, red/orange, green, black print) — roughly one
+  in five. The old code cycled the full PALETTE evenly, which read as confetti.
+  `_flake_color()` now does 80% varied grey / 20% speck.
+- **Density.** In the photo the shred is a PACKED CARPET with heavy overlap. The
+  field is still a scatter; density comes from each machine's `flake_count`/`area`
+  and the live LineFlow state, so it needs tuning per machine — NOT done yet.
+- **Still to mine from these photos:**
+  - brick wall + staircase in the background — relevant to the deferred tex-02
+    (building shell walls, previously rendered black and needing operator eyes);
+  - the belt itself: tan/khaki rubber with raised cleats and dirty side rails;
+  - the black rubber flap at the left of photo 1 is the **chute from the extruder
+    silo** (operator). Check what the model currently puts there.
+  - the close-up is a good candidate for a tiling albedo texture for bulk shred.
