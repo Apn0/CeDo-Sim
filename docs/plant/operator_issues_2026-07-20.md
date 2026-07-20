@@ -299,3 +299,51 @@ REMAINING USERS OF THE STALE CONSTANTS (same class, not yet fixed):
   operator placed them inside the real walls; the constants are still off by
   metres and should be re-derived or fitted the same way).
 - `src/tests/probe_orbs.gd:22`, `src/tests/seed_fixed_equipment.gd:20`.
+
+## J. Audio map status (asked 2026-07-20) — honest numbers, NOT ">90%"
+
+What exists and works:
+- 43 clips cut from VID-20250912-WA0011.mp4 in `assets/audio/clips/`, allocation
+  in `assets/audio/audio_layout.json` (43 entries, RD-pinned).
+- `PlantAudio.gd` spawns all 43 as looping AudioStreamPlayer3D at their pinned
+  spots (inverse-distance, unit 4 m / max 30 m, random phase offsets). An earlier
+  mirror-bug (all clips 85 m off) was found and fixed; 30/43 sit within audible
+  range of the operator's working area. Godot's 3D players give positional
+  panning, so basic directionality works by engine default.
+
+NOT done — 0%, not "handled":
+- Production-state coupling: clips loop 24/7 regardless of whether the machinery
+  at that spot is running. Nothing reads LineFlow/machine state.
+- Machine binding: audio_layout.json has NO machine field and every `notes`
+  field is EMPTY (checked all 43) — clips are pinned to GPS spots, they do not
+  follow a machine that gets moved, and nothing knows which machine a clip
+  belongs to. The placer never exported that data; allocating it is operator
+  work the pipeline has no input for yet.
+- Special-sound extraction: zero clips are tagged; no Merlo reverse alarm was
+  extracted. The reverse beeper on every vehicle is a SYNTHESIZED tone
+  (BaseVehicle._fill_beeper, AudioStreamGenerator) — not the real recording.
+
+## K. Reverse alarm inverted on forklift/bale clamp — root cause + fix
+
+Operator: "why is the reverse alarm when I go forwards and vice versa?
+Forks/clamps and seat position and look direction are forwards."
+
+Measured from the scenes: Forklift (mast z=+1.3, CarryPoint +1.05), BaleClamp
+(CarryPoint +0.55), Merlo (+0.4) and MerloP40 all have the working gear on +Z,
+and all four cab cameras are yawed 180° — the seat faces the gear. But the
+canonical drive convention is forward = -Z, so the code called fork-first travel
+"reverse": the forward key drove AWAY from what the operator faces, and the
+beeper + reverse beam fired during fork-first travel. Every subsystem had
+quietly compensated (camera yawed, NPC "carry-first reverse" legs, light layout)
+— the beeper was just where the contradiction became audible.
+
+Fix: `BaseVehicle.operator_forward_sign` (-1 on those four; MastLift/cars stay
+canonical) applied at the OPERATOR boundary only: throttle polarity (forward key
+now drives gear-first), steering polarity (left stays the seat's left), beeper/
+beam gate (alarm on counterweight-first travel), and the light layout mirrored
+(work lights on the gear side, reverse beam on the counterweight). NPC autopilot
+paths are untouched and stay canonical — NPC counterweight-first legs now beep,
+which is what a real forklift does.
+
+Verified: harness 15/0/2, npc bench PASS, feeder sequence PASS, merlo_p40 17/0,
+mast_jib 14/0. NEEDS an in-game drive to confirm feel (W = fork-first now).

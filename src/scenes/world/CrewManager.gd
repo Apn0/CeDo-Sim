@@ -318,10 +318,7 @@ func tick(delta: float) -> void:
 			_emit("machine_alarm_raised", [sid, "BUF-300", 2])
 		# else: nobody free — the jam festers (the break-time tension).
 
-	# 2b) Dispatch on FULL WASTE BIN — a skip/bay over its safe_fill is just as
-	#     urgent as a machine jam (the chute backs up, the line stalls). We use
-	#     the same _handling dict so a bin isn't double-claimed.
-	_dispatch_for_full_bin()
+	# npc-05 — bin dispatch removed: container-emptying is owned solely by NpcAutonomyBoard (Tier 4 OverflowDumpTask); CrewManager keeps production + breaks. See docs/DESIGN_npc05_container_chain_2026-07-20.md.
 
 	# 3) Rotate breaks — at most one post unmanned at a time.
 	_update_breaks(delta)
@@ -350,40 +347,6 @@ func _update_breaks(delta: float) -> void:
 			_radio_break_call(cand)
 		else:
 			_break_timer = 5.0          # nobody free right now — try again soon
-
-## Find the most-overfull WasteContainer (skip / bay / etc.) and dispatch a free
-## worker to it. The "service" here is conceptual — the worker walks over and
-## stands by; later the forklift step would do the actual empty(). The dispatch
-## is mass-action-style: we treat any over-safe-fill bin as needing attention,
-## prioritising the one furthest past its threshold.
-func _dispatch_for_full_bin() -> void:
-	var ml := Engine.get_main_loop()
-	if not (ml is SceneTree):
-		return
-	var worst : Node = null
-	var worst_frac := 0.85   # only act past safe-fill
-	for c in (ml as SceneTree).get_nodes_in_group("waste_container"):
-		if c == null or not c.has_method("fill_fraction"):
-			continue
-		var f : float = c.call("fill_fraction")
-		if f <= worst_frac:
-			continue
-		var bin_key := "bin_%d" % (c as Object).get_instance_id()
-		if _handling.has(bin_key):
-			continue          # already being attended to this round
-		worst_frac = f
-		worst = c
-	if worst == null:
-		return
-	var pos := (worst as Node3D).global_position
-	var resp : NPC = _pick_responder("waste_bin", pos)
-	if resp == null:
-		return     # nobody free — the bin festers (will be retried next tick)
-	resp.dispatch_to(pos, "waste_bin", SERVICE_SECS)
-	var key := "bin_%d" % (worst as Object).get_instance_id()
-	_handling[key] = resp
-	_emit("npc_called_for_help", ["crew", String(resp.npc_name), "waste_bin"])
-	_emit("npc_started_helping", [String(resp.npc_name), "", "waste_bin"])
 
 ## A colleague announces their break over the two-way radio. Routed through the
 ## Walkie autoload, which decides if the player actually HEARS it (battery alive,

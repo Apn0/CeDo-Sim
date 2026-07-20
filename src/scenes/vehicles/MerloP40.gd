@@ -96,6 +96,11 @@ var _player_node     : Node   = null
 
 # =============================================================================
 func _ready() -> void:
+	# Gear + cab camera sit on +Z on this vehicle (canonical forward is -Z):
+	# the seat faces the working side. Flip the operator boundary so the
+	# forward key drives gear-first and the reverse alarm fires on
+	# counterweight-first travel. See BaseVehicle.operator_forward_sign.
+	operator_forward_sign = -1.0
 	# Merlo._ready() sets boom_min/max + bucket/grapple defaults + calls
 	# BaseVehicle._ready (which builds the lights/audio aux). After it returns
 	# we restore vehicle_type (Merlo overwrites to "merlo") and then load the FBX.

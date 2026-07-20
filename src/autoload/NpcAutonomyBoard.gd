@@ -292,34 +292,38 @@ func _scan_lump_carts(tree: SceneTree, seen: Dictionary) -> void:
 		task.priority += pri_mod
 		_open_tasks[tid] = task
 
-## #198 — Operator's container policy: indoor lumps container holds ~8-10
-## lumps; we always WANT it as close to empty as possible at handover. So
-## the destination logic:
-##   1. If indoor container has room AND we're not in handover, use it
-##      (normal "cool a few, dump them inside, continue" flow).
-##   2. If we ARE in handover AND indoor already holds >= 3, route this load
-##      to the outdoor shipping container instead — the operator's goal is
-##      to leave the indoor container at most 1-3 deep for team B.
-##   3. If indoor is full (>=8) at any time, route to outdoor.
-##   4. Outdoor shipping container is the ultimate fallback (open-top, takes
-##      bulk overflow).
-const INDOOR_HANDOVER_TARGET : int = 3    # leave at most this many for team B
-const INDOOR_HARD_CAP        : int = 8    # absolute "container is full"
+## #198 — Operator's container policy (npc-05 — picks on fill_fraction() now;
+## the old lumps-count constants are comment-history: INDOOR_HANDOVER_TARGET
+## (= 3) is gone, INDOOR_HARD_CAP survives only as the lumps_count fallback in
+## _scan_overflow_containers()). Destination logic:
+##   1. If an indoor bin has room, use the emptiest one (normal "cool a few,
+##      dump them inside, continue" flow).
+##   2. During handover a bin already counts as full from fill_fraction()
+##      >= 0.5 — the operator's goal is to leave the indoor bins near-empty
+##      for team B, so loads route onward sooner.
+##   3. Bins reporting is_full() are never "open", at any time.
+##   4. The outdoor skip (group "waste_container_outdoor", lowest fill) is the
+##      ultimate fallback (open-top, takes bulk overflow) once no indoor bin
+##      is open; with no skip in the world, fall back to the emptiest indoor.
+const INDOOR_HARD_CAP : int = 8   # npc-05 — only _scan_overflow_containers()'s lumps_count fallback reads this
 ## `exclude` (npc-04): skip this container when picking — a dump's SOURCE bin
 ## must never be chosen as its own destination.
 func _choose_lumps_destination(tree: SceneTree, exclude: Node3D = null) -> Node3D:
-	# Real destinations are WasteContainer nodes (group "waste_container"); nothing
-	# in the repo tags the old "lumps_container_indoor"/"shipping_container_outdoor"
-	# groups. We prefer a container that isn't full (has_method receive_lumps +
-	# not is_full); among those, take the emptiest. If every container is full we
-	# still return the emptiest so a forklift run at least moves the cart off the
-	# discharge (the container's own overflow model handles the spill).
+	# npc-05 — #198 revived: indoor candidates are "waste_container" nodes NOT
+	# in "waste_container_outdoor"; the outdoor skip is tracked separately as
+	# the rule-4 fallback. Among open indoor bins take the emptiest; if none is
+	# open (all full, or handover-tightened) return the least-filled skip; with
+	# no skip in the world return the emptiest indoor anyway so a forklift run
+	# at least moves the cart off the discharge (the container's own overflow
+	# model handles the spill).
 	var mw_ref : Node = _find_main_world(tree)
 	var in_handover : bool = _shift_phase(mw_ref) == ShiftPhase.HANDOVER
 	var best_open : Node3D = null
 	var best_open_fill : float = INF
 	var best_any : Node3D = null
 	var best_any_fill : float = INF
+	var outdoor_lowest : Node3D = null   # npc-05 — least-filled outdoor skip
+	var outdoor_lowest_fill : float = INF
 	for c in tree.get_nodes_in_group("waste_container"):
 		if not (c is Node3D and is_instance_valid(c)):
 			continue
@@ -330,6 +334,13 @@ func _choose_lumps_destination(tree: SceneTree, exclude: Node3D = null) -> Node3
 		var fill : float = 0.0
 		if c.has_method("fill_fraction"):
 			fill = float(c.call("fill_fraction"))
+		if c.is_in_group("waste_container_outdoor"):
+			# npc-05 — skips are destinations only, never indoor candidates
+			# (otherwise: outdoor full → dump outdoor→outdoor loop).
+			if fill < outdoor_lowest_fill:
+				outdoor_lowest_fill = fill
+				outdoor_lowest = c as Node3D
+			continue
 		if fill < best_any_fill:
 			best_any_fill = fill
 			best_any = c as Node3D
@@ -345,7 +356,9 @@ func _choose_lumps_destination(tree: SceneTree, exclude: Node3D = null) -> Node3
 			best_open = c as Node3D
 	if best_open != null:
 		return best_open
-	return best_any   # everything full — emptiest still beats leaving the cart
+	if outdoor_lowest != null:
+		return outdoor_lowest   # npc-05 — #198 rule 4: indoor full/tightened → outdoor skip
+	return best_any   # npc-05 — no skip in the world: emptiest indoor still beats leaving the cart
 
 # ── Stubs for future task generators (operator-described pipeline). ─────────
 # Each can be filled in by writing a new NpcAutonomyTask subclass under
@@ -532,34 +545,28 @@ func _cleaning_priority_modifier(mw: Node) -> int:
 		mod -= PRIORITY_PENALTY_PROBLEM
 	return mod
 
-## When the indoor lumps_container crosses is_full(), an NPC drives a forklift
-## load of bulk lumps from indoor → outdoor shipping_container instead.
+## npc-05 — When any indoor waste_container crosses is_full(), an NPC drives a
+## forklift load of bulk lumps from that bin to the outdoor skip (group
+## "waste_container_outdoor") with the most room — one OverflowDumpTask PER
+## full indoor bin. No skip in the world, or no idle forklift → emit nothing.
 func _scan_overflow_containers(tree: SceneTree, seen: Dictionary) -> void:
-	var indoor : Node3D = null
-	for c in tree.get_nodes_in_group("lumps_container_indoor"):
-		if c is Node3D and is_instance_valid(c):
-			indoor = c
-			break
-	if indoor == null:
-		return
-
-	var is_full : bool = false
-	if indoor.has_method("is_full"):
-		is_full = bool(indoor.call("is_full"))
-	elif "lumps_count" in indoor:
-		is_full = int(indoor.get("lumps_count")) >= INDOOR_HARD_CAP
-
-	if not is_full:
-		return
-
+	# npc-05 — destination: the outdoor skip with the lowest fill_fraction().
 	var outdoor : Node3D = null
-	for c in tree.get_nodes_in_group("shipping_container_outdoor"):
-		if c is Node3D and is_instance_valid(c):
-			outdoor = c
-			break
+	var outdoor_fill : float = INF
+	for c in tree.get_nodes_in_group("waste_container_outdoor"):
+		if not (c is Node3D and is_instance_valid(c)):
+			continue
+		var fill : float = 0.0
+		if c.has_method("fill_fraction"):
+			fill = float(c.call("fill_fraction"))
+		if fill < outdoor_fill:
+			outdoor_fill = fill
+			outdoor = c as Node3D
 	if outdoor == null:
 		return
 
+	# npc-05 — global gate: without an idle forklift no dump run can start, so
+	# don't emit (or refresh `seen`) for any bin this scan.
 	var has_idle_forklift : bool = false
 	for f in tree.get_nodes_in_group("forklift"):
 		if f is Node3D and is_instance_valid(f):
@@ -569,20 +576,35 @@ func _scan_overflow_containers(tree: SceneTree, seen: Dictionary) -> void:
 	if not has_idle_forklift:
 		return
 
-	var tid : int = indoor.get_instance_id()
-	seen[tid] = true
-	if _open_tasks.has(tid):
-		return
-
 	var script := load("res://src/scenes/world/tasks/OverflowDumpTask.gd")
 	if script == null:
 		return
 
-	var task : NpcAutonomyTask = script.new(indoor, outdoor)
 	var mw_ref : Node = _find_main_world(tree)
-	task.base_priority = task.priority   # npc-09 — snapshot for in-place refresh
-	task.priority += _cleaning_priority_modifier(mw_ref)
-	_open_tasks[tid] = task
+	var pri_mod : int = _cleaning_priority_modifier(mw_ref)
+	# npc-05 — one task per full indoor bin (the old code emitted only for the
+	# first bin it happened to find). Indoor = in "waste_container" but NOT in
+	# "waste_container_outdoor".
+	for bin in tree.get_nodes_in_group("waste_container"):
+		if not (bin is Node3D and is_instance_valid(bin)):
+			continue
+		if bin.is_in_group("waste_container_outdoor"):
+			continue   # npc-05 — the skip is a destination, never a source
+		var is_full : bool = false
+		if bin.has_method("is_full"):
+			is_full = bool(bin.call("is_full"))
+		elif "lumps_count" in bin:
+			is_full = int(bin.get("lumps_count")) >= INDOOR_HARD_CAP
+		if not is_full:
+			continue
+		var tid : int = bin.get_instance_id()
+		seen[tid] = true
+		if _open_tasks.has(tid):
+			continue
+		var task : NpcAutonomyTask = script.new(bin as Node3D, outdoor)
+		task.base_priority = task.priority   # npc-09 — snapshot for in-place refresh
+		task.priority += pri_mod
+		_open_tasks[tid] = task
 
 # ── Generator 1b: refuel low-fuel leaf blowers. ─────────────────────────────
 # A two-stroke leaf blower runs dry (LeafBlower.fuel_pct()); once below

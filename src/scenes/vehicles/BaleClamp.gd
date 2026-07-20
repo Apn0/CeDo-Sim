@@ -140,6 +140,11 @@ var _ghost_flash_t        : float = 0.0
 
 # =============================================================================
 func _ready() -> void:
+	# Gear + cab camera sit on +Z on this vehicle (canonical forward is -Z):
+	# the seat faces the working side. Flip the operator boundary so the
+	# forward key drives gear-first and the reverse alarm fires on
+	# counterweight-first travel. See BaseVehicle.operator_forward_sign.
+	operator_forward_sign = -1.0
 	# Drive-ramp tuning per the throttle/brake audit. The clamp + LPG-twin tank
 	# rig is heavier than a bare forklift and operators drive it more cautiously
 	# when bales are aboard — slowest spool-up of the lift fleet, ~1.1 s to top

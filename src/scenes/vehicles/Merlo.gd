@@ -71,6 +71,11 @@ var _bucket_tilt : Node3D
 var _grapple_arm : Node3D
 
 func _ready() -> void:
+	# Gear + cab camera sit on +Z on this vehicle (canonical forward is -Z):
+	# the seat faces the working side. Flip the operator boundary so the
+	# forward key drives gear-first and the reverse alarm fires on
+	# counterweight-first travel. See BaseVehicle.operator_forward_sign.
+	operator_forward_sign = -1.0
 	# Drive-ramp tuning per the throttle/brake audit. Telehandler diesel pulls
 	# harder than an electric forklift but the chassis is heavier and the
 	# operator carries the full mass with a long boom — longest input tau (1.5 s)

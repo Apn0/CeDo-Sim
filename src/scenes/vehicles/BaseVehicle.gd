@@ -136,6 +136,16 @@ const STACK_VERTICAL_GAP  : float = 0.30
 var _carried_natural_local_y : Dictionary = {}
 
 # Input axes (set each frame by _gather_input when occupied)
+## OPERATOR-FORWARD SIGN (operator report 2026-07-20: "reverse alarm when I go
+## forwards and vice versa. Forks/clamps and seat position and look direction
+## are forwards"). Forklift / BaleClamp / Merlo / MerloP40 are authored with the
+## working gear AND the cab camera on +Z, while the canonical drive convention
+## is forward = -basis.z. So the seat looks at the forks, but the code called
+## fork-first travel "reverse": the throttle key drove AWAY from what the
+## operator faces, and the reverse beeper + beam fired during fork-first travel.
+## -1.0 flips the OPERATOR boundary only (throttle sign, steering sign, beeper/
+## beam gate, beam aim). NPC autopilot paths stay canonical and are untouched.
+@export var operator_forward_sign : float = 1.0
 var _throttle: float = 0.0    # -1 reverse … +1 forward — SMOOTHED throttle command (post-ramp)
 var _throttle_raw : float = 0.0   # -1..+1 raw input axis BEFORE the SmoothedRate input ramp
 var _steering: float = 0.0    # +1 left … -1 right (Godot VehicleWheel3D convention: positive steer = wheels rotate CCW from above = LEFT)
@@ -1293,7 +1303,9 @@ func _gather_input() -> void:
 	# forklift / mast lift ~1.2 s, Merlo ~1.5 s.
 	var fwd := Input.get_action_strength("vehicle_forward")
 	var rev := Input.get_action_strength("vehicle_reverse")
-	_throttle_raw = fwd - rev
+	# operator_forward_sign: on gear-on-+Z vehicles the forward key must drive
+	# fork/clamp-first — the direction the seat faces.
+	_throttle_raw = (fwd - rev) * operator_forward_sign
 	# Re-tune the smoother in case a subclass changed tau AFTER super._ready
 	# (Forklift._ready / MastLift._ready / Car subclasses bump tau in this style).
 	if _throttle_smoother:
@@ -1319,6 +1331,11 @@ func _gather_input() -> void:
 	else:
 		_steering = Input.get_action_strength("vehicle_steer_left") \
 				  - Input.get_action_strength("vehicle_steer_right")
+
+	# operator_forward_sign: the operator's LEFT is mirrored on a +Z-facing cab,
+	# and _kinematic_move flips yaw with the sign of the canonical speed — so
+	# without this the fixed throttle polarity would mirror the steering.
+	_steering *= operator_forward_sign
 
 	# Brake (foot brake — separate from handbrake). Same two-stage shape as
 	# throttle: _brake_raw is the instantaneous key axis, _brake is the SmoothedRate
@@ -1737,6 +1754,13 @@ func _vehicle_light_layout() -> Dictionary:
 
 func _build_lights() -> void:
 	var layout := _vehicle_light_layout()
+	# Layout is authored canonical (front -Z, rear +Z). On +Z-gear vehicles the
+	# OPERATOR front is +Z — mirror every z so work lights land on the fork side
+	# and the reverse beam on the counterweight.
+	if operator_forward_sign < 0.0:
+		for k in layout:
+			var v : Vector3 = layout[k]
+			layout[k] = Vector3(v.x, v.y, -v.z)
 	_build_work_lights(layout)
 	_build_hazard_lights(layout)
 	_build_reverse_beam(layout)
@@ -1752,7 +1776,7 @@ func _build_work_lights(layout: Dictionary) -> void:
 		# Aim slightly down and forward. Canonical -Z forward → a SpotLight3D
 		# with rotation.y = 0 already points along -Z (Godot's default
 		# Camera3D/SpotLight3D convention), which IS forward. No yaw needed.
-		sl.rotation_degrees = Vector3(-18.0, 0.0, 0.0)
+		sl.rotation_degrees = Vector3(-18.0, 0.0 if operator_forward_sign > 0.0 else 180.0, 0.0)
 		sl.light_color = Color(1.0, 0.96, 0.88)
 		sl.light_energy = 4.0
 		sl.spot_range = 22.0
@@ -1794,7 +1818,7 @@ func _build_reverse_beam(layout: Dictionary) -> void:
 	_light_rev = SpotLight3D.new()
 	_light_rev.name = "ReverseBeam"
 	_light_rev.position = layout["reverse"]
-	_light_rev.rotation_degrees = Vector3(-22.0, 180.0, 0.0)
+	_light_rev.rotation_degrees = Vector3(-22.0, 180.0 if operator_forward_sign > 0.0 else 0.0, 0.0)
 	_light_rev.light_color = Color(1.0, 0.97, 0.88)
 	_light_rev.light_energy = 3.2
 	_light_rev.spot_range = 14.0
@@ -2016,7 +2040,11 @@ func _tick_vehicle_aux(delta: float) -> void:
 	# comparing it to a negative threshold made `reversing` ALWAYS false and left
 	# the reverse beam + reverse beeper permanently dead on every vehicle (bughunt
 	# 2026-07-17). _current_speed_mps is signed (negative when reversing / rolling back).
-	var fwd_spd := _current_speed_mps
+	# Operator-frame signed speed: positive = toward where the seat faces.
+	# On +Z-gear vehicles canonical speed is negated, so fork-first travel is
+	# operator-forward (silent) and counterweight-first travel beeps — which is
+	# also physically right for NPC-driven forklifts on their canonical legs.
+	var fwd_spd := _current_speed_mps * operator_forward_sign
 	var reversing := occupied and fwd_spd < -0.20
 	if _light_rev:
 		_light_rev.visible = reversing

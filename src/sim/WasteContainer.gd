@@ -57,6 +57,12 @@ enum OverflowState { NONE, WARNING, SPILLING, BLOCKED }
 ## Drained fluid is just removed from the world (in reality it goes to a sewer
 ## or another tank — modelled as bookkeeping for now).
 @export var fluid_valve : bool = false
+## npc-05 — True for the OUTDOOR open-top end-destination skip: the forklift
+## dumps full indoor bins here and the crew never empties it on foot (a full
+## outdoor skip is a HUD/gauge warning only — the truck swap that would relieve
+## it is outside sim scope). Joins the "waste_container_outdoor" group in
+## _ready() so generators can scan outdoor destinations cheaply.
+@export var outdoor_skip : bool = false
 
 const DRAIN_RANGE : float = 1.6
 var _player_near : bool = false
@@ -99,6 +105,13 @@ var _gauge_label : Label3D = null
 # =============================================================================
 func _ready() -> void:
 	add_to_group("waste_container")
+	# npc-05 — outdoor end-destination skips ALSO join a dedicated scan group so
+	# generators can split indoor sources from outdoor destinations without
+	# probing every container's properties. Read at tree-enter time: spawners
+	# must set outdoor_skip BEFORE add_child() (ContainerGuideManager's real-
+	# container spawn does exactly that).
+	if outdoor_skip:
+		add_to_group("waste_container_outdoor")
 	_build_overflow_mound()
 	if show_gauge:
 		_build_fill_gauge()

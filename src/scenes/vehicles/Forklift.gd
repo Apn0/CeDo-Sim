@@ -114,6 +114,11 @@ var _ghost_flash_t        : float = 0.0
 
 # =============================================================================
 func _ready() -> void:
+	# Gear + cab camera sit on +Z on this vehicle (canonical forward is -Z):
+	# the seat faces the working side. Flip the operator boundary so the
+	# forward key drives gear-first and the reverse alarm fires on
+	# counterweight-first travel. See BaseVehicle.operator_forward_sign.
+	operator_forward_sign = -1.0
 	# Drive-ramp tuning per the throttle/brake audit. Real Linde/Toyota counter-
 	# balance forklifts feel deliberately sluggish — operators don't want to
 	# wheelspin a 4-tonne mast. ~0.95 s 0→12 km/h, ~0.21 s panic-stop from
