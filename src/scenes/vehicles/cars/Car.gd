@@ -288,7 +288,14 @@ func load_model() -> void:
 	# the artistic squish on top.
 	if root is Node3D and _real_world_length_m > 0.01:
 		var auto : float = _measure_model_scale(root as Node3D, _real_world_length_m)
-		if auto > 0.01 and not is_equal_approx(auto, 1.0):
+		# Floor is 1e-4, NOT 0.01. The old `auto > 0.01` guard silently rejected
+		# the Hyundai i20: its GLB is authored in centimetres (394.73 m raw), so
+		# the correct factor is 3.94/394.73 = 0.00998 — a hair BELOW 0.01 — and
+		# the car spawned 100x life size with no warning. The ford_ka only worked
+		# by luck (3.62/362 = 0.01000, a hair ABOVE). The floor only needs to
+		# reject degenerate zero-ish factors; _measure_model_scale already
+		# returns 1.0 for sub-centimetre AABBs.
+		if auto > 0.0001 and not is_equal_approx(auto, 1.0):
 			(root as Node3D).scale = (root as Node3D).scale * auto
 			# The VehicleWheel3D nodes are CHILDREN OF self (the Car), not of the
 			# imported model root. Scaling the imported model alone leaves the
@@ -299,7 +306,12 @@ func load_model() -> void:
 			# their wheel_radius (so physics matches visuals), and any
 			# WheelMesh child (so the procedural placeholder shrinks too).
 			_scale_vehicle_wheels(auto)
-			print("[Car] %s auto-scaled by %.3f to %.2f m" % [_model_path.get_file(), auto, _real_world_length_m])
+			print("[Car] %s auto-scaled by %.4f to %.2f m" % [_model_path.get_file(), auto, _real_world_length_m])
+		elif auto <= 0.0001:
+			# Never skip silently again — a silent skip is how a 395 m car
+			# reached the operator's car park.
+			push_warning("[Car] %s auto-scale REJECTED (factor %.6f) — model left at raw size!"
+				% [_model_path.get_file(), auto])
 	# #155 — subclass can override _model_scale (default 1,1,1) to squish the
 	# imported GLB vertically — e.g. Pascal's Streetka uses the Ka GLB at
 	# y=0.85 to read as the lower droptop convertible variant. Multiplied ON TOP of
