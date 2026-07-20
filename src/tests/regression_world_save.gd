@@ -140,7 +140,10 @@ func _ready() -> void:
 	_test_macros()   # BEFORE save-creation, which clears the in-memory macro cache
 	await _test_save_creation(world)
 	_collect_footprint_and_doors(wl)
-	_test_exterior(world)
+	# _test_exterior awaits a physics frame (the TL rod-gap raycast needs the
+	# shell colliders queryable) — MUST be awaited, or the verdict + quit below
+	# run first and the exterior checks silently never count.
+	await _test_exterior(world)
 
 	# Verdict list for the render.
 	_dump["checks"] = [
@@ -383,28 +386,55 @@ func _test_exterior(world: Node) -> void:
 	if oh == null:
 		print("  note  : OverheadLights node not found"); _skip += 1
 	else:
+		# One physics frame so the shell's static colliders are queryable.
+		await world.get_tree().physics_frame
+		var space := (world as Node3D).get_world_3d().direct_space_state
 		var tl_out := 0
 		var tl_float := 0
+		var tl_gap_fail := 0
+		var tl_worst_gap := 0.0
 		var tl_n := 0
 		for fx in (oh as Node).get_children():
 			if not (fx is Node3D):
 				continue
 			tl_n += 1
 			var pos : Vector3 = (fx as Node3D).global_position
-			var bf := _scene_to_bf(pos)
-			var inside := _bf_inside(bf, 1.0)
-			var has_rod := false
-			for ch in (fx as Node).get_children():
-				if ch is MeshInstance3D:
-					has_rod = true
-					break
+			# PHYSICAL inside-test: a bar is inside iff the measured shell has a
+			# roof face above it. The old test mapped through the baked BF_O
+			# affine — the same stale constants that put the bars in the wrong
+			# place to begin with (fitted frame vs baked origin differ by
+			# metres; see InteriorLightingManager._fit_building_frame).
+			var inside := false
+			if space != null:
+				var qi := PhysicsRayQueryParameters3D.create(pos + Vector3.UP * 0.3, pos + Vector3.UP * 45.0)
+				inside = not space.intersect_ray(qi).is_empty()
+			# VACUOUS-CHECK FIX (operator 2026-07-20, "mounted to the air"): the
+			# old has_rod test accepted ANY MeshInstance3D child — and the TL BAR
+			# ITSELF is one, so "0 floating" was true even with no rod at all.
+			# Now: the rod must exist by name, AND its top must MEASURABLY reach
+			# the roof — raycast straight up and compare against the rod top.
+			var rod := (fx as Node).get_node_or_null("MountRod") as MeshInstance3D
+			if rod == null:
+				tl_float += 1
+			elif space != null:
+				var rod_len : float = (rod.mesh as BoxMesh).size.y if rod.mesh is BoxMesh else 0.0
+				var rod_top_y : float = (fx as Node3D).global_position.y + 0.12 + rod_len
+				var q := PhysicsRayQueryParameters3D.create(pos + Vector3.UP * 0.3, pos + Vector3.UP * 45.0)
+				var hit := space.intersect_ray(q)
+				if hit.is_empty():
+					tl_gap_fail += 1     # nothing above the bar to mount to at all
+				else:
+					var gap : float = absf(float((hit["position"] as Vector3).y) - rod_top_y)
+					tl_worst_gap = maxf(tl_worst_gap, gap)
+					if gap > 0.15:
+						tl_gap_fail += 1
 			if not inside:
 				tl_out += 1
-			if not has_rod:
-				tl_float += 1
 			tl_dump.append({"pos": [pos.x, pos.y, pos.z], "inside": inside})
-		_ok(tl_out == 0, "all %d TL bars inside the building (%d OUTSIDE)" % [tl_n, tl_out])
-		_ok(tl_float == 0, "all %d TL bars rod-mounted (%d floating)" % [tl_n, tl_float])
+		_ok(tl_out == 0, "all %d TL bars under a MEASURED roof face (%d not)" % [tl_n, tl_out])
+		_ok(tl_float == 0, "all %d TL bars have a MountRod (%d without)" % [tl_n, tl_float])
+		_ok(tl_gap_fail == 0, "all %d TL rods REACH the measured roof (%d in mid-air, worst gap %.2f m)"
+			% [tl_n, tl_gap_fail, tl_worst_gap])
 	_dump["tl_bars"] = tl_dump
 
 	# ── SPAWNS: finite + within a sane radius of the plant centre ─────────────

@@ -265,3 +265,37 @@ drive off the right-hand edge. So the real running order puts the laser filter
 and the vacuum pots as FLOOR-STANDING units on the far side of the head filter,
 not as a disc and two domes riding the barrel crown. Still to build, and the
 axis mapping (which way is +Z) needs confirming before anything is moved.
+
+## I. TL bars "mounted to the air" — root cause + fix (2026-07-20)
+
+Operator: "Explain how TL bars are hanging on a mount, mounted to the air,
+without falling."
+
+Honest physics answer first: they can never fall — TL bars are static meshes,
+and gravity in this engine only acts on RigidBody3D. A wrongly-drawn mount just
+hangs where code drew it, forever. "Physics is present" is only true for rigid
+bodies (bales, carts, film pieces), never for building fixtures.
+
+Measured chain (each step forced by the previous measurement):
+1. Rod lengths came from hand-typed per-zone roof heights. New harness raycast:
+   **38/39 rods ended in mid-air, worst gap 5.67 m.**
+2. Stretching rods to a measured roof exposed worse: **28/39 bars had NO shell
+   face above their column at all** — the whole bay grid stood outside the arcs.
+3. The arcs exist in the mesh (verified in the OBJ: smooth 7.40→10.58 m arc
+   verts) and in the collision (452 roof-band tris). The bars were placed via
+   the HAND-BAKED affine `BF_PC_O(573.404, 463.647)` from 2026-07-06 — and the
+   regression "inside" check used a COPY of the same constants. Two copies of
+   one stale mapping validating each other; the mesh disagreed with both.
+4. Fix: `InteriorLightingManager._fit_building_frame()` fits the frame to the
+   shell's measured collision hull (rotating-calipers OBB + roof-height probes,
+   mean err 0.18 m) every boot; bars place through the fit; every rod is then
+   stretched to an upward raycast hit. Harness now proves it physically:
+   **39/39 under a measured roof face, 39/39 rods reach it, worst gap 0.00 m.**
+
+REMAINING USERS OF THE STALE CONSTANTS (same class, not yet fixed):
+- `src/scenes/hud/MapOverlay.gd:226` `_BF_PC_O` — the site-map building outline.
+- `src/tests/regression_world_save.gd:31` `BF_O` — still used for MACHINE
+  inside-tests and door-on-wall tests (machines pass with margin because the
+  operator placed them inside the real walls; the constants are still off by
+  metres and should be re-derived or fitted the same way).
+- `src/tests/probe_orbs.gd:22`, `src/tests/seed_fixed_equipment.gd:20`.
