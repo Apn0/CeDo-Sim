@@ -138,7 +138,12 @@ func _ready() -> void:
 	await get_tree().process_frame
 	await get_tree().create_timer(0.5).timeout
 	var img := get_viewport().get_texture().get_image()
-	var outp : String = "user://annot_%s.png" % pid
+	# Operator rule 2026-07-20: renders ALWAYS land in the project folder,
+	# never only in user:// or a temp dir — a render nobody can find is a
+	# render that gets re-made from scratch next session.
+	var out_dir := "res://docs/plant/renders/"
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(out_dir))
+	var outp : String = out_dir + "annot_%s.png" % pid
 	img.save_png(outp)
 	print("[ANNOT] saved ", ProjectSettings.globalize_path(outp))
 	get_tree().quit(0)

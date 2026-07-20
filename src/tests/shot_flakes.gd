@@ -62,8 +62,14 @@ func _ready() -> void:
 	await get_tree().process_frame
 	await get_tree().create_timer(0.6).timeout
 	var img := get_viewport().get_texture().get_image()
-	img.save_png("user://shot_flakes.png")
-	print("[FLAKES] saved ", ProjectSettings.globalize_path("user://shot_flakes.png"))
+	# Operator rule 2026-07-20: renders ALWAYS land in the project folder,
+	# never only in user:// or a temp dir — a render nobody can find is a
+	# render that gets re-made from scratch next session.
+	var out_dir := "res://docs/plant/renders/"
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(out_dir))
+	var outp := out_dir + "shot_flakes.png"
+	img.save_png(outp)
+	print("[FLAKES] saved ", ProjectSettings.globalize_path(outp))
 	get_tree().quit(0)
 
 ## The previous model, reproduced exactly: one flat box, yaw only, palette cycled.

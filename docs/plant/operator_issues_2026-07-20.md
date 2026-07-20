@@ -117,3 +117,51 @@ What they establish:
   - the black rubber flap at the left of photo 1 is the **chute from the extruder
     silo** (operator). Check what the model currently puts there.
   - the close-up is a good candidate for a tiling albedo texture for bulk shred.
+
+## F. Operator photo set now IN the repo — `docs/plant/photos/extruder_2026-07-20/`
+
+Operator instruction: **"also save images to the project folder always~!!!"** The
+photos had been sitting on his Desktop with self-describing filenames the whole
+time; nothing was missing, I just never looked there. Eight copied in.
+
+**The filename prefix on the annotated shot IS a colour legend** — he had already
+drawn the polygons I asked for:
+
+`gr-HMI_or-laserfilter_bl-vacuumpots_ye-vacuumcatchresiduebin_pu-headfiltercontrol_pi-headfiltercabinetclosed.jpg`
+
+| Colour | Part | What the photo shows |
+|---|---|---|
+| green  | HMI | separate floor-standing panel, well off to the side |
+| orange | laser filter | its own floor unit, NOT on the barrel |
+| blue   | vacuum pots | floor-standing pots beside the line |
+| yellow | vacuum catch residue bin | small bin under the vacuum pots |
+| purple | head-filter control | narrow vertical panel at floor level, beside the cabinet |
+| pink   | head-filter cabinet (closed) | LARGE stainless floor-standing cabinet next to the barrel end |
+
+### This contradicts the current model more deeply than the PCU did
+- **Vacuum degassing is modelled as two small domes ON the barrel crown**
+  (`PlaceableCatalog.gd` SECTION 5b). The photo shows **floor-standing vacuum
+  pots with their own residue bin**, off the barrel entirely.
+- **The head filter is modelled as a slim housing on the barrel.** The photo
+  shows a **large floor-standing stainless cabinet** roughly the height of a
+  person, with its **control panel as a separate vertical unit beside it** — so
+  the "invented" mini panel is not just unplaced, it is the wrong object at the
+  wrong scale.
+- **The pelletizer** (`pelletizer_closed_hatch.jpg`) is a **cylindrical housing
+  with a clamped round hatch** on an EREMA-blue body — not the rectangular
+  louvered cabinet currently modelled. That hatch is the "lid/latch" the operator
+  asked to have outlined.
+- `head_filter_cabinet_open_top-cylinder_out_breaker-plate-in.jpg`,
+  `cylinder_out_no-breaker-plate*.jpg` and `breaker-plate_with-tool-attached.jpg`
+  document the **breaker plate + screen cylinder** and the extraction tool —
+  parts that do not exist in the model at all.
+
+**None of this is built yet.** It is a bigger rebuild than the PCU and should be
+its own pass, machine by machine, with a render approval per step.
+
+## G. Renders now land in the project
+
+`shot_placeable.gd`, `shot_annotate_extruder.gd` and `shot_flakes.gd` write to
+`docs/plant/renders/` instead of `user://`. A render in
+`%APPDATA%\Godot\app_userdata\` is invisible to the operator and uncitable from
+these docs.
