@@ -705,3 +705,72 @@ and an exit-code gate would have reported that as a failure.
 The point of writing these as harness steps rather than one-off runs: every
 defect in this document was invisible to the previous harness, which is exactly
 why they kept coming back.
+
+## R. npc-05 was marked DONE on a vacuous green — corrected 2026-07-21
+
+The backlog listed the container-emptying chain as **DONE** on the strength of a
+bench printing **31/31 PASS**, including the headline
+`S5 ledger balanced: 95 kg emptied == 95.00 kg received`.
+
+That green was the test's own stub handing a number to itself. Verified by
+running the chain in a REAL MainWorld boot — three independent stages, identical
+result:
+
+```
+bin  275.00 -> 275.00 kg   (removed 0.00)
+skip   0.00 ->   0.00 kg   (received 0.00)
+```
+
+**Nothing ever moved.** Four measured causes:
+
+1. **Boarding deadlock.** `OperatorContext` called `npc.set_physics_process(false)`
+   on board, but `OverflowDumpTask.tick()` is only reachable from
+   `NPC._physics_process`. The task froze the instant it boarded — permanently,
+   with `_phase_t` stuck at 0.0 so even the 90 s phase timeout could never fire.
+   The forklift stayed `occupied` forever, jamming the idle-forklift gate for
+   every future dump run in that session (`open=0 active=2` observed live).
+2. **No vehicle could carry bulk.** `load_bulk` / `unload_bulk` existed ONLY in
+   the task's `has_method` guards and in the bench's own stub — zero production
+   implementations. Real session: source bin empties, skip gets `add(0.0)` which
+   returns immediately. **Mass destroyed** — the mirror of §C's mass creation.
+3. **Prune deleted in-flight tasks** — the generator returned before marking bins
+   `seen`, so any occupied forklift erased the live task.
+4. **Refused boardings still advanced the phase** (`NPC.gd` discarded the bool).
+
+**Fixed and re-verified:** bench **81 ok / 0 fail**, and MUTATION-TESTED —
+reverting each individual fix turns specific greens red, so no fix is unguarded.
+Real world now moves **275.00 kg removed == 275.00 kg received**, twice
+(autonomous claim, and the operator's own CrewPanel `force_task`). The boarding
+guard measured 8970 of 8979 seated frames advancing the task clock.
+
+**Still failing, stated not hidden:** with the shipped layout the forklifts park
+205 m away and the autopilot jams against the perimeter fence at a repeatable
+coordinate (-79.90, 157.14) — that is npc-06/npc-07 navigation work, already in
+the backlog, and it was NOT papered over.
+
+**Operator decision needed:** the npc-05 outdoor skip is measurably INDOORS
+(up-ray hits roof 7.9 m above it) despite `ContainerGuide.gd` claiming "~7 m
+outside the east-wing facade" — that comment is now corrected to the measurement.
+Moving it to the geometrically correct yard position was A/B tested: the forklift
+gets outside but wedges 6.95 m short and nothing moves, because navigation cannot
+route it yet. It therefore stays indoors as a labelled assumption; one constant
+(`ContainerGuide` offset) flips it back once npc-06 lands.
+
+**The lesson, again:** a bench that mocks the thing under test proves the mock.
+The bench now includes controls that FAIL when production code is stubbed —
+including a static read of the real Forklift script chain, which is the check
+that would have caught this on day one.
+
+### R2. The harness could also report a FALSE RED
+
+Found while wiring the npc-05 step: `run.sh` took the MAIN regression's process
+exit code as the harness verdict (`code=$?`). Godot can segfault in **teardown**,
+after every check has already passed — observed live as `done (exit 139)` on a
+run whose own log read `Result: 15 ok, 0 fail, 2 skip`, with all six sub-steps
+PASS.
+
+That is the mirror of the vacuous-green problem and just as corrosive: a harness
+that randomly reports red on a clean run teaches you to stop reading it, which is
+how a real red gets ignored. The sub-steps were already verdict-based; the main
+step now is too, and a post-verdict crash is reported as a `note  :` line rather
+than a failure, so it stays visible without lying about the result.

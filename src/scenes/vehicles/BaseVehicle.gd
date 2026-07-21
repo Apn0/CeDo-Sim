@@ -312,6 +312,47 @@ func get_boarding_position() -> Vector3:
 	base.y = global_position.y
 	return base
 
+# ── npc-05 — loose-bulk carry ledger ─────────────────────────────────────────
+# OverflowDumpTask scoops a full indoor waste bin into the vehicle and tips it
+# into the outdoor skip. It probed for load_bulk()/unload_bulk() with
+# has_method() guards, but NOTHING in production implemented them: every real
+# session emptied the indoor bin and then added 0.0 kg to the skip, so the mass
+# left the world silently ("bin empties, skip stays at 0.00 kg, forever").
+#
+# This is a BOOKKEEPING ledger, not a modelled bucket: no geometry, no visual,
+# no capacity limit invented out of thin air. It records what the machine is
+# currently carrying so the mass is conserved across the drive leg, and the
+# density travels with it so the receiving container blends correctly instead of
+# being handed a hardcoded 200 kg/m3.
+var carried_bulk_kg      : float = 0.0
+var carried_bulk_density : float = 0.0
+
+## Take `kg` of loose bulk aboard at `density_kg_m3`. Mass-weighted density blend
+## so two scoops of different material average out honestly.
+func load_bulk(kg: float, density_kg_m3: float = 0.0) -> void:
+	if kg <= 0.0:
+		return
+	var d : float = density_kg_m3 if density_kg_m3 > 0.0 else carried_bulk_density
+	if d <= 0.0:
+		d = 200.0
+	if carried_bulk_kg > 0.0 and carried_bulk_density > 0.0:
+		carried_bulk_density = (carried_bulk_density * carried_bulk_kg + d * kg) / (carried_bulk_kg + kg)
+	else:
+		carried_bulk_density = d
+	carried_bulk_kg += kg
+
+## Tip everything off. Returns the kg that left the vehicle so the caller can
+## ledger the dump; the density it was carried at stays readable until the next
+## load via bulk_density().
+func unload_bulk() -> float:
+	var out : float = carried_bulk_kg
+	carried_bulk_kg = 0.0
+	return out
+
+## Density (kg/m3) of what is aboard — or of what just left, until the next load.
+func bulk_density() -> float:
+	return carried_bulk_density if carried_bulk_density > 0.0 else 200.0
+
 ## NPC boarding — parents the NPC under a SeatMarker node if the vehicle has
 ## one, otherwise pins to the chassis origin. Flips occupied=true so passersby
 ## (and other NPC planners) see the vehicle as taken. Mirrors on_operator_entered
@@ -1158,7 +1199,16 @@ func _physics_process(delta: float) -> void:
 		angular_velocity = Vector3.ZERO
 		_current_speed_mps = 0.0
 		return
-	if occupied:
+	# npc-05 — this used to branch on `occupied`, which BOTH on_operator_entered
+	# AND on_npc_entered set. So the moment an NPC climbed into a vehicle, the
+	# chassis started reading the PLAYER's input actions — which nobody was
+	# pressing — and the `elif` autopilot arm became unreachable for exactly the
+	# case it exists to serve. Measured in the real world: an NPC boarded a
+	# forklift for an OverflowDumpTask and sat there at throttle=0.00,
+	# speed=0.00 m/s for the whole watch window while its task waited to arrive.
+	# `_operator` is set ONLY by on_operator_entered, so it is the honest test
+	# for "a human is holding the controls".
+	if _operator != null:
 		_gather_input()
 		_drive(delta)
 		_consume_fuel(delta)

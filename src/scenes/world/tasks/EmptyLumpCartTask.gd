@@ -118,8 +118,14 @@ func _tick_walk_to_forklift(npc: Node) -> void:
 		return
 	# At the forklift — enter the driver seat. Reuses #148 (NPC Phase 4 vehicle
 	# entry parity) which exposes board_vehicle(npc, vehicle).
+	# npc-05 — honour the board result (same defect OverflowDumpTask had): a
+	# refused board used to set _boarded = true anyway and the task drove on
+	# measuring arrivals against a forklift nobody was sitting in.
 	if npc.has_method("board_vehicle"):
-		npc.call("board_vehicle", _forklift)
+		var seated = npc.call("board_vehicle", _forklift)
+		if typeof(seated) == TYPE_BOOL and not bool(seated):
+			mark_failed("board_refused")
+			return
 		_boarded = true
 	_phase = Phase.DRIVE_TO_CART
 	_phase_t = 0.0

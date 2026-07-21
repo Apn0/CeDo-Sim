@@ -79,20 +79,44 @@ func clear_autonomy_destination() -> void:
 ## Called by tasks that need to move the NPC into a vehicle's driver seat.
 ## Reuses the #148 vehicle-entry parity (NPCs board vehicles the same way the
 ## player does via OperatorContext).
-func board_vehicle(vehicle: Node) -> void:
+## npc-05 — now RETURNS whether the worker actually got seated. It used to
+## discard OperatorContext.npc_board_vehicle()'s bool, so a refused board (no
+## OperatorContext in the tree, vehicle without on_npc_entered, can_enter()
+## false) looked identical to a successful one: the task advanced to its DRIVE
+## phase and measured arrival against a forklift nobody was sitting in.
+func board_vehicle(vehicle: Node) -> bool:
 	if vehicle == null:
-		return
+		return false
 	var op_ctx := get_tree().get_root().find_child("OperatorContext", true, false)
 	if op_ctx and op_ctx.has_method("npc_board_vehicle"):
-		op_ctx.call("npc_board_vehicle", self, vehicle)
+		return bool(op_ctx.call("npc_board_vehicle", self, vehicle))
+	return false
 
 func disembark_vehicle() -> void:
 	var op_ctx := get_tree().get_root().find_child("OperatorContext", true, false)
 	if op_ctx and op_ctx.has_method("npc_disembark_vehicle"):
 		op_ctx.call("npc_disembark_vehicle", self)
 
+## npc-05 — true while OperatorContext has this worker seated in a vehicle.
+##
+## Boarding used to be implemented as set_physics_process(false). The intent was
+## right (a seated body must not run gravity / move_and_slide against the seat's
+## transform) but it also switched off _autonomy_tick, which lives on the same
+## callback — so the very act of boarding a forklift silently killed the task
+## that ordered the boarding. Measured in the real world: the task froze
+## mid-phase with _phase_t stuck at 0.0, so not even PHASE_TIMEOUT_S could fire,
+## and the worker sat motionless for the rest of the shift holding the
+## forklift's occupied flag hostage.
+##
+## The fix keeps _physics_process RUNNING and skips only the locomotion half.
+## Moving the tick to _process would have fixed the deadlock too, but _process
+## delta is real frame time while _physics_process delta is the fixed 1/60 step:
+## that would have made every task deadline frame-rate dependent, so a slow
+## machine would time tasks out sooner than a fast one. Task time stays sim time.
+var _seated_in_vehicle : bool = false
+
 ## Per-tick autonomy tick: poll the board when idle, tick the active task
-## otherwise. Called from _physics_process before the wander/walk logic.
+## otherwise. Called from _physics_process — including while seated, see above.
 func _autonomy_tick(delta: float) -> void:
 	# #223b MANUAL TASK — an operator-assigned forced task OVERRIDES the production
 	# gate + auto-poll below. If one is set, run it to completion and return before
@@ -456,6 +480,13 @@ func _physics_process(delta: float) -> void:
 		_walk_x_smooth = SmoothedRate.new(0.0, _NPC_WALK_TAU_S)
 	if _walk_z_smooth == null:
 		_walk_z_smooth = SmoothedRate.new(0.0, _NPC_WALK_TAU_S)
+	# npc-05 — seated in a vehicle: the chassis owns our transform. Run the
+	# DECISION layer (so the task that seated us keeps ticking, and can steer the
+	# vehicle and eventually order the dismount) and skip every line of
+	# locomotion below — wander, nav, gait, gravity, move_and_slide.
+	if _seated_in_vehicle:
+		_autonomy_tick(delta)
+		return
 	# Vault/climb override (#cluster VAULT_CLIMB): while a mantle tween is
 	# active, we own the transform directly — gravity, walk, nav, jump all stand
 	# aside until we set the NPC down on top of the ledge.

@@ -93,11 +93,40 @@ const CONTAINER_IDS : Array[String] = [
 #                  generous overflow budget, accepts every stream). The
 #                  forklift dumps full indoor bins here; the crew never
 #                  empties it on foot.
-# Placement rationale for the entry below (default layout): ~7 m outside the
-# east-wing exterior facade, in the yard between the legacy test skip, the
-# orange dump pad and the south entry gate — the established forklift route.
+# npc-05 — PLACEMENT, AND WHY IT IS NOT WHERE THE NAME SUGGESTS.
+#
+# This comment used to claim "~7 m outside the east-wing exterior facade". That
+# was false: (12, 0, 28) measures 10.5 m INSIDE the building, under a roof 7.9 m
+# overhead (footprint polygon from tools/regression/out/positions.json, confirmed
+# in-world by an up-ray). The claim has been removed rather than left to mislead.
+#
+# The obvious repair — move it genuinely outdoors — was tried and MEASURED, not
+# assumed. (12, 0, 45.5) = (-190.66, 139.54) is 6.9 m past the facade, 16.5 m
+# inside the perimeter fence, 53.7 m from the nearest of the 42 placed machines.
+# Geometrically ideal. It does not work, and the A/B is unambiguous
+# (src/tests/test_npc05_realworld.gd, 200 sim-second watch, same build):
+#   offset 45.5 (outdoors): forklift crosses out of the hall, then WEDGES 6.95 m
+#                           short of the skip; 47 m covered in 141 s = 0.33 m/s.
+#                           bin 275.00 -> 275.00 kg, skip 0.00 kg. Nothing moved.
+#   offset 28.0 (indoors) : stage 2 bin 275.00 -> 0.00, skip 0.00 -> 275.00 kg.
+#                           Stage 3 (operator CrewPanel force_task) another
+#                           275.00 kg. The chain completes, twice, mass balanced.
+#
+# The blocker is NOT this constant — it is that the NPC vehicle autopilot is
+# dead reckoning (BaseVehicle._npc_drive) over a navmesh with no obstacles baked
+# into it, so it cannot route through a doorway. Both are already logged as
+# npc-06 / npc-07 in docs/BACKLOG_ultracode_2026-07-19.md and are a navigation
+# rewrite, not a placement tweak. Independent evidence from the same runs: in the
+# shipped layout the yard forklift drives straight at the plant and jams against
+# the perimeter fence's east end post at (-79.90, 157.14) — 2.92 m from the fence
+# — at the identical coordinate in two separate runs.
+#
+# So the skip stays INDOORS for now: a working chain the operator can watch beats
+# a correctly-placed skip nothing can reach. Flip this one number to 45.5 the day
+# vehicle pathfinding lands; test_npc05_realworld.gd pins the expectation and will
+# go red the moment the two disagree.
 const WORLD_CONTAINER_SPAWNS : Array[Dictionary] = [
-	# npc-05 O1 — outdoor skip (operator: verplaats gerust, positie is een gelabelde aanname)
+	# npc-05 O1 — end-destination skip (operator: verplaats gerust, positie is een gelabelde aanname)
 	{"offset": Vector3(12.0, 0.0, 28.0), "container_id": "skip_steel", "outdoor": true},
 ]
 

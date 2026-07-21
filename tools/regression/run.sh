@@ -36,8 +36,24 @@ fi
 echo "== running regression =="
 "$GODOT" --headless --path "$PROJ" \
 	--main-scene res://src/tests/regression_world_save.tscn > "$OUT/last_run.log" 2>&1
-code=$?
+raw_code=$?
 grep -E "^\[|ok    :|FAIL  :|note  :|skip  :|Result:" "$OUT/last_run.log" || true
+
+# Verdict-based, like every step below: Godot can segfault in TEARDOWN after a
+# clean pass (observed exit 139 with "15 ok, 0 fail" already printed). Keying the
+# whole harness off the process exit code turns that into a false red, and a
+# harness that randomly reports red teaches you to ignore it — the mirror of the
+# vacuous greens that let the map/npc-05 bugs survive. So: trust the printed
+# verdict, and report a post-verdict crash as a NOTE rather than a failure.
+code=0
+if grep -qE "^Result: [0-9]+ ok, 0 fail" "$OUT/last_run.log"; then
+	if [ $raw_code -ne 0 ]; then
+		echo "note  : regression passed but the engine exited $raw_code (teardown crash, not a test failure)"
+	fi
+else
+	echo "FAIL  : regression verdict missing or non-zero fail count (see $OUT/last_run.log)"
+	code=1
+fi
 
 echo "== rendering top-down =="
 cp "$UD/regression_positions.json" "$OUT/positions.json" 2>/dev/null || true
@@ -73,6 +89,18 @@ for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_fee
 		[ $code -eq 0 ] && code=1
 	fi
 done
+
+# npc-05 container chain. Bench is mutation-tested (reverting any single fix
+# turns specific greens red). It was previously 31/31 green while the chain was
+# DEAD in a real session, which is why the real-MainWorld variant exists and why
+# the bench must never be trusted alone.
+echo "== npc-05 container chain (bench) =="
+"$GODOT" --headless --path "$PROJ" 	--script res://src/tests/test_npc05_container_chain.gd > "$OUT/npc05_bench.log" 2>&1
+grep -E "^  FAIL|npc-05 container chain" "$OUT/npc05_bench.log" || true
+if ! grep -q "npc-05 container chain PASS" "$OUT/npc05_bench.log"; then
+	echo "FAIL  : npc-05 bench (see $OUT/npc05_bench.log)"
+	[ $code -eq 0 ] && code=1
+fi
 
 echo "== done (exit $code) — see $OUT/topdown.png =="
 exit $code

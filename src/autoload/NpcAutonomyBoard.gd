@@ -550,6 +550,25 @@ func _cleaning_priority_modifier(mw: Node) -> int:
 ## "waste_container_outdoor") with the most room — one OverflowDumpTask PER
 ## full indoor bin. No skip in the world, or no idle forklift → emit nothing.
 func _scan_overflow_containers(tree: SceneTree, seen: Dictionary) -> void:
+	# npc-05 — FIRST protect dump tasks that are ALREADY open from _rescan's
+	# stale-prune (:235-237), before any of the gates below can early-return.
+	# `seen` means "this target still exists", and a bin that is still in the
+	# world and still full has NOT gone away. Because the gates returned before
+	# populating it, the instant ANY forklift became occupied — an NPC boarding
+	# one to run this very task, or the operator simply climbing into it — the
+	# prune erased the in-flight task's key. Measured live as open=0 while
+	# active=2. Note this only re-confirms EXISTING keys: with no skip in the
+	# world (or no idle forklift) no NEW key is ever created, so a world without
+	# an outdoor destination still emits and marks nothing.
+	for held in tree.get_nodes_in_group("waste_container"):
+		if not (held is Node3D and is_instance_valid(held)):
+			continue
+		if held.is_in_group("waste_container_outdoor"):
+			continue
+		var held_id : int = held.get_instance_id()
+		if _open_tasks.has(held_id):
+			seen[held_id] = true
+
 	# npc-05 — destination: the outdoor skip with the lowest fill_fraction().
 	var outdoor : Node3D = null
 	var outdoor_fill : float = INF

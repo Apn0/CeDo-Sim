@@ -213,7 +213,15 @@ func npc_board_vehicle(npc: Node, vehicle: Node) -> bool:
 		return false
 	if "visible" in npc:
 		npc.visible = false
-	if npc.has_method("set_physics_process"):
+	# npc-05 — an NPC that knows how to be seated is told so, and parks its OWN
+	# locomotion while keeping its decision layer alive (NPC._physics_process).
+	# This used to be a blanket set_physics_process(false), which also switched
+	# off _autonomy_tick — so boarding a forklift silently deadlocked the very
+	# task that ordered the boarding. Bodies without the flag (FeederWorker and
+	# friends) keep the old blunt behaviour; they carry no autonomy task.
+	if "_seated_in_vehicle" in npc:
+		npc.set("_seated_in_vehicle", true)
+	elif npc.has_method("set_physics_process"):
 		npc.set_physics_process(false)
 	vehicle.call("on_npc_entered", npc)
 	_npc_vehicles[npc.get_instance_id()] = vehicle
@@ -238,7 +246,10 @@ func npc_disembark_vehicle(npc: Node) -> void:
 		if vehicle.has_method("on_npc_exited"):
 			vehicle.call("on_npc_exited", npc)
 	if is_instance_valid(npc):
-		if npc.has_method("set_physics_process"):
+		# npc-05 — mirror of the boarding branch above.
+		if "_seated_in_vehicle" in npc:
+			npc.set("_seated_in_vehicle", false)
+		elif npc.has_method("set_physics_process"):
 			npc.set_physics_process(true)
 		if "visible" in npc:
 			npc.visible = true
