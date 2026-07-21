@@ -16,7 +16,16 @@ extends Node
 # finish.
 #
 #   GODOT --headless --path . res://src/tests/test_npc05_realworld.tscn
-#   NPC05_WATCH_S=240 ...   → longer observation window
+#   NPC05_WATCH_S=240 ...        → longer observation window
+#   NPC05_DISABLE_FENCE=1 ...    → measurement-only control, see below
+#
+# NPC05_DISABLE_FENCE is a CONTROL, not a fix. The operator asked whether
+# removing perimeter-fence collision would unstick the forklift; answering with
+# an opinion is how this project has been burned before, so the switch strips
+# collision off the ChainLinkFence bodies AT RUNTIME, in this harness only, and
+# the chain is measured with and without. Nothing is written back to
+# src/scenes/world/exterior/ChainLinkFence.gd — a shipped fence with no
+# collision would let every vehicle and NPC walk off the site.
 # =============================================================================
 
 const TEST_SLOT : String = "__npc05real__"
@@ -132,11 +141,33 @@ func _ready() -> void:
 	if clock != null and clock.has_method("seek_to_wall_time"):
 		clock.call("seek_to_wall_time", 10, 0, false)
 		print("[harness] shift clock seeked to 10:00 (mid-shift)")
+	if OS.get_environment("NPC05_DISABLE_FENCE") == "1":
+		_disable_fence_collision()
 	for _i in range(SETTLE_FRAMES):
 		await get_tree().physics_frame
 
 	await _run()
 	_finish(0 if _fails == 0 else 1)
+
+## CONTROL ONLY (NPC05_DISABLE_FENCE=1). Strip collision from the perimeter
+## fence so the run measures what the operator asked: does the fence explain the
+## stall, or is the dead-reckoning autopilot the real blocker? ChainLinkFence
+## builds one StaticBody3D per post ("Post_<seg>_<i>") and per panel
+## ("PanelBody_<seg>_<i>"); zeroing their collision_layer removes them from
+## every query without touching the scene tree shape or the fence source.
+func _disable_fence_collision() -> void:
+	var stripped : int = 0
+	for n in _world.find_children("", "StaticBody3D", true, false):
+		var nm := String(n.name)
+		if not (nm.begins_with("Post_") or nm.begins_with("PanelBody_")):
+			continue
+		var body := n as StaticBody3D
+		body.collision_layer = 0
+		body.collision_mask = 0
+		stripped += 1
+	print("[harness] CONTROL: stripped collision from %d perimeter-fence bodies (runtime only — the fence source is unchanged)" % stripped)
+	_info("CONTROL RUN — fence collision disabled; results are a measurement, not a proposed fix")
+
 
 func _run() -> void:
 	var tree := get_tree()

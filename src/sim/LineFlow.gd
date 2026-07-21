@@ -781,10 +781,12 @@ func _spawn_visible_compressors() -> void:
 	var world : Node = get_parent()
 	if world == null:
 		return
-	# Marker → scene-space (applies MainWorld's world_yaw + anchor when present).
-	# WorldLayout.compressor_spawn == Vector3.ZERO means "no marker", fall back
-	# to a default offset from player_spawn. Both fallbacks go through the same
-	# _layout_marker_to_scene helper so the rotation/anchor stays consistent.
+	# Marker → scene-space. WorldLayout.compressor_spawn == Vector3.ZERO means
+	# "no marker", so fall back to a default offset from player_spawn. Both go
+	# through _layout_marker_to_scene so the frame is decided in one place.
+	# player_spawn is itself scene-absolute, so the fallback below is a plain
+	# scene position and the conversion leaves it alone — it used to be rotated
+	# and re-anchored, double-counting the anchor it was already built from.
 	var layout := get_node_or_null("/root/WorldLayout")
 	var marker : Vector3 = Vector3.ZERO
 	if layout != null and "compressor_spawn" in layout:
@@ -2428,13 +2430,15 @@ func _head_feed_point(head: Node3D) -> Vector3:
 			best_pos = marker
 	return best_pos
 
-## Map a raw WorldLayout marker (player_spawn-relative offset in WorldSetup's
-## north-up frame) to its scene position. Routes through MainWorld's
-## `_layout_to_scene` (which applies the canonical world_yaw rotation + anchor
-## translation, see MainWorld.gd:_layout_to_scene). Without this conversion the
-## line_starts markers compare a layout-frame Vector3 to head_pos in WORLD frame
-## — they will never match within LINE_START_MARKER_RADIUS, so the head silently
-## falls back to its own position and the operator's intake marker is ignored.
+## Map a raw WorldLayout marker to its scene position through MainWorld's
+## `_layout_to_scene`. Markers are SCENE-ABSOLUTE, so that call is the XZ
+## identity today — but it stays the single choke point so the frame is
+## defined in exactly one file (WorldFrame.gd) rather than assumed here.
+##
+## NOTE — this path was INERT while the transform rotated+anchored: line_starts
+## landed 145-175 m from any head, so nothing ever matched
+## LINE_START_MARKER_RADIUS and every head silently used its own position. The
+## snap is live again now; a head can legitimately move up to that radius.
 func _layout_marker_to_scene(marker: Vector3) -> Vector3:
 	var p := get_parent()
 	if p != null and p.has_method("_layout_to_scene"):

@@ -1,13 +1,30 @@
 extends Node3D
 ## Regression test for the 377-km spawn bug: a MIXED world_layout.json
 ## (player_spawn re-saved in Dutch RD coords ~1e5 m, while vehicles / yards /
-## line_starts are already small local offsets) must load with EVERY marker as
-## a sane local offset — the per-marker conversion shifts only RD-scale values.
+## line_starts are already scene-absolute) must load with EVERY marker in ONE
+## frame — the per-marker conversion shifts only RD-scale values.
+##
+## FRAME (2026-07-21): the RD shift is the building TILE centre, the same value
+## MainWorld.tscn's BuildingShell transform uses, so converted markers land
+## SCENE-ABSOLUTE. It is no longer taken from player_spawn — that produced
+## player-relative offsets (player_spawn == 0), a frame no reader uses, and cost
+## 228 m of vehicle misplacement. Expected values below are derived from the
+## mesh centre, not copied from WorldLayout's own arithmetic.
 ##
 ## Backs up + restores the real user://world_layout.json.
 ##   godot --headless --main-scene res://src/tests/test_world_layout_coords.tscn
 
 const PATH := "user://world_layout.json"
+const TILE_OBJ := "res://assets/models/CeDo_building.obj"
+
+## Independent derivation of the RD→scene shift: read the tile mesh directly
+## instead of asking WorldLayout what it used.
+func _tile_shift() -> Vector2:
+	var mesh = ResourceLoader.load(TILE_OBJ)
+	if mesh is Mesh:
+		var c : Vector3 = (mesh as Mesh).get_aabb().get_center()
+		return Vector2(c.x, c.z)
+	return Vector2.ZERO
 
 var _pass := 0
 var _fail := 0
@@ -39,10 +56,19 @@ func _ready() -> void:
 		"satellite": {"center_rd_x": 184112.5, "center_rd_y": 329382.25,
 			"extent_m": 400.0, "has_image": true},
 	})
+	var shift := _tile_shift()
+	_ok(shift != Vector2.ZERO, "tile mesh readable — RD shift derived independently %s" % str(shift))
 	var wl = load("res://src/autoload/WorldLayout.gd").new()
 	wl._load()
-	_ok(wl.player_spawn.length() < 1.0,
-		"MIXED: RD player_spawn localized to ~zero (got %s)" % str(wl.player_spawn))
+	# The RD player_spawn must land where the tile anchor puts it — NOT at zero.
+	# A zero here means the loader re-centred on the marker itself, which is the
+	# player-relative frame the engine's readers do not use.
+	var want_ps := Vector2(183857.125 - shift.x, -329241.46875 - shift.y)
+	_ok(Vector2(wl.player_spawn.x, wl.player_spawn.z).distance_to(want_ps) < 0.01,
+		"MIXED: RD player_spawn converted to scene-absolute %s (want %s), NOT re-centred to zero"
+			% [str(Vector2(wl.player_spawn.x, wl.player_spawn.z)), str(want_ps)])
+	_ok(Vector2(wl.player_spawn.x, wl.player_spawn.z).length() > 1.0,
+		"MIXED: player_spawn is NOT zero — the plant anchor keeps its own scene position")
 	var fk : Vector3 = wl.vehicle_spawns["forklift"][0]
 	_ok(Vector2(fk.x, fk.z).length() < 100.0,
 		"MIXED: local forklift offset UNTOUCHED (got %.1f, %.1f — was −183814 before fix)" % [fk.x, fk.z])
@@ -62,9 +88,16 @@ func _ready() -> void:
 	var wl2 = load("res://src/autoload/WorldLayout.gd").new()
 	wl2._load()
 	var fk2 : Vector3 = wl2.vehicle_spawns["forklift"][0]
-	_ok(absf(fk2.x - 43.0) < 0.01 and absf(fk2.z - 41.0) < 0.01,
-		"ALL-RD: vehicle converted to local offset (got %.1f, %.1f)" % [fk2.x, fk2.z])
-	_ok(wl2.player_spawn.length() < 1.0, "ALL-RD: player_spawn localized to zero")
+	var want_fk2 := Vector2(183900.0 - shift.x, -329200.0 - shift.y)
+	_ok(Vector2(fk2.x, fk2.z).distance_to(want_fk2) < 0.01,
+		"ALL-RD: vehicle converted to scene-absolute %s (want %s)" % [str(Vector2(fk2.x, fk2.z)), str(want_fk2)])
+	# The RELATIVE geometry the operator drew must survive the conversion — the
+	# forklift was authored 43 m east / 41 m north of the spawn in RD.
+	var sep := Vector2(fk2.x - wl2.player_spawn.x, fk2.z - wl2.player_spawn.z)
+	_ok(absf(sep.x - 43.0) < 0.01 and absf(sep.y - 41.0) < 0.01,
+		"ALL-RD: forklift-to-spawn separation preserved (%.1f, %.1f)" % [sep.x, sep.y])
+	_ok(Vector2(wl2.player_spawn.x, wl2.player_spawn.z).length() > 1.0,
+		"ALL-RD: player_spawn keeps a real scene position (not zeroed)")
 	wl2.free()
 
 	# ── Case 3: ALL-LOCAL file (already converted) — load is a no-op ───────────

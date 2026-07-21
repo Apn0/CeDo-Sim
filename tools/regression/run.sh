@@ -78,7 +78,13 @@ fi
 # none of them can silently rot: map frame (player inside the shell renders
 # inside the drawn outline), nested-hull drift (parked vehicles do not travel),
 # NPC waypoint guard, feeder fetches its kit on foot instead of conjuring it.
-for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch; do
+#
+# test_vehicle_spawn_frame: markers are SCENE-ABSOLUTE; _layout_to_scene used to
+# rotate+anchor them, spawning every vehicle ~228 m from where the operator drew
+# it. Mutation-tested — reverting that function turns 4 of its checks red. Note
+# the regression's own "within 500 m of plant" check stayed GREEN throughout the
+# bug, which is exactly why an identity assertion had to exist.
+for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame; do
 	echo "== $t =="
 	"$GODOT" --headless --path "$PROJ" "res://src/tests/$t.tscn" > "$OUT/$t.log" 2>&1
 	grep -E "^  (ok|FAIL)|Result|RESULT" "$OUT/$t.log" || true

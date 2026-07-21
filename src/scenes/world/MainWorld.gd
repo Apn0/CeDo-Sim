@@ -475,13 +475,20 @@ func _spawn_container_guides() -> void:
 # slot if WorldLayout has no spawns for that vehicle id.
 # =============================================================================
 
-## Sanity guard for layout-relative markers (377 km bug): a marker more than
-## ~5 km from the anchor is corrupt RD-space leakage, not a real placement.
-## Spawning physics bodies that far out breaks float precision → NaN transforms
-## → tens of thousands of "!v.is_finite()" render errors that also tank the
-## framerate via log I/O. Skip the marker instead.
-func _layout_rel_sane(rel: Vector3) -> bool:
-	return Vector2(rel.x, rel.z).length() < 5000.0
+## Sanity guard for saved WorldSetup markers (377 km bug): a marker more than
+## ~5 km from the plant anchor is corrupt RD-space leakage, not a real
+## placement. Spawning physics bodies that far out breaks float precision → NaN
+## transforms → tens of thousands of "!v.is_finite()" render errors that also
+## tank the framerate via log I/O. Skip the marker instead.
+##
+## Measured against the ANCHOR, not against the scene origin: markers are
+## scene-absolute (WorldFrame._layout_to_scene), and the plant itself sits ~224 m
+## from the origin, so a bare magnitude test rubber-stamps any frame — it was
+## green throughout the period every vehicle spawned 228 m off its own marker.
+## 5 km still bounds RD leakage (~1e5 m) by 20x with room for outlying yards.
+func _layout_rel_sane(marker: Vector3) -> bool:
+	var a : Vector3 = _layout_anchor_xz() if _world_frame != null else Vector3.ZERO
+	return Vector2(marker.x - a.x, marker.z - a.z).length() < 5000.0
 
 # Surfaced on the PerfHud overlay so the layout mapping can be sanity-checked.
 # Updated by `_layout_to_scene()` on its first call so the string always reflects
@@ -500,9 +507,6 @@ var _layout_summary_logged : bool = false
 # used in _spawn_bale_yards_from_layout()).
 func _layout_anchor_xz() -> Vector3:
 	return _world_frame._layout_anchor_xz()
-
-func _layout_rotated_offset(rel: Vector3) -> Vector3:
-	return _world_frame._layout_rotated_offset(rel)
 
 func _layout_to_scene(rel: Vector3) -> Vector3:
 	return _world_frame._layout_to_scene(rel)

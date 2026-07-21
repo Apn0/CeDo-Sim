@@ -274,6 +274,19 @@ func _build_ground() -> void:
 	ground_quad.position = Vector3(0, -0.05, 0)   # just below floor
 	add_child(ground_quad)
 
+## AABB centre of the building TILE mesh — the RD origin the whole project's
+## scene frame is anchored on. Measured from the mesh, never hardcoded, so it
+## tracks a re-exported tile. `fallback` (the displayed mesh's own centre) is
+## returned only if the tile asset is missing, which keeps this scene usable at
+## the cost of the register with MainWorld.
+func _tile_center(fallback: Vector3) -> Vector3:
+	var tile = ResourceLoader.load(BUILDING_OBJ)
+	if tile is Mesh:
+		var c : Vector3 = (tile as Mesh).get_aabb().get_center()
+		return Vector3(c.x, 0.0, c.z)
+	push_warning("[WorldSetup] %s missing — anchoring on the displayed mesh instead; markers authored now may not register with MainWorld" % BUILDING_OBJ)
+	return Vector3(fallback.x, 0.0, fallback.z)
+
 func _build_building_shell() -> void:
 	var src := BUILDING_SOLID if ResourceLoader.exists(BUILDING_SOLID) else BUILDING_OBJ
 	var mesh = ResourceLoader.load(src)
@@ -296,16 +309,24 @@ func _build_building_shell() -> void:
 	# layout where no spawn has been placed yet.
 	var aabb := mi.get_aabb()
 	var raw_center := Vector3(aabb.position.x + aabb.size.x * 0.5, 0, aabb.position.z + aabb.size.z * 0.5)
-	# The building .obj geometry is baked at Dutch RD coordinates (~184,000 / ~329,000),
-	# but the saved markers live in a LOCAL frame near the origin. If we leave the shell
-	# at RD it renders ~184 km from the markers (and the satellite/floor-plan anchored to
-	# it go with it) — so nothing shows together. Shift the mesh so its centre sits at the
-	# local origin; then shell + satellite + floor-plan + markers all share ONE frame.
-	_shell_rd_center = raw_center   # remember the TRUE RD centre for satellite fetches
-	if absf(raw_center.x) > 10000.0 or absf(raw_center.z) > 10000.0:
-		mi.position = -raw_center
-		shell_center = Vector3.ZERO
-		print("[WorldSetup] Building shell was at RD %s — shifted to local origin to match markers" % str(raw_center))
+	# The building .obj geometry is baked at Dutch RD coordinates (~184,000 / ~329,000)
+	# but the game runs in a scene frame near the origin, so the mesh has to be shifted.
+	#
+	# The shift MUST be the TILE mesh's centre — the exact value MainWorld.tscn's
+	# BuildingShell transform is built from — and NOT the centre of whichever mesh
+	# this scene happens to display. `src` prefers BUILDING_SOLID, whose own AABB
+	# centre is 220.8 m from the tile centre (measured 2026-07-21: tile
+	# (184112.50, -329382.27) vs solid (183913.60, -329286.44)). Shifting by the
+	# displayed mesh's centre put this authoring scene 220.8 m out of register with
+	# gameplay, so every marker written here would land 220.8 m from the markers
+	# already on disk while both looked correct in their own scene.
+	var anchor_center := _tile_center(raw_center)
+	_shell_rd_center = anchor_center   # RD origin for satellite fetches (scene = RD − this)
+	if absf(anchor_center.x) > 10000.0 or absf(anchor_center.z) > 10000.0:
+		mi.position = -anchor_center
+		shell_center = raw_center - anchor_center
+		print("[WorldSetup] Building shell RD %s shifted by tile anchor %s — shell centre now at scene %s (matches MainWorld)" \
+			% [str(raw_center), str(anchor_center), str(shell_center)])
 	else:
 		shell_center = raw_center
 	cam_target = WorldLayout.player_spawn if WorldLayout.player_spawn != Vector3.ZERO else shell_center
@@ -1271,17 +1292,28 @@ func _place_point(tool_id: int, world_pos: Vector3) -> void:
 
 	# Persist to WorldLayout in-memory (saved on Save & Return). _place_point is
 	# only called for `kind == "point"` tools — player spawn + line starts.
-	var p := Vector3(world_pos.x, 0.0, world_pos.z)
+	#
+	# Via _marker_world(), i.e. markers_root-GLOBAL — the SAME frame
+	# _commit_to_layout writes after a drag. Writing node.position (markers_root-
+	# LOCAL) here instead made first-placement and drag-commit disagree whenever
+	# the marker-calibration transform was non-identity, and that transform is
+	# session-only UI state that never reaches disk — so one session could emit
+	# two frames into one file.
+	var p := _marker_world(node)
 	# #131 — FACTORY_CENTER snaps onto the centroid of whichever connected
 	# component the click falls in. A slightly-off click still hits the right
 	# building, and the saved value is the building's TRUE centre so
 	# solidify_building.py picks the same component next time.
+	# Component centroids are SCENE-space (mesh-local + ShellMesh.position, see
+	# _build_components), which is the frame `p` is now in — so the containment
+	# test and the snapped value need no conversion, and only the dot's own
+	# position has to go back through markers_root.
 	if tool_id == Tool.FACTORY_CENTER and not _components.is_empty():
 		var idx := _find_component_at_xz(p)
 		if idx >= 0:
 			var cent : Vector3 = _components[idx]["centroid"]
 			p = Vector3(cent.x, 0.0, cent.z)
-			node.position = p
+			node.position = markers_root.to_local(p) if markers_root else p
 	if tool_id == Tool.PLAYER_SPAWN:
 		WorldLayout.player_spawn = p          # player spawn ONLY (decoupled from factory_center)
 	elif tool_id == Tool.FACTORY_CENTER:
@@ -1354,8 +1386,10 @@ func _add_multi_marker(tool_id: int, world_pos: Vector3) -> void:
 	arr.append(node)
 	multi_markers[tool_id] = arr
 	var vid : String = VEHICLE_TOOL_TO_ID[tool_id]
-	WorldLayout.add_vehicle_spawn(vid, Vector3(world_pos.x, 0.0, world_pos.z))
-	history.append({"kind": "multi", "tool_id": tool_id, "pos": Vector3(world_pos.x, 0.0, world_pos.z)})
+	# markers_root-GLOBAL, matching _commit_to_layout — see the note in _place_point.
+	var p := _marker_world(node)
+	WorldLayout.add_vehicle_spawn(vid, p)
+	history.append({"kind": "multi", "tool_id": tool_id, "pos": p})
 	status_label.text = "Placed %s (%d total) — right-click to delete." % [def["label"], arr.size()]
 
 # =============================================================================

@@ -774,3 +774,72 @@ that randomly reports red on a clean run teaches you to stop reading it, which i
 how a real red gets ignored. The sub-steps were already verdict-based; the main
 step now is too, and a post-verdict crash is reported as a `note  :` line rather
 than a failure, so it stays visible without lying about the result.
+
+## S. "Would removing fence collision fix it?" — measured: NO. The frame was wrong.
+
+Operator's question, answered with a control run rather than an opinion.
+
+**The fence control (pre-fix geometry, 339 fence StaticBody3Ds collision-stripped
+at runtime, nothing shipped to `ChainLinkFence.gd`):**
+
+| | jam position | kg moved |
+|---|---|---|
+| fence intact | (-79.90, -7.93, 157.13) | 0.00 |
+| fence collision REMOVED | (-79.95, -7.94, 157.25) | 0.00 |
+
+**0.13 m apart.** The forklift stops in the same place with the fence gone. The
+fence was never the blocker.
+
+### The real cause: vehicle markers were read in the wrong frame
+
+`world_layout.json` stores markers as **scene-absolute** coordinates. Proven from
+the WRITER, not by preference: `WorldSetup._add_multi_marker:1348-1357` stores
+`Vector3(world_pos.x, 0, world_pos.z)` straight from the camera-ray click —
+no anchor subtraction, no yaw, and `Basis(...UP...)` appears nowhere in the file.
+All seven marker families (vehicles, player_spawn, factory_center, line_starts,
+staff_parking, player_swift, bale-yard corners) go through one writer, one frame.
+
+But `WorldFrame._layout_to_scene()` treated them as **player-relative offsets**,
+rotating by world yaw and re-adding the anchor. Every consumer downstream
+inherited it — the vehicle spawner (legacy AND PC paths), `migrate_to_pc`,
+`BaleYardManager`, `LineFlow` line starts, `is_near_line_feed_point`.
+
+Consequences that were live in the operator's world:
+
+- **forklift #0 spawned 228.1 m from its own marker** (its marker says 11.7 m
+  from the plant — which the boot header printed correctly all along, disagreeing
+  with the spawner in the same log);
+- **bale yards rendered ~290-355 m off** — the 'forstplus' corner the operator
+  drew landed 413 m away, on the opposite side of the plant;
+- **line starts 145-175 m off**, which silently kept the 25 m line-start snap and
+  the 5 m bale feed-point gate permanently inert;
+- `factory_center_pc` was (297.34, 594.04) instead of PC(500,500) — the plant's
+  own anchor 228 m from the centre of its own coordinate grid;
+- `InspectMode` drew the CORRECT position at 50 % alpha next to the wrong one at
+  full opacity — the truth was on screen the whole time, dimmer than the lie.
+
+**Fix:** `_layout_to_scene` is the XZ identity; the RD→scene shift now comes from
+the building tile mesh's measured AABB centre instead of `player_spawn`; a
+`marker_frame` stamp refuses unknown tags loudly rather than silently
+reinterpreting; and `WorldSetup` itself was 220.8 m out of register with
+`MainWorld.tscn` (it pinned the shell to the displayed solid mesh's centre, not
+the tile's), so the NEXT authoring session would have written markers 221 m from
+the ones already on disk.
+
+**Verified:** new `test_vehicle_spawn_frame` PASS (12 ok / 0 fail), worst
+marker→spawn displacement **0.00 m**, expectation derived from the raw JSON + the
+mesh, never from the code under test. MUTATION-TESTED: restoring rotate+anchor
+turns it FAIL (4 red, 255.83 m displacement). npc-05 stage 1 went from
+`0.00 kg, jammed on the fence` to **275.00 kg removed == 275.00 kg received**.
+
+Note the harness's own `vehicles within 500 m of plant` check stayed GREEN
+throughout the entire bug — worst 232 m while every vehicle was a plant-length
+off its marker. Another vacuous green; it now sits beside a real identity
+tripwire (`every vehicle marker has a hull on it, worst gap 0.00 m`).
+
+**WHAT THE OPERATOR WILL SEE ON NEXT BOOT:** the world moves. 9 vehicles shift
+120-270 m, 7 bale yards ~290-355 m, 3 line starts ~145-175 m — all of them ONTO
+the plant, to where they were originally drawn. This is the correction, not a new
+bug. Vehicles now spawn inside the building footprint; they seat on the floor
+headlessly, but intersection with machines on a populated save is unverified, and
+the line-start snap + feed-point gate are live for the first time.

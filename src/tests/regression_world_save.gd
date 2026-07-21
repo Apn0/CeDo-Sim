@@ -456,6 +456,36 @@ func _test_exterior(world: Node) -> void:
 				vbad += 1
 		_ok(vbad == 0, "all %d vehicles finite + within 500 m of plant (worst %.0f m)"
 			% [veh.size(), vworst])
+		# The radius check above CANNOT see a frame error smaller than its own
+		# bound: it was green for the whole life of the 228 m marker-frame bug.
+		# Assert marker IDENTITY too — every operator-placed vehicle marker must
+		# have a hull standing on it. Full independent-derivation version (raw
+		# JSON + tile-mesh shift + PC round-trip + mutation test) lives in
+		# src/tests/test_vehicle_spawn_frame.gd; this is the in-harness tripwire.
+		var markers : Array[Vector2] = []
+		for vid in WorldLayout.vehicle_spawns.keys():
+			for p in (WorldLayout.vehicle_spawns[vid] as Array):
+				if p is Vector3:
+					markers.append(Vector2((p as Vector3).x, (p as Vector3).z))
+		if markers.is_empty():
+			print("  note  : layout holds no vehicle markers to match"); _skip += 1
+		else:
+			var unmatched := 0
+			var mworst := 0.0
+			for m in markers:
+				var best := INF
+				for v in veh:
+					var gp2 : Vector3 = (v as Node3D).global_position
+					best = minf(best, Vector2(gp2.x, gp2.z).distance_to(m))
+				mworst = maxf(mworst, best)
+				# 3 m: the spawner copies the marker XZ verbatim, so the expected
+				# reading is ~0; the budget only covers Rapier pushing apart the
+				# hulls of markers placed within a vehicle-width of each other.
+				if best > 3.0:
+					unmatched += 1
+			_ok(unmatched == 0,
+				"every one of %d vehicle markers has a hull on it (worst gap %.2f m)"
+					% [markers.size(), mworst])
 
 	var npcs := get_tree().get_nodes_in_group("npc")
 	if npcs.is_empty():

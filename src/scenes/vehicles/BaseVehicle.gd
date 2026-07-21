@@ -923,6 +923,12 @@ const NPC_CRUISE_FRAC  : float   = 0.55    # fraction of speed_limit the AI crui
 #     (-202.66, -8.0, 94.04), |xz| ~ 222 m);
 #   · 224 + 141 ~ 366 m bounds every real surface, so 500 m is that figure with
 #     ~35 % headroom for yard / macro extensions.
+# Re-checked 2026-07-21 against the marker-frame fix (WorldFrame._layout_to_scene
+# is now the identity): this derivation was already reading player_spawn as an
+# ABSOLUTE scene coordinate, which is the canonical frame, so the bound is
+# unchanged. What DID change is the real spread — vehicles no longer spawn ~228 m
+# off their markers, so the headroom is now genuine slack rather than the amount
+# of misplacement the bound had to tolerate.
 # Deliberately NOT derived from the TempFloor slab (FloorDetector's
 # FLOOR_BOX_SIZE_XZ = 4000 m, i.e. +/-2000 m): that slab exists so nothing can
 # fall out of the world, it is not plant surface. The 2026-07-20 clamp beads at

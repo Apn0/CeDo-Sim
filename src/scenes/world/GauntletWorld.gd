@@ -1845,17 +1845,22 @@ func _st_steer_ramp(anchor: Vector3) -> void:
 		+ "PASS = smooth 3-second ramp to full lock\n"
 		+ "FAIL = instant slam or no rotation")
 
-# 252 — Layout markers regression. Reads the PerfHud's layout_conv_summary.
+# 252 — Layout markers. RETIRED as a pass/fail station: its criterion was a
+# PerfHud STRING, not a measured position, and it certified the wrong frame for
+# months. Marker placement is proven by src/tests/test_vehicle_spawn_frame.gd
+# (spawned XZ == stored XZ, mutation-tested) — a string cannot do that job.
 func _st_layout_xform(anchor: Vector3) -> void:
 	_st_placard(anchor,
-		"Layout markers — rotation + anchor\n\n"
-		+ "Task #34 regressed: _layout_to_scene was a passthrough.\n"
-		+ "Restored to Basis(UP, _world_yaw()) * offset + anchor.\n\n"
-		+ "In MainWorld, PerfHud should now read:\n"
-		+ "  'Layout: markers rotated by NN.N deg + anchored at (X,Z)'\n"
-		+ "(was: 'no rotation, no anchor')\n\n"
-		+ "PASS = real numbers in the PerfHud string\n"
-		+ "FAIL = the old 'no rotation, no anchor' message")
+		"Layout markers — SCENE-ABSOLUTE (informational)\n\n"
+		+ "Markers are stored as scene positions, so\n"
+		+ "_layout_to_scene is the XZ identity. The earlier\n"
+		+ "'restored to Basis(UP, yaw) * offset + anchor' was\n"
+		+ "the bug: it threw every vehicle ~228 m off-marker.\n\n"
+		+ "PerfHud reads:\n"
+		+ "  'Layout: markers are scene-absolute ...'\n\n"
+		+ "This station asserts NOTHING — a PerfHud string was\n"
+		+ "never evidence. Proof lives in\n"
+		+ "src/tests/test_vehicle_spawn_frame.gd")
 
 # 253 — Clock pre-shift respawn.
 func _st_clock_preshift(anchor: Vector3) -> void:
