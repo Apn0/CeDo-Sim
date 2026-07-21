@@ -293,6 +293,12 @@ func _spawn_world_items() -> void:
 
 	print("[MainWorld] Ready — %d NPCs, shift running: %s" \
 		% [npcs.size(), str(shift_clock.shift_active) if shift_clock else "?"])
+	# npc-07 — RE-BAKE NOW THAT THE PLANT EXISTS. _spawn_navigation_region runs at
+	# :124, well before BuildMode replays the saved layout, so the first bake sees
+	# floor and fence and not one machine. Baking once at :124 was survivable while
+	# the mesh had no obstacles in it by design; with a real source set it would
+	# quietly ship a mesh describing an empty hall.
+	call_deferred("rebake_navigation")
 
 
 
@@ -879,41 +885,233 @@ func _spawn_road_and_parking() -> void:
 ## completes, so there's no startup stall.
 const NAVMESH_GROUP : String = "navmesh_source"
 
+## npc-07 — BAKE THE BUILDING ENVELOPE? Ships FALSE, and that is a decision, not
+## an oversight.
+##
+## The operator's survey contains ZERO doorways: world_layout.json structure_items
+## is an empty array, regression_positions.json doors is [], and
+## tools/generate_building.py has no opening logic at all. Openings exist only as
+## structure_items replayed through WallOpenings.add_opening, and there are none.
+##
+## So baking the shell would make the interior a hermetically sealed island, and
+## OverflowDumpTask's indoor-bin -> outdoor-skip haul would go from "arrives
+## imprecisely" to "no path exists" — a strictly worse failure that reads as a
+## regression caused by the fix. The residual with the flag off is that NPCs can
+## clip an exterior wall: a visible wrongness chosen over an invisible
+## unroutability.
+##
+## Closing it needs an operator door survey (no-build-without-docs). Once doors
+## exist as structure_items, WallOpenings already carves the collision mesh and
+## flipping this to true is the whole change.
+const NAV_BAKE_SHELL : bool = false
+
 func _spawn_navigation_region() -> void:
-	# Find the interior floor mesh + exterior ground and tag them as nav sources.
-	var floor_mi := find_child("TempFloor", true, false)
-	if floor_mi:
-		var fm := floor_mi.find_child("MeshInstance3D", false, false) as MeshInstance3D
-		if fm:
-			fm.add_to_group(NAVMESH_GROUP)
-	var ext_ground := find_child("ExteriorGround", false, false) as MeshInstance3D
-	if ext_ground:
-		ext_ground.add_to_group(NAVMESH_GROUP)
+	var tagged := _tag_nav_sources()
 	# Build the region.
 	var region := NavigationRegion3D.new()
 	region.name = "NavRegion"
 	add_child(region)
 	var nm := NavigationMesh.new()
-	nm.cell_size = 1.00
+	# npc-07 — cell_size 1.00 was unusable the moment real obstacles entered the
+	# source set: agent_radius is CEILED to whole cells by Recast (the engine warns
+	# about it), so a 0.40 m agent eroded 1.00 m per side. The plant's process
+	# lines are placed at LINE_GAP_M 0.5 (BuildMode.gd:416), which means most of
+	# the interior aisle network would have sealed outright. 0.25 is the same
+	# resolution NpcTaskBench._build_navmesh already uses.
+	nm.cell_size = 0.25
+	# STAYS 0.60, KNOWINGLY. cell_height floors agent_max_climb to whole voxels, so
+	# the 1.40 below is really 1.20 m and the lock-step claimed by the comment on
+	# agent_max_climb is ALREADY false today. Fixing the lattice (0.20 gives
+	# 1.40/0.20 = 7 exactly) re-tunes the vault verb — NPCs would start routing OVER
+	# 1.25-1.40 m obstacles they currently route around, and the vault tween
+	# (NPC.gd:567-569) would have to complete on each. That is a behaviour change
+	# wearing a bake parameter's clothes, and it is not landing in the same window
+	# as four open jams. Deferred with its own re-measure.
 	nm.cell_height = 0.60
 	nm.agent_radius = 0.40
 	nm.agent_height = 1.80
-	# Path routing climb cap — matches NPC.CLIMB_MAX_DY (1.4 m, same as the player
-	# vault). Below 0.30 the navmesh bake produced flat-only paths and NPCs got
-	# stuck on every bale-yard kerb; above 1.4 they'd try to scale obstacles the
-	# vault can't actually complete. Keeps NPCs in lock-step with the vault verb.
+	# Path routing climb cap — nominally NPC.CLIMB_MAX_DY (1.4 m, the player vault).
+	# Effective value is 1.20 m after the cell_height floor described above.
 	nm.agent_max_climb = 1.40
 	nm.agent_max_slope = 45.0
-	# Pull source geometry from MeshInstance3Ds in the NAVMESH_GROUP group, scene-wide.
-	nm.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_MESH_INSTANCES
-	nm.geometry_source_geometry_mode = NavigationMesh.SOURCE_GEOMETRY_GROUPS_EXPLICIT
+	# npc-07 — STATIC COLLIDERS, not mesh instances. Three reasons, all measured:
+	#   · MESH_INSTANCES forces a GPU->CPU readback of every source mesh on the
+	#     bake thread, which serialises against the renderer and defeats the
+	#     on_thread bake. The engine prints exactly that warning on the old config.
+	#   · every machine already carries one StaticBody3D + one BoxShape3D
+	#     (PlaceableCatalog.gd:1435-1449) — a clean, coarse, already-authored
+	#     obstacle volume, where the visual meshes are high-poly and full of
+	#     non-blocking decoration (labels, grime quads, pipes, TL bars).
+	#   · Recast then derives walkability from slope/climb, so grating platforms,
+	#     stairs and belt-deck tops become walkable without an allow-list.
+	# WITH_CHILDREN is kept, but NOT for the reason previously claimed here. The old
+	# comment said EXPLICIT "would find the bodies and none of their shapes", because
+	# a machine's shape is a child CollisionShape3D. That is FALSE, and it was
+	# measured false: mutating this line to GROUPS_EXPLICIT still carved every
+	# machine (272 polygons, and the route across the line_3a row still came back as
+	# 10 points rather than the 2-point straight line). EXPLICIT vs WITH_CHILDREN
+	# governs recursion into child NODES, not whether a body's own shapes are read.
+	# What WITH_CHILDREN actually buys is the nested bodies — belt decks and fence
+	# panels parented under a run node — worth ~21 polygons here (293 vs 272).
+	# Keeping it is right; believing it is what carves the machines is not, because
+	# that belief would send the next person debugging a missing obstacle to this
+	# line instead of to _tag_nav_sources, which is where the carve really comes from.
+	nm.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
+	nm.geometry_source_geometry_mode = NavigationMesh.SOURCE_GEOMETRY_GROUPS_WITH_CHILDREN
 	nm.geometry_source_group_name = NAVMESH_GROUP
+	# npc-07 — BOUNDING THE EXTENT IS A PRECONDITION, NOT AN OPTIMISATION, and it
+	# is atomic with the cell_size above. TempFloor is a 4000 x 4000 m containment
+	# slab; at cell_size 0.25 that is 256M heightfield columns and multiple GB —
+	# it thrashes or OOMs rather than merely running slowly. Bounded to the real
+	# site (~205 x 120 m) it is ~0.4M columns, roughly 640x cheaper. Split these
+	# two lines across commits and the bake dies.
+	var bounds := NavSiteBounds.compute(self)
+	if bounds.size != Vector3.ZERO:
+		# Grow in Y so the floor slab under the site is included even though its
+		# own AABB is rejected as the containment slab.
+		nm.filter_baking_aabb = AABB(
+			Vector3(bounds.position.x, bounds.position.y - 10.0, bounds.position.z),
+			Vector3(bounds.size.x, bounds.size.y + 20.0, bounds.size.z))
+	else:
+		push_warning("[MainWorld] site bounds unmeasurable — navmesh bake left unbounded")
 	region.navigation_mesh = nm
 	# Bake on a worker thread so we don't stall the shift boot. NavigationAgent3D
-	# in each NPC reads the live navmap as soon as bake completes.
+	# in each NPC reads the live navmap as soon as bake completes. Threading is
+	# only legitimate now that the source is colliders rather than meshes.
 	region.bake_navigation_mesh(true)
-	print("[MainWorld] NavRegion baking (group '%s', %d source meshes)" % \
-		[NAVMESH_GROUP, get_tree().get_nodes_in_group(NAVMESH_GROUP).size()])
+	print("[MainWorld] NavRegion baking (%d source bodies, site %.0f x %.0f m)"
+		% [tagged, bounds.size.x, bounds.size.z])
+	_nav_region = region
+
+var _nav_region : NavigationRegion3D = null
+
+## Re-tag and re-bake. Called once the world is fully populated, and available to
+## BuildMode: a machine the operator places that is not in the mesh is the
+## current bug in miniature. Callers must DEBOUNCE — this is a commit-time
+## operation, never a per-frame ghost-drag one.
+func rebake_navigation() -> void:
+	if _nav_region == null or not is_instance_valid(_nav_region):
+		return
+	var tagged := _tag_nav_sources()
+	_nav_region.bake_navigation_mesh(true)
+	print("[MainWorld] NavRegion re-baking (%d source bodies)" % tagged)
+	_verify_nav_connectivity()
+
+## npc-07 SEALED-PLANT GUARD.
+##
+## The failure this catches is not hypothetical: with zero doorways in the
+## survey, one careless flip of NAV_BAKE_SHELL turns the interior into an island
+## and every indoor->outdoor haul from unroutable-but-quiet into a task that
+## fails for a reason nothing reports. Worse, the existing harness counts "no
+## structure_items (doors) — skipped" as a PASS, so the trap is invisible from
+## the green side.
+##
+## So the mesh is asked, out loud, whether the crew can still get out. A failure
+## NAMES BOTH ENDPOINTS — an unreachable destination is useless to debug without
+## knowing which one it was.
+func _verify_nav_connectivity() -> void:
+	if _nav_region == null or not is_instance_valid(_nav_region):
+		return
+	# The interior anchor is the CENTRE OF THE SHELL'S GEOMETRY, not the shell
+	# node's global_position: the shell node sits at an RD-georeferenced origin
+	# (measured (-184113, -83, 329382)), so using its transform asked the navmesh
+	# for a route from 300 km away and the guard reported a sealed plant on a
+	# perfectly connected one. Caught by this guard's own first run.
+	var shell_box := NavSiteBounds.body_aabb(_shell())
+	if shell_box.size == Vector3.ZERO:
+		print("[MainWorld] nav connectivity: no measurable shell — check skipped")
+		return
+	var interior : Vector3 = shell_box.get_center()
+	interior.y = shell_box.position.y
+	# npc-07 — THE EXTERIOR ENDPOINT IS DERIVED FROM THE SHELL, NOT FROM
+	# _player_spawn_pos. It used to be the latter, and that made this entire guard
+	# vacuous in two independent ways at once:
+	#   · _player_spawn_pos is the LAYOUT ANCHOR, a point INSIDE the plant. The
+	#     "can the crew get out" check was comparing two interior points and would
+	#     have stayed green through a perfectly sealed building.
+	#   · that anchor also sits within 5 m of the shell's own centre, so the
+	#     coincide-test below fired and the guard returned without checking
+	#     anything. Measured across a full harness run: 1 skip, 0 checks. It had
+	#     never once executed.
+	# Derived from the measured half-extent instead, with the same 18 m margin
+	# src/tests/test_nav_connectivity.gd uses, so the shipped guard and the harness
+	# ask the same question of the same geometry.
+	var exterior := Vector3(
+		shell_box.position.x + shell_box.size.x + 18.0,
+		shell_box.position.y,
+		shell_box.get_center().z)
+	if interior.distance_to(exterior) < 5.0:
+		print("[MainWorld] nav connectivity: endpoints coincide — check skipped")
+		return
+	var map : RID = get_world_3d().navigation_map
+	for pair in [[interior, exterior], [exterior, interior]]:
+		var path : PackedVector3Array = NavigationServer3D.map_get_path(
+			map, pair[0], pair[1], true)
+		var reached : bool = path.size() >= 2 \
+			and path[path.size() - 1].distance_to(pair[1]) <= 1.0
+		if not reached:
+			push_error(("[MainWorld] NAVMESH CONNECTIVITY LOST: no route from %s to %s "
+				+ "(%d path points). The plant is sealed — NAV_BAKE_SHELL is %s and "
+				+ "world_layout structure_items (doorways) may be empty.")
+				% [str(pair[0].round()), str(pair[1].round()), path.size(),
+					str(NAV_BAKE_SHELL)])
+			return
+
+## Tag every body NavSourcePolicy accepts, plus the two walkable surfaces. Returns
+## how many were tagged.
+##
+## The floor tags moved from the MeshInstance3Ds to their StaticBody3Ds: under
+## PARSED_GEOMETRY_STATIC_COLLIDERS a tagged mesh contributes nothing, so leaving
+## them where they were would have produced an empty mesh with no error.
+func _tag_nav_sources() -> int:
+	var n := 0
+	for grp in NavSourcePolicy.SOURCE_GROUPS:
+		for node in get_tree().get_nodes_in_group(grp):
+			if NavSourcePolicy.is_nav_source(node, NAV_BAKE_SHELL) \
+					and not node.is_in_group(NAVMESH_GROUP):
+				node.add_to_group(NAVMESH_GROUP)
+				n += 1
+	# The two surfaces the crew actually stands on. The 4000 m slab is tagged for
+	# its geometry but the bake is clipped to filter_baking_aabb, so only the site
+	# portion of it is voxelised.
+	for nm in ["TempFloor", "ExteriorGroundBody"]:
+		var body := find_child(nm, true, false)
+		if body is StaticBody3D and not body.is_in_group(NAVMESH_GROUP):
+			body.add_to_group(NAVMESH_GROUP)
+			n += 1
+	# The perimeter fence: ~339 static bodies (posts + panels) with no shared group
+	# of their own. They are parented straight onto MainWorld as PerimeterFence_*
+	# runs (ExteriorManager.gd:195-208) — an earlier version of this looked for an
+	# "ExteriorManager" node and silently tagged nothing.
+	for c in get_children():
+		if c.name.begins_with("PerimeterFence_"):
+			n += _tag_static_descendants(c)
+	# npc-07 — THE BUILDING ENVELOPE, GATED. Without these lines NAV_BAKE_SHELL is
+	# decorative. NavSourcePolicy.is_nav_source HAS a shell rule, but it is only ever
+	# consulted for nodes already in SOURCE_GROUPS, and the shell is in neither
+	# "placed_object" nor "belt" — so the loop at the top of this function never asks
+	# about it and the flag reaches no code path at all.
+	#
+	# MEASURED, not inferred: flipping the const to true changed the baked mesh by
+	# exactly 0 polygons (293 both ways) and left the interior<->exterior route at 11
+	# points. A safety decision documented at length and wired to nothing is worse
+	# than no flag, because the comment above the const is then load-bearing
+	# misinformation — and the sealed-plant failure it exists to describe could never
+	# have been reproduced, so no test could ever prove the guard against it works.
+	#
+	# Ships false, so this changes nothing today. It makes the flag mean what it says.
+	if NAV_BAKE_SHELL:
+		n += _tag_static_descendants(_shell())
+	return n
+
+func _tag_static_descendants(root: Node) -> int:
+	var n := 0
+	if root is StaticBody3D and not root.is_in_group(NAVMESH_GROUP):
+		root.add_to_group(NAVMESH_GROUP)
+		n += 1
+	for c in root.get_children():
+		n += _tag_static_descendants(c)
+	return n
 
 func _spawn_exterior_ground(anchor: Vector3, ground_y: float) -> void:
 	var ground := MeshInstance3D.new()
@@ -926,7 +1124,9 @@ func _spawn_exterior_ground(anchor: Vector3, ground_y: float) -> void:
 	mat.albedo_color = Color(0.36, 0.46, 0.22)
 	mat.roughness = 0.96
 	ground.material_override = mat
-	ground.add_to_group(NAVMESH_GROUP)         # source for the NavRegion bake
+	# NOT a nav source any more: under PARSED_GEOMETRY_STATIC_COLLIDERS the bake
+	# walks bodies, not visuals, so a tagged MeshInstance3D contributes nothing.
+	# ExteriorGroundBody (below) is what _tag_nav_sources tags instead.
 	add_child(ground)
 	# Static collision so the player can walk on it.
 	var body := StaticBody3D.new()

@@ -910,6 +910,19 @@ var npc_autopilot      : bool    = false
 var _npc_target        : Vector3 = Vector3.ZERO
 var _npc_target_active : bool    = false
 var _npc_reverse       : bool    = false   # carry-first approach: back the carry gear onto the target
+var _pilot             : VehiclePilot = null   # npc-06 local sensing, built on first NPC drive
+# npc-06 GLOBAL ROUTE. _npc_goal is what the caller asked for; _npc_target is the
+# waypoint currently being driven to. With no route the two are identical, which
+# is exactly the old dead-reckoning behaviour — so a world where the grid cannot
+# build degrades to what shipped rather than to a vehicle that refuses to move.
+var _npc_goal    : Vector3 = Vector3.ZERO
+var _npc_route   : PackedVector3Array = PackedVector3Array()
+var _npc_route_i : int = 0
+## Shared across every vehicle: the occupancy grid describes the plant, not the
+## driver. Rebuilt when the world changes so a test that boots a second MainWorld
+## cannot inherit the first one's obstacles.
+static var _route_grid : VehicleRouteGrid = null
+static var _route_grid_world : int = 0
 const NPC_ARRIVE_TOL   : float   = 2.2     # m — "close enough" to the waypoint
 const NPC_TURN_RATE    : float   = 1.8     # rad/s yaw slew toward the heading
 const NPC_CRUISE_FRAC  : float   = 0.55    # fraction of speed_limit the AI cruises at
@@ -965,10 +978,28 @@ func npc_set_target(p: Vector3, carry_first: bool = false) -> void:
 		push_warning("[BaseVehicle] %s (%s): REFUSED npc target %.1f m from the scene origin (max %.0f m) — target %s, vehicle at %s" % [
 			name, vehicle_type, r, NPC_TARGET_MAX_R, str(p), str(global_position)])
 		return
+	# npc-06 — RE-ORDER SUPPRESSION, and it is not an optimisation. Every driving
+	# task re-issues its destination EVERY physics tick until it arrives (e.g.
+	# OverflowDumpTask._tick_drive_to_indoor:136-138), so without this the route
+	# would be re-planned 60x/s AND the vehicle would restart at waypoint 0 every
+	# tick — it could never leave the first leg. Same order, same route, keep the
+	# progress already made along it.
+	if _npc_target_active and _npc_route.size() > 0 and p.distance_to(_npc_goal) < 0.5:
+		return
+	_npc_goal = p
 	_npc_target = p
 	_npc_target_active = true
 	npc_autopilot = true
 	_npc_reverse = false
+	# npc-06 — a new order is a new leg: the pilot's stuck timer, evade commit and
+	# reverse budget must not carry over, or a vehicle re-tasked mid-recovery
+	# inherits a manoeuvre aimed at the previous obstacle.
+	if _pilot != null:
+		_pilot.reset_leg()
+	_npc_route = _plan_route(p)
+	_npc_route_i = 0
+	if _npc_route.size() > 0:
+		_npc_target = _npc_route[0]
 	if carry_first:
 		var cp := _carry_point()
 		if cp != null and cp != self:
@@ -978,13 +1009,69 @@ func npc_set_target(p: Vector3, carry_first: bool = false) -> void:
 func npc_stop() -> void:
 	_npc_target_active = false
 
-## True once we're within NPC_ARRIVE_TOL of the active waypoint (XZ).
+## True once we're within NPC_ARRIVE_TOL of the ORDERED destination (XZ) — not of
+## the intermediate waypoint currently being driven to. Reporting arrival at a
+## waypoint would let every task advance its phase the moment the route's first
+## corner was reached.
 func npc_arrived() -> bool:
 	if not _npc_target_active:
 		return true
 	var a := global_position; a.y = 0.0
-	var b := _npc_target;     b.y = 0.0
+	var b := _npc_goal;       b.y = 0.0
 	return a.distance_to(b) <= NPC_ARRIVE_TOL
+
+## Waypoints remaining on the planned route (0 when dead reckoning). Exposed so a
+## test can tell "arrived because it drove the route" from "arrived because the
+## route was empty and the straight line happened to be clear".
+func npc_route_points() -> int:
+	return _npc_route.size()
+
+## Plan a vehicle-scale route to `p`. An empty result means dead reckoning, which
+## is the shipped behaviour and the correct degradation: a world whose grid
+## cannot build must still move its vehicles.
+func _plan_route(p: Vector3) -> PackedVector3Array:
+	var grid := _ensure_route_grid()
+	if grid == null:
+		return PackedVector3Array()
+	var r := grid.route(global_position, p)
+	if r.is_empty():
+		# NAMED, not silent. An empty route means the grid found no vehicle-sized
+		# way through, and the vehicle then dead-reckons — which looks exactly like
+		# the bug this work removed. Measured cause on both jam fixtures: the
+		# endpoint was on the far side of the building envelope, and the operator's
+		# survey has ZERO doorways (world_layout structure_items is empty), so a
+		# 2.2 m probe correctly reports the interior as unreachable. Say so, rather
+		# than letting the caller infer it from a leg that wanders.
+		push_warning(("[BaseVehicle] %s (%s): NO VEHICLE ROUTE from %s to %s — falling back "
+			+ "to dead reckoning. Check whether either endpoint is inside the building "
+			+ "(no doorways exist in world_layout structure_items).")
+			% [name, vehicle_type, str(global_position.round()), str(p.round())])
+	return r
+
+## Build (or reuse) the shared site occupancy grid. Built lazily on the first NPC
+## drive order rather than at world load: a session where nothing is ever
+## NPC-driven never pays for it, and by first-order time the plant is placed.
+func _ensure_route_grid() -> VehicleRouteGrid:
+	var tree := get_tree()
+	if tree == null:
+		return null
+	var world := tree.current_scene
+	if world == null or not (world is Node3D):
+		return null
+	if _route_grid != null and _route_grid_world == world.get_instance_id():
+		return _route_grid
+	var bounds := NavSiteBounds.compute(world)
+	if bounds.size == Vector3.ZERO:
+		push_warning("[BaseVehicle] site bounds unmeasurable — NPC driving falls back to dead reckoning")
+		return null
+	var grid := VehicleRouteGrid.new()
+	if not grid.build(world as Node3D, bounds, global_position.y):
+		return null
+	_route_grid = grid
+	_route_grid_world = world.get_instance_id()
+	print("[VehicleRouteGrid] %d x %d cells over %.0f x %.0f m, %d blocked, built in %d ms"
+		% [grid.cols, grid.rows, bounds.size.x, bounds.size.z, grid.blocked_cells, grid.build_ms])
+	return _route_grid
 
 ## Per-frame AI driving: yaw toward the target (rate-limited), set forward speed
 ## scaled by how well we're facing it + how close we are. _kinematic_move (called
@@ -995,9 +1082,15 @@ func _npc_drive(delta: float) -> void:
 	to.y = 0.0
 	var dist := to.length()
 	if dist <= NPC_ARRIVE_TOL:
+		# Reached a waypoint: take the next one and keep rolling. Only the FINAL
+		# waypoint stops the vehicle, so a route does not brake at every corner.
+		if _advance_waypoint():
+			return
 		# AI hard-stop on arrival — use brake_decel_mps2 so an NPC-driven Forklift /
 		# Merlo stops at the same per-vehicle deceleration as a player-driven one.
 		_current_speed_mps = move_toward(_current_speed_mps, 0.0, brake_decel_mps2 * delta)
+		if _pilot != null:
+			_pilot.reset_leg()
 		return
 	# Canonical CeDo direction: forward = -basis.z. In Godot, -basis.z for a
 	# Y-rotation θ is (-sinθ, 0, -cosθ). So the yaw that points -basis.z along
@@ -1007,17 +1100,74 @@ func _npc_drive(delta: float) -> void:
 	var desired_yaw := atan2(-to.x, -to.z)
 	if _npc_reverse:
 		desired_yaw = atan2(to.x, to.z)
-	rotation.y = _approach_angle(rotation.y, desired_yaw, NPC_TURN_RATE * delta)
+	var cruise := (speed_limit_kmh / 3.6) * NPC_CRUISE_FRAC * _power_factor()
+	# npc-06 — LOCAL SENSING. Everything above is unchanged dead reckoning; the
+	# pilot is the only thing between it and the wheels. It reads the world and
+	# returns a heading bias + a speed scale, never a transform, so a jam that
+	# clears can be attributed to this layer and nothing else. See VehiclePilot.gd
+	# for why sensing (not a navmesh) is the missing organ — jam 1 reproduced with
+	# all 339 fence colliders stripped.
+	_ensure_pilot()
+	_pilot.advise(self, delta, cruise, _npc_target)
+	# While the pilot is rounding an obstacle the heading comes from the OBSTACLE,
+	# not from the target bearing — steering at a target behind a wall is what
+	# turned the timed swerve into an oscillation.
+	if is_finite(_pilot.heading_override):
+		desired_yaw = _pilot.heading_override
+	else:
+		desired_yaw += _pilot.yaw_bias
+	if not _pilot.hold_heading:
+		rotation.y = _approach_angle(rotation.y, desired_yaw, NPC_TURN_RATE * delta)
 	# Speed scales with alignment (don't barrel forward while still turning).
 	var yaw_err := _angle_diff(rotation.y, desired_yaw)
 	var align : float = clampf(cos(yaw_err), 0.0, 1.0)
-	var cruise := (speed_limit_kmh / 3.6) * NPC_CRUISE_FRAC * _power_factor()
-	var tgt_speed := cruise * align
+	var tgt_speed : float = cruise * align * _pilot.speed_scale
 	if dist < 4.0:
 		tgt_speed *= clampf(dist / 4.0, 0.25, 1.0)   # ease in to the waypoint
 	if _npc_reverse:
 		tgt_speed = -tgt_speed   # reverse along +basis.z (see _kinematic_move)
+	if _pilot.recovery_reverse:
+		# CRITICAL SEPARATION. The recovery reverse NEGATES the final command; it
+		# never touches _npc_reverse. That flag decides which END of the vehicle
+		# faces the load (carry-first approach), and overwriting it during a
+		# recovery manoeuvre would leave the forks on the far side of every load,
+		# permanently outside GRAB_RANGE. "Back away from the contact" composes
+		# with either approach mode; "set reverse = true" does not.
+		tgt_speed = -absf(cruise) * _pilot.speed_scale if not _npc_reverse \
+			else absf(cruise) * _pilot.speed_scale
 	_current_speed_mps = move_toward(_current_speed_mps, tgt_speed, throttle_accel_mps2 * delta)
+
+## Step to the next route waypoint. Returns false when the route is exhausted (or
+## there never was one), which is the caller's signal to brake. Clears the pilot's
+## per-leg state so a recovery aimed at the previous corner does not leak forward.
+func _advance_waypoint() -> bool:
+	if _npc_route_i + 1 >= _npc_route.size():
+		return false
+	_npc_route_i += 1
+	_npc_target = _npc_route[_npc_route_i]
+	if _pilot != null:
+		_pilot.reset_leg()
+	return true
+
+## The pilot is created on first NPC drive, not in _ready: a player-driven or
+## parked vehicle never allocates one, and nothing in the player path can be
+## affected by a node that does not exist.
+func _ensure_pilot() -> void:
+	if _pilot != null and is_instance_valid(_pilot):
+		return
+	_pilot = VehiclePilot.new()
+	_pilot.name = "VehiclePilot"
+	add_child(_pilot)
+
+## Recovery manoeuvres this vehicle's pilot has performed. Exposed so a test can
+## prove the pilot ENGAGED on a leg it passed — a cleared jam with zero
+## engagements is a coincidence, not a fix.
+var evade_count : int:
+	get: return _pilot.evade_count if _pilot != null else 0
+var recovery_reverse_count : int:
+	get: return _pilot.recovery_reverse_count if _pilot != null else 0
+var wedge_seconds_total : float:
+	get: return _pilot.wedge_seconds_total if _pilot != null else 0.0
 
 ## Smallest signed difference a→b, wrapped to [-PI, PI].
 func _angle_diff(a: float, b: float) -> float:

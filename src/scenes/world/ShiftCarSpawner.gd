@@ -183,14 +183,25 @@ func _add_parked_collider(car: Node3D) -> void:
 	body.add_child(cs)
 	car.add_child(body)
 
-## Union of every VisualInstance3D AABB under `root`, in root-local space.
+## Union of every GEOMETRY AABB under `root`, in root-local space.
+##
+## GEOMETRY, not every VisualInstance3D: Light3D also extends VisualInstance3D
+## and its AABB spans the light's REACH, not a body. BaseVehicle._build_lights
+## gives each vehicle head/work spots at spot_range 22 m plus a 14 m reverse
+## beam, so the old union produced a ParkedCollider box measured at
+## 28.2 x 32.6 x 44.3 m centred ~17 m BELOW grade — a 50 m phantom around every
+## parked car. It sits on the query-only layer so nothing bumps into it, but any
+## sweep that probes all layers still hits it, including the F10 feedback ray and
+## BuildMode's vehicle-clearance sentinel (BuildMode.gd:1100-1106 probes every
+## layer deliberately, to see query-only bodies). A clearance gate that trips on
+## a phantom 25 m away is worse than no gate.
 func _visual_aabb(root: Node3D) -> AABB:
 	var out := AABB()
 	var seen := false
 	var stack : Array[Node] = [root]
 	while not stack.is_empty():
 		var n : Node = stack.pop_back()
-		if n is VisualInstance3D and n != root:
+		if (n is MeshInstance3D or n is MultiMeshInstance3D) and n != root:
 			var vi := n as VisualInstance3D
 			var local := root.global_transform.affine_inverse() * vi.global_transform
 			var a := local * vi.get_aabb()

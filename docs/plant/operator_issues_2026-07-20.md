@@ -843,3 +843,70 @@ the plant, to where they were originally drawn. This is the correction, not a ne
 bug. Vehicles now spawn inside the building footprint; they seat on the floor
 headlessly, but intersection with machines on a populated save is unverified, and
 the line-start snap + feed-point gate are live for the first time.
+
+## T. Navigation (npc-06/07) — the four jams, and the doorway that does not exist
+
+Operator picked navigation as the next focus. Result: three of the four measured
+jams cleared, every green mutation-tested (reverting each fix turns specific
+checks red on demand — a green that cannot be reddened is not evidence).
+
+| jam | before | after |
+|---|---|---|
+| forklift wedging at (-79.90, 157.13) | wedged 38.7 s, covered 23.7 m | **0.0 s stalled, 107.2 m covered**, 7 pilot evade/reverse events |
+| npc-05 stage 3 stranding mass | forklift 4.90 m short of a 3.5 m gate | **PASS** — 3 stages, skip 275 → 550 → **825 kg** |
+| outdoor routing | wedged 6.95 m short | **PASS** — 205 m leg around the 155 m building, arrived 2.19 m from goal |
+| feeder walk into a belt deck | 6.3 m short, force-completed | **PASS**, 0 force-completions |
+| plant not sealed by the carved mesh | (new guard) | **PASS** — crew route post↔canteen both ways |
+
+Navmesh went from **2 polygons / 4 vertices** (one 4000 m featureless quad — the
+TempFloor slab top) to **293 polygons / 331 vertices** over 341 real source
+bodies, bounded to a 260 × 240 m site.
+
+### Two more vacuous greens, found by mutation-testing not by reading
+
+- **`NAV_BAKE_SHELL` was wired to nothing.** `_tag_nav_sources` only iterated
+  `placed_object` / `belt`, and the shell is in neither, so the flag's entire
+  safety rationale was unreachable. Measured: flipping it changed the mesh by
+  **0 polygons**. A long comment guarding a dead branch.
+- **`_verify_nav_connectivity` had never once executed.** Its "exterior"
+  endpoint was `_player_spawn_pos` — a point *inside* the plant — which sat
+  within 5 m of the shell centre, so its coincide-skip fired on every boot:
+  **1 skip, 0 checks, every run.** Now derived from the measured shell AABB.
+- Also corrected a load-bearing comment that was factually false about
+  `GROUPS_EXPLICIT` not parsing child shapes — measured false; it would have
+  sent the next debugger to the wrong line.
+
+### The structural blocker: THE BUILDING HAS NO DOORWAYS
+
+`world_layout.structure_items` is **empty**, so no door, gate or window is
+modelled anywhere in the facade. Consequences, measured:
+
+- a vehicle can drive anywhere OUTSIDE and anywhere INSIDE, but the router
+  correctly returns a **0-point route** across the facade — no pilot can cross a
+  solid wall, so both remaining jam-test arrivals are unreachable by data, not
+  by defect;
+- on-foot crew currently walk **through walls**, and that is the only reason
+  they can reach anything: the shell is deliberately not in the navmesh
+  (`NAV_BAKE_SHELL = false`), because carving it with no doorways would seal the
+  plant completely.
+
+This is why the jam test reports `BLOCKED:` instead of `FAIL` on arrival: no code
+change can satisfy it. The wedge assertions stay hard, and arrival becomes a hard
+check automatically the moment a gate is placed. Grep harness logs for `BLOCKED:`
+to see what the missing door survey costs.
+
+**Possible connection, not proven:** §P2 records that `_save_layout` could write
+an EMPTY shared-structure list back to `world_layout.json` whenever a bench
+BuildMode was running, on the 60 s autosave. If doors were ever placed, that
+mechanism could have erased them. It is fixed now, but the data is not
+recoverable from the file, and the operator may simply never have placed any.
+
+### Reported, not fixed
+
+- **Yassine's post is at (-508.0, 406.5)** — roughly 340 m off-site; the canteen
+  route ends 267.91 m short. Traced to a `CrewManager.assign_posts` fallback
+  using pre-shift positions, not a navmesh fault.
+- **Teardown segfaults are now more frequent** (4 in one harness run, always
+  AFTER the verdict printed). Results are unaffected and the harness is
+  verdict-gated, so it reports honestly — but the crash itself is new enough to
+  deserve its own look.

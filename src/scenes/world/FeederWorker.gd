@@ -260,6 +260,22 @@ func _walk_to_point(target: Vector3, arrive_r: float, delta: float, leg: String)
 		return false
 	desired = desired.normalized()
 	_sidestep_commit_s = maxf(0.0, _sidestep_commit_s - delta)
+	# npc-07 — THIS LEG STILL USES RAW STEERING + THE WALL-FOLLOW, ON PURPOSE.
+	# A NavigationAgent3D was fitted here and REVERTED after measurement. Two
+	# things went wrong and both are recorded so the next attempt starts from
+	# evidence rather than from the same idea:
+	#   1. the fetch target is the STAND spot beside a tool resting ON the belt
+	#      frame, and the belt deck is now a navmesh obstacle — so that spot sits
+	#      inside the agent_radius erosion and Recast returns a path that stops
+	#      short, which Godot reports as success;
+	#   2. worse, routing was preferred over the wall-follow, which put the
+	#      side-step in an else-branch and disabled it outright. Measured:
+	#      test_feeder_fetch closed 1.0 m of 13.7 m, walk_sidesteps 1 (triggered
+	#      once, applied never), and the deadlock guard force-completed the leg —
+	#      exactly the #241 teleport-stow this test exists to forbid.
+	# The fix is to route to a REACHABLE stand pose (an ApproachPose-style offset
+	# off the belt's own face) and to keep the wall-follow as the tactical layer
+	# under it, not as an alternative to it.
 	var step_dir : Vector3 = desired
 	if _sidestep_left > 0.0:
 		_sidestep_left -= delta

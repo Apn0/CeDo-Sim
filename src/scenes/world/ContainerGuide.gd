@@ -127,6 +127,10 @@ const CONTAINER_IDS : Array[String] = [
 # go red the moment the two disagree.
 const WORLD_CONTAINER_SPAWNS : Array[Dictionary] = [
 	# npc-05 O1 — end-destination skip (operator: verplaats gerust, positie is een gelabelde aanname)
+	# OPERATOR RULING 2026-07-21: keep it INDOORS for now. He was shown the A/B
+	# above and chose the position where the chain actually completes. Move it to
+	# the yard only once npc-06/npc-07 navigation lands — until then the forklift
+	# cannot reach an outdoor skip (measured: wedges 6.95 m short, 0 kg moved).
 	{"offset": Vector3(12.0, 0.0, 28.0), "container_id": "skip_steel", "outdoor": true},
 ]
 

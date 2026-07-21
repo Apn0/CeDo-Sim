@@ -553,7 +553,19 @@ func _physics_process(delta: float) -> void:
 			# baked yet, target unreachable, etc.). Falling back to straight-
 			# line in that case keeps unmanaged / pre-navmesh worlds working.
 			var next_wp : Vector3 = _nav_agent.get_next_path_position()
-			if next_wp.distance_to(global_position) < 0.05:
+			# npc-07 — the fallback is gated on whether a ROUTE EXISTS, not on "the
+			# next waypoint is within 5 cm of us". That proximity test was ALWAYS true
+			# against the old 1-polygon mesh, which returns the destination directly —
+			# so this branch was the permanent state of every NPC in the game and the
+			# agent above it was decorative. Once the mesh is real the same test would
+			# silently drop an NPC off its route whenever the first waypoint landed
+			# underfoot.
+			#
+			# The fallback itself STAYS, deliberately. Test scenes, hand-instantiated
+			# bodies, the pre-bake startup window and any NPC whose destination lands in
+			# an aisle pocket the eroded mesh sealed all depend on it. An NPC that
+			# freezes when the agent has nothing is worse than one that dead-reckons.
+			if _nav_agent.get_current_navigation_path().size() <= 1:
 				# Fallback: agent has no path (navmesh empty / disabled / first
 				# tick before bake completes). Use the straight-line direction
 				# so the NPC still moves instead of standing frozen.

@@ -84,7 +84,18 @@ fi
 # it. Mutation-tested — reverting that function turns 4 of its checks red. Note
 # the regression's own "within 500 m of plant" check stayed GREEN throughout the
 # bug, which is exactly why an identity assertion had to exist.
-for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame; do
+# test_jam_baseline reproduces the two measured wedge coordinates deterministically.
+# Its ARRIVAL checks print BLOCKED rather than FAIL while the building models no
+# doorways (world_layout structure_items is empty, so the router honestly returns
+# a 0-point route across the facade) — the wedge checks stay hard, and arrival
+# goes hard automatically once a gate is placed. Grep the logs for 'BLOCKED:' to
+# see what the missing door survey is still costing.
+# npc-06/07 navigation: test_nav_connectivity proves the carved navmesh did NOT
+# seal the plant (crew still route post<->canteen both ways); test_outdoor_route
+# proves a vehicle drives a 205 m apron-to-apron leg around the building instead
+# of dead-reckoning into it. Both mutation-tested (reverting the pilot / the
+# shell-bake flag turns them red).
+for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline; do
 	echo "== $t =="
 	"$GODOT" --headless --path "$PROJ" "res://src/tests/$t.tscn" > "$OUT/$t.log" 2>&1
 	grep -E "^  (ok|FAIL)|Result|RESULT" "$OUT/$t.log" || true
@@ -92,6 +103,42 @@ for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_fee
 	# teardown after a clean PASS (observed exit 139 with every check ok).
 	if ! grep -qE "Result: PASS|RESULT: PASS" "$OUT/$t.log"; then
 		echo "FAIL  : $t (see $OUT/$t.log)"
+		[ $code -eq 0 ] && code=1
+	fi
+done
+
+# Spawn clearance. The 9334310 marker-frame fix moved 9 vehicles 120-270 m and
+# 7 bale yards 290-355 m ONTO the plant. test_vehicle_spawn_frame proves they
+# land ON their markers; NOTHING proved they land in FREE SPACE. This measures
+# real shape overlap (vehicle's own hull, own transform) against every body in
+# the space, plus a down-ray so nothing floats or is buried.
+#
+# TWO configurations, both gating, because they answer different questions:
+#   NOLINE = the operator's real save alone. Authoritative for "what happens on
+#            his next boot". Run FIRST because the populated run perturbs the
+#            hulls under test — the synthetic line lifts MastLift onto a machine
+#            and thereby HIDES the mast-lift nesting this configuration finds.
+#   default = same world PLUS line_3a built from the clean seed, so hulls are
+#            tested against a real machine line instead of a near-empty shell.
+#
+# Mutation-tested: SPAWNCLEAR_PLANT=1 embeds a hull in a static shipped machine
+# and reproducibly reads 100 % penetration, turning 3 checks red.
+# "ADVIS" lines are measured defects the file is deliberately not the gate for
+# (see _advise in the test); they print in full and do not affect the verdict.
+for cfg in "NOLINE" "LINE"; do
+	echo "== spawn clearance ($cfg) =="
+	if [ "$cfg" = "NOLINE" ]; then
+		SPAWNCLEAR_NOLINE=1 "$GODOT" --headless --path "$PROJ" \
+			"res://src/tests/test_spawn_clearance.tscn" > "$OUT/spawn_clearance_$cfg.log" 2>&1
+	else
+		"$GODOT" --headless --path "$PROJ" \
+			"res://src/tests/test_spawn_clearance.tscn" > "$OUT/spawn_clearance_$cfg.log" 2>&1
+	fi
+	grep -aE "^  (ok|FAIL|ADVIS)  |^Result" "$OUT/spawn_clearance_$cfg.log" || true
+	# Verdict-based, like every step above: Godot segfaults in teardown after a
+	# clean pass on this one (observed with "0 fail" already printed).
+	if ! grep -qaE "^Result: PASS" "$OUT/spawn_clearance_$cfg.log"; then
+		echo "FAIL  : spawn clearance $cfg (see $OUT/spawn_clearance_$cfg.log)"
 		[ $code -eq 0 ] && code=1
 	fi
 done
