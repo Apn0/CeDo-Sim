@@ -1,7 +1,10 @@
 # DESIGN npc-05 — Container-leeg-keten (overflow → forklift → outdoor skip)
 
-Status: **CONCEPT — bouw pas na akkoord Arno.** (Zelfde regel als
-`docs/plant/npc_rol_taak_prioriteit.md`.)
+Status: **GOEDGEKEURD (Arno, 2026-07-20) → GEBOUWD.** O1 = één nieuwe buiten-skip
+via ContainerGuide (positie = gelabelde aanname, vrij te verplaatsen); O2 =
+Optie A; O3 = HUD-warning + 30 m³, vrachtwagen-wissel buiten scope. Bewijs:
+`src/tests/test_npc05_container_chain.gd` — draai `tests\run_tests.bat`
+(stage 10) op de operator-machine.
 Backlog-bron: `docs/BACKLOG_ultracode_2026-07-19.md` § "Deferred — design decision
 first". Vereiste npc-01/npc-02 (claim/release-machinerie) is geland.
 

@@ -57,6 +57,11 @@ echo === [9/9] SecuritySaveTest (script mode) ===
 %GODOT% --headless --path . --script res://tests/SecuritySaveTest.gd
 set RC9=%ERRORLEVEL%
 
+echo.
+echo === [10/10] Npc05ContainerChainTest (script mode) ===
+%GODOT% --headless --path . --script res://src/tests/test_npc05_container_chain.gd
+set RC10=%ERRORLEVEL%
+
 popd
 echo.
 echo BaleComplianceTest     exit: %RC1%
@@ -68,6 +73,7 @@ echo SettingsParseTest      exit: %RC6%
 echo ScanLogTest            exit: %RC7%
 echo VehicleBaleTest        exit: %RC8%
 echo SecuritySaveTest       exit: %RC9%
+echo Npc05ContainerChain    exit: %RC10%
 if not "%RC1%"=="0" exit /b %RC1%
 if not "%RC2%"=="0" exit /b %RC2%
 if not "%RC3%"=="0" exit /b %RC3%
@@ -76,4 +82,5 @@ if not "%RC5%"=="0" exit /b %RC5%
 if not "%RC6%"=="0" exit /b %RC6%
 if not "%RC7%"=="0" exit /b %RC7%
 if not "%RC8%"=="0" exit /b %RC8%
-exit /b %RC9%
+if not "%RC9%"=="0" exit /b %RC9%
+exit /b %RC10%

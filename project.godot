@@ -389,7 +389,7 @@ hotbar_drop={
 
 [physics]
 
-3d/physics_engine="GodotPhysics3D"
+3d/physics_engine="Rapier3D"
 jolt_physics_3d/joints/world_node=1
 jolt_physics_3d/limits/temporary_memory_buffer_size=64
 3d/default_gravity=9.810000000000002
