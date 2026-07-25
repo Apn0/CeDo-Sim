@@ -624,17 +624,14 @@ func _draw_sub_cylinder(a: Vector3, b: Vector3) -> void:
 	var len_ := diff.length()
 	if len_ < 0.001:
 		return
-	var mi := MeshInstance3D.new()
-	var cm := CylinderMesh.new()
-	cm.top_radius = hose_radius
-	cm.bottom_radius = hose_radius
-	cm.height = len_
-	cm.radial_segments = 6
-	mi.mesh = cm
-	mi.material_override = _chain_mat
-	_chain_root.add_child(mi)
+	var csg := CSGCylinder3D.new()
+	csg.radius = hose_radius
+	csg.height = len_
+	csg.sides = 6
+	csg.material = _chain_mat
+	_chain_root.add_child(csg)
 	var up : Vector3 = diff / len_
 	var ref : Vector3 = Vector3.RIGHT if absf(up.dot(Vector3.RIGHT)) < 0.95 else Vector3.FORWARD
 	var x_axis : Vector3 = up.cross(ref).normalized()
 	var z_axis : Vector3 = x_axis.cross(up).normalized()
-	mi.global_transform = Transform3D(Basis(x_axis, up, z_axis), (a + b) * 0.5)
+	csg.global_transform = Transform3D(Basis(x_axis, up, z_axis), (a + b) * 0.5)
