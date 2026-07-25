@@ -18,6 +18,8 @@ const PIECES          : int   = 6
 const MAX_PIECES_LIVE : int   = 60          # scene-wide safety cap (~10 bales' worth)
 const LAYERS_PER_PIECE : int  = 8           # thin visual slabs per piece (film look)
 
+static var _live_pieces : Array[Node] = []
+
 ## Replace `bale` with 6 fanned physical pieces at the same world pose; free the
 ## original. `scene` is where the pieces live (usually current_scene). Returns them.
 static func open(bale: Node3D, scene: Node) -> Array:
@@ -65,6 +67,7 @@ static func open(bale: Node3D, scene: Node) -> Array:
 		# flex/curl along the whole strip (the middle stays lowest).
 		seg.linear_velocity = xf.basis * Vector3(s * 0.8, absf(s) * 0.6, 0.0)
 		out.append(seg)
+		_live_pieces.append(seg)
 		prev = seg
 		prev_x = local_x
 	bale.queue_free()
@@ -102,12 +105,16 @@ static func _tint(bale: Node3D) -> Color:
 	return Color(0.62, 0.64, 0.60)
 
 ## Keep the live piece count bounded — free the oldest if we'd exceed the cap.
-static func _cap_existing(scene: Node) -> void:
-	var tree := scene.get_tree()
-	if tree == null:
-		return
-	var pieces := tree.get_nodes_in_group("bale_piece")
-	var excess := pieces.size() + PIECES - MAX_PIECES_LIVE
-	for k in range(maxi(0, excess)):
-		if k < pieces.size() and is_instance_valid(pieces[k]):
-			(pieces[k] as Node).queue_free()
+static func _cap_existing(_scene: Node) -> void:
+	var valid_pieces : Array[Node] = []
+	for p in _live_pieces:
+		if is_instance_valid(p) and p.is_inside_tree():
+			valid_pieces.append(p)
+	_live_pieces = valid_pieces
+
+	var excess := _live_pieces.size() + PIECES - MAX_PIECES_LIVE
+	if excess > 0:
+		for k in range(excess):
+			if is_instance_valid(_live_pieces[k]):
+				_live_pieces[k].queue_free()
+		_live_pieces = _live_pieces.slice(excess)
