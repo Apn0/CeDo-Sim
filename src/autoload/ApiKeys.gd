@@ -8,13 +8,9 @@ extends Node
 ##
 ## Register as autoload "ApiKeys".
 ##
-## Security note: keys are stored in PLAINTEXT at rest in user://api_keys.cfg
-## (and read from a plaintext .env on first run). That directory is user-only
-## writable and lives outside the repo, but any process running as the operator
-## can read it. This is an accepted tradeoff for a single-user desktop game. If
-## the threat model ever grows to include local malware or shared machines, move
-## the secret into the OS keychain / credential manager instead of a flat
-## ConfigFile.
+## Security note: keys are stored ENCRYPTED at rest in user://api_keys.cfg
+## (and read from a plaintext .env on first run) using Godot's built-in
+## ConfigFile encryption with OS.get_unique_id() as the encryption password.
 ##
 ## Usage:
 ##   var key := ApiKeys.google()
@@ -27,9 +23,13 @@ const CFG_PATH : String = "user://api_keys.cfg"
 var _cfg : ConfigFile = ConfigFile.new()
 
 func _ready() -> void:
-	if _cfg.load(CFG_PATH) != OK:
-		_bootstrap_from_env()
-		_cfg.load(CFG_PATH)
+	if _cfg.load_encrypted_pass(CFG_PATH, OS.get_unique_id()) != OK:
+		if _cfg.load(CFG_PATH) == OK:
+			# Migrate existing plaintext config to encrypted
+			_cfg.save_encrypted_pass(CFG_PATH, OS.get_unique_id())
+		else:
+			_bootstrap_from_env()
+			_cfg.load_encrypted_pass(CFG_PATH, OS.get_unique_id())
 
 ## Operator stores a `.env` on their Desktop with one or more of:
 ##   GOOGLE_API_KEY=…
@@ -62,7 +62,7 @@ func _bootstrap_from_env() -> void:
 		_cfg.set_value("openai", "api_key", openai_key)
 		wrote = true
 	if wrote:
-		_cfg.save(CFG_PATH)
+		_cfg.save_encrypted_pass(CFG_PATH, OS.get_unique_id())
 		print("[ApiKeys] Bootstrapped API keys from Desktop .env into ", CFG_PATH)
 
 ## Resolve "<operator's Desktop>/.env" without hardcoding a machine-specific
