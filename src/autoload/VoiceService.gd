@@ -374,6 +374,7 @@ func _speak_cloud(text: String, voice_id: String) -> void:
 		"format": "wav",
 	}
 	var err := _http_tts.request(OPENAI_TTS_URL, headers, HTTPClient.METHOD_POST, JSON.stringify(body))
+	headers[0] = "Authorization: Bearer [REDACTED]"
 	if err != OK:
 		_tts_pending = false
 		_log_clear("cloud TTS request init failed: %s" % err)
@@ -397,6 +398,7 @@ func _reason_cloud(prompt: String, system: String) -> void:
 		"temperature": 0.7,
 	}
 	var err := _http_chat.request(OPENAI_CHAT_URL, headers, HTTPClient.METHOD_POST, JSON.stringify(body))
+	headers[0] = "Authorization: Bearer [REDACTED]"
 	if err != OK:
 		_chat_pending = false
 		_log_clear("cloud chat request init failed: %s" % err)
