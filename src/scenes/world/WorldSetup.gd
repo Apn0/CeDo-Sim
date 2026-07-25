@@ -585,7 +585,11 @@ func _build_ui() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
 
-	# Top bar
+	_build_ui_top_bar(layer)
+	_build_ui_left_panel(layer)
+	_build_ui_right_panel(layer)
+
+func _build_ui_top_bar(layer: CanvasLayer) -> void:
 	var top := PanelContainer.new()
 	top.set_anchors_preset(Control.PRESET_TOP_WIDE)
 	top.offset_top = 0
@@ -598,7 +602,7 @@ func _build_ui() -> void:
 	status_label.text = "World Setup — pick a tool on the left, then click on the floor."
 	top.add_child(status_label)
 
-	# Left: marker tools — anchored top-left + bottom-left, fixed 230 px wide.
+func _build_ui_left_panel(layer: CanvasLayer) -> void:
 	var left := PanelContainer.new()
 	left.anchor_left   = 0.0
 	left.anchor_right  = 0.0
@@ -638,12 +642,15 @@ func _build_ui() -> void:
 	clear_btn.pressed.connect(_on_clear_pressed)
 	lv.add_child(clear_btn)
 
+	_build_ui_yard_panel(lv)
+
+func _build_ui_yard_panel(parent: Control) -> void:
 	# Pending-yard supplier panel — only visible while 1–4 corners are placed
 	# but the user hasn't picked a supplier yet. Once they confirm, panel hides
 	# again and the user can start a new yard.
 	yard_panel = VBoxContainer.new()
 	yard_panel.add_theme_constant_override("separation", 4)
-	lv.add_child(yard_panel)
+	parent.add_child(yard_panel)
 	yard_status_lbl = Label.new()
 	yard_status_lbl.text = "Pending yard: 0 / 4 corners"
 	yard_status_lbl.add_theme_font_size_override("font_size", 12)
@@ -677,6 +684,7 @@ func _build_ui() -> void:
 	yard_panel.add_child(discard_btn)
 	_refresh_yard_panel()
 
+func _build_ui_right_panel(layer: CanvasLayer) -> void:
 	# Right: WMS satellite + save — anchored top-right + bottom-right, 280 px wide.
 	var right := PanelContainer.new()
 	right.anchor_left   = 1.0
