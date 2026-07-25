@@ -905,6 +905,16 @@ func _tick_dryer_pairs(delta: float) -> void:
 			cyc.dryer.tick(delta, inflow, outflow)
 		cyc.tick(delta)
 
+		# Drive the visual gates if they exist
+		var n3d : Node3D = nd.get("node", null) as Node3D
+		if n3d != null and is_instance_valid(n3d):
+			var bg = n3d.get_node_or_null("besch_gate")
+			if bg != null:
+				bg.visible = bool(cyc.besch_open)
+			var eg = n3d.get_node_or_null("entleer_gate")
+			if eg != null:
+				eg.visible = bool(cyc.entleer_open)
+
 ## #99 — which side of a pair is currently in BEFULLEN (accepting flake).
 ## Returns "L", "R", or "" when neither side is BEFULLEN (both drying / idle).
 ## Falls back to whichever side has the LOWEST fill_pct so material is never
