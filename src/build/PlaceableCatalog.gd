@@ -2839,13 +2839,6 @@ static func _install_steam_plume(parent: Node3D, local_pos: Vector3,
 		ppm.radial_accel_max = 0.0)
 
 static func _m_dryer(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
-	# TODO (#99): wire a visual Beschickungsschieber + Entleerschieber here that
-	# opens/closes based on the MechDryerCycle controller attached to this drum
-	# in LineFlow. The CONTROLLER (besch_open / entleer_open booleans) lives in
-	# src/sim/MechDryerCycle.gd and is stepped each LineFlow tick; this builder
-	# just needs to spawn the two gate panels as named children so a per-tick
-	# visibility toggle in LineFlow can drive them. Skipped for now — pure
-	# cosmetic, no flow impact.
 	var galv      := _mat(color, ghost, 0.55, 0.5)                    # galvanised drum
 	var blue      := _mat(Color(0.12, 0.28, 0.55), ghost, 0.45, 0.45) # RAL-blue flanges/motors
 	var dark      := _mat(_DARK, ghost, 0.4, 0.6)
@@ -2871,6 +2864,18 @@ static func _m_dryer(p: Node3D, size: Vector3, color: Color, ghost: bool) -> voi
 
 	# ── Drum (horizontal cylinder along Z) — spins about its long (Z) axis ────
 	_spinning_cyl(p, rad, rad, drum_len, Vector3(0.0, drum_cy, 0.0), galv, "z", Vector3.BACK, ghost)
+
+	# ── Gates (Beschickungsschieber + Entleerschieber) ───────────────────────
+	# Inlet on top (-Z end), outlet on bottom (+Z end)
+	# Beschickungsschieber (Inlet, top, -Z)
+	var besch_box := _box(p, Vector3(0.6, 0.05, 0.6), Vector3(0.0, drum_cy + rad + 0.05, -drum_len * 0.4), dark)
+	var besch_gate := _box(p, Vector3(0.5, 0.05, 0.5), Vector3(0.0, drum_cy + rad + 0.05, -drum_len * 0.4), blue)
+	besch_gate.name = "besch_gate"
+
+	# Entleerschieber (Outlet, bottom, +Z)
+	var entleer_box := _box(p, Vector3(0.6, 0.05, 0.6), Vector3(0.0, drum_cy - rad - 0.05, drum_len * 0.4), dark)
+	var entleer_gate := _box(p, Vector3(0.5, 0.05, 0.5), Vector3(0.0, drum_cy - rad - 0.05, drum_len * 0.4), blue)
+	entleer_gate.name = "entleer_gate"
 
 	# ── Blue bolted end-flanges (both ends) + central gearbox + bolt ring ────
 	for sz in [-1.0, 1.0]:
