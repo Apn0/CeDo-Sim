@@ -656,9 +656,21 @@ static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -
 	# `_set_render_layers_recursive` (CharacterCustomizer) both recurse over all
 	# MeshInstance3D descendants of the rig root, so reparenting under
 	# BoneAttachment3D nodes preserves the FP-vs-mirror render-layer behaviour.
-	#
-	# TODO Phase 2: steering + hose + portofoon attachment slots, foot-IK pass.
 	_install_skeleton_rig(root)
+
+	# Phase 2: Foot-IK target nodes. (The SkeletonIK3D nodes live inside the rig,
+	# but their targets must live in world space outside the rig so they don't
+	# inherit the rig's animation transforms).
+	# TODO: Controller needs to update these targets via raycasts.
+	var foot_ik_targets := Node3D.new()
+	foot_ik_targets.name = "FootIKTargets"
+	var target_l := Marker3D.new()
+	target_l.name = "Target_L"
+	foot_ik_targets.add_child(target_l)
+	var target_r := Marker3D.new()
+	target_r.name = "Target_R"
+	foot_ik_targets.add_child(target_r)
+	root.add_child(foot_ik_targets)
 
 	return root
 
@@ -801,6 +813,37 @@ static func _install_skeleton_rig(root: Node3D) -> void:
 		att.position = _bone_world_origin(bname)
 		skel.add_child(att)
 		attach_by_bone[bname] = att
+
+	# Phase 2: Attachment slots
+	var slot_portofoon := BoneAttachment3D.new()
+	slot_portofoon.name = "Slot_Portofoon"
+	slot_portofoon.bone_name = "Chest"
+	skel.add_child(slot_portofoon)
+
+	var slot_hose := BoneAttachment3D.new()
+	slot_hose.name = "Slot_Hose"
+	slot_hose.bone_name = "RHand"
+	skel.add_child(slot_hose)
+
+	var slot_steering := BoneAttachment3D.new()
+	slot_steering.name = "Slot_Steering"
+	slot_steering.bone_name = "Chest"
+	skel.add_child(slot_steering)
+
+	# Phase 2: Foot IK
+	var ik_l := SkeletonIK3D.new()
+	ik_l.name = "IK_Foot_L"
+	ik_l.root_bone = "LUpperLeg"
+	ik_l.tip_bone = "LFoot"
+	ik_l.target_node = NodePath("../../FootIKTargets/Target_L")
+	skel.add_child(ik_l)
+
+	var ik_r := SkeletonIK3D.new()
+	ik_r.name = "IK_Foot_R"
+	ik_r.root_bone = "RUpperLeg"
+	ik_r.tip_bone = "RFoot"
+	ik_r.target_node = NodePath("../../FootIKTargets/Target_R")
+	skel.add_child(ik_r)
 	# ── Reparent every NON-LIMB MeshInstance3D descendant of root under its bone ──
 	# Two animation systems coexist:
 	#   1) NPC.gd's sine-based gait (audit item 2) — drives LIMBS via the
