@@ -923,6 +923,17 @@ var _npc_route_i : int = 0
 ## cannot inherit the first one's obstacles.
 static var _route_grid : VehicleRouteGrid = null
 static var _route_grid_world : int = 0
+
+## Force the shared route grid to resample on the next NPC drive order. The
+## grid samples real colliders ONCE per world and caches from then on, so a
+## wall opening carved or removed mid-session (BuildMode door/gate/window
+## placement or deletion) is invisible to every vehicle already driving until
+## this is called — measured: a forklift ignored a freshly-placed gate for
+## the rest of the session. Cheap: this only drops the cache; the rebuild
+## itself stays lazy (paid on the next _ensure_route_grid() call).
+static func invalidate_route_grid() -> void:
+	_route_grid = null
+
 const NPC_ARRIVE_TOL   : float   = 2.2     # m — "close enough" to the waypoint
 const NPC_TURN_RATE    : float   = 1.8     # rad/s yaw slew toward the heading
 const NPC_CRUISE_FRAC  : float   = 0.55    # fraction of speed_limit the AI cruises at

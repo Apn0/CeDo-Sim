@@ -910,3 +910,84 @@ recoverable from the file, and the operator may simply never have placed any.
   AFTER the verdict printed). Results are unaffected and the harness is
   verdict-gated, so it reports honestly — but the crash itself is new enough to
   deserve its own look.
+
+## U. Gate/door placement carved nothing live — fixed; a deeper carve-algorithm bug found and deliberately NOT fixed
+
+Operator, 2026-07-22: "i tried placing an industrial gate (roller gate), but
+no way through was created. Overhaul the gate building mechanic."
+
+### Root cause #1 (fixed): the carve only ever ran on save→reload
+
+`PlaceableCatalog.build_node`'s `door_personnel` / `gate_roller` / `window_frame`
+branch has always built DECORATION ONLY — its own comment (#116) says so
+outright: *"operator drops them into a pre-existing hole"*. The only code that
+ever cut the matching `WallOpenings` opening was
+`BuildMode._load_structure_placeable` — which runs exclusively on save→reload.
+Single-click placement (`_place_current`) never called it. So a freshly
+clicked gate stood in front of an intact wall until the operator saved and
+reloaded the entire world.
+
+**Fix:** the carve (`_carve_structure_opening`, factored out of the reload
+path so both share one implementation) now runs immediately at placement, and
+symmetrically on delete. The shared vehicle route grid — which samples
+colliders once per world and caches — is invalidated on both, so a vehicle
+already driving mid-session sees a newly placed or removed gate on its next
+order rather than ignoring it for the rest of the session.
+
+Verified: `test_gate_carve` — `WallOpenings.has_opening()` true the same
+frame, `[WallOpenings] Rebuilt` fires immediately, delete removes the
+registration and re-invalidates the grid. 10/10 assertions on the mechanism
+pass.
+
+### Root cause #2 (measured, deliberately NOT fixed here): the carve can silently no-op on this building's own geometry
+
+Proving the mechanism fires isn't the same as proving a vehicle or the
+operator can actually walk through the result — so the test also checked
+whether the wall was *physically passable* afterward. On the operator's real
+building, at a real wall face, it wasn't. Traced to two compounding defects in
+`WallOpenings._clip_triangle_against_box`'s coplanarity test, which decides
+whether a wall triangle is "this opening's wall" or unrelated geometry to
+leave alone:
+
+- **Giant source triangles.** This shell's procedural generator emits a
+  SINGLE quad (2 triangles) per wall face — measured edges over 50 m long.
+  The check compares each VERTEX's absolute distance from the carve box's
+  mid-plane against a fixed 5 cm tolerance. A `rot_y` accurate to a small
+  fraction of a degree still pushes a vertex 50 m away out past 5 cm, so the
+  entire wall face reads "not coplanar" and is never carved — regardless of
+  how precisely the gate was aimed, live placement or reload alike.
+- **A real double-sided wall.** The shell is a volume, not a paper-thin
+  plane: an outer-facing and an inner-facing triangle, a few centimetres
+  apart with exactly opposite normals, were both found right at the carve
+  point. The carve box is centred on the OUTER face (where an aim/raycast
+  lands), so the inner skin sits far enough past the same 5 cm tolerance that
+  even a fix for the first issue only opens the outer skin — leaving a solid
+  inner wall standing immediately behind the hole. Indistinguishable from "no
+  way through" to the operator or a vehicle.
+
+**Attempted same-day, reverted:** an angle-based coplanarity test (checks the
+triangle's own normal instead of raw vertex position — immune to triangle
+size) paired with widening the distance bound to the carve box's own
+half-depth (already sized generously for real wall thickness) fixed BOTH
+symptoms on this building. But `WallOpenings` is shared by every wall, door,
+gate and window in the game, and that change regressed the existing
+`test_door_carve.gd` regression (0 → 13 visible geometry "teeth" — a
+previously-caught defect class reappearing). Shipping a fix to shared,
+delicate geometry code that immediately breaks its own regression net, under
+time pressure, without its own dedicated session, is not an acceptable trade.
+**Reverted.** `test_door_carve.gd` — which existed before this session but was
+never wired into the harness — now is, closing that gap for whenever this is
+picked up properly.
+
+**What ships today:** the mechanism fix (root cause #1) is real and verified.
+Whether a specific placed gate is walkable depends on the wall geometry at
+that exact spot — `test_gate_carve` measures and prints this every run
+(`PASSABILITY: n/5 sample points clear`) without failing the build on it, so
+the gap stays visible rather than silently regressing further.
+
+**Practical operator guidance until root cause #2 has its own session:** the
+4-point Surface tool (click 4 corners, type = gate/door/window) remains the
+more reliable path — its carve box is derived from the operator's own click
+points rather than a single aimed rotation, which is far less likely to hit
+this exact failure mode. If a single-click gate still doesn't open a visible
+gap, that is root cause #2, not a regression of today's fix.

@@ -1451,6 +1451,14 @@ func _place_current() -> void:
 	node.rotation.y = _ghost_rot_y
 	_finalize_placed(node, _active_id, _ghost_height)
 	_finalize_bale(node)
+	# door_personnel / gate_roller / window_frame are decoration-only geometry
+	# from PlaceableCatalog (see build_node's #116 comment) — carve the matching
+	# wall opening NOW, live, instead of leaving the operator with a model
+	# standing in front of an intact wall until the next save/reload. Same path
+	# _load_structure_placeable replays on load, so a fresh placement and a
+	# reloaded one look and behave identically from this point on.
+	if _active_id == "door_personnel" or _active_id == "gate_roller" or _active_id == "window_frame":
+		_carve_structure_opening(node, _active_id, node.global_position, _ghost_rot_y)
 	_save_layout()
 	# #218 — Don't restart the whole line for observer-only fixtures (HMI panels,
 	# signs, doors, decorations). Rebuild wipes powered/spin/buffer and forces a
@@ -2058,6 +2066,7 @@ func _delete_pointed() -> void:
 	# If it owns a carved opening, restore that part of the wall first.
 	if target.has_meta("opening_id") and wall_openings:
 		wall_openings.remove_opening(String(target.get_meta("opening_id")))
+		BaseVehicle.invalidate_route_grid()   # the walled-up gap is solid again
 	# Drop from the flow group now so the rebuild below doesn't re-include it
 	# (queue_free only frees at end of frame).
 	target.remove_from_group("placed_object")
@@ -2180,6 +2189,7 @@ func _edit_delete_selected() -> void:
 	var deleted_id : String = String(target.get_meta("placeable_id", "")) if target.has_meta("placeable_id") else ""
 	if target.has_meta("opening_id") and wall_openings:
 		wall_openings.remove_opening(String(target.get_meta("opening_id")))
+		BaseVehicle.invalidate_route_grid()   # the walled-up gap is solid again
 	target.remove_from_group("placed_object")
 	var par := target.get_parent()
 	if par != null: par.remove_child(target)
@@ -2490,6 +2500,10 @@ func _make_surface(points: Array, type_str: String, label: String) -> Node3D:
 		var oh : float = clampf(height, 0.5, 8.0)
 		wall_openings.add_opening(oid, center, Vector3(ow, oh, 2.0), rot_y)
 		node.set_meta("opening_id", oid)
+		# See _carve_structure_opening's note: the shared vehicle route grid
+		# samples colliders once per world and would otherwise ignore this cut
+		# for the rest of the session.
+		BaseVehicle.invalidate_route_grid()
 	return node
 
 ## #104 — robust against any click order. The UI asks for BL → TL → TR → BR
@@ -3043,10 +3057,24 @@ func _load_structure_placeable(resolved_id: String, dict: Dictionary) -> void:
 	node.global_position = pos
 	node.rotation.y = float(dict.get("rot_y", 0.0))
 	_finalize_placed(node, resolved_id, float(dict.get("h", 0.0)))
-	# Carve the matching wall opening. Centre = leaf centre (Y = pos.y + H/2 so
-	# the bottom of the cut sits on the floor). Rotation = node yaw. Catalog
-	# size gives W×H; depth (2.0 m) is generous so the cut always punches the
-	# wall regardless of its thickness.
+	_carve_structure_opening(node, resolved_id, pos, float(dict.get("rot_y", 0.0)))
+
+## Cut the wall opening a door/gate/window placeable stands in — visual +
+## collision, immediately (WallOpenings.add_opening rebuilds synchronously).
+## Centre = leaf centre (Y = pos.y + H/2 so the bottom of the cut sits on the
+## floor). Rotation = node yaw. Catalog size gives W×H; depth (2.0 m) is
+## generous so the cut always punches the wall regardless of its thickness.
+##
+## SINGLE SOURCE for this carve: previously only the RELOAD path
+## (_load_structure_placeable) called this, because catalog id door_personnel /
+## gate_roller / window_frame is built as a decoration-only visual (see
+## PlaceableCatalog.gd #116 — "operator drops them into a pre-existing hole").
+## A freshly single-clicked gate therefore stood in front of an intact wall
+## with no way through until the operator saved and reloaded the world
+## (operator report 2026-07-22: "no way through was created"). Now the LIVE
+## placement path (_place_current) calls this too, so the cut appears the
+## instant the gate is dropped, not after a round-trip through disk.
+func _carve_structure_opening(node: Node3D, resolved_id: String, pos: Vector3, rot_y: float) -> void:
 	if wall_openings == null:
 		return
 	var item := PlaceableCatalog.get_item(resolved_id)
@@ -3056,8 +3084,14 @@ func _load_structure_placeable(resolved_id: String, dict: Dictionary) -> void:
 	var cut_centre := pos + Vector3(0.0, oh * 0.5, 0.0)
 	_opening_seq += 1
 	var oid := "op_%d" % _opening_seq
-	wall_openings.add_opening(oid, cut_centre, Vector3(ow, oh, 2.0), float(dict.get("rot_y", 0.0)))
+	wall_openings.add_opening(oid, cut_centre, Vector3(ow, oh, 2.0), rot_y)
 	node.set_meta("opening_id", oid)
+	# The shared vehicle route grid samples real colliders ONCE per world and is
+	# cached from then on (BaseVehicle._route_grid) — a carve made after that
+	# first sample was invisible to every vehicle already driving this session
+	# (operator's own forklift, mid-shift, ignored a freshly-placed gate).
+	# Force it to resample on the next drive order.
+	BaseVehicle.invalidate_route_grid()
 
 ## Converts a legacy box-door entry {id:"door", x,y,z,rot_y} into the new
 ## interactive roller door with a carved opening, by reconstructing its 4

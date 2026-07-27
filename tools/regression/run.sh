@@ -95,7 +95,13 @@ fi
 # proves a vehicle drives a 205 m apron-to-apron leg around the building instead
 # of dead-reckoning into it. Both mutation-tested (reverting the pilot / the
 # shell-bake flag turns them red).
-for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline; do
+# test_gate_carve: single-click door/gate/window placement now carves its wall
+# opening THE SAME FRAME (was reload-only). Its passability sample is reported,
+# not gated — it caught a SEPARATE, unfixed WallOpenings limitation (giant
+# procedural wall triangles + a thick double-sided shell defeat the 5 cm
+# coplanarity test) that a same-day attempt to fix regressed test_door_carve.gd
+# on; see the file header before touching WallOpenings._clip_triangle_against_box.
+for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve; do
 	echo "== $t =="
 	"$GODOT" --headless --path "$PROJ" "res://src/tests/$t.tscn" > "$OUT/$t.log" 2>&1
 	grep -E "^  (ok|FAIL)|Result|RESULT" "$OUT/$t.log" || true
@@ -152,6 +158,19 @@ echo "== npc-05 container chain (bench) =="
 grep -E "^  FAIL|npc-05 container chain" "$OUT/npc05_bench.log" || true
 if ! grep -q "npc-05 container chain PASS" "$OUT/npc05_bench.log"; then
 	echo "FAIL  : npc-05 bench (see $OUT/npc05_bench.log)"
+	[ $code -eq 0 ] && code=1
+fi
+
+# The regression net for WallOpenings' carve algorithm itself (visible-teeth
+# check) — was never wired into the harness at all despite existing since
+# before this session. Its whole job is to catch exactly the kind of
+# regression a careless carve-algorithm change (attempted and reverted this
+# session, see test_gate_carve.gd's header) would cause.
+echo "== door carve (visible-teeth regression) =="
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_door_carve.gd > "$OUT/door_carve.log" 2>&1
+grep -E "boundary edges|teeth|PASS —|FAIL —|RESULT FAIL" "$OUT/door_carve.log" || true
+if ! grep -q "PASS —" "$OUT/door_carve.log"; then
+	echo "FAIL  : door carve (see $OUT/door_carve.log)"
 	[ $code -eq 0 ] && code=1
 fi
 
