@@ -95,13 +95,27 @@ fi
 # proves a vehicle drives a 205 m apron-to-apron leg around the building instead
 # of dead-reckoning into it. Both mutation-tested (reverting the pilot / the
 # shell-bake flag turns them red).
+# test_tag_snapshot: makes the operator's REAL 1056-tag SCADA export
+# (src/data/plant/line3c_scada_tags.json) live for the first time via
+# src/sim/TagMap.gd, and MEASURES two defects rather than asserting them:
+#   (b) duplicate_id_collisions == 14 -- LineFlow._find_node_by_id returns the
+#       FIRST match on a non-unique placeable id, so 14 of 47 machines are
+#       unreachable by any front-end. THIS CRITERION INVERTS once machines get
+#       unique keys: a genuine fix makes it 0, and this line must then be
+#       REWRITTEN, not silenced.
+#   (c) l3c_code is stamped on 0 of 47 nodes and sum(amps_nominal) == 0.00 A,
+#       so the calibrated amps path is dead and the '~488 A' comment at
+#       LineFlow.gd:1729-1730 is not what the sim reports. live_line_amps is
+#       deliberately NOT fixtured -- it is not run-stable once the line is fed.
+# Mutation-proven: empty map -> 7 fail, stubbed get_machine_info -> 6 fail,
+# all-default values -> 3 fail, feed disabled -> 2 fail.
 # test_gate_carve: single-click door/gate/window placement now carves its wall
 # opening THE SAME FRAME (was reload-only). Its passability sample is reported,
 # not gated — it caught a SEPARATE, unfixed WallOpenings limitation (giant
 # procedural wall triangles + a thick double-sided shell defeat the 5 cm
 # coplanarity test) that a same-day attempt to fix regressed test_door_carve.gd
 # on; see the file header before touching WallOpenings._clip_triangle_against_box.
-for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve; do
+for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_tag_snapshot; do
 	echo "== $t =="
 	"$GODOT" --headless --path "$PROJ" "res://src/tests/$t.tscn" > "$OUT/$t.log" 2>&1
 	grep -E "^  (ok|FAIL)|Result|RESULT" "$OUT/$t.log" || true
