@@ -109,13 +109,25 @@ fi
 #       deliberately NOT fixtured -- it is not run-stable once the line is fed.
 # Mutation-proven: empty map -> 7 fail, stubbed get_machine_info -> 6 fail,
 # all-default values -> 3 fail, feed disabled -> 2 fail.
+# test_waslijn3c_overzicht: the FIRST ported operator HMI screen (Waslijn 3C
+# Overzicht -> WashingScope, which previously showed construction-time literals
+# from an AI-enhanced photo and whose bind() had zero callers). Asserts the
+# screen is HONEST: every field is either bound to real sim state through
+# TagMap x LineFlow.get_machine_info(), or rendered '--'; no invented values.
+# Mutation-proven, and the mutation is the point: M2 feeds structurally-perfect
+# DEAD values and the bound/unavailable accounting stays exactly intact, so the
+# accounting criterion alone would have passed it -- only the LIVENESS criterion
+# catches it. That is the npc-05 shape. Do not weaken criterion E.
+# It also reports (not asserts away) that L3C.14L renders 0 A while AAN, because
+# l3c_code is stamped on 0 of 47 nodes -- fixing that stamping is what makes
+# those currents real.
 # test_gate_carve: single-click door/gate/window placement now carves its wall
 # opening THE SAME FRAME (was reload-only). Its passability sample is reported,
 # not gated — it caught a SEPARATE, unfixed WallOpenings limitation (giant
 # procedural wall triangles + a thick double-sided shell defeat the 5 cm
 # coplanarity test) that a same-day attempt to fix regressed test_door_carve.gd
 # on; see the file header before touching WallOpenings._clip_triangle_against_box.
-for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_tag_snapshot; do
+for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_tag_snapshot test_waslijn3c_overzicht; do
 	echo "== $t =="
 	"$GODOT" --headless --path "$PROJ" "res://src/tests/$t.tscn" > "$OUT/$t.log" 2>&1
 	grep -E "^  (ok|FAIL)|Result|RESULT" "$OUT/$t.log" || true

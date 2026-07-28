@@ -417,6 +417,14 @@ func open_subscope(scope_id: String) -> bool:
 		var lf : Object = _find_laser_filter_for_scope()
 		if lf != null:
 			ctrl.call("set_filter", lf)
+	# WashingScope (now the Waslijn 3C Overzicht plant mimic) shipped a bind()
+	# with ZERO callers repo-wide, which is exactly why every process value on it
+	# was a construction-time literal. It reads live state through
+	# TagMap x LineFlow.get_machine_info(), so hand it the scope dict + the live
+	# LineFlow. Without this call the screen renders "--" everywhere, which is
+	# honest but dead.
+	if scope_id == "washing" and ctrl.has_method("bind"):
+		ctrl.call("bind", _scope, _line_flow)
 	return true
 
 ## Resolve the ExtruderModel for the panel's current scope line (#bullet-10).
