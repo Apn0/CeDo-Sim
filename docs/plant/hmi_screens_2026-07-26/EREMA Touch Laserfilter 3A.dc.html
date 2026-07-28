@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>html,body{margin:0;padding:0;background:#10182d;} a{color:#7fb2e8;} a:hover{color:#a8ccf2;}</style>
+</helmet>
+<div style="width:1920px;height:1080px;position:relative;overflow:hidden;background:radial-gradient(120% 90% at 40% 30%,#2b3a63 0%,#1c2646 55%,#131b34 100%);font-family:Tahoma,Verdana,sans-serif;color:#eef1f8;" data-screen-label="Laserfilter 3A">
+
+  <!-- TOUCH bezel strip -->
+  <div style="position:absolute;top:0;right:0;width:80px;height:100%;background:linear-gradient(#9aa1b0,#6d7482);display:flex;align-items:flex-start;justify-content:center;">
+    <span style="writing-mode:vertical-rl;font-size:64px;font-weight:800;letter-spacing:10px;color:#4a5060;margin-top:60px;">TOUCH</span>
+  </div>
+
+  <div style="position:absolute;top:34px;left:44px;display:flex;align-items:flex-start;gap:14px;">
+    <svg width="36" height="36" viewBox="0 0 34 34"><circle cx="17" cy="17" r="14" fill="none" stroke="#eef1f8" stroke-width="2.5"></circle><line x1="17" y1="17" x2="17" y2="8" stroke="#eef1f8" stroke-width="2.5"></line><line x1="17" y1="17" x2="23" y2="20" stroke="#eef1f8" stroke-width="2.5"></line></svg>
+    <div style="font-size:30px;line-height:1.3;">00:00:00 AM<br>01/01/2024</div>
+  </div>
+  <div style="position:absolute;top:40px;right:140px;display:flex;align-items:center;gap:12px;">
+    <span style="font-size:46px;font-weight:800;letter-spacing:2px;">EREMA</span>
+    <svg width="40" height="40" viewBox="0 0 34 34"><circle cx="17" cy="17" r="15" fill="#eef1f8"></circle><path d="M9 20 Q17 8 25 15" fill="none" stroke="#1c2646" stroke-width="4"></path></svg>
+  </div>
+
+  <!-- MP value boxes -->
+  <div style="position:absolute;top:150px;left:1090px;display:flex;gap:26px;color:#1a1f2e;">
+    <div style="width:240px;text-align:center;">
+      <div style="background:linear-gradient(#f4f5f8,#dcdfe8);border:1px solid #7c8299;padding:8px 4px;font-size:26px;">MP &lt; MF</div>
+      <div style="background:linear-gradient(#eceef4,#cdd1dd);border:1px solid #7c8299;border-top:none;padding:16px 4px;font-size:36px;"><b>0</b> bar</div>
+    </div>
+    <div style="width:240px;text-align:center;">
+      <div style="background:linear-gradient(#f4f5f8,#dcdfe8);border:1px solid #7c8299;padding:8px 4px;font-size:26px;">Δ MP</div>
+      <div style="background:linear-gradient(#eceef4,#cdd1dd);border:1px solid #7c8299;border-top:none;padding:16px 4px;font-size:36px;"><b>0</b> bar</div>
+    </div>
+    <div style="width:240px;text-align:center;">
+      <div style="background:linear-gradient(#f4f5f8,#dcdfe8);border:1px solid #7c8299;padding:8px 4px;font-size:26px;">MP &gt; MF</div>
+      <div style="background:linear-gradient(#eceef4,#cdd1dd);border:1px solid #7c8299;border-top:none;padding:16px 4px;font-size:36px;"><b>0</b> bar</div>
+    </div>
+  </div>
+
+  <!-- trend -->
+  <div style="position:absolute;top:170px;left:60px;">
+    <svg width="1000" height="580" viewBox="0 0 1000 580">
+      <rect x="8" y="16" width="14" height="52" fill="#3fa9e8"></rect>
+      <rect x="8" y="76" width="14" height="52" fill="#e0392a"></rect>
+      <g font-family="Tahoma,Verdana,sans-serif" font-size="26" fill="#eef1f8" text-anchor="end">
+        <text x="90" y="30">350</text><text x="90" y="98">300</text><text x="90" y="166">250</text><text x="90" y="234">200</text><text x="90" y="302">150</text><text x="90" y="370">100</text><text x="90" y="438">50</text><text x="90" y="506">0</text>
+      </g>
+      <g stroke="#eef1f8" stroke-width="1.5">
+        <line x1="98" y1="22" x2="110" y2="22"></line><line x1="98" y1="90" x2="110" y2="90"></line><line x1="98" y1="158" x2="110" y2="158"></line><line x1="98" y1="226" x2="110" y2="226"></line><line x1="98" y1="294" x2="110" y2="294"></line><line x1="98" y1="362" x2="110" y2="362"></line><line x1="98" y1="430" x2="110" y2="430"></line><line x1="98" y1="498" x2="110" y2="498"></line>
+        <line x1="110" y1="14" x2="110" y2="498"></line>
+        <line x1="110" y1="498" x2="900" y2="498"></line>
+        <line x1="900" y1="14" x2="900" y2="498"></line>
+        <line x1="900" y1="22" x2="912" y2="22"></line><line x1="900" y1="117" x2="912" y2="117"></line><line x1="900" y1="212" x2="912" y2="212"></line><line x1="900" y1="307" x2="912" y2="307"></line><line x1="900" y1="402" x2="912" y2="402"></line><line x1="900" y1="498" x2="912" y2="498"></line>
+      </g>
+      <g font-family="Tahoma,Verdana,sans-serif" font-size="26" fill="#eef1f8">
+        <text x="918" y="32">10</text><text x="918" y="127">8</text><text x="918" y="222">6</text><text x="918" y="317">4</text><text x="918" y="412">2</text><text x="918" y="508">0</text>
+      </g>
+      <rect x="966" y="16" width="14" height="52" fill="#f2e42a"></rect>
+      <!-- zeroed flat curves -->
+      <line x1="110" y1="497" x2="900" y2="497" stroke="#3fa9e8" stroke-width="3"></line>
+      <line x1="110" y1="496" x2="900" y2="496" stroke="#e0392a" stroke-width="3"></line>
+      <line x1="110" y1="495" x2="900" y2="495" stroke="#f2e42a" stroke-width="3"></line>
+      <g font-family="Tahoma,Verdana,sans-serif" font-size="26" fill="#eef1f8" text-anchor="middle">
+        <text x="150" y="540">00:00:00 AM</text><text x="150" y="572">01/01/2024</text>
+        <text x="400" y="540">00:00:00 AM</text><text x="400" y="572">01/01/2024</text>
+        <text x="650" y="540">00:00:00 AM</text><text x="650" y="572">01/01/2024</text>
+        <text x="880" y="540">00:00:00 AM</text><text x="880" y="572">01/01/2024</text>
+      </g>
+    </svg>
+    <div style="display:flex;font-size:27px;margin-top:14px;">
+      <div style="flex:1;text-align:center;"><div style="color:#3fa9e8;">Melt temperature</div><div style="color:#ff6a3a;margin-top:16px;">Δ MP</div></div>
+      <div style="flex:1;text-align:center;"><div style="color:#f2e42a;">Motor 1 speed</div></div>
+    </div>
+  </div>
+
+  <!-- Motor status box -->
+  <div style="position:absolute;left:560px;top:750px;width:340px;border:2px solid #c8cede;background:rgba(12,18,38,.55);">
+    <div style="border-bottom:2px solid #c8cede;padding:16px 8px;text-align:center;font-size:32px;">Motor</div>
+    <div style="padding:18px 8px;text-align:center;font-size:32px;color:#2ec25f;">On</div>
+  </div>
+
+  <!-- laserfilter render placeholder -->
+  <div style="position:absolute;left:1130px;top:390px;width:620px;height:520px;">
+    <svg width="620" height="520" viewBox="0 0 620 520" style="position:absolute;inset:0;">
+      <defs><pattern id="ph" width="26" height="26" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="26" height="26" fill="#2e3c64"></rect><rect width="13" height="26" fill="#33436e"></rect></pattern></defs>
+      <rect x="0" y="0" width="620" height="520" fill="url(#ph)" stroke="#55648f" stroke-width="2"></rect>
+    </svg>
+    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;font-family:ui-monospace,Menlo,monospace;font-size:22px;color:#aab8dd;text-align:center;">
+      <span>[ render: EREMA laserfilter ]</span>
+      <span style="font-size:17px;">3D-afbeelding filterunit met motor "1"</span>
+    </div>
+  </div>
+
+  <!-- bottom nav -->
+  <div style="position:absolute;left:0;right:80px;bottom:0;height:150px;display:flex;align-items:center;justify-content:space-evenly;">
+    <svg width="80" height="70" viewBox="0 0 56 52"><path d="M6 26 L28 8 L50 26 M12 24 L12 46 L44 46 L44 24" fill="none" stroke="#eef1f8" stroke-width="4.5"></path></svg>
+    <svg width="96" height="64" viewBox="0 0 72 48"><path d="M2 24 L16 24 M11 18 L17 24 L11 30 M56 24 L70 24 M65 18 L71 24 L65 30" fill="none" stroke="#eef1f8" stroke-width="3.5"></path><path d="M36 6 L54 24 L36 42 L18 24 Z" fill="none" stroke="#eef1f8" stroke-width="3.5"></path><line x1="36" y1="12" x2="36" y2="36" stroke="#eef1f8" stroke-width="3.5" stroke-dasharray="5 5"></line></svg>
+    <svg width="100" height="72" viewBox="0 0 72 52"><g fill="none" stroke="#e0392a" stroke-width="4.5"><path d="M36 10 a12 14 0 0 1 12 14 v6 l4 6 h-32 l4 -6 v-6 a12 14 0 0 1 12 -14"></path><path d="M31 40 a5 5 0 0 0 10 0"></path><path d="M14 12 q-6 12 0 24 M58 12 q6 12 0 24"></path></g></svg>
+    <span style="font-size:58px;font-weight:700;font-family:Georgia,serif;">R<span style="font-size:36px;vertical-align:-10px;">x</span></span>
+    <svg width="90" height="70" viewBox="0 0 62 52"><path d="M6 40 L20 26 L30 34 L48 14" fill="none" stroke="#eef1f8" stroke-width="4.5"></path><path d="M38 12 L52 10 L50 24" fill="none" stroke="#eef1f8" stroke-width="4.5"></path></svg>
+    <svg width="72" height="72" viewBox="0 0 52 52"><path d="M34 6 a12 12 0 1 0 12 16 l-10 -2 -4 -4 2 -10 Z" fill="none" stroke="#eef1f8" stroke-width="4" transform="rotate(90 26 26)"></path><line x1="14" y1="38" x2="30" y2="22" stroke="#eef1f8" stroke-width="5"></line></svg>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1920,&quot;height&quot;:1080}}"></script>
+</body>
+</html>

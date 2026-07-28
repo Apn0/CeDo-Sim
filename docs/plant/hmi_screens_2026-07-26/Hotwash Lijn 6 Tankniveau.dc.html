@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>html,body{margin:0;padding:0;background:#0d1117;} a{color:#4aa3e0;text-decoration:none;} a:hover{color:#7cc0f0;}</style>
+</helmet>
+<div style="width:1100px;height:720px;position:relative;overflow:hidden;background:#2b2f36;font-family:'Segoe UI',Tahoma,sans-serif;color:#e8ecf2;font-size:14px;" data-screen-label="Hotwash 6 tankniveau">
+
+  <!-- top bar -->
+  <div style="position:absolute;top:0;left:0;right:0;height:44px;background:#20242a;display:flex;align-items:center;padding:0 16px;gap:18px;border-bottom:1px solid #3a3f47;">
+    <span style="color:#9aa4b2;">ⓘ</span>
+    <span style="font-size:15px;">Installatieoverzicht</span>
+    <span style="color:#9aa4b2;">🔍</span>
+    <div style="flex:1;display:flex;justify-content:center;align-items:center;gap:8px;">
+      <span style="width:22px;height:22px;border-radius:50%;background:#2b7de0;display:flex;align-items:center;justify-content:center;font-size:12px;">A</span>
+      <span>Arno Daamen</span>
+    </div>
+    <div style="text-align:right;line-height:1.2;color:#c4ccd6;font-size:12px;"><div>17/02/2025</div><div>20:17:08</div></div>
+    <span style="margin-left:8px;">Menu ⋮</span>
+  </div>
+
+  <!-- faint background mimic hint -->
+  <div style="position:absolute;top:120px;left:52%;color:#4a5462;font-size:11px;">469<br>47-LT1</div>
+
+  <!-- card: 480-41-LT1 -->
+  <div style="position:absolute;top:70px;left:60px;width:360px;background:#3a3f47;border:1px solid #4a505a;border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.5);">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #4a505a;">
+      <span style="font-weight:600;">480-41-LT1 - Heet wassen - tankniveau</span>
+      <span style="color:#9aa4b2;">📌 ✕</span>
+    </div>
+    <div style="padding:12px 14px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;color:#c4ccd6;margin-bottom:8px;"><span>〽 Trends</span><span style="border:1px solid #5a6070;border-radius:4px;padding:2px 8px;font-size:12px;">⤢ Trendpagina ⌃</span></div>
+      <div style="height:110px;background:#2b2f36;border-radius:4px;position:relative;overflow:hidden;">
+        <svg width="330" height="110" viewBox="0 0 330 110"><polyline points="0,60 30,52 55,40 80,45 110,35 150,42 190,38 230,40 290,42 330,41" fill="none" stroke="#63c6f0" stroke-width="1.5"></polyline><polyline points="0,90 60,90 62,60 330,60" fill="none" stroke="#4aa3e0" stroke-width="1.5"></polyline></svg>
+        <span style="position:absolute;right:6px;top:4px;color:#7a828e;font-size:10px;">100.0</span>
+        <span style="position:absolute;right:6px;top:48px;color:#7a828e;font-size:10px;">50.0</span>
+        <span style="position:absolute;left:6px;top:44px;color:#7a828e;font-size:10px;">ON</span>
+        <span style="position:absolute;left:6px;bottom:4px;color:#7a828e;font-size:10px;">OFF</span>
+      </div>
+      <div style="display:flex;gap:36px;margin-top:8px;">
+        <div><div style="color:#4aa3e0;font-weight:600;">● ON</div><div style="color:#8a929e;font-size:11px;">Oké voor proces</div></div>
+        <div><div style="color:#4aa3e0;font-weight:600;">● 0.0 %</div><div style="color:#8a929e;font-size:11px;">Niveau</div></div>
+      </div>
+    </div>
+    <div style="border-top:1px solid #4a505a;padding:10px 14px;color:#c4ccd6;">✎ Parameters</div>
+    <div style="border-top:1px solid #4a505a;padding:10px 14px;color:#c4ccd6;">⚡ Signalen</div>
+    <div style="border-top:1px solid #4a505a;padding:10px 14px;color:#c4ccd6;">ⓘ Info</div>
+    <div style="border-top:1px solid #4a505a;">
+      <sc-for list="{{ alarmRows }}" as="a" hint-placeholder-count="3">
+        <div style="display:flex;gap:14px;padding:7px 14px;border-bottom:1px solid #4a505a;color:#c4ccd6;"><span style="color:#e0b23a;">🔔</span><span style="width:90px;">{{ a.tag }}</span><span>{{ a.txt }}</span></div>
+      </sc-for>
+    </div>
+  </div>
+
+  <!-- card: 490-41-LT1 -->
+  <div style="position:absolute;top:150px;right:60px;width:360px;background:#3a3f47;border:1px solid #4a505a;border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.5);">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #4a505a;">
+      <span style="font-weight:600;">490-41-LT1 - Heet wassen - tankniveau</span>
+      <span style="color:#9aa4b2;">📌 ✕</span>
+    </div>
+    <div style="padding:12px 14px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;color:#c4ccd6;margin-bottom:8px;"><span>〽 Trends</span><span style="border:1px solid #5a6070;border-radius:4px;padding:2px 8px;font-size:12px;">⤢ Trendpagina ⌃</span></div>
+      <div style="height:110px;background:#2b2f36;border-radius:4px;position:relative;overflow:hidden;">
+        <svg width="330" height="110" viewBox="0 0 330 110"><polyline points="0,55 40,48 80,40 120,44 160,52 200,50 240,45 280,42 330,40" fill="none" stroke="#63c6f0" stroke-width="1.5"></polyline><polyline points="0,90 280,90 282,64 330,64" fill="none" stroke="#4aa3e0" stroke-width="1.5"></polyline></svg>
+        <span style="position:absolute;right:6px;top:4px;color:#7a828e;font-size:10px;">100.0</span>
+        <span style="position:absolute;right:6px;top:48px;color:#7a828e;font-size:10px;">50.0</span>
+        <span style="position:absolute;left:6px;top:44px;color:#7a828e;font-size:10px;">ON</span>
+        <span style="position:absolute;left:6px;bottom:4px;color:#7a828e;font-size:10px;">OFF</span>
+      </div>
+      <div style="display:flex;gap:36px;margin-top:8px;">
+        <div><div style="color:#4aa3e0;font-weight:600;">● ON</div><div style="color:#8a929e;font-size:11px;">Oké voor proces</div></div>
+        <div><div style="color:#4aa3e0;font-weight:600;">● 0.0 %</div><div style="color:#8a929e;font-size:11px;">Niveau</div></div>
+      </div>
+    </div>
+    <div style="border-top:1px solid #4a505a;padding:10px 14px;color:#c4ccd6;">✎ Parameters</div>
+    <div style="border-top:1px solid #4a505a;padding:10px 14px;color:#c4ccd6;">⚡ Signalen</div>
+    <div style="border-top:1px solid #4a505a;padding:10px 14px;color:#c4ccd6;">ⓘ Info</div>
+  </div>
+
+  <!-- card: 469-41-LT1 watertank (front) -->
+  <div style="position:absolute;top:250px;left:300px;width:380px;background:#3a3f47;border:1px solid #4a505a;border-radius:6px;box-shadow:0 12px 32px rgba(0,0,0,.6);">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #4a505a;">
+      <span style="font-weight:600;">469-41-LT1 - Watertank - Niveau</span>
+      <span style="color:#9aa4b2;">📌 ✕</span>
+    </div>
+    <div style="padding:10px 14px;color:#e6b84a;display:flex;align-items:center;gap:8px;border-bottom:1px solid #4a505a;">⚠ Niet ok voor proces</div>
+    <div style="padding:10px 14px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;color:#c4ccd6;margin-bottom:6px;"><span>🔔 Storingen en berichten</span><span style="border:1px solid #5a6070;border-radius:4px;padding:2px 8px;font-size:12px;">⤢ Evenementpagina ⌃</span></div>
+      <div style="display:flex;gap:10px;color:#c4ccd6;font-size:12px;margin-bottom:10px;"><span style="color:#e0b23a;">🔔</span><span>M0 - Niveau niet ok voor proces<br>Het proces wacht tot het niveau is hersteld. OK.</span></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;color:#c4ccd6;margin-bottom:8px;"><span>〽 Trends</span><span style="border:1px solid #5a6070;border-radius:4px;padding:2px 8px;font-size:12px;">⤢ Trendpagina ⌃</span></div>
+      <div style="height:100px;background:#2b2f36;border-radius:4px;position:relative;overflow:hidden;">
+        <svg width="350" height="100" viewBox="0 0 350 100"><polyline points="0,70 40,45 70,60 100,80 130,55 160,40 190,55 220,45 250,70 290,72 350,72" fill="none" stroke="#63c6f0" stroke-width="1.5"></polyline><polyline points="0,88 40,88 42,60 90,60 92,88 350,88" fill="none" stroke="#4aa3e0" stroke-width="1.5"></polyline></svg>
+        <span style="position:absolute;right:6px;top:4px;color:#7a828e;font-size:10px;">100.0</span>
+        <span style="position:absolute;right:6px;top:44px;color:#7a828e;font-size:10px;">50.0</span>
+      </div>
+      <div style="display:flex;gap:36px;margin-top:8px;">
+        <div><div style="color:#4aa3e0;font-weight:600;">● OFF</div><div style="color:#8a929e;font-size:11px;">Oké voor proces</div></div>
+        <div><div style="color:#4aa3e0;font-weight:600;">● 0.0 %</div><div style="color:#8a929e;font-size:11px;">Niveau</div></div>
+      </div>
+    </div>
+    <div style="border-top:1px solid #4a505a;padding:10px 14px;color:#c4ccd6;">✎ Parameters</div>
+    <div style="border-top:1px solid #4a505a;padding:10px 14px;color:#c4ccd6;">⚡ Signalen</div>
+    <div style="border-top:1px solid #4a505a;padding:10px 14px;color:#c4ccd6;">ⓘ Info</div>
+  </div>
+
+  <!-- right timestamps -->
+  <div style="position:absolute;right:90px;top:470px;color:#c4ccd6;font-size:13px;text-align:right;line-height:2;">
+    <div>17/02/2025 20:16:35</div><div>17/02/2025 19:58:59</div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1100,&quot;height&quot;:720}}">
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      alarmRows: [
+        {tag:"469-41-LT1",txt:"Niveau niet ok"},
+        {tag:"474-41-TT1",txt:"Watertemperatuur"},
+        {tag:"469-42-TT1",txt:"Watertemperatuur"},
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

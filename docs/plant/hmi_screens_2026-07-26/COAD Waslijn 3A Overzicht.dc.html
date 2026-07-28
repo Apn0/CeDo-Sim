@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>html,body{margin:0;padding:0;background:#333;} a{color:#1a5aa8;} a:hover{color:#2f74c4;}</style>
+</helmet>
+<div style="width:1600px;height:1000px;position:relative;overflow:hidden;background:#f2f2f0;font-family:Tahoma,Verdana,sans-serif;color:#1a1a1a;" data-screen-label="C.O.A.D. Waslijn 3A">
+
+  <!-- header -->
+  <div style="height:64px;background:linear-gradient(#ffffff,#dfe2e6);border-bottom:2px solid #9aa0a8;display:flex;align-items:center;gap:24px;padding:0 20px;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div style="width:150px;height:44px;background:#1a4fa0;border-radius:50%/50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:22px;font-style:italic;letter-spacing:1px;">C.O.A.D.<span style="font-size:11px;vertical-align:8px;">®</span></div>
+    </div>
+    <span style="font-size:20px;color:#444;">Wasinstallatie 3A</span>
+    <span style="flex:1;"></span>
+    <span style="font-size:26px;font-weight:700;">AUTO</span>
+    <span style="width:2px;height:40px;background:#aab0b8;"></span>
+    <span style="font-size:26px;">CeDo Recycling</span>
+  </div>
+  <div style="height:34px;background:#e8eaec;border-bottom:1px solid #b8bec6;display:flex;align-items:center;justify-content:flex-end;padding:0 22px;font-size:19px;color:#333;">Process Overview</div>
+
+  <!-- mimic canvas -->
+  <div style="position:absolute;top:98px;left:0;right:0;bottom:96px;background:#fcfcfa;">
+    <svg width="1600" height="806" viewBox="0 0 1600 806" style="position:absolute;inset:0;">
+      <defs>
+        <linearGradient id="tank" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4db648"></stop><stop offset="1" stop-color="#2e8f2b"></stop></linearGradient>
+      </defs>
+      <!-- pipes: blue water, green material -->
+      <g stroke="#2f74c4" stroke-width="5" fill="none">
+        <path d="M300 120 L520 120 L520 200"></path>
+        <path d="M300 100 L760 100 L760 210"></path>
+        <path d="M300 80 L1060 80 L1060 170"></path>
+        <path d="M860 250 L860 300 L700 300"></path>
+      </g>
+      <g stroke="#3aa337" stroke-width="5" fill="none">
+        <path d="M150 60 L150 100"></path>
+        <path d="M240 190 L240 240"></path>
+        <path d="M1120 210 L1200 210"></path>
+        <path d="M1390 260 L1430 260 L1430 200"></path>
+      </g>
+      <!-- TEP valve top-left -->
+      <g transform="translate(120,42)"><polygon points="0,0 22,12 0,24" fill="#3aa337"></polygon><polygon points="44,0 22,12 44,24" fill="#3aa337"></polygon><rect x="-32" y="-4" width="44" height="26" fill="none" stroke="#555" stroke-width="1.5"></rect><text x="-26" y="14" font-size="15" font-family="Tahoma" fill="#333">TEP</text></g>
+      <!-- M1A dosing hopper -->
+      <polygon points="120,100 190,100 178,170 132,170" fill="url(#tank)" stroke="#1f6e1d" stroke-width="2"></polygon>
+      <polygon points="140,170 170,170 158,206 152,206" fill="url(#tank)" stroke="#1f6e1d" stroke-width="2"></polygon>
+      <!-- P11B screw under hopper -->
+      <g stroke="#3aa337" stroke-width="4" fill="none"><path d="M120 232 L134 214 L148 232 L162 214 L176 232 L190 214 L204 232 L218 214"></path></g>
+      <rect x="118" y="210" width="104" height="26" fill="none" stroke="#555" stroke-width="1.5"></rect>
+      <!-- MQ fan box -->
+      <rect x="96" y="268" width="150" height="90" fill="#fff" stroke="#555" stroke-width="1.5"></rect>
+      <g fill="#4db648"><circle cx="134" cy="304" r="26"></circle><circle cx="196" cy="304" r="26"></circle></g>
+      <g stroke="#fff" stroke-width="4"><path d="M120 290 L148 318 M148 290 L120 318 M182 290 L210 318 M210 290 L182 318"></path></g>
+      <!-- pumps row -->
+      <g>
+        <circle cx="290" cy="330" r="24" fill="#4db648" stroke="#1f6e1d" stroke-width="2"></circle><polygon points="290,314 306,330 290,346" fill="#fff"></polygon>
+        <circle cx="420" cy="330" r="24" fill="#4db648" stroke="#1f6e1d" stroke-width="2"></circle><polygon points="420,314 436,330 420,346" fill="#fff"></polygon>
+        <circle cx="800" cy="360" r="24" fill="#4db648" stroke="#1f6e1d" stroke-width="2"></circle><polygon points="800,344 816,360 800,376" fill="#fff"></polygon>
+      </g>
+      <!-- inclined screen conveyors upper right -->
+      <g transform="translate(920,150) rotate(24)"><rect x="0" y="0" width="170" height="44" fill="#b0763a" stroke="#7a4e20" stroke-width="2"></rect><path d="M8 8 L26 36 M30 8 L48 36 M52 8 L70 36 M74 8 L92 36 M96 8 L114 36 M118 8 L136 36 M140 8 L158 36" stroke="#7a4e20" stroke-width="2"></path></g>
+      <g transform="translate(1250,190) rotate(24)"><rect x="0" y="0" width="170" height="44" fill="#b0763a" stroke="#7a4e20" stroke-width="2"></rect><path d="M8 8 L26 36 M30 8 L48 36 M52 8 L70 36 M74 8 L92 36 M96 8 L114 36 M118 8 L136 36 M140 8 L158 36" stroke="#7a4e20" stroke-width="2"></path></g>
+      <!-- LAS screw between -->
+      <g stroke="#3aa337" stroke-width="4" fill="none"><path d="M1130 262 L1144 244 L1158 262 L1172 244 L1186 262 L1200 244 L1214 262"></path></g>
+      <!-- wash tank block center-right -->
+      <rect x="1010" y="270" width="200" height="80" fill="#fff" stroke="#555" stroke-width="1.5"></rect>
+      <g fill="#4db648"><circle cx="1050" cy="298" r="16"></circle><circle cx="1092" cy="298" r="16"></circle><circle cx="1134" cy="298" r="16"></circle></g>
+      <!-- big green tank right -->
+      <rect x="1440" y="180" width="130" height="120" rx="14" fill="url(#tank)" stroke="#1f6e1d" stroke-width="2"></rect>
+      <!-- AME buffer tank center-left -->
+      <ellipse cx="420" cy="470" rx="80" ry="14" fill="#4db648"></ellipse>
+      <rect x="340" y="470" width="160" height="110" fill="url(#tank)" stroke="#1f6e1d" stroke-width="2"></rect>
+      <ellipse cx="420" cy="580" rx="80" ry="14" fill="#2e8f2b"></ellipse>
+      <!-- screw P11B / M12B under tank -->
+      <g stroke="#3aa337" stroke-width="4" fill="none"><path d="M240 612 L254 594 L268 612 L282 594 L296 612 L310 594 L324 612 L338 594 L352 612 L366 594 L380 612 L394 594 L408 612 L422 594 L436 612 L450 594 L464 612 L478 594 L492 612 L506 594 L520 612 L534 594 L548 612"></path></g>
+      <rect x="236" y="590" width="318" height="28" fill="none" stroke="#555" stroke-width="1.5"></rect>
+      <!-- P11P pump + P1B pumps -->
+      <circle cx="250" cy="690" r="26" fill="#fff" stroke="#555" stroke-width="2"></circle><path d="M236 690 Q250 672 264 690 Q250 708 236 690" fill="none" stroke="#555" stroke-width="2"></path>
+      <circle cx="180" cy="760" r="26" fill="#4db648" stroke="#1f6e1d" stroke-width="2"></circle><polygon points="180,744 196,760 180,776" fill="#fff"></polygon>
+      <circle cx="600" cy="690" r="26" fill="#4db648" stroke="#1f6e1d" stroke-width="2"></circle><polygon points="600,674 616,690 600,706" fill="#fff"></polygon>
+      <circle cx="690" cy="740" r="26" fill="#4db648" stroke="#1f6e1d" stroke-width="2"></circle><polygon points="690,724 706,740 690,756" fill="#fff"></polygon>
+      <g stroke="#2f74c4" stroke-width="5" fill="none">
+        <path d="M150 620 L150 760 L154 760"></path>
+        <path d="M420 594 L420 620"></path>
+        <path d="M250 716 L250 740 L180 740"></path>
+      </g>
+      <!-- flotation cone -->
+      <g>
+        <rect x="880" y="480" width="90" height="120" fill="#c8ccd4" stroke="#666" stroke-width="2"></rect>
+        <polygon points="880,600 970,600 938,700 912,700" fill="#c8ccd4" stroke="#666" stroke-width="2"></polygon>
+        <ellipse cx="925" cy="480" rx="45" ry="10" fill="#dde0e6" stroke="#666" stroke-width="2"></ellipse>
+      </g>
+      <rect x="1020" y="470" width="120" height="110" fill="#4db648" stroke="#1f6e1d" stroke-width="2"></rect>
+      <!-- centrifuge / compactor cluster right -->
+      <rect x="1190" y="560" width="120" height="70" fill="#b0763a" stroke="#7a4e20" stroke-width="2"></rect>
+      <rect x="1190" y="520" width="120" height="40" fill="#c9974e" stroke="#7a4e20" stroke-width="2"></rect>
+      <g stroke="#8a5a24" stroke-width="3"><path d="M1200 570 L1300 620 M1200 590 L1300 640"></path></g>
+      <rect x="1170" y="640" width="200" height="40" fill="none" stroke="#555" stroke-width="2"></rect>
+      <g stroke="#3aa337" stroke-width="4" fill="none"><path d="M1330 700 L1344 682 L1358 700 L1372 682 L1386 700 L1400 682 L1414 700"></path></g>
+      <polygon points="1310,760 1420,700 1440,724 1330,784" fill="#4db648" stroke="#1f6e1d" stroke-width="2"></polygon>
+      <!-- pump icons bottom center -->
+      <circle cx="1060" cy="720" r="26" fill="#4db648" stroke="#1f6e1d" stroke-width="2"></circle><polygon points="1060,704 1076,720 1060,736" fill="#fff"></polygon>
+      <circle cx="1150" cy="740" r="26" fill="#4db648" stroke="#1f6e1d" stroke-width="2"></circle><polygon points="1150,724 1166,740 1150,756" fill="#fff"></polygon>
+    </svg>
+
+    <!-- labels + value boxes (HTML overlay) -->
+    <div style="position:absolute;left:96px;top:2px;width:110px;background:#fff;border:2px solid #444;text-align:center;font-size:17px;font-weight:700;padding:3px 2px;">M1A<br><span style="font-weight:400;">Dosing Screw</span></div>
+    <div style="position:absolute;left:36px;top:120px;width:64px;background:#dff5dd;border:2px solid #2e8f2b;text-align:center;font-size:19px;font-weight:700;padding:4px 2px;">0%</div>
+    <div style="position:absolute;left:230px;top:112px;font-size:17px;font-weight:700;">P11B</div>
+    <div style="position:absolute;left:60px;top:262px;font-size:17px;font-weight:700;">MQ</div>
+    <div style="position:absolute;left:330px;top:262px;width:64px;background:#dff5dd;border:2px solid #2e8f2b;text-align:center;font-size:19px;font-weight:700;padding:4px 2px;">0%</div>
+    <div style="position:absolute;left:296px;top:360px;font-size:17px;font-weight:700;">P12A</div>
+    <div style="position:absolute;left:700px;top:212px;font-size:17px;font-weight:700;">P11B</div>
+    <div style="position:absolute;left:760px;top:236px;width:64px;background:#dff5dd;border:2px solid #2e8f2b;text-align:center;font-size:19px;font-weight:700;padding:4px 2px;">0%</div>
+    <div style="position:absolute;left:826px;top:390px;width:64px;background:#dff5dd;border:2px solid #2e8f2b;text-align:center;font-size:19px;font-weight:700;padding:4px 2px;">0%</div>
+    <div style="position:absolute;left:806px;top:440px;font-size:17px;font-weight:700;">P12B</div>
+    <div style="position:absolute;left:1216px;top:150px;font-size:17px;font-weight:700;">LAS</div>
+    <div style="position:absolute;left:1452px;top:230px;width:96px;background:#fff;border:2px solid #444;text-align:center;font-size:17px;padding:3px 2px;">0 vaten</div>
+    <div style="position:absolute;left:320px;top:400px;font-size:18px;font-weight:700;">AME</div>
+    <div style="position:absolute;left:390px;top:500px;width:60px;background:#fff;border:2px solid #444;text-align:center;font-size:19px;padding:4px 2px;">0</div>
+    <div style="position:absolute;left:520px;top:450px;width:70px;background:#dff5dd;border:2px solid #2e8f2b;text-align:center;font-size:19px;font-weight:700;padding:4px 2px;">0%</div>
+    <div style="position:absolute;left:196px;top:560px;font-size:17px;font-weight:700;">P11B</div>
+    <div style="position:absolute;left:556px;top:560px;font-size:17px;font-weight:700;">M12B</div>
+    <div style="position:absolute;left:296px;top:668px;width:104px;background:#fff;border:2px solid #444;text-align:center;font-size:18px;padding:4px 2px;">0 d°C</div>
+    <div style="position:absolute;left:440px;top:668px;width:104px;background:#fff;border:2px solid #444;text-align:center;font-size:18px;padding:4px 2px;">0 d°C</div>
+    <div style="position:absolute;left:186px;top:664px;font-size:17px;font-weight:700;">P11P</div>
+    <div style="position:absolute;left:140px;top:796px;font-size:17px;font-weight:700;">P1B</div>
+    <div style="position:absolute;left:640px;top:664px;font-size:17px;font-weight:700;">P1B</div>
+    <div style="position:absolute;left:724px;top:730px;font-size:17px;font-weight:700;">PE</div>
+    <div style="position:absolute;left:1036px;top:756px;font-size:17px;font-weight:700;">P1A</div>
+    <div style="position:absolute;left:1128px;top:776px;font-size:17px;font-weight:700;">PV</div>
+    <div style="position:absolute;left:1224px;top:690px;font-size:17px;font-weight:700;">PEZ</div>
+    <div style="position:absolute;left:1360px;top:690px;font-size:17px;font-weight:700;">P12</div>
+    <!-- tank level widget -->
+    <div style="position:absolute;left:680px;top:456px;width:150px;background:#fff;border:2px solid #444;font-size:17px;">
+      <div style="padding:3px 6px;border-bottom:1px solid #888;font-weight:700;">Tank Level</div>
+      <div style="display:flex;gap:2px;padding:4px 6px;">
+        <div style="width:11px;height:26px;background:#4db648;"></div><div style="width:11px;height:26px;background:#4db648;"></div><div style="width:11px;height:26px;background:#e2e6ea;border:1px solid #aaa;"></div><div style="width:11px;height:26px;background:#e2e6ea;border:1px solid #aaa;"></div><div style="width:11px;height:26px;background:#e2e6ea;border:1px solid #aaa;"></div><div style="width:11px;height:26px;background:#e2e6ea;border:1px solid #aaa;"></div><div style="width:11px;height:26px;background:#e2e6ea;border:1px solid #aaa;"></div><div style="width:11px;height:26px;background:#e2e6ea;border:1px solid #aaa;"></div>
+      </div>
+      <div style="padding:3px 6px;border-top:1px solid #888;">≈ 0.0 m³</div>
+    </div>
+    <!-- right info panel -->
+    <div style="position:absolute;right:24px;top:330px;width:330px;border:2px solid #555;background:#fbfbf9;padding:12px 14px;display:flex;flex-direction:column;gap:9px;font-size:18px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;"><span>Dosering voorwas</span><span style="border:1px solid #666;background:#fff;padding:2px 8px;min-width:84px;text-align:right;">0.0%</span></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;"><span>Powder MOL</span><span style="border:1px solid #666;background:#fff;padding:2px 8px;min-width:84px;text-align:right;">0.0%</span></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;"><span>I/O Leivo</span><span style="border:1px solid #666;background:#fff;padding:2px 8px;min-width:84px;text-align:right;">0 ubpm</span></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;"><span>Power</span><span style="border:1px solid #666;background:#fff;padding:2px 8px;min-width:84px;text-align:right;">0.0%</span></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;"><span>Temp aanvoer</span><span style="border:1px solid #666;background:#fff;padding:2px 8px;min-width:84px;text-align:right;">0.0 °C</span></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;"><span>Vochtigheid</span><span style="border:1px solid #666;background:#fff;padding:2px 8px;min-width:84px;text-align:right;">0.00 n%</span></div>
+      <div style="margin-top:8px;border-top:1px solid #999;padding-top:10px;">
+        <div style="font-weight:700;margin-bottom:6px;">Compactor</div>
+        <div style="width:120px;height:56px;background:#e8eaec;border:1px solid #999;"></div>
+        <g></g>
+        <svg width="180" height="28" viewBox="0 0 180 28"><path d="M4 22 L16 6 L28 22 L40 6 L52 22 L64 6 L76 22 L88 6 L100 22 L112 6 L124 22 L136 6 L148 22 L160 6 L172 22" fill="none" stroke="#3aa337" stroke-width="4"></path></svg>
+        <div style="font-size:16px;">F/O note</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- bottom button bar -->
+  <div style="position:absolute;left:0;right:0;bottom:0;height:96px;background:linear-gradient(#e8eaec,#c9cdd3);border-top:2px solid #9aa0a8;display:flex;align-items:stretch;gap:6px;padding:8px;">
+    <div style="flex:1;background:linear-gradient(#fdfdfd,#d6dade);border:2px outset #eef0f2;display:flex;align-items:center;justify-content:center;cursor:pointer;" style-hover="background:#e6e9ee;"><svg width="44" height="40" viewBox="0 0 56 52"><path d="M6 26 L28 8 L50 26 M12 24 L12 46 L44 46 L44 24" fill="none" stroke="#333" stroke-width="4.5"></path></svg></div>
+    <div style="flex:1;background:linear-gradient(#fdfdfd,#d6dade);border:2px outset #eef0f2;"></div>
+    <div style="flex:1;background:linear-gradient(#fdfdfd,#d6dade);border:2px outset #eef0f2;display:flex;align-items:center;justify-content:center;font-size:21px;font-weight:700;cursor:pointer;" style-hover="background:#e6e9ee;">Trends</div>
+    <div style="flex:1;background:linear-gradient(#fdfdfd,#d6dade);border:2px outset #eef0f2;display:flex;align-items:center;justify-content:center;font-size:21px;font-weight:700;cursor:pointer;" style-hover="background:#e6e9ee;">Alarms</div>
+    <div style="flex:1;background:linear-gradient(#fdfdfd,#d6dade);border:2px outset #eef0f2;"></div>
+    <div style="flex:1;background:linear-gradient(#fdfdfd,#d6dade);border:2px outset #eef0f2;display:flex;align-items:center;justify-content:center;font-size:21px;font-weight:700;cursor:pointer;" style-hover="background:#e6e9ee;">Prod.</div>
+    <div style="flex:1;background:linear-gradient(#fdfdfd,#d6dade);border:2px outset #eef0f2;"></div>
+    <div style="flex:1;background:linear-gradient(#fdfdfd,#d6dade);border:2px outset #eef0f2;"></div>
+    <div style="flex:1;background:linear-gradient(#fdfdfd,#d6dade);border:2px outset #eef0f2;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;text-align:center;line-height:1.15;cursor:pointer;" style-hover="background:#e6e9ee;">Stop<br>Settings</div>
+    <div style="flex:1;background:linear-gradient(#fdfdfd,#d6dade);border:2px outset #eef0f2;"></div>
+    <div style="flex:1;background:linear-gradient(#fdfdfd,#d6dade);border:2px outset #eef0f2;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;text-align:center;line-height:1.15;cursor:pointer;" style-hover="background:#e6e9ee;">Operator<br>Settings</div>
+    <div style="width:80px;background:linear-gradient(#fdfdfd,#d6dade);border:2px outset #eef0f2;display:flex;align-items:center;justify-content:center;cursor:pointer;" style-hover="background:#e6e9ee;"><svg width="36" height="36" viewBox="0 0 36 36"><rect x="2" y="2" width="32" height="32" fill="#333"></rect><text x="13" y="27" font-size="24" font-family="Georgia" font-style="italic" fill="#fff">i</text></svg></div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1600,&quot;height&quot;:1000}}"></script>
+</body>
+</html>

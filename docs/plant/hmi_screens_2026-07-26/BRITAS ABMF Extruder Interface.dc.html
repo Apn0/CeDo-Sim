@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>html,body{margin:0;padding:0;background:#050505;} a{color:#e88a1a;text-decoration:none;} a:hover{color:#ffb04a;}</style>
+</helmet>
+<div style="width:1120px;height:720px;position:relative;overflow:hidden;background:#5a6b82;font-family:Tahoma,Verdana,sans-serif;color:#1a1a1a;font-size:16px;" data-screen-label="BRITAS Extruder Interface">
+
+  <!-- top bar -->
+  <div style="position:absolute;top:0;left:0;right:0;height:64px;background:#f5941e;display:flex;align-items:stretch;padding:8px;gap:8px;">
+    <div style="width:88px;background:#c7d0da;border:1px solid #9aa4b0;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;"><span style="color:#3ec929;font-size:22px;">⏻</span><span style="font-size:11px;">Filtering</span></div>
+    <div style="width:200px;background:#f5941e;border:1px solid #b86e10;display:flex;align-items:center;justify-content:center;font-weight:700;cursor:pointer;">Start cyclus</div>
+    <div style="width:200px;background:#f5941e;border:1px solid #b86e10;display:flex;align-items:center;justify-content:center;font-weight:700;cursor:pointer;">Start lange cyclus</div>
+    <div style="flex:1;display:flex;flex-direction:column;justify-content:center;padding-left:20px;color:#2a2a2a;"><span>Gebruiker: Operator</span><span style="margin-top:8px;">Recept:</span></div>
+    <div style="width:56px;background:#c7d0da;border:1px solid #9aa4b0;display:flex;align-items:center;justify-content:center;position:relative;cursor:pointer;"><span style="color:#d02020;font-size:24px;">🔔</span><span style="position:absolute;top:2px;left:4px;font-size:10px;">1</span></div>
+    <div style="width:56px;background:#c7d0da;border:1px solid #9aa4b0;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:22px;">📷</div>
+    <div style="width:56px;background:#c7d0da;border:1px solid #9aa4b0;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:22px;">⌂</div>
+  </div>
+
+  <!-- right nav -->
+  <div style="position:absolute;top:72px;right:8px;width:200px;display:flex;flex-direction:column;gap:3px;">
+    <div style="background:#eef1f5;border:1px solid #b8bfc9;display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;" style-hover="background:#fff;"><span>⇢</span>Filtering</div>
+    <div style="background:#eef1f5;border:1px solid #b8bfc9;display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;" style-hover="background:#fff;"><span>🌡</span>Verwarmingen</div>
+    <div style="background:#f5941e;border:1px solid #b86e10;display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;"><span>⇄</span>Interface</div>
+  </div>
+
+  <!-- rows -->
+  <div style="position:absolute;top:120px;left:170px;width:640px;display:flex;flex-direction:column;gap:22px;">
+    <sc-for list="{{ rows }}" as="r" hint-placeholder-count="4">
+      <div style="background:#c7d0da;padding:10px;border-radius:2px;">
+        <div style="display:flex;align-items:center;gap:14px;">
+          <div style="flex:1;background:#e8edf3;padding:12px 16px;text-align:right;">{{ r.label }}</div>
+          <div style="width:150px;background:#fff;padding:12px 16px;text-align:center;">{{ r.state }}</div>
+          <div style="width:34px;height:34px;background:{{ r.color }};"></div>
+        </div>
+        <sc-if value="{{ r.sub }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;align-items:center;gap:14px;margin-top:8px;">
+            <div style="flex:1;background:#e8edf3;padding:12px 16px;text-align:right;">{{ r.sub }}</div>
+            <div style="width:150px;background:#f5b800;padding:12px 16px;text-align:center;">{{ r.subval }}</div>
+            <div style="width:34px;"></div>
+          </div>
+        </sc-if>
+      </div>
+    </sc-for>
+  </div>
+
+  <!-- back arrow -->
+  <div style="position:absolute;right:220px;bottom:44px;width:56px;height:44px;background:#fff;border:1px solid #b8bfc9;display:flex;align-items:center;justify-content:center;font-size:24px;cursor:pointer;">↩</div>
+
+  <!-- footer -->
+  <div style="position:absolute;left:0;right:0;bottom:0;height:30px;background:#f5c518;display:flex;align-items:center;padding:0 12px;font-weight:700;">
+    <span style="width:250px;">ABMF | Extruder Interface</span>
+    <div style="flex:1;text-align:center;">0 bar</div>
+    <div style="flex:1;text-align:center;">0 %</div>
+    <span style="width:220px;text-align:right;font-weight:400;">So 13.10.2024 06:33:47</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1120,&quot;height&quot;:720}}">
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      rows: [
+        {label:"Extruder vrijgave",state:"Actief",color:"#3ec929",sub:null,subval:null},
+        {label:"Extruder bezig",state:"Actief",color:"#3ec929",sub:null,subval:null},
+        {label:"Zeefbandtoevoer",state:"Inactief",color:"#e02020",sub:"Extrudersnelheid verlaging",subval:"0 %"},
+        {label:"Buffer leegmaken",state:"Inactief",color:"#e02020",sub:"Verhoging granuleersnelheid",subval:"0 %"},
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

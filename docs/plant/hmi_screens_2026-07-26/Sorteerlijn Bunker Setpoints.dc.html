@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>html,body{margin:0;padding:0;background:#1a2c50;} a{color:#1a5aa8;} a:hover{color:#2f74c4;}</style>
+</helmet>
+<div style="width:1024px;height:768px;position:relative;overflow:hidden;background:#3a77c8;font-family:Tahoma,Verdana,sans-serif;color:#111;font-size:13px;" data-screen-label="Bunker setpoints">
+
+  <!-- flags -->
+  <div style="position:absolute;top:14px;right:120px;width:56px;height:34px;border:1px solid #222;display:flex;flex-direction:column;cursor:pointer;">
+    <div style="flex:1;background:#111;"></div><div style="flex:1;background:#d02020;"></div><div style="flex:1;background:#f2c81a;"></div>
+  </div>
+  <div style="position:absolute;top:14px;right:44px;width:56px;height:34px;border:1px solid #222;display:flex;flex-direction:column;cursor:pointer;">
+    <div style="flex:1;background:#b02030;"></div><div style="flex:1;background:#fff;"></div><div style="flex:1;background:#2a4fa0;"></div>
+  </div>
+
+  <!-- setpoint table -->
+  <div style="position:absolute;top:24px;left:24px;width:340px;">
+    <div style="display:grid;grid-template-columns:170px 78px 78px;column-gap:8px;row-gap:5px;align-items:center;">
+      <span style="padding:3px 6px;">speed autom.</span><span style="text-align:center;">setpoint.</span><span style="text-align:center;">limit</span>
+      <sc-for list="{{ setpoints }}" as="s" hint-placeholder-count="10">
+        <span style="background:#e8eaee;border:1px solid #6b7180;padding:3px 6px;">{{ s }}</span>
+        <span style="background:#fff;border:1px inset #9aa0aa;padding:3px 6px;text-align:right;">0</span>
+        <span style="background:#fff;border:1px inset #9aa0aa;padding:3px 6px;text-align:right;">0</span>
+      </sc-for>
+      <span style="background:#e8eaee;border:1px solid #6b7180;padding:3px 6px;">Bereken Snelheid</span>
+      <span style="display:flex;gap:4px;"><span style="background:#e8eaee;border:1px outset #cfd3da;padding:3px 8px;cursor:pointer;">on</span><span style="background:#3ec929;border:1px outset #8ae86a;padding:3px 8px;cursor:pointer;">off</span></span>
+      <span></span>
+      <span style="background:#e8eaee;border:1px solid #6b7180;padding:3px 6px;">bunkersnelheid berekend ..</span>
+      <span style="background:#fff;border:1px inset #9aa0aa;padding:3px 6px;text-align:right;">0</span>
+      <span></span>
+    </div>
+  </div>
+
+  <!-- bunkersnelheid setpoint group -->
+  <div style="position:absolute;top:100px;left:420px;width:560px;height:200px;border:2px solid #16326a;border-radius:18px;padding:12px 16px;">
+    <span style="background:#e8eaee;border:1px solid #6b7180;padding:2px 8px;">bunkersnelheid setpoint</span>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px;">
+      <div><div style="background:#e8eaee;border:1px solid #6b7180;padding:3px 6px;text-align:center;">Beide</div><div style="background:#fff;border:1px inset #9aa0aa;padding:3px 6px;text-align:center;">0</div></div>
+      <div><div style="background:#e8eaee;border:1px solid #6b7180;padding:3px 6px;text-align:center;">Zonder 3A</div><div style="background:#fff;border:1px inset #9aa0aa;padding:3px 6px;text-align:center;">0</div></div>
+      <div><div style="background:#e8eaee;border:1px solid #6b7180;padding:3px 6px;text-align:center;">Zonder 3B</div><div style="background:#fff;border:1px inset #9aa0aa;padding:3px 6px;text-align:center;">0</div></div>
+      <div><div style="background:#e8eaee;border:1px solid #6b7180;padding:3px 6px;text-align:center;">Vertraging</div><div style="background:#fff;border:1px inset #9aa0aa;padding:3px 6px;text-align:center;">0 sec.</div><div style="background:#fff;border:1px inset #9aa0aa;padding:3px 6px;text-align:center;margin-top:4px;">0 sec.</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px;">
+      <div><div style="background:#e8eaee;border:1px solid #6b7180;padding:3px 6px;text-align:center;">Pers alleen</div><div style="background:#fff;border:1px inset #9aa0aa;padding:3px 6px;text-align:center;">0</div></div>
+      <div style="grid-column:3;"><div style="background:#e8eaee;border:1px solid #6b7180;padding:3px 6px;text-align:center;">Tijd omschak.</div><div style="background:#fff;border:1px inset #9aa0aa;padding:3px 6px;text-align:center;">0 sec.</div><div style="background:#fff;border:1px inset #9aa0aa;padding:3px 6px;text-align:center;margin-top:4px;">0 sec.</div></div>
+      <div style="grid-column:4;"><div style="background:#e8eaee;border:1px solid #6b7180;padding:3px 6px;text-align:center;">Vert. terug</div><div style="background:#fff;border:1px inset #9aa0aa;padding:3px 6px;text-align:center;">0 sec.</div><div style="background:#fff;border:1px inset #9aa0aa;padding:3px 6px;text-align:center;margin-top:4px;">0 sec.</div></div>
+    </div>
+  </div>
+
+  <!-- conveyor widget -->
+  <div style="position:absolute;left:40px;top:430px;width:420px;height:110px;border:2px solid #16326a;background:#3a77c8;">
+    <div style="position:absolute;left:14px;top:10px;display:flex;flex-direction:column;gap:4px;">
+      <div style="display:flex;gap:6px;"><span style="background:#3ec929;border:1px solid #1f7a12;padding:2px 8px;min-width:34px;text-align:right;">0</span><span style="color:#fff;">actual value</span></div>
+      <div style="display:flex;gap:6px;"><span style="background:#fff;border:1px inset #9aa0aa;padding:2px 8px;min-width:34px;text-align:right;">0</span><span style="color:#fff;">setpoint</span></div>
+    </div>
+    <div style="position:absolute;right:120px;top:10px;display:flex;flex-direction:column;gap:4px;">
+      <div style="display:flex;gap:6px;"><span style="color:#fff;">actual value</span><span style="background:#3ec929;border:1px solid #1f7a12;padding:2px 8px;min-width:34px;text-align:right;">0</span></div>
+      <div style="display:flex;gap:6px;"><span style="color:#fff;">setpoint</span><span style="background:#fff;border:1px inset #9aa0aa;padding:2px 8px;min-width:34px;text-align:right;">0</span></div>
+    </div>
+    <svg width="90" height="90" viewBox="0 0 90 90" style="position:absolute;right:14px;top:8px;"><circle cx="45" cy="45" r="20" fill="#e8eaee" stroke="#333" stroke-width="2"></circle><g stroke="#333" stroke-width="3"><line x1="45" y1="8" x2="45" y2="22"></line><line x1="45" y1="68" x2="45" y2="82"></line><line x1="8" y1="45" x2="22" y2="45"></line><line x1="68" y1="45" x2="82" y2="45"></line><line x1="19" y1="19" x2="29" y2="29"></line><line x1="61" y1="61" x2="71" y2="71"></line><line x1="19" y1="71" x2="29" y2="61"></line><line x1="61" y1="29" x2="71" y2="19"></line></g></svg>
+    <svg width="380" height="40" viewBox="0 0 380 40" style="position:absolute;left:14px;bottom:6px;">
+      <rect x="0" y="8" width="340" height="18" rx="9" fill="#e8eaee" stroke="#333" stroke-width="2"></rect>
+      <circle cx="10" cy="17" r="9" fill="#c9cdd4" stroke="#333" stroke-width="1.5"></circle>
+      <circle cx="330" cy="17" r="9" fill="#c9cdd4" stroke="#333" stroke-width="1.5"></circle>
+      <line x1="60" y1="17" x2="270" y2="17" stroke="#333" stroke-width="3"></line>
+      <polygon points="270,10 288,17 270,24" fill="#333"></polygon>
+    </svg>
+  </div>
+
+  <!-- filling setpoint + bunker -->
+  <div style="position:absolute;left:560px;top:390px;">
+    <span style="background:#e8eaee;border:1px solid #6b7180;padding:2px 8px;">filling setpoint</span>
+    <div style="display:flex;gap:6px;margin-top:6px;align-items:center;">
+      <span>actual value</span><span style="background:#fff;border:1px inset #9aa0aa;padding:2px 10px;min-width:44px;text-align:right;">0</span>
+    </div>
+    <div style="width:56px;height:80px;border:2px solid #333;margin-top:10px;margin-left:20px;display:flex;flex-direction:column;justify-content:flex-end;background:#e8eaee;">
+      <div style="height:0%;background:#2a4fa0;"></div>
+    </div>
+  </div>
+  <div style="position:absolute;left:760px;top:390px;">
+    <div style="background:#e8eaee;border:2px outset #cfd3da;padding:8px 18px;font-size:15px;cursor:pointer;" style-hover="background:#f4f5f8;">diagram</div>
+  </div>
+
+  <!-- progress bar strip -->
+  <div style="position:absolute;left:300px;top:600px;width:440px;height:26px;background:#e8eaee;border:1px solid #6b7180;border-radius:12px;"></div>
+
+  <!-- bottom buttons -->
+  <div style="position:absolute;left:0;right:0;bottom:0;height:70px;display:flex;align-items:stretch;gap:4px;padding:6px 8px;background:#2a5aa0;">
+    <div style="width:34px;background:#e8eaee;border:2px outset #cfd3da;display:flex;flex-direction:column;"><div style="flex:1;background:#2a4fa0;margin:3px;"></div></div>
+    <div style="flex:1;background:#3ec929;border:2px outset #8ae86a;display:flex;align-items:center;justify-content:center;font-size:17px;cursor:pointer;" style-hover="filter:brightness(1.08);">Auto</div>
+    <div style="flex:1;background:#e8eaee;border:2px outset #cfd3da;display:flex;align-items:center;justify-content:center;font-size:17px;cursor:pointer;" style-hover="background:#f4f5f8;">Hand</div>
+    <div style="flex:1;background:#e8eaee;border:2px outset #cfd3da;display:flex;align-items:center;justify-content:center;cursor:pointer;" style-hover="background:#f4f5f8;"><svg width="34" height="24" viewBox="0 0 34 24"><rect x="2" y="4" width="20" height="16" fill="#333"></rect><polygon points="22,12 32,4 32,20" fill="#333"></polygon></svg></div>
+    <div style="flex:1;background:#e8eaee;border:2px outset #cfd3da;display:flex;align-items:center;justify-content:center;font-size:17px;cursor:pointer;" style-hover="background:#f4f5f8;">I</div>
+    <div style="flex:1;background:#d02020;border:2px outset #e86060;display:flex;align-items:center;justify-content:center;font-size:17px;color:#fff;cursor:pointer;" style-hover="filter:brightness(1.1);">0</div>
+    <div style="flex:1.3;background:#e8eaee;border:2px outset #cfd3da;display:flex;align-items:center;justify-content:center;text-align:center;font-size:15px;line-height:1.15;cursor:pointer;" style-hover="background:#f4f5f8;">Nummer<br>richtlijnen</div>
+    <div style="flex:1;background:#e8eaee;border:2px outset #cfd3da;display:flex;align-items:center;justify-content:center;font-size:17px;cursor:pointer;" style-hover="background:#f4f5f8;">0</div>
+    <div style="flex:1.3;background:#e8eaee;border:2px outset #cfd3da;display:flex;align-items:center;justify-content:center;text-align:center;font-size:15px;line-height:1.15;cursor:pointer;" style-hover="background:#f4f5f8;">Enkeling-<br>Stop</div>
+    <div style="flex:1;background:#e8eaee;border:2px outset #cfd3da;display:flex;align-items:center;justify-content:center;font-size:17px;cursor:pointer;" style-hover="background:#f4f5f8;">reset</div>
+    <div style="flex:1.2;background:#e8eaee;border:2px outset #cfd3da;display:flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer;" style-hover="background:#f4f5f8;">Overzicht</div>
+    <div style="flex:1.2;background:#e8eaee;border:2px outset #cfd3da;display:flex;align-items:center;justify-content:center;text-align:center;font-size:15px;line-height:1.15;cursor:pointer;" style-hover="background:#f4f5f8;">Start<br>scherm</div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1024,&quot;height&quot;:768}}">
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      setpoints: ["setpoint 1 empty", "setpoint 2", "setpoint 3", "setpoint 4", "setpoint 5", "setpoint 6", "setpoint 7", "setpoint 8", "setpoint 9", "setpoint 10 full"],
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>html,body{margin:0;padding:0;background:#0a0a0a;} a{color:#4aa3e0;text-decoration:none;} a:hover{color:#7cc0f0;}</style>
+</helmet>
+<div style="width:1280px;height:800px;position:relative;overflow:hidden;background:#1a1008;font-family:Tahoma,Verdana,sans-serif;color:#e8ecf2;font-size:13px;" data-screen-label="Waslijn 3C Overzicht">
+  <!-- SIEMENS bar -->
+  <div style="position:absolute;top:0;left:0;right:0;height:28px;background:#178382;display:flex;align-items:center;padding:0 14px;justify-content:space-between;">
+    <span style="font-weight:700;color:#fff;">SIEMENS</span><span style="color:#fff;">SIMATIC HMI</span>
+  </div>
+  <!-- L&P header -->
+  <div style="position:absolute;top:28px;left:0;right:0;height:44px;background:#2a2e36;display:flex;align-items:center;padding:0 14px;gap:14px;border-bottom:1px solid #3a3f47;">
+    <svg width="36" height="28" viewBox="0 0 36 28"><polygon points="8,2 18,14 8,26" fill="#2f6fb0"></polygon><polygon points="16,2 26,14 16,26" fill="#3a4a5a"></polygon></svg>
+    <span style="font-weight:700;">L&amp;P</span>
+    <div style="display:flex;align-items:center;gap:8px;margin-left:20px;">
+      <span>Status Lijn 3C</span><div style="background:#35c23a;padding:2px 20px;color:#111;font-weight:600;">Auto</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span>Status was</span><div style="background:#35c23a;padding:2px 20px;color:#111;font-weight:600;">Aan</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-left:40px;">
+      <span>Status Silo</span><div style="background:#35c23a;padding:2px 20px;color:#111;font-weight:600;">Aan</div>
+    </div>
+    <div style="flex:1;text-align:right;line-height:1.2;font-size:12px;"><div>zaterdag 10 augustus 2024</div><div>18:00:30</div></div>
+  </div>
+  <!-- alarm strip -->
+  <div style="position:absolute;top:72px;left:0;right:0;height:20px;background:#2a2e36;border-bottom:1px solid #3a3f47;display:flex;align-items:center;padding:0 14px;color:#e6b84a;font-size:12px;">
+    <span style="margin-right:12px;">149</span><span>L3C.11 Flotatietank Flow Meting: Water Flow te laag</span>
+  </div>
+
+  <!-- equipment labels + value boxes on dark bg -->
+  <div style="position:absolute;top:92px;left:0;right:0;bottom:44px;background:#1a1008;">
+    <!-- L3C.1 Doseer Silo -->
+    <div style="position:absolute;left:40px;top:280px;text-align:center;"><div style="font-size:12px;">L3C.1</div><div>Doseer Silo</div></div>
+    <div style="position:absolute;left:34px;top:180px;width:10px;height:10px;background:#35c23a;"></div>
+
+    <!-- L3C.3 Bezinkafscheider -->
+    <div style="position:absolute;left:140px;top:36px;text-align:center;font-size:12px;"><div style="font-weight:600;">L3C.3</div><div>Bezinkafscheider</div></div>
+    <div style="position:absolute;left:170px;top:76px;background:#fff;color:#111;padding:2px 8px;border:1px solid #aaa;">0 A</div>
+    <div style="position:absolute;left:140px;top:60px;width:10px;height:10px;background:#35c23a;"></div>
+
+    <!-- L3C.5L/R Transportschroef -->
+    <div style="position:absolute;left:300px;top:12px;text-align:center;font-size:12px;"><div style="font-weight:600;">L3C.5L/R</div><div>Transportschroef</div></div>
+    <div style="position:absolute;left:330px;top:52px;background:#fff;color:#111;padding:2px 8px;border:1px solid #aaa;">0,00 A</div>
+
+    <!-- L3C.6 Maalmolen -->
+    <div style="position:absolute;left:400px;top:80px;background:#fff;color:#111;padding:2px 10px;border:1px solid #aaa;font-size:14px;">0 A</div>
+    <div style="position:absolute;left:380px;top:120px;text-align:center;font-size:12px;background:rgba(0,180,220,.3);padding:4px 8px;"><div style="font-weight:600;">L3C.6</div><div>Maalmolen</div></div>
+
+    <!-- L3C.4L/R Frictiescheider -->
+    <div style="position:absolute;left:280px;top:170px;background:#fff;color:#111;padding:2px 8px;border:1px solid #aaa;">0,00 A</div>
+    <div style="position:absolute;left:170px;top:210px;background:#fff;color:#111;padding:2px 8px;border:1px solid #aaa;">0 A</div>
+    <div style="position:absolute;left:140px;top:240px;text-align:center;font-size:12px;"><div style="font-weight:600;">L3C.4L/R</div><div>Frictiescheider</div></div>
+
+    <!-- L3C.9L/R Frictiescheider -->
+    <div style="position:absolute;left:430px;top:200px;background:#fff;color:#111;padding:2px 8px;border:1px solid #aaa;">0 A</div>
+    <div style="position:absolute;left:430px;top:228px;background:#fff;color:#111;padding:2px 8px;border:1px solid #aaa;">0 A</div>
+    <div style="position:absolute;left:420px;top:258px;text-align:center;font-size:12px;"><div style="font-weight:600;">L3C.9L/R</div><div>Frictiescheider</div></div>
+
+    <!-- L3C.10L/R Transportschroef -->
+    <div style="position:absolute;left:570px;top:12px;text-align:center;font-size:12px;"><div style="font-weight:600;">L3C.10L/R</div><div>Transportschroef</div></div>
+    <div style="position:absolute;left:600px;top:52px;background:#fff;color:#111;padding:2px 8px;border:1px solid #aaa;">0,00 A</div>
+    <div style="position:absolute;left:600px;top:170px;background:#fff;color:#111;padding:2px 8px;border:1px solid #aaa;">0,00 A</div>
+
+    <!-- L3C.11 Flotatietank -->
+    <div style="position:absolute;left:700px;top:12px;text-align:center;font-size:12px;"><div style="font-weight:600;">L3C.11</div><div>Flotatietank</div></div>
+
+    <!-- L3C.12 Transportschroef -->
+    <div style="position:absolute;left:900px;top:200px;text-align:center;font-size:12px;"><div style="font-weight:600;">L3C.12</div><div>Transportschroef</div></div>
+    <div style="position:absolute;left:920px;top:230px;background:#fff;color:#111;padding:2px 8px;border:1px solid #aaa;">0 A</div>
+
+    <!-- L3C.13 Frictiescheider L-R -->
+    <div style="position:absolute;left:900px;top:260px;text-align:center;font-size:12px;"><div style="font-weight:600;">L3C.13</div><div>Frictiescheider L-R</div></div>
+
+    <!-- L3C.14L/R Mechanische Drogers -->
+    <div style="position:absolute;left:1050px;top:12px;text-align:center;font-size:12px;"><div style="font-weight:600;">L3C.14L/R</div><div>Mechanische Drogers</div></div>
+    <div style="position:absolute;left:1090px;top:50px;background:#fff;color:#111;padding:2px 8px;border:1px solid #aaa;">0 A</div>
+    <div style="position:absolute;left:1090px;top:80px;background:#fff;color:#111;padding:2px 8px;border:1px solid #aaa;">0,00 A</div>
+    <div style="position:absolute;left:1090px;top:140px;background:#fff;color:#111;padding:2px 8px;border:1px solid #aaa;">0 A</div>
+
+    <!-- L3C.15 Transport Ventilator -->
+    <div style="position:absolute;left:1100px;top:310px;text-align:center;font-size:12px;"><div style="font-weight:600;">L3C.15</div><div>Transport Ventilator</div></div>
+
+    <!-- L3C.16 Plasmaq -->
+    <div style="position:absolute;left:80px;top:360px;text-align:center;font-size:12px;"><div style="font-weight:600;">L3C.16</div><div>Plasmaq</div></div>
+    <div style="position:absolute;left:70px;top:380px;width:10px;height:10px;background:#35c23a;"></div>
+
+    <!-- L3C.18 Extruder Silo -->
+    <div style="position:absolute;left:350px;top:330px;text-align:center;font-size:12px;"><div style="font-weight:600;">L3C.18</div><div>Extruder Silo</div></div>
+
+    <!-- L3C.19 Rondmengventilator -->
+    <div style="position:absolute;left:520px;top:340px;text-align:center;font-size:12px;"><div style="font-weight:600;">L3C.19</div><div>Rondmengventilator</div></div>
+    <div style="position:absolute;left:540px;top:380px;background:#fff;color:#111;padding:2px 8px;border:1px solid #aaa;">0,00 A</div>
+  </div>
+
+  <!-- bottom nav -->
+  <div style="position:absolute;left:0;right:0;bottom:0;height:44px;background:#eef1f5;border-top:1px solid #b8bfc9;display:flex;align-items:stretch;gap:4px;padding:4px 6px;">
+    <div style="width:36px;background:#fff;border:1px solid #9aa0aa;display:flex;align-items:center;justify-content:center;cursor:pointer;">◀</div>
+    <div style="width:40px;background:#4a5a7a;border:1px solid #3a4a6a;display:flex;align-items:center;justify-content:center;cursor:pointer;"><svg width="22" height="18" viewBox="0 0 22 18"><path d="M11 2 2 10h3v6h4v-4h4v4h4v-6h3z" fill="#e8ecf2"></path></svg></div>
+    <div style="width:60px;background:#fff;border:1px solid #9aa0aa;display:flex;align-items:center;justify-content:center;text-align:center;line-height:1.1;font-size:11px;cursor:pointer;">Clean<br>screen</div>
+    <div style="width:50px;background:#fff;border:1px solid #9aa0aa;display:flex;align-items:center;justify-content:center;text-align:center;line-height:1.1;font-size:11px;cursor:pointer;">Stop<br>Runtime</div>
+    <div style="flex:1;"></div>
+    <div style="width:40px;background:#fff;border:1px solid #9aa0aa;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px;">📋</div>
+    <div style="width:40px;background:#fff;border:1px solid #9aa0aa;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px;">🔧</div>
+    <div style="width:56px;background:#fff;border:1px solid #9aa0aa;display:flex;align-items:center;justify-content:center;font-size:11px;cursor:pointer;">Logout</div>
+    <div style="width:50px;background:#fff;border:1px solid #9aa0aa;display:flex;align-items:center;justify-content:center;font-size:11px;cursor:pointer;">Reset</div>
+    <div style="width:36px;background:#fff;border:1px solid #9aa0aa;display:flex;align-items:center;justify-content:center;cursor:pointer;">⚡</div>
+    <div style="width:36px;background:#e8c040;border:1px solid #b89a20;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;">⚠</div>
+    <div style="width:36px;background:#fff;border:1px solid #9aa0aa;display:flex;align-items:center;justify-content:center;cursor:pointer;">▶</div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:800}}">
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

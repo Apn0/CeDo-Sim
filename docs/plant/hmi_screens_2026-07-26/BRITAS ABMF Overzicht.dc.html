@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>html,body{margin:0;padding:0;background:#050505;} a{color:#e88a1a;text-decoration:none;} a:hover{color:#ffb04a;}</style>
+</helmet>
+<div style="width:1200px;height:600px;position:relative;overflow:hidden;background:#5a6b82;font-family:Tahoma,Verdana,sans-serif;color:#1a1a1a;font-size:15px;" data-screen-label="BRITAS Overzicht">
+
+  <!-- top bar -->
+  <div style="position:absolute;top:0;left:0;right:0;height:64px;background:#f5941e;display:flex;align-items:stretch;padding:8px;gap:8px;">
+    <div style="width:88px;background:#c7d0da;border:1px solid #9aa4b0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M7.5 5.5a8 8 0 1 0 9 0" fill="none" stroke="#2fb520" stroke-width="2.4" stroke-linecap="round"></path><line x1="12" y1="2.5" x2="12" y2="11" stroke="#2fb520" stroke-width="2.4" stroke-linecap="round"></line></svg><span style="font-size:11px;">Filtering</span></div>
+    <div style="width:200px;background:#f5941e;border:1px solid #b86e10;display:flex;align-items:center;justify-content:center;font-weight:700;cursor:pointer;">Start cyclus</div>
+    <div style="width:200px;background:#f5941e;border:1px solid #b86e10;display:flex;align-items:center;justify-content:center;font-weight:700;cursor:pointer;">Start lange cyclus</div>
+    <div style="flex:1;display:flex;flex-direction:column;justify-content:center;padding-left:20px;color:#2a2a2a;"><span>Gebruiker: Operator</span><span style="margin-top:8px;">Recept:</span></div>
+    <div style="width:56px;background:#c7d0da;border:1px solid #9aa4b0;display:flex;align-items:center;justify-content:center;position:relative;cursor:pointer;"><svg width="26" height="26" viewBox="0 0 24 24"><path d="M12 3a5.5 5.5 0 0 0-5.5 5.5c0 3.2-1.1 4.6-2 5.6-.5.6-.1 1.4.7 1.4h13.6c.8 0 1.2-.8.7-1.4-.9-1-2-2.4-2-5.6A5.5 5.5 0 0 0 12 3z" fill="#d02020"></path><path d="M9.5 18a2.5 2.5 0 0 0 5 0z" fill="#d02020"></path></svg><span style="position:absolute;top:2px;left:4px;font-size:10px;">2</span></div>
+    <div style="width:56px;background:#c7d0da;border:1px solid #9aa4b0;display:flex;align-items:center;justify-content:center;cursor:pointer;"><svg width="26" height="22" viewBox="0 0 26 22"><rect x="1" y="5" width="24" height="16" rx="2" fill="#1a1a1a"></rect><rect x="8" y="1" width="9" height="4" rx="1" fill="#1a1a1a"></rect><circle cx="13" cy="13" r="5" fill="#c7d0da"></circle></svg></div>
+    <div style="width:56px;background:#c7d0da;border:1px solid #9aa4b0;display:flex;align-items:center;justify-content:center;cursor:pointer;"><svg width="26" height="24" viewBox="0 0 26 24"><path d="M13 2 2 12h3v10h6v-6h4v6h6V12h3z" fill="#1a1a1a"></path></svg></div>
+  </div>
+
+  <!-- right nav -->
+  <div style="position:absolute;top:72px;right:8px;width:190px;display:flex;flex-direction:column;gap:3px;">
+    <div style="background:#f5941e;border:1px solid #b86e10;display:flex;align-items:center;gap:10px;padding:9px 12px;cursor:pointer;"><svg width="20" height="20" viewBox="0 0 20 20"><rect x="2" y="3" width="4" height="4" fill="#1a1a1a"></rect><rect x="2" y="9" width="4" height="4" fill="#1a1a1a"></rect><rect x="2" y="15" width="4" height="3" fill="#1a1a1a"></rect><path d="M9 10h7l-3-3v6l3-3" fill="#1a1a1a"></path></svg>Filtering</div>
+    <div style="background:#eef1f5;border:1px solid #b8bfc9;display:flex;align-items:center;gap:10px;padding:9px 12px;line-height:1.2;cursor:pointer;" style-hover="background:#fff;"><svg width="20" height="20" viewBox="0 0 20 20"><rect x="3" y="3" width="9" height="6" rx="1" fill="none" stroke="#1a1a1a" stroke-width="1.6"></rect><circle cx="7.5" cy="6" r="1.4" fill="#1a1a1a"></circle><path d="M6 11v3a3 3 0 0 0 3 3h4" fill="none" stroke="#1a1a1a" stroke-width="1.6"></path><circle cx="15" cy="17" r="2" fill="#1a1a1a"></circle></svg>Hydraulisch systeem</div>
+    <div style="background:#eef1f5;border:1px solid #b8bfc9;display:flex;align-items:center;gap:10px;padding:9px 12px;cursor:pointer;" style-hover="background:#fff;"><svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7" fill="none" stroke="#1a1a1a" stroke-width="1.8"></circle><circle cx="10" cy="10" r="2.4" fill="#1a1a1a"></circle><line x1="10" y1="3" x2="10" y2="7.6" stroke="#1a1a1a" stroke-width="1.8"></line><line x1="16" y1="13.5" x2="12.1" y2="11.2" stroke="#1a1a1a" stroke-width="1.8"></line><line x1="4" y1="13.5" x2="7.9" y2="11.2" stroke="#1a1a1a" stroke-width="1.8"></line></svg>Motoren</div>
+    <div style="background:#eef1f5;border:1px solid #b8bfc9;display:flex;align-items:center;gap:10px;padding:9px 12px;cursor:pointer;" style-hover="background:#fff;"><svg width="20" height="20" viewBox="0 0 20 20"><path d="M10 2.5a2 2 0 0 1 2 2v7.2a4 4 0 1 1-4 0V4.5a2 2 0 0 1 2-2z" fill="none" stroke="#1a1a1a" stroke-width="1.6"></path><circle cx="10" cy="15" r="1.8" fill="#1a1a1a"></circle><line x1="10" y1="7" x2="10" y2="14" stroke="#1a1a1a" stroke-width="1.8"></line></svg>Verwarmingen</div>
+    <div style="background:#eef1f5;border:1px solid #b8bfc9;display:flex;align-items:center;gap:10px;padding:9px 12px;cursor:pointer;" style-hover="background:#fff;"><svg width="20" height="20" viewBox="0 0 20 20"><path d="M3 7h11l-3-3M17 13H6l3 3" fill="none" stroke="#1a1a1a" stroke-width="1.8" stroke-linecap="round"></path></svg>Interface</div>
+  </div>
+
+  <!-- left column: Algemeen -->
+  <div style="position:absolute;top:80px;left:14px;width:640px;">
+    <div style="color:#1a1a1a;font-size:17px;border-bottom:2px solid #f5941e;padding-bottom:2px;margin-bottom:10px;">Algemeen</div>
+    <div style="display:flex;gap:6px;margin-bottom:44px;">
+      <div style="flex:1;background:#c7d0da;padding:8px 12px;text-align:right;">Modus</div>
+      <div style="width:150px;background:#c7d0da;padding:8px 12px;text-align:center;">Automatisch</div>
+      <div style="width:120px;background:#dfe6ef;padding:8px 12px;text-align:center;">0 bar</div>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:4px;align-items:stretch;">
+      <div style="flex:1;background:#dfe6ef;padding:8px 12px;text-align:right;">Zeefband - toevoer</div>
+      <div style="width:120px;background:#f5b800;padding:8px 12px;text-align:center;">0 mm</div>
+      <div style="width:120px;background:#f5b800;padding:8px 12px;text-align:center;">0 mm</div>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:4px;">
+      <div style="flex:1;background:#dfe6ef;padding:8px 12px;text-align:right;line-height:1.2;">Zeefbandwissel<br>aan-vertraging</div>
+      <div style="width:120px;background:#f5b800;padding:8px 12px;text-align:center;">0 s</div>
+      <div style="width:120px;"></div>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:4px;">
+      <div style="flex:1;background:#dfe6ef;padding:8px 12px;text-align:right;line-height:1.2;">max. druk -<br>overdrukuitschakeling</div>
+      <div style="width:120px;background:#f5b800;padding:8px 12px;text-align:center;">0 bar</div>
+      <div style="width:120px;"></div>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:30px;">
+      <div style="flex:1;background:#dfe6ef;padding:8px 12px;text-align:right;">Cyclische zeefbandwissel</div>
+      <div style="width:120px;background:#f5b800;padding:8px 12px;text-align:center;">0 min</div>
+      <div style="width:120px;background:#f5b800;border:2px solid #1a1a1a;padding:8px 12px;text-align:center;cursor:pointer;">UIT</div>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:30px;">
+      <div style="flex:1;background:#dfe6ef;padding:8px 12px;text-align:right;">max. druk - zeefwissel</div>
+      <div style="width:120px;background:#f5b800;padding:8px 12px;text-align:center;">0 bar</div>
+      <div style="width:120px;"></div>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:4px;">
+      <div style="flex:1;background:#dfe6ef;padding:8px 12px;text-align:right;">Uitgevoerde zeefwissels</div>
+      <div style="width:120px;background:#f5b800;padding:8px 12px;text-align:center;">0</div>
+      <div style="width:120px;"></div>
+    </div>
+    <div style="display:flex;gap:6px;">
+      <div style="flex:1;background:#dfe6ef;padding:8px 12px;text-align:right;">Verbruikte zeefband</div>
+      <div style="width:120px;background:#f5b800;padding:8px 12px;text-align:center;">0,000 m</div>
+      <div style="width:120px;"></div>
+    </div>
+  </div>
+
+  <!-- middle column -->
+  <div style="position:absolute;top:80px;left:660px;width:310px;">
+    <div style="color:#1a1a1a;font-size:17px;border-bottom:2px solid #f5941e;padding-bottom:2px;margin-bottom:10px;">Magazijn motor</div>
+    <div style="display:flex;gap:6px;margin-bottom:44px;">
+      <div style="flex:1;background:#dfe6ef;padding:8px 12px;text-align:right;">Magazijn 2</div>
+      <div style="width:110px;background:#f5b800;padding:8px 12px;text-align:center;">Inactief</div>
+    </div>
+    <div style="color:#1a1a1a;font-size:17px;border-bottom:2px solid #f5941e;padding-bottom:2px;margin-bottom:10px;">Hydraulisch systeem</div>
+    <div style="display:flex;gap:6px;margin-bottom:4px;"><div style="flex:1;background:#dfe6ef;padding:8px 12px;text-align:right;">Snelheid leegmaken</div><div style="width:90px;background:#f5b800;padding:8px 12px;text-align:center;">0 %</div></div>
+    <div style="display:flex;gap:6px;margin-bottom:14px;"><div style="flex:1;background:#dfe6ef;padding:8px 12px;text-align:right;line-height:1.2;">Wiggen cyclisch aandrukken</div><div style="width:90px;background:#f5b800;border:2px solid #1a1a1a;padding:8px 6px;text-align:center;">Inactief</div></div>
+    <div style="display:flex;gap:6px;margin-bottom:4px;"><div style="flex:1;background:#dfe6ef;padding:8px 12px;text-align:right;">Vertraging wiggen open</div><div style="width:90px;background:#f5b800;padding:8px 12px;text-align:center;">0 ms</div></div>
+    <div style="display:flex;gap:6px;margin-bottom:30px;"><div style="flex:1;background:#dfe6ef;padding:8px 12px;text-align:right;line-height:1.2;">Vertraging ingangswig open</div><div style="width:90px;background:#f5b800;padding:8px 12px;text-align:center;">0 ms</div></div>
+    <div style="color:#1a1a1a;font-size:17px;border-bottom:2px solid #f5941e;padding-bottom:2px;margin-bottom:10px;">Trends</div>
+    <div style="display:flex;gap:6px;margin-bottom:4px;"><div style="flex:1;background:#dfe6ef;padding:8px 12px;text-align:right;">Temperatuur</div><div style="width:90px;background:#f5b800;padding:6px 12px;display:flex;align-items:center;justify-content:center;cursor:pointer;"><svg width="40" height="18" viewBox="0 0 40 18"><polyline points="2,14 11,6 20,11 29,3 38,8" fill="none" stroke="#1a1a1a" stroke-width="1.8"></polyline><circle cx="11" cy="6" r="1.8" fill="#1a1a1a"></circle><circle cx="20" cy="11" r="1.8" fill="#1a1a1a"></circle><circle cx="29" cy="3" r="1.8" fill="#1a1a1a"></circle></svg></div></div>
+    <div style="display:flex;gap:6px;"><div style="flex:1;background:#dfe6ef;padding:8px 12px;text-align:right;">Zeefwisselcyclus</div><div style="width:90px;background:#f5b800;padding:6px 12px;display:flex;align-items:center;justify-content:center;cursor:pointer;"><svg width="40" height="18" viewBox="0 0 40 18"><polyline points="2,14 11,6 20,11 29,3 38,8" fill="none" stroke="#1a1a1a" stroke-width="1.8"></polyline><circle cx="11" cy="6" r="1.8" fill="#1a1a1a"></circle><circle cx="20" cy="11" r="1.8" fill="#1a1a1a"></circle><circle cx="29" cy="3" r="1.8" fill="#1a1a1a"></circle></svg></div></div>
+  </div>
+
+  <!-- footer -->
+  <div style="position:absolute;left:0;right:0;bottom:0;height:30px;background:#f5c518;display:flex;align-items:center;padding:0 12px;font-weight:700;">
+    <span style="width:220px;">ABMF | Overzicht</span>
+    <div style="flex:1;text-align:center;">0 bar</div>
+    <div style="flex:1;text-align:center;">0 %</div>
+    <span style="width:200px;text-align:right;font-weight:400;">Do 20.02.2025 03:53</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1200,&quot;height&quot;:600}}">
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>
