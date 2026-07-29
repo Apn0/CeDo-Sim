@@ -157,15 +157,39 @@ func _wait_for_bake() -> void:
 		else:
 			stable = 0
 		polys = p
-	# A stable POLYGON COUNT is only a proxy: the mesh resource can be fully
-	# baked while NavigationServer3D has not yet synced the map on its own step,
-	# and a query against an unsynced map returns a TRUNCATED path rather than an
-	# error. Measured: this file passes 9/9 standalone but failed one crew-post
-	# route ("ends 11.40 m short") inside a full harness run, where eight prior
-	# MainWorld boots leave the machine contended and the server sync lands later
-	# relative to our frame budget. That is a FALSE RED — the same class this
-	# harness already fixed for teardown exit codes — so gate on the server's own
-	# iteration id, which only advances when the map has actually been rebuilt.
+	# A stable POLYGON COUNT is only a proxy: the mesh resource can be fully baked
+	# while NavigationServer3D has not yet synced the map on its own step, and a
+	# query against an unsynced map returns a TRUNCATED path rather than an error.
+	# So gate on the server's own iteration id, which only advances when the map
+	# has actually been rebuilt. Cheap, and correct regardless.
+	#
+	# CORRECTION, 2026-07-29 — TWO WRONG DIAGNOSES, RECORDED SO NOBODY REPEATS THEM.
+	# This wait was added believing it explained the intermittent crew-post failure
+	# below. It did not. Measured, paired A/B runs of the crew-post check:
+	#
+	#   bake-race theory   the wait landed, the next harness run failed the same
+	#                      check for a DIFFERENT worker (Peter, 17.00 m short).
+	#   off-mesh theory    CrewManager takes each post from its machine's own
+	#                      position and the bake erodes machine footprints, so
+	#                      posts looked off-mesh by construction. Snapping posts to
+	#                      the nearest navmesh point was tried and MEASURED:
+	#                        no-snap: PASS, PASS      snap: PASS, FAIL
+	#                      It fixes nothing, and the "is the post on the mesh"
+	#                      invariant written to prove it passed in BOTH conditions
+	#                      (worst 0.28 m) while routing failed — a vacuous check.
+	#                      Both were reverted rather than shipped.
+	#
+	# WHAT IS ACTUALLY KNOWN: the failure is genuinely nondeterministic run to run,
+	# always in the one-way `canteen<-post` direction, and the affected worker AND
+	# post position differ every time (Pascal (-218.9, 83.3); Peter; Abdellilah
+	# (-197.9, 83.7) and (-216.0, ...)). Being within 0.28 m of the mesh is not
+	# enough — the nearest polygon can be a sliver that is not CONNECTED to the
+	# canteen. The open question is therefore which machine positions are
+	# unroutable-from-canteen and why post assignment lands on them at random;
+	# that is a CrewManager/navmesh-topology question, not a bake-timing one.
+	#
+	# This wait stays because gating on the server's iteration id is correct on its
+	# own merits, not because it fixed anything.
 	var map : RID = region.get_navigation_map()
 	var iter : int = -1
 	var iter_stable : int = 0
@@ -325,6 +349,7 @@ func _test_crew_posts() -> void:
 	_check(unreachable.is_empty(),
 		"every on-site post routes to the canteen and back (%d broken: %s)"
 			% [unreachable.size(), ", ".join(unreachable) if not unreachable.is_empty() else "none"])
+
 	# REPORTED, NOT ASSERTED — and deliberately so. This is a real defect, but it
 	# belongs to CrewManager, and gating navigation work on it would be blaming the
 	# navmesh for a post that was never on the plant. It must still be LOUD: an

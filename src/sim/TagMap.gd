@@ -721,8 +721,8 @@ func _unit_14l_mech_dryer() -> void:
 		"%s ; default single 'drive' at LineFlow.gd:1457-1459 ; DOC docs/plant/line3c_scada_tags.md:35" % S_COMP,
 		"probable", "the rotary-valve + cleaning-scraper motors on this SCADA unit are absent (no sim component)")
 	_add("scada/3c/info/14l/softstarterdroger1/stroom", "14l", Kind.MACHINE_FIELD, "amps",
-		"%s ; nominal 70.80 A from Line3CDef.gd:77 ; MEASURED src/tests/test_tag_snapshot.gd 2026-07-27" % S_AMPS,
-		"probable", "MEASURED CAVEAT: reads exactly 0.00 A against a calibrated 70.80 A. mech_dryer is NOT a high-load motor, so nothing overwrites the dead calibrated path here — this row is where the l3c_code -> amps_nominal=0 chain shows through undisguised")
+		"%s ; nominal 70.80 A from Line3CDef.gd:77 ; MEASURED src/tests/test_line3c_identity.gd 2026-07-29" % S_AMPS,
+		"probable", "FIXED 2026-07-29, was the clearest symptom of the shared-id defect: this row read exactly 0.00 A against a calibrated 70.80 A, because mech_dryer is NOT a high-load motor and so nothing overwrote the dead amps_nominal=0 path — it showed the l3c_code chain broken, undisguised. Now that each node carries its own l3c_code, 14L reads 70.80 A and its sibling 14R reads 63.51 A (test_line3c_identity)")
 	_add("scada/3c/info/14l/softstarterdroger1/handauto", "14l", Kind.MACHINE_FIELD, "hand_mode",
 		S_HAND, "probable", "machine scope")
 	_add("scada/3c/setpoints/14l/softstarterdroger1/stopstarthand", "14l", Kind.MACHINE_FIELD, "manual_on",

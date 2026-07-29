@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/tests/test_l3c_unit_screens.gd" id="1_wl3covz"]
+
+[node name="TestWaslijn3COverzicht" type="Node3D"]
+script = ExtResource("1_wl3covz")

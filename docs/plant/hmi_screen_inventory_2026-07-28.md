@@ -374,3 +374,82 @@ CANVAS 1024x640 (:130, $preview :63). THIS FILE IS NOT ZERO-JS: it carries a DCL
 10) "50m3" is printed above the tank with no space and no superscript — reproduce literally.
 11) PROVENANCE_processed_log.md declares no open gap for this screen. (The log's only self-flagged gap in the whole set — "COAD right-panel labels + tank count still unconfirmed" per the brief — belongs to COAD Waslijn 3A Overzicht.dc.html, which is NOT in this batch; I confirmed the log text at PROVENANCE_processed_log.md:37-43 contains no entry for any of my four screens.)
 
+
+---
+
+# PORT STATUS — updated 2026-07-29
+
+## What is ported and live in the sim
+
+| Screen | Godot | Test | Bound / unavailable |
+|---|---|---|---|
+| Waslijn 3C Overzicht | `scopes/WashingScope.gd` | `test_waslijn3c_overzicht.gd` (15 checks) | 28 / 10 |
+| L3C.14 Mech Droger Links | `scopes/L3CUnitScreen.gd` + spec `L3C.14L` | `test_l3c_unit_screens.gd` (33 checks) | 4 / 29 |
+| L3C.14 Mech Droger Rechts | `scopes/L3CUnitScreen.gd` + spec `L3C.14R` | same | 4 / 29 |
+
+**3 of 34.** The remaining 11 unit screens are spec entries in
+`src/data/plant/l3c_unit_screens.gd`, not new scripts — the layout engine is
+written and proven against both a templated screen (Links) and the odd
+hand-authored one (Rechts).
+
+The two dryers are the pair that proves per-unit addressing: same machine type,
+both read **0.00 A** before 2026-07-29, and they now render currents whose ratio
+matches their two hand-transcribed nominals (70.80 / 63.51 = 1.1148) to four
+decimal places. A shared nominal would force that ratio to exactly 1.0000.
+
+## CORRECTION to this document (found while porting)
+
+**:235 states "TagMap has NO UNITS row for 14r (TagMap.gd:149-160 registers only
+14l), so every 14r tag is currently uncovered." That is no longer true.**
+`TagMap.UNITS` now carries `"14r": ["L3C.14R", "mech_dryer", 78]`, and 14R
+resolves to its own node with its own calibrated current. The 2026-07-29
+unique-keys work closed it. Line numbers cited throughout this file for
+`Line3CDef.gd` and `TagMap.gd` have also shifted (L3C.14L is `Line3CDef.gd:77`,
+not `:71`) — cite by CONTENT when re-reading, not by line.
+
+## KNOWN GAPS in the current port — recorded, not hidden
+
+These are real infidelities. None of them is a blocker for using the screens,
+and all are cheap to close once the operator rules on them.
+
+1. **No isometric machine mimic.** This document's finding #1 says every unit
+   screen carries one and the mockups drop it. The port drops it too, because
+   the mockup is the layout source and the photo art has not been traced. On
+   L3C.14 Rechts the mockup *does* carry crude inline SVG (:92-106) which this
+   document calls "a much poorer likeness than the photo's detailed 3D render" —
+   so tracing that would be porting the worse of two sources. **Needs the
+   operator's photo, or his ruling that a schematic stand-in is acceptable.**
+
+2. **The Reinigingsschraper card's deliberate blank row is not rendered.**
+   The photo shows a blank spacer where Loopbewaking would be, so that card's
+   rows line up with the Doseersluis card beside it; the mockup drops the
+   spacer and so does the port. Cosmetic, one row.
+
+3. **Canvas size is not per-screen.** L3C.14 Rechts is 1024x768 where every
+   sibling is 1280x800. The port lays out responsively rather than at a fixed
+   canvas size, so this does not misplace anything — but it is a difference the
+   spec does not yet record. Its dark-slate panel face (#5a6070) IS recorded and
+   IS rendered.
+
+4. **Photo setpoints are not shown, by design.** The photo has StartTijd 5 s,
+   StopTijd 210 s, Loopbewaking 9000 ms, toggles ON. The sim has no start/stop
+   timing model at all, so every timer renders "--" with that reason recorded.
+   Painting the photo's numbers would make the screen a picture of one instant
+   in 2024 rather than a view of the sim — the exact defect the Overzicht was
+   rewritten to remove. When a timing model exists, these bind and the counts
+   move.
+
+## OPERATOR QUESTIONS — unresolved, flagged not guessed
+
+1. **210 s StopTijd vs the ~30 s soak comment.** This document (:229) already
+   flags that the photo's 210 s batch-dry soak contradicts the ~30 s documented
+   at `Line3CDef.gd:68-70`, and says "do not silently reconcile". Still
+   unreconciled. It is the single most load-bearing number on the screen for
+   `MechDryerCycle`, so it wants a direct answer: **is the real soak 210 s?**
+
+2. **Which motor carries a unit's machine current** on multi-motor screens. The
+   port follows `TagMap.gd:723`, which puts it on the soft-started drum drive
+   (`softstarterdroger1`) and leaves the scraper and rotary valve unbound —
+   because the sim models no per-motor current at all. The photo shows the real
+   split: drum 108 A, scraper 1 A, sluice 3 A. **Confirm the drum reading is the
+   one that belongs on the machine, or say the sim should model all three.**

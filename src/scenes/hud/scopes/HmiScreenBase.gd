@@ -116,7 +116,8 @@ var _bound   : Array[Dictionary] = []
 var _unavail : Array[Dictionary] = []
 
 # Widget registries, keyed so rendered_text() can answer for any screen.
-var _status_dots : Dictionary = {}       # key -> ColorRect
+var _status_dots : Dictionary = {}       # key -> ColorRect (mimic squares, card bands)
+var _status_texts: Dictionary = {}       # key -> Label     (Aan/Uit pills)
 var _amp_labels  : Dictionary = {}       # key -> Label
 var _chip_labels : Dictionary = {}       # chip label -> Label
 var _value_boxes : Dictionary = {}       # key -> Label (timer / setpoint boxes)
@@ -168,10 +169,16 @@ func rendered_text(field_key: String) -> String:
 	var arg := String(parts[1]) if parts.size() > 1 else ""
 	match kind:
 		"status":
+			# Two shapes of status widget across the family: the Overzicht mimic
+			# uses colour squares, the unit screens use an "Aan"/"Uit" text pill.
+			# Both must be readable here or a bound field becomes unverifiable —
+			# which is exactly how the unit screens first shipped a "bound" status
+			# that rendered_text() answered "" for.
 			var dot : ColorRect = _status_dots.get(arg, null)
-			if dot == null:
-				return ""
-			return String(dot.get_meta("render_text", ""))
+			if dot != null:
+				return String(dot.get_meta("render_text", ""))
+			var slbl : Label = _status_texts.get(arg, null)
+			return slbl.text if slbl != null else ""
 		"stroom":
 			var lbl : Label = _amp_labels.get(arg, null)
 			return lbl.text if lbl != null else ""

@@ -67,8 +67,11 @@ const HOME_TILES_WASHING := [
 	[
 		{"label": "Waslijn",            "scope_id": "washing",             "icon": "W"},
 		{"label": "Kufferath drogers",  "scope_id": "kufferaths_dryer",    "icon": "K"},
-		null,
-		null,
+		# Per-unit detail screens. Labels are the operator's own screen titles,
+		# shortened only to fit the tile — the FULL verbatim title is the panel
+		# heading on the screen itself (l3c_unit_screens.gd), never reworded.
+		{"label": "L3C.14 Droger L",    "scope_id": "l3c_unit:L3C.14L",    "icon": "14L"},
+		{"label": "L3C.14 Droger R",    "scope_id": "l3c_unit:L3C.14R",    "icon": "14R"},
 		null,
 	],
 ]
@@ -353,6 +356,12 @@ const _SUBSCOPE_SCRIPTS := {
 	# binds the local line's MechDryerCycle pair via set_dryer_pair() below.
 	"kufferaths_dryer":    "res://src/scenes/hud/scopes/KufferathsDryerScope.gd",
 	"washing":             "res://src/scenes/hud/scopes/WashingScope.gd",
+	# Per-unit L3C detail screens. ONE layout engine driven by the verbatim spec
+	# in src/data/plant/l3c_unit_screens.gd; the scope_id after "l3c_unit:" is the
+	# spec key, so adding a screen is adding a spec entry and a menu row — not a
+	# new script. open_subscope() calls set_screen() with that suffix below.
+	"l3c_unit:L3C.14L":    "res://src/scenes/hud/scopes/L3CUnitScreen.gd",
+	"l3c_unit:L3C.14R":    "res://src/scenes/hud/scopes/L3CUnitScreen.gd",
 	# The remaining BluPort module tiles (FIX 3) don't have a finished scope
 	# file yet — open_subscope() bails cleanly (returns false) so the operator
 	# stays on HOOFDMENU. The TILE labels are documented-correct (188_CeDo1);
@@ -431,6 +440,14 @@ func open_subscope(scope_id: String) -> bool:
 	# honest but dead.
 	if scope_id == "washing" and ctrl.has_method("bind"):
 		ctrl.call("bind", _scope, _line_flow)
+	# Per-unit L3C screens: the spec key rides in the scope_id after the colon,
+	# so one script serves every unit. set_screen() must come BEFORE bind(), or
+	# the screen binds a machine code it does not have yet and reports every
+	# field unavailable — honest, but wrong.
+	if scope_id.begins_with("l3c_unit:") and ctrl.has_method("set_screen"):
+		ctrl.call("set_screen", scope_id.substr("l3c_unit:".length()))
+		if ctrl.has_method("bind"):
+			ctrl.call("bind", _scope, _line_flow)
 	return true
 
 ## Resolve the ExtruderModel for the panel's current scope line (#bullet-10).

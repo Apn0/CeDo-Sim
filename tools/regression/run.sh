@@ -144,6 +144,14 @@ fi
 #       live_line_amps stays deliberately NOT fixtured -- not run-stable once fed.
 # Mutation-proven: empty map -> 7 fail, stubbed get_machine_info -> 6 fail,
 # all-default values -> 3 fail, feed disabled -> 2 fail.
+# test_l3c_unit_screens: the per-unit L3C screens (L3C.14 dryer LINKS/RECHTS),
+# one layout engine + verbatim spec data. Its criterion A re-reads the
+# operator's own HTML export at run time and fails if a spec label was
+# invented or a motor card silently dropped, so the screens cannot drift into
+# plausible fiction. Criterion F is the headline: the two dryers are the same
+# machine TYPE and both read 0.00 A before the l3c_code work, so their
+# currents must now differ AND their ratio must match the two hand-transcribed
+# nominals (70.80/63.51) — a shared nominal would force that ratio to 1.0.
 # test_waslijn3c_overzicht: the FIRST ported operator HMI screen (Waslijn 3C
 # Overzicht -> WashingScope, which previously showed construction-time literals
 # from an AI-enhanced photo and whose bind() had zero callers). Asserts the
@@ -179,7 +187,7 @@ fi
 # instead of the 0.00 A it read before, that sum(amps_nominal) == 488.49 A, and
 # that the mass ledger still balances now that stamping also swaps in the
 # ProcessModel transfer coefficients and switches on the dryer pair controller.
-for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_tag_snapshot test_waslijn3c_overzicht; do
+for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_tag_snapshot test_waslijn3c_overzicht test_l3c_unit_screens; do
 	echo "== $t =="
 	"$GODOT" --headless --path "$PROJ" "res://src/tests/$t.tscn" > "$OUT/$t.log" 2>&1
 	grep -E "^  (ok|FAIL)|Result|RESULT" "$OUT/$t.log" || true

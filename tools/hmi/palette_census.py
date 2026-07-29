@@ -39,6 +39,12 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 SCREEN_DIR = REPO / "docs" / "plant" / "hmi_screens_2026-07-26"
 BASE_GD = REPO / "src" / "scenes" / "hud" / "scopes" / "HmiScreenBase.gd"
+# Per-screen chrome OVERRIDES live in the spec, not the base, because they are
+# genuinely one screen's own chrome: L3C.14 Rechts paints its panels dark slate
+# #5a6070 where every sibling uses #c8cdd6. Counting the spec's hexes as declared
+# keeps the census honest about the difference between "we render this" and
+# "nobody has looked at this yet".
+SPEC_GD = REPO / "src" / "data" / "plant" / "l3c_unit_screens.gd"
 
 # Both spellings, because the export mixes them freely: `background:#fff` and
 # `border:1px solid #aaa` sit beside `background:#c8cdd6`.  Matching only the
@@ -112,8 +118,13 @@ def main() -> int:
         print(f"FAIL  : base script missing: {BASE_GD}")
         return 1
 
-    declared = set(BASE_COLOR_RE.findall(BASE_GD.read_text(encoding="utf-8")))
-    declared = {h.lower() for h in declared}
+    declared = {h.lower() for h in BASE_COLOR_RE.findall(
+        BASE_GD.read_text(encoding="utf-8"))}
+    spec_declared: set[str] = set()
+    if SPEC_GD.is_file():
+        spec_declared = {norm(h) for h in HEX_RE.findall(
+            SPEC_GD.read_text(encoding="utf-8"))}
+        declared |= spec_declared
 
     all_screens = sorted(SCREEN_DIR.glob("*.html"))
     if not all_screens:
@@ -144,7 +155,8 @@ def main() -> int:
     print(f"scope          : {'ALL vendors' if wide else IN_SCOPE_PREFIX.strip()}")
     print(f"screens        : {len(screens)} of {len(all_screens)}")
     print(f"distinct hexes : {len(users)}")
-    print(f"declared in base: {len(declared)}")
+    print(f"declared in base: {len(declared) - len(spec_declared)}"
+          f" + {len(spec_declared)} per-screen override(s) in the spec")
     print(f"ignored (cited): {len(IGNORED)}")
 
     if verbose:
