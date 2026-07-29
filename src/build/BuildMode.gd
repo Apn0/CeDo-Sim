@@ -220,6 +220,75 @@ const LINE_3C6_SEQ : Array[Dictionary] = [
 	{"id": "trilzeef"},
 ]
 
+## LINE 3C — the wash/dry/extrude spine, TRANSCRIBED one-for-one from
+## Line3CDef.STAGES (src/sim/Line3CDef.gd:53-90, itself transcribed from the plant
+## HMI "Techical overview"). Nothing placed this line before: BuildMode dispatched
+## six sequences and none of them was Line 3C, so the whole calibrated 3C model
+## (ProcessModel coefficients, the HMI currents, the MechDryerCycle pair
+## controller, the Line3CDef.LINKS split/merge graph) had no node to run on.
+##
+## HARD INVARIANT: entry i's id MUST equal Line3CDef.STAGES[i]["id"], and the
+## macro_index stamped at placement (:1627-1628) is what Line3CDef
+## .code_for_macro_entry turns into the stage's l3c_code. That alignment is
+## asserted by src/tests/test_line3c_seq_alignment.gd — an insert or a reorder
+## here re-addresses the whole line and MUST go through that test.
+## APPEND-ONLY, like every other SEQ (see the standing warning at :100-101).
+##
+## NO branch_recirc / parallel_branch flags, deliberately: LineFlow skips its
+## Line3CDef.LINKS pass for any node carrying an lf_explicit_outs meta
+## (LineFlow.gd:1026 runs BEFORE the code branch at :1029-1039), so tagging the
+## L/R pairs here would REPLACE the authored split/merge graph with geometry
+## guesses. GRAPH_TOPOLOGY_MACROS below suppresses that tagging for this macro.
+##
+## LAYOUT-APPROXIMATE. Line3CDef supplies order, codes, ids, currents and
+## topology — it does NOT supply metres. The x/z offsets are the existing 3B
+## side-lane idiom, not an operator measurement; the geometry needs a K-mode jog
+## + macro save-back pass before any document calls this the real 3C layout.
+const LINE_3C_SEQ : Array[Dictionary] = [
+	{"id": "doseersilo"},                                          # 0  L3C.1
+	{"id": "sink_float"},                                          # 1  L3C.3
+	{"id": "friction_sep",    "x": -3.0, "z": 2.0},                # 2  L3C.4L
+	{"id": "friction_sep",    "x":  3.0, "z": 2.0},                # 3  L3C.4R
+	{"id": "transport_screw", "x": -3.0, "z": 7.0},                # 4  L3C.5L
+	{"id": "transport_screw", "x":  3.0, "z": 7.0,
+	 "main_advance": 11.0},                                        # 5  L3C.5R
+	{"id": "mill"},                                                # 6  L3C.6  (merge)
+	{"id": "friction_sep",    "x": -3.0, "z": 2.0},                # 7  L3C.9L
+	{"id": "friction_sep",    "x":  3.0, "z": 2.0},                # 8  L3C.9R
+	{"id": "transport_screw", "x": -3.0, "z": 7.0},                # 9  L3C.10L
+	{"id": "transport_screw", "x":  3.0, "z": 7.0,
+	 "main_advance": 11.0},                                        # 10 L3C.10R
+	{"id": "flotation_tank_wide"},                                 # 11 L3C.11 (merge)
+	{"id": "transport_screw"},                                     # 12 L3C.12
+	{"id": "friction_sep"},                                        # 13 L3C.13
+	{"id": "mech_dryer",      "x": -3.0, "z": 3.0},                # 14 L3C.14L
+	{"id": "mech_dryer",      "x":  3.0, "z": 3.0,
+	 "main_advance": 8.0},                                         # 15 L3C.14R
+	{"id": "blower"},                                              # 16 L3C.15 (merge)
+	{"id": "plasmaq"},                                             # 17 L3C.16
+	{"id": "silo"},                                                # 18 L3C.18
+	{"id": "blower"},                                              # 19 L3C.19
+	# ── extruder back-end (Line3CDef.gd:77-89, RECONSTRUCTED codes) ──────────
+	{"id": "compactorband"},                                       # 20 Cband
+	{"id": "compactor"},                                           # 21 PCU
+	{"id": "extruder_screw",  "gap": 1.5},                         # 22 Extr
+	{"id": "laser_filter"},                                        # 23 Laser
+	{"id": "vacuum_degas"},                                        # 24 Degas
+	{"id": "melt_pump"},                                           # 25 Melt
+	{"id": "kopfilter"},                                           # 26 Kop
+	{"id": "heetafslag"},                                          # 27 Heet
+	{"id": "ontwaterzeef"},                                        # 28 Ontw
+	{"id": "centrifuge"},                                          # 29 Centr
+	{"id": "weegschaal"},                                          # 30 Weeg
+	{"id": "voorraad_silo"},                                       # 31 Voorraad
+]
+
+## Macros whose flow topology comes from an AUTHORED graph rather than from the
+## branch/parallel bookkeeping in _build_full_line. For these, no node is stamped
+## with lf_explicit_outs, because LineFlow treats that meta as "downstream fully
+## specified" and skips its Line3CDef.LINKS pass entirely (LineFlow.gd:1026).
+const GRAPH_TOPOLOGY_MACROS : Array[String] = ["line_3c"]
+
 # Transportbanden 3A/3B (operator-correct term — was called "intake"). This is
 # STEP 2 in the plant 3A/3B work-flow:
 #   step 1: Sort line (LINE_SORT_SEQ — sorteerlijn)
@@ -1503,10 +1572,15 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 		seq = LINE_SORT_SEQ
 	elif line_id == "line_intake_3c6":
 		seq = LINE_3C6_SEQ
+	elif line_id == "line_3c":
+		seq = LINE_3C_SEQ
 	# #MSB — pull operator-saved deltas (chain-accumulated) from the store.
 	# Each index's delta is added in the macro's LOCAL frame (x/z lateral,
 	# y vertical, rot_y around vertical). Empty dict = use const seed verbatim.
 	var macro_deltas : Dictionary = LineMacroStore.accumulated_chain(line_id, seq.size())
+	# Authored-graph macro: place geometry only, stamp NO lf_explicit_outs. See
+	# GRAPH_TOPOLOGY_MACROS — that meta suppresses LineFlow's Line3CDef.LINKS pass.
+	var graph_topology : bool = GRAPH_TOPOLOGY_MACROS.has(line_id)
 	# Forward = the ghost's local -Z; right = local +X (lateral lane for branches).
 	var fwd := Vector3(-sin(rot_y), 0.0, -cos(rot_y))
 	var rgt := Vector3(cos(rot_y), 0.0, -sin(rot_y))
@@ -1641,7 +1715,7 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 			# placement-only: no _add_explicit_out, no chain/sibling membership,
 			# and (symmetrically) a role-none MAIN entry never becomes
 			# last_main_node or closes an open branch.
-			var flow_relevant : bool = _is_flow_relevant(mid)
+			var flow_relevant : bool = _is_flow_relevant(mid) and not graph_topology
 			if not flow_relevant:
 				pass   # placement only — invisible to the flow topology
 			elif is_branch:
@@ -1716,6 +1790,7 @@ func _macro_seed(macro_id: String) -> Array[Dictionary]:
 	if macro_id == "line_intake_3a3b": return INTAKE_3A3B_SEQ
 	if macro_id == "line_sort":        return LINE_SORT_SEQ
 	if macro_id == "line_intake_3c6":  return LINE_3C6_SEQ
+	if macro_id == "line_3c":          return LINE_3C_SEQ
 	return [] as Array[Dictionary]
 
 ## Re-walk the seed SEQ (no spawning) and emit an Array of {x, z, rot_y_extra}

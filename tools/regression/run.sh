@@ -27,6 +27,20 @@ echo "== importing =="
 # warnings (--check-only, runtime load(), and --headless --editor --quit all
 # print nothing — verified on 4.6.3). They only reach the operator in the
 # editor. This static check covers the one that keeps shipping.
+# PARSE GATE. The lint below only checks unused parameters — it has NO idea
+# whether the project compiles. Measured 2026-07-29: a tree referencing an
+# undeclared constant (S_FIRST_MATCH) passed the lint clean while the sim could
+# not compile at all ("Parse Error ... Failed to compile depended scripts"), and
+# every behavioural step after it would have been testing a corpse. A boot that
+# prints no Parse/Compile Error is seconds of work and closes that gap.
+echo "== parse gate =="
+"$GODOT" --headless --path "$PROJ" --quit > "$OUT/parse_gate.log" 2>&1
+if grep -qE "Parse Error|Compile Error" "$OUT/parse_gate.log"; then
+	echo "FAIL  : the project does not compile —"
+	grep -E "Parse Error|Compile Error" "$OUT/parse_gate.log" | sort -u | head -10
+	exit 1
+fi
+
 echo "== unused-parameter lint =="
 if ! python3 "$PROJ/tools/regression/lint_unused_params.py" "$PROJ/src"; then
 	echo "FAIL  : unused parameter(s) — would warn in the editor"
@@ -96,17 +110,27 @@ fi
 # of dead-reckoning into it. Both mutation-tested (reverting the pilot / the
 # shell-bake flag turns them red).
 # test_tag_snapshot: makes the operator's REAL 1056-tag SCADA export
-# (src/data/plant/line3c_scada_tags.json) live for the first time via
-# src/sim/TagMap.gd, and MEASURES two defects rather than asserting them:
-#   (b) duplicate_id_collisions == 14 -- LineFlow._find_node_by_id returns the
-#       FIRST match on a non-unique placeable id, so 14 of 47 machines are
-#       unreachable by any front-end. THIS CRITERION INVERTS once machines get
-#       unique keys: a genuine fix makes it 0, and this line must then be
-#       REWRITTEN, not silenced.
-#   (c) l3c_code is stamped on 0 of 47 nodes and sum(amps_nominal) == 0.00 A,
-#       so the calibrated amps path is dead and the '~488 A' comment at
-#       LineFlow.gd:1729-1730 is not what the sim reports. live_line_amps is
-#       deliberately NOT fixtured -- it is not run-stable once the line is fed.
+# (src/data/plant/line3c_scada_tags.json) live via src/sim/TagMap.gd, resolved
+# per L3C UNIT. Criteria (b) and (c) were REWRITTEN on 2026-07-29 -- as the old
+# text below them demanded -- because both INVERTED when the addressing defect
+# they measured was fixed. What they used to record:
+#   (b) duplicate_id_collisions == 14. LineFlow could only be asked for a
+#       PLACEABLE ID and returned the first match, so 14 of 47 machines were
+#       unreachable by any front-end. LineFlow now mints a per-instance key, so
+#       (b) asserts the thing that criterion was a proxy for: every machine has a
+#       DISTINCT non-empty key AND get_machine_info(key) resolves to THAT node
+#       (identity -- a resolver ignoring the key would still return a non-empty
+#       dict, which is the vacuous version). The 14-collision census is KEPT and
+#       still printed: duplicate ids are normal and harmless now that an id is a
+#       machine TYPE rather than the only handle.
+#   (c) l3c_code stamped on 0 of 47 nodes, sum(amps_nominal) == 0.00 A against
+#       ProcessModel.line_nominal_amps() 488.49 A -- the calibrated amps path was
+#       dead and every current in the sim came from MotorOverload's PLACEHOLDER
+#       90 A default. (c) now asserts BOTH directions: the line_3c spine carries
+#       all 32 codes and sums to exactly 488.49 A, AND no machine outside that
+#       macro carries a 3C code (a Line 3A frictiescheider is not L3C.4L, and
+#       stamping by id would also re-route 3A onto the Line3CDef.LINKS graph).
+#       live_line_amps stays deliberately NOT fixtured -- not run-stable once fed.
 # Mutation-proven: empty map -> 7 fail, stubbed get_machine_info -> 6 fail,
 # all-default values -> 3 fail, feed disabled -> 2 fail.
 # test_waslijn3c_overzicht: the FIRST ported operator HMI screen (Waslijn 3C
@@ -118,16 +142,33 @@ fi
 # DEAD values and the bound/unavailable accounting stays exactly intact, so the
 # accounting criterion alone would have passed it -- only the LIVENESS criterion
 # catches it. That is the npc-05 shape. Do not weaken criterion E.
-# It also reports (not asserts away) that L3C.14L renders 0 A while AAN, because
-# l3c_code is stamped on 0 of 47 nodes -- fixing that stamping is what makes
-# those currents real.
+# Its bound/unavailable split moved 13/25 -> 28/10 when the ten units that shared
+# a placeable id with a mapped sibling became addressable by their own plant code.
+# It now also builds line_3a ALONGSIDE line_3c as an adversarial decoy (same ids,
+# different equipment) and adds criterion G: every bound field must resolve
+# through a machine whose OWN l3c_code equals the caption -- the check the old
+# first-match screen could not have passed.
 # test_gate_carve: single-click door/gate/window placement now carves its wall
 # opening THE SAME FRAME (was reload-only). Its passability sample is reported,
 # not gated — it caught a SEPARATE, unfixed WallOpenings limitation (giant
 # procedural wall triangles + a thick double-sided shell defeat the 5 cm
 # coplanarity test) that a same-day attempt to fix regressed test_door_carve.gd
 # on; see the file header before touching WallOpenings._clip_triangle_against_box.
-for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_tag_snapshot test_waslijn3c_overzicht; do
+# test_line3c_seq_alignment: pure-data guard, no world, no physics. Asserts
+# BuildMode.LINE_3C_SEQ stays index-aligned with Line3CDef.STAGES, because a
+# machine's plant address (l3c_code) is DERIVED from its macro_index -- inserting
+# or reordering one SEQ row silently re-addresses every later stage and would
+# hand L3C.9R's 30.88 A to L3C.10L. Mutation: swap two rows -> red.
+# test_line3c_identity: the killer check, on a REAL MainWorld boot (a bench green
+# is worthless here -- npc-05 printed 31/31 while moving zero kg). Places the
+# line_3c macro and asserts each of the FIVE friction separators reads ITS OWN
+# calibrated nominal (29.92 / 29.92 / 28.03 / 30.88 / 24.68 A -- FOUR distinct
+# values, because Line3CDef.gd gives 4L and 4R the same 29.92; five distinct
+# numbers would mean one was invented), that L3C.14L carries 70.80 A nominal
+# instead of the 0.00 A it read before, that sum(amps_nominal) == 488.49 A, and
+# that the mass ledger still balances now that stamping also swaps in the
+# ProcessModel transfer coefficients and switches on the dryer pair controller.
+for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_tag_snapshot test_waslijn3c_overzicht; do
 	echo "== $t =="
 	"$GODOT" --headless --path "$PROJ" "res://src/tests/$t.tscn" > "$OUT/$t.log" 2>&1
 	grep -E "^  (ok|FAIL)|Result|RESULT" "$OUT/$t.log" || true

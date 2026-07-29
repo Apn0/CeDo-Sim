@@ -157,7 +157,29 @@ func _wait_for_bake() -> void:
 		else:
 			stable = 0
 		polys = p
-	_info("baked navmesh: %d polygons" % polys)
+	# A stable POLYGON COUNT is only a proxy: the mesh resource can be fully
+	# baked while NavigationServer3D has not yet synced the map on its own step,
+	# and a query against an unsynced map returns a TRUNCATED path rather than an
+	# error. Measured: this file passes 9/9 standalone but failed one crew-post
+	# route ("ends 11.40 m short") inside a full harness run, where eight prior
+	# MainWorld boots leave the machine contended and the server sync lands later
+	# relative to our frame budget. That is a FALSE RED — the same class this
+	# harness already fixed for teardown exit codes — so gate on the server's own
+	# iteration id, which only advances when the map has actually been rebuilt.
+	var map : RID = region.get_navigation_map()
+	var iter : int = -1
+	var iter_stable : int = 0
+	for _i in range(BAKE_WAIT_FRAMES):
+		var cur : int = NavigationServer3D.map_get_iteration_id(map)
+		if cur == iter and cur > 0:
+			iter_stable += 1
+			if iter_stable >= 30:
+				break
+		else:
+			iter_stable = 0
+		iter = cur
+		await get_tree().physics_frame
+	_info("baked navmesh: %d polygons (server map iteration %d)" % [polys, iter])
 	# Guard against measuring connectivity on the empty-continent mesh, where
 	# every route trivially succeeds. Without this the whole file is vacuous.
 	_check(polys > 200,

@@ -4,24 +4,36 @@ extends Node3D
 ##   godot --headless --path <proj> res://src/tests/test_waslijn3c_overzicht.tscn
 ##
 ## Boots the REAL MainWorld (not a bench — this project has shipped bench greens
-## that proved nothing: npc-05 printed 31/31 while moving zero kg), builds
-## line_3a from the clean macro seed plus the Line 3C singletons, powers and
-## FEEDS the line, then mounts src/scenes/hud/scopes/WashingScope.gd — the port
-## of docs/plant/hmi_screens_2026-07-26/Waslijn 3C Overzicht.dc.html — and asks
-## it what it claims to be showing.
+## that proved nothing: npc-05 printed 31/31 while moving zero kg), builds BOTH
+## the line_3c macro (the spine this screen is actually about) and line_3a
+## alongside it, powers and FEEDS them, then mounts
+## src/scenes/hud/scopes/WashingScope.gd — the port of
+## docs/plant/hmi_screens_2026-07-26/Waslijn 3C Overzicht.dc.html — and asks it
+## what it claims to be showing.
+##
+## WHY BOTH LINES. Line 3A re-uses the same placeable ids as Line 3C
+## (friction_sep, transport_screw, mech_dryer, blower). Building it alongside is
+## the adversarial half of the run: if the screen ever falls back to addressing a
+## machine by its id, a LINE 3A machine will answer for an L3C caption, and
+## criterion G below catches exactly that.
 ##
 ## NON-VACUOUS PASS CRITERIA, STATED UP FRONT
 ## ------------------------------------------
 ##  A. STRUCTURE   the Control instantiates and paints; field_report() accounts
 ##                 for EVERY field exactly once (bound + unavailable == total,
 ##                 total == 38).
-##  B. SPLIT       bound == 13 and unavailable == 25, compared against LITERALS
+##  B. SPLIT       bound == 28 and unavailable == 10, compared against LITERALS
 ##                 held here — a second, independent copy of the numbers the
 ##                 scope guards in BOUND_FIELDS_EXPECTED / UNAVAIL_FIELDS_EXPECTED.
 ##                 Drift in either copy fails.  This is the check that catches a
 ##                 regression which starts FAKING an unavailable field: faking one
 ##                 moves it from the unavailable list to the bound list and both
 ##                 counts break.
+##                 WAS 13 / 25 while ten of the twenty L3C units were unreachable
+##                 (one placeable id, up to five units). The count moved because
+##                 those ten became addressable by their own plant code — the
+##                 MEASUREMENT below is what these literals track, and if a run
+##                 disagrees the run wins and both copies move to it.
 ##  C. PROVENANCE  every bound field names a tag that is VERBATIM in the
 ##                 operator's export, resolves to a NON-NULL value, and its
 ##                 source_field expression genuinely goes through
@@ -33,13 +45,20 @@ extends Node3D
 ##                 about the pixels.
 ##  E. LIVENESS    the anti-vacuity check.  A screen bound to a data source that
 ##                 returns every correct KEY at its type default (all false, all
-##                 0.0) would satisfy A-D perfectly.  So: >= 8 of the 10 bound
+##                 0.0) would satisfy A-D perfectly.  So: >= 16 of the 20 bound
 ##                 status fields must read TRUE on a running line, at least one
-##                 bound Stroom must be > 0.0, and the bound values must contain
-##                 at least 2 DISTINCT numbers.  MUTATION 2 below proves this
+##                 bound Stroom must be > 0.0, and the bound Stroom values must
+##                 contain at least 4 DISTINCT numbers — four is the number of
+##                 distinct calibrated currents the spine actually holds for the
+##                 bound units, and it is unreachable by any screen that reads one
+##                 instance for a whole machine type.  MUTATION 2 proves this
 ##                 check is the one doing the work.
 ##  F. REASONS     every unavailable field carries a non-empty reason string —
 ##                 "--" without a recorded cause is how invented values creep back.
+##  G. INSTANCE    the check the old first-match screen could never have passed:
+##                 every bound field must resolve through a machine whose OWN
+##                 l3c_code equals the caption's code.  A Line 3A friction_sep
+##                 answering for L3C.4L is a FAIL, not a near miss.
 ##
 ## MUTATION TESTS (both required to go RED, or the criteria above prove nothing)
 ## ---------------------------------------------------------------------------
@@ -71,45 +90,46 @@ const TOUCHED := [
 ]
 const DUMP_PATH := "user://waslijn3c_overzicht_report.json"
 
+## THE screen's own line. Every machine it places carries an l3c_code derived from
+## its macro_index (Line3CDef.code_for_macro_entry), which is what makes each unit
+## addressable by its plant tag.
+const MACRO_3C := "line_3c"
+const LINE_3C_START_BF := Vector2(4.0, 62.0)
+## The decoy: same placeable ids, different plant equipment, no codes. Criterion G
+## is aimed squarely at this.
 const MACRO_ID := "line_3a"
 const LINE_START_BF := Vector2(4.0, 22.0)
 
-## Every placeable id the screen's ten TagMap representative units resolve to
-## (TagMap.gd:149-160 x Line3CDef.gd:53-90). No BuildMode macro builds the Line
-## 3C chain, so any of these the 3A macro does not already place is placed
-## directly, exactly as test_tag_snapshot.gd does.
-const PROBE_IDS : Array = [
-	"doseersilo", "sink_float", "friction_sep", "transport_screw", "mill",
-	"flotation_tank_wide", "mech_dryer", "blower", "plasmaq", "silo",
-]
-const PROBE_BF_Z := 57.0
-const PROBE_BF_X0 := 10.0
-const PROBE_BF_DX := 8.0
-
 const TICK_DT := 0.1
 const TICK_COUNT := 400
-## MEASURED 2026-07-28, kg/s charged into EVERY head (12 heads on this world).
-## At test_tag_snapshot.gd's 8.0, and again at 1.0, this run reproducibly trips
-## MotorOverload on BOTH high-load drives the screen binds — identical
-## "TRIP 'mill' — overload held 3.0s, peak 450 A (limit 135 A)" and the same for
-## 'friction_sep'. 450 A is locked-rotor (nominal 90 x 5, MotorOverload.gd:41-47),
-## i.e. the rotors bound solid on convergent backlog, so both drives STOP: status
-## reads UIT and every bound Stroom reads 0 A. That is the sim telling the truth
-## about an over-fed line, not a screen defect — but it leaves the run unable to
-## tell a live amps binding from a dead one, which would make criterion E vacuous.
-## 0.05 x 12 heads = 0.6 kg/s = 2160 kg/h, comfortably above Line3CDef's
-## LINE_SPEED_KG_H 1687 and inside what the 3A chain passes without binding. The
-## trip is not tuned out of sight: it is re-measured every run (see _drive_line).
+## kg/s charged into EVERY head. RE-MEASURED 2026-07-29 after the trip points
+## moved: MotorOverload is now seeded from each stage's OWN calibrated nominal
+## instead of the 90.0 A placeholder, so a friction separator's threshold is the
+## max(nominal x 1.5, 120 A) floor of 120 A against a 149.6 A locked rotor
+## (29.92 x 5) rather than 135 A against 450 A — i.e. it takes MORE accumulated
+## backlog to trip, not less. The 0.05 figure was derived against the OLD numbers
+## and is kept only because the run re-measures the trip state every time and
+## prints it by name (see _drive_line); it is not tuned out of sight.
+## 0.05 x the world's heads is comfortably above Line3CDef's LINE_SPEED_KG_H 1687
+## and inside what both chains pass without binding.
 const FEED_RATE := 0.05
 const FEED_DENSITY := 320.0
 const FEED_COMP := {"LDPE": 0.78, "HDPE": 0.075, "other": 0.145}
 
-# ── The independent copies of the documented split (criterion B).
-const EXPECT_BOUND   := 13
-const EXPECT_UNAVAIL := 25
+# ── The independent copies of the documented split (criterion B). These and
+# WashingScope.BOUND_FIELDS_EXPECTED / UNAVAIL_FIELDS_EXPECTED are deliberately
+# TWO copies: criterion B compares them, and a single shared constant could never
+# disagree with itself.
+const EXPECT_BOUND   := 28      # 20 unit status + 8 unit Stroom
+const EXPECT_UNAVAIL := 10      # 3 header chips + 1 alarm + 6 Stroom
 const EXPECT_TOTAL   := 38
-const EXPECT_BOUND_STATUS := 10
-const MIN_STATUS_TRUE := 8
+const EXPECT_BOUND_STATUS := 20
+const MIN_STATUS_TRUE := 16
+## Distinct bound-Stroom values required by criterion E. The eight bound units
+## hold SIX distinct calibrated nominals (29.92 x2 / 186.79 / 28.03 / 30.88 /
+## 24.68 / 70.80 / 63.51), so a screen reading one instance per machine TYPE
+## cannot reach four: friction_sep would supply one number for five units.
+const MIN_DISTINCT_STROOM := 4
 
 var _pass := 0
 var _fail := 0
@@ -117,6 +137,10 @@ var _skip := 0
 var _backups : Dictionary = {}
 var _guarded : Dictionary = {}
 var _dump : Dictionary = {}
+## The REAL LineFlow, kept for criterion G. Held separately from whatever the
+## screen is currently bound to, so the identity check interrogates the world
+## rather than the stub — a stub could otherwise agree with itself.
+var _line_flow_ref : Node = null
 
 
 ## A LineFlow stand-in that answers the call but knows nothing (MUTATION 1).
@@ -128,17 +152,23 @@ class StubDeadSource extends Node:
 
 
 ## A LineFlow stand-in with every CORRECT key at its type default (MUTATION 2) —
-## the npc-05 shape: structurally perfect, physically dead.
+## the npc-05 shape: structurally perfect, physically dead. `key` and `l3c_code`
+## echo the requested handle so the stub is STRUCTURALLY correct (the screen
+## verifies the answering machine carries the code it asked for); everything that
+## is a measurement sits at its type default.
 class StubDefaultValues extends Node:
 	func get_machine_info(_id: String) -> Dictionary:
 		return {
-			"id": _id, "role": "", "process": "", "rate": 0.0, "spin": 0.0,
+			"id": _id, "key": _id, "l3c_code": _id, "amps_nominal": 0.0,
+			"role": "", "process": "", "rate": 0.0, "spin": 0.0,
 			"powered": false, "buffer": 0.0, "thru": 0.0, "moist": 0.0,
 			"contam": 0.0, "quality": 0.0, "amps": 0.0,
 			"hand_mode": false, "manual_on": false, "rpm_pct": 0.0,
 			"max_rpm": 0.0, "comp_max_rpm": {}, "components": {},
 		}
 	func estop_fault_id() -> String:
+		return ""
+	func estop_fault_key() -> String:
 		return ""
 
 
@@ -212,79 +242,62 @@ func _finish() -> void:
 
 
 # =============================================================================
-func _build_world(bm, lf) -> void:
-	_section("WORLD — line_3a from the clean macro seed + the Line 3C singletons")
+func _place_macro(bm, macro_id: String, start_bf: Vector2) -> void:
 	var lms := get_node_or_null("/root/LineMacroStore")
 	if lms != null:
-		lms._cache[MACRO_ID] = {}
-
-	var start : Vector3 = Plant.pc_to_scene(_bf_to_pc(LINE_START_BF))
-	var fdir : Vector3 = Plant.pc_to_scene(_bf_to_pc(LINE_START_BF + Vector2(1.0, 0.0))) - start
+		lms._cache[macro_id] = {}       # clean const seed, on-disk macro untouched
+	var start : Vector3 = Plant.pc_to_scene(_bf_to_pc(start_bf))
+	var fdir : Vector3 = Plant.pc_to_scene(_bf_to_pc(start_bf + Vector2(1.0, 0.0))) - start
 	fdir = fdir.normalized()
-	var rot_y : float = atan2(-fdir.x, -fdir.z)
-	bm.call("_build_full_line", MACRO_ID, start, rot_y)
+	bm.call("_build_full_line", macro_id, start, atan2(-fdir.x, -fdir.z))
 	for _i in range(10):
 		await get_tree().process_frame
 
-	lf.call("rebuild")
-	for _i in range(6):
-		await get_tree().process_frame
-	var existing : Dictionary = {}
-	for e in (lf.call("machine_list") as Array):
-		existing[String((e as Dictionary).get("id", ""))] = true
 
-	var placed_root = bm.get("_placed_root")
-	var probes_placed : Array = []
-	var probes_missing : Array = []
-	var probes_skipped : Array = []
-	if placed_root == null or not is_instance_valid(placed_root):
-		_note("BuildMode._placed_root missing — Line 3C singletons not placed")
-		_skip += 1
-	else:
-		for pi in range(PROBE_IDS.size()):
-			var pid := String(PROBE_IDS[pi])
-			if existing.has(pid):
-				probes_skipped.append(pid)
-				continue
-			if PlaceableCatalog.get_item(pid).is_empty():
-				probes_missing.append(pid)
-				continue
-			var node = PlaceableCatalog.build_node(pid, false)
-			if node == null:
-				probes_missing.append(pid)
-				continue
-			(placed_root as Node).add_child(node)
-			var bf := Vector2(PROBE_BF_X0 + PROBE_BF_DX * float(pi), PROBE_BF_Z)
-			(node as Node3D).global_position = Plant.pc_to_scene(_bf_to_pc(bf))
-			(node as Node3D).rotation.y = 0.0
-			bm.call("_finalize_placed", node, pid, 0.0)
-			probes_placed.append(pid)
-		for _i in range(10):
-			await get_tree().process_frame
-	_ok(probes_missing.is_empty(),
-		"every screen machine id resolves in the catalog (%d missing: %s)"
-			% [probes_missing.size(), str(probes_missing)])
+func _build_world(bm, lf) -> void:
+	_section("WORLD — line_3c (the screen's own spine) + line_3a as the id decoy")
+	await _place_macro(bm, MACRO_3C, LINE_3C_START_BF)
+	await _place_macro(bm, MACRO_ID, LINE_START_BF)
 
 	lf.call("rebuild")
 	for _i in range(10):
 		await get_tree().process_frame
 
-	# The screen can only bind what is addressable. Prove all ten representative
-	# ids are in the world before asserting anything about the screen — 10 empty
-	# get_machine_info() results would otherwise read as "screen is honest".
-	var present : Dictionary = {}
-	for e2 in (lf.call("machine_list") as Array):
-		present[String((e2 as Dictionary).get("id", ""))] = true
+	# The screen can only bind what is addressable. Prove all twenty units are
+	# really in the world before asserting anything about the screen — twenty
+	# empty get_machine_info() results would otherwise read as "screen is honest".
+	var listed : Array = lf.call("machine_list")
+	var codes : Dictionary = {}
+	for e2 in listed:
+		var c := String((e2 as Dictionary).get("l3c_code", ""))
+		if c != "":
+			codes[c] = true
 	var absent : Array = []
-	for pid2 in PROBE_IDS:
-		if not present.has(String(pid2)):
-			absent.append(String(pid2))
+	for u in TagMapScript.UNITS.keys():
+		var want := String((TagMapScript.UNITS[String(u)] as Array)[0])
+		if not codes.has(want):
+			absent.append(want)
 	_ok(absent.is_empty(),
-		"all %d representative machine ids are live in the world (%d absent: %s)"
-			% [PROBE_IDS.size(), absent.size(), str(absent)])
+		"all %d mapped L3C units are live and addressable by their own code (%d absent: %s)"
+			% [TagMapScript.UNITS.size(), absent.size(), str(absent)])
+	# The decoy has to be present or criterion G proves nothing: a world with no
+	# duplicate-id machine cannot exhibit the first-match defect in the first place.
+	var decoy := 0
+	for nd in (lf.get("_nodes") as Array):
+		var n = (nd as Dictionary).get("node", null)
+		if n != null and is_instance_valid(n) and (n as Node).has_meta("macro_id") \
+				and String((n as Node).get_meta("macro_id")) == MACRO_ID:
+			decoy += 1
+	_ok(decoy > 0 and listed.size() > decoy,
+		"the id DECOY is really there: %d line_3a machines alongside the 3C spine (%d total) — criterion G is vacuous without them"
+			% [decoy, listed.size()])
+	_ok((lf.call("code_conflicts") as Array).is_empty(),
+		"no L3C code was claimed twice across the two macros (%d conflict(s))"
+			% (lf.call("code_conflicts") as Array).size())
 	_dump["world"] = {
-		"macro_built": MACRO_ID, "probe_ids_placed": probes_placed,
-		"probe_ids_already_in_world": probes_skipped, "absent_after_build": absent,
+		"macros_built": [MACRO_3C, MACRO_ID], "machines": listed.size(),
+		"decoy_line_3a_machines": decoy, "codes_live": codes.size(),
+		"units_absent": absent,
 	}
 
 
@@ -336,6 +349,7 @@ func _feed_heads(lf, delta: float) -> float:
 # =============================================================================
 func _exercise_screen(lf) -> void:
 	_section("SCREEN — mount WashingScope (Waslijn 3C Overzicht) and bind it live")
+	_line_flow_ref = lf
 
 	var tm : TagMap = TagMapScript.new()
 	var tmv : Dictionary = tm.validation()
@@ -361,7 +375,7 @@ func _exercise_screen(lf) -> void:
 	var failures := _audit(scope, export_tags, "LIVE")
 	for f in failures:
 		print("        [live] %s" % f)
-	_ok(failures.is_empty(), "A-F: the LIVE screen is honest (%d violation(s))" % failures.size())
+	_ok(failures.is_empty(), "A-G: the LIVE screen is honest (%d violation(s))" % failures.size())
 
 	var rep : Dictionary = scope.call("field_report")
 	_dump["live_report"] = rep
@@ -369,10 +383,10 @@ func _exercise_screen(lf) -> void:
 		% [int(rep["bound_count"]), int(rep["unavailable_count"]), int(rep["total"]),
 		   int(rep["expected_bound"]), int(rep["expected_unavailable"])])
 	# Calibrated nominal per stage code, straight off the spine — printed NEXT TO
-	# the live reading so defect 2 (l3c_code stamped on 0 of 47 nodes, so
-	# ProcessModel.stage_amps contributes 0 A and MotorOverload's PLACEHOLDER 90 A
-	# default overwrites the key on high-load drives) is reported as data, not
-	# asserted away. TagMap.gd:518-520/561-563/608-610 predict exactly this.
+	# the live reading so the amps claim stays a measurement. The nominal is now
+	# genuinely per-unit (each stamped stage seeds its own MotorOverload from it),
+	# so a Stroom box reading exactly 0 A on a powered unit would be the old dead
+	# calibrated path resurfacing.
 	var nominal : Dictionary = {}
 	for st in Line3CDef.STAGES:
 		nominal[String((st as Dictionary)["code"])] = float((st as Dictionary)["amps"])
@@ -385,11 +399,11 @@ func _exercise_screen(lf) -> void:
 			% [String(br["field"]), String(br["machine_id"]), String(br["tag"]),
 			   String(br["rendered"]), extra])
 
-	# DEFECT 2, measured on the screen itself: a bound Stroom reading EXACTLY 0 A
-	# while its unit is powered and its spine nominal is non-zero is the
-	# l3c_code-unstamped signature (ProcessModel.stage_amps contributes 0 A; only
-	# the MotorOverload writer produces a number, and only on high-load drives).
-	# Reported, not asserted — asserting it would freeze the defect in place.
+	# A bound Stroom reading EXACTLY 0 A while its unit is powered and its spine
+	# nominal is non-zero was the l3c_code-unstamped signature. It is now an
+	# ASSERTION rather than a note: with the code stamped there is no legitimate
+	# way for a powered, metered unit to read zero except a MotorOverload trip,
+	# which _drive_line measures and prints by name.
 	var dead_amps : Array = []
 	var powered_now : Dictionary = {}
 	for b4 in (rep["bound"] as Array):
@@ -404,12 +418,22 @@ func _exercise_screen(lf) -> void:
 		if is_zero_approx(float(b5r["value"])) and float(nominal.get(code5, 0.0)) > 0.0 \
 				and bool(powered_now.get(code5, false)):
 			dead_amps.append("%s (spine %.2f A)" % [code5, float(nominal.get(code5, 0.0))])
-	if dead_amps.is_empty():
-		_note("amps: every bound Stroom on a powered unit is non-zero")
-	else:
-		_note("DEFECT 2 CONFIRMED ON SCREEN — bound Stroom reads exactly 0 A while the unit is AAN: %s. l3c_code is stamped on 0 of 47 nodes, so ProcessModel.stage_amps contributes 0 A (TagMap.gd:175-179, 608-610)."
-			% str(dead_amps))
+	var tripped : Array = _dump.get("motor_overload_tripped", [])
+	_ok(dead_amps.is_empty() or not tripped.is_empty(),
+		"no bound Stroom reads 0 A on a powered, metered unit (%d do: %s) — this is where the dead calibrated amps path used to show through undisguised"
+			% [dead_amps.size(), str(dead_amps)])
+	# Distinctness on the SCREEN, not just in the sim: five friction separators
+	# rendering one number is the visible face of the addressing defect.
+	var stroom_vals : Dictionary = {}
+	for b6 in (rep["bound"] as Array):
+		var b6r : Dictionary = b6
+		if String(b6r["field"]).begins_with("stroom:"):
+			stroom_vals["%.4f" % float(b6r["value"])] = true
+	_ok(stroom_vals.size() >= MIN_DISTINCT_STROOM,
+		"the bound Stroom boxes render %d DISTINCT values (>= %d) — one instance per machine TYPE could not produce this"
+			% [stroom_vals.size(), MIN_DISTINCT_STROOM])
 	_dump["zero_amps_while_powered"] = dead_amps
+	_dump["distinct_stroom_values"] = stroom_vals.size()
 
 	# ── MUTATION 1 — dead source ─────────────────────────────────────────────
 	_section("MUTATION 1 — rebind to a stub whose get_machine_info() returns {}")
@@ -446,7 +470,8 @@ func _exercise_screen(lf) -> void:
 		"MUTATION 2 goes RED: %d violation(s) with structurally-perfect dead values" % m2.size())
 	# The point of M2: the SPLIT is still perfect, so only LIVENESS caught it.
 	_ok(int(m2rep["bound_count"]) == EXPECT_BOUND and int(m2rep["unavailable_count"]) == EXPECT_UNAVAIL,
-		"MUTATION 2 keeps the 13/25 split intact — so criterion B alone would have passed it")
+		"MUTATION 2 keeps the %d/%d split intact — so criterion B alone would have passed it"
+			% [EXPECT_BOUND, EXPECT_UNAVAIL])
 	var only_liveness := true
 	for f2b in m2:
 		if not String(f2b).begins_with("E:"):
@@ -545,14 +570,37 @@ func _audit(scope: Control, export_tags: Dictionary, _tag: String) -> Array:
 			% [status_true, status_bound, MIN_STATUS_TRUE])
 	if stroom_positive < 1:
 		out.append("E: no bound Stroom reads > 0 A (%d bound)" % stroom_bound)
-	if distinct.size() < 2:
-		out.append("E: bound Stroom values collapse to %d distinct number(s) — a flat source" % distinct.size())
+	if distinct.size() < MIN_DISTINCT_STROOM:
+		out.append("E: bound Stroom values collapse to %d distinct number(s), need >= %d — a screen reading one instance per machine TYPE cannot reach this"
+			% [distinct.size(), MIN_DISTINCT_STROOM])
 
 	# F — reasons
 	for u2 in unavail:
 		var ur2 : Dictionary = u2
 		if String(ur2.get("reason", "")).strip_edges() == "":
 			out.append("F: unavailable field %s carries no reason" % String(ur2["field"]))
+
+	# G — instance identity. Ask LineFlow directly for the code the screen claims
+	# to be showing and check the machine that answers carries THAT code. This is
+	# the check a first-match screen fails: in this world a Line 3A friction_sep
+	# shares the id with five L3C units and would answer for all of them.
+	if _line_flow_ref != null and is_instance_valid(_line_flow_ref) \
+			and _line_flow_ref.has_method("get_machine_info"):
+		var checked := 0
+		for b4 in bound:
+			var br4 : Dictionary = b4
+			var code := String(br4.get("code", ""))
+			if code == "":
+				continue
+			var info : Dictionary = _line_flow_ref.call("get_machine_info", code)
+			checked += 1
+			if info.is_empty():
+				out.append("G: bound field %s — get_machine_info(\"%s\") returns nothing" % [String(br4["field"]), code])
+			elif String(info.get("l3c_code", "")) != code:
+				out.append("G: bound field %s resolves to a machine whose own code is \"%s\", not %s"
+					% [String(br4["field"]), String(info.get("l3c_code", "")), code])
+		if not bound.is_empty() and checked == 0:
+			out.append("G: no bound field carried a code — the identity check ran on nothing")
 	return out
 
 

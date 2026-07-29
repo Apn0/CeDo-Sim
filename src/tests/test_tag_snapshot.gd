@@ -30,20 +30,36 @@ extends Node3D
 ##      throughputactual / productioncounter are all identically 0.0 on a line that
 ##      is "Running" while processing nothing. That was the state of this test
 ##      before the feed was added: the exact npc-05 shape.
-##  (b) duplicate_id_collisions is reported and must be NON-ZERO (~14 on Line 3A).
-##      This MEASURES the LineFlow._find_node_by_id first-match addressing defect
-##      (LineFlow.gd:1483-1487) instead of asserting it. 0 collisions = FAILED run.
-##  (c) live_line_amps is reported. The design doc predicts 0.0, proving the
-##      l3c_code -> amps_nominal = 0 chain (LineFlow.gd:467-482,
-##      ProcessModel.gd:38-40, LineFlow.gd:1731-1734) that the "~488 A" comment at
-##      LineFlow.gd:1729-1730 hides. The PREDICTION is printed next to the
-##      MEASUREMENT; a deviation is reported as-is, never tuned away. It DOES
-##      deviate: the calibrated path contributes 0 A on every node exactly as
-##      predicted (amps_nominal sums to 0, l3c_code stamped nowhere), but a second
-##      writer — MotorOverload, seeded from its PLACEHOLDER 90 A default precisely
-##      BECAUSE amps_nominal is 0 (LineFlow.gd:678-680) — overwrites nd["amps"]
-##      each tick (LineFlow.gd:2269-2275), so the line reads a fictitious non-zero
-##      current on the few high-load drives. Per-node attribution is dumped.
+##  (b) UNIQUE ADDRESSABILITY. REWRITTEN 2026-07-29, as this file and
+##      tools/regression/run.sh both said it must be the day the defect was fixed.
+##      It used to assert duplicate_id_collisions != 0, MEASURING the
+##      first-match addressing defect: LineFlow could only be asked for a
+##      placeable id, and 14 of 47 machines on Line 3A shared an id with an
+##      earlier one, so no front-end could reach them.
+##      That criterion INVERTED, and it is replaced — not silenced — by the
+##      thing it was a proxy for: every machine must be UNIQUELY ADDRESSABLE.
+##      LineFlow now mints a per-instance key, so the run asserts that every
+##      machine_list() row carries a distinct non-empty key AND that
+##      get_machine_info(key) comes back describing THAT NODE — identity, not
+##      merely a non-empty dict, because non-emptiness is the vacuous version and
+##      the old first-match resolver would have satisfied it.
+##      The collision census itself is KEPT and still printed: 14 duplicate ids on
+##      Line 3A is now a true and harmless fact (an id is a machine TYPE), and
+##      losing the number would lose the ability to notice it changing.
+##  (c) THE CALIBRATED AMPS PATH. Also rewritten. It used to record a dead path:
+##      l3c_code stamped on 0 of 47 nodes, sum(amps_nominal) 0.00 A against
+##      ProcessModel.line_nominal_amps() 488.49 A, so every non-zero current in
+##      the sim came from MotorOverload's PLACEHOLDER 90 A default instead.
+##      Now asserted BOTH WAYS, because only the pair is meaningful:
+##        * every line_3c stage carries its code, and sum(amps_nominal) over the
+##          coded nodes equals ProcessModel.line_nominal_amps() exactly;
+##        * NO machine outside the line_3c macro carries a 3C code. Line 3A
+##          re-uses the same placeable ids for different equipment — its
+##          frictiescheider is NOT L3C.4L — and stamping by id would both invent
+##          an equipment identity and re-route the 3A chain onto the
+##          Line3CDef.LINKS graph (LineFlow.gd:1029-1039).
+##      The per-instance currents themselves are measured in
+##      src/tests/test_line3c_identity.gd.
 ##
 ## ANTI-VACUITY GUARDS (this project's recurring failure is the green that proves
 ## nothing — npc-05 printed 31/31 while moving zero kg):
@@ -85,17 +101,14 @@ const DUMP_PATH := "user://tag_snapshot.json"
 const MACRO_ID := "line_3a"
 const LINE_START_BF := Vector2(4.0, 22.0)
 
-# Line 3C stage ids that NO macro builds (BuildMode has no Line 3C chain at all —
-# LINE_3C6_SEQ is a 4-machine shared front end). Placed directly so the map's
-# singleton units are addressable at all; voorraad_silo is the tail stage the
-# lines/3c/data/throughputactual row cites (Line3CDef.gd:89,131-132).
-const PROBE_IDS : Array = [
-	"doseersilo", "sink_float", "mill", "flotation_tank_wide", "plasmaq", "silo",
-	"voorraad_silo",
-]
-const PROBE_BF_Z := 57.0
-const PROBE_BF_X0 := 10.0
-const PROBE_BF_DX := 8.0
+## The Line 3C spine. Every machine it places carries an l3c_code derived from its
+## macro_index, so the map can be resolved per UNIT instead of per placeable id.
+## It also supplies the tail stage the lines/3c/data/throughputactual row cites
+## (Line3CDef.tail_code() 'Voorraad' -> voorraad_silo). Before this macro existed
+## the singleton 3C ids had to be dropped into the world loose, and the L/R units
+## could not be addressed at all.
+const MACRO_3C := "line_3c"
+const LINE_3C_START_BF := Vector2(4.0, 62.0)
 
 # Sim time driven after start_line(): PLCSequencer's whole-line power-up is capped
 # near TARGET_STARTUP_S = 20 s (LineFlow.gd:51) and each machine then ramps over
@@ -216,77 +229,43 @@ func _test_tagmap(tm: TagMap) -> void:
 
 
 # =============================================================================
-func _build_world(bm, lf) -> void:
-	_section("WORLD — line_3a from the clean macro seed + the Line 3C singletons")
-
-	# Clean const seed, not operator jog-deltas: in-memory cache clear only, the
-	# on-disk macro is untouched (regression_world_save.gd uses the same trick).
+## Place one macro from its CLEAN const seed. In-memory cache clear only — the
+## on-disk operator macro is untouched (regression_world_save.gd uses the same trick).
+func _place_macro(bm, macro_id: String, start_bf: Vector2) -> void:
 	var lms := get_node_or_null("/root/LineMacroStore")
 	if lms != null:
-		lms._cache[MACRO_ID] = {}
-
-	var start : Vector3 = Plant.pc_to_scene(_bf_to_pc(LINE_START_BF))
-	var fdir : Vector3 = Plant.pc_to_scene(_bf_to_pc(LINE_START_BF + Vector2(1.0, 0.0))) - start
+		lms._cache[macro_id] = {}
+	var start : Vector3 = Plant.pc_to_scene(_bf_to_pc(start_bf))
+	var fdir : Vector3 = Plant.pc_to_scene(_bf_to_pc(start_bf + Vector2(1.0, 0.0))) - start
 	fdir = fdir.normalized()
-	var rot_y : float = atan2(-fdir.x, -fdir.z)
-	bm.call("_build_full_line", MACRO_ID, start, rot_y)
+	bm.call("_build_full_line", macro_id, start, atan2(-fdir.x, -fdir.z))
 	for _i in range(10):
 		await get_tree().process_frame
 
-	# What the macro already gave us — a probe must never duplicate an existing id
-	# or it would inflate the collision figure the run is trying to measure.
+
+func _build_world(bm, lf) -> void:
+	_section("WORLD — the line_3c spine (the map's own line) + line_3a alongside it")
+	await _place_macro(bm, MACRO_3C, LINE_3C_START_BF)
+	# Line 3A re-uses the same placeable ids for DIFFERENT plant equipment. It is
+	# built here on purpose: it is what makes the collision census below non-zero,
+	# and it is the trap any id-keyed resolution falls into.
+	await _place_macro(bm, MACRO_ID, LINE_START_BF)
+
 	lf.call("rebuild")
-	for _i in range(6):
+	for _i in range(10):
 		await get_tree().process_frame
-	var existing : Dictionary = {}
+	var codes_live : Dictionary = {}
 	for e in (lf.call("machine_list") as Array):
-		existing[String((e as Dictionary).get("id", ""))] = true
-
-	# Direct placement for the ids no macro provides — same three calls
-	# _build_full_line makes per entry (BuildMode.gd:1601-1624).
-	var placed_root = bm.get("_placed_root")
-	var probes_placed : Array = []
-	var probes_missing : Array = []
-	var probes_skipped : Array = []
-	if placed_root == null or not is_instance_valid(placed_root):
-		_note("BuildMode._placed_root missing — Line 3C singletons not placed")
-		_skip += 1
-	else:
-		for pi in range(PROBE_IDS.size()):
-			var pid := String(PROBE_IDS[pi])
-			if existing.has(pid):
-				probes_skipped.append(pid)
-				continue
-			if PlaceableCatalog.get_item(pid).is_empty():
-				probes_missing.append(pid)
-				continue
-			var node = PlaceableCatalog.build_node(pid, false)
-			if node == null:
-				probes_missing.append(pid)
-				continue
-			(placed_root as Node).add_child(node)
-			var bf := Vector2(PROBE_BF_X0 + PROBE_BF_DX * float(pi), PROBE_BF_Z)
-			(node as Node3D).global_position = Plant.pc_to_scene(_bf_to_pc(bf))
-			(node as Node3D).rotation.y = 0.0
-			bm.call("_finalize_placed", node, pid, 0.0)
-			(node as Node).set_meta("tagsnap_probe", true)
-			probes_placed.append(pid)
-		for _i in range(10):
-			await get_tree().process_frame
-	_ok(probes_missing.is_empty(),
-		"every Line 3C singleton id resolves in the catalog (%d missing: %s)"
-			% [probes_missing.size(), str(probes_missing)])
-
-	lf.call("rebuild")
-	for _i in range(10):
-		await get_tree().process_frame
+		var c := String((e as Dictionary).get("l3c_code", ""))
+		if c != "":
+			codes_live[c] = true
+	_ok(codes_live.size() == Line3CDefScript.stage_count(),
+		"the 3C spine is live: %d stage codes addressable, Line3CDef has %d"
+			% [codes_live.size(), Line3CDefScript.stage_count()])
 	_dump["world"] = {
 		"save_slot": TEST_SLOT,
-		"macro_built": MACRO_ID,
-		"probe_ids_placed": probes_placed,
-		"probe_ids_missing": probes_missing,
-		"probe_ids_already_in_world": probes_skipped,
-		"probe_reason": "no BuildMode macro builds the Line 3C chain (src/build/BuildMode.gd:85,202,216,232,257,326); 'doseersilo' appears in no sequence",
+		"macros_built": [MACRO_3C, MACRO_ID],
+		"codes_live": codes_live.size(),
 	}
 
 
@@ -411,8 +390,8 @@ func _snapshot(tm: TagMap, lf, bm) -> void:
 		"static_LINE_3A_SEQ_collisions": seq_total - seq_ids.size(),
 		"scada_aligned_l3c_units": l3c_units,
 		"scada_aligned_distinct_ids": l3c_ids.size(),
-		"scada_aligned_unreachable": l3c_units - l3c_ids.size(),
-		"defect_cite": "LineFlow._find_node_by_id LineFlow.gd:1483-1487 returns the FIRST match on a non-unique placeable id",
+		"scada_aligned_ids_shared_by": l3c_units - l3c_ids.size(),
+		"note": "duplicate ids are NORMAL and harmless — a placeable id is a machine TYPE. What used to make them a defect was LineFlow having no other handle; every node now carries a distinct key (nd[\"key\"]), asserted below.",
 	}
 	_dump["addressability"] = addressability
 
@@ -463,25 +442,27 @@ func _snapshot(tm: TagMap, lf, bm) -> void:
 	var nominal_line : float = ProcessModelScript.line_nominal_amps()
 	var amps_block : Dictionary = {
 		"live_line_amps": live_amps,
-		"predicted_live_line_amps": 0.0,
 		"machines_powered": powered,
 		"machines_spinning": spinning,
 		"sum_amps_nominal_over_nodes": amps_nominal_sum,
 		"nodes_with_l3c_code_stamped": stamped,
 		"process_model_line_nominal_amps": nominal_line,
-		"would_read_at_idle_if_stamped": nominal_line * ProcessModelScript.MOTOR_IDLE_FRAC,
 		"stage_amps_probe_29_92A_idle_running": probe_amps,
-		"comment_claim": "LineFlow.gd:1729-1730 advertises '~488 A at full Line 3C load'",
-		"root_cause": "the only set_meta(\"l3c_code\", ...) call site repo-wide is tests/FlakeCouplingTest.gd:64 — no production build path stamps it, so LineFlow.gd:474-482 never runs and amps_nominal stays 0.0",
 		"nodes_with_motor_overload": mol_nodes,
 		"nodes_with_nonzero_amps": amps_by_node,
-		"run_stability": "NOT run-stable once the line is fed: measured 217.73 / 257.19 / 258.69 A across three runs on 2026-07-27. The idle component is exact and repeatable (a spinning-but-unloaded high-load drive reads 90.0 x 0.35 = 31.50 A), but MotorOverload.current_amps on a LOADED drive tracks accumulated backlog, which moves with physics/nav timing. Treat live_line_amps as a magnitude, never as a fixture value; the invariants to assert against are nodes_with_l3c_code_stamped == 0 and sum_amps_nominal_over_nodes == 0.0, which ARE exact.",
-		"second_writer": "MotorOverload OVERWRITES nd[\"amps\"] every tick (LineFlow.gd:2269-2275) with its own current_amps, and when amps_nominal is 0 it was seeded from MotorOverload's PLACEHOLDER 90.0 A default (LineFlow.gd:678-680, MotorOverload.gd:40,55) — so any non-zero line current on an unstamped world is fictitious, not calibrated",
+		"was_before_the_fix": "l3c_code stamped on 0 of 47 nodes and sum(amps_nominal) 0.00 A against the same 488.49 A line nominal — the only set_meta(\"l3c_code\") call site repo-wide was a bench (tests/FlakeCouplingTest.gd:64), so LineFlow.gd:474-482 never ran in production and every current came from a placeholder",
+		"run_stability": "live_line_amps is NOT run-stable once the line is fed: MotorOverload.current_amps on a LOADED drive tracks accumulated backlog, which moves with physics/nav timing. Treat it as a magnitude, never as a fixture value. The EXACT invariants — and the ones asserted — are nodes_with_l3c_code_stamped == Line3CDef.stage_count() and sum_amps_nominal_over_nodes == process_model_line_nominal_amps.",
+		"second_writer": "MotorOverload OVERWRITES nd[\"amps\"] every tick (LineFlow.gd:2269-2275) with its own current_amps. It is now SEEDED from the stage's own amps_nominal, so on a coded stage that number is calibrated rather than the 90.0 A default; an UNCODED high-load drive (Line 3A/3B/1) still falls back to that default, which is why only a line_3c world reports calibrated currents",
 	}
 	_dump["amps"] = amps_block
 
 	# ── resolve every mapped tag ───────────────────────────────────────────────
-	var machine_ctx : Dictionary = {"estop_fault_id": String(lf.call("estop_fault_id"))}
+	var machine_ctx : Dictionary = {
+		"estop_fault_id": String(lf.call("estop_fault_id")),
+		# Per-INSTANCE fault identity: estop_fault_id names a machine TYPE and
+		# would light the em/alarm row of all five friction separators at once.
+		"estop_fault_key": String(lf.call("estop_fault_key")),
+	}
 	var line_status := "Idle"
 	if bool(lf.call("is_estopped")):
 		line_status = "Fault"
@@ -490,11 +471,9 @@ func _snapshot(tm: TagMap, lf, bm) -> void:
 	elif float(lf.call("line_powered_fraction")) > 0.0:
 		line_status = "Running"
 	var line_ctx : Dictionary = {"line_status": line_status, "gran_mass_kg": float(lf.get("gran_mass"))}
-	var tail_id := ""
-	for st2 in Line3CDefScript.STAGES:
-		if String((st2 as Dictionary)["code"]) == Line3CDefScript.tail_code():
-			tail_id = String((st2 as Dictionary)["id"])
-	var tail_info : Dictionary = lf.call("get_machine_info", tail_id) if tail_id != "" else {}
+	# The tail stage, addressed by its CODE — the sim's throughput has to come from
+	# the 3C line's own last machine, not from whichever voorraad_silo answers first.
+	var tail_info : Dictionary = lf.call("get_machine_info", Line3CDefScript.tail_code())
 	if not tail_info.is_empty():
 		line_ctx["tail_thru_kg_h"] = float(tail_info["thru"]) * 3600.0
 	var ctx_missing : Array = []
@@ -502,42 +481,52 @@ func _snapshot(tm: TagMap, lf, bm) -> void:
 		if not line_ctx.has(String(k2)):
 			ctx_missing.append(String(k2))
 
-	# Iterate machine_list() as the design doc specifies, but resolve each
-	# DISTINCT id once: get_machine_info cannot reach a second instance anyway, so
-	# resolving per listed entry would multiply identical rows — the vacuous shape.
+	# Resolve ONE UNIT at a time, addressed by its own plant code. This used to
+	# iterate DISTINCT placeable ids instead, because get_machine_info could not
+	# reach a second instance of an id at all — so five friction separators shared
+	# one reading and ten of the twenty units had no reading. Each row now
+	# describes the machine the operator's tag actually names.
 	var out_rows : Array = []
-	var addressed : Array = tm.machine_ids()
-	var resolved_ids : Dictionary = {}
+	var addressed : Array = []
+	for u in TagMapScript.UNITS.keys():
+		addressed.append(String((TagMapScript.UNITS[String(u)] as Array)[0]))
+	var resolved_codes : Dictionary = {}
 	var hit_paths : Dictionary = {}
-	for e2 in listed:
-		var mid3 := String((e2 as Dictionary).get("id", ""))
-		if not addressed.has(mid3) or resolved_ids.has(mid3):
+	for code_a in addressed:
+		var code3 := String(code_a)
+		if resolved_codes.has(code3):
 			continue
-		resolved_ids[mid3] = true
-		var info : Dictionary = lf.call("get_machine_info", mid3)
-		# WHICH instance did the first-match actually hit? Record it: a map that
-		# cannot say which machine it read is not instance-truthful.
+		var info : Dictionary = lf.call("get_machine_info", code3)
+		if info.is_empty():
+			continue
+		resolved_codes[code3] = true
+		# WHICH machine answered? Recorded per row: a map that cannot say which
+		# machine it read is not instance-truthful, and this is the field that
+		# would expose a silent fallback to first-match-by-id.
 		var hit_path := ""
+		var hit_id := ""
 		for nd3 in nodes:
-			if String((nd3 as Dictionary).get("id", "")) == mid3:
+			if String((nd3 as Dictionary).get("key", "")) == String(info.get("key", "")):
 				var hn = (nd3 as Dictionary).get("node", null)
 				if hn != null and is_instance_valid(hn):
 					hit_path = String((hn as Node).get_path())
+				hit_id = String((nd3 as Dictionary).get("id", ""))
 				break
-		hit_paths[mid3] = hit_path
-		for r in tm.resolve_machine(mid3, info, machine_ctx):
+		hit_paths[code3] = hit_path
+		for r in tm.resolve_code(code3, info, machine_ctx):
 			var row : Dictionary = r
 			row["resolved_instance_path"] = hit_path
-			row["instances_of_this_id"] = int(seen.get(mid3, 0))
+			row["resolved_machine_key"] = String(info.get("key", ""))
+			row["instances_of_this_id"] = int(seen.get(hit_id, 0))
 			out_rows.append(row)
 	for lr in tm.resolve_line(line_ctx):
 		out_rows.append(lr)
 
-	# Mapped ids that simply are not in this world -> their rows are absent, and
+	# Mapped units that simply are not in this world -> their rows are absent, and
 	# that absence is reported rather than papered over.
 	var absent_ids : Array = []
 	for a in addressed:
-		if not resolved_ids.has(String(a)):
+		if not resolved_codes.has(String(a)):
 			absent_ids.append(String(a))
 
 	var resolved_tags := 0
@@ -637,10 +626,10 @@ func _snapshot(tm: TagMap, lf, bm) -> void:
 			"em_snelheid_rows": speed_rows, "em_snelheid_positive": speed_positive,
 			"material_flow_rows": flow_rows, "material_flow_positive": flow_positive,
 		},
-		"mapped_machine_ids": addressed,
-		"machine_ids_present": resolved_ids.keys(),
-		"machine_ids_absent_from_world": absent_ids,
-		"first_match_instance_paths": hit_paths,
+		"mapped_l3c_units": addressed,
+		"l3c_units_present": resolved_codes.keys(),
+		"l3c_units_absent_from_world": absent_ids,
+		"resolved_instance_paths": hit_paths,
 		"line_ctx": line_ctx,
 		"line_ctx_missing": ctx_missing,
 		"machine_ctx": machine_ctx,
@@ -666,7 +655,7 @@ func _snapshot(tm: TagMap, lf, bm) -> void:
 	#         the 4 line-level rows alone cleared "> 0".
 	#     Replaced with the exact counts, so either mutation now goes RED.
 	_ok(absent_ids.is_empty(),
-		"(a) every mapped machine id is present in this world (%d absent: %s)"
+		"(a) every mapped L3C unit is present in this world AND answered to its own code (%d absent: %s)"
 			% [absent_ids.size(), str(absent_ids)])
 	_ok(out_rows.size() == tm.rows().size(),
 		"(a) every mapped row was emitted: %d emitted == %d mapped" % [out_rows.size(), tm.rows().size()])
@@ -726,51 +715,108 @@ func _snapshot(tm: TagMap, lf, bm) -> void:
 			% [float((wf["flotation_tank_wide"] as Dictionary)["water_add"]),
 				float((wf["flotation_tank"] as Dictionary)["water_add"]),
 				String((wf["flotation_tank_wide"] as Dictionary)["process"])])
-	# (b) The world must really have been built before a collision count means
-	#     anything — 0 nodes also yields 0 collisions.
+	# (b) The world must really have been built before any of this means anything
+	#     — 0 nodes yields 0 collisions AND 0 addressing failures. This guard is
+	#     load-bearing and is kept VERBATIM from the version that measured the
+	#     defect; without it the rewritten criterion passes on an empty world.
 	_ok(listed.size() > 0 and macro_total > 0,
 		"(b) a real world was built: %d LineFlow machines, %d of them from macro '%s'"
 			% [listed.size(), macro_total, MACRO_ID])
-	_ok(collisions != 0,
-		"(b) duplicate_id_collisions NON-ZERO: %d  (%d nodes / %d distinct ids) — measures LineFlow.gd:1483-1487. NOTE this criterion inverts once machines get unique keys: a genuine fix makes it 0 and this line must then be rewritten, not silenced"
-			% [collisions, listed.size(), seen.size()])
+	# (b) UNIQUE ADDRESSABILITY — the rewrite of the old `collisions != 0` line.
+	#     Two assertions, because either alone is satisfiable by a fake:
+	#       1. distinct non-empty keys, one per node. A constant key collapses this.
+	#       2. get_machine_info(key) returns THAT node. A resolver that ignored the
+	#          key and first-matched the id would still return a non-empty dict for
+	#          every row, so non-emptiness proves nothing — the scene path of the
+	#          machine that answered is compared against the row's own node.
+	var blank_keys := 0
+	var key_set : Dictionary = {}
+	for e_k in listed:
+		var kk := String((e_k as Dictionary).get("key", ""))
+		if kk == "":
+			blank_keys += 1
+		key_set[kk] = true
+	_ok(blank_keys == 0 and key_set.size() == listed.size(),
+		"(b) every one of %d machines has a DISTINCT non-empty key (%d distinct, %d blank) — an id alone cannot address a machine, %d of these nodes share one"
+			% [listed.size(), key_set.size(), blank_keys, collisions])
+	var mis_resolved : Array = []
+	for ni in nodes.size():
+		var nd_i : Dictionary = nodes[ni]
+		var own_node = nd_i.get("node", null)
+		if own_node == null or not is_instance_valid(own_node):
+			continue
+		var own_path := String((own_node as Node).get_path())
+		var info_i : Dictionary = lf.call("get_machine_info", String(nd_i.get("key", "")))
+		# Resolve the SAME key a second time through the node set to recover the
+		# path the resolver actually reached.
+		var hit := ""
+		for nd_j in nodes:
+			if String((nd_j as Dictionary).get("key", "")) == String(info_i.get("key", "")):
+				var hj = (nd_j as Dictionary).get("node", null)
+				if hj != null and is_instance_valid(hj):
+					hit = String((hj as Node).get_path())
+				break
+		if info_i.is_empty() or hit != own_path:
+			mis_resolved.append("%s -> %s (wanted %s)" % [String(nd_i.get("key", "")), hit, own_path])
+	_ok(mis_resolved.is_empty(),
+		"(b) get_machine_info(key) resolves to THAT MACHINE for all %d nodes — identity, not just a non-empty dict (%d wrong: %s)"
+			% [nodes.size(), mis_resolved.size(), str(mis_resolved).substr(0, 240)])
+	_ok((lf.call("code_conflicts") as Array).is_empty(),
+		"(b) no l3c_code was claimed by two nodes (%d conflict(s): %s)"
+			% [(lf.call("code_conflicts") as Array).size(), str(lf.call("code_conflicts"))])
 	_ok(macro_collisions == seq_total - seq_ids.size(),
 		"(b) live macro collisions %d == static BuildMode.LINE_3A_SEQ collisions %d — the live figure and the shipped seed agree"
 			% [macro_collisions, seq_total - seq_ids.size()])
-	print("        (b) %s subset: %d collisions (%d nodes / %d distinct) ; static LINE_3A_SEQ: %d (%d/%d) ; SCADA-aligned 3C units unreachable: %d of %d"
+	print("        (b) %s subset: %d collisions (%d nodes / %d distinct) ; static LINE_3A_SEQ: %d (%d/%d) ; the %d SCADA-aligned 3C units share only %d distinct ids — normal now that an id is a TYPE, fatal when it was the only handle"
 		% [MACRO_ID, macro_collisions, macro_total, macro_ids.size(),
 			seq_total - seq_ids.size(), seq_total, seq_ids.size(),
-			l3c_units - l3c_ids.size(), l3c_units])
+			l3c_units, l3c_ids.size()])
 	print("        (b) duplicates: %s" % str(dup_breakdown))
 	# (c) is a MEASUREMENT, printed prediction-next-to-actual. Only its vacuity
 	# guards gate the verdict — the number itself is reported however it comes out.
-	print("        (c) live_line_amps MEASURED %.4f A   PREDICTED 0.0 A" % live_amps)
+	print("        (c) live_line_amps MEASURED %.4f A  (not run-stable once fed — see the dump's run_stability note; the EXACT invariants are asserted below)" % live_amps)
 	print("        (c) machines powered %d / spinning %d ; sum(amps_nominal) %.2f A ; l3c_code stamped on %d nodes"
 		% [powered, spinning, amps_nominal_sum, stamped])
-	print("        (c) ProcessModel.line_nominal_amps() %.2f A -> would read %.2f A at idle load if l3c_code were stamped"
-		% [nominal_line, nominal_line * ProcessModelScript.MOTOR_IDLE_FRAC])
+	print("        (c) ProcessModel.line_nominal_amps() %.2f A -> %.2f A at idle load, %.2f A at full load"
+		% [nominal_line, nominal_line * ProcessModelScript.MOTOR_IDLE_FRAC, nominal_line])
 	print("        (c) nd[\"amps\"] non-zero on %d of %d nodes (%d carry a MotorOverload): %s"
 		% [amps_by_node.size(), nodes.size(), mol_nodes, str(amps_by_node)])
 	_ok(spinning > 0,
 		"(c) NOT VACUOUS: %d machines are spinning, so stage_amps ran with running == true" % spinning)
 	_ok(probe_amps > 0.0,
 		"(c) NOT VACUOUS: stage_amps(29.92 A, load 0, running) = %.2f A > 0 — the formula is alive" % probe_amps)
-	if is_equal_approx(live_amps, 0.0):
-		print("  ok    : (c) live_line_amps == 0.0 as predicted — PROVES the l3c_code -> amps_nominal=0 chain (%d nodes stamped, sum nominal %.2f A) while LineFlow.gd:1729-1730 claims '~488 A'"
-			% [stamped, amps_nominal_sum])
-		_pass += 1
-	else:
-		print("  note  : (c) DEVIATION FROM PREDICTION — live_line_amps = %.4f A, not 0.0. Reported as measured, NOT tuned away."
-			% live_amps)
-		print("  note  : (c) the predicted half IS confirmed: l3c_code stamped on %d nodes, sum(amps_nominal) = %.2f A, so the calibrated ProcessModel path contributes exactly 0 A on all %d nodes."
-			% [stamped, amps_nominal_sum, nodes.size()])
-		print("  note  : (c) the whole reading comes from a SECOND writer the design doc did not account for: MotorOverload overwrites nd[\"amps\"] (LineFlow.gd:2269-2275) and was seeded from its PLACEHOLDER 90.0 A default because amps_nominal was 0 (LineFlow.gd:678-680, MotorOverload.gd:40,55). %d high-load drive(s) account for all %.2f A of it; the other %d machines — including every stage with a real calibrated HMI current in Line3CDef — still read exactly 0 A."
-			% [amps_by_node.size(), live_amps, nodes.size() - amps_by_node.size()])
-		_skip += 1
+	# (c) NO 3A MACHINE MAY ACQUIRE A 3C ADDRESS. The code is DERIVED from macro
+	# membership and only the line_3c macro resolves, so a Line 3A frictiescheider
+	# (BuildMode.gd:98-106, cited to water_circuit_3a_la1.md) stays uncoded. This is
+	# the guard against the cheap way to make the amps numbers appear: stamping 3C
+	# codes onto whatever machine happens to share the placeable id. Doing that
+	# would ALSO re-route the whole 3A chain onto the Line3CDef.LINKS graph
+	# (LineFlow.gd:1029-1039) and swap its material balance (:474-481).
+	var wrongly_coded : Array = []
+	for nd_c in nodes:
+		var n_c = (nd_c as Dictionary).get("node", null)
+		if n_c == null or not is_instance_valid(n_c) or not (n_c as Node).has_meta("macro_id"):
+			continue
+		if String((n_c as Node).get_meta("macro_id")) == "line_3c":
+			continue
+		if String((nd_c as Dictionary).get("l3c_code", "")) != "":
+			wrongly_coded.append("%s (%s) -> %s" % [String((nd_c as Dictionary)["id"]),
+				String((n_c as Node).get_meta("macro_id")), String((nd_c as Dictionary)["l3c_code"])])
+	_ok(wrongly_coded.is_empty(),
+		"(c) NO machine outside the line_3c macro carries an L3C code (%d do: %s) — a Line 3A frictiescheider is not L3C.4L"
+			% [wrongly_coded.size(), str(wrongly_coded)])
+	_ok(stamped == Line3CDefScript.stage_count(),
+		"(c) l3c_code stamped on %d nodes == Line3CDef.stage_count() %d — it was stamped NOWHERE in production before, so the calibrated path was dead"
+			% [stamped, Line3CDefScript.stage_count()])
+	_ok(absf(amps_nominal_sum - nominal_line) <= 0.01,
+		"(c) sum(amps_nominal) %.2f A == ProcessModel.line_nominal_amps() %.2f A — it was 0.00 A against the same 488.49 A before"
+			% [amps_nominal_sum, nominal_line])
+	print("  note  : (c) live_line_amps = %.4f A ; %d node(s) read a non-zero current, %d of them through a MotorOverload now seeded from its own stage nominal instead of the 90.0 A placeholder (LineFlow.gd:678-680)."
+		% [live_amps, amps_by_node.size(), mol_nodes])
 	if not ctx_missing.is_empty():
 		_note("line context incomplete: %s -> those rows resolve to null by design" % str(ctx_missing))
 	if not absent_ids.is_empty():
-		_note("mapped ids not in this world: %s" % str(absent_ids))
+		_note("mapped L3C units not in this world: %s" % str(absent_ids))
 
 
 # =============================================================================

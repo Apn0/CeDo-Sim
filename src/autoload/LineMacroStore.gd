@@ -66,9 +66,12 @@ static func delta_sane(dx: float, dy: float, dz: float, drot_y: float) -> bool:
 		return false
 	return absf(dx) <= MAX_ABS_DELTA_M and absf(dy) <= MAX_ABS_DELTA_M and absf(dz) <= MAX_ABS_DELTA_M
 
+## APPEND-ONLY. Each id maps to a SEQ in BuildMode; macro_index is the position
+## in that SEQ, so an id removed here orphans every user://macros/<id>.json delta.
 const MACRO_IDS : Array[String] = [
 	"line_3a", "line_3b", "line_1",
 	"line_intake_3a3b", "line_sort", "line_intake_3c6",
+	"line_3c",
 ]
 
 ## In-memory cache: macro_id -> Dictionary (full file contents).

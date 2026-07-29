@@ -223,10 +223,16 @@ var _fault_box    : VBoxContainer = null
 var _manual_rows  : Array = []           # [{section, lamp:ColorRect, btn:Button}]
 
 # --- MACHINES screen state ---------------------------------------------------
-var _selected_machine_id : String = ""
+# The selection is a per-instance KEY (LineFlow's nd["key"]), never a bare
+# placeable id: an id is a machine TYPE and several machines share it, so a bare
+# id sent the operator's HAND/RUN/RPM commands to whichever instance LineFlow
+# happened to list first — toggling the 3rd blower toggled the 1st.
+# Session-scoped by design; nothing persists a machine handle across a save, and
+# the ordinal half of the key is only stable between two LineFlow rebuilds.
+var _selected_machine_key : String = ""
 var _machines_list_vb    : VBoxContainer = null   # left column: scrollable list
 var _machines_detail_vb  : VBoxContainer = null   # right column: live detail
-var _machines_list_rows  : Array = []             # [{id, btn, lamp}]
+var _machines_list_rows  : Array = []             # [{key, id, btn, lamp, lbl}]
 # Rebuilt every time the selection changes; refresh() updates only the live widgets.
 var _md_title_lbl    : Label = null
 var _md_powered_lamp : ColorRect = null
@@ -315,7 +321,7 @@ func open_for(label: String, scope: Dictionary = {}) -> void:
 	# Drop the previous MACHINES selection — the new scope likely doesn't
 	# include the previously-selected id, and the rebuild below picks a
 	# fresh in-scope default.
-	_selected_machine_id = ""
+	_selected_machine_key = ""
 	_find_line_flow()
 	if _line_flow and "fed_mass" in _line_flow:
 		_last_fed_mass = float(_line_flow.fed_mass)
@@ -1813,12 +1819,12 @@ func _build_machines() -> void:
 	_machines_detail_vb.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	h.add_child(_machines_detail_vb)
 	# Pick an initial selection if none yet — and only within scope (#165).
-	if _selected_machine_id == "" and _line_flow != null and _line_flow.has_method("machine_list"):
+	if _selected_machine_key == "" and _line_flow != null and _line_flow.has_method("machine_list"):
 		var ml: Array = _line_flow.call("machine_list")
 		for entry in ml:
-			var eid := String(entry["id"])
-			if _scope_has_node(eid, String(entry.get("line", ""))):
-				_selected_machine_id = eid
+			# Scope is a question about the machine TYPE, so it still takes the id.
+			if _scope_has_node(String(entry["id"]), String(entry.get("line", ""))):
+				_selected_machine_key = String(entry.get("key", ""))
 				break
 	_build_machine_detail()
 
@@ -1835,6 +1841,9 @@ func _populate_machine_list() -> void:
 		return
 	for m in _line_flow.call("machine_list"):
 		var mid := String(m["id"])
+		# The HANDLE. machine_list emits one row per NODE, so two blowers are two
+		# rows; without a distinct key they would both address the first one.
+		var mkey := String(m.get("key", mid))
 		# #165 — drop out-of-scope machines so a sorting HMI never lists the
 		# washing line, etc. `line` is optional on machine_list (LineFlow
 		# doesn't carry it yet) — HmiScopes falls back to id-suffix sniffing.
@@ -1845,7 +1854,7 @@ func _populate_machine_list() -> void:
 		btn.custom_minimum_size = Vector2(0, 32)
 		btn.text = ""    # filled by children
 		btn.add_theme_stylebox_override("normal",
-			_sb(C_TILE if mid != _selected_machine_id else C_NAV_SEL, 4, 0, C_TILE_EDGE, 1))
+			_sb(C_TILE if mkey != _selected_machine_key else C_NAV_SEL, 4, 0, C_TILE_EDGE, 1))
 		btn.add_theme_stylebox_override("hover",
 			_sb(C_NAV_SEL.lightened(0.08), 4, 0, C_NAV_SEL, 1))
 		var row := HBoxContainer.new()
@@ -1860,15 +1869,18 @@ func _populate_machine_list() -> void:
 		lamp.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		row.add_child(lamp)
 		var lbl := Label.new()
-		lbl.text = mid.replace("_", " ")
+		# LineFlow supplies the display label: the plant tag (L3C.9R) when the
+		# machine has one, otherwise "<name> #<n>". Two blowers no longer render
+		# as the same row.
+		lbl.text = String(m.get("label", mid.replace("_", " ")))
 		lbl.add_theme_font_size_override("font_size", 13)
 		lbl.add_theme_color_override("font_color",
-			C_TEXT_DARK if mid != _selected_machine_id else Color.WHITE)
+			C_TEXT_DARK if mkey != _selected_machine_key else Color.WHITE)
 		lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		row.add_child(lbl)
-		btn.pressed.connect(_on_machine_picked.bind(mid))
+		btn.pressed.connect(_on_machine_picked.bind(mkey))
 		_machines_list_vb.add_child(btn)
-		_machines_list_rows.append({"id": mid, "btn": btn, "lamp": lamp, "lbl": lbl})
+		_machines_list_rows.append({"key": mkey, "id": mid, "btn": btn, "lamp": lamp, "lbl": lbl})
 
 	# LineFlow is wired but produced no rows — either nothing is placed yet, or
 	# none of the placed machines fall in this HMI's scope. Show a legible message
@@ -1885,14 +1897,14 @@ func _populate_machine_list() -> void:
 		none.add_theme_color_override("font_color", C_TEXT_DARK)
 		_machines_list_vb.add_child(none)
 
-func _on_machine_picked(id: String) -> void:
-	_selected_machine_id = id
+func _on_machine_picked(key: String) -> void:
+	_selected_machine_key = key
 	# Rebuild the list (so the selection highlight is correct) and the right pane.
 	if _machines_list_vb != null:
 		_populate_machine_list()
 	_build_machine_detail()
 
-## (Re)build the right-hand detail pane for `_selected_machine_id`. Called on
+## (Re)build the right-hand detail pane for `_selected_machine_key`. Called on
 ## selection change. Live values are refreshed by _refresh_machines().
 func _build_machine_detail() -> void:
 	if _machines_detail_vb == null:
@@ -1912,7 +1924,7 @@ func _build_machine_detail() -> void:
 	_md_rpm_pct_lbl = null
 	_md_amps_lbl = null
 
-	if _selected_machine_id == "":
+	if _selected_machine_key == "":
 		var hint := Label.new()
 		hint.text = "Selecteer een machine links."
 		hint.add_theme_color_override("font_color", C_TEXT_DARK)
@@ -1920,10 +1932,10 @@ func _build_machine_detail() -> void:
 		return
 	if _line_flow == null or not _line_flow.has_method("get_machine_info"):
 		return
-	var info : Dictionary = _line_flow.call("get_machine_info", _selected_machine_id)
+	var info : Dictionary = _line_flow.call("get_machine_info", _selected_machine_key)
 	if info.is_empty():
 		var miss := Label.new()
-		miss.text = "Machine '%s' niet gevonden (niet meer op de lijn?)" % _selected_machine_id
+		miss.text = "Machine '%s' niet gevonden (niet meer op de lijn?)" % _selected_machine_key
 		miss.add_theme_color_override("font_color", C_TEXT_DARK)
 		_machines_detail_vb.add_child(miss)
 		return
@@ -1937,7 +1949,11 @@ func _build_machine_detail() -> void:
 	_md_powered_lamp.color = LAMP_OFF
 	trow.add_child(_md_powered_lamp)
 	_md_title_lbl = Label.new()
-	_md_title_lbl.text = String(info["id"]).replace("_", " ").to_upper()
+	# Plant tag first when the machine has one (L3C.9R), so the detail pane names
+	# the SAME unit the operator's SCADA screen does; the model name otherwise.
+	var _title_code := String(info.get("l3c_code", ""))
+	_md_title_lbl.text = _title_code if _title_code != "" \
+		else String(info["id"]).replace("_", " ").to_upper()
 	_md_title_lbl.add_theme_font_size_override("font_size", 18)
 	_md_title_lbl.add_theme_color_override("font_color", C_TEXT_DARK)
 	trow.add_child(_md_title_lbl)
@@ -2101,48 +2117,60 @@ func _md_make_rpm_row(label_text: String, comp_key: String, pct: float, _design_
 		})
 	return row
 
+## The placeable id of the currently selected machine, for the #165 scope gate.
+## Scope is a question about the machine TYPE ("does this HMI cover blowers"),
+## so it needs the id, not the per-instance key. Empty when nothing is selected
+## or the selection no longer exists — _scope_has_node("") is then the refusal.
+func _selected_machine_scope_id() -> String:
+	if _line_flow == null or _selected_machine_key == "":
+		return ""
+	if not _line_flow.has_method("get_machine_info"):
+		return ""
+	var info : Dictionary = _line_flow.call("get_machine_info", _selected_machine_key)
+	return String(info.get("id", ""))
+
 func _on_machine_toggle_hand() -> void:
-	if _line_flow == null or _selected_machine_id == "":
+	if _line_flow == null or _selected_machine_key == "":
 		return
 	# #165 — refuse scope-violating writes. Belt-and-braces: the UI already
 	# filters the list, but a stale selection from a previous panel could
 	# survive an open_for() race. This is the hard gate.
-	if not _scope_has_node(_selected_machine_id):
+	if not _scope_has_node(_selected_machine_scope_id()):
 		return
-	var info : Dictionary = _line_flow.call("get_machine_info", _selected_machine_id)
+	var info : Dictionary = _line_flow.call("get_machine_info", _selected_machine_key)
 	var was_hand := bool(info.get("hand_mode", false))
-	_line_flow.call("set_machine_hand_mode", _selected_machine_id, not was_hand)
+	_line_flow.call("set_machine_hand_mode", _selected_machine_key, not was_hand)
 
 func _on_machine_toggle_run() -> void:
-	if _line_flow == null or _selected_machine_id == "":
+	if _line_flow == null or _selected_machine_key == "":
 		return
-	if not _scope_has_node(_selected_machine_id):
+	if not _scope_has_node(_selected_machine_scope_id()):
 		return   # #165 — scope guard
-	var info : Dictionary = _line_flow.call("get_machine_info", _selected_machine_id)
+	var info : Dictionary = _line_flow.call("get_machine_info", _selected_machine_key)
 	if not bool(info.get("hand_mode", false)):
 		return   # AAN/UIT only works in HAND mode (PLC owns it in AUTO)
 	var was_on := bool(info.get("manual_on", false))
-	_line_flow.call("set_machine_manual_on", _selected_machine_id, not was_on)
+	_line_flow.call("set_machine_manual_on", _selected_machine_key, not was_on)
 
 func _on_master_rpm_changed(value: float) -> void:
-	if _line_flow == null or _selected_machine_id == "":
+	if _line_flow == null or _selected_machine_key == "":
 		return
-	if not _scope_has_node(_selected_machine_id):
+	if not _scope_has_node(_selected_machine_scope_id()):
 		return   # #165 — scope guard
 	# Slider is in real RPM; LineFlow wants a 0..1 fraction of the rated max.
 	var frac : float = value / maxf(_md_master_max_rpm, 1.0)
-	_line_flow.call("set_machine_rpm_pct", _selected_machine_id, frac)
+	_line_flow.call("set_machine_rpm_pct", _selected_machine_key, frac)
 	if _md_rpm_pct_lbl != null:
 		_md_rpm_pct_lbl.text = "%d RPM" % int(round(value))
 
 func _on_component_rpm_changed(value: float, comp_key: String) -> void:
-	if _line_flow == null or _selected_machine_id == "":
+	if _line_flow == null or _selected_machine_key == "":
 		return
-	if not _scope_has_node(_selected_machine_id):
+	if not _scope_has_node(_selected_machine_scope_id()):
 		return   # #165 — scope guard
 	# Slider is real rpm for this rotor; LineFlow wants a 0..1 fraction of its max.
 	var cmax : float = float(_md_comp_max.get(comp_key, 100.0))
-	_line_flow.call("set_machine_component_pct", _selected_machine_id, comp_key, value / maxf(cmax, 1.0))
+	_line_flow.call("set_machine_component_pct", _selected_machine_key, comp_key, value / maxf(cmax, 1.0))
 	for r in _md_comp_rows:
 		if String(r["name"]) == comp_key:
 			(r["pct_lbl"] as Label).text = "%d RPM" % int(round(value))
@@ -2154,7 +2182,7 @@ func _refresh_machines() -> void:
 		return
 	# Update the list-row lamps (live powered state).
 	for r in _machines_list_rows:
-		var li : Dictionary = _line_flow.call("get_machine_info", String(r["id"]))
+		var li : Dictionary = _line_flow.call("get_machine_info", String(r["key"]))
 		if li.is_empty():
 			continue
 		var c : Color = LAMP_OFF
@@ -2164,9 +2192,9 @@ func _refresh_machines() -> void:
 			c = LAMP_IDLE
 		(r["lamp"] as ColorRect).color = c
 	# Update the detail panel.
-	if _md_title_lbl == null or _selected_machine_id == "":
+	if _md_title_lbl == null or _selected_machine_key == "":
 		return
-	var info : Dictionary = _line_flow.call("get_machine_info", _selected_machine_id)
+	var info : Dictionary = _line_flow.call("get_machine_info", _selected_machine_key)
 	if info.is_empty():
 		return
 	var hand := bool(info.get("hand_mode", false))

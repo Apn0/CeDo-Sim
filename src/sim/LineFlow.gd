@@ -110,6 +110,28 @@ var _label : Label
 # defaults to 1.0 so the wiring is a no-op for un-sensored silos.
 var _silo_sensor_by_node : Dictionary = {}
 
+# ── PER-INSTANCE ADDRESSING ───────────────────────────────────────────────────
+# A placeable id is a machine TYPE ("friction_sep"), not an address: Line 3C
+# alone runs five of them at four different calibrated currents. Every node
+# therefore carries nd["key"], minted in _discover():
+#   * the node's l3c_code when it is a stamped Line 3C stage ("L3C.9R") — the
+#     operator's own plant address, so a front-end never has to invent one;
+#   * otherwise "<placeable_id>#<n>", n counting instances of that id in
+#     discovery order.
+# NOT PERSISTED, and that is a measured decision rather than an oversight:
+# nothing in the repo stores a machine handle across a save (HmiOverlay's
+# selection is a session var, GameState.save_machine_state has zero callers), so
+# the key only has to be stable between two rebuild()s. The day any feature
+# persists a handle — a saved HMI favourite, a per-machine maintenance log — the
+# ordinal half of this scheme has to become a minted, persisted uid.
+#
+# Codes REFUSED because another node already claimed them, as
+# {code, kept, refused}. Non-empty means two nodes tried to be the same plant
+# unit (two line_3c macros placed in one world); the later claimant loses its
+# code and falls back to an ordinal key, so LineFlow's code_idx
+# (:981-985, a first-match map) can never silently drop an edge.
+var _code_conflicts : Array[Dictionary] = []
+
 # The line only feeds from bales a VEHICLE HAS DROPPED at the feed machine
 # (meta "delivered" = true). Bales merely placed in build mode are inert scenery
 # and never feed. Each delivered bale is consumed (finite) and removed when empty.
@@ -234,7 +256,13 @@ func rebuild() -> void:
 	# key in old_state) start at the defaults their fresh dict was built with.
 	var old_state : Dictionary = {}
 	for nd in _nodes:
-		var node3d : Node = nd.get("node", null)
+		# UNTYPED on purpose. `var node3d : Node = ...` THROWS "Trying to assign
+		# invalid previously freed instance" when the dict still holds a machine
+		# that was queue_free()d — the typed assignment fails BEFORE the
+		# is_instance_valid() guard below can run, and the throw aborts rebuild(),
+		# leaving _nodes pinned to the freed set for the rest of the session. Same
+		# untyped-var-plus-guard idiom as _silo_feed_multiplier (:397-407).
+		var node3d = nd.get("node", null)
 		var key : String = ""
 		if node3d != null and is_instance_valid(node3d):
 			key = String(nd.get("id", "")) + "@" + String(node3d.get_path())
@@ -276,7 +304,13 @@ func rebuild() -> void:
 	# #218 — Rehydrate survivors BEFORE _init_plc() (which used to slam
 	# powered=false / spin=0.0 unconditionally). Match by id @ scene path.
 	for nd in _nodes:
-		var node3d : Node = nd.get("node", null)
+		# UNTYPED on purpose. `var node3d : Node = ...` THROWS "Trying to assign
+		# invalid previously freed instance" when the dict still holds a machine
+		# that was queue_free()d — the typed assignment fails BEFORE the
+		# is_instance_valid() guard below can run, and the throw aborts rebuild(),
+		# leaving _nodes pinned to the freed set for the rest of the session. Same
+		# untyped-var-plus-guard idiom as _silo_feed_multiplier (:397-407).
+		var node3d = nd.get("node", null)
 		var key : String = ""
 		if node3d != null and is_instance_valid(node3d):
 			key = String(nd.get("id", "")) + "@" + String(node3d.get_path())
@@ -436,6 +470,11 @@ func _node_wout2(node3d: Node3D, prof: Dictionary, size: Vector3) -> Vector3:
 
 func _discover() -> void:
 	_nodes.clear()
+	_code_conflicts.clear()
+	# Per-instance addressing state (see the _code_conflicts declaration).
+	# id -> instances seen so far; l3c_code -> the scene path that claimed it.
+	var id_ordinal : Dictionary = {}
+	var code_owner : Dictionary = {}
 	for m in get_tree().get_nodes_in_group("placed_object"):
 		var node3d := m as Node3D
 		if node3d == null or not node3d.has_meta("placeable_id"):
@@ -464,7 +503,35 @@ func _discover() -> void:
 		var p_contam_r : float = float(prof["contam_remove"])
 		var p_rej_o    : float = float(prof["reject_other"])
 		var p_rej_h    : float = float(prof["reject_hdpe"])
+		# PLANT ADDRESS. An explicit meta wins (a bench may hand-stamp one, e.g.
+		# tests/FlakeCouplingTest.gd:64), otherwise the code is DERIVED from the
+		# macro membership BuildMode already stamps and already round-trips through
+		# the save file — so no new persisted key exists and every legacy save loads
+		# unchanged. Only the line_3c macro resolves (Line3CDef.code_for_macro_entry).
 		var l3c_code   : String = String(node3d.get_meta("l3c_code")) if node3d.has_meta("l3c_code") else ""
+		if l3c_code == "" and node3d.has_meta("macro_id") and node3d.has_meta("macro_index"):
+			l3c_code = Line3CDefScript.code_for_macro_entry(
+				String(node3d.get_meta("macro_id")), int(node3d.get_meta("macro_index")))
+		# UNIQUENESS IS A PRECONDITION, not a nicety: _link()'s code_idx is a
+		# first-match map on this code, so a second claimant would silently steal
+		# the first one's downstream edges AND its calibrated current. Refuse it
+		# and record the refusal instead — the ledger is asserted empty by the tests.
+		if l3c_code != "":
+			if code_owner.has(l3c_code):
+				_code_conflicts.append({
+					"code": l3c_code,
+					"kept": String(code_owner[l3c_code]),
+					"refused": String(node3d.get_path()),
+				})
+				push_error("[LineFlow] l3c_code '%s' already claimed by %s — refusing %s (it falls back to an ordinal key)"
+					% [l3c_code, String(code_owner[l3c_code]), String(node3d.get_path())])
+				l3c_code = ""
+			else:
+				code_owner[l3c_code] = String(node3d.get_path())
+		# The per-instance HANDLE every front-end addresses this machine by.
+		var ordinal : int = int(id_ordinal.get(id, 0)) + 1
+		id_ordinal[id] = ordinal
+		var node_key : String = l3c_code if l3c_code != "" else "%s#%d" % [id, ordinal]
 		# #99 — paired-stage tags. Empty for everything except L3C.14L/R (the
 		# mech-dryer pair). The router uses these to fan 100% of incoming material
 		# to the drum currently in BEFULLEN instead of splitting it evenly.
@@ -483,6 +550,11 @@ func _discover() -> void:
 		_nodes.append({
 			"node":  node3d,
 			"id":    id,
+			# `id` stays the plain MODEL selector — MachineFlow.profile,
+			# PlaceableCatalog.get_item, the _is_extruder/_is_high_load_motor
+			# substring dispatchers and CrewManager's zone token-matching all key
+			# on it, so it must never be suffixed. `key` is the sibling ADDRESS.
+			"key":   node_key,
 			"role":  String(prof["role"]),
 			"waste": p_waste,
 			"rate":  float(prof["rate"]),
@@ -978,6 +1050,8 @@ func _link() -> void:
 	# Map Line 3C HMI codes → node index, so the explicit branch topology (#1) can
 	# resolve its [from,to] edges. Lets one stage feed TWO downstream (a split) and
 	# two stages feed ONE (a merge) — impossible with the old single-nearest linker.
+	# This is a FIRST-MATCH map; it is safe only because _discover() refuses a
+	# duplicate l3c_code outright (see _code_conflicts) so no code reaches here twice.
 	var code_idx : Dictionary = {}
 	for i in n:
 		var c : String = String(_nodes[i].get("l3c_code", ""))
@@ -1478,30 +1552,51 @@ static func _component_topology(id: String) -> String:
 		return "parallel"
 	return "single"
 
-## Lookup a machine node dict by its placeable id; returns the FIRST match (machines
-## are unique per build). Empty dict if missing.
+## Lookup by placeable id — returns the FIRST match. A placeable id is a machine
+## TYPE, not an address: Line 3C alone runs five friction_sep at four different
+## calibrated currents, so this cannot address a specific machine. Kept only as
+## the LEGACY fallback inside _resolve() for callers still holding a bare id.
+## Empty dict if missing.
 func _find_node_by_id(id: String) -> Dictionary:
 	for nd in _nodes:
 		if String(nd["id"]) == id:
 			return nd
 	return {}
 
-## Public HMI surface — every setter quietly noops on an unknown id so the panel
-## can be opened before the line has been built without crashing.
+## Resolve a machine HANDLE to its node dict. Exact match on the per-instance key
+## first (nd["key"] — see the _code_conflicts declaration), then the legacy
+## placeable-id fallback. Permissive on purpose: a strict resolver would return {}
+## for every call site still passing a bare id and blank the MACHINES screen the
+## day this lands. Empty dict when nothing matches.
+func _resolve(handle: String) -> Dictionary:
+	if handle == "":
+		return {}
+	for nd in _nodes:
+		if String(nd.get("key", "")) == handle:
+			return nd
+	return _find_node_by_id(handle)
+
+## Codes two nodes both tried to claim, as {code, kept, refused}. Empty on a
+## healthy world; the tests assert it stays empty.
+func code_conflicts() -> Array[Dictionary]:
+	return _code_conflicts
+
+## Public HMI surface — every setter quietly noops on an unknown handle so the
+## panel can be opened before the line has been built without crashing.
 func set_machine_hand_mode(id: String, on: bool) -> void:
-	var nd := _find_node_by_id(id)
+	var nd := _resolve(id)
 	if not nd.is_empty():
 		nd["hand_mode"] = on
 		if not on:
 			nd["manual_on"] = false   # leaving HAND drops the manual run
 
 func set_machine_manual_on(id: String, on: bool) -> void:
-	var nd := _find_node_by_id(id)
+	var nd := _resolve(id)
 	if not nd.is_empty() and bool(nd["hand_mode"]):
 		nd["manual_on"] = on
 
 func set_machine_rpm_pct(id: String, pct: float) -> void:
-	var nd := _find_node_by_id(id)
+	var nd := _resolve(id)
 	if not nd.is_empty():
 		nd["rpm_pct"] = clampf(pct, 0.0, 1.0)   # 1.0 = rated max rpm
 		_apply_rotor_rpm(nd)                     # physicalize: drive the visible spin
@@ -1536,7 +1631,7 @@ func _apply_rotor_rpm(nd: Dictionary) -> void:
 			m.rpm = f * float(m.nominal_rpm)
 
 func set_machine_component_pct(id: String, component: String, pct: float) -> void:
-	var nd := _find_node_by_id(id)
+	var nd := _resolve(id)
 	if nd.is_empty():
 		return
 	var c : Dictionary = nd["components"]
@@ -1580,12 +1675,19 @@ func _component_max_rpms(nd: Dictionary) -> Dictionary:
 	return out
 
 ## Returns a snapshot the HMI can render: live state + override state + components.
+## `id` is a HANDLE: the per-instance key (preferred) or a legacy bare placeable
+## id (first match). The payload echoes the key back so a caller can tell WHICH
+## instance answered, plus the plant address and the calibrated nominal current
+## the live `amps` is derived from.
 func get_machine_info(id: String) -> Dictionary:
-	var nd := _find_node_by_id(id)
+	var nd := _resolve(id)
 	if nd.is_empty():
 		return {}
 	return {
 		"id":         String(nd["id"]),
+		"key":        String(nd.get("key", "")),
+		"l3c_code":   String(nd.get("l3c_code", "")),
+		"amps_nominal": float(nd.get("amps_nominal", 0.0)),
 		"role":       String(nd["role"]),
 		"process":    String(nd["process"]),
 		"rate":       float(nd["rate"]),
@@ -1613,14 +1715,26 @@ func _machine_max_rpm(nd: Dictionary) -> float:
 		return maxf(float(mech.nominal_rpm), 1.0)
 	return 100.0
 
-## Every machine on the line as a flat list for the MACHINES screen list.
+## Every machine on the line as a flat list for the MACHINES screen list. One row
+## per NODE, and `key` is the handle to pass back to get_machine_info / the
+## setters — `id` alone cannot address a machine (it is the model, and duplicates
+## are normal). `label` is display-only: the plant tag when the machine has one,
+## otherwise "<name> #<n>" so two blowers no longer render as the same row.
 func machine_list() -> Array:
 	var out : Array = []
 	for nd in _nodes:
+		var k := String(nd.get("key", ""))
+		var code := String(nd.get("l3c_code", ""))
+		var label := code
+		if label == "":
+			label = k.replace("_", " ").replace("#", " #")
 		out.append({
-			"id":      String(nd["id"]),
-			"role":    String(nd["role"]),
-			"process": String(nd["process"]),
+			"id":       String(nd["id"]),
+			"key":      k,
+			"l3c_code": code,
+			"label":    label,
+			"role":     String(nd["role"]),
+			"process":  String(nd["process"]),
 		})
 	return out
 
@@ -1651,6 +1765,14 @@ func is_estopped() -> bool:
 func estop_fault_id() -> String:
 	if _estop_active and _estop_fault_node >= 0 and _estop_fault_node < _nodes.size():
 		return String(_nodes[_estop_fault_node].get("id", "?"))
+	return ""
+
+## Same fault, as the per-instance KEY. estop_fault_id() names a machine TYPE, so
+## on a line with five friction separators it cannot say which one tripped; this
+## can. Both exist because the internal alarm text at :1693 still emits the id.
+func estop_fault_key() -> String:
+	if _estop_active and _estop_fault_node >= 0 and _estop_fault_node < _nodes.size():
+		return String(_nodes[_estop_fault_node].get("key", ""))
 	return ""
 
 ## Run each tick (after the PLC powers the line): detect an overload, enforce the
@@ -1727,7 +1849,12 @@ func pipe_mass() -> float:
 	return m
 
 ## Total live current (A) the whole line is drawing right now — the sum of every
-## metered stage's calibrated draw (#173). Reads ~488 A at full Line 3C load.
+## metered stage's calibrated draw (#173). Only stages carrying an l3c_code are
+## metered, i.e. only a world where the `line_3c` macro has been placed; a 3A/3B/1
+## world reads whatever MotorOverload puts on its high-load drives and nothing
+## else. ProcessModel.line_nominal_amps() (488.49 A) is the FULL-LOAD sum of the
+## whole 3C spine and is what this approaches at load_frac 1.0 — not a figure any
+## other line reaches.
 func live_line_amps() -> float:
 	var a := 0.0
 	for nd in _nodes:
@@ -1877,7 +2004,19 @@ func tick(delta: float) -> void:
 			var nd: Dictionary = _nodes[i]
 			if String(nd["role"]) == "sink" or _has_incoming(i):
 				continue
-			var feed_point : Vector3 = _head_feed_point(nd["node"] as Node3D)
+			# A node dict can outlive its Node3D: anything that frees a placed
+			# machine WITHOUT an immediate rebuild() (a save-reload cycle, a scripted
+			# teardown) leaves this array holding freed objects for a tick or more.
+			# The `as Node3D` cast below then throws "Trying to cast a freed object",
+			# which ABORTS tick() at this line — so every observer after it
+			# (_tick_advanced_systems: MotorOverload, extruder, dryer pairs) silently
+			# stops running for the rest of the session. Same guard, same reason as
+			# _silo_feed_multiplier (:397-407). Skipping is conserving: a head whose
+			# machine no longer exists cannot draw from a bale.
+			var head_node = nd.get("node", null)
+			if head_node == null or not is_instance_valid(head_node):
+				continue
+			var feed_point : Vector3 = _head_feed_point(head_node as Node3D)
 			var bale := _bale_at(feed_point, bales)
 			if bale == null:
 				continue

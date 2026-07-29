@@ -142,6 +142,12 @@ static func items() -> Array[Dictionary]:
 			# Step 1 + step 2 are bundled here because the 3C/6 line group has its
 			# own sort + transport rather than sharing the 3A/3B pair.
 			{"id": "line_intake_3c6","name":"▶ Build 3C/6 sort + transport (step 1+2)","category": "Lines", "size": Vector3(3.0, 2.0, 3.0), "color": Color(0.32, 0.46, 0.56)},
+			# Step 3c — the Line 3C wash + extrude spine itself (BuildMode.LINE_3C_SEQ,
+			# transcribed from Line3CDef.STAGES). This is the ONLY macro whose machines
+			# carry an l3c_code, so it is the only one the calibrated ProcessModel
+			# currents / transfer coefficients and the Waslijn 3C HMI screen can read.
+			# LAYOUT-APPROXIMATE — see the SEQ header; needs an operator K-mode pass.
+			{"id": "line_3c",        "name": "▶ Build Line 3C wash + extrude (step 3c)","category": "Lines", "size": Vector3(3.0, 2.0, 3.0), "color": Color(0.30, 0.68, 0.72)},
 			# ── Extruders ────────────────────────────────────────────────────
 			{"id": "extruder_3a",    "name": "Extruder 3A",        "category": "Extruders",  "size": Vector3(2.6, 4.2, 14.0), "color": Color(0.26, 0.42, 0.70)},
 			{"id": "extruder_3b",    "name": "Extruder 3B",        "category": "Extruders",  "size": Vector3(2.6, 4.2, 14.0), "color": Color(0.26, 0.50, 0.70)},

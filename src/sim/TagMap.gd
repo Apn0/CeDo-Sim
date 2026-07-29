@@ -22,18 +22,20 @@ class_name TagMap
 ## * no-build-without-docs: every tag string is VERBATIM from the export and is
 ##   validated against it at load (see validation()); every row carries a `cite`
 ##   naming both sides. A tag with no simulated quantity behind it is ABSENT, not
-##   guessed at. 77 of 1056 tags map today (7.3 %).
+##   guessed at. 112 of 1056 tags map today (10.6 %).
 ## * The equipment spine is the ONE place sim ids and real equipment numbers
 ##   already agree: Line3CDef code L3C.<n> == export segment scada/3c/info/<n>
-##   (src/sim/Line3CDef.gd:53-90). UNITS below is that agreement, nothing more.
-## * ADDRESSABILITY: LineFlow._find_node_by_id (LineFlow.gd:1483-1487) returns the
-##   FIRST match on a NON-UNIQUE placeable id. The 20 SCADA-aligned Line 3C units
-##   collapse onto only 10 DISTINCT ids (friction_sep x5, transport_screw x5,
-##   mech_dryer x2, blower x2 + 6 singletons), so exactly ONE representative unit
-##   per distinct id is mapped here (1, 3, 4l, 5l, 6, 11, 14l, 15, 16, 18).
-##   Mapping 4r/9l/9r/13 too would add 4 rows all resolving to the same
-##   friction_sep node — a vacuous multiplication. They become mappable the moment
-##   machines get unique keys; that is the prerequisite fix, not this file's job.
+##   (src/sim/Line3CDef.gd:59-96). UNITS below is that agreement, nothing more.
+## * ADDRESSABILITY — RESOLVED. The 20 SCADA-aligned Line 3C units collapse onto
+##   only 10 DISTINCT placeable ids (friction_sep x5, transport_screw x5,
+##   mech_dryer x2, blower x2 + 6 singletons), and while LineFlow could only
+##   address a machine by that id it returned the FIRST match, so ten of the
+##   twenty units were unreachable and only one representative per id was mapped.
+##   LineFlow now mints a per-instance key (LineFlow.gd _discover / _resolve) that
+##   IS the l3c_code for a stamped Line 3C stage, so every unit is addressable by
+##   its own plant tag. All 20 are mapped; use resolve_code(code, ...) rather than
+##   resolve_machine(id, ...) — the latter is the legacy id-keyed path and still
+##   reads whichever instance LineFlow's fallback returns.
 ##
 ## DELIBERATELY ABSENT CLASSES (979 tags). Reasons, so a later session cannot
 ## quietly invent them back:
@@ -95,7 +97,7 @@ class_name TagMap
 ##    "sink", so it carries the same inlet/transport_1/transport_2/outlet components
 ##    unit 11 does, and unit 3's intrekwals is the same pull-in roller this file
 ##    already maps at unit 11 -> "inlet". Left out of THIS slice only to keep the
-##    77-row figure stable for the audit it was measured against; adding it is a
+##    row count stable for the audit it was measured against; adding it is a
 ##    deliberate follow-up, and EXPECTED_ROWS must move with it.
 ##  * MEETING/TEMPERATUUR (14): one bulk MechDryerModel.temp_c (MechDryerModel.gd:7)
 ##    vs front+rear thermocouples per drum; the friction separators have no thermal
@@ -117,11 +119,12 @@ class_name TagMap
 ##    screw_rpm / filter_loading_g / die_pressure_psi, CutterCompactor, MfiProxy,
 ##    LaserFilter) have NO tags in this export — it stops at unit 20 and
 ##    Line3CDef's 12 back-end stages carry RECONSTRUCTED codes
-##    (src/sim/Line3CDef.gd:78-89). Real simulation, no real tag: the reverse gap.
+##    (src/sim/Line3CDef.gd:84-95). Real simulation, no real tag: the reverse gap.
 ##    Absent until the operator exports that HMI page.
 
 const Line3CDefScript = preload("res://src/sim/Line3CDef.gd")
 const MachineFlowScript = preload("res://src/sim/MachineFlow.gd")
+const ProcessModelScript = preload("res://src/sim/ProcessModel.gd")
 
 ## The operator's export. Slash-hierarchical strings, NOT a tree — hierarchy
 ## exists only inside the strings, so any consumer must split("/") itself.
@@ -129,7 +132,12 @@ const EXPORT_PATH : String = "res://src/data/plant/line3c_scada_tags.json"
 
 ## Guards accidental edits to the table below: a row added or dropped without
 ## updating this number fails validation loudly instead of silently.
-const EXPECTED_ROWS : int = 77
+## 77 -> 112: the ten previously-unaddressable units (4r, 5r, 9l, 9r, 10l, 10r,
+## 12, 13, 14r, 19) each gained em/status + em/hand + em/snelheid, and the five
+## whose machine-level stroom leaf is the SAME device class as an already-approved
+## sibling (4r/9l/9r/13 softstarterfrictiewasser, 14r softstarterdroger1) gained
+## that too. 30 + 5 = 35.
+const EXPECTED_ROWS : int = 112
 
 ## How a row turns a get_machine_info() snapshot (+ line context) into a value.
 enum Kind {
@@ -146,17 +154,33 @@ enum Kind {
 
 ## SCADA unit segment -> [Line3CDef code, placeable id, Line3CDef.gd line].
 ## This table IS the equipment spine — transcribed, never derived.
+## All 20 wash-line units are listed. Each one's em/status leaf was verified
+## verbatim in the export, and each is now addressable by its OWN l3c_code
+## (LineFlow mints the code as that node's per-instance key), so the ten units
+## that used to collapse onto a mapped sibling are no longer vacuous duplicates.
+## The placeable-id column stays because the legacy id-keyed resolve_machine()
+## path still needs it; resolve_code() does not.
 const UNITS : Dictionary = {
-	"1":   ["L3C.1",   "doseersilo",          54],
-	"3":   ["L3C.3",   "sink_float",          55],
-	"4l":  ["L3C.4L",  "friction_sep",        56],
-	"5l":  ["L3C.5L",  "transport_screw",     58],
-	"6":   ["L3C.6",   "mill",                60],
-	"11":  ["L3C.11",  "flotation_tank_wide", 65],
-	"14l": ["L3C.14L", "mech_dryer",          71],
-	"15":  ["L3C.15",  "blower",              73],
-	"16":  ["L3C.16",  "plasmaq",             74],
-	"18":  ["L3C.18",  "silo",                75],
+	"1":   ["L3C.1",   "doseersilo",          60],
+	"3":   ["L3C.3",   "sink_float",          61],
+	"4l":  ["L3C.4L",  "friction_sep",        62],
+	"4r":  ["L3C.4R",  "friction_sep",        63],
+	"5l":  ["L3C.5L",  "transport_screw",     64],
+	"5r":  ["L3C.5R",  "transport_screw",     65],
+	"6":   ["L3C.6",   "mill",                66],
+	"9l":  ["L3C.9L",  "friction_sep",        67],
+	"9r":  ["L3C.9R",  "friction_sep",        68],
+	"10l": ["L3C.10L", "transport_screw",     69],
+	"10r": ["L3C.10R", "transport_screw",     70],
+	"11":  ["L3C.11",  "flotation_tank_wide", 71],
+	"12":  ["L3C.12",  "transport_screw",     72],
+	"13":  ["L3C.13",  "friction_sep",        73],
+	"14l": ["L3C.14L", "mech_dryer",          77],
+	"14r": ["L3C.14R", "mech_dryer",          78],
+	"15":  ["L3C.15",  "blower",              79],
+	"16":  ["L3C.16",  "plasmaq",             80],
+	"18":  ["L3C.18",  "silo",                81],
+	"19":  ["L3C.19",  "blower",              82],
 }
 
 ## Line-context keys resolve_line() needs from the caller. Missing key -> the row
@@ -180,8 +204,11 @@ const S_AMPS : String = "LineFlow.gd:1599 amps <- ProcessModel.stage_amps (Proce
 const S_COMP : String = "LineFlow.gd:1605 components + :1593 powered"
 const S_COMP_RPM : String = "LineFlow.gd:1604-1605 components x comp_max_rpm (_component_max_rpms :1570-1580)"
 const S_COMP_PCT : String = "LineFlow.gd:1605 readback of set_machine_component_pct :1538-1545"
-const S_ESTOP : String = "LineFlow.gd:1651-1654 estop_fault_id; the MotorOverload 'mol' model (:1836-1847, MotorOverload.gd:157) is NOT reachable through any public accessor, so this row covers the E-STOP component of the real alarm only"
-const S_FIRST_MATCH : String = "resolves through LineFlow._find_node_by_id :1483-1487 — FIRST match on a non-unique id, so this reads ONE instance only"
+const S_ESTOP : String = "LineFlow.estop_fault_key / estop_fault_id; the MotorOverload 'mol' model (MotorOverload.gd:157) is NOT reachable through any public accessor, so this row covers the E-STOP component of the real alarm only"
+## The instance a row reads is now the unit's OWN machine, addressed by its plant
+## code. (This replaces S_FIRST_MATCH, which recorded the opposite and would be a
+## FALSE cite now — a stale cite is worse than none.)
+const S_BY_CODE : String = "addressed by l3c_code through LineFlow._resolve — the node whose per-instance key IS this unit's code, not a first match on the shared placeable id"
 
 var _export_tags : Dictionary = {}
 var _export_count : int = 0
@@ -282,6 +309,17 @@ func rows_for_machine(machine_id: String) -> Array[Dictionary]:
 			out.append(r)
 	return out
 
+## Rows belonging to ONE Line 3C unit, addressed by its plant code. This is the
+## instance-truthful query: rows_for_machine("friction_sep") returns the rows of
+## all five separators at once, which is only meaningful when the caller has no
+## way to tell them apart.
+func rows_for_code(code: String) -> Array[Dictionary]:
+	var out : Array[Dictionary] = []
+	for r in _rows:
+		if String(r["l3c"]) == code:
+			out.append(r)
+	return out
+
 func line_rows() -> Array[Dictionary]:
 	var out : Array[Dictionary] = []
 	for r in _rows:
@@ -295,9 +333,22 @@ func line_rows() -> Array[Dictionary]:
 # `value` is null when the quantity is not present in this world; the row is
 # still returned so an unresolved tag is VISIBLE instead of dropped.
 # =============================================================================
+## LEGACY, id-keyed. `info` must be get_machine_info(<placeable id>), which
+## LineFlow resolves by first match — so on an id with several instances every
+## returned row describes whichever one answered. Prefer resolve_code().
 func resolve_machine(machine_id: String, info: Dictionary, machine_ctx: Dictionary) -> Array[Dictionary]:
 	var out : Array[Dictionary] = []
 	for r in rows_for_machine(machine_id):
+		out.append(_emit(r, _machine_value(r, info, machine_ctx)))
+	return out
+
+
+## Resolve ONE Line 3C unit by its plant code. `info` must be
+## get_machine_info(code) — LineFlow's per-instance key for a stamped 3C stage IS
+## its code, so the snapshot and the rows describe the same physical machine.
+func resolve_code(code: String, info: Dictionary, machine_ctx: Dictionary) -> Array[Dictionary]:
+	var out : Array[Dictionary] = []
+	for r in rows_for_code(code):
 		out.append(_emit(r, _machine_value(r, info, machine_ctx)))
 	return out
 
@@ -354,6 +405,12 @@ func _machine_value(row: Dictionary, info: Dictionary, machine_ctx: Dictionary) 
 				return null
 			return float(comps_p[arg])
 		Kind.ESTOP_ALARM:
+			# Prefer the per-INSTANCE key: LineFlow.estop_fault_key() names the node
+			# that tripped, and a stamped 3C stage's key IS its code, so this lights
+			# only the unit that actually faulted. estop_fault_id() names a machine
+			# TYPE and would light all five separators at once.
+			if machine_ctx.has("estop_fault_key"):
+				return String(machine_ctx["estop_fault_key"]) == String(row["l3c"])
 			if not machine_ctx.has("estop_fault_id"):
 				return null
 			return String(machine_ctx["estop_fault_id"]) == String(row["machine"])
@@ -442,7 +499,65 @@ func _build_rows() -> void:
 	_unit_15_blower()
 	_unit_16_plasmaq()
 	_unit_18_silo()
+	_units_newly_addressable()
 	_line_level()
+
+
+## The ten units that were UNMAPPABLE until machines got per-instance keys: they
+## share a placeable id with an already-mapped sibling (friction_sep x5,
+## transport_screw x5, mech_dryer x2, blower x2), so before the fix a row here
+## would have resolved to whichever instance LineFlow's first match returned —
+## the vacuous multiplication this file refused to add. They are now reached by
+## their OWN l3c_code.
+##
+## SCOPE, deliberately narrow. Each unit gets exactly the three em leaves its
+## already-approved sibling carries (status / hand / snelheid — all three verified
+## verbatim in the export for all ten), plus the machine-level stroom leaf for the
+## five whose device is the SAME CLASS as an approved sibling's:
+## softstarterfrictiewasser (4l is approved -> 4r/9l/9r/13) and softstarterdroger1
+## (14l is approved -> 14r). 30 + 5 = 35 rows.
+##
+## NOT ADDED, and why — these are gaps, not oversights:
+##  * PER-MOTOR stroom on 5r/10l/10r/12/19 ("schroef 1"/"schroef 2",
+##    "afvoerschroef", "fqventilator"): `amps` is per-MACHINE, never per motor
+##    (see the PER-MOTOR block in the header). Which motor carries the machine
+##    total is an operator ruling, not ours.
+##  * em/alarm on the friction siblings, and the softstarter*/status +
+##    setpoints readbacks: available and bindable, but they add no quantity the
+##    approved sibling row does not already prove. Deferred as a follow-up;
+##    EXPECTED_ROWS must move with them.
+func _units_newly_addressable() -> void:
+	# unit -> [Dutch device name on the HMI, its stroom leaf or "" ]
+	var em_only : Array = ["5r", "10l", "10r", "12", "19"]
+	var with_stroom : Dictionary = {
+		"4r":  ["softstarterfrictiewasser", "friction separator, one soft-started motor — same device class as the approved 4l row (:%d)"],
+		"9l":  ["softstarterfrictiewasser", "friction separator, one soft-started motor — same device class as the approved 4l row (:%d)"],
+		"9r":  ["softstarterfrictiewasser", "friction separator, one soft-started motor — same device class as the approved 4l row (:%d)"],
+		"13":  ["softstarterfrictiewasser", "friction separator, one soft-started motor — same device class as the approved 4l row (:%d)"],
+		"14r": ["softstarterdroger1", "mechanical dryer drum — same device class as the approved 14l row (:%d)"],
+	}
+	var all_units : Array = em_only + with_stroom.keys()
+	for uu in all_units:
+		var u := String(uu)
+		var code := String((UNITS[u] as Array)[0])
+		_add("scada/3c/info/%s/em/status" % u, u, Kind.MACHINE_FIELD, "powered",
+			"%s ; %s" % [S_POWERED, S_BY_CODE], "certain",
+			"UNMAPPABLE before per-instance keys: shares a placeable id with a mapped sibling, now reached as %s" % code)
+		_add("scada/3c/info/%s/em/hand" % u, u, Kind.MACHINE_FIELD, "hand_mode",
+			"%s ; %s" % [S_HAND, S_BY_CODE], "certain", "")
+		_add("scada/3c/info/%s/em/snelheid" % u, u, Kind.MACHINE_SPEED, "",
+			"%s ; %s" % [S_SPEED, S_BY_CODE], "probable",
+			"spin is the spin-up RAMP, not a speed setting")
+	for uu2 in with_stroom.keys():
+		var u2 := String(uu2)
+		var dev := String((with_stroom[u2] as Array)[0])
+		var why := String((with_stroom[u2] as Array)[1])
+		var spine_line : int = int((UNITS[u2] as Array)[2])
+		var code2 := String((UNITS[u2] as Array)[0])
+		_add("scada/3c/info/%s/%s/stroom" % [u2, dev], u2, Kind.MACHINE_FIELD, "amps",
+			"%s ; nominal %.2f A from Line3CDef.gd:%d ; %s"
+				% [S_AMPS, ProcessModelScript.hmi_amps_for_code(code2), spine_line, S_BY_CODE],
+			"probable", why % spine_line)
 
 
 ## Unit 1 — dosing silo, 3 parallel augers + level. 13 rows.
@@ -501,11 +616,11 @@ func _unit_3_sink_float() -> void:
 ## 5 friction_sep units (4l/4r/9l/9r/13) that all collapse to one node. 9 rows.
 func _unit_4l_friction_sep() -> void:
 	_add("scada/3c/info/4l/em/status", "4l", Kind.MACHINE_FIELD, "powered",
-		"%s ; %s" % [S_POWERED, S_FIRST_MATCH], "probable", "friction_sep x5 in Line3CDef — first-match instance only")
+		"%s ; %s" % [S_POWERED, S_BY_CODE], "certain", "one of the five friction_sep on Line 3C; reached by ITS code L3C.4L, not by the shared id")
 	_add("scada/3c/info/4l/em/hand", "4l", Kind.MACHINE_FIELD, "hand_mode",
-		S_HAND, "probable", "first-match instance only")
+		S_HAND, "certain", "")
 	_add("scada/3c/info/4l/em/snelheid", "4l", Kind.MACHINE_SPEED, "",
-		S_SPEED, "probable", "first-match instance only")
+		S_SPEED, "probable", "spin is the spin-up RAMP, not a speed setting")
 	_add("scada/3c/info/4l/em/alarm", "4l", Kind.ESTOP_ALARM, "",
 		"%s ; _is_high_load_motor matches 'friction' at LineFlow.gd:594-598" % S_ESTOP,
 		"probable", "PARTIAL: the MotorOverload trip half of this alarm has no public accessor")
@@ -516,7 +631,7 @@ func _unit_4l_friction_sep() -> void:
 		"%s ; default single 'drive' at LineFlow.gd:1457-1459 ; DOC docs/plant/line3c_scada_tags.md:26" % S_COMP,
 		"probable", "friction_sep takes the default 'drive' component, NOT the frictiewasser stirrer pair")
 	_add("scada/3c/info/4l/softstarterfrictiewasser/stroom", "4l", Kind.MACHINE_FIELD, "amps",
-		"%s ; nominal 29.92 A from Line3CDef.gd:56 ; MEASURED src/tests/test_tag_snapshot.gd 2026-07-27" % S_AMPS,
+		"%s ; nominal 29.92 A from Line3CDef.gd:62 ; MEASURED src/tests/test_tag_snapshot.gd 2026-07-27" % S_AMPS,
 		"probable", "MEASURED CAVEAT: reads 31.50 A on a real MainWorld boot, NOT the calibrated 29.92 A. friction_sep matches _is_high_load_motor (LineFlow.gd:594-598), so a MotorOverload seeded from its PLACEHOLDER 90.0 A default (because amps_nominal was 0) overwrites this key: 90.0 x idle_frac 0.35 = 31.50 A of fictitious current")
 	_add("scada/3c/info/4l/softstarterfrictiewasser/handauto", "4l", Kind.MACHINE_FIELD, "hand_mode",
 		S_HAND, "probable", "MACHINE scope, not motor scope: the sim has no per-component hand/auto")
@@ -530,11 +645,11 @@ func _unit_4l_friction_sep() -> void:
 ## units (5l/5r/10l/10r/12). 6 rows.
 func _unit_5l_transport_screw() -> void:
 	_add("scada/3c/info/5l/em/status", "5l", Kind.MACHINE_FIELD, "powered",
-		"%s ; %s" % [S_POWERED, S_FIRST_MATCH], "probable", "transport_screw x5 in Line3CDef — first-match instance only")
+		"%s ; %s" % [S_POWERED, S_BY_CODE], "certain", "one of the five transport_screw on Line 3C; reached by ITS code L3C.5L")
 	_add("scada/3c/info/5l/em/hand", "5l", Kind.MACHINE_FIELD, "hand_mode",
-		S_HAND, "probable", "first-match instance only")
+		S_HAND, "certain", "")
 	_add("scada/3c/info/5l/em/snelheid", "5l", Kind.MACHINE_SPEED, "",
-		S_SPEED, "probable", "first-match instance only")
+		S_SPEED, "probable", "spin is the spin-up RAMP, not a speed setting")
 	_add("scada/3c/info/5l/schroef 1/status", "5l", Kind.COMPONENT_STATUS, "drive",
 		"%s ; MachineFlow.gd:149-152 (transport_screw role=conveyor) ; DOC docs/plant/line3c_scada_tags.md:27" % S_COMP,
 		"probable", "single-drive conveyor, 1:1 with the one SCADA motor")
@@ -559,7 +674,7 @@ func _unit_6_mill() -> void:
 		"%s ; mill -> rotor at LineFlow.gd:1429-1430 ; DOC docs/plant/line3c_scada_tags.md:28" % S_COMP,
 		"probable", "the cutting rotor is the one mill component the sim models; hydrauliek + schroef 1-3 on this SCADA unit are absent")
 	_add("scada/3c/info/6/softstartersnijmolen/stroom", "6", Kind.MACHINE_FIELD, "amps",
-		"%s ; nominal 186.79 A from Line3CDef.gd:60 ; MEASURED src/tests/test_tag_snapshot.gd 2026-07-27" % S_AMPS,
+		"%s ; nominal 186.79 A from Line3CDef.gd:66 ; MEASURED src/tests/test_tag_snapshot.gd 2026-07-27" % S_AMPS,
 		"probable", "MEASURED CAVEAT: reads 31.50 A, NOT the calibrated 186.79 A — mill matches _is_high_load_motor, so MotorOverload's placeholder 90.0 A x 0.35 supplies the number (6x too low)")
 	_add("scada/3c/info/6/softstartersnijmolen/handauto", "6", Kind.MACHINE_FIELD, "hand_mode",
 		S_HAND, "probable", "machine scope, not motor scope")
@@ -590,23 +705,23 @@ func _unit_11_flotation_tank() -> void:
 		"probable", "load-bearing: series topology means the SLOWEST component caps tank throughput")
 	_add("scada/3c/meeting/overig/6_11_flotatietank waterflow", "11", Kind.WATERFLOW, "",
 		"MachineFlow.gd:29-50 (generic defaults) + :381-386 (the arm matches 'flotation_tank' and 'sink_float', NOT 'flotation_tank_wide') x LineFlow.gd:1595 thru ; DOC docs/plant/line3c_scada_tags.md:43",
-		"needs-operator", "DEFECT, measured STATICALLY (src/tests/test_tag_snapshot.gd asserts it): MachineFlow.profile() is an EXACT `match id:` (MachineFlow.gd:28,51) and its float arm names 'flotation_tank' + 'sink_float' but NOT 'flotation_tank_wide' — L3C.11's own id (Line3CDef.gd:65) — so the sim's Flotatietank silently runs the generic profile (water_add 0.0 vs 0.40, contam_remove 0.0, process 'convey') and does nothing to the material. NOT inferable from this row's own value: water_add x thru is 0 whenever thru is 0, so a run cannot tell this defect apart from an idle line, which is why water_add is measured per profile instead")
+		"needs-operator", "DEFECT, measured STATICALLY (src/tests/test_tag_snapshot.gd asserts it): MachineFlow.profile() is an EXACT `match id:` (MachineFlow.gd:28,51) and its float arm names 'flotation_tank' + 'sink_float' but NOT 'flotation_tank_wide' — L3C.11's own id (Line3CDef.gd:71) — so the sim's Flotatietank silently runs the generic profile (water_add 0.0 vs 0.40, contam_remove 0.0, process 'convey') and does nothing to the material. NOT inferable from this row's own value: water_add x thru is 0 whenever thru is 0, so a run cannot tell this defect apart from an idle line, which is why water_add is measured per profile instead")
 
 
 ## Unit 14L — mechanical dryer, soft-started drum. Representative of the
 ## mech_dryer pair (14l/14r, pair_id dryer_pair). 7 rows.
 func _unit_14l_mech_dryer() -> void:
 	_add("scada/3c/info/14l/em/status", "14l", Kind.MACHINE_FIELD, "powered",
-		"%s ; %s" % [S_POWERED, S_FIRST_MATCH], "probable", "mech_dryer x2 in Line3CDef (and x1 in 3A, x2 in 3B) — first-match instance only")
+		"%s ; %s" % [S_POWERED, S_BY_CODE], "certain", "one of the mech_dryer pair; reached by ITS code L3C.14L, so a 3A/3B dryer sharing the id can no longer answer for it")
 	_add("scada/3c/info/14l/em/hand", "14l", Kind.MACHINE_FIELD, "hand_mode",
-		S_HAND, "probable", "first-match instance only")
+		S_HAND, "certain", "")
 	_add("scada/3c/info/14l/em/snelheid", "14l", Kind.MACHINE_SPEED, "",
-		S_SPEED, "probable", "first-match instance only")
+		S_SPEED, "probable", "spin is the spin-up RAMP, not a speed setting")
 	_add("scada/3c/info/14l/softstarterdroger1/status", "14l", Kind.COMPONENT_STATUS, "drive",
 		"%s ; default single 'drive' at LineFlow.gd:1457-1459 ; DOC docs/plant/line3c_scada_tags.md:35" % S_COMP,
 		"probable", "the rotary-valve + cleaning-scraper motors on this SCADA unit are absent (no sim component)")
 	_add("scada/3c/info/14l/softstarterdroger1/stroom", "14l", Kind.MACHINE_FIELD, "amps",
-		"%s ; nominal 70.80 A from Line3CDef.gd:71 ; MEASURED src/tests/test_tag_snapshot.gd 2026-07-27" % S_AMPS,
+		"%s ; nominal 70.80 A from Line3CDef.gd:77 ; MEASURED src/tests/test_tag_snapshot.gd 2026-07-27" % S_AMPS,
 		"probable", "MEASURED CAVEAT: reads exactly 0.00 A against a calibrated 70.80 A. mech_dryer is NOT a high-load motor, so nothing overwrites the dead calibrated path here — this row is where the l3c_code -> amps_nominal=0 chain shows through undisguised")
 	_add("scada/3c/info/14l/softstarterdroger1/handauto", "14l", Kind.MACHINE_FIELD, "hand_mode",
 		S_HAND, "probable", "machine scope")
@@ -617,11 +732,11 @@ func _unit_14l_mech_dryer() -> void:
 ## Unit 15 — transport fan, one VFD. 6 rows.
 func _unit_15_blower() -> void:
 	_add("scada/3c/info/15/em/status", "15", Kind.MACHINE_FIELD, "powered",
-		"%s ; %s" % [S_POWERED, S_FIRST_MATCH], "probable", "blower x2 in Line3CDef and x5 in LINE_3A_SEQ alone — first-match instance only")
+		"%s ; %s" % [S_POWERED, S_BY_CODE], "certain", "blower x2 on Line 3C and x5 in LINE_3A_SEQ alone; reached by ITS code L3C.15")
 	_add("scada/3c/info/15/em/hand", "15", Kind.MACHINE_FIELD, "hand_mode",
-		S_HAND, "probable", "first-match instance only")
+		S_HAND, "certain", "")
 	_add("scada/3c/info/15/em/snelheid", "15", Kind.MACHINE_SPEED, "",
-		S_SPEED, "probable", "first-match instance only")
+		S_SPEED, "probable", "spin is the spin-up RAMP, not a speed setting")
 	_add("scada/3c/info/15/fqventilator/status", "15", Kind.COMPONENT_STATUS, "drive",
 		"%s ; blower -> single 'drive' at LineFlow.gd:1427-1428 ; DOC docs/plant/line3c_scada_tags.md:36" % S_COMP,
 		"certain", "1:1 — one sim component, one SCADA motor on this unit")
@@ -665,10 +780,10 @@ func _unit_18_silo() -> void:
 ## Line-level rows (root lines/3c). 4 rows.
 func _line_level() -> void:
 	_add_line("lines/3c/performance/targetspeed", Kind.LINE_CONST, "",
-		"Line3CDef.gd:50 LINE_SPEED_KG_H = 1687.0 (same figure at ProcessModel.gd:24) ; DOC docs/plant/line3c_scada_tags.md:16",
+		"Line3CDef.gd:56 LINE_SPEED_KG_H = 1687.0 (same figure at ProcessModel.gd:24) ; DOC docs/plant/line3c_scada_tags.md:16",
 		"certain", "transcribed from the plant HMI 'Techical overview'")
 	_add_line("lines/3c/data/throughputactual", Kind.LINE_CTX, "tail_thru_kg_h",
-		"LineFlow.gd:1595 thru (EMA-smoothed kg/s, :514) x 3600 at the tail stage; tail = Line3CDef.tail_code() 'Voorraad' -> voorraad_silo (Line3CDef.gd:89,131-132); existing thru*3600 precedent at LineFlow.gd:2227 ; DOC docs/plant/line3c_scada_tags.md:16",
+		"LineFlow.gd:1595 thru (EMA-smoothed kg/s, :514) x 3600 at the tail stage; tail = Line3CDef.tail_code() 'Voorraad' -> voorraad_silo (Line3CDef.gd:95,144-149); existing thru*3600 precedent at LineFlow.gd:2227 ; DOC docs/plant/line3c_scada_tags.md:16",
 		"probable", "caller supplies the tail stage reading")
 	_add_line("lines/3c/data/productioncounter", Kind.LINE_CTX, "gran_mass_kg",
 		"LineFlow.gd:130 gran_mass (kg granulaat this shift, reset by reset_shift_telemetry :326-338)",

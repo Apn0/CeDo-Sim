@@ -49,6 +49,12 @@ class_name Line3CDef
 
 const LINE_SPEED_KG_H : float = 1687.0
 
+## The ONE macro id allowed to place this spine. BuildMode.LINE_3C_SEQ is
+## index-aligned with STAGES below, which is what makes code_for_macro_entry a
+## transcription rather than a guess; src/tests/test_line3c_seq_alignment.gd
+## fails the moment the two drift apart.
+const MACRO_ID : String = "line_3c"
+
 ## Ordered stage list — head (intake) first, pelletized-granulate store last.
 const STAGES : Array = [
 	{"code": "L3C.1",   "name": "Doseer Silo",            "id": "doseersilo",      "amps": 0.0},
@@ -114,6 +120,31 @@ const LINKS : Array = [
 	["Laser", "Degas"],   ["Degas", "Melt"],  ["Melt", "Kop"],   ["Kop", "Heet"],
 	["Heet", "Ontw"],     ["Ontw", "Centr"],  ["Centr", "Weeg"], ["Weeg", "Voorraad"],
 ]
+
+## Number of stages in the chain — the size BuildMode.LINE_3C_SEQ must match.
+static func stage_count() -> int:
+	return STAGES.size()
+
+## THE MACRO-PLACEMENT CONTRACT. The l3c_code carried by entry `idx` of macro
+## `macro_id`, or "" when that macro does not place this spine.
+##
+## This is the ONLY derivation of a plant address from placement metadata, and it
+## is deliberately narrow: only "line_3c" resolves, so no Line 3A/3B/1 machine can
+## ever inherit a 3C code just by sharing a placeable id (3A's frictiescheider M3
+## is NOT L3C.4L — BuildMode.gd:98-106). macro_id/macro_index already round-trip
+## through the save file (BuildMode.gd:1627-1628 write, :2625-2628 persist,
+## :3023-3026 restore), so nothing new has to be persisted for this to survive a
+## reload.
+##
+## CONSTRAINT: inserting a row into LINE_3C_SEQ renumbers macro_index for every
+## later entry and re-maps codes on already-saved worlds — the same append-only
+## rule BuildMode.gd:100-101 states for the other sequences.
+static func code_for_macro_entry(macro_id: String, idx: int) -> String:
+	if macro_id != MACRO_ID:
+		return ""
+	if idx < 0 or idx >= STAGES.size():
+		return ""
+	return String(STAGES[idx]["code"])
 
 ## Downstream stage codes that `code` feeds (1 for a normal run, 2 at a split point).
 static func out_links(code: String) -> Array:

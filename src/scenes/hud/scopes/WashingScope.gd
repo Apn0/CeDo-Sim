@@ -15,8 +15,8 @@ class_name WashingScope
 ##            formatted.  A second frame IMG-20240811-WA0009.jpg (17:59:50) shows
 ##            the same boxes with different numbers, which is why NO photo value
 ##            is baked in here — they are live samples, not constants.
-##  * SPINE   src/sim/Line3CDef.gd:53-90 — machine ids and Dutch names.
-##  * TAGS    src/sim/TagMap.gd (77 doc-cited rows over
+##  * SPINE   src/sim/Line3CDef.gd:59-96 — machine ids and Dutch names.
+##  * TAGS    src/sim/TagMap.gd (112 doc-cited rows over
 ##            src/data/plant/line3c_scada_tags.json).
 ##
 ## WHAT THIS FILE REPLACED (and why)
@@ -44,19 +44,39 @@ class_name WashingScope
 ## UNAVAIL_FIELDS_EXPECTED below: a regression that starts faking an unavailable
 ## field moves the counts and fails.
 ##
-## KNOWN DEFECTS THIS SCREEN MAKES VISIBLE (it does not hide them)
-## ---------------------------------------------------------------
-##  1. LineFlow._find_node_by_id (LineFlow.gd:1483-1487) first-matches a
-##     NON-UNIQUE placeable id.  Ten of the twenty L3C units on this screen share
-##     an id with a mapped sibling (friction_sep x5, transport_screw x5,
-##     mech_dryer x2, blower x2), so only the ten TagMap representatives
-##     (TagMap.gd:149-160) are addressable.  The other ten render "--".
-##  2. amps: ProcessModel.stage_amps contributes 0 A while l3c_code is stamped on
-##     0 of 47 nodes, and MotorOverload then overwrites the same key from a
-##     PLACEHOLDER 90 A default on high-load drives (TagMap.gd:175-179 and the
-##     per-row notes at TagMap.gd:518-520, 561-563, 608-610).  The three bound
-##     Stroom boxes therefore read the sim's real — but UNCALIBRATED — current.
-##     That is a measurement, not a fake; the footer says so on screen.
+## HOW IT ADDRESSES MACHINES (this used to be defect #1)
+## -----------------------------------------------------
+## Every unit is resolved by its OWN plant code — get_machine_info("L3C.9R") —
+## because LineFlow mints each node a per-instance key that IS its l3c_code for a
+## stamped Line 3C stage.  Before that existed, the screen could only ask for a
+## placeable id, LineFlow first-matched it, and ten of the twenty units shared an
+## id with a mapped sibling (friction_sep x5, transport_screw x5, mech_dryer x2,
+## blower x2); those ten rendered "--" and the other ten silently read whichever
+## machine answered first — in a Line 3A world, a LINE 3A machine.  That second
+## half was the more dangerous one: it was wrong without looking wrong.
+##
+## CONSEQUENCE: this screen binds only in a world where the `line_3c` macro has
+## been placed.  In a 3A/3B-only world nothing carries an L3C code and every
+## field renders "--" with that as its recorded reason.  That is the honest
+## answer; falling back to the id would restore exactly the lie above.
+##
+## WHAT STILL DOES NOT BIND (measured, not hidden)
+## -----------------------------------------------
+##  1. Six Stroom boxes — L3C.5L/5R/10L/10R (per-motor "schroef 1"/"schroef 2"
+##     leaves), L3C.12 ("afvoerschroef"), L3C.19 ("fqventilator").  The export
+##     has no MACHINE-level current for these units, only per-motor ones, and
+##     `amps` in the sim is per-machine (TagMap.gd PER-MOTOR block).  Picking one
+##     motor's leaf to carry the machine total is an operator ruling.
+##  2. L3C.15's box: the photo cannot settle whether it belongs to L3C.14 or
+##     L3C.15.  Unchanged by this work and deliberately still unbound.
+##  3. The three header chips and the alarm number: the sim has no line-level
+##     mode annunciator and no wash-line fault registry.
+##
+## The eight bound Stroom boxes now read a CALIBRATED current: each unit's
+## amps_nominal comes from its own Line3CDef row, so the five friction separators
+## draw against 29.92 / 29.92 / 28.03 / 30.88 / 24.68 A instead of a shared
+## placeholder.  On the high-load drives MotorOverload still owns the live number,
+## but it is now seeded from that same per-unit nominal.
 ##
 ## Idiom: self-contained procedural Control, no .tscn, same shape as
 ## ExtruderBluPortScope.gd / LaserFilterScope.gd / KufferathsDryerScope.gd.
@@ -112,8 +132,13 @@ const UNAVAIL : String = "--"
 # src/tests/test_waslijn3c_overzicht.gd.  Drift in either one fails the test.
 # ---------------------------------------------------------------------------
 
-const BOUND_FIELDS_EXPECTED  : int = 13   # 10 unit status + 3 unit Stroom
-const UNAVAIL_FIELDS_EXPECTED: int = 25   # 3 header chips + 1 alarm + 10 status + 11 Stroom
+## MEASURED 2026-07-29 on a real MainWorld boot with the line_3c macro placed,
+## not predicted: 20 unit status (every one of the 20 L3C wash units carries
+## em/status in the export and is now addressable by its own code) + 8 unit
+## Stroom (4L/4R/6/9L/9R/13/14L/14R — the units whose MACHINE-level stroom leaf
+## exists).  Was 13 / 25 while ten units were unreachable.
+const BOUND_FIELDS_EXPECTED  : int = 28   # 20 unit status + 8 unit Stroom
+const UNAVAIL_FIELDS_EXPECTED: int = 10   # 3 header chips + 1 alarm + 6 Stroom
 
 # ---------------------------------------------------------------------------
 # Mimic geometry (mockup pixel space)
@@ -236,24 +261,35 @@ const GROUPS : Array = [
 #   scada/3c/info/<unit>/em/status  ->  get_machine_info()["powered"]
 #   (TagMap.gd:450, 487, 503, 532, 549, 572, 599, 619, 637, 647).
 #
-# stroom: TagMap maps a machine-level current for exactly THREE units.  The
-#   export DOES carry per-motor stroom leaves for units 1/3/5l/11/15/18 too
-#   (e.g. "scada/3c/info/5l/schroef 1/stroom"), but TagMap deliberately leaves
-#   every PER-MOTOR current unmapped — `amps` is per-MACHINE, never per motor
-#   (TagMap.gd:74-91).  Binding a machine total to a motor leaf would invent
-#   resolution the sim does not have, so those boxes stay unavailable.
+# stroom: TagMap maps a MACHINE-level current for eight units.  The export also
+#   carries per-motor stroom leaves for 1/3/5l/5r/10l/10r/11/12/18/19 (e.g.
+#   "scada/3c/info/5l/schroef 1/stroom"), and TagMap deliberately leaves every
+#   PER-MOTOR current unmapped — `amps` is per-MACHINE, never per motor.  Binding
+#   a machine total to one of six motor leaves would invent resolution the sim
+#   does not have, so those boxes stay unavailable.  Unit 16 has no stroom leaf
+#   of any kind in the export (measured) and carries no box on the screen either.
 # ---------------------------------------------------------------------------
 
 const STATUS_TAG_FMT : String = "scada/3c/info/%s/em/status"
 
+## Every entry is verbatim in the operator export and mapped by TagMap.  The five
+## added beyond the original three (4r/9l/9r/13, 14r) INHERIT an already-approved
+## decision rather than making a new one: each is the SAME device class
+## (softstarterfrictiewasser / softstarterdroger1) as an approved sibling, and is
+## that unit's only stroom leaf of that class.
 const STROOM_TAGS : Dictionary = {
-	"4l":  "scada/3c/info/4l/softstarterfrictiewasser/stroom",   # TagMap.gd:518
-	"6":   "scada/3c/info/6/softstartersnijmolen/stroom",        # TagMap.gd:561
-	"14l": "scada/3c/info/14l/softstarterdroger1/stroom",        # TagMap.gd:608
+	"4l":  "scada/3c/info/4l/softstarterfrictiewasser/stroom",
+	"4r":  "scada/3c/info/4r/softstarterfrictiewasser/stroom",
+	"6":   "scada/3c/info/6/softstartersnijmolen/stroom",
+	"9l":  "scada/3c/info/9l/softstarterfrictiewasser/stroom",
+	"9r":  "scada/3c/info/9r/softstarterfrictiewasser/stroom",
+	"13":  "scada/3c/info/13/softstarterfrictiewasser/stroom",
+	"14l": "scada/3c/info/14l/softstarterdroger1/stroom",
+	"14r": "scada/3c/info/14r/softstarterdroger1/stroom",
 }
 
 ## Why a unit with no STROOM_TAGS entry cannot bind its box.
-const NO_STROOM_ROW_REASON : String = "TagMap has no machine-level stroom row for this unit; the export's per-motor stroom leaves are deliberately unmapped (TagMap.gd:74-91: amps is per-MACHINE, never per motor)"
+const NO_STROOM_ROW_REASON : String = "the export carries NO machine-level stroom leaf for this unit — only per-motor ones ('schroef 1'/'schroef 2'/'afvoerschroef'/'fqventilator'), and `amps` in the sim is per-MACHINE, never per motor. Which motor carries the machine total is an operator ruling, so this box stays unbound rather than guessing one. NOT caused by addressing: this unit IS addressable now."
 
 # ---------------------------------------------------------------------------
 # Dutch date parts — the header prints a long Dutch date (mockup :32
@@ -290,6 +326,8 @@ var _audit_lbl     : Label = null
 # Audit rows, rebuilt by refresh()
 var _bound     : Array[Dictionary] = []
 var _unavail   : Array[Dictionary] = []
+## L3C units this world could actually answer for, counted fresh every refresh.
+var _stamped   : int = 0
 
 var _clock_accum : float = 1.0
 
@@ -765,13 +803,37 @@ func refresh() -> void:
 				_refresh_stroom(code, meta, tag_unit, u, resolved)
 
 	if _audit_lbl != null:
-		_audit_lbl.text = "BINDING  %d live via TagMap · %d niet beschikbaar (\"%s\")   |   amps zijn ONGEKALIBREERD zolang l3c_code op 0 van 47 nodes staat (TagMap.gd:175-179)" \
-			% [_bound.size(), _unavail.size(), UNAVAIL]
+		# MEASURED counts only — the stamped figure is what _resolve_tags actually
+		# reached this refresh, never a hard-coded claim about the world.
+		_audit_lbl.text = "BINDING  %d live via TagMap · %d niet beschikbaar (\"%s\")   |   %d van %d L3C-units geadresseerd via hun eigen code (l3c_code)" \
+			% [_bound.size(), _unavail.size(), UNAVAIL, _stamped, _unit_meta_tagged_count()]
 
-## One get_machine_info() + TagMap.resolve_machine() pass per DISTINCT machine
-## id this screen needs, keyed back by tag string.
+## How many units this screen has a TagMap row set for — the denominator of the
+## audit strip's addressed count.
+func _unit_meta_tagged_count() -> int:
+	var n := 0
+	for code in _unit_meta.keys():
+		if String((_unit_meta[code] as Dictionary)["tag_unit"]) != "":
+			n += 1
+	return n
+
+## One get_machine_info() + TagMap.resolve_code() pass per L3C UNIT, keyed back by
+## tag string.
+##
+## THE LOAD-BEARING LINE IS `get_machine_info(code)`.  This loop used to
+## de-duplicate by machine id and resolve once per DISTINCT id, which meant five
+## friction separators shared one reading and ten units had no reading at all.
+## The handle is now the unit's own plant code, which LineFlow mints as that
+## node's per-instance key — so each box reads its own machine or nothing.
+## Deliberately NO id fallback: falling back would put a Line 3A machine behind an
+## L3C caption, which is the defect this replaces.
+##
+## `_stamped` (declared with the rest of the bound state) counts how many of the
+## screen's units the world could actually answer for, so the audit strip prints
+## a measurement instead of a claim.
 func _resolve_tags() -> Dictionary:
 	var out : Dictionary = {}
+	_stamped = 0
 	if _line_flow == null or not is_instance_valid(_line_flow):
 		return out
 	if _tagmap == null:
@@ -781,19 +843,23 @@ func _resolve_tags() -> Dictionary:
 	var ctx : Dictionary = {"estop_fault_id": ""}
 	if _line_flow.has_method("estop_fault_id"):
 		ctx["estop_fault_id"] = String(_line_flow.call("estop_fault_id"))
-	var seen : Dictionary = {}
+	# Per-INSTANCE fault identity when LineFlow offers it (TagMap prefers this
+	# key so an alarm lights one separator, not all five).
+	if _line_flow.has_method("estop_fault_key"):
+		ctx["estop_fault_key"] = String(_line_flow.call("estop_fault_key"))
 	for code in _unit_meta.keys():
 		var meta : Dictionary = _unit_meta[code]
 		if String(meta["tag_unit"]) == "":
 			continue
-		var mid := String(meta["id"])
-		if seen.has(mid):
-			continue
-		seen[mid] = true
-		var info : Dictionary = _line_flow.call("get_machine_info", mid)
+		var info : Dictionary = _line_flow.call("get_machine_info", String(code))
 		if typeof(info) != TYPE_DICTIONARY or info.is_empty():
 			continue
-		for r in _tagmap.resolve_machine(mid, info, ctx):
+		# A world that resolved the handle by id fallback would answer with a
+		# machine carrying no code; that is not this unit and must not be shown.
+		if String(info.get("l3c_code", "")) != String(code):
+			continue
+		_stamped += 1
+		for r in _tagmap.resolve_code(String(code), info, ctx):
 			out[String(r["tag"])] = r
 	return out
 
@@ -802,14 +868,15 @@ func _refresh_status(code: String, meta: Dictionary, tag_unit: String, resolved:
 	var key := "status:%s" % code
 	if tag_unit == "":
 		_mark_unavail(key, code, "mockup :43/:48/:94 (per-drive status square)",
-			"placeable id \"%s\" is NOT unique on the line — LineFlow._find_node_by_id (LineFlow.gd:1483-1487) first-matches it, so only the TagMap representative unit is addressable (TagMap.gd:29-36)" % String(meta["id"]))
+			"TagMap has no row set for %s — its SCADA unit segment is not in TagMap.UNITS, so there is no operator tag to bind" % code)
 		_paint_dot(dot, false, true)
 		return
 	var tag := STATUS_TAG_FMT % tag_unit
 	var row : Dictionary = resolved.get(tag, {})
 	if row.is_empty() or row.get("value", null) == null:
 		_mark_unavail(key, code, "mockup :43/:48/:94 (per-drive status square)",
-			"tag \"%s\" did not resolve — no LineFlow, or get_machine_info(\"%s\") returned nothing" % [tag, String(meta["id"])])
+			"tag \"%s\" did not resolve — no machine in this world carries the code %s (place the line_3c macro; a %s from another line is NOT this unit and is deliberately not substituted)"
+				% [tag, code, String(meta["id"])])
 		_paint_dot(dot, false, true)
 		return
 	var on := bool(row["value"])
@@ -832,7 +899,7 @@ func _refresh_stroom(code: String, meta: Dictionary, tag_unit: String,
 	var cite := String(u.get("amp_note", ""))
 	if tag_unit == "":
 		_mark_unavail(key, code, cite,
-			"placeable id \"%s\" is NOT unique — only the TagMap representative unit is addressable (LineFlow.gd:1483-1487, TagMap.gd:29-36)" % String(meta["id"]))
+			"TagMap has no row set for %s — its SCADA unit segment is not in TagMap.UNITS" % code)
 		_paint_amps(lbl, UNAVAIL)
 		return
 	if code == "L3C.15":
@@ -848,7 +915,8 @@ func _refresh_stroom(code: String, meta: Dictionary, tag_unit: String,
 	var row : Dictionary = resolved.get(tag, {})
 	if row.is_empty() or row.get("value", null) == null:
 		_mark_unavail(key, code, cite,
-			"tag \"%s\" did not resolve — no LineFlow, or get_machine_info(\"%s\") returned nothing" % [tag, String(meta["id"])])
+			"tag \"%s\" did not resolve — no machine in this world carries the code %s (place the line_3c macro; a %s from another line is NOT this unit)"
+				% [tag, code, String(meta["id"])])
 		_paint_amps(lbl, UNAVAIL)
 		return
 	var v := float(row["value"])
