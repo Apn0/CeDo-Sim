@@ -47,6 +47,17 @@ if ! python3 "$PROJ/tools/regression/lint_unused_params.py" "$PROJ/src"; then
 	exit 1
 fi
 
+# HMI PALETTE CENSUS. src/scenes/hud/scopes/HmiScreenBase.gd holds ONE chrome
+# palette for the whole "Waslijn 3C *" screen family; this fails if a screen in
+# that family uses a shared colour the base does not declare, which would make
+# every port of that screen render it wrong. It found #888 (the OFF-checkbox
+# ring, on 13 of the 16 screens) missing on its first correct run.
+echo "== hmi palette census =="
+if ! python3 "$PROJ/tools/hmi/palette_census.py"; then
+	echo "FAIL  : a shared HMI chrome colour is not declared in HmiScreenBase.gd"
+	exit 1
+fi
+
 echo "== running regression =="
 "$GODOT" --headless --path "$PROJ" \
 	--main-scene res://src/tests/regression_world_save.tscn > "$OUT/last_run.log" 2>&1

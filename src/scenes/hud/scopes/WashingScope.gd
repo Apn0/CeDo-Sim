@@ -1,5 +1,14 @@
-extends Control
+extends "res://src/scenes/hud/scopes/HmiScreenBase.gd"
 class_name WashingScope
+
+# NOTE ON THE `extends` ABOVE — it is a resource path, not the class_name.
+# HmiScreenBase does declare `class_name`, but resolving a class_name requires
+# Godot's global class cache (.godot/global_script_class_cache.cfg), which is
+# gitignored and is only rebuilt by an editor/import pass.  The regression
+# harness runs `--headless -s <test>` with no import pass, so on a fresh clone
+# `extends HmiScreenBase` fails with "Could not resolve script" — which is how
+# this line got written the wrong way round once already.  A path extends needs
+# no cache and works identically in the editor and headless.
 
 ## WASLIJN 3C — OVERZICHT.  Port of the operator's real L&P / Siemens SIMATIC
 ## plant-mimic screen onto live sim state.
@@ -84,12 +93,6 @@ class_name WashingScope
 ## called from HmiOverlay.open_subscope().
 
 # ---------------------------------------------------------------------------
-# Signals
-# ---------------------------------------------------------------------------
-
-signal request_close()
-
-# ---------------------------------------------------------------------------
 # NO `line_id` export, deliberately.  This screen IS Line 3C — every caption is
 # an L3C.<n> tag and every binding goes through TagMap's scada/3c namespace — so
 # a switchable line id would be a lie.  HmiOverlay.open_subscope() probes for the
@@ -100,32 +103,31 @@ const Line3CDefScript = preload("res://src/sim/Line3CDef.gd")
 const TagMapScript = preload("res://src/sim/TagMap.gd")
 
 # ---------------------------------------------------------------------------
-# Palette — hex values taken verbatim from the mockup's inline styles
+# Palette
+# ---------------------------------------------------------------------------
+# The shared chrome palette (C_HEADER_BG, C_GREEN, C_NAV_*, C_UNAVAIL, UNAVAIL,
+# ...) now lives ONCE in HmiScreenBase, measured against all 16 exported
+# "Waslijn 3C *" screens by tools/hmi/palette_census.py.  Only what is unique to
+# THIS screen stays here.
+#
+# The mockup cites this file used to carry per constant are not lost: they were
+# :14/:20/:24/:35/:47/:105-118 of Waslijn 3C Overzicht.dc.html, and the same
+# colours carry different line numbers on the other fifteen screens — which is
+# exactly why the base takes its content as arguments and leaves citation to the
+# screen.
 # ---------------------------------------------------------------------------
 
-const C_MIMIC_BG    : Color = Color("#1a1008")   # mockup :14, :40 (dark-brown field)
-const C_HEADER_BG   : Color = Color("#2a2e36")   # mockup :20 L&P bar, :35 alarm strip
-const C_HEADER_EDGE : Color = Color("#3a3f47")   # mockup :20
-const C_TEXT        : Color = Color("#e8ecf2")   # mockup :14
-const C_GREEN       : Color = Color("#35c23a")   # mockup :24 status chip / :43 square
-const C_CHIP_FG     : Color = Color("#111111")   # mockup :24 chip text
-const C_AMBER       : Color = Color("#e6b84a")   # mockup :35 alarm strip text
-const C_BOX_BG      : Color = Color("#ffffff")   # mockup :47 value box
-const C_BOX_FG      : Color = Color("#111111")   # mockup :47
-const C_BOX_EDGE    : Color = Color("#aaaaaa")   # mockup :47
-const C_SELECT_CYAN : Color = Color(0.0, 180.0 / 255.0, 220.0 / 255.0, 0.30)  # mockup :56
-const C_NAV_BG      : Color = Color("#eef1f5")   # mockup :105
-const C_NAV_KEY     : Color = Color("#ffffff")   # mockup :106
-const C_NAV_EDGE    : Color = Color("#9aa0aa")   # mockup :106
-const C_NAV_FG      : Color = Color("#20242a")
-const C_NAV_HOME    : Color = Color("#4a5a7a")   # mockup :107
-const C_NAV_ALARM   : Color = Color("#e8c040")   # mockup :116
-const C_LOGO_A      : Color = Color("#2f6fb0")   # mockup :21 chevron
-const C_LOGO_B      : Color = Color("#3a4a5a")   # mockup :21 chevron
-const C_UNAVAIL     : Color = Color("#8a929c")   # sim-side: an unbound field
+## Row highlight behind the selected unit — mockup :56.  Unique to the Overzicht
+## mimic; no per-unit screen has a selectable row.
+const C_SELECT_CYAN : Color = Color(0.0, 180.0 / 255.0, 220.0 / 255.0, 0.30)
 
-## The literal every unbound field renders.  Never a number, never a blank.
-const UNAVAIL : String = "--"
+## What the amber alarm strip says instead of replaying the mockup's latched
+## "149 L3C.11 Flotatietank Flow Meting: Water Flow te laag" (mockup :36).  The
+## sim has no wash-line fault source at all: src/sim/EremaFaultRegistry.gd
+## carries the EREMA extruder codes only and has no L3C entry.  This is the
+## OPERATOR-FACING half; the machine-readable half is the reason string in
+## refresh(), and the two are asserted to agree by the test.
+const ALARM_UNAVAIL_REASON : String = "geen storingsbron gekoppeld — EremaFaultRegistry dekt alleen de extruder, er is geen waslijn-storingsregister"
 
 # ---------------------------------------------------------------------------
 # Field-count guards.  Two independent copies exist: these, and the literals in
@@ -296,10 +298,6 @@ const NO_STROOM_ROW_REASON : String = "the export carries NO machine-level stroo
 # "zaterdag 10 augustus 2024").  Locale formatting, not plant data.
 # ---------------------------------------------------------------------------
 
-const NL_WEEKDAYS : Array = ["zondag", "maandag", "dinsdag", "woensdag",
-	"donderdag", "vrijdag", "zaterdag"]
-const NL_MONTHS : Array = ["januari", "februari", "maart", "april", "mei", "juni",
-	"juli", "augustus", "september", "oktober", "november", "december"]
 
 # ---------------------------------------------------------------------------
 # Bound state
@@ -315,21 +313,11 @@ var _unit_meta : Dictionary = {}
 # Node caches
 var _mimic         : Control = null
 var _tiles         : Array   = []          # [{node, px, py}]
-var _status_dots   : Dictionary = {}       # code -> ColorRect
-var _amp_labels    : Dictionary = {}       # code -> Label
-var _chip_labels   : Dictionary = {}       # chip label -> Label
-var _alarm_nr_lbl  : Label = null
-var _alarm_txt_lbl : Label = null
-var _clock_lbl     : Label = null
-var _audit_lbl     : Label = null
 
 # Audit rows, rebuilt by refresh()
-var _bound     : Array[Dictionary] = []
-var _unavail   : Array[Dictionary] = []
 ## L3C units this world could actually answer for, counted fresh every refresh.
 var _stamped   : int = 0
 
-var _clock_accum : float = 1.0
 
 # ---------------------------------------------------------------------------
 # Lifecycle
@@ -366,43 +354,19 @@ func bind(scope: Dictionary = {}, line_flow: Node = null) -> void:
 		_tagmap = TagMapScript.new()
 	refresh()
 
-## Audit surface.  {bound:[...], unavailable:[...], bound_count, unavailable_count,
-## total, expected_bound, expected_unavailable}.  Each bound row carries the
-## operator's verbatim tag, TagMap's own source_field expression and the value
-## actually rendered; each unavailable row carries a reason string.
-func field_report() -> Dictionary:
-	return {
-		"bound": _bound.duplicate(true),
-		"unavailable": _unavail.duplicate(true),
-		"bound_count": _bound.size(),
-		"unavailable_count": _unavail.size(),
-		"total": _bound.size() + _unavail.size(),
-		"expected_bound": BOUND_FIELDS_EXPECTED,
-		"expected_unavailable": UNAVAIL_FIELDS_EXPECTED,
-	}
+# ---------------------------------------------------------------------------
+# Audit counts — HmiScreenBase.field_report() reads these through the two
+# overrides below.  They cannot be plain consts: GDScript resolves a const in
+# the BASE's method body to the base's own copy, so a subclass const of the same
+# name would be shadowed and field_report() would silently report 0 / 0 — a
+# vacuous green of exactly the kind this screen exists to prevent.
+# ---------------------------------------------------------------------------
 
-## The text currently painted for a field key ("status:L3C.6" / "stroom:L3C.6" /
-## "chip:Status was" / "alarm").  Lets a test assert what the OPERATOR sees, not
-## just what the audit dict claims.
-func rendered_text(field_key: String) -> String:
-	var parts := field_key.split(":", true, 1)
-	var kind := String(parts[0])
-	var arg := String(parts[1]) if parts.size() > 1 else ""
-	match kind:
-		"status":
-			var dot : ColorRect = _status_dots.get(arg, null)
-			if dot == null:
-				return ""
-			return String(dot.get_meta("render_text", ""))
-		"stroom":
-			var lbl : Label = _amp_labels.get(arg, null)
-			return lbl.text if lbl != null else ""
-		"chip":
-			var clbl : Label = _chip_labels.get(arg, null)
-			return clbl.text if clbl != null else ""
-		"alarm":
-			return _alarm_nr_lbl.text if _alarm_nr_lbl != null else ""
-	return ""
+func _expected_bound() -> int:
+	return BOUND_FIELDS_EXPECTED
+
+func _expected_unavail() -> int:
+	return UNAVAIL_FIELDS_EXPECTED
 
 # ---------------------------------------------------------------------------
 # Spine lookup — ids and Dutch names come from Line3CDef, never re-typed here
@@ -445,121 +409,11 @@ func _build_ui() -> void:
 	# NOTE: the mockup's "SIEMENS / SIMATIC HMI" strip (:16-18) is the physical
 	# panel bezel silkscreen, NOT part of the WinCC page — it is deliberately not
 	# drawn inside the screen.
-	root.add_child(_build_header_bar())
-	root.add_child(_build_alarm_strip())
+	root.add_child(_build_header_bar(HEADER_CHIPS))
+	root.add_child(_build_alarm_strip(ALARM_UNAVAIL_REASON))
 	root.add_child(_build_mimic())
 	root.add_child(_build_audit_strip())
 	root.add_child(_build_nav_bar())
-
-# --- L&P header (mockup :20-33) ---------------------------------------------
-
-func _build_header_bar() -> Control:
-	var pc := PanelContainer.new()
-	pc.custom_minimum_size = Vector2(0, 46)
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = C_HEADER_BG
-	sb.border_color = C_HEADER_EDGE
-	sb.border_width_bottom = 1
-	sb.content_margin_left = 14
-	sb.content_margin_right = 14
-	sb.content_margin_top = 4
-	sb.content_margin_bottom = 4
-	pc.add_theme_stylebox_override("panel", sb)
-
-	var h := HBoxContainer.new()
-	h.add_theme_constant_override("separation", 14)
-	pc.add_child(h)
-
-	# L&P chevron logo (mockup :21) — two nested triangles.
-	var logo := Control.new()
-	logo.custom_minimum_size = Vector2(36, 28)
-	logo.draw.connect(func() -> void:
-		logo.draw_colored_polygon(PackedVector2Array([
-			Vector2(8, 2), Vector2(18, 14), Vector2(8, 26)]), C_LOGO_A)
-		logo.draw_colored_polygon(PackedVector2Array([
-			Vector2(16, 2), Vector2(26, 14), Vector2(16, 26)]), C_LOGO_B)
-	)
-	h.add_child(logo)
-
-	h.add_child(_mklabel("L&P", 14, C_TEXT))   # mockup :22
-
-	# The photo stacks "Status Lijn 3C" over "Status was" as a left-centre pair
-	# with "Status Silo" separately to their right; the mockup lays all three in
-	# one flex row (:23-31).  The photo layout is followed here.
-	var pair := VBoxContainer.new()
-	pair.add_theme_constant_override("separation", 2)
-	pair.add_child(_build_chip(HEADER_CHIPS[0]))
-	pair.add_child(_build_chip(HEADER_CHIPS[1]))
-	h.add_child(pair)
-
-	var silo_wrap := VBoxContainer.new()
-	silo_wrap.alignment = BoxContainer.ALIGNMENT_CENTER
-	silo_wrap.add_child(_build_chip(HEADER_CHIPS[2]))
-	h.add_child(silo_wrap)
-
-	var spacer := Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	h.add_child(spacer)
-
-	_clock_lbl = _mklabel("", 12, C_TEXT)
-	_clock_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_clock_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	h.add_child(_clock_lbl)
-	_update_clock()
-
-	var close_btn := Button.new()
-	close_btn.text = "X"
-	close_btn.custom_minimum_size = Vector2(32, 26)
-	close_btn.pressed.connect(func() -> void: request_close.emit())
-	h.add_child(close_btn)
-	return pc
-
-func _build_chip(chip: Dictionary) -> Control:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
-	row.add_child(_mklabel(String(chip["label"]), 12, C_TEXT))
-	var val := _mklabel(UNAVAIL, 12, C_CHIP_FG)
-	val.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	val.custom_minimum_size = Vector2(64, 18)
-	var box := PanelContainer.new()
-	var sb := StyleBoxFlat.new()
-	# Unbound: neutral grey, NOT the mockup's green — a green chip here would
-	# assert a state the sim does not have.
-	sb.bg_color = C_UNAVAIL
-	sb.content_margin_left = 6
-	sb.content_margin_right = 6
-	box.add_theme_stylebox_override("panel", sb)
-	box.add_child(val)
-	row.add_child(box)
-	_chip_labels[String(chip["label"])] = val
-	return row
-
-# --- alarm strip (mockup :35-37) --------------------------------------------
-
-func _build_alarm_strip() -> Control:
-	var pc := PanelContainer.new()
-	pc.custom_minimum_size = Vector2(0, 22)
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = C_HEADER_BG
-	sb.border_color = C_HEADER_EDGE
-	sb.border_width_bottom = 1
-	sb.content_margin_left = 14
-	sb.content_margin_right = 14
-	pc.add_theme_stylebox_override("panel", sb)
-	var h := HBoxContainer.new()
-	h.add_theme_constant_override("separation", 12)
-	pc.add_child(h)
-	_alarm_nr_lbl = _mklabel(UNAVAIL, 12, C_UNAVAIL)
-	_alarm_nr_lbl.custom_minimum_size = Vector2(34, 0)
-	h.add_child(_alarm_nr_lbl)
-	# No wash-line fault source exists: EremaFaultRegistry.gd covers the EREMA
-	# extruder codes only and has no L3C entry, so the strip states that rather
-	# than replaying the photo's latched "149 L3C.11 ... Water Flow te laag".
-	_alarm_txt_lbl = _mklabel(
-		"geen storingsbron gekoppeld — EremaFaultRegistry dekt alleen de extruder, er is geen waslijn-storingsregister",
-		12, C_UNAVAIL)
-	h.add_child(_alarm_txt_lbl)
-	return pc
 
 # --- mimic pane (mockup :40-102) --------------------------------------------
 
@@ -679,92 +533,6 @@ func _layout_tiles() -> void:
 			continue
 		node.size = node.get_combined_minimum_size()
 		node.position = Vector2(float(t["px"]) * sz.x, float(t["py"]) * sz.y)
-
-# --- honesty audit strip (sim-side, NOT on the plant screen) ------------------
-
-func _build_audit_strip() -> Control:
-	var pc := PanelContainer.new()
-	pc.custom_minimum_size = Vector2(0, 20)
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = C_HEADER_BG
-	sb.content_margin_left = 14
-	sb.content_margin_right = 14
-	pc.add_theme_stylebox_override("panel", sb)
-	_audit_lbl = _mklabel("", 11, C_UNAVAIL)
-	pc.add_child(_audit_lbl)
-	return pc
-
-# --- bottom nav (mockup :105-118) -------------------------------------------
-
-func _build_nav_bar() -> Control:
-	var pc := PanelContainer.new()
-	pc.custom_minimum_size = Vector2(0, 44)
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = C_NAV_BG
-	sb.border_color = Color("#b8bfc9")
-	sb.border_width_top = 1
-	sb.content_margin_left = 6
-	sb.content_margin_right = 6
-	sb.content_margin_top = 4
-	sb.content_margin_bottom = 4
-	pc.add_theme_stylebox_override("panel", sb)
-
-	var h := HBoxContainer.new()
-	h.add_theme_constant_override("separation", 4)
-	pc.add_child(h)
-
-	# Verbatim key labels, left to right, mockup :106-117.  The real bar also
-	# carries FIVE blank/unassigned keys the mockup omits (one after home, four
-	# after "Stop Runtime") — they are not drawn because their count is the only
-	# thing known about them.  The four emoji keys in the mockup are its own
-	# stand-ins; the photo shows report / two-person / wrench / triangle-A
-	# glyphs, so they are drawn as unlabelled keys here rather than as invented
-	# text.  Every key is DISABLED: none of them is wired to anything.
-	var keys : Array = [
-		{"t": "<",             "w": 36.0, "bg": C_NAV_KEY},   # mockup :106 (verbatim glyph is a left triangle)
-		{"t": "",              "w": 40.0, "bg": C_NAV_HOME},  # mockup :107 home
-		{"t": "Clean\nscreen", "w": 60.0, "bg": C_NAV_KEY},   # mockup :108
-		{"t": "Stop\nRuntime", "w": 50.0, "bg": C_NAV_KEY},   # mockup :109
-		{"t": "",              "w": 0.0,  "bg": C_NAV_KEY, "spacer": true},  # mockup :110
-		{"t": "",              "w": 40.0, "bg": C_NAV_KEY},   # mockup :111 report glyph
-		{"t": "",              "w": 40.0, "bg": C_NAV_KEY},   # mockup :112 two-person glyph
-		{"t": "Logout",        "w": 56.0, "bg": C_NAV_KEY},   # mockup :113
-		{"t": "Reset",         "w": 50.0, "bg": C_NAV_KEY},   # mockup :114
-		{"t": "",              "w": 36.0, "bg": C_NAV_KEY},   # mockup :115 wrench glyph
-		{"t": "",              "w": 36.0, "bg": C_NAV_ALARM}, # mockup :116 triangle-A glyph
-		{"t": ">",             "w": 36.0, "bg": C_NAV_KEY},   # mockup :117
-	]
-	for k in keys:
-		if bool(k.get("spacer", false)):
-			var sp := Control.new()
-			sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			h.add_child(sp)
-			continue
-		var b := Button.new()
-		b.text = String(k["t"])
-		b.custom_minimum_size = Vector2(float(k["w"]), 0)
-		b.disabled = true
-		b.tooltip_text = "niet gekoppeld"
-		var bsb := StyleBoxFlat.new()
-		bsb.bg_color = k["bg"]
-		bsb.border_color = C_NAV_EDGE
-		bsb.border_width_left = 1
-		bsb.border_width_top = 1
-		bsb.border_width_right = 1
-		bsb.border_width_bottom = 1
-		b.add_theme_stylebox_override("disabled", bsb)
-		b.add_theme_color_override("font_disabled_color", C_NAV_FG)
-		b.add_theme_font_size_override("font_size", 11)
-		h.add_child(b)
-	return pc
-
-func _mklabel(txt: String, fs: int, col: Color) -> Label:
-	var l := Label.new()
-	l.text = txt
-	l.add_theme_font_size_override("font_size", fs)
-	l.add_theme_color_override("font_color", col)
-	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return l
 
 # ---------------------------------------------------------------------------
 # Refresh — rebuilds the audit AND repaints, from one pass, so the dict and the
@@ -933,53 +701,3 @@ func _refresh_stroom(code: String, meta: Dictionary, tag_unit: String,
 	})
 	_paint_amps(lbl, txt)
 
-func _mark_unavail(field: String, code: String, cite: String, reason: String) -> void:
-	_unavail.append({"field": field, "code": code, "cite": cite, "reason": reason})
-
-func _paint_dot(dot: ColorRect, on: bool, unavailable: bool) -> void:
-	if dot == null or not is_instance_valid(dot):
-		return
-	if unavailable:
-		dot.color = C_UNAVAIL
-		dot.set_meta("render_text", UNAVAIL)
-		dot.tooltip_text = UNAVAIL
-		return
-	# mockup :43 — a run-status square is green #35c23a when the drive runs.
-	dot.color = C_GREEN if on else Color(0.30, 0.30, 0.30, 1.0)
-	dot.set_meta("render_text", "AAN" if on else "UIT")
-	dot.tooltip_text = "AAN" if on else "UIT"
-
-func _paint_amps(lbl: Label, txt: String) -> void:
-	if lbl == null or not is_instance_valid(lbl):
-		return
-	lbl.text = txt
-	lbl.add_theme_color_override("font_color", C_UNAVAIL if txt == UNAVAIL else C_BOX_FG)
-
-## Per-tag formatting, taken off the photo: L3C.4/6/9/13/14 print bare integers,
-## L3C.5/10/15/19 print a Dutch comma decimal.  Unit suffix " A" as on screen.
-func _fmt_amps(v: float, fmt: String) -> String:
-	if fmt == "comma2":
-		return ("%.2f" % v).replace(".", ",") + " A"
-	return "%d A" % int(round(v))
-
-func _update_clock() -> void:
-	if _clock_lbl == null or not is_instance_valid(_clock_lbl):
-		return
-	# mockup :32 — long Dutch date on line 1, HH:MM:SS on line 2.
-	var t : Dictionary = Time.get_datetime_dict_from_system()
-	var wd : int = clampi(int(t.get("weekday", 0)), 0, 6)
-	var mo : int = clampi(int(t.get("month", 1)) - 1, 0, 11)
-	_clock_lbl.text = "%s %d %s %d\n%02d:%02d:%02d" % [
-		String(NL_WEEKDAYS[wd]), int(t.get("day", 1)), String(NL_MONTHS[mo]),
-		int(t.get("year", 0)),
-		int(t.get("hour", 0)), int(t.get("minute", 0)), int(t.get("second", 0)),
-	]
-
-# ---------------------------------------------------------------------------
-# Input
-# ---------------------------------------------------------------------------
-
-func _gui_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and (event as InputEventKey).keycode == KEY_ESCAPE:
-		request_close.emit()
-		accept_event()
