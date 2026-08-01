@@ -19,17 +19,39 @@ extends Node
 ##       ...
 
 const CFG_PATH : String = "user://api_keys.cfg"
+const KEY_PATH : String = "user://api_keys.key"
 
 var _cfg : ConfigFile = ConfigFile.new()
 
+func _get_or_create_encryption_key() -> String:
+	if FileAccess.file_exists(KEY_PATH):
+		var f := FileAccess.open(KEY_PATH, FileAccess.READ)
+		if f != null:
+			var key := f.get_as_text().strip_edges()
+			f.close()
+			if not key.is_empty():
+				return key
+
+	var crypto := Crypto.new()
+	var new_key := crypto.generate_random_bytes(32).hex_encode()
+	var f := FileAccess.open(KEY_PATH, FileAccess.WRITE)
+	if f != null:
+		f.store_string(new_key)
+		f.close()
+	return new_key
+
 func _ready() -> void:
-	if _cfg.load_encrypted_pass(CFG_PATH, OS.get_unique_id()) != OK:
-		if _cfg.load(CFG_PATH) == OK:
+	var secure_key := _get_or_create_encryption_key()
+	if _cfg.load_encrypted_pass(CFG_PATH, secure_key) != OK:
+		if _cfg.load_encrypted_pass(CFG_PATH, OS.get_unique_id()) == OK:
+			# Migrate existing OS ID encrypted config to secure key
+			_cfg.save_encrypted_pass(CFG_PATH, secure_key)
+		elif _cfg.load(CFG_PATH) == OK:
 			# Migrate existing plaintext config to encrypted
-			_cfg.save_encrypted_pass(CFG_PATH, OS.get_unique_id())
+			_cfg.save_encrypted_pass(CFG_PATH, secure_key)
 		else:
 			_bootstrap_from_env()
-			_cfg.load_encrypted_pass(CFG_PATH, OS.get_unique_id())
+			_cfg.load_encrypted_pass(CFG_PATH, secure_key)
 
 ## Operator stores a `.env` on their Desktop with one or more of:
 ##   GOOGLE_API_KEY=…
@@ -62,7 +84,7 @@ func _bootstrap_from_env() -> void:
 		_cfg.set_value("openai", "api_key", openai_key)
 		wrote = true
 	if wrote:
-		_cfg.save_encrypted_pass(CFG_PATH, OS.get_unique_id())
+		_cfg.save_encrypted_pass(CFG_PATH, _get_or_create_encryption_key())
 		print("[ApiKeys] Bootstrapped API keys from Desktop .env into ", CFG_PATH)
 
 ## Resolve "<operator's Desktop>/.env" without hardcoding a machine-specific
