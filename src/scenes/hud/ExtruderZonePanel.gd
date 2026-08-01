@@ -76,46 +76,7 @@ func bind(model: Object) -> void:
 	box.add_child(header)
 	box.add_child(HSeparator.new())
 	for i in zone_count:
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 8)
-		box.add_child(row)
-		# Zone-name label
-		var lbl := Label.new()
-		var nm : String = String(zone_names[i]) if i < zone_names.size() else "zone_%d" % (i + 1)
-		lbl.text = "  %d. %s" % [i + 1, nm.to_upper()]
-		lbl.custom_minimum_size = Vector2(150, 0)
-		lbl.add_theme_font_size_override("font_size", 12)
-		row.add_child(lbl)
-		# Slider
-		var sl := HSlider.new()
-		sl.min_value = TEMP_MIN_C
-		sl.max_value = TEMP_MAX_C
-		sl.step = 1.0
-		sl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		var current : float = TEMP_MIN_C
-		if _model.has_method("get_zone_temp"):
-			current = float(_model.call("get_zone_temp", i))
-		current = clampf(current, TEMP_MIN_C, TEMP_MAX_C)
-		sl.value = current
-		row.add_child(sl)
-		# Numeric readout
-		var read := Label.new()
-		read.text = "%.0f °C" % current
-		read.custom_minimum_size = Vector2(60, 0)
-		read.add_theme_font_size_override("font_size", 12)
-		read.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		row.add_child(read)
-		# Wire the slider change → model + readout. Bind the zone index so the
-		# lambda knows which slider fired.
-		var idx := i
-		sl.value_changed.connect(func(v: float):
-			read.text = "%.0f °C" % v
-			if _model != null and is_instance_valid(_model) \
-					and _model.has_method("set_zone_temp"):
-				_model.call("set_zone_temp", idx, v)
-		)
-		_sliders.append(sl)
-		_readouts.append(read)
+		_add_zone_row(box, i, zone_names)
 	# ── Die-face quality chips (#209b) ──────────────────────────────────────
 	# Three side-by-side status chips showing the live pelletizer die-face
 	# quality state from the model. Only one chip glows at a time; the others
@@ -140,6 +101,48 @@ func bind(model: Object) -> void:
 	die_row.add_child(_die_chip_hot)
 	# Initial paint so the panel doesn't flash all-dark for one frame.
 	_refresh_die_face_chips()
+
+func _add_zone_row(box: VBoxContainer, i: int, zone_names: Array) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	box.add_child(row)
+	# Zone-name label
+	var lbl := Label.new()
+	var nm : String = String(zone_names[i]) if i < zone_names.size() else "zone_%d" % (i + 1)
+	lbl.text = "  %d. %s" % [i + 1, nm.to_upper()]
+	lbl.custom_minimum_size = Vector2(150, 0)
+	lbl.add_theme_font_size_override("font_size", 12)
+	row.add_child(lbl)
+	# Slider
+	var sl := HSlider.new()
+	sl.min_value = TEMP_MIN_C
+	sl.max_value = TEMP_MAX_C
+	sl.step = 1.0
+	sl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var current : float = TEMP_MIN_C
+	if _model.has_method("get_zone_temp"):
+		current = float(_model.call("get_zone_temp", i))
+	current = clampf(current, TEMP_MIN_C, TEMP_MAX_C)
+	sl.value = current
+	row.add_child(sl)
+	# Numeric readout
+	var read := Label.new()
+	read.text = "%.0f °C" % current
+	read.custom_minimum_size = Vector2(60, 0)
+	read.add_theme_font_size_override("font_size", 12)
+	read.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	row.add_child(read)
+	# Wire the slider change → model + readout. Bind the zone index so the
+	# lambda knows which slider fired.
+	var idx := i
+	sl.value_changed.connect(func(v: float):
+		read.text = "%.0f °C" % v
+		if _model != null and is_instance_valid(_model) \
+				and _model.has_method("set_zone_temp"):
+			_model.call("set_zone_temp", idx, v)
+	)
+	_sliders.append(sl)
+	_readouts.append(read)
 
 ## Build a single die-face chip. PanelContainer with a coloured StyleBoxFlat
 ## so we can recolour it live; Label child carries the text. Returned by ref
