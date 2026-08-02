@@ -584,6 +584,26 @@ func _refresh_cards(code: String, info: Dictionary) -> void:
 		var title := String(card.get("title", ""))
 		var dot : ColorRect = _card_dots.get(title, null)
 
+		# A card may name its OWN machine code. Two shapes exist in the export and
+		# conflating them would be wrong in both directions:
+		#
+		#   ONE MACHINE, MANY MOTORS — L3C.3 Bezinkafscheider's six cards
+		#     (Intrekwals, Peddelwalzen, Afvoerwals, Uittrekschroef L/R,
+		#     Afvoerschraper) are six drives of a single unit. The sim has one
+		#     `amps` between them and no per-motor state, so at most one card can
+		#     carry it.
+		#
+		#   MANY MACHINES, ONE SCREEN — L3C.4 Frictiescheider's two cards are
+		#     L3C.4L and L3C.4R, genuinely separate machines with separate
+		#     calibrated nominals. Each binds its OWN node, and treating them as
+		#     one unit's motors would resurrect the shared-id defect on a screen.
+		var card_code := String(card.get("code", ""))
+		var card_info : Dictionary = info
+		if card_code != "" and card_code != code:
+			card_info = {}
+			if _line_flow != null and _line_flow.has_method("get_machine_info"):
+				card_info = _line_flow.call("get_machine_info", card_code) as Dictionary
+
 		# Every card row EXCEPT Stroom is a PLC timing setpoint with no sim
 		# counterpart — Loopbewaking, Aanlooptijd, Uitlooptijd alike.
 		for col in ["gewenst", "reeel"]:
@@ -596,36 +616,44 @@ func _refresh_cards(code: String, info: Dictionary) -> void:
 				_mark_unavail("box:%s" % key, code, cite, R_NO_TIMERS)
 
 		var stroom_key := "%s.reeel.Stroom" % title
-		var is_carrier := title == carrier
+		# A card binds when EITHER it is the screen-level carrier named by
+		# stroom_from_machine, OR it names its own machine code.
+		var is_carrier : bool = (title == carrier) or (card_code != "")
+		var eff_code : String = card_code if card_code != "" else code
+		var eff_unit : String = String(card.get("tag_unit", _spec.get("tag_unit", "")))
+		var eff_motor : String = String(card.get("tag_motor",
+			_spec.get("stroom_tag_motor", "")))
+		# A card with no Stroom row cannot show a current whatever the tags say.
+		if not (card.get("reeel", []) as Array).has("Stroom"):
+			is_carrier = false
 		if not is_carrier:
 			_paint_dot(dot, false, true)
 			_paint_box(stroom_key, UNAVAIL)
 			_mark_unavail("card:%s" % title, code, cite, R_NO_PER_MOTOR)
-			_mark_unavail("stroom:%s" % title, code, cite, R_NO_PER_MOTOR)
+			if (card.get("reeel", []) as Array).has("Stroom"):
+				_mark_unavail("stroom:%s" % title, code, cite, R_NO_PER_MOTOR)
 			continue
 
-		if info.is_empty():
+		if card_info.is_empty():
 			_paint_dot(dot, false, true)
 			_paint_box(stroom_key, UNAVAIL)
-			_mark_unavail("card:%s" % title, code, cite, _no_machine_reason(code))
-			_mark_unavail("stroom:%s" % title, code, cite, _no_machine_reason(code))
+			_mark_unavail("card:%s" % title, eff_code, cite, _no_machine_reason(eff_code))
+			_mark_unavail("stroom:%s" % title, eff_code, cite, _no_machine_reason(eff_code))
 			continue
 
-		var powered := bool(info.get("powered", false))
+		var powered := bool(card_info.get("powered", false))
 		_paint_dot(dot, powered, false)
-		var amps := float(info.get("amps", 0.0))
+		var amps := float(card_info.get("amps", 0.0))
 		var txt := _fmt_amps(amps, String(_spec.get("amps_fmt", "int")))
 		_paint_box(stroom_key, txt)
 		_bound.append({
-			"field": "card:%s" % title, "code": code, "cite": cite,
-			"tag": "scada/3c/info/%s/%s/status" % [String(_spec.get("tag_unit", "")),
-				String(_spec.get("stroom_tag_motor", ""))],
+			"field": "card:%s" % title, "code": eff_code, "cite": cite,
+			"tag": "scada/3c/info/%s/%s/status" % [eff_unit, eff_motor],
 			"source_field": "powered", "rendered": String(dot.get_meta("render_text", "")),
 		})
 		_bound.append({
-			"field": "stroom:%s" % title, "code": code, "cite": cite,
-			"tag": "scada/3c/info/%s/%s/stroom" % [String(_spec.get("tag_unit", "")),
-				String(_spec.get("stroom_tag_motor", ""))],
+			"field": "stroom:%s" % title, "code": eff_code, "cite": cite,
+			"tag": "scada/3c/info/%s/%s/stroom" % [eff_unit, eff_motor],
 			"source_field": "amps", "rendered": txt,
 		})
 

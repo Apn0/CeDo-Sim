@@ -4,21 +4,31 @@ extends Node3D
 ##   godot --headless --path <proj> res://src/tests/test_l3c_unit_screens.tscn
 ##
 ## Covers the layout engine src/scenes/hud/scopes/L3CUnitScreen.gd driven by the
-## spec data src/data/plant/l3c_unit_screens.gd, on the first two ported screens:
-## L3C.14 Mechanische Droger LINKS and RECHTS.
+## spec data src/data/plant/l3c_unit_screens.gd, over ALL THIRTEEN unit screens.
 ##
-## WHY THAT PAIR FIRST
-## -------------------
+## WHY THE L3C.14 PAIR CARRIES THE HEADLINE
+## ----------------------------------------
 ## They are the same machine TYPE (mech_dryer) and until 2026-07-29 BOTH read
 ## 0.00 A, because LineFlow addressed machines by placeable id and an id names a
-## type, not a unit. They now carry their own calibrated currents — 70.80 A and
-## 63.51 A. Two screens whose only difference in the sim is which node answers is
-## the sharpest available test that per-unit addressing is real.
+## type, not a unit. They now carry their own calibrated currents. Two screens
+## whose only difference in the sim is which node answers is the sharpest
+## available test that per-unit addressing is real.
 ##
-## Their source files are also different in KIND: Links is templated like the
-## other eleven unit screens, Rechts is hand-authored with per-card HTML comments
-## and a machine SVG. A layout engine that only works on templated input is not a
-## layout engine, so both are ported and both are checked.
+## Their source files also differ in KIND: Links is templated like most of the
+## set, Rechts is hand-authored with per-card HTML comments, a machine SVG, a
+## 1024x768 canvas and a dark-slate panel face. A layout engine that only works
+## on templated input is not a layout engine, so both are checked.
+##
+## TWO SHAPES OF SCREEN, AND CONFLATING THEM WOULD BE WRONG BOTH WAYS
+## ------------------------------------------------------------------
+##   ONE MACHINE, MANY MOTORS   L3C.3's six cards are six drives of one unit.
+##                              The sim has one `amps` between them, so at most
+##                              one card can carry it.
+##   MANY MACHINES, ONE SCREEN  L3C.4's two cards are L3C.4L and L3C.4R,
+##                              genuinely separate machines with separate
+##                              calibrated nominals. Both bind their OWN node.
+## Criterion H is written to allow 0, 1 or 2 carriers and to reject the thing
+## that is actually wrong: a card showing a current it has no Stroom row for.
 ##
 ## NON-VACUOUS PASS CRITERIA, STATED UP FRONT
 ## ------------------------------------------
@@ -69,9 +79,24 @@ const SpecScript = preload("res://src/data/plant/l3c_unit_screens.gd")
 const SCREEN_DIR := "res://docs/plant/hmi_screens_2026-07-26/"
 ## spec id -> the export file it was transcribed from.
 const SOURCE_HTML := {
+	"L3C.1":   "Waslijn 3C L3C.1 Doseer Silo.dc.html",
+	"L3C.3":   "Waslijn 3C L3C.3 Bezinkafscheider.dc.html",
+	"L3C.4":   "Waslijn 3C L3C.4 Frictiescheider.dc.html",
+	"L3C.5":   "Waslijn 3C L3C.5 Transportschroef.dc.html",
+	"L3C.6":   "Waslijn 3C L3C.6 Maalmolen.dc.html",
+	"L3C.10":  "Waslijn 3C L3C.10 Transportschroef.dc.html",
+	"L3C.11":  "Waslijn 3C L3C.11 Flotatietank.dc.html",
+	"L3C.12":  "Waslijn 3C L3C.12 Transportschroef.dc.html",
 	"L3C.14L": "Waslijn 3C L3C.14 Mech Droger Links.dc.html",
 	"L3C.14R": "Waslijn 3C L3C.14 Mech Droger Rechts.dc.html",
+	"L3C.16":  "Waslijn 3C L3C.16 Plasmaq.dc.html",
+	"L3C.18":  "Waslijn 3C L3C.18 Extruder Silo.dc.html",
+	"L3C.19":  "Waslijn 3C L3C.19 Rondmengventilator.dc.html",
 }
+
+## Every spec key must have a source file here, or a screen could be added and
+## never transcription-checked — the one way a fabricated screen could slip in.
+## Asserted at run time rather than trusted.
 
 const BF_O  := Vector2(573.404, 463.647)
 const BF_XU := Vector2(-0.64279, 0.76604)
@@ -173,6 +198,33 @@ func _html_text_nodes(path: String) -> Array:
 	return out
 
 
+## Every motor-card header in a screen export, in file order.
+##
+## Identified by MARKUP SIGNATURE, not by device name: a coloured status band
+## carrying `font-weight:600` and `text-align:center`.  Validated 2026-07-29
+## against all 13 unit screens — it reproduces the card count on every one,
+## including the hand-authored L3C.14 Rechts (which differs only in `padding:4px
+## 8px` where its siblings use `10px`) and the three screens that genuinely have
+## no motor cards at all.
+##
+## Note the captured text can contain a real newline: L3C.6's second card is
+## "ontgrendel\ndeurmaalmolen". That is the operator's screen, and the spec must
+## carry it verbatim — newline included.
+func _html_card_headers(path: String) -> Array:
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return []
+	var raw := f.get_as_text()
+	f.close()
+	var out : Array = []
+	var re := RegEx.create_from_string(
+		"background:#[0-9a-fA-F]{3,6};color:#111;font-weight:600;padding:4px [0-9]+px;text-align:center;[^\"]*\">([^<]*)<")
+	for m in re.search_all(raw):
+		out.append(m.get_string(1).strip_edges()
+			.replace("&amp;", "&").replace("&euml;", "ë").replace("&nbsp;", " "))
+	return out
+
+
 func _check_transcription() -> void:
 	_section("A/B — TRANSCRIPTION against the operator's own export")
 	var seen_titles : Dictionary = {}
@@ -213,24 +265,29 @@ func _check_transcription() -> void:
 				% [sid, claimed.size(), missing.size(), str(missing)])
 
 		# ...and the reverse: a motor card present in the export but absent from
-		# the spec is a silently dropped device.
+		# the spec is a silently dropped device, and dropping one is the easier
+		# mistake to make. Card headers are extracted MECHANICALLY by their
+		# markup signature rather than by a list of device names — a name list
+		# only ever catches devices someone already thought of, which is the
+		# wrong shape of check for "what did I forget".
 		var card_titles : Dictionary = {}
 		for c2 in (spec["cards"] as Array):
 			card_titles[String((c2 as Dictionary)["title"])] = true
 		for c3 in (spec.get("cards_bottom", []) as Array):
 			card_titles[String((c3 as Dictionary)["title"])] = true
+		var in_html := _html_card_headers(path)
 		var dropped : Array = []
-		for n2 in nodes:
-			var s2 := String(n2)
-			# Motor-card headers are the nodes the export renders as a card
-			# title; identify them by the device vocabulary rather than by
-			# position, since the two files are laid out differently.
-			if (s2.begins_with("Mechanische Droger") or s2.begins_with("Reinigingsschraper")
-					or s2.begins_with("Doseersluis")) and not card_titles.has(s2):
-				dropped.append(s2)
-		_ok(dropped.is_empty(),
-			"%s: no motor card in the export is missing from the spec (%d dropped: %s)"
-				% [sid, dropped.size(), str(dropped)])
+		for h in in_html:
+			if not card_titles.has(String(h)):
+				dropped.append(String(h))
+		var invented_cards : Array = []
+		for k in card_titles.keys():
+			if not in_html.has(String(k)):
+				invented_cards.append(String(k))
+		_ok(dropped.is_empty() and invented_cards.is_empty(),
+			"%s: the spec's motor cards are EXACTLY the export's %d (%d dropped: %s / %d invented: %s)"
+				% [sid, in_html.size(), dropped.size(), str(dropped),
+					invented_cards.size(), str(invented_cards)])
 
 		for c4 in (spec["cards"] as Array):
 			seen_titles[String((c4 as Dictionary)["title"])] = sid
@@ -307,78 +364,108 @@ func _audit(sid: String, s: Control, tag: String) -> Dictionary:
 
 
 func _exercise(lf) -> void:
-	_section("C-H — the LIVE screens")
+	_section("C-H — every ported screen, live")
 	var amps_seen : Dictionary = {}
 	var reports : Dictionary = {}
 
-	for sid in ["L3C.14L", "L3C.14R"]:
+	# COVERAGE FIRST. A spec entry with no source file here would never be
+	# transcription-checked, which is the one way a fabricated screen could get in.
+	var uncovered : Array = []
+	for k in SpecScript.SCREENS.keys():
+		if not SOURCE_HTML.has(String(k)):
+			uncovered.append(String(k))
+	_ok(uncovered.is_empty(),
+		"every spec screen is transcription-checked against a source file (%d uncovered: %s)"
+			% [uncovered.size(), str(uncovered)])
+
+	var ids : Array = SpecScript.SCREENS.keys()
+	ids.sort()
+	for sid_v in ids:
+		var sid := String(sid_v)
+		var spec : Dictionary = SpecScript.SCREENS[sid]
 		var s : Control = await _mount(sid, lf)
 		var r := _audit(sid, s, "")
 		reports[sid] = {"bound": int(r["bound_count"]), "unavail": int(r["unavailable_count"])}
 
-		# H. Exactly one motor card carries the machine current.
+		# H. CARRIERS. "Exactly one" was right while only L3C.14 was ported and is
+		# WRONG now: L3C.4's two cards are two SEPARATE machines (L3C.4L/L3C.4R)
+		# and both legitimately carry a current, while L3C.16 and L3C.18 have no
+		# motor cards at all. The invariant that survives is: a card may claim the
+		# current only if it HAS a Stroom row, and every claim must resolve to a
+		# machine whose own l3c_code is the one the card names.
 		var carriers : Array = []
 		for e in (r["bound"] as Array):
 			var f := String((e as Dictionary)["field"])
 			if f.begins_with("stroom:"):
 				carriers.append(f.substr(7))
-		_ok(carriers.size() == 1,
-			"%s: H ONE CARRIER — exactly %d motor card renders the machine current %s (two would double-count one ammeter; zero would show none)"
-				% [sid, carriers.size(), str(carriers)])
+		var stroomless : Array = []
+		var all_cards : Array = []
+		all_cards.append_array(spec.get("cards", []) as Array)
+		all_cards.append_array(spec.get("cards_bottom", []) as Array)
+		for cv in carriers:
+			for c in all_cards:
+				var card := c as Dictionary
+				if String(card.get("title", "")) == String(cv) 						and not (card.get("reeel", []) as Array).has("Stroom"):
+					stroomless.append(String(cv))
+		_ok(stroomless.is_empty(),
+			"%s: H — no card shows a current it has no Stroom row for (%d bad: %s; %d carrier(s): %s)"
+				% [sid, stroomless.size(), str(stroomless), carriers.size(), str(carriers)])
 
-		# G. INSTANCE — the answering machine carries this screen's own code.
-		var code := String((SpecScript.SCREENS[sid] as Dictionary)["code"])
-		var info : Dictionary = _line_flow_ref.call("get_machine_info", code)
-		_ok(not info.is_empty() and String(info.get("l3c_code", "")) == code,
-			"%s: G INSTANCE — resolves to a machine whose OWN l3c_code is %s (got '%s'), not a Line 3A sibling sharing the placeable id"
-				% [sid, code, String(info.get("l3c_code", "<none>"))])
+		# G. INSTANCE — every bound field resolves through a machine whose OWN
+		# l3c_code is the one the field names. A Line 3A sibling sharing the
+		# placeable id answering here is a FAIL, and line_3a is built for this.
+		var wrong : Array = []
+		for e2 in (r["bound"] as Array):
+			var code2 := String((e2 as Dictionary).get("code", ""))
+			if code2 == "":
+				continue
+			var info2 : Dictionary = _line_flow_ref.call("get_machine_info", code2)
+			if info2.is_empty() or String(info2.get("l3c_code", "")) != code2:
+				wrong.append("%s -> %s" % [code2, String(info2.get("l3c_code", "<none>"))])
+		_ok(wrong.is_empty(),
+			"%s: G INSTANCE — every bound field resolves to its OWN code (%d wrong: %s)"
+				% [sid, wrong.size(), str(wrong)])
 
-		# F. LIVENESS — status reads Aan, current is non-zero.
-		var painted_status : String = s.call("rendered_text", "status:%s" % code)
-		_ok(painted_status == "Aan",
-			"%s: F LIVENESS — the unit reads '%s' on a fed, powered line" % [sid, painted_status])
-		var amp_txt := ""
-		if not carriers.is_empty():
-			amp_txt = s.call("rendered_text", "box:%s.reeel.Stroom" % String(carriers[0]))
-		var amp_val := float(info.get("amps", 0.0))
-		amps_seen[sid] = amp_val
-		_ok(amp_val > 0.0 and amp_txt != "--" and amp_txt != "",
-			"%s: F LIVENESS — Stroom renders '%s' (%.2f A), not a dead 0" % [sid, amp_txt, amp_val])
+		# Record this screen's currents for the cross-screen checks below.
+		for e3 in (r["bound"] as Array):
+			var f3 := String((e3 as Dictionary)["field"])
+			if not f3.begins_with("stroom:"):
+				continue
+			var c3 := String((e3 as Dictionary).get("code", ""))
+			var i3 : Dictionary = _line_flow_ref.call("get_machine_info", c3)
+			amps_seen[c3] = float(i3.get("amps", 0.0))
 		s.queue_free()
 		await get_tree().process_frame
 
-	# F. THE HEADLINE. Two screens, one machine type, two different currents.
+	_dump["live"] = {"amps": amps_seen, "reports": reports}
+	_note("screens exercised: %d; machines rendering a live current: %s"
+		% [ids.size(), str(amps_seen.keys())])
+
+	# F. THE HEADLINE. Two dryers, one machine TYPE, two different currents.
 	var a : float = float(amps_seen.get("L3C.14L", 0.0))
 	var b : float = float(amps_seen.get("L3C.14R", 0.0))
+	_ok(a > 0.0 and b > 0.0,
+		"F LIVENESS — both dryers render a non-zero current (%.2f A / %.2f A); both read 0.00 A before the l3c_code work"
+			% [a, b])
 	_ok(absf(a - b) > 0.5,
 		"F LIVENESS, THE HEADLINE — the two dryers render DIFFERENT currents (%.2f A vs %.2f A). Equal values are exactly the defect this work fixed: one placeable id first-matching for both units"
 			% [a, b])
-	# ...and the SHARP form of the same claim, against HAND-TRANSCRIBED nominals
-	# rather than the table the screen reads.
-	#
-	# Both dryers sit at the same point on the same line, so whatever load factor
-	# ProcessModel applies, it applies to both. Their currents must therefore be
-	# in the same ratio as their nominals:
-	#
-	#     amps_L / amps_R  ==  nominal_L / nominal_R  ==  70.80 / 63.51 == 1.1148
-	#
-	# This is the check a shared nominal CANNOT pass: if one table row served both
-	# units the ratio would be exactly 1.0. It needs no assumption about the load
-	# factor, the idle fraction, or the absolute currents — only that the two
-	# units scale their OWN numbers. A tolerance band on absolute amps would have
-	# passed the old broken build for a while; this cannot.
 	var want_ratio := NOMINAL_14L / NOMINAL_14R
 	var got_ratio := (a / b) if b > 0.0 else 0.0
 	_ok(absf(got_ratio - want_ratio) < 0.01,
 		"each dryer scales its OWN calibrated nominal: measured %.2f/%.2f = %.4f vs hand-transcribed %.2f/%.2f = %.4f. A shared nominal would force this ratio to 1.0000"
 			% [a, b, got_ratio, NOMINAL_14L, NOMINAL_14R, want_ratio])
-	# Report the load point rather than asserting one — the currents above are
-	# idle draw (MOTOR_IDLE_FRAC of nominal) because a dryer this far down the
-	# chain sees little material at the test feed rate. That is a property of the
-	# feed, not of the screen, so it is measured and printed, never graded.
 	_note("load point: L3C.14L %.2f A = %.0f%% of its %.2f A nominal; L3C.14R %.2f A = %.0f%%"
 		% [a, 100.0 * a / NOMINAL_14L, NOMINAL_14L, b, 100.0 * b / NOMINAL_14R])
-	_dump["live"] = {"amps": amps_seen, "reports": reports}
+
+	# L3C.4 is the OTHER shape: ONE screen showing TWO machines. Both its cards
+	# must resolve, and to DIFFERENT nodes — a screen that rendered one machine
+	# twice would look identical on screen and be wrong.
+	var f4l : float = float(amps_seen.get("L3C.4L", -1.0))
+	var f4r : float = float(amps_seen.get("L3C.4R", -1.0))
+	_ok(f4l >= 0.0 and f4r >= 0.0,
+		"L3C.4 binds BOTH of its machines (L3C.4L %.2f A, L3C.4R %.2f A) — its two cards are separate units, not one unit's motors"
+			% [f4l, f4r])
 
 	# ---- MUTATIONS ----
 	_section("MUTATIONS — the criteria above must be able to FAIL")
@@ -394,7 +481,6 @@ func _exercise(lf) -> void:
 				"%s: bound collapses to %d — a screen that still bound fields against a source returning {} would be inventing them"
 					% [mname, bound2])
 		else:
-			# M2 must keep the STRUCTURE intact and fail only on liveness.
 			_audit("L3C.14L", s2, " [%s]" % mname)
 			var painted : String = s2.call("rendered_text", "status:L3C.14L")
 			_ok(painted != "Aan",

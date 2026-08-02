@@ -67,11 +67,33 @@ const HOME_TILES_WASHING := [
 	[
 		{"label": "Waslijn",            "scope_id": "washing",             "icon": "W"},
 		{"label": "Kufferath drogers",  "scope_id": "kufferaths_dryer",    "icon": "K"},
-		# Per-unit detail screens. Labels are the operator's own screen titles,
-		# shortened only to fit the tile — the FULL verbatim title is the panel
-		# heading on the screen itself (l3c_unit_screens.gd), never reworded.
+		null,
+		null,
+		null,
+	],
+	# Per-unit detail screens, in PLANT ORDER down the line rather than
+	# alphabetical — an operator walks the line, they do not read an index.
+	# Tile labels are shortened only to fit; the FULL verbatim title is the panel
+	# heading on the screen itself (l3c_unit_screens.gd) and is never reworded.
+	[
+		{"label": "L3C.1 Doseer Silo",  "scope_id": "l3c_unit:L3C.1",      "icon": "1"},
+		{"label": "L3C.3 Bezinkafsch.", "scope_id": "l3c_unit:L3C.3",      "icon": "3"},
+		{"label": "L3C.4 Frictiesch.",  "scope_id": "l3c_unit:L3C.4",      "icon": "4"},
+		{"label": "L3C.5 Transportsch.","scope_id": "l3c_unit:L3C.5",      "icon": "5"},
+		{"label": "L3C.6 Maalmolen",    "scope_id": "l3c_unit:L3C.6",      "icon": "6"},
+	],
+	[
+		{"label": "L3C.10 Transportsch.","scope_id": "l3c_unit:L3C.10",    "icon": "10"},
+		{"label": "L3C.11 Flotatietank","scope_id": "l3c_unit:L3C.11",     "icon": "11"},
+		{"label": "L3C.12 Transportsch.","scope_id": "l3c_unit:L3C.12",    "icon": "12"},
 		{"label": "L3C.14 Droger L",    "scope_id": "l3c_unit:L3C.14L",    "icon": "14L"},
 		{"label": "L3C.14 Droger R",    "scope_id": "l3c_unit:L3C.14R",    "icon": "14R"},
+	],
+	[
+		{"label": "L3C.16 Plasmaq",     "scope_id": "l3c_unit:L3C.16",     "icon": "16"},
+		{"label": "L3C.18 Extr. Silo",  "scope_id": "l3c_unit:L3C.18",     "icon": "18"},
+		{"label": "L3C.19 Rondmengv.",  "scope_id": "l3c_unit:L3C.19",     "icon": "19"},
+		null,
 		null,
 	],
 ]
@@ -360,8 +382,19 @@ const _SUBSCOPE_SCRIPTS := {
 	# in src/data/plant/l3c_unit_screens.gd; the scope_id after "l3c_unit:" is the
 	# spec key, so adding a screen is adding a spec entry and a menu row — not a
 	# new script. open_subscope() calls set_screen() with that suffix below.
-	"l3c_unit:L3C.14L":    "res://src/scenes/hud/scopes/L3CUnitScreen.gd",
-	"l3c_unit:L3C.14R":    "res://src/scenes/hud/scopes/L3CUnitScreen.gd",
+	"l3c_unit:L3C.1":     "res://src/scenes/hud/scopes/L3CUnitScreen.gd",
+	"l3c_unit:L3C.3":     "res://src/scenes/hud/scopes/L3CUnitScreen.gd",
+	"l3c_unit:L3C.4":     "res://src/scenes/hud/scopes/L3CUnitScreen.gd",
+	"l3c_unit:L3C.5":     "res://src/scenes/hud/scopes/L3CUnitScreen.gd",
+	"l3c_unit:L3C.6":     "res://src/scenes/hud/scopes/L3CUnitScreen.gd",
+	"l3c_unit:L3C.10":    "res://src/scenes/hud/scopes/L3CUnitScreen.gd",
+	"l3c_unit:L3C.11":    "res://src/scenes/hud/scopes/L3CUnitScreen.gd",
+	"l3c_unit:L3C.12":    "res://src/scenes/hud/scopes/L3CUnitScreen.gd",
+	"l3c_unit:L3C.14L":   "res://src/scenes/hud/scopes/L3CUnitScreen.gd",
+	"l3c_unit:L3C.14R":   "res://src/scenes/hud/scopes/L3CUnitScreen.gd",
+	"l3c_unit:L3C.16":    "res://src/scenes/hud/scopes/L3CUnitScreen.gd",
+	"l3c_unit:L3C.18":    "res://src/scenes/hud/scopes/L3CUnitScreen.gd",
+	"l3c_unit:L3C.19":    "res://src/scenes/hud/scopes/L3CUnitScreen.gd",
 	# The remaining BluPort module tiles (FIX 3) don't have a finished scope
 	# file yet — open_subscope() bails cleanly (returns false) so the operator
 	# stays on HOOFDMENU. The TILE labels are documented-correct (188_CeDo1);

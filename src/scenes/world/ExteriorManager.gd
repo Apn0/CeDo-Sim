@@ -190,7 +190,7 @@ func _spawn_road_extensions(anchor: Vector3, ground_y: float) -> void:
 # ── Perimeter fence + south entry gate ──────────────────────────────────────
 func _spawn_perimeter_fence(anchor: Vector3, ground_y: float) -> void:
 	var ga := Vector3(anchor.x, ground_y, anchor.z)
-	var by : float = _world_yaw()
+	var _by : float = _world_yaw()
 	var perimeters : Array = [
 		{"name": "PerimeterFence_North",     "pts": FENCE_NORTH},
 		{"name": "PerimeterFence_East",      "pts": FENCE_EAST},
