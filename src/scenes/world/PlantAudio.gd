@@ -24,6 +24,9 @@ const ENABLED : bool = true
 
 const LAYOUT_PATH : String = "res://assets/audio/audio_layout.json"
 const CLIPS_DIR   : String = "res://assets/audio/clips/"
+# Same mesh WorldLayout._rd_to_scene_shift() measures its shift from — keeping
+# audio and markers pinned to one source. See _scene_anchor().
+const BUILDING_TILE_OBJ : String = "res://assets/models/CeDo_building.obj"
 
 # Audio-bus routing. 0..1 of the cedo "Machines" bus volume curve so future
 # settings-menu sliders can attenuate everything in one place.
@@ -79,10 +82,9 @@ func _load_and_spawn() -> void:
 		# Tell Godot to loop the WAV. WAVs default to no loop; we want continuous
 		# ambient drone for plant audio, so force it on at the stream level.
 		if stream is AudioStreamWAV:
+			_crossfade_for_loop(stream as AudioStreamWAV)
 			(stream as AudioStreamWAV).loop_mode = AudioStreamWAV.LOOP_FORWARD
-			# Without explicit end points the loop covers the whole sample, which
-			# is exactly what the placer's segment exports were trimmed for.
-			(stream as AudioStreamWAV).loop_end = 0   # 0 = end of stream
+			(stream as AudioStreamWAV).loop_end = 0   # 0 = end of (now-truncated) stream
 		var pos : Vector3 = _clip_local_position(c, anchor)
 		var player := AudioStreamPlayer3D.new()
 		player.name = "PA_" + clip_name
@@ -108,12 +110,26 @@ func _load_and_spawn() -> void:
 ## Build the RD-anchor shift the same way WorldLayout does — so audio markers
 ## land in the SAME local frame as vehicles / line-starts / yards. Returns the
 ## RD-to-local SHIFT (subtracted from each clip's RD coord to produce local).
+## The anchor MUST come from the same source WorldLayout pins every other marker
+## to — the building tile mesh AABB centre — not from the saved satellite centre.
+## The two agree today (mesh 184112.50/-329382.27 vs saved satellite
+## 184112.5/329382.25, 0.02 m apart), but the satellite centre lives in a
+## user-writable save file: re-save the layout from a differently-centred
+## screenshot and every clip silently drifts while vehicles/line-starts stay put.
+## Measure it, don't inherit it. Satellite centre remains the fallback.
 func _scene_anchor() -> Vector3:
+	var mesh = ResourceLoader.load(BUILDING_TILE_OBJ)
+	if mesh is Mesh:
+		# Mesh vertices carry z = −RD north, so negate to get the RD north anchor
+		# that _clip_local_position expects.
+		var c : Vector3 = (mesh as Mesh).get_aabb().get_center()
+		return Vector3(c.x, 0.0, -c.z)
 	var wl := get_node_or_null("/root/WorldLayout")
 	if wl == null:
 		return Vector3.ZERO
 	var sat = wl.get("satellite_center_rd")
 	if sat is Vector2:
+		push_warning("[PlantAudio] %s unavailable — falling back to the saved satellite centre" % BUILDING_TILE_OBJ)
 		return Vector3(float(sat.x), 0.0, float(sat.y))
 	return Vector3.ZERO
 
@@ -134,6 +150,41 @@ func _clip_local_position(clip: Dictionary, anchor: Vector3) -> Vector3:
 	# anchor.z − rd_y so clips co-locate with the line-starts/yards. (Proven: nearest
 	# audible clip 85.5 m → 3.7 m; 0/43 → 30/43 within 30 m of where the operator stands.)
 	return Vector3(rd_x - anchor.x, floor_y, anchor.z - rd_y)
+
+## Overlap-add crossfade: blend the tail of the WAV into its own head so the
+## loop boundary is continuous. The tail is consumed (truncated) — ~10 ms lost,
+## inaudible on multi-second plant-noise clips.
+##
+## Before:  [...TAIL_last] → [HEAD_first...]   ← sample jump = click
+## After:   [...BODY_last] → [XFADE_first...]  ← BODY_last and XFADE_first are
+##          consecutive in the ORIGINAL pcm, so the transition is smooth.
+func _crossfade_for_loop(wav: AudioStreamWAV) -> void:
+	if wav.format != AudioStreamWAV.FORMAT_16_BITS:
+		push_warning("[PlantAudio] clip is not 16-bit PCM (format=%d) — skipping crossfade. "
+			+ "If IMA_ADPCM, set compress/mode=0 in the .import file and reimport." % wav.format)
+		return
+	const FADE_SEC := 0.010   # 10 ms — plenty for broadband machine noise
+	var channels := 2 if wav.stereo else 1
+	var bpf := 2 * channels   # 16-bit = 2 bytes per sample per channel
+	@warning_ignore("integer_division")
+	var total_frames := wav.data.size() / bpf
+	var fade_frames := mini(int(wav.mix_rate * FADE_SEC), total_frames / 3)
+	if fade_frames < 2:
+		return
+	var src := wav.data                            # COW — stays immutable
+	var new_count := total_frames - fade_frames    # truncate the tail
+	var out := src.slice(0, new_count * bpf)       # copy head + body
+	var tail_off := (total_frames - fade_frames) * bpf
+	for i in fade_frames:
+		var alpha := float(i) / float(fade_frames)
+		var f_off := i * bpf
+		for ch in channels:
+			var byte_off := f_off + ch * 2
+			var h := src.decode_s16(byte_off)
+			var t := src.decode_s16(tail_off + byte_off)
+			var mixed := int(float(h) * alpha + float(t) * (1.0 - alpha))
+			out.encode_s16(byte_off, clampi(mixed, -32768, 32767))
+	wav.data = out
 
 ## Best-effort stream-length lookup so the random-offset jitter doesn't
 ## over-shoot. Falls back to 2 s for unknown streams.
