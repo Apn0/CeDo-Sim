@@ -1,0 +1,173 @@
+#!/usr/bin/env python3
+"""Regenerate every positional plant clip from the operator's source recordings.
+
+WHY THIS EXISTS
+---------------
+`assets/` is gitignored (`.gitignore:2`). The 48 baked WAVs and the runtime copy
+of the layout are therefore local-only and do NOT survive a fresh clone. The
+audio design's answer to that is "generator scripts under tools/ are the
+committed source of truth; baked assets are derived artifacts" — but no such
+script existed, so the audio work was one disk failure from being unrecoverable.
+
+This script is that committed source of truth. Given the source recordings, it
+reproduces every clip byte-for-byte from `audio_layout.json` (the master copy
+lives HERE, next to this script, because the runtime copy under `assets/` is
+gitignored).
+
+USAGE
+-----
+    python tools/audio/extract_clips.py --check      # report only, touch nothing
+    python tools/audio/extract_clips.py              # regenerate missing clips
+    python tools/audio/extract_clips.py --force      # regenerate all
+
+Source recordings are NOT in the repo either (49 MB of operator video). Point at
+them with --sources; the default is the operator's Desktop staging folder.
+
+THE IMA_ADPCM TRAP
+------------------
+Godot 4.6 imports WAVs as `compress/mode=2` (IMA_ADPCM) by DEFAULT. PlantAudio's
+loop crossfade does byte-level PCM editing and bails on anything that is not
+16-bit PCM (`PlantAudio.gd:162`), so an ADPCM clip silently loses its crossfade
+and clicks at the loop point. This script writes a `.import` sidecar with
+`compress/mode=0` for every clip it creates. If you ever add a clip by hand,
+set that field yourself and reimport — measured 2026-08-03, all five hand-added
+clips came in as mode=2 until forced.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[2]
+MASTER_LAYOUT = Path(__file__).resolve().parent / "audio_layout.json"
+RUNTIME_LAYOUT = REPO / "assets" / "audio" / "audio_layout.json"
+CLIPS_DIR = REPO / "assets" / "audio" / "clips"
+DEFAULT_SOURCES = Path.home() / "Desktop" / "tmp"
+
+# Format the existing 43 clips use; new clips must match or they will not mix.
+SAMPLE_RATE = 44100
+CHANNELS = 2
+CODEC = "pcm_s16le"
+
+IMPORT_SIDECAR = """[remap]
+
+importer="wav"
+type="AudioStreamWAV"
+
+[deps]
+
+source_file="res://assets/audio/clips/{name}.wav"
+
+[params]
+
+force/8_bit=false
+force/mono=false
+force/max_rate=false
+force/max_rate_hz=44100
+edit/trim=false
+edit/normalize=false
+edit/loop_mode=0
+edit/loop_begin=0
+edit/loop_end=-1
+compress/mode=0
+"""
+
+
+def ffmpeg() -> str:
+    exe = shutil.which("ffmpeg")
+    if exe:
+        return exe
+    fallback = Path.home() / "AppData/Local/Microsoft/WinGet/Links/ffmpeg.exe"
+    if fallback.exists():
+        return str(fallback)
+    sys.exit("ffmpeg not found on PATH — install it or add it to PATH")
+
+
+def load_layout() -> list[dict]:
+    path = MASTER_LAYOUT if MASTER_LAYOUT.exists() else RUNTIME_LAYOUT
+    if not path.exists():
+        sys.exit(f"no layout found at {MASTER_LAYOUT} or {RUNTIME_LAYOUT}")
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--sources", type=Path, default=DEFAULT_SOURCES,
+                    help=f"folder holding the source recordings (default {DEFAULT_SOURCES})")
+    ap.add_argument("--check", action="store_true", help="report only, write nothing")
+    ap.add_argument("--force", action="store_true", help="regenerate clips that already exist")
+    args = ap.parse_args()
+
+    layout = load_layout()
+    CLIPS_DIR.mkdir(parents=True, exist_ok=True)
+
+    missing_src: set[str] = set()
+    cut_names: list[str] = []
+    made = kept = 0
+
+    for entry in layout:
+        name = entry["clip_name"]
+        src = args.sources / entry["source_file"]
+        dst = CLIPS_DIR / f"{name}.wav"
+
+        if not src.exists():
+            missing_src.add(entry["source_file"])
+            continue
+        if dst.exists() and not args.force:
+            kept += 1
+            continue
+        if args.check:
+            print(f"  WOULD CUT  {name}")
+            made += 1
+            continue
+
+        start = float(entry["start_s"])
+        dur = float(entry["end_s"]) - start
+        subprocess.run(
+            [ffmpeg(), "-v", "error", "-y", "-ss", str(start), "-t", f"{dur:.3f}",
+             "-i", str(src), "-vn", "-acodec", CODEC,
+             "-ar", str(SAMPLE_RATE), "-ac", str(CHANNELS), str(dst)],
+            check=True,
+        )
+        # Force PCM so PlantAudio's crossfade applies — see the IMA_ADPCM note above.
+        (CLIPS_DIR / f"{name}.wav.import").write_text(
+            IMPORT_SIDECAR.format(name=name), encoding="utf-8")
+        made += 1
+        cut_names.append(name)
+        print(f"  cut  {name}")
+
+    # Step 2 — loopify. A raw ffmpeg cut clicks at the loop point; every one of
+    # the operator's 43 original clips carries a 100 ms equal-power head-tail
+    # crossfade and a `smpl` chunk from loopify_wavs.py. Skipping this is why a
+    # naive re-cut is NOT byte-identical to the originals (measured 2026-08-03:
+    # ~17,606 bytes / 0.0998 s longer, and no smpl chunk). PlantAudio's runtime
+    # crossfade is only 10 ms, so it does not substitute for this.
+    if cut_names and not args.check:
+        loopify = Path(__file__).resolve().parent / "loopify_wavs.py"
+        if loopify.exists():
+            subprocess.run([sys.executable, str(loopify),
+                            "--in", str(CLIPS_DIR), "--in-place"], check=True)
+        else:
+            print(f"  WARNING: {loopify.name} missing — clips will click at the loop point")
+
+    if not args.check and MASTER_LAYOUT.exists():
+        RUNTIME_LAYOUT.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(MASTER_LAYOUT, RUNTIME_LAYOUT)
+
+    print(f"\n  {made} cut, {kept} already present, {len(layout)} in layout")
+    if missing_src:
+        print("\n  MISSING SOURCE RECORDINGS (clips from these were skipped):")
+        for s in sorted(missing_src):
+            print(f"    {s}")
+        print(f"  Put them in {args.sources} or pass --sources.")
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
