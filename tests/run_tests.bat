@@ -13,47 +13,47 @@ set GODOT=godot
 where %GODOT% >nul 2>&1 || set GODOT="%LOCALAPPDATA%\Godot\godot.exe"
 pushd "%~dp0\.."
 
-echo === [1/8] BaleComplianceTest (script mode) ===
+echo === [1/11] BaleComplianceTest (script mode) ===
 %GODOT% --headless --path . --script res://tests/BaleComplianceTest.gd
 set RC1=%ERRORLEVEL%
 
 echo.
-echo === [2/8] BaleSheetsTest (script mode) ===
+echo === [2/11] BaleSheetsTest (script mode) ===
 %GODOT% --headless --path . --script res://tests/BaleSheetsTest.gd
 set RC2=%ERRORLEVEL%
 
 echo.
-echo === [3/8] WireFixAndCameraTest (script mode) ===
+echo === [3/11] WireFixAndCameraTest (script mode) ===
 %GODOT% --headless --path . --script res://tests/WireFixAndCameraTest.gd
 set RC3=%ERRORLEVEL%
 
 echo.
-echo === [4/8] OperatorLifecycleTest (script mode) ===
+echo === [4/11] OperatorLifecycleTest (script mode) ===
 %GODOT% --headless --path . --script res://tests/OperatorLifecycleTest.gd
 set RC4=%ERRORLEVEL%
 
 echo.
-echo === [5/8] VehicleDriveTest (script mode) ===
+echo === [5/11] VehicleDriveTest (script mode) ===
 %GODOT% --headless --path . --script res://tests/VehicleDriveTest.gd
 set RC5=%ERRORLEVEL%
 
 echo.
-echo === [6/8] SettingsParseTest (script mode) ===
+echo === [6/11] SettingsParseTest (script mode) ===
 %GODOT% --headless --path . --script res://tests/SettingsParseTest.gd
 set RC6=%ERRORLEVEL%
 
 echo.
-echo === [7/8] ScanLogTest (script mode) ===
+echo === [7/11] ScanLogTest (script mode) ===
 %GODOT% --headless --path . --script res://tests/ScanLogTest.gd
 set RC7=%ERRORLEVEL%
 
 echo.
-echo === [8/9] VehicleBaleTest (scene mode — needs Godot 4.6) ===
+echo === [8/11] VehicleBaleTest (scene mode — needs Godot 4.6) ===
 %GODOT% --headless --path . res://tests/VehicleBaleTest.tscn
 set RC8=%ERRORLEVEL%
 
 echo.
-echo === [9/9] SecuritySaveTest (script mode) ===
+echo === [9/11] SecuritySaveTest (script mode) ===
 %GODOT% --headless --path . --script res://tests/SecuritySaveTest.gd
 set RC9=%ERRORLEVEL%
 

@@ -3419,13 +3419,6 @@ static func _install_steam_plume(parent: Node3D, local_pos: Vector3,
 		ppm.radial_accel_max = 0.0)
 
 static func _m_dryer(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
-	# TODO (#99): wire a visual Beschickungsschieber + Entleerschieber here that
-	# opens/closes based on the MechDryerCycle controller attached to this drum
-	# in LineFlow. The CONTROLLER (besch_open / entleer_open booleans) lives in
-	# src/sim/MechDryerCycle.gd and is stepped each LineFlow tick; this builder
-	# just needs to spawn the two gate panels as named children so a per-tick
-	# visibility toggle in LineFlow can drive them. Skipped for now — pure
-	# cosmetic, no flow impact.
 	var galv      := _mat(color, ghost, 0.55, 0.5)                    # galvanised drum
 	var blue      := _mat(Color(0.12, 0.28, 0.55), ghost, 0.45, 0.45) # RAL-blue flanges/motors
 	var dark      := _mat(_DARK, ghost, 0.4, 0.6)
@@ -3451,6 +3444,18 @@ static func _m_dryer(p: Node3D, size: Vector3, color: Color, ghost: bool) -> voi
 
 	# ── Drum (horizontal cylinder along Z) — spins about its long (Z) axis ────
 	_spinning_cyl(p, rad, rad, drum_len, Vector3(0.0, drum_cy, 0.0), galv, "z", Vector3.BACK, ghost)
+
+	# ── Gates (Beschickungsschieber + Entleerschieber) ───────────────────────
+	# Inlet on top (-Z end), outlet on bottom (+Z end)
+	# Beschickungsschieber (Inlet, top, -Z)
+	var besch_box := _box(p, Vector3(0.6, 0.05, 0.6), Vector3(0.0, drum_cy + rad + 0.05, -drum_len * 0.4), dark)
+	var besch_gate := _box(p, Vector3(0.5, 0.05, 0.5), Vector3(0.0, drum_cy + rad + 0.05, -drum_len * 0.4), blue)
+	besch_gate.name = "besch_gate"
+
+	# Entleerschieber (Outlet, bottom, +Z)
+	var entleer_box := _box(p, Vector3(0.6, 0.05, 0.6), Vector3(0.0, drum_cy - rad - 0.05, drum_len * 0.4), dark)
+	var entleer_gate := _box(p, Vector3(0.5, 0.05, 0.5), Vector3(0.0, drum_cy - rad - 0.05, drum_len * 0.4), blue)
+	entleer_gate.name = "entleer_gate"
 
 	# ── Blue bolted end-flanges (both ends) + central gearbox + bolt ring ────
 	for sz in [-1.0, 1.0]:
@@ -10616,15 +10621,57 @@ static func _build_heetafslag_strand_switcher(p: Node3D, die_r: float,
 	var mat_cold := _mat(Color(0.50, 0.45, 0.40), ghost, 0.10, 0.85)   # dull grey-brown, lifeless
 	var mat_good := _mat(Color(0.55, 0.45, 0.85), ghost, 0.20, 0.50)   # lavender (matches pelletizer.png)
 	var mat_hot  := _mat(Color(0.25, 0.10, 0.05), ghost, 0.10, 0.90)   # dark brown / charred
-	var grp_cold := Node3D.new()
+	var grp_cold := MultiMeshInstance3D.new()
 	grp_cold.name = "te_koud_strands"
 	switcher.add_child(grp_cold)
-	var grp_good := Node3D.new()
+	var grp_good := MultiMeshInstance3D.new()
 	grp_good.name = "goed_gehard_strands"
 	switcher.add_child(grp_good)
-	var grp_hot := Node3D.new()
+	var grp_hot := MultiMeshInstance3D.new()
 	grp_hot.name = "te_heet_strands"
 	switcher.add_child(grp_hot)
+
+	# Mesh setups for MultiMeshes
+	var cm_cold := CylinderMesh.new()
+	cm_cold.top_radius = strand_r
+	cm_cold.bottom_radius = strand_r
+	cm_cold.height = strand_h
+	cm_cold.radial_segments = 8
+	var mm_cold := MultiMesh.new()
+	mm_cold.transform_format = MultiMesh.TRANSFORM_3D
+	mm_cold.instance_count = strand_count
+	mm_cold.mesh = cm_cold
+	grp_cold.multimesh = mm_cold
+	grp_cold.material_override = mat_cold
+
+	var cm_good := CylinderMesh.new()
+	cm_good.top_radius = strand_r
+	cm_good.bottom_radius = strand_r
+	cm_good.height = strand_h
+	cm_good.radial_segments = 8
+	var mm_good := MultiMesh.new()
+	mm_good.transform_format = MultiMesh.TRANSFORM_3D
+	mm_good.instance_count = strand_count
+	mm_good.mesh = cm_good
+	grp_good.multimesh = mm_good
+	grp_good.material_override = mat_good
+
+	var cm_hot := CylinderMesh.new()
+	cm_hot.top_radius = strand_r * 0.85
+	cm_hot.bottom_radius = strand_r * 0.85
+	cm_hot.height = strand_h
+	cm_hot.radial_segments = 8
+	var mm_hot := MultiMesh.new()
+	mm_hot.transform_format = MultiMesh.TRANSFORM_3D
+	mm_hot.instance_count = strand_count
+	mm_hot.mesh = cm_hot
+	grp_hot.multimesh = mm_hot
+	grp_hot.material_override = mat_hot
+
+	var grp_hot_wisp := MultiMeshInstance3D.new()
+	grp_hot_wisp.name = "smoke_wisps"
+	grp_hot.add_child(grp_hot_wisp)
+
 	# Small smoke-wisp QuadMesh material — pre-built once, reused across the
 	# 20 te_heet strands so we don't churn the resource cache.
 	var smoke_mat := StandardMaterial3D.new()
@@ -10632,20 +10679,33 @@ static func _build_heetafslag_strand_switcher(p: Node3D, die_r: float,
 	smoke_mat.albedo_color = Color(0.55, 0.50, 0.48, 0.18)
 	smoke_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	smoke_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+
+	var qm := QuadMesh.new()
+	qm.size = Vector2(0.04, 0.06)
+	var mm_wisp := MultiMesh.new()
+	mm_wisp.transform_format = MultiMesh.TRANSFORM_3D
+	mm_wisp.instance_count = strand_count
+	mm_wisp.mesh = qm
+	grp_hot_wisp.multimesh = mm_wisp
+	grp_hot_wisp.material_override = smoke_mat
+
 	for i in strand_count:
 		var sx : float = x0 + float(i) * dx
 		# Tiny per-strand Y jitter so the row reads as natural, not rigid.
 		var y_jitter : float = sin(float(i) * 1.31) * 0.005
 		var pos := Vector3(sx, -strand_h * 0.5 + y_jitter, 0.0)
+
 		# Slight twist on the cold strands (deformed / not yet hardened).
-		_strand_cyl(grp_cold, strand_r, strand_h, pos, mat_cold,
-			Vector3(deg_to_rad(sin(float(i)) * 6.0), 0.0, deg_to_rad(cos(float(i)) * 6.0)))
+		var rot_cold := Vector3(deg_to_rad(sin(float(i)) * 6.0), 0.0, deg_to_rad(cos(float(i)) * 6.0))
+		mm_cold.set_instance_transform(i, Transform3D(Basis.from_euler(rot_cold), pos))
+
 		# GOED — clean vertical strand (the operator's target state).
-		_strand_cyl(grp_good, strand_r, strand_h, pos + Vector3(0.0, 0.002, 0.0),
-			mat_good, Vector3.ZERO)
+		mm_good.set_instance_transform(i, Transform3D(Basis.IDENTITY, pos + Vector3(0.0, 0.002, 0.0)))
+
 		# TE HEET — charred, slightly thinner, with a small smoke wisp above.
-		_strand_cyl(grp_hot, strand_r * 0.85, strand_h, pos, mat_hot,
-			Vector3(deg_to_rad(sin(float(i) * 2.0) * 4.0), 0.0, 0.0))
+		var rot_hot := Vector3(deg_to_rad(sin(float(i) * 2.0) * 4.0), 0.0, 0.0)
+		mm_hot.set_instance_transform(i, Transform3D(Basis.from_euler(rot_hot), pos))
+
 		# Smoke wisp — a small QuadMesh above the top of the strand.
 		var wisp := MeshInstance3D.new()
 		var qm := QuadMesh.new()
@@ -10662,25 +10722,6 @@ static func _build_heetafslag_strand_switcher(p: Node3D, die_r: float,
 	grp_good.visible = false
 	grp_hot.visible = false
 
-## Helper: spawn a single strand CylinderMesh under `parent` at `pos` with
-## optional `rot`. Kept inline (instead of going through _cyl) so we can apply
-## small per-strand rotations to read as a natural extruded strand rather than
-## a perfectly regimented array.
-static func _strand_cyl(parent: Node3D, r: float, h: float, pos: Vector3,
-		mat: StandardMaterial3D, rot: Vector3) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	var cm := CylinderMesh.new()
-	cm.top_radius = r
-	cm.bottom_radius = r
-	cm.height = h
-	cm.radial_segments = 8   # strands are thin — 8 sides is plenty
-	mi.mesh = cm
-	mi.material_override = mat
-	mi.position = pos
-	mi.rotation = rot
-	parent.add_child(mi)
-	return mi
-
 ## #209b — Flip the StrandSwitcher to a given state. The controller calls this
 ## with state ∈ {0 = TE KOUD, 1 = GOED GEHARD, 2 = TE HEET}. The lookup is by
 ## child name so the switcher node can be discovered via the
@@ -10688,9 +10729,9 @@ static func _strand_cyl(parent: Node3D, r: float, h: float, pos: Vector3,
 static func show_die_face_state(switcher: Node3D, state: int) -> void:
 	if switcher == null or not is_instance_valid(switcher):
 		return
-	var grp_cold : Node3D = switcher.get_node_or_null("te_koud_strands") as Node3D
-	var grp_good : Node3D = switcher.get_node_or_null("goed_gehard_strands") as Node3D
-	var grp_hot  : Node3D = switcher.get_node_or_null("te_heet_strands") as Node3D
+	var grp_cold : MultiMeshInstance3D = switcher.get_node_or_null("te_koud_strands") as MultiMeshInstance3D
+	var grp_good : MultiMeshInstance3D = switcher.get_node_or_null("goed_gehard_strands") as MultiMeshInstance3D
+	var grp_hot  : MultiMeshInstance3D = switcher.get_node_or_null("te_heet_strands") as MultiMeshInstance3D
 	if grp_cold != null:
 		grp_cold.visible = (state == 0)
 	if grp_good != null:

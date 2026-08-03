@@ -139,43 +139,13 @@ func _spawn_bale_yards_from_layout() -> void:
 	_world.add_child(yards_root)
 	var total_bales := 0
 	var total_yards := 0
-	for y in WorldLayout.bale_yards:
-		var data : Dictionary = y
-		var corners : Array = data.get("corners", [])
-		if corners.size() < 3: continue
-		var supplier_id : String = data.get("supplier_id", "")
-		if supplier_id == "":
-			push_warning("[BaleYardManager] Bale yard has no supplier_id — skipping")
-			continue
-		var origin_def : Dictionary = BaleDefs.get_origin(supplier_id)
-		if origin_def.is_empty():
-			push_warning("[BaleYardManager] Unknown supplier_id '%s' — skipping yard" % supplier_id)
-			continue
-		var size : Vector3 = origin_def.get("size", Vector3(1.1, 0.7, 1.1))
-		var stack_high : int = int(origin_def.get("stack", 2))
-		# Convert the polygon corners from layout-space (player-relative, north-up
-		# RD) into scene-space via the same rotation-aware mapping the vehicles
-		# use, so the yard sits in the right place + orientation on the building.
-		# #221-PC Phase 3 — prefer the Plant PC path (single source of truth)
-		# when WorldLayout has been migrated; fall back to legacy _layout_to_scene
-		# otherwise. Math is equivalent for migrated saves; Plant guarantees the
-		# same converter every spawner uses.
-		var use_pc : bool = _world.has_node("/root/Plant") and Plant.is_initialized() and WorldLayout.has_pc_data
-		# Pull the per-yard PC corner list (if present) by matching index. The
-		# migrate_to_pc walk preserved order, so bale_yards_pc[idx] aligns with
-		# WorldLayout.bale_yards[idx].
-		var yard_idx : int = WorldLayout.bale_yards.find(y)
-		var corners_pc : Array = []
-		if use_pc and yard_idx >= 0 and yard_idx < WorldLayout.bale_yards_pc.size():
-			corners_pc = (WorldLayout.bale_yards_pc[yard_idx] as Dictionary).get("corners_pc", [])
-			if corners_pc.size() != corners.size():
-				# Size mismatch — fall back to legacy for this yard rather than
-				# index a PC array against a different polygon. Should only
-				# happen if migrate_to_pc was interrupted mid-walk.
-				push_warning("[BaleYardManager] Yard '%s' PC corner count %d ≠ legacy %d — using legacy path" % [supplier_id, corners_pc.size(), corners.size()])
-				use_pc = false
-		elif use_pc:
-			use_pc = false   # PC data is missing for THIS yard
+	for yard_idx in WorldLayout.bale_yards.size():
+		var y : Dictionary = WorldLayout.bale_yards[yard_idx]
+		var bales_spawned : int = _spawn_yard(y, yard_idx, yards_root)
+		if bales_spawned >= 0:
+			total_bales += bales_spawned
+			total_yards += 1
+	print("[BaleYardManager] Bale yards from layout: %d bales across %d yards (RBs deferred)" % [total_bales, total_yards])
 
 		var translated_corners : Array = []
 		var yard_corrupt := false
@@ -335,65 +305,35 @@ func _spawn_bale_yards_from_layout() -> void:
 				mmi.visibility_range_begin_margin = 0.0
 				mmi.visibility_range_fade_mode    = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 				if mmi_close != null:
-					yard_node.add_child(mmi_close)
-					mmi_close.visibility_range_end        = CLOSE_LOD_M
-					mmi_close.visibility_range_end_margin = 0.0
-					mmi_close.visibility_range_fade_mode  = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+					mmi_close.multimesh.set_instance_transform(i, xf)
 				if mmi_sticker != null:
-					yard_node.add_child(mmi_sticker)
-					mmi_sticker.visibility_range_end        = STICKER_LOD_M
-					mmi_sticker.visibility_range_end_margin = 2.0
-					mmi_sticker.visibility_range_fade_mode  = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
-				var safe_yaw : float = bale_yaw if is_finite(bale_yaw) else 0.0
-				var bale_basis := Basis(Vector3.UP, safe_yaw)
-				var size_y_half : float = size.y * 0.5
-				# Pass 1 — populate the MultiMesh transforms IMMEDIATELY. These are
-				# just integer transform writes to the shared buffer and finish in
-				# a fraction of a second even for 2940 instances. Bales render at
-				# correct positions the moment the yard appears. Same transforms
-				# go into BOTH MMs so far / close stay perfectly aligned during
-				# the fade swap.
-				for i in bales_this_yard:
-					var entry : Array = slots[i]
-					var pos : Vector3 = entry[0]
-					var level : int = int(entry[1])
-					var inst_origin := Vector3(
-						pos.x,
-						floor_y + size.y * float(level) + size_y_half,
-						pos.z)
-					var xf := Transform3D(bale_basis, inst_origin)
-					mmi.multimesh.set_instance_transform(i, xf)
-					if mmi_close != null:
-						mmi_close.multimesh.set_instance_transform(i, xf)
-					if mmi_sticker != null:
-						# Sticker rides the +Z face at mid-height, 4 mm proud of the
-						# bale skin so it doesn't z-fight. QuadMesh faces +Z by
-						# default, which lines up with the bale's +Z face.
-						var sticker_local := Vector3(0.0, 0.0, size.z * 0.49 + 0.004)
-						var sticker_xf := Transform3D(bale_basis,
-							inst_origin + bale_basis * sticker_local)
-						mmi_sticker.multimesh.set_instance_transform(i, sticker_xf)
-				# #127 — Pass 2: per-bale collider creation is the actual cost
-				# (2940 RigidBody3D + CollisionShape3D + meta + group joins). The
-				# old loop blocked >60 s. Push the job onto a time-sliced queue
-				# that _process drains within a fixed per-frame budget — bounded
-				# stutter regardless of total yard count, instead of a fan-out of
-				# self-rescheduling call_deferred batches that can stack up.
-				total_bales += bales_this_yard
-				_yard_spawn_queue.push_back({
-					"yard":     yard_node,
-					"mmi":      mmi,
-					"supplier": supplier_id,
-					"prefix":   prefix,
-					"slots":    slots,
-					"floor_y":  floor_y,
-					"size":     size,
-					"yaw":      safe_yaw,
-					"idx":      0,
-				})
-		print("[BaleYardManager]  Yard '%s' filled with %d bales  (1 multimesh draw call)" % [supplier_id, bales_this_yard])
-		total_yards += 1
-	print("[BaleYardManager] Bale yards from layout: %d bales across %d yards (RBs deferred)" % [total_bales, total_yards])
+					# Sticker rides the +Z face at mid-height, 4 mm proud of the
+					# bale skin so it doesn't z-fight. QuadMesh faces +Z by
+					# default, which lines up with the bale's +Z face.
+					var sticker_local := Vector3(0.0, 0.0, size.z * 0.49 + 0.004)
+					var sticker_xf := Transform3D(bale_basis,
+						inst_origin + bale_basis * sticker_local)
+					mmi_sticker.multimesh.set_instance_transform(i, sticker_xf)
+			# #127 — Pass 2: per-bale collider creation is the actual cost
+			# (2940 RigidBody3D + CollisionShape3D + meta + group joins). The
+			# old loop blocked >60 s. Push the job onto a time-sliced queue
+			# that _process drains within a fixed per-frame budget — bounded
+			# stutter regardless of total yard count, instead of a fan-out of
+			# self-rescheduling call_deferred batches that can stack up.
+			_yard_spawn_queue.push_back({
+				"yard":     yard_node,
+				"mmi":      mmi,
+				"supplier": supplier_id,
+				"prefix":   prefix,
+				"slots":    slots,
+				"floor_y":  floor_y,
+				"size":     size,
+				"yaw":      safe_yaw,
+				"idx":      0,
+			})
+	print("[BaleYardManager]  Yard '%s' filled with %d bales  (1 multimesh draw call)" % [supplier_id, bales_this_yard])
+	return bales_this_yard
+
 
 func _spawn_one_yard_bale(job: Dictionary) -> void:
 	var yard_node : Node3D = job["yard"]

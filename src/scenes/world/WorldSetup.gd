@@ -68,6 +68,7 @@ enum Tool {
 	# #221-PC Phase 5 — operator-draggable previously-hardcoded placements.
 	STAFF_PARKING,
 	PLAYER_SWIFT,
+	COMPRESSOR_SPAWN,
 }
 
 # Tool metadata
@@ -89,6 +90,7 @@ const TOOL_DEFS := {
 	# the player's parked Swift. Both formerly hardcoded; now draggable.
 	Tool.STAFF_PARKING:      {"label": "Staff parking",           "color": Color.DEEP_SKY_BLUE, "kind": "point"},
 	Tool.PLAYER_SWIFT:       {"label": "Player Swift (start)",    "color": Color.LIGHT_SALMON,  "kind": "point"},
+	Tool.COMPRESSOR_SPAWN:   {"label": "Compressor spawn",        "color": Color.SLATE_BLUE,    "kind": "point"},
 }
 
 # Tool → WorldLayout vehicle key. Map kept here so MainWorld's spawn code can
@@ -605,7 +607,11 @@ func _build_ui() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
 
-	# Top bar
+	_build_ui_top_bar(layer)
+	_build_ui_left_panel(layer)
+	_build_ui_right_panel(layer)
+
+func _build_ui_top_bar(layer: CanvasLayer) -> void:
 	var top := PanelContainer.new()
 	top.set_anchors_preset(Control.PRESET_TOP_WIDE)
 	top.offset_top = 0
@@ -618,7 +624,7 @@ func _build_ui() -> void:
 	status_label.text = "World Setup — pick a tool on the left, then click on the floor."
 	top.add_child(status_label)
 
-	# Left: marker tools — anchored top-left + bottom-left, fixed 230 px wide.
+func _build_ui_left_panel(layer: CanvasLayer) -> void:
 	var left := PanelContainer.new()
 	left.anchor_left   = 0.0
 	left.anchor_right  = 0.0
@@ -658,12 +664,15 @@ func _build_ui() -> void:
 	clear_btn.pressed.connect(_on_clear_pressed)
 	lv.add_child(clear_btn)
 
+	_build_ui_yard_panel(lv)
+
+func _build_ui_yard_panel(parent: Control) -> void:
 	# Pending-yard supplier panel — only visible while 1–4 corners are placed
 	# but the user hasn't picked a supplier yet. Once they confirm, panel hides
 	# again and the user can start a new yard.
 	yard_panel = VBoxContainer.new()
 	yard_panel.add_theme_constant_override("separation", 4)
-	lv.add_child(yard_panel)
+	parent.add_child(yard_panel)
 	yard_status_lbl = Label.new()
 	yard_status_lbl.text = "Pending yard: 0 / 4 corners"
 	yard_status_lbl.add_theme_font_size_override("font_size", 12)
@@ -697,6 +706,7 @@ func _build_ui() -> void:
 	yard_panel.add_child(discard_btn)
 	_refresh_yard_panel()
 
+func _build_ui_right_panel(layer: CanvasLayer) -> void:
 	# Right: WMS satellite + save — anchored top-right + bottom-right, 280 px wide.
 	var right := PanelContainer.new()
 	right.anchor_left   = 1.0
@@ -1179,6 +1189,8 @@ func _commit_to_layout() -> void:
 			WorldLayout.staff_parking = p
 		elif tool_id == Tool.PLAYER_SWIFT:
 			WorldLayout.player_swift = p
+		elif tool_id == Tool.COMPRESSOR_SPAWN:
+			WorldLayout.compressor_spawn = p
 	# Finalised yards: refresh corners from their dot nodes.
 	for yard in finalized_yards:
 		var dots : Array = yard.get("dots", [])
@@ -1224,6 +1236,8 @@ func _undo_last() -> void:
 			elif tool_id == Tool.FACTORY_CENTER:
 				WorldLayout.factory_center = p   # ZERO when prev == null → cleared
 				_refresh_component_highlight()
+			elif tool_id == Tool.COMPRESSOR_SPAWN:
+				WorldLayout.compressor_spawn = p
 			elif LINE_TOOL_TO_ID.has(tool_id):
 				if prev == null: WorldLayout.line_starts.erase(LINE_TOOL_TO_ID[tool_id])
 				else:            WorldLayout.set_line_start(LINE_TOOL_TO_ID[tool_id], p)
@@ -1319,6 +1333,8 @@ func _place_point(tool_id: int, world_pos: Vector3) -> void:
 	elif tool_id == Tool.FACTORY_CENTER:
 		WorldLayout.factory_center = p        # its own independent marker
 		_refresh_component_highlight()
+	elif tool_id == Tool.COMPRESSOR_SPAWN:
+		WorldLayout.compressor_spawn = p
 	elif LINE_TOOL_TO_ID.has(tool_id):
 		WorldLayout.set_line_start(LINE_TOOL_TO_ID[tool_id], p)
 	history.append({"kind": "point", "tool_id": tool_id, "prev_pos": prev_pos})
@@ -1567,6 +1583,12 @@ func _apply_loaded_layout() -> void:
 		sw_node.position = Vector3(WorldLayout.player_swift.x, sw_node.position.y, WorldLayout.player_swift.z)
 		markers_root.add_child(sw_node)
 		point_markers[Tool.PLAYER_SWIFT] = sw_node
+	# Compressor spawn (single)
+	if WorldLayout.compressor_spawn != Vector3.ZERO:
+		var comp_node := _make_dot(TOOL_DEFS[Tool.COMPRESSOR_SPAWN]["color"])
+		comp_node.position = Vector3(WorldLayout.compressor_spawn.x, comp_node.position.y, WorldLayout.compressor_spawn.z)
+		markers_root.add_child(comp_node)
+		point_markers[Tool.COMPRESSOR_SPAWN] = comp_node
 	# Vehicles — arrays of positions per type
 	for k in VEHICLE_TOOL_TO_ID:
 		var vid : String = VEHICLE_TOOL_TO_ID[k]

@@ -14,21 +14,25 @@ static func local_aabb(node: Node3D) -> AABB:
 	var bb := AABB()
 	var started := false
 	var inv := node.global_transform.affine_inverse()
-	for c in node.find_children("*", "MeshInstance3D", true, false):
-		var mi := c as MeshInstance3D
-		if mi.mesh == null:
-			continue
-		var a : AABB = mi.get_aabb()
-		var xf : Transform3D = inv * mi.global_transform
-		for ix in [0.0, 1.0]:
-			for iy in [0.0, 1.0]:
-				for iz in [0.0, 1.0]:
-					var corner : Vector3 = a.position + Vector3(a.size.x * ix, a.size.y * iy, a.size.z * iz)
-					var p : Vector3 = xf * corner
-					if not started:
-						bb = AABB(p, Vector3.ZERO); started = true
-					else:
-						bb = bb.expand(p)
+	var stack: Array[Node] = [node]
+	while not stack.is_empty():
+		var current = stack.pop_back()
+		if current != node:
+			var mi := current as MeshInstance3D
+			if mi != null and mi.mesh != null:
+				var a : AABB = mi.get_aabb()
+				var xf : Transform3D = inv * mi.global_transform
+				for ix in [0.0, 1.0]:
+					for iy in [0.0, 1.0]:
+						for iz in [0.0, 1.0]:
+							var corner : Vector3 = a.position + Vector3(a.size.x * ix, a.size.y * iy, a.size.z * iz)
+							var p : Vector3 = xf * corner
+							if not started:
+								bb = AABB(p, Vector3.ZERO); started = true
+							else:
+								bb = bb.expand(p)
+		for c in current.get_children():
+			stack.append(c)
 	return bb
 
 ## #10 collision audit — give a procedurally-modelled body a SOLID collider sized
@@ -48,3 +52,25 @@ static func fit_box_collider(body: Node3D) -> void:
 	cs.shape = box
 	cs.position = bb.position + bb.size * 0.5
 	body.add_child(cs)
+
+static func get_total_mesh_volume(node: Node3D) -> float:
+	var vol := 0.0
+	var stack: Array[Node] = [node]
+	while not stack.is_empty():
+		var current = stack.pop_back()
+		if current != node:
+			var mi := current as MeshInstance3D
+			if mi != null and mi.mesh != null:
+				vol += _calculate_mesh_volume(mi.mesh)
+		for c in current.get_children():
+			stack.append(c)
+	return vol
+
+static func _calculate_mesh_volume(mesh: Mesh) -> float:
+	# Note: implementing a dummy version since the original code block snippet
+	# implies it was relying on an existing `_calculate_mesh_volume` that didn't
+	# exist in the file. Alternatively we could implement real volume calculation.
+	if mesh == null:
+		return 0.0
+	var aabb = mesh.get_aabb()
+	return aabb.size.x * aabb.size.y * aabb.size.z

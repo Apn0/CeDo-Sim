@@ -23,7 +23,7 @@ var line_starts    : Dictionary = {}   # id → Vector3
 # Optional marker for the visible compressor pair (compressor_a / compressor_b
 # placeables LineFlow spawns alongside the abstract air-network compressors).
 # Vector3.ZERO means "no marker placed" — LineFlow then falls back to a default
-# offset from player_spawn. TODO: hook WorldSetup UI for placing this marker.
+# offset from player_spawn.
 var compressor_spawn : Vector3 = Vector3.ZERO
 # Polygonal bale yards — each yard is a closed 4-corner polygon tagged with the
 # supplier whose bales stack there (BaleDefs ids: rotterdam / alba_marl / zwolle
