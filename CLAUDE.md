@@ -27,7 +27,35 @@ was wrong and would fail on the first command.
 
 ## What the harness actually proves
 
-Last measured run: **`16 ok, 0 fail, 2 skip`**.
+**The harness does not currently pass. `run.sh` ends `== done (exit 1) ==`.**
+
+`tools/regression/run.sh` runs **22 suites**. 21 pass. `test_l3c_unit_screens`
+**hangs forever** — it boots a full MainWorld and never returns, so it never
+reaches its own `get_tree().quit()` at `src/tests/test_l3c_unit_screens.gd:554`.
+Measured 2026-08-03: **8 h 56 m** with no further output, ~12 % CPU, the log
+frozen after `[HOTSPOT] ready — F7 to toggle`. Kill that Godot process and the
+harness resumes and finishes the remaining suites normally.
+
+Pre-existing, and unrelated to audio: it reproduces identically with the
+pristine 43-entry `audio_layout.json` swapped in. The suite arrived in `1b29087`;
+the branch has been red since.
+
+Two consequences you must not repeat:
+
+- **Never pipe `run.sh` into `head`/`tail`.** You get the pipe's exit status, not
+  the harness's, and a truncated tail looks like a clean finish. Redirect to a
+  file and read `== done (exit N) ==`.
+- **`16 ok, 0 fail, 2 skip` is ONE suite** (`regression_world_save`), not the
+  harness total. Quoting it as the harness result is how this hang stayed
+  invisible. Both mistakes were made in this repo on 2026-08-03.
+
+Killing the hung run leaves residue: `test_l3c_unit_screens` backs up its
+`TOUCHED` `user://` files **in memory only** and restores them in `_finish()`, so
+a kill loses the backups. Verified afterwards that `world_layout.json` survived
+intact; `world_layout_consumed.flag` was left behind but no production code reads
+it — only tests do.
+
+### Within the suites that do run
 
 `run.sh` gates on the fail count only, so **skips pass silently**. Two of the
 things this file used to claim were "proven" are among the skips:
