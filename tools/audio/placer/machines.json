@@ -1,0 +1,452 @@
+[
+  {
+    "id": "hmi_panel",
+    "name": "HMI panel (stand)",
+    "category": "Control"
+  },
+  {
+    "id": "hmi_wall",
+    "name": "HMI panel (wall)",
+    "category": "Control"
+  },
+  {
+    "id": "compactorband",
+    "name": "Compactorband (feed belt)",
+    "category": "Conveyance"
+  },
+  {
+    "id": "variable_belt",
+    "name": "Conveyor (variable, 2-click)",
+    "category": "Conveyance"
+  },
+  {
+    "id": "cyclone",
+    "name": "Cyclone",
+    "category": "Conveyance"
+  },
+  {
+    "id": "feed_hopper",
+    "name": "Feed hopper (small)",
+    "category": "Conveyance"
+  },
+  {
+    "id": "inclined_belt_8m",
+    "name": "Inclined belt (45\u00c2\u00b0, 8 m rise)",
+    "category": "Conveyance"
+  },
+  {
+    "id": "opzetband_1",
+    "name": "Opzetband 1 (5m@25\u00c2\u00b0, 3m wide, funnel walls)",
+    "category": "Conveyance"
+  },
+  {
+    "id": "opzetband_3a3b",
+    "name": "Opzetband 3A/3B (4m flat + 6m@40\u00c2\u00b0 + 0.5m top)",
+    "category": "Conveyance"
+  },
+  {
+    "id": "opzetband_3c6",
+    "name": "Opzetband 3C/6 (4m flat + 8m@35\u00c2\u00b0)",
+    "category": "Conveyance"
+  },
+  {
+    "id": "pole_single",
+    "name": "Support pole (1 leg)",
+    "category": "Conveyance"
+  },
+  {
+    "id": "pole_double",
+    "name": "Support pole (2 legs)",
+    "category": "Conveyance"
+  },
+  {
+    "id": "pole_a_frame",
+    "name": "Support pole (A-frame)",
+    "category": "Conveyance"
+  },
+  {
+    "id": "transport_belt",
+    "name": "Transport belt",
+    "category": "Conveyance"
+  },
+  {
+    "id": "transport_screw",
+    "name": "Transport screw",
+    "category": "Conveyance"
+  },
+  {
+    "id": "blower",
+    "name": "Ventilator / blower",
+    "category": "Conveyance"
+  },
+  {
+    "id": "westa_band_1",
+    "name": "Westa band 1 (8m@35\u00c2\u00b0, no flat)",
+    "category": "Conveyance"
+  },
+  {
+    "id": "kopfilter",
+    "name": "Diekop (die head)",
+    "category": "Extruders"
+  },
+  {
+    "id": "extruder_screw",
+    "name": "Extruder (3C screw)",
+    "category": "Extruders"
+  },
+  {
+    "id": "extruder_1",
+    "name": "Extruder 1",
+    "category": "Extruders"
+  },
+  {
+    "id": "extruder_3a",
+    "name": "Extruder 3A",
+    "category": "Extruders"
+  },
+  {
+    "id": "extruder_3b",
+    "name": "Extruder 3B",
+    "category": "Extruders"
+  },
+  {
+    "id": "extruder_3c",
+    "name": "Extruder 3C",
+    "category": "Extruders"
+  },
+  {
+    "id": "extruder_6",
+    "name": "Extruder 6",
+    "category": "Extruders"
+  },
+  {
+    "id": "heetafslag",
+    "name": "Heetafslag (hot-face cutter)",
+    "category": "Extruders"
+  },
+  {
+    "id": "laser_filter",
+    "name": "Laserfilter",
+    "category": "Extruders"
+  },
+  {
+    "id": "melt_pump",
+    "name": "Meltpump",
+    "category": "Extruders"
+  },
+  {
+    "id": "plasmaq",
+    "name": "Plasmaq (dewater press)",
+    "category": "Extruders"
+  },
+  {
+    "id": "vacuum_degas",
+    "name": "Vacuum degassing zone",
+    "category": "Extruders"
+  },
+  {
+    "id": "compactor",
+    "name": "Compactor / PCU (preconditioning unit)",
+    "category": "Extrusion prep"
+  },
+  {
+    "id": "mas_bak",
+    "name": "MAS trough",
+    "category": "Extrusion prep"
+  },
+  {
+    "id": "mengsilo",
+    "name": "Mixing silo (mengsilo)",
+    "category": "Extrusion prep"
+  },
+  {
+    "id": "hook_air_hose",
+    "name": "Air hose hook (20 m, translucent)",
+    "category": "Hoses & Air"
+  },
+  {
+    "id": "compressor_a",
+    "name": "Compressor A (vertical, ~3 m)",
+    "category": "Hoses & Air"
+  },
+  {
+    "id": "compressor_b",
+    "name": "Compressor B (cabinet, ~4 m)",
+    "category": "Hoses & Air"
+  },
+  {
+    "id": "dirt_hotspot",
+    "name": "Dirt hot-spot (auto-accumulates)",
+    "category": "Hoses & Air"
+  },
+  {
+    "id": "reel_fire_red",
+    "name": "Fire hose reel (red, 10 m)",
+    "category": "Hoses & Air"
+  },
+  {
+    "id": "washer_hp_mobile",
+    "name": "High-pressure washer (mobile)",
+    "category": "Hoses & Air"
+  },
+  {
+    "id": "reel_water_black",
+    "name": "Water hose reel (black, 10 m thin)",
+    "category": "Hoses & Air"
+  },
+  {
+    "id": "reel_water_thick_yellow",
+    "name": "Water hose reel (yellow, 10 m thick)",
+    "category": "Hoses & Air"
+  },
+  {
+    "id": "cyclone_bin",
+    "name": "Cyclone underflow bin",
+    "category": "Logistics"
+  },
+  {
+    "id": "fines_bin",
+    "name": "Fines bin (under-conveyor)",
+    "category": "Logistics"
+  },
+  {
+    "id": "ibc_tote",
+    "name": "IBC tote (1 m\u00c2\u00b3, fluids)",
+    "category": "Logistics"
+  },
+  {
+    "id": "skip_steel",
+    "name": "Steel skip (PLASTIC, chute)",
+    "category": "Logistics"
+  },
+  {
+    "id": "waste_container",
+    "name": "Waste container (schraperbak)",
+    "category": "Logistics"
+  },
+  {
+    "id": "weegschaal",
+    "name": "Weegschaal (25 kg batch weigh)",
+    "category": "Logistics"
+  },
+  {
+    "id": "pump_large",
+    "name": "Process pump (large)",
+    "category": "Pumps"
+  },
+  {
+    "id": "water_pump",
+    "name": "Water pump",
+    "category": "Pumps"
+  },
+  {
+    "id": "sink_float",
+    "name": "Bezinkafscheider",
+    "category": "Separation"
+  },
+  {
+    "id": "scraper_conveyor",
+    "name": "Coarse scraper conveyor",
+    "category": "Separation"
+  },
+  {
+    "id": "dewater_screw",
+    "name": "Dewatering screw",
+    "category": "Separation"
+  },
+  {
+    "id": "flotation_tank",
+    "name": "Flotation tank",
+    "category": "Separation"
+  },
+  {
+    "id": "friction_sep",
+    "name": "Friction separator",
+    "category": "Separation"
+  },
+  {
+    "id": "kufferath_sieve",
+    "name": "Kufferath sieve",
+    "category": "Separation"
+  },
+  {
+    "id": "ontwaterzeef",
+    "name": "Ontwaterzeef (dewater screen)",
+    "category": "Separation"
+  },
+  {
+    "id": "overband_magnet",
+    "name": "Overband magnet",
+    "category": "Separation"
+  },
+  {
+    "id": "rafter",
+    "name": "Rafter (sieve deck)",
+    "category": "Separation"
+  },
+  {
+    "id": "rotation_tank",
+    "name": "Rotation tank",
+    "category": "Separation"
+  },
+  {
+    "id": "shredder_1",
+    "name": "Shredder 1 (coarse)",
+    "category": "Shredders"
+  },
+  {
+    "id": "shredder_1_3c6",
+    "name": "Shredder 1 \u00c2\u00b7 3C/6",
+    "category": "Shredders"
+  },
+  {
+    "id": "shredder_2",
+    "name": "Shredder 2 (fine)",
+    "category": "Shredders"
+  },
+  {
+    "id": "shredder_3a3b",
+    "name": "Shredder 3A/3B",
+    "category": "Shredders"
+  },
+  {
+    "id": "mill",
+    "name": "Mill (granulator)",
+    "category": "Size reduction"
+  },
+  {
+    "id": "vuilsnippersilo",
+    "name": "Wet film silo (vuilsnipper)",
+    "category": "Size reduction"
+  },
+  {
+    "id": "ballistic_sep",
+    "name": "Ballistic separator",
+    "category": "Sorting"
+  },
+  {
+    "id": "bunker",
+    "name": "Bunker (intake)",
+    "category": "Sorting"
+  },
+  {
+    "id": "metal_belt",
+    "name": "Overband metal sep.",
+    "category": "Sorting"
+  },
+  {
+    "id": "sga_drum",
+    "name": "SGA opener drum",
+    "category": "Sorting"
+  },
+  {
+    "id": "titech_sort",
+    "name": "TITECH NIR sorter",
+    "category": "Sorting"
+  },
+  {
+    "id": "wind_sifter",
+    "name": "Windshifter (zigzag)",
+    "category": "Sorting"
+  },
+  {
+    "id": "door",
+    "name": "Door",
+    "category": "Structure"
+  },
+  {
+    "id": "doseersilo",
+    "name": "Doseer Silo",
+    "category": "Structure"
+  },
+  {
+    "id": "pcu_cabinet",
+    "name": "Extruder PCU",
+    "category": "Structure"
+  },
+  {
+    "id": "silo",
+    "name": "Silo",
+    "category": "Structure"
+  },
+  {
+    "id": "voorraad_silo",
+    "name": "Voorraad silo (granulate)",
+    "category": "Structure"
+  },
+  {
+    "id": "tool_scanner",
+    "name": "Barcode scanner",
+    "category": "Tools"
+  },
+  {
+    "id": "zone_collection",
+    "name": "Collection zone",
+    "category": "Tools"
+  },
+  {
+    "id": "film_scrap_pile",
+    "name": "Film scrap pile",
+    "category": "Tools"
+  },
+  {
+    "id": "tool_jerrycan",
+    "name": "Jerry can (fuel)",
+    "category": "Tools"
+  },
+  {
+    "id": "tool_lpg_rack",
+    "name": "LPG cylinder rack",
+    "category": "Tools"
+  },
+  {
+    "id": "tool_leafblower",
+    "name": "Leaf blower",
+    "category": "Tools"
+  },
+  {
+    "id": "tool_shovel",
+    "name": "Shovel",
+    "category": "Tools"
+  },
+  {
+    "id": "tool_scissors",
+    "name": "Wire scissors",
+    "category": "Tools"
+  },
+  {
+    "id": "centrifuge",
+    "name": "Centrifuge",
+    "category": "Washing"
+  },
+  {
+    "id": "friction_washer",
+    "name": "Friction washer",
+    "category": "Washing"
+  },
+  {
+    "id": "intensive_washer",
+    "name": "Intensive washer",
+    "category": "Washing"
+  },
+  {
+    "id": "mech_dryer",
+    "name": "Mechanical dryer",
+    "category": "Washing"
+  },
+  {
+    "id": "prewash_drum",
+    "name": "Pre-wash drum",
+    "category": "Washing"
+  },
+  {
+    "id": "wash_line",
+    "name": "Washing line",
+    "category": "Washing"
+  },
+  {
+    "id": "zss_water",
+    "name": "ZSS water plant",
+    "category": "Water"
+  }
+]

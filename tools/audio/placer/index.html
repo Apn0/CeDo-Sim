@@ -1,0 +1,1867 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CeDo Audio Placer</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; padding: 0; height: 100%; font-family: system-ui, sans-serif; background: #111; color: #ddd; }
+  /* Three-column layout: sidebar | main(map over workbench) | video pane (right). */
+  body { display: grid; grid-template-columns: 300px 1fr 440px; grid-template-rows: 1fr 260px; height: 100vh; }
+  #sidebar   { grid-row: 1 / 3; grid-column: 1; background: #1a1d22; padding: 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+  #map       { grid-row: 1;     grid-column: 2; min-height: 200px; background: #222; }
+  #workbench { grid-row: 2;     grid-column: 2; background: #161a1f; border-top: 1px solid #333; padding: 10px; display: none; }
+  #workbench.visible { display: block; }
+  /* Right pane: video on top, "Selected clip" rename panel below. Split 1:1. */
+  #video-pane{ grid-row: 1 / 3; grid-column: 3; background: #161a1f; border-left: 1px solid #333; padding: 10px; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+  #video-pane h2 { color: #9bd; font-size: 12px; margin: 0 0 4px 0; text-transform: uppercase; letter-spacing: 0.05em; }
+  #vp-top    { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; gap: 6px; background: #000; padding: 6px; border-radius: 4px; }
+  #wb-video  { width: 100%; flex: 1 1 0; min-height: 0; background: #000; object-fit: contain; }
+  #vp-status { color: #aab; font-size: 11px; }
+  #rename-panel { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
+  #rename-panel h2 { margin-top: 0; }
+  #rn-machines { flex: 1 1 0; min-height: 120px; overflow-y: auto; margin: 4px 0; padding: 4px; border: 1px solid #333; border-radius: 4px; background: #0e1217; }
+
+  h1 { font-size: 16px; margin: 0; color: #fff; }
+  h2 { font-size: 12px; margin: 10px 0 4px 0; color: #9bd; text-transform: uppercase; letter-spacing: 0.05em; }
+  .small { font-size: 11px; color: #99a; }
+  .row-flex { display: flex; gap: 6px; }
+  .row-flex > * { flex: 1; }
+  .btn { padding: 6px 10px; background: #2a4060; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
+  .btn:hover { background: #3a5680; }
+  .btn.danger { background: #6e2a2a; }
+  .btn.danger:hover { background: #8e3838; }
+  .btn.row { display: block; width: 100%; text-align: left; }
+  .btn.compact { padding: 3px 6px; font-size: 11px; }
+  .drop-zone { border: 2px dashed #555; padding: 12px; text-align: center; border-radius: 6px; color: #888; transition: all 0.15s; cursor: pointer; }
+  .drop-zone.over { border-color: #5af; background: #1a2638; color: #cdf; }
+  .drop-zone input { display: none; }
+
+  .source-row, .segment-row { display: flex; gap: 6px; align-items: center; padding: 5px 6px; border-radius: 4px; background: #232830; margin-bottom: 3px; }
+  .source-row.selected { outline: 2px solid #79b; }
+  .segment-row.placed  { background: #213d29; }
+  .segment-row.selected { outline: 2px solid #79b; }
+  .source-row .name, .segment-row .name { flex: 1; cursor: pointer; font-size: 12px; word-break: break-all; }
+  .source-row .meta, .segment-row .meta { font-size: 10px; color: #889; }
+  .x { color: #faa; cursor: pointer; padding: 0 6px; font-weight: bold; user-select: none; }
+  .x:hover { color: #f55; }
+
+  /* Workbench (waveform + controls; video lives in its own pane on the right). */
+  #wb-grid { display: grid; grid-template-columns: 1fr; gap: 6px; }
+  #wb-waveform-wrap { position: relative; height: 130px; background: #0c0f12; border: 1px solid #333; }
+  #wb-waveform { width: 100%; height: 100%; display: block; cursor: crosshair; }
+  #wb-playhead { position: absolute; top: 0; width: 1px; height: 100%; background: #ffc; pointer-events: none; }
+  .wb-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; font-size: 12px; }
+  .wb-controls label { display: inline-flex; gap: 4px; align-items: center; }
+  .wb-controls input[type=range] { width: 110px; }
+  .wb-segments { margin-top: 8px; max-height: 140px; overflow-y: auto; }
+
+  .leaflet-popup-content audio, .leaflet-popup-content video { width: 100%; margin-top: 6px; }
+  .leaflet-popup-content input[type=text], .leaflet-popup-content textarea {
+    width: 100%; box-sizing: border-box; padding: 3px 5px; border: 1px solid #aaa; border-radius: 3px; font-family: inherit;
+  }
+  .leaflet-popup-content textarea { min-height: 50px; resize: vertical; }
+
+  input[type=text], input[type=number] {
+    background: #0e1217; color: #ddd; border: 1px solid #333; border-radius: 3px; padding: 3px 5px; font-size: 12px;
+    width: 100%; box-sizing: border-box; margin-bottom: 4px;
+  }
+  #rn-machines .cat { margin: 6px 0 2px 0; color: #9bd; font-size: 11px; text-transform: uppercase; cursor: pointer; user-select: none; }
+  #rn-machines .cat:hover { color: #cef; }
+  #rn-machines label { display: flex; gap: 4px; align-items: center; font-size: 11px; padding: 1px 0 1px 8px; cursor: pointer; }
+  #rn-machines label:hover { background: #1f2530; }
+  #rn-machines input[type=checkbox] { width: auto; margin: 0; }
+  #rn-status { padding: 4px 0; color: #5e8; }
+  .segment-row.playing { background: #2d4a52; }
+  /* Auto-suggest chips (rename panel): one-click "accept best match" buttons. */
+  #rn-suggest { margin: 4px 0; padding: 0; }
+  #rn-suggest .sg-label { font-size: 10px; color: #99a; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 3px; }
+  #rn-suggest .sg-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .sg-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 7px; border: 1px solid #3a5680;
+             background: #1c2a3e; color: #cfe; border-radius: 11px; cursor: pointer; font-size: 11px; }
+  .sg-chip:hover { background: #2a4060; border-color: #5af; }
+  .sg-chip.accepted { background: #213d29; border-color: #3a7d4a; color: #9e9; cursor: default; }
+  .sg-chip .sg-score { font-size: 9px; color: #889; }
+  .sg-chip.accepted .sg-score { color: #6a8; }
+</style>
+</head>
+<body>
+<aside id="sidebar">
+  <h1>CeDo Audio Placer</h1>
+  <div class="small">Upload a video/audio file → auto-split by silence → place each segment on the map.</div>
+
+  <label class="drop-zone" id="dropZone">
+    <div>Drag a video or audio file here</div>
+    <div class="small">or click to pick (mp4, mov, webm, wav, mp3, m4a, ogg, flac)</div>
+    <input type="file" id="filePicker" accept="audio/*,video/*" multiple>
+  </label>
+
+  <h2>Sources (<span id="sourceCount">0</span>)</h2>
+  <div id="sourceList"></div>
+
+  <h2>Segments (<span id="segmentCount">0</span>)</h2>
+  <div class="small">Click a segment to auto-loop it, then click on the map to place. Drag markers to move.</div>
+  <div id="segmentList"></div>
+
+  <h2>Manifest</h2>
+  <div class="row-flex">
+    <button class="btn" id="exportBtn">Export JSON</button>
+    <button class="btn" id="importBtn">Import JSON</button>
+    <input type="file" id="importPicker" accept=".json" style="display:none">
+  </div>
+  <button class="btn danger" id="clearBtn">Clear everything</button>
+
+  <div class="small">Autosaves to your browser (IndexedDB for blobs, localStorage for metadata). PDOK Luchtfoto tiles. WGS84 + RD New (EPSG:28992) in export.</div>
+</aside>
+
+<main id="map"></main>
+
+<section id="workbench">
+  <div id="wb-grid">
+    <div>
+      <div class="wb-controls">
+        <label>Method:
+          <select id="wb-method">
+            <option value="spectral" selected>Spectral change (default)</option>
+            <option value="silence">Silence</option>
+            <option value="fixed">Fixed chunks</option>
+          </select>
+        </label>
+        <span class="wb-opt wb-opt-spectral">
+          <label>Sensitivity: <input type="range" id="wb-sensitivity" min="0.3" max="3.0" step="0.1" value="1.0"><span id="wb-sensitivity-val">1.0</span></label>
+          <label>Min seg (s): <input type="range" id="wb-minseg" min="1" max="30" step="1" value="5"><span id="wb-minseg-val">5</span></label>
+        </span>
+        <span class="wb-opt wb-opt-silence" style="display:none">
+          <label>Min silence (s): <input type="range" id="wb-minsilence" min="0.2" max="3.0" step="0.1" value="0.8"><span id="wb-minsilence-val">0.8</span></label>
+          <label>Threshold (dB): <input type="range" id="wb-threshold" min="-60" max="-20" step="1" value="-40"><span id="wb-threshold-val">-40</span></label>
+        </span>
+        <span class="wb-opt wb-opt-fixed" style="display:none">
+          <label>Chunk (s): <input type="range" id="wb-chunk" min="3" max="60" step="1" value="15"><span id="wb-chunk-val">15</span></label>
+        </span>
+      </div>
+      <div class="wb-controls">
+        <button class="btn" id="wb-autosegment">Auto-segment</button>
+        <button class="btn" id="wb-splithere">Split at playhead (M)</button>
+        <button class="btn danger compact" id="wb-clear-segments">Clear unplaced</button>
+      </div>
+      <div class="small" id="wb-status">No source selected.</div>
+    </div>
+    <div>
+      <div id="wb-waveform-wrap">
+        <canvas id="wb-waveform"></canvas>
+        <div id="wb-playhead" style="left:0"></div>
+      </div>
+      <div class="wb-segments" id="wb-segments"></div>
+    </div>
+  </div>
+</section>
+
+<aside id="video-pane">
+  <div id="vp-top">
+    <h2>Video preview</h2>
+    <!-- Plays the selected segment, looped within [start_s, end_s]. Muted —
+         audio comes from the seamless-loop audio element below so we don't get
+         a "click" at every wrap. -->
+    <video id="wb-video" muted playsinline></video>
+    <div class="small" id="vp-status">Pick a clip to play.</div>
+    <div class="row-flex" style="align-items:center; gap:8px">
+      <button class="btn" id="mute-btn" title="Mute / unmute the looped audio (kills sound, video keeps playing)">🔊 Mute</button>
+      <label class="small" style="flex:1">Volume
+        <input type="range" id="volume-slider" min="0" max="100" step="1" value="100" style="width:100%; vertical-align:middle">
+      </label>
+    </div>
+    <!-- Seamless audio loop element: src is a pre-rendered head-tail-crossfaded
+         WAV Blob; loop=true lets the browser handle the wrap natively. -->
+    <audio id="loop-player" loop preload="auto"></audio>
+  </div>
+
+  <div id="rename-panel" style="display:none">
+    <h2>Selected clip</h2>
+    <input type="text" id="rn-name" placeholder="Clip name (filename stem)">
+    <div class="small" id="rn-status"></div>
+    <div id="rn-suggest"></div>
+    <div class="small" style="margin-top:6px"><b>Machines</b> (multi-select, grouped):</div>
+    <div id="rn-machines"></div>
+    <input type="text" id="rn-tags" placeholder="Free-form tags (comma-sep)">
+    <input type="text" id="rn-notes" placeholder="Notes (machine state, shift…)">
+    <div class="small"><b>Filename →</b> <code id="rn-preview" style="color:#9bd; word-break: break-all;"></code></div>
+  </div>
+</aside>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin></script>
+<script type="application/json" id="machines-json">
+[
+  {
+    "id": "hmi_panel",
+    "name": "HMI panel (stand)",
+    "category": "Control"
+  },
+  {
+    "id": "hmi_wall",
+    "name": "HMI panel (wall)",
+    "category": "Control"
+  },
+  {
+    "id": "compactorband",
+    "name": "Compactorband (feed belt)",
+    "category": "Conveyance"
+  },
+  {
+    "id": "variable_belt",
+    "name": "Conveyor (variable, 2-click)",
+    "category": "Conveyance"
+  },
+  {
+    "id": "cyclone",
+    "name": "Cyclone",
+    "category": "Conveyance"
+  },
+  {
+    "id": "feed_hopper",
+    "name": "Feed hopper (small)",
+    "category": "Conveyance"
+  },
+  {
+    "id": "inclined_belt_8m",
+    "name": "Inclined belt (45\u00c2\u00b0, 8 m rise)",
+    "category": "Conveyance"
+  },
+  {
+    "id": "opzetband_1",
+    "name": "Opzetband 1 (5m@25\u00c2\u00b0, 3m wide, funnel walls)",
+    "category": "Conveyance"
+  },
+  {
+    "id": "opzetband_3a3b",
+    "name": "Opzetband 3A/3B (4m flat + 6m@40\u00c2\u00b0 + 0.5m top)",
+    "category": "Conveyance"
+  },
+  {
+    "id": "opzetband_3c6",
+    "name": "Opzetband 3C/6 (4m flat + 8m@35\u00c2\u00b0)",
+    "category": "Conveyance"
+  },
+  {
+    "id": "pole_single",
+    "name": "Support pole (1 leg)",
+    "category": "Conveyance"
+  },
+  {
+    "id": "pole_double",
+    "name": "Support pole (2 legs)",
+    "category": "Conveyance"
+  },
+  {
+    "id": "pole_a_frame",
+    "name": "Support pole (A-frame)",
+    "category": "Conveyance"
+  },
+  {
+    "id": "transport_belt",
+    "name": "Transport belt",
+    "category": "Conveyance"
+  },
+  {
+    "id": "transport_screw",
+    "name": "Transport screw",
+    "category": "Conveyance"
+  },
+  {
+    "id": "blower",
+    "name": "Ventilator / blower",
+    "category": "Conveyance"
+  },
+  {
+    "id": "westa_band_1",
+    "name": "Westa band 1 (8m@35\u00c2\u00b0, no flat)",
+    "category": "Conveyance"
+  },
+  {
+    "id": "kopfilter",
+    "name": "Diekop (die head)",
+    "category": "Extruders"
+  },
+  {
+    "id": "extruder_screw",
+    "name": "Extruder (3C screw)",
+    "category": "Extruders"
+  },
+  {
+    "id": "extruder_1",
+    "name": "Extruder 1",
+    "category": "Extruders"
+  },
+  {
+    "id": "extruder_3a",
+    "name": "Extruder 3A",
+    "category": "Extruders"
+  },
+  {
+    "id": "extruder_3b",
+    "name": "Extruder 3B",
+    "category": "Extruders"
+  },
+  {
+    "id": "extruder_3c",
+    "name": "Extruder 3C",
+    "category": "Extruders"
+  },
+  {
+    "id": "extruder_6",
+    "name": "Extruder 6",
+    "category": "Extruders"
+  },
+  {
+    "id": "heetafslag",
+    "name": "Heetafslag (hot-face cutter)",
+    "category": "Extruders"
+  },
+  {
+    "id": "laser_filter",
+    "name": "Laserfilter",
+    "category": "Extruders"
+  },
+  {
+    "id": "melt_pump",
+    "name": "Meltpump",
+    "category": "Extruders"
+  },
+  {
+    "id": "plasmaq",
+    "name": "Plasmaq (dewater press)",
+    "category": "Extruders"
+  },
+  {
+    "id": "vacuum_degas",
+    "name": "Vacuum degassing zone",
+    "category": "Extruders"
+  },
+  {
+    "id": "compactor",
+    "name": "Compactor / PCU (preconditioning unit)",
+    "category": "Extrusion prep"
+  },
+  {
+    "id": "mas_bak",
+    "name": "MAS trough",
+    "category": "Extrusion prep"
+  },
+  {
+    "id": "mengsilo",
+    "name": "Mixing silo (mengsilo)",
+    "category": "Extrusion prep"
+  },
+  {
+    "id": "hook_air_hose",
+    "name": "Air hose hook (20 m, translucent)",
+    "category": "Hoses & Air"
+  },
+  {
+    "id": "compressor_a",
+    "name": "Compressor A (vertical, ~3 m)",
+    "category": "Hoses & Air"
+  },
+  {
+    "id": "compressor_b",
+    "name": "Compressor B (cabinet, ~4 m)",
+    "category": "Hoses & Air"
+  },
+  {
+    "id": "dirt_hotspot",
+    "name": "Dirt hot-spot (auto-accumulates)",
+    "category": "Hoses & Air"
+  },
+  {
+    "id": "reel_fire_red",
+    "name": "Fire hose reel (red, 10 m)",
+    "category": "Hoses & Air"
+  },
+  {
+    "id": "washer_hp_mobile",
+    "name": "High-pressure washer (mobile)",
+    "category": "Hoses & Air"
+  },
+  {
+    "id": "reel_water_black",
+    "name": "Water hose reel (black, 10 m thin)",
+    "category": "Hoses & Air"
+  },
+  {
+    "id": "reel_water_thick_yellow",
+    "name": "Water hose reel (yellow, 10 m thick)",
+    "category": "Hoses & Air"
+  },
+  {
+    "id": "cyclone_bin",
+    "name": "Cyclone underflow bin",
+    "category": "Logistics"
+  },
+  {
+    "id": "fines_bin",
+    "name": "Fines bin (under-conveyor)",
+    "category": "Logistics"
+  },
+  {
+    "id": "ibc_tote",
+    "name": "IBC tote (1 m\u00c2\u00b3, fluids)",
+    "category": "Logistics"
+  },
+  {
+    "id": "skip_steel",
+    "name": "Steel skip (PLASTIC, chute)",
+    "category": "Logistics"
+  },
+  {
+    "id": "waste_container",
+    "name": "Waste container (schraperbak)",
+    "category": "Logistics"
+  },
+  {
+    "id": "weegschaal",
+    "name": "Weegschaal (25 kg batch weigh)",
+    "category": "Logistics"
+  },
+  {
+    "id": "pump_large",
+    "name": "Process pump (large)",
+    "category": "Pumps"
+  },
+  {
+    "id": "water_pump",
+    "name": "Water pump",
+    "category": "Pumps"
+  },
+  {
+    "id": "sink_float",
+    "name": "Bezinkafscheider",
+    "category": "Separation"
+  },
+  {
+    "id": "scraper_conveyor",
+    "name": "Coarse scraper conveyor",
+    "category": "Separation"
+  },
+  {
+    "id": "dewater_screw",
+    "name": "Dewatering screw",
+    "category": "Separation"
+  },
+  {
+    "id": "flotation_tank",
+    "name": "Flotation tank",
+    "category": "Separation"
+  },
+  {
+    "id": "friction_sep",
+    "name": "Friction separator",
+    "category": "Separation"
+  },
+  {
+    "id": "kufferath_sieve",
+    "name": "Kufferath sieve",
+    "category": "Separation"
+  },
+  {
+    "id": "ontwaterzeef",
+    "name": "Ontwaterzeef (dewater screen)",
+    "category": "Separation"
+  },
+  {
+    "id": "overband_magnet",
+    "name": "Overband magnet",
+    "category": "Separation"
+  },
+  {
+    "id": "rafter",
+    "name": "Rafter (sieve deck)",
+    "category": "Separation"
+  },
+  {
+    "id": "rotation_tank",
+    "name": "Rotation tank",
+    "category": "Separation"
+  },
+  {
+    "id": "shredder_1",
+    "name": "Shredder 1 (coarse)",
+    "category": "Shredders"
+  },
+  {
+    "id": "shredder_1_3c6",
+    "name": "Shredder 1 \u00c2\u00b7 3C/6",
+    "category": "Shredders"
+  },
+  {
+    "id": "shredder_2",
+    "name": "Shredder 2 (fine)",
+    "category": "Shredders"
+  },
+  {
+    "id": "shredder_3a3b",
+    "name": "Shredder 3A/3B",
+    "category": "Shredders"
+  },
+  {
+    "id": "mill",
+    "name": "Mill (granulator)",
+    "category": "Size reduction"
+  },
+  {
+    "id": "vuilsnippersilo",
+    "name": "Wet film silo (vuilsnipper)",
+    "category": "Size reduction"
+  },
+  {
+    "id": "ballistic_sep",
+    "name": "Ballistic separator",
+    "category": "Sorting"
+  },
+  {
+    "id": "bunker",
+    "name": "Bunker (intake)",
+    "category": "Sorting"
+  },
+  {
+    "id": "metal_belt",
+    "name": "Overband metal sep.",
+    "category": "Sorting"
+  },
+  {
+    "id": "sga_drum",
+    "name": "SGA opener drum",
+    "category": "Sorting"
+  },
+  {
+    "id": "titech_sort",
+    "name": "TITECH NIR sorter",
+    "category": "Sorting"
+  },
+  {
+    "id": "wind_sifter",
+    "name": "Windshifter (zigzag)",
+    "category": "Sorting"
+  },
+  {
+    "id": "door",
+    "name": "Door",
+    "category": "Structure"
+  },
+  {
+    "id": "doseersilo",
+    "name": "Doseer Silo",
+    "category": "Structure"
+  },
+  {
+    "id": "pcu_cabinet",
+    "name": "Extruder PCU",
+    "category": "Structure"
+  },
+  {
+    "id": "silo",
+    "name": "Silo",
+    "category": "Structure"
+  },
+  {
+    "id": "voorraad_silo",
+    "name": "Voorraad silo (granulate)",
+    "category": "Structure"
+  },
+  {
+    "id": "tool_scanner",
+    "name": "Barcode scanner",
+    "category": "Tools"
+  },
+  {
+    "id": "zone_collection",
+    "name": "Collection zone",
+    "category": "Tools"
+  },
+  {
+    "id": "film_scrap_pile",
+    "name": "Film scrap pile",
+    "category": "Tools"
+  },
+  {
+    "id": "tool_jerrycan",
+    "name": "Jerry can (fuel)",
+    "category": "Tools"
+  },
+  {
+    "id": "tool_lpg_rack",
+    "name": "LPG cylinder rack",
+    "category": "Tools"
+  },
+  {
+    "id": "tool_leafblower",
+    "name": "Leaf blower",
+    "category": "Tools"
+  },
+  {
+    "id": "tool_shovel",
+    "name": "Shovel",
+    "category": "Tools"
+  },
+  {
+    "id": "tool_scissors",
+    "name": "Wire scissors",
+    "category": "Tools"
+  },
+  {
+    "id": "centrifuge",
+    "name": "Centrifuge",
+    "category": "Washing"
+  },
+  {
+    "id": "friction_washer",
+    "name": "Friction washer",
+    "category": "Washing"
+  },
+  {
+    "id": "intensive_washer",
+    "name": "Intensive washer",
+    "category": "Washing"
+  },
+  {
+    "id": "mech_dryer",
+    "name": "Mechanical dryer",
+    "category": "Washing"
+  },
+  {
+    "id": "prewash_drum",
+    "name": "Pre-wash drum",
+    "category": "Washing"
+  },
+  {
+    "id": "wash_line",
+    "name": "Washing line",
+    "category": "Washing"
+  },
+  {
+    "id": "zss_water",
+    "name": "ZSS water plant",
+    "category": "Water"
+  }
+]
+</script>
+
+<script>
+'use strict';
+
+// ─── Config ──────────────────────────────────────────────────────────────
+const CEDO_CENTER = [50.9606, 5.8225];
+const CEDO_ZOOM   = 18;
+const PDOK_WMS    = 'https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0';
+
+// ─── WGS84 → RD New (EPSG:28992) ─────────────────────────────────────────
+function wgs84ToRd(lat, lon) {
+  const PHI0 = 52.15517440, LAM0 = 5.38720621;
+  const dphi = 0.36 * (lat - PHI0), dlam = 0.36 * (lon - LAM0);
+  const x = 155000
+    + 190094.945*dlam - 11832.228*dphi*dlam - 114.221*dphi*dphi*dlam
+    -     32.391*dlam*dlam*dlam - 2.340*dphi*dphi*dphi*dlam
+    -      0.608*dphi*dlam*dlam*dlam - 0.008*dlam*dlam
+    +      0.148*dphi*dphi*dlam*dlam*dlam;
+  const y = 463000
+    + 309056.544*dphi + 3638.893*dlam*dlam + 73.077*dphi*dphi
+    -    157.984*dphi*dlam*dlam + 59.788*dphi*dphi*dphi
+    +      0.433*dlam - 6.439*dphi*dphi*dlam*dlam
+    -     44.840*dphi*dphi*dphi*dlam*dlam + 0.092*dlam*dlam*dlam*dlam
+    -      0.054*dphi*dlam*dlam*dlam*dlam;
+  return { x, y };
+}
+
+// ─── State ───────────────────────────────────────────────────────────────
+// source: { id, name, file_name, blob, type ('audio'|'video'), duration, waveform: Float32Array, sampleRate }
+// segment: { id, source_id, name, start_s, end_s, lat?, lon?, notes, marker?, machines: string[], tags: string[] }
+const sources  = new Map();
+const segments = new Map();
+let selectedSourceId  = null;
+let selectedSegmentId = null;
+let machineCatalog    = [];   // {id, name, category}[]  loaded from machines.json
+const loopPlayer = document.getElementById('loop-player');
+
+// ── Mute / volume control (right pane, above the loop-player) ──────────────
+// Persisted across reloads via localStorage so the user can't accidentally lose
+// a mute setting between sessions (browser autoplay policies sometimes reset
+// the element's own properties).
+const MUTE_KEY   = 'cedo_audio_placer_muted';
+const VOLUME_KEY = 'cedo_audio_placer_volume';
+const muteBtn      = document.getElementById('mute-btn');
+const volumeSlider = document.getElementById('volume-slider');
+function _applyAudioControls() {
+  const isMuted = localStorage.getItem(MUTE_KEY) === '1';
+  const vol     = Math.max(0, Math.min(1, parseFloat(localStorage.getItem(VOLUME_KEY) ?? '1')));
+  loopPlayer.muted  = isMuted;
+  loopPlayer.volume = vol;
+  if (muteBtn) muteBtn.textContent = isMuted ? '🔇 Unmute' : '🔊 Mute';
+  if (volumeSlider) volumeSlider.value = String(Math.round(vol * 100));
+}
+if (muteBtn) {
+  muteBtn.addEventListener('click', () => {
+    const next = localStorage.getItem(MUTE_KEY) !== '1';
+    localStorage.setItem(MUTE_KEY, next ? '1' : '0');
+    _applyAudioControls();
+  });
+}
+if (volumeSlider) {
+  volumeSlider.addEventListener('input', e => {
+    const v = parseFloat(e.target.value) / 100;
+    localStorage.setItem(VOLUME_KEY, String(v));
+    // Setting the slider implicitly unmutes — that's the expected UX in every
+    // browser media player.
+    localStorage.setItem(MUTE_KEY, '0');
+    _applyAudioControls();
+  });
+}
+_applyAudioControls();
+// Declared early because top-level code below (the seamless-loop wiring around
+// line ~824) attaches a `timeupdate` listener at module load time. `const` is
+// not hoisted out of the TDZ, so leaving this declaration where the playhead
+// helpers live (further down) would crash the whole script on load.
+const videoEl = document.getElementById('wb-video');
+
+const LS_KEY = 'cedo_audio_placer_v2';
+const IDB_NAME = 'cedo_audio_placer_v2';
+const IDB_STORE = 'blobs';
+
+// ─── Seamless loop player ────────────────────────────────────────────────
+// The visible <video> plays muted with a seek-loop for the visual; the
+// <audio loop> element plays a PRE-RENDERED head-tail-crossfaded WAV Blob
+// for SEAMLESS audio (browser handles the wrap natively, no timeupdate gap).
+// Same algorithm as loopify_wavs.py, ported to JS.
+//
+// `src.audioBuffer` caches the decoded AudioBuffer for the currently-active
+// source. Switching sources discards the previous one (~95 MB per 5-min file).
+let _decodedSourceId = null;
+
+async function ensureDecodedBuffer(src) {
+  if (src.audioBuffer && _decodedSourceId === src.id) return src.audioBuffer;
+  // Drop any other source's buffer to keep memory bounded.
+  for (const s of sources.values()) if (s.id !== src.id) s.audioBuffer = null;
+  const ab = await src.blob.arrayBuffer();
+  const ac = new (window.AudioContext || window.webkitAudioContext)();
+  src.audioBuffer = await ac.decodeAudioData(ab.slice(0));
+  ac.close();
+  _decodedSourceId = src.id;
+  return src.audioBuffer;
+}
+
+async function buildLoopableBlob(seg) {
+  const src = sources.get(seg.source_id);
+  if (!src) return null;
+  const buf = await ensureDecodedBuffer(src);
+  const sr = buf.sampleRate;
+  const nCh = Math.min(2, buf.numberOfChannels);
+  const startSample = Math.max(0, Math.floor(seg.start_s * sr));
+  const endSample   = Math.min(buf.length, Math.floor(seg.end_s * sr));
+  const nFrames = endSample - startSample;
+  if (nFrames < 16) return null;
+
+  // Pull the segment range from the AudioBuffer into per-channel Float32 arrays.
+  const channels = [];
+  for (let c = 0; c < nCh; c++) {
+    const src_data = buf.getChannelData(c).subarray(startSample, endSample);
+    channels.push(new Float32Array(src_data));
+  }
+
+  // Head-to-tail equal-power crossfade (matches loopify_wavs.py).
+  const fadeMs = 100;
+  const fade = Math.min(Math.round(sr * fadeMs / 1000), Math.floor(nFrames / 4));
+  let outFrames = nFrames;
+  if (fade >= 16) {
+    outFrames = nFrames - fade;
+    const outChannels = channels.map(() => new Float32Array(outFrames));
+    for (let c = 0; c < nCh; c++) {
+      const inC = channels[c];
+      const outC = outChannels[c];
+      // Body unchanged: in[fade..N-fade) → out[fade..N-fade)
+      for (let i = fade; i < outFrames; i++) outC[i] = inC[i];
+      // Crossfade region at output[0..fade): head*fadeIn + tail*fadeOut
+      for (let i = 0; i < fade; i++) {
+        const t = i / fade;
+        const a = Math.sin(t * Math.PI / 2);              // head 0 → 1
+        const b = Math.cos(t * Math.PI / 2);              // tail 1 → 0
+        outC[i] = inC[i] * a + inC[nFrames - fade + i] * b;
+      }
+    }
+    for (let c = 0; c < nCh; c++) channels[c] = outChannels[c];
+  }
+
+  return new Blob([encodeWavInt16(channels, sr)], { type: 'audio/wav' });
+}
+
+// Encodes per-channel Float32 → interleaved 16-bit PCM RIFF WAV (ArrayBuffer).
+function encodeWavInt16(channels, sr) {
+  const nCh = channels.length;
+  const nFrames = channels[0].length;
+  const dataSize = nFrames * nCh * 2;
+  const ab = new ArrayBuffer(44 + dataSize);
+  const v = new DataView(ab);
+  // RIFF
+  v.setUint32(0, 0x46464952, true);  // "RIFF"
+  v.setUint32(4, 36 + dataSize, true);
+  v.setUint32(8, 0x45564157, true);  // "WAVE"
+  // fmt
+  v.setUint32(12, 0x20746d66, true); // "fmt "
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true);           // PCM
+  v.setUint16(22, nCh, true);
+  v.setUint32(24, sr, true);
+  v.setUint32(28, sr * nCh * 2, true);
+  v.setUint16(32, nCh * 2, true);
+  v.setUint16(34, 16, true);
+  // data
+  v.setUint32(36, 0x61746164, true); // "data"
+  v.setUint32(40, dataSize, true);
+  let o = 44;
+  for (let i = 0; i < nFrames; i++) {
+    for (let c = 0; c < nCh; c++) {
+      let s = Math.max(-1, Math.min(1, channels[c][i]));
+      v.setInt16(o, s * 32767, true);
+      o += 2;
+    }
+  }
+  return ab;
+}
+
+async function startLoopFor(seg) {
+  const src = sources.get(seg.source_id);
+  if (!src || !src.blob) { stopLoop(); return; }
+
+  setStatus(`Building loopable clip for "${seg.name}"…`);
+  let blobUrl = seg._loopBlobUrl;
+  try {
+    if (blobUrl == null) {
+      const blob = await buildLoopableBlob(seg);
+      if (blob == null) { stopLoop(); return; }
+      blobUrl = URL.createObjectURL(blob);
+      seg._loopBlobUrl = blobUrl;
+    }
+  } catch (err) {
+    console.error('buildLoopableBlob failed', err);
+    setStatus('Could not decode audio for this clip — see console.');
+    return;
+  }
+
+  // Audio: play the pre-rendered crossfaded WAV with native loop=true.
+  if (loopPlayer.src !== blobUrl) {
+    loopPlayer.src = blobUrl;
+  }
+  loopPlayer.loop = true;
+  loopPlayer.currentTime = 0;
+  // Re-apply persisted mute / volume each time we swap clips — assigning .src
+  // on an <audio> element does NOT reset muted/volume, but being explicit here
+  // means a future change to the playback path can't accidentally desync them.
+  _applyAudioControls();
+  loopPlayer.play().catch(() => {});
+
+  // Video: play the source clipped to [start_s, end_s], muted; loop visually.
+  if (videoEl.src !== URL.createObjectURL) {  // dummy to avoid lint
+  }
+  if (videoEl._srcId !== src.id) {
+    try { if (videoEl._objUrl) URL.revokeObjectURL(videoEl._objUrl); } catch (e) {}
+    videoEl._objUrl = URL.createObjectURL(src.blob);
+    videoEl.src = videoEl._objUrl;
+    videoEl._srcId = src.id;
+  }
+  videoEl._seg = seg;
+  const playVid = () => {
+    videoEl.currentTime = seg.start_s;
+    videoEl.play().catch(() => {});
+  };
+  if (videoEl.readyState >= 1) playVid();
+  else videoEl.addEventListener('loadedmetadata', playVid, { once: true });
+
+  setStatus(`▶ Looping "${seg.name}" (${(seg.end_s-seg.start_s).toFixed(1)}s, crossfaded)`);
+  const vp = document.getElementById('vp-status');
+  if (vp) vp.textContent = `▶ ${seg.name}  ${seg.start_s.toFixed(1)}–${seg.end_s.toFixed(1)}s`;
+}
+
+function stopLoop() {
+  loopPlayer.pause();
+  videoEl.pause();
+  videoEl._seg = null;
+}
+
+// Visual loop on the video element via timeupdate. The audio (loopPlayer) is
+// already seamless — the video element loop here just keeps the picture in sync.
+videoEl.addEventListener('timeupdate', () => {
+  const seg = videoEl._seg;
+  if (!seg) return;
+  if (videoEl.currentTime >= seg.end_s - 0.03) {
+    videoEl.currentTime = seg.start_s;
+  }
+});
+
+// ─── Machine catalog (from machines.json, parsed from the sim's PlaceableCatalog) ──
+async function loadMachineCatalog() {
+  // Prefer the inlined catalog (works from file:// without a server).
+  const el = document.getElementById('machines-json');
+  if (el && el.textContent.trim()) {
+    try { machineCatalog = JSON.parse(el.textContent); return; }
+    catch (err) { console.warn('Inline machines-json parse failed — trying fetch.', err); }
+  }
+  try {
+    const r = await fetch('machines.json', { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    machineCatalog = await r.json();
+  } catch (err) {
+    console.warn('Could not load machine catalog — checklist will be empty.', err);
+    machineCatalog = [];
+  }
+}
+
+// ─── Auto-suggest: fuzzy-match a clip to catalog machines ──────────────────
+// The user has dozens of recordings whose filename stems / tags hint at the
+// machine (e.g. "shredder1_run", "extruder_3a_idle"). We can't KNOW the right
+// machine, so we score every catalog entry against the clip's text and surface
+// the best few as one-click chips. The user confirms or ignores.
+
+// Split a string into lowercase alphanumeric tokens, e.g.
+//   "shredder1_run-3A" → ["shredder", "1", "run", "3", "a"]  (+ "3a" kept as a glued token)
+function _tokenize(s) {
+  const lower = (s || '').toLowerCase();
+  const raw = lower.split(/[^a-z0-9]+/).filter(Boolean);
+  const out = [];
+  for (const t of raw) {
+    out.push(t);
+    // Also split letter/number runs so "3a" matches "3" and "a" separately,
+    // while keeping the glued "3a" for exact id fragments like extruder_3a.
+    const parts = t.match(/[a-z]+|[0-9]+/g);
+    if (parts && parts.length > 1) for (const p of parts) out.push(p);
+  }
+  return out;
+}
+
+// Tiny noise words that shouldn't drive a match (recording verbs / states).
+const _SUGGEST_STOPWORDS = new Set([
+  'run','running','idle','idling','start','stop','on','off','clip','audio','rec',
+  'recording','test','loop','sound','noise','the','a','of','and','seg','segment',
+  'mov','mp4','wav','mp3','m4a','ogg','flac','cedo','machine',
+]);
+
+// Score a single machine against the clip's tokens. Higher = better.
+// Combines: exact id-fragment hits, name-token overlap, and substring fallback.
+function _scoreMachine(machine, clipTokens, clipText) {
+  if (!clipTokens.length) return 0;
+  const idTokens   = _tokenize(machine.id);
+  const nameTokens = _tokenize(machine.name);
+  const clipSet = new Set(clipTokens);
+
+  let score = 0;
+  let matchedSignal = false;
+
+  // 1) id-fragment matches are the strongest signal (ids are deliberate, e.g. "shredder_1").
+  for (const t of idTokens) {
+    if (t.length < 2 && !/[0-9]/.test(t)) continue;   // skip lone letters, keep digits
+    if (clipSet.has(t)) {
+      score += _SUGGEST_STOPWORDS.has(t) ? 0.5 : 3;
+      if (!_SUGGEST_STOPWORDS.has(t)) matchedSignal = true;
+    }
+  }
+  // 2) name-token overlap (the human-readable name often echoes the recording label).
+  for (const t of nameTokens) {
+    if (t.length < 3 || _SUGGEST_STOPWORDS.has(t)) continue;
+    if (clipSet.has(t)) { score += 2; matchedSignal = true; }
+  }
+  // 3) substring fallback: a long, distinctive id appearing verbatim in the clip text
+  //    (handles "extruder3a" written without a separator).
+  const idJoined = (machine.id || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const clipJoined = (clipText || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (idJoined.length >= 5 && clipJoined.includes(idJoined)) { score += 4; matchedSignal = true; }
+
+  // Require at least one non-stopword signal so a stray "1" can't alone surface a machine.
+  return matchedSignal ? score : 0;
+}
+
+// Return up to `limit` best machine matches for a segment: [{machine, score}].
+function suggestMachinesFor(seg, limit = 4) {
+  if (!seg || !machineCatalog.length) return [];
+  const clipText = [seg.name || '', ...(seg.tags || [])].join(' ');
+  const clipTokens = _tokenize(clipText);
+  const scored = [];
+  for (const m of machineCatalog) {
+    const s = _scoreMachine(m, clipTokens, clipText);
+    if (s > 0) scored.push({ machine: m, score: s });
+  }
+  scored.sort((a, b) => b.score - a.score || a.machine.name.localeCompare(b.machine.name));
+  return scored.slice(0, limit);
+}
+
+// ─── Rename panel ────────────────────────────────────────────────────────
+const renamePanel  = document.getElementById('rename-panel');
+const rnNameInput  = document.getElementById('rn-name');
+const rnTagsInput  = document.getElementById('rn-tags');
+const rnNotesInput = document.getElementById('rn-notes');
+const rnMachinesEl = document.getElementById('rn-machines');
+const rnSuggestEl  = document.getElementById('rn-suggest');
+const rnPreviewEl  = document.getElementById('rn-preview');
+const rnStatusEl   = document.getElementById('rn-status');
+
+function sanitizeName(s) {
+  return (s || '').replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '') || 'clip';
+}
+function fileNameStem(seg) {
+  const parts = [sanitizeName(seg.name)];
+  if (seg.machines && seg.machines.length) parts.push(seg.machines.map(sanitizeName).join('-'));
+  if (seg.tags && seg.tags.length)         parts.push(seg.tags.map(sanitizeName).join('-'));
+  return parts.join('__');
+}
+
+// Render the one-click auto-suggest chips for a segment. Clicking a chip toggles
+// that machine on `seg.machines` (same data path as the checklist), persists, and
+// refreshes the UI. Already-assigned suggestions show as "accepted" (✓).
+function renderSuggestions(seg) {
+  if (!rnSuggestEl) return;
+  rnSuggestEl.innerHTML = '';
+  const suggestions = suggestMachinesFor(seg);
+  if (!suggestions.length) return;
+  const label = document.createElement('div');
+  label.className = 'sg-label';
+  label.textContent = 'Suggested (from name/tags) — click to accept';
+  rnSuggestEl.appendChild(label);
+  const chips = document.createElement('div');
+  chips.className = 'sg-chips';
+  for (const { machine, score } of suggestions) {
+    const accepted = seg.machines.includes(machine.id);
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'sg-chip' + (accepted ? ' accepted' : '');
+    chip.title = accepted
+      ? `${machine.name} — already assigned (click in the list below to remove)`
+      : `Accept "${machine.name}" (${machine.id}) · match score ${score.toFixed(0)}`;
+    chip.innerHTML = `${accepted ? '✓ ' : '+ '}${escHtml(machine.name)} <span class="sg-score">${score.toFixed(0)}</span>`;
+    if (!accepted) {
+      chip.addEventListener('click', () => {
+        if (!seg.machines.includes(machine.id)) seg.machines.push(machine.id);
+        renderRenamePanel(); renderSegmentList();
+        if (seg.marker) refreshTooltip(seg.marker, seg);
+        saveState();
+      });
+    }
+    chips.appendChild(chip);
+  }
+  rnSuggestEl.appendChild(chips);
+}
+
+function renderRenamePanel() {
+  const seg = segments.get(selectedSegmentId);
+  if (!seg) { renamePanel.style.display = 'none'; return; }
+  renamePanel.style.display = '';
+  rnNameInput.value  = seg.name;
+  rnTagsInput.value  = (seg.tags || []).join(', ');
+  rnNotesInput.value = seg.notes || '';
+  rnStatusEl.textContent = loopPlayer.paused ? '(not playing)' : '♪ looping…';
+  renderSuggestions(seg);
+  // Build machine checklist grouped by category
+  const grouped = {};
+  for (const m of machineCatalog) (grouped[m.category] = grouped[m.category] || []).push(m);
+  const cats = Object.keys(grouped).sort();
+  rnMachinesEl.innerHTML = '';
+  for (const cat of cats) {
+    const ch = grouped[cat];
+    const hdr = document.createElement('div');
+    hdr.className = 'cat';
+    const checked = ch.filter(m => seg.machines.includes(m.id)).length;
+    hdr.textContent = `${cat}  (${checked}/${ch.length})  ▾`;
+    const wrap = document.createElement('div');
+    wrap.style.display = checked > 0 ? '' : 'none';
+    hdr.addEventListener('click', () => { wrap.style.display = wrap.style.display === 'none' ? '' : 'none'; });
+    rnMachinesEl.appendChild(hdr);
+    for (const m of ch) {
+      const lbl = document.createElement('label');
+      const cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.value = m.id;
+      cb.checked = seg.machines.includes(m.id);
+      cb.addEventListener('change', () => {
+        if (cb.checked) { if (!seg.machines.includes(m.id)) seg.machines.push(m.id); }
+        else            { seg.machines = seg.machines.filter(x => x !== m.id); }
+        renderRenamePanel(); renderSegmentList();
+        if (seg.marker) refreshTooltip(seg.marker, seg);
+        saveState();
+      });
+      lbl.appendChild(cb);
+      lbl.appendChild(document.createTextNode(` ${m.name}  `));
+      const code = document.createElement('span');
+      code.style.color = '#778'; code.style.fontSize = '10px';
+      code.textContent = m.id;
+      lbl.appendChild(code);
+      wrap.appendChild(lbl);
+    }
+    rnMachinesEl.appendChild(wrap);
+  }
+  rnPreviewEl.textContent = fileNameStem(seg) + '.wav';
+}
+
+rnNameInput.addEventListener('input', () => {
+  const seg = segments.get(selectedSegmentId);
+  if (!seg) return;
+  seg.name = rnNameInput.value;
+  rnPreviewEl.textContent = fileNameStem(seg) + '.wav';
+  renderSegmentList();
+  if (seg.marker) refreshTooltip(seg.marker, seg);
+  saveState();
+});
+rnTagsInput.addEventListener('input', () => {
+  const seg = segments.get(selectedSegmentId);
+  if (!seg) return;
+  seg.tags = rnTagsInput.value.split(',').map(s => s.trim()).filter(Boolean);
+  rnPreviewEl.textContent = fileNameStem(seg) + '.wav';
+  saveState();
+});
+rnNotesInput.addEventListener('input', () => {
+  const seg = segments.get(selectedSegmentId);
+  if (!seg) return;
+  seg.notes = rnNotesInput.value;
+  saveState();
+});
+
+// ─── IndexedDB ───────────────────────────────────────────────────────────
+function idbOpen() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open(IDB_NAME, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore(IDB_STORE);
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  });
+}
+async function idbPut(id, blob)  { const db=await idbOpen(); return new Promise((r,j)=>{const t=db.transaction(IDB_STORE,'readwrite'); t.objectStore(IDB_STORE).put(blob,id); t.oncomplete=r; t.onerror=()=>j(t.error);}); }
+async function idbGet(id)        { const db=await idbOpen(); return new Promise((r,j)=>{const t=db.transaction(IDB_STORE,'readonly');  const q=t.objectStore(IDB_STORE).get(id); q.onsuccess=()=>r(q.result||null); q.onerror=()=>j(q.error);}); }
+async function idbDelete(id)     { const db=await idbOpen(); return new Promise((r,j)=>{const t=db.transaction(IDB_STORE,'readwrite'); t.objectStore(IDB_STORE).delete(id); t.oncomplete=r; t.onerror=()=>j(t.error);}); }
+async function idbClear()        { const db=await idbOpen(); return new Promise((r,j)=>{const t=db.transaction(IDB_STORE,'readwrite'); t.objectStore(IDB_STORE).clear(); t.oncomplete=r; t.onerror=()=>j(t.error);}); }
+
+const uid = () => 's_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,7);
+const stripExt = s => s.replace(/\.[^.]+$/, '');
+const escHtml = s => (s||'').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const escAttr = s => (s||'').replace(/["&<>]/g, c => ({'"':'&quot;','&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+// ─── Map ─────────────────────────────────────────────────────────────────
+const map = L.map('map').setView(CEDO_CENTER, CEDO_ZOOM);
+L.tileLayer.wms(PDOK_WMS, {
+  layers: 'Actueel_orthoHR',
+  format: 'image/png',
+  attribution: '© PDOK Luchtfoto',
+  maxZoom: 22,
+}).addTo(map);
+map.on('click', e => placeSelectedSegment(e.latlng));
+
+// ─── Decode + waveform extraction ────────────────────────────────────────
+async function decodeAndWaveform(file) {
+  // decodeAudioData handles audio tracks from MP3/MP4/WAV/M4A/OGG in modern browsers.
+  // For MOV containers, support depends on the browser's MP4 demuxer.
+  const ab = await file.arrayBuffer();
+  const ac = new (window.AudioContext || window.webkitAudioContext)();
+  let buf;
+  try {
+    buf = await ac.decodeAudioData(ab.slice(0)); // slice() because decode detaches the buffer
+  } finally {
+    ac.close();
+  }
+  // Downmix to mono
+  const N = buf.length;
+  const ch0 = buf.getChannelData(0);
+  let mono;
+  if (buf.numberOfChannels >= 2) {
+    const ch1 = buf.getChannelData(1);
+    mono = new Float32Array(N);
+    for (let i = 0; i < N; i++) mono[i] = (ch0[i] + ch1[i]) * 0.5;
+  } else {
+    mono = new Float32Array(ch0); // copy so we keep it after decode buffer is GC'd
+  }
+  // Compute RMS waveform at fixed 50 ms resolution for analysis + display.
+  const sr = buf.sampleRate;
+  const winN = Math.max(1, Math.round(0.05 * sr));
+  const nWins = Math.ceil(N / winN);
+  const wf = new Float32Array(nWins);
+  for (let w = 0; w < nWins; w++) {
+    let sum = 0; const start = w * winN;
+    const end = Math.min(N, start + winN);
+    for (let i = start; i < end; i++) sum += mono[i] * mono[i];
+    wf[w] = Math.sqrt(sum / Math.max(1, end - start));
+  }
+  return { waveform: wf, sampleRate: sr, duration: buf.duration, winSec: 0.05 };
+}
+
+// Decode the source blob to a mono Float32 at a target sample rate (default 16 kHz),
+// for spectral analysis. Cheaper than keeping the full-rate buffer in memory.
+async function decodeMono(blob, targetSr = 16000) {
+  const ab = await blob.arrayBuffer();
+  const ac = new (window.AudioContext || window.webkitAudioContext)();
+  const buf = await ac.decodeAudioData(ab.slice(0));
+  ac.close();
+  const N = buf.length;
+  const ch0 = buf.getChannelData(0);
+  let mono;
+  if (buf.numberOfChannels >= 2) {
+    const ch1 = buf.getChannelData(1);
+    mono = new Float32Array(N);
+    for (let i = 0; i < N; i++) mono[i] = (ch0[i] + ch1[i]) * 0.5;
+  } else {
+    mono = new Float32Array(ch0);
+  }
+  // Naive box-filter downsample (anti-alias is fine for our ≤4 kHz analysis bands).
+  if (buf.sampleRate <= targetSr) return { mono, sr: buf.sampleRate, duration: buf.duration };
+  const ratio = buf.sampleRate / targetSr;
+  const nOut = Math.floor(mono.length / ratio);
+  const ds = new Float32Array(nOut);
+  for (let i = 0; i < nOut; i++) {
+    const i0 = Math.floor(i * ratio);
+    const i1 = Math.floor((i + 1) * ratio);
+    let s = 0; for (let j = i0; j < i1 && j < mono.length; j++) s += mono[j];
+    ds[i] = s / Math.max(1, i1 - i0);
+  }
+  return { mono: ds, sr: targetSr, duration: buf.duration };
+}
+
+// Biquad bandpass (RBJ cookbook). Q=1, normalised.
+function biquadBP(freq, Q, sr) {
+  const w = 2 * Math.PI * freq / sr;
+  const a = Math.sin(w) / (2 * Q);
+  const c = Math.cos(w);
+  const a0 = 1 + a;
+  return { b0: a/a0, b1: 0, b2: -a/a0, a1: -2*c/a0, a2: (1-a)/a0 };
+}
+function applyBiquad(x, k) {
+  const y = new Float32Array(x.length);
+  let x1=0, x2=0, y1=0, y2=0;
+  for (let i = 0; i < x.length; i++) {
+    const xi = x[i];
+    const yi = k.b0*xi + k.b1*x1 + k.b2*x2 - k.a1*y1 - k.a2*y2;
+    y[i] = yi;
+    x2 = x1; x1 = xi; y2 = y1; y1 = yi;
+  }
+  return y;
+}
+
+// Spectral change detection: split where the rolling band-energy profile shifts.
+// Returns array of [start, end] segments (seconds).
+function spectralSegments(mono, sr, duration, sensitivity, minSegSec) {
+  // 3 bands, biquad bandpass — chosen to discriminate low hum / mid roar / high whine
+  const bands = [200, 1000, 3500].map(f => applyBiquad(mono, biquadBP(f, 1.0, sr)));
+  const winSec = 0.1;
+  const winN = Math.round(winSec * sr);
+  const nWins = Math.floor(mono.length / winN);
+  // log-energy per window per band
+  const E = bands.map(b => {
+    const e = new Float32Array(nWins);
+    for (let w = 0; w < nWins; w++) {
+      let s = 0; const start = w * winN; const end = start + winN;
+      for (let i = start; i < end; i++) s += b[i] * b[i];
+      e[w] = Math.log(1e-9 + s / winN);
+    }
+    return e;
+  });
+  // z-score normalise each band (compare shape, not absolute energy)
+  for (const e of E) {
+    let m = 0; for (let i = 0; i < nWins; i++) m += e[i]; m /= nWins || 1;
+    let v = 0; for (let i = 0; i < nWins; i++) v += (e[i]-m)*(e[i]-m); const sd = Math.sqrt(v / (nWins||1)) || 1;
+    for (let i = 0; i < nWins; i++) e[i] = (e[i]-m) / sd;
+  }
+  // Change score: distance between the mean band-vector of the last 2 s vs the next 2 s
+  const K = Math.max(5, Math.round(2.0 / winSec));
+  const score = new Float32Array(nWins);
+  for (let w = K; w < nWins - K; w++) {
+    let d2 = 0;
+    for (let b = 0; b < 3; b++) {
+      let prev = 0, next = 0;
+      for (let i = w-K; i < w; i++) prev += E[b][i];
+      for (let i = w; i < w+K; i++) next += E[b][i];
+      prev /= K; next /= K;
+      d2 += (next - prev) * (next - prev);
+    }
+    score[w] = Math.sqrt(d2);
+  }
+  // Peak-pick: above (mean + sensitivity·std) of the score, local max, with refractory.
+  let m = 0; for (let i = 0; i < nWins; i++) m += score[i]; m /= nWins || 1;
+  let v = 0; for (let i = 0; i < nWins; i++) v += (score[i]-m)*(score[i]-m); const sd = Math.sqrt(v / (nWins||1)) || 1;
+  const thr = m + sensitivity * sd;
+  const minSpacing = Math.max(3, Math.round(minSegSec / winSec));
+  const boundaries = [0];
+  let lastPeak = -minSpacing;
+  for (let w = 0; w < nWins; w++) {
+    if (score[w] > thr && w - lastPeak >= minSpacing) {
+      let isMax = true;
+      for (let j = Math.max(0, w-3); j < Math.min(nWins, w+4); j++) if (j !== w && score[j] > score[w]) { isMax = false; break; }
+      if (isMax) { boundaries.push(w * winSec); lastPeak = w; }
+    }
+  }
+  boundaries.push(duration);
+  // Build segments and drop ones shorter than minSegSec by absorbing into the next.
+  const segs = [];
+  for (let i = 0; i < boundaries.length - 1; i++) {
+    if (boundaries[i+1] - boundaries[i] >= minSegSec) segs.push({ start_s: boundaries[i], end_s: boundaries[i+1] });
+  }
+  return segs;
+}
+
+function fixedChunkSegments(duration, chunkSec) {
+  const segs = [];
+  for (let t = 0; t < duration; t += chunkSec) segs.push({ start_s: t, end_s: Math.min(t + chunkSec, duration) });
+  return segs;
+}
+
+// Auto-segment a source by silence detection.
+// Returns array of {start_s, end_s}, trimming leading/trailing silence.
+function autoSegment(waveform, winSec, thresholdDb, minSilenceSec) {
+  const thresh = Math.pow(10, thresholdDb / 20);
+  const minSilWins = Math.max(1, Math.round(minSilenceSec / winSec));
+  const isQuiet = (i) => waveform[i] < thresh;
+
+  // Walk through and find runs of NON-quiet (= segments) separated by long quiet runs.
+  const segs = [];
+  let segStart = null;
+  let quietRun = 0;
+  for (let i = 0; i < waveform.length; i++) {
+    if (isQuiet(i)) {
+      quietRun++;
+      if (segStart !== null && quietRun >= minSilWins) {
+        // Close the active segment at the start of the silence run.
+        const segEnd = i - quietRun + 1;
+        if (segEnd - segStart >= Math.round(0.3 / winSec)) {  // ignore <300 ms blips
+          segs.push({ start_s: segStart * winSec, end_s: segEnd * winSec });
+        }
+        segStart = null;
+      }
+    } else {
+      if (segStart === null) segStart = i;
+      quietRun = 0;
+    }
+  }
+  if (segStart !== null) {
+    segs.push({ start_s: segStart * winSec, end_s: waveform.length * winSec });
+  }
+  return segs;
+}
+
+// ─── Sources ─────────────────────────────────────────────────────────────
+async function addSourceFromFile(file) {
+  const id = uid();
+  const type = file.type.startsWith('video/') || /\.(mp4|mov|webm|mkv)$/i.test(file.name) ? 'video' : 'audio';
+  setStatus(`Decoding "${file.name}"…`);
+  let decoded;
+  try {
+    decoded = await decodeAndWaveform(file);
+  } catch (err) {
+    console.error(err);
+    alert(`Couldn't decode "${file.name}".\n\n${err.message}\n\nIf this is a MOV or unusual codec, convert to MP4/MP3 first.`);
+    return;
+  }
+  const src = {
+    id, type,
+    name: stripExt(file.name),
+    file_name: file.name,
+    blob: file,
+    duration: decoded.duration,
+    waveform: decoded.waveform,
+    winSec: decoded.winSec,
+    sampleRate: decoded.sampleRate,
+  };
+  sources.set(id, src);
+  await idbPut(id, file);
+  setStatus(`Loaded "${file.name}" — ${decoded.duration.toFixed(1)}s. Click Auto-segment.`);
+  selectSource(id);
+  renderSources();
+  saveState();
+}
+
+function selectSource(id) {
+  selectedSourceId = id;
+  selectedSegmentId = null;
+  const src = sources.get(id);
+  if (!src) { document.getElementById('workbench').classList.remove('visible'); return; }
+  document.getElementById('workbench').classList.add('visible');
+  // The video element itself is now managed by startLoopFor (so it's bound
+  // to the SEGMENT range, not just the source). Here we just point it at
+  // the source blob so the user can scrub it manually via the waveform until
+  // they pick a clip.
+  if (videoEl._srcId !== src.id) {
+    try { if (videoEl._objUrl) URL.revokeObjectURL(videoEl._objUrl); } catch (e) {}
+    videoEl._objUrl = URL.createObjectURL(src.blob);
+    videoEl.src = videoEl._objUrl;
+    videoEl._srcId = src.id;
+    videoEl._seg = null;   // no segment-loop active yet
+  }
+  drawWaveform();
+  renderSegmentList();
+  renderSources();
+}
+
+async function deleteSource(id) {
+  // Delete all child segments first.
+  for (const s of [...segments.values()]) if (s.source_id === id) deleteSegment(s.id, true);
+  sources.delete(id);
+  await idbDelete(id);
+  if (selectedSourceId === id) { selectedSourceId = null; document.getElementById('workbench').classList.remove('visible'); }
+  renderSources(); renderSegmentList(); saveState();
+}
+
+// ─── Segments ────────────────────────────────────────────────────────────
+function addSegment(source_id, start_s, end_s, name) {
+  const src = sources.get(source_id);
+  const id = uid();
+  const seg = {
+    id, source_id,
+    name: name || `${src.name}_${start_s.toFixed(1)}s`,
+    start_s, end_s,
+    notes: '',
+    machines: [],
+    tags: [],
+  };
+  segments.set(id, seg);
+  return seg;
+}
+
+function deleteSegment(id, skipRender) {
+  const s = segments.get(id);
+  if (!s) return;
+  if (s.marker) map.removeLayer(s.marker);
+  if (s._loopBlobUrl) { try { URL.revokeObjectURL(s._loopBlobUrl); } catch (e) {} }
+  segments.delete(id);
+  if (selectedSegmentId === id) { selectedSegmentId = null; stopLoop(); }
+  if (!skipRender) { renderSegmentList(); drawWaveform(); saveState(); }
+}
+
+function placeSelectedSegment(latlng) {
+  if (!selectedSegmentId) {
+    alert('Pick a segment from the list first.');
+    return;
+  }
+  const s = segments.get(selectedSegmentId);
+  if (!s) return;
+  if (s.marker) s.marker.setLatLng(latlng);
+  else s.marker = makeMarkerFor(s, latlng);
+  s.lat = latlng.lat; s.lon = latlng.lng;
+  renderSegmentList(); saveState();
+}
+
+function makeMarkerFor(seg, latlng) {
+  const m = L.marker(latlng, { draggable: true }).addTo(map);
+  refreshTooltip(m, seg);
+  m.on('click', () => {
+    selectedSegmentId = seg.id;
+    if (sources.has(seg.source_id) && selectedSourceId !== seg.source_id) selectSource(seg.source_id);
+    startLoopFor(seg);
+    renderSegmentList(); renderRenamePanel(); drawWaveform();
+  });
+  m.on('dragend', () => { const ll = m.getLatLng(); seg.lat = ll.lat; seg.lon = ll.lng; renderSegmentList(); refreshTooltip(m, seg); saveState(); });
+  m.on('contextmenu', () => { if (confirm(`Delete marker for "${seg.name}"?`)) { if (seg.marker) { map.removeLayer(seg.marker); seg.marker = null; } seg.lat = null; seg.lon = null; if (selectedSegmentId === seg.id) stopLoop(); renderSegmentList(); renderRenamePanel(); saveState(); }});
+  return m;
+}
+
+function refreshTooltip(marker, seg) {
+  const machineLabel = seg.machines && seg.machines.length ? `\n[${seg.machines.join(', ')}]` : '';
+  marker.unbindTooltip();
+  marker.bindTooltip(`${seg.name} (${(seg.end_s - seg.start_s).toFixed(1)}s)${machineLabel}`, { direction: 'top', offset: [0, -20] });
+}
+
+function popupHtml(seg) {
+  const src = sources.get(seg.source_id);
+  const blobUrl = src && src.blob ? URL.createObjectURL(src.blob) : '';
+  const tag = src && src.type === 'video' ? 'video' : 'audio';
+  const rd = seg.lat != null ? wgs84ToRd(seg.lat, seg.lon) : { x: 0, y: 0 };
+  return `
+    <div>
+      <input type="text" data-field="name" value="${escAttr(seg.name)}" placeholder="Segment name" style="font-weight:bold; font-size:13px;">
+      <div class="small">${escHtml(src?.file_name||'?')} · ${seg.start_s.toFixed(2)}–${seg.end_s.toFixed(2)} s (${(seg.end_s-seg.start_s).toFixed(1)} s)</div>
+      <textarea data-field="notes" placeholder="Notes (machine, conditions…)">${escHtml(seg.notes||'')}</textarea>
+      <${tag} controls src="${blobUrl}#t=${seg.start_s},${seg.end_s}"></${tag}>
+      <div class="small">WGS84 ${seg.lat?.toFixed(6)}, ${seg.lon?.toFixed(6)}<br>RD ${rd.x.toFixed(1)}, ${rd.y.toFixed(1)}</div>
+      <button class="btn danger compact" data-action="delete">Delete segment</button>
+    </div>`;
+}
+
+function wirePopup(root, seg) {
+  if (!root) return;
+  root.querySelector('[data-field=name]').addEventListener('input', e => { seg.name = e.target.value; renderSegmentList(); saveState(); });
+  root.querySelector('[data-field=notes]').addEventListener('input', e => { seg.notes = e.target.value; saveState(); });
+  root.querySelector('[data-action=delete]').addEventListener('click', () => deleteSegment(seg.id));
+  // Loop playback within [start_s, end_s] on the popup media element.
+  const media = root.querySelector('audio, video');
+  if (media) {
+    media.addEventListener('timeupdate', () => {
+      if (media.currentTime > seg.end_s) media.currentTime = seg.start_s;
+    });
+  }
+}
+
+// ─── Waveform canvas ─────────────────────────────────────────────────────
+const wfCanvas = document.getElementById('wb-waveform');
+const wfCtx = wfCanvas.getContext('2d');
+
+function drawWaveform() {
+  const src = sources.get(selectedSourceId);
+  if (!src) return;
+  const W = wfCanvas.clientWidth, H = wfCanvas.clientHeight;
+  wfCanvas.width = W; wfCanvas.height = H;
+  wfCtx.fillStyle = '#0c0f12'; wfCtx.fillRect(0, 0, W, H);
+  // RMS bars
+  const wf = src.waveform;
+  const max = Math.max(...wf, 1e-6);
+  wfCtx.fillStyle = '#5a6e89';
+  for (let x = 0; x < W; x++) {
+    const i0 = Math.floor(x       / W * wf.length);
+    const i1 = Math.floor((x + 1) / W * wf.length);
+    let peak = 0;
+    for (let i = i0; i < i1; i++) if (wf[i] > peak) peak = wf[i];
+    const h = (peak / max) * H;
+    wfCtx.fillRect(x, (H - h) / 2, 1, h);
+  }
+  // Segments belonging to this source
+  for (const s of segments.values()) {
+    if (s.source_id !== src.id) continue;
+    const x0 = s.start_s / src.duration * W;
+    const x1 = s.end_s   / src.duration * W;
+    wfCtx.fillStyle = (s.id === selectedSegmentId) ? 'rgba(120, 180, 255, 0.35)' : 'rgba(80, 170, 100, 0.22)';
+    wfCtx.fillRect(x0, 0, x1 - x0, H);
+    wfCtx.strokeStyle = (s.id === selectedSegmentId) ? '#9cf' : '#6c9';
+    wfCtx.strokeRect(x0 + 0.5, 0.5, Math.max(1, x1 - x0 - 1), H - 1);
+  }
+}
+
+// Playhead from video element currentTime. `videoEl` is declared up top so the
+// seamless-loop wiring earlier in this script can attach listeners at load.
+const playheadEl = document.getElementById('wb-playhead');
+function syncPlayhead() {
+  const src = sources.get(selectedSourceId);
+  if (!src || !videoEl.duration) { playheadEl.style.left = '0px'; return; }
+  const W = wfCanvas.clientWidth;
+  const x = videoEl.currentTime / src.duration * W;
+  playheadEl.style.left = x + 'px';
+}
+videoEl.addEventListener('timeupdate', syncPlayhead);
+videoEl.addEventListener('seeked', syncPlayhead);
+
+// Click on waveform → seek media, and select the segment under the cursor (if any).
+wfCanvas.addEventListener('click', e => {
+  const src = sources.get(selectedSourceId);
+  if (!src) return;
+  const rect = wfCanvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const t = (x / rect.width) * src.duration;
+  videoEl.currentTime = t;
+  // If click lands inside a segment, select it.
+  for (const s of segments.values()) {
+    if (s.source_id === src.id && t >= s.start_s && t <= s.end_s) {
+      selectedSegmentId = s.id; renderSegmentList(); drawWaveform(); return;
+    }
+  }
+});
+
+// ─── Workbench controls ──────────────────────────────────────────────────
+const methodSelect = document.getElementById('wb-method');
+const sensitivitySlider = document.getElementById('wb-sensitivity');
+const minSegSlider = document.getElementById('wb-minseg');
+const minSilSlider = document.getElementById('wb-minsilence');
+const thresholdSlider = document.getElementById('wb-threshold');
+const chunkSlider = document.getElementById('wb-chunk');
+
+function syncSliderLabel(slider, labelId) {
+  slider.addEventListener('input', e => document.getElementById(labelId).textContent = e.target.value);
+}
+syncSliderLabel(sensitivitySlider, 'wb-sensitivity-val');
+syncSliderLabel(minSegSlider,      'wb-minseg-val');
+syncSliderLabel(minSilSlider,      'wb-minsilence-val');
+syncSliderLabel(thresholdSlider,   'wb-threshold-val');
+syncSliderLabel(chunkSlider,       'wb-chunk-val');
+
+methodSelect.addEventListener('change', updateMethodUI);
+function updateMethodUI() {
+  const m = methodSelect.value;
+  document.querySelectorAll('.wb-opt').forEach(el => el.style.display = 'none');
+  document.querySelectorAll('.wb-opt-' + m).forEach(el => el.style.display = '');
+}
+updateMethodUI();
+
+document.getElementById('wb-autosegment').addEventListener('click', async () => {
+  const src = sources.get(selectedSourceId);
+  if (!src) return;
+  // Wipe previously-auto-generated (unplaced) segments for this source; keep placed ones.
+  for (const s of [...segments.values()]) if (s.source_id === src.id && s.lat == null) deleteSegment(s.id, true);
+
+  const method = methodSelect.value;
+  let segs;
+  if (method === 'silence') {
+    segs = autoSegment(src.waveform, src.winSec, parseFloat(thresholdSlider.value), parseFloat(minSilSlider.value));
+  } else if (method === 'fixed') {
+    segs = fixedChunkSegments(src.duration, parseFloat(chunkSlider.value));
+  } else { // spectral
+    setStatus('Decoding for spectral analysis…');
+    try {
+      const { mono, sr, duration } = await decodeMono(src.blob, 16000);
+      setStatus('Analysing spectral changes…');
+      // Give the UI one frame to repaint before the synchronous analysis.
+      await new Promise(r => setTimeout(r, 0));
+      segs = spectralSegments(mono, sr, duration, parseFloat(sensitivitySlider.value), parseFloat(minSegSlider.value));
+    } catch (err) {
+      console.error(err);
+      setStatus('Spectral analysis failed — see console.');
+      return;
+    }
+  }
+  segs.forEach(s => addSegment(src.id, s.start_s, s.end_s));
+  setStatus(`Auto-segment (${method}) → ${segs.length} segment(s).`);
+  renderSegmentList(); drawWaveform(); saveState();
+});
+
+document.getElementById('wb-splithere').addEventListener('click', () => {
+  const src = sources.get(selectedSourceId);
+  if (!src) return;
+  const t = videoEl.currentTime;
+  // If inside an existing segment, split it at t.
+  for (const s of [...segments.values()]) {
+    if (s.source_id === src.id && t > s.start_s + 0.05 && t < s.end_s - 0.05) {
+      const oldEnd = s.end_s;
+      s.end_s = t;
+      // Boundary changed — drop the cached loop Blob so it gets rebuilt next play.
+      if (s._loopBlobUrl) { try { URL.revokeObjectURL(s._loopBlobUrl); } catch (e) {} ; s._loopBlobUrl = null; }
+      addSegment(src.id, t, oldEnd, s.name + '_b');
+      setStatus(`Split at ${t.toFixed(2)}s`);
+      renderSegmentList(); drawWaveform(); saveState(); return;
+    }
+  }
+  // Otherwise create a 5-s segment starting here.
+  const end = Math.min(t + 5, src.duration);
+  addSegment(src.id, t, end);
+  renderSegmentList(); drawWaveform(); saveState();
+});
+
+// Keyboard: M = split at current playhead (when not typing in an input).
+document.addEventListener('keydown', e => {
+  if (e.key !== 'm' && e.key !== 'M') return;
+  const tag = (document.activeElement && document.activeElement.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  e.preventDefault();
+  document.getElementById('wb-splithere').click();
+});
+
+document.getElementById('wb-clear-segments').addEventListener('click', () => {
+  const src = sources.get(selectedSourceId);
+  if (!src || !confirm('Clear all UNPLACED segments from this source?')) return;
+  for (const s of [...segments.values()]) if (s.source_id === src.id && s.lat == null) deleteSegment(s.id, true);
+  renderSegmentList(); drawWaveform(); saveState();
+});
+
+// ─── Sidebar rendering ───────────────────────────────────────────────────
+const sourceListEl  = document.getElementById('sourceList');
+const segmentListEl = document.getElementById('segmentList');
+const wbSegmentsEl  = document.getElementById('wb-segments');
+const sourceCountEl = document.getElementById('sourceCount');
+const segmentCountEl = document.getElementById('segmentCount');
+
+function renderSources() {
+  sourceListEl.innerHTML = '';
+  const arr = [...sources.values()];
+  sourceCountEl.textContent = arr.length;
+  arr.forEach(s => {
+    const row = document.createElement('div');
+    row.className = 'source-row' + (s.id === selectedSourceId ? ' selected' : '');
+    const name = document.createElement('div');
+    name.className = 'name';
+    name.innerHTML = `<div>${escHtml(s.name)}</div><div class="meta">${s.type} · ${s.duration.toFixed(1)}s</div>`;
+    name.addEventListener('click', () => selectSource(s.id));
+    const x = document.createElement('span');
+    x.className = 'x'; x.textContent = '×'; x.title = 'Delete source + its segments';
+    x.addEventListener('click', e => { e.stopPropagation(); if (confirm(`Delete "${s.name}" and all its segments?`)) deleteSource(s.id); });
+    row.appendChild(name); row.appendChild(x);
+    sourceListEl.appendChild(row);
+  });
+}
+
+function renderSegmentList() {
+  segmentListEl.innerHTML = '';
+  wbSegmentsEl.innerHTML = '';
+  const arr = [...segments.values()].sort((a,b) => a.start_s - b.start_s);
+  segmentCountEl.textContent = arr.length;
+  // Sidebar: all segments
+  arr.forEach(s => segmentListEl.appendChild(segmentRow(s, false)));
+  // Workbench: only segments of selected source
+  arr.filter(s => s.source_id === selectedSourceId).forEach(s => wbSegmentsEl.appendChild(segmentRow(s, true)));
+}
+
+function segmentRow(s, workbench) {
+  const src = sources.get(s.source_id);
+  const row = document.createElement('div');
+  const playing = (s.id === selectedSegmentId && !loopPlayer.paused);
+  row.className = 'segment-row'
+    + (s.lat != null ? ' placed' : '')
+    + (s.id === selectedSegmentId ? ' selected' : '')
+    + (playing ? ' playing' : '');
+  const name = document.createElement('div');
+  name.className = 'name';
+  const placedTxt = s.lat != null ? `${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}` : 'unplaced';
+  const tagHint = (s.machines && s.machines.length) ? ` · [${s.machines.join(', ')}]` : '';
+  name.innerHTML = `<div>${escHtml(s.name)}${tagHint ? `<span style="color:#9bd">${escHtml(tagHint)}</span>` : ''}</div><div class="meta">${(src?.file_name)||'?'} · ${s.start_s.toFixed(1)}–${s.end_s.toFixed(1)}s · ${placedTxt}</div>`;
+  name.addEventListener('click', () => {
+    selectedSegmentId = s.id;
+    if (src && selectedSourceId !== src.id) selectSource(src.id);
+    if (videoEl.duration && src) videoEl.currentTime = s.start_s;
+    if (s.marker) { map.panTo(s.marker.getLatLng()); }
+    startLoopFor(s);
+    renderSegmentList(); renderRenamePanel(); drawWaveform();
+  });
+  // Play button: loops the segment in the workbench player.
+  const play = document.createElement('button');
+  play.className = 'btn compact';
+  play.textContent = '▶';
+  play.title = 'Loop play this segment in workbench';
+  play.addEventListener('click', e => {
+    e.stopPropagation();
+    if (src && selectedSourceId !== src.id) selectSource(src.id);
+    setTimeout(() => playSegment(s), 50);
+  });
+  const x = document.createElement('span');
+  x.className = 'x'; x.textContent = '×'; x.title = 'Delete segment';
+  x.addEventListener('click', e => { e.stopPropagation(); if (confirm(`Delete segment "${s.name}"?`)) deleteSegment(s.id); });
+  row.appendChild(name);
+  if (workbench) row.appendChild(play);
+  row.appendChild(x);
+  return row;
+}
+
+// The workbench "▶" button on a segment row: just delegate to startLoopFor so
+// the seamless audio path is used (no duplicate playback logic here).
+function playSegment(seg) {
+  startLoopFor(seg);
+}
+
+function setStatus(s) { document.getElementById('wb-status').textContent = s; }
+
+// ─── File picker / drop zone ─────────────────────────────────────────────
+const dz = document.getElementById('dropZone');
+const fp = document.getElementById('filePicker');
+['dragenter','dragover'].forEach(t => dz.addEventListener(t, e => { e.preventDefault(); dz.classList.add('over'); }));
+['dragleave','drop'].forEach(t => dz.addEventListener(t, e => { e.preventDefault(); dz.classList.remove('over'); }));
+dz.addEventListener('drop', async e => { for (const f of e.dataTransfer.files) await addSourceFromFile(f); });
+fp.addEventListener('change', async e => { for (const f of e.target.files) await addSourceFromFile(f); fp.value = ''; });
+
+// ─── Export / import ─────────────────────────────────────────────────────
+document.getElementById('exportBtn').addEventListener('click', () => {
+  const out = [...segments.values()].map(s => {
+    const src = sources.get(s.source_id);
+    const rd = s.lat != null ? wgs84ToRd(s.lat, s.lon) : null;
+    return {
+      clip_name:   s.name,
+      filename_stem: fileNameStem(s),
+      source_file: src?.file_name || '',
+      start_s:     +s.start_s.toFixed(3),
+      end_s:       +s.end_s.toFixed(3),
+      lat:         s.lat ?? null,
+      lon:         s.lon ?? null,
+      rd_x:        rd ? +rd.x.toFixed(2) : null,
+      rd_y:        rd ? +rd.y.toFixed(2) : null,
+      machines:    s.machines || [],
+      tags:        s.tags || [],
+      notes:       s.notes || '',
+    };
+  });
+  const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'audio_layout.json'; a.click();
+});
+
+document.getElementById('importBtn').addEventListener('click', () => document.getElementById('importPicker').click());
+document.getElementById('importPicker').addEventListener('change', async e => {
+  const f = e.target.files[0]; if (!f) return;
+  let arr;
+  try { arr = JSON.parse(await f.text()); } catch { alert('Bad JSON'); return; }
+  if (!Array.isArray(arr)) { alert('Expected an array'); return; }
+  for (const entry of arr) {
+    const src = [...sources.values()].find(s => s.file_name === entry.source_file);
+    if (!src) {
+      console.warn('No loaded source for', entry.source_file, '— re-upload that file to bind.');
+      continue;
+    }
+    const seg = addSegment(src.id, entry.start_s, entry.end_s, entry.clip_name);
+    seg.notes = entry.notes || '';
+    seg.machines = Array.isArray(entry.machines) ? entry.machines.slice() : [];
+    seg.tags = Array.isArray(entry.tags) ? entry.tags.slice() : [];
+    if (entry.lat != null && entry.lon != null) {
+      seg.lat = entry.lat; seg.lon = entry.lon;
+      seg.marker = makeMarkerFor(seg, [entry.lat, entry.lon]);
+    }
+  }
+  renderSegmentList(); drawWaveform(); saveState();
+  e.target.value = '';
+});
+
+document.getElementById('clearBtn').addEventListener('click', async () => {
+  if (!confirm('Remove ALL sources, segments, and markers? This cannot be undone.')) return;
+  for (const s of segments.values()) if (s.marker) map.removeLayer(s.marker);
+  segments.clear(); sources.clear();
+  selectedSourceId = null; selectedSegmentId = null;
+  await idbClear(); localStorage.removeItem(LS_KEY);
+  document.getElementById('workbench').classList.remove('visible');
+  renderSources(); renderSegmentList();
+});
+
+// ─── Persistence ─────────────────────────────────────────────────────────
+function saveState() {
+  const out = {
+    v: 2,
+    sources: [...sources.values()].map(s => ({
+      id: s.id, name: s.name, file_name: s.file_name, type: s.type,
+      duration: s.duration, winSec: s.winSec, sampleRate: s.sampleRate,
+      // Waveform Float32 → Array (lossy precision but small enough; or skip and recompute on load)
+      // For ~5 min @ 50ms windows = 6000 floats — fine.
+      waveform: Array.from(s.waveform),
+    })),
+    segments: [...segments.values()].map(s => ({
+      id: s.id, source_id: s.source_id, name: s.name,
+      start_s: s.start_s, end_s: s.end_s,
+      lat: s.lat ?? null, lon: s.lon ?? null, notes: s.notes || '',
+      machines: s.machines || [], tags: s.tags || [],
+    })),
+  };
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(out));
+  } catch (err) {
+    console.warn('localStorage save failed (state too big?). Drop browser data if needed.', err);
+  }
+}
+
+async function loadState() {
+  const raw = localStorage.getItem(LS_KEY);
+  if (!raw) return;
+  let parsed; try { parsed = JSON.parse(raw); } catch { return; }
+  for (const m of parsed.sources || []) {
+    const blob = await idbGet(m.id);
+    if (!blob) continue;
+    const s = {
+      id: m.id, name: m.name, file_name: m.file_name, type: m.type,
+      blob, duration: m.duration, winSec: m.winSec, sampleRate: m.sampleRate,
+      waveform: new Float32Array(m.waveform),
+    };
+    sources.set(m.id, s);
+  }
+  for (const m of parsed.segments || []) {
+    if (!sources.has(m.source_id)) continue;
+    const seg = {
+      id: m.id, source_id: m.source_id, name: m.name,
+      start_s: m.start_s, end_s: m.end_s,
+      notes: m.notes || '',
+      machines: Array.isArray(m.machines) ? m.machines.slice() : [],
+      tags: Array.isArray(m.tags) ? m.tags.slice() : [],
+    };
+    segments.set(m.id, seg);
+    if (m.lat != null && m.lon != null) {
+      seg.lat = m.lat; seg.lon = m.lon;
+      seg.marker = makeMarkerFor(seg, [m.lat, m.lon]);
+    }
+  }
+  renderSources(); renderSegmentList();
+  const first = [...sources.keys()][0];
+  if (first) selectSource(first);
+}
+
+// Boot: machine catalog first (so the rename panel can populate), then state.
+(async () => {
+  await loadMachineCatalog();
+  await loadState();
+  renderRenamePanel();
+})();
+</script>
+</body>
+</html>

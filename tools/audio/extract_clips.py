@@ -110,6 +110,19 @@ def main() -> int:
     cut_names: list[str] = []
     made = kept = 0
 
+    # Cuts are staged OUTSIDE CLIPS_DIR. loopify_wavs.py takes a folder and
+    # rewrites every WAV in it, and it is NOT idempotent — a second pass strips
+    # another fade_ms off an already-faded clip. Pointing it at CLIPS_DIR
+    # therefore corrupts every clip that was already there (measured 2026-08-03:
+    # 42 of 43 operator clips silently lost exactly 17,640 bytes = 100 ms of
+    # stereo 16-bit 44.1 kHz audio). Staging makes that structurally impossible:
+    # only the files this run actually cut are ever handed to loopify.
+    stage = CLIPS_DIR.parent / "_stage"
+    if not args.check:
+        if stage.exists():
+            shutil.rmtree(stage)
+        stage.mkdir(parents=True)
+
     for entry in layout:
         name = entry["clip_name"]
         src = args.sources / entry["source_file"]
@@ -131,29 +144,36 @@ def main() -> int:
         subprocess.run(
             [ffmpeg(), "-v", "error", "-y", "-ss", str(start), "-t", f"{dur:.3f}",
              "-i", str(src), "-vn", "-acodec", CODEC,
-             "-ar", str(SAMPLE_RATE), "-ac", str(CHANNELS), str(dst)],
+             "-ar", str(SAMPLE_RATE), "-ac", str(CHANNELS), str(stage / f"{name}.wav")],
             check=True,
         )
-        # Force PCM so PlantAudio's crossfade applies — see the IMA_ADPCM note above.
-        (CLIPS_DIR / f"{name}.wav.import").write_text(
-            IMPORT_SIDECAR.format(name=name), encoding="utf-8")
         made += 1
         cut_names.append(name)
         print(f"  cut  {name}")
 
-    # Step 2 — loopify. A raw ffmpeg cut clicks at the loop point; every one of
-    # the operator's 43 original clips carries a 100 ms equal-power head-tail
-    # crossfade and a `smpl` chunk from loopify_wavs.py. Skipping this is why a
-    # naive re-cut is NOT byte-identical to the originals (measured 2026-08-03:
-    # ~17,606 bytes / 0.0998 s longer, and no smpl chunk). PlantAudio's runtime
-    # crossfade is only 10 ms, so it does not substitute for this.
-    if cut_names and not args.check:
-        loopify = Path(__file__).resolve().parent / "loopify_wavs.py"
-        if loopify.exists():
-            subprocess.run([sys.executable, str(loopify),
-                            "--in", str(CLIPS_DIR), "--in-place"], check=True)
-        else:
-            print(f"  WARNING: {loopify.name} missing — clips will click at the loop point")
+    # Step 2 — loopify the staged cuts only. A raw ffmpeg cut clicks at the loop
+    # point; every one of the operator's 43 original clips carries a 100 ms
+    # equal-power head-tail crossfade and a `smpl` chunk from loopify_wavs.py.
+    # Skipping this is why a naive re-cut is NOT byte-identical to the originals
+    # (measured 2026-08-03: 17,640 bytes / 0.1 s longer, and no smpl chunk).
+    # PlantAudio's runtime crossfade is only 10 ms, so it does not substitute.
+    # With this step wired in, regenerating an operator clip reproduces it
+    # byte-for-byte — verified on VID-20250912-WA0011_110.9s, md5 9b8f46f1.
+    if not args.check:
+        if cut_names:
+            loopify = Path(__file__).resolve().parent / "loopify_wavs.py"
+            if loopify.exists():
+                subprocess.run([sys.executable, str(loopify),
+                                "--in", str(stage), "--in-place"], check=True)
+            else:
+                sys.exit(f"{loopify.name} missing — refusing to install un-looped "
+                         f"clips that would click at the loop point")
+            for name in cut_names:
+                shutil.move(str(stage / f"{name}.wav"), str(CLIPS_DIR / f"{name}.wav"))
+                # Force PCM so PlantAudio's crossfade applies — see IMA_ADPCM above.
+                (CLIPS_DIR / f"{name}.wav.import").write_text(
+                    IMPORT_SIDECAR.format(name=name), encoding="utf-8")
+        shutil.rmtree(stage, ignore_errors=True)
 
     if not args.check and MASTER_LAYOUT.exists():
         RUNTIME_LAYOUT.parent.mkdir(parents=True, exist_ok=True)
