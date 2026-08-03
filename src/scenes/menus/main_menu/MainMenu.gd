@@ -3,14 +3,14 @@ extends Control
 # #75 follow-up — SaveList is now a 4-column Tree (Name / Last Saved / In-game /
 # Play time + machines) instead of a single-column ItemList. The Tree's root is
 # hidden so each save shows as a top-level row.
-@onready var save_list: Tree = $CenterContainer/Centerer/VBoxContainer/SaveList
-@onready var load_button: Button = $CenterContainer/Centerer/VBoxContainer/LoadButton
-@onready var delete_selected_button: Button = $CenterContainer/Centerer/VBoxContainer/DeleteSelectedButton
-@onready var delete_all_button: Button = $CenterContainer/Centerer/VBoxContainer/DeleteAllButton
-@onready var new_save_input: LineEdit = $CenterContainer/Centerer/VBoxContainer/NewSaveInput
-@onready var new_save_button: Button = $CenterContainer/Centerer/VBoxContainer/NewSaveButton
-@onready var world_setup_button: Button = $CenterContainer/Centerer/VBoxContainer/WorldSetupButton
-@onready var gauntlet_button: Button = $CenterContainer/Centerer/VBoxContainer/GauntletButton
+@onready var save_list: Tree = $ScrollContainer/Centerer/Wrapper/SaveList
+@onready var load_button: Button = $ScrollContainer/Centerer/Wrapper/LoadButton
+@onready var delete_selected_button: Button = $ScrollContainer/Centerer/Wrapper/DeleteSelectedButton
+@onready var delete_all_button: Button = $ScrollContainer/Centerer/Wrapper/DeleteAllButton
+@onready var new_save_input: LineEdit = $ScrollContainer/Centerer/Wrapper/NewSaveInput
+@onready var new_save_button: Button = $ScrollContainer/Centerer/Wrapper/NewSaveButton
+@onready var world_setup_button: Button = $ScrollContainer/Centerer/Wrapper/WorldSetupButton
+@onready var gauntlet_button: Button = $ScrollContainer/Centerer/Wrapper/GauntletButton
 
 var game_state_script = preload("res://src/scenes/world/GameState.gd")
 
@@ -27,16 +27,12 @@ func _ready() -> void:
 	var customize_btn := Button.new()
 	customize_btn.text = "Customise character"
 	customize_btn.custom_minimum_size = Vector2(0, 40)
-	# Make sure the mouse can actually click this — Control nodes added at
-	# runtime sometimes inherit theme defaults that leave them invisible to
-	# clicks. STOP is the explicit "swallow this click" filter Buttons need.
 	customize_btn.mouse_filter = Control.MOUSE_FILTER_STOP
 	customize_btn.pressed.connect(_on_customize_pressed)
-	var col : Node = gauntlet_button.get_parent()
-	if col != null:
-		col.add_child(customize_btn)
-		# Sit it right under Gauntlet in the column order.
-		col.move_child(customize_btn, gauntlet_button.get_index() + 1)
+	var vbox : Node = gauntlet_button.get_parent()
+	if vbox != null:
+		vbox.add_child(customize_btn)
+		vbox.move_child(customize_btn, gauntlet_button.get_index() + 1)
 	# #158 — "Macro sandbox" button. Flat grass + all 5 line macros laid out
 	# for fast walkthrough (F8 prev / F9 next station).
 	# Operator report (post-#158): could only reach it via Tab+Enter, mouse
@@ -49,9 +45,48 @@ func _ready() -> void:
 	sandbox_btn.custom_minimum_size = Vector2(0, 40)
 	sandbox_btn.mouse_filter = Control.MOUSE_FILTER_STOP
 	sandbox_btn.pressed.connect(_on_sandbox_pressed)
-	if col != null:
-		col.add_child(sandbox_btn)
-		col.move_child(sandbox_btn, customize_btn.get_index() + 1)
+	if vbox != null:
+		vbox.add_child(sandbox_btn)
+	# Extruder test gauntlet — flat-floor live-editing bench: one detailed
+	# extruder + cutter-compactor + live ExtruderMachine sim. Meant to be run
+	# alongside the Godot editor so live scene editing applies in-session.
+	var extg_btn := Button.new()
+	extg_btn.text = "Extruder test gauntlet"
+	extg_btn.custom_minimum_size = Vector2(0, 40)
+	extg_btn.mouse_filter = Control.MOUSE_FILTER_STOP
+	extg_btn.pressed.connect(_on_extruder_gauntlet_pressed)
+	if vbox != null:
+		vbox.add_child(extg_btn)
+		vbox.move_child(sandbox_btn, customize_btn.get_index() + 1)
+	# #225 — NPC task bench: flat 3-line world (feeder belt → shredder → wash →
+	# extruder → laserfilter + 2 lump carts) running the REAL crew systems:
+	# CrewManager, NpcAutonomyBoard auto-assignment, CrewPanel (C) manual
+	# role/task assignment, live lump discharge into the carts.
+	var npcbench_btn := Button.new()
+	npcbench_btn.text = "NPC task bench"
+	npcbench_btn.custom_minimum_size = Vector2(0, 40)
+	npcbench_btn.mouse_filter = Control.MOUSE_FILTER_STOP
+	npcbench_btn.pressed.connect(_on_npc_task_bench_pressed)
+	if vbox != null:
+		vbox.add_child(npcbench_btn)
+	# Feature Tester — sandbox with live dials for tuning a new feature's look
+	# (starts with the water-pipe + film stream).
+	var feature_btn := Button.new()
+	feature_btn.text = "Feature tester"
+	feature_btn.custom_minimum_size = Vector2(0, 40)
+	feature_btn.mouse_filter = Control.MOUSE_FILTER_STOP
+	feature_btn.pressed.connect(_on_feature_tester_pressed)
+	if vbox != null:
+		vbox.add_child(feature_btn)
+		vbox.move_child(feature_btn, sandbox_btn.get_index() + 1)
+	var dragger_btn := Button.new()
+	dragger_btn.text = "Line layout dragger"
+	dragger_btn.custom_minimum_size = Vector2(0, 40)
+	dragger_btn.mouse_filter = Control.MOUSE_FILTER_STOP
+	dragger_btn.pressed.connect(_on_line_dragger_pressed)
+	if vbox != null:
+		vbox.add_child(dragger_btn)
+		vbox.move_child(dragger_btn, feature_btn.get_index() + 1)
 	# Tree column titles + widths. column 0 (name) is the widest because save
 	# names can be long; the other three are sized for readable timestamps and
 	# the secondary metadata.
@@ -73,7 +108,8 @@ func _ready() -> void:
 	_refresh_save_list()
 
 func _on_world_setup_pressed() -> void:
-	get_tree().change_scene_to_file("res://src/scenes/world/WorldSetup.tscn")
+	_go_to_scene("res://src/scenes/world/WorldSetup.tscn",
+		"Loading world setup…", "")
 
 ## #153 — Character customizer / wardrobe. Opened from a button on the main
 ## menu OR from the in-game wardrobe locker (#154). Overlays the customizer
@@ -95,14 +131,34 @@ func _on_customize_pressed() -> void:
 
 ## #158 — Macro sandbox. Flat grass world with all 5 line macros pre-spawned.
 func _on_sandbox_pressed() -> void:
-	get_tree().change_scene_to_file("res://src/scenes/world/SandboxWorld.tscn")
+	_go_to_scene("res://src/scenes/world/SandboxWorld.tscn",
+		"Loading macro sandbox…", "")
+
+## Feature Tester — a dials sandbox for tuning a feature's look in real time.
+func _on_feature_tester_pressed() -> void:
+	get_tree().change_scene_to_file("res://src/scenes/menus/feature_tester/FeatureTester.tscn")
+
+func _on_line_dragger_pressed() -> void:
+	get_tree().change_scene_to_file("res://src/scenes/menus/line_dragger/LineDragger.tscn")
 
 ## Backlog-verification launcher. Loads GauntletWorld.tscn — a long platform
 ## with one station per pending / recently-finished task so the operator can
 ## walk past each and confirm. NOT a real shift: crew + LineFlow + bale yards
 ## stay out so verification is fast.
 func _on_gauntlet_pressed() -> void:
-	get_tree().change_scene_to_file("res://src/scenes/world/GauntletWorld.tscn")
+	_go_to_scene("res://src/scenes/world/GauntletWorld.tscn",
+		"Loading gauntlet…", "")
+
+## Flat-floor extruder bench (extruder + PCU + live sim) for editor-driven
+## live tuning. See ExtruderGauntlet.gd.
+func _on_extruder_gauntlet_pressed() -> void:
+	_go_to_scene("res://src/scenes/world/ExtruderGauntlet.tscn",
+		"Loading extruder bench…", "")
+
+## #225 — NPC task bench: 3 flat lines + live crew systems. See NpcTaskBench.gd.
+func _on_npc_task_bench_pressed() -> void:
+	_go_to_scene("res://src/scenes/world/NpcTaskBench.tscn",
+		"Loading NPC task bench…", "")
 
 # ── Save-file deletion ───────────────────────────────────────────────────────
 ## Translate the display name back to the on-disk filename. "default" is the
@@ -325,4 +381,42 @@ func _start_game(save_name: String, is_new: bool) -> void:
 		EventBus.set_meta("pending_save_name", save_name)
 		EventBus.set_meta("pending_is_new_save", is_new)
 
-	get_tree().change_scene_to_file("res://src/scenes/world/MainWorld.tscn")
+	_go_to_scene("res://src/scenes/world/MainWorld.tscn",
+		"Loading shift…",
+		"Building the plant — this can take ~30 seconds. The window may say\n\"Not Responding\" while the world is built; it isn't stuck.")
+
+## Full-screen loading curtain, then the scene change. change_scene_to_file
+## loads + builds the target world in ONE main-thread frame (~27 s measured
+## for MainWorld on the GTX 1070) during which no new frame is presented —
+## whatever rendered LAST stays on screen and Windows flags the window
+## "Not Responding". Painting this curtain and awaiting two frames first
+## means the player stares at an honest loading screen instead of what
+## looks like a crashed menu.
+func _go_to_scene(path: String, headline: String, detail: String) -> void:
+	var curtain := ColorRect.new()
+	curtain.name = "LoadingCurtain"
+	curtain.color = Color(0.10, 0.11, 0.13, 1.0)
+	curtain.set_anchors_preset(Control.PRESET_FULL_RECT)
+	curtain.mouse_filter = Control.MOUSE_FILTER_STOP   # swallow stray clicks
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	curtain.add_child(center)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 12)
+	center.add_child(box)
+	var head := Label.new()
+	head.text = headline
+	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	head.add_theme_font_size_override("font_size", 40)
+	box.add_child(head)
+	var sub := Label.new()
+	sub.text = detail
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sub.modulate = Color(1.0, 1.0, 1.0, 0.65)
+	box.add_child(sub)
+	add_child(curtain)
+	# Two frames: one for layout, one so the curtain is actually PRESENTED
+	# before the load freezes the main thread.
+	await get_tree().process_frame
+	await get_tree().process_frame
+	get_tree().change_scene_to_file(path)

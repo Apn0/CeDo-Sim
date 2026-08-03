@@ -1,0 +1,28 @@
+[gd_scene format=3 uid="uid://bpsk04w4wnls0"]
+
+[ext_resource type="Material" uid="uid://bqg7gm4210wyl" path="res://addons/waterbox/assets/materials/metal.tres" id="1_fassh"]
+[ext_resource type="Script" uid="uid://df0pon6togqks" path="res://addons/waterbox/scripts/buoyancy_component.gd" id="2_m4474"]
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_pfotc"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_pfotc"]
+
+[node name="Floating Capsule" type="RigidBody3D" unique_id=1213732022]
+
+[node name="Mesh" type="MeshInstance3D" parent="." unique_id=483490078]
+mesh = SubResource("CapsuleMesh_pfotc")
+surface_material_override/0 = ExtResource("1_fassh")
+
+[node name="Collision" type="CollisionShape3D" parent="." unique_id=778894339]
+shape = SubResource("CapsuleShape3D_pfotc")
+
+[node name="BuoyancyComponent" type="Node3D" parent="." unique_id=1490821703 node_paths=PackedStringArray("buoyancy_points")]
+script = ExtResource("2_m4474")
+buoyancy_points = [NodePath("Marker_Top"), NodePath("Marker_Bottom")]
+metadata/_custom_type_script = "uid://df0pon6togqks"
+
+[node name="Marker_Top" type="Marker3D" parent="BuoyancyComponent" unique_id=757564070]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
+
+[node name="Marker_Bottom" type="Marker3D" parent="BuoyancyComponent" unique_id=719790407]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1, 0)

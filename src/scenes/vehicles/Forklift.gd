@@ -114,6 +114,11 @@ var _ghost_flash_t        : float = 0.0
 
 # =============================================================================
 func _ready() -> void:
+	# Gear + cab camera sit on +Z on this vehicle (canonical forward is -Z):
+	# the seat faces the working side. Flip the operator boundary so the
+	# forward key drives gear-first and the reverse alarm fires on
+	# counterweight-first travel. See BaseVehicle.operator_forward_sign.
+	operator_forward_sign = -1.0
 	# Drive-ramp tuning per the throttle/brake audit. Real Linde/Toyota counter-
 	# balance forklifts feel deliberately sluggish — operators don't want to
 	# wheelspin a 4-tonne mast. ~0.95 s 0→12 km/h, ~0.21 s panic-stop from
@@ -121,12 +126,18 @@ func _ready() -> void:
 	# Set BEFORE super._ready() so the SmoothedRate picks up the tau on its
 	# first approach() call.
 	throttle_accel_mps2 = 3.5
-	brake_decel_mps2    = 16.0
-	coast_decel_mps2    = 4.0
+	brake_decel_mps2    = 3.0   # #223: was 16 (1.6g) — a real forklift brakes ~2-3 m/s² or the load flies off
+	coast_decel_mps2    = 2.0   # was 4
 	throttle_ramp_tau_s = 1.2
 	brake_ramp_tau_s    = 0.3
 	super._ready()
 	vehicle_type = "forklift"
+	# npc-02 — register the "forklift" group in PRODUCTION code. Every forklift
+	# task resolves its vehicle via get_nodes_in_group("forklift")
+	# (EmptyLumpCartTask/OverflowDumpTask._find_nearest_idle_forklift, the
+	# board's idle-forklift check); only NpcTaskBench used to tag the group, so
+	# the whole lump-cart haul chain was dead in MainWorld.
+	add_to_group("forklift")
 	if lift_carriage_path: _lift_carriage = get_node_or_null(lift_carriage_path) as Node3D
 	if mast_pivot_path:    _mast_pivot    = get_node_or_null(mast_pivot_path)    as Node3D
 	if rotator_path:       _rotator       = get_node_or_null(rotator_path)       as Node3D

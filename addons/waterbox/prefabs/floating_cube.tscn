@@ -1,0 +1,47 @@
+[gd_scene format=3 uid="uid://br3fmylr23jde"]
+
+[ext_resource type="Material" uid="uid://bqg7gm4210wyl" path="res://addons/waterbox/assets/materials/metal.tres" id="1_lxogp"]
+[ext_resource type="Script" uid="uid://df0pon6togqks" path="res://addons/waterbox/scripts/buoyancy_component.gd" id="2_ewqiv"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_pfotc"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_pfotc"]
+
+[node name="Floating Cube" type="RigidBody3D" unique_id=716553465]
+continuous_cd = true
+
+[node name="Mesh" type="MeshInstance3D" parent="." unique_id=552247819]
+mesh = SubResource("BoxMesh_pfotc")
+surface_material_override/0 = ExtResource("1_lxogp")
+
+[node name="Collision" type="CollisionShape3D" parent="." unique_id=1210710379]
+shape = SubResource("BoxShape3D_pfotc")
+
+[node name="BuoyancyComponent" type="Node3D" parent="." unique_id=1859941452 node_paths=PackedStringArray("buoyancy_points")]
+script = ExtResource("2_ewqiv")
+buoyancy_points = [NodePath("Marker_1"), NodePath("Marker_2"), NodePath("Marker_3"), NodePath("Marker_4"), NodePath("Marker_5"), NodePath("Marker_6"), NodePath("Marker_7"), NodePath("Marker_8")]
+metadata/_custom_type_script = "uid://df0pon6togqks"
+
+[node name="Marker_1" type="Marker3D" parent="BuoyancyComponent" unique_id=1754523409]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0.5, 0.5)
+
+[node name="Marker_2" type="Marker3D" parent="BuoyancyComponent" unique_id=1154135556]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0.5, -0.5)
+
+[node name="Marker_3" type="Marker3D" parent="BuoyancyComponent" unique_id=494415063]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, -0.5, -0.5)
+
+[node name="Marker_4" type="Marker3D" parent="BuoyancyComponent" unique_id=1889831733]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, -0.5, 0.5)
+
+[node name="Marker_5" type="Marker3D" parent="BuoyancyComponent" unique_id=871547130]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5, 0.5, 0.5)
+
+[node name="Marker_6" type="Marker3D" parent="BuoyancyComponent" unique_id=2047925563]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5, 0.5, -0.5)
+
+[node name="Marker_7" type="Marker3D" parent="BuoyancyComponent" unique_id=47376713]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5, -0.5, -0.5)
+
+[node name="Marker_8" type="Marker3D" parent="BuoyancyComponent" unique_id=1177570479]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5, -0.5, 0.5)

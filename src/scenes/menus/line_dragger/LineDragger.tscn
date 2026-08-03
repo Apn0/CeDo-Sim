@@ -1,0 +1,92 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/scenes/menus/line_dragger/LineDragger.gd" id="1_linedrag"]
+
+[node name="LineDragger" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_linedrag")
+
+[node name="ColorRect" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.10, 0.11, 0.13, 1)
+
+[node name="CanvasArea" type="Control" parent="."]
+layout_mode = 1
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = -260.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+clip_contents = true
+
+[node name="Sidebar" type="PanelContainer" parent="."]
+layout_mode = 1
+anchor_left = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -260.0
+grow_horizontal = 0
+grow_vertical = 2
+
+[node name="VBox" type="VBoxContainer" parent="Sidebar"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="TitleLabel" type="Label" parent="Sidebar/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Line Layout Dragger"
+horizontal_alignment = 1
+
+[node name="HSep" type="HSeparator" parent="Sidebar/VBox"]
+layout_mode = 2
+
+[node name="LineLabel" type="Label" parent="Sidebar/VBox"]
+layout_mode = 2
+text = "Line: —"
+
+[node name="HelpLabel" type="Label" parent="Sidebar/VBox"]
+layout_mode = 2
+autowrap_mode = 3
+text = "Drag machines to reposition.\nMiddle-mouse to pan.\nYellow line = drift from default."
+theme_override_font_sizes/font_size = 11
+
+[node name="HSep2" type="HSeparator" parent="Sidebar/VBox"]
+layout_mode = 2
+
+[node name="InfoLabel" type="Label" parent="Sidebar/VBox"]
+layout_mode = 2
+autowrap_mode = 3
+custom_minimum_size = Vector2(0, 80)
+text = "Click a machine…"
+theme_override_font_sizes/font_size = 12
+
+[node name="HSep3" type="HSeparator" parent="Sidebar/VBox"]
+layout_mode = 2
+
+[node name="SaveButton" type="Button" parent="Sidebar/VBox"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+text = "Save layout"
+
+[node name="ResetButton" type="Button" parent="Sidebar/VBox"]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+text = "Reset to defaults"
+
+[node name="BackButton" type="Button" parent="Sidebar/VBox"]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+text = "← Back to menu"

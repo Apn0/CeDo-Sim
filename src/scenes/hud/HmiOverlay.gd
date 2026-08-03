@@ -35,20 +35,76 @@ signal request_subscope(scope_id)
 enum FaultTab { HISTORY, ACTIVE, ACKNOWLEDGE, SHIELD }
 
 # Sub-scope screen tile definitions for the new HOOFDMENU grid (#207b).
-# Two rows × five columns; nulls render as empty placeholders.
-const HOME_TILES := [
+# The tile set is chosen per panel scope by _home_tiles_for_scope() so a
+# washing panel doesn't show extruder module tiles and vice-versa.
+#
+# EXTRUDER grid (#bullet-10, FIX 3) — the documented EREMA BluPort module grid
+# from OTHER-erema-bluport-modulegrid-LIJN-3C (188_CeDo1) / hmi_reference.md:131.
+# Verbatim Dutch tile labels, in the photographed layout:
+#   Row 1: Doseren, Wateronthardheid, Extruder 1, Smeltfilter 1, Smeltpomp 1, Granulaatsysteem
+#   Row 2: Smeltfilter 2
+#   Row 3: (2e) Doseren
+# The invented "Devicon" / "Dryven Controller" tiles (in NO doc) are removed.
+const HOME_TILES_EXTRUDER := [
 	[
-		{"label": "Devicon",                 "scope_id": "devicon",             "icon": "D"},
-		{"label": "Material Feeding Unit",   "scope_id": "mfu",                 "icon": "M"},
-		{"label": "Extruder 1",              "scope_id": "extruder_1_blueport", "icon": "E"},
-		{"label": "Filter Unit 1",           "scope_id": "filter_unit_1",       "icon": "F1"},
-		{"label": "Complete Systems",        "scope_id": "complete_systems",    "icon": "CS"},
+		{"label": "Doseren",            "scope_id": "doseren",             "icon": "D"},
+		{"label": "Wateronthardheid",   "scope_id": "wateronthardheid",    "icon": "W"},
+		{"label": "Extruder 1",         "scope_id": "extruder_1_blueport", "icon": "E"},
+		{"label": "Smeltfilter 1",      "scope_id": "filter_unit_1",       "icon": "F1"},
+		{"label": "Smeltpomp 1",        "scope_id": "smeltpomp_1",         "icon": "P1"},
 	],
 	[
-		{"label": "Dryven Controller",       "scope_id": "drive_controller",    "icon": "DC"},
+		{"label": "Granulaatsysteem",   "scope_id": "granulaatsysteem",    "icon": "G"},
+		{"label": "Smeltfilter 2",      "scope_id": "filter_unit_2",       "icon": "F2"},
 		null,
 		null,
-		{"label": "Filter Unit 2",           "scope_id": "filter_unit_2",       "icon": "F2"},
+		{"label": "Doseren (2)",        "scope_id": "doseren_2",           "icon": "D2"},
+	],
+]
+
+# WASHING grid — routes to the finished wash-line + Kufferath dryer screens.
+const HOME_TILES_WASHING := [
+	[
+		{"label": "Waslijn",            "scope_id": "washing",             "icon": "W"},
+		{"label": "Kufferath drogers",  "scope_id": "kufferaths_dryer",    "icon": "K"},
+		null,
+		null,
+		null,
+	],
+	# Per-unit detail screens, in PLANT ORDER down the line rather than
+	# alphabetical — an operator walks the line, they do not read an index.
+	# Tile labels are shortened only to fit; the FULL verbatim title is the panel
+	# heading on the screen itself (l3c_unit_screens.gd) and is never reworded.
+	[
+		{"label": "L3C.1 Doseer Silo",  "scope_id": "l3c_unit:L3C.1",      "icon": "1"},
+		{"label": "L3C.3 Bezinkafsch.", "scope_id": "l3c_unit:L3C.3",      "icon": "3"},
+		{"label": "L3C.4 Frictiesch.",  "scope_id": "l3c_unit:L3C.4",      "icon": "4"},
+		{"label": "L3C.5 Transportsch.","scope_id": "l3c_unit:L3C.5",      "icon": "5"},
+		{"label": "L3C.6 Maalmolen",    "scope_id": "l3c_unit:L3C.6",      "icon": "6"},
+	],
+	[
+		{"label": "L3C.10 Transportsch.","scope_id": "l3c_unit:L3C.10",    "icon": "10"},
+		{"label": "L3C.11 Flotatietank","scope_id": "l3c_unit:L3C.11",     "icon": "11"},
+		{"label": "L3C.12 Transportsch.","scope_id": "l3c_unit:L3C.12",    "icon": "12"},
+		{"label": "L3C.14 Droger L",    "scope_id": "l3c_unit:L3C.14L",    "icon": "14L"},
+		{"label": "L3C.14 Droger R",    "scope_id": "l3c_unit:L3C.14R",    "icon": "14R"},
+	],
+	[
+		{"label": "L3C.16 Plasmaq",     "scope_id": "l3c_unit:L3C.16",     "icon": "16"},
+		{"label": "L3C.18 Extr. Silo",  "scope_id": "l3c_unit:L3C.18",     "icon": "18"},
+		{"label": "L3C.19 Rondmengv.",  "scope_id": "l3c_unit:L3C.19",     "icon": "19"},
+		null,
+		null,
+	],
+]
+
+# SORTING grid — routes to the finished sorteerlijn screen.
+const HOME_TILES_SORTING := [
+	[
+		{"label": "Sorteerlijn",        "scope_id": "sorteerlijn",         "icon": "S"},
+		null,
+		null,
+		null,
 		null,
 	],
 ]
@@ -192,10 +248,16 @@ var _fault_box    : VBoxContainer = null
 var _manual_rows  : Array = []           # [{section, lamp:ColorRect, btn:Button}]
 
 # --- MACHINES screen state ---------------------------------------------------
-var _selected_machine_id : String = ""
+# The selection is a per-instance KEY (LineFlow's nd["key"]), never a bare
+# placeable id: an id is a machine TYPE and several machines share it, so a bare
+# id sent the operator's HAND/RUN/RPM commands to whichever instance LineFlow
+# happened to list first — toggling the 3rd blower toggled the 1st.
+# Session-scoped by design; nothing persists a machine handle across a save, and
+# the ordinal half of the key is only stable between two LineFlow rebuilds.
+var _selected_machine_key : String = ""
 var _machines_list_vb    : VBoxContainer = null   # left column: scrollable list
 var _machines_detail_vb  : VBoxContainer = null   # right column: live detail
-var _machines_list_rows  : Array = []             # [{id, btn, lamp}]
+var _machines_list_rows  : Array = []             # [{key, id, btn, lamp, lbl}]
 # Rebuilt every time the selection changes; refresh() updates only the live widgets.
 var _md_title_lbl    : Label = null
 var _md_powered_lamp : ColorRect = null
@@ -251,9 +313,21 @@ func _find_line_flow() -> void:
 	# directly, and we shouldn't drop a live ref because of a transient tree state).
 	if _line_flow != null and is_instance_valid(_line_flow):
 		return
-	var root := get_tree().current_scene
-	if root:
-		_line_flow = root.find_child("LineFlow", true, false)
+	# Resolution was current_scene.find_child ONLY, which returns null whenever the
+	# HMI runs while current_scene isn't the world (loading curtain, pre-shift, a
+	# nested/added world) — producing a FALSE "PLC connection bad" + empty machine
+	# list on a perfectly healthy line (MEASURED: LineFlow was live with 27 machines
+	# /23 links yet this lookup missed it). Try the robust anchors too: LineFlow is
+	# ALWAYS added to the "line_flow" group (MainWorld.gd:268) and hangs under root.
+	var tree := get_tree()
+	var lf : Node = tree.get_first_node_in_group("line_flow")
+	if lf == null:
+		var root := tree.current_scene
+		if root:
+			lf = root.find_child("LineFlow", true, false)
+	if lf == null:
+		lf = tree.root.find_child("LineFlow", true, false)
+	_line_flow = lf
 
 # =============================================================================
 # OPEN / CLOSE
@@ -272,7 +346,7 @@ func open_for(label: String, scope: Dictionary = {}) -> void:
 	# Drop the previous MACHINES selection — the new scope likely doesn't
 	# include the previously-selected id, and the rebuild below picks a
 	# fresh in-scope default.
-	_selected_machine_id = ""
+	_selected_machine_key = ""
 	_find_line_flow()
 	if _line_flow and "fed_mass" in _line_flow:
 		_last_fed_mass = float(_line_flow.fed_mass)
@@ -304,12 +378,32 @@ const _SUBSCOPE_SCRIPTS := {
 	# binds the local line's MechDryerCycle pair via set_dryer_pair() below.
 	"kufferaths_dryer":    "res://src/scenes/hud/scopes/KufferathsDryerScope.gd",
 	"washing":             "res://src/scenes/hud/scopes/WashingScope.gd",
-	# The remaining tiles don't have a finished scope file yet — open_subscope()
-	# bails cleanly (returns false) so the operator stays on HOOFDMENU.
-	"devicon":             "",
-	"mfu":                 "",
-	"complete_systems":    "",
-	"drive_controller":    "",
+	# Per-unit L3C detail screens. ONE layout engine driven by the verbatim spec
+	# in src/data/plant/l3c_unit_screens.gd; the scope_id after "l3c_unit:" is the
+	# spec key, so adding a screen is adding a spec entry and a menu row — not a
+	# new script. open_subscope() calls set_screen() with that suffix below.
+	"l3c_unit:L3C.1":     "res://src/scenes/hud/scopes/L3CUnitScreen.gd",
+	"l3c_unit:L3C.3":     "res://src/scenes/hud/scopes/L3CUnitScreen.gd",
+	"l3c_unit:L3C.4":     "res://src/scenes/hud/scopes/L3CUnitScreen.gd",
+	"l3c_unit:L3C.5":     "res://src/scenes/hud/scopes/L3CUnitScreen.gd",
+	"l3c_unit:L3C.6":     "res://src/scenes/hud/scopes/L3CUnitScreen.gd",
+	"l3c_unit:L3C.10":    "res://src/scenes/hud/scopes/L3CUnitScreen.gd",
+	"l3c_unit:L3C.11":    "res://src/scenes/hud/scopes/L3CUnitScreen.gd",
+	"l3c_unit:L3C.12":    "res://src/scenes/hud/scopes/L3CUnitScreen.gd",
+	"l3c_unit:L3C.14L":   "res://src/scenes/hud/scopes/L3CUnitScreen.gd",
+	"l3c_unit:L3C.14R":   "res://src/scenes/hud/scopes/L3CUnitScreen.gd",
+	"l3c_unit:L3C.16":    "res://src/scenes/hud/scopes/L3CUnitScreen.gd",
+	"l3c_unit:L3C.18":    "res://src/scenes/hud/scopes/L3CUnitScreen.gd",
+	"l3c_unit:L3C.19":    "res://src/scenes/hud/scopes/L3CUnitScreen.gd",
+	# The remaining BluPort module tiles (FIX 3) don't have a finished scope
+	# file yet — open_subscope() bails cleanly (returns false) so the operator
+	# stays on HOOFDMENU. The TILE labels are documented-correct (188_CeDo1);
+	# the screens are stubbed until built.
+	"doseren":             "",
+	"doseren_2":           "",
+	"wateronthardheid":    "",
+	"smeltpomp_1":         "",
+	"granulaatsysteem":    "",
 }
 
 ## Mount a per-scope screen as a child of the bezel. Returns true on success.
@@ -360,7 +454,101 @@ func open_subscope(scope_id: String) -> bool:
 	# the scope tolerates (pills sit at neutral).
 	if scope_id == "kufferaths_dryer" and ctrl.has_method("set_dryer_pair"):
 		ctrl.call("set_dryer_pair", _dryer_pair_for_line(_line_id_from_scope()))
+	# #bullet-10 (FIX 1) — the BluPort extruder scope and the laser-filter scope
+	# both ship a setter (set_model / set_filter) that had ZERO callers, so those
+	# screens rendered defaults/zeros. Resolve the scoped machine and bind it.
+	if scope_id == "extruder_1_blueport" and ctrl.has_method("set_model"):
+		var ex_model : Object = _find_extruder_model_for_scope()
+		if ex_model != null:
+			ctrl.call("set_model", ex_model)
+	if (scope_id == "filter_unit_1" or scope_id == "filter_unit_2") and ctrl.has_method("set_filter"):
+		var lf : Object = _find_laser_filter_for_scope()
+		if lf != null:
+			ctrl.call("set_filter", lf)
+	# WashingScope (now the Waslijn 3C Overzicht plant mimic) shipped a bind()
+	# with ZERO callers repo-wide, which is exactly why every process value on it
+	# was a construction-time literal. It reads live state through
+	# TagMap x LineFlow.get_machine_info(), so hand it the scope dict + the live
+	# LineFlow. Without this call the screen renders "--" everywhere, which is
+	# honest but dead.
+	if scope_id == "washing" and ctrl.has_method("bind"):
+		ctrl.call("bind", _scope, _line_flow)
+	# Per-unit L3C screens: the spec key rides in the scope_id after the colon,
+	# so one script serves every unit. set_screen() must come BEFORE bind(), or
+	# the screen binds a machine code it does not have yet and reports every
+	# field unavailable — honest, but wrong.
+	if scope_id.begins_with("l3c_unit:") and ctrl.has_method("set_screen"):
+		ctrl.call("set_screen", scope_id.substr("l3c_unit:".length()))
+		if ctrl.has_method("bind"):
+			ctrl.call("bind", _scope, _line_flow)
 	return true
+
+## Resolve the ExtruderModel for the panel's current scope line (#bullet-10).
+## Reuses _find_extruder_model_for() (which matches on the extruder machine's
+## config_resource.line_id). Falls back to the first extruder in the scene when
+## the scope carries no line tag so a generic panel still binds something live.
+func _find_extruder_model_for_scope() -> Object:
+	var line_id := _line_id_from_scope()
+	if line_id != "":
+		var m := _find_extruder_model_for("extruder_" + line_id.to_lower())
+		if m != null:
+			return m
+	# No line tag (or no match): take the first extruder machine's model.
+	for em in get_tree().get_nodes_in_group("extruder_machine"):
+		if em != null and is_instance_valid(em) and "model" in em and em.model != null:
+			return em.model
+	return null
+
+## Resolve the LaserFilter serving this scope's extruder line (#bullet-10). The
+## macros lay one laser_filter per extruder and ExtruderMachine caches the
+## closest member of the "laser_filter" group, so we mirror that: find the
+## in-scope extruder machine and return the laser_filter nearest to it. Falls
+## back to the first laser_filter in the scene when no extruder is resolvable.
+func _find_laser_filter_for_scope() -> Object:
+	var extruder_node : Node3D = _find_extruder_machine_for_scope()
+	var lf : Object = _closest_laser_filter_to(extruder_node)
+	if lf != null:
+		return lf
+	var filters : Array = get_tree().get_nodes_in_group("laser_filter")
+	return filters[0] if not filters.is_empty() else null
+
+## The LaserFilter nearest to `node` (mirrors ExtruderMachine's own
+## _closest_in_group). Returns null when no laser_filter is in the scene or when
+## `node` is null and the group is empty.
+func _closest_laser_filter_to(node: Node3D) -> Object:
+	var filters : Array = get_tree().get_nodes_in_group("laser_filter")
+	if filters.is_empty():
+		return null
+	if node == null or not is_instance_valid(node):
+		return filters[0]
+	var best : Node = null
+	var best_d2 : float = INF
+	for n in filters:
+		var n3 := n as Node3D
+		if n3 == null:
+			continue
+		var d2 : float = (n3.global_position - node.global_position).length_squared()
+		if d2 < best_d2:
+			best_d2 = d2
+			best = n
+	return best if best != null else filters[0]
+
+## The ExtruderMachine (scene node) matching this scope's line, or the first one.
+func _find_extruder_machine_for_scope() -> Node3D:
+	var want := _line_id_from_scope().to_lower()
+	var first : Node3D = null
+	for em in get_tree().get_nodes_in_group("extruder_machine"):
+		var n3 := em as Node3D
+		if n3 == null or not is_instance_valid(n3):
+			continue
+		if first == null:
+			first = n3
+		if want == "":
+			continue
+		var cfg = em.get("config_resource")
+		if cfg != null and String(cfg.get("line_id")).to_lower() == want:
+			return n3
+	return first
 
 func close_subscope() -> void:
 	if _subscope_node != null and is_instance_valid(_subscope_node):
@@ -642,12 +830,37 @@ func _build_hoofdmenu() -> void:
 	grid.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	v.add_child(grid)
 
-	for row in HOME_TILES:
+	# #bullet-10 (FIX 2/3) — the tile set depends on the panel scope so a wash
+	# panel routes to the wash/kufferath screens, a sorting panel to sorteerlijn,
+	# and an extruder panel shows the documented BluPort module grid.
+	for row in _home_tiles_for_scope():
 		for entry in row:
 			if entry == null:
 				grid.add_child(_home_tile_placeholder())
 			else:
 				grid.add_child(_home_tile(entry as Dictionary))
+
+## Pick the HOOFDMENU tile grid for the currently-bound scope (#bullet-10).
+## Uses the scope's tokens to decide: washing tokens → wash grid, sorting
+## tokens → sorting grid, otherwise the extruder BluPort module grid (also the
+## generic/no-scope default, matching the documented 3C panel).
+func _home_tiles_for_scope() -> Array:
+	var tokens : Array = _scope.get("tokens", []) if not _scope.is_empty() else []
+	var has := func(subs: Array) -> bool:
+		for tk in tokens:
+			var t := String(tk)
+			for s in subs:
+				if t.find(String(s)) != -1:
+					return true
+		return false
+	# Sorting panel — bunker / sga / titech / tomra tokens.
+	if has.call(["sga", "titech", "tomra", "ballistic", "wind_sifter", "sorteer", "bunker"]):
+		return HOME_TILES_SORTING
+	# Washing panel — wash / flotation / kufferath / dryer tokens.
+	if has.call(["wash", "was", "flotation", "kufferath", "dryer", "droger", "centrifuge", "dewater"]):
+		return HOME_TILES_WASHING
+	# Default: extruder BluPort module grid.
+	return HOME_TILES_EXTRUDER
 
 func _home_tile(entry: Dictionary) -> Button:
 	var label_text := String(entry.get("label", "?"))
@@ -833,10 +1046,13 @@ func _build_storingen() -> void:
 	var tabs := HBoxContainer.new()
 	tabs.add_theme_constant_override("separation", 4)
 	v.add_child(tabs)
-	tabs.add_child(_fault_tab_btn("clock history",     FaultTab.HISTORY))
-	tabs.add_child(_fault_tab_btn("warn active",       FaultTab.ACTIVE))
-	tabs.add_child(_fault_tab_btn("bell acknowledge",  FaultTab.ACKNOWLEDGE))
-	tabs.add_child(_fault_tab_btn("shield shield",     FaultTab.SHIELD))
+	# Dutch alarm-filter tabs, ISA-18.2 order (Actief default → Gekwitteerd →
+	# Onderdrukt → Historie). Was unfinished "icon word" placeholders
+	# ("shield shield" etc.) while the rest of the HMI is Dutch.
+	tabs.add_child(_fault_tab_btn("Actief",       FaultTab.ACTIVE))
+	tabs.add_child(_fault_tab_btn("Gekwitteerd",  FaultTab.ACKNOWLEDGE))
+	tabs.add_child(_fault_tab_btn("Onderdrukt",   FaultTab.SHIELD))
+	tabs.add_child(_fault_tab_btn("Historie",     FaultTab.HISTORY))
 
 	# 3-col table header
 	var hdr := PanelContainer.new()
@@ -1459,6 +1675,7 @@ func _section_def(section_name: String) -> Dictionary:
 ## naming the machine/stage at fault, so the matching mimic tile lights red.
 func _compute_faults() -> Array:
 	var out : Array = []
+	_find_line_flow()   # self-heal a transient early null before crying PLC fault
 	if _line_flow == null:
 		out.append({"code": "PLC-000", "text": "Geen lijn-PLC gekoppeld in deze scene", "scope": ""})
 		_record_fault_transitions(out)
@@ -1513,7 +1730,10 @@ func _compute_faults() -> Array:
 		var line_id : String = ""
 		if "line_id" in em:
 			line_id = String(em.line_id)
-		for f in _EREMA_FAULTS.detect_active(model):
+		# #bullet-10 (FIX 5) — hand the registry the laser_filter serving this
+		# extruder so the documented 6522/6557 alarms detect off live state.
+		var lf : Object = _closest_laser_filter_to(em as Node3D)
+		for f in _EREMA_FAULTS.detect_active(model, lf):
 			out.append({
 				"code":  "EREMA-%04d" % int(f.get("nr", 0)),
 				"text":  String(f.get("msg", "")),
@@ -1649,12 +1869,12 @@ func _build_machines() -> void:
 	_machines_detail_vb.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	h.add_child(_machines_detail_vb)
 	# Pick an initial selection if none yet — and only within scope (#165).
-	if _selected_machine_id == "" and _line_flow != null and _line_flow.has_method("machine_list"):
+	if _selected_machine_key == "" and _line_flow != null and _line_flow.has_method("machine_list"):
 		var ml: Array = _line_flow.call("machine_list")
 		for entry in ml:
-			var eid := String(entry["id"])
-			if _scope_has_node(eid, String(entry.get("line", ""))):
-				_selected_machine_id = eid
+			# Scope is a question about the machine TYPE, so it still takes the id.
+			if _scope_has_node(String(entry["id"]), String(entry.get("line", ""))):
+				_selected_machine_key = String(entry.get("key", ""))
 				break
 	_build_machine_detail()
 
@@ -1662,6 +1882,7 @@ func _populate_machine_list() -> void:
 	for c in _machines_list_vb.get_children():
 		c.queue_free()
 	_machines_list_rows.clear()
+	_find_line_flow()   # self-heal a transient early null so a live line isn't hidden
 	if _line_flow == null or not _line_flow.has_method("machine_list"):
 		var empty := Label.new()
 		empty.text = "(geen machines)"
@@ -1670,6 +1891,9 @@ func _populate_machine_list() -> void:
 		return
 	for m in _line_flow.call("machine_list"):
 		var mid := String(m["id"])
+		# The HANDLE. machine_list emits one row per NODE, so two blowers are two
+		# rows; without a distinct key they would both address the first one.
+		var mkey := String(m.get("key", mid))
 		# #165 — drop out-of-scope machines so a sorting HMI never lists the
 		# washing line, etc. `line` is optional on machine_list (LineFlow
 		# doesn't carry it yet) — HmiScopes falls back to id-suffix sniffing.
@@ -1680,7 +1904,7 @@ func _populate_machine_list() -> void:
 		btn.custom_minimum_size = Vector2(0, 32)
 		btn.text = ""    # filled by children
 		btn.add_theme_stylebox_override("normal",
-			_sb(C_TILE if mid != _selected_machine_id else C_NAV_SEL, 4, 0, C_TILE_EDGE, 1))
+			_sb(C_TILE if mkey != _selected_machine_key else C_NAV_SEL, 4, 0, C_TILE_EDGE, 1))
 		btn.add_theme_stylebox_override("hover",
 			_sb(C_NAV_SEL.lightened(0.08), 4, 0, C_NAV_SEL, 1))
 		var row := HBoxContainer.new()
@@ -1695,24 +1919,42 @@ func _populate_machine_list() -> void:
 		lamp.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		row.add_child(lamp)
 		var lbl := Label.new()
-		lbl.text = mid.replace("_", " ")
+		# LineFlow supplies the display label: the plant tag (L3C.9R) when the
+		# machine has one, otherwise "<name> #<n>". Two blowers no longer render
+		# as the same row.
+		lbl.text = String(m.get("label", mid.replace("_", " ")))
 		lbl.add_theme_font_size_override("font_size", 13)
 		lbl.add_theme_color_override("font_color",
-			C_TEXT_DARK if mid != _selected_machine_id else Color.WHITE)
+			C_TEXT_DARK if mkey != _selected_machine_key else Color.WHITE)
 		lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		row.add_child(lbl)
-		btn.pressed.connect(_on_machine_picked.bind(mid))
+		btn.pressed.connect(_on_machine_picked.bind(mkey))
 		_machines_list_vb.add_child(btn)
-		_machines_list_rows.append({"id": mid, "btn": btn, "lamp": lamp, "lbl": lbl})
+		_machines_list_rows.append({"key": mkey, "id": mid, "btn": btn, "lamp": lamp, "lbl": lbl})
 
-func _on_machine_picked(id: String) -> void:
-	_selected_machine_id = id
+	# LineFlow is wired but produced no rows — either nothing is placed yet, or
+	# none of the placed machines fall in this HMI's scope. Show a legible message
+	# so an empty line doesn't read as a BROKEN panel (the operator hit exactly
+	# this on a save with 0 placed line machines).
+	if _machines_list_rows.is_empty():
+		var none := Label.new()
+		# Distinguish "no line built at all" from "a line IS built but none of its
+		# machines fall in THIS HMI's scope" — otherwise a scoped panel on a running
+		# plant misleads the operator into rebuilding a line that already exists.
+		var total : int = _line_flow.call("machine_list").size()
+		none.text = "(geen machines geplaatst — bouw een lijn met Tab)" if total == 0 \
+			else "(%d machines op de lijn — geen binnen deze HMI-scope)" % total
+		none.add_theme_color_override("font_color", C_TEXT_DARK)
+		_machines_list_vb.add_child(none)
+
+func _on_machine_picked(key: String) -> void:
+	_selected_machine_key = key
 	# Rebuild the list (so the selection highlight is correct) and the right pane.
 	if _machines_list_vb != null:
 		_populate_machine_list()
 	_build_machine_detail()
 
-## (Re)build the right-hand detail pane for `_selected_machine_id`. Called on
+## (Re)build the right-hand detail pane for `_selected_machine_key`. Called on
 ## selection change. Live values are refreshed by _refresh_machines().
 func _build_machine_detail() -> void:
 	if _machines_detail_vb == null:
@@ -1732,7 +1974,7 @@ func _build_machine_detail() -> void:
 	_md_rpm_pct_lbl = null
 	_md_amps_lbl = null
 
-	if _selected_machine_id == "":
+	if _selected_machine_key == "":
 		var hint := Label.new()
 		hint.text = "Selecteer een machine links."
 		hint.add_theme_color_override("font_color", C_TEXT_DARK)
@@ -1740,10 +1982,10 @@ func _build_machine_detail() -> void:
 		return
 	if _line_flow == null or not _line_flow.has_method("get_machine_info"):
 		return
-	var info : Dictionary = _line_flow.call("get_machine_info", _selected_machine_id)
+	var info : Dictionary = _line_flow.call("get_machine_info", _selected_machine_key)
 	if info.is_empty():
 		var miss := Label.new()
-		miss.text = "Machine '%s' niet gevonden (niet meer op de lijn?)" % _selected_machine_id
+		miss.text = "Machine '%s' niet gevonden (niet meer op de lijn?)" % _selected_machine_key
 		miss.add_theme_color_override("font_color", C_TEXT_DARK)
 		_machines_detail_vb.add_child(miss)
 		return
@@ -1757,7 +1999,11 @@ func _build_machine_detail() -> void:
 	_md_powered_lamp.color = LAMP_OFF
 	trow.add_child(_md_powered_lamp)
 	_md_title_lbl = Label.new()
-	_md_title_lbl.text = String(info["id"]).replace("_", " ").to_upper()
+	# Plant tag first when the machine has one (L3C.9R), so the detail pane names
+	# the SAME unit the operator's SCADA screen does; the model name otherwise.
+	var _title_code := String(info.get("l3c_code", ""))
+	_md_title_lbl.text = _title_code if _title_code != "" \
+		else String(info["id"]).replace("_", " ").to_upper()
 	_md_title_lbl.add_theme_font_size_override("font_size", 18)
 	_md_title_lbl.add_theme_color_override("font_color", C_TEXT_DARK)
 	trow.add_child(_md_title_lbl)
@@ -1921,48 +2167,60 @@ func _md_make_rpm_row(label_text: String, comp_key: String, pct: float, _design_
 		})
 	return row
 
+## The placeable id of the currently selected machine, for the #165 scope gate.
+## Scope is a question about the machine TYPE ("does this HMI cover blowers"),
+## so it needs the id, not the per-instance key. Empty when nothing is selected
+## or the selection no longer exists — _scope_has_node("") is then the refusal.
+func _selected_machine_scope_id() -> String:
+	if _line_flow == null or _selected_machine_key == "":
+		return ""
+	if not _line_flow.has_method("get_machine_info"):
+		return ""
+	var info : Dictionary = _line_flow.call("get_machine_info", _selected_machine_key)
+	return String(info.get("id", ""))
+
 func _on_machine_toggle_hand() -> void:
-	if _line_flow == null or _selected_machine_id == "":
+	if _line_flow == null or _selected_machine_key == "":
 		return
 	# #165 — refuse scope-violating writes. Belt-and-braces: the UI already
 	# filters the list, but a stale selection from a previous panel could
 	# survive an open_for() race. This is the hard gate.
-	if not _scope_has_node(_selected_machine_id):
+	if not _scope_has_node(_selected_machine_scope_id()):
 		return
-	var info : Dictionary = _line_flow.call("get_machine_info", _selected_machine_id)
+	var info : Dictionary = _line_flow.call("get_machine_info", _selected_machine_key)
 	var was_hand := bool(info.get("hand_mode", false))
-	_line_flow.call("set_machine_hand_mode", _selected_machine_id, not was_hand)
+	_line_flow.call("set_machine_hand_mode", _selected_machine_key, not was_hand)
 
 func _on_machine_toggle_run() -> void:
-	if _line_flow == null or _selected_machine_id == "":
+	if _line_flow == null or _selected_machine_key == "":
 		return
-	if not _scope_has_node(_selected_machine_id):
+	if not _scope_has_node(_selected_machine_scope_id()):
 		return   # #165 — scope guard
-	var info : Dictionary = _line_flow.call("get_machine_info", _selected_machine_id)
+	var info : Dictionary = _line_flow.call("get_machine_info", _selected_machine_key)
 	if not bool(info.get("hand_mode", false)):
 		return   # AAN/UIT only works in HAND mode (PLC owns it in AUTO)
 	var was_on := bool(info.get("manual_on", false))
-	_line_flow.call("set_machine_manual_on", _selected_machine_id, not was_on)
+	_line_flow.call("set_machine_manual_on", _selected_machine_key, not was_on)
 
 func _on_master_rpm_changed(value: float) -> void:
-	if _line_flow == null or _selected_machine_id == "":
+	if _line_flow == null or _selected_machine_key == "":
 		return
-	if not _scope_has_node(_selected_machine_id):
+	if not _scope_has_node(_selected_machine_scope_id()):
 		return   # #165 — scope guard
 	# Slider is in real RPM; LineFlow wants a 0..1 fraction of the rated max.
 	var frac : float = value / maxf(_md_master_max_rpm, 1.0)
-	_line_flow.call("set_machine_rpm_pct", _selected_machine_id, frac)
+	_line_flow.call("set_machine_rpm_pct", _selected_machine_key, frac)
 	if _md_rpm_pct_lbl != null:
 		_md_rpm_pct_lbl.text = "%d RPM" % int(round(value))
 
 func _on_component_rpm_changed(value: float, comp_key: String) -> void:
-	if _line_flow == null or _selected_machine_id == "":
+	if _line_flow == null or _selected_machine_key == "":
 		return
-	if not _scope_has_node(_selected_machine_id):
+	if not _scope_has_node(_selected_machine_scope_id()):
 		return   # #165 — scope guard
 	# Slider is real rpm for this rotor; LineFlow wants a 0..1 fraction of its max.
 	var cmax : float = float(_md_comp_max.get(comp_key, 100.0))
-	_line_flow.call("set_machine_component_pct", _selected_machine_id, comp_key, value / maxf(cmax, 1.0))
+	_line_flow.call("set_machine_component_pct", _selected_machine_key, comp_key, value / maxf(cmax, 1.0))
 	for r in _md_comp_rows:
 		if String(r["name"]) == comp_key:
 			(r["pct_lbl"] as Label).text = "%d RPM" % int(round(value))
@@ -1974,7 +2232,7 @@ func _refresh_machines() -> void:
 		return
 	# Update the list-row lamps (live powered state).
 	for r in _machines_list_rows:
-		var li : Dictionary = _line_flow.call("get_machine_info", String(r["id"]))
+		var li : Dictionary = _line_flow.call("get_machine_info", String(r["key"]))
 		if li.is_empty():
 			continue
 		var c : Color = LAMP_OFF
@@ -1984,9 +2242,9 @@ func _refresh_machines() -> void:
 			c = LAMP_IDLE
 		(r["lamp"] as ColorRect).color = c
 	# Update the detail panel.
-	if _md_title_lbl == null or _selected_machine_id == "":
+	if _md_title_lbl == null or _selected_machine_key == "":
 		return
-	var info : Dictionary = _line_flow.call("get_machine_info", _selected_machine_id)
+	var info : Dictionary = _line_flow.call("get_machine_info", _selected_machine_key)
 	if info.is_empty():
 		return
 	var hand := bool(info.get("hand_mode", false))

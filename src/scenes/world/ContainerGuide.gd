@@ -17,6 +17,12 @@ class_name ContainerGuideManager
 ## holograms have no collision, are not saved, and never touch the material
 ## flow.
 ##
+## npc-05 O1 — ONE exception to "purely visual": this manager also spawns the
+## plant's REAL outdoor end-destination skip(s) once at world load (see
+## WORLD_CONTAINER_SPAWNS). Those are functional WasteContainers the forklift
+## dumps into — not holograms — and they are configured BEFORE add_child() so
+## WasteContainer._ready() sees outdoor_skip when it joins its scan groups.
+##
 ## Design notes
 ##   • Everything runs off two cheap timers (rescan ~1 s, proximity ~0.4 s), so
 ##     there are no per-frame raycasts — only a handful of slots ever exist.
@@ -74,6 +80,60 @@ const CONTAINER_IDS : Array[String] = [
 	"skip_steel", "waste_container", "fines_bin", "cyclone_bin", "ibc_tote",
 ]
 
+# ── npc-05 O1 — REAL container spawns (outdoor end-destination skip) ──────────
+# Unlike SLOT_REGISTRY (machine-anchored holograms), each entry here spawns ONE
+# real, functional container once at world load, at an anchor-local offset —
+# the same unrotated `anchor + offset` frame LegacyPropsSpawner uses for its
+# test skip (6, 0, 18) and dump zone (20, 0, 18).
+#   offset       — metres from _get_factory_anchor(), floor level (y = 0).
+#   container_id — catalog id to build (ghost = false, so it's a real body).
+#   outdoor      — optional flag: configure the spawn as the outdoor open-top
+#                  END-DESTINATION skip (outdoor_skip = true → joins the
+#                  "waste_container_outdoor" scan group in its _ready(), 30 m³,
+#                  generous overflow budget, accepts every stream). The
+#                  forklift dumps full indoor bins here; the crew never
+#                  empties it on foot.
+# npc-05 — PLACEMENT, AND WHY IT IS NOT WHERE THE NAME SUGGESTS.
+#
+# This comment used to claim "~7 m outside the east-wing exterior facade". That
+# was false: (12, 0, 28) measures 10.5 m INSIDE the building, under a roof 7.9 m
+# overhead (footprint polygon from tools/regression/out/positions.json, confirmed
+# in-world by an up-ray). The claim has been removed rather than left to mislead.
+#
+# The obvious repair — move it genuinely outdoors — was tried and MEASURED, not
+# assumed. (12, 0, 45.5) = (-190.66, 139.54) is 6.9 m past the facade, 16.5 m
+# inside the perimeter fence, 53.7 m from the nearest of the 42 placed machines.
+# Geometrically ideal. It does not work, and the A/B is unambiguous
+# (src/tests/test_npc05_realworld.gd, 200 sim-second watch, same build):
+#   offset 45.5 (outdoors): forklift crosses out of the hall, then WEDGES 6.95 m
+#                           short of the skip; 47 m covered in 141 s = 0.33 m/s.
+#                           bin 275.00 -> 275.00 kg, skip 0.00 kg. Nothing moved.
+#   offset 28.0 (indoors) : stage 2 bin 275.00 -> 0.00, skip 0.00 -> 275.00 kg.
+#                           Stage 3 (operator CrewPanel force_task) another
+#                           275.00 kg. The chain completes, twice, mass balanced.
+#
+# The blocker is NOT this constant — it is that the NPC vehicle autopilot is
+# dead reckoning (BaseVehicle._npc_drive) over a navmesh with no obstacles baked
+# into it, so it cannot route through a doorway. Both are already logged as
+# npc-06 / npc-07 in docs/BACKLOG_ultracode_2026-07-19.md and are a navigation
+# rewrite, not a placement tweak. Independent evidence from the same runs: in the
+# shipped layout the yard forklift drives straight at the plant and jams against
+# the perimeter fence's east end post at (-79.90, 157.14) — 2.92 m from the fence
+# — at the identical coordinate in two separate runs.
+#
+# So the skip stays INDOORS for now: a working chain the operator can watch beats
+# a correctly-placed skip nothing can reach. Flip this one number to 45.5 the day
+# vehicle pathfinding lands; test_npc05_realworld.gd pins the expectation and will
+# go red the moment the two disagree.
+const WORLD_CONTAINER_SPAWNS : Array[Dictionary] = [
+	# npc-05 O1 — end-destination skip (operator: verplaats gerust, positie is een gelabelde aanname)
+	# OPERATOR RULING 2026-07-21: keep it INDOORS for now. He was shown the A/B
+	# above and chose the position where the chain actually completes. Move it to
+	# the yard only once npc-06/npc-07 navigation lands — until then the forklift
+	# cannot reach an outdoor skip (measured: wedges 6.95 m short, 0 kg moved).
+	{"offset": Vector3(12.0, 0.0, 28.0), "container_id": "skip_steel", "outdoor": true},
+]
+
 # ── Tunables ──────────────────────────────────────────────────────────────────
 const RESCAN_INTERVAL    : float = 1.0    # s between machine rescans (add/remove guides)
 const PROXIMITY_INTERVAL : float = 0.4    # s between proximity checks (show/hide)
@@ -101,10 +161,50 @@ func _ready() -> void:
 	_proximity_timer.timeout.connect(_update_proximity)
 	add_child(_proximity_timer)
 
+	# npc-05 O1 — spawn the real outdoor end-destination container(s) once, up
+	# front, so the overflow chain has its dump target from the first board tick.
+	_spawn_world_containers()
+
 	# Do one pass immediately so the guides are up the moment the world loads,
 	# rather than after the first timer tick.
 	_rescan()
 	_update_proximity()
+
+
+# ── npc-05 O1 — real container spawns ─────────────────────────────────────────
+## Build every WORLD_CONTAINER_SPAWNS entry as a REAL container (ghost = false).
+## Ordering contract: all per-entry config lands on the detached node BEFORE
+## add_child() — WasteContainer._ready() fires the moment the body enters the
+## tree and joins its scan groups ("waste_container", and, when outdoor_skip is
+## already true, "waste_container_outdoor"). This is the mirror image of the
+## ghost group-strip in ContainerGuide._build(), which must run AFTER add_child
+## for the very same reason.
+func _spawn_world_containers() -> void:
+	var world := get_parent()
+	var anchor : Vector3 = Vector3.ZERO
+	if world != null and world.has_method("_get_factory_anchor"):
+		anchor = world.call("_get_factory_anchor")
+	for entry in WORLD_CONTAINER_SPAWNS:
+		var cid := String(entry["container_id"])
+		var node := PlaceableCatalog.build_node(cid, false) as Node3D
+		if node == null:
+			push_warning("[ContainerGuideManager] build_node failed for '%s'" % cid)
+			continue
+		if bool(entry.get("outdoor", false)) and node is WasteContainer:
+			var wc := node as WasteContainer
+			wc.outdoor_skip = true
+			wc.capacity_m3 = 30.0          # big open-top skip (design npc-05 D1)
+			wc.overflow_budget_m3 = 5.0    # generous — outdoors, no chute to block
+			# Accepts every stream. MUST assign a typed Array[int]: an untyped []
+			# via set() silently no-ops on the typed export (see the test-skip
+			# note in LegacyPropsSpawner._spawn_test_skip).
+			var all_streams : Array[int] = []
+			wc.accepted_streams = all_streams
+		add_child(node)
+		node.global_position = anchor + (entry["offset"] as Vector3)
+		print("[ContainerGuideManager] Real container '%s' spawned @ %s%s"
+			% [cid, str(node.global_position),
+				" (outdoor end-destination skip)" if bool(entry.get("outdoor", false)) else ""])
 
 
 # ── Rescan: ensure exactly one guide per (machine, slot); cull orphans ────────
@@ -243,7 +343,10 @@ class ContainerGuide extends Node3D:
 		# MUST run AFTER add_child: the container body (a WasteContainer) re-adds
 		# itself to the "waste_container" group in its own _ready(), which only
 		# fires once it has entered the tree — so stripping earlier would be undone.
-		for grp in ["placed_object", "waste_container", "belt", "bale", "feed_machine"]:
+		# npc-05 — "waste_container_outdoor" included defensively: a ghost whose
+		# body ever carries outdoor_skip = true would join that GENERATOR scan
+		# group in the same _ready(), and a hologram must never draw dump tasks.
+		for grp in ["placed_object", "waste_container", "waste_container_outdoor", "belt", "bale", "feed_machine"]:
 			if ghost.is_in_group(grp):
 				ghost.remove_from_group(grp)
 		if ghost.has_meta("placeable_id"):

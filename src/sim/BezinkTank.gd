@@ -29,6 +29,16 @@ const DRAIN_PER_S  : float = 0.12
 var _water_meshes : Array = []        # [{node, lo, hi}]
 var _player_near  : bool  = false
 
+# Inflow is WASH-PROCESS water — it may only enter while the line is actually
+# running. Previously INFLOW_PER_S was added every frame unconditionally, so the
+# tank filled from nothing on a cold/stopped plant (operator: "water from
+# nothing", bughunt 2026-07-17). Gate it on any belt moving = line active,
+# recomputed on a 0.5 s cache so we don't scan the belt group every physics tick.
+var _line_active   : bool  = false
+var _line_check_t  : float = 0.0
+const _LINE_CHECK_PERIOD : float = 0.5
+const _BELT_MOVING_MPS   : float = 0.05
+
 func _ready() -> void:
 	add_to_group("bezink_tank")
 	_build_trigger()
@@ -112,11 +122,30 @@ func _physics_process(delta: float) -> void:
 		elif water_level <= sp_low:
 			valve_open = false
 	pump_on = valve_open
-	var dl := INFLOW_PER_S * delta
+	# Refresh the "is the line running" gate on a slow cache.
+	_line_check_t -= delta
+	if _line_check_t <= 0.0:
+		_line_check_t = _LINE_CHECK_PERIOD
+		_line_active = _any_belt_running()
+	var dl := 0.0
+	# Process water only enters while the wash line runs (conservation) — a stopped
+	# plant supplies nothing, so the tank holds its level instead of inventing water.
+	if _line_active:
+		dl += INFLOW_PER_S * delta
 	if valve_open:
 		dl -= DRAIN_PER_S * delta
 	water_level = clampf(water_level + dl, 0.0, 1.0)
 	_update_water_visual()
+
+## True if any conveyor belt is physically moving — the plant is running, so the
+## wash process is drawing and shedding water. Cheap group scan, called at most
+## twice a second (see the cache in _physics_process).
+func _any_belt_running() -> bool:
+	for b in get_tree().get_nodes_in_group("belt"):
+		if b != null and b.has_method("current_belt_speed_mps") \
+				and absf(float(b.call("current_belt_speed_mps"))) > _BELT_MOVING_MPS:
+			return true
+	return false
 
 func _update_water_visual() -> void:
 	for w in _water_meshes:

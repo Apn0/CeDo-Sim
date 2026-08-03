@@ -150,6 +150,9 @@ func clear() -> void:
 func save() -> void:
 	var data := {
 		"version": 2 if has_pc_data else 1,
+		# Frame stamp — lets a future build DETECT a convention change instead of
+		# silently reinterpreting coordinates. See _check_marker_frame.
+		"marker_frame": MARKER_FRAME,
 		"factory_center": _v3(factory_center),
 		"player_spawn":   _v3(player_spawn),
 		"vehicle_spawns": _dict_v3(vehicle_spawns),
@@ -204,13 +207,89 @@ func save() -> void:
 	emit_signal("layout_changed")
 
 ## True when a marker's XZ magnitude says "Dutch RD scene-space" (~1e5 m) rather
-## than a local offset around the building (~1e2 m).
+## than a scene-absolute position around the building (~1e2 m).
 func _is_rd_scale(p: Vector3) -> bool:
 	return abs(p.x) > 10000.0 or abs(p.z) > 10000.0
 
-## Shift a marker into local space ONLY if it is itself RD-scale; markers that
-## are already local offsets pass through untouched (mixed-file safety).
-func _localized(p: Vector3, shift: Vector3) -> Vector3:
+# CANONICAL frame tag written into every save. A file carrying a DIFFERENT tag
+# was authored by a build whose marker convention we cannot reconstruct, so it
+# is reported loudly rather than reinterpreted (see _check_marker_frame).
+const MARKER_FRAME := "scene_absolute"
+# Source of the RD→scene shift. This is the TILE mesh MainWorld.tscn's
+# BuildingShell transform is derived from — not the factory-solid mesh the
+# scene actually displays. The two centres are 220.8 m apart, so measuring the
+# shift from the wrong one authors markers 220.8 m from the ones on disk.
+const BUILDING_TILE_OBJ := "res://assets/models/CeDo_building.obj"
+# True when the loaded file's frame tag disagrees with MARKER_FRAME. Consumers
+# can gate on it; the load itself does not silently rewrite the markers.
+var marker_frame_trusted : bool = true
+# True when the loaded file actually CARRIED a marker_frame key. Absent means the
+# file predates the stamp: its scene-absolute markers are still trustworthy (the
+# writer never changed), but its derived PC block is not — see _load.
+var _file_has_frame_stamp : bool = false
+
+## RD → scene-absolute shift, MEASURED from the building tile mesh's AABB centre
+## so it cannot drift from MainWorld.tscn's BuildingShell transform. Falls back
+## to the saved satellite centre (RD x → scene x, RD y → scene −z) when the mesh
+## is unavailable; returns ZERO if neither source exists, which leaves RD
+## markers untouched rather than shifting them by a guess.
+func _rd_to_scene_shift() -> Vector3:
+	var mesh = ResourceLoader.load(BUILDING_TILE_OBJ)
+	if mesh is Mesh:
+		var c : Vector3 = (mesh as Mesh).get_aabb().get_center()
+		return Vector3(c.x, 0.0, c.z)
+	if has_satellite and satellite_center_rd != Vector2.ZERO:
+		push_warning("[WorldLayout] %s unavailable — falling back to the saved satellite centre for the RD shift" % BUILDING_TILE_OBJ)
+		return Vector3(satellite_center_rd.x, 0.0, -satellite_center_rd.y)
+	push_error("[WorldLayout] RD-scale markers present but no tile mesh and no satellite centre — leaving them unconverted (they will be rejected by _layout_rel_sane)")
+	return Vector3.ZERO
+
+## Loud, explicit report when the file mixes RD-scale and scene-absolute markers.
+## The per-marker conversion below handles it correctly, but a mixed file means
+## some earlier session wrote through a different frame — the operator should
+## know, because the un-mixed half may be positioned by an old convention.
+func _warn_if_mixed_frame() -> void:
+	var rd : Array[String] = []
+	var local : Array[String] = []
+	var bucket := func(name: String, p: Vector3) -> void:
+		if p == Vector3.ZERO:
+			return
+		if _is_rd_scale(p): rd.append(name)
+		else: local.append(name)
+	bucket.call("player_spawn", player_spawn)
+	bucket.call("factory_center", factory_center)
+	for k in vehicle_spawns.keys():
+		var arr : Array = vehicle_spawns[k]
+		for i in arr.size():
+			if arr[i] is Vector3: bucket.call("%s#%d" % [k, i + 1], arr[i])
+	for k in line_starts.keys():
+		bucket.call("line_%s" % k, line_starts[k])
+	for y in bale_yards:
+		for c in (y as Dictionary).get("corners", []):
+			if c is Vector3: bucket.call("yard_%s" % (y as Dictionary).get("supplier_id", "?"), c)
+	if rd.is_empty() or local.is_empty():
+		return
+	push_warning("[WorldLayout] MIXED COORDINATE FRAMES in %s — %d RD-scale marker(s) %s alongside %d scene-absolute marker(s) %s. Only the RD ones are converted; re-place the others in WorldSetup if they look wrong." % [
+		LAYOUT_PATH, rd.size(), str(rd.slice(0, 6)), local.size(), str(local.slice(0, 6))])
+
+## Compare the file's frame tag against MARKER_FRAME. An untagged file predates
+## the tag and is scene-absolute by construction (WorldSetup has only ever
+## written `_screen_to_floor` output), so it is trusted. A file tagged with
+## anything else was authored by a convention this build cannot reconstruct:
+## report it loudly and leave the values alone — silently reinterpreting them is
+## how markers end up hundreds of metres from where they were drawn.
+func _check_marker_frame(parsed: Dictionary) -> void:
+	_file_has_frame_stamp = parsed.has("marker_frame")
+	var tag : String = String(parsed.get("marker_frame", MARKER_FRAME))
+	marker_frame_trusted = (tag == MARKER_FRAME)
+	if not marker_frame_trusted:
+		push_error("[WorldLayout] %s declares marker_frame='%s' but this build only understands '%s' — markers are being loaded VERBATIM and may be misplaced. Re-save the layout from WorldSetup." % [
+			LAYOUT_PATH, tag, MARKER_FRAME])
+
+## Bring a marker into the scene-absolute frame ONLY if it is itself RD-scale.
+## Markers already in that frame pass through untouched — that per-marker rule is
+## the mixed-file safety net (see the 377 km note in _load).
+func _to_scene_frame(p: Vector3, shift: Vector3) -> Vector3:
 	return p - shift if _is_rd_scale(p) else p
 
 ## Any vehicle / line-start / yard-corner marker still in RD space? Used to
@@ -235,6 +314,8 @@ func _load() -> void:
 	if typeof(parsed) != TYPE_DICTIONARY:
 		push_warning("[WorldLayout] %s is not a JSON object — ignoring" % LAYOUT_PATH)
 		return
+	# Frame check FIRST — everything below decides what to trust based on it.
+	_check_marker_frame(parsed)
 	factory_center = _read_v3(parsed.get("factory_center", {}))
 	player_spawn   = _read_v3(parsed.get("player_spawn",   {}))
 	vehicle_spawns = _read_dict_v3(parsed.get("vehicle_spawns", {}))
@@ -264,6 +345,29 @@ func _load() -> void:
 	# has_pc_data: any non-zero PC field signals v2+. factory_center_pc=(500,500)
 	# is the canonical "non-zero" marker since migrate_to_pc always sets it.
 	has_pc_data = (factory_center_pc != Vector2.ZERO)
+	# DISCARD PC data written before the frame stamp existed. Those values were
+	# produced by migrate_to_pc composing scene_to_pc with the old rotate+anchor
+	# `_layout_to_scene`, so they encode the 228 m misplacement — the operator's
+	# own file carries player_spawn_pc = (297.34, 594.04) where the Plant
+	# contract (Plant.gd:20-22) requires PC_CENTER (500, 500).
+	#
+	# MainWorld normally re-migrates right after Plant.init and overwrites them,
+	# but that only happens when Plant was not already initialised. Any boot that
+	# skips the re-migration would spawn straight off these stale numbers. Zero
+	# them so the PC path CANNOT run until it has been recomputed — a missing
+	# migration then falls back to the legacy (correct) reader instead of
+	# silently reinstating the old frame.
+	if has_pc_data and not _file_has_frame_stamp:
+		print("[WorldLayout] PC block predates the marker_frame stamp — discarding it; it will be recomputed from the scene-absolute markers")
+		factory_center_pc = Vector2.ZERO
+		player_spawn_pc = Vector2.ZERO
+		vehicle_spawns_pc.clear()
+		line_starts_pc.clear()
+		compressor_spawn_pc = Vector2.ZERO
+		bale_yards_pc.clear()
+		staff_parking_pc = Vector2.ZERO
+		player_swift_pc = Vector2.ZERO
+		has_pc_data = false
 	var sat = parsed.get("satellite", {})
 	if typeof(sat) == TYPE_DICTIONARY:
 		satellite_center_rd = Vector2(sat.get("center_rd_x", 0.0), sat.get("center_rd_y", 0.0))
@@ -280,53 +384,50 @@ func _load() -> void:
 	# Building STRUCTURE — round-tripped as raw JSON dicts (BuildMode owns the schema).
 	var si = parsed.get("structure_items", [])
 	structure_items = (si as Array).duplicate(true) if si is Array else []
-	# Re-centring: WorldSetup writes positions in Dutch RD coords (magnitudes
-	# ~1e5+) because its satellite quad is anchored at RD scene-space. The
-	# building shell model has its own internal scene-space, so markers in RD
-	# don't line up with the shell. We subtract an RD anchor so all markers
-	# become OFFSETS from where the player_spawn marker was placed; MainWorld
-	# adds the player's actual scene-space position back in when spawning.
+	# Legacy RD conversion. Ancient WorldSetup saves wrote positions in Dutch RD
+	# coords (magnitudes ~1e5+) because the satellite quad was anchored at RD
+	# scene-space. Everything since stores markers SCENE-ABSOLUTE — the frame
+	# MainWorld.tscn's BuildingShell transform defines — so this block's only job
+	# is to bring an RD marker into THAT frame.
 	#
-	# CRITICAL (377 km bug): the file can be in a MIXED state — e.g. a previous
-	# load converted vehicles/yards to local offsets and a later WorldSetup save
-	# re-wrote player_spawn in RD coords. Blanket-subtracting the shift from
-	# EVERYTHING then corrupts the already-local markers (18 − 183857 ≈ −183839
-	# → equipment spawns 377 km away, NaN transforms, 34k render errors). So:
-	#   1. pick the anchor from whichever marker IS RD-scale
-	#      (player_spawn → factory_center → satellite centre), and
-	#   2. convert PER-MARKER: only markers that are themselves RD-scale get
-	#      shifted; already-local offsets pass through untouched.
+	# The shift is the building TILE's own centre (measured from the mesh, see
+	# _rd_to_scene_shift), which is exactly what MainWorld.tscn:76 subtracts.
+	# It is NOT taken from player_spawn any more: doing that zeroed player_spawn
+	# and turned the file into player-relative OFFSETS, a frame no reader uses
+	# (PlayerSpawner, the boot header, _get_factory_anchor and Plant all read
+	# markers absolutely). That mismatch is the 228 m vehicle-misplacement bug.
+	#
+	# CRITICAL (377 km bug): the file can be MIXED — a previous load converted
+	# vehicles/yards while a later WorldSetup save re-wrote player_spawn in RD.
+	# Blanket-subtracting corrupts the already-converted markers (18 − 183857 ≈
+	# −183839 → spawns 377 km away, NaN transforms, 34k render errors). So the
+	# conversion stays PER-MARKER: only RD-scale markers are shifted.
 	var shift := Vector3.ZERO
-	if _is_rd_scale(player_spawn):
-		shift = Vector3(player_spawn.x, 0.0, player_spawn.z)
-	elif _is_rd_scale(factory_center):
-		shift = Vector3(factory_center.x, 0.0, factory_center.z)
-	elif has_satellite and satellite_center_rd != Vector2.ZERO \
-			and _has_any_rd_marker():
-		# RD x → world x, RD y → world −z (Godot right-handed).
-		shift = Vector3(satellite_center_rd.x, 0.0, -satellite_center_rd.y)
+	if _has_any_rd_marker() or _is_rd_scale(player_spawn) or _is_rd_scale(factory_center):
+		shift = _rd_to_scene_shift()
 	if shift != Vector3.ZERO:
-		print("[WorldLayout] Detected RD-scale coordinates — converting RD markers to local offsets (anchor %.0f, %.0f)" % [shift.x, shift.z])
-		player_spawn   = _localized(player_spawn, shift)
-		factory_center = _localized(factory_center, shift)
-		compressor_spawn = _localized(compressor_spawn, shift)
+		_warn_if_mixed_frame()
+		print("[WorldLayout] Detected RD-scale coordinates — converting RD markers to the scene-absolute frame (tile anchor %.1f, %.1f)" % [shift.x, shift.z])
+		player_spawn   = _to_scene_frame(player_spawn, shift)
+		factory_center = _to_scene_frame(factory_center, shift)
+		compressor_spawn = _to_scene_frame(compressor_spawn, shift)
 		# #221-PC Phase 5 — operator-draggable single-point markers ride the same
-		# RD→local shift so they end up in the same frame as the rest.
-		staff_parking  = _localized(staff_parking, shift)
-		player_swift   = _localized(player_swift, shift)
+		# RD→scene shift so they end up in the same frame as the rest.
+		staff_parking  = _to_scene_frame(staff_parking, shift)
+		player_swift   = _to_scene_frame(player_swift, shift)
 		for k in vehicle_spawns.keys():
 			var arr : Array = vehicle_spawns[k]
 			var out : Array = []
 			for p in arr:
-				if p is Vector3: out.append(_localized(p, shift))
+				if p is Vector3: out.append(_to_scene_frame(p, shift))
 			vehicle_spawns[k] = out
 		for k in line_starts.keys():
-			line_starts[k] = _localized(line_starts[k], shift)
+			line_starts[k] = _to_scene_frame(line_starts[k], shift)
 		for y in bale_yards:
 			var corners : Array = y.get("corners", [])
 			for i in range(corners.size()):
 				if corners[i] is Vector3:
-					corners[i] = _localized(corners[i], shift)
+					corners[i] = _to_scene_frame(corners[i], shift)
 			y["corners"] = corners
 	print("[WorldLayout] loaded from %s" % LAYOUT_PATH)
 	print("  player_spawn   = (%.2f, %.2f, %.2f)" % [player_spawn.x, player_spawn.y, player_spawn.z])
@@ -335,7 +436,11 @@ func _load() -> void:
 	print("  bale_yards     = %d rectangle(s)" % bale_yards.size())
 	# Distances-from-player report so the user can see at a glance whether their
 	# markers are realistic plant distances (10–40 m) or accidentally far apart.
-	print("  ── offsets from player_spawn (XZ horizontal m) ──")
+	# Markers are scene-absolute, so this is a plain subtraction — and it is the
+	# SAME number the spawner must land on. When the two disagreed, the spawner
+	# was wrong (see WorldFrame._layout_to_scene); src/tests/test_vehicle_spawn_frame.gd
+	# now asserts they agree.
+	print("  ── distance from player_spawn (XZ horizontal m) ──")
 	for vid in vehicle_spawns.keys():
 		var positions : Array = vehicle_spawns[vid]
 		for i in range(positions.size()):

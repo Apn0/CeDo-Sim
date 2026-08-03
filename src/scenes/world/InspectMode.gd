@@ -12,10 +12,14 @@ class_name InspectMode
 ##
 ## Each layout marker is rendered TWICE:
 ##   • OPAQUE gizmo at  MainWorld._layout_to_scene(saved_marker) — where the
-##     world ACTUALLY put the corresponding object (post-rotation/anchor).
-##   • 50%-alpha gizmo at the raw saved coords (no transform) — the BEFORE
-##     position the operator drew in WorldSetup. The visual delta is the
-##     diagnostic information for rotation/anchor debugging.
+##     world ACTUALLY put the corresponding object.
+##   • 50%-alpha gizmo at the raw saved coords (no transform) — what the
+##     operator drew in WorldSetup.
+## The two now COINCIDE, because markers are scene-absolute and the transform is
+## the identity. A visible gap between them means the frame has regressed, and
+## the ghost is the trustworthy one: while _layout_to_scene rotated+anchored,
+## the operator was shown the truth at half opacity beside a 228 m lie at full
+## opacity. src/tests/test_vehicle_spawn_frame.gd asserts the gap stays closed.
 ##
 ## All children are spawned on activate() and torn down on deactivate() — when
 ## Inspect Mode is OFF there are zero nodes and zero per-frame work.

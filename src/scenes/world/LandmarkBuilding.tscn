@@ -1,0 +1,30 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/building_3d_raw/texturedMesh.obj" id="1"]
+[ext_resource type="Script" path="res://src/scenes/world/LandmarkPicker.gd" id="2"]
+
+[sub_resource type="Environment" id="env"]
+background_mode = 1
+background_color = Color(0.09, 0.09, 0.12, 1)
+ambient_light_source = 1
+ambient_light_color = Color(1, 1, 1, 1)
+ambient_light_energy = 3.2
+
+[node name="LandmarkPicker" type="Node3D"]
+script = ExtResource("2")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("env")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.7648, -0.6442, 0, 0.6442, 0.7648, 0, 60, 0)
+light_energy = 1.6
+
+[node name="Hologram" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0)
+mesh = ExtResource("1")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.7648, -0.6442, 0, 0.6442, 0.7648, 0, 18, 18)
+fov = 70.0
+far = 4000.0

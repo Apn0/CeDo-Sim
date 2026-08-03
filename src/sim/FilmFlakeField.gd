@@ -51,6 +51,11 @@ var _pz        : PackedFloat32Array = PackedFloat32Array()   # local Z per flake
 var _spin      : PackedFloat32Array = PackedFloat32Array()   # yaw per flake
 var _spin_rate : PackedFloat32Array = PackedFloat32Array()
 var _dunk      : PackedFloat32Array = PackedFloat32Array()   # 0..1 how deep under right now
+# Per-flake pose/shape variation (see _build) — shredded film is never uniform.
+var _tilt      : PackedFloat32Array = PackedFloat32Array()   # pitch per flake
+var _roll      : PackedFloat32Array = PackedFloat32Array()   # roll per flake
+var _aspect    : PackedFloat32Array = PackedFloat32Array()   # length multiplier
+var _gauge     : PackedFloat32Array = PackedFloat32Array()   # overall size multiplier
 var _dunk_zones: Array = []   # Array of {x: float, z: float, r: float}
 var _rng_seed  : int = 12345
 var _rng       : RandomNumberGenerator = RandomNumberGenerator.new()
@@ -81,12 +86,15 @@ func _ready() -> void:
 	_build()
 
 func _build() -> void:
-	var flake := BoxMesh.new()
-	flake.size = Vector3(flake_size, flake_size * 0.15, flake_size)   # thin chip
+	var flake := _build_flake_mesh()
 	var mat := StandardMaterial3D.new()
 	mat.vertex_color_use_as_albedo = true
-	mat.roughness = 0.7
-	flake.material = mat
+	# Shredded LDPE film is translucent, not an opaque chip — the operator photos
+	# (2026-07-20, compactor belt before the PCU) show light passing through the
+	# curls, which is what makes the mass read white-grey rather than plastic-grey.
+	mat.roughness = 0.62
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED    # single-sided folds, seen from both sides
+	flake.surface_set_material(0, mat)
 	_mat = mat
 	_mm = MultiMesh.new()
 	_mm.transform_format = MultiMesh.TRANSFORM_3D
@@ -101,16 +109,85 @@ func _build() -> void:
 	_px.resize(flake_count); _pz.resize(flake_count)
 	_spin.resize(flake_count); _spin_rate.resize(flake_count)
 	_dunk.resize(flake_count)
+	_tilt.resize(flake_count); _roll.resize(flake_count)
+	_aspect.resize(flake_count); _gauge.resize(flake_count)
 	for i in flake_count:
 		_px[i] = _frand(i * 7 + 1) * area.x - area.x * 0.5
 		_pz[i] = _frand(i * 13 + 3) * area.y - area.y * 0.5
 		_spin[i] = _frand(i * 5 + 2) * TAU
 		_spin_rate[i] = (_frand(i * 11 + 4) - 0.5) * 2.0
 		_dunk[i] = 0.0
-		_mm.set_instance_color(i, PALETTE[i % PALETTE.size()])
+		# Per-flake pose + proportions. In the photos no two shreds are alike and
+		# almost none lie flat: they sit at every angle, and lengths run from
+		# stubby specks to long torn ribbons. A single uniform chip mesh is what
+		# made the old field read as "flat squares".
+		_tilt[i] = (_frand(i * 17 + 5) - 0.5) * 1.7      # pitch, radians
+		_roll[i] = (_frand(i * 19 + 6) - 0.5) * 1.7      # roll, radians
+		_aspect[i] = 0.55 + _frand(i * 23 + 7) * 2.10    # length multiplier
+		_gauge[i] = 0.60 + _frand(i * 29 + 8) * 0.85     # overall size multiplier
+		_mm.set_instance_color(i, _flake_color(i))
 		_write_xform(i)
 	if mat_mode:
 		_build_sinkers()
+
+## The flake mesh: a CRUMPLED SHRED, not a flat chip.
+##
+## Operator photos 2026-07-20 (compactor conveyor before the PCU, plus a close-up
+## of the finished material): shredded film is torn, curled and folded — every
+## piece catches light on several faces at once, which is what makes the mass
+## read as bright white-grey rather than a bed of grey tiles. The old mesh was
+## `BoxMesh(flake_size, flake_size * 0.15, flake_size)`: a flat square, exactly
+## the thing he flagged.
+##
+## Built as three folded ribbons through the same centre at different angles.
+## Cheap (18 tris), and because a MultiMesh shares ONE mesh across every instance
+## the variety has to come from the per-instance transform — see _build, where
+## each flake gets its own tilt, roll, length and size.
+func _build_flake_mesh() -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var s : float = flake_size
+	# Three ribbons, each folded along its middle so it reads as a curl.
+	for r in 3:
+		var ang : float = float(r) * (PI / 3.0) + 0.4
+		var ca : float = cos(ang)
+		var sa : float = sin(ang)
+		var w : float = s * (0.30 - 0.06 * float(r))       # ribbons taper
+		var l : float = s * (0.62 - 0.10 * float(r))
+		var lift : float = s * (0.16 + 0.07 * float(r))    # fold height
+		# Ribbon runs along (ca, 0, sa); width across the perpendicular.
+		var along := Vector3(ca, 0.0, sa)
+		var across := Vector3(-sa, 0.0, ca)
+		var a := -along * l + across * w
+		var b := -along * l - across * w
+		var c := Vector3(0.0, lift, 0.0) + across * w * 0.5
+		var d := Vector3(0.0, lift, 0.0) - across * w * 0.5
+		var e := along * l + across * w * 0.7
+		var f := along * l - across * w * 0.7
+		_quad(st, a, b, d, c)     # up-fold
+		_quad(st, c, d, f, e)     # down-fold
+	st.generate_normals()
+	return st.commit()
+
+func _quad(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, d: Vector3) -> void:
+	st.add_vertex(a); st.add_vertex(b); st.add_vertex(c)
+	st.add_vertex(a); st.add_vertex(c); st.add_vertex(d)
+
+## Colour for flake i. The photos are overwhelmingly translucent white-grey with
+## a scatter of bright specks (blue caps, red/orange print, green, black print) —
+## roughly 1 in 5. Cycling PALETTE evenly, as the old code did, made the belt look
+## like confetti instead of like film.
+func _flake_color(i: int) -> Color:
+	var pick : float = _frand(i * 31 + 9)
+	if pick < 0.80:
+		# Clear/silver film: vary the grey slightly so the mass isn't flat.
+		var g : float = 0.70 + _frand(i * 37 + 10) * 0.22
+		return Color(g, g + 0.015, g + 0.03)
+	# Bright speck — skip index 0/5 (the greys) so specks actually read as specks.
+	var bright : Array[Color] = [
+		PALETTE[1], PALETTE[2], PALETTE[3], PALETTE[4], PALETTE[6], PALETTE[7],
+	]
+	return bright[int(_frand(i * 41 + 11) * float(bright.size())) % bright.size()]
 
 ## Build the (cheap, separate) heavies MultiMesh. Only spun up in mat mode so
 ## non-flotation users pay nothing.
@@ -324,7 +401,12 @@ func _process_sinkers(delta: float) -> void:
 ## mat mode flakes pack denser/larger and fade out as they near the outlet.
 func _write_xform(i: int) -> void:
 	var y := surface_y - _dunk[i] * dunk_depth
-	var b := Basis(Vector3.UP, _spin[i])
+	# Yaw (drift spin) THEN the flake's own fixed tilt/roll, so each shred keeps
+	# its crumpled attitude while the field turns it. Non-uniform scale stretches
+	# it along its own length axis — that's what gives the torn-ribbon spread the
+	# operator photos show instead of a bed of identical squares.
+	var b := Basis(Vector3.UP, _spin[i]) * Basis(Vector3.RIGHT, _tilt[i]) * Basis(Vector3.BACK, _roll[i])
+	b = b.scaled(Vector3(_gauge[i], _gauge[i], _gauge[i] * _aspect[i]))
 	if mat_mode:
 		# Pack the raft denser + a touch larger, then SHRINK to nothing over the last
 		# stretch before the +Z outlet so the mat reads as skimmed off the top (a

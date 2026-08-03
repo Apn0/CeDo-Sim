@@ -565,15 +565,34 @@ def main():
         n_along = max(2, int((depth_max - depth_min - 2 * inset) / spacing) + 1)
         depth_pos = [depth_min + inset + spacing * i for i in range(n_along)]
 
-        # Sample the local roof height above each (X,Z) within the factory verts
-        # only (not the whole tile). Find the highest factory vert in a small XZ
-        # window — good enough for a flat-roof factory where ys cluster at eaves.
-        def roof_y_at(cx, cz, win=4.0):
-            best = bby1
-            for pv in f_verts:
-                if abs(pv[0] - cx) <= win and abs(pv[2] - cz) <= win:
-                    if pv[1] > best:
-                        best = pv[1]
+        # Exact roof height above (X,Z): ray-cast straight up through the factory
+        # triangles. A triangle counts as roof skin when it is not near-vertical
+        # (|ny| > 0.2) and contains the point in XZ; the plane equation gives the
+        # interpolated Y. We take the LOWEST roof skin above head height, so a
+        # post under a low hall stops at ITS roof even when a taller hall is
+        # adjacent. Returns None when no roof is overhead — the AABB grid point
+        # lies outside the actual (non-rectangular) footprint. The old
+        # vertex-window fallback (`best = bby1` = building MAX height) made every
+        # such post a full-height pole sticking out of the lower halls' roofs.
+        def roof_y_at(cx, cz):
+            best = None
+            for (ia, ib, ic) in wt:
+                a, b, c = uniq[ia], uniq[ib], uniq[ic]
+                nx_, ny_, nz_ = cross(_vec_sub(b, a), _vec_sub(c, a))
+                m = math.sqrt(nx_*nx_ + ny_*ny_ + nz_*nz_)
+                if m < 1e-9 or abs(ny_ / m) < 0.2:
+                    continue  # degenerate or near-vertical (wall)
+                # 2D point-in-triangle (XZ) via signed areas.
+                d1 = (cx - b[0]) * (a[2] - b[2]) - (a[0] - b[0]) * (cz - b[2])
+                d2 = (cx - c[0]) * (b[2] - c[2]) - (b[0] - c[0]) * (cz - c[2])
+                d3 = (cx - a[0]) * (c[2] - a[2]) - (c[0] - a[0]) * (cz - a[2])
+                has_neg = d1 < 0 or d2 < 0 or d3 < 0
+                has_pos = d1 > 0 or d2 > 0 or d3 > 0
+                if has_neg and has_pos:
+                    continue
+                y = a[1] - (nx_ * (cx - a[0]) + nz_ * (cz - a[2])) / ny_
+                if y > floor_y + 2.5 and (best is None or y < best):
+                    best = y
             return best
 
         sec = args.post_section
@@ -593,7 +612,10 @@ def main():
                 # convex but most factory cells are roughly rectangular).
                 if not (bbx0 + 0.1 <= px <= bbx1 - 0.1 and bbz0 + 0.1 <= pz <= bbz1 - 0.1):
                     continue
-                top_y = roof_y_at(px, pz) - 0.05   # tuck under the roof skin
+                ry = roof_y_at(px, pz)
+                if ry is None:
+                    continue   # no roof above this grid point — outside footprint
+                top_y = ry - 0.05   # tuck under the roof skin
                 if top_y - floor_y < 2.0:
                     continue   # not tall enough to be a real column
                 # Build a square box (cross-section sec×sec) from floor to roof.
@@ -654,7 +676,7 @@ def main():
     # has nowhere to go (the V-beams render as shell paint).
     mtl_out = os.path.splitext(args.out)[0] + ".mtl"
     with open(mtl_out, "w") as mf:
-        mf.write("# CeDo factory — material slot manifest. Values are placeholders;\n"
+        mf.write("# CeDo factory - material slot manifest. Values are placeholders;\n"
                  "# real materials are applied at runtime by MaterialPalette + MainWorld.\n"
                  "newmtl shell\nKa 0.7 0.68 0.63\nKd 0.7 0.68 0.63\nKs 0 0 0\nNs 10\n"
                  "newmtl posts\nKa 0.30 0.22 0.14\nKd 0.30 0.22 0.14\nKs 0 0 0\nNs 10\n")
@@ -662,9 +684,10 @@ def main():
 
     # ── Write the .obj ────────────────────────────────────────────────────────
     with open(args.out, "w") as f:
-        f.write("# CeDo factory — solidified + coplanar-merged (thickness=%.2fm, merge=%.2f°).\n"
-                "# Standalone OBJ — no Godot required. Walls collapsed from triangle soup\n"
-                "# into clean N-gons by iterative coplanar merge.\n" % (t, args.merge_deg))
+        f.write("# CeDo factory - solidified + coplanar-merged (thickness=%.2fm, merge=%.2f deg).\n"
+                "# Standalone OBJ - no Godot required. Walls collapsed from triangle soup\n"
+                "# into clean N-gons by iterative coplanar merge. ASCII-only header:\n"
+                "# Godot's OBJ importer warns on non-UTF8/extended bytes.\n" % (t, args.merge_deg))
         f.write("mtllib %s\n" % os.path.basename(mtl_out))
         # Vertices: one per unique position.
         for p in id_to_pos:

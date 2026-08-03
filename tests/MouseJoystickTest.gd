@@ -9,7 +9,7 @@ extends Node3D
 
 const FORKLIFT := "res://src/scenes/vehicles/Forklift.tscn"
 const MERLO    := "res://src/scenes/vehicles/Merlo.tscn"
-const SCISSOR  := "res://src/scenes/vehicles/ScissorLift.tscn"
+const SCISSOR  := "res://src/scenes/vehicles/MastLift.tscn"   # ScissorLift was renamed to MastLift
 
 var _pass := 0
 var _fail := 0

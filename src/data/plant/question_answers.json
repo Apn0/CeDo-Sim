@@ -1,0 +1,427 @@
+[
+ {
+  "question_id": "Q1",
+  "question": "ZSS — what does the acronym mean and where is it located?",
+  "status": "answered",
+  "answer": "ZSS = Zand-Slib Scheider (sand-sludge separator). Plant-wide water node feeding the blauwe tank alongside fresh canal water.",
+  "evidence": [
+   "244_CeDo126 (FLOW-lijn1-incl-waterloops): 'Waterput & pomp was 1 naar ZSS' + 'ZSS water zuivering systeem'",
+   "253_CeDo135 / 261_CeDo130 (3A): ZSS feeds Blauwe tank",
+   "264_CeDo134 (3B): ZSS + Vers kanaalwater -> Blauwe tank",
+   "240_CeDo127 (hall layout): ZSS in Hal 0 and Hal 1",
+   "operator interview 2026-07-05 (AskUserQuestion session)"
+  ],
+  "confidence": "certain"
+ },
+ {
+  "question_id": "Q2",
+  "question": "What is block 'C1' on lijn 3A between Frictiewasser M1/M2 and Frictiescheider M3?",
+  "status": "answered",
+  "answer": "C1 is 'Pomp C1' — the friction-washer discharge/transfer PUMP (not a tank). It sits exactly between the Frictiewasser (M1 en M2) and the Frictiescheider M3, and pumps the washed film+water on to the first flotation (LA3 '1e flotatie'). It is position 6 in wash-water circuit 1 (La1) of was 3a. On lijn 3B there is NO C1 box; 3B replaces that stretch with Rafter -> Ontwaterschroef van rafter -> Frictiescheider 210. So C1 is a line-3A-specific pump station.",
+  "evidence": [
+   "252_CeDo13: '...de folie met het water uit de machine worden gedrukt richting C1 pomp. De C1 pomp verplaatst dan het water met de folie richting LA3 1e flotatie.'",
+   "277_CeDo81 (frictiewasser poster) same caption; 276_CeDo82: 'Vuil water en folie vanuit pomp C1'",
+   "261_CeDo130 / 253_CeDo135: Frictiewasser (M1 en M2) -> C1 -> Frictiescheider M3",
+   "286_CeDo78 circuit-1 legend: '6 Pomp C1'"
+  ],
+  "confidence": "certain"
+ },
+ {
+  "question_id": "Q3",
+  "question": "Is M11a shared by the Mengsilo dosing screw AND the infeed screw?",
+  "status": "answered",
+  "answer": "Yes. On the lijn-3A flow diagram the tag 'Doseerschroef M11a' appears TWICE: (1) front-end, feeding the Frictiewasser from Vuilsnipper silo 3a, and (2) under the Mengsilo, feeding the Verdeelwals (m14). A distinct 'Doseerschroef M11b' is the screw between Mengsilo and Ventilator V2. On lijn 3B, M11a appears only once (front-end infeed) because 3B has no mengsilo/rondmengen branch. So the duplicated-M11a is a 3A layout feature: the same motor tag labels both the vuilsnipper infeed dosing screw and the mengsilo dosing screw.",
+  "evidence": [
+   "245_CeDo131 / 253_CeDo135 / 261_CeDo130: two 'Doseerschroef M11a' boxes + one 'Doseerschroef M11b'",
+   "264_CeDo134 (3B): single front-end 'Doseerschroef M11a'"
+  ],
+  "confidence": "certain"
+ },
+ {
+  "question_id": "Q4",
+  "question": "What is the 'Rafter' (3B) make/type?",
+  "status": "answered",
+  "answer": "Rafter (3B) = round steel-mesh sieve with a rotating screw inside that rubs the film against the mesh; submerged; its tank sits at 3B flotation-tank level on a platform. Extremely reliable (operator never saw a malfunction). ALREADY modeled in PlaceableCatalog as id 'rafter' (_m_rafter: 1.5 mm steel-mesh cylinder + rafter_auger 35 rpm) — matches; header comment 'inclined vibrating sieve deck' is stale; submerged/platform placement is refinement backlog.",
+  "evidence": [
+   "243_CeDo129 / 264_CeDo134 (3B): 'Rafter' + 'Ontwaterschroef van rafter' blocks, no manufacturer stated",
+   "operator interview 2026-07-05 (AskUserQuestion session)"
+  ],
+  "confidence": "certain"
+ },
+ {
+  "question_id": "Q5",
+  "question": "Water routing directions (ZSS<->blauwe tank, LA2/P1 return, granuleerwater loop, Ontwaterzeef<->tankje, koeltoren->compactor, drains->Riool naar EOP)?",
+  "status": "answered",
+  "answer": "Per the official flow diagrams (the 3B 'incl waterloops' sheet 264_CeDo134 is the definitive reference). SUPPLY: ZSS + Vers kanaalwater -> Blauwe tank -> Pomp was 3a/3b + Pomp was 4 (wash-water supply). WASH CIRCUITS: circuit 1 = La1 (Zandscheider naar LA1, fed by P1); circuit 2 = La2 (fed by P2); circuit 3 = EOP (blauwe-tank recycled water); a faint circuit 4 = koeltoren/pretreated canal water. Wash-water circuit 1 (La1) is a closed loop: Waterbak La1 -> P1 (clean) -> Doseerschroef (film joins) -> Frictiewasser -> Glijgoot -> C1 -> Frictiescheider M3 (water/film split) -> Zandscheider -> back to Waterbak La1. PELLETIZE/COOLING: Blauwe vat + Pomp feeds extruder/laserfilter vacuum cooling; 'Tankje tussen extruders' + its own Pomp and the Koeltoren circuit serve pellet/cooling water; die-face pellet water -> Ontwaterzeef -> Centrifuge dewater. SPENT WATER: dirty/spent process water -> 'Riool naar EOP' (sewer to the end-of-pipe effluent endpoint). On line 1: Waterput & pomp was 1 -> ZSS; EOP/blauwe tank -> was 1/3a/3b.",
+  "evidence": [
+   "264_CeDo134 (title 'Lijn 3b flow diagram / incl waterloops / 20-04-2023')",
+   "253_CeDo135 (3A: P1/P2/LA2/Zandscheider naar LA1/Blauwe tank/Pomp was 3a/Pomp was 4/Tankje tussen extruders)",
+   "254_CeDo5 (circuit list La1/La2/EOP + circuit 4)",
+   "286_CeDo78 (closed La1 loop 8 nodes)",
+   "244_CeDo126 (ZSS/EOP/Blauwe tank/Koeltoren/Vers kanaalwater routing)",
+   "276_CeDo82/277_CeDo81 (P1->washer, C1->LA3)"
+  ],
+  "confidence": "likely"
+ },
+ {
+  "question_id": "Q6",
+  "question": "Pomp zeefbocht — location and function?",
+  "status": "answered",
+  "answer": "'Pomp zeefbocht' (sieve-bend / wedge-wire-screen recirculation pump) is a LIJN 3B feature. It is drawn as a standalone blue node in the bottom-left utility cluster of the 3B flow diagram, alongside 'Pomp was 3b' and 'Pomp was 4', drawing from the Blauwe tank and recirculating wash/float screen water. It is ABSENT from the 3A diagram (3A circuit-1 uses only P1 and C1). ZSS wash-water screening sits in Hal 0/Hal 1.",
+  "evidence": [
+   "241_CeDo128 / 264_CeDo134 (3B flow diagram incl waterloops): blue box 'Pomp zeefbocht', bottom-left standalone",
+   "261_CeDo130 (3A): no zeefbocht pump",
+   "240_CeDo127 (hall layout): ZSS in Hal 0/Hal 1"
+  ],
+  "confidence": "certain"
+ },
+ {
+  "question_id": "Q7",
+  "question": "Tankje tussen extruders — between which extruders, and is it shared?",
+  "status": "answered",
+  "answer": "'Tankje tussen extruders' (small tank between the extruders) is present on BOTH lines 3A and 3B — one per line — each with its own dedicated 'Pomp' directly below it, sitting in the pelletize/cooling-water cluster next to the Koeltoren circuit and 'Riool naar EOP'. It services that line's pellet/cooling water (under the Ontwaterzeef area). Cross-line sharing is not shown; it is drawn as a per-line block. The melt-train component order on the BluPort mimic is extruder -> MPU1 (smeltpomp/gear melt pump) -> MF2 (melt filter 2).",
+  "evidence": [
+   "261_CeDo130 / 264_CeDo134: 'Tankje tussen extruders' with a 'Pomp' box below, in the Ontwaterzeef/Centrifuge/Koeltoren cluster (one per line)",
+   "329_CeDo33: 'MP < MPU1' / 'MP < MF2' melt-train order"
+  ],
+  "confidence": "likely"
+ },
+ {
+  "question_id": "Q8",
+  "question": "Does lijn 3B have a bigbag station?",
+  "status": "answered",
+  "answer": "Per the flow diagrams, the bigbag station is a LIJN 3A feature (block below the Weegschaal / near the Mengsilo-rondmengen output branch). The 3B material-flow diagram ends at 'MS/LS silo buiten' with NO bigbag-station block drawn, and 3B has no mengsilo/rondmengen branch. So: bigbag station = 3A confirmed; 3B not shown/absent in its diagram. (Separately, extruders are run out to bigbag first after a knife/screen change until quality is OK.)",
+  "evidence": [
+   "245_CeDo131 / 253_CeDo135 / 261_CeDo130 (3A): 'bigbag station' below Weegschaal",
+   "243_CeDo129 / 264_CeDo134 (3B): ends at MS/LS silo buiten, no bigbag block",
+   "283_CeDo29 (SWI-042 p4): extruders started to bigbag until quality acceptable"
+  ],
+  "confidence": "likely"
+ },
+ {
+  "question_id": "Q9",
+  "question": "Line throughput in kg/h?",
+  "status": "answered",
+  "answer": "EREMA extruder budget/target = 1200 kg/h; realistic sustained ~1000 kg/h (~200 kg/h lost to slow running per the Newton training). LIVE observed throughput: LIJN 3C runs ~1022-1513 kg/h (recipe nameplate 'LDPE 800 kg/h'/'600 kg/h' but actual output well above nameplate; melt-pump MPU1-doorzet reads even higher, e.g. 1329 and 2630-2632 kg/h). LIJN 6 runs ~923-1185 kg/h on LDPE (testrun 923-1115; production recipe '1-14-25 production program rke' = 1185 kg/h). A small/commissioning EREMA line trends ~200-300 kg/h on a 0-600 scale. One HMI snapshot: doorzet 1087 kg/h at 13:30 10-04-2024.",
+  "evidence": [
+   "249_CeDo46: '1200 kg/hr' budget, ~1000 kg/hr green output, 'Slow Running 200kg per uur'",
+   "247_CeDo3: '1087 kg/h'",
+   "204_CeDo54: 1513 kg/h; 205_CeDo52: 1452; 190_CeDo63: 1022 (3C)",
+   "223_CeDo69: 1185 kg/h (LIJN 6 production); 222_CeDo26: 923; 219_CeDo22: 1115",
+   "329_CeDo33: MPU1-doorzet 2632 kg/h; 328_CeDo17: 1679 kg/h extruder",
+   "284/285_CeDo12/13: small line ~200-300 kg/h on 0-600 scale"
+  ],
+  "confidence": "certain"
+ },
+ {
+  "question_id": "Q10",
+  "question": "Blauwe tank — volume and pump specs?",
+  "status": "answered",
+  "answer": "Blauwe tank is SMALL: ~3 m3 (approx 2 m x 1 m, chest height — operator could see in from the top). Primarily the extruder COOLING-water circuit hub, corroborated by the diagram ('Extruder 3a, 3b en lijn 1 koelwater van warmte wisselaars' returns to it; kanaalwater injects into the cooling return). Digest's 'proceswaterreservoir' label kept as the slide's own title.",
+  "evidence": [
+   "240_CeDo127 (Hal 1: 8m3/5m3/blauwe tank)",
+   "264_CeDo134 (Blauwe tank fed by ZSS+vers kanaalwater -> wash pumps)",
+   "254_CeDo5 ('Water circuit 3 (EOP) blauwe tank water')",
+   "232_CeDo138 (blauwe-tank connection sketch, Hultink 2023-09-27)",
+   "operator interview 2026-07-05 (AskUserQuestion session)"
+  ],
+  "confidence": "certain"
+ },
+ {
+  "question_id": "Q11",
+  "question": "LA1 / LA2 — what do they mean?",
+  "status": "answered",
+  "answer": "LA1/LA2 (and LA3) are the numbered wash-water circuits/basins of the wash installation, each a flotation-stage tank with its own circulation pump. LA1 = water circuit 1 (primary, sand-separated: 'Waterbak La 1' -> P1); LA2 = water circuit 2 (secondary: -> P2); LA3 = the first flotation ('1e flotatie', fed by the C1 pump). On 3A both LA1 and LA2 are drawn; on 3B only a single LA1 head (Zandscheider, LA1, P1) plus a Pomp zeefbocht. The 'LA' initialism itself is not expanded on the sheets. A physical 'LA2 tank' photo confirms it is a discrete steel tank with its own blue centrifugal recirc pump.",
+  "evidence": [
+   "254_CeDo5: 'Water circuit 1 (La1)', 'Water circuit 2 (La2)', 'Water circuit 3 (EOP)'",
+   "252_CeDo13: 'richting LA3 1e flotatie'",
+   "286_CeDo78: legend '1 Waterbak La 1'",
+   "261_CeDo130 (3A: LA1+P1, LA2+P2) vs 264_CeDo134 (3B: LA1 only)",
+   "272_CeDo74: 'LA2 tank' photo with recirc pump"
+  ],
+  "confidence": "certain"
+ },
+ {
+  "question_id": "Q12",
+  "question": "EOP — what does the acronym mean?",
+  "status": "answered",
+  "answer": "EOP = End Of Pipe: on-site water-treatment mini-plant operated by external company Indaver. Removes sand + fine film particles (paper-pulp-like residue) and slib; purpose is water REUSE (not river discharge). Model as external endpoint entity; malfunctions there occasionally caused plant problems — possible future event source.",
+  "evidence": [
+   "254_CeDo5: 'Water circuit 3 (EOP) blauwe tank water'",
+   "251_CeDo2: 'Water vanuit EOP > gerecycled water, EUR goedkoop'",
+   "244_CeDo126: 'EOP water zuivering system'",
+   "261_CeDo130 / 264_CeDo134: 'Riool naar EOP'",
+   "operator interview 2026-07-05 (AskUserQuestion session)"
+  ],
+  "confidence": "certain"
+ },
+ {
+  "question_id": "Q13",
+  "question": "FORM-008 row 22 duplicate 'compactor 3a' — should it be 3B?",
+  "status": "answered",
+  "answer": "Rows 21/22 are the PCU (compactor) fume-extraction (afzuiging) units — one per extruder (3a and 3b each have one... the row pair covers unit 1 and unit 2). Unit 2 was ALWAYS broken in real production and permanently set to 0; sim should force it to 0 / read-only. Line 1's ventilation worked differently (model later with line 1).",
+  "evidence": [
+   "168_CeDo122 (FORM-008 = Midrange Checklist line 3, 29 rows)",
+   "332_CeDo95 (SWI-017 title 'Extruder 3a/3b leegdraaien/stoppen', one SWI for both compactors)",
+   "operator interview 2026-07-05 (AskUserQuestion session)"
+  ],
+  "confidence": "certain"
+ },
+ {
+  "question_id": "Q14",
+  "question": "FORM-008 row 16 full text?",
+  "status": "answered",
+  "answer": "Row 16's 'kleine LA' is a SEPARATE small water tank (about half LA1's size, similar function) on the floor at the 3B flotation-tank material EXIT side (towards Hal 0) — NOT one of the 3A LA1/LA2/LA3 tanks (those are all open-top water tanks, all line 3A, none are pumps). Operator does not know what LA stands for.",
+  "evidence": [
+   "168_CeDo122 (FORM-008)",
+   "283_CeDo29 (SWI-042 p4 timing chain rows 14-20)",
+   "operator interview 2026-07-05 (AskUserQuestion session)"
+  ],
+  "confidence": "certain"
+ },
+ {
+  "question_id": "Q15",
+  "question": "Which temperature zones (200-235-175-240-245-250-255 C) sit before/after the laserfilter, and why is zone 3 = 175 C?",
+  "status": "partial",
+  "answer": "Operator: zones ZZ1..ZZ7 + EZ1 exist; EZ1 (first) runs ~100 C. Zones 1-3 before the laserfilter, the next 1-2 around it, then barrel + degassing zone + barrel + head filters + a short zone after. Laserfilter additionally has its own front/back/center-before/after temperatures separate from the barrel ladder. FORM-008's 200-235-175-... ladder may be partly wrong; operator will supply an HMI screenshot with setpoints.",
+  "evidence": [
+   "257_CeDo5 / 185_CeDo88 (EZ-1/ZZ zone tags)",
+   "193_CeDo59 (MPU1-Z1 261, 2nd zone 230); 329_CeDo33 (MPU1-Z1 270)",
+   "189_CeDo89 (SIMATIC laserfilter melt ~250)",
+   "304_CeDo71 (MF1-Z1 master / MF1-Z2 slave)",
+   "319_CeDo98/332_CeDo95 (SWI-017: compactor setpoint 123 -> 118 C)",
+   "248_CeDo16 (yellow ~175 setpoint on degC axis)",
+   "202_CeDo39/205_CeDo52 (heat nav-bar icon, sub-screen not captured)",
+   "operator interview 2026-07-05 (AskUserQuestion session)"
+  ],
+  "confidence": "likely"
+ },
+ {
+  "question_id": "Q16",
+  "question": "Bunker speed 200-800 — what unit?",
+  "status": "answered",
+  "answer": "Bunker speed 200-800 = belt travel setting in mm per fixed time interval (200 mm .. 800 mm per interval). Calibration: at setting 600 the bunker empties its ~10 m length in ~10 minutes. The bunker = a huge buffer conveyor ~10 m long x 4 m wide, walls 3.5-4 m high, plexiglass doors at the shredder-1 infeed side, sits 1-1.5 m high. Feed: shredder 1 -> belt 1012 -> bunker -> belt 1040 (numbers approximate). Interlock: shredder-2 overload stops belt 1040 which stops the bunker; TITECH/TOMRA keep running.",
+  "evidence": [
+   "283_CeDo29 (SWI-042 p4: bunker fill setting 300)",
+   "317_CeDo23/316_CeDo21 (LIJN 6 sticky note: laserfilter uittrekschroeven 3-8 rpm)",
+   "223_CeDo69: 'BC1-toerental %', 'PES-toerental %', 'TEU-toerental %' vs 'EX1-toerental rpm'",
+   "operator interview 2026-07-05 (AskUserQuestion session)"
+  ],
+  "confidence": "certain"
+ },
+ {
+  "question_id": "Q17",
+  "question": "Does FORM-007 row 17 end in 'vocht' (moisture)?",
+  "status": "answered",
+  "answer": "Confirmed from the scan: row 17 guidance ends in 'vocht' (te hoog = afkeur / vocht) — moisture spec, same metric as the hourly Vochtmeting.",
+  "evidence": [
+   "060_CeDo123 (FORM-007, blank template, R. Keunen 11-1-21)",
+   "233_CeDo43 (Lijn 3A Extruder lijst: 'Vochtmeting __%' end-of-shift field)",
+   "operator interview 2026-07-05 (AskUserQuestion session)"
+  ],
+  "confidence": "certain"
+ },
+ {
+  "question_id": "Q18",
+  "question": "Shredder rpm: lijn 1 32-50 vs Shredder 1 35-60 — which is right?",
+  "status": "answered",
+  "answer": "Different machines: lijn 1's shredder (32-50 rpm) and line 3's Shredder 1 (35-60 rpm) are separate units with their own ranges; startup at 26 rpm then ramp up also correct.",
+  "evidence": [
+   "274_CeDo111 (SWI-012 p1 step 3: 'shredder hoort bij opstart op 26 toeren te staan. Daarna opvoeren naar wat nodig is')",
+   "278_CeDo80 (uittrekschroef settable in toeren on E-paneel)",
+   "333_CeDo26 (SWI-042: shredder 1 leegdraaien, band 1040 LOTOTO)",
+   "operator interview 2026-07-05 (AskUserQuestion session)"
+  ],
+  "confidence": "certain"
+ },
+ {
+  "question_id": "Q19",
+  "question": "Stortgewicht (bulk density) — unit and value?",
+  "status": "answered",
+  "answer": "Stortgewicht (bulk/pour density) is an active per-line QC acceptance gate. The Cedo 'Lijn 3B' QC spec sheet on the lab weighing bench specifies stortgewicht >= 470. The unit is not printed on the visible sheet, but for granulate stortgewicht the conventional unit is g/l, so the spec reads >= 470 g/l (minimum). It is measured with a funnel-into-fixed-volume-cylinder rig plus a balance at the QC station. The Lijn-3A Extruder lijst logs 'stort gewicht meting' per operating hour plus a 'stortgewicht gemiddelde' (shift average).",
+  "evidence": [
+   "259_CeDo2 (QC lab weegbench: Cedo 'Lijn 3B' sheet, stortgewicht >= 470, funnel/cylinder rig + balance, 'Kwaliteit begint bij ons')",
+   "233_CeDo43 (Lijn 3A extruder list: 'stort gewicht meting' per hour + 'stortgewicht gemiddelde')"
+  ],
+  "confidence": "likely"
+ },
+ {
+  "question_id": "Q20",
+  "question": "Slow-running remedies per cause?",
+  "status": "answered",
+  "answer": "The Newton slide lists the CAUSES of slow running; the remedies are the inverse of each. Causes: (1) shredder not delivering enough / extruder silo empty -> keep infeed full; (2) maalmolen continuously in overload -> reduce mill load / clear overload; (3) extruder filter change interval too short -> cleaner upstream material / extend screen life; (4) extruder filter pressure too high -> change screen / cut contamination; (5) extruder already at max RPM -> speed-capped, no remedy. Explicit remedy text is not printed on the slide. The shift form's slow-running reason codes are: Sorteerlijn (grondstof / shredder 1 / shredder 2), Overblazen naar was 3a, Laserfilter druk, Kwaliteit eind product, Anders. Downtime codes: M = Messen wissel, O = Onderhoud, P = Process storing, T = Technische storing. Crew header: Dienst = OD/MD/ND (ochtend/middag/nacht), Ploeg = A/B/C/D/E (5-ploegen).",
+  "evidence": [
+   "249_CeDo46: 'Mogelijke redenen' bullets (shredder/silo, maalmolen overload, filter wisseltijd, filter druk, Max RPM)",
+   "233_CeDo43 (Lijn 3A form: slow-running reason codes + M/O/P/T downtime codes + Dienst OD/MD/ND + Ploeg A-E)"
+  ],
+  "confidence": "likely"
+ },
+ {
+  "question_id": "Q21",
+  "question": "The 1200 kg/hr budget — which line does it belong to?",
+  "status": "answered",
+  "answer": "Budget speeds: 3A/3B = 1250 kg/h; 3C/6 = 1200 kg/h (1500 was achievable but not sustained plant-wide). Use these per-line budgets in the sim. ('Newton' training name not recognized by operator.)",
+  "evidence": [
+   "249_CeDo46 footer 'Budget snelheid is 1200 kg/hr' (no line label)",
+   "204_CeDo54/205_CeDo52/190_CeDo63 (3C 1022-1513 kg/h)",
+   "274_CeDo111 (SWI-012 ref: 'Oude SOP procedure opstarten lijn 1 V1.1: I1200')",
+   "307_CeDo53 ('Instelpunt van voeding, basisregel = 1kW voor 10kg doorvoer')",
+   "operator interview 2026-07-05 (AskUserQuestion session)"
+  ],
+  "confidence": "certain"
+ },
+ {
+  "question_id": "Q22",
+  "question": "Onderhoud_1 — task frequency?",
+  "status": "answered",
+  "answer": "Cedo-PROD-FORM-012 'Eerste lijns onderhouds werkzaamheden lijn 1' (first-line/operator maintenance, line 1; Rev 01, 14-1-2022, approved Peter Scheffer) is the line-1 first-line maintenance form: 14 sections, 47 tasks, with a 180 bar threshold noted, and per-task frequencies in the form (the digest carries the full 14-section / 47-task breakdown; two 'kritisch' flags were audit-corrected on 2026-07-04 — 'Waterfilters reinigen/wisselen' IS critical, 'Ventilatoren 10a/10b waaierhuis reinigen' is NOT). The machine-readable version is src/data/plant/maintenance_lijn1.json.",
+  "evidence": [
+   "362_CeDo119 (FORM-012 'Eerste lijns onderhouds werkzaamheden lijn 1', Rev 01, 14-1-2022)",
+   "docs/plant/onderhoud_lijn1.md + src/data/plant/maintenance_lijn1.json (14 sections, 47 tasks, 180 bar threshold)"
+  ],
+  "confidence": "certain"
+ },
+ {
+  "question_id": "Q23",
+  "question": "Voertuig 'Machine nr' — is it the mast lift?",
+  "status": "answered",
+  "answer": "'Machine nr' is simply the fleet asset number (e.g. forklift #3, bale clamp #4). Mast lifts had NO daily vehicle checks — maintained by an external company. Sim: daily inspection loop applies to forklifts/bale clamps/Merlos only.",
+  "evidence": [
+   "312_CeDo105 (QESH-PLD-007 p18: 'heftrucks uitgerust met vorken of balenklemmen. Enkele kunnen roteren')",
+   "306_CeDo96 (p9: hoogwerker dims, permission rule)",
+   "075_CeDo106 (p19: heftruck/teletruck/JCB rules)",
+   "170_CeDo124 (FORM-023 daily vehicle check)",
+   "operator interview 2026-07-05 (AskUserQuestion session)"
+  ],
+  "confidence": "certain"
+ },
+ {
+  "question_id": "Q24",
+  "question": "Real densities pre/post compactor + per-origin bale?",
+  "status": "partial",
+  "answer": "No measured per-origin numbers. Reason via composition: Forst+ cleanest (mostly LDPE; metal only bale wires); Alba Marl most polluted (drink cans, metal closures, sand, heavier polymers HDPE/PP/PET) -> heavier bales but LOWER yield. Model per-origin composition/yield rather than a single density; keep ~320 kg/m3 as the base estimate.",
+  "evidence": [
+   "181_CeDo54 (EREMA compactor PCU bulk-density table)",
+   "305_CeDo64 ('Stompe messen... Verlagen de verwerkingscapaciteit'; 'Alleen scherpe messen'; 10 mm gap)",
+   "src/data/plant/material_densities.json + docs/plant/densities.md",
+   "operator interview 2026-07-05 (AskUserQuestion session)"
+  ],
+  "confidence": "hint"
+ },
+ {
+  "question_id": "Q25",
+  "question": "BOPP on 3A/3B?",
+  "status": "answered",
+  "answer": "LDPE only on 3A/3B — operator never heard of BOPP there. Line 1 ran black agricultural film (asparagus-field film), also LDPE. The densities-doc BOPP row is reference data; keep a note open in case docs resurface.",
+  "evidence": [
+   "No BOPP reference in any digest; recipes are LDPE (194_CeDo36, 187_CeDo87, 219_CeDo22)",
+   "123_CeDo41 (grades L1/L3a/L3b -> Telford/Wroclaw)",
+   "operator interview 2026-07-05 (AskUserQuestion session)"
+  ],
+  "confidence": "certain"
+ },
+ {
+  "question_id": "Q26",
+  "question": "Floorplan lijn 4/5 naming?",
+  "status": "answered",
+  "answer": "Lijn 4 & 5 were OLD lines, demolished; 3C and 6 were built in (approximately) their places. The floorplan's hall layout is authoritative for the halls; treat lijn 4/5 areas as empty slots where 3C/6 layouts belong. (Plant itself has since been demolished entirely.)",
+  "evidence": [
+   "240_CeDo127 (Hal 4 shredder/lijn 4&5; Hal 5 pretreat; Hal 6 wasinstallatie+extruder 4&5)",
+   "223_CeDo69 (LIJN 6 production recipe, permanent line)",
+   "operator interview 2026-07-05 (AskUserQuestion session)"
+  ],
+  "confidence": "certain"
+ },
+ {
+  "question_id": "Q27",
+  "question": "The 10 outdoor silos — function?",
+  "status": "answered",
+  "answer": "Outdoor silos hold finished PELLETS per line. MS = mengsilo (mixing silo — blends pellet batches for uniform orders, via blowers that move pellets from silo top to silo top); LS = laadsilo (loading silo — truck lane underneath with discharge mechanisms). Each line has its own silos + mixing silos.",
+  "evidence": [
+   "240_CeDo127 (outdoor silo row)",
+   "239_CeDo125/253_CeDo135/243_CeDo129 (lines end at 'MS/LS silo buiten')",
+   "125_CeDo40 (granulate -> weegschaal -> voorraadsilo -> mengsilo -> transport)",
+   "123_CeDo41 (destinations Telford/Wroclaw)",
+   "operator interview 2026-07-05 (AskUserQuestion session)"
+  ],
+  "confidence": "certain"
+ },
+ {
+  "question_id": "Q28",
+  "question": "TITECH — programs / ejected fraction / EM sensor / belt width?",
+  "status": "answered",
+  "answer": "The plant runs TITECH 1&2 and TOMRA 1&2 NIR optical sorters (TOMRA AUTOSORT with FLYING BEAM, NIR+VIS spectrometer), ejecting via an air bar (luchtbalk) of valve nozzles/klepjes. TOMRA AUTOSORT also uses an EM (electromagnetic/metal) sensor for metal detection alongside the NIR. Cleaning cycle = 3 mandatory programs in order: (1) Cleaning, (2) Automatic, (3) Manual — on TITECH via 'jet test'->'cleaning' (~10 min/unit), on TOMRA via main-menu 'inloggen'; run Wednesday morning by 08:00 during regular maintenance. Defective-nozzle swap policy: swap when 10 clustered defective, always by 20; <10 just log; report to TD before 10:00 (TD swaps same day per Tomra tech doc ch 11.3.4, advice from Tomra visit 13-4-2023). NIR lamp glasses cleaned at every Wednesday meswissel AND before every lamp change / lamp+sensor calibration (LOTOTO on the conveyor). Sort line 3 is in Hal 7. The '3-page Werking Titech tomra' set (previously flagged incomplete) IS fully digested (174/173/172). Exact belt width / ejected-fraction % are not numerically printed.",
+  "evidence": [
+   "236_CeDo106/234_CeDo110 (SWI-015: 3 programs Cleaning/Automatic/Manual, defective-valve 10-20 policy)",
+   "273_CeDo103 (3 programs order, Wed 08:00, defect from 10-20)",
+   "275_CeDo121 (glasses cleaned every meswissel + before lamp/sensor calibration)",
+   "174/173/172_CeDo48/49/50 (Werking Titech tomra p1-3: AUTOSORT FLYING BEAM, EM sensor)",
+   "240_CeDo127 (sorteerlijn 3 in Hal 7)"
+  ],
+  "confidence": "certain"
+ },
+ {
+  "question_id": "Q29",
+  "question": "Is 3C the SCADA host for wash line 6?",
+  "status": "answered",
+  "answer": "No — the premise is not supported. LIJN 3C and LIJN 6 are two SEPARATE physical EREMA BluPort regranulation (extruder) lines with IDENTICAL HMI screens, distinguished only by the engraved blue bottom-panel plate ('LIJN 3C' vs 'LIJN 6'). Every 3C/6 screen shows EX1/EX1-toerental/EX1-belasting + PCU-vulpeil/PCU-vermogen/PCU-temp + AIS-positie + melt pressure (bar) + kg/h pellet output + a Smeltpomp/melt-pump (MPU1) screen + Smeltfilter/laserfilter screen — classic EREMA regranulation overviews, NOT a wash-line SCADA host. The wash line has its OWN SCADA: a SIMATIC WinCC German-labelled wash-line mimic (256_CeDo51) and per-line wash/sort HMI consoles; the laserfilter has a separate SIMATIC HMI trend. So '3C' and '6' are regranulation extruder lines, not a SCADA host for a wash line. (The original 'scada/3c' tag-tree confusion is a naming artefact of the tag export, addressed in README open-Q5.)",
+  "evidence": [
+   "206-210 (LIJN 3C) vs 220-223 (LIJN 6): identical EREMA BluPort screens, different engraved plate",
+   "194_CeDo36/190_CeDo63/295_CeDo62 (3C overview + Smeltpomp + Smeltfilter screens)",
+   "256_CeDo51 (separate SIMATIC WinCC wash-line SCADA, German)",
+   "189_CeDo89 (separate SIMATIC laserfilter HMI)",
+   "298_CeDo85 (wash line = 'De Wasinstallatie', 5-stage VSM)"
+  ],
+  "confidence": "certain"
+ },
+ {
+  "question_id": "Q30",
+  "question": "HMI units: Vermogen hoofdmotor (%/kW/A), Snelheid (rpm/%), flotation_level (%), power_CC?",
+  "status": "answered",
+  "answer": "EREMA BluPort HMI unit conventions (verbatim across 3C/6 captures): TEMPERATURE = C (PCU-temp, EX1-IZ1, MPU1-Z1); POWER/Vermogen = kW (PCU-vermogen, EX1-vermogen, hoofdmotor kW) — sometimes shown WITH a parallel % load field (e.g. 102,7 kW / 36 %); MAIN extruder & melt-pump SPEED = rpm (EX1-toerental, MPU1-toerental); AUXILIARY drive speeds = % (BC1-, PES-, TEU-toerental, AIS-positie); LOAD/utilisation = % (EX1-belasting, PCU-belasting, MPU1-belasting); PRESSURE = bar (melt pre/post filter diamonds, shown ORANGE near limit / RED at alarm); THROUGHPUT = kg/h (line + MPU1-doorzet); COMPACTOR fill = cm (PCU-vulpeil); MELT DENSITY = kg/dm3 (Smeltdichtheid 0,700-0,748); per-phase CURRENT = A (Stroom L1); Totaal actief vermogen = kW; Vermogensfactor (power factor) = dimensionless 0,7; Frequentie = Hz (50,0); specific energy = kWh/kg (0,156-0,496); cumulative energy = kWh; laserfilter bolt torque = Nm (500); running hours = h. NOTE: the older SV/Cutter-Compactor HMI mixes degF on live-value boxes (EZ-1, Z2-1, cc-temperature) with degC on trend axes, and cc-power in hp; but the newer BluPort 3C/6 screens use kW/C throughout. SWI-017 defines 'KW=KiloWatt, aangegeven vermogen'. So: power = kW (not %/A), main speed = rpm.",
+  "evidence": [
+   "223_CeDo69/220-222 ('BC1/PES/TEU-toerental %', 'EX1-toerental rpm', 'PCU-vulpeil cm')",
+   "291_CeDo71 ('Stroom L1 454,8 A', 'Totaal actief vermogen 237,3 kW', 'Vermogensfactor 0,7', 'Frequentie 50,0 Hz')",
+   "295_CeDo62 ('MPU1-doorzet 1329 kg/h', 'Smeltdichtheid 0,700 kg/dm3')",
+   "328_CeDo17 ('170,3 kW','140 rpm','86 %','0,156 kWh/kg')",
+   "307_CeDo53 (cc-power hp, EZ-1/Z2-1 in degF, trend degC); 332_CeDo95 (SWI-017: 'KW=KiloWatt')"
+  ],
+  "confidence": "certain"
+ },
+ {
+  "question_id": "Q31",
+  "question": "washer6 values 0-6 — current, or state code?",
+  "status": "answered",
+  "answer": "Amps (small motors) — confirmed by operator from a sample: values 0-6 A are real current draw of dryer scrapers / rotary valves / ventilator, logged on change-of-value.",
+  "evidence": [
+   "204_CeDo54 (302 bar RED at 115 rpm); 205_CeDo52 (298 orange at 113 rpm); 194_CeDo36 (297 orange)",
+   "README/cedo_data_manifest.md (GUIexport washer6 = synthetic placeholders)",
+   "operator interview 2026-07-05 (AskUserQuestion session)"
+  ],
+  "confidence": "certain"
+ },
+ {
+  "question_id": "Q32",
+  "question": "Do real softstarter power exports exist?",
+  "status": "answered",
+  "answer": "No real softstarter/friction-SEPARATOR power exports exist in the corpus. The 32 GUIexport 'powermeasurements_washer6_*' CSVs are invalid (very old synthetic ramps) — operator agrees they should be removed/quarantined. Searched for 6_4 L/R and 6_9 L/R data: washer6/ has logs only for 6_3, 6_6, 6_11, 6_14 L/R, 6_18; the SCADA tag tree confirms softstarterfrictiewasser tags existed (scada/3c/info/13/softstarterfrictiewasser/stroom etc.), so an export was possible but none is present on F:. Operator note: 'frictiewasser' here is really a friction SEPARATOR in English.",
+  "evidence": [
+   "224_CeDo65/225_CeDo70 (LIJN 6 testrun + production recipes)",
+   "291_CeDo71 (3C live A/kW/power-factor/Hz)",
+   "README open-Q3 (GUIexport synthetic; real softstarter exports unknown)",
+   "operator interview 2026-07-05 (AskUserQuestion session)"
+  ],
+  "confidence": "certain"
+ },
+ {
+  "question_id": "Q33",
+  "question": "Does a filled-in Extruderlijst exist?",
+  "status": "answered",
+  "answer": "No filled-in Extruderlijst was found — the 'Lijn 3A : Extruder lijst' in the corpus is a BLANK per-shift log template (233_CeDo43). It defines the fields the operator logs per operating hour (uur 1-8): Cummulatieve output (kg), Actuele snelheid (kg/uur), stort gewicht meting, aantal korrels met gasvorming (pellets with gas voids), aantal korrels met aluminium (pellets with Al inclusions); plus shift summaries: stortgewicht gemiddelde and Vochtmeting __%. Header: Dienst OD/MD/ND, Ploeg A-E, 'order wisselen bij __ KG', 'kilo's vorige order __ KG'. Real numeric setpoints therefore have to be derived from Checklist FORM-008 + the EREMA trend envelopes, not from a filled sheet (this is also README open-Q2).",
+  "evidence": [
+   "233_CeDo43 (blank Lijn 3A Extruder lijst: per-hour + summary fields, Dienst/Ploeg header)",
+   "README open-Q2 (no filled-in Extruderlijst)"
+  ],
+  "confidence": "certain"
+ }
+]

@@ -75,6 +75,8 @@ const STATIONS : Array[Dictionary] = [
 	{"id": 261, "title": "Voice & AI — Settings tab, cloud OFF default",      "fn": "_st_voice_ai",       "status": "verifying"},
 	# Lines complete audit
 	{"id": 262, "title": "Lines 1 / 3A / 3B — whiteboard audit",              "fn": "_st_lines_audit",    "status": "verifying"},
+	# #227 — Shredder functional sim (ShredderMachine): throughput, overload trip, e-stop.
+	{"id": 263, "title": "Shredder — feed→shred, overfeed TRIPS, aim+E controls", "fn": "_st_shredder",    "status": "verifying"},
 ]
 
 # Cached anchors so per-station builders can attach to one parent each.
@@ -117,6 +119,12 @@ func _ready() -> void:
 			_build_placeholder(Vector3(x, 0.0, 4.0), String(entry["status"]))
 		slot += 1
 	_build_player()
+	# #gauntlet-parity — spawn the SAME OperatorContext MainWorld uses so vehicle
+	# stations are actually boardable here. Without it, VehicleEnterArea couldn't
+	# find the "operator_context" group and boarding was silently dead (the bale
+	# clamp rendered but E did nothing). We spawn ONLY the OperatorContext, not the
+	# full SystemsSpawner (which would also pull in LineFlow the gauntlet omits).
+	OperatorContext.spawn_under(self, _player)
 	_spawn_build_mode()
 	_spawn_hud()
 	_spawn_help_overlay()
@@ -242,13 +250,14 @@ func _spawn_help_overlay() -> void:
 func _build_floor() -> void:
 	# Length is based on visible (non-failed) stations so the floor doesn't
 	# extend past the last sign into empty space.
-	var visible : int = 0
+	# `visible_count`, not `visible`: the latter shadows Node3D.visible.
+	var visible_count : int = 0
 	for s in STATIONS:
 		var sid : String = str(int(s["id"]))
 		var status : String = String(_persisted.get(sid, s["status"]))
 		if status != "failed" and status != "verified":
-			visible += 1
-	var length : float = float(maxi(visible, 1)) * STATION_SPACING_M + 20.0
+			visible_count += 1
+	var length : float = float(maxi(visible_count, 1)) * STATION_SPACING_M + 20.0
 	# Floor width covers from -PLATFORM_FRONT_PAD (in front of the sign row)
 	# to DEEPEST_PROP_Z + PLATFORM_BACK_PAD behind it. Centre shifted so the
 	# slab actually sits under the props, not just under the signs.
@@ -334,10 +343,11 @@ func _build_player() -> void:
 		var body : Node3D = humanoid_script.build(Color(0.96, 0.45, 0.12), 0, {})
 		body.name = "PlayerBody"
 		p.add_child(body)
-		# Humanoid.build() authors the rig face-on-+Z (see Humanoid.gd:200 docstring).
-		# The capsule's own yaw (p.rotation.y = -PI*0.5 above) aims its -basis.z at
-		# the first station; this 180° wrap aligns the body's face with that forward,
-		# so the operator sees the gauntlet ahead instead of walking backward into it.
+		# #205 fix — Humanoid.build() authors the rig with face-on-local-(-Z), the
+		# canonical forward. GauntletWorld's player capsule is rotated -PI/2 to point
+		# at the first station. Apply body.rotation.y = PI to align body's -Z (face)
+		# with the capsule's forward direction, so the operator sees the gauntlet
+		# ahead instead of walking backward.
 		body.rotation.y = PI
 		_tag_body_layers(body)
 	_player = p
@@ -360,18 +370,19 @@ func _spawn_build_mode() -> void:
 	print("[Gauntlet] BuildMode ready — press Tab to build")
 
 ## Local copy of MainWorld._set_body_render_layer_split — same logic, no shared
-## autoload. Walks the Humanoid mesh tree summing local-y to detect head-region
-## meshes (y >= 0.55) and routes them onto layer 3, body parts onto layer 2.
+## autoload. Operator request 2026-07-05: FP shows ONLY the legs — meshes under
+## a HipPivot_* ancestor keep layer 2 (FP-visible); torso / arms / head / PPE
+## go to layer 3, which the FP camera culls. Orbit cameras render everything.
 func _tag_body_layers(root: Node) -> void:
 	if root is MeshInstance3D:
 		var mi := root as MeshInstance3D
-		var y_local : float = mi.position.y
+		var on_leg := false
 		var par : Node = mi.get_parent()
 		while par != null and (not (par is Node3D) or par.name != "PlayerBody"):
-			if par is Node3D:
-				y_local += (par as Node3D).position.y
+			if String(par.name).begins_with("HipPivot"):
+				on_leg = true
 			par = par.get_parent()
-		mi.layers = (1 << 2) if y_local >= 0.55 else (1 << 1)
+		mi.layers = (1 << 1) if on_leg else (1 << 2)
 	for c in root.get_children():
 		_tag_body_layers(c)
 
@@ -525,6 +536,42 @@ func _st_98(anchor: Vector3) -> void:
 	lbl.position = anchor + Vector3(1.4, 3.6, 0.0)
 	lbl.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
 	lbl.pixel_size = 0.005
+	add_child(lbl)
+
+# #227 — Shredder functional test stage. LEFT (shredder_1) fed a moderate rate →
+# runs (rotors spin, output tracks feed). RIGHT (shredder_2) deliberately OVERFED
+# → the motor-overload protection TRIPS it ~5 s after boot. Live readouts show
+# state / throughput / load / buffer. Aim at a unit + press E: start/stop, reset
+# the trip or e-stop, (in Onderhoud) open the housing, block the rotor.
+func _st_shredder(anchor: Vector3) -> void:
+	var RO : Resource = load("res://src/scenes/world/ShredderReadout.gd")
+	var sh1 : Node3D = _build_placed("shredder_1", anchor)
+	if sh1 != null and sh1.has_method("set_feed_throughput"):
+		sh1.call("set_feed_throughput", 3200.0)
+		sh1.call("start")
+		var r1 : Label3D = RO.new()
+		r1.font_size = 22; r1.outline_size = 6; r1.pixel_size = 0.006
+		r1.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+		r1.modulate = Color(0.75, 1.0, 0.80)
+		r1.position = anchor + Vector3(0.0, 4.4, -3.0)
+		r1.set("target", sh1)
+		add_child(r1)
+	var sh2 : Node3D = _build_placed("shredder_2", anchor + Vector3(7.5, 0.0, 0.0))
+	if sh2 != null and sh2.has_method("set_feed_throughput"):
+		sh2.call("set_feed_throughput", 5200.0)   # > fine rated 2200 kg/h → overload
+		sh2.call("start")
+		var r2 : Label3D = RO.new()
+		r2.font_size = 22; r2.outline_size = 6; r2.pixel_size = 0.006
+		r2.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+		r2.modulate = Color(1.0, 0.80, 0.70)
+		r2.position = anchor + Vector3(7.5, 3.6, -3.0)
+		r2.set("target", sh2)
+		add_child(r2)
+	var lbl := Label3D.new()
+	lbl.text = "SHREDDER sim (ShredderMachine) — LEFT fed 3200 kg/h runs · RIGHT overfed 5200 kg/h TRIPS.\nAim + E: start/stop · reset trip/e-stop · Onderhoud→open housing · block rotor. Rotors spin only while running."
+	lbl.font_size = 20; lbl.outline_size = 6; lbl.pixel_size = 0.005
+	lbl.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+	lbl.position = anchor + Vector3(3.5, 6.6, -3.0)
 	add_child(lbl)
 
 # #99 — mech_dryer pair → header → blower → cyclone. Flow: dryer drum tops →
@@ -1798,17 +1845,22 @@ func _st_steer_ramp(anchor: Vector3) -> void:
 		+ "PASS = smooth 3-second ramp to full lock\n"
 		+ "FAIL = instant slam or no rotation")
 
-# 252 — Layout markers regression. Reads the PerfHud's layout_conv_summary.
+# 252 — Layout markers. RETIRED as a pass/fail station: its criterion was a
+# PerfHud STRING, not a measured position, and it certified the wrong frame for
+# months. Marker placement is proven by src/tests/test_vehicle_spawn_frame.gd
+# (spawned XZ == stored XZ, mutation-tested) — a string cannot do that job.
 func _st_layout_xform(anchor: Vector3) -> void:
 	_st_placard(anchor,
-		"Layout markers — rotation + anchor\n\n"
-		+ "Task #34 regressed: _layout_to_scene was a passthrough.\n"
-		+ "Restored to Basis(UP, _world_yaw()) * offset + anchor.\n\n"
-		+ "In MainWorld, PerfHud should now read:\n"
-		+ "  'Layout: markers rotated by NN.N deg + anchored at (X,Z)'\n"
-		+ "(was: 'no rotation, no anchor')\n\n"
-		+ "PASS = real numbers in the PerfHud string\n"
-		+ "FAIL = the old 'no rotation, no anchor' message")
+		"Layout markers — SCENE-ABSOLUTE (informational)\n\n"
+		+ "Markers are stored as scene positions, so\n"
+		+ "_layout_to_scene is the XZ identity. The earlier\n"
+		+ "'restored to Basis(UP, yaw) * offset + anchor' was\n"
+		+ "the bug: it threw every vehicle ~228 m off-marker.\n\n"
+		+ "PerfHud reads:\n"
+		+ "  'Layout: markers are scene-absolute ...'\n\n"
+		+ "This station asserts NOTHING — a PerfHud string was\n"
+		+ "never evidence. Proof lives in\n"
+		+ "src/tests/test_vehicle_spawn_frame.gd")
 
 # 253 — Clock pre-shift respawn.
 func _st_clock_preshift(anchor: Vector3) -> void:

@@ -140,6 +140,11 @@ var _ghost_flash_t        : float = 0.0
 
 # =============================================================================
 func _ready() -> void:
+	# Gear + cab camera sit on +Z on this vehicle (canonical forward is -Z):
+	# the seat faces the working side. Flip the operator boundary so the
+	# forward key drives gear-first and the reverse alarm fires on
+	# counterweight-first travel. See BaseVehicle.operator_forward_sign.
+	operator_forward_sign = -1.0
 	# Drive-ramp tuning per the throttle/brake audit. The clamp + LPG-twin tank
 	# rig is heavier than a bare forklift and operators drive it more cautiously
 	# when bales are aboard — slowest spool-up of the lift fleet, ~1.1 s to top
@@ -151,6 +156,11 @@ func _ready() -> void:
 	brake_ramp_tau_s    = 0.3
 	super._ready()
 	vehicle_type = "bale_clamp"
+	# Rear-wheel steer: switch A/D left↔right vs the front-steer default, and run a
+	# quicker rack — double the slew + auto-centre rate (operator 2026-07-17). This
+	# replaces the old no-op VehicleWheel3D.steering flip in _physics_process.
+	steer_sign = -1.0
+	steer_rate_rad_per_sec = STEER_RATE_RAD_PER_SEC * 2.0
 	if mast_pivot_path:    _mast_pivot    = get_node_or_null(mast_pivot_path)    as Node3D
 	if lift_carriage_path: _lift_carriage = get_node_or_null(lift_carriage_path) as Node3D
 	if left_plate_path:    _left_plate    = get_node_or_null(left_plate_path)    as Node3D
@@ -159,9 +169,10 @@ func _ready() -> void:
 	# #201 — physicalize the plates. .tscn changed them to AnimatableBody3D with a
 	# CollisionShape3D sibling matching the plate mesh (0.12 × 1.04 × 1.10).
 	# Real bale-clamp plates have a heavy rubber/steel-stud face for grip; a
-	# friction of ~1.6 lets clamp_force ≈ rated load hold a 250 kg bale via
-	# normal-force × μ alone (no script-attach magic). Bounce is near zero so
-	# the bale doesn't kick out when first squeezed.
+	# friction of ~1.6 lets clamp_force ≈ rated load hold a real 400-717 kg CeDo
+	# film bale (BaleDefs BULK_DENSITY 175 kg/m³) via normal-force × μ alone (no
+	# script-attach magic). Bounce is near zero so the bale doesn't kick out when
+	# first squeezed. (#223: prior comment said 250 kg — real bales are heavier.)
 	var plate_pm := PhysicsMaterial.new()
 	plate_pm.friction = 1.6
 	plate_pm.bounce   = 0.02
@@ -236,11 +247,9 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
 	super._physics_process(delta)
 
-	# Achterwielbesturing = A/D draait de neus de "verkeerde" kant op t.o.v. de auto logica.
-	# We flippen de stuurhoek van alle sturende wielen om de BaseVehicle logica recht te trekken.
-	for c in get_children():
-		if c is VehicleWheel3D and c.use_as_steering:
-			c.steering = -c.steering
+	# (Rear-wheel steer left↔right switch now handled by steer_sign=-1 in _ready —
+	# the old `c.steering = -c.steering` loop here was a NO-OP because body yaw is
+	# driven by _current_steer_rad, not VehicleWheel3D.steering. Removed.)
 
 	if occupied:
 		_update_lift_tilt(delta)
@@ -444,6 +453,28 @@ func _open_to_sheet_arc(bale: Node3D) -> void:
 	if scene_root == null:
 		scene_root = get_tree().root
 	var spawned : Array[RigidBody3D] = []
+	# ── Mass conservation (#223 audit) ───────────────────────────────────────
+	# Slicing a bale does not change its density: the opened pile must weigh
+	# exactly what the intact bale weighed. Apportion the source RigidBody's
+	# real mass across the sheets by volume fraction (survives per-origin
+	# weight overrides + the ±50 kg label jitter). The old hardcoded 80 kg/m³
+	# was less than half the calibrated BULK_DENSITY (175) — a 591 kg bale
+	# became a ~270 kg pile the moment the clamp opened it.
+	var bale_mass_kg : float = 0.0
+	var bale_rb := bale as RigidBody3D
+	if bale_rb != null:
+		bale_mass_kg = bale_rb.mass
+	var total_sheet_vol : float = 0.0
+	for sheet in sheets.get_children():
+		var mi0 := sheet as MeshInstance3D
+		if mi0 != null and mi0.mesh is BoxMesh:
+			var sv : Vector3 = (mi0.mesh as BoxMesh).size
+			total_sheet_vol += sv.x * sv.y * sv.z
+	# Fallback density if the source mass is unknown (non-RB bale): calibrated
+	# bale bulk density, NOT the old 80.
+	var density : float = BaleDefs.BULK_DENSITY
+	if bale_mass_kg > 1.0 and total_sheet_vol > 0.0001:
+		density = bale_mass_kg / total_sheet_vol
 	for sheet in sheets.get_children():
 		var mi := sheet as MeshInstance3D
 		if mi == null or mi.mesh == null:
@@ -451,8 +482,8 @@ func _open_to_sheet_arc(bale: Node3D) -> void:
 		var s_size: Vector3 = (mi.mesh as BoxMesh).size
 		var s_world := mi.global_transform
 		var sheet_rb := RigidBody3D.new()
-		# Each compressed-film slice is light — it's a thin slab, not a brick.
-		sheet_rb.mass = maxf(s_size.x * s_size.y * s_size.z * 80.0, 0.1)
+		# Sheet mass = its volume share of the intact bale's real mass.
+		sheet_rb.mass = maxf(s_size.x * s_size.y * s_size.z * density, 0.1)
 		sheet_rb.linear_damp  = 3.5       # was 1.2 — kills sliding so sheets stack
 		sheet_rb.angular_damp = 5.0       # was 2.5 — kills tumbling
 		var pm := PhysicsMaterial.new()

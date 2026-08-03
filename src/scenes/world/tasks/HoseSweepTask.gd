@@ -123,12 +123,14 @@ func _tick_walk_to_nozzle(npc: Node) -> void:
 		_set_dest(npc, nozzle.global_position)
 		return
 	# Pick up — re-parent under NPC, same hand offset as the leaf blower so
-	# the rig reads consistently across tools.
+	# the rig reads consistently across tools (npc-11: now genuinely shared —
+	# the old local (0.35, 0.95, 0.4) was the operator-rejected float-above-
+	# the-head pose; see NpcAutonomyTask.TOOL_CARRY_OFFSET).
 	if nozzle.get_parent() != npc:
 		var saved_xform : Transform3D = nozzle.global_transform
 		nozzle.get_parent().remove_child(nozzle)
 		npc.add_child(nozzle)
-		nozzle.transform = Transform3D(Basis.IDENTITY, Vector3(0.35, 0.95, 0.4))
+		nozzle.transform = Transform3D(Basis.IDENTITY, TOOL_CARRY_OFFSET)
 		nozzle.set_meta("saved_world_xform", saved_xform)
 	_phase = Phase.CIRCUIT
 	_phase_t = 0.0
@@ -144,29 +146,57 @@ func _tick_circuit(npc: Node, delta: float) -> void:
 	if not _close_enough(npc, wp_world, WAYPOINT_DIST_M):
 		_set_dest(npc, wp_world)
 		return
+	# Real effect during the dwell: the hose washes down / blasts loose dirt, so
+	# nearby FloorPiles shrink while the colleague is spraying. Water reduces more
+	# per beat than the lower-power air hose.
+	_wash_nearby(npc, delta)
 	_dwell_t += delta
 	if _dwell_t >= _dwell_s:
 		_dwell_t = 0.0
 		_circuit_idx += 1
 
+# Shrink any FloorPile within WASH_RADIUS_M of the NPC while the hose is running.
+# Water hose washes more mass per second than the air hose. Uses FloorPile.scoop
+# (the same "remove N kg" API the shovel uses) so the pile's cone + collider
+# shrink and the change is visible.
+const WASH_RADIUS_M       : float = 3.0
+const WATER_WASH_KG_PER_S : float = 8.0
+const AIR_WASH_KG_PER_S   : float = 3.0
+func _wash_nearby(npc: Node, delta: float) -> void:
+	if npc == null or not (npc is Node3D):
+		return
+	var tree := npc.get_tree() if npc.has_method("get_tree") else null
+	if tree == null:
+		return
+	var rate : float = AIR_WASH_KG_PER_S if _is_air else WATER_WASH_KG_PER_S
+	var remove_kg : float = rate * delta
+	if remove_kg <= 0.0:
+		return
+	var origin : Vector3 = npc.global_position
+	for p in tree.get_nodes_in_group("floor_pile"):
+		var pn := p as Node3D
+		if pn == null or not is_instance_valid(pn):
+			continue
+		if pn.global_position.distance_to(origin) > WASH_RADIUS_M:
+			continue
+		if pn.has_method("scoop"):
+			pn.call("scoop", remove_kg)
+
 func _tick_return_nozzle(npc: Node) -> void:
 	if not _close_enough(npc, _pickup_pos, APPROACH_DIST_M):
 		_set_dest(npc, _pickup_pos)
 		return
+	# Drop the nozzle back at its saved station transform (shared npc-03 helper).
+	_drop_tool(npc, nozzle)
 	if nozzle != null and is_instance_valid(nozzle):
-		if nozzle.get_parent() == npc:
-			npc.remove_child(nozzle)
-			var mw : Node = npc.get_parent()
-			if mw != null:
-				mw.add_child(nozzle)
-				var saved : Transform3D = nozzle.get_meta("saved_world_xform",
-					Transform3D(Basis.IDENTITY, _pickup_pos))
-				nozzle.global_transform = saved
 		nozzle.set_meta("last_cleaned_at", _now_sim_s())
 	release(npc)
 	mark_done()
 
-func release(_npc: Node) -> void:
+func release(npc: Node) -> void:
+	# npc-03 — any abort must put the nozzle DOWN (same weld-to-hand failure as
+	# the leaf blower; see BlowLeavesTask.release).
+	_drop_tool(npc, nozzle)
 	if nozzle != null and is_instance_valid(nozzle):
 		nozzle.remove_meta("autonomy_claimed_by")
 

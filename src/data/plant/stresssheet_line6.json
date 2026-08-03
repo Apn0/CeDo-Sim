@@ -1,0 +1,237 @@
+{
+  "source_file": "F:\\Citizen\\CeDo\\6\\merged_data\\CeDo Big StressSheet.xlsx",
+  "sheet": "merged_side_by_side_part1",
+  "table_title": "Table name: merged_side_by_side_part1 Last updated: Apr 08, 2025 12:56 PM",
+  "note": "Side-by-side sample (500 data rows per month column) of line-6 washline 1 Hz tags. Subset of the full data already summarized in src/data/plant/trends/washline6_1hz_summary.json. Timestamps show sampling is NOT contiguous 1 Hz (rows skip seconds) \u2014 this is a decimated/sampled export, first ~500 samples of each month.",
+  "last_updated": "Apr 08, 2025 12:56 PM",
+  "n_data_rows": 500,
+  "months": [
+    "2024-08",
+    "2024-09",
+    "2024-10",
+    "2024-11",
+    "2024-12",
+    "2025-01",
+    "2025-02"
+  ],
+  "tags": [
+    "flotation_level",
+    "dryer_left_amp",
+    "dryer_right_amp",
+    "grinder_amp",
+    "flotation_flow"
+  ],
+  "per_month": {
+    "2024-08": {
+      "time_first": "2024-08-21 11:02:54",
+      "time_last": "2024-08-21 12:09:35",
+      "tag_stats": {
+        "flotation_level": {
+          "n": 0
+        },
+        "dryer_left_amp": {
+          "n": 0
+        },
+        "dryer_right_amp": {
+          "n": 0
+        },
+        "grinder_amp": {
+          "n": 0
+        },
+        "flotation_flow": {
+          "n": 0
+        }
+      }
+    },
+    "2024-09": {
+      "time_first": "2024-09-01 00:00:27",
+      "time_last": "2024-09-01 01:07:08",
+      "tag_stats": {
+        "flotation_level": {
+          "n": 248,
+          "min": 55.0,
+          "max": 56.0,
+          "mean": 55.49,
+          "median": 55.0
+        },
+        "dryer_left_amp": {
+          "n": 0
+        },
+        "dryer_right_amp": {
+          "n": 0
+        },
+        "grinder_amp": {
+          "n": 0
+        },
+        "flotation_flow": {
+          "n": 0
+        }
+      }
+    },
+    "2024-10": {
+      "time_first": "2024-10-01 00:00:26",
+      "time_last": "2024-10-01 01:07:07",
+      "tag_stats": {
+        "flotation_level": {
+          "n": 459,
+          "min": 38.0,
+          "max": 52.0,
+          "mean": 46.45,
+          "median": 47.0
+        },
+        "dryer_left_amp": {
+          "n": 0
+        },
+        "dryer_right_amp": {
+          "n": 0
+        },
+        "grinder_amp": {
+          "n": 0
+        },
+        "flotation_flow": {
+          "n": 0
+        }
+      }
+    },
+    "2024-11": {
+      "time_first": "2024-11-01 00:00:27",
+      "time_last": "2024-11-01 01:07:08",
+      "tag_stats": {
+        "flotation_level": {
+          "n": 402,
+          "min": 47.0,
+          "max": 52.0,
+          "mean": 49.71,
+          "median": 50.0
+        },
+        "dryer_left_amp": {
+          "n": 268,
+          "min": 69.0,
+          "max": 107.0,
+          "mean": 86.51,
+          "median": 90.0
+        },
+        "dryer_right_amp": {
+          "n": 269,
+          "min": 68.0,
+          "max": 105.0,
+          "mean": 84.72,
+          "median": 85.0
+        },
+        "grinder_amp": {
+          "n": 304,
+          "min": 123.0,
+          "max": 204.0,
+          "mean": 151.57,
+          "median": 151.0
+        },
+        "flotation_flow": {
+          "n": 0
+        }
+      }
+    },
+    "2024-12": {
+      "time_first": "2024-12-01 00:00:27",
+      "time_last": "2024-12-01 01:07:08",
+      "tag_stats": {
+        "flotation_level": {
+          "n": 0
+        },
+        "dryer_left_amp": {
+          "n": 0
+        },
+        "dryer_right_amp": {
+          "n": 0
+        },
+        "grinder_amp": {
+          "n": 0
+        },
+        "flotation_flow": {
+          "n": 0
+        }
+      }
+    },
+    "2025-01": {
+      "time_first": "2025-01-17 10:39:38",
+      "time_last": "2025-01-17 11:46:19",
+      "tag_stats": {
+        "flotation_level": {
+          "n": 374,
+          "min": 43.0,
+          "max": 49.0,
+          "mean": 45.91,
+          "median": 46.0
+        },
+        "dryer_left_amp": {
+          "n": 336,
+          "min": 78.0,
+          "max": 87.0,
+          "mean": 82.08,
+          "median": 82.0
+        },
+        "dryer_right_amp": {
+          "n": 367,
+          "min": 87.0,
+          "max": 105.0,
+          "mean": 94.87,
+          "median": 95.0
+        },
+        "grinder_amp": {
+          "n": 470,
+          "min": 127.0,
+          "max": 181.0,
+          "mean": 141.83,
+          "median": 141.0
+        },
+        "flotation_flow": {
+          "n": 500,
+          "min": 21.0,
+          "max": 108.0,
+          "mean": 70.81,
+          "median": 77.0
+        }
+      }
+    },
+    "2025-02": {
+      "time_first": "2025-02-01 00:00:26",
+      "time_last": "2025-02-01 01:07:07",
+      "tag_stats": {
+        "flotation_level": {
+          "n": 173,
+          "min": 45.0,
+          "max": 48.0,
+          "mean": 46.12,
+          "median": 46.0
+        },
+        "dryer_left_amp": {
+          "n": 202,
+          "min": 70.0,
+          "max": 93.0,
+          "mean": 83.88,
+          "median": 87.0
+        },
+        "dryer_right_amp": {
+          "n": 245,
+          "min": 69.0,
+          "max": 109.0,
+          "mean": 95.3,
+          "median": 100.0
+        },
+        "grinder_amp": {
+          "n": 316,
+          "min": 121.0,
+          "max": 177.0,
+          "mean": 146.28,
+          "median": 147.0
+        },
+        "flotation_flow": {
+          "n": 343,
+          "min": -30.0,
+          "max": 91.0,
+          "mean": 49.93,
+          "median": 62.0
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>html,body{margin:0;padding:0;background:#1a2c50;} a{color:#cfe2ff;} a:hover{color:#fff;}</style>
+</helmet>
+<div style="width:1280px;height:1024px;position:relative;overflow:hidden;background:#2f5fae;font-family:Tahoma,Verdana,sans-serif;color:#111;" data-screen-label="Sorteerlijn overzicht">
+
+  <!-- conveyor mimic -->
+  <svg width="1280" height="700" viewBox="0 0 1280 700" style="position:absolute;top:0;left:0;">
+    <defs>
+      <linearGradient id="belt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f2f3f5"></stop><stop offset="1" stop-color="#c9cdd4"></stop></linearGradient>
+    </defs>
+    <g stroke="#8a909a" stroke-width="2" fill="url(#belt)">
+      <!-- top horizontal main belt -->
+      <rect x="60" y="40" width="1010" height="34"></rect>
+      <!-- top right vertical -->
+      <rect x="1070" y="10" width="90" height="150"></rect>
+      <rect x="1070" y="160" width="46" height="180"></rect>
+      <!-- big center block conveyor -->
+      <rect x="390" y="110" width="520" height="120"></rect>
+      <rect x="800" y="110" width="110" height="60"></rect>
+      <!-- vertical drop from main belt -->
+      <rect x="420" y="230" width="40" height="180"></rect>
+      <!-- second horizontal row -->
+      <rect x="60" y="330" width="900" height="36"></rect>
+      <!-- left cluster verticals -->
+      <rect x="30" y="60" width="36" height="140"></rect>
+      <rect x="30" y="380" width="40" height="160"></rect>
+      <!-- left small belts -->
+      <rect x="120" y="250" width="150" height="60"></rect>
+      <rect x="120" y="390" width="60" height="120"></rect>
+      <!-- singulator long belt -->
+      <rect x="500" y="470" width="560" height="40"></rect>
+      <rect x="390" y="440" width="110" height="130"></rect>
+    </g>
+    <!-- green status squares -->
+    <g fill="#3ec929" stroke="#1f7a12" stroke-width="1.5">
+      <rect x="72" y="255" width="44" height="40"></rect>
+      <rect x="540" y="410" width="52" height="48"></rect>
+      <rect x="90" y="560" width="40" height="120"></rect>
+      <rect x="60" y="560" width="24" height="120"></rect>
+    </g>
+    <rect x="612" y="410" width="52" height="48" fill="#aeb4be" stroke="#707682"></rect>
+    <!-- flow arrows -->
+    <g stroke="#111" stroke-width="3" fill="#111">
+      <line x1="360" y1="57" x2="440" y2="57"></line><polygon points="440,50 456,57 440,64"></polygon>
+      <line x1="700" y1="170" x2="620" y2="170"></line><polygon points="620,163 604,170 620,177"></polygon>
+      <line x1="1092" y1="250" x2="1092" y2="300"></line><polygon points="1085,300 1092,316 1099,300"></polygon>
+      <line x1="48" y1="120" x2="48" y2="90"></line><polygon points="41,90 48,74 55,90"></polygon>
+      <line x1="50" y1="440" x2="50" y2="490"></line><polygon points="43,490 50,506 57,490"></polygon>
+      <line x1="900" y1="490" x2="820" y2="490"></line><polygon points="820,483 804,490 820,497"></polygon>
+    </g>
+    <!-- pumps bottom-left -->
+    <g fill="#c9cdd4" stroke="#707682" stroke-width="2">
+      <circle cx="230" cy="640" r="46"></circle>
+      <circle cx="370" cy="640" r="46"></circle>
+    </g>
+    <g fill="#111"><polygon points="222,632 240,640 222,648"></polygon><polygon points="378,632 360,640 378,648"></polygon></g>
+    <path d="M275 655 Q320 690 325 655" fill="none" stroke="#707682" stroke-width="3"></path>
+  </svg>
+
+  <!-- number tags -->
+  <sc-for list="{{ tags }}" as="t" hint-placeholder-count="6">
+    <div style="position:absolute;left:{{ t.x }}px;top:{{ t.y }}px;background:{{ t.bg }};border:2px solid #6b7180;padding:3px 10px;font-size:21px;color:#111;box-shadow:1px 2px 0 rgba(0,0,0,.25);white-space:nowrap;">{{ t.label }}</div>
+  </sc-for>
+
+  <!-- Herstart panel -->
+  <div style="position:absolute;left:640px;top:530px;width:230px;background:#e8eaee;border:2px solid #6b7180;box-shadow:2px 3px 0 rgba(0,0,0,.3);">
+    <div style="font-size:30px;padding:6px 12px;border-bottom:2px solid #9aa0aa;">Herstart</div>
+    <div style="padding:8px 12px;font-size:19px;display:grid;grid-template-columns:auto auto;column-gap:10px;row-gap:4px;">
+      <span>Programma:</span><span>0</span>
+      <span>Product type:</span><span>Standard</span>
+      <span>Bestemming:</span><span>Lane 0</span>
+      <span>Aantal:</span><span>0</span>
+    </div>
+  </div>
+
+  <!-- message list -->
+  <div style="position:absolute;left:380px;top:720px;right:60px;height:170px;background:#eceef2;border:2px solid #6b7180;display:flex;">
+    <div style="flex:1.4;border-right:2px solid #9aa0aa;padding:10px 14px;font-size:20px;line-height:1.4;">
+      <div style="display:grid;grid-template-columns:70px auto;column-gap:14px;">
+        <span>5170</span><span>Transportband in werking</span>
+        <span>4003</span><span>Sorteercriteria OK</span>
+        <span>4003</span><span>Sorteed aanwezig</span>
+        <span>1251</span><span>Product aanwezig</span>
+      </div>
+      <div style="margin-top:6px;padding-left:84px;">Status: 0-0-0</div>
+    </div>
+    <div style="flex:1;"></div>
+  </div>
+
+  <!-- STOP / DAMP labels -->
+  <div style="position:absolute;left:130px;top:552px;background:#e8eaee;border:2px solid #6b7180;padding:3px 10px;font-size:21px;">STOP</div>
+  <div style="position:absolute;left:280px;top:575px;background:#e8eaee;border:2px solid #6b7180;padding:3px 10px;font-size:21px;">DAMP</div>
+
+  <!-- bottom buttons -->
+  <div style="position:absolute;left:0;right:0;bottom:0;height:110px;display:flex;align-items:stretch;gap:10px;padding:10px 14px;background:linear-gradient(#274f92,#1d3d74);">
+    <div style="flex:1.1;background:#d02020;border:3px outset #e86060;color:#fff;display:flex;align-items:center;justify-content:center;text-align:center;font-size:26px;line-height:1.2;cursor:pointer;" style-hover="filter:brightness(1.1);">RED<br>STOP</div>
+    <div style="flex:1.2;background:#3a3f47;border:3px outset #6a707a;color:#fff;display:flex;align-items:center;justify-content:center;text-align:center;font-size:26px;line-height:1.2;cursor:pointer;" style-hover="filter:brightness(1.2);">Nummer<br>richtingen</div>
+    <div style="flex:1;background:#3a3f47;border:3px outset #6a707a;color:#fff;display:flex;align-items:center;justify-content:center;font-size:30px;cursor:pointer;" style-hover="filter:brightness(1.2);">C</div>
+    <div style="flex:1.1;background:#3a3f47;border:3px outset #6a707a;color:#fff;display:flex;align-items:center;justify-content:center;text-align:center;font-size:26px;line-height:1.2;cursor:pointer;" style-hover="filter:brightness(1.2);">Enkeling<br>Stop</div>
+    <div style="flex:1;background:#3a3f47;border:3px outset #6a707a;color:#fff;display:flex;align-items:center;justify-content:center;font-size:26px;cursor:pointer;" style-hover="filter:brightness(1.2);">reset</div>
+    <div style="flex:1.1;background:#3a3f47;border:3px outset #6a707a;color:#fff;display:flex;align-items:center;justify-content:center;font-size:26px;cursor:pointer;" style-hover="filter:brightness(1.2);">Overzicht</div>
+    <div style="flex:1.1;background:#3a3f47;border:3px outset #6a707a;color:#fff;display:flex;align-items:center;justify-content:center;text-align:center;font-size:26px;line-height:1.2;cursor:pointer;" style-hover="filter:brightness(1.2);">Start<br>scherm</div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:1024}}">
+class Component extends DCLogic {
+  renderVals() {
+    const w = "#e8eaee", g = "#3ec929", y = "#f2d21a", b = "#7ec8e8";
+    return {
+      tags: [
+        { x: 20, y: 30, label: "3006", bg: w },
+        { x: 210, y: 44, label: "3002", bg: w },
+        { x: 700, y: 150, label: "3004", bg: w },
+        { x: 940, y: 118, label: "3004", bg: w },
+        { x: 1090, y: 20, label: "37:0", bg: w },
+        { x: 1064, y: 246, label: "3107", bg: w },
+        { x: 1160, y: 300, label: "Zwanenhals", bg: b },
+        { x: 90, y: 300, label: "3006", bg: w },
+        { x: 60, y: 268, label: "Sorteer", bg: w },
+        { x: 175, y: 300, label: "3002", bg: w },
+        { x: 300, y: 265, label: "3008", bg: w },
+        { x: 200, y: 336, label: "3002", bg: w },
+        { x: 330, y: 320, label: "3010", bg: w },
+        { x: 520, y: 300, label: "3002", bg: w },
+        { x: 700, y: 336, label: "3107", bg: w },
+        { x: 330, y: 400, label: "3010", bg: w },
+        { x: 20, y: 420, label: "3108", bg: w },
+        { x: 40, y: 530, label: "3103", bg: w },
+        { x: 140, y: 490, label: "Sorteer-order", bg: g },
+        { x: 30, y: 596, label: "3107", bg: w },
+        { x: 420, y: 490, label: "3104", bg: w },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

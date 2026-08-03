@@ -219,11 +219,17 @@ func _test_sensor_grab_release() -> void:
 	_ok_eq(bale.get_parent(), self, "grab: bale NOT reparented (physics-carry, no auto-snap)")
 	_ok(bale.has_meta("delivered") == had_delivered_before,
 		"grab: 'delivered' meta untouched by the sensor grab")
+	# #9 — grab marks the bale as in-transit so it can't feed while carried.
+	_ok(bale.has_meta("carried") and bool(bale.get_meta("carried")),
+		"grab: bale flagged carried=true (won't feed while held)")
 
 	# RELEASE
 	v.call("_release")
 	_ok_eq(v.get("_carried_bale"), null, "release: _carried_bale cleared")
 	_ok_eq(bale.get_parent(), self, "release: bale still where physics left it (no reparent)")
+	# #9 — release clears the in-transit flag.
+	_ok(not bool(bale.get_meta("carried", false)),
+		"release: carried flag cleared (feed-eligible again once set down)")
 
 	bale.remove_from_group("bale")
 	bale.queue_free()
@@ -327,6 +333,13 @@ func _test_line_flow_gates_on_delivered() -> void:
 	_ok(_scan_for_delivered_bale_at(Vector3.ZERO),
 		"delivered bale at feed point → picked")
 
+	# #9 — a delivered bale that is ALSO being carried must NOT feed (it's in
+	# transit). This mirrors the carried-skip guard added to LineFlow._bale_at.
+	bale.set_meta("carried", true)
+	_ok(not _scan_for_delivered_bale_at(Vector3.ZERO),
+		"delivered BUT carried bale → not picked (no phantom feed while hauled)")
+	bale.set_meta("carried", false)
+
 	bale.queue_free()
 
 ## Mirrors LineFlow._bale_at: true if a delivered bale sits within FEED_RADIUS of pos.
@@ -338,6 +351,8 @@ func _scan_for_delivered_bale_at(pos: Vector3) -> bool:
 			continue
 		if not (cn.has_meta("delivered") and bool(cn.get_meta("delivered"))):
 			continue
+		if cn.has_meta("carried") and bool(cn.get_meta("carried")):
+			continue   # #9 — mirrors LineFlow._bale_at: held bales never feed
 		if cn.global_position.distance_to(pos) < best_d:
 			return true
 	return false

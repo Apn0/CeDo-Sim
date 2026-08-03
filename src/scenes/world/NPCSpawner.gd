@@ -47,6 +47,22 @@ const NPC_DATA: Dictionary = {
 		"car": "res://src/scenes/vehicles/cars/BMWX1Placeholder.tscn"},   # PLACEHOLDER: white AClass-as-BMW until real GLB lands
 }
 
+# #224 — Resolve the appearance dict a spawned NPC should use: the operator's
+# saved customization (game_state.npc_appearances[npc_id]) REPLACES the NPC_DATA
+# preset wholesale when present + non-empty, else the preset stands. Extracted
+# from the spawn loop so a headless test can drive the SAME code that spawn uses
+# (proves the save->load->apply chain, not a copy of it). `game_state` may be
+# null (fresh world) — then the preset is always used.
+static func resolve_npc_appearance(npc_id: String, data: Dictionary, game_state) -> Dictionary:
+	var npc_ap : Dictionary = (data.get("appearance", {}) as Dictionary).duplicate(true)
+	if game_state and "npc_appearances" in game_state:
+		var custom_npc_ap = game_state.get("npc_appearances")
+		if custom_npc_ap is Dictionary and custom_npc_ap.has(npc_id):
+			var saved_ap = custom_npc_ap[npc_id]
+			if saved_ap is Dictionary and not (saved_ap as Dictionary).is_empty():
+				npc_ap = (saved_ap as Dictionary).duplicate(true)
+	return npc_ap
+
 # Reference back to MainWorld for game_state / _shell / _on_floor / npcs /
 # lift_booking and parenting spawned NPCs under the world. Set in _ready() and
 # again in setup() so either call order works.
@@ -161,13 +177,7 @@ func _spawn_npcs() -> void:
 		# customizer, so unsetting a flag was impossible. CharacterCustomizer
 		# now guarantees a full appearance dict via _ensure_defaults() before
 		# save, so the REPLACE is safe.
-		var npc_ap : Dictionary = data.get("appearance", {}).duplicate(true)
-		if game_state and "npc_appearances" in game_state:
-			var custom_npc_ap = game_state.get("npc_appearances")
-			if custom_npc_ap is Dictionary and custom_npc_ap.has(npc_id):
-				var saved_ap = custom_npc_ap[npc_id]
-				if saved_ap is Dictionary and not (saved_ap as Dictionary).is_empty():
-					npc_ap = (saved_ap as Dictionary).duplicate(true)
+		var npc_ap : Dictionary = resolve_npc_appearance(npc_id, data, game_state)
 		var body : Node3D = humanoid_script.build(data["color"], npc_variant, npc_ap)
 		body.name = "HumanoidBody"           # tagged so NPC._physics_process can scale it for crouch / prone (#146)
 		npc_variant += 1
@@ -183,6 +193,13 @@ func _spawn_npcs() -> void:
 
 		if npc_script:
 			npc.set_script(npc_script)
+			# #audit-2026-07-08 — assign identity at spawn (was NEVER set). Without
+			# npc_id, NpcAutonomyBoard._role_of() returned "" for every NPC so the
+			# autonomy role-gate was skipped (shift-leader Romain got cleaning tasks);
+			# without npc_role, CrewManager zone-posting + jam coverage collapsed (no
+			# worker manned its station). Set BEFORE add_child so _ready() sees them.
+			npc.set("npc_id", npc_id)
+			npc.set("npc_role", String(data.get("role", "")))
 
 		npc.set_meta("map_color", data["color"])   # MapOverlay draws crew in this colour
 

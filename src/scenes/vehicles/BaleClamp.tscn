@@ -530,6 +530,27 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.42, 1.63, 0.05)
 mesh = SubResource("Sph_lever_knob")
 material_override = SubResource("Mat_hood")
 
+; ── Lever 3: clamp open/close (fork spread) + Lever 4: rotator (operator 2026-07-17) ──
+[node name="LeverClamp" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.52, 1.50, 0.05)
+mesh = SubResource("Cyl_lever")
+material_override = SubResource("Mat_chrome")
+
+[node name="LeverClampKnob" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.52, 1.63, 0.05)
+mesh = SubResource("Sph_lever_knob")
+material_override = SubResource("Mat_hood")
+
+[node name="LeverRotate" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.62, 1.50, 0.05)
+mesh = SubResource("Cyl_lever")
+material_override = SubResource("Mat_chrome")
+
+[node name="LeverRotateKnob" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.62, 1.63, 0.05)
+mesh = SubResource("Sph_lever_knob")
+material_override = SubResource("Mat_hood")
+
 ; ── Overhead Guard (ROPS) ────────────────────────────────────────────────────
 [node name="RopsPostFL" type="MeshInstance3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.55, 1.85, 0.85)

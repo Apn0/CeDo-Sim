@@ -34,9 +34,18 @@ func _ready() -> void:
 	_build_segments()
 
 func _build_segments() -> void:
-	var asphalt_mat := StandardMaterial3D.new()
-	asphalt_mat.albedo_color = Color(0.12, 0.12, 0.13)
-	asphalt_mat.roughness = 0.93
+	# Operator pick (2026-07): the plant roads are GRAVEL, not asphalt —
+	# Polyhaven gravel_floor_03 via PolyhavenMaterials (shared instance, PBR
+	# maps stream in when the download lands). Flat-colour fallback otherwise.
+	var asphalt_mat : Material = null
+	var ph := get_node_or_null("/root/PolyhavenMaterials")
+	if ph != null:
+		asphalt_mat = ph.call("ground_gravel")
+	if asphalt_mat == null:
+		var flat := StandardMaterial3D.new()
+		flat.albedo_color = Color(0.45, 0.43, 0.40)
+		flat.roughness = 0.97
+		asphalt_mat = flat
 	var paint_mat := StandardMaterial3D.new()
 	paint_mat.albedo_color = Color(0.95, 0.95, 0.92)
 	paint_mat.roughness = 0.55

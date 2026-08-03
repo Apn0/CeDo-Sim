@@ -22,11 +22,17 @@ static func apply_textures(world: Node, shell: MeshInstance3D) -> void:
 	if floor_node:
 		var fm := floor_node.find_child("MeshInstance3D", false, false) as MeshInstance3D
 		if fm:
-			# Photo-extracted hall-floor texture (assets/textures/floor/) when
-			# local assets are present; procedural noise otherwise.
-			var floor_mat := MaterialPalette.mat_concrete_worn()
-			if floor_mat.albedo_texture == null:
-				floor_mat = industrial_mat(Color(0.34, 0.32, 0.30), 0.55, 0.92, false)
+			# Operator pick (2026-07): Polyhaven dirty_concrete for the hall
+			# floor — matches the real CeDo floor better than the photo crops.
+			# Fallback chain: photo-extracted texture → procedural noise.
+			var floor_mat : StandardMaterial3D = null
+			var ph := world.get_node_or_null("/root/PolyhavenMaterials")
+			if ph != null:
+				floor_mat = ph.call("factory_floor_dirty")
+			if floor_mat == null:
+				floor_mat = MaterialPalette.mat_concrete_worn()
+				if floor_mat.albedo_texture == null:
+					floor_mat = industrial_mat(Color(0.34, 0.32, 0.30), 0.55, 0.92, false)
 			fm.material_override = floor_mat
 	# Building shell — painted concrete/steel. Use a SIMPLE flat material rather
 	# than the triplanar-noise one: the noise normal-map combined with the .obj's

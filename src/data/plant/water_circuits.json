@@ -1,0 +1,165 @@
+{
+  "meta": {
+    "extracted": "2026-07-04",
+    "sources": [
+      "C:/Users/arnod/Documents/CeDo_Simulator_data/Water_circuit_3A_LA1.pdf",
+      "C:/Users/arnod/Documents/CeDo_Simulator_data/Water_circuit_3A_LA2.pdf",
+      "C:/Users/arnod/Documents/CeDo_Simulator_data/Water_circuit_blauwe_tank.pdf",
+      "C:/Users/arnod/Documents/CeDo_Simulator_data/Water_circuit_kanaalwater.pdf"
+    ],
+    "slide_year": 2024,
+    "notes": "All four slides contain no volumes, flow rates, pressures or level setpoints; only blocks/nodes, arrows and pump/screw ids (P1, C1, P2, M3). Media: 'water' or 'water_folie' (water with film). Circle diagrams (la1, la2, kanaalwater): node 'medium_label_nl' is the verbatim label at that node on the circle; edge medium is the physically-correct medium for that segment (film joins at the dosing screw / flotation tank, is separated at the friction separator / dewatering screw). Edges flagged unsure=true have ambiguous routing in the source photo; see docs/plant/water_circuit_*.md for full routing descriptions."
+  },
+  "circuits": {
+    "was_3a_la1": {
+      "title_nl": "Water circuit 1 (La 1) was 3a",
+      "title_en": "Water circuit 1 (LA1), wash line 3A",
+      "shape": "closed_loop",
+      "direction": "clockwise",
+      "medium": "water",
+      "nodes": [
+        { "id": "waterbak_la1", "seq": 1, "label_nl": "Waterbak La 1", "label_en": "Water basin LA1", "kind": "tank", "medium_label_nl": "water" },
+        { "id": "pomp_p1", "seq": 2, "label_nl": "Pomp P1", "label_en": "Pump P1", "kind": "pump", "pump_id": "P1", "medium_label_nl": "water" },
+        { "id": "doseerschroef_la1", "seq": 3, "label_nl": "Doseerschroef", "label_en": "Dosing screw", "kind": "screw_conveyor", "medium_label_nl": "water/folie" },
+        { "id": "frictiewasser_la1", "seq": 4, "label_nl": "Frictiewasser", "label_en": "Friction washer", "kind": "friction_washer", "medium_label_nl": "water/folie" },
+        { "id": "glijgoot_la1", "seq": 5, "label_nl": "Glijgoot", "label_en": "Slide chute", "kind": "chute", "medium_label_nl": "water/folie" },
+        { "id": "pomp_c1", "seq": 6, "label_nl": "Pomp C1", "label_en": "Pump C1", "kind": "pump", "pump_id": "C1", "medium_label_nl": "water/folie" },
+        { "id": "frictiescheider_m3_la1", "seq": 7, "label_nl": "Fricktiescheider m3 [sic]", "label_en": "Friction separator m3", "kind": "friction_separator", "machine_id": "m3", "medium_label_nl": "water/folie", "note_nl": "worden gescheiden van mekaar (water en folie worden hier gescheiden)" },
+        { "id": "zandscheider_la1", "seq": 8, "label_nl": "Zandscheider", "label_en": "Sand separator", "kind": "sand_separator", "medium_label_nl": "water" }
+      ],
+      "edges": [
+        { "from": "waterbak_la1", "to": "pomp_p1", "medium": "water", "label": "" },
+        { "from": "pomp_p1", "to": "doseerschroef_la1", "medium": "water", "label": "" },
+        { "from": "doseerschroef_la1", "to": "frictiewasser_la1", "medium": "water_folie", "label": "folie treedt toe bij doseerschroef" },
+        { "from": "frictiewasser_la1", "to": "glijgoot_la1", "medium": "water_folie", "label": "" },
+        { "from": "glijgoot_la1", "to": "pomp_c1", "medium": "water_folie", "label": "" },
+        { "from": "pomp_c1", "to": "frictiescheider_m3_la1", "medium": "water_folie", "label": "" },
+        { "from": "frictiescheider_m3_la1", "to": "zandscheider_la1", "medium": "water", "label": "water en folie gescheiden; folie verlaat het circuit richting lijn 3A droogproces" },
+        { "from": "zandscheider_la1", "to": "waterbak_la1", "medium": "water", "label": "" }
+      ]
+    },
+    "was_3a_la2": {
+      "title_nl": "Water circuit 2 (La 2) was 3a",
+      "title_en": "Water circuit 2 (LA2), wash line 3A",
+      "shape": "closed_loop",
+      "direction": "clockwise",
+      "medium": "water",
+      "nodes": [
+        { "id": "waterbak_la2", "seq": 1, "label_nl": "Waterbak La 2", "label_en": "Water basin LA2", "kind": "tank", "medium_label_nl": "water" },
+        { "id": "pomp_p2", "seq": 2, "label_nl": "Pomp P2", "label_en": "Pump P2", "kind": "pump", "pump_id": "P2", "medium_label_nl": "water" },
+        { "id": "flotatietank_la2", "seq": 3, "label_nl": "Flotatietank", "label_en": "Flotation (sink-float) tank", "kind": "flotation_tank", "medium_label_nl": "water/folie" },
+        { "id": "ontwaterschroef_m3_la2", "seq": 4, "label_nl": "Ontwaterschroef M3", "label_en": "Dewatering screw M3", "kind": "dewatering_screw", "machine_id": "M3", "medium_label_nl": "water/folie", "note_nl": "gescheiden van mekaar (water en folie worden hier gescheiden)" },
+        { "id": "glijgoot_la2", "seq": 5, "label_nl": "Glijgoot", "label_en": "Slide chute", "kind": "chute", "medium_label_nl": "water" }
+      ],
+      "edges": [
+        { "from": "waterbak_la2", "to": "pomp_p2", "medium": "water", "label": "" },
+        { "from": "pomp_p2", "to": "flotatietank_la2", "medium": "water", "label": "" },
+        { "from": "flotatietank_la2", "to": "ontwaterschroef_m3_la2", "medium": "water_folie", "label": "folie treedt toe in flotatietank" },
+        { "from": "ontwaterschroef_m3_la2", "to": "glijgoot_la2", "medium": "water", "label": "water en folie gescheiden; folie verlaat het circuit richting lijn 3A droogproces" },
+        { "from": "glijgoot_la2", "to": "waterbak_la2", "medium": "water", "label": "" }
+      ]
+    },
+    "kanaalwater": {
+      "title_nl": "Water circuit vers kanaal water",
+      "title_en": "Fresh canal water supply circuit",
+      "subtitle_nl": "Het vers kanaalwater wordt toegevoegd aan bestaande circuits",
+      "shape": "open_chain",
+      "direction": "clockwise",
+      "medium": "water",
+      "notes": "Cirkel is getekend met een opening linksboven (tussen knooppunt 4 en 1): toevoerketen, geen gesloten kringloop.",
+      "nodes": [
+        { "id": "hoofdleiding_kelder", "seq": 1, "label_nl": "hoofd leiding vanuit kelder", "label_en": "Main supply line from the cellar", "kind": "water_source" },
+        { "id": "blauwe_tank", "seq": 2, "label_nl": "blauwe tank", "label_en": "Blue tank", "kind": "tank", "shared_with": "blauwe_tank_network" },
+        { "id": "koeling_hydrauliek_units", "seq": 3, "label_nl": "oa koeling op hydrauliek units", "label_en": "i.a. cooling on hydraulic units", "kind": "cooling_consumer" },
+        { "id": "naar_wasinstallaties", "seq": 4, "label_nl": "naar wasinstallaties", "label_en": "To washing installations", "kind": "wash_consumer" }
+      ],
+      "edges": [
+        { "from": "hoofdleiding_kelder", "to": "blauwe_tank", "medium": "water", "label": "vers kanaalwater" },
+        { "from": "blauwe_tank", "to": "koeling_hydrauliek_units", "medium": "water", "label": "" },
+        { "from": "koeling_hydrauliek_units", "to": "naar_wasinstallaties", "medium": "water", "label": "" }
+      ]
+    },
+    "blauwe_tank_network": {
+      "title_nl": "Water circuit blauwe tank",
+      "title_en": "Blue tank water circuit",
+      "subtitle_nl": "Blauwe tank water voegt water toe aan de wasinstallaties",
+      "shape": "network",
+      "medium": "water",
+      "nodes": [
+        { "id": "zss_proces", "label_nl": "ZSS proces", "label_en": "ZSS water purification process", "kind": "water_treatment" },
+        { "id": "eop_proces", "label_nl": "EOP proces", "label_en": "EOP (end-of-pipe) water treatment process", "kind": "water_treatment" },
+        { "id": "extruder_koelwater_warmtewisselaars", "label_nl": "Extruder 3a, 3b en lijn 1 koelwater van warmte wisselaars", "label_en": "Extruders 3A, 3B and line 1: cooling water from heat exchangers", "kind": "cooling_consumer", "serves_lines": ["3A", "3B", "1"] },
+        { "id": "extruder_vacuum_centrifuge_water", "label_nl": "Extruder 3a, 3b en lijn 1 vacuum en centrifuge water", "label_en": "Extruders 3A, 3B and line 1: vacuum and centrifuge water", "kind": "utility_consumer", "serves_lines": ["3A", "3B", "1"] },
+        { "id": "kanaalwater", "label_nl": "Kanaalwater", "label_en": "Canal water", "kind": "water_source" },
+        { "id": "blauwe_tank", "label_nl": "Blauwe tank", "label_en": "Blue tank (central process-water reservoir)", "kind": "tank", "serves_lines": ["1", "3A", "3B"] },
+        { "id": "wash_line_1", "label_nl": "Wash line 1", "label_en": "Wash line 1", "kind": "wash_line", "line": "1" },
+        { "id": "put_pomp_was_1", "label_nl": "Put & pomp was 1", "label_en": "Pit & pump, wash line 1", "kind": "pump", "line": "1" },
+        { "id": "was_3a_la2_rest", "label_nl": "Was 3a LA2 & rest van was 3a", "label_en": "Wash 3A: LA2 circuit & rest of wash 3A", "kind": "wash_consumer", "line": "3A", "linked_circuits": ["was_3a_la1", "was_3a_la2"] },
+        { "id": "was_3a_vuilsnippersilo", "label_nl": "Was 3a vuilsnippersilo", "label_en": "Wash 3A dirty-shred silo", "kind": "wash_consumer", "line": "3A" },
+        { "id": "was_3b_vuilsnipper_silo", "label_nl": "Was 3b vuilsnipper silo", "label_en": "Wash 3B dirty-shred silo", "kind": "wash_consumer", "line": "3B" },
+        { "id": "was_3b_flotatie_tank", "label_nl": "Was 3b flotatie tank", "label_en": "Wash 3B flotation tank", "kind": "wash_consumer", "line": "3B" },
+        { "id": "was_3b_rafter", "label_nl": "Was 3b rafter", "label_en": "Wash 3B rafter [machine type unconfirmed]", "kind": "wash_consumer", "line": "3B" },
+        { "id": "riool_naar_eop", "label_nl": "Riool naar EOP", "label_en": "Sewer to EOP treatment", "kind": "sewer" }
+      ],
+      "edges": [
+        { "from": "kanaalwater", "to": "blauwe_tank", "medium": "water", "label": "vers water, directe pijl in bovenkant tank" },
+        { "from": "kanaalwater", "to": "extruder_koelwater_warmtewisselaars", "medium": "water", "label": "suppletie koelwater" },
+        { "from": "kanaalwater", "to": "extruder_vacuum_centrifuge_water", "medium": "water", "label": "suppletie vacuum-/centrifugewater" },
+        { "from": "kanaalwater", "to": "blauwe_tank", "medium": "water", "label": "injectie op koelwaterretourleiding (zwarte pijlpunt)" },
+        { "from": "kanaalwater", "to": "wash_line_1", "medium": "water", "label": "vers water, via toplijn in bovenkant wash line 1" },
+        { "from": "kanaalwater", "to": "was_3a_la2_rest", "medium": "water", "label": "bovenste van twee aanvoerpijlen", "unsure": true },
+        { "from": "extruder_koelwater_warmtewisselaars", "to": "blauwe_tank", "medium": "water", "label": "retour warm koelwater" },
+        { "from": "extruder_vacuum_centrifuge_water", "to": "riool_naar_eop", "medium": "water", "label": "afvoer vacuum-/centrifugewater" },
+        { "from": "blauwe_tank", "to": "wash_line_1", "medium": "water", "label": "waswater aanvoer (zijkant)" },
+        { "from": "blauwe_tank", "to": "was_3a_la2_rest", "medium": "water", "label": "waswater aanvoer, onderste van twee pijlen" },
+        { "from": "blauwe_tank", "to": "was_3a_vuilsnippersilo", "medium": "water", "label": "waswater aanvoer via verdeel-leiding" },
+        { "from": "blauwe_tank", "to": "was_3b_vuilsnipper_silo", "medium": "water", "label": "waswater aanvoer via verdeel-leiding" },
+        { "from": "blauwe_tank", "to": "was_3b_flotatie_tank", "medium": "water", "label": "waswater aanvoer, dunne pijl (bovenste)" },
+        { "from": "blauwe_tank", "to": "was_3b_flotatie_tank", "medium": "water", "label": "hoofdaanvoer, dikkere pijl (onderste)" },
+        { "from": "blauwe_tank", "to": "was_3b_rafter", "medium": "water", "label": "waswater aanvoer via lange lus onderlangs" },
+        { "from": "wash_line_1", "to": "put_pomp_was_1", "medium": "water", "label": "vuilwater was 1" },
+        { "from": "wash_line_1", "to": "zss_proces", "medium": "water", "label": "retour naar ZSS" },
+        { "from": "put_pomp_was_1", "to": "zss_proces", "medium": "water", "label": "opgepompt vuilwater was 1 naar ZSS" },
+        { "from": "was_3a_la2_rest", "to": "riool_naar_eop", "medium": "water", "label": "vuilwater" },
+        { "from": "was_3a_vuilsnippersilo", "to": "riool_naar_eop", "medium": "water", "label": "vuilwater" },
+        { "from": "was_3b_vuilsnipper_silo", "to": "was_3b_rafter", "medium": "water", "label": "cascade: silowater naar rafter (pijl in rechterkant rafter)" },
+        { "from": "was_3b_flotatie_tank", "to": "riool_naar_eop", "medium": "water", "label": "vuilwater (pijl in onderkant riool-blok)" },
+        { "from": "was_3b_rafter", "to": "riool_naar_eop", "medium": "water", "label": "vuilwater (pijl in onderkant riool-blok)" },
+        { "from": "riool_naar_eop", "to": "eop_proces", "medium": "water", "label": "dikke lijn onderlangs: vuilwaterhoofdstroom naar EOP-zuivering" },
+        { "from": "eop_proces", "to": "blauwe_tank", "medium": "water", "label": "dikke lijn: gezuiverd water terug naar blauwe tank" },
+        { "from": "eop_proces", "to": "zss_proces", "medium": "water", "label": "via stijgleiding linkerrand" },
+        { "from": "zss_proces", "to": "eop_proces", "medium": "water", "label": "pijl in bovenkant EOP" },
+        { "from": "zss_proces", "to": "eop_proces", "medium": "water", "label": "tweede lijn, pijl in rechterkant EOP", "unsure": true }
+      ]
+    }
+  },
+  "cross_connections": [
+    {
+      "description_nl": "Blauwe tank is het gedeelde proceswaterreservoir voor lijn 1, 3A en 3B: voedt wash line 1, was 3a (LA1/LA2 + vuilsnippersilo) en was 3b (vuilsnipper silo, flotatie tank, rafter).",
+      "node": "blauwe_tank",
+      "lines": ["1", "3A", "3B"]
+    },
+    {
+      "description_nl": "Kanaalwater (vers, hoofdleiding vanuit kelder) suppleert de blauwe tank, de extruder-hulpsystemen (koelwater warmtewisselaars, vacuum/centrifuge) van lijn 1, 3A en 3B, en wash line 1.",
+      "node": "kanaalwater",
+      "lines": ["1", "3A", "3B"]
+    },
+    {
+      "description_nl": "Het blok 'Was 3a LA2 & rest van was 3a' in het blauwe-tank-netwerk omvat de gesloten kringlopen was_3a_la1 (rest van was 3a) en was_3a_la2 (LA2); de blauwe tank levert daarvan het suppletiewater.",
+      "node": "was_3a_la2_rest",
+      "linked_circuits": ["was_3a_la1", "was_3a_la2"]
+    },
+    {
+      "description_nl": "Knooppunt 2 van het kanaalwater-circuit is hetzelfde object als 'blauwe_tank' in het blauwe-tank-netwerk.",
+      "nodes": ["kanaalwater.blauwe_tank", "blauwe_tank_network.blauwe_tank"]
+    },
+    {
+      "description_nl": "Vuilwaterkringloop: alle was 3a/3b-verbruikers en het vacuum-/centrifugewater lozen op 'Riool naar EOP'; EOP zuivert en retourneert naar de blauwe tank. Was 1 heeft een eigen route via put & pomp naar ZSS; ZSS en EOP wisselen onderling uit.",
+      "nodes": ["riool_naar_eop", "eop_proces", "zss_proces", "put_pomp_was_1"]
+    },
+    {
+      "description_nl": "Consistentie met lijn 1 flow diagram (line_flow_graphs.json): 'Waterput & pomp was 1 naar ZSS', 'Blauwe tank water voor was 1, 3a en 3b', 'EOP water zuivering system'. De daar als unsure gemarkeerde kant zss->blauwe_tank blijkt op deze slide te lopen als ZSS->EOP->blauwe tank.",
+      "supersedes_unsure_edge": { "file": "line_flow_graphs.json", "line": "1", "from": "zss", "to": "blauwe_tank" }
+    }
+  ]
+}

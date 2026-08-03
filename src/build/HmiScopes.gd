@@ -51,6 +51,58 @@ class_name HmiScopes
 
 const GENERIC_ID := "generic"
 
+## ── MOUNT TABLE (placement) ─────────────────────────────────────────────────
+## This file called itself "the single source of truth" while carrying no
+## placement data at all: it mapped panels to the machines they CONTROL, never
+## to where they STAND. That is why five rounds of "fix the HMI placement"
+## changed nothing — every one of them touched screen content, because there was
+## no placement code to change. Hmi.gd._ready() never set a transform; a panel
+## sat wherever it was dropped.
+##
+## Each entry is:
+##   {
+##     "set":    bool     # false = NOT specified by the operator yet. Never guess.
+##     "anchor": String   # placeable_id substring of the machine it mounts to
+##     "face":   String   # "+x" / "-x" / "+z" / "-z" — which side of that machine
+##     "offset": Vector3  # metres from the anchor's face centre (y = mount height)
+##   }
+##
+## `set: false` is deliberate and load-bearing: an unset mount means the panel
+## keeps whatever position it was placed at, and Hmi.gd logs it once. Inventing
+## coordinates here is exactly the failure this table exists to end. Fill them
+## from operator F10 markers via tools/hmi_mounts_from_markers.py.
+const MOUNT_UNSET := {"set": false, "anchor": "", "face": "+x", "offset": Vector3.ZERO}
+
+## hmi_id -> mount. Only ids present here are placed automatically.
+const MOUNTS := {
+	"hmi_shredder_l1":       MOUNT_UNSET,
+	"hmi_shredder1_l3ab":    MOUNT_UNSET,
+	"hmi_shredder2_l3ab":    MOUNT_UNSET,
+	"hmi_shredder_l3c6":     MOUNT_UNSET,
+	"hmi_sorting_l3ab":      MOUNT_UNSET,
+	"hmi_transport_l3ab":    MOUNT_UNSET,
+	"hmi_transport_l3c6":    MOUNT_UNSET,
+	"hmi_washing_all":       MOUNT_UNSET,
+	"hmi_extruder_all":      MOUNT_UNSET,
+	"hmi_water_l3c6":        MOUNT_UNSET,
+	"hmi_water_extr_l1_3ab": MOUNT_UNSET,
+	"hmi_indaver_water":     MOUNT_UNSET,
+}
+
+## The mount for an hmi_id, or MOUNT_UNSET when the operator hasn't specified it.
+static func get_mount(hmi_id: String) -> Dictionary:
+	return MOUNTS.get(hmi_id, MOUNT_UNSET)
+
+## How many of the 12 panels actually have operator-specified placement.
+## Surfaced so "HMI placement is done" can never again be claimed without a count.
+static func mounts_specified() -> int:
+	var n := 0
+	for k in MOUNTS:
+		if bool((MOUNTS[k] as Dictionary).get("set", false)):
+			n += 1
+	return n
+
+
 const SCOPES := {
 	# ── 1. Shredder Line 1 ────────────────────────────────────────────────
 	"hmi_shredder_l1": {

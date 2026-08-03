@@ -94,23 +94,161 @@ func release_task(npc: Node) -> void:
 		var t : NpcAutonomyTask = _active[nid]
 		if t and not t.is_done():
 			t.release(npc)
+			# npc-01 — un-claim: the base release() never clears _claimed_by, so
+			# a shift-bell/production release left the still-open task pointing
+			# at a valid NPC and take_next_task skipped it for the session.
+			t._claimed_by = null
 		_active.erase(nid)
 
+## #198 operator override — CrewPanel task dropdown assigns a specific chore to
+## a specific worker. Builds the concrete task targeting the NEAREST relevant
+## node to the npc, hands it to the npc as a FORCED task (which overrides the
+## production gate + auto-poll in NPC._autonomy_tick), and returns true.
+## Returns false if npc is invalid or no valid target/dest exists for `kind`.
+## BYPASSES accept_roles + shift-window gating — the operator's word is law.
+func force_task(npc: Node, kind: String) -> bool:
+	if npc == null or not is_instance_valid(npc):
+		return false
+	if not npc.has_method("assign_forced_task"):
+		return false
+	var tree := get_tree()
+	if tree == null:
+		return false
+	var task : NpcAutonomyTask = _build_forced_task(tree, npc, kind)
+	if task == null:
+		return false
+	npc.call("assign_forced_task", task)
+	return true
+
+## Concrete task factory for force_task(). Nearest-node target resolution per
+## kind; returns null if the required target (or destination) is missing.
+func _build_forced_task(tree: SceneTree, npc: Node, kind: String) -> NpcAutonomyTask:
+	var mw_ref : Node = _find_main_world(tree)
+	match kind:
+		"blow_leaves":
+			var blower : Node3D = _nearest_in_group(tree, "leaf_blower", npc)
+			if blower == null:
+				return null
+			var s := load("res://src/scenes/world/tasks/BlowLeavesTask.gd")
+			if s == null:
+				return null
+			return s.new(blower, mw_ref)
+		"hose_sweep":
+			var nozzle : Node3D = _nearest_in_group(tree, "hose_nozzle", npc)
+			if nozzle == null:
+				return null
+			var s := load("res://src/scenes/world/tasks/HoseSweepTask.gd")
+			if s == null:
+				return null
+			return s.new(nozzle, mw_ref)
+		"shovel_pile":
+			var pile : Node3D = _nearest_in_group(tree, "floor_pile", npc)
+			if pile == null:
+				return null
+			var s := load("res://src/scenes/world/tasks/ShovelFloorPileTask.gd")
+			if s == null:
+				return null
+			return s.new(pile, mw_ref)
+		"empty_lump_cart":
+			var cart : Node3D = _nearest_in_group(tree, "lump_cart", npc)
+			if cart == null:
+				return null
+			var dest : Node3D = _choose_lumps_destination(tree)
+			if dest == null:
+				return null
+			var s := load("res://src/scenes/world/tasks/EmptyLumpCartTask.gd")
+			if s == null:
+				return null
+			return s.new(cart, dest)
+		"overflow_dump":
+			var bin : Node3D = _nearest_in_group(tree, "waste_container", npc)
+			if bin == null:
+				return null
+			# npc-04 — resolve a REAL receiving container. This arm used to pass
+			# mw_ref (the whole MainWorld node) as the destination: the forklift
+			# drove to world origin and the scooped mass silently vanished (the
+			# root has neither add() nor receive_lumps()). No second container →
+			# no valid task → force_task returns false → CrewPanel "geen doel".
+			var dump_dest : Node3D = _choose_lumps_destination(tree, bin)
+			if dump_dest == null:
+				return null
+			var s := load("res://src/scenes/world/tasks/OverflowDumpTask.gd")
+			if s == null:
+				return null
+			return s.new(bin, dump_dest)
+		"refuel_blower":
+			# Target the blower that most needs it (lowest fuel), tie-broken by
+			# nearest; the can is the one nearest the operator-picked npc.
+			var blower : Node3D = _lowest_fuel_blower(tree, npc)
+			if blower == null:
+				return null
+			var can : Node3D = _nearest_in_group(tree, "jerrycan", npc)
+			if can == null:
+				return null
+			var s := load("res://src/scenes/world/tasks/RefuelBlowerTask.gd")
+			if s == null:
+				return null
+			return s.new(blower, can, mw_ref)
+		_:
+			return null
+
 # ── World scan: assemble the open task list from live state. ───────────────
+# npc-01 — how long a FAILED task blocks re-emission for its target. The failed
+# entry is kept in _open_tasks (take_next_task already skips done tasks) until
+# the cooldown lapses; then the reap below frees the key and the generator
+# re-emits a fresh task on the same scan. Prevents instant thrash against a
+# persistently-failing target (e.g. no forklift available yet).
+const FAIL_RETRY_COOLDOWN_S : float = 30.0
+
 func _rescan() -> void:
 	var tree := get_tree()
 	if tree == null:
 		return
+	# npc-01 — reap terminal tasks FIRST so a still-qualifying target gets a
+	# fresh task from its generator on this same scan. Previously a done task
+	# wedged its key in _open_tasks forever: one failure (phase_timeout,
+	# no_forklift_available, …) permanently blocked that cart/blower/pile.
+	var now_s : float = Time.get_ticks_msec() / 1000.0
+	for tid in _open_tasks.keys():
+		var t : NpcAutonomyTask = _open_tasks[tid]
+		if t == null:
+			_open_tasks.erase(tid)
+			continue
+		if not t.is_done():
+			continue
+		if t.is_failed() and (now_s - t._failed_at) < FAIL_RETRY_COOLDOWN_S:
+			continue   # hold as a re-emit block until the retry cooldown lapses
+		_open_tasks.erase(tid)
 	var seen : Dictionary = {}   # instance_id → true (for dedup vs stale entries)
 	# Generator 1: empty cooled lump carts.
 	_scan_lump_carts(tree, seen)
-	# Generators 2-4 (stubs — see file footer for the planned generators).
+	# Generator 1b: refuel low-fuel leaf blowers (only if a jerrycan exists).
+	# Runs BEFORE _scan_dirty_floor so a genuinely low blower claims its
+	# instance-id key with the refuel task before the blow-circuit generator
+	# would grab the same key (an empty blower can't blow, so refuelling wins).
+	_scan_low_fuel_blowers(tree, seen)
+	# Generators 2-5.
 	_scan_dirty_floor(tree, seen)
+	_scan_floor_piles(tree, seen)
 	_scan_overflow_containers(tree, seen)
 	# Prune entries whose target has gone away.
 	for tid in _open_tasks.keys():
 		if not seen.has(tid):
 			_open_tasks.erase(tid)
+	# npc-09 — refresh open UNCLAIMED task priorities in place (what the header
+	# comment always promised): a task emitted mid-shift picks up the +30
+	# handover boost when the window opens, and a task emitted during a line
+	# fault sheds its -50 penalty once the fault clears — instead of losing
+	# every priority contest to fresher tasks for the rest of the shift.
+	var mw_ref : Node = _find_main_world(tree)
+	var pri_mod : int = _cleaning_priority_modifier(mw_ref)
+	for otid in _open_tasks.keys():
+		var ot : NpcAutonomyTask = _open_tasks[otid]
+		if ot == null or ot.is_done():
+			continue
+		if ot._claimed_by != null and is_instance_valid(ot._claimed_by):
+			continue
+		ot.priority = ot.base_priority + pri_mod
 
 func _scan_lump_carts(tree: SceneTree, seen: Dictionary) -> void:
 	# #198 dynamic — Operator's spec: cooled lump carts go into the indoor
@@ -150,44 +288,77 @@ func _scan_lump_carts(tree: SceneTree, seen: Dictionary) -> void:
 		if script == null:
 			continue
 		var task : NpcAutonomyTask = script.new(cart, dest)
+		task.base_priority = task.priority   # npc-09 — snapshot for in-place refresh
 		task.priority += pri_mod
 		_open_tasks[tid] = task
 
-## #198 — Operator's container policy: indoor lumps container holds ~8-10
-## lumps; we always WANT it as close to empty as possible at handover. So
-## the destination logic:
-##   1. If indoor container has room AND we're not in handover, use it
-##      (normal "cool a few, dump them inside, continue" flow).
-##   2. If we ARE in handover AND indoor already holds >= 3, route this load
-##      to the outdoor shipping container instead — the operator's goal is
-##      to leave the indoor container at most 1-3 deep for team B.
-##   3. If indoor is full (>=8) at any time, route to outdoor.
-##   4. Outdoor shipping container is the ultimate fallback (open-top, takes
-##      bulk overflow).
-const INDOOR_HANDOVER_TARGET : int = 3    # leave at most this many for team B
-const INDOOR_HARD_CAP        : int = 8    # absolute "container is full"
-func _choose_lumps_destination(tree: SceneTree) -> Node3D:
+## #198 — Operator's container policy (npc-05 — picks on fill_fraction() now;
+## the old lumps-count constants are comment-history: INDOOR_HANDOVER_TARGET
+## (= 3) is gone, INDOOR_HARD_CAP survives only as the lumps_count fallback in
+## _scan_overflow_containers()). Destination logic:
+##   1. If an indoor bin has room, use the emptiest one (normal "cool a few,
+##      dump them inside, continue" flow).
+##   2. During handover a bin already counts as full from fill_fraction()
+##      >= 0.5 — the operator's goal is to leave the indoor bins near-empty
+##      for team B, so loads route onward sooner.
+##   3. Bins reporting is_full() are never "open", at any time.
+##   4. The outdoor skip (group "waste_container_outdoor", lowest fill) is the
+##      ultimate fallback (open-top, takes bulk overflow) once no indoor bin
+##      is open; with no skip in the world, fall back to the emptiest indoor.
+const INDOOR_HARD_CAP : int = 8   # npc-05 — only _scan_overflow_containers()'s lumps_count fallback reads this
+## `exclude` (npc-04): skip this container when picking — a dump's SOURCE bin
+## must never be chosen as its own destination.
+func _choose_lumps_destination(tree: SceneTree, exclude: Node3D = null) -> Node3D:
+	# npc-05 — #198 revived: indoor candidates are "waste_container" nodes NOT
+	# in "waste_container_outdoor"; the outdoor skip is tracked separately as
+	# the rule-4 fallback. Among open indoor bins take the emptiest; if none is
+	# open (all full, or handover-tightened) return the least-filled skip; with
+	# no skip in the world return the emptiest indoor anyway so a forklift run
+	# at least moves the cart off the discharge (the container's own overflow
+	# model handles the spill).
 	var mw_ref : Node = _find_main_world(tree)
 	var in_handover : bool = _shift_phase(mw_ref) == ShiftPhase.HANDOVER
-	var indoor : Node3D = null
-	for c in tree.get_nodes_in_group("lumps_container_indoor"):
-		if c is Node3D and is_instance_valid(c):
-			indoor = c
-			break
-	if indoor != null:
-		var fill : int = 0
-		if "lumps_count" in indoor:
-			fill = int(indoor.get("lumps_count"))
-		var hard_full : bool = fill >= INDOOR_HARD_CAP
-		if indoor.has_method("is_full"):
-			hard_full = hard_full or bool(indoor.call("is_full"))
-		var handover_full : bool = in_handover and fill >= INDOOR_HANDOVER_TARGET
-		if not (hard_full or handover_full):
-			return indoor
-	for c in tree.get_nodes_in_group("shipping_container_outdoor"):
-		if c is Node3D and is_instance_valid(c):
-			return c as Node3D
-	return indoor   # nothing else — fall back to indoor even if full
+	var best_open : Node3D = null
+	var best_open_fill : float = INF
+	var best_any : Node3D = null
+	var best_any_fill : float = INF
+	var outdoor_lowest : Node3D = null   # npc-05 — least-filled outdoor skip
+	var outdoor_lowest_fill : float = INF
+	for c in tree.get_nodes_in_group("waste_container"):
+		if not (c is Node3D and is_instance_valid(c)):
+			continue
+		if exclude != null and c == exclude:
+			continue   # npc-04 — never dump a container into itself
+		if not c.has_method("receive_lumps"):
+			continue
+		var fill : float = 0.0
+		if c.has_method("fill_fraction"):
+			fill = float(c.call("fill_fraction"))
+		if c.is_in_group("waste_container_outdoor"):
+			# npc-05 — skips are destinations only, never indoor candidates
+			# (otherwise: outdoor full → dump outdoor→outdoor loop).
+			if fill < outdoor_lowest_fill:
+				outdoor_lowest_fill = fill
+				outdoor_lowest = c as Node3D
+			continue
+		if fill < best_any_fill:
+			best_any_fill = fill
+			best_any = c as Node3D
+		# During handover we tighten what counts as "open" so the crew leaves the
+		# nearest bins emptier for team B (route to a less-loaded bin sooner).
+		var full : bool = false
+		if c.has_method("is_full"):
+			full = bool(c.call("is_full"))
+		if in_handover and fill >= 0.5:
+			full = true
+		if not full and fill < best_open_fill:
+			best_open_fill = fill
+			best_open = c as Node3D
+	if best_open != null:
+		return best_open
+	if outdoor_lowest != null:
+		return outdoor_lowest   # npc-05 — #198 rule 4: indoor full/tightened → outdoor skip
+	return best_any   # npc-05 — no skip in the world: emptiest indoor still beats leaving the cart
 
 # ── Stubs for future task generators (operator-described pipeline). ─────────
 # Each can be filled in by writing a new NpcAutonomyTask subclass under
@@ -237,6 +408,7 @@ func _scan_dirty_floor(tree: SceneTree, seen: Dictionary) -> void:
 		if script == null:
 			continue
 		var task : NpcAutonomyTask = script.new(blower as Node3D, mw_ref)
+		task.base_priority = task.priority   # npc-09 — snapshot for in-place refresh
 		task.priority += pri_mod
 		_open_tasks[tid] = task
 	# Hose nozzles (water + air, same group, distinguished by `air_mode` flag).
@@ -264,10 +436,50 @@ func _scan_dirty_floor(tree: SceneTree, seen: Dictionary) -> void:
 		if hose_script == null:
 			continue
 		var nz_task : NpcAutonomyTask = hose_script.new(nz as Node3D, mw_ref)
+		nz_task.base_priority = nz_task.priority   # npc-09 — snapshot for in-place refresh
 		nz_task.priority += pri_mod
 		_open_tasks[nz_tid] = nz_task
 
+# ── Generator 3: shovel down FloorPiles that have built up. ──────────────────
+# A FloorPile (src/sim/FloorPile.gd, group "floor_pile") accumulates loose
+# material when bins overflow or LineFlow can't route a stream. Above
+# SHOVEL_PILE_MIN_KG the heap starts blocking lanes / intakes, so an idle NPC
+# grabs a shovel-worth of it into the nearest waste_container until it's low.
+const SHOVEL_PILE_MIN_KG : float = 60.0
+func _scan_floor_piles(tree: SceneTree, seen: Dictionary) -> void:
+	var mw_ref : Node = _find_main_world(tree)
+	var pri_mod : int = _cleaning_priority_modifier(mw_ref)
+	for pile in tree.get_nodes_in_group("floor_pile"):
+		if not is_instance_valid(pile):
+			continue
+		if not (pile is Node3D):
+			continue
+		if float(pile.get("mass_kg")) < SHOVEL_PILE_MIN_KG:
+			continue
+		var tid : int = pile.get_instance_id()
+		seen[tid] = true
+		if _open_tasks.has(tid):
+			continue
+		if pile.has_meta("autonomy_claimed_by"):
+			continue
+		var script := load("res://src/scenes/world/tasks/ShovelFloorPileTask.gd")
+		if script == null:
+			continue
+		var task : NpcAutonomyTask = script.new(pile as Node3D, mw_ref)
+		task.base_priority = task.priority   # npc-09 — snapshot for in-place refresh
+		task.priority += pri_mod
+		_open_tasks[tid] = task
+
 func _find_main_world(tree: SceneTree) -> Node:
+	# #audit-2026-07-08 — the root-children scan returned null in-game (autoload
+	# nodes precede the world under /root and the match was fragile), so mw_ref was
+	# null: BlowLeavesTask/HoseSweepTask fell back to raw plant-local waypoints near
+	# origin and every cleaning task timed out ("NPCs do nothing"). current_scene is
+	# the authoritative world node when loaded via change_scene — prefer it, keep the
+	# scan as a fallback for harness/embedded cases.
+	var cs := tree.current_scene
+	if cs != null and cs is Node3D and "_player_spawn_pos" in cs:
+		return cs
 	for c in tree.get_root().get_children():
 		if c is Node3D and "_player_spawn_pos" in c:
 			return c
@@ -333,34 +545,47 @@ func _cleaning_priority_modifier(mw: Node) -> int:
 		mod -= PRIORITY_PENALTY_PROBLEM
 	return mod
 
-## When the indoor lumps_container crosses is_full(), an NPC drives a forklift
-## load of bulk lumps from indoor → outdoor shipping_container instead.
+## npc-05 — When any indoor waste_container crosses is_full(), an NPC drives a
+## forklift load of bulk lumps from that bin to the outdoor skip (group
+## "waste_container_outdoor") with the most room — one OverflowDumpTask PER
+## full indoor bin. No skip in the world, or no idle forklift → emit nothing.
 func _scan_overflow_containers(tree: SceneTree, seen: Dictionary) -> void:
-	var indoor : Node3D = null
-	for c in tree.get_nodes_in_group("lumps_container_indoor"):
-		if c is Node3D and is_instance_valid(c):
-			indoor = c
-			break
-	if indoor == null:
-		return
+	# npc-05 — FIRST protect dump tasks that are ALREADY open from _rescan's
+	# stale-prune (:235-237), before any of the gates below can early-return.
+	# `seen` means "this target still exists", and a bin that is still in the
+	# world and still full has NOT gone away. Because the gates returned before
+	# populating it, the instant ANY forklift became occupied — an NPC boarding
+	# one to run this very task, or the operator simply climbing into it — the
+	# prune erased the in-flight task's key. Measured live as open=0 while
+	# active=2. Note this only re-confirms EXISTING keys: with no skip in the
+	# world (or no idle forklift) no NEW key is ever created, so a world without
+	# an outdoor destination still emits and marks nothing.
+	for held in tree.get_nodes_in_group("waste_container"):
+		if not (held is Node3D and is_instance_valid(held)):
+			continue
+		if held.is_in_group("waste_container_outdoor"):
+			continue
+		var held_id : int = held.get_instance_id()
+		if _open_tasks.has(held_id):
+			seen[held_id] = true
 
-	var is_full : bool = false
-	if indoor.has_method("is_full"):
-		is_full = bool(indoor.call("is_full"))
-	elif "lumps_count" in indoor:
-		is_full = int(indoor.get("lumps_count")) >= INDOOR_HARD_CAP
-
-	if not is_full:
-		return
-
+	# npc-05 — destination: the outdoor skip with the lowest fill_fraction().
 	var outdoor : Node3D = null
-	for c in tree.get_nodes_in_group("shipping_container_outdoor"):
-		if c is Node3D and is_instance_valid(c):
-			outdoor = c
-			break
+	var outdoor_fill : float = INF
+	for c in tree.get_nodes_in_group("waste_container_outdoor"):
+		if not (c is Node3D and is_instance_valid(c)):
+			continue
+		var fill : float = 0.0
+		if c.has_method("fill_fraction"):
+			fill = float(c.call("fill_fraction"))
+		if fill < outdoor_fill:
+			outdoor_fill = fill
+			outdoor = c as Node3D
 	if outdoor == null:
 		return
 
+	# npc-05 — global gate: without an idle forklift no dump run can start, so
+	# don't emit (or refresh `seen`) for any bin this scan.
 	var has_idle_forklift : bool = false
 	for f in tree.get_nodes_in_group("forklift"):
 		if f is Node3D and is_instance_valid(f):
@@ -370,30 +595,166 @@ func _scan_overflow_containers(tree: SceneTree, seen: Dictionary) -> void:
 	if not has_idle_forklift:
 		return
 
-	var tid : int = indoor.get_instance_id()
-	seen[tid] = true
-	if _open_tasks.has(tid):
-		return
-
 	var script := load("res://src/scenes/world/tasks/OverflowDumpTask.gd")
 	if script == null:
 		return
 
-	var task : NpcAutonomyTask = script.new(indoor, outdoor)
 	var mw_ref : Node = _find_main_world(tree)
-	task.priority += _cleaning_priority_modifier(mw_ref)
-	_open_tasks[tid] = task
+	var pri_mod : int = _cleaning_priority_modifier(mw_ref)
+	# npc-05 — one task per full indoor bin (the old code emitted only for the
+	# first bin it happened to find). Indoor = in "waste_container" but NOT in
+	# "waste_container_outdoor".
+	for bin in tree.get_nodes_in_group("waste_container"):
+		if not (bin is Node3D and is_instance_valid(bin)):
+			continue
+		if bin.is_in_group("waste_container_outdoor"):
+			continue   # npc-05 — the skip is a destination, never a source
+		var is_full : bool = false
+		if bin.has_method("is_full"):
+			is_full = bool(bin.call("is_full"))
+		elif "lumps_count" in bin:
+			is_full = int(bin.get("lumps_count")) >= INDOOR_HARD_CAP
+		if not is_full:
+			continue
+		var tid : int = bin.get_instance_id()
+		seen[tid] = true
+		if _open_tasks.has(tid):
+			continue
+		var task : NpcAutonomyTask = script.new(bin as Node3D, outdoor)
+		task.base_priority = task.priority   # npc-09 — snapshot for in-place refresh
+		task.priority += pri_mod
+		_open_tasks[tid] = task
+
+# ── Generator 1b: refuel low-fuel leaf blowers. ─────────────────────────────
+# A two-stroke leaf blower runs dry (LeafBlower.fuel_pct()); once below
+# RefuelBlowerTask.FUEL_LOW_FRACTION it can't do useful work, so an idle NPC
+# fetches fuel from a jerrycan and tops it up. Only meaningful when at least
+# one "jerrycan" is placed in the scene — with no can there's nowhere to refuel
+# from, so we emit nothing. Deduped by the blower's instance id (shares the
+# _open_tasks keyspace with the blow-circuit generator, so a given blower holds
+# at most one of {refuel, blow} — refuel wins because this runs first).
+func _scan_low_fuel_blowers(tree: SceneTree, seen: Dictionary) -> void:
+	var jerrycans : Array = tree.get_nodes_in_group("jerrycan")
+	if jerrycans.is_empty():
+		return   # nowhere to refuel from — don't emit
+	var rb_script := load("res://src/scenes/world/tasks/RefuelBlowerTask.gd")
+	if rb_script == null:
+		return
+	# Read FUEL_LOW_FRACTION off the loaded script (avoids a hard class_name
+	# dependency at parse time). Fall back to 0.25 if the const isn't present.
+	var low_frac : float = 0.25
+	var consts : Dictionary = rb_script.get_script_constant_map()
+	if consts.has("FUEL_LOW_FRACTION"):
+		low_frac = float(consts["FUEL_LOW_FRACTION"])
+	var mw_ref : Node = _find_main_world(tree)
+	var pri_mod : int = _cleaning_priority_modifier(mw_ref)
+	for blower in tree.get_nodes_in_group("leaf_blower"):
+		if not (blower is Node3D and is_instance_valid(blower)):
+			continue
+		if _blower_fuel_fraction(blower) >= low_frac:
+			continue   # still has fuel — let the blow-circuit generator have it
+		var tid : int = blower.get_instance_id()
+		seen[tid] = true
+		if _open_tasks.has(tid):
+			continue
+		if blower.has_meta("autonomy_claimed_by"):
+			continue
+		var can : Node3D = _nearest_in_group(tree, "jerrycan", blower)
+		if can == null:
+			continue
+		var task : NpcAutonomyTask = rb_script.new(blower as Node3D, can, mw_ref)
+		task.base_priority = task.priority   # npc-09 — snapshot for in-place refresh
+		task.priority += pri_mod
+		_open_tasks[tid] = task
 
 func _role_of(npc: Node) -> String:
 	if npc == null:
 		return ""
-	if not ("npc_id" in npc):
+	# Prefer the role set LIVE on the NPC node (the spawner / CrewManager set it).
+	# Reading it here decouples this autoload from the NPCSpawner class_name, whose
+	# script references the Plant autoload — so the board stays compilable and
+	# unit-testable headless (no NPCSpawner→Plant compile chain).
+	if "npc_role" in npc and String(npc.npc_role) != "":
+		return String(npc.npc_role)
+	# Fallback: NPCSpawner.NPC_DATA by npc_id, loaded at RUNTIME (not a compile-time
+	# class reference) so an un-tagged node still resolves in-game.
+	if not ("npc_id" in npc) or String(npc.npc_id) == "":
 		return ""
-	var npc_id : String = String(npc.npc_id)
-	if npc_id == "":
-		return ""
-	# Pull role out of NPCSpawner.NPC_DATA without coupling to MainWorld.
-	var npc_data : Dictionary = NPCSpawner.NPC_DATA if "NPC_DATA" in NPCSpawner else {}
-	if not npc_data.has(npc_id):
-		return ""
-	return String(npc_data[npc_id].get("role", ""))
+	var cat := _npc_role_catalog()
+	var nid : String = String(npc.npc_id)
+	if cat.has(nid):
+		return String((cat[nid] as Dictionary).get("role", ""))
+	return ""
+
+# Lazily load NPCSpawner.NPC_DATA once via load() so this autoload carries NO
+# compile-time dependency on NPCSpawner (which pulls in the Plant autoload).
+var _role_catalog_cache : Dictionary = {}
+var _role_catalog_tried : bool = false
+func _npc_role_catalog() -> Dictionary:
+	if _role_catalog_tried:
+		return _role_catalog_cache
+	_role_catalog_tried = true
+	var scr = load("res://src/scenes/world/NPCSpawner.gd")
+	if scr != null and scr.has_method("get_script_constant_map"):
+		var consts : Dictionary = scr.get_script_constant_map()
+		if consts.has("NPC_DATA") and consts["NPC_DATA"] is Dictionary:
+			_role_catalog_cache = consts["NPC_DATA"]
+	return _role_catalog_cache
+
+# ── Shared spatial helpers ──────────────────────────────────────────────────
+
+## Nearest live Node3D in `group` to `ref`'s global position. `ref` may be any
+## Node3D (an npc or another node such as a blower); a non-Node3D / null ref
+## degrades to distance-from-origin. Returns null if the group is empty.
+func _nearest_in_group(tree: SceneTree, group: String, ref: Node) -> Node3D:
+	if tree == null:
+		return null
+	var origin : Vector3 = Vector3.ZERO
+	if ref is Node3D and is_instance_valid(ref):
+		origin = (ref as Node3D).global_position
+	var best : Node3D = null
+	var best_d : float = INF
+	for n in tree.get_nodes_in_group(group):
+		if not (n is Node3D and is_instance_valid(n)):
+			continue
+		var d : float = ((n as Node3D).global_position - origin).length()
+		if d < best_d:
+			best_d = d
+			best = n as Node3D
+	return best
+
+## The leaf blower that most needs refuelling: lowest fuel fraction, ties broken
+## by proximity to `ref`. Returns null if no leaf blower exists.
+func _lowest_fuel_blower(tree: SceneTree, ref: Node) -> Node3D:
+	if tree == null:
+		return null
+	var origin : Vector3 = Vector3.ZERO
+	if ref is Node3D and is_instance_valid(ref):
+		origin = (ref as Node3D).global_position
+	var best : Node3D = null
+	var best_frac : float = INF
+	var best_d : float = INF
+	for b in tree.get_nodes_in_group("leaf_blower"):
+		if not (b is Node3D and is_instance_valid(b)):
+			continue
+		var frac : float = _blower_fuel_fraction(b)
+		var d : float = ((b as Node3D).global_position - origin).length()
+		if frac < best_frac - 0.0001 or (absf(frac - best_frac) <= 0.0001 and d < best_d):
+			best_frac = frac
+			best_d = d
+			best = b as Node3D
+	return best
+
+## Fuel fraction 0..1 for a leaf blower. Prefers the LeafBlower.fuel_pct() API;
+## falls back to fuel_l / fuel_capacity_l; defaults to 1.0 (treat as full, i.e.
+## "no refuel needed") when no fuel state is exposed.
+func _blower_fuel_fraction(b: Node) -> float:
+	if b == null:
+		return 1.0
+	if b.has_method("fuel_pct"):
+		return float(b.call("fuel_pct"))
+	var cap : float = float(b.get("fuel_capacity_l")) if "fuel_capacity_l" in b else 0.0
+	var lvl : float = float(b.get("fuel_l")) if "fuel_l" in b else 0.0
+	if cap > 0.0:
+		return clampf(lvl / cap, 0.0, 1.0)
+	return 1.0

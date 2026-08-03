@@ -20,7 +20,7 @@ const FEEDERS_ENABLED : bool = true
 # ── Public entry point ──────────────────────────────────────────────────────
 ## Call from MainWorld in place of the old inline legacy-prop block. Honours
 ## CLEAN_CANVAS on the world (the in-source toggle that hides the test props).
-static func spawn_all(world: Node, factory_anchor: Vector3, vehicle_anchor: Vector3, floor_top_y: float) -> void:
+static func spawn_all(world: Node, _factory_anchor: Vector3, _vehicle_anchor: Vector3, _floor_top_y: float) -> void:
 	_spawn_battery_station(world)
 	_spawn_shift_leader_desk(world)
 	_spawn_service_stations(world)
@@ -36,25 +36,30 @@ static func spawn_all(world: Node, factory_anchor: Vector3, vehicle_anchor: Vect
 	_spawn_feeder_line(world)
 
 # =============================================================================
-# TEST BUNKER — an intake pit beside the player to dump carried bales into
+# TEST BALE INTAKE — an opzetband beside the player to dump carried bales onto
 # =============================================================================
-## Drops a single intake bunker a short distance from the player's spawn so the
-## full loop is testable on the spot: grab a stack from the yard → carry it over →
-## release it at the bunker → LineFlow picks up the delivered bale and meters it in.
-## Tagged "placed_object" + "feed_machine" like a build-placed one so LineFlow's
-## scan treats it as a real feed point.
+## Drops a single opzetband (bale feed belt) a short distance from the player's
+## spawn so the full loop is testable on the spot: grab a stack from the yard →
+## carry it over → release it at the intake → LineFlow picks up the delivered
+## bale and meters it in.
+## 2026-07-06 (bunker.md flag F16): this used to spawn a `bunker` as the
+## bale-dump target, but the rebuilt bunker is a buffer CONVEYOR downstream of
+## shredder 1 — bales feed the opzetband/shredder-1 head (SWI-042p1 "Stop met
+## balen invoeren"; SWI-035 front-end order), so the test flow retargets to
+## `opzetband_3a3b`. Function name kept: the spawn_all call site + save-less
+## test worlds reference it.
 static func _spawn_test_bunker(world: Node) -> void:
 	var base : Vector3 = world.call("_get_factory_anchor")
 	# In front of the player, past the bale yard, clear of the vehicle row.
 	# -0.9 grounds the base (anchor is the player capsule centre, ~0.9 m up).
 	base += Vector3(2.0, -0.9, 14.0)
-	var bunker := PlaceableCatalog.build_node("bunker", false) as Node3D
-	if bunker == null:
-		push_warning("[LegacyPropsSpawner] test bunker build failed")
+	var intake := PlaceableCatalog.build_node("opzetband_3a3b", false) as Node3D
+	if intake == null:
+		push_warning("[LegacyPropsSpawner] test bale-intake build failed")
 		return
-	world.add_child(bunker)
-	bunker.global_position = base
-	print("[LegacyPropsSpawner] Test bunker spawned at %s" % str(base))
+	world.add_child(intake)
+	intake.global_position = base
+	print("[LegacyPropsSpawner] Test bale intake (opzetband_3a3b) spawned at %s" % str(base))
 
 # =============================================================================
 # MACHINES — Extruder 3B (first machine sim, drives the 120s cascade test)
@@ -328,17 +333,18 @@ static func _spawn_feeder_station(world: Node, station: Vector3, worker_name: St
 		v.global_position = station + Vector3(2.0, 0.5, -3.0)
 		worker.assign_vehicle(v)
 
-	# 5) Personal scissors + scanner on the holster (not player-grabbable).
+	# 5) Personal scissors + scanner. #241 — the kit is NOT conjured onto the
+	#    worker: it lies beside the belt frame at the loading end (the same "one
+	#    pickup point" rule CrewManager._kit_feeder_from_pickup applies) and the
+	#    worker WALKS over and picks it up before boarding.
+	var pickup : Vector3 = station + Vector3(1.4, 0.35, 0.0)
 	var scissors := WireCutter.new()
 	world.add_child(scissors)
-	scissors.global_position = worker.global_position
-	worker.stow_personal_tool(scissors, -1.0)
+	scissors.global_position = pickup + Vector3(-0.25, 0.0, 0.0)
 	var scanner := preload("res://src/scenes/world/BarcodeScanner.gd").new()
 	world.add_child(scanner)
-	scanner.global_position = worker.global_position
-	worker.stow_personal_tool(scanner, 1.0)
-	worker.personal_scissors = scissors
-	worker.personal_scanner = scanner
+	scanner.global_position = pickup + Vector3(0.25, 0.0, 0.0)
+	worker.begin_tool_fetch(pickup, scissors, scanner)
 
 	print("[LegacyPropsSpawner] Feeder station: %s on %s (vehicle %s)" % \
 			[worker_name, line_name, vehicle_scene_path.get_file()])
@@ -408,7 +414,11 @@ static func _spawn_test_skip(world: Node) -> void:
 		world.add_child(skip)
 		skip.global_position = anchor + Vector3(6.0, 0.0, 18.0)
 		# Configure as a COARSE_FILM-only catcher (Stream.COARSE_FILM = 0).
-		skip.set("accepted_streams", [0])
+		# MUST be a typed Array[int]: set() with an untyped Array silently
+		# no-ops on the Array[int] export, leaving the bin an accept-everything
+		# catch-all.
+		var skip_streams : Array[int] = [0]
+		skip.set("accepted_streams", skip_streams)
 		skip.set("capacity_m3", 2.4)
 		skip.set("safe_fill", 0.8)
 		# Seed with some material so the operator can see the dump-empty cycle work.
@@ -467,7 +477,8 @@ static func _spawn_test_waste_zones(world: Node) -> void:
 			continue
 		world.add_child(bin)
 		bin.global_position = Vector3(anchor.x + 9.0 + float(i) * 1.1, floor_y, anchor.z + 22.0)
-		bin.set("accepted_streams", [1])   # Stream.FINES
+		var bin_streams : Array[int] = [1]   # Stream.FINES (typed — untyped no-ops on Array[int])
+		bin.set("accepted_streams", bin_streams)
 		bin.set("capacity_m3", 0.7)
 		bin.set("safe_fill", 0.8)
 		# Seed the LAST bin past its safe-fill so the mound visualisation is live.
@@ -480,7 +491,8 @@ static func _spawn_test_waste_zones(world: Node) -> void:
 	if cb != null:
 		world.add_child(cb)
 		cb.global_position = Vector3(anchor.x + 13.0, floor_y, anchor.z + 25.0)
-		cb.set("accepted_streams", [4])    # Stream.SLUDGE
+		var cb_streams : Array[int] = [4]    # Stream.SLUDGE (typed — untyped no-ops on Array[int])
+		cb.set("accepted_streams", cb_streams)
 		cb.set("capacity_m3", 1.3)
 		cb.set("safe_fill", 0.85)
 		cb.set("mound_color", Color(0.32, 0.30, 0.26))
@@ -495,7 +507,8 @@ static func _spawn_test_waste_zones(world: Node) -> void:
 	if ibc != null:
 		world.add_child(ibc)
 		ibc.global_position = Vector3(anchor.x + 17.0, floor_y, anchor.z + 25.0)
-		ibc.set("accepted_streams", [5])   # Stream.EFFLUENT
+		var ibc_streams : Array[int] = [5]   # Stream.EFFLUENT (typed — untyped no-ops on Array[int])
+		ibc.set("accepted_streams", ibc_streams)
 		ibc.set("capacity_m3", 1.0)
 		ibc.set("safe_fill", 0.9)
 		ibc.set("movable", false)

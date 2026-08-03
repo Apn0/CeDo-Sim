@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>html,body{margin:0;padding:0;background:#0a0a0a;} a{color:#4aa3e0;text-decoration:none;} a:hover{color:#7cc0f0;}</style>
+</helmet>
+<div style="width:1024px;height:768px;position:relative;overflow:hidden;background:#101609;font-family:Arial,Helvetica,sans-serif;color:#111;font-size:15px;" data-screen-label="EREMA extruder">
+
+  <!-- ===== mimic (behind value boxes) ===== -->
+  <svg style="position:absolute;left:300px;top:150px;" width="700" height="340" viewBox="0 0 700 340">
+    <!-- barrel -->
+    <rect x="30" y="250" width="660" height="70" fill="#dde4ef" stroke="#46587a" stroke-width="2"></rect>
+    <!-- peaked zone dividers rising above the barrel -->
+    <path d="M120 250 L165 214 L210 250" fill="none" stroke="#3d4d6b" stroke-width="1.5"></path>
+    <path d="M270 250 L315 214 L360 250" fill="none" stroke="#3d4d6b" stroke-width="1.5"></path>
+    <path d="M420 250 L465 214 L510 250" fill="none" stroke="#3d4d6b" stroke-width="1.5"></path>
+    <path d="M560 250 L605 214 L650 250" fill="none" stroke="#3d4d6b" stroke-width="1.5"></path>
+    <!-- gearbox stub -->
+    <rect x="600" y="226" width="70" height="24" fill="#c3cede" stroke="#46587a" stroke-width="1.5"></rect>
+    <!-- hopper: single outline, rectangular body + integrated left-pointing intake wedge, flat on barrel -->
+    <polygon points="130,8 350,8 350,250 215,250 130,150 40,105 130,60" fill="#e4e9f1" stroke="#46587a" stroke-width="2"></polygon>
+    <line x1="245" y1="8" x2="245" y2="180" stroke="#8f9db5" stroke-width="1.5"></line>
+  </svg>
+
+  <!-- ===== top row ===== -->
+  <div style="position:absolute;top:30px;left:382px;width:180px;background:#f2f2ee;border:1px solid #8b8b8b;">
+    <div style="padding:4px 8px;font-size:12px;color:#555;border-bottom:1px solid #ccc;">SV-vulpeil</div>
+    <div style="display:flex;align-items:baseline;gap:10px;padding:8px 10px;"><span style="font-size:28px;font-weight:600;">0</span><span style="color:#555;">cm</span></div>
+  </div>
+  <div style="position:absolute;top:30px;left:620px;display:flex;">
+    <div style="width:150px;background:#f2f2ee;border:1px solid #8b8b8b;">
+      <div style="padding:4px 8px;font-size:12px;color:#555;border-bottom:1px solid #ccc;">afzuiging 1</div>
+      <div style="display:flex;align-items:baseline;gap:10px;padding:8px 10px;"><span style="font-size:28px;font-weight:600;">0</span><span style="color:#555;">%</span></div>
+    </div>
+    <div style="width:130px;background:#f2f2ee;border:1px solid #8b8b8b;border-left:none;">
+      <div style="padding:4px 8px;font-size:12px;color:#555;border-bottom:1px solid #ccc;">afzuiging 2</div>
+      <div style="display:flex;align-items:baseline;gap:10px;padding:8px 10px;"><span style="font-size:28px;font-weight:600;">0</span></div>
+    </div>
+  </div>
+
+  <!-- ===== left column ===== -->
+  <div style="position:absolute;top:250px;left:40px;width:200px;background:#f2f2ee;border:1px solid #8b8b8b;">
+    <div style="padding:4px 8px;font-size:12px;color:#555;border-bottom:1px solid #ccc;">schuif</div>
+    <div style="display:flex;align-items:baseline;gap:10px;padding:8px 10px;"><span style="font-size:28px;font-weight:600;">0</span><span style="color:#555;">%</span></div>
+  </div>
+  <div style="position:absolute;top:430px;left:40px;width:210px;background:#f2f2ee;border:1px solid #8b8b8b;">
+    <div style="padding:4px 8px;font-size:12px;color:#555;border-bottom:1px solid #ccc;">ex - belasting</div>
+    <div style="display:flex;align-items:baseline;gap:10px;padding:8px 10px;"><span style="font-size:28px;font-weight:600;">0</span><span style="color:#555;">%</span></div>
+  </div>
+  <div style="position:absolute;top:530px;left:40px;width:210px;background:#f2f2ee;border:1px solid #8b8b8b;">
+    <div style="padding:4px 8px;font-size:12px;color:#555;border-bottom:1px solid #ccc;">extr rpm</div>
+    <div style="display:flex;align-items:baseline;gap:10px;padding:8px 10px;"><span style="font-size:28px;font-weight:600;">0</span><span style="color:#555;">rpm</span></div>
+    <div style="display:flex;align-items:baseline;gap:10px;padding:6px 10px;border-top:1px solid #ccc;background:#2a4fa8;"><span style="font-size:24px;font-weight:600;color:#fff;">0</span><span style="color:#dfe6f2;">rpm</span></div>
+  </div>
+
+  <!-- ===== SV-temperatuur (overlays hopper, as in original) ===== -->
+  <div style="position:absolute;top:330px;left:258px;width:190px;background:#f2f2ee;border:1px solid #8b8b8b;">
+    <div style="padding:4px 8px;font-size:12px;color:#555;border-bottom:1px solid #ccc;">SV-temperatuur</div>
+    <div style="display:flex;align-items:baseline;gap:10px;padding:8px 10px;"><span style="font-size:28px;font-weight:600;">0</span><span style="color:#555;">°C</span></div>
+  </div>
+
+  <!-- ===== right column ===== -->
+  <div style="position:absolute;top:180px;left:770px;width:190px;background:#f2f2ee;border:1px solid #8b8b8b;">
+    <div style="padding:4px 8px;font-size:12px;color:#555;border-bottom:1px solid #ccc;">SV-belasting</div>
+    <div style="display:flex;align-items:baseline;gap:10px;padding:8px 10px;"><span style="font-size:28px;font-weight:600;">0</span><span style="color:#555;">%</span></div>
+  </div>
+  <div style="position:absolute;top:272px;left:770px;width:190px;background:#f2f2ee;border:1px solid #8b8b8b;">
+    <div style="padding:4px 8px;font-size:12px;color:#555;border-bottom:1px solid #ccc;">SV-vermogen</div>
+    <div style="display:flex;align-items:baseline;gap:10px;padding:8px 10px;"><span style="font-size:28px;font-weight:600;">0</span><span style="color:#555;">kW</span></div>
+  </div>
+
+  <!-- ===== zone temperature strip: overlays the barrel's lower half ===== -->
+  <div style="position:absolute;top:435px;left:430px;display:flex;">
+    <sc-for list="{{ zones }}" as="z" hint-placeholder-count="4">
+      <div style="width:130px;background:#f2f2ee;border:1px solid #8b8b8b;border-left:none;">
+        <div style="padding:4px 8px;font-size:12px;color:#555;border-bottom:1px solid #ccc;">{{ z.name }}</div>
+        <div style="display:flex;align-items:baseline;gap:8px;padding:8px 10px;"><span style="font-size:26px;font-weight:600;">0</span><span style="font-size:13px;color:#555;">°C</span></div>
+        <div style="width:42px;height:6px;background:#6ad0e0;margin:0 0 8px 10px;"></div>
+      </div>
+    </sc-for>
+  </div>
+
+  <!-- ===== bottom icon bar ===== -->
+  <div style="position:absolute;left:300px;right:20px;bottom:24px;height:100px;display:flex;align-items:center;justify-content:space-around;color:#aebbc7;font-size:13px;">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;">
+      <svg width="56" height="46" viewBox="0 0 56 46"><rect x="4" y="8" width="34" height="30" rx="5" fill="none" stroke="#aebbc7" stroke-width="3"></rect><line x1="38" y1="23" x2="52" y2="23" stroke="#aebbc7" stroke-width="3"></line><polygon points="46,15 56,23 46,31" fill="#aebbc7"></polygon></svg>
+      <span>uitloop</span>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;">
+      <svg width="76" height="46" viewBox="0 0 76 46"><path d="M8 10 L8 30 Q8 38 18 38" fill="none" stroke="#aebbc7" stroke-width="4" stroke-linecap="round"></path><path d="M32 10 L32 30 Q32 38 42 38" fill="none" stroke="#aebbc7" stroke-width="4" stroke-linecap="round"></path><path d="M56 10 L56 30 Q56 38 66 38" fill="none" stroke="#aebbc7" stroke-width="4" stroke-linecap="round"></path></svg>
+      <span>extruder</span>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;">
+      <svg width="60" height="46" viewBox="0 0 60 46"><polygon points="30,6 52,23 30,40 8,23" fill="none" stroke="#aebbc7" stroke-width="3"></polygon><line x1="30" y1="14" x2="30" y2="32" stroke="#aebbc7" stroke-width="3" stroke-dasharray="4 3"></line></svg>
+      <span>smelt…</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1024,&quot;height&quot;:768}}">
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      zones: [{name:"EZ-1"},{name:"ZZ-1"},{name:"ZZ-2"},{name:"ZZ-3"}],
+    };
+  }
+}
+</script>
+</body>
+</html>

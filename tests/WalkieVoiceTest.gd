@@ -44,11 +44,14 @@ func _ready() -> void:
 	# A single word still speaks (≥1 syllable).
 	_ok(_am._build_voice_plan("Standby.").size() >= 1, "single word still produces a syllable")
 
-	# Incoming call arms the synth; length = squelch (~0.20s) + plan.
+	# Incoming call arms the synth. #159/T1 — length now uses a word-count
+	# carrier (not the formant syllable plan): SQUELCH_IN + clamp(0.35 +
+	# 0.12×words, 0.40, 1.40) + SQUELCH_OUT. "Copy that." = 2 words.
 	_am.play_radio_call("Copy that.", 0.6, false)
 	_ok(float(_am._radio_t) > 0.0, "incoming call arms the voice synth")
-	_ok(absf(float(_am._radio_len) - (d_short + 0.20)) < 0.01,
-		"call length = opening + plan + closing squelch (%.2fs)" % float(_am._radio_len))
+	var expected_len : float = _am.SQUELCH_IN + clampf(0.35 + 0.12 * 2.0, 0.40, 1.40) + _am.SQUELCH_OUT
+	_ok(absf(float(_am._radio_len) - expected_len) < 0.01,
+		"call length = squelch_in + word-count carrier + squelch_out (%.2fs)" % float(_am._radio_len))
 
 	# Dead radio (loudness 0) must NOT arm — nothing comes through.
 	_am._radio_t = 0.0

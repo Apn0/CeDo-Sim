@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>html,body{margin:0;padding:0;background:#20262e;} a{color:#1a5aa8;text-decoration:none;} a:hover{color:#2f74c4;}</style>
+</helmet>
+<div style="{{ screenStyle }}" data-screen-label="Waslijn 3A storingen">
+
+  <!-- header -->
+  <div style="{{ barStyle }}">
+    <svg width="22" height="16" viewBox="0 0 22 16"><rect x="1" y="1" width="9" height="14" fill="#2f6fb0"></rect><rect x="12" y="1" width="9" height="14" fill="#3a3f4a"></rect></svg>
+    <span style="font-weight:700;color:{{ brandColor }};">CeDo</span>
+    <span style="margin-left:6px;">Installatie opgestart</span>
+    <div style="flex:1;text-align:center;font-size:15px;font-weight:600;">Auto</div>
+    <span>CeDo Recycling</span>
+    <div style="text-align:right;line-height:1.15;color:#333;margin-left:10px;"><div>20-6-2025</div><div>2:05:10</div></div>
+  </div>
+
+  <!-- active alarm row (highlighted) -->
+  <div style="{{ activeStyle }}">
+    <span style="width:44px;padding-left:20px;">439</span><span style="width:70px;">2:03:08</span><span style="width:90px;">20-6-2025</span>
+    <span style="flex:1;">+CP3-516S7 storing onderdrukmeting V1</span>
+    <span style="width:130px;">Groep bevestigen</span><span style="width:30px;text-align:center;">0</span>
+  </div>
+
+  <!-- column header -->
+  <div style="{{ headStyle }}">
+    <span style="width:44px;padding-left:20px;">Nr.</span><span style="width:70px;">Tijd</span><span style="width:90px;">Datum</span><span style="width:60px;">Status</span><span style="flex:1;">Tekst</span><span style="width:30px;text-align:center;">0</span>
+  </div>
+
+  <!-- rows -->
+  <div style="{{ bodyStyle }}">
+    <sc-for list="{{ rows }}" as="r" hint-placeholder-count="20">
+      <div style="display:flex;align-items:center;height:{{ r.rowH }};font-size:{{ r.fs }};background:{{ r.bg }};border-bottom:1px solid {{ r.lh }};">
+        <span style="width:44px;padding-left:20px;">{{ r.nr }}</span>
+        <span style="width:70px;">{{ r.tijd }}</span>
+        <span style="width:90px;">{{ r.datum }}</span>
+        <span style="width:60px;">{{ r.status }}</span>
+        <span style="flex:1;">{{ r.tekst }}</span>
+        <span style="width:30px;text-align:center;">0</span>
+      </div>
+    </sc-for>
+  </div>
+
+  <!-- bottom nav -->
+  <div style="{{ footStyle }}">
+    <div style="width:46px;{{ btnStyle }}">⌂</div>
+    <div style="width:90px;{{ btnStyle }}">Actueel</div>
+    <div style="width:90px;background:#35c23a;border:1px solid #1f8a20;display:flex;align-items:center;justify-content:center;color:#fff;cursor:pointer;">Buffer</div>
+    <div style="width:100px;background:#35c23a;border:1px solid #1f8a20;display:flex;align-items:center;justify-content:center;text-align:center;line-height:1.15;color:#fff;cursor:pointer;">Freq.<br>Regelaars</div>
+    <div style="flex:1;"></div>
+    <div style="width:46px;{{ btnStyle }}">⏻</div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1024,&quot;height&quot;:640},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Klassiek Siemens&quot;,&quot;Donker HMI&quot;,&quot;Hoog contrast&quot;],&quot;default&quot;:&quot;Klassiek Siemens&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Uitstraling&quot;},&quot;density&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Compact&quot;,&quot;Normaal&quot;,&quot;Ruim&quot;],&quot;default&quot;:&quot;Normaal&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Uitstraling&quot;},&quot;zebra&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Uitstraling&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const T = (nr,tijd,status,tekst) => ({nr,tijd,datum:"19-6-2025",status,tekst});
+    const theme = this.props.theme ?? "Klassiek Siemens";
+    const density = this.props.density ?? "Normaal";
+    const zebra = this.props.zebra ?? false;
+
+    const THEMES = {
+      "Klassiek Siemens": {
+        screen:"#dfe4ea", text:"#111", bar:"#eef1f5", barBorder:"#b8bfc9", brand:"#2f4a7a",
+        headCell:"#c4ccd6", headBorder:"#9aa0aa", body:"#fff", rowLine:"#dfe4ea",
+        active:"#2f6fd0", activeText:"#fff", zebra:"#eef2f7", btn:"#fff", btnBorder:"#9aa0aa"
+      },
+      "Donker HMI": {
+        screen:"#161a20", text:"#dfe4ea", bar:"#20262e", barBorder:"#3a424e", brand:"#6fa8e0",
+        headCell:"#2a323c", headBorder:"#3a424e", body:"#1b2129", rowLine:"#2a323c",
+        active:"#2f6fd0", activeText:"#fff", zebra:"#222932", btn:"#2a323c", btnBorder:"#3a424e"
+      },
+      "Hoog contrast": {
+        screen:"#000", text:"#fff", bar:"#111", barBorder:"#555", brand:"#ffd23a",
+        headCell:"#222", headBorder:"#666", body:"#000", rowLine:"#333",
+        active:"#ffd23a", activeText:"#000", zebra:"#141414", btn:"#111", btnBorder:"#777"
+      },
+    };
+    const DENS = {
+      "Compact": {h:18, fs:11, hh:16, active:18},
+      "Normaal": {h:23, fs:12, hh:20, active:22},
+      "Ruim":    {h:30, fs:14, hh:26, active:28},
+    };
+    const t = THEMES[theme] || THEMES["Klassiek Siemens"];
+    const d = DENS[density] || DENS["Normaal"];
+    const raw = [
+        {nr:"439",tijd:"2:03:08",datum:"20-6-2025",status:"I",tekst:"+CP3-516S7 storing onderdrukmeting V1"},
+        {nr:"439",tijd:"2:03:06",datum:"20-6-2025",status:"(I)O",tekst:"+CP3-516S7 storing onderdrukmeting V1"},
+        T("439","23:50:30","I","+CP3-516S7 storing onderdrukmeting V1"),
+        T("439","23:50:29","(I)O","+CP3-516S7 storing onderdrukmeting V1"),
+        T("439","23:48:53","I","+CP3-516S7 storing onderdrukmeting V1"),
+        T("439","23:48:47","(I)O","+CP3-516S7 storing onderdrukmeting V1"),
+        T("439","23:48:31","I","+CP3-516S7 storing onderdrukmeting V1"),
+        T("439","23:48:29","(I)O","+CP3-516S7 storing onderdrukmeting V1"),
+        T("439","23:48:28","I","+CP3-516S7 storing onderdrukmeting V1"),
+        T("439","23:48:25","(I)O","+CP3-516S7 storing onderdrukmeting V1"),
+        T("439","23:45:41","I","+CP3-516S7 storing onderdrukmeting V1"),
+        T("439","23:45:37","(I)O","+CP3-516S7 storing onderdrukmeting V1"),
+        T("439","23:45:36","I","+CP3-516S7 storing onderdrukmeting V1"),
+        T("439","23:45:35","(I)O","+CP3-516S7 storing onderdrukmeting V1"),
+        T("439","23:39:36","I","+CP3-516S7 storing onderdrukmeting V1"),
+        T("568","23:38:36","I","Onderdrukschakelaar te weinig druk. Stopt Heater R1-4 en Schroef M11A"),
+        T("568","23:38:26","(I)O","Onderdrukschakelaar te weinig druk. Stopt Heater R1-4 en Schroef M11A"),
+        T("568","23:38:23","I","+CP3-516S7 storing onderdrukmeting V1"),
+        T("439","22:39:23","(I)O","+CP3-516S7 storing onderdrukmeting V1"),
+        T("568","17:44:08","I","Onderdrukschakelaar te weinig druk. Stopt Heater R1-4 en Schroef M11A"),
+        T("439","17:43:54","I","+CP3-516S7 storing onderdrukmeting V1"),
+        T("568","17:42:54","I","Onderdrukschakelaar te weinig druk. Stopt Heater R1-4 en Schroef M11A"),
+        T("36","14:41:18","(I)O","M15.4 Lage druk hydro-unit"),
+        T("36","14:41:16","I","M15.4 Lage druk hydro-unit"),
+        T("567","14:38:11","(I)O","Onderdrukschakelaar te weinig druk. Stopt Heater R5-8 en Schroef M11B"),
+        T("567","14:38:02","I","Onderdrukschakelaar te weinig druk. Stopt Heater R5-8 en Schroef M11B"),
+    ];
+    const rows = raw.map((r,i) => ({
+      ...r,
+      bg: zebra ? (i % 2 ? t.zebra : t.body) : t.body,
+      rowH: d.h + "px", fs: d.fs + "px", lh: d.rowLine,
+    }));
+    return {
+      th: t, dn: d,
+      screenStyle: `width:1024px;height:640px;position:relative;overflow:hidden;background:${t.screen};font-family:Tahoma,Verdana,sans-serif;color:${t.text};font-size:${d.fs}px;`,
+      barStyle: `position:absolute;top:0;left:0;right:0;height:30px;background:${t.bar};border-bottom:1px solid ${t.barBorder};display:flex;align-items:center;padding:0 10px;gap:10px;`,
+      brandColor: t.brand,
+      activeStyle: `position:absolute;top:30px;left:0;right:0;height:${d.active}px;background:${t.active};color:${t.activeText};display:flex;align-items:center;font-weight:600;`,
+      headStyle: `position:absolute;top:${30+d.active}px;left:0;right:0;height:${d.hh}px;background:${t.headCell};border-bottom:1px solid ${t.headBorder};display:flex;align-items:center;font-weight:700;color:${t.text};`,
+      bodyStyle: `position:absolute;top:${30+d.active+d.hh}px;left:0;right:0;bottom:44px;overflow:hidden;background:${t.body};`,
+      footStyle: `position:absolute;left:0;right:0;bottom:0;height:44px;background:${t.bar};border-top:1px solid ${t.barBorder};display:flex;align-items:stretch;gap:5px;padding:5px 8px;`,
+      btnStyle: `background:${t.btn};border:1px solid ${t.btnBorder};display:flex;align-items:center;justify-content:center;cursor:pointer;color:${t.text};`,
+      rows,
+    };
+  }
+}
+</script>
+</body>
+</html>

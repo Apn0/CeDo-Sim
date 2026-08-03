@@ -1,0 +1,1110 @@
+# Line 3C / wash-line 6 SCADA tag list (3c_tags.xlsx) - full transcription
+
+**Source:** `F:/Citizen/Documents/CeDo/Random Exports/3c_tags.xlsx` (Sheet1, single column, 1084 rows of which 1056 unique)
+**Extraction date:** 2026-07-04
+**Machine-readable copy:** `src/data/plant/line3c_scada_tags.json`
+
+The tag tree is rooted at `scada/3c/...` and `lines/3c/...`, but the *metingen* (measurement) tags
+under `scada/3c/meeting/...` reference equipment numbers prefixed `6_` (e.g. `6_11_flotatietank`,
+`6_3_bezinkafscheider`, `6_6_maalmolen`). The `washer6/` CSV exports use the same unit numbers
+(611, 63, 66, 614l...). Open question for the operator: is "3c" here the SCADA node name that hosts
+the line-6 wash line, or does the wash line administratively belong to line 3C?
+
+## Tree structure (counts of unique tags)
+
+- `historicaldata/3c/...` - 11 tags (OEE history: availability/performance/quality/oee, budgetted+target, linestatus, ordernumber)
+- `lines/3c/...` - 16 tags (live OEE: availability/performance/quality/oee + budgetted/target, linestatus, ordernumber, productioncounter, throughputactual, targetspeed, opc/output)
+- `scada/3c/info/<unit>/<motor>/<leaf>` - live per-motor process values
+- `scada/3c/setpoints/<unit>/<motor>/<leaf>` - per-motor setpoints
+- `scada/3c/meeting/{overig|temperatuur|vibratie}/...` - waterflow, temperature and vibration sensors with explicit `6_x` unit names
+
+### Units present under scada/3c (info/setpoints), with Dutch motor names
+| Unit | Motors/devices (glossed on first use) |
+|---|---|
+| 1 | em (elektromotor block: alarm/hand/leegdraaitijd (run-empty time)/safety/snelheid (speed)/starttijd/status/stoptijd), niveau meting (level measurement), schroef (screw conveyor) 1-3 |
+| 3 | em, fqafvoerschroef1/2 (frequency-drive discharge screws), fqafvoerwalz (FQ discharge roller), fqpeddelwals1en2 (FQ paddle rollers), intrekwals (pull-in roller), motorafvoerschraper (discharge scraper motor), niveau meting |
+| 4l / 4r | em, softstarterfrictiewasser (softstarter friction washer) |
+| 5l / 5r | em, schroef 1 / schroef 2 |
+| 6 | em, hydrauliek (hydraulics), schroef 1-3, softstartersnijmolen (softstarter cutting mill / grinder) |
+| 7 | setpoints/em only |
+| 9l / 9r | em, softstarterfrictiewasser |
+| 10l / 10r | em, schroef 1 / schroef 2 |
+| 11 | em, afvoerschraper (discharge scraper), afvoerschroef (discharge screw), afvoerwals (discharge roller), intrekwals, niveau, peddelwals (paddle roller) 1_2_3_4 / 5_6_7_8 / 9_10, uittrekschroef (extraction screw) |
+| 12 | em, afvoerschroef |
+| 13 | em, softstarterfrictiewasser, loopcontrollefrictiewasser (run monitoring) |
+| 14l / 14r | em, fq_roterende_klep (FQ rotary valve, 14l only), motorreinigingsschrapper (cleaning-scraper motor), motorroterendeklep (rotary-valve motor), softstarterdroger1/2 (softstarter dryer) |
+| 15 | em, fqventilator (FQ fan) |
+| 16 | em only |
+| 18 | em, fqschroef, motorroterroeras1/2 (rotating agitator shaft motors), motorventilator, niveau |
+| 19 | em, fqventilator |
+| 20 | em only |
+
+### Measurement (meeting) tags - explicit 6_x equipment names
+- overig (other): `6_11_flotatietank waterflow` (flotation tank water flow), `6_3_bezinkafscheider waterflow` (settling separator water flow), `6_6_maalmolen waterflow` (grinding mill water flow)
+- temperatuur + vibratie (identical name sets): `6_13_frictiescheider_links_rechts_{links,rechts}` (friction separator), `6_14l_mechanische_droger_links_{voor,achter}` (mechanical dryer L front/rear), `6_14r_mechanische_droger_rechts_{voor,achter}`, `6_4l_frictiescheider_links_{boven,onder}` (top/bottom), `6_4r_frictiescheider_rechts_{boven,onder}`, `6_9l_frictiescheider_links_{boven,onder}`, `6_9r_frictiescheider_rechts_{boven,onder}`
+
+Common leaf vocabulary: alarm, handauto (hand/auto), start, stop, status, stroom (current), frequentie (frequency),
+snelheid (speed), leegdraaitijd (run-empty time), aanlooptijd (run-up time), uitlooptijd (run-out time),
+loopbewakingtijd (run-monitoring time), niveau (level), niveauhoog/hooghoog/laag/laaglaag (level alarms HH/H/L/LL),
+bsnelheidlangzaam / isnelheidlangzaam (slow-speed setpoints [unsure: b=bewaakte/i=instel]), draairichting (rotation direction),
+startstophand / stopstarthand (manual start-stop), bstarttijd/tstarttijd + bewaking (start/stop times and their monitoring),
+schroef_x_enable, safety, hand.
+
+## Full unique tag list (1056 tags, verbatim)
+
+- `historicaldata/3c/availability/availability`
+- `historicaldata/3c/availability/budgetted`
+- `historicaldata/3c/availability/target`
+- `historicaldata/3c/data/linestatus`
+- `historicaldata/3c/data/ordernumber`
+- `historicaldata/3c/oeebudgetted`
+- `historicaldata/3c/oeetarget`
+- `historicaldata/3c/performance/budgetted`
+- `historicaldata/3c/performance/target`
+- `historicaldata/3c/quality/budgetted`
+- `historicaldata/3c/quality/target`
+- `lines/3c/availability/availability`
+- `lines/3c/availability/budgetted`
+- `lines/3c/availability/target`
+- `lines/3c/data/linestatus`
+- `lines/3c/data/ordernumber`
+- `lines/3c/data/productioncounter`
+- `lines/3c/data/throughputactual`
+- `lines/3c/oee`
+- `lines/3c/oeebudgetted`
+- `lines/3c/oeetarget`
+- `lines/3c/opc/output`
+- `lines/3c/performance/budgetted`
+- `lines/3c/performance/target`
+- `lines/3c/performance/targetspeed`
+- `lines/3c/quality/budgetted`
+- `lines/3c/quality/target`
+- `scada/3c/info/1/em/alarm`
+- `scada/3c/info/1/em/hand`
+- `scada/3c/info/1/em/leegdraaitijd`
+- `scada/3c/info/1/em/safety`
+- `scada/3c/info/1/em/snelheid`
+- `scada/3c/info/1/em/starttijd`
+- `scada/3c/info/1/em/status`
+- `scada/3c/info/1/em/stoptijd`
+- `scada/3c/info/1/niveau meting/alarm`
+- `scada/3c/info/1/niveau meting/niveau`
+- `scada/3c/info/1/schroef 1/alarm`
+- `scada/3c/info/1/schroef 1/frequentie`
+- `scada/3c/info/1/schroef 1/handauto`
+- `scada/3c/info/1/schroef 1/leegdraaitijd`
+- `scada/3c/info/1/schroef 1/start`
+- `scada/3c/info/1/schroef 1/status`
+- `scada/3c/info/1/schroef 1/stop`
+- `scada/3c/info/1/schroef 1/stroom`
+- `scada/3c/info/1/schroef 2/alarm`
+- `scada/3c/info/1/schroef 2/frequentie`
+- `scada/3c/info/1/schroef 2/handauto`
+- `scada/3c/info/1/schroef 2/leegdraaitijd`
+- `scada/3c/info/1/schroef 2/start`
+- `scada/3c/info/1/schroef 2/status`
+- `scada/3c/info/1/schroef 2/stop`
+- `scada/3c/info/1/schroef 2/stroom`
+- `scada/3c/info/1/schroef 3/alarm`
+- `scada/3c/info/1/schroef 3/frequentie`
+- `scada/3c/info/1/schroef 3/handauto`
+- `scada/3c/info/1/schroef 3/leegdraaitijd`
+- `scada/3c/info/1/schroef 3/start`
+- `scada/3c/info/1/schroef 3/status`
+- `scada/3c/info/1/schroef 3/stop`
+- `scada/3c/info/1/schroef 3/stroom`
+- `scada/3c/info/10l/em/alarm`
+- `scada/3c/info/10l/em/hand`
+- `scada/3c/info/10l/em/leegdraaitijd`
+- `scada/3c/info/10l/em/safety`
+- `scada/3c/info/10l/em/snelheid`
+- `scada/3c/info/10l/em/starttijd`
+- `scada/3c/info/10l/em/status`
+- `scada/3c/info/10l/em/stoptijd`
+- `scada/3c/info/10l/schroef 1/alarm`
+- `scada/3c/info/10l/schroef 1/frequentie`
+- `scada/3c/info/10l/schroef 1/handauto`
+- `scada/3c/info/10l/schroef 1/leegdraaitijd`
+- `scada/3c/info/10l/schroef 1/start`
+- `scada/3c/info/10l/schroef 1/status`
+- `scada/3c/info/10l/schroef 1/stop`
+- `scada/3c/info/10l/schroef 1/stroom`
+- `scada/3c/info/10r/em/alarm`
+- `scada/3c/info/10r/em/hand`
+- `scada/3c/info/10r/em/leegdraaitijd`
+- `scada/3c/info/10r/em/safety`
+- `scada/3c/info/10r/em/snelheid`
+- `scada/3c/info/10r/em/starttijd`
+- `scada/3c/info/10r/em/status`
+- `scada/3c/info/10r/em/stoptijd`
+- `scada/3c/info/10r/schroef 2/alarm`
+- `scada/3c/info/10r/schroef 2/frequentie`
+- `scada/3c/info/10r/schroef 2/handauto`
+- `scada/3c/info/10r/schroef 2/leegdraaitijd`
+- `scada/3c/info/10r/schroef 2/start`
+- `scada/3c/info/10r/schroef 2/status`
+- `scada/3c/info/10r/schroef 2/stop`
+- `scada/3c/info/10r/schroef 2/stroom`
+- `scada/3c/info/11/afvoerschraper/aanlooptijd`
+- `scada/3c/info/11/afvoerschraper/alarm`
+- `scada/3c/info/11/afvoerschraper/handauto`
+- `scada/3c/info/11/afvoerschraper/start`
+- `scada/3c/info/11/afvoerschraper/status`
+- `scada/3c/info/11/afvoerschraper/stop`
+- `scada/3c/info/11/afvoerschraper/stroom`
+- `scada/3c/info/11/afvoerschraper/uitlooptijd`
+- `scada/3c/info/11/afvoerschroef/alarm`
+- `scada/3c/info/11/afvoerschroef/frequentie`
+- `scada/3c/info/11/afvoerschroef/handauto`
+- `scada/3c/info/11/afvoerschroef/leegdraaitijd`
+- `scada/3c/info/11/afvoerschroef/start`
+- `scada/3c/info/11/afvoerschroef/status`
+- `scada/3c/info/11/afvoerschroef/stop`
+- `scada/3c/info/11/afvoerschroef/stroom`
+- `scada/3c/info/11/afvoerwals/alarm`
+- `scada/3c/info/11/afvoerwals/frequentie`
+- `scada/3c/info/11/afvoerwals/handauto`
+- `scada/3c/info/11/afvoerwals/leegdraaitijd`
+- `scada/3c/info/11/afvoerwals/start`
+- `scada/3c/info/11/afvoerwals/status`
+- `scada/3c/info/11/afvoerwals/stop`
+- `scada/3c/info/11/afvoerwals/stroom`
+- `scada/3c/info/11/em/alarm`
+- `scada/3c/info/11/em/hand`
+- `scada/3c/info/11/em/leegdraaitijd`
+- `scada/3c/info/11/em/safety`
+- `scada/3c/info/11/em/snelheid`
+- `scada/3c/info/11/em/starttijd`
+- `scada/3c/info/11/em/status`
+- `scada/3c/info/11/em/stoptijd`
+- `scada/3c/info/11/intrekwals/aanlooptijd`
+- `scada/3c/info/11/intrekwals/alarm`
+- `scada/3c/info/11/intrekwals/handauto`
+- `scada/3c/info/11/intrekwals/start`
+- `scada/3c/info/11/intrekwals/status`
+- `scada/3c/info/11/intrekwals/stop`
+- `scada/3c/info/11/intrekwals/stroom`
+- `scada/3c/info/11/intrekwals/uitlooptijd`
+- `scada/3c/info/11/niveau/alarm`
+- `scada/3c/info/11/niveau/niveau`
+- `scada/3c/info/11/peddelwals 1_2_3_4/alarm`
+- `scada/3c/info/11/peddelwals 1_2_3_4/frequentie`
+- `scada/3c/info/11/peddelwals 1_2_3_4/handauto`
+- `scada/3c/info/11/peddelwals 1_2_3_4/leegdraaitijd`
+- `scada/3c/info/11/peddelwals 1_2_3_4/start`
+- `scada/3c/info/11/peddelwals 1_2_3_4/status`
+- `scada/3c/info/11/peddelwals 1_2_3_4/stop`
+- `scada/3c/info/11/peddelwals 1_2_3_4/stroom`
+- `scada/3c/info/11/peddelwals 5_6_7_8/alarm`
+- `scada/3c/info/11/peddelwals 5_6_7_8/frequentie`
+- `scada/3c/info/11/peddelwals 5_6_7_8/handauto`
+- `scada/3c/info/11/peddelwals 5_6_7_8/leegdraaitijd`
+- `scada/3c/info/11/peddelwals 5_6_7_8/start`
+- `scada/3c/info/11/peddelwals 5_6_7_8/status`
+- `scada/3c/info/11/peddelwals 5_6_7_8/stop`
+- `scada/3c/info/11/peddelwals 5_6_7_8/stroom`
+- `scada/3c/info/11/peddelwals 9_10/alarm`
+- `scada/3c/info/11/peddelwals 9_10/frequentie`
+- `scada/3c/info/11/peddelwals 9_10/handauto`
+- `scada/3c/info/11/peddelwals 9_10/leegdraaitijd`
+- `scada/3c/info/11/peddelwals 9_10/start`
+- `scada/3c/info/11/peddelwals 9_10/status`
+- `scada/3c/info/11/peddelwals 9_10/stop`
+- `scada/3c/info/11/peddelwals 9_10/stroom`
+- `scada/3c/info/11/uittrekschroef/alarm`
+- `scada/3c/info/11/uittrekschroef/frequentie`
+- `scada/3c/info/11/uittrekschroef/handauto`
+- `scada/3c/info/11/uittrekschroef/leegdraaitijd`
+- `scada/3c/info/11/uittrekschroef/start`
+- `scada/3c/info/11/uittrekschroef/status`
+- `scada/3c/info/11/uittrekschroef/stop`
+- `scada/3c/info/11/uittrekschroef/stroom`
+- `scada/3c/info/12/afvoerschroef/alarm`
+- `scada/3c/info/12/afvoerschroef/frequentie`
+- `scada/3c/info/12/afvoerschroef/handauto`
+- `scada/3c/info/12/afvoerschroef/leegdraaitijd`
+- `scada/3c/info/12/afvoerschroef/start`
+- `scada/3c/info/12/afvoerschroef/status`
+- `scada/3c/info/12/afvoerschroef/stop`
+- `scada/3c/info/12/afvoerschroef/stroom`
+- `scada/3c/info/12/em/alarm`
+- `scada/3c/info/12/em/hand`
+- `scada/3c/info/12/em/leegdraaitijd`
+- `scada/3c/info/12/em/safety`
+- `scada/3c/info/12/em/snelheid`
+- `scada/3c/info/12/em/starttijd`
+- `scada/3c/info/12/em/status`
+- `scada/3c/info/12/em/stoptijd`
+- `scada/3c/info/13/em/alarm`
+- `scada/3c/info/13/em/hand`
+- `scada/3c/info/13/em/leegdraaitijd`
+- `scada/3c/info/13/em/safety`
+- `scada/3c/info/13/em/snelheid`
+- `scada/3c/info/13/em/starttijd`
+- `scada/3c/info/13/em/status`
+- `scada/3c/info/13/em/stoptijd`
+- `scada/3c/info/13/softstarterfrictiewasser/alarm`
+- `scada/3c/info/13/softstarterfrictiewasser/handauto`
+- `scada/3c/info/13/softstarterfrictiewasser/start`
+- `scada/3c/info/13/softstarterfrictiewasser/status`
+- `scada/3c/info/13/softstarterfrictiewasser/stop`
+- `scada/3c/info/13/softstarterfrictiewasser/stroom`
+- `scada/3c/info/14l/em/alarm`
+- `scada/3c/info/14l/em/hand`
+- `scada/3c/info/14l/em/leegdraaitijd`
+- `scada/3c/info/14l/em/safety`
+- `scada/3c/info/14l/em/snelheid`
+- `scada/3c/info/14l/em/starttijd`
+- `scada/3c/info/14l/em/status`
+- `scada/3c/info/14l/em/stoptijd`
+- `scada/3c/info/14l/fq_roterende_klep /aanlooptijd`
+- `scada/3c/info/14l/fq_roterende_klep /alarm`
+- `scada/3c/info/14l/fq_roterende_klep /handauto`
+- `scada/3c/info/14l/fq_roterende_klep /start`
+- `scada/3c/info/14l/fq_roterende_klep /status`
+- `scada/3c/info/14l/fq_roterende_klep /stop`
+- `scada/3c/info/14l/fq_roterende_klep /stroom`
+- `scada/3c/info/14l/fq_roterende_klep /uitlooptijd`
+- `scada/3c/info/14l/motorreinigingsschrapper/aanlooptijd`
+- `scada/3c/info/14l/motorreinigingsschrapper/alarm`
+- `scada/3c/info/14l/motorreinigingsschrapper/handauto`
+- `scada/3c/info/14l/motorreinigingsschrapper/start`
+- `scada/3c/info/14l/motorreinigingsschrapper/status`
+- `scada/3c/info/14l/motorreinigingsschrapper/stop`
+- `scada/3c/info/14l/motorreinigingsschrapper/stroom`
+- `scada/3c/info/14l/motorreinigingsschrapper/uitlooptijd`
+- `scada/3c/info/14l/motorroterendeklep/aanlooptijd`
+- `scada/3c/info/14l/motorroterendeklep/alarm`
+- `scada/3c/info/14l/motorroterendeklep/handauto`
+- `scada/3c/info/14l/motorroterendeklep/start`
+- `scada/3c/info/14l/motorroterendeklep/status`
+- `scada/3c/info/14l/motorroterendeklep/stop`
+- `scada/3c/info/14l/motorroterendeklep/stroom`
+- `scada/3c/info/14l/motorroterendeklep/uitlooptijd`
+- `scada/3c/info/14l/softstarterdroger1/alarm`
+- `scada/3c/info/14l/softstarterdroger1/handauto`
+- `scada/3c/info/14l/softstarterdroger1/start`
+- `scada/3c/info/14l/softstarterdroger1/status`
+- `scada/3c/info/14l/softstarterdroger1/stop`
+- `scada/3c/info/14l/softstarterdroger1/stroom`
+- `scada/3c/info/14r/em/alarm`
+- `scada/3c/info/14r/em/hand`
+- `scada/3c/info/14r/em/leegdraaitijd`
+- `scada/3c/info/14r/em/safety`
+- `scada/3c/info/14r/em/snelheid`
+- `scada/3c/info/14r/em/starttijd`
+- `scada/3c/info/14r/em/status`
+- `scada/3c/info/14r/em/stoptijd`
+- `scada/3c/info/14r/motorreinigingsschrapper/aanlooptijd`
+- `scada/3c/info/14r/motorreinigingsschrapper/alarm`
+- `scada/3c/info/14r/motorreinigingsschrapper/handauto`
+- `scada/3c/info/14r/motorreinigingsschrapper/start`
+- `scada/3c/info/14r/motorreinigingsschrapper/status`
+- `scada/3c/info/14r/motorreinigingsschrapper/stop`
+- `scada/3c/info/14r/motorreinigingsschrapper/stroom`
+- `scada/3c/info/14r/motorreinigingsschrapper/uitlooptijd`
+- `scada/3c/info/14r/motorroterendeklep/aanlooptijd`
+- `scada/3c/info/14r/motorroterendeklep/alarm`
+- `scada/3c/info/14r/motorroterendeklep/handauto`
+- `scada/3c/info/14r/motorroterendeklep/start`
+- `scada/3c/info/14r/motorroterendeklep/status`
+- `scada/3c/info/14r/motorroterendeklep/stop`
+- `scada/3c/info/14r/motorroterendeklep/stroom`
+- `scada/3c/info/14r/motorroterendeklep/uitlooptijd`
+- `scada/3c/info/14r/softstarterdroger1/alarm`
+- `scada/3c/info/14r/softstarterdroger1/handauto`
+- `scada/3c/info/14r/softstarterdroger1/start`
+- `scada/3c/info/14r/softstarterdroger1/status`
+- `scada/3c/info/14r/softstarterdroger1/stop`
+- `scada/3c/info/14r/softstarterdroger1/stroom`
+- `scada/3c/info/15/em/alarm`
+- `scada/3c/info/15/em/hand`
+- `scada/3c/info/15/em/leegdraaitijd`
+- `scada/3c/info/15/em/safety`
+- `scada/3c/info/15/em/snelheid`
+- `scada/3c/info/15/em/starttijd`
+- `scada/3c/info/15/em/status`
+- `scada/3c/info/15/em/stoptijd`
+- `scada/3c/info/15/fqventilator/alarm`
+- `scada/3c/info/15/fqventilator/frequentie`
+- `scada/3c/info/15/fqventilator/handauto`
+- `scada/3c/info/15/fqventilator/leegdraaitijd`
+- `scada/3c/info/15/fqventilator/start`
+- `scada/3c/info/15/fqventilator/status`
+- `scada/3c/info/15/fqventilator/stop`
+- `scada/3c/info/15/fqventilator/stroom`
+- `scada/3c/info/16/em/alarm`
+- `scada/3c/info/16/em/hand`
+- `scada/3c/info/16/em/leegdraaitijd`
+- `scada/3c/info/16/em/safety`
+- `scada/3c/info/16/em/snelheid`
+- `scada/3c/info/16/em/starttijd`
+- `scada/3c/info/16/em/status`
+- `scada/3c/info/16/em/stoptijd`
+- `scada/3c/info/18/em/alarm`
+- `scada/3c/info/18/em/hand`
+- `scada/3c/info/18/em/leegdraaitijd`
+- `scada/3c/info/18/em/safety`
+- `scada/3c/info/18/em/snelheid`
+- `scada/3c/info/18/em/starttijd`
+- `scada/3c/info/18/em/status`
+- `scada/3c/info/18/em/stoptijd`
+- `scada/3c/info/18/fqschroef/alarm`
+- `scada/3c/info/18/fqschroef/frequentie`
+- `scada/3c/info/18/fqschroef/handauto`
+- `scada/3c/info/18/fqschroef/leegdraaitijd`
+- `scada/3c/info/18/fqschroef/start`
+- `scada/3c/info/18/fqschroef/status`
+- `scada/3c/info/18/fqschroef/stop`
+- `scada/3c/info/18/fqschroef/stroom`
+- `scada/3c/info/18/motorroterroeras1/aanlooptijd`
+- `scada/3c/info/18/motorroterroeras1/alarm`
+- `scada/3c/info/18/motorroterroeras1/handauto`
+- `scada/3c/info/18/motorroterroeras1/start`
+- `scada/3c/info/18/motorroterroeras1/status`
+- `scada/3c/info/18/motorroterroeras1/stop`
+- `scada/3c/info/18/motorroterroeras1/stroom`
+- `scada/3c/info/18/motorroterroeras1/uitlooptijd`
+- `scada/3c/info/18/motorroterroeras2/aanlooptijd`
+- `scada/3c/info/18/motorroterroeras2/alarm`
+- `scada/3c/info/18/motorroterroeras2/handauto`
+- `scada/3c/info/18/motorroterroeras2/start`
+- `scada/3c/info/18/motorroterroeras2/status`
+- `scada/3c/info/18/motorroterroeras2/stop`
+- `scada/3c/info/18/motorroterroeras2/stroom`
+- `scada/3c/info/18/motorroterroeras2/uitlooptijd`
+- `scada/3c/info/18/motorventilator/aanlooptijd`
+- `scada/3c/info/18/motorventilator/alarm`
+- `scada/3c/info/18/motorventilator/handauto`
+- `scada/3c/info/18/motorventilator/start`
+- `scada/3c/info/18/motorventilator/status`
+- `scada/3c/info/18/motorventilator/stop`
+- `scada/3c/info/18/motorventilator/stroom`
+- `scada/3c/info/18/motorventilator/uitlooptijd`
+- `scada/3c/info/18/niveau/niveau`
+- `scada/3c/info/19/em/alarm`
+- `scada/3c/info/19/em/hand`
+- `scada/3c/info/19/em/leegdraaitijd`
+- `scada/3c/info/19/em/safety`
+- `scada/3c/info/19/em/snelheid`
+- `scada/3c/info/19/em/starttijd`
+- `scada/3c/info/19/em/status`
+- `scada/3c/info/19/em/stoptijd`
+- `scada/3c/info/19/fqventilator/alarm`
+- `scada/3c/info/19/fqventilator/frequentie`
+- `scada/3c/info/19/fqventilator/handauto`
+- `scada/3c/info/19/fqventilator/leegdraaitijd`
+- `scada/3c/info/19/fqventilator/start`
+- `scada/3c/info/19/fqventilator/status`
+- `scada/3c/info/19/fqventilator/stop`
+- `scada/3c/info/19/fqventilator/stroom`
+- `scada/3c/info/20/em/alarm`
+- `scada/3c/info/20/em/hand`
+- `scada/3c/info/20/em/leegdraaitijd`
+- `scada/3c/info/20/em/safety`
+- `scada/3c/info/20/em/snelheid`
+- `scada/3c/info/20/em/starttijd`
+- `scada/3c/info/20/em/status`
+- `scada/3c/info/20/em/stoptijd`
+- `scada/3c/info/3/em/alarm`
+- `scada/3c/info/3/em/hand`
+- `scada/3c/info/3/em/leegdraaitijd`
+- `scada/3c/info/3/em/safety`
+- `scada/3c/info/3/em/snelheid`
+- `scada/3c/info/3/em/starttijd`
+- `scada/3c/info/3/em/status`
+- `scada/3c/info/3/em/stoptijd`
+- `scada/3c/info/3/fqafvoerschroef1/alarm`
+- `scada/3c/info/3/fqafvoerschroef1/frequentie`
+- `scada/3c/info/3/fqafvoerschroef1/handauto`
+- `scada/3c/info/3/fqafvoerschroef1/leegdraaitijd`
+- `scada/3c/info/3/fqafvoerschroef1/start`
+- `scada/3c/info/3/fqafvoerschroef1/status`
+- `scada/3c/info/3/fqafvoerschroef1/stop`
+- `scada/3c/info/3/fqafvoerschroef1/stroom`
+- `scada/3c/info/3/fqafvoerschroef2/alarm`
+- `scada/3c/info/3/fqafvoerschroef2/frequentie`
+- `scada/3c/info/3/fqafvoerschroef2/handauto`
+- `scada/3c/info/3/fqafvoerschroef2/leegdraaitijd`
+- `scada/3c/info/3/fqafvoerschroef2/start`
+- `scada/3c/info/3/fqafvoerschroef2/status`
+- `scada/3c/info/3/fqafvoerschroef2/stop`
+- `scada/3c/info/3/fqafvoerschroef2/stroom`
+- `scada/3c/info/3/fqafvoerwalz/alarm`
+- `scada/3c/info/3/fqafvoerwalz/frequentie`
+- `scada/3c/info/3/fqafvoerwalz/handauto`
+- `scada/3c/info/3/fqafvoerwalz/leegdraaitijd`
+- `scada/3c/info/3/fqafvoerwalz/start`
+- `scada/3c/info/3/fqafvoerwalz/status`
+- `scada/3c/info/3/fqafvoerwalz/stop`
+- `scada/3c/info/3/fqafvoerwalz/stroom`
+- `scada/3c/info/3/fqpeddelwals1en2/alarm`
+- `scada/3c/info/3/fqpeddelwals1en2/frequentie`
+- `scada/3c/info/3/fqpeddelwals1en2/handauto`
+- `scada/3c/info/3/fqpeddelwals1en2/leegdraaitijd`
+- `scada/3c/info/3/fqpeddelwals1en2/start`
+- `scada/3c/info/3/fqpeddelwals1en2/status`
+- `scada/3c/info/3/fqpeddelwals1en2/stop`
+- `scada/3c/info/3/fqpeddelwals1en2/stroom`
+- `scada/3c/info/3/intrekwals/aanlooptijd`
+- `scada/3c/info/3/intrekwals/alarm`
+- `scada/3c/info/3/intrekwals/handauto`
+- `scada/3c/info/3/intrekwals/start`
+- `scada/3c/info/3/intrekwals/status`
+- `scada/3c/info/3/intrekwals/stop`
+- `scada/3c/info/3/intrekwals/stroom`
+- `scada/3c/info/3/intrekwals/uitlooptijd`
+- `scada/3c/info/3/motorafvoerschraper/aanlooptijd`
+- `scada/3c/info/3/motorafvoerschraper/alarm`
+- `scada/3c/info/3/motorafvoerschraper/handauto`
+- `scada/3c/info/3/motorafvoerschraper/start`
+- `scada/3c/info/3/motorafvoerschraper/status`
+- `scada/3c/info/3/motorafvoerschraper/stop`
+- `scada/3c/info/3/motorafvoerschraper/stroom`
+- `scada/3c/info/3/motorafvoerschraper/uitlooptijd`
+- `scada/3c/info/3/niveau meting/alarm`
+- `scada/3c/info/3/niveau meting/niveau`
+- `scada/3c/info/4l/em/alarm`
+- `scada/3c/info/4l/em/hand`
+- `scada/3c/info/4l/em/leegdraaitijd`
+- `scada/3c/info/4l/em/safety`
+- `scada/3c/info/4l/em/snelheid`
+- `scada/3c/info/4l/em/starttijd`
+- `scada/3c/info/4l/em/status`
+- `scada/3c/info/4l/em/stoptijd`
+- `scada/3c/info/4l/softstarterfrictiewasser/alarm`
+- `scada/3c/info/4l/softstarterfrictiewasser/handauto`
+- `scada/3c/info/4l/softstarterfrictiewasser/start`
+- `scada/3c/info/4l/softstarterfrictiewasser/status`
+- `scada/3c/info/4l/softstarterfrictiewasser/stop`
+- `scada/3c/info/4l/softstarterfrictiewasser/stroom`
+- `scada/3c/info/4r/em/alarm`
+- `scada/3c/info/4r/em/hand`
+- `scada/3c/info/4r/em/leegdraaitijd`
+- `scada/3c/info/4r/em/safety`
+- `scada/3c/info/4r/em/snelheid`
+- `scada/3c/info/4r/em/starttijd`
+- `scada/3c/info/4r/em/status`
+- `scada/3c/info/4r/em/stoptijd`
+- `scada/3c/info/4r/softstarterfrictiewasser/alarm`
+- `scada/3c/info/4r/softstarterfrictiewasser/handauto`
+- `scada/3c/info/4r/softstarterfrictiewasser/start`
+- `scada/3c/info/4r/softstarterfrictiewasser/status`
+- `scada/3c/info/4r/softstarterfrictiewasser/stop`
+- `scada/3c/info/4r/softstarterfrictiewasser/stroom`
+- `scada/3c/info/5l/em/alarm`
+- `scada/3c/info/5l/em/hand`
+- `scada/3c/info/5l/em/leegdraaitijd`
+- `scada/3c/info/5l/em/safety`
+- `scada/3c/info/5l/em/snelheid`
+- `scada/3c/info/5l/em/starttijd`
+- `scada/3c/info/5l/em/status`
+- `scada/3c/info/5l/em/stoptijd`
+- `scada/3c/info/5l/schroef 1/alarm`
+- `scada/3c/info/5l/schroef 1/frequentie`
+- `scada/3c/info/5l/schroef 1/handauto`
+- `scada/3c/info/5l/schroef 1/leegdraaitijd`
+- `scada/3c/info/5l/schroef 1/start`
+- `scada/3c/info/5l/schroef 1/status`
+- `scada/3c/info/5l/schroef 1/stop`
+- `scada/3c/info/5l/schroef 1/stroom`
+- `scada/3c/info/5r/em/alarm`
+- `scada/3c/info/5r/em/hand`
+- `scada/3c/info/5r/em/leegdraaitijd`
+- `scada/3c/info/5r/em/safety`
+- `scada/3c/info/5r/em/snelheid`
+- `scada/3c/info/5r/em/starttijd`
+- `scada/3c/info/5r/em/status`
+- `scada/3c/info/5r/em/stoptijd`
+- `scada/3c/info/5r/schroef 2/alarm`
+- `scada/3c/info/5r/schroef 2/frequentie`
+- `scada/3c/info/5r/schroef 2/handauto`
+- `scada/3c/info/5r/schroef 2/leegdraaitijd`
+- `scada/3c/info/5r/schroef 2/start`
+- `scada/3c/info/5r/schroef 2/status`
+- `scada/3c/info/5r/schroef 2/stop`
+- `scada/3c/info/5r/schroef 2/stroom`
+- `scada/3c/info/6/em/alarm`
+- `scada/3c/info/6/em/hand`
+- `scada/3c/info/6/em/leegdraaitijd`
+- `scada/3c/info/6/em/safety`
+- `scada/3c/info/6/em/snelheid`
+- `scada/3c/info/6/em/starttijd`
+- `scada/3c/info/6/em/status`
+- `scada/3c/info/6/em/stoptijd`
+- `scada/3c/info/6/hydrauliek/aanlooptijd`
+- `scada/3c/info/6/hydrauliek/alarm`
+- `scada/3c/info/6/hydrauliek/handauto`
+- `scada/3c/info/6/hydrauliek/start`
+- `scada/3c/info/6/hydrauliek/status`
+- `scada/3c/info/6/hydrauliek/stop`
+- `scada/3c/info/6/hydrauliek/stroom`
+- `scada/3c/info/6/hydrauliek/uitlooptijd`
+- `scada/3c/info/6/schroef 1/alarm`
+- `scada/3c/info/6/schroef 1/frequentie`
+- `scada/3c/info/6/schroef 1/handauto`
+- `scada/3c/info/6/schroef 1/leegdraaitijd`
+- `scada/3c/info/6/schroef 1/start`
+- `scada/3c/info/6/schroef 1/status`
+- `scada/3c/info/6/schroef 1/stop`
+- `scada/3c/info/6/schroef 1/stroom`
+- `scada/3c/info/6/schroef 2/alarm`
+- `scada/3c/info/6/schroef 2/frequentie`
+- `scada/3c/info/6/schroef 2/handauto`
+- `scada/3c/info/6/schroef 2/leegdraaitijd`
+- `scada/3c/info/6/schroef 2/start`
+- `scada/3c/info/6/schroef 2/status`
+- `scada/3c/info/6/schroef 2/stop`
+- `scada/3c/info/6/schroef 2/stroom`
+- `scada/3c/info/6/schroef 3/alarm`
+- `scada/3c/info/6/schroef 3/frequentie`
+- `scada/3c/info/6/schroef 3/handauto`
+- `scada/3c/info/6/schroef 3/leegdraaitijd`
+- `scada/3c/info/6/schroef 3/start`
+- `scada/3c/info/6/schroef 3/status`
+- `scada/3c/info/6/schroef 3/stop`
+- `scada/3c/info/6/schroef 3/stroom`
+- `scada/3c/info/6/softstartersnijmolen/alarm`
+- `scada/3c/info/6/softstartersnijmolen/handauto`
+- `scada/3c/info/6/softstartersnijmolen/start`
+- `scada/3c/info/6/softstartersnijmolen/status`
+- `scada/3c/info/6/softstartersnijmolen/stop`
+- `scada/3c/info/6/softstartersnijmolen/stroom`
+- `scada/3c/info/9l/em/alarm`
+- `scada/3c/info/9l/em/hand`
+- `scada/3c/info/9l/em/leegdraaitijd`
+- `scada/3c/info/9l/em/safety`
+- `scada/3c/info/9l/em/snelheid`
+- `scada/3c/info/9l/em/starttijd`
+- `scada/3c/info/9l/em/status`
+- `scada/3c/info/9l/em/stoptijd`
+- `scada/3c/info/9l/softstarterfrictiewasser/alarm`
+- `scada/3c/info/9l/softstarterfrictiewasser/handauto`
+- `scada/3c/info/9l/softstarterfrictiewasser/start`
+- `scada/3c/info/9l/softstarterfrictiewasser/status`
+- `scada/3c/info/9l/softstarterfrictiewasser/stop`
+- `scada/3c/info/9l/softstarterfrictiewasser/stroom`
+- `scada/3c/info/9r/em/alarm`
+- `scada/3c/info/9r/em/hand`
+- `scada/3c/info/9r/em/leegdraaitijd`
+- `scada/3c/info/9r/em/safety`
+- `scada/3c/info/9r/em/snelheid`
+- `scada/3c/info/9r/em/starttijd`
+- `scada/3c/info/9r/em/status`
+- `scada/3c/info/9r/em/stoptijd`
+- `scada/3c/info/9r/softstarterfrictiewasser/alarm`
+- `scada/3c/info/9r/softstarterfrictiewasser/handauto`
+- `scada/3c/info/9r/softstarterfrictiewasser/start`
+- `scada/3c/info/9r/softstarterfrictiewasser/status`
+- `scada/3c/info/9r/softstarterfrictiewasser/stop`
+- `scada/3c/info/9r/softstarterfrictiewasser/stroom`
+- `scada/3c/meeting/overig/6_11_flotatietank waterflow`
+- `scada/3c/meeting/overig/6_3_bezinkafscheider waterflow`
+- `scada/3c/meeting/overig/6_6_maalmolen waterflow`
+- `scada/3c/meeting/temperatuur/6_13_frictiescheider_links_rechts_links`
+- `scada/3c/meeting/temperatuur/6_13_frictiescheider_links_rechts_rechts`
+- `scada/3c/meeting/temperatuur/6_14l_mechanische_droger_links_achter`
+- `scada/3c/meeting/temperatuur/6_14l_mechanische_droger_links_voor`
+- `scada/3c/meeting/temperatuur/6_14r_mechanische_droger_rechts_achter`
+- `scada/3c/meeting/temperatuur/6_14r_mechanische_droger_rechts_voor`
+- `scada/3c/meeting/temperatuur/6_4l_frictiescheider_links_boven`
+- `scada/3c/meeting/temperatuur/6_4l_frictiescheider_links_onder`
+- `scada/3c/meeting/temperatuur/6_4r_frictiescheider_rechts_boven`
+- `scada/3c/meeting/temperatuur/6_4r_frictiescheider_rechts_onder`
+- `scada/3c/meeting/temperatuur/6_9l_frictiescheider_links_boven`
+- `scada/3c/meeting/temperatuur/6_9l_frictiescheider_links_onder`
+- `scada/3c/meeting/temperatuur/6_9r_frictiescheider_rechts_boven`
+- `scada/3c/meeting/temperatuur/6_9r_frictiescheider_rechts_onder`
+- `scada/3c/meeting/vibratie/6_13_frictiescheider_links_rechts_links`
+- `scada/3c/meeting/vibratie/6_13_frictiescheider_links_rechts_rechts`
+- `scada/3c/meeting/vibratie/6_14l_mechanische_droger_links_achter`
+- `scada/3c/meeting/vibratie/6_14l_mechanische_droger_links_voor`
+- `scada/3c/meeting/vibratie/6_14r_mechanische_droger_rechts_achter`
+- `scada/3c/meeting/vibratie/6_14r_mechanische_droger_rechts_voor`
+- `scada/3c/meeting/vibratie/6_4l_frictiescheider_links_boven`
+- `scada/3c/meeting/vibratie/6_4l_frictiescheider_links_onder`
+- `scada/3c/meeting/vibratie/6_4r_frictiescheider_rechts_boven`
+- `scada/3c/meeting/vibratie/6_4r_frictiescheider_rechts_onder`
+- `scada/3c/meeting/vibratie/6_9l_frictiescheider_links_boven`
+- `scada/3c/meeting/vibratie/6_9l_frictiescheider_links_onder`
+- `scada/3c/meeting/vibratie/6_9r_frictiescheider_rechts_boven`
+- `scada/3c/meeting/vibratie/6_9r_frictiescheider_rechts_onder`
+- `scada/3c/setpoints/1/em/bstarttijd`
+- `scada/3c/setpoints/1/em/bstarttijdbewaking`
+- `scada/3c/setpoints/1/em/bstoptijd`
+- `scada/3c/setpoints/1/em/bstoptijdbewaking`
+- `scada/3c/setpoints/1/em/handauto`
+- `scada/3c/setpoints/1/em/leegdraaitijd`
+- `scada/3c/setpoints/1/em/tstarttijd`
+- `scada/3c/setpoints/1/em/tstarttijdbewaking`
+- `scada/3c/setpoints/1/em/tstoptijd`
+- `scada/3c/setpoints/1/em/tstoptijdbewaking`
+- `scada/3c/setpoints/1/loopbewaking roerwerk/loopbewakingtijd`
+- `scada/3c/setpoints/1/loopbewaking schroef 1/loopbewakingtijd`
+- `scada/3c/setpoints/1/loopbewaking schroef 2/loopbewakingtijd`
+- `scada/3c/setpoints/1/loopbewaking schroef 3/loopbewakingtijd`
+- `scada/3c/setpoints/1/niveau meeting/niveauhoog`
+- `scada/3c/setpoints/1/niveau meeting/niveauhooghoog`
+- `scada/3c/setpoints/1/niveau meeting/niveaulaag`
+- `scada/3c/setpoints/1/niveau meeting/niveaulaaglaag`
+- `scada/3c/setpoints/1/niveau meeting/schroef_1_enable`
+- `scada/3c/setpoints/1/niveau meeting/schroef_2_enable`
+- `scada/3c/setpoints/1/niveau meeting/schroef_3_enable`
+- `scada/3c/setpoints/1/schroef 1/bsnelheidlangzaam`
+- `scada/3c/setpoints/1/schroef 1/draairichting`
+- `scada/3c/setpoints/1/schroef 1/isnelheidlangzaam`
+- `scada/3c/setpoints/1/schroef 1/snelheid`
+- `scada/3c/setpoints/1/schroef 1/startstophand`
+- `scada/3c/setpoints/1/schroef 2/bsnelheidlangzaam`
+- `scada/3c/setpoints/1/schroef 2/draairichting`
+- `scada/3c/setpoints/1/schroef 2/isnelheidlangzaam`
+- `scada/3c/setpoints/1/schroef 2/snelheid`
+- `scada/3c/setpoints/1/schroef 2/startstophand`
+- `scada/3c/setpoints/1/schroef 3/bsnelheidlangzaam`
+- `scada/3c/setpoints/1/schroef 3/draairichting`
+- `scada/3c/setpoints/1/schroef 3/isnelheidlangzaam`
+- `scada/3c/setpoints/1/schroef 3/snelheid`
+- `scada/3c/setpoints/1/schroef 3/startstophand`
+- `scada/3c/setpoints/10l/em/bstarttijd`
+- `scada/3c/setpoints/10l/em/bstarttijdbewaking`
+- `scada/3c/setpoints/10l/em/bstoptijd`
+- `scada/3c/setpoints/10l/em/bstoptijdbewaking`
+- `scada/3c/setpoints/10l/em/handauto`
+- `scada/3c/setpoints/10l/em/leegdraaitijd`
+- `scada/3c/setpoints/10l/em/tstarttijd`
+- `scada/3c/setpoints/10l/em/tstarttijdbewaking`
+- `scada/3c/setpoints/10l/em/tstoptijd`
+- `scada/3c/setpoints/10l/em/tstoptijdbewaking`
+- `scada/3c/setpoints/10l/loopbewaking schroef 1/loopbewakingtijd`
+- `scada/3c/setpoints/10l/schroef 1/bsnelheidlangzaam`
+- `scada/3c/setpoints/10l/schroef 1/draairichting`
+- `scada/3c/setpoints/10l/schroef 1/isnelheidlangzaam`
+- `scada/3c/setpoints/10l/schroef 1/snelheid`
+- `scada/3c/setpoints/10l/schroef 1/startstophand`
+- `scada/3c/setpoints/10r/em/bstarttijd`
+- `scada/3c/setpoints/10r/em/bstarttijdbewaking`
+- `scada/3c/setpoints/10r/em/bstoptijd`
+- `scada/3c/setpoints/10r/em/bstoptijdbewaking`
+- `scada/3c/setpoints/10r/em/handauto`
+- `scada/3c/setpoints/10r/em/leegdraaitijd`
+- `scada/3c/setpoints/10r/em/tstarttijd`
+- `scada/3c/setpoints/10r/em/tstarttijdbewaking`
+- `scada/3c/setpoints/10r/em/tstoptijd`
+- `scada/3c/setpoints/10r/em/tstoptijdbewaking`
+- `scada/3c/setpoints/10r/loopbewaking schroef 2/loopbewakingtijd`
+- `scada/3c/setpoints/10r/schroef 2/bsnelheidlangzaam`
+- `scada/3c/setpoints/10r/schroef 2/draairichting`
+- `scada/3c/setpoints/10r/schroef 2/isnelheidlangzaam`
+- `scada/3c/setpoints/10r/schroef 2/snelheid`
+- `scada/3c/setpoints/10r/schroef 2/startstophand`
+- `scada/3c/setpoints/11/afvoerschraper/aanlooptijd`
+- `scada/3c/setpoints/11/afvoerschraper/handauto`
+- `scada/3c/setpoints/11/afvoerschraper/stopstarthand`
+- `scada/3c/setpoints/11/afvoerschraper/uitlooptijd`
+- `scada/3c/setpoints/11/afvoerschroef/bsnelheidlangzaam`
+- `scada/3c/setpoints/11/afvoerschroef/draairichting`
+- `scada/3c/setpoints/11/afvoerschroef/isnelheidlangzaam`
+- `scada/3c/setpoints/11/afvoerschroef/snelheid`
+- `scada/3c/setpoints/11/afvoerschroef/startstophand`
+- `scada/3c/setpoints/11/afvoerwals/bsnelheidlangzaam`
+- `scada/3c/setpoints/11/afvoerwals/draairichting`
+- `scada/3c/setpoints/11/afvoerwals/isnelheidlangzaam`
+- `scada/3c/setpoints/11/afvoerwals/snelheid`
+- `scada/3c/setpoints/11/afvoerwals/startstophand`
+- `scada/3c/setpoints/11/em/bstarttijd`
+- `scada/3c/setpoints/11/em/bstarttijdbewaking`
+- `scada/3c/setpoints/11/em/bstoptijd`
+- `scada/3c/setpoints/11/em/bstoptijdbewaking`
+- `scada/3c/setpoints/11/em/handauto`
+- `scada/3c/setpoints/11/em/leegdraaitijd`
+- `scada/3c/setpoints/11/em/tstarttijd`
+- `scada/3c/setpoints/11/em/tstarttijdbewaking`
+- `scada/3c/setpoints/11/em/tstoptijd`
+- `scada/3c/setpoints/11/em/tstoptijdbewaking`
+- `scada/3c/setpoints/11/intrekwals/aanlooptijd`
+- `scada/3c/setpoints/11/intrekwals/handauto`
+- `scada/3c/setpoints/11/intrekwals/stopstarthand`
+- `scada/3c/setpoints/11/intrekwals/uitlooptijd`
+- `scada/3c/setpoints/11/loopbewaking afvoerschraper/loopbewakingtijd`
+- `scada/3c/setpoints/11/loopbewaking afvoerschroef/loopbewakingtijd`
+- `scada/3c/setpoints/11/loopbewaking afvoerwals/loopbewakingtijd`
+- `scada/3c/setpoints/11/loopbewaking intrekwals/loopbewakingtijd`
+- `scada/3c/setpoints/11/loopbewaking peddelwals 1_2_3_4/loopbewakingtijd`
+- `scada/3c/setpoints/11/loopbewaking peddelwals 5_6_7_8/loopbewakingtijd`
+- `scada/3c/setpoints/11/loopbewaking peddelwals 9_10/loopbewakingtijd`
+- `scada/3c/setpoints/11/loopbewaking uittrekschroef/loopbewakingtijd`
+- `scada/3c/setpoints/11/niveau/niveauhoog`
+- `scada/3c/setpoints/11/niveau/niveauhooghoog`
+- `scada/3c/setpoints/11/niveau/niveaulaag`
+- `scada/3c/setpoints/11/niveau/niveaulaaglaag`
+- `scada/3c/setpoints/11/niveau/schroef_1_enable`
+- `scada/3c/setpoints/11/niveau/schroef_2_enable`
+- `scada/3c/setpoints/11/niveau/schroef_3_enable`
+- `scada/3c/setpoints/11/peddelwals 1_2_3_4/bsnelheidlangzaam`
+- `scada/3c/setpoints/11/peddelwals 1_2_3_4/draairichting`
+- `scada/3c/setpoints/11/peddelwals 1_2_3_4/isnelheidlangzaam`
+- `scada/3c/setpoints/11/peddelwals 1_2_3_4/snelheid`
+- `scada/3c/setpoints/11/peddelwals 1_2_3_4/startstophand`
+- `scada/3c/setpoints/11/peddelwals 5_6_7_8/bsnelheidlangzaam`
+- `scada/3c/setpoints/11/peddelwals 5_6_7_8/draairichting`
+- `scada/3c/setpoints/11/peddelwals 5_6_7_8/isnelheidlangzaam`
+- `scada/3c/setpoints/11/peddelwals 5_6_7_8/snelheid`
+- `scada/3c/setpoints/11/peddelwals 5_6_7_8/startstophand`
+- `scada/3c/setpoints/11/peddelwals 9_10/bsnelheidlangzaam`
+- `scada/3c/setpoints/11/peddelwals 9_10/draairichting`
+- `scada/3c/setpoints/11/peddelwals 9_10/isnelheidlangzaam`
+- `scada/3c/setpoints/11/peddelwals 9_10/snelheid`
+- `scada/3c/setpoints/11/peddelwals 9_10/startstophand`
+- `scada/3c/setpoints/11/uittrekschroef/bsnelheidlangzaam`
+- `scada/3c/setpoints/11/uittrekschroef/draairichting`
+- `scada/3c/setpoints/11/uittrekschroef/isnelheidlangzaam`
+- `scada/3c/setpoints/11/uittrekschroef/snelheid`
+- `scada/3c/setpoints/11/uittrekschroef/startstophand`
+- `scada/3c/setpoints/12/afvoerschroef/bsnelheidlangzaam`
+- `scada/3c/setpoints/12/afvoerschroef/draairichting`
+- `scada/3c/setpoints/12/afvoerschroef/isnelheidlangzaam`
+- `scada/3c/setpoints/12/afvoerschroef/snelheid`
+- `scada/3c/setpoints/12/afvoerschroef/startstophand`
+- `scada/3c/setpoints/12/em/bstarttijd`
+- `scada/3c/setpoints/12/em/bstarttijdbewaking`
+- `scada/3c/setpoints/12/em/bstoptijd`
+- `scada/3c/setpoints/12/em/bstoptijdbewaking`
+- `scada/3c/setpoints/12/em/handauto`
+- `scada/3c/setpoints/12/em/leegdraaitijd`
+- `scada/3c/setpoints/12/em/tstarttijd`
+- `scada/3c/setpoints/12/em/tstarttijdbewaking`
+- `scada/3c/setpoints/12/em/tstoptijd`
+- `scada/3c/setpoints/12/em/tstoptijdbewaking`
+- `scada/3c/setpoints/12/loopbewaking afvoerschroef/loopbewakingtijd`
+- `scada/3c/setpoints/13/em/bstarttijd`
+- `scada/3c/setpoints/13/em/bstarttijdbewaking`
+- `scada/3c/setpoints/13/em/bstoptijd`
+- `scada/3c/setpoints/13/em/bstoptijdbewaking`
+- `scada/3c/setpoints/13/em/handauto`
+- `scada/3c/setpoints/13/em/leegdraaitijd`
+- `scada/3c/setpoints/13/em/tstarttijd`
+- `scada/3c/setpoints/13/em/tstarttijdbewaking`
+- `scada/3c/setpoints/13/em/tstoptijd`
+- `scada/3c/setpoints/13/em/tstoptijdbewaking`
+- `scada/3c/setpoints/13/loopcontrollefrictiewasser/loopbewakingtijd`
+- `scada/3c/setpoints/13/softstarterfrictiewasser/handauto`
+- `scada/3c/setpoints/13/softstarterfrictiewasser/stopstarthand`
+- `scada/3c/setpoints/14l/em/bstarttijd`
+- `scada/3c/setpoints/14l/em/bstarttijdbewaking`
+- `scada/3c/setpoints/14l/em/bstoptijd`
+- `scada/3c/setpoints/14l/em/bstoptijdbewaking`
+- `scada/3c/setpoints/14l/em/handauto`
+- `scada/3c/setpoints/14l/em/leegdraaitijd`
+- `scada/3c/setpoints/14l/em/tstarttijd`
+- `scada/3c/setpoints/14l/em/tstarttijdbewaking`
+- `scada/3c/setpoints/14l/em/tstoptijd`
+- `scada/3c/setpoints/14l/em/tstoptijdbewaking`
+- `scada/3c/setpoints/14l/loopcontrolledroger1/loopbewakingtijd`
+- `scada/3c/setpoints/14l/loopcontrollereinigingsschrapper/loopbewakingtijd`
+- `scada/3c/setpoints/14l/loopcontrolleroterendeklep/loopbewakingtijd`
+- `scada/3c/setpoints/14l/motorreinigingsschrapper/aanlooptijd`
+- `scada/3c/setpoints/14l/motorreinigingsschrapper/handauto`
+- `scada/3c/setpoints/14l/motorreinigingsschrapper/stopstarthand`
+- `scada/3c/setpoints/14l/motorreinigingsschrapper/uitlooptijd`
+- `scada/3c/setpoints/14l/motorroterendeklep/aanlooptijd`
+- `scada/3c/setpoints/14l/motorroterendeklep/handauto`
+- `scada/3c/setpoints/14l/motorroterendeklep/stopstarthand`
+- `scada/3c/setpoints/14l/motorroterendeklep/uitlooptijd`
+- `scada/3c/setpoints/14l/softstarterdroger1/handauto`
+- `scada/3c/setpoints/14l/softstarterdroger1/stopstarthand`
+- `scada/3c/setpoints/14r/em/bstarttijd`
+- `scada/3c/setpoints/14r/em/bstarttijdbewaking`
+- `scada/3c/setpoints/14r/em/bstoptijd`
+- `scada/3c/setpoints/14r/em/bstoptijdbewaking`
+- `scada/3c/setpoints/14r/em/handauto`
+- `scada/3c/setpoints/14r/em/leegdraaitijd`
+- `scada/3c/setpoints/14r/em/tstarttijd`
+- `scada/3c/setpoints/14r/em/tstarttijdbewaking`
+- `scada/3c/setpoints/14r/em/tstoptijd`
+- `scada/3c/setpoints/14r/em/tstoptijdbewaking`
+- `scada/3c/setpoints/14r/loopcontrolledroger2/loopbewakingtijd`
+- `scada/3c/setpoints/14r/loopcontrollereinigingsschrapper/loopbewakingtijd`
+- `scada/3c/setpoints/14r/loopcontrolleroterendeklep/loopbewakingtijd`
+- `scada/3c/setpoints/14r/motorreinigingsschrapper/aanlooptijd`
+- `scada/3c/setpoints/14r/motorreinigingsschrapper/handauto`
+- `scada/3c/setpoints/14r/motorreinigingsschrapper/stopstarthand`
+- `scada/3c/setpoints/14r/motorreinigingsschrapper/uitlooptijd`
+- `scada/3c/setpoints/14r/motorroterendeklep/aanlooptijd`
+- `scada/3c/setpoints/14r/motorroterendeklep/handauto`
+- `scada/3c/setpoints/14r/motorroterendeklep/stopstarthand`
+- `scada/3c/setpoints/14r/motorroterendeklep/uitlooptijd`
+- `scada/3c/setpoints/14r/softstarterdroger2/handauto`
+- `scada/3c/setpoints/14r/softstarterdroger2/stopstarthand`
+- `scada/3c/setpoints/15/em/bstarttijd`
+- `scada/3c/setpoints/15/em/bstarttijdbewaking`
+- `scada/3c/setpoints/15/em/bstoptijd`
+- `scada/3c/setpoints/15/em/bstoptijdbewaking`
+- `scada/3c/setpoints/15/em/handauto`
+- `scada/3c/setpoints/15/em/leegdraaitijd`
+- `scada/3c/setpoints/15/em/tstarttijd`
+- `scada/3c/setpoints/15/em/tstarttijdbewaking`
+- `scada/3c/setpoints/15/em/tstoptijd`
+- `scada/3c/setpoints/15/em/tstoptijdbewaking`
+- `scada/3c/setpoints/15/fqventilator/bsnelheidlangzaam`
+- `scada/3c/setpoints/15/fqventilator/draairichting`
+- `scada/3c/setpoints/15/fqventilator/isnelheidlangzaam`
+- `scada/3c/setpoints/15/fqventilator/snelheid`
+- `scada/3c/setpoints/15/fqventilator/startstophand`
+- `scada/3c/setpoints/15/loopcontrolleventilator/loopbewakingtijd`
+- `scada/3c/setpoints/16/em/bstarttijd`
+- `scada/3c/setpoints/16/em/bstarttijdbewaking`
+- `scada/3c/setpoints/16/em/bstoptijd`
+- `scada/3c/setpoints/16/em/bstoptijdbewaking`
+- `scada/3c/setpoints/16/em/handauto`
+- `scada/3c/setpoints/16/em/leegdraaitijd`
+- `scada/3c/setpoints/16/em/tstarttijd`
+- `scada/3c/setpoints/16/em/tstarttijdbewaking`
+- `scada/3c/setpoints/16/em/tstoptijd`
+- `scada/3c/setpoints/16/em/tstoptijdbewaking`
+- `scada/3c/setpoints/18/em/bstarttijd`
+- `scada/3c/setpoints/18/em/bstarttijdbewaking`
+- `scada/3c/setpoints/18/em/bstoptijd`
+- `scada/3c/setpoints/18/em/bstoptijdbewaking`
+- `scada/3c/setpoints/18/em/handauto`
+- `scada/3c/setpoints/18/em/leegdraaitijd`
+- `scada/3c/setpoints/18/em/tstarttijd`
+- `scada/3c/setpoints/18/em/tstarttijdbewaking`
+- `scada/3c/setpoints/18/em/tstoptijd`
+- `scada/3c/setpoints/18/em/tstoptijdbewaking`
+- `scada/3c/setpoints/18/fqdubbelschroef/bsnelheidlangzaam`
+- `scada/3c/setpoints/18/fqdubbelschroef/draairichting`
+- `scada/3c/setpoints/18/fqdubbelschroef/isnelheidlangzaam`
+- `scada/3c/setpoints/18/fqdubbelschroef/snelheid`
+- `scada/3c/setpoints/18/fqdubbelschroef/startstophand`
+- `scada/3c/setpoints/18/fqschroef1/bsnelheidlangzaam`
+- `scada/3c/setpoints/18/fqschroef1/draairichting`
+- `scada/3c/setpoints/18/fqschroef1/isnelheidlangzaam`
+- `scada/3c/setpoints/18/fqschroef1/snelheid`
+- `scada/3c/setpoints/18/fqschroef1/startstophand`
+- `scada/3c/setpoints/18/loopbewaking roeras1/loopbewakingtijd`
+- `scada/3c/setpoints/18/loopbewaking roeras2/loopbewakingtijd`
+- `scada/3c/setpoints/18/loopcontrolledebbelschroef/loopbewakingtijd`
+- `scada/3c/setpoints/18/loopcontrolleschroef1/loopbewakingtijd`
+- `scada/3c/setpoints/18/motorroeras1/aanlooptijd`
+- `scada/3c/setpoints/18/motorroeras1/handauto`
+- `scada/3c/setpoints/18/motorroeras1/stopstarthand`
+- `scada/3c/setpoints/18/motorroeras1/uitlooptijd`
+- `scada/3c/setpoints/18/motorroeras2/aanlooptijd`
+- `scada/3c/setpoints/18/motorroeras2/handauto`
+- `scada/3c/setpoints/18/motorroeras2/stopstarthand`
+- `scada/3c/setpoints/18/motorroeras2/uitlooptijd`
+- `scada/3c/setpoints/18/niveau/niveauhoog`
+- `scada/3c/setpoints/18/niveau/niveauhooghoog`
+- `scada/3c/setpoints/18/niveau/niveaulaag`
+- `scada/3c/setpoints/18/niveau/niveaulaaglaag`
+- `scada/3c/setpoints/18/niveau/schroef_1_enable`
+- `scada/3c/setpoints/18/niveau/schroef_2_enable`
+- `scada/3c/setpoints/18/niveau/schroef_3_enable`
+- `scada/3c/setpoints/19/em/bstarttijd`
+- `scada/3c/setpoints/19/em/bstarttijdbewaking`
+- `scada/3c/setpoints/19/em/bstoptijd`
+- `scada/3c/setpoints/19/em/bstoptijdbewaking`
+- `scada/3c/setpoints/19/em/handauto`
+- `scada/3c/setpoints/19/em/leegdraaitijd`
+- `scada/3c/setpoints/19/em/tstarttijd`
+- `scada/3c/setpoints/19/em/tstarttijdbewaking`
+- `scada/3c/setpoints/19/em/tstoptijd`
+- `scada/3c/setpoints/19/em/tstoptijdbewaking`
+- `scada/3c/setpoints/19/fqventilator/bsnelheidlangzaam`
+- `scada/3c/setpoints/19/fqventilator/draairichting`
+- `scada/3c/setpoints/19/fqventilator/isnelheidlangzaam`
+- `scada/3c/setpoints/19/fqventilator/snelheid`
+- `scada/3c/setpoints/19/fqventilator/startstophand`
+- `scada/3c/setpoints/19/loopcontrolleventilator/loopbewakingtijd`
+- `scada/3c/setpoints/20/em/bstarttijd`
+- `scada/3c/setpoints/20/em/bstarttijdbewaking`
+- `scada/3c/setpoints/20/em/bstoptijd`
+- `scada/3c/setpoints/20/em/bstoptijdbewaking`
+- `scada/3c/setpoints/20/em/handauto`
+- `scada/3c/setpoints/20/em/leegdraaitijd`
+- `scada/3c/setpoints/20/em/tstarttijd`
+- `scada/3c/setpoints/20/em/tstarttijdbewaking`
+- `scada/3c/setpoints/20/em/tstoptijd`
+- `scada/3c/setpoints/20/em/tstoptijdbewaking`
+- `scada/3c/setpoints/3/em/bstarttijd`
+- `scada/3c/setpoints/3/em/bstarttijdbewaking`
+- `scada/3c/setpoints/3/em/bstoptijd`
+- `scada/3c/setpoints/3/em/bstoptijdbewaking`
+- `scada/3c/setpoints/3/em/handauto`
+- `scada/3c/setpoints/3/em/leegdraaitijd`
+- `scada/3c/setpoints/3/em/tstarttijd`
+- `scada/3c/setpoints/3/em/tstarttijdbewaking`
+- `scada/3c/setpoints/3/em/tstoptijd`
+- `scada/3c/setpoints/3/em/tstoptijdbewaking`
+- `scada/3c/setpoints/3/fqafvoerschroef1/bsnelheidlangzaam`
+- `scada/3c/setpoints/3/fqafvoerschroef1/draairichting`
+- `scada/3c/setpoints/3/fqafvoerschroef1/isnelheidlangzaam`
+- `scada/3c/setpoints/3/fqafvoerschroef1/snelheid`
+- `scada/3c/setpoints/3/fqafvoerschroef1/startstophand`
+- `scada/3c/setpoints/3/fqafvoerschroef2/bsnelheidlangzaam`
+- `scada/3c/setpoints/3/fqafvoerschroef2/draairichting`
+- `scada/3c/setpoints/3/fqafvoerschroef2/isnelheidlangzaam`
+- `scada/3c/setpoints/3/fqafvoerschroef2/snelheid`
+- `scada/3c/setpoints/3/fqafvoerschroef2/startstophand`
+- `scada/3c/setpoints/3/fqafvoerwalz/bsnelheidlangzaam`
+- `scada/3c/setpoints/3/fqafvoerwalz/draairichting`
+- `scada/3c/setpoints/3/fqafvoerwalz/isnelheidlangzaam`
+- `scada/3c/setpoints/3/fqafvoerwalz/snelheid`
+- `scada/3c/setpoints/3/fqafvoerwalz/startstophand`
+- `scada/3c/setpoints/3/fqpeddelwals1en2/bsnelheidlangzaam`
+- `scada/3c/setpoints/3/fqpeddelwals1en2/draairichting`
+- `scada/3c/setpoints/3/fqpeddelwals1en2/isnelheidlangzaam`
+- `scada/3c/setpoints/3/fqpeddelwals1en2/snelheid`
+- `scada/3c/setpoints/3/fqpeddelwals1en2/startstophand`
+- `scada/3c/setpoints/3/intrekwals/aanlooptijd`
+- `scada/3c/setpoints/3/intrekwals/handauto`
+- `scada/3c/setpoints/3/intrekwals/stopstarthand`
+- `scada/3c/setpoints/3/intrekwals/uitlooptijd`
+- `scada/3c/setpoints/3/loopcontrolleafvoerschraper/loopbewakingtijd`
+- `scada/3c/setpoints/3/loopcontrolleafvoerschroef1/loopbewakingtijd`
+- `scada/3c/setpoints/3/loopcontrolleafvoerschroef2/loopbewakingtijd`
+- `scada/3c/setpoints/3/loopcontrolleafvoerwalz/loopbewakingtijd`
+- `scada/3c/setpoints/3/loopcontrollepeddelwals1/loopbewakingtijd`
+- `scada/3c/setpoints/3/loopcontrollepeddelwals2/loopbewakingtijd`
+- `scada/3c/setpoints/3/loopcontrolleroeras/loopbewakingtijd`
+- `scada/3c/setpoints/3/motorafvoerschraper/aanlooptijd`
+- `scada/3c/setpoints/3/motorafvoerschraper/handauto`
+- `scada/3c/setpoints/3/motorafvoerschraper/stopstarthand`
+- `scada/3c/setpoints/3/motorafvoerschraper/uitlooptijd`
+- `scada/3c/setpoints/3/niveaumeeting/niveauhoog`
+- `scada/3c/setpoints/3/niveaumeeting/niveauhooghoog`
+- `scada/3c/setpoints/3/niveaumeeting/niveaulaag`
+- `scada/3c/setpoints/3/niveaumeeting/niveaulaaglaag`
+- `scada/3c/setpoints/3/niveaumeeting/schroef_1_enable`
+- `scada/3c/setpoints/3/niveaumeeting/schroef_2_enable`
+- `scada/3c/setpoints/3/niveaumeeting/schroef_3_enable`
+- `scada/3c/setpoints/4l/em/bstarttijd`
+- `scada/3c/setpoints/4l/em/bstarttijdbewaking`
+- `scada/3c/setpoints/4l/em/bstoptijd`
+- `scada/3c/setpoints/4l/em/bstoptijdbewaking`
+- `scada/3c/setpoints/4l/em/handauto`
+- `scada/3c/setpoints/4l/em/leegdraaitijd`
+- `scada/3c/setpoints/4l/em/tstarttijd`
+- `scada/3c/setpoints/4l/em/tstarttijdbewaking`
+- `scada/3c/setpoints/4l/em/tstoptijd`
+- `scada/3c/setpoints/4l/em/tstoptijdbewaking`
+- `scada/3c/setpoints/4l/loopcontrollefrictiewasser/loopbewakingtijd`
+- `scada/3c/setpoints/4l/softstarterfrictiewasser/handauto`
+- `scada/3c/setpoints/4l/softstarterfrictiewasser/stopstarthand`
+- `scada/3c/setpoints/4r/em/bstarttijd`
+- `scada/3c/setpoints/4r/em/bstarttijdbewaking`
+- `scada/3c/setpoints/4r/em/bstoptijd`
+- `scada/3c/setpoints/4r/em/bstoptijdbewaking`
+- `scada/3c/setpoints/4r/em/handauto`
+- `scada/3c/setpoints/4r/em/leegdraaitijd`
+- `scada/3c/setpoints/4r/em/tstarttijd`
+- `scada/3c/setpoints/4r/em/tstarttijdbewaking`
+- `scada/3c/setpoints/4r/em/tstoptijd`
+- `scada/3c/setpoints/4r/em/tstoptijdbewaking`
+- `scada/3c/setpoints/4r/loopcontrollefrictiewasser/loopbewakingtijd`
+- `scada/3c/setpoints/4r/softstarterfrictiewasser/handauto`
+- `scada/3c/setpoints/4r/softstarterfrictiewasser/stopstarthand`
+- `scada/3c/setpoints/5l/em/bstarttijd`
+- `scada/3c/setpoints/5l/em/bstarttijdbewaking`
+- `scada/3c/setpoints/5l/em/bstoptijd`
+- `scada/3c/setpoints/5l/em/bstoptijdbewaking`
+- `scada/3c/setpoints/5l/em/handauto`
+- `scada/3c/setpoints/5l/em/leegdraaitijd`
+- `scada/3c/setpoints/5l/em/tstarttijd`
+- `scada/3c/setpoints/5l/em/tstarttijdbewaking`
+- `scada/3c/setpoints/5l/em/tstoptijd`
+- `scada/3c/setpoints/5l/em/tstoptijdbewaking`
+- `scada/3c/setpoints/5l/fqschroef1/bsnelheidlangzaam`
+- `scada/3c/setpoints/5l/fqschroef1/draairichting`
+- `scada/3c/setpoints/5l/fqschroef1/isnelheidlangzaam`
+- `scada/3c/setpoints/5l/fqschroef1/snelheid`
+- `scada/3c/setpoints/5l/fqschroef1/startstophand`
+- `scada/3c/setpoints/5l/loopcontrolleschroef1/loopbewakingtijd`
+- `scada/3c/setpoints/5r/em/bstarttijd`
+- `scada/3c/setpoints/5r/em/bstarttijdbewaking`
+- `scada/3c/setpoints/5r/em/bstoptijd`
+- `scada/3c/setpoints/5r/em/bstoptijdbewaking`
+- `scada/3c/setpoints/5r/em/handauto`
+- `scada/3c/setpoints/5r/em/leegdraaitijd`
+- `scada/3c/setpoints/5r/em/tstarttijd`
+- `scada/3c/setpoints/5r/em/tstarttijdbewaking`
+- `scada/3c/setpoints/5r/em/tstoptijd`
+- `scada/3c/setpoints/5r/em/tstoptijdbewaking`
+- `scada/3c/setpoints/5r/fqschroef2/bsnelheidlangzaam`
+- `scada/3c/setpoints/5r/fqschroef2/draairichting`
+- `scada/3c/setpoints/5r/fqschroef2/isnelheidlangzaam`
+- `scada/3c/setpoints/5r/fqschroef2/snelheid`
+- `scada/3c/setpoints/5r/fqschroef2/startstophand`
+- `scada/3c/setpoints/5r/loopcontrolleschroef2/loopbewakingtijd`
+- `scada/3c/setpoints/6/em/bstarttijd`
+- `scada/3c/setpoints/6/em/bstarttijdbewaking`
+- `scada/3c/setpoints/6/em/bstoptijd`
+- `scada/3c/setpoints/6/em/bstoptijdbewaking`
+- `scada/3c/setpoints/6/em/handauto`
+- `scada/3c/setpoints/6/em/leegdraaitijd`
+- `scada/3c/setpoints/6/em/tstarttijd`
+- `scada/3c/setpoints/6/em/tstarttijdbewaking`
+- `scada/3c/setpoints/6/em/tstoptijd`
+- `scada/3c/setpoints/6/em/tstoptijdbewaking`
+- `scada/3c/setpoints/6/hydrauliek/aanlooptijd`
+- `scada/3c/setpoints/6/hydrauliek/handauto`
+- `scada/3c/setpoints/6/hydrauliek/stopstarthand`
+- `scada/3c/setpoints/6/hydrauliek/uitlooptijd`
+- `scada/3c/setpoints/6/loopbewaking schroef 1/loopbewakingtijd`
+- `scada/3c/setpoints/6/loopbewaking schroef 2/loopbewakingtijd`
+- `scada/3c/setpoints/6/loopbewaking schroef 3/loopbewakingtijd`
+- `scada/3c/setpoints/6/loopcontrollehydrauliek/loopbewakingtijd`
+- `scada/3c/setpoints/6/loopcontrollesnijmolen/loopbewakingtijd`
+- `scada/3c/setpoints/6/schroef 1/bsnelheidlangzaam`
+- `scada/3c/setpoints/6/schroef 1/draairichting`
+- `scada/3c/setpoints/6/schroef 1/isnelheidlangzaam`
+- `scada/3c/setpoints/6/schroef 1/snelheid`
+- `scada/3c/setpoints/6/schroef 1/startstophand`
+- `scada/3c/setpoints/6/schroef 2/bsnelheidlangzaam`
+- `scada/3c/setpoints/6/schroef 2/draairichting`
+- `scada/3c/setpoints/6/schroef 2/isnelheidlangzaam`
+- `scada/3c/setpoints/6/schroef 2/snelheid`
+- `scada/3c/setpoints/6/schroef 2/startstophand`
+- `scada/3c/setpoints/6/schroef 3/bsnelheidlangzaam`
+- `scada/3c/setpoints/6/schroef 3/draairichting`
+- `scada/3c/setpoints/6/schroef 3/isnelheidlangzaam`
+- `scada/3c/setpoints/6/schroef 3/snelheid`
+- `scada/3c/setpoints/6/schroef 3/startstophand`
+- `scada/3c/setpoints/6/softstartersnijmolen/handauto`
+- `scada/3c/setpoints/6/softstartersnijmolen/stopstarthand`
+- `scada/3c/setpoints/7/em/bstarttijd`
+- `scada/3c/setpoints/7/em/bstarttijdbewaking`
+- `scada/3c/setpoints/7/em/bstoptijd`
+- `scada/3c/setpoints/7/em/bstoptijdbewaking`
+- `scada/3c/setpoints/7/em/handauto`
+- `scada/3c/setpoints/7/em/leegdraaitijd`
+- `scada/3c/setpoints/7/em/tstarttijd`
+- `scada/3c/setpoints/7/em/tstarttijdbewaking`
+- `scada/3c/setpoints/7/em/tstoptijd`
+- `scada/3c/setpoints/7/em/tstoptijdbewaking`
+- `scada/3c/setpoints/9l/em/bstarttijd`
+- `scada/3c/setpoints/9l/em/bstarttijdbewaking`
+- `scada/3c/setpoints/9l/em/bstoptijd`
+- `scada/3c/setpoints/9l/em/bstoptijdbewaking`
+- `scada/3c/setpoints/9l/em/handauto`
+- `scada/3c/setpoints/9l/em/leegdraaitijd`
+- `scada/3c/setpoints/9l/em/tstarttijd`
+- `scada/3c/setpoints/9l/em/tstarttijdbewaking`
+- `scada/3c/setpoints/9l/em/tstoptijd`
+- `scada/3c/setpoints/9l/em/tstoptijdbewaking`
+- `scada/3c/setpoints/9l/loopbewakingfrictiewasser/loopbewakingtijd`
+- `scada/3c/setpoints/9l/softstarterfrictiewasser/handauto`
+- `scada/3c/setpoints/9l/softstarterfrictiewasser/stopstarthand`
+- `scada/3c/setpoints/9r/em/bstarttijd`
+- `scada/3c/setpoints/9r/em/bstarttijdbewaking`
+- `scada/3c/setpoints/9r/em/bstoptijd`
+- `scada/3c/setpoints/9r/em/bstoptijdbewaking`
+- `scada/3c/setpoints/9r/em/handauto`
+- `scada/3c/setpoints/9r/em/leegdraaitijd`
+- `scada/3c/setpoints/9r/em/tstarttijd`
+- `scada/3c/setpoints/9r/em/tstarttijdbewaking`
+- `scada/3c/setpoints/9r/em/tstoptijd`
+- `scada/3c/setpoints/9r/em/tstoptijdbewaking`
+- `scada/3c/setpoints/9r/loopbewaking frictiewasser/loopbewakingtijd`
+- `scada/3c/setpoints/9r/softstarterfrictiewasser/handauto`
+- `scada/3c/setpoints/9r/softstarterfrictiewasser/stopstarthand`

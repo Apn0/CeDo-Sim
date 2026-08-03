@@ -29,6 +29,20 @@ var current_mode    : String = "on_foot"
 var current_vehicle : Node3D = null    # null when on_foot
 var interactable_vehicle: Node3D = null # vehicle in range to enter (set by VehicleEnterArea)
 
+## Shared spawn helper — creates + wires an OperatorContext under `host`, using the
+## player capsule's own Camera3D. BOTH MainWorld (via SystemsSpawner) and
+## GauntletWorld call this so the two can never drift: the gauntlet used to skip
+## spawning an OperatorContext entirely, so vehicles rendered but could NOT be
+## boarded there (VehicleEnterArea + BaseVehicle gate boarding on the
+## "operator_context" group, which _ready() registers). #gauntlet-parity.
+static func spawn_under(host: Node, player_body: CharacterBody3D) -> OperatorContext:
+	var oc := OperatorContext.new()
+	oc.name = "OperatorContext"
+	oc.on_foot_body = player_body
+	oc.foot_camera  = player_body.find_child("Camera3D", true, false) as Camera3D
+	host.add_child(oc)
+	return oc
+
 # =============================================================================
 func _ready() -> void:
 	# Register in a group so VehicleEnterArea / AudioManager can find us without
@@ -199,7 +213,15 @@ func npc_board_vehicle(npc: Node, vehicle: Node) -> bool:
 		return false
 	if "visible" in npc:
 		npc.visible = false
-	if npc.has_method("set_physics_process"):
+	# npc-05 — an NPC that knows how to be seated is told so, and parks its OWN
+	# locomotion while keeping its decision layer alive (NPC._physics_process).
+	# This used to be a blanket set_physics_process(false), which also switched
+	# off _autonomy_tick — so boarding a forklift silently deadlocked the very
+	# task that ordered the boarding. Bodies without the flag (FeederWorker and
+	# friends) keep the old blunt behaviour; they carry no autonomy task.
+	if "_seated_in_vehicle" in npc:
+		npc.set("_seated_in_vehicle", true)
+	elif npc.has_method("set_physics_process"):
 		npc.set_physics_process(false)
 	vehicle.call("on_npc_entered", npc)
 	_npc_vehicles[npc.get_instance_id()] = vehicle
@@ -224,7 +246,10 @@ func npc_disembark_vehicle(npc: Node) -> void:
 		if vehicle.has_method("on_npc_exited"):
 			vehicle.call("on_npc_exited", npc)
 	if is_instance_valid(npc):
-		if npc.has_method("set_physics_process"):
+		# npc-05 — mirror of the boarding branch above.
+		if "_seated_in_vehicle" in npc:
+			npc.set("_seated_in_vehicle", false)
+		elif npc.has_method("set_physics_process"):
 			npc.set_physics_process(true)
 		if "visible" in npc:
 			npc.visible = true

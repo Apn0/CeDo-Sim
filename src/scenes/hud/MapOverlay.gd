@@ -23,7 +23,10 @@ const MAX_RADIUS  : float = 600.0
 const ZOOM_STEP   : float = 0.82      # multiply/divide per wheel notch
 
 # Marker colours
-const C_PANEL   := Color(0.06, 0.07, 0.06, 0.93)
+# FULLY OPAQUE. At alpha 0.93 the 3D scene bled through the map — the operator's
+# screenshot shows an NPC and a red machine visible *through* the panel, which is
+# what made it unreadable. A map is a map, not a window.
+const C_PANEL   := Color(0.06, 0.07, 0.06, 1.0)
 const C_BORDER  := Color(0.32, 0.52, 0.34, 0.9)
 const C_RING    := Color(0.30, 0.42, 0.32, 0.5)
 const C_BUILDING := Color(0.84, 0.82, 0.74, 0.9)   # cream — CeDo building outline
@@ -60,6 +63,11 @@ func open() -> void:
 	var vp := get_viewport()
 	if vp:
 		size = vp.get_visible_rect().size
+	# Cache the counter-rotation that makes the map genuinely north-up.
+	if main_world != null and main_world.has_method("_world_yaw"):
+		var yaw : float = float(main_world.call("_world_yaw"))
+		_yaw_cos = cos(yaw)
+		_yaw_sin = sin(yaw)
 	visible = true
 	set_process(true)
 	queue_redraw()
@@ -96,27 +104,38 @@ func _draw() -> void:
 	if not visible:
 		return
 	# Full-screen dim
-	draw_rect(Rect2(Vector2.ZERO, size), Color(0, 0, 0, 0.55))
+	draw_rect(Rect2(Vector2.ZERO, size), Color(0, 0, 0, 0.72))
 
-	# Centred square map panel
-	var m := minf(size.x, size.y) * 0.82
-	var panel := Rect2((size - Vector2(m, m)) * 0.5, Vector2(m, m))
+	# Centred square map panel — geometry comes from view_params() so the draw
+	# path and the headless frame test share ONE projection setup.
+	var vparams := view_params()
+	var panel : Rect2 = vparams["panel"]
 	draw_rect(panel, C_PANEL)
 	draw_rect(panel, C_BORDER, false, 2.0)
 
-	var center_px := panel.position + panel.size * 0.5
-	var scale_px  := (m * 0.5) / view_radius_m            # pixels per metre
-	var origin    := _player_xz()
+	var center_px : Vector2 = vparams["center_px"]
+	var scale_px : float = vparams["scale_px"]
+	var origin : Vector2 = vparams["origin"]
 
-	_draw_rings(center_px, scale_px, m)
+	_draw_rings(center_px, scale_px, panel.size.x)
 	# CeDo building outline — drawn first so machines / vehicles / crew render
-	# ON TOP of it. The shell mesh's AABB projected to ground gives a
-	# rectangle that bounds the factory; good enough as a "where is the
-	# building" reference at site-map scale.
+	# ON TOP of it. Placed via the MEASURED building frame (fitted to the
+	# shell's collision geometry by InteriorLightingManager), projected through
+	# the same _to_px as every entity layer; hidden when no fit exists.
 	_draw_building_outline(center_px, scale_px, origin, panel)
+	# Bale yards, under the markers for the same reason as the outline.
+	_draw_yards(center_px, scale_px, origin)
 
 	# Machines (steel squares; ids only when zoomed in enough to be legible)
+	# Operator 2026-07-20 ("very poor, see?"): every machine and every parked car
+	# drew its label unconditionally, so the staff car park came out as one
+	# unreadable pile of overlapping text. Labels are now claimed against a
+	# collision list and dropped when they'd overlap something already drawn.
+	_label_rects.clear()
 	var label_machines := scale_px > 3.0
+	# Vehicle names are only legible once the map is zoomed in — at wide zoom the
+	# car park is a cluster a few pixels across and no label can be readable.
+	var label_vehicles := scale_px > 5.0
 	for nd in _machines():
 		var n = nd.get("node", null)
 		if n == null or not is_instance_valid(n):
@@ -125,7 +144,7 @@ func _draw() -> void:
 		var cl := _clamp_to(px, panel)
 		draw_rect(Rect2(cl - Vector2(2.5, 2.5), Vector2(5, 5)), C_MACHINE)
 		if label_machines and cl == px:
-			_text(cl + Vector2(5, 3), _short_id(String(nd.get("id", ""))), 10, C_DIM)
+			_text_nc(cl + Vector2(5, 3), _short_id(String(nd.get("id", ""))), 10, C_DIM)
 
 	# Loose bales (small tan squares)
 	for b in _bales():
@@ -154,8 +173,8 @@ func _draw() -> void:
 		var vt := String(v.vehicle_type)
 		var col := C_LIFT if (vt == "mast_lift" or vt == "scissor_lift") else C_VEHICLE
 		_draw_heading_tri(cl, _forward2(v), 7.0, col)
-		if cl == vp:
-			_text(cl + Vector2(7, 3), _vehicle_short(String(v.vehicle_type)), 10, col)
+		if label_vehicles and cl == vp:
+			_text_nc(cl + Vector2(7, 3), _vehicle_short(String(v.vehicle_type)), 10, col)
 
 	# Player (always dead-centre, heading arrow)
 	if main_world and main_world.player:
@@ -165,7 +184,9 @@ func _draw() -> void:
 	_text(Vector2(center_px.x - 5, panel.position.y + 16), "N", 14, C_DIM)
 	_draw_scalebar(panel, scale_px)
 	_draw_legend(panel)
-	_text(Vector2(panel.position.x, panel.position.y - 10),
+	# Inside the panel, not above it: at panel.position.y - 10 the title landed on
+	# top of the HUD shift clock ("Shift starts in ... · SITE MAP" overlapped).
+	_text(Vector2(panel.position.x + 8, panel.position.y + 20),
 		"SITE MAP", 18, Color(0.78, 0.92, 0.78, 1.0))
 	_text(Vector2(panel.end.x - 250, panel.position.y - 10),
 		"[M] close   ·   scroll to zoom", 13, C_DIM)
@@ -185,42 +206,71 @@ func _draw_rings(center_px: Vector2, scale_px: float, m: float) -> void:
 			draw_arc(center_px, rp, 0.0, TAU, 64, C_RING, 1.0, true)
 		r += step
 
-## Cached footprint polygon (mesh-local XZ) of the building shell. Computed
-## once from the shell mesh's floor triangles unioned together — the shell
-## is static so the polygon is too. Preserves L-shapes / concavities that
-## the previous AABB-rectangle path lost.
-var _footprint_local : PackedVector2Array = PackedVector2Array()
-var _footprint_built : bool = false
-var _footprint_mesh_rid : RID
+## Canonical building perimeter in the georeferenced BUILDING FRAME
+## (tools/generate_building.py). This is the trusted SHAPE (150.7 x 71.5 m
+## envelope — InteriorLightingManager sanity-checks the measured shell OBB
+## against these spans, +-12 m). The FRAME that lands it in the scene is NOT
+## baked here: hand-baked BF->PC affine constants placed 38/39 TL bars
+## against open air (worst 5.67 m off) before 2701275; the surviving copy in
+## this file displaced the outline the same way, drawing the player "outside"
+## a building they were standing in. Placement now comes exclusively from the
+## measured fit (_outline_scene_pts).
+const _BF_OUTLINE : Array = [
+	Vector2(0, 0), Vector2(150.7, 0), Vector2(150.7, 31.5), Vector2(131.5, 31.5),
+	Vector2(131.5, 71.5), Vector2(81, 71.5), Vector2(81, 66), Vector2(57, 66),
+	Vector2(57, 61), Vector2(0, 61)]
 
-## Draw the building shell's true XZ footprint (not its AABB) as a translucent
-## cream outline + label. Uses MainWorld._shell() to find the MeshInstance3D;
-## silently skips if the shell isn't loaded (sandbox world, headless test).
-func _draw_building_outline(center_px: Vector2, scale_px: float, origin: Vector2, panel: Rect2) -> void:
+## Outline vertices in scene XZ, mapped through the frame that
+## InteriorLightingManager FITS to the shell's actual collision faces
+## (rotating-calipers OBB + roof-height raycast disambiguation). Cached after
+## the first successful fetch: the shell is static and the fit runs exactly
+## once per boot, so the mapping cannot change while the world lives. Empty
+## while the fit is pending or absent (bench worlds, fit failure) — the
+## outline is then NOT drawn: absent beats wrong.
+var _outline_scene : PackedVector2Array = PackedVector2Array()
+
+func _outline_scene_pts() -> PackedVector2Array:
+	if _outline_scene.size() >= 3:
+		return _outline_scene
 	if main_world == null:
-		return
-	var shell : MeshInstance3D = main_world._shell() if main_world.has_method("_shell") else null
-	if shell == null or not is_instance_valid(shell) or shell.mesh == null:
-		return
-	# Invalidate the cache if the shell mesh changed (level reload, swap).
-	if _footprint_built and shell.mesh.get_rid() != _footprint_mesh_rid:
-		_footprint_built = false
-	if not _footprint_built:
-		_footprint_local = _compute_footprint_polygon(shell.mesh)
-		_footprint_mesh_rid = shell.mesh.get_rid()
-		_footprint_built = true
-	if _footprint_local.size() < 3:
-		return
-	# Project the polygon through the shell's world transform back to world XZ,
-	# then to screen pixels via _to_px.
-	var xfm := shell.global_transform
+		return PackedVector2Array()
+	var ilm := main_world.get_node_or_null("InteriorLightingManager") as InteriorLightingManager
+	if ilm == null:
+		return PackedVector2Array()
+	var fit : Dictionary = ilm.get_building_frame()
+	if fit.is_empty():
+		return PackedVector2Array()
+	var o : Vector2 = fit["o"]
+	var fx : Vector2 = fit["x"]
+	var fz : Vector2 = fit["z"]
 	var pts := PackedVector2Array()
-	pts.resize(_footprint_local.size())
-	for i in _footprint_local.size():
-		var v : Vector2 = _footprint_local[i]
-		var world : Vector3 = xfm * Vector3(v.x, 0.0, v.y)
-		pts[i] = _to_px(world, center_px, scale_px, origin)
-	# Fill is subtle so yard markers stay visible through it.
+	pts.resize(_BF_OUTLINE.size())
+	for i in _BF_OUTLINE.size():
+		var b : Vector2 = _BF_OUTLINE[i]
+		pts[i] = o + fx * b.x + fz * b.y
+	_outline_scene = pts
+	return _outline_scene
+
+## The building outline pushed through the SAME _to_px projection as every
+## entity layer — the headless frame test (src/tests/test_map_frame.gd)
+## asserts on this exact function, so what is tested is what is drawn.
+## Empty when no measured frame is available.
+func outline_px(center_px: Vector2, scale_px: float, origin: Vector2) -> PackedVector2Array:
+	var scene_pts := _outline_scene_pts()
+	var pts := PackedVector2Array()
+	if scene_pts.size() < 3:
+		return pts
+	pts.resize(scene_pts.size())
+	for i in scene_pts.size():
+		var s2 : Vector2 = scene_pts[i]
+		pts[i] = _to_px(Vector3(s2.x, 0.0, s2.y), center_px, scale_px, origin)
+	return pts
+
+func _draw_building_outline(center_px: Vector2, scale_px: float, origin: Vector2, panel: Rect2) -> void:
+	var pts := outline_px(center_px, scale_px, origin)
+	if pts.size() < 3:
+		return
+	# Fill is subtle so bale / machine / crew markers inside the building stay legible.
 	var fill := C_BUILDING
 	fill.a = 0.10
 	draw_colored_polygon(pts, fill)
@@ -236,105 +286,29 @@ func _draw_building_outline(center_px: Vector2, scale_px: float, origin: Vector2
 	if panel.has_point(top_left):
 		_text(top_left + Vector2(4, -4), "CEDO", 11, C_BUILDING)
 
-## Walk the shell mesh's floor triangles, project to XZ, union them. The
-## result is the building footprint in mesh-local coordinates — handles
-## L-shapes / concavities the AABB lost. Runs once per shell mesh.
-##
-## Filtering: prefer triangles where all 3 vertices sit within FLOOR_EPS of
-## the mesh's min_y (the explicit floor face). If the mesh has no floor
-## triangles, fall back to ALL triangles whose XZ projection isn't
-## degenerate — the union still gives the right outline because vertical
-## walls project to zero-area lines that don't contribute.
-const _FOOTPRINT_FLOOR_EPS_M : float = 0.05
-const _FOOTPRINT_DEGENERATE_AREA : float = 0.0001
-func _compute_footprint_polygon(mesh: Mesh) -> PackedVector2Array:
-	if mesh.get_surface_count() == 0:
-		return PackedVector2Array()
-	var arrays := mesh.surface_get_arrays(0)
-	var verts : PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-	if verts.is_empty():
-		return PackedVector2Array()
-	var idx : PackedInt32Array = PackedInt32Array()
-	if arrays.size() > Mesh.ARRAY_INDEX and arrays[Mesh.ARRAY_INDEX] != null:
-		idx = arrays[Mesh.ARRAY_INDEX]
-	var min_y : float = INF
-	for v in verts:
-		if v.y < min_y:
-			min_y = v.y
-	# Collect projected triangles in two buckets: floor (preferred) + all.
-	var tris_floor : Array = []
-	var tris_all : Array = []
-	if idx.size() > 0:
-		var n : int = idx.size()
-		var i : int = 0
-		while i < n:
-			var v1 : Vector3 = verts[idx[i]]
-			var v2 : Vector3 = verts[idx[i + 1]]
-			var v3 : Vector3 = verts[idx[i + 2]]
-			i += 3
-			var p1 := Vector2(v1.x, v1.z)
-			var p2 := Vector2(v2.x, v2.z)
-			var p3 := Vector2(v3.x, v3.z)
-			if absf((p2 - p1).cross(p3 - p1)) < _FOOTPRINT_DEGENERATE_AREA:
-				continue
-			var tri := PackedVector2Array([p1, p2, p3])
-			tris_all.append(tri)
-			if v1.y - min_y <= _FOOTPRINT_FLOOR_EPS_M \
-					and v2.y - min_y <= _FOOTPRINT_FLOOR_EPS_M \
-					and v3.y - min_y <= _FOOTPRINT_FLOOR_EPS_M:
-				tris_floor.append(tri)
-	else:
-		var n : int = verts.size()
-		var i : int = 0
-		while i + 2 < n:
-			var v1 : Vector3 = verts[i]
-			var v2 : Vector3 = verts[i + 1]
-			var v3 : Vector3 = verts[i + 2]
-			i += 3
-			var p1 := Vector2(v1.x, v1.z)
-			var p2 := Vector2(v2.x, v2.z)
-			var p3 := Vector2(v3.x, v3.z)
-			if absf((p2 - p1).cross(p3 - p1)) < _FOOTPRINT_DEGENERATE_AREA:
-				continue
-			var tri := PackedVector2Array([p1, p2, p3])
-			tris_all.append(tri)
-			if v1.y - min_y <= _FOOTPRINT_FLOOR_EPS_M \
-					and v2.y - min_y <= _FOOTPRINT_FLOOR_EPS_M \
-					and v3.y - min_y <= _FOOTPRINT_FLOOR_EPS_M:
-				tris_floor.append(tri)
-	var tris : Array = tris_floor if tris_floor.size() > 0 else tris_all
-	if tris.is_empty():
-		return PackedVector2Array()
-	# Union all triangle projections. After each merge keep the polygon with
-	# the largest area — multi-component meshes (detached props, attached
-	# fences) would otherwise grow into an Array of disjoint islands.
-	var acc : PackedVector2Array = tris[0]
-	for j in range(1, tris.size()):
-		var merged : Array = Geometry2D.merge_polygons(acc, tris[j])
-		if merged.is_empty():
+## Bale-yard perimeters. Source is BaleYardManager's record of where each yard
+## was ACTUALLY spawned (scene XZ), pushed through the same _to_px as the
+## outline and every marker — so a yard rectangle and the bale squares standing
+## inside it cannot drift apart. Not cached here: yards can be reset/restocked,
+## and the list is a handful of quads.
+func _draw_yards(center_px: Vector2, scale_px: float, origin: Vector2) -> void:
+	if main_world == null or main_world.bale_yard_manager == null:
+		return
+	var fill := C_BALE
+	fill.a = 0.09
+	var edge := C_BALE
+	edge.a = 0.45
+	for poly in main_world.bale_yard_manager.get_yard_polygons():
+		if poly.size() < 3:
 			continue
-		if merged.size() == 1:
-			acc = merged[0]
-			continue
-		var best : PackedVector2Array = merged[0]
-		var best_area : float = absf(_polygon_area(best))
-		for k in range(1, merged.size()):
-			var a_k : float = absf(_polygon_area(merged[k]))
-			if a_k > best_area:
-				best = merged[k]
-				best_area = a_k
-		acc = best
-	return acc
-
-static func _polygon_area(poly: PackedVector2Array) -> float:
-	if poly.size() < 3:
-		return 0.0
-	var s : float = 0.0
-	for i in poly.size():
-		var p := poly[i]
-		var q := poly[(i + 1) % poly.size()]
-		s += p.x * q.y - q.x * p.y
-	return s * 0.5
+		var pts := PackedVector2Array()
+		pts.resize(poly.size())
+		for i in poly.size():
+			var s2 : Vector2 = poly[i]
+			pts[i] = _to_px(Vector3(s2.x, 0.0, s2.y), center_px, scale_px, origin)
+		draw_colored_polygon(pts, fill)
+		for i in pts.size():
+			draw_line(pts[i], pts[(i + 1) % pts.size()], edge, 1.2, true)
 
 func _draw_heading_tri(c: Vector2, dir: Vector2, s: float, col: Color) -> void:
 	var d := dir
@@ -371,6 +345,7 @@ func _draw_legend(panel: Rect2) -> void:
 		[C_LIFT,    "Scissor lift"],
 		[C_MACHINE, "Machine"],
 		[C_BALE,    "Bale"],
+		[Color(C_BALE.r, C_BALE.g, C_BALE.b, 0.45), "Bale yard"],
 		[C_BUILDING, "CeDo building"],
 	]
 	var x := panel.end.x - 132.0
@@ -388,12 +363,55 @@ func _text(pos: Vector2, s: String, fsize: int, col: Color) -> void:
 		return
 	draw_string(_font, pos, s, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize, col)
 
+## Rects already occupied by a label this frame (see _draw).
+var _label_rects : Array[Rect2] = []
+
+## Draw a label ONLY if it doesn't collide with one already placed this frame.
+## Returns false when the label was dropped. Cheap O(n^2) — n is a few dozen and
+## only while the map is open.
+func _text_nc(pos: Vector2, s: String, fsize: int, col: Color) -> bool:
+	# _font can be null under a dummy display server (headless frame test), where
+	# get_string_size would crash before the label is ever rasterised.
+	if s == "" or _font == null:
+		return false
+	var w : float = _font.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize).x
+	var r := Rect2(pos - Vector2(2.0, float(fsize)), Vector2(w + 4.0, float(fsize) + 4.0))
+	for q in _label_rects:
+		if r.intersects(q):
+			return false
+	_label_rects.append(r)
+	_text(pos, s, fsize, col)
+	return true
+
 # =============================================================================
 # PROJECTION + ENTITY GATHERING
 # =============================================================================
-## World XZ → screen pixels, player-centred. +X right, +Z down (so -Z = north = up).
+## World XZ → screen pixels, player-centred, NORTH-UP. The scene frame is
+## rotated by the canonical world yaw (130.2 deg), so raw world axes put
+## north down-left; we counter-rotate into the layout (north-up) frame so
+## the "N" compass label is honest. Yaw is cached in open().
+var _yaw_cos : float = 1.0
+var _yaw_sin : float = 0.0
+
+## Canonical view setup — panel rect, pixel centre, px-per-metre scale and the
+## player-centred origin. ONE source of truth: _draw and the headless frame
+## test both build their projection from this dict, so an assertion on
+## _to_px(view_params()...) is an assertion on the rendered map.
+func view_params() -> Dictionary:
+	var m := minf(size.x, size.y) * 0.82
+	var panel := Rect2((size - Vector2(m, m)) * 0.5, Vector2(m, m))
+	return {
+		"panel": panel,
+		"center_px": panel.position + panel.size * 0.5,
+		"scale_px": (m * 0.5) / view_radius_m,
+		"origin": _player_xz(),
+	}
+
 func _to_px(world_pos: Vector3, center_px: Vector2, scale_px: float, origin: Vector2) -> Vector2:
-	return center_px + Vector2(world_pos.x - origin.x, world_pos.z - origin.y) * scale_px
+	var dx := world_pos.x - origin.x
+	var dz := world_pos.z - origin.y
+	return center_px + Vector2(dx * _yaw_cos - dz * _yaw_sin,
+		dx * _yaw_sin + dz * _yaw_cos) * scale_px
 
 func _clamp_to(px: Vector2, panel: Rect2) -> Vector2:
 	return Vector2(
@@ -406,10 +424,12 @@ func _player_xz() -> Vector2:
 		return Vector2(p.x, p.z)
 	return Vector2.ZERO
 
-## A node's forward direction projected to map space (x, z). Godot bodies face -Z.
+## A node's forward direction projected to map space (x, z), counter-rotated
+## into the north-up frame like _to_px. Godot bodies face -Z.
 func _forward2(n: Node3D) -> Vector2:
 	var f := -n.global_transform.basis.z
-	return Vector2(f.x, f.z)
+	return Vector2(f.x * _yaw_cos - f.z * _yaw_sin,
+		f.x * _yaw_sin + f.z * _yaw_cos)
 
 func _machines() -> Array:
 	if main_world and main_world.line_flow and "_nodes" in main_world.line_flow:

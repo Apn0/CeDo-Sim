@@ -28,7 +28,13 @@ class_name FeederWorker
 ## open on the belt instead of staying shut or tearing.
 
 @export var worker_name   : String = "Feeder"
+@export var body_color    : Color  = Color(0.95, 0.55, 0.10)   # hi-vis; set to the assigned crew member's colour (#233)
 @export var assigned_line : String = ""              # "Line 1", "Line 3A/3B", …
+# #173 — section pin the operator picked ("feed_3a", "feed_1", …). When set, the
+# worker feeds THAT section's opzetband (matched by belt placeable_id) instead of
+# just the nearest belt. Empty = legacy nearest-belt behaviour.
+@export var assigned_section : String = ""
+@export var section_belt_id  : String = ""           # opzetband placeable_id to feed (derived from the section)
 @export var walk_speed    : float = 3.2
 @export var arrive_dist   : float = 1.1
 @export var lot_center    : Vector3 = Vector3.ZERO   # where the feedstock bales sit
@@ -48,6 +54,7 @@ var vehicle           : Node3D = null
 var personal_scissors : Node3D = null
 var personal_scanner  : Node3D = null
 var _holster          : Node3D = null
+var _hand             : Node3D = null   # front-of-chest anchor a tool is pulled to while in use
 
 enum State { SEEK, TO_BALE, GRAB, LIFT, PROCESS, CARRY, LOAD, WAIT, TO_BELT,
 	SET_DOWN, DISMOUNT, CUT, SCAN, FEED, REMOUNT }
@@ -61,6 +68,18 @@ var _carry_point : Node3D = null
 var _timer       : float = 0.0
 var _gravity     : float = 9.8
 var _riding      : bool = false          # true once boarded into the assigned vehicle
+var _boarding_walk : bool = false        # #233 walking on foot to the parked clamp before boarding
+# #241 — TOOL FETCH leg. The kit does NOT materialise in the worker's hands: the
+# scissors + scanner lie at a real pickup point (a claimed world tool, the shift
+# leader's desk, the QA bench, the wardrobe locker, or the assigned feed belt) and
+# the worker WALKS there and picks them up before boarding. Gates _physics_process
+# exactly like _boarding_walk does, so no production state can half-run meanwhile.
+var _fetching         : bool    = false
+var _fetch_pos        : Vector3 = Vector3.ZERO   # floor spot the worker STANDS on to reach the kit
+var _tool_rest_pos    : Vector3 = Vector3.ZERO   # where the kit LIES (surface, hand height)
+var _pending_scissors : Node3D  = null
+var _pending_scanner  : Node3D  = null
+const FETCH_ARRIVE_M  : float   = 1.8    # close enough to reach the tools down
 var _leg_timer   : float = 0.0           # time spent on the current drive leg
 var _log_timer   : float = 0.0           # throttles the diagnostic print
 var _last_good_xf : Transform3D = Transform3D.IDENTITY   # NaN-transform watchdog
@@ -71,7 +90,43 @@ var _xf_warned   : bool = false
 # transition (a watchdog for the "feeders don't feed" report).
 var _state_log         : int   = -1
 var _state_held_secs   : float = 0.0
+var _state_next_warn_s : float = 0.0     # de-spam: the old `int(held) % 10 == 0`
+										 # test was true for EVERY frame inside
+										 # that second (~60 warnings per hit).
 const _STATE_STUCK_S   : float = 30.0
+const _STATE_WARN_EVERY_S : float = 10.0
+# #233 boarding walk is straight-line steering with no navmesh — a machine or wall
+# between the worker and the parked clamp blocks it forever. While blocked
+# _physics_process returns BEFORE the state machine ticks, so _state freezes at
+# whatever it was (usually SEEK) and the stuck watchdog misreports the phase.
+var _board_walk_secs   : float = 0.0
+var _board_walk_best_d : float = INF     # closest we've ever gotten to the clamp
+var _board_walk_warned : bool  = false
+const BOARD_WALK_STUCK_S : float = 20.0  # no net progress for this long == blocked
+const BOARD_WALK_PROGRESS_M : float = 0.5   # counts as progress toward the clamp
+# #241 audit — the on-foot legs have no navmesh to route around solids: MainWorld
+# bakes its NavigationRegion3D from group "navmesh_source", and only the interior
+# floor + the exterior ground are in it, so a path request comes back as a straight
+# line THROUGH the belt deck. Until machine collision meshes are nav sources, the
+# walk earns its way round obstacles itself: when move_and_slide reports we are
+# grinding on something, steer along the contact tangent for SIDESTEP_SECS before
+# re-aiming (a wall-follow), instead of pressing into it until the watchdog fires.
+var _sidestep_dir      : Vector3 = Vector3.ZERO
+var _sidestep_left     : float   = 0.0   # remaining side-step time
+var _sidestep_commit_s : float   = 0.0   # keep the same side while rounding one obstacle
+var _blocked_secs      : float   = 0.0
+const SIDESTEP_TRIGGER_S : float = 0.4   # grinding this long == a real obstacle
+const SIDESTEP_SECS      : float = 1.5   # ~4.8 m at walk_speed — clears a belt deck
+const SIDESTEP_COMMIT_S  : float = 3.0   # no left/right flip-flop inside this window
+const SIDESTEP_MIN_FRAC  : float = 0.35  # of the ground we should have covered this tick
+## Walk legs the deadlock guard had to force-complete. MUST stay 0: a force-complete
+## means the worker took possession of a tool they never physically reached, which is
+## exactly the #241 cheat. Tests assert it, the guard warns loudly when it happens.
+var walk_forced_completions : int = 0
+## Side-steps taken this run — how often the wall-follow had to earn a way round a
+## solid. Non-zero is normal on a cluttered plant; it is the counter above that
+## must stay at zero.
+var walk_sidesteps : int = 0
 const _STATE_NAMES : Array[String] = ["SEEK","TO_BALE","GRAB","LIFT","PROCESS",
 	"CARRY","LOAD","WAIT","TO_BELT","SET_DOWN","DISMOUNT","CUT","SCAN","FEED","REMOUNT"]
 var _grab_tries  : int = 0               # real-grab attempts this approach (no teleport fallback)
@@ -100,6 +155,14 @@ func _ready() -> void:
 	_holster.name = "Holster"
 	_holster.position = Vector3(0.0, 1.0, 0.35)
 	add_child(_holster)
+	# In-use anchor: front of the chest (canonical front = local -Z), hand height.
+	# SCAN pulls the scanner here, CUT pulls the scissors here, so the worker is
+	# visibly USING the tool instead of scanning/cutting with empty hands (operator
+	# 2026-07-16). Between steps the tool returns to the back holster.
+	_hand = Node3D.new()
+	_hand.name = "Hand"
+	_hand.position = Vector3(0.28, 1.15, -0.30)
+	add_child(_hand)
 
 # =============================================================================
 # PERSONAL KIT (assigned by MainWorld)
@@ -114,8 +177,10 @@ func assign_vehicle(v: Node3D) -> void:
 		v.set("npc_owned", true)
 	if "npc_owner_name" in v:
 		v.set("npc_owner_name", worker_name)
-	# Board it next frame (both nodes need to be in the tree first).
-	call_deferred("_board_vehicle")
+	# #233 — the assigned worker WALKS to the parked clamp on foot and climbs in,
+	# rather than teleporting into the cab. _physics_process drives the approach.
+	_boarding_walk = true
+	_reset_walk_watchdog()
 
 ## Climb into the assigned vehicle: re-parent under it (so we ride along), park
 ## at the cab, and disable our own capsule collision + on-foot locomotion. From
@@ -137,6 +202,242 @@ func _board_vehicle() -> void:
 	_bale = null
 	_riding = true
 
+## #233 — walk on foot to the parked assigned vehicle. Returns true once we're
+## close enough to climb in (the caller then boards). Same on-foot locomotion as
+## the no-vehicle fallback; the capsule is still enabled at this point (boarding
+## disables it), so move_and_slide + is_on_floor work.
+func _walk_to_vehicle(delta: float) -> bool:
+	if vehicle == null or not is_instance_valid(vehicle):
+		_boarding_walk = false
+		return true
+	if _walk_to_point((vehicle as Node3D).global_position, 2.4, delta, "boarding walk to the clamp"):
+		_boarding_walk = false
+		return true
+	return false
+
+## #241 — shared on-foot leg used by BOTH the tool fetch and the boarding walk.
+## Steering + a side-step around whatever the body grinds on (see the SIDESTEP
+## block above), plus the #233 blocked-walk watchdog. Returns true once we've
+## ARRIVED — or, as a deadlock guard only, once the watchdog force-completes.
+## `leg` names the phase in the warning so the log points at the real culprit.
+func _walk_to_point(target: Vector3, arrive_r: float, delta: float, leg: String) -> bool:
+	var d : float = _horiz_dist(target)
+	if d <= arrive_r:
+		_clear_sidestep()
+		return true
+	# Progress = getting meaningfully closer than our best-ever distance.
+	if d < _board_walk_best_d - BOARD_WALK_PROGRESS_M:
+		_board_walk_best_d = d
+		_board_walk_secs = 0.0
+	else:
+		_board_walk_secs += delta
+		if _board_walk_secs > BOARD_WALK_STUCK_S:
+			# DEADLOCK GUARD — NOT the normal way this leg ends. Getting here means
+			# the worker never physically reached the target, so anything they take
+			# on arrival was effectively teleported to them. Production must not
+			# wedge, so the leg still completes, but never silently: report the
+			# residual + where we jammed so a recurrence is visible in the log.
+			if not _board_walk_warned:
+				_board_walk_warned = true
+				walk_forced_completions += 1
+				push_warning(("[Feeder %s] ERROR: %s FORCE-COMPLETED %.1f m SHORT of "
+					+ "the target after %.0fs with no progress — the worker did NOT "
+					+ "reach it (deadlock guard; jammed at %s, target %s)")
+					% [worker_name, leg, d, _board_walk_secs,
+						str(global_position.round()), str(target.round())])
+			_clear_sidestep()
+			return true
+	if not is_on_floor():
+		velocity.y -= _gravity * delta
+	else:
+		velocity.y = 0.0
+	var desired : Vector3 = target - global_position
+	desired.y = 0.0
+	if desired.length_squared() <= 0.0001:
+		velocity.x = 0.0
+		velocity.z = 0.0
+		move_and_slide()
+		return false
+	desired = desired.normalized()
+	_sidestep_commit_s = maxf(0.0, _sidestep_commit_s - delta)
+	# npc-07 — THIS LEG STILL USES RAW STEERING + THE WALL-FOLLOW, ON PURPOSE.
+	# A NavigationAgent3D was fitted here and REVERTED after measurement. Two
+	# things went wrong and both are recorded so the next attempt starts from
+	# evidence rather than from the same idea:
+	#   1. the fetch target is the STAND spot beside a tool resting ON the belt
+	#      frame, and the belt deck is now a navmesh obstacle — so that spot sits
+	#      inside the agent_radius erosion and Recast returns a path that stops
+	#      short, which Godot reports as success;
+	#   2. worse, routing was preferred over the wall-follow, which put the
+	#      side-step in an else-branch and disabled it outright. Measured:
+	#      test_feeder_fetch closed 1.0 m of 13.7 m, walk_sidesteps 1 (triggered
+	#      once, applied never), and the deadlock guard force-completed the leg —
+	#      exactly the #241 teleport-stow this test exists to forbid.
+	# The fix is to route to a REACHABLE stand pose (an ApproachPose-style offset
+	# off the belt's own face) and to keep the wall-follow as the tactical layer
+	# under it, not as an alternative to it.
+	var step_dir : Vector3 = desired
+	if _sidestep_left > 0.0:
+		_sidestep_left -= delta
+		step_dir = _sidestep_dir
+	velocity.x = step_dir.x * walk_speed
+	velocity.z = step_dir.z * walk_speed
+	look_at(global_position + step_dir, Vector3.UP)
+	var before : Vector3 = global_position
+	move_and_slide()
+	_update_sidestep(before, desired, delta)
+	return false
+
+## Grinding check for one walk tick: if the body covered far less ground than the
+## walk speed says it should have, aim along the blocking surface instead of into
+## it. `before` is the position at the top of the tick, `desired` the normalised
+## straight-line heading we would have taken.
+func _update_sidestep(before: Vector3, desired: Vector3, delta: float) -> void:
+	var moved : float = Vector2(global_position.x - before.x,
+		global_position.z - before.z).length()
+	if moved >= walk_speed * delta * SIDESTEP_MIN_FRAC:
+		_blocked_secs = 0.0
+		return
+	_blocked_secs += delta
+	if _sidestep_left > 0.0 or _blocked_secs < SIDESTEP_TRIGGER_S:
+		return
+	# Tangent of the first horizontal contact. No contact reported (wedged on
+	# geometry we only touch diagonally) → step across our own heading instead.
+	var n : Vector3 = Vector3.ZERO
+	for i in range(get_slide_collision_count()):
+		var cn : Vector3 = get_slide_collision(i).get_normal()
+		cn.y = 0.0
+		if cn.length_squared() > 0.0001:
+			n = cn.normalized()
+			break
+	var tangent : Vector3 = Vector3(-desired.z, 0.0, desired.x) if n == Vector3.ZERO \
+		else Vector3(-n.z, 0.0, n.x)
+	if tangent.dot(desired) < 0.0:
+		tangent = -tangent
+	# One obstacle, one side: re-deciding per contact rocks the worker in place at
+	# a head-on wall, where the tangent sign is a coin flip.
+	if _sidestep_commit_s > 0.0 and tangent.dot(_sidestep_dir) < 0.0:
+		tangent = -tangent
+	_sidestep_dir = tangent.normalized()
+	_sidestep_left = SIDESTEP_SECS
+	_sidestep_commit_s = SIDESTEP_COMMIT_S
+	_blocked_secs = 0.0
+	walk_sidesteps += 1
+
+func _clear_sidestep() -> void:
+	_sidestep_left = 0.0
+	_sidestep_commit_s = 0.0
+	_blocked_secs = 0.0
+
+## Reset the shared walk watchdog at the START of a leg. The fetch and the
+## boarding walk are strictly sequential, so one counter set serves both.
+func _reset_walk_watchdog() -> void:
+	_board_walk_secs = 0.0
+	_board_walk_best_d = INF
+	_board_walk_warned = false
+	_sidestep_dir = Vector3.ZERO
+	_clear_sidestep()
+
+# =============================================================================
+# #241 — TOOL FETCH: the kit comes from somewhere
+# =============================================================================
+## Send this worker to collect the scissors + scanner that are ALREADY lying at
+## `rest_pos` (CrewManager / LegacyPropsSpawner resolved the point and put them
+## down). `stand_pos` is the floor spot to walk to — the rest pose is on a surface
+## and is usually INSIDE the collider of whatever holds it, so it is not a walkable
+## target. Callers with no resolved standing spot may omit it and keep the legacy
+## aim-at-the-kit behaviour. Idempotent: a re-pin on a worker that already carries a
+## tool will not queue a second one, and passing nothing is a no-op.
+func begin_tool_fetch(rest_pos: Vector3, scissors: Node3D, scanner: Node3D,
+		stand_pos: Vector3 = Vector3.INF) -> void:
+	if scissors != null and is_instance_valid(scissors) and personal_scissors == null:
+		_pending_scissors = scissors
+	if scanner != null and is_instance_valid(scanner) and personal_scanner == null:
+		_pending_scanner = scanner
+	if _pending_scissors == null and _pending_scanner == null:
+		return
+	_tool_rest_pos = rest_pos
+	_fetch_pos = stand_pos if stand_pos.is_finite() else rest_pos
+	_fetching = true
+	_reset_walk_watchdog()
+
+## One frame of the fetch leg. True once the kit is on the holster (or there was
+## nothing left to fetch); false while still walking.
+func _tick_tool_fetch(delta: float) -> bool:
+	if _pending_scissors == null and _pending_scanner == null:
+		_fetching = false
+		return true
+	# Already in a cab (re-kit mid-shift): we can't walk, so take the tools where
+	# we are rather than freeze the loop. Normal assignment fetches before boarding.
+	if _riding:
+		_finish_tool_fetch()
+		return true
+	if _walk_to_point(_fetch_pos, FETCH_ARRIVE_M, delta, "tool pickup walk"):
+		_finish_tool_fetch()
+		return true
+	return false
+
+## Pick the tools up off the pickup point and holster them.
+func _finish_tool_fetch() -> void:
+	_fetching = false
+	if _pending_scissors != null and is_instance_valid(_pending_scissors):
+		stow_personal_tool(_pending_scissors, -1.0)
+		personal_scissors = _pending_scissors
+	if _pending_scanner != null and is_instance_valid(_pending_scanner):
+		stow_personal_tool(_pending_scanner, 1.0)
+		personal_scanner = _pending_scanner
+	_pending_scissors = null
+	_pending_scanner = null
+	_reset_walk_watchdog()
+
+## True while this worker still has to go and collect their kit. Tests + the
+## stuck-state diagnostic read it.
+func is_fetching_tools() -> bool:
+	return _fetching
+
+## #241 — end of the feeding shift: put BORROWED world tools back where they came
+## from (mirrors BlowLeavesTask's drop-back) instead of letting queue_free take a
+## tool the operator built. Tools this feeder's kit SPAWNED carry no borrow meta
+## and are freed with the worker as before.
+func release_borrowed_tools() -> void:
+	for t in [personal_scissors, personal_scanner, _pending_scissors, _pending_scanner]:
+		var n := t as Node3D
+		if n == null or not is_instance_valid(n) or not n.has_meta("feeder_borrow_parent"):
+			continue
+		var par = n.get_meta("feeder_borrow_parent")
+		var xf : Transform3D = n.get_meta("feeder_borrow_xform", n.global_transform)
+		if par == null or not is_instance_valid(par) or not (par is Node):
+			continue
+		if n.get_parent():
+			n.get_parent().remove_child(n)
+		(par as Node).add_child(n)
+		n.global_transform = xf
+		_reactivate_tool(n)
+		n.remove_meta("feeder_borrow_parent")
+		n.remove_meta("feeder_borrow_xform")
+		if n.has_meta("autonomy_claimed_by"):
+			n.remove_meta("autonomy_claimed_by")
+		if n == personal_scissors:
+			personal_scissors = null
+		elif n == personal_scanner:
+			personal_scanner = null
+		elif n == _pending_scissors:
+			_pending_scissors = null
+		elif n == _pending_scanner:
+			_pending_scanner = null
+	_fetching = false
+
+## Undo what stow_personal_tool disabled, so a returned tool is grabbable again.
+func _reactivate_tool(tool: Node3D) -> void:
+	var area := tool.get_node_or_null("PickupArea") as Area3D
+	if area:
+		area.monitoring = true
+		area.monitorable = true
+	if tool is CollisionObject3D:
+		var body := tool as CollisionObject3D
+		body.collision_layer = int(tool.get_meta("prestow_layer", 1))
+		body.collision_mask  = int(tool.get_meta("prestow_mask", 1))
+
 ## Stow a personal tool (scissors / scanner) on the holster. Disables its
 ## world-pickup so the player can't walk off with the crew's kit.
 func stow_personal_tool(tool: Node3D, side: float) -> void:
@@ -148,8 +449,15 @@ func stow_personal_tool(tool: Node3D, side: float) -> void:
 		area.monitoring = false
 		area.monitorable = false
 	if tool is CollisionObject3D:
-		(tool as CollisionObject3D).collision_layer = 0
-		(tool as CollisionObject3D).collision_mask  = 0
+		var body := tool as CollisionObject3D
+		# #241 — remember the layers ONCE (SCAN/CUT re-stow every bale; without the
+		# guard the second stow would snapshot the zeroed values) so a borrowed tool
+		# can be handed back grabbable at the end of the shift.
+		if not tool.has_meta("prestow_layer"):
+			tool.set_meta("prestow_layer", body.collision_layer)
+			tool.set_meta("prestow_mask", body.collision_mask)
+		body.collision_layer = 0
+		body.collision_mask  = 0
 	if tool.get_parent():
 		tool.get_parent().remove_child(tool)
 	_holster.add_child(tool)
@@ -160,7 +468,7 @@ func _build_body() -> void:
 	# Humanoid is centred on its origin (feet at -0.9); this body sits at y=0.9
 	# so its feet land at the node origin, matching the capsule collider below.
 	var humanoid_script := load("res://src/scenes/world/Humanoid.gd")
-	var body : Node3D = humanoid_script.build(Color(0.95, 0.55, 0.10), 1)
+	var body : Node3D = humanoid_script.build(body_color, 1)
 	body.position = Vector3(0, 0.9, 0)
 	add_child(body)
 	var col := CollisionShape3D.new()
@@ -206,11 +514,21 @@ func _physics_process(delta: float) -> void:
 				% [worker_name, prev, nxt, bales_fed, str(_bale)])
 		_state_log = _state
 		_state_held_secs = 0.0
+		_state_next_warn_s = _STATE_STUCK_S
 	else:
 		_state_held_secs += delta
-		if _state_held_secs > _STATE_STUCK_S and int(_state_held_secs) % 10 == 0:
+		if _state_held_secs >= _state_next_warn_s:
+			_state_next_warn_s = _state_held_secs + _STATE_WARN_EVERY_S
+			# Name the phase that is ACTUALLY running. While _boarding_walk is set
+			# the state machine never ticks (see the early return below), so
+			# reporting _state here blamed SEEK for a blocked walk to the clamp.
+			var phase := _name_for_state(_state)
+			if _fetching:
+				phase = "TOOL_FETCH(state %s frozen)" % phase
+			elif _boarding_walk:
+				phase = "BOARDING_WALK(state %s frozen)" % phase
 			push_warning("[Feeder %s] stuck in %s for %.0fs"
-					% [worker_name, _name_for_state(_state), _state_held_secs])
+					% [worker_name, phase, _state_held_secs])
 	# NaN-transform watchdog (see BaseVehicle): a worker whose transform goes bad
 	# would spam instance_set_transform via its capsule + name tag + held tools. Snap
 	# back to the last good pose + report ONCE rather than flood the log.
@@ -224,11 +542,21 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector3.ZERO
 		return
 	_resolve_belt()
+	# #241 — TOOL FETCH runs BEFORE anything else: the worker walks to where their
+	# scissors + scanner actually lie and picks them up. Freezes the rest of the
+	# machine the same way the boarding walk does, so nothing half-runs meanwhile.
+	if _fetching:
+		if not _tick_tool_fetch(delta):
+			return
 	if vehicle != null and is_instance_valid(vehicle):
-		# DRIVE mode. RETRY boarding every frame until it sticks — the deferred
-		# board can miss if the vehicle wasn't ready yet, which would otherwise
-		# leave the feeder doing nothing forever (the in-game bug).
+		# DRIVE mode.
 		if not _riding:
+			# #233 — the assigned worker walks on foot to the parked clamp, THEN
+			# climbs in (the operator wants them to visibly go to the clamp + board,
+			# not spawn in the cab). Once boarded the drive brain takes over.
+			if _boarding_walk:
+				if not _walk_to_vehicle(delta):
+					return                 # still walking over to the clamp
 			_board_vehicle()
 		if _riding:
 			_brain_drive(delta)
@@ -273,16 +601,19 @@ func _brain_drive(delta: float) -> void:
 func _drive_state_seek() -> void:
 	var b := _find_bale()
 	if b == null:
-		# Lot ran dry — refill the reserve so the feeder NEVER freezes, then
-		# re-seek shortly (it will find the restocked bales). #178
-		# (#32) no auto-restock: feedstock comes from the build menu now
+		# Lot ran dry. Operator 2026-07-16 ("stationary bale / feeder does
+		# nothing"): the #32 "no auto-restock" left the feeder parked FOREVER on an
+		# empty lot. Re-enable a CAPPED restock so it keeps working without flooding
+		# the plant — after MAX_RESTOCKS refills it parks as before.
+		if _restocks < MAX_RESTOCKS:
+			_restock_lot()
 		vehicle.call("npc_stop")
 		_state = State.WAIT
 		_timer = 1.0
 	else:
 		_bale = b
 		b.set_meta("feeder_claimed", true)
-		vehicle.call("npc_set_target", (b as Node3D).global_position)
+		vehicle.call("npc_set_target", (b as Node3D).global_position, true)   # carry-first: reverse the plates onto the bale
 		_state = State.TO_BALE
 		_leg_timer = 0.0
 
@@ -292,6 +623,21 @@ func _drive_state_to_bale(delta: float) -> void:
 	else:
 		_leg_timer += delta
 		if bool(vehicle.call("npc_arrived")) or _leg_timer > STUCK_LIMIT:
+			# npc_arrived tolerates NPC_ARRIVE_TOL (2.2 m) to the waypoint, which
+			# can park the CARRY POINT just outside GRAB_RANGE (2.5 m). Every
+			# grab then fails, and re-targeting the same bale pos "arrives"
+			# instantly without moving — an infinite TO_BALE→GRAB loop. If we
+			# stopped short, aim PAST the bale so the clamp pulls its carry
+			# point onto the load, and keep driving (STUCK_LIMIT still bounds it).
+			if _leg_timer <= STUCK_LIMIT and vehicle.has_method("_carry_point"):
+				var cp : Node3D = vehicle.call("_carry_point") as Node3D
+				var bpos : Vector3 = (_bale as Node3D).global_position
+				if cp != null and cp.global_position.distance_to(bpos) > 2.3:  # GRAB_RANGE − margin
+					var dir : Vector3 = bpos - (vehicle as Node3D).global_position
+					dir.y = 0.0
+					dir = dir.normalized() if dir.length() > 0.01 else Vector3.FORWARD
+					vehicle.call("npc_set_target", bpos + dir * 1.5, true)
+					return
 			# Arrived: stop and LOWER THE CARRIAGE to the bale (real control —
 			# drive lift_height_m down), then grab. No teleport.
 			vehicle.call("npc_stop")
@@ -323,7 +669,7 @@ func _drive_state_grab(delta: float) -> void:
 			else:
 				# Re-approach and retry (real driving, not a teleport).
 				if _bale != null and is_instance_valid(_bale):
-					vehicle.call("npc_set_target", (_bale as Node3D).global_position)
+					vehicle.call("npc_set_target", (_bale as Node3D).global_position, true)
 				_leg_timer = 0.0
 				_state = State.TO_BALE
 
@@ -333,11 +679,11 @@ func _drive_state_lift(delta: float) -> void:
 		vehicle.set("lift_height_m", LIFT_CARRY_M)   # raise the load on the mast (real control)
 	if _timer <= 0.0:
 		if is_supplier and supplier_target != Vector3.ZERO:
-			vehicle.call("npc_set_target", supplier_target)   # ferry to the feeder's staging
+			vehicle.call("npc_set_target", supplier_target, true)   # ferry to the feeder's staging, load leading
 			_state = State.TO_BELT
 			_leg_timer = 0.0
 		elif _belt != null:
-			vehicle.call("npc_set_target", _work_spot())
+			vehicle.call("npc_set_target", _work_spot(), true)   # deliver with the load leading
 			_state = State.TO_BELT
 			_leg_timer = 0.0
 		else:
@@ -375,46 +721,69 @@ func _drive_state_set_down(delta: float) -> void:
 			_state = State.SEEK
 
 func _drive_state_dismount() -> void:
-	# Hop OUT of the cab and stand at the grounded bale, scissors in hand. #176
+	# Hop OUT of the cab and stand at the still-CLAMPED bale. #233 — the operator's
+	# real order is SCAN first (with the scanner), THEN cut the top wires, so the
+	# on-foot work starts at SCAN.
 	_dismount_worker()
-	_state = State.CUT
+	_state = State.SCAN
 	_timer = maxf(process_secs * 0.5, 0.3)
 
-func _drive_state_cut(delta: float) -> void:
-	# On foot: cut + REMOVE the 3 wires. We no longer explode the bale into
-	# loose sheets here — that dropped an empty husk + wires onto the belt and
-	# spilled film on the floor in the wrong direction. The de-wired, de-labelled
-	# block now rides the belt whole + centred. #176
-	_timer -= delta
-	if _timer <= 0.0:
-		if _bale != null and is_instance_valid(_bale):
-			_bale.set_meta("wires_cut", true)
-			_strip_wires(_bale)
-		_state = State.SCAN
-		_timer = maxf(process_secs * 0.5, 0.3)
-
 func _drive_state_scan(delta: float) -> void:
-	# On foot: scan the yellow label, then PEEL it off so the bale that rides
-	# the belt has no label left on it (and no stack of them). #177
+	# On foot, bale still CLAMPED: actually scan the yellow label (the belt's #152
+	# scan gate), then PEEL it off. #233 — scan comes BEFORE the wire-cut ("actually
+	# scan it, no magic"). The scanner is pulled to the hand for the duration so the
+	# worker is visibly scanning WITH the scanner (operator 2026-07-16).
+	_equip_tool(personal_scanner)
 	_timer -= delta
 	if _timer <= 0.0:
 		if _bale != null and is_instance_valid(_bale) and _bale.is_in_group("bale"):
 			_bale.set_meta("scanned", true)
 			_peel_label(_bale)
-		bales_processed += 1
-		_state = State.FEED
+		stow_personal_tool(personal_scanner, 1.0)
+		_state = State.CUT
+		_timer = maxf(process_secs * 0.5, 0.3)
 
-func _drive_state_feed() -> void:
-	# Put the cut, scanned, opened material onto the conveyor — but ONLY once the
-	# belt's loading end is clear, so bales never land inside one another. Until
-	# then the worker just stands beside the belt holding it (re-checks each frame).
-	_feed_ground_bale()
-	_state = State.REMOUNT
+func _drive_state_cut(delta: float) -> void:
+	# On foot, bale still CLAMPED CORRECTLY: cut + remove the 3 top wires (scissors).
+	# #233 — cut happens AFTER the scan and while the clamp still holds the stack, so
+	# it can't open until the clamp finally releases it on the belt (see #4). Then the
+	# worker climbs back into the clamp to place it — cut → REMOUNT, not straight to feed.
+	# The scissors are pulled to the hand so the worker visibly cuts WITH the cutter.
+	_equip_tool(personal_scissors)
+	_timer -= delta
+	if _timer <= 0.0:
+		if _bale != null and is_instance_valid(_bale):
+			_bale.set_meta("wires_cut", true)
+			_strip_wires(_bale)
+		stow_personal_tool(personal_scissors, -1.0)
+		bales_processed += 1
+		_state = State.REMOUNT
+
+## Pull a stowed personal tool from the back holster to the front-of-chest hand
+## anchor so the worker is seen USING it. No-op if the tool is missing.
+func _equip_tool(tool: Node3D) -> void:
+	if tool == null or not is_instance_valid(tool) or _hand == null:
+		return
+	if tool.get_parent() != _hand:
+		if tool.get_parent():
+			tool.get_parent().remove_child(tool)
+		_hand.add_child(tool)
+	tool.transform = Transform3D(Basis(), Vector3.ZERO)
 
 func _drive_state_remount() -> void:
-	# Climb back into the cab and go again.
+	# #233 — climb back INTO the clamp, THEN place the (scanned + de-wired) bale on
+	# the conveyor and release it. "Then and only then get back in the clamp…"
 	_remount_worker()
-	_state = State.SEEK
+	_state = State.FEED
+
+func _drive_state_feed() -> void:
+	# Back in the clamp: put the scanned, de-wired bale onto the conveyor + release —
+	# but ONLY once the belt's loading end is clear, so bales never land inside one
+	# another. Until then hold it in the clamp (re-checks each frame). #233
+	if not _belt_has_room():
+		return                      # hold: belt's load zone still occupied
+	if _feed_ground_bale():
+		_state = State.SEEK
 
 func _drive_state_wait(delta: float) -> void:
 	_timer -= delta
@@ -524,28 +893,59 @@ func _remount_worker() -> void:
 		transform = Transform3D(Basis(), Vector3(0.0, 1.3, -0.2))
 	_dismounted = false
 
-## Put the cut + scanned + opened bale onto the feed belt (honours the scan gate).
-func _feed_ground_bale() -> void:
+## Put the cut + scanned + opened bale onto the feed belt via belt.accept_bale
+## (which honours the #152 scan gate and re-parents the bale onto the deck so the
+## belt sim + LineFlow head actually consume it). Returns true once the bale is on
+## the belt; false if there's nothing to feed or the belt refused it (scan gate /
+## load-zone), so the caller can retry.
+func _feed_ground_bale() -> bool:
 	var b := _bale
 	if b == null or not is_instance_valid(b):
 		_bale = null
-		return
+		return true
+	# No belt to feed (headless / mis-config): drop the ref so we don't deadlock.
+	if _belt == null or not is_instance_valid(_belt) or not _belt.has_method("accept_bale"):
+		_bale = null
+		return true
+	# #233 — the feeder is stationed AT this belt: if it has latched a fault (a jam),
+	# they clear it as part of loading so the feed loop can NEVER permanently deadlock
+	# waiting on a belt nobody resets. (accept_bale refuses while faulted.)
+	if _belt.has_method("is_faulted") and bool(_belt.call("is_faulted")):
+		if _belt.has_method("reset_faults"):
+			_belt.call("reset_faults")
 	# Open the clamp NOW (real control) — the wires are already cut, so the instant the
-	# clamp lets go nothing holds the stack. Then move the de-wired bale to the belt
-	# infeed and burst it into 6 flexible pieces (#23).
+	# clamp lets go nothing holds the stack.
 	if vehicle != null and is_instance_valid(vehicle):
 		if "clamp_force" in vehicle:
 			vehicle.set("clamp_force", 0.0)
 		vehicle.call("_release")
+	# Detach from wherever the clamp/carry left it, then lay it on the belt infeed
+	# in the feed orientation so accept_bale can re-parent it cleanly onto the deck.
 	if b.get_parent():
 		b.get_parent().remove_child(b)
-	var scene := get_tree().current_scene
-	scene.add_child(b)
+	get_tree().current_scene.add_child(b)
 	b.global_transform = Transform3D(_bale_feed_basis(), _belt_load_point())
-	var pieces : Array = preload("res://src/sim/BaleBurst.gd").open(b, scene)
-	if not pieces.is_empty():
-		bales_fed += 1
+	# #4 — on release the bale BURSTS into physical tumbling film pieces (nothing
+	# clamps it anymore). burst_bale still rides the bale's MASS to the shredder
+	# invisibly, so the line feeds as before. Fall back to accept_bale on older belts.
+	var ok : bool
+	if _belt.has_method("burst_bale"):
+		ok = bool(_belt.call("burst_bale", b))
+	else:
+		ok = bool(_belt.call("accept_bale", b, 0))   # lane 0 = deck centre; honours scan gate
+	if not ok:
+		# Belt refused (unscanned / load zone busy). Keep the ref and try again next
+		# tick — the FEED state re-enters and _belt_has_room() paces the retry.
+		return false
+	# The bale now rides the belt and is consumed by the belt→shredder→LineFlow
+	# path. Clear any `delivered` flag the vehicle's _release set when it opened the
+	# clamp at the belt, so LineFlow's _bale_at head-draw can't ALSO meter from this
+	# same bale sitting on the deck (would double-feed the line).
+	if is_instance_valid(b):
+		b.set_meta("delivered", false)
+	bales_fed += 1
 	_bale = null
+	return true
 
 ## Ground work-spot beside the belt's loading end where bales are set down + cut.
 func _work_spot() -> Vector3:
@@ -576,6 +976,8 @@ func _peel_label(bale: Node3D) -> void:
 
 ## Refill an empty lot with a fresh side-by-side row of bales (the reserve), so the
 ## feeder keeps running instead of stopping dead when the lot empties. #178
+const MAX_RESTOCKS : int = 4   # capped auto-refills before the feeder parks (anti-flood; _restocks declared above)
+
 func _restock_lot() -> void:
 	var n := 0
 	var current_frame := Engine.get_physics_frames()
@@ -604,7 +1006,9 @@ func _restock_lot() -> void:
 		if bale == null:
 			continue
 		get_tree().current_scene.add_child(bale)
-		bale.global_position = lot_center + Vector3(float(i) * 1.7, 0.6, 0.0)
+		# #223 audit: was +0.6 m then frozen → bales hovered in mid-air forever.
+		# Bale origin = bale bottom, so a floor-level Y rests it exactly on the slab.
+		bale.global_position = lot_center + Vector3(float(i) * 1.7, 0.0, 0.0)
 		bale.rotation.y = BALE_FEED_YAW   # length along the feed direction, like the belt (#orientation)
 		if bale is RigidBody3D:
 			(bale as RigidBody3D).freeze = true
@@ -613,13 +1017,26 @@ func _restock_lot() -> void:
 func _resolve_belt() -> void:
 	if _belt != null and is_instance_valid(_belt):
 		return
-	# Pick the NEAREST feed belt to this worker (a worker feeds the belt by
-	# their lot — and it keeps multi-belt scenes / tests unambiguous).
 	var current_frame := Engine.get_physics_frames()
 	if current_frame != _last_belt_cache_frame:
 		_cached_belts = get_tree().get_nodes_in_group("shredder_feed_belt")
 		_last_belt_cache_frame = current_frame
 
+	# #173 — SECTION-PINNED: feed the specific opzetband the operator assigned this
+	# worker to (matched by placeable_id). This is the "reads section pins to choose
+	# which feed belt" behaviour the SECTION_ZONES comment advertises.
+	if section_belt_id != "":
+		for b in _cached_belts:
+			if not is_instance_valid(b):
+				continue
+			var bn := b as Node3D
+			if bn != null and String((bn as Node).get_meta("placeable_id", "")) == section_belt_id:
+				_belt = b
+				return
+		# Named belt not (yet) in the scene — fall through to nearest so we still feed.
+
+	# Legacy / fallback: nearest feed belt to this worker (a worker feeds the belt
+	# by their lot — and it keeps multi-belt scenes / tests unambiguous).
 	var best : Node = null
 	var best_d := 1e9
 	for b in _cached_belts:
@@ -708,6 +1125,7 @@ func _locomote(delta: float) -> void:
 		velocity.x = 0.0
 		velocity.z = 0.0
 	move_and_slide()
+	KinematicPush.apply(self, 85.0, 0.5, get_physics_process_delta_time())   # #223: mass-based push
 
 # =============================================================================
 # BALE HANDLING

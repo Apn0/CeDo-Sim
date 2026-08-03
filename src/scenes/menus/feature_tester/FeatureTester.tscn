@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/scenes/menus/feature_tester/FeatureTester.gd" id="1_ft"]
+
+[node name="FeatureTester" type="Node3D"]
+script = ExtResource("1_ft")

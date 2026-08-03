@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>html,body{margin:0;padding:0;background:#20262e;} a{color:#1a5aa8;text-decoration:none;} a:hover{color:#2f74c4;}</style>
+</helmet>
+<div style="width:1024px;height:600px;position:relative;overflow:hidden;background:#f4f4f2;font-family:Tahoma,Verdana,sans-serif;color:#111;font-size:15px;" data-screen-label="WEIMA vulpeil trechter">
+
+  <!-- green header -->
+  <div style="position:absolute;top:0;left:0;right:0;height:70px;background:#8dc63f;display:flex;align-items:center;padding:0 20px;">
+    <div style="font-style:italic;font-weight:800;font-size:30px;color:#fff;letter-spacing:1px;">WEIMA</div>
+    <div style="flex:1;text-align:center;font-size:26px;color:#1a1a1a;">Instelling vulpeil trechter</div>
+    <div style="text-align:right;line-height:1.25;color:#1a1a1a;font-size:15px;"><div>3:33:0</div><div>31-03</div></div>
+  </div>
+  <div style="position:absolute;top:60px;left:24px;color:#4a4a4a;font-size:11px;display:flex;gap:40px;"><span>M27520</span><span>710-340</span></div>
+
+  <!-- table -->
+  <div style="position:absolute;top:170px;left:320px;width:520px;border:1px solid #8a8a8a;">
+    <div style="display:flex;border-bottom:1px solid #b8b8b8;background:#fff;">
+      <div style="flex:1;padding:8px 12px;color:#2a56c0;font-weight:600;">Vulpeil</div>
+      <div style="width:70px;padding:8px 6px;text-align:right;color:#2a56c0;">0</div>
+      <div style="width:34px;padding:8px 6px;color:#555;">%</div>
+    </div>
+    <div style="display:flex;border-bottom:1px solid #b8b8b8;background:#fff;">
+      <div style="flex:1;padding:8px 12px;">Vulpeil toevoer stop</div>
+      <div style="width:70px;padding:8px 6px;text-align:right;background:#bcdcf4;border:1px solid #7aa8d8;">0</div>
+      <div style="width:34px;padding:8px 6px;color:#555;">%</div>
+    </div>
+    <div style="display:flex;border-bottom:1px solid #b8b8b8;background:#fff;">
+      <div style="flex:1;padding:8px 12px;">Vulpeil toevoer start</div>
+      <div style="width:70px;padding:8px 6px;text-align:right;background:#bcdcf4;border:1px solid #7aa8d8;">0</div>
+      <div style="width:34px;padding:8px 6px;color:#555;">%</div>
+    </div>
+    <div style="display:flex;background:#fff;">
+      <div style="flex:1;padding:8px 12px;">Vulpeilsensor</div>
+      <div style="width:70px;padding:6px;display:flex;"><div style="flex:1;background:#3ec929;text-align:center;padding:2px 0;cursor:pointer;">aan</div></div>
+      <div style="width:34px;padding:8px 4px;color:#555;cursor:pointer;">…</div>
+    </div>
+  </div>
+
+  <!-- fill indicator -->
+  <div style="position:absolute;top:170px;left:880px;width:70px;height:110px;border:1px solid #8a8a8a;display:flex;flex-direction:column;">
+    <div style="flex:1;background:#fff;"></div><div style="flex:1;background:#2a2a2a;"></div>
+  </div>
+
+  <!-- bottom nav bar -->
+  <div style="position:absolute;left:0;right:0;bottom:56px;height:64px;background:#5a6470;display:flex;align-items:stretch;gap:2px;padding:6px 4px;">
+    <sc-for list="{{ navIcons }}" as="ic" hint-placeholder-count="10">
+      <div style="flex:1;background:#6b7580;border:1px solid #7f8a96;display:flex;align-items:center;justify-content:center;font-size:22px;color:#e8ecf2;cursor:pointer;" style-hover="background:#7a8590;">{{ ic }}</div>
+    </sc-for>
+    <div style="flex:1;background:#6b7580;border:1px solid #7f8a96;display:flex;align-items:center;justify-content:center;font-size:22px;color:#e8ecf2;cursor:pointer;">🔒</div>
+    <div style="flex:1;background:#6b7580;border:1px solid #7f8a96;display:flex;align-items:center;justify-content:center;font-size:22px;color:#e8ecf2;cursor:pointer;">🌐</div>
+  </div>
+
+  <!-- F-key strip -->
+  <div style="position:absolute;left:0;right:0;bottom:0;height:56px;background:#c8ccd2;display:flex;align-items:flex-start;gap:2px;padding:4px;">
+    <sc-for list="{{ fkeys }}" as="f" hint-placeholder-count="10">
+      <div style="flex:1;display:flex;flex-direction:column;align-items:center;">
+        <span style="font-size:9px;color:#555;">{{ f }}</span>
+        <div style="width:70%;height:26px;background:#e4e6ea;border:1px solid #a8adb5;margin-top:2px;"></div>
+      </div>
+    </sc-for>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1024,&quot;height&quot;:600}}">
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      navIcons: ["⌂","⚠","▤","«","‹","›","",""],
+      fkeys: ["F1","F2","F3","F4","F5","F6","F7","F8","F9","F10"],
+    };
+  }
+}
+</script>
+</body>
+</html>

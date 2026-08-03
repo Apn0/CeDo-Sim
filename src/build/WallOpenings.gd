@@ -275,20 +275,26 @@ func _emit_surface(new_mesh: ArrayMesh, out_v: PackedVector3Array, _out_n: Packe
 	var fixed := _fix_winding_outward(out_v)
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	# FLAT per-face normals (#shell-winding). generate_normals() SMOOTHS by
+	# merging coincident vertices, so where the .obj's mixed winding leaves two
+	# neighbouring tris wound oppositely, their normals average toward ZERO and
+	# the face shades BLACK (461/1948 faces measured that way — the "missing
+	# walls"). smooth_group(-1) makes each face flat, so normals can never cancel;
+	# with the shell material's CULL_DISABLED, both sides light either way. The
+	# shell is nearly all flat planes, so flat shading reads correctly.
+	st.set_smooth_group(-1)
 	for v in fixed:
 		st.add_vertex(v)
 	st.generate_normals()
 	st.commit(new_mesh)
 
-## Walk every triangle and flip its winding if the geometric normal points
-## toward the mesh centroid. A "mostly closed" shape (like our building shell)
-## should have all face normals pointing OUTWARD; an inverted face has its
-## normal pointing INWARD, which makes it render dark on the side the player
-## sees. Centroid heuristic catches that case without needing user input.
+## Coarse outward-winding pass (single global centroid). Cheap; only fixes
+## grossly-inverted faces. It's NOT the black-face fix — that's the flat-normal
+## (smooth_group -1) change in _emit_surface, which stops normal cancellation
+## regardless of winding on the open, non-convex shell. Kept as harmless hygiene.
 func _fix_winding_outward(verts: PackedVector3Array) -> PackedVector3Array:
 	if verts.size() < 3:
 		return verts
-	# Centroid = average of all vertices (good enough for a closed shell)
 	var centroid := Vector3.ZERO
 	for v in verts:
 		centroid += v
@@ -300,17 +306,10 @@ func _fix_winding_outward(verts: PackedVector3Array) -> PackedVector3Array:
 		var b := verts[i0 + 1]
 		var c := verts[i0 + 2]
 		var n := (b - a).cross(c - a)
-		var tri_center := (a + b + c) / 3.0
-		var outward := tri_center - centroid
-		if n.dot(outward) < 0.0:
-			# Normal points inward — flip the winding (swap two vertices)
-			out[i0]     = a
-			out[i0 + 1] = c
-			out[i0 + 2] = b
+		if n.dot((a + b + c) / 3.0 - centroid) < 0.0:
+			out[i0] = a; out[i0 + 1] = c; out[i0 + 2] = b
 		else:
-			out[i0]     = a
-			out[i0 + 1] = b
-			out[i0 + 2] = c
+			out[i0] = a; out[i0 + 1] = b; out[i0 + 2] = c
 	return out
 
 func _regen_collision(boxes: Array) -> void:

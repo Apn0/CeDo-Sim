@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/tests/repro_transport.gd" id="1_transport"]
+
+[node name="ReproTransport" type="Node"]
+script = ExtResource("1_transport")

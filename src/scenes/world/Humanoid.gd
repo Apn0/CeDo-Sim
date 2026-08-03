@@ -14,6 +14,27 @@ class_name Humanoid
 ## the NPC's map colour as `shirt` so each worker still reads as a distinct
 ## colour from a distance (and on the MapOverlay).
 
+# ── Body mass from build sliders ─────────────────────────────────────────────
+# Mass follows near-volume scaling: at constant tissue density, body mass is
+# proportional to height × width × depth. The exponent is slightly below 1.0
+# because real bodies don't scale density-perfectly with frame size (taller
+# people are not proportionally thicker through every tissue). Calibrated so
+# the customizer's slider extremes map exactly to the operator-specified range:
+#   smallest build (0.80 / 0.80 / 0.80) →  50 kg
+#   default build  (1.00 / 1.00 / 1.00) →  88 kg
+#   largest build  (1.20 / 1.25 / 1.25) → 150 kg
+const BODY_MASS_REF_KG   : float = 88.1
+const BODY_MASS_EXPONENT : float = 0.8463
+
+## Physical body mass (kg) for an appearance dict's build sliders. Used by the
+## player controller (push impulses, belt/vehicle physics) and available to
+## NPCs — one law for every human in the plant.
+static func body_mass_kg(appearance: Dictionary) -> float:
+	var h : float = clampf(float(appearance.get("height_mul", 1.0)), 0.80, 1.20)
+	var w : float = clampf(float(appearance.get("width_mul",  1.0)), 0.80, 1.25)
+	var d : float = clampf(float(appearance.get("depth_mul",  w)),   0.80, 1.25)
+	return BODY_MASS_REF_KG * pow(h * w * d, BODY_MASS_EXPONENT)
+
 const _SKIN_TONES : Array[Color] = [
 	Color(0.94, 0.78, 0.66), Color(0.86, 0.66, 0.52),
 	Color(0.72, 0.52, 0.38), Color(0.52, 0.36, 0.26),
@@ -240,12 +261,15 @@ static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -
 	if skin_raw is Dictionary and skin_raw.has("r"):
 		skin_raw = Color(float(skin_raw["r"]), float(skin_raw["g"]), float(skin_raw["b"]))
 	var skin  : Color = skin_raw if skin_raw is Color else _SKIN_TONES[variant % _SKIN_TONES.size()]
-	# Intentional: every two skin tones map to the next hair tone.
-	@warning_ignore("integer_division")
 	var hair_raw : Variant = appearance.get("hair_color", null)
 	if hair_raw is Dictionary and hair_raw.has("r"):
 		hair_raw = Color(float(hair_raw["r"]), float(hair_raw["g"]), float(hair_raw["b"]))
-	var hair  : Color = hair_raw if hair_raw is Color else _HAIR_TONES[(variant / 2) % _HAIR_TONES.size()]
+	# Intentional: every two skin tones map to the next hair tone. The annotation
+	# has to sit on the line that DOES the division — it was one line too high
+	# (attached to hair_raw), so the warning still fired.
+	@warning_ignore("integer_division")
+	var hair_idx : int = (variant / 2) % _HAIR_TONES.size()
+	var hair  : Color = hair_raw if hair_raw is Color else _HAIR_TONES[hair_idx]
 	# `shirt` is kept as the MapOverlay colour (set as meta by MainWorld); the
 	# in-world torso / arms now always use the company hi-vis material so the
 	# crew reads as on-shift regardless of which NPC they are. Per-person
@@ -330,13 +354,15 @@ static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -
 	# texture path. The default tint is hi-vis yellow so the legacy "no override"
 	# case keeps showing the photo cleanly (albedo_color is left at WHITE inside
 	# _hivis_material since hi_vis_coat ignores the tint by design).
-	var shirt_tint : Color = HIVIS_YELLOW
+	var shirt_tint : Color = HIVIS_ORANGE
 	if shirt_color_override is Color:
 		shirt_tint = shirt_color_override
 
-	# Hi-vis tag — operator spec is YELLOW; "orange" still selectable via
-	# appearance.hivis_color = "orange" for the legacy texture set.
-	var hivis_tag : String = String(appearance.get("hivis_color", "yellow"))
+	# Hi-vis tag — operator spec 2026-07-16 is ORANGE ONLY. Default flipped from
+	# "yellow" to "orange": the orange PBR set (ppe_hivis_orange_*.png) exists on
+	# disk so the vest also picks up its photo texture (matching the denim pants),
+	# whereas the yellow path had no texture and rendered flat.
+	var hivis_tag : String = String(appearance.get("hivis_color", "orange"))
 
 	var m_skin  := _mat(skin, 0.85)
 	var m_shirt : StandardMaterial3D = _apply_clothing_material(shirt_type, shirt_tint, hivis_tag)
@@ -375,7 +401,7 @@ static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -
 		hip.name = "HipPivot_R" if sx > 0.0 else "HipPivot_L"
 		hip.position = Vector3(x, _hip_y, 0.0)
 		root.add_child(hip)
-		_box(hip, Vector3(0.16, 0.08, 0.30), Vector3(0.0, -0.86 - _hip_y, 0.04), m_shoe)    # foot
+		_box(hip, Vector3(0.16, 0.08, 0.30), Vector3(0.0, -0.86 - _hip_y, -0.04), m_shoe)    # foot — toes point FRONT (-Z), #205 flip fix
 		if footwear == "work_boots":
 			_box(hip, Vector3(0.15, 0.12, 0.16), Vector3(0.0, -0.78 - _hip_y, 0.0), m_boots)  # ankle boot cuff
 		# Per-side denim variant — left leg (sx < 0) gets a mirrored + phase-shifted
@@ -463,11 +489,11 @@ static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -
 		root.add_child(sh)
 		_box(sh, Vector3(0.11, 0.26, 0.12), Vector3(0.0, 0.34 - _shoulder_y, 0.0), m_shirt)     # upper arm
 		_box(sh, Vector3(0.10, 0.26, 0.11), Vector3(0.0, 0.08 - _shoulder_y, 0.0), m_forearm)   # forearm
-		_box(sh, Vector3(0.10, 0.10, 0.12), Vector3(0.0, -0.08 - _shoulder_y, 0.02), m_skin)    # hand
+		_box(sh, Vector3(0.10, 0.10, 0.12), Vector3(0.0, -0.08 - _shoulder_y, -0.02), m_skin)    # hand — front (-Z), #205 flip fix
 		if _show_gloves:
 			# Glove is 1mm larger on every axis than the hand to avoid Z-fight
 			# while still reading as "wrapping" the hand from any camera angle.
-			_box(sh, Vector3(0.11, 0.11, 0.13), Vector3(0.0, -0.08 - _shoulder_y, 0.02), m_glove)
+			_box(sh, Vector3(0.11, 0.11, 0.13), Vector3(0.0, -0.08 - _shoulder_y, -0.02), m_glove)
 
 	# ── NECK + HEAD ─────────────────────────────────────────────────────────────
 	_box(root, Vector3(0.12, 0.08, 0.12), Vector3(0.0, 0.53, 0.0), m_skin)        # neck
@@ -883,6 +909,8 @@ static func _install_skeleton_rig(root: Node3D) -> void:
 	lib.add_animation("idle", _build_anim_idle(skel))
 	lib.add_animation("walk", _build_anim_walk(skel))
 	lib.add_animation("run",  _build_anim_run(skel))
+	lib.add_animation("strafe_l", _build_anim_strafe_l(skel))   # #224
+	lib.add_animation("strafe_r", _build_anim_strafe_r(skel))   # #224
 	# Phase 2 stance poses (single-frame holds). The state machine below travels
 	# between locomotion / crouch / prone / seated based on the controller's stance.
 	lib.add_animation("crouch_pose", _build_anim_crouch(skel))
@@ -924,6 +952,13 @@ static func _install_skeleton_rig(root: Node3D) -> void:
 	bs.add_blend_point(n_idle, Vector2(0.0, 0.0))
 	bs.add_blend_point(n_walk, Vector2(1.0, 0.0))
 	bs.add_blend_point(n_run,  Vector2(2.0, 0.0))
+	# #224 — strafe rows on the Y axis (left = -1, right = +1) at walk speed.
+	var n_strafe_l := AnimationNodeAnimation.new()
+	n_strafe_l.animation = "strafe_l"
+	var n_strafe_r := AnimationNodeAnimation.new()
+	n_strafe_r.animation = "strafe_r"
+	bs.add_blend_point(n_strafe_l, Vector2(1.0, -1.0))
+	bs.add_blend_point(n_strafe_r, Vector2(1.0,  1.0))
 	# Phase 2: wrap the locomotion BlendSpace + three pose animations in a
 	# StateMachine. The controller (PlayerController._update_animation_blend and
 	# NPC._update_animation_blend) travels between states by writing
@@ -1257,6 +1292,46 @@ static func _build_anim_run(_skel: Skeleton3D) -> Animation:
 		[0.0,  Quaternion(Vector3.UP, deg_to_rad( -7.0))],
 		[0.4,  Quaternion(Vector3.UP, deg_to_rad(  7.0))],
 	])
+	return a
+
+## #224 Side-step (strafe) — lateral weight-shift gait for BlendSpace2D Y=±1.
+## dir = +1 steps LEFT, -1 steps RIGHT. Legs abduct/adduct sideways (around the
+## Z/FORWARD axis) instead of the fore/aft X swing; the torso leans into the step
+## and the arms float out for balance. Angles are a first pass — eyeball-tune in
+## game. 1.0 s loop.
+static func _build_anim_strafe_l(_skel: Skeleton3D) -> Animation:
+	return _build_strafe(1.0)
+static func _build_anim_strafe_r(_skel: Skeleton3D) -> Animation:
+	return _build_strafe(-1.0)
+static func _build_strafe(dir: float) -> Animation:
+	var a := Animation.new()
+	a.length = 1.0
+	a.loop_mode = Animation.LOOP_LINEAR
+	# Lead + trail legs alternate an out-step / follow around the FORWARD axis.
+	_add_rot_track(a, "LUpperLeg", [
+		[0.0, Quaternion(Vector3.FORWARD, deg_to_rad( 16.0 * dir))],
+		[0.5, Quaternion(Vector3.FORWARD, deg_to_rad(  2.0 * dir))],
+		[1.0, Quaternion(Vector3.FORWARD, deg_to_rad( 16.0 * dir))],
+	])
+	_add_rot_track(a, "RUpperLeg", [
+		[0.0, Quaternion(Vector3.FORWARD, deg_to_rad(  2.0 * dir))],
+		[0.5, Quaternion(Vector3.FORWARD, deg_to_rad( 16.0 * dir))],
+		[1.0, Quaternion(Vector3.FORWARD, deg_to_rad(  2.0 * dir))],
+	])
+	_add_rot_track(a, "LLowerLeg", [
+		[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( -6.0))],
+		[0.5, Quaternion(Vector3.RIGHT, deg_to_rad(-20.0))],
+		[1.0, Quaternion(Vector3.RIGHT, deg_to_rad( -6.0))],
+	])
+	_add_rot_track(a, "RLowerLeg", [
+		[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-20.0))],
+		[0.5, Quaternion(Vector3.RIGHT, deg_to_rad( -6.0))],
+		[1.0, Quaternion(Vector3.RIGHT, deg_to_rad(-20.0))],
+	])
+	# Arms float out from the sides + a torso lean into the travel direction.
+	_add_rot_track(a, "LUpperArm", [[0.0, Quaternion(Vector3.FORWARD, deg_to_rad( 16.0))]])
+	_add_rot_track(a, "RUpperArm", [[0.0, Quaternion(Vector3.FORWARD, deg_to_rad(-16.0))]])
+	_add_rot_track(a, "Spine", [[0.0, Quaternion(Vector3.FORWARD, deg_to_rad( 5.0 * dir))]])
 	return a
 
 ## Add one TYPE_ROTATION_3D track to `a` for the given bone, keyed at the

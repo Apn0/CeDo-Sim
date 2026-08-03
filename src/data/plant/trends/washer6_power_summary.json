@@ -1,0 +1,1344 @@
+{
+ "extraction_date": "2026-07-04",
+ "sources": {
+  "guiexport": "F:/Citizen/Documents/CeDo/GUIexport (32 files: 4 units x 8 months 2024-08..2025-03)",
+  "washer6": "F:/Citizen/Documents/CeDo/washer6 (14 Grafana-style change-of-value exports, Oct 2024 - Mar 2025)"
+ },
+ "guiexport_softstarter_frictiewasser": [
+  {
+   "file": "powermeasurements_washer6_64l_softstarterfrictiewasser_2024_08.csv",
+   "unit": "64l",
+   "year": 2024,
+   "month": 8,
+   "rows": 10,
+   "time_span": {
+    "from": "2024-08-01 00:00:00",
+    "to": "2024-08-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  },
+  {
+   "file": "powermeasurements_washer6_64l_softstarterfrictiewasser_2024_09.csv",
+   "unit": "64l",
+   "year": 2024,
+   "month": 9,
+   "rows": 10,
+   "time_span": {
+    "from": "2024-09-01 00:00:00",
+    "to": "2024-09-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  },
+  {
+   "file": "powermeasurements_washer6_64l_softstarterfrictiewasser_2024_10.csv",
+   "unit": "64l",
+   "year": 2024,
+   "month": 10,
+   "rows": 10,
+   "time_span": {
+    "from": "2024-10-01 00:00:00",
+    "to": "2024-10-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  },
+  {
+   "file": "powermeasurements_washer6_64l_softstarterfrictiewasser_2024_11.csv",
+   "unit": "64l",
+   "year": 2024,
+   "month": 11,
+   "rows": 10,
+   "time_span": {
+    "from": "2024-11-01 00:00:00",
+    "to": "2024-11-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  },
+  {
+   "file": "powermeasurements_washer6_64l_softstarterfrictiewasser_2024_12.csv",
+   "unit": "64l",
+   "year": 2024,
+   "month": 12,
+   "rows": 10,
+   "time_span": {
+    "from": "2024-12-01 00:00:00",
+    "to": "2024-12-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  },
+  {
+   "file": "powermeasurements_washer6_64l_softstarterfrictiewasser_2025_01.csv",
+   "unit": "64l",
+   "year": 2025,
+   "month": 1,
+   "rows": 10,
+   "time_span": {
+    "from": "2025-01-01 00:00:00",
+    "to": "2025-01-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  },
+  {
+   "file": "powermeasurements_washer6_64l_softstarterfrictiewasser_2025_02.csv",
+   "unit": "64l",
+   "year": 2025,
+   "month": 2,
+   "rows": 10,
+   "time_span": {
+    "from": "2025-02-01 00:00:00",
+    "to": "2025-02-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  },
+  {
+   "file": "powermeasurements_washer6_64l_softstarterfrictiewasser_2025_03.csv",
+   "unit": "64l",
+   "year": 2025,
+   "month": 3,
+   "rows": 10,
+   "time_span": {
+    "from": "2025-03-01 00:00:00",
+    "to": "2025-03-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  },
+  {
+   "file": "powermeasurements_washer6_64r_softstarterfrictiewasser_2024_08.csv",
+   "unit": "64r",
+   "year": 2024,
+   "month": 8,
+   "rows": 10,
+   "time_span": {
+    "from": "2024-08-01 00:00:00",
+    "to": "2024-08-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  },
+  {
+   "file": "powermeasurements_washer6_64r_softstarterfrictiewasser_2024_09.csv",
+   "unit": "64r",
+   "year": 2024,
+   "month": 9,
+   "rows": 10,
+   "time_span": {
+    "from": "2024-09-01 00:00:00",
+    "to": "2024-09-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  },
+  {
+   "file": "powermeasurements_washer6_64r_softstarterfrictiewasser_2024_10.csv",
+   "unit": "64r",
+   "year": 2024,
+   "month": 10,
+   "rows": 10,
+   "time_span": {
+    "from": "2024-10-01 00:00:00",
+    "to": "2024-10-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  },
+  {
+   "file": "powermeasurements_washer6_64r_softstarterfrictiewasser_2024_11.csv",
+   "unit": "64r",
+   "year": 2024,
+   "month": 11,
+   "rows": 10,
+   "time_span": {
+    "from": "2024-11-01 00:00:00",
+    "to": "2024-11-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  },
+  {
+   "file": "powermeasurements_washer6_64r_softstarterfrictiewasser_2024_12.csv",
+   "unit": "64r",
+   "year": 2024,
+   "month": 12,
+   "rows": 10,
+   "time_span": {
+    "from": "2024-12-01 00:00:00",
+    "to": "2024-12-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  },
+  {
+   "file": "powermeasurements_washer6_64r_softstarterfrictiewasser_2025_01.csv",
+   "unit": "64r",
+   "year": 2025,
+   "month": 1,
+   "rows": 10,
+   "time_span": {
+    "from": "2025-01-01 00:00:00",
+    "to": "2025-01-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  },
+  {
+   "file": "powermeasurements_washer6_64r_softstarterfrictiewasser_2025_02.csv",
+   "unit": "64r",
+   "year": 2025,
+   "month": 2,
+   "rows": 10,
+   "time_span": {
+    "from": "2025-02-01 00:00:00",
+    "to": "2025-02-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  },
+  {
+   "file": "powermeasurements_washer6_64r_softstarterfrictiewasser_2025_03.csv",
+   "unit": "64r",
+   "year": 2025,
+   "month": 3,
+   "rows": 10,
+   "time_span": {
+    "from": "2025-03-01 00:00:00",
+    "to": "2025-03-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  },
+  {
+   "file": "powermeasurements_washer6_69l_softstarterfrictiewasser_2024_08.csv",
+   "unit": "69l",
+   "year": 2024,
+   "month": 8,
+   "rows": 10,
+   "time_span": {
+    "from": "2024-08-01 00:00:00",
+    "to": "2024-08-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  },
+  {
+   "file": "powermeasurements_washer6_69l_softstarterfrictiewasser_2024_09.csv",
+   "unit": "69l",
+   "year": 2024,
+   "month": 9,
+   "rows": 10,
+   "time_span": {
+    "from": "2024-09-01 00:00:00",
+    "to": "2024-09-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  },
+  {
+   "file": "powermeasurements_washer6_69l_softstarterfrictiewasser_2024_10.csv",
+   "unit": "69l",
+   "year": 2024,
+   "month": 10,
+   "rows": 10,
+   "time_span": {
+    "from": "2024-10-01 00:00:00",
+    "to": "2024-10-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  },
+  {
+   "file": "powermeasurements_washer6_69l_softstarterfrictiewasser_2024_11.csv",
+   "unit": "69l",
+   "year": 2024,
+   "month": 11,
+   "rows": 10,
+   "time_span": {
+    "from": "2024-11-01 00:00:00",
+    "to": "2024-11-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  },
+  {
+   "file": "powermeasurements_washer6_69l_softstarterfrictiewasser_2024_12.csv",
+   "unit": "69l",
+   "year": 2024,
+   "month": 12,
+   "rows": 10,
+   "time_span": {
+    "from": "2024-12-01 00:00:00",
+    "to": "2024-12-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  },
+  {
+   "file": "powermeasurements_washer6_69l_softstarterfrictiewasser_2025_01.csv",
+   "unit": "69l",
+   "year": 2025,
+   "month": 1,
+   "rows": 10,
+   "time_span": {
+    "from": "2025-01-01 00:00:00",
+    "to": "2025-01-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  },
+  {
+   "file": "powermeasurements_washer6_69l_softstarterfrictiewasser_2025_02.csv",
+   "unit": "69l",
+   "year": 2025,
+   "month": 2,
+   "rows": 10,
+   "time_span": {
+    "from": "2025-02-01 00:00:00",
+    "to": "2025-02-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  },
+  {
+   "file": "powermeasurements_washer6_69l_softstarterfrictiewasser_2025_03.csv",
+   "unit": "69l",
+   "year": 2025,
+   "month": 3,
+   "rows": 10,
+   "time_span": {
+    "from": "2025-03-01 00:00:00",
+    "to": "2025-03-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  },
+  {
+   "file": "powermeasurements_washer6_69r_softstarterfrictiewasser_2024_08.csv",
+   "unit": "69r",
+   "year": 2024,
+   "month": 8,
+   "rows": 10,
+   "time_span": {
+    "from": "2024-08-01 00:00:00",
+    "to": "2024-08-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  },
+  {
+   "file": "powermeasurements_washer6_69r_softstarterfrictiewasser_2024_09.csv",
+   "unit": "69r",
+   "year": 2024,
+   "month": 9,
+   "rows": 10,
+   "time_span": {
+    "from": "2024-09-01 00:00:00",
+    "to": "2024-09-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  },
+  {
+   "file": "powermeasurements_washer6_69r_softstarterfrictiewasser_2024_10.csv",
+   "unit": "69r",
+   "year": 2024,
+   "month": 10,
+   "rows": 10,
+   "time_span": {
+    "from": "2024-10-01 00:00:00",
+    "to": "2024-10-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  },
+  {
+   "file": "powermeasurements_washer6_69r_softstarterfrictiewasser_2024_11.csv",
+   "unit": "69r",
+   "year": 2024,
+   "month": 11,
+   "rows": 10,
+   "time_span": {
+    "from": "2024-11-01 00:00:00",
+    "to": "2024-11-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  },
+  {
+   "file": "powermeasurements_washer6_69r_softstarterfrictiewasser_2024_12.csv",
+   "unit": "69r",
+   "year": 2024,
+   "month": 12,
+   "rows": 10,
+   "time_span": {
+    "from": "2024-12-01 00:00:00",
+    "to": "2024-12-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  },
+  {
+   "file": "powermeasurements_washer6_69r_softstarterfrictiewasser_2025_01.csv",
+   "unit": "69r",
+   "year": 2025,
+   "month": 1,
+   "rows": 10,
+   "time_span": {
+    "from": "2025-01-01 00:00:00",
+    "to": "2025-01-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  },
+  {
+   "file": "powermeasurements_washer6_69r_softstarterfrictiewasser_2025_02.csv",
+   "unit": "69r",
+   "year": 2025,
+   "month": 2,
+   "rows": 10,
+   "time_span": {
+    "from": "2025-02-01 00:00:00",
+    "to": "2025-02-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  },
+  {
+   "file": "powermeasurements_washer6_69r_softstarterfrictiewasser_2025_03.csv",
+   "unit": "69r",
+   "year": 2025,
+   "month": 3,
+   "rows": 10,
+   "time_span": {
+    "from": "2025-03-01 00:00:00",
+    "to": "2025-03-01 00:00:09"
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0
+   ],
+   "is_synthetic_ramp": true
+  }
+ ],
+ "washer6_signal_logs": [
+  {
+   "file": "611_afvoerwals.csv",
+   "scada_tag_guess": "scada/3c/info/11/afvoerwals",
+   "declared_rows": 605,
+   "parsed_rows": 605,
+   "bad_rows": 0,
+   "time_span": {
+    "from": "2024-10-17T08:39:29",
+    "to": "2025-03-31T21:57:48"
+   },
+   "stats": {
+    "n": 605,
+    "min": 0.0,
+    "max": 1.0,
+    "mean": 0.246,
+    "p5": 0.0,
+    "p50": 0.0,
+    "p95": 1.0,
+    "nonzero_band": {
+     "low": 1.0,
+     "high": 1.0
+    },
+    "zero_fraction": 0.7537
+   },
+   "top_values": [
+    [
+     0.0,
+     456
+    ],
+    [
+     1.0,
+     149
+    ]
+   ],
+   "binary_like": true
+  },
+  {
+   "file": "611_peddelwals 1_2_3_4.csv",
+   "scada_tag_guess": "scada/3c/info/11/peddelwals 1_2_3_4",
+   "declared_rows": 2058,
+   "parsed_rows": 2058,
+   "bad_rows": 0,
+   "time_span": {
+    "from": "2024-10-17T08:39:29",
+    "to": "2025-03-31T21:57:02"
+   },
+   "stats": {
+    "n": 2058,
+    "min": 0.0,
+    "max": 3.0,
+    "mean": 1.61,
+    "p5": 0.0,
+    "p50": 2.0,
+    "p95": 3.0,
+    "nonzero_band": {
+     "low": 1.0,
+     "high": 3.0
+    },
+    "zero_fraction": 0.3445
+   },
+   "top_values": [
+    [
+     3.0,
+     850
+    ],
+    [
+     0.0,
+     709
+    ],
+    [
+     2.0,
+     264
+    ],
+    [
+     1.0,
+     235
+    ]
+   ],
+   "binary_like": false
+  },
+  {
+   "file": "614l_motorreinigingsschrapper.csv",
+   "scada_tag_guess": "scada/3c/info/14l/motorreinigingsschrapper",
+   "declared_rows": 372,
+   "parsed_rows": 372,
+   "bad_rows": 0,
+   "time_span": {
+    "from": "2024-10-17T08:39:29",
+    "to": "2025-03-31T18:02:15"
+   },
+   "stats": {
+    "n": 372,
+    "min": 0.0,
+    "max": 0.0,
+    "mean": 0.0,
+    "p5": 0.0,
+    "p50": 0.0,
+    "p95": 0.0,
+    "nonzero_band": null,
+    "zero_fraction": 1.0
+   },
+   "top_values": [
+    [
+     0.0,
+     372
+    ]
+   ],
+   "binary_like": true
+  },
+  {
+   "file": "614l_motorroterendeklep.csv",
+   "scada_tag_guess": "scada/3c/info/14l/motorroterendeklep",
+   "declared_rows": 372,
+   "parsed_rows": 372,
+   "bad_rows": 0,
+   "time_span": {
+    "from": "2024-10-17T08:39:29",
+    "to": "2025-03-31T18:02:14"
+   },
+   "stats": {
+    "n": 372,
+    "min": 0.0,
+    "max": 0.0,
+    "mean": 0.0,
+    "p5": 0.0,
+    "p50": 0.0,
+    "p95": 0.0,
+    "nonzero_band": null,
+    "zero_fraction": 1.0
+   },
+   "top_values": [
+    [
+     0.0,
+     372
+    ]
+   ],
+   "binary_like": true
+  },
+  {
+   "file": "614r_motorreinigingsschrapper.csv",
+   "scada_tag_guess": "scada/3c/info/14r/motorreinigingsschrapper",
+   "declared_rows": 372,
+   "parsed_rows": 372,
+   "bad_rows": 0,
+   "time_span": {
+    "from": "2024-10-17T08:39:29",
+    "to": "2025-03-31T18:02:14"
+   },
+   "stats": {
+    "n": 372,
+    "min": 0.0,
+    "max": 0.0,
+    "mean": 0.0,
+    "p5": 0.0,
+    "p50": 0.0,
+    "p95": 0.0,
+    "nonzero_band": null,
+    "zero_fraction": 1.0
+   },
+   "top_values": [
+    [
+     0.0,
+     372
+    ]
+   ],
+   "binary_like": true
+  },
+  {
+   "file": "614r_motorroterendeklep.csv",
+   "scada_tag_guess": "scada/3c/info/14r/motorroterendeklep",
+   "declared_rows": 372,
+   "parsed_rows": 372,
+   "bad_rows": 0,
+   "time_span": {
+    "from": "2024-10-17T08:39:29",
+    "to": "2025-03-31T18:02:15"
+   },
+   "stats": {
+    "n": 372,
+    "min": 0.0,
+    "max": 0.0,
+    "mean": 0.0,
+    "p5": 0.0,
+    "p50": 0.0,
+    "p95": 0.0,
+    "nonzero_band": null,
+    "zero_fraction": 1.0
+   },
+   "top_values": [
+    [
+     0.0,
+     372
+    ]
+   ],
+   "binary_like": true
+  },
+  {
+   "file": "618_motorventilator.csv",
+   "scada_tag_guess": "scada/3c/info/18/motorventilator",
+   "declared_rows": 374,
+   "parsed_rows": 374,
+   "bad_rows": 0,
+   "time_span": {
+    "from": "2024-10-17T08:39:29",
+    "to": "2025-03-31T18:02:14"
+   },
+   "stats": {
+    "n": 374,
+    "min": 0.0,
+    "max": 0.0,
+    "mean": 0.0,
+    "p5": 0.0,
+    "p50": 0.0,
+    "p95": 0.0,
+    "nonzero_band": null,
+    "zero_fraction": 1.0
+   },
+   "top_values": [
+    [
+     0.0,
+     374
+    ]
+   ],
+   "binary_like": true
+  },
+  {
+   "file": "63_fqafvoerschroef 2.csv",
+   "scada_tag_guess": "scada/3c/info/3/fqafvoerschroef2",
+   "declared_rows": 145252,
+   "parsed_rows": 145252,
+   "bad_rows": 0,
+   "time_span": {
+    "from": "2024-10-17T08:39:29",
+    "to": "2025-03-31T21:48:26"
+   },
+   "stats": {
+    "n": 145252,
+    "min": 0.0,
+    "max": 5.0,
+    "mean": 2.499,
+    "p5": 2.0,
+    "p50": 3.0,
+    "p95": 3.0,
+    "nonzero_band": {
+     "low": 2.0,
+     "high": 3.0
+    },
+    "zero_fraction": 0.0045
+   },
+   "top_values": [
+    [
+     3.0,
+     71933
+    ],
+    [
+     2.0,
+     71490
+    ],
+    [
+     4.0,
+     1012
+    ],
+    [
+     0.0,
+     660
+    ],
+    [
+     1.0,
+     155
+    ],
+    [
+     5.0,
+     2
+    ]
+   ],
+   "binary_like": false
+  },
+  {
+   "file": "63_fqafvoerwalz.csv",
+   "scada_tag_guess": "scada/3c/info/3/fqafvoerwalz",
+   "declared_rows": 1456,
+   "parsed_rows": 1456,
+   "bad_rows": 0,
+   "time_span": {
+    "from": "2024-10-17T08:39:29",
+    "to": "2025-03-31T21:48:26"
+   },
+   "stats": {
+    "n": 1456,
+    "min": 0.0,
+    "max": 1.0,
+    "mean": 0.534,
+    "p5": 0.0,
+    "p50": 1.0,
+    "p95": 1.0,
+    "nonzero_band": {
+     "low": 1.0,
+     "high": 1.0
+    },
+    "zero_fraction": 0.4657
+   },
+   "top_values": [
+    [
+     1.0,
+     778
+    ],
+    [
+     0.0,
+     678
+    ]
+   ],
+   "binary_like": true
+  },
+  {
+   "file": "63_fqpeddelwals1en2.csv",
+   "scada_tag_guess": "scada/3c/info/3/fqpeddelwals1en2",
+   "declared_rows": 1843,
+   "parsed_rows": 1843,
+   "bad_rows": 0,
+   "time_span": {
+    "from": "2024-10-17T08:39:29",
+    "to": "2025-03-31T21:48:24"
+   },
+   "stats": {
+    "n": 1843,
+    "min": 0.0,
+    "max": 2.0,
+    "mean": 1.054,
+    "p5": 0.0,
+    "p50": 1.0,
+    "p95": 2.0,
+    "nonzero_band": {
+     "low": 1.0,
+     "high": 2.0
+    },
+    "zero_fraction": 0.3679
+   },
+   "top_values": [
+    [
+     2.0,
+     778
+    ],
+    [
+     0.0,
+     678
+    ],
+    [
+     1.0,
+     387
+    ]
+   ],
+   "binary_like": false
+  },
+  {
+   "file": "66_hydrauliek.csv",
+   "scada_tag_guess": "scada/3c/info/6/hydrauliek",
+   "declared_rows": 544,
+   "parsed_rows": 544,
+   "bad_rows": 0,
+   "time_span": {
+    "from": "2024-10-17T08:39:29",
+    "to": "2025-03-31T17:35:57"
+   },
+   "stats": {
+    "n": 544,
+    "min": 0.0,
+    "max": 6.0,
+    "mean": 0.603,
+    "p5": 0.0,
+    "p50": 0.0,
+    "p95": 3.0,
+    "nonzero_band": {
+     "low": 2.0,
+     "high": 5.0
+    },
+    "zero_fraction": 0.7941
+   },
+   "top_values": [
+    [
+     0.0,
+     432
+    ],
+    [
+     3.0,
+     71
+    ],
+    [
+     2.0,
+     24
+    ],
+    [
+     5.0,
+     5
+    ],
+    [
+     4.0,
+     5
+    ],
+    [
+     1.0,
+     4
+    ]
+   ],
+   "binary_like": false
+  },
+  {
+   "file": "66_schroef 1.csv",
+   "scada_tag_guess": "scada/3c/info/6/schroef 1",
+   "declared_rows": 1974,
+   "parsed_rows": 1974,
+   "bad_rows": 0,
+   "time_span": {
+    "from": "2024-10-17T08:39:29",
+    "to": "2025-03-31T21:50:36"
+   },
+   "stats": {
+    "n": 1974,
+    "min": 0.0,
+    "max": 5.0,
+    "mean": 2.394,
+    "p5": 0.0,
+    "p50": 3.0,
+    "p95": 5.0,
+    "nonzero_band": {
+     "low": 1.0,
+     "high": 5.0
+    },
+    "zero_fraction": 0.3207
+   },
+   "top_values": [
+    [
+     4.0,
+     749
+    ],
+    [
+     0.0,
+     633
+    ],
+    [
+     5.0,
+     182
+    ],
+    [
+     1.0,
+     145
+    ],
+    [
+     3.0,
+     145
+    ],
+    [
+     2.0,
+     120
+    ]
+   ],
+   "binary_like": false
+  },
+  {
+   "file": "66_schroef 2.csv",
+   "scada_tag_guess": "scada/3c/info/6/schroef 2",
+   "declared_rows": 2013,
+   "parsed_rows": 2013,
+   "bad_rows": 0,
+   "time_span": {
+    "from": "2024-10-17T08:39:29",
+    "to": "2025-03-31T21:50:35"
+   },
+   "stats": {
+    "n": 2013,
+    "min": 0.0,
+    "max": 5.0,
+    "mean": 2.447,
+    "p5": 0.0,
+    "p50": 3.0,
+    "p95": 5.0,
+    "nonzero_band": {
+     "low": 1.0,
+     "high": 5.0
+    },
+    "zero_fraction": 0.315
+   },
+   "top_values": [
+    [
+     4.0,
+     748
+    ],
+    [
+     0.0,
+     634
+    ],
+    [
+     5.0,
+     238
+    ],
+    [
+     1.0,
+     162
+    ],
+    [
+     3.0,
+     119
+    ],
+    [
+     2.0,
+     112
+    ]
+   ],
+   "binary_like": false
+  },
+  {
+   "file": "66_schroef 3.csv",
+   "scada_tag_guess": "scada/3c/info/6/schroef 3",
+   "declared_rows": 1967,
+   "parsed_rows": 1967,
+   "bad_rows": 0,
+   "time_span": {
+    "from": "2024-10-17T08:39:29",
+    "to": "2025-03-31T21:50:37"
+   },
+   "stats": {
+    "n": 1967,
+    "min": 0.0,
+    "max": 5.0,
+    "mean": 2.363,
+    "p5": 0.0,
+    "p50": 3.0,
+    "p95": 5.0,
+    "nonzero_band": {
+     "low": 1.0,
+     "high": 5.0
+    },
+    "zero_fraction": 0.3228
+   },
+   "top_values": [
+    [
+     4.0,
+     748
+    ],
+    [
+     0.0,
+     635
+    ],
+    [
+     5.0,
+     174
+    ],
+    [
+     1.0,
+     158
+    ],
+    [
+     2.0,
+     128
+    ],
+    [
+     3.0,
+     124
+    ]
+   ],
+   "binary_like": false
+  }
+ ],
+ "notes": [
+  "GUIexport: 32/32 files contain ONLY a 10-row 0..9 integer ramp starting at the first second of the month - these are placeholder/GUI-test exports, NOT real power measurements.",
+  "washer6/*.csv are change-of-value logs (irregular timestamps). Unit prefix maps to line-6 equipment number: 611=6_11 flotatietank, 614l/r=6_14 mechanische droger L/R, 618=6_18, 63=6_3 bezinkafscheider, 66=6_6 maalmolen. Tag paths live under the 'scada/3c/...' tree (see line3c_scada_tags.json)."
+ ]
+}

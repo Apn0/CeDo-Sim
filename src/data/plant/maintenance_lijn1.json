@@ -1,0 +1,347 @@
+{
+  "source": "C:/Users/arnod/Documents/CeDo_Simulator_data/Onderhoud_1.pdf",
+  "extracted": "2026-07-04",
+  "form": {
+    "title_nl": "Eerste lijns onderhouds werkzaamheden lijn 1",
+    "title_en": "First-line maintenance tasks, line 1",
+    "form_id": "Cedo - PROD - FORM - 012",
+    "department": "PROD Department",
+    "rev_no": "01",
+    "issue_date": "2022-01-14",
+    "author": "PROD Dept",
+    "approved_by": "Peter Scheffer",
+    "instruction_nl": "Kritisch gemarkeerde delen moeten gecontroleerd worden op uitvoering",
+    "instruction_en": "Parts marked critical must be checked for execution"
+  },
+  "line": 1,
+  "sections": [
+    {
+      "section_nl": "Banden",
+      "section_en": "Belts/conveyors",
+      "tasks": [
+        {
+          "task_nl": "Metaal detectie band lagers ontdoen van draad/touw",
+          "task_en": "Clear metal-detection belt bearings of wire/rope",
+          "kritisch": true
+        },
+        {
+          "task_nl": "Poetsen onder band 2",
+          "task_en": "Clean under belt 2",
+          "kritisch": false
+        },
+        {
+          "task_nl": "Poetsen onder band 3",
+          "task_en": "Clean under belt 3",
+          "kritisch": false
+        }
+      ]
+    },
+    {
+      "section_nl": "Shredder",
+      "section_en": "Shredder",
+      "tasks": [
+        {
+          "task_nl": "Shredder zeefkorf open en schoon maken",
+          "task_en": "Open and clean shredder screen basket",
+          "kritisch": false
+        },
+        {
+          "task_nl": "Shredder zeefkorf controleren op schade",
+          "task_en": "Check shredder screen basket for damage",
+          "kritisch": false
+        },
+        {
+          "task_nl": "Shredder achterkant open en schoon maken",
+          "task_en": "Open and clean shredder rear side",
+          "kritisch": false
+        },
+        {
+          "task_nl": "Rotor (stator) messen controleren op schade",
+          "task_en": "Check rotor (stator) knives for damage",
+          "kritisch": false
+        }
+      ]
+    },
+    {
+      "section_nl": "Trommel",
+      "section_en": "Drum",
+      "tasks": [
+        {
+          "task_nl": "Trommel op hand laten draaien, stenen eruit",
+          "task_en": "Turn drum by hand, remove stones",
+          "kritisch": true
+        },
+        {
+          "task_nl": "Overgang trommel naar fricki's schoon",
+          "task_en": "Clean transition from drum to Fricki's (friction washers)",
+          "kritisch": true
+        }
+      ]
+    },
+    {
+      "section_nl": "Fricki's",
+      "section_en": "Friction washers",
+      "tasks": [
+        {
+          "task_nl": "Alle luiken openen en schoon spuiten",
+          "task_en": "Open all hatches and spray clean",
+          "kritisch": false
+        }
+      ]
+    },
+    {
+      "section_nl": "Intensiefwassers",
+      "section_en": "Intensive washers",
+      "tasks": [
+        {
+          "task_nl": "Alle luiken openen en schoon spuiten",
+          "task_en": "Open all hatches and spray clean",
+          "kritisch": false
+        },
+        {
+          "task_nl": "Voorkant zware delen uitgang openen en zware delen/troep eruit halen",
+          "task_en": "Open heavy-parts outlet at the front and remove heavy parts/debris",
+          "kritisch": false
+        }
+      ]
+    },
+    {
+      "section_nl": "Maalmolen 1",
+      "section_en": "Granulator / grinding mill 1 (MM1)",
+      "tasks": [
+        {
+          "task_nl": "Kap openen en rotor schoon maken",
+          "task_en": "Open hood and clean rotor",
+          "kritisch": false
+        },
+        {
+          "task_nl": "Onderkant openen en schoon maken, rotzooi eruit halen, NIET via ventilatoren weg blazen i.v.m. aankoeking troep.",
+          "task_en": "Open bottom and clean, remove junk; do NOT blow it away via the fans due to caking of debris",
+          "kritisch": true
+        },
+        {
+          "task_nl": "Zeef schoon blazen. Idem aan hierboven",
+          "task_en": "Blow screen clean; same remark as above",
+          "kritisch": true
+        }
+      ]
+    },
+    {
+      "section_nl": "Ventilatoren 10a/10b",
+      "section_en": "Fans 10a/10b",
+      "tasks": [
+        {
+          "task_nl": "Openen en waaier / waaierhuis reinigen",
+          "task_en": "Open and clean impeller / impeller housing",
+          "kritisch": false,
+          "notes": " Kritisch cell verified white/unmarked in source (8x zoom, 2026-07-04)."
+        }
+      ]
+    },
+    {
+      "section_nl": "Cyclonen",
+      "section_en": "Cyclones",
+      "tasks": [
+        {
+          "task_nl": "Ingang cyclonen en bovenin cyclonen ontdoen van aangekoekte troep",
+          "task_en": "Clear cyclone inlet and cyclone tops of caked-on debris",
+          "kritisch": true
+        }
+      ]
+    },
+    {
+      "section_nl": "Flotatie tank",
+      "section_en": "Flotation tank",
+      "tasks": [
+        {
+          "task_nl": "Schraper op hand laten draaien",
+          "task_en": "Turn scraper by hand",
+          "kritisch": false
+        },
+        {
+          "task_nl": "Aflaten flotatie tank in overleg met leidingevende",
+          "task_en": "Drain flotation tank in consultation with supervisor",
+          "kritisch": false,
+          "notes": " Form prints 'leidingevende' (typo for leidinggevende); kept verbatim."
+        }
+      ]
+    },
+    {
+      "section_nl": "Fricki links rechts",
+      "section_en": "Fricki (friction washer) left/right",
+      "tasks": [
+        {
+          "task_nl": "zeef aan beide kanten schoon spuiten",
+          "task_en": "Spray screen clean on both sides",
+          "kritisch": true
+        },
+        {
+          "task_nl": "Water afvoer onderkant door spuiten",
+          "task_en": "Flush water drain at the bottom through",
+          "kritisch": true
+        }
+      ]
+    },
+    {
+      "section_nl": "Kufferath 1 en 2",
+      "section_en": "Kufferath dewatering screens 1 and 2",
+      "tasks": [
+        {
+          "task_nl": "Zeef schoon spuiten",
+          "task_en": "Spray screen clean",
+          "kritisch": false
+        },
+        {
+          "task_nl": "Water afvoer onderkant door spuiten",
+          "task_en": "Flush water drain at the bottom through",
+          "kritisch": false
+        }
+      ]
+    },
+    {
+      "section_nl": "MAS drogers",
+      "section_en": "MAS dryers",
+      "tasks": [
+        {
+          "task_nl": "Opvangbak onder de zeven ontdoen van stof",
+          "task_en": "Clear collection tray under the screens of dust",
+          "kritisch": true
+        },
+        {
+          "task_nl": "Zeven schoon vegen met een borstel indien sterk vervuild eruit halen en met hoge drukreinigen",
+          "task_en": "Sweep screens clean with a brush; if heavily fouled, remove and high-pressure clean",
+          "kritisch": true
+        },
+        {
+          "task_nl": "Zeven controleren op gaten, evt. wisselen",
+          "task_en": "Check screens for holes, replace if necessary",
+          "kritisch": true
+        }
+      ]
+    },
+    {
+      "section_nl": "Vloer",
+      "section_en": "Floor",
+      "tasks": [
+        {
+          "task_nl": "Vloer onder MAS drogers en Kufferath's",
+          "task_en": "Floor under MAS dryers and Kufferaths",
+          "kritisch": false
+        },
+        {
+          "task_nl": "Vloer onder flotatie tank",
+          "task_en": "Floor under flotation tank",
+          "kritisch": false
+        },
+        {
+          "task_nl": "Vloer rondom shredder",
+          "task_en": "Floor around shredder",
+          "kritisch": false
+        },
+        {
+          "task_nl": "Vloer rondom intensiefwassers",
+          "task_en": "Floor around intensive washers",
+          "kritisch": false
+        },
+        {
+          "task_nl": "Vloer rondom MM1",
+          "task_en": "Floor around maalmolen 1",
+          "kritisch": false
+        },
+        {
+          "task_nl": "Vloer algemeen was 1",
+          "task_en": "Floor, general, washing area 1",
+          "kritisch": false
+        },
+        {
+          "task_nl": "Schoon blazen alle elektro motoren",
+          "task_en": "Blow clean all electric motors",
+          "kritisch": true
+        }
+      ]
+    },
+    {
+      "section_nl": "Extruder",
+      "section_en": "Extruder",
+      "tasks": [
+        {
+          "task_nl": "Onder opvoerband compactor poetsen",
+          "task_en": "Clean under compactor infeed belt",
+          "kritisch": false
+        },
+        {
+          "task_nl": "Bovenkant extruder silo afblazen",
+          "task_en": "Blow off top of extruder silo",
+          "kritisch": false
+        },
+        {
+          "task_nl": "Compactor openen en controleren op aangekoekte smelt op de zijkant en rand.",
+          "task_en": "Open compactor and check for caked-on melt on the side and rim",
+          "kritisch": false
+        },
+        {
+          "task_nl": "Filter water inspuit compactor reinigen",
+          "task_en": "Clean compactor water-injection filter",
+          "kritisch": true
+        },
+        {
+          "task_nl": "Elektro motoren schoon blazen, inclusief ruimte tussen compactor, emotor en tandwielkast",
+          "task_en": "Blow electric motors clean, including space between compactor, e-motor and gearbox",
+          "kritisch": true
+        },
+        {
+          "task_nl": "Laserfilter wisselen indien eind druk voor stop boven de 180 bar",
+          "task_en": "Change laser filter if end pressure before stop is above 180 bar",
+          "kritisch": true,
+          "threshold": {
+            "parameter": "eind druk voor stop (end pressure before stop)",
+            "value": 180,
+            "unit": "bar",
+            "condition": "above"
+          }
+        },
+        {
+          "task_nl": "Vacuum pot achterkant schoon maken",
+          "task_en": "Clean vacuum pot at the rear",
+          "kritisch": true
+        },
+        {
+          "task_nl": "Vacuum openingen voorkant reinigen",
+          "task_en": "Clean vacuum openings at the front",
+          "kritisch": true
+        },
+        {
+          "task_nl": "Heetafslag ring schoon maken en mesjes wisselen",
+          "task_en": "Clean hot die-face pelletizer ring and change knives",
+          "kritisch": true
+        },
+        {
+          "task_nl": "Waterbak aflaten/vullen",
+          "task_en": "Drain/fill water bath",
+          "kritisch": false
+        },
+        {
+          "task_nl": "Waterfilters reinigen/wisselen",
+          "task_en": "Clean/replace water filters",
+          "kritisch": true,
+          "notes": " Kritisch cell verified solid red in source (8x zoom, 2026-07-04)."
+        },
+        {
+          "task_nl": "Centrifuge reinigen",
+          "task_en": "Clean centrifuge",
+          "kritisch": true
+        },
+        {
+          "task_nl": "Rooster onder weegschaal klep schoon blazen",
+          "task_en": "Blow clean the grate under the weigh-scale flap",
+          "kritisch": true
+        },
+        {
+          "task_nl": "Bovenkant weegschaal afblazen inclusief cycloon weegschaal",
+          "task_en": "Blow off top of weigh scale including weigh-scale cyclone",
+          "kritisch": false
+        }
+      ]
+    }
+  ]
+}

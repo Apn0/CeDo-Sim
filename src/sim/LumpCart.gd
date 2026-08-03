@@ -30,15 +30,26 @@ var _grabbed_by : Node3D = null
 # EMPTY_THRESHOLD_KG of lumps in it, the NpcAutonomyBoard emits an
 # "empty_lump_cart" task — an idle NPC will then grab a forklift, drive over,
 # lift the cart, transport it to the indoor lumps_container, and dump.
-const CAPACITY_KG       : float = 240.0   # cart fills up around this mass
-const FULL_THRESHOLD_KG : float = 200.0   # above this → "is_full" → block more lumps
-const EMPTY_THRESHOLD_KG: float = 40.0    # above this → worth emptying (don't haul ~empty carts)
+# Operator-recalculated 2026-07-11: a full Lumpenwagen holds ~90 kg of lumps,
+# with a small heap over the rim before the discharge truly can't add more.
+const CAPACITY_KG       : float = 100.0   # hard cap — heaped a little over the top
+const FULL_THRESHOLD_KG : float = 90.0    # above this → "is_full" → block more lumps
+const EMPTY_THRESHOLD_KG: float = 20.0    # above this → worth emptying (don't haul ~empty carts)
 const COOL_TIME_S_MIN   : float = 60.0 * 60.0   #  1 sim-hour minimum cool-down
 const COOL_TIME_S_MAX   : float = 3.0 * 60.0 * 60.0   # 3 sim-hour worst case
+
+const EMPTY_MASS_KG   : float = 40.0     # bare cart (steel dumpster + wheels)
 
 var lumps_kg          : float = 0.0
 var _last_received_at : float = -INF     # sim-time of the most recent lump
 var _cool_time_s      : float = COOL_TIME_S_MIN   # randomised per receive
+
+## Physics mass tracks the load: bare cart + whatever lumps are in it. A cart
+## with 200 kg of lumps genuinely pushes/steers like 240 kg, not like an empty
+## one. Called after every fill/dump so the RigidBody the player shoves and the
+## forklift lifts feels the real weight.
+func _sync_mass() -> void:
+	mass = EMPTY_MASS_KG + lumps_kg
 
 func is_full() -> bool:
 	return lumps_kg >= FULL_THRESHOLD_KG
@@ -65,6 +76,7 @@ func receive_lump(mass_kg: float) -> void:
 		# pushing.
 		return
 	lumps_kg = clampf(lumps_kg + mass_kg, 0.0, CAPACITY_KG)
+	_sync_mass()
 	_last_received_at = _now_sim_s()
 	# Each receive resets the cool-down with a fresh random sample in [min,max].
 	_cool_time_s = randf_range(COOL_TIME_S_MIN, COOL_TIME_S_MAX)
@@ -75,8 +87,33 @@ func receive_lump(mass_kg: float) -> void:
 func empty() -> float:
 	var dumped : float = lumps_kg
 	lumps_kg = 0.0
+	_sync_mass()
 	_last_received_at = -INF
 	return dumped
+
+# ── phys-04 — fill state survives save/load ──────────────────────────────────
+# BuildMode._save_layout persists lumps_kg + cool_remaining_s() per cart; the
+# load path calls restore_fill(). Without this a full 90 kg cart reloaded
+# empty: mass conservation violated, the "is_full → discharge blocked" state
+# reset, and the pending empty_lump_cart task chain evaporated.
+
+## Remaining cool-down seconds for the current load (0 = already cool or empty).
+func cool_remaining_s() -> float:
+	if lumps_kg <= 0.001 or _last_received_at == -INF:
+		return 0.0
+	return maxf(0.0, _cool_time_s - (_now_sim_s() - _last_received_at))
+
+## Put a persisted fill back after a reload. Re-anchors the cool timer at "now"
+## so exactly `cool_left_s` seconds remain (a hot cart reloads hot; a cool one
+## is immediately eligible for the empty_lump_cart task again).
+func restore_fill(kg: float, cool_left_s: float) -> void:
+	lumps_kg = clampf(kg, 0.0, CAPACITY_KG)
+	_sync_mass()
+	if lumps_kg <= 0.001:
+		_last_received_at = -INF
+		return
+	_cool_time_s = maxf(cool_left_s, 0.0)
+	_last_received_at = _now_sim_s()
 
 ## Sim time in seconds since the ShiftClock's day-zero epoch. Falls back to the
 ## wall-clock if the shift clock isn't reachable (test scenes).
@@ -91,14 +128,92 @@ func crosshair_prompt(_p: Node3D) -> String:
 		return "Lumpenwagen loslaten [E]"
 	return "Lumpenwagen pakken aan handvat [E]"
 
+# ── #223 audit (critical): force-based grab — no more velocity teleport ──────
+# The old chase ASSIGNED linear_velocity every tick, which (a) ignored mass —
+# a 140 kg full cart snapped to 3.5 m/s exactly like an empty one, and (b)
+# overwrote the contact solver's blocking response 60×/s, which is precisely
+# why a cart with wheels embedded in the concrete could still be dragged.
+# Now the grab applies a CAPPED FORCE (what two hands on a cart handle can
+# sustain) and a capped yaw torque; the solver keeps the final word, so an
+# embedded or jammed cart stalls against the geometry like it should.
+#
+# While grabbed, the cart "rolls" — friction drops from the parked 0.9 to a
+# rolling-resistance value (castor wheels turning) and the parked damping is
+# eased, so the ~350 N hand force actually moves it. Restored on release, so
+# a parked cart doesn't creep on belt/vehicle nudges.
+const GRAB_PUSH_FORCE_N  : float = 350.0   # sustained two-hand push/pull on a cart handle
+const GRAB_YAW_TORQUE_NM : float = 120.0
+const ROLLING_FRICTION   : float = 0.04    # castor wheels rolling
+const GRAB_LINEAR_DAMP   : float = 0.3
+var _parked_friction : float = -1.0        # cached pre-roll values (restored on exit)
+var _parked_damp     : float = -1.0
+
+# ── phys-01 — body-shove enters the same rolling state as the grab ───────────
+# KinematicPush pokes notify_body_push() on slide contact. The parked friction
+# 0.9 caps a per-tick friction impulse of mu*g*dt = 0.147 m/s — more than the
+# push delivers at walk (0.046) or sprint (0.101) — so without this the
+# "shove it by walking into it" promised at the catalog spawn comment was a
+# bolted-down wall. The cart rolls while being pushed and re-parks
+# PUSH_ROLL_TIMEOUT_S after the last shove, keeping the belt/vehicle-nudge
+# creep protection the high parked friction exists for.
+const PUSH_ROLL_TIMEOUT_S : float = 0.5
+var _push_roll_left : float = 0.0
+
 func crosshair_interact(player: Node3D) -> void:
 	if _grabbed_by == null:
 		_grabbed_by = player
 		sleeping = false
+		_enter_rolling()
 	else:
-		_grabbed_by = null
+		_release()
 
-func _physics_process(_delta: float) -> void:
+## phys-01 — called by KinematicPush when a walking body (player / NPC /
+## feeder) shoves the cart. Grab keeps priority: its controller owns the state.
+func notify_body_push() -> void:
+	if _grabbed_by != null:
+		return
+	sleeping = false
+	_enter_rolling()
+	_push_roll_left = PUSH_ROLL_TIMEOUT_S
+
+func _enter_rolling() -> void:
+	if _parked_friction >= 0.0:
+		return   # already rolling — don't cache the rolling values as "parked"
+	if physics_material_override == null:
+		physics_material_override = PhysicsMaterial.new()
+	_parked_friction = physics_material_override.friction
+	_parked_damp = linear_damp
+	physics_material_override.friction = ROLLING_FRICTION
+	linear_damp = GRAB_LINEAR_DAMP
+
+func _release() -> void:
+	_grabbed_by = null
+	_exit_rolling()
+
+## Restore the parked friction/damp cached by _enter_rolling (shared by grab
+## release and the phys-01 push-decay timer) and clear the caches so the next
+## _enter_rolling re-samples them.
+func _exit_rolling() -> void:
+	if _parked_friction >= 0.0 and physics_material_override != null:
+		physics_material_override.friction = _parked_friction
+	if _parked_damp >= 0.0:
+		linear_damp = _parked_damp
+	_parked_friction = -1.0
+	_parked_damp = -1.0
+	_push_roll_left = 0.0
+
+## Loaded carts can't be walked as fast as empty ones: max towing speed
+## derates from a brisk push (empty) to a heavy trudge (full).
+func _max_speed_for_load() -> float:
+	return lerpf(1.8, 1.1, clampf(lumps_kg / CAPACITY_KG, 0.0, 1.0))
+
+func _physics_process(delta: float) -> void:
+	# phys-01 — decay the body-shove rolling window: once nothing has pushed
+	# for PUSH_ROLL_TIMEOUT_S the parked friction/damp come back.
+	if _grabbed_by == null and _push_roll_left > 0.0:
+		_push_roll_left -= delta
+		if _push_roll_left <= 0.0:
+			_exit_rolling()
 	if _grabbed_by == null or not is_instance_valid(_grabbed_by):
 		return
 	var fwd : Vector3 = -_grabbed_by.global_transform.basis.z
@@ -110,14 +225,25 @@ func _physics_process(_delta: float) -> void:
 	var handle_world : Vector3 = global_transform * HANDLE_LOCAL
 	var to_target : Vector3 = target - handle_world
 	to_target.y = 0.0
-	var v : Vector3 = to_target * STIFF
-	if v.length() > MAX_SPEED:
-		v = v.normalized() * MAX_SPEED
-	linear_velocity = Vector3(v.x, linear_velocity.y, v.z)
-	# Yaw the cart so its front (-Z handle is on +Z) faces away from the player.
+	# Desired velocity toward the handle target, capped by what a human can
+	# actually walk while towing this load.
+	var desired_v : Vector3 = to_target * STIFF
+	var vmax : float = _max_speed_for_load()
+	if desired_v.length() > vmax:
+		desired_v = desired_v.normalized() * vmax
+	# F = m·Δv/Δt, clamped to hand force. The solver integrates it — if the
+	# cart is jammed against geometry, the force just stalls (realistic).
+	var dv : Vector3 = desired_v - Vector3(linear_velocity.x, 0.0, linear_velocity.z)
+	var force : Vector3 = dv * (mass / maxf(delta, 0.001))
+	if force.length() > GRAB_PUSH_FORCE_N:
+		force = force.normalized() * GRAB_PUSH_FORCE_N
+	apply_central_force(force)
+	# Yaw toward handle-away-from-player via capped torque (τ = I·α; the
+	# cart's yaw inertia ≈ m·r² with r≈0.5 m footprint radius).
 	var desired_yaw : float = atan2(fwd.x, fwd.z) + PI
-	var cur_yaw     : float = rotation.y
-	var yaw_err     : float = wrapf(desired_yaw - cur_yaw, -PI, PI)
-	angular_velocity = Vector3(0.0, yaw_err * YAW_STIFF, 0.0)
+	var yaw_err     : float = wrapf(desired_yaw - rotation.y, -PI, PI)
+	var torque_y : float = clampf(yaw_err * YAW_STIFF * mass * 0.25,
+		-GRAB_YAW_TORQUE_NM, GRAB_YAW_TORQUE_NM)
+	apply_torque(Vector3(0.0, torque_y, 0.0))
 	if global_position.distance_to(_grabbed_by.global_position) > RELEASE_DIST:
-		_grabbed_by = null
+		_release()

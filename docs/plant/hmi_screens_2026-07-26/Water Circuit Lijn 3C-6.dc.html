@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>html,body{margin:0;padding:0;background:#20262e;} a{color:#1a5aa8;text-decoration:none;} a:hover{color:#2f74c4;}</style>
+</helmet>
+<div style="width:1024px;height:600px;position:relative;overflow:hidden;background:#dfe4ea;font-family:Tahoma,Verdana,sans-serif;color:#1a1a1a;font-size:13px;" data-screen-label="Water circuit 3C/6">
+
+  <!-- top bar -->
+  <div style="position:absolute;top:0;left:0;right:0;height:34px;background:#eef1f5;border-bottom:1px solid #b8bfc9;display:flex;align-items:center;padding:0 12px;">
+    <svg width="26" height="20" viewBox="0 0 26 20" style="margin-right:8px;"><polygon points="2,2 13,10 2,18" fill="#2f6fb0"></polygon><polygon points="12,2 23,10 12,18" fill="#3a3f4a"></polygon></svg>
+    <span style="font-weight:700;color:#3a3f4a;">L&amp;P</span>
+    <div style="flex:1;display:flex;justify-content:center;"><span style="border:1px solid #9aa0aa;background:#fff;padding:3px 22px;">Niet alles in Auto</span></div>
+    <div style="text-align:right;line-height:1.2;color:#3a3f4a;"><div>donderdag 6 februari 2025</div><div>19:38</div></div>
+  </div>
+
+  <!-- alarm strip -->
+  <div style="position:absolute;top:34px;left:0;right:0;height:22px;background:#f4f6f9;border-bottom:1px solid #b8bfc9;display:flex;align-items:center;padding:0 12px;color:#333;">
+    <span style="width:36px;">27</span><span>Pomp Indaver niet actief</span>
+  </div>
+
+  <!-- process area -->
+  <div style="position:absolute;top:56px;left:0;right:0;bottom:56px;background:#dfe4ea;">
+
+    <!-- proceswater outlet -->
+    <div style="position:absolute;right:16px;top:24px;border:1px solid #9aa0aa;background:#fff;padding:6px 10px;line-height:1.3;">Proceswater<br>Lijn 3C, 6</div>
+    <svg style="position:absolute;right:150px;top:30px;" width="90" height="20"><line x1="0" y1="10" x2="78" y2="10" stroke="#37b98a" stroke-width="3"></line><polygon points="78,3 90,10 78,17" fill="#37b98a"></polygon></svg>
+
+    <!-- pressure readouts -->
+    <div style="position:absolute;left:640px;top:60px;display:flex;align-items:center;gap:8px;">
+      <div style="width:26px;height:26px;border:1.5px solid #444;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#fff;">P</div>
+      <div><div style="border:1px solid #9aa0aa;background:#fff;padding:2px 12px;">+0 mbar</div><div style="border:1px solid #9aa0aa;background:#fff;padding:2px 12px;margin-top:6px;">+0 mbar</div></div>
+      <div style="line-height:2.2;color:#333;"><div>Gewenst</div><div>Reëel</div></div>
+    </div>
+    <div style="position:absolute;left:640px;top:150px;display:flex;align-items:center;gap:8px;">
+      <div style="width:26px;height:26px;border:1.5px solid #444;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#fff;">F</div>
+      <div style="border:1px solid #9aa0aa;background:#fff;padding:2px 12px;">+0,0 L/min</div>
+      <span style="color:#333;">Reëel</span>
+    </div>
+
+    <!-- kanaalwater + valve -->
+    <div style="position:absolute;left:24px;top:120px;border:1px solid #9aa0aa;background:#fff;padding:6px 10px;">Kanaalwater</div>
+    <div style="position:absolute;left:150px;top:118px;width:40px;height:26px;display:flex;cursor:pointer;">
+      <div style="width:0;height:0;border-top:13px solid transparent;border-bottom:13px solid transparent;border-left:20px solid #35c23a;"></div>
+      <div style="width:0;height:0;border-top:13px solid transparent;border-bottom:13px solid transparent;border-right:20px solid #35c23a;"></div>
+    </div>
+    <svg style="position:absolute;left:190px;top:100px;" width="330" height="140"><path d="M0 31 H330 V150" stroke="#a44ad0" stroke-width="3" fill="none"></path></svg>
+
+    <!-- indaver -->
+    <div style="position:absolute;left:24px;top:180px;border:1px solid #9aa0aa;background:#eef1f5;padding:8px 10px;width:180px;">
+      <div style="font-weight:700;text-align:center;margin-bottom:6px;">Indaver</div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="border:1px solid #9aa0aa;background:#fff;padding:4px 6px;line-height:1.2;">Afvalwater<br>Zuivering</div>
+        <div style="width:30px;height:30px;border-radius:50%;background:#e8607a;border:1px solid #b03050;"></div>
+      </div>
+    </div>
+    <svg style="position:absolute;left:150px;top:210px;" width="330" height="120"><path d="M60 5 H320 V115" stroke="#37b98a" stroke-width="3" fill="none"></path></svg>
+
+    <!-- tank -->
+    <div style="position:absolute;left:400px;top:210px;text-align:center;">
+      <div style="color:#333;margin-bottom:4px;">50m3</div>
+      <div style="width:150px;height:150px;border:2px solid #333;background:#fff;display:flex;flex-direction:column;justify-content:flex-end;position:relative;">
+        <div style="height:0%;background:#3aa0e0;"></div>
+        <div style="position:absolute;left:50%;bottom:60px;transform:translateX(-50%);border:1px solid #9aa0aa;background:#fff;padding:1px 8px;">0 mm</div>
+      </div>
+    </div>
+
+    <!-- niveau table -->
+    <div style="position:absolute;left:190px;top:210px;width:230px;font-size:12px;">
+      <div style="font-weight:700;text-align:right;padding-right:6px;margin-bottom:2px;">Niveau</div>
+      <sc-for list="{{ niveau }}" as="r" hint-placeholder-count="7">
+        <div style="display:flex;justify-content:flex-end;align-items:center;gap:6px;margin-bottom:2px;">
+          <span style="text-align:right;">{{ r.k }}</span>
+          <span style="border:1px solid #9aa0aa;background:#fff;padding:1px 8px;min-width:60px;text-align:left;">{{ r.v }}</span>
+        </div>
+      </sc-for>
+    </div>
+
+    <!-- pumps -->
+    <div style="position:absolute;left:560px;top:245px;text-align:center;">
+      <div style="color:#333;">Pomp 1</div>
+      <div style="border:1px solid #9aa0aa;background:#fff;padding:2px 10px;margin:4px 0;">0,0 Hz</div>
+      <div style="width:34px;height:34px;border-radius:50%;background:#35c23a;border:2px solid #1f8a20;margin:0 auto;"></div>
+    </div>
+    <div style="position:absolute;left:680px;top:245px;text-align:center;">
+      <div style="width:34px;height:34px;border-radius:50%;background:#c9cdd4;border:2px solid #7a808a;margin:0 auto 30px;"></div>
+      <div style="border:1px solid #9aa0aa;background:#fff;padding:2px 10px;">0,0 Hz</div>
+      <div style="color:#333;margin-top:4px;">Pomp 2</div>
+    </div>
+  </div>
+
+  <!-- bottom bar -->
+  <div style="position:absolute;left:0;right:0;bottom:0;height:56px;background:#eef1f5;border-top:1px solid #b8bfc9;display:flex;align-items:stretch;gap:5px;padding:6px 8px;">
+    <div style="width:40px;background:#fff;border:1px solid #9aa0aa;display:flex;align-items:center;justify-content:center;cursor:pointer;">◀</div>
+    <div style="width:44px;background:#fff;border:1px solid #9aa0aa;display:flex;align-items:center;justify-content:center;cursor:pointer;">⌂</div>
+    <sc-for list="{{ navBtns }}" as="b" hint-placeholder-count="9">
+      <div style="flex:1;background:#fff;border:1px solid #9aa0aa;display:flex;align-items:center;justify-content:center;text-align:center;line-height:1.15;cursor:pointer;" style-hover="background:#f4f6f9;">{{ b }}</div>
+    </sc-for>
+    <div style="flex:1;background:#fff;border:1px solid #9aa0aa;display:flex;align-items:center;justify-content:center;cursor:pointer;">▶</div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1024,&quot;height&quot;:600}}">
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      niveau: [
+        {k:"Maximum",v:"0 mm"},{k:"Minimum",v:"0 mm"},
+        {k:"Stop Vullen Indaver",v:"0 mm"},{k:"Start Vullen Indaver",v:"0 mm"},
+        {k:"Stop Vullen kanaal water",v:"0 mm"},{k:"Start Vullen kanaal water",v:"0 mm"},
+        {k:"Lijnen stoppen",v:"0 mm"},
+      ],
+      navBtns: ["Koel\nwater","Proces\nwater","Naar\nPompen","","","Water\nverbruik","","Inter\nface","Reset"],
+    };
+  }
+}
+</script>
+</body>
+</html>

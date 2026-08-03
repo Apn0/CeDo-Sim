@@ -65,7 +65,8 @@ func _test_stream_routing() -> void:
 	add_child(fines)
 	fines.capacity_m3 = 1.0
 	fines.override_density_kg_m3 = 180.0
-	fines.accepted_streams = [1]   # Stream.FINES only
+	var fines_streams : Array[int] = [1]   # Stream.FINES only (typed — untyped Array errors on Array[int])
+	fines.accepted_streams = fines_streams
 	# Dump 50 kg of COARSE_FILM (cls=0) into it → should be refused entirely
 	var refused : float = fines.add(50.0, 90.0, 0)
 	_ok(refused == 50.0, "FINES-only bin refuses 50 kg of COARSE_FILM (returned %.0f)" % refused)
@@ -116,7 +117,8 @@ func _test_skip_pickup_and_dump() -> void:
 	var skip := PlaceableCatalog.build_node("skip_steel", false) as Node3D
 	add_child(skip)
 	skip.global_position = cp.global_position + Vector3(0.1, 0.0, 0.0)
-	skip.set("accepted_streams", [0])    # COARSE_FILM
+	var skip_streams : Array[int] = [0]    # COARSE_FILM (typed — untyped no-ops on Array[int])
+	skip.set("accepted_streams", skip_streams)
 	skip.set("capacity_m3", 2.0)
 	# Seed it with some mass so we can verify "emptied" by checking it goes to 0.
 	var refused : float = skip.call("add", 100.0, 90.0, 0)

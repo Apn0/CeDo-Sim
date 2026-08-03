@@ -107,7 +107,9 @@ func _tick_walk_to_blower(npc: Node) -> void:
 		var saved_xform : Transform3D = leaf_blower.global_transform
 		leaf_blower.get_parent().remove_child(leaf_blower)
 		npc.add_child(leaf_blower)
-		leaf_blower.transform = Transform3D(Basis.IDENTITY, Vector3(0.35, 0.95, 0.4))
+		# npc-11 — shared operator-corrected hand offset (2026-07-16 feedback);
+		# calibration note lives at NpcAutonomyTask.TOOL_CARRY_OFFSET.
+		leaf_blower.transform = Transform3D(Basis.IDENTITY, TOOL_CARRY_OFFSET)
 		leaf_blower.set_meta("saved_world_xform", saved_xform)
 	_phase = Phase.CIRCUIT
 	_phase_t = 0.0
@@ -124,32 +126,57 @@ func _tick_circuit(npc: Node, delta: float) -> void:
 		_set_dest(npc, wp_world)
 		return
 	# Arrived — dwell for DWELL_S seconds (the "blowing" beat), then advance.
+	# Real effect: the blast pushes nearby loose film scrap away from the NPC so
+	# the world visibly changes when a colleague cleans (not just a cosmetic walk).
+	_blow_nearby_scrap(npc)
 	_dwell_t += delta
 	if _dwell_t >= DWELL_S:
 		_dwell_t = 0.0
 		_circuit_idx += 1
 
+# Push any RigidBody3D in group "film_scrap" within BLOW_RADIUS_M away from the
+# NPC, low and outward, as if the leaf blower's air cone hit it. Cheap per-frame
+# radial impulse — the scraps are light (mass 0.05) so a small nudge scatters them.
+const BLOW_RADIUS_M   : float = 3.5
+const BLOW_IMPULSE    : float = 0.12
+func _blow_nearby_scrap(npc: Node) -> void:
+	if npc == null or not (npc is Node3D):
+		return
+	var tree := npc.get_tree() if npc.has_method("get_tree") else null
+	if tree == null:
+		return
+	var origin : Vector3 = npc.global_position
+	for s in tree.get_nodes_in_group("film_scrap"):
+		if not (s is RigidBody3D) or not is_instance_valid(s):
+			continue
+		var to : Vector3 = s.global_position - origin
+		var d : float = to.length()
+		if d > BLOW_RADIUS_M or d < 0.001:
+			continue
+		var dir : Vector3 = to / d
+		dir.y = maxf(dir.y, 0.25)   # bias slightly upward so scrap skips, not drags
+		# Falloff with distance so close scrap gets the strongest push.
+		var falloff : float = 1.0 - (d / BLOW_RADIUS_M)
+		s.apply_central_impulse(dir.normalized() * BLOW_IMPULSE * falloff)
+
 func _tick_return_blower(npc: Node) -> void:
 	if not _close_enough(npc, _pickup_pos, APPROACH_DIST_M):
 		_set_dest(npc, _pickup_pos)
 		return
-	# Drop the blower back at its pickup location with its saved orientation.
+	# Drop the blower back at its saved station transform (shared npc-03 helper).
+	_drop_tool(npc, leaf_blower)
 	if leaf_blower != null and is_instance_valid(leaf_blower):
-		if leaf_blower.get_parent() == npc:
-			npc.remove_child(leaf_blower)
-			# Re-parent under MainWorld (npc's parent) so it stays in the scene.
-			var mw : Node = npc.get_parent()
-			if mw != null:
-				mw.add_child(leaf_blower)
-				var saved : Transform3D = leaf_blower.get_meta("saved_world_xform",
-					Transform3D(Basis.IDENTITY, _pickup_pos))
-				leaf_blower.global_transform = saved
 		# Stamp the cleaning time so the board doesn't immediately re-emit.
 		leaf_blower.set_meta("last_cleaned_at", _now_sim_s())
 	release(npc)
 	mark_done()
 
-func release(_npc: Node) -> void:
+func release(npc: Node) -> void:
+	# npc-03 — an abort (phase timeout, shift bell, production preemption,
+	# operator clear) must put the blower DOWN. Without this the tool stayed
+	# welded to the NPC's hand forever and — with the claim meta removed
+	# below — a later task could "pick it up" out of his hands.
+	_drop_tool(npc, leaf_blower)
 	if leaf_blower != null and is_instance_valid(leaf_blower):
 		leaf_blower.remove_meta("autonomy_claimed_by")
 

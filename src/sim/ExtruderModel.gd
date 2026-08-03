@@ -468,7 +468,7 @@ func _tick_starting(delta: float, _inputs: Dictionary, events: Array[String]) ->
 ## independent and matches the emulator's `*= 0.9` decay step at 0.5 s tick.
 ## Production continues at the residual rpm fraction so downstream catches
 ## the tail-end material; no new lumps are emitted (die_pressure = 0).
-func _tick_stopping(delta: float, _inputs: Dictionary, events: Array[String]) -> void:
+func _tick_stopping(delta: float, _inputs: Dictionary, _events: Array[String]) -> void:
 	var nominal := config.screw_rpm_nominal
 	# Exponential decay: rpm_new = rpm_old * exp(-delta / tau)
 	screw_rpm = screw_rpm * exp(-delta / max(0.05, STOP_DECAY_S))

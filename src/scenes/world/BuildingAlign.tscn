@@ -1,0 +1,70 @@
+[gd_scene load_steps=9 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/building_3d_raw/texturedMesh.obj" id="1"]
+[ext_resource type="Script" path="res://src/scenes/world/BuildingAlign.gd" id="2"]
+
+[sub_resource type="ProceduralSkyMaterial" id="sky_mat"]
+sky_horizon_color = Color(0.3, 0.35, 0.42, 1)
+ground_horizon_color = Color(0.2, 0.22, 0.26, 1)
+
+[sub_resource type="Sky" id="sky"]
+sky_material = SubResource("sky_mat")
+
+[sub_resource type="Environment" id="env"]
+background_mode = 2
+sky = SubResource("sky")
+ambient_light_source = 2
+ambient_light_color = Color(0.7, 0.72, 0.8, 1)
+ambient_light_energy = 0.6
+
+[sub_resource type="StandardMaterial3D" id="holo_mat"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(0.35, 0.8, 1, 0.32)
+emission_enabled = true
+emission = Color(0.25, 0.7, 1, 1)
+emission_energy_multiplier = 1.4
+cull_mode = 2
+
+[sub_resource type="StandardMaterial3D" id="ground_mat"]
+albedo_color = Color(0.14, 0.15, 0.17, 1)
+roughness = 0.95
+metallic = 0.0
+
+[sub_resource type="PlaneMesh" id="ground_plane"]
+size = Vector2(800, 800)
+
+[node name="BuildingAlign" type="Node3D"]
+script = ExtResource("2")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("env")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866, -0.25, 0.433, 0, 0.866, 0.5, -0.5, -0.433, 0.75, 0, 200, 0)
+shadow_enabled = true
+
+[node name="Ground" type="MeshInstance3D" parent="."]
+mesh = SubResource("ground_plane")
+material_override = SubResource("ground_mat")
+
+[node name="Hologram" type="MeshInstance3D" parent="."]
+mesh = ExtResource("1")
+material_override = SubResource("holo_mat")
+
+[node name="RadiusRing" type="MeshInstance3D" parent="."]
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 80, 240)
+fov = 65.0
+far = 4000.0
+
+[node name="HUD" type="CanvasLayer" parent="."]
+
+[node name="Label" type="Label" parent="HUD"]
+offset_left = 16.0
+offset_top = 12.0
+offset_right = 1900.0
+offset_bottom = 90.0
+theme_override_font_sizes/font_size = 20
+text = "BUILDING ALIGN"

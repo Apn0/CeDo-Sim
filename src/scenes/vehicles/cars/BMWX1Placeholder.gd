@@ -11,10 +11,9 @@ const TARGET_NODE_NAME := "AClass"
 const OTHER_CARS := ["206", "Hiace", "Avensis", "Astra", "Golf", "A3", "Almera", "Clio", "Vectra"]
 
 func _ready() -> void:
-	# BMW X1 / premium hatch — punchier off-the-line than the Car default.
-	# Audit recommendation: bump car-class accel from 6.0 → 7.5 m/s² for the
-	# BMW + Audi class. Tau stays at the Car default (0.6 s).
-	throttle_accel_mps2 = 7.5
+	# BMW X1 — punchier than the fleet base but #223 real: 7.5 m/s² was ~3× a
+	# real SUV; ~0-100 in ~8.5 s ≈ 3.3 m/s². Tau stays at the Car default (0.6 s).
+	throttle_accel_mps2 = 3.3
 	super._ready()
 	vehicle_type    = "bmw_x1_placeholder"
 	speed_limit_kmh = 95.0

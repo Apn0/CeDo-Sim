@@ -32,10 +32,14 @@ extends Node3D
 ## If the heavy scene cannot instantiate headless, Tier 2 is reported as skipped
 ## rather than failing the whole run — Tier 1 still validates the core contract.
 
-# ── Synthetic RD-scale layout (Geleen-ish RD numbers; exact values irrelevant,
-#    only the MAGNITUDE matters — they must trip the >10 000 re-centring branch).
-const RD_PLAYER  := Vector3(176000.0, 0.0, 330000.0)
-# Plant-scale offsets we expect to survive re-centring as ~these metres.
+# ── Synthetic RD-scale layout. Values must be in the REAL RD convention (RD x →
+#    scene x, RD y → scene −z, hence the negative Z) and near the CeDo tile, so
+#    the loader's tile-anchored shift lands them at plant scale. Magnitude alone
+#    is no longer sufficient: the shift is a fixed mesh-derived constant, not a
+#    value re-derived from player_spawn, so an arbitrary RD point stays arbitrary.
+const RD_PLAYER  := Vector3(183900.0, 0.0, -329300.0)
+# Plant-scale offsets, added to RD_PLAYER on disk. After conversion each marker
+# must sit exactly this far from the converted player_spawn.
 const OFF_FORK_A := Vector3(3.0,  0.0,  2.0)
 const OFF_FORK_B := Vector3(-6.0, 0.0, 12.0)
 const OFF_CLAMP  := Vector3(10.0, 0.0, -4.0)
@@ -112,10 +116,15 @@ func _test_load_finite(wl: Node) -> void:
 	var fc : Vector3 = wl.get("factory_center")
 	_ok(_v3_finite(ps), "player_spawn is finite %s" % str(ps))
 	_ok(_v3_finite(fc), "factory_center is finite %s" % str(fc))
-	# Re-centring subtracts the player_spawn shift, so player_spawn collapses to
-	# ~0 on XZ and all other markers drop from 1e5 RD magnitudes to plant scale.
-	_ok(absf(ps.x) < 1.0 and absf(ps.z) < 1.0,
-		"player_spawn re-centred to ~origin (RD shift removed): (%.2f, %.2f)" % [ps.x, ps.z])
+	# RD conversion subtracts the building TILE centre (WorldLayout._rd_to_scene_shift),
+	# so every marker drops from 1e5 RD magnitudes into the scene-absolute frame.
+	# player_spawn keeps a REAL scene position — it is the plant anchor, not the
+	# origin. It collapsing to ~0 is the signature of the player-relative frame
+	# that misplaced every vehicle by 228 m.
+	_ok(Vector2(ps.x, ps.z).length() < 10000.0,
+		"player_spawn converted out of RD scale: (%.2f, %.2f)" % [ps.x, ps.z])
+	_ok(Vector2(ps.x, ps.z).length() > 1.0,
+		"player_spawn was NOT re-centred onto the origin — it holds its own scene position")
 
 	# Vehicle spawns — finite AND brought back to the small offsets we authored.
 	var fork : Array = wl.call("get_vehicle_spawns", "forklift")
@@ -126,15 +135,20 @@ func _test_load_finite(wl: Node) -> void:
 			if not _v3_finite(p): all_small = false
 			if Vector2(p.x, p.z).length() > 10000.0: all_small = false
 	_ok(all_small, "all vehicle spawns finite and < 10 km after re-centring (RD leak check)")
+	# Markers are scene-absolute after conversion, so the invariant that survives
+	# is the SEPARATION the layout was authored with — checked against the
+	# converted player_spawn, not against a bare offset.
 	if fork.size() >= 1:
 		var f0 : Vector3 = fork[0]
-		_ok(_v3_approx(f0, OFF_FORK_A, 0.5),
-			"forklift #1 offset restored to authored %s (got %s)" % [str(OFF_FORK_A), str(f0)])
+		_ok(_v3_approx(f0 - ps, OFF_FORK_A, 0.5),
+			"forklift #1 sits %s from player_spawn as authored (got %s)"
+				% [str(OFF_FORK_A), str(f0 - ps)])
 
 	# Line starts.
 	var ls : Vector3 = wl.call("get_line_start", "1", Vector3(9999, 9999, 9999))
-	_ok(_v3_finite(ls) and _v3_approx(ls, OFF_LINE1, 0.5),
-		"line '1' start finite + restored to %s (got %s)" % [str(OFF_LINE1), str(ls)])
+	_ok(_v3_finite(ls) and _v3_approx(ls - ps, OFF_LINE1, 0.5),
+		"line '1' start finite + %s from player_spawn as authored (got %s)"
+			% [str(OFF_LINE1), str(ls - ps)])
 
 	# Yard corners.
 	var yards : Array = wl.get("bale_yards")
@@ -152,7 +166,7 @@ func _test_load_finite(wl: Node) -> void:
 # =============================================================================
 # (2) + (3) MainWorld._layout_to_scene + the vehicles/yards it really spawns.
 # =============================================================================
-func _test_layout_to_scene_and_spawns(wl: Node) -> void:
+func _test_layout_to_scene_and_spawns(_wl: Node) -> void:
 	_section("MainWorld — instantiate real scene, check layout→scene mapping")
 
 	var scn := load("res://src/scenes/world/MainWorld.tscn") as PackedScene
@@ -191,20 +205,23 @@ func _test_layout_to_scene_and_spawns(wl: Node) -> void:
 	var anchor : Vector3 = world.call("_layout_anchor_xz")
 	_ok(_v3_finite(anchor), "_layout_anchor_xz() is finite %s" % str(anchor))
 
-	var probe := Vector3(10.0, 0.0, -4.0)
+	# Markers are SCENE-ABSOLUTE (WorldFrame._layout_to_scene), so the mapping is
+	# the XZ identity: the value the operator drew IS the scene position. The old
+	# assertions here (magnitude preserved relative to the anchor, and
+	# _layout_to_scene(0) landing ON the anchor) only held for the rotate+anchor
+	# reading that put every vehicle ~228 m off its own marker.
+	var probe := Vector3(-211.21, 0.0, 86.05)   # the operator's forklift #1
 	var scene_pos : Vector3 = world.call("_layout_to_scene", probe)
 	_ok(_v3_finite(scene_pos), "_layout_to_scene(%s) is finite → %s" % [str(probe), str(scene_pos)])
-	# The mapping is anchor + rotate(offset): the result must sit within |offset|
-	# (plus slop) of the anchor, i.e. the offset magnitude is PRESERVED, never
-	# blown up to RD scale. This is the core "not 380 km away" guard.
-	var d_from_anchor := Vector2(scene_pos.x - anchor.x, scene_pos.z - anchor.z).length()
-	_ok(absf(d_from_anchor - probe.length()) < 0.5,
-		"_layout_to_scene preserves offset magnitude (%.2f m vs authored %.2f m)"
-			% [d_from_anchor, probe.length()])
-	# Zero offset must map exactly onto the anchor.
-	var at_anchor : Vector3 = world.call("_layout_to_scene", Vector3.ZERO)
-	_ok(Vector2(at_anchor.x - anchor.x, at_anchor.z - anchor.z).length() < 0.01,
-		"_layout_to_scene(0) lands on the anchor")
+	_ok(Vector2(scene_pos.x - probe.x, scene_pos.z - probe.z).length() < 0.001,
+		"_layout_to_scene is the XZ identity — a marker maps to itself (%s → %s)"
+			% [str(Vector2(probe.x, probe.z)), str(Vector2(scene_pos.x, scene_pos.z))])
+	_ok(absf(scene_pos.y) < 0.001, "_layout_to_scene discards Y (caller pins it via _on_floor)")
+	# The transform must NOT drag markers onto the anchor: that was the symptom
+	# of re-anchoring an already-absolute coordinate.
+	var at_origin : Vector3 = world.call("_layout_to_scene", Vector3.ZERO)
+	_ok(Vector2(at_origin.x, at_origin.z).length() < 0.001,
+		"_layout_to_scene(0) stays at the scene origin, NOT at the anchor %s" % str(anchor))
 
 	# ── Vehicles actually spawned by _spawn_vehicle_instances: finite + near anchor.
 	var vehicles := _find_vehicles(world)

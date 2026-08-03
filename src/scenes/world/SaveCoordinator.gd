@@ -80,6 +80,11 @@ func save_game() -> void:
 	if bm != null and bm.has_method("_save_layout"):
 		bm._save_layout()
 	print("[SaveCoordinator] Game saved")
+	# Surface the save on the HUD ("✓ Saved" toast). Before this the only trace
+	# of a save was the console print above — invisible during a shift.
+	var bus := get_node_or_null("/root/EventBus")
+	if bus and bus.has_signal("autosave_completed"):
+		bus.emit_signal("autosave_completed")
 
 func save_and_quit() -> void:
 	save_game()

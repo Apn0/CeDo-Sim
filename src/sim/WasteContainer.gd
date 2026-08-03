@@ -57,6 +57,12 @@ enum OverflowState { NONE, WARNING, SPILLING, BLOCKED }
 ## Drained fluid is just removed from the world (in reality it goes to a sewer
 ## or another tank — modelled as bookkeeping for now).
 @export var fluid_valve : bool = false
+## npc-05 — True for the OUTDOOR open-top end-destination skip: the forklift
+## dumps full indoor bins here and the crew never empties it on foot (a full
+## outdoor skip is a HUD/gauge warning only — the truck swap that would relieve
+## it is outside sim scope). Joins the "waste_container_outdoor" group in
+## _ready() so generators can scan outdoor destinations cheaply.
+@export var outdoor_skip : bool = false
 
 const DRAIN_RANGE : float = 1.6
 var _player_near : bool = false
@@ -99,6 +105,13 @@ var _gauge_label : Label3D = null
 # =============================================================================
 func _ready() -> void:
 	add_to_group("waste_container")
+	# npc-05 — outdoor end-destination skips ALSO join a dedicated scan group so
+	# generators can split indoor sources from outdoor destinations without
+	# probing every container's properties. Read at tree-enter time: spawners
+	# must set outdoor_skip BEFORE add_child() (ContainerGuideManager's real-
+	# container spawn does exactly that).
+	if outdoor_skip:
+		add_to_group("waste_container_outdoor")
 	_build_overflow_mound()
 	if show_gauge:
 		_build_fill_gauge()
@@ -188,6 +201,28 @@ func empty() -> float:
 	blended_density = 200.0
 	_update_state()
 	return removed
+
+# ── #198 NPC-autonomy lumps API ──────────────────────────────────────────────
+# Thin aliases so EmptyLumpCartTask (and the board's destination logic) can treat
+# a WasteContainer as a lumps sink without knowing its SI add()/fill model. Lumps
+# from the laser filter are a coarse solid waste stream — route them through the
+# same POLY_REJECT bucket the container already understands (dense chunky reject).
+const _LUMPS_DENSITY_KG_M3 : float = 350.0   # cooled extruder lump density
+
+## Receive `kg` of cooled lumps dumped by a forklift. Returns the mass that could
+## NOT be accepted (overflowed / refused), matching add()'s ledger contract.
+func receive_lumps(kg: float) -> float:
+	return add(kg, _LUMPS_DENSITY_KG_M3, Stream.POLY_REJECT)
+
+## Approximate "how many carts' worth" this bin holds, for the board's fill-based
+## routing (LumpCart.FULL_THRESHOLD_KG ~ 200 kg per cart). Cheap integer estimate.
+func lumps_count() -> int:
+	return int(floor((mass_kg + overflow_mass_kg) / 200.0))
+
+## True once the bin is at/over its safe-fill point — the board reads this to
+## decide it should route the next load to a different (outdoor) container.
+func is_full() -> bool:
+	return needs_emptying()
 
 # =============================================================================
 # INTERNAL

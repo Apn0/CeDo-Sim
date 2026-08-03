@@ -15,9 +15,16 @@ class_name PlaceableCatalog
 # (safe key access under this project's warnings-as-errors setting).
 static var _items: Array[Dictionary] = []
 
+# Floating billboard nameplate over each placed machine. Real plants have no
+# text floating over the machines, so this is OFF everywhere (operator decision
+# 2026-07-11: what passes in the test gauntlet IS the main-world behaviour —
+# no double bookkeeping). Kept as a flag so a debug tool can flip it on for a
+# session; nothing in the shipped flow sets it true.
+static var emit_name_labels : bool = false
+
 # ── #212 Stencil-label helper ─────────────────────────────────────────────────
 # Small white stencilled text decal used by brand-decal additions across this
-# file (EIRENE / WAVE-CUT / LINDNER POLARIS / PRESONA / WILO / TANK A …). Built
+# file (EREMA / WAVE-CUT / LINDNER POLARIS / PRESONA / WILO / TANK A …). Built
 # as a Label3D parented under a tiny QuadMesh stand-in so it reads as a flat
 # panel on the host machine face. `face` selects which axis the decal looks
 # down ("+Z" default, "-Z", "+X", "-X"). `size` is the requested decal panel
@@ -135,6 +142,12 @@ static func items() -> Array[Dictionary]:
 			# Step 1 + step 2 are bundled here because the 3C/6 line group has its
 			# own sort + transport rather than sharing the 3A/3B pair.
 			{"id": "line_intake_3c6","name":"▶ Build 3C/6 sort + transport (step 1+2)","category": "Lines", "size": Vector3(3.0, 2.0, 3.0), "color": Color(0.32, 0.46, 0.56)},
+			# Step 3c — the Line 3C wash + extrude spine itself (BuildMode.LINE_3C_SEQ,
+			# transcribed from Line3CDef.STAGES). This is the ONLY macro whose machines
+			# carry an l3c_code, so it is the only one the calibrated ProcessModel
+			# currents / transfer coefficients and the Waslijn 3C HMI screen can read.
+			# LAYOUT-APPROXIMATE — see the SEQ header; needs an operator K-mode pass.
+			{"id": "line_3c",        "name": "▶ Build Line 3C wash + extrude (step 3c)","category": "Lines", "size": Vector3(3.0, 2.0, 3.0), "color": Color(0.30, 0.68, 0.72)},
 			# ── Extruders ────────────────────────────────────────────────────
 			{"id": "extruder_3a",    "name": "Extruder 3A",        "category": "Extruders",  "size": Vector3(2.6, 4.2, 14.0), "color": Color(0.26, 0.42, 0.70)},
 			{"id": "extruder_3b",    "name": "Extruder 3B",        "category": "Extruders",  "size": Vector3(2.6, 4.2, 14.0), "color": Color(0.26, 0.50, 0.70)},
@@ -155,8 +168,8 @@ static func items() -> Array[Dictionary]:
 			# Per-position shredders the line actually has — Shredder 1 is the
 			# big coarse pre-shredder (≤10×10 cm output), Shredder 2 is a smaller
 			# compact unit that takes it down to ~1-2 cm flakes.
-			{"id": "shredder_1",     "name": "Shredder 1 (coarse, 3A/3B)","category": "Shredders","size": Vector3(4.0, 9.0, 5.0),  "color": Color(0.42, 0.18, 0.15)},
-			{"id": "shredder_2",     "name": "Shredder 2 (fine)",  "category": "Shredders",  "size": Vector3(2.4, 2.4, 2.8),  "color": Color(0.62, 0.30, 0.22)},
+			{"id": "shredder_1",     "name": "Shredder 1 (coarse — Line 1 + 3C/6, big red)","category": "Shredders","size": Vector3(4.0, 9.0, 5.0),  "color": Color(0.62, 0.14, 0.11)},
+			{"id": "shredder_2",     "name": "Shredder 2 (fine)",  "category": "Shredders",  "size": Vector3(3.4, 6.0, 4.2),  "color": Color(0.18, 0.30, 0.58)},
 			# ── Washing / drying ─────────────────────────────────────────────
 			{"id": "mech_dryer",     "name": "Mechanical dryer",   "category": "Washing",    "size": Vector3(2.4, 3.0, 4.5),  "color": Color(0.62, 0.63, 0.65)},
 			# REMOVED: wash_line was the old monolithic Washing-line placeable
@@ -189,6 +202,10 @@ static func items() -> Array[Dictionary]:
 			{"id": "grating_platform", "name": "Grating platform (2-click, resizable)", "category": "Platforms", "size": Vector3(2.0, 0.25, 2.0), "color": Color(0.55, 0.57, 0.60)},
 			{"id": "stairs",         "name": "Stairs (grating, guardrail)", "category": "Platforms", "size": Vector3(1.2, 2.5, 3.0),  "color": Color(0.55, 0.57, 0.60)},
 			{"id": "guardrail",      "name": "Guardrail segment",           "category": "Platforms", "size": Vector3(0.06, 1.1, 2.0),  "color": Color(0.80, 0.72, 0.20)},
+			# #225.2 — Low steel-grating BORDES the laserfilter + its two lump carts
+			# stand on, with an oprit (ramp) on the -Z approach side so a forklift
+			# rolls up to fork a cart out. Operator 2026-07-14 + photo _lumbs_cart.jpg.
+			{"id": "lump_platform",  "name": "Laserfilter afvoer-bordes (met oprit)", "category": "Platforms", "size": Vector3(3.8, 0.12, 2.4), "color": Color(0.50, 0.52, 0.55)},
 			# ── Walls (2-click: click START, click END → solid wall along the line) ──
 			# size.x = thickness, size.y = height (metres). All three are two-click.
 			{"id": "wall_low",  "name": "Wall — partition (3.5m, 2-click)",  "category": "Walls", "size": Vector3(0.20, 3.5,  1.0), "color": Color(0.82, 0.80, 0.76)},
@@ -253,9 +270,15 @@ static func items() -> Array[Dictionary]:
 			{"id": "transfer_chute", "name": "Transfer chute",     "category": "Conveyance", "size": Vector3(0.8, 1.4, 1.8),  "color": Color(0.55, 0.57, 0.60)},
 			{"id": "blower",         "name": "Ventilator / blower","category": "Conveyance", "size": Vector3(1.0, 1.2, 1.2),  "color": Color(0.50, 0.46, 0.40)},
 			# ── Sorting (bunkers / scanners / pre-wash drum etc) ─────────────
-			# Bunker = the open-top steel pit material is dumped into, with
-			# bunker rollers at the bottom that meter the load onto Shredder 1.
-			{"id": "bunker",         "name": "Bunker (intake)",    "category": "Sorting",    "size": Vector3(4.2, 4.0, 3.4),  "color": Color(0.55, 0.55, 0.58)},
+			# Bunker REBUILT 2026-07-06 (bunker.md + operator rulings): NOT an
+			# intake pit — a ~10 m long × 4 m wide BUFFER CONVEYOR downstream of
+			# Shredder 1 (operator interview: shredder 1 bottom → belt → bunker →
+			# belt 1040; SWI-035 front-end order). Deck ~1.25 m up (placeholder,
+			# documented band 1.0-1.5 m — flag F1), walls ~3.75 m above it
+			# (band 3.5-4.0 m — flag F1). Id KEPT for save-file compat (every
+			# matcher substring-matches "bunker": HmiScopes/HmiOverlay/CrewManager/
+			# LineFlow). Colour undocumented — flag F14.
+			{"id": "bunker",         "name": "Bunker (buffer conveyor, lijn 3)", "category": "Sorting", "size": Vector3(4.0, 5.0, 10.0), "color": Color(0.55, 0.55, 0.58)},
 			# ── Size reduction ───────────────────────────────────────────────
 			# Mill = the fine-stage size reducer on lines 3C / 6. Lives in the
 		# "Shredders" category alongside Shredder 1 / Shredder 2 so the build
@@ -285,8 +308,23 @@ static func items() -> Array[Dictionary]:
 			# + motor end-cap, grey finned motor, junction box, stainless base plate,
 			# vertical stainless discharge stub. Modelled from the real CeDo photo.
 			# REMOVED: waterpomp was the bespoke small Wilo-style pump model
-			# (_m_waterpomp). No macro referenced it — Line 3A's Pomp C1 uses
-			# `water_pump` (generic _m_pump). Catalog now offers ONE pump id.
+			# (_m_waterpomp). No macro referenced it — Line 3A's Pomp C1 used
+			# `water_pump` (generic _m_pump) until 2026-07-06.
+			# ── Named pump stations (2026-07-06, water_small.md §3/§4) ────────
+			# Distinct ids for pumps that carry their OWN names on the plant's
+			# flow diagrams — the flotation_tank/_wide one-builder-many-ids
+			# precedent, NOT a violation of the pump dedupe rule above (these are
+			# distinct real-world stations, not model aliases; ruled in the
+			# 2026-07-06 batch, water_small.md flag F10). Both reuse _m_pump with
+			# a stencil station label; real pump size/appearance never
+			# photographed — generic Wilo model is a stand-in (flags F7/F8).
+			# Pomp C1 (3A only): glijgoot → C1 → frictiescheider M3; pumps the
+			# dirty water + film ("vuil water en folie") — M3 training 101_CeDo14.
+			{"id": "pomp_c1",       "name": "Pomp C1 (glijgoot → frictiescheider M3, 3A)", "category": "Pumps", "size": Vector3(0.8, 0.9, 1.3), "color": Color(0.30, 0.45, 0.62)},
+			# Pomp zeefbocht (3B only): utility cluster near Blauwe tank / Pomp
+			# was 3b / Pomp was 4. The ZEEFBOCHT screen it feeds is NOT drawn on
+			# any diagram and is NOT modeled — flag F9, needs operator photo.
+			{"id": "pomp_zeefbocht", "name": "Pomp zeefbocht (3B)",                        "category": "Pumps", "size": Vector3(0.8, 0.9, 1.3), "color": Color(0.30, 0.45, 0.62)},
 			# Line-3A ring main: serpentine of off-white plastic pipes inside a yellow
 			# steel safety cage (5 horizontal U-loops + vertical riser, stainless
 			# band clamps at intervals). Modelled from the real CeDo photos.
@@ -306,7 +344,12 @@ static func items() -> Array[Dictionary]:
 			{"id": "vuilsnippersilo","name": "Wet film silo (vuilsnipper)","category": "Size reduction","size": Vector3(3.0, 4.0, 3.0),"color": Color(0.50, 0.50, 0.55)},
 			{"id": "friction_washer","name": "Frictiewasser (stirring tank)","category": "Washing","size": Vector3(1.5, 1.5, 3.0),  "color": Color(0.62, 0.64, 0.68)},
 			{"id": "intensive_washer","name": "Intensive washer",  "category": "Washing",    "size": Vector3(1.6, 2.4, 2.0),  "color": Color(0.42, 0.55, 0.60)},
-			{"id": "rafter",         "name": "Rafter (sieve deck)","category": "Separation", "size": Vector3(1.8, 1.8, 3.6),  "color": Color(0.55, 0.57, 0.60)},
+			# Rafter refined 2026-07-06 (eop_rafter.md Part B + operator ruling B7):
+	# submerged mesh-cylinder sieve (~0.75 m ⌀) inside a ~1 m wide × 1 m high
+	# water tank on a support platform. The tank has its OWN water level — it is
+	# NOT a connected vessel with the flotation tank (operator-corrected 2026-07-17).
+	# Platform top lowered 3.1 → 1.9 m (operator: top was 1.2 m too high).
+	{"id": "rafter",         "name": "Rafter (submerged mesh-cylinder sieve, 3B)","category": "Separation", "size": Vector3(1.8, 4.8, 3.6),  "color": Color(0.55, 0.57, 0.60)},
 			# #91 — Trilzeef (vibrating sieve / shaker screen): a steeply-sloped
 			# perforated deck with vertical side barriers, a rubber inlet flap at
 			# the top fed by a belt above, and an open-top discharge chute at the
@@ -355,6 +398,23 @@ static func items() -> Array[Dictionary]:
 			{"id": "mengsilo",       "name": "Mixing silo (mengsilo)","category": "Extrusion prep","size": Vector3(3.0, 6.5, 3.0),"color": Color(0.60, 0.62, 0.66)},
 			# ── Water / utilities (closes the wash-water loop) ────────────────
 			{"id": "zss_water",      "name": "ZSS water tank (wash-water loop)","category": "Water / utilities","size": Vector3(2.4, 4.0, 2.4),"color": Color(0.40, 0.52, 0.60)},
+			# Kleine LA (2026-07-06, water_small.md §1): separate small open-top
+			# water tank at the 3B flotation-tank material-EXIT side (towards
+			# Hal 0), floor-standing. Checklist row 16: tank level 90-92 cm =
+			# "Nét overlopen kleine LA I" — kept just barely overflowing. "LA"
+			# acronym unknown to the operator (flag F3). SIZE IS A PLACEHOLDER:
+			# documented only as "~half of LA1" and LA1 has no size anywhere
+			# (water_circuit_3a_la1.md:12 "geen volumes") — flag F1. Modeled
+			# DEAD-END (no outlet documented — flag F2).
+			{"id": "kleine_la",     "name": "Kleine LA (open waterbak, 3B uitloopzijde)", "category": "Water / utilities", "size": Vector3(1.5, 1.2, 1.5), "color": Color(0.40, 0.52, 0.60)},
+			# Tankje tussen extruders (2026-07-06, water_small.md §2): small water
+			# tank in the pellet/cooling-water cluster, ONE PER LINE (3A + 3B),
+			# each with its OWN pump directly below it (flow diagrams 261_CeDo130
+			# / 264_CeDo134 + interview). Composite: raised tankje + _m_pump
+			# underneath. ALL DIMENSIONS PLACEHOLDER (only "tankje" = small is
+			# documented — flags F4/F5); ontwaterzeef⇄tankje flow direction
+			# unsure on the source photos (flag F6).
+			{"id": "tankje_tussen_extruders", "name": "Tankje tussen extruders (+ pomp eronder)", "category": "Water / utilities", "size": Vector3(1.2, 2.2, 1.4), "color": Color(0.40, 0.52, 0.60)},
 			# ── Logistics ────────────────────────────────────────────────────
 			{"id": "waste_container","name": "Waste container (schraperbak)","category": "Logistics","size": Vector3(1.2, 1.2, 1.6),"color": Color(0.72, 0.56, 0.20)},
 			{"id": "skip_steel",     "name": "Steel skip (PLASTIC, chute)",  "category": "Logistics","size": Vector3(1.6, 1.2, 1.4),  "color": Color(0.42, 0.46, 0.40)},
@@ -389,6 +449,29 @@ static func items() -> Array[Dictionary]:
 			{"id": "ontwaterzeef",   "name": "Ontwaterzeef (dewater screen)","category": "Separation",   "size": Vector3(1.8, 1.8, 3.2),  "color": Color(0.50, 0.56, 0.60)},
 			{"id": "weegschaal",     "name": "Weegschaal (25 kg batch weigh)","category": "Logistics",   "size": Vector3(1.2, 2.2, 1.2),  "color": Color(0.55, 0.57, 0.60)},
 			{"id": "voorraad_silo",  "name": "Voorraad silo (granulate)",    "category": "Structure",    "size": Vector3(3.0, 6.5, 3.0),  "color": Color(0.66, 0.68, 0.72)},
+			# ── OUTDOOR PELLET SILOS MS/LS (2026-07-06, silos_ms_ls.md) ───────
+			# Silopark: 10 silos in 2 rows of 5 (operator ruling B8 2026-07-06,
+			# per the floor plan 240_CeDo127), Buitenterrein zuidwest below
+			# Hal 0/Hal 1. Per-line dedicated silos; operators never interact.
+			# MS = mengsilo: MIXING is a background recirculation LOOP — pellets
+			# pumped backward laadsilo → mengsilo and forward again, looping per
+			# pellet type (ruling B6); NO player controls, visual pipe stubs only.
+			# LS = laadsilo: truck lane underneath + discharge spout.
+			# Height 18.0 m + ~4 m footprint are SHELL-MESH-DERIVED PLACEHOLDERS
+			# (3DBAG cluster at world ≈ (-211, +53), silos_ms_ls.md §4 — flags
+			# 1/2/13); grey copied from voorraad_silo, RAL undocumented (flag 12).
+			# NOT the indoor 3A flake `mengsilo` — different machine, keep apart.
+			{"id": "ms_silo_buiten", "name": "Mengsilo buiten (MS — pellet blend)",   "category": "Structure", "size": Vector3(4.0, 18.0, 4.0), "color": Color(0.66, 0.68, 0.72)},
+			{"id": "ls_silo_buiten", "name": "Laadsilo buiten (LS — truck loadout)",  "category": "Structure", "size": Vector3(4.0, 18.0, 4.0), "color": Color(0.66, 0.68, 0.72)},
+			# EOP (End Of Pipe) — EXTERNAL ENTITY endpoint (2026-07-06,
+			# eop_rafter.md Part A). Indaver-operated on-site water-treatment
+			# mini-plant (sand / fine-film "paper pulp" / slib removal; goal =
+			# water REUSE, not river discharge — QA:Q12). NOT a working machine:
+			# role "none" in MachineFlow, no player interaction (control-room
+			# visibility is the separate hmi_indaver_water wall panel). Appearance
+			# UNDOCUMENTED — neutral 6×3×4 m building block + placard + the 3
+			# documented pipe-stub groups (water_circuits.json edges); flags 1-3.
+			{"id": "eop_endpoint",   "name": "EOP — Indaver waterzuivering (extern)", "category": "Structure", "size": Vector3(6.0, 3.0, 4.0),  "color": Color(0.55, 0.56, 0.58)},
 			# #A3 — Silo level sensor. A small panel that reads the linked silo's
 			# fill level and signals upstream throttle when it climbs high. The
 			# operator can BRIDGE it (E) to remove the governor — peak-performance
@@ -1046,7 +1129,7 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 					tn.add_to_group("belt")
 				var deck : StaticBody3D = tn.get_node_or_null("Deck") as StaticBody3D
 				if deck != null and deck.get_node_or_null("BeltSurface") == null:
-					var bs : Node = load("res://src/build/BeltSurface.gd").new()
+					var bs : Node = load("res://src/sim/BeltSurface.gd").new()
 					bs.name = "BeltSurface"
 					deck.add_child(bs)
 		return tn
@@ -1198,6 +1281,13 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 		# crosshair_prompt + crosshair_interact, opening the customizer (#153)
 		# on E.
 		body = load("res://src/build/WardrobeLocker.gd").new()
+	elif id == "shredder_1" or id == "shredder_2":
+		# Coarse/fine shredder sim brain (ShredderMachine.gd): throughput physics
+		# (feed→shred capped at rated, motor load, overfeed buffer + overload trip),
+		# relay-panel states (key I/II/III · start · e-stop), rotor-spin gating, and
+		# the SWI open/clean/block-rotor procedures as crosshair interactions. Slots
+		# in as a StaticBody3D so the model + leg/collision/group plumbing keep working.
+		body = load("res://src/sim/ShredderMachine.gd").new()
 	elif id == "laser_filter":
 		# Rotary-disc melt filter. The script (LaserFilter.gd) holds ΔP /
 		# scraper-RPM / screen-thickness state and exposes the multi-step
@@ -1223,7 +1313,9 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 		# handle to a point in front of the player and yaws the cart to match
 		# their facing. Friction stays high so it doesn't drift after release.
 		var rb_cart : RigidBody3D = load("res://src/sim/LumpCart.gd").new()
-		rb_cart.mass = 40.0
+		# #223 audit: one source of truth for empty-cart mass. LumpCart._sync_mass
+		# sets mass = EMPTY_MASS_KG + lumps_kg; at spawn lumps_kg=0 → EMPTY_MASS_KG.
+		rb_cart.call("_sync_mass")
 		rb_cart.linear_damp = 0.9
 		rb_cart.angular_damp = 3.0
 		rb_cart.can_sleep = true
@@ -1231,6 +1323,13 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 		pm_cart.friction = 0.9
 		pm_cart.bounce = 0.02
 		rb_cart.physics_material_override = pm_cart
+		# Pin the centre of mass LOW + CENTRED so the cart rests stably and
+		# settles deterministically regardless of the compound collision layout
+		# (the fork-pocket rework shifted the auto-computed CoM and made the cart
+		# roll a little on spawn → save/reload drift). A real cart's mass is in its
+		# base/wheels anyway.
+		rb_cart.center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
+		rb_cart.center_of_mass = Vector3(0.0, 0.18, 0.0)   # just above the underframe
 		# #198 — tag so NpcAutonomyBoard's lump-cart scanner finds this cart.
 		rb_cart.add_to_group("lump_cart")
 		body = rb_cart
@@ -1305,11 +1404,21 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 		body.set_meta("simple_bale", true)
 	else:
 		_build_model(model, id, category, size, color, ghost)
+		# #224 — STATIC-MERGE: bake the machine's static parts into one mesh per
+		# material look so it renders in a few draw calls instead of one-per-part
+		# (#221 perf; enables adding detail without tanking the framerate). Rotors /
+		# HMI / comp-tagged / particles / scripted parts stay separate & keep
+		# working. Ghosts skip it; opt out per-model via set_meta("no_merge", true).
+		if not ghost:
+			StaticMerge.merge_static(model)
 
 	if not ghost:
 		# Floor-paint placeables (lump_cart_spot, etc.) are purely visual — skip
 		# collision so wheels/carts don't ride up on the paint stripe.
-		var skip_collision : bool = id == "lump_cart_spot"
+		# stairs skip the generic full-size AABB collider — that solid box filled the
+		# whole flight and made it impassable, and it hid the per-tread StaticBody
+		# colliders _m_stairs builds (bughunt 2026-07-17). Walk on the treads instead.
+		var skip_collision : bool = id == "lump_cart_spot" or id == "stairs"
 		if not skip_collision:
 			if id == "lump_cart":
 				# #201 — operator spec: the cart's underframe has TWO 150 × 80 mm
@@ -1321,6 +1430,13 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 				# spreader widens from 0.20 m centerline to clamp the outer pocket
 				# walls. NOTHING is parented under the fork — pure contact physics.
 				_lump_cart_compound_collision(body, size)
+			elif id == "extruder_silo":
+				# The silo body sits ~2.6 m up on 4 legs with open walk-under
+				# clearance. A generic AABB filled that clearance solid (couldn't
+				# pass under it); build legs + raised-body collision instead so the
+				# operator can walk under and park a discharge cart (bughunt
+				# 2026-07-17).
+				_extruder_silo_compound_collision(body, size)
 			else:
 				var col := CollisionShape3D.new()
 				var shape := BoxShape3D.new()
@@ -1408,8 +1524,9 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 		# barcode sticker is the wrong colour/size to look realistic — both have
 		# to be re-done as a true paper-style sticker before being added back.
 		# Non-bale placeables keep the small floating name label so build-mode
-		# users can still tell what they placed.
-		if category != "Bales":
+		# users can still tell what they placed — UNLESS emit_name_labels is off
+		# (immersive contexts like the extruder bench).
+		if category != "Bales" and emit_name_labels:
 			var label := Label3D.new()
 			label.text = String(item["name"])
 			label.position = Vector3(0.0, size.y + 0.45, 0.0)
@@ -1451,6 +1568,7 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 		"extruder_silo":  _m_extruder_silo(p, size, color, ghost)
 		"lump_cart":      _m_lump_cart(p, size, color, ghost)
 		"lump_cart_spot": _m_lump_cart_spot(p, size, color, ghost)
+		"lump_platform":  _m_lump_platform(p, size, color, ghost)
 		"wardrobe_locker": _m_wardrobe_locker(p, size, color, ghost)
 		"doseersilo":     _m_doseersilo(p, size, color, ghost)
 		"transport_belt": _m_belt(p, size, color, ghost)
@@ -1465,8 +1583,8 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 		"pcu_cabinet":    _m_cabinet(p, size, color, ghost)
 		"door":           _m_door(p, size, color, ghost)
 		"mill":           _m_mill(p, size, color, ghost)
-		"flotation_tank": _m_flotation(p, size, color, ghost)
-		"flotation_tank_wide": _m_flotation(p, size, color, ghost)
+		"flotation_tank": _m_flotation(p, size, color, ghost, false)
+		"flotation_tank_wide": _m_flotation(p, size, color, ghost, true)
 		"sink_float":     _m_sinkfloat(p, size, color, ghost)
 		"friction_sep":   _m_friction(p, size, color, ghost)
 		"dewater_screw":  _m_dewater(p, size, color, ghost)
@@ -1474,6 +1592,10 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 		# pump_large / waterpomp / ringleiding_3a removed — see comments at
 		# their (formerly) catalog entries. water_pump + ringleiding are the
 		# canonical singletons.
+		# Named pump stations (2026-07-06): _m_pump + stencil station label —
+		# the flotation_tank/_wide shared-builder precedent (water_small.md §3/§4).
+		"pomp_c1":        _m_pump_labeled(p, size, color, ghost, "C1")
+		"pomp_zeefbocht": _m_pump_labeled(p, size, color, ghost, "ZEEFBOCHT")
 		"compactor_belt": _m_compactor_belt(p, size, color, ghost)
 		"hmi_panel":      _m_hmi(p, size, color, ghost)
 		"hmi_wall":       _m_hmi_wall(p, size, color, ghost)
@@ -1514,6 +1636,10 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 		"kufferath_sieve":_m_kufferath(p, size, color, ghost)
 		"mengsilo":       _m_mengsilo(p, size, color, ghost)
 		"zss_water":      _m_zss_water(p, size, color, ghost)
+		# Small water fixtures 2026-07-06 (water_small.md §1/§2) — role "none",
+		# never enter LineFlow / the HMI.
+		"kleine_la":               _m_kleine_la(p, size, color, ghost)
+		"tankje_tussen_extruders": _m_tankje_extruders(p, size, color, ghost)
 		# ── Hoses & Air (visual placeables, do NOT enter LineFlow / the HMI) ──
 		"reel_water_thick_yellow": _m_hose_reel(p, size, color, ghost, 0.045)
 		"reel_water_black":        _m_hose_reel(p, size, color, ghost, 0.025)
@@ -1548,6 +1674,10 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 		"ontwaterzeef":   _m_ontwaterzeef(p, size, color, ghost)
 		"weegschaal":     _m_weegschaal(p, size, color, ghost)
 		"voorraad_silo":  _m_silo(p, size, color, ghost)
+		# Outdoor MS/LS pellet silos + EOP endpoint (2026-07-06 batch).
+		"ms_silo_buiten": _m_silo_buiten(p, size, color, ghost, "ms")
+		"ls_silo_buiten": _m_silo_buiten(p, size, color, ghost, "ls")
+		"eop_endpoint":   _m_eop_endpoint(p, size, color, ghost)
 		# ── Line 1 machines (#62) ─────────────────────────────────────────────
 		"metaaldetector": _m_metaaldetector(p, size, color, ghost)
 		"vw_trommel":     _m_vw_trommel(p, size, color, ghost)
@@ -1555,7 +1685,11 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 		"mas_droger":     _m_mas_droger(p, size, color, ghost)
 		# ── Consolidated single-model extruder unit (#92): feed tower → barrel →
 		#    C-2 laser-filter → twin filter modules → meltpump → Wave-Cut pelletizer ─
-		"extruder_3a", "extruder_3b", "extruder_1", "extruder_3c", "extruder_6": _m_extruder_unit(p, size, color, ghost)
+		"extruder_3a": _m_extruder_unit(p, size, color, ghost, "3A")   # #223 docs->code: line-only barrel stencil
+		"extruder_3b": _m_extruder_unit(p, size, color, ghost, "3B")
+		"extruder_1":  _m_extruder_unit(p, size, color, ghost, "1")
+		"extruder_3c": _m_extruder_unit(p, size, color, ghost, "3C")
+		"extruder_6":  _m_extruder_unit(p, size, color, ghost, "6")
 		# ── #212 Decals (yellow hazard placards) ──────────────────────────────
 		"hazard_moving", "hazard_overhead", "hazard_hightemp", \
 		"hazard_hardhat", "hazard_piralchute", "hazard_platformmaxload":
@@ -1717,7 +1851,41 @@ static func make_roller_stripe_material(ghost: bool = false) -> StandardMaterial
 		m.albedo_color = Color(1, 1, 1, 0.40)
 	return m
 
-static func _mat(c: Color, ghost: bool, metallic: float = 0.15, rough: float = 0.7) -> StandardMaterial3D:
+# ── #226 GLOBAL DIRTY FILTER ─────────────────────────────────────────────────
+# Operator 2026-07-14: NOTHING should read as brand-new one-colour paint — every
+# machine gets a LIGHT grime patina by default (until told otherwise per-machine).
+# A single shared procedural grime NoiseTexture, multiplied onto the flat albedo
+# via object-space triplanar UV1 (works on the procedural box meshes with no UV
+# unwrap) + a small roughness bump. Cached → one texture for the whole plant.
+# Skips ghosts (build previews) and translucent colours (glass / tank water).
+# Pass clean=true to opt a material out (lenses, emissive dots, decals).
+static var _grime_cache : NoiseTexture2D = null
+static func _grime_tex() -> NoiseTexture2D:
+	if _grime_cache != null:
+		return _grime_cache
+	var n := FastNoiseLite.new()
+	n.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	n.frequency = 0.016                       # bigger, softer blobs (less busy)
+	var nt := NoiseTexture2D.new()
+	nt.width = 256
+	nt.height = 256
+	nt.seamless = true
+	nt.noise = n
+	# noise → colour ramp: mostly clean with occasional LIGHT warm-grey grime.
+	# Darkest patch is 0.80 → only a ~20% darkening in the dirtiest spots (subtle).
+	var g := Gradient.new()
+	# Operator 2026-07-16 "dirt accumulates way too fast" — the patina is static
+	# (cached, no growth), so "too fast" = too dirty. Confine grime to the top
+	# ~30% of the noise range and halve the darkening (0.80 → 0.91) so surfaces
+	# read lightly used, not filthy.
+	g.set_offsets(PackedFloat32Array([0.0, 0.70, 1.0]))
+	g.set_colors(PackedColorArray([
+		Color(0.91, 0.90, 0.88), Color(0.96, 0.95, 0.93), Color(1.0, 1.0, 1.0)]))
+	nt.color_ramp = g
+	_grime_cache = nt
+	return _grime_cache
+
+static func _mat(c: Color, ghost: bool, metallic: float = 0.15, rough: float = 0.7, clean: bool = false) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.metallic = metallic
 	m.roughness = rough
@@ -1728,6 +1896,12 @@ static func _mat(c: Color, ghost: bool, metallic: float = 0.15, rough: float = 0
 		m.albedo_color = c
 		if c.a < 0.999:   # already-translucent colours (e.g. tank water) stay see-through
 			m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		elif not clean:
+			# #226 global dirty filter — subtle grime patina on every opaque surface.
+			m.albedo_texture = _grime_tex()
+			m.uv1_triplanar = true
+			m.uv1_scale = Vector3(0.5, 0.5, 0.5)               # sparser grime blobs
+			m.roughness = clampf(rough + 0.02, 0.0, 1.0)       # was +0.05 — less grimy sheen
 	return m
 
 static func _box(parent: Node3D, size: Vector3, pos: Vector3, mat: StandardMaterial3D) -> MeshInstance3D:
@@ -1739,6 +1913,16 @@ static func _box(parent: Node3D, size: Vector3, pos: Vector3, mat: StandardMater
 	mi.position = pos
 	parent.add_child(mi)
 	return mi
+
+## 4 vertical walls forming a HOLLOW box (open top + bottom) — for feed hoppers,
+## throats and funnels that should read as open, not a solid block.
+static func _hollow_box(parent: Node3D, w: float, h: float, d: float, center: Vector3, t: float, mat: StandardMaterial3D) -> void:
+	var hw : float = w * 0.5
+	var hd : float = d * 0.5
+	_box(parent, Vector3(t, h, d), center + Vector3(-hw + t * 0.5, 0.0, 0.0), mat)
+	_box(parent, Vector3(t, h, d), center + Vector3( hw - t * 0.5, 0.0, 0.0), mat)
+	_box(parent, Vector3(w - t * 2.0, h, t), center + Vector3(0.0, 0.0, -hd + t * 0.5), mat)
+	_box(parent, Vector3(w - t * 2.0, h, t), center + Vector3(0.0, 0.0,  hd - t * 0.5), mat)
 
 ## `_box` with a StaticBody3D + BoxShape3D wrapper so the box is COLLIDABLE
 ## (player can stand on it / push against it). Use this for things the player
@@ -1925,50 +2109,95 @@ static func _railing(parent: Node3D, halfx: float, halfz: float, base_y: float, 
 
 ## A vertical caged access ladder rising `height` from its foot `base`. Two rails
 ## + rungs + a safety cage (horizontal hoops + vertical bars) on the climb-out (+Z) side.
-static func _caged_ladder(parent: Node3D, base: Vector3, height: float, mat: StandardMaterial3D) -> void:
+## A LadderZone Area3D is embedded so PlayerController.enter_ladder/exit_ladder fire
+## automatically — no manual wiring needed per-silo.
+static func _caged_ladder(parent: Node3D, base: Vector3, height: float, mat: StandardMaterial3D, ghost: bool = false) -> void:
 	var W := 0.46
 	_box(parent, Vector3(0.05, height, 0.05), base + Vector3(-W * 0.5, height * 0.5, 0.0), mat)
 	_box(parent, Vector3(0.05, height, 0.05), base + Vector3( W * 0.5, height * 0.5, 0.0), mat)
-	# Each rung becomes a tiny COLLIDABLE step (StaticBody3D + BoxShape3D) the
-	# player can stand on, with a small +Z extension so it acts as a ledge.
-	# Rungs sit 0.3 m apart vertically — below the default step_up_height — so
-	# move_and_slide cascades the capsule up rung by rung. The rails, hoops,
-	# and cage struts stay decorative (visual-only) so the player isn't boxed
-	# out by the cage geometry while climbing inside it.
-	const RUNG_TREAD_DEPTH : float = 0.18   # how far rung protrudes in +Z as a ledge
+	# Rungs are collidable ledges. Step-up alone can't drive a full ladder ascent;
+	# the LadderZone Area3D below switches the player to climb mode (W/S = vertical).
+	# Ghost previews get visual-only rungs — BuildMode assumes a collision-less ghost.
+	const RUNG_TREAD_DEPTH : float = 0.18
 	var rungs := int(height / 0.3)
 	for i in range(1, rungs):
-		_box_static_body(parent,
-			Vector3(W, 0.03, RUNG_TREAD_DEPTH),
-			base + Vector3(0.0, float(i) * 0.3, RUNG_TREAD_DEPTH * 0.5),
-			mat)
+		if ghost:
+			_box(parent,
+				Vector3(W, 0.03, RUNG_TREAD_DEPTH),
+				base + Vector3(0.0, float(i) * 0.3, RUNG_TREAD_DEPTH * 0.5),
+				mat)
+		else:
+			_box_static_body(parent,
+				Vector3(W, 0.03, RUNG_TREAD_DEPTH),
+				base + Vector3(0.0, float(i) * 0.3, RUNG_TREAD_DEPTH * 0.5),
+				mat)
+	# Cage hoops and bars — size increased 10% vs original for operator clearance.
 	var hoop_y := 2.2
 	while hoop_y < height - 0.1:
-		_torus(parent, 0.36, 0.44, base + Vector3(0.0, hoop_y, 0.30), mat)
+		_torus(parent, 0.396, 0.484, base + Vector3(0.0, hoop_y, 0.33), mat)
 		hoop_y += 0.5
 	var cage_h : float = maxf(height - 2.2, 0.2)
-	for bz in [Vector3(0.0, 0.0, 0.72), Vector3(-0.42, 0.0, 0.30), Vector3(0.42, 0.0, 0.30)]:
+	for bz in [Vector3(0.0, 0.0, 0.792), Vector3(-0.462, 0.0, 0.33), Vector3(0.462, 0.0, 0.33)]:
 		_box(parent, Vector3(0.03, cage_h, 0.03), base + bz + Vector3(0.0, 2.2 + cage_h * 0.5, 0.0), mat)
+
+	# LadderZone Area3D — PlayerController.enter_ladder / exit_ladder are called
+	# automatically when the player's CharacterBody3D overlaps this volume.
+	# NEVER in ghosts: a live zone inside the mouse-following preview flipped the
+	# player into gravity-off climb mode whenever the ghost swept over them.
+	if ghost:
+		return
+	var area := Area3D.new()
+	area.name = "LadderZone"
+	area.position = base + Vector3(0.0, height * 0.5, 0.20)
+	var col := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(W + 0.4, height + 0.2, 0.7)
+	col.shape = shape
+	area.add_child(col)
+	area.body_entered.connect(func(body: Node3D) -> void:
+		if body.has_method("enter_ladder"): body.enter_ladder())
+	area.body_exited.connect(func(body: Node3D) -> void:
+		if body.has_method("exit_ladder"): body.exit_ladder())
+	parent.add_child(area)
 
 ## A straight ground stair climbing `rise` in +Z from its foot `base`, `width`
 ## wide. Grating treads + side posts + sloped handrails.
-static func _stair(parent: Node3D, base: Vector3, rise: float, width: float, tread_mat: StandardMaterial3D, rail_mat: StandardMaterial3D) -> void:
+static func _stair(parent: Node3D, base: Vector3, rise: float, width: float, _tread_mat: StandardMaterial3D, rail_mat: StandardMaterial3D) -> void:
 	var steps := maxi(int(rise / 0.22), 4)
 	var step_h := rise / float(steps)
 	var tread := 0.27
-	# Each tread is a StaticBody3D + BoxShape3D so the player can walk up.
-	# Previously these were plain MeshInstance3D — visually correct stairs but
-	# physically a flat-ground sweep, so the operator slid right past them.
+	# Operator 2026-07-16: treads must be see-through METAL GRATING (not solid
+	# slabs) and the flight must be SUPPORTED to the floor (not floating). Each
+	# tread = a grating-deck visual + a hidden StaticBody collider (so you can walk
+	# up but see through it); two sloped stringers carry it down to the ground.
 	for i in range(steps):
-		_box_static_body(parent, Vector3(width, 0.04, tread),
-			base + Vector3(0.0, float(i + 1) * step_h, float(i) * tread + tread * 0.5),
-			tread_mat)
+		var tpos : Vector3 = base + Vector3(0.0, float(i + 1) * step_h, float(i) * tread + tread * 0.5)
+		_grating_deck(parent, width, tread * 0.92, tpos)           # see-through grating (visual)
+		# Collision ONLY — a bare StaticBody+CollisionShape with NO mesh. The old
+		# code used a hidden mesh, but StaticMerge re-bakes hidden meshes VISIBLE,
+		# so every tread rendered a solid box UNDER the grating → z-fight "seizure"
+		# (operator 2026-07-17). No mesh = nothing for StaticMerge to re-show.
+		var tb := StaticBody3D.new()
+		tb.position = tpos
+		var cs := CollisionShape3D.new()
+		var bs := BoxShape3D.new()
+		bs.size = Vector3(width, 0.06, tread)
+		cs.shape = bs
+		tb.add_child(cs)
+		parent.add_child(tb)
 	var run := float(steps) * tread
+	# Sloped side stringers reaching the floor — visible support under the flight.
+	var diag : float = sqrt(run * run + rise * rise)
+	var pitch : float = atan2(rise, run)
+	for sx in [-1.0, 1.0]:
+		var stringer := _box(parent, Vector3(0.06, 0.20, diag),
+			base + Vector3(sx * width * 0.5, rise * 0.5, run * 0.5), rail_mat)
+		stringer.rotation.x = -pitch
 	for sx in [-1.0, 1.0]:
 		_box(parent, Vector3(0.05, 1.0, 0.05), base + Vector3(sx * width * 0.5, 0.5, 0.2), rail_mat)
 		_box(parent, Vector3(0.05, 1.0, 0.05), base + Vector3(sx * width * 0.5, rise + 1.0, run - 0.2), rail_mat)
-		var rail := _box(parent, Vector3(0.04, 0.04, sqrt(run * run + rise * rise)), base + Vector3(sx * width * 0.5, rise * 0.5 + 1.0, run * 0.5), rail_mat)
-		rail.rotation.x = -atan2(rise, run)
+		var rail := _box(parent, Vector3(0.04, 0.04, diag), base + Vector3(sx * width * 0.5, rise * 0.5 + 1.0, run * 0.5), rail_mat)
+		rail.rotation.x = -pitch
 
 ## A faceted half-cylinder TROUGH (bottom half of a horizontal cylinder, open top)
 ## with its axis at `axis_pos` running along Z, length `length`. Built from flat
@@ -2218,6 +2447,15 @@ static func _m_laser_filter(p: Node3D, size: Vector3, color: Color, ghost: bool)
 	_legs(p, size, size.y * 0.14, dark)
 	var cy : float = size.y * 0.6
 	var disc_r : float = size.y * 0.46
+	# #233 — the 4 corner legs sit at the footprint corners, but the disc housing is
+	# CENTRED, so it read as floating above detached legs (operator "disc disc disc").
+	# Tie them with a base plate + a central pedestal up to the disc bottom.
+	if not ghost:
+		var lf_base_y : float = size.y * 0.14
+		var lf_disc_bot : float = cy - disc_r
+		_box(p, Vector3(size.x * 0.92, 0.09, size.z * 0.86), Vector3(0.0, lf_base_y, 0.0), dark)
+		_box(p, Vector3(size.x * 0.46, maxf(lf_disc_bot - lf_base_y, 0.06), size.z * 0.52),
+			Vector3(0.0, (lf_base_y + lf_disc_bot) * 0.5, 0.0), dark)
 	# Concentric disc faces toward ±X (the big circle), built from nested rings.
 	# The outer housing is a real RotatingMechanism (spins about X to self-clean);
 	# the inner rings/hub are parented UNDER it so they rotate together. On ghost,
@@ -2225,13 +2463,54 @@ static func _m_laser_filter(p: Node3D, size: Vector3, color: Color, ghost: bool)
 	var disc_rm := _spinning_cyl(p, disc_r, disc_r, size.x * 0.50, Vector3(0.0, cy, 0.0), body, "x", Vector3.RIGHT, ghost)   # outer housing
 	var ring_y : float = 0.0 if not ghost else cy
 	_cyl(disc_rm, disc_r * 0.72, disc_r * 0.72, size.x * 0.58, Vector3(0.0, ring_y, 0.0), steel, "x")   # filter ring (proud)
-	_cyl(disc_rm, disc_r * 0.40, disc_r * 0.40, size.x * 0.62, Vector3(0.0, ring_y, 0.0), body,  "x")   # inner disc
+	# #223 docs->code: EREMA LF 2/406 — the "2" = TWO zeefschijven (screen discs).
+	# docs/plant/swi/TRAIN-laserfilter-p3A__112_CeDo32.md: contaminated melt is forced
+	# BETWEEN the 2 discs and through both; a small co-axial gap on the spin (X) axis.
+	var lf_gap : float = size.x * 0.11
+	_cyl(disc_rm, disc_r * 0.42, disc_r * 0.42, size.x * 0.12, Vector3(-lf_gap, ring_y, 0.0), body, "x")   # zeefschijf A
+	_cyl(disc_rm, disc_r * 0.42, disc_r * 0.42, size.x * 0.12, Vector3( lf_gap, ring_y, 0.0), body, "x")   # zeefschijf B
 	_cyl(disc_rm, disc_r * 0.10, disc_r * 0.10, size.x * 0.66, Vector3(0.0, ring_y, 0.0), dark,  "x")   # centre hub
 	# Melt pipe in from the extruder (-Z) and out to the meltpump (+Z).
 	_cyl(p, size.x * 0.12, size.x * 0.12, size.z * 0.5, Vector3(0.0, cy, -size.z * 0.45), dark, "z")
 	_cyl(p, size.x * 0.12, size.x * 0.12, size.z * 0.5, Vector3(0.0, cy,  size.z * 0.45), dark, "z")
 	# Disc self-clean drive motor off the +X face.
 	_motor_unit(p, size.x * 0.13, size.y * 0.28, Vector3(size.x * 0.52, cy, 0.0), "x", ghost)
+	# #225.2 docs->code: TWIN afvoervijzel discharge (operator 2026-07-14 + photos
+	# machines/laserfilter_lump_cart_discharge.jpg, _lumbs_cart.jpg).
+	# A VERTICAL discharge nozzle drops into a lump cart on BOTH sides of the disc:
+	# aisle (+X, in front of the disc face / HMI side) and wall (-X, behind it).
+	# Each side augers UP a corrugated riser beside the disc, ACROSS a short top
+	# arm, then DOWN a prominent vertical corrugated spout to a funnel mouth whose
+	# lip (~1.13 m) clears the cart rim — so the rope drops straight down IN the
+	# bucket, never on the housing or extruder. Mirrors LaserFilter.eject_local_
+	# offset (+X, 1.30, 1.13) and eject_wall_local (-X, -1.30, 1.13) — keep in sync.
+	var lf_disch_r   : float = size.x * 0.13
+	var lf_mouth_x   : float = 1.30                   # cart centre (= eject offset X)
+	# #234 afvoerschroef (operator 2026-07-15 + 3A "De Laserfilter" poster): a HORIZONTAL
+	# uitvoerschroef (discharge screw in a corrugated tube) runs out from the disc to over
+	# the cart, then a small (~8 cm dia) VERTICAL tube drops the lump DOWN into the cart.
+	# ASYMMETRIC: the REAR (wall, -X) screw is HIGHER (its cart is on the raised bordes);
+	# the FRONT (aisle, +X) screw is LOWER (its cart is on the ground).
+	for lf_s in [1.0, -1.0]:                           # +X aisle (front, low), -X wall (rear, high)
+		var is_rear : bool = lf_s < 0.0
+		var screw_y  : float = 1.36 if is_rear else 1.10   # horizontal uitvoerschroef height
+		var tube_bot : float = 1.14 if is_rear else 0.98   # drop-tube bottom, over the cart rim
+		var disc_x : float = lf_s * size.x * 0.34          # screw inlet at the disc face
+		var mx     : float = lf_s * lf_mouth_x             # cart centre
+		var screw_len : float = absf(mx - disc_x)
+		var screw_cx  : float = (mx + disc_x) * 0.5
+		# corrugated tube housing of the horizontal uitvoerschroef
+		var n_seg : int = maxi(int(screw_len / 0.12), 1)
+		for si in range(n_seg):
+			_cyl(p, lf_disch_r, lf_disch_r, 0.10, Vector3(disc_x + lf_s * (float(si) * 0.12 + 0.05), screw_y, 0.0), steel, "x")
+		# internal screw (auger shaft)
+		_cyl(p, lf_disch_r * 0.5, lf_disch_r * 0.5, screw_len, Vector3(screw_cx, screw_y, 0.0), dark, "x")
+		# VERTICAL drop tube (~8 cm dia) at the screw end, straight down into the cart
+		var tube_r : float = 0.04
+		_cyl(p, tube_r, tube_r, maxf(screw_y - tube_bot, 0.08), Vector3(mx, (screw_y + tube_bot) * 0.5, 0.0), steel)
+		_cyl(p, tube_r * 1.6, tube_r, 0.08, Vector3(mx, tube_bot, 0.0), dark)   # funnel lip over the cart
+		# uitvoerschroef drive motor at the disc end of the screw
+		_motor_unit(p, size.x * 0.07, size.x * 0.12, Vector3(disc_x - lf_s * lf_disch_r * 1.2, screw_y, 0.0), "x", ghost)
 	# #212.8 S-curve flow-direction decal on the +X face of the disc cover.
 	# Drawn as a sequence of small black box segments tracing an S shape over
 	# a white backing panel — reads as a flow-arrow at the operator's eye-level.
@@ -2388,13 +2667,15 @@ static func _m_silo(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void
 	# Small steel landing platform cantilevered off the -X face of the shell.
 	# Roughly 0.8 m × 0.8 m, sits with its inner edge tucked against the shell
 	# (shell radius r at this Y), outer edge clear for the climber to step on.
-	var deck_half : float = 0.40                                # half-extent X & Z
-	var deck_x : float = -r - deck_half - 0.05                  # outer edge tucked against shell
+	# deck_half must exceed the dome base radius (r) so the player walks on flat
+	# steel AROUND the dome, not inside it.  r = size.x * 0.46 ≈ 1.38 m.
+	var deck_half : float = r + 0.70                            # e.g. ~2.08 m — clear of dome on all sides
+	var deck_x : float = 0.0                                    # centred on the silo top
 	_box(p, Vector3(deck_half * 2.0, 0.05, deck_half * 2.0),
 		Vector3(deck_x, body_top, 0.0), steel)
-	# Safety-yellow guardrails on three sides — open on -X where the ladder
-	# lands (the push-gate covers the fall-protection job there).
-	_railing(p, deck_half, deck_half, body_top + 0.025, yellow, ["-x"])
+	# Guardrail on ±Z sides only — leaves -X (ladder) and +X (walkthrough) open
+	# so the player can traverse the full silo top without hitting a wall.
+	_railing(p, deck_half, deck_half, body_top + 0.025, yellow, ["-x", "+x"])
 	# Caged ladder climbing from the floor to just above the landing. Same
 	# rotated-root trick as the extruder silo: _caged_ladder builds the cage
 	# opening toward +Z by default, so we yaw the parent -90° about Y so the
@@ -2406,7 +2687,7 @@ static func _m_silo(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void
 	ladder_root.rotation.y = -PI * 0.5
 	ladder_root.position = Vector3(ladder_x, 0.0, 0.0)
 	p.add_child(ladder_root)
-	_caged_ladder(ladder_root, Vector3.ZERO, ladder_h, steel)
+	_caged_ladder(ladder_root, Vector3.ZERO, ladder_h, steel, ghost)
 	# Self-closing push-gate at the landing edge directly above the ladder
 	# top. Pushes open into +X (onto the deck) and auto-closes behind the
 	# climber. Free side index 1 = -X (the ladder side, free to swing
@@ -2447,6 +2728,156 @@ static func _m_silo(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void
 		col.position = Vector3(0.0, 0.525, 0.0)
 		gate_root.add_child(col)
 
+# ── OUTDOOR MS/LS PELLET SILO (2026-07-06, silos_ms_ls.md §5/§6) ─────────────
+## Shared builder for `ms_silo_buiten` (variant "ms") and `ls_silo_buiten`
+## (variant "ls"). Skeleton = the proven _m_silo legs+cone+body+dome, MINUS the
+## #101 cloth discharge skirt (indoor extruder-feed dressing — not documented
+## outdoors), PLUS the voorraad_silo caged-ladder/landing/push-gate access
+## (photo 125_CeDo40: "tall grey outdoor silos with access stair/ladder and
+## ducting" — ladder-vs-stair ambiguous, ladder pattern reused; flag 10).
+##
+## Height 18.0 m + proportions are placeholders (shell-mesh measurement,
+## silos_ms_ls.md §4 — flags 1/2/3). Capacity is deliberately NOT modelled:
+## pellet bulk density undocumented (open Q19 stortgewicht — flag 11).
+##
+## Variant extras:
+##  "ms" — blower-transfer pipe stub at the TOP (the MS-defining feature):
+##         mixing = background meng⇄laad recirculation LOOP (operator ruling B6
+##         2026-07-06) — NO player controls, stub geometry only (flag 8/9).
+##  "ls" — legs lengthened for the drive-under truck lane (hopper tip clearance
+##         4.5 m = neutral EU-truck placeholder, flag 6) + discharge tube /
+##         slide-valve / flexible spout to truck-hatch height (mechanism type
+##         undocumented — neutral tube+valve+spout, flag 7) + top infeed elbow
+##         (pneumatic from the weegschaal line, 125_CeDo40) but NO silo-to-silo
+##         stub (MS→LS topology unconfirmed — flag 9).
+## Ghost-safe: _caged_ladder handles its own ghost mode (visual rungs, no
+## LadderZone); the push-gate collapses to a plain Node3D + meshes in ghosts.
+static func _m_silo_buiten(p: Node3D, size: Vector3, color: Color, ghost: bool, variant: String) -> void:
+	var shell := _mat(color, ghost, 0.3, 0.5)
+	var dark  := _mat(_DARK, ghost, 0.4, 0.6)
+	var steel := _mat(_STEEL, ghost, 0.6, 0.4)
+	var yellow := _mat(_SAFETY, ghost, 0.2, 0.6)
+	var r := size.x * 0.46
+	var is_ls : bool = variant == "ls"
+	# Vertical zones. MS keeps the _m_silo fractions; LS fixes the floor
+	# clearance at 4.5 m so a truck fits under the hopper tip (flag 6).
+	var floor_clear : float = 4.5 if is_ls else size.y * 0.16
+	var cone_h : float = size.y * 0.20
+	var dome_h : float = size.y * 0.08
+	var leg_top : float = floor_clear + cone_h
+	var body_h : float = size.y - leg_top - dome_h
+	var body_top : float = leg_top + body_h
+	# ── Legs + bracing (photo: "elevated steel platform structure" — brace
+	# pattern is a neutral placeholder). Tagged for floor-snap (#70).
+	var signs : Array[float] = [-1.0, 1.0]
+	for sx in signs:
+		for sz in signs:
+			var lg := _box(p, Vector3(0.16, leg_top, 0.16),
+				Vector3(sx * r * 0.72, leg_top * 0.5, sz * r * 0.72), dark)
+			lg.add_to_group("machine_leg")
+			lg.set_meta("leg_h", leg_top)
+	for frac in [0.35, 0.70]:
+		var by : float = floor_clear * frac
+		for sz2 in signs:
+			_box(p, Vector3(r * 1.44, 0.08, 0.08), Vector3(0.0, by, sz2 * r * 0.72), dark)
+		for sx2 in signs:
+			_box(p, Vector3(0.08, 0.08, r * 1.44), Vector3(sx2 * r * 0.72, by, 0.0), dark)
+	# ── Shell: conical hopper + main cylinder + domed top (_m_silo proportions,
+	# re-anchored — proportions at 18 m are placeholders, flag 3).
+	_cyl(p, r, 0.18, cone_h, Vector3(0.0, floor_clear + cone_h * 0.5, 0.0), shell)
+	_cyl(p, r, r, body_h, Vector3(0.0, leg_top + body_h * 0.5, 0.0), shell)
+	_cyl(p, r * 0.25, r, dome_h, Vector3(0.0, body_top + dome_h * 0.5, 0.0), shell)
+	# ── Access: landing deck + guardrail + caged ladder + self-closing push-gate
+	# (exact voorraad_silo block, body_top recomputed for the 18 m shell).
+	var deck_half : float = r + 0.70
+	_box(p, Vector3(deck_half * 2.0, 0.05, deck_half * 2.0),
+		Vector3(0.0, body_top, 0.0), steel)
+	_railing(p, deck_half, deck_half, body_top + 0.025, yellow, ["-x", "+x"])
+	var ladder_h : float = body_top + 0.10
+	var ladder_root := Node3D.new()
+	ladder_root.name = "SiloBuitenAccessLadder"
+	ladder_root.rotation.y = -PI * 0.5
+	ladder_root.position = Vector3(-r - 0.30, 0.0, 0.0)
+	p.add_child(ladder_root)
+	_caged_ladder(ladder_root, Vector3.ZERO, ladder_h, steel, ghost)
+	var gate_root : Node3D
+	if ghost:
+		gate_root = Node3D.new()
+	else:
+		var pg_script := load("res://src/build/PushGate.gd")
+		gate_root = StaticBody3D.new()
+		if pg_script != null:
+			(gate_root as StaticBody3D).set_script(pg_script)
+			gate_root.set("free_side_idx", 1)
+	gate_root.name = "SiloBuitenPushGate"
+	gate_root.position = Vector3(-r - 0.05, body_top + 0.05, 0.0)
+	p.add_child(gate_root)
+	_box(gate_root, Vector3(0.05, 1.05, 0.05), Vector3(0.0, 0.525,  0.23), yellow)
+	_box(gate_root, Vector3(0.05, 1.05, 0.05), Vector3(0.0, 0.525, -0.23), yellow)
+	_box(gate_root, Vector3(0.04, 0.04, 0.46), Vector3(0.0, 1.00, 0.0), yellow)
+	_box(gate_root, Vector3(0.04, 0.04, 0.46), Vector3(0.0, 0.55, 0.0), yellow)
+	_cyl(gate_root, 0.02, 0.02, 0.10, Vector3(0.0, 0.20, 0.23), steel)
+	if not ghost:
+		var gcol := CollisionShape3D.new()
+		var gcol_box := BoxShape3D.new()
+		gcol_box.size = Vector3(0.08, 1.05, 0.46)
+		gcol.shape = gcol_box
+		gcol.position = Vector3(0.0, 0.525, 0.0)
+		gate_root.add_child(gcol)
+	# ── Pneumatic top infeed elbow (both variants): the weegschaal line lands
+	# on the silo TOP (training slide 125_CeDo40: air blower → leidingwerk →
+	# silo). Pipe diameter/routing = placeholder (flag 8).
+	var apex_y : float = body_top + dome_h
+	_cyl(p, 0.12, 0.12, 1.0, Vector3(0.0, apex_y + 0.45, 0.0), steel)
+	_cyl(p, 0.12, 0.12, 0.9, Vector3(-0.45, apex_y + 0.90, 0.0), steel, "x")
+	if is_ls:
+		# ── LS discharge (documented existence only — neutral tube + slide-valve
+		# + hanging flexible spout to ~2.5 m truck-hatch height; flag 7).
+		_cyl(p, 0.14, 0.14, 0.50, Vector3(0.0, floor_clear - 0.25, 0.0), dark)
+		_box(p, Vector3(0.45, 0.25, 0.45), Vector3(0.0, floor_clear - 0.60, 0.0), steel)
+		var spout_top : float = floor_clear - 0.72
+		var spout_h : float = maxf(spout_top - 2.5, 0.3)
+		_cyl(p, 0.10, 0.16, spout_h, Vector3(0.0, spout_top - spout_h * 0.5, 0.0), dark)
+	else:
+		# ── MS blower-transfer stub at the top (the mengsilo-defining feature):
+		# pellets are blown from one silo INTO THE TOP of another; piping visible
+		# (interview + 125_CeDo40 "Leidingwerk"). Stub only — do NOT model a full
+		# inter-silo pipe run (routing undocumented, flag 8; mixing loop itself is
+		# background-only per ruling B6).
+		_cyl(p, 0.15, 0.15, 1.5, Vector3(0.9, apex_y + 0.90, 0.0), steel, "x")
+		_cyl(p, 0.19, 0.19, 0.05, Vector3(1.67, apex_y + 0.90, 0.0), steel, "x")   # open flange
+
+# ── EOP (End Of Pipe) — Indaver water-treatment EXTERNAL ENTITY endpoint ─────
+## 2026-07-06 (eop_rafter.md Part A). Appearance UNDOCUMENTED — every dimension
+## is a neutral placeholder (flags 1-3): one flat-roofed building block +
+## "EOP — INDAVER" placard + EXACTLY the 3 documented pipe-stub groups from
+## water_circuits.json / DIAG-blauwe-watertank 232_CeDo138:
+##   1. -Z low, largest ⌀ : "Riool naar EOP" dirty-water main IN (thick line)
+##   2. +Z              : purified return → Blauwe tank
+##   3. -X, 2 small     : ZSS exchange pair (2nd line marked unsure in the json)
+## No fence (a fence would be invented detail). No MachineFlow role, no player
+## interaction — the hmi_indaver_water wall panel is the control-room view.
+## EOP malfunction as a future plant-wide water event: backlog hook (QA:Q12).
+static func _m_eop_endpoint(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
+	var shell := _mat(color, ghost, 0.2, 0.7)
+	var dark  := _mat(_DARK, ghost, 0.5, 0.6)
+	var white := _mat(Color(0.92, 0.92, 0.90), ghost, 0.1, 0.7)
+	# Flat-roofed rectangular building block (container-cabin scale placeholder).
+	_box(p, Vector3(size.x, size.y, size.z), Vector3(0.0, size.y * 0.5, 0.0), shell)
+	# Placard on the +Z face — text is the documented name (QA:Q12 / HmiScopes
+	# "Indaver waterzuivering" wording).
+	_box(p, Vector3(1.7, 0.55, 0.03), Vector3(0.0, size.y * 0.72, size.z * 0.5 + 0.02), white)
+	if not ghost:
+		var lbl := _stencil_label(p, "EOP — INDAVER", Vector3(1.6, 0.45, 0.01), "+Z")
+		lbl.position = Vector3(0.0, size.y * 0.72, size.z * 0.5 + 0.045)
+	# 1. Sewer main IN (-Z face, low, largest diameter of the three).
+	_cyl(p, 0.18, 0.18, 0.60, Vector3(0.0, 0.45, -size.z * 0.5 - 0.30), dark, "z")
+	# 2. Purified-water return → Blauwe tank (+Z face).
+	_cyl(p, 0.10, 0.10, 0.60, Vector3(size.x * 0.28, 0.65, size.z * 0.5 + 0.30), dark, "z")
+	# 3. ZSS exchange pair (-X face; second stub = the `unsure` json edge).
+	_cyl(p, 0.07, 0.07, 0.50, Vector3(-size.x * 0.5 - 0.25, 0.75, -0.40), dark, "x")
+	_cyl(p, 0.07, 0.07, 0.50, Vector3(-size.x * 0.5 - 0.25, 0.75,  0.40), dark, "x")
+
 # ── #201 lump_cart compound collision: real fork-pocket cavities ────────────
 # The lump_cart body needs 2 horizontal tunnels (150 × 80 mm) in its underframe
 # so a forklift can slide its tines straight through and then widen the
@@ -2466,9 +2897,10 @@ static func _lump_cart_compound_collision(body: PhysicsBody3D, size: Vector3) ->
 	var cart_base_y : float = frame_y0 + frame_h
 	var cart_h   : float = size.y * 0.52
 	var wall_t   : float = 0.025
-	var pocket_w : float = 0.150
-	var pocket_h : float = 0.080
-	var pocket_cx : float = 0.10                       # ±0.10 m
+	var pocket_w : float = 0.15
+	var pocket_h : float = 0.08
+	var pocket_cx : float = 0.10
+	var floor_h : float = 0.0
 	# ── Underframe split into 3 longitudinal strips (outer-L | between | outer-R)
 	#    leaving the 2 pocket lanes open. ───────────────────────────────────────
 	var fy : float = frame_y0 + frame_h * 0.5
@@ -2487,13 +2919,14 @@ static func _lump_cart_compound_collision(body: PhysicsBody3D, size: Vector3) ->
 	# ── Top cap of the underframe above the pocket cavity. The pocket is only
 	#    80 mm tall; anything above pocket_h within frame_h is solid so a fork
 	#    inserted in the slot bottoms out on the cavity roof. ─────────────────
-	var cap_h : float = max(frame_h - pocket_h, 0.001)
-	var cap_y : float = frame_y0 + pocket_h + cap_h * 0.5
-	# Two cap strips, one over each pocket lane.
-	_col_box(body, Vector3(pocket_w, cap_h, cart_d + 0.10),
-		Vector3(-pocket_cx, cap_y, 0.0))
-	_col_box(body, Vector3(pocket_w, cap_h, cart_d + 0.10),
-		Vector3( pocket_cx, cap_y, 0.0))
+	var cap_h : float = max(frame_h - pocket_h - floor_h, 0.001)
+	var cap_y : float = frame_y0 + floor_h + pocket_h + cap_h * 0.5
+	# Roof cap per lane (the fork lifts against it). The pocket FLOOR is visual-
+	# only — a collision floor plate here penetrated the cart's own rest pose and
+	# ejected the live cart on reload (round-trip drift); the wheels already carry
+	# the cart, so no extra collision floor is needed.
+	for px in [-pocket_cx, pocket_cx]:
+		_col_box(body, Vector3(pocket_w, cap_h, cart_d + 0.10), Vector3(px, cap_y, 0.0))
 	# ── Cart floor ───────────────────────────────────────────────────────────
 	_col_box(body, Vector3(cart_w, wall_t, cart_d),
 		Vector3(0.0, cart_base_y + wall_t * 0.5, 0.0))
@@ -2507,6 +2940,50 @@ static func _lump_cart_compound_collision(body: PhysicsBody3D, size: Vector3) ->
 		Vector3(-cart_w * 0.5 + wall_t * 0.5, cart_cy, 0.0))
 	_col_box(body, Vector3(wall_t, cart_h - wall_t, cart_d - wall_t * 2.0),
 		Vector3( cart_w * 0.5 - wall_t * 0.5, cart_cy, 0.0))
+	# ── #223 audit (critical): WHEEL contact shapes ──────────────────────────
+	# Without these the lowest collision box was the underframe strip at local
+	# y ≈ 0.14 (= wheel_r*2), so a cart spawned with its origin on the floor
+	# free-fell 0.14 m until the underframe hit concrete — burying the visual
+	# wheels (which span y 0-0.14) ENTIRELY inside the floor. That is the
+	# "wheels embedded in concrete, yet draggable" bug. Four sphere contacts at
+	# the visual wheel centres put the compound's lowest point at y=0 so the
+	# cart rests ON the slab with wheels visible. Spheres = cheap 4-point roll.
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			var wcol := CollisionShape3D.new()
+			var wsh := SphereShape3D.new()
+			wsh.radius = wheel_r
+			wcol.shape = wsh
+			wcol.position = Vector3(sx * cart_w * 0.42, wheel_r, sz * cart_d * 0.42)
+			body.add_child(wcol)
+
+## Compound collision for the elevated extruder feed silo. The generic single
+## AABB (size.y tall, centred at size.y*0.5) filled the whole footprint from the
+## floor up — including the ~2.6 m designed WALK-UNDER clearance beneath the
+## raised silo box, so the operator couldn't pass under it (bughunt 2026-07-17).
+## Instead: 4 slim corner-leg colliders (floor→frame underside) + the silo BODY
+## box up top. The bay between the legs is left open so you can walk through and
+## park a discharge cart under it, exactly as the model geometry promises.
+## Mirrors the local frame of _m_extruder_silo 1:1 (frame_top / box / bw / bd).
+static func _extruder_silo_compound_collision(body: PhysicsBody3D, size: Vector3) -> void:
+	var frame_top : float = size.y * 0.40                # silo underside / leg top ≈ 2.6 m
+	var box_top   : float = size.y * 0.92                # top of the silo box ≈ 5.98 m
+	var box_h     : float = box_top - frame_top
+	var box_cy    : float = (frame_top + box_top) * 0.5
+	var body_scale_x : float = 2.25
+	var bw : float = size.x * 0.96 * body_scale_x        # widened body (radial) — matches shell
+	var bd : float = size.z * 0.96 * body_scale_x
+	# ── SILO BODY: solid box occupying the upper portion only (frame_top→box_top).
+	_col_box(body, Vector3(bw, box_h, bd), Vector3(0.0, box_cy, 0.0))
+	# ── 4 CORNER LEGS floor→frame underside. Slightly fattened (leg_w×1.6) so the
+	#    player firmly bumps them instead of threading between mesh and collider.
+	var leg_w : float = 0.14 * 1.6
+	var lx : float = bw * 0.5 - 0.14 * 0.6
+	var lz : float = bd * 0.5 - 0.14 * 0.6
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			_col_box(body, Vector3(leg_w, frame_top, leg_w),
+				Vector3(sx * lx, frame_top * 0.5, sz * lz))
 
 static func _col_box(parent: PhysicsBody3D, size: Vector3, pos: Vector3) -> void:
 	var col := CollisionShape3D.new()
@@ -2531,6 +3008,7 @@ static func _m_lump_cart(p: Node3D, size: Vector3, _color: Color, ghost: bool) -
 	# sticks up off the back face so the operator can wheel the cart around.
 	var blue   := _mat(Color(0.16, 0.30, 0.55), ghost, 0.30, 0.55)  # cart paint
 	var steel  := _mat(_STEEL, ghost, 0.55, 0.35)
+	var grip   := _mat(Color(0.72, 0.74, 0.77), ghost, 0.95, 0.12)  # #punch: shiny grey hand-grip
 	var rubber := _mat(Color(0.08, 0.08, 0.10), ghost, 0.15, 0.85)  # hard rubber wheels
 	var dark   := _mat(_DARK, ghost, 0.40, 0.60)                    # pocket bores
 	var yellow := _mat(_SAFETY, ghost, 0.25, 0.70)
@@ -2551,22 +3029,38 @@ static func _m_lump_cart(p: Node3D, size: Vector3, _color: Color, ghost: bool) -
 			_cyl(p, wheel_r, wheel_r, wheel_d,
 				Vector3(float(sx) * (cart_w * 0.42), wheel_r,
 					float(sz) * (cart_d * 0.42)), rubber, "x")
-	# ── Metal under-frame plate (the "red rectangle" in the sketch, painted blue) ─
-	_box(p, Vector3(cart_w + 0.10, frame_h, cart_d + 0.10),
-		Vector3(0.0, frame_y0 + frame_h * 0.5, 0.0), blue)
-	# ── Two forklift fork pockets running ALONG the length (±Z faces open)
-	#    so the forklift approaches from the short end. Per operator spec
-	#    (#201): 150 × 80 mm cavity, centred at ±0.10 m so the forklift's
-	#    minimum spread (0.20 m → fork centres ±0.10 m) slides cleanly in,
-	#    and widening the spreader clamps the outer pocket walls. The actual
-	#    collision cavities are built in _lump_cart_compound_collision() —
-	#    this is the visible dark recess painted into the underframe.
-	var pocket_h : float = 0.080
-	var pocket_w : float = 0.150
-	for sx in [-1.0, 1.0]:
-		_box(p, Vector3(pocket_w, pocket_h, cart_d + 0.14),
-			Vector3(float(sx) * 0.10, frame_y0 + frame_h * 0.55,
-				0.0), dark)
+	# ── Metal under-frame: 3 longitudinal rails (outer-L | centre | outer-R)
+	#    that leave TWO genuine OPEN fork channels (150 mm wide, centred ±0.10 m)
+	#    running the full length — so a forklift tine slides through a real
+	#    rectangular hole, NOT a solid slab. Geometry mirrors
+	#    _lump_cart_compound_collision() 1:1, so what the operator sees is exactly
+	#    what the physics is (operator #201-fix: "rectangular holes with guidance
+	#    strips, not solid blocks — you can't put forks into a solid block").
+	# ── FORK POCKETS (operator 2026-07-16: "pockets below the cart, not grooves;
+	#    invisible holes are illegal"). Two ENCLOSED rectangular tube sockets under
+	#    the cart — top + FLOOR + dark-lined bore so each reads as a real visible
+	#    opening a fork slides into (not an open-bottom slot). Sized from real
+	#    fork-pocket specs (~200 × 100 mm) and spaced 0.56 m apart (realistic fork
+	#    spread), not the old 10 cm. Geometry mirrors _lump_cart_compound_collision.
+	# Two PROMINENT fork-pocket housings at the base near the wheels, each a blue
+	# box with a DARK rectangular OPENING on the front + back face — matching the
+	# operator's rear-view sketch (2026-07-17): visible pockets + wheels + tub, not
+	# invisible slots. (Physical fork-entry collision stays at the stable narrow
+	# layout in _lump_cart_compound_collision; moving collision to this wide spacing
+	# without save/reload drift needs a freeze-on-spawn cart redesign — flagged.)
+	var uf_d  : float = cart_d + 0.10
+	var uf_fy : float = frame_y0 + frame_h * 0.5
+	var pv_cx : float = cart_w * 0.32                   # housing centre, just inside the wheels
+	var pv_w  : float = 0.18                             # housing outer width
+	var pv_ow : float = 0.11                             # pocket mouth width
+	var pv_oh : float = 0.06                             # pocket mouth height
+	# Cross-beam tying both housings to the tub base so they don't read as floating.
+	_box(p, Vector3(pv_cx * 2.0 + pv_w, frame_h * 0.55, uf_d * 0.7),
+		Vector3(0.0, uf_fy + frame_h * 0.22, 0.0), blue)
+	for px in [-pv_cx, pv_cx]:
+		_box(p, Vector3(pv_w, frame_h, uf_d), Vector3(px, uf_fy, 0.0), blue)                          # blue housing
+		# dark opening proud of the front/back faces → reads as a real pocket mouth
+		_box(p, Vector3(pv_ow, pv_oh, uf_d + 0.02), Vector3(px, frame_y0 + frame_h * 0.5, 0.0), dark)
 	# ── Cart body: blue steel, open top, 4 walls + 1 bottom ──────────────────
 	_box(p, Vector3(cart_w, wall_t, cart_d),
 		Vector3(0.0, cart_base_y + wall_t * 0.5, 0.0), blue)
@@ -2584,7 +3078,7 @@ static func _m_lump_cart(p: Node3D, size: Vector3, _color: Color, ghost: bool) -
 			_box(p, Vector3(post_t, cart_h, post_t),
 				Vector3(float(sx) * (cart_w * 0.5 - post_t * 0.3),
 					cart_cy,
-					float(sz) * (cart_d * 0.5 - post_t * 0.3)), steel)
+					float(sz) * (cart_d * 0.5 - post_t * 0.3)), blue)   # #punch: 4 side-pulls BLUE
 	# ── Push handle: two angled risers off the back (+Z) of the cart, meeting
 	#    a horizontal grip bar above. Anchored via a Node3D so the rotation
 	#    handles the local-frame axis math cleanly. ──────────────────────────
@@ -2596,9 +3090,9 @@ static func _m_lump_cart(p: Node3D, size: Vector3, _color: Color, ghost: bool) -
 	var riser_len : float = size.y * 0.45
 	for sx in [-1.0, 1.0]:
 		_box(handle_root, Vector3(0.028, 0.028, riser_len),
-			Vector3(float(sx) * cart_w * 0.40, 0.0, riser_len * 0.5), steel)
+			Vector3(float(sx) * cart_w * 0.40, 0.0, riser_len * 0.5), blue)   # #punch: handlebar risers BLUE
 	_cyl(handle_root, 0.024, 0.024, cart_w * 0.95,
-		Vector3(0.0, 0.0, riser_len), steel, "x")
+		Vector3(0.0, 0.0, riser_len), grip, "x")   # #punch: hand-grip = shiny grey metal
 	# ── Hot-surface warning decal (ISO 7010 W017): yellow triangle with black
 	#    border + flame/hand icon. 18 cm — readable at arm's length. Mounted on
 	#    the back (+Z) face where operator approaches the handle.
@@ -2665,6 +3159,61 @@ static func _m_lump_cart_spot(p: Node3D, size: Vector3, _color: Color, ghost: bo
 				Vector3(float(sx) * (hx - bar_thk * 0.5), paint_h * 0.5,
 					float(sz) * (hz - bar_len * 0.5)), yellow)
 
+# ── #225.2 lump_platform: low steel-grating bordes the laserfilter + its two
+# lump carts stand on, with an oprit (ramp) on the -Z approach side so a
+# forklift rolls up to fork a cart out. Deck top = size.y (default box collision
+# spans 0→size.y, so carts placed at y=size.y rest on it). Operator 2026-07-14 +
+# photo _lumbs_cart.jpg (cart on a raised skid beside floor grating).
+static func _m_lump_platform(p: Node3D, _size: Vector3, _color: Color, ghost: bool) -> void:
+	var size : Vector3 = _size
+	var grate := _mat(Color(0.50, 0.52, 0.55), ghost, 0.55, 0.45)
+	var steel := _mat(_STEEL, ghost, 0.6, 0.35)
+	var dark  := _mat(_DARK, ghost, 0.4, 0.6)
+	# #225.3 — the logical deck top is size.y (carts placed at y=size.y rest on the
+	# box collision that spans 0→size.y). Previously the whole size.y box was drawn
+	# solid, so at size.y=0.12 it read as a floor sliver. Now: a THIN walkable slab
+	# at the top, standing on SHORT legs, so it reads as a real (if low) raised
+	# bordes with open space beneath — and the ramp run scales with the deck height.
+	var deck_top : float = size.y
+	var slab_h   : float = minf(0.05, deck_top)          # thin walking plate at the top
+	var slab_cy  : float = deck_top - slab_h * 0.5
+	# ── Thin raised deck slab ─────────────────────────────────────────────────
+	_box(p, Vector3(size.x, slab_h, size.z), Vector3(0.0, slab_cy, 0.0), grate)
+	# grating slats — thin dark lines across the top so it reads as open grating
+	var n_slat : int = int(size.x / 0.25)
+	for si in range(n_slat):
+		var sxp : float = -size.x * 0.5 + 0.125 + float(si) * 0.25
+		_box(p, Vector3(0.02, 0.012, size.z * 0.98), Vector3(sxp, deck_top + 0.004, 0.0), dark)
+	# ── Short legs standing the slab up into a bordes ─────────────────────────
+	var leg_h : float = maxf(deck_top - slab_h, 0.0)     # floor → slab underside
+	if leg_h > 0.005:
+		for fx in [-1.0, 1.0]:
+			for fz in [-1.0, 1.0]:
+				_box(p, Vector3(0.10, leg_h, 0.10),
+					Vector3(float(fx) * (size.x * 0.5 - 0.12), leg_h * 0.5, float(fz) * (size.z * 0.5 - 0.12)), steel)
+		# perimeter skirt rail along the two long (±X) edges so the raised deck
+		# reads as a solid bordes lip rather than a floating plate.
+		for sx7 in [-1.0, 1.0]:
+			_box(p, Vector3(0.03, leg_h, size.z * 0.9),
+				Vector3(float(sx7) * (size.x * 0.5 - 0.02), leg_h * 0.5, 0.0), dark)
+	# ── Ramp (oprit) on the -Z approach side ─────────────────────────────────
+	# Wedge from the floor up to the deck edge; -Z end low, +Z (deck) end high.
+	# Run scales with deck height at a walkable ~18° incline (was a fixed 0.60).
+	var ramp_ang : float = deg_to_rad(18.0)
+	var ramp_run : float = deck_top / tan(ramp_ang)
+	var ramp_w   : float = min(size.x * 0.55, 1.4)
+	var ramp_len : float = sqrt(ramp_run * ramp_run + deck_top * deck_top)
+	var ramp_root := Node3D.new()
+	ramp_root.name = "Ramp"
+	ramp_root.position = Vector3(0.0, deck_top * 0.5, -size.z * 0.5 - ramp_run * 0.5)
+	ramp_root.rotation.x = -ramp_ang     # -X rot tilts the +Z (deck) end UP
+	p.add_child(ramp_root)
+	_box(ramp_root, Vector3(ramp_w, 0.04, ramp_len), Vector3.ZERO, grate)
+	# ramp side kerbs so a fork/wheel doesn't slide off
+	for kx in [-1.0, 1.0]:
+		_box(ramp_root, Vector3(0.04, 0.08, ramp_len),
+			Vector3(float(kx) * ramp_w * 0.5, 0.04, 0.0), steel)
+
 # ── #154 wardrobe locker: tall blue steel cabinet with a hi-vis vest hanging ──
 ## Body is a thin upright box (the size.x × size.y × size.z catalog dims).
 ## Right edge is the door — a slightly proud slab so the silhouette reads as
@@ -2727,81 +3276,112 @@ static func _install_steam_plume(parent: Node3D, local_pos: Vector3,
 		radius: float, height: float, tint: Color, ghost: bool) -> void:
 	if ghost or parent == null:
 		return
-	# #182 — overhauled per operator: opaque white "burning blob" became soft
-	# light-grey volumetric puffs that respond to the player walking through.
 	var emitter := GPUParticles3D.new()
 	emitter.name = "SteamPlume"
-	emitter.amount = 40
-	emitter.lifetime = 5.0                          # longer-lived → more overlap → reads as volumetric
+	# Group tag so a machine's run-state controller (or an immersive bench that
+	# wants a COLD machine) can find and gate every plume without knowing the
+	# model's internal node layout. A real extruder/dryer only steams when hot.
+	emitter.add_to_group("steam_plume")
+	# Idle machines emit NOTHING (operator 2026-07-16: steam invented from nothing).
+	# LineFlow flips .emitting true per-tick only while real material flows.
+	emitter.emitting = false
+	emitter.amount = 80                              # more puffs, lower alpha each → volumetric density
+	emitter.lifetime = 7.0                           # long life so column fills out
 	emitter.one_shot = false
-	emitter.preprocess = 2.0
+	emitter.preprocess = 3.5
 	emitter.explosiveness = 0.0
 	emitter.fixed_fps = 30
 	emitter.visibility_aabb = AABB(
 		Vector3(-radius * 6.0, 0.0, -radius * 6.0),
-		Vector3( radius * 12.0, height + 4.0, radius * 12.0))
+		Vector3( radius * 12.0, height + 5.0, radius * 12.0))
 	var pm := ParticleProcessMaterial.new()
 	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_RING
-	pm.emission_ring_radius = radius
+	pm.emission_ring_radius = radius * 0.6
 	pm.emission_ring_inner_radius = 0.0
 	pm.emission_ring_axis = Vector3.UP
-	pm.emission_ring_height = 0.02
+	pm.emission_ring_height = 0.05
 	pm.direction = Vector3.UP
-	pm.spread = 22.0
-	pm.initial_velocity_min = height * 0.18         # SLOWER rise → fluffier column
-	pm.initial_velocity_max = height * 0.32
-	pm.gravity = Vector3(0.0, 0.35, 0.0)            # gentle buoyancy
-	pm.damping_min = 0.4
-	pm.damping_max = 0.8
-	pm.scale_min = radius * 1.2
-	pm.scale_max = radius * 2.4
-	# Expanding scale curve — fluffier at the end of life.
+	pm.spread = 16.0
+	pm.initial_velocity_min = height * 0.14
+	pm.initial_velocity_max = height * 0.26
+	pm.gravity = Vector3(0.0, 0.20, 0.0)
+	pm.damping_min = 0.15
+	pm.damping_max = 0.40
+	# Per-puff rotation — critical for organic look; without this all puffs are identical.
+	pm.angular_velocity_min = -20.0
+	pm.angular_velocity_max = 20.0
+	pm.scale_min = radius * 0.9
+	pm.scale_max = radius * 1.8
+	# Puffs born tight, expand as they rise — mimics real smoke buoyancy.
 	var sc := Curve.new()
-	sc.add_point(Vector2(0.0, 0.35))
-	sc.add_point(Vector2(0.5, 1.0))
-	sc.add_point(Vector2(1.0, 1.8))
+	sc.add_point(Vector2(0.0, 0.18))
+	sc.add_point(Vector2(0.35, 0.85))
+	sc.add_point(Vector2(1.0, 2.2))
 	pm.scale_curve = CurveTexture.new()
 	(pm.scale_curve as CurveTexture).curve = sc
-	# Operator note: light grey (NOT pure white) with a soft alpha gradient that
-	# fades to 0 across the lifetime — the previous 0.55 plateau read as opaque.
-	var col_tint := Color(0.85, 0.88, 0.92)         # cool light-grey water-steam
-	# Caller's `tint` is honoured as a slight nudge so extruder vs dryer still
-	# read differently, but only at low weight so they stay translucent.
-	col_tint = col_tint.lerp(tint, 0.25)
+	# Turbulence breaks up the straight column into convincing wisps.
+	pm.turbulence_enabled = true
+	pm.turbulence_noise_strength = 1.4
+	pm.turbulence_noise_scale = 3.0
+	pm.turbulence_noise_speed_random = 0.4
+	# Color: born dark-grey at base (dense, shadowed), lightens as it rises and disperses.
+	var col_base := Color(0.80, 0.82, 0.86)
+	col_base = col_base.lerp(tint, 0.20)
+	var dark := Color(col_base.r * 0.55, col_base.g * 0.56, col_base.b * 0.60)
+	var mid  := Color(col_base.r * 0.78, col_base.g * 0.80, col_base.b * 0.84)
+	var lite := col_base
 	var grad := Gradient.new()
-	grad.set_color(0, Color(col_tint.r, col_tint.g, col_tint.b, 0.0))
-	grad.set_color(1, Color(col_tint.r, col_tint.g, col_tint.b, 0.0))
-	grad.add_point(0.15, Color(col_tint.r, col_tint.g, col_tint.b, 0.22))
-	grad.add_point(0.55, Color(col_tint.r, col_tint.g, col_tint.b, 0.18))
-	grad.add_point(0.90, Color(col_tint.r, col_tint.g, col_tint.b, 0.06))
+	grad.set_color(0, Color(dark.r, dark.g, dark.b, 0.0))
+	grad.set_color(1, Color(lite.r, lite.g, lite.b, 0.0))
+	grad.add_point(0.06, Color(dark.r, dark.g, dark.b, 0.10))
+	grad.add_point(0.25, Color(mid.r,  mid.g,  mid.b,  0.13))
+	grad.add_point(0.55, Color(lite.r, lite.g, lite.b, 0.09))
+	grad.add_point(0.82, Color(lite.r, lite.g, lite.b, 0.04))
 	var gt := GradientTexture1D.new()
 	gt.gradient = grad
 	pm.color_ramp = gt
 	emitter.process_material = pm
-	# Soft sphere puffs.
-	var sm := SphereMesh.new()
-	sm.radius = 0.5
-	sm.height = 1.0
-	sm.radial_segments = 10
-	sm.rings = 5
+	# Bake a radial-falloff smoke puff texture at runtime.
+	# Hard spheres were the "white circles" problem — a soft quad with a radial
+	# alpha gradient reads as a genuine volumetric puff.
+	var tex_sz := 64
+	var img := Image.create(tex_sz, tex_sz, false, Image.FORMAT_RGBA8)
+	var ctr := Vector2(tex_sz * 0.5, tex_sz * 0.5)
+	var max_r := tex_sz * 0.5
+	for py in range(tex_sz):
+		for px in range(tex_sz):
+			var d : float = Vector2(px, py).distance_to(ctr) / max_r
+			# Gaussian-ish falloff: full opacity at centre, zero at rim.
+			var a : float = clampf(exp(-d * d * 3.2) - 0.04, 0.0, 1.0)
+			# Subtle sine ripple breaks the perfect-circle silhouette.
+			var angle : float = atan2(py - ctr.y, px - ctr.x)
+			a *= 0.88 + 0.12 * sin(angle * 5.0 + d * 8.0)
+			img.set_pixel(px, py, Color(1.0, 1.0, 1.0, a))
+	var smoke_tex := ImageTexture.create_from_image(img)
+	var qm := QuadMesh.new()
+	qm.size = Vector2(1.0, 1.0)
 	var pmat := StandardMaterial3D.new()
 	pmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	# Operator 2026-07-16 "smoke ugly and FAKE": the depth-pre-pass alpha-scissored
+	# each puff to a hard silhouette (no soft stacking) and a razor seam sliced
+	# through machines. Plain ALPHA + SOFT-PARTICLE proximity fade dissolves the
+	# intersection and lets low-alpha puffs blend into soft density = real vapour.
 	pmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	pmat.proximity_fade_enabled = true       # fade where a puff meets solid geometry (no clip seam)
+	pmat.proximity_fade_distance = 0.6
 	pmat.blend_mode = BaseMaterial3D.BLEND_MODE_MIX
 	pmat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	pmat.albedo_color = col_tint
-	pmat.albedo_color.a = 1.0                       # gradient controls per-particle alpha
+	pmat.albedo_texture = smoke_tex
+	pmat.albedo_color = Color(1.0, 1.0, 1.0, 1.0)  # per-particle alpha comes from color_ramp × texture
 	pmat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	# depth_test stays on so geometry occludes correctly; the soft-particle fade
-	# below keeps the plume from showing a sharp seam where it intersects walls.
 	pmat.no_depth_test = false
-	# Camera-side fade — close puffs fade out so flying through doesn't render a
-	# wall-of-white right on the lens.
-	pmat.distance_fade_mode = BaseMaterial3D.DISTANCE_FADE_PIXEL_ALPHA
-	pmat.distance_fade_min_distance = 0.4
-	pmat.distance_fade_max_distance = 1.6
-	sm.material = pmat
-	emitter.draw_pass_1 = sm
+	# Drop the dithered near-camera fade (0.5–2 m band) — it stippled to noise
+	# exactly where the player inspects a machine. proximity_fade handles clipping.
+	pmat.distance_fade_mode = BaseMaterial3D.DISTANCE_FADE_DISABLED
+	qm.material = pmat
+	emitter.draw_pass_1 = qm
+	# Back-to-front sort so low-alpha puffs blend into density instead of popping.
+	emitter.draw_order = GPUParticles3D.DRAW_ORDER_VIEW_DEPTH
 	emitter.position = local_pos
 	parent.add_child(emitter)
 	# Player-passage disturbance: an Area3D that, while a body is inside, bumps
@@ -3504,9 +4084,17 @@ static func _m_blower(p: Node3D, size: Vector3, color: Color, ghost: bool) -> vo
 ## painted-steel bays on a dark plinth: left blank door, centre control panel with
 ## HMI screen + indicator-light bank + two analog gauges + big rotary selector,
 ## right blank door. Vertical door seams and stainless handles on every bay. The
-## yellow CAUTION placard is a thin proud-sticker. All procedural — no textures.
+## yellow CAUTION placard is a thin proud-sticker. Geometry all procedural; the
+## bay bodies carry the photo-extracted cream-steel palette mat, the rest stays
+## flat _mat colours (lenses / lamps / decals opt out per the palette doc).
 static func _m_cabinet(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
 	var body_mat  := _mat(color, ghost, 0.25, 0.55)               # off-white painted steel
+	if not ghost:
+		# Photo-extracted cream painted steel — MaterialPalette grounds the
+		# machines/paint_cream_steel triplet in _extruder_silo.png + _e_kast.png
+		# and names the E-kast as a consumer. Shared opaque singleton, so ghosts
+		# keep the translucent _mat above.
+		body_mat = MaterialPalette.mat_paint_cream_steel()
 	var plinth    := _mat(Color(0.28, 0.25, 0.22), ghost, 0.15, 0.85)  # dirty concrete-coloured base
 	var dark      := _mat(_DARK, ghost, 0.2, 0.4)                 # door seams + HMI bezel
 	var steel     := _mat(_STEEL, ghost, 0.7, 0.25)               # handles, screws, gauge bezels
@@ -3804,7 +4392,7 @@ static func _m_mill(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> voi
 	_box(p, Vector3(0.5, 0.6, 0.5), Vector3(-hw * 0.30, 0.30,  hd + 0.45), blue)
 
 	# ── Caged access ladder on the +X face ────────────────────────────────────
-	_caged_ladder(p, Vector3(hw + 0.10, 0.0, hd * 0.35), deck_y + 0.9, steel)
+	_caged_ladder(p, Vector3(hw + 0.10, 0.0, hd * 0.35), deck_y + 0.9, steel, ghost)
 
 	# ── Ground stair to the right-rear (+X, -Z), ascending toward the deck ────
 	_stair(p, Vector3(hw * 0.55, 0.0, -hd - 1.0), deck_y, 0.9, grating, yellow)
@@ -3863,12 +4451,20 @@ static func _m_doseersilo(p: Node3D, size: Vector3, color: Color, ghost: bool) -
 # subtle variation / large drum-style outlet), a slow scraper bar above the +Z
 # outlet that drags floating material into a discharge container, and a visible
 # chain+sprocket drive on the outlet paddle (other paddles get small motor stubs).
-static func _m_flotation(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
+static func _m_flotation(p: Node3D, size: Vector3, color: Color, ghost: bool, wide : bool = false) -> void:
 	var tank := _mat(color, ghost, 0.4, 0.4)
 	var water := _mat(Color(0.20, 0.45, 0.60, 0.55), ghost, 0.0, 0.1)
 	var roller := _mat(_DARK, ghost, 0.4, 0.6)
 	var legmat := _mat(_DARK, ghost, 0.5, 0.6)
-	var chainmat := _mat(Color(0.18, 0.18, 0.20), ghost, 0.4, 0.6)
+	if not ghost:
+		# Photo-extracted weathered stainless (flotatietank_3A.png) — the palette
+		# triplet was calibrated for THIS tank (catalog colour == palette fallback,
+		# see MaterialPalette.mat_stainless_weathered). Palette mats are shared
+		# opaque singletons, so ghosts keep the translucent _mat above. The wide
+		# 3C/6 variant keeps its flat colour until it has photo grounding of its own.
+		if not wide:
+			tank = MaterialPalette.mat_stainless_weathered()
+		legmat = MaterialPalette.mat_steel_dark_aged()
 	var hz := size.z * 0.5
 	# ── HEIGHT PROFILE (operator survey #230) ─────────────────────────────────
 	# Stand top at 3.5 m; tank rim ~0.6 m higher; flat tank bottom ~1 m above
@@ -3936,7 +4532,13 @@ static func _m_flotation(p: Node3D, size: Vector3, color: Color, ghost: bool) ->
 				Vector3(sx * (bot_hx + panel_dx * 0.5),
 						flat_bot_y + panel_dy * 0.5,
 						0.0), tank)
-		panel.rotation.z = sx * slope_ang
+		# Operator report 2026-07-05: the tank body read UPSIDE DOWN — the sign
+		# below was +sx, which tipped each panel TOP inward (wide at the floor,
+		# narrow at the rim). -sx tips the top OUTWARD: narrow flat bottom
+		# flaring to the wide rim, as surveyed (#230). Correction per panel =
+		# slope_ang (24.2° for the 4.5 m tank, 31.0° for the 6 m wide variant),
+		# flipped across vertical.
+		panel.rotation.z = -sx * slope_ang
 	# Outer rim cap boxes — short vertical lips at the rim
 	for sx in [-1.0, 1.0]:
 		_box(p, Vector3(0.10, 0.18, size.z * 0.96),
@@ -3944,75 +4546,87 @@ static func _m_flotation(p: Node3D, size: Vector3, color: Color, ghost: bool) ->
 	for sz in [-1.0, 1.0]:
 		_box(p, Vector3(size.x * 0.92, 0.18, 0.10),
 				Vector3(0.0, rim_y + 0.05, sz * hz * 0.96), tank)
-	# Water surface — ~10 cm below the rim
 	var surf_y : float = rim_y - 0.10
-	_box(p, Vector3(size.x * 0.85, 0.04, size.z * 0.9),
-			Vector3(0.0, surf_y, 0.0), water)
-	# ── PADDLE LAYOUT — bespoke per position, slow RPM (≈4× slower than 45) ──
+	# #235 — WATER restored (operator 2026-07-16: removing the flat surface "sheet" left
+	# the tanks looking drained/leaked). Model the actual water BODY filling the tank from
+	# near the bottom up to the surface (translucent), NOT the flat lid-like plane that was
+	# removed earlier. The paddles + film raft still ride on the surface at surf_y.
+	if not ghost:
+		# Operator 2026-07-16: the old single straight box hung OUTSIDE the sloped
+		# V-hopper walls and poked past the end walls = "water contained by nothing,
+		# floating in the air". Rebuild as interior-CLIPPED slabs (each sized to the
+		# wall at its own bottom edge so no slab crosses a sloped wall, and bounded
+		# by the end walls on Z) + a REAL Waterbox physics volume so bodies actually
+		# float (buoyancy + drag), per the installed addons/waterbox plugin.
+		var wtr_bot : float = flat_bot_y + 0.12
+		var wvol_h : float = maxf(surf_y - wtr_bot, 0.2)
+		var inset : float = 0.08
+		var z_half : float = flat_bot_z * 0.5 - inset
+		var n_slab : int = 6
+		for si in n_slab:
+			var y0 : float = lerpf(wtr_bot, surf_y, float(si) / float(n_slab))
+			var y1 : float = lerpf(wtr_bot, surf_y, float(si + 1) / float(n_slab))
+			var wall_hx : float = bot_hx + (top_hx - bot_hx) * (y0 - flat_bot_y) / tank_depth
+			var x_half : float = maxf(wall_hx - inset, 0.05)
+			_box(p, Vector3(x_half * 2.0, (y1 - y0) + 0.02, z_half * 2.0),
+				Vector3(0.0, (y0 + y1) * 0.5, 0.0), water)
+		var surf_hx : float = maxf(bot_hx + (top_hx - bot_hx) * (surf_y - flat_bot_y) / tank_depth - inset, 0.05)
+		_box(p, Vector3(surf_hx * 2.0, 0.04, z_half * 2.0), Vector3(0.0, surf_y, 0.0), water)
+		# Real water physics — WaterBox addon (buoyancy + drag on any RigidBody3D
+		# inside). Build the Area3D child FIRST, then parent wbox, or WaterBox._ready
+		# connects to a null water_area and crashes.
+		var wbox := WaterBox.new()
+		wbox.name = "TankWater"
+		wbox.water_density = 1.0
+		wbox.water_drag = 0.5
+		wbox.require_buoyancy_component = false
+		var warea := Area3D.new()
+		warea.name = "WaterVolume"
+		warea.position = Vector3(0.0, (surf_y + wtr_bot) * 0.5, 0.0)
+		var wshape := CollisionShape3D.new()
+		var wbs := BoxShape3D.new()
+		wbs.size = Vector3((bot_hx + top_hx) * 0.9, wvol_h, z_half * 2.0)
+		wshape.shape = wbs
+		warea.add_child(wshape)
+		wbox.add_child(warea)
+		p.add_child(wbox)
+	# ── PADDLE LAYOUT (operator 2026-07-15, per line) ─────────────────────────
+	# 3A/3B (standard) = 7 paddles: a LARGE 1st (hidden under a metal plate) + 5
+	# small + a LARGE last. 3C/6 (wide) = 11: LARGE 1st + 9 small + LARGE last.
+	# 1st & last are ~double the small diameter. ONE motor per paddle, IN LINE with
+	# the axle (large motor on the large end paddles, small on the middle). comp
+	# tags kept for the LineFlow sim (inlet / transport_* / outlet).
 	var blade_t : float = 0.025
-	# Inlet paddle (small, 3 narrow blades) at -Z, 6 rpm
-	var fl_inlet := _spinning_cyl(p, 0.06, 0.06, size.x * 0.82,
-			Vector3(0.0, roll_y, -hz * 0.85), roller, "x", Vector3.RIGHT, ghost, 6.0)
-	if not ghost:
-		fl_inlet.set_meta("comp", "inlet")
-		_attach_paddle_blades(fl_inlet, 3, size.x * 0.72, blade_t, 0.28, roller)
-	# 9 transport paddles with subtle variation: blade count + rpm vary by group
-	for i in 9:
-		var t : float = float(i) / 8.0
-		var zz : float = lerp(-hz * 0.65, hz * 0.65, t)
-		var grp : String = "transport_1"
-		var rpm_grp : float = 4.0
-		var n_blades : int = 4
-		if i >= 6:
-			grp = "transport_3"; rpm_grp = 6.0; n_blades = 3
-		elif i >= 3:
-			grp = "transport_2"; rpm_grp = 5.0; n_blades = 4
-		var fl_t := _spinning_cyl(p, 0.06, 0.06, size.x * 0.82,
-				Vector3(0.0, roll_y, zz), roller, "x", Vector3.RIGHT, ghost, rpm_grp)
+	var small_r : float = 0.06
+	var large_r : float = 0.12
+	var side_x  : float = size.x * 0.41                 # shaft end near the +X wall
+	var n_mid : int = 9 if wide else 5
+	var padz : Array = [-hz * 0.85]                     # LARGE 1st paddle
+	for i in n_mid:
+		padz.append(lerp(-hz * 0.58, hz * 0.58, float(i) / float(n_mid - 1)))
+	padz.append(hz * 0.85)                              # LARGE last paddle
+	var n_pad : int = padz.size()
+	for pi in n_pad:
+		var pz : float = float(padz[pi])
+		var is_end : bool = (pi == 0 or pi == n_pad - 1)
+		var pr : float = large_r if is_end else small_r
+		var comp : String = "inlet" if pi == 0 else ("outlet" if pi == n_pad - 1 else "transport_%d" % (1 + (pi - 1) % 3))
+		var rpm : float = 9.0 if is_end else 5.0
+		var pad := _spinning_cyl(p, pr, pr, size.x * 0.82,
+				Vector3(0.0, roll_y, pz), roller, "x", Vector3.RIGHT, ghost, rpm)
 		if not ghost:
-			fl_t.set_meta("comp", grp)
-			_attach_paddle_blades(fl_t, n_blades, size.x * 0.72, blade_t, 0.28, roller)
-			# Subtle phase offset per paddle so they don't all flap in unison
-			fl_t.rotation.x = TAU * (float(i) * 0.13)
-	# Outlet drag paddle (LARGE drum-style) at +Z — 6 wide blades, 9 rpm
-	var fl_outlet := _spinning_cyl(p, 0.14, 0.14, size.x * 0.86,
-			Vector3(0.0, roll_y + 0.05, hz * 0.85), roller, "x", Vector3.RIGHT, ghost, 9.0)
-	if not ghost:
-		fl_outlet.set_meta("comp", "outlet")
-		_attach_paddle_blades(fl_outlet, 6, size.x * 0.78, 0.035, 0.42, roller)
-	# ── DRIVE: motor box + visible chain + sprockets on the outlet paddle ─────
-	# Other 10 paddles get small motor stubs at the +X end (visual only).
-	if not ghost:
-		var drive_x : float = size.x * 0.5 + 0.05
-		var drive_z : float = hz * 0.85
-		var motor_y : float = roll_y + 0.05 + 0.55
-		# Motor cabinet
-		_box(p, Vector3(0.35, 0.45, 0.40),
-				Vector3(drive_x + 0.20, motor_y, drive_z), tank)
-		# Drive sprocket (small, on motor shaft)
-		_cyl(p, 0.10, 0.10, 0.05,
-				Vector3(drive_x, motor_y, drive_z), chainmat, "x")
-		# Driven sprocket (larger, on paddle shaft tip)
-		_cyl(p, 0.22, 0.22, 0.05,
-				Vector3(drive_x, roll_y + 0.05, drive_z), chainmat, "x")
-		# Chain loop: 4 thin boxes wrapping the two sprockets
-		var sprk_dy : float = motor_y - (roll_y + 0.05)
-		_box(p, Vector3(0.03, sprk_dy, 0.04),
-				Vector3(drive_x, (motor_y + roll_y + 0.05) * 0.5, drive_z + 0.22), chainmat)
-		_box(p, Vector3(0.03, sprk_dy, 0.04),
-				Vector3(drive_x, (motor_y + roll_y + 0.05) * 0.5, drive_z - 0.22), chainmat)
-		_box(p, Vector3(0.03, 0.04, 0.22),
-				Vector3(drive_x, motor_y + 0.10, drive_z), chainmat)
-		_box(p, Vector3(0.03, 0.04, 0.44),
-				Vector3(drive_x, roll_y + 0.05 - 0.22, drive_z), chainmat)
-		# Small motor stubs on the other paddles (visual only)
-		_motor_unit(p, 0.08, 0.20,
-				Vector3(drive_x + 0.10, roll_y + 0.02, -hz * 0.85), "x", ghost)
-		for i in 9:
-			var t2 : float = float(i) / 8.0
-			var zz2 : float = lerp(-hz * 0.65, hz * 0.65, t2)
-			_motor_unit(p, 0.07, 0.16,
-					Vector3(drive_x + 0.08, roll_y + 0.02, zz2), "x", ghost)
+			pad.set_meta("comp", comp)
+			_attach_paddle_blades(pad, (6 if is_end else 4), size.x * 0.76,
+					(0.035 if is_end else blade_t), (0.42 if is_end else 0.28), roller)
+			pad.rotation.x = TAU * (float(pi) * 0.13)   # phase offset so they don't flap in unison
+			# per-paddle drive motor, IN LINE with the axle, just outside the +X wall
+			var mr : float = 0.16 if is_end else 0.09
+			var ml : float = 0.44 if is_end else 0.24
+			_motor_unit(p, mr, ml, Vector3(side_x + ml * 0.5 + 0.06, roll_y, pz), "x", ghost)
+	# Metal cover plate hiding the LARGE 1st paddle — 3A/3B only (operator).
+	if not ghost and not wide:
+		_box(p, Vector3(size.x * 0.9, 0.05, hz * 0.30),
+				Vector3(0.0, roll_y + large_r + 0.12, -hz * 0.85), tank)
 	# ── SCRAPER ABOVE +Z END ──────────────────────────────────────────────────
 	# Slow scraper bar with 6 perpendicular fingers, mounted above the water at
 	# the +Z (outlet) end. Drags floating material over the weir into the
@@ -4080,6 +4694,49 @@ static func _m_flotation(p: Node3D, size: Vector3, color: Color, ghost: bool) ->
 		field.set_floor_y(flat_bot_y + 0.06)      # heavies fall to the narrow flat bottom
 		field.set_mat_mode(true)
 		p.add_child(field)
+
+	# ── #232 PHOTO-ACCURATE HOPPER EXTERIOR (flotatietank_3A.png) ──────────────
+	# Operator 2026-07-15: "HOPPER 4A" IS the flotation tank — rebuild faithfully.
+	# Operator revision 2026-07-15: TOP OPEN (no collar) so water + paddles stay
+	# visible; per-line paddle counts (7 for 3A/3B, 11 for 3C/6) with per-paddle
+	# aligned motors are built in the paddle loop above. This block adds only the
+	# operator CATWALK (1.2 m lower) + placards. The survey-calibrated bath, sim
+	# comp tags, water/film field + rafter level link (rim 4.1 / surf 4.0) stay intact.
+	if not ghost:
+		var blue_mat := _mat(Color(0.14, 0.30, 0.55), ghost, 0.35, 0.5)   # blue structural supports
+		var yel_mat  := _mat(_SAFETY, ghost, 0.2, 0.6)
+		var grt_mat  := _mat(Color(0.36, 0.40, 0.38), ghost, 0.3, 0.85)
+		# TOP OPEN (operator 2026-07-15) — no enclosing collar; water + paddles stay
+		# visible. Operator CATWALK 1.2 m LOWER than the first pass, yellow railing
+		# on BLUE legs, alongside the -X wall.
+		var cw_top : float = rim_y - 0.25                # ≈ 3.85 m (was 5.05)
+		var cw_hx : float = 0.60
+		var cw_cx : float = -(top_hx + 0.16 + cw_hx)
+		var cw_hz : float = hz * 0.82
+		for wsx in [-1.0, 1.0]:
+			for wsz in [-1.0, 1.0]:
+				_box(p, Vector3(0.12, cw_top, 0.12),
+					Vector3(cw_cx + float(wsx) * (cw_hx - 0.10), cw_top * 0.5, float(wsz) * (cw_hz - 0.2)), blue_mat)
+		# WALKABLE deck → real collision (operator 2026-07-16: "impossible to walk
+		# through a mesh"). _box_static_body wraps a StaticBody3D+BoxShape (survives
+		# StaticMerge); 0.10 m thick so a fast capsule can't tunnel it.
+		_box_static_body(p, Vector3(cw_hx * 2.0, 0.10, cw_hz * 2.0), Vector3(cw_cx, cw_top - 0.025, 0.0), grt_mat)
+		var cw_rail := Node3D.new()
+		cw_rail.position = Vector3(cw_cx, cw_top + 0.03, 0.0)
+		p.add_child(cw_rail)
+		_railing(cw_rail, cw_hx, cw_hz, 0.0, yel_mat, ["+x", "-z"])   # open +x (toward tank) + -z (stair)
+		# Grating stair from the catwalk -Z end down to the floor.
+		var fst_run : float = float(maxi(int(cw_top / 0.22), 4)) * 0.27
+		var fst_pivot := Node3D.new()
+		fst_pivot.position = Vector3(cw_cx, 0.0, -(cw_hz + fst_run))
+		p.add_child(fst_pivot)
+		_stair(fst_pivot, Vector3.ZERO, cw_top, 0.9, grt_mat, yel_mat)
+		# Placards on the upper +X wall (HOPPER 4A only on the 3A/3B standard tank).
+		var lbl_b := _stencil_label(p, "MAX LOAD 500KG", Vector3(1.05, 0.20, 0.01), "+X")
+		lbl_b.position = Vector3(top_hx * 0.96, rim_y - 0.22, hz * 0.22)
+		if not wide:
+			var lbl_a := _stencil_label(p, "HOPPER 4A", Vector3(1.15, 0.30, 0.01), "+X")
+			lbl_a.position = Vector3(top_hx * 0.96, rim_y - 0.55, -hz * 0.08)
 
 # ── sink/float separator (bezinkbakscheider) ────────────────────────────────
 ## CeDo line 3C / line 6 — twin parallel water troughs with a central drive
@@ -4237,8 +4894,9 @@ static func _m_sinkfloat(p: Node3D, size: Vector3, color: Color, ghost: bool) ->
 	# ── Outer walkway grating + yellow railings ───────────────────────────────
 	for s in [-1.0, 1.0]:
 		var deck_cx : float = s * (hx - deck_w * 0.5)
-		_box(p, Vector3(deck_w, 0.04, size.z * 0.96),
-				Vector3(deck_cx, deck_y, 0.0), grating)
+		# WALKABLE walkway → real collision (0.10 m so the capsule can't tunnel it).
+		_box_static_body(p, Vector3(deck_w, 0.10, size.z * 0.96),
+				Vector3(deck_cx, deck_y - 0.03, 0.0), grating)
 		# Outer railing — short verticals + top rail
 		var rail_y : float = deck_y + 0.55
 		_box(p, Vector3(0.03, 1.1, size.z * 0.94),
@@ -4406,6 +5064,18 @@ static func _m_pump(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void
 		var wilo_lbl := _stencil_label(p, "WILO",
 			Vector3(size.x * 0.18, 0.04, 0.01), "+X")
 		wilo_lbl.position = Vector3(size.x * 0.22, size.y * 0.42, size.z * 0.3)
+
+# ── Named pump station: _m_pump + a stencil STATION label on the -X volute face
+# (2026-07-06, water_small.md shared note 1). Used by pomp_c1 ("C1") and
+# pomp_zeefbocht ("ZEEFBOCHT") so the stations are identifiable in-world while
+# sharing the photo-verified Wilo model — the real C1 / zeefbocht pumps were
+# never photographed (flags F7/F8), so the generic model is a marked stand-in.
+static func _m_pump_labeled(p: Node3D, size: Vector3, color: Color, ghost: bool, station: String) -> void:
+	_m_pump(p, size, color, ghost)
+	if not ghost:
+		var st_lbl := _stencil_label(p, station,
+			Vector3(size.x * 0.30, 0.05, 0.01), "-X")
+		st_lbl.position = Vector3(-size.x * 0.22, size.y * 0.42, size.z * 0.3)
 
 # ── HMI screen material (dark glass that glows faintly when "on") ─────────────
 static func _screen_mat(ghost: bool) -> StandardMaterial3D:
@@ -4817,7 +5487,7 @@ static func _build_light_bale(origin: String, ghost: bool) -> Node3D:
 	var wires := Node3D.new()
 	wires.name = "Wires"
 	rb.add_child(wires)
-	_build_wires(wires, size, ghost)
+	_build_wires(wires, size, ghost, _wire_count_for(origin))
 	if not ghost:
 		var col := CollisionShape3D.new()
 		var bx := BoxShape3D.new()
@@ -4977,7 +5647,7 @@ static func _m_bale_simple(p: Node3D, id: String, size: Vector3, color: Color, g
 		var end_x : float = size.x * 0.5 + band_r * 0.5
 		var horiz_len : float = size.x + band_r * 2.0
 		var vert_len  : float = size.y + band_r * 2.0
-		for wz in [-size.z * 0.30, 0.0, size.z * 0.30]:
+		for wz in _wire_positions(size, _wire_count_for(id)):
 			# Top — runs the full LENGTH (X) over every sheet edge.
 			var b_top := _cyl(p, band_r, band_r, horiz_len,
 				Vector3(0.0, top_y, wz), wire, "x")
@@ -5283,11 +5953,21 @@ static func _draw_text_into_image(img: Image, x0: int, y0: int, text: String, sc
 							if px >= 0 and py >= 0 and px < img.get_width() and py < img.get_height():
 								img.set_pixel(px, py, ink)
 		cx += 4 * scale       # 3px char + 1px gap
-static var _bale_sticker_tex : ImageTexture = null
+static var _bale_sticker_tex_by_id : Dictionary = {}
 
-static func _bale_sticker_texture() -> ImageTexture:
-	if _bale_sticker_tex != null:
-		return _bale_sticker_tex
+static func _bale_sticker_texture(id: String = "rotterdam") -> ImageTexture:
+	if _bale_sticker_tex_by_id.has(id):
+		return _bale_sticker_tex_by_id[id]
+	# #labelyard — sticker text is now per-SUPPLIER (pulled from BaleDefs) instead
+	# of the old hardcoded "ROTTERDAM / ID B-00482 / 250 KG NETTO" baked into one
+	# shared texture. That global bake made every yard (Alba Marl, Zwolle, Forst+)
+	# read the Rotterdam sticker — and 250 kg was wrong even for Rotterdam. We
+	# still bake ONE texture per supplier (not per bale — the MultiMesh shares it);
+	# true per-instance ids would need a per-instance UV atlas.
+	var o := BaleDefs.get_origin(id)
+	var supplier_name : String = String(o.get("name", id)).to_upper()
+	var sz : Vector3 = o.get("size", Vector3(1.45, 1.25, 1.25))
+	var net_kg : int = int(round(BaleDefs.estimated_weight(sz)))
 	var img := Image.create(_BALE_STICKER_TEX_W, _BALE_STICKER_TEX_H, false, Image.FORMAT_RGB8)
 	# #170 — yellow shipping label, matching the LabelItem sticker colour the
 	# operator confirmed earlier.
@@ -5309,9 +5989,9 @@ static func _bale_sticker_texture() -> ImageTexture:
 	# label. Dropped that line; scale 1 (native 3×5 glyphs, 4px char-cell)
 	# leaves the longest line ("250 KG NETTO" = 48 px) well inside the 192 px
 	# texture width with plenty of horizontal margin.
-	_draw_text_into_image(img, 10,  8, "ROTTERDAM",     1, paper)   # white on header strip
-	_draw_text_into_image(img,  8, 30, "ID B-00482",    1, ink)
-	_draw_text_into_image(img,  8, 50, "250 KG NETTO",  1, ink)
+	_draw_text_into_image(img, 10,  8, supplier_name,                    1, paper)   # white on header strip
+	_draw_text_into_image(img,  8, 30, "ID B-%05d" % (hash(id) % 100000), 1, ink)
+	_draw_text_into_image(img,  8, 50, "%d KG NETTO" % net_kg,           1, ink)
 	# Barcode band at the bottom — alternating black bars of varying width.
 	var bx : int = 8
 	while bx < _BALE_STICKER_TEX_W - 8:
@@ -5320,8 +6000,9 @@ static func _bale_sticker_texture() -> ImageTexture:
 			for y in range(95, 120):
 				img.set_pixel(x, y, ink)
 		bx += w + 1 + (bx * 3) % 3
-	_bale_sticker_tex = ImageTexture.create_from_image(img)
-	return _bale_sticker_tex
+	var tex := ImageTexture.create_from_image(img)
+	_bale_sticker_tex_by_id[id] = tex
+	return tex
 
 static func build_yard_sticker_multimesh(id: String, instance_count: int) -> MultiMeshInstance3D:
 	var item := get_item(id)
@@ -5333,7 +6014,7 @@ static func build_yard_sticker_multimesh(id: String, instance_count: int) -> Mul
 	qm.size = Vector2(min(size.x, size.z) * 0.30, size.y * 0.30)
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = Color(1.0, 1.0, 1.0)
-	mat.albedo_texture = _bale_sticker_texture()
+	mat.albedo_texture = _bale_sticker_texture(id)
 	mat.roughness = 0.9
 	mat.metallic = 0.0
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED       # readable from either side
@@ -5502,7 +6183,7 @@ static func _m_bale(p: Node3D, id: String, size: Vector3, ghost: bool) -> void:
 	var wires_root := Node3D.new()
 	wires_root.name = "Wires"
 	p.add_child(wires_root)
-	_build_wires(wires_root, size, ghost)
+	_build_wires(wires_root, size, ghost, _wire_count_for(id))
 	# Distance-cull the metal wires beyond 15 m of the camera (engine-side, faded).
 	if not ghost:
 		for w in wires_root.find_children("*", "MeshInstance3D", true, false):
@@ -5529,17 +6210,41 @@ static func _m_bale(p: Node3D, id: String, size: Vector3, ghost: bool) -> void:
 ## continuous loop instead of disconnected sticks. Parented under a Node3D
 ## named "Wire_i" so the cutter can `queue_free` an entire wire, and the
 ## clamp-force bulge can lift the top segment alone.
-static func _build_wires(root: Node3D, size: Vector3, ghost: bool) -> void:
+## Number of binding wires for a supplier's bales. Rotterdam + Fostplus ship
+## 3-wire bales; Alba and Zwolle ship 5-wire bales (tighter-bound, more straps).
+## Anything else defaults to 3.
+static func _wire_count_for(id: String) -> int:
+	match id:
+		"alba_marl", "zwolle":
+			return 5
+		_:
+			return 3
+
+## Evenly-spaced wire-band Z positions for `count` wires across the bale width.
+## 3 wires keep the historical ±0.30·width spread; 5 wires use ±0.36·width so
+## they don't crowd. Single-wire degenerate case sits on the centreline.
+static func _wire_positions(size: Vector3, count: int) -> Array[float]:
+	var out : Array[float] = []
+	if count <= 1:
+		out.append(0.0)
+		return out
+	var span : float = 0.30 if count <= 3 else 0.36
+	for i in count:
+		var f : float = float(i) / float(count - 1)   # 0 .. 1
+		out.append((-span + f * (2.0 * span)) * size.z)
+	return out
+
+static func _build_wires(root: Node3D, size: Vector3, ghost: bool, count: int = 3) -> void:
 	var wire := _mat(Color(0.18, 0.17, 0.16), ghost, 0.85, 0.30)
 	# Thicker than the original 1.2 cm so the loops are clearly visible — real
 	# bale-binding wire is ~3-4 mm but visually it needs to read at 5+ metres.
 	var r := 0.018
-	# 3 wires spaced across the WIDTH (Z). Each is a full loop around the bale's
-	# length+height: Top and Bottom run the FULL LENGTH (X), crossing EVERY sheet's
-	# edge; Left and Right cap the two end faces (±X). So each wire binds the whole
-	# stack — cutting it releases all the sheets, not just one edge. (Was: a loop
-	# around a single YZ slice, which only wrapped one sheet's worth.)
-	var positions: Array[float] = [-size.z * 0.30, 0.0, size.z * 0.30]
+	# `count` wires spaced across the WIDTH (Z). Each is a full loop around the
+	# bale's length+height: Top and Bottom run the FULL LENGTH (X), crossing EVERY
+	# sheet's edge; Left and Right cap the two end faces (±X). So each wire binds
+	# the whole stack — cutting it releases all the sheets, not just one edge.
+	# (Was: a loop around a single YZ slice, which only wrapped one sheet's worth.)
+	var positions: Array[float] = _wire_positions(size, count)
 	var top_y  : float = size.y + r * 0.5              # sits on top, half-sunk
 	var bot_y  : float = -r * 0.5                       # sits under, half-sunk
 	var end_x  : float = size.x * 0.5 + r * 0.5         # sits on the ±X end faces
@@ -5576,16 +6281,30 @@ static func _build_wires(root: Node3D, size: Vector3, ghost: bool) -> void:
 		knot_mi.name = "Knot"
 		w.add_child(knot_mi)
 
-# ── rafter: inclined vibrating sieve deck (zeefdek) + scraper trough + drive ───
-## #87 — Rafter rebuilt as a horizontal ENCAPSULATED SCREW inside a 1.5 mm
-## steel-mesh cylinder. Material rides the auger from the +Z inlet end to the
-## -Z discharge end; water drains DOWN through the fine mesh into a collection
-## trough below, dewatered flake exits the -Z end into a chute. The mesh
-## cylinder is semi-transparent so the rotating auger is visible from outside.
+# ── rafter: SUBMERGED mesh-cylinder sieve in a water tank on a raised stand ──
+## Header fixed 2026-07-06 (the "inclined vibrating sieve deck (zeefdek)" text
+## was stale — QA:Q4 flags it explicitly).
+## #87 core kept: horizontal ENCAPSULATED SCREW inside a 1.5 mm steel-mesh
+## cylinder, semi-transparent so the rotating auger is visible.
+## Refinement 2026-07-06 (eop_rafter.md Part B + operator ruling B7):
+##  • Mesh cylinder ~0.75 m ⌀, encapsulated in a water tank ~1 m wide × 1 m
+##    high; everything below the tank is PLATFORM (ruling B7).
+##  • The tank has its OWN water level. (CORRECTION 2026-07-17: an earlier pass
+##    wrongly claimed the rafter and flotation tank were "connected vessels" at a
+##    shared 4.0 m surface — the operator confirmed that is not a thing. They are
+##    separate tanks; nothing ties their levels.)
+##  • Reliability: the operator NEVER saw the rafter malfunction (interview /
+##    QA:Q4) — exclude it from random-breakdown pools / lowest failure tier
+##    when a per-machine failure system lands (no such hook exists yet).
+## Material path: doseerschroef M11a → +Z inlet hopper → auger through the
+## submerged mesh → -Z discharge chute → ontwaterschroef van rafter.
 static func _m_rafter(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
 	var steel  := _mat(color, ghost, 0.5, 0.45)
 	var dark   := _mat(_DARK, ghost, 0.5, 0.6)
 	var bronze := _mat(Color(0.50, 0.40, 0.22), ghost, 0.4, 0.6)   # rusted-bronze auger
+	# Translucent water — same material look as the other tanks (this tank has its
+	# OWN level; not tied to the flotation tank).
+	var water := _mat(Color(0.20, 0.45, 0.60, 0.55), ghost, 0.0, 0.1)
 	# Steel-mesh cylinder material: pale grey, semi-transparent, slight wire-pattern
 	# look via lower roughness — reads as fine perforated metal screen.
 	var mesh_mat : StandardMaterial3D = StandardMaterial3D.new()
@@ -5599,90 +6318,136 @@ static func _m_rafter(p: Node3D, size: Vector3, color: Color, ghost: bool) -> vo
 		mesh_mat.albedo_color = Color(0.62, 0.64, 0.68, 0.30)
 		mesh_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 
-	# ── Frame: 4 corner legs + a cross-rail at deck height ───────────────────
-	var deck_y : float = size.y * 0.52
+	# ── Height ladder (world metres). Operator 2026-07-17: top was 1.2 m too high
+	# (3.1 → 1.9). The rafter's water level is its OWN tank — it is NOT a connected
+	# vessel with the flotation tank (that earlier claim was wrong; operator-
+	# corrected 2026-07-17). "plat_top" = height of the support platform, nothing
+	# more. Tank rim/surface follow from this tank's own geometry.
+	var plat_top : float = 1.9            # support-platform top height
+	var tank_h   : float = 1.0            # tank ~1 m high
+	var tank_w   : float = 1.0            # tank ~1 m wide
+	var rim_y    : float = plat_top + tank_h        # this tank's own rim
+	var surf_y   : float = rim_y - 0.10             # this tank's own water surface
 	var hx : float = size.x * 0.5
 	var hz : float = size.z * 0.5
-	var leg_w : float = 0.10
+
+	# ── RAISED STAND — _m_flotation pattern (4 heavy posts + braces + ring).
+	var leg_w : float = 0.18
+	var hx_l : float = size.x * 0.40
+	var hz_l : float = size.z * 0.45
 	for sx in [-1.0, 1.0]:
 		for sz in [-1.0, 1.0]:
-			var lg := _box(p, Vector3(leg_w, deck_y, leg_w),
-				Vector3(sx * (hx - leg_w * 0.6), deck_y * 0.5, sz * (hz - leg_w * 0.6)), dark)
+			var lg := _box(p, Vector3(leg_w, plat_top, leg_w),
+				Vector3(float(sx) * hx_l, plat_top * 0.5, float(sz) * hz_l), dark)
 			lg.add_to_group("machine_leg")
-			lg.set_meta("leg_h", deck_y)
-	# Cross-rails along the long axis (-Z and +Z sides) for the read of a built-up
-	# frame and to give the water trough something to hang from.
-	for sx2 in [-1.0, 1.0]:
-		_box(p, Vector3(0.06, 0.06, size.z * 0.94),
-			Vector3(sx2 * (hx - 0.06), deck_y - 0.04, 0.0), steel)
+			lg.set_meta("leg_h", plat_top)
+	for sz3 in [-1.0, 1.0]:
+		_box(p, Vector3(hx_l * 2.0, 0.06, 0.06), Vector3(0.0, plat_top * 0.35, float(sz3) * hz_l), dark)
+		_box(p, Vector3(hx_l * 2.0, 0.06, 0.06), Vector3(0.0, plat_top * 0.70, float(sz3) * hz_l), dark)
+	for sx3 in [-1.0, 1.0]:
+		_box(p, Vector3(0.06, 0.06, hz_l * 2.0), Vector3(float(sx3) * hx_l, plat_top * 0.35, 0.0), dark)
+		_box(p, Vector3(0.06, 0.06, hz_l * 2.0), Vector3(float(sx3) * hx_l, plat_top * 0.70, 0.0), dark)
+	# Platform plate at the stand top (tank bottom).
+	_box(p, Vector3(size.x * 0.9, 0.10, size.z * 0.98), Vector3(0.0, plat_top - 0.05, 0.0), steel)
 
-	# ── Water collection trough (below the mesh, catches dripping water) ─────
-	var trough_w : float = size.x * 0.82
-	var trough_h : float = size.y * 0.18
-	var trough_y : float = deck_y - trough_h * 0.5 + 0.02
-	_box(p, Vector3(trough_w, trough_h, size.z * 0.86),
-		Vector3(0.0, trough_y, 0.0), dark)
-	# A small drain stub on the -X side at the low end (water out).
-	_cyl(p, 0.05, 0.05, 0.30,
-		Vector3(-trough_w * 0.5 - 0.10, trough_y - trough_h * 0.20, hz * 0.40), dark, "x")
+	# ── WATER TANK (open top) enclosing the mesh cylinder — ruling B7 dims.
+	var tank_l : float = size.z * 0.96
+	var twt : float = 0.05
+	_box(p, Vector3(twt, tank_h, tank_l), Vector3(-tank_w * 0.5 + twt * 0.5, plat_top + tank_h * 0.5, 0.0), steel)
+	_box(p, Vector3(twt, tank_h, tank_l), Vector3( tank_w * 0.5 - twt * 0.5, plat_top + tank_h * 0.5, 0.0), steel)
+	_box(p, Vector3(tank_w, tank_h, twt), Vector3(0.0, plat_top + tank_h * 0.5, -tank_l * 0.5 + twt * 0.5), steel)
+	_box(p, Vector3(tank_w, tank_h, twt), Vector3(0.0, plat_top + tank_h * 0.5,  tank_l * 0.5 - twt * 0.5), steel)
+	# Water surface at 4.0 m — ABOVE the mesh-cylinder top so the cylinder is
+	# fully submerged (interview "SUBMERGED"); alpha ≈ 0.55 keeps the auger
+	# readable through water + mesh (#87 design intent preserved).
+	_box(p, Vector3(tank_w - twt * 2.0, 0.04, tank_l - twt * 2.0),
+		Vector3(0.0, surf_y, 0.0), water)
 
-	# ── 1.5 mm STEEL-MESH CYLINDER (the rafter's defining feature) ───────────
-	# Slightly tilted (~5° head-down toward -Z) so material progresses forward
-	# under gravity AND auger thrust. Axis along Z. Centered on Y above trough.
-	var cyl_r  : float = size.x * 0.32
-	var cyl_l  : float = size.z * 0.86
-	var cyl_y  : float = deck_y + cyl_r * 0.7
-	var cyl_tilt : float = deg_to_rad(-5.0)
+	# ── 1.5 mm STEEL-MESH CYLINDER, ~0.75 m ⌀ (ruling B7), axis LEVEL along Z.
+	# The old ~5° head-down tilt is dropped: a tilted cylinder would break the
+	# submerged read inside the 1 m tank (top would pierce the water surface).
+	var cyl_r : float = 0.375                      # ~0.75 m diameter, ruling B7
+	var cyl_l : float = size.z * 0.86
+	var cyl_y : float = plat_top + 0.45            # top at 3.925 < water 4.0 → submerged
 	var cyl_pivot := Node3D.new()
 	cyl_pivot.position = Vector3(0.0, cyl_y, 0.0)
-	cyl_pivot.rotation = Vector3(cyl_tilt, 0.0, 0.0)
 	p.add_child(cyl_pivot)
 	# Mesh cylinder shell (along Z axis).
 	_cyl(cyl_pivot, cyl_r, cyl_r, cyl_l, Vector3.ZERO, mesh_mat, "z")
-	# End caps — solid steel rings, not perforated. The +Z end has a feed inlet
-	# port (small cylinder protruding straight up); the -Z end is the discharge.
+	# End caps — solid steel rings, not perforated.
 	_cyl(cyl_pivot, cyl_r * 1.05, cyl_r * 1.05, 0.06, Vector3(0.0, 0.0,  cyl_l * 0.5 + 0.03), steel, "z")
 	_cyl(cyl_pivot, cyl_r * 1.05, cyl_r * 1.05, 0.06, Vector3(0.0, 0.0, -cyl_l * 0.5 - 0.03), steel, "z")
-	# Three reinforcing bands around the mesh (visual stiffeners + read of weld lines).
+	# Three reinforcing bands around the mesh (visual stiffeners / weld lines).
 	for rk in [-0.35, 0.0, 0.35]:
-		_cyl(cyl_pivot, cyl_r * 1.04, cyl_r * 1.04, 0.04, Vector3(0.0, 0.0, cyl_l * rk), steel, "z")
+		_cyl(cyl_pivot, cyl_r * 1.04, cyl_r * 1.04, 0.04, Vector3(0.0, 0.0, cyl_l * float(rk)), steel, "z")
 
-	# ── ROTATING AUGER inside the mesh (visible through transparent shell) ───
-	# Bronze-coloured to contrast against the pale steel mesh. Reuses the shared
-	# _spinning_auger helper so it picks up the live-RPM system. Tagged
-	# `comp: rafter_auger` for HMI control.
+	# ── ROTATING AUGER inside the mesh — unchanged from #87 (QA:Q4 confirms the
+	# auger + mesh cylinder match reality). comp "rafter_auger", 35 rpm.
 	_spinning_auger(cyl_pivot, cyl_l * 0.96, Vector3.ZERO,
 		cyl_r * 0.25, cyl_r * 0.78, dark, bronze, ghost, 35.0, "rafter_auger")
 
-	# ── INLET HOPPER at the +Z end (where the upstream machine drops material in)
-	# Mounted on TOP of the +Z end cap so the upstream chute drops straight down.
-	_cyl(cyl_pivot, cyl_r * 0.55, cyl_r * 0.20, cyl_r * 0.90,
-		Vector3(0.0, cyl_r * 0.65, cyl_l * 0.4), steel)
-	# A short rectangular flange on top of the hopper for the upstream chute lip.
-	_box(cyl_pivot, Vector3(cyl_r * 1.10, 0.04, cyl_r * 1.10),
-		Vector3(0.0, cyl_r * 1.10, cyl_l * 0.4), steel)
+	# ── INLET HOPPER above the tank rim at the +Z end (feed from doseerschroef
+	# M11a drops straight down through the water surface into the cylinder).
+	_cyl(p, cyl_r * 0.60, cyl_r * 0.22, 0.45, Vector3(0.0, rim_y + 0.22, cyl_l * 0.4), steel)
+	_box(p, Vector3(cyl_r * 1.2, 0.04, cyl_r * 1.2), Vector3(0.0, rim_y + 0.47, cyl_l * 0.4), steel)
 
-	# ── DRIVE MOTOR + GEARBOX at the +Z end of the auger shaft ───────────────
-	_motor_unit(cyl_pivot, cyl_r * 0.45, cyl_r * 0.6,
-		Vector3(0.0, 0.0, cyl_l * 0.5 + cyl_r * 0.45), "z", ghost)
+	# ── DRIVE MOTOR + GEARBOX at the +Z end, outside the tank end wall, at
+	# auger-shaft height.
+	_motor_unit(p, 0.17, 0.25, Vector3(0.0, cyl_y, tank_l * 0.5 + 0.18), "z", ghost)
 
-	# ── DISCHARGE CHUTE at the -Z end (matches MachineFlow's out port) ──────
-	# Material exits the -Z end of the cylinder, slides down a 35° chute to
-	# whatever the rafter feeds. Sized + positioned so its mouth sits at the
-	# "out" port (0.0, 0.4, -0.4).
+	# ── DISCHARGE CHUTE at the -Z end: dewatered flake exits over/through the
+	# -Z tank end down a 35° chute toward the ontwaterschroef van rafter.
 	var chute_w : float = cyl_r * 1.6
 	var chute_l : float = size.z * 0.30
-	var chute_y : float = deck_y - 0.05
-	var chute_z : float = -hz * 1.05
+	var chute_y : float = plat_top - 0.10
+	var chute_z : float = -hz * 1.02
 	var chute := _box(p, Vector3(chute_w, 0.06, chute_l), Vector3(0.0, chute_y, chute_z), steel)
 	chute.rotation = Vector3(deg_to_rad(-35.0), 0.0, 0.0)
 	for sxr in [-1.0, 1.0]:
-		var rail := _box(p, Vector3(0.04, size.y * 0.10, chute_l),
-			Vector3(sxr * chute_w * 0.5, chute_y + size.y * 0.04, chute_z), steel)
+		var rail := _box(p, Vector3(0.04, 0.22, chute_l),
+			Vector3(float(sxr) * chute_w * 0.5, chute_y + 0.09, chute_z), steel)
 		rail.rotation = Vector3(deg_to_rad(-35.0), 0.0, 0.0)
 	# Outlet lip at the bottom of the chute (the actual material drop point).
 	_box(p, Vector3(chute_w * 0.95, 0.05, 0.10),
 		Vector3(0.0, chute_y - chute_l * 0.30, chute_z - chute_l * 0.45), dark)
+
+	# ── #231 MAINTENANCE WALKWAY + STAIRCASE on the -X (outtake) side, at the
+	# rafter's bottom level. Operator 2026-07-15: "same as the 3C/6 mill" — a
+	# grated bordes + yellow railing + a grating stair, lining up with the rafter
+	# bottom, stair toward the +Z (material inlet) end. Mirrors the _m_mill
+	# deck/_railing/_stair pattern using the shared helpers.
+	var grating := _mat(Color(0.36, 0.40, 0.38), ghost, 0.3, 0.85)
+	var yellow  := _mat(_SAFETY, ghost, 0.2, 0.6)
+	var wk_hx : float = 0.50                                   # walkway half-width (X)
+	var wk_hz : float = hz * 0.94                              # runs the tank length (Z)
+	var wk_cx : float = -(tank_w * 0.5 + 0.12 + wk_hx)         # just outside the -X tank wall
+	# Four support legs from the floor to the deck (auto-extend with the machine).
+	for wsx in [-1.0, 1.0]:
+		for wsz in [-1.0, 1.0]:
+			var wlg := _box(p, Vector3(0.12, plat_top, 0.12),
+				Vector3(wk_cx + float(wsx) * (wk_hx - 0.10), plat_top * 0.5, float(wsz) * (wk_hz - 0.15)), dark)
+			wlg.add_to_group("machine_leg")
+			wlg.set_meta("leg_h", plat_top)
+	# Perimeter beams under the deck edge + grated deck at the rafter-bottom level.
+	_box(p, Vector3(wk_hx * 2.0, 0.08, 0.08), Vector3(wk_cx, plat_top - 0.10,  wk_hz), dark)
+	_box(p, Vector3(wk_hx * 2.0, 0.08, 0.08), Vector3(wk_cx, plat_top - 0.10, -wk_hz), dark)
+	_box(p, Vector3(0.08, 0.08, wk_hz * 2.0), Vector3(wk_cx - wk_hx, plat_top - 0.10, 0.0), dark)
+	_box(p, Vector3(0.08, 0.08, wk_hz * 2.0), Vector3(wk_cx + wk_hx, plat_top - 0.10, 0.0), dark)
+	_box(p, Vector3(wk_hx * 2.0, 0.05, wk_hz * 2.0), Vector3(wk_cx, plat_top, 0.0), grating)
+	# Yellow guardrail — open on +X (toward the rafter, for servicing access).
+	var wk_rail := Node3D.new()
+	wk_rail.position = Vector3(wk_cx, plat_top + 0.03, 0.0)
+	p.add_child(wk_rail)
+	_railing(wk_rail, wk_hx, wk_hz, 0.0, yellow, ["+x", "+z"])   # open +x (tank) + +z (stair landing)
+	# Grating staircase off the +Z (inlet) END, descending AWAY from the machine in
+	# +Z (operator 2026-07-15: stair "at the end, going down" — not running back
+	# alongside the tank). Rotated 180° so the flight lands on the deck's +Z edge.
+	var st_run : float = float(maxi(int(plat_top / 0.22), 4)) * 0.27
+	var st_pivot := Node3D.new()
+	st_pivot.position = Vector3(wk_cx, 0.0, wk_hz + st_run)
+	st_pivot.rotation.y = PI
+	p.add_child(st_pivot)
+	_stair(st_pivot, Vector3.ZERO, plat_top, 0.9, grating, yellow)
 
 # #91 ── TRILZEEF (vibrating sieve / shaker screen) ────────────────────────────
 # Steep navy-painted sloped deck with vertical side barriers. Material enters
@@ -5897,6 +6662,17 @@ static func _m_stairs(p: Node3D, size: Vector3, color: Color, ghost: bool) -> vo
 		var cz : float = -run * 0.5 + (float(i) + 0.5) * step_run
 		var cy : float = (float(i) + 1.0) * step_rise
 		_grating_deck(p, tread_w, step_run * 0.92, Vector3(0.0, cy, cz))
+		# Per-tread collision so the player can actually walk up (operator
+		# 2026-07-16: _grating_deck is a bare mesh — walk-through without this).
+		if not ghost:
+			var tb := StaticBody3D.new()
+			tb.position = Vector3(0.0, cy, cz)
+			var cs := CollisionShape3D.new()
+			var bs := BoxShape3D.new()
+			bs.size = Vector3(tread_w, 0.06, step_run * 0.92)
+			cs.shape = bs
+			tb.add_child(cs)
+			p.add_child(tb)
 		# thin riser plate closing the back of each step (cosmetic; uses steel not grating)
 		_box(p, Vector3(tread_w, step_rise, tread_t),
 			Vector3(0.0, cy - step_rise * 0.5, cz - step_run * 0.46), steel)
@@ -6131,7 +6907,9 @@ static func _m_compactor(p: Node3D, size: Vector3, color: Color, ghost: bool) ->
 	var body_mat := _mat(color, ghost, 0.4, 0.45)
 	var dark := _mat(_DARK, ghost, 0.5, 0.5)
 	var steel := _mat(_STEEL, ghost, 0.55, 0.4)
-	_box(p, Vector3(size.x * 0.9, 0.3, size.z * 0.9), Vector3(0.0, 0.15, 0.0), dark)
+	# Base pad → real collision so there IS a mesh under the compactor to stand on
+	# / that connects to the floor (operator 2026-07-16: "not a mesh underneath").
+	_box_static_body(p, Vector3(size.x * 0.9, 0.3, size.z * 0.9), Vector3(0.0, 0.15, 0.0), dark)
 	# Upright drum body (the compaction chamber).
 	var drum_r : float = size.x * 0.42
 	_cyl(p, drum_r, drum_r, size.y * 0.72, Vector3(0.0, size.y * 0.5, 0.0), body_mat)
@@ -6145,6 +6923,43 @@ static func _m_compactor(p: Node3D, size: Vector3, color: Color, ghost: bool) ->
 	# Flush top inlet — a short collar around a hole in the lid.
 	_cyl(p, drum_r * 0.32, drum_r * 0.32, size.y * 0.04,
 		Vector3(-size.x * 0.16, size.y * 0.91, -size.z * 0.16), steel)
+	# ── PCU AFZUIGING vent (operator ruling B5 2026-07-06 — OVERRIDES the
+	# kitchen-hood geometry in afzuiging.md): ONE ~30 cm ⌀ vent hole in the
+	# compactor's TOP CENTRE with the extraction fan visible inside behind a
+	# mesh. ONE unit per PCU (the checklist's "unit 2" reading is superseded).
+	# The % setpoint drives THIS fan: default 55 (FORM-008 rows 21/22 "Compactor
+	# rand afzuiging EN reiniging — 55%", extruder_3a_setpoints.json); forcing
+	# 0 % AND 100 % both harm drying (0 = sauna effect / moisture stays, 100 =
+	# moisture removed the wrong way — ruling B5). The vent SHAFT above the
+	# machine is a separate building system — out of scope. The "EN reiniging"
+	# cleaning half of the checklist row has no separate mechanic yet
+	# (afzuiging.md flag 7). Sits clear of the off-centre flush inlet collar
+	# above and keeps the #106 no-funnel silhouette (nothing rises off the lid).
+	var vent_r : float = 0.15                        # ~30 cm diameter (ruling B5)
+	var lid_top_y : float = size.y * 0.905
+	p.set_meta("afzuiging_pct", 55.0)                # HMI/sim hook — default 55 %
+	# Dark recess = the hole read (slightly proud so it doesn't z-fight the lid).
+	_cyl(p, vent_r, vent_r, size.y * 0.012, Vector3(0.0, lid_top_y + 0.005, 0.0),
+		_mat(Color(0.06, 0.06, 0.07), ghost, 0.2, 0.8))
+	# Fan: spinning hub + 4 blades just below the mesh, visible down the hole.
+	var fan := _spinning_cyl(p, 0.030, 0.030, 0.05,
+		Vector3(0.0, lid_top_y - 0.06, 0.0), dark, "y", Vector3.UP, ghost, 120.0)
+	if not ghost:
+		for fb in 4:
+			var fan_ang : float = TAU * float(fb) / 4.0
+			var blade := _box(fan, Vector3(vent_r * 0.85, 0.010, 0.055),
+				Vector3(cos(fan_ang) * vent_r * 0.45, 0.0, sin(fan_ang) * vent_r * 0.45), steel)
+			blade.rotation.y = -fan_ang
+	# Protective mesh disc over the hole (semi-transparent — fan visible behind it).
+	var vent_mesh_mat := StandardMaterial3D.new()
+	vent_mesh_mat.albedo_color = Color(0.55, 0.57, 0.60, 0.40 if not ghost else 0.22)
+	vent_mesh_mat.metallic = 0.6
+	vent_mesh_mat.roughness = 0.4
+	vent_mesh_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	vent_mesh_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_cyl(p, vent_r * 0.98, vent_r * 0.98, 0.008, Vector3(0.0, lid_top_y + 0.015, 0.0), vent_mesh_mat)
+	# Collar ring around the vent rim (torus — a solid disc would hide the mesh).
+	_torus(p, vent_r * 1.0, vent_r * 1.2, Vector3(0.0, lid_top_y + 0.01, 0.0), steel)
 	# Tangential outlet to the extruder screw (+Z side, low).
 	_cyl(p, size.x * 0.13, size.x * 0.13, size.z * 0.36, Vector3(0.0, size.y * 0.34, size.z * 0.44), dark, "z")
 	# Big cutter drive motor under the drum.
@@ -6326,10 +7141,13 @@ static func _m_kopfilter(p: Node3D, size: Vector3, color: Color, ghost: bool) ->
 	# Melt pipe in (-Z) from the meltpump.
 	_cyl(p, size.x * 0.1, size.x * 0.1, size.z * 0.4, Vector3(0.0, size.y * 0.6, -size.z * 0.5), dark, "z")
 
-# ── Heetafslag: hot-face die + underwater pelletizer cutter. The melt is forced
-#    through the die plate and a spinning blade head shears it into pellets in a
-#    water-filled cutting chamber; the pellet-water slurry leaves out the +Z side
-#    to the dewater screen. This is where the granulate first appears. ──────────
+# ── Heetafslag: HOT DIE-FACE cut (heetafslag) — NOT an underwater pelletizer. The
+#    melt is pressed through the matrijs (die plate) and a spinning multi-arm blade
+#    head shears it to pellet length right AT the die face; continuously circulating
+#    granuleerwater surface-quenches the fresh pellets and conveys the re-granulaat
+#    out the +Z side to the ontwaterzeef (dewatering sieve). This is where the
+#    granulate first appears.
+#    #223 docs->code: docs/plant/swi/OTHER-training-heetafslag-6__098_CeDo36.md ────
 static func _m_heetafslag(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
 	var body := _mat(color, ghost, 0.35, 0.5)
 	var steel := _mat(_STEEL, ghost, 0.6, 0.3)
@@ -6545,52 +7363,178 @@ static func _m_waste_container(p: Node3D, size: Vector3, color: Color, ghost: bo
 	_box(p, Vector3(size.x * 0.25, 0.12, size.z * 1.0), Vector3(size.x * 0.22, 0.06, 0.0), dark)
 	_box(p, Vector3(size.x * 0.25, 0.12, size.z * 1.0), Vector3(-size.x * 0.22, 0.06, 0.0), dark)
 
-# ── bunker: open-top steel pit + 4 bunker rollers at the bottom + side motor ──
+# ── bunker: lijn-3 BUFFER CONVEYOR downstream of Shredder 1 (rebuilt 2026-07-06)
 ##
-## Bales are dumped into the top opening; the rollers at the floor meter the
-## load out the discharge end onto the feeding belt of Shredder 1. Sized for
-## one truck-bay of intake (~4 m × 3 m footprint, 4 m tall).
+## Full rebuild per bunker.md + the 2026-07-06 operator rulings. It is NOT an
+## intake pit: shredder 1 bottom → belt → BUNKER → belt 1040 (interview; SWI-035
+## front-end order; FORM-018_p2 sensor list "Shredder 1, Bunker, Shredder 2").
+## A ~10 m long × 4 m wide travelling DECK carries the bed toward the +Z
+## discharge; material drops in over the -Z infeed-end wall top. Local +Z =
+## conveying direction (belt convention).
+##
+## Documented numbers honoured here:
+##  • Speed setting 200-1000 hard cap (ruling B3: normal band 200-800 per
+##    FORM-008; overspeed 1000 = rush-to-outfeed after the bunker ran empty;
+##    real cap unknown, ≥1000). Settable BELOW 200 but causes relay trips /
+##    motor stalls ~every 15 min, worse the lower — see the fault-hook meta
+##    below (TODO: full relay-trip event needs LineFlow).
+##  • Calibration: setting 600 ≈ full 10 m traversal in 10 min ⇒ 600 mm per
+##    ~36 s interval, linear ⇒ m/s = setting / 36000 (interview). KNOWN
+##    inconsistency kept visible: operator memory "at 200 it takes ~15 min"
+##    (linear would give ~30 min) — calibration anchor stays 600 ≈ 10 min.
+##  • Fill LEVEL SETTING 100-130 cm, default 115 (FORM-008 row 4; ruling B4),
+##    read by a sensor ~3 m up — and MISCALIBRATED: actual bed ≈ setting
+##    +35-50 cm (setting 100 → ~130-140 actual). Reproduced as a fixed +40 cm
+##    offset meta (authentic operator knowledge, ruling B4). The "2.0 = full"
+##    startup scale + HMI "258" remain separate, unexplained scales (flag F6).
+##  • Doors (ruling B1, COMBINATION of both sources): barred/grated doors, each
+##    with a blurry plexiglass window in its own frame, on the -Z shredder-1
+##    infeed side. Count/size/position placeholders (flag F4); door-open must
+##    eventually block the startup FSM (SWI-049 step 4) — interaction TODO.
+##  • ONE bunkerrol at the discharge end (SWI-039: wraps with film/wire —
+##    cleaning target). Diameter/drive placeholder (flag F9).
+## Placeholders (flags F1/F10/F11/F12/F14): deck elevation 1.25 m (band
+## 1.0-1.5), wall height 3.75 m (band 3.5-4.0), wall thickness 0.10, motor
+## location, sensor mount, exterior colour.
+##
+## Save-compat: comp key stays the legacy "uittrekrol" (LineFlow
+## _default_components_for + old saves address it — bunker.md flag F15). The
+## documented component names are "belt" (deck drive) + "bunkerrol" (SWI-039);
+## rename both sides together in a future LineFlow pass.
 static func _m_bunker(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
 	var steel := _mat(color, ghost, 0.45, 0.5)
-	var dark := _mat(_DARK, ghost, 0.5, 0.6)
+	var dark  := _mat(_DARK, ghost, 0.5, 0.6)
 	var hx := size.x * 0.5
 	var hz := size.z * 0.5
-	var wall_h := size.y * 0.95
-	var wt := 0.10                                  # wall thickness
-	# Floor
-	_box(p, Vector3(size.x, 0.18, size.z), Vector3(0.0, 0.09, 0.0), dark)
-	# Four walls (open top) — the +Z wall is shorter so a discharge mouth is
-	# visible at the front.
-	_box(p, Vector3(wt, wall_h, size.z), Vector3(-hx + wt * 0.5, wall_h * 0.5 + 0.1, 0.0), steel)
-	_box(p, Vector3(wt, wall_h, size.z), Vector3( hx - wt * 0.5, wall_h * 0.5 + 0.1, 0.0), steel)
-	_box(p, Vector3(size.x, wall_h, wt), Vector3(0.0, wall_h * 0.5 + 0.1, -hz + wt * 0.5), steel)
-	# Front (discharge) wall — only the upper half, so the rollers + outgoing
-	# material are visible.
-	_box(p, Vector3(size.x, wall_h * 0.55, wt), \
-		Vector3(0.0, wall_h * 0.6 + 0.4, hz - wt * 0.5), steel)
-	# Bunker rollers — four chunky cylinders along X, evenly spaced along Z.
-	# They feed material outward (+Z direction) into the discharge mouth.
-	var roller_y := 0.4
-	var roller_r := 0.22
-	var roller_len := size.x * 0.88
-	for i in 4:
-		var t := float(i) / 3.0                     # 0, 1/3, 2/3, 1
-		var z_pos := -hz * 0.7 + t * (size.z * 1.0)
-		# Spinning extraction roller (axis X). All four share comp "uittrekrol" so a
-		# single HMI slider drives the whole roller bank together.
-		var bnk_roll := _spinning_cyl(p, roller_r, roller_r, roller_len, Vector3(0.0, roller_y, z_pos), dark, "x", Vector3.RIGHT, ghost)
-		if not ghost:
-			bnk_roll.set_meta("comp", "uittrekrol")
-	# Drive motor on the +X side, low — turns the bunker-roller chain.
-	_motor_unit(p, 0.28, 0.65, Vector3(hx + 0.05, roller_y, 0.0), "z", ghost)
-	_guard(p, Vector3(0.6, 0.35, 0.18), Vector3(hx + 0.05, roller_y + 0.45, 0.0), ghost)
-	# Top rim/lip walkway — narrow band around the top so the visual reads
-	# as "you can dump bales in here".
-	var rim_y := size.y - 0.05
-	_box(p, Vector3(size.x + 0.1, 0.04, 0.2), Vector3(0.0, rim_y, -hz), dark)
-	_box(p, Vector3(size.x + 0.1, 0.04, 0.2), Vector3(0.0, rim_y,  hz), dark)
-	_box(p, Vector3(0.2, 0.04, size.z + 0.1), Vector3(-hx, rim_y, 0.0), dark)
-	_box(p, Vector3(0.2, 0.04, size.z + 0.1), Vector3( hx, rim_y, 0.0), dark)
+	var wt := 0.10                       # wall thickness — "thin" only (flag F11)
+	var deck_y : float = 1.25            # deck elevation (flag F1, midpoint 1.0-1.5)
+	var wall_top : float = size.y        # 1.25 deck + 3.75 wall (flag F1) = 5.0
+	# ── Ruled operating metas (read by future HMI/LineFlow wiring) ───────────
+	# Speed: UI band 200-1000 (ruling B3), normal 200-800 (FORM-008), default
+	# 600 = calibration anecdote only (flag F8). m/s = setting / 36000.
+	p.set_meta("bunker_speed_setting", 600.0)
+	p.set_meta("bunker_speed_min", 200.0)        # below → relay trips (see fault hook)
+	p.set_meta("bunker_speed_max", 1000.0)       # sim hard cap, ruling B3
+	# TODO(fault hook): settings BELOW 200 are settable and must schedule
+	# relay-trip/motor-stall events ~every 15 min (more frequent the lower the
+	# setting) — needs a LineFlow event, not a catalog mesh. Ruling B3 2026-07-06.
+	p.set_meta("bunker_relay_trip_below", 200.0)
+	# Fill: level SETTING 100-130 cm, default 115 (ruling B4) + the authentic
+	# +40 cm sensor miscalibration (actual bed ≈ setting + 35-50 cm).
+	p.set_meta("bunker_fill_setting_cm", 115.0)
+	p.set_meta("bunker_fill_min_cm", 100.0)
+	p.set_meta("bunker_fill_max_cm", 130.0)
+	p.set_meta("bunker_fill_miscal_offset_cm", 40.0)
+	# ── Support legs (deck carried ~1.25 m above the floor) ──────────────────
+	var leg_zs : Array[float] = [-hz + 0.4, -hz * 0.5, 0.0, hz * 0.5, hz - 0.4]
+	for lz in leg_zs:
+		for sx in [-1.0, 1.0]:
+			var lg := _box(p, Vector3(0.12, deck_y, 0.12),
+				Vector3(float(sx) * (hx - 0.10), deck_y * 0.5, lz), dark)
+			lg.add_to_group("machine_leg")
+			lg.set_meta("leg_h", deck_y)
+	# Longitudinal frame beams under the deck edges.
+	for sx2 in [-1.0, 1.0]:
+		_box(p, Vector3(0.14, 0.14, size.z * 0.98),
+			Vector3(float(sx2) * (hx - 0.10), deck_y - 0.20, 0.0), dark)
+	# ── Travelling deck (the conveyor bed). Walkable belt body per bunker.md
+	# §5: group "belt" + belt_speed meta (setting/36000 → 600 ⇒ ~0.0167 m/s)
+	# so the player is carried along local +Z. Ghost gets a plain mesh — NEVER
+	# a live StaticBody3D in ghosts. NOTE: the placeable's outer box collider
+	# currently encases the interior; the deck body is the correct tagging
+	# surface for when interior access lands.
+	var deck_w : float = size.x - wt * 2.0
+	var belt_mat := _mat(Color(0.10, 0.10, 0.12), ghost, 0.85, 0.3)
+	if ghost:
+		_box(p, Vector3(deck_w, 0.12, size.z * 0.98), Vector3(0.0, deck_y - 0.06, 0.0), belt_mat)
+	else:
+		var deck_body := StaticBody3D.new()
+		deck_body.name = "BunkerDeck"
+		deck_body.position = Vector3(0.0, deck_y - 0.06, 0.0)
+		p.add_child(deck_body)
+		var dmi := MeshInstance3D.new()
+		var dbm := BoxMesh.new()
+		dbm.size = Vector3(deck_w, 0.12, size.z * 0.98)
+		dmi.mesh = dbm
+		dmi.material_override = belt_mat
+		deck_body.add_child(dmi)
+		var dcol := CollisionShape3D.new()
+		var dsh := BoxShape3D.new()
+		dsh.size = Vector3(deck_w, 0.12, size.z * 0.98)
+		dcol.shape = dsh
+		deck_body.add_child(dcol)
+		deck_body.add_to_group("belt")
+		var carry : float = 600.0 / 36000.0    # default setting 600 (flag F8)
+		deck_body.set_meta("belt_speed", carry)
+		deck_body.set_meta("belt_ramp_tau_s", 2.5)   # heavy loaded deck coast-down
+		var belt_script : Resource = load("res://src/sim/BeltSurface.gd")
+		if belt_script != null:
+			deck_body.set_script(belt_script)
+			deck_body.set("belt_speed_mps", carry)
+			deck_body.set("belt_ramp_tau_s", 2.5)
+	# ── Walls: thin, non-see-through, deck → wall_top (interview). ───────────
+	var wall_h : float = wall_top - deck_y
+	var wall_cy : float = deck_y + wall_h * 0.5
+	_box(p, Vector3(wt, wall_h, size.z), Vector3(-hx + wt * 0.5, wall_cy, 0.0), steel)
+	_box(p, Vector3(wt, wall_h, size.z), Vector3( hx - wt * 0.5, wall_cy, 0.0), steel)
+	# -Z INFEED-END wall (shredder-1 side; material drops in OVER its top —
+	# whether over-top or through an opening is undocumented, flag F4).
+	_box(p, Vector3(size.x, wall_h, wt), Vector3(0.0, wall_cy, -hz + wt * 0.5), steel)
+	# +Z DISCHARGE-END wall: upper panel only — a 1.0 m mouth above the deck
+	# lets the bed exit over the bunkerrol onto the next belt (belt 1040 per
+	# interview; numbering conflict flag F2).
+	var mouth_h : float = 1.0
+	_box(p, Vector3(size.x, wall_h - mouth_h, wt),
+		Vector3(0.0, deck_y + mouth_h + (wall_h - mouth_h) * 0.5, hz - wt * 0.5), steel)
+	# ── Doors on the -Z infeed wall (ruling B1): 2 barred/grated person-height
+	# panels, each with a blurry plexiglass window in its own frame. Count/size/
+	# position = placeholders (flag F4). "Bunkerdeuren gesloten" is a documented
+	# startup check (SWI-049 step 4) — open/close interaction is a TODO hook.
+	var door_w : float = 0.90
+	var door_h : float = 2.00
+	var plex := StandardMaterial3D.new()
+	plex.albedo_color = Color(0.75, 0.80, 0.84, 0.35)   # blurry plexiglass
+	plex.roughness = 0.85                                # frosted → "blurry" read
+	plex.metallic = 0.0
+	plex.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	if ghost:
+		plex.albedo_color = Color(0.75, 0.80, 0.84, 0.20)
+	var frame_mat := _mat(Color(0.30, 0.32, 0.35), ghost, 0.5, 0.5)
+	var door_z : float = -hz - 0.03                      # proud of the outside face
+	for dx in [-0.65, 0.65]:
+		var dcx := float(dx)
+		var dy0 : float = deck_y + 0.05                  # doors open onto the deck level
+		# Door frame (4 edges).
+		_box(p, Vector3(door_w + 0.10, 0.06, 0.06), Vector3(dcx, dy0 + door_h + 0.03, door_z), frame_mat)
+		_box(p, Vector3(door_w + 0.10, 0.06, 0.06), Vector3(dcx, dy0 - 0.03, door_z), frame_mat)
+		_box(p, Vector3(0.06, door_h + 0.12, 0.06), Vector3(dcx - door_w * 0.5 - 0.03, dy0 + door_h * 0.5, door_z), frame_mat)
+		_box(p, Vector3(0.06, door_h + 0.12, 0.06), Vector3(dcx + door_w * 0.5 + 0.03, dy0 + door_h * 0.5, door_z), frame_mat)
+		# Vertical bars (barred/grated read — SWI-049 photo).
+		for bi in 4:
+			var bx : float = dcx - door_w * 0.5 + (float(bi) + 1.0) * (door_w / 5.0)
+			_box(p, Vector3(0.03, door_h, 0.03), Vector3(bx, dy0 + door_h * 0.5, door_z), frame_mat)
+		# Blurry plexiglass window pane + its own frame (upper half of the door).
+		var win_y : float = dy0 + door_h * 0.70
+		_box(p, Vector3(door_w * 0.7 + 0.06, 0.05, 0.05), Vector3(dcx, win_y + door_h * 0.14, door_z - 0.02), frame_mat)
+		_box(p, Vector3(door_w * 0.7 + 0.06, 0.05, 0.05), Vector3(dcx, win_y - door_h * 0.14, door_z - 0.02), frame_mat)
+		var win := _box(p, Vector3(door_w * 0.7, door_h * 0.26, 0.015), Vector3(dcx, win_y, door_z - 0.02), plex)
+		win.name = "BunkerDoorWindow"
+	# ── ONE bunkerrol across the width at the +Z discharge end (SWI-039: the
+	# roller that wraps with shredded film + wires; cleaned under LOTO with a
+	# Stanley knife + betonschaar). Diameter/position placeholder (flag F9).
+	# Comp key = legacy "uittrekrol" (see header — bunker.md flag F15).
+	var roll := _spinning_cyl(p, 0.25, 0.25, size.x * 0.88,
+		Vector3(0.0, deck_y + 0.20, hz - 0.45), dark, "x", Vector3.RIGHT, ghost, 12.0)
+	if not ghost:
+		roll.set_meta("comp", "uittrekrol")
+	# ── Deck drive motor, low on the +X side at the discharge end (flag F10). ─
+	_motor_unit(p, 0.24, 0.60, Vector3(hx + 0.05, deck_y - 0.35, hz - 0.8), "z", ghost)
+	_guard(p, Vector3(0.5, 0.35, 0.18), Vector3(hx + 0.05, deck_y + 0.05, hz - 0.8), ghost)
+	# ── Fill sensor ("Bunker sensor", FORM-018_p2 wipe item): small box ~3 m
+	# above the deck at the discharge end (ruling B4 "sensor ~3 m up"; mount
+	# placeholder, flag F12).
+	_box(p, Vector3(0.18, 0.24, 0.12),
+		Vector3(hx - wt - 0.10, deck_y + 3.0, hz - 0.8), _mat(_SAFETY, ghost, 0.2, 0.6))
 
 # ── Shredder 1 (coarse pre-shredder): heavy + big throat + dual rotors ────────
 ##
@@ -6604,7 +7548,7 @@ static func _m_bunker(p: Node3D, size: Vector3, color: Color, ghost: bool) -> vo
 ## the machine along the 5 m length (Z): level at ~0.75 m from under the chamber
 ## to 1 m past the +Z edge, then 35° up to ~4.5 m to feed the bunker at the far
 ## end. (Conveyor extends beyond the bbox; collision is the 4×9×5 body box.)
-static func _m_shredder_1(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
+static func _m_shredder_1(p: Node3D, size: Vector3, color: Color, ghost: bool, wide_hopper: bool = true) -> void:
 	var dark    := _mat(_DARK, ghost, 0.4, 0.6)
 	var steel   := _mat(_STEEL, ghost, 0.5, 0.45)
 	var body_mat := _mat(color, ghost, 0.3, 0.55)
@@ -6628,7 +7572,16 @@ static func _m_shredder_1(p: Node3D, size: Vector3, color: Color, ghost: bool) -
 			# sub-frame extends past the bbox and must not be stretched.)
 			lg.add_to_group("machine_leg")
 			lg.set_meta("leg_h", leg_top)
-	_box(p, Vector3(size.x * 0.96, 0.22, size.z * 0.92), Vector3(0.0, leg_top, 0.0), steel)
+	# Base deck — SPLIT to leave a centre drop slot (X) over the discharge conveyor
+	# so material drawn down between the two rotors drops through onto the belt below
+	# (operator 2026-07-14: "centre of the 2 rotors opens on the bottom onto the
+	# conveyor"). Was a single solid plate that sealed the chamber bottom.
+	var slot_hw : float = 0.55                          # half-width of the drop slot (X)
+	var base_hw : float = size.x * 0.48
+	var plate_w : float = base_hw - slot_hw
+	for sx0 in [-1.0, 1.0]:
+		_box(p, Vector3(plate_w, 0.22, size.z * 0.92),
+			Vector3(float(sx0) * (slot_hw + plate_w * 0.5), leg_top, 0.0), steel)
 
 	# Cutting-chamber housing — 4 walls; bottom open (material drops to conveyor).
 	for sx in [-1.0, 1.0]:
@@ -6638,33 +7591,43 @@ static func _m_shredder_1(p: Node3D, size: Vector3, color: Color, ghost: bool) -
 		_box(p, Vector3(size.x * 0.9, chamber_h, 0.18),
 			Vector3(0.0, chamber_cy, float(sz) * hz * 0.9), body_mat)
 
-	# ROTOR — horizontal shaft across the width (X) + knife discs. The shaft is a
-	# real RotatingMechanism (spins about X); the knife discs are parented UNDER it
-	# so they turn with the shaft. Shaft sits at the RM origin so disc X-offsets are
-	# relative to it (positions identical to the old static layout).
-	var rotor_y : float = leg_top + chamber_h * 0.32
-	var rotor_r : float = 0.42
-	var rotor_rm := _spinning_cyl(p, rotor_r, rotor_r, size.x * 0.86, Vector3(0.0, rotor_y, 0.0), steel, "x", Vector3.RIGHT, ghost)
-	if not ghost:
-		rotor_rm.set_meta("comp", "rotor")
-	var n_knives := 6
-	for i in n_knives:
-		var kx : float = lerp(-hx * 0.78, hx * 0.78, float(i) / float(n_knives - 1))
-		# Parent discs under the rotor RM (offset only by X; the RM already carries
-		# the rotor_y height). On ghost, rotor_rm == p, so fall back to absolute Y.
-		var disc_y : float = 0.0 if not ghost else rotor_y
-		_cyl(rotor_rm, rotor_r * 1.45, rotor_r * 1.45, 0.12, Vector3(kx, disc_y, 0.0), dark, "x")
-	# STATORS — fixed counter-knife bars flanking the rotor, just below it.
+	# TWIN ROTORS — two counter-rotating horizontal shafts (X), offset in Z, whose
+	# knife discs interleave so material is drawn DOWN into the centre gap and drops
+	# through the base slot onto the conveyor (operator 2026-07-14: "2 rotors, centre
+	# opens onto the conveyor"). Each shaft is a real RotatingMechanism; the discs
+	# parented UNDER it turn with it. On ghost, the RM == p so discs fall back to
+	# absolute Y/Z.
+	var rotor_y  : float = leg_top + chamber_h * 0.34
+	var rotor_r  : float = 0.34
+	var rotor_dz : float = rotor_r * 1.15               # one shaft either side of centre
+	var n_knives : int = 6
+	var disc_pitch : float = (hx * 1.56) / float(n_knives - 1)
+	for ri in [0, 1]:
+		var rz : float = (-1.0 if ri == 0 else 1.0) * rotor_dz
+		var spin : Vector3 = Vector3.RIGHT if ri == 0 else Vector3.LEFT   # counter-rotate inward
+		var rrm := _spinning_cyl(p, rotor_r, rotor_r, size.x * 0.86, Vector3(0.0, rotor_y, rz), steel, "x", spin, ghost)
+		if not ghost:
+			rrm.set_meta("comp", "rotor")
+		for i in n_knives:
+			# offset shaft-2's discs half a pitch so the two disc sets interleave
+			var kx : float = lerp(-hx * 0.78, hx * 0.78, float(i) / float(n_knives - 1)) + (disc_pitch * 0.5 if ri == 1 else 0.0)
+			var d_y : float = 0.0 if not ghost else rotor_y
+			var d_z : float = 0.0 if not ghost else rz
+			_cyl(rrm, rotor_r * 1.5, rotor_r * 1.5, 0.10, Vector3(kx, d_y, d_z), dark, "x")
+	# STATORS — fixed counter-knife bars along the OUTER side of each rotor.
 	for sz in [-1.0, 1.0]:
-		_box(p, Vector3(size.x * 0.82, 0.18, 0.18),
-			Vector3(0.0, rotor_y - rotor_r * 0.7, float(sz) * rotor_r * 1.4), dark)
+		_box(p, Vector3(size.x * 0.82, 0.16, 0.14),
+			Vector3(0.0, rotor_y - rotor_r * 0.35, float(sz) * (rotor_dz + rotor_r * 0.95)), dark)
 
-	# FEED HOPPER on top — flared two-tier funnel up to the full height.
+	# FEED HOPPER on top — a HOLLOW funnel (open top to feed, open bottom into the
+	# chamber), NOT a solid block (operator 2026-07-14). Coarse shredder = a tall
+	# throat + a wider flared collar; wide_hopper=false (Shredder 2) = single throat.
 	var hopper_h : float = size.y - chamber_top
-	_box(p, Vector3(size.x * 0.96, hopper_h * 0.5, size.z * 0.92),
-		Vector3(0.0, chamber_top + hopper_h * 0.25, 0.0), steel)
-	_box(p, Vector3(size.x * 1.14, hopper_h * 0.5, size.z * 1.08),
-		Vector3(0.0, chamber_top + hopper_h * 0.75, 0.0), steel)
+	var lo_h : float = hopper_h * (0.5 if wide_hopper else 1.0)
+	_hollow_box(p, size.x * 0.92, lo_h, size.z * 0.88, Vector3(0.0, chamber_top + lo_h * 0.5, 0.0), 0.10, steel)
+	if wide_hopper:
+		var up_h : float = hopper_h * 0.5
+		_hollow_box(p, size.x * 1.12, up_h, size.z * 1.04, Vector3(0.0, chamber_top + lo_h + up_h * 0.5, 0.0), 0.10, steel)
 
 	# Drive motor + V-belt guard on the -X side of the chamber.
 	_motor_unit(p, 0.5, size.z * 0.5, Vector3(-hx * 1.02, chamber_cy, 0.0), "x", ghost)
@@ -6704,64 +7667,26 @@ static func _m_shredder_1(p: Node3D, size: Vector3, color: Color, ghost: bool) -
 
 # ── Shredder 2 (compact fine shredder): smaller, faster, single rotor ─────────
 static func _m_shredder_2(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
-	var dark := _mat(_DARK, ghost, 0.4, 0.6)
-	var steel := _mat(_STEEL, ghost, 0.5, 0.45)
-	var body_mat := _mat(color, ghost, 0.3, 0.5)
-	var hx := size.x * 0.5
-	var hz := size.z * 0.5
-	# Base
-	_box(p, Vector3(size.x * 0.95, 0.28, size.z * 0.95), Vector3(0.0, 0.14, 0.0), dark)
-	# Compact body
-	_box(p, Vector3(size.x * 0.82, size.y * 0.52, size.z * 0.78), Vector3(0.0, size.y * 0.55, 0.0), body_mat)
-	# Smaller feed throat — round funnel rather than rectangular hopper
-	_cyl(p, size.x * 0.34, size.x * 0.18, size.y * 0.35, Vector3(0.0, size.y * 0.92, 0.0), steel)
-	# Single high-speed rotor visible — now a real spinning rotor (axis X). The old
-	# thin slab box is replaced by a cylinder of similar span (length = old X size,
-	# radius ≈ old Y thickness) so it reads the same but actually turns.
-	var s2_rotor_rm := _spinning_cyl(p, size.y * 0.09, size.y * 0.09, size.x * 0.56, Vector3(0.0, size.y * 0.66, 0.0), dark, "x", Vector3.RIGHT, ghost)
-	if not ghost:
-		s2_rotor_rm.set_meta("comp", "rotor")
-	# Smaller drive motor — high RPM type
-	_motor_unit(p, size.y * 0.18, size.z * 0.42, Vector3(-hx * 0.97, size.y * 0.55, 0.0), "x", ghost)
-	_guard(p, Vector3(size.x * 0.18, size.y * 0.4, size.z * 0.22), \
-		Vector3(-hx * 0.75, size.y * 0.55, hz * 0.16), ghost)
-	# Discharge chute on +Z (output flake size ~1-2 cm)
-	_box(p, Vector3(size.x * 0.35, size.y * 0.2, size.z * 0.16), \
-		Vector3(0.0, size.y * 0.32, hz * 0.93), dark)
-	# #212.5 LINDNER POLARIS brand decal — 1.2 × 0.15 m white-on-grey side
-	# stripe on the +X face of the body, plus a smaller "SWINGING ARM
-	# TECHNOLOGY" subtitle below.
-	if not ghost:
-		var grey_bg := _mat(Color(0.55, 0.57, 0.60), ghost, 0.3, 0.55)
-		_box(p, Vector3(0.005, 0.15, 1.20),
-			Vector3(hx * 0.99, size.y * 0.65, 0.0), grey_bg)
-		var lp_lbl := _stencil_label(p, "LINDNER POLARIS",
-			Vector3(1.0, 0.14, 0.01), "+X")
-		lp_lbl.position = Vector3(hx * 1.0, size.y * 0.65, 0.0)
-		# Subtitle just below the main stripe.
-		_box(p, Vector3(0.004, 0.06, 0.90),
-			Vector3(hx * 0.99, size.y * 0.52, 0.0), grey_bg)
-		var lp_sub := _stencil_label(p, "SWINGING ARM TECHNOLOGY",
-			Vector3(0.85, 0.05, 0.01), "+X")
-		lp_sub.position = Vector3(hx * 1.0, size.y * 0.52, 0.0)
-	# #212.16 yellow/black hazard tape stripe at the bottom skirt — alternating
-	# yellow and black box segments forming a diagonal stripe pattern around
-	# the base perimeter.
-	if not ghost:
-		var hzy := _mat(Color(0.95, 0.78, 0.10), ghost, 0.0, 0.7)
-		var hzk := _mat(Color(0.04, 0.04, 0.05), ghost, 0.0, 0.8)
-		var seg_len : float = size.x * 0.10
-		var n : int = 8
-		for i in n:
-			var t : float = float(i) / float(n - 1) - 0.5
-			var x : float = t * size.x * 0.85
-			var mat_seg : StandardMaterial3D = hzy if (i % 2 == 0) else hzk
-			# +Z front skirt.
-			_box(p, Vector3(seg_len, 0.10, 0.02),
-				Vector3(x, 0.30, hz * 0.97), mat_seg)
-			# -Z back skirt.
-			_box(p, Vector3(seg_len, 0.10, 0.02),
-				Vector3(x, 0.30, -hz * 0.97), mat_seg)
+	# Operator 2026-07-14: the real Shredder 2 looks like Shredder 1 (dark blue,
+	# dirty), just a bit smaller — NOT the compact red "Lindner Polaris" box the
+	# placeholder showed. Reuse the Shredder-1 geometry at this (smaller) size with
+	# the blue body colour, then add a "SCHINDLER'S" name stencil. The global dirty
+	# filter (_mat) makes the blue read as worn, not brand-new. wide_hopper=false
+	# drops the wider top hopper tier (operator: "halve the top grey part").
+	_m_shredder_1(p, size, color, ghost, false)
+	if ghost:
+		return
+	# Nameplate on the +X chamber face (mirror of Shredder-1's chamber geometry:
+	# leg_top 1.3, chamber_h = size.y*0.42, wall at x = ±size.x*0.45).
+	var chamber_cy : float = 1.3 + (size.y * 0.42) * 0.5
+	# The +X chamber wall is a 0.18 m-thick slab centred at x = size.x*0.45, so its
+	# OUTER face is at size.x*0.45 + 0.09. Mount the nameplate proud of THAT (the
+	# old plate was buried inside the wall → invisible).
+	var plate_x : float = size.x * 0.45 + 0.10
+	var grey_bg := _mat(Color(0.55, 0.57, 0.60), ghost, 0.3, 0.6)
+	_box(p, Vector3(0.02, 0.26, 1.35), Vector3(plate_x, chamber_cy, 0.0), grey_bg)
+	var lbl := _stencil_label(p, "SCHINDLER'S", Vector3(1.20, 0.20, 0.015), "+X")
+	lbl.position = Vector3(plate_x + 0.02, chamber_cy, 0.0)
 
 # ── Inclined transport belt (45°, 8 m rise) ──────────────────────────────────
 ##
@@ -6988,6 +7913,82 @@ static func _m_zss_water(p: Node3D, size: Vector3, color: Color, ghost: bool) ->
 	_box(p, Vector3(size.x * 0.3, size.y * 0.18, size.z * 0.3), Vector3(size.x * 0.5, size.y * 0.12, 0.0), steel)
 	# Discharge pipe stub off the +X side.
 	_cyl(p, size.x * 0.06, size.x * 0.06, size.x * 0.5, Vector3(size.x * 0.6, size.y * 0.3, 0.0), steel, "x")
+
+# ── Kleine LA: small open-top water basin, lijn 3B flotation-tank exit side ──
+## 2026-07-06 (water_small.md §1). Plain rectangular open-top steel tank,
+## floor-standing, NO internals (nothing documented — no agitators/ladders/
+## pumps). Water surface just below the rim because the documented operating
+## state is "just barely overflowing" (checklist row 16 "Nét overlopen kleine
+## LA I", FORM-008). Dimensions PLACEHOLDER — only "~half of LA1" is documented
+## and LA1 has no size anywhere (flag F1). Dead-end basin: no outlet documented
+## (flag F2) — one capped stub only. Deliberately NOT _m_zss_water (closed
+## cylinder + side pump contradicts "open-top", operator interview 2026-07-05).
+static func _m_kleine_la(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
+	var shell := _mat(color, ghost, 0.4, 0.45)
+	var dark  := _mat(_DARK, ghost, 0.5, 0.6)
+	# Translucent water material — same family as the flotation/sinkfloat tanks.
+	var water := _mat(Color(0.32, 0.40, 0.34, 0.78), ghost, 0.0, 0.2)
+	var hx := size.x * 0.5
+	var hz := size.z * 0.5
+	var wt := 0.05                       # wall thickness (placeholder)
+	# Floor plate.
+	_box(p, Vector3(size.x, 0.06, size.z), Vector3(0.0, 0.03, 0.0), dark)
+	# 4 thin walls, open top.
+	_box(p, Vector3(wt, size.y, size.z), Vector3(-hx + wt * 0.5, size.y * 0.5, 0.0), shell)
+	_box(p, Vector3(wt, size.y, size.z), Vector3( hx - wt * 0.5, size.y * 0.5, 0.0), shell)
+	_box(p, Vector3(size.x, size.y, wt), Vector3(0.0, size.y * 0.5, -hz + wt * 0.5), shell)
+	_box(p, Vector3(size.x, size.y, wt), Vector3(0.0, size.y * 0.5,  hz - wt * 0.5), shell)
+	# Water surface ~4 cm below the rim — "nét overlopen" read (checklist row 16).
+	_box(p, Vector3(size.x - wt * 2.0, 0.03, size.z - wt * 2.0),
+		Vector3(0.0, size.y - 0.04, 0.0), water)
+	# Capped stub low on the -X side — the UNDOCUMENTED outlet (flag F2): the
+	# LA1 analogy implies a circuit pump, but none is drawn on the 3B diagram.
+	_cyl(p, 0.05, 0.05, 0.16, Vector3(-hx - 0.08, 0.25, 0.0), dark, "x")
+	_cyl(p, 0.065, 0.065, 0.03, Vector3(-hx - 0.17, 0.25, 0.0), dark, "x")   # blind flange
+
+# ── Tankje tussen extruders: small raised tank + its OWN pump underneath ─────
+## 2026-07-06 (water_small.md §2). One per line (3A + 3B) — placed twice by the
+## operator. Diagram blocks: "Tankje tussen extruders" with a "Pomp" box below
+## it (lijn_3a_flow.md:117-118 / lijn_3b_flow.md:100-101); interview: each has
+## its own dedicated pump DIRECTLY BELOW it — physical stacking is the faithful
+## reading, flagged for confirmation (F5). Tank top style undocumented → plain
+## closed box (flag F4). Pipe stubs: up toward the ontwaterzeef (direction
+## UNSURE on the source photos — flag F6) and out toward the koeltoren circuit.
+static func _m_tankje_extruders(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
+	var shell := _mat(color, ghost, 0.4, 0.45)
+	var dark  := _mat(_DARK, ghost, 0.5, 0.6)
+	var steel := _mat(_STEEL, ghost, 0.5, 0.45)
+	# The photo-verified Wilo pump (water_pump catalog size 0.8 × 0.9 × 1.3)
+	# sits at floor level under the stand — _m_pump geometry reused verbatim.
+	var pump_size := Vector3(0.8, 0.9, 1.3)
+	var pump_root := Node3D.new()
+	pump_root.name = "TankjePomp"
+	p.add_child(pump_root)
+	_m_pump(pump_root, pump_size, color, ghost)
+	# 4-leg steel stand — tall enough for the pump below (stand top ~1.0 m,
+	# placeholder). Legs tagged machine_leg so floor-snap keeps working.
+	var stand_top := 1.0
+	var hx := size.x * 0.5
+	var hz := size.z * 0.5
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			var lg := _box(p, Vector3(0.08, stand_top, 0.08),
+				Vector3(float(sx) * (hx - 0.06), stand_top * 0.5, float(sz) * (hz - 0.06)), dark)
+			lg.add_to_group("machine_leg")
+			lg.set_meta("leg_h", stand_top)
+	# Tank body (plain closed box — top style undocumented, flag F4) above the stand.
+	var tank_h : float = size.y - stand_top - 0.05
+	_box(p, Vector3(size.x * 0.94, 0.05, size.z * 0.94), Vector3(0.0, stand_top + 0.025, 0.0), steel)
+	_box(p, Vector3(size.x * 0.9, tank_h, size.z * 0.9),
+		Vector3(0.0, stand_top + 0.05 + tank_h * 0.5, 0.0), shell)
+	# Pipe stub UP from the tank top toward the ontwaterzeef above/beside it
+	# (edge direction "richting onduidelijk op foto" — flag F6).
+	_cyl(p, 0.05, 0.05, 0.35, Vector3(0.0, size.y + 0.12, -size.z * 0.25), steel)
+	# Pump discharge stub toward the koeltoren circuit (+X, terminates open —
+	# the koeltoren itself is outside this batch, water_small.md §2).
+	_cyl(p, 0.05, 0.05, 0.40, Vector3(size.x * 0.55, 0.45, 0.0), steel, "x")
+	# Drop pipe tank → pump suction.
+	_cyl(p, 0.045, 0.045, stand_top, Vector3(0.0, stand_top * 0.5 + 0.05, hz * 0.75), steel)
 
 # ── ballistic separator: inclined paddle housing + feed hopper + 2 discharge lips
 static func _m_ballistic(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
@@ -7435,8 +8436,11 @@ static func _m_hose_reel(p: Node3D, size: Vector3, color: Color, ghost: bool, ho
 		var tm := TorusMesh.new()
 		tm.inner_radius = ring_inner
 		tm.outer_radius = ring_outer
-		tm.rings = 6
-		tm.ring_segments = 22
+		# `rings` = slices around the main loop; 6 read as a literal hexagon.
+		# Bumped high so each coil reads as a smooth round hose. `ring_segments`
+		# is the tube cross-section roundness.
+		tm.rings = 48
+		tm.ring_segments = 24
 		mi.mesh = tm
 		mi.material_override = hose
 		mi.position = Vector3(rx, axle_y, 0.0)
@@ -7491,8 +8495,9 @@ static func _m_air_hose_hook(p: Node3D, size: Vector3, ghost: bool) -> void:
 		var tm := TorusMesh.new()
 		tm.inner_radius = coil_inner
 		tm.outer_radius = coil_outer
-		tm.rings = 6
-		tm.ring_segments = 20
+		# 6 slices around the loop looked like a hexagon — make the coil round.
+		tm.rings = 48
+		tm.ring_segments = 22
 		mi.mesh = tm
 		mi.material_override = hose_mat
 		mi.position = Vector3(0.0, ry, size.z * 0.05)
@@ -8775,6 +9780,14 @@ static func _m_extruder_silo(p: Node3D, size: Vector3, color: Color, ghost: bool
 	var yellow := _mat(_SAFETY, ghost, 0.2, 0.6)               # safety-yellow guardrails
 	var white  := _mat(Color(0.92, 0.92, 0.90), ghost, 0.1, 0.7)  # danger-sign plate
 	var red    := _mat(Color(0.82, 0.14, 0.12), ghost, 0.2, 0.6)  # danger-sign strip
+	if not ghost:
+		# Photo-extracted cream painted steel — the machines/paint_cream_steel
+		# triplet was cut from _extruder_silo.png, i.e. this exact machine's
+		# photo; guardrails get the calibrated equipment yellow (same colour as
+		# _SAFETY). Palette mats are shared opaque singletons, so ghosts keep
+		# the translucent _mat above.
+		shell = MaterialPalette.mat_paint_cream_steel()
+		yellow = MaterialPalette.mat_paint_safety_yellow()
 
 	# #99 — hw/hd retained as comments; the legs/braces now use bw/bd half-extents
 	# so the support frame catches the widened silo body.
@@ -8938,7 +9951,7 @@ static func _m_extruder_silo(p: Node3D, size: Vector3, color: Color, ghost: bool
 	ladder_root.rotation.y = -PI * 0.5               # cage now faces +X (toward deck)
 	ladder_root.position = Vector3(ladder_x, 0.0, 0.0)
 	p.add_child(ladder_root)
-	_caged_ladder(ladder_root, Vector3.ZERO, ladder_h, steel)
+	_caged_ladder(ladder_root, Vector3.ZERO, ladder_h, steel, ghost)
 	# Push-gate body — built inline so build_node()'s ghost path stays cheap, then
 	# attached to a PushGate script at the end. In ghost-mode we skip the script.
 	var gate_y : float = box_top + 0.05                     # deck top
@@ -9038,7 +10051,7 @@ static func _m_extruder_silo(p: Node3D, size: Vector3, color: Color, ghost: bool
 
 # ── Consolidated extruder UNIT (#92): ONE model = the whole EREMA-style line,
 #    reconstructed REAR(-Z)->FRONT(+Z) from the operator's 5 photos. Sim brands:
-#    EIRENE (barrel), Wave-Cut Systems (pelletizer), Integrated Process Solutions
+#    EREMA (barrel), Wave-Cut Systems (pelletizer), Integrated Process Solutions
 #    (filter modules), C-2 Process Unit (rotary laser-filter disc). Sections:
 #    feed/cutter-compactor TOWER → gearbox + screw motor + main HMI → clad BARREL
 #    (stainless rounded hood over navy cabinets) → C-2 rotary LASER-FILTER disc on
@@ -9046,7 +10059,7 @@ static func _m_extruder_silo(p: Node3D, size: Vector3, color: Color, ghost: bool
 #    (granulate out the front). Used by Extruders 3A/3B/1/3C + the front half of
 #    Line 6. All support legs are machine_leg-tagged so they reach the floor when
 #    the unit is raised (#63/#70). ───────────────────────────────────────────────
-static func _m_extruder_unit(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
+static func _m_extruder_unit(p: Node3D, size: Vector3, color: Color, ghost: bool, line_tag : String = "") -> void:
 	var steel  := _mat(_STEEL, ghost, 0.6, 0.35)                     # brushed stainless
 	var navy   := _mat(Color(0.16, 0.22, 0.42), ghost, 0.25, 0.55)  # navy lower cabinets
 	var dark   := _mat(_DARK, ghost, 0.5, 0.6)                       # legs / frames / detailing
@@ -9058,7 +10071,7 @@ static func _m_extruder_unit(p: Node3D, size: Vector3, color: Color, ghost: bool
 	var flakes := _mat(Color(0.80, 0.80, 0.78), ghost, 0.1, 0.8)    # flakes behind PCU sight-glass
 	var gunk   := _mat(Color(0.10, 0.07, 0.05), ghost, 0.2, 0.6)    # contaminant in filter windows
 	var gold   := _mat(Color(0.78, 0.62, 0.22), ghost, 0.5, 0.4)    # Wave-Cut roundel gold
-	var teal   := _mat(Color(0.16, 0.55, 0.55), ghost, 0.4, 0.4)    # EIRENE / Wave-Cut accent
+	var teal   := _mat(Color(0.16, 0.55, 0.55), ghost, 0.4, 0.4)    # EREMA / Wave-Cut accent
 
 	var barrel_cy : float = size.y * 0.31                  # barrel centreline ≈ 1.30 m
 	var barrel_leg_h : float = barrel_cy * 0.15            # skid leg top, just under the navy cabinet (cabinet underside = barrel_cy*0.56 - barrel_cy*0.41)
@@ -9081,35 +10094,78 @@ static func _m_extruder_unit(p: Node3D, size: Vector3, color: Color, ghost: bool
 	for hzc in [-size.z * 0.18, size.z * 0.02, size.z * 0.20]:
 		_box(p, Vector3(size.x * 0.22, 0.03, size.z * 0.05), Vector3(0.0, hood_top + 0.005, hzc), dark)
 		_box(p, Vector3(0.12, 0.04, 0.03), Vector3(size.x * 0.07, hood_top + 0.04, hzc), steel)
-	# EIRENE roundel + wordmark on the +X navy panel
+	# EREMA roundel + wordmark on the +X navy panel
 	_cyl(p, size.x * 0.07, size.x * 0.07, 0.03, Vector3(size.x * 0.34, barrel_cy * 0.55, -size.z * 0.18), teal, "x")
 	_box(p, Vector3(0.02, size.x * 0.05, size.x * 0.28), Vector3(size.x * 0.335, barrel_cy * 0.55, -size.z * 0.05), steel)
-	# #212.3 EIRENE brand decal — 0.4 × 0.1 m white-on-navy stencil on the +X
+	# #212.3 EREMA brand decal — 0.4 × 0.1 m white-on-navy stencil on the +X
 	# face of the navy lower cabinet, with a faint emissive so it reads under
 	# work-lighting. The decal sits just below the wordmark bar.
 	if not ghost:
-		var eirene_navy := _mat(Color(0.16, 0.22, 0.42), ghost, 0.25, 0.55)
-		eirene_navy.emission_enabled = true
-		eirene_navy.emission = Color(0.16, 0.22, 0.42)
-		eirene_navy.emission_energy_multiplier = 0.10
+		var erema_navy := _mat(Color(0.16, 0.22, 0.42), ghost, 0.25, 0.55)
+		erema_navy.emission_enabled = true
+		erema_navy.emission = Color(0.16, 0.22, 0.42)
+		erema_navy.emission_energy_multiplier = 0.10
 		_box(p, Vector3(0.005, 0.10, 0.40),
-			Vector3(size.x * 0.34, barrel_cy * 0.35, -size.z * 0.05), eirene_navy)
-		var eirene_lbl := _stencil_label(p, "EIRENE",
+			Vector3(size.x * 0.34, barrel_cy * 0.35, -size.z * 0.05), erema_navy)
+		var erema_lbl := _stencil_label(p, "EREMA",
 			Vector3(0.40, 0.10, 0.01), "+X")
-		eirene_lbl.position = Vector3(size.x * 0.345, barrel_cy * 0.35, -size.z * 0.05)
+		erema_lbl.position = Vector3(size.x * 0.345, barrel_cy * 0.35, -size.z * 0.05)
+		if line_tag != "":
+			# #223 docs->code: per-line barrel stencil (LINE ONLY, no position number) —
+			# docs/plant/swi/TRAIN-laserfilter-p3A__112_CeDo32.md ("ter hoogte van nr 3");
+			# operator: the extruder is simply "right after line 3A". Second decal beside EREMA.
+			var line_navy := _mat(Color(0.16, 0.22, 0.42), ghost, 0.25, 0.55)
+			line_navy.emission_enabled = true
+			line_navy.emission = Color(0.16, 0.22, 0.42)
+			line_navy.emission_energy_multiplier = 0.10
+			_box(p, Vector3(0.005, 0.17, 0.28),
+				Vector3(size.x * 0.34, barrel_cy * 0.74, -size.z * 0.05), line_navy)
+			var line_lbl := _stencil_label(p, line_tag,
+				Vector3(0.26, 0.15, 0.01), "+X")
+			line_lbl.position = Vector3(size.x * 0.345, barrel_cy * 0.74, -size.z * 0.05)
 
-	# ═══ SECTION 1: FEED / CUTTER-COMPACTOR TOWER (rear, -Z) ═══
-	var tw_z : float = -size.z * 0.42
+	# ═══ BARREL HEATER-ZONE BANDS (distinct heated zones along the clad barrel) ═══
+	# #223 docs->code: TRAIN-extruderen-p3__108_CeDo24.md — "de extruderschroef
+	# bestaat uit een aantal zones"; the deck lists distinct barrel zone setpoints
+	# (~7 heated zones). Shown as proud zone-band collars + a small heater/thermo-
+	# couple junction box per zone on the +X shoulder. Zone COUNT and spacing are
+	# representational — the docs give temperatures, not band positions.
+	var heat_band := _mat(Color(0.50, 0.52, 0.55), ghost, 0.5, 0.45)
+	for bz in [-0.24, -0.16, -0.08, 0.0, 0.08, 0.16]:
+		var hbz : float = size.z * bz
+		_cyl(p, hood_r * 1.02, hood_r * 1.02, size.z * 0.012, Vector3(0.0, hood_cy, hbz), heat_band, "z")   # zone band collar
+		_box(p, Vector3(0.10, size.x * 0.12, size.z * 0.02), Vector3(hood_r * 0.75, hood_cy + hood_r * 0.70, hbz), dark)  # zone junction box
+	# ═══ SECTION 1: FEED / CUTTER-COMPACTOR (PCU) — ABOVE THE BARREL ═══
+	# docs/plant/extruder_line_layout.md:10-12 (operator spec 2026-07-15):
+	#   "PCU — large unit sitting ABOVE the barrel near the motor end. Feeds
+	#    material DOWN into the barrel through an intake slider (intrek/
+	#    opzetschuif)."
+	# It used to stand on the floor BEHIND the barrel (tw_z = -size.z * 0.42) on
+	# four short legs, discharging through a tangential side throat — which is
+	# what the operator kept reporting as wrong. The drum now sits on a PORTAL
+	# frame that straddles the barrel, with a vertical intake chute + slider gate
+	# dropping into the barrel crown near the motor end.
+	var tw_z : float = -size.z * 0.20                      # over the barrel, just past the gearbox
 	var drum_r : float = size.x * 0.34
-	var tower_leg_h : float = barrel_cy * 0.5
+	# Portal legs clear the clad barrel: they land OUTSIDE the hood in X and run
+	# from the floor to just above hood_top, so the drum rides over the barrel.
+	var tower_leg_h : float = hood_top + 0.35
+	var portal_x : float = size.x * 0.42
 	for sx2 in [-1.0, 1.0]:
 		for sz2 in [-1.0, 1.0]:
 			var tl := _box(p, Vector3(0.14, tower_leg_h, 0.14),
-				Vector3(sx2 * drum_r * 0.72, tower_leg_h * 0.5, tw_z + sz2 * drum_r * 0.72), dark)
+				Vector3(sx2 * portal_x, tower_leg_h * 0.5, tw_z + sz2 * drum_r * 0.72), dark)
 			tl.add_to_group("machine_leg")
 			tl.set_meta("leg_h", tower_leg_h)
-	_box(p, Vector3(drum_r * 1.9, 0.12, drum_r * 1.9), Vector3(0.0, tower_leg_h + 0.06, tw_z), steel)  # base plate on the legs
-	var drum_h : float = size.y * 0.56
+		# cross-braces tying the two legs on this side together
+		_box(p, Vector3(0.10, 0.10, drum_r * 1.44),
+			Vector3(sx2 * portal_x, tower_leg_h * 0.55, tw_z), dark)
+	# Deck plate spanning the portal — the drum sits on this, over the barrel.
+	_box(p, Vector3(portal_x * 2.0 + 0.14, 0.12, drum_r * 1.9),
+		Vector3(0.0, tower_leg_h + 0.06, tw_z), steel)
+	# Shorter drum than the old floor tower: the deck already starts above the
+	# barrel, so the full size.y*0.56 would push the unit through its own bbox.
+	var drum_h : float = size.y * 0.42
 	var drum_base : float = tower_leg_h + 0.12
 	var drum_cy : float = drum_base + drum_h * 0.5
 	_cyl(p, drum_r, drum_r, drum_h, Vector3(0.0, drum_cy, tw_z), steel)                                # tall stainless drum
@@ -9124,16 +10180,86 @@ static func _m_extruder_unit(p: Node3D, size: Vector3, color: Color, ghost: bool
 	_install_steam_plume(p,
 		Vector3(0.0, drum_base + drum_h + size.y * 0.20, tw_z),
 		drum_r * 0.25, 2.0, Color(0.96, 0.94, 0.88), ghost)
-	# oval sight-glass on +X (steel frame + pale flakes behind)
-	_box(p, Vector3(0.04, size.y * 0.16, size.y * 0.10), Vector3(drum_r * 1.0, drum_cy + size.y * 0.04, tw_z), dark)
-	_box(p, Vector3(0.05, size.y * 0.12, size.y * 0.07), Vector3(drum_r * 1.02, drum_cy + size.y * 0.04, tw_z), flakes)
-	# grey control box + 2 round gauges on -X
-	_box(p, Vector3(0.12, size.y * 0.16, size.y * 0.18), Vector3(-drum_r * 1.0, drum_cy - size.y * 0.05, tw_z), body)
-	_cyl(p, 0.05, 0.05, 0.04, Vector3(-drum_r * 1.12, drum_cy - size.y * 0.01, tw_z - size.y * 0.045), dark, "x")
-	_cyl(p, 0.05, 0.05, 0.04, Vector3(-drum_r * 1.12, drum_cy - size.y * 0.01, tw_z + size.y * 0.045), dark, "x")
-	# tangential outlet + throat dropping into the barrel start
-	_cyl(p, size.x * 0.12, size.x * 0.12, drum_r * 1.1, Vector3(0.0, barrel_cy + size.y * 0.05, tw_z + drum_r * 0.8), dark, "z")
-	_cyl(p, size.x * 0.15, size.x * 0.10, barrel_cy * 0.5, Vector3(0.0, barrel_cy + size.y * 0.10, tw_z + drum_r * 1.5), steel)
+	# ROUND sight-glass (Schauglas) on +X - operator spec: round, 10 cm dia,
+	# raised 15 cm vs the old oval box. Steel bezel + glass disc + flakes.
+	var glass_y : float = drum_cy + size.y * 0.04 + 0.15
+	_cyl(p, 0.062, 0.062, 0.03, Vector3(drum_r * 1.00, glass_y, tw_z), dark, "x")
+	_cyl(p, 0.050, 0.050, 0.02, Vector3(drum_r * 1.03, glass_y, tw_z), glass, "x")
+	_cyl(p, 0.044, 0.044, 0.01, Vector3(drum_r * 0.99, glass_y, tw_z), flakes, "x")
+	# PCU DRIVE: belt-driven cutter disc + side motor (operator: PCU motor +
+	# belt driven disc not present). EREMA cutter-compactor spins a horizontal
+	# disc at the pot bottom via V-belts from a big side motor.
+	var disc_y : float = drum_base + 0.10
+	_cyl(p, drum_r * 0.86, drum_r * 0.86, 0.07, Vector3(0.0, disc_y, tw_z), dark)
+	_cyl(p, drum_r * 0.10, drum_r * 0.10, drum_h * 0.5, Vector3(0.0, disc_y - drum_h * 0.2, tw_z), steel)
+	var mot_x : float = -drum_r * 1.35
+	var mot_y : float = drum_base - 0.05
+	_motor_unit(p, size.x * 0.14, size.z * 0.02, Vector3(mot_x, mot_y, tw_z), "y", ghost)
+	_cyl(p, 0.09, 0.09, 0.05, Vector3(mot_x, mot_y + 0.30, tw_z), dark, "x")
+	_cyl(p, 0.11, 0.11, 0.05, Vector3(0.0, disc_y - drum_h * 0.2, tw_z), dark, "x")
+	_box(p, Vector3(absf(mot_x) + drum_r * 0.10, 0.20, 0.03),
+		Vector3(mot_x * 0.5, (mot_y + 0.30 + disc_y - drum_h * 0.2) * 0.5, tw_z + 0.06), dark)
+	# SAFETY MESH GUARD boxing the belt run (operator: legs + mesh for if the
+	# drive belt snaps). Semi-transparent grid panels between the legs.
+	if not ghost:
+		var mesh_mat := _mat(Color(0.30, 0.32, 0.34), ghost, 0.2, 0.6)
+		mesh_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mesh_mat.albedo_color.a = 0.35
+		var guard_cy : float = (mot_y + disc_y) * 0.5 + 0.15
+		var guard_h : float = drum_h * 0.7
+		var guard_d : float = drum_r * 1.7
+		_box(p, Vector3(0.02, guard_h, guard_d), Vector3(mot_x - 0.02, guard_cy, tw_z), mesh_mat)
+		_box(p, Vector3(absf(mot_x), guard_h, 0.02), Vector3(mot_x * 0.5, guard_cy, tw_z - guard_d * 0.5), mesh_mat)
+		_box(p, Vector3(absf(mot_x), guard_h, 0.02), Vector3(mot_x * 0.5, guard_cy, tw_z + guard_d * 0.5), mesh_mat)
+		# #223 — mesh cage around the BOTTOM of the 4 support pillars (operator
+		# asked "where is the mesh around the bottom of the support pillars?").
+		# Floor-level guard wrapping the leg footprint, up toward the base plate.
+		# The pillars now straddle the barrel, so the cage wraps the leg footprint
+		# at floor level on the OUTBOARD faces only — boxing in the inboard side
+		# would seal the barrel walkway shut.
+		var pcu_cage_d : float = drum_r * 1.44 + 0.14
+		var pcu_cage_h : float = barrel_leg_h + barrel_cy * 0.55
+		var pcu_cage_cy : float = pcu_cage_h * 0.5
+		_box(p, Vector3(0.02, pcu_cage_h, pcu_cage_d), Vector3(-portal_x - 0.09, pcu_cage_cy, tw_z), mesh_mat)
+		_box(p, Vector3(0.02, pcu_cage_h, pcu_cage_d), Vector3( portal_x + 0.09, pcu_cage_cy, tw_z), mesh_mat)
+		for sx3 in [-1.0, 1.0]:
+			_box(p, Vector3(0.18, pcu_cage_h, 0.02), Vector3(sx3 * portal_x, pcu_cage_cy, tw_z - pcu_cage_d * 0.5), mesh_mat)
+			_box(p, Vector3(0.18, pcu_cage_h, 0.02), Vector3(sx3 * portal_x, pcu_cage_cy, tw_z + pcu_cage_d * 0.5), mesh_mat)
+	# grey control box + 2 round gauges, mounted on the -X portal leg at standing
+	# height. NOT operator-specified: with the drum now up on the portal its old
+	# drum-mounted spot sat ~3.2 m in the air, unreachable. 1.45 m is the usual
+	# panel height — flagged in docs/plant/operator_issues_2026-07-20.md for
+	# confirmation rather than left floating.
+	var pcu_box_cy : float = 1.45
+	_box(p, Vector3(0.12, size.y * 0.16, size.y * 0.18), Vector3(-portal_x - 0.14, pcu_box_cy, tw_z), body)
+	_cyl(p, 0.05, 0.05, 0.04, Vector3(-portal_x - 0.24, pcu_box_cy + size.y * 0.04, tw_z - size.y * 0.045), dark, "x")
+	_cyl(p, 0.05, 0.05, 0.04, Vector3(-portal_x - 0.24, pcu_box_cy + size.y * 0.04, tw_z + size.y * 0.045), dark, "x")
+
+	# ═══ INTAKE SLIDER (intrek/opzetschuif) — PCU discharges DOWN into the barrel ═══
+	# extruder_line_layout.md:10-12. Previously ABSENT as geometry: the slider
+	# existed only as the HMI readout "AIS-positie" (ExtruderBluPortScope.gd:129),
+	# so the number on the panel referred to a part that wasn't in the world.
+	# Vertical chute from the drum floor down to the barrel crown, with a sliding
+	# gate plate + its actuator cylinder on the +X side.
+	var slider_top : float = drum_base
+	var slider_bot : float = hood_cy + hood_r * 0.55        # meets the barrel crown
+	var slider_h : float = maxf(slider_top - slider_bot, 0.15)
+	var slider_w : float = drum_r * 0.62
+	_box(p, Vector3(slider_w, slider_h, slider_w),
+		Vector3(0.0, slider_bot + slider_h * 0.5, tw_z), steel)                       # chute body
+	_box(p, Vector3(slider_w * 1.18, 0.06, slider_w * 1.18),
+		Vector3(0.0, slider_bot + slider_h * 0.62, tw_z), dark)                        # gate frame
+	# The gate plate itself, part-withdrawn so the slot reads as an opening.
+	_box(p, Vector3(slider_w * 1.05, 0.04, slider_w * 0.55),
+		Vector3(slider_w * 0.30, slider_bot + slider_h * 0.62, tw_z), steel)
+	# Pneumatic actuator driving the gate (body + rod), on +X.
+	_cyl(p, 0.055, 0.055, slider_w * 0.9,
+		Vector3(slider_w * 1.05, slider_bot + slider_h * 0.62, tw_z), dark, "x")
+	_cyl(p, 0.022, 0.022, slider_w * 0.5,
+		Vector3(slider_w * 0.62, slider_bot + slider_h * 0.62, tw_z), steel, "x")
+	# Saddle where the chute lands on the clad barrel.
+	_box(p, Vector3(slider_w * 1.30, 0.05, slider_w * 1.30),
+		Vector3(0.0, slider_bot, tw_z), dark)
 
 	# ═══ SECTION 2: GEARBOX + SCREW-DRIVE MOTOR + MAIN HMI ═══
 	var gb_z : float = -size.z * 0.27
@@ -9149,58 +10275,135 @@ static func _m_extruder_unit(p: Node3D, size: Vector3, color: Color, ghost: bool
 	_cyl(p, 0.02, 0.02, 0.04, Vector3(hmi_x + 0.05, sc_y - 0.30, gb_z + size.z * 0.05 + 0.08), gold, "x")       # button
 	_box(p, Vector3(0.01, 0.10, 0.16), Vector3(hmi_x + 0.07, sc_y - 0.42, gb_z + size.z * 0.05), white)         # warning label
 
-	# ═══ SECTION 4: C-2 PROCESS UNIT — rotary laser-filter disc on top of the barrel ═══
-	# #106 — lowered ~50 cm per operator (was at hood_top + 0.06 m, disc centre
-	# at hood_top + 1.04 m which read as floating well above the line). Now sits
-	# directly on the hood top with the base block flush against it.
+	# ═══ SECTION 4: MELT TAKE-OFF STUB (to the STANDALONE laser filter) ═══
+	# #225.3 de-dup: the integrated rotary laser-filter disc (spinning zeefschijf
+	# A/B + straight-down afvoerschroef discharge) that used to live here was a
+	# SECOND disc — the real filter is the standalone `laser_filter` placeable
+	# (_m_laser_filter, bound by ExtruderMachine._closest_in_group('laser_filter')).
+	# Mirror of the doubled-compactor cleanup in ExtruderGauntlet.gd:115-118.
+	# Only a short melt-inlet stub remains on the barrel top so the pipe run to the
+	# external filter still reads continuous.
 	var c2_z : float = size.z * 0.02
-	var c2_base_y : float = hood_top - size.x * 0.10
-	_box(p, Vector3(size.x * 0.32, size.x * 0.26, size.x * 0.32), Vector3(0.0, c2_base_y, c2_z), body)          # base block
-	var disc_r : float = size.x * 0.34
-	var disc_cy : float = c2_base_y + size.x * 0.22       # was * 0.40 — closer to the base block
-	var c2_rm := _spinning_cyl(p, disc_r, disc_r, size.x * 0.28, Vector3(0.0, disc_cy, c2_z), steel, "x", Vector3.RIGHT, ghost, 6.0)
-	if not ghost:
-		c2_rm.set_meta("comp", "c2_filter")
-	var c2_ry : float = 0.0 if not ghost else disc_cy
-	var c2_rz : float = 0.0 if not ghost else c2_z
-	_cyl(c2_rm, disc_r * 1.02, disc_r * 1.02, size.x * 0.04, Vector3(0.0, c2_ry, c2_rz), dark, "x")             # proud rim ring
-	_cyl(c2_rm, disc_r * 0.55, disc_r * 0.55, size.x * 0.34, Vector3(0.0, c2_ry, c2_rz), body, "x")             # inner disc
-	_cyl(c2_rm, disc_r * 0.20, disc_r * 0.20, size.x * 0.38, Vector3(0.0, c2_ry, c2_rz), blackm, "x")           # swirl-logo cap
-	_motor_unit(p, size.x * 0.08, size.x * 0.16, Vector3(0.0, disc_cy + disc_r * 0.55, c2_z - size.x * 0.20), "y", ghost)  # drive motor
-	_box(p, Vector3(0.04, size.y * 0.26, 0.04), Vector3(size.x * 0.18, size.y * 0.98, c2_z), dark)             # overhead drop-rod
-	_box(p, Vector3(0.45, 0.06, 0.06), Vector3(size.x * 0.05, size.y * 0.88, c2_z), red)                       # red brake-release lever
+	var stub_r : float = size.x * 0.09
+	_cyl(p, stub_r, stub_r, size.x * 0.26, Vector3(0.0, hood_top + size.x * 0.10, c2_z), dark)   # riser stub off the hood
+	_cyl(p, stub_r * 1.25, stub_r * 1.25, size.x * 0.04, Vector3(0.0, hood_top + size.x * 0.02, c2_z), steel)  # flange collar
 
-	# ═══ SECTION 5: HEAD FILTER MODULES A & B (white) — sit on the MELTPUMP zone ═══
-	# #107 — moved to the FRONT of the barrel near the meltpump (where head
-	# filters actually live in a real LDPE pelletizer). Previously they were
-	# stuck high on the barrel mid-section, hidden behind the C-2 disc and
-	# vacuum domes. Now they read as a clear pair of removable filter cassettes
-	# bolted to the +Z end of the barrel, just behind the meltpump.
-	var fm_z : float = size.z * 0.26                                   # near +Z meltpump zone
-	var fm_base_y : float = hood_cy - size.x * 0.18                    # FLANK the barrel, not on top
-	for sx3 in [-1.0, 1.0]:
-		var mx : float = sx3 * size.x * 0.30
-		_box(p, Vector3(size.x * 0.20, size.x * 0.42, size.x * 0.20), Vector3(mx, fm_base_y + size.x * 0.21, fm_z), white)        # module body
-		_box(p, Vector3(0.10, 0.05, 0.05), Vector3(mx + sx3 * size.x * 0.11, fm_base_y + size.x * 0.34, fm_z), steel)             # pull-handle
-		_box(p, Vector3(size.x * 0.13, 0.06, 0.01), Vector3(mx, fm_base_y + size.x * 0.38, fm_z + size.x * 0.11), white)          # nameplate
-		_box(p, Vector3(size.x * 0.13, size.x * 0.10, 0.02), Vector3(mx, fm_base_y + size.x * 0.10, fm_z + size.x * 0.11), gunk)  # contaminant window
-		# Mounting collar tying each filter module to the barrel.
-		_cyl(p, 0.05, 0.05, size.x * 0.30,
-			Vector3(mx * 0.5, fm_base_y + size.x * 0.10, fm_z), dark, "x")
-	# Pair of pressure-difference gauges between the modules.
-	for gz in [fm_z - size.x * 0.05, fm_z + size.x * 0.05]:
-		_box(p, Vector3(0.02, size.x * 0.18, 0.02), Vector3(0.0, fm_base_y + size.x * 0.22, gz), steel)         # gauge stem
-		_cyl(p, 0.06, 0.06, 0.03, Vector3(0.0, fm_base_y + size.x * 0.32, gz), dark, "z")                       # dial face
+	# ═══ SECTION 5: KOPFILTER — piston-type screen changer at the die head ═══
+	# #223 docs->code: rebuilt as the documented PISTON-TYPE SCREEN CHANGER.
+	#   docs/plant/swi/TRAIN-de-kopfilter-p5__119_CeDo35.md — "de kopfilter. De
+	#   filters in de piston onder en boven kunnen vervangen worden. De filters
+	#   bestaan uit 2 steunzeven en het filter." Source drawing 119_CeDo35.pdf
+	#   (melt-path photo) shows a TALL vertical EREMA housing with an UPPER and a
+	#   LOWER piston station, each carrying two round screen-pack cavities joined
+	#   by an S/hourglass melt channel — the final filtration before pelletizing.
+	#   OTHER-training-heetafslag-6__098_CeDo36.md places this screen-changer as
+	#   the melt-inlet housing of the die-face pelletizer.
+	# Geometry tracks src/sim/HeadFilter.gd: each piston is a hydraulic slide
+	# carrier with an ONLINE + OFFLINE cavity (one filters while the other is
+	# repacked); every pack = 2 steunzeven (support screens) + 1 filter mesh.
+	var kf_z : float = size.z * 0.22                       # barrel front, ahead of hood, behind meltpump
+	var kf_house_w : float = size.x * 0.46                 # housing width across the melt path (X)
+	var kf_house_d : float = size.z * 0.08                 # housing depth (Z)
+	var kf_low_y : float = barrel_cy * 1.04                # LOWER piston station (at the melt centreline)
+	var kf_up_y : float = barrel_cy * 1.62                 # UPPER piston station
+	var kf_bot : float = barrel_cy * 0.82
+	var kf_top : float = kf_up_y + barrel_cy * 0.30
+	var kf_h : float = kf_top - kf_bot
+	# Screen-pack layer materials (119_CeDo35 close-up: coarse steunzeef mesh +
+	# fine filter mesh + coarse steunzeef).
+	var steun := _mat(Color(0.62, 0.64, 0.66), ghost, 0.7, 0.35)   # steunzeef (coarse support screen)
+	var mesh_f := _mat(Color(0.28, 0.28, 0.30), ghost, 0.4, 0.6)   # fine filter mesh (darker)
+	# Housing: navy lower third + stainless upper (matches the EREMA cabinet).
+	_box(p, Vector3(kf_house_w, kf_h * 0.30, kf_house_d), Vector3(0.0, kf_bot + kf_h * 0.15, kf_z), navy)
+	_box(p, Vector3(kf_house_w, kf_h * 0.70, kf_house_d), Vector3(0.0, kf_bot + kf_h * 0.65, kf_z), steel)
+	# Inlet stub from the barrel (-Z) into the UPPER station; external S melt-path
+	# pipe upper->lower on the front face (the blue route drawn in 119_CeDo35);
+	# outlet stub (+Z) from the LOWER station toward the meltpump / die head.
+	_cyl(p, size.x * 0.06, size.x * 0.06, size.z * 0.06, Vector3(0.0, kf_up_y, kf_z - kf_house_d * 0.5 - size.z * 0.03), dark, "z")
+	_cyl(p, size.x * 0.045, size.x * 0.045, kf_up_y - kf_low_y, Vector3(size.x * 0.11, (kf_low_y + kf_up_y) * 0.5, kf_z + kf_house_d * 0.5 + size.x * 0.03), steel)
+	_cyl(p, size.x * 0.06, size.x * 0.06, size.z * 0.06, Vector3(0.0, kf_low_y, kf_z + kf_house_d * 0.5 + size.z * 0.03), dark, "z")
+	# UPPER + LOWER piston stations. Each = a horizontal hydraulic slide bolt
+	# crossing the melt path (X), a hydraulic actuator cylinder + rod on the -X
+	# end, and TWO round screen-pack cavities on the +Z face (online + offline).
+	for st in [kf_low_y, kf_up_y]:
+		_box(p, Vector3(kf_house_w * 0.94, size.x * 0.24, kf_house_d * 0.72), Vector3(0.0, st, kf_z), steel)        # horizontal slide bolt
+		_box(p, Vector3(kf_house_w * 0.64, size.x * 0.30, 0.02), Vector3(0.0, st, kf_z + kf_house_d * 0.5 + 0.005), blackm)  # window surround
+		var act_x : float = -kf_house_w * 0.5 - size.x * 0.11
+		_cyl(p, size.x * 0.08, size.x * 0.08, size.x * 0.22, Vector3(act_x, st, kf_z), body, "x")                   # hydraulic cylinder
+		_cyl(p, size.x * 0.09, size.x * 0.09, 0.05, Vector3(act_x - size.x * 0.13, st, kf_z), dark, "x")            # end cap / clevis
+		_cyl(p, size.x * 0.035, size.x * 0.035, kf_house_w * 0.55, Vector3(-kf_house_w * 0.26, st, kf_z), steel, "x")  # actuator rod
+		for cx in [-1.0, 1.0]:
+			var pack_x : float = cx * size.x * 0.088
+			var pf : float = kf_z + kf_house_d * 0.5 - 0.01
+			_cyl(p, size.x * 0.075, size.x * 0.075, 0.03, Vector3(pack_x, st, pf), dark, "z")            # steel retaining ring
+			_cyl(p, size.x * 0.062, size.x * 0.062, 0.012, Vector3(pack_x, st, pf + 0.020), steun, "z")  # steunzeef (back)
+			_cyl(p, size.x * 0.055, size.x * 0.055, 0.012, Vector3(pack_x, st, pf + 0.033), mesh_f, "z")  # filter mesh
+			_cyl(p, size.x * 0.062, size.x * 0.062, 0.010, Vector3(pack_x, st, pf + 0.045), steun, "z")  # steunzeef (front)
+	# Local ΔP screen-change gauges on the +X face (sim tracks delta_p_psi).
+	for gy in [kf_low_y + barrel_cy * 0.34, kf_up_y + barrel_cy * 0.34]:
+		_box(p, Vector3(0.02, 0.02, size.x * 0.14), Vector3(kf_house_w * 0.5, gy, kf_z), steel)
+		_cyl(p, 0.06, 0.06, 0.03, Vector3(kf_house_w * 0.5 + 0.01, gy, kf_z + size.x * 0.11), dark, "x")
+	# ── HEAD-FILTER CABINET (operator photos 2026-07-20) ──────────────────────
+	# docs/plant/photos/extruder_2026-07-20/head_filter_cabinet_closed.jpg and
+	# gr-HMI_or-laserfilter_bl-vacuumpots_ye-vacuumcatchresiduebin_pu-headfiltercontrol_
+	# pi-headfiltercabinetclosed.jpg (pink polygon).
+	#
+	# The piston screen-changer above is doc-correct and stays — what was missing
+	# is the ENCLOSURE around it. The photos show a large floor-standing brushed
+	# stainless cabinet, roughly person-height plus, standing clear of the floor on
+	# legs, with a chamfered top corner and two vertical door latches down one
+	# edge. The operator sees this cabinet, not the changer, unless a door is open
+	# (head_filter_cabinet_open_top-cylinder_out_breaker-plate-in.jpg).
+	var hfc_w : float = size.x * 1.02          # wider than the barrel — it stands beside it
+	var hfc_d : float = kf_house_d * 2.6
+	var hfc_leg : float = barrel_cy * 0.30     # cabinet floats clear of the floor
+	var hfc_top : float = size.y * 0.66
+	var hfc_h : float = hfc_top - hfc_leg
+	var hfc_cy : float = hfc_leg + hfc_h * 0.5
+	var hfc_mat := _mat(Color(0.72, 0.73, 0.75), ghost, 0.55, 0.42)   # brushed stainless
+	if not ghost:
+		for sx8 in [-1.0, 1.0]:
+			for sz8 in [-1.0, 1.0]:
+				var hl := _box(p, Vector3(0.09, hfc_leg, 0.09),
+					Vector3(sx8 * hfc_w * 0.42, hfc_leg * 0.5, kf_z + sz8 * hfc_d * 0.38), dark)
+				hl.add_to_group("machine_leg")
+				hl.set_meta("leg_h", hfc_leg)
+	# Main shell + the chamfered top band (the photo's cut corner, approximated as
+	# a narrower box on top rather than a true bevel).
+	_box(p, Vector3(hfc_w, hfc_h * 0.88, hfc_d), Vector3(0.0, hfc_cy - hfc_h * 0.06, kf_z), hfc_mat)
+	_box(p, Vector3(hfc_w * 0.86, hfc_h * 0.12, hfc_d * 0.86),
+		Vector3(0.0, hfc_top - hfc_h * 0.06, kf_z), hfc_mat)
+	# Two vertical door latches down the +X edge, and the door seam between them.
+	_box(p, Vector3(0.02, hfc_h * 0.92, 0.02), Vector3(hfc_w * 0.5 + 0.012, hfc_cy, kf_z - hfc_d * 0.18), dark)
+	for lz in [-0.22, 0.20]:
+		_box(p, Vector3(0.05, hfc_h * 0.16, 0.05),
+			Vector3(hfc_w * 0.5 + 0.03, hfc_cy + hfc_h * lz, kf_z + hfc_d * 0.30), dark)
+
+	# ── HEAD-FILTER CONTROL (purple polygon, same photo) ──────────────────────
+	# Was a hand-sized push-button box bolted to the changer housing — invented,
+	# no doc. The photos show a SEPARATE narrow FLOOR-STANDING post beside the
+	# cabinet, carrying a green running lamp. Rebuilt at standing height so the
+	# SWAP / REPACK E-interaction lands on something the operator can walk up to.
+	var hfp_x : float = -hfc_w * 0.5 - 0.28
+	var hfp_h : float = barrel_cy * 1.35
+	_box(p, Vector3(0.06, hfp_h, 0.06), Vector3(hfp_x, hfp_h * 0.5, kf_z - hfc_d * 0.30), dark)
+	_box(p, Vector3(0.16, size.x * 0.26, 0.13),
+		Vector3(hfp_x, hfp_h * 0.86, kf_z - hfc_d * 0.30), body)
+	_cyl(p, 0.028, 0.028, 0.04,
+		Vector3(hfp_x - 0.09, hfp_h * 0.94, kf_z - hfc_d * 0.30), teal, "x")   # green running lamp
+	_cyl(p, 0.030, 0.030, 0.05,
+		Vector3(hfp_x - 0.09, hfp_h * 0.80, kf_z - hfc_d * 0.30), red, "x")    # E-stop
 
 	# ═══ SECTION 5b: VACUUM DEGAS DOMES on the BARREL itself ═══════════════════
 	# Two upward-facing vacuum chambers tap the barrel on top — that's where
 	# real screw extruders pull volatiles off the melt. Each is a low dome with
-	# a riser pipe to a vacuum line + a sight glass. Positioned along the
-	# barrel mid-section between the cutter-compactor tower (rear) and the
-	# laser-filter disc (mid). Tagged a clearly-different colour from the head
-	# filters so the player can tell them apart.
+	# a riser pipe to a vacuum line + a sight glass. Positioned DOWNSTREAM of the
+	# laser-filter disc and UPSTREAM of the kopfilter — schematic callout 4
+	# (degas) sits between the filter (callout 3) and the screen-changer (5):
+	# #223 docs->code TRAIN-extruderen-p3__108_CeDo24.md / OTHER-training-extruderen-4__105_CeDo25.md.
+	# Kept a clearly-different colour from the head filter so they stay distinguishable.
 	var vac_mat := _mat(Color(0.45, 0.48, 0.52), ghost, 0.55, 0.4)
-	for vz in [-size.z * 0.10, size.z * 0.05]:
+	for vz in [size.z * 0.06, size.z * 0.13]:
 		var vac_y : float = hood_top + size.x * 0.04
 		# Dome (hemisphere) sitting on the hood — flattened cyl reads as a dome.
 		_cyl(p, size.x * 0.10, size.x * 0.06, size.x * 0.10,
@@ -9213,11 +10416,19 @@ static func _m_extruder_unit(p: Node3D, size: Vector3, color: Color, ghost: bool
 			Vector3(size.x * 0.10, vac_y + size.x * 0.02, vz), glass, "x")
 
 	# ═══ SECTION 6: MELTPUMP (gear-pump block) on the barrel front ═══
-	var mp_z : float = size.z * 0.30
-	_box(p, Vector3(size.x * 0.30, barrel_cy * 0.55, size.z * 0.05), Vector3(0.0, hood_cy, mp_z), body)         # pump block
-	for sx4 in [-0.10, 0.10]:
-		_cyl(p, size.x * 0.06, size.x * 0.06, size.z * 0.06, Vector3(sx4 * size.x, hood_cy + size.x * 0.18, mp_z), steel, "z")  # gear shafts
-	_cyl(p, size.x * 0.08, size.x * 0.08, size.z * 0.06, Vector3(0.0, hood_cy, mp_z + size.z * 0.05), steel, "z")  # melt out to die
+	# #225.3 spec: ONLY line 3C has the smeltpomp (gear pump) fitted — the other
+	# extruder lines (1 / 3A / 3B / 6) feed the die head directly. Gated on the
+	# per-line tag so the doubled/incorrect pump no longer renders everywhere.
+	# (PHOTO-erema-bluport-lijn3C-smeltpomp1-productie__295_CeDo62_3.md is a 3C shot.)
+	if line_tag == "3C":
+		var mp_z : float = size.z * 0.30
+		_box(p, Vector3(size.x * 0.30, barrel_cy * 0.55, size.z * 0.05), Vector3(0.0, hood_cy, mp_z), body)         # pump block
+		for sx4 in [-0.10, 0.10]:
+			_cyl(p, size.x * 0.06, size.x * 0.06, size.z * 0.06, Vector3(sx4 * size.x, hood_cy + size.x * 0.18, mp_z), steel, "z")  # gear shafts
+		_cyl(p, size.x * 0.08, size.x * 0.08, size.z * 0.06, Vector3(0.0, hood_cy, mp_z + size.z * 0.05), steel, "z")  # melt out to die
+		# #223 docs->code: meltpump drive motor on TOP of the gear-pump block
+		# (PHOTO-erema-bluport-lijn3C-smeltpomp1-productie__295_CeDo62_3.md: drive motor on top).
+		_motor_unit(p, size.x * 0.09, size.x * 0.16, Vector3(0.0, hood_cy + barrel_cy * 0.30, mp_z), "y", ghost)
 
 	# ═══ SECTION 7: WAVE-CUT PELLETIZER CABINET (front, +Z) ═══
 	var pz : float = size.z * 0.42
@@ -9390,6 +10601,11 @@ static func _build_heetafslag_strand_switcher(p: Node3D, die_r: float,
 	switcher.position = Vector3(0.0, barrel_cy - die_r * 0.10, die_z + 0.04)
 	p.add_child(switcher)
 	switcher.set_meta("die_face_switcher", true)
+	# Keep the strand groups OUT of the static-merge bake — otherwise StaticMerge
+	# re-shows the group-hidden strands as one baked mesh and the idle die drips
+	# melt again despite the LineFlow gate (bughunt 2026-07-17: my earlier
+	# "hide grp_good" fix was silently undone by the baker).
+	switcher.set_meta("no_merge", true)
 	# Strand dimensions per spec — 0.003 m radius (3 mm) × 0.4 m height.
 	var strand_r : float = 0.003
 	var strand_h : float = 0.40
@@ -9491,12 +10707,19 @@ static func _build_heetafslag_strand_switcher(p: Node3D, die_r: float,
 		mm_hot.set_instance_transform(i, Transform3D(Basis.from_euler(rot_hot), pos))
 
 		# Smoke wisp — a small QuadMesh above the top of the strand.
-		mm_wisp.set_instance_transform(i, Transform3D(Basis.IDENTITY, pos + Vector3(0.0, strand_h * 0.55, 0.0)))
-
-	# Default visibility — GOED GEHARD on, the other two off. A controller can
-	# flip these via .visible directly or via the helper below.
+		var wisp := MeshInstance3D.new()
+		var qm := QuadMesh.new()
+		qm.size = Vector2(0.04, 0.06)
+		wisp.mesh = qm
+		wisp.material_override = smoke_mat
+		wisp.position = pos + Vector3(0.0, strand_h * 0.55, 0.0)
+		grp_hot.add_child(wisp)
+	# Default visibility — ALL OFF (operator 2026-07-16: no orange melt strands
+	# dripping from an idle/unfed extruder = "inventing material from nothing").
+	# LineFlow drives show_die_face_state() from live throughput so strands only
+	# appear while the extruder is actually pushing melt.
 	grp_cold.visible = false
-	grp_good.visible = true
+	grp_good.visible = false
 	grp_hot.visible = false
 
 ## #209b — Flip the StrandSwitcher to a given state. The controller calls this

@@ -10,11 +10,16 @@ class_name WorldFrame
 # building-local offsets into world space.
 # =============================================================================
 # CANONICAL: `WorldLayout.floor_plan_rot_deg` — the floor-plan PDF rotation
-# slider in WorldSetup's right panel — drives every exterior orientation.
-# fence / parking / road network / road markings / crosswalk / sidewalk /
-# trees / power poles / street signs / transformer / neighbour buildings /
-# overhead bay lights / line_starts / vehicle spawns / NPC posts all align
-# to it.
+# slider in WorldSetup's right panel — drives every BUILDING-LOCAL exterior
+# placement: fence / parking / road network / road markings / crosswalk /
+# sidewalk / trees / power poles / street signs / transformer / neighbour
+# buildings / overhead bay lights / NPC posts. Those are authored as offsets
+# from the plant anchor and MUST be rotated onto it (`_bo()`).
+#
+# It does NOT apply to WorldSetup markers (vehicle spawns / line starts / yard
+# corners / player_spawn / factory_center). Those are stored SCENE-ABSOLUTE —
+# the operator already drew them at the building's real orientation — so
+# `_layout_to_scene()` is the identity. See its docstring for the measurement.
 #
 # That slider is the ONE rotation knob the operator owns: they tune it
 # visually until the PDF lays correctly on the satellite. Making it canonical
@@ -71,13 +76,9 @@ func _world_yaw() -> float:
 ## and that drawn orientation IS the yaw the building should adopt. Falls back
 ## to the ShellMesh-AABB helper when no yards are saved (sandbox / fresh setup).
 ##
-## CRITICAL — recursion break: `_layout_to_scene()` rotates by `_world_yaw()`,
-## which is what THIS function returns. Routing yard corners through
-## `_layout_to_scene` before measuring would call back into here (cache is NaN
-## until we return) → stack overflow. We work on RAW corners instead: the
-## anchor offset cancels in (B - A), and rotating both endpoints by the same
-## basis only rotates the edge — but we WANT the layout-frame edge direction
-## here, so skipping the rotation IS the correct measurement, not a workaround.
+## Works on RAW corners, which is now simply the scene position: markers are
+## stored scene-absolute, so the drawn edge direction IS the scene edge
+## direction and no conversion is required to measure it.
 func _compute_world_yaw() -> float:
 	# CANONICAL: the floor-plan PDF's calibrated rotation drives world yaw.
 	# That slider in WorldSetup (right panel → Floor plan → Rotation) is the
@@ -164,19 +165,14 @@ func _bo(ga: Vector3, offset: Vector3) -> Vector3:
 # LAYOUT-FRAME TRANSFORMS
 # =============================================================================
 
-## Building-anchor for layout-relative markers — the player's ACTUAL spawn this
-## run (set in `_spawn_player`, MainWorld.gd), pinned to the operating floor.
-## This is the rotation pivot AND translation origin for every WorldSetup marker
-## (vehicles / NPC posts / line starts / yard corners / build placements).
+## The plant anchor — the player's ACTUAL spawn this run (set in `_spawn_player`,
+## MainWorld.gd), pinned to the operating floor.
 ##
-## Why _player_spawn_pos and not _get_factory_anchor():
-##  • WorldSetup.gd saves player_spawn and factory_center as INDEPENDENT
-##    markers (decoupled since #34), and WorldLayout._load re-centres EVERY
-##    marker by subtracting the player_spawn shift — so the saved offsets are
-##    player_spawn-relative, not factory_center-relative.
-##  • The NPC anchor and road/parking anchor both use `_player_spawn_pos`
-##    already; using the same anchor here keeps every layout-derived
-##    subsystem on ONE pivot.
+## NOT a marker origin. WorldSetup markers are scene-absolute and are never
+## anchored onto this (see `_layout_to_scene`). This is the origin for genuinely
+## building-LOCAL offsets — `_bo()`'s callers (roads / fence / parking / lamps),
+## the NPC post anchor — and the reference point `_layout_rel_sane` measures
+## marker plausibility against.
 func _layout_anchor_xz() -> Vector3:
 	var psp : Vector3 = _world.get("_player_spawn_pos")
 	if psp != Vector3.ZERO:
@@ -185,45 +181,37 @@ func _layout_anchor_xz() -> Vector3:
 	# the player is built). Mirrors the chain in _get_factory_anchor().
 	return _world.call("_get_factory_anchor")
 
-## Rotate a layout-frame XZ offset through the canonical world yaw (no anchor add).
-## Internal helper used by `_layout_to_scene` to keep the rotate step OUTSIDE the
-## `_world_yaw()` derivation path — and used by `_compute_world_yaw()` would
-## RE-ENTER `_layout_to_scene` here (yard yaw is computed FROM yard corners),
-## causing infinite recursion. `_compute_world_yaw()` therefore walks RAW corners
-## without calling either helper (the edge direction is rotation-equivariant —
-## anchor cancels, and the rotation is exactly what we're trying to derive).
-func _layout_rotated_offset(rel: Vector3) -> Vector3:
-	var b := Basis(Vector3.UP, _world_yaw())
-	var r : Vector3 = b * Vector3(rel.x, 0.0, rel.z)
-	return Vector3(r.x, 0.0, r.z)
-
-## Map a saved marker (player_spawn-relative offset in WorldSetup's north-up frame)
-## to its scene position. Two-step transform — the SAME convention every other
-## layout-derived placement uses (`_bo()` for roads/parking, NPC anchor,
-## parking-arrival code):
-##   1. Rotate the XZ offset around +Y by `_world_yaw()` (the canonical bale-yard-
-##      derived rotation that aligns the operator's drawn polygons with the
-##      building shell).
-##   2. Translate by the layout anchor (`_layout_anchor_xz()` → player_spawn on
-##      the operating floor).
-## Forward = -Z, right = +X, up = +Y; rotation is around +Y. Y component is
-## discarded (markers were placed on a y=0 click plane in WorldSetup); the caller
-## passes the result through `_on_floor()` to pin it to the operating floor.
+## Map a saved WorldSetup marker to its scene position — the XZ IDENTITY.
 ##
-## When no layout is loaded, callers fall back to hardcoded local-frame defaults
-## upstream (`_spawn_vehicle_instances` etc.), so the path is bypassed entirely
-## — the rotation+anchor here only ever runs against a saved layout the operator
-## deliberately authored.
+## CANONICAL FRAME: markers are SCENE-ABSOLUTE, not offsets. WorldSetup's only
+## marker writers (`_place_point` :1260, `_add_multi_marker` :1348,
+## `_commit_to_layout` :1137) store `_screen_to_floor()` / `_marker_world()`
+## output verbatim — a camera ray onto the y=0 plane of the SAME tile-anchored
+## frame MainWorld.tscn puts BuildingShell in. Nothing is subtracted and no yaw
+## is applied on the way in, so nothing may be applied on the way out.
+##
+## MEASURED (2026-07-21, the operator's world_layout.json): the factory mesh's
+## true scene centre is (-198.90, 95.84); the stored player_spawn/factory_center
+## is (-202.66, 94.04) — 4.2 m away. Read absolutely, 11 of 13 markers land
+## INSIDE the building footprint; read as rotated offsets, 0 of 13 do and every
+## vehicle lands 120-270 m off-plant in the field to the north-east.
+##
+## HISTORY — do not reintroduce: this used to `Basis(UP, _world_yaw()) * rel +
+## _layout_anchor_xz()`. That double-counted the orientation the operator had
+## already drawn into the markers AND re-anchored an absolute coordinate onto
+## itself, throwing vehicles ~228 m and bale yards ~300-420 m. Rotate+anchor
+## still belongs to `_bo()`, which serves genuinely building-LOCAL offsets
+## (fence / roads / parking / lamps) — that path is correct and is untouched.
+##
+## Y is discarded (markers live on a y=0 click plane); callers pass the result
+## through `_on_floor()` to pin it to the operating floor.
 func _layout_to_scene(rel: Vector3) -> Vector3:
-	var a : Vector3 = _layout_anchor_xz()
-	var r : Vector3 = _layout_rotated_offset(rel)
-	var out := Vector3(a.x + r.x, 0.0, a.z + r.z)
-	# Refresh the PerfHud one-liner so the overlay reports the actual transform
-	# that just ran (and only once per run — `_world_yaw()` is cached).
+	# Refresh the PerfHud one-liner once per run so the overlay reports the
+	# transform that actually ran.
 	if not bool(_world.get("_layout_summary_logged")):
-		var yaw_deg : float = rad_to_deg(_world_yaw())
+		var a : Vector3 = _layout_anchor_xz()
 		_world.set("layout_conv_summary",
-			"Layout: markers rotated by %.1f deg + anchored at (%.1f, %.1f)" \
-				% [yaw_deg, a.x, a.z])
+			"Layout: markers are scene-absolute (no rotation, no anchor) — plant anchor (%.1f, %.1f)" \
+				% [a.x, a.z])
 		_world.set("_layout_summary_logged", true)
-	return out
+	return Vector3(rel.x, 0.0, rel.z)

@@ -44,6 +44,9 @@ var _edit_dirty     : bool = false
 const LEGACY_LAYOUT_PATH := "user://factory_layout.json"
 var layout_path : String = "user://factory_layout.json"
 var allow_legacy_fallback : bool = true
+# Overlay WorldLayout.structure_items (shared site walls/doors/gates) after the
+# per-save items. Default on; test benches without a building shell turn it off.
+var load_shared_structure : bool = true
 const LAYOUT_VERSION := 2   # #29 — bump to force a one-time wipe of pre-patch saved builds
 const GRID        := 0.5                  # metres — snap step for placement
 const ROT_STEP    := PI / 12.0            # 15° rotation increment per [Q]/[E]
@@ -56,11 +59,20 @@ const SURF_TYPES  : Array[String] = ["door", "gate", "window", "sign", "panel"]
 # ── Whole-line macro sequences (front → back, in process order) ───────────────
 # Transcribed directly from the operator's hand-drawn LIJN 3A / LIJN 3B sheet.
 # IMPORTANT: these macros are the WASH + DRY + EXTRUSION train ONLY and START at
-# the vuilsnippersilo (wet-film buffer). The shared dry front-end (opzetband →
-# shredder → bunker → SGA → magnet → ballistic → windshifter → TITECH → VSS) is
-# the common intake that feeds BOTH lines — built separately (task #54), NOT here.
+# the vuilsnippersilo (wet-film buffer). The shared dry front-end is the common
+# intake that feeds BOTH lines — built separately (task #54), NOT here.
+# Operator 2026-07-06 (interview, ruling B2): the front-end is a "SNAIL", not a
+# straight line — feeder belt → 90° side-feed into shredder-1 funnel → belt 1040
+# at 90° → BUNKER top (bunker runs 180° vs the initial feeder) → roll at bunker
+# end → next belt at 90° (clockwise from above) → the LONG belt (number
+# unconfirmed) at another 90°, parallel to + between the feeder and the bunker →
+# SGA → magnet → ballistic → windshifter → TITECH → VSS. Operator explicitly
+# requests floor plans for the sorting/washing areas BEFORE any line-layout
+# macro encodes this — do not macro-ise the front end from this comment alone.
 # Kufferath, MAS bak/drogers and the 3-washer chain are LINE 1 — absent from 3A/3B.
-# Name→id: doseerschroef→transport_screw, glijgoot→transfer_chute, pomp→water_pump,
+# Name→id: doseerschroef→transport_screw, glijgoot→transfer_chute, pomp→pomp_c1
+# (the sheet's "pomp" IS Pomp C1 — water_circuit_3a_la1.md pos 6; generic
+# water_pump stays in the catalog for free placement),
 # ontwaterschroef→dewater_screw, intrekschroef+schoepen+uitdraairol flotatie→one
 # flotation_tank, thermische droger→thermal_dryer, (rondmeng) verdeelwals→verdeelwals,
 # ringleiding→ringleiding (verdeelwals/ringleiding/thermal_dryer are new machines).
@@ -79,17 +91,21 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 	{"id": "transport_screw"},
 	{"id": "friction_washer"},          # frictiewasser — stirring tank, 3A only
 	{"id": "transfer_chute"},
-	# #81 — water_pump moved OFF the centreline. It's a utility unit (water loop,
+	# #81 — pump moved OFF the centreline. It's a utility unit (water loop,
 	# not material flow; role="none" in MachineFlow) so placing it in the main
 	# chain just pushed every downstream machine further along Z for no reason.
 	# Now sits on the -X side lane next to the friction_sep it feeds water to.
-	{"id": "water_pump", "x": -3.5, "z": 0.0},
+	# 2026-07-06: this slot IS Pomp C1 (LA1doc positions 5-6-7: glijgoot →
+	# Pomp C1 → frictiescheider M3; water_circuit_3a_la1.md). In-place id swap
+	# keeps seq.size() and every macro_index stable, so operator-saved deltas
+	# in user://macros/line_3a.json stay valid. Mirror: LineDragger.LINE_3A_SEQ.
+	{"id": "pomp_c1", "x": -3.5, "z": 0.0},
 	{"id": "friction_sep"},
 	{"id": "flotation_tank"},
 	{"id": "dewater_screw"},
 	{"id": "friction_sep"},
 	{"id": "transport_screw"},
-	{"id": "mech_dryer"},
+	{"id": "mech_dryer", "gap": 1.2},   # wet→dry section break: wider access gap
 	{"id": "blower"},
 	{"id": "mengsilo"},
 	# ── RECIRC DRYING LOOP (branch, +X side, returns to the mengsilo top) ──
@@ -118,14 +134,42 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 	# #107 — was plain `silo`; the extruder's hot end has to be fed by the
 	# elevated extruder_silo (frame + 2 cyclones on top + lump bin + windows),
 	# not a generic dosing silo. Same change applied to 3B and Line 1 below.
-	{"id": "extruder_silo"},
+	{"id": "extruder_silo", "gap": 1.5},  # extruder needs maintenance clearance at both ends
 	{"id": "extruder_3a"},
 	# #98 — Lump cart parking spot next to the extruder's screen-changer
 	# discharge. Operator's responsibility to make sure a lump_cart is parked
 	# here BEFORE the extruder starts. Spot is at +X offset, partway along the
 	# extruder's length so the laser_filter outlet is above the cart.
-	{"id": "lump_cart_spot", "x": 2.8, "z": -5.0},
-	{"id": "lump_cart",      "x": 2.8, "z": -5.0},
+	# #225 — the LIVE laserfilter is a standalone machine beside the extruder
+	# (ExtruderMachine binds _closest_in_group("laser_filter"); the macros never
+	# placed one, so the 318-bar trip / wissel / lump sim were dead in macro
+	# worlds). #225.3 — the filter sits 3.5 m out to the side (matches NpcTaskBench
+	# FILTER_SIDE_X) with a lump_platform bordes under it, and a cart under EACH of
+	# the twin afvoerschroef nozzles (LaserFilter.gd eject_local_offset/eject_wall
+	# at filter-local ±1.30): AISLE (+X) at 3.5+1.30 = 4.80, WALL (-X) at 3.5-1.30 =
+	# 2.20. 3.5 out keeps the wall cart clear of the extruder edge (±1.30) so nothing
+	# overlaps the barrel (the old 2.6 filter put the wall nozzle onto the extruder).
+	{"id": "laser_filter",   "x": 3.5, "z": -5.0},
+	# Bordes on the REAR (wall, -X) side only — the rear afvoerschroef discharges
+	# HIGHER so its cart sits on the raised platform (y = deck top 0.12); the FRONT
+	# (aisle, +X, head-filter-access side) cart sits on the GROUND because the front
+	# discharge is lower. Operator 2026-07-15 (see docs/plant/extruder_line_layout.md).
+	{"id": "lump_platform",  "x": 2.2, "z": -5.0},
+	{"id": "lump_cart_spot", "x": 2.2, "z": -5.0, "y": 0.12},
+	{"id": "lump_cart",      "x": 2.2, "z": -5.0, "y": 0.12},
+	{"id": "lump_cart_spot", "x": 4.8, "z": -5.0},
+	{"id": "lump_cart",      "x": 4.8, "z": -5.0},
+	# #223 docs->code: swi/TRAIN-de-flow-master-diagram__116_CeDo7.md +
+	# swi/TRAIN-verdere-verloop-granulaat-silos__125_CeDo40.md — every extruder
+	# line runs extruder → heetafslag → ontwaterzeef → centrifuge → weegschaal →
+	# voorraad_silo. Back-end chain continues on the centreline past the extruder
+	# (lump carts above are branches — they don't advance the main cursor).
+	# +14.3 m over 5 main entries at the default 0.5 m gap; stays inside footprint.
+	{"id": "heetafslag"},
+	{"id": "ontwaterzeef"},
+	{"id": "centrifuge"},
+	{"id": "weegschaal"},
+	{"id": "voorraad_silo"},
 ]
 # #54 — shared dry FRONT-END for Lines 3A and 3B. Lays the Shredder-2 climb,
 # the 12 numbered intake belts in series, the switch-belt diverter, and the VSS
@@ -171,10 +215,79 @@ const LINE_SORT_SEQ : Array[Dictionary] = [
 ## per line (use LINE_3A/3B-style macros for that, with the wider flotation_tank_wide).
 const LINE_3C6_SEQ : Array[Dictionary] = [
 	{"id": "opzetband_3c6"},
-	{"id": "shredder_2"},
+	{"id": "shredder_1"},                # 3C/6 = the big-RED coarse shredder (operator 2026-07-14; was shredder_2, blue). Same id as Line 1.
 	{"id": "inclined_belt_8m"},
 	{"id": "trilzeef"},
 ]
+
+## LINE 3C — the wash/dry/extrude spine, TRANSCRIBED one-for-one from
+## Line3CDef.STAGES (src/sim/Line3CDef.gd:53-90, itself transcribed from the plant
+## HMI "Techical overview"). Nothing placed this line before: BuildMode dispatched
+## six sequences and none of them was Line 3C, so the whole calibrated 3C model
+## (ProcessModel coefficients, the HMI currents, the MechDryerCycle pair
+## controller, the Line3CDef.LINKS split/merge graph) had no node to run on.
+##
+## HARD INVARIANT: entry i's id MUST equal Line3CDef.STAGES[i]["id"], and the
+## macro_index stamped at placement (:1627-1628) is what Line3CDef
+## .code_for_macro_entry turns into the stage's l3c_code. That alignment is
+## asserted by src/tests/test_line3c_seq_alignment.gd — an insert or a reorder
+## here re-addresses the whole line and MUST go through that test.
+## APPEND-ONLY, like every other SEQ (see the standing warning at :100-101).
+##
+## NO branch_recirc / parallel_branch flags, deliberately: LineFlow skips its
+## Line3CDef.LINKS pass for any node carrying an lf_explicit_outs meta
+## (LineFlow.gd:1026 runs BEFORE the code branch at :1029-1039), so tagging the
+## L/R pairs here would REPLACE the authored split/merge graph with geometry
+## guesses. GRAPH_TOPOLOGY_MACROS below suppresses that tagging for this macro.
+##
+## LAYOUT-APPROXIMATE. Line3CDef supplies order, codes, ids, currents and
+## topology — it does NOT supply metres. The x/z offsets are the existing 3B
+## side-lane idiom, not an operator measurement; the geometry needs a K-mode jog
+## + macro save-back pass before any document calls this the real 3C layout.
+const LINE_3C_SEQ : Array[Dictionary] = [
+	{"id": "doseersilo"},                                          # 0  L3C.1
+	{"id": "sink_float"},                                          # 1  L3C.3
+	{"id": "friction_sep",    "x": -3.0, "z": 2.0},                # 2  L3C.4L
+	{"id": "friction_sep",    "x":  3.0, "z": 2.0},                # 3  L3C.4R
+	{"id": "transport_screw", "x": -3.0, "z": 7.0},                # 4  L3C.5L
+	{"id": "transport_screw", "x":  3.0, "z": 7.0,
+	 "main_advance": 11.0},                                        # 5  L3C.5R
+	{"id": "mill"},                                                # 6  L3C.6  (merge)
+	{"id": "friction_sep",    "x": -3.0, "z": 2.0},                # 7  L3C.9L
+	{"id": "friction_sep",    "x":  3.0, "z": 2.0},                # 8  L3C.9R
+	{"id": "transport_screw", "x": -3.0, "z": 7.0},                # 9  L3C.10L
+	{"id": "transport_screw", "x":  3.0, "z": 7.0,
+	 "main_advance": 11.0},                                        # 10 L3C.10R
+	{"id": "flotation_tank_wide"},                                 # 11 L3C.11 (merge)
+	{"id": "transport_screw"},                                     # 12 L3C.12
+	{"id": "friction_sep"},                                        # 13 L3C.13
+	{"id": "mech_dryer",      "x": -3.0, "z": 3.0},                # 14 L3C.14L
+	{"id": "mech_dryer",      "x":  3.0, "z": 3.0,
+	 "main_advance": 8.0},                                         # 15 L3C.14R
+	{"id": "blower"},                                              # 16 L3C.15 (merge)
+	{"id": "plasmaq"},                                             # 17 L3C.16
+	{"id": "silo"},                                                # 18 L3C.18
+	{"id": "blower"},                                              # 19 L3C.19
+	# ── extruder back-end (Line3CDef.gd:77-89, RECONSTRUCTED codes) ──────────
+	{"id": "compactorband"},                                       # 20 Cband
+	{"id": "compactor"},                                           # 21 PCU
+	{"id": "extruder_screw",  "gap": 1.5},                         # 22 Extr
+	{"id": "laser_filter"},                                        # 23 Laser
+	{"id": "vacuum_degas"},                                        # 24 Degas
+	{"id": "melt_pump"},                                           # 25 Melt
+	{"id": "kopfilter"},                                           # 26 Kop
+	{"id": "heetafslag"},                                          # 27 Heet
+	{"id": "ontwaterzeef"},                                        # 28 Ontw
+	{"id": "centrifuge"},                                          # 29 Centr
+	{"id": "weegschaal"},                                          # 30 Weeg
+	{"id": "voorraad_silo"},                                       # 31 Voorraad
+]
+
+## Macros whose flow topology comes from an AUTHORED graph rather than from the
+## branch/parallel bookkeeping in _build_full_line. For these, no node is stamped
+## with lf_explicit_outs, because LineFlow treats that meta as "downstream fully
+## specified" and skips its Line3CDef.LINKS pass entirely (LineFlow.gd:1026).
+const GRAPH_TOPOLOGY_MACROS : Array[String] = ["line_3c"]
 
 # Transportbanden 3A/3B (operator-correct term — was called "intake"). This is
 # STEP 2 in the plant 3A/3B work-flow:
@@ -219,6 +332,15 @@ const LINE_3B_SEQ : Array[Dictionary] = [
 	{"id": "dewater_screw"},
 	{"id": "friction_sep"},
 	{"id": "flotation_tank"},
+	# Kleine LA — open waterbak at the 3B flotation-tank material-EXIT side
+	# (checklist row 16 "Nét overlopen kleine LA I" — water_small.md §1). Side
+	# lane like 3A's pomp_c1 (#81): role="none" water fixture, no flow edge
+	# (placement-only thanks to the I1 guard in _build_full_line).
+	# x/z are PLACEHOLDERS — "towards Hal 0" is a world-frame fact the macro
+	# local frame cannot express; flag for operator (water_small.md F1/F2).
+	# NOTE: this insertion shifts macro_index for entries 7+ — any operator-saved
+	# user://macros/line_3b.json chain must be re-saved (verified absent 2026-07-06).
+	{"id": "kleine_la", "x": -3.0, "z": -0.5},
 	{"id": "dewater_screw"},
 	{"id": "friction_sep"},        # frictiescheider L-R — throws material both ways
 	# ── L-R SPLIT: a mechanical dryer on each side, then recombine at the ventilator ──
@@ -238,8 +360,34 @@ const LINE_3B_SEQ : Array[Dictionary] = [
 	{"id": "extruder_silo"},
 	{"id": "extruder_3b"},
 	# #98 — Lump cart parking spot at the extruder's filter discharge.
-	{"id": "lump_cart_spot", "x": 2.8, "z": -5.0},
-	{"id": "lump_cart",      "x": 2.8, "z": -5.0},
+	# #225 — the LIVE laserfilter is a standalone machine beside the extruder
+	# (ExtruderMachine binds _closest_in_group("laser_filter"); the macros never
+	# placed one, so the 318-bar trip / wissel / lump sim were dead in macro
+	# worlds). #225.3 — the filter sits 3.5 m out to the side (matches NpcTaskBench
+	# FILTER_SIDE_X) with a lump_platform bordes under it, and a cart under EACH of
+	# the twin afvoerschroef nozzles (LaserFilter.gd eject_local_offset/eject_wall
+	# at filter-local ±1.30): AISLE (+X) at 3.5+1.30 = 4.80, WALL (-X) at 3.5-1.30 =
+	# 2.20. 3.5 out keeps the wall cart clear of the extruder edge (±1.30) so nothing
+	# overlaps the barrel (the old 2.6 filter put the wall nozzle onto the extruder).
+	{"id": "laser_filter",   "x": 3.5, "z": -5.0},
+	# Bordes on the REAR (wall, -X) side only — the rear afvoerschroef discharges
+	# HIGHER so its cart sits on the raised platform (y = deck top 0.12); the FRONT
+	# (aisle, +X, head-filter-access side) cart sits on the GROUND because the front
+	# discharge is lower. Operator 2026-07-15 (see docs/plant/extruder_line_layout.md).
+	{"id": "lump_platform",  "x": 2.2, "z": -5.0},
+	{"id": "lump_cart_spot", "x": 2.2, "z": -5.0, "y": 0.12},
+	{"id": "lump_cart",      "x": 2.2, "z": -5.0, "y": 0.12},
+	{"id": "lump_cart_spot", "x": 4.8, "z": -5.0},
+	{"id": "lump_cart",      "x": 4.8, "z": -5.0},
+	# #223 docs->code: swi/TRAIN-de-flow-master-diagram__116_CeDo7.md +
+	# swi/TRAIN-verdere-verloop-granulaat-silos__125_CeDo40.md — extruder →
+	# heetafslag → ontwaterzeef → centrifuge → weegschaal → voorraad_silo.
+	# Main-centreline chain past the extruder (+14.3 m at default 0.5 m gap).
+	{"id": "heetafslag"},
+	{"id": "ontwaterzeef"},
+	{"id": "centrifuge"},
+	{"id": "weegschaal"},
+	{"id": "voorraad_silo"},
 ]
 # Line 1 = its own intake (opzetband 1 → metal detector → westa band → shredder →
 # magnet → VW trommel → scheidingsgoot) then wash/dry/extrude; transcribed from the
@@ -299,8 +447,42 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	{"id": "cyclone"},
 	{"id": "extruder_silo"},
 	{"id": "extruder_1"},
+	# #98 — Lump cart parking spot at the extruder's filter discharge. Same
+	# +X / partway-back offset as 3A/3B so the laser_filter outlet sits above
+	# the cart (was missing — Line 1's LaserFilter had no cart under it and
+	# fell back to the nearest cart anywhere in the hall). APPEND-only: existing
+	# macro_index values are unchanged, so saved line_1.json deltas stay valid.
+	# #225 — the LIVE laserfilter is a standalone machine beside the extruder
+	# (ExtruderMachine binds _closest_in_group("laser_filter"); the macros never
+	# placed one, so the 318-bar trip / wissel / lump sim were dead in macro
+	# worlds). #225.3 — the filter sits 3.5 m out to the side (matches NpcTaskBench
+	# FILTER_SIDE_X) with a lump_platform bordes under it, and a cart under EACH of
+	# the twin afvoerschroef nozzles (LaserFilter.gd eject_local_offset/eject_wall
+	# at filter-local ±1.30): AISLE (+X) at 3.5+1.30 = 4.80, WALL (-X) at 3.5-1.30 =
+	# 2.20. 3.5 out keeps the wall cart clear of the extruder edge (±1.30) so nothing
+	# overlaps the barrel (the old 2.6 filter put the wall nozzle onto the extruder).
+	{"id": "laser_filter",   "x": 3.5, "z": -5.0},
+	# Bordes on the REAR (wall, -X) side only — the rear afvoerschroef discharges
+	# HIGHER so its cart sits on the raised platform (y = deck top 0.12); the FRONT
+	# (aisle, +X, head-filter-access side) cart sits on the GROUND because the front
+	# discharge is lower. Operator 2026-07-15 (see docs/plant/extruder_line_layout.md).
+	{"id": "lump_platform",  "x": 2.2, "z": -5.0},
+	{"id": "lump_cart_spot", "x": 2.2, "z": -5.0, "y": 0.12},
+	{"id": "lump_cart",      "x": 2.2, "z": -5.0, "y": 0.12},
+	{"id": "lump_cart_spot", "x": 4.8, "z": -5.0},
+	{"id": "lump_cart",      "x": 4.8, "z": -5.0},
+	# #223 docs->code: swi/TRAIN-de-flow-master-diagram__116_CeDo7.md +
+	# swi/TRAIN-verdere-verloop-granulaat-silos__125_CeDo40.md — extruder →
+	# heetafslag → ontwaterzeef → centrifuge → weegschaal → voorraad_silo.
+	# Main-centreline chain past the extruder (+14.3 m at default 0.5 m gap).
+	# APPEND-only after the lump carts, so existing macro_index values are unchanged.
+	{"id": "heetafslag"},
+	{"id": "ontwaterzeef"},
+	{"id": "centrifuge"},
+	{"id": "weegschaal"},
+	{"id": "voorraad_silo"},
 ]
-const LINE_GAP_M : float = 1.5   # clear space between consecutive machines
+const LINE_GAP_M : float = 0.5   # clear space between consecutive machines (process lines are tight)
 
 # Injected by MainWorld so placement rays can ignore the player capsule.
 var player_body : CharacterBody3D = null
@@ -882,6 +1064,196 @@ func _process(delta: float) -> void:
 	if _has_two_point and _two_point_preview != null:
 		_update_two_point_preview(p)
 
+# ── Standing placed-vehicle sentinel (see _arm_vehicle_watchdog below) ────────
+const VEH_SENTINEL_PERIOD_S : float = 30.0   # re-measure every placed vehicle this often
+const VEH_SENTINEL_TOL_M    : float = 10.0   # per-leg displacement that counts as "it moved by itself"
+const VEH_SENTINEL_NEAR_M   : float = 5.0    # radius of the "who was touching it" dump
+# One entry per placed vehicle:
+#   {"node": Node3D, "origin": Vector3 (current baseline), "label": String, "legs": int}
+var _veh_watch    : Array[Dictionary] = []
+var _veh_sentinel : Timer = null
+
+## Tripwire for the unexplained 2026-07-20 relocation: the operator's five
+## placed clamps were recorded 220+ m from the click point minutes later —
+## not reproducible headlessly at a clean tickrate (src/tests/repro_clamp_spawn.gd:
+## clamps stay within 3 m). One second after a vehicle placement, measure how
+## far it actually got; a recurrence then logs who/when/where instead of
+## leaving another mystery save file.
+##
+## 2026-07-21 — the one-second shot proved far too short. The transport measured
+## in src/tests/repro_feeder_drive.gd is a SMOOTH 0.27-1.56 m/s drift (185 m in
+## 150 s, zero per-frame jumps), and the operator's beads only surfaced in a
+## quit-save minutes later; a 1 s window can never see either. The watchdog is
+## now a STANDING sentinel: the 1 s shot stays (it is the only thing that
+## catches an instantaneous teleport) and the vehicle is ALSO registered with a
+## repeating VEH_SENTINEL_PERIOD_S check that runs for the rest of its life and
+## dumps full driving + neighbourhood state the moment a leg exceeds tolerance.
+## Purely diagnostic — nothing here changes vehicle behaviour.
+func _arm_vehicle_watchdog(node: Node3D) -> void:
+	var placed_at : Vector3 = node.global_position
+	_veh_watch.append({
+		"node": node,
+		"origin": placed_at,
+		"label": String(node.name),
+		"legs": 0,
+	})
+	_ensure_vehicle_sentinel()
+	get_tree().create_timer(1.0).timeout.connect(func() -> void:
+		if node == null or not is_instance_valid(node):
+			push_warning("[BuildMode] placed vehicle FREED within 1 s of placement")
+			return
+		var d := node.global_position.distance_to(placed_at)
+		if d > 10.0:
+			push_warning("[BuildMode] placed vehicle moved %.1f m within 1 s of placement: (%.1f, %.1f, %.1f) -> (%.1f, %.1f, %.1f)\n%s" % [
+				d, placed_at.x, placed_at.y, placed_at.z,
+				node.global_position.x, node.global_position.y, node.global_position.z,
+				_vehicle_diagnostic_dump(node)]))
+
+## Create the single repeating timer behind the standing sentinel, on first use.
+## Lazy (rather than in _ready) so a bench that never places a vehicle never
+## pays for it, and so the ordering inside _ready stays untouched.
+func _ensure_vehicle_sentinel() -> void:
+	if _veh_sentinel != null and is_instance_valid(_veh_sentinel):
+		return
+	_veh_sentinel = Timer.new()
+	_veh_sentinel.name = "VehicleSentinel"
+	_veh_sentinel.wait_time = VEH_SENTINEL_PERIOD_S
+	_veh_sentinel.one_shot = false
+	_veh_sentinel.autostart = true
+	_veh_sentinel.timeout.connect(_vehicle_sentinel_tick)
+	add_child(_veh_sentinel)
+
+## Re-measure every watched vehicle against its baseline. Freed / detached
+## vehicles are pruned. A vehicle that moved further than the tolerance reports
+## once and then RE-BASELINES, so a slow continuous drift leaves one warning per
+## 30 s leg — a readable trail with speeds — instead of the same line forever.
+func _vehicle_sentinel_tick() -> void:
+	var keep : Array[Dictionary] = []
+	for w in _veh_watch:
+		var node := w.get("node") as Node3D
+		if node == null or not is_instance_valid(node) or not node.is_inside_tree():
+			continue
+		keep.append(w)
+		var origin : Vector3 = w.get("origin", Vector3.ZERO)
+		var now : Vector3 = node.global_position
+		var d := origin.distance_to(now)
+		if d <= VEH_SENTINEL_TOL_M:
+			continue
+		var legs : int = int(w.get("legs", 0)) + 1
+		w["legs"] = legs
+		w["origin"] = now
+		push_warning("[BuildMode] SENTINEL leg %d — placed vehicle '%s' moved %.1f m (%.2f m/s avg) in the last %.0f s: (%.2f, %.2f, %.2f) -> (%.2f, %.2f, %.2f)\n%s" % [
+			legs, String(w.get("label", "?")), d, d / VEH_SENTINEL_PERIOD_S, VEH_SENTINEL_PERIOD_S,
+			origin.x, origin.y, origin.z, now.x, now.y, now.z,
+			_vehicle_diagnostic_dump(node)])
+	_veh_watch = keep
+
+## The state the 2026-07-20/21 investigation had to reconstruct after the fact:
+## was the autopilot on, where was it told to go, did an NPC own it, and what
+## else was standing in its hull. Built ONLY after the tolerance was already
+## exceeded, so the cost never lands on the normal path.
+func _vehicle_diagnostic_dump(node: Node3D) -> String:
+	var lines : Array[String] = []
+	lines.append("    npc_autopilot=%s  _npc_target_active=%s  _npc_target=%s" % [
+		str(node.get("npc_autopilot")), str(node.get("_npc_target_active")), str(node.get("_npc_target"))])
+	lines.append("    npc_owned=%s  npc_owner_name=%s  occupied=%s" % [
+		str(node.get("npc_owned")), str(node.get("npc_owner_name")), str(node.get("occupied"))])
+	lines.append("    rotation.y=%.4f  path=%s" % [node.rotation.y, str(node.get_path())])
+	lines.append("    bodies within %.0f m:" % VEH_SENTINEL_NEAR_M)
+	var space := get_world_3d().direct_space_state
+	if space == null:
+		lines.append("      (no space state)")
+		return "\n".join(lines)
+	var sh := SphereShape3D.new()
+	sh.radius = VEH_SENTINEL_NEAR_M
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = sh
+	q.transform = Transform3D(Basis.IDENTITY, node.global_position)
+	q.collide_with_areas = false
+	q.collide_with_bodies = true
+	# EVERY layer, not the vehicle's normal mask: ShiftCarSpawner parks its cars
+	# on the query-only layer 1<<19 with mask 0, so a default-mask probe would be
+	# blind to exactly the neighbour we most want named if one turns out to push.
+	q.collision_mask = 0xFFFFFFFF
+	var found := 0
+	for r in space.intersect_shape(q, 16):
+		var col := r.get("collider") as Node
+		if col == null or col == node or node.is_ancestor_of(col):
+			continue
+		found += 1
+		lines.append("      %s  vel=%s  path=%s" % [
+			String(col.name), _body_velocity_str(col), str(col.get_path())])
+	if found == 0:
+		lines.append("      (none)")
+	return "\n".join(lines)
+
+## Best-effort velocity readout for an arbitrary neighbouring body: RigidBody3D
+## exposes linear_velocity, CharacterBody3D exposes velocity, statics/animatables
+## expose neither (an AnimatableBody3D that teleports its transform every frame
+## reads "static" here — that absence is itself a useful signal).
+func _body_velocity_str(body: Node) -> String:
+	var lv : Variant = body.get("linear_velocity")
+	if lv is Vector3:
+		var a : Vector3 = lv
+		return "(%.2f, %.2f, %.2f)" % [a.x, a.y, a.z]
+	var v : Variant = body.get("velocity")
+	if v is Vector3:
+		var b : Vector3 = v
+		return "(%.2f, %.2f, %.2f)" % [b.x, b.y, b.z]
+	return "static"
+
+## Any OTHER vehicle whose hull overlaps the would-be vehicle footprint at `at`.
+## Returns its display name, or "" when the spot is clear. Only vehicles block:
+## two nested dynamic hulls shove each other apart (the measured 2026-07-20
+## stacked-clamp case); overlap rules for statics are unchanged on purpose.
+func _vehicle_spawn_blocker(at: Vector3) -> String:
+	var skip : Array[Node] = []
+	if _ghost != null:
+		skip.append(_ghost)
+	return _vehicle_blocker_at(_active_id, at, _ghost_rot_y, skip)
+
+## Shared clearance probe behind _vehicle_spawn_blocker, parameterised so the
+## LOAD path can reuse it for a restored pose (which has its own id + rot_y and
+## no ghost). Every node in `ignore` is skipped together with its subtree: a
+## restored vehicle must not report itself, and the load pass additionally
+## ignores every vehicle it restored this pass, because a body added or moved
+## this frame has not been synced into the physics space yet and would be
+## reported at a stale pose. Those are resolved geometrically instead.
+func _vehicle_blocker_at(id: String, at: Vector3, rot_y: float, ignore: Array[Node]) -> String:
+	var space := get_world_3d().direct_space_state
+	if space == null:
+		return ""
+	var item : Dictionary = PlaceableCatalog.get_item(id)
+	var sz : Vector3 = item.get("size", Vector3(2.0, 2.5, 4.0)) if not item.is_empty() else Vector3(2.0, 2.5, 4.0)
+	var shape := BoxShape3D.new()
+	# 85 % footprint: brushing past a parked machine stays allowed; hull-on-hull
+	# does not.
+	shape.size = sz * 0.85
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = shape
+	q.transform = Transform3D(Basis(Vector3.UP, rot_y),
+		at + Vector3(0.0, sz.y * 0.5 + 0.1, 0.0))
+	q.collide_with_areas = false
+	for r in space.intersect_shape(q, 8):
+		var col : Object = r.get("collider")
+		var cur : Node = col as Node
+		while cur != null:
+			if cur.is_in_group("vehicle"):
+				if _is_ignored(cur, ignore):
+					break
+				return String(cur.name)
+			cur = cur.get_parent()
+	return ""
+
+## True when `n` is one of `ignore` or sits inside one of their subtrees.
+func _is_ignored(n: Node, ignore: Array[Node]) -> bool:
+	for ig in ignore:
+		if ig == null or not is_instance_valid(ig):
+			continue
+		if ig == n or ig.is_ancestor_of(n):
+			return true
+	return false
+
 ## A tall thin green vertical cylinder used as the edge-snap indicator.
 ## Hangs above the snap point so the operator can spot it across the floor.
 func _build_snap_marker() -> Node3D:
@@ -1124,14 +1496,38 @@ func _place_current() -> void:
 			_finalize_placed(pole, _active_id, 0.0)
 		_save_layout()
 		return
+	# Vehicle spawn clearance gate (operator 2026-07-20: five clamp clicks at one
+	# aim point nested five VehicleBody3Ds inside each other — the pile shoved
+	# itself apart/upward and read as "spawning is unsuccessful"). A vehicle may
+	# not materialize inside another vehicle; refuse LOUDLY instead of silently
+	# stacking. Statics keep the pre-existing free-placement rules.
+	if _active_id.begins_with("vehicle_"):
+		var blocker := _vehicle_spawn_blocker(_ghost.global_position)
+		if blocker != "":
+			_status.text = "SPAWN GEBLOKKEERD — %s staat op deze plek. Kies een vrije plek." % blocker
+			return
 	var node := PlaceableCatalog.build_node(_active_id, false)
 	if node == null:
 		return
 	_placed_root.add_child(node)
 	node.global_position = _ghost.global_position
+	# Vehicles get the same +0.5 m drop cushion VehicleSpawner uses — a
+	# VehicleBody3D whose wheels materialize exactly flush with the surface
+	# starts in contact-manifold ambiguity; a short drop settles it cleanly.
+	if _active_id.begins_with("vehicle_"):
+		node.global_position.y += 0.5
+		_arm_vehicle_watchdog(node)
 	node.rotation.y = _ghost_rot_y
 	_finalize_placed(node, _active_id, _ghost_height)
 	_finalize_bale(node)
+	# door_personnel / gate_roller / window_frame are decoration-only geometry
+	# from PlaceableCatalog (see build_node's #116 comment) — carve the matching
+	# wall opening NOW, live, instead of leaving the operator with a model
+	# standing in front of an intact wall until the next save/reload. Same path
+	# _load_structure_placeable replays on load, so a fresh placement and a
+	# reloaded one look and behave identically from this point on.
+	if _active_id == "door_personnel" or _active_id == "gate_roller" or _active_id == "window_frame":
+		_carve_structure_opening(node, _active_id, node.global_position, _ghost_rot_y)
 	_save_layout()
 	# #218 — Don't restart the whole line for observer-only fixtures (HMI panels,
 	# signs, doors, decorations). Rebuild wipes powered/spin/buffer and forces a
@@ -1176,10 +1572,15 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 		seq = LINE_SORT_SEQ
 	elif line_id == "line_intake_3c6":
 		seq = LINE_3C6_SEQ
+	elif line_id == "line_3c":
+		seq = LINE_3C_SEQ
 	# #MSB — pull operator-saved deltas (chain-accumulated) from the store.
 	# Each index's delta is added in the macro's LOCAL frame (x/z lateral,
 	# y vertical, rot_y around vertical). Empty dict = use const seed verbatim.
 	var macro_deltas : Dictionary = LineMacroStore.accumulated_chain(line_id, seq.size())
+	# Authored-graph macro: place geometry only, stamp NO lf_explicit_outs. See
+	# GRAPH_TOPOLOGY_MACROS — that meta suppresses LineFlow's Line3CDef.LINKS pass.
+	var graph_topology : bool = GRAPH_TOPOLOGY_MACROS.has(line_id)
 	# Forward = the ghost's local -Z; right = local +X (lateral lane for branches).
 	var fwd := Vector3(-sin(rot_y), 0.0, -cos(rot_y))
 	var rgt := Vector3(cos(rot_y), 0.0, -sin(rot_y))
@@ -1209,6 +1610,7 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 	const TB_CHUTE_DROP_M : float = 0.22
 	var prev_tb_outlet_y : float = -1.0   # sentinel = first belt sits on floor
 	var last_main_was_tb : bool = false
+	var prev_main_gap : float = LINE_GAP_M   # gap actually added after the previous main entry
 	for entry_idx in range(seq.size()):
 		var entry : Dictionary = seq[entry_idx]
 		var mid : String = String(entry.get("id", ""))
@@ -1242,16 +1644,20 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 			tb_y_offset = base_y
 			tb_outlet_y_after = base_y + outlet_top_off
 		var place_z : float
+		# Per-entry gap override: {"gap": 1.2} replaces LINE_GAP_M after this machine.
+		var gap_after : float = float(entry.get("gap", LINE_GAP_M))
 		if not is_branch:
 			# Main-centreline machine — advances the main cursor.
-			# Head-to-tail spacing for consecutive transportbands: undo the
-			# LINE_GAP_M that the previous main entry added, so this belt's
-			# inlet butts directly against the prior belt's outlet.
+			# Head-to-tail spacing for consecutive transportbands: undo the gap
+			# that the previous main entry actually added (a "gap" override may
+			# have replaced LINE_GAP_M), so this belt's inlet butts directly
+			# against the prior belt's outlet.
 			if last_main_was_tb and is_tb:
-				main_z -= LINE_GAP_M
+				main_z -= prev_main_gap
 			main_z += depth * 0.5
 			place_z = main_z
-			main_z += depth * 0.5 + LINE_GAP_M
+			main_z += depth * 0.5 + gap_after
+			prev_main_gap = gap_after
 			last_main_was_tb = is_tb
 		else:
 			# Branch machine — sits beside the line at (current cursor + z offset) and
@@ -1279,8 +1685,13 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 			var d_scale : Vector3 = Vector3.ONE
 			if d.has("scale") and d["scale"] is Vector3:
 				d_scale = d["scale"]
+			# #225.3 — optional per-entry "y" lifts a branch item onto a raised
+			# surface (e.g. lump carts resting on the lump_platform bordes deck at
+			# y=0.12, mirroring NpcTaskBench.PLATFORM_Y). Defaults to 0 so every
+			# existing macro entry is unchanged.
+			var entry_y : float = float(entry.get("y", 0.0))
 			node.global_position = Vector3(start.x, start.y + tb_y_offset, start.z) \
-				+ fwd * (place_z + d_dz) + rgt * (x + d_dx) + Vector3.UP * d_dy
+				+ fwd * (place_z + d_dz) + rgt * (x + d_dx) + Vector3.UP * (d_dy + entry_y)
 			node.rotation.y = rot_y + PI + d_drot
 			if d_scale != Vector3.ONE:
 				node.scale = d_scale
@@ -1292,7 +1703,22 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 			node.set_meta("macro_anchor", {"start": start, "rot_y": rot_y})
 			built += 1
 			# ── #71 branch state transitions ───────────────────────────────────
-			if is_branch:
+			# I1 fix (component_flags_review.md, confirmed 2026-07-06): utilities
+			# whose MachineFlow role is "none" (water pumps, kleine LA, lump cart
+			# + spot, …) must NOT take part in branch/parallel bookkeeping.
+			# LineFlow marks any node with a non-empty lf_explicit_outs meta as
+			# explicit_src BEFORE checking that its targets resolve and then skips
+			# the geometry fallback for it — but a role-none target is never
+			# discovered, so the edge is dropped and the source machine ends the
+			# linker with ZERO outgoing edges (fresh line_3a: transfer_chute lost
+			# its edge because of the side-lane water_pump). Role-none entries are
+			# placement-only: no _add_explicit_out, no chain/sibling membership,
+			# and (symmetrically) a role-none MAIN entry never becomes
+			# last_main_node or closes an open branch.
+			var flow_relevant : bool = _is_flow_relevant(mid) and not graph_topology
+			if not flow_relevant:
+				pass   # placement only — invisible to the flow topology
+			elif is_branch:
 				if is_parallel:
 					# Parallel sibling — share branch_source with peers, tag now.
 					if parallel_source == null:
@@ -1364,6 +1790,7 @@ func _macro_seed(macro_id: String) -> Array[Dictionary]:
 	if macro_id == "line_intake_3a3b": return INTAKE_3A3B_SEQ
 	if macro_id == "line_sort":        return LINE_SORT_SEQ
 	if macro_id == "line_intake_3c6":  return LINE_3C6_SEQ
+	if macro_id == "line_3c":          return LINE_3C_SEQ
 	return [] as Array[Dictionary]
 
 ## Re-walk the seed SEQ (no spawning) and emit an Array of {x, z, rot_y_extra}
@@ -1486,6 +1913,14 @@ func save_macro_overrides(macro_id: String) -> int:
 		# Wrap rotation into (-PI, PI] so saved deltas are minimal.
 		drot = wrapf(drot, -PI, PI)
 		var sc : Vector3 = node.scale
+		# #macro-sink corruption guard: if this machine has fallen through the
+		# world (physics sink) its absolute local delta is absurd — this is the
+		# line_3a dy≈-40 km bug, which compounded every save. Refuse to record
+		# it: skip the machine, do NOT roll the accumulator, leave the clean
+		# seed pose for it. Uses the same threshold the load path filters on.
+		if not LineMacroStore.delta_sane(dx, dy, dz, drot):
+			push_warning("[BuildMode] macro '%s' index %d pose implausible (dx=%.1f dy=%.1f dz=%.1f) — skipped, not saved" % [macro_id, i, dx, dy, dz])
+			continue
 		# Quick "is this machine actually moved?" check — within 1cm / 1°
 		# of the upstream-inherited drift means no explicit override here.
 		var explicit_dx : float = dx - acc.x
@@ -1706,6 +2141,7 @@ func _delete_pointed() -> void:
 	# If it owns a carved opening, restore that part of the wall first.
 	if target.has_meta("opening_id") and wall_openings:
 		wall_openings.remove_opening(String(target.get_meta("opening_id")))
+		BaseVehicle.invalidate_route_grid()   # the walled-up gap is solid again
 	# Drop from the flow group now so the rebuild below doesn't re-include it
 	# (queue_free only frees at end of frame).
 	target.remove_from_group("placed_object")
@@ -1828,6 +2264,7 @@ func _edit_delete_selected() -> void:
 	var deleted_id : String = String(target.get_meta("placeable_id", "")) if target.has_meta("placeable_id") else ""
 	if target.has_meta("opening_id") and wall_openings:
 		wall_openings.remove_opening(String(target.get_meta("opening_id")))
+		BaseVehicle.invalidate_route_grid()   # the walled-up gap is solid again
 	target.remove_from_group("placed_object")
 	var par := target.get_parent()
 	if par != null: par.remove_child(target)
@@ -1972,10 +2409,32 @@ func _update_edit_status() -> void:
 		else:
 			_dim_readout.text = "scale  X %.2f   Y %.2f   Z %.2f" % [sc_v.x, sc_v.y, sc_v.z]
 
+## The camera build mode AIMS with — always the player's, never merely the one
+## that happens to be `current`.
+##
+## Operator report 2026-07-20 (NPC bench): "when I spawn a bale clamp / a film
+## pile it always lands in the exact centre of the middle shredder". Root cause:
+## _raycast() built its ray from `get_viewport().get_camera_3d()` along that
+## camera's FORWARD AXIS — the mouse is never involved. NpcTaskBench's O key
+## (_cycle_observer) makes a STATIC ObserverCam current, so with observer mode on
+## the ray is one fixed line in space and EVERY placeable of EVERY kind lands on
+## the single point that line first hits. Pre-placed bench bales looked fine
+## because the rig places them directly, not through build mode.
+##
+## Ruled out first, by measurement, not by argument: add_child-then-position
+## stranding RigidBody3D children at the origin — src/tests/test_spawn_transform.gd
+## shows both orderings land within 0.8 m of the aim point.
+func _aim_camera() -> Camera3D:
+	if player_body != null and is_instance_valid(player_body):
+		var pc := player_body.find_child("Camera3D", true, false) as Camera3D
+		if pc != null:
+			return pc
+	return get_viewport().get_camera_3d()
+
 # Camera-forward ray against the world (floor / building / placed objects),
 # excluding the player capsule and the (collision-less) ghost.
 func _raycast() -> Dictionary:
-	var cam := get_viewport().get_camera_3d()
+	var cam := _aim_camera()
 	if cam == null:
 		return {}
 	var from := cam.global_position
@@ -2116,6 +2575,10 @@ func _make_surface(points: Array, type_str: String, label: String) -> Node3D:
 		var oh : float = clampf(height, 0.5, 8.0)
 		wall_openings.add_opening(oid, center, Vector3(ow, oh, 2.0), rot_y)
 		node.set_meta("opening_id", oid)
+		# See _carve_structure_opening's note: the shared vehicle route grid
+		# samples colliders once per world and would otherwise ignore this cut
+		# for the rest of the session.
+		BaseVehicle.invalidate_route_grid()
 	return node
 
 ## #104 — robust against any click order. The UI asks for BL → TL → TR → BR
@@ -2224,6 +2687,14 @@ func _save_layout() -> void:
 				entry["scale"] = [sc_v.x, sc_v.y, sc_v.z]
 			if child.has_meta("bale_code"):
 				entry["code"] = String(child.get_meta("bale_code"))
+			# phys-04 — lump_cart fill survives save/load. Persist kg + remaining
+			# cool-down seconds so a full 90 kg cart doesn't reload empty (mass
+			# conservation) and a hot cart stays hot across the save boundary.
+			# Written only when loaded; absence on load means an empty cart.
+			if child.is_in_group("lump_cart") and "lumps_kg" in child \
+					and float(child.get("lumps_kg")) > 0.001:
+				entry["lumps_kg"] = float(child.get("lumps_kg"))
+				entry["cool_left_s"] = float(child.call("cool_remaining_s"))
 			# #MSB — round-trip macro membership so a reopened save can still
 			# invoke save-back on previously placed macro members.
 			if child.has_meta("macro_id"):
@@ -2278,10 +2749,37 @@ func _save_layout() -> void:
 		f.close()
 	# Push the SHARED structure list to WorldLayout and persist it so EVERY save
 	# (including brand-new ones) inherits the building's walls / doors / gates / windows.
-	WorldLayout.structure_items = shared
-	WorldLayout.save()
+	#
+	# ONLY when this instance actually loaded that structure. A BuildMode with
+	# load_shared_structure = false (test benches, ExtruderGauntlet) never
+	# instantiated the site's walls/doors, so `shared` is empty for reasons that
+	# have nothing to do with the operator deleting anything — writing it back
+	# would erase the real site structure for EVERY save. This is not
+	# hypothetical: SaveCoordinator's 60 s autosave routes
+	# save_game -> _save_layout -> WorldLayout.save(), so any booted bench would
+	# have wiped it on a timer, unattended.
+	if load_shared_structure:
+		WorldLayout.structure_items = shared
+		WorldLayout.save()
+
+# Vehicles restored by the CURRENT load_layout() pass — one entry per vehicle,
+# {node, id}. Rebuilt every load, consumed and cleared by
+# _denest_loaded_vehicles(). Saves written before the placement clearance gate
+# (BuildMode._vehicle_spawn_blocker) contain nested vehicle poses, and applying
+# those poses verbatim re-creates the overlap that made hulls translate forever.
+var _loaded_vehicles : Array[Dictionary] = []
+
+## De-nest search geometry. Fixed step + fixed angle count = deterministic: the
+## same save always yields the same corrected poses, so the regression harness
+## and the operator's world stay reproducible. 1.5 m clears a bale-clamp
+## footprint (1.6 × 3.6 m) in one or two rings; 8 rings reaches 12 m, past any
+## plausible ladder cluster without walking a vehicle across the plant.
+const DENEST_STEP_M : float = 1.5
+const DENEST_RINGS : int = 8
+const DENEST_ANGLES : int = 12
 
 func load_layout() -> void:
+	_loaded_vehicles.clear()
 	# Per-save data (machines, signs, plain panels — playthrough-specific items).
 	# Falls through with an empty `data` array so a new save (no per-save file) still
 	# loads the SHARED structure (walls / doors / gates / windows) below.
@@ -2325,11 +2823,135 @@ func load_layout() -> void:
 			count += 1
 	# Always overlay the SHARED building structure (walls + doors + gates + windows)
 	# on top of per-save items, so a brand-new save still gets the factory's interior.
+	# Test benches (ExtruderGauntlet) opt out: they have no building shell, so site
+	# doors/gates would float in the void hundreds of metres from the bench floor.
 	var shared_count := 0
-	for s_entry in WorldLayout.structure_items:
-		if _apply_layout_entry(s_entry):
-			shared_count += 1
+	if load_shared_structure:
+		for s_entry in WorldLayout.structure_items:
+			if _apply_layout_entry(s_entry):
+				shared_count += 1
+	# Restored vehicle poses are NOT clearance-checked on the way in (they were
+	# valid when saved, or predate the gate). Resolve any nesting before the
+	# first physics frame runs on them.
+	_denest_loaded_vehicles()
 	print("[BuildMode] Loaded %d placed objects (per-save) + %d shared structure" % [count, shared_count])
+
+## Move restored vehicles off each other so no two hulls start overlapped.
+##
+## Overlap is the ENTRY condition for the runaway-drift bug: Rapier's contact
+## recovery inside BaseVehicle's move_and_collide pushes two nested frozen-
+## kinematic hulls by the same vector every frame, so the overlap never resolves.
+## BaseVehicle._clamp_recovery_overshoot bounds that motion; this removes its
+## cause on the load path, the one path that still applies poses unchecked.
+##
+## A saved vehicle is NEVER dropped: if no clear spot is found inside the search
+## radius the original pose is kept and the conflict is reported.
+func _denest_loaded_vehicles() -> void:
+	if _loaded_vehicles.is_empty():
+		return
+	# Every vehicle restored this pass is invisible to the physics probe (not yet
+	# synced into the space), so they are resolved against each other with the
+	# same 85 % footprint the placement gate uses, and excluded from the probe.
+	var skip : Array[Node] = []
+	for v in _loaded_vehicles:
+		var vn : Node3D = v["node"]
+		if is_instance_valid(vn):
+			skip.append(vn)
+	var settled : Array[Dictionary] = []
+	var moved := 0
+	for v2 in _loaded_vehicles:
+		var node : Node3D = v2["node"]
+		if not is_instance_valid(node):
+			continue
+		var vid : String = v2["id"]
+		var size := _vehicle_footprint(vid)
+		var rot_y := node.rotation.y
+		var pos := node.global_position
+		var blocker := _denest_blocker(vid, pos, rot_y, size, settled, skip)
+		if blocker == "":
+			settled.append({"pos": pos, "rot": rot_y, "size": size})
+			continue
+		var found := false
+		for ring in range(1, DENEST_RINGS + 1):
+			var radius := float(ring) * DENEST_STEP_M
+			for a in DENEST_ANGLES:
+				var ang := TAU * float(a) / float(DENEST_ANGLES)
+				var cand := pos + Vector3(cos(ang) * radius, 0.0, sin(ang) * radius)
+				if _denest_blocker(vid, cand, rot_y, size, settled, skip) != "":
+					continue
+				push_warning("[BuildMode] de-nest on load: '%s' (%s) was inside '%s' at %s — offset %.2f m to %s"
+					% [String(node.name), vid, blocker, str(pos.round()),
+						(cand - pos).length(), str(cand.round())])
+				node.global_position = cand
+				settled.append({"pos": cand, "rot": rot_y, "size": size})
+				moved += 1
+				found = true
+				break
+			if found:
+				break
+		if not found:
+			push_warning("[BuildMode] de-nest on load: '%s' (%s) is inside '%s' at %s and NO clear spot was found within %.1f m — kept at its saved pose"
+				% [String(node.name), vid, blocker, str(pos.round()),
+					float(DENEST_RINGS) * DENEST_STEP_M])
+			settled.append({"pos": pos, "rot": rot_y, "size": size})
+	if moved > 0:
+		print("[BuildMode] de-nest on load: offset %d of %d restored vehicles" % [moved, _loaded_vehicles.size()])
+	_loaded_vehicles.clear()
+
+## Catalog hull size for a vehicle id, with the same fallback the placement gate
+## uses so both paths agree on what "overlapping" means.
+func _vehicle_footprint(id: String) -> Vector3:
+	var item : Dictionary = PlaceableCatalog.get_item(id)
+	if item.is_empty():
+		return Vector3(2.0, 2.5, 4.0)
+	return item.get("size", Vector3(2.0, 2.5, 4.0))
+
+## Name of whatever blocks `at`, or "" when the spot is clear. Two sources:
+## the live physics probe (world vehicles that predate this load) and a
+## geometric test against the vehicles already settled by this pass.
+func _denest_blocker(id: String, at: Vector3, rot_y: float, size: Vector3,
+		settled: Array[Dictionary], skip: Array[Node]) -> String:
+	var live := _vehicle_blocker_at(id, at, rot_y, skip)
+	if live != "":
+		return live
+	for i in settled.size():
+		var s : Dictionary = settled[i]
+		var s_pos : Vector3 = s["pos"]
+		var s_rot : float = s["rot"]
+		var s_size : Vector3 = s["size"]
+		if _hulls_overlap(at, rot_y, size, s_pos, s_rot, s_size):
+			return "restored vehicle #%d" % i
+	return ""
+
+## 85 %-footprint overlap test between two vehicle hulls, mirroring the placement
+## gate: box centres sit at pos.y + size.y * 0.5 + 0.1, extents are size * 0.85.
+## Separating-axis test on the four footprint axes plus a vertical interval test
+## — a nested "ladder" pair overlaps on both, a machine parked alongside on
+## neither.
+func _hulls_overlap(a_pos: Vector3, a_rot: float, a_size: Vector3,
+		b_pos: Vector3, b_rot: float, b_size: Vector3) -> bool:
+	var a_cy := a_pos.y + a_size.y * 0.5 + 0.1
+	var b_cy := b_pos.y + b_size.y * 0.5 + 0.1
+	var a_hy := a_size.y * 0.85 * 0.5
+	var b_hy := b_size.y * 0.85 * 0.5
+	if absf(a_cy - b_cy) >= a_hy + b_hy:
+		return false
+	var d := Vector2(b_pos.x - a_pos.x, b_pos.z - a_pos.z)
+	var axes : Array[Vector2] = [
+		Vector2(cos(a_rot), -sin(a_rot)), Vector2(sin(a_rot), cos(a_rot)),
+		Vector2(cos(b_rot), -sin(b_rot)), Vector2(sin(b_rot), cos(b_rot)),
+	]
+	for ax in axes:
+		var reach := _footprint_reach(ax, a_rot, a_size) + _footprint_reach(ax, b_rot, b_size)
+		if absf(d.dot(ax)) >= reach:
+			return false
+	return true
+
+## Half-extent of a Y-rotated 85 % footprint projected onto `axis`.
+func _footprint_reach(axis: Vector2, rot_y: float, size: Vector3) -> float:
+	var ux := Vector2(cos(rot_y), -sin(rot_y))
+	var uz := Vector2(sin(rot_y), cos(rot_y))
+	return absf(axis.dot(ux)) * size.x * 0.85 * 0.5 + absf(axis.dot(uz)) * size.z * 0.85 * 0.5
 
 ## Apply one persisted layout entry (from per-save or shared structure). Returns
 ## true when an object was actually placed in the scene.
@@ -2458,6 +3080,19 @@ func _apply_layout_entry(entry: Variant) -> bool:
 			node.scale = Vector3(sc, sc, sc)
 	_finalize_placed(node, String(dict.get("id", "")), float(dict.get("h", 0.0)))
 	_finalize_bale(node, String(dict.get("code", "")))
+	# A placed vehicle's life spans reloads — the 2026-07-20 clamps were only seen
+	# displaced in a LATER save, never at the moment of placement. So a restored
+	# vehicle joins the standing sentinel too, baselined on its restored pose.
+	if entry_id.begins_with("vehicle_"):
+		_arm_vehicle_watchdog(node)
+		# Queued for the post-load clearance pass (_denest_loaded_vehicles): a
+		# saved pose is applied verbatim here, and pre-gate saves contain nested
+		# pairs.
+		_loaded_vehicles.append({"node": node, "id": entry_id})
+	# phys-04 — restore lump_cart fill (kg + remaining cool-down) persisted by
+	# _save_layout; restore_fill re-syncs mass and re-anchors the cool timer.
+	if dict.has("lumps_kg") and node.is_in_group("lump_cart") and node.has_method("restore_fill"):
+		node.call("restore_fill", float(dict.get("lumps_kg", 0.0)), float(dict.get("cool_left_s", 0.0)))
 	# #MSB — restore macro membership metas from disk so save-back still works
 	# after a reload of a save that placed a macro previously.
 	if dict.has("macro_id"):
@@ -2497,10 +3132,24 @@ func _load_structure_placeable(resolved_id: String, dict: Dictionary) -> void:
 	node.global_position = pos
 	node.rotation.y = float(dict.get("rot_y", 0.0))
 	_finalize_placed(node, resolved_id, float(dict.get("h", 0.0)))
-	# Carve the matching wall opening. Centre = leaf centre (Y = pos.y + H/2 so
-	# the bottom of the cut sits on the floor). Rotation = node yaw. Catalog
-	# size gives W×H; depth (2.0 m) is generous so the cut always punches the
-	# wall regardless of its thickness.
+	_carve_structure_opening(node, resolved_id, pos, float(dict.get("rot_y", 0.0)))
+
+## Cut the wall opening a door/gate/window placeable stands in — visual +
+## collision, immediately (WallOpenings.add_opening rebuilds synchronously).
+## Centre = leaf centre (Y = pos.y + H/2 so the bottom of the cut sits on the
+## floor). Rotation = node yaw. Catalog size gives W×H; depth (2.0 m) is
+## generous so the cut always punches the wall regardless of its thickness.
+##
+## SINGLE SOURCE for this carve: previously only the RELOAD path
+## (_load_structure_placeable) called this, because catalog id door_personnel /
+## gate_roller / window_frame is built as a decoration-only visual (see
+## PlaceableCatalog.gd #116 — "operator drops them into a pre-existing hole").
+## A freshly single-clicked gate therefore stood in front of an intact wall
+## with no way through until the operator saved and reloaded the world
+## (operator report 2026-07-22: "no way through was created"). Now the LIVE
+## placement path (_place_current) calls this too, so the cut appears the
+## instant the gate is dropped, not after a round-trip through disk.
+func _carve_structure_opening(node: Node3D, resolved_id: String, pos: Vector3, rot_y: float) -> void:
 	if wall_openings == null:
 		return
 	var item := PlaceableCatalog.get_item(resolved_id)
@@ -2510,8 +3159,14 @@ func _load_structure_placeable(resolved_id: String, dict: Dictionary) -> void:
 	var cut_centre := pos + Vector3(0.0, oh * 0.5, 0.0)
 	_opening_seq += 1
 	var oid := "op_%d" % _opening_seq
-	wall_openings.add_opening(oid, cut_centre, Vector3(ow, oh, 2.0), float(dict.get("rot_y", 0.0)))
+	wall_openings.add_opening(oid, cut_centre, Vector3(ow, oh, 2.0), rot_y)
 	node.set_meta("opening_id", oid)
+	# The shared vehicle route grid samples real colliders ONCE per world and is
+	# cached from then on (BaseVehicle._route_grid) — a carve made after that
+	# first sample was invisible to every vehicle already driving this session
+	# (operator's own forklift, mid-shift, ignored a freshly-placed gate).
+	# Force it to resample on the next drive order.
+	BaseVehicle.invalidate_route_grid()
 
 ## Converts a legacy box-door entry {id:"door", x,y,z,rot_y} into the new
 ## interactive roller door with a carved opening, by reconstructing its 4

@@ -136,6 +136,16 @@ const STACK_VERTICAL_GAP  : float = 0.30
 var _carried_natural_local_y : Dictionary = {}
 
 # Input axes (set each frame by _gather_input when occupied)
+## OPERATOR-FORWARD SIGN (operator report 2026-07-20: "reverse alarm when I go
+## forwards and vice versa. Forks/clamps and seat position and look direction
+## are forwards"). Forklift / BaleClamp / Merlo / MerloP40 are authored with the
+## working gear AND the cab camera on +Z, while the canonical drive convention
+## is forward = -basis.z. So the seat looks at the forks, but the code called
+## fork-first travel "reverse": the throttle key drove AWAY from what the
+## operator faces, and the reverse beeper + beam fired during fork-first travel.
+## -1.0 flips the OPERATOR boundary only (throttle sign, steering sign, beeper/
+## beam gate, beam aim). NPC autopilot paths stay canonical and are untouched.
+@export var operator_forward_sign : float = 1.0
 var _throttle: float = 0.0    # -1 reverse … +1 forward — SMOOTHED throttle command (post-ramp)
 var _throttle_raw : float = 0.0   # -1..+1 raw input axis BEFORE the SmoothedRate input ramp
 var _steering: float = 0.0    # +1 left … -1 right (Godot VehicleWheel3D convention: positive steer = wheels rotate CCW from above = LEFT)
@@ -160,9 +170,12 @@ var _brake_raw : float = 0.0      # 0..1 raw brake axis BEFORE the SmoothedRate 
 # Both stages preserve the existing W/A/S/D/Space input mapping verbatim —
 # only the engine_force / brake assignment changes downstream.
 @export_group("Drive ramps")
+# #223 audit: brake was 24 m/s² = 2.4 g — physically impossible for any tyre on
+# concrete (best road cars peak ~1.0-1.1 g). Realistic service-brake defaults;
+# subclasses override per machine (forklift/car below).
 @export var throttle_accel_mps2 : float = 8.0   # legacy DRIVE_ACCEL — accelerate-to-target rate
-@export var brake_decel_mps2    : float = 24.0  # legacy DRIVE_ACCEL * 3 — foot-brake / handbrake deceleration
-@export var coast_decel_mps2    : float = 8.0   # legacy DRIVE_ACCEL — passive (no throttle, no brake) deceleration
+@export var brake_decel_mps2    : float = 6.0   # was 24 (2.4g!) — strong service brake ~0.6 g
+@export var coast_decel_mps2    : float = 1.5   # was 8 — passive roll-down (drivetrain drag)
 @export var throttle_ramp_tau_s : float = 0.6   # input-side ramp tau (cars default)
 @export var brake_ramp_tau_s    : float = 0.3   # input-side brake ramp tau — fast but not instant
 var _throttle_smoother : SmoothedRate = null
@@ -298,6 +311,47 @@ func get_boarding_position() -> Vector3:
 	var base : Vector3 = global_position + global_transform.basis * dismount_offset
 	base.y = global_position.y
 	return base
+
+# ── npc-05 — loose-bulk carry ledger ─────────────────────────────────────────
+# OverflowDumpTask scoops a full indoor waste bin into the vehicle and tips it
+# into the outdoor skip. It probed for load_bulk()/unload_bulk() with
+# has_method() guards, but NOTHING in production implemented them: every real
+# session emptied the indoor bin and then added 0.0 kg to the skip, so the mass
+# left the world silently ("bin empties, skip stays at 0.00 kg, forever").
+#
+# This is a BOOKKEEPING ledger, not a modelled bucket: no geometry, no visual,
+# no capacity limit invented out of thin air. It records what the machine is
+# currently carrying so the mass is conserved across the drive leg, and the
+# density travels with it so the receiving container blends correctly instead of
+# being handed a hardcoded 200 kg/m3.
+var carried_bulk_kg      : float = 0.0
+var carried_bulk_density : float = 0.0
+
+## Take `kg` of loose bulk aboard at `density_kg_m3`. Mass-weighted density blend
+## so two scoops of different material average out honestly.
+func load_bulk(kg: float, density_kg_m3: float = 0.0) -> void:
+	if kg <= 0.0:
+		return
+	var d : float = density_kg_m3 if density_kg_m3 > 0.0 else carried_bulk_density
+	if d <= 0.0:
+		d = 200.0
+	if carried_bulk_kg > 0.0 and carried_bulk_density > 0.0:
+		carried_bulk_density = (carried_bulk_density * carried_bulk_kg + d * kg) / (carried_bulk_kg + kg)
+	else:
+		carried_bulk_density = d
+	carried_bulk_kg += kg
+
+## Tip everything off. Returns the kg that left the vehicle so the caller can
+## ledger the dump; the density it was carried at stays readable until the next
+## load via bulk_density().
+func unload_bulk() -> float:
+	var out : float = carried_bulk_kg
+	carried_bulk_kg = 0.0
+	return out
+
+## Density (kg/m3) of what is aboard — or of what just left, until the next load.
+func bulk_density() -> float:
+	return carried_bulk_density if carried_bulk_density > 0.0 else 200.0
 
 ## NPC boarding — parents the NPC under a SeatMarker node if the vehicle has
 ## one, otherwise pins to the chassis origin. Flips occupied=true so passersby
@@ -574,6 +628,9 @@ func _try_grab() -> void:
 		# No qualifying body in range. If we were holding a reference, drop it —
 		# the operator pressed grab but nothing is there to grab.
 		if _carried_bale != null:
+			# #9 — clear the carried flag so a let-go bale is feed-eligible again.
+			if is_instance_valid(_carried_bale):
+				_carried_bale.set_meta("carried", false)
 			_carried_bale = null
 			_on_released()
 		return
@@ -587,7 +644,27 @@ func _try_grab() -> void:
 	# reparent — pure physics from here on.
 	if best.has_meta("simple_bale"):
 		PlaceableCatalog.detail_bale(best)
+	# #9 — the sensor can latch a DIFFERENT body while we're still flagged on the
+	# old one (force-ramp / pinch re-fires _try_grab mid-carry). Un-mark the old
+	# load or it stays feed-ineligible forever (LineFlow._bale_at skips it).
+	if _carried_bale != null and _carried_bale != best and is_instance_valid(_carried_bale):
+		_carried_bale.set_meta("carried", false)
 	_carried_bale = best
+	# #9 — mark the bale as in-transit so LineFlow._bale_at won't feed from it
+	# while it's being carried (a re-grabbed, previously-delivered bale must not
+	# keep metering into the line as it's hauled away). Cleared on release.
+	best.set_meta("carried", true)
+	# MAGIC-BALE FIX (operator 2026-07-16): placed bales spawn freeze=true /
+	# FREEZE_MODE_KINEMATIC (PlaceableCatalog ~1329) so untouched yard stacks
+	# don't drift. That freeze=false flip on grab was orphaned in #201 Step 5, so
+	# a grabbed bale stayed a FROZEN kinematic body — it ignored gravity AND could
+	# not be pushed by the AnimatableBody3D plates (kinematic-vs-kinematic doesn't
+	# resolve), leaving it hovering detached as the clamp drove off. Unfreeze it
+	# the instant it's latched so gravity + the μ=1.6 plate friction do the carry
+	# (no joint reintroduced). Left unfrozen on release so it falls + rests. Never
+	# re-freeze while carried / on release — that is what made bales hover forever.
+	if best is RigidBody3D:
+		(best as RigidBody3D).freeze = false
 	_bale_orig_parent = null
 	_carried_stack.clear()
 	_carried_stack_orig_parents.clear()
@@ -601,12 +678,48 @@ func _release() -> void:
 	_on_pre_release()
 	if _carried_bale == null:
 		return
+	# #9 — clear the in-transit flag so the released bale can feed again once it's
+	# set down.
+	if is_instance_valid(_carried_bale):
+		_carried_bale.set_meta("carried", false)
+		# FEED-ELIGIBILITY (narrow, correct path — #201 removed the blanket
+		# _drop_bale delivered flag because it fired at pickup/mid-air). Mark the
+		# bale delivered=true ONLY when it is SET DOWN within range of a real line
+		# feed point (an intake marker or a feed belt). LineFlow._bale_at then
+		# ingests it; a bale released anywhere else stays inert. Bales never fire
+		# this at pickup (that path is _try_grab, which sets carried=true, not
+		# delivered) nor mid-air (the vehicle drives the load to the feed point and
+		# opens the tool AT the belt).
+		if _carried_bale.is_in_group("bale") and _carried_bale.has_meta("material_origin"):
+			if _is_near_line_feed_point(_carried_bale.global_position):
+				_carried_bale.set_meta("delivered", true)
+		# #201 Step 5 removed the only _drop_bale caller, orphaning the dump-zone
+		# tip check — re-attach it here so a movable skip released over a
+		# "dump_zone" marker still empties (LegacyPropsSpawner tip-zone flow).
+		if _carried_bale.is_in_group("waste_container") and _carried_bale.has_method("empty"):
+			var zone := _dump_zone_at(_carried_bale.global_position)
+			if zone != null:
+				var dumped: float = _carried_bale.call("empty")
+				print("[Dump] Skip emptied %.0f kg at %s" % [dumped, zone.name])
 	_carried_bale = null
 	_bale_orig_parent = null
 	_carried_stack.clear()
 	_carried_stack_orig_parents.clear()
 	_carried_natural_local_y.clear()
 	_on_released()
+
+## True when `pos` is within range of a line feed point (intake marker / feed
+## belt). Delegates to MainWorld.is_near_line_feed_point — found by walking up the
+## ancestors (the vehicle lives under MainWorld). Returns false (no delivery) when
+## the world can't be reached (headless tests, no MainWorld), which is correct: a
+## test that wants a delivered bale sets the meta itself (see VehicleBaleTest).
+func _is_near_line_feed_point(pos: Vector3) -> bool:
+	var n : Node = self
+	while n != null:
+		if n.has_method("is_near_line_feed_point"):
+			return bool(n.call("is_near_line_feed_point", pos))
+		n = n.get_parent()
+	return false
 
 ## Reparent a bale under `dest` keeping its world transform, mark it delivered,
 ## un-grab it, and settle it onto the floor below.
@@ -680,52 +793,10 @@ func _clamp_carried_against_obstacles() -> void:
 	# bales from clipping into stacks; with the snap gone, gravity + contact
 	# solve this for free. Body kept for save-compat and stays a no-op.
 	return
-	# legacy path below is unreachable but kept verbatim for review.
-	if _carried_bale == null:
-		return
-	var space := get_world_3d().direct_space_state
-	if space == null:
-		return
-	# Build the full list of carried bodies (primary + stack).
-	var all_carried : Array[Node3D] = [_carried_bale]
-	for sb in _carried_stack:
-		if sb != null and is_instance_valid(sb):
-			all_carried.append(sb)
-	# 1) Reset to natural local Y so the clamp is recomputed cleanly every frame.
-	for b in all_carried:
-		var key := b.get_instance_id()
-		if _carried_natural_local_y.has(key):
-			b.position.y = _carried_natural_local_y[key]
-	# 2) Find the LOWEST carried bale — that's the one whose bottom hits an
-	#    obstacle first when the carrier lowers the load.
-	var lowest := all_carried[0]
-	for b in all_carried:
-		if b.global_position.y < lowest.global_position.y:
-			lowest = b
-	# 3) Probe straight down from a hair above the bale's TOP, deep enough to
-	#    catch obstacles within reach. Exclude the vehicle + every carried body
-	#    (we don't want to "hit ourselves" with the carried stack).
-	var sz := _carry_size(lowest)
-	var bottom_y := lowest.global_position.y - sz.y * 0.5
-	var start := lowest.global_position + Vector3.UP * (sz.y * 0.5 + 0.05)
-	var probe := PhysicsRayQueryParameters3D.create(start, start + Vector3.DOWN * 6.0)
-	var excl : Array = [get_rid()]
-	for b in all_carried:
-		if b is PhysicsBody3D:
-			excl.append((b as PhysicsBody3D).get_rid())
-	probe.exclude = excl
-	var hit := space.intersect_ray(probe)
-	if hit.is_empty():
-		return
-	var obstacle_top_y : float = (hit["position"] as Vector3).y
-	var lift_needed := obstacle_top_y - bottom_y
-	if lift_needed <= 0.0:
-		return   # already above the obstacle — nothing to push
-	# 4) Push every carried bale up by the same amount so the stack stays intact.
-	#    (Local Y, since carried bales are parented under the carry point and we
-	#    care about the vertical world axis — small mast tilts are negligible.)
-	for b in all_carried:
-		b.position.y += lift_needed
+	# The legacy positional clamp that used to live here was deleted on
+	# 2026-07-20: it sat after the return, so it was unreachable code (a
+	# warning, and warnings are errors here). Recover it from git history if
+	# the contact solve ever proves insufficient.
 
 ## A box collision shape's size (m), or Vector3.ONE if the body has no BoxShape.
 ## Local helper so BaseVehicle doesn't depend on BaleClamp's identical _bale_size.
@@ -838,27 +909,180 @@ func can_enter() -> bool:
 var npc_autopilot      : bool    = false
 var _npc_target        : Vector3 = Vector3.ZERO
 var _npc_target_active : bool    = false
+var _npc_reverse       : bool    = false   # carry-first approach: back the carry gear onto the target
+var _pilot             : VehiclePilot = null   # npc-06 local sensing, built on first NPC drive
+# npc-06 GLOBAL ROUTE. _npc_goal is what the caller asked for; _npc_target is the
+# waypoint currently being driven to. With no route the two are identical, which
+# is exactly the old dead-reckoning behaviour — so a world where the grid cannot
+# build degrades to what shipped rather than to a vehicle that refuses to move.
+var _npc_goal    : Vector3 = Vector3.ZERO
+var _npc_route   : PackedVector3Array = PackedVector3Array()
+var _npc_route_i : int = 0
+## Shared across every vehicle: the occupancy grid describes the plant, not the
+## driver. Rebuilt when the world changes so a test that boots a second MainWorld
+## cannot inherit the first one's obstacles.
+static var _route_grid : VehicleRouteGrid = null
+static var _route_grid_world : int = 0
+
+## Force the shared route grid to resample on the next NPC drive order. The
+## grid samples real colliders ONCE per world and caches from then on, so a
+## wall opening carved or removed mid-session (BuildMode door/gate/window
+## placement or deletion) is invisible to every vehicle already driving until
+## this is called — measured: a forklift ignored a freshly-placed gate for
+## the rest of the session. Cheap: this only drops the cache; the rebuild
+## itself stays lazy (paid on the next _ensure_route_grid() call).
+static func invalidate_route_grid() -> void:
+	_route_grid = null
+
 const NPC_ARRIVE_TOL   : float   = 2.2     # m — "close enough" to the waypoint
 const NPC_TURN_RATE    : float   = 1.8     # rad/s yaw slew toward the heading
 const NPC_CRUISE_FRAC  : float   = 0.55    # fraction of speed_limit the AI cruises at
 
+# NPC_TARGET_MAX_R — the sanity bound npc_set_target rejects beyond. Derived
+# from the world extent, not picked:
+#   · the drivable exterior apron is a 200 x 200 m slab centred on the plant
+#     anchor (MainWorld._spawn_exterior_ground, MainWorld.gd:918 / :933), so no
+#     drivable point is more than its half-diagonal, 141 m, from that anchor;
+#   · the plant anchor sits ~224 m from the scene origin (player_spawn is scene
+#     (-202.66, -8.0, 94.04), |xz| ~ 222 m);
+#   · 224 + 141 ~ 366 m bounds every real surface, so 500 m is that figure with
+#     ~35 % headroom for yard / macro extensions.
+# Re-checked 2026-07-21 against the marker-frame fix (WorldFrame._layout_to_scene
+# is now the identity): this derivation was already reading player_spawn as an
+# ABSOLUTE scene coordinate, which is the canonical frame, so the bound is
+# unchanged. What DID change is the real spread — vehicles no longer spawn ~228 m
+# off their markers, so the headroom is now genuine slack rather than the amount
+# of misplacement the bound had to tolerate.
+# Deliberately NOT derived from the TempFloor slab (FloorDetector's
+# FLOOR_BOX_SIZE_XZ = 4000 m, i.e. +/-2000 m): that slab exists so nothing can
+# fall out of the world, it is not plant surface. The 2026-07-20 clamp beads at
+# x = +/-814 sat on that slab, hundreds of metres past anything drivable — which
+# is exactly the class of coordinate this radius rejects.
+const NPC_TARGET_MAX_R : float = 500.0   # m from the scene origin, XZ
+
 ## Point the vehicle at a world position and start driving there.
-func npc_set_target(p: Vector3) -> void:
+## carry_first=true: approach with the carry gear leading. All fork vehicles
+## mount forks/plates at local +Z while canonical drive-forward is -Z, so an
+## NPC that noses in always parks the carry point on the FAR side of the load —
+## permanently outside GRAB_RANGE and the grab can never latch. Real clamp
+## drivers reverse onto the load; so does the autopilot in this mode.
+##
+## SANITY GUARD (2026-07-21). This entry point accepted ANY Vector3 — no finite
+## check, no bounds check — so a NaN or a wild coordinate would have been driven
+## toward silently. No current caller does that (every FeederWorker target is
+## bounded to a few metres by _find_bale / _work_spot, and the 2026-07-20
+## relocation was proven NOT to come through here: those clamps held
+## rotation.y == 0.0000, which _npc_drive cannot produce because it rewrites
+## rotation.y every frame). The guard is defence-in-depth against a future
+## caller, and it turns a silent 800 m excursion into a named warning. The bound
+## itself (NPC_TARGET_MAX_R) is derived from the world extent just above.
+##
+## A refusal leaves the previous waypoint state untouched (it was valid) rather
+## than stopping the vehicle — the guard rejects the bad order, it does not
+## invent a new one.
+func npc_set_target(p: Vector3, carry_first: bool = false) -> void:
+	if not (is_finite(p.x) and is_finite(p.y) and is_finite(p.z)):
+		push_warning("[BaseVehicle] %s (%s): REFUSED non-finite npc target %s" % [name, vehicle_type, str(p)])
+		return
+	var r := Vector2(p.x, p.z).length()
+	if r > NPC_TARGET_MAX_R:
+		push_warning("[BaseVehicle] %s (%s): REFUSED npc target %.1f m from the scene origin (max %.0f m) — target %s, vehicle at %s" % [
+			name, vehicle_type, r, NPC_TARGET_MAX_R, str(p), str(global_position)])
+		return
+	# npc-06 — RE-ORDER SUPPRESSION, and it is not an optimisation. Every driving
+	# task re-issues its destination EVERY physics tick until it arrives (e.g.
+	# OverflowDumpTask._tick_drive_to_indoor:136-138), so without this the route
+	# would be re-planned 60x/s AND the vehicle would restart at waypoint 0 every
+	# tick — it could never leave the first leg. Same order, same route, keep the
+	# progress already made along it.
+	if _npc_target_active and _npc_route.size() > 0 and p.distance_to(_npc_goal) < 0.5:
+		return
+	_npc_goal = p
 	_npc_target = p
 	_npc_target_active = true
 	npc_autopilot = true
+	_npc_reverse = false
+	# npc-06 — a new order is a new leg: the pilot's stuck timer, evade commit and
+	# reverse budget must not carry over, or a vehicle re-tasked mid-recovery
+	# inherits a manoeuvre aimed at the previous obstacle.
+	if _pilot != null:
+		_pilot.reset_leg()
+	_npc_route = _plan_route(p)
+	_npc_route_i = 0
+	if _npc_route.size() > 0:
+		_npc_target = _npc_route[0]
+	if carry_first:
+		var cp := _carry_point()
+		if cp != null and cp != self:
+			_npc_reverse = to_local(cp.global_position).z > 0.0
 
 ## Stop driving (hold position).
 func npc_stop() -> void:
 	_npc_target_active = false
 
-## True once we're within NPC_ARRIVE_TOL of the active waypoint (XZ).
+## True once we're within NPC_ARRIVE_TOL of the ORDERED destination (XZ) — not of
+## the intermediate waypoint currently being driven to. Reporting arrival at a
+## waypoint would let every task advance its phase the moment the route's first
+## corner was reached.
 func npc_arrived() -> bool:
 	if not _npc_target_active:
 		return true
 	var a := global_position; a.y = 0.0
-	var b := _npc_target;     b.y = 0.0
+	var b := _npc_goal;       b.y = 0.0
 	return a.distance_to(b) <= NPC_ARRIVE_TOL
+
+## Waypoints remaining on the planned route (0 when dead reckoning). Exposed so a
+## test can tell "arrived because it drove the route" from "arrived because the
+## route was empty and the straight line happened to be clear".
+func npc_route_points() -> int:
+	return _npc_route.size()
+
+## Plan a vehicle-scale route to `p`. An empty result means dead reckoning, which
+## is the shipped behaviour and the correct degradation: a world whose grid
+## cannot build must still move its vehicles.
+func _plan_route(p: Vector3) -> PackedVector3Array:
+	var grid := _ensure_route_grid()
+	if grid == null:
+		return PackedVector3Array()
+	var r := grid.route(global_position, p)
+	if r.is_empty():
+		# NAMED, not silent. An empty route means the grid found no vehicle-sized
+		# way through, and the vehicle then dead-reckons — which looks exactly like
+		# the bug this work removed. Measured cause on both jam fixtures: the
+		# endpoint was on the far side of the building envelope, and the operator's
+		# survey has ZERO doorways (world_layout structure_items is empty), so a
+		# 2.2 m probe correctly reports the interior as unreachable. Say so, rather
+		# than letting the caller infer it from a leg that wanders.
+		push_warning(("[BaseVehicle] %s (%s): NO VEHICLE ROUTE from %s to %s — falling back "
+			+ "to dead reckoning. Check whether either endpoint is inside the building "
+			+ "(no doorways exist in world_layout structure_items).")
+			% [name, vehicle_type, str(global_position.round()), str(p.round())])
+	return r
+
+## Build (or reuse) the shared site occupancy grid. Built lazily on the first NPC
+## drive order rather than at world load: a session where nothing is ever
+## NPC-driven never pays for it, and by first-order time the plant is placed.
+func _ensure_route_grid() -> VehicleRouteGrid:
+	var tree := get_tree()
+	if tree == null:
+		return null
+	var world := tree.current_scene
+	if world == null or not (world is Node3D):
+		return null
+	if _route_grid != null and _route_grid_world == world.get_instance_id():
+		return _route_grid
+	var bounds := NavSiteBounds.compute(world)
+	if bounds.size == Vector3.ZERO:
+		push_warning("[BaseVehicle] site bounds unmeasurable — NPC driving falls back to dead reckoning")
+		return null
+	var grid := VehicleRouteGrid.new()
+	if not grid.build(world as Node3D, bounds, global_position.y):
+		return null
+	_route_grid = grid
+	_route_grid_world = world.get_instance_id()
+	print("[VehicleRouteGrid] %d x %d cells over %.0f x %.0f m, %d blocked, built in %d ms"
+		% [grid.cols, grid.rows, bounds.size.x, bounds.size.z, grid.blocked_cells, grid.build_ms])
+	return _route_grid
 
 ## Per-frame AI driving: yaw toward the target (rate-limited), set forward speed
 ## scaled by how well we're facing it + how close we are. _kinematic_move (called
@@ -869,23 +1093,92 @@ func _npc_drive(delta: float) -> void:
 	to.y = 0.0
 	var dist := to.length()
 	if dist <= NPC_ARRIVE_TOL:
+		# Reached a waypoint: take the next one and keep rolling. Only the FINAL
+		# waypoint stops the vehicle, so a route does not brake at every corner.
+		if _advance_waypoint():
+			return
 		# AI hard-stop on arrival — use brake_decel_mps2 so an NPC-driven Forklift /
 		# Merlo stops at the same per-vehicle deceleration as a player-driven one.
 		_current_speed_mps = move_toward(_current_speed_mps, 0.0, brake_decel_mps2 * delta)
+		if _pilot != null:
+			_pilot.reset_leg()
 		return
 	# Canonical CeDo direction: forward = -basis.z. In Godot, -basis.z for a
 	# Y-rotation θ is (-sinθ, 0, -cosθ). So the yaw that points -basis.z along
 	# `to` is atan2(-to.x, -to.z) (equivalently atan2(to.x, to.z) + PI).
+	# Carry-first mode points +basis.z (the carry side) at the target instead
+	# and drives in reverse, so the forks/plates arrive ON the load.
 	var desired_yaw := atan2(-to.x, -to.z)
-	rotation.y = _approach_angle(rotation.y, desired_yaw, NPC_TURN_RATE * delta)
+	if _npc_reverse:
+		desired_yaw = atan2(to.x, to.z)
+	var cruise := (speed_limit_kmh / 3.6) * NPC_CRUISE_FRAC * _power_factor()
+	# npc-06 — LOCAL SENSING. Everything above is unchanged dead reckoning; the
+	# pilot is the only thing between it and the wheels. It reads the world and
+	# returns a heading bias + a speed scale, never a transform, so a jam that
+	# clears can be attributed to this layer and nothing else. See VehiclePilot.gd
+	# for why sensing (not a navmesh) is the missing organ — jam 1 reproduced with
+	# all 339 fence colliders stripped.
+	_ensure_pilot()
+	_pilot.advise(self, delta, cruise, _npc_target)
+	# While the pilot is rounding an obstacle the heading comes from the OBSTACLE,
+	# not from the target bearing — steering at a target behind a wall is what
+	# turned the timed swerve into an oscillation.
+	if is_finite(_pilot.heading_override):
+		desired_yaw = _pilot.heading_override
+	else:
+		desired_yaw += _pilot.yaw_bias
+	if not _pilot.hold_heading:
+		rotation.y = _approach_angle(rotation.y, desired_yaw, NPC_TURN_RATE * delta)
 	# Speed scales with alignment (don't barrel forward while still turning).
 	var yaw_err := _angle_diff(rotation.y, desired_yaw)
 	var align : float = clampf(cos(yaw_err), 0.0, 1.0)
-	var cruise := (speed_limit_kmh / 3.6) * NPC_CRUISE_FRAC * _power_factor()
-	var tgt_speed := cruise * align
+	var tgt_speed : float = cruise * align * _pilot.speed_scale
 	if dist < 4.0:
 		tgt_speed *= clampf(dist / 4.0, 0.25, 1.0)   # ease in to the waypoint
+	if _npc_reverse:
+		tgt_speed = -tgt_speed   # reverse along +basis.z (see _kinematic_move)
+	if _pilot.recovery_reverse:
+		# CRITICAL SEPARATION. The recovery reverse NEGATES the final command; it
+		# never touches _npc_reverse. That flag decides which END of the vehicle
+		# faces the load (carry-first approach), and overwriting it during a
+		# recovery manoeuvre would leave the forks on the far side of every load,
+		# permanently outside GRAB_RANGE. "Back away from the contact" composes
+		# with either approach mode; "set reverse = true" does not.
+		tgt_speed = -absf(cruise) * _pilot.speed_scale if not _npc_reverse \
+			else absf(cruise) * _pilot.speed_scale
 	_current_speed_mps = move_toward(_current_speed_mps, tgt_speed, throttle_accel_mps2 * delta)
+
+## Step to the next route waypoint. Returns false when the route is exhausted (or
+## there never was one), which is the caller's signal to brake. Clears the pilot's
+## per-leg state so a recovery aimed at the previous corner does not leak forward.
+func _advance_waypoint() -> bool:
+	if _npc_route_i + 1 >= _npc_route.size():
+		return false
+	_npc_route_i += 1
+	_npc_target = _npc_route[_npc_route_i]
+	if _pilot != null:
+		_pilot.reset_leg()
+	return true
+
+## The pilot is created on first NPC drive, not in _ready: a player-driven or
+## parked vehicle never allocates one, and nothing in the player path can be
+## affected by a node that does not exist.
+func _ensure_pilot() -> void:
+	if _pilot != null and is_instance_valid(_pilot):
+		return
+	_pilot = VehiclePilot.new()
+	_pilot.name = "VehiclePilot"
+	add_child(_pilot)
+
+## Recovery manoeuvres this vehicle's pilot has performed. Exposed so a test can
+## prove the pilot ENGAGED on a leg it passed — a cleared jam with zero
+## engagements is a coincidence, not a fix.
+var evade_count : int:
+	get: return _pilot.evade_count if _pilot != null else 0
+var recovery_reverse_count : int:
+	get: return _pilot.recovery_reverse_count if _pilot != null else 0
+var wedge_seconds_total : float:
+	get: return _pilot.wedge_seconds_total if _pilot != null else 0.0
 
 ## Smallest signed difference a→b, wrapped to [-PI, PI].
 func _angle_diff(a: float, b: float) -> float:
@@ -1034,8 +1327,13 @@ const TURN_RATE   : float = 1.6    # rad/s yaw at full steer
 # wheels are gone), so we don't bother. Future re-enablement of the friction
 # model would only need to add that one write here.
 const MAX_STEER_RAD          : float = 0.95993108859688   # 55 deg
-const STEER_RATE_RAD_PER_SEC : float = 0.31991378286563   # 18.33 deg/s
+const STEER_RATE_RAD_PER_SEC : float = 0.31991378286563   # 18.33 deg/s (default rack speed)
 var _current_steer_rad : float = 0.0
+# Per-subclass steering tuning (operator 2026-07-17). steer_sign = -1 switches
+# left/right for a REAR-wheel-steer machine (the bale clamp). steer_rate is the
+# angle slew AND the auto-centre rate — subclasses raise it for a quicker rack.
+var steer_sign : float = 1.0
+var steer_rate_rad_per_sec : float = STEER_RATE_RAD_PER_SEC
 
 # Kinematic-drive runtime state — _current_speed is the body's actual forward
 # speed, tracked frame-to-frame because freeze=true means linear_velocity is no
@@ -1068,7 +1366,16 @@ func _physics_process(delta: float) -> void:
 		angular_velocity = Vector3.ZERO
 		_current_speed_mps = 0.0
 		return
-	if occupied:
+	# npc-05 — this used to branch on `occupied`, which BOTH on_operator_entered
+	# AND on_npc_entered set. So the moment an NPC climbed into a vehicle, the
+	# chassis started reading the PLAYER's input actions — which nobody was
+	# pressing — and the `elif` autopilot arm became unreachable for exactly the
+	# case it exists to serve. Measured in the real world: an NPC boarded a
+	# forklift for an OverflowDumpTask and sat there at throttle=0.00,
+	# speed=0.00 m/s for the whole watch window while its task waited to arrive.
+	# `_operator` is set ONLY by on_operator_entered, so it is the honest test
+	# for "a human is holding the controls".
+	if _operator != null:
 		_gather_input()
 		_drive(delta)
 		_consume_fuel(delta)
@@ -1087,6 +1394,11 @@ func _physics_process(delta: float) -> void:
 	# .steering writes all read _current_steer_rad downstream. Runs every frame
 	# (occupied, autopilot, AND parked) so parked vehicles re-centre on their own.
 	_update_steer_ramp(delta)
+	# Visual steered wheels follow the ramp EVERY frame, not only while occupied —
+	# otherwise a parked or NPC-driven vehicle yaws its body while the front wheels
+	# stay dead-straight (bughunt 2026-07-17). Idempotent: just copies the ramped
+	# _current_steer_rad onto the wheel-mesh basis.
+	_rotate_steered_wheel_meshes(delta)
 	_kinematic_move(delta)
 	# Lights + reverse beeper + horn audio fill. Runs both occupied + parked
 	# (a vehicle rolling backward down a slope still needs the beeper).
@@ -1101,7 +1413,7 @@ func _drive(delta: float) -> void:
 	# Out of energy (flat battery / empty tank) → no drive, just coast to a stop.
 	if not _has_power():
 		_current_speed_mps = move_toward(_current_speed_mps, 0.0, coast_decel_mps2 * delta)
-		_rotate_steered_wheel_meshes(delta)
+		# (wheel-mesh steer is applied unconditionally in _physics_process now)
 		return
 	# Foot brake — when no throttle is held but the brake action is down, the
 	# vehicle decelerates faster than coasting. Per-vehicle @export drive ramp
@@ -1124,7 +1436,7 @@ func _drive(delta: float) -> void:
 		var max_mps := (speed_limit_kmh / 3.6) * _power_factor()
 		var target_speed := _throttle * max_mps
 		_current_speed_mps = move_toward(_current_speed_mps, target_speed, throttle_accel_mps2 * delta)
-	_rotate_steered_wheel_meshes(delta)
+	# (wheel-mesh steer is applied unconditionally in _physics_process now)
 	# #175 — periodic diagnostic so the operator can confirm the drive loop
 	# from the log. Once a second while occupied: input throttle/steering,
 	# resulting speed, handbrake state. If "W does nothing" recurs the log will
@@ -1169,6 +1481,13 @@ func _kinematic_move(delta: float) -> void:
 	# freeze=true disables). If we hit something head-on, kill forward speed so we
 	# don't keep grinding into it.
 	var motion := fwd * (_current_speed_mps * delta)
+	# HORIZONTAL DISPLACEMENT BUDGET — see _clamp_recovery_overshoot below.
+	# Rapier's contact-recovery pass INSIDE move_and_collide translates an
+	# overlapping frozen-kinematic hull even when `motion` is exactly zero, and
+	# returns null while doing it (recovery is not reported as a collision), so
+	# nothing downstream can observe it. `pre` is the reference the achieved
+	# travel is measured against after the sweep + slide have run.
+	var pre := global_position
 	var hit := move_and_collide(motion)
 	if hit != null:
 		# Slide along the surface with whatever motion remains after the hit.
@@ -1181,6 +1500,7 @@ func _kinematic_move(delta: float) -> void:
 			# Hit-wall bleed — same brake-decel rate as a panic stop, so a head-on
 			# scrape kills speed quickly without violating the per-vehicle ramp.
 			_current_speed_mps = move_toward(_current_speed_mps, 0.0, brake_decel_mps2 * delta * 1.33)
+	_clamp_recovery_overshoot(pre, motion.length())
 	# Yaw
 	rotate_y(yaw_rate * delta)
 	# Gravity probe — drop the body until its underside touches the floor.
@@ -1204,6 +1524,62 @@ func _kinematic_move(delta: float) -> void:
 		angular_velocity = Vector3.ZERO
 		_current_speed_mps = 0.0
 
+## Slack on top of the frame's requested travel before the horizontal
+## displacement is treated as engine-injected recovery. RELATIVE (0.1 % of the
+## requested travel), never absolute, and that distinction is load-bearing: an
+## absolute per-frame slack is a per-frame budget the recovery simply spends.
+## Measured 2026-07-21 with a 1e-4 m absolute slack, the nested pairs consumed
+## exactly 1e-4 m EVERY frame in a fixed direction — 0.006 m/s, bounded but
+## never converging, i.e. the same bug 250× slower. A relative slack gives a
+## parked vehicle (requested travel exactly 0) a budget of exactly 0, so the
+## drift stops dead, while a driven vehicle keeps float headroom proportional
+## to how far it actually asked to move.
+const RECOVERY_SLACK_REL : float = 0.001
+
+## Bound the HORIZONTAL travel achieved by the move_and_collide sweep + slide in
+## _kinematic_move to what the caller actually asked for — |motion| scaled by
+## the relative slack, so a parked vehicle's budget is exactly zero.
+##
+## WHY (measured 2026-07-21, src/tests/probe_drift_source.gd): two bale clamps
+## restored from a pre-clearance-gate save overlap. Rapier 0.8.34's contact
+## recovery runs inside move_and_collide and displaces BOTH hulls by the same
+## vector each frame, so the overlap never resolves and the pair translates
+## forever at constant speed (185 m in 150 s in MainWorld, 23 m in 15 s in the
+## probe) with rotation.y exactly 0. move_and_collide returns null on those
+## frames — recovery_as_collision defaults to false — so `hit != null` never
+## fires and no existing guard can see the motion. Clamping the ACHIEVED
+## displacement is the only signal available to the caller.
+##
+## PRESERVED ON PURPOSE:
+##   • The sweep at :1274, the remainder-slide at :1279 and the head-on speed
+##     bleed at :1285 all still run UNCHANGED, so a driven vehicle still
+##     collides with and slides along walls, machines and other vehicles
+##     instead of passing through them. For legitimate driving this clamp is a
+##     no-op: sweep displacement + slide displacement can never exceed |motion|
+##     (the slide only consumes the remainder), so the limit is never reached.
+##   • Y is untouched. Vertical depenetration (a hull spawned inside the floor)
+##     is legitimate physics, and ride height is owned by _settle_on_ground().
+##
+## ACCEPTED BEHAVIOUR CHANGE: a PARKED vehicle has budget 0, so it can no longer
+## be shoved sideways by its own recovery pass when another vehicle drives into
+## it — parked machines are now immovable obstacles. That is the physically
+## honest reading of a braked 8-tonne machine, and the previous "shove" was the
+## same unbounded recovery that caused this bug.
+##
+## This bounds the symptom; overlap itself is prevented at its two sources —
+## BuildMode._vehicle_spawn_blocker at placement time and _denest_loaded_vehicles
+## on load.
+func _clamp_recovery_overshoot(pre: Vector3, budget_m: float) -> void:
+	var d := global_position - pre
+	var xz := Vector2(d.x, d.z)
+	var travel := xz.length()
+	var limit := budget_m * (1.0 + RECOVERY_SLACK_REL)
+	# Non-finite is left alone: the post-move watchdog restores _last_good_xf.
+	if not is_finite(travel) or travel <= limit:
+		return
+	var k := limit / travel
+	global_position = Vector3(pre.x + d.x * k, global_position.y, pre.z + d.z * k)
+
 ## Ride-height target above the floor. Subclasses can change this to lift the
 ## chassis (e.g. Merlo's stabiliser-boom effect when the bucket presses ground).
 ## Reset toward DEFAULT_RIDE_HEIGHT every frame so the chassis settles back down
@@ -1215,20 +1591,44 @@ var _ride_height_target_m : float = DEFAULT_RIDE_HEIGHT
 ## stand-in for full wheel suspension — keeps the vehicle resting on whatever
 ## surface is below (floor, ramp, kerb). Subclasses can bias the ride height by
 ## writing to _ride_height_target_m before super._physics_process runs.
+##
+## Two constraints, both measured in the 2026-07-20 stacked-clamp session
+## (src/tests/repro_clamp_spawn.gd):
+##   • ANOTHER VEHICLE is not ground. Overlapping vehicles each treated the
+##     other's hull as floor and ratcheted upward ~2.1 m per rung (the save
+##     recorded ladders at y -0.65 / 1.54 / 3.57). Vehicle hits are skipped.
+##   • The probe reaches 40 m down (was 6 m) so a body boosted high — ladder
+##     rungs reached 13 m above the exterior floor in the measured session —
+##     still finds a floor below once vehicle hits are skipped, instead of
+##     stranding when the short ray comes up empty. (The measured stray was
+##     standing on a real shell overhang at y+1.09, a legitimate hit; the
+##     empty-ray strand is the adjacent failure this reach closes.)
 func _settle_on_ground() -> void:
 	var space := get_world_3d().direct_space_state
 	if space == null:
 		return
 	var origin_y := global_position.y + 2.0
-	var query := PhysicsRayQueryParameters3D.create(
-		Vector3(global_position.x, origin_y, global_position.z),
-		Vector3(global_position.x, origin_y - 6.0, global_position.z))
-	query.exclude = [get_rid()]
+	var from := Vector3(global_position.x, origin_y, global_position.z)
+	var to := Vector3(global_position.x, origin_y - 40.0, global_position.z)
+	var excl : Array = [get_rid()]
 	# Don't snap into bales being carried (their RID is already in the carry
 	# tree but might still be in the layer mask).
 	if _carried_bale and _carried_bale is PhysicsBody3D:
-		query.exclude.append((_carried_bale as PhysicsBody3D).get_rid())
-	var hit := space.intersect_ray(query)
+		excl.append((_carried_bale as PhysicsBody3D).get_rid())
+	var hit : Dictionary = {}
+	# Walk past vehicle hulls (max 4 stacked bodies) to the first REAL surface.
+	for _attempt in 4:
+		var query := PhysicsRayQueryParameters3D.create(from, to)
+		query.exclude = excl
+		hit = space.intersect_ray(query)
+		if hit.is_empty():
+			return
+		var col : Object = hit.get("collider")
+		if col is Node and _is_vehicle_hull(col as Node):
+			excl.append(hit["rid"])
+			hit = {}
+			continue
+		break
 	if hit.is_empty():
 		return
 	var ground_y := (hit["position"] as Vector3).y
@@ -1238,6 +1638,16 @@ func _settle_on_ground() -> void:
 	var target_y := ground_y + _ride_height_target_m
 	global_position.y = lerpf(global_position.y, target_y, 0.25)
 
+## True when `n` or any ancestor is a vehicle body (group set in _ready above).
+## Used by the settle probe so one vehicle never treats another as floor.
+func _is_vehicle_hull(n: Node) -> bool:
+	var cur : Node = n
+	while cur != null:
+		if cur.is_in_group("vehicle"):
+			return true
+		cur = cur.get_parent()
+	return false
+
 func _gather_input() -> void:
 	# Forward / reverse — single rocker pedal convention (electric/LPG forklift).
 	# _throttle_raw is the instantaneous keyboard axis; _throttle is the
@@ -1246,7 +1656,9 @@ func _gather_input() -> void:
 	# forklift / mast lift ~1.2 s, Merlo ~1.5 s.
 	var fwd := Input.get_action_strength("vehicle_forward")
 	var rev := Input.get_action_strength("vehicle_reverse")
-	_throttle_raw = fwd - rev
+	# operator_forward_sign: on gear-on-+Z vehicles the forward key must drive
+	# fork/clamp-first — the direction the seat faces.
+	_throttle_raw = (fwd - rev) * operator_forward_sign
 	# Re-tune the smoother in case a subclass changed tau AFTER super._ready
 	# (Forklift._ready / MastLift._ready / Car subclasses bump tau in this style).
 	if _throttle_smoother:
@@ -1272,6 +1684,11 @@ func _gather_input() -> void:
 	else:
 		_steering = Input.get_action_strength("vehicle_steer_left") \
 				  - Input.get_action_strength("vehicle_steer_right")
+
+	# operator_forward_sign: the operator's LEFT is mirrored on a +Z-facing cab,
+	# and _kinematic_move flips yaw with the sign of the canonical speed — so
+	# without this the fixed throttle polarity would mirror the steering.
+	_steering *= operator_forward_sign
 
 	# Brake (foot brake — separate from handbrake). Same two-stage shape as
 	# throttle: _brake_raw is the instantaneous key axis, _brake is the SmoothedRate
@@ -1319,16 +1736,16 @@ func _apply_steering() -> void:
 func _update_steer_ramp(delta: float) -> void:
 	if not occupied and not (npc_autopilot and _npc_target_active):
 		# Parked → wheels straighten on their own (operator dismounted mid-turn).
-		_current_steer_rad = move_toward(_current_steer_rad, 0.0, STEER_RATE_RAD_PER_SEC * delta)
+		_current_steer_rad = move_toward(_current_steer_rad, 0.0, steer_rate_rad_per_sec * delta)
 		return
 	if accumulate_steering:
 		# Mast lift / hold-on-release: _steering is the persisted lock from
 		# _gather_input (rate-limited there by ACCUM_STEER_RATE). Track instantly
 		# so we don't double-rate. -1..1 maps directly to ±MAX_STEER_RAD.
-		_current_steer_rad = _steering * MAX_STEER_RAD
+		_current_steer_rad = _steering * MAX_STEER_RAD * steer_sign
 		return
-	var target_rad := _steering * MAX_STEER_RAD
-	_current_steer_rad = move_toward(_current_steer_rad, target_rad, STEER_RATE_RAD_PER_SEC * delta)
+	var target_rad := _steering * MAX_STEER_RAD * steer_sign
+	_current_steer_rad = move_toward(_current_steer_rad, target_rad, steer_rate_rad_per_sec * delta)
 
 # Cached visual steering angle (smoothed) so we don't snap the wheel meshes.
 var _visual_steer_rad : float = 0.0
@@ -1690,6 +2107,13 @@ func _vehicle_light_layout() -> Dictionary:
 
 func _build_lights() -> void:
 	var layout := _vehicle_light_layout()
+	# Layout is authored canonical (front -Z, rear +Z). On +Z-gear vehicles the
+	# OPERATOR front is +Z — mirror every z so work lights land on the fork side
+	# and the reverse beam on the counterweight.
+	if operator_forward_sign < 0.0:
+		for k in layout:
+			var v : Vector3 = layout[k]
+			layout[k] = Vector3(v.x, v.y, -v.z)
 	_build_work_lights(layout)
 	_build_hazard_lights(layout)
 	_build_reverse_beam(layout)
@@ -1705,7 +2129,7 @@ func _build_work_lights(layout: Dictionary) -> void:
 		# Aim slightly down and forward. Canonical -Z forward → a SpotLight3D
 		# with rotation.y = 0 already points along -Z (Godot's default
 		# Camera3D/SpotLight3D convention), which IS forward. No yaw needed.
-		sl.rotation_degrees = Vector3(-18.0, 0.0, 0.0)
+		sl.rotation_degrees = Vector3(-18.0, 0.0 if operator_forward_sign > 0.0 else 180.0, 0.0)
 		sl.light_color = Color(1.0, 0.96, 0.88)
 		sl.light_energy = 4.0
 		sl.spot_range = 22.0
@@ -1747,7 +2171,7 @@ func _build_reverse_beam(layout: Dictionary) -> void:
 	_light_rev = SpotLight3D.new()
 	_light_rev.name = "ReverseBeam"
 	_light_rev.position = layout["reverse"]
-	_light_rev.rotation_degrees = Vector3(-22.0, 180.0, 0.0)
+	_light_rev.rotation_degrees = Vector3(-22.0, 180.0 if operator_forward_sign > 0.0 else 0.0, 0.0)
 	_light_rev.light_color = Color(1.0, 0.97, 0.88)
 	_light_rev.light_energy = 3.2
 	_light_rev.spot_range = 14.0
@@ -1965,9 +2389,15 @@ func _tick_vehicle_aux(delta: float) -> void:
 		_light_blue_r.visible = occupied
 	# Reverse beam + beeper — driven off ACTUAL forward speed, not throttle
 	# intent. Operator on a slope rolling backward still triggers the alarm.
-	var fwd_spd := 0.0
-	if has_method("get_speed_mps"):
-		fwd_spd = get_speed_mps()
+	# Use the SIGNED speed — get_speed_mps() returns absf() for the HUD readout, so
+	# comparing it to a negative threshold made `reversing` ALWAYS false and left
+	# the reverse beam + reverse beeper permanently dead on every vehicle (bughunt
+	# 2026-07-17). _current_speed_mps is signed (negative when reversing / rolling back).
+	# Operator-frame signed speed: positive = toward where the seat faces.
+	# On +Z-gear vehicles canonical speed is negated, so fork-first travel is
+	# operator-forward (silent) and counterweight-first travel beeps — which is
+	# also physically right for NPC-driven forklifts on their canonical legs.
+	var fwd_spd := _current_speed_mps * operator_forward_sign
 	var reversing := occupied and fwd_spd < -0.20
 	if _light_rev:
 		_light_rev.visible = reversing

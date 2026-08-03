@@ -236,7 +236,7 @@ func _spawn_bollard(holder: Node3D, pos: Vector3) -> void:
 	n.add_child(cs)
 
 
-func _spawn_sign(holder: Node3D, pos: Vector3, kind: String, tags: Dictionary) -> void:
+func _spawn_sign(holder: Node3D, pos: Vector3, kind: String, _tags: Dictionary) -> void:
 	## Generic post-mounted sign — 2.2m post + 0.3x0.3 plate. Plate colour by kind.
 	var n := Node3D.new()
 	n.name = "Sign_" + kind

@@ -1,0 +1,107 @@
+{
+  "sources": [
+    "C:/Users/arnod/Documents/CeDo_Simulator_data/Slow_running.pdf",
+    "C:/Users/arnod/Documents/CeDo_Simulator_data/Slow_running_2.pdf"
+  ],
+  "extracted": "2026-07-04",
+  "budget_speed": {
+    "value": 1200,
+    "unit": "kg/hr",
+    "note_nl": "Budget snelheid is 1200 kg/hr",
+    "note_en": "Budget speed is 1200 kg/hr (printed in the footer of both slides)"
+  },
+  "definitions": {
+    "stilstand": {
+      "term_nl": "Stilstand",
+      "term_en": "Downtime",
+      "definition_nl": "Extruder staat stil (rood blok), of extruder snelheid wordt terug genomen wegens een storing elders in de lijn.",
+      "definition_en": "Extruder is stopped (red block), or extruder speed is deliberately reduced because of a fault elsewhere in the line. Both cases: WEL stilstand, GEEN slow running."
+    },
+    "slow_running": {
+      "term_nl": "Slow running",
+      "term_en": "Slow running",
+      "definition_nl": "Wat is de reden dat er niet meer gemaakt kan worden tijdens normale productie?",
+      "definition_en": "Steady output below the budget speed during normal production, without a stop or registered fault. The shortfall vs budget is the slow-running loss."
+    }
+  },
+  "classification_rules": [
+    {
+      "scenario_nl": "Shredder vast; extruder stopt in hetzelfde venster, daarna weer 1200 kg/hr",
+      "scenario_en": "Shredder jammed; extruder stops for the same window, then resumes at 1200 kg/hr",
+      "classification": "stilstand",
+      "is_slow_running": false
+    },
+    {
+      "scenario_nl": "Wanneer de extruder snelheid wordt terug genomen (bijv. wegens storing/shredder vast) is dit geen slow running",
+      "scenario_en": "When extruder speed is deliberately throttled back (e.g. due to a fault / shredder jam), this is not slow running",
+      "classification": "stilstand",
+      "is_slow_running": false
+    },
+    {
+      "scenario_nl": "Extruder draait de hele dienst op 1000 kg/hr terwijl budget 1200 kg/hr is",
+      "scenario_en": "Extruder runs the whole 8-hour shift at 1000 kg/hr against a 1200 kg/hr budget",
+      "classification": "slow_running",
+      "is_slow_running": true,
+      "example_loss": {
+        "value": 200,
+        "unit": "kg/hr",
+        "actual_output": 1000,
+        "budget_output": 1200,
+        "shift_length_hours": 8
+      }
+    }
+  ],
+  "symptoms": [
+    {
+      "symptom_nl": "Slow running: output blijft onder budget snelheid (1200 kg/hr) tijdens normale productie, zonder stilstand",
+      "symptom_en": "Slow running: output stays below budget speed (1200 kg/hr) during normal production, without a stop",
+      "causes": [
+        {
+          "cause_nl": "Shredder brengt niet genoeg (extruder silo leeg)",
+          "cause_en": "Shredder does not deliver enough (extruder silo empty)",
+          "checks": [
+            "Extruder silo level (silo runs empty)"
+          ],
+          "remedy": null
+        },
+        {
+          "cause_nl": "Maalmolen gaat continue in overload",
+          "cause_en": "Granulator (maalmolen) continuously goes into overload",
+          "checks": [
+            "Maalmolen overload state / trips"
+          ],
+          "remedy": null
+        },
+        {
+          "cause_nl": "Extruder filter wisseltijd te kort",
+          "cause_en": "Extruder filter change interval too short",
+          "checks": [
+            "Time between filter changes"
+          ],
+          "remedy": null
+        },
+        {
+          "cause_nl": "Extruder filter druk te hoog",
+          "cause_en": "Extruder filter pressure too high",
+          "checks": [
+            "Filter pressure reading"
+          ],
+          "remedy": null
+        },
+        {
+          "cause_nl": "Extruder Max RPM",
+          "cause_en": "Extruder at maximum RPM (screw speed ceiling reached)",
+          "checks": [
+            "Extruder screw RPM vs maximum"
+          ],
+          "remedy": null
+        }
+      ]
+    }
+  ],
+  "notes": [
+    "Source slides define slow running and list possible causes; they do not prescribe remedies or detailed check procedures. 'checks' entries are restatements of each cause's observable, 'remedy' is null where the source gives none.",
+    "Handwritten annotation on Slow_running.pdf panel 2: 'storing' (fault) with pen hatching over the throttled extruder segment.",
+    "Slides are CeDo / Newton training material; legend colours: green = Output/Snelheid, red = Stop, orange = Slow running."
+  ]
+}

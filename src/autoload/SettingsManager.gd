@@ -207,7 +207,7 @@ const ACTION_LABELS := {
 	"vehicle_blinker_right":    "Vehicle: right blinker (])",
 	"vehicle_horn":             "Vehicle: horn — mast lift (N)",
 	"vehicle_wipers":           "Vehicle: windscreen wipers on/off — Merlo P40 (Y)",
-	"lpg_switch_active":        "Switch active LPG tank — bale clamp (H)",
+	"lpg_switch_active":        "Switch active LPG tank — bale clamp (I)",
 	"vehicle_forward":          "Drive forward",
 	"vehicle_reverse":          "Reverse",
 	"vehicle_steer_left":       "Steer left",
@@ -266,20 +266,26 @@ func _ready() -> void:
 	apply()
 
 ## One-time keybind migration. The saved user://settings.cfg overlays defaults,
-## so a player who launched before this change still has the OLD P → camera_toggle
-## binding even after we rebound it to F4 in project.godot. Strip P from
-## camera_toggle if it's still there, and add P to menu_toggle if it's missing —
-## without touching any other custom rebinds the player has made.
+## so a player who launched before these fixes still carries the stale bindings
+## even after project.godot was corrected:
+##   - camera_toggle: legacy P (moved to menu_toggle) AND the mistyped F10
+##     default (keycode 4194341 = F10, intended F4) — F10 belongs to the
+##     feedback/marker tool, so a capture press also flipped the camera.
+##   - lpg_switch_active: legacy J (walkie_headset owns J; HUD._input handles it
+##     first and marks it handled, so the valve toggle never fired) plus the
+##     vestigial undocumented backslash — the valve lives on I now.
+## Strip only the stale keys — any other custom rebind the player made stays —
+## and restore the canonical default when an action would end up keyless.
 func _migrate_legacy_keybinds() -> void:
 	var ct : Array = _current_keybinds.get("camera_toggle", [])
 	var kept : Array = []
-	var had_p := false
+	var had_stale := false
 	for ev in ct:
-		if ev is InputEventKey and (ev as InputEventKey).keycode == KEY_P:
-			had_p = true
+		if ev is InputEventKey and (ev as InputEventKey).keycode in [KEY_P, KEY_F10]:
+			had_stale = true
 			continue
 		kept.append(ev)
-	if had_p:
+	if had_stale:
 		_current_keybinds["camera_toggle"] = kept
 		# If camera_toggle ended up with no key at all, restore the F4 default so
 		# the user doesn't lose the camera cycle entirely.
@@ -292,6 +298,27 @@ func _migrate_legacy_keybinds() -> void:
 			var f4 := InputEventKey.new()
 			f4.keycode = KEY_F4
 			_current_keybinds["camera_toggle"].append(f4)
+	# lpg_switch_active: strip the dead J and the vestigial backslash; restore
+	# the canonical I when the action would otherwise end up keyless.
+	var lpg : Array = _current_keybinds.get("lpg_switch_active", [])
+	var lpg_kept : Array = []
+	var had_stale_lpg := false
+	for ev in lpg:
+		if ev is InputEventKey and (ev as InputEventKey).keycode in [KEY_J, KEY_BACKSLASH]:
+			had_stale_lpg = true
+			continue
+		lpg_kept.append(ev)
+	if had_stale_lpg:
+		_current_keybinds["lpg_switch_active"] = lpg_kept
+		var lpg_has_key := false
+		for ev in lpg_kept:
+			if ev is InputEventKey:
+				lpg_has_key = true
+				break
+		if not lpg_has_key:
+			var ki := InputEventKey.new()
+			ki.keycode = KEY_I
+			_current_keybinds["lpg_switch_active"].append(ki)
 	# Ensure menu_toggle is bound to P if not already configured.
 	var mt : Array = _current_keybinds.get("menu_toggle", [])
 	var has_p := false
@@ -514,7 +541,27 @@ func _apply_keybinds() -> void:
 		for ev in _current_keybinds[action]:
 			if ev is InputEvent:
 				InputMap.action_add_event(action, ev)
+	_reserve_feedback_key()
 	keybinds_changed.emit()
+
+## F10 is RESERVED for `feedback_capture` (the screenshot + context.json handoff).
+## A stale saved binding once had `camera_toggle` ALSO on F10, so a single F10
+## press both captured AND cycled the camera to third-person. Strip F10 from
+## every other action — in BOTH the live InputMap and the in-memory model, so it
+## is never re-saved — leaving F10 to feedback alone. Runs after every keybind
+## apply, so no saved config can reintroduce the collision.
+func _reserve_feedback_key() -> void:
+	for action in _current_keybinds.keys():
+		if action == "feedback_capture":
+			continue
+		var kept: Array = []
+		for ev in _current_keybinds[action]:
+			if ev is InputEventKey and (ev as InputEventKey).keycode == KEY_F10:
+				if InputMap.has_action(action):
+					InputMap.action_erase_event(action, ev)
+			else:
+				kept.append(ev)
+		_current_keybinds[action] = kept
 
 func _apply_fov_to_current_camera() -> void:
 	# Defer one frame so the camera is current after a display mode change.
@@ -580,8 +627,15 @@ func _ensure_aux_actions() -> void:
 		"hotbar_2":          KEY_2,
 		"hotbar_3":          KEY_3,
 		"hotbar_4":          KEY_4,
+		"hotbar_5":          KEY_5,
 		"hotbar_drop":       KEY_Q,
-		"lpg_switch_active": KEY_H,
+		# #punch: was KEY_H (double-bound with vehicle_handbrake — pressing H to
+		# switch LPG tank ALSO toggled the handbrake), then KEY_J — which was NOT
+		# free: walkie_headset owns J and HUD._input marks it handled before the
+		# clamp ever sees it, so the valve never switched ("keys weird / not
+		# working"). I is genuinely free on foot and in the clamp (cars reuse I
+		# for vehicle_ignition, but only while occupying the car).
+		"lpg_switch_active": KEY_I,
 		"vehicle_lights":    KEY_L,
 		"vehicle_hazards":   KEY_K,
 		"vehicle_blinker_left": KEY_BRACKETLEFT,
@@ -605,17 +659,20 @@ func _ensure_aux_actions() -> void:
 		# PlayerController re-adds it if a stale InputMap still lacks the action.
 		"inspect_mode":      KEY_F8,
 	}
-	# Anything in INSTALL_AND_PURGE first has ALL its key events removed so the
+	# Anything in the purge map first has the listed key events removed so the
 	# new binding doesn't pile up next to the old one. Used to migrate keys that
 	# moved between actions (e.g. P moved off camera_toggle).
 	var purge := {
-		"camera_toggle": KEY_P,    # P was the legacy camera-cycle key; F4 owns it now
+		# P = legacy camera-cycle key; F10 belongs to feedback_capture — F4 owns the cycle now
+		"camera_toggle": [KEY_P, KEY_F10],
+		# J is walkie_headset's key (HUD._input swallows it); \ was an undocumented vestige — I owns the valve now
+		"lpg_switch_active": [KEY_J, KEY_BACKSLASH],
 	}
 	for action_name in purge:
 		if not InputMap.has_action(action_name):
 			continue
 		for ev in InputMap.action_get_events(action_name):
-			if ev is InputEventKey and (ev as InputEventKey).keycode == purge[action_name]:
+			if ev is InputEventKey and (ev as InputEventKey).keycode in purge[action_name]:
 				InputMap.action_erase_event(action_name, ev)
 	# Make sure camera_toggle has F4 (the canonical binding now).
 	if InputMap.has_action("camera_toggle"):

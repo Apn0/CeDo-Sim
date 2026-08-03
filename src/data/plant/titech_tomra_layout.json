@@ -1,0 +1,48 @@
+{
+  "meta": {
+    "extracted": "2026-07-04",
+    "sources": [
+      "C:/Users/arnod/Documents/CeDo_Simulator_data/Titech_Tomra_render.pdf",
+      "C:/Users/arnod/Documents/CeDo_Simulator_data/Titech_Tomra_schematic.pdf"
+    ],
+    "document_title": "Werking Titech tomra",
+    "pages_present": [1, 2],
+    "pages_total": 3,
+    "notes": "Pages 1-2 of a 3-page Dutch document on the TITECH/TOMRA AUTOSORT optical sorter; PAGE 3 IS MISSING from the supplied scans. Not yet modeled in the sim. Floor plan shows 'sorteerlijn 3' along the north side of Hal 7 continuing into Hal 8 (association with this machine is an interpretation, unconfirmed). No belt numbers, widths, or capacities appear in these two pages; diagram items are numbered 1-3 only.",
+    "key_facts": {
+      "system": "TOMRA/TITECH AUTOSORT",
+      "sensors": ["NIR spectrometer (2 detector variants for different spectral ranges)", "VIS spectrometer (color)", "EM sensor (optional)"],
+      "illumination": "FLYING BEAM (scanned-zone-only illumination, energy savings up to 70 percent)",
+      "scan": "full belt width scanned linearly",
+      "reconfiguration": "sorting programs selectable"
+    }
+  },
+  "nodes": [
+    { "id": "voeding", "label_nl": "Voeding van niet-gesorteerd materiaal", "label_en": "Feed of unsorted material", "kind": "infeed", "diagram_number": 1 },
+    { "id": "transportband", "label_nl": "Transportband", "label_en": "Acceleration/transport belt (troughed infeed belt with side walls, two drum pulleys, drive motors at infeed end)", "kind": "conveyor", "diagram_number": 1 },
+    { "id": "scanner", "label_nl": "Spectrometerscanner (AUTOSORT-scannereenheid)", "label_en": "Spectrometer scanner unit (NIR + VIS, orange beam spanning full belt width on a portal frame; optional EM sensor)", "kind": "optical_scanner", "diagram_number": 2 },
+    { "id": "schakelkast", "label_nl": "Schakelkast", "label_en": "Control cabinet (receives detections, commands valve block)", "kind": "control" },
+    { "id": "kleppenblok", "label_nl": "Kleppenblok", "label_en": "Air valve block at the end of the belt (blows selected material)", "kind": "air_ejector" },
+    { "id": "splitterrol", "label_nl": "Splitterrol", "label_en": "Splitter roller (ejected material is lifted by air over it)", "kind": "splitter" },
+    { "id": "afscheidingsruimte", "label_nl": "Afscheidingsruimte", "label_en": "Separation chamber (housing at belt discharge with two bunkers)", "kind": "separation_chamber", "diagram_number": 3 },
+    { "id": "bunker_gesorteerd", "label_nl": "Bunker gesorteerde fractie", "label_en": "Bunker for the air-ejected (sorted) fraction — far bunker, past the splitter roller", "kind": "bunker" },
+    { "id": "rest_afvoer", "label_nl": "Lagere transportband of bunker (rest)", "label_en": "Lower transport belt or bunker for the non-ejected rest fraction — near bunker / lower belt", "kind": "discharge" }
+  ],
+  "edges": [
+    { "from": "voeding", "to": "transportband", "label": "material dumped evenly onto belt", "medium": "film" },
+    { "from": "transportband", "to": "scanner", "label": "belt passes under scanner; full width scanned linearly", "medium": "film" },
+    { "from": "scanner", "to": "schakelkast", "label": "detection signal", "medium": "signal" },
+    { "from": "schakelkast", "to": "kleppenblok", "label": "fire command for the relevant valves", "medium": "signal" },
+    { "from": "transportband", "to": "kleppenblok", "label": "material reaches belt end (discharge trajectory)", "medium": "film" },
+    { "from": "kleppenblok", "to": "splitterrol", "label": "targeted material blown by air", "medium": "film" },
+    { "from": "splitterrol", "to": "bunker_gesorteerd", "label": "ejected fraction lifted over splitter roller into separation chamber", "medium": "film" },
+    { "from": "kleppenblok", "to": "rest_afvoer", "label": "rest (not blown) falls on lower belt or into bunker", "medium": "film" },
+    { "from": "bunker_gesorteerd", "to": "afscheidingsruimte", "label": "bunker is inside separation chamber (containment, not flow)", "medium": "containment" },
+    { "from": "rest_afvoer", "to": "afscheidingsruimte", "label": "near bunker is inside separation chamber (containment, not flow)", "medium": "containment" }
+  ],
+  "physical_arrangement": {
+    "render_description": "Long flat troughed infeed belt with raised dark side walls on steel legs; two drive motors at infeed drum. Mid-length: steel portal/truss frame over the belt carrying a small orange electrical/switch cabinet (door with window) and the large orange TOMRA scanner bar spanning the full belt width with downward-facing sensor windows. A small operator panel sits on the belt rail under the scanner. At the discharge end: taller dark enclosed separation section with panels, piping/hoses on its side.",
+    "flow_direction": "single straight line: infeed -> scan -> air ejection at belt end -> separation chamber with two side-by-side bunkers (near = rest, far = ejected fraction), both discharging downward/outward",
+    "floor_plan_link_unconfirmed": "sorteerlijn 3 runs along the north side of Hal 7 into Hal 8; balenpers stands in Hal 8 near the line's east end (possible downstream of sorted fraction - ask operator)"
+  }
+}

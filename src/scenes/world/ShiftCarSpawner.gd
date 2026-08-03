@@ -144,7 +144,72 @@ func _spawn_car_in_bay(scene_path: String, side: int, idx: int, label: String, n
 		# `_model_scale` as a one-shot — re-applying via Node3D.scale is
 		# additive only on the body, not the wheels.
 		call_deferred("_apply_pascal_body_squish", car)
+	# Parked cars had NO collision of any kind — they were pure visuals.
+	# Operator 2026-07-20: two F10 markers placed on two wheels of the SAME car
+	# came out 134.69 m apart, both reporting hit_name "TempFloor", because the
+	# feedback ray went straight through the car and landed on the ground plane
+	# far behind it. A body you cannot hit is also a body you can walk through.
+	call_deferred("_add_parked_collider", car)
 	return car
+
+## Wrap a parked car in a StaticBody3D box sized from its visible AABB, so rays
+## (F10 feedback, build-mode placement, interaction) and the player capsule both
+## stop at it. Deferred: the GLB is loaded asynchronously, so the AABB is only
+## meaningful after the model subtree exists.
+func _add_parked_collider(car: Node3D) -> void:
+	if car == null or not is_instance_valid(car):
+		return
+	if car.get_node_or_null("ParkedCollider") != null:
+		return
+	var aabb := _visual_aabb(car)
+	if aabb.size == Vector3.ZERO:
+		return
+	var body := StaticBody3D.new()
+	body.name = "ParkedCollider"
+	# DEDICATED LAYER 20, not layer 1. On layer 1 these colliders regressed the
+	# world round-trip (14 ok/0 fail -> 13/1, machines drifting 5.8-8.9 m and the
+	# amount varying per run): extra static bodies in the car park perturb how the
+	# placed machines settle before the save. Layer 20 is masked by nobody, so
+	# nothing collides with them — but a query ray with mask 0xFFFFFFFF (the F10
+	# feedback ray, PlayerController._feedback_context) still hits them, which is
+	# all that is needed to make markers land ON the car.
+	body.collision_layer = 1 << 19
+	body.collision_mask = 0
+	var cs := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = aabb.size
+	cs.shape = box
+	cs.position = aabb.get_center()
+	body.add_child(cs)
+	car.add_child(body)
+
+## Union of every GEOMETRY AABB under `root`, in root-local space.
+##
+## GEOMETRY, not every VisualInstance3D: Light3D also extends VisualInstance3D
+## and its AABB spans the light's REACH, not a body. BaseVehicle._build_lights
+## gives each vehicle head/work spots at spot_range 22 m plus a 14 m reverse
+## beam, so the old union produced a ParkedCollider box measured at
+## 28.2 x 32.6 x 44.3 m centred ~17 m BELOW grade — a 50 m phantom around every
+## parked car. It sits on the query-only layer so nothing bumps into it, but any
+## sweep that probes all layers still hits it, including the F10 feedback ray and
+## BuildMode's vehicle-clearance sentinel (BuildMode.gd:1100-1106 probes every
+## layer deliberately, to see query-only bodies). A clearance gate that trips on
+## a phantom 25 m away is worse than no gate.
+func _visual_aabb(root: Node3D) -> AABB:
+	var out := AABB()
+	var seen := false
+	var stack : Array[Node] = [root]
+	while not stack.is_empty():
+		var n : Node = stack.pop_back()
+		if (n is MeshInstance3D or n is MultiMeshInstance3D) and n != root:
+			var vi := n as VisualInstance3D
+			var local := root.global_transform.affine_inverse() * vi.global_transform
+			var a := local * vi.get_aabb()
+			out = a if not seen else out.merge(a)
+			seen = true
+		for c in n.get_children():
+			stack.append(c)
+	return out if seen else AABB()
 
 ## Pascal's Ford Ka rides lower than Abdellilah's — squish the imported GLB
 ## body subtree on Y only. Wheels live under VehicleWheel3D nodes (siblings of

@@ -10,14 +10,25 @@ class_name PlayerController
 ## ESC / pause is handled by HUD.gd — not here.
 ## When the mouse cursor is visible (pause menu open) movement is suppressed.
 
+# Physical body mass (kg). Set by PlayerSpawner from the wardrobe's build
+# sliders via Humanoid.body_mass_kg() — smallest build 50 kg, default ~88 kg,
+# largest 150 kg. Consumed wherever the player exchanges momentum with the
+# physics world (RigidBody push impulses, belts, vehicle interactions). A
+# CharacterBody3D has no engine-side mass, so this is the single source of
+# truth for "how heavy is the operator".
+var mass_kg : float = 88.1
+
 # Movement
-@export var walk_speed         : float = 5.0
-@export var acceleration       : float = 20.0
+# #223 audit — realistic operator locomotion (work boots, plant floor). Was
+# 5.0 m/s (3.5× real walking). These are the top candidates to feel-tune in the
+# gauntlet live-update round if a realistic pace reads as too slow to play.
+@export var walk_speed         : float = 2.0    # operator-tuned: brisk-but-realistic (was 5.0 → 1.5 → 2.0)
+@export var acceleration       : float = 8.0    # reach full walk in ~1-2 steps
 @export var friction           : float = 16.0
-@export var jump_speed         : float = 4.5
+@export var jump_speed         : float = 3.68   # DOUBLED apex (operator 2026-07-16): height=v²/2g, so 2× height = 2.6·√2 ≈ 3.68 → apex ~0.69 m
 # Sprint (#side-quest from operator): Shift while moving multiplies the walk
 # speed. Only fires while STANDING — crouched / prone keep their stance pace.
-@export var sprint_multiplier  : float = 1.7
+@export var sprint_multiplier  : float = 2.2    # was 1.7 — 3.3 m/s loaded jog
 # Fast-traverse (Alt): 5× speed for cross-yard movement during testing.
 # Overrides sprint when both are held.
 @export var fast_run_multiplier : float = 5.0
@@ -36,6 +47,11 @@ var _speed_mul_smooth : SmoothedRate = null
 const GRAVITY: float = 9.8
 const STEP_HEIGHT: float = 0.4   # max ledge/curb height the player walks over
 const INTERACT_RAY_RANGE: float = 3.75
+const LADDER_CLIMB_SPEED : float = 0.5  # m/s vertical (#223: was 2.5, ~5× real caged-ladder pace)
+
+# Incremented by each overlapping LadderZone Area3D; 0 = normal movement.
+# Using a count (not bool) handles nested/adjacent ladders correctly.
+var _on_ladder_count : int = 0
 
 # ── Vault / climb (#cluster VAULT_CLIMB) ──────────────────────────────────────
 # When the player presses Space while walking forward (W) into a chest-height
@@ -49,7 +65,7 @@ const INTERACT_RAY_RANGE: float = 3.75
 # aimed along -basis.z), (d) jumping NOW (action just_pressed). All five must
 # match — otherwise the jump branch falls through to the normal vertical impulse.
 const CLIMB_MAX_HEIGHT      : float = 1.4   # ceiling on ledges we can mantle over (~chest)
-const CLIMB_DURATION        : float = 0.5   # seconds to lerp from start pose to top
+const CLIMB_DURATION        : float = 2.0   # #223: was 0.5 — mantling a chest-high ledge is a 2 s effort, not a vault
 const CLIMB_FORWARD_DIST    : float = 1.2   # how far forward we land on top of the ledge
 const CLIMB_FORWARD_RAY_LEN : float = 0.9
 enum VaultState { NONE, CLIMBING }
@@ -91,6 +107,18 @@ var _shaft_target : Node3D = null   # node currently under the crosshair (NIR so
 var _shaft_holding : bool = false   # E currently held + hold-E in flight
 var _shaft_prompt_text : String = "" # last text we pushed to interaction_prompt_show
 const _SHAFT_CUT := preload("res://src/scenes/interactions/TitechShaftCut.gd")
+
+# ── #markers — in-world precise point marker tool (F10) ───────────────────────
+# F10 no longer fires a single-shot feedback capture; it toggles a live marker
+# mode. A cyan preview orb tracks the crosshair raycast; LMB drops a persistent
+# amber orb, G cycles snap (off → grid → edge-vertex), H clears them, RMB/F10
+# exits and writes every placed point to user://feedback/<stamp>/markers.json
+# (+ screenshot) so the exact coordinates the operator meant are readable — a
+# multi-point successor to the old capture. See MarkerTool.gd. The tool is
+# hosted under the WORLD (not the player) so placed orbs stay fixed in world
+# space instead of riding along under the capsule.
+const _MARKER_TOOL := preload("res://src/scenes/player/MarkerTool.gd")
+var _marker_tool : Node3D = null
 
 @onready var head     : Node3D   = $Head
 @onready var camera_3d: Camera3D = $Head/Camera3D
@@ -236,6 +264,14 @@ func _refresh_settings() -> void:
 	if _camera_rig and _camera_rig._camera:
 		_camera_rig._camera.fov = fov
 
+## Called by LadderZone Area3D when the player's body enters a ladder.
+func enter_ladder() -> void:
+	_on_ladder_count += 1
+
+## Called by LadderZone Area3D when the player's body exits a ladder.
+func exit_ladder() -> void:
+	_on_ladder_count = maxi(_on_ladder_count - 1, 0)
+
 func _physics_process(delta: float) -> void:
 	# Vault/climb override (#cluster VAULT_CLIMB): while the mantle tween is
 	# active we own the transform directly — gravity, WASD, jump, step-up and
@@ -243,6 +279,40 @@ func _physics_process(delta: float) -> void:
 	if _vault_state == VaultState.CLIMBING:
 		_advance_vault(delta)
 		return
+
+	# Ladder climbing: gravity off, W climbs up, S climbs down.
+	# Area3D nodes on every _caged_ladder call enter_ladder/exit_ladder to set the count.
+	if _on_ladder_count > 0:
+		# Space hops off: reset the zone count so gravity resumes (exit_ladder()
+		# clamps at 0 when the body later leaves; walking back in re-arms climb
+		# mode). Without this + the A/D side-step below, the zone — its box
+		# reaches the plant floor at every ladder foot — captured any passer-by
+		# with zero horizontal mobility: a softlock.
+		if Input.is_action_just_pressed("jump"):
+			_on_ladder_count = 0
+			velocity.y = jump_speed * 0.6
+		else:
+			var climb := 0.0
+			if Input.is_action_pressed("move_forward"):
+				climb = 1.0
+			elif Input.is_action_pressed("move_backward"):
+				climb = -1.0
+			var lateral := Vector3.ZERO
+			if Input.is_action_pressed("move_left"):
+				lateral -= global_transform.basis.x
+			if Input.is_action_pressed("move_right"):
+				lateral += global_transform.basis.x
+			# `ladder_xz`, not `target_xz`: the walk path declares its own
+			# target_xz further down in the parent block (CONFUSABLE_LOCAL_DECLARATION).
+			var ladder_xz := lateral.normalized() * walk_speed * 0.5
+			velocity.x = move_toward(velocity.x, ladder_xz.x, acceleration * delta)
+			velocity.z = move_toward(velocity.z, ladder_xz.z, acceleration * delta)
+			velocity.y = climb * LADDER_CLIMB_SPEED
+		move_and_slide()
+		_push_rigid_bodies(delta)   # #223: same mass-based push on the ladder path
+		_update_animation_blend()
+		return
+
 	# Always apply gravity so the capsule rests on the floor.
 	if not is_on_floor():
 		velocity.y -= GRAVITY * delta
@@ -267,6 +337,7 @@ func _physics_process(delta: float) -> void:
 		velocity.x = move_toward(velocity.x, 0.0, friction * delta)
 		velocity.z = move_toward(velocity.z, 0.0, friction * delta)
 		move_and_slide()
+		_push_rigid_bodies(delta)   # #223: mass-based push on the UI-open glide path too
 		# Animation Phase 1: keep the rig in idle while UI is open. Velocity
 		# already decays via friction above, but resolve + push 0 explicitly
 		# so the legs visibly settle even if velocity is still drifting down.
@@ -306,6 +377,11 @@ func _physics_process(delta: float) -> void:
 		elif Input.is_action_pressed("sprint"):
 			target_speed_mul *= sprint_multiplier
 	var speed_mul : float = _speed_mul_smooth.approach(target_speed_mul, delta)
+	# #223 audit: carried tool weight slows you. A ~40 kg cap (LPG + blower +
+	# hose) knocks off up to 40% of speed; empty-handed = full pace.
+	if has_node("/root/Inventory"):
+		var carried : float = get_node("/root/Inventory").call("total_carried_kg")
+		speed_mul *= clampf(1.0 - carried / 40.0 * 0.4, 0.6, 1.0)
 	var target_xz := wish_dir * walk_speed * speed_mul
 	var accel     := acceleration if wish_dir.length() > 0.0 else friction
 	velocity.x = move_toward(velocity.x, target_xz.x, accel * delta)
@@ -325,6 +401,7 @@ func _physics_process(delta: float) -> void:
 	_attempt_wedge_rescue(wish_dir, delta)
 	_update_stance(delta)
 	move_and_slide()
+	_push_rigid_bodies(delta)
 	_apply_belt_carry(delta)
 	_update_crosshair_interaction()
 	_update_knife_replace_hold(delta)
@@ -333,6 +410,21 @@ func _physics_process(delta: float) -> void:
 	# a real walk cycle. No-op for first-person (the body's head is on a
 	# hidden layer + the FP eye sits between the body's shoulders).
 	_update_animation_blend(wish_dir)
+
+# ── #223 audit (critical): mass-based RigidBody push ─────────────────────────
+# A CharacterBody3D is kinematic — Godot's solver displaces RigidBodies it walks
+# into with INFINITE effective mass, so a 140 kg loaded cart moved exactly like
+# an empty one. This helper restores momentum exchange: for every slide contact
+# with a free RigidBody, split momentum by the real mass ratio —
+#   * the rigid body receives an impulse toward the contact (F=ma over ~tau),
+#   * the PLAYER loses the blocked velocity component scaled by (1-ratio), so
+#     walking into a heavy machine actually stops you instead of bulldozing it.
+# Grabbed carts are skipped (LumpCart's handle controller owns them) and frozen
+# bodies are immovable by definition.
+const _PUSH_ACCEL_TAU_S : float = 0.5   # time to accelerate the pushed body to your speed
+
+func _push_rigid_bodies(delta: float) -> void:
+	KinematicPush.apply(self, mass_kg, _PUSH_ACCEL_TAU_S, delta)
 
 ## Belt-carry: if we're standing on a body in group "belt", drag the player along
 ## the belt's world-space carry velocity. Reads slide collisions from the last
@@ -495,7 +587,7 @@ func _build_vault_rays() -> void:
 		return
 	_ray_player_waist = RayCast3D.new()
 	_ray_player_waist.name = "RayVaultWaist"
-	_ray_player_waist.position = Vector3(0.0, 0.0, 0.0)
+	_ray_player_waist.position = Vector3(0.0, -0.45, 0.0)   # lower so knee/waist-high crates register (vaulting)
 	_ray_player_waist.target_position = Vector3(0.0, 0.0, -CLIMB_FORWARD_RAY_LEN)
 	_ray_player_waist.collide_with_areas = false
 	_ray_player_waist.collide_with_bodies = true
@@ -546,10 +638,11 @@ func _try_start_vault(wish_dir: Vector3) -> bool:
 	_ray_player_waist.force_raycast_update()
 	_ray_player_chest.force_raycast_update()
 	_ray_player_head.force_raycast_update()
-	# (3) Obstacle profile: waist + chest hit, head clear.
+	# (3) Obstacle profile (operator 2026-07-16 "allow vaulting"): waist hit + head
+	# clear is enough to MANTLE. The old code also required the CHEST ray to hit,
+	# so knee/waist-high crates + railings (which the chest ray sails over) never
+	# vaulted and fell through to a useless hop. Chest gate dropped.
 	if not _ray_player_waist.is_colliding():
-		return false
-	if not _ray_player_chest.is_colliding():
 		return false
 	if _ray_player_head.is_colliding():
 		return false
@@ -645,12 +738,18 @@ func _build_flashlight() -> void:
 		var ev_sprint := InputEventKey.new()
 		ev_sprint.physical_keycode = KEY_SHIFT
 		InputMap.action_add_event("sprint", ev_sprint)
-	# Register the fast-traverse keybind (Alt) — 5× speed for testing.
+	# Register the fast-traverse keybind (Alt) — 5× speed. #223 audit: this is a
+	# DEV traverse aid (25 m/s = 90 km/h on foot), not a real ability. Always
+	# register the action so is_action_pressed at line 373 stays valid (an
+	# unregistered action spams a per-frame InputMap error), but only bind the
+	# Alt key in debug builds — shipping players can't accidentally sprint at
+	# 90 km/h across the yard.
 	if not InputMap.has_action("fast_run"):
 		InputMap.add_action("fast_run")
-		var ev_alt := InputEventKey.new()
-		ev_alt.physical_keycode = KEY_ALT
-		InputMap.action_add_event("fast_run", ev_alt)
+		if OS.is_debug_build():
+			var ev_alt := InputEventKey.new()
+			ev_alt.physical_keycode = KEY_ALT
+			InputMap.action_add_event("fast_run", ev_alt)
 	# Debug fault trigger (0 / Numpad-0) — aim at a machine and press to force
 	# the nearest MotorOverload to trip (or call .force_trip() / .force_fault()
 	# / .trip() on whatever ancestor of the hit collider exposes it). Lets the
@@ -827,6 +926,10 @@ func _building_shell_offset() -> Vector3:
 	return shell.global_position
 
 func _input(event: InputEvent) -> void:
+	# #markers — while the F10 marker tool is active it owns LMB/RMB/G/H, so it
+	# must run before ANY gameplay bind (else H would toggle the LPG tank, etc.).
+	if _marker_input(event):
+		return
 	# #106 — flashlight toggle on F. Check first so other keybinds don't swallow it.
 	if event.is_action_pressed("flashlight"):
 		_toggle_flashlight()
@@ -902,8 +1005,11 @@ func _input(event: InputEvent) -> void:
 		_debug_fill_silo_at_crosshair()
 		get_viewport().set_input_as_handled()
 
+	# F10 — enter the marker tool (was: one-shot feedback capture). While the
+	# tool is active, F10/RMB exit is handled up in _marker_input(); this branch
+	# only fires when the tool is OFF, so it always means "enter".
 	if event.is_action_pressed("feedback_capture"):
-		_capture_feedback_at_crosshair()
+		_marker_tool_enter()
 		get_viewport().set_input_as_handled()
 		return
 
@@ -921,14 +1027,31 @@ func _input(event: InputEvent) -> void:
 				get_viewport().set_input_as_handled()
 				return
 
-	# Hotbar: 1-4 switch the active inventory slot, Q drops the active item.
+	# Hotbar: number keys switch the active inventory slot, Q drops the active item.
 	# Tools (scissors / scanner) live under Head and Inventory handles the
 	# show/hide so only the active one is in your hand.
 	var inv := get_node_or_null("/root/Inventory")
 	if inv:
-		for i in 4:
+		var n_slots : int = int(inv.get("NUM_SLOTS"))
+		for i in n_slots:
 			if event.is_action_pressed("hotbar_%d" % (i + 1)):
 				inv.call("set_active", i)
+				return
+		# #punch: mouse wheel cycles the active slot in NORMAL WALKING MODE only.
+		# Gated: cursor captured (excludes pause / settings / build-browse / HMI,
+		# which all release the cursor), FP camera current, and build mode inactive.
+		if event is InputEventMouseButton and event.pressed \
+				and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED \
+				and camera_3d != null and camera_3d.current \
+				and not _build_mode_active():
+			var mb := event as InputEventMouseButton
+			if mb.button_index == MOUSE_BUTTON_WHEEL_UP:
+				inv.call("set_active", (int(inv.get("active_idx")) - 1 + n_slots) % n_slots)
+				get_viewport().set_input_as_handled()
+				return
+			elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+				inv.call("set_active", (int(inv.get("active_idx")) + 1) % n_slots)
+				get_viewport().set_input_as_handled()
 				return
 		if event.is_action_pressed("hotbar_drop"):
 			var t := inv.call("active") as Node3D
@@ -938,8 +1061,71 @@ func _input(event: InputEvent) -> void:
 
 	# ESC is owned by HUD.gd — do NOT handle ui_cancel here.
 
+# =============================================================================
+# #markers — F10 in-world point marker tool routing
+# =============================================================================
+## Lazily build the MarkerTool and host it under the world (current scene) so
+## placed orbs stay fixed in world space rather than parented to the moving
+## capsule. Rebuilt if the previous instance was freed by a scene change.
+func _ensure_marker_tool() -> Node3D:
+	if _marker_tool != null and is_instance_valid(_marker_tool):
+		return _marker_tool
+	_marker_tool = _MARKER_TOOL.new()
+	_marker_tool.name = "MarkerTool"
+	var host : Node = get_tree().current_scene
+	if host == null:
+		host = get_tree().root
+	host.add_child(_marker_tool)
+	return _marker_tool
+
+## F10 (tool OFF) → enter marker mode, casting the crosshair ray from the eye
+## and excluding the player capsule so we never tag ourselves.
+func _marker_tool_enter() -> void:
+	var mt := _ensure_marker_tool()
+	mt.begin(camera_3d, [get_rid()])
+
+## Consume LMB/RMB/G/H/F10 while the marker tool is active. Returns true when the
+## event was handled (caller returns immediately). No-op when the tool is off.
+func _marker_input(event: InputEvent) -> bool:
+	if _marker_tool == null or not is_instance_valid(_marker_tool) or not _marker_tool.active:
+		return false
+	if event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
+		match (event as InputEventMouseButton).button_index:
+			MOUSE_BUTTON_LEFT:
+				_marker_tool.place()
+				get_viewport().set_input_as_handled()
+				return true
+			MOUSE_BUTTON_RIGHT:
+				_marker_tool.exit_and_save()
+				get_viewport().set_input_as_handled()
+				return true
+	if event is InputEventKey and (event as InputEventKey).pressed and not (event as InputEventKey).echo:
+		match (event as InputEventKey).physical_keycode:
+			KEY_G:
+				_marker_tool.cycle_snap()
+				get_viewport().set_input_as_handled()
+				return true
+			KEY_H:
+				_marker_tool.clear()
+				get_viewport().set_input_as_handled()
+				return true
+			KEY_F10:
+				_marker_tool.exit_and_save()   # F10 again = exit (toggle)
+				get_viewport().set_input_as_handled()
+				return true
+	return false
+
 # Register fallback Input actions for the hotbar — same trick as HUD's
 # _ensure_map_action, since users without a fresh .godot project may have a
+# True while BuildMode's placement UI is active — so the walk-mode wheel-scroll
+# slot cycling stays OUT of build mode (where the wheel does other things).
+func _build_mode_active() -> bool:
+	var mw := get_tree().current_scene
+	if mw == null or not ("build_mode" in mw):
+		return false
+	var bm = mw.get("build_mode")
+	return bm != null and "_state" in bm and int(bm.get("_state")) != 0
+
 # stale InputMap that doesn't know "hotbar_1" yet.
 func _ensure_hotbar_actions() -> void:
 	var binds := {
@@ -947,10 +1133,12 @@ func _ensure_hotbar_actions() -> void:
 		"hotbar_2":          KEY_2,
 		"hotbar_3":          KEY_3,
 		"hotbar_4":          KEY_4,
+		"hotbar_5":          KEY_5,   # #punch: 5th inventory slot
 		"hotbar_drop":       KEY_Q,
-		# LPG dual-cylinder active-tank valve toggle (bale clamp only). Bound
-		# here as a fallback so a stale InputMap doesn't silently swallow H.
-		"lpg_switch_active": KEY_H,
+		# LPG dual-cylinder active-tank valve toggle (bale clamp only). #punch:
+		# moved off H (vehicle_handbrake collision), then off J (walkie_headset
+		# owns J — HUD._input swallows it before the clamp) to the free I key.
+		"lpg_switch_active": KEY_I,
 		# Vehicle aux — work lamps, 4-way hazards, horn (mast lift only honks).
 		"vehicle_lights":    KEY_L,
 		"vehicle_hazards":   KEY_K,
@@ -1629,7 +1817,11 @@ func _crosshair_context() -> Dictionary:
 	if camera_3d == null:
 		return ctx
 	var from := camera_3d.global_position
-	var to := from - camera_3d.global_transform.basis.z * INTERACT_RAY_RANGE
+	# Feedback tagging ray is deliberately LONG (unlike the interact ray):
+	# the operator aims at a door / wall / feature from anywhere in the yard,
+	# presses F10, and world_point pins it to centimetres.
+	const FEEDBACK_RAY_RANGE := 250.0
+	var to := from - camera_3d.global_transform.basis.z * FEEDBACK_RAY_RANGE
 	var q := PhysicsRayQueryParameters3D.create(from, to)
 	q.collision_mask = 0xFFFFFFFF
 	q.collide_with_areas = true
@@ -1641,8 +1833,15 @@ func _crosshair_context() -> Dictionary:
 	ctx["hit"] = true
 	ctx["world_point"] = _v3_to_arr(hit["position"])
 	ctx["world_normal"] = _v3_to_arr(hit["normal"])
+	# PC coords of the aimed point — same frame as the layout markers, so a
+	# tagged door can be placed without any scene-frame conversion.
+	if has_node("/root/Plant") and Plant.is_initialized():
+		var pcv : Vector2 = Plant.scene_to_pc(hit["position"])
+		ctx["world_point_pc"] = [pcv.x, pcv.y]
 	var collider : Node = hit["collider"]
-	ctx["collider_name"] = collider.name if collider else ""
+	# String() cast is required: collider.name is a StringName, "" is a String, and
+	# the mismatch trips INCOMPATIBLE_TERNARY (warnings are errors in this project).
+	ctx["collider_name"] = String(collider.name) if collider != null else ""
 	# Climb to the nearest placed_object so the developer gets a stable
 	# placeable_id rather than e.g. "Model" or "Rib_2".
 	var n : Node = collider
@@ -1752,15 +1951,17 @@ func _update_animation_blend(wish_dir: Vector3 = Vector3.ZERO) -> void:
 	if horiz < 0.05:
 		_anim_tree.set("parameters/locomotion/blend_position", Vector2(0.0, 0.0))
 		return
+	# #224 — decompose world velocity into the body's LOCAL forward/right (the body
+	# yaws with look, so basis carries facing). X = gait speed, Y = strafe.
+	var lv : Vector3 = global_transform.basis.inverse() * Vector3(velocity.x, 0.0, velocity.z)
+	var side : float = lv.x                    # right (+) / left (-)
 	var run_speed : float = walk_speed * sprint_multiplier
 	var bx : float
 	if horiz <= walk_speed:
 		bx = horiz / maxf(walk_speed, 0.1)
 	else:
 		bx = 1.0 + clampf((horiz - walk_speed) / maxf(run_speed - walk_speed, 0.1), 0.0, 1.0)
-
-	var right_dir := global_transform.basis.x.normalized()
-	var by := wish_dir.dot(right_dir)
+	var by : float = clampf(side / maxf(walk_speed, 0.1), -1.0, 1.0)   # #224 strafe
 	_anim_tree.set("parameters/locomotion/blend_position", Vector2(clampf(bx, 0.0, 2.0), by))
 
 ## Vehicles call this when the player enters / exits the driver seat so the

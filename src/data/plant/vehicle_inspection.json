@@ -1,0 +1,213 @@
+{
+  "source": "C:/Users/arnod/Documents/CeDo_Simulator_data/Voertuig_controle.pdf",
+  "extracted": "2026-07-04",
+  "form": {
+    "title_nl": "Dagelijkse controle voertuig",
+    "title_en": "Daily vehicle inspection",
+    "form_id": "Cedo - PROD - FORM - 023",
+    "department": "PROD Department",
+    "rev_no": "01",
+    "issue_date": "2022-10-25",
+    "author": "CI Dept",
+    "approved_by": "Peter Scheffer"
+  },
+  "applies_to_vehicles": ["heftruck", "heftruck_balenklem", "merlo"],
+  "cadence": {
+    "daily_items": "Per shift (OD/MD/ND = morning/afternoon/night), by the operator, within 30 minutes after start of shift; days Ma-Zo.",
+    "weekly_items": "Once per week by the (assistant) shiftleader."
+  },
+  "fields": [
+    { "field_nl": "Heftruck nr", "field_en": "Forklift number" },
+    { "field_nl": "Machine nr", "field_en": "Machine number" },
+    { "field_nl": "Merlo nr", "field_en": "Merlo (telehandler) number" },
+    { "field_nl": "Week nr", "field_en": "Week number" },
+    { "field_nl": "Urenstand", "field_en": "Hour-meter reading" },
+    { "field_nl": "Naam controleur", "field_en": "Name of inspector" },
+    { "field_nl": "Naam (Ass) Shiftleader", "field_en": "Name of (assistant) shiftleader (weekly section)" }
+  ],
+  "red_rule": {
+    "rule_nl": "Als de te controleren onderdelen met deze kleur afgevinkt worden met ROOD mag heftruck niet gebruikt worden. Veiligheid boven alles",
+    "rule_en": "If any checked item is ticked RED, the forklift may not be used. Safety above all.",
+    "note": "Items with critical=true have their label printed on a red background on the form (safety-critical functions)."
+  },
+  "pass_criteria_note": "The form itself only offers a green (OK) / red (niet OK) tick per item; pass_criteria below are derived from the check text, not printed on the form.",
+  "items": [
+    {
+      "seq": 0,
+      "section": "daily",
+      "check_nl": "Met hoge druk reiniger heftruck reinigen",
+      "check_en": "Clean the forklift with the high-pressure cleaner",
+      "vehicle_type": "all",
+      "critical": false,
+      "pass_criteria": "Vehicle cleaned with high-pressure washer",
+      "transcription_note": "Printed as 'hode druk' on the form; typo for 'hoge druk'."
+    },
+    {
+      "seq": 1,
+      "section": "daily",
+      "check_nl": "Met perslucht Cabine en motorruimte",
+      "check_en": "Blow out cab and engine compartment with compressed air",
+      "vehicle_type": "all",
+      "critical": false,
+      "pass_criteria": "Cab and engine compartment blown clean with compressed air",
+      "transcription_note": "Printed as 'perlucht'; typo for 'perslucht'."
+    },
+    {
+      "seq": 2,
+      "section": "daily",
+      "check_nl": "Motorruimte controle op lekkages",
+      "check_en": "Check engine compartment for leaks",
+      "vehicle_type": "all",
+      "critical": false,
+      "pass_criteria": "No leaks found in engine compartment"
+    },
+    {
+      "seq": 3,
+      "section": "daily",
+      "check_nl": "Beschadigingen aan frame rondom zoals aan lepels - balenklem of klem",
+      "check_en": "Damage to frame all round, such as to forks, bale clamp or clamp",
+      "vehicle_type": "all",
+      "critical": false,
+      "pass_criteria": "No damage to frame, forks, bale clamp or clamp"
+    },
+    {
+      "seq": 4,
+      "section": "daily",
+      "check_nl": "Verlichting voor en achter",
+      "check_en": "Lights front and rear",
+      "vehicle_type": "all",
+      "critical": false,
+      "pass_criteria": "Front and rear lights working"
+    },
+    {
+      "seq": 5,
+      "section": "daily",
+      "check_nl": "Draad om de wiel assen",
+      "check_en": "Wire/thread wrapped around the wheel axles",
+      "vehicle_type": "all",
+      "critical": false,
+      "pass_criteria": "No wire/rope wound around wheel axles"
+    },
+    {
+      "seq": 6,
+      "section": "daily",
+      "check_nl": "Banden loopvlak en of beschadigingen (stuk uit)",
+      "check_en": "Tyre tread and/or damage (chunk missing)",
+      "vehicle_type": "all",
+      "critical": false,
+      "pass_criteria": "Tyre tread OK, no chunks missing or damage"
+    },
+    {
+      "seq": 7,
+      "section": "daily",
+      "check_nl": "Hydrauliek systeem Controle binnenkant mast op geleiderollen",
+      "check_en": "Hydraulic system; check inside of mast for guide rollers",
+      "vehicle_type": "mast_vehicles",
+      "critical": false,
+      "pass_criteria": "Hydraulic system OK; mast guide rollers OK"
+    },
+    {
+      "seq": 8,
+      "section": "daily",
+      "check_nl": "Mast maximaal (omhoog)",
+      "check_en": "Raise mast to maximum (up)",
+      "vehicle_type": "mast_vehicles",
+      "critical": true,
+      "pass_criteria": "Mast raises fully without issue"
+    },
+    {
+      "seq": 9,
+      "section": "daily",
+      "check_nl": "Mast maximaal naar voor en achter kantelen",
+      "check_en": "Tilt mast fully forward and backward",
+      "vehicle_type": "mast_vehicles",
+      "critical": false,
+      "pass_criteria": "Mast tilts fully forward and backward without issue"
+    },
+    {
+      "seq": 10,
+      "section": "daily",
+      "check_nl": "Klem of lepels maximaal uit elkaar / in elkaar",
+      "check_en": "Move clamp or forks fully apart / together",
+      "vehicle_type": "all",
+      "critical": false,
+      "pass_criteria": "Clamp/fork positioning travels full range without issue"
+    },
+    {
+      "seq": 11,
+      "section": "daily",
+      "check_nl": "Remmen en Voetrem / Handrem",
+      "check_en": "Brakes: foot brake and hand brake",
+      "vehicle_type": "all",
+      "critical": true,
+      "pass_criteria": "Foot brake and hand brake both function",
+      "sub_items": ["Voetrem (foot brake)", "Handrem (hand brake)"]
+    },
+    {
+      "seq": 12,
+      "section": "daily",
+      "check_nl": "Dodemanspedaal en of noodstop",
+      "check_en": "Dead-man's pedal and/or emergency stop",
+      "vehicle_type": "all",
+      "critical": true,
+      "pass_criteria": "Dead-man's pedal and/or emergency stop functions"
+    },
+    {
+      "seq": 13,
+      "section": "daily",
+      "check_nl": "Claxon !!!!",
+      "check_en": "Horn",
+      "vehicle_type": "all",
+      "critical": true,
+      "pass_criteria": "Horn works",
+      "transcription_note": "Exclamation marks partly obscured by red label fill on scan [unsure: exact count]."
+    },
+    {
+      "seq": 14,
+      "section": "daily",
+      "check_nl": "Zwaailamp",
+      "check_en": "Rotating beacon",
+      "vehicle_type": "all",
+      "critical": false,
+      "pass_criteria": "Rotating beacon works"
+    },
+    {
+      "seq": null,
+      "section": "weekly",
+      "check_nl": "Orde en netheid voertuig",
+      "check_en": "Order and cleanliness of the vehicle",
+      "vehicle_type": "all",
+      "critical": false,
+      "pass_criteria": "Vehicle orderly and clean",
+      "transcription_note": "Unnumbered row at top of the weekly shiftleader section."
+    },
+    {
+      "seq": 15,
+      "section": "weekly",
+      "check_nl": "Motoroliepeil",
+      "check_en": "Engine oil level",
+      "vehicle_type": "all",
+      "critical": false,
+      "pass_criteria": "Engine oil level within range"
+    },
+    {
+      "seq": 16,
+      "section": "weekly",
+      "check_nl": "Ventilator radiator aandrijfriemen",
+      "check_en": "Fan / radiator / drive belts",
+      "vehicle_type": "all",
+      "critical": false,
+      "pass_criteria": "Fan, radiator and drive belts OK"
+    },
+    {
+      "seq": 17,
+      "section": "weekly",
+      "check_nl": "Koelvloeistof",
+      "check_en": "Coolant",
+      "vehicle_type": "all",
+      "critical": false,
+      "pass_criteria": "Coolant level within range"
+    }
+  ],
+  "game_mapping_note": "Form covers the in-game fleet: heftruck (forklift), heftruck with balenklem (bale clamp), Merlo (telehandler). Items 7-9 (mast checks) apply to mast vehicles (forklift/mast lift); item 3 and 10 explicitly mention lepels (forks) and balenklem (bale clamp)."
+}

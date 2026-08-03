@@ -54,6 +54,11 @@ func request_pbr_set(asset_id: String, resolution: String = "2k") -> void:
 			var tex := _load_texture(p)
 			if tex != null:
 				have[role] = tex
+			else:
+				# Corrupt cache entry (e.g. truncated by a mid-download quit) —
+				# delete it so the role gets re-downloaded instead of
+				# error-spamming every boot.
+				DirAccess.remove_absolute(p)
 	if have.size() == MAP_KEYS.size():
 		_sets[asset_id] = have
 		_touch_manifest(asset_id, resolution)
@@ -78,7 +83,10 @@ func _on_file_list(_result: int, code: int, _headers: PackedStringArray,
 	var resolution: String = state["resolution"]
 
 	if code != 200:
-		push_warning("TextureCache: file list for '%s' failed (%d)" % [asset_id, code])
+		# 404 = asset doesn't exist on Polyhaven (renamed/removed). Don't warn, just skip.
+		# Other errors: still warn so we know about real issues.
+		if code != 404:
+			push_warning("TextureCache: file list for '%s' failed (%d)" % [asset_id, code])
 		_pending.erase(asset_id)
 		return
 	var json := JSON.new()
@@ -105,7 +113,10 @@ func _download_map(asset_id: String, resolution: String, role: String, url: Stri
 	var path := _map_path(asset_id, resolution, role)
 	var http := HTTPRequest.new()
 	http.use_threads = true
-	http.download_file = path
+	# Download to a .part sidecar and rename on success — writing straight to
+	# the final path left truncated PNGs in the shared cache when the game quit
+	# mid-download, and every later boot error-spammed trying to decode them.
+	http.download_file = path + ".part"
 	add_child(http)
 	http.request_completed.connect(
 		_on_map_downloaded.bind(http, asset_id, role, path))
@@ -117,9 +128,16 @@ func _on_map_downloaded(_result: int, code: int, _headers: PackedStringArray,
 		_body: PackedByteArray, http: HTTPRequest,
 		asset_id: String, role: String, path: String) -> void:
 	http.queue_free()
+	var part := path + ".part"
 	var tex: ImageTexture = null
 	if code == 200:
-		tex = _load_texture(path)
+		DirAccess.remove_absolute(path)   # replace any stale/corrupt older copy
+		if DirAccess.rename_absolute(part, path) == OK:
+			tex = _load_texture(path)
+			if tex == null:
+				DirAccess.remove_absolute(path)   # decode failed — don't poison the cache
+	else:
+		DirAccess.remove_absolute(part)
 	_one_done(asset_id, role, tex)
 
 func _one_done(asset_id: String, role: String, tex: ImageTexture) -> void:

@@ -46,7 +46,7 @@ func footprint() -> Vector2:
 	var z : float = float(bay_count) * bay_width
 	return Vector2(x, z)
 
-# ── Asphalt slab ──────────────────────────────────────────────────────────────
+# ── Lot surface slab ──────────────────────────────────────────────────────────
 func _build_asphalt() -> void:
 	var fp := footprint()
 	var asphalt := MeshInstance3D.new()
@@ -55,10 +55,18 @@ func _build_asphalt() -> void:
 	bm.size = Vector3(fp.x, 0.05, fp.y)
 	asphalt.mesh = bm
 	asphalt.position = Vector3(0.0, surface_y - 0.025, 0.0)
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.13, 0.13, 0.135)   # worn asphalt, almost black
-	mat.roughness = 0.95
-	mat.metallic = 0.0
+	# Operator pick (2026-07): the staff lot is GRAVEL — Polyhaven
+	# gravel_floor_03 via PolyhavenMaterials; flat-colour fallback otherwise.
+	var mat : Material = null
+	var ph := get_node_or_null("/root/PolyhavenMaterials")
+	if ph != null:
+		mat = ph.call("ground_gravel")
+	if mat == null:
+		var flat := StandardMaterial3D.new()
+		flat.albedo_color = Color(0.45, 0.43, 0.40)
+		flat.roughness = 0.97
+		flat.metallic = 0.0
+		mat = flat
 	asphalt.material_override = mat
 	add_child(asphalt)
 
@@ -143,17 +151,18 @@ func _build_parking_sign() -> void:
 	post.position = Vector3(-fp.x * 0.5 - 0.6, post_h * 0.5, -fp.y * 0.5 + 0.5)
 	add_child(post)
 	# Square blue P sign on top.
-	var sign := MeshInstance3D.new()
-	sign.name = "ParkingSign"
+	# sign_mesh, not sign: `sign` shadows the built-in sign() function.
+	var sign_mesh := MeshInstance3D.new()
+	sign_mesh.name = "ParkingSign"
 	var qm := QuadMesh.new()
 	qm.size = Vector2(0.55, 0.55)
-	sign.mesh = qm
+	sign_mesh.mesh = qm
 	var sm := StandardMaterial3D.new()
 	sm.albedo_color = Color(0.05, 0.32, 0.78)   # NL parking-sign blue
 	sm.roughness = 0.6
-	sign.material_override = sm
-	sign.position = Vector3(-fp.x * 0.5 - 0.6, post_h - 0.20, -fp.y * 0.5 + 0.5 + 0.03)
-	add_child(sign)
+	sign_mesh.material_override = sm
+	sign_mesh.position = Vector3(-fp.x * 0.5 - 0.6, post_h - 0.20, -fp.y * 0.5 + 0.5 + 0.03)
+	add_child(sign_mesh)
 	# White P glyph — a thick PrismMesh stand-in (good enough at distance).
 	var p := MeshInstance3D.new()
 	p.name = "ParkingP"

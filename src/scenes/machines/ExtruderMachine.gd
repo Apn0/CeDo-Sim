@@ -29,6 +29,16 @@ var _debug_lbl : Label3D
 var _laser_filter : Node = null
 var _head_filter  : Node = null
 
+# #223 docs->code — over-pressure trip latches (items 14 + 17). Both trips are
+# LATCHING (no chatter): once fired they stay set until the operator resets the
+# EMERGENCY_STOP (E key → reset_after_estop), which re-arms them. See the
+# OVER-PRESSURE TRIPS section for the two documented shutdowns.
+var _upstream_trip_latched : bool = false   # laserfilter 318-bar upstream trip
+var _pel_trip_latched      : bool = false   # pelletiser 160-bar MP<PEL interlock
+var _lf_trip_connected     : bool = false   # connect upstream_pressure_trip once
+# psi->bar for the MP<PEL die-head reading — matches LaserFilter.PSI_PER_BAR.
+const PSI_PER_BAR : float = 14.5038
+
 # #scada-surfacing — cached ScadaDashboard handle (resolved lazily via group
 # "scada_dashboard"). Each tick we push per-line process values + the FAULT
 # status string. Throttled to ~5 Hz via _scada_push_t.
@@ -77,6 +87,16 @@ func _ready() -> void:
 func _resolve_downstream_filters() -> void:
 	_laser_filter = _closest_in_group("laser_filter")
 	_head_filter  = _closest_in_group("head_filter")
+	# #223 docs->code (item 14) — connect the laserfilter's 318-bar upstream
+	# over-pressure trip so it hard-stops the trio (Compactor + extruder +
+	# pelletiser). Signal source: LaserFilter.upstream_pressure_trip(bar), fired
+	# once when it latches is_tripped. Connected once (guard) because this runs
+	# lazily every tick until both filters resolve.
+	# doc: docs/plant/swi/laserfilter-smeltdrukverschil__062_CeDo72.md
+	if not _lf_trip_connected and _laser_filter != null and is_instance_valid(_laser_filter) \
+			and _laser_filter.has_signal("upstream_pressure_trip"):
+		_laser_filter.connect("upstream_pressure_trip", _on_upstream_pressure_trip)
+		_lf_trip_connected = true
 
 func _closest_in_group(group: String) -> Node:
 	var best : Node = null
@@ -138,6 +158,7 @@ func _interact_hint() -> String:
 		ExtruderModel.State.RUNNING:        return "simulate vacuum loss (test the 120s cascade)"
 		ExtruderModel.State.VACUUM_ALARM:   return "restore vacuum (clear alarm)"
 		ExtruderModel.State.FAULT:          return "operator-clear fault → back to OFF"
+		ExtruderModel.State.EMERGENCY_STOP: return "reset emergency stop (over-pressure trip)"
 		_:                                  return ""
 
 # =============================================================================
@@ -169,12 +190,20 @@ func _on_sim_tick(delta: float) -> void:
 	# but no melt is exiting. We zero `throughput_kg_h` after the tick so any
 	# downstream consumer (lump output, MachineFlow handoffs, audio) sees the
 	# stop without needing to know about filter internals.
+	# Only a PRODUCING extruder pushes real melt through the filters. IDLE forwards
+	# idle_kg_per_h (50, "screw turning, no feed") which the filter read as real
+	# throughput → phantom pressure with the whole line at 0 (operator 2026-07-16).
+	# Map OFF/IDLE/FAULT/E-STOP → 0 feed so the LaserFilter no-flow gate parks ΔP.
+	var _producing : bool = model.state in [
+		ExtruderModel.State.STARTING, ExtruderModel.State.RUNNING,
+		ExtruderModel.State.STOPPING, ExtruderModel.State.VACUUM_ALARM]
+	var _feed_kg_h : float = model.throughput_kg_h if _producing else 0.0
 	if _laser_filter != null and is_instance_valid(_laser_filter) \
 			and _laser_filter.has_method("set_feed_throughput"):
-		_laser_filter.set_feed_throughput(model.throughput_kg_h)
+		_laser_filter.set_feed_throughput(_feed_kg_h)
 	if _head_filter != null and is_instance_valid(_head_filter) \
 			and _head_filter.has_method("set_feed_throughput"):
-		_head_filter.set_feed_throughput(model.throughput_kg_h)
+		_head_filter.set_feed_throughput(_feed_kg_h)
 	var line_blocked : bool = (_laser_filter != null and is_instance_valid(_laser_filter) \
 			and _laser_filter.has_method("is_line_down") and _laser_filter.call("is_line_down")) \
 		or (_head_filter != null and is_instance_valid(_head_filter) \
@@ -208,7 +237,43 @@ func _on_sim_tick(delta: float) -> void:
 		if _laser_filter.has_method("set_lump_feed_rate") \
 				and "lump_passthrough_rate_g_s" in model:
 			_laser_filter.call("set_lump_feed_rate", model.lump_passthrough_rate_g_s)
+	elif _laser_filter != null and is_instance_valid(_laser_filter):
+		# Not producing → clear the amplifier signals at the source, else the last
+		# RUNNING values stay latched and keep driving front-face loading + a
+		# phantom over-pressure trip with zero flow (operator 2026-07-16).
+		if _laser_filter.has_method("set_lump_feed_rate"):
+			_laser_filter.call("set_lump_feed_rate", 0.0)
+		if _laser_filter.has_method("set_upstream_pressure_indicator"):
+			_laser_filter.call("set_upstream_pressure_indicator", 0.0)
+		if _laser_filter.has_method("set_extruder_rpm_indicator"):
+			_laser_filter.call("set_extruder_rpm_indicator", 0.0)
 	_broadcast(events)
+	# #223 docs->code (item 17) — pelletiser 160-bar MP<PEL melt-pressure
+	# interlock. Read the die-head / meltpump-outlet melt pressure the model
+	# computes (die_pressure_psi = "smeltdruk stroomopwaarts van de
+	# pelletiseermachine"), convert to bar, and fire the SAME trio shutdown as the
+	# 318-bar upstream trip when it exceeds the documented 160-bar limit. Latching;
+	# only armed while the extruder is actually pushing melt.
+	# doc: docs/plant/swi/EREMA-manual-4.3.7-pelletiseersysteem__169_CeDo84.md
+	if not _pel_trip_latched and "die_pressure_psi" in model \
+			and model.state in [ExtruderModel.State.RUNNING, ExtruderModel.State.STARTING, ExtruderModel.State.VACUUM_ALARM]:
+		var mp_pel_bar : float = model.die_pressure_psi / PSI_PER_BAR
+		if mp_pel_bar > EremaFaultRegistry.PEL_MELT_PRESSURE_TRIP_BAR:
+			_pel_trip_latched = true
+			model.fault_reason = "pelletiser_meltdruk_160bar"
+			print("[%s] 160-bar PELLETISER INTERLOCK @ %.0f bar (MP<PEL) — trio shutdown" \
+				% [config_resource.line_id, mp_pel_bar])
+			_trip_shutdown_all_three("pelletiser_melt_pressure_160bar", mp_pel_bar)
+	# #223 docs->code (items 14/17) — keep the over-pressure cause asserted while
+	# latched. The model wipes fault_reason to "" on the emergency_stop transition
+	# and die_pressure drops to 0 once stopped, so without this the operator loses
+	# the reason the line died. Re-assert it so the SCADA chip + Storingstabel row
+	# (EremaFaultRegistry reads fault_reason) persist until the operator resets.
+	if model.state == ExtruderModel.State.EMERGENCY_STOP and model.fault_reason == "":
+		if _upstream_trip_latched:
+			model.fault_reason = "laserfilter_upstream_overpressure_318bar"
+		elif _pel_trip_latched:
+			model.fault_reason = "pelletiser_meltdruk_160bar"
 	# Cascade-stop hook: when the 2-min vacuum-alarm grace expires the model
 	# transitions to FAULT. Per the operator's anecdote, EVERYTHING downstream
 	# halts — screw, both vacuum units, laser filter, head filter, pelletizer,
@@ -221,6 +286,15 @@ func _on_sim_tick(delta: float) -> void:
 	# Operator-clear path: when the fault is cleared (FAULT → anything else),
 	# resume the laser filter so the line is ready to restart.
 	if prev_state == ExtruderModel.State.FAULT and model.state != ExtruderModel.State.FAULT:
+		_cascade_resume_downstream()
+	# #223 docs->code (items 14/17) — clearing the over-pressure EMERGENCY_STOP
+	# (operator reset via E → reset_after_estop) re-arms BOTH trip latches and
+	# resumes the frozen downstream filters, mirroring the FAULT-clear resume
+	# above. EMERGENCY_STOP is only ever entered by the two over-pressure trips.
+	if prev_state == ExtruderModel.State.EMERGENCY_STOP and model.state != ExtruderModel.State.EMERGENCY_STOP:
+		_upstream_trip_latched = false
+		_pel_trip_latched = false
+		model.fault_reason = ""   # clear the persisted trip cause so the next run is clean
 		_cascade_resume_downstream()
 	# Feed AudioManager urgency data every tick while the cascade is running
 	if model.state == ExtruderModel.State.VACUUM_ALARM:
@@ -313,6 +387,65 @@ func _cascade_resume_downstream() -> void:
 			"cascade_resume",
 			{})
 
+# =============================================================================
+# OVER-PRESSURE TRIPS (docs->code #223, items 14 + 17)
+# =============================================================================
+# Both the laserfilter 318-bar UPSTREAM trip and the pelletiser 160-bar MP<PEL
+# interlock demand the SAME documented action: immediate SIMULTANEOUS shutdown
+# of the cutter-compactor/PCU, the extruder itself, AND the pelletiser.
+#   - docs/plant/swi/laserfilter-smeltdrukverschil__062_CeDo72.md — upstream
+#     melt pressure over the limit → "de Compactor (optie), de extruder en het
+#     pelletiseringssysteem onmiddellijk uitgeschakeld".
+#   - docs/plant/swi/EREMA-manual-4.3.7-pelletiseersysteem__169_CeDo84.md —
+#     MP<PEL > 160 bar → "de Compactor (configureerbaar), de extruder en het
+#     pelletiseersysteem onmiddellijk uitgeschakeld".
+# This is DELIBERATELY harder than the vacuum-alarm cascade: that one keeps the
+# PCU alive (pot-seize anecdote); an over-pressure trip stops the PCU too, per
+# both docs. We reuse the existing cascade_stop mechanism (defensive method
+# calls on the filters + a SCADA broadcast) rather than inventing a new one.
+
+## Signal handler for LaserFilter.upstream_pressure_trip(bar). Latching (item 14).
+func _on_upstream_pressure_trip(bar: float) -> void:
+	if _upstream_trip_latched:
+		return   # already tripped — no chatter
+	_upstream_trip_latched = true
+	model.fault_reason = "laserfilter_upstream_overpressure_318bar"
+	print("[%s] 318-bar UPSTREAM TRIP @ %.0f bar — shutting down Compactor + extruder + pelletiser" \
+		% [config_resource.line_id, bar])
+	_trip_shutdown_all_three("laserfilter_upstream_pressure_318bar", bar)
+
+## Shared trio shutdown for BOTH over-pressure trips (items 14 + 17). Mirrors
+## _cascade_stop_downstream (defensive filter stops + SCADA broadcast) but also
+## commands the PCU/compactor + pelletiser down — the documented full-line trip.
+func _trip_shutdown_all_three(reason: String, bar: float) -> void:
+	# 1) Extruder itself → immediate hard stop via the model's always-honoured
+	# emergency_stop input (screw/throughput/die pressure all zero next tick).
+	# Cleared by the operator through reset_after_estop (E key), which re-arms
+	# both latches (see the EMERGENCY_STOP resume edge in _on_sim_tick).
+	_pending["emergency_stop"] = true
+	# 2) Downstream filters → freeze. The laser filter already self-halts on its
+	# own is_tripped latch; the head filter is mirrored here for parity.
+	if _laser_filter != null and is_instance_valid(_laser_filter) \
+			and _laser_filter.has_method("cascade_stop"):
+		_laser_filter.call("cascade_stop")
+	if _head_filter != null and is_instance_valid(_head_filter) \
+			and _head_filter.has_method("cascade_stop"):
+		_head_filter.call("cascade_stop")
+	# 3) Compactor/PCU + pelletiser → commanded down via the SCADA broadcast.
+	# The pelletiser also stops implicitly (the model does not tick it while in
+	# EMERGENCY_STOP). Unlike cascade_stop_all_except_pcu, this event carries
+	# stop_pcu:true — the documented over-pressure trip stops the compactor too.
+	if EventBus.has_signal("scada_event"):
+		EventBus.emit_signal(
+			"scada_event",
+			config_resource.line_id,
+			"overpressure_trip_stop_all",
+			{"reason": reason, "bar": bar, "stop_pcu": true,
+			 "stop_extruder": true, "stop_pelletiser": true})
+	# 4) Raise the HMI alarm so the EremaFaultRegistry Storingstabel row is
+	# accompanied by a live severity-3 alarm on the panel.
+	EventBus.machine_alarm_raised.emit(config_resource.line_id, "overpressure", 3)
+
 func _emit_initial_state() -> void:
 	# Broadcast the boot state so AudioManager / HUD start in sync.
 	EventBus.machine_state_changed.emit(
@@ -386,3 +519,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif model.state == ExtruderModel.State.FAULT:
 			_pending["operator_clear_fault"] = true
 			print("[%s] Operator cleared fault" % config_resource.line_id)
+		elif model.state == ExtruderModel.State.EMERGENCY_STOP:
+			# #223 docs->code (items 14/17) — reset the over-pressure trip
+			# EMERGENCY_STOP. Re-arm happens on the state edge in _on_sim_tick.
+			_pending["reset_after_estop"] = true
+			print("[%s] Operator reset emergency stop (over-pressure trip cleared)" % config_resource.line_id)

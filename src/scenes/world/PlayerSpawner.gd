@@ -214,6 +214,11 @@ func _spawn_player() -> CharacterBody3D:
 		# add_child FIRST so the recursive ancestor-walk in _set_body_render_layer_split
 		# can find "PlayerBody" as the root sentinel.
 		player.add_child(body)
+		# Physical body mass from the build sliders (50-150 kg range). One law
+		# for every human — see Humanoid.body_mass_kg. Wardrobe live-edits call
+		# the same helper when they re-apply appearance.
+		if "mass_kg" in player:
+			player.set("mass_kg", humanoid_script.body_mass_kg(appearance))
 		# #205 — Humanoid.build() actually authors the rig with the visible face
 		# on local -Z (see Humanoid.gd:419 inside the head-build block:
 		# "VISUAL FRONT RULE — visible front MUST sit on local -Z to match the
@@ -258,6 +263,13 @@ func _spawn_player() -> CharacterBody3D:
 			# its CameraRig before we hand it the saved state.
 			call_deferred("_restore_freecam_state", fc)
 
+	# First-spawn loadout: hand the operator the three starter tools already in the
+	# hotbar (scissors/scanner/shovel). Idempotent, so a reload re-arms cleanly.
+	# MainWorld-only (Gauntlet/Sandbox build their own player), which is what we want.
+	var inv := get_node_or_null("/root/Inventory")
+	if inv and inv.has_method("give_starter_tools"):
+		inv.call("give_starter_tools")
+
 	return player
 
 # ── Footwear / wardrobe swap on shift bell ──────────────────────────────────
@@ -273,7 +285,10 @@ func _player_apply_footwear(player_node: Node, on_shift: bool) -> void:
 	# up their off_duty clothes when the bell rings off and their on_duty PPE
 	# when it rings on. Legacy single-dict saves fall back to the old behaviour
 	# (just toggle footwear) so the prior contract still holds.
-	var gs = _world.get_node_or_null("/root/GameState")
+	# #224 — GameState is the world's child node (see _world.game_state at spawn),
+	# NOT the autoload path "/root/GameState" (which is always null here). The old
+	# lookup meant the shift-bell outfit swap never saw the player's wardrobe.
+	var gs = _world.game_state if "game_state" in _world else _world.get_node_or_null("/root/GameState")
 	var display_name : String = String(player_node.get_meta("display_name", "Arno"))
 	var appearance : Dictionary = player_node.get_meta("appearance", {})
 	var picked_from_wardrobe : bool = false

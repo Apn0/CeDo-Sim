@@ -7,7 +7,11 @@ var npc_name: String = ""
 var npc_role: String = ""  # shift_leader, extruder_op, feeder, etc.
 
 # Movement parameters
-var walk_speed: float = 2.0  # m/s (slower than player)
+var walk_speed: float = 1.5  # m/s (operator-tuned — slower than the 2.0 player)
+# #223 audit: physical mass so a walking worker pushes carts/bales by real
+# momentum (not infinite kinematic mass). Average adult worker; per-NPC build
+# refinement can set this from appearance later.
+var mass_kg: float = 85.0
 var wander_radius: float = 10.0
 var wander_change_interval: float = 5.0  # seconds
 
@@ -35,12 +39,20 @@ var npc_id : String = ""
 # Currently-running autonomy task (or null = idle). When non-null the NPC's
 # physics step routes through _autonomy_tick instead of the free-wander.
 var _autonomy_task : RefCounted = null
+# #223b MANUAL TASK — operator-assigned task set from the CrewPanel task dropdown.
+# When non-null it OVERRIDES the production gate + auto-poll: the operator has
+# explicitly told this worker what to do, so it runs to completion above Tier 1.
+var _forced_task : NpcAutonomyTask = null
 # Cooldown so an idle NPC only polls the board every 3 s, not every frame.
 var _autonomy_poll_t : float = 0.0
 const _AUTONOMY_POLL_INTERVAL_S : float = 3.0
 # Destination an active task is steering the NPC toward. The NPC's existing
 # pathfinding consumes this; the task only sets it.
 var _autonomy_destination_active : bool = false
+# #223 — cached CrewManager (production arbiter). Resolved lazily via the
+# "crew_manager" group so NPC stays decoupled from MainWorld. Production work
+# (jams / dispatch / breaks) preempts autonomy housekeeping through it.
+var _crew_mgr : Node = null
 
 ## Called by NpcAutonomyTask (or its subclasses) to steer the NPC toward a
 ## world position. Hooks into the existing target_position field so the rest
@@ -67,21 +79,65 @@ func clear_autonomy_destination() -> void:
 ## Called by tasks that need to move the NPC into a vehicle's driver seat.
 ## Reuses the #148 vehicle-entry parity (NPCs board vehicles the same way the
 ## player does via OperatorContext).
-func board_vehicle(vehicle: Node) -> void:
+## npc-05 — now RETURNS whether the worker actually got seated. It used to
+## discard OperatorContext.npc_board_vehicle()'s bool, so a refused board (no
+## OperatorContext in the tree, vehicle without on_npc_entered, can_enter()
+## false) looked identical to a successful one: the task advanced to its DRIVE
+## phase and measured arrival against a forklift nobody was sitting in.
+func board_vehicle(vehicle: Node) -> bool:
 	if vehicle == null:
-		return
+		return false
 	var op_ctx := get_tree().get_root().find_child("OperatorContext", true, false)
 	if op_ctx and op_ctx.has_method("npc_board_vehicle"):
-		op_ctx.call("npc_board_vehicle", self, vehicle)
+		return bool(op_ctx.call("npc_board_vehicle", self, vehicle))
+	return false
 
 func disembark_vehicle() -> void:
 	var op_ctx := get_tree().get_root().find_child("OperatorContext", true, false)
 	if op_ctx and op_ctx.has_method("npc_disembark_vehicle"):
 		op_ctx.call("npc_disembark_vehicle", self)
 
+## npc-05 — true while OperatorContext has this worker seated in a vehicle.
+##
+## Boarding used to be implemented as set_physics_process(false). The intent was
+## right (a seated body must not run gravity / move_and_slide against the seat's
+## transform) but it also switched off _autonomy_tick, which lives on the same
+## callback — so the very act of boarding a forklift silently killed the task
+## that ordered the boarding. Measured in the real world: the task froze
+## mid-phase with _phase_t stuck at 0.0, so not even PHASE_TIMEOUT_S could fire,
+## and the worker sat motionless for the rest of the shift holding the
+## forklift's occupied flag hostage.
+##
+## The fix keeps _physics_process RUNNING and skips only the locomotion half.
+## Moving the tick to _process would have fixed the deadlock too, but _process
+## delta is real frame time while _physics_process delta is the fixed 1/60 step:
+## that would have made every task deadline frame-rate dependent, so a slow
+## machine would time tasks out sooner than a fast one. Task time stays sim time.
+var _seated_in_vehicle : bool = false
+
 ## Per-tick autonomy tick: poll the board when idle, tick the active task
-## otherwise. Called from _physics_process before the wander/walk logic.
+## otherwise. Called from _physics_process — including while seated, see above.
 func _autonomy_tick(delta: float) -> void:
+	# #223b MANUAL TASK — an operator-assigned forced task OVERRIDES the production
+	# gate + auto-poll below. If one is set, run it to completion and return before
+	# _production_needs_me() ever gets a look-in.
+	if _forced_task != null:
+		var ft := _forced_task
+		if ft == null or ft.is_done():
+			clear_forced_task()
+			return
+		if ft.tick(self, delta):
+			clear_forced_task()
+		return
+	# #223 PRODUCTION-FIRST — the crew brain (jams / dispatch / breaks) strictly
+	# outranks autonomy housekeeping (blow leaves / hose / shovel / empty lump cart).
+	# If production has a claim on this worker, drop any in-progress housekeeping
+	# task AND don't poll for a new one, so a posted operator is never off cleaning
+	# while his own line jams.
+	# (docs/plant/npc_rol_taak_prioriteit.md — Tier 1 keep-the-line-running > Tier 4.)
+	if _production_needs_me():
+		_abandon_autonomy_task()
+		return
 	# Already on a task — tick it.
 	if _autonomy_task != null:
 		var t : NpcAutonomyTask = _autonomy_task
@@ -99,8 +155,10 @@ func _autonomy_tick(delta: float) -> void:
 	if _autonomy_poll_t < _AUTONOMY_POLL_INTERVAL_S:
 		return
 	_autonomy_poll_t = 0.0
-	if not Engine.has_singleton("NpcAutonomyBoard"):
+	if not (Engine.has_singleton("NpcAutonomyBoard") or has_node("/root/NpcAutonomyBoard")):
 		# Autoload not configured (e.g. unit-test scene). Fall back to wander.
+		# Engine.has_singleton() returns false for GDScript autoloads in Godot 4,
+		# so the has_node("/root/...") arm is the one that actually passes here.
 		return
 	# Direct autoload access — Engine.has_singleton is a heuristic; the real
 	# call goes through the engine's autoload table.
@@ -110,6 +168,54 @@ func _autonomy_tick(delta: float) -> void:
 	var task : NpcAutonomyTask = board.call("take_next_task", self)
 	if task != null:
 		_autonomy_task = task
+
+## #223 — production-first arbiter lookup. True when CrewManager has a claim on
+## this worker right now (committed to a jam/bin/break/off-post, or a jam in this
+## worker's zone still needs answering). Cached CrewManager ref via the
+## "crew_manager" group. Absent (headless / unit-test scene) → never blocks.
+func _production_needs_me() -> bool:
+	if _crew_mgr == null or not is_instance_valid(_crew_mgr):
+		var tree := get_tree()
+		if tree == null:
+			return false                     # detached / despawning → nothing to yield to
+		_crew_mgr = tree.get_first_node_in_group("crew_manager")
+	if _crew_mgr == null or not _crew_mgr.has_method("needs_worker"):
+		return false
+	return bool(_crew_mgr.call("needs_worker", self))
+
+## #223 — abandon the current housekeeping task cleanly: hand it back to the board
+## (which calls the task's release() so tools are dropped / the forklift is exited)
+## and clear the steering destination so the crew brain can repost / dispatch us.
+func _abandon_autonomy_task() -> void:
+	if _autonomy_task == null:
+		return
+	var board := get_node_or_null("/root/NpcAutonomyBoard")
+	if board != null and board.has_method("release_task"):
+		board.call("release_task", self)
+	else:
+		var t := _autonomy_task as NpcAutonomyTask
+		t.release(self)
+		# npc-01 — un-claim (mirrors board.release_task) so the still-open task
+		# stays offerable instead of being wedged behind a stale _claimed_by.
+		t._claimed_by = null
+	_autonomy_task = null
+	clear_autonomy_destination()
+
+## #223b — operator override: assign a forced task (from the CrewPanel task
+## dropdown via NpcAutonomyBoard.force_task). Starts it immediately; from the
+## next _autonomy_tick it runs above the production gate until it reports done.
+func assign_forced_task(task : NpcAutonomyTask) -> void:
+	_forced_task = task
+	if task != null:
+		task.start(self)
+
+## #223b — clear the forced task: release it (drops tools / exits the vehicle)
+## and clear the steering destination so autonomy/production can take over again.
+func clear_forced_task() -> void:
+	if _forced_task:
+		_forced_task.release(self)
+		_forced_task = null
+		clear_autonomy_destination()
 
 # Social state (mutual-aid economy)
 var relationship_points: Dictionary = {}  # NPC ID -> points
@@ -374,6 +480,13 @@ func _physics_process(delta: float) -> void:
 		_walk_x_smooth = SmoothedRate.new(0.0, _NPC_WALK_TAU_S)
 	if _walk_z_smooth == null:
 		_walk_z_smooth = SmoothedRate.new(0.0, _NPC_WALK_TAU_S)
+	# npc-05 — seated in a vehicle: the chassis owns our transform. Run the
+	# DECISION layer (so the task that seated us keeps ticking, and can steer the
+	# vehicle and eventually order the dismount) and skip every line of
+	# locomotion below — wander, nav, gait, gravity, move_and_slide.
+	if _seated_in_vehicle:
+		_autonomy_tick(delta)
+		return
 	# Vault/climb override (#cluster VAULT_CLIMB): while a mantle tween is
 	# active, we own the transform directly — gravity, walk, nav, jump all stand
 	# aside until we set the NPC down on top of the ledge.
@@ -440,7 +553,19 @@ func _physics_process(delta: float) -> void:
 			# baked yet, target unreachable, etc.). Falling back to straight-
 			# line in that case keeps unmanaged / pre-navmesh worlds working.
 			var next_wp : Vector3 = _nav_agent.get_next_path_position()
-			if next_wp.distance_to(global_position) < 0.05:
+			# npc-07 — the fallback is gated on whether a ROUTE EXISTS, not on "the
+			# next waypoint is within 5 cm of us". That proximity test was ALWAYS true
+			# against the old 1-polygon mesh, which returns the destination directly —
+			# so this branch was the permanent state of every NPC in the game and the
+			# agent above it was decorative. Once the mesh is real the same test would
+			# silently drop an NPC off its route whenever the first waypoint landed
+			# underfoot.
+			#
+			# The fallback itself STAYS, deliberately. Test scenes, hand-instantiated
+			# bodies, the pre-bake startup window and any NPC whose destination lands in
+			# an aisle pocket the eroded mesh sealed all depend on it. An NPC that
+			# freezes when the agent has nothing is worse than one that dead-reckons.
+			if _nav_agent.get_current_navigation_path().size() <= 1:
 				# Fallback: agent has no path (navmesh empty / disabled / first
 				# tick before bake completes). Use the straight-line direction
 				# so the NPC still moves instead of standing frozen.
@@ -494,6 +619,7 @@ func _physics_process(delta: float) -> void:
 
 	velocity = current_velocity
 	move_and_slide()
+	KinematicPush.apply(self, mass_kg, 0.5, delta)   # #223: mass-based cart/bale push
 
 	# Animation Phase 1: feed horizontal velocity into the locomotion
 	# BlendSpace2D so the walk / run pose blends with idle as the NPC moves.
@@ -852,8 +978,28 @@ func is_servicing() -> bool: return task_state == Task.SERVICING
 func is_on_break()  -> bool: return task_state == Task.ON_BREAK
 func is_off_duty()  -> bool: return task_state == Task.OFF_DUTY
 
+## npc-08 — autonomy task_name → the CrewPanel task dropdown's Dutch vocabulary
+## (lower-cased to match the other roster status strings below).
+const _AUTONOMY_TASK_LABELS_NL : Dictionary = {
+	"blow_leaves":       "blad blazen",
+	"water_hose_sweep":  "spuiten (slang)",
+	"air_hose_sweep":    "spuiten (slang)",
+	"shovel_floor_pile": "vegen (schep)",
+	"empty_lump_cart":   "lumpskar legen",
+	"overflow_dump":     "container legen",
+	"refuel_blower":     "bladblazer tanken",
+}
+
 ## Short human-readable status for the HUD crew roster.
 func current_task() -> String:
+	# npc-08 — an active forced/autonomy task outranks the crew-brain state:
+	# the roster used to show "rondlopen" for a worker mid-circuit, including
+	# tasks the operator himself had just forced from the CrewPanel dropdown.
+	# "!" marks an operator-forced task.
+	if _forced_task != null and not _forced_task.is_done():
+		return "! " + _autonomy_task_label(_forced_task.task_name)
+	if _autonomy_task is NpcAutonomyTask and not (_autonomy_task as NpcAutonomyTask).is_done():
+		return _autonomy_task_label((_autonomy_task as NpcAutonomyTask).task_name)
 	match task_state:
 		Task.AT_POST:
 			return "post: %s" % assigned_station_id
@@ -867,15 +1013,22 @@ func current_task() -> String:
 		Task.OFF_DUTY:  return "vrij (rust)"
 		_:              return "rondlopen"
 
-func add_relationship_points(npc_id: String, points: int) -> void:
-	"""Add relationship points with another NPC (mutual-aid)."""
-	if not relationship_points.has(npc_id):
-		relationship_points[npc_id] = 0
-	relationship_points[npc_id] += points
+## npc-08 — Dutch roster label for an autonomy task name; unknown names fall
+## back to the raw name with underscores spaced (still readable in the panel).
+func _autonomy_task_label(tn: String) -> String:
+	return String(_AUTONOMY_TASK_LABELS_NL.get(tn, tn.replace("_", " ")))
 
-func get_relationship_points(npc_id: String) -> int:
+## `other_id`, not `npc_id`: this NPC's OWN npc_id is a class variable, and a
+## parameter of the same name shadowed it (and read as "my id" at a glance).
+func add_relationship_points(other_id: String, points: int) -> void:
+	"""Add relationship points with another NPC (mutual-aid)."""
+	if not relationship_points.has(other_id):
+		relationship_points[other_id] = 0
+	relationship_points[other_id] += points
+
+func get_relationship_points(other_id: String) -> int:
 	"""Get relationship points with another NPC."""
-	return relationship_points.get(npc_id, 0)
+	return relationship_points.get(other_id, 0)
 
 func set_helping(target: Node) -> void:
 	"""Set this NPC to help another NPC/task."""

@@ -19,6 +19,15 @@ var npc_data: Dictionary = {}
 # pants, short hair, no beard, no cap) so an empty save reads as "fresh hire".
 var player_appearance: Dictionary = {}
 var npc_appearances: Dictionary = {}
+# #224 — Player wardrobe (two outfits per character: on_duty + off_duty) keyed
+# by display name, plus the operator's chosen display name. CharacterCustomizer
+# WRITES these via gs.set(...) and PlayerSpawner READS them on spawn — but they
+# were never DECLARED here, so gs.set() silently no-oped (GDScript ignores set()
+# on an undeclared property) and every customization was dropped on save, leaving
+# the player reset to base after reload. Declaring + persisting them closes the
+# leak end-to-end. See save_game()/load_game() below.
+var player_wardrobes: Dictionary = {}
+var player_name: String = ""
 var machine_data: Dictionary = {}
 # #124 — operator-set crew pins (HIER + station/role pins) keyed by npc_name.
 # Empty on a fresh save; populated by CrewManager.save_pins_dict() each save.
@@ -51,6 +60,12 @@ func _ready() -> void:
 
 func save_game() -> void:
 	"""Save complete game state to file."""
+	# #224 — Anti-clobber: an autosave / save-and-quit that fires while the
+	# in-memory appearance is still empty (e.g. a save triggered before load_game
+	# repopulated it) must NOT wipe customizations already on disk. Only re-read
+	# when we'd otherwise write blanks over something real.
+	if player_appearance.is_empty() and npc_appearances.is_empty() and player_wardrobes.is_empty():
+		_recover_appearance_from_disk()
 	var save_data = {
 		"version": 1,
 		"timestamp": Time.get_ticks_msec(),
@@ -68,6 +83,9 @@ func save_game() -> void:
 		"crew_pins": crew_pins_data,
 		"player_appearance": player_appearance,
 		"npc_appearances": npc_appearances,
+		# #224 — the wardrobe (two-outfit) + display name the customizer writes.
+		"player_wardrobes": player_wardrobes,
+		"player_name": player_name,
 	}
 
 	var json = JSON.stringify(save_data)
@@ -109,12 +127,43 @@ func load_game() -> void:
 			crew_pins_data = data.get("crew_pins", {}) if typeof(data.get("crew_pins")) == TYPE_DICTIONARY else {}
 			player_appearance = data.get("player_appearance", {}) if typeof(data.get("player_appearance")) == TYPE_DICTIONARY else {}
 			npc_appearances = data.get("npc_appearances", {}) if typeof(data.get("npc_appearances")) == TYPE_DICTIONARY else {}
+			# #224 — restore the wardrobe + display name so PlayerSpawner's
+			# `"player_wardrobes" in game_state` / `player_name` reads see the
+			# operator's saved outfits instead of falling back to base.
+			player_wardrobes = data.get("player_wardrobes", {}) if typeof(data.get("player_wardrobes")) == TYPE_DICTIONARY else {}
+			player_name = String(data.get("player_name", "")) if typeof(data.get("player_name")) == TYPE_STRING else ""
 			print("Game loaded from: ", save_file_path)
 			emit_signal("game_loaded")
 		else:
 			push_error("Failed to parse save file")
 	else:
 		push_warning("No save file found at: ", save_file_path)
+
+# #224 — Read ONLY the appearance fields back from the existing save so an
+# empty-in-memory save doesn't blank out a customization already on disk. Called
+# from save_game() when all three appearance dicts are empty.
+func _recover_appearance_from_disk() -> void:
+	if not FileAccess.file_exists(save_file_path):
+		return
+	var file = FileAccess.open(save_file_path, FileAccess.READ)
+	if file == null:
+		return
+	var json = JSON.new()
+	if json.parse(file.get_as_text()) != OK:
+		return
+	var data = json.data
+	if typeof(data) != TYPE_DICTIONARY:
+		return
+	if typeof(data.get("player_appearance")) == TYPE_DICTIONARY:
+		player_appearance = data["player_appearance"]
+	if typeof(data.get("npc_appearances")) == TYPE_DICTIONARY:
+		npc_appearances = data["npc_appearances"]
+	if typeof(data.get("player_wardrobes")) == TYPE_DICTIONARY:
+		player_wardrobes = data["player_wardrobes"]
+	if typeof(data.get("player_name")) == TYPE_STRING:
+		player_name = data["player_name"]
+	if not player_appearance.is_empty() or not npc_appearances.is_empty() or not player_wardrobes.is_empty():
+		print("[GameState] Preserved on-disk appearance (in-memory was empty)")
 
 func save_shift_state(data: Dictionary) -> void:
 	"""Save shift-specific state."""
@@ -169,5 +218,8 @@ func clear_save() -> void:
 			npc_data.clear()
 			machine_data.clear()
 			npc_appearances.clear()
+			player_appearance.clear()
+			player_wardrobes.clear()
+			player_name = ""
 		else:
 			push_error("Failed to delete save file")

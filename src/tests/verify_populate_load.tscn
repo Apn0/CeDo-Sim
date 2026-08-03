@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/tests/verify_populate_load.gd" id="1_vpl"]
+
+[node name="VerifyPopulateLoad" type="Node3D"]
+script = ExtResource("1_vpl")

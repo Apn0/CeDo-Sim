@@ -173,8 +173,8 @@ size = Vector3(1.08, 0.035, 0.035)
 size = Vector3(0.035, 1.04, 0.035)
 
 [sub_resource type="StandardMaterial3D" id="Mat_orange"]
-albedo_color = Color(0.9, 0.4, 0.1, 1)
-roughness = 0.6
+albedo_color = Color(0.13, 0.3, 0.17, 1)
+roughness = 0.78
 
 [sub_resource type="BoxMesh" id="BoxMesh_door_lower_panel"]
 size = Vector3(0.022, 0.5, 1.82)
@@ -432,6 +432,26 @@ mesh = SubResource("Cyl_lever")
 
 [node name="LeverTiltKnob" type="MeshInstance3D" parent="." unique_id=95158500]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.42, 1.63, 0.05)
+material_override = SubResource("Mat_hood")
+mesh = SubResource("Sph_lever_knob")
+
+[node name="LeverShift" type="MeshInstance3D" parent="." unique_id=95158501]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.52, 1.5, 0.05)
+material_override = SubResource("Mat_chrome")
+mesh = SubResource("Cyl_lever")
+
+[node name="LeverShiftKnob" type="MeshInstance3D" parent="." unique_id=95158502]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.52, 1.63, 0.05)
+material_override = SubResource("Mat_hood")
+mesh = SubResource("Sph_lever_knob")
+
+[node name="LeverRotate" type="MeshInstance3D" parent="." unique_id=95158503]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.62, 1.5, 0.05)
+material_override = SubResource("Mat_chrome")
+mesh = SubResource("Cyl_lever")
+
+[node name="LeverRotateKnob" type="MeshInstance3D" parent="." unique_id=95158504]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.62, 1.63, 0.05)
 material_override = SubResource("Mat_hood")
 mesh = SubResource("Sph_lever_knob")
 

@@ -39,15 +39,27 @@ const ENGAGE_RISE_MIN    : float = 0.03    # cart Y must climb at least this muc
 const APPROACH_DIST_M    : float = 1.6     # close enough to interact (enter forklift / grab cart)
 const APPROACH_DIST_VEH  : float = 3.5     # close enough when DRIVING a forklift
 const SEATED_DIST_M      : float = 1.0     # tighter tolerance once aligned to pockets
+# phys-06 — "cart still on the forks" gate for every HAUL tick + the dump credit:
+const CART_ON_FORKS_MAX_DIST_M : float = 3.0    # cart-to-chassis distance while riding
+const CART_RIDE_DROP_TOL_M     : float = 0.25   # relative-Y slack (bordes step ≈ 0.12 m)
 
 var lump_cart  : Node3D = null   # the target cart (set on init)
 var dest_node  : Node3D = null   # the lumps_container (or shipping_container if indoor is full)
 var _phase     : int    = Phase.WALK_TO_FORKLIFT
 var _phase_t   : float  = 0.0
 var _forklift  : Node3D = null
+# True only after THIS task's NPC actually boarded _forklift. release() must not
+# command the lift otherwise: _find_nearest_idle_forklift can pick a forklift that
+# another NPC claims first, and npc_set_lift is ungated (Forklift.gd) — an unguarded
+# release would slam that working forklift's carriage to the floor mid-haul.
+var _boarded   : bool   = false
 var _lift_step : int    = Lift.POSE_FORKS
 var _step_t    : float  = 0.0
 var _cart_y_at_engage_start : float = 0.0
+# phys-06 — cart-minus-forklift Y captured when HAUL starts; the on-forks check
+# compares against THIS (not absolute Y) because hauls legitimately descend the
+# ~0.12 m bordes step on the way to the container.
+var _cart_ride_dy : float = 0.0
 
 func _init(cart: Node3D, dest: Node3D) -> void:
 	task_name = "empty_lump_cart"
@@ -106,8 +118,15 @@ func _tick_walk_to_forklift(npc: Node) -> void:
 		return
 	# At the forklift — enter the driver seat. Reuses #148 (NPC Phase 4 vehicle
 	# entry parity) which exposes board_vehicle(npc, vehicle).
+	# npc-05 — honour the board result (same defect OverflowDumpTask had): a
+	# refused board used to set _boarded = true anyway and the task drove on
+	# measuring arrivals against a forklift nobody was sitting in.
 	if npc.has_method("board_vehicle"):
-		npc.call("board_vehicle", _forklift)
+		var seated = npc.call("board_vehicle", _forklift)
+		if typeof(seated) == TYPE_BOOL and not bool(seated):
+			mark_failed("board_refused")
+			return
+		_boarded = true
 	_phase = Phase.DRIVE_TO_CART
 	_phase_t = 0.0
 
@@ -120,7 +139,7 @@ func _tick_drive_to_cart(npc: Node) -> void:
 	# #201 compound-collision spec); approach from the +Z side so the forks
 	# slide in cleanly.
 	var approach_pos : Vector3 = _pocket_approach_position()
-	if not _close_enough(_forklift, _make_marker(approach_pos), APPROACH_DIST_VEH):
+	if not _close_enough_pos(_forklift, approach_pos, APPROACH_DIST_VEH):
 		_set_vehicle_destination(npc, approach_pos)
 		return
 	_phase = Phase.LIFT_AND_HAUL
@@ -167,7 +186,7 @@ func _tick_lift_and_haul(npc: Node) -> void:
 				_step_t = 0.0
 		Lift.APPROACH_POCKETS:
 			var approach : Vector3 = _pocket_approach_position()
-			if not _close_enough(_forklift, _make_marker(approach), SEATED_DIST_M):
+			if not _close_enough_pos(_forklift, approach, SEATED_DIST_M):
 				_set_vehicle_destination(npc, approach)
 				return
 			_lift_step = Lift.SLIDE_IN
@@ -179,7 +198,7 @@ func _tick_lift_and_haul(npc: Node) -> void:
 			# the cart so the autopilot keeps nudging forward until the
 			# physical contact stops the chassis.
 			var seat_pos : Vector3 = _pocket_seat_position()
-			if not _close_enough(_forklift, _make_marker(seat_pos), 0.6):
+			if not _close_enough_pos(_forklift, seat_pos, 0.6):
 				_set_vehicle_destination(npc, seat_pos)
 				return
 			# Forks seated. Park the chassis and snapshot the cart Y so the
@@ -201,9 +220,19 @@ func _tick_lift_and_haul(npc: Node) -> void:
 				if rise < ENGAGE_RISE_MIN:
 					mark_failed("forks_missed_pockets")
 					return
+				# phys-06 — snapshot the ride offset so HAUL can verify the cart
+				# keeps riding the forks relative to the chassis.
+				_cart_ride_dy = lump_cart.global_position.y - _forklift.global_position.y
 				_lift_step = Lift.HAUL
 				_step_t = 0.0
 		Lift.HAUL:
+			# phys-06 — the cart rides on contact + gravity only (no attach
+			# magic), so it CAN slide off mid-drive. Fail fast — the board
+			# re-emits against the cart's actual position — instead of arriving
+			# and "dumping" from empty forks.
+			if not _cart_still_on_forks():
+				mark_failed("cart_lost_in_transit")
+				return
 			if not _close_enough(_forklift, dest_node, APPROACH_DIST_VEH):
 				_set_vehicle_destination(npc, dest_node.global_position)
 				return
@@ -211,6 +240,12 @@ func _tick_lift_and_haul(npc: Node) -> void:
 			_phase_t = 0.0
 
 func _tick_dump_and_return(npc: Node) -> void:
+	# phys-06 — final gate before crediting: if the cart fell off the forks on
+	# the way here, dumping anyway would teleport up to 90 kg from wherever the
+	# cart actually lies into the container (mass-conservation pillar).
+	if not _cart_still_on_forks():
+		mark_failed("cart_lost_in_transit")
+		return
 	# Move the lumps mass from cart → dest. Cart returns to zero, dest grows.
 	var dumped : float = 0.0
 	if lump_cart.has_method("empty"):
@@ -225,6 +260,20 @@ func _tick_dump_and_return(npc: Node) -> void:
 	if npc.has_method("disembark_vehicle"):
 		npc.call("disembark_vehicle")
 	mark_done()
+
+## Lifecycle hardening (npc-01/phys-06 companion) — release() runs on normal
+## completion AND on every abort/failure path. Leave the rig usable: carriage
+## down, NPC out of the seat. Without this a failed haul left the worker seated
+## forever, the forklift read "occupied", and every reissued task starved on
+## no_forklift_available. Both calls are idempotent (npc_disembark_vehicle
+## no-ops when the NPC isn't seated), so the happy path's own disembark is safe.
+func release(npc: Node) -> void:
+	# Only command the lift if THIS task's NPC boarded the forklift — see _boarded.
+	if _boarded and _forklift != null and is_instance_valid(_forklift):
+		if _forklift.has_method("npc_set_lift"):
+			_forklift.call("npc_set_lift", LIFT_FLAT_M)
+	if npc != null and is_instance_valid(npc) and npc.has_method("disembark_vehicle"):
+		npc.call("disembark_vehicle")
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -247,16 +296,28 @@ func _pocket_seat_position() -> Vector3:
 	var fwd : Vector3 = -lump_cart.global_transform.basis.z
 	return lump_cart.global_position + fwd * SLIDE_IN_OFFSET_M
 
-## _close_enough() expects two Node3Ds, but we sometimes want to test against
-## a bare Vector3 target. Wrap the position in a tiny throwaway Node3D so the
-## existing helper keeps its single shape.
-func _make_marker(pos: Vector3) -> Node3D:
-	var n := Node3D.new()
-	n.global_position = pos
-	# Note: not added to the tree — _close_enough only reads global_position
-	# which is the local position for a parentless node, fine for our distance
-	# check and avoids polluting the scene with throwaway nodes.
-	return n
+## Position-flavoured _close_enough (mirror of BlowLeavesTask's helper): test a
+## node against a bare Vector3 target. npc-12 — replaces the old _make_marker
+## wrapper, which allocated an out-of-tree Node3D EVERY physics tick of the
+## driving phases (~60 permanent orphans/s per driving leg — Node3D is not
+## RefCounted) just to reuse the node-vs-node check.
+func _close_enough_pos(a: Node, pos: Vector3, r: float) -> bool:
+	if a == null or not (a is Node3D):
+		return false
+	return ((a as Node3D).global_position - pos).length() <= r
+
+## phys-06 — true while the cart is genuinely riding the forks: still near the
+## chassis AND not sunk relative to it since HAUL began (measured against
+## _cart_ride_dy, not absolute Y — hauls legitimately descend the bordes step).
+func _cart_still_on_forks() -> bool:
+	if lump_cart == null or not is_instance_valid(lump_cart):
+		return false
+	if _forklift == null or not is_instance_valid(_forklift):
+		return false
+	if lump_cart.global_position.distance_to(_forklift.global_position) > CART_ON_FORKS_MAX_DIST_M:
+		return false
+	return (lump_cart.global_position.y - _forklift.global_position.y) \
+		>= _cart_ride_dy - CART_RIDE_DROP_TOL_M
 
 func _find_nearest_idle_forklift(npc: Node) -> Node3D:
 	var tree := npc.get_tree() if npc.has_method("get_tree") else null

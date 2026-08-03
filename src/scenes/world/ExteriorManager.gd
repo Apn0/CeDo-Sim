@@ -21,13 +21,19 @@ class_name ExteriorManager
 # Roads. Each entry is [start_offset, end_offset] in metres, B-local.
 const ROAD_SOUTH_EXT       : Array = [Vector3(-42.0, 0.0, -40.0), Vector3(  5.0, 0.0, -40.0)]
 const ROAD_EAST_SERVICE    : Array = [Vector3( 35.0, 0.0, -30.0), Vector3( 35.0, 0.0,  20.0)]
-const ROAD_NORTH_BALE_YARD : Array = [Vector3(  5.0, 0.0,  35.0), Vector3( 40.0, 0.0,  35.0)]
-const ROAD_INTERNAL_AISLE  : Array = [Vector3(-15.0, 0.0,  -5.0), Vector3( -5.0, 0.0,  -5.0)]
+# 2026-07-06 — re-georeferenced against the parametric shell. The old
+# constants predate the survey georeference: both road extensions and
+# FENCE_NORTH converted to positions INSIDE the building (operator
+# screenshots: road + fence crossing the factory interior). All offsets are
+# anchor-local (PC - 500), rotated by the canonical yaw at spawn time.
+const ROAD_NORTH_BALE_YARD : Array = [Vector3(-49.0, 0.0,  55.4), Vector3(-73.2, 0.0,  58.1)]
+const ROAD_INTERNAL_AISLE  : Array = [Vector3(-77.9, 0.0,  19.5), Vector3(-97.2, 0.0,  42.5)]
 
-# Perimeter fence runs (north + east + south-east half).
-const FENCE_NORTH      : Array = [Vector3(-30.0, 0.0,  38.0), Vector3( 40.0, 0.0,  38.0)]
-const FENCE_EAST       : Array = [Vector3( 40.0, 0.0,  38.0), Vector3( 40.0, 0.0, -35.0)]
-const FENCE_SOUTH_EAST : Array = [Vector3( 40.0, 0.0, -35.0), Vector3(  8.0, 0.0, -35.0)]
+# Perimeter fence runs: NW long side, NE end, half of the SE side — the
+# south stays open for the bale lot and the access road.
+const FENCE_NORTH      : Array = [Vector3(  7.1, 0.0, -105.1), Vector3(-124.7, 0.0,  52.0)]
+const FENCE_EAST       : Array = [Vector3( 99.0, 0.0,  -27.9), Vector3(   7.1, 0.0, -105.1)]
+const FENCE_SOUTH_EAST : Array = [Vector3( 99.0, 0.0,  -27.9), Vector3(  41.1, 0.0,  41.0)]
 
 # Gate barrier at the south plant entry.
 const GATE_OFFSET : Vector3 = Vector3(0.0, 0.0, 25.0)
@@ -184,7 +190,7 @@ func _spawn_road_extensions(anchor: Vector3, ground_y: float) -> void:
 # ── Perimeter fence + south entry gate ──────────────────────────────────────
 func _spawn_perimeter_fence(anchor: Vector3, ground_y: float) -> void:
 	var ga := Vector3(anchor.x, ground_y, anchor.z)
-	var by : float = _world_yaw()
+	var _by : float = _world_yaw()
 	var perimeters : Array = [
 		{"name": "PerimeterFence_North",     "pts": FENCE_NORTH},
 		{"name": "PerimeterFence_East",      "pts": FENCE_EAST},

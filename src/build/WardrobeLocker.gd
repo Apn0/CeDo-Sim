@@ -5,6 +5,11 @@ class_name WardrobeLocker
 ## open the character customizer (#153). Loads CharacterCustomizer.gd at
 ## runtime, parents it under /root, and the customizer handles pause + save.
 
+## #241 — group so crew logic can RESOLVE a locker as a real place to collect
+## personal kit from (CrewManager.TOOL_PICKUP_GROUPS). No geometry change.
+func _ready() -> void:
+	add_to_group("wardrobe_locker")
+
 func crosshair_prompt(_player) -> String:
 	return "Open locker (wardrobe) [E]"
 

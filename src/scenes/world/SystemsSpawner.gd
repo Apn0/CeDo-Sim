@@ -33,11 +33,8 @@ func setup(world: Node) -> void:
 # OPERATOR CONTEXT (embodiment switcher: on_foot ↔ forklift ↔ ...)
 # =============================================================================
 func _spawn_operator_context() -> void:
-	var operator_context := OperatorContext.new()
-	operator_context.name = "OperatorContext"
-	operator_context.on_foot_body = _world.player
-	operator_context.foot_camera  = (_world.player as Node).find_child("Camera3D", true, false) as Camera3D
-	_world.add_child(operator_context)
+	# Shared helper so MainWorld + GauntletWorld build the OperatorContext identically.
+	var operator_context := OperatorContext.spawn_under(_world, _world.player)
 	_world.operator_context = operator_context
 	print("[SystemsSpawner] OperatorContext ready")
 

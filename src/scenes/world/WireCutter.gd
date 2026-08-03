@@ -220,6 +220,13 @@ func _try_cut_nearest() -> void:
 		n = n.get_parent()
 	if bale == null or bool(bale.get_meta("wires_cut", false)):
 		return
+	# A yard bale the player walks up to is a SIMPLE LOD bale with NO Sheets/Wires
+	# children — those are only built by detail_bale(), which until now ran only on
+	# a VEHICLE grab (BaseVehicle._try_grab). So on foot the cutter found no wires
+	# and silently did nothing (operator 2026-07-16: "can't cut the iron wires").
+	# Promote it here so the on-foot cut has real wires to sever.
+	if bool(bale.get_meta("simple_bale", false)):
+		PlaceableCatalog.detail_bale(bale)
 	var wires := bale.find_child("Wires", true, false)
 	if wires == null:
 		return
@@ -248,3 +255,11 @@ func _recheck_all_cut(bale: Node3D) -> void:
 	var wires := bale.find_child("Wires", true, false)
 	if wires == null or wires.get_child_count() == 0:
 		bale.set_meta("wires_cut", true)
+		# The bale is compressed film held ONLY by the 3 iron wires — cut the last
+		# one and it springs open. Previously wires_cut just flipped a flag and
+		# nothing happened (operator: "bale no burst after 3 wires cut"). Burst it
+		# into the 6 fanned, mass-conserving pieces now.
+		var scene : Node = get_tree().current_scene
+		if scene == null:
+			scene = get_tree().root
+		BaleBurst.open(bale, scene)

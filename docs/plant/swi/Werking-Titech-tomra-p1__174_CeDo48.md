@@ -1,0 +1,24 @@
+# "Werking Titech tomra" — Pagina 1 van 3 (TOMRA AUTOSORT with FLYING BEAM, NIR+VIS)
+
+**Source scan:** `D:/drive-download-20251124T130330Z-1-001/174_CeDo48.pdf` (1 page = **page 1 of 3** of "Werking Titech tomra")
+**Doc type:** Not a SWI. TOMRA/TITECH AUTOSORT reference (intro page). Completes the 3-page set with p.2 (`173_CeDo49`) and p.3 (`172_CeDo50`).
+
+## Header
+> "Werking Titech tomra" — "Pagina 1 van 3"
+
+## Embedded photo (top)
+Photo of the **TOMRA AUTOSORT** machine: a long dark-grey infeed **conveyor belt** (with legs) leading into a boxed sorter housing; an **orange TOMRA scanner module** mounted on top over the belt (branding "TOMRA" visible in orange); control cabinet on the right side; the acceleration/scanning belt runs left-to-right into the ejection/separation housing. This is the full sorter line photo (relevant to Q28 belt/machine form factor).
+
+## Body (verbatim transcription; scan is faint — [unsure] noted)
+> "De **AUTOSORT** is een multifunctioneel sorteersysteem dat een grote reeks waardevolle materialen uit verschillende afvalstromen herwint, zoals uit een enkele stroom, verpakking, vast gemeentelijk afval en andere. De nieuwe generatie met **FLYING BEAM®**-technologie levert een aanzienlijke bijdrage aan het vereenvoudigen van het volledige systeem. Daardoor is het sorteerproces van de AUTOSORT uiterst betrouwbaar en is ook het onderhoud zeer gemakkelijk.
+>
+> De karakteristieke spectrums worden met een zeer hoge optische resolutie gedetecteerd door geavanceerde **near infrared (NIR)-** en **visible light (VIS)-sensoren** die zijn gebaseerd op een spectrometer. Innovatieve **FLYING BEAM®**-verlichtingstechnologie concentreert zich enkel op de zone van de transportband die wordt gescand. Het resultaat: **energiebesparingen tot 70%**. De geavanceerde NIR-spectrometer detecteert materialen op basis van de specifieke en unieke spectrale eigenschappen van het licht dat deze reflecteren. Er zijn **twee detectoren** verkrijgbaar voor verschillende spectrale reikwijdtes. De **VIS-spectrometer** herkent materialen op basis van hun specifieke kleureigenschappen. Afhankelijk van de toepassing kunnen deze detectoren worden gecombineerd. Het systeem kan snel opnieuw worden geconfigureerd om de vereiste sorteertaken uit te voeren door verschillende **sorteerprogramma's** te selecteren. De onderstaande afbeelding toont het werkingsprincipe van de AUTOSORT."
+
+**Gloss:** The AUTOSORT is a multifunctional sorting system recovering a wide range of valuable materials from various waste streams (single-stream, packaging, municipal solid waste, etc.). The new generation with **FLYING BEAM®** technology greatly simplifies the whole system, making sorting highly reliable and maintenance very easy. Characteristic spectra are detected at very high optical resolution by advanced **NIR** and **visible-light (VIS)** spectrometer-based sensors. FLYING BEAM® illumination focuses only on the scanned belt zone → **energy savings up to 70%**. The NIR spectrometer detects materials by the unique spectral properties of reflected light; **two detectors** are available for different spectral ranges. The **VIS spectrometer** recognises materials by their colour properties. Detectors can be combined depending on the application. The system can be quickly reconfigured for the required sorting tasks by selecting different **sorting programs**. The figure below shows the AUTOSORT working principle.
+
+## Notes / open-question hits (Q28)
+- **Q28 — sorting programs / what was ejected:** CONFIRMED the sorter runs **selectable "sorteerprogramma's" (sorting programs)** — reconfigurable per task. It combines **NIR (material/polymer type)** + **VIS (colour)** detection. So ejection targets can be by polymer type AND/OR colour depending on the loaded program. This directly answers the Q28 "sorting programs" sub-question: programs are software-selectable NIR/VIS profiles.
+- **Q28 — machine model / make:** **TOMRA AUTOSORT** with **FLYING BEAM®** illumination technology (energy savings up to 70%). Two spectrometer detectors available (different spectral ranges) + VIS colour spectrometer. This is the full make/model for the CeDo TITECH/TOMRA sorters.
+- **Q28 — EM sensor:** page 1 lists NIR + VIS sensors; the **EM sensor is the optional add-on** noted on p.2 (`173_CeDo49`). So base config = NIR + VIS; EM optional.
+- **Q28 — belt/photo:** the photo shows the physical AUTOSORT line: long infeed conveyor + TOMRA scanner module + ejection housing + control cabinet. (Exact belt width in metres still not numerically stated across the 3 pages — [unsure]; but full 3-page set now digested: p1 intro/specs, p2 working principle+EM, p3 PolySort UHR/belt speed 3 m/s/polymer types.)
+- **Application context:** AUTOSORT designed for single-stream/packaging/MSW recovery — at CeDo used upstream to pull contaminant polymers/colours off the LDPE film stream before the bunker/compactor.

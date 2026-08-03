@@ -21,7 +21,7 @@ roughness = 0.85
 radius = 1.7
 
 [node name="FordStreetka" type="VehicleBody3D"]
-mass = 880.0
+mass = 1060.0
 center_of_mass_mode = 1
 center_of_mass = Vector3(0, -0.20, 0.0)
 script = ExtResource("1_streetka")

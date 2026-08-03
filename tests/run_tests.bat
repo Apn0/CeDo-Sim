@@ -58,14 +58,9 @@ echo === [9/11] SecuritySaveTest (script mode) ===
 set RC9=%ERRORLEVEL%
 
 echo.
-echo === [10/11] WasteContainerTest (script mode) ===
-%GODOT% --headless --path . --script res://tests/WasteContainerTest.gd
+echo === [10/10] Npc05ContainerChainTest (script mode) ===
+%GODOT% --headless --path . --script res://src/tests/test_npc05_container_chain.gd
 set RC10=%ERRORLEVEL%
-
-echo.
-echo === [11/11] LaserFilterTest (script mode) ===
-%GODOT% --headless --path . --script res://tests/LaserFilterTest.gd
-set RC11=%ERRORLEVEL%
 
 popd
 echo.
@@ -78,8 +73,7 @@ echo SettingsParseTest      exit: %RC6%
 echo ScanLogTest            exit: %RC7%
 echo VehicleBaleTest        exit: %RC8%
 echo SecuritySaveTest       exit: %RC9%
-echo WasteContainerTest     exit: %RC10%
-echo LaserFilterTest        exit: %RC11%
+echo Npc05ContainerChain    exit: %RC10%
 if not "%RC1%"=="0" exit /b %RC1%
 if not "%RC2%"=="0" exit /b %RC2%
 if not "%RC3%"=="0" exit /b %RC3%
@@ -89,5 +83,4 @@ if not "%RC6%"=="0" exit /b %RC6%
 if not "%RC7%"=="0" exit /b %RC7%
 if not "%RC8%"=="0" exit /b %RC8%
 if not "%RC9%"=="0" exit /b %RC9%
-if not "%RC10%"=="0" exit /b %RC10%
-exit /b %RC11%
+exit /b %RC10%

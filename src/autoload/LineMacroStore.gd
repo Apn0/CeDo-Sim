@@ -48,9 +48,30 @@ extends Node
 
 const MACRO_DIR : String = "user://macros"
 const STORE_VERSION : int = 1
+## Corruption guard (#macro-sink). A per-machine macro delta beyond this many
+## metres — or non-finite — means the machine fell through the world (a physics
+## sink) and its pose must NOT be recorded or re-applied. This is the line_3a
+## dy≈-40 km bug: machine 32 sank, the save recorded its plummeting Y, and the
+## delta compounded every save→load→fall cycle. Both the save-back
+## (BuildMode.save_macro_overrides) and the load (get_overrides) reject such
+## values so one glitched machine can never poison a whole macro. The whole
+## plant footprint is ~150 m, so no legitimate single-machine jog approaches
+## this cap.
+const MAX_ABS_DELTA_M : float = 100.0
+
+## True when a per-machine pose delta is finite and within the sane range.
+## Shared by the save-back guard and the load-time filter.
+static func delta_sane(dx: float, dy: float, dz: float, drot_y: float) -> bool:
+	if not (is_finite(dx) and is_finite(dy) and is_finite(dz) and is_finite(drot_y)):
+		return false
+	return absf(dx) <= MAX_ABS_DELTA_M and absf(dy) <= MAX_ABS_DELTA_M and absf(dz) <= MAX_ABS_DELTA_M
+
+## APPEND-ONLY. Each id maps to a SEQ in BuildMode; macro_index is the position
+## in that SEQ, so an id removed here orphans every user://macros/<id>.json delta.
 const MACRO_IDS : Array[String] = [
 	"line_3a", "line_3b", "line_1",
 	"line_intake_3a3b", "line_sort", "line_intake_3c6",
+	"line_3c",
 ]
 
 ## In-memory cache: macro_id -> Dictionary (full file contents).
@@ -116,11 +137,20 @@ func get_overrides(macro_id: String) -> Dictionary:
 		var v = (raw as Dictionary)[k]
 		if not (v is Dictionary):
 			continue
+		var _dx := float((v as Dictionary).get("dx", 0.0))
+		var _dy := float((v as Dictionary).get("dy", 0.0))
+		var _dz := float((v as Dictionary).get("dz", 0.0))
+		var _dr := float((v as Dictionary).get("drot_y", 0.0))
+		# #macro-sink guard: drop a poisoned delta (e.g. a machine that sank to
+		# y=-27 km) rather than teleporting the machine into the void on load.
+		if not delta_sane(_dx, _dy, _dz, _dr):
+			push_warning("[LineMacroStore] %s index %s delta implausible (dx=%.1f dy=%.1f dz=%.1f) — dropped" % [macro_id, k, _dx, _dy, _dz])
+			continue
 		out[idx] = {
-			"dx":     float((v as Dictionary).get("dx", 0.0)),
-			"dy":     float((v as Dictionary).get("dy", 0.0)),
-			"dz":     float((v as Dictionary).get("dz", 0.0)),
-			"drot_y": float((v as Dictionary).get("drot_y", 0.0)),
+			"dx":     _dx,
+			"dy":     _dy,
+			"dz":     _dz,
+			"drot_y": _dr,
 			"scale":  _read_scale((v as Dictionary).get("scale", [1.0, 1.0, 1.0])),
 		}
 	return out

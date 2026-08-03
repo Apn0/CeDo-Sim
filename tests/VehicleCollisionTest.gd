@@ -19,7 +19,7 @@ var _fail : int = 0
 var _fail_lines : Array[String] = []
 
 var _fork : Node3D = null
-var _wall_z : float = 8.0
+var _wall_z : float = -6.0   # canonical CeDo vehicle forward is local -Z (BaseVehicle._kinematic_move)
 var _frames : int = 0
 var _done : bool = false
 
@@ -28,7 +28,8 @@ func _ready() -> void:
 	print("  CeDo Simulator — Vehicle vs world collision test")
 	print("============================================================")
 
-	# A static wall 8 m ahead (+Z), spanning the drive path.
+	# A static wall 6 m ahead (-Z, the direction the forklift actually drives),
+	# spanning the drive path.
 	var wall := StaticBody3D.new()
 	wall.name = "Wall"
 	add_child(wall)
@@ -48,7 +49,7 @@ func _ready() -> void:
 	fcol.shape = fbox
 	floor_body.add_child(fcol)
 
-	# Forklift at origin, facing +Z (its forward is +basis.z), driving toward the wall.
+	# Forklift at origin. Canonical forward = local -Z, so it drives toward the wall at -Z.
 	var scene := load(FORKLIFT_SCENE) as PackedScene
 	_fork = scene.instantiate() as Node3D
 	add_child(_fork)
@@ -78,15 +79,15 @@ func _physics_process(_delta: float) -> void:
 
 func _evaluate() -> void:
 	var z: float = (_fork as Node3D).global_position.z
-	# Forklift body half-depth ~1.25 m; wall front face is at _wall_z - 0.25.
-	# It must be stopped on the NEAR side of the wall, not past it.
-	var wall_front := _wall_z - 0.25
-	_ok(z < wall_front + 0.1,
+	# Driving toward -Z: the wall face nearest the spawn is at _wall_z + 0.25.
+	# The forklift must be stopped on the NEAR side of the wall, not past it.
+	var wall_front := _wall_z + 0.25
+	_ok(z > wall_front - 0.1,
 		"forklift stopped at/near the wall front (z=%.2f, wall front=%.2f)" % [z, wall_front])
-	_ok(z < _wall_z + 1.0,
+	_ok(z > _wall_z - 1.0,
 		"forklift did NOT pass through the wall (z=%.2f, wall=%.2f)" % [z, _wall_z])
 	# And it actually moved toward the wall (didn't just sit at spawn).
-	_ok(z > 1.0, "forklift drove forward before being stopped (z=%.2f)" % z)
+	_ok(z < -1.0, "forklift drove forward before being stopped (z=%.2f)" % z)
 
 	print("============================================================")
 	print("  RESULT: %d passed · %d failed" % [_pass, _fail])

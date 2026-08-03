@@ -50,7 +50,10 @@ func _test_feeder_drives() -> void:
 	_ok(bool(worker.get("_riding")), "worker boarded + is riding the vehicle")
 	_ok(bool(v.get("npc_autopilot")), "vehicle is under NPC autopilot")
 	_ok(worker.bales_processed >= 1, "driver cut+scanned at least one bale (%d)" % worker.bales_processed)
-	_ok(belt.bales_accepted >= 1, "driver delivered a bale to the belt (%d)" % belt.bales_accepted)
+	# #23 — the driver no longer hands whole bales to accept_bale (which is what
+	# bales_accepted counts); it bursts the de-wired bale into pieces AT the
+	# belt's load point. bales_fed only increments when that burst succeeded.
+	_ok(worker.bales_fed >= 1, "driver burst-fed a bale at the belt infeed (%d)" % worker.bales_fed)
 
 # ── 4. Personal kit: NPC-owned vehicle + holstered, non-grabbable tools ───────
 func _test_personal_kit() -> void:
@@ -91,6 +94,10 @@ func _build_floor() -> void:
 
 func _make_belt(pos: Vector3) -> Node:
 	var belt = preload("res://src/scenes/world/ShredderFeedBelt.gd").new()
+	# Standalone mode — this harness builds a bare belt with no shredder node in
+	# group "shredder"; the PLC interlock (require_shredder default true) would
+	# otherwise keep the belt stopped and the throat empty forever.
+	belt.require_shredder = false
 	add_child(belt)
 	belt.global_position = pos
 	return belt

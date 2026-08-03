@@ -232,7 +232,9 @@ func _spawn_world_items() -> void:
 			WorldLayout.migrate_to_pc(Callable(self, "_layout_to_scene"))
 
 	# Vehicles ALWAYS come from WorldLayout (or fall back to defaults if empty).
-	var veh_spawner := VehicleSpawner.new(); add_child(veh_spawner); veh_spawner.setup(self, _player_spawn_pos)
+	var veh_spawner := VehicleSpawner.new()
+	veh_spawner.name = "VehicleSpawner"   # #206 — explicit name so _spawn_merlo's find_child("VehicleSpawner") resolves (auto-name is "@Node3D@id")
+	add_child(veh_spawner); veh_spawner.setup(self, _player_spawn_pos)
 	_spawn_merlo()
 
 	# When the user has configured a world via WorldSetup, treat it as
@@ -257,16 +259,29 @@ func _spawn_world_items() -> void:
 	# running. NEW games skip this on purpose — operator must commission the
 	# line via the HMI (cold start), matching real plant power-up procedure.
 	if line_flow:
-		if _is_resumed_save and line_flow.has_method("mark_warm_boot"):
-			line_flow.mark_warm_boot()
+		# #audit-2026-07-08 — COLD START ON LOAD (operator decision). The warm-boot
+		# path called LineFlow.force_all_powered() UNCONDITIONALLY for every resumed
+		# save, so loading ANY save started the whole line RUNNING — even a world the
+		# operator never commissioned. Loading must NOT start production; the operator
+		# commissions the line via the HMI START (matching real plant power-up). True
+		# mid-run resume (option B) would require persisting per-machine run state and
+		# is deferred; mark_warm_boot()/force_all_powered() remain in LineFlow for that.
 		line_flow.rebuild()
+		# Discoverable by group so a released bale can ask "am I at a feed point?"
+		# without a hard reference (BaseVehicle._release → is_near_line_feed_point).
+		if not line_flow.is_in_group("line_flow"):
+			line_flow.add_to_group("line_flow")
 	# Crew manager ALWAYS spawns (even with an authoritative layout). It posts
 	# the 9 workers to whatever LineFlow machines exist (free-wander if none),
 	# and — critically — the HUD crew-assignment panel (C / Numpad-.) bails out
 	# when crew_manager is null, so skipping it broke that menu entirely.
 	_spawn_crew_manager()
-	var shift_lc := ShiftLifecycleManager.new(); add_child(shift_lc); shift_lc.setup(self, shift_clock, staff_parking, _player_spawn_pos)
-	var save_coord := SaveCoordinator.new(); add_child(save_coord); save_coord.setup(self, player, game_state, shift_clock, crew_manager)
+	var shift_lc := ShiftLifecycleManager.new()
+	shift_lc.name = "ShiftLifecycleManager"   # #206 — explicit name for find_child lookups
+	add_child(shift_lc); shift_lc.setup(self, shift_clock, staff_parking, _player_spawn_pos)
+	var save_coord := SaveCoordinator.new()
+	save_coord.name = "SaveCoordinator"   # #206 — explicit name so save_game()/save_and_quit()'s find_child("SaveCoordinator") resolves; auto-name broke Save & Quit (it changed scene WITHOUT saving)
+	add_child(save_coord); save_coord.setup(self, player, game_state, shift_clock, crew_manager)
 
 	# WorldEnvironment + sun are now in the tree — push saved graphics prefs
 	# (SSAO / SDFGI / fog / brightness / shadow distance) onto them.
@@ -278,6 +293,12 @@ func _spawn_world_items() -> void:
 
 	print("[MainWorld] Ready — %d NPCs, shift running: %s" \
 		% [npcs.size(), str(shift_clock.shift_active) if shift_clock else "?"])
+	# npc-07 — RE-BAKE NOW THAT THE PLANT EXISTS. _spawn_navigation_region runs at
+	# :124, well before BuildMode replays the saved layout, so the first bake sees
+	# floor and fence and not one machine. Baking once at :124 was survivable while
+	# the mesh had no obstacles in it by design; with a real source set it would
+	# quietly ship a mesh describing an empty hall.
+	call_deferred("rebake_navigation")
 
 
 
@@ -312,24 +333,26 @@ func _building_center_and_footprint() -> Dictionary:
 			Vector2(x1, z1), Vector2(x0, z1)])
 	}
 
-const _PLAYER_BODY_LAYER : int = 1 << 1
-const _PLAYER_HEAD_LAYER : int = 1 << 2
-const _HEAD_Y_THRESHOLD  : float = 0.55
+const _PLAYER_BODY_LAYER : int = 1 << 1   # visible in first person (legs only)
+const _PLAYER_HEAD_LAYER : int = 1 << 2   # culled by the FP camera (head + torso + arms)
 
+## Operator request 2026-07-05: first person shows ONLY the operator's legs.
+## Structural classification: leg meshes (feet / boot cuffs / shins / thighs)
+## all live under a HipPivot_L / HipPivot_R ancestor in the Humanoid box rig —
+## they keep the FP-visible layer. Every other player mesh (torso, arms, head,
+## PPE overlays) goes to the FP-culled layer. Orbit / free-move cameras keep
+## the default cull mask and still render the full body; NPCs are never walked
+## by this function, so they are unaffected.
 func _set_body_render_layer_split(root: Node) -> void:
 	if root is MeshInstance3D:
 		var mi := root as MeshInstance3D
-		# Local position relative to the Humanoid rig root tells us if this is a
-		# head-region box. Walk up from the mesh summing Node3D y positions until
-		# we hit the PlayerBody root (orientations are identity inside Humanoid,
-		# so summing y is correct).
-		var y_local : float = mi.position.y
+		var on_leg := false
 		var p : Node = mi.get_parent()
 		while p != null and (not (p is Node3D) or p.name != "PlayerBody"):
-			if p is Node3D:
-				y_local += (p as Node3D).position.y
+			if String(p.name).begins_with("HipPivot"):
+				on_leg = true
 			p = p.get_parent()
-		mi.layers = _PLAYER_HEAD_LAYER if y_local >= _HEAD_Y_THRESHOLD else _PLAYER_BODY_LAYER
+		mi.layers = _PLAYER_BODY_LAYER if on_leg else _PLAYER_HEAD_LAYER
 	for c in root.get_children():
 		_set_body_render_layer_split(c)
 
@@ -396,14 +419,31 @@ func _spawn_crew_manager() -> void:
 	crew_manager = CrewManager.new()
 	crew_manager.name = "CrewManager"
 
-	# Break room: use a BreakRoom/Canteen marker if the level has one, else a fixed
-	# spot near the factory entrance.
-	var break_pos := Vector3(0.0, 0.0, 25.0)
+	# Break room: a BreakRoom/Canteen marker if the level has one, else a spot
+	# derived from the MEASURED plant anchor.
+	#
+	# The old fallback was a bare `Vector3(0, 0, 25)` commented "near the factory
+	# entrance". That was true only while the world was origin-centred; since the
+	# plant became georeferenced (anchor ~(-202.7, -8, 94.0)) scene (0, 0, 25) is
+	# open exterior ground ~224 m away, and the operator's own boot log read
+	# "canteen @ (0.0, 0.0, 25.0)" — nine workers hiking a ~450 m round trip for a
+	# 30 s break. Same class of bug as the TL bars hung on stale constants: derive
+	# from what is measured, never from a baked origin.
+	#
+	# No canteen geometry is invented here (no-build-without-docs): the fallback is
+	# a standing spot beside the player/factory anchor until the operator places a
+	# real BreakRoom marker, which still wins when present.
 	var canteen := find_child("BreakRoom", false, false) as Node3D
 	if canteen == null:
 		canteen = find_child("Canteen", false, false) as Node3D
-	if canteen:
+	var break_pos : Vector3
+	if canteen != null:
 		break_pos = canteen.global_position
+	else:
+		# _get_factory_anchor already falls back factory_center -> player spawn ->
+		# marker and pins Y to the measured operating floor.
+		break_pos = _get_factory_anchor()
+		push_warning("[MainWorld] No BreakRoom/Canteen marker — breaks fall back to the plant anchor %s. Place a canteen marker in WorldSetup to give crew a real break room." % str(break_pos))
 
 	add_child(crew_manager)
 	crew_manager.setup(npcs, line_flow, shift_clock, break_pos)
@@ -441,19 +481,30 @@ func _spawn_container_guides() -> void:
 # slot if WorldLayout has no spawns for that vehicle id.
 # =============================================================================
 
-## Sanity guard for layout-relative markers (377 km bug): a marker more than
-## ~5 km from the anchor is corrupt RD-space leakage, not a real placement.
-## Spawning physics bodies that far out breaks float precision → NaN transforms
-## → tens of thousands of "!v.is_finite()" render errors that also tank the
-## framerate via log I/O. Skip the marker instead.
-func _layout_rel_sane(rel: Vector3) -> bool:
-	return Vector2(rel.x, rel.z).length() < 5000.0
+## Sanity guard for saved WorldSetup markers (377 km bug): a marker more than
+## ~5 km from the plant anchor is corrupt RD-space leakage, not a real
+## placement. Spawning physics bodies that far out breaks float precision → NaN
+## transforms → tens of thousands of "!v.is_finite()" render errors that also
+## tank the framerate via log I/O. Skip the marker instead.
+##
+## Measured against the ANCHOR, not against the scene origin: markers are
+## scene-absolute (WorldFrame._layout_to_scene), and the plant itself sits ~224 m
+## from the origin, so a bare magnitude test rubber-stamps any frame — it was
+## green throughout the period every vehicle spawned 228 m off its own marker.
+## 5 km still bounds RD leakage (~1e5 m) by 20x with room for outlying yards.
+func _layout_rel_sane(marker: Vector3) -> bool:
+	var a : Vector3 = _layout_anchor_xz() if _world_frame != null else Vector3.ZERO
+	return Vector2(marker.x - a.x, marker.z - a.z).length() < 5000.0
 
 # Surfaced on the PerfHud overlay so the layout mapping can be sanity-checked.
 # Updated by `_layout_to_scene()` on its first call so the string always reflects
 # the actual yaw+anchor that ran (not stale boilerplate). PerfHud.gd:88 reads this
 # verbatim, so we keep the variable NAME stable and only change its contents.
 var layout_conv_summary : String = "Layout: no layout file — vanilla spawn"
+# NOT dead — WorldFrame.gd:223/228 reads and writes it DYNAMICALLY via
+# _world.get()/set(), which the analyzer can't see, so it reports it as unused.
+# Deleting it would silently break the log-summary-once guard.
+@warning_ignore("unused_private_class_variable")
 var _layout_summary_logged : bool = false
 
 # Layout transforms now live in WorldFrame. Thin forwarders preserve callers.
@@ -462,9 +513,6 @@ var _layout_summary_logged : bool = false
 # used in _spawn_bale_yards_from_layout()).
 func _layout_anchor_xz() -> Vector3:
 	return _world_frame._layout_anchor_xz()
-
-func _layout_rotated_offset(rel: Vector3) -> Vector3:
-	return _world_frame._layout_rotated_offset(rel)
 
 func _layout_to_scene(rel: Vector3) -> Vector3:
 	return _world_frame._layout_to_scene(rel)
@@ -479,6 +527,40 @@ func _vehicle_anchor() -> Vector3:
 ## at this Y seats it flush on the floor.
 func _floor_top_y() -> float:
 	return _floor_min_y_cache
+
+## True when `world_pos` is within LineFlow.FEED_RADIUS of a place the line will
+## draw feed from — i.e. an operator intake marker (WorldLayout.line_starts) or a
+## physical feed belt (opzetband). A bale SET DOWN here becomes feed-eligible;
+## BaseVehicle._release() calls this so a released bale is marked delivered=true
+## only at a real feed point, never blanket-marked wherever it's dropped.
+## Distance is measured in the XZ plane so a bale resting slightly below the marker
+## height still qualifies. Mirrors LineFlow's FEED_RADIUS (5 m) with a small margin
+## for the set-down settle so the gate isn't missed by a few cm.
+const _FEED_POINT_RANGE : float = 5.0
+func is_near_line_feed_point(world_pos: Vector3) -> bool:
+	# 1) Operator intake markers (the canonical bale drop zones).
+	var wl := get_node_or_null("/root/WorldLayout")
+	if wl != null:
+		var starts = wl.get("line_starts")
+		if starts is Dictionary:
+			for v in (starts as Dictionary).values():
+				if v is Vector3:
+					var m : Vector3 = _layout_to_scene(v)
+					if _xz_dist(world_pos, m) <= _FEED_POINT_RANGE:
+						return true
+	# 2) Physical feed belts (opzetbanden) — the line head a feeder delivers onto.
+	for b in get_tree().get_nodes_in_group("shredder_feed_belt"):
+		var bn := b as Node3D
+		if bn == null or not is_instance_valid(bn):
+			continue
+		if _xz_dist(world_pos, bn.global_position) <= _FEED_POINT_RANGE:
+			return true
+	return false
+
+func _xz_dist(a: Vector3, b: Vector3) -> float:
+	var da := a; da.y = 0.0
+	var db := b; db.y = 0.0
+	return da.distance_to(db)
 
 func _spawn_merlo() -> void:
 	# #195 — _spawn_vehicle_instances moved to VehicleSpawner. _spawn_merlo stays
@@ -755,12 +837,13 @@ func _spawn_road_and_parking() -> void:
 	# Wide exterior ground plane around the anchor so the player can walk
 	# outside the building without falling into void.
 	_spawn_exterior_ground(anchor, ground_y)
-	# Parking lot — 25 m local-west, 8 m local-north of the building centre.
+	# Parking lot — operator-drawn rectangle on the georeferenced site map
+	# (2026-07-06, second correction): the lot sits in the yard NW of the west
+	# wing / west of the annex, by the access-road hook. ~39 x 31 m.
 	# #221-PC Phase 5 — the position is now an operator-tunable PC marker
 	# (WorldLayout.staff_parking / staff_parking_pc), authored in WorldSetup.
-	# When unset, falls back to the Phase 3 PARKING_PC constant so existing
-	# saves spawn the lot where they always did.
-	const PARKING_PC_DEFAULT := Vector2(475.0, 508.0)
+	# When unset, falls back to this constant.
+	const PARKING_PC_DEFAULT := Vector2(418.8, 541.1)
 	var parking_pc : Vector2 = PARKING_PC_DEFAULT
 	if WorldLayout.staff_parking != Vector3.ZERO and WorldLayout.has_pc_data \
 			and WorldLayout.staff_parking_pc != Vector2.ZERO:
@@ -780,6 +863,8 @@ func _spawn_road_and_parking() -> void:
 			anchor.x + parking_world.x,
 			ground_y + 0.02,
 			anchor.z + parking_world.z)
+	# Operator-drawn lot rectangle runs parallel to the building axes —
+	# canonical yaw.
 	staff_parking.rotation.y = by
 	_spawn_parking_lamps(staff_parking, ground_y)
 	# Road — De Asselen Kuil — runs along the building's local west edge
@@ -794,15 +879,30 @@ func _spawn_road_and_parking() -> void:
 	road.name = "DeAsselenKuil"
 	road.surface_y = ground_y
 	var use_plant : bool = has_node("/root/Plant") and Plant.is_initialized()
-	# Waypoints as PC (500 + local.x, 500 + local.z). Source values below
-	# match the legacy hardcoded offsets exactly.
+	# Waypoints as PC (500 + local.x, 500 + local.z). Digitized from the
+	# operator's orange-route satellite trace (site_georeference.json,
+	# 2026-07-06, ~+/-10 m): southern access road up the west side, past the
+	# parking lot's south edge, hooking toward the site entrance.
 	const ROAD_WAYPOINTS_PC : Array = [
-		Vector2(458.0,  60.0),   # FAR south spawn end       (was -42, -440)
-		Vector2(458.0, 460.0),   # original south end        (was -42, -40)
-		Vector2(458.0, 500.0),   # straight north            (was -42,   0)
-		Vector2(458.0, 520.0),   # past parking entry        (was -42,  20)
-		Vector2(475.0, 530.0),   # turn east toward plant    (was -25,  30)
-		Vector2(500.0, 530.0),   # plant entry pad           (was   0,  30)
+		Vector2(494.0, 883.4),   # FAR south spawn end (southern access road)
+		Vector2(512.8, 856.5),
+		Vector2(523.5, 829.6),
+		Vector2(542.3, 789.3),
+		Vector2(550.4, 767.8),
+		Vector2(542.3, 743.6),   # bend north-west
+		Vector2(510.1, 719.4),
+		Vector2(483.2, 692.5),
+		Vector2(451.0, 665.6),   # long run along the bale lot's SW edge
+		Vector2(421.4, 638.7),
+		Vector2(402.6, 614.5),
+		Vector2(378.4, 595.7),
+		Vector2(362.2, 576.9),   # western corner
+		Vector2(370.3, 555.4),   # parking lot south edge
+		Vector2(391.8, 539.3),
+		Vector2(413.3, 528.5),
+		Vector2(429.4, 520.5),   # past parking entry
+		Vector2(437.5, 533.9),   # hook toward site entrance
+		Vector2(443.9, 550.0),
 	]
 	var waypoints : Array = []
 	for pc in ROAD_WAYPOINTS_PC:
@@ -812,9 +912,9 @@ func _spawn_road_and_parking() -> void:
 			waypoints.append(_bo(ga, Vector3(pc.x - 500.0, 0.0, pc.y - 500.0)))
 	road.setup(waypoints)
 	add_child(road)
-	# Street sign at PC(456.5, 500) = local (-43.5, 0) — half a metre west of
-	# the road's west edge so the sign post sits on the verge, not in traffic.
-	const STREET_SIGN_PC := Vector2(456.5, 500.0)
+	# Street sign on the verge of the western corner of the georeferenced
+	# route, where the road turns toward the parking lot.
+	const STREET_SIGN_PC := Vector2(365.0, 570.0)
 	var sign_pos : Vector3
 	if use_plant:
 		sign_pos = Plant.pc_to_scene_with_y(STREET_SIGN_PC, ground_y)
@@ -823,18 +923,15 @@ func _spawn_road_and_parking() -> void:
 	_spawn_street_sign(sign_pos, "De Asselen Kuil")
 	# #192 follow-up — road extensions / perimeter fence / exterior props are
 	# now owned by ExteriorManager (a child node); it parents its spawned items
-	# back under MainWorld so the runtime scene shape is unchanged. Interior
-	# TL bars (misnamed "_spawn_floodlights" — actually inside the shell) stay
-	# in MainWorld because they belong to the building's interior lighting kit.
+	# back under MainWorld so the runtime scene shape is unchanged.
 	var exterior_mgr := preload("res://src/scenes/world/ExteriorManager.gd").new()
 	exterior_mgr.name = "ExteriorManager"
 	add_child(exterior_mgr)
 	exterior_mgr.build_exterior(anchor, ground_y)
-	# #195 — interior lighting (overhead grid + wall-line TL bars) extracted to
+	# #195 — interior lighting (georeferenced overhead TL bar grid) extracted to
 	# InteriorLightingManager. Spawns its children under MainWorld so the scene
-	# shape is unchanged (OverheadLights node under ShellMesh; InteriorTLBars
-	# node under ShellMesh). build_all() runs _spawn_overhead_lights() first
-	# then _spawn_floodlights(anchor) to preserve the original side-effect order.
+	# shape is unchanged (OverheadLights node under ShellMesh). build_all() runs
+	# _spawn_overhead_lights() to place the 39 per-hall fixtures.
 	var lighting := InteriorLightingManager.new()
 	lighting.name = "InteriorLightingManager"
 	add_child(lighting)
@@ -852,41 +949,233 @@ func _spawn_road_and_parking() -> void:
 ## completes, so there's no startup stall.
 const NAVMESH_GROUP : String = "navmesh_source"
 
+## npc-07 — BAKE THE BUILDING ENVELOPE? Ships FALSE, and that is a decision, not
+## an oversight.
+##
+## The operator's survey contains ZERO doorways: world_layout.json structure_items
+## is an empty array, regression_positions.json doors is [], and
+## tools/generate_building.py has no opening logic at all. Openings exist only as
+## structure_items replayed through WallOpenings.add_opening, and there are none.
+##
+## So baking the shell would make the interior a hermetically sealed island, and
+## OverflowDumpTask's indoor-bin -> outdoor-skip haul would go from "arrives
+## imprecisely" to "no path exists" — a strictly worse failure that reads as a
+## regression caused by the fix. The residual with the flag off is that NPCs can
+## clip an exterior wall: a visible wrongness chosen over an invisible
+## unroutability.
+##
+## Closing it needs an operator door survey (no-build-without-docs). Once doors
+## exist as structure_items, WallOpenings already carves the collision mesh and
+## flipping this to true is the whole change.
+const NAV_BAKE_SHELL : bool = false
+
 func _spawn_navigation_region() -> void:
-	# Find the interior floor mesh + exterior ground and tag them as nav sources.
-	var floor_mi := find_child("TempFloor", true, false)
-	if floor_mi:
-		var fm := floor_mi.find_child("MeshInstance3D", false, false) as MeshInstance3D
-		if fm:
-			fm.add_to_group(NAVMESH_GROUP)
-	var ext_ground := find_child("ExteriorGround", false, false) as MeshInstance3D
-	if ext_ground:
-		ext_ground.add_to_group(NAVMESH_GROUP)
+	var tagged := _tag_nav_sources()
 	# Build the region.
 	var region := NavigationRegion3D.new()
 	region.name = "NavRegion"
 	add_child(region)
 	var nm := NavigationMesh.new()
-	nm.cell_size = 1.00
+	# npc-07 — cell_size 1.00 was unusable the moment real obstacles entered the
+	# source set: agent_radius is CEILED to whole cells by Recast (the engine warns
+	# about it), so a 0.40 m agent eroded 1.00 m per side. The plant's process
+	# lines are placed at LINE_GAP_M 0.5 (BuildMode.gd:416), which means most of
+	# the interior aisle network would have sealed outright. 0.25 is the same
+	# resolution NpcTaskBench._build_navmesh already uses.
+	nm.cell_size = 0.25
+	# STAYS 0.60, KNOWINGLY. cell_height floors agent_max_climb to whole voxels, so
+	# the 1.40 below is really 1.20 m and the lock-step claimed by the comment on
+	# agent_max_climb is ALREADY false today. Fixing the lattice (0.20 gives
+	# 1.40/0.20 = 7 exactly) re-tunes the vault verb — NPCs would start routing OVER
+	# 1.25-1.40 m obstacles they currently route around, and the vault tween
+	# (NPC.gd:567-569) would have to complete on each. That is a behaviour change
+	# wearing a bake parameter's clothes, and it is not landing in the same window
+	# as four open jams. Deferred with its own re-measure.
 	nm.cell_height = 0.60
 	nm.agent_radius = 0.40
 	nm.agent_height = 1.80
-	# Path routing climb cap — matches NPC.CLIMB_MAX_DY (1.4 m, same as the player
-	# vault). Below 0.30 the navmesh bake produced flat-only paths and NPCs got
-	# stuck on every bale-yard kerb; above 1.4 they'd try to scale obstacles the
-	# vault can't actually complete. Keeps NPCs in lock-step with the vault verb.
+	# Path routing climb cap — nominally NPC.CLIMB_MAX_DY (1.4 m, the player vault).
+	# Effective value is 1.20 m after the cell_height floor described above.
 	nm.agent_max_climb = 1.40
 	nm.agent_max_slope = 45.0
-	# Pull source geometry from MeshInstance3Ds in the NAVMESH_GROUP group, scene-wide.
-	nm.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_MESH_INSTANCES
-	nm.geometry_source_geometry_mode = NavigationMesh.SOURCE_GEOMETRY_GROUPS_EXPLICIT
+	# npc-07 — STATIC COLLIDERS, not mesh instances. Three reasons, all measured:
+	#   · MESH_INSTANCES forces a GPU->CPU readback of every source mesh on the
+	#     bake thread, which serialises against the renderer and defeats the
+	#     on_thread bake. The engine prints exactly that warning on the old config.
+	#   · every machine already carries one StaticBody3D + one BoxShape3D
+	#     (PlaceableCatalog.gd:1435-1449) — a clean, coarse, already-authored
+	#     obstacle volume, where the visual meshes are high-poly and full of
+	#     non-blocking decoration (labels, grime quads, pipes, TL bars).
+	#   · Recast then derives walkability from slope/climb, so grating platforms,
+	#     stairs and belt-deck tops become walkable without an allow-list.
+	# WITH_CHILDREN is kept, but NOT for the reason previously claimed here. The old
+	# comment said EXPLICIT "would find the bodies and none of their shapes", because
+	# a machine's shape is a child CollisionShape3D. That is FALSE, and it was
+	# measured false: mutating this line to GROUPS_EXPLICIT still carved every
+	# machine (272 polygons, and the route across the line_3a row still came back as
+	# 10 points rather than the 2-point straight line). EXPLICIT vs WITH_CHILDREN
+	# governs recursion into child NODES, not whether a body's own shapes are read.
+	# What WITH_CHILDREN actually buys is the nested bodies — belt decks and fence
+	# panels parented under a run node — worth ~21 polygons here (293 vs 272).
+	# Keeping it is right; believing it is what carves the machines is not, because
+	# that belief would send the next person debugging a missing obstacle to this
+	# line instead of to _tag_nav_sources, which is where the carve really comes from.
+	nm.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
+	nm.geometry_source_geometry_mode = NavigationMesh.SOURCE_GEOMETRY_GROUPS_WITH_CHILDREN
 	nm.geometry_source_group_name = NAVMESH_GROUP
+	# npc-07 — BOUNDING THE EXTENT IS A PRECONDITION, NOT AN OPTIMISATION, and it
+	# is atomic with the cell_size above. TempFloor is a 4000 x 4000 m containment
+	# slab; at cell_size 0.25 that is 256M heightfield columns and multiple GB —
+	# it thrashes or OOMs rather than merely running slowly. Bounded to the real
+	# site (~205 x 120 m) it is ~0.4M columns, roughly 640x cheaper. Split these
+	# two lines across commits and the bake dies.
+	var bounds := NavSiteBounds.compute(self)
+	if bounds.size != Vector3.ZERO:
+		# Grow in Y so the floor slab under the site is included even though its
+		# own AABB is rejected as the containment slab.
+		nm.filter_baking_aabb = AABB(
+			Vector3(bounds.position.x, bounds.position.y - 10.0, bounds.position.z),
+			Vector3(bounds.size.x, bounds.size.y + 20.0, bounds.size.z))
+	else:
+		push_warning("[MainWorld] site bounds unmeasurable — navmesh bake left unbounded")
 	region.navigation_mesh = nm
 	# Bake on a worker thread so we don't stall the shift boot. NavigationAgent3D
-	# in each NPC reads the live navmap as soon as bake completes.
+	# in each NPC reads the live navmap as soon as bake completes. Threading is
+	# only legitimate now that the source is colliders rather than meshes.
 	region.bake_navigation_mesh(true)
-	print("[MainWorld] NavRegion baking (group '%s', %d source meshes)" % \
-		[NAVMESH_GROUP, get_tree().get_nodes_in_group(NAVMESH_GROUP).size()])
+	print("[MainWorld] NavRegion baking (%d source bodies, site %.0f x %.0f m)"
+		% [tagged, bounds.size.x, bounds.size.z])
+	_nav_region = region
+
+var _nav_region : NavigationRegion3D = null
+
+## Re-tag and re-bake. Called once the world is fully populated, and available to
+## BuildMode: a machine the operator places that is not in the mesh is the
+## current bug in miniature. Callers must DEBOUNCE — this is a commit-time
+## operation, never a per-frame ghost-drag one.
+func rebake_navigation() -> void:
+	if _nav_region == null or not is_instance_valid(_nav_region):
+		return
+	var tagged := _tag_nav_sources()
+	_nav_region.bake_navigation_mesh(true)
+	print("[MainWorld] NavRegion re-baking (%d source bodies)" % tagged)
+	_verify_nav_connectivity()
+
+## npc-07 SEALED-PLANT GUARD.
+##
+## The failure this catches is not hypothetical: with zero doorways in the
+## survey, one careless flip of NAV_BAKE_SHELL turns the interior into an island
+## and every indoor->outdoor haul from unroutable-but-quiet into a task that
+## fails for a reason nothing reports. Worse, the existing harness counts "no
+## structure_items (doors) — skipped" as a PASS, so the trap is invisible from
+## the green side.
+##
+## So the mesh is asked, out loud, whether the crew can still get out. A failure
+## NAMES BOTH ENDPOINTS — an unreachable destination is useless to debug without
+## knowing which one it was.
+func _verify_nav_connectivity() -> void:
+	if _nav_region == null or not is_instance_valid(_nav_region):
+		return
+	# The interior anchor is the CENTRE OF THE SHELL'S GEOMETRY, not the shell
+	# node's global_position: the shell node sits at an RD-georeferenced origin
+	# (measured (-184113, -83, 329382)), so using its transform asked the navmesh
+	# for a route from 300 km away and the guard reported a sealed plant on a
+	# perfectly connected one. Caught by this guard's own first run.
+	var shell_box := NavSiteBounds.body_aabb(_shell())
+	if shell_box.size == Vector3.ZERO:
+		print("[MainWorld] nav connectivity: no measurable shell — check skipped")
+		return
+	var interior : Vector3 = shell_box.get_center()
+	interior.y = shell_box.position.y
+	# npc-07 — THE EXTERIOR ENDPOINT IS DERIVED FROM THE SHELL, NOT FROM
+	# _player_spawn_pos. It used to be the latter, and that made this entire guard
+	# vacuous in two independent ways at once:
+	#   · _player_spawn_pos is the LAYOUT ANCHOR, a point INSIDE the plant. The
+	#     "can the crew get out" check was comparing two interior points and would
+	#     have stayed green through a perfectly sealed building.
+	#   · that anchor also sits within 5 m of the shell's own centre, so the
+	#     coincide-test below fired and the guard returned without checking
+	#     anything. Measured across a full harness run: 1 skip, 0 checks. It had
+	#     never once executed.
+	# Derived from the measured half-extent instead, with the same 18 m margin
+	# src/tests/test_nav_connectivity.gd uses, so the shipped guard and the harness
+	# ask the same question of the same geometry.
+	var exterior := Vector3(
+		shell_box.position.x + shell_box.size.x + 18.0,
+		shell_box.position.y,
+		shell_box.get_center().z)
+	if interior.distance_to(exterior) < 5.0:
+		print("[MainWorld] nav connectivity: endpoints coincide — check skipped")
+		return
+	var map : RID = get_world_3d().navigation_map
+	for pair in [[interior, exterior], [exterior, interior]]:
+		var path : PackedVector3Array = NavigationServer3D.map_get_path(
+			map, pair[0], pair[1], true)
+		var reached : bool = path.size() >= 2 \
+			and path[path.size() - 1].distance_to(pair[1]) <= 1.0
+		if not reached:
+			push_error(("[MainWorld] NAVMESH CONNECTIVITY LOST: no route from %s to %s "
+				+ "(%d path points). The plant is sealed — NAV_BAKE_SHELL is %s and "
+				+ "world_layout structure_items (doorways) may be empty.")
+				% [str(pair[0].round()), str(pair[1].round()), path.size(),
+					str(NAV_BAKE_SHELL)])
+			return
+
+## Tag every body NavSourcePolicy accepts, plus the two walkable surfaces. Returns
+## how many were tagged.
+##
+## The floor tags moved from the MeshInstance3Ds to their StaticBody3Ds: under
+## PARSED_GEOMETRY_STATIC_COLLIDERS a tagged mesh contributes nothing, so leaving
+## them where they were would have produced an empty mesh with no error.
+func _tag_nav_sources() -> int:
+	var n := 0
+	for grp in NavSourcePolicy.SOURCE_GROUPS:
+		for node in get_tree().get_nodes_in_group(grp):
+			if NavSourcePolicy.is_nav_source(node, NAV_BAKE_SHELL) \
+					and not node.is_in_group(NAVMESH_GROUP):
+				node.add_to_group(NAVMESH_GROUP)
+				n += 1
+	# The two surfaces the crew actually stands on. The 4000 m slab is tagged for
+	# its geometry but the bake is clipped to filter_baking_aabb, so only the site
+	# portion of it is voxelised.
+	for nm in ["TempFloor", "ExteriorGroundBody"]:
+		var body := find_child(nm, true, false)
+		if body is StaticBody3D and not body.is_in_group(NAVMESH_GROUP):
+			body.add_to_group(NAVMESH_GROUP)
+			n += 1
+	# The perimeter fence: ~339 static bodies (posts + panels) with no shared group
+	# of their own. They are parented straight onto MainWorld as PerimeterFence_*
+	# runs (ExteriorManager.gd:195-208) — an earlier version of this looked for an
+	# "ExteriorManager" node and silently tagged nothing.
+	for c in get_children():
+		if c.name.begins_with("PerimeterFence_"):
+			n += _tag_static_descendants(c)
+	# npc-07 — THE BUILDING ENVELOPE, GATED. Without these lines NAV_BAKE_SHELL is
+	# decorative. NavSourcePolicy.is_nav_source HAS a shell rule, but it is only ever
+	# consulted for nodes already in SOURCE_GROUPS, and the shell is in neither
+	# "placed_object" nor "belt" — so the loop at the top of this function never asks
+	# about it and the flag reaches no code path at all.
+	#
+	# MEASURED, not inferred: flipping the const to true changed the baked mesh by
+	# exactly 0 polygons (293 both ways) and left the interior<->exterior route at 11
+	# points. A safety decision documented at length and wired to nothing is worse
+	# than no flag, because the comment above the const is then load-bearing
+	# misinformation — and the sealed-plant failure it exists to describe could never
+	# have been reproduced, so no test could ever prove the guard against it works.
+	#
+	# Ships false, so this changes nothing today. It makes the flag mean what it says.
+	if NAV_BAKE_SHELL:
+		n += _tag_static_descendants(_shell())
+	return n
+
+func _tag_static_descendants(root: Node) -> int:
+	var n := 0
+	if root is StaticBody3D and not root.is_in_group(NAVMESH_GROUP):
+		root.add_to_group(NAVMESH_GROUP)
+		n += 1
+	for c in root.get_children():
+		n += _tag_static_descendants(c)
+	return n
 
 func _spawn_exterior_ground(anchor: Vector3, ground_y: float) -> void:
 	var ground := MeshInstance3D.new()
@@ -899,7 +1188,9 @@ func _spawn_exterior_ground(anchor: Vector3, ground_y: float) -> void:
 	mat.albedo_color = Color(0.36, 0.46, 0.22)
 	mat.roughness = 0.96
 	ground.material_override = mat
-	ground.add_to_group(NAVMESH_GROUP)         # source for the NavRegion bake
+	# NOT a nav source any more: under PARSED_GEOMETRY_STATIC_COLLIDERS the bake
+	# walks bodies, not visuals, so a tagged MeshInstance3D contributes nothing.
+	# ExteriorGroundBody (below) is what _tag_nav_sources tags instead.
 	add_child(ground)
 	# Static collision so the player can walk on it.
 	var body := StaticBody3D.new()

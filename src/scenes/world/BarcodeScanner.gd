@@ -22,6 +22,11 @@ const tool_id : String = "scanner"
 const SCAN_RANGE     : float = 4.0     # max distance the laser reaches
 const SCAN_COOLDOWN  : float = 0.25    # don't spam-scan on held LMB
 const PICKUP_RANGE   : float = 1.6
+# The beam must actually land ON the label card (22×14 cm + aim slop) — hitting
+# the bale anywhere else is a FAILED scan, like a real 1D scanner that needs
+# the barcode in the window. Half-diagonal of the card is ~0.13 m; 0.30 gives
+# honest but forgiving aim.
+const LABEL_AIM_RADIUS : float = 0.30
 
 var _held_by      : Node3D = null
 var _player_near  : bool   = false
@@ -217,6 +222,16 @@ func _scan_in_front() -> void:
 	if labelled == null:
 		_banner("[scan]  %s — no label" % node.name)
 		return
+	# Aim gate: the beam must land ON the label card itself. Hitting the host
+	# anywhere else = failed scan (real 1D scanner behaviour — walk around the
+	# bale and find the sticker). hit.position is where the ray struck.
+	var label_node := labelled.get_node_or_null("Label") as Node3D
+	if label_node != null:
+		var hit_pos : Vector3 = hit.get("position", Vector3.INF)
+		if hit_pos.is_finite() and hit_pos.distance_to(label_node.global_position) > LABEL_AIM_RADIUS:
+			_last_scan_t = now
+			_banner("[scan] FAILED — no barcode in the window. Aim at the label.", true)
+			return
 	_last_scan_t  = now
 	_last_scanned = labelled
 	# Scan gate (#152): mark a scanned bale so the feed belt will accept it.

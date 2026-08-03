@@ -1,0 +1,1143 @@
+{
+ "extraction_date": "2026-07-04",
+ "source_dir": "F:/Citizen/Documents/CeDo/Random Exports",
+ "dataset": "1 Hz wash-line (line 6 wash line, SCADA tree 'scada/3c') tag exports: flotation_flow [L/min], flotation_level, dryer_left_amp/dryer_right_amp [A], grinder_amp [A]",
+ "files": [
+  {
+   "file": "August_cleaned.csv",
+   "description": "raw-merge Aug 2024",
+   "size_bytes": 22623962,
+   "rows": 824252,
+   "time_span": {
+    "from": "2024-08-21 11:02:28",
+    "to": "2024-08-30 23:59:59"
+   },
+   "columns": {
+    "flotation_level": {
+     "n_values": 504398,
+     "null_fraction": 0.3881,
+     "min": 35.0,
+     "max": 72.0,
+     "mean": 51.695,
+     "p5": 43.0,
+     "p50": 51.0,
+     "p95": 61.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 43.0,
+      "high": 61.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "dryer_left_amp": {
+     "n_values": 0
+    },
+    "dryer_right_amp": {
+     "n_values": 0
+    },
+    "grinder_amp": {
+     "n_values": 0
+    }
+   }
+  },
+  {
+   "file": "September_cleaned.csv",
+   "description": "raw-merge Sep 2024",
+   "size_bytes": 70631482,
+   "rows": 2584799,
+   "time_span": {
+    "from": "2024-09-01 00:00:01",
+    "to": "2024-09-30 21:59:59"
+   },
+   "columns": {
+    "flotation_level": {
+     "n_values": 1507887,
+     "null_fraction": 0.4166,
+     "min": -119.0,
+     "max": 72.0,
+     "mean": 47.9747,
+     "p5": 42.0,
+     "p50": 49.0,
+     "p95": 55.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0066,
+     "nonzero_band": {
+      "low": 42.0,
+      "high": 55.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "dryer_left_amp": {
+     "n_values": 0
+    },
+    "dryer_right_amp": {
+     "n_values": 0
+    },
+    "grinder_amp": {
+     "n_values": 0
+    }
+   }
+  },
+  {
+   "file": "October_cleaned.csv",
+   "description": "raw-merge Oct 2024",
+   "size_bytes": 80982459,
+   "rows": 2674799,
+   "time_span": {
+    "from": "2024-10-01 00:00:00",
+    "to": "2024-10-31 22:59:58"
+   },
+   "columns": {
+    "flotation_level": {
+     "n_values": 1713299,
+     "null_fraction": 0.3595,
+     "min": -119.0,
+     "max": 104.0,
+     "mean": 46.7553,
+     "p5": 44.0,
+     "p50": 48.0,
+     "p95": 51.0,
+     "negative_fraction": 0.0008,
+     "zero_fraction": 0.0074,
+     "nonzero_band": {
+      "low": 44.0,
+      "high": 51.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "dryer_left_amp": {
+     "n_values": 494462,
+     "null_fraction": 0.8151,
+     "min": 0.0,
+     "max": 824.0,
+     "mean": 91.4455,
+     "p5": 69.0,
+     "p50": 93.0,
+     "p95": 109.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 69.0,
+      "high": 109.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "dryer_right_amp": {
+     "n_values": 504759,
+     "null_fraction": 0.8113,
+     "min": 0.0,
+     "max": 815.0,
+     "mean": 91.7912,
+     "p5": 69.0,
+     "p50": 93.0,
+     "p95": 112.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 69.0,
+      "high": 112.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "grinder_amp": {
+     "n_values": 608483,
+     "null_fraction": 0.7725,
+     "min": 0.0,
+     "max": 823.0,
+     "mean": 154.5067,
+     "p5": 125.0,
+     "p50": 151.0,
+     "p95": 193.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0001,
+     "nonzero_band": {
+      "low": 125.0,
+      "high": 193.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    }
+   }
+  },
+  {
+   "file": "November_cleaned.csv",
+   "description": "raw-merge Nov 2024",
+   "size_bytes": 81799274,
+   "rows": 2588383,
+   "time_span": {
+    "from": "2024-11-01 00:00:01",
+    "to": "2024-11-30 22:59:43"
+   },
+   "columns": {
+    "flotation_level": {
+     "n_values": 1518557,
+     "null_fraction": 0.4133,
+     "min": -119.0,
+     "max": 104.0,
+     "mean": 45.6749,
+     "p5": 44.0,
+     "p50": 47.0,
+     "p95": 51.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 44.0,
+      "high": 51.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "dryer_left_amp": {
+     "n_values": 900427,
+     "null_fraction": 0.6521,
+     "min": 0.0,
+     "max": 815.0,
+     "mean": 89.7017,
+     "p5": 70.0,
+     "p50": 91.0,
+     "p95": 106.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 70.0,
+      "high": 106.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "dryer_right_amp": {
+     "n_values": 929855,
+     "null_fraction": 0.6408,
+     "min": 0.0,
+     "max": 836.0,
+     "mean": 91.3084,
+     "p5": 70.0,
+     "p50": 93.0,
+     "p95": 110.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 70.0,
+      "high": 110.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "grinder_amp": {
+     "n_values": 1118922,
+     "null_fraction": 0.5677,
+     "min": 0.0,
+     "max": 979.0,
+     "mean": 156.3359,
+     "p5": 125.0,
+     "p50": 153.0,
+     "p95": 196.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 125.0,
+      "high": 196.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    }
+   }
+  },
+  {
+   "file": "December_cleaned.csv",
+   "description": "raw-merge Dec 2024",
+   "size_bytes": 85827281,
+   "rows": 2674799,
+   "time_span": {
+    "from": "2024-12-01 00:00:01",
+    "to": "2024-12-31 22:59:59"
+   },
+   "columns": {
+    "flotation_level": {
+     "n_values": 1516203,
+     "null_fraction": 0.4332,
+     "min": -119.0,
+     "max": 93.0,
+     "mean": 46.4024,
+     "p5": 45.0,
+     "p50": 46.0,
+     "p95": 49.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 45.0,
+      "high": 49.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "dryer_left_amp": {
+     "n_values": 1013661,
+     "null_fraction": 0.621,
+     "min": 0.0,
+     "max": 981.0,
+     "mean": 87.1304,
+     "p5": 70.0,
+     "p50": 89.0,
+     "p95": 101.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 70.0,
+      "high": 101.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "dryer_right_amp": {
+     "n_values": 1085286,
+     "null_fraction": 0.5943,
+     "min": 0.0,
+     "max": 810.0,
+     "mean": 94.6378,
+     "p5": 70.0,
+     "p50": 97.0,
+     "p95": 112.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 70.0,
+      "high": 112.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "grinder_amp": {
+     "n_values": 1207133,
+     "null_fraction": 0.5487,
+     "min": 0.0,
+     "max": 998.0,
+     "mean": 160.3845,
+     "p5": 128.0,
+     "p50": 158.0,
+     "p95": 196.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0001,
+     "nonzero_band": {
+      "low": 128.0,
+      "high": 196.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    }
+   }
+  },
+  {
+   "file": "January_cleaned.csv",
+   "description": "raw-merge Jan 2025",
+   "size_bytes": 43828748,
+   "rows": 1254047,
+   "time_span": {
+    "from": "2025-01-17 10:39:12",
+    "to": "2025-01-31 22:59:58"
+   },
+   "columns": {
+    "flotation_flow": {
+     "n_values": 848437,
+     "null_fraction": 0.3234,
+     "min": -636.0,
+     "max": 905.0,
+     "mean": 35.2475,
+     "p5": -28.0,
+     "p50": 19.0,
+     "p95": 99.0,
+     "negative_fraction": 0.115,
+     "zero_fraction": 0.0046,
+     "nonzero_band": {
+      "low": 8.0,
+      "high": 101.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "flotation_level": {
+     "n_values": 552806,
+     "null_fraction": 0.5592,
+     "min": 1.0,
+     "max": 70.0,
+     "mean": 44.4125,
+     "p5": 44.0,
+     "p50": 46.0,
+     "p95": 48.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 44.0,
+      "high": 48.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "dryer_left_amp": {
+     "n_values": 469280,
+     "null_fraction": 0.6258,
+     "min": 0.0,
+     "max": 834.0,
+     "mean": 80.609,
+     "p5": 71.0,
+     "p50": 80.0,
+     "p95": 88.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 71.0,
+      "high": 88.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "dryer_right_amp": {
+     "n_values": 510649,
+     "null_fraction": 0.5928,
+     "min": 0.0,
+     "max": 816.0,
+     "mean": 89.8308,
+     "p5": 73.0,
+     "p50": 89.0,
+     "p95": 105.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 73.0,
+      "high": 105.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "grinder_amp": {
+     "n_values": 659461,
+     "null_fraction": 0.4741,
+     "min": 0.0,
+     "max": 841.0,
+     "mean": 146.6469,
+     "p5": 130.0,
+     "p50": 144.0,
+     "p95": 169.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 130.0,
+      "high": 169.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    }
+   }
+  },
+  {
+   "file": "february_1_to_14.csv",
+   "description": "raw Feb 1-14 2025",
+   "size_bytes": 34897604,
+   "rows": 879125,
+   "time_span": {
+    "from": "Feb 1",
+    "to": "Feb 14",
+    "format_note": "raw file uses US timestamp text 'Feb 1, 2025, 12:00:00 AM'"
+   },
+   "columns": {
+    "flotation_flow": {
+     "n_values": 879117,
+     "null_fraction": 0.0,
+     "min": -176.0,
+     "max": 827.0,
+     "mean": 44.2378,
+     "p5": 1.0,
+     "p50": 19.0,
+     "p95": 109.0,
+     "negative_fraction": 0.0425,
+     "zero_fraction": 0.0049,
+     "nonzero_band": {
+      "low": 7.0,
+      "high": 110.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "flotation_level": {
+     "n_values": 456588,
+     "null_fraction": 0.4806,
+     "min": -119.0,
+     "max": 72.0,
+     "mean": 45.551,
+     "p5": 45.0,
+     "p50": 46.0,
+     "p95": 48.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 45.0,
+      "high": 48.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "dryer_left_amp": {
+     "n_values": 497253,
+     "null_fraction": 0.4344,
+     "min": 0.0,
+     "max": 803.0,
+     "mean": 88.1726,
+     "p5": 71.0,
+     "p50": 89.0,
+     "p95": 99.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0001,
+     "nonzero_band": {
+      "low": 71.0,
+      "high": 99.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "dryer_right_amp": {
+     "n_values": 554311,
+     "null_fraction": 0.3695,
+     "min": 0.0,
+     "max": 930.0,
+     "mean": 98.2978,
+     "p5": 72.0,
+     "p50": 100.0,
+     "p95": 115.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0001,
+     "nonzero_band": {
+      "low": 72.0,
+      "high": 115.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "grinder_amp": {
+     "n_values": 662982,
+     "null_fraction": 0.2459,
+     "min": 0.0,
+     "max": 977.0,
+     "mean": 160.4381,
+     "p5": 131.0,
+     "p50": 157.0,
+     "p95": 200.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0001,
+     "nonzero_band": {
+      "low": 131.0,
+      "high": 200.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    }
+   }
+  },
+  {
+   "file": "february_15_to_29.csv",
+   "description": "raw Feb 15-28 2025",
+   "size_bytes": 31214002,
+   "rows": 793910,
+   "time_span": {
+    "from": "Feb 15",
+    "to": "Feb 28",
+    "format_note": "raw file uses US timestamp text 'Feb 1, 2025, 12:00:00 AM'"
+   },
+   "columns": {
+    "flotation_flow": {
+     "n_values": 793897,
+     "null_fraction": 0.0,
+     "min": -175.0,
+     "max": 787.0,
+     "mean": 41.3344,
+     "p5": -4.0,
+     "p50": 19.0,
+     "p95": 111.0,
+     "negative_fraction": 0.0692,
+     "zero_fraction": 0.0069,
+     "nonzero_band": {
+      "low": 7.0,
+      "high": 112.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "flotation_level": {
+     "n_values": 386992,
+     "null_fraction": 0.5125,
+     "min": -2.0,
+     "max": 104.0,
+     "mean": 43.0308,
+     "p5": 9.0,
+     "p50": 46.0,
+     "p95": 47.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 9.0,
+      "high": 47.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "dryer_left_amp": {
+     "n_values": 364834,
+     "null_fraction": 0.5405,
+     "min": 0.0,
+     "max": 813.0,
+     "mean": 79.6654,
+     "p5": 62.0,
+     "p50": 78.0,
+     "p95": 96.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0001,
+     "nonzero_band": {
+      "low": 62.0,
+      "high": 96.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "dryer_right_amp": {
+     "n_values": 411484,
+     "null_fraction": 0.4817,
+     "min": 0.0,
+     "max": 812.0,
+     "mean": 90.6118,
+     "p5": 63.0,
+     "p50": 90.0,
+     "p95": 113.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0001,
+     "nonzero_band": {
+      "low": 63.0,
+      "high": 113.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "grinder_amp": {
+     "n_values": 525514,
+     "null_fraction": 0.3381,
+     "min": 0.0,
+     "max": 830.0,
+     "mean": 157.6577,
+     "p5": 127.0,
+     "p50": 153.0,
+     "p95": 200.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0001,
+     "nonzero_band": {
+      "low": 127.0,
+      "high": 200.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    }
+   }
+  },
+  {
+   "file": "5tags_Feb_cleansed.csv",
+   "description": "cleaned Feb 2025, 1 s grid",
+   "size_bytes": 94001894,
+   "rows": 2415600,
+   "time_span": {
+    "from": "2025-02-01 00:00:00",
+    "to": "2025-02-28 22:59:59"
+   },
+   "columns": {
+    "flotation_flow": {
+     "n_values": 2022228,
+     "null_fraction": 0.1628,
+     "min": -176.0,
+     "max": 827.0,
+     "mean": 42.4447,
+     "p5": 0.0,
+     "p50": 19.0,
+     "p95": 109.0,
+     "negative_fraction": 0.0478,
+     "zero_fraction": 0.0051,
+     "nonzero_band": {
+      "low": 7.0,
+      "high": 110.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "flotation_level": {
+     "n_values": 1269153,
+     "null_fraction": 0.4746,
+     "min": -119.0,
+     "max": 104.0,
+     "mean": 44.7226,
+     "p5": 44.0,
+     "p50": 46.0,
+     "p95": 47.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 44.0,
+      "high": 47.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "dryer_left_amp": {
+     "n_values": 1400358,
+     "null_fraction": 0.4203,
+     "min": 0.0,
+     "max": 813.0,
+     "mean": 84.3439,
+     "p5": 66.0,
+     "p50": 86.0,
+     "p95": 98.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 66.0,
+      "high": 98.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "dryer_right_amp": {
+     "n_values": 1485205,
+     "null_fraction": 0.3852,
+     "min": 0.0,
+     "max": 930.0,
+     "mean": 94.4582,
+     "p5": 70.0,
+     "p50": 96.0,
+     "p95": 114.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 70.0,
+      "high": 114.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "grinder_amp": {
+     "n_values": 1494026,
+     "null_fraction": 0.3815,
+     "min": 0.0,
+     "max": 977.0,
+     "mean": 158.9186,
+     "p5": 127.0,
+     "p50": 155.0,
+     "p95": 200.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0001,
+     "nonzero_band": {
+      "low": 127.0,
+      "high": 200.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    }
+   }
+  },
+  {
+   "file": "february_gap_filled.csv",
+   "description": "Feb 2025 gap-filled subset w/ dryer_avg_amp",
+   "size_bytes": 19094498,
+   "rows": 734400,
+   "time_span": {
+    "from": "2025-02-01 10:00:00",
+    "to": "2025-02-09 21:59:59"
+   },
+   "columns": {
+    "flotation_flow": {
+     "n_values": 0
+    },
+    "flotation_level": {
+     "n_values": 0
+    },
+    "dryer_left_amp": {
+     "n_values": 0
+    },
+    "dryer_right_amp": {
+     "n_values": 0
+    },
+    "grinder_amp": {
+     "n_values": 0
+    },
+    "dryer_avg_amp": {
+     "n_values": 0
+    }
+   },
+   "note": "All 6 value columns are 100% empty - the file is a 1 Hz timestamp skeleton (2025-02-01 10:00 .. 2025-02-09 22:00) from a gap-fill attempt that wrote no values. No measurement content."
+  },
+  {
+   "file": "4tags_August_with_estimated_flow.csv",
+   "description": "Aug 2024 with model-estimated flow",
+   "size_bytes": 28174399,
+   "rows": 503913,
+   "time_span": {
+    "from": "2024-08-21 13:49:50",
+    "to": "2024-08-30 23:59:59"
+   },
+   "columns": {
+    "flotation_level": {
+     "n_values": 503913,
+     "null_fraction": 0.0,
+     "min": 40.0,
+     "max": 72.0,
+     "mean": 51.7063,
+     "p5": 43.0,
+     "p50": 51.0,
+     "p95": 61.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 43.0,
+      "high": 61.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "dryer_left_amp": {
+     "n_values": 0
+    },
+    "dryer_right_amp": {
+     "n_values": 0
+    },
+    "grinder_amp": {
+     "n_values": 0
+    },
+    "level_smooth": {
+     "n_values": 503913,
+     "null_fraction": 0.0,
+     "min": 40.2,
+     "max": 70.6,
+     "mean": 51.7063,
+     "p5": 45.4,
+     "p50": 50.4,
+     "p95": 61.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 45.4,
+      "high": 61.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "level_shifted": {
+     "n_values": 503913,
+     "null_fraction": 0.0,
+     "min": 40.2,
+     "max": 70.6,
+     "mean": 51.7073,
+     "p5": 45.4,
+     "p50": 50.4,
+     "p95": 61.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 45.4,
+      "high": 61.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "estimated_flow": {
+     "n_values": 503913,
+     "null_fraction": 0.0,
+     "min": -250.61227239552738,
+     "max": 114.34805648434059,
+     "mean": -23.8002,
+     "p5": -135.362,
+     "p50": -8.106,
+     "p95": 51.921,
+     "negative_fraction": 0.5789,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 1.498,
+      "high": 61.525
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    }
+   }
+  },
+  {
+   "file": "Done/2025_03.csv",
+   "description": "merged Mar 2025 (_x/_y merge artefact columns)",
+   "size_bytes": 3006833,
+   "rows": 50069,
+   "time_span": {
+    "from": "2025-03-30 15:00:00",
+    "to": "2025-03-31 07:00:00"
+   },
+   "columns": {
+    "flotation_flow_x": {
+     "n_values": 25192,
+     "null_fraction": 0.4969,
+     "min": -69.0,
+     "max": 118.0,
+     "mean": 28.3228,
+     "p5": -10.0,
+     "p50": 18.0,
+     "p95": 91.0,
+     "negative_fraction": 0.1352,
+     "zero_fraction": 0.0107,
+     "nonzero_band": {
+      "low": 5.0,
+      "high": 93.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "flotation_level_x": {
+     "n_values": 17340,
+     "null_fraction": 0.6537,
+     "min": 44.0,
+     "max": 56.0,
+     "mean": 47.5815,
+     "p5": 45.0,
+     "p50": 46.0,
+     "p95": 54.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 45.0,
+      "high": 54.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "dryer_left_amp_x": {
+     "n_values": 14485,
+     "null_fraction": 0.7107,
+     "min": 61.0,
+     "max": 87.0,
+     "mean": 73.3919,
+     "p5": 67.0,
+     "p50": 73.0,
+     "p95": 80.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 67.0,
+      "high": 80.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "dryer_right_amp_x": {
+     "n_values": 16081,
+     "null_fraction": 0.6788,
+     "min": 61.0,
+     "max": 105.0,
+     "mean": 83.1489,
+     "p5": 72.0,
+     "p50": 82.0,
+     "p95": 95.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 72.0,
+      "high": 95.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "grinder_amp_x": {
+     "n_values": 24083,
+     "null_fraction": 0.519,
+     "min": 115.0,
+     "max": 356.0,
+     "mean": 179.7795,
+     "p5": 137.0,
+     "p50": 174.0,
+     "p95": 243.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 137.0,
+      "high": 243.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "flotation_flow_y": {
+     "n_values": 24877,
+     "null_fraction": 0.5031,
+     "min": -77.0,
+     "max": 27.0,
+     "mean": 10.0363,
+     "p5": -13.0,
+     "p50": 13.0,
+     "p95": 21.0,
+     "negative_fraction": 0.1768,
+     "zero_fraction": 0.0148,
+     "nonzero_band": {
+      "low": 3.0,
+      "high": 21.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "flotation_level_y": {
+     "n_values": 15851,
+     "null_fraction": 0.6834,
+     "min": 50.0,
+     "max": 74.0,
+     "mean": 52.6325,
+     "p5": 51.0,
+     "p50": 53.0,
+     "p95": 54.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 51.0,
+      "high": 54.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "dryer_left_amp_y": {
+     "n_values": 13372,
+     "null_fraction": 0.7329,
+     "min": 0.0,
+     "max": 87.0,
+     "mean": 75.3774,
+     "p5": 70.0,
+     "p50": 75.0,
+     "p95": 81.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0001,
+     "nonzero_band": {
+      "low": 70.0,
+      "high": 81.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "dryer_right_amp_y": {
+     "n_values": 15385,
+     "null_fraction": 0.6927,
+     "min": 0.0,
+     "max": 103.0,
+     "mean": 85.8284,
+     "p5": 77.0,
+     "p50": 86.0,
+     "p95": 95.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0001,
+     "nonzero_band": {
+      "low": 77.0,
+      "high": 95.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "grinder_amp_y": {
+     "n_values": 20897,
+     "null_fraction": 0.5826,
+     "min": 0.0,
+     "max": 364.0,
+     "mean": 189.074,
+     "p5": 143.0,
+     "p50": 183.0,
+     "p95": 259.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 143.0,
+      "high": 259.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "flotation_flow": {
+     "n_values": 25192,
+     "null_fraction": 0.4969,
+     "min": -69.0,
+     "max": 118.0,
+     "mean": 28.3228,
+     "p5": -10.0,
+     "p50": 18.0,
+     "p95": 91.0,
+     "negative_fraction": 0.1352,
+     "zero_fraction": 0.0107,
+     "nonzero_band": {
+      "low": 5.0,
+      "high": 93.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "flotation_level": {
+     "n_values": 17340,
+     "null_fraction": 0.6537,
+     "min": 44.0,
+     "max": 56.0,
+     "mean": 47.5815,
+     "p5": 45.0,
+     "p50": 46.0,
+     "p95": 54.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 45.0,
+      "high": 54.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "dryer_left_amp": {
+     "n_values": 14485,
+     "null_fraction": 0.7107,
+     "min": 61.0,
+     "max": 87.0,
+     "mean": 73.3919,
+     "p5": 67.0,
+     "p50": 73.0,
+     "p95": 80.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 67.0,
+      "high": 80.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "dryer_right_amp": {
+     "n_values": 16081,
+     "null_fraction": 0.6788,
+     "min": 61.0,
+     "max": 105.0,
+     "mean": 83.1489,
+     "p5": 72.0,
+     "p50": 82.0,
+     "p95": 95.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 72.0,
+      "high": 95.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    },
+    "grinder_amp": {
+     "n_values": 24083,
+     "null_fraction": 0.519,
+     "min": 115.0,
+     "max": 356.0,
+     "mean": 179.7795,
+     "p5": 137.0,
+     "p50": 174.0,
+     "p95": 243.0,
+     "negative_fraction": 0.0,
+     "zero_fraction": 0.0,
+     "nonzero_band": {
+      "low": 137.0,
+      "high": 243.0
+     },
+     "stats_note": "p5/p50/p95 + nonzero_band from 1/3 systematic sample; n/min/max/mean/fractions are exact full-scan values (recomputed 2026-07-04)"
+    }
+   },
+   "note": "pandas merge artefact: _x/_y column pairs plus final coalesced columns; final unsuffixed columns equal the _x set. Span only 2025-03-30 15:00 .. 2025-03-31 07:00."
+  }
+ ],
+ "skipped_files": [
+  {
+   "file": "5tags_Feb.csv",
+   "size_bytes": 73488892,
+   "reason_skipped": "duplicate of february raw export, US 'Feb 1, 2025, 12:00:00 AM' timestamp format; superseded by 5tags_Feb_ISO/_cleansed",
+   "header": "timestamp,flotation_flow,flotation_level,dryer_left_amp,dryer_right_amp,grinder_amp",
+   "first_timestamp": "\"Feb 1",
+   "last_timestamp": "\"Feb 28"
+  },
+  {
+   "file": "5tags_Feb_ISO.csv",
+   "size_bytes": 63561549,
+   "reason_skipped": "same Feb data re-timestamped to ISO; superseded by 5tags_Feb_cleansed.csv",
+   "header": "timestamp,flotation_flow,flotation_level,dryer_left_amp,dryer_right_amp,grinder_amp",
+   "first_timestamp": "2025-02-01 00:00:00",
+   "last_timestamp": "2025-02-28 22:59:59"
+  },
+  {
+   "file": "Merged_cleaned_full_timestamps.csv",
+   "size_bytes": 402117918,
+   "reason_skipped": "concatenation of the monthly *_cleaned.csv files (Aug 2024-Jan 2025); stats covered by the monthlies",
+   "header": "timestamp,flotation_level,dryer_left_amp,dryer_right_amp,grinder_amp,flotation_flow",
+   "first_timestamp": "2024-08-21 11:02:28",
+   "last_timestamp": "2025-01-31 22:59:58"
+  },
+  {
+   "file": "Done/2024_09.csv",
+   "size_bytes": 70631359,
+   "reason_skipped": "near-duplicate of September_cleaned.csv with a mangled header row (column names lost, 'Unnamed: n' leaked into first data row)",
+   "header": "2024-09-01 00:00:01,55.0,Unnamed: 2,Unnamed: 3,Unnamed: 4",
+   "first_timestamp": "2024-09-01 00:00:05",
+   "last_timestamp": "2024-09-30 21:59:59"
+  },
+  {
+   "file": "../Merged_with_February - Copy.txt",
+   "size_bytes": 487593550,
+   "reason_skipped": "CSV-in-txt: Merged_cleaned_full_timestamps + February appended (Aug 2024-Feb/Mar 2025); stats covered by the monthlies",
+   "header": "timestamp,flotation_level,dryer_left_amp,dryer_right_amp,grinder_amp,flotation_flow",
+   "first_timestamp": "2024-08-21 11:02:28",
+   "last_timestamp": "2025-02-28 22:59:59"
+  }
+ ]
+}

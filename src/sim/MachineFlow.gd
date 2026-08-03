@@ -39,12 +39,35 @@ static func profile(id: String) -> Dictionary:
 		"contam_remove": 0.0,
 		"reject_other":  0.0,
 		"reject_hdpe":   0.0,
+		# #223 docs->code (docs/plant/swi/pelletiseer-waterbassin-trilnaald__063_CeDo86.md)
+		# Pellet-dewatering (ontwaterzeef) HMI tunables. Present on every profile
+		# (0.0 = off) so the HMI can read/set them uniformly; only ontwaterzeef
+		# acts on them today. trilnaald_followup_s = seconds the trilmotoren keep
+		# running after the pelletiser stops; basin_flush_interval_min = minutes
+		# between fixed-duration water-basin flushes (0 = flushing off).
+		"trilnaald_followup_s":     0.0,
+		"basin_flush_interval_min": 0.0,
 	}
 	match id:
 		# ── sinks: the extruders turn melt into granulaat (line end) ──────────
-		"extruder_3a", "extruder_3b", "extruder_1", "extruder_3c", "extruder_6":
+		"extruder_3a", "extruder_1", "extruder_3c", "extruder_6":
 			pr["role"] = "sink"
 			pr["in"]   = Vector3(0.0, 0.9, 0.45)
+			pr["rate"] = 8.0
+		# extruder_3b (operator 2026-07-16 "line 3B functional start to finish"):
+		# demoted from sink → process so it EMITS its granulaat downstream instead
+		# of banking + swallowing it. The 3B macro's pelletising back-end
+		# (laser_filter → heetafslag → ontwaterzeef → centrifuge → weegschaal →
+		# voorraad_silo) was placed + linked but starved because the sink emitted
+		# nothing; now material flows to voorraad_silo (already a sink, line ~292),
+		# which banks the granulaat at the true line end — mirroring how 3C runs
+		# its extruder_screw as a process into a voorraad_silo sink. 3A / Line 1
+		# extruders stay sinks (unchanged), so there is no double-count anywhere.
+		"extruder_3b":
+			pr["role"] = "process"
+			pr["process"] = "convey"
+			pr["in"]   = Vector3(0.0, 0.9, 0.45)
+			pr["out"]  = Vector3(0.0, 0.35, 0.45)
 			pr["rate"] = 8.0
 		# ── size reduction ───────────────────────────────────────────────────
 		# Dedupe: shredder_3a3b + shredder_1_3c6 removed — they were legacy ids
@@ -98,8 +121,12 @@ static func profile(id: String) -> Dictionary:
 			pr["out"]  = Vector3(0.0, 0.74, 0.45)
 			pr["waste"] = 0.12                       # sinkers + skimmed reject
 		"rafter":
-			pr["in"]   = Vector3(0.0, 0.7, 0.4)
-			pr["out"]  = Vector3(0.0, 0.4, -0.4)
+			# Port fractions recomputed 2026-07-06 for the raised-platform +
+			# water-tank model (bbox 1.8 × 4.8 × 3.6): inlet hopper mouth at
+			# ~4.57 m / +Z, discharge chute lip at ~2.7 m / -Z end.
+			# waste/screen/water_remove values unchanged — no new data.
+			pr["in"]   = Vector3(0.0, 0.95, 0.35)
+			pr["out"]  = Vector3(0.0, 0.55, -0.5)
 			pr["waste"] = 0.03
 		# #91 — trilzeef: top-fed at the +Z high end (a belt drops material in
 		# through the rubber flap), discharges OVERS out the -Z low end into the
@@ -206,12 +233,16 @@ static func profile(id: String) -> Dictionary:
 			pr["in"]   = Vector3(0.0, 0.95, 0.0)
 			pr["out"]  = Vector3(0.0, 0.12, 0.45)
 		"bunker":
-			# Receives bales/loose film from the top (where the forklift dumps it)
-			# and meters them out the +Z discharge mouth onto the next belt.
-			pr["in"]    = Vector3(0.0, 0.95, 0.0)
-			pr["out"]   = Vector3(0.0, 0.15, 0.45)
+			# Rebuilt 2026-07-06 (bunker.md §5): NOT an intake pit — a ~10 m
+			# buffer CONVEYOR downstream of shredder 1 (operator interview:
+			# shredder 1 bottom → belt → bunker → belt 1040). Material drops in
+			# over the -Z infeed-end wall top; the travelling deck discharges at
+			# the +Z end over the bunkerrol onto the next belt.
+			pr["role"]  = "conveyor"
+			pr["in"]    = Vector3(0.0, 0.95, -0.45)
+			pr["out"]   = Vector3(0.0, 0.27, 0.45)   # deck at 1.25/5.0 ≈ 0.25 bbox height
 			pr["waste"] = 0.0
-			pr["rate"]  = 10.0    # bunkers buffer + meter — high throughput
+			pr["rate"]  = 10.0    # kept — inside the derived 4.6-18.4 kg/s band (bunker.md §3)
 		"blower":
 			pr["role"] = "conveyor"
 			pr["in"]   = Vector3(0.0, 0.5, 0.0)
@@ -266,9 +297,15 @@ static func profile(id: String) -> Dictionary:
 		"weegschaal":
 			pr["in"]   = Vector3(0.0, 0.85, 0.0)
 			pr["out"]  = Vector3(0.0, 0.12, 0.45)
-		"voorraad_silo":
+		# Outdoor MS/LS pellet silos (silopark zuidwest, 2 rows of 5 — operator
+		# 2026-07-06 ruling B8 / floor plan 240_CeDo127): same passive sink
+		# treatment as voorraad_silo. They stand beyond MAX_LINK_DIST so in
+		# practice they are edge-less scenery until a pneumatic blower bridge is
+		# modelled (silos_ms_ls.md §7). rate copied from voorraad_silo —
+		# real pneumatic transfer rate UNDOCUMENTED (silos_ms_ls.md flag 14).
+		"voorraad_silo", "ms_silo_buiten", "ls_silo_buiten":
 			pr["role"] = "sink"
-			pr["in"]   = Vector3(0.0, 0.9, 0.0)
+			pr["in"]   = Vector3(0.0, 0.9, 0.0)   # pneumatic line lands on the silo TOP (125_CeDo40)
 			pr["rate"] = 12.0
 		"silo", "doseersilo":
 			pr["in"]  = Vector3(0.0, 0.9, 0.0)
@@ -286,13 +323,25 @@ static func profile(id: String) -> Dictionary:
 		# Dedupe: pump_large + wash_line removed from the catalog. water_pump
 		# is the canonical pump id and stays as a role-none fixture (it doesn't
 		# carry material — it pushes water through the wash loop).
-		"door", "pcu_cabinet", "hmi_panel", "hmi_wall", "surface", "waste_container", "water_pump", "zss_water":
+		# 2026-07-06 batch: the four small water fixtures (water_small.md) are
+		# role-none like water_pump/zss_water — they push WATER around the wash
+		# loops, not film. eop_endpoint is an external-entity endpoint (Indaver
+		# water treatment, eop_rafter.md Part A) — never a material-flow node.
+		"door", "pcu_cabinet", "hmi_panel", "hmi_wall", "surface", "waste_container", "water_pump", "zss_water", \
+		"kleine_la", "tankje_tussen_extruders", "pomp_c1", "pomp_zeefbocht", "eop_endpoint":
 			pr["role"] = "none"   # info screens / fixtures — NOT material-flow machines
 		_:
 			# #165 — every scoped HMI id (`hmi_shredder_l1`, etc.) is a control
 			# fixture, NOT a material-flow node. Catch them all by prefix so we
 			# don't have to enumerate the 12 ids here AND in HmiScopes.gd.
 			if id.begins_with("hmi_"):
+				pr["role"] = "none"
+			# Hand tools (leaf blower / jerrycan / shovel / scanner / wrench) are
+			# HELD items, not material-flow machines. Without this they defaulted to
+			# role "process" and leaked into LineFlow → the crew "post" dropdown as
+			# phantom stations (operator 2026-07-16: posting Mohammed to the leaf
+			# blower did nothing — a dead AT_POST at a non-machine).
+			elif id.begins_with("tool_") or id == "socket_wrench_7":
 				pr["role"] = "none"
 			# Bales and anything unrecognised are not flow nodes (bales feed the
 			# head node's composition instead — see LineFlow).
@@ -378,7 +427,21 @@ static func _apply_process(pr: Dictionary, id: String) -> void:
 		"ontwaterzeef":
 			pr["process"] = "dewater"
 			pr["water_remove"] = 0.80
-		"weegschaal", "voorraad_silo":
+			# #223 docs->code (docs/plant/swi/pelletiseer-waterbassin-trilnaald__063_CeDo86.md)
+			# HMI-settable tunables (default 0.0 = off). Set explicitly so the
+			# ontwaterzeef node always advertises them; the flush DURATION is
+			# fixed, only the interval + follow-up seconds are operator values.
+			pr["trilnaald_followup_s"]     = 0.0
+			pr["basin_flush_interval_min"] = 0.0
+		# #223 docs->code (docs/plant/swi/TRAIN-de-weegschaal-p6c__117_CeDo39.md)
+		# Weegschaal is NOT an inert buffer: it meters production in fixed 25 kg
+		# weigh-and-dump batches (inlet klep closes at 25 kg, discharge klep
+		# dumps to the voorraad silo, valves switch back at 0 kg). Tag "weigh"
+		# so LineFlow routes it through the attached WeighHopper (see the
+		# _weigh_hoppers registry below) instead of free-flowing.
+		"weegschaal":
+			pr["process"] = "weigh"
+		"voorraad_silo", "ms_silo_buiten", "ls_silo_buiten":
 			pr["process"] = "buffer"
 		# ── cyclone / air sep: pulls light fines + some moisture into the air ─
 		"cyclone", "cyclone_tower":
@@ -442,3 +505,21 @@ static func _mech_dryer_water_remove() -> float:
 		var residual_factor : float = clampf(m.residual_moisture_pct / 100.0, 0.0, 1.0)
 		return eff * residual_factor
 	return 0.70
+
+# -- weigh-hopper registry (#223 item 16) ----------------------------
+# #223 docs->code (docs/plant/swi/TRAIN-de-weegschaal-p6c__117_CeDo39.md)
+# Mirror of the mech_dryer model registry above: LineFlow attaches a
+# WeighHopper to a weegschaal node key, feeds it kg per tick, and pulls the
+# released 25 kg dumps back out. produced_kg / dump_count are then readable
+# straight off the attached hopper for the HMI. No scene deps here.
+static var _weigh_hoppers : Dictionary = {}
+
+static func attach_weigh_hopper(key: String, hopper: WeighHopper) -> void:
+	_weigh_hoppers[key] = hopper
+
+static func detach_weigh_hopper(key: String) -> void:
+	_weigh_hoppers.erase(key)
+
+## Attached WeighHopper for this node key, or null if none is registered.
+static func weigh_hopper_for(key: String) -> WeighHopper:
+	return _weigh_hoppers.get(key, null)
