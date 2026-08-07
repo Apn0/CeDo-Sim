@@ -281,6 +281,29 @@ const LINE_3C_SEQ : Array[Dictionary] = [
 	{"id": "centrifuge"},                                          # 29 Centr
 	{"id": "weegschaal"},                                          # 30 Weeg
 	{"id": "voorraad_silo"},                                       # 31 Voorraad
+	# ── laserfilter afvoer furniture (operator ruling 2026-08-03) ─────────────
+	# TWO lump carts per extruder — one VOOR, one ACHTER of the laser filter
+	# (docs/plant/extruder_line_layout.md; re-confirmed by the operator
+	# 2026-08-03 after 3C shipped with NONE). APPENDED past the Line3CDef.STAGES
+	# spine end, honouring the append-only rule (:100-101): every machine keeps
+	# its macro_index → l3c_code address, and code_for_macro_entry returns ""
+	# for these indices (bounds-safe — test_line3c_seq_alignment checks it).
+	# "at_entry": 23 anchors each piece to the laser filter's own z-centre, so
+	# there is no hand-baked distance to rot when a machine upstream resizes
+	# (stale-constant disease). Geometry mirrors the 3A/3B/1 idiom relative to
+	# the filter (here on the centreline at x=0): wall/ACHTER cart on the
+	# 0.12 m bordes at -1.30, aisle/VOOR cart on the GROUND at +1.30 — the
+	# nozzle drop points, LaserFilter.gd eject_wall_local / eject_local_offset.
+	{"id": "lump_platform",  "x": -1.3, "z": 0.0, "at_entry": 23,
+	 "furniture": true},                                           # 32 bordes
+	{"id": "lump_cart_spot", "x": -1.3, "z": 0.0, "y": 0.12, "at_entry": 23,
+	 "furniture": true},                                           # 33 achter spot
+	{"id": "lump_cart",      "x": -1.3, "z": 0.0, "y": 0.12, "at_entry": 23,
+	 "furniture": true},                                           # 34 achter cart
+	{"id": "lump_cart_spot", "x":  1.3, "z": 0.0, "at_entry": 23,
+	 "furniture": true},                                           # 35 voor spot
+	{"id": "lump_cart",      "x":  1.3, "z": 0.0, "at_entry": 23,
+	 "furniture": true},                                           # 36 voor cart
 ]
 
 ## Macros whose flow topology comes from an AUTHORED graph rather than from the
@@ -1586,6 +1609,12 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 	var rgt := Vector3(cos(rot_y), 0.0, -sin(rot_y))
 	var main_z := 0.0
 	var built := 0
+	# #lump-3c — per-entry place_z snapshots, so a LATER entry can anchor itself
+	# to an earlier machine's z-centre via {"at_entry": N}. This is what lets the
+	# 3C laserfilter furniture live at the APPEND-ONLY tail of the SEQ (indices
+	# past the Line3CDef.STAGES spine, so no macro_index → l3c_code address ever
+	# shifts) while still being placed beside entry 23's laser filter.
+	var entry_z_by_idx : Dictionary = {}
 	# #71 branch tracking — explicit edges for split / recirc topology.
 	# Two distinct kinds of branch are supported:
 	#   CHAINED  (3A recirc loop): one machine after another along +X side lane,
@@ -1662,7 +1691,21 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 		else:
 			# Branch machine — sits beside the line at (current cursor + z offset) and
 			# does NOT advance the main cursor (the main flow runs past it).
-			place_z = main_z + float(entry.get("z", 0.0))
+			# {"at_entry": N} re-bases the z offset on entry N's placed z-CENTRE
+			# instead of the current cursor (N must be an EARLIER entry — the
+			# snapshot only exists once N has been placed). No size coupling: if
+			# entry N's machine grows, the anchored furniture moves with it.
+			var anchor_idx : int = int(entry.get("at_entry", -1))
+			if anchor_idx >= 0:
+				if entry_z_by_idx.has(anchor_idx):
+					place_z = float(entry_z_by_idx[anchor_idx]) + float(entry.get("z", 0.0))
+				else:
+					push_warning("[BuildMode] %s entry %d: at_entry %d not placed yet — falling back to cursor"
+						% [line_id, entry_idx, anchor_idx])
+					place_z = main_z + float(entry.get("z", 0.0))
+			else:
+				place_z = main_z + float(entry.get("z", 0.0))
+		entry_z_by_idx[entry_idx] = place_z
 		# Update transportband chain state AFTER we've used prev_tb_outlet_y for
 		# this belt's base. Branches like transportband_8_5 read from the chain
 		# (so they stack from belt 8's outlet) but do NOT overwrite it — main

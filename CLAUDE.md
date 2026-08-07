@@ -101,14 +101,18 @@ read `Result:` AND the `note  :` lines in `tools/regression/out/last_run.log`.
    `src/tests/shot_placeable.tscn`:
    `<godot> --path . res://src/tests/shot_placeable.tscn -- <placeable_id> [yaw] [pitch]`
 
-### OPEN CONTRADICTION — do not silently resolve
+### RESOLVED 2026-08-03 — two lump carts per extruder
 
-The operator's locked fact is **"one lump cart serves four extruders — do not
-'improve' to two."** The code disagrees: `src/build/BuildMode.gd` places **six**
-lump carts, two per line (`:159/:161`, `:379/:381`, `:471/:473`), and line 3C's
-laser filter gets none. `BuildMode.gd:147-151` justifies it ("a cart under EACH
-of the twin afvoerschroef nozzles"). One of these is wrong. **Ask the operator —
-do not change either side on your own initiative.**
+The operator ruled: **"two carts per extruder — one at the voor side, one at the
+achter side of the laser filter."** The old "one cart serves four extruders"
+locked fact was the stale 2026-07-12 statement, superseded on 07-14/07-15; the
+"open contradiction" this section used to flag was built on it. Lines 1/3A/3B
+already complied; **line 3C had zero carts and now has both** via an append-only
+furniture tail on `LINE_3C_SEQ` (`BuildMode.gd`, `{"at_entry": 23}` anchoring).
+Proof: `src/tests/test_lump_cart_coverage.tscn` (39 checks, mutation-proven, in
+the harness). Full story + the still-open questions (3C MF1/MF2 cart count,
+line 6 Britas, nozzle visual asymmetry, LaserFilter's crossed aisle/wall labels):
+`docs/plant/extruder_line_layout.md`, 2026-08-03 section.
 
 ## Where things are
 

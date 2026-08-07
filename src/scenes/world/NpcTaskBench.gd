@@ -194,22 +194,28 @@ func _build_rig() -> void:
 		zc += ex_depth * 0.5
 		var ex_z : float = zc
 		_place(String(EXTRUDER_IDS[li]), Vector3(lx, 0.0, ex_z))
-		# standalone LIVE laserfilter on its afvoer-bordes, twin nozzles ±X
+		# standalone LIVE laserfilter, twin nozzles ±X. ASYMMETRIC heights per the
+		# operator 2026-07-15 ruling (docs/plant/extruder_line_layout.md, re-confirmed
+		# 2026-08-03): the bordes sits on the WALL (-X, achter) side only and carries
+		# that cart at PLATFORM_Y; the AISLE (+X, voor) cart stands on the GROUND.
+		# The bench previously had filter + both carts all at PLATFORM_Y — the
+		# superseded 07-14 symmetric generation — so its greens proved the wrong
+		# geometry (stale-constant disease). This now mirrors the LINE_*_SEQ macros.
 		var lf_z : float = ex_z + 3.5
 		var lf_x : float = lx + FILTER_SIDE_X
-		# the bordes (platform + oprit) the filter + BOTH carts stand on
-		_place("lump_platform", Vector3(lf_x, 0.0, lf_z))
-		var lf : Node3D = _place("laser_filter", Vector3(lf_x, PLATFORM_Y, lf_z))
+		_place("lump_platform", Vector3(lx + CART_WALL_X, 0.0, lf_z))
+		var lf : Node3D = _place("laser_filter", Vector3(lf_x, 0.0, lf_z))
 		# BENCH DEMO FEED — no ExtruderMachine sim brains in bench v1, so nothing
 		# would drive feed_throughput and the discharge would sit dead. Feed the
 		# filter a realistic line rate so lumps visibly purge into the carts.
 		if lf != null and lf.has_method("set_feed_throughput"):
 			lf.call("set_feed_throughput", 450.0)
-		# TWO lump carts per extruder (operator spec 2026-07-14): one under EACH
-		# vertical nozzle — aisle (+X, in front of the disc face) and wall (-X,
-		# behind it) — on the bordes, with a yellow spot under each.
-		_place("lump_cart_spot", Vector3(lx + CART_AISLE_X, PLATFORM_Y, lf_z))
-		_place("lump_cart",      Vector3(lx + CART_AISLE_X, PLATFORM_Y, lf_z))
+		# TWO lump carts per extruder (operator spec 2026-07-14, heights corrected to
+		# the 07-15 asymmetric ruling, re-confirmed 2026-08-03): one under EACH
+		# vertical nozzle — aisle/VOOR (+X, in front of the disc face) on the GROUND,
+		# wall/ACHTER (-X, behind it) on the bordes — with a yellow spot under each.
+		_place("lump_cart_spot", Vector3(lx + CART_AISLE_X, 0.0, lf_z))
+		_place("lump_cart",      Vector3(lx + CART_AISLE_X, 0.0, lf_z))
 		_place("lump_cart_spot", Vector3(lx + CART_WALL_X,  PLATFORM_Y, lf_z))
 		_place("lump_cart",      Vector3(lx + CART_WALL_X,  PLATFORM_Y, lf_z))
 

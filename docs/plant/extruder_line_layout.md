@@ -59,3 +59,49 @@ any earlier guesswork about the laser-filter discharge / head-filter arrangement
 - Melt pump drawn on every line → gate to 3C only (`_m_extruder_unit` Section 6).
 - Britas (line 6), PCU-above-barrel + intake slider, head-filter safety hood, afvoerschroef mechanism
   = DEFERRED pending operator photos/decisions.
+
+## 2026-08-03 — operator ruling: two carts per extruder, IMPLEMENTED on all four lines
+
+Operator (verbatim intent): **"There have to be two carts per extruder, one at the
+voor side, one at the achter side of the laser filter."** This re-confirms the
+07-15 asymmetric layout above and closes the false "one cart serves four
+extruders" contradiction that was flagged in CLAUDE.md — that line was the stale
+2026-07-12 statement, superseded two days later by this document.
+
+State as of this ruling, measured in a real MainWorld boot
+(`src/tests/test_lump_cart_coverage.tscn`, 39 checks):
+
+- **Lines 1 / 3A / 3B** already placed both carts (macro entries at ±1.30 around
+  the filter, bordes cart at deck height 0.12, ground cart at 0) — unchanged.
+- **Line 3C had ZERO carts.** Fixed: `BuildMode.LINE_3C_SEQ` now carries an
+  APPEND-ONLY furniture tail (indices 32-36: bordes + 2 spots + 2 carts) anchored
+  to the laser filter's own z via the new `{"at_entry": N}` key, so no
+  macro_index → l3c_code address shifted and saved macros stay valid.
+  `test_line3c_seq_alignment` guards the tail (mutation-proven: untagging,
+  re-anchoring, or deleting a cart each turn a named check red).
+- Every laser filter now binds BOTH nozzle carts through its own runtime catch
+  windows, the bordes cart rides 0.120 m above the ground cart on all four
+  lines, and each cart spawn volume is probed clear of the building shell.
+
+### Naming cross (cleanup item, does not affect behaviour)
+Measured 2026-08-03: under the macro rotation, the nozzle `LaserFilter.gd` NAMES
+"aisle / +X / front-of-disc" (`lump_cart`, `eject_local_offset`) physically lands
+on the **bordes side** on all four lines — which this document calls the
+**achterzijde**. The refs work (each window binds its own cart; discharge splits
+per active nozzle) but the local labels are crossed relative to plant vocabulary.
+Renaming touches external readers of `eject_local_offset` — do it as its own
+sweep, not in passing.
+
+### Still open (ask the operator / needs photos — do NOT build)
+1. **3C MF1/MF2**: the LIJN 3C alarm list names Smeltfilter 1 AND Smeltfilter 2.
+   If 3C physically carries two filter heads, is the ruling 2 carts total or 2
+   per head (= 4)? Built as 2 total for now.
+2. **Line 6 (Britas/ABMF band filter)**: it has uittrekschroeven (3-8 rpm sticky
+   note) so a discharge exists, but no doc places its cart(s).
+3. The **asymmetric nozzle VISUAL** (rear exits UP, front exits DOWN — poster
+   cross-section above) is still not modelled; both downspouts remain symmetric
+   at local ±1.30/1.13. Model work pending a render + operator confirm.
+4. The 07-20 photo doc (`operator_issues_2026-07-20.md`) shows the filter as a
+   floor-standing unit OFF the barrel ("not built yet, axis mapping needs
+   confirming"). If that rebuild happens, which world side "voor" faces must be
+   re-confirmed, and NpcTaskBench + the macros move together.
