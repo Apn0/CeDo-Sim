@@ -35,13 +35,15 @@ func _ready() -> void:
 	add_child(plat); (plat as Node3D).global_position = Vector3.ZERO
 	var lf := PlaceableCatalog.build_node("laser_filter", false)
 	add_child(lf);   (lf as Node3D).global_position = Vector3(0.0, 0.12, 0.0)
-	var aisle := PlaceableCatalog.build_node("lump_cart", false)
-	add_child(aisle); (aisle as Node3D).global_position = Vector3(1.30, 0.12, 0.0)
-	var wall := PlaceableCatalog.build_node("lump_cart", false)
-	add_child(wall);  (wall as Node3D).global_position = Vector3(-1.30, 0.12, 0.0)
+	var achter := PlaceableCatalog.build_node("lump_cart", false)
+	add_child(achter); (achter as Node3D).global_position = Vector3(1.30, 0.12, 0.0)
+	var voor := PlaceableCatalog.build_node("lump_cart", false)
+	add_child(voor);  (voor as Node3D).global_position = Vector3(-1.30, 0.12, 0.0)
 	# bind both carts directly + grow a visible rope hanging from each nozzle
-	lf.set("lump_cart", aisle)
-	lf.set("lump_cart_wall", wall)
+	# (channel names per the 2026-08-07 sweep: achter = +X mouth, voor = -X;
+	# this shot keeps the old symmetric both-on-platform staging — visual only)
+	lf.set("lump_cart_achter", achter)
+	lf.set("lump_cart_voor", voor)
 	for _i in 11:
 		lf.call("_grow_sausage", 0.1, 200.0)
 	# ── camera: 3/4 view framing filter + both nozzles + both carts ──────────

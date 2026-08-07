@@ -214,10 +214,18 @@ var is_halted : bool = false
 
 # Optional discharge targets — when set, scraped lumps drop into these carts.
 # #225.2 (operator 2026-07-14): the afvoervijzel discharges through a VERTICAL
-# nozzle on BOTH sides of the disc — one in front of the disc face (aisle/HMI
-# side, +X) and one behind it (wall side, -X). A lump cart sits under each.
-var lump_cart            : Node  = null   # aisle (+X, front-of-disc) — back-compat single ref
-var lump_cart_wall       : Node  = null   # wall (-X, behind-disc)
+# nozzle on BOTH sides of the disc. A lump cart sits under each.
+# PLANT VOCABULARY (naming sweep 2026-08-07; measured 2026-08-03 with the
+# test_lump_cart_coverage diagnostics): under the yaw every LINE_*_SEQ macro
+# gives this filter, the +X mouth lands on the ACHTER (bordes) side — the
+# raised cart — and the -X mouth on the VOOR side — the ground cart. The old
+# labels ("aisle +X / wall -X") claimed the opposite; only the NAMES were
+# wrong, each catch window always bound its own cart. CAVEAT: NpcTaskBench
+# places the filter UNROTATED, so there the channel↔cart pairing mirrors
+# (achter/+X holds the bench's ground cart) — see the BENCH MIRROR note in
+# NpcTaskBench.gd.
+var lump_cart_achter     : Node  = null   # achter (+X local; bordes/raised cart in MainWorld) — channel 0, single-cart default
+var lump_cart_voor       : Node  = null   # voor (-X local; ground cart in MainWorld) — channel 1
 
 # =============================================================================
 # BACKWARD-COMPAT COMPUTED PROPERTIES
@@ -275,15 +283,15 @@ func _physics_process(delta: float) -> void:
 	# over. Prevents the old unbounded-nearest bug where a cart metres away
 	# (or on the NEIGHBOURING line) silently received the kg credit while the
 	# physical chunks piled on the floor.
-	# Rebind BOTH nozzle carts by their own catch window (aisle +X / wall -X).
+	# Rebind BOTH nozzle carts by their own catch window (achter +X / voor -X).
 	_cart_recheck_t += delta
 	var _need_recheck : bool = _cart_recheck_t >= CART_RECHECK_S \
-		or lump_cart == null or not is_instance_valid(lump_cart) \
-		or lump_cart_wall == null or not is_instance_valid(lump_cart_wall)
+		or lump_cart_achter == null or not is_instance_valid(lump_cart_achter) \
+		or lump_cart_voor == null or not is_instance_valid(lump_cart_voor)
 	if _need_recheck:
 		_cart_recheck_t = 0.0
-		lump_cart      = _rebind_cart(lump_cart,      eject_global())
-		lump_cart_wall = _rebind_cart(lump_cart_wall, eject_global_wall())
+		lump_cart_achter = _rebind_cart(lump_cart_achter, eject_global_achter())
+		lump_cart_voor   = _rebind_cart(lump_cart_voor,   eject_global_voor())
 	_absorb_settled_chunks(delta)
 	if _change_state != Change.IDLE:
 		_advance_change(delta)
@@ -449,12 +457,12 @@ func _disc_advance() -> void:
 	var act : Array = _active_channels()
 	if lumps_kg > 1.0e-5:
 		lumps_kg_this_shift += lumps_kg
-		# Credit each ACTIVE nozzle's cart an equal share. Aisle-only (single-cart
-		# MainWorld line) → full credit, no regression; both carts (bench) → half
+		# Credit each ACTIVE nozzle's cart an equal share. Achter-only (a
+		# single-cart line) → full credit, no regression; both carts → half
 		# each. kg stays on the receive_lump path (regression-safe).
 		var share_kg : float = lumps_kg / float(act.size())
 		for i in act:
-			var c : Node = lump_cart if i == 0 else lump_cart_wall
+			var c : Node = lump_cart_achter if i == 0 else lump_cart_voor
 			if c != null and is_instance_valid(c) and c.has_method("receive_lump"):
 				c.call("receive_lump", share_kg)
 	# Discharge each ACTIVE nozzle's in-progress rope as a discrete chunk.
@@ -466,11 +474,11 @@ func _disc_advance() -> void:
 # =============================================================================
 # #B — Sausage extrusion from the scraper discharge
 # =============================================================================
-# The scraper sheds caught melt + grit through TWO eject ports (aisle +X /
-# wall -X) at the bottom sides of the filter disc. In real life it's a
+# The scraper sheds caught melt + grit through TWO eject ports (achter +X /
+# voor -X) at the bottom sides of the filter disc. In real life it's a
 # continuous ~70 mm rope that piles into the cart under each nozzle and cools
 # to a solid in a few minutes. We model that as:
-#   * `_saus[i]` : channel i's in-progress rope (i=0 aisle, i=1 wall), growing
+#   * `_saus[i]` : channel i's in-progress rope (i=0 achter, i=1 voor), growing
 #                  each tick by a length proportional to `clear_g_s` (so a
 #                  low-RPM scraper extrudes a thinner rate). Each is one
 #                  MeshInstance3D + material whose colour lerps hot→cool.
@@ -485,24 +493,26 @@ const SAUSAGE_COOL_COLOR     : Color = Color(0.18, 0.16, 0.14)
 const SAUSAGE_COOL_TIME_S    : float = 180.0    # rope cools over 3 sim-minutes
 # #225.2 — TWO outlet mouths of the afvoervijzel discharge, LOCAL to this node
 # (origin at FLOOR level). Operator (2026-07-14): a VERTICAL discharge nozzle
-# on BOTH sides of the disc — aisle (+X, in front of the disc face) and wall
-# (-X, behind it) — each dropping straight down into its own cart. Mirrors
-# _m_laser_filter's twin-spout geometry: lumps auger sideways just clear of the
-# disc housing, then drop from a mouth whose lip (~1.13 m) clears the 0.95 m
-# cart rim — so the rope/chunks land IN the bucket, never on the housing or the
-# extruder. Vars (not const) so a differently-plumbed placeable can re-aim them.
-# eject_local_offset keeps its name (external readers/tests use it) = the aisle.
-var eject_local_offset       : Vector3 = Vector3( 1.30, 1.13, 0.0)   # aisle (+X)
-var eject_wall_local         : Vector3 = Vector3(-1.30, 1.13, 0.0)   # wall  (-X)
+# on BOTH sides of the disc — achter (+X) and voor (-X), plant sides per the
+# 2026-08-03 measurement (see the lump_cart_achter block above) — each dropping
+# straight down into its own cart. Mirrors _m_laser_filter's twin-spout
+# geometry: lumps auger sideways just clear of the disc housing, then drop from
+# a mouth whose lip (~1.13 m) clears the 0.95 m cart rim — so the rope/chunks
+# land IN the bucket, never on the housing or the extruder. Vars (not const) so
+# a differently-plumbed placeable can re-aim them.
+# Renamed 2026-08-07 (was eject_local_offset / eject_wall_local — crossed
+# labels); every external reader/test was grepped and updated in the same sweep.
+var eject_achter_local       : Vector3 = Vector3( 1.30, 1.13, 0.0)   # achter (+X)
+var eject_voor_local         : Vector3 = Vector3(-1.30, 1.13, 0.0)   # voor  (-X)
 
-func eject_global() -> Vector3:        # aisle (+X) — back-compat
-	return to_global(eject_local_offset)
-func eject_global_wall() -> Vector3:   # wall (-X)
-	return to_global(eject_wall_local)
+func eject_global_achter() -> Vector3: # achter (+X) — channel 0, single-cart default
+	return to_global(eject_achter_local)
+func eject_global_voor() -> Vector3:   # voor (-X)
+	return to_global(eject_voor_local)
 
-# Local mouth for channel i (0 = aisle/+X, 1 = wall/-X).
+# Local mouth for channel i (0 = achter/+X, 1 = voor/-X).
 func _chan_eject_local(i: int) -> Vector3:
-	return eject_local_offset if i == 0 else eject_wall_local
+	return eject_achter_local if i == 0 else eject_voor_local
 
 # Two independent discharge channels. Each keeps its own in-progress rope
 # (MeshInstance3D + material + length/age). Dicts are pass-by-ref so the helpers
@@ -513,15 +523,15 @@ var _saus : Array = [
 ]
 
 ## Which discharge nozzles are ACTIVE this tick: a nozzle only augers out if a
-## cart is parked under it. Aisle-only (a single-cart MainWorld line) → all
-## discharge routes to the aisle exactly as before; both carts (the bench) →
-## split evenly. If NO cart is parked anywhere, the aisle still extrudes so the
+## cart is parked under it. Achter-only (a single-cart line) → all discharge
+## routes to the achter channel exactly as before; both carts → split evenly.
+## If NO cart is parked anywhere, the achter channel still extrudes so the
 ## rope visibly piles as honest "no cart parked" feedback (as it did before).
 func _active_channels() -> Array:
 	var act : Array = []
-	if lump_cart != null and is_instance_valid(lump_cart):
+	if lump_cart_achter != null and is_instance_valid(lump_cart_achter):
 		act.append(0)
-	if lump_cart_wall != null and is_instance_valid(lump_cart_wall):
+	if lump_cart_voor != null and is_instance_valid(lump_cart_voor):
 		act.append(1)
 	if act.is_empty():
 		act.append(0)
@@ -693,7 +703,7 @@ func _absorb_settled_chunks(delta: float) -> void:
 			continue
 		var absorbed : bool = false
 		# A chunk resting inside EITHER nozzle's bound cart is absorbed.
-		for cart in [lump_cart, lump_cart_wall]:
+		for cart in [lump_cart_achter, lump_cart_voor]:
 			var cart3 := cart as Node3D
 			if cart3 == null or not is_instance_valid(cart3):
 				continue
