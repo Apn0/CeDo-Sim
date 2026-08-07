@@ -339,11 +339,11 @@ func _collect_footprint_and_doors(wl: Node) -> void:
 
 # =============================================================================
 # EXTERIOR & FIXTURES — the things the operator keeps seeing wrong:
-# fence through the building, TL bars floating outside, spawns in the void.
+# TL bars floating outside, spawns in the void.
 # All MEASURED off the real spawned nodes, not asserted.
 # =============================================================================
 func _test_exterior(world: Node) -> void:
-	_section("EXTERIOR & FIXTURES — fence, TL bars, spawns (measured)")
+	_section("EXTERIOR & FIXTURES — TL bars, spawns (measured)")
 
 	# True building footprint polygon in scene XZ.
 	var poly := PackedVector2Array()
@@ -352,31 +352,8 @@ func _test_exterior(world: Node) -> void:
 			var s : Vector3 = Plant.pc_to_scene(_bf_to_pc(bf))
 			poly.append(Vector2(s.x, s.z))
 
-	# ── FENCE: no perimeter-fence segment may cross the building interior ──────
-	var fences : Array = world.find_children("PerimeterFence*", "", true, false)
-	var fence_dump : Array = []
-	var fence_cross := 0
-	for f in fences:
-		var wps = f.get("_waypoints")   # ChainLinkFence stores world-space corners here
-		if not (wps is Array) or (wps as Array).size() < 2:
-			continue
-		var arr : Array = wps
-		for i in range(arr.size() - 1):
-			var a : Vector3 = arr[i]
-			var b : Vector3 = arr[i + 1]
-			var a2 := Vector2(a.x, a.z)
-			var b2 := Vector2(b.x, b.z)
-			var hits := _seg_hits_polygon(a2, b2, poly)
-			if hits:
-				fence_cross += 1
-			fence_dump.append({"a": [a.x, a.z], "b": [b.x, b.z], "crosses": hits})
-	_dump["fence"] = fence_dump
-	if fences.is_empty():
-		print("  note  : no PerimeterFence nodes found"); _skip += 1
-	else:
-		_ok(fence_cross == 0,
-			"NO fence segment crosses the building (%d crossing / %d segments)"
-				% [fence_cross, fence_dump.size()])
+	# (FENCE check removed 2026-08-03 — the perimeter fence itself was deleted
+	# per operator order; there is nothing to cross-check any more.)
 
 	# ── TL BARS: all inside + rod-mounted; legacy floating path gone ──────────
 	_ok(world.find_child("InteriorTLBars", true, false) == null,

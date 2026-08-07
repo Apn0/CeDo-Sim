@@ -1143,13 +1143,6 @@ func _tag_nav_sources() -> int:
 		if body is StaticBody3D and not body.is_in_group(NAVMESH_GROUP):
 			body.add_to_group(NAVMESH_GROUP)
 			n += 1
-	# The perimeter fence: ~339 static bodies (posts + panels) with no shared group
-	# of their own. They are parented straight onto MainWorld as PerimeterFence_*
-	# runs (ExteriorManager.gd:195-208) — an earlier version of this looked for an
-	# "ExteriorManager" node and silently tagged nothing.
-	for c in get_children():
-		if c.name.begins_with("PerimeterFence_"):
-			n += _tag_static_descendants(c)
 	# npc-07 — THE BUILDING ENVELOPE, GATED. Without these lines NAV_BAKE_SHELL is
 	# decorative. NavSourcePolicy.is_nav_source HAS a shell rule, but it is only ever
 	# consulted for nodes already in SOURCE_GROUPS, and the shell is in neither

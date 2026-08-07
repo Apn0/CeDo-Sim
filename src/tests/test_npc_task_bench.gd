@@ -64,11 +64,13 @@ func _ready() -> void:
 	_check(tree.get_nodes_in_group("line_fault").is_empty(), "S1 no line_fault nodes (cleaning priorities unpenalized)")
 	_check(extruders.size() == 3, "S1 3 extruders found by placeable_id (%d)" % extruders.size())
 
-	# ── S2 geometry (BOTH vertical nozzles: aisle +X, wall -X) ───────────────
+	# ── S2 geometry (BOTH vertical nozzles: achter +X, voor -X channels; NB the
+	# bench filter is UNROTATED so the achter channel hangs over the bench's
+	# ground/voor cart — see the BENCH MIRROR note in NpcTaskBench.gd) ────────
 	const RIM_Y := 0.95
 	for f in filters:
-		var ejects : Array = [f.call("eject_global"), f.call("eject_global_wall")]
-		var elbl : Array = ["aisle", "wall"]
+		var ejects : Array = [f.call("eject_global_achter"), f.call("eject_global_voor")]
+		var elbl : Array = ["achter(+X)", "voor(-X)"]
 		for ei in ejects.size():
 			var eject : Vector3 = ejects[ei]
 			_check(eject.y > RIM_Y + 0.05,
@@ -91,8 +93,8 @@ func _ready() -> void:
 	var fa = filters[0]
 	# Let the 2 s cart-binding cadence run so the filter binds both window carts.
 	await get_tree().create_timer(2.2).timeout
-	_check(fa.get("lump_cart") != null, "S3 filter bound the AISLE (+X) cart")
-	_check(fa.get("lump_cart_wall") != null, "S3 filter bound the WALL (-X) cart")
+	_check(fa.get("lump_cart_achter") != null, "S3 filter bound the achter-channel (+X) cart")
+	_check(fa.get("lump_cart_voor") != null, "S3 filter bound the voor-channel (-X) cart")
 	# Extrude fast: grow cap 0.05 m/call, rope breaks at 0.55 m. _grow_sausage
 	# splits across BOTH active nozzles, so 80 calls ≈ 2 chunks per side.
 	for i in 80:
@@ -102,14 +104,14 @@ func _ready() -> void:
 	await get_tree().create_timer(2.0).timeout   # fall + settle
 	var landed_ok := true
 	var on_extruder := false
-	var eject_a : Vector3 = fa.call("eject_global")
-	var eject_w : Vector3 = fa.call("eject_global_wall")
+	var eject_a : Vector3 = fa.call("eject_global_achter")
+	var eject_v : Vector3 = fa.call("eject_global_voor")
 	for ch in tree.get_nodes_in_group("lump_chunk"):
 		var ch3 := ch as Node3D
 		# each chunk must be at EITHER nozzle's drop column
-		var at_aisle : bool = absf(ch3.global_position.x - eject_a.x) <= 0.70 and absf(ch3.global_position.z - eject_a.z) <= 1.0
-		var at_wall  : bool = absf(ch3.global_position.x - eject_w.x) <= 0.70 and absf(ch3.global_position.z - eject_w.z) <= 1.0
-		if not (at_aisle or at_wall):
+		var at_achter : bool = absf(ch3.global_position.x - eject_a.x) <= 0.70 and absf(ch3.global_position.z - eject_a.z) <= 1.0
+		var at_voor   : bool = absf(ch3.global_position.x - eject_v.x) <= 0.70 and absf(ch3.global_position.z - eject_v.z) <= 1.0
+		if not (at_achter or at_voor):
 			landed_ok = false
 		for e in extruders:
 			var e3 := e as Node3D
@@ -125,7 +127,7 @@ func _ready() -> void:
 	# ── S4 assignment: role gate + full-cart task ────────────────────────────
 	var board = get_node_or_null("/root/NpcAutonomyBoard")
 	_check(board != null, "S4 NpcAutonomyBoard autoload present")
-	var cart0 = fa.get("lump_cart")
+	var cart0 = fa.get("lump_cart_achter")
 	cart0.set("lumps_kg", 95.0)
 	cart0.set("_last_received_at", -INF)   # long-cooled → is_cool() true
 	if cart0.has_method("_sync_mass"): cart0.call("_sync_mass")
@@ -228,7 +230,7 @@ func _ready() -> void:
 	var phase_dump : int = int((elc.get_script_constant_map()["Phase"] as Dictionary)["DUMP_AND_RETURN"])
 	var fork_node = tree.get_nodes_in_group("forklift")[0] as Node3D
 	var bin0 = tree.get_nodes_in_group("waste_container")[0]
-	var yank_cart = fa.get("lump_cart_wall") as Node3D   # wall cart — unused by S4/S9
+	var yank_cart = fa.get("lump_cart_voor") as Node3D   # voor-channel cart — unused by S4/S9
 	yank_cart.set("lumps_kg", 80.0)
 	yank_cart.set("_last_received_at", -INF)
 	if yank_cart.has_method("_sync_mass"): yank_cart.call("_sync_mass")

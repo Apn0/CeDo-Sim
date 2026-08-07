@@ -83,14 +83,42 @@ State as of this ruling, measured in a real MainWorld boot
   windows, the bordes cart rides 0.120 m above the ground cart on all four
   lines, and each cart spawn volume is probed clear of the building shell.
 
-### Naming cross (cleanup item, does not affect behaviour)
-Measured 2026-08-03: under the macro rotation, the nozzle `LaserFilter.gd` NAMES
-"aisle / +X / front-of-disc" (`lump_cart`, `eject_local_offset`) physically lands
-on the **bordes side** on all four lines — which this document calls the
-**achterzijde**. The refs work (each window binds its own cart; discharge splits
-per active nozzle) but the local labels are crossed relative to plant vocabulary.
-Renaming touches external readers of `eject_local_offset` — do it as its own
-sweep, not in passing.
+### Naming cross (RESOLVED 2026-08-07 — naming sweep, behaviour untouched)
+Measured 2026-08-03: under the macro yaw, the nozzle `LaserFilter.gd` then named
+"aisle / +X / front-of-disc" physically lands on the **bordes side** on all four
+lines — the **achterzijde**. Renamed 2026-08-07 to plant vocabulary:
+
+| old (crossed) | new |
+|---|---|
+| `lump_cart` | `lump_cart_achter` (+X, bordes/raised) |
+| `lump_cart_wall` | `lump_cart_voor` (-X, ground) |
+| `eject_local_offset` | `eject_achter_local` |
+| `eject_wall_local` | `eject_voor_local` |
+| `eject_global()` | `eject_global_achter()` |
+| `eject_global_wall()` | `eject_global_voor()` |
+| NpcTaskBench `CART_AISLE_X` | `CART_VOOR_X` (4.8, ground cart) |
+| NpcTaskBench `CART_WALL_X` | `CART_ACHTER_X` (2.2, bordes cart) |
+
+Also swept: BuildMode `LINE_*_SEQ` comments (all four lines), PlaceableCatalog
+`_m_laser_filter` comments (+ `is_rear` → `is_high_side`),
+`test_lump_cart_coverage.gd` (whose check-A/B and shell-clearance side labels
+were themselves crossed), `test_npc_task_bench.gd`, `shot_discharge_station.gd`,
+`docs/plant/npc_task_bench.md`. Every external reader was grepped; `.bak`
+copies of all nine touched files sit beside them. Proven after the rename:
+`test_lump_cart_coverage.tscn` 39/39 PASS + `test_npc_task_bench.tscn` PASS.
+
+**BENCH MIRROR (documented, not fixed):** NpcTaskBench places the filter
+UNROTATED while the macros yaw it, so on the bench the +X/achter channel binds
+the GROUND (voor) cart and the -X/voor channel the BORDES cart. Behaviour is
+identical (each catch window binds whatever cart is parked in it). Rotating the
+bench filter to match production is a separate, purely visual fix.
+
+**Found during the sweep (geometry, still open — folded into item 3 below):**
+the #234 VISUAL asymmetry in `_m_laser_filter` builds the HIGH screw/spout on
+-X and the LOW one on +X. Under the macro yaw that puts the LOW spout over the
+RAISED bordes cart — backwards vs the poster (achter discharges HIGHER) — and
+its 0.98 m funnel lip sits below a bordes-cart rim at ~1.07 m (0.95 rim +
+0.12 deck), so it would clip. Needs the item-3 render + operator confirm.
 
 ### Still open (ask the operator / needs photos — do NOT build)
 1. **3C MF1/MF2**: the LIJN 3C alarm list names Smeltfilter 1 AND Smeltfilter 2.
@@ -98,9 +126,13 @@ sweep, not in passing.
    per head (= 4)? Built as 2 total for now.
 2. **Line 6 (Britas/ABMF band filter)**: it has uittrekschroeven (3-8 rpm sticky
    note) so a discharge exists, but no doc places its cart(s).
-3. The **asymmetric nozzle VISUAL** (rear exits UP, front exits DOWN — poster
-   cross-section above) is still not modelled; both downspouts remain symmetric
-   at local ±1.30/1.13. Model work pending a render + operator confirm.
+3. The **asymmetric nozzle VISUAL** (achter exits HIGHER, voor LOWER — poster
+   cross-section above) is half-done and on the WRONG SIDES: `_m_laser_filter`
+   #234 builds the high screw on local -X and the low one on local +X, but
+   measured 2026-08-03 the +X mouth is the achter/bordes side under the macro
+   yaw (see "Naming cross" above — its low 0.98 m funnel lip would clip a
+   bordes-cart rim at ~1.07 m). The SIM drop points are still symmetric at
+   local ±1.30/1.13. Model work pending a render + operator confirm.
 4. The 07-20 photo doc (`operator_issues_2026-07-20.md`) shows the filter as a
    floor-standing unit OFF the barrel ("not built yet, axis mapping needs
    confirming"). If that rebuild happens, which world side "voor" faces must be

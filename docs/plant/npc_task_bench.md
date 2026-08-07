@@ -25,22 +25,30 @@ Proof: `godot --headless --path . res://src/tests/test_npc_task_bench.tscn`
 ## Lump discharge — TWIN vertical nozzles (operator 2026-07-14 + photos)
 
 The afvoervijzel discharges through a VERTICAL nozzle on BOTH sides of the disc
-— **aisle** (+X, in front of the disc face / HMI side) and **wall** (-X, behind
-it) — each dropping straight down into its own lump cart on the bordes. (The
-earlier single sideways-arm model was operator-corrected.)
+— **achter** (+X channel; in MainWorld this mouth lands over the bordes/raised
+cart) and **voor** (-X channel; ground cart) — each dropping straight down into
+its own lump cart. (The earlier single sideways-arm model was
+operator-corrected. Channel names per the 2026-08-07 naming sweep; the old
+"aisle +X / wall -X" labels were crossed vs plant vocabulary.)
 
 - **Model** (`_m_laser_filter`): per side = corrugated riser beside the disc →
   short top arm → prominent vertical down-spout → funnel mouth at filter-local
   **(±1.30, ~1.13)**, above the cart rim.
-- **Sim** (`LaserFilter.gd`): `eject_local_offset` (+X aisle) + `eject_wall_local`
-  (-X); two bound carts `lump_cart` / `lump_cart_wall`, each by its own catch
-  window (±0.55 / ±0.85 m, re-checked 2 s). Discharge routes to the ACTIVE
-  nozzles (those with a parked cart), split evenly: a single-cart MainWorld line
-  → all to the aisle (**no regression**); the bench's two carts → half each. kg
-  stays on the `receive_lump` path. Two ropes (one per nozzle) grow + break into
-  their cart; settled chunks are absorbed, misses stay as floor litter (cap 16).
-- **Bordes** (`lump_platform` placeable): low steel-grating deck + ramp (~0.12 m)
-  the filter + both carts stand on; the forklift rolls up the ramp to fork a
+- **Sim** (`LaserFilter.gd`): `eject_achter_local` (+X) + `eject_voor_local`
+  (-X); two bound carts `lump_cart_achter` / `lump_cart_voor`, each by its own
+  catch window (±0.55 / ±0.85 m, re-checked 2 s). Discharge routes to the ACTIVE
+  nozzles (those with a parked cart), split evenly: a single-cart line → all to
+  the achter channel (**no regression**); two carts → half each. kg stays on
+  the `receive_lump` path. Two ropes (one per nozzle) grow + break into their
+  cart; settled chunks are absorbed, misses stay as floor litter (cap 16).
+- **BENCH MIRROR**: NpcTaskBench places the filter UNROTATED (the LINE_*_SEQ
+  macros yaw it), so on the bench the +X/achter channel binds the GROUND (voor)
+  cart at `CART_VOOR_X` and the -X/voor channel binds the BORDES cart at
+  `CART_ACHTER_X`. Behaviour identical — each window binds whatever cart is
+  parked in it. See the consts note in `NpcTaskBench.gd`.
+- **Bordes** (`lump_platform` placeable): low steel-grating deck + ramp (~0.12 m).
+  Since the 07-15 asymmetric ruling only the ACHTER cart rides it (the voor cart
+  and the filter stand on the ground); the forklift rolls up the ramp to fork a
   cart out.
 - **Fork-pickability** (#201, this pass): the cart underframe visual is now 3
   rails with TWO genuine OPEN fork channels matching the collision cavities 1:1

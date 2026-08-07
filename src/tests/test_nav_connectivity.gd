@@ -302,7 +302,7 @@ func _test_crew_posts() -> void:
 		% [workers.size(), canteen.x, canteen.y, canteen.z])
 	# Posts outside the site are a CREW defect, not a navmesh one, and conflating
 	# them buries a real bug under a wrong headline. MEASURED: on this fixture
-	# Yassine's post is (-508.0, 406.5) — roughly 340 m outside the fence, with the
+	# Yassine's post is (-508.0, 406.5) — roughly 340 m off-site, with the
 	# canteen route ending 267.91 m short. No navmesh can route to a post that is
 	# not on the site; CrewManager.assign_posts (CrewManager.gd:266-277) falls back
 	# to `pos = w.global_position` when no machine sits in the worker's zone, and

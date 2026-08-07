@@ -145,15 +145,21 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 	# placed one, so the 318-bar trip / wissel / lump sim were dead in macro
 	# worlds). #225.3 — the filter sits 3.5 m out to the side (matches NpcTaskBench
 	# FILTER_SIDE_X) with a lump_platform bordes under it, and a cart under EACH of
-	# the twin afvoerschroef nozzles (LaserFilter.gd eject_local_offset/eject_wall
-	# at filter-local ±1.30): AISLE (+X) at 3.5+1.30 = 4.80, WALL (-X) at 3.5-1.30 =
-	# 2.20. 3.5 out keeps the wall cart clear of the extruder edge (±1.30) so nothing
-	# overlaps the barrel (the old 2.6 filter put the wall nozzle onto the extruder).
+	# the twin afvoerschroef nozzles (LaserFilter.gd eject_achter_local /
+	# eject_voor_local at filter-local ±1.30). Macro coords: ACHTER/bordes cart at
+	# 3.5-1.30 = 2.20, VOOR/ground cart at 3.5+1.30 = 4.80 — under the yaw this
+	# macro gives the filter, its +X (achter) mouth lands over 2.20 and its -X
+	# (voor) mouth over 4.80 (measured 2026-08-03, all four lines; the old comment
+	# called 4.80 the "+X AISLE" cart — labels were crossed, geometry always
+	# right). 3.5 out keeps the 2.20 cart clear of the extruder edge (±1.30) so
+	# nothing overlaps the barrel (the old 2.6 filter put that nozzle onto the
+	# extruder).
 	{"id": "laser_filter",   "x": 3.5, "z": -5.0},
-	# Bordes on the REAR (wall, -X) side only — the rear afvoerschroef discharges
-	# HIGHER so its cart sits on the raised platform (y = deck top 0.12); the FRONT
-	# (aisle, +X, head-filter-access side) cart sits on the GROUND because the front
-	# discharge is lower. Operator 2026-07-15 (see docs/plant/extruder_line_layout.md).
+	# Bordes on the ACHTER side only (macro-x 2.20 — where the filter's +X achter
+	# mouth lands) — the achter afvoerschroef discharges HIGHER so its cart sits on
+	# the raised platform (y = deck top 0.12); the VOOR cart (macro-x 4.80) sits on
+	# the GROUND because the voor discharge is lower. Operator 2026-07-15 (see
+	# docs/plant/extruder_line_layout.md).
 	{"id": "lump_platform",  "x": 2.2, "z": -5.0},
 	{"id": "lump_cart_spot", "x": 2.2, "z": -5.0, "y": 0.12},
 	{"id": "lump_cart",      "x": 2.2, "z": -5.0, "y": 0.12},
@@ -291,9 +297,10 @@ const LINE_3C_SEQ : Array[Dictionary] = [
 	# "at_entry": 23 anchors each piece to the laser filter's own z-centre, so
 	# there is no hand-baked distance to rot when a machine upstream resizes
 	# (stale-constant disease). Geometry mirrors the 3A/3B/1 idiom relative to
-	# the filter (here on the centreline at x=0): wall/ACHTER cart on the
-	# 0.12 m bordes at -1.30, aisle/VOOR cart on the GROUND at +1.30 — the
-	# nozzle drop points, LaserFilter.gd eject_wall_local / eject_local_offset.
+	# the filter (here on the centreline at x=0): ACHTER cart on the 0.12 m
+	# bordes at macro -1.30, VOOR cart on the GROUND at macro +1.30. Under the
+	# macro yaw the filter's +X (eject_achter_local) mouth lands over -1.30 and
+	# its -X (eject_voor_local) mouth over +1.30 (measured 2026-08-03).
 	{"id": "lump_platform",  "x": -1.3, "z": 0.0, "at_entry": 23,
 	 "furniture": true},                                           # 32 bordes
 	{"id": "lump_cart_spot", "x": -1.3, "z": 0.0, "y": 0.12, "at_entry": 23,
@@ -388,15 +395,21 @@ const LINE_3B_SEQ : Array[Dictionary] = [
 	# placed one, so the 318-bar trip / wissel / lump sim were dead in macro
 	# worlds). #225.3 — the filter sits 3.5 m out to the side (matches NpcTaskBench
 	# FILTER_SIDE_X) with a lump_platform bordes under it, and a cart under EACH of
-	# the twin afvoerschroef nozzles (LaserFilter.gd eject_local_offset/eject_wall
-	# at filter-local ±1.30): AISLE (+X) at 3.5+1.30 = 4.80, WALL (-X) at 3.5-1.30 =
-	# 2.20. 3.5 out keeps the wall cart clear of the extruder edge (±1.30) so nothing
-	# overlaps the barrel (the old 2.6 filter put the wall nozzle onto the extruder).
+	# the twin afvoerschroef nozzles (LaserFilter.gd eject_achter_local /
+	# eject_voor_local at filter-local ±1.30). Macro coords: ACHTER/bordes cart at
+	# 3.5-1.30 = 2.20, VOOR/ground cart at 3.5+1.30 = 4.80 — under the yaw this
+	# macro gives the filter, its +X (achter) mouth lands over 2.20 and its -X
+	# (voor) mouth over 4.80 (measured 2026-08-03, all four lines; the old comment
+	# called 4.80 the "+X AISLE" cart — labels were crossed, geometry always
+	# right). 3.5 out keeps the 2.20 cart clear of the extruder edge (±1.30) so
+	# nothing overlaps the barrel (the old 2.6 filter put that nozzle onto the
+	# extruder).
 	{"id": "laser_filter",   "x": 3.5, "z": -5.0},
-	# Bordes on the REAR (wall, -X) side only — the rear afvoerschroef discharges
-	# HIGHER so its cart sits on the raised platform (y = deck top 0.12); the FRONT
-	# (aisle, +X, head-filter-access side) cart sits on the GROUND because the front
-	# discharge is lower. Operator 2026-07-15 (see docs/plant/extruder_line_layout.md).
+	# Bordes on the ACHTER side only (macro-x 2.20 — where the filter's +X achter
+	# mouth lands) — the achter afvoerschroef discharges HIGHER so its cart sits on
+	# the raised platform (y = deck top 0.12); the VOOR cart (macro-x 4.80) sits on
+	# the GROUND because the voor discharge is lower. Operator 2026-07-15 (see
+	# docs/plant/extruder_line_layout.md).
 	{"id": "lump_platform",  "x": 2.2, "z": -5.0},
 	{"id": "lump_cart_spot", "x": 2.2, "z": -5.0, "y": 0.12},
 	{"id": "lump_cart",      "x": 2.2, "z": -5.0, "y": 0.12},
@@ -480,15 +493,21 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	# placed one, so the 318-bar trip / wissel / lump sim were dead in macro
 	# worlds). #225.3 — the filter sits 3.5 m out to the side (matches NpcTaskBench
 	# FILTER_SIDE_X) with a lump_platform bordes under it, and a cart under EACH of
-	# the twin afvoerschroef nozzles (LaserFilter.gd eject_local_offset/eject_wall
-	# at filter-local ±1.30): AISLE (+X) at 3.5+1.30 = 4.80, WALL (-X) at 3.5-1.30 =
-	# 2.20. 3.5 out keeps the wall cart clear of the extruder edge (±1.30) so nothing
-	# overlaps the barrel (the old 2.6 filter put the wall nozzle onto the extruder).
+	# the twin afvoerschroef nozzles (LaserFilter.gd eject_achter_local /
+	# eject_voor_local at filter-local ±1.30). Macro coords: ACHTER/bordes cart at
+	# 3.5-1.30 = 2.20, VOOR/ground cart at 3.5+1.30 = 4.80 — under the yaw this
+	# macro gives the filter, its +X (achter) mouth lands over 2.20 and its -X
+	# (voor) mouth over 4.80 (measured 2026-08-03, all four lines; the old comment
+	# called 4.80 the "+X AISLE" cart — labels were crossed, geometry always
+	# right). 3.5 out keeps the 2.20 cart clear of the extruder edge (±1.30) so
+	# nothing overlaps the barrel (the old 2.6 filter put that nozzle onto the
+	# extruder).
 	{"id": "laser_filter",   "x": 3.5, "z": -5.0},
-	# Bordes on the REAR (wall, -X) side only — the rear afvoerschroef discharges
-	# HIGHER so its cart sits on the raised platform (y = deck top 0.12); the FRONT
-	# (aisle, +X, head-filter-access side) cart sits on the GROUND because the front
-	# discharge is lower. Operator 2026-07-15 (see docs/plant/extruder_line_layout.md).
+	# Bordes on the ACHTER side only (macro-x 2.20 — where the filter's +X achter
+	# mouth lands) — the achter afvoerschroef discharges HIGHER so its cart sits on
+	# the raised platform (y = deck top 0.12); the VOOR cart (macro-x 4.80) sits on
+	# the GROUND because the voor discharge is lower. Operator 2026-07-15 (see
+	# docs/plant/extruder_line_layout.md).
 	{"id": "lump_platform",  "x": 2.2, "z": -5.0},
 	{"id": "lump_cart_spot", "x": 2.2, "z": -5.0, "y": 0.12},
 	{"id": "lump_cart",      "x": 2.2, "z": -5.0, "y": 0.12},

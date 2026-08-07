@@ -15,9 +15,11 @@ extends "res://src/scenes/world/GauntletWorld.gd"
 ## and the CrewPanel (C / Numpad-.) for manual role + task assignment.
 ##
 ## The lump discharge is LIVE: each standalone laser_filter runs LaserFilter.gd
-## — TWO vertical afvoervijzel nozzles (aisle +X / wall -X) drop rope chunks
-## into the cart parked under each, on the bordes. Proven headless by
+## — TWO vertical afvoervijzel nozzles (achter +X / voor -X channels) drop rope
+## chunks into the cart parked under each. Proven headless by
 ## src/tests/test_npc_task_bench.gd (chunks land in carts, never on extruder).
+## NB: this bench places the filter UNROTATED — see the BENCH MIRROR note at
+## the cart consts below.
 
 const NPCScript      = preload("res://src/scenes/world/NPC.gd")
 const HumanoidScript = preload("res://src/scenes/world/Humanoid.gd")
@@ -45,15 +47,22 @@ const CHAIN_GAP_M : float = 1.0
 # from center vs the +2.5 m footprint edge → +3.9 m puts the washer under it.
 const CHAIN_POST_CLEAR : Dictionary = {"shredder_1": 3.9}
 const CHAIN_Z_START : float = -22.0
-# Twin discharge: vertical nozzles at filter-local ±1.30 (aisle +X / wall -X),
-# a cart under each (LaserFilter.eject_local_offset / eject_wall_local).
-# The extruder is 2.6 m wide (±1.3) × 14 m long — so the filter sits 3.5 m out
-# to the side, which puts the WALL nozzle at 3.5-1.30 = 2.2 (clear of the
-# extruder edge at 1.3) and the AISLE nozzle at 4.8. Both clear.
+# Twin discharge: vertical nozzles at filter-local ±1.30, a cart under each
+# (LaserFilter.eject_achter_local +X / eject_voor_local -X). The extruder is
+# 2.6 m wide (±1.3) × 14 m long — so the filter sits 3.5 m out to the side,
+# which puts the -X mouth at 3.5-1.30 = 2.2 (clear of the extruder edge at
+# 1.3) and the +X mouth at 4.8. Both clear.
+# BENCH MIRROR (naming sweep 2026-08-07): _place() applies NO rotation, while
+# every LINE_*_SEQ macro yaws the filter so its +X (achter) mouth lands over
+# the bordes cart. Here the pairing is therefore mirrored: the +X/achter
+# channel (lump_cart_achter) binds the bench's GROUND (voor) cart at 4.8, and
+# the -X/voor channel binds the BORDES (achter) cart at 2.2. Behaviour is
+# unaffected — each catch window binds whatever cart is parked in it. Rotating
+# the bench filter to match production is a separate, purely visual fix.
 const NOZZLE_DX     : float = 1.30   # eject offset from filter centre (both sides)
 const FILTER_SIDE_X : float = 3.5
-const CART_AISLE_X  : float = FILTER_SIDE_X + NOZZLE_DX   # 4.8 — aisle (+X) cart
-const CART_WALL_X   : float = FILTER_SIDE_X - NOZZLE_DX   # 2.2 — wall  (-X) cart
+const CART_VOOR_X   : float = FILTER_SIDE_X + NOZZLE_DX   # 4.8 — VOOR/ground cart (under the +X mouth: bench mirror)
+const CART_ACHTER_X : float = FILTER_SIDE_X - NOZZLE_DX   # 2.2 — ACHTER/bordes cart (under the -X mouth: bench mirror)
 const PLATFORM_Y    : float = 0.12   # bordes deck top — filter + carts stand on it
 
 var _rig_root : Node3D = null
@@ -196,14 +205,16 @@ func _build_rig() -> void:
 		_place(String(EXTRUDER_IDS[li]), Vector3(lx, 0.0, ex_z))
 		# standalone LIVE laserfilter, twin nozzles ±X. ASYMMETRIC heights per the
 		# operator 2026-07-15 ruling (docs/plant/extruder_line_layout.md, re-confirmed
-		# 2026-08-03): the bordes sits on the WALL (-X, achter) side only and carries
-		# that cart at PLATFORM_Y; the AISLE (+X, voor) cart stands on the GROUND.
-		# The bench previously had filter + both carts all at PLATFORM_Y — the
-		# superseded 07-14 symmetric generation — so its greens proved the wrong
-		# geometry (stale-constant disease). This now mirrors the LINE_*_SEQ macros.
+		# 2026-08-03): the bordes carries the ACHTER cart at PLATFORM_Y on the 2.2
+		# side; the VOOR cart stands on the GROUND at 4.8. The bench previously had
+		# filter + both carts all at PLATFORM_Y — the superseded 07-14 symmetric
+		# generation — so its greens proved the wrong geometry (stale-constant
+		# disease). World arrangement matches the LINE_*_SEQ macros; the filter
+		# itself is UNROTATED here, so channel↔cart is mirrored vs MainWorld (see
+		# the BENCH MIRROR note at the consts).
 		var lf_z : float = ex_z + 3.5
 		var lf_x : float = lx + FILTER_SIDE_X
-		_place("lump_platform", Vector3(lx + CART_WALL_X, 0.0, lf_z))
+		_place("lump_platform", Vector3(lx + CART_ACHTER_X, 0.0, lf_z))
 		var lf : Node3D = _place("laser_filter", Vector3(lf_x, 0.0, lf_z))
 		# BENCH DEMO FEED — no ExtruderMachine sim brains in bench v1, so nothing
 		# would drive feed_throughput and the discharge would sit dead. Feed the
@@ -212,12 +223,13 @@ func _build_rig() -> void:
 			lf.call("set_feed_throughput", 450.0)
 		# TWO lump carts per extruder (operator spec 2026-07-14, heights corrected to
 		# the 07-15 asymmetric ruling, re-confirmed 2026-08-03): one under EACH
-		# vertical nozzle — aisle/VOOR (+X, in front of the disc face) on the GROUND,
-		# wall/ACHTER (-X, behind it) on the bordes — with a yellow spot under each.
-		_place("lump_cart_spot", Vector3(lx + CART_AISLE_X, 0.0, lf_z))
-		_place("lump_cart",      Vector3(lx + CART_AISLE_X, 0.0, lf_z))
-		_place("lump_cart_spot", Vector3(lx + CART_WALL_X,  PLATFORM_Y, lf_z))
-		_place("lump_cart",      Vector3(lx + CART_WALL_X,  PLATFORM_Y, lf_z))
+		# vertical nozzle — VOOR on the GROUND at CART_VOOR_X (under the +X mouth:
+		# bench mirror), ACHTER on the bordes at CART_ACHTER_X (under the -X
+		# mouth) — with a yellow spot under each.
+		_place("lump_cart_spot", Vector3(lx + CART_VOOR_X, 0.0, lf_z))
+		_place("lump_cart",      Vector3(lx + CART_VOOR_X, 0.0, lf_z))
+		_place("lump_cart_spot", Vector3(lx + CART_ACHTER_X,  PLATFORM_Y, lf_z))
+		_place("lump_cart",      Vector3(lx + CART_ACHTER_X,  PLATFORM_Y, lf_z))
 
 	# ── housekeeping bait (the NpcAutonomyBoard group scan finds these) ──
 	_place("waste_container", Vector3(-18.0, 0.0, 30.0))

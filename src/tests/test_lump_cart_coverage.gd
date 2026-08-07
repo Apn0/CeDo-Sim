@@ -9,18 +9,18 @@ extends Node3D
 ## 31/31 while moving 0.00 kg), places ALL FOUR extruder line macros
 ## (line_1 / line_3a / line_3b / line_3c), and asserts for EVERY laser filter:
 ##
-##   A. BINDING    LaserFilter's own runtime rebind (the 2 s catch-window scan,
-##                 LaserFilter.gd:270-286) resolved BOTH nozzle carts — aisle
-##                 (+X, voor) AND wall (-X, achter) — to two DISTINCT carts.
+##   A. BINDING    LaserFilter's own runtime rebind (the 2 s catch-window scan
+##                 in _physics_process) resolved BOTH nozzle carts — achter
+##                 (+X, bordes) AND voor (-X, ground) — to two DISTINCT carts.
 ##                 This is the sim's real credit path, not a geometry re-check.
 ##   B. WINDOWS    each bound cart really is inside its nozzle's catch window
-##                 (|dx| <= 0.55, |dz| <= 0.85 of eject_global()/_wall()) —
-##                 printed with measured dx/dz so a drift shows numbers.
+##                 (|dx| <= 0.55, |dz| <= 0.85 of eject_global_achter()/_voor())
+##                 — printed with measured dx/dz so a drift shows numbers.
 ##   C. HEIGHTS    the asymmetric 07-15 ruling: one cart rides the 0.12 m
-##                 bordes, the other stands on the ground. Measured: the bordes
-##                 side is the one LaserFilter's lump_cart ("aisle") ref binds
-##                 (the code's local labels are crossed vs plant vocabulary —
-##                 see the note at check C).
+##                 bordes, the other stands on the ground. Measured 2026-08-03:
+##                 the bordes side is the one the +X (lump_cart_achter) ref
+##                 binds, on all four lines — which is what the 2026-08-07
+##                 naming sweep renamed the refs after (see the note at check C).
 ##   D. BORDES     a lump_platform sits under the raised cart (XZ within 1.0 m).
 ##
 ## NON-VACUITY, stated up front: exactly 4 laser filters and exactly 8 lump
@@ -142,45 +142,44 @@ func _check_coverage() -> void:
 	for f in filters:
 		var lf := f as Node3D
 		var tag : String = String(lf.get_meta("macro_id")) if lf.has_meta("macro_id") else lf.name
-		var aisle : Node = lf.get("lump_cart")
-		var wall  : Node = lf.get("lump_cart_wall")
-		print("  note  : %s filter pos %s rot_y %.3f | eject_aisle %s | eject_wall %s | cart_aisle %s | cart_wall %s"
+		var achter : Node = lf.get("lump_cart_achter")
+		var voor   : Node = lf.get("lump_cart_voor")
+		print("  note  : %s filter pos %s rot_y %.3f | eject_achter %s | eject_voor %s | cart_achter %s | cart_voor %s"
 			% [tag, str(lf.global_position.snappedf(0.01)), lf.rotation.y,
-			   str((lf.call("eject_global") as Vector3).snappedf(0.01)),
-			   str((lf.call("eject_global_wall") as Vector3).snappedf(0.01)),
-			   str((aisle as Node3D).global_position.snappedf(0.01)) if aisle != null else "<none>",
-			   str((wall as Node3D).global_position.snappedf(0.01)) if wall != null else "<none>"])
+			   str((lf.call("eject_global_achter") as Vector3).snappedf(0.01)),
+			   str((lf.call("eject_global_voor") as Vector3).snappedf(0.01)),
+			   str((achter as Node3D).global_position.snappedf(0.01)) if achter != null else "<none>",
+			   str((voor as Node3D).global_position.snappedf(0.01)) if voor != null else "<none>"])
 		# A — the sim's own binding resolved both nozzles, to two different carts.
-		_ok(aisle != null and is_instance_valid(aisle),
-			"%s: VOOR (aisle +X) nozzle has a bound cart" % tag)
-		_ok(wall != null and is_instance_valid(wall),
-			"%s: ACHTER (wall -X) nozzle has a bound cart" % tag)
-		if aisle == null or wall == null:
+		_ok(achter != null and is_instance_valid(achter),
+			"%s: ACHTER (+X, bordes) nozzle has a bound cart" % tag)
+		_ok(voor != null and is_instance_valid(voor),
+			"%s: VOOR (-X, ground) nozzle has a bound cart" % tag)
+		if achter == null or voor == null:
 			continue
-		_ok(aisle != wall, "%s: the two nozzles bound two DISTINCT carts" % tag)
+		_ok(achter != voor, "%s: the two nozzles bound two DISTINCT carts" % tag)
 		# B — measured window residuals.
-		var ea : Vector3 = lf.call("eject_global")
-		var ew : Vector3 = lf.call("eject_global_wall")
-		var pa : Vector3 = (aisle as Node3D).global_position
-		var pw : Vector3 = (wall as Node3D).global_position
+		var ea : Vector3 = lf.call("eject_global_achter")
+		var ev : Vector3 = lf.call("eject_global_voor")
+		var pa : Vector3 = (achter as Node3D).global_position
+		var pv : Vector3 = (voor as Node3D).global_position
 		_ok(absf(pa.x - ea.x) <= CATCH_DX and absf(pa.z - ea.z) <= CATCH_DZ,
-			"%s: voor cart inside its catch window (dx %.2f <= %.2f, dz %.2f <= %.2f)"
-				% [tag, absf(pa.x - ea.x), CATCH_DX, absf(pa.z - ea.z), CATCH_DZ])
-		_ok(absf(pw.x - ew.x) <= CATCH_DX and absf(pw.z - ew.z) <= CATCH_DZ,
 			"%s: achter cart inside its catch window (dx %.2f <= %.2f, dz %.2f <= %.2f)"
-				% [tag, absf(pw.x - ew.x), CATCH_DX, absf(pw.z - ew.z), CATCH_DZ])
+				% [tag, absf(pa.x - ea.x), CATCH_DX, absf(pa.z - ea.z), CATCH_DZ])
+		_ok(absf(pv.x - ev.x) <= CATCH_DX and absf(pv.z - ev.z) <= CATCH_DZ,
+			"%s: voor cart inside its catch window (dx %.2f <= %.2f, dz %.2f <= %.2f)"
+				% [tag, absf(pv.x - ev.x), CATCH_DX, absf(pv.z - ev.z), CATCH_DZ])
 		# C — asymmetric heights: ONE cart on the 0.12 m bordes, the other on the
 		# ground (operator 2026-07-15, re-confirmed 2026-08-03). MEASURED
-		# 2026-08-03: under the macro rotation, the nozzle LaserFilter.gd NAMES
-		# "aisle/+X/front-of-disc" physically lands on the barrel/bordes side on
-		# ALL FOUR lines — i.e. the code's local labels are CROSSED relative to
-		# plant vocabulary (the bordes side is the plant's ACHTERZIJDE per
-		# docs/plant/extruder_line_layout.md:37-51). The PHYSICAL arrangement is
-		# the operator-approved one; the label cleanup is flagged in the docs.
-		# So: the lump_cart-ref ("aisle") cart must be the RAISED one.
-		_ok(pa.y - pw.y >= MIN_HEIGHT_SPLIT,
-			"%s: bordes-side cart (lump_cart ref) rides above the ground-side cart (%.3f - %.3f = %.3f >= %.2f)"
-				% [tag, pa.y, pw.y, pa.y - pw.y, MIN_HEIGHT_SPLIT])
+		# 2026-08-03: under the macro yaw, the +X nozzle physically lands on the
+		# bordes side on ALL FOUR lines — the plant's ACHTERZIJDE per
+		# docs/plant/extruder_line_layout.md:37-51. The 2026-08-07 naming sweep
+		# renamed the refs to match (the +X ref was called "aisle"/lump_cart and
+		# claimed the voor side — crossed labels, correct geometry).
+		# So: the lump_cart_achter cart must be the RAISED one.
+		_ok(pa.y - pv.y >= MIN_HEIGHT_SPLIT,
+			"%s: bordes-side cart (lump_cart_achter ref) rides above the ground-side cart (%.3f - %.3f = %.3f >= %.2f)"
+				% [tag, pa.y, pv.y, pa.y - pv.y, MIN_HEIGHT_SPLIT])
 		# D — a bordes actually under the raised cart.
 		var near_platform := false
 		for p in platforms:
@@ -273,8 +272,10 @@ func _check_shell_clearance() -> void:
 	for f in get_tree().get_nodes_in_group("laser_filter"):
 		var lf := f as Node3D
 		var tag : String = String(lf.get_meta("macro_id", "")) if lf.has_meta("macro_id") else lf.name
-		for side in [["voor", lf.call("eject_global") as Vector3],
-				["achter", lf.call("eject_global_wall") as Vector3]]:
+		# Side labels fixed in the 2026-08-07 naming sweep: +X = achter (bordes),
+		# -X = voor (the old pairing here was crossed).
+		for side in [["achter", lf.call("eject_global_achter") as Vector3],
+				["voor", lf.call("eject_global_voor") as Vector3]]:
 			var eject : Vector3 = side[1]
 			var spawn := Vector3(eject.x, eject.y - 1.13 + 0.12 + 0.475, eject.z)
 			var shape := BoxShape3D.new()

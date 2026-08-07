@@ -2478,23 +2478,31 @@ static func _m_laser_filter(p: Node3D, size: Vector3, color: Color, ghost: bool)
 	# #225.2 docs->code: TWIN afvoervijzel discharge (operator 2026-07-14 + photos
 	# machines/laserfilter_lump_cart_discharge.jpg, _lumbs_cart.jpg).
 	# A VERTICAL discharge nozzle drops into a lump cart on BOTH sides of the disc:
-	# aisle (+X, in front of the disc face / HMI side) and wall (-X, behind it).
+	# achter (+X — under the macro yaw this mouth lands over the bordes/raised
+	# cart in MainWorld) and voor (-X — ground cart). Naming sweep 2026-08-07;
+	# the old labels called +X "aisle" and -X "wall", crossed vs plant vocabulary.
 	# Each side augers UP a corrugated riser beside the disc, ACROSS a short top
 	# arm, then DOWN a prominent vertical corrugated spout to a funnel mouth whose
 	# lip (~1.13 m) clears the cart rim — so the rope drops straight down IN the
-	# bucket, never on the housing or extruder. Mirrors LaserFilter.eject_local_
-	# offset (+X, 1.30, 1.13) and eject_wall_local (-X, -1.30, 1.13) — keep in sync.
+	# bucket, never on the housing or extruder. Mirrors LaserFilter.
+	# eject_achter_local (+X, 1.30, 1.13) and eject_voor_local (-X, -1.30, 1.13)
+	# — keep in sync.
 	var lf_disch_r   : float = size.x * 0.13
 	var lf_mouth_x   : float = 1.30                   # cart centre (= eject offset X)
 	# #234 afvoerschroef (operator 2026-07-15 + 3A "De Laserfilter" poster): a HORIZONTAL
 	# uitvoerschroef (discharge screw in a corrugated tube) runs out from the disc to over
 	# the cart, then a small (~8 cm dia) VERTICAL tube drops the lump DOWN into the cart.
-	# ASYMMETRIC: the REAR (wall, -X) screw is HIGHER (its cart is on the raised bordes);
-	# the FRONT (aisle, +X) screw is LOWER (its cart is on the ground).
-	for lf_s in [1.0, -1.0]:                           # +X aisle (front, low), -X wall (rear, high)
-		var is_rear : bool = lf_s < 0.0
-		var screw_y  : float = 1.36 if is_rear else 1.10   # horizontal uitvoerschroef height
-		var tube_bot : float = 1.14 if is_rear else 0.98   # drop-tube bottom, over the cart rim
+	# ASYMMETRIC as BUILT: the -X screw is HIGHER, the +X screw is LOWER — but
+	# measured 2026-08-03 the +X mouth is the ACHTER/bordes (raised-cart) side in
+	# MainWorld, so these visual heights sit on the WRONG sides under the macro
+	# yaw (the LOW +X funnel lip at 0.98 m is even below a bordes-cart rim at
+	# ~0.95+0.12 m). Geometry fix pending an operator render + confirm — see
+	# extruder_line_layout.md "Still open" item 3. Naming sweep 2026-08-07
+	# relabels only; heights deliberately untouched.
+	for lf_s in [1.0, -1.0]:                           # +X achter mouth (built LOW — crossed, see above), -X voor mouth (built HIGH)
+		var is_high_side : bool = lf_s < 0.0
+		var screw_y  : float = 1.36 if is_high_side else 1.10   # horizontal uitvoerschroef height
+		var tube_bot : float = 1.14 if is_high_side else 0.98   # drop-tube bottom, over the cart rim
 		var disc_x : float = lf_s * size.x * 0.34          # screw inlet at the disc face
 		var mx     : float = lf_s * lf_mouth_x             # cart centre
 		var screw_len : float = absf(mx - disc_x)

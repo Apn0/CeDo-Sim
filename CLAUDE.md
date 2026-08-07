@@ -27,18 +27,33 @@ was wrong and would fail on the first command.
 
 ## What the harness actually proves
 
-**The harness does not currently pass. `run.sh` ends `== done (exit 1) ==`.**
+`tools/regression/run.sh` runs **22 suites**. Since the perimeter-fence
+deletion (operator order 2026-08-07) it ends `== done (exit 1) ==`:
+`test_jam_baseline`'s jam1 leg now wedges **10.0 s (budget 3.0) on the parked
+`VolvoV40Placeholder` in the staff parking lot** — the fence used to wall that
+lot off the yard→plant bearing, and the pilot dead-reckons (route planning
+already returns NO ROUTE because the target is inside the building — a
+pre-existing gap). Measured with an intersect_shape probe at the recorded wedge
+point (-115.26, -8.60, 138.19). The fix direction (pilot evade vs outdoor road
+routing vs re-baselining the leg) is an operator decision — do not silently
+re-tune the budget. Every other suite is green.
+Last full run 2026-08-07, after the fix below; `test_l3c_unit_screens` alone is
+`Result: 120 ok, 0 fail, 0 skip` and takes minutes, not hours.
 
-`tools/regression/run.sh` runs **22 suites**. 21 pass. `test_l3c_unit_screens`
-**hangs forever** — it boots a full MainWorld and never returns, so it never
-reaches its own `get_tree().quit()` at `src/tests/test_l3c_unit_screens.gd:554`.
-Measured 2026-08-03: **8 h 56 m** with no further output, ~12 % CPU, the log
-frozen after `[HOTSPOT] ready — F7 to toggle`. Kill that Godot process and the
-harness resumes and finishes the remaining suites normally.
-
-Pre-existing, and unrelated to audio: it reproduces identically with the
-pristine 43-entry `audio_layout.json` swapped in. The suite arrived in `1b29087`;
-the branch has been red since.
+**History — the `1b29087` "hang" (red 2026-08-02 → fixed 2026-08-07).** The
+suite never looped: `src/data/plant/l3c_unit_screens.gd` was committed with raw
+newlines where `\n` escapes were intended (the L3C.6
+`"ontgrendel\ndeurmaalmolen"` card title, plus a doc comment broken across
+column 0), so the file **never parsed**. `test_l3c_unit_screens.gd:77`'s
+`preload` of it failed, the whole test script failed to compile, the scene
+booted **with no script attached**, and headless Godot idled forever with
+nothing to ever call `get_tree().quit()`. The tell was at the TOP of the log —
+`SCRIPT ERROR: Parse Error: Could not preload resource script` — printed before
+the autoload chatter everyone stared at the tail of. The same parse failure
+also silently broke every in-game L3C unit-screen tile (`L3CUnitScreen.gd:80`
+preloads the same spec). Lesson: a headless suite that "hangs" right after boot
+prints but before its own header has usually **failed to attach its script** —
+read the head of the log for parse errors before profiling the tail.
 
 Two consequences you must not repeat:
 
@@ -49,9 +64,9 @@ Two consequences you must not repeat:
   harness total. Quoting it as the harness result is how this hang stayed
   invisible. Both mistakes were made in this repo on 2026-08-03.
 
-Killing the hung run leaves residue: `test_l3c_unit_screens` backs up its
+Killing a mid-run suite leaves residue: `test_l3c_unit_screens` backs up its
 `TOUCHED` `user://` files **in memory only** and restores them in `_finish()`, so
-a kill loses the backups. Verified afterwards that `world_layout.json` survived
+a kill loses the backups. Verified 2026-08-03 that `world_layout.json` survived
 intact; `world_layout_consumed.flag` was left behind but no production code reads
 it — only tests do.
 
@@ -62,7 +77,7 @@ things this file used to claim were "proven" are among the skips:
 
 | claimed proof | reality |
 |---|---|
-| machines inside the building, fence 0-crossing, TL bars, round-trip | genuinely checked |
+| machines inside the building, TL bars, round-trip | genuinely checked (the fence 0-crossing check died with the fence — deleted per operator order 2026-08-03) |
 | **doors on walls** | **SKIPPED** — `no structure_items (doors) in world_layout` (`src/tests/regression_world_save.gd:204`) |
 | **macro-corruption guard** | **SKIPPED** — `no operator macros present` (`regression_world_save.gd:575`) |
 | top-down PNG | emitted to `tools/regression/out/topdown.png`, but the step is **non-gating** (`\|\| true`) |
