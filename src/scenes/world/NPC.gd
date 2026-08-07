@@ -988,6 +988,8 @@ const _AUTONOMY_TASK_LABELS_NL : Dictionary = {
 	"empty_lump_cart":   "lumpskar legen",
 	"overflow_dump":     "container legen",
 	"refuel_blower":     "bladblazer tanken",
+	"fix_storing":       "storing verhelpen",
+	"kwitteren_storing": "storing kwitteren (HMI)",
 }
 
 ## Short human-readable status for the HUD crew roster.

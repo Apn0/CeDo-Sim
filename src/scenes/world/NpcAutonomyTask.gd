@@ -18,8 +18,10 @@ class_name NpcAutonomyTask
 #
 # Roles match NPC_DATA[npc_id].role: shift_leader / asst_shift_leader /
 # extruder_op / all_rounder / permanent_feeder / production_manager /
-# transitional. Tasks declare which roles can do them (an empty array =
-# anyone). The board never offers a task to an NPC whose role doesn't match.
+# transitional / storing_fixen. Tasks declare which roles can do them (an
+# empty array = anyone). The board never offers a task to an NPC whose role
+# doesn't match, nor to excluded_npc (the kwitteren rule: the storing fixer
+# may not acknowledge their own fix).
 
 # ── Task identity (subclass sets these) ─────────────────────────────────────
 var task_name    : String = "task"
@@ -32,6 +34,12 @@ var priority     : int    = 0           # higher = more urgent
 var base_priority : int   = 0
 var target_node  : Node3D = null        # where the NPC is heading
 var accept_roles : PackedStringArray = PackedStringArray()   # empty = any role
+# Operator 2026-08-07 (storing fixen): seconds the worker STAYS assigned after
+# completion before the board frees them for the next task. 0 = release at
+# once, so every pre-existing task keeps its old behaviour.
+var linger_s     : float = 0.0
+# The one NPC this task must never be offered to (kwitteren: not the fixer).
+var excluded_npc : Node = null
 
 # ── Task lifecycle state ────────────────────────────────────────────────────
 var _claimed_by : Node = null   # the NPC who took this task

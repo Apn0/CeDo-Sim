@@ -42,49 +42,121 @@ var _open_tasks : Dictionary = {}   # int -> NpcAutonomyTask
 # Active tasks (claimed by an NPC). Cleared on done/failed.
 var _active : Dictionary = {}       # int -> NpcAutonomyTask, key = npc instance id
 
+# ── Storing fixen (operator 2026-08-07) ──────────────────────────────────────
+# Active storingen, key "<machine_id>/<alarm_id>" -> {machine_id, alarm_id,
+# severity, pos}. Fed by EventBus machine_alarm_raised/cleared plus the
+# board-side INV-101 feed-starvation monitor below (the HmiOverlay version of
+# that check only runs while the overlay is open — the operator's "no bale at
+# feeder belt with nobody assigned" case must not depend on an open UI).
+var _storing_alarms : Dictionary = {}
+# Storing-fixen dispatch weight: score = priority − distance × this. Priorities
+# span ~28-90 and the site ~200 m, so 0.15/m lets ~30 m of extra walking beat
+# one severity point but never outweigh a big priority gap.
+const STORING_DIST_COST_PER_M : float = 0.15
+const STORING_ROLE : String = "storing_fixen"
+# INV-101 mirror of HmiOverlay's derived fault: feed enabled + fed_mass
+# stagnant longer than this. Same 3 s the overlay uses.
+const NO_FEED_ALARM_S : float = 3.0
+var _last_fed_mass : float = -1.0
+var _no_feed_t : float = 0.0
+# npc-ack registry: alarm codes acknowledged by a storing-fixen worker at an
+# HMI panel (KwitterenStoringTask). HmiOverlay ORs these into its own
+# KWITTEREN state so the bell calms; codes drop out when their fault clears.
+var _npc_acked : Dictionary = {}
+# Post-completion linger (task.linger_s): npc instance id -> wall-s first seen
+# done. While lingering the worker stays in _active and gets NO new task.
+var _done_seen : Dictionary = {}
+
 var _scan_t : float = 0.0
 
 func _ready() -> void:
 	set_process(true)
+	var bus := get_node_or_null("/root/EventBus")
+	if bus != null:
+		if bus.has_signal("machine_alarm_raised"):
+			bus.connect("machine_alarm_raised", _on_machine_alarm_raised)
+		if bus.has_signal("machine_alarm_cleared"):
+			bus.connect("machine_alarm_cleared", _on_machine_alarm_cleared)
 
 func _process(delta: float) -> void:
 	_scan_t += delta
 	if _scan_t >= SCAN_INTERVAL_S:
 		_scan_t = 0.0
 		_rescan()
-	# Cull completed/failed active tasks.
+	_tick_feed_starvation_monitor(delta)
+	# Cull completed/failed active tasks — honouring the per-task linger:
+	# a task with linger_s keeps its worker in _active (unavailable to
+	# take_next_task) for linger_s seconds after completion.
+	var now : float = Time.get_ticks_msec() / 1000.0
 	for npc_id in _active.keys():
 		var t : NpcAutonomyTask = _active[npc_id]
-		if t == null or t.is_done():
+		if t == null:
 			_active.erase(npc_id)
+			_done_seen.erase(npc_id)
+		elif t.is_done():
+			if t.linger_s > 0.0:
+				if not _done_seen.has(npc_id):
+					_done_seen[npc_id] = now
+				elif now - float(_done_seen[npc_id]) >= t.linger_s:
+					_active.erase(npc_id)
+					_done_seen.erase(npc_id)
+			else:
+				_active.erase(npc_id)
+				_done_seen.erase(npc_id)
 
-## Idle NPC asks for work. Returns the highest-priority compatible task, or null.
+## Idle NPC asks for work. Returns the highest-priority compatible task, or
+## null. Storing-fixen workers (operator 2026-08-07) pick by BOTH variables —
+## closest + most important — via a combined score; every other role keeps the
+## original pure-priority pick so the bench-proven assignment order stands.
 func take_next_task(npc: Node) -> NpcAutonomyTask:
 	if npc == null:
 		return null
 	if _active.has(npc.get_instance_id()):
+		var cur : NpcAutonomyTask = _active[npc.get_instance_id()]
+		if cur != null and cur.is_done():
+			# Post-completion linger: the worker is still bound to the finished
+			# task for its linger_s — no new task until _process releases them.
+			return null
 		# Already on a task — don't hand out another one.
-		return _active[npc.get_instance_id()]
+		return cur
 	var role : String = _role_of(npc)
+	var storing_picker : bool = (role == STORING_ROLE)
+	var npc_pos : Vector3 = (npc as Node3D).global_position if npc is Node3D else Vector3.ZERO
 	var best : NpcAutonomyTask = null
-	var best_pri : int = -1
+	var best_score : float = -INF
 	for tid in _open_tasks.keys():
 		var t : NpcAutonomyTask = _open_tasks[tid]
 		if t == null or t.is_done():
 			continue
 		if t._claimed_by != null and is_instance_valid(t._claimed_by):
 			continue
+		if t.excluded_npc != null and is_instance_valid(t.excluded_npc) and t.excluded_npc == npc:
+			continue
 		if t.accept_roles.size() > 0 and role != "" and not (role in t.accept_roles):
 			continue
 		if not t.can_start(npc):
 			continue
-		if t.priority > best_pri:
-			best_pri = t.priority
+		var score : float = float(t.priority)
+		if storing_picker:
+			score -= _task_distance_m(t, npc_pos) * STORING_DIST_COST_PER_M
+		if score > best_score:
+			best_score = score
 			best = t
 	if best != null:
 		best.start(npc)
 		_active[npc.get_instance_id()] = best
 	return best
+
+## Distance from an NPC to a task's work site, for the storing-fixen combined
+## score. Prefers the live target node; falls back to the storing task's own
+## stored position; 0 when neither exists (pure-priority behaviour).
+func _task_distance_m(t: NpcAutonomyTask, from_pos: Vector3) -> float:
+	if t.target_node != null and is_instance_valid(t.target_node):
+		return (t.target_node.global_position - from_pos).length()
+	var p = t.get("target_pos")
+	if p is Vector3:
+		return ((p as Vector3) - from_pos).length()
+	return 0.0
 
 ## Forced release — NPC gives up (e.g. shift bell). Frees the task so another
 ## NPC can pick it up on the next scan.
@@ -231,6 +303,8 @@ func _rescan() -> void:
 	_scan_dirty_floor(tree, seen)
 	_scan_floor_piles(tree, seen)
 	_scan_overflow_containers(tree, seen)
+	# Generator 6 — storingen (operator 2026-08-07, storing_fixen role).
+	_scan_storing_alarms(seen)
 	# Prune entries whose target has gone away.
 	for tid in _open_tasks.keys():
 		if not seen.has(tid):
@@ -247,6 +321,11 @@ func _rescan() -> void:
 		if ot == null or ot.is_done():
 			continue
 		if ot._claimed_by != null and is_instance_valid(ot._claimed_by):
+			continue
+		# Storing tasks are exempt from the CLEANING modifier — the −50
+		# line-problem penalty exists to park housekeeping during a fault,
+		# and the storing task IS the fault response.
+		if ot.task_name == "fix_storing" or ot.task_name == "kwitteren_storing":
 			continue
 		ot.priority = ot.base_priority + pri_mod
 
@@ -758,3 +837,145 @@ func _blower_fuel_fraction(b: Node) -> float:
 	if cap > 0.0:
 		return clampf(lvl / cap, 0.0, 1.0)
 	return 1.0
+
+# =============================================================================
+# Storing fixen (operator 2026-08-07) — alarm registry, generator, ack registry
+# =============================================================================
+
+func _on_machine_alarm_raised(machine_id: String, alarm_id: String, severity: int) -> void:
+	var key := "%s/%s" % [machine_id, alarm_id]
+	if _storing_alarms.has(key):
+		return
+	_storing_alarms[key] = {
+		"machine_id": machine_id, "alarm_id": alarm_id,
+		"severity": severity, "pos": _station_pos(machine_id),
+	}
+	print("[NpcAutonomyBoard] storing raised: %s (sev %d)" % [key, severity])
+
+func _on_machine_alarm_cleared(machine_id: String, alarm_id: String) -> void:
+	var key := "%s/%s" % [machine_id, alarm_id]
+	if _storing_alarms.has(key):
+		print("[NpcAutonomyBoard] storing cleared: %s" % key)
+	_storing_alarms.erase(key)
+	# The fault is gone — its npc-ack is spent (mirrors HmiOverlay dropping
+	# rows whose condition ended).
+	_npc_acked.erase(alarm_id)
+
+## True while the storing behind `key` is still active — FixStoringTask's
+## completion condition.
+func storing_active(key: String) -> bool:
+	return _storing_alarms.has(key)
+
+## KwitterenStoringTask reached the HMI: record the ack. HmiOverlay ORs this
+## into its own KWITTEREN state (bell amber-steady instead of red-flashing).
+func mark_npc_acked(alarm_id: String) -> void:
+	_npc_acked[alarm_id] = true
+
+func npc_acked(alarm_id: String) -> bool:
+	return _npc_acked.has(alarm_id)
+
+## FixStoringTask completed: emit the acknowledge task for a DIFFERENT storing
+## worker (operator rule — the fixer may not kwitteren their own fix).
+func on_storing_fixed(key: String, fixer: Node) -> void:
+	var entry : Dictionary = _storing_alarms.get(key, {})
+	var aid : String = String(entry.get("alarm_id", key.get_slice("/", 1)))
+	var panel : Node3D = _nearest_hmi_panel(fixer)
+	var ppos : Vector3 = panel.global_position if panel != null \
+		else ((fixer as Node3D).global_position if fixer is Node3D else Vector3.ZERO)
+	var t := KwitterenStoringTask.new(key, aid, panel, ppos, fixer, self)
+	_open_tasks[("kwit:" + key).hash()] = t
+
+## The CrewManager (joined group "crew_manager") — machine positions + the
+## relief hook route through it.
+func crew_manager() -> Node:
+	var tree := get_tree()
+	if tree == null:
+		return null
+	return tree.get_first_node_in_group("crew_manager")
+
+func _station_pos(machine_id: String) -> Vector3:
+	var cm := crew_manager()
+	if cm != null and cm.has_method("_machine_list"):
+		for m in cm.call("_machine_list"):
+			if String(m.get("id", "")) == machine_id:
+				return m.get("pos", Vector3.ZERO)
+	# Fallback: a placed_object whose placeable_id matches.
+	var tree := get_tree()
+	if tree != null:
+		for po in tree.get_nodes_in_group("placed_object"):
+			if po is Node3D and String(po.get_meta("placeable_id", "")) == machine_id:
+				return (po as Node3D).global_position
+	return Vector3.ZERO
+
+func _nearest_hmi_panel(ref: Node) -> Node3D:
+	var tree := get_tree()
+	if tree == null:
+		return null
+	var from : Vector3 = (ref as Node3D).global_position if ref is Node3D else Vector3.ZERO
+	var best : Node3D = null
+	var best_d : float = INF
+	for po in tree.get_nodes_in_group("placed_object"):
+		if not (po is Node3D):
+			continue
+		var pid := String(po.get_meta("placeable_id", ""))
+		if pid != "hmi_panel" and pid != "hmi_wall" and not pid.begins_with("hmi_"):
+			continue
+		var d : float = ((po as Node3D).global_position - from).length()
+		if d < best_d:
+			best_d = d
+			best = po as Node3D
+	return best
+
+## Generator 6 — one FixStoringTask per active storing. Keyed by the alarm key
+## hash (storing targets are positions, not always live nodes, so the usual
+## target-instance-id key does not apply).
+func _scan_storing_alarms(seen: Dictionary) -> void:
+	for key in _storing_alarms.keys():
+		var e : Dictionary = _storing_alarms[key]
+		var tid : int = ("storing:" + String(key)).hash()
+		seen[tid] = true
+		if _open_tasks.has(tid):
+			continue
+		var pos : Vector3 = e.get("pos", Vector3.ZERO)
+		if pos == Vector3.ZERO:
+			pos = _station_pos(String(e.get("machine_id", "")))
+			e["pos"] = pos
+		var t := FixStoringTask.new(String(key), String(e.get("machine_id", "")),
+			String(e.get("alarm_id", "")), int(e.get("severity", 1)), pos, null, self)
+		_open_tasks[tid] = t
+	# Keep open kwitteren tasks alive across prunes (they are keyed off-node too).
+	for tid2 in _open_tasks.keys():
+		var t2 : NpcAutonomyTask = _open_tasks[tid2]
+		if t2 != null and t2.task_name == "kwitteren_storing" and not t2.is_done():
+			seen[tid2] = true
+
+## INV-101 mirror — the operator's own example ("no bale at feeder belt").
+## HmiOverlay derives this fault only while the overlay is OPEN; the board
+## watches the live LineFlow continuously so a storing worker responds even
+## with every UI closed. Raise/clear through the same registry as EventBus
+## alarms so fix + kwitteren behave identically.
+func _tick_feed_starvation_monitor(delta: float) -> void:
+	var cm := crew_manager()
+	if cm == null:
+		return
+	var lf : Node = cm.get("line_flow")
+	if lf == null or not is_instance_valid(lf):
+		return
+	var enabled : bool = bool(lf.get("feed_enabled"))
+	var fed : float = float(lf.get("fed_mass"))
+	var key := "invoer/INV-101"
+	if not enabled:
+		_no_feed_t = 0.0
+		_last_fed_mass = fed
+		if _storing_alarms.has(key):
+			_on_machine_alarm_cleared("invoer", "INV-101")
+		return
+	if fed > _last_fed_mass + 0.001:
+		_no_feed_t = 0.0
+		_last_fed_mass = fed
+		if _storing_alarms.has(key):
+			_on_machine_alarm_cleared("invoer", "INV-101")
+		return
+	_no_feed_t += delta
+	if _no_feed_t >= NO_FEED_ALARM_S and not _storing_alarms.has(key):
+		_on_machine_alarm_raised("invoer", "INV-101", 2)
