@@ -168,10 +168,8 @@ const SCREENS : Dictionary = {
 	#           Loopbewaking, while the other four cards on that screen have it
 	#    L3C.11 Peddelwals 9,10    — Gewenst [Loopbewaking], Reeel [Frequentie, Stroom]
 	#    L3C.19 has no Loopbewaking row at all; the string occurs 0 times in the file
-	#    L3C.6  card two is "ontgrendel
-deurmaalmolen" with an EMBEDDED NEWLINE.
-	#           The single-space form does not occur in the file. Keep the 
-.
+	#    L3C.6  card two is "ontgrendel\ndeurmaalmolen" with an EMBEDDED NEWLINE.
+	#           The single-space form does not occur in the file. Keep the \n.
 	# =====================================================================
 
 	"L3C.1": {
@@ -312,8 +310,7 @@ deurmaalmolen" with an EMBEDDED NEWLINE.
 			{"title": "Maalmolen",
 				"gewenst": ["Loopbewaking"],
 				"reeel": ["Stroom"]},
-			{"title": "ontgrendel
-deurmaalmolen",
+			{"title": "ontgrendel\ndeurmaalmolen",
 				"gewenst": [],
 				"reeel": []},
 		],
