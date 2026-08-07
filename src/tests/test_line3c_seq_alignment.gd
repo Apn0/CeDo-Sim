@@ -44,9 +44,44 @@ func _ready() -> void:
 	# NON-VACUITY: 0 == 0 would satisfy every check below.
 	_ok(stages.size() > 0 and seq.size() > 0,
 		"both tables are non-empty (%d SEQ entries / %d stages)" % [seq.size(), stages.size()])
-	_ok(seq.size() == stages.size(),
-		"LINE_3C_SEQ.size() %d == Line3CDef.stage_count() %d"
+	# #lump-3c — the SEQ is the STAGES spine plus an APPEND-ONLY furniture tail
+	# (laserfilter carts/bordes, operator ruling 2026-08-03). The spine part must
+	# still match STAGES index-for-index; the tail must be furniture-tagged and
+	# sit entirely PAST the spine so no macro_index → l3c_code address shifts.
+	_ok(seq.size() >= stages.size(),
+		"LINE_3C_SEQ.size() %d >= Line3CDef.stage_count() %d (spine + furniture tail)"
 			% [seq.size(), Line3CDefScript.stage_count()])
+	var tail_bad : Array = []
+	var tail_ids : Dictionary = {}
+	const FURNITURE_IDS := ["lump_platform", "lump_cart", "lump_cart_spot"]
+	for ti in range(stages.size(), seq.size()):
+		var te : Dictionary = seq[ti]
+		var tid := String(te.get("id", ""))
+		tail_ids[tid] = int(tail_ids.get(tid, 0)) + 1
+		if not bool(te.get("furniture", false)):
+			tail_bad.append("idx %d '%s' not furniture-tagged" % [ti, tid])
+		if not FURNITURE_IDS.has(tid):
+			tail_bad.append("idx %d '%s' is not a sanctioned furniture id" % [ti, tid])
+		var anchor : int = int(te.get("at_entry", -1))
+		if anchor < 0 or anchor >= stages.size() \
+				or String((seq[anchor] as Dictionary).get("id", "")) != "laser_filter":
+			tail_bad.append("idx %d anchors at_entry=%d which is not the laser_filter" % [ti, anchor])
+	_ok(tail_bad.is_empty(),
+		"every tail entry is sanctioned, furniture-tagged, laser_filter-anchored (%d bad: %s)"
+			% [tail_bad.size(), str(tail_bad)])
+	# The operator ruling itself: TWO carts (voor + achter), each on a spot,
+	# one bordes. A tail that drifts from 2 carts is a red, not a shrug.
+	_ok(int(tail_ids.get("lump_cart", 0)) == 2 and int(tail_ids.get("lump_cart_spot", 0)) == 2
+			and int(tail_ids.get("lump_platform", 0)) == 1,
+		"furniture tail is exactly 2 carts + 2 spots + 1 bordes (got %s)" % [str(tail_ids)])
+	# And no machine row may hide in the spine wearing the furniture tag —
+	# that would silently unmap its l3c address.
+	var spine_furniture : Array = []
+	for si in range(0, mini(seq.size(), stages.size())):
+		if bool((seq[si] as Dictionary).get("furniture", false)):
+			spine_furniture.append(si)
+	_ok(spine_furniture.is_empty(),
+		"no spine entry is furniture-tagged (%d are: %s)" % [spine_furniture.size(), str(spine_furniture)])
 
 	var id_mismatch : Array = []
 	var code_mismatch : Array = []
