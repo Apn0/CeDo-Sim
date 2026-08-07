@@ -10,7 +10,8 @@ extends Node
 #   read them as player_spawn-relative offsets and applied R(world_yaw) + anchor.
 #   Every vehicle therefore spawned ~228 m from its own marker — forklift #1 was
 #   drawn at (-211.21, 86.05) and materialised at (-0.6, 199.8), out in the field
-#   north-east of the plant, on the far side of the perimeter fence.
+#   north-east of the plant, well outside the site apron (the perimeter
+#   fence that used to stand between was deleted 2026-08-03).
 #
 # WHY THE EXISTING CHECKS COULD NOT SEE IT:
 #   regression_world_save.gd:455 asserts "all vehicles finite + within 500 m of

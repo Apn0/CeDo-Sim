@@ -22,13 +22,13 @@ extends RefCounted
 class_name NavSiteBounds
 
 ## Padding beyond the outermost real geometry. Enough that a vehicle rounding the
-## far side of the fence still has grid under it.
+## far side of the site still has grid under it.
 const PAD_M : float = 20.0
 ## A source whose footprint exceeds this is the containment slab, not the site.
 ## The building itself measures ~151 x 72 m, so 1000 m rejects only the slab.
 const MAX_SANE_SPAN_M : float = 1000.0
 
-## XZ extent of the real plant: building shell, exterior apron, perimeter fence
+## XZ extent of the real plant: building shell, exterior apron
 ## and everything BuildMode has placed. Returns an AABB with Y spanning the
 ## bodies found. Empty (size == ZERO) when the world has no recognisable
 ## geometry — callers must treat that as "do not proceed", never as "everything".
@@ -58,7 +58,7 @@ static func _sources(world: Node) -> Array[Node3D]:
 	var tree := world.get_tree()
 	if tree == null:
 		return out
-	for g in ["placed_object", "fence_post", "fence_panel"]:
+	for g in ["placed_object"]:
 		for n in tree.get_nodes_in_group(g):
 			if n is StaticBody3D and is_instance_valid(n):
 				out.append(n as Node3D)
@@ -67,18 +67,8 @@ static func _sources(world: Node) -> Array[Node3D]:
 		var n := world.find_child(nm, true, false)
 		if n is Node3D:
 			out.append(n as Node3D)
-	# The fence spawns its posts/panels as plain StaticBody3Ds under PerimeterFence_*
-	# run nodes parented straight onto MainWorld (ExteriorManager.gd:195-208).
-	for c in world.get_children():
-		if c.name.begins_with("PerimeterFence_"):
-			_collect_static(c, out)
 	return out
 
-static func _collect_static(n: Node, out: Array[Node3D]) -> void:
-	if n is StaticBody3D:
-		out.append(n as Node3D)
-	for c in n.get_children():
-		_collect_static(c, out)
 
 ## World-space AABB of a node's collision shapes, falling back to its visual mesh.
 ## Collision is preferred: it is what a vehicle can actually hit. PUBLIC because

@@ -102,8 +102,6 @@ const PEN_VEHICLE : float = 0.10
 # Machine / belt / wall / shell. The plant mutation below reads ~1.0, so this
 # floor sits 5x below the signal it exists to catch.
 const PEN_SOLID : float = 0.20
-# Fence posts/panels are thin; past this a hull is through the fence line.
-const PEN_FENCE : float = 0.15
 
 # Bodies parked on layer 20 with mask 0 are QUERY-ONLY proxies (ShiftCarSpawner
 # .gd:177-178). They are reported but never scored: nothing can physically
@@ -406,8 +404,6 @@ func _classify(n: Node) -> String:
 		if cur.has_meta("placeable_id") or cur.is_in_group("placed_object"):
 			return "machine"
 		var nm : String = String(cur.name)
-		if nm.begins_with("PerimeterFence") or nm.begins_with("ChainLinkFence"):
-			return "fence"
 		if nm == "TempFloor" or nm.begins_with("ExteriorGround") or nm.begins_with("GroundQuad") \
 				or nm.begins_with("YardPad"):
 			return "ground"
@@ -489,7 +485,6 @@ func _check_a_vehicle_overlap() -> void:
 	var bad_vehicle : int = 0
 	var bad_shipped : int = 0
 	var bad_synth   : int = 0
-	var bad_fence   : int = 0
 	var probed      : int = 0
 	var proxies     : int = 0
 	var worst_solid : float = 0.0
@@ -556,8 +551,6 @@ func _check_a_vehicle_overlap() -> void:
 							if pen > worst_solid:
 								worst_solid = pen
 								worst_desc = "%s in %s" % [v.name, (col as Node).name]
-					elif kind == "fence" and pen > PEN_FENCE:
-						verdict = "BAD-FENCE"; bad_fence += 1
 					lines.append("      %-11s %-12s pen %5.1f %%   %-9s %s" % [
 						kind, verdict, pen * 100.0, "TESTLINE" if synth else "shipped",
 						(col as Node).get_path()])
@@ -575,7 +568,7 @@ func _check_a_vehicle_overlap() -> void:
 	_check(bad_shipped == 0,
 		"NO vehicle hull is embedded in SHIPPED-SAVE machine/belt/wall/shell (%d, worst %.0f %%: %s)"
 			% [bad_shipped, worst_solid * 100.0, worst_desc])
-	_check(bad_fence == 0, "NO vehicle hull is driven through a fence (%d overlap(s))" % bad_fence)
+	# (fence overlap check removed 2026-08-03 — the perimeter fence was deleted.)
 	# Separate gate, separate meaning: the synthetic line_3a is anchored at
 	# bf(4,22) by THIS FILE. A hit here says the operator's vehicle markers sit
 	# on top of where line_3a gets built — a real collision the moment he builds

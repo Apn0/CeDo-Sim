@@ -5,7 +5,7 @@ class_name ExteriorManager
 # =============================================================================
 # #192 follow-up — Exterior layout extracted from MainWorld.gd.
 # =============================================================================
-# Owns the road extensions / perimeter fence / sidewalk + crosswalk + road
+# Owns the road extensions / sidewalk + crosswalk + road
 # markings / trees / power poles / transformer / neighbour buildings around
 # the plant. MainWorld instantiates one of these as a child node and calls
 # build_exterior(anchor, ground_y) exactly once during world setup; the
@@ -31,9 +31,8 @@ const ROAD_INTERNAL_AISLE  : Array = [Vector3(-77.9, 0.0,  19.5), Vector3(-97.2,
 
 # Perimeter fence runs: NW long side, NE end, half of the SE side — the
 # south stays open for the bale lot and the access road.
-const FENCE_NORTH      : Array = [Vector3(  7.1, 0.0, -105.1), Vector3(-124.7, 0.0,  52.0)]
-const FENCE_EAST       : Array = [Vector3( 99.0, 0.0,  -27.9), Vector3(   7.1, 0.0, -105.1)]
-const FENCE_SOUTH_EAST : Array = [Vector3( 99.0, 0.0,  -27.9), Vector3(  41.1, 0.0,  41.0)]
+# (Perimeter fence DELETED per operator order 2026-08-03 — it caused vehicle
+# jams, see test_jam_baseline.gd / VehiclePilot.gd history. No fence runs exist.)
 
 # Gate barrier at the south plant entry.
 const GATE_OFFSET : Vector3 = Vector3(0.0, 0.0, 25.0)
@@ -97,7 +96,6 @@ const NEIGHBOR_NW : Dictionary = {
 # Preload the exterior placeable scripts once so each build call doesn't pay
 # the load cost again. The paths are stable; if any move, fix here.
 const _ROAD_SCRIPT        := preload("res://src/scenes/world/Road.gd")
-const _FENCE_SCRIPT       := preload("res://src/scenes/world/exterior/ChainLinkFence.gd")
 const _GATE_SCRIPT        := preload("res://src/scenes/world/exterior/GateBarrier.gd")
 const _SIDEWALK_SCRIPT    := preload("res://src/scenes/world/exterior/Sidewalk.gd")
 const _CROSSWALK_SCRIPT   := preload("res://src/scenes/world/exterior/Crosswalk.gd")
@@ -119,7 +117,6 @@ func build_exterior(anchor: Vector3, ground_y: float) -> void:
 	if _world == null:
 		_world = get_parent()
 	_spawn_road_extensions(anchor, ground_y)
-	_spawn_perimeter_fence(anchor, ground_y)
 	_spawn_exterior_props(anchor, ground_y)
 
 # ── Helpers that defer to MainWorld's canonical yaw / bo math ───────────────
@@ -187,37 +184,9 @@ func _spawn_road_extensions(anchor: Vector3, ground_y: float) -> void:
 	print("[ExteriorManager] Road extensions: %d extra segments (south ext / east service / north access / plant aisle)" \
 		% segments.size())
 
-# ── Perimeter fence + south entry gate ──────────────────────────────────────
-func _spawn_perimeter_fence(anchor: Vector3, ground_y: float) -> void:
-	var ga := Vector3(anchor.x, ground_y, anchor.z)
-	var _by : float = _world_yaw()
-	var perimeters : Array = [
-		{"name": "PerimeterFence_North",     "pts": FENCE_NORTH},
-		{"name": "PerimeterFence_East",      "pts": FENCE_EAST},
-		{"name": "PerimeterFence_SouthEast", "pts": FENCE_SOUTH_EAST},
-	]
-	for p in perimeters:
-		var f = _FENCE_SCRIPT.new()
-		f.name = p["name"]
-		# setup() must come BEFORE add_child so _ready() sees populated waypoints.
-		# #199 — each endpoint Y is sampled from the actual ground at its XZ, so
-		# a fence that crosses a dip (woods) follows the terrain instead of
-		# floating at the plant-floor plane.
-		var pts : Array = p["pts"]
-		f.setup([_bo_grounded(ga, pts[0]), _bo_grounded(ga, pts[1])])
-		_world.add_child(f)
-	# Per operator: no automatic boom barrier at the plant entry. The real
-	# CeDo gate is a manual roller, not an auto-boom; the barrier here was
-	# scaffolding from before that requirement was clear, and it ended up
-	# stuck closed forever because no gate-logic was ever wired (the comment
-	# at this site read "set_open(true) when gate logic wires up", which
-	# never happened). Removing it also unblocks fence-line vaulting along
-	# the entry stretch where the gate's collision footprint overlapped.
-	#
-	# If a manual entry placeable is later wanted, drop a `gate_roller` from
-	# the build catalog instead — that one is operator-spec'd and toggles
-	# correctly.
-	print("[ExteriorManager] Perimeter fence: %d runs (entry gate intentionally not spawned)" % perimeters.size())
+# ── (Perimeter fence removed — operator order 2026-08-03. The entry-gate note
+# that lived here still holds: the real CeDo gate is a manual roller; if an
+# entry placeable is ever wanted, use the operator-spec'd `gate_roller`.) ─────
 
 # ── Sidewalk, crosswalk, markings, trees, power line, transformer, neighbors ─
 func _spawn_exterior_props(anchor: Vector3, ground_y: float) -> void:

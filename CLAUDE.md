@@ -27,7 +27,16 @@ was wrong and would fail on the first command.
 
 ## What the harness actually proves
 
-`tools/regression/run.sh` runs **22 suites** and ends `== done (exit 0) ==`.
+`tools/regression/run.sh` runs **22 suites**. Since the perimeter-fence
+deletion (operator order 2026-08-07) it ends `== done (exit 1) ==`:
+`test_jam_baseline`'s jam1 leg now wedges **10.0 s (budget 3.0) on the parked
+`VolvoV40Placeholder` in the staff parking lot** — the fence used to wall that
+lot off the yard→plant bearing, and the pilot dead-reckons (route planning
+already returns NO ROUTE because the target is inside the building — a
+pre-existing gap). Measured with an intersect_shape probe at the recorded wedge
+point (-115.26, -8.60, 138.19). The fix direction (pilot evade vs outdoor road
+routing vs re-baselining the leg) is an operator decision — do not silently
+re-tune the budget. Every other suite is green.
 Last full run 2026-08-07, after the fix below; `test_l3c_unit_screens` alone is
 `Result: 120 ok, 0 fail, 0 skip` and takes minutes, not hours.
 
@@ -68,7 +77,7 @@ things this file used to claim were "proven" are among the skips:
 
 | claimed proof | reality |
 |---|---|
-| machines inside the building, fence 0-crossing, TL bars, round-trip | genuinely checked |
+| machines inside the building, TL bars, round-trip | genuinely checked (the fence 0-crossing check died with the fence — deleted per operator order 2026-08-03) |
 | **doors on walls** | **SKIPPED** — `no structure_items (doors) in world_layout` (`src/tests/regression_world_save.gd:204`) |
 | **macro-corruption guard** | **SKIPPED** — `no operator macros present` (`regression_world_save.gd:575`) |
 | top-down PNG | emitted to `tools/regression/out/topdown.png`, but the step is **non-gating** (`\|\| true`) |
