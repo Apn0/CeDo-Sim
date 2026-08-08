@@ -49,8 +49,15 @@ func _initialize() -> void:
 	# ── 3. Carve ONE door opening at the centre of the wall ──────────────────
 	# Opening centre at (0, DOOR_H*0.5, 0) so the door sits on the floor.
 	# Size = (1.2 m, 2.4 m, 2 m depth). rot_y = 0 (wall is on XY plane).
-	wo.add_opening("test_door", Vector3(0.0, DOOR_H * 0.5, 0.0),
+	# add_opening now pre-checks overlap and returns false (no-op, no rebuild)
+	# for a box that touches no shell geometry — this door sits dead-centre of
+	# the synthetic wall, so it must return true or the no-op guard itself is
+	# broken.
+	var cut_ok : bool = wo.add_opening("test_door", Vector3(0.0, DOOR_H * 0.5, 0.0),
 		Vector3(DOOR_W, DOOR_H, 2.0), 0.0)
+	if not cut_ok:
+		print("RESULT FAIL: add_opening returned false for a door centred on the wall")
+		quit(2); return
 	wo.rebuild()
 
 	# ── 4. Extract the resulting mesh and count boundary edges ────────────────
@@ -157,9 +164,38 @@ func _initialize() -> void:
 		print("  example off-plane verts:")
 		for ex in visible_teeth_examples:
 			print("    %s" % str(ex))
-	if visible_teeth == 0:
-		print("  PASS — no off-plane bumps; opening is visually clean")
-		quit(0)
-	else:
+	if visible_teeth > 0:
 		print("  FAIL — %d off-plane vertices = real teeth" % visible_teeth)
 		quit(1)
+		return
+	print("  PASS — no off-plane bumps; opening is visually clean")
+
+	# ── 5. NO-OP GUARD (2026-08-08) — a box nowhere near the wall must be
+	# refused, not silently registered as a permanent (expensive) opening.
+	# MUTATION-PROVEN: an operator placed door_personnel 5-8 m from any wall
+	# 41 times; each call still ran a full O(shell_triangles) rebuild before
+	# this guard existed. Reproduced here at 90 m from the test wall.
+	print("==== NO-OP GUARD TEST ====")
+	var before_verts : int = (arr_mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
+	var floating_ok : bool = wo.add_opening("floating_door", Vector3(100.0, DOOR_H * 0.5, 0.0),
+		Vector3(DOOR_W, DOOR_H, 2.0), 0.0)
+	if floating_ok:
+		print("  FAIL — add_opening('floating_door') returned true 90 m from any wall")
+		quit(3)
+		return
+	print("  ok    : add_opening returned false for a box with no nearby wall")
+	var after_mesh : ArrayMesh = shell_mi.mesh as ArrayMesh
+	var after_verts : int = (after_mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
+	if after_verts != before_verts:
+		print("  FAIL — shell mesh changed (%d -> %d verts) even though the opening was refused"
+			% [before_verts, after_verts])
+		quit(4)
+		return
+	print("  ok    : shell mesh unchanged (%d verts) — no rebuild ran for the refused opening" % after_verts)
+	if wo.has_opening("floating_door"):
+		print("  FAIL — 'floating_door' was registered despite being refused")
+		quit(5)
+		return
+	print("  ok    : 'floating_door' was NOT registered")
+	print("  PASS — no-op guard rejects a floating box without touching the mesh")
+	quit(0)

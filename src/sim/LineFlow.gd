@@ -184,6 +184,20 @@ var _waste_containers_cache : Array = []
 # over potentially thousands of RigidBody3D yard bales. Cache once per tick to
 # match the floor_pile / waste_container pattern above.
 var _bales_cache : Array = []
+# Perf 2026-08-08 — deliverable-only subset of _bales_cache (has
+# material_origin, is delivered, not carried), rebuilt once per tick. The
+# "bale" group holds EVERY bale in the world including yard stock — measured
+# with the operator's own yards: 460+407+314 = 1181 RigidBody3D bales sitting
+# in 3 yards, none of them ever deliverable. The feed loop below used to call
+# _bale_at() once per intake head PER TICK, and _bale_at scanned the FULL
+# group doing 2 has_meta() checks per bale before it could reject a yard bale
+# — with ~20 heads across 4 lines that's ~20 * 1181 = ~23,600 meta lookups
+# every single frame, 60x/s. Measured CPU-BOUND proc=333-491ms / fps=1-4 in
+# the operator's own [PERF] log matches this order of magnitude exactly.
+# Filtering ONCE per tick turns O(heads * total_bales) into
+# O(total_bales) + O(heads * deliverable_bales), and deliverable_bales is
+# normally a handful (the bales actually sitting at feed points), not 1181.
+var _deliverable_bales_cache : Array = []
 
 # ── #52 advanced-systems wiring state ─────────────────────────────────────────
 # The AirNetwork is a plant-wide autoload, so its compressors are registered ONCE
@@ -1909,10 +1923,21 @@ func tick(delta: float) -> void:
 		_floor_piles_cache = tree.get_nodes_in_group("floor_pile")
 		_waste_containers_cache = tree.get_nodes_in_group("waste_container")
 		_bales_cache = tree.get_nodes_in_group("bale")
+		_deliverable_bales_cache.clear()
+		for c in _bales_cache:
+			var cn := c as Node3D
+			if cn == null or not cn.has_meta("material_origin"):
+				continue
+			if not (cn.has_meta("delivered") and bool(cn.get_meta("delivered"))):
+				continue
+			if cn.has_meta("carried") and bool(cn.get_meta("carried")):
+				continue
+			_deliverable_bales_cache.append(cn)
 	else:
 		_floor_piles_cache.clear()
 		_waste_containers_cache.clear()
 		_bales_cache.clear()
+		_deliverable_bales_cache.clear()
 
 	# 0) PLC powers the line up DOWNSTREAM-FIRST; each powered machine then ramps
 	#    its rotor over SPIN_UP_S. The live spin (0..1) gates how fast it conveys,
@@ -2002,7 +2027,11 @@ func tick(delta: float) -> void:
 	#    (legacy behaviour — preserves the test rigs that just plopped a bale on a
 	#    machine).
 	if feed_enabled:
-		var bales := _bales_cache
+		# Perf 2026-08-08 — pre-filtered (deliverable-only) cache; see the
+		# declaration comment on _deliverable_bales_cache. _bale_at's own
+		# has_meta checks stay in place as a cheap defensive re-check, but
+		# now run over a handful of candidates instead of every yard bale.
+		var bales := _deliverable_bales_cache
 		for i in _nodes.size():
 			var nd: Dictionary = _nodes[i]
 			if String(nd["role"]) == "sink" or _has_incoming(i):
