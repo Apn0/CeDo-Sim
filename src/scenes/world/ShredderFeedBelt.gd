@@ -870,6 +870,17 @@ func _process(delta: float) -> void:
 	var i := _riders.size() - 1
 	while i >= 0:
 		var r : Dictionary = _riders[i]
+		# A rider's bale can be freed EXTERNALLY mid-ride (clamp grab, wire cut,
+		# despawn). Fetch UNTYPED first: `var n : Node3D = r["node"]` on a freed
+		# instance throws "Trying to assign invalid previously freed instance"
+		# BEFORE any is_instance_valid guard can run — measured 2026-08-07 in
+		# the operator's save1 world, where the error repeated every frame
+		# (frozen game, 54-error spam). A dead rider is dropped, not replayed.
+		var rider_raw = r.get("node")
+		if rider_raw == null or not is_instance_valid(rider_raw):
+			_riders.remove_at(i)
+			i -= 1
+			continue
 		if r["feeding"]:
 			# At the top: transfer mass into the throat, but only while there's
 			# room (running). This is the portioned drop.
@@ -967,9 +978,12 @@ func _tick_feeding_rules(delta: float) -> void:
 
 ## Position a rider bale along the path from its progress (0..1).
 func _place_rider(r: Dictionary) -> void:
-	var node : Node3D = r["node"]
-	if node == null or not is_instance_valid(node):
+	# Untyped fetch first — a typed declaration on a freed instance throws
+	# before the guard below could ever run (see the rider-loop note above).
+	var node_raw = r.get("node")
+	if node_raw == null or not is_instance_valid(node_raw):
 		return
+	var node : Node3D = node_raw
 	var dist : float = r["progress"] * _path_total
 	var pos : Vector3
 	if dist <= deck_length:

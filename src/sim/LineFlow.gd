@@ -234,7 +234,10 @@ func _build_ui() -> void:
 	_label.anchor_left = 1.0
 	_label.anchor_right = 1.0
 	_label.offset_left = -320.0
-	_label.offset_top = 70.0
+	# Below the ScadaDashboard cockpit panel (its offset_bottom is 320 —
+	# ScadaDashboard.gd:216). At 70 this label sat INSIDE that panel and the
+	# two texts interleaved unreadably (operator screenshot 2026-08-07).
+	_label.offset_top = 328.0
 	_label.offset_right = -12.0
 	_label.add_theme_font_size_override("font_size", 13)
 	_label.add_theme_color_override("font_color", Color(0.8, 1.0, 0.85))

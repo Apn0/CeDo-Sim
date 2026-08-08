@@ -32,7 +32,12 @@ const DEFAULTS_GRAPHICS := {
 	"shadow_distance":  150.0,            # metres
 	"volumetric_fog":   true,             # on by default — distance haze at 500m so far silos read crisp
 	"ssao":             true,
-	"sdfgi":            true,             # real-time global illumination (fills shadow/back faces)
+	# PERF default flip 2026-08-08 (operator: avg 7 FPS, wants >=35): SDFGI is
+	# the single most expensive effect in the stack — measured profile was
+	# 250 ms frames at only 531 draws / 112k prims, the classic SDFGI
+	# signature. OFF by default; the graphics menu can re-enable it on
+	# machines that can afford it. (An existing saved pref still wins.)
+	"sdfgi":            false,            # real-time global illumination (fills shadow/back faces)
 	"brightness":       1.0,              # 0.5 – 1.5
 	"fov":              75.0,             # 60 – 110 degrees
 }
@@ -492,7 +497,7 @@ func _apply_environment_settings() -> void:
 	var env := _find_active_environment()
 	if env:
 		env.ssao_enabled           = bool(_current_graphics.get("ssao", true))
-		env.sdfgi_enabled          = bool(_current_graphics.get("sdfgi", true))
+		env.sdfgi_enabled          = bool(_current_graphics.get("sdfgi", false))
 		# Default OFF — a stale save without this key was falling back to true and
 		# adding grey haze over everything.
 		env.volumetric_fog_enabled = bool(_current_graphics.get("volumetric_fog", false))

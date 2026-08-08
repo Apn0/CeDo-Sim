@@ -33,7 +33,9 @@ func _ready() -> void:
 	_label.add_theme_color_override("font_color", Color(0.55, 1.0, 0.55))
 	_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
 	_label.add_theme_constant_override("outline_size", 5)
-	_label.position = Vector2(10, 96)   # below the time pill / crew panel
+	# Below the HUD crew roster panel (offset_bottom 300, HUD.gd:352). At y=96
+	# the perf text sat ON the roster (operator screenshot 2026-08-07).
+	_label.position = Vector2(10, 308)
 	add_child(_label)
 	set_process(true)
 	print("[PERF] overlay ready — F3 toggles it; snapshot logged every %.0fs" % LOG_INTERVAL_S)
