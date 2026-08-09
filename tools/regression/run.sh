@@ -191,7 +191,7 @@ fi
 # instead of the 0.00 A it read before, that sum(amps_nominal) == 488.49 A, and
 # that the mass ledger still balances now that stamping also swaps in the
 # ProcessModel transfer coefficients and switches on the dryer pair controller.
-for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_l3c_unit_screens; do
+for t in test_qa_spec test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_l3c_unit_screens; do
 	echo "== $t =="
 	"$GODOT" --headless --path "$PROJ" "res://src/tests/$t.tscn" > "$OUT/$t.log" 2>&1
 	grep -E "^  (ok|FAIL)|Result|RESULT" "$OUT/$t.log" || true
