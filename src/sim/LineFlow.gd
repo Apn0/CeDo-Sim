@@ -197,7 +197,12 @@ var _bales_cache : Array = []
 # Filtering ONCE per tick turns O(heads * total_bales) into
 # O(total_bales) + O(heads * deliverable_bales), and deliverable_bales is
 # normally a handful (the bales actually sitting at feed points), not 1181.
-var _deliverable_bales_cache : Array = []
+# MUST be Array[Node]: _bale_at(pos, bales: Array[Node]) rejects a plain Array
+# at RUNTIME ("does not have the same element type") — an untyped declaration
+# here made every feed-loop call throw and return null in a real MainWorld
+# boot (caught by the windowed HMI proof run 2026-08-09; the headless feeder
+# bench never passed this cache in, so it stayed green — bench-greens rule).
+var _deliverable_bales_cache : Array[Node] = []
 
 # ── #52 advanced-systems wiring state ─────────────────────────────────────────
 # The AirNetwork is a plant-wide autoload, so its compressors are registered ONCE
