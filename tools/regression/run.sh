@@ -260,5 +260,17 @@ if ! grep -q "PASS —" "$OUT/door_carve.log"; then
 	[ $code -eq 0 ] && code=1
 fi
 
+# HmiWebOverlay (task #2): the WebView itself can't exist headless, so this
+# covers everything Godot owns around it — Index-derived nav order, the
+# unknown-screen refusal, and gather_vals()' LineFlow -> shell payload
+# (calibrated amps per plant code, 4-state line pill, estop fault flag).
+echo "== hmi web overlay (nav + vals logic) =="
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_hmi_web.gd --quit-after 300 > "$OUT/hmi_web.log" 2>&1
+grep -E "^  ok|RESULT FAIL|PASS —" "$OUT/hmi_web.log" || true
+if ! grep -q "PASS —" "$OUT/hmi_web.log"; then
+	echo "FAIL  : hmi web overlay (see $OUT/hmi_web.log)"
+	[ $code -eq 0 ] && code=1
+fi
+
 echo "== done (exit $code) — see $OUT/topdown.png =="
 exit $code

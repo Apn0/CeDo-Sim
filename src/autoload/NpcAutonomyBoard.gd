@@ -866,6 +866,21 @@ func _on_machine_alarm_cleared(machine_id: String, alarm_id: String) -> void:
 func storing_active(key: String) -> bool:
 	return _storing_alarms.has(key)
 
+## Read-only snapshot of every active storing — for external HMI renderers
+## (HmiWebOverlay's alarm strip). Returns [{key, machine_id, alarm_id,
+## severity}]; order is the registry's insertion order.
+func storing_list() -> Array:
+	var out : Array = []
+	for key in _storing_alarms:
+		var e : Dictionary = _storing_alarms[key]
+		out.append({
+			"key": key,
+			"machine_id": String(e.get("machine_id", "")),
+			"alarm_id": String(e.get("alarm_id", "")),
+			"severity": int(e.get("severity", 1)),
+		})
+	return out
+
 ## KwitterenStoringTask reached the HMI: record the ack. HmiOverlay ORs this
 ## into its own KWITTEREN state (bell amber-steady instead of red-flashing).
 func mark_npc_acked(alarm_id: String) -> void:

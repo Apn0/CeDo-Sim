@@ -31,6 +31,12 @@ class_name HmiScopes
 ##     "color":     Color       # housing colour (lets operators tell panels apart visually)
 ##     "lines":     Array[String]   # line tags (1 / 3a / 3b / 3c / 6 / indaver) this HMI owns
 ##     "tokens":    Array[String]   # machine id-substring tokens the HMI can control
+##     "web_screen": String     # OPTIONAL — filename of a Claude-Design
+##                              # .dc.html export (docs/plant/hmi_screens_2026-07-26/)
+##                              # to open as this panel's start screen in the
+##                              # HmiWebOverlay (WebView) instead of the GDScript
+##                              # touchscreen. Falls back to the touchscreen when
+##                              # the WebView addon is unavailable (headless).
 ##   }
 ##
 ## A LineFlow node MATCHES the scope when:
@@ -181,6 +187,9 @@ const SCOPES := {
 		"label":  "Waslijn (alle lijnen)",
 		"mesh":   "hmi_panel",
 		"color":  Color(0.16, 0.30, 0.40),
+		# task#2 prototype: this panel opens the Claude-Design wash-line 3C
+		# overview in the WebView overlay (live amps/status via LineFlow).
+		"web_screen": "Waslijn 3C Overzicht.dc.html",
 		"lines":  ["1", "3a", "3b", "3c", "6"],
 		"tokens": [
 			"prewash", "voorwas", "friction", "intensive", "wash", "was",

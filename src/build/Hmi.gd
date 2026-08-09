@@ -28,6 +28,10 @@ const _SCOPES := preload("res://src/build/HmiScopes.gd")
 # to the touchscreen overlay.
 const _RELAY_PANEL_PATH := "res://src/scenes/hud/panels/ShredderRelayPanel.gd"
 
+# WebView overlay for scopes with a "web_screen" (task #2). load()ed lazily —
+# if the file is missing the HMI silently falls back to the touchscreen.
+const _WEB_OVERLAY_PATH := "res://src/scenes/hud/HmiWebOverlay.gd"
+
 # One overlay instance is shared between every HMI in the world — opens for
 # whichever panel the player most recently interacted with. The overlay is
 # re-scoped on every open_for(), so opening HMI-A then HMI-B never leaks A's
@@ -39,6 +43,9 @@ static var _overlay : CanvasLayer = null
 # the touchscreen overlay does. Re-used across every relay HMI.
 static var _relay_layer : CanvasLayer = null
 static var _relay_panel : Control = null
+
+# Shared WebView overlay (task #2) — same one-instance pattern as _overlay.
+static var _web_overlay : CanvasLayer = null
 
 var _player_near : bool = false
 var _label       : String = "HMI"
@@ -92,16 +99,41 @@ func crosshair_interact(_player: Node3D) -> void:
 ## panel. Re-opening on a different HMI always re-applies its scope, so the
 ## list/sections never carry over from the previous panel.
 ##
-## Branches on scope.panel_type (#207h):
-##   - "relay"      → load ShredderRelayPanel.gd (non-touchscreen cabinet)
-##   - otherwise    → load HmiOverlay.tscn (touchscreen — default)
+## Branches on scope.panel_type (#207h) + scope.web_screen (task #2):
+##   - "relay"           → load ShredderRelayPanel.gd (non-touchscreen cabinet)
+##   - "web_screen" set  → HmiWebOverlay (Claude-Design .dc.html in a WebView);
+##                         falls back to the touchscreen when the WebView
+##                         addon can't run here (headless / class missing)
+##   - otherwise         → load HmiOverlay.tscn (touchscreen — default)
 func _open_overlay() -> void:
 	var scope := _SCOPES.get_scope(_hmi_id)
 	var panel_type := String(scope.get("panel_type", "touchscreen"))
 	if panel_type == "relay":
 		_open_relay_panel(scope)
 		return
+	if String(scope.get("web_screen", "")) != "" and _open_web_overlay(scope):
+		return
 	_open_touchscreen_overlay(scope)
+
+## WebView path — the Claude-Design HMI exports rendered live (task #2).
+## Returns false when the web overlay can't open so the caller can fall back
+## to the GDScript touchscreen (same screen content, older look).
+func _open_web_overlay(scope: Dictionary) -> bool:
+	var overlay_script := load(_WEB_OVERLAY_PATH)
+	if overlay_script == null:
+		return false
+	if not overlay_script.call("webview_available"):
+		return false
+	if _web_overlay == null or not is_instance_valid(_web_overlay):
+		_web_overlay = overlay_script.new() as CanvasLayer
+		if _web_overlay == null:
+			return false
+		get_tree().root.add_child(_web_overlay)
+	if not _web_overlay.has_method("open_for"):
+		return false
+	_web_overlay.call("open_for", _label, scope)
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	return true
 
 ## Touchscreen path — the original HmiOverlay.tscn behaviour.
 func _open_touchscreen_overlay(scope: Dictionary) -> void:
