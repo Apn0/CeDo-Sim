@@ -145,7 +145,8 @@ func _init_state(r: Dictionary) -> void:
 		RuleKind.STEP_ORDER:
 			_state[rid] = {"idx": 0, "broken": false, "best": 0}
 		RuleKind.SAFETY_GATE:
-			_state[rid] = {"gate_ok_at_s": -1.0e12, "violations": 0, "checks": 0}
+			_state[rid] = {"latched": false, "gate_ok_at_s": -1.0e12,
+				"violations": 0, "checks": 0}
 
 
 ## Does a payload match every key/value in `expect`? A non-dictionary `expect`
@@ -287,19 +288,44 @@ func _on_step_order(r: Dictionary, kind: String, at_s: float) -> void:
 # ── 5) SAFETY_GATE ───────────────────────────────────────────────────────────
 # A hard gate, not a weighted score. One violation zeroes the whole session.
 
+## A gate is a LATCH by default, not a recency window.
+##
+## Lockout is a state: the padlock is on until someone takes it off. Modelling
+## it as "satisfied within the last N seconds" fails an honest operator the
+## moment the gap exceeds N — and on a laser-filter change LOTO is step 3 while
+## OPEN is step 8, with the bordes, the compactbuis, three dopmoeren and the kap
+## in between. Twenty-five brisk minutes is normal. Falsely accusing a competent
+## operator is the worst thing a training tool can do, so `gate_window_s`
+## defaults to 0.0 meaning NO time limit.
+##
+## Set `ungate_kind` to whatever releases the gate (REMOVE_LOTO) so re-entry
+## after release is a violation again.
+##
+## `gate_window_s > 0` is still supported, because genuinely time-bounded gates
+## exist — a confined-space gas test does expire. It is opt-in rather than the
+## default, since the costly error here is the false positive.
 func _on_safety(r: Dictionary, kind: String, payload: Dictionary, at_s: float) -> void:
 	var st : Dictionary = _state[String(r["id"])]
 	if kind == String(r.get("gate_kind", "")) and _matches(payload, r.get("gate_when")):
+		st["latched"] = true
 		st["gate_ok_at_s"] = at_s
+		return
+	if kind == String(r.get("ungate_kind", "")) and _matches(payload, r.get("ungate_when")):
+		st["latched"] = false
 		return
 	if kind != String(r.get("forbidden_kind", "")) or not _matches(payload, r.get("forbidden_when")):
 		return
 	st["checks"] = int(st["checks"]) + 1
-	if at_s - float(st["gate_ok_at_s"]) > float(r.get("gate_window_s", 120.0)):
-		st["violations"] = int(st["violations"]) + 1
-		_finding(String(r["id"]), at_s, "violation",
-			"forbidden action without the gate satisfied within %.0f s"
-				% float(r.get("gate_window_s", 120.0)))
+	var window := float(r.get("gate_window_s", 0.0))
+	var satisfied : bool = bool(st["latched"])
+	if satisfied and window > 0.0 and at_s - float(st["gate_ok_at_s"]) > window:
+		satisfied = false
+	if satisfied:
+		return
+	st["violations"] = int(st["violations"]) + 1
+	var why : String = "the gate was never satisfied" if not bool(st["latched"]) \
+		else "the gate expired (%.0f s window)" % window
+	_finding(String(r["id"]), at_s, "violation", "forbidden action — %s" % why)
 
 
 # ── scoring ──────────────────────────────────────────────────────────────────
