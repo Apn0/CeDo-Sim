@@ -10715,10 +10715,14 @@ static func _build_heetafslag_strand_switcher(p: Node3D, die_r: float,
 		mm_hot.set_instance_transform(i, Transform3D(Basis.from_euler(rot_hot), pos))
 
 		# Smoke wisp — a small QuadMesh above the top of the strand.
+		# `wisp_qm`, not `qm`: the enclosing scope already declares a `qm` at the
+		# top of this function for mm_wisp, and redeclaring it here is a parse
+		# error that stopped the whole file compiling — which cascaded into
+		# MainWorld.gd and took every world test with it.
 		var wisp := MeshInstance3D.new()
-		var qm := QuadMesh.new()
-		qm.size = Vector2(0.04, 0.06)
-		wisp.mesh = qm
+		var wisp_qm := QuadMesh.new()
+		wisp_qm.size = Vector2(0.04, 0.06)
+		wisp.mesh = wisp_qm
 		wisp.material_override = smoke_mat
 		wisp.position = pos + Vector3(0.0, strand_h * 0.55, 0.0)
 		grp_hot.add_child(wisp)

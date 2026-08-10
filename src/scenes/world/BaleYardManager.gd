@@ -147,163 +147,246 @@ func _spawn_bale_yards_from_layout() -> void:
 			total_yards += 1
 	print("[BaleYardManager] Bale yards from layout: %d bales across %d yards (RBs deferred)" % [total_bales, total_yards])
 
-		var translated_corners : Array = []
-		var yard_corrupt := false
-		for i in corners.size():
-			var c : Vector3 = corners[i]
-			if not _world.call("_layout_rel_sane", c):
-				yard_corrupt = true
-				break
-			if use_pc:
-				translated_corners.append(Plant.pc_to_scene(corners_pc[i]))
-			else:
-				translated_corners.append(_world.call("_layout_to_scene", c))
-		if yard_corrupt:
-			push_warning("[BaleYardManager] Yard '%s' has a corner km away from the anchor — corrupt layout data, skipping yard (redraw it in WorldSetup)" % supplier_id)
-			continue
-		corners = translated_corners
-		# FIX (footprint shows as a triangle): if the user clicked corners in
-		# Z-order (TL, TR, BL, BR) the polygon self-intersects into a bowtie and
-		# point-in-polygon only fills a triangle. Re-sort the corners by angle
-		# around their centroid so any 4 points form a proper convex quad.
-		corners = _world.call("_sort_corners_ccw", corners)
-		# Record the final scene-frame perimeter (post-sort, so it matches the pad
-		# and the fill grid exactly) for get_yard_polygons() consumers.
-		var yard_poly := PackedVector2Array()
-		for cs in corners:
-			var c3 : Vector3 = cs
-			yard_poly.append(Vector2(c3.x, c3.z))
-		_yard_polys.append(yard_poly)
-		# Operator pick (2026-07): the real bale lot is brick-paved — lay a
-		# Polyhaven brick_pavement_03 pad under the yard polygon.
-		_spawn_yard_pad(yards_root, corners, supplier_id)
-		# Fill the polygon along ITS OWN LONGEST EDGE direction, not world X/Z. This
-		# is what the user was missing: their rectangles are typically NOT axis-
-		# aligned, so an axis-aligned grid only filled the diamond inscribed in the
-		# polygon's AABB (the visible "diamond inside the rectangle" pattern). Now
-		# bales are laid out along the polygon's actual edges, rotated to match,
-		# filling the rectangle properly.
-		var le_a : Vector3 = corners[0]; var le_b : Vector3 = corners[0]
-		var le_len_sq : float = 0.0
-		for i in corners.size():
-			var ca : Vector3 = corners[i]
-			var cb : Vector3 = corners[(i + 1) % corners.size()]
-			var dd : float = (cb - ca).length_squared()
-			if dd > le_len_sq:
-				le_len_sq = dd; le_a = ca; le_b = cb
-		var u_axis : Vector3 = (le_b - le_a)
-		u_axis.y = 0.0
-		u_axis = u_axis.normalized() if u_axis.length() > 0.001 else Vector3.RIGHT
-		# #102 — final NaN guard: if the polygon is degenerate (collinear corners,
-		# zero-area, or any NaN-tainted coordinate that slipped past the sanity
-		# check), the normalize path can still produce a non-finite u_axis. Drop
-		# the yard rather than spawn bales with NaN transforms — those hit the
-		# renderer every frame and saturate the error log (~46k errors).
-		if not u_axis.is_finite() or u_axis.length_squared() < 0.5:
-			push_warning("[BaleYardManager] Yard '%s' has degenerate polygon — skipping (redraw it)" % supplier_id)
-			continue
-		var v_axis : Vector3 = Vector3(-u_axis.z, 0.0, u_axis.x)   # 90° CCW in XZ
-		# Polygon centroid (the grid pivot in WORLD space).
-		var centroid := Vector3.ZERO
-		for c in corners: centroid += c
-		centroid /= float(corners.size())
-		# Polygon UV extents in the (u,v) local basis (so the grid steps span the
-		# real polygon extent — no diamond clipping).
-		var min_u :=  INF; var max_u := -INF
-		var min_v :=  INF; var max_v := -INF
-		for c in corners:
-			var cv : Vector3 = c
-			var dv : Vector3 = cv - centroid
-			# Renamed from u/v — same names are reused as the row-walking cursors
-			# later in this function and the inner shadowing tripped
-			# CONFUSABLE_LOCAL_DECLARATION.
-			var pu : float = dv.dot(u_axis)
-			var pv : float = dv.dot(v_axis)
-			if pu < min_u: min_u = pu
-			if pu > max_u: max_u = pu
-			if pv < min_v: min_v = pv
-			if pv > max_v: max_v = pv
-		var poly2 : PackedVector2Array = _polygon_xz(corners)   # for point-in-poly check (world XZ)
-		var yard_w : float = max_u - min_u
-		var yard_d : float = max_v - min_v
-		print("[BaleYardManager]  Yard '%s'  polygon-aligned %.1f × %.1f m  (stack %d)" \
-			% [supplier_id, yard_w, yard_d, stack_high])
-		# Randomized 1–6 cm gap between adjacent bales (operator spec). Real yard
-		# bales are packed tight and irregular, not on an airy regular grid. Each
-		# grid step adds the bale footprint plus a small random gap; seeded per
-		# supplier so the layout is stable across reloads.
-		var gap_rng := RandomNumberGenerator.new()
-		gap_rng.seed = hash(supplier_id + "_yardgap")
-		var GAP_MIN : float = 0.01
-		var GAP_MAX : float = 0.06
-		# Nominal cell (used only for the starting half-cell offset; the per-step
-		# increments below are randomized within [GAP_MIN, GAP_MAX]).
-		var step_x : float = size.x + (GAP_MIN + GAP_MAX) * 0.5
-		var step_z : float = size.z + (GAP_MIN + GAP_MAX) * 0.5
-		var floor_y : float = float(_world.call("_floor_top_y"))
-		var yard_node := Node3D.new()
-		yard_node.name = "Yard_%s" % supplier_id
-		yards_root.add_child(yard_node)
-		var nm : String = String(origin_def.get("name", supplier_id))
-		var prefix : String = nm.substr(0, 3).to_upper()
-		var bale_yaw : float = atan2(u_axis.x, u_axis.z)    # rotate each bale so its size.x aligns with the polygon edge
-		# #61 — collect every (world_xy, level) the polygon would fill, FIRST,
-		# so we can size the per-yard MultiMesh once before spawning bales. The
-		# old per-bale build_node() + 13 MeshInstance3D children gave us ~30k
-		# draw calls and 50-100k objs when yards were in view; the new path is
-		# one MultiMesh per yard (= 1 draw call) plus colliders.
-		var slots : Array = []   # each entry = [Vector3 pos, int level]
-		var u := min_u + step_x * 0.5
-		while u <= max_u:
-			var v := min_v + step_z * 0.5
-			while v <= max_v:
-				var world_xy : Vector3 = centroid + u_axis * u + v_axis * v
-				# #102 — last-line NaN gate. The renderer hits is_finite() once
-				# per frame on every transform; a single bad bale would saturate
-				# the error log. Drop the cell silently if the math went bad.
-				if not world_xy.is_finite():
-					v += size.z + gap_rng.randf_range(GAP_MIN, GAP_MAX)
-					continue
-				if Geometry2D.is_point_in_polygon(Vector2(world_xy.x, world_xy.z), poly2):
-					for level in stack_high:
-						slots.append([world_xy, level])
+## Spawn every bale of ONE yard. Returns the bale count, or -1 when the yard is
+## skipped (no supplier_id, unknown supplier, corrupt or degenerate polygon) —
+## the caller only tallies results >= 0.
+##
+## RESTORED 2026-08-10. Merge 4ce7627 mangled this function. main (803702b) had
+## extracted it out of the yard loop; the branch (1b29087) had meanwhile added
+## the yard-perimeter record, the brick pad and the randomised bale gap. The
+## conflict resolution kept the branch body but main's signature region,
+## deleting the func header, every local it declared, AND the inner
+## "for i in bales_this_yard" transform loop. ~190 lines were left orphaned, the
+## file stopped parsing, and that cascaded through PlaceableCatalog into
+## MainWorld.gd — which is why no world suite could run. origin/main is still in
+## that state as of this commit.
+##
+## Rebuilt the way the merge should have resolved: the branch body verbatim so
+## all three features survive, main's signature, and the four yard-level
+## `continue`s turned into `return -1`. The `continue` inside the fill loop and
+## the caller's own tally are untouched.
+func _spawn_yard(data: Dictionary, yard_idx: int, yards_root: Node3D) -> int:
+	var corners : Array = data.get("corners", [])
+	if corners.size() < 3: return -1
+	var supplier_id : String = data.get("supplier_id", "")
+	if supplier_id == "":
+		push_warning("[BaleYardManager] Bale yard has no supplier_id — skipping")
+		return -1
+	var origin_def : Dictionary = BaleDefs.get_origin(supplier_id)
+	if origin_def.is_empty():
+		push_warning("[BaleYardManager] Unknown supplier_id '%s' — skipping yard" % supplier_id)
+		return -1
+	var size : Vector3 = origin_def.get("size", Vector3(1.1, 0.7, 1.1))
+	var stack_high : int = int(origin_def.get("stack", 2))
+	# Convert the polygon corners from layout-space (player-relative, north-up
+	# RD) into scene-space via the same rotation-aware mapping the vehicles
+	# use, so the yard sits in the right place + orientation on the building.
+	# #221-PC Phase 3 — prefer the Plant PC path (single source of truth)
+	# when WorldLayout has been migrated; fall back to legacy _layout_to_scene
+	# otherwise. Math is equivalent for migrated saves; Plant guarantees the
+	# same converter every spawner uses.
+	var use_pc : bool = _world.has_node("/root/Plant") and Plant.is_initialized() and WorldLayout.has_pc_data
+	# Pull the per-yard PC corner list (if present) by matching index. The
+	# migrate_to_pc walk preserved order, so bale_yards_pc[idx] aligns with
+	# WorldLayout.bale_yards[idx].
+	var corners_pc : Array = []
+	if use_pc and yard_idx >= 0 and yard_idx < WorldLayout.bale_yards_pc.size():
+		corners_pc = (WorldLayout.bale_yards_pc[yard_idx] as Dictionary).get("corners_pc", [])
+		if corners_pc.size() != corners.size():
+			# Size mismatch — fall back to legacy for this yard rather than
+			# index a PC array against a different polygon. Should only
+			# happen if migrate_to_pc was interrupted mid-walk.
+			push_warning("[BaleYardManager] Yard '%s' PC corner count %d ≠ legacy %d — using legacy path" % [supplier_id, corners_pc.size(), corners.size()])
+			use_pc = false
+	elif use_pc:
+		use_pc = false   # PC data is missing for THIS yard
+
+	var translated_corners : Array = []
+	var yard_corrupt := false
+	for i in corners.size():
+		var c : Vector3 = corners[i]
+		if not _world.call("_layout_rel_sane", c):
+			yard_corrupt = true
+			break
+		if use_pc:
+			translated_corners.append(Plant.pc_to_scene(corners_pc[i]))
+		else:
+			translated_corners.append(_world.call("_layout_to_scene", c))
+	if yard_corrupt:
+		push_warning("[BaleYardManager] Yard '%s' has a corner km away from the anchor — corrupt layout data, skipping yard (redraw it in WorldSetup)" % supplier_id)
+		return -1
+	corners = translated_corners
+	# FIX (footprint shows as a triangle): if the user clicked corners in
+	# Z-order (TL, TR, BL, BR) the polygon self-intersects into a bowtie and
+	# point-in-polygon only fills a triangle. Re-sort the corners by angle
+	# around their centroid so any 4 points form a proper convex quad.
+	corners = _world.call("_sort_corners_ccw", corners)
+	# Record the final scene-frame perimeter (post-sort, so it matches the pad
+	# and the fill grid exactly) for get_yard_polygons() consumers.
+	var yard_poly := PackedVector2Array()
+	for cs in corners:
+		var c3 : Vector3 = cs
+		yard_poly.append(Vector2(c3.x, c3.z))
+	_yard_polys.append(yard_poly)
+	# Operator pick (2026-07): the real bale lot is brick-paved — lay a
+	# Polyhaven brick_pavement_03 pad under the yard polygon.
+	_spawn_yard_pad(yards_root, corners, supplier_id)
+	# Fill the polygon along ITS OWN LONGEST EDGE direction, not world X/Z. This
+	# is what the user was missing: their rectangles are typically NOT axis-
+	# aligned, so an axis-aligned grid only filled the diamond inscribed in the
+	# polygon's AABB (the visible "diamond inside the rectangle" pattern). Now
+	# bales are laid out along the polygon's actual edges, rotated to match,
+	# filling the rectangle properly.
+	var le_a : Vector3 = corners[0]; var le_b : Vector3 = corners[0]
+	var le_len_sq : float = 0.0
+	for i in corners.size():
+		var ca : Vector3 = corners[i]
+		var cb : Vector3 = corners[(i + 1) % corners.size()]
+		var dd : float = (cb - ca).length_squared()
+		if dd > le_len_sq:
+			le_len_sq = dd; le_a = ca; le_b = cb
+	var u_axis : Vector3 = (le_b - le_a)
+	u_axis.y = 0.0
+	u_axis = u_axis.normalized() if u_axis.length() > 0.001 else Vector3.RIGHT
+	# #102 — final NaN guard: if the polygon is degenerate (collinear corners,
+	# zero-area, or any NaN-tainted coordinate that slipped past the sanity
+	# check), the normalize path can still produce a non-finite u_axis. Drop
+	# the yard rather than spawn bales with NaN transforms — those hit the
+	# renderer every frame and saturate the error log (~46k errors).
+	if not u_axis.is_finite() or u_axis.length_squared() < 0.5:
+		push_warning("[BaleYardManager] Yard '%s' has degenerate polygon — skipping (redraw it)" % supplier_id)
+		return -1
+	var v_axis : Vector3 = Vector3(-u_axis.z, 0.0, u_axis.x)   # 90° CCW in XZ
+	# Polygon centroid (the grid pivot in WORLD space).
+	var centroid := Vector3.ZERO
+	for c in corners: centroid += c
+	centroid /= float(corners.size())
+	# Polygon UV extents in the (u,v) local basis (so the grid steps span the
+	# real polygon extent — no diamond clipping).
+	var min_u :=  INF; var max_u := -INF
+	var min_v :=  INF; var max_v := -INF
+	for c in corners:
+		var cv : Vector3 = c
+		var dv : Vector3 = cv - centroid
+		# Renamed from u/v — same names are reused as the row-walking cursors
+		# later in this function and the inner shadowing tripped
+		# CONFUSABLE_LOCAL_DECLARATION.
+		var pu : float = dv.dot(u_axis)
+		var pv : float = dv.dot(v_axis)
+		if pu < min_u: min_u = pu
+		if pu > max_u: max_u = pu
+		if pv < min_v: min_v = pv
+		if pv > max_v: max_v = pv
+	var poly2 : PackedVector2Array = _polygon_xz(corners)   # for point-in-poly check (world XZ)
+	var yard_w : float = max_u - min_u
+	var yard_d : float = max_v - min_v
+	print("[BaleYardManager]  Yard '%s'  polygon-aligned %.1f × %.1f m  (stack %d)" \
+		% [supplier_id, yard_w, yard_d, stack_high])
+	# Randomized 1–6 cm gap between adjacent bales (operator spec). Real yard
+	# bales are packed tight and irregular, not on an airy regular grid. Each
+	# grid step adds the bale footprint plus a small random gap; seeded per
+	# supplier so the layout is stable across reloads.
+	var gap_rng := RandomNumberGenerator.new()
+	gap_rng.seed = hash(supplier_id + "_yardgap")
+	var GAP_MIN : float = 0.01
+	var GAP_MAX : float = 0.06
+	# Nominal cell (used only for the starting half-cell offset; the per-step
+	# increments below are randomized within [GAP_MIN, GAP_MAX]).
+	var step_x : float = size.x + (GAP_MIN + GAP_MAX) * 0.5
+	var step_z : float = size.z + (GAP_MIN + GAP_MAX) * 0.5
+	var floor_y : float = float(_world.call("_floor_top_y"))
+	var yard_node := Node3D.new()
+	yard_node.name = "Yard_%s" % supplier_id
+	yards_root.add_child(yard_node)
+	var nm : String = String(origin_def.get("name", supplier_id))
+	var prefix : String = nm.substr(0, 3).to_upper()
+	var bale_yaw : float = atan2(u_axis.x, u_axis.z)    # rotate each bale so its size.x aligns with the polygon edge
+	# #61 — collect every (world_xy, level) the polygon would fill, FIRST,
+	# so we can size the per-yard MultiMesh once before spawning bales. The
+	# old per-bale build_node() + 13 MeshInstance3D children gave us ~30k
+	# draw calls and 50-100k objs when yards were in view; the new path is
+	# one MultiMesh per yard (= 1 draw call) plus colliders.
+	var slots : Array = []   # each entry = [Vector3 pos, int level]
+	var u := min_u + step_x * 0.5
+	while u <= max_u:
+		var v := min_v + step_z * 0.5
+		while v <= max_v:
+			var world_xy : Vector3 = centroid + u_axis * u + v_axis * v
+			# #102 — last-line NaN gate. The renderer hits is_finite() once
+			# per frame on every transform; a single bad bale would saturate
+			# the error log. Drop the cell silently if the math went bad.
+			if not world_xy.is_finite():
 				v += size.z + gap_rng.randf_range(GAP_MIN, GAP_MAX)
-			u += size.x + gap_rng.randf_range(GAP_MIN, GAP_MAX)
-		var bales_this_yard : int = slots.size()
-		if bales_this_yard > 0:
-			# One MultiMesh sized to the whole yard.
-			var mmi := PlaceableCatalog.build_yard_multimesh(supplier_id, bales_this_yard)
-			# #117 — Close-LOD MM with groove-shaded bale material; visibility-
-			# range swap with the far MM hides it past ~35 m so far-distance
-			# draw count stays at 1 per yard. Close-range yards now show wire
-			# shadow grooves on every bale face.
-			var mmi_close := PlaceableCatalog.build_yard_multimesh_close(supplier_id, bales_this_yard)
-			# #125 — Proximity-loaded paper sticker MM per yard. Stickers vanish
-			# beyond STICKER_LOD_M (12 m) so far yards pay zero sticker cost; close
-			# yards get the one-draw-call label pass.
-			var mmi_sticker := PlaceableCatalog.build_yard_sticker_multimesh(supplier_id, bales_this_yard)
-			if mmi != null:
-				yard_node.add_child(mmi)
-				# #243 — was 35 m with FADE_SELF (which fades both MMs to
-				# fully TRANSPARENT around the threshold — operator saw bales
-				# briefly disappear at the swap band, not swap). Now 25 m
-				# with FADE_DISABLED for a hard cut: close MM hard-ends at
-				# 25 m, far MM hard-begins at 25 m, no margin = no
-				# transparent window. The close MM's per-bale slabs and wire
-				# overlays inside _m_bale_simple already cap at 24 m, so the
-				# 25 m hard-cut lines up with their cull and no double-render
-				# is visible.
-				const CLOSE_LOD_M : float = 25.0
-				# #170 — was 12 m, but visibility_range_end on a MultiMeshInstance3D
-				# culls the WHOLE INSTANCE, not per-bale. With a 30 m-wide yard the
-				# yard centre sits ~15 m from the operator standing AT a bale, so
-				# the entire sticker MM was already faded out (zero labels visible
-				# in 5+ runs). 80 m is the new threshold so the operator always
-				# sees stickers when within practical scan range of any yard.
-				const STICKER_LOD_M : float = 80.0
-				mmi.visibility_range_begin        = CLOSE_LOD_M
-				mmi.visibility_range_begin_margin = 0.0
-				mmi.visibility_range_fade_mode    = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+				continue
+			if Geometry2D.is_point_in_polygon(Vector2(world_xy.x, world_xy.z), poly2):
+				for level in stack_high:
+					slots.append([world_xy, level])
+			v += size.z + gap_rng.randf_range(GAP_MIN, GAP_MAX)
+		u += size.x + gap_rng.randf_range(GAP_MIN, GAP_MAX)
+	var bales_this_yard : int = slots.size()
+	if bales_this_yard > 0:
+		# One MultiMesh sized to the whole yard.
+		var mmi := PlaceableCatalog.build_yard_multimesh(supplier_id, bales_this_yard)
+		# #117 — Close-LOD MM with groove-shaded bale material; visibility-
+		# range swap with the far MM hides it past ~35 m so far-distance
+		# draw count stays at 1 per yard. Close-range yards now show wire
+		# shadow grooves on every bale face.
+		var mmi_close := PlaceableCatalog.build_yard_multimesh_close(supplier_id, bales_this_yard)
+		# #125 — Proximity-loaded paper sticker MM per yard. Stickers vanish
+		# beyond STICKER_LOD_M (12 m) so far yards pay zero sticker cost; close
+		# yards get the one-draw-call label pass.
+		var mmi_sticker := PlaceableCatalog.build_yard_sticker_multimesh(supplier_id, bales_this_yard)
+		if mmi != null:
+			yard_node.add_child(mmi)
+			# #243 — was 35 m with FADE_SELF (which fades both MMs to
+			# fully TRANSPARENT around the threshold — operator saw bales
+			# briefly disappear at the swap band, not swap). Now 25 m
+			# with FADE_DISABLED for a hard cut: close MM hard-ends at
+			# 25 m, far MM hard-begins at 25 m, no margin = no
+			# transparent window. The close MM's per-bale slabs and wire
+			# overlays inside _m_bale_simple already cap at 24 m, so the
+			# 25 m hard-cut lines up with their cull and no double-render
+			# is visible.
+			const CLOSE_LOD_M : float = 25.0
+			# #170 — was 12 m, but visibility_range_end on a MultiMeshInstance3D
+			# culls the WHOLE INSTANCE, not per-bale. With a 30 m-wide yard the
+			# yard centre sits ~15 m from the operator standing AT a bale, so
+			# the entire sticker MM was already faded out (zero labels visible
+			# in 5+ runs). 80 m is the new threshold so the operator always
+			# sees stickers when within practical scan range of any yard.
+			const STICKER_LOD_M : float = 80.0
+			mmi.visibility_range_begin        = CLOSE_LOD_M
+			mmi.visibility_range_begin_margin = 0.0
+			mmi.visibility_range_fade_mode    = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+			if mmi_close != null:
+				yard_node.add_child(mmi_close)
+				mmi_close.visibility_range_end        = CLOSE_LOD_M
+				mmi_close.visibility_range_end_margin = 0.0
+				mmi_close.visibility_range_fade_mode  = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+			if mmi_sticker != null:
+				yard_node.add_child(mmi_sticker)
+				mmi_sticker.visibility_range_end        = STICKER_LOD_M
+				mmi_sticker.visibility_range_end_margin = 2.0
+				mmi_sticker.visibility_range_fade_mode  = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+			var safe_yaw : float = bale_yaw if is_finite(bale_yaw) else 0.0
+			var bale_basis := Basis(Vector3.UP, safe_yaw)
+			var size_y_half : float = size.y * 0.5
+			# Pass 1 — populate the MultiMesh transforms IMMEDIATELY. These are
+			# just integer transform writes to the shared buffer and finish in
+			# a fraction of a second even for 2940 instances. Bales render at
+			# correct positions the moment the yard appears. Same transforms
+			# go into BOTH MMs so far / close stay perfectly aligned during
+			# the fade swap.
+			for i in bales_this_yard:
+				var entry : Array = slots[i]
+				var pos : Vector3 = entry[0]
+				var level : int = int(entry[1])
+				var inst_origin := Vector3(
+					pos.x,
+					floor_y + size.y * float(level) + size_y_half,
+					pos.z)
+				var xf := Transform3D(bale_basis, inst_origin)
+				mmi.multimesh.set_instance_transform(i, xf)
 				if mmi_close != null:
 					mmi_close.multimesh.set_instance_transform(i, xf)
 				if mmi_sticker != null:
