@@ -28,7 +28,27 @@ var _manifest: Dictionary   = {}   # asset_id -> { first_fetched, last_used, res
 var _sets: Dictionary    = {}   # asset_id -> { role -> ImageTexture }
 var _pending: Dictionary = {}   # asset_id -> { resolution, maps, remaining }
 
+## Set CEDO_OFFLINE=1 to serve textures from the on-disk cache only and never
+## touch the network.
+##
+## WHY THIS EXISTS (measured, 2026-08-10): behind a proxy that refuses the
+## Polyhaven API, a headless `tools/regression/run.sh` WEDGES. regression_world_save
+## was killed after 3h21m with its log frozen mid-boot on a run of
+## "TextureCache: file list for '<asset>' failed (403)" warnings. The requests
+## do not fail fast, so the world boot never completes and the harness — the one
+## command that is supposed to prove things — cannot run in CI or any sandbox
+## without egress to api.polyhaven.com.
+##
+## OPT-IN ON PURPOSE. Default behaviour is byte-identical to before, because
+## headless is NOT a safe proxy for "does not want textures": the Rule 9 audit
+## renders (src/tests/shot_placeable.tscn) run headless and do want them.
+var _offline : bool = false
+
+
 func _ready() -> void:
+	_offline = OS.get_environment("CEDO_OFFLINE") == "1"
+	if _offline:
+		print("[TextureCache] CEDO_OFFLINE=1 — disk cache only, no network fetches")
 	# Use the AppData\Roaming shared folder — persists across Windows sessions,
 	# never touched by Disk Cleanup / Storage Sense / CCleaner.
 	var appdata: String = OS.get_environment("APPDATA").replace("\\", "/")
@@ -65,7 +85,14 @@ func request_pbr_set(asset_id: String, resolution: String = "2k") -> void:
 		pbr_set_ready.emit(asset_id, have)
 		return
 
-	# At least one map is missing — fetch the asset's file list from the API.
+	# At least one map is missing. Offline: stop here rather than opening an
+	# HTTPRequest that may never complete. Callers already handle an asset that
+	# never becomes ready (PolyhavenMaterials.gd:70 degrades to the base
+	# material), so this costs fidelity and nothing else.
+	if _offline:
+		return
+
+	# Fetch the asset's file list from the API.
 	_pending[asset_id] = {"resolution": resolution, "maps": have, "remaining": 0}
 	var http := HTTPRequest.new()
 	add_child(http)
