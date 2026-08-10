@@ -107,7 +107,6 @@ static func open(bale: Node3D, scene: Node) -> Array:
 		var s := (float(i) - float(CHUNKS - 1) * 0.5) / float(CHUNKS - 1)
 		seg.linear_velocity = xf.basis * Vector3(s * 0.7, absf(s) * 0.5, 0.0)
 		out.append(seg)
-		_live_pieces.append(seg)
 		prev = seg
 
 	# The bale's material now lives in the piece bodies. Free only the emptied
