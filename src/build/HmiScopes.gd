@@ -115,6 +115,7 @@ const SCOPES := {
 		"label":  "Shredder lijn 1",
 		"mesh":   "hmi_panel",
 		"color":  Color(0.30, 0.32, 0.36),
+		"web_screen": "WEIMA Shredder Vulpeil Trechter.dc.html",
 		"lines":  ["1"],
 		"tokens": ["shredder"],
 	},
@@ -123,6 +124,7 @@ const SCOPES := {
 		"label":  "Shredder 1 lijn 3A/3B",
 		"mesh":   "hmi_panel",
 		"color":  Color(0.30, 0.32, 0.36),
+		"web_screen": "WEIMA Shredder Vulpeil Trechter.dc.html",
 		"lines":  ["3a", "3b"],
 		"tokens": ["shredder_1", "shredder1"],
 	},
@@ -143,6 +145,7 @@ const SCOPES := {
 		"label":  "Shredder lijn 3C/6",
 		"mesh":   "hmi_panel",
 		"color":  Color(0.30, 0.32, 0.36),
+		"web_screen": "WEIMA Shredder Vulpeil Trechter.dc.html",
 		"lines":  ["3c", "6"],
 		"tokens": ["shredder"],
 	},
@@ -151,6 +154,7 @@ const SCOPES := {
 		"label":  "Sorteerlijn 3A/3B",
 		"mesh":   "hmi_panel",
 		"color":  Color(0.26, 0.38, 0.30),
+		"web_screen": "Sorteerlijn Overzicht.dc.html",
 		"lines":  ["3a", "3b"],
 		"tokens": [
 			"bunker", "sga", "ballistic", "wind_sifter",
@@ -163,6 +167,10 @@ const SCOPES := {
 		"label":  "Transportbanden 3A/3B",
 		"mesh":   "hmi_panel",
 		"color":  Color(0.36, 0.30, 0.18),
+		# No web_screen: the operator's 33 designs contain no conveyor/transport
+		# screen. Stays on the GDScript touchscreen rather than borrowing another
+		# unit's artwork — a panel showing the wrong machine's screen is worse
+		# than an honest generic one.
 		"lines":  ["3a", "3b"],
 		"tokens": [
 			"conveyor", "transport_belt", "transportband",
@@ -175,6 +183,7 @@ const SCOPES := {
 		"label":  "Transportbanden 3C/6",
 		"mesh":   "hmi_panel",
 		"color":  Color(0.36, 0.30, 0.18),
+		# No web_screen — see hmi_transport_l3ab (no conveyor design exists).
 		"lines":  ["3c", "6"],
 		"tokens": [
 			"conveyor", "transport_belt", "transportband",
@@ -203,6 +212,7 @@ const SCOPES := {
 		"label":  "Extruder (alle lijnen)",
 		"mesh":   "hmi_panel",
 		"color":  Color(0.30, 0.16, 0.34),
+		"web_screen": "EREMA Extruder Scherm 3C.dc.html",
 		"lines":  ["1", "3a", "3b", "3c", "6"],
 		"tokens": [
 			"extruder", "intarema", "erema",
@@ -218,6 +228,7 @@ const SCOPES := {
 		"label":  "Water lijn 3C/6",
 		"mesh":   "hmi_panel",
 		"color":  Color(0.14, 0.34, 0.40),
+		"web_screen": "Water Circuit Lijn 3C-6.dc.html",
 		"lines":  ["3c", "6"],
 		"tokens": [
 			"water", "pomp", "pump", "tank",
@@ -229,6 +240,9 @@ const SCOPES := {
 		"label":  "Water extruder 1/3A/3B",
 		"mesh":   "hmi_panel",
 		"color":  Color(0.14, 0.34, 0.40),
+		# No web_screen: "Water Circuit Lijn 3C-6" is explicitly the 3C/6 loop,
+		# and there is no 1/3A/3B water design. Assigning the 3C artwork here
+		# would put the wrong line's circuit on the panel.
 		"lines":  ["1", "3a", "3b"],
 		"tokens": [
 			"water", "pomp", "pump", "tank",
@@ -240,6 +254,7 @@ const SCOPES := {
 		"label":  "Indaver waterzuivering",
 		"mesh":   "hmi_wall",
 		"color":  Color(0.22, 0.40, 0.46),
+		# No web_screen: no Indaver/effluent design exists in the 33.
 		"lines":  ["indaver"],
 		"tokens": ["indaver", "effluent", "water"],
 	},

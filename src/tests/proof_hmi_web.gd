@@ -17,8 +17,23 @@ extends Node
 const SRC_SLOT := "save1"
 const PROOF_SLOT := "hmiproof"
 
+## Native canvas of the screen under proof. Sizing the game window to exactly
+## this makes the WebView render the design 1:1 — no letterbox scale — so the
+## capture can be diffed against the .dc.html rendered in a plain browser.
+## (2026-08-10: an earlier capture looked "cropped"; measured cause was the game
+## window hanging off the desktop edge at 1920x1080, NOT a render defect —
+## window/viewport/Control/page all agreed exactly. Pinning the size removes
+## the whole class of screenshot artefact.)
+const PROOF_W : int = 1280
+const PROOF_H : int = 800
+
+## Seconds the overlay is held open after the CAPTURE NOW marker.
+const CAPTURE_HOLD_S : float = 45.0
+
 func _ready() -> void:
 	print("[PROOF] boot")
+	DisplayServer.window_set_size(Vector2i(PROOF_W, PROOF_H))
+	DisplayServer.window_set_position(Vector2i(80, 80))
 	for suffix in ["_factory.json", "_save.json"]:
 		var s := "user://%s%s" % [SRC_SLOT, suffix]
 		var d := "user://%s%s" % [PROOF_SLOT, suffix]
@@ -41,10 +56,12 @@ func _ready() -> void:
 	await get_tree().process_frame
 	get_tree().root.add_child(world)
 
-	# Wait (up to ~90 s of frames) for the save-placed washing HMI panel.
+	# Wait (up to 90 REAL seconds) for the save-placed washing HMI panel.
 	var hmi : Node = null
-	for i in range(60 * 90):
+	var waited := 0.0
+	while waited < 90.0:
 		await get_tree().process_frame
+		waited += get_process_delta_time()
 		for h in get_tree().get_nodes_in_group("hmi"):
 			if h.has_meta("hmi_id") and String(h.get_meta("hmi_id")) == "hmi_washing_all":
 				hmi = h
@@ -59,8 +76,7 @@ func _ready() -> void:
 	hmi.call("_open_overlay")
 
 	# Let the shell boot (React + first vals push), then show idle state.
-	for i in range(60 * 6):
-		await get_tree().process_frame
+	await _hold_seconds(6.0)
 	print("[PROOF] overlay open (idle values)")
 
 	# PLC cold start → machines power up → live amps in the value boxes.
@@ -71,7 +87,29 @@ func _ready() -> void:
 	else:
 		print("[PROOF] WARN no LineFlow to start")
 
-	for i in range(60 * 20):
-		await get_tree().process_frame
+	await _hold_seconds(12.0)
+
+	# Re-assert the overlay before the capture window. Measured 2026-08-10: a
+	# spurious {"type":"close"} arrived from the page during the run (the native
+	# WebView2 child window can receive an activation click on the ✕ when the
+	# game window is moved/resized under the cursor), which left the capture
+	# showing the 3D world instead of the HMI. Re-opening makes the proof
+	# independent of that, and CAPTURE_HOLD_S gives the screenshotter a wide,
+	# clearly-marked window.
+	hmi.call("_open_overlay")
+	await _hold_seconds(3.0)
+	print("[PROOF] CAPTURE NOW — overlay re-asserted, holding %.0f s" % CAPTURE_HOLD_S)
+	await _hold_seconds(CAPTURE_HOLD_S)
 	print("[PROOF] done — exiting")
 	get_tree().quit(0)
+
+## Wall-clock wait. NEVER count frames for a human-facing hold: this scene runs
+## WINDOWED with the full plant rendering, measured at 4 fps, so the original
+## `for i in range(60 * 30)` meant 1800 frames = 7.5 MINUTES, not 30 s — it left
+## the run occupying the machine long after the screenshot was taken and blocked
+## the regression harness queued behind it (2026-08-10).
+func _hold_seconds(secs: float) -> void:
+	var t := 0.0
+	while t < secs:
+		await get_tree().process_frame
+		t += get_process_delta_time()

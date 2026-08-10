@@ -42,13 +42,20 @@ window.onerror = function (m, s, l) { window.__lastErr = m + " @" + s + ":" + l;
   #stage { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; }
   #frame { border:0; background:#0a0a0a; flex:none; transform-origin:center center; }
   #frame.fluid { width:100%; height:100%; transform:none; }
+  /* Top-right of the WINDOW, which in game is letterbox gutter, not artwork:
+     a 1280x800 design in a 1920x1080 window scales 1.35x to 1728 wide, leaving
+     96 px of empty gutter each side. It only touches the design in the rare
+     exact-fit case (window sized to the design), so it is ghosted to 35% until
+     hovered. NOT bottom-left — that is where the screens' own ◀ prev button
+     lives and the two would fight for the same click. Esc closes as well. */
   #closeBtn {
-    position:fixed; top:10px; right:10px; z-index:10; width:34px; height:34px;
+    position:fixed; top:8px; right:8px; z-index:10; width:26px; height:26px;
     display:flex; align-items:center; justify-content:center; cursor:pointer;
-    background:rgba(40,44,52,.85); color:#dfe5ee; border:1px solid #4a505a;
-    border-radius:4px; font:700 16px/1 Tahoma,Verdana,sans-serif; user-select:none;
+    background:rgba(20,22,26,.45); color:#8b93a0; border:1px solid rgba(120,128,140,.35);
+    border-radius:4px; font:700 13px/1 Tahoma,Verdana,sans-serif; user-select:none;
+    opacity:.35; transition:opacity .15s, background .15s, color .15s;
   }
-  #closeBtn:hover { background:#a03030; color:#fff; }
+  #closeBtn:hover { opacity:1; background:#a03030; color:#fff; border-color:#c04040; }
   #err {
     position:fixed; left:12px; bottom:12px; z-index:10; max-width:60%;
     color:#e6b84a; font:12px/1.4 Tahoma,Verdana,sans-serif; white-space:pre-wrap; display:none;
@@ -236,12 +243,22 @@ function hmiBoot(win) {
       }
     });
   }
+  // Godot pushes the PLANT clock ({date,time}) with every vals message; a
+  // screen standing in the plant must not show the player's PC clock. The
+  // real-time fallback only applies outside the game (?screen= preview mode).
+  win.__hmiClock = null;
   win.setInterval(function () {
     if (!clockEls.length || !clockEls[0].isConnected) scanClock();
     if (!clockEls.length) return;
-    var n = new Date();
-    var ds = DAYS[n.getDay()] + " " + n.getDate() + " " + MONTHS[n.getMonth()] + " " + n.getFullYear();
-    var ts = pad(n.getHours()) + ":" + pad(n.getMinutes()) + ":" + pad(n.getSeconds());
+    var ds, ts;
+    if (win.__hmiClock && win.__hmiClock.date) {
+      ds = win.__hmiClock.date;
+      ts = win.__hmiClock.time || "";
+    } else {
+      var n = new Date();
+      ds = DAYS[n.getDay()] + " " + n.getDate() + " " + MONTHS[n.getMonth()] + " " + n.getFullYear();
+      ts = pad(n.getHours()) + ":" + pad(n.getMinutes()) + ":" + pad(n.getSeconds());
+    }
     clockEls.forEach(function (d) {
       d.children[0].textContent = ds;
       d.children[1].textContent = ts;
@@ -365,6 +382,7 @@ function hmiBoot(win) {
   }
 
   win.__hmiApply = function (msg) {
+    if (msg.clock && msg.clock.date) win.__hmiClock = msg.clock;
     if (bindingsStale()) bindings = scan();
     var units = msg.units || {};
     bindings.boxes.forEach(function (b) {
@@ -399,6 +417,25 @@ function hmiBoot(win) {
 }
 
 /* ── boot ────────────────────────────────────────────────────────────────── */
+
+// Standalone preview mode: hmi_shell.html?screen=<filename>[&vals=<json>]
+// loads a screen without Godot. This is how a screen gets eyeballed (or
+// headless-screenshotted) without booting the game — the in-game path is
+// unchanged, Godot still pushes screens over IPC.
+(function () {
+  var q = new URLSearchParams(location.search);
+  var want = q.get("screen");
+  if (!want) return;
+  fetch(encodeURI(want))
+    .then(function (r) { return r.text(); })
+    .then(function (html) {
+      openScreen(want, html);
+      var v = q.get("vals");
+      if (v) { try { lastVals = JSON.parse(v); } catch (e) { showErr("bad vals param: " + e); } }
+    })
+    .catch(function (e) { showErr("preview load failed: " + e); });
+})();
+
 sendIpc({ type: "ready" });
 </script>
 </body>

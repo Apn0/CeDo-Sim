@@ -45,6 +45,7 @@ var _current_screen := ""
 var _screen_order : Array[String] = []   # Index card order = ◀/▶ sequence
 var _order_built := false                # lazy — built on first use
 var _line_flow : Node = null
+var _shift_clock : Node = null
 var _scope : Dictionary = {}
 var _accum := 0.0
 
@@ -131,6 +132,7 @@ func _ensure_webview() -> void:
 			"shell:String(typeof window.__shellNav), err:String(window.__lastErr||'')," +
 			"scripts:document.querySelectorAll('script').length," +
 			"bodyLen:document.body?document.body.innerHTML.length:-1," +
+			"pageW:window.innerWidth, pageH:window.innerHeight," +
 			"title:String(document.title)}))"))
 	add_child(_web)
 	print("[HmiWebOverlay] WebView created, loading %s" % SHELL_URL)
@@ -304,7 +306,46 @@ func gather_vals() -> Dictionary:
 		"pills": pills,
 		"units": units,
 		"alarm": _top_alarm(),
+		"clock": _clock_lines(),
 	}
+
+## The two header clock lines. The designs ship a frozen Gregorian date+time
+## (e.g. "zaterdag 10 augustus 2024 / 18:00:30"); a screen standing in the plant
+## must show the PLANT's time, not the player's PC clock (which is what the
+## page's own fallback Date() gives — measured 03:22 real-time on a 07:00 shift).
+## The sim has no Gregorian calendar, it has a rota: ShiftClock.calendar_string()
+## is exactly what the HUD shows ("Dag 1 · Vroege dienst · Ploeg A"), so that
+## takes the date line and the wall clock takes the time line — seconds included,
+## since the design's format has them.
+func _clock_lines() -> Dictionary:
+	var sc := _find_shift_clock()
+	if sc == null:
+		return {}
+	var hhmm := String(sc.call("get_time_string"))          # "HH:MM"
+	var secs := int(absf(float(sc.get("shift_elapsed_seconds")))) % 60
+	return {
+		"date": String(sc.call("calendar_string")),
+		"time": "%s:%02d" % [hhmm, secs],
+	}
+
+## Locate the ShiftClock. current_scene FIRST (the normal game path), then the
+## whole tree — a harness that add_child()s MainWorld without assigning
+## current_scene would otherwise silently find nothing, and the page would fall
+## back to the player's PC clock with no error anywhere. That is exactly what
+## happened on the first in-game verification of this feature (2026-08-10):
+## the screen showed real wall-clock time and looked plausible.
+func _find_shift_clock() -> Node:
+	if _shift_clock != null and is_instance_valid(_shift_clock):
+		return _shift_clock
+	var tree := get_tree()
+	if tree == null:
+		return null
+	var scene := tree.current_scene
+	if scene != null:
+		_shift_clock = scene.find_child("ShiftClock", true, false)
+	if _shift_clock == null and tree.root != null:
+		_shift_clock = tree.root.find_child("ShiftClock", true, false)
+	return _shift_clock
 
 ## Highest-severity active storing from the plant-wide registry, or null.
 func _top_alarm() -> Variant:
