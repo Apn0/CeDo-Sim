@@ -112,7 +112,45 @@ function transform(html) {
 function openScreen(file, html) {
   currentFile = file;
   errBox.style.display = "none";
+  mimic = null;
   frame.srcdoc = transform(html);
+  loadMimic(file);
+}
+
+/* ── mimic ────────────────────────────────────────────────────────────────
+   The Claude-Design exports carry the labels, value boxes and chrome of the
+   operator's screens but NOT the isometric machine drawing, which on the real
+   panel is most of the picture (compare photo IMG-20240811-WA0010). Rather
+   than hand-draw it, tool_render_3c_mimic.gd renders the SIM'S OWN line-3C
+   machines orthographically and writes, next to this file:
+
+     mimic/<screen basename>.png    transparent-background render
+     mimic/<screen basename>.json   {code: {x, y}} anchor per plant code
+
+   Found BY CONVENTION — no mapping table to drift. A screen with no mimic on
+   disk renders exactly as before, so this can never break the other 32. */
+
+var mimic = null;   // {url, anchors, size} for the current screen, or null
+
+function loadMimic(file) {
+  var base = file.replace(/\.dc\.html$/, "");
+  fetch(encodeURI("mimic/" + base + ".json"))
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (j) {
+      if (!j || !j.anchors) return;
+      mimic = { url: "mimic/" + base + ".png", anchors: j.anchors,
+                size: j.mimic_size || [1280, 664] };
+      applyMimic();
+    })
+    .catch(function () { /* no mimic for this screen — normal */ });
+}
+
+function applyMimic() {
+  if (!mimic) return;
+  try {
+    var w = frame.contentWindow;
+    if (w && typeof w.__hmiMimic === "function") w.__hmiMimic(mimic);
+  } catch (e) { showErr("mimic: " + e); }
 }
 
 function measureAndFit() {
@@ -130,6 +168,7 @@ function measureAndFit() {
 
 frame.addEventListener("load", function () {
   measureAndFit();
+  applyMimic();
   if (lastVals) applyVals(lastVals);
   sendIpc({ type: "screen_ready", file: currentFile });
 });
@@ -141,6 +180,7 @@ frame.addEventListener("load", function () {
 window.addEventListener("message", function (e) {
   if (e.data && e.data.type === "__dc_booted") {
     measureAndFit();
+    applyMimic();
     if (lastVals) applyVals(lastVals);
   }
 });
@@ -370,6 +410,106 @@ function hmiBoot(win) {
     return String(Math.round(v)) + " A";
   }
   function stateColor(u) { return u.fault ? RED : (u.on ? GREEN : GREY); }
+
+  /* Drop the rendered line behind the labels, then move each label group onto
+     its own machine. Without the move the labels keep their authored pixel
+     positions and float away from the machines they name — the mimic has to
+     drive the layout, not just sit behind it.
+     Re-runnable: the dc runtime replaces the DOM on boot, so this is called
+     again from the shell after __dc_booted. */
+  win.__hmiMimic = function (m) {
+    var area = mimicArea();
+    if (!area) return;
+    var img = doc.getElementById("__hmi_mimic");
+    if (!img) {
+      img = doc.createElement("img");
+      img.id = "__hmi_mimic";
+      img.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%;" +
+        "object-fit:contain;pointer-events:none;z-index:0;";
+      area.insertBefore(img, area.firstChild);
+    }
+    if (img.getAttribute("src") !== m.url) img.setAttribute("src", m.url);
+    if (getComputedStyle(area).position === "static") area.style.position = "relative";
+    placeOnMimic(area, m);
+  };
+
+  /* The screen's equipment pane: the absolutely-positioned block between the
+     alarm strip and the nav bar. Identified by geometry (tallest absolute
+     child of the screen root) rather than by a class, because the design
+     exports carry no classes or ids at all. */
+  function mimicArea() {
+    var root = doc.querySelector("[data-screen-label]");
+    if (!root) return null;
+    var best = null, bestH = 0;
+    Array.prototype.forEach.call(root.children, function (c) {
+      if (!(c instanceof win.HTMLElement)) return;
+      if (getComputedStyle(c).position !== "absolute") return;
+      var h = c.getBoundingClientRect().height;
+      if (h > bestH) { bestH = h; best = c; }
+    });
+    return best;
+  }
+
+  function placeOnMimic(area, m) {
+    var ar = area.getBoundingClientRect();
+    // The render is letterboxed by object-fit:contain — map anchor pixels
+    // through the SAME fit so labels track the image at any window size.
+    var sx = ar.width / m.size[0], sy = ar.height / m.size[1];
+    var s = Math.min(sx, sy);
+    var ox = (ar.width - m.size[0] * s) / 2, oy = (ar.height - m.size[1] * s) / 2;
+
+    var groups = labelGroups(area);
+    groups.forEach(function (g) {
+      var a = null;
+      for (var i = 0; i < g.codes.length && !a; i++) a = m.anchors[g.codes[i]];
+      if (!a) return;
+      var x = ox + a.x * s, y = oy + a.y * s;
+      var lr = g.label.getBoundingClientRect();
+      g.label.style.left = Math.round(x - lr.width / 2) + "px";
+      g.label.style.top = Math.round(y + 14 * s) + "px";   // caption under the machine
+      g.label.style.right = "auto";  g.label.style.bottom = "auto";
+      g.label.style.zIndex = "2";
+      // Value boxes stack just above the machine, in their authored order.
+      g.boxes.forEach(function (b, i) {
+        var br = b.el.getBoundingClientRect();
+        b.el.style.left = Math.round(x - br.width / 2) + "px";
+        b.el.style.top = Math.round(y - (18 + i * 22) * s) + "px";
+        b.el.style.right = "auto"; b.el.style.bottom = "auto";
+        b.el.style.zIndex = "2";
+      });
+      if (g.lamp) {
+        var gr = g.lamp.getBoundingClientRect();
+        g.lamp.style.left = Math.round(x - gr.width / 2) + "px";
+        g.lamp.style.top = Math.round(y + 2 * s) + "px";
+        g.lamp.style.right = "auto"; g.lamp.style.bottom = "auto";
+        g.lamp.style.zIndex = "2";
+      }
+    });
+  }
+
+  /* Label divs (the ones carrying an L3C code) with the value boxes and status
+     lamp that belong to them — reuses the same nearest-neighbour grouping the
+     live-value binder uses, so both agree on which box is whose. */
+  function labelGroups(area) {
+    if (!bindings || bindingsStale()) bindings = scan();
+    var out = [];
+    Array.prototype.forEach.call(area.querySelectorAll("div"), function (d) {
+      var codes = null;
+      Array.prototype.forEach.call(d.children, function (ch) {
+        var t = (ch.textContent || "").trim();
+        if (ch.tagName === "DIV" && CODE_RE.test(t)) {
+          codes = t.indexOf("L/R") >= 0 ? [t.replace("L/R", "L"), t.replace("L/R", "R")] : [t];
+        }
+      });
+      if (!codes) return;
+      var boxes = bindings.boxes.filter(function (b) { return codes.indexOf(b.code) >= 0; });
+      var lamp = null;
+      for (var i = 0; i < bindings.squares.length && !lamp; i++)
+        if (codes.indexOf(bindings.squares[i].code) >= 0) lamp = bindings.squares[i].el;
+      out.push({ label: d, codes: codes, boxes: boxes, lamp: lamp });
+    });
+    return out;
+  }
 
   function bindingsStale() {
     if (!bindings) return true;
