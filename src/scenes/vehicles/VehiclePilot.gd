@@ -226,6 +226,15 @@ func _tick_evade(v: Node3D, whiskers: Array[float], target: Vector3, dist: float
 		return
 	if _mode_t < EVADE_MIN_SECS:
 		return
+	# A wall-follow is only a follow while it MOVES. A front-CORNER contact the
+	# whiskers straddle (rays at 0°/±25°/±55° pass beside it) grinds here with
+	# every ray reading open: measured on the jam-1 leg 2026-08-10 — dead stop
+	# at 0.01 m/s against the parked V40's corner, _blocked_secs climbing while
+	# this state waited for the 25 s circling cap. RUN escalates on the same
+	# grind signal after 0.4 s; the follow must not be 60x more patient.
+	if _blocked_secs >= BLOCK_TRIGGER_S:
+		_enter_reverse()
+		return
 	if _bearing_clear(v, target, dist):
 		_mode = Mode.RUN
 		_mode_t = 0.0
