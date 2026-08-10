@@ -39,6 +39,15 @@ const BF_XU := Vector2(-0.64279, 0.76604)
 const BF_ZU := Vector2(-0.76604, -0.64279)
 
 const DT := 0.1
+## Feed shape copied from test_tag_snapshot.gd:121-123 so both suites drive the
+## line the same way — wet and dirty LDPE-dominant film, as it arrives off a bale.
+const FEED_RATE    := 8.0
+const FEED_DENSITY := 320.0
+const FEED_COMP    := {"LDPE": 0.78, "HDPE": 0.075, "other": 0.145}
+## Material has to physically traverse the line before the sink banks anything:
+## ProcessModel.WASH_RESIDENCE_S 600 + EXTRUDER_RESIDENCE_S 300, plus pipe
+## transit. Ticking less than that guarantees 0 kg and a false failure.
+const WARMUP_TICKS := 15000            # 1500 s of sim time
 
 var _pass := 0
 var _fail := 0
@@ -108,9 +117,21 @@ func _ready() -> void:
 
 	# ── 1) non-vacuity ───────────────────────────────────────────────────────
 	print("\n[1 — non-vacuity: the npc-05 guard]")
+	# BuildMode places nodes, LineFlow only sees them after rebuild(). It must
+	# come AFTER the awaited frames, not before — BuildMode finishes wiring at
+	# the end of the frame, and rebuilding early leaves _nodes holding freed
+	# Node3Ds (test_line3c_identity.gd:223-238 records both halves of this).
+	lf.call("rebuild")
 	lf.call("enable_qa", "3C", "TEST-SHIFT", null)
-	for _i in range(900):
+	# Machines boot unpowered (LineFlow.gd:612). start_line() runs the PLC
+	# sequencer, which staggers the stages over TARGET_STARTUP_S — the warmup
+	# ticks below cover that as well as the material residence time.
+	lf.call("start_line")
+	var injected := 0.0
+	for _i in range(WARMUP_TICKS):
+		injected += _feed_heads(lf, DT)
 		lf.call("tick", DT)
+	_ok(injected > 0.0, "injected %.1f kg at the line heads" % injected)
 	var gran : float = float(lf.get("gran_mass"))
 	var n_nodes : int = (lf.get("_nodes") as Array).size()
 	_ok(n_nodes > 0, "%d machines discovered on the line" % n_nodes)
@@ -193,6 +214,28 @@ func _ready() -> void:
 	world.queue_free()
 	_verify_operator_saves()
 	_finish()
+
+
+## Push material into every head node (no incoming edge, not a sink). Copied
+## from test_tag_snapshot.gd:_feed_heads so both suites feed identically.
+## Note this bypasses the physical-bale path, so LineFlow.fed_mass stays 0 and
+## the injected mass shows up as ledger residual — which is why check 4 compares
+## the residual BEFORE and AFTER the assay rather than against zero.
+func _feed_heads(lf, delta: float) -> float:
+	var nodes : Array = lf.get("_nodes")
+	var fed := 0.0
+	for i in nodes.size():
+		var nd : Dictionary = nodes[i]
+		if String(nd["role"]) == "sink":
+			continue
+		if bool(lf.call("_has_incoming", i)):
+			continue
+		var draw : float = FEED_RATE * delta
+		(nd["in"] as MaterialBatch).add(MaterialBatch.new(
+			draw, draw / FEED_DENSITY, FEED_COMP.duplicate(), "qaloop_feed",
+			draw * 0.08, draw * 0.12))
+		fed += draw
+	return fed
 
 
 func _place_macro(bm, macro_id: String, start_bf: Vector2) -> void:
