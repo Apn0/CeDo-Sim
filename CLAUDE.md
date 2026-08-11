@@ -270,6 +270,49 @@ carried in saves, `machine_state_changed` payloads and recorded event streams,
 so renumbering them would silently rewrite history. The guard test asserts the
 numbering.
 
+## A test file can rot without anyone noticing
+
+`tools/regression/run.sh`'s parse gate is `--headless --path . --quit`, which
+boots the main scene. Nothing under `src/tests/` is on that path, so a test
+script can stop compiling and stay broken indefinitely while the harness reports
+green. Measured 2026-08-11: `test_npc05_realworld.gd` — the REAL MainWorld proof
+for the npc-05 container chain, written precisely because the bench stubs the
+execution half — referenced `_backup_files()`, `_run()` and `_finish()`, none of
+which existed. It had never once run.
+
+The harness now sweeps `src/tests/*.gd` with `--check-only`. It gates on
+**Parse Error only**, deliberately: `--check-only` does not register autoloads,
+so 31 of 77 files report `Compile Error: Identifier not found: Plant /
+EventBus / WorldLayout` purely from how they are invoked — including files that
+run green. Measured across all 77: 0 Parse Errors, 31 Compile Errors, every one
+an autoload miss. Gating on Compile Error would paint the step permanently red,
+and a permanently red step is one everyone learns to skip. Mutation-tested:
+restoring the broken file turns it red, the repaired tree is clean.
+
+## The npc-05 container chain stalls at DRIVE_TO_INDOOR
+
+What the restored harness reports (`NPC05_WATCH_S=180`):
+
+* a stock world has **zero indoor WasteContainers**. `ContainerGuideManager`'s
+  per-machine pass builds *hologram guides* marking where a bin belongs; the
+  only real container it spawns is the outdoor skip in `WORLD_CONTAINER_SPAWNS`.
+  The source bin is the operator's to place, so the board correctly emits
+  nothing and the chain cannot start at all. The harness now places one on a
+  real guide slot through the catalog and fills it via `WasteContainer.add()`.
+* with a full bin the board dispatches immediately: WALK_TO_FORKLIFT at t=4.5 s,
+  DRIVE_TO_INDOOR at t=6.2 s.
+* it then **stalls in DRIVE_TO_INDOOR for the rest of the window**. The worker
+  boards (`task._boarded = true`) and sits on the forklift (0.1 m away), the
+  target bin is **33.9 m** off, and the forklift does not cover it. The phase
+  budget (123.5 s) expires, the task is re-emitted, another worker takes it, same
+  result. This is the same dead-reckoning vehicle autopilot weakness that
+  `ContainerGuide.gd` already records for the yard leg — it fails on a 34 m
+  indoor leg too.
+* the **boarding-deadlock guard never fires**, because its premise no longer
+  holds: it watches for `set_physics_process(false)` on a seated worker, and
+  `physics_process` stayed true on every observed frame even with
+  `_boarded = true`.
+
 ## Branch state
 
 `main` is the integration branch. Work happens on feature branches and lands via
