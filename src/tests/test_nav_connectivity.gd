@@ -90,10 +90,18 @@ func _ready() -> void:
 		await get_tree().process_frame
 
 	await _build_line_3a()
+	# BuildMode calls line_flow.rebuild() after every placement; this harness
+	# builds its fixture straight from the catalog and so never did, leaving
+	# LineFlow with 0 nodes. CrewManager._machine_list() reads line_flow._nodes,
+	# so with none the post assignment below has nothing to assign from.
+	var lf0 = _world.get("line_flow")
+	if lf0 != null and lf0.has_method("rebuild"):
+		lf0.call("rebuild")
+		await get_tree().process_frame
 	await _wait_for_bake()
 	_test_machine_carve()
 	_test_inside_outside()
-	_test_crew_posts()
+	await _test_crew_posts()
 
 	print("\n=========================================")
 	print("Result: %s (%d ok, %d fail)"
@@ -190,6 +198,26 @@ func _wait_for_bake() -> void:
 	#
 	# This wait stays because gating on the server's iteration id is correct on its
 	# own merits, not because it fixed anything.
+	#
+	# RESOLVED 2026-08-12 — THIRD DIAGNOSIS, AND THIS ONE HELD.
+	# The nondeterminism was never in the navmesh. It was in the INPUT. This
+	# harness builds its line-3A fixture straight from the catalog and never
+	# called line_flow.rebuild() (BuildMode does, after every placement), so
+	# CrewManager._machine_list() — which reads line_flow._nodes — saw ZERO
+	# machines. assign_posts() therefore took the `no machine in zone` branch for
+	# every worker and set pos = w.global_position: the spot each worker happened
+	# to be standing on mid-walk. Measured, 3 consecutive runs, all 9 workers:
+	#   station='' every time, and every post moved between runs
+	#   (Romain (-208.8,83.4) / (-196.6,98.0) / (-188.6,85.6))
+	# So the check was routing eight wandering floor positions, and failed
+	# whenever one landed off-mesh — about one run in three, always on a
+	# different worker. That is exactly the signature recorded above.
+	#
+	# With rebuild() called before assignment, posts are real stations
+	# (extruder_3a, centrifuge, mengsilo, wind_sifter, plus floaters on
+	# "(rondgang)") and the result is byte-identical run to run: 9 runs, same 6
+	# broken legs, same distances to 0.01 m. The check now names a stable
+	# navmesh/topology defect instead of tossing a coin.
 	var map : RID = region.get_navigation_map()
 	var iter : int = -1
 	var iter_stable : int = 0
@@ -309,10 +337,30 @@ func _test_crew_posts() -> void:
 	# during the pre-shift window that position is wherever the worker still is —
 	# on the approach road. So these are counted, named and reported SEPARATELY,
 	# and the navmesh assertion is made over the posts that are actually on site.
+	# assign_posts() reads line_flow._nodes (CrewManager._machine_list), and it
+	# runs at CrewManager setup — BEFORE this harness builds its line-3A fixture.
+	# So every post was assigned against an empty machine list and fell back to
+	# `pos = w.global_position`, i.e. wherever the worker was standing mid-walk.
+	# MEASURED before this call was added: all 8 workers had station='' and every
+	# post moved between runs (Romain (-208.8,83.4) / (-196.6,98.0) / (-188.6,85.6)),
+	# so the check was routing eight random floor positions and failed whenever one
+	# of them landed off-mesh — about one run in three. Re-assign now that the
+	# machines exist, so the posts under test are actual stations.
+	var lf = _world.get("line_flow")
+	var n_nodes : int = 0
+	if lf != null and "_nodes" in lf:
+		n_nodes = (lf.get("_nodes") as Array).size()
+	_info("LineFlow nodes available for post assignment: %d" % n_nodes)
+	if cm.has_method("assign_posts"):
+		cm.call("assign_posts")
+		for _i in range(10):
+			await get_tree().process_frame
+
 	var site := NavSiteBounds.compute(_world)
 	var unreachable : Array[String] = []
 	var offsite : Array[String] = []
 	var checked : int = 0
+	var stationed : int = 0
 	for w in workers:
 		if not (w is Node3D):
 			continue
@@ -324,6 +372,17 @@ func _test_crew_posts() -> void:
 			offsite.append("%s at (%.1f, %.1f)" % [String(w.get("npc_name")), post.x, post.z])
 			continue
 		checked += 1
+		# Provenance, not just position. assign_posts() takes the post from the
+		# nearest machine IN ZONE measured from the worker's CURRENT position,
+		# and falls back to that position outright when the zone has no machine
+		# (CrewManager.gd:266-277). A post with no station id is therefore
+		# "wherever this worker happened to be standing", which is why the
+		# failing worker and post differ every run.
+		var sid := String(w.get("assigned_station_id"))
+		if sid != "":
+			stationed += 1
+		_info("post %-12s station='%s' at (%.1f, %.1f)"
+			% [String(w.get("npc_name")), sid, post.x, post.z])
 		# Both directions: a one-way route is a crew that can go on break and
 		# never come back, which is the same bug wearing a different hat.
 		#
@@ -346,6 +405,14 @@ func _test_crew_posts() -> void:
 	_check(checked >= 5,
 		"enough ON-SITE posts were actually measured to mean anything (%d of %d workers)"
 			% [checked, workers.size()])
+	# ANTI-VACUITY #2. `checked > 0` is not enough: a post with no station id is
+	# just "wherever this worker was standing", and routing eight of those is a
+	# coin flip, not a test. MEASURED before the LineFlow rebuild above: all 8
+	# workers had station='' and every post moved between runs, which is the
+	# whole reason this file failed about one run in three.
+	_check(stationed > 0,
+		"posts come from real stations, not from wherever a worker stood "
+		+ "(%d of %d checked posts carry a station id)" % [stationed, checked])
 	_check(unreachable.is_empty(),
 		"every on-site post routes to the canteen and back (%d broken: %s)"
 			% [unreachable.size(), ", ".join(unreachable) if not unreachable.is_empty() else "none"])

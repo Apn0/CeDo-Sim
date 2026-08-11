@@ -313,6 +313,31 @@ What the restored harness reports (`NPC05_WATCH_S=180`):
   `physics_process` stayed true on every observed frame even with
   `_boarded = true`.
 
+## A flaky test usually means a nondeterministic INPUT
+
+`test_nav_connectivity` failed about one run in three, always on a different
+worker, for long enough that two diagnoses were tried and reverted (a navmesh
+bake race, and snapping posts to the nearest mesh point — both measured, both
+disproven, both recorded in the file). Neither was the cause.
+
+The cause was that the harness builds its line-3A fixture straight from the
+catalog and never called `line_flow.rebuild()` — `BuildMode` does that after
+every placement. `CrewManager._machine_list()` reads `line_flow._nodes`, so it
+saw zero machines, so `assign_posts()` took its `no machine in zone` fallback
+for all nine workers and set the post to `w.global_position` — wherever that
+worker was standing mid-walk. The test was routing eight wandering floor
+positions and failing whenever one landed off-mesh.
+
+Fixed by rebuilding LineFlow before assignment. Posts are now real stations and
+the result is byte-identical across 9 runs. Two anti-vacuity guards keep it that
+way: `checked > 0` (already there) and a new one asserting posts actually carry
+a station id, because eight random floor points will always route *sometimes*.
+
+**It is deterministically RED**, reporting 6 unroutable legs at 4 named stations
+(`extruder_3a`, `centrifuge`, `mengsilo`, `wind_sifter`). That is a real
+navmesh/topology defect the coin-flip had been masking. Do not silence it by
+widening `POST_ENDPOINT_TOL_M` or dropping workers from the fixture.
+
 ## Branch state
 
 `main` is the integration branch. Work happens on feature branches and lands via
