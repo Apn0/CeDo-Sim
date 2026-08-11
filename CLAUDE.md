@@ -185,6 +185,91 @@ places an orb, G snaps to grid/edge, H clears, RMB/F10 exits and writes
 operator says "check feedback", read the newest directory under
 `%APPDATA%/Godot/app_userdata/CeDo Simulator/feedback/`.
 
+## Placed machines must be given a sim brain
+
+A catalog placeable is geometry. Some machines also own a *simulation*, and that
+is attached by `MachineBrains.attach()` from the tail of
+`PlaceableCatalog.build_node()`.
+
+This is not decorative plumbing. Measured on 2026-08-11, a booted MainWorld on a
+real 84-placeable save contained **8872 nodes across 67 scripts and zero
+`ExtruderMachine.gd`**, and a 90-second recording of every EventBus signal
+produced **0 events**. `ExtruderModel` is constructed in exactly one place
+(`ExtruderMachine.gd:54`), on exactly one scene (`Extruder3B.tscn`), which was
+instantiated by exactly two scripts: `ExtruderGauntlet.gd` (a bench) and
+`LegacyPropsSpawner.gd` — and the latter is gated behind
+`not WorldLayout.is_configured()` (`MainWorld.gd:244`). So every real save
+printed *"WorldLayout is authoritative — skipping legacy utility/demo spawns"*
+and no extruder ever simulated. What was dark: the vacuum cascade and its 120 s
+grace, `machine_state_changed` / `machine_alarm_raised` / `scada_event`
+entirely, the HMI MACHINES screen and 7-zone panel (`HmiOverlay` enumerates
+`get_nodes_in_group("extruder_machine")` in five places), and the SWI-049
+startup flow `SorteerlijnScope` drives against that same group.
+
+If you add a machine that owns a model, add it to `MachineBrains.EXTRUDERS` (or
+a sibling table) rather than instantiating it from a world script. Rules the
+hook already honours: config is assigned **before** `add_child` (`_ready()`
+builds the model from it), the brain's placeholder mesh and collider are
+switched off because the catalog model is the visible machine, each brain gets
+its **own duplicated** `ExtruderConfig` (a shared one means editing a zone
+setpoint on the HMI retunes the other line), and `attach()` is idempotent so
+`rebuild_in_place()` cannot stack two.
+
+`tools/regression/run.sh` does **not** cover this — its world places no extruder
+at all, so it stayed green for the entire period the brain was missing. The
+guard is `src/tests/test_extruder_brain_wired.gd`:
+
+    godot --headless --path . res://src/tests/test_extruder_brain_wired.tscn
+
+13 checks, including negative controls (a non-extruder placeable and a build
+mode ghost must NOT get a brain) and a behavioural check that driving
+`_pending["start_production"]` really produces `machine_state_changed`. It has
+been mutation-tested: reverting the `build_node` hook turns 4 of the 13 red.
+
+## The extruder warm-up, and a citation that was wrong
+
+A cold barrel used to be a dead end. `#218` spawns the model `OFF`, `_ready`
+hands the barrel over hot, and `_tick_off` cools it 0.5 °C/s — so after ~50 s
+the melt is below ~190 °C, cold-melt torque (+2 %/°C on top of a 110 % trip that
+fires after 2 s sustained) trips every start, and **no operator input anywhere
+turned the heaters back on.** Measured over a recorded shift: **81 % of starts on
+3A and 98 % on L1 went STARTING → FAULT.**
+
+`State.PREHEAT` fixes that. Pressing start on a cold barrel routes to PREHEAT
+(`ExtruderModel._route_start_request`), the heaters warm the melt toward
+setpoint, and the green button is not live until `preheat_ready()`. The ready
+threshold is *derived* from the trip rather than picked: it is the melt
+temperature at which cold-melt torque still leaves 25 % headroom under
+`TORQUE_TRIP_PCT`.
+
+**Duration comes from the docs, not from feel.** `ExtruderConfig.preheat_min_s`
+= 1800 s, from Cedo-PROD-SWI-042 p4 step 19: starting the 3a/3b extruder
+compactors *"duurt altijd minimaal 30 minuten, in deze opwarm tijd, kunnen de
+silo's verder vullen"*. That same step records *"Nog SWI maken opstarten
+extruders"* — there is no dedicated extruder start-up SWI — which is why step 19
+is the authority.
+
+**Citation fix.** `ExtruderMachine._ready()` used to point at SWI-049
+"Automaatknop → Voorverwarmen (15 s preheat) → Groene drukknop". SWI-048 and
+SWI-049 are both *Opstarten sorteerlijn* — the **sorting line**, a different
+machine. Anyone reading that comment would have modelled a 15-second extruder
+preheat off a sort-line document. The comment now cites SWI-042 p4 §19.
+
+**Check every SWI id against `docs/plant/swi/INDEX.md` before implementing from
+a code comment.** A full audit of all 54 citation sites in `src/` and `tools/`
+(`docs/plant/swi_citation_audit_2026-08-11.md`) found every cited id real, but
+**two pointed at a document about a different machine** — the failure mode is not
+a dangling reference, it is a plausible, authoritative-looking citation that
+survives review. `ExtruderGauntlet.gd` also blamed SWI-049 for the extruder, and
+`ShredderMachine.gd` cited SWI-042 for cleaning shredder 2 (which has no SWI at
+all). Note that SWI-042's *title* is about a knife change while its *page 4* is
+the shift start-up schedule, so always cite page and step, not just the id.
+
+`State.PREHEAT` is **appended as 8**, never inserted: the first eight values are
+carried in saves, `machine_state_changed` payloads and recorded event streams,
+so renumbering them would silently rewrite history. The guard test asserts the
+numbering.
+
 ## Branch state
 
 `main` is the integration branch. Work happens on feature branches and lands via

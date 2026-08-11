@@ -1537,6 +1537,14 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 			label.modulate = Color.WHITE
 			body.add_child(label)
 
+		# Sim brain. Some placeables are not just geometry: an extruder owns an
+		# ExtruderModel, joins the "extruder_machine" group the HMI enumerates,
+		# and drives the vacuum cascade. Before this hook nothing in a configured
+		# world ever created one — see MachineBrains.gd for the measurement.
+		# We are already inside `if not ghost`, so ghosts never get a brain, and
+		# attach() is idempotent so rebuild_in_place() cannot stack two.
+		MachineBrains.attach(body, id, size)
+
 	return body
 
 # =============================================================================
