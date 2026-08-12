@@ -334,9 +334,96 @@ way: `checked > 0` (already there) and a new one asserting posts actually carry
 a station id, because eight random floor points will always route *sometimes*.
 
 **It is deterministically RED**, reporting 6 unroutable legs at 4 named stations
-(`extruder_3a`, `centrifuge`, `mengsilo`, `wind_sifter`). That is a real
-navmesh/topology defect the coin-flip had been masking. Do not silence it by
+(`extruder_3a`, `centrifuge`, `mengsilo`, `wind_sifter`). Do not silence it by
 widening `POST_ENDPOINT_TOL_M` or dropping workers from the fixture.
+
+### The red is a CREW defect, not a navmesh one (measured 2026-08-12)
+
+The paragraph above used to call it "a real navmesh/topology defect". It is not,
+and the correction matters because it points the next person at the wrong file.
+The test now prints a `why` line for every broken leg, and all five failing posts
+read the same:
+
+    why Kevin   nearest mesh dXZ 0.00 m, +1.10 m above floor; canteen->it ends
+                3.68 m short (ISLAND); inside [Extruder 3A 14.0x2.6 m]
+
+Every failing post is **inside a named machine's own collider** — `Extruder 3A`,
+`Centrifuge`, `Mixing silo (mengsilo)`, `Windshifter (zigzag)` (x2). By
+construction: `assign_posts` sets the post to the machine's own
+`global_position` (`CrewManager.gd:276`), and MainWorld bakes that same collider
+as navmesh source geometry, so a stationed post always lands inside the hole its
+own machine carved. `post->canteen` then goes nowhere (10.8-40.5 m short) while
+`canteen->post` lands in the aisle 1.6-3.7 m away and mostly passes — exactly the
+asymmetry the file predicts.
+
+Two consequences worth having in writing:
+
+- **Snapping posts to the nearest navmesh point cannot fix this.** The nearest
+  point is dXZ **0.00 m** away (1.10 m above the operating floor): a sliver
+  Recast left inside the machine footprint, lifted by `cell_height` 0.60
+  quantisation, enclosed and unroutable. The snap is a no-op in plan, which is
+  the whole reason the 2026-07-29 attempt
+  measured as "fixes nothing", and it is why repeating it will fail again. A real
+  fix places the post in the AISLE BESIDE the machine — a change to where crew
+  stand, so an operator call, not a test tweak.
+- The check's own convention already says posts that are CrewManager's fault are
+  reported (`ADVIS`) rather than asserted — that is how off-site posts are
+  handled. Whether this one moves to `ADVIS` is the same operator call. Until it
+  does, the harness stays red for a reason that is real but is not navigation's.
+
+### The bake race was re-tested 2026-08-12 and is dead
+
+Worth stating flatly, because it is the hypothesis everyone reaches for first and
+this is now the third time it has been chased. Across **20 runs** (10 pre-fix at
+`ea54e19^`, 10 post-fix at `ea54e19`) every navmesh-only measurement was
+identical, in the failing runs as well as the passing ones:
+
+    baked navmesh: 279 polygons (server map iteration 3)      20/20
+    route AROUND the machine row: 13 points                   20/20
+    inside -> outside: 12 points, ends 0.00 m from goal       20/20
+
+A race would move those numbers. Only the POSTS moved. The synchronisation point
+people propose adding — waiting on `NavigationServer3D.map_get_iteration_id()`
+rather than a frame count — has been in `_wait_for_bake()` since 2026-07-29;
+`test_nav_connectivity.gd` records that it was added for this flake and did not
+fix it. Measured failure rate of the pre-fix version in this batch: **1 of 10**
+(the earlier estimate was ~1 in 3; either way it is a coin toss, and the post-fix
+version is 10 of 10 byte-identical, not merely 10 of 10 same-verdict).
+
+## The headless teardown segfault is real, and it skips `_restore_files()`
+
+`run.sh` keys off the printed verdict rather than the exit code, with the comment
+"Godot can segfault in teardown after a clean PASS". Measured 2026-08-12 over
+**62 batched headless MainWorld boots**: it segfaults **24 %** of the time
+(15 of 62 — 2 of 10 `test_outdoor_route`, 13 of 52 `test_nav_connectivity`).
+Keying off the
+verdict is CORRECT and load-bearing: in every segfaulting run the log ends
+exactly at the verdict banner, after every check has executed, while a clean run
+continues on to the `ObjectDB instances leaked at exit` warnings. No verdict was
+ever wrong.
+
+**But it is not harmless, and this is the part nobody had measured.** `_finish()`
+runs `_world.queue_free()` → `await process_frame` → `_restore_files()` →
+`quit()`. The crash lands in world teardown — i.e. BEFORE the restore. Proof:
+after the batch, `__outdoorroute___save.json` and `__outdoorroute___factory.json`
+were still sitting in `user://`, which only happens when `_restore_files()` never
+ran. Both tests list **`user://world_layout.json` in `PROTECT`**, so roughly one
+run in four the safety net over the world's ground truth — the file this document
+already flags as being in git nowhere — is simply skipped. It came through every
+boot byte-identical against a `.bak`, so nothing is lost today; the exposure is
+the finding, and it is the same failure mode already recorded for killed runs.
+Take a `.bak` of `world_layout.json` before batch-running any MainWorld suite.
+
+## `test_outdoor_route` does not share the navmesh race — it has no navmesh
+
+Worth writing down because the two files sit next to each other in `run.sh` and
+the assumption is natural. `test_outdoor_route` has NO bake wait at all, only a
+fixed `BOOT_FRAMES + SETTLE_FRAMES` — which looks exactly like the thing that
+races. It cannot: vehicles route through `VehicleRouteGrid`
+(`BaseVehicle._plan_route`, `BaseVehicle.gd:1043`), a synchronous occupancy grid
+built from physics shape queries, with no `NavigationServer3D` involvement
+anywhere in the path. Measured 10 runs: **10/10 PASS, all four gated checks one
+hash** — 4 waypoints and 2.19 m arrival, identical every run.
 
 ## Branch state
 

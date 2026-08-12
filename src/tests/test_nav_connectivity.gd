@@ -43,6 +43,11 @@ const PATH_ENDPOINT_TOL_M : float = 1.5
 ## Crew posts get more slack: a post can legitimately sit inside a machine's
 ## eroded footprint, and the nearest mesh point is then a metre or two away.
 const POST_ENDPOINT_TOL_M : float = 3.0
+## Diagnostics only. "Did the path land ON this polygon" needs a far tighter gate
+## than "did the crew get near enough": A* handed an unreachable target returns
+## the closest reachable point, so any tolerance wide enough to forgive a post
+## inside a machine is also wide enough to call an island reachable.
+const ON_POLYGON_TOL_M : float = 0.5
 
 const BOOT_FRAMES   : int = 120
 const SETTLE_FRAMES : int = 60
@@ -400,6 +405,13 @@ func _test_crew_posts() -> void:
 		if gap_from > POST_ENDPOINT_TOL_M:
 			unreachable.append("%s canteen<-post (ends %.2f m short; post at (%.1f, %.1f))"
 				% [String(w.get("npc_name")), gap_from, post.x, post.z])
+		# A distance alone does not say WHOSE bug it is, and this file has already
+		# cost two wrong diagnoses that a number here would have cut short. So when
+		# a leg breaks, name the mechanism as well: how far the post is from any
+		# mesh at all, whether the nearest mesh point is reachable from the canteen,
+		# and — the decisive one — which body the post is standing inside.
+		if gap_to > POST_ENDPOINT_TOL_M or gap_from > POST_ENDPOINT_TOL_M:
+			_info("  why %-12s %s" % [String(w.get("npc_name")), _diagnose(post, canteen)])
 	# ANTI-VACUITY. 0 of 0 posts reachable is the shape of every vacuous green
 	# this project has shipped. Assert the sample size before the result.
 	_check(checked >= 5,
@@ -441,6 +453,96 @@ func _route(label: String, from: Vector3, to: Vector3, tol: float) -> void:
 	_check(path.size() >= 2 and endp <= tol,
 		"%s: routed (%d points, ends %.2f m from the goal, limit %.1f)"
 			% [label, path.size(), endp, tol])
+
+## WHY a post's route breaks, in the three terms that separate the candidate
+## owners. Measurement only — this adds no assertion and cannot change a verdict.
+##
+##   nearest mesh  where the navmesh actually is relative to the post, SPLIT into
+##                 a horizontal offset and a height above the operating floor.
+##                 The split is the whole point. MEASURED here: dXZ 0.00 m, and
+##                 0.2-0.4 m of floor clearance. There IS mesh directly at the
+##                 post's own XZ — a sliver Recast left inside the machine's
+##                 footprint, lifted by cell_height 0.60 voxel quantisation. So
+##                 "the post is off-mesh" is the wrong headline; the post is ON a
+##                 scrap of mesh that goes nowhere.
+##   reach         whether the canteen can route to that nearest point and LAND
+##                 on it, judged at 0.50 m rather than POST_ENDPOINT_TOL_M. The
+##                 loose gate is what makes this reading useless: A* asked for an
+##                 unreachable island returns the closest reachable point instead,
+##                 which is the aisle ~1.8 m away — inside a 3 m tolerance, and
+##                 therefore indistinguishable from success. Only a gate tight
+##                 enough to demand "the path actually ended ON the polygon"
+##                 separates an island from a neighbour.
+##   inside        the body whose collider contains the post, WITH its footprint.
+##                 This one names an owner outright: CrewManager.assign_posts
+##                 takes the post from the machine's OWN global_position
+##                 (CrewManager.gd:276), and MainWorld bakes that machine's
+##                 collider as navmesh source, so a stationed post sits inside
+##                 its own machine.
+##
+## A FOURTH THEORY, DISPROVEN 2026-08-12 — RECORDED SO NOBODY CHASES IT.
+## extruder_3a is the only station that fails in BOTH directions, and the obvious
+## reading is that a two-way failure must have a different cause than the four
+## one-way ones. It does not. All five `why` lines are the same shape — dXZ
+## 0.00 m, ISLAND, post inside its own machine — and the whole difference is how
+## far the reachable aisle sits from the machine's ORIGIN, which is a function of
+## how big the machine is:
+##
+##     extruder_3a   canteen->post ends 3.68 m short   > POST_ENDPOINT_TOL_M 3.0
+##     centrifuge                    1.78 m
+##     mengsilo                      2.17 m
+##     wind_sifter                   1.97 m
+##
+## Only the first crosses the 3.0 m line, so only the first is also counted in
+## the post<-canteen direction. One mechanism, five instances, one of them on the
+## far side of a tolerance. Treating the asymmetry as a separate defect would be
+## the fourth wrong diagnosis this check has produced; the footprint printed in
+## `inside [...]` is there to cut that short.
+func _diagnose(post: Vector3, canteen: Vector3) -> String:
+	var map : RID = _world.get_world_3d().navigation_map
+	var cp : Vector3 = NavigationServer3D.map_get_closest_point(map, post)
+	var off : float = Vector2(cp.x - post.x, cp.z - post.z).length()
+	# HEIGHT ABOVE THE OPERATING FLOOR, NOT ABOVE THE POST. Measured 2026-08-12:
+	# against the post this read +0.26 to +0.42 m over 10 runs and was the ONLY
+	# unstable field in the whole log. Not the navmesh — cp.y is deterministic —
+	# but post.y, which assign_posts copies from w.global_position, i.e. the
+	# worker's SETTLED standing height, a few cm of physics noise every boot.
+	# Which is this file's own lesson arriving by the back door: a nondeterministic
+	# input had leaked into a diagnostic, and a diagnostic that moves run to run is
+	# one nobody can diff. Plant.floor_top_y() is a constant of the world.
+	var dy : float = cp.y - Plant.floor_top_y()
+	var to_cp : PackedVector3Array = NavigationServer3D.map_get_path(map, canteen, cp, true)
+	var cp_gap : float = INF
+	if to_cp.size() >= 2:
+		cp_gap = to_cp[to_cp.size() - 1].distance_to(cp)
+	# CONTAINMENT FROM GEOMETRY, NOT FROM A PHYSICS QUERY. This began as
+	# intersect_point at post.y + 1.0 and was the last unstable field in the log:
+	# 1 run in 10 reported `inside [nothing]` for three of the five posts. The
+	# probe height rode on post.y — the worker's settled standing height again —
+	# and a point query is knife-edge by nature. Measured AABB overlap depends on
+	# nothing but the placement, which the identical routing distances already
+	# prove is deterministic.
+	#
+	# The body's OWN footprint is reported with it, because the one number that
+	# looks like a second mechanism is explained by it — see the note below.
+	# Axis-aligned, so a rotated machine reads slightly larger than its true
+	# footprint; that is fine for naming an owner and would not be for gating.
+	var inside : Array[String] = []
+	for n in get_tree().get_nodes_in_group("placed_object"):
+		if not (n is Node3D):
+			continue
+		var box := NavSiteBounds.body_aabb(n as Node3D)
+		if box.size == Vector3.ZERO:
+			continue
+		if post.x < box.position.x or post.x > box.position.x + box.size.x:
+			continue
+		if post.z < box.position.z or post.z > box.position.z + box.size.z:
+			continue
+		inside.append("%s %.1fx%.1f m" % [(n as Node).name, box.size.x, box.size.z])
+	return ("nearest mesh dXZ %.2f m, %+.2f m above floor; canteen->it ends %.2f m short (%s); inside [%s]"
+		% [off, dy, cp_gap,
+			"reachable" if cp_gap <= ON_POLYGON_TOL_M else "ISLAND",
+			", ".join(inside) if not inside.is_empty() else "nothing"])
 
 ## XZ distance between where a route ENDS and where it was asked to end. INF when
 ## no route came back at all. Returned as a number rather than a bool so the
