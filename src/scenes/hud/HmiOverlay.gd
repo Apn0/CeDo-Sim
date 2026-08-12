@@ -481,7 +481,28 @@ func open_subscope(scope_id: String) -> bool:
 		ctrl.call("set_screen", scope_id.substr("l3c_unit:".length()))
 		if ctrl.has_method("bind"):
 			ctrl.call("bind", _scope, _line_flow)
+		# Operator 2026-08-07 — the bottom-nav < / > keys navigate the 13 unit
+		# screens in HOME_TILES_WASHING plant order (wrap-around), replacing
+		# their "niet gekoppeld" disabled state.
+		if ctrl.has_method("wire_nav"):
+			var order : Array = _l3c_unit_scope_order()
+			var idx : int = order.find(scope_id)
+			if idx >= 0 and order.size() > 1:
+				var prev_id : String = String(order[(idx - 1 + order.size()) % order.size()])
+				var next_id : String = String(order[(idx + 1) % order.size()])
+				ctrl.call("wire_nav",
+					func() -> void: open_subscope(prev_id),
+					func() -> void: open_subscope(next_id))
 	return true
+
+## The l3c_unit:* scope ids in HOOFDMENU tile order — the < / > nav sequence.
+func _l3c_unit_scope_order() -> Array:
+	var out : Array = []
+	for tile in HOME_TILES_WASHING:
+		var sid := String((tile as Dictionary).get("scope_id", ""))
+		if sid.begins_with("l3c_unit:"):
+			out.append(sid)
+	return out
 
 ## Resolve the ExtruderModel for the panel's current scope line (#bullet-10).
 ## Reuses _find_extruder_model_for() (which matches on the extruder machine's
@@ -1201,10 +1222,19 @@ func _refresh() -> void:
 	var screen_name : String = ["HOOFDMENU", "OVERZICHT", "STORINGEN", "HANDBEDIENING", "MACHINES"][_screen]
 	_header_title.text = "%s  ·  %s" % [_station, screen_name]
 	var faults := _compute_faults()
+	# Operator 2026-08-07 — a storing-fixen worker acknowledging at a panel
+	# (KwitterenStoringTask → NpcAutonomyBoard.mark_npc_acked) counts exactly
+	# like the player's KWITTEREN: the bell calms to amber-steady. Ack only
+	# silences; the fault row still stands until its condition ends.
+	var board := get_node_or_null("/root/NpcAutonomyBoard")
 	var unacked := 0
 	for f in faults:
-		if not _acked_faults.has(String(f["code"])):
-			unacked += 1
+		var fcode := String(f["code"])
+		if _acked_faults.has(fcode):
+			continue
+		if board != null and board.has_method("npc_acked") and bool(board.call("npc_acked", fcode)):
+			continue
+		unacked += 1
 	# #207c — header chip is now a small static text label; the live alarm
 	# indicator lives on the navbar bell (CHANGE A).
 	if faults.is_empty():

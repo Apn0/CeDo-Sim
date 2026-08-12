@@ -185,6 +185,246 @@ places an orb, G snaps to grid/edge, H clears, RMB/F10 exits and writes
 operator says "check feedback", read the newest directory under
 `%APPDATA%/Godot/app_userdata/CeDo Simulator/feedback/`.
 
+## Placed machines must be given a sim brain
+
+A catalog placeable is geometry. Some machines also own a *simulation*, and that
+is attached by `MachineBrains.attach()` from the tail of
+`PlaceableCatalog.build_node()`.
+
+This is not decorative plumbing. Measured on 2026-08-11, a booted MainWorld on a
+real 84-placeable save contained **8872 nodes across 67 scripts and zero
+`ExtruderMachine.gd`**, and a 90-second recording of every EventBus signal
+produced **0 events**. `ExtruderModel` is constructed in exactly one place
+(`ExtruderMachine.gd:54`), on exactly one scene (`Extruder3B.tscn`), which was
+instantiated by exactly two scripts: `ExtruderGauntlet.gd` (a bench) and
+`LegacyPropsSpawner.gd` — and the latter is gated behind
+`not WorldLayout.is_configured()` (`MainWorld.gd:244`). So every real save
+printed *"WorldLayout is authoritative — skipping legacy utility/demo spawns"*
+and no extruder ever simulated. What was dark: the vacuum cascade and its 120 s
+grace, `machine_state_changed` / `machine_alarm_raised` / `scada_event`
+entirely, the HMI MACHINES screen and 7-zone panel (`HmiOverlay` enumerates
+`get_nodes_in_group("extruder_machine")` in five places), and the SWI-049
+startup flow `SorteerlijnScope` drives against that same group.
+
+If you add a machine that owns a model, add it to `MachineBrains.EXTRUDERS` (or
+a sibling table) rather than instantiating it from a world script. Rules the
+hook already honours: config is assigned **before** `add_child` (`_ready()`
+builds the model from it), the brain's placeholder mesh and collider are
+switched off because the catalog model is the visible machine, each brain gets
+its **own duplicated** `ExtruderConfig` (a shared one means editing a zone
+setpoint on the HMI retunes the other line), and `attach()` is idempotent so
+`rebuild_in_place()` cannot stack two.
+
+`tools/regression/run.sh` does **not** cover this — its world places no extruder
+at all, so it stayed green for the entire period the brain was missing. The
+guard is `src/tests/test_extruder_brain_wired.gd`:
+
+    godot --headless --path . res://src/tests/test_extruder_brain_wired.tscn
+
+13 checks, including negative controls (a non-extruder placeable and a build
+mode ghost must NOT get a brain) and a behavioural check that driving
+`_pending["start_production"]` really produces `machine_state_changed`. It has
+been mutation-tested: reverting the `build_node` hook turns 4 of the 13 red.
+
+## The extruder warm-up, and a citation that was wrong
+
+A cold barrel used to be a dead end. `#218` spawns the model `OFF`, `_ready`
+hands the barrel over hot, and `_tick_off` cools it 0.5 °C/s — so after ~50 s
+the melt is below ~190 °C, cold-melt torque (+2 %/°C on top of a 110 % trip that
+fires after 2 s sustained) trips every start, and **no operator input anywhere
+turned the heaters back on.** Measured over a recorded shift: **81 % of starts on
+3A and 98 % on L1 went STARTING → FAULT.**
+
+`State.PREHEAT` fixes that. Pressing start on a cold barrel routes to PREHEAT
+(`ExtruderModel._route_start_request`), the heaters warm the melt toward
+setpoint, and the green button is not live until `preheat_ready()`. The ready
+threshold is *derived* from the trip rather than picked: it is the melt
+temperature at which cold-melt torque still leaves 25 % headroom under
+`TORQUE_TRIP_PCT`.
+
+**Duration comes from the docs, not from feel.** `ExtruderConfig.preheat_min_s`
+= 1800 s, from Cedo-PROD-SWI-042 p4 step 19: starting the 3a/3b extruder
+compactors *"duurt altijd minimaal 30 minuten, in deze opwarm tijd, kunnen de
+silo's verder vullen"*. That same step records *"Nog SWI maken opstarten
+extruders"* — there is no dedicated extruder start-up SWI — which is why step 19
+is the authority.
+
+**Citation fix.** `ExtruderMachine._ready()` used to point at SWI-049
+"Automaatknop → Voorverwarmen (15 s preheat) → Groene drukknop". SWI-048 and
+SWI-049 are both *Opstarten sorteerlijn* — the **sorting line**, a different
+machine. Anyone reading that comment would have modelled a 15-second extruder
+preheat off a sort-line document. The comment now cites SWI-042 p4 §19.
+
+**Check every SWI id against `docs/plant/swi/INDEX.md` before implementing from
+a code comment.** A full audit of all 54 citation sites in `src/` and `tools/`
+(`docs/plant/swi_citation_audit_2026-08-11.md`) found every cited id real, but
+**two pointed at a document about a different machine** — the failure mode is not
+a dangling reference, it is a plausible, authoritative-looking citation that
+survives review. `ExtruderGauntlet.gd` also blamed SWI-049 for the extruder, and
+`ShredderMachine.gd` cited SWI-042 for cleaning shredder 2 (which has no SWI at
+all). Note that SWI-042's *title* is about a knife change while its *page 4* is
+the shift start-up schedule, so always cite page and step, not just the id.
+
+`State.PREHEAT` is **appended as 8**, never inserted: the first eight values are
+carried in saves, `machine_state_changed` payloads and recorded event streams,
+so renumbering them would silently rewrite history. The guard test asserts the
+numbering.
+
+## A test file can rot without anyone noticing
+
+`tools/regression/run.sh`'s parse gate is `--headless --path . --quit`, which
+boots the main scene. Nothing under `src/tests/` is on that path, so a test
+script can stop compiling and stay broken indefinitely while the harness reports
+green. Measured 2026-08-11: `test_npc05_realworld.gd` — the REAL MainWorld proof
+for the npc-05 container chain, written precisely because the bench stubs the
+execution half — referenced `_backup_files()`, `_run()` and `_finish()`, none of
+which existed. It had never once run.
+
+The harness now sweeps `src/tests/*.gd` with `--check-only`. It gates on
+**Parse Error only**, deliberately: `--check-only` does not register autoloads,
+so 31 of 77 files report `Compile Error: Identifier not found: Plant /
+EventBus / WorldLayout` purely from how they are invoked — including files that
+run green. Measured across all 77: 0 Parse Errors, 31 Compile Errors, every one
+an autoload miss. Gating on Compile Error would paint the step permanently red,
+and a permanently red step is one everyone learns to skip. Mutation-tested:
+restoring the broken file turns it red, the repaired tree is clean.
+
+## The npc-05 container chain stalls at DRIVE_TO_INDOOR
+
+What the restored harness reports (`NPC05_WATCH_S=180`):
+
+* a stock world has **zero indoor WasteContainers**. `ContainerGuideManager`'s
+  per-machine pass builds *hologram guides* marking where a bin belongs; the
+  only real container it spawns is the outdoor skip in `WORLD_CONTAINER_SPAWNS`.
+  The source bin is the operator's to place, so the board correctly emits
+  nothing and the chain cannot start at all. The harness now places one on a
+  real guide slot through the catalog and fills it via `WasteContainer.add()`.
+* with a full bin the board dispatches immediately: WALK_TO_FORKLIFT at t=4.5 s,
+  DRIVE_TO_INDOOR at t=6.2 s.
+* it then **stalls in DRIVE_TO_INDOOR for the rest of the window**. The worker
+  boards (`task._boarded = true`) and sits on the forklift (0.1 m away), the
+  target bin is **33.9 m** off, and the forklift does not cover it. The phase
+  budget (123.5 s) expires, the task is re-emitted, another worker takes it, same
+  result. This is the same dead-reckoning vehicle autopilot weakness that
+  `ContainerGuide.gd` already records for the yard leg — it fails on a 34 m
+  indoor leg too.
+* the **boarding-deadlock guard never fires**, because its premise no longer
+  holds: it watches for `set_physics_process(false)` on a seated worker, and
+  `physics_process` stayed true on every observed frame even with
+  `_boarded = true`.
+
+## A flaky test usually means a nondeterministic INPUT
+
+`test_nav_connectivity` failed about one run in three, always on a different
+worker, for long enough that two diagnoses were tried and reverted (a navmesh
+bake race, and snapping posts to the nearest mesh point — both measured, both
+disproven, both recorded in the file). Neither was the cause.
+
+The cause was that the harness builds its line-3A fixture straight from the
+catalog and never called `line_flow.rebuild()` — `BuildMode` does that after
+every placement. `CrewManager._machine_list()` reads `line_flow._nodes`, so it
+saw zero machines, so `assign_posts()` took its `no machine in zone` fallback
+for all nine workers and set the post to `w.global_position` — wherever that
+worker was standing mid-walk. The test was routing eight wandering floor
+positions and failing whenever one landed off-mesh.
+
+Fixed by rebuilding LineFlow before assignment. Posts are now real stations and
+the result is byte-identical across 9 runs. Two anti-vacuity guards keep it that
+way: `checked > 0` (already there) and a new one asserting posts actually carry
+a station id, because eight random floor points will always route *sometimes*.
+
+**It is deterministically RED**, reporting 6 unroutable legs at 4 named stations
+(`extruder_3a`, `centrifuge`, `mengsilo`, `wind_sifter`). Do not silence it by
+widening `POST_ENDPOINT_TOL_M` or dropping workers from the fixture.
+
+### The red is a CREW defect, not a navmesh one (measured 2026-08-12)
+
+The paragraph above used to call it "a real navmesh/topology defect". It is not,
+and the correction matters because it points the next person at the wrong file.
+The test now prints a `why` line for every broken leg, and all five failing posts
+read the same:
+
+    why Kevin   nearest mesh dXZ 0.00 m, +1.10 m above floor; canteen->it ends
+                3.68 m short (ISLAND); inside [Extruder 3A 14.0x2.6 m]
+
+Every failing post is **inside a named machine's own collider** — `Extruder 3A`,
+`Centrifuge`, `Mixing silo (mengsilo)`, `Windshifter (zigzag)` (x2). By
+construction: `assign_posts` sets the post to the machine's own
+`global_position` (`CrewManager.gd:276`), and MainWorld bakes that same collider
+as navmesh source geometry, so a stationed post always lands inside the hole its
+own machine carved. `post->canteen` then goes nowhere (10.8-40.5 m short) while
+`canteen->post` lands in the aisle 1.6-3.7 m away and mostly passes — exactly the
+asymmetry the file predicts.
+
+Two consequences worth having in writing:
+
+- **Snapping posts to the nearest navmesh point cannot fix this.** The nearest
+  point is dXZ **0.00 m** away (1.10 m above the operating floor): a sliver
+  Recast left inside the machine footprint, lifted by `cell_height` 0.60
+  quantisation, enclosed and unroutable. The snap is a no-op in plan, which is
+  the whole reason the 2026-07-29 attempt
+  measured as "fixes nothing", and it is why repeating it will fail again. A real
+  fix places the post in the AISLE BESIDE the machine — a change to where crew
+  stand, so an operator call, not a test tweak.
+- The check's own convention already says posts that are CrewManager's fault are
+  reported (`ADVIS`) rather than asserted — that is how off-site posts are
+  handled. Whether this one moves to `ADVIS` is the same operator call. Until it
+  does, the harness stays red for a reason that is real but is not navigation's.
+
+### The bake race was re-tested 2026-08-12 and is dead
+
+Worth stating flatly, because it is the hypothesis everyone reaches for first and
+this is now the third time it has been chased. Across **20 runs** (10 pre-fix at
+`ea54e19^`, 10 post-fix at `ea54e19`) every navmesh-only measurement was
+identical, in the failing runs as well as the passing ones:
+
+    baked navmesh: 279 polygons (server map iteration 3)      20/20
+    route AROUND the machine row: 13 points                   20/20
+    inside -> outside: 12 points, ends 0.00 m from goal       20/20
+
+A race would move those numbers. Only the POSTS moved. The synchronisation point
+people propose adding — waiting on `NavigationServer3D.map_get_iteration_id()`
+rather than a frame count — has been in `_wait_for_bake()` since 2026-07-29;
+`test_nav_connectivity.gd` records that it was added for this flake and did not
+fix it. Measured failure rate of the pre-fix version in this batch: **1 of 10**
+(the earlier estimate was ~1 in 3; either way it is a coin toss, and the post-fix
+version is 10 of 10 byte-identical, not merely 10 of 10 same-verdict).
+
+## The headless teardown segfault is real, and it skips `_restore_files()`
+
+`run.sh` keys off the printed verdict rather than the exit code, with the comment
+"Godot can segfault in teardown after a clean PASS". Measured 2026-08-12 over
+**62 batched headless MainWorld boots**: it segfaults **24 %** of the time
+(15 of 62 — 2 of 10 `test_outdoor_route`, 13 of 52 `test_nav_connectivity`).
+Keying off the
+verdict is CORRECT and load-bearing: in every segfaulting run the log ends
+exactly at the verdict banner, after every check has executed, while a clean run
+continues on to the `ObjectDB instances leaked at exit` warnings. No verdict was
+ever wrong.
+
+**But it is not harmless, and this is the part nobody had measured.** `_finish()`
+runs `_world.queue_free()` → `await process_frame` → `_restore_files()` →
+`quit()`. The crash lands in world teardown — i.e. BEFORE the restore. Proof:
+after the batch, `__outdoorroute___save.json` and `__outdoorroute___factory.json`
+were still sitting in `user://`, which only happens when `_restore_files()` never
+ran. Both tests list **`user://world_layout.json` in `PROTECT`**, so roughly one
+run in four the safety net over the world's ground truth — the file this document
+already flags as being in git nowhere — is simply skipped. It came through every
+boot byte-identical against a `.bak`, so nothing is lost today; the exposure is
+the finding, and it is the same failure mode already recorded for killed runs.
+Take a `.bak` of `world_layout.json` before batch-running any MainWorld suite.
+
+## `test_outdoor_route` does not share the navmesh race — it has no navmesh
+
+Worth writing down because the two files sit next to each other in `run.sh` and
+the assumption is natural. `test_outdoor_route` has NO bake wait at all, only a
+fixed `BOOT_FRAMES + SETTLE_FRAMES` — which looks exactly like the thing that
+races. It cannot: vehicles route through `VehicleRouteGrid`
+(`BaseVehicle._plan_route`, `BaseVehicle.gd:1043`), a synchronous occupancy grid
+built from physics shape queries, with no `NavigationServer3D` involvement
+anywhere in the path. Measured 10 runs: **10/10 PASS, all four gated checks one
+hash** — 4 waypoints and 2.19 m arrival, identical every run.
+
 ## Branch state
 
 `main` is the integration branch. Work happens on feature branches and lands via

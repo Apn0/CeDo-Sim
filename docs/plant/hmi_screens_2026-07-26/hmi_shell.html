@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>CeDo HMI</title>
+<!--
+  hmi_shell.html — in-game host page for the Claude-Design HMI exports (#task2).
+
+  Loaded by HmiWebOverlay.gd in a godot_wry WebView (res:// custom protocol).
+  The 34 *.dc.html screen files in this directory are NEVER modified; Godot
+  reads a screen file and pushes it here via post_message (base64), and this
+  shell renders it inside a same-origin <iframe srcdoc>, after two runtime
+  transformations:
+
+    1. Local React UMDs (vendor/) are injected BEFORE support.js — support.js's
+       loadReactUmd() short-circuits when window.React/ReactDOM already exist,
+       so the unpkg CDN is never touched (offline-safe).
+    2. A live-bridge bootstrap (hmiBoot below) is appended at </body>: it wires
+       the dead nav buttons, intercepts Index links, runs the live clock, and
+       applies value/status updates pushed from Godot.
+
+  Message contract (Godot -> shell, via WebView.post_message JSON string,
+  received as a CustomEvent 'message' on document with e.detail = the string):
+    {type:"screen", file, b64}   — render this screen (b64 = utf8 HTML)
+    {type:"vals", screen, pills, units, alarm}  — live values (see hmiBoot)
+  Shell -> Godot (window.ipc.postMessage JSON string):
+    {type:"ready"}               — shell booted, Godot may push a screen
+    {type:"screen_ready", file}  — iframe rendered; push vals now
+    {type:"nav", dir}            — "prev" | "next" | "home" (bottom-bar arrows)
+    {type:"open", file}          — an Index card link was clicked
+    {type:"close"}               — the ✕ button
+    {type:"event", name, screen} — any other dead HMI button (log-only)
+-->
+<script>
+// Installed before anything else so the Godot-side eval() probe can report
+// the first JS error when the main shell script fails to boot.
+window.__lastErr = "";
+window.onerror = function (m, s, l) { window.__lastErr = m + " @" + s + ":" + l; };
+</script>
+<style>
+  html, body { margin:0; padding:0; width:100%; height:100%; overflow:hidden; background:#0a0a0a; }
+  #stage { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; }
+  #frame { border:0; background:#0a0a0a; flex:none; transform-origin:center center; }
+  #frame.fluid { width:100%; height:100%; transform:none; }
+  /* Top-right of the WINDOW, which in game is letterbox gutter, not artwork:
+     a 1280x800 design in a 1920x1080 window scales 1.35x to 1728 wide, leaving
+     96 px of empty gutter each side. It only touches the design in the rare
+     exact-fit case (window sized to the design), so it is ghosted to 35% until
+     hovered. NOT bottom-left — that is where the screens' own ◀ prev button
+     lives and the two would fight for the same click. Esc closes as well. */
+  #closeBtn {
+    position:fixed; top:8px; right:8px; z-index:10; width:26px; height:26px;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+    background:rgba(20,22,26,.45); color:#8b93a0; border:1px solid rgba(120,128,140,.35);
+    border-radius:4px; font:700 13px/1 Tahoma,Verdana,sans-serif; user-select:none;
+    opacity:.35; transition:opacity .15s, background .15s, color .15s;
+  }
+  #closeBtn:hover { opacity:1; background:#a03030; color:#fff; border-color:#c04040; }
+  #err {
+    position:fixed; left:12px; bottom:12px; z-index:10; max-width:60%;
+    color:#e6b84a; font:12px/1.4 Tahoma,Verdana,sans-serif; white-space:pre-wrap; display:none;
+  }
+</style>
+</head>
+<body>
+<div id="stage"><iframe id="frame"></iframe></div>
+<div id="closeBtn" title="Sluiten (Esc)">✕</div>
+<div id="err"></div>
+<script>
+"use strict";
+
+var frame = document.getElementById("frame");
+var errBox = document.getElementById("err");
+var currentFile = null;
+var lastVals = null;      // last vals message, re-applied after every screen load
+var screenSize = null;    // {w,h} of the current fixed-canvas screen, null = fluid
+
+function sendIpc(obj) {
+  try { window.ipc.postMessage(JSON.stringify(obj)); }
+  catch (e) { console.log("[shell] ipc unavailable:", JSON.stringify(obj)); }
+}
+
+function showErr(msg) {
+  errBox.textContent = String(msg);
+  errBox.style.display = "block";
+  console.error("[shell]", msg);
+}
+
+/* ── screen loading ──────────────────────────────────────────────────────── */
+
+function b64ToUtf8(b64) {
+  var bin = atob(b64);
+  var bytes = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder("utf-8").decode(bytes);
+}
+
+// Inject local React before support.js + append the live bridge. The screen
+// file's own bytes are otherwise untouched (operator rule: no re-porting, no
+// edits to the design exports).
+function transform(html) {
+  var boot = '<script src="vendor/react@18.3.1.min.js"><\/script>' +
+             '<script src="vendor/react-dom@18.3.1.min.js"><\/script>';
+  var re = /<script\s+src="(?:\.\/)?support\.js"><\/script>/;
+  if (re.test(html)) html = html.replace(re, boot + "$&");
+  var bridge = "<script>(" + hmiBoot.toString() + ")(window);<\/script>";
+  if (/<\/body>/i.test(html)) html = html.replace(/<\/body>/i, bridge + "</body>");
+  else html += bridge;
+  return html;
+}
+
+function openScreen(file, html) {
+  currentFile = file;
+  errBox.style.display = "none";
+  mimic = null;
+  frame.srcdoc = transform(html);
+  loadMimic(file);
+}
+
+/* ── mimic ────────────────────────────────────────────────────────────────
+   The Claude-Design exports carry the labels, value boxes and chrome of the
+   operator's screens but NOT the isometric machine drawing, which on the real
+   panel is most of the picture (compare photo IMG-20240811-WA0010). Rather
+   than hand-draw it, tool_render_3c_mimic.gd renders the SIM'S OWN line-3C
+   machines orthographically and writes, next to this file:
+
+     mimic/<screen basename>.png    transparent-background render
+     mimic/<screen basename>.json   {code: {x, y}} anchor per plant code
+
+   Found BY CONVENTION — no mapping table to drift. A screen with no mimic on
+   disk renders exactly as before, so this can never break the other 32. */
+
+var mimic = null;   // {url, anchors, size} for the current screen, or null
+
+function loadMimic(file) {
+  var base = file.replace(/\.dc\.html$/, "");
+  fetch(encodeURI("mimic/" + base + ".json"))
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (j) {
+      if (!j || !j.anchors) return;
+      mimic = { url: "mimic/" + base + ".png", anchors: j.anchors,
+                size: j.mimic_size || [1280, 664] };
+      applyMimic();
+    })
+    .catch(function () { /* no mimic for this screen — normal */ });
+}
+
+function applyMimic() {
+  if (!mimic) return;
+  try {
+    var w = frame.contentWindow;
+    if (w && typeof w.__hmiMimic === "function") w.__hmiMimic(mimic);
+  } catch (e) { showErr("mimic: " + e); }
+}
+
+function measureAndFit() {
+  try {
+    var doc = frame.contentDocument;
+    var root = doc ? doc.querySelector("[data-screen-label]") : null;
+    if (root && root.style.width && root.style.height) {
+      screenSize = { w: parseFloat(root.style.width), h: parseFloat(root.style.height) };
+    } else {
+      screenSize = null; // HMI Index — fluid/responsive
+    }
+    fit();
+  } catch (e) { showErr("measure: " + e); }
+}
+
+frame.addEventListener("load", function () {
+  measureAndFit();
+  applyMimic();
+  if (lastVals) applyVals(lastVals);
+  sendIpc({ type: "screen_ready", file: currentFile });
+});
+
+// The dc runtime (support.js) re-renders the whole screen through React AFTER
+// the iframe load event, replacing the original DOM (and normalizing every
+// inline style). It posts {type:"__dc_booted"} to its parent when done — that
+// is the reliable moment to (re)measure the canvas and (re)apply live values.
+window.addEventListener("message", function (e) {
+  if (e.data && e.data.type === "__dc_booted") {
+    measureAndFit();
+    applyMimic();
+    if (lastVals) applyVals(lastVals);
+  }
+});
+
+/* ── scaling: fixed-px canvases letterbox-fit the window ─────────────────── */
+
+function fit() {
+  if (!screenSize) {
+    frame.className = "fluid";
+    frame.style.width = ""; frame.style.height = ""; frame.style.transform = "";
+    return;
+  }
+  frame.className = "";
+  frame.style.width = screenSize.w + "px";
+  frame.style.height = screenSize.h + "px";
+  var s = Math.min(window.innerWidth / screenSize.w, window.innerHeight / screenSize.h);
+  frame.style.transform = "scale(" + s + ")";
+}
+window.addEventListener("resize", fit);
+
+/* ── messages from Godot ─────────────────────────────────────────────────── */
+
+document.addEventListener("message", function (e) {
+  var msg;
+  try { msg = JSON.parse(e.detail); }
+  catch (err) { showErr("bad message: " + err); return; }
+  if (msg.type === "screen") {
+    try { openScreen(msg.file, b64ToUtf8(msg.b64)); }
+    catch (err) { showErr("screen decode: " + err); }
+  } else if (msg.type === "vals") {
+    lastVals = msg;
+    applyVals(msg);
+  }
+});
+
+function applyVals(msg) {
+  if (msg.screen && msg.screen !== "*" && msg.screen !== currentFile) return;
+  try {
+    var w = frame.contentWindow;
+    if (w && typeof w.__hmiApply === "function") w.__hmiApply(msg);
+  } catch (e) { showErr("apply: " + e); }
+}
+
+/* ── bridge from the iframe (nav clicks bubble up through these) ─────────── */
+
+window.__shellNav = function (dir) { sendIpc({ type: "nav", dir: dir }); };
+window.__shellOpen = function (file) { sendIpc({ type: "open", file: file }); };
+window.__shellEvent = function (name) { sendIpc({ type: "event", name: name, screen: currentFile }); };
+
+document.getElementById("closeBtn").addEventListener("click", function () {
+  sendIpc({ type: "close" });
+});
+
+/* ── hmiBoot — serialized into every screen iframe; runs in that document ──
+   Self-contained: no references to shell closures. Everything is best-effort
+   and no-ops cleanly on screens where a selector finds nothing.            */
+
+function hmiBoot(win) {
+  var doc = win.document;
+
+  function shell() { return win.parent; }
+
+  /* 1. Click wiring — Index links + the (dead-by-design) bottom nav bar. */
+  doc.addEventListener("click", function (e) {
+    var a = e.target.closest ? e.target.closest("a[href]") : null;
+    if (a) {
+      e.preventDefault();
+      try { shell().__shellOpen(decodeURI(a.getAttribute("href"))); } catch (err) {}
+      return;
+    }
+    var el = e.target.closest ? e.target.closest("div") : null;
+    while (el && el.style && el.style.cursor !== "pointer") el = el.parentElement;
+    if (!el || !el.style || el.style.cursor !== "pointer") return;
+    var t = (el.textContent || "").trim();
+    var s = shell();
+    try {
+      if (t === "◀") s.__shellNav("prev");
+      else if (t === "▶") s.__shellNav("next");
+      else if (t === "" && el.querySelector("svg path")) s.__shellNav("home");
+      else if (t === "Logout") s.__shellNav("home");
+      else s.__shellEvent(t.replace(/\s+/g, " ").slice(0, 40) || "?");
+    } catch (err) {}
+  }, true);
+
+  /* 2. Live clock — any header block showing a Dutch date + hh:mm:ss.
+     The dc runtime replaces the whole DOM after boot, so the elements are
+     re-found whenever the cached ones are gone (self-healing). */
+  var DAYS = ["zondag","maandag","dinsdag","woensdag","donderdag","vrijdag","zaterdag"];
+  var MONTHS = ["januari","februari","maart","april","mei","juni","juli",
+                "augustus","september","oktober","november","december"];
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  var clockEls = [];
+  function scanClock() {
+    clockEls = [];
+    Array.prototype.forEach.call(doc.querySelectorAll("div"), function (d) {
+      if (d.children.length === 2 &&
+          /^\d{2}:\d{2}:\d{2}$/.test((d.children[1].textContent || "").trim()) &&
+          /\d{4}/.test(d.children[0].textContent || "")) {
+        clockEls.push(d);
+      }
+    });
+  }
+  // Godot pushes the PLANT clock ({date,time}) with every vals message; a
+  // screen standing in the plant must not show the player's PC clock. The
+  // real-time fallback only applies outside the game (?screen= preview mode).
+  win.__hmiClock = null;
+  win.setInterval(function () {
+    if (!clockEls.length || !clockEls[0].isConnected) scanClock();
+    if (!clockEls.length) return;
+    var ds, ts;
+    if (win.__hmiClock && win.__hmiClock.date) {
+      ds = win.__hmiClock.date;
+      ts = win.__hmiClock.time || "";
+    } else {
+      var n = new Date();
+      ds = DAYS[n.getDay()] + " " + n.getDate() + " " + MONTHS[n.getMonth()] + " " + n.getFullYear();
+      ts = pad(n.getHours()) + ":" + pad(n.getMinutes()) + ":" + pad(n.getSeconds());
+    }
+    clockEls.forEach(function (d) {
+      d.children[0].textContent = ds;
+      d.children[1].textContent = ts;
+    });
+  }, 1000);
+
+  /* 3. Value binding — geometric nearest-label assignment.
+     Element detection goes through the CSSOM (el.style.backgroundColor etc.),
+     NEVER the raw style attribute string: React's re-render normalizes every
+     inline style ("background:#fff" -> "background: rgb(255, 255, 255)"), so
+     string matching works before boot but silently fails after. CSSOM colors
+     are normalized to rgb() in both worlds. */
+  var CODE_RE = /^L3C\.\d+(?:L\/R)?$/;
+  var GREEN = "#35c23a", GREY = "#6a7a8a", RED = "#e02020", AMBER = "#e8c040";
+  var RGB_WHITE = "rgb(255, 255, 255)", RGB_INK = "rgb(17, 17, 17)";
+  var RGB_STATE = ["rgb(53, 194, 58)", "rgb(106, 122, 138)", "rgb(224, 32, 32)"]; // green/grey/red
+  var RGB_AMBER_TXT = "rgb(230, 184, 74)"; // #e6b84a alarm strip
+
+  function center(el) {
+    var r = el.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  }
+  function dist2(a, b) { var dx = a.x - b.x, dy = a.y - b.y; return dx * dx + dy * dy; }
+
+  var bindings = null; // { boxes:[{el,code,fmt}], squares:[{el,code}], pills:{label:el}, alarm:{nr,text} }
+
+  function scan() {
+    var labels = []; // {el, codes:[..], c:{x,y}}
+    Array.prototype.forEach.call(doc.querySelectorAll("div"), function (d) {
+      Array.prototype.forEach.call(d.children, function (ch) {
+        var t = (ch.textContent || "").trim();
+        if (ch.tagName === "DIV" && CODE_RE.test(t)) {
+          var codes = t.indexOf("L/R") >= 0
+            ? [t.replace("L/R", "L"), t.replace("L/R", "R")]
+            : [t];
+          labels.push({ el: d, codes: codes, c: center(d) });
+        }
+      });
+    });
+    var boxes = [];   // white value boxes
+    var squares = []; // 10x10 status squares
+    Array.prototype.forEach.call(doc.querySelectorAll("div"), function (d) {
+      if (d.style.backgroundColor === RGB_WHITE && d.style.color === RGB_INK &&
+          /^\d+(,\d+)?\s*A$/.test((d.textContent || "").trim())) {
+        boxes.push({ el: d, c: center(d),
+          fmt: (d.textContent.indexOf(",") >= 0) ? "dec" : "int", code: null });
+      } else if (d.style.width === "10px" && d.style.height === "10px" &&
+                 RGB_STATE.indexOf(d.style.backgroundColor) >= 0) {
+        squares.push({ el: d, c: center(d), code: null });
+      }
+    });
+    if (labels.length) {
+      // Greedy global assignment with CAPACITY + RADIUS. Plain nearest-label
+      // misbinds: on the 3C Overzicht, L3C.4's upper amp box sits nearer to
+      // the L3C.6 label than to its own, so it became L3C.6 "surplus" and
+      // never updated (measured in the browser bench). Instead: sort every
+      // (box,label) pair by distance; a label accepts at most codes.length
+      // boxes; pairs beyond RADIUS px never bind. Surplus/far boxes honestly
+      // keep their design value rather than guessing (e.g. the third box in
+      // the L3C.14 cluster).
+      var RADIUS2 = 160 * 160;
+      var pairs = [];
+      boxes.forEach(function (b, bi) {
+        labels.forEach(function (l, li) {
+          var d2 = dist2(b.c, l.c);
+          if (d2 <= RADIUS2) pairs.push({ bi: bi, li: li, d2: d2 });
+        });
+      });
+      pairs.sort(function (a, b) { return a.d2 - b.d2; });
+      var taken = {};   // label idx -> count assigned
+      var byLabel = {}; // label idx -> [box,...]
+      pairs.forEach(function (p) {
+        if (boxes[p.bi].code !== null || boxes[p.bi]._claimed) return;
+        if ((taken[p.li] || 0) >= labels[p.li].codes.length) return;
+        boxes[p.bi]._claimed = true;
+        taken[p.li] = (taken[p.li] || 0) + 1;
+        (byLabel[p.li] = byLabel[p.li] || []).push(boxes[p.bi]);
+      });
+      Object.keys(byLabel).forEach(function (li) {
+        var l = labels[li];
+        byLabel[li]
+          .sort(function (a, b) { return a.c.y - b.c.y || a.c.x - b.c.x; })
+          .forEach(function (b, i) { b.code = l.codes[i]; }); // top->bottom = L,R
+      });
+      squares.forEach(function (sq) {
+        var best = -1, bd = RADIUS2;
+        labels.forEach(function (l, i) { var d2 = dist2(sq.c, l.c); if (d2 <= bd) { bd = d2; best = i; } });
+        if (best >= 0) sq.code = labels[best].codes[0];
+      });
+    }
+    var pills = {}; // "Status Lijn 3C" -> pill div
+    Array.prototype.forEach.call(doc.querySelectorAll("span"), function (sp) {
+      var t = (sp.textContent || "").trim();
+      var sib = sp.nextElementSibling;
+      if (/^Status\s/.test(t) && sib && sib.tagName === "DIV") pills[t] = sib;
+    });
+    var alarm = null;
+    Array.prototype.forEach.call(doc.querySelectorAll("div"), function (d) {
+      if (d.style.color === RGB_AMBER_TXT && d.querySelectorAll("span").length >= 2) {
+        var sps = d.querySelectorAll("span");
+        alarm = { nr: sps[0], text: sps[1] };
+      }
+    });
+    return { boxes: boxes.filter(function (b) { return b.code; }), squares: squares, pills: pills, alarm: alarm };
+  }
+
+  function fmtAmps(v, fmt) {
+    if (fmt === "dec") return v.toFixed(2).replace(".", ",") + " A";
+    return String(Math.round(v)) + " A";
+  }
+  function stateColor(u) { return u.fault ? RED : (u.on ? GREEN : GREY); }
+
+  /* Drop the rendered line behind the labels, then move each label group onto
+     its own machine. Without the move the labels keep their authored pixel
+     positions and float away from the machines they name — the mimic has to
+     drive the layout, not just sit behind it.
+     Re-runnable: the dc runtime replaces the DOM on boot, so this is called
+     again from the shell after __dc_booted. */
+  win.__hmiMimic = function (m) {
+    var area = mimicArea();
+    if (!area) return;
+    var img = doc.getElementById("__hmi_mimic");
+    if (!img) {
+      img = doc.createElement("img");
+      img.id = "__hmi_mimic";
+      img.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%;" +
+        "object-fit:contain;pointer-events:none;z-index:0;";
+      area.insertBefore(img, area.firstChild);
+    }
+    if (img.getAttribute("src") !== m.url) img.setAttribute("src", m.url);
+    if (getComputedStyle(area).position === "static") area.style.position = "relative";
+    placeOnMimic(area, m);
+  };
+
+  /* The screen's equipment pane: the absolutely-positioned block between the
+     alarm strip and the nav bar. Identified by geometry (tallest absolute
+     child of the screen root) rather than by a class, because the design
+     exports carry no classes or ids at all. */
+  function mimicArea() {
+    var root = doc.querySelector("[data-screen-label]");
+    if (!root) return null;
+    var best = null, bestH = 0;
+    Array.prototype.forEach.call(root.children, function (c) {
+      if (!(c instanceof win.HTMLElement)) return;
+      if (getComputedStyle(c).position !== "absolute") return;
+      var h = c.getBoundingClientRect().height;
+      if (h > bestH) { bestH = h; best = c; }
+    });
+    return best;
+  }
+
+  function placeOnMimic(area, m) {
+    var ar = area.getBoundingClientRect();
+    // The render is letterboxed by object-fit:contain — map anchor pixels
+    // through the SAME fit so labels track the image at any window size.
+    var sx = ar.width / m.size[0], sy = ar.height / m.size[1];
+    var s = Math.min(sx, sy);
+    var ox = (ar.width - m.size[0] * s) / 2, oy = (ar.height - m.size[1] * s) / 2;
+
+    var groups = labelGroups(area);
+    groups.forEach(function (g) {
+      var a = null;
+      for (var i = 0; i < g.codes.length && !a; i++) a = m.anchors[g.codes[i]];
+      if (!a) return;
+      var x = ox + a.x * s, y = oy + a.y * s;
+      var lr = g.label.getBoundingClientRect();
+      g.label.style.left = Math.round(x - lr.width / 2) + "px";
+      g.label.style.top = Math.round(y + 14 * s) + "px";   // caption under the machine
+      g.label.style.right = "auto";  g.label.style.bottom = "auto";
+      g.label.style.zIndex = "2";
+      // Value boxes stack just above the machine, in their authored order.
+      g.boxes.forEach(function (b, i) {
+        var br = b.el.getBoundingClientRect();
+        b.el.style.left = Math.round(x - br.width / 2) + "px";
+        b.el.style.top = Math.round(y - (18 + i * 22) * s) + "px";
+        b.el.style.right = "auto"; b.el.style.bottom = "auto";
+        b.el.style.zIndex = "2";
+      });
+      if (g.lamp) {
+        var gr = g.lamp.getBoundingClientRect();
+        g.lamp.style.left = Math.round(x - gr.width / 2) + "px";
+        g.lamp.style.top = Math.round(y + 2 * s) + "px";
+        g.lamp.style.right = "auto"; g.lamp.style.bottom = "auto";
+        g.lamp.style.zIndex = "2";
+      }
+    });
+  }
+
+  /* Label divs (the ones carrying an L3C code) with the value boxes and status
+     lamp that belong to them — reuses the same nearest-neighbour grouping the
+     live-value binder uses, so both agree on which box is whose. */
+  function labelGroups(area) {
+    if (!bindings || bindingsStale()) bindings = scan();
+    var out = [];
+    Array.prototype.forEach.call(area.querySelectorAll("div"), function (d) {
+      var codes = null;
+      Array.prototype.forEach.call(d.children, function (ch) {
+        var t = (ch.textContent || "").trim();
+        if (ch.tagName === "DIV" && CODE_RE.test(t)) {
+          codes = t.indexOf("L/R") >= 0 ? [t.replace("L/R", "L"), t.replace("L/R", "R")] : [t];
+        }
+      });
+      if (!codes) return;
+      var boxes = bindings.boxes.filter(function (b) { return codes.indexOf(b.code) >= 0; });
+      var lamp = null;
+      for (var i = 0; i < bindings.squares.length && !lamp; i++)
+        if (codes.indexOf(bindings.squares[i].code) >= 0) lamp = bindings.squares[i].el;
+      out.push({ label: d, codes: codes, boxes: boxes, lamp: lamp });
+    });
+    return out;
+  }
+
+  function bindingsStale() {
+    if (!bindings) return true;
+    var probe = bindings.boxes[0] || bindings.squares[0] ||
+                (bindings.alarm && { el: bindings.alarm.nr }) || null;
+    // No probe = the scan found nothing bindable; retry (the dc runtime may
+    // not have re-rendered yet when the first vals arrived).
+    if (!probe) return true;
+    return !probe.el.isConnected;
+  }
+
+  win.__hmiApply = function (msg) {
+    if (msg.clock && msg.clock.date) win.__hmiClock = msg.clock;
+    if (bindingsStale()) bindings = scan();
+    var units = msg.units || {};
+    bindings.boxes.forEach(function (b) {
+      var u = units[b.code];
+      if (u && typeof u.amps === "number") b.el.textContent = fmtAmps(u.amps, b.fmt);
+    });
+    bindings.squares.forEach(function (sq) {
+      var u = units[sq.code];
+      if (u) sq.el.style.background = stateColor(u);
+    });
+    var pills = msg.pills || {};
+    Object.keys(pills).forEach(function (label) {
+      var el = bindings.pills[label];
+      if (!el) return;
+      var p = pills[label];
+      if (p.text != null) el.textContent = p.text;
+      if (p.bg) {
+        el.style.background = p.bg;
+        el.style.color = (p.bg === GREY || p.bg === RED) ? "#fff" : "#111";
+      }
+    });
+    if (bindings.alarm) {
+      if (msg.alarm) {
+        bindings.alarm.nr.textContent = String(msg.alarm.nr || "");
+        bindings.alarm.text.textContent = String(msg.alarm.text || "");
+      } else {
+        bindings.alarm.nr.textContent = "";
+        bindings.alarm.text.textContent = "";
+      }
+    }
+  };
+}
+
+/* ── boot ────────────────────────────────────────────────────────────────── */
+
+// Standalone preview mode: hmi_shell.html?screen=<filename>[&vals=<json>]
+// loads a screen without Godot. This is how a screen gets eyeballed (or
+// headless-screenshotted) without booting the game — the in-game path is
+// unchanged, Godot still pushes screens over IPC.
+(function () {
+  var q = new URLSearchParams(location.search);
+  var want = q.get("screen");
+  if (!want) return;
+  fetch(encodeURI(want))
+    .then(function (r) { return r.text(); })
+    .then(function (html) {
+      openScreen(want, html);
+      var v = q.get("vals");
+      if (v) { try { lastVals = JSON.parse(v); } catch (e) { showErr("bad vals param: " + e); } }
+    })
+    .catch(function (e) { showErr("preview load failed: " + e); });
+})();
+
+sendIpc({ type: "ready" });
+</script>
+</body>
+</html>

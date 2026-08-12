@@ -8,8 +8,11 @@ extends "res://src/scenes/world/GauntletWorld.gd"
 ##   * lump cart parked at the laser-filter discharge
 ##   * Extruder3B.tscn sim brain (ExtruderMachine + ExtruderConfig) placed at
 ##     the detailed model with its placeholder box hidden — so the HMI scopes,
-##     SWI-049 startup flow, SimTick ticking and the FAULT cascade all run
-##     against the real sim while the operator looks at the real model.
+##     SimTick ticking and the FAULT cascade all run against the real sim while
+##     the operator looks at the real model.
+##     (Citation audit 2026-08-11: this used to say "SWI-049 startup flow".
+##     SWI-049 is "Opstarten sorteerlijn" — the SORTING line, not an extruder.
+##     The extruder's own warm-up is SWI-042 p4 step 19; see ExtruderModel.)
 ##
 ## Purpose: run from the Godot editor (F5 → this scene, or via the main-menu
 ## button) and use LIVE SCENE EDITING — tweak transforms/params in the editor

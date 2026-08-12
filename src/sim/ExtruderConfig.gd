@@ -45,6 +45,22 @@ class_name ExtruderConfig
 @export var backflush_threshold_grams       : float = 4_000_000.0
 @export var backflush_lump_mass_kg          : float = 35.0   # avg lump produced
 
+@export_group("Startup — barrel warm-up")
+## Minimum seconds from a cold barrel (ambient) to melt setpoint.
+##
+## Operator-confirmed, Cedo-PROD-SWI-042 p4 step 19 ("Extruder compactor 3a en
+## 3b opstart"): "start je de compactors van 3a en 3b extruder op. Dit ALTIJD
+## minimaal 30 minuten, in deze opwarm tijd, kunnen de silo's verder vullen."
+## — start-up always takes at least 30 minutes of warm-up, during which the
+## silos keep filling. That same step notes "Nog SWI maken opstarten
+## extruders": there is no dedicated extruder start-up SWI yet, so step 19 is
+## the authority.
+##
+## NB this is NOT the 15 s "voorverwarmen" button from SWI-048/049 — those are
+## the SORTING LINE ("Opstarten sorteerlijn"), a different machine. See the
+## note in ExtruderModel._tick_preheat().
+@export var preheat_min_s : float = 1800.0
+
 @export_group("Vacuum cascade — the signature 120-second mechanic")
 @export var vacuum_alarm_grace_s     : float = 120.0
 ## The real plant timing: vacuum unit error → 120s grace → if missed, cascade.

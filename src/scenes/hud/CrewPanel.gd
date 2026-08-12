@@ -131,23 +131,12 @@ func _populate() -> void:
 	for rp in roles:
 		_post_ids.append(String(rp.get("id", "")))
 		_post_labels.append(String(rp.get("label", "")))
-	# #173 — Section posts AFTER roles: "Line 3A · Feed area", etc. The operator
-	# wanted to assign by a meaningful chunk of the plant rather than by raw
-	# coords or by one specific machine id — pinning to a section auto-posts to
-	# the nearest matching machine and covers any incident inside the section.
-	var sections : Array = _cm.section_posts() if _cm.has_method("section_posts") else []
-	for sp in sections:
-		_post_ids.append(String(sp.get("id", "")))
-		_post_labels.append(String(sp.get("label", "")))
-	# Then specific machine stations (the deduped legacy list) for fine-grained pinning.
-	var seen := {}
-	for s in _cm.station_list():
-		var sid := String(s.get("id", ""))
-		if sid == "" or seen.has(sid):
-			continue
-		seen[sid] = true
-		_post_ids.append(sid)
-		_post_labels.append(sid.replace("_", " "))
+	# Operator 2026-08-07: the dropdown lists ONLY the rota roles above — the
+	# #173 section posts and raw machine-station entries that used to be
+	# appended here read as "broken extra roles" below Production manager and
+	# are removed from the MENU. The underlying pin machinery (sections,
+	# FeederWorker engagement, pos-pins) stays intact so older saves restore;
+	# those pins just can't be newly assigned from this panel any more.
 	for w in _cm.workers:
 		_add_worker_row(w)
 

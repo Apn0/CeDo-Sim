@@ -41,7 +41,8 @@ const ZONES : Dictionary = {
 }
 # Roles that roam centrally and may respond ANYWHERE as cover (no fixed post).
 const FLOATERS : Array[String] = ["shift_leader", "asst_shift_leader",
-								  "production_manager", "all_rounder"]
+								  "production_manager", "all_rounder",
+								  "storing_fixen"]
 
 # ── Injected dependencies ─────────────────────────────────────────────────────
 var workers       : Array   = []          # Array[NPC]
@@ -396,6 +397,12 @@ func _worst_jam() -> Dictionary:
 		return {}
 	return {"id": String(found.get("id", "")), "node": found, "buffer": worst}
 
+## Public relief hook for FixStoringTask (storing_fixen role, operator
+## 2026-08-07): the identical unchoke effect a jam-dispatch responder has when
+## finishing service at a station. Safe no-op for unknown ids.
+func relieve_station(station_id: String) -> void:
+	_relieve(_node_by_id(station_id))
+
 ## Clear a backlog: move RELIEF_KG from the machine's input to its output. This is
 ## ledger-neutral for LineFlow (in-transit total is unchanged) — it just represents
 ## the operator unchoking the machine so material flows on again.
@@ -596,6 +603,10 @@ const ROLE_POSTS := [
 	{"id": "role:transitional",       "label": "Transitional (feeder → extruder)"},
 	{"id": "role:all_rounder",        "label": "All-rounder"},
 	{"id": "role:production_manager", "label": "Production manager"},
+	# Operator 2026-08-07 — the storings-loop role (docs/plant/
+	# npc_rol_taak_prioriteit.md:66-77). Storing-fixen workers float, and are
+	# the ONLY acceptors of FixStoringTask / KwitterenStoringTask.
+	{"id": "role:storing_fixen",      "label": "Storing fixen"},
 ]
 
 ## #173 — section-level assignment. The operator can pin a worker to a NAMED
@@ -1118,6 +1129,18 @@ func manual_assign(worker, station_id: String) -> void:
 	# Role-based post: switch the worker's RotA role, then auto-post by that role's zone.
 	if station_id.begins_with("role:"):
 		var new_role := station_id.substr(5)
+		# Whitelist against ROLE_POSTS. A stale pin from an older save (or a
+		# removed role) used to silently overwrite npc_role with a dead string,
+		# leaving the worker standing at spawn — refuse loudly instead.
+		var known := false
+		for rp in ROLE_POSTS:
+			if String(rp.get("id", "")) == station_id:
+				known = true
+				break
+		if not known:
+			print("[CrewManager] refusing unknown role pin '%s' for %s (stale save?)"
+				% [station_id, String(worker.npc_name)])
+			return
 		worker.npc_role = new_role
 		_pinned.erase(worker)
 		var best_role : Dictionary = _nearest_in_zone(new_role, worker.global_position, _machine_list())

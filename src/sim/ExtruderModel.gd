@@ -89,7 +89,10 @@ class_name ExtruderModel
 ## They sit between IDLE and RUNNING (resp. RUNNING and OFF) so external code
 ## that branches on RUNNING needs to treat STARTING + STOPPING as "active
 ## production" — both still drive material flow at a fraction of nominal.
-enum State { OFF, IDLE, STARTING, RUNNING, STOPPING, VACUUM_ALARM, FAULT, EMERGENCY_STOP }
+## PREHEAT is appended, not inserted: the numeric values of the first eight are
+## carried in saves, EventBus machine_state_changed payloads and recorded event
+## streams, so renumbering them would silently rewrite history.
+enum State { OFF, IDLE, STARTING, RUNNING, STOPPING, VACUUM_ALARM, FAULT, EMERGENCY_STOP, PREHEAT }
 enum DieFaceState { OFF, TE_KOUD, GOED_GEHARD, TE_HEET }
 
 # =============================================================================
@@ -136,6 +139,9 @@ const START_RAMP_S        : float = 4.0
 ## STOPPING → OFF decay. Time-constant; `rpm *= exp(-delta / STOP_DECAY_S)`
 ## so framerate-independent. 4 s ≈ the emulator's `*= 0.9` step at 0.5 s tick.
 const STOP_DECAY_S        : float = 4.0
+## Shop-floor ambient. Was a bare 25.0 literal in three places; the preheat
+## rate is derived from it, so it has to be one number.
+const AMBIENT_C : float = 25.0
 const STARTING_RPM_THRESHOLD_FRAC : float = 0.95   # within 5 % of nominal → RUNNING
 const STOPPING_RPM_FLOOR  : float = 0.5            # below this → OFF
 
@@ -182,7 +188,7 @@ var config: ExtruderConfig
 
 # ── State ─────────────────────────────────────────────────────────────────────
 var state            : State = State.OFF
-var melt_temp        : float = 25.0          # °C — starts at ambient
+var melt_temp        : float = AMBIENT_C     # °C — starts at ambient
 var screw_rpm        : float = 0.0
 var throughput_kg_h  : float = 0.0
 var filter_loading_g : float = 0.0           # grams accumulated since last swap
@@ -300,12 +306,16 @@ func tick(delta: float, inputs: Dictionary) -> Array[String]:
 	match state:
 		State.OFF:
 			_tick_off(delta)
-			if inputs.get("start_production", false):
-				_transition(State.STARTING, events)
+			if inputs.get("preheat_on", false):
+				_transition(State.PREHEAT, events)
+			elif inputs.get("start_production", false):
+				_route_start_request(events)
 		State.IDLE:
 			_tick_idle(delta)
-			if inputs.get("start_production", false):
-				_transition(State.STARTING, events)
+			if inputs.get("preheat_on", false):
+				_transition(State.PREHEAT, events)
+			elif inputs.get("start_production", false):
+				_route_start_request(events)
 		State.STARTING:
 			_tick_starting(delta, inputs, events)
 			# Operator can abort mid-ramp; falls through to STOPPING
@@ -323,6 +333,13 @@ func tick(delta: float, inputs: Dictionary) -> Array[String]:
 			if inputs.get("start_production", false):
 				_transition(State.STARTING, events)
 			elif screw_rpm < STOPPING_RPM_FLOOR:
+				_transition(State.OFF, events)
+		State.PREHEAT:
+			_tick_preheat(delta, events)
+			# The green button only works once the display block is green.
+			if inputs.get("start_production", false) and preheat_ready():
+				_transition(State.STARTING, events)
+			elif inputs.get("stop_production", false):
 				_transition(State.OFF, events)
 		State.VACUUM_ALARM:
 			_tick_vacuum_alarm(delta, inputs, events)
@@ -351,13 +368,84 @@ func _tick_off(delta: float) -> void:
 	# so the SCADA gauges park at calm grey when the machine is powered off
 	# (without these the last RUNNING value would freeze on the dashboard,
 	# making it look like the line was still loading the screw motor).
-	melt_temp = move_toward(melt_temp, 25.0, 0.5 * delta)
+	melt_temp = move_toward(melt_temp, AMBIENT_C, 0.5 * delta)
 	screw_rpm = 0.0
 	throughput_kg_h = 0.0
 	die_pressure_psi = 0.0
 	motor_torque_pct = 0.0
 	lump_passthrough_rate_g_s = 0.0
 	die_face_state = DieFaceState.OFF
+
+## A start request from a cold barrel goes to PREHEAT, not STARTING.
+##
+## Before this existed, pressing start on a cold machine entered STARTING and
+## tripped on motor torque 2 s later, every single time, with no operator action
+## that could ever fix it: melt begins at ambient, _tick_off actively cools
+## toward ambient, and nothing in OFF/IDLE turned the heaters on. Measured over
+## a recorded shift, 81 % of starts on line 3A and 98 % on L1 went
+## STARTING -> FAULT. Routing the request to PREHEAT is what the panel does in
+## practice — the green button is simply not live until the block is green.
+func _route_start_request(events: Array[String]) -> void:
+	if preheat_ready():
+		_transition(State.STARTING, events)
+	else:
+		_transition(State.PREHEAT, events)
+
+
+## True once the barrel is hot enough that STARTING will not trip on torque.
+##
+## The trip is sustained motor_torque_pct >= TORQUE_TRIP_PCT, and torque carries
+## (setpoint - melt) * motor_torque_per_10c_below / 10 on top of the base. So
+## the honest threshold is derived from the trip itself rather than picked: stay
+## far enough below TORQUE_TRIP_PCT that the ramp has headroom.
+func preheat_ready() -> bool:
+	return melt_temp >= _preheat_ready_temp()
+
+
+func _preheat_ready_temp() -> float:
+	var headroom_pct : float = TORQUE_TRIP_PCT - config.motor_torque_base_pct
+	var per_c : float = maxf(0.001, config.motor_torque_per_10c_below / 10.0)
+	# Reach setpoint minus whatever cold-melt deficit still fits under the trip,
+	# with a 25 % safety margin so a brief ramp excursion cannot trip it.
+	var allowed_deficit_c : float = (headroom_pct / per_c) * 0.75
+	return config.melt_temp_setpoint - allowed_deficit_c
+
+
+## 0 .. 1 warm-up progress, for the HMI block that goes green.
+func preheat_progress() -> float:
+	var lo : float = AMBIENT_C
+	var hi : float = _preheat_ready_temp()
+	if hi <= lo:
+		return 1.0
+	return clampf((melt_temp - lo) / (hi - lo), 0.0, 1.0)
+
+
+## Barrel warm-up. Heaters on, screw stopped, no feed.
+##
+## Rate is derived from config.preheat_min_s so the documented duration is the
+## single source of truth: Cedo-PROD-SWI-042 p4 step 19 says extruder start-up
+## "duurt altijd minimaal 30 minuten, in deze opwarm tijd" — always at least 30
+## minutes of warm-up. That step also records "Nog SWI maken opstarten
+## extruders", i.e. no dedicated extruder start-up SWI exists, so step 19 is the
+## authority for this number.
+##
+## Deliberately NOT modelled on the 15 s "voorverwarmknop" in SWI-048/049: those
+## documents are "Opstarten sorteerlijn", the SORTING LINE. ExtruderMachine.gd
+## used to cite SWI-049 for the extruder's startup; that citation was wrong.
+func _tick_preheat(delta: float, events: Array[String]) -> void:
+	var was_ready := preheat_ready()
+	var span_c : float = maxf(1.0, config.melt_temp_setpoint - AMBIENT_C)
+	var rate : float = span_c / maxf(1.0, config.preheat_min_s)
+	melt_temp = move_toward(melt_temp, config.melt_temp_setpoint, rate * delta)
+	screw_rpm = 0.0
+	throughput_kg_h = 0.0
+	die_pressure_psi = 0.0
+	motor_torque_pct = 0.0
+	lump_passthrough_rate_g_s = 0.0
+	die_face_state = DieFaceState.OFF
+	if not was_ready and preheat_ready():
+		events.append("preheat_ready")
+
 
 func _tick_idle(delta: float) -> void:
 	# Screw spinning at idle rpm, no feed, melt held at setpoint. Live
@@ -561,7 +649,7 @@ func _tick_e_stop(delta: float) -> void:
 	die_pressure_psi = 0.0
 	motor_torque_pct = 0.0
 	lump_passthrough_rate_g_s = 0.0
-	melt_temp = move_toward(melt_temp, 25.0, 0.5 * delta)
+	melt_temp = move_toward(melt_temp, AMBIENT_C, 0.5 * delta)
 	die_face_state = DieFaceState.OFF
 
 # =============================================================================

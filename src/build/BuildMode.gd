@@ -1569,7 +1569,18 @@ func _place_current() -> void:
 	# _load_structure_placeable replays on load, so a fresh placement and a
 	# reloaded one look and behave identically from this point on.
 	if _active_id == "door_personnel" or _active_id == "gate_roller" or _active_id == "window_frame":
-		_carve_structure_opening(node, _active_id, node.global_position, _ghost_rot_y)
+		if not _carve_structure_opening(node, _active_id, node.global_position, _ghost_rot_y):
+			# No wall within the carve box — tell the operator directly instead
+			# of leaving them to click the same spot again believing it's
+			# broken (measured 2026-08-08: 41 repeat clicks, ~5-8 m from the
+			# nearest wall, each one a full shell rebuild before this guard).
+			var walkie := get_node_or_null("/root/Walkie")
+			if walkie and walkie.has_method("receive_call"):
+				walkie.call("receive_call", "Bouw",
+					"Geen muur gevonden op deze plek — de %s staat er, maar er is niets om een doorgang in te snijden."
+						% PlaceableCatalog.get_item(_active_id).get("name", _active_id))
+			push_warning("[BuildMode] %s placed at %s but no wall was found to carve — the model stands with no opening"
+				% [_active_id, str(node.global_position)])
 	_save_layout()
 	# #218 — Don't restart the whole line for observer-only fixtures (HMI panels,
 	# signs, doors, decorations). Rebuild wipes powered/spin/buffer and forces a
@@ -2635,8 +2646,11 @@ func _make_surface(points: Array, type_str: String, label: String) -> Node3D:
 		# would otherwise produce a 50 m box that the carver chokes on).
 		var ow : float = clampf(width,  0.5, 6.0)
 		var oh : float = clampf(height, 0.5, 8.0)
-		wall_openings.add_opening(oid, center, Vector3(ow, oh, 2.0), rot_y)
-		node.set_meta("opening_id", oid)
+		if wall_openings.add_opening(oid, center, Vector3(ow, oh, 2.0), rot_y):
+			node.set_meta("opening_id", oid)
+		else:
+			push_warning("[BuildMode] %s surface carve found no wall at %s — the panel is placed but stands in front of an intact wall"
+				% [type_str, str(center)])
 		# See _carve_structure_opening's note: the shared vehicle route grid
 		# samples colliders once per world and would otherwise ignore this cut
 		# for the rest of the session.
@@ -3211,9 +3225,14 @@ func _load_structure_placeable(resolved_id: String, dict: Dictionary) -> void:
 ## (operator report 2026-07-22: "no way through was created"). Now the LIVE
 ## placement path (_place_current) calls this too, so the cut appears the
 ## instant the gate is dropped, not after a round-trip through disk.
-func _carve_structure_opening(node: Node3D, resolved_id: String, pos: Vector3, rot_y: float) -> void:
+## Returns true if a wall was actually cut. False means the box touched no
+## shell geometry — the placeable stands somewhere with no wall nearby
+## (measured 2026-08-08: an operator door_personnel click 5-8 m from any
+## wall, on the outdoor apron, silently registered as a permanent opening 41
+## times over — each one a full shell-mesh rebuild — before this guard).
+func _carve_structure_opening(node: Node3D, resolved_id: String, pos: Vector3, rot_y: float) -> bool:
 	if wall_openings == null:
-		return
+		return false
 	var item := PlaceableCatalog.get_item(resolved_id)
 	var size : Vector3 = item.get("size", Vector3(1.2, 2.4, 0.18)) if not item.is_empty() else Vector3(1.2, 2.4, 0.18)
 	var ow := clampf(size.x, 0.5, 6.0)
@@ -3221,7 +3240,8 @@ func _carve_structure_opening(node: Node3D, resolved_id: String, pos: Vector3, r
 	var cut_centre := pos + Vector3(0.0, oh * 0.5, 0.0)
 	_opening_seq += 1
 	var oid := "op_%d" % _opening_seq
-	wall_openings.add_opening(oid, cut_centre, Vector3(ow, oh, 2.0), rot_y)
+	if not wall_openings.add_opening(oid, cut_centre, Vector3(ow, oh, 2.0), rot_y):
+		return false
 	node.set_meta("opening_id", oid)
 	# The shared vehicle route grid samples real colliders ONCE per world and is
 	# cached from then on (BaseVehicle._route_grid) — a carve made after that
@@ -3229,6 +3249,7 @@ func _carve_structure_opening(node: Node3D, resolved_id: String, pos: Vector3, r
 	# (operator's own forklift, mid-shift, ignored a freshly-placed gate).
 	# Force it to resample on the next drive order.
 	BaseVehicle.invalidate_route_grid()
+	return true
 
 ## Converts a legacy box-door entry {id:"door", x,y,z,rot_y} into the new
 ## interactive roller door with a carved opening, by reconstructing its 4

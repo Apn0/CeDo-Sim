@@ -41,6 +41,38 @@ if grep -qE "Parse Error|Compile Error" "$OUT/parse_gate.log"; then
 	exit 1
 fi
 
+# TEST-SCRIPT PARSE SWEEP. The gate above boots the main scene, which never
+# loads anything under src/tests/ — so a test file can stop compiling and sit
+# unnoticed for months. Measured 2026-08-11: test_npc05_realworld.gd, the REAL
+# MainWorld proof for the npc-05 container chain, referenced three functions
+# that were never written. It had never once run, and the harness was green
+# throughout. --check-only compiles a script without booting anything.
+#
+# Parse Error ONLY, deliberately. --check-only does not register autoloads, so
+# 31 of the 77 files here report "Compile Error: Identifier not found: Plant /
+# EventBus / WorldLayout / ..." purely because of how they are being invoked —
+# including files that demonstrably run green. Measured across all 77: 0 Parse
+# Errors, 31 Compile Errors, every one of them an autoload miss. Failing on
+# Compile Error would paint this step permanently red, and a step that is always
+# red is a step everyone learns to skip. The npc05 defect was a Parse Error
+# ("Function not found in base self"), which is exactly what this catches.
+echo "== test-script parse sweep =="
+sweep_fail=0
+for f in "$PROJ"/src/tests/*.gd; do
+	[ -e "$f" ] || continue
+	rel="res://src/tests/$(basename "$f")"
+	if "$GODOT" --headless --path "$PROJ" --check-only --script "$rel" 2>&1 			| grep -q "Parse Error"; then
+		echo "FAIL  : $rel does not parse"
+		"$GODOT" --headless --path "$PROJ" --check-only --script "$rel" 2>&1 			| grep "Parse Error" | sort -u | head -4
+		sweep_fail=1
+	fi
+done
+if [ "$sweep_fail" -ne 0 ]; then
+	echo "FAIL  : one or more test scripts do not parse"
+	exit 1
+fi
+echo "  ok    : every src/tests/*.gd parses"
+
 echo "== unused-parameter lint =="
 if ! python3 "$PROJ/tools/regression/lint_unused_params.py" "$PROJ/src"; then
 	echo "FAIL  : unused parameter(s) — would warn in the editor"
@@ -257,6 +289,18 @@ echo "== door carve (visible-teeth regression) =="
 grep -E "boundary edges|teeth|PASS —|FAIL —|RESULT FAIL" "$OUT/door_carve.log" || true
 if ! grep -q "PASS —" "$OUT/door_carve.log"; then
 	echo "FAIL  : door carve (see $OUT/door_carve.log)"
+	[ $code -eq 0 ] && code=1
+fi
+
+# HmiWebOverlay (task #2): the WebView itself can't exist headless, so this
+# covers everything Godot owns around it — Index-derived nav order, the
+# unknown-screen refusal, and gather_vals()' LineFlow -> shell payload
+# (calibrated amps per plant code, 4-state line pill, estop fault flag).
+echo "== hmi web overlay (nav + vals logic) =="
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_hmi_web.gd --quit-after 300 > "$OUT/hmi_web.log" 2>&1
+grep -E "^  ok|RESULT FAIL|PASS —" "$OUT/hmi_web.log" || true
+if ! grep -q "PASS —" "$OUT/hmi_web.log"; then
+	echo "FAIL  : hmi web overlay (see $OUT/hmi_web.log)"
 	[ $code -eq 0 ] && code=1
 fi
 

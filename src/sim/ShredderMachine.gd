@@ -22,7 +22,12 @@ extends StaticBody3D
 #       - motor-overload reset
 #       - OPEN housing            (SWI-027 sh1 / SWI-040 sh2) — only in Onderhoud
 #       - BLOK rotor / deblok     (SWI-033 rotor blokkeren) — LOTO for cleaning
-#       - CLEAN + close           (SWI-034 sh1 / SWI-042 sh2)
+#       - CLEAN + close           (SWI-034 sh1; NO SWI exists for sh2 cleaning)
+#         Citation audit 2026-08-11: this line used to cite "SWI-042 sh2".
+#         SWI-042 is "Leegdraaien lijn 3 voor meswissel" (empty-running line 3
+#         for a knife change), not a shredder-2 cleaning procedure, and the SWI
+#         index has no shredder-2 cleaning doc at all — only SWI-040 "Lijn 3
+#         openen shredder 2". Treat sh2 cleaning as undocumented.
 #
 # Data (docs): whole-plant film feed 4500 kg/h (7.5 bales × 600 kg); ~2082 kg/h
 # clean flake after magnet + 2× TITECH; shredder-2 overflow ~100 kg/dienst; bunker
