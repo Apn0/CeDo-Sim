@@ -50,12 +50,17 @@ class_name HmiScopes
 ## changes, `matches()` below is the ONE function to update.
 ##
 ## ───────────────────────────────────────────────────────────────────────────
-## BACK-COMPAT:
-##   The two legacy placeable ids `hmi_panel` and `hmi_wall` (cosmetic-only,
-##   pre-#165) map to the "generic" scope, which sees every machine — same
-##   behaviour as before so existing saves don't crash on load.
-
-const GENERIC_ID := "generic"
+## RETIRED (2026-08-15, operator order "remove unused/old HMI displays"):
+##   The two pre-#165 cosmetic placeable ids `hmi_panel` / `hmi_wall` used to
+##   map to a "generic" scope that saw EVERY machine. No such panel exists in
+##   the plant, so the id, the scope and the fallback are all gone
+##   (`PlaceableCatalog.RETIRED_IDS`). There is now exactly one rule:
+##
+##       an hmi_id that is not a key of SCOPES is a BUG, not a fallback.
+##
+##   `get_scope()` therefore returns an EMPTY dictionary on a miss and Hmi.gd
+##   leaves such a panel inert (warning, no interaction) instead of quietly
+##   handing the player control over the whole plant.
 
 ## ── MOUNT TABLE (placement) ─────────────────────────────────────────────────
 ## This file called itself "the single source of truth" while carrying no
@@ -276,22 +281,20 @@ const ORDERED_IDS := [
 	"hmi_indaver_water",
 ]
 
-## Back-compat scope — what `hmi_panel` / `hmi_wall` get when loaded from a
-## save written before #165. Sees every machine = old behaviour preserved.
-const _GENERIC_SCOPE := {
-	"label":  "HMI (generiek)",
-	"mesh":   "hmi_panel",
-	"color":  Color(0.30, 0.32, 0.36),
-	"lines":  [],     # empty = no line filter
-	"tokens": [],     # empty = no token filter (matches everything)
-}
+## True when `hmi_id` is one of the 12 documented panels.
+static func has_scope(hmi_id: String) -> bool:
+	return SCOPES.has(hmi_id)
 
-## Look up the scope for a `hmi_id`. Returns the GENERIC scope on miss so the
-## overlay never crashes — bad/legacy ids just show every machine.
+## Look up the scope for a `hmi_id`. Returns an EMPTY dictionary on a miss.
+##
+## It used to return a see-everything "generic" scope. That fallback existed for
+## the retired `hmi_panel` / `hmi_wall` props, and it was the dangerous kind of
+## default: an unknown id silently became a master panel over the entire plant.
+## Callers must now check `is_empty()` — Hmi.gd does, and leaves the panel inert.
 static func get_scope(hmi_id: String) -> Dictionary:
 	if SCOPES.has(hmi_id):
 		return SCOPES[hmi_id]
-	return _GENERIC_SCOPE
+	return {}
 
 ## True iff the given LineFlow node id (and optional explicit `line` attr) is
 ## inside the scope.
@@ -340,17 +343,14 @@ static func matches(scope: Dictionary, node_id: String, node_line: String = "") 
 			break
 	return not any_line_tag
 
-## Resolve a placed-HMI node's hmi_id from its meta. Falls back to the
-## placeable_id (legacy `hmi_panel`/`hmi_wall` → generic scope).
+## Resolve a placed-HMI node's hmi_id from its meta, falling back to the
+## placeable_id (the catalog stamps both, and they are equal for all 12 panels).
+## Returns "" when neither meta is present — the caller treats that as unknown.
 static func resolve_hmi_id(meta_owner: Object) -> String:
 	if meta_owner == null:
-		return GENERIC_ID
+		return ""
 	if meta_owner.has_meta("hmi_id"):
 		return String(meta_owner.get_meta("hmi_id"))
 	if meta_owner.has_meta("placeable_id"):
-		var pid := String(meta_owner.get_meta("placeable_id"))
-		# Legacy cosmetic ids → generic scope (back-compat for old saves).
-		if pid == "hmi_panel" or pid == "hmi_wall":
-			return GENERIC_ID
-		return pid
-	return GENERIC_ID
+		return String(meta_owner.get_meta("placeable_id"))
+	return ""

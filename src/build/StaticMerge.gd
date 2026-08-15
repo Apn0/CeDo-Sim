@@ -122,7 +122,7 @@ static func _is_dynamic(node: Node) -> bool:
 	if node is Area3D or node is AnimatableBody3D or node is RigidBody3D:
 		return true
 	if node.is_in_group("mechanism") or node.is_in_group("steam_plume") \
-			or node.is_in_group("hmi_panel") or node.is_in_group("interactive"):
+			or node.is_in_group("hmi") or node.is_in_group("interactive"):
 		return true
 	# Support legs / foot pads are rescaled to the floor AFTER the model is built
 	# (extend_machine_legs runs at placement time). If the merge bakes them away

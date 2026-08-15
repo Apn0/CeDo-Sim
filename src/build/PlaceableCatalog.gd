@@ -483,9 +483,10 @@ static func items() -> Array[Dictionary]:
 			# hmi_id meta (Hmi.gd reads it on _ready) so the overlay knows which
 			# subset of machines to expose. `mesh` selects the stand- vs
 			# wall-mount geometry — both physical builds remain available.
-			# The legacy cosmetic ids `hmi_panel` / `hmi_wall` are kept as
-			# aliases at the end of the list so saves written before #165 still
-			# load (they map to a generic see-all scope in HmiScopes.gd).
+			# These 12 are the WHOLE list. The pre-#165 cosmetic ids
+			# `hmi_panel` / `hmi_wall` were RETIRED 2026-08-15 (operator order:
+			# "remove unused/old HMI displays") — see RETIRED_IDS below. Do not
+			# re-add a generic see-all panel; there is no such thing in the plant.
 			{"id": "hmi_shredder_l1",       "name": "HMI — Shredder lijn 1",            "category": "Control", "size": Vector3(0.7, 1.5, 0.5),  "color": Color(0.30, 0.32, 0.36), "hmi_id": "hmi_shredder_l1",       "mesh": "hmi_panel"},
 			{"id": "hmi_shredder1_l3ab",    "name": "HMI — Shredder 1 lijn 3A/3B",      "category": "Control", "size": Vector3(0.7, 1.5, 0.5),  "color": Color(0.30, 0.32, 0.36), "hmi_id": "hmi_shredder1_l3ab",    "mesh": "hmi_panel"},
 			{"id": "hmi_shredder2_l3ab",    "name": "HMI — Shredder 2 lijn 3A/3B",      "category": "Control", "size": Vector3(0.7, 1.5, 0.5),  "color": Color(0.30, 0.32, 0.36), "hmi_id": "hmi_shredder2_l3ab",    "mesh": "hmi_panel"},
@@ -498,10 +499,6 @@ static func items() -> Array[Dictionary]:
 			{"id": "hmi_water_l3c6",        "name": "HMI — Water lijn 3C/6",            "category": "Control", "size": Vector3(0.7, 1.5, 0.5),  "color": Color(0.14, 0.34, 0.40), "hmi_id": "hmi_water_l3c6",        "mesh": "hmi_panel"},
 			{"id": "hmi_water_extr_l1_3ab", "name": "HMI — Water extruder 1/3A/3B",     "category": "Control", "size": Vector3(0.7, 1.5, 0.5),  "color": Color(0.14, 0.34, 0.40), "hmi_id": "hmi_water_extr_l1_3ab", "mesh": "hmi_panel"},
 			{"id": "hmi_indaver_water",     "name": "HMI — Indaver waterzuivering",     "category": "Control", "size": Vector3(0.6, 0.5, 0.16), "color": Color(0.22, 0.40, 0.46), "hmi_id": "hmi_indaver_water",     "mesh": "hmi_wall"},
-			# Legacy back-compat aliases — pre-#165 saves keep loading. Both map
-			# to a generic "see every machine" scope in HmiScopes.gd.
-			{"id": "hmi_panel",      "name": "HMI panel (stand, generiek)", "category": "Control",    "size": Vector3(0.7, 1.5, 0.5),  "color": Color(0.30, 0.32, 0.36), "hmi_id": "generic", "mesh": "hmi_panel"},
-			{"id": "hmi_wall",       "name": "HMI panel (wand, generiek)",  "category": "Control",    "size": Vector3(0.6, 0.5, 0.16), "color": Color(0.30, 0.32, 0.36), "hmi_id": "generic", "mesh": "hmi_wall"},
 			# Shift-leader PC: walk up + E → Balen-scanlog + Reset/Restock buttons
 			# (#73 / #74). MainWorld also auto-spawns one for back-compat, but this
 			# entry lets the operator place additional desks or move them via K-edit.
@@ -607,6 +604,40 @@ static func _canonical_id(id: String) -> String:
 	if id.begins_with("intake_belt_"):
 		return "transportband_" + id.substr("intake_belt_".length())
 	return id
+
+## =============================================================================
+## RETIRED PLACEABLES — ids that existed in old saves and must never come back
+## =============================================================================
+## A retired id is NOT an alias: there is no replacement to map it to, so it is
+## deliberately DROPPED on load rather than silently rebuilt as something else.
+##
+## `hmi_panel` / `hmi_wall` were the pre-#165 cosmetic HMI props. They opened a
+## "generic" see-every-machine overlay that has no counterpart anywhere in the
+## real plant — the operator's whiteboard lists exactly 12 panels (HmiScopes.gd)
+## and every one of them is now a first-class catalog entry. Operator order
+## 2026-08-15: "remove unused/old HMI displays … from build menu and from logic".
+##
+## Contract:
+##   - not in `items()`      → gone from the build menu, gone from every
+##                             catalog-driven UI/tool that enumerates items
+##   - `build_node()` → null → an old save entry produces nothing, with ONE
+##                             explanatory warning instead of the bare
+##                             "Unknown id" (BuildMode counts them per load)
+##   - re-saving the world drops the entry for good (the node no longer exists)
+##
+## The value is the reason string, printed once per id per load.
+const RETIRED_IDS := {
+	"hmi_panel": "legacy generic HMI stand (pre-#165) — retired 2026-08-15, place one of the 12 scoped HMI panels instead",
+	"hmi_wall":  "legacy generic HMI wall panel (pre-#165) — retired 2026-08-15, place `hmi_indaver_water` or one of the 12 scoped HMI panels instead",
+}
+
+## True when `id` is a retired placeable — never buildable, never in the menu.
+static func is_retired(id: String) -> bool:
+	return RETIRED_IDS.has(_canonical_id(id))
+
+## Human-readable reason a placeable was retired ("" when it wasn't).
+static func retired_reason(id: String) -> String:
+	return String(RETIRED_IDS.get(_canonical_id(id), ""))
 
 ## =============================================================================
 ## SIZE OVERRIDES (in-game 3D-model editor — K-mode "B" bake key)
@@ -1108,6 +1139,11 @@ static func _finalize_placeable(node: Node3D, id: String) -> Node3D:
 	return node
 
 static func build_node(id: String, ghost: bool = false, simple: bool = false) -> Node3D:
+	# Retired ids (see RETIRED_IDS) are dropped on purpose, with the REASON, so a
+	# vanished object from an old save is never mistaken for a load bug.
+	if is_retired(id):
+		push_warning("[PlaceableCatalog] Retired placeable '%s' not built — %s" % [id, retired_reason(id)])
+		return null
 	var item := get_item(id)
 	if item.is_empty():
 		push_warning("[PlaceableCatalog] Unknown id: %s" % id)
@@ -1355,8 +1391,8 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 	body.set_meta("placeable_id", id)
 	# #165 — Control category placeables (HMI panels) carry a scope id so the
 	# Hmi.gd interaction script and HmiOverlay can look up which subset of the
-	# plant this physical panel governs. Legacy `hmi_panel` / `hmi_wall` saves
-	# get the "generic" scope (see HmiScopes.gd) and behave like before.
+	# plant this physical panel governs. Every buildable HMI carries one — the
+	# generic see-all scope died with the retired `hmi_panel` / `hmi_wall` ids.
 	if category == "Control" and item.has("hmi_id"):
 		body.set_meta("hmi_id", String(item["hmi_id"]))
 
@@ -1560,10 +1596,12 @@ const _DARK  : Color = Color(0.24, 0.25, 0.28)
 const _SAFETY: Color = Color(0.94, 0.78, 0.14)
 
 static func _build_model(p: Node3D, id: String, category: String, size: Vector3, color: Color, ghost: bool) -> void:
-	# #165 — scoped HMI ids ("hmi_shredder_l1" etc.) route to the mesh chosen
-	# by their catalog `mesh` field ("hmi_panel" stand or "hmi_wall" wall). The
-	# legacy `hmi_panel` / `hmi_wall` ids stay in the match below for back-compat.
-	if category == "Control" and id.begins_with("hmi_") and id != "hmi_panel" and id != "hmi_wall":
+	# #165 — the 12 scoped HMI ids ("hmi_shredder_l1" etc.) route to the mesh
+	# chosen by their catalog `mesh` field ("hmi_panel" stand or "hmi_wall"
+	# wall). `mesh` is a GEOMETRY key, not a placeable id — the placeables that
+	# once carried those two ids are retired (RETIRED_IDS) and can never reach
+	# here, so no id exclusions are needed.
+	if category == "Control" and id.begins_with("hmi_"):
 		var hmi_item := get_item(id)
 		var mesh_key := String(hmi_item.get("mesh", "hmi_panel"))
 		if mesh_key == "hmi_wall":
@@ -1605,8 +1643,8 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 		"pomp_c1":        _m_pump_labeled(p, size, color, ghost, "C1")
 		"pomp_zeefbocht": _m_pump_labeled(p, size, color, ghost, "ZEEFBOCHT")
 		"compactor_belt": _m_compactor_belt(p, size, color, ghost)
-		"hmi_panel":      _m_hmi(p, size, color, ghost)
-		"hmi_wall":       _m_hmi_wall(p, size, color, ghost)
+		# (no "hmi_panel" / "hmi_wall" arms — those placeable ids are retired.
+		#  The 12 scoped panels are dispatched by the `mesh` key above.)
 		"vuilsnippersilo":_m_vuilsnippersilo(p, size, color, ghost)
 		"friction_washer":_m_friction_washer(p, size, color, ghost)
 		"intensive_washer":_m_intensive_washer(p, size, color, ghost)

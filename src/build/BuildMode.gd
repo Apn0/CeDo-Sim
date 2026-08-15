@@ -594,8 +594,11 @@ func _is_flow_relevant(id : String) -> bool:
 	if id.begins_with("hmi_"):
 		return false
 	# Hard-coded observer-only ids that don't carry a sim role.
+	# (`hmi_wall` / `hmi_panel` used to head this list; they are retired
+	#  placeables now — PlaceableCatalog.RETIRED_IDS — and the `hmi_` prefix
+	#  check above already covers every HMI that can still be placed.)
 	const _OBSERVER_IDS : Array[String] = [
-		"hmi_wall", "hmi_panel", "pcu_cabinet", "e_kast", "door",
+		"pcu_cabinet", "e_kast", "door",
 		"door_personnel", "gate_roller", "window_frame",
 		"hazard_moving", "hazard_overhead", "hazard_hightemp",
 		"hazard_hardhat", "hazard_piralchute", "hazard_platformmaxload",
@@ -2845,6 +2848,10 @@ func _save_layout() -> void:
 # those poses verbatim re-creates the overlap that made hulls translate forever.
 var _loaded_vehicles : Array[Dictionary] = []
 
+# Retired placeable ids encountered by the CURRENT load_layout() pass, id -> count.
+# Reported once at the end of the load (_report_retired_drops) and cleared.
+var _retired_dropped : Dictionary = {}
+
 ## De-nest search geometry. Fixed step + fixed angle count = deterministic: the
 ## same save always yields the same corrected poses, so the regression harness
 ## and the operator's world stay reproducible. 1.5 m clears a bale-clamp
@@ -2856,6 +2863,7 @@ const DENEST_ANGLES : int = 12
 
 func load_layout() -> void:
 	_loaded_vehicles.clear()
+	_retired_dropped.clear()
 	# Per-save data (machines, signs, plain panels — playthrough-specific items).
 	# Falls through with an empty `data` array so a new save (no per-save file) still
 	# loads the SHARED structure (walls / doors / gates / windows) below.
@@ -2911,6 +2919,17 @@ func load_layout() -> void:
 	# first physics frame runs on them.
 	_denest_loaded_vehicles()
 	print("[BuildMode] Loaded %d placed objects (per-save) + %d shared structure" % [count, shared_count])
+	_report_retired_drops()
+
+## One line per retired placeable id that this save still contained, with the
+## count and the reason. Saving the world afterwards writes the entry out of
+## existence — the objects are gone from the scene tree, so the next save has
+## nothing to record.
+func _report_retired_drops() -> void:
+	for rid in _retired_dropped:
+		print("[BuildMode] dropped %d x retired placeable '%s' from this save — %s"
+			% [int(_retired_dropped[rid]), rid, PlaceableCatalog.retired_reason(String(rid))])
+	_retired_dropped.clear()
 
 ## Move restored vehicles off each other so no two hulls start overlapped.
 ##
@@ -3130,6 +3149,13 @@ func _apply_layout_entry(entry: Variant) -> bool:
 	if entry_id == "":
 		# Legacy / corrupt save entry — skip silently instead of pushing the
 		# "Unknown id:" warning from PlaceableCatalog.build_node.
+		return false
+	# Retired placeables (e.g. the pre-#165 generic HMI props) are dropped on
+	# purpose. Counted, not warned per-entry, so a save with a dozen of them
+	# produces one honest summary line instead of a wall of warnings — and so
+	# "my panel disappeared" always has a printed answer.
+	if PlaceableCatalog.is_retired(entry_id):
+		_retired_dropped[entry_id] = int(_retired_dropped.get(entry_id, 0)) + 1
 		return false
 	var node := PlaceableCatalog.build_node(entry_id, false)
 	if node == null:
