@@ -11,6 +11,59 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>html,body{margin:0;padding:0;background:#0a0a0a;} a{color:#4aa3e0;text-decoration:none;} a:hover{color:#7cc0f0;}</style>
 </helmet>
+<!--
+  ============================================================================
+  PROVENANCE / VALUE CONVENTION — read before touching any number in this file
+  ============================================================================
+  This screen follows the SET-WIDE convention stated in `HMI Index.dc.html:16`:
+  "Waarden op nul, labels verbatim" — every process value in a delivered mockup
+  is ZERO; only the labels, layout and chrome are transcribed. The mockups are a
+  LAYOUT SPEC, not a data source (`hmi_screen_inventory_2026-07-28.md:10-13`:
+  "Never treat a mockup literal as plant data").
+
+  WHY THE ZEROS ARE NOT A LOSS. Between 2026-07-26 and 2026-08-16 the ten value
+  boxes below were overwritten with the real captured readings. They were reverted
+  on 2026-08-16. Nothing was lost: every one of those numbers is recorded, with its
+  source photo, in
+    - docs/plant/hmi_screen_inventory_2026-07-28.md:193  (both frames, verbatim)
+    - docs/plant/swi/PHOTO-erema-hmi-SV-extruder-livevalues__257_CeDo5_3.md    (frame A)
+    - docs/plant/swi/PHOTO-erema-hmi-SV-extruder-livevalues-frame2__258_CeDo6_3.md (frame B)
+    - docs/plant/swi/OTHER-erema-hmi-mimic-SV-compactor-extruder-zones__185_CeDo88_3.md
+  Capture = assets/reference_photos/hmi/2024-04-10-13-29-20-271.jpg and
+  ...-13-29-22-533.jpg (2 s apart), cited by PROVENANCE_processed_log.md:12.
+  For the record, frame A read: SV-vulpeil 45 cm · afzuiging 1 55 % · afzuiging 2 0 ·
+  schuif 100 % · ex-belasting 102 % · extr rpm 120 (setpoint 120) · SV-temperatuur
+  108 °C · SV-belasting 61 % · SV-vermogen 193 kW · zones EZ-1 113 / ZZ-1 157 /
+  ZZ-2 184 / ZZ-3 213 °C. Frame B differs only in SV-belasting 63 %, SV-vermogen
+  199 kW, ex-belasting 101 % — i.e. these are LIVE channels, not constants.
+
+  WHY THEY ARE NOT HARDCODED HERE. This file is served into the in-game HMI as a
+  static document (`HmiWebOverlay.gd:237-248` posts it verbatim). The only live
+  binding the shell performs is: amps boxes whose text matches /^\d+(,\d+)?\s*A$/,
+  state squares, "Status …" pills and the alarm row (`hmi_shell.html:326-405`,
+  `:527-553`). NONE of the boxes on this screen are bindable — it carries zero
+  "Status …" pills and zero amps boxes. A number typed in here can therefore NEVER
+  be overwritten at runtime: E-stop the line, or simply never start it, and a
+  hardcoded 120 rpm / 108 °C / 193 kW would still show a hot running extruder on a
+  dead line. That is the defect this comment exists to prevent (audit C4,
+  docs/AUDIT_handoffs_2026-08-16.md:79-83). If live extruder telemetry is ever
+  wanted here it needs a real binding in HmiWebOverlay.gd + hmi_shell.html driven by
+  LineFlow — not literals in the mockup. No doc authorises a mapping from LineFlow
+  state to SV-vulpeil/SV-temperatuur, so none was invented.
+
+  LINE MIS-ATTRIBUTION CAVEAT (audit H10) — this file is named "3C" and
+  `HmiScopes.gd:220` scopes it to the line-3C extruder panel, but the SV-* labels are
+  the PRE-BluPort 3A/3B generation vocabulary (`hmi_reference.md:151-164`: the older
+  EREMA HMI uses SV-temperatuur / SV-vermogen / intrekschuif; `:364`: BluPort 3C and 6
+  use PCU-temp / PCU-vermogen / AIS-positie for the same physical quantities). No doc
+  states which line the source photos were shot on. Do NOT calibrate 3C from the
+  numbers above: every documented 3C capture puts the compactor buffer at
+  PCU-vulpeil 265-270 cm (`hmi_reference.md:79`, `:108`, `:121`), not 45 cm — a factor
+  of ~6. The FILE NAME is deliberately left as "3C": `HMI Index.dc.html:70`,
+  `HmiScopes.gd:220` and the 33-screen count in `src/tests/test_hmi_web.gd:78` all key
+  on it. Renaming is an operator decision, not an agent one.
+  ============================================================================
+-->
 <div style="width:1024px;height:768px;position:relative;overflow:hidden;background:#101609;font-family:Arial,Helvetica,sans-serif;color:#111;font-size:15px;" data-screen-label="EREMA extruder">
 
   <!-- ===== mimic (behind value boxes) ===== -->
@@ -32,12 +85,12 @@
   <!-- ===== top row ===== -->
   <div style="position:absolute;top:30px;left:382px;width:180px;background:#f2f2ee;border:1px solid #8b8b8b;">
     <div style="padding:4px 8px;font-size:12px;color:#555;border-bottom:1px solid #ccc;">SV-vulpeil</div>
-    <div style="display:flex;align-items:baseline;gap:10px;padding:8px 10px;"><span style="font-size:28px;font-weight:600;">45</span><span style="color:#555;">cm</span></div>
+    <div style="display:flex;align-items:baseline;gap:10px;padding:8px 10px;"><span style="font-size:28px;font-weight:600;">0</span><span style="color:#555;">cm</span></div>
   </div>
   <div style="position:absolute;top:30px;left:620px;display:flex;">
     <div style="width:150px;background:#f2f2ee;border:1px solid #8b8b8b;">
       <div style="padding:4px 8px;font-size:12px;color:#555;border-bottom:1px solid #ccc;">afzuiging 1</div>
-      <div style="display:flex;align-items:baseline;gap:10px;padding:8px 10px;"><span style="font-size:28px;font-weight:600;">55</span><span style="color:#555;">%</span></div>
+      <div style="display:flex;align-items:baseline;gap:10px;padding:8px 10px;"><span style="font-size:28px;font-weight:600;">0</span><span style="color:#555;">%</span></div>
     </div>
     <div style="width:130px;background:#f2f2ee;border:1px solid #8b8b8b;border-left:none;">
       <div style="padding:4px 8px;font-size:12px;color:#555;border-bottom:1px solid #ccc;">afzuiging 2</div>
@@ -48,32 +101,32 @@
   <!-- ===== left column ===== -->
   <div style="position:absolute;top:250px;left:40px;width:200px;background:#f2f2ee;border:1px solid #8b8b8b;">
     <div style="padding:4px 8px;font-size:12px;color:#555;border-bottom:1px solid #ccc;">schuif</div>
-    <div style="display:flex;align-items:baseline;gap:10px;padding:8px 10px;"><span style="font-size:28px;font-weight:600;">100</span><span style="color:#555;">%</span></div>
+    <div style="display:flex;align-items:baseline;gap:10px;padding:8px 10px;"><span style="font-size:28px;font-weight:600;">0</span><span style="color:#555;">%</span></div>
   </div>
   <div style="position:absolute;top:430px;left:40px;width:210px;background:#f2f2ee;border:1px solid #8b8b8b;">
     <div style="padding:4px 8px;font-size:12px;color:#555;border-bottom:1px solid #ccc;">ex - belasting</div>
-    <div style="display:flex;align-items:baseline;gap:10px;padding:8px 10px;"><span style="font-size:28px;font-weight:600;">102</span><span style="color:#555;">%</span></div>
+    <div style="display:flex;align-items:baseline;gap:10px;padding:8px 10px;"><span style="font-size:28px;font-weight:600;">0</span><span style="color:#555;">%</span></div>
   </div>
   <div style="position:absolute;top:530px;left:40px;width:210px;background:#f2f2ee;border:1px solid #8b8b8b;">
     <div style="padding:4px 8px;font-size:12px;color:#555;border-bottom:1px solid #ccc;">extr rpm</div>
-    <div style="display:flex;align-items:baseline;gap:10px;padding:8px 10px;"><span style="font-size:28px;font-weight:600;">120</span><span style="color:#555;">rpm</span></div>
-    <div style="display:flex;align-items:baseline;gap:10px;padding:6px 10px;border-top:1px solid #ccc;background:#2a4fa8;"><span style="font-size:24px;font-weight:600;color:#fff;">120</span><span style="color:#dfe6f2;">rpm</span></div>
+    <div style="display:flex;align-items:baseline;gap:10px;padding:8px 10px;"><span style="font-size:28px;font-weight:600;">0</span><span style="color:#555;">rpm</span></div>
+    <div style="display:flex;align-items:baseline;gap:10px;padding:6px 10px;border-top:1px solid #ccc;background:#2a4fa8;"><span style="font-size:24px;font-weight:600;color:#fff;">0</span><span style="color:#dfe6f2;">rpm</span></div>
   </div>
 
   <!-- ===== SV-temperatuur (overlays hopper, as in original) ===== -->
   <div style="position:absolute;top:330px;left:258px;width:190px;background:#f2f2ee;border:1px solid #8b8b8b;">
     <div style="padding:4px 8px;font-size:12px;color:#555;border-bottom:1px solid #ccc;">SV-temperatuur</div>
-    <div style="display:flex;align-items:baseline;gap:10px;padding:8px 10px;"><span style="font-size:28px;font-weight:600;">108</span><span style="color:#555;">°C</span></div>
+    <div style="display:flex;align-items:baseline;gap:10px;padding:8px 10px;"><span style="font-size:28px;font-weight:600;">0</span><span style="color:#555;">°C</span></div>
   </div>
 
   <!-- ===== right column ===== -->
   <div style="position:absolute;top:180px;left:770px;width:190px;background:#f2f2ee;border:1px solid #8b8b8b;">
     <div style="padding:4px 8px;font-size:12px;color:#555;border-bottom:1px solid #ccc;">SV-belasting</div>
-    <div style="display:flex;align-items:baseline;gap:10px;padding:8px 10px;"><span style="font-size:28px;font-weight:600;">61</span><span style="color:#555;">%</span></div>
+    <div style="display:flex;align-items:baseline;gap:10px;padding:8px 10px;"><span style="font-size:28px;font-weight:600;">0</span><span style="color:#555;">%</span></div>
   </div>
   <div style="position:absolute;top:272px;left:770px;width:190px;background:#f2f2ee;border:1px solid #8b8b8b;">
     <div style="padding:4px 8px;font-size:12px;color:#555;border-bottom:1px solid #ccc;">SV-vermogen</div>
-    <div style="display:flex;align-items:baseline;gap:10px;padding:8px 10px;"><span style="font-size:28px;font-weight:600;">193</span><span style="color:#555;">kW</span></div>
+    <div style="display:flex;align-items:baseline;gap:10px;padding:8px 10px;"><span style="font-size:28px;font-weight:600;">0</span><span style="color:#555;">kW</span></div>
   </div>
 
   <!-- ===== zone temperature strip: overlays the barrel's lower half ===== -->
@@ -81,7 +134,7 @@
     <sc-for list="{{ zones }}" as="z" hint-placeholder-count="4">
       <div style="width:130px;background:#f2f2ee;border:1px solid #8b8b8b;border-left:none;">
         <div style="padding:4px 8px;font-size:12px;color:#555;border-bottom:1px solid #ccc;">{{ z.name }}</div>
-        <div style="display:flex;align-items:baseline;gap:8px;padding:8px 10px;"><span style="font-size:26px;font-weight:600;">{{ z.temp }}</span><span style="font-size:13px;color:#555;">°C</span></div>
+        <div style="display:flex;align-items:baseline;gap:8px;padding:8px 10px;"><span style="font-size:26px;font-weight:600;">0</span><span style="font-size:13px;color:#555;">°C</span></div>
         <div style="width:42px;height:6px;background:#6ad0e0;margin:0 0 8px 10px;"></div>
       </div>
     </sc-for>
@@ -108,12 +161,7 @@
 class Component extends DCLogic {
   renderVals() {
     return {
-      zones: [
-        {name: "EZ-1", temp: 113},
-        {name: "ZZ-1", temp: 157},
-        {name: "ZZ-2", temp: 184},
-        {name: "ZZ-3", temp: 213}
-      ],
+      zones: [{name:"EZ-1"},{name:"ZZ-1"},{name:"ZZ-2"},{name:"ZZ-3"}],
     };
   }
 }

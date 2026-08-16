@@ -23,6 +23,7 @@ config/icon="res://cedo_logo.svg"
 
 [audio]
 
+buses/default_bus_layout="uid://ufjffcjjbpd5"
 driver/enable_input=true
 
 [autoload]

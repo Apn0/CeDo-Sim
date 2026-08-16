@@ -21,14 +21,19 @@ class_name BaleYardManager
 # restock_yard_bales so ShiftLeaderTerminal.gd's `mw.call("reset_yard_bales")`
 # path continues to work unchanged.
 
-# Frame budget for the yard collider drain queue. 2 ms is enough to keep
-# multi-thousand-bale layouts spawning steadily without showing as a hitch on
-# the PerfHud.
-const _YARD_SPAWN_BUDGET_USEC : int = 2000   # 2 ms / frame cap
+# RETIRED (2026-08-16 audit): frame budget for the old time-sliced yard collider
+# drain queue. That queue no longer exists — tick()'s proximity sweep creates
+# colliders on demand instead — so this constant has had ZERO readers since the
+# sweep landed (repo-wide grep: this line only). Kept, not deleted, so a reader
+# of a log line or doc that still quotes "2 ms/frame" can find the retirement
+# note instead of a live-looking knob. Do not wire it back up without a doc.
+const _YARD_SPAWN_BUDGET_USEC : int = 2000   # DEAD — no readers
 
-# Proximity sweep parameters. 25 m matches the close-LOD MM swap, so colliders
-# come online at exactly the radius the operator can interact with bales.
-const _YARD_RB_NEAR_M  : float = 25.0
+# RETIRED (2026-08-16 audit): the sweep radius lives in tick() as NEAR_SQ (24 m)
+# / FAR_SQ (32 m hysteresis); this 25 m copy has zero readers and disagrees with
+# the value that actually runs — the stale-constant pattern this project keeps
+# getting bitten by. Read tick(), not this line.
+const _YARD_RB_NEAR_M  : float = 25.0        # DEAD — superseded by tick()'s NEAR_SQ
 const _YARD_RB_TICK_S  : float = 0.5
 
 # ── Runtime state ───────────────────────────────────────────────────────────
@@ -36,6 +41,23 @@ var _yard_slots       : Array[Dictionary] = []   # of slot definition dicts
 var _active_bale_rbs  : Dictionary = {}          # String slot_key -> RigidBody3D
 var _yard_rb_tick_t   : float = 0.0
 var _restock_pending  : bool  = false
+
+## Slot keys whose bale has LEFT the yard's control: grabbed and hauled away,
+## reparented onto a vehicle, or freed outright (LineFlow.gd:2085 frees a bale
+## once remaining_kg hits 0, BaleBurst.gd:115 frees the husk when it is opened).
+##
+## A consumed slot is NEVER refilled. The yard is a finite stock delivered by
+## truck; the only documented way more bales appear is the shift-leader's
+## restock order (restock_yard_bales → reset_yard_bales), and no plant doc
+## authorises a slot growing a replacement bale on its own.
+##
+## 2026-08-16 audit C1/C2 — before this set existed, tick()'s far-branch erased
+## the slot key on the KEEP-ALIVE path too. Grab a yard bale, haul it past 32 m,
+## come back inside 24 m: the slot had no key, so a SECOND bale was minted in it
+## while the first was still in the forks (unbounded mass creation, C1), and the
+## new body was invisible-but-solid because detail_bale() had already zero-scaled
+## that slot's MultiMesh instance and nothing restores it (C2).
+var _consumed_slots   : Dictionary = {}          # String slot_key -> true (a set)
 
 ## Yard perimeters in SCENE XZ, captured as each yard is built. These are the
 ## positions the pad and bales were ACTUALLY spawned at, not a re-derivation
@@ -99,27 +121,54 @@ func tick(delta: float) -> void:
 				min_d_sq = d_sq
 
 		var key : String = slot["key"]
+		# Untyped on purpose: the dictionary can still hold a body something else
+		# freed this frame, and assigning a freed instance to a typed Node3D local
+		# is itself an error in Godot 4.
+		#
+		# Liveness is `has(key) and is_instance_valid(...)`, NEVER `tracked != null`:
+		# measured 2026-08-16, a Variant holding a FREED Object compares EQUAL to
+		# null in Godot 4, so a `!= null` guard silently skips the dead-body case
+		# and the slot then looks empty and refillable — the very bug this block
+		# exists to stop.
+		var tracked = _active_bale_rbs.get(key, null)
+		var alive : bool = _active_bale_rbs.has(key) and is_instance_valid(tracked)
+		if _active_bale_rbs.has(key) and not alive:
+			# Someone else freed this bale — LineFlow fed it into the line
+			# (LineFlow.gd:2085), or BaleBurst opened it (BaleBurst.gd:115). The
+			# slot is spent: drop the dangling reference and record that it must
+			# never be refilled.
+			_active_bale_rbs.erase(key)
+			_consumed_slots[key] = true
+
 		if min_d_sq < NEAR_SQ:
-			if not _active_bale_rbs.has(key):
+			# Spawn a collider ONLY for a slot that still holds its own bale.
+			# _consumed_slots is what keeps this from minting a duplicate of a
+			# bale that is currently in the operator's forks (audit C1) — and,
+			# because a consumed slot's MultiMesh instance is zero-scaled and
+			# never restored here, from minting an invisible solid one (C2).
+			if not alive and not _consumed_slots.has(key):
 				var rb := _spawn_slot_bale_rb(slot)
 				if rb != null:
 					_active_bale_rbs[key] = rb
 		elif min_d_sq > FAR_SQ:
-			if _active_bale_rbs.has(key):
-				var rb : Node3D = _active_bale_rbs[key]
-				if rb != null and is_instance_valid(rb):
-					var drift : float = rb.global_position.distance_to(slot_pos)
-					var was_detailed : bool = not bool(rb.get_meta("simple_bale", true))
-					var reparented : bool = (rb.get_parent() != slot["yard"])
-					if drift > 0.35 or was_detailed or reparented:
-						# Bale was grabbed by clamp/forks or moved — keep it alive!
-						_active_bale_rbs.erase(key)
-					else:
-						# Pristine in slot and far from any vehicle/player — free the RB!
-						_active_bale_rbs.erase(key)
-						rb.queue_free()
-				else:
+			if alive:
+				var rb3 : Node3D = tracked as Node3D
+				var drift : float = rb3.global_position.distance_to(slot_pos)
+				var was_detailed : bool = not bool(rb3.get_meta("simple_bale", true))
+				var reparented : bool = (rb3.get_parent() != slot["yard"])
+				if drift > 0.35 or was_detailed or reparented:
+					# Grabbed by clamp/forks, hauled off, or riding a vehicle. The
+					# BODY stays alive — it is the operator's bale now — but the
+					# SLOT is spent and must not grow a replacement.
 					_active_bale_rbs.erase(key)
+					_consumed_slots[key] = true
+				else:
+					# Pristine, still in its slot, and far from every sweep point:
+					# free the body. Its MultiMesh instance is untouched (still
+					# full scale), so the operator keeps seeing the bale and the
+					# next approach re-creates an identical collider. NOT consumed.
+					_active_bale_rbs.erase(key)
+					rb3.queue_free()
 
 # ── Yard layout spawn ───────────────────────────────────────────────────────
 ## Spawn bales inside each polygonal yard saved in WorldLayout, picking the
@@ -461,6 +510,16 @@ func reset_yard_bales() -> int:
 			continue
 		if not rb.has_meta("yard_origin"):
 			continue   # not a yard-MM bale (forklift-placed elsewhere)
+		# This bale is ALIVE and is about to be put back in its slot (pose snapped
+		# + MultiMesh instance restored below), so re-adopt it: re-register it
+		# under its slot key and lift the "consumed" mark for that slot only.
+		# Slots whose bale no longer exists (fed into the line, burst open) are
+		# NOT reached by this loop and stay consumed — clearing the whole set here
+		# would refill them with invisible bodies, which is the C2 defect again.
+		if rb.has_meta("slot_key"):
+			var sk := String(rb.get_meta("slot_key"))
+			_active_bale_rbs[sk] = rb
+			_consumed_slots.erase(sk)
 		var origin : Vector3 = rb.get_meta("yard_origin")
 		var yaw    : float   = float(rb.get_meta("yard_origin_yaw", 0.0))
 		var drift  : float   = rb.global_position.distance_to(origin)
