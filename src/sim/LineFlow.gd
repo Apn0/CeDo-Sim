@@ -577,6 +577,8 @@ func _discover() -> void:
 			# substring dispatchers and CrewManager's zone token-matching all key
 			# on it, so it must never be suffixed. `key` is the sibling ADDRESS.
 			"key":   node_key,
+			"line":  String(node3d.get_meta("line")) if node3d.has_meta("line") else "",
+			"hmi_id": String(node3d.get_meta("hmi_id")) if node3d.has_meta("hmi_id") else "",
 			"role":  String(prof["role"]),
 			"waste": p_waste,
 			"rate":  float(prof["rate"]),
@@ -1753,6 +1755,8 @@ func machine_list() -> Array:
 		out.append({
 			"id":       String(nd["id"]),
 			"key":      k,
+			"line":     String(nd.get("line", "")),
+			"hmi_id":   String(nd.get("hmi_id", "")),
 			"l3c_code": code,
 			"label":    label,
 			"role":     String(nd["role"]),

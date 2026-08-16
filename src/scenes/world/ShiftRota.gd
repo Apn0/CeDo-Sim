@@ -87,7 +87,7 @@ static func team_label(team: int) -> String:
 ## Clock window [start_hour, end_hour) for a shift; nights wrap past midnight.
 static func shift_hours(shift: int) -> Vector2i:
 	match shift:
-		Shift.EARLY: return Vector2i(6, 14)
-		Shift.LATE:  return Vector2i(14, 22)
-		Shift.NIGHT: return Vector2i(22, 6)
+		Shift.EARLY: return Vector2i(7, 15)
+		Shift.LATE:  return Vector2i(15, 23)
+		Shift.NIGHT: return Vector2i(23, 7)
 		_:           return Vector2i(0, 0)

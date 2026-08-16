@@ -37,9 +37,10 @@ const PBR_ASSETS: Dictionary = {
 	"factory_floor_dirty":     "dirty_concrete",      # interior hall floor
 	"ground_gravel":           "gravel_floor_03",     # roads + staff parking
 	"ground_brick_pavement":   "brick_pavement_03",   # bale-lot yard paving
-	# Also operator-shortlisted, not yet assigned to a surface (wire by adding
-	# a kind + a consumer): rusty_metal_grid, rusty_metal_sheet, rusty_metal_03,
-	# green_metal_rust.
+	"wash_line_floor_wet":     "concrete_floor_02",   # wet wash plant floor with puddle reflections
+	"road_asphalt_weathered":  "gravel_floor_03",     # heavy asphalt road
+	"shredder_chute_steel":    "metal_plate",         # high-friction chute steel
+	"bale_plastic_foil":       "metal_plate",         # LDPE film surface sheen
 }
 
 # [albedo_color, roughness, tile_metres]
@@ -53,6 +54,10 @@ const FALLBACK: Dictionary = {
 	"factory_floor_dirty":     [Color(0.34, 0.32, 0.30), 0.92, 2.5],
 	"ground_gravel":           [Color(0.45, 0.43, 0.40), 0.97, 1.8],
 	"ground_brick_pavement":   [Color(0.47, 0.44, 0.41), 0.90, 1.6],
+	"wash_line_floor_wet":     [Color(0.28, 0.30, 0.32), 0.18, 2.0],
+	"road_asphalt_weathered":  [Color(0.22, 0.22, 0.23), 0.90, 2.2],
+	"shredder_chute_steel":    [Color(0.38, 0.39, 0.42), 0.45, 1.2],
+	"bale_plastic_foil":       [Color(0.85, 0.86, 0.88), 0.35, 1.0],
 }
 
 var _cache: Dictionary    = {}   # kind → StandardMaterial3D (standalone)
@@ -189,3 +194,7 @@ func concrete_floor_variant()  -> StandardMaterial3D: return get_material("concr
 func factory_floor_dirty()     -> StandardMaterial3D: return get_material("factory_floor_dirty")
 func ground_gravel()           -> StandardMaterial3D: return get_material("ground_gravel")
 func ground_brick_pavement()   -> StandardMaterial3D: return get_material("ground_brick_pavement")
+func wash_line_floor_wet()     -> StandardMaterial3D: return get_material("wash_line_floor_wet")
+func road_asphalt_weathered()  -> StandardMaterial3D: return get_material("road_asphalt_weathered")
+func shredder_chute_steel()    -> StandardMaterial3D: return get_material("shredder_chute_steel")
+func bale_plastic_foil()       -> StandardMaterial3D: return get_material("bale_plastic_foil")

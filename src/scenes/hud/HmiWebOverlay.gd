@@ -79,6 +79,10 @@ func close() -> void:
 	visible = false
 	if _web != null and is_instance_valid(_web):
 		_web.visible = false   # hides the NATIVE WebView2 child window too
+		if _web.has_method("release_focus"):
+			_web.call("release_focus")
+	get_viewport().gui_release_focus()
+	DisplayServer.window_move_to_foreground()
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 
 func _input(event: InputEvent) -> void:
@@ -170,11 +174,24 @@ func _on_ipc(message: String) -> void:
 		"close":
 			close()
 		"event":
-			# Dead-by-design HMI buttons (Clean screen, Reset, ...) — log only.
-			print("[HmiWebOverlay] HMI button '%s' on %s (not wired)"
-				% [String(d.get("name", "?")), String(d.get("screen", "?"))])
-
-# ── screens + navigation (all headless-testable) ───────────────────────────
+			var btn_name := String(d.get("name", "")).to_lower().strip_edges()
+			
+			if btn_name == "aan" or btn_name == "start":
+				var lf := _find_line_flow()
+				if lf and lf.has_method("start_line"):
+					lf.call("start_line")
+					print("[HmiWebOverlay] Line started via HMI button.")
+			elif btn_name == "uit" or btn_name == "stop":
+				var lf := _find_line_flow()
+				if lf and lf.has_method("stop_line"):
+					lf.call("stop_line")
+					print("[HmiWebOverlay] Line stopped via HMI button.")
+			elif btn_name == "⌂" or btn_name == "home":
+				_send_screen(INDEX_FILE)
+			else:
+				# Log unwired buttons so we know what else needs wiring
+				push_warning("[HmiWebOverlay] HMI button '%s' on %s (not wired)"
+					% [String(d.get("name", "?")), String(d.get("screen", "?"))])
 
 ## The ◀/▶ sequence is the Index page's own card order — parsed from its
 ## href list, so navigation always matches what the Index shows the operator.

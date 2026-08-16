@@ -32,7 +32,8 @@ const _YARD_RB_NEAR_M  : float = 25.0
 const _YARD_RB_TICK_S  : float = 0.5
 
 # ── Runtime state ───────────────────────────────────────────────────────────
-var _yard_spawn_queue : Array = []   # of Dictionary jobs (see _spawn_one_yard_bale)
+var _yard_slots       : Array[Dictionary] = []   # of slot definition dicts
+var _active_bale_rbs  : Dictionary = {}          # String slot_key -> RigidBody3D
 var _yard_rb_tick_t   : float = 0.0
 var _restock_pending  : bool  = false
 
@@ -64,39 +65,61 @@ func setup(world: Node, shift_clock: Node) -> void:
 func get_yard_polygons() -> Array[PackedVector2Array]:
 	return _yard_polys
 
-# ── _process slice (drain queue + proximity sweep) ──────────────────────────
+# ── _process slice (proximity sweep & dynamic RB activation) ────────────────
 ## Called from MainWorld._process so MainWorld controls the per-frame ordering.
-## Drains the bale-spawn backlog every frame within the budget, and runs the
-## proximity sweep every _YARD_RB_TICK_S. Previously was a chunk of
-## MainWorld._process; same behaviour, just relocated.
+## Dynamically instantiates RigidBody3D colliders ONLY for bales near the player
+## or vehicles, and frees untouched distant colliders. This prevents thousands
+## of idle RigidBody3D nodes from saturating the physics server and SceneTree.
 func tick(delta: float) -> void:
-	# #192 — first, drain the bale-spawn backlog within our frame budget. This
-	# is independent of the proximity tick cadence; we want to keep spawning
-	# even between the 0.5 s proximity sweeps.
-	_drain_yard_spawn_queue()
 	_yard_rb_tick_t += delta
 	if _yard_rb_tick_t < _YARD_RB_TICK_S:
 		return
 	_yard_rb_tick_t = 0.0
+	var sweep_points : Array[Vector3] = []
 	var player : Node = null
 	if _world != null and "player" in _world:
 		player = _world.get("player")
-	if player == null or not is_instance_valid(player):
+	if player != null and is_instance_valid(player):
+		sweep_points.append(player.global_position)
+	for v in get_tree().get_nodes_in_group("vehicle"):
+		if v is Node3D and is_instance_valid(v):
+			sweep_points.append((v as Node3D).global_position)
+	if sweep_points.is_empty():
 		return
-	var ppos : Vector3 = player.global_position
-	var near_sq := _YARD_RB_NEAR_M * _YARD_RB_NEAR_M
-	for rb in get_tree().get_nodes_in_group("yard_bale_rb"):
-		if not is_instance_valid(rb):
-			continue
-		var d2 : float = (rb.global_position - ppos).length_squared()
-		var near : bool = d2 < near_sq
-		var on : bool = rb.collision_layer != 0
-		if near and not on:
-			rb.collision_layer = int(rb.get_meta("yard_rb_layer", 1))
-			rb.collision_mask  = int(rb.get_meta("yard_rb_mask",  1))
-		elif not near and on:
-			rb.collision_layer = 0
-			rb.collision_mask  = 0
+
+	const NEAR_SQ : float = 24.0 * 24.0   # 24m spawn radius
+	const FAR_SQ  : float = 32.0 * 32.0   # 32m despawn radius (hysteresis)
+
+	for slot in _yard_slots:
+		var slot_pos : Vector3 = slot["spawn_pos"]
+		var min_d_sq : float = 1e12
+		for pt in sweep_points:
+			var d_sq : float = (slot_pos - pt).length_squared()
+			if d_sq < min_d_sq:
+				min_d_sq = d_sq
+
+		var key : String = slot["key"]
+		if min_d_sq < NEAR_SQ:
+			if not _active_bale_rbs.has(key):
+				var rb := _spawn_slot_bale_rb(slot)
+				if rb != null:
+					_active_bale_rbs[key] = rb
+		elif min_d_sq > FAR_SQ:
+			if _active_bale_rbs.has(key):
+				var rb : Node3D = _active_bale_rbs[key]
+				if rb != null and is_instance_valid(rb):
+					var drift : float = rb.global_position.distance_to(slot_pos)
+					var was_detailed : bool = not bool(rb.get_meta("simple_bale", true))
+					var reparented : bool = (rb.get_parent() != slot["yard"])
+					if drift > 0.35 or was_detailed or reparented:
+						# Bale was grabbed by clamp/forks or moved — keep it alive!
+						_active_bale_rbs.erase(key)
+					else:
+						# Pristine in slot and far from any vehicle/player — free the RB!
+						_active_bale_rbs.erase(key)
+						rb.queue_free()
+				else:
+					_active_bale_rbs.erase(key)
 
 # ── Yard layout spawn ───────────────────────────────────────────────────────
 ## Spawn bales inside each polygonal yard saved in WorldLayout, picking the
@@ -373,80 +396,53 @@ func _spawn_bale_yards_from_layout() -> void:
 						var sticker_xf := Transform3D(bale_basis,
 							inst_origin + bale_basis * sticker_local)
 						mmi_sticker.multimesh.set_instance_transform(i, sticker_xf)
-				# #127 — Pass 2: per-bale collider creation is the actual cost
-				# (2940 RigidBody3D + CollisionShape3D + meta + group joins). The
-				# old loop blocked >60 s. Push the job onto a time-sliced queue
-				# that _process drains within a fixed per-frame budget — bounded
-				# stutter regardless of total yard count, instead of a fan-out of
-				# self-rescheduling call_deferred batches that can stack up.
+				# Pass 2: Register slot metadata for dynamic proximity activation.
+				# Instead of allocating thousands of RigidBody3D nodes upfront,
+				# the proximity sweep in tick() only instantiates colliders near
+				# the player and active vehicles, saving thousands of physics bodies.
+				for i in bales_this_yard:
+					var entry : Array = slots[i]
+					var pos : Vector3 = entry[0]
+					var level : int = int(entry[1])
+					var spawn_pos := Vector3(pos.x, floor_y + size.y * float(level), pos.z)
+					var slot_key := "%s_%d_%d" % [supplier_id, yard_idx, i]
+					_yard_slots.append({
+						"key":       slot_key,
+						"yard":      yard_node,
+						"mmi":       mmi,
+						"supplier":  supplier_id,
+						"prefix":    prefix,
+						"spawn_pos": spawn_pos,
+						"size":      size,
+						"yaw":       safe_yaw,
+						"idx":       i,
+					})
 				total_bales += bales_this_yard
-				_yard_spawn_queue.push_back({
-					"yard":     yard_node,
-					"mmi":      mmi,
-					"supplier": supplier_id,
-					"prefix":   prefix,
-					"slots":    slots,
-					"floor_y":  floor_y,
-					"size":     size,
-					"yaw":      safe_yaw,
-					"idx":      0,
-				})
 		print("[BaleYardManager]  Yard '%s' filled with %d bales  (1 multimesh draw call)" % [supplier_id, bales_this_yard])
 		total_yards += 1
-	print("[BaleYardManager] Bale yards from layout: %d bales across %d yards (RBs deferred)" % [total_bales, total_yards])
+	print("[BaleYardManager] Bale yards from layout: %d bales across %d yards (proximity physics active)" % [total_bales, total_yards])
 
-func _spawn_one_yard_bale(job: Dictionary) -> void:
-	var yard_node : Node3D = job["yard"]
-	var slots     : Array  = job["slots"]
-	var i         : int    = int(job["idx"])
-	var entry     : Array  = slots[i]
-	var pos       : Vector3 = entry[0]
-	var level     : int    = int(entry[1])
-	var size      : Vector3 = job["size"]
-	var yaw       : float  = job["yaw"]
+func _spawn_slot_bale_rb(slot: Dictionary) -> RigidBody3D:
+	var yard_node : Node3D = slot["yard"]
+	if yard_node == null or not is_instance_valid(yard_node):
+		return null
+	var i : int = int(slot["idx"])
 	var rb := PlaceableCatalog.build_yard_bale_mm(
-		job["supplier"] as String, job["mmi"] as MultiMeshInstance3D, i)
+		slot["supplier"] as String, slot["mmi"] as MultiMeshInstance3D, i)
 	if rb == null:
-		return
+		return null
 	yard_node.add_child(rb)
-	var spawn_pos := Vector3(pos.x, float(job["floor_y"]) + size.y * float(level), pos.z)
+	var spawn_pos : Vector3 = slot["spawn_pos"]
+	var yaw : float = float(slot["yaw"])
 	rb.global_position = spawn_pos
 	rb.rotation.y = yaw
-	var code := "%s-%05d" % [job["prefix"] as String, (randi() % 100000)]
+	var code := "%s-%05d" % [slot["prefix"] as String, (randi() % 100000)]
 	rb.set_meta("bale_code", code)
-	# #73 — origin pose so Reset Bales can snap moved bales back.
 	rb.set_meta("yard_origin", spawn_pos)
 	rb.set_meta("yard_origin_yaw", yaw)
-	# #143 — proximity gate. Stash the spawn layer/mask, then turn collision
-	# OFF. The periodic proximity sweep below re-enables only the RBs near
-	# the player, so far yards (thousands of bales) don't churn collision
-	# pairs every physics tick.
+	rb.set_meta("slot_key", slot["key"])
 	rb.add_to_group("yard_bale_rb")
-	rb.set_meta("yard_rb_layer", rb.collision_layer)
-	rb.set_meta("yard_rb_mask",  rb.collision_mask)
-	rb.collision_layer = 0
-	rb.collision_mask  = 0
-
-func _drain_yard_spawn_queue() -> void:
-	if _yard_spawn_queue.is_empty():
-		return
-	var start_usec := Time.get_ticks_usec()
-	while not _yard_spawn_queue.is_empty() \
-			and (Time.get_ticks_usec() - start_usec) < _YARD_SPAWN_BUDGET_USEC:
-		var job : Dictionary = _yard_spawn_queue[0]
-		var yard_node : Node3D = job["yard"]
-		# Yard may have been freed (world reload, save load) — drop the job.
-		if yard_node == null or not is_instance_valid(yard_node):
-			_yard_spawn_queue.pop_front()
-			continue
-		var slots : Array = job["slots"]
-		if int(job["idx"]) >= slots.size():
-			_yard_spawn_queue.pop_front()
-			continue
-		_spawn_one_yard_bale(job)
-		job["idx"] = int(job["idx"]) + 1
-		if int(job["idx"]) >= slots.size():
-			_yard_spawn_queue.pop_front()
+	return rb as RigidBody3D
 
 # =============================================================================
 # SHIFT-LEADER PC — bale yard maintenance buttons (#73, #74)
@@ -458,6 +454,7 @@ func _drain_yard_spawn_queue() -> void:
 ## yard renders normally again.
 func reset_yard_bales() -> int:
 	var n_reset : int = 0
+	_active_bale_rbs.clear()
 	for b in get_tree().get_nodes_in_group("bale"):
 		var rb := b as Node3D
 		if rb == null or not is_instance_valid(rb):

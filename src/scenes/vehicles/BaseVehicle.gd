@@ -1327,7 +1327,7 @@ const TURN_RATE   : float = 1.6    # rad/s yaw at full steer
 # wheels are gone), so we don't bother. Future re-enablement of the friction
 # model would only need to add that one write here.
 const MAX_STEER_RAD          : float = 0.95993108859688   # 55 deg
-const STEER_RATE_RAD_PER_SEC : float = 0.31991378286563   # 18.33 deg/s (default rack speed)
+const STEER_RATE_RAD_PER_SEC : float = 0.479870674298445  # 27.5 deg/s (+50% faster steering rack speed)
 var _current_steer_rad : float = 0.0
 # Per-subclass steering tuning (operator 2026-07-17). steer_sign = -1 switches
 # left/right for a REAR-wheel-steer machine (the bale clamp). steer_rate is the
@@ -2305,8 +2305,8 @@ func _build_reverse_beeper() -> void:
 	_beeper.max_db = 6.0
 	_beeper.unit_size = 8.0
 	# Mount at the rear of the vehicle so distance attenuation reads right.
-	# Canonical -Z forward → rear = +Z.
-	_beeper.position = Vector3(0.0, 1.0, 1.7)
+	# Canonical -Z forward → rear = +Z on standard vehicles; -Z on +Z-gear vehicles.
+	_beeper.position = Vector3(0.0, 1.0, 1.7 if operator_forward_sign > 0.0 else -1.7)
 	add_child(_beeper)
 	_beeper.play()
 	_beeper_pb = _beeper.get_stream_playback() as AudioStreamGeneratorPlayback

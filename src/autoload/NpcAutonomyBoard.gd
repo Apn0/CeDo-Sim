@@ -292,18 +292,12 @@ func _rescan() -> void:
 			continue   # hold as a re-emit block until the retry cooldown lapses
 		_open_tasks.erase(tid)
 	var seen : Dictionary = {}   # instance_id → true (for dedup vs stale entries)
-	# Generator 1: empty cooled lump carts.
+	# Generators 1-6
 	_scan_lump_carts(tree, seen)
-	# Generator 1b: refuel low-fuel leaf blowers (only if a jerrycan exists).
-	# Runs BEFORE _scan_dirty_floor so a genuinely low blower claims its
-	# instance-id key with the refuel task before the blow-circuit generator
-	# would grab the same key (an empty blower can't blow, so refuelling wins).
 	_scan_low_fuel_blowers(tree, seen)
-	# Generators 2-5.
 	_scan_dirty_floor(tree, seen)
 	_scan_floor_piles(tree, seen)
 	_scan_overflow_containers(tree, seen)
-	# Generator 6 — storingen (operator 2026-08-07, storing_fixen role).
 	_scan_storing_alarms(seen)
 	# Prune entries whose target has gone away.
 	for tid in _open_tasks.keys():

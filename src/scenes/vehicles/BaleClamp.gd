@@ -156,10 +156,10 @@ func _ready() -> void:
 	brake_ramp_tau_s    = 0.3
 	super._ready()
 	vehicle_type = "bale_clamp"
-	# Rear-wheel steer: switch A/D left↔right vs the front-steer default, and run a
-	# quicker rack — double the slew + auto-centre rate (operator 2026-07-17). This
-	# replaces the old no-op VehicleWheel3D.steering flip in _physics_process.
-	steer_sign = -1.0
+	# Rear-wheel steer machine: steer_sign = 1.0 ensures pressing A turns left
+	# and pressing D turns right when driving forward. Run a quicker rack
+	# (2x base rate) for responsive manoeuvring.
+	steer_sign = 1.0
 	steer_rate_rad_per_sec = STEER_RATE_RAD_PER_SEC * 2.0
 	if mast_pivot_path:    _mast_pivot    = get_node_or_null(mast_pivot_path)    as Node3D
 	if lift_carriage_path: _lift_carriage = get_node_or_null(lift_carriage_path) as Node3D

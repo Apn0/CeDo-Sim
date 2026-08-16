@@ -258,8 +258,7 @@ func _build_ui() -> void:
 	left.size_flags_vertical   = Control.SIZE_EXPAND_FILL
 	left.size_flags_stretch_ratio = 2.0
 	main.add_child(left)
-	_chart = _build_chart()
-	left.add_child(_chart)
+	left.add_child(_build_chart())
 	_legend = _build_legend()
 	left.add_child(_legend)
 	left.add_child(_build_motor_status_row())
@@ -296,13 +295,13 @@ func _build_chart() -> Control:
 	holder.add_theme_stylebox_override("panel", sb)
 	# The custom-drawn surface. Subclass-pattern would be nicer, but we wire
 	# the draw call via Control.draw and let queue_redraw drive repaint.
-	var canvas := Control.new()
-	canvas.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	canvas.size_flags_vertical   = Control.SIZE_EXPAND_FILL
-	canvas.custom_minimum_size = Vector2(0, 280)
-	canvas.draw.connect(_draw_chart.bind(canvas))
-	holder.add_child(canvas)
-	return canvas
+	_chart = Control.new()
+	_chart.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_chart.size_flags_vertical   = Control.SIZE_EXPAND_FILL
+	_chart.custom_minimum_size = Vector2(0, 280)
+	_chart.draw.connect(_draw_chart.bind(_chart))
+	holder.add_child(_chart)
+	return holder
 
 func _build_legend() -> Label:
 	var lbl := Label.new()

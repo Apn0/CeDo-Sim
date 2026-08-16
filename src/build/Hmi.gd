@@ -214,7 +214,7 @@ func _bind_relay_panel_to_shredder(scope: Dictionary) -> void:
 		tokens = ["shredder_2"]
 	var shredder : Node = _find_scoped_shredder(tokens)
 	if shredder == null:
-		push_warning("[Hmi] No shredder controller found for scope %s — relay panel stays static. TODO: wire once shredder controller exists." % _hmi_id)
+		# push_warning("[Hmi] No shredder controller found for scope %s — relay panel stays static. TODO: wire once shredder controller exists." % _hmi_id)
 		return
 	# Reflect the model's current run state on the panel face (best-effort).
 	if shredder.has_method("is_running") and _relay_panel.has_method("set_running"):

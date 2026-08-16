@@ -110,9 +110,14 @@ func _resolve_downstream_filters() -> void:
 		_lf_trip_connected = true
 
 func _closest_in_group(group: String) -> Node:
+	if not is_inside_tree():
+		return null
+	var tree := get_tree()
+	if tree == null:
+		return null
 	var best : Node = null
 	var best_d2 : float = INF
-	for n in get_tree().get_nodes_in_group(group):
+	for n in tree.get_nodes_in_group(group):
 		var n3 := n as Node3D
 		if n3 == null:
 			continue

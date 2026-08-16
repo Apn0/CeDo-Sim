@@ -53,6 +53,14 @@ var _radio_len   := 0.0      # total length of the current call
 var _radio_gain  := 0.0      # 0..1 loudness handed in by the Walkie
 var _radio_close := false    # headset route → tighter band, quieter
 
+# ── Live Microphone Push-To-Talk (Walkie-Talkie) ─────────────────────────────
+var _mic_player       : AudioStreamPlayer       = null
+var _mic_capture      : AudioEffectCapture      = null
+var _mic_transmitting : bool                    = false
+var _mic_level        : float                   = 0.0
+var _mic_squelch_in   : float                   = 0.0
+var _mic_squelch_out  : float                   = 0.0
+
 # ── #163 FORMANT VOICE SYNTH ──────────────────────────────────────────────────
 # Instead of a flat harmonic buzz (which read as "annoying tone, no voice"), the
 # call is synthesised as VOWEL FORMANTS driven by the actual message text: each
@@ -130,7 +138,27 @@ func _ready() -> void:
 	# Ambient is always audible; all others start completely silent.
 	_ambient_player.volume_db = -18.0
 
+	_init_mic_capture()
 	_connect_event_bus()
+
+func _init_mic_capture() -> void:
+	if OS.has_feature("headless"):
+		return
+	var rec_idx := AudioServer.get_bus_index(&"Record")
+	if rec_idx < 0:
+		AudioServer.add_bus()
+		rec_idx = AudioServer.bus_count - 1
+		AudioServer.set_bus_name(rec_idx, &"Record")
+	AudioServer.set_bus_mute(rec_idx, true)
+	_mic_capture = AudioEffectCapture.new()
+	_mic_capture.buffer_length = 0.5
+	AudioServer.add_bus_effect(rec_idx, _mic_capture)
+	_mic_player = AudioStreamPlayer.new()
+	_mic_player.name = "MicInputPlayer"
+	_mic_player.bus = &"Record"
+	_mic_player.stream = AudioStreamMicrophone.new()
+	add_child(_mic_player)
+	_mic_player.play()
 
 
 func _make_gen_player(node_name: String, bus: StringName, buf_s: float) -> AudioStreamPlayer:
@@ -466,6 +494,66 @@ func _fill_radio(_delta: float) -> void:
 		s *= _radio_gain * route * 0.5
 		_radio_pb.push_frame(Vector2(s, s))
 		_radio_t = maxf(0.0, _radio_t - dt)
+
+	# ── LIVE MICROPHONE STREAMING OVER WALKIE ────────────────────────────────
+	if _mic_transmitting and _radio_pb != null:
+		var avail := _radio_pb.get_frames_available()
+		if avail > 0:
+			var mic_frames : PackedVector2Array = PackedVector2Array()
+			if _mic_capture != null and _mic_capture.can_get_buffer(avail):
+				mic_frames = _mic_capture.get_buffer(avail)
+			var sum_sq : float = 0.0
+			for idx in avail:
+				var raw_sample : float = 0.0
+				if idx < mic_frames.size():
+					raw_sample = (mic_frames[idx].x + mic_frames[idx].y) * 0.5
+				sum_sq += raw_sample * raw_sample
+				# Squelch key-up chirp during start
+				var out_s : float = 0.0
+				if _mic_squelch_in > 0.0:
+					_mic_squelch_in -= dt
+					var e := clampf(1.0 - (_mic_squelch_in / 0.10), 0.0, 1.0)
+					var bf : float = lerpf(1200.0, 1650.0, e)
+					_radio_ph = fmod(_radio_ph + bf * dt, 1.0)
+					out_s = sin(_radio_ph * TAU) * 0.35 + raw_sample * 0.5
+				else:
+					# Bandpass 300 Hz - 3.4 kHz radio filter
+					_svf1_low += 0.18 * _svf1_band
+					_svf1_band += 0.18 * (raw_sample - _svf1_low - 0.45 * _svf1_band)
+					out_s = tanh(_svf1_band * 2.2) * 0.65
+				var route := 0.6 if _radio_close else 1.0
+				out_s *= _radio_gain * route * 0.75
+				_radio_pb.push_frame(Vector2(out_s, out_s))
+			var rms : float = sqrt(sum_sq / maxf(1.0, float(avail)))
+			_mic_level = lerpf(_mic_level, clampf(rms * 4.0, 0.0, 1.0), 0.25)
+	elif _mic_squelch_out > 0.0 and _radio_pb != null:
+		var avail2 := _radio_pb.get_frames_available()
+		for _j in avail2:
+			_mic_squelch_out -= dt
+			var e2 := clampf(1.0 - (_mic_squelch_out / 0.12), 0.0, 1.0)
+			var bf2 : float = lerpf(1500.0, 900.0, e2)
+			_radio_ph = fmod(_radio_ph + bf2 * dt, 1.0)
+			var roger : float = sin(_radio_ph * TAU) * sin((1.0 - e2) * PI * 0.5) * 0.35
+			_radio_pb.push_frame(Vector2(roger, roger))
+			if _mic_squelch_out <= 0.0:
+				break
+
+func start_mic_transmission(loudness: float = 1.0, headset: bool = false) -> void:
+	_mic_transmitting = true
+	_mic_squelch_in = 0.10
+	_mic_squelch_out = 0.0
+	_radio_gain = loudness
+	_radio_close = headset
+	if _mic_capture != null:
+		_mic_capture.clear_buffer()
+
+func stop_mic_transmission() -> void:
+	_mic_transmitting = false
+	_mic_squelch_out = 0.12
+	_mic_level = 0.0
+
+func get_mic_level() -> float:
+	return _mic_level
 
 # =============================================================================
 # VEHICLE THROTTLE POLL (called every _process frame)

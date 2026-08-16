@@ -4,19 +4,22 @@ class_name BuildMode
 ## the sim provides the objects + placement mechanics.
 ##
 ## States:
-##   INACTIVE — normal play.
-##   BROWSING — catalog panel open, mouse free. Click an item → PLACING.
-##   PLACING  — translucent ghost follows the crosshair; mouse captured.
-##              [LMB] place   [R] rotate   [RMB] put item away (→ BROWSING)
-##              [X] delete the object under the crosshair   [Tab] open catalog
+##   INACTIVE    — normal play.
+##   BROWSING    — catalog panel open, mouse free. Click an item → PLACING.
+##   PLACING     — translucent ghost follows the crosshair; mouse captured.
+##                 [LMB] place   [R] rotate   [RMB] put item away (→ BROWSING)
+##                 [X] delete the object under the crosshair   [Tab] open catalog
+##   SEQUENTIAL  — guided one-machine-at-a-time line placement (Home key).
+##                 [LMB] place & advance   [RMB] skip (furniture only)   [Esc] exit
 ##
-## Toggle the whole mode with [Tab] (build_mode_toggle).
+## Toggle build mode with [Tab] (build_mode_toggle).
+## Toggle Sequential Line Builder with [Home] — works from any state.
 ##
 ## Spawned by MainWorld as a child (needs the world for raycasts and to parent
 ## placed objects). Placed layout persists to user://factory_layout.json and is
 ## reloaded on startup, so the factory you build stays built.
 
-enum State { INACTIVE, BROWSING, PLACING, SURFACE, EDIT }
+enum State { INACTIVE, BROWSING, PLACING, SURFACE, EDIT, SEQUENTIAL }
 
 # ── Jog/Edit mode ─────────────────────────────────────────────────────────────
 # Press K (anytime) to enter EDIT: aim the crosshair at a placed machine, [LMB]
@@ -198,21 +201,48 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 ##      VSS_3A, VSS_3B, or both (task #137).
 ##   3. VSS is REMOVED from this macro. It belongs to the wash macro as its
 ##      FIRST machine (line_3a / line_3b spawn vss_silo at index 0).
-# Sort line — two trilzeef vibrating sieves running in PARALLEL (operator
-# spec: bales feed into the head end, material splits left+right across two
-# screens running side-by-side, dual outputs at the tail). x = ±2.5 m puts
-# them on either side of the centreline with ~1m clear lane between them
-# (each trilzeef is 1.8 m wide). Both at z=0 so they run as siblings, not in
-# series. _build_full_line treats x≠0 entries as branches; using a PARALLEL
-# split (both at the same z, opposite x) matches the 3B L-R split pattern.
+# Sorteerlijn 3A/3B (Full Optical Sorting & Shredding Front-End)
+# Complete plant sequence as specified by operator:
+#   1. Opzetband 3A/3B (feed intake)
+#   2. Shredder 1 (coarse pre-shredder)
+#   3. Transport belt (out from under Shredder 1)
+#   4. Bunker (large buffer/metering conveyor)
+#   5. Transport belt (out of bunker)
+#   6. Transport belt (intermediate transfer)
+#   7. Split belt (diverter between Titan & Tomra banks)
+#   8. Overband magnets (ferrous removal over infeed belts)
+#   9. Incline belts (climb to optical sorter decks)
+#  10. Titan 1 & Titan 2 (TITECH NIR sorters)
+#  11. Tomra 1 & Tomra 2 (TOMRA Autosort NIR sorters)
+#  12. Waste/reject collection belts
+#  13. Accepted LDPE film collection belts -> long transfer conveyor
+#  14. Shredder 2 (fine shredder)
+#  15. Inclined belt 8m (climb out of Shredder 2)
+# Hand-off at tail goes into Transportband 1 (start of Transportbanden 3A/3B C1-C12).
 const LINE_SORT_SEQ : Array[Dictionary] = [
-	# D4 — operator: real plant feeds the trilzeef pair from an opzetband_3a3b
-	# at the head. Without it the macro just drops two parallel screens with no
-	# upstream feed surface.
-	{"id": "opzetband_3a3b"},
-	{"id": "trilzeef", "x": -2.5, "z": 1.0},
-	{"id": "trilzeef", "x":  2.5, "z": 1.0},
+	{"id": "opzetband_3a3b"},                                      # 0: Infeed conveyor
+	{"id": "shredder_1"},                                          # 1: Coarse shredder (red)
+	{"id": "transport_belt"},                                      # 2: Outfeed belt under Shredder 1
+	{"id": "bunker"},                                              # 3: Buffer metering conveyor
+	{"id": "transport_belt"},                                      # 4: Outfeed belt from bunker
+	{"id": "transport_belt"},                                      # 5: Transfer conveyor
+	{"id": "switch_belt"},                                         # 6: Split conveyor (Titan vs Tomra)
+	{"id": "overband_magnet", "x": -2.5, "z": 0.0},                # 7: Magnet (Titan side)
+	{"id": "overband_magnet", "x":  2.5, "z": 0.0},                # 8: Magnet (Tomra side)
+	{"id": "inclined_belt_8m", "x": -2.5, "z": 2.0},               # 9: Incline infeed (Titan)
+	{"id": "inclined_belt_8m", "x":  2.5, "z": 2.0},               # 10: Incline infeed (Tomra)
+	{"id": "titech_sort",      "x": -3.5, "z": 6.0},               # 11: Titan 1 (TITECH NIR)
+	{"id": "titech_sort",      "x": -3.5, "z": 10.0},              # 12: Titan 2 (TITECH NIR)
+	{"id": "tomra_sort",       "x":  3.5, "z": 6.0},               # 13: Tomra 1 (TOMRA Autosort)
+	{"id": "tomra_sort",       "x":  3.5, "z": 10.0},              # 14: Tomra 2 (TOMRA Autosort)
+	{"id": "transport_belt",   "x": -6.0, "z": 8.0, "furniture": true},  # 15: Waste reject belt (Titan)
+	{"id": "transport_belt",   "x":  6.0, "z": 8.0, "furniture": true},  # 16: Waste reject belt (Tomra)
+	{"id": "transport_belt",   "x":  0.0, "z": 12.0},              # 17: LDPE accept collection conveyor
+	{"id": "transport_belt",   "x":  0.0, "z": 18.0},              # 18: Long transfer conveyor to Shredder 2
+	{"id": "shredder_2"},                                          # 19: Fine shredder (blue)
+	{"id": "inclined_belt_8m"},                                    # 20: Climb conveyor to Transportband 1
 ]
+
 
 ## D4 — Lines 3C + 6 share a front-end (opzetband_3c6 → shredder → climb belt →
 ## trilzeef → wash chain). Previously placeable existed in the catalog but no
@@ -582,6 +612,19 @@ var _popup       : PanelContainer
 var _popup_type  : OptionButton
 var _popup_name  : LineEdit
 
+# ── Sequential Line Builder ──────────────────────────────────────────────────
+# Activated with [Home]. Hands the operator one machine at a time from a chosen
+# line sequence; each LMB places it and auto-loads the next machine. All
+# machines land as free-standing placed_objects (no macro_id/macro_index metas)
+# so they are individually joggable with K-mode and picked up by LineFlow
+# geometry linking. No macro save-back is used — precise manual placement IS
+# the save-back for this workflow.
+var _seq_line_id   : String = ""      # which macro we're walking
+var _seq_line_name : String = ""      # human label shown in the status bar
+var _seq           : Array  = []      # the SEQ array for the chosen line
+var _seq_index     : int    = 0       # current position in _seq
+var _seq_picker    : PanelContainer = null   # the line-picker panel
+
 # =============================================================================
 ## Whether placing/removing/jogging this placeable should rebuild LineFlow.
 ## HMI panels, signs, lights, doors, decorations are observer/control fixtures
@@ -610,10 +653,10 @@ func _is_flow_relevant(id : String) -> bool:
 	# Authoritative check: MachineFlow.profile(id).role != 'none' means
 	# the id participates in the material-flow graph. If profile() is
 	# absent or returns null, default to flow-relevant (rebuild on safety).
-	var MachineFlow := load("res://src/sim/MachineFlow.gd")
-	if MachineFlow == null or not MachineFlow.has_method("profile"):
+	var machine_flow := load("res://src/sim/MachineFlow.gd")
+	if machine_flow == null or not machine_flow.has_method("profile"):
 		return true
-	var pr : Dictionary = MachineFlow.profile(id)
+	var pr : Dictionary = machine_flow.profile(id)
 	if pr == null or pr.is_empty():
 		return true
 	var role : String = String(pr.get("role", ""))
@@ -931,11 +974,181 @@ func _enter_surface() -> void:
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 
 # =============================================================================
+# SEQUENTIAL LINE BUILDER
+# =============================================================================
+
+## Open the Home-key line-picker panel. If Build Mode is INACTIVE we enter it
+## first so the ghost system is live. The picker lists all 7 line macros; each
+## button calls _start_sequential with the chosen id.
+func _open_sequential_picker() -> void:
+	# Auto-enter build mode if needed so the ghost / catalog infrastructure is ready.
+	if _state == State.INACTIVE:
+		_enter_browsing()
+	# Tear down any existing picker (re-open re-creates it fresh).
+	if _seq_picker != null and is_instance_valid(_seq_picker):
+		_seq_picker.queue_free()
+		_seq_picker = null
+	# Build the panel.
+	_seq_picker = PanelContainer.new()
+	_seq_picker.anchor_left   = 0.0
+	_seq_picker.anchor_top    = 0.0
+	_seq_picker.anchor_right  = 0.0
+	_seq_picker.anchor_bottom = 0.0
+	_seq_picker.offset_left   = 20.0
+	_seq_picker.offset_top    = 60.0
+	_seq_picker.offset_right  = 320.0
+	_seq_picker.offset_bottom = 420.0
+	_ui.add_child(_seq_picker)
+	var vbox := VBoxContainer.new()
+	_seq_picker.add_child(vbox)
+	var title := Label.new()
+	title.text = "🔧 LIJN PLAATSER — kies een lijn"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 14)
+	vbox.add_child(title)
+	vbox.add_child(HSeparator.new())
+	# Line entries: [id, display_name, machine_count_hint]
+	const LINES : Array = [
+		["line_intake_3c6",   "3C/6 Voedingsband",       "4 machines"],
+		["line_3c",           "Lijn 3C (wassen/extruderen)", "37 machines"],
+		["line_intake_3a3b",  "3A/3B Voedingsband (C1–C12)", "16 machines"],
+		["line_sort",         "Sorteerlijn 3A/3B (Shredder/Bunker/NIR)", "21 machines"],
+		["line_3a",           "Lijn 3A (wassen/extruderen)", "~35 machines"],
+		["line_3b",           "Lijn 3B (wassen/extruderen)", "~25 machines"],
+		["line_1",            "Lijn 1 (wassen/extruderen)", "~42 machines"],
+	]
+	for entry in LINES:
+		var row := HBoxContainer.new()
+		vbox.add_child(row)
+		var btn := Button.new()
+		btn.text = entry[1]
+		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		btn.tooltip_text = entry[2]
+		btn.pressed.connect(_start_sequential.bind(entry[0], entry[1]))
+		row.add_child(btn)
+	vbox.add_child(HSeparator.new())
+	var cancel_btn := Button.new()
+	cancel_btn.text = "Annuleer  [Home]"
+	cancel_btn.pressed.connect(func():
+		if _seq_picker != null and is_instance_valid(_seq_picker):
+			_seq_picker.queue_free()
+			_seq_picker = null
+		if _state == State.BROWSING:
+			_enter_inactive()
+	)
+	vbox.add_child(cancel_btn)
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+
+## Begin sequential placement for a given line id. Closes the picker, loads the
+## correct SEQ array, and enters PLACING on the first machine.
+func _start_sequential(line_id: String, display_name: String) -> void:
+	# Close the picker.
+	if _seq_picker != null and is_instance_valid(_seq_picker):
+		_seq_picker.queue_free()
+		_seq_picker = null
+	# Resolve the SEQ.
+	var seq := _seq_for_line(line_id)
+	if seq.is_empty():
+		push_warning("[BuildMode] Sequential: unknown line_id '%s'" % line_id)
+		_enter_inactive()
+		return
+	_seq_line_id   = line_id
+	_seq_line_name = display_name
+	_seq           = seq
+	_seq_index     = 0
+	_state         = State.SEQUENTIAL
+	_load_seq_step()
+
+## Load the machine at _seq_index into the ghost placement system and update the
+## status bar with the sequential-mode prompt.
+func _load_seq_step() -> void:
+	if _seq_index >= _seq.size():
+		_exit_sequential("✅ Lijn klaar! (%s)" % _seq_line_name)
+		return
+	var entry : Dictionary = _seq[_seq_index]
+	var machine_id : String = String(entry.get("id", ""))
+	if machine_id.is_empty():
+		# Skip empty/malformed entries.
+		_seq_index += 1
+		_load_seq_step()
+		return
+	# Reuse the existing PLACING ghost infrastructure — just set state back to
+	# SEQUENTIAL after _enter_placing switches it to PLACING.
+	_enter_placing(machine_id)
+	_state = State.SEQUENTIAL   # restore SEQUENTIAL after _enter_placing overwrote it
+	# Override the status bar with the sequential-mode prompt.
+	var nm : String = String(PlaceableCatalog.get_item(machine_id).get("name", machine_id))
+	var total : int = _seq.size()
+	var skip_hint : String = "   [→/RMB] skip" if entry.get("furniture", false) else ""
+	_status.text = "🔧 LIJN %s  [%d/%d]  %s   ·   [LMB] plaatsen   [Q/E] draaien   [R/F] hoogte   [K] jog%s   [Home/Esc] stoppen" \
+		% [_seq_line_name, _seq_index + 1, total, nm, skip_hint]
+
+## Exit sequential mode. Placed machines stay. Transitions to BROWSING so the
+## operator can immediately press K to jog the freshly placed machines.
+func _exit_sequential(banner: String) -> void:
+	_clear_ghost()
+	_seq_line_id   = ""
+	_seq_line_name = ""
+	_seq           = []
+	_seq_index     = 0
+	# Tear down picker if it's somehow still open.
+	if _seq_picker != null and is_instance_valid(_seq_picker):
+		_seq_picker.queue_free()
+		_seq_picker = null
+	_enter_browsing()   # land in BROWSING so K-jog is immediately available
+	if not banner.is_empty():
+		_status.text = banner + "   ·   BUILD MODE   ·   [K] jog machines   ·   [Tab] exit build"
+
+## Returns the SEQ array for a line_id, or an empty array if unknown.
+## Mirrors the dispatch table in _build_full_line so they stay in sync.
+func _seq_for_line(line_id: String) -> Array:
+	match line_id:
+		"line_3a":           return LINE_3A_SEQ
+		"line_3b":           return LINE_3B_SEQ
+		"line_1":            return LINE_1_SEQ
+		"line_intake_3a3b":  return INTAKE_3A3B_SEQ
+		"line_sort":         return LINE_SORT_SEQ
+		"line_intake_3c6":   return LINE_3C6_SEQ
+		"line_3c":           return LINE_3C_SEQ
+		_:                   return []
+
+# =============================================================================
 # INPUT  (handled in _input so [Tab] beats UI focus navigation)
 # =============================================================================
 func _input(event: InputEvent) -> void:
 	if event.is_action_pressed("build_mode_toggle"):
 		_on_toggle()
+		get_viewport().set_input_as_handled()
+		return
+
+	# [Home] — Sequential Line Builder toggle. Works from any state:
+	# • INACTIVE / BROWSING → open the line-picker panel
+	# • SEQUENTIAL          → exit sequential mode (placed machines stay)
+	if event is InputEventKey and event.pressed and not event.echo \
+			and (event as InputEventKey).keycode == KEY_HOME:
+		if _state == State.SEQUENTIAL:
+			_exit_sequential("")
+		else:
+			_open_sequential_picker()
+		get_viewport().set_input_as_handled()
+		return
+
+	# [Esc] exits sequential mode cleanly (Godot's ui_cancel action).
+	if _state == State.SEQUENTIAL and event.is_action_pressed("ui_cancel"):
+		_exit_sequential("")
+		get_viewport().set_input_as_handled()
+		return
+
+	# [→] skips a furniture entry while in sequential mode.
+	if _state == State.SEQUENTIAL and event is InputEventKey and event.pressed \
+			and not event.echo \
+			and (event as InputEventKey).keycode == KEY_RIGHT:
+		if _seq_index < _seq.size() and _seq[_seq_index].get("furniture", false):
+			_seq_index += 1
+			if _seq_index >= _seq.size():
+				_exit_sequential("✅ Lijn klaar!")
+			else:
+				_load_seq_step()
 		get_viewport().set_input_as_handled()
 		return
 
@@ -1000,7 +1213,7 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 
-	if _state != State.PLACING:
+	if _state != State.PLACING and _state != State.SEQUENTIAL:
 		return
 
 	if event.is_action_pressed("build_place"):
@@ -1010,6 +1223,25 @@ func _input(event: InputEvent) -> void:
 		# RMB: first press just cancels an in-progress two-point capture (keep the
 		# operator on the same placeable so they can re-pick the start); a second
 		# RMB falls through to leaving placing mode altogether.
+		# In SEQUENTIAL mode, RMB skips furniture entries; for non-furniture machines
+		# it just cancels a two-point capture if one is active, or does nothing
+		# (operator must use Home/Esc to fully exit sequential mode).
+		if _state == State.SEQUENTIAL:
+			if _has_two_point:
+				_has_two_point = false
+				_two_point_start = Vector3.ZERO
+				_clear_two_point_preview()
+				_update_placing_status()
+			elif _seq_index < _seq.size() and _seq[_seq_index].get("furniture", false):
+				# Furniture entry — RMB skips it.
+				_seq_index += 1
+				if _seq_index >= _seq.size():
+					_exit_sequential("✅ Lijn klaar!")
+				else:
+					_load_seq_step()
+			# Non-furniture in sequential mode: RMB is a no-op (force Esc/Home to exit).
+			get_viewport().set_input_as_handled()
+			return
 		if _has_two_point:
 			_has_two_point = false
 			_two_point_start = Vector3.ZERO
@@ -1049,7 +1281,7 @@ func _process(delta: float) -> void:
 	if _state == State.EDIT:
 		_edit_process(delta)
 		return
-	if _state != State.PLACING or _ghost == null:
+	if (_state != State.PLACING and _state != State.SEQUENTIAL) or _ghost == null:
 		return
 	var hit := _raycast()
 	if hit.is_empty():
@@ -1526,6 +1758,13 @@ func _place_current() -> void:
 			if line_flow and line_flow.has_signal("observer_placed"):
 				line_flow.emit_signal("observer_placed", _active_id)
 		_update_placing_status()
+		# Sequential mode: advance to next step after a two-point placement completes.
+		if _state == State.SEQUENTIAL:
+			_seq_index += 1
+			if _seq_index >= _seq.size():
+				_exit_sequential("✅ Lijn klaar! (%s)" % _seq_line_name)
+			else:
+				_load_seq_step()
 		return
 	# Poles use a custom-height build path so the smart snap height (or the
 	# default height when no belt is under the crosshair) actually lands as the
@@ -1540,6 +1779,13 @@ func _place_current() -> void:
 			pole.rotation.y = _ghost_rot_y
 			_finalize_placed(pole, _active_id, 0.0)
 		_save_layout()
+		# Sequential mode: advance to next step after a pole placement.
+		if _state == State.SEQUENTIAL:
+			_seq_index += 1
+			if _seq_index >= _seq.size():
+				_exit_sequential("✅ Lijn klaar! (%s)" % _seq_line_name)
+			else:
+				_load_seq_step()
 		return
 	# Vehicle spawn clearance gate (operator 2026-07-20: five clamp clicks at one
 	# aim point nested five VehicleBody3Ds inside each other — the pile shoved
@@ -1597,6 +1843,16 @@ func _place_current() -> void:
 		# signal if LineFlow provides one.
 		if line_flow and line_flow.has_signal("observer_placed"):
 			line_flow.emit_signal("observer_placed", _active_id)
+	# ── Sequential mode advance ───────────────────────────────────────────────
+	# After every normal single-machine placement, check if we are in sequential
+	# mode and advance to the next entry. This fires AFTER the LineFlow rebuild so
+	# the freshly placed machine is already in the graph before the next ghost loads.
+	if _state == State.SEQUENTIAL:
+		_seq_index += 1
+		if _seq_index >= _seq.size():
+			_exit_sequential("✅ Lijn klaar! (%s)" % _seq_line_name)
+		else:
+			_load_seq_step()
 
 ## Lay a whole line front-to-back from `start`, marching along the ghost's local
 ## -Z (forward). Each machine is built, rotated to face the march, spaced by its
@@ -1874,14 +2130,14 @@ func _macro_seed(macro_id: String) -> Array[Dictionary]:
 ## inside _build_full_line so the per-index nominal pose lines up exactly with
 ## what the original placement put in world. Branch nodes inherit a y offset
 ## of 0; transportband Y stacking is captured via tb_y_offset.
-func _macro_nominal_poses(seed: Array[Dictionary]) -> Array:
+func _macro_nominal_poses(p_seed: Array[Dictionary]) -> Array:
 	var poses : Array = []
 	var main_z := 0.0
 	const TB_CHUTE_DROP_M : float = 0.22
 	const _LINE_GAP_M : float = LINE_GAP_M
 	var prev_tb_outlet_y : float = -1.0
 	var last_main_was_tb : bool = false
-	for entry in seed:
+	for entry in p_seed:
 		var mid : String = String(entry.get("id", ""))
 		if mid == "":
 			poses.append({"x": 0.0, "y": 0.0, "z": 0.0})
@@ -1934,11 +2190,11 @@ func _macro_nominal_poses(seed: Array[Dictionary]) -> Array:
 ## upstream changes), and hand the dict to LineMacroStore. Returns the number
 ## of overrides written.
 func save_macro_overrides(macro_id: String) -> int:
-	var seed : Array[Dictionary] = _macro_seed(macro_id)
-	if seed.is_empty():
+	var p_seed : Array[Dictionary] = _macro_seed(macro_id)
+	if p_seed.is_empty():
 		push_warning("[BuildMode] Unknown macro id %s" % macro_id)
 		return 0
-	var nominal : Array = _macro_nominal_poses(seed)
+	var nominal : Array = _macro_nominal_poses(p_seed)
 	# Gather siblings: every placed_object whose macro_id meta matches.
 	var members : Dictionary = {}   # int_index -> Node3D
 	var anchor : Dictionary = {}
@@ -1968,7 +2224,7 @@ func save_macro_overrides(macro_id: String) -> int:
 	var acc := Vector3.ZERO
 	var acc_rot := 0.0
 	var acc_scale := Vector3.ONE
-	for i in range(seed.size()):
+	for i in range(p_seed.size()):
 		if not members.has(i):
 			continue
 		var node : Node3D = members[i]
@@ -1994,7 +2250,8 @@ func save_macro_overrides(macro_id: String) -> int:
 		# line_3a dy≈-40 km bug, which compounded every save. Refuse to record
 		# it: skip the machine, do NOT roll the accumulator, leave the clean
 		# seed pose for it. Uses the same threshold the load path filters on.
-		if not LineMacroStore.delta_sane(dx, dy, dz, drot):
+		var LMScript = preload("res://src/autoload/LineMacroStore.gd")
+		if not LMScript.delta_sane(dx, dy, dz, drot):
 			push_warning("[BuildMode] macro '%s' index %d pose implausible (dx=%.1f dy=%.1f dz=%.1f) — skipped, not saved" % [macro_id, i, dx, dy, dz])
 			continue
 		# Quick "is this machine actually moved?" check — within 1cm / 1°
@@ -2029,7 +2286,7 @@ func save_macro_overrides(macro_id: String) -> int:
 		if _status:
 			_status.text = "No edits detected for %s — nothing to save." % macro_id.to_upper()
 		return 0
-	var ok : bool = LineMacroStore.save_overrides(macro_id, deltas, seed.size())
+	var ok : bool = LineMacroStore.save_overrides(macro_id, deltas, p_seed.size())
 	if ok and _status:
 		_status.text = "Saved %d overrides for %s → user://macros/%s.json" % [
 			deltas.size(), macro_id.to_upper(), macro_id]

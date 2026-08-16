@@ -824,15 +824,17 @@ func _process(delta: float) -> void:
 		var digested : float = before_fill - fill
 		if digested > 0.0 and before_fill > 0.0:
 			# Draw the kilograms PROPORTIONALLY out of what is actually in the
-			# throat. The old line minted them: `digested * OUTPUT_KG_PER_FILL`
-			# turned a dimensionless fraction into 350 kg per unit fill with
-			# nothing debited, so one bale of any weight produced the same
-			# invented amount.
+			# throat.
 			var kg_out : float = _throat_kg * (digested / before_fill)
 			kg_out = minf(kg_out, _throat_kg)
 			_throat_kg -= kg_out
 			if kg_out > 0.0:
 				_emit_output(kg_out, delta)
+				if _cached_shredder != null and is_instance_valid(_cached_shredder) and _cached_shredder.has_method("set_feed_throughput"):
+					var rate_kg_h : float = (kg_out / maxf(delta, 0.001)) * 3600.0
+					_cached_shredder.call("set_feed_throughput", rate_kg_h)
+		elif _cached_shredder != null and is_instance_valid(_cached_shredder) and _cached_shredder.has_method("set_feed_throughput"):
+			_cached_shredder.call("set_feed_throughput", 0.0)
 	var running := is_running()
 	# #214 belt-speed ramp — the PLC setpoint is binary (running ? belt_speed : 0)
 	# but the physical belt coasts smoothly between those two states. Push the

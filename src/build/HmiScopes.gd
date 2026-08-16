@@ -307,6 +307,10 @@ static func get_scope(hmi_id: String) -> Dictionary:
 ##                          permissive because today's macros write line into
 ##                          the id rather than as a separate attribute.
 static func matches(scope: Dictionary, node_id: String, node_line: String = "") -> bool:
+	if scope.is_empty() or bool(scope.get("see_all", false)):
+		return true
+	if node_line.to_lower() == "all":
+		return true
 	var tokens : Array = scope.get("tokens", [])
 	if not tokens.is_empty():
 		var hit := false
