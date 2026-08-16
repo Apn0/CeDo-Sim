@@ -327,7 +327,9 @@ static func profile(id: String) -> Dictionary:
 		# role-none like water_pump/zss_water — they push WATER around the wash
 		# loops, not film. eop_endpoint is an external-entity endpoint (Indaver
 		# water treatment, eop_rafter.md Part A) — never a material-flow node.
-		"door", "pcu_cabinet", "hmi_panel", "hmi_wall", "surface", "waste_container", "water_pump", "zss_water", \
+		# 2026-08-15: the retired `hmi_panel` / `hmi_wall` ids left this list;
+		# the `hmi_` prefix branch below covers every HMI that still exists.
+		"door", "pcu_cabinet", "surface", "waste_container", "water_pump", "zss_water", \
 		"kleine_la", "tankje_tussen_extruders", "pomp_c1", "pomp_zeefbocht", "eop_endpoint":
 			pr["role"] = "none"   # info screens / fixtures — NOT material-flow machines
 		_:

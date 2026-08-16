@@ -933,7 +933,9 @@ func _nearest_hmi_panel(ref: Node) -> Node3D:
 		if not (po is Node3D):
 			continue
 		var pid := String(po.get_meta("placeable_id", ""))
-		if pid != "hmi_panel" and pid != "hmi_wall" and not pid.begins_with("hmi_"):
+		# One rule since the generic `hmi_panel` / `hmi_wall` props were retired:
+		# every HMI placeable id starts with `hmi_`.
+		if not pid.begins_with("hmi_"):
 			continue
 		var d : float = ((po as Node3D).global_position - from).length()
 		if d < best_d:

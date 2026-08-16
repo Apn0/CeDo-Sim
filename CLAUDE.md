@@ -129,6 +129,36 @@ the harness). Full story + the still-open questions (3C MF1/MF2 cart count,
 line 6 Britas, nozzle visual asymmetry, LaserFilter's crossed aisle/wall labels):
 `docs/plant/extruder_line_layout.md`, 2026-08-03 section.
 
+### There are exactly 12 HMI panels — the generic ones are RETIRED (2026-08-15)
+
+Operator order: *"remove unused/old HMI displays — from build menu and from
+logic"*. The two pre-#165 cosmetic props `hmi_panel` and `hmi_wall` are gone.
+They sat in the build menu beside the 12 real panels and opened a **"generic"
+scope that saw and controlled EVERY machine in the plant** — a master panel
+that exists nowhere in Geleen. `HmiScopes.SCOPES` is the whole list; every
+entry in it is a first-class catalog placeable.
+
+What that removal actually required, beyond deleting two catalog lines:
+
+- `PlaceableCatalog.RETIRED_IDS` — a retired id is **not an alias**. There is no
+  honest replacement to map it to, so `build_node()` returns `null` with the
+  *reason*, and `BuildMode` counts the drops and prints one line per id per
+  load. A panel that silently vanishes from a save now always has a printed
+  answer. Re-saving writes the id out of existence.
+- `HmiScopes.get_scope()` returns an **empty Dictionary** on a miss instead of
+  the old see-all fallback, and `has_scope()` is the new gate. The fallback was
+  the dangerous kind of default: an unknown id became a plant-wide master panel.
+- `Hmi.gd` leaves an unscoped panel **inert** — no proximity trigger, no
+  crosshair prompt, no overlay — and warns once.
+
+Guard: `src/tests/test_hmi_retired.tscn`, in `run.sh`. 70 checks across menu,
+`build_node`, scope table, runtime behaviour, an old save containing both
+retired ids, and MachineFlow roles. Mutation-proven twice — re-adding the
+catalog entry turns 8 red, restoring the generic fallback turns 7 red.
+
+Do not re-add a generic panel. `mesh: "hmi_panel"` / `"hmi_wall"` in the catalog
+are **geometry keys**, not placeable ids, and stay.
+
 ## Where things are
 
 285 GDScript files, 105,241 lines under `src/`:
