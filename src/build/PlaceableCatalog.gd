@@ -10981,98 +10981,80 @@ static func _build_heetafslag_strand_switcher(p: Node3D, die_r: float,
 	var mat_cold := _mat(Color(0.50, 0.45, 0.40), ghost, 0.10, 0.85)   # dull grey-brown, lifeless
 	var mat_good := _mat(Color(0.55, 0.45, 0.85), ghost, 0.20, 0.50)   # lavender (matches pelletizer.png)
 	var mat_hot  := _mat(Color(0.25, 0.10, 0.05), ghost, 0.10, 0.90)   # dark brown / charred
-	var grp_cold := MultiMeshInstance3D.new()
-	grp_cold.name = "te_koud_strands"
-	switcher.add_child(grp_cold)
-	var grp_good := MultiMeshInstance3D.new()
-	grp_good.name = "goed_gehard_strands"
-	switcher.add_child(grp_good)
-	var grp_hot := MultiMeshInstance3D.new()
-	grp_hot.name = "te_heet_strands"
-	switcher.add_child(grp_hot)
-
-	# Mesh setups for MultiMeshes
-	var cm_cold := CylinderMesh.new()
-	cm_cold.top_radius = strand_r
-	cm_cold.bottom_radius = strand_r
-	cm_cold.height = strand_h
-	cm_cold.radial_segments = 8
-	var mm_cold := MultiMesh.new()
-	mm_cold.transform_format = MultiMesh.TRANSFORM_3D
-	mm_cold.instance_count = strand_count
-	mm_cold.mesh = cm_cold
-	grp_cold.multimesh = mm_cold
-	grp_cold.material_override = mat_cold
-
-	var cm_good := CylinderMesh.new()
-	cm_good.top_radius = strand_r
-	cm_good.bottom_radius = strand_r
-	cm_good.height = strand_h
-	cm_good.radial_segments = 8
-	var mm_good := MultiMesh.new()
-	mm_good.transform_format = MultiMesh.TRANSFORM_3D
-	mm_good.instance_count = strand_count
-	mm_good.mesh = cm_good
-	grp_good.multimesh = mm_good
-	grp_good.material_override = mat_good
-
-	var cm_hot := CylinderMesh.new()
-	cm_hot.top_radius = strand_r * 0.85
-	cm_hot.bottom_radius = strand_r * 0.85
-	cm_hot.height = strand_h
-	cm_hot.radial_segments = 8
-	var mm_hot := MultiMesh.new()
-	mm_hot.transform_format = MultiMesh.TRANSFORM_3D
-	mm_hot.instance_count = strand_count
-	mm_hot.mesh = cm_hot
-	grp_hot.multimesh = mm_hot
-	grp_hot.material_override = mat_hot
-
-	var grp_hot_wisp := MultiMeshInstance3D.new()
-	grp_hot_wisp.name = "smoke_wisps"
-	grp_hot.add_child(grp_hot_wisp)
-
-	# Small smoke-wisp QuadMesh material — pre-built once, reused across the
-	# 20 te_heet strands so we don't churn the resource cache.
 	var smoke_mat := StandardMaterial3D.new()
 	smoke_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	smoke_mat.albedo_color = Color(0.55, 0.50, 0.48, 0.18)
 	smoke_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	smoke_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 
+	var cm := CylinderMesh.new()
+	cm.top_radius = strand_r
+	cm.bottom_radius = strand_r
+	cm.height = strand_h
+	cm.radial_segments = 8
+
+	var cm_hot := CylinderMesh.new()
+	cm_hot.top_radius = strand_r * 0.85
+	cm_hot.bottom_radius = strand_r * 0.85
+	cm_hot.height = strand_h
+	cm_hot.radial_segments = 8
+
 	var qm := QuadMesh.new()
 	qm.size = Vector2(0.04, 0.06)
-	var mm_wisp := MultiMesh.new()
-	mm_wisp.transform_format = MultiMesh.TRANSFORM_3D
-	mm_wisp.instance_count = strand_count
-	mm_wisp.mesh = qm
-	grp_hot_wisp.multimesh = mm_wisp
-	grp_hot_wisp.material_override = smoke_mat
+
+	var mm_cold := MultiMesh.new()
+	mm_cold.transform_format = MultiMesh.TRANSFORM_3D
+	mm_cold.instance_count = strand_count
+	mm_cold.mesh = cm
+	var mmi_cold := MultiMeshInstance3D.new()
+	mmi_cold.name = "te_koud_strands"
+	mmi_cold.multimesh = mm_cold
+	mmi_cold.material_override = mat_cold
+	switcher.add_child(mmi_cold)
+
+	var mm_good := MultiMesh.new()
+	mm_good.transform_format = MultiMesh.TRANSFORM_3D
+	mm_good.instance_count = strand_count
+	mm_good.mesh = cm
+	var mmi_good := MultiMeshInstance3D.new()
+	mmi_good.name = "goed_gehard_strands"
+	mmi_good.multimesh = mm_good
+	mmi_good.material_override = mat_good
+	switcher.add_child(mmi_good)
+
+	var mm_hot := MultiMesh.new()
+	mm_hot.transform_format = MultiMesh.TRANSFORM_3D
+	mm_hot.instance_count = strand_count
+	mm_hot.mesh = cm_hot
+	var mmi_hot := MultiMeshInstance3D.new()
+	mmi_hot.name = "te_heet_strands"
+	mmi_hot.multimesh = mm_hot
+	mmi_hot.material_override = mat_hot
+	switcher.add_child(mmi_hot)
+
+	var smoke_mm := MultiMesh.new()
+	smoke_mm.transform_format = MultiMesh.TRANSFORM_3D
+	smoke_mm.instance_count = strand_count
+	smoke_mm.mesh = qm
+	var mmi_smoke := MultiMeshInstance3D.new()
+	mmi_smoke.multimesh = smoke_mm
+	mmi_smoke.material_override = smoke_mat
+	mmi_hot.add_child(mmi_smoke)
 
 	for i in strand_count:
 		var sx : float = x0 + float(i) * dx
 		var y_jitter : float = sin(float(i) * 1.31) * 0.005
 		var pos := Vector3(sx, -strand_h * 0.5 + y_jitter, 0.0)
 
-		# Slight twist on the cold strands (deformed / not yet hardened).
-		var rot_cold := Vector3(deg_to_rad(sin(float(i)) * 6.0), 0.0, deg_to_rad(cos(float(i)) * 6.0))
-		mm_cold.set_instance_transform(i, Transform3D(Basis.from_euler(rot_cold), pos))
+		var r_cold := Vector3(deg_to_rad(sin(float(i)) * 6.0), 0.0, deg_to_rad(cos(float(i)) * 6.0))
+		mm_cold.set_instance_transform(i, Transform3D(Basis.from_euler(r_cold), pos))
 
-		# GOED — clean vertical strand (the operator's target state).
-		mm_good.set_instance_transform(i, Transform3D(Basis.IDENTITY, pos + Vector3(0.0, 0.002, 0.0)))
+		mm_good.set_instance_transform(i, Transform3D(Basis(), pos + Vector3(0.0, 0.002, 0.0)))
 
-		# TE HEET — charred, slightly thinner, with a small smoke wisp above.
-		var rot_hot := Vector3(deg_to_rad(sin(float(i) * 2.0) * 4.0), 0.0, 0.0)
-		mm_hot.set_instance_transform(i, Transform3D(Basis.from_euler(rot_hot), pos))
+		var r_hot := Vector3(deg_to_rad(sin(float(i) * 2.0) * 4.0), 0.0, 0.0)
+		mm_hot.set_instance_transform(i, Transform3D(Basis.from_euler(r_hot), pos))
 
-		# Smoke wisp — a small QuadMesh above the top of the strand.
-		var wisp := MeshInstance3D.new()
-		var qm := QuadMesh.new()
-		qm.size = Vector2(0.04, 0.06)
-		wisp.mesh = qm
-		wisp.material_override = smoke_mat
-		wisp.position = pos + Vector3(0.0, strand_h * 0.55, 0.0)
-		grp_hot.add_child(wisp)
+		smoke_mm.set_instance_transform(i, Transform3D(Basis(), pos + Vector3(0.0, strand_h * 0.55, 0.0)))
 	# Default visibility — ALL OFF (operator 2026-07-16: no orange melt strands
 	# dripping from an idle/unfed extruder = "inventing material from nothing").
 	# LineFlow drives show_die_face_state() from live throughput so strands only
