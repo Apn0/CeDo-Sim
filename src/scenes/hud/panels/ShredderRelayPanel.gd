@@ -87,7 +87,7 @@ var _stop_lbl       : Label     = null
 # ============================================================================
 func _ready() -> void:
 	custom_minimum_size = PANEL_SIZE
-	size = PANEL_SIZE
+	set_deferred("size", PANEL_SIZE)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	set_process(true)
 	_build()

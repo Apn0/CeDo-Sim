@@ -36,12 +36,17 @@ signal call_received(from_name: String, text: String, heard: bool)
 ## this currently exists for the audio chirp + HUD self-echo, with the canned
 ## message loop ready for the crew AI to subscribe to.
 signal transmit_sent(text: String, heard: bool)
+signal mic_ptt_changed(active: bool)
+signal mic_level_changed(level: float)
+signal task_broadcasted(task_type: String, target_node: Node, from_name: String)
 
 # ── State ─────────────────────────────────────────────────────────────────────
 var battery        : BatteryT = null
 var headset_on     : bool    = true     # earpiece attached by default
 var volume         : float   = 0.6      # 0..1 knob position
 const VOLUME_STEP  : float   = 0.1
+var is_transmitting_mic : bool = false
+var mic_enabled         : bool = true
 
 var _shift_clock   : Node = null
 var _last_percent  : int  = -1
@@ -219,6 +224,50 @@ func transmit_freeform(text: String) -> bool:
 ## but the in-game UI now goes through the menu + `transmit_line(index)`.
 func transmit() -> bool:
 	return transmit_line(0)
+
+## Broadcasts a task over the radio so idle NPCs can pick it up.
+func broadcast_task(task_type: String, target_node: Node, from_name: String = "operator") -> void:
+	# Convert task to text
+	var text := "Task: " + task_type
+	if is_instance_valid(target_node) and target_node.has_method("get_name"):
+		text += " at " + target_node.name
+	transmit_freeform(text)
+	emit_signal("task_broadcasted", task_type, target_node, from_name)
+
+# =============================================================================
+# LIVE MICROPHONE PUSH-TO-TALK (PTT)
+# =============================================================================
+func start_mic_ptt() -> bool:
+	if not mic_enabled or not battery_alive() or is_transmitting_mic:
+		return false
+	is_transmitting_mic = true
+	var am := get_node_or_null("/root/AudioManager")
+	if am and am.has_method("start_mic_transmission"):
+		am.call("start_mic_transmission", effective_loudness(), headset_on)
+	emit_signal("mic_ptt_changed", true)
+	return true
+
+func stop_mic_ptt() -> void:
+	if not is_transmitting_mic:
+		return
+	is_transmitting_mic = false
+	var am := get_node_or_null("/root/AudioManager")
+	if am and am.has_method("stop_mic_transmission"):
+		am.call("stop_mic_transmission")
+	emit_signal("mic_ptt_changed", false)
+
+func get_mic_level() -> float:
+	var am := get_node_or_null("/root/AudioManager")
+	if am and am.has_method("get_mic_level"):
+		return float(am.call("get_mic_level"))
+	return 0.0
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventKey and event.keycode == KEY_T and not event.echo:
+		if event.pressed:
+			start_mic_ptt()
+		else:
+			stop_mic_ptt()
 
 # =============================================================================
 # VOICE SERVICE INTEGRATION (#179 follow-up — real TTS optional)

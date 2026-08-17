@@ -127,8 +127,8 @@ var _flake_live  : int   = 0
 # =============================================================================
 func _ready() -> void:
 	add_to_group("shredder_feed_belt")
-	_incline_angle = deg_to_rad(incline_deg)
-	_incline_hyp   = incline_run / maxf(cos(_incline_angle), 0.01)
+	_incline_angle = _incline_angle_rad()
+	_incline_hyp   = _incline_hyp_m()
 	_path_total = deck_length + _incline_hyp + maxf(top_flat_m, 0.0)
 	# #214 belt-speed ramp — start at the live PLC state. is_running() reads
 	# fault latches + fill + _shredder_ok(); at construction these all default
@@ -148,7 +148,11 @@ func _build_container_area() -> void:
 	sp.radius = 3.0
 	cs.shape = sp
 	area.add_child(cs)
-	area.position = Vector3(0.0, 0.0, deck_length + incline_run + 1.5)
+	# LOCKSTEP with _discharge_pos(): the trigger that notices a container parked
+	# at the discharge must sit exactly where _container_at() looks for it. This
+	# used to be a hand-copied `deck_length + incline_run + 1.5`, which silently
+	# disagreed with the landing point on every belt that has a top tray.
+	area.position = Vector3(0.0, 0.0, _landing_z())
 	area.body_entered.connect(_on_container_entered)
 	area.body_exited.connect(_on_container_exited)
 	add_child(area)
@@ -824,15 +828,17 @@ func _process(delta: float) -> void:
 		var digested : float = before_fill - fill
 		if digested > 0.0 and before_fill > 0.0:
 			# Draw the kilograms PROPORTIONALLY out of what is actually in the
-			# throat. The old line minted them: `digested * OUTPUT_KG_PER_FILL`
-			# turned a dimensionless fraction into 350 kg per unit fill with
-			# nothing debited, so one bale of any weight produced the same
-			# invented amount.
+			# throat.
 			var kg_out : float = _throat_kg * (digested / before_fill)
 			kg_out = minf(kg_out, _throat_kg)
 			_throat_kg -= kg_out
 			if kg_out > 0.0:
 				_emit_output(kg_out, delta)
+				if _cached_shredder != null and is_instance_valid(_cached_shredder) and _cached_shredder.has_method("set_feed_throughput"):
+					var rate_kg_h : float = (kg_out / maxf(delta, 0.001)) * 3600.0
+					_cached_shredder.call("set_feed_throughput", rate_kg_h)
+		elif _cached_shredder != null and is_instance_valid(_cached_shredder) and _cached_shredder.has_method("set_feed_throughput"):
+			_cached_shredder.call("set_feed_throughput", 0.0)
 	var running := is_running()
 	# #214 belt-speed ramp — the PLC setpoint is binary (running ? belt_speed : 0)
 	# but the physical belt coasts smoothly between those two states. Push the
@@ -1006,9 +1012,66 @@ func _place_rider(r: Dictionary) -> void:
 # =============================================================================
 # SHREDDED OUTPUT (#8) — eaten throat mass → flakes at the discharge
 # =============================================================================
-## Ground point just past the top of the incline where shredded flakes drop.
+# ── DISCHARGE GEOMETRY — TWO points, deliberately (audit 2026-08-16) ──────────
+# The belt has a discharge LIP (high, at the end of the belt surface, where
+# material physically leaves the belt) and a discharge LANDING point (on the
+# floor, past the end of the structure, where the shredded output comes to rest).
+# They are NOT the same point and the code needs both:
+#
+#   LANDING (_discharge_pos)  — floor level. Used by _container_at (measures 3 m
+#     to FLOOR-SEATED container origins), _ensure_output_pile (a FloorPile sits on
+#     the floor) and _shredder_ok (measures 6 m to a FLOOR-SEATED machine origin).
+#     Raising this to the real lip height would move it 4-7 m away from every one
+#     of those origins and stop containers filling / lose the shredder interlock.
+#   LIP (_discharge_lip_pos) — belt-surface level at the very end of the path.
+#     Used for the falling-flake visual, which used to pop out of thin air 1.7 m
+#     over the floor beside the machine instead of off the end of the belt.
+#
+# operator_issues_2026-07-20.md:130-133 names the old single-point version as an
+# open root cause ("y = 0.0 at a z beyond the top of the incline ... ignoring
+# top_flat_m"). top_flat_m is now honoured by both points.
+
+## Horizontal distance from the END of the belt structure to the floor landing
+## point. UNSOURCED — no docs/plant/ entry gives this overhang; it is carried
+## forward unchanged from the original expression rather than re-invented, and is
+## an OPEN OPERATOR QUESTION. LegacyPropsSpawner.gd:311 holds a third copy of the
+## same idea with a different value (+2.0) and is deliberately left alone: it
+## positions a machine, and moving shipped machines needs an operator ruling.
+const DISCHARGE_OVERHANG_M : float = 1.5
+
+## The incline angle / slope length for the CURRENT exports. _ready() caches these
+## into _incline_angle / _incline_hyp; these helpers are the single formula both
+## the cache and the discharge geometry read, so a belt whose exports were set
+## after construction can still be asked where its discharge is.
+func _incline_angle_rad() -> float:
+	return deg_to_rad(incline_deg)
+
+func _incline_hyp_m() -> float:
+	return incline_run / maxf(cos(_incline_angle_rad()), 0.01)
+
+## Local Z of the very END of the belt structure: top of the incline plus the
+## horizontal discharge tray when there is one. `incline_run` is already the
+## HORIZONTAL run (hyp = run / cos θ, so hyp·cos θ == run), which is why this is
+## not the hypotenuse — but `top_flat_m` was genuinely missing.
+func _end_z() -> float:
+	return deck_length + incline_run + maxf(top_flat_m, 0.0)
+
+## Local Z of the floor landing point.
+func _landing_z() -> float:
+	return _end_z() + DISCHARGE_OVERHANG_M
+
+## LANDING point — on the FLOOR (belt origin plane), just past the end of the
+## belt. y is 0 in local space ON PURPOSE: every caller of this measures to a
+## floor-seated origin. See the block comment above before "fixing" the height.
 func _discharge_pos() -> Vector3:
-	return to_global(Vector3(0.0, 0.0, deck_length + incline_run + 1.5))
+	return to_global(Vector3(0.0, 0.0, _landing_z()))
+
+## LIP — the belt SURFACE at the very end of the path: the point material is
+## actually released from. Same arithmetic _place_rider uses for a rider at
+## progress 1.0, minus the 0.15 m rider stand-off, so the two can never drift.
+func _discharge_lip_pos() -> Vector3:
+	var a : float = _incline_angle_rad()
+	return to_global(Vector3(0.0, deck_height + _incline_hyp_m() * sin(a), _end_z()))
 
 var _cached_containers: Array[Node] = []
 
@@ -1055,10 +1118,12 @@ func _emit_output(kg: float, delta: float) -> void:
 	_flake_t += delta
 	if _flake_t >= 0.12 and _flake_live < OUTPUT_FLAKE_MAX:
 		_flake_t = 0.0
-		_spawn_output_flake(disc)
+		_spawn_output_flake(_discharge_lip_pos(), disc)
 
-## A small flake cube that emerges above the discharge and tumbles onto the heap.
-func _spawn_output_flake(landing: Vector3) -> void:
+## A small flake cube that leaves the belt AT THE LIP and tumbles onto the heap
+## on the floor. It used to be spawned at `landing + 1.7 m`, i.e. hovering at
+## chest height next to the machine with the actual discharge 4-7 m above it.
+func _spawn_output_flake(lip: Vector3, landing: Vector3) -> void:
 	var mi := MeshInstance3D.new()
 	var bm := BoxMesh.new()
 	bm.size = Vector3(0.10, 0.06, 0.10)
@@ -1068,7 +1133,7 @@ func _spawn_output_flake(landing: Vector3) -> void:
 	m.roughness = 0.85
 	mi.material_override = m
 	get_tree().current_scene.add_child(mi)
-	mi.global_position = landing + Vector3(randf_range(-0.2, 0.2), 1.7, randf_range(-0.2, 0.2))
+	mi.global_position = lip + Vector3(randf_range(-0.2, 0.2), 0.10, randf_range(-0.2, 0.2))
 	_flake_live += 1
 	var land := landing + Vector3(randf_range(-0.5, 0.5), 0.12, randf_range(-0.5, 0.5))
 	var t := create_tween()

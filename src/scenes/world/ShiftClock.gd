@@ -10,13 +10,11 @@ class_name ShiftClock
 ## (ShiftClock is child[0], GameState is child[1] — GameState._ready() hasn't
 ## run yet when ShiftClock._ready() fires).
 
-const SHIFT_START_HOUR  : int = 7
 const SHIFT_START_MINUTE: int = 0
-const SHIFT_END_HOUR    : int = 15
 const SHIFT_END_MINUTE  : int = 0
 
 var shift_elapsed_seconds: float = 0.0
-var shift_total_seconds  : float = (SHIFT_END_HOUR - SHIFT_START_HOUR) * 3600.0
+var shift_total_seconds  : float = 8.0 * 3600.0
 var shift_active         : bool  = false
 
 # ── #166 Pre-shift window ────────────────────────────────────────────────────
@@ -341,10 +339,10 @@ func _serial_day(d: Dictionary) -> int:
 		y -= 1
 		m += 12
 	# Howard Hinnant's days_from_civil — handles all proleptic Gregorian dates.
-	var era : int = (y if y >= 0 else y - 399) / 400
+	var era : int = int((y if y >= 0 else y - 399) / 400.0)
 	var yoe : int = y - era * 400                # [0, 399]
-	var doy : int = (153 * (m - 3) + 2) / 5 + dd - 1     # [0, 365]
-	var doe : int = yoe * 365 + yoe / 4 - yoe / 100 + doy
+	var doy : int = int((153 * (m - 3) + 2) / 5.0) + dd - 1     # [0, 365]
+	var doe : int = yoe * 365 + int(yoe / 4.0) - int(yoe / 100.0) + doy
 	return era * 146097 + doe - 719468           # offset so 1970-01-01 → 0
 
 # =============================================================================
@@ -358,17 +356,13 @@ func get_time_string() -> String:
 	var base_minutes : int = shift_start_hour() * 60 + int(total_s / 60.0)
 	# Modulo into [0, 1440) so negative totals wrap to "yesterday evening".
 	base_minutes = ((base_minutes % 1440) + 1440) % 1440
-	var hours   : int = base_minutes / 60
+	var hours   : int = int(base_minutes / 60.0)
 	var minutes : int = base_minutes % 60
 	return "%02d:%02d" % [hours, minutes]
 
 ## The clock start hour for the dienst this playable window represents.
 func shift_start_hour() -> int:
-	match current_shift():
-		ShiftRota.Shift.EARLY: return 7
-		ShiftRota.Shift.LATE:  return 15
-		ShiftRota.Shift.NIGHT: return 23
-		_:                     return 7   # rest days are skipped by the rollover
+	return ShiftRota.shift_hours(current_shift()).x
 
 func get_elapsed_seconds() -> float:
 	return shift_elapsed_seconds

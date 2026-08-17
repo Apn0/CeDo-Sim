@@ -47,9 +47,6 @@ static func apply_textures(world: Node, shell: MeshInstance3D) -> void:
 		sm.albedo_color = Color(0.70, 0.68, 0.63)
 		sm.roughness    = 0.94          # matte — kills bright specular hot-spots
 		sm.metallic     = 0.0
-		# CULL_DISABLED so back faces still render (single-sided walls would
-		# disappear from one side otherwise). Godot auto-flips the normal on
-		# the back face, so both sides light correctly.
 		sm.cull_mode    = BaseMaterial3D.CULL_DISABLED
 		# #111 — the solidified .obj now emits `usemtl shell` and `usemtl posts`
 		# as separate surfaces (surface 0 = walls/roof, surface 1 = wooden
@@ -64,10 +61,6 @@ static func apply_textures(world: Node, shell: MeshInstance3D) -> void:
 			shell.material_override = null
 			shell.set_surface_override_material(0, sm)
 			var timber := MaterialPalette.mat_timber_dark()
-			# Apply CULL_DISABLED to timber too — posts are baked as proper
-			# 6-sided boxes by solidify_building.py, but the photo material is
-			# triplanar with a normal map, and CULL_DISABLED matches the shell
-			# behaviour so lighting reads identically across both surfaces.
 			timber.cull_mode = BaseMaterial3D.CULL_DISABLED
 			shell.set_surface_override_material(1, timber)
 		else:

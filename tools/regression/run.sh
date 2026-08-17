@@ -219,7 +219,7 @@ fi
 # instead of the 0.00 A it read before, that sum(amps_nominal) == 488.49 A, and
 # that the mass ledger still balances now that stamping also swaps in the
 # ProcessModel transfer coefficients and switches on the dryer pair controller.
-for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_l3c_unit_screens; do
+for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens; do
 	echo "== $t =="
 	"$GODOT" --headless --path "$PROJ" "res://src/tests/$t.tscn" > "$OUT/$t.log" 2>&1
 	grep -E "^  (ok|FAIL)|Result|RESULT" "$OUT/$t.log" || true
@@ -267,17 +267,10 @@ for cfg in "NOLINE" "LINE"; do
 	fi
 done
 
-# npc-05 container chain. Bench is mutation-tested (reverting any single fix
-# turns specific greens red). It was previously 31/31 green while the chain was
-# DEAD in a real session, which is why the real-MainWorld variant exists and why
-# the bench must never be trusted alone.
-echo "== npc-05 container chain (bench) =="
-"$GODOT" --headless --path "$PROJ" 	--script res://src/tests/test_npc05_container_chain.gd > "$OUT/npc05_bench.log" 2>&1
-grep -E "^  FAIL|npc-05 container chain" "$OUT/npc05_bench.log" || true
-if ! grep -q "npc-05 container chain PASS" "$OUT/npc05_bench.log"; then
-	echo "FAIL  : npc-05 bench (see $OUT/npc05_bench.log)"
-	[ $code -eq 0 ] && code=1
-fi
+# npc-05 container chain bench: DELETED 2026-08-17 on operator order along with
+# the bench worlds it ran on. It was 31/31 green while the chain was DEAD in a
+# real session -- the canonical example of why a bench green proves the mock.
+# Coverage for the container chain now belongs in a real MainWorld boot.
 
 # The regression net for WallOpenings' carve algorithm itself (visible-teeth
 # check) — was never wired into the harness at all despite existing since

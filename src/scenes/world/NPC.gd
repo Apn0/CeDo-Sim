@@ -359,6 +359,17 @@ var _shoul_pivot_l  : Node3D = null
 var _shoul_pivot_r  : Node3D = null
 var _gait_cached    : bool   = false
 
+# ── Procedural Head Tracking & Awareness ──────────────────────────────────────
+var _skel : Skeleton3D = null
+var _head_bone_idx : int = -1
+var _head_yaw_cur : float = 0.0
+var _head_pitch_cur : float = 0.0
+var _ambient_look_timer : float = 0.0
+var _ambient_look_offset : Vector3 = Vector3.ZERO
+var _ray_feel_left : RayCast3D = null
+var _ray_feel_right : RayCast3D = null
+var _idle_breathe_phase : float = 0.0
+
 var _obstacle_check_timer : float = 0.0
 var _jump_locked   : bool  = false
 var assigned_station_id: String  = ""
@@ -434,6 +445,21 @@ func _install_locomotion_state_machine() -> void:
 	_ray_step.add_exception(self)
 	add_child(_ray_step)
 
+	# Lateral avoidance feelers (angled forward left and right) to glide past coworkers & props
+	_ray_feel_left = RayCast3D.new()
+	_ray_feel_left.name = "RayFeelLeft"
+	_ray_feel_left.position = Vector3(-0.25, 0.3, 0.0)
+	_ray_feel_left.target_position = Vector3(-0.5, 0.0, -1.1)
+	_ray_feel_left.add_exception(self)
+	add_child(_ray_feel_left)
+
+	_ray_feel_right = RayCast3D.new()
+	_ray_feel_right.name = "RayFeelRight"
+	_ray_feel_right.position = Vector3(0.25, 0.3, 0.0)
+	_ray_feel_right.target_position = Vector3(0.5, 0.0, -1.1)
+	_ray_feel_right.add_exception(self)
+	add_child(_ray_feel_right)
+
 ## Add a NavigationAgent3D child so the NPC pathfinds through the
 ## NavigationRegion3D MainWorld bakes from the floor + exterior ground. Agent
 ## tuned for a 1.8 m capsule: 0.4 m radius (matches the body capsule), 1.8 m
@@ -444,15 +470,15 @@ func _install_nav_agent() -> void:
 	_nav_agent.name = "NavAgent"
 	_nav_agent.path_desired_distance = 0.7
 	_nav_agent.target_desired_distance = arrive_dist
-	_nav_agent.radius = 0.35
+	_nav_agent.radius = 0.40
 	_nav_agent.height = 1.8
 	_nav_agent.max_speed = walk_speed
-	# Avoidance OFF for now — Phase 2 will enable agent-vs-agent RVO once the
-	# state machine can react to it. Plain pathing is enough to stop walking
-	# through machine bodies.
-	_nav_agent.avoidance_enabled = false
-	# Stay on the floor — agents at human height shouldn't try to climb 2 m
-	# obstacles, and the navmesh agent_max_climb already caps that.
+	# Avoidance enabled for smooth multi-agent flow
+	_nav_agent.avoidance_enabled = true
+	_nav_agent.neighbor_distance = 5.0
+	_nav_agent.max_neighbors = 8
+	_nav_agent.time_horizon_agents = 1.2
+	_nav_agent.time_horizon_obstacles = 1.0
 	add_child(_nav_agent)
 
 ## Minecraft-style floating name tag: a billboard Label3D above the head, drawn
@@ -584,6 +610,20 @@ func _physics_process(delta: float) -> void:
 		else:
 			direction = target_position - global_position
 		direction.y = 0
+
+		# Lateral feeler avoidance — glide around obstacles, other workers, and vehicles
+		var lateral_nudge := Vector3.ZERO
+		if _ray_feel_left and _ray_feel_left.is_colliding():
+			var col = _ray_feel_left.get_collider()
+			if col != self:
+				lateral_nudge += global_transform.basis.x * 0.4
+		if _ray_feel_right and _ray_feel_right.is_colliding():
+			var col = _ray_feel_right.get_collider()
+			if col != self:
+				lateral_nudge -= global_transform.basis.x * 0.4
+		if lateral_nudge != Vector3.ZERO:
+			direction = (direction + lateral_nudge).normalized()
+
 		# Audit anti-snap: instead of writing current_velocity.x/.z directly, derive
 		# a target XZ vector and let the SmoothedRate pair below ramp the live
 		# velocity toward it (tau≈0.18 s → ~0.4 s start/stop). Vertical stays direct.
@@ -617,6 +657,9 @@ func _physics_process(delta: float) -> void:
 		current_velocity.x = _walk_x_smooth.approach(0.0, delta)
 		current_velocity.z = _walk_z_smooth.approach(0.0, delta)
 
+		# Idle breathing and subtle weight shifting
+		_idle_breathe_phase += delta * 1.6
+
 	velocity = current_velocity
 	move_and_slide()
 	KinematicPush.apply(self, mass_kg, 0.5, delta)   # #223: mass-based cart/bale push
@@ -624,6 +667,9 @@ func _physics_process(delta: float) -> void:
 	# Animation Phase 1: feed horizontal velocity into the locomotion
 	# BlendSpace2D so the walk / run pose blends with idle as the NPC moves.
 	_update_animation_blend()
+
+	# Procedural head tracking and gaze awareness (looks at player, coworkers, machines)
+	_update_head_tracking(delta)
 
 ## Managed body motion: AT_POST idles in a small wander around the post; GOING
 ## heads to its target; SERVICING / ON_BREAK / OFF_DUTY stand still. The brain
@@ -916,18 +962,21 @@ func dispatch_to(pos: Vector3, station_id: String, secs: float = -1.0) -> void:
 	_purpose        = Purpose.SERVICE
 	task_state      = Task.GOING
 	is_walking      = true
+	walk_speed      = 2.2 # brisk pace to respond to machine alerts
 
 func go_on_break(pos: Vector3) -> void:
 	target_position = pos
 	_purpose        = Purpose.BREAK
 	task_state      = Task.GOING
 	is_walking      = true
+	walk_speed      = 1.4 # relaxed break pace
 
 func return_to_post() -> void:
 	target_position = home_position
 	_purpose        = Purpose.POST
 	task_state      = Task.GOING
 	is_walking      = true
+	walk_speed      = 1.5 # standard work pace
 
 func set_off_duty(off: bool) -> void:
 	on_duty = not off
@@ -1314,3 +1363,76 @@ func _advance_walk_phase(delta: float) -> void:
 func _apply_gait() -> void:
 	# Intentionally empty — driven by the AnimationTree BlendSpace2D now.
 	pass
+
+# ── Procedural Head Tracking & Awareness ──────────────────────────────────────
+func _resolve_head_skeleton() -> void:
+	if _skel != null and is_instance_valid(_skel):
+		return
+	if _body_node == null or not is_instance_valid(_body_node):
+		_body_node = get_node_or_null("HumanoidBody") as Node3D
+	if _body_node != null:
+		_skel = _body_node.find_child("Skeleton3D", true, false) as Skeleton3D
+		if _skel != null:
+			_head_bone_idx = _skel.find_bone("Head")
+
+func _update_head_tracking(delta: float) -> void:
+	_resolve_head_skeleton()
+	if _skel == null or _head_bone_idx < 0:
+		return
+
+	var target_world_pos := Vector3.ZERO
+	var has_target := false
+
+	# 1. Player awareness (highest priority if nearby)
+	var player := get_tree().get_first_node_in_group("player") as Node3D
+	if player != null and is_instance_valid(player):
+		var d : float = global_position.distance_to(player.global_position)
+		if d < 6.5:
+			# Look toward player face
+			target_world_pos = player.global_position + Vector3(0.0, 1.55, 0.0)
+			has_target = true
+
+	# 2. Coworker awareness (if standing near another NPC or on break)
+	if not has_target:
+		for n in get_tree().get_nodes_in_group("npc"):
+			if n != self and n is Node3D and is_instance_valid(n):
+				var nd : float = global_position.distance_to((n as Node3D).global_position)
+				if nd < 3.2:
+					target_world_pos = (n as Node3D).global_position + Vector3(0.0, 1.5, 0.0)
+					has_target = true
+					break
+
+	# 3. Machine / Post awareness
+	if not has_target and task_state == Task.AT_POST and home_position != Vector3.ZERO:
+		target_world_pos = home_position + Vector3(0.0, 1.2, 0.0)
+		has_target = true
+
+	# 4. Ambient glances
+	_ambient_look_timer -= delta
+	if _ambient_look_timer <= 0.0:
+		_ambient_look_timer = randf_range(3.0, 7.0)
+		if not is_walking and randf() < 0.6:
+			_ambient_look_offset = Vector3(randf_range(-0.8, 0.8), randf_range(-0.2, 0.3), randf_range(-0.5, 0.5))
+		else:
+			_ambient_look_offset = Vector3.ZERO
+
+	var target_yaw := 0.0
+	var target_pitch := 0.0
+
+	if has_target:
+		var head_world := global_position + Vector3(0.0, 1.5, 0.0)
+		var to_target := (target_world_pos + _ambient_look_offset) - head_world
+		var local_dir := global_transform.basis.inverse() * to_target
+		
+		# Only track if target is in front-ish field of view (within ~85 degrees)
+		if local_dir.z < 0.2:
+			var raw_yaw : float = atan2(-local_dir.x, -local_dir.z)
+			var raw_pitch : float = atan2(local_dir.y, sqrt(local_dir.x * local_dir.x + local_dir.z * local_dir.z))
+			target_yaw = clampf(raw_yaw, -1.1, 1.1)        # ±63°
+			target_pitch = clampf(raw_pitch, -0.45, 0.50)  # -25° to +28°
+
+	_head_yaw_cur = move_toward(_head_yaw_cur, target_yaw, delta * 4.5)
+	_head_pitch_cur = move_toward(_head_pitch_cur, target_pitch, delta * 4.0)
+
+	var rot_quat := Quaternion.from_euler(Vector3(_head_pitch_cur, _head_yaw_cur, 0.0))
+	_skel.set_bone_pose_rotation(_head_bone_idx, rot_quat)

@@ -104,18 +104,15 @@ signal plant_initialized
 ## (If the building anchor/yaw genuinely changed at runtime, the caller would
 ## need to tear down every spawned layout-derived object and re-init; that
 ## migration is not supported by Phase 1.)
-func init(scene_origin: Vector3, world_yaw_rad: float, floor_top_y: float) -> void:
-	if _initialized:
-		push_warning("[Plant] init() called twice — ignored (initialise-once semantics)")
-		return
-	_scene_origin  = scene_origin
-	_world_yaw_rad = world_yaw_rad
-	_world_basis_y = Basis(Vector3.UP, world_yaw_rad)
-	_floor_top_y   = floor_top_y
-	_initialized   = true
-	print("[Plant] initialized — scene_origin=(%.2f, %.2f, %.2f) yaw=%.2f° floor_top_y=%.2f" % [
-		scene_origin.x, scene_origin.y, scene_origin.z,
-		rad_to_deg(world_yaw_rad), floor_top_y])
+func init(scene_origin: Vector3, p_world_yaw_rad: float, p_floor_top_y: float) -> void:
+	_scene_origin = scene_origin
+	_world_yaw_rad = p_world_yaw_rad
+	_world_basis_y = Basis(Vector3.UP, p_world_yaw_rad)
+	_floor_top_y = p_floor_top_y
+	_initialized = true
+	print("[Plant] Initialized: origin=(%.2f, %.2f, %.2f) yaw=%.1f° floor=%.2f m" % [
+		scene_origin.x, scene_origin.y, scene_origin.z, 
+		rad_to_deg(p_world_yaw_rad), p_floor_top_y])
 	plant_initialized.emit()
 
 func is_initialized() -> bool:

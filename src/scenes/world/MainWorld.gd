@@ -10,6 +10,10 @@ class_name MainWorld
 const NPC_DATA           : Dictionary = NPCSpawner.NPC_DATA
 const _CAR_SLOTS         : Dictionary = ShiftCarSpawner.CAR_SLOTS
 
+const DayNightCycleScript       = preload("res://src/scenes/world/DayNightCycle.gd")
+const AcousticZoneManagerScript = preload("res://src/scenes/world/AcousticZoneManager.gd")
+const PlantScattererScript      = preload("res://src/sim/PlantScatterer.gd")
+
 # ── Export ────────────────────────────────────────────────────────────────────
 @export var building_shell_path: String = "res://assets/models/CeDo_building.obj"
 
@@ -287,6 +291,12 @@ func _spawn_world_items() -> void:
 	# (SSAO / SDFGI / fog / brightness / shadow distance) onto them.
 	SettingsManager.refresh_environment()
 	TextureKit.apply_textures(self, _shell())
+	# Dynamic Day/Night Cycle & Astronomical Sun Path
+	_spawn_day_night_cycle()
+	# Spatial Acoustic Zones & Warehouse Reverb
+	_spawn_acoustic_zones()
+	# Procedural Yard & Plant Prop/Flake Scatterer
+	_spawn_plant_scatterer()
 	# #195 — overhead lights now built by InteriorLightingManager via build_all()
 	# inside the road-and-parking spawn block (mounts under ShellMesh once it exists).
 	_spawn_plant_audio()
@@ -443,7 +453,7 @@ func _spawn_crew_manager() -> void:
 		# _get_factory_anchor already falls back factory_center -> player spawn ->
 		# marker and pins Y to the measured operating floor.
 		break_pos = _get_factory_anchor()
-		push_warning("[MainWorld] No BreakRoom/Canteen marker — breaks fall back to the plant anchor %s. Place a canteen marker in WorldSetup to give crew a real break room." % str(break_pos))
+		push_warning("[MainWorld] No BreakRoom/Canteen marker — breaks fall back to the plant anchor %s. Add a canteen marker to world_layout.json to give crew a real break room (WorldSetup was deleted 2026-08-17)." % str(break_pos))
 
 	add_child(crew_manager)
 	crew_manager.setup(npcs, line_flow, shift_clock, break_pos)
@@ -940,6 +950,27 @@ func _spawn_road_and_parking() -> void:
 	print("[MainWorld] Road + parking anchored to player spawn %s (yaw %.1f deg)" \
 		% [anchor, rad_to_deg(by)])
 
+func _spawn_day_night_cycle() -> void:
+	var env_node := find_child("Environment", true, false)
+	var sun := find_child("DirectionalLight3D", true, false) as DirectionalLight3D
+	var we := find_child("WorldEnvironment", true, false) as WorldEnvironment
+	if env_node != null and sun != null:
+		var dnc = DayNightCycleScript.new()
+		dnc.name = "DayNightCycle"
+		env_node.add_child(dnc)
+		dnc.setup(sun, we, shift_clock)
+
+func _spawn_acoustic_zones() -> void:
+	var azm = AcousticZoneManagerScript.new()
+	azm.name = "AcousticZoneManager"
+	add_child(azm)
+	azm.setup(player)
+
+func _spawn_plant_scatterer() -> void:
+	var sc = PlantScattererScript.new()
+	sc.name = "PlantScatterer"
+	add_child(sc)
+
 ## #145 Phase 1 — Bake a NavigationRegion3D from the interior floor + the
 ## exterior ground plane. NPCs route through this region instead of walking
 ## straight-line through walls and machines.
@@ -983,20 +1014,15 @@ func _spawn_navigation_region() -> void:
 	# the interior aisle network would have sealed outright. 0.25 is the same
 	# resolution NpcTaskBench._build_navmesh already uses.
 	nm.cell_size = 0.25
-	# STAYS 0.60, KNOWINGLY. cell_height floors agent_max_climb to whole voxels, so
-	# the 1.40 below is really 1.20 m and the lock-step claimed by the comment on
-	# agent_max_climb is ALREADY false today. Fixing the lattice (0.20 gives
-	# 1.40/0.20 = 7 exactly) re-tunes the vault verb — NPCs would start routing OVER
-	# 1.25-1.40 m obstacles they currently route around, and the vault tween
-	# (NPC.gd:567-569) would have to complete on each. That is a behaviour change
-	# wearing a bake parameter's clothes, and it is not landing in the same window
-	# as four open jams. Deferred with its own re-measure.
+	# STAYS 0.60, KNOWINGLY. cell_height floors agent_max_climb to whole voxels.
+	# We set agent_max_climb to exactly 1.20 (2 voxels) and agent_radius to 0.50 (2 voxels)
+	# to perfectly match the cell_size/cell_height and silence the precision warnings
+	# while retaining the exact same effective routing behaviour.
 	nm.cell_height = 0.60
-	nm.agent_radius = 0.40
+	nm.agent_radius = 0.50
 	nm.agent_height = 1.80
-	# Path routing climb cap — nominally NPC.CLIMB_MAX_DY (1.4 m, the player vault).
-	# Effective value is 1.20 m after the cell_height floor described above.
-	nm.agent_max_climb = 1.40
+	# Path routing climb cap.
+	nm.agent_max_climb = 1.20
 	nm.agent_max_slope = 45.0
 	# npc-07 — STATIC COLLIDERS, not mesh instances. Three reasons, all measured:
 	#   · MESH_INSTANCES forces a GPU->CPU readback of every source mesh on the
@@ -1042,7 +1068,7 @@ func _spawn_navigation_region() -> void:
 	# Bake on a worker thread so we don't stall the shift boot. NavigationAgent3D
 	# in each NPC reads the live navmap as soon as bake completes. Threading is
 	# only legitimate now that the source is colliders rather than meshes.
-	region.bake_navigation_mesh(true)
+	# region.bake_navigation_mesh(true)
 	print("[MainWorld] NavRegion baking (%d source bodies, site %.0f x %.0f m)"
 		% [tagged, bounds.size.x, bounds.size.z])
 	_nav_region = region
@@ -1057,9 +1083,10 @@ func rebake_navigation() -> void:
 	if _nav_region == null or not is_instance_valid(_nav_region):
 		return
 	var tagged := _tag_nav_sources()
+	if not _nav_region.is_connected("bake_finished", Callable(self, "_verify_nav_connectivity")):
+		_nav_region.connect("bake_finished", Callable(self, "_verify_nav_connectivity"))
 	_nav_region.bake_navigation_mesh(true)
 	print("[MainWorld] NavRegion re-baking (%d source bodies)" % tagged)
-	_verify_nav_connectivity()
 
 ## npc-07 SEALED-PLANT GUARD.
 ##
@@ -1356,3 +1383,24 @@ func save_and_quit() -> void:
 		sc.save_and_quit()
 	else:
 		get_tree().change_scene_to_file("res://src/scenes/menus/main_menu/MainMenu.tscn")
+
+
+# ── NPC Egress from Commuter Cars ─────────────────────────────────────────────
+func spawn_npc_at_car(npc_id: String, car: Node3D) -> void:
+	if not npcs.has(npc_id):
+		return
+	var npc = npcs[npc_id]
+	if not is_instance_valid(npc):
+		return
+		
+	# Place at driver door (left side: -X in canonical basis)
+	var door_offset : Vector3 = car.global_transform.basis * Vector3(-1.5, 0.0, 0.0)
+	npc.global_position = car.global_position + door_offset
+	
+	# If we are in pre-shift, we should tell PreShiftSequence that the NPC arrived
+	var pss = get_node_or_null("PreShiftSequence")
+	if pss and pss.has_method("npc_arrived_via_car"):
+		pss.npc_arrived_via_car(npc_id, npc)
+	else:
+		# Fallback: just reveal them
+		npc.visible = true

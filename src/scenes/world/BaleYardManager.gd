@@ -21,20 +21,43 @@ class_name BaleYardManager
 # restock_yard_bales so ShiftLeaderTerminal.gd's `mw.call("reset_yard_bales")`
 # path continues to work unchanged.
 
-# Frame budget for the yard collider drain queue. 2 ms is enough to keep
-# multi-thousand-bale layouts spawning steadily without showing as a hitch on
-# the PerfHud.
-const _YARD_SPAWN_BUDGET_USEC : int = 2000   # 2 ms / frame cap
+# RETIRED (2026-08-16 audit): frame budget for the old time-sliced yard collider
+# drain queue. That queue no longer exists — tick()'s proximity sweep creates
+# colliders on demand instead — so this constant has had ZERO readers since the
+# sweep landed (repo-wide grep: this line only). Kept, not deleted, so a reader
+# of a log line or doc that still quotes "2 ms/frame" can find the retirement
+# note instead of a live-looking knob. Do not wire it back up without a doc.
+const _YARD_SPAWN_BUDGET_USEC : int = 2000   # DEAD — no readers
 
-# Proximity sweep parameters. 25 m matches the close-LOD MM swap, so colliders
-# come online at exactly the radius the operator can interact with bales.
-const _YARD_RB_NEAR_M  : float = 25.0
+# RETIRED (2026-08-16 audit): the sweep radius lives in tick() as NEAR_SQ (24 m)
+# / FAR_SQ (32 m hysteresis); this 25 m copy has zero readers and disagrees with
+# the value that actually runs — the stale-constant pattern this project keeps
+# getting bitten by. Read tick(), not this line.
+const _YARD_RB_NEAR_M  : float = 25.0        # DEAD — superseded by tick()'s NEAR_SQ
 const _YARD_RB_TICK_S  : float = 0.5
 
 # ── Runtime state ───────────────────────────────────────────────────────────
-var _yard_spawn_queue : Array = []   # of Dictionary jobs (see _spawn_one_yard_bale)
+var _yard_slots       : Array[Dictionary] = []   # of slot definition dicts
+var _active_bale_rbs  : Dictionary = {}          # String slot_key -> RigidBody3D
 var _yard_rb_tick_t   : float = 0.0
 var _restock_pending  : bool  = false
+
+## Slot keys whose bale has LEFT the yard's control: grabbed and hauled away,
+## reparented onto a vehicle, or freed outright (LineFlow.gd:2085 frees a bale
+## once remaining_kg hits 0, BaleBurst.gd:115 frees the husk when it is opened).
+##
+## A consumed slot is NEVER refilled. The yard is a finite stock delivered by
+## truck; the only documented way more bales appear is the shift-leader's
+## restock order (restock_yard_bales → reset_yard_bales), and no plant doc
+## authorises a slot growing a replacement bale on its own.
+##
+## 2026-08-16 audit C1/C2 — before this set existed, tick()'s far-branch erased
+## the slot key on the KEEP-ALIVE path too. Grab a yard bale, haul it past 32 m,
+## come back inside 24 m: the slot had no key, so a SECOND bale was minted in it
+## while the first was still in the forks (unbounded mass creation, C1), and the
+## new body was invisible-but-solid because detail_bale() had already zero-scaled
+## that slot's MultiMesh instance and nothing restores it (C2).
+var _consumed_slots   : Dictionary = {}          # String slot_key -> true (a set)
 
 ## Yard perimeters in SCENE XZ, captured as each yard is built. These are the
 ## positions the pad and bales were ACTUALLY spawned at, not a re-derivation
@@ -64,39 +87,88 @@ func setup(world: Node, shift_clock: Node) -> void:
 func get_yard_polygons() -> Array[PackedVector2Array]:
 	return _yard_polys
 
-# ── _process slice (drain queue + proximity sweep) ──────────────────────────
+# ── _process slice (proximity sweep & dynamic RB activation) ────────────────
 ## Called from MainWorld._process so MainWorld controls the per-frame ordering.
-## Drains the bale-spawn backlog every frame within the budget, and runs the
-## proximity sweep every _YARD_RB_TICK_S. Previously was a chunk of
-## MainWorld._process; same behaviour, just relocated.
+## Dynamically instantiates RigidBody3D colliders ONLY for bales near the player
+## or vehicles, and frees untouched distant colliders. This prevents thousands
+## of idle RigidBody3D nodes from saturating the physics server and SceneTree.
 func tick(delta: float) -> void:
-	# #192 — first, drain the bale-spawn backlog within our frame budget. This
-	# is independent of the proximity tick cadence; we want to keep spawning
-	# even between the 0.5 s proximity sweeps.
-	_drain_yard_spawn_queue()
 	_yard_rb_tick_t += delta
 	if _yard_rb_tick_t < _YARD_RB_TICK_S:
 		return
 	_yard_rb_tick_t = 0.0
+	var sweep_points : Array[Vector3] = []
 	var player : Node = null
 	if _world != null and "player" in _world:
 		player = _world.get("player")
-	if player == null or not is_instance_valid(player):
+	if player != null and is_instance_valid(player):
+		sweep_points.append(player.global_position)
+	for v in get_tree().get_nodes_in_group("vehicle"):
+		if v is Node3D and is_instance_valid(v):
+			sweep_points.append((v as Node3D).global_position)
+	if sweep_points.is_empty():
 		return
-	var ppos : Vector3 = player.global_position
-	var near_sq := _YARD_RB_NEAR_M * _YARD_RB_NEAR_M
-	for rb in get_tree().get_nodes_in_group("yard_bale_rb"):
-		if not is_instance_valid(rb):
-			continue
-		var d2 : float = (rb.global_position - ppos).length_squared()
-		var near : bool = d2 < near_sq
-		var on : bool = rb.collision_layer != 0
-		if near and not on:
-			rb.collision_layer = int(rb.get_meta("yard_rb_layer", 1))
-			rb.collision_mask  = int(rb.get_meta("yard_rb_mask",  1))
-		elif not near and on:
-			rb.collision_layer = 0
-			rb.collision_mask  = 0
+
+	const NEAR_SQ : float = 24.0 * 24.0   # 24m spawn radius
+	const FAR_SQ  : float = 32.0 * 32.0   # 32m despawn radius (hysteresis)
+
+	for slot in _yard_slots:
+		var slot_pos : Vector3 = slot["spawn_pos"]
+		var min_d_sq : float = 1e12
+		for pt in sweep_points:
+			var d_sq : float = (slot_pos - pt).length_squared()
+			if d_sq < min_d_sq:
+				min_d_sq = d_sq
+
+		var key : String = slot["key"]
+		# Untyped on purpose: the dictionary can still hold a body something else
+		# freed this frame, and assigning a freed instance to a typed Node3D local
+		# is itself an error in Godot 4.
+		#
+		# Liveness is `has(key) and is_instance_valid(...)`, NEVER `tracked != null`:
+		# measured 2026-08-16, a Variant holding a FREED Object compares EQUAL to
+		# null in Godot 4, so a `!= null` guard silently skips the dead-body case
+		# and the slot then looks empty and refillable — the very bug this block
+		# exists to stop.
+		var tracked = _active_bale_rbs.get(key, null)
+		var alive : bool = _active_bale_rbs.has(key) and is_instance_valid(tracked)
+		if _active_bale_rbs.has(key) and not alive:
+			# Someone else freed this bale — LineFlow fed it into the line
+			# (LineFlow.gd:2085), or BaleBurst opened it (BaleBurst.gd:115). The
+			# slot is spent: drop the dangling reference and record that it must
+			# never be refilled.
+			_active_bale_rbs.erase(key)
+			_consumed_slots[key] = true
+
+		if min_d_sq < NEAR_SQ:
+			# Spawn a collider ONLY for a slot that still holds its own bale.
+			# _consumed_slots is what keeps this from minting a duplicate of a
+			# bale that is currently in the operator's forks (audit C1) — and,
+			# because a consumed slot's MultiMesh instance is zero-scaled and
+			# never restored here, from minting an invisible solid one (C2).
+			if not alive and not _consumed_slots.has(key):
+				var rb := _spawn_slot_bale_rb(slot)
+				if rb != null:
+					_active_bale_rbs[key] = rb
+		elif min_d_sq > FAR_SQ:
+			if alive:
+				var rb3 : Node3D = tracked as Node3D
+				var drift : float = rb3.global_position.distance_to(slot_pos)
+				var was_detailed : bool = not bool(rb3.get_meta("simple_bale", true))
+				var reparented : bool = (rb3.get_parent() != slot["yard"])
+				if drift > 0.35 or was_detailed or reparented:
+					# Grabbed by clamp/forks, hauled off, or riding a vehicle. The
+					# BODY stays alive — it is the operator's bale now — but the
+					# SLOT is spent and must not grow a replacement.
+					_active_bale_rbs.erase(key)
+					_consumed_slots[key] = true
+				else:
+					# Pristine, still in its slot, and far from every sweep point:
+					# free the body. Its MultiMesh instance is untouched (still
+					# full scale), so the operator keeps seeing the bale and the
+					# next approach re-creates an identical collider. NOT consumed.
+					_active_bale_rbs.erase(key)
+					rb3.queue_free()
 
 # ── Yard layout spawn ───────────────────────────────────────────────────────
 ## Spawn bales inside each polygonal yard saved in WorldLayout, picking the
@@ -139,13 +211,43 @@ func _spawn_bale_yards_from_layout() -> void:
 	_world.add_child(yards_root)
 	var total_bales := 0
 	var total_yards := 0
-	for yard_idx in WorldLayout.bale_yards.size():
-		var y : Dictionary = WorldLayout.bale_yards[yard_idx]
-		var bales_spawned : int = _spawn_yard(y, yard_idx, yards_root)
-		if bales_spawned >= 0:
-			total_bales += bales_spawned
-			total_yards += 1
-	print("[BaleYardManager] Bale yards from layout: %d bales across %d yards (RBs deferred)" % [total_bales, total_yards])
+	for y in WorldLayout.bale_yards:
+		var data : Dictionary = y
+		var corners : Array = data.get("corners", [])
+		if corners.size() < 3: continue
+		var supplier_id : String = data.get("supplier_id", "")
+		if supplier_id == "":
+			push_warning("[BaleYardManager] Bale yard has no supplier_id — skipping")
+			continue
+		var origin_def : Dictionary = BaleDefs.get_origin(supplier_id)
+		if origin_def.is_empty():
+			push_warning("[BaleYardManager] Unknown supplier_id '%s' — skipping yard" % supplier_id)
+			continue
+		var size : Vector3 = origin_def.get("size", Vector3(1.1, 0.7, 1.1))
+		var stack_high : int = int(origin_def.get("stack", 2))
+		# Convert the polygon corners from layout-space (player-relative, north-up
+		# RD) into scene-space via the same rotation-aware mapping the vehicles
+		# use, so the yard sits in the right place + orientation on the building.
+		# #221-PC Phase 3 — prefer the Plant PC path (single source of truth)
+		# when WorldLayout has been migrated; fall back to legacy _layout_to_scene
+		# otherwise. Math is equivalent for migrated saves; Plant guarantees the
+		# same converter every spawner uses.
+		var use_pc : bool = _world.has_node("/root/Plant") and Plant.is_initialized() and WorldLayout.has_pc_data
+		# Pull the per-yard PC corner list (if present) by matching index. The
+		# migrate_to_pc walk preserved order, so bale_yards_pc[idx] aligns with
+		# WorldLayout.bale_yards[idx].
+		var yard_idx : int = WorldLayout.bale_yards.find(y)
+		var corners_pc : Array = []
+		if use_pc and yard_idx >= 0 and yard_idx < WorldLayout.bale_yards_pc.size():
+			corners_pc = (WorldLayout.bale_yards_pc[yard_idx] as Dictionary).get("corners_pc", [])
+			if corners_pc.size() != corners.size():
+				# Size mismatch — fall back to legacy for this yard rather than
+				# index a PC array against a different polygon. Should only
+				# happen if migrate_to_pc was interrupted mid-walk.
+				push_warning("[BaleYardManager] Yard '%s' PC corner count %d ≠ legacy %d — using legacy path" % [supplier_id, corners_pc.size(), corners.size()])
+				use_pc = false
+		elif use_pc:
+			use_pc = false   # PC data is missing for THIS yard
 
 		var translated_corners : Array = []
 		var yard_corrupt := false
@@ -305,88 +407,91 @@ func _spawn_bale_yards_from_layout() -> void:
 				mmi.visibility_range_begin_margin = 0.0
 				mmi.visibility_range_fade_mode    = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 				if mmi_close != null:
-					mmi_close.multimesh.set_instance_transform(i, xf)
+					yard_node.add_child(mmi_close)
+					mmi_close.visibility_range_end        = CLOSE_LOD_M
+					mmi_close.visibility_range_end_margin = 0.0
+					mmi_close.visibility_range_fade_mode  = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 				if mmi_sticker != null:
-					# Sticker rides the +Z face at mid-height, 4 mm proud of the
-					# bale skin so it doesn't z-fight. QuadMesh faces +Z by
-					# default, which lines up with the bale's +Z face.
-					var sticker_local := Vector3(0.0, 0.0, size.z * 0.49 + 0.004)
-					var sticker_xf := Transform3D(bale_basis,
-						inst_origin + bale_basis * sticker_local)
-					mmi_sticker.multimesh.set_instance_transform(i, sticker_xf)
-			# #127 — Pass 2: per-bale collider creation is the actual cost
-			# (2940 RigidBody3D + CollisionShape3D + meta + group joins). The
-			# old loop blocked >60 s. Push the job onto a time-sliced queue
-			# that _process drains within a fixed per-frame budget — bounded
-			# stutter regardless of total yard count, instead of a fan-out of
-			# self-rescheduling call_deferred batches that can stack up.
-			_yard_spawn_queue.push_back({
-				"yard":     yard_node,
-				"mmi":      mmi,
-				"supplier": supplier_id,
-				"prefix":   prefix,
-				"slots":    slots,
-				"floor_y":  floor_y,
-				"size":     size,
-				"yaw":      safe_yaw,
-				"idx":      0,
-			})
-	print("[BaleYardManager]  Yard '%s' filled with %d bales  (1 multimesh draw call)" % [supplier_id, bales_this_yard])
-	return bales_this_yard
+					yard_node.add_child(mmi_sticker)
+					mmi_sticker.visibility_range_end        = STICKER_LOD_M
+					mmi_sticker.visibility_range_end_margin = 2.0
+					mmi_sticker.visibility_range_fade_mode  = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+				var safe_yaw : float = bale_yaw if is_finite(bale_yaw) else 0.0
+				var bale_basis := Basis(Vector3.UP, safe_yaw)
+				var size_y_half : float = size.y * 0.5
+				# Pass 1 — populate the MultiMesh transforms IMMEDIATELY. These are
+				# just integer transform writes to the shared buffer and finish in
+				# a fraction of a second even for 2940 instances. Bales render at
+				# correct positions the moment the yard appears. Same transforms
+				# go into BOTH MMs so far / close stay perfectly aligned during
+				# the fade swap.
+				for i in bales_this_yard:
+					var entry : Array = slots[i]
+					var pos : Vector3 = entry[0]
+					var level : int = int(entry[1])
+					var inst_origin := Vector3(
+						pos.x,
+						floor_y + size.y * float(level) + size_y_half,
+						pos.z)
+					var xf := Transform3D(bale_basis, inst_origin)
+					mmi.multimesh.set_instance_transform(i, xf)
+					if mmi_close != null:
+						mmi_close.multimesh.set_instance_transform(i, xf)
+					if mmi_sticker != null:
+						# Sticker rides the +Z face at mid-height, 4 mm proud of the
+						# bale skin so it doesn't z-fight. QuadMesh faces +Z by
+						# default, which lines up with the bale's +Z face.
+						var sticker_local := Vector3(0.0, 0.0, size.z * 0.49 + 0.004)
+						var sticker_xf := Transform3D(bale_basis,
+							inst_origin + bale_basis * sticker_local)
+						mmi_sticker.multimesh.set_instance_transform(i, sticker_xf)
+				# Pass 2: Register slot metadata for dynamic proximity activation.
+				# Instead of allocating thousands of RigidBody3D nodes upfront,
+				# the proximity sweep in tick() only instantiates colliders near
+				# the player and active vehicles, saving thousands of physics bodies.
+				for i in bales_this_yard:
+					var entry : Array = slots[i]
+					var pos : Vector3 = entry[0]
+					var level : int = int(entry[1])
+					var spawn_pos := Vector3(pos.x, floor_y + size.y * float(level), pos.z)
+					var slot_key := "%s_%d_%d" % [supplier_id, yard_idx, i]
+					_yard_slots.append({
+						"key":       slot_key,
+						"yard":      yard_node,
+						"mmi":       mmi,
+						"supplier":  supplier_id,
+						"prefix":    prefix,
+						"spawn_pos": spawn_pos,
+						"size":      size,
+						"yaw":       safe_yaw,
+						"idx":       i,
+					})
+				total_bales += bales_this_yard
+		print("[BaleYardManager]  Yard '%s' filled with %d bales  (1 multimesh draw call)" % [supplier_id, bales_this_yard])
+		total_yards += 1
+	print("[BaleYardManager] Bale yards from layout: %d bales across %d yards (proximity physics active)" % [total_bales, total_yards])
 
-
-func _spawn_one_yard_bale(job: Dictionary) -> void:
-	var yard_node : Node3D = job["yard"]
-	var slots     : Array  = job["slots"]
-	var i         : int    = int(job["idx"])
-	var entry     : Array  = slots[i]
-	var pos       : Vector3 = entry[0]
-	var level     : int    = int(entry[1])
-	var size      : Vector3 = job["size"]
-	var yaw       : float  = job["yaw"]
+func _spawn_slot_bale_rb(slot: Dictionary) -> RigidBody3D:
+	var yard_node : Node3D = slot["yard"]
+	if yard_node == null or not is_instance_valid(yard_node):
+		return null
+	var i : int = int(slot["idx"])
 	var rb := PlaceableCatalog.build_yard_bale_mm(
-		job["supplier"] as String, job["mmi"] as MultiMeshInstance3D, i)
+		slot["supplier"] as String, slot["mmi"] as MultiMeshInstance3D, i)
 	if rb == null:
-		return
+		return null
 	yard_node.add_child(rb)
-	var spawn_pos := Vector3(pos.x, float(job["floor_y"]) + size.y * float(level), pos.z)
+	var spawn_pos : Vector3 = slot["spawn_pos"]
+	var yaw : float = float(slot["yaw"])
 	rb.global_position = spawn_pos
 	rb.rotation.y = yaw
-	var code := "%s-%05d" % [job["prefix"] as String, (randi() % 100000)]
+	var code := "%s-%05d" % [slot["prefix"] as String, (randi() % 100000)]
 	rb.set_meta("bale_code", code)
-	# #73 — origin pose so Reset Bales can snap moved bales back.
 	rb.set_meta("yard_origin", spawn_pos)
 	rb.set_meta("yard_origin_yaw", yaw)
-	# #143 — proximity gate. Stash the spawn layer/mask, then turn collision
-	# OFF. The periodic proximity sweep below re-enables only the RBs near
-	# the player, so far yards (thousands of bales) don't churn collision
-	# pairs every physics tick.
+	rb.set_meta("slot_key", slot["key"])
 	rb.add_to_group("yard_bale_rb")
-	rb.set_meta("yard_rb_layer", rb.collision_layer)
-	rb.set_meta("yard_rb_mask",  rb.collision_mask)
-	rb.collision_layer = 0
-	rb.collision_mask  = 0
-
-func _drain_yard_spawn_queue() -> void:
-	if _yard_spawn_queue.is_empty():
-		return
-	var start_usec := Time.get_ticks_usec()
-	while not _yard_spawn_queue.is_empty() \
-			and (Time.get_ticks_usec() - start_usec) < _YARD_SPAWN_BUDGET_USEC:
-		var job : Dictionary = _yard_spawn_queue[0]
-		var yard_node : Node3D = job["yard"]
-		# Yard may have been freed (world reload, save load) — drop the job.
-		if yard_node == null or not is_instance_valid(yard_node):
-			_yard_spawn_queue.pop_front()
-			continue
-		var slots : Array = job["slots"]
-		if int(job["idx"]) >= slots.size():
-			_yard_spawn_queue.pop_front()
-			continue
-		_spawn_one_yard_bale(job)
-		job["idx"] = int(job["idx"]) + 1
-		if int(job["idx"]) >= slots.size():
-			_yard_spawn_queue.pop_front()
+	return rb as RigidBody3D
 
 # =============================================================================
 # SHIFT-LEADER PC — bale yard maintenance buttons (#73, #74)
@@ -398,12 +503,23 @@ func _drain_yard_spawn_queue() -> void:
 ## yard renders normally again.
 func reset_yard_bales() -> int:
 	var n_reset : int = 0
+	_active_bale_rbs.clear()
 	for b in get_tree().get_nodes_in_group("bale"):
 		var rb := b as Node3D
 		if rb == null or not is_instance_valid(rb):
 			continue
 		if not rb.has_meta("yard_origin"):
 			continue   # not a yard-MM bale (forklift-placed elsewhere)
+		# This bale is ALIVE and is about to be put back in its slot (pose snapped
+		# + MultiMesh instance restored below), so re-adopt it: re-register it
+		# under its slot key and lift the "consumed" mark for that slot only.
+		# Slots whose bale no longer exists (fed into the line, burst open) are
+		# NOT reached by this loop and stay consumed — clearing the whole set here
+		# would refill them with invisible bodies, which is the C2 defect again.
+		if rb.has_meta("slot_key"):
+			var sk := String(rb.get_meta("slot_key"))
+			_active_bale_rbs[sk] = rb
+			_consumed_slots.erase(sk)
 		var origin : Vector3 = rb.get_meta("yard_origin")
 		var yaw    : float   = float(rb.get_meta("yard_origin_yaw", 0.0))
 		var drift  : float   = rb.global_position.distance_to(origin)

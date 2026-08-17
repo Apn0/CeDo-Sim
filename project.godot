@@ -21,6 +21,11 @@ run/main_scene="res://src/scenes/menus/main_menu/MainMenu.tscn"
 config/features=PackedStringArray("4.6")
 config/icon="res://cedo_logo.svg"
 
+[audio]
+
+buses/default_bus_layout="uid://ufjffcjjbpd5"
+driver/enable_input=true
+
 [autoload]
 
 EventBus="*res://src/autoload/EventBus.gd"
@@ -47,6 +52,7 @@ AeroUnits="*uid://5vah4ayrdxci"
 [debug]
 
 gdscript/warnings/unused_signal=0
+shader_language/warnings/treat_warnings_as_errors=true
 gdscript/warnings/unused_argument=1
 
 [editor_plugins]

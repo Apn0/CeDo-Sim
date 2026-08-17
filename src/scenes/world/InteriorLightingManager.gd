@@ -233,6 +233,35 @@ func _build_overhead_fixture(parent: Node3D, pos: Vector3) -> void:
 	spot.transform = Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-90.0)), Vector3(0.0, -0.05, 0.0))
 	fixture.add_child(spot)
 
+	# Aging starter flicker chance (1 in 10 fixtures has an authentic micro-flicker)
+	if randf() < 0.12:
+		fixture.set_meta("is_flicker_fixture", true)
+		_flicker_fixtures.append({"fixture": fixture, "spot": spot, "bar_mat": bar_mat, "phase": randf() * TAU})
+
+var _flicker_fixtures : Array = []
+
+func _process(delta: float) -> void:
+	if _flicker_fixtures.is_empty():
+		return
+	var t := Time.get_ticks_msec() * 0.001
+	for f in _flicker_fixtures:
+		var spot : SpotLight3D = f.get("spot")
+		var bar_mat : StandardMaterial3D = f.get("bar_mat")
+		var ph : float = float(f.get("phase", 0.0))
+		# High-frequency starter jitter modulated by low-frequency envelope
+		var flk : float = sin(t * 37.0 + ph) * sin(t * 7.3 + ph)
+		if flk > 0.88:
+			var dip : float = randf_range(0.3, 0.9)
+			if spot and is_instance_valid(spot):
+				spot.light_energy = dip * 2.0
+			if bar_mat:
+				bar_mat.emission_energy_multiplier = dip * 3.0
+		else:
+			if spot and is_instance_valid(spot):
+				spot.light_energy = 2.0
+			if bar_mat:
+				bar_mat.emission_energy_multiplier = 3.0
+
 
 # =============================================================================
 # BUILDING-FRAME FIT — measure, don't assume (2026-07-20)
