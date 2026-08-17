@@ -269,6 +269,10 @@ func _ready() -> void:
 	_migrate_legacy_keybinds()
 	_sync_pending_from_current()
 	apply()
+	# FOV: vehicles spawn long after this apply() — catch them as they arrive.
+	# See the #fov-cab block near _apply_fov_to_current_camera.
+	if not get_tree().node_added.is_connected(_on_node_added):
+		get_tree().node_added.connect(_on_node_added)
 
 ## One-time keybind migration. The saved user://settings.cfg overlays defaults,
 ## so a player who launched before these fixes still carries the stale bindings
@@ -572,10 +576,101 @@ func _apply_fov_to_current_camera() -> void:
 	# Defer one frame so the camera is current after a display mode change.
 	call_deferred("_set_fov_on_current_camera")
 
+# ── FOV plumbing (#fov-cab, 2026-08-17) ──────────────────────────────────────
+# The saved FOV used to be pushed ONLY to whatever Camera3D happened to be
+# `current` at the instant apply() ran. At boot that is the player's head
+# camera. A vehicle CAB camera is built later by BaseVehicle._ready(), which
+# explicitly sets `_cab_camera.current = false` (BaseVehicle.gd:242), and it
+# only becomes current when the operator climbs in — long after the last
+# apply(). So every cab kept its scene/engine value regardless of the setting.
+#
+# MEASURED before this fix (headless MainWorld boot, settings.cfg fov = 65.0):
+#   bale_clamp / forklift / mast_lift / merlo / merlo_p40 CabCamera = 75.0
+#     (Camera3D's built-in default — no `fov` key in any vehicle .tscn)
+#   the 7 cars                                            CabCamera = 70.0
+#     (scene-authored, e.g. src/scenes/vehicles/cars/VWGolfMk6.tscn:93)
+#   → 0 / 12 cab cameras carried the operator's 65.
+#
+# Fix has two halves:
+#   (a) on every apply(), sweep the cab camera of every node in the "vehicle"
+#       group, so machines already in the world update immediately; and
+#   (b) watch the root viewport's current camera each frame and stamp it the
+#       moment it changes, so ANY camera that takes over the screen later —
+#       including the third-person CameraRig camera — inherits the saved value;
+#   (c) re-run the (a) sweep whenever a vehicle enters the tree. Half (a) alone
+#       is not enough: apply() runs at boot from _ready(), long before
+#       MainWorld spawns the fleet — measured, the sweep-only build still
+#       reported 0/12. The node_added hook only queues work for nodes that
+#       expose `cab_camera_path` (i.e. a BaseVehicle), and only ever touches
+#       cab cameras, so hand-tuned cameras elsewhere are never clobbered.
+# A camera that must keep a hand-picked FOV can additionally opt out by joining
+# the "fixed_fov" group. (SubViewport cameras, e.g. the CharacterCustomizer
+# portrait preview at fov 38, are never returned by the root viewport and are
+# not vehicle cab cameras, so neither half reaches them.)
+var _last_stamped_cam : Camera3D = null
+var _fov_sweep_queued : bool = false
+var _fov_pending_vehicles : Array[Node3D] = []
+
+func _process(_dt: float) -> void:
+	var vp := get_viewport()
+	if vp == null:
+		return
+	var cam := vp.get_camera_3d()
+	if cam != null and cam != _last_stamped_cam:
+		_last_stamped_cam = cam
+		_stamp_fov(cam)
+
+func _on_node_added(n: Node) -> void:
+	if not (n is Node3D):
+		return
+	if n.get("cab_camera_path") == null:
+		return   # not a BaseVehicle
+	# The "vehicle" group is only joined in BaseVehicle._ready (BaseVehicle.gd:213),
+	# which has not run yet at node_added time — so remember the node itself as
+	# well as relying on the group sweep.
+	_fov_pending_vehicles.append(n as Node3D)
+	if _fov_sweep_queued:
+		return
+	_fov_sweep_queued = true
+	call_deferred("_deferred_fov_sweep")
+
+func _deferred_fov_sweep() -> void:
+	_fov_sweep_queued = false
+	var pending := _fov_pending_vehicles
+	_fov_pending_vehicles = []
+	for v in pending:
+		if is_instance_valid(v):
+			_stamp_vehicle_cab_fov(v)
+	_apply_fov_to_vehicle_cameras()
+
 func _set_fov_on_current_camera() -> void:
-	var cam := get_viewport().get_camera_3d() if get_viewport() else null
-	if cam:
-		cam.fov = float(_current_graphics.get("fov", 75.0))
+	# Force the watcher to re-stamp even if the same camera is still current —
+	# the operator may have just moved the FOV slider.
+	_last_stamped_cam = null
+	var vp := get_viewport()
+	if vp:
+		_stamp_fov(vp.get_camera_3d())
+	_apply_fov_to_vehicle_cameras()
+
+## Push the saved FOV onto every vehicle's cab camera, current or not.
+func _apply_fov_to_vehicle_cameras() -> void:
+	var tree := get_tree()
+	if tree == null:
+		return
+	for v in tree.get_nodes_in_group("vehicle"):
+		if v is Node3D:
+			_stamp_vehicle_cab_fov(v as Node3D)
+
+func _stamp_vehicle_cab_fov(v: Node3D) -> void:
+	var p = v.get("cab_camera_path")
+	if p == null or String(p) == "":
+		return
+	_stamp_fov(v.get_node_or_null(NodePath(String(p))) as Camera3D)
+
+func _stamp_fov(cam: Camera3D) -> void:
+	if cam == null or cam.is_in_group("fixed_fov"):
+		return
+	cam.fov = float(_current_graphics.get("fov", 75.0))
 
 func _set_bus_db(bus_name: String, db: float) -> void:
 	var idx := AudioServer.get_bus_index(bus_name)

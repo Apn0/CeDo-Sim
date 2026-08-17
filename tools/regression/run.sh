@@ -267,17 +267,10 @@ for cfg in "NOLINE" "LINE"; do
 	fi
 done
 
-# npc-05 container chain. Bench is mutation-tested (reverting any single fix
-# turns specific greens red). It was previously 31/31 green while the chain was
-# DEAD in a real session, which is why the real-MainWorld variant exists and why
-# the bench must never be trusted alone.
-echo "== npc-05 container chain (bench) =="
-"$GODOT" --headless --path "$PROJ" 	--script res://src/tests/test_npc05_container_chain.gd > "$OUT/npc05_bench.log" 2>&1
-grep -E "^  FAIL|npc-05 container chain" "$OUT/npc05_bench.log" || true
-if ! grep -q "npc-05 container chain PASS" "$OUT/npc05_bench.log"; then
-	echo "FAIL  : npc-05 bench (see $OUT/npc05_bench.log)"
-	[ $code -eq 0 ] && code=1
-fi
+# npc-05 container chain bench: DELETED 2026-08-17 on operator order along with
+# the bench worlds it ran on. It was 31/31 green while the chain was DEAD in a
+# real session -- the canonical example of why a bench green proves the mock.
+# Coverage for the container chain now belongs in a real MainWorld boot.
 
 # The regression net for WallOpenings' carve algorithm itself (visible-teeth
 # check) — was never wired into the harness at all despite existing since

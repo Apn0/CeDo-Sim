@@ -2185,8 +2185,20 @@ func _build_blue_spots(layout: Dictionary) -> void:
 	# approaching even around blind corners.
 	# Canonical -Z forward: SpotLight3D's default orientation (yaw=0) already
 	# points along -Z = forward. yaw=180 flips to +Z = rear.
-	_light_blue_f = _make_blue_spot(layout["blue_front"],   0.0)
-	_light_blue_r = _make_blue_spot(layout["blue_rear"],  180.0)
+	#
+	# #— blue-glow-under-the-machine fix. _build_lights() mirrors every layout z
+	# for operator_forward_sign < 0, but the AIM YAW used to stay hard-coded at
+	# 0/180. On the counterweight-first rigs (BaleClamp, Forklift, Merlo,
+	# MerloP40 — all sign = -1) that put the front spot on the operator-forward
+	# side of the chassis while still aiming it backwards, so the beam landed
+	# 0.54 m INSIDE its own footprint. Flip the yaw with the position, using the
+	# same idiom the work lights (line ~2132) and reverse beam (~2174) already
+	# use. Node NAMES stay role-keyed (0 = front, 180 = rear) so external
+	# readers such as src/tests/shot_bale_clamp.gd:182 keep resolving.
+	_light_blue_f = _make_blue_spot(layout["blue_front"],
+		  0.0 if operator_forward_sign > 0.0 else 180.0, "BlueSpot_0")
+	_light_blue_r = _make_blue_spot(layout["blue_rear"],
+		180.0 if operator_forward_sign > 0.0 else   0.0, "BlueSpot_180")
 	add_child(_light_blue_f)
 	add_child(_light_blue_r)
 
@@ -2263,14 +2275,23 @@ func _build_beacon_rig(layout: Dictionary) -> void:
 
 	_beacons.append(beacon_rig)
 
-## A Linde-style blue floor spot — aimed steeply down, narrow cone. `yaw_deg`
-## chooses which side: 0 = forward (the FRONT of the vehicle, since canonical
-## -Z = fwd and SpotLight3D default points -Z) / 180 = rear.
-func _make_blue_spot(pos: Vector3, yaw_deg: float) -> SpotLight3D:
+## A Linde-style blue floor spot — narrow cone raked down at a shallow angle so
+## the pool lands 2-3 m clear of the machine. `yaw_deg` is the CANONICAL aim
+## (0 = -Z, 180 = +Z); the caller picks it from operator_forward_sign, because
+## on counterweight-first rigs the operator's front is +Z. `node_name` is
+## role-keyed and stays fixed across both polarities.
+func _make_blue_spot(pos: Vector3, yaw_deg: float, node_name: String) -> SpotLight3D:
 	var sl := SpotLight3D.new()
-	sl.name = "BlueSpot_%d" % int(yaw_deg)
+	sl.name = node_name
 	sl.position = pos
-	sl.rotation_degrees = Vector3(-65.0, yaw_deg, 0.0)
+	# Pitch: -65° threw the pool only 0.49 m out from the lamp — with the mount
+	# sitting ~0.05 m inside the chassis face that is a puddle at the wheels,
+	# not the "2-3 m out" this function's own header promises (see the
+	# _build_blue_spots comment above). -22.0° is the pitch the reverse beam in
+	# this same file already uses (line ~2174) and it puts every lit vehicle
+	# inside that band: floor throw = mount_height / tan(22°) = 2.48 m (Merlo,
+	# h=1.00) … 2.60 m (forklift chassis, h=1.05).
+	sl.rotation_degrees = Vector3(-22.0, yaw_deg, 0.0)
 	sl.light_color = Color(0.20, 0.55, 1.00)
 	sl.light_energy = 5.0
 	sl.spot_range = 6.0

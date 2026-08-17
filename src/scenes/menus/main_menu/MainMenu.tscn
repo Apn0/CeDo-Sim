@@ -104,16 +104,6 @@ text = "Start New Save"
 [node name="HSeparator3" type="HSeparator" parent="ScrollContainer/Centerer/Wrapper" unique_id=1342266394]
 layout_mode = 2
 
-[node name="WorldSetupButton" type="Button" parent="ScrollContainer/Centerer/Wrapper" unique_id=2044840359]
-custom_minimum_size = Vector2(0, 40)
-layout_mode = 2
-text = "Setup World Layout"
-
-[node name="GauntletButton" type="Button" parent="ScrollContainer/Centerer/Wrapper" unique_id=2044840360]
-custom_minimum_size = Vector2(0, 40)
-layout_mode = 2
-text = "TEST GAUNTLET (verify the backlog)"
-
 [node name="RightSpacer" type="Control" parent="ScrollContainer/Centerer" unique_id=1754327296]
 layout_mode = 2
 size_flags_horizontal = 3
