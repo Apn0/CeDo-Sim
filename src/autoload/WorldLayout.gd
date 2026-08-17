@@ -23,7 +23,7 @@ var line_starts    : Dictionary = {}   # id → Vector3
 # Optional marker for the visible compressor pair (compressor_a / compressor_b
 # placeables LineFlow spawns alongside the abstract air-network compressors).
 # Vector3.ZERO means "no marker placed" — LineFlow then falls back to a default
-# offset from player_spawn. TODO: hook WorldSetup UI for placing this marker.
+# offset from player_spawn.
 var compressor_spawn : Vector3 = Vector3.ZERO
 # Polygonal bale yards — each yard is a closed 4-corner polygon tagged with the
 # supplier whose bales stack there (BaleDefs ids: rotterdam / alba_marl / zwolle
@@ -269,7 +269,7 @@ func _warn_if_mixed_frame() -> void:
 			if c is Vector3: bucket.call("yard_%s" % (y as Dictionary).get("supplier_id", "?"), c)
 	if rd.is_empty() or local.is_empty():
 		return
-	push_warning("[WorldLayout] MIXED COORDINATE FRAMES in %s — %d RD-scale marker(s) %s alongside %d scene-absolute marker(s) %s. Only the RD ones are converted; re-place the others in WorldSetup if they look wrong." % [
+	push_warning("[WorldLayout] MIXED COORDINATE FRAMES in %s — %d RD-scale marker(s) %s alongside %d scene-absolute marker(s) %s. Only the RD ones are converted; re-place the others by editing world_layout.json (WorldSetup was deleted 2026-08-17; seed copy at src/data/world/world_layout_seed.json)." % [
 		LAYOUT_PATH, rd.size(), str(rd.slice(0, 6)), local.size(), str(local.slice(0, 6))])
 
 ## Compare the file's frame tag against MARKER_FRAME. An untagged file predates
@@ -283,7 +283,7 @@ func _check_marker_frame(parsed: Dictionary) -> void:
 	var tag : String = String(parsed.get("marker_frame", MARKER_FRAME))
 	marker_frame_trusted = (tag == MARKER_FRAME)
 	if not marker_frame_trusted:
-		push_error("[WorldLayout] %s declares marker_frame='%s' but this build only understands '%s' — markers are being loaded VERBATIM and may be misplaced. Re-save the layout from WorldSetup." % [
+		push_error("[WorldLayout] %s declares marker_frame='%s' but this build only understands '%s' — markers are being loaded VERBATIM and may be misplaced. Re-save the layout by hand (WorldSetup was deleted 2026-08-17; seed copy at src/data/world/world_layout_seed.json)." % [
 			LAYOUT_PATH, tag, MARKER_FRAME])
 
 ## Bring a marker into the scene-absolute frame ONLY if it is itself RD-scale.

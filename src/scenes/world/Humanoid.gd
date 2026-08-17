@@ -682,9 +682,21 @@ static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -
 	# `_set_render_layers_recursive` (CharacterCustomizer) both recurse over all
 	# MeshInstance3D descendants of the rig root, so reparenting under
 	# BoneAttachment3D nodes preserves the FP-vs-mirror render-layer behaviour.
-	#
-	# TODO Phase 2: steering + hose + portofoon attachment slots, foot-IK pass.
 	_install_skeleton_rig(root)
+
+	# Phase 2: Foot-IK target nodes. (The SkeletonIK3D nodes live inside the rig,
+	# but their targets must live in world space outside the rig so they don't
+	# inherit the rig's animation transforms).
+	# TODO: Controller needs to update these targets via raycasts.
+	var foot_ik_targets := Node3D.new()
+	foot_ik_targets.name = "FootIKTargets"
+	var target_l := Marker3D.new()
+	target_l.name = "Target_L"
+	foot_ik_targets.add_child(target_l)
+	var target_r := Marker3D.new()
+	target_r.name = "Target_R"
+	foot_ik_targets.add_child(target_r)
+	root.add_child(foot_ik_targets)
 
 	return root
 
@@ -827,6 +839,37 @@ static func _install_skeleton_rig(root: Node3D) -> void:
 		att.position = _bone_world_origin(bname)
 		skel.add_child(att)
 		attach_by_bone[bname] = att
+
+	# Phase 2: Attachment slots
+	var slot_portofoon := BoneAttachment3D.new()
+	slot_portofoon.name = "Slot_Portofoon"
+	slot_portofoon.bone_name = "Chest"
+	skel.add_child(slot_portofoon)
+
+	var slot_hose := BoneAttachment3D.new()
+	slot_hose.name = "Slot_Hose"
+	slot_hose.bone_name = "RHand"
+	skel.add_child(slot_hose)
+
+	var slot_steering := BoneAttachment3D.new()
+	slot_steering.name = "Slot_Steering"
+	slot_steering.bone_name = "Chest"
+	skel.add_child(slot_steering)
+
+	# Phase 2: Foot IK
+	var ik_l := SkeletonIK3D.new()
+	ik_l.name = "IK_Foot_L"
+	ik_l.root_bone = "LUpperLeg"
+	ik_l.tip_bone = "LFoot"
+	ik_l.target_node = NodePath("../../FootIKTargets/Target_L")
+	skel.add_child(ik_l)
+
+	var ik_r := SkeletonIK3D.new()
+	ik_r.name = "IK_Foot_R"
+	ik_r.root_bone = "RUpperLeg"
+	ik_r.tip_bone = "RFoot"
+	ik_r.target_node = NodePath("../../FootIKTargets/Target_R")
+	skel.add_child(ik_r)
 	# ── Reparent every NON-LIMB MeshInstance3D descendant of root under its bone ──
 	# Two animation systems coexist:
 	#   1) NPC.gd's sine-based gait (audit item 2) — drives LIMBS via the
@@ -873,6 +916,7 @@ static func _install_skeleton_rig(root: Node3D) -> void:
 	lib.add_animation("crouch_pose", _build_anim_crouch(skel))
 	lib.add_animation("prone_pose",  _build_anim_prone(skel))
 	lib.add_animation("seated_pose", _build_anim_seated(skel))
+	lib.add_animation("climb_pose",  _build_anim_climb(skel))
 	ap.add_animation_library("", lib)
 	# We do NOT call ap.play("idle") here — the rig root isn't in the scene
 	# tree yet, and play() requires the player to be active. The AnimationTree
@@ -926,11 +970,14 @@ static func _install_skeleton_rig(root: Node3D) -> void:
 	n_prone.animation = "prone_pose"
 	var n_seated := AnimationNodeAnimation.new()
 	n_seated.animation = "seated_pose"
+	var n_climb := AnimationNodeAnimation.new()
+	n_climb.animation = "climb_pose"
 	var sm := AnimationNodeStateMachine.new()
 	sm.add_node("locomotion", bs,        Vector2(   0.0,   0.0))
 	sm.add_node("crouch",     n_crouch,  Vector2( 200.0, 120.0))
 	sm.add_node("prone",      n_prone,   Vector2( 400.0, 120.0))
 	sm.add_node("seated",     n_seated,  Vector2( 600.0, 120.0))
+	sm.add_node("climb",      n_climb,   Vector2( 800.0, 120.0))
 	# Godot 4.6 has no set_start_node() — the initial state is selected by
 	# adding a transition from the built-in "Start" pseudonode (it always
 	# exists, alongside "End"). SWITCH_MODE_IMMEDIATE so locomotion is active
@@ -940,7 +987,7 @@ static func _install_skeleton_rig(root: Node3D) -> void:
 	sm.add_transition("Start", "locomotion", t_start)
 	# Bi-directional transitions between locomotion and each pose state, plus
 	# pose-to-pose so the operator can rebind crouch→prone without first standing.
-	var pose_states := ["crouch", "prone", "seated"]
+	var pose_states := ["crouch", "prone", "seated", "climb"]
 	for to in pose_states:
 		var t_to := AnimationNodeStateMachineTransition.new()
 		t_to.xfade_time = 0.25
@@ -1351,6 +1398,23 @@ static func _build_anim_prone(_skel: Skeleton3D) -> Animation:
 	_add_rot_track(a, "RUpperArm",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-100.0))]])
 	_add_rot_track(a, "LUpperLeg",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( -5.0))]])
 	_add_rot_track(a, "RUpperLeg",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( -5.0))]])
+	return a
+
+## Climb pose — used during vault/mantle. Arms raised, one knee bent up.
+static func _build_anim_climb(_skel: Skeleton3D) -> Animation:
+	var a := Animation.new()
+	a.length = 0.5
+	a.loop_mode = Animation.LOOP_LINEAR
+	_add_pos_track(a, "Hips",     [[0.0, Vector3(0.0, -0.15, 0.0)]])
+	_add_rot_track(a, "LUpperLeg",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 80.0))]])
+	_add_rot_track(a, "RUpperLeg",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 10.0))]])
+	_add_rot_track(a, "LLowerLeg",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-80.0))]])
+	_add_rot_track(a, "RLowerLeg",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( -5.0))]])
+	_add_rot_track(a, "LUpperArm",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(130.0))]])
+	_add_rot_track(a, "RUpperArm",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(130.0))]])
+	_add_rot_track(a, "LLowerArm",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 40.0))]])
+	_add_rot_track(a, "RLowerArm",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 40.0))]])
+	_add_rot_track(a, "Spine",    [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 10.0))]])
 	return a
 
 ## Seated pose — used when entering any vehicle. Hips slightly lowered, hips

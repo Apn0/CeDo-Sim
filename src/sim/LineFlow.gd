@@ -867,9 +867,6 @@ func _register_air_network() -> void:
 ## is gated by a fixed node name lookup under the world root. The placeables are
 ## additive — they don't enter LineFlow's material graph (Hoses & Air rows are
 ## visual only) and don't change the abstract AirNetwork bank registered above.
-##
-## TODO: WorldSetup UI for placing the compressor_spawn marker. Until then the
-## default offset (20m east, 20m north of player_spawn) is fine.
 func _spawn_visible_compressors() -> void:
 	# World root is whoever owns this LineFlow (typically MainWorld). We attach
 	# directly under it so the placeables sit alongside the rest of the placed
@@ -1015,6 +1012,16 @@ func _tick_dryer_pairs(delta: float) -> void:
 		if cyc.dryer != null:
 			cyc.dryer.tick(delta, inflow, outflow)
 		cyc.tick(delta)
+
+		# Drive the visual gates if they exist
+		var n3d : Node3D = nd.get("node", null) as Node3D
+		if n3d != null and is_instance_valid(n3d):
+			var bg = n3d.get_node_or_null("besch_gate")
+			if bg != null:
+				bg.visible = bool(cyc.besch_open)
+			var eg = n3d.get_node_or_null("entleer_gate")
+			if eg != null:
+				eg.visible = bool(cyc.entleer_open)
 
 ## #99 — which side of a pair is currently in BEFULLEN (accepting flake).
 ## Returns "L", "R", or "" when neither side is BEFULLEN (both drying / idle).

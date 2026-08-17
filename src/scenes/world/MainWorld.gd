@@ -453,7 +453,7 @@ func _spawn_crew_manager() -> void:
 		# _get_factory_anchor already falls back factory_center -> player spawn ->
 		# marker and pins Y to the measured operating floor.
 		break_pos = _get_factory_anchor()
-		push_warning("[MainWorld] No BreakRoom/Canteen marker — breaks fall back to the plant anchor %s. Place a canteen marker in WorldSetup to give crew a real break room." % str(break_pos))
+		push_warning("[MainWorld] No BreakRoom/Canteen marker — breaks fall back to the plant anchor %s. Add a canteen marker to world_layout.json to give crew a real break room (WorldSetup was deleted 2026-08-17)." % str(break_pos))
 
 	add_child(crew_manager)
 	crew_manager.setup(npcs, line_flow, shift_clock, break_pos)
@@ -643,24 +643,32 @@ func _sort_corners_ccw(corners: Array) -> Array:
 
 func _spawn_bale_yard() -> void:
 	# Anchor: each bale yard in WorldLayout is now a 4-corner polygon with an
-	# associated supplier_id. For this initial pass we still spawn a single
-	# stack-column per supplier, anchored at the polygon centroid of the
-	# matching yard. Yards whose supplier doesn't match any BaleDefs origin
-	# get the default offset behaviour as a fallback.
-	# TODO follow-up: pack rows × columns into the polygon footprint so the
-	# user's drawn shape actually fills with bales (the original to-do #38).
+	# associated supplier_id.
 	# #221-PC Phase 4 — when PC data exists, route the centroid through
 	# Plant.pc_to_scene so the legacy "missing yaw on bale-yard centroid" bug
 	# is fixed in the non-authoritative path too. The audit flagged this as a
 	# structural divergence from the vehicle pipeline (vehicles rotate, yards
 	# didn't); Plant unifies them.
 	var use_pc : bool = has_node("/root/Plant") and Plant.is_initialized() and WorldLayout.has_pc_data
-	var supplier_to_centroid : Dictionary = {}
+
+	var yard := Node3D.new()
+	yard.name = "BaleYard"
+	add_child(yard)
+	yard.global_position = Vector3.ZERO
+
+	var total := 0
+	var handled_suppliers := {}
+
 	for yi in WorldLayout.bale_yards.size():
 		var y : Dictionary = WorldLayout.bale_yards[yi]
 		var corners : Array = y.get("corners", [])
 		if corners.size() < 3: continue
 		var sid : String = y.get("supplier_id", "")
+		if sid == "": continue
+
+		var origin_def : Dictionary = BaleDefs.get_origin(sid)
+		if origin_def.is_empty(): continue
+
 		# Pick the PC corner list when available + lengths match; else legacy.
 		var corners_pc : Array = []
 		var use_pc_for_this_yard : bool = use_pc
@@ -670,61 +678,117 @@ func _spawn_bale_yard() -> void:
 				use_pc_for_this_yard = false
 		else:
 			use_pc_for_this_yard = false
-		# Centroid: average then convert (Plant.pc_to_scene is affine, so
-		# averaging in PC space and converting once is equivalent to converting
-		# each corner and averaging in scene space — and cheaper).
-		var centroid_scene : Vector3
-		if use_pc_for_this_yard:
-			var avg_pc := Vector2.ZERO
-			for c_pc in corners_pc: avg_pc += (c_pc as Vector2)
-			avg_pc /= float(corners_pc.size())
-			centroid_scene = Plant.pc_to_scene(avg_pc)
-		else:
-			var c := Vector3.ZERO
-			for v in corners: c += v
-			c /= float(corners.size())
-			centroid_scene = _on_floor(c)
-		supplier_to_centroid[sid] = centroid_scene
-	var base : Vector3
-	if not supplier_to_centroid.is_empty():
-		# Use the first polygon's centroid as the legacy "yard origin" so the
-		# existing per-supplier column lay-out below still works for now.
-		base = supplier_to_centroid.values()[0]
-	else:
-		var anchor := _get_factory_anchor()
-		# A tidy yard 6 m to the player's side and a few metres ahead. _on_floor
-		# already pins Y to the detected floor.
-		base = _on_floor(anchor + Vector3(6.0, 0.0, 6.0))
 
-	var yard := Node3D.new()
-	yard.name = "BaleYard"
-	add_child(yard)
-	yard.global_position = Vector3.ZERO
+		var translated_corners := []
+		for i in corners.size():
+			if use_pc_for_this_yard:
+				translated_corners.append(Plant.pc_to_scene(corners_pc[i]))
+			else:
+				# Original behavior for non-PC was just to use the corner coordinates directly
+				# (actually _spawn_bale_yard centroid calculation just averaged the raw `corners` array and called _on_floor)
+				var c : Vector3 = corners[i]
+				translated_corners.append(Vector3(c.x, 0.0, c.z))
 
+		corners = _sort_corners_ccw(translated_corners)
+
+		var le_a : Vector3 = corners[0]; var le_b : Vector3 = corners[0]
+		var le_len_sq : float = 0.0
+		for i in corners.size():
+			var ca : Vector3 = corners[i]
+			var cb : Vector3 = corners[(i + 1) % corners.size()]
+			var dd : float = (cb - ca).length_squared()
+			if dd > le_len_sq:
+				le_len_sq = dd; le_a = ca; le_b = cb
+		var u_axis : Vector3 = (le_b - le_a)
+		u_axis.y = 0.0
+		u_axis = u_axis.normalized() if u_axis.length() > 0.001 else Vector3.RIGHT
+		if not u_axis.is_finite() or u_axis.length_squared() < 0.5:
+			continue
+		var v_axis : Vector3 = Vector3(-u_axis.z, 0.0, u_axis.x)
+
+		var centroid := Vector3.ZERO
+		for c in corners: centroid += c
+		centroid /= float(corners.size())
+
+		var min_u := INF; var max_u := -INF
+		var min_v := INF; var max_v := -INF
+		for c in corners:
+			var cv : Vector3 = c
+			var dv : Vector3 = cv - centroid
+			var pu : float = dv.dot(u_axis)
+			var pv : float = dv.dot(v_axis)
+			if pu < min_u: min_u = pu
+			if pu > max_u: max_u = pu
+			if pv < min_v: min_v = pv
+			if pv > max_v: max_v = pv
+
+		var poly2 := PackedVector2Array()
+		for c in corners: poly2.append(Vector2(c.x, c.z))
+
+		var size : Vector3 = origin_def.get("size", Vector3(1.1, 0.7, 1.1))
+		var stack_high : int = int(origin_def.get("stack", 2))
+		var step_x : float = size.x + 0.25
+		var step_z : float = size.z + 0.25
+		var bale_yaw : float = atan2(u_axis.x, u_axis.z)
+		var safe_yaw : float = bale_yaw if is_finite(bale_yaw) else 0.0
+
+		var u := min_u + step_x * 0.5
+		while u <= max_u:
+			var v := min_v + step_z * 0.5
+			while v <= max_v:
+				var world_xy : Vector3 = centroid + u_axis * u + v_axis * v
+				if not world_xy.is_finite():
+					v += step_z
+					continue
+				if Geometry2D.is_point_in_polygon(Vector2(world_xy.x, world_xy.z), poly2):
+					var ground := _on_floor(world_xy)
+					for level in stack_high:
+						var bale := PlaceableCatalog.build_node(sid, false) as Node3D
+						if bale != null:
+							yard.add_child(bale)
+							bale.global_position = Vector3(world_xy.x, ground.y + size.y * float(level), world_xy.z)
+							bale.rotation.y = safe_yaw
+							var nm : String = String(origin_def.get("name", "BALE"))
+							var code := "%s-%05d" % [nm.substr(0, 3).to_upper(), (randi() % 100000)]
+							bale.set_meta("bale_code", code)
+							PlaceableCatalog.add_bale_label(bale, sid, code)
+							total += 1
+				v += step_z
+			u += step_x
+
+		handled_suppliers[sid] = true
+
+	# Fallback for origins not explicitly defined in the layout polygons
 	var origins := BaleDefs.origins()
-	var col_x : float = base.x
-	var total := 0
+	var fallback_origins := []
 	for o in origins:
-		var id   : String  = String(o["id"])
-		var size : Vector3 = o["size"]
-		var high : int     = int(o.get("stack", 2))
-		# Vertical column: each bale's base sits on the one below (origin = base).
-		var y : float = base.y
-		for level in high:
-			var bale := PlaceableCatalog.build_node(id, false) as Node3D
-			if bale == null:
-				continue
-			yard.add_child(bale)
-			bale.global_position = Vector3(col_x, y, base.z)
-			# Stamp a unique code + print the yellow label, same as a placed bale.
-			var nm := String(BaleDefs.get_origin(id).get("name", "BALE"))
-			var code := "%s-%05d" % [nm.substr(0, 3).to_upper(), (randi() % 100000)]
-			bale.set_meta("bale_code", code)
-			PlaceableCatalog.add_bale_label(bale, id, code)
-			y += size.y          # next bale rests on this one's top
-			total += 1
-		# Space columns by the widest footprint plus a gangway.
-		col_x += maxf(size.x, size.z) + 2.0
+		var id = String(o["id"])
+		if not handled_suppliers.has(id):
+			fallback_origins.append(o)
+
+	if not fallback_origins.is_empty():
+		var anchor := _get_factory_anchor()
+		var base := _on_floor(anchor + Vector3(6.0, 0.0, 6.0))
+		var col_x := base.x
+		for o in fallback_origins:
+			var id   : String  = String(o["id"])
+			var size : Vector3 = o["size"]
+			var high : int     = int(o.get("stack", 2))
+			var y : float = base.y
+			for level in high:
+				var bale := PlaceableCatalog.build_node(id, false) as Node3D
+				if bale == null:
+					continue
+				yard.add_child(bale)
+				bale.global_position = Vector3(col_x, y, base.z)
+				var nm : String = String(BaleDefs.get_origin(id).get("name", "BALE"))
+				var code := "%s-%05d" % [nm.substr(0, 3).to_upper(), (randi() % 100000)]
+				bale.set_meta("bale_code", code)
+				PlaceableCatalog.add_bale_label(bale, id, code)
+				y += size.y
+				total += 1
+			col_x += maxf(size.x, size.z) + 2.0
+
 	print("[MainWorld] Bale yard: %d bales in %d stacks" % [total, origins.size()])
 
 # =============================================================================
