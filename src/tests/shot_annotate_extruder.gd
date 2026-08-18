@@ -145,6 +145,7 @@ func _ready() -> void:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(out_dir))
 	var outp : String = out_dir + "annot_%s.png" % pid
 	img.save_png(outp)
+	preload("res://src/tests/shot_common.gd").check_image_content(img, outp)
 	print("[ANNOT] saved ", ProjectSettings.globalize_path(outp))
 	get_tree().quit(0)
 

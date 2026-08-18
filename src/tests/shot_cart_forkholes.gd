@@ -46,5 +46,6 @@ func _ready() -> void:
 	await get_tree().create_timer(0.5).timeout
 	var img := get_viewport().get_texture().get_image()
 	img.save_png(OUT_PNG)
+	preload("res://src/tests/shot_common.gd").check_image_content(img, OUT_PNG)
 	print("[SHOT] saved ", ProjectSettings.globalize_path(OUT_PNG))
 	get_tree().quit(0)

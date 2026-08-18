@@ -287,4 +287,5 @@ func _capture_screenshot(filename: String) -> void:
 	var path := _out_dir + filename
 	var abs_path := ProjectSettings.globalize_path(path)
 	img.save_png(abs_path)
+	preload("res://src/tests/shot_common.gd").check_image_content(img, abs_path)
 	print("[PIPELINE_TEST] Saved screenshot: ", abs_path)

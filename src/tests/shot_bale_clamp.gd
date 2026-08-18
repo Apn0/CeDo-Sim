@@ -125,6 +125,7 @@ func _shoot(nm: String, yaw: float, pitch: float, dist: float, look_y: float) ->
 	var img := get_viewport().get_texture().get_image()
 	var outp := OUT_DIR + "shot_baleclamp_%s.png" % nm
 	img.save_png(outp)
+	preload("res://src/tests/shot_common.gd").check_image_content(img, outp)
 	print("[CLAMPSHOT] saved ", ProjectSettings.globalize_path(outp))
 
 func _aabb_world(n: Node) -> String:
