@@ -69,6 +69,7 @@ func _ready() -> void:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(out_dir))
 	var outp := out_dir + "shot_flakes.png"
 	img.save_png(outp)
+	preload("res://src/tests/shot_common.gd").check_image_content(img, outp)
 	print("[FLAKES] saved ", ProjectSettings.globalize_path(outp))
 	get_tree().quit(0)
 

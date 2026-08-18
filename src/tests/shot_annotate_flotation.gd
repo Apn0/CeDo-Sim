@@ -123,5 +123,6 @@ func _ready() -> void:
 	var img := get_viewport().get_texture().get_image()
 	var outp := "user://shot_flotation_annotated.png"
 	img.save_png(outp)
+	preload("res://src/tests/shot_common.gd").check_image_content(img, outp)
 	print("[SHOT] saved ", ProjectSettings.globalize_path(outp))
 	get_tree().quit(0)

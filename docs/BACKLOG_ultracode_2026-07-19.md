@@ -61,6 +61,17 @@ is the queue for the next rounds, with the reason each item waited.
   labelled assumption — one constant flips it back.
   Design + evidence: `docs/DESIGN_npc05_container_chain_2026-07-20.md`,
   `src/tests/test_npc05_container_chain.gd`, `src/tests/test_npc05_realworld.gd`.
+  ⚠️ **CORRECTED 2026-08-18 — the "Fixed + re-verified" line above is STALE.**
+  `test_npc05_realworld.gd` existed but was never wired into
+  `tools/regression/run.sh`'s gating loop (it sat in a comment only) and its own
+  last recorded run is a documented **FAIL**: the chain now stalls in
+  DRIVE_TO_INDOOR (worker boards the forklift, target bin sits 33.9 m away, the
+  autopilot never closes that leg). See `CLAUDE.md`'s "The npc-05 container
+  chain stalls at DRIVE_TO_INDOOR" section for the measured cause — not
+  duplicated here. `test_npc05_realworld` is now gated in `run.sh` (added
+  2026-08-18) so this state prints FAIL on every run instead of sitting quiet
+  in a comment; do not read the 2026-07-21 "275.00 kg twice" line above as the
+  current status.
 
 ## Deferred — cheap follow-ups (bundle into next QoL round)
 - **qol-06** E-to-exit a moving vehicle is silently ignored — add "stop first" prompt
