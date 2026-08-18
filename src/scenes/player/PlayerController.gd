@@ -1918,7 +1918,7 @@ func _find_anim_tree_recursive(n: Node) -> AnimationTree:
 ## parameters/playback.travel(name) with a 0.25 s xfade configured on the rig.
 var _last_anim_state : String = "locomotion"
 
-func _update_animation_blend(wish_dir: Vector3 = Vector3.ZERO) -> void:
+func _update_animation_blend(_wish_dir: Vector3 = Vector3.ZERO) -> void:
 	if _anim_tree == null or not is_instance_valid(_anim_tree):
 		_anim_tree = _resolve_player_anim_tree()
 		if _anim_tree == null:

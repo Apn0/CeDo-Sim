@@ -97,6 +97,9 @@ static func load_fraction(throughput_kg_h: float) -> float:
 
 # ── REAL OPERATING POINTS (CeDo training binder + operator, #174) ─────────────
 # Documented anchors the bake is calibrated against. All tunable as exact data lands.
+# audit: spec-anchors — these consts record measured plant figures and are allowed
+# to be unreferenced by code. tools/audit/symbol_flow.py skips this file's
+# dead-constant pass; they are captured operator knowledge, not dead code.
 const MELT_TEMP_C        : float = 250.0      # extruder melt temp (operator)
 const VACUUM_ZONES       : int   = 2          # vacuum vent PORTS — HMI/operator-derived (2 columns on the HMI). NB EREMA publishes "triple degassing" as 3 STAGES (PCU pre-dry + reverse-degas + vacuum zone), not a port count; confirm port count with operator.
 const COMPACTOR_KW       : float = 150.0      # compactor power band 130–160 kW (doc 102)
