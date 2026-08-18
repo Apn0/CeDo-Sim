@@ -14,9 +14,13 @@
 # Override the engine path with:  GODOT=/path/to/godot bash tools/regression/run.sh
 set -uo pipefail
 
+# All three are overridable so the harness runs off-Windows (Linux CI, a cloud
+# session) without editing this file. The defaults are the operator's Windows
+# paths and are unchanged — plain `bash tools/regression/run.sh` on that machine
+# behaves exactly as before.
 GODOT="${GODOT:-C:/Users/arnod/AppData/Local/Godot/Godot_v4.6.3-stable_win64_console.exe}"
-PROJ="C:/Users/arnod/Documents/CeDo_Simulator"
-UD="C:/Users/arnod/AppData/Roaming/Godot/app_userdata/CeDo Simulator"
+PROJ="${PROJ:-C:/Users/arnod/Documents/CeDo_Simulator}"
+UD="${UD:-C:/Users/arnod/AppData/Roaming/Godot/app_userdata/CeDo Simulator}"
 OUT="$PROJ/tools/regression/out"
 mkdir -p "$OUT"
 
@@ -219,7 +223,7 @@ fi
 # instead of the 0.00 A it read before, that sum(amps_nominal) == 488.49 A, and
 # that the mass ledger still balances now that stamping also swaps in the
 # ProcessModel transfer coefficients and switches on the dryer pair controller.
-for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens; do
+for t in test_qa_spec test_assessment_procedure test_qa_loop test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_l3c_unit_screens; do
 	echo "== $t =="
 	"$GODOT" --headless --path "$PROJ" "res://src/tests/$t.tscn" > "$OUT/$t.log" 2>&1
 	grep -E "^  (ok|FAIL)|Result|RESULT" "$OUT/$t.log" || true

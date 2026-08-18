@@ -338,10 +338,11 @@ func _physics_process(delta: float) -> void:
 		velocity.z = move_toward(velocity.z, 0.0, friction * delta)
 		move_and_slide()
 		_push_rigid_bodies(delta)   # #223: mass-based push on the UI-open glide path too
-		# Animation Phase 1: keep the rig in idle while UI is open. Velocity
-		# already decays via friction above, but resolve + push 0 explicitly
-		# so the legs visibly settle even if velocity is still drifting down.
-		_update_animation_blend(Vector3.ZERO)
+		# Animation Phase 1: the legs settle to idle while UI is open because the
+		# friction decay above drives velocity to ~0 and the blend reads velocity
+		# directly (#224). This used to pass Vector3.ZERO to force idle; that
+		# argument had been ignored since #224, so dropping it changes nothing.
+		_update_animation_blend()
 		return
 
 	# WASD — relative to body facing direction. CANONICAL Godot convention:
@@ -409,7 +410,7 @@ func _physics_process(delta: float) -> void:
 	# Animation Phase 1: feed the body's BlendSpace2D so 3rd-person/orbit shows
 	# a real walk cycle. No-op for first-person (the body's head is on a
 	# hidden layer + the FP eye sits between the body's shoulders).
-	_update_animation_blend(wish_dir)
+	_update_animation_blend()
 
 # ── #223 audit (critical): mass-based RigidBody push ─────────────────────────
 # A CharacterBody3D is kinematic — Godot's solver displaces RigidBodies it walks
@@ -1918,7 +1919,11 @@ func _find_anim_tree_recursive(n: Node) -> AnimationTree:
 ## parameters/playback.travel(name) with a 0.25 s xfade configured on the rig.
 var _last_anim_state : String = "locomotion"
 
-func _update_animation_blend(_wish_dir: Vector3 = Vector3.ZERO) -> void:
+## Takes no wish-direction: since #224 the blend is decomposed from the body's
+## ACTUAL velocity, not from input intent, so that vaulting, belt-carry and
+## being pushed animate correctly (velocity ≠ wish_dir in all three). Matches
+## NPC._update_animation_blend()'s zero-arg signature.
+func _update_animation_blend() -> void:
 	if _anim_tree == null or not is_instance_valid(_anim_tree):
 		_anim_tree = _resolve_player_anim_tree()
 		if _anim_tree == null:

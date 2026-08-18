@@ -3,7 +3,6 @@
 [ext_resource type="Script" uid="uid://c1ql4rdf71uvc" path="res://src/scenes/world/MainWorld.gd" id="1_mainworld"]
 [ext_resource type="Script" uid="uid://djarrwb3pw7v0" path="res://src/scenes/world/ShiftClock.gd" id="2_shiftclock"]
 [ext_resource type="Script" uid="uid://knba1io7mqjq" path="res://src/scenes/world/GameState.gd" id="3_gamestate"]
-[ext_resource type="ArrayMesh" uid="uid://bk82u0pr8gxp6" path="res://assets/models/CeDo_factory_solid.obj" id="4_building"]
 
 [sub_resource type="ProceduralSkyMaterial" id="SkyMat_main"]
 sky_top_color = Color(0.38, 0.46, 0.62, 1)
@@ -75,9 +74,12 @@ mesh = SubResource("BoxMesh_floor")
 [node name="BuildingShell" type="Node3D" parent="." unique_id=846125031]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -184112.5, -83.02, 329382.28)
 
+; mesh is assigned at RUNTIME by MainWorld._load_shell_mesh(). It must NOT be a
+; baked [ext_resource]: assets/ is gitignored, and a missing ext_resource makes
+; this whole scene fail to PARSE, taking MainWorld.gd and every world test with
+; it. See MainWorld.gd:_load_shell_mesh.
 [node name="ShellMesh" type="MeshInstance3D" parent="BuildingShell" unique_id=366167826]
 material_override = SubResource("Mat_building")
-mesh = ExtResource("4_building")
 
 [node name="NPCSpawnPoints" type="Node3D" parent="." unique_id=329357556]
 
