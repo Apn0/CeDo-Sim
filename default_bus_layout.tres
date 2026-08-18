@@ -1,5 +1,23 @@
 [gd_resource type="AudioBusLayout" format=3 uid="uid://ufjffcjjbpd5"]
 
+[sub_resource type="AudioEffectReverb" id="AudioEffectReverb_warehouse"]
+resource_name = "WarehouseReverb"
+room_size = 0.85
+damping = 0.45
+spread = 0.8
+hipass = 0.1
+dry = 0.0
+wet = 0.7
+
+[sub_resource type="AudioEffectReverb" id="AudioEffectReverb_office"]
+resource_name = "OfficeReverb"
+room_size = 0.22
+damping = 0.85
+spread = 0.3
+hipass = 0.2
+dry = 0.0
+wet = 0.3
+
 [resource]
 bus/1/name = &"Machines"
 bus/1/solo = false
@@ -25,3 +43,19 @@ bus/4/mute = false
 bus/4/bypass_fx = false
 bus/4/volume_db = -3.0
 bus/4/send = &"Master"
+bus/5/name = &"ReverbWarehouse"
+bus/5/solo = false
+bus/5/mute = false
+bus/5/bypass_fx = false
+bus/5/volume_db = -4.0
+bus/5/send = &"Master"
+bus/5/effect/0/effect = SubResource("AudioEffectReverb_warehouse")
+bus/5/effect/0/enabled = true
+bus/6/name = &"ReverbOffice"
+bus/6/solo = false
+bus/6/mute = false
+bus/6/bypass_fx = false
+bus/6/volume_db = -6.0
+bus/6/send = &"Master"
+bus/6/effect/0/effect = SubResource("AudioEffectReverb_office")
+bus/6/effect/0/enabled = true

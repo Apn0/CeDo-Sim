@@ -19,6 +19,8 @@ var npc_data: Dictionary = {}
 # pants, short hair, no beard, no cap) so an empty save reads as "fresh hire".
 var player_appearance: Dictionary = {}
 var npc_appearances: Dictionary = {}
+var custom_npc_roles: Dictionary = {}
+
 # #224 — Player wardrobe (two outfits per character: on_duty + off_duty) keyed
 # by display name, plus the operator's chosen display name. CharacterCustomizer
 # WRITES these via gs.set(...) and PlayerSpawner READS them on spawn — but they
@@ -83,6 +85,7 @@ func save_game() -> void:
 		"crew_pins": crew_pins_data,
 		"player_appearance": player_appearance,
 		"npc_appearances": npc_appearances,
+		"custom_npc_roles": custom_npc_roles,
 		# #224 — the wardrobe (two-outfit) + display name the customizer writes.
 		"player_wardrobes": player_wardrobes,
 		"player_name": player_name,
@@ -127,6 +130,8 @@ func load_game() -> void:
 			crew_pins_data = data.get("crew_pins", {}) if typeof(data.get("crew_pins")) == TYPE_DICTIONARY else {}
 			player_appearance = data.get("player_appearance", {}) if typeof(data.get("player_appearance")) == TYPE_DICTIONARY else {}
 			npc_appearances = data.get("npc_appearances", {}) if typeof(data.get("npc_appearances")) == TYPE_DICTIONARY else {}
+			custom_npc_roles = data.get("custom_npc_roles", {}) if typeof(data.get("custom_npc_roles")) == TYPE_DICTIONARY else {}
+			
 			# #224 — restore the wardrobe + display name so PlayerSpawner's
 			# `"player_wardrobes" in game_state` / `player_name` reads see the
 			# operator's saved outfits instead of falling back to base.
@@ -220,6 +225,7 @@ func clear_save() -> void:
 			npc_appearances.clear()
 			player_appearance.clear()
 			player_wardrobes.clear()
+			custom_npc_roles.clear()
 			player_name = ""
 		else:
 			push_error("Failed to delete save file")

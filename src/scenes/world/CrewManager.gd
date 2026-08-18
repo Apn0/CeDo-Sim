@@ -41,7 +41,8 @@ const ZONES : Dictionary = {
 }
 # Roles that roam centrally and may respond ANYWHERE as cover (no fixed post).
 const FLOATERS : Array[String] = ["shift_leader", "asst_shift_leader",
-								  "production_manager", "all_rounder"]
+								  "production_manager", "all_rounder",
+								  "storing_fixen"]
 
 # ── Injected dependencies ─────────────────────────────────────────────────────
 var workers       : Array   = []          # Array[NPC]
@@ -56,6 +57,7 @@ var _worst_jam_cache : Dictionary = {}   # #223 — worst jam this frame; needs_
 var _break_until: Dictionary = {}   # NPC -> seconds of break remaining
 var _break_timer: float      = BREAK_INTERVAL
 var _break_rotation_idx: int = 0    # round-robin cursor so breaks ROTATE across crew
+var _inspection_timer: float = 45.0 # periodic machine walkaround inspection interval
 var _pinned     : Dictionary = {}   # NPC -> station_id the OPERATOR pinned by hand (overrides auto-post)
 # #124 — for `pos:` (HIER) pins ONLY, store the full Vector3 position + facing
 # radians the operator picked. _pinned holds the string id used for the panel
@@ -323,6 +325,26 @@ func tick(delta: float) -> void:
 	# 3) Rotate breaks — at most one post unmanned at a time.
 	_update_breaks(delta)
 
+	# 4) Floater Machine Inspection Walkaround (diagnostics & radio calls)
+	_update_inspections(delta)
+
+func _update_inspections(delta: float) -> void:
+	_inspection_timer -= delta
+	if _inspection_timer <= 0.0 and _handling.is_empty():
+		_inspection_timer = 60.0
+		var machines := _machine_list()
+		if machines.is_empty():
+			return
+		for w in workers:
+			if _is_floater(w) and w.is_available() and not w.is_on_break():
+				var target_mach : Dictionary = machines[randi() % machines.size()]
+				var sid : String = String(target_mach.get("id", "Line"))
+				var pos : Vector3 = target_mach.get("pos", w.global_position)
+				w.dispatch_to(pos, sid, 3.0)
+				_handling[sid] = w
+				_radio_inspection_call(w, sid)
+				break
+
 func _update_breaks(delta: float) -> void:
 	# Count down workers who have actually reached the canteen; send them back.
 	for w in _break_until.keys():
@@ -340,7 +362,8 @@ func _update_breaks(delta: float) -> void:
 	if _break_timer <= 0.0 and _break_until.size() < MAX_ON_BREAK:
 		var cand := _break_candidate()
 		if cand != null:
-			cand.go_on_break(break_room_pos)
+			var slot_offset := Vector3(randf_range(-1.2, 1.2), 0.0, randf_range(-1.2, 1.2))
+			cand.go_on_break(break_room_pos + slot_offset)
 			_break_until[cand] = BREAK_DURATION
 			_break_timer = BREAK_INTERVAL
 			# Radio it in — the crew keys up the walkie when they step off post.
@@ -361,6 +384,17 @@ func _radio_break_call(worker) -> void:
 		return
 	var nm := String(worker.npc_name)
 	walkie.receive_call(nm, "%s hier — ik ga even pauzeren." % nm)
+
+## A floater announces a machine inspection check over the walkie.
+func _radio_inspection_call(worker, station_id: String) -> void:
+	var ml := Engine.get_main_loop()
+	if not (ml is SceneTree):
+		return
+	var walkie := (ml as SceneTree).root.get_node_or_null("Walkie")
+	if walkie == null or not walkie.has_method("receive_call"):
+		return
+	var nm := String(worker.npc_name)
+	walkie.receive_call(nm, "%s: inspectieronde bij %s — lagers en temperaturen normaal." % [nm, station_id])
 
 ## Resolve the EventBus autoload lazily (cached). Returns null when it isn't present
 ## (e.g. the headless harness), in which case event broadcasts are skipped.
@@ -395,6 +429,12 @@ func _worst_jam() -> Dictionary:
 	if found.is_empty():
 		return {}
 	return {"id": String(found.get("id", "")), "node": found, "buffer": worst}
+
+## Public relief hook for FixStoringTask (storing_fixen role, operator
+## 2026-08-07): the identical unchoke effect a jam-dispatch responder has when
+## finishing service at a station. Safe no-op for unknown ids.
+func relieve_station(station_id: String) -> void:
+	_relieve(_node_by_id(station_id))
 
 ## Clear a backlog: move RELIEF_KG from the machine's input to its output. This is
 ## ledger-neutral for LineFlow (in-transit total is unchanged) — it just represents
@@ -596,6 +636,10 @@ const ROLE_POSTS := [
 	{"id": "role:transitional",       "label": "Transitional (feeder → extruder)"},
 	{"id": "role:all_rounder",        "label": "All-rounder"},
 	{"id": "role:production_manager", "label": "Production manager"},
+	# Operator 2026-08-07 — the storings-loop role (docs/plant/
+	# npc_rol_taak_prioriteit.md:66-77). Storing-fixen workers float, and are
+	# the ONLY acceptors of FixStoringTask / KwitterenStoringTask.
+	{"id": "role:storing_fixen",      "label": "Storing fixen"},
 ]
 
 ## #173 — section-level assignment. The operator can pin a worker to a NAMED
@@ -1118,7 +1162,22 @@ func manual_assign(worker, station_id: String) -> void:
 	# Role-based post: switch the worker's RotA role, then auto-post by that role's zone.
 	if station_id.begins_with("role:"):
 		var new_role := station_id.substr(5)
+		# Whitelist against ROLE_POSTS. A stale pin from an older save (or a
+		# removed role) used to silently overwrite npc_role with a dead string,
+		# leaving the worker standing at spawn — refuse loudly instead.
+		var known := false
+		for rp in ROLE_POSTS:
+			if String(rp.get("id", "")) == station_id:
+				known = true
+				break
+		if not known:
+			print("[CrewManager] refusing unknown role pin '%s' for %s (stale save?)"
+				% [station_id, String(worker.npc_name)])
+			return
 		worker.npc_role = new_role
+		var gs = get_parent().get("game_state") if get_parent() else null
+		if gs and "custom_npc_roles" in gs:
+			gs.custom_npc_roles[String(worker.get("npc_id"))] = new_role
 		_pinned.erase(worker)
 		var best_role : Dictionary = _nearest_in_zone(new_role, worker.global_position, _machine_list())
 		if not best_role.is_empty():

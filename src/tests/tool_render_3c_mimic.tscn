@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://toolrender3cmimic"]
+
+[ext_resource type="Script" path="res://src/tests/tool_render_3c_mimic.gd" id="1"]
+
+[node name="ToolRender3CMimic" type="Node"]
+script = ExtResource("1")

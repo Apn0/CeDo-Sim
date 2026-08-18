@@ -264,6 +264,46 @@ static func mat_indicator_blue() -> StandardMaterial3D:
 	return _lazy("indicator_blue", Color(0.30, 0.55, 0.95), 0.0, 0.20, Color(0.30, 0.55, 1.0), 4.0)
 
 
+# ── GLASS & SIGHT-GAUGES (inspection windows, sight glasses with grime) ───────
+## Transparent machine inspection window glass with subtle polymer dust/grime patina.
+static func mat_glass_inspection_grime() -> StandardMaterial3D:
+	if _cache.has("glass_inspection_grime"):
+		return _cache["glass_inspection_grime"]
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.18, 0.22, 0.24, 0.45)
+	m.metallic = 0.15
+	m.roughness = 0.25
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_cache["glass_inspection_grime"] = m
+	return m
+
+## Transparent liquid/melt level sight gauge glass with optical clarity.
+static func mat_glass_sight_gauge() -> StandardMaterial3D:
+	if _cache.has("glass_sight_gauge"):
+		return _cache["glass_sight_gauge"]
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.35, 0.50, 0.55, 0.35)
+	m.metallic = 0.05
+	m.roughness = 0.08
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_cache["glass_sight_gauge"] = m
+	return m
+
+## Cast iron rough texture for heavy pump/gearbox castings.
+static func mat_cast_iron_rough() -> StandardMaterial3D:
+	return _lazy("cast_iron_rough", Color(0.18, 0.19, 0.21), 0.40, 0.75)
+
+## Industrial teal machine paint (EREMA & filter cabinets).
+static func mat_paint_teal_industrial() -> StandardMaterial3D:
+	return _lazy("paint_teal_industrial", Color(0.14, 0.48, 0.52), 0.15, 0.50)
+
+## High-visibility equipment safety orange.
+static func mat_paint_safety_orange() -> StandardMaterial3D:
+	return _lazy("paint_safety_orange", Color(0.92, 0.45, 0.10), 0.05, 0.55)
+
+
 # ── TEST / DEBUG ────────────────────────────────────────────────────────────
 ## Returns the count of materials currently cached (for sanity tests).
 static func cached_count() -> int:

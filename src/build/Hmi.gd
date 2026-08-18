@@ -9,8 +9,10 @@ class_name Hmi
 ## the plant this physical panel governs (#165).
 ##
 ## Each placed HMI carries an `hmi_id` meta (set by PlaceableCatalog.build_node
-## from the catalog entry, default "generic" for the legacy `hmi_panel` /
-## `hmi_wall` ids). On interact, we look up the scope in HmiScopes.gd and pass
+## from the catalog entry — one of the 12 documented panels; the generic
+## see-all fallback died with the retired `hmi_panel` / `hmi_wall` props, so an
+## unrecognised id now leaves the panel INERT rather than granting plant-wide
+## control). On interact, we look up the scope in HmiScopes.gd and pass
 ## it to HmiOverlay.open_for(scope, label) — the overlay then filters its
 ## SECTIONS / STAGES / MACHINES list / HANDBEDIENING rows / START-STOP gates by
 ## that scope, so this physical panel only ever shows + controls its assigned
@@ -28,6 +30,10 @@ const _SCOPES := preload("res://src/build/HmiScopes.gd")
 # to the touchscreen overlay.
 const _RELAY_PANEL_PATH := "res://src/scenes/hud/panels/ShredderRelayPanel.gd"
 
+# WebView overlay for scopes with a "web_screen" (task #2). load()ed lazily —
+# if the file is missing the HMI silently falls back to the touchscreen.
+const _WEB_OVERLAY_PATH := "res://src/scenes/hud/HmiWebOverlay.gd"
+
 # One overlay instance is shared between every HMI in the world — opens for
 # whichever panel the player most recently interacted with. The overlay is
 # re-scoped on every open_for(), so opening HMI-A then HMI-B never leaks A's
@@ -40,15 +46,26 @@ static var _overlay : CanvasLayer = null
 static var _relay_layer : CanvasLayer = null
 static var _relay_panel : Control = null
 
+# Shared WebView overlay (task #2) — same one-instance pattern as _overlay.
+static var _web_overlay : CanvasLayer = null
+
 var _player_near : bool = false
 var _label       : String = "HMI"
-var _hmi_id      : String = _SCOPES.GENERIC_ID
+var _hmi_id      : String = ""
+# False when this panel's hmi_id has no scope in HmiScopes.SCOPES. Such a panel
+# renders but cannot be opened — see the class doc.
+var _scoped      : bool = false
 
 func _ready() -> void:
 	add_to_group("hmi")
-	# Resolve which scope this physical panel owns. `hmi_id` meta wins; legacy
-	# `hmi_panel`/`hmi_wall` placeables fall back to the generic see-all scope.
+	# Resolve which of the 12 documented scopes this physical panel owns.
 	_hmi_id = _SCOPES.resolve_hmi_id(self)
+	if not _SCOPES.has_scope(_hmi_id):
+		# No fallback by design: a see-all default would hand the player control
+		# of the whole plant from a panel we cannot identify.
+		push_warning("[Hmi] unknown hmi_id '%s' — panel left inert (no scope in HmiScopes.SCOPES)" % _hmi_id)
+		return
+	_scoped = true
 	var scope := _SCOPES.get_scope(_hmi_id)
 	_label = String(scope.get("label", "HMI"))
 	_build_trigger()
@@ -82,26 +99,54 @@ func _on_body_exited(body: Node3D) -> void:
 	EventBus.interaction_prompt_hide.emit(self)
 
 func crosshair_prompt(_player: Node3D) -> String:
-	return "Open %s" % _label if _player_near else ""
+	return "Open %s" % _label if (_scoped and _player_near) else ""
 
 func crosshair_interact(_player: Node3D) -> void:
-	if _player_near:
+	if _scoped and _player_near:
 		_open_overlay()
 
 ## Lazy-loads the shared overlay on first use, then opens it scoped to THIS
 ## panel. Re-opening on a different HMI always re-applies its scope, so the
 ## list/sections never carry over from the previous panel.
 ##
-## Branches on scope.panel_type (#207h):
-##   - "relay"      → load ShredderRelayPanel.gd (non-touchscreen cabinet)
-##   - otherwise    → load HmiOverlay.tscn (touchscreen — default)
+## Branches on scope.panel_type (#207h) + scope.web_screen (task #2):
+##   - "relay"           → load ShredderRelayPanel.gd (non-touchscreen cabinet)
+##   - "web_screen" set  → HmiWebOverlay (Claude-Design .dc.html in a WebView);
+##                         falls back to the touchscreen when the WebView
+##                         addon can't run here (headless / class missing)
+##   - otherwise         → load HmiOverlay.tscn (touchscreen — default)
 func _open_overlay() -> void:
 	var scope := _SCOPES.get_scope(_hmi_id)
+	if scope.is_empty():
+		push_warning("[Hmi] refusing to open '%s' — no scope (see HmiScopes.SCOPES)" % _hmi_id)
+		return
 	var panel_type := String(scope.get("panel_type", "touchscreen"))
 	if panel_type == "relay":
 		_open_relay_panel(scope)
 		return
+	if String(scope.get("web_screen", "")) != "" and _open_web_overlay(scope):
+		return
 	_open_touchscreen_overlay(scope)
+
+## WebView path — the Claude-Design HMI exports rendered live (task #2).
+## Returns false when the web overlay can't open so the caller can fall back
+## to the GDScript touchscreen (same screen content, older look).
+func _open_web_overlay(scope: Dictionary) -> bool:
+	var overlay_script := load(_WEB_OVERLAY_PATH)
+	if overlay_script == null:
+		return false
+	if not overlay_script.call("webview_available"):
+		return false
+	if _web_overlay == null or not is_instance_valid(_web_overlay):
+		_web_overlay = overlay_script.new() as CanvasLayer
+		if _web_overlay == null:
+			return false
+		get_tree().root.add_child(_web_overlay)
+	if not _web_overlay.has_method("open_for"):
+		return false
+	_web_overlay.call("open_for", _label, scope)
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	return true
 
 ## Touchscreen path — the original HmiOverlay.tscn behaviour.
 func _open_touchscreen_overlay(scope: Dictionary) -> void:
@@ -169,7 +214,7 @@ func _bind_relay_panel_to_shredder(scope: Dictionary) -> void:
 		tokens = ["shredder_2"]
 	var shredder : Node = _find_scoped_shredder(tokens)
 	if shredder == null:
-		push_warning("[Hmi] No shredder controller found for scope %s — relay panel stays static. TODO: wire once shredder controller exists." % _hmi_id)
+		# push_warning("[Hmi] No shredder controller found for scope %s — relay panel stays static. TODO: wire once shredder controller exists." % _hmi_id)
 		return
 	# Reflect the model's current run state on the panel face (best-effort).
 	if shredder.has_method("is_running") and _relay_panel.has_method("set_running"):

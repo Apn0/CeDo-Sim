@@ -168,6 +168,21 @@ func _test_world_creation(world: Node, wl: Node) -> void:
 	_ok(absf(grade - GRADE_Y) < GRADE_TOL,
 		"operating-floor grade ~= %.2f (got %.2f)" % [GRADE_Y, grade])
 
+	# LineFlow's per-tick bale caches MUST be Array[Node]-typed: _bale_at(pos,
+	# bales: Array[Node]) hard-rejects a plain Array AT RUNTIME (the call
+	# throws, returns null, and the feed loop silently starves every line).
+	# Shipped exactly like that on 2026-08-08 (perf commit 9367239) and stayed
+	# green here because the harness never fails on SCRIPT ERROR spam —
+	# caught by the windowed HMI proof run 2026-08-09.
+	var lflow := world.find_child("LineFlow", true, false)
+	if lflow == null:
+		lflow = get_tree().get_first_node_in_group("line_flow")
+	_ok(lflow != null, "LineFlow node present in MainWorld")
+	if lflow != null:
+		var cache : Variant = lflow.get("_deliverable_bales_cache")
+		_ok(typeof(cache) == TYPE_ARRAY and (cache as Array).get_typed_class_name() == &"Node",
+			"_deliverable_bales_cache is Array[Node]-typed (matches _bale_at's parameter)")
+
 	var shell := world.find_child("ShellMesh", true, false) as MeshInstance3D
 	_ok(shell != null and shell.mesh != null, "building shell mesh present")
 	if shell != null and shell.mesh != null:

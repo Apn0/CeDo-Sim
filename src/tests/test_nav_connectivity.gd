@@ -43,6 +43,11 @@ const PATH_ENDPOINT_TOL_M : float = 1.5
 ## Crew posts get more slack: a post can legitimately sit inside a machine's
 ## eroded footprint, and the nearest mesh point is then a metre or two away.
 const POST_ENDPOINT_TOL_M : float = 3.0
+## Diagnostics only. "Did the path land ON this polygon" needs a far tighter gate
+## than "did the crew get near enough": A* handed an unreachable target returns
+## the closest reachable point, so any tolerance wide enough to forgive a post
+## inside a machine is also wide enough to call an island reachable.
+const ON_POLYGON_TOL_M : float = 0.5
 
 const BOOT_FRAMES   : int = 120
 const SETTLE_FRAMES : int = 60
@@ -90,10 +95,18 @@ func _ready() -> void:
 		await get_tree().process_frame
 
 	await _build_line_3a()
+	# BuildMode calls line_flow.rebuild() after every placement; this harness
+	# builds its fixture straight from the catalog and so never did, leaving
+	# LineFlow with 0 nodes. CrewManager._machine_list() reads line_flow._nodes,
+	# so with none the post assignment below has nothing to assign from.
+	var lf0 = _world.get("line_flow")
+	if lf0 != null and lf0.has_method("rebuild"):
+		lf0.call("rebuild")
+		await get_tree().process_frame
 	await _wait_for_bake()
 	_test_machine_carve()
 	_test_inside_outside()
-	_test_crew_posts()
+	await _test_crew_posts()
 
 	print("\n=========================================")
 	print("Result: %s (%d ok, %d fail)"
@@ -190,6 +203,26 @@ func _wait_for_bake() -> void:
 	#
 	# This wait stays because gating on the server's iteration id is correct on its
 	# own merits, not because it fixed anything.
+	#
+	# RESOLVED 2026-08-12 — THIRD DIAGNOSIS, AND THIS ONE HELD.
+	# The nondeterminism was never in the navmesh. It was in the INPUT. This
+	# harness builds its line-3A fixture straight from the catalog and never
+	# called line_flow.rebuild() (BuildMode does, after every placement), so
+	# CrewManager._machine_list() — which reads line_flow._nodes — saw ZERO
+	# machines. assign_posts() therefore took the `no machine in zone` branch for
+	# every worker and set pos = w.global_position: the spot each worker happened
+	# to be standing on mid-walk. Measured, 3 consecutive runs, all 9 workers:
+	#   station='' every time, and every post moved between runs
+	#   (Romain (-208.8,83.4) / (-196.6,98.0) / (-188.6,85.6))
+	# So the check was routing eight wandering floor positions, and failed
+	# whenever one landed off-mesh — about one run in three, always on a
+	# different worker. That is exactly the signature recorded above.
+	#
+	# With rebuild() called before assignment, posts are real stations
+	# (extruder_3a, centrifuge, mengsilo, wind_sifter, plus floaters on
+	# "(rondgang)") and the result is byte-identical run to run: 9 runs, same 6
+	# broken legs, same distances to 0.01 m. The check now names a stable
+	# navmesh/topology defect instead of tossing a coin.
 	var map : RID = region.get_navigation_map()
 	var iter : int = -1
 	var iter_stable : int = 0
@@ -309,10 +342,30 @@ func _test_crew_posts() -> void:
 	# during the pre-shift window that position is wherever the worker still is —
 	# on the approach road. So these are counted, named and reported SEPARATELY,
 	# and the navmesh assertion is made over the posts that are actually on site.
+	# assign_posts() reads line_flow._nodes (CrewManager._machine_list), and it
+	# runs at CrewManager setup — BEFORE this harness builds its line-3A fixture.
+	# So every post was assigned against an empty machine list and fell back to
+	# `pos = w.global_position`, i.e. wherever the worker was standing mid-walk.
+	# MEASURED before this call was added: all 8 workers had station='' and every
+	# post moved between runs (Romain (-208.8,83.4) / (-196.6,98.0) / (-188.6,85.6)),
+	# so the check was routing eight random floor positions and failed whenever one
+	# of them landed off-mesh — about one run in three. Re-assign now that the
+	# machines exist, so the posts under test are actual stations.
+	var lf = _world.get("line_flow")
+	var n_nodes : int = 0
+	if lf != null and "_nodes" in lf:
+		n_nodes = (lf.get("_nodes") as Array).size()
+	_info("LineFlow nodes available for post assignment: %d" % n_nodes)
+	if cm.has_method("assign_posts"):
+		cm.call("assign_posts")
+		for _i in range(10):
+			await get_tree().process_frame
+
 	var site := NavSiteBounds.compute(_world)
 	var unreachable : Array[String] = []
 	var offsite : Array[String] = []
 	var checked : int = 0
+	var stationed : int = 0
 	for w in workers:
 		if not (w is Node3D):
 			continue
@@ -324,6 +377,17 @@ func _test_crew_posts() -> void:
 			offsite.append("%s at (%.1f, %.1f)" % [String(w.get("npc_name")), post.x, post.z])
 			continue
 		checked += 1
+		# Provenance, not just position. assign_posts() takes the post from the
+		# nearest machine IN ZONE measured from the worker's CURRENT position,
+		# and falls back to that position outright when the zone has no machine
+		# (CrewManager.gd:266-277). A post with no station id is therefore
+		# "wherever this worker happened to be standing", which is why the
+		# failing worker and post differ every run.
+		var sid := String(w.get("assigned_station_id"))
+		if sid != "":
+			stationed += 1
+		_info("post %-12s station='%s' at (%.1f, %.1f)"
+			% [String(w.get("npc_name")), sid, post.x, post.z])
 		# Both directions: a one-way route is a crew that can go on break and
 		# never come back, which is the same bug wearing a different hat.
 		#
@@ -341,11 +405,26 @@ func _test_crew_posts() -> void:
 		if gap_from > POST_ENDPOINT_TOL_M:
 			unreachable.append("%s canteen<-post (ends %.2f m short; post at (%.1f, %.1f))"
 				% [String(w.get("npc_name")), gap_from, post.x, post.z])
+		# A distance alone does not say WHOSE bug it is, and this file has already
+		# cost two wrong diagnoses that a number here would have cut short. So when
+		# a leg breaks, name the mechanism as well: how far the post is from any
+		# mesh at all, whether the nearest mesh point is reachable from the canteen,
+		# and — the decisive one — which body the post is standing inside.
+		if gap_to > POST_ENDPOINT_TOL_M or gap_from > POST_ENDPOINT_TOL_M:
+			_info("  why %-12s %s" % [String(w.get("npc_name")), _diagnose(post, canteen)])
 	# ANTI-VACUITY. 0 of 0 posts reachable is the shape of every vacuous green
 	# this project has shipped. Assert the sample size before the result.
 	_check(checked >= 5,
 		"enough ON-SITE posts were actually measured to mean anything (%d of %d workers)"
 			% [checked, workers.size()])
+	# ANTI-VACUITY #2. `checked > 0` is not enough: a post with no station id is
+	# just "wherever this worker was standing", and routing eight of those is a
+	# coin flip, not a test. MEASURED before the LineFlow rebuild above: all 8
+	# workers had station='' and every post moved between runs, which is the
+	# whole reason this file failed about one run in three.
+	_check(stationed > 0,
+		"posts come from real stations, not from wherever a worker stood "
+		+ "(%d of %d checked posts carry a station id)" % [stationed, checked])
 	_check(unreachable.is_empty(),
 		"every on-site post routes to the canteen and back (%d broken: %s)"
 			% [unreachable.size(), ", ".join(unreachable) if not unreachable.is_empty() else "none"])
@@ -374,6 +453,96 @@ func _route(label: String, from: Vector3, to: Vector3, tol: float) -> void:
 	_check(path.size() >= 2 and endp <= tol,
 		"%s: routed (%d points, ends %.2f m from the goal, limit %.1f)"
 			% [label, path.size(), endp, tol])
+
+## WHY a post's route breaks, in the three terms that separate the candidate
+## owners. Measurement only — this adds no assertion and cannot change a verdict.
+##
+##   nearest mesh  where the navmesh actually is relative to the post, SPLIT into
+##                 a horizontal offset and a height above the operating floor.
+##                 The split is the whole point. MEASURED here: dXZ 0.00 m, and
+##                 0.2-0.4 m of floor clearance. There IS mesh directly at the
+##                 post's own XZ — a sliver Recast left inside the machine's
+##                 footprint, lifted by cell_height 0.60 voxel quantisation. So
+##                 "the post is off-mesh" is the wrong headline; the post is ON a
+##                 scrap of mesh that goes nowhere.
+##   reach         whether the canteen can route to that nearest point and LAND
+##                 on it, judged at 0.50 m rather than POST_ENDPOINT_TOL_M. The
+##                 loose gate is what makes this reading useless: A* asked for an
+##                 unreachable island returns the closest reachable point instead,
+##                 which is the aisle ~1.8 m away — inside a 3 m tolerance, and
+##                 therefore indistinguishable from success. Only a gate tight
+##                 enough to demand "the path actually ended ON the polygon"
+##                 separates an island from a neighbour.
+##   inside        the body whose collider contains the post, WITH its footprint.
+##                 This one names an owner outright: CrewManager.assign_posts
+##                 takes the post from the machine's OWN global_position
+##                 (CrewManager.gd:276), and MainWorld bakes that machine's
+##                 collider as navmesh source, so a stationed post sits inside
+##                 its own machine.
+##
+## A FOURTH THEORY, DISPROVEN 2026-08-12 — RECORDED SO NOBODY CHASES IT.
+## extruder_3a is the only station that fails in BOTH directions, and the obvious
+## reading is that a two-way failure must have a different cause than the four
+## one-way ones. It does not. All five `why` lines are the same shape — dXZ
+## 0.00 m, ISLAND, post inside its own machine — and the whole difference is how
+## far the reachable aisle sits from the machine's ORIGIN, which is a function of
+## how big the machine is:
+##
+##     extruder_3a   canteen->post ends 3.68 m short   > POST_ENDPOINT_TOL_M 3.0
+##     centrifuge                    1.78 m
+##     mengsilo                      2.17 m
+##     wind_sifter                   1.97 m
+##
+## Only the first crosses the 3.0 m line, so only the first is also counted in
+## the post<-canteen direction. One mechanism, five instances, one of them on the
+## far side of a tolerance. Treating the asymmetry as a separate defect would be
+## the fourth wrong diagnosis this check has produced; the footprint printed in
+## `inside [...]` is there to cut that short.
+func _diagnose(post: Vector3, canteen: Vector3) -> String:
+	var map : RID = _world.get_world_3d().navigation_map
+	var cp : Vector3 = NavigationServer3D.map_get_closest_point(map, post)
+	var off : float = Vector2(cp.x - post.x, cp.z - post.z).length()
+	# HEIGHT ABOVE THE OPERATING FLOOR, NOT ABOVE THE POST. Measured 2026-08-12:
+	# against the post this read +0.26 to +0.42 m over 10 runs and was the ONLY
+	# unstable field in the whole log. Not the navmesh — cp.y is deterministic —
+	# but post.y, which assign_posts copies from w.global_position, i.e. the
+	# worker's SETTLED standing height, a few cm of physics noise every boot.
+	# Which is this file's own lesson arriving by the back door: a nondeterministic
+	# input had leaked into a diagnostic, and a diagnostic that moves run to run is
+	# one nobody can diff. Plant.floor_top_y() is a constant of the world.
+	var dy : float = cp.y - Plant.floor_top_y()
+	var to_cp : PackedVector3Array = NavigationServer3D.map_get_path(map, canteen, cp, true)
+	var cp_gap : float = INF
+	if to_cp.size() >= 2:
+		cp_gap = to_cp[to_cp.size() - 1].distance_to(cp)
+	# CONTAINMENT FROM GEOMETRY, NOT FROM A PHYSICS QUERY. This began as
+	# intersect_point at post.y + 1.0 and was the last unstable field in the log:
+	# 1 run in 10 reported `inside [nothing]` for three of the five posts. The
+	# probe height rode on post.y — the worker's settled standing height again —
+	# and a point query is knife-edge by nature. Measured AABB overlap depends on
+	# nothing but the placement, which the identical routing distances already
+	# prove is deterministic.
+	#
+	# The body's OWN footprint is reported with it, because the one number that
+	# looks like a second mechanism is explained by it — see the note below.
+	# Axis-aligned, so a rotated machine reads slightly larger than its true
+	# footprint; that is fine for naming an owner and would not be for gating.
+	var inside : Array[String] = []
+	for n in get_tree().get_nodes_in_group("placed_object"):
+		if not (n is Node3D):
+			continue
+		var box := NavSiteBounds.body_aabb(n as Node3D)
+		if box.size == Vector3.ZERO:
+			continue
+		if post.x < box.position.x or post.x > box.position.x + box.size.x:
+			continue
+		if post.z < box.position.z or post.z > box.position.z + box.size.z:
+			continue
+		inside.append("%s %.1fx%.1f m" % [(n as Node).name, box.size.x, box.size.z])
+	return ("nearest mesh dXZ %.2f m, %+.2f m above floor; canteen->it ends %.2f m short (%s); inside [%s]"
+		% [off, dy, cp_gap,
+			"reachable" if cp_gap <= ON_POLYGON_TOL_M else "ISLAND",
+			", ".join(inside) if not inside.is_empty() else "nothing"])
 
 ## XZ distance between where a route ENDS and where it was asked to end. INF when
 ## no route came back at all. Returned as a number rather than a bool so the

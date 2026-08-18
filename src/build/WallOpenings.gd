@@ -173,9 +173,44 @@ func _quad(nv: PackedVector3Array, p0: Vector3, p1: Vector3, p2: Vector3, p3: Ve
 # =============================================================================
 # PUBLIC API
 # =============================================================================
-func add_opening(id: String, center: Vector3, size: Vector3, rot_y: float) -> void:
+## Returns true if the opening was registered (and a wall was actually cut),
+## false if the box touches no shell geometry at all — a no-op that used to
+## silently register anyway. Measured 2026-08-08: an operator's 41 repeated
+## door_personnel clicks (each ~5-8 m from any wall — an OUTDOOR spot) each
+## still ran the full O(shell_triangles) carve pass on both the visual AND
+## collision mesh, growing the registered-opening count every time (so every
+## LATER click got slower too, testing against a bigger box list) — the
+## in-editor freeze/54-error session traced back to this. Skipping the
+## rebuild entirely when nothing would be cut turns a silent, expensive no-op
+## into a cheap, honest failure the caller can report.
+func add_opening(id: String, center: Vector3, size: Vector3, rot_y: float) -> bool:
+	if not _would_cut_anything(center, size, rot_y):
+		push_warning("[WallOpenings] add_opening('%s') touches no shell geometry — skipped (no wall within the opening box)" % id)
+		return false
 	_openings[id] = {"center": center, "size": size, "rot_y": rot_y}
 	rebuild()
+	return true
+
+## Cheap pre-check: does this box overlap ANY original (pre-carve) shell
+## triangle? No mesh mutation, no rebuild — just the same _tri_box_status
+## classifier the real carve uses, run once per triangle instead of the full
+## recursive clip. O(shell_triangles), same as one pass of the real carve,
+## but a small fraction of the cost since there's no subdivision or mesh
+## re-emit.
+func _would_cut_anything(center: Vector3, size: Vector3, rot_y: float) -> bool:
+	if _shell == null:
+		return false
+	var inv : Transform3D = _shell.global_transform.affine_inverse() \
+		if _shell.is_inside_tree() else Transform3D.IDENTITY
+	var box := {"c": inv * center, "half": size * 0.5, "rot_y": rot_y}
+	for surf in _orig_surfaces:
+		var verts : PackedVector3Array = surf["v"]
+		var vi := 0
+		while vi + 2 < verts.size():
+			if _tri_box_status(verts[vi], verts[vi + 1], verts[vi + 2], box) != -1:
+				return true
+			vi += 3
+	return false
 
 func remove_opening(id: String) -> void:
 	if _openings.erase(id):

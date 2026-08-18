@@ -206,6 +206,7 @@ var _manual_run     : Dictionary = {}    # section name -> bool (HANDBEDIENING)
 var _acked_faults   : Dictionary = {}    # fault code -> true
 var _last_fed_mass  : float = 0.0
 var _no_feed_secs   : float = 0.0
+var _show_all_machines : bool = false    # toggle to see all plant machines on PLC tab
 
 # --- Persistent chrome widgets ---
 var _dim          : ColorRect
@@ -481,7 +482,28 @@ func open_subscope(scope_id: String) -> bool:
 		ctrl.call("set_screen", scope_id.substr("l3c_unit:".length()))
 		if ctrl.has_method("bind"):
 			ctrl.call("bind", _scope, _line_flow)
+		# Operator 2026-08-07 — the bottom-nav < / > keys navigate the 13 unit
+		# screens in HOME_TILES_WASHING plant order (wrap-around), replacing
+		# their "niet gekoppeld" disabled state.
+		if ctrl.has_method("wire_nav"):
+			var order : Array = _l3c_unit_scope_order()
+			var idx : int = order.find(scope_id)
+			if idx >= 0 and order.size() > 1:
+				var prev_id : String = String(order[(idx - 1 + order.size()) % order.size()])
+				var next_id : String = String(order[(idx + 1) % order.size()])
+				ctrl.call("wire_nav",
+					func() -> void: open_subscope(prev_id),
+					func() -> void: open_subscope(next_id))
 	return true
+
+## The l3c_unit:* scope ids in HOOFDMENU tile order — the < / > nav sequence.
+func _l3c_unit_scope_order() -> Array:
+	var out : Array = []
+	for tile in HOME_TILES_WASHING:
+		var sid := String((tile as Dictionary).get("scope_id", ""))
+		if sid.begins_with("l3c_unit:"):
+			out.append(sid)
+	return out
 
 ## Resolve the ExtruderModel for the panel's current scope line (#bullet-10).
 ## Reuses _find_extruder_model_for() (which matches on the extruder machine's
@@ -1201,10 +1223,19 @@ func _refresh() -> void:
 	var screen_name : String = ["HOOFDMENU", "OVERZICHT", "STORINGEN", "HANDBEDIENING", "MACHINES"][_screen]
 	_header_title.text = "%s  ·  %s" % [_station, screen_name]
 	var faults := _compute_faults()
+	# Operator 2026-08-07 — a storing-fixen worker acknowledging at a panel
+	# (KwitterenStoringTask → NpcAutonomyBoard.mark_npc_acked) counts exactly
+	# like the player's KWITTEREN: the bell calms to amber-steady. Ack only
+	# silences; the fault row still stands until its condition ends.
+	var board := get_node_or_null("/root/NpcAutonomyBoard")
 	var unacked := 0
 	for f in faults:
-		if not _acked_faults.has(String(f["code"])):
-			unacked += 1
+		var fcode := String(f["code"])
+		if _acked_faults.has(fcode):
+			continue
+		if board != null and board.has_method("npc_acked") and bool(board.call("npc_acked", fcode)):
+			continue
+		unacked += 1
 	# #207c — header chip is now a small static text label; the live alarm
 	# indicator lives on the navbar bell (CHANGE A).
 	if faults.is_empty():
@@ -1885,21 +1916,40 @@ func _populate_machine_list() -> void:
 	_find_line_flow()   # self-heal a transient early null so a live line isn't hidden
 	if _line_flow == null or not _line_flow.has_method("machine_list"):
 		var empty := Label.new()
-		empty.text = "(geen machines)"
+		empty.text = "(geen machines gekoppeld)"
 		empty.add_theme_color_override("font_color", C_TEXT_DARK)
 		_machines_list_vb.add_child(empty)
 		return
-	for m in _line_flow.call("machine_list"):
+
+	var all_machines: Array = _line_flow.call("machine_list")
+	var total : int = all_machines.size()
+
+	# Header toggle for Scope vs All Machines
+	if total > 0:
+		var toggle_btn := Button.new()
+		toggle_btn.custom_minimum_size = Vector2(0, 24)
+		toggle_btn.text = "Scope: Alle Machines" if _show_all_machines else "Scope: HMI Filter"
+		toggle_btn.add_theme_font_size_override("font_size", 11)
+		toggle_btn.add_theme_stylebox_override("normal", _sb(Color(0.18, 0.24, 0.32), 3, 0, C_TILE_EDGE, 1))
+		toggle_btn.pressed.connect(func():
+			_show_all_machines = !_show_all_machines
+			_populate_machine_list()
+			_build_machine_detail()
+		)
+		_machines_list_vb.add_child(toggle_btn)
+
+	var in_scope_count := 0
+	for m in all_machines:
 		var mid := String(m["id"])
-		# The HANDLE. machine_list emits one row per NODE, so two blowers are two
-		# rows; without a distinct key they would both address the first one.
 		var mkey := String(m.get("key", mid))
-		# #165 — drop out-of-scope machines so a sorting HMI never lists the
-		# washing line, etc. `line` is optional on machine_list (LineFlow
-		# doesn't carry it yet) — HmiScopes falls back to id-suffix sniffing.
 		var node_line := String(m.get("line", ""))
-		if not _scope_has_node(mid, node_line):
+		var matches_scope := _scope_has_node(mid, node_line)
+		
+		# If user toggled show all, or if 0 in scope (auto-fallback), show everything
+		if not _show_all_machines and not matches_scope:
 			continue
+		
+		in_scope_count += 1
 		var btn := Button.new()
 		btn.custom_minimum_size = Vector2(0, 32)
 		btn.text = ""    # filled by children
@@ -1919,10 +1969,10 @@ func _populate_machine_list() -> void:
 		lamp.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		row.add_child(lamp)
 		var lbl := Label.new()
-		# LineFlow supplies the display label: the plant tag (L3C.9R) when the
-		# machine has one, otherwise "<name> #<n>". Two blowers no longer render
-		# as the same row.
-		lbl.text = String(m.get("label", mid.replace("_", " ")))
+		var display_txt := String(m.get("label", mid.replace("_", " ")))
+		if not matches_scope:
+			display_txt += " [Unscoped]"
+		lbl.text = display_txt
 		lbl.add_theme_font_size_override("font_size", 13)
 		lbl.add_theme_color_override("font_color",
 			C_TEXT_DARK if mkey != _selected_machine_key else Color.WHITE)
@@ -1932,18 +1982,15 @@ func _populate_machine_list() -> void:
 		_machines_list_vb.add_child(btn)
 		_machines_list_rows.append({"key": mkey, "id": mid, "btn": btn, "lamp": lamp, "lbl": lbl})
 
-	# LineFlow is wired but produced no rows — either nothing is placed yet, or
-	# none of the placed machines fall in this HMI's scope. Show a legible message
-	# so an empty line doesn't read as a BROKEN panel (the operator hit exactly
-	# this on a save with 0 placed line machines).
-	if _machines_list_rows.is_empty():
+	# If strict scope yielded 0 machines, auto-populate all machines with notice
+	if in_scope_count == 0 and total > 0 and not _show_all_machines:
+		_show_all_machines = true
+		_populate_machine_list()
+		return
+
+	if total == 0:
 		var none := Label.new()
-		# Distinguish "no line built at all" from "a line IS built but none of its
-		# machines fall in THIS HMI's scope" — otherwise a scoped panel on a running
-		# plant misleads the operator into rebuilding a line that already exists.
-		var total : int = _line_flow.call("machine_list").size()
-		none.text = "(geen machines geplaatst — bouw een lijn met Tab)" if total == 0 \
-			else "(%d machines op de lijn — geen binnen deze HMI-scope)" % total
+		none.text = "(geen machines geplaatst — bouw een lijn met Tab)"
 		none.add_theme_color_override("font_color", C_TEXT_DARK)
 		_machines_list_vb.add_child(none)
 

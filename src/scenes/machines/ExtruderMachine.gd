@@ -70,10 +70,21 @@ func _ready() -> void:
 
 	SimTick.sim_tick.connect(_on_sim_tick)
 	# #218 — cold spawn: do NOT promote the model to IDLE here. ExtruderModel
-	# defaults to State.OFF (see ExtruderModel.gd:184). The operator must walk
-	# the SWI-049 startup sequence on the HMI: Automaatknop → Voorverwarmen
-	# (15s preheat) → Groene drukknop. SorteerlijnScope drives that flow and
-	# emits `startup_completed` when the green button is pressed.
+	# defaults to State.OFF (see the State enum).
+	#
+	# CITATION FIX (2026-08-11): this comment used to send the reader to SWI-049
+	# "Automaatknop → Voorverwarmen (15 s preheat) → Groene drukknop". SWI-048
+	# and SWI-049 are both "Opstarten sorteerlijn" — the SORTING LINE, a
+	# different machine. The extruder's own warm-up is Cedo-PROD-SWI-042 p4
+	# step 19: starting the 3a/3b compactors "duurt altijd minimaal 30 minuten,
+	# in deze opwarm tijd" — at least 30 minutes — and that same step records
+	# "Nog SWI maken opstarten extruders", so no extruder start-up SWI exists.
+	# That duration now lives in ExtruderConfig.preheat_min_s and is spent in
+	# State.PREHEAT; see ExtruderModel._tick_preheat().
+	#
+	# The barrel is still handed over hot here, because a line at shift change
+	# has been running for days. It cools in OFF (_tick_off), and once cold the
+	# operator warms it again through PREHEAT instead of being stuck.
 	model.melt_temp = config_resource.melt_temp_setpoint
 	# Cache the downstream filter refs once the world has spawned. Deferred so
 	# placeable nodes that the catalog adds in the same frame as us are present
@@ -99,9 +110,14 @@ func _resolve_downstream_filters() -> void:
 		_lf_trip_connected = true
 
 func _closest_in_group(group: String) -> Node:
+	if not is_inside_tree():
+		return null
+	var tree := get_tree()
+	if tree == null:
+		return null
 	var best : Node = null
 	var best_d2 : float = INF
-	for n in get_tree().get_nodes_in_group(group):
+	for n in tree.get_nodes_in_group(group):
 		var n3 := n as Node3D
 		if n3 == null:
 			continue
@@ -135,6 +151,12 @@ func _readable_status() -> String:
 	match model.state:
 		ExtruderModel.State.OFF:
 			return "Powered off — cold, no rotation."
+		ExtruderModel.State.PREHEAT:
+			if model.preheat_ready():
+				return "Warm-up complete — press the green button to start."
+			return "Warming up — %.0f%% (%.0f °C of %.0f °C)." % [
+				100.0 * model.preheat_progress(), model.melt_temp,
+				config_resource.melt_temp_setpoint]
 		ExtruderModel.State.IDLE:
 			return "Warm, screw at idle rpm, awaiting feed."
 		ExtruderModel.State.RUNNING:
@@ -154,6 +176,12 @@ func _readable_status() -> String:
 # What the interact key (E) will do in the current state.
 func _interact_hint() -> String:
 	match model.state:
+		ExtruderModel.State.OFF:
+			return "start production" if model.preheat_ready() else "start warm-up"
+		ExtruderModel.State.PREHEAT:
+			if model.preheat_ready():
+				return "start production (barrel at temperature)"
+			return "warming up — %.0f%%" % (100.0 * model.preheat_progress())
 		ExtruderModel.State.IDLE:           return "start production"
 		ExtruderModel.State.RUNNING:        return "simulate vacuum loss (test the 120s cascade)"
 		ExtruderModel.State.VACUUM_ALARM:   return "restore vacuum (clear alarm)"
@@ -513,9 +541,27 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif model.state == ExtruderModel.State.VACUUM_ALARM:
 			_pending["vacuum_restored"] = true
 			print("[%s] Operator restored vacuum — alarm cleared" % config_resource.line_id)
+		elif model.state == ExtruderModel.State.PREHEAT:
+			# The green pushbutton is only live once the display block is green.
+			if model.preheat_ready():
+				_pending["start_production"] = true
+				print("[%s] Operator started production (barrel at temperature)"
+					% config_resource.line_id)
+			else:
+				print("[%s] Still warming — %.0f%% (%.0f/%.0f °C). The green "
+					% [config_resource.line_id, 100.0 * model.preheat_progress(),
+					   model.melt_temp, config_resource.melt_temp_setpoint]
+					+ "button is not live yet.")
 		elif model.state in [ExtruderModel.State.OFF, ExtruderModel.State.IDLE]:
+			# On a cold barrel the model routes this to PREHEAT rather than
+			# STARTING — see ExtruderModel._route_start_request(). Pressing E on
+			# a cold machine used to guarantee a torque trip 2 s later.
 			_pending["start_production"] = true
-			print("[%s] Operator started production" % config_resource.line_id)
+			if model.preheat_ready():
+				print("[%s] Operator started production" % config_resource.line_id)
+			else:
+				print("[%s] Operator started warm-up (barrel cold, %.0f °C)"
+					% [config_resource.line_id, model.melt_temp])
 		elif model.state == ExtruderModel.State.FAULT:
 			_pending["operator_clear_fault"] = true
 			print("[%s] Operator cleared fault" % config_resource.line_id)

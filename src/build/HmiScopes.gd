@@ -31,6 +31,12 @@ class_name HmiScopes
 ##     "color":     Color       # housing colour (lets operators tell panels apart visually)
 ##     "lines":     Array[String]   # line tags (1 / 3a / 3b / 3c / 6 / indaver) this HMI owns
 ##     "tokens":    Array[String]   # machine id-substring tokens the HMI can control
+##     "web_screen": String     # OPTIONAL — filename of a Claude-Design
+##                              # .dc.html export (docs/plant/hmi_screens_2026-07-26/)
+##                              # to open as this panel's start screen in the
+##                              # HmiWebOverlay (WebView) instead of the GDScript
+##                              # touchscreen. Falls back to the touchscreen when
+##                              # the WebView addon is unavailable (headless).
 ##   }
 ##
 ## A LineFlow node MATCHES the scope when:
@@ -44,12 +50,17 @@ class_name HmiScopes
 ## changes, `matches()` below is the ONE function to update.
 ##
 ## ───────────────────────────────────────────────────────────────────────────
-## BACK-COMPAT:
-##   The two legacy placeable ids `hmi_panel` and `hmi_wall` (cosmetic-only,
-##   pre-#165) map to the "generic" scope, which sees every machine — same
-##   behaviour as before so existing saves don't crash on load.
-
-const GENERIC_ID := "generic"
+## RETIRED (2026-08-15, operator order "remove unused/old HMI displays"):
+##   The two pre-#165 cosmetic placeable ids `hmi_panel` / `hmi_wall` used to
+##   map to a "generic" scope that saw EVERY machine. No such panel exists in
+##   the plant, so the id, the scope and the fallback are all gone
+##   (`PlaceableCatalog.RETIRED_IDS`). There is now exactly one rule:
+##
+##       an hmi_id that is not a key of SCOPES is a BUG, not a fallback.
+##
+##   `get_scope()` therefore returns an EMPTY dictionary on a miss and Hmi.gd
+##   leaves such a panel inert (warning, no interaction) instead of quietly
+##   handing the player control over the whole plant.
 
 ## ── MOUNT TABLE (placement) ─────────────────────────────────────────────────
 ## This file called itself "the single source of truth" while carrying no
@@ -109,6 +120,7 @@ const SCOPES := {
 		"label":  "Shredder lijn 1",
 		"mesh":   "hmi_panel",
 		"color":  Color(0.30, 0.32, 0.36),
+		"web_screen": "WEIMA Shredder Vulpeil Trechter.dc.html",
 		"lines":  ["1"],
 		"tokens": ["shredder"],
 	},
@@ -117,6 +129,7 @@ const SCOPES := {
 		"label":  "Shredder 1 lijn 3A/3B",
 		"mesh":   "hmi_panel",
 		"color":  Color(0.30, 0.32, 0.36),
+		"web_screen": "WEIMA Shredder Vulpeil Trechter.dc.html",
 		"lines":  ["3a", "3b"],
 		"tokens": ["shredder_1", "shredder1"],
 	},
@@ -137,6 +150,7 @@ const SCOPES := {
 		"label":  "Shredder lijn 3C/6",
 		"mesh":   "hmi_panel",
 		"color":  Color(0.30, 0.32, 0.36),
+		"web_screen": "WEIMA Shredder Vulpeil Trechter.dc.html",
 		"lines":  ["3c", "6"],
 		"tokens": ["shredder"],
 	},
@@ -145,6 +159,7 @@ const SCOPES := {
 		"label":  "Sorteerlijn 3A/3B",
 		"mesh":   "hmi_panel",
 		"color":  Color(0.26, 0.38, 0.30),
+		"web_screen": "Sorteerlijn Overzicht.dc.html",
 		"lines":  ["3a", "3b"],
 		"tokens": [
 			"bunker", "sga", "ballistic", "wind_sifter",
@@ -157,6 +172,10 @@ const SCOPES := {
 		"label":  "Transportbanden 3A/3B",
 		"mesh":   "hmi_panel",
 		"color":  Color(0.36, 0.30, 0.18),
+		# No web_screen: the operator's 33 designs contain no conveyor/transport
+		# screen. Stays on the GDScript touchscreen rather than borrowing another
+		# unit's artwork — a panel showing the wrong machine's screen is worse
+		# than an honest generic one.
 		"lines":  ["3a", "3b"],
 		"tokens": [
 			"conveyor", "transport_belt", "transportband",
@@ -169,6 +188,7 @@ const SCOPES := {
 		"label":  "Transportbanden 3C/6",
 		"mesh":   "hmi_panel",
 		"color":  Color(0.36, 0.30, 0.18),
+		# No web_screen — see hmi_transport_l3ab (no conveyor design exists).
 		"lines":  ["3c", "6"],
 		"tokens": [
 			"conveyor", "transport_belt", "transportband",
@@ -181,6 +201,9 @@ const SCOPES := {
 		"label":  "Waslijn (alle lijnen)",
 		"mesh":   "hmi_panel",
 		"color":  Color(0.16, 0.30, 0.40),
+		# task#2 prototype: this panel opens the Claude-Design wash-line 3C
+		# overview in the WebView overlay (live amps/status via LineFlow).
+		"web_screen": "Waslijn 3C Overzicht.dc.html",
 		"lines":  ["1", "3a", "3b", "3c", "6"],
 		"tokens": [
 			"prewash", "voorwas", "friction", "intensive", "wash", "was",
@@ -194,6 +217,7 @@ const SCOPES := {
 		"label":  "Extruder (alle lijnen)",
 		"mesh":   "hmi_panel",
 		"color":  Color(0.30, 0.16, 0.34),
+		"web_screen": "EREMA Extruder Scherm 3C.dc.html",
 		"lines":  ["1", "3a", "3b", "3c", "6"],
 		"tokens": [
 			"extruder", "intarema", "erema",
@@ -209,6 +233,7 @@ const SCOPES := {
 		"label":  "Water lijn 3C/6",
 		"mesh":   "hmi_panel",
 		"color":  Color(0.14, 0.34, 0.40),
+		"web_screen": "Water Circuit Lijn 3C-6.dc.html",
 		"lines":  ["3c", "6"],
 		"tokens": [
 			"water", "pomp", "pump", "tank",
@@ -220,6 +245,9 @@ const SCOPES := {
 		"label":  "Water extruder 1/3A/3B",
 		"mesh":   "hmi_panel",
 		"color":  Color(0.14, 0.34, 0.40),
+		# No web_screen: "Water Circuit Lijn 3C-6" is explicitly the 3C/6 loop,
+		# and there is no 1/3A/3B water design. Assigning the 3C artwork here
+		# would put the wrong line's circuit on the panel.
 		"lines":  ["1", "3a", "3b"],
 		"tokens": [
 			"water", "pomp", "pump", "tank",
@@ -231,6 +259,7 @@ const SCOPES := {
 		"label":  "Indaver waterzuivering",
 		"mesh":   "hmi_wall",
 		"color":  Color(0.22, 0.40, 0.46),
+		# No web_screen: no Indaver/effluent design exists in the 33.
 		"lines":  ["indaver"],
 		"tokens": ["indaver", "effluent", "water"],
 	},
@@ -252,22 +281,20 @@ const ORDERED_IDS := [
 	"hmi_indaver_water",
 ]
 
-## Back-compat scope — what `hmi_panel` / `hmi_wall` get when loaded from a
-## save written before #165. Sees every machine = old behaviour preserved.
-const _GENERIC_SCOPE := {
-	"label":  "HMI (generiek)",
-	"mesh":   "hmi_panel",
-	"color":  Color(0.30, 0.32, 0.36),
-	"lines":  [],     # empty = no line filter
-	"tokens": [],     # empty = no token filter (matches everything)
-}
+## True when `hmi_id` is one of the 12 documented panels.
+static func has_scope(hmi_id: String) -> bool:
+	return SCOPES.has(hmi_id)
 
-## Look up the scope for a `hmi_id`. Returns the GENERIC scope on miss so the
-## overlay never crashes — bad/legacy ids just show every machine.
+## Look up the scope for a `hmi_id`. Returns an EMPTY dictionary on a miss.
+##
+## It used to return a see-everything "generic" scope. That fallback existed for
+## the retired `hmi_panel` / `hmi_wall` props, and it was the dangerous kind of
+## default: an unknown id silently became a master panel over the entire plant.
+## Callers must now check `is_empty()` — Hmi.gd does, and leaves the panel inert.
 static func get_scope(hmi_id: String) -> Dictionary:
 	if SCOPES.has(hmi_id):
 		return SCOPES[hmi_id]
-	return _GENERIC_SCOPE
+	return {}
 
 ## True iff the given LineFlow node id (and optional explicit `line` attr) is
 ## inside the scope.
@@ -280,6 +307,10 @@ static func get_scope(hmi_id: String) -> Dictionary:
 ##                          permissive because today's macros write line into
 ##                          the id rather than as a separate attribute.
 static func matches(scope: Dictionary, node_id: String, node_line: String = "") -> bool:
+	if scope.is_empty() or bool(scope.get("see_all", false)):
+		return true
+	if node_line.to_lower() == "all":
+		return true
 	var tokens : Array = scope.get("tokens", [])
 	if not tokens.is_empty():
 		var hit := false
@@ -316,17 +347,14 @@ static func matches(scope: Dictionary, node_id: String, node_line: String = "") 
 			break
 	return not any_line_tag
 
-## Resolve a placed-HMI node's hmi_id from its meta. Falls back to the
-## placeable_id (legacy `hmi_panel`/`hmi_wall` → generic scope).
+## Resolve a placed-HMI node's hmi_id from its meta, falling back to the
+## placeable_id (the catalog stamps both, and they are equal for all 12 panels).
+## Returns "" when neither meta is present — the caller treats that as unknown.
 static func resolve_hmi_id(meta_owner: Object) -> String:
 	if meta_owner == null:
-		return GENERIC_ID
+		return ""
 	if meta_owner.has_meta("hmi_id"):
 		return String(meta_owner.get_meta("hmi_id"))
 	if meta_owner.has_meta("placeable_id"):
-		var pid := String(meta_owner.get_meta("placeable_id"))
-		# Legacy cosmetic ids → generic scope (back-compat for old saves).
-		if pid == "hmi_panel" or pid == "hmi_wall":
-			return GENERIC_ID
-		return pid
-	return GENERIC_ID
+		return String(meta_owner.get_meta("placeable_id"))
+	return ""

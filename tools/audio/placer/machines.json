@@ -1,15 +1,5 @@
 [
   {
-    "id": "hmi_panel",
-    "name": "HMI panel (stand)",
-    "category": "Control"
-  },
-  {
-    "id": "hmi_wall",
-    "name": "HMI panel (wall)",
-    "category": "Control"
-  },
-  {
     "id": "compactorband",
     "name": "Compactorband (feed belt)",
     "category": "Conveyance"

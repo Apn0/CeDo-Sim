@@ -137,7 +137,7 @@ func spawn_vehicle_instances(layout_id: String, scene_path: String, fallback_off
 	for i in positions.size():
 		var rel : Vector3 = positions[i]
 		if not bool(_world.call("_layout_rel_sane", rel)):
-			push_warning("[VehicleSpawner] %s #%d marker is %.0f m from the anchor — corrupt layout data, skipping (re-place it in WorldSetup)" \
+			push_warning("[VehicleSpawner] %s #%d marker is %.0f m from the anchor — corrupt layout data, skipping (re-place it in world_layout.json; WorldSetup was deleted 2026-08-17)" \
 				% [label, i + 1, Vector2(rel.x, rel.z).length()])
 			continue
 		var p : Vector3
@@ -194,11 +194,11 @@ func _denest_spawn(v: Node3D, catalog_id: String, at: Vector3, label: String, id
 			var cand := at + Vector3(cos(ang) * radius, 0.0, sin(ang) * radius)
 			if _spawn_blocker(catalog_id, cand, rot_y, size) != "":
 				continue
-			push_warning("[VehicleSpawner] de-nest at spawn: %s #%d would materialise inside '%s' at scene(%.1f, %.1f) — RUNTIME pose offset %.2f m to scene(%.1f, %.1f). The marker in world_layout.json is UNCHANGED; move it in WorldSetup to make this permanent."
+			push_warning("[VehicleSpawner] de-nest at spawn: %s #%d would materialise inside '%s' at scene(%.1f, %.1f) — RUNTIME pose offset %.2f m to scene(%.1f, %.1f). The marker in world_layout.json is UNCHANGED; edit world_layout.json to make this permanent (WorldSetup was deleted 2026-08-17)."
 				% [label, idx, blocker, at.x, at.z, (cand - at).length(), cand.x, cand.z])
 			_settled_hulls.append({"pos": cand, "rot": rot_y, "size": size})
 			return cand
-	push_warning("[VehicleSpawner] de-nest at spawn: %s #%d is inside '%s' at scene(%.1f, %.1f) and NO clear spot was found within %.1f m — spawned ON its marker anyway (never dropped). Re-place the marker in WorldSetup."
+	push_warning("[VehicleSpawner] de-nest at spawn: %s #%d is inside '%s' at scene(%.1f, %.1f) and NO clear spot was found within %.1f m — spawned ON its marker anyway (never dropped). Re-place the marker in world_layout.json (WorldSetup was deleted 2026-08-17)."
 		% [label, idx, blocker, at.x, at.z, float(BuildMode.DENEST_RINGS) * BuildMode.DENEST_STEP_M])
 	_settled_hulls.append({"pos": at, "rot": rot_y, "size": size})
 	return at

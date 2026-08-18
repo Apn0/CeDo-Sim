@@ -109,7 +109,7 @@ gated op shift-fase (opstart/overdracht-boost) in `NpcAutonomyBoard.gd`.
 | Taakbord + rol-gated auto-taken | ✅ bestaat (`NpcAutonomyBoard`) — **maar alleen Tier 4** |
 | Post gaat vóór schoonmaak | ✅ **gebouwd (#223)** — `CrewManager.needs_worker()` + `NPC._production_needs_me()`: productie (jam/dispatch/pauze) verdringt nu strikt de huishouding; een geposte operator laat de bladblazer vallen zodra er een storing in zijn zone is en pakt er geen op zolang productie hem claimt |
 | Tier 1 storings-rangschikking op doorvoer-impact | ❌ mist — alleen grove `JAM_KG`-posting |
-| Storings-loop (HMI → unit → fix → dicht → HMI → herstart) | ❌ mist |
+| Storings-loop (HMI → unit → fix → dicht → HMI → herstart) | 🟡 **kern gebouwd 2026-08-07** (operator-order): nieuwe rol **`storing_fixen`** (CrewPanel-menu = alleen de 8 rota-rollen + deze; secties/stations uit het menu). `NpcAutonomyBoard` houdt een storingsregister bij (EventBus `machine_alarm_raised/cleared` + eigen INV-101 voedingsbewaking, live bewezen in MainWorld-boot) en emitteert `FixStoringTask` (loop tot storing weg, backlog-relief via `CrewManager.relieve_station`) + `KwitterenStoringTask` voor een **ándere** storing-operator (excluded_npc; ack → bel amber i.p.v. rood). Dispatch = dichtstbij + belangrijkst (score = prioriteit − 0.15/m); 3 s na-afloop-linger houdt de claim vast. **Nog open:** E2E-bewijs met een toegewezen storing-operator in een echte wereld; machines verplaatsen/bijbouwen en containers bouwen/onderhouden (fase 2); HMI-herstart-stap; gedrag bij één enkele storing-operator (kwitteren blijft dan open staan). |
 | Feeder-ladder (Tier 2) | ❌ mist |
 | Tier 3 balenpers als slack-gated 1×/shift taak | ❌ mist — bestaat als taak helemaal niet |
 

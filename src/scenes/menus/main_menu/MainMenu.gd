@@ -9,8 +9,12 @@ extends Control
 @onready var delete_all_button: Button = $ScrollContainer/Centerer/Wrapper/DeleteAllButton
 @onready var new_save_input: LineEdit = $ScrollContainer/Centerer/Wrapper/NewSaveInput
 @onready var new_save_button: Button = $ScrollContainer/Centerer/Wrapper/NewSaveButton
-@onready var world_setup_button: Button = $ScrollContainer/Centerer/Wrapper/WorldSetupButton
-@onready var gauntlet_button: Button = $ScrollContainer/Centerer/Wrapper/GauntletButton
+# World Setup, Gauntlet, Extruder test gauntlet, NPC task bench and the Line
+# layout dragger were DELETED 2026-08-17 on operator order: "I'm kinda done with
+# all the hopping around between things where nothing works, and then it works in
+# one, and then it doesn't work in the other." One world, one truth — proofs are
+# established in a real MainWorld boot, never in a parallel bench.
+# See docs/plant/operator_rulings_2026-08-17.md §4.
 
 var game_state_script = preload("res://src/scenes/world/GameState.gd")
 
@@ -19,20 +23,17 @@ func _ready() -> void:
 	delete_selected_button.pressed.connect(_on_delete_selected_pressed)
 	delete_all_button.pressed.connect(_on_delete_all_pressed)
 	new_save_button.pressed.connect(_on_new_save_pressed)
-	world_setup_button.pressed.connect(_on_world_setup_pressed)
-	gauntlet_button.pressed.connect(_on_gauntlet_pressed)
 	# #153 — "Customise character" button. Added programmatically (less risky
-	# than editing the .tscn) right after Gauntlet so it sits at the bottom of
-	# the main menu's button column.
+	# than editing the .tscn). Anchored on new_save_button since the Gauntlet
+	# button it used to sit after was deleted 2026-08-17.
 	var customize_btn := Button.new()
 	customize_btn.text = "Customise character"
 	customize_btn.custom_minimum_size = Vector2(0, 40)
 	customize_btn.mouse_filter = Control.MOUSE_FILTER_STOP
 	customize_btn.pressed.connect(_on_customize_pressed)
-	var vbox : Node = gauntlet_button.get_parent()
+	var vbox : Node = new_save_button.get_parent()
 	if vbox != null:
 		vbox.add_child(customize_btn)
-		vbox.move_child(customize_btn, gauntlet_button.get_index() + 1)
 	# #158 — "Macro sandbox" button. Flat grass + all 5 line macros laid out
 	# for fast walkthrough (F8 prev / F9 next station).
 	# Operator report (post-#158): could only reach it via Tab+Enter, mouse
@@ -47,28 +48,7 @@ func _ready() -> void:
 	sandbox_btn.pressed.connect(_on_sandbox_pressed)
 	if vbox != null:
 		vbox.add_child(sandbox_btn)
-	# Extruder test gauntlet — flat-floor live-editing bench: one detailed
-	# extruder + cutter-compactor + live ExtruderMachine sim. Meant to be run
-	# alongside the Godot editor so live scene editing applies in-session.
-	var extg_btn := Button.new()
-	extg_btn.text = "Extruder test gauntlet"
-	extg_btn.custom_minimum_size = Vector2(0, 40)
-	extg_btn.mouse_filter = Control.MOUSE_FILTER_STOP
-	extg_btn.pressed.connect(_on_extruder_gauntlet_pressed)
-	if vbox != null:
-		vbox.add_child(extg_btn)
 		vbox.move_child(sandbox_btn, customize_btn.get_index() + 1)
-	# #225 — NPC task bench: flat 3-line world (feeder belt → shredder → wash →
-	# extruder → laserfilter + 2 lump carts) running the REAL crew systems:
-	# CrewManager, NpcAutonomyBoard auto-assignment, CrewPanel (C) manual
-	# role/task assignment, live lump discharge into the carts.
-	var npcbench_btn := Button.new()
-	npcbench_btn.text = "NPC task bench"
-	npcbench_btn.custom_minimum_size = Vector2(0, 40)
-	npcbench_btn.mouse_filter = Control.MOUSE_FILTER_STOP
-	npcbench_btn.pressed.connect(_on_npc_task_bench_pressed)
-	if vbox != null:
-		vbox.add_child(npcbench_btn)
 	# Feature Tester — sandbox with live dials for tuning a new feature's look
 	# (starts with the water-pipe + film stream).
 	var feature_btn := Button.new()
@@ -79,14 +59,6 @@ func _ready() -> void:
 	if vbox != null:
 		vbox.add_child(feature_btn)
 		vbox.move_child(feature_btn, sandbox_btn.get_index() + 1)
-	var dragger_btn := Button.new()
-	dragger_btn.text = "Line layout dragger"
-	dragger_btn.custom_minimum_size = Vector2(0, 40)
-	dragger_btn.mouse_filter = Control.MOUSE_FILTER_STOP
-	dragger_btn.pressed.connect(_on_line_dragger_pressed)
-	if vbox != null:
-		vbox.add_child(dragger_btn)
-		vbox.move_child(dragger_btn, feature_btn.get_index() + 1)
 	# Tree column titles + widths. column 0 (name) is the widest because save
 	# names can be long; the other three are sized for readable timestamps and
 	# the secondary metadata.
@@ -106,10 +78,6 @@ func _ready() -> void:
 	save_list.item_activated.connect(_on_load_pressed)
 
 	_refresh_save_list()
-
-func _on_world_setup_pressed() -> void:
-	_go_to_scene("res://src/scenes/world/WorldSetup.tscn",
-		"Loading world setup…", "")
 
 ## #153 — Character customizer / wardrobe. Opened from a button on the main
 ## menu OR from the in-game wardrobe locker (#154). Overlays the customizer
@@ -137,28 +105,6 @@ func _on_sandbox_pressed() -> void:
 ## Feature Tester — a dials sandbox for tuning a feature's look in real time.
 func _on_feature_tester_pressed() -> void:
 	get_tree().change_scene_to_file("res://src/scenes/menus/feature_tester/FeatureTester.tscn")
-
-func _on_line_dragger_pressed() -> void:
-	get_tree().change_scene_to_file("res://src/scenes/menus/line_dragger/LineDragger.tscn")
-
-## Backlog-verification launcher. Loads GauntletWorld.tscn — a long platform
-## with one station per pending / recently-finished task so the operator can
-## walk past each and confirm. NOT a real shift: crew + LineFlow + bale yards
-## stay out so verification is fast.
-func _on_gauntlet_pressed() -> void:
-	_go_to_scene("res://src/scenes/world/GauntletWorld.tscn",
-		"Loading gauntlet…", "")
-
-## Flat-floor extruder bench (extruder + PCU + live sim) for editor-driven
-## live tuning. See ExtruderGauntlet.gd.
-func _on_extruder_gauntlet_pressed() -> void:
-	_go_to_scene("res://src/scenes/world/ExtruderGauntlet.tscn",
-		"Loading extruder bench…", "")
-
-## #225 — NPC task bench: 3 flat lines + live crew systems. See NpcTaskBench.gd.
-func _on_npc_task_bench_pressed() -> void:
-	_go_to_scene("res://src/scenes/world/NpcTaskBench.tscn",
-		"Loading NPC task bench…", "")
 
 # ── Save-file deletion ───────────────────────────────────────────────────────
 ## Translate the display name back to the on-disk filename. "default" is the

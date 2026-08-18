@@ -115,6 +115,38 @@ const NL_MONTHS : Array = ["januari", "februari", "maart", "april", "mei", "juni
 var _bound   : Array[Dictionary] = []
 var _unavail : Array[Dictionary] = []
 
+# Operator 2026-08-07 — the bottom-nav < / > keys, captured at build time so
+# wire_nav() can turn them from "niet gekoppeld" chrome into real navigation.
+var _nav_prev_btn : Button = null
+var _nav_next_btn : Button = null
+
+
+var _pending_nav_prev : Callable = Callable()
+var _pending_nav_next : Callable = Callable()
+
+
+## Enable the < and > bottom-nav keys. The host (HmiOverlay) decides what
+## previous/next mean — for the L3C unit screens that is the HOOFDMENU tile
+## order. Order-proof: callables are stored, and applied either immediately
+## (buttons already built) or by _build_nav_bar when it runs later.
+func wire_nav(prev_cb: Callable, next_cb: Callable) -> void:
+	_pending_nav_prev = prev_cb
+	_pending_nav_next = next_cb
+	_apply_nav_wiring()
+
+
+func _apply_nav_wiring() -> void:
+	if _nav_prev_btn != null and _pending_nav_prev.is_valid():
+		_nav_prev_btn.disabled = false
+		_nav_prev_btn.tooltip_text = "vorige unit"
+		if not _nav_prev_btn.pressed.is_connected(_pending_nav_prev):
+			_nav_prev_btn.pressed.connect(_pending_nav_prev)
+	if _nav_next_btn != null and _pending_nav_next.is_valid():
+		_nav_next_btn.disabled = false
+		_nav_next_btn.tooltip_text = "volgende unit"
+		if not _nav_next_btn.pressed.is_connected(_pending_nav_next):
+			_nav_next_btn.pressed.connect(_pending_nav_next)
+
 # Widget registries, keyed so rendered_text() can answer for any screen.
 var _status_dots : Dictionary = {}       # key -> ColorRect (mimic squares, card bands)
 var _status_texts: Dictionary = {}       # key -> Label     (Aan/Uit pills)
@@ -383,6 +415,14 @@ func _build_nav_bar() -> Control:
 		b.custom_minimum_size = Vector2(float(k["w"]), 0)
 		b.disabled = true
 		b.tooltip_text = "niet gekoppeld"
+		# Operator 2026-08-07 — the < and > keys are real navigation now.
+		# Captured here, enabled by wire_nav() once the host overlay decides
+		# what previous/next mean for this screen. Every other key stays a
+		# disabled photo-faithful stand-in.
+		if String(k["t"]) == "<":
+			_nav_prev_btn = b
+		elif String(k["t"]) == ">":
+			_nav_next_btn = b
 		var bsb := StyleBoxFlat.new()
 		bsb.bg_color = k["bg"]
 		bsb.border_color = C_NAV_EDGE
@@ -393,7 +433,13 @@ func _build_nav_bar() -> Control:
 		b.add_theme_stylebox_override("disabled", bsb)
 		b.add_theme_color_override("font_disabled_color", C_NAV_FG)
 		b.add_theme_font_size_override("font_size", 11)
+		# Enabled nav keys need a non-disabled style too, or they render blank.
+		b.add_theme_stylebox_override("normal", bsb)
+		b.add_theme_stylebox_override("hover", bsb)
+		b.add_theme_stylebox_override("pressed", bsb)
+		b.add_theme_color_override("font_color", C_NAV_FG)
 		h.add_child(b)
+	_apply_nav_wiring()
 	return pc
 
 # ---------------------------------------------------------------------------

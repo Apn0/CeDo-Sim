@@ -127,29 +127,31 @@ func _spawn_car_in_bay(scene_path: String, side: int, idx: int, label: String, n
 	if car == null:
 		return null
 	_world.add_child(car)
-	car.transform = _staff_parking.bay_world_transform(side, idx)
+	
 	car.set_meta("display_label", label)
-	# Per-NPC body-only overrides. Pascal drives the same Ford Ka 2003 GLB as
-	# Abdellilah but his is the lower-slung "Streetka"-style variant: shrink
-	# 15 % on Y. Body-only: wheels are reparented to VehicleWheel3D nodes that
-	# are children of the Car (not of the scaled imported subtree) by
-	# Car._articulate_wheels, so they stay round.
+	if npc_id != "":
+		car.set_meta("npc_id", npc_id)
+
+	# Setup target bay
+	var bay_xf = _staff_parking.bay_world_transform(side, idx)
+	
+	# Spawn down the road instead of instantly in the bay
+	# We use the _player_spawn_pos but offset backwards further down De Asselen Kuil
+	var by : float = _world.call("_world_yaw")
+	var rot := Basis(Vector3.UP, by)
+	
+	# Stagger them so they don't spawn inside each other
+	var spawn_z_offset = -60.0 - (idx * 15.0) - (0.0 if side == -1 else 7.5) 
+	car.global_transform.basis = rot
+	car.global_position = _player_spawn_pos + rot * Vector3(0, -0.7, spawn_z_offset)
+	
 	if npc_id == "pascal":
-		# Pre-set _model_scale BEFORE the deferred load_model finishes if it
-		# hasn't already run (subclass _ready calls load_model synchronously
-		# in our Car flow, so this is set as a follow-up rescale of the body
-		# subtree). Walks the immediate children, applies Y=0.85 to anything
-		# that's not a VehicleWheel3D / Area3D / Camera3D / CollisionShape3D
-		# (i.e. just the imported GLB body root). Safe because Car treats
-		# `_model_scale` as a one-shot — re-applying via Node3D.scale is
-		# additive only on the body, not the wheels.
 		call_deferred("_apply_pascal_body_squish", car)
-	# Parked cars had NO collision of any kind — they were pure visuals.
-	# Operator 2026-07-20: two F10 markers placed on two wheels of the SAME car
-	# came out 134.69 m apart, both reporting hit_name "TempFloor", because the
-	# feedback ray went straight through the car and landed on the ground plane
-	# far behind it. A body you cannot hit is also a body you can walk through.
-	call_deferred("_add_parked_collider", car)
+		
+	# Instead of instantly freezing in bay, instruct it to drive
+	if car.has_method("ai_drive_to_bay"):
+		car.ai_drive_to_bay(bay_xf)
+		
 	return car
 
 ## Wrap a parked car in a StaticBody3D box sized from its visible AABB, so rays
@@ -231,8 +233,8 @@ func _apply_pascal_body_squish(car: Node3D) -> void:
 	# Target only the FrontAxisCorrection wrap by name. If load_model() didn't
 	# create one (asset not imported, or subclass opted out via
 	# _model_front_axis_correction_deg = 0), warn once and skip.
-	var wrap := car.get_node_or_null("FrontAxisCorrection") as Node3D
-	if wrap == null:
+	var car_wrap := car.get_node_or_null("FrontAxisCorrection") as Node3D
+	if car_wrap == null:
 		push_warning("[ShiftCarSpawner] Pascal squish: FrontAxisCorrection wrap missing on %s — skipped (model not imported?)" % car.name)
 		return
 	# Apply Y-shrink to the IMPORTED GLB root (the wrap's only child), in ITS
@@ -241,7 +243,7 @@ func _apply_pascal_body_squish(car: Node3D) -> void:
 	# directly to bypass the Node3D.scale decomposition pathway, which can
 	# encode 180°-Y as negative X/Z scale and smear the non-uniform factor
 	# onto the wrong axis.
-	for body in wrap.get_children():
+	for body in car_wrap.get_children():
 		if body is Node3D:
 			var n : Node3D = body
 			var t : Transform3D = n.transform

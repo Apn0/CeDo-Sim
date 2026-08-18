@@ -15,6 +15,7 @@ class_name PerfHud
 
 const LOG_INTERVAL_S : float = 5.0
 const AVG_WINDOW_S   : float = 1.0   # rolling window for the stable FPS/frame-ms read
+const FRAME_MS_TAU_S : float = 0.5   # EMA constant for the frame time the VERDICT uses
 
 var _label : Label
 var _log_accum : float = 0.0
@@ -25,6 +26,9 @@ var _win_time   : float = 0.0
 var _win_frames : int = 0
 var _avg_fps    : float = 0.0
 var _avg_ms     : float = 0.0
+# Smoothed TRUE frame time (ms) from the real delta — the denominator the
+# bottleneck verdict divides by. See the verdict block in _process().
+var _frame_ms_ema : float = 0.0
 
 func _ready() -> void:
 	layer = 100
@@ -33,7 +37,9 @@ func _ready() -> void:
 	_label.add_theme_color_override("font_color", Color(0.55, 1.0, 0.55))
 	_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
 	_label.add_theme_constant_override("outline_size", 5)
-	_label.position = Vector2(10, 96)   # below the time pill / crew panel
+	# Below the HUD crew roster panel (offset_bottom 300, HUD.gd:352). At y=96
+	# the perf text sat ON the roster (operator screenshot 2026-08-07).
+	_label.position = Vector2(10, 308)
 	add_child(_label)
 	set_process(true)
 	print("[PERF] overlay ready — F3 toggles it; snapshot logged every %.0fs" % LOG_INTERVAL_S)
@@ -45,7 +51,6 @@ func _input(event: InputEvent) -> void:
 
 func _process(delta: float) -> void:
 	var fps        : float = Performance.get_monitor(Performance.TIME_FPS)
-	var frame_ms   : float = (1000.0 / fps) if fps > 0.0 else 0.0
 	var proc_ms    : float = Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
 	var phys_ms    : float = Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
 	var draws      : int   = int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
@@ -66,19 +71,54 @@ func _process(delta: float) -> void:
 		_win_time = 0.0
 		_win_frames = 0
 
-	# Cheap heuristic for where the bottleneck is:
-	#   CPU-bound  → process/physics ms is a big chunk of the frame budget.
-	#   GPU-bound  → frame is slow but CPU ms is low (time spent on the GPU),
-	#                usually paired with high draw calls / primitives.
-	var cpu_ms := proc_ms + phys_ms
+	# ── Bottleneck verdict ───────────────────────────────────────────────────
+	# ARITHMETIC FIX 2026-08-17. Two defects, both proved with numbers:
+	#
+	# 1. WRONG DENOMINATOR. The old code divided the CPU time by
+	#        frame_ms = 1000.0 / Performance.TIME_FPS
+	#    TIME_FPS is an INTEGER the engine averages over ~1 s, so at low frame
+	#    rates it disagrees badly with the frame time the HUD itself displays
+	#    (_avg_ms, computed from the real delta).
+	#    Operator screenshot: process 73.5 ms + physics 33.4 ms = 106.9 ms CPU
+	#    inside a 133.3 ms frame -> the CPU is 80.2 % of the frame: CPU-BOUND.
+	#    Old path: TIME_FPS read 4 -> frame_ms 250.0 -> 106.9/250.0 = 42.8 %,
+	#    which is not > 60 %; draws < 4000 and prims < 5 M; so it fell through
+	#    to the unconditional `else` and printed "GPU-BOUND (fill/shader)".
+	#
+	# 2. AN `else` THAT ASSERTED THE GPU WITH NO GPU EVIDENCE. Measured proof:
+	#    a --headless run (draws = 0, prims = 0 — nothing is rendered at all)
+	#    still logged "-> GPU-BOUND (fill/shader)".
+	#
+	# Now: the denominator is the measured frame time, the CPU is compared
+	# against the REST of that same frame, and a GPU verdict requires the CPU
+	# to actually be cheap AND some drawing to have happened.
+	var dt_ms : float = delta * 1000.0
+	if _frame_ms_ema <= 0.0:
+		_frame_ms_ema = dt_ms
+	else:
+		var a : float = clampf(delta / FRAME_MS_TAU_S, 0.0, 1.0)
+		_frame_ms_ema += (dt_ms - _frame_ms_ema) * a
+	var frame_ms : float = _frame_ms_ema
+
+	var cpu_ms    : float = proc_ms + phys_ms
+	var cpu_share : float = (cpu_ms / frame_ms) if frame_ms > 0.0 else 0.0
+	var cpu_pct   : float = cpu_share * 100.0
+	var cap_ms    : float = (1000.0 / float(Engine.max_fps)) if Engine.max_fps > 0 else 0.0
+	var draw_heavy : bool = draws > 4000 or prims > 5_000_000
 	var verdict := "OK"
-	if fps < 50.0:
-		if cpu_ms > frame_ms * 0.6:
-			verdict = "CPU-BOUND (scripts/physics)"
-		elif draws > 4000 or prims > 5_000_000:
-			verdict = "GPU/DRAW-CALL-BOUND"
+	if frame_ms > 20.0:                                   # slower than 50 FPS
+		if cap_ms > 0.0 and frame_ms <= cap_ms * 1.1 and cpu_share < 0.35:
+			verdict = "OK — frame limited by max_fps %d" % Engine.max_fps
+		elif cpu_share >= 0.55:
+			verdict = "CPU-BOUND (scripts/physics) — CPU %.0f%% of frame" % cpu_pct
+		elif cpu_share >= 0.35:
+			verdict = "MIXED — CPU %.0f%% / rest %.0f%%" % [cpu_pct, 100.0 - cpu_pct]
+		elif draw_heavy:
+			verdict = "GPU/DRAW-CALL-BOUND — CPU only %.0f%%" % cpu_pct
+		elif draws > 0:
+			verdict = "GPU-BOUND (fill/shader) — CPU only %.0f%%" % cpu_pct
 		else:
-			verdict = "GPU-BOUND (fill/shader)"
+			verdict = "UNEXPLAINED — CPU %.0f%%, 0 draws (vsync / stall?)" % cpu_pct
 
 	# Pull the layout-conversion summary off MainWorld (our parent) for on-screen
 	# display (C) — so the rotation can be diagnosed without the console.
@@ -103,8 +143,11 @@ func _process(delta: float) -> void:
 	_log_accum += delta
 	if _log_accum >= LOG_INTERVAL_S:
 		_log_accum = 0.0
-		print("[PERF] fps=%d frame=%.1fms proc=%.1fms phys=%.1fms draws=%d prims=%d objs=%d vram=%.0fMB nodes=%d -> %s" % [
-			int(fps), frame_ms, proc_ms, phys_ms, draws, prims, objs, vram_mb, nodes, verdict])
+		# frame= is the MEASURED frame time (EMA of delta), not 1000/TIME_FPS —
+		# it is the same number the verdict divides by, so log and verdict can
+		# never disagree again.
+		print("[PERF] fps=%d frame=%.1fms cpu=%.1fms(%.0f%%) proc=%.1fms phys=%.1fms draws=%d prims=%d objs=%d vram=%.0fMB nodes=%d -> %s" % [
+			int(fps), frame_ms, cpu_ms, cpu_pct, proc_ms, phys_ms, draws, prims, objs, vram_mb, nodes, verdict])
 
 func _commafy(n: int) -> String:
 	var s := str(n)

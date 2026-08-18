@@ -165,15 +165,15 @@ func save() -> void:
 		# #221-PC Phase 2 — parallel PC fields. Only written when migrate_to_pc
 		# has populated them (has_pc_data == true). Older readers ignore the
 		# new keys; newer readers can fall back to legacy if these are absent.
-		"factory_center_pc":   _v2(factory_center_pc) if has_pc_data else null,
-		"player_spawn_pc":     _v2(player_spawn_pc)   if has_pc_data else null,
-		"vehicle_spawns_pc":   _dict_v2(vehicle_spawns_pc) if has_pc_data else null,
-		"line_starts_pc":      _dict_v2_single(line_starts_pc) if has_pc_data else null,
-		"compressor_spawn_pc": _v2(compressor_spawn_pc) if has_pc_data else null,
-		"bale_yards_pc":       _yards_pc_to_json() if has_pc_data else null,
+		"factory_center_pc":   _v2(factory_center_pc) if has_pc_data else {},
+		"player_spawn_pc":     _v2(player_spawn_pc)   if has_pc_data else {},
+		"vehicle_spawns_pc":   _dict_v2(vehicle_spawns_pc) if has_pc_data else {},
+		"line_starts_pc":      _dict_v2_single(line_starts_pc) if has_pc_data else {},
+		"compressor_spawn_pc": _v2(compressor_spawn_pc) if has_pc_data else {},
+		"bale_yards_pc":       _yards_pc_to_json() if has_pc_data else [],
 		# #221-PC Phase 5 — PC parallels for the new operator markers.
-		"staff_parking_pc":    _v2(staff_parking_pc) if has_pc_data else null,
-		"player_swift_pc":     _v2(player_swift_pc) if has_pc_data else null,
+		"staff_parking_pc":    _v2(staff_parking_pc) if has_pc_data else {},
+		"player_swift_pc":     _v2(player_swift_pc) if has_pc_data else {},
 		"satellite": {
 			"center_rd_x": satellite_center_rd.x,
 			"center_rd_y": satellite_center_rd.y,
@@ -251,11 +251,11 @@ func _rd_to_scene_shift() -> Vector3:
 func _warn_if_mixed_frame() -> void:
 	var rd : Array[String] = []
 	var local : Array[String] = []
-	var bucket := func(name: String, p: Vector3) -> void:
+	var bucket := func(p_name: String, p: Vector3) -> void:
 		if p == Vector3.ZERO:
 			return
-		if _is_rd_scale(p): rd.append(name)
-		else: local.append(name)
+		if _is_rd_scale(p): rd.append(p_name)
+		else: local.append(p_name)
 	bucket.call("player_spawn", player_spawn)
 	bucket.call("factory_center", factory_center)
 	for k in vehicle_spawns.keys():
@@ -269,7 +269,7 @@ func _warn_if_mixed_frame() -> void:
 			if c is Vector3: bucket.call("yard_%s" % (y as Dictionary).get("supplier_id", "?"), c)
 	if rd.is_empty() or local.is_empty():
 		return
-	push_warning("[WorldLayout] MIXED COORDINATE FRAMES in %s — %d RD-scale marker(s) %s alongside %d scene-absolute marker(s) %s. Only the RD ones are converted; re-place the others in WorldSetup if they look wrong." % [
+	push_warning("[WorldLayout] MIXED COORDINATE FRAMES in %s — %d RD-scale marker(s) %s alongside %d scene-absolute marker(s) %s. Only the RD ones are converted; re-place the others by editing world_layout.json (WorldSetup was deleted 2026-08-17; seed copy at src/data/world/world_layout_seed.json)." % [
 		LAYOUT_PATH, rd.size(), str(rd.slice(0, 6)), local.size(), str(local.slice(0, 6))])
 
 ## Compare the file's frame tag against MARKER_FRAME. An untagged file predates
@@ -283,7 +283,7 @@ func _check_marker_frame(parsed: Dictionary) -> void:
 	var tag : String = String(parsed.get("marker_frame", MARKER_FRAME))
 	marker_frame_trusted = (tag == MARKER_FRAME)
 	if not marker_frame_trusted:
-		push_error("[WorldLayout] %s declares marker_frame='%s' but this build only understands '%s' — markers are being loaded VERBATIM and may be misplaced. Re-save the layout from WorldSetup." % [
+		push_error("[WorldLayout] %s declares marker_frame='%s' but this build only understands '%s' — markers are being loaded VERBATIM and may be misplaced. Re-save the layout by hand (WorldSetup was deleted 2026-08-17; seed copy at src/data/world/world_layout_seed.json)." % [
 			LAYOUT_PATH, tag, MARKER_FRAME])
 
 ## Bring a marker into the scene-absolute frame ONLY if it is itself RD-scale.

@@ -38,7 +38,7 @@ var player_ref  : Node3D = null                       # set by PlayerController.
 const TOOL_MASS_KG : Dictionary = {
 	"leaf_blower": 9.0, "water_hose": 4.0, "lpg_cylinder": 20.0,
 	"wire_cutter": 0.6, "barcode_scanner": 0.5, "scissors": 0.3,
-	"charging_plug": 1.5, "putty_knife": 0.4, "steel_brush": 0.5,
+	"line_coupler": 0.5, "charging_plug": 1.5, "putty_knife": 0.4, "steel_brush": 0.5,
 }
 const DEFAULT_TOOL_MASS_KG : float = 1.0
 
@@ -93,7 +93,7 @@ func take(tool: Node3D) -> bool:
 	return true
 
 ## First-spawn loadout (operator 2026-07-16: starter tools already in the hotbar).
-## Instantiates the three starter hand tools and runs each tool's own _pick_up()
+## Instantiates the starter hand tools and runs each tool's own _pick_up()
 ## so the held pose / _held_by / take() bookkeeping is identical to a real E-grab.
 ## Idempotent: self-heals freed slot refs (this autoload outlives the tool NODES
 ## across a scene reload) and skips any tool_id already held, so calling it on
@@ -101,6 +101,7 @@ func take(tool: Node3D) -> bool:
 const STARTER_TOOL_SCRIPTS : Array = [
 	"res://src/scenes/world/WireCutter.gd",     # scissors
 	"res://src/scenes/world/BarcodeScanner.gd", # scanner
+	"res://src/scenes/world/LineCouplerTool.gd",# line coupler / PLC wire tool
 	"res://src/scenes/world/ShovelTool.gd",     # shovel
 ]
 
