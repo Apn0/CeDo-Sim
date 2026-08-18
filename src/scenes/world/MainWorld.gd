@@ -16,6 +16,9 @@ const PlantScattererScript      = preload("res://src/sim/PlantScatterer.gd")
 
 # ── Export ────────────────────────────────────────────────────────────────────
 @export var building_shell_path: String = "res://assets/models/CeDo_building.obj"
+## Preferred shell mesh, same one WorldSetup.BUILDING_SOLID prefers. Loaded at
+## runtime by _load_shell_mesh(); never bake it into the .tscn.
+const SHELL_SOLID_PATH : String = "res://assets/models/CeDo_factory_solid.obj"
 
 # ── Runtime references ────────────────────────────────────────────────────────
 var player          : CharacterBody3D
@@ -54,8 +57,36 @@ func _shell() -> MeshInstance3D:
 	var sh := get_node_or_null("BuildingShell/ShellMesh") as MeshInstance3D
 	if sh == null:
 		sh = find_child("ShellMesh", true, false) as MeshInstance3D
+	if sh != null and sh.mesh == null:
+		sh.mesh = _load_shell_mesh()
 	_shell_mesh_cache = sh
 	return sh
+
+
+## The factory shell mesh, loaded at RUNTIME instead of baked into
+## MainWorld.tscn as an [ext_resource].
+##
+## WHY (measured 2026-08-10): .gitignore:2 ignores assets/, so
+## assets/models/CeDo_factory_solid.obj is not in the repository. As a baked
+## ext_resource it made the ENTIRE scene fail to parse on any machine without
+## the file — "[ext_resource] referenced non-existent resource" — so MainWorld.gd
+## never loaded, BuildMode never existed, and every world suite in the harness
+## was unrunnable from a clean clone. It boots on the operator's machine only
+## because the file is sitting there untracked.
+##
+## Loading it here degrades instead of exploding: no shell mesh, world still
+## boots, tests still run. Same preference order WorldSetup.gd:293 already uses
+## (solid first, tile as fallback), and behaviour is identical when the asset is
+## present.
+func _load_shell_mesh() -> Mesh:
+	for p in [SHELL_SOLID_PATH, building_shell_path]:
+		if String(p).is_empty() or not ResourceLoader.exists(p):
+			continue
+		var m := ResourceLoader.load(p) as Mesh
+		if m != null:
+			return m
+	push_warning("[MainWorld] shell mesh missing (%s) — booting without it" % SHELL_SOLID_PATH)
+	return null
 
 func _player_spawn_node() -> Node3D:
 	if _player_spawn_cache != null and is_instance_valid(_player_spawn_cache):

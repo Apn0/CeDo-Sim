@@ -158,6 +158,17 @@ var water_added    := 0.0    # process water drawn in by washers
 var water_removed  := 0.0    # moisture driven off by dryers/dewaterers (effluent/vapour)
 var contam_removed := 0.0    # dirt stripped to scraper bins
 var poly_rejected  := 0.0    # off-spec polymer kicked out by optical/float sorters
+
+# ── Graded quality analysis (#qa) ────────────────────────────────────────────
+# Line-level, NOT per-node, so these are deliberately NOT part of the three-place
+# survivor edit for things living inside _nodes (rebuild() snapshot :259-287,
+# rehydration :319-345, _attach_advanced_systems() guard :707). A plain member
+# survives rebuild() untouched, which matches the #218 rule at :249-252 that a
+# rebuild must not reset shift state. Null until enable_qa() is called, and every
+# QA code path is gated on that, so a production line pays nothing.
+var _qa_lab     : QaLab      = null
+var _assessment : Assessment = null
+var _last_gran  : MaterialBatch = null   # last parcel banked at the sink
 # Granulaat quality (0..100), mass-weighted average over the run.
 var _gran_q_accum  := 0.0
 
@@ -1911,6 +1922,43 @@ func ledger_residual() -> float:
 		- in_transit_mass()
 
 # =============================================================================
+# GRADED QUALITY ANALYSIS (#qa)
+# =============================================================================
+## Switch the line into training mode. Off by default: a production run pays
+## nothing, since every QA path is gated on _qa_lab being non-null.
+## `line` is the SCADA line id ("3A"/"3B"/"3C"/"1"); `session` identifies one
+## graded shift and is what Assessment keys every event on.
+func enable_qa(line: String, session: String, spec: QaSpec = null) -> void:
+	_qa_lab = QaLab.new(line, session, spec)
+	_qa_lab.set_bus(get_node_or_null("/root/EventBus"))
+	_assessment = Assessment.new(line, session)
+
+
+func qa_lab() -> QaLab:
+	return _qa_lab
+
+
+func assessment() -> Assessment:
+	return _assessment
+
+
+## A representative sample of the most recently banked granulaat parcel.
+##
+## NON-DESTRUCTIVE: the split happens on a DUPLICATE, so the plant's mass ledger
+## is untouched and ledger_residual() is unchanged by taking a sample. That is
+## deliberate — a destructive assay would have to be subtracted in four separate
+## places (the counter, ledger_residual(), _update_label()'s residual, and
+## reset_shift_telemetry()) and missing any one makes the conservation harness
+## go red. Returns null when the line has not banked anything yet.
+func take_product_sample(kg: float) -> MaterialBatch:
+	if _last_gran == null or _last_gran.is_empty():
+		return null
+	var s := _last_gran.duplicate_batch()
+	if _last_gran.mass_kg > 0.0:
+		s = s.split_fraction(clampf(kg / _last_gran.mass_kg, 0.0, 1.0))
+	return s
+
+# =============================================================================
 # FLOW TICK
 # =============================================================================
 func _process(delta: float) -> void:
@@ -2203,6 +2251,13 @@ func tick(delta: float) -> void:
 		if String(nd["role"]) == "sink":
 			gran_mass += flow.mass_kg
 			_gran_q_accum += flow.quality_grade() * flow.mass_kg
+			# Keep a copy of the most recently banked parcel so the QA bench has
+			# something representative to sample. duplicate_batch() (MaterialBatch
+			# .gd:97-98) copies rather than splits, so the ledger is untouched —
+			# see qa_lab()/take_product_sample() below. Only paid for when a lab
+			# exists, i.e. never in a plain production run.
+			if _qa_lab != null:
+				_last_gran = flow.duplicate_batch()
 		else:
 			(nd["out"] as MaterialBatch).add(flow)
 
@@ -2217,6 +2272,16 @@ func tick(delta: float) -> void:
 	#      driven by real elapsed time. The router (section 3 below) reads
 	#      cycle.step on the same tick to decide which drum receives flake.
 	_tick_dryer_pairs(delta)
+
+	# 2.7) QA bench delay + assessment clock. Pure observers: neither touches
+	#      material, so the conservation ledger is unaffected. Deliberately
+	#      driven from here rather than SimTick, which runs PROCESS_MODE_ALWAYS
+	#      (SimTick.gd:41) and would resolve bench samples behind a pause menu —
+	#      reasoning recorded in the QaLab.gd header.
+	if _qa_lab != null:
+		_qa_lab.tick(delta)
+	if _assessment != null:
+		_assessment.tick(delta)
 
 	# 3) Carry each output DOWN ITS CONNECTOR as a delay-line. Material entering a
 	#    link rides PIPE_STAGES slots that shift forward one slot every stage_dt,

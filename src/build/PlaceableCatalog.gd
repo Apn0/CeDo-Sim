@@ -11046,15 +11046,29 @@ static func _build_heetafslag_strand_switcher(p: Node3D, die_r: float,
 		var y_jitter : float = sin(float(i) * 1.31) * 0.005
 		var pos := Vector3(sx, -strand_h * 0.5 + y_jitter, 0.0)
 
-		var r_cold := Vector3(deg_to_rad(sin(float(i)) * 6.0), 0.0, deg_to_rad(cos(float(i)) * 6.0))
-		mm_cold.set_instance_transform(i, Transform3D(Basis.from_euler(r_cold), pos))
+		# Slight twist on the cold strands (deformed / not yet hardened).
+		var rot_cold := Vector3(deg_to_rad(sin(float(i)) * 6.0), 0.0, deg_to_rad(cos(float(i)) * 6.0))
+		mm_cold.set_instance_transform(i, Transform3D(Basis.from_euler(rot_cold), pos))
 
-		mm_good.set_instance_transform(i, Transform3D(Basis(), pos + Vector3(0.0, 0.002, 0.0)))
+		# GOED — clean vertical strand (the operator's target state).
+		mm_good.set_instance_transform(i, Transform3D(Basis.IDENTITY, pos + Vector3(0.0, 0.002, 0.0)))
 
-		var r_hot := Vector3(deg_to_rad(sin(float(i) * 2.0) * 4.0), 0.0, 0.0)
-		mm_hot.set_instance_transform(i, Transform3D(Basis.from_euler(r_hot), pos))
+		# TE HEET — charred, slightly thinner, with a small smoke wisp above.
+		var rot_hot := Vector3(deg_to_rad(sin(float(i) * 2.0) * 4.0), 0.0, 0.0)
+		mm_hot.set_instance_transform(i, Transform3D(Basis.from_euler(rot_hot), pos))
 
-		smoke_mm.set_instance_transform(i, Transform3D(Basis(), pos + Vector3(0.0, strand_h * 0.55, 0.0)))
+		# Smoke wisp — a small QuadMesh above the top of the strand.
+		# `wisp_qm`, not `qm`: the enclosing scope already declares a `qm` at the
+		# top of this function for mm_wisp, and redeclaring it here is a parse
+		# error that stopped the whole file compiling — which cascaded into
+		# MainWorld.gd and took every world test with it.
+		var wisp := MeshInstance3D.new()
+		var wisp_qm := QuadMesh.new()
+		wisp_qm.size = Vector2(0.04, 0.06)
+		wisp.mesh = wisp_qm
+		wisp.material_override = smoke_mat
+		wisp.position = pos + Vector3(0.0, strand_h * 0.55, 0.0)
+		grp_hot.add_child(wisp)
 	# Default visibility — ALL OFF (operator 2026-07-16: no orange melt strands
 	# dripping from an idle/unfed extruder = "inventing material from nothing").
 	# LineFlow drives show_die_face_state() from live throughput so strands only

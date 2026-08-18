@@ -14,9 +14,13 @@
 # Override the engine path with:  GODOT=/path/to/godot bash tools/regression/run.sh
 set -uo pipefail
 
+# All three are overridable so the harness runs off-Windows (Linux CI, a cloud
+# session) without editing this file. The defaults are the operator's Windows
+# paths and are unchanged — plain `bash tools/regression/run.sh` on that machine
+# behaves exactly as before.
 GODOT="${GODOT:-C:/Users/arnod/AppData/Local/Godot/Godot_v4.6.3-stable_win64_console.exe}"
-PROJ="C:/Users/arnod/Documents/CeDo_Simulator"
-UD="C:/Users/arnod/AppData/Roaming/Godot/app_userdata/CeDo Simulator"
+PROJ="${PROJ:-C:/Users/arnod/Documents/CeDo_Simulator}"
+UD="${UD:-C:/Users/arnod/AppData/Roaming/Godot/app_userdata/CeDo Simulator}"
 OUT="$PROJ/tools/regression/out"
 mkdir -p "$OUT"
 
