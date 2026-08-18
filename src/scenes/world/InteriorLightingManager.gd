@@ -240,7 +240,7 @@ func _build_overhead_fixture(parent: Node3D, pos: Vector3) -> void:
 
 var _flicker_fixtures : Array = []
 
-func _process(delta: float) -> void:
+func _process(_delta: float) -> void:
 	if _flicker_fixtures.is_empty():
 		return
 	var t := Time.get_ticks_msec() * 0.001

@@ -102,6 +102,9 @@ const PEN_VEHICLE : float = 0.10
 # Machine / belt / wall / shell. The plant mutation below reads ~1.0, so this
 # floor sits 5x below the signal it exists to catch.
 const PEN_SOLID : float = 0.20
+# Frames given to BaleYardManager's drain queue once the probes are parked. The
+# queue is time-sliced at 2 ms/frame, so a yard materialises over many frames.
+const BALE_DRAIN_FRAMES : int = 180
 
 # Bodies parked on layer 20 with mask 0 are QUERY-ONLY proxies (ShiftCarSpawner
 # .gd:177-178). They are reported but never scored: nothing can physically
@@ -211,7 +214,7 @@ func _ready() -> void:
 
 	_check_a_vehicle_overlap()
 	_check_b_vehicles_are_standing()
-	_check_c_bale_yards(machines)
+	await _check_c_bale_yards(machines)
 	_check_d_query_proxy_sanity()
 	await _finish()
 
@@ -695,13 +698,45 @@ func _check_c_bale_yards(machines: Array) -> void:
 			% [idx, c.x, c.y, under, under_kind, under_y, "YES" if roofed else "no", poly.size()])
 	_check(no_ground == 0, "every yard centroid has real ground under it (%d with nothing)" % no_ground)
 
+	# Yard bales are STREAMED, not built at boot: BaleYardManager.tick() only
+	# materialises a slot's RigidBody while a player or a "vehicle"-group node is
+	# inside the 24 m NEAR radius (BaleYardManager.gd:112). This test parks its
+	# vehicles on their save markers, and those sit far from the yards — measured
+	# 2026-08-18 from this test's own log, the nearest vehicle (BaleClamp) is
+	# 58.7 m from the nearest yard centroid, a 34.7 m shortfall. So the drain
+	# queue never ran, `yard_bale_rb` was always empty, and the vacuity guard
+	# below failed on EVERY run since it was added (94c685b, 2026-07-22).
+	#
+	# Park one probe per yard so every yard streams in together, then give the
+	# time-sliced queue frames to drain. Probes are freed at both exits so they
+	# can never show up in check D's sweep of group "vehicle".
+	var probes : Array[Node3D] = []
+	for pp in polys:
+		var ppoly : PackedVector2Array = pp
+		if ppoly.size() < 3:
+			continue
+		var pc := Vector2.ZERO
+		for pt in ppoly:
+			pc += pt
+		pc /= float(ppoly.size())
+		var probe := Node3D.new()
+		probe.name = "BaleStreamProbe"
+		probe.add_to_group("vehicle")
+		add_child(probe)
+		probe.global_position = Vector3(pc.x, Plant.floor_top_y(), pc.y)
+		probes.append(probe)
+	for _f in range(BALE_DRAIN_FRAMES):
+		await get_tree().process_frame
+
 	# Bale bodies vs solid geometry. Only the RBs the time-sliced drain queue has
 	# actually produced exist yet; the count is printed so a small population can
 	# never be mistaken for a clean result.
 	var rbs : Array = get_tree().get_nodes_in_group("yard_bale_rb")
-	_info("bale RBs materialised so far: %d (drain queue is time-sliced at 2 ms/frame)" % rbs.size())
+	_info("bale RBs materialised so far: %d (%d probe(s), %d frames of drain)"
+		% [rbs.size(), probes.size(), BALE_DRAIN_FRAMES])
 	if rbs.is_empty():
 		_check(false, "at least one bale body exists to test — 0 would make this check vacuous")
+		_free_probes(probes)
 		return
 	var machine_rids : Array[RID] = []
 	for m in machines:
@@ -754,6 +789,15 @@ func _check_c_bale_yards(machines: Array) -> void:
 		% [bad, rbs.size(), worst * 100.0, worst_desc])
 	if machine_rids.is_empty():
 		_info("note: no machine colliders collected — bale-vs-machine arm had nothing to hit")
+	_free_probes(probes)
+
+
+## Drop the streaming probes. Their bales despawn on the next tick, which is fine:
+## every measurement above is already taken.
+func _free_probes(probes: Array[Node3D]) -> void:
+	for pr in probes:
+		if is_instance_valid(pr):
+			pr.queue_free()
 
 
 # =============================================================================

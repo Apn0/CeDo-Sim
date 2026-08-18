@@ -42,7 +42,7 @@ func _bind_sky() -> void:
 		if s.sky_material is ProceduralSkyMaterial:
 			_sky_mat = s.sky_material as ProceduralSkyMaterial
 
-func _process(delta: float) -> void:
+func _process(_delta: float) -> void:
 	if _shift_clock == null:
 		_shift_clock = get_tree().root.find_child("ShiftClock", true, false)
 		if _shift_clock == null:
