@@ -211,43 +211,24 @@ func _spawn_bale_yards_from_layout() -> void:
 	_world.add_child(yards_root)
 	var total_bales := 0
 	var total_yards := 0
+	# One call per yard. `_spawn_yard` returns the bale count, or -1 when it
+	# skipped the yard (no supplier_id, unknown supplier, corrupt or degenerate
+	# polygon) — only results >= 0 are tallied.
+	#
+	# The index is enumerated rather than recovered with bale_yards.find(y):
+	# `find` matches by VALUE, so two identically-drawn yards would both resolve
+	# to the first one's index and _spawn_yard would read the wrong entry out of
+	# WorldLayout.bale_yards_pc. Position is the alignment migrate_to_pc
+	# guarantees, so position is what gets passed.
+	var yard_idx := 0
 	for y in WorldLayout.bale_yards:
-		var data : Dictionary = y
-		var corners : Array = data.get("corners", [])
-		if corners.size() < 3: continue
-		var supplier_id : String = data.get("supplier_id", "")
-		if supplier_id == "":
-			push_warning("[BaleYardManager] Bale yard has no supplier_id — skipping")
+		var n := _spawn_yard(y as Dictionary, yard_idx, yards_root)
+		yard_idx += 1
+		if n < 0:
 			continue
-		var origin_def : Dictionary = BaleDefs.get_origin(supplier_id)
-		if origin_def.is_empty():
-			push_warning("[BaleYardManager] Unknown supplier_id '%s' — skipping yard" % supplier_id)
-			continue
-		var size : Vector3 = origin_def.get("size", Vector3(1.1, 0.7, 1.1))
-		var stack_high : int = int(origin_def.get("stack", 2))
-		# Convert the polygon corners from layout-space (player-relative, north-up
-		# RD) into scene-space via the same rotation-aware mapping the vehicles
-		# use, so the yard sits in the right place + orientation on the building.
-		# #221-PC Phase 3 — prefer the Plant PC path (single source of truth)
-		# when WorldLayout has been migrated; fall back to legacy _layout_to_scene
-		# otherwise. Math is equivalent for migrated saves; Plant guarantees the
-		# same converter every spawner uses.
-		var use_pc : bool = _world.has_node("/root/Plant") and Plant.is_initialized() and WorldLayout.has_pc_data
-		# Pull the per-yard PC corner list (if present) by matching index. The
-		# migrate_to_pc walk preserved order, so bale_yards_pc[idx] aligns with
-		# WorldLayout.bale_yards[idx].
-		var yard_idx : int = WorldLayout.bale_yards.find(y)
-		var corners_pc : Array = []
-		if use_pc and yard_idx >= 0 and yard_idx < WorldLayout.bale_yards_pc.size():
-			corners_pc = (WorldLayout.bale_yards_pc[yard_idx] as Dictionary).get("corners_pc", [])
-			if corners_pc.size() != corners.size():
-				# Size mismatch — fall back to legacy for this yard rather than
-				# index a PC array against a different polygon. Should only
-				# happen if migrate_to_pc was interrupted mid-walk.
-				push_warning("[BaleYardManager] Yard '%s' PC corner count %d ≠ legacy %d — using legacy path" % [supplier_id, corners_pc.size(), corners.size()])
-				use_pc = false
-		elif use_pc:
-			use_pc = false   # PC data is missing for THIS yard
+		total_bales += n
+		total_yards += 1
+	print("[BaleYardManager] Bale yards from layout: %d bales across %d yards (proximity physics active)" % [total_bales, total_yards])
 
 ## Spawn every bale of ONE yard. Returns the bale count, or -1 when the yard is
 ## skipped (no supplier_id, unknown supplier, corrupt or degenerate polygon) —
@@ -490,69 +471,38 @@ func _spawn_yard(data: Dictionary, yard_idx: int, yards_root: Node3D) -> int:
 				var xf := Transform3D(bale_basis, inst_origin)
 				mmi.multimesh.set_instance_transform(i, xf)
 				if mmi_close != null:
-					yard_node.add_child(mmi_close)
-					mmi_close.visibility_range_end        = CLOSE_LOD_M
-					mmi_close.visibility_range_end_margin = 0.0
-					mmi_close.visibility_range_fade_mode  = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+					mmi_close.multimesh.set_instance_transform(i, xf)
 				if mmi_sticker != null:
-					yard_node.add_child(mmi_sticker)
-					mmi_sticker.visibility_range_end        = STICKER_LOD_M
-					mmi_sticker.visibility_range_end_margin = 2.0
-					mmi_sticker.visibility_range_fade_mode  = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
-				var safe_yaw : float = bale_yaw if is_finite(bale_yaw) else 0.0
-				var bale_basis := Basis(Vector3.UP, safe_yaw)
-				var size_y_half : float = size.y * 0.5
-				# Pass 1 — populate the MultiMesh transforms IMMEDIATELY. These are
-				# just integer transform writes to the shared buffer and finish in
-				# a fraction of a second even for 2940 instances. Bales render at
-				# correct positions the moment the yard appears. Same transforms
-				# go into BOTH MMs so far / close stay perfectly aligned during
-				# the fade swap.
-				for i in bales_this_yard:
-					var entry : Array = slots[i]
-					var pos : Vector3 = entry[0]
-					var level : int = int(entry[1])
-					var inst_origin := Vector3(
-						pos.x,
-						floor_y + size.y * float(level) + size_y_half,
-						pos.z)
-					var xf := Transform3D(bale_basis, inst_origin)
-					mmi.multimesh.set_instance_transform(i, xf)
-					if mmi_close != null:
-						mmi_close.multimesh.set_instance_transform(i, xf)
-					if mmi_sticker != null:
-						# Sticker rides the +Z face at mid-height, 4 mm proud of the
-						# bale skin so it doesn't z-fight. QuadMesh faces +Z by
-						# default, which lines up with the bale's +Z face.
-						var sticker_local := Vector3(0.0, 0.0, size.z * 0.49 + 0.004)
-						var sticker_xf := Transform3D(bale_basis,
-							inst_origin + bale_basis * sticker_local)
-						mmi_sticker.multimesh.set_instance_transform(i, sticker_xf)
-				# Pass 2: Register slot metadata for dynamic proximity activation.
-				# Instead of allocating thousands of RigidBody3D nodes upfront,
-				# the proximity sweep in tick() only instantiates colliders near
-				# the player and active vehicles, saving thousands of physics bodies.
-				for i in bales_this_yard:
-					var entry : Array = slots[i]
-					var pos : Vector3 = entry[0]
-					var level : int = int(entry[1])
-					var spawn_pos := Vector3(pos.x, floor_y + size.y * float(level), pos.z)
-					var slot_key := "%s_%d_%d" % [supplier_id, yard_idx, i]
-					_yard_slots.append({
-						"key":       slot_key,
-						"yard":      yard_node,
-						"mmi":       mmi,
-						"supplier":  supplier_id,
-						"prefix":    prefix,
-						"spawn_pos": spawn_pos,
-						"size":      size,
-						"yaw":       safe_yaw,
-						"idx":       i,
-					})
-				total_bales += bales_this_yard
+					# Sticker rides the +Z face at mid-height, 4 mm proud of the
+					# bale skin so it doesn't z-fight. QuadMesh faces +Z by
+					# default, which lines up with the bale's +Z face.
+					var sticker_local := Vector3(0.0, 0.0, size.z * 0.49 + 0.004)
+					var sticker_xf := Transform3D(bale_basis,
+						inst_origin + bale_basis * sticker_local)
+					mmi_sticker.multimesh.set_instance_transform(i, sticker_xf)
+			# Pass 2: Register slot metadata for dynamic proximity activation.
+			# Instead of allocating thousands of RigidBody3D nodes upfront,
+			# the proximity sweep in tick() only instantiates colliders near
+			# the player and active vehicles, saving thousands of physics bodies.
+			for i in bales_this_yard:
+				var entry : Array = slots[i]
+				var pos : Vector3 = entry[0]
+				var level : int = int(entry[1])
+				var spawn_pos := Vector3(pos.x, floor_y + size.y * float(level), pos.z)
+				var slot_key := "%s_%d_%d" % [supplier_id, yard_idx, i]
+				_yard_slots.append({
+					"key":       slot_key,
+					"yard":      yard_node,
+					"mmi":       mmi,
+					"supplier":  supplier_id,
+					"prefix":    prefix,
+					"spawn_pos": spawn_pos,
+					"size":      size,
+					"yaw":       safe_yaw,
+					"idx":       i,
+				})
 		print("[BaleYardManager]  Yard '%s' filled with %d bales  (1 multimesh draw call)" % [supplier_id, bales_this_yard])
-		total_yards += 1
-	print("[BaleYardManager] Bale yards from layout: %d bales across %d yards (proximity physics active)" % [total_bales, total_yards])
+	return bales_this_yard
 
 func _spawn_slot_bale_rb(slot: Dictionary) -> RigidBody3D:
 	var yard_node : Node3D = slot["yard"]

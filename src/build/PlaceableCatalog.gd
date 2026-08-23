@@ -11057,18 +11057,21 @@ static func _build_heetafslag_strand_switcher(p: Node3D, die_r: float,
 		var rot_hot := Vector3(deg_to_rad(sin(float(i) * 2.0) * 4.0), 0.0, 0.0)
 		mm_hot.set_instance_transform(i, Transform3D(Basis.from_euler(rot_hot), pos))
 
-		# Smoke wisp — a small QuadMesh above the top of the strand.
-		# `wisp_qm`, not `qm`: the enclosing scope already declares a `qm` at the
-		# top of this function for mm_wisp, and redeclaring it here is a parse
-		# error that stopped the whole file compiling — which cascaded into
-		# MainWorld.gd and took every world test with it.
-		var wisp := MeshInstance3D.new()
-		var wisp_qm := QuadMesh.new()
-		wisp_qm.size = Vector2(0.04, 0.06)
-		wisp.mesh = wisp_qm
-		wisp.material_override = smoke_mat
-		wisp.position = pos + Vector3(0.0, strand_h * 0.55, 0.0)
-		grp_hot.add_child(wisp)
+		# Smoke wisp above the top of the strand. It goes into `smoke_mm`, the
+		# MultiMesh built for exactly this a few lines up (instance_count ==
+		# strand_count, mesh == qm) — NOT into a per-strand MeshInstance3D.
+		#
+		# Two reasons this is the only correct form, both learned the hard way:
+		#   * the per-strand version referenced `grp_hot`, which is a local of
+		#     show_die_face_state() further down the file, so the whole file
+		#     failed to parse. PlaceableCatalog is preloaded by BuildMode,
+		#     MainWorld and 27 of the test scripts, so ONE undeclared name here
+		#     takes the entire project down. Restored from ed9198b after the
+		#     7b72ecf merge reverted it; see docs/AUDIT_project_sweep_2026-08-23.md.
+		#   * leaving smoke_mm's transforms unset does not merely waste the
+		#     MultiMesh — every one of its strand_count instances defaults to
+		#     IDENTITY, so all the smoke quads pile up at the switcher origin.
+		smoke_mm.set_instance_transform(i, Transform3D(Basis(), pos + Vector3(0.0, strand_h * 0.55, 0.0)))
 	# Default visibility — ALL OFF (operator 2026-07-16: no orange melt strands
 	# dripping from an idle/unfed extruder = "inventing material from nothing").
 	# LineFlow drives show_die_face_state() from live throughput so strands only

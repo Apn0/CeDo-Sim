@@ -1733,6 +1733,16 @@ func _place_current() -> void:
 					(_two_point_start.x + end_pos.x) * 0.5,
 					_two_point_start.y,
 					(_two_point_start.z + end_pos.z) * 0.5)
+				# `placeable_id` is the KEY _save_layout() gates on (line ~2996):
+				# a child without it is not serialised at all, so before this
+				# line every hand-built wall was gone on the next load — the
+				# operator drew a partition, saved, reloaded, and the plant was
+				# open-plan again. build_wall() cannot set it itself (it is a
+				# static helper that never receives the id), and _finalize_placed
+				# only writes height_offset, so it has to be set here. The reload
+				# path at line ~3369 already stamps the same three metas, which is
+				# why loading a wall worked and saving one never did.
+				wall.set_meta("placeable_id", _active_id)
 				wall.set_meta("wall_start", _two_point_start)
 				wall.set_meta("wall_end", end_pos)
 				_finalize_placed(wall, _active_id, _two_point_start.y - FLOOR_Y)
