@@ -45,37 +45,31 @@ if grep -qE "Parse Error|Compile Error" "$OUT/parse_gate.log"; then
 	exit 1
 fi
 
-# TEST-SCRIPT PARSE SWEEP. The gate above boots the main scene, which never
-# loads anything under src/tests/ — so a test file can stop compiling and sit
-# unnoticed for months. Measured 2026-08-11: test_npc05_realworld.gd, the REAL
-# MainWorld proof for the npc-05 container chain, referenced three functions
-# that were never written. It had never once run, and the harness was green
-# throughout. --check-only compiles a script without booting anything.
+# FULL-TREE PARSE SWEEP. The gate above boots the main scene — MainMenu.tscn —
+# which loads none of src/build, src/sim or src/scenes/world, so it cannot see a
+# broken file in any of them. Measured 2026-08-23: merge 7b72ecf left `grp_hot`
+# (a local of a DIFFERENT function) in PlaceableCatalog.gd:11071, the gate above
+# printed clean, and LineFlow, BuildMode and every world suite were dead. A
+# suite whose script fails to compile does not fail — it boots with no script
+# attached and idles forever, which is the "hang" this repo has now chased twice.
 #
-# Parse Error ONLY, deliberately. --check-only does not register autoloads, so
-# 31 of the 77 files here report "Compile Error: Identifier not found: Plant /
-# EventBus / WorldLayout / ..." purely because of how they are being invoked —
-# including files that demonstrably run green. Measured across all 77: 0 Parse
-# Errors, 31 Compile Errors, every one of them an autoload miss. Failing on
-# Compile Error would paint this step permanently red, and a step that is always
-# red is a step everyone learns to skip. The npc05 defect was a Parse Error
-# ("Function not found in base self"), which is exactly what this catches.
-echo "== test-script parse sweep =="
-sweep_fail=0
-for f in "$PROJ"/src/tests/*.gd; do
-	[ -e "$f" ] || continue
-	rel="res://src/tests/$(basename "$f")"
-	if "$GODOT" --headless --path "$PROJ" --check-only --script "$rel" 2>&1 			| grep -q "Parse Error"; then
-		echo "FAIL  : $rel does not parse"
-		"$GODOT" --headless --path "$PROJ" --check-only --script "$rel" 2>&1 			| grep "Parse Error" | sort -u | head -4
-		sweep_fail=1
-	fi
-done
-if [ "$sweep_fail" -ne 0 ]; then
-	echo "FAIL  : one or more test scripts do not parse"
+# This used to sweep src/tests/*.gd only, one `--check-only` engine start per
+# file. That version WOULD have gone red here, but with 27 test files all
+# reporting the same inherited error and the actual culprit — a non-test file —
+# never named. It now sweeps the whole tree, names the root file, and does it in
+# one boot: ~15 s against the ~6 min the 312-start loop cost.
+#
+# Gated on ERR_PARSE_ERROR only, for the same reason as before: see the header of
+# parse_sweep.gd for the measurement, for the 47 ungated ERR_COMPILATION_FAILED
+# notes, and for the two detectors that were tried and failed their mutation.
+echo "== full-tree parse sweep =="
+"$GODOT" --headless --path "$PROJ" \
+	--script res://tools/regression/parse_sweep.gd > "$OUT/parse_sweep.log" 2>&1
+grep -E "^===|^  FAIL|^note  :|^Result:" "$OUT/parse_sweep.log" || true
+if ! grep -q "^RESULT: PASS" "$OUT/parse_sweep.log"; then
+	echo "FAIL  : one or more project scripts do not parse (see $OUT/parse_sweep.log)"
 	exit 1
 fi
-echo "  ok    : every src/tests/*.gd parses"
 
 echo "== unused-parameter lint =="
 if ! python3 "$PROJ/tools/regression/lint_unused_params.py" "$PROJ/src"; then
@@ -223,7 +217,18 @@ fi
 # instead of the 0.00 A it read before, that sum(amps_nominal) == 488.49 A, and
 # that the mass ledger still balances now that stamping also swaps in the
 # ProcessModel transfer coefficients and switches on the dryer pair controller.
-for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld; do
+# test_project_sweep_guards: the three findings of the 2026-08-23 sweep, each of
+# which had already survived a review. A — the hot strand group owns ONE smoke
+# MultiMesh and ZERO loose per-strand wisps (the reverted form of that loop is
+# what stopped PlaceableCatalog.gd parsing and hung every world suite). B — a
+# wall placed through BuildMode's own two-point path reaches
+# WorldLayout.structure_items with both endpoints; before the fix it carried no
+# placeable_id, so _save_layout skipped it and every hand-built partition was
+# gone on reload. C — crew TTS is connected, and connected exactly once; C is
+# also the record that FULL_LOGIC_AUDIT #12 is REFUTED, since it is green with
+# and without that finding's prescribed fix. All three mutation-proven; see the
+# file header and docs/AUDIT_project_sweep_2026-08-23.md.
+for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_project_sweep_guards; do
 	echo "== $t =="
 	"$GODOT" --headless --path "$PROJ" "res://src/tests/$t.tscn" > "$OUT/$t.log" 2>&1
 	grep -E "^  (ok|FAIL)|Result|RESULT" "$OUT/$t.log" || true

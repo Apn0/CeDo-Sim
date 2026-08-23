@@ -27,7 +27,17 @@ was wrong and would fail on the first command.
 
 ## What the harness actually proves
 
-`tools/regression/run.sh` runs **22 suites**. Since the perimeter-fence
+> **2026-08-23 — `main` as merged (`e48479b`) DID NOT COMPILE.** Merge `7b72ecf`
+> reverted a one-line fix, leaving `grp_hot` (a local of a different function) in
+> `PlaceableCatalog.gd:11071`; LineFlow, BuildMode and 27 test scripts were down,
+> and every world suite HUNG rather than failing. The parse gate reported exit 0
+> throughout, because it boots `MainMenu.tscn`. `BaleYardManager.gd` was mangled
+> by the same merge. Both are repaired, the gate is replaced by a full-tree
+> sweep, and the whole story — including the two vacuous detectors that were
+> tried and rejected — is in `docs/AUDIT_project_sweep_2026-08-23.md`. **When a
+> merge touches this repo, run the sweep before trusting anything else.**
+
+`tools/regression/run.sh` runs **23 suites**. Since the perimeter-fence
 deletion (operator order 2026-08-07) it ends `== done (exit 1) ==`:
 `test_jam_baseline`'s jam1 leg now wedges **10.0 s (budget 3.0) on the parked
 `VolvoV40Placeholder` in the staff parking lot** — the fence used to wall that
@@ -161,15 +171,17 @@ are **geometry keys**, not placeable ids, and stay.
 
 ## Where things are
 
-285 GDScript files, 105,241 lines under `src/`:
+313 GDScript files, 109,663 lines under `src/` (measured 2026-08-23; the
+previous "285 / 105,241 / 72 tests" in this table was ~6 months stale, so treat
+this one as re-checkable too — `find src -name '*.gd' | wc -l`):
 
 | dir | files | what |
 |---|---|---|
 | `src/scenes/` | 133 | world, player, NPC, vehicles, HUD/HMI |
-| `src/tests/` | 72 | every proof; also the render + shot tools |
-| `src/sim/` | 42 | LineFlow, TagMap, MachineFlow, machine models |
+| `src/tests/` | 93 | every proof; also the render + shot tools |
+| `src/sim/` | 47 | LineFlow, TagMap, MachineFlow, machine models |
 | `src/autoload/` | 19 | singletons (WorldLayout, SettingsManager, AudioManager…) |
-| `src/build/` | 14 | `PlaceableCatalog` + `BuildMode` — the two biggest files |
+| `src/build/` | 16 | `PlaceableCatalog` + `BuildMode` — the two biggest files |
 | `src/data/`, `src/operator/`, `src/util/` | 5 | plant data, operator context |
 
 ## Doc index — `docs/`
@@ -180,9 +192,10 @@ are **geometry keys**, not placeable ids, and stay.
 | `docs/plant/hmi_screen_inventory_2026-07-28.md` | Ground truth for the 34 HMI mockups — the **photos are authoritative**, the mockups are layout only |
 | `docs/AUDIO_sound_engine_state_2026-08-03.md` | Both audio systems, the verified RD frame for the 43 positional clips, loop-crossfade + IMA_ADPCM trap, 3 open findings |
 | `docs/AUDIT_handoffs_2026-08-16.md` | **Read before trusting any handoff doc.** Two 2026-08-16 handoffs claimed "Stable / Verified"; three of five claims described code not in the repo. Records 12 unmentioned defects (4 critical, now fixed + tested), the Rule 1 blocks, and the 3 findings that were refuted |
+| `docs/AUDIT_project_sweep_2026-08-23.md` | **The sweep that found `main` did not compile.** Why both harness compile checks missed it, the BaleYardManager merge repair, FULL_LOGIC_AUDIT #7 confirmed + fixed and #12 REFUTED, the headless MultiMesh limit, and what a fresh clone can/cannot prove |
 | `docs/BACKLOG_ultracode_2026-07-19.md` | Deferred queue — 16 of 40 findings landed; also records the npc-05 vacuous-green correction |
 | `docs/DESIGN_SUGGESTIONS_2026-07-08.md` | Ranked roadmap, P1-P8 physicalization + Q1-Q8 QoL, every item file-cited |
-| `docs/FULL_LOGIC_AUDIT_2026-07-08.md` | Runtime-behaviour audit, 25 findings. **Snapshot, no per-finding status.** Bug 0 / HIGH #1 / #2 are DONE; #7 `build_wall` meta, #12 Walkie→VoiceService and 5 dead files still open. Re-measure before acting |
+| `docs/FULL_LOGIC_AUDIT_2026-07-08.md` | Runtime-behaviour audit, 25 findings. **Snapshot, no per-finding status.** Bug 0 / HIGH #1 / #2 / #7 are DONE (#7 fixed 2026-08-23, guarded by `test_project_sweep_guards`); **#12 Walkie→VoiceService is REFUTED — measured, the connect works**; 5 dead files still unverified. Two findings re-measured, one was wrong: re-measure before acting |
 | `docs/DESIGN_hmi_tag_bridge_2026-07-22.md` | **Verdict: do NOT build the WebSocket HMI bridge.** Plus the slice that WAS built: `src/sim/TagMap.gd` |
 | `docs/DESIGN_npc05_container_chain_2026-07-20.md` | Container-chain design (Dutch). ⚠️ Its "GEBOUWD" status was corrected 2026-07-21 — that proof was a vacuous green |
 | `docs/research_film_physics_feasibility.md` | Film-physics R&D — GO on Jolt + GPUParticles3D + custom buoyancy; NO-GO on a Rapier backend swap. Correctly targets 4.6.3 |
@@ -198,6 +211,21 @@ are **geometry keys**, not placeable ids, and stay.
 - **`user://world_layout.json` is the world's ground truth and is in git nowhere.**
   `WorldLayout.gd`'s `LAYOUT_PATH` has no `res://` fallback. Losing your
   `app_userdata` loses the world.
+- **A green harness on a FRESH CLONE is a narrower claim than a green harness on
+  the operator's machine**, and the difference is measured. Without `assets/` and
+  without a `world_layout.json`, 15 of 22 suites pass and the other 7 fail for
+  purely environmental reasons — four on "the shell has a measurable footprint"
+  (no `CeDo_factory_solid.obj`), one on a missing vehicle marker, and both spawn
+  clearance runs on "BaleYardManager reachable", because `MainWorld.gd:286` only
+  builds that manager when the layout is authoritative. Do not chase those as
+  regressions, and do not quote a cloud-session green as if it covered the world
+  suites. Full table in `docs/AUDIT_project_sweep_2026-08-23.md` §3.2.
+- **A headless suite cannot assert MultiMesh CONTENT.** Measured on 4.6.3
+  immediately after a successful `set_instance_transform`: `buffer` reads back
+  EMPTY and `get_instance_transform()` returns IDENTITY for every index. The
+  dummy renderer keeps no CPU-side copy. A check written against those readings
+  fails on CORRECT code, and the instinct is then to weaken it. Assert a
+  MultiMesh's shape and node graph; never its contents.
 - **F8 is a trap.** The project binds F8 to Inspect Mode (`SettingsManager.gd:660`),
   but when the game runs embedded in the editor F8 is the editor's **Stop**
   shortcut — `NpcTaskBench.gd:68`: "it killed the session." Use the observer key
@@ -311,14 +339,24 @@ for the npc-05 container chain, written precisely because the bench stubs the
 execution half — referenced `_backup_files()`, `_run()` and `_finish()`, none of
 which existed. It had never once run.
 
-The harness now sweeps `src/tests/*.gd` with `--check-only`. It gates on
-**Parse Error only**, deliberately: `--check-only` does not register autoloads,
-so 31 of 77 files report `Compile Error: Identifier not found: Plant /
-EventBus / WorldLayout` purely from how they are invoked — including files that
-run green. Measured across all 77: 0 Parse Errors, 31 Compile Errors, every one
-an autoload miss. Gating on Compile Error would paint the step permanently red,
-and a permanently red step is one everyone learns to skip. Mutation-tested:
-restoring the broken file turns it red, the repaired tree is clean.
+The harness sweeps the tree for files that do not parse. **As of 2026-08-23 it
+sweeps ALL of `src/` and `tools/`, not just `src/tests/`** — the old test-only
+version was measured missing the `PlaceableCatalog` breakage above, because all
+27 red files reported the same *inherited* error and none named the culprit.
+
+`tools/regression/parse_sweep.gd` does it in ONE boot (~15 s) instead of one
+`--check-only` engine start per file (~6 min for 312). It gates on
+`ERR_PARSE_ERROR` (43) only, for the same reason as before — 47 files report
+`ERR_COMPILATION_FAILED` (36) purely from how the sweep invokes the compiler, and
+a permanently red step is one everyone learns to skip. Mutation-tested both ways:
+the repaired tree is 316 ok / 0 fail; restoring either broken file turns it red
+and NAMES it.
+
+Read `parse_sweep.gd`'s header before changing its detector. Two obvious ones are
+already disproven there: `ResourceLoader.load() == null` (a file with a hard
+parse error still loads NON-null — that version reported 316 ok on a broken
+tree), and recompiling a file's source text into a fresh `GDScript` (no `res://`
+identity, so 200+ healthy files report 43).
 
 ## The npc-05 container chain stalls at DRIVE_TO_INDOOR
 
@@ -462,6 +500,17 @@ hash** — 4 waypoints and 2.19 m arrival, identical every run.
 PR. Check where you are before trusting anything — this repo has had a local
 `main` sit 118 commits behind `origin/main` while a daily sync script reported
 "in sync" (that script only syncs the *checked-out* branch).
+
+**Merges into this repo have now silently reverted a fix three times**, always in
+the same two files, always leaving the project unable to compile: `4ce7627` and
+then `7b72ecf` mangled `BaleYardManager.gd` (its own header documents the first),
+and `7b72ecf` also took the older side of `PlaceableCatalog.gd`'s
+`_build_heetafslag_strand_switcher` and undid `ed9198b`. These two are the
+biggest, most-edited files in the tree and they conflict on almost every merge.
+**After ANY merge, run the full-tree parse sweep before anything else** — it is
+15 seconds and it is the only step that would have caught all three:
+
+    godot --headless --path . --script res://tools/regression/parse_sweep.gd
 
 ## Where session memory lives
 

@@ -57,12 +57,35 @@ func _ready() -> void:
 	battery = BatteryT.new(1.0, "pack_player_start")
 	_last_percent = battery.percent()
 	# Subscribe to VoiceService TTS results so when a real-voice stream lands we
-	# route it through AudioManager at the current effective loudness. Best-effort
-	# — silently skipped headless when the autoload isn't present.
+	# route it through AudioManager at the current effective loudness.
+	#
+	# INLINE, and deliberately so. FULL_LOGIC_AUDIT_2026-07-08 HIGH #12 records
+	# this line as a live defect — "VoiceService is autoload #12 (after Walkie
+	# #6) -> node doesn't exist yet -> never retried. All real TTS crew voice is
+	# dead every launch" — and prescribes call_deferred. That finding is
+	# REFUTED, measured on 4.6.3 on 2026-08-23 by probing from inside this
+	# function on a real boot:
+	#
+	#     [PROBE] Walkie._ready: /root/VoiceService present = true
+	#
+	# Godot adds every autoload to /root BEFORE readying them, so declaration
+	# order does not starve this lookup, and the deferred version was tried and
+	# changed nothing (test_project_sweep_guards C2 is green either way — the
+	# mutation is in its header). It is written back inline so the next reader of
+	# the audit does not "fix" a working line on the strength of a stale doc.
+	# The audit is a 2026-07-08 SNAPSHOT: re-measure every finding before acting.
+	_connect_voice_service()
+
+## Hook up VoiceService's voice_done signal. Split out of _ready() so the hookup
+## has a name a test can call, and written idempotently so calling it twice
+## cannot stack two listeners and double every synthesised line. Best-effort —
+## silently skipped in stripped builds where the autoload is genuinely absent.
+func _connect_voice_service() -> void:
 	var vs := get_node_or_null("/root/VoiceService")
-	if vs != null and vs.has_signal("voice_done"):
-		if not vs.is_connected("voice_done", Callable(self, "_on_voice_done")):
-			vs.connect("voice_done", Callable(self, "_on_voice_done"))
+	if vs == null or not vs.has_signal("voice_done"):
+		return
+	if not vs.is_connected("voice_done", Callable(self, "_on_voice_done")):
+		vs.connect("voice_done", Callable(self, "_on_voice_done"))
 
 ## Resolve the ShiftClock lazily — it lives under MainWorld, which doesn't exist
 ## yet when this autoload's _ready() runs.
