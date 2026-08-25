@@ -2037,6 +2037,18 @@ func _build_machine_detail() -> void:
 		_machines_detail_vb.add_child(miss)
 		return
 
+	_md_build_title_row(info)
+	_md_build_control_row()
+	_md_build_buffer_row()
+	_md_build_rpm_sliders(info)
+	_md_build_extruder_panel(info)
+
+	# Spacer at the bottom so the panel reads cleanly.
+	var sp := Control.new()
+	sp.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_machines_detail_vb.add_child(sp)
+
+func _md_build_title_row(info: Dictionary) -> void:
 	# Title row: name + powered lamp + status
 	var trow := HBoxContainer.new()
 	trow.add_theme_constant_override("separation", 10)
@@ -2066,6 +2078,7 @@ func _build_machine_detail() -> void:
 	_md_amps_lbl.add_theme_color_override("font_color", C_AMBER)
 	trow.add_child(_md_amps_lbl)
 
+func _md_build_control_row() -> void:
 	# HAND / AUTO + RUN row
 	var crow := HBoxContainer.new()
 	crow.add_theme_constant_override("separation", 8)
@@ -2082,6 +2095,7 @@ func _build_machine_detail() -> void:
 	_md_safeguard_lbl.add_theme_color_override("font_color", LAMP_FAULT)
 	crow.add_child(_md_safeguard_lbl)
 
+func _md_build_buffer_row() -> void:
 	# Buffer / fill bar + throughput
 	var brow := HBoxContainer.new()
 	brow.add_theme_constant_override("separation", 8)
@@ -2105,6 +2119,7 @@ func _build_machine_detail() -> void:
 	_md_thru_lbl.custom_minimum_size = Vector2(150, 0)
 	brow.add_child(_md_thru_lbl)
 
+func _md_build_rpm_sliders(info: Dictionary) -> void:
 	# Per-rotor RPM sliders, each in REAL rpm (0..that rotor's rated max). Real
 	# machines have NO single "master" — each rotor/drive has its own motor
 	# (e.g. the dosing silo's 3 augers), so there is one slider PER component.
@@ -2115,9 +2130,10 @@ func _build_machine_detail() -> void:
 			float(comps[cname]), float(info.get("rate", 0.0)), float(info.get("spin", 0.0)))
 		_machines_detail_vb.add_child(row)
 
+func _md_build_extruder_panel(info: Dictionary) -> void:
 	# Extruder-only: append the 7-zone temperature setpoint panel bound to this
 	# line's ExtruderModel. Operator can drop individual zones to keep paper /
-	# cellulose contamination from burning at the screw (the matrix's "Drop
+	# cellulose memory contamination from burning at the screw (the matrix's "Drop
 	# Zone Temps" lever) — the model's motor_torque_pct climbs in response,
 	# eventually feeding lumps into the laser filter or tripping FAULT.
 	if String(info["id"]).begins_with("extruder"):
@@ -2129,11 +2145,6 @@ func _build_machine_detail() -> void:
 			zone_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			_machines_detail_vb.add_child(zone_panel)
 			zone_panel.bind(ex_model)
-
-	# Spacer at the bottom so the panel reads cleanly.
-	var sp := Control.new()
-	sp.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_machines_detail_vb.add_child(sp)
 
 ## Resolve the ExtruderModel powering the LineFlow node `machine_id`. The id
 ## convention from the catalog is `extruder_<line>` (e.g. "extruder_3a"); the
