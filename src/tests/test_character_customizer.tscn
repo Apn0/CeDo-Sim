@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://cf8hxk72y2p1"]
+
+[ext_resource type="Script" path="res://src/tests/test_character_customizer.gd" id="1_testcust"]
+
+[node name="TestCharacterCustomizer" type="Node"]
+script = ExtResource("1_testcust")
