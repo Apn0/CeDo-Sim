@@ -364,15 +364,18 @@ class ContainerGuide extends Node3D:
 	## material (a new instance per mesh so the optional pulse can drive each
 	## without disturbing shared catalog materials).
 	func _apply_holographic_material(root: Node) -> void:
-		for child in root.find_children("*", "MeshInstance3D", true, false):
-			var mi := child as MeshInstance3D
-			if mi == null:
-				continue
-			var m := _make_holo_material()
-			mi.material_override = m
-			# Holograms don't cast shadows.
-			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			_materials.append(m)
+		var stack: Array[Node] = [root]
+		while not stack.is_empty():
+			var current: Node = stack.pop_back()
+			if current != root and current is MeshInstance3D:
+				var mi := current as MeshInstance3D
+				var m := _make_holo_material()
+				mi.material_override = m
+				# Holograms don't cast shadows.
+				mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				_materials.append(m)
+			for i in range(current.get_child_count() - 1, -1, -1):
+				stack.append(current.get_child(i))
 
 
 	func _make_holo_material() -> StandardMaterial3D:
