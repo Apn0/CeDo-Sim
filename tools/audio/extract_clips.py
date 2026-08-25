@@ -141,7 +141,7 @@ def main() -> int:
 
         start = float(entry["start_s"])
         dur = float(entry["end_s"]) - start
-        subprocess.run(
+        subprocess.run(  # nosec B603
             [ffmpeg(), "-v", "error", "-y", "-ss", str(start), "-t", f"{dur:.3f}",
              "-i", str(src), "-vn", "-acodec", CODEC,
              "-ar", str(SAMPLE_RATE), "-ac", str(CHANNELS), str(stage / f"{name}.wav")],
@@ -163,7 +163,7 @@ def main() -> int:
         if cut_names:
             loopify = Path(__file__).resolve().parent / "loopify_wavs.py"
             if loopify.exists():
-                subprocess.run([sys.executable, str(loopify),
+                subprocess.run([sys.executable, str(loopify),  # nosec B603
                                 "--in", str(stage), "--in-place"], check=True)
             else:
                 sys.exit(f"{loopify.name} missing — refusing to install un-looped "
