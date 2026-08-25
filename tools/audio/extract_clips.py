@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -124,6 +125,11 @@ def main() -> int:
         stage.mkdir(parents=True)
 
     for entry in layout:
+        if not re.match(r"^[A-Za-z0-9_.-]+$", entry["clip_name"]):
+            sys.exit(f"Invalid clip_name: {entry['clip_name']}")
+        if not re.match(r"^[A-Za-z0-9_.-]+$", entry["source_file"]):
+            sys.exit(f"Invalid source_file: {entry['source_file']}")
+
         name = entry["clip_name"]
         src = args.sources / entry["source_file"]
         dst = CLIPS_DIR / f"{name}.wav"
