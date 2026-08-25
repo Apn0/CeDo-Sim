@@ -335,8 +335,8 @@ var _ray_step      : RayCast3D = null
 # blend_position is updated every physics tick from horizontal velocity so the
 # walk cycle (legs / arms / torso) ramps in as the NPC starts moving and ramps
 # back to idle when stationary. See Humanoid._install_skeleton_rig().
-# TODO Phase 2: feed the BlendSpace2D Y axis with strafe (velocity decomposed
-# into local right vs facing direction). For Phase 1 we keep Y at 0.
+# Phase 2: feed the BlendSpace2D Y axis with strafe (velocity decomposed
+# into local right vs facing direction).
 var _anim_tree     : AnimationTree = null
 const _ANIM_RUN_SPEED_NPC : float = 4.0    # m/s that maps to BlendSpace X=2 (run)
 
@@ -1280,11 +1280,17 @@ func _update_animation_blend() -> void:
 	if want_state != "locomotion":
 		return
 	var horiz : float = Vector2(velocity.x, velocity.z).length()
+	if horiz < 0.05:
+		_anim_tree.set("parameters/locomotion/blend_position", Vector2(0.0, 0.0))
+		return
+	# Phase 2: decompose world velocity into the body's LOCAL forward/right (the body
+	# yaws with look, so basis carries facing). X = gait speed, Y = strafe.
+	var lv : Vector3 = global_transform.basis.inverse() * Vector3(velocity.x, 0.0, velocity.z)
+	var side : float = lv.x                    # right (+) / left (-)
 	var walk_t : float = horiz / maxf(walk_speed, 0.1)
 	var bx : float = clampf(walk_t, 0.0, 2.0)
-	if horiz < 0.05:
-		bx = 0.0
-	_anim_tree.set("parameters/locomotion/blend_position", Vector2(bx, 0.0))
+	var by : float = clampf(side / maxf(walk_speed, 0.1), -1.0, 1.0)
+	_anim_tree.set("parameters/locomotion/blend_position", Vector2(bx, by))
 
 ## Flagged by FeederWorker / vehicle entry code when the NPC sits down.
 var npc_autopilot_seated : bool = false
