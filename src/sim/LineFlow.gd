@@ -1705,6 +1705,9 @@ func _apply_component_rotor(nd: Dictionary, comp: String) -> void:
 ## {component → its rotor's rated max rpm}, for the HMI sliders. Untagged
 ## components default to the machine's primary max.
 func _component_max_rpms(nd: Dictionary) -> Dictionary:
+	if nd.has("comp_max_rpms_cache"):
+		return nd["comp_max_rpms_cache"]
+
 	var out := {}
 	var default_max := _machine_max_rpm(nd)
 	for k in (nd.get("components", {}) as Dictionary).keys():
@@ -1714,6 +1717,8 @@ func _component_max_rpms(nd: Dictionary) -> Dictionary:
 		for m in machine.find_children("*", "", true, false):
 			if m.is_in_group("mechanism") and m.has_meta("comp") and ("nominal_rpm" in m):
 				out[String(m.get_meta("comp"))] = maxf(float(m.nominal_rpm), 1.0)
+
+	nd["comp_max_rpms_cache"] = out
 	return out
 
 ## Returns a snapshot the HMI can render: live state + override state + components.
