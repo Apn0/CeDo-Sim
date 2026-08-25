@@ -190,5 +190,24 @@ func _run() -> void:
 		_fail("screen file read broken"); return
 	print("  ok    : screen file readable with its data-screen-label intact")
 
+
+	# ── 7. open_for and close logic ───────────────────────────────────────
+	overlay.open_for("Test Panel", {})
+	if not overlay.visible:
+		_fail("open_for should make the overlay visible"); return
+	if overlay._pending_screen != overlay.INDEX_FILE:
+		_fail("open_for without web_screen should default to INDEX_FILE, got '%s'" % overlay._pending_screen); return
+	if overlay._web != null:
+		_fail("headless test should not create a WebView instance"); return
+
+	overlay.open_for("Test Panel 2", {"web_screen": "Waslijn 3C Overzicht.dc.html"})
+	if overlay._pending_screen != "Waslijn 3C Overzicht.dc.html":
+		_fail("open_for with web_screen should set _pending_screen, got '%s'" % overlay._pending_screen); return
+
+	overlay.close()
+	if overlay.visible:
+		_fail("close should make the overlay invisible"); return
+	print("  ok    : open_for and close set visibility and _pending_screen correctly")
+
 	print("PASS — HmiWebOverlay logic verified headless")
 	quit(0)
