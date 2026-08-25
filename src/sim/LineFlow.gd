@@ -1643,30 +1643,45 @@ func set_machine_rpm_pct(id: String, pct: float) -> void:
 		nd["rpm_pct"] = clampf(pct, 0.0, 1.0)   # 1.0 = rated max rpm
 		_apply_rotor_rpm(nd)                     # physicalize: drive the visible spin
 
+func _cache_rotors(nd: Dictionary) -> void:
+	if nd.has("rotors"):
+		return
+	var machine = nd.get("node")
+	if machine == null or not is_instance_valid(machine):
+		return
+	var rotors : Array = []
+	var comp_rotors : Dictionary = {}
+	for m in machine.find_children("*", "", true, false):
+		if not (m.is_in_group("mechanism") and ("nominal_rpm" in m)):
+			continue
+
+		if m.has_meta("comp"):
+			var comp = String(m.get_meta("comp"))
+			if not comp_rotors.has(comp):
+				comp_rotors[comp] = []
+			comp_rotors[comp].append(m)
+
+		# Skip rotors nested under another rotor (they ride their parent).
+		var anc = m.get_parent()
+		var nested := false
+		while anc != null and anc != machine:
+			if anc.is_in_group("mechanism"):
+				nested = true
+				break
+			anc = anc.get_parent()
+		if not nested:
+			rotors.append(m)
+	nd["rotors"] = rotors
+	nd["comp_rotors"] = comp_rotors
+
 ## Physically drive every TOP-LEVEL rotor of a machine from its rpm setting, so
 ## the VISIBLE spin speed matches the control (different setpoints → visibly
 ## different speeds). Rotors nested under another rotor (e.g. a drive-band riding
 ## a drum) are skipped — they ride their parent. The rotor list is cached per node.
 func _apply_rotor_rpm(nd: Dictionary) -> void:
-	var machine = nd.get("node")
-	if machine == null or not is_instance_valid(machine):
-		return
+	_cache_rotors(nd)
 	if not nd.has("rotors"):
-		var list : Array = []
-		for m in machine.find_children("*", "", true, false):
-			if not (m.is_in_group("mechanism") and ("nominal_rpm" in m)):
-				continue
-			# Skip rotors nested under another rotor (they ride their parent).
-			var anc = m.get_parent()
-			var nested := false
-			while anc != null and anc != machine:
-				if anc.is_in_group("mechanism"):
-					nested = true
-					break
-				anc = anc.get_parent()
-			if not nested:
-				list.append(m)
-		nd["rotors"] = list
+		return
 	var f : float = clampf(float(nd.get("rpm_pct", 1.0)), 0.0, 1.0)
 	for m in nd["rotors"]:
 		if is_instance_valid(m):
@@ -1686,18 +1701,16 @@ func set_machine_component_pct(id: String, component: String, pct: float) -> voi
 ## nominal. If the machine has a single untagged drive, this component drives all
 ## its rotors (the single-motor case).
 func _apply_component_rotor(nd: Dictionary, comp: String) -> void:
-	var machine = nd.get("node")
-	if machine == null or not is_instance_valid(machine):
+	_cache_rotors(nd)
+	if not nd.has("comp_rotors"):
 		return
 	var pct : float = clampf(float((nd["components"] as Dictionary).get(comp, 1.0)), 0.0, 1.0)
-	var matched := false
-	for m in machine.find_children("*", "", true, false):
-		if not (m.is_in_group("mechanism") and ("nominal_rpm" in m)):
-			continue
-		if m.has_meta("comp") and String(m.get_meta("comp")) == comp:
-			m.rpm = pct * float(m.nominal_rpm)
-			matched = true
-	if not matched:
+	var comp_rotors = nd["comp_rotors"] as Dictionary
+	if comp_rotors.has(comp):
+		for m in comp_rotors[comp]:
+			if is_instance_valid(m):
+				m.rpm = pct * float(m.nominal_rpm)
+	else:
 		# Single-drive machine: this component governs all its rotors.
 		nd["rpm_pct"] = pct
 		_apply_rotor_rpm(nd)
@@ -1709,11 +1722,13 @@ func _component_max_rpms(nd: Dictionary) -> Dictionary:
 	var default_max := _machine_max_rpm(nd)
 	for k in (nd.get("components", {}) as Dictionary).keys():
 		out[k] = default_max
-	var machine = nd.get("node")
-	if machine != null and is_instance_valid(machine):
-		for m in machine.find_children("*", "", true, false):
-			if m.is_in_group("mechanism") and m.has_meta("comp") and ("nominal_rpm" in m):
-				out[String(m.get_meta("comp"))] = maxf(float(m.nominal_rpm), 1.0)
+	_cache_rotors(nd)
+	if nd.has("comp_rotors"):
+		var comp_rotors = nd["comp_rotors"] as Dictionary
+		for comp in comp_rotors.keys():
+			for m in comp_rotors[comp]:
+				if is_instance_valid(m) and ("nominal_rpm" in m):
+					out[comp] = maxf(float(m.nominal_rpm), 1.0)
 	return out
 
 ## Returns a snapshot the HMI can render: live state + override state + components.
