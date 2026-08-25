@@ -118,7 +118,7 @@ def main() -> int:
             "ffmpeg", "-y", "-loglevel", "error",
             "-ss", f"{float(start):.3f}",
             "-t",  f"{duration:.3f}",
-            "-i",  src_path,
+            "-i",  os.path.abspath(src_path),
             "-vn",  # discard video; audio only
             "-ac", "1" if args.mono else "2",
             "-ar", str(args.sample_rate),
@@ -132,7 +132,7 @@ def main() -> int:
             cmd += ["-c:a", "libvorbis", "-q:a", "5"]
         elif args.format == "flac":
             cmd += ["-c:a", "flac"]
-        cmd.append(out_path)
+        cmd.append(os.path.abspath(out_path))
 
         if args.dry_run:
             print(f"  WOULD  {clip} -> {out_name}")
