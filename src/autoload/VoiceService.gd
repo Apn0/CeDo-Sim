@@ -302,10 +302,18 @@ func _reason_local(prompt: String, system: String) -> String:
 	if not system.is_empty():
 		joined += "<<SYS>>\n%s\n<</SYS>>\n" % system
 	joined += prompt
+
+	var prompt_path := "user://tmp_llama_in.txt"
+	var f := FileAccess.open(prompt_path, FileAccess.WRITE)
+	if f == null:
+		return ""
+	f.store_string(joined)
+	f.close()
+
 	var output : Array = []
 	var args := [
 		"-m", ProjectSettings.globalize_path(model),
-		"-p", joined,
+		"-f", ProjectSettings.globalize_path(prompt_path),
 		"-n", "120",
 		"--no-display-prompt",
 	]
