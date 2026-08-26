@@ -213,6 +213,21 @@ document.addEventListener("message", function (e) {
   } else if (msg.type === "vals") {
     lastVals = msg;
     applyVals(msg);
+  } else if (msg.type === "diag_probe") {
+    // Godot-side diagnostic: was this replaced by eval()-injecting the same
+    // read directly from HmiWebOverlay.gd. godot_wry's only page->Godot
+    // channel is post_message (this handler), so the probe now lives here as
+    // a declared script instead of a string handed to eval() at runtime.
+    sendIpc({
+      type: "probe",
+      shell: String(typeof window.__shellNav),
+      err: String(window.__lastErr || ""),
+      scripts: document.querySelectorAll("script").length,
+      bodyLen: document.body ? document.body.innerHTML.length : -1,
+      pageW: window.innerWidth,
+      pageH: window.innerHeight,
+      title: String(document.title)
+    });
   }
 });
 
