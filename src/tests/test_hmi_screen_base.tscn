@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://ddl1d0w3l3g0w"]
+
+[ext_resource type="Script" path="res://src/tests/test_hmi_screen_base.gd" id="1_4n5a6"]
+
+[node name="Node3D" type="Node3D"]
+script = ExtResource("1_4n5a6")
