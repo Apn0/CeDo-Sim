@@ -86,7 +86,7 @@ const LAMP_OFF   : Color = Color(0.42, 0.45, 0.43, 1.0)
 const LAMP_RUN   : Color = Color(0.22, 0.85, 0.32, 1.0)
 
 # ── State ────────────────────────────────────────────────────────────────────
-var _filter : LaserFilter = null
+var _filter : Node3D = null
 
 # Rolling sample buffers (parallel arrays — same length).
 var _t_buf       : PackedFloat32Array = PackedFloat32Array()   # sim time (s)
@@ -139,7 +139,7 @@ func _process(delta: float) -> void:
 # ── Public API ───────────────────────────────────────────────────────────────
 ## Bind a LaserFilter to this scope. Resets the rolling buffers so we don't
 ## carry samples from a previous filter into the new chart.
-func set_filter(f: LaserFilter) -> void:
+func set_filter(f: Node3D) -> void:
 	_filter = f
 	_t_buf.clear()
 	_temp_buf.clear()
@@ -160,7 +160,7 @@ func _pull_telemetry() -> void:
 	# ── Inlet pressure (MP < MF) — upstream proxy reported by ExtruderMachine.
 	_cur_inlet_bar = _filter.upstream_pressure_psi_indicator * PSI_TO_BAR
 	# ── Motor 1 speed = disc-motor rpm (operator setpoint; #223 — no ΔP boost).
-	_cur_motor_rpm = clampf(_filter.scraper_rpm, 0.0, LaserFilter.MAX_SCRAPER_RPM)
+	_cur_motor_rpm = clampf(_filter.get("scraper_rpm") if "scraper_rpm" in _filter else 0.0, 0.0, 60.0)
 	# ── Melt temperature: LaserFilter doesn't track this, so probe the parent
 	# ExtruderModel/ExtruderMachine via siblings. Fall back to a synthetic
 	# value tied to the boost state so the yellow trace still moves.
@@ -404,7 +404,7 @@ func _refresh_readouts() -> void:
 		_press_outlet.update(maxf(0.0, _cur_inlet_bar - _cur_delta_bar))
 	# #223 docs->code — dMP-MF1 setpoint = the dP alarm threshold (SCRAPER_BOOST_PSI) in bar.
 	if _press_setpt != null and is_instance_valid(_press_setpt):
-		_press_setpt.update(LaserFilter.SCRAPER_BOOST_PSI * PSI_TO_BAR)
+		_press_setpt.update(4351.0 * PSI_TO_BAR)
 	# Motor lamp green when scraper is actually turning.
 	if _motor_lamp != null and is_instance_valid(_motor_lamp):
 		var running : bool = _cur_motor_rpm > 0.5 \
