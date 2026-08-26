@@ -128,16 +128,16 @@ func _ensure_webview() -> void:
 	_web.connect("page_load_started", func(u): print("[HmiWebOverlay] page_load_started: %s" % str(u)))
 	_web.connect("page_load_finished", func(u):
 		print("[HmiWebOverlay] page_load_finished: %s" % str(u))
-		# Diagnostic probe: eval() bypasses any page CSP, so if this arrives
+		# Diagnostic probe. Was eval()-injecting an ad-hoc JS string into the
+		# page — bypasses whatever CSP the page sets, and was the one caller
+		# in this file not using the post_message channel every other Godot->
+		# shell message already goes through. The probe logic itself now
+		# lives in hmi_shell.html as a declared script (its own "message"
+		# listener, type "diag_probe") and replies the same {type:'probe',...}
+		# shape over ipc, so _on_ipc below needed no change. If this arrives
 		# but "ready" never did, the page's own <script> was blocked; if this
 		# never arrives either, the ipc channel itself is broken.
-		_web.call("eval",
-			"window.ipc && window.ipc.postMessage(JSON.stringify({type:'probe'," +
-			"shell:String(typeof window.__shellNav), err:String(window.__lastErr||'')," +
-			"scripts:document.querySelectorAll('script').length," +
-			"bodyLen:document.body?document.body.innerHTML.length:-1," +
-			"pageW:window.innerWidth, pageH:window.innerHeight," +
-			"title:String(document.title)}))"))
+		_web.call("post_message", JSON.stringify({"type": "diag_probe"})))
 	add_child(_web)
 	print("[HmiWebOverlay] WebView created, loading %s" % SHELL_URL)
 
