@@ -2564,6 +2564,32 @@ func _tick_advanced_systems(delta: float) -> void:
 		if _is_pack_up_paused(String(nd.get("id", ""))):
 			nd["powered"] = false
 
+		# BUNKER RELAY TRIP — sustained low-speed motor stall/relay trip (#TODO relay trips).
+		# Driven strictly by speed setpoint (rpm_pct × max speed), not mass backlog.
+		var n3d = nd.get("node")
+		if n3d != null and is_instance_valid(n3d) and n3d.has_meta("bunker_relay_trip_below"):
+			var trip_below : float = float(n3d.get_meta("bunker_relay_trip_below"))
+			var max_speed : float = float(n3d.get_meta("bunker_speed_max")) if n3d.has_meta("bunker_speed_max") else 1000.0
+			var speed_setting : float = float(nd.get("rpm_pct", 1.0)) * max_speed
+
+			if speed_setting < trip_below and speed_setting > 0.01 and bool(nd.get("powered", false)):
+				# The ruling gives exactly one anchor: 200 -> 900s (15 min), and "worse the lower".
+				# Interpolating linearly down to 120s at 0 speed. (Curve shape is unsourced
+				# beyond the 200->900s data point; using linear until docs specify otherwise).
+				var trip_delay : float = lerpf(120.0, 900.0, speed_setting / trip_below)
+				var t : float = float(nd.get("_bunker_relay_t", 0.0)) + delta
+				if t >= trip_delay:
+					nd["powered"] = false
+					var fid := String(nd.get("id", "?"))
+					var bus := get_node_or_null("/root/EventBus")
+					if bus and bus.has_signal("machine_alarm_raised"):
+						bus.emit_signal("machine_alarm_raised", fid, "RELAY-TRIP", 3)
+					print("[LineFlow] RELAY TRIP at '%s' — speed %.0f < %.0f held for %.1fs. Motor stopped." % [fid, speed_setting, trip_below, t])
+					t = 0.0
+				nd["_bunker_relay_t"] = t
+			else:
+				nd["_bunker_relay_t"] = 0.0
+
 		# 4) AIR consumer duty — accumulate this consumer's load fraction (throughput
 		#    vs its design rate) so we can report a single duty per air id.
 		var aid : String = String(nd.get("air_id", ""))
