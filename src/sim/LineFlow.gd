@@ -1705,15 +1705,34 @@ func _apply_component_rotor(nd: Dictionary, comp: String) -> void:
 	if not nd.has("comp_rotors"):
 		return
 	var pct : float = clampf(float((nd["components"] as Dictionary).get(comp, 1.0)), 0.0, 1.0)
-	var comp_rotors = nd["comp_rotors"] as Dictionary
-	if comp_rotors.has(comp):
-		for m in comp_rotors[comp]:
-			if is_instance_valid(m):
-				m.rpm = pct * float(m.nominal_rpm)
-	else:
+	var matched := false
+
+	if not nd.has("component_rotors"):
+		_cache_component_rotors(nd)
+
+	var rotors : Array = nd["component_rotors"].get(comp, [])
+	for m in rotors:
+		if is_instance_valid(m):
+			m.rpm = pct * float(m.nominal_rpm)
+			matched = true
+
+	if not matched:
 		# Single-drive machine: this component governs all its rotors.
 		nd["rpm_pct"] = pct
 		_apply_rotor_rpm(nd)
+
+func _cache_component_rotors(nd: Dictionary) -> void:
+	var machine = nd.get("node")
+	if machine == null or not is_instance_valid(machine):
+		return
+	var cr := {}
+	for m in machine.find_children("*", "", true, false):
+		if m.is_in_group("mechanism") and m.has_meta("comp") and ("nominal_rpm" in m):
+			var c = String(m.get_meta("comp"))
+			if not cr.has(c):
+				cr[c] = []
+			cr[c].append(m)
+	nd["component_rotors"] = cr
 
 ## {component → its rotor's rated max rpm}, for the HMI sliders. Untagged
 ## components default to the machine's primary max.
@@ -1725,13 +1744,16 @@ func _component_max_rpms(nd: Dictionary) -> Dictionary:
 	var default_max := _machine_max_rpm(nd)
 	for k in (nd.get("components", {}) as Dictionary).keys():
 		out[k] = default_max
-	_cache_rotors(nd)
-	if nd.has("comp_rotors"):
-		var comp_rotors = nd["comp_rotors"] as Dictionary
-		for comp in comp_rotors.keys():
-			for m in comp_rotors[comp]:
-				if is_instance_valid(m) and ("nominal_rpm" in m):
+	var machine = nd.get("node")
+	if machine != null and is_instance_valid(machine):
+		if not nd.has("component_rotors"):
+			_cache_component_rotors(nd)
+		var cr : Dictionary = nd["component_rotors"]
+		for comp in cr.keys():
+			for m in cr[comp]:
+				if is_instance_valid(m):
 					out[comp] = maxf(float(m.nominal_rpm), 1.0)
+					break # Just need one valid rotor per component for max rpm
 	return out
 
 ## Returns a snapshot the HMI can render: live state + override state + components.
