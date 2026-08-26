@@ -18,7 +18,7 @@ class MockExtruderModel extends Object:
 	var config: Dictionary = {"screw_rpm_nominal": 150.0}
 	var state := 2 # RUNNING
 
-	func get_zone_temp(z: int) -> float:
+	func get_zone_temp(_z: int) -> float:
 		return 200.0
 
 class MockExtruderModelAlarm extends Object:
@@ -34,7 +34,7 @@ class MockExtruderModelAlarm extends Object:
 	var state := 2
 
 	# ZONE_ALARM_LOW_C = 180, ZONE_ALARM_HIGH_C = 230
-	func get_zone_temp(z: int) -> float:
+	func get_zone_temp(_z: int) -> float:
 		return 240.0 # Alarm!
 
 func _ok(cond: bool, msg: String) -> void:

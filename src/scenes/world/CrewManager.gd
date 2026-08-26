@@ -274,9 +274,38 @@ func assign_posts() -> void:
 				sid = "(rondgang)"
 		else:
 			sid = String(best["id"])
-			pos = best["pos"]
+			pos = _post_pos_on_aisle(best, w.global_position)
 		pos.y = w.global_position.y      # keep them on the floor
 		w.assign_post(sid, pos)
+
+## A machine's own global_position sits INSIDE its collider — which MainWorld also
+## bakes as navmesh source — so a worker posted straight there stands on a sliver
+## of navmesh disconnected from the aisle. Measured in test_nav_connectivity.gd
+## (2026-08-12): dXZ 0.00 m from the post to the nearest mesh point, ISLAND, post
+## inside its own machine's footprint, for every one of 5 broken legs — the
+## nearest reachable aisle point sat 1.78-3.68 m away depending on the machine's
+## own size. Push the post out to the machine's AABB edge, on the side facing
+## the worker's own current position, plus a clearance margin, so it lands on the
+## aisle instead of inside the obstacle.
+const POST_AISLE_MARGIN_M : float = 1.0
+
+func _post_pos_on_aisle(machine: Dictionary, from: Vector3) -> Vector3:
+	var centre : Vector3 = machine.get("pos", Vector3.ZERO)
+	var node = machine.get("node", null)
+	if node == null or not is_instance_valid(node) or not (node is Node3D):
+		return centre
+	var box := NavSiteBounds.body_aabb(node as Node3D)
+	if box.size == Vector3.ZERO:
+		return centre
+	var dir := Vector3(from.x - centre.x, 0.0, from.z - centre.z)
+	if dir.length() < 0.01:
+		dir = Vector3(1.0, 0.0, 0.0)   # worker is standing on the machine too — pick a side
+	dir = dir.normalized()
+	# Axis-aligned half-extent along the chosen direction. Conservative for a
+	# rotated machine — it can only push the post further out, never leave it
+	# short of the true (rotated) edge.
+	var reach : float = absf(dir.x) * box.size.x * 0.5 + absf(dir.z) * box.size.z * 0.5
+	return centre + dir * (reach + POST_AISLE_MARGIN_M)
 
 # =============================================================================
 # MAIN LOOP
@@ -557,7 +586,8 @@ func _machine_list() -> Array:
 	var out : Array = []
 	if _has_nodes():
 		for nd in line_flow._nodes:
-			out.append({"id": String(nd.get("id", "")), "pos": _node_pos(nd)})
+			out.append({"id": String(nd.get("id", "")), "pos": _node_pos(nd),
+				"node": nd.get("node", null)})
 	return out
 
 func _nearest_in_zone(role: String, from: Vector3, machines: Array) -> Dictionary:
