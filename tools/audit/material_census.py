@@ -50,7 +50,15 @@ DEBIT_RE = re.compile(r'\b\w+\s*-=\s*|\bminf\s*\(|\.\s*split_(?:mass|fraction)\s
 BOUNDARY = {
     'BaleDefs.gd': 'plant intake — bales arrive from outside the fence',
     'MaterialBatch.gd': 'the accounting primitive itself',
+    # QaLab.gd:33-40 — non-destructive by default: submit_sample() grades a
+    # duplicate_batch(), not the live one, so the plant ledger never sees the
+    # sample. A lab bench consuming its own sample is a boundary, not a sink.
+    'QaLab.gd': 'QA bench sample — grades a duplicate, never debited from the plant ledger',
 }
+# Test fixtures construct batches as literal input (BaleDefs.gd's boundary,
+# applied per-file) rather than moving real plant mass — same as the plant
+# intake case above, just under src/tests/ instead of a single autoload.
+TEST_DIR_MARKER = os.sep + 'tests' + os.sep
 
 
 def strip_comments(text: str) -> list[str]:
@@ -109,7 +117,7 @@ def census(path: str) -> dict | None:
 def judge(c: dict) -> list[dict]:
     base = os.path.basename(c['path'])
     findings = []
-    if base in BOUNDARY:
+    if base in BOUNDARY or TEST_DIR_MARKER in c['path']:
         return findings
 
     # MINTS — a batch is built with mass, but nothing in the file debits a source.

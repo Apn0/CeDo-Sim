@@ -88,6 +88,26 @@ if ! python3 "$PROJ/tools/hmi/palette_census.py"; then
 	exit 1
 fi
 
+# SYMBOL FLOW. Generalises the `_live_pieces` bug (occurred once in the whole
+# repo, blocked every test for 3 weeks) into a repeatable check: every private
+# symbol must be declared, written AND read somewhere. Mutation-tested against
+# the pre-fix BaleBurst.gd — see docs/audit/material_trace_2026-08-18.md.
+echo "== symbol flow audit =="
+if ! python3 "$PROJ/tools/audit/symbol_flow.py" --root "$PROJ/src" --all; then
+	echo "FAIL  : an undeclared/write-only/dead symbol was found (see above)"
+	exit 1
+fi
+
+# MATERIAL CENSUS. Every stage that consumes a MaterialBatch must also emit
+# one (or be a documented plant boundary) — the operator's "every input has an
+# output" framing, applied to the conserved mass/water/contaminant quantities
+# directly rather than to code symbols. Same audit session, same doc.
+echo "== material census =="
+if ! python3 "$PROJ/tools/audit/material_census.py" --root "$PROJ/src"; then
+	echo "FAIL  : a material stage mints, sinks, or drops a sub-mass (see above)"
+	exit 1
+fi
+
 echo "== running regression =="
 "$GODOT" --headless --path "$PROJ" \
 	--main-scene res://src/tests/regression_world_save.tscn > "$OUT/last_run.log" 2>&1

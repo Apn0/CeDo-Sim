@@ -16,9 +16,9 @@ class MockCrewManager extends Node:
 	var workers = []
 	func role_posts() -> Array:
 		return [{"id": "post1", "label": "Post 1"}]
-	func pinned_station(worker) -> String:
+	func pinned_station(_worker) -> String:
 		return ""
-	func position_pin_for(worker) -> Dictionary:
+	func position_pin_for(_worker) -> Dictionary:
 		return {}
 
 ## Stand-in for Worker/NPC

@@ -116,7 +116,6 @@ var _incline_angle : float = 0.0   # radians
 var _incline_hyp   : float = 0.0   # belt length along the slope
 
 # #8 — shredded OUTPUT
-const OUTPUT_KG_PER_FILL : float = 350.0   # flake mass produced per unit of throat digested
 const OUTPUT_DENSITY     : float = 180.0   # coarse film-flake bulk density (kg/m³)
 const OUTPUT_FLAKE_LIFE  : float = 0.7      # falling-flake visual lifetime (s)
 const OUTPUT_FLAKE_MAX   : int   = 14       # cap on live falling flakes (no spam)
