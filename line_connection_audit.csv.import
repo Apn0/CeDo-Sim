@@ -15,5 +15,3 @@ dest_files=["res://line_connection_audit.seq.translation", "res://line_connectio
 
 compress=1
 delimiter=0
-unescape_keys=false
-unescape_translations=true
