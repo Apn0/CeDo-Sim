@@ -31,6 +31,22 @@ func _run() -> void:
 	_check(absf(float(sh.get("motor_load_pct")) - 66.7) < 10.0, "S1 motor load ≈ feed/rated (%.0f%%)" % float(sh.get("motor_load_pct")))
 	_check((sh.get("_rotors") as Array).size() >= 2, "S1 TWIN rotors found for spin-gating (%d)" % (sh.get("_rotors") as Array).size())
 
+	# ── S1b throughput tracks rotor spin-up, not just the run flag (#C3) ─────
+	# A fresh machine started this tick should still be near-stopped: rotor rpm
+	# has real inertia (RotatingMechanism.spin_up_s), so output must ramp in,
+	# not snap to full rate the instant `running` flips true.
+	var sh2 : Node = PlaceableCatalog.build_node("shredder_1", false)
+	add_child(sh2)
+	await get_tree().process_frame
+	sh2.set_feed_throughput(3000.0)
+	sh2.call("start")
+	sh2._physics_process(0.05)   # one tick, 50ms after start
+	_check(float(sh2.get("throughput_kg_h")) < 900.0, "S1b throughput still near-zero 50ms after start (%.0f kg/h)" % float(sh2.get("throughput_kg_h")))
+	var spin_up_s : float = float((sh2.get("_rotors") as Array)[0].get("spin_up_s"))
+	for _i in int(spin_up_s / 0.1) + 20: sh2._physics_process(0.1)
+	_check(float(sh2.get("throughput_kg_h")) > 2500.0, "S1b throughput reaches feed rate once spun up (%.0f kg/h, spin_up_s=%.1f)" % [float(sh2.get("throughput_kg_h")), spin_up_s])
+	sh2.queue_free()
+
 	# ── S2 overfeed: output caps at rated, buffer backs up ───────────────────
 	sh.set_feed_throughput(6000.0)
 	var buf0 : float = float(sh.get("buffer_kg"))

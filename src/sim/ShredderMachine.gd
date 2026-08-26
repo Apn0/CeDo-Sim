@@ -64,6 +64,16 @@ var overflow_kg      : float = 0.0               # cumulative spill (housekeepin
 var _overload_t      : float = 0.0
 var _rotors          : Array = []
 var _rotors_found    : bool  = false
+## 0..1 — how close the rotor(s) are to running speed. Ramped at the same
+## time-constant as the rotor's own spin-up (RotatingMechanism.spin_up_s),
+## but tracked locally rather than read live off the rotor node: the rotor
+## ramps in `_process()` (render-rate), this sim runs in `_physics_process()`,
+## and coupling throughput to a value that only advances on render frames
+## would make it silently depend on whether the engine is drawing a frame —
+## exactly the kind of hidden coupling Q10 (measure, don't assert) exists to
+## catch. Same physical parameter (spin_up_s), same physics tick, no
+## cross-callback timing dependency.
+var _spin_frac       : float = 0.0
 
 ## Emitted whenever a state the relay panel / HMI cares about changes.
 signal state_changed()
@@ -97,16 +107,34 @@ func _apply_rotor_state(spinning: bool) -> void:
 		if is_instance_valid(r) and r.has_method("set_running"):
 			r.call("set_running", spinning)
 
+## Spin-up/down time constant, sourced from the actual rotor node so a tuned
+## spin_up_s there is honored here too. Falls back to RotatingMechanism's own
+## default (1.2s) if no rotor was found yet (e.g. bench test before _ready).
+func _rotor_spin_up_s() -> float:
+	for r in _rotors:
+		if is_instance_valid(r) and ("spin_up_s" in r):
+			return maxf(float(r.get("spin_up_s")), 0.01)
+	return 1.2
+
 # =============================================================================
 func _physics_process(delta: float) -> void:
 	_ensure_rotors()
 	var operational : bool = _is_operational()
 	_apply_rotor_state(operational)
 
+	# Rotor speed fraction (0 stopped, 1 up to speed) — exponential approach,
+	# tau ≈ spin_up_s/3 so ~95% of the step lands at t = spin_up_s, matching
+	# RotatingMechanism's own ramp shape (#C3, measured 2026-08-26: previously
+	# throughput_kg_h snapped to full rate the instant `operational` went true,
+	# with zero regard for whether the rotor had actually spun up).
+	var spin_target : float = 1.0 if operational else 0.0
+	var spin_tau : float = maxf(_rotor_spin_up_s() / 3.0, 0.01)
+	_spin_frac = spin_target + (_spin_frac - spin_target) * exp(-delta / spin_tau)
+
 	var feed_dt : float = feed_kg_h / 3600.0 * delta        # kg arriving this tick
 	if operational:
 		var avail : float = buffer_kg + feed_dt
-		var cap_dt : float = rated_kg_h / 3600.0 * delta
+		var cap_dt : float = rated_kg_h * _spin_frac / 3600.0 * delta
 		var processed : float = minf(avail, cap_dt)
 		buffer_kg = maxf(0.0, avail - processed)
 		throughput_kg_h = (processed / delta * 3600.0) if delta > 0.0 else 0.0
