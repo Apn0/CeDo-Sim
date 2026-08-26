@@ -1237,6 +1237,70 @@ func _is_pack_up_paused(bid: String) -> bool:
 			return true
 	return false
 
+## BuildMode.LINE_SORT_SEQ slots (BuildMode.gd:222-246), addressed by
+## macro_id + macro_index — NOT by catalog id. The bunker's outfeed belt
+## shares the generic id "transport_belt" with 6 other belts in this same
+## macro (indices 2, 4, 5, 15, 16, 17, 18), so an id-string match can't tell
+## them apart. Same per-instance-identity trap test_line3c_identity.gd was
+## written to catch for L3C currents (its C1/C2 notes).
+const _SORT_MACRO_ID       : String = "line_sort"
+const _SORT_BUNKER_IDX     : int = 3
+const _SORT_BUNKER_OUT_IDX : int = 4
+const _SORT_SHREDDER2_IDX  : int = 19
+
+## _nodes indices of every machine placed at (macro_id, macro_index) — plural
+## because nothing stops an operator from placing the same macro twice; a
+## second "line_sort" would share this macro_id with the first, and this
+## returns every instance rather than silently picking one.
+func _node_indices_by_macro(macro_id: String, macro_index: int) -> Array:
+	var out : Array = []
+	for i in _nodes.size():
+		var node3d = _nodes[i].get("node")
+		if node3d == null or not is_instance_valid(node3d):
+			continue
+		if not (node3d as Node3D).has_meta("macro_id") or not (node3d as Node3D).has_meta("macro_index"):
+			continue
+		if String((node3d as Node3D).get_meta("macro_id")) == macro_id \
+				and int((node3d as Node3D).get_meta("macro_index")) == macro_index:
+			out.append(i)
+	return out
+
+## Bunker/shredder-2 interlock (operator instruction, 2026-08-26): shredder-2's
+## MOL (motor-overload) trip stops the bunker AND its outfeed belt; TITECH/
+## TOMRA (downstream, between the two) are left running — they simply see no
+## fresh material, same as any other starved-but-healthy machine. Distinct
+## from (in addition to) #139's pack-up cascade, where "bunker" is only ever
+## the LAST belt paused and never trip-driven.
+##
+## `mol` here means LineFlow's own MotorOverload component (nd.get("mol"),
+## set on every node matching _is_high_load_motor() — see :2552-2567 above),
+## NOT ShredderMachine.gd's separate is_tripped() relay model. The catalog
+## audit (2026-08-18, finding H6) already flagged these as two independent,
+## disagreeing trip models sharing the same shredder node; this interlock
+## intentionally reads the one the TODO's own wording named.
+##
+## Known limitation, stated rather than silently wrong: if "line_sort" is
+## ever placed more than once in one world, every instance's bunker stops
+## the moment ANY instance's shredder-2 trips (there is currently no cross-
+## macro-instance pairing). The plant has one sort-line front end, so this
+## does not arise today.
+func _tick_bunker_shredder2_interlock() -> void:
+	var s2_idx : Array = _node_indices_by_macro(_SORT_MACRO_ID, _SORT_SHREDDER2_IDX)
+	if s2_idx.is_empty():
+		return
+	var tripped := false
+	for i in s2_idx:
+		var mol = _nodes[i].get("mol")
+		if mol != null and bool(mol.call("is_tripped")):
+			tripped = true
+			break
+	if not tripped:
+		return
+	for i in _node_indices_by_macro(_SORT_MACRO_ID, _SORT_BUNKER_IDX):
+		_nodes[i]["powered"] = false
+	for i in _node_indices_by_macro(_SORT_MACRO_ID, _SORT_BUNKER_OUT_IDX):
+		_nodes[i]["powered"] = false
+
 ## When only one VSS is full the switch belt's buffer-aware split (#137)
 ## already biases against it, so there's no need to flip C8 in that case.
 ## #211d — extended to ALSO trip pack-up when an upstream ShredderFeedBelt
@@ -1552,10 +1616,11 @@ static func _default_components_for(id: String) -> Dictionary:
 		# tags the new bunkerrol's RotatingMechanism with comp == "uittrekrol".
 		# Documented names are "belt" (deck drive) + "bunkerrol"; rename here and
 		# in the catalog together in a dedicated save-migration pass.
-		# TODO(bunker interlock, bunker.md §3.3 / operator interview): shredder-2
-		# `mol` trip → powered=false on the bunker's outfeed belt AND the bunker
-		# itself; TITECH/TOMRA keep running. Distinct from (in addition to) the
-		# #139 pack-up cascade where "bunker" stays last in _PACK_UP_ORDER.
+		# Bunker/shredder-2 MOL interlock: see _tick_bunker_shredder2_interlock()
+		# below. (Was TODO-cited to "bunker.md §3.3" — that doc does not exist
+		# anywhere in the repo, confirmed by the 2026-08-18 catalog audit,
+		# findings C7/H14; the interlock itself is implemented per operator
+		# instruction 2026-08-26, not per that citation.)
 		# TODO(relay trips, ruling B3 2026-07-06): speed settings BELOW 200
 		# (settable, sim cap 1000) must fire relay-trip/motor-stall events
 		# ~every 15 min, worse the lower — needs an event hook in the tick; the
@@ -2307,6 +2372,10 @@ func tick(delta: float) -> void:
 	#      the motor-overload model can only STOP a jammed rotor conveying (mass then
 	#      backs up — conserving), and air duty is reported to the header.
 	_tick_advanced_systems(delta)
+	# 2.55) Bunker/shredder-2 MOL interlock — must run AFTER _tick_advanced_systems
+	# so this tick's mol.tick()/is_tripped() result (set inside that loop) is
+	# already current, not last tick's value.
+	_tick_bunker_shredder2_interlock()
 	# 2.6) #99 — DRD batch dryer cycles. Step both drums of every registered
 	#      pair (and any unpaired single drum) so the L/R BEFULLEN swap is
 	#      driven by real elapsed time. The router (section 3 below) reads
