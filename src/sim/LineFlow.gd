@@ -2657,7 +2657,16 @@ func _tick_advanced_systems(delta: float) -> void:
 
 		# BUNKER RELAY TRIP — sustained low-speed motor stall/relay trip (#TODO relay trips).
 		# Driven strictly by speed setpoint (rpm_pct × max speed), not mass backlog.
+		# PlaceableCatalog._m_bunker() stamps bunker_relay_trip_below/bunker_speed_max
+		# on the composite "Model" CHILD node (build_node()'s `model`, named "Model"),
+		# not on the StaticBody3D root that BuildMode places and that we hold as
+		# nd["node"] — that root only carries placement meta (macro_id etc). Checking
+		# nd["node"] directly here silently never matched anything (found + mutation-
+		# tested by test_bunker_relay_trip.gd, 2026-08-27); fall through to the
+		# "Model" child so this actually sees the catalog's meta.
 		var n3d = nd.get("node")
+		if n3d != null and is_instance_valid(n3d) and not n3d.has_meta("bunker_relay_trip_below"):
+			n3d = (n3d as Node3D).get_node_or_null("Model")
 		if n3d != null and is_instance_valid(n3d) and n3d.has_meta("bunker_relay_trip_below"):
 			var trip_below : float = float(n3d.get_meta("bunker_relay_trip_below"))
 			var max_speed : float = float(n3d.get_meta("bunker_speed_max")) if n3d.has_meta("bunker_speed_max") else 1000.0
