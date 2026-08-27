@@ -456,7 +456,7 @@ const LINE_3B_SEQ : Array[Dictionary] = [
 	{"id": "voorraad_silo"},
 ]
 # Line 1 = its own intake (opzetband 1 → metal detector → westa band → shredder →
-# magnet → VW trommel → scheidingsgoot) then wash/dry/extrude; transcribed from the
+# magnet → VW trommel → band 2 → SGA-trommel → Y-splitgoot) then wash/dry/extrude; transcribed from the
 # operator's LIJN 1 sheet; 2x machines laid as side-by-side pairs (jog with K to finalize).
 const LINE_1_SEQ : Array[Dictionary] = [
 	# #196 — operator rework. Old head (metaaldetector + 45° westa_band) gone:
@@ -479,7 +479,28 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	{"id": "transport_belt", "main_advance": 1.0},     # short 1m after 90° L
 	{"id": "westa_band_1"},                            # 45° incline to drum top
 	{"id": "prewash_drum"},
-	{"id": "scheidingsgoot"},
+	# ── DOC-WALK GAP FIX 2026-08-28 — lijn_1_flow.md / line_flow_graphs.json ──
+	# The flow diagram's line-1 chain is
+	#   … voorwas trommel → band_2_hps → HPS (SGA) zware-delen scheider → 2×
+	#   frictiescheider …
+	# but this macro jumped prewash_drum → scheidingsgoot, so BOTH the belt and
+	# the SGA drum were missing. `sga_drum` was already in the catalog, already
+	# modelled, and already had full MachineFlow behaviour (process "screen",
+	# contam_remove 0.20, waste 0.02, rate 8.0) — it was simply never placed by
+	# ANY macro, so line 1 did no heavy-parts separation at all. `scheidingsgoot`
+	# standing in its slot has no MachineFlow entry, i.e. it removed nothing.
+	# The two chutes are OPERATOR-described (2026-08-28), not doc-derived: the
+	# flow diagrams draw blocks only and never show chutes, but there is a chute
+	# between most machines on the real floor.
+	#   sga_feed_chute — 90° right turn off band 2, feeds the drum's TOP side.
+	#   scheidingsgoot — the Y-splitgoot at the drum's END (rebuilt this pass).
+	# NOT append-only: this inserts 3 entries, shifting every later macro_index
+	# on line 1. Checked before doing it — `user://macros/` holds no line_*.json
+	# deltas and none ship in the repo, so no saved address is invalidated.
+	{"id": "transport_belt"},                          # band 2 (naar HPS/SGA)
+	{"id": "sga_feed_chute"},                          # 90° hoekgoot → drum top
+	{"id": "sga_drum"},                                # HPS (SGA) zware-delen scheider
+	{"id": "scheidingsgoot"},                          # Y-splitgoot, drum → friction L/R
 	# #196 — parallel L/R friction split. parallel_branch tells the macro
 	# builder these two siblings BOTH receive from the upstream scheidingsgoot
 	# (the "glijgoot" slide-chute connector). Without it, only the first sibling

@@ -301,7 +301,19 @@ static func items() -> Array[Dictionary]:
 			{"id": "overband_magnet","name": "Overband magnet",    "category": "Separation", "size": Vector3(1.6, 1.8, 3.0),  "color": Color(0.30, 0.32, 0.38)},
 			{"id": "scraper_conveyor","name":"Coarse scraper conveyor","category": "Separation","size": Vector3(1.4, 2.6, 6.0), "color": Color(0.46, 0.50, 0.54)},
 			{"id": "verdeelwals",    "name": "Verdeelwals (distribution roller)","category": "Separation","size": Vector3(2.0, 1.8, 1.4),"color": Color(0.55, 0.55, 0.58)},
-			{"id": "scheidingsgoot", "name": "Scheidingsgoot (separation gutter)","category": "Separation","size": Vector3(1.6, 1.4, 3.0),"color": Color(0.55, 0.57, 0.60)},
+			# Operator 2026-08-28 (line-1 HPS/SGA walk): the goot after the SGA drum is
+			# NOT a straight gutter — it is a Y-splitter carrying material+water:
+			# ~1 m at 30° down, then the split, then ~1 m at 60° down with the legs
+			# yawed ~35° left and ~35° right, then both legs turn back straight (in
+			# line with the drum axis) and keep feeding into the next machine.
+			# Height raised 1.4 → 2.0 to fit the operator's real 1.37 m of total drop
+			# (30° leg 0.50 m + 60° leg 0.87 m); footprint X/Z unchanged.
+			{"id": "scheidingsgoot", "name": "Scheidingsgoot (Y-splitgoot, na SGA-trommel)","category": "Separation","size": Vector3(1.6, 2.0, 3.0),"color": Color(0.55, 0.57, 0.60)},
+			# Operator 2026-08-28: between band 2 and the SGA drum sits a chute that
+			# makes a 90° RIGHT turn off the conveyor and feeds the drum on its TOP
+			# side. The flow diagrams draw blocks only, never chutes — this one is
+			# operator-described, not doc-derived.
+			{"id": "sga_feed_chute", "name": "SGA invoergoot (90° hoek, band → trommel)","category": "Separation","size": Vector3(1.8, 1.8, 1.8),"color": Color(0.55, 0.57, 0.60)},
 			# ── Pumps ────────────────────────────────────────────────────────
 			{"id": "water_pump",     "name": "Water pump",         "category": "Pumps",      "size": Vector3(0.8, 0.9, 1.3),  "color": Color(0.30, 0.45, 0.62)},
 			# Small floor-mounted centrifugal pump (Wilo-style): teal-painted volute
@@ -1729,6 +1741,7 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 		"metaaldetector": _m_metaaldetector(p, size, color, ghost)
 		"vw_trommel":     _m_vw_trommel(p, size, color, ghost)
 		"scheidingsgoot": _m_scheidingsgoot(p, size, color, ghost)
+		"sga_feed_chute": _m_sga_feed_chute(p, size, color, ghost)
 		"mas_droger":     _m_mas_droger(p, size, color, ghost)
 		# ── Consolidated single-model extruder unit (#92): feed tower → barrel →
 		#    C-2 laser-filter → twin filter modules → meltpump → Wave-Cut pelletizer ─
@@ -10080,36 +10093,110 @@ static func _m_vw_trommel(p: Node3D, size: Vector3, _color: Color, ghost: bool) 
 			Vector3(1.40, 0.20, 0.01), "+X")
 		cap_lbl.position = Vector3(drum_r + 0.02, drum_cy + drum_r * 0.20, drum_len * -0.10)
 
-# ── scheidingsgoot (separation gutter): a wide U-shaped sloped open trough that
-#    material slides down. Tilted a few degrees about X so it runs downhill along Z,
-#    on floor legs. Cosmetic — NO rotor. size = (1.6, 1.4, 3.0). ─────────────────
+# ── scheidingsgoot — the Y-SPLITGOOT at the discharge end of the SGA drum. ────
+# Operator spec 2026-08-28 (line-1 HPS/SGA doc walk), verbatim:
+#   "at the end of the drum there is a Y-shaped shute also, which splits the
+#    material+water stream left and right (about 1m long 30 deg down angle, then
+#    the split, then a steeper 60 deg down angle, where left is about 35 deg to
+#    the left and the right side about 35 deg to the right, both for about 1m,
+#    then both sides turn straight (in line with the drum orientation) while
+#    still feeding material+water into the next machine)"
+# Open U-channel throughout — it carries WATER as well as film, so no lid.
+# Was a plain straight U-trough until this walk; the split was faked entirely by
+# LineFlow's scheidingsgoot→friction_sep connector rule, so the machine that
+# actually does the splitting had no splitting geometry.
+# #196's direction is preserved: material enters at +Z (under the drum's
+# discharge) and runs downhill toward -Z, where LineFlow still spawns the
+# glijgoot connectors on to the two friction washers.
 static func _m_scheidingsgoot(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
 	var steel := _mat(color, ghost, 0.5, 0.4)
-	var dark := _mat(_DARK, ghost, 0.5, 0.6)
-	# #196 — operator-flagged direction. Original slope dropped toward +Z; in
-	# the wash-line layout the discharge end is the -Z end (the chute hands
-	# off into the glijgoot that feeds the friction L/R washers). Flipped
-	# the tilt sign + moved the cross-lip to the -Z end so the trough now
-	# runs downhill toward -Z and reads as feeding the right neighbour.
-	var tilt : float = deg_to_rad(8.0)                # downhill toward -Z
-	var trough_y : float = size.y * 0.58
-	var wall_h : float = size.y * 0.36
-	var floor_t : float = 0.06
-	# U-trough: a floor plate + two side walls, ALL tilted together about X so the
-	# channel runs downhill along Z. Parent them under a tilted pivot so the slope
-	# is shared (kept inside the size box at this small angle).
-	var floor_plate := _box(p, Vector3(size.x * 0.86, floor_t, size.z * 0.96),
-		Vector3(0.0, trough_y, 0.0), steel)
-	floor_plate.rotation.x = tilt
-	for sx in [-1.0, 1.0]:
-		var wall := _box(p, Vector3(0.06, wall_h, size.z * 0.96),
-			Vector3(float(sx) * size.x * 0.42, trough_y + wall_h * 0.5, 0.0), steel)
-		wall.rotation.x = tilt
-	# Low cross-lip at the discharge (-Z) end so the channel reads as open-ended.
-	_box(p, Vector3(size.x * 0.86, wall_h * 0.5, 0.06),
-		Vector3(0.0, trough_y - size.z * 0.5 * sin(tilt) + wall_h * 0.25, -size.z * 0.46), dark)
+	var dark  := _mat(_DARK, ghost, 0.5, 0.6)
+
+	var leg_w : float = size.x * 0.44            # channel width of ONE branch (~0.70 m)
+	var wall_h : float = 0.22
+	var inlet_y : float = size.y * 0.92          # under the SGA drum's discharge mouth
+	var start := Vector3(0.0, inlet_y, size.z * 0.48)
+
+	# 1) STEM — ~1 m at 30° down, straight. Double width: both legs still share
+	#    one channel until the split.
+	var stem_end := _goot_segment(p, start, 1.0, 30.0, 0.0, leg_w * 2.0, wall_h, steel)
+
+	# Splitter nose — the wedge that divides the stream left/right.
+	_box(p, Vector3(0.06, wall_h * 1.4, 0.34),
+		stem_end + Vector3(0.0, wall_h * 0.7, -0.16), dark)
+
+	# 2) BRANCHES — ~1 m at 60° down, yawed ~35° out, then
+	# 3) RUN-OUTS — each leg turns back straight (yaw 0, in line with the drum
+	#    axis) and keeps feeding the next machine.
+	# +yaw is toward -X (see _goot_segment), so 35.0 = left leg, -35.0 = right.
+	for yaw in [35.0, -35.0]:
+		var br_end := _goot_segment(p, stem_end, 1.0, 60.0, yaw, leg_w, wall_h, steel)
+		var out_end := _goot_segment(p, br_end, 0.8, 15.0, 0.0, leg_w, wall_h, steel)
+		# Open discharge lip so the leg reads as feeding, not holding.
+		_box(p, Vector3(leg_w * 1.05, 0.05, 0.08), out_end + Vector3(0.0, -0.02, 0.0), dark)
+
 	# Four floor legs that lengthen to the floor when raised (#70).
-	_legs(p, size, trough_y, dark)
+	_legs(p, size, size.y * 0.28, dark)
+
+## One straight open-U segment of a goot: floor plate + two side walls, pitched
+## `pitch_deg` below horizontal and yawed `yaw_deg` (POSITIVE = toward -X).
+## Travel runs along the pivot's local -Z. Returns the segment's END point in
+## `parent` space so segments chain without hand-baked coordinates.
+static func _goot_segment(parent: Node3D, start: Vector3, length: float, \
+		pitch_deg: float, yaw_deg: float, width: float, wall_h: float, \
+		mat: StandardMaterial3D) -> Vector3:
+	var pitch := deg_to_rad(pitch_deg)
+	var yaw   := deg_to_rad(yaw_deg)
+	var piv := Node3D.new()
+	piv.position = start
+	# Godot's default YXZ euler order: a NEGATIVE x-rotation tips local -Z DOWN.
+	piv.rotation = Vector3(-pitch, yaw, 0.0)
+	parent.add_child(piv)
+	_box(piv, Vector3(width, 0.05, length), Vector3(0.0, 0.0, -length * 0.5), mat)
+	for sx in [-1.0, 1.0]:
+		_box(piv, Vector3(0.05, wall_h, length),
+			Vector3(float(sx) * width * 0.5, wall_h * 0.5, -length * 0.5), mat)
+	# End point = start + R·(0,0,-L), with R = Ry(yaw)·Rx(-pitch).
+	return start + Vector3(
+		-sin(yaw) * cos(pitch),
+		-sin(pitch),
+		-cos(yaw) * cos(pitch)) * length
+
+# ── SGA invoergoot — the 90° corner chute between band 2 and the SGA drum. ─────
+# Operator 2026-08-28: "there is actually a chute after the belt that feeds
+# material into the drum on the top side (and it makes a 90 deg right turn from
+# the conveyor to the drum)". The flow diagrams draw BLOCKS only and never show
+# chutes, so this one is operator-described, not doc-derived.
+# Material arrives along -Z off the belt head, drops into a corner pan with a
+# deflector back-plate, and leaves along +X — a right turn when facing -Z —
+# discharging over the drum's TOP inlet. Open-topped so the turn stays visible.
+static func _m_sga_feed_chute(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
+	var steel := _mat(color, ghost, 0.5, 0.4)
+	var dark  := _mat(_DARK, ghost, 0.5, 0.6)
+
+	var w : float = size.x * 0.42
+	var wall_h : float = 0.24
+	var inlet_y : float = size.y * 0.88
+	var corner := Vector3(-size.x * 0.18, inlet_y - 0.26, 0.0)
+
+	# 1) INFEED leg — short run off the belt head, mild 20° drop toward -Z.
+	_goot_segment(p, Vector3(-size.x * 0.18, inlet_y, size.z * 0.46),
+		0.62, 20.0, 0.0, w, wall_h, steel)
+
+	# 2) CORNER PAN + deflector back-plate that turns the stream 90° right.
+	_box(p, Vector3(w * 1.25, 0.05, w * 1.25), corner, steel)
+	_box(p, Vector3(w * 1.25, wall_h * 1.5, 0.05),
+		corner + Vector3(0.0, wall_h * 0.75, -w * 0.60), dark)    # splash/deflector plate
+	_box(p, Vector3(0.05, wall_h * 1.5, w * 1.25),
+		corner + Vector3(-w * 0.60, wall_h * 0.75, 0.0), steel)   # outer cheek
+
+	# 3) OUTFEED leg — the right turn itself: yaw -90° aims travel at +X, 28°
+	#    down, ending over the drum's top inlet.
+	var out_end := _goot_segment(p, corner, 0.85, 28.0, -90.0, w, wall_h, steel)
+	# Downward-facing discharge lip over the drum mouth.
+	_box(p, Vector3(0.06, 0.18, w * 1.05), out_end + Vector3(0.03, -0.09, 0.0), dark)
+
+	_legs(p, size, size.y * 0.30, dark)
 
 # ── MAS droger (dryer): a compact horizontal drying drum unit (smaller / different
 #    proportions than mech_dryer). Drum SPINS about its long (Z) axis. End flanges,
