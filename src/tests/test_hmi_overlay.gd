@@ -42,7 +42,7 @@ class TestableHmiOverlay extends CanvasLayer:
 	func _find_line_flow() -> void:
 		_line_flow = get_tree().root.get_node_or_null("root/LineFlow")
 
-	func _show_screen(s: int) -> void:
+	func _show_screen(_s: int) -> void:
 		pass
 
 func _fail(msg: String) -> void:
