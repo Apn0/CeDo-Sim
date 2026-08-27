@@ -248,7 +248,17 @@ fi
 # also the record that FULL_LOGIC_AUDIT #12 is REFUTED, since it is green with
 # and without that finding's prescribed fix. All three mutation-proven; see the
 # file header and docs/AUDIT_project_sweep_2026-08-23.md.
-for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_project_sweep_guards; do
+# test_line3a_identity / test_line3b_identity (2026-08-27): the same
+# ledger_residual() conservation claim as test_line3c_identity, extended to
+# line_3a and line_3b (docs/audit/material_trace_2026-08-18.md: "macros exist
+# for line_3a, line_3b, line_1, line_sort, line_intake_3a3b -- none of them
+# assert the ledger"). Neither line has a Line3ADef/Line3BDef HMI-current
+# table like line_3c's, so these two make no per-instance amps claim -- only
+# the mass ledger, on a real MainWorld boot, fed at the documented 1000 kg/h
+# per-line design rate (docs/plant/misc_sources.md:190/206). line_1 and
+# line_sort/line_intake_3a3b remain unasserted -- no documented feed-rate
+# source was found for line_1, and the other two are out of scope.
+for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_line3a_identity test_line3b_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_project_sweep_guards; do
 	echo "== $t =="
 	"$GODOT" --headless --path "$PROJ" "res://src/tests/$t.tscn" > "$OUT/$t.log" 2>&1
 	grep -E "^  (ok|FAIL)|Result|RESULT" "$OUT/$t.log" || true
