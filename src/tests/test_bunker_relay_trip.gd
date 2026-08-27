@@ -72,24 +72,26 @@ func _run() -> void:
 		get_tree().quit(1); return
 
 	var bunker_node : Node3D = nodes[bunker_i]["node"]
-	# BUG (found by this test, 2026-08-27): PlaceableCatalog._m_bunker() stamps
-	# bunker_relay_trip_below/bunker_speed_max on the "Model" CHILD node (the
-	# `p` passed into _build_model), not on the StaticBody3D root that BuildMode
-	# places and that LineFlow stores as nd["node"] (and stamps macro_id/
-	# macro_index on). LineFlow's relay-trip check
-	# (n3d.has_meta("bunker_relay_trip_below"), n3d == nd.get("node")) is
-	# therefore checking the wrong node and can NEVER see this meta — the
-	# shipped feature (PR #113) never fires in real gameplay. Asserting the
-	# real contract here on purpose, not the Model workaround, so this stays
-	# RED until LineFlow.gd (or _m_bunker) is fixed to agree on which node
-	# carries the meta.
-	_check(bunker_node.has_meta("bunker_relay_trip_below"),
-		"bunker carries the catalog's bunker_relay_trip_below meta ON THE NODE LineFlow ACTUALLY CHECKS (nd[\"node\"])")
-	if not bunker_node.has_meta("bunker_relay_trip_below"):
-		print("[TEST] bunker relay trip FAIL (meta lives on the 'Model' child, not on nd[\"node\"] — see PlaceableCatalog._m_bunker / LineFlow._tick_advanced_systems)")
+	# PlaceableCatalog._m_bunker() stamps bunker_relay_trip_below/bunker_speed_max
+	# on the composite "Model" CHILD node, not on the StaticBody3D root BuildMode
+	# places (that root only carries placement meta — macro_id etc). This test
+	# ORIGINALLY checked bunker_node directly and caught LineFlow reading the
+	# wrong node for this exact reason (its check silently never matched
+	# anything, so the feature never fired in real gameplay); LineFlow.gd now
+	# falls through to the "Model" child when the root doesn't carry the meta.
+	# Resolve the same way here so this test verifies the CATALOG DATA exists
+	# (a real precondition) without re-asserting LineFlow's internal node
+	# resolution, which S1-S5 below exercise end-to-end anyway.
+	var meta_node : Node3D = bunker_node
+	if not meta_node.has_meta("bunker_relay_trip_below"):
+		meta_node = bunker_node.get_node_or_null("Model")
+	_check(meta_node != null and meta_node.has_meta("bunker_relay_trip_below"),
+		"bunker's catalog meta (root or Model child) carries bunker_relay_trip_below")
+	if meta_node == null or not meta_node.has_meta("bunker_relay_trip_below"):
+		print("[TEST] bunker relay trip FAIL (setup incomplete — no bunker_relay_trip_below meta anywhere)")
 		get_tree().quit(1); return
-	var trip_below : float = float(bunker_node.get_meta("bunker_relay_trip_below"))
-	var max_speed : float = float(bunker_node.get_meta("bunker_speed_max"))
+	var trip_below : float = float(meta_node.get_meta("bunker_relay_trip_below"))
+	var max_speed : float = float(meta_node.get_meta("bunker_speed_max"))
 	_check(is_equal_approx(trip_below, 200.0), "trip_below == 200 (catalog value, %.1f)" % trip_below)
 	_check(is_equal_approx(max_speed, 1000.0), "bunker_speed_max == 1000 (catalog value, %.1f)" % max_speed)
 
