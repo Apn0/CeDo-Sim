@@ -2164,9 +2164,12 @@ static func extend_machine_legs(root: Node3D, drop: float) -> int:
 
 ## A TEFC electric motor: finned body cylinder + terminal box on top. axis as _cyl.
 static func _motor_unit(parent: Node3D, r: float, length: float, pos: Vector3, axis: String, ghost: bool) -> void:
-	var dark := _mat(_DARK, ghost, 0.55, 0.5)
+	# PLANT-WIDE RULE (operator 2026-08-28, flotation-tank walk): "All motors
+	# in the factory are blue, by the way, dark blue. If you look at the CeDo
+	# logo, it would be the blue from that logo." cedo_logo.svg fill #191E6C.
+	var motor_blue := _mat(Color(0.098, 0.118, 0.424), ghost, 0.35, 0.5)
 	var blk := _mat(Color(0.12, 0.12, 0.13), ghost, 0.3, 0.6)
-	_cyl(parent, r, r, length, pos, dark, axis)
+	_cyl(parent, r, r, length, pos, motor_blue, axis)
 	# terminal/junction box sits on top regardless of motor axis
 	_box(parent, Vector3(r * 0.8, r * 0.5, length * 0.45), pos + Vector3(0.0, r * 0.95, 0.0), blk)
 
@@ -4916,50 +4919,23 @@ static func _m_flotation(p: Node3D, size: Vector3, color: Color, ghost: bool, wi
 					(0.035 if is_end else blade_t), (0.42 if is_end else 0.28), roller)
 			pad.rotation.x = TAU * (float(pi) * 0.13)   # phase offset so they don't flap in unison
 			# per-paddle drive motor, IN LINE with the axle, just outside the +X wall
-			var mr : float = 0.16 if is_end else 0.09
-			var ml : float = 0.44 if is_end else 0.24
+			# Operator 2026-08-28: each paddle has its own motor; the two large
+			# paddles get motors ~TWICE the small ones; a small paddle motor is
+			# ~10 cm dia or less ("smaller than a pipe from a blower").
+			var mr : float = 0.10 if is_end else 0.05
+			var ml : float = 0.40 if is_end else 0.20
 			_motor_unit(p, mr, ml, Vector3(side_x + ml * 0.5 + 0.06, roll_y, pz), "x", ghost)
 	# Metal cover plate hiding the LARGE 1st paddle — 3A/3B only (operator).
 	if not ghost and not wide:
 		_box(p, Vector3(size.x * 0.9, 0.05, hz * 0.30),
 				Vector3(0.0, roll_y + large_r + 0.12, -hz * 0.85), tank)
-	# ── SCRAPER ABOVE +Z END ──────────────────────────────────────────────────
-	# Slow scraper bar with 6 perpendicular fingers, mounted above the water at
-	# the +Z (outlet) end. Drags floating material over the weir into the
-	# discharge container on the floor.
-	if not ghost:
-		var scrap_y : float = rim_y + 0.50
-		var scrap_z : float = hz * 0.97
-		_box(p, Vector3(0.30, 0.30, 0.30),
-				Vector3(size.x * 0.46, scrap_y, scrap_z), tank)
-		var scraper := _spinning_cyl(p, 0.05, 0.05, size.x * 0.80,
-				Vector3(0.0, scrap_y, scrap_z), roller, "x", Vector3.RIGHT, ghost, 3.0)
-		_attach_paddle_blades(scraper, 6, size.x * 0.74, 0.03, 0.40, roller)
-		scraper.set_meta("comp", "scraper")
-	# ── DISCHARGE CONTAINER (~1.2 × 1.2 × 1.0 m, open top) ───────────────────
-	# Sits on the floor at the +Z end. 4 walls + floor.
-	if not ghost:
-		var cont_root := Node3D.new()
-		cont_root.name = "DischargeContainer"
-		var cont_w : float = 1.2
-		var cont_h : float = 1.0
-		var cont_d : float = 1.2
-		var cont_y : float = cont_h * 0.5
-		# +X offset since the bottom-scraper spout + container took the -X side
-		# past the +Z wall (operator drawing 2026-08-28).
-		cont_root.position = Vector3(1.0, 0.0, hz + cont_d * 0.5 + 0.10)
-		p.add_child(cont_root)
-		var bin_mat := _mat(Color(0.55, 0.42, 0.20), ghost, 0.5, 0.5)
-		_box(cont_root, Vector3(cont_w, 0.06, cont_d),
-				Vector3(0.0, 0.03, 0.0), bin_mat)
-		_box(cont_root, Vector3(0.06, cont_h, cont_d),
-				Vector3( cont_w * 0.5, cont_y, 0.0), bin_mat)
-		_box(cont_root, Vector3(0.06, cont_h, cont_d),
-				Vector3(-cont_w * 0.5, cont_y, 0.0), bin_mat)
-		_box(cont_root, Vector3(cont_w, cont_h, 0.06),
-				Vector3(0.0, cont_y,  cont_d * 0.5), bin_mat)
-		_box(cont_root, Vector3(cont_w, cont_h, 0.06),
-				Vector3(0.0, cont_y, -cont_d * 0.5), bin_mat)
+	# ── NO SURFACE SCRAPER, NO SECOND CONTAINER (operator 2026-08-28) ─────────
+	# #230's "slow scraper bar above the +Z outlet + discharge container" was a
+	# MIS-SURVEY of the uittrek PADDLE: "the outlet pedal … pushes film
+	# basically over the edge of the flotation tank into the dewatering screw.
+	# There is no container involved there, and it's not a scraper." Removed;
+	# the ONE container is the bottom scraper's (below its downspout).
+
 	# ── WEIR-SCOOP OVERFLOW CHUTE (kept; #100) ────────────────────────────────
 	# On the OUTSIDE of the +Z wall — overflow path to the downstream dewater_screw.
 	if not ghost:

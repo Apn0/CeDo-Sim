@@ -794,3 +794,20 @@ CONFIRMS: large intrek + small transports + largest uittrek at the surface,
 the outgoing dewater screw at the outlet rim, and the infeed chute at the
 opposite rim. Render `renders/shot_flotation_tank.png`; world regression
 17/0; line-1 conformance PASS.
+
+### ✅ Flotation tank round 3 — ONE container + the motor rule (2026-08-28)
+
+Operator caught two bins in the render. Resolution: **#230's "surface
+scraper bar + discharge container" was a MIS-SURVEY of the uittrek paddle**
+— "the outlet pedal … pushes film basically over the edge of the flotation
+tank into the dewatering screw. There is no container involved there, and
+it's not a scraper." Removed both (the bar and its bin); the ONE container
+is the bottom scraper's, under its downspout. Paddle motors resized per the
+operator: small ≈ Ø10 cm ("smaller than a pipe from a blower"), the two
+large paddles ≈ twice that.
+
+**NEW PLANT-WIDE STANDING RULE** (now in CLAUDE.md rule 8b + enforced
+centrally in `_motor_unit`): "All motors in the factory are blue, by the
+way, dark blue. If you look at the CeDo logo, it would be the blue from
+that logo." → every `_motor_unit` in the plant is now #191E6C (the
+cedo_logo.svg fill). Regression 17/0; line-1 conformance PASS.
