@@ -39,7 +39,8 @@ do what the docs say it does?*
 | 1 | `lijn_1_flow.md` + `line_flow_graphs.json` (line "1") | ✅ COMPLETE — gaps 1.1–1.3, fix 1.4, ruling 1.B, fold 1.A; leg F confirmed by operator 2026-08-28. Open: archive the sketch image |
 | 2 | `lijn_3a_flow.md` | ✅ 2.1-B re-wired per operator, 2.2 fixed, Q2.3/Q2.4 closed; open: heater cabinets build, bigbag render sign-off |
 | 3 | `lijn_3b_flow.md` | ✅ ruling 3.1-B applied (plasmaq group restored); open: doc's operator questions (rafter type, zeefbocht) |
-| … | remaining 426 docs | ☐ |
+| 4 | `water_circuit_*.md` ×4 (la1, la2, blauwe_tank, kanaalwater) | ⚙ surveyed; gaps W.1-W.3 + identity question W.4 open |
+| … | remaining docs | ☐ |
 
 ---
 
@@ -585,3 +586,56 @@ from the LineFlow topology (disconnected in reality → invisible to flow).
 World regression 17/0. Render: `renders/shot_thermal_dryer_decommissioned.png`
 (spiral shown NOWHERE on the face — it is internal; two hint attempts read
 as a speaker cone and were dropped).
+
+---
+
+## Doc 4 — the four water-circuit slides (walked 2026-08-28)
+
+`water_circuit_3a_la1.md` (already reconciled — source of the Pomp C1 swap),
+`water_circuit_3a_la2.md`, `water_circuit_blauwe_tank.md` (the hub slide: 14
+blocks, 28 edges), `water_circuit_kanaalwater.md` (supply chain: kelder
+hoofdleiding → blauwe tank → koeling hydrauliek units → wasinstallaties).
+
+**Sim water state, measured:** the wash-side utility fixtures exist as
+placeables (`zss_water`, `eop_endpoint` with its 3 doc-cited pipe-stub
+groups, `water_pump` ×3 incl. "Put & pomp was 1", `pomp_c1`, `kleine_la`,
+`tankje_tussen_extruders`, `pomp_zeefbocht`) and sit in the 56-row
+`fixed_equipment_ids.json` grid-seed tool — but that seed writes `user://`
+entries for the operator to drag; nothing is in a committed world yet. There
+is NO water-flow simulation: `water_circuits.json` (the authoritative
+4-circuit graph) is read by nothing except the EOP builder's pipe-stub
+comments, and LineFlow's ledger only tracks per-machine water_add/remove
+fractions. A circuits sim (supply/return, quality cascades — the "dirty
+water cascades" gameplay the README names) remains future work.
+
+### GAP W.1 — the BLAUWE TANK does not exist in the sim · ☐ HALTED (question W.4)
+
+The central hub of the entire water system — its own slide, subtitle "voegt
+water toe aan de wasinstallaties", supply edges to was 1/3A/3B, the EOP main
+return INTO it, the kanaalwater chain THROUGH it — has no placeable and no
+fixed-equipment row. Neither do its floor-plan neighbours, the 8 m³ and 5 m³
+tanks (Hal 1). Blocked on W.4 (size/identity).
+
+### GAP W.2 — the KOELTOREN circuit does not exist · ☐ OPEN
+
+Line-1 diagram block ("Koeltoren circuit inclusief voorbehandeld
+kanaalwater", red/blue arrows to the extruder), 3A/3B water sheets
+(tankje → pomp → koeltoren). No placeable, no row. Outdoor unit — needs an
+operator description/photo before building.
+
+### GAP W.3 — the BLAUWE VAT (granuleerwater-vat) does not exist · ☐ OPEN
+
+On both 3A and 3B water sheets: "Blauwe vat" + its pomp under the extruder —
+the granulate-water loop (vat → pomp → heetafslag/kopfilter → ontwaterzeef →
+vat, directions [unsure] on both sheets). `tankje_tussen_extruders` exists,
+the vat does not.
+
+### ❓ W.4 — Blauwe TANK vs blauwe VAT — an identity tension · ☐ ASKED
+
+`floor_plan_edits.md` Q10 records an interview ruling: blauwe tank ≈ **3 m³
+extruder-KOELWATER-hub, "geen groot procesreservoir"**. But the hub slide
+makes the Blauwe tank the CENTRAL WASH-WATER BUFFER for three lines. These
+read as two different objects: the slides distinguish the Blauwe TANK
+(Hal 1, wash supply) from the Blauwe VAT (under the extruder, granulate
+water). Hypothesis: the interview answer described the VAT. Operator asked —
+the answer sets the tank's real size and settles what W.1 and W.3 each build.
