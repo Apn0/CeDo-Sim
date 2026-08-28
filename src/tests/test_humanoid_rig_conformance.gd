@@ -28,6 +28,33 @@ func _bone_angle_deg(skel: Skeleton3D, bone: String) -> float:
 	var q : Quaternion = skel.get_bone_pose_rotation(skel.find_bone(bone))
 	return rad_to_deg(2.0 * acos(clampf(absf(q.w), -1.0, 1.0)))
 
+## World-space vertical extent of every mesh in the rig — the same measurement
+## probe_stance_extents prints. Used to prove a pose neither sinks through the
+## floor nor merely pretends to crouch.
+func _mesh_y_range(root: Node3D) -> Vector2:
+	var lo : float = 1e9
+	var hi : float = -1e9
+	var stack : Array = [root]
+	while not stack.is_empty():
+		var n : Node = stack.pop_back()
+		for c in n.get_children():
+			stack.append(c)
+		if n is MeshInstance3D:
+			var mi := n as MeshInstance3D
+			var aabb : AABB = mi.get_aabb()
+			for i in 8:
+				var wy : float = (mi.global_transform * aabb.get_endpoint(i)).y
+				lo = minf(lo, wy)
+				hi = maxf(hi, wy)
+	return Vector2(lo, hi)
+
+func _lowest_mesh_y(root: Node3D) -> float:
+	return _mesh_y_range(root).x
+
+func _height(root: Node3D) -> float:
+	var r : Vector2 = _mesh_y_range(root)
+	return r.y - r.x
+
 func _run() -> void:
 	print("[TEST] humanoid rig conformance")
 	var body : Node3D = Humanoid.build(Color(0.9, 0.5, 0.1), 0, {"ppe": "operator"})
@@ -96,8 +123,17 @@ func _run() -> void:
 	pb.travel("jump")
 	for _f2 in 60:
 		await get_tree().process_frame
-	_check(absf(_bone_angle_deg(skel, "LUpperLeg") - 45.0) < 3.0,
-		"jump pose tucks the lead leg (LUpperLeg %.1f°, want 45°)" % _bone_angle_deg(skel, "LUpperLeg"))
+	# Check the SIGNED X component, not just the angle magnitude: a -45° tuck
+	# (leg swung BACKWARD) has the identical |angle| and would sail through a
+	# magnitude-only gate while looking wrong.
+	var jump_q : Quaternion = skel.get_bone_pose_rotation(skel.find_bone("LUpperLeg"))
+	_check(absf(_bone_angle_deg(skel, "LUpperLeg") - 45.0) < 3.0 and jump_q.x > 0.3,
+		"jump pose tucks the lead leg FORWARD (%.1f°, quat.x %.2f — want 45°, x>0)"
+		% [_bone_angle_deg(skel, "LUpperLeg"), jump_q.x])
+	# The trail leg must go the OTHER way, or the "tuck" is both legs in
+	# lockstep — a scissor, not a jump.
+	var jump_r : Quaternion = skel.get_bone_pose_rotation(skel.find_bone("RUpperLeg"))
+	_check(jump_r.x < 0.0, "jump pose sweeps the trail leg back (quat.x %.2f)" % jump_r.x)
 	# Prone: whole chain flat AND face-down. The face-down sign is the +90°
 	# Hips X rotation — the -90° regression (face-up, arms skyward) keys the
 	# quaternion with a NEGATIVE x component.
@@ -110,6 +146,21 @@ func _run() -> void:
 	var foot_y : float = (skel.get_node("BA_LFoot") as Node3D).global_position.y
 	_check(head_y < -0.2, "prone lays the HEAD near the floor (y=%.2f)" % head_y)
 	_check(foot_y < 0.0, "prone lays the FEET down too — the standing-legs bug (y=%.2f)" % foot_y)
+	# Ground poses must not sink through the floor: the standing sole sits at
+	# y = -0.90, so nothing may go below that. (Measured with
+	# probe_stance_extents; prone was -0.97 and crouch -0.97 before the fix.)
+	_check(_lowest_mesh_y(body) > -0.92,
+		"prone rests ON the floor plane, not through it (low %.2f, stand sole -0.90)"
+		% _lowest_mesh_y(body))
+	# Crouch must be a REAL crouch. The first cut measured 1.70 m against a
+	# 1.78 m stand — a 4%% squat the operator read as "crouching does nothing".
+	pb.travel("crouch")
+	for _f4 in 60:
+		await get_tree().process_frame
+	var crouch_h : float = _height(body)
+	_check(crouch_h < 1.50, "crouch actually crouches (%.2f m vs 1.78 m standing)" % crouch_h)
+	_check(_lowest_mesh_y(body) > -0.92 and _lowest_mesh_y(body) < -0.85,
+		"crouch keeps the feet PLANTED on the floor plane (low %.2f)" % _lowest_mesh_y(body))
 
 	# ── S3 — rebuild_appearance keeps exactly ONE body ──────────────────────
 	print("  -- S3: rebuild one-body guard --")
@@ -130,6 +181,35 @@ func _run() -> void:
 		_check(fresh != null and String(fresh.name) == rig_name,
 			"the fresh rig keeps the name '%s' so per-frame lookups still resolve" % rig_name)
 		holder.queue_free()
+
+	# ── S4 — the REAL FP layer splitter still finds the legs ────────────────
+	# First person shows only the operator's legs (operator request
+	# 2026-07-05). MainWorld classifies by ancestor NAME, and the unification
+	# moved every leg mesh off HipPivot* onto BA_*Leg/BA_*Foot — so run the
+	# actual production function over a real rig and count the buckets.
+	print("  -- S4: MainWorld FP leg/head render split --")
+	var mw_script := load("res://src/scenes/world/MainWorld.gd")
+	var mw = mw_script.new()
+	var fp_body : Node3D = Humanoid.build(Color.WHITE, 0, {"ppe": "operator"})
+	fp_body.name = "PlayerBody"      # the walker's stop-name
+	add_child(fp_body)
+	await get_tree().process_frame
+	mw.call("_set_body_render_layer_split", fp_body)
+	var n_leg : int = 0
+	var n_head : int = 0
+	var s2 : Array = [fp_body]
+	while not s2.is_empty():
+		var n2 : Node = s2.pop_back()
+		for c4 in n2.get_children():
+			s2.append(c4)
+		if n2 is MeshInstance3D:
+			# Leg bucket = layer 2 (1<<1), FP-culled bucket = layer 4 (1<<2).
+			if int((n2 as MeshInstance3D).layers) == 2: n_leg += 1
+			elif int((n2 as MeshInstance3D).layers) == 4: n_head += 1
+	_check(n_leg >= 6,
+		"the FP splitter still tags the LEGS visible after the bone move (%d leg meshes, was 0 with the old HipPivot-only rule)" % n_leg)
+	_check(n_head > 0, "torso/head/arms stay FP-culled (%d meshes)" % n_head)
+	mw.free()
 
 	print("[TEST] humanoid rig conformance %s (%d fail)" % ["PASS" if _fails == 0 else "FAIL", _fails])
 	get_tree().quit(1 if _fails > 0 else 0)

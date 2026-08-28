@@ -1939,6 +1939,13 @@ func _update_animation_blend() -> void:
 		_anim_tree = _resolve_player_anim_tree()
 		if _anim_tree == null:
 			return
+		# A FRESH tree always starts in "locomotion" (its Start transition), so
+		# the cached state is now a lie. Without this reset the shift-bell
+		# wardrobe rebuild — which only started really replacing the player rig
+		# with the 2026-08-28 double-body fix — would leave a crouched/prone
+		# operator standing: want_state would still equal _last_anim_state and
+		# travel() would never fire.
+		_last_anim_state = "locomotion"
 	# Travel to the state that matches our stance. _stance is the operator's
 	# crouch/prone toggle; in-vehicle is owned elsewhere and pushed via
 	# set_in_vehicle_animation(...) below.

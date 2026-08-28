@@ -82,11 +82,20 @@ func _ready() -> void:
 		var skel : Skeleton3D = body.get_node_or_null("Skeleton3D") as Skeleton3D
 		var bi : int = skel.find_bone("LUpperLeg") if skel != null else -1
 		if tag.begins_with("locomotion_") and tag != "locomotion_idle" and bi >= 0:
+			var hit_peak := false
 			for _f in 180:
 				var qq : Quaternion = skel.get_bone_pose_rotation(bi)
 				if rad_to_deg(2.0 * acos(clampf(absf(qq.w), -1.0, 1.0))) >= 15.0:
+					hit_peak = true
 					break
 				await get_tree().process_frame
+			if not hit_peak:
+				# 180 frames (3 s) is several full gait loops. Never reaching the
+				# swing peak means the cycle is not driving the bone — shoot the
+				# frame anyway (it is the evidence) but FAIL loudly instead of
+				# quietly saving a statue that looks like a fine still.
+				print("[SHOT] DEAD-RIG: %s never reached the swing peak in 180 frames" % tag)
+				fails += 1
 		# Diagnose the anim data-path: what the tree thinks the blend is, and
 		# what the skeleton bone actually holds at shot time.
 		if bi >= 0:

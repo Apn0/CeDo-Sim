@@ -1381,21 +1381,42 @@ static func _add_pos_track(a: Animation, bone_name: String, keys: Array) -> void
 # / seated based on the controller's _stance / vehicle-occupied state, with a
 # 0.25 s crossfade. Procedurally generated so no external rig data is needed.
 
-## Crouch pose — hips drop ~20 cm via the Hips position track, knees bend
-## forward, thighs rotate back, mild forward Spine lean. Holds statically.
+## Crouch pose — a real deep squat, feet planted.
+##
+## The first cut (thigh 70°, knee -90°, hips -0.22) measured 1.70 m tall
+## against a 1.78 m stand — a 4 % "crouch" that read as "crouching does
+## nothing" (operator, 2026-08-28) — and its hip drop overshot the leg fold,
+## so the feet sank 7 cm through the floor. The geometry is fixed by the bone
+## rests: thigh 0.20 m (hip −0.24 → knee −0.44), shin 0.38 m (→ ankle −0.82).
+## With thigh +100° and knee −150° the ankle sits 0.209 m below the hip joint
+## instead of 0.58 m, so the hips must drop exactly that 0.371 m difference to
+## keep the feet planted — which is also what makes the squat deep (≈1.41 m).
+## The feet inherit the chain's −50° accumulation, so LFoot/RFoot counter-
+## rotate +50° to stay flat on the floor instead of tiptoeing.
 static func _build_anim_crouch(_skel: Skeleton3D) -> Animation:
 	var a := Animation.new()
 	a.length = 0.5
 	a.loop_mode = Animation.LOOP_LINEAR
+	# 0.371 is the bone-geometry figure; the measured sole then floated 6 cm
+	# (the +50° foot counter-rotation lifts the boot box), so plant it at
+	# -0.431 — verified by probe_stance_extents: low = -0.90, the stand plane.
 	_add_pos_track(a, "Hips", [
-		[0.0, Vector3(0.0, -0.22, 0.0)],
-		[0.5, Vector3(0.0, -0.22, 0.0)],
+		[0.0, Vector3(0.0, -0.431, 0.0)],
+		[0.5, Vector3(0.0, -0.431, 0.0)],
 	])
-	_add_rot_track(a, "LUpperLeg", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 70.0))]])
-	_add_rot_track(a, "RUpperLeg", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 70.0))]])
-	_add_rot_track(a, "LLowerLeg", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-90.0))]])
-	_add_rot_track(a, "RLowerLeg", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-90.0))]])
-	_add_rot_track(a, "Spine",     [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 15.0))]])
+	_add_rot_track(a, "LUpperLeg", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 100.0))]])
+	_add_rot_track(a, "RUpperLeg", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 100.0))]])
+	_add_rot_track(a, "LLowerLeg", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-150.0))]])
+	_add_rot_track(a, "RLowerLeg", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-150.0))]])
+	_add_rot_track(a, "LFoot",     [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(  50.0))]])
+	_add_rot_track(a, "RFoot",     [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(  50.0))]])
+	# Torso leans forward over the knees (a squat's balance) and the arms hang
+	# forward of the thighs instead of clipping through them.
+	_add_rot_track(a, "Spine",     [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(  22.0))]])
+	_add_rot_track(a, "LUpperArm", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( -25.0))]])
+	_add_rot_track(a, "RUpperArm", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( -25.0))]])
+	_add_rot_track(a, "LLowerArm", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( -30.0))]])
+	_add_rot_track(a, "RLowerArm", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( -30.0))]])
 	return a
 
 ## Prone pose — face-down. The Hips bone rotates +90° around X so the whole
@@ -1409,7 +1430,9 @@ static func _build_anim_prone(_skel: Skeleton3D) -> Animation:
 	var a := Animation.new()
 	a.length = 0.5
 	a.loop_mode = Animation.LOOP_LINEAR
-	_add_pos_track(a, "Hips", [[0.0, Vector3(0.0, -0.75, 0.0)]])
+	# -0.68, not -0.75: measured, the deeper drop pushed the lying body 7 cm
+	# BELOW the standing foot plane (y = -0.90), i.e. through the floor.
+	_add_pos_track(a, "Hips", [[0.0, Vector3(0.0, -0.68, 0.0)]])
 	_add_rot_track(a, "Hips",     [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 90.0))]])
 	_add_rot_track(a, "Spine",    [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(  5.0))]])
 	# Nod the head BACK relative to the flat chain so the face doesn't bury
