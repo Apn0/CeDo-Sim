@@ -663,3 +663,18 @@ read as two different objects: the slides distinguish the Blauwe TANK
 (Hal 1, wash supply) from the Blauwe VAT (under the extruder, granulate
 water). Hypothesis: the interview answer described the VAT. Operator asked —
 the answer sets the tank's real size and settles what W.1 and W.3 each build.
+
+### ❓ R.1 — what IS the 3A ring? Three candidates · ☐ ASKED (photo sent)
+
+Ruling 3.1-C called 3A's ring "the spiral cabinet" (flat, 2×2 m, 30-35 cm,
+heater side-panels). But `assets/reference_photos/machines/_ringleiding_1.png`
+(mapped to the `ringleiding` placeable in photo_audit, operator-review box
+NEVER ticked) shows something else entirely: an open steel cage rack of
+~40-50 cm white pipe U-bends, vendor placard **"GLOBAL SPIRAL CHUTES —
+MOD. 260"**, CAUTION sign "SPIRAL CHUTE OPERATION — KEEP CLEAR". Three
+candidates for the rondmeng ring: (a) this photographed spiral-chute rack,
+(b) the flat heater-panel cabinet of 3.1-C, (c) the current generic
+ring-main model. The 3.1-C item "remodel 3A's ringleiding as the spiral
+cabinet" is ON HOLD until the operator identifies the photo — if (b) and the
+photo are different objects, 3A may have BOTH, and the decommissioned 3B
+flat-cabinet model may need revisiting too.
