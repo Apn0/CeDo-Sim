@@ -3081,13 +3081,17 @@ func _make_connector(a: Dictionary, b: Dictionary) -> void:
 	# plant; the air-laden flake stream runs through a sealed round pipe between
 	# the blower discharge and the cyclone tangential inlet.
 	if src_id == "blower":
-		_spawn_round_duct(a_world, b_world, 0.18)
+		# Radius 0.07 → Ø 140 mm — operator 2026-08-28 on the line-1 drawing's
+		# pink pipelines: "about one twenty millimeters or so diameter …
+		# maybe it's like one fifty". Was 0.18 (Ø 360, twice the real bore).
+		_spawn_round_duct(a_world, b_world, 0.07)
 		return
 	# #107 — CYCLONE → BLOWER is the suction-leg of a pneumatic loop (blower
 	# pulls air + flake OUT the bottom of the cyclone), same round-pipe geometry
 	# as the discharge leg above.
 	if src_id == "cyclone" and tgt_id == "blower":
-		_spawn_round_duct(a_world, b_world, 0.16)
+		# Ø 140 mm, same operator sizing as the discharge leg above.
+		_spawn_round_duct(a_world, b_world, 0.07)
 		return
 	# #107 — CYCLONE → SILO (or extruder_silo) is a vertical gravity drop: a
 	# tapered funnel from the cyclone's discharge spout into the silo's top

@@ -636,8 +636,13 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	{"id": "mech_dryer",  "x":  2.5, "z": 1.0, "main_advance": 5.0},
 	{"id": "blower",      "x": -2.0, "z": 0.5},
 	{"id": "blower",      "x":  2.0, "z": 0.5, "main_advance": 2.5},
-	{"id": "cyclone",     "x": -2.0, "z": 0.5},
-	{"id": "cyclone",     "x":  2.0, "z": 0.5, "main_advance": 3.0},
+	# ── Operator 2026-08-28 (line-1 drawing walk): "then to the two cyclones
+	# ON the mill" — this pair rides the mill's top (mill 3.6×4.8×4.6; the
+	# next main). z 2.8 puts them over its centre, x ±0.9 keeps both inside
+	# its 3.6 m width, y 4.6 nests the cones on its roof. NO extend_legs —
+	# they are mounted on the machine, not on 4.6 m stilts.
+	{"id": "cyclone",     "x": -0.9, "z": 2.8, "y": 4.6},
+	{"id": "cyclone",     "x":  0.9, "z": 2.8, "y": 4.6, "main_advance": 3.0},
 	# ── DOC-WALK GAP FIX 2026-08-28 (gap 1.2) — lijn_1_flow.md edges 12-19 ──
 	# The diagram's post-mill chain is
 	#   maalmolen_1 → ventilator_10a/b → intrekschroef_11a/b → flotatie_tank
@@ -654,8 +659,13 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	{"id": "mill"},
 	{"id": "blower",      "x": -2.0, "z": 0.5},
 	{"id": "blower",      "x":  2.0, "z": 0.5, "main_advance": 2.5},
-	{"id": "cyclone",     "x": -2.0, "z": 0.5},
-	{"id": "cyclone",     "x":  2.0, "z": 0.5, "main_advance": 3.0},
+	# ── Operator 2026-08-28: this pair sits "at the top of the flotation
+	# tank" (tank 4.5×5.0×9.0), the intrekschroeven running from the cyclone
+	# discharges INTO the tank. y 5.0 = rim height; extend_legs → their
+	# supports run to the floor beside the tank.
+	{"id": "cyclone",     "x": -2.0, "z": 0.5, "y": 5.0, "extend_legs": true},
+	{"id": "cyclone",     "x":  2.0, "z": 0.5, "y": 5.0, "extend_legs": true,
+	 "main_advance": 3.0},
 	{"id": "transport_screw", "x": -2.0, "z": 0.5},                # intrekschroef 11a
 	{"id": "transport_screw", "x":  2.0, "z": 0.5, "main_advance": 5.0},  # intrekschroef 11b
 	# #fold — leg E (RIGHT −90): the sketch offsets the flotation tank SOUTH

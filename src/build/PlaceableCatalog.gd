@@ -10350,6 +10350,31 @@ static func _m_vw_trommel(p: Node3D, size: Vector3, _color: Color, ghost: bool) 
 			Vector3(1.40, 0.20, 0.01), "+X")
 		cap_lbl.position = Vector3(drum_r + 0.02, drum_cy + drum_r * 0.20, drum_len * -0.10)
 
+	# ── BORDES (grate) + STAIRS — operator's line-1 drawing 2026-08-28
+	# (line1_washing_flow_sketch: yellow grate walkway along the drum with
+	# stairs at the upstream end). Rafter-#231 idiom: grated deck at working
+	# height on the -X aisle flank, safety-yellow railing on the outer edge,
+	# grating stair descending at the -Z (chute/upstream) end.
+	var bordes_y : float = drum_cy - drum_r * 0.55          # deck under the drum's belly line
+	var bordes_w : float = 0.95
+	var bordes_x : float = -(drum_r + bordes_w * 0.5 + 0.05)
+	var bordes_len : float = drum_len * 0.92
+	var safety := _mat(_SAFETY, ghost, 0.2, 0.6)
+	var b_dark := _mat(_DARK, ghost, 0.5, 0.6)
+	var b_steel := _mat(_STEEL, ghost, 0.5, 0.4)
+	_grating_deck(p, bordes_w, bordes_len, Vector3(bordes_x, bordes_y, 0.0))
+	# Deck support legs to the floor.
+	for szb in [-0.42, 0.0, 0.42]:
+		_box(p, Vector3(0.07, bordes_y, 0.07),
+			Vector3(bordes_x - bordes_w * 0.35, bordes_y * 0.5, bordes_len * szb), b_dark)
+	# Railing along the OUTER (-X) edge + the two ends; open toward the drum.
+	for szr in [-1.0, 1.0]:
+		_box(p, Vector3(0.05, 0.05, bordes_len), Vector3(bordes_x - bordes_w * 0.48, bordes_y + 1.0, 0.0), safety)
+		_box(p, Vector3(0.05, 1.0, 0.05), Vector3(bordes_x - bordes_w * 0.48, bordes_y + 0.5, float(szr) * bordes_len * 0.48), safety)
+	_box(p, Vector3(0.05, 0.05, bordes_len), Vector3(bordes_x - bordes_w * 0.48, bordes_y + 0.55, 0.0), safety)
+	# Stair down at the -Z (upstream/chute) end, descending away from the drum.
+	_stair(p, Vector3(bordes_x, bordes_y, -bordes_len * 0.5 - 0.1), bordes_y, bordes_w * 0.8, b_steel, safety)
+
 # ── scheidingsgoot — the Y-SPLITGOOT at the discharge end of the SGA drum. ────
 # Operator spec 2026-08-28 (line-1 HPS/SGA doc walk), verbatim:
 #   "at the end of the drum there is a Y-shaped shute also, which splits the

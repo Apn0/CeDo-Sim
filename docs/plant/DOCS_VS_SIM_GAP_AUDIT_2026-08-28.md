@@ -699,3 +699,41 @@ Open note: the original builder carries TWO degas domes on the barrel ("the
 operator's 2 vacuum zones") while idx 24 places a standalone `vacuum_degas`
 — left VERBATIM (the builder documents its own intent); whether both degas
 representations belong on 3C is a question for the 3C doc-walk proper.
+
+### ✅ R.1 RESOLVED + the line-1 drawing walk (2026-08-28, afternoon)
+
+**R.1:** operator — the GLOBAL SPIRAL CHUTES photo "is the ring"; the 2×2
+"snail box" is the separate thermal-dryer cabinet ("render looks okay for
+now"). Two different objects. → the 3.1-C note "remodel ringleiding as the
+spiral cabinet" is CANCELLED; instead 3A's ring should be remodelled from
+the `_ringleiding_1..4.png` PHOTOS (spiral-chute rack in a steel cage) —
+detail-program item.
+
+**Line-1 drawing** archived at `photos/line1_washing_flow_sketch_2026-08-28.png`
+(v1; operator's v2 update did not reach disk — re-save requested). Colour
+legend (operator): red = conveyors, blue = chutes, yellow = grate/stairs/
+walkways, brown = blowers, pink = pneumatic pipelines Ø ~120–150 mm, green =
+machines. **The drawing CONFIRMS the fold's plan-shape end to end** (wall
+conveyor, shredder below the tee, climb to the chute, drum east, Y to the
+friction pair, flotation south, tail east to silo → compactorband → PCU →
+extruder with the silo's two top cyclones drawn).
+
+**Applied from the drawing + voice walk:**
+- Pneumatic duct radius 0.18/0.16 → **0.07 (Ø 140 mm)** in LineFlow's
+  blower↔cyclone spawns (was twice the operator's stated bore).
+- Line-1 mill cyclone pair LIFTED "on the mill" (y 4.6, over its roof, no
+  stilts); flotation cyclone pair LIFTED to the tank rim (y 5.0,
+  extend_legs), intrekschroeven bridging into the tank — reconciling doc
+  edges 17-19 with the operator's "cyclones at the top of the flotation
+  tank".
+- `_m_vw_trommel` gains the drawing's **bordes (grate) + stairs**: grated
+  walkway on the aisle flank, safety-yellow railing, stair at the upstream
+  end (rafter-#231 idiom).
+- Operator confirmed the sim's line-1 middle chain machine-for-machine
+  (friction L/R → mech dryers → blowers → cyclones → mill → blowers →
+  cyclones → screws → flotation) and that the doc's frictiescheider-before-
+  mech-dryer order matches his memory.
+
+Line-1 conformance 70/70; world regression 17/0. OPEN: the "heather thing"
+(drawing's single heater box where the doc has MAS buffer ×2 + MAS droger
+×2) — next single question; v2 of the drawing to be re-saved.
