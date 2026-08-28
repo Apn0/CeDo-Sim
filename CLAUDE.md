@@ -422,6 +422,33 @@ a station id, because eight random floor points will always route *sometimes*.
 (`extruder_3a`, `centrifuge`, `mengsilo`, `wind_sifter`). Do not silence it by
 widening `POST_ENDPOINT_TOL_M` or dropping workers from the fixture.
 
+#### 2026-08-28 — it went GREEN, then PR #118 turned it red again at one station
+
+The "deterministically RED" line above is no longer the whole truth, and the
+sequence matters more than either endpoint:
+
+* `CrewManager._post_pos_on_aisle` (the AISLE-BESIDE-THE-MACHINE fix this
+  section calls for) landed and **worked**: measured on `9981a6b`, the
+  pre-merge main, `Result: PASS (10 ok, 0 fail)` with 41 static bodies.
+* Merging **PR #118** (the 3A recomposition to ruling 2.1-B) put it back to
+  `Result: FAIL (8 ok, 2 fail)`, measured identically on 3 of 3 runs — so this
+  is NOT the old one-in-three flake. Two failures:
+  1. `machine fixture present` — the fixture asserts `machines >= 40` and 3A
+     now builds **38** static bodies. That threshold is a stale magic number,
+     but do not just lower it: check the count against the 2.1-B composition
+     that `test_line3a_flow_conformance` asserts before touching it.
+  2. Abdellilah and Mohammed both post at `wind_sifter` (-215.6, 82.8) and
+     cannot route back from the canteen (14.32 m short). The `why` line reads
+     `inside [@StaticBody3D@2425 1.2x1.0 m]`, +1.10 m above floor, ISLAND.
+
+  The aisle push is `half-extent + POST_AISLE_MARGIN_M (1.0)` along the
+  direction to the worker, and it never checks that the RESULT is clear — so
+  now that 3A's infeed is packed tighter, the post clears the wind sifter and
+  lands inside its **neighbour**. A candidate-clearance test (try the pushed
+  point, fall back to other directions) is the obvious fix, but per this
+  section's own rule it changes WHERE CREW STAND and is therefore an operator
+  call, not a test tweak. Left red and documented rather than silenced.
+
 ### The red is a CREW defect, not a navmesh one (measured 2026-08-12)
 
 The paragraph above used to call it "a real navmesh/topology defect". It is not,
