@@ -56,14 +56,16 @@ func _run() -> void:
 
 	var seq : Array = BuildMode.LINE_1_SEQ
 
-	# ── S1 — the macro SEQ matches the flow diagram's chain ──────────────────
+	# ── S1 — the macro SEQ matches the flow diagram's chain, AS RULED ────────
 	# Doc edges 4,5,6,7: band_2_voorwas -> band_2_hps -> hps_sga -> 2x
-	# frictiescheider. The chutes between them are operator-described
-	# (2026-08-28); the diagrams draw blocks only and never show chutes.
-	print("  -- S1: LINE_1_SEQ order vs the flow diagram --")
+	# frictiescheider. OPERATOR RULING 2026-08-28 (layout sketch): the
+	# voorwastrommel IS the HPS (SGA) — ONE drum does both, so the diagram's
+	# hps_sga block maps onto vw_trommel, not onto a second machine. The
+	# earlier same-day literal reading (separate band 2 + corner chute +
+	# sga_drum) was reversed by that ruling; sga_feed_chute returns with the
+	# line-1 fold (a 90° turn cannot sit on a straight macro axis).
+	print("  -- S1: LINE_1_SEQ order vs the flow diagram (one-drum ruling) --")
 
-	var i_drum  := _idx(seq, "sga_drum")
-	var i_chute := _idx(seq, "sga_feed_chute")
 	var i_goot  := _idx(seq, "scheidingsgoot")
 	# The voorwastrommel is `vw_trommel`, NOT the `prewash_drum` stub — see the
 	# 2026-08-28 swap in LINE_1_SEQ closing audit finding C5.
@@ -71,30 +73,26 @@ func _run() -> void:
 	var i_fric  := _idx(seq, "friction_sep")
 	var i_mill  := _idx(seq, "mill")
 
-	_check(i_drum >= 0, "sga_drum (HPS/SGA zware-delen scheider) is in LINE_1_SEQ")
-	_check(_all_idx(seq, "sga_drum").size() == 1, "exactly one sga_drum on line 1")
-	_check(i_chute >= 0, "sga_feed_chute (90 deg hoekgoot, operator 2026-08-28) is in LINE_1_SEQ")
+	_check(i_pre >= 0, "vw_trommel (voorwas + HPS/SGA, one drum) is in LINE_1_SEQ")
+	_check(_all_idx(seq, "vw_trommel").size() == 1, "exactly one drum on line 1")
 	_check(i_goot >= 0, "scheidingsgoot (Y-splitgoot) is in LINE_1_SEQ")
 	_check(i_mill >= 0, "mill (Maalmolen 1) is in LINE_1_SEQ")
 
-	if i_drum < 0 or i_chute < 0 or i_goot < 0 or i_pre < 0 or i_fric < 0 or i_mill < 0:
+	if i_goot < 0 or i_pre < 0 or i_fric < 0 or i_mill < 0:
 		print("[TEST] line 1 conformance FAIL (setup incomplete)")
 		get_tree().quit(1); return
 
-	# Chain: prewash_drum -> (band 2) -> chute -> drum -> Y-goot -> friction L/R
-	_check(i_pre < i_chute, "vw_trommel (voorwastrommel) comes before the SGA feed chute")
+	# One-drum ruling: no second drum, no stub, and no corner chute until the
+	# fold exists to make its 90° turn geometrically true.
+	_check(_idx(seq, "sga_drum") < 0,
+		"NO separate sga_drum — the ruling merged HPS/SGA into vw_trommel")
+	_check(_idx(seq, "sga_feed_chute") < 0,
+		"sga_feed_chute deferred to the fold (a 90° turn on a straight axis would lie)")
 	_check(_idx(seq, "prewash_drum") < 0,
 		"line 1 uses the photo-signed-off vw_trommel, NOT the prewash_drum stub (audit C5)")
-	_check(i_chute < i_drum, "feed chute comes before the drum (chute feeds the drum's TOP side)")
-	_check(i_drum < i_goot, "drum comes before the Y-splitgoot (goot sits at the drum's END)")
+	# Chain: drum -> Y-goot -> friction L/R (sketch: chute/drum/Y run as one).
+	_check(i_pre < i_goot, "drum comes before the Y-splitgoot (goot sits at the drum's END)")
 	_check(i_goot < i_fric, "Y-splitgoot comes before the frictiescheiders it splits into")
-	# A belt must sit between the prewash drum and the feed chute — doc node
-	# band_2_hps, "Band 2 (naar HPS/SGA)".
-	var belt_between := false
-	for i in range(i_pre + 1, i_chute):
-		if String((seq[i] as Dictionary).get("id", "")) == "transport_belt":
-			belt_between = true
-	_check(belt_between, "a transport_belt (doc node band_2_hps) runs vw_trommel -> feed chute")
 
 	# ── S1b — gap 1.2: the intake screws belong AFTER the mill ───────────────
 	# Doc edges 14-19: maalmolen_1 -> ventilator_10a/b -> intrekschroef_11a/b ->
@@ -166,11 +164,12 @@ func _run() -> void:
 		min_z = minf(min_z, n3.global_position.z)
 		max_z = maxf(max_z, n3.global_position.z)
 
-	_check(int(counts.get("sga_drum", 0)) == 1,
-		"world contains exactly 1 sga_drum (was 0 before this fix — placed by no macro at all)")
-	_check(int(counts.get("sga_feed_chute", 0)) == 1, "world contains exactly 1 sga_feed_chute")
 	_check(int(counts.get("vw_trommel", 0)) == 1,
 		"world contains the photo-signed-off vw_trommel (audit C5)")
+	_check(int(counts.get("sga_drum", 0)) == 0,
+		"world contains NO separate sga_drum (one-drum ruling 2026-08-28)")
+	_check(int(counts.get("sga_feed_chute", 0)) == 0,
+		"world contains NO sga_feed_chute yet (deferred to the fold)")
 	_check(int(counts.get("prewash_drum", 0)) == 0,
 		"world contains NO prewash_drum stub on line 1")
 	_check(int(counts.get("compactorband", 0)) == 1,
@@ -196,41 +195,39 @@ func _run() -> void:
 
 	var nodes : Array = lf.get("_nodes")
 	var edges : Array = lf.get("_edges")
-	var drum_i := -1
 	var goot_i := -1
 	var vw_i := -1
+	var sga_in_topo := false
 	for i in nodes.size():
 		var nid := String((nodes[i] as Dictionary).get("id", ""))
-		if nid == "sga_drum" and drum_i < 0:
-			drum_i = i
-		elif nid == "scheidingsgoot" and goot_i < 0:
+		if nid == "scheidingsgoot" and goot_i < 0:
 			goot_i = i
 		elif nid == "vw_trommel" and vw_i < 0:
 			vw_i = i
+		elif nid == "sga_drum":
+			sga_in_topo = true
 
-	# The C5 swap must not have silently deleted the pre-wash. vw_trommel had NO
-	# MachineFlow profile before this pass, so an id-swap alone would have left
-	# it on the inert "convey" default — washing nothing.
+	# ONE drum, carrying BOTH merged behaviours (operator ruling 2026-08-28):
+	# the wash half (water_add 0.30) and the heavy-parts half folded into
+	# contam_remove 0.52 = 1 − (1−0.40)·(1−0.20) and waste 0.05 = 0.03 + 0.02.
+	# vw_trommel had NO MachineFlow profile before the C5 swap, so any profile
+	# regression here silently deletes the entire wet front — keep these tight.
 	_check(vw_i >= 0, "vw_trommel is a node in the LineFlow topology")
+	_check(not sga_in_topo, "NO sga_drum node in the topology (one-drum ruling)")
 	if vw_i >= 0:
 		var vw_cr : float = float((nodes[vw_i] as Dictionary).get("contam_remove", 0.0))
 		var vw_wa : float = float((nodes[vw_i] as Dictionary).get("water_add", 0.0))
-		_check(is_equal_approx(vw_cr, 0.40),
-			"vw_trommel still WASHES after the swap: contam_remove == 0.40, got %.3f" % vw_cr)
+		var vw_ws : float = float((nodes[vw_i] as Dictionary).get("waste", 0.0))
+		_check(is_equal_approx(vw_cr, 0.52),
+			"the drum SCREENS as well as washes: contam_remove == 0.52 (merged), got %.3f" % vw_cr)
 		_check(is_equal_approx(vw_wa, 0.30),
-			"vw_trommel still adds water after the swap: water_add == 0.30, got %.3f" % vw_wa)
+			"the drum still adds wash water: water_add == 0.30, got %.3f" % vw_wa)
+		_check(is_equal_approx(vw_ws, 0.05),
+			"the drum rejects heavies: waste == 0.05 (0.03 wash + 0.02 heavies), got %.3f" % vw_ws)
 		_check(String((nodes[vw_i] as Dictionary).get("process", "")) == "wash",
-			"vw_trommel's process is 'wash', not an inert 'convey' fallback")
+			"the drum's process is 'wash', not an inert 'convey' fallback")
 
-	_check(drum_i >= 0, "sga_drum is a node in the LineFlow topology (not dropped as role 'none')")
 	_check(goot_i >= 0, "scheidingsgoot is a node in the LineFlow topology")
-
-	if drum_i >= 0:
-		var cr : float = float((nodes[drum_i] as Dictionary).get("contam_remove", 0.0))
-		_check(is_equal_approx(cr, 0.20),
-			"the drum's screening is LIVE in the sim: contam_remove == 0.20 (MachineFlow), got %.3f" % cr)
-		_check(String((nodes[drum_i] as Dictionary).get("process", "")) == "screen",
-			"the drum's process is 'screen', not an inert 'convey' pass-through")
 
 	if goot_i >= 0:
 		var goot_cr : float = float((nodes[goot_i] as Dictionary).get("contam_remove", 0.0))
@@ -238,12 +235,12 @@ func _run() -> void:
 			"scheidingsgoot itself removes nothing (it is a chute) — so the drum is what does the work")
 
 	# The drum must actually feed the Y-splitgoot.
-	if drum_i >= 0 and goot_i >= 0:
+	if vw_i >= 0 and goot_i >= 0:
 		var drum_to_goot := false
 		for e in edges:
-			if int((e as Dictionary)["a"]) == drum_i and int((e as Dictionary)["b"]) == goot_i:
+			if int((e as Dictionary)["a"]) == vw_i and int((e as Dictionary)["b"]) == goot_i:
 				drum_to_goot = true
-		_check(drum_to_goot, "LineFlow wired an edge sga_drum -> scheidingsgoot")
+		_check(drum_to_goot, "LineFlow wired an edge vw_trommel -> scheidingsgoot")
 
 		# ...and the goot must fan out to BOTH frictiescheiders (doc edges 6,7).
 		var fanout := 0

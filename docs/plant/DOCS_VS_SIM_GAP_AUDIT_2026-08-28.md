@@ -36,7 +36,7 @@ do what the docs say it does?*
 
 | # | Document | Status |
 |---|---|---|
-| 1 | `lijn_1_flow.md` + `line_flow_graphs.json` (line "1") | ⚙ gaps 1.1, 1.2, 1.3 + fix 1.4 all fixed; consequence 1.A (line-1 fold) open |
+| 1 | `lijn_1_flow.md` + `line_flow_graphs.json` (line "1") | ⚙ gaps 1.1–1.3, fix 1.4, ruling 1.B done; open: consequence 1.A (fold, sketch received) |
 | 2 | `lijn_3a_flow.md` | ☐ |
 | 3 | `lijn_3b_flow.md` | ☐ |
 | … | remaining 426 docs | ☐ |
@@ -102,6 +102,41 @@ splitting the stream left/right previously had **no splitting geometry**. The
 split existed only as a LineFlow connector rule spawning two chutes out of a
 straight gutter.
 
+### ⚖ RULING 1.B — ONE drum: the voorwastrommel IS the HPS (SGA) · ✅ APPLIED
+
+Operator ruling 2026-08-28, from the line-1 layout sketch ("Same machine — one
+drum does both"): the voorwastrommel and the HPS (SGA) zware-delen scheider are
+the SAME physical drum. The sketch shows shredder → conveyor → chute → ONE drum
+→ Y-split → the two parallel machines. This also explains why the flow diagram
+never draws a voorwas-trommel block of its own — its "HPS (SGA)" block IS this
+drum, and "Band 2 (naar voorwas trommel)" names it only in passing.
+
+**This partially reverses gap-fix 1.1**, which had read the diagram literally
+and inserted a separate band 2 + corner chute + `sga_drum` stage. Applied:
+
+- `LINE_1_SEQ`: the three inserted entries removed again; chain is now
+  `westa_band_1 → vw_trommel → scheidingsgoot → 2× friction_sep`.
+- `MachineFlow.gd`: `vw_trommel` gets its OWN arm merging both stages'
+  existing constants — `contam_remove 0.52` (= 1 − (1−0.40)·(1−0.20), the
+  wash and the screen composed), `waste 0.05` (0.03 wash + 0.02 heavies),
+  `rate 8.0`, `water_add 0.30` kept. Composition arithmetic on constants the
+  sim already carried — no new invented physics. `prewash_drum` keeps its old
+  arm untouched.
+- Catalog name now carries both: "VW trommel / HPS (SGA) — voorwas + zware
+  delen (50,000L)".
+- `sga_feed_chute` (the 90°-turn corner chute — real, operator-described, in
+  the sketch at the drum's head) is REMOVED from the straight macro: a 90°
+  turn on a straight axis would be geometrically false. It returns WITH the
+  fold. The placeable stays in the catalog.
+- `sga_drum` returns to being unplaced — this time DELIBERATELY, with this
+  ruling as the reason (it is a modelled spare, not a forgotten machine).
+- `test_line1_flow_conformance` rewritten to assert the ruling (one drum, no
+  second drum anywhere in SEQ/world/topology, merged coefficients live).
+  53 ok / 0 fail.
+
+Span effect: line 1 drops to **146.8 m** — now under the 155 m shell axis,
+still over the 140 m one. The fold (consequence 1.A) remains open but smaller.
+
 ### GAP 1.2 — `intrekschroef_11a` / `_11b` in the wrong stage · ✅ FIXED
 
 **Doc:** `maalmolen_1` → `ventilator_10a/b` → `intrekschroef_11a/b` →
@@ -129,6 +164,8 @@ after the two fixes above:
 | `origin/main` (before) | 48 | **147.9 m** |
 | with gaps 1.1 + 1.2 fixed | 51 | **160.2 m** |
 | after gap 1.3 + fix 1.4 | 52 | **161.4 m** |
+| after westa re-aim | 52 | **159.1 m** |
+| after ruling 1.B (one drum) | 49 | **146.8 m** |
 
 The building shell's aabb is **140 × 155 m** (`regression_world_save.gd`,
 "shell footprint non-trivial"). Gap 1.2 was length-neutral; the whole +12.3 m

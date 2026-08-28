@@ -46,7 +46,7 @@ Legend: ☐ todo · ◑ read/awaiting operator · ⚙ fixing · ✓ done · ⚠ 
 | Opzetband (Westa) | 1 | `westa_band_1` / `opzetband_1` | — | ✓ | ☐ |
 | Band 1 onder shredder / Band 2 | 1 | `transportband_*` | — | ✓ | ☐ |
 | Magneetband (overband magnet) | 1 | `overband_magnet` | — | ✓ | ☐ |
-| HPS (SGA) zware-delen scheider | 1 | `sga_drum` | — | ✓ | ☐ |
+| HPS (SGA) zware-delen scheider | 1 | `vw_trommel` *(ruling 2026-08-28: SAME machine as the voorwastrommel — one drum; `sga_drum` is a deliberately-unplaced spare)* | — | ✓ | ☐ |
 | TITECH/TOMRA AUTOSORT | sort | `titech_sort`,`tomra_sort` | machines/titech_tomra_1.jpg *(actually a disc/ballistic screen, NOT the sorter)* | ⚠ | ◑ Doc `titech_tomra.md`+`Werking-Titech-tomra-p1/2/3`: real = belt→NIR/VIS scanner→valve block→splitter→2 bunkers; **not modelled** (stubs only). Photo is a screen. |
 | Disc/ballistic screen (in titech photo) | sort? | `ballistic_sep` / `wind_sifter`? | machines/titech_tomra_1.jpg | ? | ◑ Identify: which machine is the striped-roller disc screen in the photo? |
 

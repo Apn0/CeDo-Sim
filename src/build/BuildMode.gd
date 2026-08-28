@@ -517,28 +517,25 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	# incline_run is now DERIVED from vw_trommel_funnel_mouth_local() and the
 	# lip-over-funnel relationship is measured in the built world by
 	# test_line1_flow_conformance S4 (was 3.05 m high / 1.59 m past the mouth).
+	# ── OPERATOR RULING 2026-08-28 (layout sketch): ONE drum, not two. ────────
+	# "Same machine — one drum does both": the voorwastrommel IS the HPS (SGA)
+	# zware-delen scheider. The flow diagram's separate "HPS (SGA)" block is
+	# the SAME physical drum this entry places — which also explains why the
+	# diagram never draws a voorwas-trommel block of its own (only "Band 2
+	# (naar voorwas trommel)" naming it in passing).
+	# Earlier the same day, walking the diagram literally, gap-fix 1.1 had
+	# inserted band 2 + sga_feed_chute + sga_drum here as a separate stage;
+	# the sketch ruling REVERSED that (ledger: DOCS_VS_SIM_GAP_AUDIT, ruling
+	# 1.B). The drum therefore carries BOTH behaviours in MachineFlow.gd
+	# (wash + heavy-parts screening, its own dedicated arm), and the
+	# Y-splitgoot follows it directly.
+	# `sga_feed_chute` (the 90°-turn corner chute, operator-described and in
+	# the sketch at the drum's head) is NOT placeable on a straight macro axis
+	# — it turns the flow 90° — so it returns WITH the line-1 fold. On the
+	# straight interim axis westa_band_1 discharges into the funnel directly
+	# (measured, S4).
+	# The C5 model-swap note above still applies unchanged.
 	{"id": "vw_trommel"},
-	# ── DOC-WALK GAP FIX 2026-08-28 — lijn_1_flow.md / line_flow_graphs.json ──
-	# The flow diagram's line-1 chain is
-	#   … voorwas trommel → band_2_hps → HPS (SGA) zware-delen scheider → 2×
-	#   frictiescheider …
-	# but this macro jumped prewash_drum → scheidingsgoot, so BOTH the belt and
-	# the SGA drum were missing. `sga_drum` was already in the catalog, already
-	# modelled, and already had full MachineFlow behaviour (process "screen",
-	# contam_remove 0.20, waste 0.02, rate 8.0) — it was simply never placed by
-	# ANY macro, so line 1 did no heavy-parts separation at all. `scheidingsgoot`
-	# standing in its slot has no MachineFlow entry, i.e. it removed nothing.
-	# The two chutes are OPERATOR-described (2026-08-28), not doc-derived: the
-	# flow diagrams draw blocks only and never show chutes, but there is a chute
-	# between most machines on the real floor.
-	#   sga_feed_chute — 90° right turn off band 2, feeds the drum's TOP side.
-	#   scheidingsgoot — the Y-splitgoot at the drum's END (rebuilt this pass).
-	# NOT append-only: this inserts 3 entries, shifting every later macro_index
-	# on line 1. Checked before doing it — `user://macros/` holds no line_*.json
-	# deltas and none ship in the repo, so no saved address is invalidated.
-	{"id": "transport_belt"},                          # band 2 (naar HPS/SGA)
-	{"id": "sga_feed_chute"},                          # 90° hoekgoot → drum top
-	{"id": "sga_drum"},                                # HPS (SGA) zware-delen scheider
 	{"id": "scheidingsgoot"},                          # Y-splitgoot, drum → friction L/R
 	# #196 — parallel L/R friction split. parallel_branch tells the macro
 	# builder these two siblings BOTH receive from the upstream scheidingsgoot

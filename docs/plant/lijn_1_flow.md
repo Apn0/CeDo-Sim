@@ -133,6 +133,10 @@ De waterlijnen zijn dunne blauwe/paarse lijnen over het hele diagram. Foto-resol
 ## Open vragen voor de operator
 1. Waar komt de aanvoerlus (punt 1 hierboven) precies vandaan — Blauwe tank direct, of via een pomp die niet als blok getekend is?
 2. Voert de voorwas trommel (genoemd in "Band 2 (naar voorwas trommel)") zelf water — de trommel zelf is geen blok in het diagram?
+   **Antwoord (operator, 2026-08-28, layout-sketch):** de voorwastrommel IS het
+   "HPS (SGA)"-blok — één trommel wast én scheidt de zware delen. Daarom heeft
+   het diagram geen apart voorwas-trommel-blok. Sim: `vw_trommel` draagt beide
+   rollen (zie `docs/plant/DOCS_VS_SIM_GAP_AUDIT_2026-08-28.md`, ruling 1.B).
 3. Pijlrichting ZSS ↔ Blauwe tank bevestigen.
 4. Gaat er koelwater van het koeltorencircuit naar de Compactor (punt 7)?
 5. Waar loost de Ontwaterzeef/Centrifuge zijn water op — waterput was 1, ZSS, of riool naar EOP?

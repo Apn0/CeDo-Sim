@@ -104,17 +104,25 @@ static func profile(id: String) -> Dictionary:
 			pr["in"]   = Vector3(0.0, 0.80, -0.45)
 			pr["out"]  = Vector3(0.0, 0.70, 0.45)
 			pr["rate"] = 7.0
-		# vw_trommel shares prewash_drum's profile: line 1's voorwastrommel IS the
-		# pre-wash drum. Added 2026-08-28 when LINE_1_SEQ was switched from the
-		# `prewash_drum` stub to the photo-signed-off `vw_trommel` geometry
-		# (DETAIL_STANDARD_audit_2026-08-18.md finding C5). WITHOUT this arm the
-		# swap would silently delete the pre-wash: vw_trommel had no profile at
-		# all, so it would fall back to the inert "convey" default and quietly
-		# drop water_add 0.30 / contam_remove 0.40.
-		"prewash_drum", "vw_trommel":
+		"prewash_drum":
 			pr["in"]    = Vector3(0.0, 0.80, -0.45)
 			pr["out"]   = Vector3(0.0, 0.40, 0.45)
 			pr["waste"] = 0.03
+		# vw_trommel — line 1's ONE wet drum. Operator ruling 2026-08-28 (layout
+		# sketch): the voorwastrommel IS the HPS (SGA) zware-delen scheider —
+		# one machine does both jobs. So this arm MERGES the two stages'
+		# existing constants rather than sharing prewash_drum's:
+		#   waste 0.05        = prewash 0.03 + sga heavies-reject 0.02
+		#   rate  8.0         = the sga_drum arm's rate (one big drum replaces
+		#                       what the sim modelled as two stages in series)
+		# in/out kept from the prewash arm (funnel high at -Z in, low +Z out —
+		# matches _m_vw_trommel's real geometry). Composition arithmetic on
+		# constants the sim already carried — no new invented physics.
+		"vw_trommel":
+			pr["in"]    = Vector3(0.0, 0.80, -0.45)
+			pr["out"]   = Vector3(0.0, 0.40, 0.45)
+			pr["waste"] = 0.05
+			pr["rate"]  = 8.0
 		"kufferath_sieve":
 			pr["in"]  = Vector3(0.0, 0.75, -0.4)
 			pr["out"] = Vector3(0.0, 0.35, 0.45)
@@ -478,11 +486,19 @@ static func _apply_process(pr: Dictionary, id: String) -> void:
 			pr["process"] = "optical"
 			pr["reject_other"] = 0.60
 			pr["reject_hdpe"]  = 0.20
-		# See the paired arm above — vw_trommel must carry the SAME wash physics.
-		"prewash_drum", "vw_trommel":
+		"prewash_drum":
 			pr["process"] = "wash"
 			pr["water_add"]     = 0.30
 			pr["contam_remove"] = 0.40
+		# vw_trommel = voorwas + HPS/SGA in one drum (operator ruling
+		# 2026-08-28, see the arm above). contam_remove is the COMPOSITION of
+		# the two merged stages' existing constants — material passing both a
+		# 0.40 wash and a 0.20 screen keeps (1−0.40)·(1−0.20) of its dirt:
+		#   1 − 0.60 × 0.80 = 0.52
+		"vw_trommel":
+			pr["process"] = "wash"
+			pr["water_add"]     = 0.30
+			pr["contam_remove"] = 0.52
 		"kufferath_sieve":
 			pr["process"] = "screen"
 			pr["water_remove"]  = 0.35

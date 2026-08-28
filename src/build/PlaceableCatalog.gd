@@ -412,7 +412,10 @@ static func items() -> Array[Dictionary]:
 			# with bolted seam rings, rotates on 2 pairs of solid rubber tires, axial
 			# thrust assembly, drive shroud, drain grating tray, yellow peeling-paint
 			# safety cage with embossed capacity placard. Modelled from CeDo photos.
-			{"id": "vw_trommel",     "name": "VW trommel (voorwastrommel, 50,000L)","category": "Sorting","size": Vector3(3.6, 4.5, 8.0),  "color": Color(0.62, 0.62, 0.60)},
+			# Operator ruling 2026-08-28 (layout sketch): this drum IS also the
+			# HPS (SGA) zware-delen scheider — one machine washes AND drops the
+			# heavies. Name carries both so the K-menu/HMI read true.
+			{"id": "vw_trommel",     "name": "VW trommel / HPS (SGA) — voorwas + zware delen (50,000L)","category": "Sorting","size": Vector3(3.6, 4.5, 8.0),  "color": Color(0.62, 0.62, 0.60)},
 			# ── Wash line (wet section additions) ────────────────────────────
 			{"id": "prewash_drum",   "name": "Pre-wash drum (2.5x scale)", "category": "Washing",    "size": Vector3(6.0, 6.5, 11.25), "color": Color(0.40, 0.54, 0.58)},
 			{"id": "mas_droger",     "name": "MAS droger (dryer)", "category": "Washing",    "size": Vector3(2.0, 2.4, 3.0),  "color": Color(0.60, 0.62, 0.64)},
