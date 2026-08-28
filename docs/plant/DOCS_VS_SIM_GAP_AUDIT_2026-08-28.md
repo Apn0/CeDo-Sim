@@ -737,3 +737,16 @@ extruder with the silo's two top cyclones drawn).
 Line-1 conformance 70/70; world regression 17/0. OPEN: the "heather thing"
 (drawing's single heater box where the doc has MAS buffer ×2 + MAS droger
 ×2) — next single question; v2 of the drawing to be re-saved.
+
+### ✅ Line-1 drawing walk COMPLETE (v2, 2026-08-28)
+
+Drawing v2 archived (same path, v1 kept as .bak). V2 confirms the implemented
+middle item for item: mill cyclones ON the mill, tank cyclones with the
+intrekschroeven bridging in, dewatering screw as its own machine with the
+chute to the L-R friction separator. Final question resolved: the "heather
+thing" = the MAS area drawn as one blob — operator: "Four units — I drew
+them as one blob" → the sim's MAS buffer ×2 + MAS droger ×2 chain stands.
+**Line 1 is now fully reconciled across flow doc + operator drawing + voice
+walk, with zero open deltas.** Remaining line-1 items live in the detail
+program only (ring remodel from photos, spiral-cabinet ringleiding
+distinction, etc.).
