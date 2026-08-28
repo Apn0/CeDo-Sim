@@ -66,10 +66,19 @@ func _run() -> void:
 	var loop_ids : Array = []
 	var i := i_silo + 1
 	while i < seq.size() and not is_equal_approx(float((seq[i] as Dictionary).get("x", 0.0)), 0.0):
-		loop_ids.append(String((seq[i] as Dictionary).get("id", "")))
+		var bid := String((seq[i] as Dictionary).get("id", ""))
+		# Role-none utilities (heater cabinet etc.) ride the side lane but are
+		# invisible to the flow chain (I1 guard) — skip them here like the
+		# builder does.
+		if String(MachineFlow.profile(bid).get("role", "")) != "none":
+			loop_ids.append(bid)
 		i += 1
 	_check(loop_ids == ["transport_screw", "verdeelwals", "blower", "ringleiding"],
 		"rondmeng-lus = doseerschroef → verdeelwals m14 → V1 → de RING (got %s)" % str(loop_ids))
+	# Q2.4 — the heater/filter cabinet stands beside V1 (operator spec:
+	# 60×60×200 cabinet; heats the air the blower sucks in).
+	_check(_idx_after(seq, "heater_cabinet", i_silo) >= 0,
+		"a heater_cabinet rides the lus's side lane beside V1 (Q2.4)")
 	_check(bool((seq[i_silo + 1] as Dictionary).get("branch_recirc", false)),
 		"the lus is tagged branch_recirc (closes back into the silo)")
 

@@ -429,6 +429,13 @@ static func items() -> Array[Dictionary]:
 			# (water_circuit_3a_la1.md:12 "geen volumes") — flag F1. Modeled
 			# DEAD-END (no outlet documented — flag F2).
 			{"id": "kleine_la",     "name": "Kleine LA (open waterbak, 3B uitloopzijde)", "category": "Water / utilities", "size": Vector3(1.5, 1.2, 1.5), "color": Color(0.40, 0.52, 0.60)},
+			# Heater cabinet — operator spec 2026-08-28 (doc-walk Q2.4): "sixty
+			# by sixty centimeter. And then about two meters high, which is
+			# also where, like, the filters sit … from the bottom of these
+			# filter stacks, the pipes go to the blower." Heats the air the
+			# adjacent blower sucks in (3A rondmeng loop). Air-side utility —
+			# MachineFlow role "none", placement only.
+			{"id": "heater_cabinet","name": "Heater/filter cabinet (hete-lucht unit)", "category": "Water / utilities", "size": Vector3(0.6, 2.0, 0.6), "color": Color(0.52, 0.50, 0.48)},
 			# Tankje tussen extruders (2026-07-06, water_small.md §2): small water
 			# tank in the pellet/cooling-water cluster, ONE PER LINE (3A + 3B),
 			# each with its OWN pump directly below it (flow diagrams 261_CeDo130
@@ -1717,6 +1724,7 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 		# Small water fixtures 2026-07-06 (water_small.md §1/§2) — role "none",
 		# never enter LineFlow / the HMI.
 		"kleine_la":               _m_kleine_la(p, size, color, ghost)
+		"heater_cabinet":          _m_heater_cabinet(p, size, color, ghost)
 		"tankje_tussen_extruders": _m_tankje_extruders(p, size, color, ghost)
 		# ── Hoses & Air (visual placeables, do NOT enter LineFlow / the HMI) ──
 		"reel_water_thick_yellow": _m_hose_reel(p, size, color, ghost, 0.045)
@@ -7621,6 +7629,39 @@ static func _m_weegschaal(p: Node3D, size: Vector3, color: Color, ghost: bool) -
 	disp_mat.emission_enabled = true
 	disp_mat.emission = Color(0.12, 0.92, 0.32)
 	_box(p, Vector3(0.24, 0.12, 0.01), Vector3(0.0, size.y * 0.65, size.z * 0.485), disp_mat)
+
+# ── Heater/filter cabinet — operator spec 2026-08-28 (doc-walk Q2.4): 60×60 cm,
+#    ~2 m high; the filter stacks sit inside, and pipes run from the BOTTOM of
+#    the stacks to the adjacent blower. Heats the air the blower sucks in (3A
+#    rondmeng loop; 3B's plasmaq-heater question still open). Air-side utility,
+#    role "none". ─────────────────────────────────────────────────────────────
+static func _m_heater_cabinet(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
+	var shell := _mat(color, ghost, 0.4, 0.5)
+	var dark  := _mat(_DARK, ghost, 0.5, 0.6)
+	var steel := _mat(_STEEL, ghost, 0.6, 0.35)
+	var warn  := _mat(Color(0.85, 0.55, 0.10), ghost, 0.2, 0.6)   # hot-surface accent
+
+	# Cabinet body on a low plinth.
+	_box(p, Vector3(size.x, 0.06, size.z), Vector3(0.0, 0.03, 0.0), dark)
+	_box(p, Vector3(size.x * 0.96, size.y - 0.10, size.z * 0.96),
+		Vector3(0.0, (size.y - 0.10) * 0.5 + 0.06, 0.0), shell)
+	# Louvre vent panel on the front (+Z) upper half — the air intake.
+	for vy in [0.62, 0.70, 0.78, 0.86]:
+		_box(p, Vector3(size.x * 0.70, 0.02, 0.02),
+			Vector3(0.0, size.y * vy, size.z * 0.49), dark)
+	# Filter-stack access door (lower front) with a handle.
+	_box(p, Vector3(size.x * 0.72, size.y * 0.38, 0.02),
+		Vector3(0.0, size.y * 0.28, size.z * 0.485), steel)
+	_box(p, Vector3(0.03, 0.10, 0.03), Vector3(size.x * 0.28, size.y * 0.28, size.z * 0.50), dark)
+	# Hot-surface warning band near the top.
+	_box(p, Vector3(size.x * 0.97, 0.05, size.z * 0.97), Vector3(0.0, size.y * 0.93, 0.0), warn)
+	# The pipe from the filter-stack BOTTOM out the -X flank toward the blower
+	# (operator: "from the bottom of these filter stacks, the pipes go to the
+	# blower"). Elbow: short vertical drop + horizontal run.
+	_cyl(p, 0.09, 0.09, 0.25, Vector3(-size.x * 0.30, 0.30, 0.0), steel, "y")
+	_cyl(p, 0.09, 0.09, size.x * 1.4, Vector3(-size.x * 0.95, 0.18, 0.0), steel, "x")
+	# Small electrical junction box on the +X flank.
+	_box(p, Vector3(0.04, 0.18, 0.14), Vector3(size.x * 0.50, size.y * 0.55, 0.0), dark)
 
 # ── Bigbag station (gap 2.2, lijn_3a_flow.md edge 36) — operator composite
 #    spec 2026-08-28 from two chat reference images: BOTTOM per image 1 (open

@@ -468,9 +468,15 @@ the BOTTOM of the filter stacks to the blower. Build as role-none side units
 (pomp_c1 pattern) beside V2/M11b, V1 and the thermische droger.
 
 The ring question this answer raised is CLOSED by ruling 2.1-B: the ring
-lives in the rondmeng loop. Remaining build item: the three heater cabinets
-(60×60×200, filter stacks, pipes from the stack bottoms to the blowers) as
-role-none side units — needs a small model pass.
+lives in the rondmeng loop. **Heater cabinet BUILT 2026-08-28** to the spec
+(new placeable `heater_cabinet`, 0.6×2.0×0.6: louvre intake, filter access
+door, hot-surface band, pipe elbow from the stack bottom toward the blower;
+role "none"; render `renders/shot_heater_cabinet.png`). Placed beside 3A's
+loop blower V1 — the position the operator's description names directly.
+STILL OPEN: whether 3B's plasmaq heater (diagram edge 16) is a separate
+cabinet like this or integrated in the plasmaq — ask before placing one; and
+the diagram's second 3A heater "bij M11b" has no home in ruling 2.1-B's bare
+main path, so none is placed there.
 
 ---
 

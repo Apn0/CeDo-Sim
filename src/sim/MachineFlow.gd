@@ -352,7 +352,8 @@ static func profile(id: String) -> Dictionary:
 		# 2026-08-15: the retired `hmi_panel` / `hmi_wall` ids left this list;
 		# the `hmi_` prefix branch below covers every HMI that still exists.
 		"door", "pcu_cabinet", "surface", "waste_container", "water_pump", "zss_water", \
-		"kleine_la", "tankje_tussen_extruders", "pomp_c1", "pomp_zeefbocht", "eop_endpoint":
+		"kleine_la", "tankje_tussen_extruders", "pomp_c1", "pomp_zeefbocht", "eop_endpoint", \
+		"heater_cabinet":
 			pr["role"] = "none"   # info screens / fixtures — NOT material-flow machines
 		_:
 			# #165 — every scoped HMI id (`hmi_shredder_l1`, etc.) is a control

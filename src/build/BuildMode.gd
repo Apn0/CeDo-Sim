@@ -151,6 +151,11 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 	{"id": "verdeelwals",     "x": 5.0, "z":  0.0},                          # Verdeelwals (m14)
 	{"id": "blower",          "x": 5.0, "z":  3.0},                          # Ventilator V1 rondmengen
 	{"id": "ringleiding",     "x": 5.0, "z":  6.0},                          # de RING (serpentine)
+	# Heater/filter cabinet beside V1 (operator spec, Q2.4): heats the air V1
+	# sucks in; its pipe elbow aims -X toward the blower at x 5.0. Role-none
+	# utility — the I1 guard keeps it out of the branch-chain bookkeeping, so
+	# the recirc close still tags the ringleiding as the loop's last stage.
+	{"id": "heater_cabinet",  "x": 7.0, "z":  3.0},                          # hete-lucht kast bij V1
 	# ── MAIN PATH out of the mengsilo — operator: "just dosing screw,
 	# blower, pipeline pipeline pipeline, extruder silo." ──
 	{"id": "transport_screw"},          # Doseerschroef M11b
