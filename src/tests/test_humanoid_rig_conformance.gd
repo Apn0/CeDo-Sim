@@ -57,6 +57,11 @@ func _height(root: Node3D) -> float:
 
 func _run() -> void:
 	print("[TEST] humanoid rig conformance")
+	# CANONICAL VERDICT LINE. tools/regression/run.sh gates on
+	# grep -E "Result: PASS|RESULT: PASS" -- the descriptive line above does
+	# NOT match it. Measured 2026-08-28: all four conformance tests passed
+	# standalone and reported FAIL in the harness for this reason alone.
+	print("Result: %s (%d fail)" % ["PASS" if _fails == 0 else "FAIL", _fails])
 	var body : Node3D = Humanoid.build(Color(0.9, 0.5, 0.1), 0, {"ppe": "operator"})
 	add_child(body)
 	await get_tree().process_frame
