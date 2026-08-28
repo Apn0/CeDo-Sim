@@ -138,6 +138,24 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 	# elevated extruder_silo (frame + 2 cyclones on top + lump bin + windows),
 	# not a generic dosing silo. Same change applied to 3B and Line 1 below.
 	{"id": "extruder_silo", "gap": 1.5},  # extruder needs maintenance clearance at both ends
+	# ── DOC-WALK GAP FIX 2026-08-28 (gap 1.3) ───────────────────────────────
+	# Every line's flow diagram runs extruder_silo → COMPACTOR BAND → compactor
+	# → extruder (line_flow_graphs.json edges 32/33/34, identical for 1, 3A and
+	# 3B). The band was missing from all three; only line_3c ever placed one,
+	# even though `compactorband`'s own builder describes it running "Silo up
+	# into the compactor's top funnel" — i.e. exactly this edge.
+	# Corroborated beyond the diagrams by the operator checklist FORM-018
+	# (swi/FORM-018__064_CeDo120.md:52): "Compactor banden en compactor hoed
+	# compleet reinigen" — plural belts, under a section covering "beide
+	# compactors", so these are real, separately-maintained machines.
+	# The COMPACTOR itself is deliberately NOT added here: _m_extruder_unit
+	# builds the EREMA cutter-compactor INTEGRATED on the extruder's -X flank
+	# (PlaceableCatalog.gd, "SECTION 1: FEED / CUTTER-COMPACTOR (PCU)"), so a
+	# standalone `compactor` placeable would double it. The diagram draws them
+	# as separate process BLOCKS, which is not a claim about separate machines.
+	# Carries the 1.5 m gap so the extruder keeps its maintenance clearance —
+	# that clearance belongs next to the extruder, not next to the silo.
+	{"id": "compactorband", "gap": 1.5},
 	{"id": "extruder_3a"},
 	# #98 — Lump cart parking spot next to the extruder's screen-changer
 	# discharge. Operator's responsibility to make sure a lump_cart is parked
@@ -418,6 +436,9 @@ const LINE_3B_SEQ : Array[Dictionary] = [
 	{"id": "blower"},
 	{"id": "cyclone"},
 	{"id": "extruder_silo"},
+	# Gap 1.3 — see the matching note in LINE_3A_SEQ. Flow diagram edge 32:
+	# extruder_silo → compactor_band. The PCU stays integrated in the extruder.
+	{"id": "compactorband"},
 	{"id": "extruder_3b"},
 	# #98 — Lump cart parking spot at the extruder's filter discharge.
 	# #225 — the LIVE laserfilter is a standalone machine beside the extruder
@@ -471,14 +492,31 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	#   → transport_belt (short 1 m horizontal, 30 cm down + 90° L turn — handled
 	#                     visually by the K-menu jog after placement)
 	#   → westa_band_1 (45° incline up to the top of the pre-wash drum)
-	#   → prewash_drum  (now scaled 2.5×, top-fed)
+	#   → vw_trommel    (the real voorwastrommel, top-fed)
 	{"id": "opzetband_1"},
 	{"id": "shredder_1"},
 	{"id": "transport_belt"},                          # uitvoerband
 	{"id": "overband_magnet"},
 	{"id": "transport_belt", "main_advance": 1.0},     # short 1m after 90° L
 	{"id": "westa_band_1"},                            # 45° incline to drum top
-	{"id": "prewash_drum"},
+	# ── DOC-WALK FIX 2026-08-28 — operator-directed, closes audit finding C5 ──
+	# Was `prewash_drum`: an 18-line unsourced stub (a trough, a plain cylinder,
+	# a spray pipe). The REAL voorwastrommel geometry — ~150 lines, built from
+	# operator photos and signed off by the operator (bolted flange drive ring,
+	# axial-thrust bracket, rubber cradle tyres, yellow peeling safety cage,
+	# "TANK A-4 / MAX CAP 50,000 L" placard, drain tray) — sat unused under the
+	# sibling id `vw_trommel`. Same orphaned-model disease as gap 1.1's sga_drum.
+	# See DETAIL_STANDARD_audit_2026-08-18.md finding C5 and photo_audit.md:68.
+	# IN-PLACE ID SWAP — seq.size() and every macro_index are unchanged.
+	# NOTE the wash physics had to move WITH the model: `vw_trommel` carried no
+	# MachineFlow profile at all, so swapping the id alone would have dropped
+	# water_add 0.30 / contam_remove 0.40 and turned the pre-wash into an inert
+	# conveyor. MachineFlow.gd now matches both ids in the same two arms.
+	# SIZE CHANGE: 6.0x6.5x11.25 → 3.6x4.5x8.0, so line 1 gets 3.25 m SHORTER
+	# (helps the overrun) but the drum top drops ~2 m — westa_band_1 above is
+	# aimed at "the TOP of the pre-wash drum", so its discharge alignment needs
+	# an eyeball once the fold lands. Logged in the gap-audit ledger.
+	{"id": "vw_trommel"},
 	# ── DOC-WALK GAP FIX 2026-08-28 — lijn_1_flow.md / line_flow_graphs.json ──
 	# The flow diagram's line-1 chain is
 	#   … voorwas trommel → band_2_hps → HPS (SGA) zware-delen scheider → 2×
@@ -546,6 +584,9 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	{"id": "blower",      "x":  2.0, "z": 0.5, "main_advance": 2.5},
 	{"id": "cyclone"},
 	{"id": "extruder_silo"},
+	# Gap 1.3 — see the matching note in LINE_3A_SEQ. Flow diagram edge 32:
+	# extruder_silo → compactor_band. The PCU stays integrated in the extruder.
+	{"id": "compactorband"},
 	{"id": "extruder_1"},
 	# #98 — Lump cart parking spot at the extruder's filter discharge. Same
 	# +X / partway-back offset as 3A/3B so the laser_filter outlet sits above

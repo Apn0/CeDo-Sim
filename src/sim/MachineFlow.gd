@@ -104,7 +104,14 @@ static func profile(id: String) -> Dictionary:
 			pr["in"]   = Vector3(0.0, 0.80, -0.45)
 			pr["out"]  = Vector3(0.0, 0.70, 0.45)
 			pr["rate"] = 7.0
-		"prewash_drum":
+		# vw_trommel shares prewash_drum's profile: line 1's voorwastrommel IS the
+		# pre-wash drum. Added 2026-08-28 when LINE_1_SEQ was switched from the
+		# `prewash_drum` stub to the photo-signed-off `vw_trommel` geometry
+		# (DETAIL_STANDARD_audit_2026-08-18.md finding C5). WITHOUT this arm the
+		# swap would silently delete the pre-wash: vw_trommel had no profile at
+		# all, so it would fall back to the inert "convey" default and quietly
+		# drop water_add 0.30 / contam_remove 0.40.
+		"prewash_drum", "vw_trommel":
 			pr["in"]    = Vector3(0.0, 0.80, -0.45)
 			pr["out"]   = Vector3(0.0, 0.40, 0.45)
 			pr["waste"] = 0.03
@@ -471,7 +478,8 @@ static func _apply_process(pr: Dictionary, id: String) -> void:
 			pr["process"] = "optical"
 			pr["reject_other"] = 0.60
 			pr["reject_hdpe"]  = 0.20
-		"prewash_drum":
+		# See the paired arm above — vw_trommel must carry the SAME wash physics.
+		"prewash_drum", "vw_trommel":
 			pr["process"] = "wash"
 			pr["water_add"]     = 0.30
 			pr["contam_remove"] = 0.40

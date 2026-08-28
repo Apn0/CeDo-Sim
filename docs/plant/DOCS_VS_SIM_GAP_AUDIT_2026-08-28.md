@@ -36,7 +36,7 @@ do what the docs say it does?*
 
 | # | Document | Status |
 |---|---|---|
-| 1 | `lijn_1_flow.md` + `line_flow_graphs.json` (line "1") | ⚙ gaps 1.1 + 1.2 fixed; 1.3 + consequence 1.A open |
+| 1 | `lijn_1_flow.md` + `line_flow_graphs.json` (line "1") | ⚙ gaps 1.1, 1.2, 1.3 + fix 1.4 all fixed; consequence 1.A (line-1 fold) open |
 | 2 | `lijn_3a_flow.md` | ☐ |
 | 3 | `lijn_3b_flow.md` | ☐ |
 | … | remaining 426 docs | ☐ |
@@ -128,6 +128,7 @@ after the two fixes above:
 |---|---|---|
 | `origin/main` (before) | 48 | **147.9 m** |
 | with gaps 1.1 + 1.2 fixed | 51 | **160.2 m** |
+| after gap 1.3 + fix 1.4 | 52 | **161.4 m** |
 
 The building shell's aabb is **140 × 155 m** (`regression_world_save.gd`,
 "shell footprint non-trivial"). Gap 1.2 was length-neutral; the whole +12.3 m
@@ -159,7 +160,7 @@ Note also that **nothing in the regression harness would have caught this**:
 (added this pass) reports the span but deliberately does **not** gate on it,
 because the correct limit is unknown until the operator answers.
 
-### GAP 1.3 — `compactor_band` missing on lines 1, 3A and 3B · ☐ OPEN
+### GAP 1.3 — `compactor_band` missing on lines 1, 3A and 3B · ✅ FIXED
 
 **Doc:** `extruder_silo` → `compactor_band` → `compactor` → `extruder`
 (edges 32, 33, 34). Present in the flow graphs for **all three** lines.
@@ -174,7 +175,54 @@ cutter-compactor **integrated** into the extruder (`PlaceableCatalog.gd:10544`,
 "SECTION 1: FEED / CUTTER-COMPACTOR (PCU) — SIDE-MOUNTED TANGENTIAL INFEED").
 Adding a standalone `compactor` to those lines would double it.
 
+**Extra corroboration beyond the diagrams**, found while fixing: operator
+checklist **FORM-018** (`swi/FORM-018__064_CeDo120.md:52`) —
+*"Compactor **banden** en compactor hoed compleet reinigen"* — plural belts,
+in a section covering *"beide compactors"*. So these are real, separately
+maintained machines, not a diagram abstraction.
+
+**Fix:** `compactorband` inserted between `extruder_silo` and the extruder on
+all three lines. On 3A it carries the `gap: 1.5` maintenance clearance, which
+belongs next to the extruder rather than next to the silo.
+
+**Proven:** the world regression builds line_3a and footprint-checks it —
+42 → **43 machines, all 43 still inside the building footprint**, round-trip
+stable, 17 ok / 0 fail. (Its `expected` count is computed from the SEQ, so it
+self-adjusted.) Lines 1 and 3B are not footprint-tested by anything.
+
 > Follow-on to check when the walk reaches 3C: `LINE_3C_SEQ` places a standalone
 > `compactor` (index 21) **and** `extruder_screw` (index 22), which also routes
 > to `_m_extruder_unit` and therefore also builds an integrated PCU. That looks
 > like a double compactor on 3C. Unverified — do not act on it from here.
+
+### FIX 1.4 — line 1 was running the `prewash_drum` STUB · ✅ FIXED
+
+Operator-directed, 2026-08-28, mid-walk. Not a flow-diagram gap — a
+**model-quality** gap, and the exact same disease as 1.1: an operator-approved
+model orphaned while a stub gets placed.
+
+`LINE_1_SEQ` placed `prewash_drum` — an 18-line unsourced stub (a trough, a
+plain cylinder, a spray pipe, a motor). The real voorwastrommel geometry,
+~150 lines built from operator photos and signed off by the operator (bolted
+flange drive ring, axial-thrust bracket, rubber cradle tyres, yellow peeling
+safety cage, "TANK A-4 / MAX CAP 50,000 L" placard, drain tray), sat unused
+under the sibling id `vw_trommel`. Already recorded as finding **C5** in
+`DETAIL_STANDARD_audit_2026-08-18.md`, and in `photo_audit.md:68` as
+IMAGE OK / operator-reviewed.
+
+**Fix:** in-place id swap in `LINE_1_SEQ` (index-stable, `seq.size()`
+unchanged) **plus** a matching `MachineFlow.gd` change.
+
+**The MachineFlow half is the important half.** `prewash_drum` carries a real
+profile — `process "wash"`, `water_add 0.30`, `contam_remove 0.40`,
+`waste 0.03`. `vw_trommel` had **no profile at all**, so swapping the id alone
+would have silently dropped the machine to the inert `"convey"` default and
+**deleted line 1's entire pre-wash stage** while looking like a pure visual
+upgrade. Both ids now match in the same two arms. This is standing rule 3
+biting for the second time in one document.
+
+**Watch item:** the swap changes the machine's size from 6.0 × 6.5 × 11.25 to
+3.6 × 4.5 × 8.0. Line 1 gets 3.25 m shorter (helps consequence 1.A) but the
+drum top drops ~2 m, and `westa_band_1` immediately upstream is described as a
+45° incline feeding "the TOP of the pre-wash drum". That alignment wants an
+eyeball once the fold lands — flagged, not yet checked.

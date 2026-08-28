@@ -65,7 +65,9 @@ func _run() -> void:
 	var i_drum  := _idx(seq, "sga_drum")
 	var i_chute := _idx(seq, "sga_feed_chute")
 	var i_goot  := _idx(seq, "scheidingsgoot")
-	var i_pre   := _idx(seq, "prewash_drum")
+	# The voorwastrommel is `vw_trommel`, NOT the `prewash_drum` stub — see the
+	# 2026-08-28 swap in LINE_1_SEQ closing audit finding C5.
+	var i_pre   := _idx(seq, "vw_trommel")
 	var i_fric  := _idx(seq, "friction_sep")
 	var i_mill  := _idx(seq, "mill")
 
@@ -80,7 +82,9 @@ func _run() -> void:
 		get_tree().quit(1); return
 
 	# Chain: prewash_drum -> (band 2) -> chute -> drum -> Y-goot -> friction L/R
-	_check(i_pre < i_chute, "prewash_drum comes before the SGA feed chute")
+	_check(i_pre < i_chute, "vw_trommel (voorwastrommel) comes before the SGA feed chute")
+	_check(_idx(seq, "prewash_drum") < 0,
+		"line 1 uses the photo-signed-off vw_trommel, NOT the prewash_drum stub (audit C5)")
 	_check(i_chute < i_drum, "feed chute comes before the drum (chute feeds the drum's TOP side)")
 	_check(i_drum < i_goot, "drum comes before the Y-splitgoot (goot sits at the drum's END)")
 	_check(i_goot < i_fric, "Y-splitgoot comes before the frictiescheiders it splits into")
@@ -90,7 +94,7 @@ func _run() -> void:
 	for i in range(i_pre + 1, i_chute):
 		if String((seq[i] as Dictionary).get("id", "")) == "transport_belt":
 			belt_between = true
-	_check(belt_between, "a transport_belt (doc node band_2_hps) runs prewash_drum -> feed chute")
+	_check(belt_between, "a transport_belt (doc node band_2_hps) runs vw_trommel -> feed chute")
 
 	# ── S1b — gap 1.2: the intake screws belong AFTER the mill ───────────────
 	# Doc edges 14-19: maalmolen_1 -> ventilator_10a/b -> intrekschroef_11a/b ->
@@ -110,6 +114,33 @@ func _run() -> void:
 	for s in screws:
 		_check(int(s) > i_mill, "intrekschroef at SEQ %d is after the mill (%d)" % [int(s), i_mill])
 		_check(int(s) < i_flot, "intrekschroef at SEQ %d feeds the flotation tank (%d)" % [int(s), i_flot])
+
+	# ── S1c — gap 1.3: the compactor band, on ALL THREE documented lines ────
+	# line_flow_graphs.json edges 32/33/34 are identical for lines 1, 3A and 3B:
+	#   extruder_silo -> compactor_band -> compactor -> extruder
+	# Corroborated by operator checklist FORM-018:52 ("Compactor banden en
+	# compactor hoed compleet reinigen" — plural, "beide compactors").
+	# The COMPACTOR must stay absent: _m_extruder_unit builds the EREMA PCU
+	# integrated on the extruder's -X flank, so a standalone one would double it.
+	print("  -- S1c: compactor band on lines 1 / 3A / 3B (doc edge 32) --")
+	var lines := {
+		"line_1":  {"seq": BuildMode.LINE_1_SEQ,  "extruder": "extruder_1"},
+		"line_3a": {"seq": BuildMode.LINE_3A_SEQ, "extruder": "extruder_3a"},
+		"line_3b": {"seq": BuildMode.LINE_3B_SEQ, "extruder": "extruder_3b"},
+	}
+	for lname in lines:
+		var lseq : Array = lines[lname]["seq"]
+		var ex_id : String = String(lines[lname]["extruder"])
+		var i_silo := _idx(lseq, "extruder_silo")
+		var i_band := _idx(lseq, "compactorband")
+		var i_ex   := _idx(lseq, ex_id)
+		_check(i_band >= 0, "%s: compactorband is present (doc node compactor_band)" % lname)
+		_check(i_silo >= 0 and i_band > i_silo,
+			"%s: compactorband comes after the extruder_silo it is fed from" % lname)
+		_check(i_ex >= 0 and i_band < i_ex,
+			"%s: compactorband comes before the extruder it feeds" % lname)
+		_check(_idx(lseq, "compactor") < 0,
+			"%s: NO standalone compactor — the PCU is integrated in the extruder unit" % lname)
 
 	# ── S2 — BuildMode actually PLACES them ─────────────────────────────────
 	# S1 only proves the constant reads correctly. This proves the builder
@@ -138,6 +169,12 @@ func _run() -> void:
 	_check(int(counts.get("sga_drum", 0)) == 1,
 		"world contains exactly 1 sga_drum (was 0 before this fix — placed by no macro at all)")
 	_check(int(counts.get("sga_feed_chute", 0)) == 1, "world contains exactly 1 sga_feed_chute")
+	_check(int(counts.get("vw_trommel", 0)) == 1,
+		"world contains the photo-signed-off vw_trommel (audit C5)")
+	_check(int(counts.get("prewash_drum", 0)) == 0,
+		"world contains NO prewash_drum stub on line 1")
+	_check(int(counts.get("compactorband", 0)) == 1,
+		"world contains exactly 1 compactorband (doc edge 32, was missing)")
 	_check(int(counts.get("scheidingsgoot", 0)) == 1, "world contains exactly 1 scheidingsgoot")
 	_check(int(counts.get("transport_screw", 0)) == 2, "world contains 2 transport_screw (intrekschroef 11a/11b)")
 
@@ -161,12 +198,29 @@ func _run() -> void:
 	var edges : Array = lf.get("_edges")
 	var drum_i := -1
 	var goot_i := -1
+	var vw_i := -1
 	for i in nodes.size():
 		var nid := String((nodes[i] as Dictionary).get("id", ""))
 		if nid == "sga_drum" and drum_i < 0:
 			drum_i = i
 		elif nid == "scheidingsgoot" and goot_i < 0:
 			goot_i = i
+		elif nid == "vw_trommel" and vw_i < 0:
+			vw_i = i
+
+	# The C5 swap must not have silently deleted the pre-wash. vw_trommel had NO
+	# MachineFlow profile before this pass, so an id-swap alone would have left
+	# it on the inert "convey" default — washing nothing.
+	_check(vw_i >= 0, "vw_trommel is a node in the LineFlow topology")
+	if vw_i >= 0:
+		var vw_cr : float = float((nodes[vw_i] as Dictionary).get("contam_remove", 0.0))
+		var vw_wa : float = float((nodes[vw_i] as Dictionary).get("water_add", 0.0))
+		_check(is_equal_approx(vw_cr, 0.40),
+			"vw_trommel still WASHES after the swap: contam_remove == 0.40, got %.3f" % vw_cr)
+		_check(is_equal_approx(vw_wa, 0.30),
+			"vw_trommel still adds water after the swap: water_add == 0.30, got %.3f" % vw_wa)
+		_check(String((nodes[vw_i] as Dictionary).get("process", "")) == "wash",
+			"vw_trommel's process is 'wash', not an inert 'convey' fallback")
 
 	_check(drum_i >= 0, "sga_drum is a node in the LineFlow topology (not dropped as role 'none')")
 	_check(goot_i >= 0, "scheidingsgoot is a node in the LineFlow topology")
