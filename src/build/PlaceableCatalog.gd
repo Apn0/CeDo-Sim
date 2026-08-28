@@ -178,7 +178,21 @@ static func items() -> Array[Dictionary]:
 			# by LINE_3A_SEQ + LINE_3B_SEQ + LINE_1_SEQ. The catalog no longer
 			# offers the old monolith.
 			{"id": "centrifuge",     "name": "Centrifuge",         "category": "Washing",    "size": Vector3(2.0, 2.4, 2.0),  "color": Color(0.45, 0.50, 0.58)},
+			# LEGACY MODEL — placed by no macro since ruling 3.1-B. The real
+			# thermische droger (operator 2026-08-28, ruling 3.1-C) is a flat
+			# SPIRAL CABINET: ~2×2 m from the front, 30-35 cm thick, material
+			# enters mid-face, runs 4-5 spiral loops inward→outward, exits at
+			# the side; heater elements sit in the REMOVABLE SIDE PANELS. See
+			# thermal_dryer_decommissioned below for that geometry; this old
+			# 2.6×4.5×3.0 block model is superseded and kept only for saves.
 			{"id": "thermal_dryer",  "name": "Thermal dryer (thermische droger)","category": "Washing","size": Vector3(2.6, 4.5, 3.0),"color": Color(0.60, 0.60, 0.64)},
+			# Ruling 3.1-C (operator 2026-08-28): 3B's thermische droger was
+			# REPLACED by the plasmaq during his tenure, but the machine still
+			# physically STANDS there, disconnected — "a pipe of like twenty
+			# centimeters that sticks out. And then there's nothing." Built to
+			# the real spiral-cabinet spec above. Role "none": plant
+			# archaeology, not a flow machine.
+			{"id": "thermal_dryer_decommissioned", "name": "Thermische droger (buiten gebruik, 3B)","category": "Washing","size": Vector3(2.2, 2.3, 0.7),"color": Color(0.58, 0.58, 0.60)},
 			# ── Conveyance ───────────────────────────────────────────────────
 			{"id": "transport_belt", "name": "Transport belt",     "category": "Conveyance", "size": Vector3(1.0, 0.9, 4.0),  "color": Color(0.34, 0.34, 0.38)},
 			# Two-point variable-length / variable-angle conveyor. Click ONCE to set the
@@ -216,7 +230,14 @@ static func items() -> Array[Dictionary]:
 			# here is the rough bounding box (W × H × L) for the build-mode footprint.
 			{"id": "opzetband_3a3b", "name": "Opzetband 3A/3B (8m flat + 10m@25° + 1m top)", "category": "Conveyance", "size": Vector3(2.0, 4.93, 18.06), "color": Color(0.20, 0.40, 0.80)},
 			{"id": "opzetband_3c6",  "name": "Opzetband 3C/6 (4m flat + 8m@35°)",            "category": "Conveyance", "size": Vector3(2.5, 5.4, 10.6), "color": Color(0.20, 0.40, 0.80)},
-			{"id": "westa_band_1",   "name": "Westa band 1 (45° feeder to prewash drum top)", "category": "Conveyance", "size": Vector3(1.6, 7.0, 9.5),  "color": Color(0.20, 0.40, 0.80)},
+			# westa_band_1 size re-derived 2026-08-28 (#fold). The belt's rise
+			# is DERIVED in _build_opzetband from the chute/funnel port
+			# helpers (lip ≈ 5.22 → run 4.52, extent 4.52+0.6 = 5.12 m of
+			# one-sided geometry from the origin). y: lip + guide rails ≈ 5.6.
+			# z: geometry-honest wrap (5.12 + margin). The chute is lined up
+			# under the lip via LINE_1_SEQ's westa gap (derivation there), NOT
+			# via this box — guarded live by test_line1_flow_conformance S4b.
+			{"id": "westa_band_1",   "name": "Westa band 1 (45° feeder to SGA hoekgoot)", "category": "Conveyance", "size": Vector3(1.6, 5.6, 5.8),  "color": Color(0.20, 0.40, 0.80)},
 			{"id": "opzetband_1",    "name": "Opzetband 1 (10m@25°, 4m wide, integrated magnet head)", "category": "Conveyance", "size": Vector3(4.0, 5.0, 10.0),  "color": Color(0.20, 0.40, 0.80)},
 			# Inclined belt — climbs 8 m vertically over 8 m horizontal (45°).
 			# Goes from Shredder 2's output up to the feed hopper at the top.
@@ -264,6 +285,15 @@ static func items() -> Array[Dictionary]:
 			# transitions. Frame legs reach the floor via extend_machine_legs().
 			{"id": "cyclone_tower",  "name": "Cyclone on tower (gravity drop)", "category": "Conveyance", "size": Vector3(2.4, 8.0, 2.4), "color": Color(0.58, 0.58, 0.62)},
 			{"id": "ringleiding",    "name": "Ringleiding (pneumatic ring main)","category": "Conveyance","size": Vector3(3.2, 3.0, 3.2),"color": Color(0.60, 0.62, 0.66)},
+			# The 3A rondmeng RING — operator-identified 2026-08-28 ("it's the
+			# ring") from assets/reference_photos/machines/_ringleiding_1..4:
+			# a caged SERPENTINE, not the generic ring main above. Three
+			# stacked ~Ø440 cream pipe runs with 180° U-bends at alternating
+			# ends ("starts at the bottom … 180° turn … up a little … another
+			# 180 … two loops"), clamp collars, grey cage with yellow-trimmed
+			# posts + wire mesh, gauge on the top bend, vendor placard
+			# "GLOBAL SPIRAL CHUTES MOD. 260". Heated air per ruling 2.1-B.
+			{"id": "ringleiding_3a", "name": "Ringleiding 3A (Global Spiral Chutes MOD. 260)","category": "Conveyance","size": Vector3(1.6, 2.8, 5.0),"color": Color(0.86, 0.84, 0.78)},
 			# Inter-machine transfer connectors — drop one between a machine's outlet
 			# and the next machine's inlet, then jog it into place (K edit mode).
 			{"id": "funnel",         "name": "Metal funnel",       "category": "Conveyance", "size": Vector3(1.2, 1.0, 1.2),  "color": Color(0.60, 0.62, 0.66)},
@@ -301,7 +331,19 @@ static func items() -> Array[Dictionary]:
 			{"id": "overband_magnet","name": "Overband magnet",    "category": "Separation", "size": Vector3(1.6, 1.8, 3.0),  "color": Color(0.30, 0.32, 0.38)},
 			{"id": "scraper_conveyor","name":"Coarse scraper conveyor","category": "Separation","size": Vector3(1.4, 2.6, 6.0), "color": Color(0.46, 0.50, 0.54)},
 			{"id": "verdeelwals",    "name": "Verdeelwals (distribution roller)","category": "Separation","size": Vector3(2.0, 1.8, 1.4),"color": Color(0.55, 0.55, 0.58)},
-			{"id": "scheidingsgoot", "name": "Scheidingsgoot (separation gutter)","category": "Separation","size": Vector3(1.6, 1.4, 3.0),"color": Color(0.55, 0.57, 0.60)},
+			# Operator 2026-08-28 (line-1 HPS/SGA walk): the goot after the SGA drum is
+			# NOT a straight gutter — it is a Y-splitter carrying material+water:
+			# ~1 m at 30° down, then the split, then ~1 m at 60° down with the legs
+			# yawed ~35° left and ~35° right, then both legs turn back straight (in
+			# line with the drum axis) and keep feeding into the next machine.
+			# Height raised 1.4 → 2.0 to fit the operator's real 1.37 m of total drop
+			# (30° leg 0.50 m + 60° leg 0.87 m); footprint X/Z unchanged.
+			{"id": "scheidingsgoot", "name": "Scheidingsgoot (Y-splitgoot, na SGA-trommel)","category": "Separation","size": Vector3(1.6, 2.0, 3.0),"color": Color(0.55, 0.57, 0.60)},
+			# Operator 2026-08-28: between band 2 and the SGA drum sits a chute that
+			# makes a 90° RIGHT turn off the conveyor and feeds the drum on its TOP
+			# side. The flow diagrams draw blocks only, never chutes — this one is
+			# operator-described, not doc-derived.
+			{"id": "sga_feed_chute", "name": "SGA invoergoot (90° hoek, band → trommel)","category": "Separation","size": Vector3(1.8, 1.8, 1.8),"color": Color(0.55, 0.57, 0.60)},
 			# ── Pumps ────────────────────────────────────────────────────────
 			{"id": "water_pump",     "name": "Water pump",         "category": "Pumps",      "size": Vector3(0.8, 0.9, 1.3),  "color": Color(0.30, 0.45, 0.62)},
 			# Small floor-mounted centrifugal pump (Wilo-style): teal-painted volute
@@ -389,7 +431,10 @@ static func items() -> Array[Dictionary]:
 			# with bolted seam rings, rotates on 2 pairs of solid rubber tires, axial
 			# thrust assembly, drive shroud, drain grating tray, yellow peeling-paint
 			# safety cage with embossed capacity placard. Modelled from CeDo photos.
-			{"id": "vw_trommel",     "name": "VW trommel (voorwastrommel, 50,000L)","category": "Sorting","size": Vector3(3.6, 4.5, 8.0),  "color": Color(0.62, 0.62, 0.60)},
+			# Operator ruling 2026-08-28 (layout sketch): this drum IS also the
+			# HPS (SGA) zware-delen scheider — one machine washes AND drops the
+			# heavies. Name carries both so the K-menu/HMI read true.
+			{"id": "vw_trommel",     "name": "VW trommel / HPS (SGA) — voorwas + zware delen (50,000L)","category": "Sorting","size": Vector3(3.6, 4.5, 8.0),  "color": Color(0.62, 0.62, 0.60)},
 			# ── Wash line (wet section additions) ────────────────────────────
 			{"id": "prewash_drum",   "name": "Pre-wash drum (2.5x scale)", "category": "Washing",    "size": Vector3(6.0, 6.5, 11.25), "color": Color(0.40, 0.54, 0.58)},
 			{"id": "mas_droger",     "name": "MAS droger (dryer)", "category": "Washing",    "size": Vector3(2.0, 2.4, 3.0),  "color": Color(0.60, 0.62, 0.64)},
@@ -407,6 +452,13 @@ static func items() -> Array[Dictionary]:
 			# (water_circuit_3a_la1.md:12 "geen volumes") — flag F1. Modeled
 			# DEAD-END (no outlet documented — flag F2).
 			{"id": "kleine_la",     "name": "Kleine LA (open waterbak, 3B uitloopzijde)", "category": "Water / utilities", "size": Vector3(1.5, 1.2, 1.5), "color": Color(0.40, 0.52, 0.60)},
+			# Heater cabinet — operator spec 2026-08-28 (doc-walk Q2.4): "sixty
+			# by sixty centimeter. And then about two meters high, which is
+			# also where, like, the filters sit … from the bottom of these
+			# filter stacks, the pipes go to the blower." Heats the air the
+			# adjacent blower sucks in (3A rondmeng loop). Air-side utility —
+			# MachineFlow role "none", placement only.
+			{"id": "heater_cabinet","name": "Heater/filter cabinet (hete-lucht unit)", "category": "Water / utilities", "size": Vector3(0.6, 2.0, 0.6), "color": Color(0.52, 0.50, 0.48)},
 			# Tankje tussen extruders (2026-07-06, water_small.md §2): small water
 			# tank in the pellet/cooling-water cluster, ONE PER LINE (3A + 3B),
 			# each with its OWN pump directly below it (flow diagrams 261_CeDo130
@@ -448,6 +500,15 @@ static func items() -> Array[Dictionary]:
 			{"id": "heetafslag",     "name": "Heetafslag (hot-face cutter)", "category": "Extruders",    "size": Vector3(1.8, 2.0, 2.4),  "color": Color(0.44, 0.40, 0.40)},
 			{"id": "ontwaterzeef",   "name": "Ontwaterzeef (dewater screen)","category": "Separation",   "size": Vector3(1.8, 1.8, 3.2),  "color": Color(0.50, 0.56, 0.60)},
 			{"id": "weegschaal",     "name": "Weegschaal (25 kg batch weigh)","category": "Logistics",   "size": Vector3(1.2, 2.2, 1.2),  "color": Color(0.55, 0.57, 0.60)},
+			# Bigbag station — doc-walk gap 2.2 (lijn_3a_flow.md edge 36:
+			# Weegschaal → bigbag station; ruled a 3A-ONLY feature in
+			# question_answers.json). Operator composite spec 2026-08-28 from
+			# two reference images (sent in chat, to be archived): BOTTOM =
+			# open steel frame, bag hanging by its 4 loops on corner hangers,
+			# resting on a wooden EURO pallet; TOP = fill head with the bag's
+			# "trunk" inlet sleeve bound to a metal fill cylinder with a BLUE
+			# strap, and a small cyclone on top of the frame.
+			{"id": "bigbag_station", "name": "Bigbag station (weegschaal aftap)","category": "Logistics", "size": Vector3(1.7, 3.6, 1.7),  "color": Color(0.72, 0.73, 0.75)},
 			{"id": "voorraad_silo",  "name": "Voorraad silo (granulate)",    "category": "Structure",    "size": Vector3(3.0, 6.5, 3.0),  "color": Color(0.66, 0.68, 0.72)},
 			# ── OUTDOOR PELLET SILOS MS/LS (2026-07-06, silos_ms_ls.md) ───────
 			# Silopark: 10 silos in 2 rows of 5 (operator ruling B8 2026-07-06,
@@ -1686,6 +1747,7 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 		# Small water fixtures 2026-07-06 (water_small.md §1/§2) — role "none",
 		# never enter LineFlow / the HMI.
 		"kleine_la":               _m_kleine_la(p, size, color, ghost)
+		"heater_cabinet":          _m_heater_cabinet(p, size, color, ghost)
 		"tankje_tussen_extruders": _m_tankje_extruders(p, size, color, ghost)
 		# ── Hoses & Air (visual placeables, do NOT enter LineFlow / the HMI) ──
 		"reel_water_thick_yellow": _m_hose_reel(p, size, color, ghost, 0.045)
@@ -1711,15 +1773,27 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 		"scraper_conveyor":_m_scraper_conveyor(p, size, color, ghost)
 		"verdeelwals":    _m_verdeelwals(p, size, color, ghost)
 		"ringleiding":    _m_ringleiding(p, size, color, ghost)
+		"ringleiding_3a": _m_ringleiding_3a(p, size, color, ghost)
 		"thermal_dryer":  _m_thermal_dryer(p, size, color, ghost)
+		"thermal_dryer_decommissioned": _m_thermal_dryer_decommissioned(p, size, color, ghost)
 		# ── Line 3C extruder back-end (#175) ──────────────────────────────────
 		"compactorband":  _m_compactorband(p, size, color, ghost)
-		"extruder", "extruder_screw": _m_extruder_unit(p, size, color, ghost)
+		"extruder": _m_extruder_unit(p, size, color, ghost)
+		# 3C's screw entry is ONLY the barrel section — the PCU (compactor,
+		# idx 21), kopfilter (26), vacuum_degas (24) and melt_pump (25) are
+		# STANDALONE machines in LINE_3C_SEQ. Routing this id through the
+		# full unit builder doubled all of them in miniature (doc-walk
+		# follow-on to gap 1.3, verified 2026-08-28). The purpose-built
+		# barrel-only _m_extruder_screw had existed UNDISPATCHED all along —
+		# orphaned-model disease case #4 (after sga_drum, vw_trommel and the
+		# fixed-equipment water blocks).
+		"extruder_screw": _m_extruder_screw(p, size, color, ghost)
 		"vacuum_degas":   _m_vacuum_degas(p, size, color, ghost)
 		"kopfilter":      _m_kopfilter(p, size, color, ghost)
 		"heetafslag":     _m_heetafslag(p, size, color, ghost)
 		"ontwaterzeef":   _m_ontwaterzeef(p, size, color, ghost)
 		"weegschaal":     _m_weegschaal(p, size, color, ghost)
+		"bigbag_station": _m_bigbag_station(p, size, color, ghost)
 		"voorraad_silo":  _m_silo(p, size, color, ghost)
 		# Outdoor MS/LS pellet silos + EOP endpoint (2026-07-06 batch).
 		"ms_silo_buiten": _m_silo_buiten(p, size, color, ghost, "ms")
@@ -1729,6 +1803,7 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 		"metaaldetector": _m_metaaldetector(p, size, color, ghost)
 		"vw_trommel":     _m_vw_trommel(p, size, color, ghost)
 		"scheidingsgoot": _m_scheidingsgoot(p, size, color, ghost)
+		"sga_feed_chute": _m_sga_feed_chute(p, size, color, ghost)
 		"mas_droger":     _m_mas_droger(p, size, color, ghost)
 		# ── Consolidated single-model extruder unit (#92): feed tower → barrel →
 		#    C-2 laser-filter → twin filter modules → meltpump → Wave-Cut pelletizer ─
@@ -2089,9 +2164,12 @@ static func extend_machine_legs(root: Node3D, drop: float) -> int:
 
 ## A TEFC electric motor: finned body cylinder + terminal box on top. axis as _cyl.
 static func _motor_unit(parent: Node3D, r: float, length: float, pos: Vector3, axis: String, ghost: bool) -> void:
-	var dark := _mat(_DARK, ghost, 0.55, 0.5)
+	# PLANT-WIDE RULE (operator 2026-08-28, flotation-tank walk): "All motors
+	# in the factory are blue, by the way, dark blue. If you look at the CeDo
+	# logo, it would be the blue from that logo." cedo_logo.svg fill #191E6C.
+	var motor_blue := _mat(Color(0.098, 0.118, 0.424), ghost, 0.35, 0.5)
 	var blk := _mat(Color(0.12, 0.12, 0.13), ghost, 0.3, 0.6)
-	_cyl(parent, r, r, length, pos, dark, axis)
+	_cyl(parent, r, r, length, pos, motor_blue, axis)
 	# terminal/junction box sits on top regardless of motor axis
 	_box(parent, Vector3(r * 0.8, r * 0.5, length * 0.45), pos + Vector3(0.0, r * 0.95, 0.0), blk)
 
@@ -4841,48 +4919,23 @@ static func _m_flotation(p: Node3D, size: Vector3, color: Color, ghost: bool, wi
 					(0.035 if is_end else blade_t), (0.42 if is_end else 0.28), roller)
 			pad.rotation.x = TAU * (float(pi) * 0.13)   # phase offset so they don't flap in unison
 			# per-paddle drive motor, IN LINE with the axle, just outside the +X wall
-			var mr : float = 0.16 if is_end else 0.09
-			var ml : float = 0.44 if is_end else 0.24
+			# Operator 2026-08-28: each paddle has its own motor; the two large
+			# paddles get motors ~TWICE the small ones; a small paddle motor is
+			# ~10 cm dia or less ("smaller than a pipe from a blower").
+			var mr : float = 0.10 if is_end else 0.05
+			var ml : float = 0.40 if is_end else 0.20
 			_motor_unit(p, mr, ml, Vector3(side_x + ml * 0.5 + 0.06, roll_y, pz), "x", ghost)
 	# Metal cover plate hiding the LARGE 1st paddle — 3A/3B only (operator).
 	if not ghost and not wide:
 		_box(p, Vector3(size.x * 0.9, 0.05, hz * 0.30),
 				Vector3(0.0, roll_y + large_r + 0.12, -hz * 0.85), tank)
-	# ── SCRAPER ABOVE +Z END ──────────────────────────────────────────────────
-	# Slow scraper bar with 6 perpendicular fingers, mounted above the water at
-	# the +Z (outlet) end. Drags floating material over the weir into the
-	# discharge container on the floor.
-	if not ghost:
-		var scrap_y : float = rim_y + 0.50
-		var scrap_z : float = hz * 0.97
-		_box(p, Vector3(0.30, 0.30, 0.30),
-				Vector3(size.x * 0.46, scrap_y, scrap_z), tank)
-		var scraper := _spinning_cyl(p, 0.05, 0.05, size.x * 0.80,
-				Vector3(0.0, scrap_y, scrap_z), roller, "x", Vector3.RIGHT, ghost, 3.0)
-		_attach_paddle_blades(scraper, 6, size.x * 0.74, 0.03, 0.40, roller)
-		scraper.set_meta("comp", "scraper")
-	# ── DISCHARGE CONTAINER (~1.2 × 1.2 × 1.0 m, open top) ───────────────────
-	# Sits on the floor at the +Z end. 4 walls + floor.
-	if not ghost:
-		var cont_root := Node3D.new()
-		cont_root.name = "DischargeContainer"
-		var cont_w : float = 1.2
-		var cont_h : float = 1.0
-		var cont_d : float = 1.2
-		var cont_y : float = cont_h * 0.5
-		cont_root.position = Vector3(0.0, 0.0, hz + cont_d * 0.5 + 0.10)
-		p.add_child(cont_root)
-		var bin_mat := _mat(Color(0.55, 0.42, 0.20), ghost, 0.5, 0.5)
-		_box(cont_root, Vector3(cont_w, 0.06, cont_d),
-				Vector3(0.0, 0.03, 0.0), bin_mat)
-		_box(cont_root, Vector3(0.06, cont_h, cont_d),
-				Vector3( cont_w * 0.5, cont_y, 0.0), bin_mat)
-		_box(cont_root, Vector3(0.06, cont_h, cont_d),
-				Vector3(-cont_w * 0.5, cont_y, 0.0), bin_mat)
-		_box(cont_root, Vector3(cont_w, cont_h, 0.06),
-				Vector3(0.0, cont_y,  cont_d * 0.5), bin_mat)
-		_box(cont_root, Vector3(cont_w, cont_h, 0.06),
-				Vector3(0.0, cont_y, -cont_d * 0.5), bin_mat)
+	# ── NO SURFACE SCRAPER, NO SECOND CONTAINER (operator 2026-08-28) ─────────
+	# #230's "slow scraper bar above the +Z outlet + discharge container" was a
+	# MIS-SURVEY of the uittrek PADDLE: "the outlet pedal … pushes film
+	# basically over the edge of the flotation tank into the dewatering screw.
+	# There is no container involved there, and it's not a scraper." Removed;
+	# the ONE container is the bottom scraper's (below its downspout).
+
 	# ── WEIR-SCOOP OVERFLOW CHUTE (kept; #100) ────────────────────────────────
 	# On the OUTSIDE of the +Z wall — overflow path to the downstream dewater_screw.
 	if not ghost:
@@ -4915,6 +4968,73 @@ static func _m_flotation(p: Node3D, size: Vector3, color: Color, ghost: bool, wi
 		field.set_floor_y(flat_bot_y + 0.06)      # heavies fall to the narrow flat bottom
 		field.set_mat_mode(true)
 		p.add_child(field)
+
+	# ── BOTTOM SCRAPER + 45° INCLINE + CONTAINER (Q2.3 + operator side-view
+	# drawing flotation_tank_sketch_2026-08-28.png) ────────────────────────────
+	# "the heavy parts can sink to the bottom. Then the scraper at the bottom
+	# removes it … then up like a forty-five degree thing … into the container
+	# below." The DRAWING settles the geometry the voice left open: the chain
+	# runs the flat bottom, the incline starts MID-BOTTOM and climbs at 45°
+	# toward the OUTLET (+Z) side (my first build had it at the infeed end —
+	# corrected), enclosed in a chute HOUSING that rises above the waterline
+	# ("so that the water doesn't exit through the scraper chute"), then a
+	# bend-over downspout drops the sediment into an open container standing
+	# on the floor past the tank. Assembly offset to -X so the weir chute +
+	# surface-scraper furniture keep the centreline.
+	if not ghost:
+		var ch_mat := _mat(Color(0.30, 0.30, 0.33), ghost, 0.6, 0.5)
+		var sc_x : float = -0.9
+		var run_half : float = flat_bot_z * 0.5 - 0.3
+		var ch_y : float = flat_bot_y + 0.14
+		var inc_start_z : float = 0.5
+		# Lower + upper chain runs along the bottom (idler turn at the -Z end).
+		_box(p, Vector3(0.05, 0.03, run_half + inc_start_z), Vector3(sc_x, ch_y, (inc_start_z - run_half) * 0.5), ch_mat)
+		_box(p, Vector3(0.05, 0.03, run_half + inc_start_z), Vector3(sc_x, ch_y + 0.18, (inc_start_z - run_half) * 0.5), ch_mat)
+		var n_fl : int = int((run_half + inc_start_z) / 0.9)
+		for fi in n_fl:
+			var fz : float = -run_half + 0.45 + float(fi) * 0.9
+			_box(p, Vector3(flat_bot_x * 0.62, 0.05, 0.06), Vector3(sc_x, ch_y - 0.02, fz), ch_mat)
+		_cyl(p, 0.10, 0.10, flat_bot_x * 0.5, Vector3(sc_x, ch_y + 0.09, -run_half), ch_mat, "x")
+		# 45° incline from mid-bottom up past the waterline at the +Z side.
+		var inc_len : float = 4.6
+		var inc := Node3D.new()
+		inc.position = Vector3(sc_x, ch_y, inc_start_z)
+		inc.rotation.x = deg_to_rad(45.0)
+		p.add_child(inc)
+		var tr_w : float = flat_bot_x * 0.62
+		# Chute HOUSING: floor, two side walls AND a lid — enclosed so the tank
+		# water cannot escape up the scraper path (operator).
+		_box(inc, Vector3(tr_w, 0.04, inc_len), Vector3(0.0, 0.0, inc_len * 0.5), tank)
+		for sx3 in [-1.0, 1.0]:
+			_box(inc, Vector3(0.04, 0.34, inc_len), Vector3(float(sx3) * tr_w * 0.5, 0.17, inc_len * 0.5), tank)
+		_box(inc, Vector3(tr_w, 0.04, inc_len), Vector3(0.0, 0.34, inc_len * 0.5), tank)
+		# Chain + flights riding the incline (visible at the open head end).
+		_box(inc, Vector3(0.05, 0.03, inc_len * 0.96), Vector3(0.0, 0.10, inc_len * 0.5), ch_mat)
+		for fi2 in 4:
+			_box(inc, Vector3(tr_w * 0.8, 0.05, 0.06), Vector3(0.0, 0.09, inc_len * (0.16 + 0.24 * float(fi2))), ch_mat)
+		# Head: drive sprocket + motor above the rim, past the +Z wall.
+		var head := Vector3(sc_x, ch_y + inc_len * sin(deg_to_rad(45.0)), inc_start_z + inc_len * cos(deg_to_rad(45.0)))
+		var drv := _spinning_cyl(p, 0.10, 0.10, flat_bot_x * 0.5, head, ch_mat, "x", Vector3.RIGHT, ghost, 4.0)
+		drv.set_meta("comp", "bottom_scraper")
+		_motor_unit(p, 0.10, 0.30, head + Vector3(flat_bot_x * 0.35, 0.0, 0.0), "x", ghost)
+		# Bend-over DOWNSPOUT (the drawing's orange hook): short forward roof +
+		# vertical drop duct over the container.
+		_box(p, Vector3(tr_w, 0.04, 0.55), head + Vector3(0.0, 0.16, 0.24), tank)
+		var spout_z : float = head.z + 0.55
+		_box(p, Vector3(0.30, 1.1, 0.04), Vector3(sc_x - 0.15 + 0.15, head.y - 0.35, spout_z + 0.17), tank)
+		_box(p, Vector3(0.04, 1.1, 0.34), Vector3(sc_x - 0.17, head.y - 0.35, spout_z), tank)
+		_box(p, Vector3(0.04, 1.1, 0.34), Vector3(sc_x + 0.17, head.y - 0.35, spout_z), tank)
+		# The CONTAINER below the spout, on the floor past the tank (pink in the
+		# drawing).
+		var bcont := Node3D.new()
+		bcont.name = "BottomScraperContainer"
+		bcont.position = Vector3(sc_x, 0.0, spout_z + 0.1)
+		p.add_child(bcont)
+		var bbin := _mat(Color(0.42, 0.44, 0.30), ghost, 0.5, 0.5)
+		_box(bcont, Vector3(1.2, 0.06, 1.2), Vector3(0.0, 0.03, 0.0), bbin)
+		for sx4 in [-1.0, 1.0]:
+			_box(bcont, Vector3(0.06, 1.0, 1.2), Vector3(float(sx4) * 0.6, 0.5, 0.0), bbin)
+			_box(bcont, Vector3(1.2, 1.0, 0.06), Vector3(0.0, 0.5, float(sx4) * 0.6), bbin)
 
 	# ── #232 PHOTO-ACCURATE HOPPER EXTERIOR (flotatietank_3A.png) ──────────────
 	# Operator 2026-07-15: "HOPPER 4A" IS the flotation tank — rebuild faithfully.
@@ -5384,7 +5504,10 @@ static func _build_tool(id: String, size: Vector3, ghost: bool) -> Node3D:
 ##
 ##   • opzetband_3a3b — 4 m flat + 6 m at 40° + 0.5 m horizontal top
 ##   • opzetband_3c6  — 4 m flat + 8 m at 35°
-##   • westa_band_1   — 8 m at 35°, no flat
+##   • westa_band_1   — 45° climb + 0.6 m top flat, run DERIVED from the
+##                     hoekgoot/funnel port helpers (NOT the operator's old
+##                     "8 m at 35°" — that stale bullet outlived two rewrites
+##                     of the branch below; review finding 2026-08-28)
 ##   • opzetband_1    — 5 m at 25°, 3 m wide, funnel walls
 ##                     (0–0.75 m straight wide, 0.75–3.0 m narrowing to 1.5 m wide,
 ##                      3.0–5.0 m straight narrow)
@@ -5409,19 +5532,32 @@ static func _build_opzetband(id: String, size: Vector3, ghost: bool) -> Node3D:
 			belt.incline_run = 8.0 * cos(deg_to_rad(35.0))
 			belt.deck_width  = 2.5
 		"westa_band_1":
-			# #196 — re-spec'd as the 45° feeder belt that takes uitvoerband
-			# output and lifts it to the TOP of the 2.5× prewash drum.
-			# Drum top is ~6.5 m off the floor; 45° with no flat deck means
-			# horizontal run = vertical rise, so incline_run = 6.5 m and
-			# slope hyp ≈ 9.2 m. deck_width kept slim (1.2 m) — this is a
-			# discharge feeder, not a wide intake.
+			# #196 — the 45° feeder belt at the end of the wash-feed group.
+			# #fold 2026-08-28: with the line-1 fold laid out, the belt climbs
+			# leg C (north) and discharges into the sga_feed_chute's IN port;
+			# the chute makes the operator's "90 deg right turn" and drops
+			# into the vw_trommel funnel on leg D. The whole height chain is
+			# DERIVED here from the two shared port helpers — no baked height:
+			#   chute lift = funnel mouth + 0.30 drop − chute OUT height
+			#   belt lip   = chute IN height at that lift + 0.15 drop
+			# (Before the fold this spec briefly aimed the lip at the funnel
+			# directly; before THAT it was a stale 6.5 m constant aimed at a
+			# deleted stub — measured 3.05 m too high. Guarded live by
+			# test_line1_flow_conformance S4/S4b.)
 			belt.deck_length = 0.0
 			belt.incline_deg = 45.0
-			belt.incline_run = 6.5
 			belt.deck_width  = 1.2
-			# Short flat at the top so material drops cleanly INTO the drum's
-			# top feed port rather than skidding off the end of the slope.
+			# Short flat at the top so material drops cleanly INTO the chute's
+			# infeed rather than skidding off the end of the slope.
 			belt.top_flat_m  = 0.6
+			var vt_mouth_y : float = vw_trommel_funnel_mouth_local(
+				Vector3(get_item("vw_trommel")["size"])).y
+			var c_ports : Dictionary = sga_feed_chute_ports_local(
+				Vector3(get_item("sga_feed_chute")["size"]))
+			var chute_lift : float = vt_mouth_y + 0.30 - (c_ports["out"] as Vector3).y
+			var lip_y : float = (c_ports["in"] as Vector3).y + chute_lift + 0.15
+			belt.incline_run = (lip_y - belt.deck_height) \
+				/ tan(deg_to_rad(belt.incline_deg))
 		"opzetband_1":
 			# #196 — 2× scale: 10 m @ 25° (was 5 m), 4 m wide (was 3 m). Metal
 			# detector + reverse-reject head is built INTO this belt at 3/4 along
@@ -7573,6 +7709,124 @@ static func _m_weegschaal(p: Node3D, size: Vector3, color: Color, ghost: bool) -
 	disp_mat.emission = Color(0.12, 0.92, 0.32)
 	_box(p, Vector3(0.24, 0.12, 0.01), Vector3(0.0, size.y * 0.65, size.z * 0.485), disp_mat)
 
+# ── Heater/filter cabinet — operator spec 2026-08-28 (doc-walk Q2.4): 60×60 cm,
+#    ~2 m high; the filter stacks sit inside, and pipes run from the BOTTOM of
+#    the stacks to the adjacent blower. Heats the air the blower sucks in (3A
+#    rondmeng loop; 3B's plasmaq-heater question still open). Air-side utility,
+#    role "none". ─────────────────────────────────────────────────────────────
+static func _m_heater_cabinet(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
+	var shell := _mat(color, ghost, 0.4, 0.5)
+	var dark  := _mat(_DARK, ghost, 0.5, 0.6)
+	var steel := _mat(_STEEL, ghost, 0.6, 0.35)
+	var warn  := _mat(Color(0.85, 0.55, 0.10), ghost, 0.2, 0.6)   # hot-surface accent
+
+	# Cabinet body on a low plinth.
+	_box(p, Vector3(size.x, 0.06, size.z), Vector3(0.0, 0.03, 0.0), dark)
+	_box(p, Vector3(size.x * 0.96, size.y - 0.10, size.z * 0.96),
+		Vector3(0.0, (size.y - 0.10) * 0.5 + 0.06, 0.0), shell)
+	# Louvre vent panel on the front (+Z) upper half — the air intake.
+	for vy in [0.62, 0.70, 0.78, 0.86]:
+		_box(p, Vector3(size.x * 0.70, 0.02, 0.02),
+			Vector3(0.0, size.y * vy, size.z * 0.49), dark)
+	# Filter-stack access door (lower front) with a handle.
+	_box(p, Vector3(size.x * 0.72, size.y * 0.38, 0.02),
+		Vector3(0.0, size.y * 0.28, size.z * 0.485), steel)
+	_box(p, Vector3(0.03, 0.10, 0.03), Vector3(size.x * 0.28, size.y * 0.28, size.z * 0.50), dark)
+	# Hot-surface warning band near the top.
+	_box(p, Vector3(size.x * 0.97, 0.05, size.z * 0.97), Vector3(0.0, size.y * 0.93, 0.0), warn)
+	# The pipe from the filter-stack BOTTOM out the -X flank toward the blower
+	# (operator: "from the bottom of these filter stacks, the pipes go to the
+	# blower"). Elbow: short vertical drop + horizontal run.
+	_cyl(p, 0.09, 0.09, 0.25, Vector3(-size.x * 0.30, 0.30, 0.0), steel, "y")
+	_cyl(p, 0.09, 0.09, size.x * 1.4, Vector3(-size.x * 0.95, 0.18, 0.0), steel, "x")
+	# Small electrical junction box on the +X flank.
+	_box(p, Vector3(0.04, 0.18, 0.14), Vector3(size.x * 0.50, size.y * 0.55, 0.0), dark)
+
+# ── Bigbag station (gap 2.2, lijn_3a_flow.md edge 36) — operator composite
+#    spec 2026-08-28 from two chat reference images: BOTTOM per image 1 (open
+#    square-tube frame, bag hanging by its 4 loops on corner strap hangers,
+#    resting on a wooden EURO pallet), TOP per image 2 (metal fill cylinder
+#    with the bag's "trunk" inlet sleeve bound around it with a BLUE strap,
+#    small cyclone on top of the frame). Q&A behaviour fact, NOT built here:
+#    after a knife/screen change the extruder runs out to bigbag until quality
+#    is OK — gameplay hook for a later pass. size = (1.7, 3.6, 1.7). ─────────
+static func _m_bigbag_station(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
+	var steel  := _mat(color, ghost, 0.55, 0.4)                      # galvanized frame
+	var dark   := _mat(_DARK, ghost, 0.5, 0.6)
+	var wood   := _mat(Color(0.62, 0.47, 0.30), ghost, 0.0, 0.85)    # pallet timber
+	var fabric := _mat(Color(0.90, 0.90, 0.88), ghost, 0.0, 0.92)    # woven PP bag
+	var strap  := _mat(Color(0.94, 0.94, 0.92), ghost, 0.0, 0.85)    # lifting loops
+	var blue   := _mat(Color(0.16, 0.32, 0.75), ghost, 0.1, 0.6)     # trunk clamp strap
+	var inox   := _mat(_STEEL, ghost, 0.7, 0.3)                      # fill head / cyclone
+
+	var post_x : float = size.x * 0.44
+	var frame_top : float = size.y * 0.68                            # ≈ 2.45 m
+
+	# ── EURO pallet on the floor (image 1): 3 bearers + deck boards. ─────────
+	for bx in [-0.45, 0.0, 0.45]:
+		_box(p, Vector3(0.14, 0.10, 1.00), Vector3(bx, 0.05, 0.0), wood)
+	for bz in [-0.44, -0.22, 0.0, 0.22, 0.44]:
+		_box(p, Vector3(1.18, 0.022, 0.12), Vector3(0.0, 0.111, bz), wood)
+
+	# ── Big bag: bulged white cube on the pallet. ────────────────────────────
+	var bag_base : float = 0.125
+	var bag_h : float = size.y * 0.335                               # ≈ 1.2 m
+	var bag_top : float = bag_base + bag_h
+	_box(p, Vector3(0.94, bag_h, 0.94), Vector3(0.0, bag_base + bag_h * 0.5, 0.0), fabric)
+	# low-belly bulge (a filled bag bellies out at the BOTTOM; keeping the
+	# band low and tall tucks its edge under the straps instead of reading as
+	# a second stacked box — first render showed a hard mid-bag step)
+	_box(p, Vector3(1.04, bag_h * 0.62, 1.04), Vector3(0.0, bag_base + bag_h * 0.33, 0.0), fabric)
+
+	# ── Trunk inlet sleeve (slurf) up to the fill cylinder, blue strap bound. ─
+	var cyl_bot : float = frame_top - 0.28                           # fill cylinder lower lip
+	_cyl(p, 0.115, 0.20, cyl_bot - bag_top, Vector3(0.0, (bag_top + cyl_bot) * 0.5, 0.0), fabric, "y")
+	_cyl(p, 0.135, 0.135, 0.05, Vector3(0.0, cyl_bot + 0.06, 0.0), blue, "y")   # the blue strap
+
+	# ── Fill head (image 2): metal cylinder through the frame deck + clamp. ──
+	_cyl(p, 0.115, 0.115, 0.55, Vector3(0.0, cyl_bot + 0.24, 0.0), inox, "y")
+	_cyl(p, 0.145, 0.145, 0.04, Vector3(0.0, cyl_bot + 0.14, 0.0), dark, "y")   # clamp collar
+
+	# ── Cyclone on top of the frame (image 2 style). ─────────────────────────
+	var cy_body : float = frame_top + 0.62
+	_cyl(p, 0.30, 0.12, 0.32, Vector3(0.0, frame_top + 0.30, 0.0), inox, "y")   # cone down to the fill pipe
+	_cyl(p, 0.30, 0.30, 0.42, Vector3(0.0, cy_body, 0.0), inox, "y")            # body
+	_cyl(p, 0.07, 0.07, size.x * 0.42, Vector3(size.x * 0.26, cy_body + 0.10, 0.0), inox, "x")  # tangential inlet stub
+	_cyl(p, 0.09, 0.09, 0.24, Vector3(0.0, cy_body + 0.32, 0.0), inox, "y")     # top vent stub
+
+	# ── Open steel frame (image 1): 4 posts + top perimeter + head beams. ────
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			var post := _box(p, Vector3(0.08, frame_top, 0.08),
+				Vector3(sx * post_x, frame_top * 0.5, sz * post_x), steel)
+			post.add_to_group("machine_leg")
+			post.set_meta("leg_h", frame_top)
+	for sz2 in [-1.0, 1.0]:
+		_box(p, Vector3(post_x * 2.0 + 0.08, 0.10, 0.08),
+			Vector3(0.0, frame_top + 0.05, sz2 * post_x), steel)
+		_box(p, Vector3(0.08, 0.10, post_x * 2.0 + 0.08),
+			Vector3(sz2 * post_x, frame_top + 0.05, 0.0), steel)
+	# head beams carrying the fill cylinder
+	for sx3 in [-1.0, 1.0]:
+		_box(p, Vector3(0.08, 0.08, post_x * 2.0),
+			Vector3(sx3 * 0.20, frame_top + 0.12, 0.0), steel)
+	# base rails along two sides with foot pads
+	for sz3 in [-1.0, 1.0]:
+		_box(p, Vector3(post_x * 2.0 + 0.16, 0.06, 0.10),
+			Vector3(0.0, 0.03, sz3 * post_x), steel)
+
+	# ── 4 lifting loops (image 2): bag corners up to hangers at the posts. ───
+	for sx4 in [-1.0, 1.0]:
+		for sz4 in [-1.0, 1.0]:
+			var a := Vector3(sx4 * 0.40, bag_top - 0.06, sz4 * 0.40)
+			var b := Vector3(sx4 * (post_x - 0.06), frame_top - 0.12, sz4 * (post_x - 0.06))
+			var d := b - a
+			var loop := _box(p, Vector3(0.055, d.length(), 0.012),
+				(a + b) * 0.5, strap)
+			loop.rotation = Vector3(atan2(d.z, d.y), 0.0, -atan2(d.x, d.y))
+			# hanger ratchet block at the top of each strap (image 1 detail)
+			_box(p, Vector3(0.07, 0.12, 0.05), b + Vector3(0.0, 0.06, 0.0), dark)
+
 # ── steel skip (PLASTIC, sat under a chute): green-grey weathered box with
 #    visible forklift pockets at the base. Forklift drives in, lifts, dumps. ──
 static func _m_steel_skip(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
@@ -9674,6 +9928,85 @@ static func _m_verdeelwals(p: Node3D, size: Vector3, color: Color, ghost: bool) 
 
 # ── ringleiding (pneumatic ring main): a horizontal smooth-pipe loop up high that
 #    feeds conveying air to drop points. Cosmetic — NO rotor. ────────────────────
+# ── Ringleiding 3A — the rondmeng serpentine, photo-accurate from
+#    _ringleiding_1..4.png (operator 2026-08-28: "it's the ring"). Three
+#    stacked horizontal runs of Ø ~440 cream pipe joined by 180° U-bends at
+#    alternating ends; clamp collars along the runs; grey square-tube cage
+#    with YELLOW-trimmed posts + wire-mesh panels; pressure gauge on the top
+#    bend flange; entry riser at the bottom, exit continuing up from the top
+#    run (to the shared silo-top cyclone); vendor placard "GLOBAL SPIRAL
+#    CHUTES MOD. 260". size = (1.6, 2.8, 5.0), runs along Z. ─────────────────
+static func _m_ringleiding_3a(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
+	var pipe  := _mat(color, ghost, 0.15, 0.55)                     # cream GRP/steel pipe
+	var dark  := _mat(_DARK, ghost, 0.5, 0.6)
+	var frame := _mat(Color(0.48, 0.50, 0.53), ghost, 0.5, 0.5)     # grey cage tube
+	var trim  := _mat(_SAFETY, ghost, 0.2, 0.6)                     # yellow post trim
+	var steel := _mat(_STEEL, ghost, 0.6, 0.35)
+
+	var pr : float = 0.22                                           # pipe radius (Ø 440)
+	var run_len : float = size.z * 0.78
+	var ys : Array[float] = [0.62, 1.40, 2.18]                      # the three run heights
+	var bend_r : float = (ys[1] - ys[0]) * 0.5                      # U-bend radius
+
+	# ── The three runs with clamp collars. ───────────────────────────────────
+	for yi in ys.size():
+		_cyl(p, pr, pr, run_len, Vector3(0.0, ys[yi], 0.0), pipe, "z")
+		for cz in [-0.30, -0.10, 0.10, 0.30]:
+			_cyl(p, pr + 0.015, pr + 0.015, 0.05, Vector3(0.0, ys[yi], run_len * float(cz)), dark, "z")
+
+	# ── 180° U-bends at ALTERNATING ends (bottom→mid at -Z, mid→top at +Z),
+	# each approximated by 5 short segments on a half-circle arc. ────────────
+	for bi in [0, 1]:
+		var y_lo : float = ys[bi]
+		var end_sign : float = -1.0 if bi == 0 else 1.0
+		var cz2 : float = end_sign * run_len * 0.5
+		var cy2 : float = y_lo + bend_r
+		for si in 5:
+			var a0 : float = PI * float(si) / 5.0
+			var a1 : float = PI * float(si + 1) / 5.0
+			var p0 := Vector3(0.0, cy2 - cos(a0) * bend_r, cz2 + end_sign * sin(a0) * bend_r)
+			var p1 := Vector3(0.0, cy2 - cos(a1) * bend_r, cz2 + end_sign * sin(a1) * bend_r)
+			var seg_mid := (p0 + p1) * 0.5
+			var d := p1 - p0
+			var seg := _cyl(p, pr, pr, d.length() + pr * 0.6, seg_mid, pipe, "y")
+			seg.rotation.x = atan2(d.z, d.y)
+
+	# ── Entry riser (floor → bottom run, -Z end) + exit up from the top run
+	# (+Z end, toward the silo-top cyclone). ─────────────────────────────────
+	_cyl(p, pr, pr, ys[0], Vector3(0.0, ys[0] * 0.5, -run_len * 0.38), pipe, "y")
+	_cyl(p, pr, pr, size.y - ys[2], Vector3(0.0, (ys[2] + size.y) * 0.5, run_len * 0.38), pipe, "y")
+
+	# ── Gauge on a flanged joint at the top bend. ────────────────────────────
+	_cyl(p, pr + 0.03, pr + 0.03, 0.06, Vector3(0.0, ys[2], run_len * 0.42), steel, "z")
+	_cyl(p, 0.03, 0.03, 0.10, Vector3(0.0, ys[2] + pr + 0.05, run_len * 0.42), dark, "y")
+	_cyl(p, 0.07, 0.07, 0.03, Vector3(0.0, ys[2] + pr + 0.13, run_len * 0.42), _mat(Color(0.92, 0.92, 0.90), ghost, 0.1, 0.7), "y")
+
+	# ── Cage: grey posts with yellow trim, top rails, wire-mesh side panels. ─
+	var px : float = size.x * 0.46
+	var pz : float = size.z * 0.47
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			var post := _box(p, Vector3(0.07, size.y * 0.92, 0.07),
+				Vector3(float(sx) * px, size.y * 0.46, float(sz) * pz), frame)
+			post.add_to_group("machine_leg")
+			post.set_meta("leg_h", size.y * 0.92)
+			_box(p, Vector3(0.075, size.y * 0.92, 0.02),
+				Vector3(float(sx) * px, size.y * 0.46, float(sz) * pz + 0.045), trim)
+	for sx2 in [-1.0, 1.0]:
+		_box(p, Vector3(0.06, 0.06, pz * 2.0), Vector3(float(sx2) * px, size.y * 0.92, 0.0), frame)
+		# Open cage rails (a solid grating panel rendered as an opaque slab
+		# and hid the serpentine — thin horizontal wires read as mesh better).
+		for ry in [0.25, 0.85, 1.45, 2.05, 2.45]:
+			_box(p, Vector3(0.02, 0.02, pz * 1.94), Vector3(float(sx2) * px, ry, 0.0), frame)
+	_box(p, Vector3(px * 2.0, 0.06, 0.06), Vector3(0.0, size.y * 0.92, pz), frame)
+	_box(p, Vector3(px * 2.0, 0.06, 0.06), Vector3(0.0, size.y * 0.92, -pz), frame)
+
+	# ── Vendor placard on the +X top rail. ───────────────────────────────────
+	if not ghost:
+		var plc := _stencil_label(p, "GLOBAL SPIRAL CHUTES  MOD. 260",
+			Vector3(0.9, 0.10, 0.01), "+X")
+		plc.position = Vector3(px + 0.05, size.y * 0.86, -pz * 0.4)
+
 static func _m_ringleiding(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
 	var pipe := _mat(color, ghost, 0.7, 0.3)
 	var dark := _mat(_DARK, ghost, 0.5, 0.5)
@@ -9740,6 +10073,57 @@ static func _m_ringleiding(p: Node3D, size: Vector3, color: Color, ghost: bool) 
 #    (fluid-bed tower) on a tapered hopper bottom. Visually distinct from the
 #    horizontal-drum mech_dryer. Primarily a vessel — no required rotor. ─────────
 # ── Thermal dryer: tall insulated cyclone drying tower with rotary airlock valve ────
+# ── Thermische droger, BUITEN GEBRUIK (3B) — ruling 3.1-C, operator 2026-08-28.
+#    The REAL machine form (both lines had this model): a flat SPIRAL CABINET,
+#    ~2×2 m from the front and 30-35 cm thick. Material enters mid-face, runs
+#    4-5 spiral loops from the inside outward, and exits at the side. The
+#    heater elements sit in the REMOVABLE SIDE PANELS. On 3B it was replaced
+#    by the plasmaq and stands DISCONNECTED: a ~20 cm pipe stub sticks out
+#    into nothing. (3A's working twin IS the rondmeng "ring" — the ringleiding
+#    placeable's remodel to this spec is a detail-program item.) ──────────────
+static func _m_thermal_dryer_decommissioned(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
+	var shell := _mat(color, ghost, 0.45, 0.5)
+	var dark  := _mat(_DARK, ghost, 0.5, 0.6)
+	var steel := _mat(_STEEL, ghost, 0.6, 0.35)
+	var seam  := _mat(Color(0.42, 0.42, 0.45), ghost, 0.5, 0.5)
+
+	var cab_w : float = size.x * 0.94       # ~2.0 m face width
+	var cab_h : float = 2.0                 # ~2 m face height
+	var cab_t : float = 0.34                # 30-35 cm thick
+	var base_y : float = 0.18
+	var cy : float = base_y + cab_h * 0.5
+
+	# Four stubby feet + the flat cabinet body.
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			_box(p, Vector3(0.08, base_y, 0.08),
+				Vector3(float(sx) * cab_w * 0.42, base_y * 0.5, float(sz) * cab_t * 0.35), dark)
+	_box(p, Vector3(cab_w, cab_h, cab_t), Vector3(0.0, cy, 0.0), shell)
+
+	# Removable SIDE PANELS (the heater elements live behind them): seam lines
+	# + two lift handles per panel on both ±X flanks.
+	for sx2 in [-1.0, 1.0]:
+		var px : float = float(sx2) * (cab_w * 0.5 + 0.005)
+		_box(p, Vector3(0.015, cab_h * 0.92, cab_t * 0.92), Vector3(px, cy, 0.0), seam)
+		for hy in [-0.3, 0.3]:
+			_box(p, Vector3(0.05, 0.03, 0.12), Vector3(px + float(sx2) * 0.02, cy + cab_h * hy, 0.0), dark)
+
+	# NO spiral shown on the face: the 4-5-loop spiral is INTERNAL (operator:
+	# "it's basically like a spiral" describing the inside) — the real
+	# exterior is plain sheet metal. Two render attempts at a spiral "hint"
+	# (stacked discs, then ring collars) both read as a speaker cone; plain
+	# panels with the blanked inlet + stub are the doc-faithful exterior.
+
+	# Mid-face inlet: BLANKED OFF (the feed was rerouted to the plasmaq) — a
+	# bolted blind flange where the entry pipe used to be.
+	_cyl(p, 0.11, 0.11, 0.05, Vector3(0.0, cy, cab_t * 0.5 + 0.03), steel, "z")
+	_cyl(p, 0.13, 0.13, 0.015, Vector3(0.0, cy, cab_t * 0.5 + 0.06), dark, "z")
+
+	# THE 20 cm STUB — the side exit pipe that "sticks out. And then there's
+	# nothing." Open flange, no duct: the signature of the decommissioning.
+	_cyl(p, 0.10, 0.10, 0.20, Vector3(cab_w * 0.5 + 0.10, cy + cab_h * 0.28, 0.0), steel, "x")
+	_cyl(p, 0.125, 0.125, 0.02, Vector3(cab_w * 0.5 + 0.21, cy + cab_h * 0.28, 0.0), dark, "x")
+
 static func _m_thermal_dryer(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
 	var shell := _mat(color, ghost, 0.45, 0.45)
 	var dark := _mat(_DARK, ghost, 0.5, 0.55)
@@ -9928,6 +10312,22 @@ static func _m_metaaldetector(p: Node3D, size: Vector3, color: Color, ghost: boo
 ##
 ## All materials pulled from MaterialPalette so future visual passes stay
 ## consistent. The drum still uses _spinning_cyl so it animates at runtime.
+
+## Local position of the TOP of the vw_trommel's feed-funnel mouth (the -Z
+## intake cone) for a trommel of `size`. SINGLE SOURCE OF TRUTH shared by
+## _m_vw_trommel (which places the cone with it) and the westa_band_1 spec in
+## _build_opzetband (which aims its 45° discharge at it) — so the belt and the
+## funnel can never drift apart when the trommel is resized (the 2026-08-28
+## C5 swap did exactly that: the belt kept aiming at the old stub's 6.5 m top
+## while the real trommel's mouth sits at ~4.15 m).
+static func vw_trommel_funnel_mouth_local(size: Vector3) -> Vector3:
+	var drum_r  : float = minf(size.x * 0.46, 1.55)
+	var drum_cy : float = size.y * 0.12 + drum_r + 0.18     # leg_top + r + clearance
+	var drum_len : float = size.z * 0.85
+	# Cone centre sits at drum_cy + r*0.75; the cone is size.y*0.32 tall, so the
+	# mouth (top face) is half that above the centre.
+	return Vector3(0.0, drum_cy + drum_r * 0.75 + size.y * 0.16, -drum_len * 0.55)
+
 static func _m_vw_trommel(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> void:
 	var P = MaterialPalette
 	var shell    : StandardMaterial3D = P.mat_stainless_weathered()
@@ -9981,8 +10381,12 @@ static func _m_vw_trommel(p: Node3D, size: Vector3, _color: Color, ghost: bool) 
 		Vector3(0.0, drum_cy, drum_len * 0.5 + 0.50), stainless, "z")
 
 	# ── FEED HOPPER + INPUT CHUTE at the -Z (high) end ─────────────────────────
+	# Placed via vw_trommel_funnel_mouth_local() (mouth = cone TOP, so the cone
+	# centre is half its height below it) — the same function the westa_band_1
+	# spec aims at. Change the cone there, not here.
+	var funnel_mouth := vw_trommel_funnel_mouth_local(size)
 	_cyl(p, drum_r * 0.55, drum_r * 0.30, H * 0.32,
-		Vector3(0.0, drum_cy + drum_r * 0.75, -drum_len * 0.55), aged)
+		funnel_mouth - Vector3(0.0, H * 0.16, 0.0), aged)
 
 	# ── SOLID-TIRE SUPPORT ROLLERS (two pairs, one near each end) ──────────────
 	# Each pair has TWO tires below the drum, angled inward like trommel cradle
@@ -10080,36 +10484,160 @@ static func _m_vw_trommel(p: Node3D, size: Vector3, _color: Color, ghost: bool) 
 			Vector3(1.40, 0.20, 0.01), "+X")
 		cap_lbl.position = Vector3(drum_r + 0.02, drum_cy + drum_r * 0.20, drum_len * -0.10)
 
-# ── scheidingsgoot (separation gutter): a wide U-shaped sloped open trough that
-#    material slides down. Tilted a few degrees about X so it runs downhill along Z,
-#    on floor legs. Cosmetic — NO rotor. size = (1.6, 1.4, 3.0). ─────────────────
+	# ── BORDES (grate) + STAIRS — operator's line-1 drawing 2026-08-28
+	# (line1_washing_flow_sketch: yellow grate walkway along the drum with
+	# stairs at the upstream end). Rafter-#231 idiom: grated deck at working
+	# height on the -X aisle flank, safety-yellow railing on the outer edge,
+	# grating stair descending at the -Z (chute/upstream) end.
+	var bordes_y : float = drum_cy - drum_r * 0.55          # deck under the drum's belly line
+	var bordes_w : float = 0.95
+	var bordes_x : float = -(drum_r + bordes_w * 0.5 + 0.05)
+	var bordes_len : float = drum_len * 0.92
+	var safety := _mat(_SAFETY, ghost, 0.2, 0.6)
+	var b_dark := _mat(_DARK, ghost, 0.5, 0.6)
+	var b_steel := _mat(_STEEL, ghost, 0.5, 0.4)
+	_grating_deck(p, bordes_w, bordes_len, Vector3(bordes_x, bordes_y, 0.0))
+	# Deck support legs to the floor.
+	for szb in [-0.42, 0.0, 0.42]:
+		_box(p, Vector3(0.07, bordes_y, 0.07),
+			Vector3(bordes_x - bordes_w * 0.35, bordes_y * 0.5, bordes_len * szb), b_dark)
+	# Railing along the OUTER (-X) edge + the two ends; open toward the drum.
+	for szr in [-1.0, 1.0]:
+		_box(p, Vector3(0.05, 0.05, bordes_len), Vector3(bordes_x - bordes_w * 0.48, bordes_y + 1.0, 0.0), safety)
+		_box(p, Vector3(0.05, 1.0, 0.05), Vector3(bordes_x - bordes_w * 0.48, bordes_y + 0.5, float(szr) * bordes_len * 0.48), safety)
+	_box(p, Vector3(0.05, 0.05, bordes_len), Vector3(bordes_x - bordes_w * 0.48, bordes_y + 0.55, 0.0), safety)
+	# Stair down at the -Z (upstream/chute) end, descending away from the drum.
+	_stair(p, Vector3(bordes_x, bordes_y, -bordes_len * 0.5 - 0.1), bordes_y, bordes_w * 0.8, b_steel, safety)
+
+# ── scheidingsgoot — the Y-SPLITGOOT at the discharge end of the SGA drum. ────
+# Operator spec 2026-08-28 (line-1 HPS/SGA doc walk), verbatim:
+#   "at the end of the drum there is a Y-shaped shute also, which splits the
+#    material+water stream left and right (about 1m long 30 deg down angle, then
+#    the split, then a steeper 60 deg down angle, where left is about 35 deg to
+#    the left and the right side about 35 deg to the right, both for about 1m,
+#    then both sides turn straight (in line with the drum orientation) while
+#    still feeding material+water into the next machine)"
+# Open U-channel throughout — it carries WATER as well as film, so no lid.
+# Was a plain straight U-trough until this walk; the split was faked entirely by
+# LineFlow's scheidingsgoot→friction_sep connector rule, so the machine that
+# actually does the splitting had no splitting geometry.
+# #196's direction is preserved: material enters at +Z (under the drum's
+# discharge) and runs downhill toward -Z, where LineFlow still spawns the
+# glijgoot connectors on to the two friction washers.
 static func _m_scheidingsgoot(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
 	var steel := _mat(color, ghost, 0.5, 0.4)
-	var dark := _mat(_DARK, ghost, 0.5, 0.6)
-	# #196 — operator-flagged direction. Original slope dropped toward +Z; in
-	# the wash-line layout the discharge end is the -Z end (the chute hands
-	# off into the glijgoot that feeds the friction L/R washers). Flipped
-	# the tilt sign + moved the cross-lip to the -Z end so the trough now
-	# runs downhill toward -Z and reads as feeding the right neighbour.
-	var tilt : float = deg_to_rad(8.0)                # downhill toward -Z
-	var trough_y : float = size.y * 0.58
-	var wall_h : float = size.y * 0.36
-	var floor_t : float = 0.06
-	# U-trough: a floor plate + two side walls, ALL tilted together about X so the
-	# channel runs downhill along Z. Parent them under a tilted pivot so the slope
-	# is shared (kept inside the size box at this small angle).
-	var floor_plate := _box(p, Vector3(size.x * 0.86, floor_t, size.z * 0.96),
-		Vector3(0.0, trough_y, 0.0), steel)
-	floor_plate.rotation.x = tilt
-	for sx in [-1.0, 1.0]:
-		var wall := _box(p, Vector3(0.06, wall_h, size.z * 0.96),
-			Vector3(float(sx) * size.x * 0.42, trough_y + wall_h * 0.5, 0.0), steel)
-		wall.rotation.x = tilt
-	# Low cross-lip at the discharge (-Z) end so the channel reads as open-ended.
-	_box(p, Vector3(size.x * 0.86, wall_h * 0.5, 0.06),
-		Vector3(0.0, trough_y - size.z * 0.5 * sin(tilt) + wall_h * 0.25, -size.z * 0.46), dark)
+	var dark  := _mat(_DARK, ghost, 0.5, 0.6)
+
+	var leg_w : float = size.x * 0.44            # channel width of ONE branch (~0.70 m)
+	var wall_h : float = 0.22
+	var inlet_y : float = size.y * 0.92          # under the SGA drum's discharge mouth
+	var start := Vector3(0.0, inlet_y, size.z * 0.48)
+
+	# 1) STEM — ~1 m at 30° down, straight. Double width: both legs still share
+	#    one channel until the split.
+	var stem_end := _goot_segment(p, start, 1.0, 30.0, 0.0, leg_w * 2.0, wall_h, steel)
+
+	# Splitter nose — the wedge that divides the stream left/right.
+	_box(p, Vector3(0.06, wall_h * 1.4, 0.34),
+		stem_end + Vector3(0.0, wall_h * 0.7, -0.16), dark)
+
+	# 2) BRANCHES — ~1 m at 60° down, yawed ~35° out, then
+	# 3) RUN-OUTS — each leg turns back straight (yaw 0, in line with the drum
+	#    axis) and keeps feeding the next machine.
+	# +yaw is toward -X (see _goot_segment), so 35.0 = left leg, -35.0 = right.
+	for yaw in [35.0, -35.0]:
+		var br_end := _goot_segment(p, stem_end, 1.0, 60.0, yaw, leg_w, wall_h, steel)
+		var out_end := _goot_segment(p, br_end, 0.8, 15.0, 0.0, leg_w, wall_h, steel)
+		# Open discharge lip so the leg reads as feeding, not holding.
+		_box(p, Vector3(leg_w * 1.05, 0.05, 0.08), out_end + Vector3(0.0, -0.02, 0.0), dark)
+
 	# Four floor legs that lengthen to the floor when raised (#70).
-	_legs(p, size, trough_y, dark)
+	_legs(p, size, size.y * 0.28, dark)
+
+## One straight open-U segment of a goot: floor plate + two side walls, pitched
+## `pitch_deg` below horizontal and yawed `yaw_deg` (POSITIVE = toward -X).
+## Travel runs along the pivot's local -Z. Returns the segment's END point in
+## `parent` space so segments chain without hand-baked coordinates.
+static func _goot_segment(parent: Node3D, start: Vector3, length: float, \
+		pitch_deg: float, yaw_deg: float, width: float, wall_h: float, \
+		mat: StandardMaterial3D) -> Vector3:
+	var pitch := deg_to_rad(pitch_deg)
+	var yaw   := deg_to_rad(yaw_deg)
+	var piv := Node3D.new()
+	piv.position = start
+	# Godot's default YXZ euler order: a NEGATIVE x-rotation tips local -Z DOWN.
+	piv.rotation = Vector3(-pitch, yaw, 0.0)
+	parent.add_child(piv)
+	_box(piv, Vector3(width, 0.05, length), Vector3(0.0, 0.0, -length * 0.5), mat)
+	for sx in [-1.0, 1.0]:
+		_box(piv, Vector3(0.05, wall_h, length),
+			Vector3(float(sx) * width * 0.5, wall_h * 0.5, -length * 0.5), mat)
+	# End point = start + R·(0,0,-L), with R = Ry(yaw)·Rx(-pitch).
+	return start + Vector3(
+		-sin(yaw) * cos(pitch),
+		-sin(pitch),
+		-cos(yaw) * cos(pitch)) * length
+
+# ── SGA invoergoot — the 90° corner chute at the drum head. ───────────────────
+# Operator 2026-08-28: "there is actually a chute after the belt that feeds
+# material into the drum on the top side (and it makes a 90 deg right turn from
+# the conveyor to the drum)". The flow diagrams draw BLOCKS only and never show
+# chutes, so this one is operator-described, not doc-derived. The layout sketch
+# places it at the head of the ONE drum (vw_trommel), at the leg-C → leg-D
+# corner of the line-1 fold.
+
+## Port geometry for the sga_feed_chute. Placed nodes face the flow (rotation
+## leg_rot+PI), so local -Z is the UPSTREAM face and local -X is the RIGHT of
+## the flow — the operator's "90 deg right turn".
+##   in     — top of the infeed leg, on the upstream (-Z) face (westa's lip
+##            discharges onto this point + a small drop).
+##   corner — the corner pan where the stream turns.
+##   out    — discharge lip end of the outfeed leg (-X side), hangs over the
+##            vw_trommel feed funnel.
+## SINGLE SOURCE OF TRUTH shared by _m_sga_feed_chute (geometry), the
+## westa_band_1 spec (aims its lip at `in`), and the derivations behind
+## LINE_1_SEQ's baked y/gap/turn_advance numbers — all guarded live by
+## test_line1_flow_conformance S4/S4b.
+static func sga_feed_chute_ports_local(size: Vector3) -> Dictionary:
+	var infeed_len := 0.62
+	var infeed_pitch := deg_to_rad(20.0)
+	var out_len := 0.85
+	var out_pitch := deg_to_rad(28.0)
+	var p_in := Vector3(0.0, size.y * 0.88, -size.z * 0.46)
+	var corner := p_in + Vector3(0.0, -infeed_len * sin(infeed_pitch), infeed_len * cos(infeed_pitch))
+	var p_out := corner + Vector3(-out_len * cos(out_pitch), -out_len * sin(out_pitch), 0.0)
+	return {"in": p_in, "corner": corner, "out": p_out,
+		"infeed_len": infeed_len, "out_len": out_len}
+
+static func _m_sga_feed_chute(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
+	var steel := _mat(color, ghost, 0.5, 0.4)
+	var dark  := _mat(_DARK, ghost, 0.5, 0.6)
+
+	var w : float = size.x * 0.42
+	var wall_h : float = 0.24
+	var ports := sga_feed_chute_ports_local(size)
+	var p_in : Vector3 = ports["in"]
+	var corner : Vector3 = ports["corner"]
+	var p_out : Vector3 = ports["out"]
+
+	# 1) INFEED leg — from the upstream (-Z) face down to the corner
+	#    (_goot_segment yaw 180 → travel +Z), mild 20° drop.
+	_goot_segment(p, p_in, float(ports["infeed_len"]), 20.0, 180.0, w, wall_h, steel)
+
+	# 2) CORNER PAN + deflector plates that turn the stream 90° RIGHT (-X).
+	_box(p, Vector3(w * 1.25, 0.05, w * 1.25), corner + Vector3(0.0, -0.03, 0.0), steel)
+	_box(p, Vector3(w * 1.25, wall_h * 1.5, 0.05),
+		corner + Vector3(0.0, wall_h * 0.75, w * 0.60), dark)     # splash plate, far (+Z) side
+	_box(p, Vector3(0.05, wall_h * 1.5, w * 1.25),
+		corner + Vector3(w * 0.60, wall_h * 0.75, 0.0), steel)    # outer cheek, +X (opposite the exit)
+
+	# 3) OUTFEED leg — the right turn itself: _goot_segment yaw +90 → travel
+	#    -X, 28° down, ending over the drum's feed funnel.
+	_goot_segment(p, corner, float(ports["out_len"]), 28.0, 90.0, w, wall_h, steel)
+	# Downward-facing discharge lip over the funnel mouth.
+	_box(p, Vector3(0.06, 0.18, w * 1.05), p_out + Vector3(-0.03, -0.09, 0.0), dark)
+
+	_legs(p, size, size.y * 0.30, dark)
 
 # ── MAS droger (dryer): a compact horizontal drying drum unit (smaller / different
 #    proportions than mech_dryer). Drum SPINS about its long (Z) axis. End flanges,

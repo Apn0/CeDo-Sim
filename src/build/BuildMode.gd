@@ -109,35 +109,79 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 	{"id": "friction_sep"},
 	{"id": "transport_screw"},
 	{"id": "mech_dryer", "gap": 1.2},   # wet→dry section break: wider access gap
-	{"id": "blower"},
+	# ── RULING 2.1-B, operator 2026-08-28 (SUPERSEDES the same morning's
+	# "Diagram is right" ruling — that answer was based on a misread of the
+	# question; this is the operator's own account of the machines he ran):
+	#   INFEED: "material coming in from the mechanical dryer. Then there is
+	#   a blower ... then the material goes to the wind shifter. Then there
+	#   is another blower that blows it in the top of the silo in one
+	#   cyclone, big cyclone on top."
+	#   LOOP:   one screw "goes to the ring and then back up. to dry the
+	#   material ... warm it, blow it constantly ... only if the line is
+	#   running." On 3A the diagram's "thermische droger" IS this heated
+	#   ring circuit — the real thermal-dryer MACHINE is line 3B's (works
+	#   differently); 3A's block is "kind of dead" as a separate machine.
+	#   MAIN:   the other screw "goes to the extruder silo. That is just
+	#   dosing screw, blower, pipeline pipeline pipeline, extruder silo."
+	# So vs the diagram: windzifter moves to the INFEED, the ringleiding
+	# lives in the LOOP, and no thermal dryer/verdeelwals exists on the 3A
+	# main path. The diagram remains the transcription authority for BLOCK
+	# NAMES; the operator is the authority for the wiring.
+	{"id": "blower"},                   # infeed blower 1 (V4)
+	{"id": "wind_sifter"},              # windzifter — operator: on the INFEED
+	{"id": "blower"},                   # infeed blower 2 → big top cyclone
+	# The BIG SHARED CYCLONE on the mengsilo TOP: both blower lines (from the
+	# windzifter and from the ring) enter it at ~180° opposite inlets, and it
+	# drops into the silo. gap −2.3 pulls the silo's centre under the cyclone
+	# (cyc_half 0.8 + gap + silo_half 1.5 = 0); y 5.9 seats the cone on the
+	# 6.5 m silo's dome. Model detail (twin opposed inlets) → detail program.
+	{"id": "cyclone", "y": 5.9, "gap": -2.3},
 	{"id": "mengsilo"},
-	# ── RECIRC DRYING LOOP (branch, +X side, returns to the mengsilo top) ──
-	# 2nd dosing screw lifts film into the ring main to DRY it; a cyclone drops the
-	# dried film back into the TOP of the mengsilo. Toggleable sub-circuit.
-	# #71 — `branch_recirc` on the first branch entry tells _build_full_line to
-	# tag the LAST branch entry (cyclone) with a recirc back-edge to the source
-	# (mengsilo). LineFlow treats recirc edges as invisible to the cycle check,
-	# so the loop can close without blocking the main forward path.
-	{"id": "transport_screw", "x": 5.0, "z": -3.0, "branch_recirc": true},
-	{"id": "blower",          "x": 5.0, "z":  0.0},
-	{"id": "ringleiding",     "x": 5.0, "z":  3.0},
-	{"id": "cyclone",         "x": 5.0, "z":  6.0},
-	# ── MAIN PATH out of the mengsilo (1st dosing screw) ──
-	{"id": "transport_screw"},
-	{"id": "verdeelwals"},
+	# ── RONDMENG-LUS (branch, +X side) — the ALWAYS-ON (while running)
+	# heated drying circulation. Material: silo → doseerschroef M11a₂ →
+	# verdeelwals m14 (rotary feeder into the airstream; heaters + V1 blower
+	# are the air side, modelled later per the 60×60×200 heater-cabinet spec)
+	# → the RING → back into the shared top cyclone → silo. The ring itself:
+	# starts at the bottom, 180° turn, up, 180°, other side, 180° — two
+	# serpentine loops, then up to the cyclone (operator; detail program).
+	# #71 — branch_recirc: the LAST branch entry (the ring) carries the
+	# recirc back-edge to the mengsilo; physically that return passes through
+	# the shared top cyclone.
+	{"id": "transport_screw", "x": 5.0, "z": -3.0, "branch_recirc": true},  # Doseerschroef M11a (onder mengsilo)
+	{"id": "verdeelwals",     "x": 5.0, "z":  0.0},                          # Verdeelwals (m14)
+	{"id": "blower",          "x": 5.0, "z":  3.0},                          # Ventilator V1 rondmengen
+	{"id": "ringleiding_3a",  "x": 5.0, "z":  6.0},                          # de RING (Global Spiral Chutes MOD. 260)
+	# Heater/filter cabinet beside V1 (operator spec, Q2.4): heats the air V1
+	# sucks in; its pipe elbow aims -X toward the blower at x 5.0. Role-none
+	# utility — the I1 guard keeps it out of the branch-chain bookkeeping, so
+	# the recirc close still tags the ringleiding as the loop's last stage.
+	{"id": "heater_cabinet",  "x": 7.0, "z":  3.0},                          # hete-lucht kast bij V1
+	# ── MAIN PATH out of the mengsilo — operator: "just dosing screw,
+	# blower, pipeline pipeline pipeline, extruder silo." ──
+	{"id": "transport_screw"},          # Doseerschroef M11b
 	{"id": "blower"},
-	{"id": "wind_sifter"},
-	{"id": "blower"},
-	{"id": "cyclone"},
-	{"id": "verdeelwals"},
-	{"id": "thermal_dryer"},
-	{"id": "cyclone"},
-	{"id": "blower"},
-	{"id": "cyclone"},
 	# #107 — was plain `silo`; the extruder's hot end has to be fed by the
 	# elevated extruder_silo (frame + 2 cyclones on top + lump bin + windows),
 	# not a generic dosing silo. Same change applied to 3B and Line 1 below.
 	{"id": "extruder_silo", "gap": 1.5},  # extruder needs maintenance clearance at both ends
+	# ── DOC-WALK GAP FIX 2026-08-28 (gap 1.3) ───────────────────────────────
+	# Every line's flow diagram runs extruder_silo → COMPACTOR BAND → compactor
+	# → extruder (line_flow_graphs.json edges 32/33/34, identical for 1, 3A and
+	# 3B). The band was missing from all three; only line_3c ever placed one,
+	# even though `compactorband`'s own builder describes it running "Silo up
+	# into the compactor's top funnel" — i.e. exactly this edge.
+	# Corroborated beyond the diagrams by the operator checklist FORM-018
+	# (swi/FORM-018__064_CeDo120.md:52): "Compactor banden en compactor hoed
+	# compleet reinigen" — plural belts, under a section covering "beide
+	# compactors", so these are real, separately-maintained machines.
+	# The COMPACTOR itself is deliberately NOT added here: _m_extruder_unit
+	# builds the EREMA cutter-compactor INTEGRATED on the extruder's -X flank
+	# (PlaceableCatalog.gd, "SECTION 1: FEED / CUTTER-COMPACTOR (PCU)"), so a
+	# standalone `compactor` placeable would double it. The diagram draws them
+	# as separate process BLOCKS, which is not a claim about separate machines.
+	# Carries the 1.5 m gap so the extruder keeps its maintenance clearance —
+	# that clearance belongs next to the extruder, not next to the silo.
+	{"id": "compactorband", "gap": 1.5},
 	{"id": "extruder_3a"},
 	# #98 — Lump cart parking spot next to the extruder's screen-changer
 	# discharge. Operator's responsibility to make sure a lump_cart is parked
@@ -178,6 +222,16 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 	{"id": "ontwaterzeef"},
 	{"id": "centrifuge"},
 	{"id": "weegschaal"},
+	# ── DOC-WALK GAP FIX 2026-08-28 (gap 2.2) — lijn_3a_flow.md edge 36:
+	# Weegschaal → bigbag station. RULED 3A-ONLY (question_answers.json — 3B's
+	# diagram has no bigbag block, so 3B/1/3C get none). Branch on the -X
+	# aisle beside the weegschaal (the +X side is the laser-filter lane); the
+	# #71 chained-branch logic gives it the weegschaal→bigbag explicit edge,
+	# and as a MachineFlow SINK the bag banks granulate (a full bag leaves by
+	# forklift, not by line flow). Inserted BEFORE voorraad_silo, shifting
+	# only that one index — user://macros still empty (re-checked), so no
+	# saved delta breaks.
+	{"id": "bigbag_station", "x": -3.0, "z": 0.0},
 	{"id": "voorraad_silo"},
 ]
 # #54 — shared dry FRONT-END for Lines 3A and 3B. Lays the Shredder-2 climb,
@@ -411,13 +465,42 @@ const LINE_3B_SEQ : Array[Dictionary] = [
 	# without these tags, so only ONE side would carry material.
 	{"id": "mech_dryer", "x": -1.75, "z": 2.0, "parallel_branch": true},
 	{"id": "mech_dryer", "x":  1.75, "z": 2.0, "parallel_branch": true, "main_advance": 4.75},
-	{"id": "blower"},              # recombine
-	{"id": "cyclone"},
-	{"id": "plasmaq"},
-	{"id": "cyclone"},
-	{"id": "blower"},
-	{"id": "cyclone"},
+	# ── RULING 3.1-B, operator 2026-08-28 (SUPERSEDES the doc-literal gap-3.1
+	# fix made hours earlier — "Oh, fuck. Yes. I forget. Indeed, line three b
+	# goes through the plasma[q]"). His account of the dry section:
+	#   recombine blower → pipe → the PLASMAQ CYCLONE → through the PLASMAQ →
+	#   built-in blower at the plasmaq's end → ~15 m of pipe → the
+	#   TUSSENVENTILATOR ("just a cyclone with a blower" — a booster, because
+	#   one blower hasn't enough power for the whole length) → all the way
+	#   into the extruder silo.
+	# RECONCILIATION with the diagram (and with ruling 2.1-B's "the thermal
+	# dryer is 3B's"): on 3B the diagram's "Thermische droger" block IS the
+	# plasmaq — the vendor-named machine that "works different" from 3A's
+	# heated-ring drying. The diagram's Verdeelwals block has no home in the
+	# operator's account (open note in the ledger); the old SEQ's trailing
+	# third cyclone stays gone (the extruder_silo model carries its own two
+	# top cyclones).
+	{"id": "blower"},                # "Ventilator" — recombine (edges 12-14)
+	{"id": "cyclone"},               # the plasmaq cyclone (inlet)
+	# gap 15.0 — OPERATOR-sourced pipe run: "material goes about fifteen
+	# meters to a new cyclone".  Plasmaq's outlet blower is built into the
+	# machine (model-detail note), not a separate placeable.
+	{"id": "plasmaq", "gap": 15.0},  # PLASMAQ = the diagram's "Thermische droger" on 3B
+	# ── Ruling 3.1-C — the DECOMMISSIONED thermische droger. The plasmaq
+	# replaced it during the operator's tenure, but the machine still stands
+	# there, disconnected ("a pipe of like twenty centimeters that sticks
+	# out. And then there's nothing."). Role-none plant archaeology beside
+	# the run it used to serve. x/z are PLACEHOLDERS — the operator's coming
+	# 3B layout drawing will pin the true spot.
+	{"id": "thermal_dryer_decommissioned", "x": -3.5, "z": -8.0},
+	# explicit_from_prev — the 15 m run exceeds LineFlow's MAX_LINK_DIST
+	# (14 m), so the plasmaq → tussenventilator edge is tagged explicitly.
+	{"id": "cyclone", "explicit_from_prev": true},  # TUSSENVENTILATOR — its cyclone…
+	{"id": "blower"},                # …and its booster blower
 	{"id": "extruder_silo"},
+	# Gap 1.3 — see the matching note in LINE_3A_SEQ. Flow diagram edge 32:
+	# extruder_silo → compactor_band. The PCU stays integrated in the extruder.
+	{"id": "compactorband"},
 	{"id": "extruder_3b"},
 	# #98 — Lump cart parking spot at the extruder's filter discharge.
 	# #225 — the LIVE laserfilter is a standalone machine beside the extruder
@@ -456,7 +539,7 @@ const LINE_3B_SEQ : Array[Dictionary] = [
 	{"id": "voorraad_silo"},
 ]
 # Line 1 = its own intake (opzetband 1 → metal detector → westa band → shredder →
-# magnet → VW trommel → scheidingsgoot) then wash/dry/extrude; transcribed from the
+# magnet → VW trommel → band 2 → SGA-trommel → Y-splitgoot) then wash/dry/extrude; transcribed from the
 # operator's LIJN 1 sheet; 2x machines laid as side-by-side pairs (jog with K to finalize).
 const LINE_1_SEQ : Array[Dictionary] = [
 	# #196 — operator rework. Old head (metaaldetector + 45° westa_band) gone:
@@ -471,15 +554,78 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	#   → transport_belt (short 1 m horizontal, 30 cm down + 90° L turn — handled
 	#                     visually by the K-menu jog after placement)
 	#   → westa_band_1 (45° incline up to the top of the pre-wash drum)
-	#   → prewash_drum  (now scaled 2.5×, top-fed)
+	#   → vw_trommel    (the real voorwastrommel, top-fed)
+	# ── #fold 2026-08-28 — line 1 SNAKES (operator layout sketch; transcribed
+	# in docs/plant/line1_layout_sketch_2026-08-28.md — original image not yet
+	# archived, see the warning there). ───────────────────────────────────────
+	# Plan-view legs (headings relative to the macro's placement rot):
+	#   leg A            opzetband_1 → shredder_1        (intake ramp)
+	#   leg B  LEFT +90°  uitvoerband + magnet           (short east run)
+	#   leg C  LEFT +90°  short belt → westa → hoekgoot  (climb to drum head)
+	#   leg D  RIGHT −90°  drum → Y-goot → wet train     (the long drum axis)
+	#   leg E  RIGHT −90°  flotation tank + dewater      (sketch: tank offset
+	#                                                     south of the train)
+	#   leg F  LEFT +90°  friction → … → extruder tail   (east — CONFIRMED by
+	#          the operator 2026-08-28 ("leg F is correct"); matches the floor
+	#          plan's east-west extruder-1 block on Hal 2's south wall.)
 	{"id": "opzetband_1"},
 	{"id": "shredder_1"},
-	{"id": "transport_belt"},                          # uitvoerband
+	{"id": "transport_belt", "turn_deg": 90.0},        # uitvoerband — leg B (east)
 	{"id": "overband_magnet"},
-	{"id": "transport_belt", "main_advance": 1.0},     # short 1m after 90° L
-	{"id": "westa_band_1"},                            # 45° incline to drum top
-	{"id": "prewash_drum"},
-	{"id": "scheidingsgoot"},
+	{"id": "transport_belt", "turn_deg": 90.0,
+	 "main_advance": 1.0},                             # short belt — leg C (north)
+	# westa gap 2.14 — DERIVED: the belt's lip sits run+flat = 5.12 m past its
+	# origin; the chute's IN port is 0.828 m upstream of the chute centre, so
+	# centre-to-centre = 5.12 + 0.828 = 5.94 = westa_half 2.9 + gap + chute_half
+	# 0.9 → gap = 2.14. Guarded by test S4b (lip-over-IN measured in-world).
+	{"id": "westa_band_1", "gap": 2.14},               # 45° climb to the hoekgoot
+	# ── DOC-WALK FIX 2026-08-28 — operator-directed, closes audit finding C5 ──
+	# Was `prewash_drum`: an 18-line unsourced stub (a trough, a plain cylinder,
+	# a spray pipe). The REAL voorwastrommel geometry — ~150 lines, built from
+	# operator photos and signed off by the operator (bolted flange drive ring,
+	# axial-thrust bracket, rubber cradle tyres, yellow peeling safety cage,
+	# "TANK A-4 / MAX CAP 50,000 L" placard, drain tray) — sat unused under the
+	# sibling id `vw_trommel`. Same orphaned-model disease as gap 1.1's sga_drum.
+	# See DETAIL_STANDARD_audit_2026-08-18.md finding C5 and photo_audit.md:68.
+	# IN-PLACE ID SWAP — seq.size() and every macro_index are unchanged.
+	# NOTE the wash physics had to move WITH the model: `vw_trommel` carried no
+	# MachineFlow profile at all, so swapping the id alone would have dropped
+	# water_add 0.30 / contam_remove 0.40 and turned the pre-wash into an inert
+	# conveyor. MachineFlow.gd now matches both ids in the same two arms.
+	# SIZE CHANGE: 6.0x6.5x11.25 → 3.6x4.5x8.0, so line 1 gets shorter (helps
+	# the overrun). The westa_band_1 discharge was re-aimed the same day: its
+	# incline_run is now DERIVED from vw_trommel_funnel_mouth_local() and the
+	# lip-over-funnel relationship is measured in the built world by
+	# test_line1_flow_conformance S4 (was 3.05 m high / 1.59 m past the mouth).
+	# ── OPERATOR RULING 2026-08-28 (layout sketch): ONE drum, not two. ────────
+	# "Same machine — one drum does both": the voorwastrommel IS the HPS (SGA)
+	# zware-delen scheider. The flow diagram's separate "HPS (SGA)" block is
+	# the SAME physical drum this entry places — which also explains why the
+	# diagram never draws a voorwas-trommel block of its own (only "Band 2
+	# (naar voorwas trommel)" naming it in passing).
+	# Earlier the same day, walking the diagram literally, gap-fix 1.1 had
+	# inserted band 2 + sga_feed_chute + sga_drum here as a separate stage;
+	# the sketch ruling REVERSED that (ledger: DOCS_VS_SIM_GAP_AUDIT, ruling
+	# 1.B). The drum therefore carries BOTH behaviours in MachineFlow.gd
+	# (wash + heavy-parts screening, its own dedicated arm), and the
+	# Y-splitgoot follows it directly.
+	# The C5 model-swap note above still applies unchanged.
+	# ── #fold — the hoekgoot + the leg-C→D corner. All numbers DERIVED from
+	# sga_feed_chute_ports_local(1.8³) + vw_trommel_funnel_mouth_local():
+	#   y 3.48   = funnel mouth 4.155 + 0.30 drop − chute OUT height 0.973
+	#   gap −1.15 = the corner pivot must sit at the OUT port's along-leg
+	#              coordinate (0.245 m upstream of the chute centre), so the
+	#              cursor is pulled BACK: 0.9 half-depth + gap = −0.245.
+	#   turn_advance 0.49 = OUT hangs 0.750 m to the flow's right; the funnel
+	#              sits trommel_half 4.0 − inset 3.74 = 0.26 m down leg D, so
+	#              leg D pre-advances 0.75 − 0.26 = 0.49 to line them up.
+	# extend_legs — the chute rides 3.48 m up; its own legs stretch to the
+	# floor via _finalize_placed → extend_machine_legs (#70).
+	# Guarded by test S4 (chute OUT over funnel) + S4b (westa lip over IN).
+	{"id": "sga_feed_chute", "y": 3.48, "gap": -1.15, "extend_legs": true},
+	{"id": "vw_trommel", "turn_deg": -90.0,
+	 "turn_advance": 0.49},                            # leg D (east) — the drum axis
+	{"id": "scheidingsgoot"},                          # Y-splitgoot, drum → friction L/R
 	# #196 — parallel L/R friction split. parallel_branch tells the macro
 	# builder these two siblings BOTH receive from the upstream scheidingsgoot
 	# (the "glijgoot" slide-chute connector). Without it, only the first sibling
@@ -490,18 +636,46 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	{"id": "mech_dryer",  "x":  2.5, "z": 1.0, "main_advance": 5.0},
 	{"id": "blower",      "x": -2.0, "z": 0.5},
 	{"id": "blower",      "x":  2.0, "z": 0.5, "main_advance": 2.5},
-	{"id": "cyclone",     "x": -2.0, "z": 0.5},
-	{"id": "cyclone",     "x":  2.0, "z": 0.5, "main_advance": 3.0},
-	{"id": "transport_screw", "x": -2.0, "z": 0.5},
-	{"id": "transport_screw", "x":  2.0, "z": 0.5, "main_advance": 5.0},
+	# ── Operator 2026-08-28 (line-1 drawing walk): "then to the two cyclones
+	# ON the mill" — this pair rides the mill's top (mill 3.6×4.8×4.6; the
+	# next main). z 2.8 puts them over its centre, x ±0.9 keeps both inside
+	# its 3.6 m width, y 4.6 nests the cones on its roof. NO extend_legs —
+	# they are mounted on the machine, not on 4.6 m stilts.
+	{"id": "cyclone",     "x": -0.9, "z": 2.8, "y": 4.6},
+	{"id": "cyclone",     "x":  0.9, "z": 2.8, "y": 4.6, "main_advance": 3.0},
+	# ── DOC-WALK GAP FIX 2026-08-28 (gap 1.2) — lijn_1_flow.md edges 12-19 ──
+	# The diagram's post-mill chain is
+	#   maalmolen_1 → ventilator_10a/b → intrekschroef_11a/b → flotatie_tank
+	# and it has NO screw between the frictiescheiders and the mill
+	# (ventilator_8a/b feed the mill directly). This macro had the pair in the
+	# wrong stage: two transport_screw entries BEFORE the mill and none after,
+	# so the post-mill cyclones dumped straight into the flotation tank.
+	# Operator confirmed 2026-08-28: "after the mill, like the doc says".
+	# MOVED, not added — the pre-mill pair is deleted and re-placed below, so
+	# the line's total length is unchanged and the flotation tank and the whole
+	# extruder back-end stay exactly where they were. Only the mill and the
+	# post-mill blower/cyclone pairs shift 5 m upstream, into the space the
+	# misplaced screws used to occupy.
 	{"id": "mill"},
 	{"id": "blower",      "x": -2.0, "z": 0.5},
 	{"id": "blower",      "x":  2.0, "z": 0.5, "main_advance": 2.5},
-	{"id": "cyclone",     "x": -2.0, "z": 0.5},
-	{"id": "cyclone",     "x":  2.0, "z": 0.5, "main_advance": 3.0},
-	{"id": "flotation_tank"},
+	# ── Operator 2026-08-28: this pair sits "at the top of the flotation
+	# tank" (tank 4.5×5.0×9.0), the intrekschroeven running from the cyclone
+	# discharges INTO the tank. y 5.0 = rim height; extend_legs → their
+	# supports run to the floor beside the tank.
+	{"id": "cyclone",     "x": -2.0, "z": 0.5, "y": 5.0, "extend_legs": true},
+	{"id": "cyclone",     "x":  2.0, "z": 0.5, "y": 5.0, "extend_legs": true,
+	 "main_advance": 3.0},
+	{"id": "transport_screw", "x": -2.0, "z": 0.5},                # intrekschroef 11a
+	{"id": "transport_screw", "x":  2.0, "z": 0.5, "main_advance": 5.0},  # intrekschroef 11b
+	# #fold — leg E (RIGHT −90): the sketch offsets the flotation tank SOUTH
+	# of the wet train's east run.
+	{"id": "flotation_tank", "turn_deg": -90.0},
 	{"id": "dewater_screw"},
-	{"id": "friction_sep"},
+	# #fold — leg F (LEFT +90): the long tail heads east again. ASSUMED (see
+	# the leg map at the top of this SEQ) — sketch ends at the flotation tank;
+	# east matches the floor plan's east-west extruder-1 block in Hal 2.
+	{"id": "friction_sep", "turn_deg": 90.0},
 	{"id": "kufferath_sieve", "x": -2.5, "z": 1.0},
 	{"id": "kufferath_sieve", "x":  2.5, "z": 1.0, "main_advance": 4.5},
 	{"id": "mas_bak",     "x": -2.5, "z": 1.0},
@@ -512,6 +686,9 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	{"id": "blower",      "x":  2.0, "z": 0.5, "main_advance": 2.5},
 	{"id": "cyclone"},
 	{"id": "extruder_silo"},
+	# Gap 1.3 — see the matching note in LINE_3A_SEQ. Flow diagram edge 32:
+	# extruder_silo → compactor_band. The PCU stays integrated in the extruder.
+	{"id": "compactorband"},
 	{"id": "extruder_1"},
 	# #98 — Lump cart parking spot at the extruder's filter discharge. Same
 	# +X / partway-back offset as 3A/3B so the laser_filter outlet sits above
@@ -1903,10 +2080,32 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 	# Authored-graph macro: place geometry only, stamp NO lf_explicit_outs. See
 	# GRAPH_TOPOLOGY_MACROS — that meta suppresses LineFlow's Line3CDef.LINKS pass.
 	var graph_topology : bool = GRAPH_TOPOLOGY_MACROS.has(line_id)
+	# ── LEG STATE (#fold 2026-08-28) ─────────────────────────────────────────
+	# A line is a chain of straight LEGS. A main entry carrying {"turn_deg": a}
+	# rotates the heading by `a` degrees (POSITIVE = LEFT, i.e. CCW seen from
+	# above) around the current cursor point BEFORE that entry is placed; the
+	# cursor point becomes the new leg's origin and the cursor resets to 0.
+	# Optional {"turn_advance": m} pre-advances the new leg's cursor (used to
+	# line a corner chute's discharge up with the next machine's inlet).
+	# Every placed node's macro_anchor meta records ITS OWN leg's {start,
+	# rot_y}, so save_macro_overrides can invert per-leg. Built for the line-1
+	# fold (operator layout sketch, 2026-08-28); no other macro turns yet.
 	# Forward = the ghost's local -Z; right = local +X (lateral lane for branches).
-	var fwd := Vector3(-sin(rot_y), 0.0, -cos(rot_y))
-	var rgt := Vector3(cos(rot_y), 0.0, -sin(rot_y))
+	var leg_start := start
+	var leg_rot := rot_y
+	var leg_idx := 0
+	var fwd := Vector3(-sin(leg_rot), 0.0, -cos(leg_rot))
+	var rgt := Vector3(cos(leg_rot), 0.0, -sin(leg_rot))
 	var main_z := 0.0
+	var total_run := 0.0                  # summed leg lengths, for the report line
+	var leg_by_idx : Dictionary = {}      # entry_idx -> leg_idx (at_entry guard)
+	# Saved-delta chain semantics across a turn: accumulated_chain() knows
+	# nothing about legs, and an upstream drag must NOT leak its drift into a
+	# leg with a different frame. `delta_base` snapshots the accumulated delta
+	# at the last pre-turn index; each application subtracts it, so inheritance
+	# restarts at every leg. save_macro_overrides mirrors this (acc reset per
+	# leg) — keep the two in lockstep.
+	var delta_base : Dictionary = {"dx": 0.0, "dy": 0.0, "dz": 0.0, "drot_y": 0.0}
 	var built := 0
 	# #lump-3c — per-entry place_z snapshots, so a LATER entry can anchor itself
 	# to an earlier machine's z-centre via {"at_entry": N}. This is what lets the
@@ -1947,6 +2146,26 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 		var x : float = float(entry.get("x", 0.0))
 		var is_branch : bool = not is_equal_approx(x, 0.0)
 		var is_parallel : bool = bool(entry.get("parallel_branch", false))
+		# ── #fold — turn the line heading before placing this entry ──────────
+		if entry.has("turn_deg"):
+			if is_branch:
+				push_warning("[BuildMode] %s entry %d: turn_deg on a BRANCH entry is unsupported — ignored" % [line_id, entry_idx])
+			else:
+				leg_start = leg_start + fwd * main_z          # pivot = cursor point
+				leg_rot += deg_to_rad(float(entry["turn_deg"]))
+				fwd = Vector3(-sin(leg_rot), 0.0, -cos(leg_rot))
+				rgt = Vector3(cos(leg_rot), 0.0, -sin(leg_rot))
+				total_run += main_z
+				main_z = float(entry.get("turn_advance", 0.0))
+				leg_idx += 1
+				# A turn breaks the transportband head-to-tail chain and the
+				# saved-delta inheritance (frame change).
+				prev_tb_outlet_y = -1.0
+				last_main_was_tb = false
+				prev_main_gap = LINE_GAP_M
+				if entry_idx > 0:
+					delta_base = macro_deltas.get(entry_idx - 1, delta_base)
+		leg_by_idx[entry_idx] = leg_idx
 		var item := PlaceableCatalog.get_item(mid)
 		var depth : float = 2.0
 		if not item.is_empty():
@@ -1996,6 +2215,10 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 			# entry N's machine grows, the anchored furniture moves with it.
 			var anchor_idx : int = int(entry.get("at_entry", -1))
 			if anchor_idx >= 0:
+				# #fold — z snapshots are LEG-relative; anchoring across a turn
+				# would re-base on a coordinate from a different frame.
+				if int(leg_by_idx.get(anchor_idx, leg_idx)) != leg_idx:
+					push_warning("[BuildMode] %s entry %d: at_entry %d is on a different leg — geometry will be wrong" % [line_id, entry_idx, anchor_idx])
 				if entry_z_by_idx.has(anchor_idx):
 					place_z = float(entry_z_by_idx[anchor_idx]) + float(entry.get("z", 0.0))
 				else:
@@ -2020,10 +2243,15 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 			# #MSB — apply operator-saved chain delta (in macro local frame).
 			# dx → lateral (rgt), dz → forward (fwd), dy → vertical.
 			var d : Dictionary = macro_deltas.get(entry_idx, {})
-			var d_dx : float = float(d.get("dx", 0.0))
-			var d_dy : float = float(d.get("dy", 0.0))
-			var d_dz : float = float(d.get("dz", 0.0))
-			var d_drot : float = float(d.get("drot_y", 0.0))
+			# #fold — subtract the pre-turn accumulated drift so saved-delta
+			# inheritance restarts at each leg (see delta_base above).
+			var d_dx : float = float(d.get("dx", 0.0)) - float(delta_base.get("dx", 0.0))
+			var d_dy : float = float(d.get("dy", 0.0)) - float(delta_base.get("dy", 0.0))
+			var d_dz : float = float(d.get("dz", 0.0)) - float(delta_base.get("dz", 0.0))
+			var d_drot : float = float(d.get("drot_y", 0.0)) - float(delta_base.get("drot_y", 0.0))
+			if d.is_empty():
+				# No stored delta at all for this index — nothing to re-base.
+				d_dx = 0.0; d_dy = 0.0; d_dz = 0.0; d_drot = 0.0
 			var d_scale : Vector3 = Vector3.ONE
 			if d.has("scale") and d["scale"] is Vector3:
 				d_scale = d["scale"]
@@ -2032,17 +2260,24 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 			# y=0.12, mirroring NpcTaskBench.PLATFORM_Y). Defaults to 0 so every
 			# existing macro entry is unchanged.
 			var entry_y : float = float(entry.get("y", 0.0))
-			node.global_position = Vector3(start.x, start.y + tb_y_offset, start.z) \
+			node.global_position = Vector3(leg_start.x, leg_start.y + tb_y_offset, leg_start.z) \
 				+ fwd * (place_z + d_dz) + rgt * (x + d_dx) + Vector3.UP * (d_dy + entry_y)
-			node.rotation.y = rot_y + PI + d_drot
+			node.rotation.y = leg_rot + PI + d_drot
 			if d_scale != Vector3.ONE:
 				node.scale = d_scale
-			_finalize_placed(node, mid, 0.0)
+			# #fold — {"extend_legs": true} passes the entry's y lift through to
+			# _finalize_placed so the machine's own legs stretch to the floor
+			# (e.g. the elevated sga_feed_chute at the drum head). Opt-in:
+			# existing lifted entries (lump carts on the 0.12 m bordes) keep
+			# their legacy no-frame behaviour.
+			_finalize_placed(node, mid, entry_y if bool(entry.get("extend_legs", false)) else 0.0)
 			# #MSB — stamp macro-membership metas so save-back can find this
 			# node and recover its local-frame pose later.
 			node.set_meta("macro_id", line_id)
 			node.set_meta("macro_index", entry_idx)
-			node.set_meta("macro_anchor", {"start": start, "rot_y": rot_y})
+			# #fold — the anchor is THIS NODE'S LEG, not the macro's entry
+			# point. save_macro_overrides inverts per node with this.
+			node.set_meta("macro_anchor", {"start": leg_start, "rot_y": leg_rot})
 			built += 1
 			# ── #71 branch state transitions ───────────────────────────────────
 			# I1 fix (component_flags_review.md, confirmed 2026-07-06): utilities
@@ -2080,9 +2315,27 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 				# A new main-centreline machine — close any open branches.
 				if not branch_chain.is_empty():
 					var last_chain : Node3D = branch_chain[branch_chain.size() - 1] as Node3D
+					var last_role : String = String(MachineFlow.profile(
+						String(last_chain.get_meta("placeable_id"))).get("role", ""))
 					if branch_recirc and branch_source != null:
 						# Recirc: last branch entry returns to the branch source.
 						_add_explicit_out(last_chain, branch_source, true)
+						# 2026-08-28 SEVERED-MAIN FIX (found by the 3A doc-walk
+						# test): tagging the source with lf_explicit_outs makes
+						# LineFlow SKIP its geometry fallback (LineFlow.gd:1142),
+						# and nothing ever reconnected it to the next main — so
+						# 3A's line was silently DEAD past the mengsilo: the
+						# side-loop closed but mengsilo → M11b never existed.
+						# A recirc loop is a side-circuit; the main path must
+						# continue from its source.
+						_add_explicit_out(branch_source, node, false)
+					elif last_role == "sink" and branch_source != null:
+						# Chain dead-ends in a SINK (e.g. the 3A bigbag
+						# station): the sink banks material and LineFlow never
+						# emits from sinks (:1137), so an edge out of it would
+						# be dead anyway — the MAIN path continues from the
+						# branch source instead.
+						_add_explicit_out(branch_source, node, false)
 					else:
 						# Normal chained branch: last entry feeds this new main.
 						_add_explicit_out(last_chain, node, false)
@@ -2094,11 +2347,21 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 						_add_explicit_out(sib as Node3D, node, false)
 					parallel_siblings.clear()
 					parallel_source = null
+				# ── {"explicit_from_prev": true} (#fold-up, 2026-08-28) ──
+				# Force an explicit edge from the previous main machine to
+				# this one. Needed when an operator-sourced pipe run puts two
+				# consecutive mains beyond LineFlow's MAX_LINK_DIST (14 m) —
+				# first real case: 3B's plasmaq → tussenventilator, a ~15 m
+				# pneumatic line (ruling 3.1-B). Found live by the 3B
+				# conformance test's severed-main guard.
+				if bool(entry.get("explicit_from_prev", false)) and last_main_node != null:
+					_add_explicit_out(last_main_node, node, false)
 				last_main_node = node
 		# Explicit cursor push to clear a split/recombine (e.g. past parallel dryers).
 		if entry.has("main_advance"):
 			main_z += float(entry["main_advance"])
-	print("[BuildMode] Built %s — %d machines over %.1f m" % [line_id, built, main_z])
+	total_run += main_z
+	print("[BuildMode] Built %s — %d machines over %.1f m in %d leg(s)" % [line_id, built, total_run, leg_idx + 1])
 	if _status:
 		_status.text = "Built %s — %d machines.  Use [K] edit mode to jog each into place." % [
 			line_id.to_upper(), built]
@@ -2144,16 +2407,39 @@ func _macro_nominal_poses(p_seed: Array[Dictionary]) -> Array:
 	var poses : Array = []
 	var main_z := 0.0
 	const TB_CHUTE_DROP_M : float = 0.22
-	const _LINE_GAP_M : float = LINE_GAP_M
 	var prev_tb_outlet_y : float = -1.0
 	var last_main_was_tb : bool = false
-	for entry in p_seed:
+	# 2026-08-28 MIRROR FIX: this walk ignored per-entry {"gap": g} overrides
+	# and undid tb head-to-tail spacing with the constant instead of the gap
+	# actually added — so every nominal z after a gap override disagreed with
+	# _build_full_line, and save-back recorded phantom deltas that the load
+	# path then re-applied onto the same wrong nominal (self-consistent, so
+	# the round-trip test never went red). Now tracks prev_main_gap exactly
+	# like the builder.
+	var prev_main_gap : float = LINE_GAP_M
+	# #fold — leg tracking mirrors _build_full_line: a main entry with
+	# turn_deg resets the leg-relative cursor (and optionally pre-advances by
+	# turn_advance). Emitted "leg" lets save_macro_overrides reset its chain
+	# accumulator at each leg boundary.
+	var leg := 0
+	# 2026-08-28 MIRROR FIX 2: {"at_entry": N} anchoring existed only in the
+	# builder — nominal fell back to the cursor, so 3C's laserfilter furniture
+	# had wrong nominals (masked by the same phantom-delta self-consistency).
+	var entry_z_by_idx : Dictionary = {}
+	for entry_idx in range(p_seed.size()):
+		var entry : Dictionary = p_seed[entry_idx]
 		var mid : String = String(entry.get("id", ""))
 		if mid == "":
-			poses.append({"x": 0.0, "y": 0.0, "z": 0.0})
+			poses.append({"x": 0.0, "y": 0.0, "z": 0.0, "leg": leg})
 			continue
 		var x : float = float(entry.get("x", 0.0))
 		var is_branch : bool = not is_equal_approx(x, 0.0)
+		if entry.has("turn_deg") and not is_branch:
+			main_z = float(entry.get("turn_advance", 0.0))
+			leg += 1
+			prev_tb_outlet_y = -1.0
+			last_main_was_tb = false
+			prev_main_gap = LINE_GAP_M
 		var item := PlaceableCatalog.get_item(mid)
 		var depth : float = 2.0
 		if not item.is_empty():
@@ -2176,20 +2462,35 @@ func _macro_nominal_poses(p_seed: Array[Dictionary]) -> Array:
 			tb_y_offset = base_y
 			tb_outlet_y_after = base_y + outlet_top_off
 		var place_z : float
+		var gap_after : float = float(entry.get("gap", LINE_GAP_M))
 		if not is_branch:
 			if last_main_was_tb and is_tb:
-				main_z -= _LINE_GAP_M
+				main_z -= prev_main_gap
 			main_z += depth * 0.5
 			place_z = main_z
-			main_z += depth * 0.5 + _LINE_GAP_M
+			main_z += depth * 0.5 + gap_after
+			prev_main_gap = gap_after
 			last_main_was_tb = is_tb
 		else:
-			place_z = main_z + float(entry.get("z", 0.0))
+			var anchor_idx : int = int(entry.get("at_entry", -1))
+			if anchor_idx >= 0 and entry_z_by_idx.has(anchor_idx):
+				place_z = float(entry_z_by_idx[anchor_idx]) + float(entry.get("z", 0.0))
+			else:
+				place_z = main_z + float(entry.get("z", 0.0))
+		entry_z_by_idx[entry_idx] = place_z
 		if is_tb and not is_branch and tb_outlet_y_after > 0.0:
 			prev_tb_outlet_y = tb_outlet_y_after
 		elif not is_tb and not is_branch:
 			prev_tb_outlet_y = -1.0
-		poses.append({"x": x, "y": tb_y_offset, "z": place_z})
+		# 2026-08-28 MIRROR FIX 3 (found by the fold review): the per-entry
+		# {"y": h} lift is part of the NOMINAL pose — the builder adds it at
+		# placement, so leaving it out of the nominal made save_macro_overrides
+		# record it as a phantom operator dy, which the load path then applied
+		# ON TOP of entry_y: every save/rebuild cycle would double the lift
+		# (lump carts +0.12, the fold's hoekgoot +3.48 → 6.96 m). delta_sane
+		# never catches it (threshold is metres of drag, not stacking).
+		poses.append({"x": x, "y": tb_y_offset + float(entry.get("y", 0.0)),
+			"z": place_z, "leg": leg})
 		if entry.has("main_advance"):
 			main_z += float(entry["main_advance"])
 	return poses
@@ -2223,9 +2524,10 @@ func save_macro_overrides(macro_id: String) -> int:
 		return 0
 	var a_start : Vector3 = anchor.get("start", Vector3.ZERO)
 	var a_rot   : float   = float(anchor.get("rot_y", 0.0))
-	# Inverse-basis vectors (same fwd/rgt as _build_full_line).
-	var fwd := Vector3(-sin(a_rot), 0.0, -cos(a_rot))
-	var rgt := Vector3(cos(a_rot), 0.0, -sin(a_rot))
+	# #fold — anchors are PER LEG since the turn capability: each node's own
+	# macro_anchor meta carries its leg's {start, rot_y}, and the inverse
+	# transform below re-derives fwd/rgt per node. The a_start/a_rot above
+	# remain only as a fallback for nodes missing the meta (pre-fold saves).
 	# Build the chain accumulator: for each index the operator MOVED (or any
 	# index <= max moved), compute its local delta vs nominal, then subtract
 	# the upstream accumulated drift so the on-disk value is the operator's
@@ -2234,6 +2536,7 @@ func save_macro_overrides(macro_id: String) -> int:
 	var acc := Vector3.ZERO
 	var acc_rot := 0.0
 	var acc_scale := Vector3.ONE
+	var cur_leg : int = 0
 	for i in range(p_seed.size()):
 		if not members.has(i):
 			continue
@@ -2241,17 +2544,31 @@ func save_macro_overrides(macro_id: String) -> int:
 		var nom : Dictionary = {"x": 0.0, "y": 0.0, "z": 0.0}
 		if i < nominal.size() and nominal[i] is Dictionary:
 			nom = nominal[i]
+		# #fold — a turn changes the local frame, so upstream drift cannot
+		# inherit across it: reset the chain accumulator at each leg boundary
+		# (the load side mirrors this via delta_base in _build_full_line).
+		var nom_leg : int = int(nom.get("leg", 0))
+		if nom_leg != cur_leg:
+			cur_leg = nom_leg
+			acc = Vector3.ZERO
+			acc_rot = 0.0
+		# #fold — invert with THIS NODE'S leg anchor.
+		var n_anchor : Dictionary = node.get_meta("macro_anchor") if node.has_meta("macro_anchor") else anchor
+		var n_start : Vector3 = n_anchor.get("start", a_start)
+		var n_rot : float = float(n_anchor.get("rot_y", a_rot))
+		var fwd := Vector3(-sin(n_rot), 0.0, -cos(n_rot))
+		var rgt := Vector3(cos(n_rot), 0.0, -sin(n_rot))
 		# Inverse transform: local = inverse_basis * (world_pos - start).
 		# Basis is rotation-only around Y, so dot products recover x_local
 		# (along rgt) and z_local (along fwd).
-		var rel : Vector3 = node.global_position - a_start
+		var rel : Vector3 = node.global_position - n_start
 		var x_local : float = rel.dot(rgt)
 		var z_local : float = rel.dot(fwd)
 		var y_local : float = rel.y
 		var dx : float = x_local - float(nom.get("x", 0.0))
 		var dy : float = y_local - float(nom.get("y", 0.0))
 		var dz : float = z_local - float(nom.get("z", 0.0))
-		var drot : float = node.rotation.y - (a_rot + PI)
+		var drot : float = node.rotation.y - (n_rot + PI)
 		# Wrap rotation into (-PI, PI] so saved deltas are minimal.
 		drot = wrapf(drot, -PI, PI)
 		var sc : Vector3 = node.scale

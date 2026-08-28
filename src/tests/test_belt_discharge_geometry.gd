@@ -87,8 +87,12 @@ func _ready() -> void:
 	_check_catalog_belt("opzetband_3a3b")
 	# Fixture 3: a shipped belt WITH a top tray, yawed and offset — proves both
 	# points are world-space and that top_flat_m is honoured.
-	_check_belt("westa_band_1 config, yawed 90 deg @ (7,2,-3)",
-		{"deck_length": 0.0, "incline_deg": 45.0, "incline_run": 6.5,
+	# 2026-08-28: label decoupled from westa_band_1 — that belt's incline_run is
+	# now DERIVED from the vw_trommel funnel (see _build_opzetband), so a frozen
+	# copy here would silently drift. This fixture tests the lip/landing MATH
+	# under yaw+offset for a steep no-deck tray belt; any config exercises it.
+	_check_belt("45 deg + top-tray config, yawed 90 deg @ (7,2,-3)",
+		{"deck_length": 0.0, "incline_deg": 45.0, "incline_run": 3.75,
 			"deck_width": 1.2, "top_flat_m": 0.6},
 		Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(7.0, 2.0, -3.0)))
 	await _check_behaviour()

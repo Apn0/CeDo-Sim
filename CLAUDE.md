@@ -121,6 +121,10 @@ read `Result:` AND the `note  :` lines in `tools/regression/out/last_run.log`.
    waslijn, doseersilo. These are `PlaceableCatalog` ids and display names.
 8. Every machine gets a light grime patina by default. Nothing is brand-new
    painted (global in `PlaceableCatalog._mat`).
+8b. **All factory motors are CeDo-logo dark blue** (#191E6C — operator
+   2026-08-28: "All motors in the factory are blue … the blue from that
+   logo"). Global in `PlaceableCatalog._motor_unit`; never paint a motor
+   another colour.
 9. Audit renders get a **per-line unique filename** (`shot_flotation_tank_3A.png`),
    never a shared name that overwrites the previous line's shot. Renders come from
    `src/tests/shot_placeable.tscn`:
