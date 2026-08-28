@@ -533,15 +533,16 @@ func _physics_process(delta: float) -> void:
 
 	# Phase 2 (#146): pick / apply the locomotion state (IDLE / WALK / CROUCH /
 	# JUMP / PRONE) BEFORE deriving velocity so the speed multiplier + jump
-	# impulse apply this tick. The state machine also resizes the capsule + the
-	# body's Y-scale to match the pose (taller for stand, shorter for crouch).
+	# impulse apply this tick. The state machine resizes the CAPSULE to match
+	# the pose; the visible body is posed by the skeleton, not scaled (the
+	# legacy Y-squash went out with the 2026-08-28 rig unification).
 	_update_locomotion(delta)
 
-	# Audit item 2 — sine-based walking gait. _walk_phase advances by the ground
-	# distance walked this tick (TAU per GAIT_STRIDE_M), then _apply_gait pushes
-	# sin(phase)*amp onto the Humanoid's HipPivot_L/R and ShoulderPivot_L/R
-	# nodes so the legs and arms visibly swing. The cache is lazy so a fresh
-	# spawn whose body hasn't entered the tree yet won't bind to null.
+	# VESTIGIAL, kept only so the retirement is visible at the call site: the
+	# sine gait these two fed (audit item 2, via the HipPivot/ShoulderPivot
+	# nodes) is gone — _apply_gait() is an empty stub and NOTHING reads
+	# _walk_phase (verified repo-wide 2026-08-28). The AnimationTree
+	# BlendSpace2D animates the limbs from velocity instead.
 	_advance_walk_phase(delta)
 	_apply_gait()
 

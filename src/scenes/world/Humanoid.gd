@@ -398,13 +398,16 @@ static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -
 
 	# ── LEGS ──────────────────────────────────────────────────────────────────
 	# Feet at y≈-0.9. Boots, shins, thighs stacked up to the pelvis at y≈-0.18.
-	# Wrapped in a HIP PIVOT Node3D at the hip joint (y=-0.06) so the gait
-	# animator in NPC.gd can rotate the whole leg about X without offsetting
-	# the foot in world space (rotating about the actual hip joint, not about
-	# the rig origin). The pivot's local Y + each mesh's local Y still sum to
-	# the same world Y the boxes had before — _set_body_render_layer_split
-	# (which sums parent Node3D Y to classify head-vs-body) is unaffected.
-	# Pivot names: HipPivot_L / HipPivot_R (NPC gait reads these).
+	# Built under a HIP PIVOT Node3D at the hip joint (y=-0.06). The pivot no
+	# longer ANIMATES anything — since the 2026-08-28 rig unification
+	# _install_skeleton_rig reparents these meshes onto the leg bones and the
+	# pivot is left empty (the NPC sine gait it existed for is a dead stub).
+	# It survives as an authoring convenience: the pivot's local Y + each
+	# mesh's local Y sum to the same rig-local Y the boxes had before, which is
+	# what _local_in_root walks to classify each box onto its bone.
+	# Pivot names: HipPivot_L / HipPivot_R — still read BY NAME in
+	# MainWorld._set_body_render_layer_split (first-person legs), so do not
+	# rename or remove them.
 	var _hip_y : float = -0.06
 	for sx in [-1.0, 1.0]:
 		var x : float = float(sx) * 0.12
@@ -475,16 +478,17 @@ static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -
 				pass
 
 	# ── ARMS ──────────────────────────────────────────────────────────────────
-	# Wrapped in a SHOULDER PIVOT Node3D at the shoulder joint (y=+0.47, top of
-	# the upper-arm box) so the gait animator in NPC.gd can swing the whole arm
-	# from the shoulder. Same Y-sum invariant as legs: pivot.y + mesh.y == old
-	# mesh.y, so render-layer classification stays put.
-	# Pivot names: ShoulderPivot_L / ShoulderPivot_R (NPC gait reads these).
+	# Built under a SHOULDER PIVOT Node3D at the shoulder joint (y=+0.47, top of
+	# the upper-arm box). Same story as the legs: the pivot is an authoring
+	# frame only — the meshes end up on the arm BONES and the pivot is left
+	# empty. Same Y-sum invariant, so bone classification is unaffected.
+	# Pivot names: ShoulderPivot_L / ShoulderPivot_R.
 	#
 	# #212 — White work gloves. When the NPC is in a hi-vis loadout (hi_vis or
 	# operator PPE, AND on duty) we layer a slightly-oversized white box over
-	# the bare-skin hand. It lives INSIDE the shoulder pivot so it swings with
-	# the arm. We skip the glove on the "none" PPE (off-shift attire) and any
+	# the bare-skin hand. It is built inside the shoulder pivot and therefore
+	# classifies onto the same hand bone as the hand box, so it keeps tracking
+	# the hand. We skip the glove on the "none" PPE (off-shift attire) and any
 	# off_duty state — same suppression rule as the vest/bands above.
 	var _show_gloves : bool = (wear_state != "off_duty") \
 		and (ppe_class == "hi_vis" or ppe_class == "operator")

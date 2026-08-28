@@ -209,6 +209,29 @@ func _run() -> void:
 	_check(n_leg >= 6,
 		"the FP splitter still tags the LEGS visible after the bone move (%d leg meshes, was 0 with the old HipPivot-only rule)" % n_leg)
 	_check(n_head > 0, "torso/head/arms stay FP-culled (%d meshes)" % n_head)
+	# SandboxWorld._tag_body_layers uses a DIFFERENT rule — summed local Y with
+	# a 0.55 head threshold. The unification could have broken it, because the
+	# meshes moved under BoneAttachment3D nodes: it only still works because a
+	# mesh's position became (rig_local - bone_rest) while its attachment is
+	# seeded to bone_rest, so the sum cancels back to the anatomical height.
+	# Replicate that walk here and prove the head still lands above 0.55.
+	var head_hits : int = 0
+	var s3 : Array = [fp_body]
+	while not s3.is_empty():
+		var n3 : Node = s3.pop_back()
+		for c5 in n3.get_children():
+			s3.append(c5)
+		if n3 is MeshInstance3D:
+			var y_local : float = (n3 as MeshInstance3D).position.y
+			var par : Node = n3.get_parent()
+			while par != null and (not (par is Node3D) or par.name != "PlayerBody"):
+				if par is Node3D:
+					y_local += (par as Node3D).position.y
+				par = par.get_parent()
+			if y_local >= 0.55:
+				head_hits += 1
+	_check(head_hits >= 4,
+		"the sandbox Y-sum walk still reconstructs anatomical height at rest (%d meshes above 0.55 — head/cap/face)" % head_hits)
 	mw.free()
 
 	print("[TEST] humanoid rig conformance %s (%d fail)" % ["PASS" if _fails == 0 else "FAIL", _fails])
