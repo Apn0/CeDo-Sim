@@ -778,8 +778,19 @@ Built: chain runs with cross flights along the flat bottom's centreline,
 idler sprocket at the +Z turn, a 45° trough rising out of the tank past the
 end wall, chain + flights on the incline, drive sprocket (spinning, comp
 "bottom_scraper") + motor at the head, discharge lip, and an open container
-on the floor beneath it. **⚠ End-choice flagged for operator eyeball:** the
-incline was placed at the -Z INFEED end (counter-flow; keeps the +Z end
-clear for surface scraper + weir + dewater screw) — the operator did not
-name the end. Render `renders/shot_flotation_tank.png`; world regression
+on the floor beneath it. The end-choice question was answered the same hour by the operator's
+side-view drawing (`photos/flotation_tank_sketch_2026-08-28.png`, full
+colour legend: black tank, blue stand, red paddles + blades, gray infeed
+chute, light-blue water lines, yellow/green outgoing screw cross-section,
+brown scraper chain + flights, orange scraper chute housing, pink
+container): the incline rises at the **OUTLET side**, starting mid-bottom
+and climbing at 45° inside along the outlet wall, in an ENCLOSED housing
+that clears the waterline ("so that the water doesn't exit through the
+scraper chute"), then a bend-over downspout drops into the container on
+the floor past the tank. Rebuilt to the drawing; the assembly sits on the
+-X side and the #230 surface-scraper container moved to +X so both bins
+stand side-by-side past the outlet wall, as drawn. The drawing also
+CONFIRMS: large intrek + small transports + largest uittrek at the surface,
+the outgoing dewater screw at the outlet rim, and the infeed chute at the
+opposite rim. Render `renders/shot_flotation_tank.png`; world regression
 17/0; line-1 conformance PASS.
