@@ -678,3 +678,24 @@ ring-main model. The 3.1-C item "remodel 3A's ringleiding as the spiral
 cabinet" is ON HOLD until the operator identifies the photo — if (b) and the
 photo are different objects, 3A may have BOTH, and the decommissioned 3B
 flat-cabinet model may need revisiting too.
+
+### GAP 3C.1 — the 3C extruder screw doubled FIVE subsystems · ✅ FIXED
+
+The gap-1.3 follow-on note, now verified and worse than flagged:
+`extruder_screw` (3C's barrel entry, idx 22) was dispatched to the FULL
+`_m_extruder_unit` builder, which unconditionally builds the integrated PCU,
+kopfilter, vacuum-degas domes, melt pump AND pelletizer cabinet — all five
+standing in miniature beside their real standalone 3C machines (compactor 21,
+laser 23, degas 24, melt pump 25, kopfilter 26).
+
+**And the fix already existed:** a purpose-built barrel-only
+`_m_extruder_screw` (gearbox + feed throat + barrel/heater bands + two barrel
+domes + melt-out flange) sat UNDISPATCHED in the catalog the whole time —
+**orphaned-model disease case #4** (after `sga_drum`, `vw_trommel` and the
+never-placed water blocks). One dispatch line routes it now. 3C seq-alignment
+11/0; world regression 17/0. Render `renders/shot_extruder_screw.png`.
+
+Open note: the original builder carries TWO degas domes on the barrel ("the
+operator's 2 vacuum zones") while idx 24 places a standalone `vacuum_degas`
+— left VERBATIM (the builder documents its own intent); whether both degas
+representations belong on 3C is a question for the 3C doc-walk proper.

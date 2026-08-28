@@ -1768,7 +1768,16 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 		"thermal_dryer_decommissioned": _m_thermal_dryer_decommissioned(p, size, color, ghost)
 		# ── Line 3C extruder back-end (#175) ──────────────────────────────────
 		"compactorband":  _m_compactorband(p, size, color, ghost)
-		"extruder", "extruder_screw": _m_extruder_unit(p, size, color, ghost)
+		"extruder": _m_extruder_unit(p, size, color, ghost)
+		# 3C's screw entry is ONLY the barrel section — the PCU (compactor,
+		# idx 21), kopfilter (26), vacuum_degas (24) and melt_pump (25) are
+		# STANDALONE machines in LINE_3C_SEQ. Routing this id through the
+		# full unit builder doubled all of them in miniature (doc-walk
+		# follow-on to gap 1.3, verified 2026-08-28). The purpose-built
+		# barrel-only _m_extruder_screw had existed UNDISPATCHED all along —
+		# orphaned-model disease case #4 (after sga_drum, vw_trommel and the
+		# fixed-equipment water blocks).
+		"extruder_screw": _m_extruder_screw(p, size, color, ghost)
 		"vacuum_degas":   _m_vacuum_degas(p, size, color, ghost)
 		"kopfilter":      _m_kopfilter(p, size, color, ghost)
 		"heetafslag":     _m_heetafslag(p, size, color, ghost)
