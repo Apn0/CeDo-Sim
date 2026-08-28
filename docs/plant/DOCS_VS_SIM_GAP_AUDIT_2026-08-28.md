@@ -38,7 +38,7 @@ do what the docs say it does?*
 |---|---|---|
 | 1 | `lijn_1_flow.md` + `line_flow_graphs.json` (line "1") | ✅ COMPLETE — gaps 1.1–1.3, fix 1.4, ruling 1.B, fold 1.A; leg F confirmed by operator 2026-08-28. Open: archive the sketch image |
 | 2 | `lijn_3a_flow.md` | ✅ 2.1-B re-wired per operator, 2.2 fixed, Q2.3/Q2.4 closed; open: heater cabinets build, bigbag render sign-off |
-| 3 | `lijn_3b_flow.md` | ☐ |
+| 3 | `lijn_3b_flow.md` | ⚙ gap 3.1 fixed; open: doc's operator questions (rafter type, fan V-numbers, zeefbocht) |
 | … | remaining 426 docs | ☐ |
 
 ---
@@ -471,3 +471,46 @@ The ring question this answer raised is CLOSED by ruling 2.1-B: the ring
 lives in the rondmeng loop. Remaining build item: the three heater cabinets
 (60×60×200, filter stacks, pipes from the stack bottoms to the blowers) as
 role-none side units — needs a small model pass.
+
+---
+
+## Doc 3 — `lijn_3b_flow.md` (27 material edges + water)
+
+Walked 2026-08-28 against `LINE_3B_SEQ`. **Cleared, not gaps:** the front wash
+chain matches the doc end-to-end (vuilsnippersilo → M11a screw → rafter →
+rafter-ontwaterschroef → frictiescheider 210 → flotation tank (intrek/uittrek
+rollers integrated per ruling Q2.3) → ontwaterschroef → frictie li/re →
+parallel dryers 310/311); VSS-first is the #136 ruling; kleine_la is the
+checklist-sourced water fixture; compactorband was gap 1.3; kopfilter is
+integrated in the extruder unit; no bigbag (doc draws none + Q&A ruling —
+guarded by the 3A test); no mengsilo/rondmeng on 3B ✓.
+
+### GAP 3.1 — the 3B dry section ran through an undocumented plasmaq · ✅ FIXED
+
+**Doc** (edges 12-19): Ventilator (recombine) → **Verdeelwals** →
+**THERMISCHE DROGER** (+ Heater, hot air) → ventilator → **Ringventilator** →
+extruder silo.
+
+**Sim, before:** blower → cyclone → **plasmaq** → cyclone → blower → cyclone →
+extruder silo. No verdeelwals, no thermal dryer — and the plasmaq is a
+**line-3C machine** (L3C.16, HMI-photo-verified, `Line3CDef.gd:74`); no 3B
+source for one exists anywhere in the corpus.
+
+**Corroboration:** ruling 2.1-B the same day — operator, unprompted: *"the
+thermal dryer I think is for line three b, actually"* — the REAL machine,
+working differently from 3A's heated ring. Doc and operator agree; fixed
+without a further halt (flagged for operator review in-session).
+
+**Fix:** dry section recomposed to the doc. The two unnamed fan blocks stay
+generic `blower` placeables — the doc's own open question 6 asks the operator
+for their V-numbers. Proven by NEW `test_line3b_flow_conformance` (22 checks,
+3 layers: SEQ incl. front-chain order and no-plasmaq/no-mengsilo/no-bigbag
+guards; world counts; LineFlow wiring incl. the li/re split feeding BOTH
+dryers, both recombining at the Ventilator, and the thermal dryer fed AND
+feeding onward). Mutation (plasmaq chain restored) goes red 10 ways. 3B
+identity ledger 4/0; world regression 17/0.
+
+**Open (from the doc's own operator-question list):** rafter brand/type (Q1 —
+model itself operator-approved 2026-07-15), the two fan V-numbers (Q6), the
+zeefbocht fed by "Pomp zeefbocht" (Q3), LA1/P1 water routing (Q4). The heater
+cabinet beside the thermal dryer joins doc 2's pending heater-cabinet build.

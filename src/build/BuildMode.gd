@@ -460,12 +460,22 @@ const LINE_3B_SEQ : Array[Dictionary] = [
 	# without these tags, so only ONE side would carry material.
 	{"id": "mech_dryer", "x": -1.75, "z": 2.0, "parallel_branch": true},
 	{"id": "mech_dryer", "x":  1.75, "z": 2.0, "parallel_branch": true, "main_advance": 4.75},
-	{"id": "blower"},              # recombine
-	{"id": "cyclone"},
-	{"id": "plasmaq"},
-	{"id": "cyclone"},
-	{"id": "blower"},
-	{"id": "cyclone"},
+	# ── DOC-WALK GAP FIX 2026-08-28 (gap 3.1) — lijn_3b_flow.md edges 12-19.
+	# The doc's dry section is: Ventilator (recombine) → Verdeelwals →
+	# THERMISCHE DROGER (+ Heater, hot air) → ventilator → Ringventilator →
+	# extruder silo. The sim instead ran cyclone → PLASMAQ → cyclone → blower
+	# → cyclone: no verdeelwals, no thermal dryer, and a plasmaq that every
+	# document places on LINE 3C only (L3C.16, HMI-photo-verified,
+	# Line3CDef.gd:74) — no 3B source for it exists. The operator independently
+	# confirmed the same day (ruling 2.1-B): "the thermal dryer is for line
+	# 3B, actually" — the REAL machine, unlike 3A where the heated ring does
+	# the job. The two unnamed fan blocks keep generic `blower` placeables;
+	# the doc's own open question 6 asks the operator for their V-numbers.
+	{"id": "blower"},              # "Ventilator" — recombine (edges 12-14)
+	{"id": "verdeelwals"},         # Verdeelwals (edge 15)
+	{"id": "thermal_dryer"},       # Thermische droger — 3B's REAL machine (edge 15; heater cabinet pending)
+	{"id": "blower"},              # "ventilator" (edge 17)
+	{"id": "blower"},              # Ringventilator (edges 18-19, pneumatic into the silo)
 	{"id": "extruder_silo"},
 	# Gap 1.3 — see the matching note in LINE_3A_SEQ. Flow diagram edge 32:
 	# extruder_silo → compactor_band. The PCU stays integrated in the extruder.
