@@ -285,6 +285,15 @@ static func items() -> Array[Dictionary]:
 			# transitions. Frame legs reach the floor via extend_machine_legs().
 			{"id": "cyclone_tower",  "name": "Cyclone on tower (gravity drop)", "category": "Conveyance", "size": Vector3(2.4, 8.0, 2.4), "color": Color(0.58, 0.58, 0.62)},
 			{"id": "ringleiding",    "name": "Ringleiding (pneumatic ring main)","category": "Conveyance","size": Vector3(3.2, 3.0, 3.2),"color": Color(0.60, 0.62, 0.66)},
+			# The 3A rondmeng RING — operator-identified 2026-08-28 ("it's the
+			# ring") from assets/reference_photos/machines/_ringleiding_1..4:
+			# a caged SERPENTINE, not the generic ring main above. Three
+			# stacked ~Ø440 cream pipe runs with 180° U-bends at alternating
+			# ends ("starts at the bottom … 180° turn … up a little … another
+			# 180 … two loops"), clamp collars, grey cage with yellow-trimmed
+			# posts + wire mesh, gauge on the top bend, vendor placard
+			# "GLOBAL SPIRAL CHUTES MOD. 260". Heated air per ruling 2.1-B.
+			{"id": "ringleiding_3a", "name": "Ringleiding 3A (Global Spiral Chutes MOD. 260)","category": "Conveyance","size": Vector3(1.6, 2.8, 5.0),"color": Color(0.86, 0.84, 0.78)},
 			# Inter-machine transfer connectors — drop one between a machine's outlet
 			# and the next machine's inlet, then jog it into place (K edit mode).
 			{"id": "funnel",         "name": "Metal funnel",       "category": "Conveyance", "size": Vector3(1.2, 1.0, 1.2),  "color": Color(0.60, 0.62, 0.66)},
@@ -1764,6 +1773,7 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 		"scraper_conveyor":_m_scraper_conveyor(p, size, color, ghost)
 		"verdeelwals":    _m_verdeelwals(p, size, color, ghost)
 		"ringleiding":    _m_ringleiding(p, size, color, ghost)
+		"ringleiding_3a": _m_ringleiding_3a(p, size, color, ghost)
 		"thermal_dryer":  _m_thermal_dryer(p, size, color, ghost)
 		"thermal_dryer_decommissioned": _m_thermal_dryer_decommissioned(p, size, color, ghost)
 		# ── Line 3C extruder back-end (#175) ──────────────────────────────────
@@ -9873,6 +9883,85 @@ static func _m_verdeelwals(p: Node3D, size: Vector3, color: Color, ghost: bool) 
 
 # ── ringleiding (pneumatic ring main): a horizontal smooth-pipe loop up high that
 #    feeds conveying air to drop points. Cosmetic — NO rotor. ────────────────────
+# ── Ringleiding 3A — the rondmeng serpentine, photo-accurate from
+#    _ringleiding_1..4.png (operator 2026-08-28: "it's the ring"). Three
+#    stacked horizontal runs of Ø ~440 cream pipe joined by 180° U-bends at
+#    alternating ends; clamp collars along the runs; grey square-tube cage
+#    with YELLOW-trimmed posts + wire-mesh panels; pressure gauge on the top
+#    bend flange; entry riser at the bottom, exit continuing up from the top
+#    run (to the shared silo-top cyclone); vendor placard "GLOBAL SPIRAL
+#    CHUTES MOD. 260". size = (1.6, 2.8, 5.0), runs along Z. ─────────────────
+static func _m_ringleiding_3a(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
+	var pipe  := _mat(color, ghost, 0.15, 0.55)                     # cream GRP/steel pipe
+	var dark  := _mat(_DARK, ghost, 0.5, 0.6)
+	var frame := _mat(Color(0.48, 0.50, 0.53), ghost, 0.5, 0.5)     # grey cage tube
+	var trim  := _mat(_SAFETY, ghost, 0.2, 0.6)                     # yellow post trim
+	var steel := _mat(_STEEL, ghost, 0.6, 0.35)
+
+	var pr : float = 0.22                                           # pipe radius (Ø 440)
+	var run_len : float = size.z * 0.78
+	var ys : Array[float] = [0.62, 1.40, 2.18]                      # the three run heights
+	var bend_r : float = (ys[1] - ys[0]) * 0.5                      # U-bend radius
+
+	# ── The three runs with clamp collars. ───────────────────────────────────
+	for yi in ys.size():
+		_cyl(p, pr, pr, run_len, Vector3(0.0, ys[yi], 0.0), pipe, "z")
+		for cz in [-0.30, -0.10, 0.10, 0.30]:
+			_cyl(p, pr + 0.015, pr + 0.015, 0.05, Vector3(0.0, ys[yi], run_len * float(cz)), dark, "z")
+
+	# ── 180° U-bends at ALTERNATING ends (bottom→mid at -Z, mid→top at +Z),
+	# each approximated by 5 short segments on a half-circle arc. ────────────
+	for bi in [0, 1]:
+		var y_lo : float = ys[bi]
+		var end_sign : float = -1.0 if bi == 0 else 1.0
+		var cz2 : float = end_sign * run_len * 0.5
+		var cy2 : float = y_lo + bend_r
+		for si in 5:
+			var a0 : float = PI * float(si) / 5.0
+			var a1 : float = PI * float(si + 1) / 5.0
+			var p0 := Vector3(0.0, cy2 - cos(a0) * bend_r, cz2 + end_sign * sin(a0) * bend_r)
+			var p1 := Vector3(0.0, cy2 - cos(a1) * bend_r, cz2 + end_sign * sin(a1) * bend_r)
+			var seg_mid := (p0 + p1) * 0.5
+			var d := p1 - p0
+			var seg := _cyl(p, pr, pr, d.length() + pr * 0.6, seg_mid, pipe, "y")
+			seg.rotation.x = atan2(d.z, d.y)
+
+	# ── Entry riser (floor → bottom run, -Z end) + exit up from the top run
+	# (+Z end, toward the silo-top cyclone). ─────────────────────────────────
+	_cyl(p, pr, pr, ys[0], Vector3(0.0, ys[0] * 0.5, -run_len * 0.38), pipe, "y")
+	_cyl(p, pr, pr, size.y - ys[2], Vector3(0.0, (ys[2] + size.y) * 0.5, run_len * 0.38), pipe, "y")
+
+	# ── Gauge on a flanged joint at the top bend. ────────────────────────────
+	_cyl(p, pr + 0.03, pr + 0.03, 0.06, Vector3(0.0, ys[2], run_len * 0.42), steel, "z")
+	_cyl(p, 0.03, 0.03, 0.10, Vector3(0.0, ys[2] + pr + 0.05, run_len * 0.42), dark, "y")
+	_cyl(p, 0.07, 0.07, 0.03, Vector3(0.0, ys[2] + pr + 0.13, run_len * 0.42), _mat(Color(0.92, 0.92, 0.90), ghost, 0.1, 0.7), "y")
+
+	# ── Cage: grey posts with yellow trim, top rails, wire-mesh side panels. ─
+	var px : float = size.x * 0.46
+	var pz : float = size.z * 0.47
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			var post := _box(p, Vector3(0.07, size.y * 0.92, 0.07),
+				Vector3(float(sx) * px, size.y * 0.46, float(sz) * pz), frame)
+			post.add_to_group("machine_leg")
+			post.set_meta("leg_h", size.y * 0.92)
+			_box(p, Vector3(0.075, size.y * 0.92, 0.02),
+				Vector3(float(sx) * px, size.y * 0.46, float(sz) * pz + 0.045), trim)
+	for sx2 in [-1.0, 1.0]:
+		_box(p, Vector3(0.06, 0.06, pz * 2.0), Vector3(float(sx2) * px, size.y * 0.92, 0.0), frame)
+		# Open cage rails (a solid grating panel rendered as an opaque slab
+		# and hid the serpentine — thin horizontal wires read as mesh better).
+		for ry in [0.25, 0.85, 1.45, 2.05, 2.45]:
+			_box(p, Vector3(0.02, 0.02, pz * 1.94), Vector3(float(sx2) * px, ry, 0.0), frame)
+	_box(p, Vector3(px * 2.0, 0.06, 0.06), Vector3(0.0, size.y * 0.92, pz), frame)
+	_box(p, Vector3(px * 2.0, 0.06, 0.06), Vector3(0.0, size.y * 0.92, -pz), frame)
+
+	# ── Vendor placard on the +X top rail. ───────────────────────────────────
+	if not ghost:
+		var plc := _stencil_label(p, "GLOBAL SPIRAL CHUTES  MOD. 260",
+			Vector3(0.9, 0.10, 0.01), "+X")
+		plc.position = Vector3(px + 0.05, size.y * 0.86, -pz * 0.4)
+
 static func _m_ringleiding(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
 	var pipe := _mat(color, ghost, 0.7, 0.3)
 	var dark := _mat(_DARK, ghost, 0.5, 0.5)

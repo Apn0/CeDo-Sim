@@ -150,7 +150,7 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 	{"id": "transport_screw", "x": 5.0, "z": -3.0, "branch_recirc": true},  # Doseerschroef M11a (onder mengsilo)
 	{"id": "verdeelwals",     "x": 5.0, "z":  0.0},                          # Verdeelwals (m14)
 	{"id": "blower",          "x": 5.0, "z":  3.0},                          # Ventilator V1 rondmengen
-	{"id": "ringleiding",     "x": 5.0, "z":  6.0},                          # de RING (serpentine)
+	{"id": "ringleiding_3a",  "x": 5.0, "z":  6.0},                          # de RING (Global Spiral Chutes MOD. 260)
 	# Heater/filter cabinet beside V1 (operator spec, Q2.4): heats the air V1
 	# sucks in; its pipe elbow aims -X toward the blower at x 5.0. Role-none
 	# utility — the I1 guard keeps it out of the branch-chain bookkeeping, so

@@ -73,7 +73,7 @@ func _run() -> void:
 		if String(MachineFlow.profile(bid).get("role", "")) != "none":
 			loop_ids.append(bid)
 		i += 1
-	_check(loop_ids == ["transport_screw", "verdeelwals", "blower", "ringleiding"],
+	_check(loop_ids == ["transport_screw", "verdeelwals", "blower", "ringleiding_3a"],
 		"rondmeng-lus = doseerschroef → verdeelwals m14 → V1 → de RING (got %s)" % str(loop_ids))
 	# Q2.4 — the heater/filter cabinet stands beside V1 (operator spec:
 	# 60×60×200 cabinet; heats the air the blower sucks in).
@@ -113,7 +113,7 @@ func _run() -> void:
 			continue
 		var pid := String(n3.get_meta("placeable_id"))
 		counts[pid] = int(counts.get(pid, 0)) + 1
-	_check(int(counts.get("ringleiding", 0)) == 1, "world contains exactly 1 ringleiding (in the lus)")
+	_check(int(counts.get("ringleiding_3a", 0)) == 1, "world contains exactly 1 ringleiding_3a (the caged serpentine, in the lus)")
 	_check(int(counts.get("wind_sifter", 0)) == 1, "world contains exactly 1 wind_sifter (infeed)")
 	_check(int(counts.get("verdeelwals", 0)) == 1,
 		"world contains exactly 1 verdeelwals (m14 in the lus — none on main), got %d" % int(counts.get("verdeelwals", 0)))
@@ -145,7 +145,7 @@ func _run() -> void:
 			recirc_in = true
 			recirc_src_id = String((nodes[int((e as Dictionary)["a"])] as Dictionary).get("id", ""))
 	_check(recirc_in, "a RECIRC edge returns into the mengsilo (rondmeng-retour)")
-	_check(recirc_src_id == "ringleiding",
+	_check(recirc_src_id == "ringleiding_3a",
 		"the recirc edge comes from the RING — the lus's last stage (got '%s')" % recirc_src_id)
 	# Doc edge 13: Mengsilo → Doseerschroef M11b — the MAIN path must continue
 	# past the side-loop. Guards the explicit-out suppression hole: a source

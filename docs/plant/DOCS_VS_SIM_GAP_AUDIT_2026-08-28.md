@@ -750,3 +750,16 @@ them as one blob" → the sim's MAS buffer ×2 + MAS droger ×2 chain stands.
 walk, with zero open deltas.** Remaining line-1 items live in the detail
 program only (ring remodel from photos, spiral-cabinet ringleiding
 distinction, etc.).
+
+### ✅ Detail program: the 3A ring rebuilt from its photos (2026-08-28)
+
+New placeable `ringleiding_3a` ("Global Spiral Chutes MOD. 260") replacing the
+generic ring-main model in the 3A rondmeng-lus slot — photo-accurate from
+`_ringleiding_1..4.png` per R.1's identification: three stacked Ø ~440 cream
+pipe runs with clamp collars, 180° U-bends at alternating ends (the
+serpentine), open steel cage with yellow-trimmed posts and wire rails,
+pressure gauge on the top bend, entry riser at the bottom, exit rising from
+the top run toward the silo-top cyclone, vendor placard. The generic
+`ringleiding` id keeps the plant-wide ring-main model (fixed-equipment row
+untouched). 3A conformance updated to the new id — 31/31; world regression
+17/0. Render: `renders/shot_ringleiding_3a.png`.
