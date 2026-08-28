@@ -36,7 +36,7 @@ do what the docs say it does?*
 
 | # | Document | Status |
 |---|---|---|
-| 1 | `lijn_1_flow.md` + `line_flow_graphs.json` (line "1") | ⚙ 1 of 3 gaps fixed |
+| 1 | `lijn_1_flow.md` + `line_flow_graphs.json` (line "1") | ⚙ gaps 1.1 + 1.2 fixed; 1.3 + consequence 1.A open |
 | 2 | `lijn_3a_flow.md` | ☐ |
 | 3 | `lijn_3b_flow.md` | ☐ |
 | … | remaining 426 docs | ☐ |
@@ -102,18 +102,62 @@ splitting the stream left/right previously had **no splitting geometry**. The
 split existed only as a LineFlow connector rule spawning two chutes out of a
 straight gutter.
 
-### GAP 1.2 — `intrekschroef_11a` / `_11b` missing · ☐ OPEN
+### GAP 1.2 — `intrekschroef_11a` / `_11b` in the wrong stage · ✅ FIXED
 
 **Doc:** `maalmolen_1` → `ventilator_10a/b` → `intrekschroef_11a/b` →
-`flotatie_tank` (edges 14-19).
+`flotatie_tank` (edges 14-19), and **no** screw between the frictiescheiders
+and the mill — `ventilator_8a/b` feed the mill directly.
 
-**Sim:** post-mill chain is `mill` → 2× `blower` → 2× `cyclone` →
-`flotation_tank`. No screws. A `transport_screw` pair does exist on line 1 but
-sits **pre**-mill, where the doc has no screw at all.
+**Sim, before:** the `transport_screw` pair sat **pre**-mill, and the post-mill
+cyclones dumped straight into the flotation tank.
 
-Reads like the discharge screws were placed one stage too early. Needs an
-operator check before moving them — and per standing rule 1, whether a chute
-sits between the cyclones and the tank.
+**Operator, 2026-08-28:** *"after the mill, like the doc says"*.
+
+**Fix:** the pair is **moved, not added** — deleted from the pre-mill stage and
+re-placed between the post-mill cyclones and the flotation tank. Length-neutral
+by construction, so the flotation tank and the whole extruder back-end stay
+exactly where they were; only the mill and the post-mill blower/cyclone pairs
+shift 5 m upstream into the space the misplaced screws had occupied.
+
+### ⚠ CONSEQUENCE 1.A — line 1 is now longer than the building · ☐ OPEN
+
+Measured with a throwaway probe, building `line_1` at the origin before and
+after the two fixes above:
+
+| | machines | Z span |
+|---|---|---|
+| `origin/main` (before) | 48 | **147.9 m** |
+| with gaps 1.1 + 1.2 fixed | 51 | **160.2 m** |
+
+The building shell's aabb is **140 × 155 m** (`regression_world_save.gd`,
+"shell footprint non-trivial"). Gap 1.2 was length-neutral; the whole +12.3 m
+is gap 1.1's three doc-required machines (`transport_belt` 4.0 + `sga_feed_chute`
+1.8 + `sga_drum` 5.0, plus 3 × `LINE_GAP_M` 0.5).
+
+So line 1 was **already** over the 140 m axis at 147.9 m and cleared the 155 m
+axis by only ~7 m; adding the machines the plant's own flow diagram requires
+takes it past both. For comparison `line_3a` is 117.2 m and passes the
+footprint check comfortably.
+
+**This is not merely a side effect of the fix — it is evidence the sim's line-1
+layout was already dimensionally unfaithful.** The real hall holds this line
+with the SGA drum in it, so either the sim's inter-machine spacing is too
+generous, or line 1 does not run as one straight axis in reality.
+`floor_plan_edits.md:41` hints at the latter: lines run *"doorlopend van Hal 4
+(shredders) naar Hal 5"* — through more than one hall.
+
+**Do not "fix" this by shrinking `main_advance`/`LINE_GAP_M` until the operator
+says how line 1 is really laid out** — that would be inventing floor plan, which
+this project forbids. Open question for the operator:
+
+> Does line 1 run as one straight run down the hall, or does it fold / change
+> direction (e.g. Hal 4 → Hal 5)? And roughly how long is the real run?
+
+Note also that **nothing in the regression harness would have caught this**:
+`regression_world_save.gd` hardcodes `line_3a` for its footprint check, so line
+1 has never been footprint-tested at any length. `test_line1_flow_conformance`
+(added this pass) reports the span but deliberately does **not** gate on it,
+because the correct limit is unknown until the operator answers.
 
 ### GAP 1.3 — `compactor_band` missing on lines 1, 3A and 3B · ☐ OPEN
 

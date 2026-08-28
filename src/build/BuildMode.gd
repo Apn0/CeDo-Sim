@@ -513,13 +513,26 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	{"id": "blower",      "x":  2.0, "z": 0.5, "main_advance": 2.5},
 	{"id": "cyclone",     "x": -2.0, "z": 0.5},
 	{"id": "cyclone",     "x":  2.0, "z": 0.5, "main_advance": 3.0},
-	{"id": "transport_screw", "x": -2.0, "z": 0.5},
-	{"id": "transport_screw", "x":  2.0, "z": 0.5, "main_advance": 5.0},
+	# ── DOC-WALK GAP FIX 2026-08-28 (gap 1.2) — lijn_1_flow.md edges 12-19 ──
+	# The diagram's post-mill chain is
+	#   maalmolen_1 → ventilator_10a/b → intrekschroef_11a/b → flotatie_tank
+	# and it has NO screw between the frictiescheiders and the mill
+	# (ventilator_8a/b feed the mill directly). This macro had the pair in the
+	# wrong stage: two transport_screw entries BEFORE the mill and none after,
+	# so the post-mill cyclones dumped straight into the flotation tank.
+	# Operator confirmed 2026-08-28: "after the mill, like the doc says".
+	# MOVED, not added — the pre-mill pair is deleted and re-placed below, so
+	# the line's total length is unchanged and the flotation tank and the whole
+	# extruder back-end stay exactly where they were. Only the mill and the
+	# post-mill blower/cyclone pairs shift 5 m upstream, into the space the
+	# misplaced screws used to occupy.
 	{"id": "mill"},
 	{"id": "blower",      "x": -2.0, "z": 0.5},
 	{"id": "blower",      "x":  2.0, "z": 0.5, "main_advance": 2.5},
 	{"id": "cyclone",     "x": -2.0, "z": 0.5},
 	{"id": "cyclone",     "x":  2.0, "z": 0.5, "main_advance": 3.0},
+	{"id": "transport_screw", "x": -2.0, "z": 0.5},                # intrekschroef 11a
+	{"id": "transport_screw", "x":  2.0, "z": 0.5, "main_advance": 5.0},  # intrekschroef 11b
 	{"id": "flotation_tank"},
 	{"id": "dewater_screw"},
 	{"id": "friction_sep"},
