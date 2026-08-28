@@ -111,29 +111,41 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 	{"id": "mech_dryer", "gap": 1.2},   # wet→dry section break: wider access gap
 	{"id": "blower"},
 	{"id": "mengsilo"},
-	# ── RECIRC DRYING LOOP (branch, +X side, returns to the mengsilo top) ──
-	# 2nd dosing screw lifts film into the ring main to DRY it; a cyclone drops the
-	# dried film back into the TOP of the mengsilo. Toggleable sub-circuit.
+	# ── DOC-WALK GAP FIX 2026-08-28 (gap 2.1) — lijn_3a_flow.md edges 13-28,
+	# operator: "Diagram is right — fix the sim". The old layout had the two
+	# paths MISCOMPOSED: the ringleiding + a cyclone sat inside the recirc
+	# loop (whose own comment claimed an unrecorded operator description),
+	# while the flow diagram, photo_audit.md:34's spine and
+	# fixed_equipment_inventory.md:29 ("plant-wide ring main") all put the
+	# ringleiding in the MAIN path. The loop also lacked its verdeelwals m14,
+	# and the main path carried an extra early verdeelwals + extra trailing
+	# cyclone that are in no document.
+	# ── RONDMENG-LUS (branch, +X side, returns to the mengsilo top) ──
+	# Doc edges 19-22: Mengsilo → Doseerschroef M11a (2nd block with that
+	# motor code — ruled REAL, question_answers.json) → Verdeelwals (m14) →
+	# Ventilator V1 rondmengen → pneumatic return into the silo top.
 	# #71 — `branch_recirc` on the first branch entry tells _build_full_line to
-	# tag the LAST branch entry (cyclone) with a recirc back-edge to the source
-	# (mengsilo). LineFlow treats recirc edges as invisible to the cycle check,
-	# so the loop can close without blocking the main forward path.
-	{"id": "transport_screw", "x": 5.0, "z": -3.0, "branch_recirc": true},
-	{"id": "blower",          "x": 5.0, "z":  0.0},
-	{"id": "ringleiding",     "x": 5.0, "z":  3.0},
-	{"id": "cyclone",         "x": 5.0, "z":  6.0},
-	# ── MAIN PATH out of the mengsilo (1st dosing screw) ──
-	{"id": "transport_screw"},
-	{"id": "verdeelwals"},
-	{"id": "blower"},
+	# tag the LAST branch entry (V1's blower) with a recirc back-edge to the
+	# source (mengsilo). LineFlow treats recirc edges as invisible to the
+	# cycle check, so the loop can close without blocking the main path.
+	{"id": "transport_screw", "x": 5.0, "z": -3.0, "branch_recirc": true},  # Doseerschroef M11a (onder mengsilo)
+	{"id": "verdeelwals",     "x": 5.0, "z":  0.0},                          # Verdeelwals (m14)
+	{"id": "blower",          "x": 5.0, "z":  3.0},                          # Ventilator V1 rondmengen
+	# ── MAIN PATH out of the mengsilo — doc edges 13-17, 24-28 ──
+	{"id": "transport_screw"},          # Doseerschroef M11b
+	{"id": "blower"},                   # Ventilator V2
+	{"id": "ringleiding"},              # ringleiding (pneumatic ring main)
+	# "Cycloon & windzifter" is ONE station in the diagram; the sim's two
+	# placeables stand adjacent for it (intra-station order not documented —
+	# kept the pre-existing wind_sifter→cyclone order).
 	{"id": "wind_sifter"},
-	{"id": "blower"},
 	{"id": "cyclone"},
-	{"id": "verdeelwals"},
+	{"id": "blower"},                   # Ventilator V2a
+	{"id": "verdeelwals"},              # Verdeelwals thermische droger
 	{"id": "thermal_dryer"},
+	# "Cycloon -> ventilator V3" is likewise one block, two placeables.
 	{"id": "cyclone"},
-	{"id": "blower"},
-	{"id": "cyclone"},
+	{"id": "blower"},                   # Ventilator V3
 	# #107 — was plain `silo`; the extruder's hot end has to be fed by the
 	# elevated extruder_silo (frame + 2 cyclones on top + lump bin + windows),
 	# not a generic dosing silo. Same change applied to 3B and Line 1 below.

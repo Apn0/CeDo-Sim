@@ -37,7 +37,7 @@ do what the docs say it does?*
 | # | Document | Status |
 |---|---|---|
 | 1 | `lijn_1_flow.md` + `line_flow_graphs.json` (line "1") | ✅ COMPLETE — gaps 1.1–1.3, fix 1.4, ruling 1.B, fold 1.A; leg F confirmed by operator 2026-08-28. Open: archive the sketch image |
-| 2 | `lijn_3a_flow.md` | ☐ |
+| 2 | `lijn_3a_flow.md` | ⚙ gap 2.1 fixed; open: 2.2 bigbag, Q2.3 rollers, Q2.4 heaters |
 | 3 | `lijn_3b_flow.md` | ☐ |
 | … | remaining 426 docs | ☐ |
 
@@ -339,3 +339,59 @@ numbers exactly, so the fix was derived, not tuned:
   1.99), then restored clean. 51 ok / 0 fail.
 - Side effect: line 1 shortens 161.4 → **159.1 m** (consequence 1.A still
   open — the fold).
+
+---
+
+## Doc 2 — `lijn_3a_flow.md` (36 material edges + water)
+
+Walked 2026-08-28 against `LINE_3A_SEQ` + `MachineFlow` + the Q&A rulings.
+**Cleared, not gaps:** C1 = Pomp C1 (placed, #81); kopfilter (built INTO
+`_m_extruder_unit` SECTION 5, doc-cited); M11a appearing twice (ruled real);
+compactorband (fixed by gap 1.3); VSS before vuilsnippersilo (#136 ruling);
+transfer_chute glijgoot (LA1-doc-sourced).
+
+### GAP 2.1 — mengsilo loop miscomposed · ✅ FIXED
+
+**Doc** (edges 13-28, backed by `photo_audit.md:34`'s spine and
+`fixed_equipment_inventory.md:29`): main path = M11b → V2 → **ringleiding →
+cycloon & windzifter** → V2a → verdeelwals → thermische droger → cycloon→V3 →
+extruder silo; rondmeng-lus = M11a₂ → **verdeelwals m14** → V1 → silo top.
+
+**Sim, before:** the recirc loop held the ringleiding + a cyclone (its comment
+claimed an operator description no ruling records), the loop lacked its
+verdeelwals, and the main path had an extra early verdeelwals + extra trailing
+cyclone found in no document.
+
+**Operator 2026-08-28:** "Diagram is right — fix the sim."
+
+**Fix:** both paths recomposed to the diagram in `LINE_3A_SEQ` (3A drops
+43 → 41 machines). "Cycloon & windzifter" and "Cycloon → ventilator V3" are
+each ONE doc station rendered as two adjacent placeables; intra-station order
+is undocumented and kept from the old SEQ. Proven by the NEW
+`test_line3a_flow_conformance` (12 checks: SEQ order, world counts, and the
+LineFlow RECIRC edge from V1's blower back into the silo — doc edge 22);
+mutation (ringleiding back into the loop) goes red 4 ways. World regression
+17/0, all 41 machines inside the footprint.
+
+### GAP 2.2 — bigbag station missing · ☐ OPEN (needs operator description)
+
+Doc edge 36: Weegschaal → **bigbag station**. Already RULED a 3A feature
+(`question_answers.json`: "bigbag station = 3A confirmed", 3B has none), with
+a behaviour fact: after a knife/screen change the extruder is run out to
+bigbag until quality is OK. The sim has no bigbag placeable of any kind. No
+photo exists in the corpus — per the no-build-without-docs rule the model
+needs the operator's description (shape, hangs-from-frame vs platform, where
+it stands relative to the weegschaal) before building.
+
+### Q 2.3 — Intrekrol / Uittrek rol flotatie tank · ☐ OPEN
+
+Doc blocks 6/8 draw the intake and extraction ROLLERS of the flotation tank
+as separate stations; `_m_flotation` has internal paddle shafts only, and no
+roller machine exists in the SEQ. Ask the operator: separate machines on the
+floor, or the tank's own end rollers (one-drum-style merge)?
+
+### Q 2.4 — Heaters (3× hot-air blocks) · ☐ OPEN
+
+Doc draws three Heaters blocks (bij M11b, bij V1, bij thermische droger) with
+"lucht (heet)" edges. Nothing in the sim; no photo/spec beyond the block.
+Needs operator input before modelling — air-side utilities, low priority.
