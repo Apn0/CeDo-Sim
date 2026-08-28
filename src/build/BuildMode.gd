@@ -493,12 +493,32 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	#                     visually by the K-menu jog after placement)
 	#   → westa_band_1 (45° incline up to the top of the pre-wash drum)
 	#   → vw_trommel    (the real voorwastrommel, top-fed)
+	# ── #fold 2026-08-28 — line 1 SNAKES (operator layout sketch; transcribed
+	# in docs/plant/line1_layout_sketch_2026-08-28.md — original image not yet
+	# archived, see the warning there). ───────────────────────────────────────
+	# Plan-view legs (headings relative to the macro's placement rot):
+	#   leg A            opzetband_1 → shredder_1        (intake ramp)
+	#   leg B  LEFT +90°  uitvoerband + magnet           (short east run)
+	#   leg C  LEFT +90°  short belt → westa → hoekgoot  (climb to drum head)
+	#   leg D  RIGHT −90°  drum → Y-goot → wet train     (the long drum axis)
+	#   leg E  RIGHT −90°  flotation tank + dewater      (sketch: tank offset
+	#                                                     south of the train)
+	#   leg F  LEFT +90°  friction → … → extruder tail   (ASSUMED east — the
+	#          sketch ends at the flotation tank; the floor plan draws
+	#          extruder 1 as a long east-west block on Hal 2's south wall, so
+	#          east is the minimal-invention tail heading. Operator eyeball
+	#          pending — flagged in the gap-audit ledger.)
 	{"id": "opzetband_1"},
 	{"id": "shredder_1"},
-	{"id": "transport_belt"},                          # uitvoerband
+	{"id": "transport_belt", "turn_deg": 90.0},        # uitvoerband — leg B (east)
 	{"id": "overband_magnet"},
-	{"id": "transport_belt", "main_advance": 1.0},     # short 1m after 90° L
-	{"id": "westa_band_1"},                            # 45° incline to drum top
+	{"id": "transport_belt", "turn_deg": 90.0,
+	 "main_advance": 1.0},                             # short belt — leg C (north)
+	# westa gap 2.14 — DERIVED: the belt's lip sits run+flat = 5.12 m past its
+	# origin; the chute's IN port is 0.828 m upstream of the chute centre, so
+	# centre-to-centre = 5.12 + 0.828 = 5.94 = westa_half 2.9 + gap + chute_half
+	# 0.9 → gap = 2.14. Guarded by test S4b (lip-over-IN measured in-world).
+	{"id": "westa_band_1", "gap": 2.14},               # 45° climb to the hoekgoot
 	# ── DOC-WALK FIX 2026-08-28 — operator-directed, closes audit finding C5 ──
 	# Was `prewash_drum`: an 18-line unsourced stub (a trough, a plain cylinder,
 	# a spray pipe). The REAL voorwastrommel geometry — ~150 lines, built from
@@ -529,13 +549,22 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	# 1.B). The drum therefore carries BOTH behaviours in MachineFlow.gd
 	# (wash + heavy-parts screening, its own dedicated arm), and the
 	# Y-splitgoot follows it directly.
-	# `sga_feed_chute` (the 90°-turn corner chute, operator-described and in
-	# the sketch at the drum's head) is NOT placeable on a straight macro axis
-	# — it turns the flow 90° — so it returns WITH the line-1 fold. On the
-	# straight interim axis westa_band_1 discharges into the funnel directly
-	# (measured, S4).
 	# The C5 model-swap note above still applies unchanged.
-	{"id": "vw_trommel"},
+	# ── #fold — the hoekgoot + the leg-C→D corner. All numbers DERIVED from
+	# sga_feed_chute_ports_local(1.8³) + vw_trommel_funnel_mouth_local():
+	#   y 3.48   = funnel mouth 4.155 + 0.30 drop − chute OUT height 0.973
+	#   gap −1.15 = the corner pivot must sit at the OUT port's along-leg
+	#              coordinate (0.245 m upstream of the chute centre), so the
+	#              cursor is pulled BACK: 0.9 half-depth + gap = −0.245.
+	#   turn_advance 0.49 = OUT hangs 0.750 m to the flow's right; the funnel
+	#              sits trommel_half 4.0 − inset 3.74 = 0.26 m down leg D, so
+	#              leg D pre-advances 0.75 − 0.26 = 0.49 to line them up.
+	# extend_legs — the chute rides 3.48 m up; its own legs stretch to the
+	# floor via _finalize_placed → extend_machine_legs (#70).
+	# Guarded by test S4 (chute OUT over funnel) + S4b (westa lip over IN).
+	{"id": "sga_feed_chute", "y": 3.48, "gap": -1.15, "extend_legs": true},
+	{"id": "vw_trommel", "turn_deg": -90.0,
+	 "turn_advance": 0.49},                            # leg D (east) — the drum axis
 	{"id": "scheidingsgoot"},                          # Y-splitgoot, drum → friction L/R
 	# #196 — parallel L/R friction split. parallel_branch tells the macro
 	# builder these two siblings BOTH receive from the upstream scheidingsgoot
@@ -569,9 +598,14 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	{"id": "cyclone",     "x":  2.0, "z": 0.5, "main_advance": 3.0},
 	{"id": "transport_screw", "x": -2.0, "z": 0.5},                # intrekschroef 11a
 	{"id": "transport_screw", "x":  2.0, "z": 0.5, "main_advance": 5.0},  # intrekschroef 11b
-	{"id": "flotation_tank"},
+	# #fold — leg E (RIGHT −90): the sketch offsets the flotation tank SOUTH
+	# of the wet train's east run.
+	{"id": "flotation_tank", "turn_deg": -90.0},
 	{"id": "dewater_screw"},
-	{"id": "friction_sep"},
+	# #fold — leg F (LEFT +90): the long tail heads east again. ASSUMED (see
+	# the leg map at the top of this SEQ) — sketch ends at the flotation tank;
+	# east matches the floor plan's east-west extruder-1 block in Hal 2.
+	{"id": "friction_sep", "turn_deg": 90.0},
 	{"id": "kufferath_sieve", "x": -2.5, "z": 1.0},
 	{"id": "kufferath_sieve", "x":  2.5, "z": 1.0, "main_advance": 4.5},
 	{"id": "mas_bak",     "x": -2.5, "z": 1.0},
@@ -1976,10 +2010,32 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 	# Authored-graph macro: place geometry only, stamp NO lf_explicit_outs. See
 	# GRAPH_TOPOLOGY_MACROS — that meta suppresses LineFlow's Line3CDef.LINKS pass.
 	var graph_topology : bool = GRAPH_TOPOLOGY_MACROS.has(line_id)
+	# ── LEG STATE (#fold 2026-08-28) ─────────────────────────────────────────
+	# A line is a chain of straight LEGS. A main entry carrying {"turn_deg": a}
+	# rotates the heading by `a` degrees (POSITIVE = LEFT, i.e. CCW seen from
+	# above) around the current cursor point BEFORE that entry is placed; the
+	# cursor point becomes the new leg's origin and the cursor resets to 0.
+	# Optional {"turn_advance": m} pre-advances the new leg's cursor (used to
+	# line a corner chute's discharge up with the next machine's inlet).
+	# Every placed node's macro_anchor meta records ITS OWN leg's {start,
+	# rot_y}, so save_macro_overrides can invert per-leg. Built for the line-1
+	# fold (operator layout sketch, 2026-08-28); no other macro turns yet.
 	# Forward = the ghost's local -Z; right = local +X (lateral lane for branches).
-	var fwd := Vector3(-sin(rot_y), 0.0, -cos(rot_y))
-	var rgt := Vector3(cos(rot_y), 0.0, -sin(rot_y))
+	var leg_start := start
+	var leg_rot := rot_y
+	var leg_idx := 0
+	var fwd := Vector3(-sin(leg_rot), 0.0, -cos(leg_rot))
+	var rgt := Vector3(cos(leg_rot), 0.0, -sin(leg_rot))
 	var main_z := 0.0
+	var total_run := 0.0                  # summed leg lengths, for the report line
+	var leg_by_idx : Dictionary = {}      # entry_idx -> leg_idx (at_entry guard)
+	# Saved-delta chain semantics across a turn: accumulated_chain() knows
+	# nothing about legs, and an upstream drag must NOT leak its drift into a
+	# leg with a different frame. `delta_base` snapshots the accumulated delta
+	# at the last pre-turn index; each application subtracts it, so inheritance
+	# restarts at every leg. save_macro_overrides mirrors this (acc reset per
+	# leg) — keep the two in lockstep.
+	var delta_base : Dictionary = {"dx": 0.0, "dy": 0.0, "dz": 0.0, "drot_y": 0.0}
 	var built := 0
 	# #lump-3c — per-entry place_z snapshots, so a LATER entry can anchor itself
 	# to an earlier machine's z-centre via {"at_entry": N}. This is what lets the
@@ -2020,6 +2076,26 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 		var x : float = float(entry.get("x", 0.0))
 		var is_branch : bool = not is_equal_approx(x, 0.0)
 		var is_parallel : bool = bool(entry.get("parallel_branch", false))
+		# ── #fold — turn the line heading before placing this entry ──────────
+		if entry.has("turn_deg"):
+			if is_branch:
+				push_warning("[BuildMode] %s entry %d: turn_deg on a BRANCH entry is unsupported — ignored" % [line_id, entry_idx])
+			else:
+				leg_start = leg_start + fwd * main_z          # pivot = cursor point
+				leg_rot += deg_to_rad(float(entry["turn_deg"]))
+				fwd = Vector3(-sin(leg_rot), 0.0, -cos(leg_rot))
+				rgt = Vector3(cos(leg_rot), 0.0, -sin(leg_rot))
+				total_run += main_z
+				main_z = float(entry.get("turn_advance", 0.0))
+				leg_idx += 1
+				# A turn breaks the transportband head-to-tail chain and the
+				# saved-delta inheritance (frame change).
+				prev_tb_outlet_y = -1.0
+				last_main_was_tb = false
+				prev_main_gap = LINE_GAP_M
+				if entry_idx > 0:
+					delta_base = macro_deltas.get(entry_idx - 1, delta_base)
+		leg_by_idx[entry_idx] = leg_idx
 		var item := PlaceableCatalog.get_item(mid)
 		var depth : float = 2.0
 		if not item.is_empty():
@@ -2069,6 +2145,10 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 			# entry N's machine grows, the anchored furniture moves with it.
 			var anchor_idx : int = int(entry.get("at_entry", -1))
 			if anchor_idx >= 0:
+				# #fold — z snapshots are LEG-relative; anchoring across a turn
+				# would re-base on a coordinate from a different frame.
+				if int(leg_by_idx.get(anchor_idx, leg_idx)) != leg_idx:
+					push_warning("[BuildMode] %s entry %d: at_entry %d is on a different leg — geometry will be wrong" % [line_id, entry_idx, anchor_idx])
 				if entry_z_by_idx.has(anchor_idx):
 					place_z = float(entry_z_by_idx[anchor_idx]) + float(entry.get("z", 0.0))
 				else:
@@ -2093,10 +2173,15 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 			# #MSB — apply operator-saved chain delta (in macro local frame).
 			# dx → lateral (rgt), dz → forward (fwd), dy → vertical.
 			var d : Dictionary = macro_deltas.get(entry_idx, {})
-			var d_dx : float = float(d.get("dx", 0.0))
-			var d_dy : float = float(d.get("dy", 0.0))
-			var d_dz : float = float(d.get("dz", 0.0))
-			var d_drot : float = float(d.get("drot_y", 0.0))
+			# #fold — subtract the pre-turn accumulated drift so saved-delta
+			# inheritance restarts at each leg (see delta_base above).
+			var d_dx : float = float(d.get("dx", 0.0)) - float(delta_base.get("dx", 0.0))
+			var d_dy : float = float(d.get("dy", 0.0)) - float(delta_base.get("dy", 0.0))
+			var d_dz : float = float(d.get("dz", 0.0)) - float(delta_base.get("dz", 0.0))
+			var d_drot : float = float(d.get("drot_y", 0.0)) - float(delta_base.get("drot_y", 0.0))
+			if d.is_empty():
+				# No stored delta at all for this index — nothing to re-base.
+				d_dx = 0.0; d_dy = 0.0; d_dz = 0.0; d_drot = 0.0
 			var d_scale : Vector3 = Vector3.ONE
 			if d.has("scale") and d["scale"] is Vector3:
 				d_scale = d["scale"]
@@ -2105,17 +2190,24 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 			# y=0.12, mirroring NpcTaskBench.PLATFORM_Y). Defaults to 0 so every
 			# existing macro entry is unchanged.
 			var entry_y : float = float(entry.get("y", 0.0))
-			node.global_position = Vector3(start.x, start.y + tb_y_offset, start.z) \
+			node.global_position = Vector3(leg_start.x, leg_start.y + tb_y_offset, leg_start.z) \
 				+ fwd * (place_z + d_dz) + rgt * (x + d_dx) + Vector3.UP * (d_dy + entry_y)
-			node.rotation.y = rot_y + PI + d_drot
+			node.rotation.y = leg_rot + PI + d_drot
 			if d_scale != Vector3.ONE:
 				node.scale = d_scale
-			_finalize_placed(node, mid, 0.0)
+			# #fold — {"extend_legs": true} passes the entry's y lift through to
+			# _finalize_placed so the machine's own legs stretch to the floor
+			# (e.g. the elevated sga_feed_chute at the drum head). Opt-in:
+			# existing lifted entries (lump carts on the 0.12 m bordes) keep
+			# their legacy no-frame behaviour.
+			_finalize_placed(node, mid, entry_y if bool(entry.get("extend_legs", false)) else 0.0)
 			# #MSB — stamp macro-membership metas so save-back can find this
 			# node and recover its local-frame pose later.
 			node.set_meta("macro_id", line_id)
 			node.set_meta("macro_index", entry_idx)
-			node.set_meta("macro_anchor", {"start": start, "rot_y": rot_y})
+			# #fold — the anchor is THIS NODE'S LEG, not the macro's entry
+			# point. save_macro_overrides inverts per node with this.
+			node.set_meta("macro_anchor", {"start": leg_start, "rot_y": leg_rot})
 			built += 1
 			# ── #71 branch state transitions ───────────────────────────────────
 			# I1 fix (component_flags_review.md, confirmed 2026-07-06): utilities
@@ -2171,7 +2263,8 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 		# Explicit cursor push to clear a split/recombine (e.g. past parallel dryers).
 		if entry.has("main_advance"):
 			main_z += float(entry["main_advance"])
-	print("[BuildMode] Built %s — %d machines over %.1f m" % [line_id, built, main_z])
+	total_run += main_z
+	print("[BuildMode] Built %s — %d machines over %.1f m in %d leg(s)" % [line_id, built, total_run, leg_idx + 1])
 	if _status:
 		_status.text = "Built %s — %d machines.  Use [K] edit mode to jog each into place." % [
 			line_id.to_upper(), built]
@@ -2217,16 +2310,39 @@ func _macro_nominal_poses(p_seed: Array[Dictionary]) -> Array:
 	var poses : Array = []
 	var main_z := 0.0
 	const TB_CHUTE_DROP_M : float = 0.22
-	const _LINE_GAP_M : float = LINE_GAP_M
 	var prev_tb_outlet_y : float = -1.0
 	var last_main_was_tb : bool = false
-	for entry in p_seed:
+	# 2026-08-28 MIRROR FIX: this walk ignored per-entry {"gap": g} overrides
+	# and undid tb head-to-tail spacing with the constant instead of the gap
+	# actually added — so every nominal z after a gap override disagreed with
+	# _build_full_line, and save-back recorded phantom deltas that the load
+	# path then re-applied onto the same wrong nominal (self-consistent, so
+	# the round-trip test never went red). Now tracks prev_main_gap exactly
+	# like the builder.
+	var prev_main_gap : float = LINE_GAP_M
+	# #fold — leg tracking mirrors _build_full_line: a main entry with
+	# turn_deg resets the leg-relative cursor (and optionally pre-advances by
+	# turn_advance). Emitted "leg" lets save_macro_overrides reset its chain
+	# accumulator at each leg boundary.
+	var leg := 0
+	# 2026-08-28 MIRROR FIX 2: {"at_entry": N} anchoring existed only in the
+	# builder — nominal fell back to the cursor, so 3C's laserfilter furniture
+	# had wrong nominals (masked by the same phantom-delta self-consistency).
+	var entry_z_by_idx : Dictionary = {}
+	for entry_idx in range(p_seed.size()):
+		var entry : Dictionary = p_seed[entry_idx]
 		var mid : String = String(entry.get("id", ""))
 		if mid == "":
-			poses.append({"x": 0.0, "y": 0.0, "z": 0.0})
+			poses.append({"x": 0.0, "y": 0.0, "z": 0.0, "leg": leg})
 			continue
 		var x : float = float(entry.get("x", 0.0))
 		var is_branch : bool = not is_equal_approx(x, 0.0)
+		if entry.has("turn_deg") and not is_branch:
+			main_z = float(entry.get("turn_advance", 0.0))
+			leg += 1
+			prev_tb_outlet_y = -1.0
+			last_main_was_tb = false
+			prev_main_gap = LINE_GAP_M
 		var item := PlaceableCatalog.get_item(mid)
 		var depth : float = 2.0
 		if not item.is_empty():
@@ -2249,20 +2365,35 @@ func _macro_nominal_poses(p_seed: Array[Dictionary]) -> Array:
 			tb_y_offset = base_y
 			tb_outlet_y_after = base_y + outlet_top_off
 		var place_z : float
+		var gap_after : float = float(entry.get("gap", LINE_GAP_M))
 		if not is_branch:
 			if last_main_was_tb and is_tb:
-				main_z -= _LINE_GAP_M
+				main_z -= prev_main_gap
 			main_z += depth * 0.5
 			place_z = main_z
-			main_z += depth * 0.5 + _LINE_GAP_M
+			main_z += depth * 0.5 + gap_after
+			prev_main_gap = gap_after
 			last_main_was_tb = is_tb
 		else:
-			place_z = main_z + float(entry.get("z", 0.0))
+			var anchor_idx : int = int(entry.get("at_entry", -1))
+			if anchor_idx >= 0 and entry_z_by_idx.has(anchor_idx):
+				place_z = float(entry_z_by_idx[anchor_idx]) + float(entry.get("z", 0.0))
+			else:
+				place_z = main_z + float(entry.get("z", 0.0))
+		entry_z_by_idx[entry_idx] = place_z
 		if is_tb and not is_branch and tb_outlet_y_after > 0.0:
 			prev_tb_outlet_y = tb_outlet_y_after
 		elif not is_tb and not is_branch:
 			prev_tb_outlet_y = -1.0
-		poses.append({"x": x, "y": tb_y_offset, "z": place_z})
+		# 2026-08-28 MIRROR FIX 3 (found by the fold review): the per-entry
+		# {"y": h} lift is part of the NOMINAL pose — the builder adds it at
+		# placement, so leaving it out of the nominal made save_macro_overrides
+		# record it as a phantom operator dy, which the load path then applied
+		# ON TOP of entry_y: every save/rebuild cycle would double the lift
+		# (lump carts +0.12, the fold's hoekgoot +3.48 → 6.96 m). delta_sane
+		# never catches it (threshold is metres of drag, not stacking).
+		poses.append({"x": x, "y": tb_y_offset + float(entry.get("y", 0.0)),
+			"z": place_z, "leg": leg})
 		if entry.has("main_advance"):
 			main_z += float(entry["main_advance"])
 	return poses
@@ -2296,9 +2427,10 @@ func save_macro_overrides(macro_id: String) -> int:
 		return 0
 	var a_start : Vector3 = anchor.get("start", Vector3.ZERO)
 	var a_rot   : float   = float(anchor.get("rot_y", 0.0))
-	# Inverse-basis vectors (same fwd/rgt as _build_full_line).
-	var fwd := Vector3(-sin(a_rot), 0.0, -cos(a_rot))
-	var rgt := Vector3(cos(a_rot), 0.0, -sin(a_rot))
+	# #fold — anchors are PER LEG since the turn capability: each node's own
+	# macro_anchor meta carries its leg's {start, rot_y}, and the inverse
+	# transform below re-derives fwd/rgt per node. The a_start/a_rot above
+	# remain only as a fallback for nodes missing the meta (pre-fold saves).
 	# Build the chain accumulator: for each index the operator MOVED (or any
 	# index <= max moved), compute its local delta vs nominal, then subtract
 	# the upstream accumulated drift so the on-disk value is the operator's
@@ -2307,6 +2439,7 @@ func save_macro_overrides(macro_id: String) -> int:
 	var acc := Vector3.ZERO
 	var acc_rot := 0.0
 	var acc_scale := Vector3.ONE
+	var cur_leg : int = 0
 	for i in range(p_seed.size()):
 		if not members.has(i):
 			continue
@@ -2314,17 +2447,31 @@ func save_macro_overrides(macro_id: String) -> int:
 		var nom : Dictionary = {"x": 0.0, "y": 0.0, "z": 0.0}
 		if i < nominal.size() and nominal[i] is Dictionary:
 			nom = nominal[i]
+		# #fold — a turn changes the local frame, so upstream drift cannot
+		# inherit across it: reset the chain accumulator at each leg boundary
+		# (the load side mirrors this via delta_base in _build_full_line).
+		var nom_leg : int = int(nom.get("leg", 0))
+		if nom_leg != cur_leg:
+			cur_leg = nom_leg
+			acc = Vector3.ZERO
+			acc_rot = 0.0
+		# #fold — invert with THIS NODE'S leg anchor.
+		var n_anchor : Dictionary = node.get_meta("macro_anchor") if node.has_meta("macro_anchor") else anchor
+		var n_start : Vector3 = n_anchor.get("start", a_start)
+		var n_rot : float = float(n_anchor.get("rot_y", a_rot))
+		var fwd := Vector3(-sin(n_rot), 0.0, -cos(n_rot))
+		var rgt := Vector3(cos(n_rot), 0.0, -sin(n_rot))
 		# Inverse transform: local = inverse_basis * (world_pos - start).
 		# Basis is rotation-only around Y, so dot products recover x_local
 		# (along rgt) and z_local (along fwd).
-		var rel : Vector3 = node.global_position - a_start
+		var rel : Vector3 = node.global_position - n_start
 		var x_local : float = rel.dot(rgt)
 		var z_local : float = rel.dot(fwd)
 		var y_local : float = rel.y
 		var dx : float = x_local - float(nom.get("x", 0.0))
 		var dy : float = y_local - float(nom.get("y", 0.0))
 		var dz : float = z_local - float(nom.get("z", 0.0))
-		var drot : float = node.rotation.y - (a_rot + PI)
+		var drot : float = node.rotation.y - (n_rot + PI)
 		# Wrap rotation into (-PI, PI] so saved deltas are minimal.
 		drot = wrapf(drot, -PI, PI)
 		var sc : Vector3 = node.scale

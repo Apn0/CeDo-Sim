@@ -36,7 +36,7 @@ do what the docs say it does?*
 
 | # | Document | Status |
 |---|---|---|
-| 1 | `lijn_1_flow.md` + `line_flow_graphs.json` (line "1") | ⚙ gaps 1.1–1.3, fix 1.4, ruling 1.B done; open: consequence 1.A (fold, sketch received) |
+| 1 | `lijn_1_flow.md` + `line_flow_graphs.json` (line "1") | ✅ gaps 1.1–1.3, fix 1.4, ruling 1.B, fold 1.A done — open: leg-F heading confirmation |
 | 2 | `lijn_3a_flow.md` | ☐ |
 | 3 | `lijn_3b_flow.md` | ☐ |
 | … | remaining 426 docs | ☐ |
@@ -196,6 +196,66 @@ Note also that **nothing in the regression harness would have caught this**:
 1 has never been footprint-tested at any length. `test_line1_flow_conformance`
 (added this pass) reports the span but deliberately does **not** gate on it,
 because the correct limit is unknown until the operator answers.
+
+### ✅ RESOLVED — the fold is laid out (turn capability, 2026-08-28)
+
+Operator sketch received + "build the turn capability and lay out the fold".
+
+**New macro-builder capability** (`BuildMode.gd`): a line is now a chain of
+straight LEGS. A main SEQ entry with `{"turn_deg": a}` rotates the heading `a`
+degrees (positive = LEFT/CCW from above) around the cursor point, which
+becomes the new leg's origin; `{"turn_advance": m}` pre-advances the new leg;
+`{"extend_legs": true}` stretches an elevated entry's legs to the floor.
+Per-node `macro_anchor` now records each node's OWN leg, `_macro_nominal_poses`
+mirrors the walk (emitting a `leg` per pose), and `save_macro_overrides`
+inverts per-leg with chain inheritance reset at each turn (mirrored on the
+load side via `delta_base`). Two pre-existing mirror bugs fixed on the way:
+nominal ignored per-entry `gap` overrides and lacked `at_entry` anchoring —
+both previously masked by phantom-delta self-consistency in the round-trip
+test.
+
+**Line 1's fold** (sketch legs, turns L,L,R,R,L):
+
+| Leg | Heading | Contents |
+|---|---|---|
+| A | (placement rot) | opzetband → shredder |
+| B | LEFT | uitvoerband + magnet |
+| C | LEFT | short belt → westa climb → **hoekgoot** (back, elevated 3.48 m) |
+| D | RIGHT | vw_trommel → Y-goot → wet train → intake screws |
+| E | RIGHT | flotation tank + dewater (sketch: offset south of the train) |
+| F | LEFT | friction → Kufferath/MAS → silo → compactorband → extruder tail |
+
+**Leg F's east heading is an ASSUMPTION** — the sketch ends at the flotation
+tank; east matches the floor plan's east-west extruder-1 block in Hal 2.
+Flagged in the SEQ comment; needs the operator's eyeball.
+
+**Provenance:** the sketch is transcribed verbatim in
+[`line1_layout_sketch_2026-08-28.md`](line1_layout_sketch_2026-08-28.md); the
+**original image is not yet archived** (operator to save it into
+`docs/plant/photos/`). Until then legs A–E rest on that transcription — one
+level less sure than an archived original (review finding, 2026-08-28).
+
+**Adversarial review (17-agent workflow, 2026-08-28):** 3 findings CONFIRMED
+and fixed — (1) S4/S4b could skip silently if `_discharge_lip_pos` vanished
+(proven by live mutation: PASS with 4 fewer checks) → the guard is now its own
+red check; (2) the sketch provenance gap above; (3) a stale "8 m at 35°"
+westa docstring bullet that outlived two rewrites. Self-adjudicated from the
+unverified remainder: (4) REAL save-back bug — nominal poses omitted per-entry
+`y` lifts, so saving macro overrides recorded a phantom dy that the loader
+stacked ON TOP of the lift, doubling it each save/rebuild cycle (hoekgoot
+3.48 → 6.96 m; latent for the 0.12 m lump carts since #225.3) → nominal now
+includes the lift; (5) S4's 0.85 m gate was wider than a lost turn_advance
+(0.49 m) → tightened to 0.35; (6) the plan-box +3 m flat margin understated a
+14 m extruder's half-length → per-machine catalog half-extents.
+
+**Measured, first build:** every derived corner number landed exact — hoekgoot
+OUT over the funnel horiz 0.00 m / drop 0.30 m; westa lip over hoekgoot IN
+0.00 / 0.15; all five leg headings ±90.0°; nominal-mirror parity worst
+0.0000 m over 48 nodes (lump_cart excluded — live physics prop, settles
+−0.29 m). **Folded plan box: 111.6 × 24.8 m — fits the 140 × 155 shell with
+room to spare.** Mutation: flipping one turn sign produces 7 independent
+FAILs (pattern, alignment, heading, plan shape). Consequence 1.A is CLOSED
+pending the leg-F confirmation.
 
 ### GAP 1.3 — `compactor_band` missing on lines 1, 3A and 3B · ✅ FIXED
 

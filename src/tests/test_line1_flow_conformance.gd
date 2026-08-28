@@ -82,17 +82,27 @@ func _run() -> void:
 		print("[TEST] line 1 conformance FAIL (setup incomplete)")
 		get_tree().quit(1); return
 
-	# One-drum ruling: no second drum, no stub, and no corner chute until the
-	# fold exists to make its 90° turn geometrically true.
+	# One-drum ruling: no second drum, no stub. The corner chute is BACK now
+	# that the fold exists to make its 90° turn geometrically true.
 	_check(_idx(seq, "sga_drum") < 0,
 		"NO separate sga_drum — the ruling merged HPS/SGA into vw_trommel")
-	_check(_idx(seq, "sga_feed_chute") < 0,
-		"sga_feed_chute deferred to the fold (a 90° turn on a straight axis would lie)")
 	_check(_idx(seq, "prewash_drum") < 0,
 		"line 1 uses the photo-signed-off vw_trommel, NOT the prewash_drum stub (audit C5)")
-	# Chain: drum -> Y-goot -> friction L/R (sketch: chute/drum/Y run as one).
+	# Chain: westa -> hoekgoot -> drum -> Y-goot -> friction L/R.
+	var i_hoek := _idx(seq, "sga_feed_chute")
+	var i_westa := _idx(seq, "westa_band_1")
+	_check(i_hoek >= 0, "sga_feed_chute (90° hoekgoot) is back in LINE_1_SEQ with the fold")
+	_check(i_westa >= 0 and i_westa < i_hoek, "westa band climbs into the hoekgoot")
+	_check(i_hoek < i_pre, "hoekgoot comes before the drum it feeds")
 	_check(i_pre < i_goot, "drum comes before the Y-splitgoot (goot sits at the drum's END)")
 	_check(i_goot < i_fric, "Y-splitgoot comes before the frictiescheiders it splits into")
+	# The fold itself: the SEQ carries the sketch's turn pattern L,L,R,R,L.
+	var turns : Array = []
+	for e in seq:
+		if (e as Dictionary).has("turn_deg"):
+			turns.append(signf(float((e as Dictionary)["turn_deg"])))
+	_check(turns == [1.0, 1.0, -1.0, -1.0, 1.0],
+		"turn pattern is LEFT,LEFT,RIGHT,RIGHT,LEFT (sketch legs A→F), got %s" % str(turns))
 
 	# ── S1b — gap 1.2: the intake screws belong AFTER the mill ───────────────
 	# Doc edges 14-19: maalmolen_1 -> ventilator_10a/b -> intrekschroef_11a/b ->
@@ -168,8 +178,8 @@ func _run() -> void:
 		"world contains the photo-signed-off vw_trommel (audit C5)")
 	_check(int(counts.get("sga_drum", 0)) == 0,
 		"world contains NO separate sga_drum (one-drum ruling 2026-08-28)")
-	_check(int(counts.get("sga_feed_chute", 0)) == 0,
-		"world contains NO sga_feed_chute yet (deferred to the fold)")
+	_check(int(counts.get("sga_feed_chute", 0)) == 1,
+		"world contains exactly 1 sga_feed_chute (the leg-C→D corner)")
 	_check(int(counts.get("prewash_drum", 0)) == 0,
 		"world contains NO prewash_drum stub on line 1")
 	_check(int(counts.get("compactorband", 0)) == 1,
@@ -177,10 +187,9 @@ func _run() -> void:
 	_check(int(counts.get("scheidingsgoot", 0)) == 1, "world contains exactly 1 scheidingsgoot")
 	_check(int(counts.get("transport_screw", 0)) == 2, "world contains 2 transport_screw (intrekschroef 11a/11b)")
 
-	# Line length is reported, not gated: the harness's footprint check only
-	# ever builds line_3a (117.2 m, 42 machines, fits), so this number is the
-	# only signal that inserting machines has not run line 1 out of the hall.
-	print("  info   : line_1 spans %.1f m along Z (line_3a, which fits, is 117.2 m)" % (max_z - min_z))
+	# With the fold the line is 2-D in plan — S5 reports the full bounding box
+	# and gates it against the building shell; this line is just the raw Z.
+	print("  info   : line_1 raw Z extent %.1f m (folded — see S5 for the plan box)" % (max_z - min_z))
 
 	# ── S3 — LineFlow wires it, and the drum's screening is LIVE ────────────
 	# The drum being placed is not enough: LineFlow drops any machine whose
@@ -252,16 +261,16 @@ func _run() -> void:
 		_check(fanout == 2,
 			"the Y-splitgoot fans out to BOTH frictiescheiders (doc edges 6,7), got %d" % fanout)
 
-	# ── S4 — westa band discharge really lands in the trommel's feed funnel ──
-	# The C5 swap shrank the drum (6.5 → 4.5 m tall), and westa_band_1's spec
-	# was hand-aimed at the OLD stub's 6.5 m top. This measures the actual
-	# world-space relationship between the belt's own _discharge_lip_pos() and
-	# the trommel's funnel mouth (via the shared
-	# PlaceableCatalog.vw_trommel_funnel_mouth_local() helper), so a future
-	# resize of either machine goes red here instead of silently misfeeding.
-	print("  -- S4: westa discharge lip vs vw_trommel feed funnel --")
+	# ── S4/S4b — the fold's corner really carries material (measured) ────────
+	# Two hand-offs at the leg-C→D corner, both measured in WORLD space via the
+	# shared port helpers, so a resize of the belt, the chute or the drum (or a
+	# broken turn transform) goes red here instead of silently misfeeding:
+	#   S4   the hoekgoot's OUT port hangs over the vw_trommel feed funnel
+	#   S4b  the westa band's discharge lip hangs over the hoekgoot's IN port
+	print("  -- S4: hoekgoot OUT over funnel · S4b: westa lip over hoekgoot IN --")
 	var westa : Node3D = null
 	var trommel : Node3D = null
+	var hoek : Node3D = null
 	for m in get_tree().get_nodes_in_group("placed_object"):
 		var n3 := m as Node3D
 		if n3 == null or not n3.has_meta("placeable_id") or not n3.has_meta("macro_id"):
@@ -273,24 +282,159 @@ func _run() -> void:
 			westa = n3
 		elif pid == "vw_trommel":
 			trommel = n3
+		elif pid == "sga_feed_chute":
+			hoek = n3
 	_check(westa != null, "westa_band_1 found in the built line")
 	_check(trommel != null, "vw_trommel found in the built line")
-	if westa != null and trommel != null and westa.has_method("_discharge_lip_pos"):
-		var lip : Vector3 = westa.call("_discharge_lip_pos")
+	_check(hoek != null, "sga_feed_chute found in the built line")
+	# Review finding (2026-08-28, CONFIRMED by live mutation): this guard used
+	# to skip the whole measured block SILENTLY if _discharge_lip_pos vanished
+	# — the suite printed PASS with 4 fewer checks and nothing noticed. The
+	# guard's failure is now itself a red check.
+	_check(westa == null or westa.has_method("_discharge_lip_pos"),
+		"westa exposes _discharge_lip_pos (S4/S4b cannot run without it)")
+	if westa != null and trommel != null and hoek != null \
+			and westa.has_method("_discharge_lip_pos"):
 		var t_size : Vector3 = PlaceableCatalog.get_item("vw_trommel")["size"]
+		var c_size : Vector3 = PlaceableCatalog.get_item("sga_feed_chute")["size"]
+		var ports : Dictionary = PlaceableCatalog.sga_feed_chute_ports_local(c_size)
 		var mouth : Vector3 = trommel.to_global(
 			PlaceableCatalog.vw_trommel_funnel_mouth_local(t_size))
-		var horiz : float = Vector2(lip.x - mouth.x, lip.z - mouth.z).length()
-		var drop : float = lip.y - mouth.y
-		print("  info   : lip (%.2f, %.2f, %.2f)  mouth (%.2f, %.2f, %.2f)  horiz %.2f m  drop %.2f m"
-			% [lip.x, lip.y, lip.z, mouth.x, mouth.y, mouth.z, horiz, drop])
-		# Funnel mouth radius is drum_r*0.55 ≈ 0.85 m — the lip must hang over
-		# the opening, and material must FALL into it (small positive drop),
-		# not be launched from metres above or arrive below the rim.
-		_check(horiz <= 0.85,
-			"lip hangs over the funnel mouth (horiz %.2f m, mouth radius 0.85)" % horiz)
-		_check(drop >= 0.05 and drop <= 0.9,
-			"lip is a sane drop above the mouth (%.2f m, want 0.05–0.9)" % drop)
+		var out_w : Vector3 = hoek.to_global(ports["out"])
+		var in_w : Vector3 = hoek.to_global(ports["in"])
+		var lip : Vector3 = westa.call("_discharge_lip_pos")
+		# S4 — chute OUT over the funnel (mouth radius drum_r*0.55 ≈ 0.85 m).
+		var h1 : float = Vector2(out_w.x - mouth.x, out_w.z - mouth.z).length()
+		var d1 : float = out_w.y - mouth.y
+		print("  info   : chute OUT (%.2f, %.2f, %.2f)  funnel (%.2f, %.2f, %.2f)  horiz %.2f  drop %.2f"
+			% [out_w.x, out_w.y, out_w.z, mouth.x, mouth.y, mouth.z, h1, d1])
+		# Gate 0.35, NOT the 0.85 funnel radius: losing turn_advance (0.49)
+		# misaligns by exactly 0.49 m, which the radius-sized window would
+		# wave through (review finding). Measured build lands at 0.00-0.01.
+		_check(h1 <= 0.35,
+			"S4 chute OUT centred over the funnel (horiz %.2f m, gate 0.35)" % h1)
+		_check(d1 >= 0.05 and d1 <= 0.9,
+			"S4 chute OUT is a sane drop above the mouth (%.2f m, want 0.05–0.9)" % d1)
+		# S4b — westa lip over the chute IN (channel half-width ≈ 0.38 m; allow
+		# a little slack for the lip's own overhang).
+		var h2 : float = Vector2(lip.x - in_w.x, lip.z - in_w.z).length()
+		var d2 : float = lip.y - in_w.y
+		print("  info   : westa lip (%.2f, %.2f, %.2f)  chute IN (%.2f, %.2f, %.2f)  horiz %.2f  drop %.2f"
+			% [lip.x, lip.y, lip.z, in_w.x, in_w.y, in_w.z, h2, d2])
+		_check(h2 <= 0.35,
+			"S4b westa lip lands on the hoekgoot infeed (horiz %.2f m, gate 0.35)" % h2)
+		_check(d2 >= 0.05 and d2 <= 0.6,
+			"S4b westa lip is a sane drop above the infeed (%.2f m, want 0.05–0.6)" % d2)
+
+	# ── S5 — the fold itself: legs, headings, plan box, and mirror parity ────
+	print("  -- S5: fold geometry (operator sketch) --")
+	# Node-by-macro-index lookup (relational — no baked indices).
+	var by_idx : Dictionary = {}
+	for m in get_tree().get_nodes_in_group("placed_object"):
+		var n3 := m as Node3D
+		if n3 == null or not n3.has_meta("macro_id") or not n3.has_meta("macro_index"):
+			continue
+		if String(n3.get_meta("macro_id")) != "line_1":
+			continue
+		by_idx[int(n3.get_meta("macro_index"))] = n3
+	var n_shred : Node3D = by_idx.get(_idx(seq, "shredder_1"))
+	var n_opzet : Node3D = by_idx.get(_idx(seq, "opzetband_1"))
+	var n_magnet : Node3D = by_idx.get(_idx(seq, "overband_magnet"))
+	var n_mill : Node3D = by_idx.get(_idx(seq, "mill"))
+	var n_flot : Node3D = by_idx.get(_idx(seq, "flotation_tank"))
+	var n_ext : Node3D = by_idx.get(_idx(seq, "extruder_1"))
+	var n_silo : Node3D = by_idx.get(_idx(seq, "voorraad_silo"))
+	var all_named : bool = n_shred != null and n_opzet != null and n_magnet != null \
+		and n_mill != null and n_flot != null and n_ext != null and n_silo != null \
+		and hoek != null and trommel != null and westa != null
+	_check(all_named, "all fold landmark machines resolved by macro_index")
+	if all_named:
+		# Headings: consecutive legs differ by exactly ±90° (built at rot 0,
+		# but asserted RELATIVELY so any placement rotation passes too).
+		var d_ab : float = wrapf(n_magnet.rotation.y - n_shred.rotation.y, -PI, PI)
+		var d_bc : float = wrapf(westa.rotation.y - n_magnet.rotation.y, -PI, PI)
+		var d_cd : float = wrapf(trommel.rotation.y - hoek.rotation.y, -PI, PI)
+		var d_de : float = wrapf(n_flot.rotation.y - n_mill.rotation.y, -PI, PI)
+		var d_ef : float = wrapf(n_ext.rotation.y - n_flot.rotation.y, -PI, PI)
+		_check(absf(d_ab - PI / 2.0) < 0.01, "leg A→B turns LEFT 90° (got %.1f°)" % rad_to_deg(d_ab))
+		_check(absf(d_bc - PI / 2.0) < 0.01, "leg B→C turns LEFT 90° (got %.1f°)" % rad_to_deg(d_bc))
+		_check(absf(d_cd + PI / 2.0) < 0.01, "leg C→D turns RIGHT 90° (got %.1f°)" % rad_to_deg(d_cd))
+		_check(absf(d_de + PI / 2.0) < 0.01, "leg D→E turns RIGHT 90° (got %.1f°)" % rad_to_deg(d_de))
+		_check(absf(d_ef - PI / 2.0) < 0.01, "leg E→F turns LEFT 90° (got %.1f°)" % rad_to_deg(d_ef))
+		# Plan relationships at build rot 0 (leg A = -Z, legs B/D/F = -X,
+		# leg C = +Z, leg E = -Z): the sketch's shape, not just the turns.
+		_check(n_shred.global_position.z < n_opzet.global_position.z,
+			"shredder sits downstream (leg A) of the opzetband")
+		_check(westa.global_position.z > n_magnet.global_position.z,
+			"westa climbs BACK up leg C, north of the magnet run")
+		_check(trommel.global_position.x < hoek.global_position.x,
+			"drum runs leg D away from the corner chute")
+		_check(n_flot.global_position.z < trommel.global_position.z,
+			"flotation tank is offset to the SOUTH of the drum axis (sketch)")
+		_check(n_ext.global_position.x < n_flot.global_position.x,
+			"extruder tail runs leg F (assumed east — Hal 2 floor plan)")
+		_check(n_silo.global_position.x < n_ext.global_position.x,
+			"voorraad silo is at the very end of leg F")
+		# Plan bounding box vs the building shell (140 × 155 aabb). Each
+		# machine contributes its own catalog half-extent (max of x/z halves —
+		# a rotation-agnostic upper bound), not a flat margin: a flat +3 m
+		# understated a 14 m extruder's 7 m half-length at the box edge
+		# (review finding).
+		var mn := Vector3(INF, 0, INF)
+		var mx := Vector3(-INF, 0, -INF)
+		for i2 in by_idx:
+			var nd2 := by_idx[i2] as Node3D
+			var p3 : Vector3 = nd2.global_position
+			var it2 : Dictionary = PlaceableCatalog.get_item(String(nd2.get_meta("placeable_id")))
+			var half : float = 1.0
+			if not it2.is_empty():
+				var s2 : Vector3 = it2["size"]
+				half = maxf(s2.x, s2.z) * 0.5
+			mn.x = minf(mn.x, p3.x - half); mn.z = minf(mn.z, p3.z - half)
+			mx.x = maxf(mx.x, p3.x + half); mx.z = maxf(mx.z, p3.z + half)
+		var ext_x : float = mx.x - mn.x
+		var ext_z : float = mx.z - mn.z
+		print("  info   : folded plan box %.1f × %.1f m (shell aabb 140 × 155)" % [ext_x, ext_z])
+		_check((ext_x <= 155.0 and ext_z <= 140.0) or (ext_x <= 140.0 and ext_z <= 155.0),
+			"folded line 1 FITS the building shell in some orientation (%.1f × %.1f)" % [ext_x, ext_z])
+		# Mirror parity: _macro_nominal_poses + each node's own leg anchor must
+		# reproduce the builder's world positions exactly. This is the check
+		# that makes save-back trustworthy — and would have caught the old
+		# gap-override drift between the two walks.
+		var nominal : Array = bm.call("_macro_nominal_poses", seq)
+		var worst := 0.0
+		var checked := 0
+		for i3 in by_idx:
+			var node3 : Node3D = by_idx[i3]
+			if i3 >= nominal.size() or not node3.has_meta("macro_anchor"):
+				continue
+			# lump_cart is a live physics prop — it settles/rolls after spawn
+			# (measured −0.29 m of y-settle), so it can't witness PLACEMENT
+			# fidelity. Everything bolted down stays in the check.
+			if String(node3.get_meta("placeable_id")) == "lump_cart":
+				continue
+			var nomp : Dictionary = nominal[i3]
+			var anc : Dictionary = node3.get_meta("macro_anchor")
+			var a_s : Vector3 = anc.get("start", Vector3.ZERO)
+			var a_r : float = float(anc.get("rot_y", 0.0))
+			var f3 := Vector3(-sin(a_r), 0.0, -cos(a_r))
+			var g3 := Vector3(cos(a_r), 0.0, -sin(a_r))
+			# nominal.y now INCLUDES the per-entry {"y": h} lift (mirror fix 3)
+			# — re-adding it here would mask the exact phantom-dy save-back bug
+			# the fix closed.
+			var expect : Vector3 = a_s + f3 * float(nomp.get("z", 0.0)) \
+				+ g3 * float(nomp.get("x", 0.0)) \
+				+ Vector3.UP * float(nomp.get("y", 0.0))
+			var err : float = (node3.global_position - expect).length()
+			if err > 0.01:
+				print("  debug : idx %d %s err %.4f (world %s vs expect %s)" % [i3,
+					String(node3.get_meta("placeable_id")), err,
+					str(node3.global_position), str(expect)])
+			worst = maxf(worst, err)
+			checked += 1
+		_check(checked >= 40, "mirror parity covered the whole line (%d nodes)" % checked)
+		_check(worst < 0.01,
+			"nominal-pose mirror reproduces every world position (worst %.4f m)" % worst)
 
 	print("[TEST] line 1 conformance %s (%d fail)" % ["PASS" if _fails == 0 else "FAIL", _fails])
 	get_tree().quit(1 if _fails > 0 else 0)

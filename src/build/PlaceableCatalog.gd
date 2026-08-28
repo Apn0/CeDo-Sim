@@ -216,18 +216,14 @@ static func items() -> Array[Dictionary]:
 			# here is the rough bounding box (W × H × L) for the build-mode footprint.
 			{"id": "opzetband_3a3b", "name": "Opzetband 3A/3B (8m flat + 10m@25° + 1m top)", "category": "Conveyance", "size": Vector3(2.0, 4.93, 18.06), "color": Color(0.20, 0.40, 0.80)},
 			{"id": "opzetband_3c6",  "name": "Opzetband 3C/6 (4m flat + 8m@35°)",            "category": "Conveyance", "size": Vector3(2.5, 5.4, 10.6), "color": Color(0.20, 0.40, 0.80)},
-			# westa_band_1 size re-derived 2026-08-28 for the real vw_trommel
-			# (was 1.6×7.0×9.5, aimed at the deleted prewash stub's 6.5 m top).
-			# y: lip 0.7+3.755=4.46 + guide rails ≈ 4.8. z: the opzetband
-			# geometry grows one-sided from its origin (origin = slot centre),
-			# so z is chosen to put the funnel under the lip: lip sits at
-			# run 3.755 + flat 0.6 = 4.36 m downstream of origin; the funnel
-			# sits at z/2 + gap 0.5 + trommel_half 4.0 − funnel_inset 3.74 =
-			# z/2 + 0.76 → z = 2×(4.36−0.76) = 7.2 lands it dead-centre.
-			# Guarded live by test_line1_flow_conformance S4 (lip-over-mouth,
-			# measured in the BUILT world), so trommel/belt resizes go red
-			# there instead of silently misfeeding.
-			{"id": "westa_band_1",   "name": "Westa band 1 (45° feeder to vw_trommel funnel)", "category": "Conveyance", "size": Vector3(1.6, 4.8, 7.2),  "color": Color(0.20, 0.40, 0.80)},
+			# westa_band_1 size re-derived 2026-08-28 (#fold). The belt's rise
+			# is DERIVED in _build_opzetband from the chute/funnel port
+			# helpers (lip ≈ 5.22 → run 4.52, extent 4.52+0.6 = 5.12 m of
+			# one-sided geometry from the origin). y: lip + guide rails ≈ 5.6.
+			# z: geometry-honest wrap (5.12 + margin). The chute is lined up
+			# under the lip via LINE_1_SEQ's westa gap (derivation there), NOT
+			# via this box — guarded live by test_line1_flow_conformance S4b.
+			{"id": "westa_band_1",   "name": "Westa band 1 (45° feeder to SGA hoekgoot)", "category": "Conveyance", "size": Vector3(1.6, 5.6, 5.8),  "color": Color(0.20, 0.40, 0.80)},
 			{"id": "opzetband_1",    "name": "Opzetband 1 (10m@25°, 4m wide, integrated magnet head)", "category": "Conveyance", "size": Vector3(4.0, 5.0, 10.0),  "color": Color(0.20, 0.40, 0.80)},
 			# Inclined belt — climbs 8 m vertically over 8 m horizontal (45°).
 			# Goes from Shredder 2's output up to the feed hopper at the top.
@@ -5411,7 +5407,10 @@ static func _build_tool(id: String, size: Vector3, ghost: bool) -> Node3D:
 ##
 ##   • opzetband_3a3b — 4 m flat + 6 m at 40° + 0.5 m horizontal top
 ##   • opzetband_3c6  — 4 m flat + 8 m at 35°
-##   • westa_band_1   — 8 m at 35°, no flat
+##   • westa_band_1   — 45° climb + 0.6 m top flat, run DERIVED from the
+##                     hoekgoot/funnel port helpers (NOT the operator's old
+##                     "8 m at 35°" — that stale bullet outlived two rewrites
+##                     of the branch below; review finding 2026-08-28)
 ##   • opzetband_1    — 5 m at 25°, 3 m wide, funnel walls
 ##                     (0–0.75 m straight wide, 0.75–3.0 m narrowing to 1.5 m wide,
 ##                      3.0–5.0 m straight narrow)
@@ -5436,26 +5435,31 @@ static func _build_opzetband(id: String, size: Vector3, ghost: bool) -> Node3D:
 			belt.incline_run = 8.0 * cos(deg_to_rad(35.0))
 			belt.deck_width  = 2.5
 		"westa_band_1":
-			# #196 — the 45° feeder belt that lifts uitvoerband output to the
-			# TOP of the voorwastrommel. 2026-08-28: the target is now the REAL
-			# vw_trommel (C5 swap), and the height is DERIVED from the shared
-			# vw_trommel_funnel_mouth_local() helper instead of hand-baked —
-			# the old constant 6.5 was aimed at the deleted stub's top and left
-			# the lip 3.05 m above / 1.59 m past the real funnel (measured by
-			# test_line1_flow_conformance S4 before this fix). 45° kept from
-			# the operator spec; deck_width slim (1.2 m) — discharge feeder,
-			# not a wide intake.
+			# #196 — the 45° feeder belt at the end of the wash-feed group.
+			# #fold 2026-08-28: with the line-1 fold laid out, the belt climbs
+			# leg C (north) and discharges into the sga_feed_chute's IN port;
+			# the chute makes the operator's "90 deg right turn" and drops
+			# into the vw_trommel funnel on leg D. The whole height chain is
+			# DERIVED here from the two shared port helpers — no baked height:
+			#   chute lift = funnel mouth + 0.30 drop − chute OUT height
+			#   belt lip   = chute IN height at that lift + 0.15 drop
+			# (Before the fold this spec briefly aimed the lip at the funnel
+			# directly; before THAT it was a stale 6.5 m constant aimed at a
+			# deleted stub — measured 3.05 m too high. Guarded live by
+			# test_line1_flow_conformance S4/S4b.)
 			belt.deck_length = 0.0
 			belt.incline_deg = 45.0
 			belt.deck_width  = 1.2
-			# Short flat at the top so material drops cleanly INTO the drum's
-			# top feed port rather than skidding off the end of the slope.
+			# Short flat at the top so material drops cleanly INTO the chute's
+			# infeed rather than skidding off the end of the slope.
 			belt.top_flat_m  = 0.6
-			# Lip = funnel mouth + 0.30 m drop clearance. rise = lip − deck
-			# height; horizontal run = rise / tan(angle) (= rise at 45°).
 			var vt_mouth_y : float = vw_trommel_funnel_mouth_local(
 				Vector3(get_item("vw_trommel")["size"])).y
-			belt.incline_run = (vt_mouth_y + 0.30 - belt.deck_height) \
+			var c_ports : Dictionary = sga_feed_chute_ports_local(
+				Vector3(get_item("sga_feed_chute")["size"]))
+			var chute_lift : float = vt_mouth_y + 0.30 - (c_ports["out"] as Vector3).y
+			var lip_y : float = (c_ports["in"] as Vector3).y + chute_lift + 0.15
+			belt.incline_run = (lip_y - belt.deck_height) \
 				/ tan(deg_to_rad(belt.incline_deg))
 		"opzetband_1":
 			# #196 — 2× scale: 10 m @ 25° (was 5 m), 4 m wide (was 3 m). Metal
@@ -10204,39 +10208,64 @@ static func _goot_segment(parent: Node3D, start: Vector3, length: float, \
 		-sin(pitch),
 		-cos(yaw) * cos(pitch)) * length
 
-# ── SGA invoergoot — the 90° corner chute between band 2 and the SGA drum. ─────
+# ── SGA invoergoot — the 90° corner chute at the drum head. ───────────────────
 # Operator 2026-08-28: "there is actually a chute after the belt that feeds
 # material into the drum on the top side (and it makes a 90 deg right turn from
 # the conveyor to the drum)". The flow diagrams draw BLOCKS only and never show
-# chutes, so this one is operator-described, not doc-derived.
-# Material arrives along -Z off the belt head, drops into a corner pan with a
-# deflector back-plate, and leaves along +X — a right turn when facing -Z —
-# discharging over the drum's TOP inlet. Open-topped so the turn stays visible.
+# chutes, so this one is operator-described, not doc-derived. The layout sketch
+# places it at the head of the ONE drum (vw_trommel), at the leg-C → leg-D
+# corner of the line-1 fold.
+
+## Port geometry for the sga_feed_chute. Placed nodes face the flow (rotation
+## leg_rot+PI), so local -Z is the UPSTREAM face and local -X is the RIGHT of
+## the flow — the operator's "90 deg right turn".
+##   in     — top of the infeed leg, on the upstream (-Z) face (westa's lip
+##            discharges onto this point + a small drop).
+##   corner — the corner pan where the stream turns.
+##   out    — discharge lip end of the outfeed leg (-X side), hangs over the
+##            vw_trommel feed funnel.
+## SINGLE SOURCE OF TRUTH shared by _m_sga_feed_chute (geometry), the
+## westa_band_1 spec (aims its lip at `in`), and the derivations behind
+## LINE_1_SEQ's baked y/gap/turn_advance numbers — all guarded live by
+## test_line1_flow_conformance S4/S4b.
+static func sga_feed_chute_ports_local(size: Vector3) -> Dictionary:
+	var infeed_len := 0.62
+	var infeed_pitch := deg_to_rad(20.0)
+	var out_len := 0.85
+	var out_pitch := deg_to_rad(28.0)
+	var p_in := Vector3(0.0, size.y * 0.88, -size.z * 0.46)
+	var corner := p_in + Vector3(0.0, -infeed_len * sin(infeed_pitch), infeed_len * cos(infeed_pitch))
+	var p_out := corner + Vector3(-out_len * cos(out_pitch), -out_len * sin(out_pitch), 0.0)
+	return {"in": p_in, "corner": corner, "out": p_out,
+		"infeed_len": infeed_len, "out_len": out_len}
+
 static func _m_sga_feed_chute(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
 	var steel := _mat(color, ghost, 0.5, 0.4)
 	var dark  := _mat(_DARK, ghost, 0.5, 0.6)
 
 	var w : float = size.x * 0.42
 	var wall_h : float = 0.24
-	var inlet_y : float = size.y * 0.88
-	var corner := Vector3(-size.x * 0.18, inlet_y - 0.26, 0.0)
+	var ports := sga_feed_chute_ports_local(size)
+	var p_in : Vector3 = ports["in"]
+	var corner : Vector3 = ports["corner"]
+	var p_out : Vector3 = ports["out"]
 
-	# 1) INFEED leg — short run off the belt head, mild 20° drop toward -Z.
-	_goot_segment(p, Vector3(-size.x * 0.18, inlet_y, size.z * 0.46),
-		0.62, 20.0, 0.0, w, wall_h, steel)
+	# 1) INFEED leg — from the upstream (-Z) face down to the corner
+	#    (_goot_segment yaw 180 → travel +Z), mild 20° drop.
+	_goot_segment(p, p_in, float(ports["infeed_len"]), 20.0, 180.0, w, wall_h, steel)
 
-	# 2) CORNER PAN + deflector back-plate that turns the stream 90° right.
-	_box(p, Vector3(w * 1.25, 0.05, w * 1.25), corner, steel)
+	# 2) CORNER PAN + deflector plates that turn the stream 90° RIGHT (-X).
+	_box(p, Vector3(w * 1.25, 0.05, w * 1.25), corner + Vector3(0.0, -0.03, 0.0), steel)
 	_box(p, Vector3(w * 1.25, wall_h * 1.5, 0.05),
-		corner + Vector3(0.0, wall_h * 0.75, -w * 0.60), dark)    # splash/deflector plate
+		corner + Vector3(0.0, wall_h * 0.75, w * 0.60), dark)     # splash plate, far (+Z) side
 	_box(p, Vector3(0.05, wall_h * 1.5, w * 1.25),
-		corner + Vector3(-w * 0.60, wall_h * 0.75, 0.0), steel)   # outer cheek
+		corner + Vector3(w * 0.60, wall_h * 0.75, 0.0), steel)    # outer cheek, +X (opposite the exit)
 
-	# 3) OUTFEED leg — the right turn itself: yaw -90° aims travel at +X, 28°
-	#    down, ending over the drum's top inlet.
-	var out_end := _goot_segment(p, corner, 0.85, 28.0, -90.0, w, wall_h, steel)
-	# Downward-facing discharge lip over the drum mouth.
-	_box(p, Vector3(0.06, 0.18, w * 1.05), out_end + Vector3(0.03, -0.09, 0.0), dark)
+	# 3) OUTFEED leg — the right turn itself: _goot_segment yaw +90 → travel
+	#    -X, 28° down, ending over the drum's feed funnel.
+	_goot_segment(p, corner, float(ports["out_len"]), 28.0, 90.0, w, wall_h, steel)
+	# Downward-facing discharge lip over the funnel mouth.
+	_box(p, Vector3(0.06, 0.18, w * 1.05), p_out + Vector3(-0.03, -0.09, 0.0), dark)
 
 	_legs(p, size, size.y * 0.30, dark)
 
