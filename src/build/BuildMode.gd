@@ -208,6 +208,16 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 	{"id": "ontwaterzeef"},
 	{"id": "centrifuge"},
 	{"id": "weegschaal"},
+	# ── DOC-WALK GAP FIX 2026-08-28 (gap 2.2) — lijn_3a_flow.md edge 36:
+	# Weegschaal → bigbag station. RULED 3A-ONLY (question_answers.json — 3B's
+	# diagram has no bigbag block, so 3B/1/3C get none). Branch on the -X
+	# aisle beside the weegschaal (the +X side is the laser-filter lane); the
+	# #71 chained-branch logic gives it the weegschaal→bigbag explicit edge,
+	# and as a MachineFlow SINK the bag banks granulate (a full bag leaves by
+	# forklift, not by line flow). Inserted BEFORE voorraad_silo, shifting
+	# only that one index — user://macros still empty (re-checked), so no
+	# saved delta breaks.
+	{"id": "bigbag_station", "x": -3.0, "z": 0.0},
 	{"id": "voorraad_silo"},
 ]
 # #54 — shared dry FRONT-END for Lines 3A and 3B. Lays the Shredder-2 climb,
@@ -2255,9 +2265,27 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 				# A new main-centreline machine — close any open branches.
 				if not branch_chain.is_empty():
 					var last_chain : Node3D = branch_chain[branch_chain.size() - 1] as Node3D
+					var last_role : String = String(MachineFlow.profile(
+						String(last_chain.get_meta("placeable_id"))).get("role", ""))
 					if branch_recirc and branch_source != null:
 						# Recirc: last branch entry returns to the branch source.
 						_add_explicit_out(last_chain, branch_source, true)
+						# 2026-08-28 SEVERED-MAIN FIX (found by the 3A doc-walk
+						# test): tagging the source with lf_explicit_outs makes
+						# LineFlow SKIP its geometry fallback (LineFlow.gd:1142),
+						# and nothing ever reconnected it to the next main — so
+						# 3A's line was silently DEAD past the mengsilo: the
+						# side-loop closed but mengsilo → M11b never existed.
+						# A recirc loop is a side-circuit; the main path must
+						# continue from its source.
+						_add_explicit_out(branch_source, node, false)
+					elif last_role == "sink" and branch_source != null:
+						# Chain dead-ends in a SINK (e.g. the 3A bigbag
+						# station): the sink banks material and LineFlow never
+						# emits from sinks (:1137), so an edge out of it would
+						# be dead anyway — the MAIN path continues from the
+						# branch source instead.
+						_add_explicit_out(branch_source, node, false)
 					else:
 						# Normal chained branch: last entry feeds this new main.
 						_add_explicit_out(last_chain, node, false)

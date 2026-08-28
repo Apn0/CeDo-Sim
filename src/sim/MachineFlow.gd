@@ -322,6 +322,13 @@ static func profile(id: String) -> Dictionary:
 			pr["role"] = "sink"
 			pr["in"]   = Vector3(0.0, 0.9, 0.0)   # pneumatic line lands on the silo TOP (125_CeDo40)
 			pr["rate"] = 12.0
+		# Bigbag station (gap 2.2, 3A only): granulate falls in through the
+		# top cyclone/fill head; the bag BANKS it (sink) — a filled bag leaves
+		# by forklift, not by line flow. Doc edge 36: Weegschaal → bigbag.
+		"bigbag_station":
+			pr["role"] = "sink"
+			pr["in"]   = Vector3(0.0, 0.95, 0.0)
+			pr["rate"] = 4.0
 		"silo", "doseersilo":
 			pr["in"]  = Vector3(0.0, 0.9, 0.0)
 			pr["out"] = Vector3(0.0, 0.12, 0.0)
@@ -459,6 +466,8 @@ static func _apply_process(pr: Dictionary, id: String) -> void:
 		"weegschaal":
 			pr["process"] = "weigh"
 		"voorraad_silo", "ms_silo_buiten", "ls_silo_buiten":
+			pr["process"] = "buffer"
+		"bigbag_station":
 			pr["process"] = "buffer"
 		# ── cyclone / air sep: pulls light fines + some moisture into the air ─
 		"cyclone", "cyclone_tower":

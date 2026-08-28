@@ -37,7 +37,7 @@ do what the docs say it does?*
 | # | Document | Status |
 |---|---|---|
 | 1 | `lijn_1_flow.md` + `line_flow_graphs.json` (line "1") | ✅ COMPLETE — gaps 1.1–1.3, fix 1.4, ruling 1.B, fold 1.A; leg F confirmed by operator 2026-08-28. Open: archive the sketch image |
-| 2 | `lijn_3a_flow.md` | ⚙ gap 2.1 fixed; open: 2.2 bigbag, Q2.3 rollers, Q2.4 heaters |
+| 2 | `lijn_3a_flow.md` | ⚙ 2.1+2.2 fixed, Q2.3 closed; open: heaters build (spec received), rondmeng-ring wiring question |
 | 3 | `lijn_3b_flow.md` | ☐ |
 | … | remaining 426 docs | ☐ |
 
@@ -373,25 +373,66 @@ LineFlow RECIRC edge from V1's blower back into the silo — doc edge 22);
 mutation (ringleiding back into the loop) goes red 4 ways. World regression
 17/0, all 41 machines inside the footprint.
 
-### GAP 2.2 — bigbag station missing · ☐ OPEN (needs operator description)
+### GAP 2.2 — bigbag station missing · ✅ FIXED
 
-Doc edge 36: Weegschaal → **bigbag station**. Already RULED a 3A feature
-(`question_answers.json`: "bigbag station = 3A confirmed", 3B has none), with
-a behaviour fact: after a knife/screen change the extruder is run out to
-bigbag until quality is OK. The sim has no bigbag placeable of any kind. No
-photo exists in the corpus — per the no-build-without-docs rule the model
-needs the operator's description (shape, hangs-from-frame vs platform, where
-it stands relative to the weegschaal) before building.
+Doc edge 36: Weegschaal → **bigbag station**. RULED a 3A-only feature, with a
+behaviour fact (extruder runs out to bigbag after a knife/screen change until
+quality is OK — future gameplay hook, not built). The sim had no bigbag
+placeable of any kind.
 
-### Q 2.3 — Intrekrol / Uittrek rol flotatie tank · ☐ OPEN
+**Fixed 2026-08-28** from the operator's composite spec (two chat reference
+images, to be archived like the fold sketch): bottom per image 1 — open
+square-tube frame, bag on its 4 loops on corner hangers, wooden EURO pallet
+underneath; top per image 2 — metal fill cylinder with the bag's "trunk"
+sleeve bound by a BLUE strap, small cyclone on the frame top. New placeable
+`bigbag_station` (1.7 × 3.6 × 1.7, Logistics), MachineFlow SINK (the bag
+banks granulate; a full bag leaves by forklift), placed as a -X branch off
+the 3A weegschaal. Render: `renders/shot_bigbag_station.png`, sent for
+sign-off.
 
-Doc blocks 6/8 draw the intake and extraction ROLLERS of the flotation tank
-as separate stations; `_m_flotation` has internal paddle shafts only, and no
-roller machine exists in the SEQ. Ask the operator: separate machines on the
-floor, or the tank's own end rollers (one-drum-style merge)?
+**MAJOR side catch — the severed-main bug.** The test's guard check
+"weegschaal STILL feeds the voorraad silo" went red: a source tagged with
+`lf_explicit_outs` skips LineFlow's geometry fallback (`LineFlow.gd:1142`)
+and the #71 branch-close never reconnected it to the next main. Adding the
+same check at the mengsilo proved the pre-existing case: **3A's main line has
+been topologically SEVERED at the mengsilo since #71** — the side-loop closed
+but mengsilo → M11b never existed, and the mass-ledger tests stayed green
+because a stalled line also conserves mass. Fixed in BuildMode's branch-close:
+a RECIRC chain now re-links source → next main (a side-loop is a
+side-circuit), and a chain ending in a SINK (bigbag) links source → next main
+instead of the dead sink → main edge. Proven: 25/25 on the 3A conformance
+test (both "STILL feeds" checks red before the fix, green after), 3A/3B
+identity ledgers 4/0, line-1 conformance PASS, world regression 17/0.
 
-### Q 2.4 — Heaters (3× hot-air blocks) · ☐ OPEN
+### Q 2.3 — Intrekrol / Uittrek rol flotatie tank · ✅ ANSWERED (operator 2026-08-28)
 
-Doc draws three Heaters blocks (bij M11b, bij V1, bij thermische droger) with
-"lucht (heet)" edges. Nothing in the sim; no photo/spec beyond the block.
-Needs operator input before modelling — air-side utilities, low priority.
+All part of the flotation tank — no separate machines, the sim topology was
+already right. Operator description, recorded for the model-detail program:
+- The tank is a POOL on metal legs, a few metres up.
+- **Intrek** = the FIRST paddle, LARGER than the rest.
+- Middle: ~5-10 (model-dependent) smaller TRANSPORT paddles pushing the film
+  along the surface repeatedly — washing it while the heavies sink.
+- A **bottom scraper** runs along the tank's bottom centre, then UP a ~45°
+  incline; the scraped heavies fall into a CONTAINER below.
+- **Uittrek** = the LAST paddle, larger like the first, at the far edge, so
+  it pushes material up OVER THE LATCH (overflow lip) — usually into a
+  dewatering screw.
+`_m_flotation` today: uniform paddle shafts, no first/last size distinction,
+no bottom scraper / 45° incline / container. → model-detail backlog item,
+not a topology gap.
+
+### Q 2.4 — Heaters (3× hot-air blocks) · ⚙ SPEC RECEIVED (operator 2026-08-28)
+
+Heater elements heat air, which the blower sucks in; the material joins from
+the doseer screw and warm air + material are blown onward. Model spec: a
+**60 × 60 cm cabinet, ~2 m high** housing the filter stacks; pipes run from
+the BOTTOM of the filter stacks to the blower. Build as role-none side units
+(pomp_c1 pattern) beside V2/M11b, V1 and the thermische droger.
+
+⚠ The same answer described the rondmeng return as "the warm air and the
+material get blown **through the ring** back to the top of the silo **into
+the cyclone**" — which is exactly the wiring gap 2.1 just REMOVED from the
+loop on the "Diagram is right" ruling. Open question posed to the operator:
+is that ring THE ringleiding block (the diagram draws it in the main path),
+a second ring, or one shared plant ring serving both paths? **Do not re-wire
+until answered.**

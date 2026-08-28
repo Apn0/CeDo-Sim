@@ -470,6 +470,15 @@ static func items() -> Array[Dictionary]:
 			{"id": "heetafslag",     "name": "Heetafslag (hot-face cutter)", "category": "Extruders",    "size": Vector3(1.8, 2.0, 2.4),  "color": Color(0.44, 0.40, 0.40)},
 			{"id": "ontwaterzeef",   "name": "Ontwaterzeef (dewater screen)","category": "Separation",   "size": Vector3(1.8, 1.8, 3.2),  "color": Color(0.50, 0.56, 0.60)},
 			{"id": "weegschaal",     "name": "Weegschaal (25 kg batch weigh)","category": "Logistics",   "size": Vector3(1.2, 2.2, 1.2),  "color": Color(0.55, 0.57, 0.60)},
+			# Bigbag station — doc-walk gap 2.2 (lijn_3a_flow.md edge 36:
+			# Weegschaal → bigbag station; ruled a 3A-ONLY feature in
+			# question_answers.json). Operator composite spec 2026-08-28 from
+			# two reference images (sent in chat, to be archived): BOTTOM =
+			# open steel frame, bag hanging by its 4 loops on corner hangers,
+			# resting on a wooden EURO pallet; TOP = fill head with the bag's
+			# "trunk" inlet sleeve bound to a metal fill cylinder with a BLUE
+			# strap, and a small cyclone on top of the frame.
+			{"id": "bigbag_station", "name": "Bigbag station (weegschaal aftap)","category": "Logistics", "size": Vector3(1.7, 3.6, 1.7),  "color": Color(0.72, 0.73, 0.75)},
 			{"id": "voorraad_silo",  "name": "Voorraad silo (granulate)",    "category": "Structure",    "size": Vector3(3.0, 6.5, 3.0),  "color": Color(0.66, 0.68, 0.72)},
 			# ── OUTDOOR PELLET SILOS MS/LS (2026-07-06, silos_ms_ls.md) ───────
 			# Silopark: 10 silos in 2 rows of 5 (operator ruling B8 2026-07-06,
@@ -1742,6 +1751,7 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 		"heetafslag":     _m_heetafslag(p, size, color, ghost)
 		"ontwaterzeef":   _m_ontwaterzeef(p, size, color, ghost)
 		"weegschaal":     _m_weegschaal(p, size, color, ghost)
+		"bigbag_station": _m_bigbag_station(p, size, color, ghost)
 		"voorraad_silo":  _m_silo(p, size, color, ghost)
 		# Outdoor MS/LS pellet silos + EOP endpoint (2026-07-06 batch).
 		"ms_silo_buiten": _m_silo_buiten(p, size, color, ghost, "ms")
@@ -7611,6 +7621,91 @@ static func _m_weegschaal(p: Node3D, size: Vector3, color: Color, ghost: bool) -
 	disp_mat.emission_enabled = true
 	disp_mat.emission = Color(0.12, 0.92, 0.32)
 	_box(p, Vector3(0.24, 0.12, 0.01), Vector3(0.0, size.y * 0.65, size.z * 0.485), disp_mat)
+
+# ── Bigbag station (gap 2.2, lijn_3a_flow.md edge 36) — operator composite
+#    spec 2026-08-28 from two chat reference images: BOTTOM per image 1 (open
+#    square-tube frame, bag hanging by its 4 loops on corner strap hangers,
+#    resting on a wooden EURO pallet), TOP per image 2 (metal fill cylinder
+#    with the bag's "trunk" inlet sleeve bound around it with a BLUE strap,
+#    small cyclone on top of the frame). Q&A behaviour fact, NOT built here:
+#    after a knife/screen change the extruder runs out to bigbag until quality
+#    is OK — gameplay hook for a later pass. size = (1.7, 3.6, 1.7). ─────────
+static func _m_bigbag_station(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
+	var steel  := _mat(color, ghost, 0.55, 0.4)                      # galvanized frame
+	var dark   := _mat(_DARK, ghost, 0.5, 0.6)
+	var wood   := _mat(Color(0.62, 0.47, 0.30), ghost, 0.0, 0.85)    # pallet timber
+	var fabric := _mat(Color(0.90, 0.90, 0.88), ghost, 0.0, 0.92)    # woven PP bag
+	var strap  := _mat(Color(0.94, 0.94, 0.92), ghost, 0.0, 0.85)    # lifting loops
+	var blue   := _mat(Color(0.16, 0.32, 0.75), ghost, 0.1, 0.6)     # trunk clamp strap
+	var inox   := _mat(_STEEL, ghost, 0.7, 0.3)                      # fill head / cyclone
+
+	var post_x : float = size.x * 0.44
+	var frame_top : float = size.y * 0.68                            # ≈ 2.45 m
+
+	# ── EURO pallet on the floor (image 1): 3 bearers + deck boards. ─────────
+	for bx in [-0.45, 0.0, 0.45]:
+		_box(p, Vector3(0.14, 0.10, 1.00), Vector3(bx, 0.05, 0.0), wood)
+	for bz in [-0.44, -0.22, 0.0, 0.22, 0.44]:
+		_box(p, Vector3(1.18, 0.022, 0.12), Vector3(0.0, 0.111, bz), wood)
+
+	# ── Big bag: bulged white cube on the pallet. ────────────────────────────
+	var bag_base : float = 0.125
+	var bag_h : float = size.y * 0.335                               # ≈ 1.2 m
+	var bag_top : float = bag_base + bag_h
+	_box(p, Vector3(0.94, bag_h, 0.94), Vector3(0.0, bag_base + bag_h * 0.5, 0.0), fabric)
+	# low-belly bulge (a filled bag bellies out at the BOTTOM; keeping the
+	# band low and tall tucks its edge under the straps instead of reading as
+	# a second stacked box — first render showed a hard mid-bag step)
+	_box(p, Vector3(1.04, bag_h * 0.62, 1.04), Vector3(0.0, bag_base + bag_h * 0.33, 0.0), fabric)
+
+	# ── Trunk inlet sleeve (slurf) up to the fill cylinder, blue strap bound. ─
+	var cyl_bot : float = frame_top - 0.28                           # fill cylinder lower lip
+	_cyl(p, 0.115, 0.20, cyl_bot - bag_top, Vector3(0.0, (bag_top + cyl_bot) * 0.5, 0.0), fabric, "y")
+	_cyl(p, 0.135, 0.135, 0.05, Vector3(0.0, cyl_bot + 0.06, 0.0), blue, "y")   # the blue strap
+
+	# ── Fill head (image 2): metal cylinder through the frame deck + clamp. ──
+	_cyl(p, 0.115, 0.115, 0.55, Vector3(0.0, cyl_bot + 0.24, 0.0), inox, "y")
+	_cyl(p, 0.145, 0.145, 0.04, Vector3(0.0, cyl_bot + 0.14, 0.0), dark, "y")   # clamp collar
+
+	# ── Cyclone on top of the frame (image 2 style). ─────────────────────────
+	var cy_body : float = frame_top + 0.62
+	_cyl(p, 0.30, 0.12, 0.32, Vector3(0.0, frame_top + 0.30, 0.0), inox, "y")   # cone down to the fill pipe
+	_cyl(p, 0.30, 0.30, 0.42, Vector3(0.0, cy_body, 0.0), inox, "y")            # body
+	_cyl(p, 0.07, 0.07, size.x * 0.42, Vector3(size.x * 0.26, cy_body + 0.10, 0.0), inox, "x")  # tangential inlet stub
+	_cyl(p, 0.09, 0.09, 0.24, Vector3(0.0, cy_body + 0.32, 0.0), inox, "y")     # top vent stub
+
+	# ── Open steel frame (image 1): 4 posts + top perimeter + head beams. ────
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			var post := _box(p, Vector3(0.08, frame_top, 0.08),
+				Vector3(sx * post_x, frame_top * 0.5, sz * post_x), steel)
+			post.add_to_group("machine_leg")
+			post.set_meta("leg_h", frame_top)
+	for sz2 in [-1.0, 1.0]:
+		_box(p, Vector3(post_x * 2.0 + 0.08, 0.10, 0.08),
+			Vector3(0.0, frame_top + 0.05, sz2 * post_x), steel)
+		_box(p, Vector3(0.08, 0.10, post_x * 2.0 + 0.08),
+			Vector3(sz2 * post_x, frame_top + 0.05, 0.0), steel)
+	# head beams carrying the fill cylinder
+	for sx3 in [-1.0, 1.0]:
+		_box(p, Vector3(0.08, 0.08, post_x * 2.0),
+			Vector3(sx3 * 0.20, frame_top + 0.12, 0.0), steel)
+	# base rails along two sides with foot pads
+	for sz3 in [-1.0, 1.0]:
+		_box(p, Vector3(post_x * 2.0 + 0.16, 0.06, 0.10),
+			Vector3(0.0, 0.03, sz3 * post_x), steel)
+
+	# ── 4 lifting loops (image 2): bag corners up to hangers at the posts. ───
+	for sx4 in [-1.0, 1.0]:
+		for sz4 in [-1.0, 1.0]:
+			var a := Vector3(sx4 * 0.40, bag_top - 0.06, sz4 * 0.40)
+			var b := Vector3(sx4 * (post_x - 0.06), frame_top - 0.12, sz4 * (post_x - 0.06))
+			var d := b - a
+			var loop := _box(p, Vector3(0.055, d.length(), 0.012),
+				(a + b) * 0.5, strap)
+			loop.rotation = Vector3(atan2(d.z, d.y), 0.0, -atan2(d.x, d.y))
+			# hanger ratchet block at the top of each strap (image 1 detail)
+			_box(p, Vector3(0.07, 0.12, 0.05), b + Vector3(0.0, 0.06, 0.0), dark)
 
 # ── steel skip (PLASTIC, sat under a chute): green-grey weathered box with
 #    visible forklift pockets at the base. Forklift drives in, lifts, dumps. ──

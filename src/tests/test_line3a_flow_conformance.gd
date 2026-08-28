@@ -117,6 +117,69 @@ func _run() -> void:
 	_check(recirc_in, "a RECIRC edge returns into the mengsilo (doc edge 22)")
 	_check(recirc_src_id == "blower",
 		"the recirc edge comes from the lus's ventilator V1 (got '%s')" % recirc_src_id)
+	# Doc edge 13: Mengsilo → Doseerschroef M11b — the MAIN path must continue
+	# past the side-loop. Guards the explicit-out suppression hole: a source
+	# with lf_explicit_outs skips the geometry fallback (LineFlow.gd:1142),
+	# and the #71 branch-close never reconnected the source to the next main,
+	# silently severing the line at the mengsilo.
+	var m11b_seq : int = i          # first MAIN entry after the lus (computed in S1)
+	var m11b_i := -1
+	for k3 in nodes.size():
+		var n3d3 = (nodes[k3] as Dictionary).get("node")
+		if n3d3 != null and is_instance_valid(n3d3) and n3d3.has_meta("macro_index") \
+				and int(n3d3.get_meta("macro_index")) == m11b_seq:
+			m11b_i = k3
+			break
+	_check(m11b_i >= 0, "doseerschroef M11b resolved as a LineFlow node")
+	var silo_to_m11b := false
+	for e3 in edges:
+		if int((e3 as Dictionary)["a"]) == silo_i and int((e3 as Dictionary)["b"]) == m11b_i:
+			silo_to_m11b = true
+	_check(silo_to_m11b, "mengsilo STILL feeds doseerschroef M11b (doc edge 13 — main path past the lus)")
+
+	# ── S4 — gap 2.2: the bigbag station (doc edge 36, ruled 3A-ONLY) ───────
+	print("  -- S4: bigbag station --")
+	var i_weeg := _idx_after(seq, "weegschaal", 0)
+	var i_bb := _idx_after(seq, "bigbag_station", 0)
+	var i_voorraad := _idx_after(seq, "voorraad_silo", 0)
+	_check(i_bb >= 0, "bigbag_station is in LINE_3A_SEQ (doc edge 36)")
+	_check(i_weeg >= 0 and i_bb > i_weeg and i_voorraad > i_bb,
+		"bigbag sits between weegschaal and voorraad_silo in the SEQ")
+	if i_bb >= 0:
+		_check(not is_equal_approx(float((seq[i_bb] as Dictionary).get("x", 0.0)), 0.0),
+			"bigbag is a BRANCH beside the line (the main path runs weegschaal → voorraad)")
+	# Ruled 3A-only — no other line may grow one.
+	for other in [["line_3b", BuildMode.LINE_3B_SEQ], ["line_1", BuildMode.LINE_1_SEQ],
+			["line_3c", BuildMode.LINE_3C_SEQ]]:
+		_check(_idx_after(other[1], "bigbag_station", 0) < 0,
+			"%s has NO bigbag station (ruled 3A-only)" % other[0])
+	_check(int(counts.get("bigbag_station", 0)) == 1, "world contains exactly 1 bigbag_station")
+	# LineFlow: weegschaal must feed BOTH the bigbag branch AND the main-path
+	# voorraad silo. The second check guards the #71/I1 explicit-out trap —
+	# an explicit branch edge on the weegschaal suppresses its geometry
+	# fallback, which could silently sever the main path to the silo.
+	var weeg_i := -1
+	var bb_i := -1
+	var vs_i := -1
+	for k2 in nodes.size():
+		match String((nodes[k2] as Dictionary).get("id", "")):
+			"weegschaal": weeg_i = k2
+			"bigbag_station": bb_i = k2
+			"voorraad_silo": vs_i = k2
+	_check(bb_i >= 0, "bigbag_station is a LineFlow node (not dropped as role 'none')")
+	if bb_i >= 0:
+		_check(String((nodes[bb_i] as Dictionary).get("role", "")) == "sink",
+			"bigbag BANKS granulate (MachineFlow role 'sink')")
+	var weeg_to_bb := false
+	var weeg_to_vs := false
+	for e2 in edges:
+		if int((e2 as Dictionary)["a"]) == weeg_i:
+			if int((e2 as Dictionary)["b"]) == bb_i:
+				weeg_to_bb = true
+			elif int((e2 as Dictionary)["b"]) == vs_i:
+				weeg_to_vs = true
+	_check(weeg_to_bb, "LineFlow wired weegschaal → bigbag (doc edge 36)")
+	_check(weeg_to_vs, "weegschaal STILL feeds the voorraad silo (doc edge 35 — main path intact)")
 
 	print("[TEST] line 3A conformance %s (%d fail)" % ["PASS" if _fails == 0 else "FAIL", _fails])
 	get_tree().quit(1 if _fails > 0 else 0)
