@@ -4991,6 +4991,63 @@ static func _m_flotation(p: Node3D, size: Vector3, color: Color, ghost: bool, wi
 		field.set_mat_mode(true)
 		p.add_child(field)
 
+	# ── BOTTOM SCRAPER + 45° INCLINE + CONTAINER (Q2.3, operator 2026-08-28) ──
+	# "the heavy parts can sink to the bottom. Then the scraper at the bottom
+	# removes it, along the bottom center of the tank and then up like a
+	# forty-five degree thing. And then the material will fall into the
+	# container below." Chain scraper along the flat bottom's centreline with
+	# cross flights, rising out of the tank on a 45° trough, dropping the
+	# heavies into an open container on the floor. The incline is placed at
+	# the -Z (INFEED) end — counter-flow, and it keeps the +Z end clear for
+	# the surface scraper + weir + dewater screw; the operator did not name
+	# the end, so this choice is flagged for his eyeball in the ledger.
+	if not ghost:
+		var ch_mat := _mat(Color(0.30, 0.30, 0.33), ghost, 0.6, 0.5)
+		var run_half : float = flat_bot_z * 0.5 - 0.3
+		var ch_y : float = flat_bot_y + 0.14
+		# Lower + upper chain runs along the bottom centre, with cross flights.
+		_box(p, Vector3(0.05, 0.03, run_half * 2.0), Vector3(0.0, ch_y, 0.0), ch_mat)
+		_box(p, Vector3(0.05, 0.03, run_half * 2.0), Vector3(0.0, ch_y + 0.18, 0.0), ch_mat)
+		var n_fl : int = int(run_half * 2.0 / 0.9)
+		for fi in n_fl:
+			var fz : float = -run_half + 0.45 + float(fi) * 0.9
+			_box(p, Vector3(flat_bot_x * 0.85, 0.05, 0.06), Vector3(0.0, ch_y - 0.02, fz), ch_mat)
+		# Idler sprocket shaft at the +Z turn (submerged).
+		_cyl(p, 0.10, 0.10, flat_bot_x * 0.6, Vector3(0.0, ch_y + 0.09, run_half), ch_mat, "x")
+		# 45° incline trough from the bottom out past the -Z end wall.
+		var inc_len : float = 2.3
+		var inc := Node3D.new()
+		inc.position = Vector3(0.0, ch_y, -run_half)
+		inc.rotation.x = deg_to_rad(-45.0)
+		p.add_child(inc)
+		var tr_w : float = flat_bot_x * 0.95
+		_box(inc, Vector3(tr_w, 0.04, inc_len), Vector3(0.0, 0.0, -inc_len * 0.5), tank)
+		for sx3 in [-1.0, 1.0]:
+			_box(inc, Vector3(0.04, 0.24, inc_len),
+				Vector3(float(sx3) * tr_w * 0.5, 0.12, -inc_len * 0.5), tank)
+		# Chain + flights riding the incline.
+		_box(inc, Vector3(0.05, 0.03, inc_len * 0.94), Vector3(0.0, 0.06, -inc_len * 0.5), ch_mat)
+		for fi2 in 3:
+			_box(inc, Vector3(tr_w * 0.8, 0.05, 0.06),
+				Vector3(0.0, 0.05, -inc_len * (0.2 + 0.3 * float(fi2))), ch_mat)
+		# Drive sprocket + motor at the incline head (outside, above the container).
+		var head := Vector3(0.0, ch_y + inc_len * sin(deg_to_rad(45.0)),
+			-run_half - inc_len * cos(deg_to_rad(45.0)))
+		var drv := _spinning_cyl(p, 0.10, 0.10, flat_bot_x * 0.6, head, ch_mat, "x", Vector3.RIGHT, ghost, 4.0)
+		drv.set_meta("comp", "bottom_scraper")
+		_motor_unit(p, 0.10, 0.30, head + Vector3(flat_bot_x * 0.45, 0.0, 0.0), "x", ghost)
+		# Short discharge lip + the CONTAINER BELOW on the floor.
+		_box(p, Vector3(tr_w * 0.8, 0.03, 0.30), head + Vector3(0.0, -0.10, -0.28), tank)
+		var bcont := Node3D.new()
+		bcont.name = "BottomScraperContainer"
+		bcont.position = Vector3(0.0, 0.0, head.z - 0.35)
+		p.add_child(bcont)
+		var bbin := _mat(Color(0.42, 0.44, 0.30), ghost, 0.5, 0.5)
+		_box(bcont, Vector3(1.2, 0.06, 1.2), Vector3(0.0, 0.03, 0.0), bbin)
+		for sx4 in [-1.0, 1.0]:
+			_box(bcont, Vector3(0.06, 1.0, 1.2), Vector3(float(sx4) * 0.6, 0.5, 0.0), bbin)
+			_box(bcont, Vector3(1.2, 1.0, 0.06), Vector3(0.0, 0.5, float(sx4) * 0.6), bbin)
+
 	# ── #232 PHOTO-ACCURATE HOPPER EXTERIOR (flotatietank_3A.png) ──────────────
 	# Operator 2026-07-15: "HOPPER 4A" IS the flotation tank — rebuild faithfully.
 	# Operator revision 2026-07-15: TOP OPEN (no collar) so water + paddles stay

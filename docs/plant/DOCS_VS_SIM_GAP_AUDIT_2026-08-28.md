@@ -763,3 +763,23 @@ the top run toward the silo-top cyclone, vendor placard. The generic
 `ringleiding` id keeps the plant-wide ring-main model (fixed-equipment row
 untouched). 3A conformance updated to the new id — 31/31; world regression
 17/0. Render: `renders/shot_ringleiding_3a.png`.
+
+### ✅ Detail program: flotation tank — the Q2.3 bottom scraper built (2026-08-28)
+
+Q2.3's audit against `_m_flotation` found the paddle inventory ALREADY
+matching (the 2026-07-15 layout: LARGE intrek + 5 small transport + LARGE
+uittrek at the lip, per-paddle in-line motors, surface scraper + weir +
+discharge container). The one genuine gap was the **bottom scraper for the
+sunken heavies** — operator: "the scraper at the bottom removes it, along
+the bottom center of the tank and then up like a forty-five degree thing.
+And then the material will fall into the container below."
+
+Built: chain runs with cross flights along the flat bottom's centreline,
+idler sprocket at the +Z turn, a 45° trough rising out of the tank past the
+end wall, chain + flights on the incline, drive sprocket (spinning, comp
+"bottom_scraper") + motor at the head, discharge lip, and an open container
+on the floor beneath it. **⚠ End-choice flagged for operator eyeball:** the
+incline was placed at the -Z INFEED end (counter-flow; keeps the +Z end
+clear for surface scraper + weir + dewater screw) — the operator did not
+name the end. Render `renders/shot_flotation_tank.png`; world regression
+17/0; line-1 conformance PASS.
