@@ -630,7 +630,31 @@ the granulate-water loop (vat → pomp → heetafslag/kopfilter → ontwaterzeef
 vat, directions [unsure] on both sheets). `tankje_tussen_extruders` exists,
 the vat does not.
 
-### ❓ W.4 — Blauwe TANK vs blauwe VAT — an identity tension · ☐ ASKED
+### ❓ W.4 — Blauwe TANK vs blauwe VAT — an identity tension · ⚙ OPERATOR REVIEWING
+
+**Operator's memory (2026-08-28, "don't quote me" on the roof part):** the
+blauwe tank is the COOLING/granulate water hub — the extruder cooling return
+for the granulators of lines 1/3A/3B (NOT 3C/6); from the tank the water
+"should go to the roof, to a cooling tower, and then back down", then back
+to the blauwe VAT under the extruders — "the blue tank bath, which sits
+below the shaker table that dries and removes the water from the granulate."
+Wash water is a SEPARATE system: "mainly just to the gutters, and then the
+gutters lead to the EOP… I-n-d-a-v-e-r."
+
+**Collision:** three printed sources give the tank a wash-supply role
+(blauwe-tank slide subtitle "voegt water toe aan de wasinstallaties" + 8
+supply arrows + the thick EOP→tank return; kanaalwater legend "…blauwe tank →
+… → naar wasinstallaties"; lijn-1 sheet block label "Blauwe tank water voor
+was 1, 3a en 3b"). The operator asked for the slide links and is LOOKING
+INTO IT. Possible resolutions: the tank feeds multiple circuits, or the
+wash-buffer role belongs to the 8 m³/5 m³ neighbours in the same Hal 1
+corner. W.1 and W.3 stay halted until he rules.
+
+**New facts recorded meanwhile:** koeltoren is on the ROOF (unverified by
+docs — no doc places it); blauwe vat = the bath under the shaker table
+(ontwaterzeef area); wash water reaches the EOP via floor GUTTERS (gutters
+are in no sim system either — future item); Indaver = the EOP operator
+(matches the eop_endpoint placard).
 
 `floor_plan_edits.md` Q10 records an interview ruling: blauwe tank ≈ **3 m³
 extruder-KOELWATER-hub, "geen groot procesreservoir"**. But the hub slide
