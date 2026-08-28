@@ -216,7 +216,18 @@ static func items() -> Array[Dictionary]:
 			# here is the rough bounding box (W × H × L) for the build-mode footprint.
 			{"id": "opzetband_3a3b", "name": "Opzetband 3A/3B (8m flat + 10m@25° + 1m top)", "category": "Conveyance", "size": Vector3(2.0, 4.93, 18.06), "color": Color(0.20, 0.40, 0.80)},
 			{"id": "opzetband_3c6",  "name": "Opzetband 3C/6 (4m flat + 8m@35°)",            "category": "Conveyance", "size": Vector3(2.5, 5.4, 10.6), "color": Color(0.20, 0.40, 0.80)},
-			{"id": "westa_band_1",   "name": "Westa band 1 (45° feeder to prewash drum top)", "category": "Conveyance", "size": Vector3(1.6, 7.0, 9.5),  "color": Color(0.20, 0.40, 0.80)},
+			# westa_band_1 size re-derived 2026-08-28 for the real vw_trommel
+			# (was 1.6×7.0×9.5, aimed at the deleted prewash stub's 6.5 m top).
+			# y: lip 0.7+3.755=4.46 + guide rails ≈ 4.8. z: the opzetband
+			# geometry grows one-sided from its origin (origin = slot centre),
+			# so z is chosen to put the funnel under the lip: lip sits at
+			# run 3.755 + flat 0.6 = 4.36 m downstream of origin; the funnel
+			# sits at z/2 + gap 0.5 + trommel_half 4.0 − funnel_inset 3.74 =
+			# z/2 + 0.76 → z = 2×(4.36−0.76) = 7.2 lands it dead-centre.
+			# Guarded live by test_line1_flow_conformance S4 (lip-over-mouth,
+			# measured in the BUILT world), so trommel/belt resizes go red
+			# there instead of silently misfeeding.
+			{"id": "westa_band_1",   "name": "Westa band 1 (45° feeder to vw_trommel funnel)", "category": "Conveyance", "size": Vector3(1.6, 4.8, 7.2),  "color": Color(0.20, 0.40, 0.80)},
 			{"id": "opzetband_1",    "name": "Opzetband 1 (10m@25°, 4m wide, integrated magnet head)", "category": "Conveyance", "size": Vector3(4.0, 5.0, 10.0),  "color": Color(0.20, 0.40, 0.80)},
 			# Inclined belt — climbs 8 m vertically over 8 m horizontal (45°).
 			# Goes from Shredder 2's output up to the feed hopper at the top.
@@ -5422,19 +5433,27 @@ static func _build_opzetband(id: String, size: Vector3, ghost: bool) -> Node3D:
 			belt.incline_run = 8.0 * cos(deg_to_rad(35.0))
 			belt.deck_width  = 2.5
 		"westa_band_1":
-			# #196 — re-spec'd as the 45° feeder belt that takes uitvoerband
-			# output and lifts it to the TOP of the 2.5× prewash drum.
-			# Drum top is ~6.5 m off the floor; 45° with no flat deck means
-			# horizontal run = vertical rise, so incline_run = 6.5 m and
-			# slope hyp ≈ 9.2 m. deck_width kept slim (1.2 m) — this is a
-			# discharge feeder, not a wide intake.
+			# #196 — the 45° feeder belt that lifts uitvoerband output to the
+			# TOP of the voorwastrommel. 2026-08-28: the target is now the REAL
+			# vw_trommel (C5 swap), and the height is DERIVED from the shared
+			# vw_trommel_funnel_mouth_local() helper instead of hand-baked —
+			# the old constant 6.5 was aimed at the deleted stub's top and left
+			# the lip 3.05 m above / 1.59 m past the real funnel (measured by
+			# test_line1_flow_conformance S4 before this fix). 45° kept from
+			# the operator spec; deck_width slim (1.2 m) — discharge feeder,
+			# not a wide intake.
 			belt.deck_length = 0.0
 			belt.incline_deg = 45.0
-			belt.incline_run = 6.5
 			belt.deck_width  = 1.2
 			# Short flat at the top so material drops cleanly INTO the drum's
 			# top feed port rather than skidding off the end of the slope.
 			belt.top_flat_m  = 0.6
+			# Lip = funnel mouth + 0.30 m drop clearance. rise = lip − deck
+			# height; horizontal run = rise / tan(angle) (= rise at 45°).
+			var vt_mouth_y : float = vw_trommel_funnel_mouth_local(
+				Vector3(get_item("vw_trommel")["size"])).y
+			belt.incline_run = (vt_mouth_y + 0.30 - belt.deck_height) \
+				/ tan(deg_to_rad(belt.incline_deg))
 		"opzetband_1":
 			# #196 — 2× scale: 10 m @ 25° (was 5 m), 4 m wide (was 3 m). Metal
 			# detector + reverse-reject head is built INTO this belt at 3/4 along
@@ -9941,6 +9960,22 @@ static func _m_metaaldetector(p: Node3D, size: Vector3, color: Color, ghost: boo
 ##
 ## All materials pulled from MaterialPalette so future visual passes stay
 ## consistent. The drum still uses _spinning_cyl so it animates at runtime.
+
+## Local position of the TOP of the vw_trommel's feed-funnel mouth (the -Z
+## intake cone) for a trommel of `size`. SINGLE SOURCE OF TRUTH shared by
+## _m_vw_trommel (which places the cone with it) and the westa_band_1 spec in
+## _build_opzetband (which aims its 45° discharge at it) — so the belt and the
+## funnel can never drift apart when the trommel is resized (the 2026-08-28
+## C5 swap did exactly that: the belt kept aiming at the old stub's 6.5 m top
+## while the real trommel's mouth sits at ~4.15 m).
+static func vw_trommel_funnel_mouth_local(size: Vector3) -> Vector3:
+	var drum_r  : float = minf(size.x * 0.46, 1.55)
+	var drum_cy : float = size.y * 0.12 + drum_r + 0.18     # leg_top + r + clearance
+	var drum_len : float = size.z * 0.85
+	# Cone centre sits at drum_cy + r*0.75; the cone is size.y*0.32 tall, so the
+	# mouth (top face) is half that above the centre.
+	return Vector3(0.0, drum_cy + drum_r * 0.75 + size.y * 0.16, -drum_len * 0.55)
+
 static func _m_vw_trommel(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> void:
 	var P = MaterialPalette
 	var shell    : StandardMaterial3D = P.mat_stainless_weathered()
@@ -9994,8 +10029,12 @@ static func _m_vw_trommel(p: Node3D, size: Vector3, _color: Color, ghost: bool) 
 		Vector3(0.0, drum_cy, drum_len * 0.5 + 0.50), stainless, "z")
 
 	# ── FEED HOPPER + INPUT CHUTE at the -Z (high) end ─────────────────────────
+	# Placed via vw_trommel_funnel_mouth_local() (mouth = cone TOP, so the cone
+	# centre is half its height below it) — the same function the westa_band_1
+	# spec aims at. Change the cone there, not here.
+	var funnel_mouth := vw_trommel_funnel_mouth_local(size)
 	_cyl(p, drum_r * 0.55, drum_r * 0.30, H * 0.32,
-		Vector3(0.0, drum_cy + drum_r * 0.75, -drum_len * 0.55), aged)
+		funnel_mouth - Vector3(0.0, H * 0.16, 0.0), aged)
 
 	# ── SOLID-TIRE SUPPORT ROLLERS (two pairs, one near each end) ──────────────
 	# Each pair has TWO tires below the drum, angled inward like trommel cradle

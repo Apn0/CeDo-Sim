@@ -255,5 +255,45 @@ func _run() -> void:
 		_check(fanout == 2,
 			"the Y-splitgoot fans out to BOTH frictiescheiders (doc edges 6,7), got %d" % fanout)
 
+	# ── S4 — westa band discharge really lands in the trommel's feed funnel ──
+	# The C5 swap shrank the drum (6.5 → 4.5 m tall), and westa_band_1's spec
+	# was hand-aimed at the OLD stub's 6.5 m top. This measures the actual
+	# world-space relationship between the belt's own _discharge_lip_pos() and
+	# the trommel's funnel mouth (via the shared
+	# PlaceableCatalog.vw_trommel_funnel_mouth_local() helper), so a future
+	# resize of either machine goes red here instead of silently misfeeding.
+	print("  -- S4: westa discharge lip vs vw_trommel feed funnel --")
+	var westa : Node3D = null
+	var trommel : Node3D = null
+	for m in get_tree().get_nodes_in_group("placed_object"):
+		var n3 := m as Node3D
+		if n3 == null or not n3.has_meta("placeable_id") or not n3.has_meta("macro_id"):
+			continue
+		if String(n3.get_meta("macro_id")) != "line_1":
+			continue
+		var pid := String(n3.get_meta("placeable_id"))
+		if pid == "westa_band_1":
+			westa = n3
+		elif pid == "vw_trommel":
+			trommel = n3
+	_check(westa != null, "westa_band_1 found in the built line")
+	_check(trommel != null, "vw_trommel found in the built line")
+	if westa != null and trommel != null and westa.has_method("_discharge_lip_pos"):
+		var lip : Vector3 = westa.call("_discharge_lip_pos")
+		var t_size : Vector3 = PlaceableCatalog.get_item("vw_trommel")["size"]
+		var mouth : Vector3 = trommel.to_global(
+			PlaceableCatalog.vw_trommel_funnel_mouth_local(t_size))
+		var horiz : float = Vector2(lip.x - mouth.x, lip.z - mouth.z).length()
+		var drop : float = lip.y - mouth.y
+		print("  info   : lip (%.2f, %.2f, %.2f)  mouth (%.2f, %.2f, %.2f)  horiz %.2f m  drop %.2f m"
+			% [lip.x, lip.y, lip.z, mouth.x, mouth.y, mouth.z, horiz, drop])
+		# Funnel mouth radius is drum_r*0.55 ≈ 0.85 m — the lip must hang over
+		# the opening, and material must FALL into it (small positive drop),
+		# not be launched from metres above or arrive below the rim.
+		_check(horiz <= 0.85,
+			"lip hangs over the funnel mouth (horiz %.2f m, mouth radius 0.85)" % horiz)
+		_check(drop >= 0.05 and drop <= 0.9,
+			"lip is a sane drop above the mouth (%.2f m, want 0.05–0.9)" % drop)
+
 	print("[TEST] line 1 conformance %s (%d fail)" % ["PASS" if _fails == 0 else "FAIL", _fails])
 	get_tree().quit(1 if _fails > 0 else 0)

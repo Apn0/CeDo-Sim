@@ -512,10 +512,11 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	# MachineFlow profile at all, so swapping the id alone would have dropped
 	# water_add 0.30 / contam_remove 0.40 and turned the pre-wash into an inert
 	# conveyor. MachineFlow.gd now matches both ids in the same two arms.
-	# SIZE CHANGE: 6.0x6.5x11.25 → 3.6x4.5x8.0, so line 1 gets 3.25 m SHORTER
-	# (helps the overrun) but the drum top drops ~2 m — westa_band_1 above is
-	# aimed at "the TOP of the pre-wash drum", so its discharge alignment needs
-	# an eyeball once the fold lands. Logged in the gap-audit ledger.
+	# SIZE CHANGE: 6.0x6.5x11.25 → 3.6x4.5x8.0, so line 1 gets shorter (helps
+	# the overrun). The westa_band_1 discharge was re-aimed the same day: its
+	# incline_run is now DERIVED from vw_trommel_funnel_mouth_local() and the
+	# lip-over-funnel relationship is measured in the built world by
+	# test_line1_flow_conformance S4 (was 3.05 m high / 1.59 m past the mouth).
 	{"id": "vw_trommel"},
 	# ── DOC-WALK GAP FIX 2026-08-28 — lijn_1_flow.md / line_flow_graphs.json ──
 	# The flow diagram's line-1 chain is

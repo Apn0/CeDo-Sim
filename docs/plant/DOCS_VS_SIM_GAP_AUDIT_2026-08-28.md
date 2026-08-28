@@ -221,8 +221,24 @@ would have silently dropped the machine to the inert `"convey"` default and
 upgrade. Both ids now match in the same two arms. This is standing rule 3
 biting for the second time in one document.
 
-**Watch item:** the swap changes the machine's size from 6.0 × 6.5 × 11.25 to
-3.6 × 4.5 × 8.0. Line 1 gets 3.25 m shorter (helps consequence 1.A) but the
-drum top drops ~2 m, and `westa_band_1` immediately upstream is described as a
-45° incline feeding "the TOP of the pre-wash drum". That alignment wants an
-eyeball once the fold lands — flagged, not yet checked.
+**Watch item → FIXED same day (operator: "fix the westa band alignment").**
+The swap shrank the drum from 6.0 × 6.5 × 11.25 to 3.6 × 4.5 × 8.0, and
+`westa_band_1` was still hand-aimed at the old stub's 6.5 m top. **Measured
+first** (test S4, in the BUILT line, before any fix): discharge lip at
+y = 7.20 m vs funnel mouth at y = 4.15 m — a 3.05 m free fall — and the lip
+overshot the mouth horizontally by 1.59 m. The placement model predicted both
+numbers exactly, so the fix was derived, not tuned:
+
+- New shared helper `PlaceableCatalog.vw_trommel_funnel_mouth_local(size)` —
+  single source of truth used by BOTH `_m_vw_trommel` (to place the feed cone)
+  and the `westa_band_1` spec (to aim the belt), so they cannot drift apart.
+- `belt.incline_run` is now DERIVED at build time: `(mouth_y + 0.30 −
+  deck_height) / tan(45°)` — no baked height constant remains.
+- Catalog size re-derived 1.6×7.0×9.5 → 1.6×4.8×7.2 (z chosen so the funnel
+  lands dead-centre under the lip; full derivation in the catalog comment).
+- `test_line1_flow_conformance` S4 measures the lip→mouth relationship in the
+  built world: **horiz 0.01 m, drop 0.30 m** after the fix. Mutation-tested:
+  mis-aiming the belt +2 m turns both S4 checks red (drop 2.30 / overshoot
+  1.99), then restored clean. 51 ok / 0 fail.
+- Side effect: line 1 shortens 161.4 → **159.1 m** (consequence 1.A still
+  open — the fold).
