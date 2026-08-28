@@ -503,11 +503,9 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	#   leg D  RIGHT −90°  drum → Y-goot → wet train     (the long drum axis)
 	#   leg E  RIGHT −90°  flotation tank + dewater      (sketch: tank offset
 	#                                                     south of the train)
-	#   leg F  LEFT +90°  friction → … → extruder tail   (ASSUMED east — the
-	#          sketch ends at the flotation tank; the floor plan draws
-	#          extruder 1 as a long east-west block on Hal 2's south wall, so
-	#          east is the minimal-invention tail heading. Operator eyeball
-	#          pending — flagged in the gap-audit ledger.)
+	#   leg F  LEFT +90°  friction → … → extruder tail   (east — CONFIRMED by
+	#          the operator 2026-08-28 ("leg F is correct"); matches the floor
+	#          plan's east-west extruder-1 block on Hal 2's south wall.)
 	{"id": "opzetband_1"},
 	{"id": "shredder_1"},
 	{"id": "transport_belt", "turn_deg": 90.0},        # uitvoerband — leg B (east)

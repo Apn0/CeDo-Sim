@@ -36,7 +36,7 @@ do what the docs say it does?*
 
 | # | Document | Status |
 |---|---|---|
-| 1 | `lijn_1_flow.md` + `line_flow_graphs.json` (line "1") | ✅ gaps 1.1–1.3, fix 1.4, ruling 1.B, fold 1.A done — open: leg-F heading confirmation |
+| 1 | `lijn_1_flow.md` + `line_flow_graphs.json` (line "1") | ✅ COMPLETE — gaps 1.1–1.3, fix 1.4, ruling 1.B, fold 1.A; leg F confirmed by operator 2026-08-28. Open: archive the sketch image |
 | 2 | `lijn_3a_flow.md` | ☐ |
 | 3 | `lijn_3b_flow.md` | ☐ |
 | … | remaining 426 docs | ☐ |
@@ -225,9 +225,9 @@ test.
 | E | RIGHT | flotation tank + dewater (sketch: offset south of the train) |
 | F | LEFT | friction → Kufferath/MAS → silo → compactorband → extruder tail |
 
-**Leg F's east heading is an ASSUMPTION** — the sketch ends at the flotation
-tank; east matches the floor plan's east-west extruder-1 block in Hal 2.
-Flagged in the SEQ comment; needs the operator's eyeball.
+**Leg F's east heading: CONFIRMED** by the operator 2026-08-28 ("leg F is
+correct") after being flagged as an assumption. The fold is fully
+operator-sourced end to end; only archiving the sketch image remains open.
 
 **Provenance:** the sketch is transcribed verbatim in
 [`line1_layout_sketch_2026-08-28.md`](line1_layout_sketch_2026-08-28.md); the

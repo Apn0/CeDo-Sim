@@ -47,7 +47,7 @@ Bochtenpatroon L, L, R, R (schets) + L (aanname, staart):
 | C | noord | kort bandje → westa-klim → hoekgoot (verhoogd) |
 | D | oost | trommel → Y-goot → natte straat → intrekschroeven |
 | E | zuid | flotatietank + dewater (tank zuidelijk van de straat ✓ schets) |
-| F | **oost — AANNAME** | frictie → Kufferath/MAS → silo → compactorband → extruder-staart. Niet op de schets; oost gekozen omdat de plattegrond (`floor_plan_edits.md`) extruder 1 als lang oost-west-blok tegen de zuidwand van Hal 2 tekent. **Operator-oordeel nog nodig.** |
+| F | oost — **BEVESTIGD** (operator 2026-08-28: "leg F is correct") | frictie → Kufferath/MAS → silo → compactorband → extruder-staart. Niet op de schets; klopt met de plattegrond (`floor_plan_edits.md`): extruder 1 als lang oost-west-blok tegen de zuidwand van Hal 2. |
 
 De operator-uitspraak over de hoekgoot ("90 deg right turn from the conveyor
 to the drum", 2026-08-28, in de ledger geciteerd) klopt met de schets: klim
