@@ -438,16 +438,26 @@ sequence matters more than either endpoint:
      but do not just lower it: check the count against the 2.1-B composition
      that `test_line3a_flow_conformance` asserts before touching it.
   2. Abdellilah and Mohammed both post at `wind_sifter` (-215.6, 82.8) and
-     cannot route back from the canteen (14.32 m short). The `why` line reads
-     `inside [@StaticBody3D@2425 1.2x1.0 m]`, +1.10 m above floor, ISLAND.
+     cannot route back from the canteen (14.32 m short).
 
-  The aisle push is `half-extent + POST_AISLE_MARGIN_M (1.0)` along the
-  direction to the worker, and it never checks that the RESULT is clear — so
-  now that 3A's infeed is packed tighter, the post clears the wind sifter and
-  lands inside its **neighbour**. A candidate-clearance test (try the pushed
-  point, fall back to other directions) is the obvious fix, but per this
-  section's own rule it changes WHERE CREW STAND and is therefore an operator
-  call, not a test tweak. Left red and documented rather than silenced.
+  **The stable fact is a NAVMESH GAP, not a post inside a collider.** Across
+  runs the post position, the 14.32 m shortfall and `nearest mesh dXZ 0.92 m,
+  +1.10 m above floor (ISLAND)` never move, but the overlap term is NOT stable
+  — the same code reported `inside [@StaticBody3D@2425 1.2x1.0 m]` on three
+  runs and `inside [nothing]` on the next. Do not chase the collider: the post
+  stands in open space that simply has no floor-level navmesh, and the only
+  mesh within reach is a sliver ~1.1 m up (`cell_height` 0.60 quantisation) on
+  top of the neighbouring kit.
+
+  A post-placement fix was tried 2026-08-28 and **measured as not working** —
+  kept at `scratchpad/CrewManager.gd.attempt_navpost.bak`. It searched the
+  worker's side plus four cardinals, accepting only spots that were physically
+  clear AND had floor-level navmesh within 0.75 m. Every direction was rejected
+  out to `STAND_MAX_PUSH_M` (4.0 m), i.e. **there is no floor-level navmesh
+  anywhere within 4 m of that post**. That points at navmesh coverage around
+  3A's repacked infeed (or the spacing of the machines there), not at
+  `_post_pos_on_aisle`. Reverted rather than shipped: it changes where ALL crew
+  stand, and per this section's own rule that is an operator call.
 
 ### The red is a CREW defect, not a navmesh one (measured 2026-08-12)
 
