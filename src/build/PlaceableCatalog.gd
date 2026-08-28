@@ -178,7 +178,21 @@ static func items() -> Array[Dictionary]:
 			# by LINE_3A_SEQ + LINE_3B_SEQ + LINE_1_SEQ. The catalog no longer
 			# offers the old monolith.
 			{"id": "centrifuge",     "name": "Centrifuge",         "category": "Washing",    "size": Vector3(2.0, 2.4, 2.0),  "color": Color(0.45, 0.50, 0.58)},
+			# LEGACY MODEL — placed by no macro since ruling 3.1-B. The real
+			# thermische droger (operator 2026-08-28, ruling 3.1-C) is a flat
+			# SPIRAL CABINET: ~2×2 m from the front, 30-35 cm thick, material
+			# enters mid-face, runs 4-5 spiral loops inward→outward, exits at
+			# the side; heater elements sit in the REMOVABLE SIDE PANELS. See
+			# thermal_dryer_decommissioned below for that geometry; this old
+			# 2.6×4.5×3.0 block model is superseded and kept only for saves.
 			{"id": "thermal_dryer",  "name": "Thermal dryer (thermische droger)","category": "Washing","size": Vector3(2.6, 4.5, 3.0),"color": Color(0.60, 0.60, 0.64)},
+			# Ruling 3.1-C (operator 2026-08-28): 3B's thermische droger was
+			# REPLACED by the plasmaq during his tenure, but the machine still
+			# physically STANDS there, disconnected — "a pipe of like twenty
+			# centimeters that sticks out. And then there's nothing." Built to
+			# the real spiral-cabinet spec above. Role "none": plant
+			# archaeology, not a flow machine.
+			{"id": "thermal_dryer_decommissioned", "name": "Thermische droger (buiten gebruik, 3B)","category": "Washing","size": Vector3(2.2, 2.3, 0.7),"color": Color(0.58, 0.58, 0.60)},
 			# ── Conveyance ───────────────────────────────────────────────────
 			{"id": "transport_belt", "name": "Transport belt",     "category": "Conveyance", "size": Vector3(1.0, 0.9, 4.0),  "color": Color(0.34, 0.34, 0.38)},
 			# Two-point variable-length / variable-angle conveyor. Click ONCE to set the
@@ -1751,6 +1765,7 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 		"verdeelwals":    _m_verdeelwals(p, size, color, ghost)
 		"ringleiding":    _m_ringleiding(p, size, color, ghost)
 		"thermal_dryer":  _m_thermal_dryer(p, size, color, ghost)
+		"thermal_dryer_decommissioned": _m_thermal_dryer_decommissioned(p, size, color, ghost)
 		# ── Line 3C extruder back-end (#175) ──────────────────────────────────
 		"compactorband":  _m_compactorband(p, size, color, ghost)
 		"extruder", "extruder_screw": _m_extruder_unit(p, size, color, ghost)
@@ -9915,6 +9930,57 @@ static func _m_ringleiding(p: Node3D, size: Vector3, color: Color, ghost: bool) 
 #    (fluid-bed tower) on a tapered hopper bottom. Visually distinct from the
 #    horizontal-drum mech_dryer. Primarily a vessel — no required rotor. ─────────
 # ── Thermal dryer: tall insulated cyclone drying tower with rotary airlock valve ────
+# ── Thermische droger, BUITEN GEBRUIK (3B) — ruling 3.1-C, operator 2026-08-28.
+#    The REAL machine form (both lines had this model): a flat SPIRAL CABINET,
+#    ~2×2 m from the front and 30-35 cm thick. Material enters mid-face, runs
+#    4-5 spiral loops from the inside outward, and exits at the side. The
+#    heater elements sit in the REMOVABLE SIDE PANELS. On 3B it was replaced
+#    by the plasmaq and stands DISCONNECTED: a ~20 cm pipe stub sticks out
+#    into nothing. (3A's working twin IS the rondmeng "ring" — the ringleiding
+#    placeable's remodel to this spec is a detail-program item.) ──────────────
+static func _m_thermal_dryer_decommissioned(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
+	var shell := _mat(color, ghost, 0.45, 0.5)
+	var dark  := _mat(_DARK, ghost, 0.5, 0.6)
+	var steel := _mat(_STEEL, ghost, 0.6, 0.35)
+	var seam  := _mat(Color(0.42, 0.42, 0.45), ghost, 0.5, 0.5)
+
+	var cab_w : float = size.x * 0.94       # ~2.0 m face width
+	var cab_h : float = 2.0                 # ~2 m face height
+	var cab_t : float = 0.34                # 30-35 cm thick
+	var base_y : float = 0.18
+	var cy : float = base_y + cab_h * 0.5
+
+	# Four stubby feet + the flat cabinet body.
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			_box(p, Vector3(0.08, base_y, 0.08),
+				Vector3(float(sx) * cab_w * 0.42, base_y * 0.5, float(sz) * cab_t * 0.35), dark)
+	_box(p, Vector3(cab_w, cab_h, cab_t), Vector3(0.0, cy, 0.0), shell)
+
+	# Removable SIDE PANELS (the heater elements live behind them): seam lines
+	# + two lift handles per panel on both ±X flanks.
+	for sx2 in [-1.0, 1.0]:
+		var px : float = float(sx2) * (cab_w * 0.5 + 0.005)
+		_box(p, Vector3(0.015, cab_h * 0.92, cab_t * 0.92), Vector3(px, cy, 0.0), seam)
+		for hy in [-0.3, 0.3]:
+			_box(p, Vector3(0.05, 0.03, 0.12), Vector3(px + float(sx2) * 0.02, cy + cab_h * hy, 0.0), dark)
+
+	# NO spiral shown on the face: the 4-5-loop spiral is INTERNAL (operator:
+	# "it's basically like a spiral" describing the inside) — the real
+	# exterior is plain sheet metal. Two render attempts at a spiral "hint"
+	# (stacked discs, then ring collars) both read as a speaker cone; plain
+	# panels with the blanked inlet + stub are the doc-faithful exterior.
+
+	# Mid-face inlet: BLANKED OFF (the feed was rerouted to the plasmaq) — a
+	# bolted blind flange where the entry pipe used to be.
+	_cyl(p, 0.11, 0.11, 0.05, Vector3(0.0, cy, cab_t * 0.5 + 0.03), steel, "z")
+	_cyl(p, 0.13, 0.13, 0.015, Vector3(0.0, cy, cab_t * 0.5 + 0.06), dark, "z")
+
+	# THE 20 cm STUB — the side exit pipe that "sticks out. And then there's
+	# nothing." Open flange, no duct: the signature of the decommissioning.
+	_cyl(p, 0.10, 0.10, 0.20, Vector3(cab_w * 0.5 + 0.10, cy + cab_h * 0.28, 0.0), steel, "x")
+	_cyl(p, 0.125, 0.125, 0.02, Vector3(cab_w * 0.5 + 0.21, cy + cab_h * 0.28, 0.0), dark, "x")
+
 static func _m_thermal_dryer(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
 	var shell := _mat(color, ghost, 0.45, 0.45)
 	var dark := _mat(_DARK, ghost, 0.5, 0.55)

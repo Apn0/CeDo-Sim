@@ -555,3 +555,33 @@ Proven: test_line3b_flow_conformance 22/22 against 3.1-B; 3B identity ledger
 4/0 (mass flows end-to-end THROUGH the plasmaq across the explicit link);
 world regression 17/0. Model-detail notes: plasmaq's built-in outlet blower;
 the tussenventilator as a named cyclone+blower booster station.
+
+### ⚖ RULING 3.1-C — the thermische droger, finally in focus · ✅ APPLIED
+
+Operator 2026-08-28 (after digging: "for me, it's already more than a year
+ago since the factory closed... but I'm sure that that is right"):
+
+- The REAL thermal-dryer form (both lines had the same model): a flat
+  **spiral cabinet** — ~2×2 m from the front, 30-35 cm thick. Material
+  enters mid-face, runs **4-5 spiral loops from the inside outward**, exits
+  at the side. The **heater elements sit in the removable side panels**.
+- **3B:** the machine was REPLACED by the plasmaq during his tenure but
+  still physically STANDS there, disconnected — "a pipe of like twenty
+  centimeters that sticks out. And then there's nothing."
+- **3A:** "three a has that as well. So that is actually the thermal dryer
+  for three a" — which RECONCILES with 2.1-B's "the thermal dryer would be
+  the ring part": the rondmeng ring and the spiral cabinet are ONE object.
+  → detail-program item: remodel 3A's `ringleiding` instance as this spiral
+  cabinet (currently a generic ring-main model).
+
+**Applied:** new placeable `thermal_dryer_decommissioned` built to the spec
+(flat cabinet, side-panel seams + lift handles, blanked mid-face inlet
+flange, the open 20 cm stub), MachineFlow role "none", placed beside 3B's
+plasmaq run at PLACEHOLDER coords (the operator's coming 3B layout drawing
+pins the true spot). The legacy oversized `thermal_dryer` model (2.6×4.5×3.0)
+is marked superseded in the catalog and placed by nothing. 3B conformance
+now 25 checks incl.: the decommissioned unit present in SEQ+world AND absent
+from the LineFlow topology (disconnected in reality → invisible to flow).
+World regression 17/0. Render: `renders/shot_thermal_dryer_decommissioned.png`
+(spiral shown NOWHERE on the face — it is internal; two hint attempts read
+as a speaker cone and were dropped).

@@ -59,6 +59,10 @@ func _run() -> void:
 	# PLASMAQ → (~15 m) → tussenventilator (cyclone + booster blower) → silo.
 	var mid_ids : Array = []
 	for j in range(d2 + 1, seq.size()):
+		# Skip side-lane branches (x != 0) — e.g. the decommissioned
+		# thermische droger standing beside the run (ruling 3.1-C).
+		if not is_equal_approx(float((seq[j] as Dictionary).get("x", 0.0)), 0.0):
+			continue
 		var mid := String((seq[j] as Dictionary).get("id", ""))
 		mid_ids.append(mid)
 		if mid == "extruder_silo":
@@ -70,7 +74,10 @@ func _run() -> void:
 	_check(i_pq >= 0,
 		"the PLASMAQ is on 3B — it IS the diagram's 'Thermische droger' block (ruling 3.1-B)")
 	_check(_idx_after(seq, "thermal_dryer", 0) < 0,
-		"NO separate thermal_dryer machine (the plasmaq is it)")
+		"NO connected thermal_dryer machine (the plasmaq replaced it)")
+	# Ruling 3.1-C: the replaced machine still STANDS there, disconnected.
+	_check(_idx_after(seq, "thermal_dryer_decommissioned", 0) >= 0,
+		"the DECOMMISSIONED thermische droger stands beside the run (ruling 3.1-C)")
 	if i_pq >= 0:
 		_check(float((seq[i_pq] as Dictionary).get("gap", 0.0)) >= 12.0,
 			"the ~15 m operator-sourced pipe run to the tussenventilator is in the SEQ (gap %.1f)"
@@ -107,6 +114,8 @@ func _run() -> void:
 	_check(int(counts.get("cyclone", 0)) == 2,
 		"world contains exactly 2 cyclones (plasmaq inlet + tussenventilator), got %d" % int(counts.get("cyclone", 0)))
 	_check(int(counts.get("mech_dryer", 0)) == 2, "world contains both mech dryers (310/311)")
+	_check(int(counts.get("thermal_dryer_decommissioned", 0)) == 1,
+		"world contains the decommissioned thermische droger (plant archaeology)")
 
 	# ── S3 — LineFlow wiring ────────────────────────────────────────────────
 	print("  -- S3: LineFlow topology --")
@@ -116,6 +125,15 @@ func _run() -> void:
 	lf.call("rebuild")
 	var nodes : Array = lf.get("_nodes")
 	var edges : Array = lf.get("_edges")
+	# The decommissioned dryer must be INVISIBLE to the flow topology — it is
+	# disconnected in reality (20 cm stub into nothing) and role "none" in
+	# MachineFlow, so LineFlow must drop it entirely.
+	var decomm_in_topology := false
+	for kk in nodes.size():
+		if String((nodes[kk] as Dictionary).get("id", "")) == "thermal_dryer_decommissioned":
+			decomm_in_topology = true
+	_check(not decomm_in_topology,
+		"the decommissioned dryer is NOT in the LineFlow topology (disconnected in reality)")
 	# Resolve nodes by macro_index so the two dryers/blowers are unambiguous.
 	var by_seq : Dictionary = {}
 	for k in nodes.size():

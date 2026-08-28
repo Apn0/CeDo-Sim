@@ -486,6 +486,13 @@ const LINE_3B_SEQ : Array[Dictionary] = [
 	# meters to a new cyclone".  Plasmaq's outlet blower is built into the
 	# machine (model-detail note), not a separate placeable.
 	{"id": "plasmaq", "gap": 15.0},  # PLASMAQ = the diagram's "Thermische droger" on 3B
+	# ── Ruling 3.1-C — the DECOMMISSIONED thermische droger. The plasmaq
+	# replaced it during the operator's tenure, but the machine still stands
+	# there, disconnected ("a pipe of like twenty centimeters that sticks
+	# out. And then there's nothing."). Role-none plant archaeology beside
+	# the run it used to serve. x/z are PLACEHOLDERS — the operator's coming
+	# 3B layout drawing will pin the true spot.
+	{"id": "thermal_dryer_decommissioned", "x": -3.5, "z": -8.0},
 	# explicit_from_prev — the 15 m run exceeds LineFlow's MAX_LINK_DIST
 	# (14 m), so the plasmaq → tussenventilator edge is tagged explicitly.
 	{"id": "cyclone", "explicit_from_prev": true},  # TUSSENVENTILATOR — its cyclone…
