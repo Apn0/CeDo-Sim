@@ -37,7 +37,7 @@ do what the docs say it does?*
 | # | Document | Status |
 |---|---|---|
 | 1 | `lijn_1_flow.md` + `line_flow_graphs.json` (line "1") | ✅ COMPLETE — gaps 1.1–1.3, fix 1.4, ruling 1.B, fold 1.A; leg F confirmed by operator 2026-08-28. Open: archive the sketch image |
-| 2 | `lijn_3a_flow.md` | ⚙ 2.1+2.2 fixed, Q2.3 closed; open: heaters build (spec received), rondmeng-ring wiring question |
+| 2 | `lijn_3a_flow.md` | ✅ 2.1-B re-wired per operator, 2.2 fixed, Q2.3/Q2.4 closed; open: heater cabinets build, bigbag render sign-off |
 | 3 | `lijn_3b_flow.md` | ☐ |
 | … | remaining 426 docs | ☐ |
 
@@ -350,7 +350,7 @@ Walked 2026-08-28 against `LINE_3A_SEQ` + `MachineFlow` + the Q&A rulings.
 compactorband (fixed by gap 1.3); VSS before vuilsnippersilo (#136 ruling);
 transfer_chute glijgoot (LA1-doc-sourced).
 
-### GAP 2.1 — mengsilo loop miscomposed · ✅ FIXED
+### GAP 2.1 — mengsilo loop miscomposed · ⚠ SUPERSEDED BY RULING 2.1-B (below)
 
 **Doc** (edges 13-28, backed by `photo_audit.md:34`'s spine and
 `fixed_equipment_inventory.md:29`): main path = M11b → V2 → **ringleiding →
@@ -372,6 +372,44 @@ is undocumented and kept from the old SEQ. Proven by the NEW
 LineFlow RECIRC edge from V1's blower back into the silo — doc edge 22);
 mutation (ringleiding back into the loop) goes red 4 ways. World regression
 17/0, all 41 machines inside the footprint.
+
+### ⚖ RULING 2.1-B — the operator's own wiring of the mengsilo area · ✅ APPLIED
+
+Same day, hours after "Diagram is right": the operator explained that answer
+came from misreading the question, and gave his own account of the machines
+he ran. **Operator supersedes diagram** (the diagram stays the authority for
+block NAMES only):
+
+- **INFEED:** mech. dryer → blower → **windzifter** → blower → **one BIG
+  cyclone on the mengsilo TOP** → silo. (Diagram had the windzifter after
+  the silo.) Both blower lines — windzifter's and the ring's — enter that
+  same top cyclone at ~180° opposite inlets.
+- **LOOP:** doseerschroef M11a₂ → verdeelwals m14 → V1 → **the RING** → the
+  shared top cyclone → silo. Always on while the line runs; heated (the
+  60×60×200 heater cabinets feed the air side). **On 3A, the diagram's
+  "thermische droger" IS this heated ring circuit** — "kind of dead" as a
+  separate machine; the real thermal-dryer machine belongs to **line 3B**
+  and works differently.
+- **MAIN:** doseerschroef M11b → blower → "pipeline pipeline pipeline" →
+  extruder silo. No windzifter, no verdeelwals, no thermal dryer here.
+- **Ring geometry** (detail program): starts at the bottom, 180° turn, up a
+  bit, 180°, other side, 180° — two serpentine loops, then up to the cyclone.
+
+Applied in `LINE_3A_SEQ` (3A now 38 machines): windzifter + second blower +
+the lifted shared cyclone (y 5.9, negative gap pulls the silo under it) on
+the infeed; the ring moved into the lus as its LAST stage (recirc edge ring →
+silo, physically via the top cyclone); main path reduced to screw → blower →
+extruder silo; `thermal_dryer` removed from 3A entirely.
+
+**Pre-measured gap for doc 3:** `LINE_3B_SEQ` has NO `thermal_dryer` — and
+per this ruling the real machine is 3B's. Expect that gap when the walk
+reaches `lijn_3b_flow.md`.
+
+Proven: test_line3a_flow_conformance rewritten to 2.1-B — 30/30 (infeed
+composition, lifted cyclone, lus incl. ring, bare main path, no thermal
+dryer anywhere, recirc edge from the RING, top-cyclone → silo drop edge,
+severed-main guards, bigbag block). World regression 17/0, 38/38 inside;
+3A identity ledger 4/0.
 
 ### GAP 2.2 — bigbag station missing · ✅ FIXED
 
@@ -429,10 +467,7 @@ the doseer screw and warm air + material are blown onward. Model spec: a
 the BOTTOM of the filter stacks to the blower. Build as role-none side units
 (pomp_c1 pattern) beside V2/M11b, V1 and the thermische droger.
 
-⚠ The same answer described the rondmeng return as "the warm air and the
-material get blown **through the ring** back to the top of the silo **into
-the cyclone**" — which is exactly the wiring gap 2.1 just REMOVED from the
-loop on the "Diagram is right" ruling. Open question posed to the operator:
-is that ring THE ringleiding block (the diagram draws it in the main path),
-a second ring, or one shared plant ring serving both paths? **Do not re-wire
-until answered.**
+The ring question this answer raised is CLOSED by ruling 2.1-B: the ring
+lives in the rondmeng loop. Remaining build item: the three heater cabinets
+(60×60×200, filter stacks, pipes from the stack bottoms to the blowers) as
+role-none side units — needs a small model pass.

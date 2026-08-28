@@ -109,43 +109,52 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 	{"id": "friction_sep"},
 	{"id": "transport_screw"},
 	{"id": "mech_dryer", "gap": 1.2},   # wet→dry section break: wider access gap
-	{"id": "blower"},
+	# ── RULING 2.1-B, operator 2026-08-28 (SUPERSEDES the same morning's
+	# "Diagram is right" ruling — that answer was based on a misread of the
+	# question; this is the operator's own account of the machines he ran):
+	#   INFEED: "material coming in from the mechanical dryer. Then there is
+	#   a blower ... then the material goes to the wind shifter. Then there
+	#   is another blower that blows it in the top of the silo in one
+	#   cyclone, big cyclone on top."
+	#   LOOP:   one screw "goes to the ring and then back up. to dry the
+	#   material ... warm it, blow it constantly ... only if the line is
+	#   running." On 3A the diagram's "thermische droger" IS this heated
+	#   ring circuit — the real thermal-dryer MACHINE is line 3B's (works
+	#   differently); 3A's block is "kind of dead" as a separate machine.
+	#   MAIN:   the other screw "goes to the extruder silo. That is just
+	#   dosing screw, blower, pipeline pipeline pipeline, extruder silo."
+	# So vs the diagram: windzifter moves to the INFEED, the ringleiding
+	# lives in the LOOP, and no thermal dryer/verdeelwals exists on the 3A
+	# main path. The diagram remains the transcription authority for BLOCK
+	# NAMES; the operator is the authority for the wiring.
+	{"id": "blower"},                   # infeed blower 1 (V4)
+	{"id": "wind_sifter"},              # windzifter — operator: on the INFEED
+	{"id": "blower"},                   # infeed blower 2 → big top cyclone
+	# The BIG SHARED CYCLONE on the mengsilo TOP: both blower lines (from the
+	# windzifter and from the ring) enter it at ~180° opposite inlets, and it
+	# drops into the silo. gap −2.3 pulls the silo's centre under the cyclone
+	# (cyc_half 0.8 + gap + silo_half 1.5 = 0); y 5.9 seats the cone on the
+	# 6.5 m silo's dome. Model detail (twin opposed inlets) → detail program.
+	{"id": "cyclone", "y": 5.9, "gap": -2.3},
 	{"id": "mengsilo"},
-	# ── DOC-WALK GAP FIX 2026-08-28 (gap 2.1) — lijn_3a_flow.md edges 13-28,
-	# operator: "Diagram is right — fix the sim". The old layout had the two
-	# paths MISCOMPOSED: the ringleiding + a cyclone sat inside the recirc
-	# loop (whose own comment claimed an unrecorded operator description),
-	# while the flow diagram, photo_audit.md:34's spine and
-	# fixed_equipment_inventory.md:29 ("plant-wide ring main") all put the
-	# ringleiding in the MAIN path. The loop also lacked its verdeelwals m14,
-	# and the main path carried an extra early verdeelwals + extra trailing
-	# cyclone that are in no document.
-	# ── RONDMENG-LUS (branch, +X side, returns to the mengsilo top) ──
-	# Doc edges 19-22: Mengsilo → Doseerschroef M11a (2nd block with that
-	# motor code — ruled REAL, question_answers.json) → Verdeelwals (m14) →
-	# Ventilator V1 rondmengen → pneumatic return into the silo top.
-	# #71 — `branch_recirc` on the first branch entry tells _build_full_line to
-	# tag the LAST branch entry (V1's blower) with a recirc back-edge to the
-	# source (mengsilo). LineFlow treats recirc edges as invisible to the
-	# cycle check, so the loop can close without blocking the main path.
+	# ── RONDMENG-LUS (branch, +X side) — the ALWAYS-ON (while running)
+	# heated drying circulation. Material: silo → doseerschroef M11a₂ →
+	# verdeelwals m14 (rotary feeder into the airstream; heaters + V1 blower
+	# are the air side, modelled later per the 60×60×200 heater-cabinet spec)
+	# → the RING → back into the shared top cyclone → silo. The ring itself:
+	# starts at the bottom, 180° turn, up, 180°, other side, 180° — two
+	# serpentine loops, then up to the cyclone (operator; detail program).
+	# #71 — branch_recirc: the LAST branch entry (the ring) carries the
+	# recirc back-edge to the mengsilo; physically that return passes through
+	# the shared top cyclone.
 	{"id": "transport_screw", "x": 5.0, "z": -3.0, "branch_recirc": true},  # Doseerschroef M11a (onder mengsilo)
 	{"id": "verdeelwals",     "x": 5.0, "z":  0.0},                          # Verdeelwals (m14)
 	{"id": "blower",          "x": 5.0, "z":  3.0},                          # Ventilator V1 rondmengen
-	# ── MAIN PATH out of the mengsilo — doc edges 13-17, 24-28 ──
+	{"id": "ringleiding",     "x": 5.0, "z":  6.0},                          # de RING (serpentine)
+	# ── MAIN PATH out of the mengsilo — operator: "just dosing screw,
+	# blower, pipeline pipeline pipeline, extruder silo." ──
 	{"id": "transport_screw"},          # Doseerschroef M11b
-	{"id": "blower"},                   # Ventilator V2
-	{"id": "ringleiding"},              # ringleiding (pneumatic ring main)
-	# "Cycloon & windzifter" is ONE station in the diagram; the sim's two
-	# placeables stand adjacent for it (intra-station order not documented —
-	# kept the pre-existing wind_sifter→cyclone order).
-	{"id": "wind_sifter"},
-	{"id": "cyclone"},
-	{"id": "blower"},                   # Ventilator V2a
-	{"id": "verdeelwals"},              # Verdeelwals thermische droger
-	{"id": "thermal_dryer"},
-	# "Cycloon -> ventilator V3" is likewise one block, two placeables.
-	{"id": "cyclone"},
-	{"id": "blower"},                   # Ventilator V3
+	{"id": "blower"},
 	# #107 — was plain `silo`; the extruder's hot end has to be fed by the
 	# elevated extruder_silo (frame + 2 cyclones on top + lump bin + windows),
 	# not a generic dosing silo. Same change applied to 3B and Line 1 below.
