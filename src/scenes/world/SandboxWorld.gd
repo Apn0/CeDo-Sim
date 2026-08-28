@@ -151,8 +151,17 @@ func _build_player() -> void:
 		_tag_body_layers(body)
 	_player = p
 
-## Local copy of MainWorld._set_body_render_layer_split — sandbox doesn't share
-## the autoload, so we re-implement the local-y walk inline.
+## NOT a copy of MainWorld._set_body_render_layer_split — the two split on
+## different rules and always have. MainWorld classifies by ancestor NAME
+## (HipPivot_*/BA_*Leg = the first-person legs); this one splits head-from-body
+## by summed local Y. Kept because the sandbox only needs "hide the head".
+##
+## The Y-sum still reconstructs the anatomical height after the 2026-08-28 rig
+## unification: each mesh's position became (rig_local - bone_rest_origin) and
+## its BoneAttachment3D is seeded to that same bone_rest_origin, so the two
+## cancel. That holds AT REST ONLY — call this before the AnimationTree poses
+## the skeleton (as _spawn_player does), never mid-animation, or a prone rig
+## would classify its head as a leg. Guarded by test_humanoid_rig_conformance.
 func _tag_body_layers(root: Node) -> void:
 	if root is MeshInstance3D:
 		var mi := root as MeshInstance3D

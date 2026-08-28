@@ -316,7 +316,13 @@ func _physics_process(delta: float) -> void:
 	# Always apply gravity so the capsule rests on the floor.
 	if not is_on_floor():
 		velocity.y -= GRAVITY * delta
+		# Airborne timer for the "jump" animation state. The on-delay (see
+		# _AIR_ANIM_DELAY_S at _update_animation_blend) filters out the 1-2
+		# off-floor frames after a vault re-seat and step-up jitter, so only a
+		# real jump/fall swaps the skeleton into the airborne pose.
+		_air_time += delta
 	else:
+		_air_time = 0.0
 		# Remember the last spot we genuinely stood on — the fall fail-safe
 		# teleports back here if we ever drop through a floor hole.
 		_last_floor_pos = global_position
@@ -1918,6 +1924,11 @@ func _find_anim_tree_recursive(n: Node) -> AnimationTree:
 ## parameters/locomotion/blend_position. State transitions are driven via
 ## parameters/playback.travel(name) with a 0.25 s xfade configured on the rig.
 var _last_anim_state : String = "locomotion"
+# Airborne-pose debounce (operator bug report 2026-08-28). _air_time accrues in
+# _physics_process while off the floor and zeroes on contact; the delay keeps
+# step-up jitter and the post-vault re-seat from flashing the jump pose.
+const _AIR_ANIM_DELAY_S : float = 0.12
+var _air_time : float = 0.0
 
 ## Takes no wish-direction: since #224 the blend is decomposed from the body's
 ## ACTUAL velocity, not from input intent, so that vaulting, belt-carry and
@@ -1928,6 +1939,13 @@ func _update_animation_blend() -> void:
 		_anim_tree = _resolve_player_anim_tree()
 		if _anim_tree == null:
 			return
+		# A FRESH tree always starts in "locomotion" (its Start transition), so
+		# the cached state is now a lie. Without this reset the shift-bell
+		# wardrobe rebuild — which only started really replacing the player rig
+		# with the 2026-08-28 double-body fix — would leave a crouched/prone
+		# operator standing: want_state would still equal _last_anim_state and
+		# travel() would never fire.
+		_last_anim_state = "locomotion"
 	# Travel to the state that matches our stance. _stance is the operator's
 	# crouch/prone toggle; in-vehicle is owned elsewhere and pushed via
 	# set_in_vehicle_animation(...) below.
@@ -1936,6 +1954,15 @@ func _update_animation_blend() -> void:
 		Stance.CROUCHING: want_state = "crouch"
 		Stance.PRONE:     want_state = "prone"
 		_:                want_state = "locomotion"
+	# Airborne (operator bug report 2026-08-28: jumping showed the stiff
+	# locomotion statue). Only from the standing stance — a mid-air crouch /
+	# prone toggle is the operator's explicit pose choice — and never on a
+	# ladder (rung-hopping reads better as locomotion than as a jump tuck).
+	# The 0.12 s on-delay debounces vault re-seat and step-up floor flicker;
+	# landing resets _air_time so the revert to locomotion is immediate.
+	if want_state == "locomotion" and _air_time > _AIR_ANIM_DELAY_S \
+			and _on_ladder_count == 0:
+		want_state = "jump"
 	# vault wins over stance
 	if _vault_state == VaultState.CLIMBING:
 		want_state = "climb"

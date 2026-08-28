@@ -378,19 +378,27 @@ const _PLAYER_BODY_LAYER : int = 1 << 1   # visible in first person (legs only)
 const _PLAYER_HEAD_LAYER : int = 1 << 2   # culled by the FP camera (head + torso + arms)
 
 ## Operator request 2026-07-05: first person shows ONLY the operator's legs.
-## Structural classification: leg meshes (feet / boot cuffs / shins / thighs)
-## all live under a HipPivot_L / HipPivot_R ancestor in the Humanoid box rig —
-## they keep the FP-visible layer. Every other player mesh (torso, arms, head,
-## PPE overlays) goes to the FP-culled layer. Orbit / free-move cameras keep
-## the default cull mask and still render the full body; NPCs are never walked
-## by this function, so they are unaffected.
+## Structural classification: since the 2026-08-28 rig unification (operator
+## bug report: limbs never animated), leg meshes (feet / boot cuffs / shins /
+## thighs) live under the skeleton's leg-bone BoneAttachment3D nodes
+## (BA_LUpperLeg … BA_RFoot) — those keep the FP-visible layer. The legacy
+## HipPivot_L/R name is still honoured so any not-yet-migrated tree keeps
+## working. Every other player mesh (torso, arms, head, PPE overlays) goes to
+## the FP-culled layer. Orbit / free-move cameras keep the default cull mask
+## and still render the full body; NPCs are never walked by this function, so
+## they are unaffected.
+const _LEG_BONE_ATTACHMENTS : Array[String] = [
+	"BA_LUpperLeg", "BA_LLowerLeg", "BA_LFoot",
+	"BA_RUpperLeg", "BA_RLowerLeg", "BA_RFoot",
+]
 func _set_body_render_layer_split(root: Node) -> void:
 	if root is MeshInstance3D:
 		var mi := root as MeshInstance3D
 		var on_leg := false
 		var p : Node = mi.get_parent()
 		while p != null and (not (p is Node3D) or p.name != "PlayerBody"):
-			if String(p.name).begins_with("HipPivot"):
+			var pn := String(p.name)
+			if pn.begins_with("HipPivot") or pn in _LEG_BONE_ATTACHMENTS:
 				on_leg = true
 			p = p.get_parent()
 		mi.layers = _PLAYER_BODY_LAYER if on_leg else _PLAYER_HEAD_LAYER

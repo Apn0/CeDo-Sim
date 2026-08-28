@@ -298,14 +298,9 @@ const _CAPSULE_HEIGHT := {
 	Locomotion.PRONE_CRAWL: 0.55,
 	Locomotion.VAULT: 1.8,
 }
-const _BODY_Y_SCALE := {
-	Locomotion.IDLE: 1.0,
-	Locomotion.WALK: 1.0,
-	Locomotion.CROUCH_WALK: 0.66,
-	Locomotion.JUMP: 1.0,
-	Locomotion.PRONE_CRAWL: 0.30,
-	Locomotion.VAULT: 1.0,
-}
+# _BODY_Y_SCALE removed 2026-08-28: the rig unification made the skeleton
+# crouch/prone poses real, so the legacy Y-squash (0.66/0.30) doubled up into
+# a squashed midget. _apply_locomotion_pose now only morphs the capsule.
 const _JUMP_VELOCITY  : float = 5.5
 const _OBSTACLE_CHECK_INTERVAL : float = 0.20
 
@@ -370,6 +365,10 @@ var _idle_breathe_phase : float = 0.0
 
 var _obstacle_check_timer : float = 0.0
 var _jump_locked   : bool  = false
+## True once a jump has provably left the floor. Guards the landing detector
+## from firing on the impulse tick itself (is_on_floor() is one tick stale
+## there) — see the gravity/land block in _physics_process.
+var _jump_airborne : bool  = false
 var assigned_station_id: String  = ""
 # #124 — facing the worker should hold once they arrive at home_position. NAN
 # means "no opinion, keep whatever rotation the walk happened to leave". Set
@@ -534,25 +533,36 @@ func _physics_process(delta: float) -> void:
 
 	# Phase 2 (#146): pick / apply the locomotion state (IDLE / WALK / CROUCH /
 	# JUMP / PRONE) BEFORE deriving velocity so the speed multiplier + jump
-	# impulse apply this tick. The state machine also resizes the capsule + the
-	# body's Y-scale to match the pose (taller for stand, shorter for crouch).
+	# impulse apply this tick. The state machine resizes the CAPSULE to match
+	# the pose; the visible body is posed by the skeleton, not scaled (the
+	# legacy Y-squash went out with the 2026-08-28 rig unification).
 	_update_locomotion(delta)
 
-	# Audit item 2 — sine-based walking gait. _walk_phase advances by the ground
-	# distance walked this tick (TAU per GAIT_STRIDE_M), then _apply_gait pushes
-	# sin(phase)*amp onto the Humanoid's HipPivot_L/R and ShoulderPivot_L/R
-	# nodes so the legs and arms visibly swing. The cache is lazy so a fresh
-	# spawn whose body hasn't entered the tree yet won't bind to null.
+	# VESTIGIAL, kept only so the retirement is visible at the call site: the
+	# sine gait these two fed (audit item 2, via the HipPivot/ShoulderPivot
+	# nodes) is gone — _apply_gait() is an empty stub and NOTHING reads
+	# _walk_phase (verified repo-wide 2026-08-28). The AnimationTree
+	# BlendSpace2D animates the limbs from velocity instead.
 	_advance_walk_phase(delta)
 	_apply_gait()
 
 	# Apply gravity
 	if not is_on_floor():
 		current_velocity.y -= 9.8 * delta
+		_jump_airborne = true      # we have provably left the ground
 	# Land detection — clear the jump lock so the obstacle check can pick a
 	# normal pose again. JUMP keeps XZ velocity but adds the impulse to Y.
-	elif _jump_locked:
+	#
+	# The `_jump_airborne` gate is why this can't fire on the impulse tick:
+	# _update_locomotion sets the impulse and _jump_locked BEFORE this block,
+	# but is_on_floor() still reports the PREVIOUS tick's move_and_slide, so
+	# without the gate the latch was cleared (and locomotion reset to WALK) on
+	# the very tick the jump started — the lock never survived a single frame.
+	# That silently disabled the mid-air re-impulse guard in _update_locomotion
+	# AND made the airborne animation state unreachable (2026-08-28 review).
+	elif _jump_locked and _jump_airborne:
 		_jump_locked = false
+		_jump_airborne = false
 		locomotion = Locomotion.WALK
 
 	# Move towards target (unless the brain wants us standing still). The
@@ -1195,26 +1205,38 @@ func _classify_obstacle_ahead() -> int:
 		return Locomotion.JUMP
 	return Locomotion.WALK
 
-## Apply the current state's pose: resize capsule height + offset, scale the
-## humanoid body's Y, lower its origin so the feet stay on the floor (the
-## body is built around the node origin = capsule centre; when crouched the
-## capsule shrinks upward so the body's centre lowers proportionally).
+## Apply the current state's physics pose: resize the capsule bottom-fixed,
+## exactly like PlayerController._update_stance. Since the 2026-08-28 rig
+## unification the VISUAL crouch/prone comes from the skeleton pose states
+## (NPC._update_animation_blend travels crouch/prone) — the old Y-squash
+## (_BODY_Y_SCALE 0.66/0.30) on top of the real pose made a squashed midget,
+## so the body is no longer scaled or offset at all.
 func _apply_locomotion_pose() -> void:
 	if _capsule_shape == null:
 		return
 	var h : float = float(_CAPSULE_HEIGHT.get(locomotion, 1.8))
 	if absf(_capsule_shape.height - h) > 0.001:
 		_capsule_shape.height = h
-	# Body Y-scale only — XZ stays 1.0 so shoulders don't squash.
-	if _body_node != null:
-		var ys : float = float(_BODY_Y_SCALE.get(locomotion, 1.0))
-		if absf(_body_node.scale.y - ys) > 0.001:
-			_body_node.scale = Vector3(1.0, ys, 1.0)
-			# Lower the body so its feet stay on the floor — the body mesh is
-			# centred at the node origin, scaling Y shrinks toward that origin,
-			# so we have to shift it DOWN by half the height loss.
-			var origin_drop : float = (1.8 - h) * 0.5
-			_body_node.position.y = -origin_drop
+		# Keep the capsule BOTTOM fixed (crouch lowers the head, not the
+		# feet): centre = bottom + h/2. The node origin never sinks, which is
+		# the frame the skeleton pose tracks were authored against.
+		var col_node := get_node_or_null("BodyCollision") as CollisionShape3D
+		if col_node != null:
+			col_node.position.y = h * 0.5 - float(_CAPSULE_HEIGHT[Locomotion.WALK]) * 0.5
+	# Clear a legacy squash left on a rig by the pre-unification path — WITHOUT
+	# touching the #126 build sliders. Humanoid.build sets the rig root scale to
+	# (width_mul, height_mul, depth_mul) (Humanoid.gd:327), so six roster NPCs
+	# legitimately run non-1.0 scales (Vincent 1.12 tall, Pascal 0.90/1.15 …).
+	# A blanket reset to ONE would flatten every one of them to default
+	# proportions on the first physics tick. The legacy squash is Y-ONLY
+	# (x == z == 1.0, y ∈ {0.66, 0.30}), so only that exact shape is cleared,
+	# and the body is restored to a plain unscaled rig.
+	if _body_node != null \
+			and is_equal_approx(_body_node.scale.x, 1.0) \
+			and is_equal_approx(_body_node.scale.z, 1.0) \
+			and _body_node.scale.y < 0.999:
+		_body_node.scale = Vector3.ONE
+		_body_node.position.y = 0.0
 
 # =============================================================================
 # Animation Phase 1 — feed velocity into the AnimationTree's BlendSpace2D
@@ -1257,14 +1279,23 @@ func _update_animation_blend() -> void:
 		_anim_tree = _resolve_anim_tree(_body_node)
 		if _anim_tree == null:
 			return
+		# The fresh tree starts in "locomotion"; a stale cached state would make
+		# the travel guard below skip, freezing a crouching/proning NPC upright
+		# after a wardrobe swap (same trap as the player's).
+		_last_anim_state = "locomotion"
 	# Map NPC.Locomotion → state name. CROUCH_WALK = held crouch pose (Phase 3
 	# would author a crouch-walk locomotion BlendSpace row). PRONE_CRAWL = prone.
-	# JUMP keeps using the locomotion state. VAULT uses the climb pose.
+	# VAULT uses the climb pose. JUMP maps to the airborne tuck: the locomotion
+	# state itself is the debounce — it is set at the impulse and reset to WALK
+	# by the landing detector (which since the 2026-08-28 review only fires
+	# once the body has provably left the floor, so the state survives the
+	# flight instead of being cleared on the impulse tick).
 	var want_state : String = "locomotion"
 	match locomotion:
 		Locomotion.CROUCH_WALK: want_state = "crouch"
 		Locomotion.PRONE_CRAWL: want_state = "prone"
 		Locomotion.VAULT:       want_state = "climb"
+		Locomotion.JUMP:        want_state = "jump"
 		_:                      want_state = "locomotion"
 	# NPC sitting in vehicle — set via assign_vehicle / clear_vehicle in the
 	# vehicle entry code.

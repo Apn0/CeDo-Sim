@@ -129,6 +129,17 @@ read `Result:` AND the `note  :` lines in `tools/regression/out/last_run.log`.
    never a shared name that overwrites the previous line's shot. Renders come from
    `src/tests/shot_placeable.tscn`:
    `<godot> --path . res://src/tests/shot_placeable.tscn -- <placeable_id> [yaw] [pitch]`
+10. **The Skeleton3D is the ONE animation system, and poses are MEASURED.**
+   Every humanoid mesh — limbs included — must sit under a `BA_<bone>`
+   BoneAttachment3D; the `HipPivot_*`/`ShoulderPivot_*` nodes are empty
+   name-compat shells (`MainWorld._set_body_render_layer_split` still reads
+   them). Never judge a pose from a render: a still of a 4 %-deep crouch looks
+   perfectly fine. Run `res://src/tests/probe_stance_extents.tscn`, which
+   prints each stance's low/high/height, and check two things — the pose
+   actually changes the height, and its lowest point is **≥ −0.90** (the
+   standing sole plane) so the body does not sink through the floor. Guarded by
+   `test_humanoid_rig_conformance`; the full story is in
+   `docs/anim_rig_unification_2026-08-28.md`.
 
 ### RESOLVED 2026-08-03 — two lump carts per extruder
 
@@ -192,9 +203,10 @@ this one as re-checkable too — `find src -name '*.gd' | wc -l`):
 
 | Doc | What it holds |
 |---|---|
-| `docs/plant/` | **Primary source of truth for the plant — start at `docs/plant/README.md`, the corpus index.** 414 `.md`: SWI procedures, HMI screens, trends, photo-audit ledger |
+| `docs/plant/` | **Primary source of truth for the plant — start at `docs/plant/README.md`, the corpus index.** 419 `.md` (counted 2026-08-28): SWI procedures, HMI screens, trends, photo-audit ledger |
 | `docs/plant/hmi_screen_inventory_2026-07-28.md` | Ground truth for the 34 HMI mockups — the **photos are authoritative**, the mockups are layout only |
 | `docs/AUDIO_sound_engine_state_2026-08-03.md` | Both audio systems, the verified RD frame for the 43 positional clips, loop-crossfade + IMA_ADPCM trap, 3 open findings |
+| `docs/anim_rig_unification_2026-08-28.md` | **Why the humanoid never animated:** limb meshes sat on dead pivot nodes while the AnimationTree drove boneless bones. Also the face-up prone, the 4 %-deep crouch found by MEASURING, the poses that sank through the floor, the double-player-body (`rebuild_appearance` didn't know the name `PlayerBody`), and the NPC jump latch that cleared on the impulse tick. 12 review findings, mutation-verified |
 | `docs/AUDIT_handoffs_2026-08-16.md` | **Read before trusting any handoff doc.** Two 2026-08-16 handoffs claimed "Stable / Verified"; three of five claims described code not in the repo. Records 12 unmentioned defects (4 critical, now fixed + tested), the Rule 1 blocks, and the 3 findings that were refuted |
 | `docs/AUDIT_project_sweep_2026-08-23.md` | **The sweep that found `main` did not compile.** Why both harness compile checks missed it, the BaleYardManager merge repair, FULL_LOGIC_AUDIT #7 confirmed + fixed and #12 REFUTED, the headless MultiMesh limit, and what a fresh clone can/cannot prove |
 | `docs/BACKLOG_ultracode_2026-07-19.md` | Deferred queue — 16 of 40 findings landed; also records the npc-05 vacuous-green correction |

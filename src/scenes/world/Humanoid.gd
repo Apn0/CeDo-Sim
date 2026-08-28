@@ -185,24 +185,35 @@ static func _apply_pants_material(tint: Variant, use_denim_texture: bool, mirror
 static func rebuild_appearance(holder: Node3D, shirt: Color, variant: int, new_appearance: Dictionary) -> Node3D:
 	if holder == null or not is_instance_valid(holder):
 		return null
-	# MainWorld._spawn_npcs renames the rig "HumanoidBody" after attaching, but
-	# the player + customizer keep the default "Body" name. Find either.
+	# Rig names by owner: NPCs = "HumanoidBody" (MainWorld._spawn_npcs), the
+	# PLAYER = "PlayerBody" (PlayerSpawner._spawn_player:208), customizer
+	# preview = default "Body". Operator bug 2026-08-28 (double player body):
+	# "PlayerBody" was MISSING from this lookup, so every shift-bell wardrobe
+	# rebuild on the player found no old rig, freed nothing, and added a stray
+	# second body ("Body", default render layers → visible head in first
+	# person) next to the untouched original.
 	var old : Node3D = holder.get_node_or_null("HumanoidBody") as Node3D
+	if old == null:
+		old = holder.get_node_or_null("PlayerBody") as Node3D
 	if old == null:
 		old = holder.get_node_or_null("Body") as Node3D
 	var fresh : Node3D = Humanoid.build(shirt, variant, new_appearance)
 	if fresh == null:
 		return null
-	# Match whatever the old name was so the NPC's per-frame body-scaling lookup
-	# (#146 crouch/prone) still finds it after the swap.
 	if old != null:
+		# Detach the old rig BEFORE adding the like-named fresh one. add_child
+		# is immediate while queue_free is deferred, so adding first would make
+		# Godot auto-rename the incoming duplicate ("@HumanoidBody@N") — and
+		# every per-frame get_node_or_null lookup (#146 crouch/prone scaling,
+		# anim-tree rebind) would silently stop finding the new rig.
+		# Match the old name so those lookups still resolve after the swap.
 		fresh.name = old.name
-	holder.add_child(fresh)
-	if old:
-		# Copy the world transform so the swap is visually seamless if `Body`
-		# was offset/rotated by the NPC (most aren't — Body sits at origin).
+		# Copy the world transform so the swap is visually seamless if the rig
+		# was offset/rotated by the NPC (most aren't — it sits at origin).
 		fresh.transform = old.transform
+		holder.remove_child(old)
 		old.queue_free()
+	holder.add_child(fresh)
 	return fresh
 
 ## #133 / #186 — per-character appearance dict. Recognised keys:
@@ -387,13 +398,16 @@ static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -
 
 	# ── LEGS ──────────────────────────────────────────────────────────────────
 	# Feet at y≈-0.9. Boots, shins, thighs stacked up to the pelvis at y≈-0.18.
-	# Wrapped in a HIP PIVOT Node3D at the hip joint (y=-0.06) so the gait
-	# animator in NPC.gd can rotate the whole leg about X without offsetting
-	# the foot in world space (rotating about the actual hip joint, not about
-	# the rig origin). The pivot's local Y + each mesh's local Y still sum to
-	# the same world Y the boxes had before — _set_body_render_layer_split
-	# (which sums parent Node3D Y to classify head-vs-body) is unaffected.
-	# Pivot names: HipPivot_L / HipPivot_R (NPC gait reads these).
+	# Built under a HIP PIVOT Node3D at the hip joint (y=-0.06). The pivot no
+	# longer ANIMATES anything — since the 2026-08-28 rig unification
+	# _install_skeleton_rig reparents these meshes onto the leg bones and the
+	# pivot is left empty (the NPC sine gait it existed for is a dead stub).
+	# It survives as an authoring convenience: the pivot's local Y + each
+	# mesh's local Y sum to the same rig-local Y the boxes had before, which is
+	# what _local_in_root walks to classify each box onto its bone.
+	# Pivot names: HipPivot_L / HipPivot_R — still read BY NAME in
+	# MainWorld._set_body_render_layer_split (first-person legs), so do not
+	# rename or remove them.
 	var _hip_y : float = -0.06
 	for sx in [-1.0, 1.0]:
 		var x : float = float(sx) * 0.12
@@ -464,16 +478,17 @@ static func build(shirt: Color, variant: int = 0, appearance: Dictionary = {}) -
 				pass
 
 	# ── ARMS ──────────────────────────────────────────────────────────────────
-	# Wrapped in a SHOULDER PIVOT Node3D at the shoulder joint (y=+0.47, top of
-	# the upper-arm box) so the gait animator in NPC.gd can swing the whole arm
-	# from the shoulder. Same Y-sum invariant as legs: pivot.y + mesh.y == old
-	# mesh.y, so render-layer classification stays put.
-	# Pivot names: ShoulderPivot_L / ShoulderPivot_R (NPC gait reads these).
+	# Built under a SHOULDER PIVOT Node3D at the shoulder joint (y=+0.47, top of
+	# the upper-arm box). Same story as the legs: the pivot is an authoring
+	# frame only — the meshes end up on the arm BONES and the pivot is left
+	# empty. Same Y-sum invariant, so bone classification is unaffected.
+	# Pivot names: ShoulderPivot_L / ShoulderPivot_R.
 	#
 	# #212 — White work gloves. When the NPC is in a hi-vis loadout (hi_vis or
 	# operator PPE, AND on duty) we layer a slightly-oversized white box over
-	# the bare-skin hand. It lives INSIDE the shoulder pivot so it swings with
-	# the arm. We skip the glove on the "none" PPE (off-shift attire) and any
+	# the bare-skin hand. It is built inside the shoulder pivot and therefore
+	# classifies onto the same hand bone as the hand box, so it keeps tracking
+	# the hand. We skip the glove on the "none" PPE (off-shift attire) and any
 	# off_duty state — same suppression rule as the vest/bands above.
 	var _show_gloves : bool = (wear_state != "off_duty") \
 		and (ppe_class == "hi_vis" or ppe_class == "operator")
@@ -870,17 +885,14 @@ static func _install_skeleton_rig(root: Node3D) -> void:
 	ik_r.tip_bone = "RFoot"
 	ik_r.target_node = NodePath("../../FootIKTargets/Target_R")
 	skel.add_child(ik_r)
-	# ── Reparent every NON-LIMB MeshInstance3D descendant of root under its bone ──
-	# Two animation systems coexist:
-	#   1) NPC.gd's sine-based gait (audit item 2) — drives LIMBS via the
-	#      HipPivot_L/R and ShoulderPivot_L/R Node3Ds. _collect_meshes_recursive
-	#      INTENTIONALLY skips those four subtrees so the leg/arm meshes stay
-	#      parented to the pivots and follow the gait rotation.
-	#   2) The Skeleton3D + AnimationTree walk cycle — drives everything else
-	#      (head/torso/pelvis/neck) via BoneAttachment3D.
-	# Meshes outside the four pivot subtrees still need their root-local
-	# position to classify by bone, which _local_in_root computes by summing
-	# Node3D origins up the parent chain.
+	# ── Reparent EVERY MeshInstance3D descendant of root under its bone ──────
+	# 2026-08-28 rig unification: the Skeleton3D + AnimationTree is the ONE
+	# animation system — limbs included. (The sine-based pivot gait this used
+	# to defer to was an empty stub; limb meshes on the pivots never animated:
+	# walk read as a statue and prone folded the torso while the legs stayed
+	# standing.) Meshes under the legacy HipPivot_*/ShoulderPivot_* nodes
+	# classify by their root-local position, which _local_in_root computes by
+	# summing Node3D origins up the parent chain — pivots included.
 	var all_meshes : Array = []
 	_collect_meshes_recursive(root, all_meshes)
 	for mi in all_meshes:
@@ -917,6 +929,7 @@ static func _install_skeleton_rig(root: Node3D) -> void:
 	lib.add_animation("prone_pose",  _build_anim_prone(skel))
 	lib.add_animation("seated_pose", _build_anim_seated(skel))
 	lib.add_animation("climb_pose",  _build_anim_climb(skel))
+	lib.add_animation("jump_pose",   _build_anim_jump(skel))
 	ap.add_animation_library("", lib)
 	# We do NOT call ap.play("idle") here — the rig root isn't in the scene
 	# tree yet, and play() requires the player to be active. The AnimationTree
@@ -972,12 +985,19 @@ static func _install_skeleton_rig(root: Node3D) -> void:
 	n_seated.animation = "seated_pose"
 	var n_climb := AnimationNodeAnimation.new()
 	n_climb.animation = "climb_pose"
+	# Operator bug report 2026-08-28: jumping showed the same stiff statue as
+	# everything else — there was NO airborne pose at all. "jump" is a static
+	# in-air hold (legs tucked asymmetrically, arms out for balance); the
+	# controller travels here while off the floor and back on landing.
+	var n_jump := AnimationNodeAnimation.new()
+	n_jump.animation = "jump_pose"
 	var sm := AnimationNodeStateMachine.new()
 	sm.add_node("locomotion", bs,        Vector2(   0.0,   0.0))
 	sm.add_node("crouch",     n_crouch,  Vector2( 200.0, 120.0))
 	sm.add_node("prone",      n_prone,   Vector2( 400.0, 120.0))
 	sm.add_node("seated",     n_seated,  Vector2( 600.0, 120.0))
 	sm.add_node("climb",      n_climb,   Vector2( 800.0, 120.0))
+	sm.add_node("jump",       n_jump,    Vector2(1000.0, 120.0))
 	# Godot 4.6 has no set_start_node() — the initial state is selected by
 	# adding a transition from the built-in "Start" pseudonode (it always
 	# exists, alongside "End"). SWITCH_MODE_IMMEDIATE so locomotion is active
@@ -987,7 +1007,7 @@ static func _install_skeleton_rig(root: Node3D) -> void:
 	sm.add_transition("Start", "locomotion", t_start)
 	# Bi-directional transitions between locomotion and each pose state, plus
 	# pose-to-pose so the operator can rebind crouch→prone without first standing.
-	var pose_states := ["crouch", "prone", "seated", "climb"]
+	var pose_states := ["crouch", "prone", "seated", "climb", "jump"]
 	for to in pose_states:
 		var t_to := AnimationNodeStateMachineTransition.new()
 		t_to.xfade_time = 0.25
@@ -1069,17 +1089,17 @@ static func _collect_meshes_recursive(node: Node, out: Array) -> void:
 	for c in node.get_children():
 		if c is BoneAttachment3D:
 			continue   # already rigged — don't re-collect its descendants
-		# Audit item 2 — the sine-based walking gait drives limb meshes via
-		# HipPivot_L/R and ShoulderPivot_L/R Node3Ds. Skipping their subtrees
-		# here keeps the meshes parented to those pivots so NPC._apply_gait()
-		# rotates the visible limb instead of an empty pivot. The bones
-		# corresponding to those limbs remain in the skeleton (for future
-		# Skeleton3D-driven secondary motion); they just don't own these
-		# specific meshes.
-		var cn := String(c.name) if c is Node else ""
-		if cn == "HipPivot_L" or cn == "HipPivot_R" \
-				or cn == "ShoulderPivot_L" or cn == "ShoulderPivot_R":
-			continue
+		# 2026-08-28 rig unification (operator bug report: walk was a statue,
+		# prone folded the torso while the legs stayed standing). This walker
+		# used to SKIP the HipPivot_L/R and ShoulderPivot_L/R subtrees for the
+		# sine-based pivot gait (audit item 2) — but that gait was long dead
+		# (NPC._apply_gait is an empty stub), so limb meshes sat on static
+		# pivots while the AnimationTree rotated limb bones that owned no
+		# meshes. Limbs are now collected like everything else and reparent
+		# under their bones; _local_in_root sums positions through the pivots,
+		# so classification is unchanged. The empty pivot Node3Ds stay in the
+		# tree for name-compat (e.g. MainWorld's FP layer splitter still
+		# honours the old ancestry).
 		if c is MeshInstance3D:
 			out.append(c)
 		if c is Node:
@@ -1365,39 +1385,97 @@ static func _add_pos_track(a: Animation, bone_name: String, keys: Array) -> void
 # / seated based on the controller's _stance / vehicle-occupied state, with a
 # 0.25 s crossfade. Procedurally generated so no external rig data is needed.
 
-## Crouch pose — hips drop ~20 cm via the Hips position track, knees bend
-## forward, thighs rotate back, mild forward Spine lean. Holds statically.
+## Crouch pose — a real deep squat, feet planted.
+##
+## The first cut (thigh 70°, knee -90°, hips -0.22) measured 1.70 m tall
+## against a 1.78 m stand — a 4 % "crouch" that read as "crouching does
+## nothing" (operator, 2026-08-28) — and its hip drop overshot the leg fold,
+## so the feet sank 7 cm through the floor. The geometry is fixed by the bone
+## rests: thigh 0.20 m (hip −0.24 → knee −0.44), shin 0.38 m (→ ankle −0.82).
+## With thigh +100° and knee −150° the ankle sits 0.209 m below the hip joint
+## instead of 0.58 m, so the hips must drop exactly that 0.371 m difference to
+## keep the feet planted — which is also what makes the squat deep (≈1.41 m).
+## The feet inherit the chain's −50° accumulation, so LFoot/RFoot counter-
+## rotate +50° to stay flat on the floor instead of tiptoeing.
 static func _build_anim_crouch(_skel: Skeleton3D) -> Animation:
 	var a := Animation.new()
 	a.length = 0.5
 	a.loop_mode = Animation.LOOP_LINEAR
+	# 0.371 is the bone-geometry figure; the measured sole then floated 6 cm
+	# (the +50° foot counter-rotation lifts the boot box), so plant it at
+	# -0.431 — verified by probe_stance_extents: low = -0.90, the stand plane.
 	_add_pos_track(a, "Hips", [
-		[0.0, Vector3(0.0, -0.22, 0.0)],
-		[0.5, Vector3(0.0, -0.22, 0.0)],
+		[0.0, Vector3(0.0, -0.431, 0.0)],
+		[0.5, Vector3(0.0, -0.431, 0.0)],
 	])
-	_add_rot_track(a, "LUpperLeg", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 70.0))]])
-	_add_rot_track(a, "RUpperLeg", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 70.0))]])
-	_add_rot_track(a, "LLowerLeg", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-90.0))]])
-	_add_rot_track(a, "RLowerLeg", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-90.0))]])
-	_add_rot_track(a, "Spine",     [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 15.0))]])
+	_add_rot_track(a, "LUpperLeg", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 100.0))]])
+	_add_rot_track(a, "RUpperLeg", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 100.0))]])
+	_add_rot_track(a, "LLowerLeg", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-150.0))]])
+	_add_rot_track(a, "RLowerLeg", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-150.0))]])
+	_add_rot_track(a, "LFoot",     [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(  50.0))]])
+	_add_rot_track(a, "RFoot",     [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(  50.0))]])
+	# Torso leans forward over the knees (a squat's balance) and the arms hang
+	# forward of the thighs instead of clipping through them.
+	_add_rot_track(a, "Spine",     [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(  22.0))]])
+	_add_rot_track(a, "LUpperArm", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( -25.0))]])
+	_add_rot_track(a, "RUpperArm", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( -25.0))]])
+	_add_rot_track(a, "LLowerArm", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( -30.0))]])
+	_add_rot_track(a, "RLowerArm", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( -30.0))]])
 	return a
 
-## Prone pose — face-down. The Hips bone rotates -90° around X so the whole
-## kinematic chain lays horizontal, plus a downward position so the body settles
-## near floor level instead of floating where the capsule centre was. Arms
-## stretched forward (Superman-style) so they don't poke through the chest.
+## Prone pose — face-down. The Hips bone rotates +90° around X so the whole
+## kinematic chain lays horizontal (rig-internal forward is +Z, so POSITIVE X
+## pitch tips the torso chest-toward-+Z = a forward dive onto the belly; the
+## first cut used -90° and rendered face-UP, arms poking skyward — caught by
+## shot_humanoid_stances after the 2026-08-28 rig unification), plus a downward
+## position so the body settles near floor level instead of floating where the
+## capsule centre was. Arms rest alongside the head, slightly raised.
 static func _build_anim_prone(_skel: Skeleton3D) -> Animation:
 	var a := Animation.new()
 	a.length = 0.5
 	a.loop_mode = Animation.LOOP_LINEAR
-	_add_pos_track(a, "Hips", [[0.0, Vector3(0.0, -0.75, 0.0)]])
-	_add_rot_track(a, "Hips",     [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-90.0))]])
-	_add_rot_track(a, "Spine",    [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-5.0))]])
-	_add_rot_track(a, "Head",     [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 30.0))]])
-	_add_rot_track(a, "LUpperArm",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-100.0))]])
-	_add_rot_track(a, "RUpperArm",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-100.0))]])
-	_add_rot_track(a, "LUpperLeg",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( -5.0))]])
-	_add_rot_track(a, "RUpperLeg",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( -5.0))]])
+	# -0.68, not -0.75: measured, the deeper drop pushed the lying body 7 cm
+	# BELOW the standing foot plane (y = -0.90), i.e. through the floor.
+	_add_pos_track(a, "Hips", [[0.0, Vector3(0.0, -0.68, 0.0)]])
+	_add_rot_track(a, "Hips",     [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 90.0))]])
+	_add_rot_track(a, "Spine",    [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(  5.0))]])
+	# Nod the head BACK relative to the flat chain so the face doesn't bury
+	# itself in the floor (negative X = tilt toward the rig's -Z back side).
+	_add_rot_track(a, "Head",     [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-30.0))]])
+	# From the hanging rest (-Y) a -160° X swing carries the arm up past the
+	# shoulder toward the head; with the chain face-down that lays the arms
+	# beside the head, elbows softly bent so the gloves rest near the floor.
+	_add_rot_track(a, "LUpperArm",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-160.0))]])
+	_add_rot_track(a, "RUpperArm",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-160.0))]])
+	_add_rot_track(a, "LLowerArm",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( -20.0))]])
+	_add_rot_track(a, "RLowerArm",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( -20.0))]])
+	_add_rot_track(a, "LUpperLeg",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(  -5.0))]])
+	_add_rot_track(a, "RUpperLeg",[[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(  -5.0))]])
+	return a
+
+## Jump / airborne pose — static in-air hold (operator bug report 2026-08-28:
+## there was no airborne pose, jumps showed the stiff statue). Asymmetric leg
+## tuck (lead knee up, trail leg back) + arms out from the sides and slightly
+## back for balance, small forward spine lean. The 0.25 s state crossfade does
+## the takeoff/landing smoothing.
+static func _build_anim_jump(_skel: Skeleton3D) -> Animation:
+	var a := Animation.new()
+	a.length = 0.5
+	a.loop_mode = Animation.LOOP_LINEAR
+	# Lead (left) leg: thigh up, knee folded. Trail (right) leg: swept back.
+	_add_rot_track(a, "LUpperLeg", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad( 45.0))]])
+	_add_rot_track(a, "LLowerLeg", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-70.0))]])
+	_add_rot_track(a, "RUpperLeg", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-20.0))]])
+	_add_rot_track(a, "RLowerLeg", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-45.0))]])
+	# Arms abduct sideways (FORWARD axis, same sign convention as idle's inward
+	# bias but opposite direction) + a little behind the torso.
+	_add_rot_track(a, "LUpperArm", [[0.0,
+		Quaternion(Vector3.FORWARD, deg_to_rad(-35.0)) * Quaternion(Vector3.RIGHT, deg_to_rad(-15.0))]])
+	_add_rot_track(a, "RUpperArm", [[0.0,
+		Quaternion(Vector3.FORWARD, deg_to_rad( 35.0)) * Quaternion(Vector3.RIGHT, deg_to_rad(-15.0))]])
+	_add_rot_track(a, "LLowerArm", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-25.0))]])
+	_add_rot_track(a, "RLowerArm", [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(-25.0))]])
+	_add_rot_track(a, "Spine",     [[0.0, Quaternion(Vector3.RIGHT, deg_to_rad(  6.0))]])
 	return a
 
 ## Climb pose — used during vault/mantle. Arms raised, one knee bent up.
