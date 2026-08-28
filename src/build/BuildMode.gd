@@ -460,22 +460,31 @@ const LINE_3B_SEQ : Array[Dictionary] = [
 	# without these tags, so only ONE side would carry material.
 	{"id": "mech_dryer", "x": -1.75, "z": 2.0, "parallel_branch": true},
 	{"id": "mech_dryer", "x":  1.75, "z": 2.0, "parallel_branch": true, "main_advance": 4.75},
-	# ── DOC-WALK GAP FIX 2026-08-28 (gap 3.1) — lijn_3b_flow.md edges 12-19.
-	# The doc's dry section is: Ventilator (recombine) → Verdeelwals →
-	# THERMISCHE DROGER (+ Heater, hot air) → ventilator → Ringventilator →
-	# extruder silo. The sim instead ran cyclone → PLASMAQ → cyclone → blower
-	# → cyclone: no verdeelwals, no thermal dryer, and a plasmaq that every
-	# document places on LINE 3C only (L3C.16, HMI-photo-verified,
-	# Line3CDef.gd:74) — no 3B source for it exists. The operator independently
-	# confirmed the same day (ruling 2.1-B): "the thermal dryer is for line
-	# 3B, actually" — the REAL machine, unlike 3A where the heated ring does
-	# the job. The two unnamed fan blocks keep generic `blower` placeables;
-	# the doc's own open question 6 asks the operator for their V-numbers.
-	{"id": "blower"},              # "Ventilator" — recombine (edges 12-14)
-	{"id": "verdeelwals"},         # Verdeelwals (edge 15)
-	{"id": "thermal_dryer"},       # Thermische droger — 3B's REAL machine (edge 15; heater cabinet pending)
-	{"id": "blower"},              # "ventilator" (edge 17)
-	{"id": "blower"},              # Ringventilator (edges 18-19, pneumatic into the silo)
+	# ── RULING 3.1-B, operator 2026-08-28 (SUPERSEDES the doc-literal gap-3.1
+	# fix made hours earlier — "Oh, fuck. Yes. I forget. Indeed, line three b
+	# goes through the plasma[q]"). His account of the dry section:
+	#   recombine blower → pipe → the PLASMAQ CYCLONE → through the PLASMAQ →
+	#   built-in blower at the plasmaq's end → ~15 m of pipe → the
+	#   TUSSENVENTILATOR ("just a cyclone with a blower" — a booster, because
+	#   one blower hasn't enough power for the whole length) → all the way
+	#   into the extruder silo.
+	# RECONCILIATION with the diagram (and with ruling 2.1-B's "the thermal
+	# dryer is 3B's"): on 3B the diagram's "Thermische droger" block IS the
+	# plasmaq — the vendor-named machine that "works different" from 3A's
+	# heated-ring drying. The diagram's Verdeelwals block has no home in the
+	# operator's account (open note in the ledger); the old SEQ's trailing
+	# third cyclone stays gone (the extruder_silo model carries its own two
+	# top cyclones).
+	{"id": "blower"},                # "Ventilator" — recombine (edges 12-14)
+	{"id": "cyclone"},               # the plasmaq cyclone (inlet)
+	# gap 15.0 — OPERATOR-sourced pipe run: "material goes about fifteen
+	# meters to a new cyclone".  Plasmaq's outlet blower is built into the
+	# machine (model-detail note), not a separate placeable.
+	{"id": "plasmaq", "gap": 15.0},  # PLASMAQ = the diagram's "Thermische droger" on 3B
+	# explicit_from_prev — the 15 m run exceeds LineFlow's MAX_LINK_DIST
+	# (14 m), so the plasmaq → tussenventilator edge is tagged explicitly.
+	{"id": "cyclone", "explicit_from_prev": true},  # TUSSENVENTILATOR — its cyclone…
+	{"id": "blower"},                # …and its booster blower
 	{"id": "extruder_silo"},
 	# Gap 1.3 — see the matching note in LINE_3A_SEQ. Flow diagram edge 32:
 	# extruder_silo → compactor_band. The PCU stays integrated in the extruder.
@@ -2316,6 +2325,15 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 						_add_explicit_out(sib as Node3D, node, false)
 					parallel_siblings.clear()
 					parallel_source = null
+				# ── {"explicit_from_prev": true} (#fold-up, 2026-08-28) ──
+				# Force an explicit edge from the previous main machine to
+				# this one. Needed when an operator-sourced pipe run puts two
+				# consecutive mains beyond LineFlow's MAX_LINK_DIST (14 m) —
+				# first real case: 3B's plasmaq → tussenventilator, a ~15 m
+				# pneumatic line (ruling 3.1-B). Found live by the 3B
+				# conformance test's severed-main guard.
+				if bool(entry.get("explicit_from_prev", false)) and last_main_node != null:
+					_add_explicit_out(last_main_node, node, false)
 				last_main_node = node
 		# Explicit cursor push to clear a split/recombine (e.g. past parallel dryers).
 		if entry.has("main_advance"):

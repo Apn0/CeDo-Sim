@@ -3,15 +3,15 @@ extends Node
 ##
 ##   godot --headless --path . res://src/tests/test_line3b_flow_conformance.tscn
 ##
-## Authority: docs/plant/lijn_3b_flow.md (27 material edges), corroborated by
-## ruling 2.1-B (operator: the REAL thermal-dryer machine is 3B's; 3A dries
-## via its heated ring instead). Gap 3.1 replaced the sim's undocumented
-## cyclone → plasmaq → cyclone → blower → cyclone dry section (plasmaq is a
-## LINE 3C machine — L3C.16, no 3B source exists) with the doc's
-## Ventilator → Verdeelwals → Thermische droger → ventilator →
-## Ringventilator → extruder silo.
-## Three layers: S1 SEQ, S2 world, S3 LineFlow wiring. Order asserted
-## RELATIONALLY — no baked macro indices.
+## Authority: RULING 3.1-B (operator 2026-08-28, superseding the doc-literal
+## gap-3.1 fix): the 3B dry section runs recombine blower → the PLASMAQ
+## CYCLONE → the PLASMAQ (which IS the diagram's "Thermische droger" block on
+## 3B — vendor-named, built-in outlet blower) → ~15 m pipe → the
+## TUSSENVENTILATOR (a cyclone + booster blower; one blower hasn't enough
+## power for the whole run) → extruder silo.
+## docs/plant/lijn_3b_flow.md stays the authority for the front wash chain
+## and block names. Three layers: S1 SEQ, S2 world, S3 LineFlow wiring.
+## Order asserted RELATIONALLY — no baked macro indices.
 
 var _fails : int = 0
 
@@ -55,21 +55,26 @@ func _run() -> void:
 			and bool((seq[d2] as Dictionary).get("parallel_branch", false)),
 			"both dryers are parallel_branch siblings (the L-R split)")
 
-	# Dry section (edges 12-19): recombine blower → verdeelwals → THERMISCHE
-	# DROGER → ventilator → Ringventilator → extruder silo.
+	# Dry section (ruling 3.1-B): recombine blower → plasmaq cyclone →
+	# PLASMAQ → (~15 m) → tussenventilator (cyclone + booster blower) → silo.
 	var mid_ids : Array = []
 	for j in range(d2 + 1, seq.size()):
 		var mid := String((seq[j] as Dictionary).get("id", ""))
 		mid_ids.append(mid)
 		if mid == "extruder_silo":
 			break
-	_check(mid_ids == ["blower", "verdeelwals", "thermal_dryer", "blower", "blower",
+	_check(mid_ids == ["blower", "cyclone", "plasmaq", "cyclone", "blower",
 			"extruder_silo"],
-		"dry section = Ventilator → Verdeelwals → Thermische droger → ventilator → Ringventilator → silo (got %s)" % str(mid_ids))
-	_check(_idx_after(seq, "plasmaq", 0) < 0,
-		"NO plasmaq on 3B (a line-3C machine — L3C.16; no 3B source exists)")
-	_check(_idx_after(seq, "thermal_dryer", 0) >= 0,
-		"3B has the REAL thermal-dryer machine (ruling 2.1-B: 3A's is the ring)")
+		"dry section = Ventilator → plasmaq-cycloon → PLASMAQ → tussenventilator (cycloon+blower) → silo (got %s)" % str(mid_ids))
+	var i_pq := _idx_after(seq, "plasmaq", 0)
+	_check(i_pq >= 0,
+		"the PLASMAQ is on 3B — it IS the diagram's 'Thermische droger' block (ruling 3.1-B)")
+	_check(_idx_after(seq, "thermal_dryer", 0) < 0,
+		"NO separate thermal_dryer machine (the plasmaq is it)")
+	if i_pq >= 0:
+		_check(float((seq[i_pq] as Dictionary).get("gap", 0.0)) >= 12.0,
+			"the ~15 m operator-sourced pipe run to the tussenventilator is in the SEQ (gap %.1f)"
+			% float((seq[i_pq] as Dictionary).get("gap", 0.0)))
 	# 3B's diagram draws no mengsilo/rondmeng and no bigbag (Q&A ruled).
 	_check(_idx_after(seq, "mengsilo", 0) < 0, "NO mengsilo on 3B (the diagram has none)")
 	_check(_idx_after(seq, "ringleiding", 0) < 0, "NO ringleiding on 3B (3A's loop only)")
@@ -96,11 +101,11 @@ func _run() -> void:
 			continue
 		var pid := String(n3.get_meta("placeable_id"))
 		counts[pid] = int(counts.get(pid, 0)) + 1
-	_check(int(counts.get("thermal_dryer", 0)) == 1, "world contains exactly 1 thermal_dryer")
-	_check(int(counts.get("verdeelwals", 0)) == 1, "world contains exactly 1 verdeelwals")
-	_check(int(counts.get("plasmaq", 0)) == 0, "world contains NO plasmaq")
-	_check(int(counts.get("cyclone", 0)) == 0,
-		"world contains NO cyclone on 3B (the doc's dry section has none), got %d" % int(counts.get("cyclone", 0)))
+	_check(int(counts.get("plasmaq", 0)) == 1, "world contains exactly 1 plasmaq")
+	_check(int(counts.get("thermal_dryer", 0)) == 0,
+		"world contains NO separate thermal_dryer (the plasmaq is 3B's)")
+	_check(int(counts.get("cyclone", 0)) == 2,
+		"world contains exactly 2 cyclones (plasmaq inlet + tussenventilator), got %d" % int(counts.get("cyclone", 0)))
 	_check(int(counts.get("mech_dryer", 0)) == 2, "world contains both mech dryers (310/311)")
 
 	# ── S3 — LineFlow wiring ────────────────────────────────────────────────
@@ -121,9 +126,9 @@ func _run() -> void:
 	var d1_i : int = by_seq.get(d1, -1)
 	var d2_i : int = by_seq.get(d2, -1)
 	var rc_i : int = by_seq.get(d2 + 1, -1)        # recombine blower
-	var td_i : int = by_seq.get(_idx_after(seq, "thermal_dryer", 0), -1)
+	var td_i : int = by_seq.get(_idx_after(seq, "plasmaq", 0), -1)
 	_check(fs_i >= 0 and d1_i >= 0 and d2_i >= 0 and rc_i >= 0 and td_i >= 0,
-		"split/recombine/thermal-dryer nodes all resolved")
+		"split/recombine/plasmaq nodes all resolved")
 	var split_l := false
 	var split_r := false
 	var rec_l := false
@@ -137,14 +142,15 @@ func _run() -> void:
 		if ea == d2_i and eb == rc_i: rec_r = true
 	_check(split_l and split_r, "frictiescheider li/re feeds BOTH dryers (edges 10-11)")
 	_check(rec_l and rec_r, "both dryers recombine at the Ventilator (edges 12-13)")
-	# The thermal dryer must be ON the main path: something feeds it and it
-	# feeds onward (severed-main guard for this line).
+	# The plasmaq must be ON the main path: something feeds it and it feeds
+	# onward across the 15 m gap (severed-main guard for this line — the long
+	# pipe run is exactly where a range-limited geometry linker could fail).
 	var td_in := false
 	var td_out := false
 	for e2 in edges:
 		if int((e2 as Dictionary)["b"]) == td_i: td_in = true
 		if int((e2 as Dictionary)["a"]) == td_i: td_out = true
-	_check(td_in and td_out, "the thermal dryer is fed AND feeds onward (in %s / out %s)" % [td_in, td_out])
+	_check(td_in and td_out, "the plasmaq is fed AND feeds onward across the 15 m run (in %s / out %s)" % [td_in, td_out])
 
 	print("[TEST] line 3B conformance %s (%d fail)" % ["PASS" if _fails == 0 else "FAIL", _fails])
 	get_tree().quit(1 if _fails > 0 else 0)

@@ -38,7 +38,7 @@ do what the docs say it does?*
 |---|---|---|
 | 1 | `lijn_1_flow.md` + `line_flow_graphs.json` (line "1") | ✅ COMPLETE — gaps 1.1–1.3, fix 1.4, ruling 1.B, fold 1.A; leg F confirmed by operator 2026-08-28. Open: archive the sketch image |
 | 2 | `lijn_3a_flow.md` | ✅ 2.1-B re-wired per operator, 2.2 fixed, Q2.3/Q2.4 closed; open: heater cabinets build, bigbag render sign-off |
-| 3 | `lijn_3b_flow.md` | ⚙ gap 3.1 fixed; open: doc's operator questions (rafter type, fan V-numbers, zeefbocht) |
+| 3 | `lijn_3b_flow.md` | ✅ ruling 3.1-B applied (plasmaq group restored); open: doc's operator questions (rafter type, zeefbocht) |
 | … | remaining 426 docs | ☐ |
 
 ---
@@ -485,7 +485,7 @@ checklist-sourced water fixture; compactorband was gap 1.3; kopfilter is
 integrated in the extruder unit; no bigbag (doc draws none + Q&A ruling —
 guarded by the 3A test); no mengsilo/rondmeng on 3B ✓.
 
-### GAP 3.1 — the 3B dry section ran through an undocumented plasmaq · ✅ FIXED
+### GAP 3.1 — the 3B dry section · ⚠ SUPERSEDED BY RULING 3.1-B (below)
 
 **Doc** (edges 12-19): Ventilator (recombine) → **Verdeelwals** →
 **THERMISCHE DROGER** (+ Heater, hot air) → ventilator → **Ringventilator** →
@@ -514,3 +514,38 @@ identity ledger 4/0; world regression 17/0.
 model itself operator-approved 2026-07-15), the two fan V-numbers (Q6), the
 zeefbocht fed by "Pomp zeefbocht" (Q3), LA1/P1 water routing (Q4). The heater
 cabinet beside the thermal dryer joins doc 2's pending heater-cabinet build.
+
+### ⚖ RULING 3.1-B — the plasmaq group IS 3B's dry section · ✅ APPLIED
+
+Hours after the doc-literal gap-3.1 fix, the operator: *"Oh, fuck. Yes. I
+forget. Indeed, line three b goes through the plasma[q]."* His account:
+
+> friction li/re → the two mechanical dryers → recombine, where the blower
+> blows the material through a pipe to the **plasmaq cyclone**, then through
+> the **plasmaq**. At the plasmaq's end there is a **built-in blower**. Then
+> the material goes **about fifteen meters** to a new cyclone — the
+> **TUSSENVENTILATOR**, "just a cyclone with a blower" — a booster, because
+> one blower doesn't have enough power for the whole length. Then all the
+> way into the extruder silo.
+
+**Reconciliation** (squares ALL prior statements): on 3B the diagram's
+"Thermische droger" block **IS the plasmaq** — the vendor-named machine that
+"works different" from 3A's heated-ring drying (ruling 2.1-B said the
+thermal dryer "is for line 3B": the MACHINE is, and it is called Plasmaq).
+The diagram's Verdeelwals block has no home in the operator account — open
+note. The old SEQ's trailing third cyclone stays gone (the extruder_silo
+model carries its own two top cyclones).
+
+**Applied:** dry section = blower → plasmaq-cycloon → plasmaq (gap 15.0,
+operator-sourced) → tussenventilator (cyclone + blower) → extruder silo.
+
+**Capability added along the way:** the 15 m run exceeds LineFlow's
+MAX_LINK_DIST (14 m), and the 3B test's severed-main guard caught the
+plasmaq feeding NOTHING on the first build. New SEQ key
+`{"explicit_from_prev": true}` forces the explicit main-path edge across an
+over-range gap — first real user: plasmaq → tussenventilator.
+
+Proven: test_line3b_flow_conformance 22/22 against 3.1-B; 3B identity ledger
+4/0 (mass flows end-to-end THROUGH the plasmaq across the explicit link);
+world regression 17/0. Model-detail notes: plasmaq's built-in outlet blower;
+the tussenventilator as a named cyclone+blower booster station.
