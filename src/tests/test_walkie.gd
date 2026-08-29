@@ -6,6 +6,14 @@ func _initialize() -> void:
 func _run_tests() -> void:
 	print("=== Walkie Autoload Tests ===")
 
+	# The real autoloads already own the "AudioManager" and "VoiceService" names under /root,
+	# so we must free or rename them before inserting our mocks to ensure Walkie's
+	# get_node_or_null("/root/AudioManager") finds our mocks.
+	if root.has_node("AudioManager"):
+		root.get_node("AudioManager").name = "AudioManager_Real"
+	if root.has_node("VoiceService"):
+		root.get_node("VoiceService").name = "VoiceService_Real"
+
 	var am = MockAudioManager.new()
 	am.name = "AudioManager"
 	root.add_child(am)
@@ -116,6 +124,12 @@ func _run_tests() -> void:
 	am.free()
 	root.remove_child(vs)
 	vs.free()
+
+	# Restore real autoloads if they were renamed
+	if root.has_node("AudioManager_Real"):
+		root.get_node("AudioManager_Real").name = "AudioManager"
+	if root.has_node("VoiceService_Real"):
+		root.get_node("VoiceService_Real").name = "VoiceService"
 
 	quit(0)
 
