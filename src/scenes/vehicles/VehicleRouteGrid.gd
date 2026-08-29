@@ -215,6 +215,24 @@ func _clamp_cell(c: Vector2i) -> Vector2i:
 
 ## Nearest free cell by expanding rings. Bounded so a fully solid grid returns a
 ## miss instead of scanning the whole site.
+##
+## npc-05 REALWORLD — TRIED AND MEASURED, REVERTED. A version of this function
+## preferred a free cell whose local neighbourhood was at least 20 cells (BFS),
+## on the theory that the npc-05 forklift's parking spot snaps into a walled-off
+## 2-cell pocket (measured) and a bigger, connected cell would give it a real
+## route instead of none. It did: route() started returning a path instead of
+## empty. But the measured route was 125.4 m for a 33.5 m straight-line leg
+## (NPCDBG on a real MainWorld boot) — the only way out of that pocket at grid
+## resolution is around the far end of a ~118 m unbroken wall of solid cells, so
+## "prefer a bigger component" forced a detour roughly 4x the direct distance,
+## which blows the phase budget by itself before the vehicle even starts making
+## progress. Dead reckoning (this function's plain nearest-free, unchanged
+## below) had already covered the same 33.5 m leg in 128 s on an earlier real
+## boot — proof the whiskers find a much shorter real path than the coarse grid
+## admits, almost certainly through a gap narrower than one 2 m cell that the
+## rasterised wall can't represent. Reverted rather than kept "for future work":
+## a wrong route is worse than no route, since no route degrades to the
+## already-working dead reckoning.
 func _nearest_free(c: Vector2i) -> Vector2i:
 	if in_bounds(c) and not is_solid(c):
 		return c

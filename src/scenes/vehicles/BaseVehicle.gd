@@ -995,7 +995,25 @@ func npc_set_target(p: Vector3, carry_first: bool = false) -> void:
 	# would be re-planned 60x/s AND the vehicle would restart at waypoint 0 every
 	# tick — it could never leave the first leg. Same order, same route, keep the
 	# progress already made along it.
-	if _npc_target_active and _npc_route.size() > 0 and p.distance_to(_npc_goal) < 0.5:
+	#
+	# npc-05 REALWORLD — the guard used to require _npc_route.size() > 0, so it
+	# only protected a vehicle the grid actually routed. Any vehicle the grid
+	# COULDN'T route (VehicleRouteGrid.route() returning empty — measured on the
+	# npc-05 forklift, whose parked spot snaps into a fully enclosed 2-cell
+	# pocket in the coarse occupancy grid, is_solid on all 4 sides) fell straight
+	# through every tick: _plan_route() re-ran a full A* over the whole site grid
+	# 60x/s (measured CPU-bound, fps 3-5 for the entire indoor leg), and
+	# _pilot.reset_leg() wiped the local-avoidance pilot's stuck timer/evade
+	# commit/reverse budget every physics frame, so VehiclePilot could never
+	# complete a multi-frame evade manoeuvre and the vehicle crawled at dead-
+	# reckoning speed (measured ~0.26 m/s over a 34 m leg, 128 s) instead of
+	# using its whiskers properly. The grid is static per world (only
+	# invalidate_route_grid() forces a resample), so retrying an unchanged order
+	# every tick can never produce a different route() answer — it was pure
+	# waste on the happy path and an active foot-shot on the stuck-vehicle path.
+	# Same order now suppresses re-planning and re-arms whether or not a route
+	# was found.
+	if _npc_target_active and p.distance_to(_npc_goal) < 0.5:
 		return
 	_npc_goal = p
 	_npc_target = p
