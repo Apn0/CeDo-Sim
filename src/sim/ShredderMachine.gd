@@ -45,6 +45,57 @@ const RATED_FINE   : float = 2200.0
 const OVERFLOW_KG  : float = 750.0               # bunker/buffer cap before it spills
 const TRIP_PCT     : float = 118.0               # motor load that (sustained) trips
 const TRIP_TIME_S  : float = 5.0                 # seconds of overload before the trip
+
+# ── Knife-geometry cutting-capacity cross-check (operator 2026-08-29) ────────
+# shredder_1's rotor/stator geometry, per the operator's own live estimate —
+# NOT a measured plant figure like RATED_COARSE above; easy to correct once
+# real numbers exist. Same machine on line 1 and 3C (BuildMode.gd's LINE_1_SEQ
+# / LINE_3C_SEQ comment: "3C/6 = the big-RED coarse shredder... Same id as
+# Line 1"), so one set of numbers covers both.
+const KNIFE_ROTOR_COUNT   : int   = 75    # total knives around the rotor
+const KNIFE_STATOR_COUNT  : int   = 15    # fixed counter-knives
+const KNIFE_STATOR_EDGE_M : float = 5.0   # TOTAL cutting edge across all 15
+                                           # (operator: "total across all",
+                                           # i.e. NOT per-knife — ~0.33 m each)
+# Minimum rotor set point ("it has to ramp up... the minimum set point was
+# 30 RPM"). Independently corroborated within ~2 rpm by
+# docs/plant/checklist_lijn1.md row 9 (FORM-007): "Toerental shredder ...
+# 32-50 rpm" — that same doc flags an unreconciled 35-60 rpm figure for
+# "Shredder 1" on FORM-008 (checklist_3a_3b.md:99) as an OPEN question, not
+# settled ground truth, so treat 30 as the operator's live number, not as
+# something the docs already nailed down.
+const KNIFE_ROTOR_RPM_MIN : float = 30.0
+
+## Total length of stator cutting edge a rotor knife sweeps past, per second,
+## at the given RPM. The operator's own framing, translated directly: "how
+## many times per second those areas are sliding along each other" (rotor
+## knife count × rev/s) times "the [stator] surface area that can be cut"
+## (the 5 m of total stator edge). A pure geometric rate — m of edge per
+## second — not yet a mass rate; see implied_chip_depth_m() for why.
+static func swept_edge_rate_m_s(rpm: float = KNIFE_ROTOR_RPM_MIN) -> float:
+	return KNIFE_STATOR_EDGE_M * float(KNIFE_ROTOR_COUNT) * (rpm / 60.0)
+
+## Cross-check, NOT a replacement for RATED_COARSE. Turning a swept EDGE
+## LENGTH into a mass rate needs one more number geometry alone can't supply:
+## how much material THICKNESS actually gets sheared off per pass (a "chip
+## load", in machining terms) — the operator didn't give one, and guessing it
+## would plant an unsourced number right next to RATED_COARSE, which IS
+## doc-grounded (whole-plant mass-balance figures, this file's header). So
+## this asks the question the other way round: what chip depth would have to
+## be true for the knife geometry to reproduce the EXISTING 4500 kg/h figure?
+## Answer, at 30 rpm: ~0.038 mm. Thin, but physically sane for shredding
+## loosely-packed FILM rather than solid chunks — BaleDefs.BULK_DENSITY
+## (175 kg/m^3) is mostly trapped air, so a thin solid-equivalent "bite" per
+## pass corresponds to a much thicker slice of the actual loose material
+## being pulled through the shear zone. Reported as a sanity check on the
+## operator's knife estimate, not fed back into rated_kg_h.
+static func implied_chip_depth_m(rated_kg_h_val: float = RATED_COARSE,
+		rpm: float = KNIFE_ROTOR_RPM_MIN,
+		bulk_density_kg_m3: float = BaleDefs.BULK_DENSITY) -> float:
+	var edge_rate : float = swept_edge_rate_m_s(rpm)
+	if edge_rate <= 0.0 or bulk_density_kg_m3 <= 0.0:
+		return 0.0
+	return (rated_kg_h_val / 3600.0) / (edge_rate * bulk_density_kg_m3)
 const LOAD_TAU     : float = 0.5                 # motor-load ramp time constant
 
 # ── Relay / operating state ──────────────────────────────────────────────────

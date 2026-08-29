@@ -73,10 +73,46 @@ static func profile(id: String) -> Dictionary:
 		# Dedupe: shredder_3a3b + shredder_1_3c6 removed — they were legacy ids
 		# for the old generic _m_shredder model. shredder_1 (#50 bespoke) and
 		# shredder_2 cover lines 3A/3B and the fine pass.
-		"shredder_1", "shredder_2", "mill":
+		"shredder_1", "shredder_2":
 			pr["in"]  = Vector3(0.0, 0.85, 0.0)
 			pr["out"] = Vector3(0.0, 0.15, 0.0)
 			pr["waste"] = 0.01
+			# 2026-08-29 — this used to fall through to the file's generic
+			# default (6.0 kg/s = 21,600 kg/h) while ShredderMachine.gd's OWN
+			# rated capacity for the exact same node — 4500/2200 kg/h,
+			# doc-grounded (whole-plant film feed + 3C mass-balance figures,
+			# see ShredderMachine.gd's header) — sat right next to it, unread.
+			# Already flagged and left open by audit findings H6/H16
+			# (docs/plant/DOCS_VS_SIM_GAP_AUDIT_2026-08-28.md and the earlier
+			# DETAIL_STANDARD audit): two independent, disagreeing capacity
+			# models on one node. Reading ShredderMachine's constant directly
+			# (not duplicating the number) means the two can never diverge
+			# again silently — test_shredder_rate_reconciliation guards it.
+			# Measured consequence of the old 4.8x-looser default: a single
+			# bale dumped on line 1's infeed sailed straight through
+			# shredder_1 and tripped the UNRELATED downstream 'mill' node
+			# instead — the coarse shredder should be the natural bottleneck
+			# for a bulk dump, not a machine four stages later.
+			pr["rate"] = (ShredderMachine.RATED_COARSE if id == "shredder_1"
+				else ShredderMachine.RATED_FINE) / 3600.0
+		"mill":
+			pr["in"]  = Vector3(0.0, 0.85, 0.0)
+			pr["out"] = Vector3(0.0, 0.15, 0.0)
+			pr["waste"] = 0.01
+			# UNLIKE shredder_1/2 above, "mill" (maalmolen_1, line 1's
+			# DOWNSTREAM dry granulator — see BuildMode.gd LINE_1_SEQ, well
+			# after the friction separators/dryers) has NO ShredderMachine.gd
+			# brain (PlaceableCatalog only attaches one to shredder_1/2) and
+			# NO real capacity figure for LINE 1 specifically. Two amp
+			# readings exist in docs/plant/ that look tempting but are NOT
+			# this machine: hmi_screen_inventory_2026-07-28.md's "Maalmolen
+			# 240 A" is LINE 3C's mill (L3C.6), and checklist_lijn1.md row 10
+			# "Lijn 5 maalmolen 130-270 Amp" is explicitly LINE 5's, per that
+			# same file's own header ("this form covers both lijn 1 and lijn
+			# 5"). Neither transfers. Stays on the generic default rate until
+			# a real line-1 figure exists — do not borrow the 3C or Lijn-5
+			# numbers here, that is the exact misattribution CLAUDE.md's
+			# citation-accuracy history warns about.
 		"vuilsnippersilo":
 			pr["in"]  = Vector3(0.0, 0.85, 0.0)
 			pr["out"] = Vector3(0.35, 0.25, 0.0)

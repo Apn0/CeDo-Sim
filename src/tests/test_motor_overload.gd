@@ -142,6 +142,41 @@ func _init() -> void:
 	m4.tick(DT)
 	_ok(m4.current_amps < m4.trip_threshold, "cleared motor runs normally (under threshold) after reset(true)")
 
+	# ── 6. set_load() — the 2026-08-29 bug this method exists to fix ───────────
+	# LineFlow.gd used to call add_load(_backlog_kg) EVERY TICK, where
+	# _backlog_kg is a STOCK (the buffer's current level), not a one-off inflow
+	# event — so the same standing kg got re-counted as fresh load forever.
+	# Measured on line 1's real 'mill' node: buffer stayed under 7 kg the whole
+	# run (genuinely keeping up), current_amps still raced to the 450 A
+	# locked-rotor cap in ~10 s. set_load() mirrors the stock directly instead.
+	_section("set_load() mirrors a stock — no false trip at a small STEADY level")
+	var m5 = make.call()   # same 90A/480A/180A-3s/120kg rig as the others
+	# Call set_load EVERY tick with the SAME small value, exactly like
+	# LineFlow's per-tick call pattern — this is what falsely tripped before.
+	for _i5 in 200:            # 20 s of sim time — 6.7x the 3.0 s trip_delay
+		m5.set_load(6.5)       # matches the measured real-world mill buffer
+		m5.tick(DT)
+	_ok(not m5.is_tripped(),
+		"20 s of a steady 6.5 kg buffer (well under 120 kg capacity) → no trip")
+	_ok(m5.accumulated_kg == 6.5,
+		"accumulated_kg mirrors the last set_load() call, not a running sum (%.1f kg)" % m5.accumulated_kg)
+
+	_section("set_load() still catches a REAL sustained overload")
+	var m6 = make.call()
+	var m6_trips : Array = []   # array, not a bool: a lambda reassigning a
+	                            # captured primitive does not propagate out in
+	                            # GDScript, but mutating a captured container does
+	m6.tripped.connect(func(_id, _amps): m6_trips.append(true))
+	# A genuinely large, persistent buffer — the node truly cannot keep up,
+	# same value held every tick (this IS what a real, growing pack-up looks
+	# like from the caller's side: _backlog_kg stays pinned near its ceiling
+	# because inflow keeps outrunning the machine's own processing rate).
+	for _i6 in 50:              # 5 s — past the 3.0 s trip_delay
+		m6.set_load(300.0)      # 2.5x the 120 kg binding capacity
+		m6.tick(DT)
+	_ok(m6.is_tripped(), "a genuinely-full 300 kg buffer, held sustained, still trips after trip_delay")
+	_ok(m6_trips.size() == 1, "the `tripped` signal still fires for a genuine overload")
+
 	_finish()
 
 func _finish() -> void:

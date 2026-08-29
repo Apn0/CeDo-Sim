@@ -108,6 +108,26 @@ func relieve(kg: float) -> void:
 		return
 	accumulated_kg = maxf(0.0, accumulated_kg - kg)
 
+## Set the pile directly to `kg` — for an owner that already tracks the STOCK
+## itself (e.g. a MaterialBatch buffer) and just wants the motor model to
+## mirror it, rather than emitting separate arrived/departed events.
+##
+## 2026-08-29 bug fix: LineFlow.gd used to call
+## `add_load(_backlog_kg); relieve(_moved_kg)` every tick, where `_backlog_kg`
+## is the node's CURRENT buffer level (a stock), not a one-off inflow event. A
+## stock re-added on top of itself every tick — instead of replacing the
+## previous tick's value — accumulates without bound even while the buffer
+## sits perfectly steady: a machine comfortably keeping up with a small,
+## stable queue (buffer near-constant, genuinely fine) still raced from idle
+## to a full trip in ~10 s of sim time, because the same few kg got counted
+## as "new load" again and again. Measured on line 1's mill: buffer stayed
+## under 7 kg throughout, current_amps still hit the 450 A locked-rotor cap.
+## `set_load` is the correct operation for a stock-tracking caller: it
+## naturally settles to a steady load_ratio when inflow ≈ outflow, and only
+## climbs when the buffer itself is genuinely growing — a real overload.
+func set_load(kg: float) -> void:
+	accumulated_kg = maxf(0.0, kg)
+
 ## Mechanical load as a fraction of the binding point (0 = empty, 1 = fully
 ## loaded/nominal, >1 = overloaded toward stall).
 func load_ratio() -> float:
