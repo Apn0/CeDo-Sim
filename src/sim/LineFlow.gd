@@ -2614,18 +2614,25 @@ func _tick_advanced_systems(delta: float) -> void:
 			if bool(cc.get("stalled")):
 				nd["powered"] = false             # Donut stall halts the drive
 			nd["amps"] = float(cc.get("motor_amps"))
-		# 3) MOTOR-OVERLOAD — pile on the un-passed backlog, relieve what moved on,
+		# 3) MOTOR-OVERLOAD — mirror the node's own buffer level as the pile,
 		#    advance the trip clock. A sustained overload trips the relay; we then drop
 		#    this node's `powered` so it stops CONVEYING (material backs up — conserving).
 		#    The model raises its own EventBus alarm on the trip edge.
+		#
+		#    2026-08-29 fix: this used to call add_load(_backlog_kg) every tick —
+		#    but _backlog_kg is the buffer's CURRENT STOCK, not a one-off inflow
+		#    event, so re-adding it on top of itself every tick accumulated
+		#    without bound even at a small, perfectly steady queue (measured: a
+		#    machine keeping up fine, buffer <7 kg throughout, still raced to a
+		#    full trip in ~10s). set_load() mirrors the stock directly instead —
+		#    see its doc comment in MotorOverload.gd for the full trace.
 		var mol = nd.get("mol")
 		if mol != null:
 			# Keep the model's run-state in step with the node so a stopped/E-stopped
 			# drive accrues no trip time, and a re-powered one re-energises.
 			if mol.has_method("set_running") and not bool(mol.call("is_tripped")):
 				mol.call("set_running", bool(nd["powered"]))
-			mol.call("add_load", float(nd.get("_backlog_kg", 0.0)))
-			mol.call("relieve", float(nd.get("_moved_kg", 0.0)))
+			mol.call("set_load", float(nd.get("_backlog_kg", 0.0)))
 			mol.call("tick", delta)
 			if bool(mol.call("is_tripped")):
 				nd["powered"] = false           # stop conveying (conserving)

@@ -258,7 +258,7 @@ fi
 # per-line design rate (docs/plant/misc_sources.md:190/206). line_1 and
 # line_sort/line_intake_3a3b remain unasserted -- no documented feed-rate
 # source was found for line_1, and the other two are out of scope.
-for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_line3a_identity test_line3b_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_humanoid_rig_conformance test_line1_flow_conformance test_line3a_flow_conformance test_line3b_flow_conformance test_shredder_rate_reconciliation test_project_sweep_guards; do
+for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_line3a_identity test_line3b_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_humanoid_rig_conformance test_line1_flow_conformance test_line3a_flow_conformance test_line3b_flow_conformance test_shredder_rate_reconciliation test_line1_no_false_overload test_project_sweep_guards; do
 	echo "== $t =="
 	"$GODOT" --headless --path "$PROJ" "res://src/tests/$t.tscn" > "$OUT/$t.log" 2>&1
 	grep -E "^  (ok|FAIL)|Result|RESULT" "$OUT/$t.log" || true
@@ -328,6 +328,21 @@ echo "== door carve (visible-teeth regression) =="
 grep -E "boundary edges|teeth|PASS —|FAIL —|RESULT FAIL" "$OUT/door_carve.log" || true
 if ! grep -q "PASS —" "$OUT/door_carve.log"; then
 	echo "FAIL  : door carve (see $OUT/door_carve.log)"
+	[ $code -eq 0 ] && code=1
+fi
+
+# MotorOverload unit test — existed since before this session but was NEVER
+# wired into the harness. Now guards the 2026-08-29 set_load() fix directly:
+# LineFlow used to call add_load(_backlog_kg) every tick (a STOCK re-added as
+# if it were a fresh inflow event each time), so any high-load node with even
+# a small, perfectly steady buffer would eventually false-trip — measured on
+# line 1's real 'mill' node, buffer under 7 kg throughout, still raced to a
+# full 450 A trip in ~10 s. set_load() mirrors the stock directly instead.
+echo "== motor overload (set_load fix + trip/reset logic) =="
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_motor_overload.gd > "$OUT/motor_overload.log" 2>&1
+grep -E "^\[|^  ok|^  FAIL|^Result:" "$OUT/motor_overload.log" || true
+if ! grep -qE "^Result: [0-9]+ ok, 0 fail" "$OUT/motor_overload.log"; then
+	echo "FAIL  : motor overload (see $OUT/motor_overload.log)"
 	[ $code -eq 0 ] && code=1
 fi
 
