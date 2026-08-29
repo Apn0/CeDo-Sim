@@ -1,0 +1,174 @@
+extends SceneTree
+
+const CFG_PATH = "user://api_keys.cfg"
+const KEY_PATH = "user://api_keys.key"
+
+var _fail := 0
+var _pass := 0
+
+var _original_cfg_content = null
+var _original_key_content = null
+
+class MockApiKeys extends "res://src/autoload/ApiKeys.gd":
+	var mock_env_path = ""
+	func _desktop_env_path() -> String:
+		return mock_env_path
+
+func _init() -> void:
+	print("=== ApiKeys verification ===")
+	_backup_files()
+
+	_test_empty_keys()
+	_test_bootstrap_from_env()
+	_test_migration_from_plaintext()
+	_test_migration_from_os_id()
+
+	_restore_files()
+
+	print("\n=========================================")
+	print("Result: %d ok, %d fail" % [_pass, _fail])
+	print("=========================================")
+	quit(0 if _fail == 0 else 1)
+
+func _ok(cond: bool, msg: String) -> void:
+	if cond:
+		print("  ok   : %s" % msg)
+		_pass += 1
+	else:
+		print("  FAIL : %s" % msg)
+		_fail += 1
+
+func _backup_files() -> void:
+	if FileAccess.file_exists(CFG_PATH):
+		var f := FileAccess.open(CFG_PATH, FileAccess.READ)
+		if f:
+			_original_cfg_content = f.get_buffer(f.get_length())
+			f.close()
+
+	if FileAccess.file_exists(KEY_PATH):
+		var f := FileAccess.open(KEY_PATH, FileAccess.READ)
+		if f:
+			_original_key_content = f.get_buffer(f.get_length())
+			f.close()
+
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(CFG_PATH))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(KEY_PATH))
+
+func _restore_files() -> void:
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(CFG_PATH))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(KEY_PATH))
+
+	if _original_cfg_content != null:
+		var f := FileAccess.open(CFG_PATH, FileAccess.WRITE)
+		if f:
+			f.store_buffer(_original_cfg_content)
+			f.close()
+
+	if _original_key_content != null:
+		var f := FileAccess.open(KEY_PATH, FileAccess.WRITE)
+		if f:
+			f.store_buffer(_original_key_content)
+			f.close()
+
+func _clear_test_files() -> void:
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(CFG_PATH))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(KEY_PATH))
+
+func _test_empty_keys() -> void:
+	print("\n[1] Default keys should be empty")
+	_clear_test_files()
+	var api = MockApiKeys.new()
+	api._ready()
+	_ok(api.google() == "", "Google key is empty by default")
+	_ok(api.openai() == "", "OpenAI key is empty by default")
+	api.free()
+
+func _test_bootstrap_from_env() -> void:
+	print("\n[2] Bootstrap from .env")
+	_clear_test_files()
+	var env_path = "user://test_desktop.env"
+	var f = FileAccess.open(env_path, FileAccess.WRITE)
+	f.store_line("GOOGLE_API_KEY=test_google_123")
+	f.store_line("OPENAI_API_KEY=test_openai_456")
+	f.close()
+
+	var api = MockApiKeys.new()
+	api.mock_env_path = env_path
+	api._ready()
+
+	_ok(api.google() == "test_google_123", "Bootstrapped Google key correctly")
+	_ok(api.openai() == "test_openai_456", "Bootstrapped OpenAI key correctly")
+
+	# Verify it's encrypted on disk by loading it back
+	var check_cfg = ConfigFile.new()
+
+	# Can we load it using the new key?
+	var test_key = ""
+	var key_file = FileAccess.open(KEY_PATH, FileAccess.READ)
+	if key_file:
+		test_key = key_file.get_as_text().strip_edges()
+		key_file.close()
+
+	var enc_err = check_cfg.load_encrypted_pass(CFG_PATH, test_key)
+	_ok(enc_err == OK, "File can be loaded with the generated encryption key")
+
+	# Verify it matches
+	_ok(check_cfg.get_value("google", "api_key", "") == "test_google_123", "Saved google key matches")
+	_ok(check_cfg.get_value("openai", "api_key", "") == "test_openai_456", "Saved openai key matches")
+
+	api.free()
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(env_path))
+
+func _test_migration_from_plaintext() -> void:
+	print("\n[3] Migration from plaintext config")
+	_clear_test_files()
+
+	var cfg = ConfigFile.new()
+	cfg.set_value("google", "api_key", "plain_google")
+	cfg.set_value("openai", "api_key", "plain_openai")
+	cfg.save(CFG_PATH)
+
+	var api = MockApiKeys.new()
+	api._ready()
+
+	_ok(api.google() == "plain_google", "Migrated Google key from plaintext")
+	_ok(api.openai() == "plain_openai", "Migrated OpenAI key from plaintext")
+
+	var test_key = ""
+	var key_file = FileAccess.open(KEY_PATH, FileAccess.READ)
+	if key_file:
+		test_key = key_file.get_as_text().strip_edges()
+		key_file.close()
+
+	var check_cfg = ConfigFile.new()
+	var secure_err = check_cfg.load_encrypted_pass(CFG_PATH, test_key)
+	_ok(secure_err == OK, "File is now stored with the secure key")
+
+	api.free()
+
+func _test_migration_from_os_id() -> void:
+	print("\n[4] Migration from OS ID encryption")
+	_clear_test_files()
+
+	var cfg = ConfigFile.new()
+	cfg.set_value("google", "api_key", "os_google")
+	cfg.set_value("openai", "api_key", "os_openai")
+	cfg.save_encrypted_pass(CFG_PATH, OS.get_unique_id())
+
+	var api = MockApiKeys.new()
+	api._ready()
+
+	_ok(api.google() == "os_google", "Migrated Google key from OS ID encryption")
+	_ok(api.openai() == "os_openai", "Migrated OpenAI key from OS ID encryption")
+
+	var check_cfg = ConfigFile.new()
+	var test_key = ""
+	var key_file = FileAccess.open(KEY_PATH, FileAccess.READ)
+	if key_file:
+		test_key = key_file.get_as_text().strip_edges()
+		key_file.close()
+
+	var secure_err = check_cfg.load_encrypted_pass(CFG_PATH, test_key)
+	_ok(secure_err == OK, "File is now stored with the secure key")
+
+	api.free()
