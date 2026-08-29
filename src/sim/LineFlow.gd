@@ -1455,18 +1455,36 @@ func _find_film_field(machine: Node) -> Node:
 ## recursively since it lives under the model subtree. Gated on real flow so an
 ## idle machine never steams (operator 2026-07-16: "inventing water from nothing").
 func _find_steam_plume(machine: Node) -> Node:
+	if machine.has_meta("_cached_steam_plume"):
+		var cached = machine.get_meta("_cached_steam_plume")
+		if cached == null or is_instance_valid(cached):
+			return cached as Node
+
+	var found : Node = null
 	for c in machine.find_children("*", "GPUParticles3D", true, false):
 		if c.is_in_group("steam_plume"):
-			return c
-	return null
+			found = c
+			break
+
+	machine.set_meta("_cached_steam_plume", found)
+	return found
 
 ## The extruder's heetafslag die-face strand switcher (meta die_face_switcher),
 ## searched recursively. Gated on real flow so an idle die shows no melt.
 func _find_die_switcher(machine: Node) -> Node:
+	if machine.has_meta("_cached_die_switcher"):
+		var cached = machine.get_meta("_cached_die_switcher")
+		if cached == null or is_instance_valid(cached):
+			return cached as Node
+
+	var found : Node = null
 	for c in machine.find_children("*", "Node3D", true, false):
 		if c.has_meta("die_face_switcher"):
-			return c
-	return null
+			found = c
+			break
+
+	machine.set_meta("_cached_die_switcher", found)
+	return found
 
 ## Live conveying fraction (0..1.25) from a node's rotor rpm vs its nominal. 1.0
 ## when the node has no rotor (the spin gate alone then governs it).
@@ -1621,10 +1639,9 @@ static func _default_components_for(id: String) -> Dictionary:
 		# anywhere in the repo, confirmed by the 2026-08-18 catalog audit,
 		# findings C7/H14; the interlock itself is implemented per operator
 		# instruction 2026-08-26, not per that citation.)
-		# TODO(relay trips, ruling B3 2026-07-06): speed settings BELOW 200
-		# (settable, sim cap 1000) must fire relay-trip/motor-stall events
-		# ~every 15 min, worse the lower — needs an event hook in the tick; the
-		# catalog stamps `bunker_relay_trip_below` meta on the model meanwhile.
+		# Relay trips (ruling B3 2026-07-06): speed settings BELOW 200
+		# (settable, sim cap 1000) fire relay-trip/motor-stall events
+		# ~every 15 min, worse the lower. Handled in _tick_advanced_systems.
 		out["uittrekrol"] = 1.0
 	elif lid.find("nir") >= 0 or lid.find("tomra") >= 0 or lid.find("titech") >= 0:
 		# NIR optical sorter — the acceleration belt drums are the driven part
@@ -2085,6 +2102,44 @@ func tick(delta: float) -> void:
 	else:
 		_pack_up_t = 0.0
 
+	_tick_cache_spatial_queries()
+	_tick_plc_power_downstream(delta)
+	_tick_feed(delta)
+	_tick_process_machines(delta)
+	# 2.5) ADVANCED-SYSTEM OBSERVERS (#52) — run ALONGSIDE the flow now that each
+	#      node's throughput/backlog for this tick is known. Nothing here re-routes
+	#      material or changes the split; the extruder/MFI models publish telemetry,
+	#      the motor-overload model can only STOP a jammed rotor conveying (mass then
+	#      backs up — conserving), and air duty is reported to the header.
+	_tick_advanced_systems(delta)
+	# 2.55) Bunker/shredder-2 MOL interlock — must run AFTER _tick_advanced_systems
+	# so this tick's mol.tick()/is_tripped() result (set inside that loop) is
+	# already current, not last tick's value.
+	_tick_bunker_shredder2_interlock()
+	# 2.6) #99 — DRD batch dryer cycles. Step both drums of every registered
+	#      pair (and any unpaired single drum) so the L/R BEFULLEN swap is
+	#      driven by real elapsed time. The router (section 3 below) reads
+	#      cycle.step on the same tick to decide which drum receives flake.
+	_tick_dryer_pairs(delta)
+
+	# 2.7) QA bench delay + assessment clock. Pure observers: neither touches
+	#      material, so the conservation ledger is unaffected. Deliberately
+	#      driven from here rather than SimTick, which runs PROCESS_MODE_ALWAYS
+	#      (SimTick.gd:41) and would resolve bench samples behind a pause menu —
+	#      reasoning recorded in the QaLab.gd header.
+	if _qa_lab != null:
+		_qa_lab.tick(delta)
+	if _assessment != null:
+		_assessment.tick(delta)
+
+	_tick_route_outputs(delta)
+	# #52 push live line state + key process params to the SCADA dashboard (throttled).
+	_push_scada(delta)
+
+	_update_label()
+
+
+func _tick_cache_spatial_queries() -> void:
 	# Cache spatial queries once per tick for heavy inner loops like _dump_waste
 	# and the feed bale-pickup scan.
 	var tree = get_tree()
@@ -2108,6 +2163,8 @@ func tick(delta: float) -> void:
 		_bales_cache.clear()
 		_deliverable_bales_cache.clear()
 
+
+func _tick_plc_power_downstream(delta: float) -> void:
 	# 0) PLC powers the line up DOWNSTREAM-FIRST; each powered machine then ramps
 	#    its rotor over SPIN_UP_S. The live spin (0..1) gates how fast it conveys,
 	#    so nothing moves until the rotor is actually turning (#145).
@@ -2185,6 +2242,8 @@ func tick(delta: float) -> void:
 		if die_s != null and is_instance_valid(die_s):
 			PlaceableCatalog.show_die_face_state(die_s, 1 if flowing_s else -1)
 
+
+func _tick_feed(delta: float) -> void:
 	# 1) Feed — OFF unless deliberately enabled. When on, a head node draws from a
 	#    bale on its feed point and DEPLETES that bale (finite); the bale is removed
 	#    when empty, so the line can never feed from thin air or forever.
@@ -2244,6 +2303,8 @@ func tick(delta: float) -> void:
 			if remaining <= 0.0:
 				bale.queue_free()
 
+
+func _tick_process_machines(delta: float) -> void:
 	# 2) Each machine processes up to rate·delta. It fights water + dirt in the
 	#    same order a real line does: strip contaminant → sort off-spec → drive
 	#    water off / take water on → shed mechanical yield loss. The extruder
@@ -2366,32 +2427,8 @@ func tick(delta: float) -> void:
 		else:
 			(nd["out"] as MaterialBatch).add(flow)
 
-	# 2.5) ADVANCED-SYSTEM OBSERVERS (#52) — run ALONGSIDE the flow now that each
-	#      node's throughput/backlog for this tick is known. Nothing here re-routes
-	#      material or changes the split; the extruder/MFI models publish telemetry,
-	#      the motor-overload model can only STOP a jammed rotor conveying (mass then
-	#      backs up — conserving), and air duty is reported to the header.
-	_tick_advanced_systems(delta)
-	# 2.55) Bunker/shredder-2 MOL interlock — must run AFTER _tick_advanced_systems
-	# so this tick's mol.tick()/is_tripped() result (set inside that loop) is
-	# already current, not last tick's value.
-	_tick_bunker_shredder2_interlock()
-	# 2.6) #99 — DRD batch dryer cycles. Step both drums of every registered
-	#      pair (and any unpaired single drum) so the L/R BEFULLEN swap is
-	#      driven by real elapsed time. The router (section 3 below) reads
-	#      cycle.step on the same tick to decide which drum receives flake.
-	_tick_dryer_pairs(delta)
 
-	# 2.7) QA bench delay + assessment clock. Pure observers: neither touches
-	#      material, so the conservation ledger is unaffected. Deliberately
-	#      driven from here rather than SimTick, which runs PROCESS_MODE_ALWAYS
-	#      (SimTick.gd:41) and would resolve bench samples behind a pause menu —
-	#      reasoning recorded in the QaLab.gd header.
-	if _qa_lab != null:
-		_qa_lab.tick(delta)
-	if _assessment != null:
-		_assessment.tick(delta)
-
+func _tick_route_outputs(delta: float) -> void:
 	# 3) Carry each output DOWN ITS CONNECTOR as a delay-line. Material entering a
 	#    link rides PIPE_STAGES slots that shift forward one slot every stage_dt,
 	#    so it takes the full transit_time to reach the downstream machine. Feeding
@@ -2552,10 +2589,6 @@ func tick(delta: float) -> void:
 				pipe[s] = pipe[s - 1]
 			pipe[0] = MaterialBatch.new()
 
-	# #52 push live line state + key process params to the SCADA dashboard (throttled).
-	_push_scada(delta)
-
-	_update_label()
 
 # ── #52 advanced-system per-tick observers ────────────────────────────────────
 ## Step each attached observer for one tick. Order matters for the extruder pair:
@@ -2662,7 +2695,7 @@ func _tick_advanced_systems(delta: float) -> void:
 		if _is_pack_up_paused(String(nd.get("id", ""))):
 			nd["powered"] = false
 
-		# BUNKER RELAY TRIP — sustained low-speed motor stall/relay trip (#TODO relay trips).
+		# BUNKER RELAY TRIP — sustained low-speed motor stall/relay trip.
 		# Driven strictly by speed setpoint (rpm_pct × max speed), not mass backlog.
 		# PlaceableCatalog._m_bunker() stamps bunker_relay_trip_below/bunker_speed_max
 		# on the composite "Model" CHILD node (build_node()'s `model`, named "Model"),

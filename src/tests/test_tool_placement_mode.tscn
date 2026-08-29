@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://test_tpm"]
+
+[ext_resource type="Script" path="res://src/tests/test_tool_placement_mode.gd" id="1_2n4m"]
+
+[node name="TestToolPlacementMode" type="Node3D"]
+script = ExtResource("1_2n4m")

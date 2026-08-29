@@ -197,6 +197,18 @@ func _on_sim_tick(delta: float) -> void:
 	_pending.clear()
 	var prev_state := model.state
 	var events := model.tick(delta, inputs)
+
+	_resolve_lazy_dependencies()
+	_update_telemetry(delta)
+	_update_downstream_throughput()
+	_update_downstream_signals()
+
+	_broadcast(events)
+
+	_check_pressure_trips()
+	_handle_state_transitions(prev_state)
+
+func _resolve_lazy_dependencies() -> void:
 	# Lazy fallback in case the filters spawned after our _ready (e.g. when
 	# the player places one mid-run). Resolve only if we still have nothing.
 	if _laser_filter == null or _head_filter == null:
@@ -206,11 +218,15 @@ func _on_sim_tick(delta: float) -> void:
 		var found := get_tree().get_nodes_in_group("scada_dashboard")
 		if not found.is_empty():
 			_scada = found[0]
+
+func _update_telemetry(delta: float) -> void:
 	_scada_push_t += delta
 	if _scada_push_t >= SCADA_PUSH_DT_S and _scada != null and is_instance_valid(_scada) \
 			and _scada.has_method("set_param"):
 		_scada_push_t = 0.0
 		_push_extruder_params_to_scada()
+
+func _update_downstream_throughput() -> void:
 	# Downstream filter integration: push the extruder's throughput into each
 	# filter so they accumulate debris loading, then gate the EFFECTIVE
 	# throughput on whether either filter is mid-change. During a swap or
@@ -238,6 +254,8 @@ func _on_sim_tick(delta: float) -> void:
 			and _head_filter.has_method("is_line_down") and _head_filter.call("is_line_down"))
 	if line_blocked:
 		model.throughput_kg_h = 0.0
+
+func _update_downstream_signals() -> void:
 	# Operator-confirmed asymmetric clog signals: the laser filter cares about
 	# upstream screw RPM (high RPM = more debris-per-second forward), upstream
 	# pressure (drives front-face loading bias), and any cold-zone lump
@@ -275,7 +293,8 @@ func _on_sim_tick(delta: float) -> void:
 			_laser_filter.call("set_upstream_pressure_indicator", 0.0)
 		if _laser_filter.has_method("set_extruder_rpm_indicator"):
 			_laser_filter.call("set_extruder_rpm_indicator", 0.0)
-	_broadcast(events)
+
+func _check_pressure_trips() -> void:
 	# #223 docs->code (item 17) — pelletiser 160-bar MP<PEL melt-pressure
 	# interlock. Read the die-head / meltpump-outlet melt pressure the model
 	# computes (die_pressure_psi = "smeltdruk stroomopwaarts van de
@@ -302,6 +321,8 @@ func _on_sim_tick(delta: float) -> void:
 			model.fault_reason = "laserfilter_upstream_overpressure_318bar"
 		elif _pel_trip_latched:
 			model.fault_reason = "pelletiser_meltdruk_160bar"
+
+func _handle_state_transitions(prev_state: int) -> void:
 	# Cascade-stop hook: when the 2-min vacuum-alarm grace expires the model
 	# transitions to FAULT. Per the operator's anecdote, EVERYTHING downstream
 	# halts — screw, both vacuum units, laser filter, head filter, pelletizer,

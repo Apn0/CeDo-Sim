@@ -222,11 +222,8 @@ func _rebuild_form() -> void:
 
 func _populate_form() -> void:
 	var parent := _form_container
-	var title := Label.new()
-	title.text = "Wardrobe"
-	title.add_theme_font_size_override("font_size", 32)
-	parent.add_child(title)
-	# Character selector — always available so all NPCs can be customised.
+	_build_header(parent)
+
 	# #186 — player display name comes from GameState.player_name (default "Arno")
 	# instead of the hardcoded "Player" string. Real operators have real names.
 	var gs : Node = _resolve_game_state()
@@ -235,6 +232,21 @@ func _populate_form() -> void:
 		var pn = gs.get("player_name")
 		if pn is String and String(pn) != "":
 			player_display_name = String(pn)
+
+	_build_character_selector(parent, player_display_name)
+	_build_name_field(parent, player_display_name)
+	_build_wear_state_selector(parent)
+	_build_appearance_fields(parent)
+	_build_footer_buttons(parent)
+
+func _build_header(parent: Control) -> void:
+	var title := Label.new()
+	title.text = "Wardrobe"
+	title.add_theme_font_size_override("font_size", 32)
+	parent.add_child(title)
+
+func _build_character_selector(parent: Control, player_display_name: String) -> void:
+	# Character selector — always available so all NPCs can be customised.
 	var char_ids : Array = ["player"]
 	var char_labels : Array = [player_display_name]
 	var npc_data : Dictionary = {}
@@ -264,6 +276,8 @@ func _populate_form() -> void:
 		cmenu.item_selected.connect(func(idx): _switch_character(String(ids_copy[idx])))
 		char_row.add_child(cmenu)
 		parent.add_child(char_row)
+
+func _build_name_field(parent: Control, player_display_name: String) -> void:
 	# #186 — Player NAME field (only when the active character is the player).
 	# The node name in MainWorld stays "Player" (other systems look it up by that
 	# string), but this drives the display-name meta + every UI that shows it.
@@ -284,6 +298,8 @@ func _populate_form() -> void:
 		)
 		name_row.add_child(name_edit)
 		parent.add_child(name_row)
+
+func _build_wear_state_selector(parent: Control) -> void:
 	# #186 — wear_state toggle (on_duty / off_duty). The customizer edits one
 	# outfit slot at a time; flipping this switches the form binding without
 	# closing/reopening. MainWorld picks the active slot from shift_active.
@@ -300,6 +316,8 @@ func _populate_form() -> void:
 	ws_menu.item_selected.connect(func(idx): _switch_wear_state("on_duty" if idx == 0 else "off_duty"))
 	ws_row.add_child(ws_menu)
 	parent.add_child(ws_row)
+
+func _build_appearance_fields(parent: Control) -> void:
 	# Skin colour
 	parent.add_child(_make_color_row("Skin", "skin_color",
 		_appearance.get("skin_color", Color(0.94, 0.78, 0.66))))
@@ -349,6 +367,8 @@ func _populate_form() -> void:
 	# personal clothes alone. Independent of shirt_type — both stack.
 	parent.add_child(_make_option_row("PPE class", "ppe",
 		["hi_vis", "operator", "none"], _appearance.get("ppe", "hi_vis")))
+
+func _build_footer_buttons(parent: Control) -> void:
 	# Spacer
 	var spacer := Control.new()
 	spacer.custom_minimum_size = Vector2(0, 12)

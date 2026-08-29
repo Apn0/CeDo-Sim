@@ -295,8 +295,8 @@ func _test_inside_outside() -> void:
 	var floor_y : float = box.position.y
 	var interior := Vector3(centre.x, floor_y, centre.z)
 	# Straight out along +X past the facade. Derived from the MEASURED half-extent,
-	# never from a constant: a site map validated against its own stale constant is
-	# already one of this project's shipped bugs.
+	# never from a constant, to ensure the site map is always validated against
+	# actual geometry rather than a stale assumption.
 	var exterior := Vector3(
 		box.position.x + box.size.x + EXTERIOR_MARGIN_M, floor_y, centre.z)
 	_info("shell footprint %.0f x %.0f m centred (%.1f, %.1f)"
