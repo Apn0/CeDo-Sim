@@ -770,6 +770,9 @@
     }
   };
   function evalDcLogic(src) {
+    // Security Context: `src` is loaded strictly from first-party authored `.dc.html` files
+    // in the project's own COMPONENT_DIR. This is a known and trusted code path.
+    // Untrusted user input cannot influence this execution.
     //! nosemgrep: eval-and-function-constructor
     const fn = new Function(
       "DCLogic",
@@ -1144,6 +1147,8 @@
         }).code : src;
         const module = { exports: {} };
         const before = new Set(Object.keys(window));
+        // Security Context: `code` is loaded exclusively from first-party internal URLs or registered assets.
+        // This execution path is trusted and cannot be driven by untrusted remote input.
         //! nosemgrep: eval-and-function-constructor
         new Function("React", "module", "exports", "require", code)(
           getReact(),
