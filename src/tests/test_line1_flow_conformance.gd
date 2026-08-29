@@ -80,11 +80,7 @@ func _run() -> void:
 
 	if i_goot < 0 or i_pre < 0 or i_fric < 0 or i_mill < 0:
 		print("[TEST] line 1 conformance FAIL (setup incomplete)")
-	# CANONICAL VERDICT LINE. tools/regression/run.sh gates on
-	# grep -E "Result: PASS|RESULT: PASS" -- the descriptive line above does
-	# NOT match it. Measured 2026-08-28: all four conformance tests passed
-	# standalone and reported FAIL in the harness for this reason alone.
-	print("Result: %s (%d fail)" % ["PASS" if _fails == 0 else "FAIL", _fails])
+		print("Result: FAIL (1 fail)")
 		get_tree().quit(1); return
 
 	# One-drum ruling: no second drum, no stub. The corner chute is BACK now
@@ -442,4 +438,9 @@ func _run() -> void:
 			"nominal-pose mirror reproduces every world position (worst %.4f m)" % worst)
 
 	print("[TEST] line 1 conformance %s (%d fail)" % ["PASS" if _fails == 0 else "FAIL", _fails])
+	# CANONICAL VERDICT LINE. tools/regression/run.sh gates on
+	# grep -E "Result: PASS|RESULT: PASS" -- the descriptive line above does
+	# NOT match it. Measured 2026-08-28: all four conformance tests passed
+	# standalone and reported FAIL in the harness for this reason alone.
+	print("Result: %s (%d fail)" % ["PASS" if _fails == 0 else "FAIL", _fails])
 	get_tree().quit(1 if _fails > 0 else 0)

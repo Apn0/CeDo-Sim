@@ -43,11 +43,7 @@ func _run() -> void:
 	_check(i_silo >= 0, "mengsilo present")
 	if i_silo < 0:
 		print("[TEST] line 3A conformance FAIL (setup)")
-	# CANONICAL VERDICT LINE. tools/regression/run.sh gates on
-	# grep -E "Result: PASS|RESULT: PASS" -- the descriptive line above does
-	# NOT match it. Measured 2026-08-28: all four conformance tests passed
-	# standalone and reported FAIL in the harness for this reason alone.
-	print("Result: %s (%d fail)" % ["PASS" if _fails == 0 else "FAIL", _fails])
+		print("Result: FAIL (1 fail)")
 		get_tree().quit(1); return
 
 	# INFEED: … mech_dryer → blower → windzifter → blower → top cyclone →
@@ -228,4 +224,9 @@ func _run() -> void:
 	_check(weeg_to_vs, "weegschaal STILL feeds the voorraad silo (doc edge 35 — main path intact)")
 
 	print("[TEST] line 3A conformance %s (%d fail)" % ["PASS" if _fails == 0 else "FAIL", _fails])
+	# CANONICAL VERDICT LINE. tools/regression/run.sh gates on
+	# grep -E "Result: PASS|RESULT: PASS" -- the descriptive line above does
+	# NOT match it. Measured 2026-08-28: all four conformance tests passed
+	# standalone and reported FAIL in the harness for this reason alone.
+	print("Result: %s (%d fail)" % ["PASS" if _fails == 0 else "FAIL", _fails])
 	get_tree().quit(1 if _fails > 0 else 0)
