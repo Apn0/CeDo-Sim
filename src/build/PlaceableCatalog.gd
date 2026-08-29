@@ -1355,6 +1355,7 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 					deck_body.add_to_group("belt")
 					deck_body.set_meta("belt_speed", op_speed)
 					deck_body.set_meta("belt_ramp_tau_s", 0.1)
+			# D4 fix: node is tagged + group before returning.
 		return op
 
 	var size: Vector3 = item["size"]
