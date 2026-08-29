@@ -1398,10 +1398,10 @@ func _creates_cycle(from_idx: int, to_idx: int) -> bool:
 			out_map[src] = []
 		(out_map[src] as Array).append(int(e["b"]))
 	var visited : Dictionary = {}
-	var stack : Array = [from_idx]
+	var stack : Array = [to_idx]
 	while not stack.is_empty():
 		var cur : int = int(stack.pop_back())
-		if cur == to_idx:
+		if cur == from_idx:
 			return true
 		if visited.has(cur):
 			continue
