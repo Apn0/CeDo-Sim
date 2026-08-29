@@ -510,180 +510,185 @@ func _discover() -> void:
 	var code_owner : Dictionary = {}
 	for m in get_tree().get_nodes_in_group("placed_object"):
 		var node3d := m as Node3D
-		if node3d == null or not node3d.has_meta("placeable_id"):
-			continue
-		# Waste containers / floor piles are SINKS for reject, not material-flow
-		# process machines — never let them into the line topology even if a
-		# build path tagged them placed_object.
-		if node3d.is_in_group("waste_container") or node3d.is_in_group("floor_pile"):
-			continue
-		var id := String(node3d.get_meta("placeable_id"))
-		var prof := MachineFlow.profile(id)
-		if String(prof["role"]) == "none":
-			continue
-		var item := PlaceableCatalog.get_item(id)
-		if item.is_empty():
-			continue
-		var size: Vector3 = item["size"]
-		var inf: Vector3  = prof["in"]
-		var outf: Vector3 = prof["out"]
-		# Default physics = MachineFlow's generic per-id fractions. For a real
-		# LINE 3C stage (tagged with its HMI code) we OVERRIDE them with the BAKED,
-		# calibrated ProcessModel coefficients (#173) and seed its nominal current.
-		var p_waste    : float = float(prof["waste"])
-		var p_water_a  : float = float(prof["water_add"])
-		var p_water_r  : float = float(prof["water_remove"])
-		var p_contam_r : float = float(prof["contam_remove"])
-		var p_rej_o    : float = float(prof["reject_other"])
-		var p_rej_h    : float = float(prof["reject_hdpe"])
-		# PLANT ADDRESS. An explicit meta wins (a bench may hand-stamp one, e.g.
-		# tests/FlakeCouplingTest.gd:64), otherwise the code is DERIVED from the
-		# macro membership BuildMode already stamps and already round-trips through
-		# the save file — so no new persisted key exists and every legacy save loads
-		# unchanged. Only the line_3c macro resolves (Line3CDef.code_for_macro_entry).
-		var l3c_code   : String = String(node3d.get_meta("l3c_code")) if node3d.has_meta("l3c_code") else ""
-		if l3c_code == "" and node3d.has_meta("macro_id") and node3d.has_meta("macro_index"):
-			l3c_code = Line3CDefScript.code_for_macro_entry(
-				String(node3d.get_meta("macro_id")), int(node3d.get_meta("macro_index")))
-		# UNIQUENESS IS A PRECONDITION, not a nicety: _link()'s code_idx is a
-		# first-match map on this code, so a second claimant would silently steal
-		# the first one's downstream edges AND its calibrated current. Refuse it
-		# and record the refusal instead — the ledger is asserted empty by the tests.
-		if l3c_code != "":
-			if code_owner.has(l3c_code):
-				_code_conflicts.append({
-					"code": l3c_code,
-					"kept": String(code_owner[l3c_code]),
-					"refused": String(node3d.get_path()),
-				})
-				push_error("[LineFlow] l3c_code '%s' already claimed by %s — refusing %s (it falls back to an ordinal key)"
-					% [l3c_code, String(code_owner[l3c_code]), String(node3d.get_path())])
-				l3c_code = ""
-			else:
-				code_owner[l3c_code] = String(node3d.get_path())
-		# The per-instance HANDLE every front-end addresses this machine by.
-		var ordinal : int = int(id_ordinal.get(id, 0)) + 1
-		id_ordinal[id] = ordinal
-		var node_key : String = l3c_code if l3c_code != "" else "%s#%d" % [id, ordinal]
-		# #99 — paired-stage tags. Empty for everything except L3C.14L/R (the
-		# mech-dryer pair). The router uses these to fan 100% of incoming material
-		# to the drum currently in BEFULLEN instead of splitting it evenly.
-		var pair_id   : String = Line3CDefScript.pair_id_for(l3c_code) if l3c_code != "" else ""
-		var pair_side : String = Line3CDefScript.pair_side_for(l3c_code) if l3c_code != "" else ""
-		var amps_nom   : float = 0.0
-		if l3c_code != "" and ProcessModelScript.has_stage(l3c_code):
-			var tf : Dictionary = ProcessModelScript.stage_transfer(l3c_code)
-			p_water_a  = float(tf["water_add"])
-			p_water_r  = float(tf["water_remove"])
-			p_contam_r = float(tf["contam_remove"])
-			p_rej_o    = float(tf["reject_other"])
-			p_rej_h    = float(tf["reject_hdpe"])
-			p_waste    = float(tf["waste"])
-			amps_nom   = ProcessModelScript.hmi_amps_for_code(l3c_code)
-		_nodes.append({
-			"node":  node3d,
-			"id":    id,
-			# `id` stays the plain MODEL selector — MachineFlow.profile,
-			# PlaceableCatalog.get_item, the _is_extruder/_is_high_load_motor
-			# substring dispatchers and CrewManager's zone token-matching all key
-			# on it, so it must never be suffixed. `key` is the sibling ADDRESS.
-			"key":   node_key,
-			"line":  String(node3d.get_meta("line")) if node3d.has_meta("line") else "",
-			"hmi_id": String(node3d.get_meta("hmi_id")) if node3d.has_meta("hmi_id") else "",
-			"role":  String(prof["role"]),
-			"waste": p_waste,
-			"rate":  float(prof["rate"]),
-			"process":       String(prof["process"]),
-			"water_add":     p_water_a,
-			"water_remove":  p_water_r,
-			"contam_remove": p_contam_r,
-			"reject_other":  p_rej_o,
-			"reject_hdpe":   p_rej_h,
-			"l3c_code":      l3c_code,
-			# #99 — paired-stage routing tags (mech-dryer L/R only).
-			"pair_id":       pair_id,
-			"pair_side":     pair_side,
-			# Populated in _attach_advanced_systems() with a MechDryerCycle for
-			# nodes whose pair_id == "dryer_pair". Null on everything else.
-			"dryer_cycle":   null,
-			"amps_nominal":  amps_nom,
-			"amps":          0.0,
-			"win":   _node_win(node3d, id, inf, size),
-			"wout":  _node_wout(node3d, id, outf, size),
-			# #54 splitters carry a second output port — used by the linker to add
-			# a SECOND outgoing edge so the switch belt can route to both VSS and
-			# U-bay. Null world position when the profile didn't define one.
-			"wout2": _node_wout2(node3d, prof, size),
-			"in":    MaterialBatch.new(),
-			"out":   MaterialBatch.new(),
-			# Live telemetry, refreshed each tick so the HMI can read real operator
-			# numbers per machine (smoothed throughput; instantaneous stream state).
-			"thru":    0.0,    # kg/s leaving this machine (EMA-smoothed)
-			"moist":   0.0,    # % moisture of the stream leaving
-			"contam":  0.0,    # % contamination of the stream leaving
-			"quality": 0.0,    # 0..100 melt-quality grade of the stream leaving
-			"buffer":  0.0,    # kg waiting in this machine's input buffer
-			# #145 transport: the machine's conveying rotor(s), its live spin-up
-			# state (0..1), and whether the PLC has powered it. `mechs` is the
-			# FULL list (doseersilo: 3 augers, frictiewasser: 2 stirrers);
-			# `mech` keeps the legacy primary-rotor pointer for HUD widgets
-			# that show a single RPM. The set_running cascade walks `mechs`
-			# so EVERY rotor responds to power-state changes, not just the
-			# first one listed.
-			"mechs":   _find_mechanisms(node3d),
-			"mech":    _find_mechanism(node3d),
-			"spin":    0.0,
-			"powered": false,
-			# Per-machine HMI override (#new-hmi). hand_mode bypasses the PLC and the
-			# safeguards (upstream-empty, e-stop, shredder interlock) — manual_on then
-			# decides whether the machine runs. component_pct stores per-component
-			# RPM overrides (inlet/paddles/outlet for tanks; "drive" for conveyors /
-			# ventilators / shredders); the effective rate is the design rate scaled
-			# by the AVERAGE of these and by rpm_pct. Defaults run the machine 100%.
-			"hand_mode":     false,
-			"manual_on":     false,
-			"rpm_pct":       1.0,
-			"components":    _default_components_for(id),
-			# #173 visual coupling: the machine's FilmFlakeField (if any), driven
-			# each tick from this node's live telemetry so the look matches the sim.
-			"view":    _find_film_field(node3d),
-			# Flow-gated visuals: steam plume + extruder die-face melt strands only
-			# show while material is actually being processed (no invention from nothing).
-			"plume":       _find_steam_plume(node3d),
-			"die_switcher": _find_die_switcher(node3d),
-			# ── #52 advanced-system observers (null unless this node qualifies) ───
-			# ex/mfi: extruder thermal+rheology model + its MFI soft-sensor (extruders).
-			# mol: motor-overload trip model (high-load mills/shredders/friction sep).
-			# air_id: the AirNetwork consumer key for air-driven machines (sorter/PCU).
-			# _backlog_kg/_moved_kg: per-tick load bookkeeping for the motor model
-			#   (pure OBSERVATIONS of the existing split — they change no flow math).
-			"ex":          null,
-			"mfi":         null,
-			"mol":         null,
-			"air_id":      "",
-			"die_pressure": 0.0,
-			"melt_temp":    0.0,
-			"viscosity":    0.0,
-			"mfi_value":    0.0,
-			"_backlog_kg":  0.0,
-			"_moved_kg":    0.0,
-			# #137 — switch_belt jog controller. Populated below for switch_belt
-			# placeables only; everyone else carries null and the tick path skips
-			# the jog logic entirely.
-			"switch_ctrl":  null,
-			# #138 — conveyor-8 bidirectional controller. Populated below for
-			# transportband_8 only.
-			"c8_ctrl":      null,
-		})
-		# #137 — attach the jog controller to switch_belt bodies and stash it on
-		# the node dict so the tick can read jog_x without a per-frame find_child.
-		if id == "switch_belt":
-			_nodes[_nodes.size() - 1]["switch_ctrl"] = SwitchBeltScript.attach_to(node3d)
-		# #138 — attach the bidirectional ramp controller to C8.
-		elif id == "transportband_8":
-			_nodes[_nodes.size() - 1]["c8_ctrl"] = Conveyor8Script.attach_to(node3d)
+		if node3d != null:
+			_process_discovered_node(node3d, id_ordinal, code_owner)
 	# Attach the advanced-system observers now that every node dict exists.
 	_attach_advanced_systems()
+
+func _process_discovered_node(node3d: Node3D, id_ordinal: Dictionary, code_owner: Dictionary) -> void:
+	if node3d == null or not node3d.has_meta("placeable_id"):
+		return
+	# Waste containers / floor piles are SINKS for reject, not material-flow
+	# process machines — never let them into the line topology even if a
+	# build path tagged them placed_object.
+	if node3d.is_in_group("waste_container") or node3d.is_in_group("floor_pile"):
+		return
+	var id := String(node3d.get_meta("placeable_id"))
+	var prof := MachineFlow.profile(id)
+	if String(prof["role"]) == "none":
+		return
+	var item := PlaceableCatalog.get_item(id)
+	if item.is_empty():
+		return
+	var size: Vector3 = item["size"]
+	var inf: Vector3  = prof["in"]
+	var outf: Vector3 = prof["out"]
+	# Default physics = MachineFlow's generic per-id fractions. For a real
+	# LINE 3C stage (tagged with its HMI code) we OVERRIDE them with the BAKED,
+	# calibrated ProcessModel coefficients (#173) and seed its nominal current.
+	var p_waste    : float = float(prof["waste"])
+	var p_water_a  : float = float(prof["water_add"])
+	var p_water_r  : float = float(prof["water_remove"])
+	var p_contam_r : float = float(prof["contam_remove"])
+	var p_rej_o    : float = float(prof["reject_other"])
+	var p_rej_h    : float = float(prof["reject_hdpe"])
+	# PLANT ADDRESS. An explicit meta wins (a bench may hand-stamp one, e.g.
+	# tests/FlakeCouplingTest.gd:64), otherwise the code is DERIVED from the
+	# macro membership BuildMode already stamps and already round-trips through
+	# the save file — so no new persisted key exists and every legacy save loads
+	# unchanged. Only the line_3c macro resolves (Line3CDef.code_for_macro_entry).
+	var l3c_code   : String = String(node3d.get_meta("l3c_code")) if node3d.has_meta("l3c_code") else ""
+	if l3c_code == "" and node3d.has_meta("macro_id") and node3d.has_meta("macro_index"):
+		l3c_code = Line3CDefScript.code_for_macro_entry(
+			String(node3d.get_meta("macro_id")), int(node3d.get_meta("macro_index")))
+	# UNIQUENESS IS A PRECONDITION, not a nicety: _link()'s code_idx is a
+	# first-match map on this code, so a second claimant would silently steal
+	# the first one's downstream edges AND its calibrated current. Refuse it
+	# and record the refusal instead — the ledger is asserted empty by the tests.
+	if l3c_code != "":
+		if code_owner.has(l3c_code):
+			_code_conflicts.append({
+				"code": l3c_code,
+				"kept": String(code_owner[l3c_code]),
+				"refused": String(node3d.get_path()),
+			})
+			push_error("[LineFlow] l3c_code '%s' already claimed by %s — refusing %s (it falls back to an ordinal key)"
+				% [l3c_code, String(code_owner[l3c_code]), String(node3d.get_path())])
+			l3c_code = ""
+		else:
+			code_owner[l3c_code] = String(node3d.get_path())
+	# The per-instance HANDLE every front-end addresses this machine by.
+	var ordinal : int = int(id_ordinal.get(id, 0)) + 1
+	id_ordinal[id] = ordinal
+	var node_key : String = l3c_code if l3c_code != "" else "%s#%d" % [id, ordinal]
+	# #99 — paired-stage tags. Empty for everything except L3C.14L/R (the
+	# mech-dryer pair). The router uses these to fan 100% of incoming material
+	# to the drum currently in BEFULLEN instead of splitting it evenly.
+	var pair_id   : String = Line3CDefScript.pair_id_for(l3c_code) if l3c_code != "" else ""
+	var pair_side : String = Line3CDefScript.pair_side_for(l3c_code) if l3c_code != "" else ""
+	var amps_nom   : float = 0.0
+	if l3c_code != "" and ProcessModelScript.has_stage(l3c_code):
+		var tf : Dictionary = ProcessModelScript.stage_transfer(l3c_code)
+		p_water_a  = float(tf["water_add"])
+		p_water_r  = float(tf["water_remove"])
+		p_contam_r = float(tf["contam_remove"])
+		p_rej_o    = float(tf["reject_other"])
+		p_rej_h    = float(tf["reject_hdpe"])
+		p_waste    = float(tf["waste"])
+		amps_nom   = ProcessModelScript.hmi_amps_for_code(l3c_code)
+	_nodes.append({
+		"node":  node3d,
+		"id":    id,
+		# `id` stays the plain MODEL selector — MachineFlow.profile,
+		# PlaceableCatalog.get_item, the _is_extruder/_is_high_load_motor
+		# substring dispatchers and CrewManager's zone token-matching all key
+		# on it, so it must never be suffixed. `key` is the sibling ADDRESS.
+		"key":   node_key,
+		"line":  String(node3d.get_meta("line")) if node3d.has_meta("line") else "",
+		"hmi_id": String(node3d.get_meta("hmi_id")) if node3d.has_meta("hmi_id") else "",
+		"role":  String(prof["role"]),
+		"waste": p_waste,
+		"rate":  float(prof["rate"]),
+		"process":       String(prof["process"]),
+		"water_add":     p_water_a,
+		"water_remove":  p_water_r,
+		"contam_remove": p_contam_r,
+		"reject_other":  p_rej_o,
+		"reject_hdpe":   p_rej_h,
+		"l3c_code":      l3c_code,
+		# #99 — paired-stage routing tags (mech-dryer L/R only).
+		"pair_id":       pair_id,
+		"pair_side":     pair_side,
+		# Populated in _attach_advanced_systems() with a MechDryerCycle for
+		# nodes whose pair_id == "dryer_pair". Null on everything else.
+		"dryer_cycle":   null,
+		"amps_nominal":  amps_nom,
+		"amps":          0.0,
+		"win":   _node_win(node3d, id, inf, size),
+		"wout":  _node_wout(node3d, id, outf, size),
+		# #54 splitters carry a second output port — used by the linker to add
+		# a SECOND outgoing edge so the switch belt can route to both VSS and
+		# U-bay. Null world position when the profile didn't define one.
+		"wout2": _node_wout2(node3d, prof, size),
+		"in":    MaterialBatch.new(),
+		"out":   MaterialBatch.new(),
+		# Live telemetry, refreshed each tick so the HMI can read real operator
+		# numbers per machine (smoothed throughput; instantaneous stream state).
+		"thru":    0.0,    # kg/s leaving this machine (EMA-smoothed)
+		"moist":   0.0,    # % moisture of the stream leaving
+		"contam":  0.0,    # % contamination of the stream leaving
+		"quality": 0.0,    # 0..100 melt-quality grade of the stream leaving
+		"buffer":  0.0,    # kg waiting in this machine's input buffer
+		# #145 transport: the machine's conveying rotor(s), its live spin-up
+		# state (0..1), and whether the PLC has powered it. `mechs` is the
+		# FULL list (doseersilo: 3 augers, frictiewasser: 2 stirrers);
+		# `mech` keeps the legacy primary-rotor pointer for HUD widgets
+		# that show a single RPM. The set_running cascade walks `mechs`
+		# so EVERY rotor responds to power-state changes, not just the
+		# first one listed.
+		"mechs":   _find_mechanisms(node3d),
+		"mech":    _find_mechanism(node3d),
+		"spin":    0.0,
+		"powered": false,
+		# Per-machine HMI override (#new-hmi). hand_mode bypasses the PLC and the
+		# safeguards (upstream-empty, e-stop, shredder interlock) — manual_on then
+		# decides whether the machine runs. component_pct stores per-component
+		# RPM overrides (inlet/paddles/outlet for tanks; "drive" for conveyors /
+		# ventilators / shredders); the effective rate is the design rate scaled
+		# by the AVERAGE of these and by rpm_pct. Defaults run the machine 100%.
+		"hand_mode":     false,
+		"manual_on":     false,
+		"rpm_pct":       1.0,
+		"components":    _default_components_for(id),
+		# #173 visual coupling: the machine's FilmFlakeField (if any), driven
+		# each tick from this node's live telemetry so the look matches the sim.
+		"view":    _find_film_field(node3d),
+		# Flow-gated visuals: steam plume + extruder die-face melt strands only
+		# show while material is actually being processed (no invention from nothing).
+		"plume":       _find_steam_plume(node3d),
+		"die_switcher": _find_die_switcher(node3d),
+		# ── #52 advanced-system observers (null unless this node qualifies) ───
+		# ex/mfi: extruder thermal+rheology model + its MFI soft-sensor (extruders).
+		# mol: motor-overload trip model (high-load mills/shredders/friction sep).
+		# air_id: the AirNetwork consumer key for air-driven machines (sorter/PCU).
+		# _backlog_kg/_moved_kg: per-tick load bookkeeping for the motor model
+		#   (pure OBSERVATIONS of the existing split — they change no flow math).
+		"ex":          null,
+		"mfi":         null,
+		"mol":         null,
+		"air_id":      "",
+		"die_pressure": 0.0,
+		"melt_temp":    0.0,
+		"viscosity":    0.0,
+		"mfi_value":    0.0,
+		"_backlog_kg":  0.0,
+		"_moved_kg":    0.0,
+		# #137 — switch_belt jog controller. Populated below for switch_belt
+		# placeables only; everyone else carries null and the tick path skips
+		# the jog logic entirely.
+		"switch_ctrl":  null,
+		# #138 — conveyor-8 bidirectional controller. Populated below for
+		# transportband_8 only.
+		"c8_ctrl":      null,
+	})
+	# #137 — attach the jog controller to switch_belt bodies and stash it on
+	# the node dict so the tick can read jog_x without a per-frame find_child.
+	if id == "switch_belt":
+		_nodes[_nodes.size() - 1]["switch_ctrl"] = SwitchBeltScript.attach_to(node3d)
+	# #138 — attach the bidirectional ramp controller to C8.
+	elif id == "transportband_8":
+		_nodes[_nodes.size() - 1]["c8_ctrl"] = Conveyor8Script.attach_to(node3d)
+
 
 # ── #52 advanced-system observers (attach + classify) ─────────────────────────
 ## Set the ScadaDashboard MainWorld owns so tick() can push live state + params.
