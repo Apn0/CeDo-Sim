@@ -1639,10 +1639,9 @@ static func _default_components_for(id: String) -> Dictionary:
 		# anywhere in the repo, confirmed by the 2026-08-18 catalog audit,
 		# findings C7/H14; the interlock itself is implemented per operator
 		# instruction 2026-08-26, not per that citation.)
-		# TODO(relay trips, ruling B3 2026-07-06): speed settings BELOW 200
-		# (settable, sim cap 1000) must fire relay-trip/motor-stall events
-		# ~every 15 min, worse the lower — needs an event hook in the tick; the
-		# catalog stamps `bunker_relay_trip_below` meta on the model meanwhile.
+		# Relay trips (ruling B3 2026-07-06): speed settings BELOW 200
+		# (settable, sim cap 1000) fire relay-trip/motor-stall events
+		# ~every 15 min, worse the lower. Handled in _tick_advanced_systems.
 		out["uittrekrol"] = 1.0
 	elif lid.find("nir") >= 0 or lid.find("tomra") >= 0 or lid.find("titech") >= 0:
 		# NIR optical sorter — the acceleration belt drums are the driven part
@@ -2680,7 +2679,7 @@ func _tick_advanced_systems(delta: float) -> void:
 		if _is_pack_up_paused(String(nd.get("id", ""))):
 			nd["powered"] = false
 
-		# BUNKER RELAY TRIP — sustained low-speed motor stall/relay trip (#TODO relay trips).
+		# BUNKER RELAY TRIP — sustained low-speed motor stall/relay trip.
 		# Driven strictly by speed setpoint (rpm_pct × max speed), not mass backlog.
 		# PlaceableCatalog._m_bunker() stamps bunker_relay_trip_below/bunker_speed_max
 		# on the composite "Model" CHILD node (build_node()'s `model`, named "Model"),
