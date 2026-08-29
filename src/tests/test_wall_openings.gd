@@ -23,6 +23,22 @@ func _init() -> void:
 	openings._openings.erase("test_id")
 	assert(not openings.has_opening("test_id"), "Expected false after manually erasing ID")
 
+	# Test 4: _solidify_surfaces with empty array
+	var res1 = openings._solidify_surfaces([])
+	assert(res1.size() == 0, "Expected empty array for empty input")
+
+	# Test 5: _solidify_surfaces with empty surface
+	var res2 = openings._solidify_surfaces([{"v": PackedVector3Array()}])
+	assert(res2.size() == 1 and res2[0]["v"].size() == 0, "Expected empty surface for empty input surface")
+
+	# Test 6: _solidify_surfaces with degenerate triangle (area ~ 0)
+	var res3 = openings._solidify_surfaces([{"v": PackedVector3Array([Vector3.ZERO, Vector3.ZERO, Vector3.ZERO])}])
+	assert(res3.size() == 1 and res3[0]["v"].size() == 0, "Expected empty surface for degenerate triangle")
+
+	# Test 7: _solidify_surfaces with valid triangle
+	var res4 = openings._solidify_surfaces([{"v": PackedVector3Array([Vector3(0,0,0), Vector3(1,0,0), Vector3(0,1,0)])}])
+	assert(res4.size() == 1 and res4[0]["v"].size() == 24, "Expected 24 vertices for a single valid triangle (front, back, and 3 rim quads)")
+
 	openings.free()
 
 	print("[Test] All WallOpenings tests passed!\n")
