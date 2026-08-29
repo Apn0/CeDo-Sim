@@ -512,6 +512,15 @@ func _exec_tool(tool_path: String, args: Array, output: Array) -> int:
 	if not _is_trusted_tool_path(tool_path):
 		_log_clear("refusing to exec '%s' — outside the %s allowlist (check voice_paths.cfg)." % [tool_path, TOOLS_ROOT])
 		return -1
+
+	var re := RegEx.new()
+	re.compile("[&|;<>`$\n\r%\\^]")
+	for arg in args:
+		var s := String(arg)
+		if re.search(s) != null:
+			_log_clear("refusing to exec '%s' — unsafe argument detected: %s" % [tool_path, s])
+			return -1
+
 	return OS.execute(ProjectSettings.globalize_path(tool_path), args, output, true)
 
 func _openai_key() -> String:
