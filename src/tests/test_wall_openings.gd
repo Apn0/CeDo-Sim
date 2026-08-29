@@ -79,16 +79,32 @@ func _init() -> void:
 	assert(openings._would_cut_anything(Vector3(4, 0, 0), Vector3(2, 2, 2), 0.0), "Expected true for edge intersection")
 
 	mock_shell.free()
+
+	# Test 5: _solidify_surfaces with empty array
+	var res1 = openings._solidify_surfaces([])
+	assert(res1.size() == 0, "Expected empty array for empty input")
+
+	# Test 6: _solidify_surfaces with empty surface
+	var res2 = openings._solidify_surfaces([{"v": PackedVector3Array()}])
+	assert(res2.size() == 1 and res2[0]["v"].size() == 0, "Expected empty surface for empty input surface")
+
+	# Test 7: _solidify_surfaces with degenerate triangle (area ~ 0)
+	var res3 = openings._solidify_surfaces([{"v": PackedVector3Array([Vector3.ZERO, Vector3.ZERO, Vector3.ZERO])}])
+	assert(res3.size() == 1 and res3[0]["v"].size() == 0, "Expected empty surface for degenerate triangle")
+
+	# Test 8: _solidify_surfaces with valid triangle
+	var res4 = openings._solidify_surfaces([{"v": PackedVector3Array([Vector3(0,0,0), Vector3(1,0,0), Vector3(0,1,0)])}])
+	assert(res4.size() == 1 and res4[0]["v"].size() == 24, "Expected 24 vertices for a single valid triangle (front, back, and 3 rim quads)")
 	openings.free()
 
 
-	# Test 4: setup() with empty mesh
+	# Test 9: setup() with empty mesh
 	var empty_mesh = MeshInstance3D.new()
 	var openings2 = WallOpenings.new()
 	openings2.setup(empty_mesh)
 	assert(openings2._ready_ok == false, "Expected setup to fail with no mesh")
 
-	# Test 5: setup() with valid mesh
+	# Test 10: setup() with valid mesh
 	var valid_mesh = MeshInstance3D.new()
 	var array_mesh = ArrayMesh.new()
 	var arrays = []
@@ -104,7 +120,7 @@ func _init() -> void:
 	assert(openings3._ready_ok == true, "Expected setup to succeed with valid mesh")
 	assert(openings3._orig_surfaces.size() == 1, "Expected 1 original surface")
 
-	# Test 6: setup() with thin_collision_source
+	# Test 11: setup() with thin_collision_source
 	var thin_mesh = ArrayMesh.new()
 	var thin_arrays = []
 	thin_arrays.resize(Mesh.ARRAY_MAX)
