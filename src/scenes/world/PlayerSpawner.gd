@@ -47,43 +47,92 @@ func _spawn_player() -> CharacterBody3D:
 	var game_state = _world.game_state
 	var shift_clock = _world.shift_clock
 
-	var spawn_pos  : Vector3 = Vector3.ZERO
-	var spawn_rot_y: float   = 0.0
-	var from_save  : bool    = false
+	var saved_info = _resolve_saved_position(game_state)
+	var spawn_pos : Vector3 = saved_info["pos"]
+	var spawn_rot_y : float = saved_info["rot_y"]
+	var from_save : bool = saved_info["from_save"]
 
-	if game_state:
-		var saved = game_state.load_player_state()
-		if saved.has("x"):
-			var sp := Vector3(saved["x"], saved["y"], saved["z"])
-			# X4/#183 — only reject the saved position if the WORLD ANCHOR moved
-			# (the operator re-ran WorldSetup and re-placed player_spawn). When
-			# the anchor matches, trust the saved coords regardless of distance
-			# — the operator may have walked far across the industrial terrain
-			# before save. Old guard rejected legitimate 500 m saves and bounced
-			# everyone back to spawn.
-			var anchor_moved : bool = false
-			if saved.has("anchor_x") and saved.has("anchor_z"):
-				var ax : float = float(saved["anchor_x"])
-				var az : float = float(saved["anchor_z"])
-				var d_anchor : float = Vector2(
-					ax - WorldLayout.player_spawn.x,
-					az - WorldLayout.player_spawn.z).length()
-				anchor_moved = d_anchor > 5.0   # 5 m slop for operator nudges
-			else:
-				# Legacy save with no anchor snapshot — fall back to the old
-				# generous-but-not-absurd guard so RD-coord saves still get
-				# rejected but routine 500 m walks don't.
-				var d_marker : float = Vector2(sp.x - WorldLayout.player_spawn.x,
-					sp.z - WorldLayout.player_spawn.z).length()
-				anchor_moved = d_marker > 2000.0
-			if anchor_moved:
-				print("[PlayerSpawner] World re-anchored since save — using spawn marker (was at %.0f,%.0f)"
-					% [sp.x, sp.z])
-			else:
-				spawn_pos   = sp
-				spawn_rot_y = saved.get("rot_y", 0.0)
-				from_save   = true
+	var plant_anchor = _resolve_plant_anchor()
 
+	if not from_save:
+		# Marker XZ is meaningful (where the operator's feet should land);
+		# marker Y is NOT — WorldSetup places markers on a y=0 click plane
+		# regardless of where the actual floor is. Use the resolved plant
+		# anchor with the detected floor Y.
+		spawn_pos = plant_anchor
+
+	var player = _build_player_capsule(game_state)
+	if not player:
+		return null
+
+	_attach_humanoid_body(player, shift_clock, game_state)
+
+	_world.add_child(player)
+	player.global_position = spawn_pos
+	if from_save:
+		player.rotation.y = spawn_rot_y
+
+	# #200 — _player_spawn_pos is the PLANT ANCHOR, not the player's current
+	# position. On a resumed save the player may be a kilometre east of the
+	# plant; the road / fences / parking lot / bale yards must still anchor
+	# to the BUILDING, not to wherever the player wandered to. The old code
+	# set this to player.global_position which dragged the entire plant
+	# infrastructure with the player on every save+quit+reload.
+	_world._player_spawn_pos = plant_anchor
+
+	print("[PlayerSpawner] Player spawned at %s%s" \
+		% [player.global_position, " (resumed)" if from_save else ""])
+
+	_restore_saved_freecam(from_save, game_state)
+	_give_starter_tools(player)
+
+	return player
+
+func _resolve_saved_position(game_state: Node) -> Dictionary:
+	var result = {
+		"pos": Vector3.ZERO,
+		"rot_y": 0.0,
+		"from_save": false
+	}
+
+	if not game_state:
+		return result
+
+	var saved = game_state.load_player_state()
+	if saved.has("x"):
+		var sp := Vector3(saved["x"], saved["y"], saved["z"])
+		# X4/#183 — only reject the saved position if the WORLD ANCHOR moved
+		# (the operator re-ran WorldSetup and re-placed player_spawn). When
+		# the anchor matches, trust the saved coords regardless of distance
+		# — the operator may have walked far across the industrial terrain
+		# before save. Old guard rejected legitimate 500 m saves and bounced
+		# everyone back to spawn.
+		var anchor_moved : bool = false
+		if saved.has("anchor_x") and saved.has("anchor_z"):
+			var ax : float = float(saved["anchor_x"])
+			var az : float = float(saved["anchor_z"])
+			var d_anchor : float = Vector2(
+				ax - WorldLayout.player_spawn.x,
+				az - WorldLayout.player_spawn.z).length()
+			anchor_moved = d_anchor > 5.0   # 5 m slop for operator nudges
+		else:
+			# Legacy save with no anchor snapshot — fall back to the old
+			# generous-but-not-absurd guard so RD-coord saves still get
+			# rejected but routine 500 m walks don't.
+			var d_marker : float = Vector2(sp.x - WorldLayout.player_spawn.x,
+				sp.z - WorldLayout.player_spawn.z).length()
+			anchor_moved = d_marker > 2000.0
+		if anchor_moved:
+			print("[PlayerSpawner] World re-anchored since save — using spawn marker (was at %.0f,%.0f)"
+				% [sp.x, sp.z])
+		else:
+			result["pos"] = sp
+			result["rot_y"] = saved.get("rot_y", 0.0)
+			result["from_save"] = true
+
+	return result
+
+func _resolve_plant_anchor() -> Vector3:
 	# #200 — Compute the building anchor in BOTH paths (fresh AND resumed).
 	# Previously this only ran in the `not from_save` branch and the resumed
 	# branch let _player_spawn_pos pick up the player's saved position — so
@@ -117,14 +166,9 @@ func _spawn_player() -> CharacterBody3D:
 					% [anchor_candidate.x, anchor_candidate.z,
 						anchor_candidate.distance_to(bldg_center),
 						bldg_center.x, bldg_center.z])
+	return plant_anchor
 
-	if not from_save:
-		# Marker XZ is meaningful (where the operator's feet should land);
-		# marker Y is NOT — WorldSetup places markers on a y=0 click plane
-		# regardless of where the actual floor is. Use the resolved plant
-		# anchor with the detected floor Y.
-		spawn_pos = plant_anchor
-
+func _build_player_capsule(game_state: Node) -> CharacterBody3D:
 	var script := load("res://src/scenes/player/PlayerController.gd")
 	if not script:
 		push_error("[PlayerSpawner] PlayerController.gd not found")
@@ -173,7 +217,9 @@ func _spawn_player() -> CharacterBody3D:
 	cap.height = 1.8
 	col.shape  = cap
 	player.add_child(col)
+	return player
 
+func _attach_humanoid_body(player: CharacterBody3D, shift_clock: Node, game_state: Node) -> void:
 	# #152 / #186 — Visible Humanoid body. The customizer now saves TWO outfits
 	# per character (on_duty + off_duty); MainWorld picks the active one based
 	# on ShiftClock.shift_active so PPE shows up at the bell and personal
@@ -182,6 +228,7 @@ func _spawn_player() -> CharacterBody3D:
 	var _on_shift_init : bool = shift_clock != null and bool(shift_clock.get("shift_active"))
 	var _wear_state_init : String = "on_duty" if _on_shift_init else "off_duty"
 	var appearance : Dictionary = {}
+	var _display_name : String = String(player.get_meta("display_name", "Arno"))
 	if game_state:
 		var pw = game_state.get("player_wardrobes") if "player_wardrobes" in game_state else null
 		if pw is Dictionary:
@@ -237,21 +284,7 @@ func _spawn_player() -> CharacterBody3D:
 			if shift_clock.has_signal("shift_ended"):
 				shift_clock.shift_ended.connect(_player_apply_footwear.bind(player, false))
 
-	_world.add_child(player)
-	player.global_position = spawn_pos
-	if from_save:
-		player.rotation.y = spawn_rot_y
-
-	# #200 — _player_spawn_pos is the PLANT ANCHOR, not the player's current
-	# position. On a resumed save the player may be a kilometre east of the
-	# plant; the road / fences / parking lot / bale yards must still anchor
-	# to the BUILDING, not to wherever the player wandered to. The old code
-	# set this to player.global_position which dragged the entire plant
-	# infrastructure with the player on every save+quit+reload.
-	_world._player_spawn_pos = plant_anchor
-
-	print("[PlayerSpawner] Player spawned at %s%s" \
-		% [player.global_position, " (resumed)" if from_save else ""])
+func _restore_saved_freecam(from_save: bool, game_state: Node) -> void:
 	# Restore the saved free-cam pose if there is one. Defer one frame so PlayerController._ready
 	# has built its CameraRig before we hand it the saved state. (#freecam)
 	if from_save and game_state:
@@ -263,14 +296,13 @@ func _spawn_player() -> CharacterBody3D:
 			# its CameraRig before we hand it the saved state.
 			call_deferred("_restore_freecam_state", fc)
 
+func _give_starter_tools(player: Node) -> void:
 	# First-spawn loadout: hand the operator the three starter tools already in the
 	# hotbar (scissors/scanner/shovel). Idempotent, so a reload re-arms cleanly.
 	# MainWorld-only (Gauntlet/Sandbox build their own player), which is what we want.
-	var inv := get_node_or_null("/root/Inventory")
+	var inv := player.get_node_or_null("/root/Inventory")
 	if inv and inv.has_method("give_starter_tools"):
 		inv.call("give_starter_tools")
-
-	return player
 
 # ── Footwear / wardrobe swap on shift bell ──────────────────────────────────
 ## T8 — Toggle the player's footwear when the shift starts / ends. Rebuilds the
