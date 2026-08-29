@@ -59,7 +59,35 @@ func _ready() -> void:
     var nearest6 = tpm._nearest_slot(Vector3.ZERO)
     _check(nearest6 == slot, "_nearest_slot ignores non-matching tool slot and finds next best")
 
+    print("--- Testing _slot_accepts ---")
+    _check(tpm._slot_accepts(null, null) == true, "_slot_accepts returns true when slot is null")
+
+    var test_slot = Node3D.new()
+    _check(tpm._slot_accepts(test_slot, null) == true, "_slot_accepts returns true when slot has no accepts meta")
+
+    test_slot.set_meta("accepts", [])
+    _check(tpm._slot_accepts(test_slot, null) == true, "_slot_accepts returns true when slot accepts meta is empty")
+
+    test_slot.set_meta("accepts", ["hammer"])
+    _check(tpm._slot_accepts(test_slot, null) == false, "_slot_accepts returns false when tool is null but slot has accepts meta")
+
+    var tool_no_id = Node3D.new()
+    _check(tpm._slot_accepts(test_slot, tool_no_id) == false, "_slot_accepts returns false when tool lacks tool_id but slot has accepts meta")
+
+    var tool_hammer = MockTool.new()
+    tool_hammer.tool_id = "hammer"
+    _check(tpm._slot_accepts(test_slot, tool_hammer) == true, "_slot_accepts returns true when tool matches accepts meta")
+
+    var tool_wrench = MockTool.new()
+    tool_wrench.tool_id = "wrench"
+    _check(tpm._slot_accepts(test_slot, tool_wrench) == false, "_slot_accepts returns false when tool does not match accepts meta")
+
     print("Result: %s" % ("PASS" if _fails == 0 else "FAIL (%d)" % _fails))
+
+    test_slot.queue_free()
+    tool_no_id.queue_free()
+    tool_hammer.queue_free()
+    tool_wrench.queue_free()
 
     tpm.queue_free()
     slot.queue_free()
