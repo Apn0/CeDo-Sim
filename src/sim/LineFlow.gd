@@ -1455,18 +1455,36 @@ func _find_film_field(machine: Node) -> Node:
 ## recursively since it lives under the model subtree. Gated on real flow so an
 ## idle machine never steams (operator 2026-07-16: "inventing water from nothing").
 func _find_steam_plume(machine: Node) -> Node:
+	if machine.has_meta("_cached_steam_plume"):
+		var cached = machine.get_meta("_cached_steam_plume")
+		if cached == null or is_instance_valid(cached):
+			return cached as Node
+
+	var found : Node = null
 	for c in machine.find_children("*", "GPUParticles3D", true, false):
 		if c.is_in_group("steam_plume"):
-			return c
-	return null
+			found = c
+			break
+
+	machine.set_meta("_cached_steam_plume", found)
+	return found
 
 ## The extruder's heetafslag die-face strand switcher (meta die_face_switcher),
 ## searched recursively. Gated on real flow so an idle die shows no melt.
 func _find_die_switcher(machine: Node) -> Node:
+	if machine.has_meta("_cached_die_switcher"):
+		var cached = machine.get_meta("_cached_die_switcher")
+		if cached == null or is_instance_valid(cached):
+			return cached as Node
+
+	var found : Node = null
 	for c in machine.find_children("*", "Node3D", true, false):
 		if c.has_meta("die_face_switcher"):
-			return c
-	return null
+			found = c
+			break
+
+	machine.set_meta("_cached_die_switcher", found)
+	return found
 
 ## Live conveying fraction (0..1.25) from a node's rotor rpm vs its nominal. 1.0
 ## when the node has no rotor (the spin gate alone then governs it).
