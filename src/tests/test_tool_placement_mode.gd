@@ -59,7 +59,30 @@ func _ready() -> void:
     var nearest6 = tpm._nearest_slot(Vector3.ZERO)
     _check(nearest6 == slot, "_nearest_slot ignores non-matching tool slot and finds next best")
 
-    # Test _make_ghost
+    print("--- Testing _slot_accepts ---")
+    _check(tpm._slot_accepts(null, null) == true, "_slot_accepts returns true when slot is null")
+
+    var test_slot = Node3D.new()
+    _check(tpm._slot_accepts(test_slot, null) == true, "_slot_accepts returns true when slot has no accepts meta")
+
+    test_slot.set_meta("accepts", [])
+    _check(tpm._slot_accepts(test_slot, null) == true, "_slot_accepts returns true when slot accepts meta is empty")
+
+    test_slot.set_meta("accepts", ["hammer"])
+    _check(tpm._slot_accepts(test_slot, null) == false, "_slot_accepts returns false when tool is null but slot has accepts meta")
+
+    var tool_no_id = Node3D.new()
+    _check(tpm._slot_accepts(test_slot, tool_no_id) == false, "_slot_accepts returns false when tool lacks tool_id but slot has accepts meta")
+
+    var tool_hammer = MockTool.new()
+    tool_hammer.tool_id = "hammer"
+    _check(tpm._slot_accepts(test_slot, tool_hammer) == true, "_slot_accepts returns true when tool matches accepts meta")
+
+    var tool_wrench = MockTool.new()
+    tool_wrench.tool_id = "wrench"
+    _check(tpm._slot_accepts(test_slot, tool_wrench) == false, "_slot_accepts returns false when tool does not match accepts meta")
+
+    print("--- Testing _make_ghost ---")
     var empty_node = Node3D.new()
     var ghost1 = tpm._make_ghost(empty_node)
     _check(ghost1 == null, "_make_ghost should return null for empty node tree")
@@ -76,13 +99,22 @@ func _ready() -> void:
     var ghost3 = tpm._make_ghost(empty_node)
     _check(ghost3 != null, "_make_ghost should return a valid MeshInstance3D when a mesh is present")
     _check(ghost3 is MeshInstance3D, "Returned ghost should be a MeshInstance3D")
-    _check(ghost3.mesh == box_mesh, "Returned ghost should have the same mesh")
+    # Guarded deliberately: an unguarded ghost3.mesh aborts _ready() before the
+    # final get_tree().quit(), so a future _make_ghost regression would HANG the
+    # suite forever instead of reporting red — the "idles forever" failure mode
+    # tools/regression/run.sh's header documents this repo having chased twice.
+    _check(ghost3 != null and ghost3.mesh == box_mesh, "Returned ghost should have the same mesh")
 
     if ghost3:
         ghost3.queue_free()
     empty_node.queue_free()
 
     print("Result: %s" % ("PASS" if _fails == 0 else "FAIL (%d)" % _fails))
+
+    test_slot.queue_free()
+    tool_no_id.queue_free()
+    tool_hammer.queue_free()
+    tool_wrench.queue_free()
 
     tpm.queue_free()
     slot.queue_free()
