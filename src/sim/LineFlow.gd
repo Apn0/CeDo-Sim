@@ -2102,6 +2102,44 @@ func tick(delta: float) -> void:
 	else:
 		_pack_up_t = 0.0
 
+	_tick_cache_spatial_queries()
+	_tick_plc_power_downstream(delta)
+	_tick_feed(delta)
+	_tick_process_machines(delta)
+	# 2.5) ADVANCED-SYSTEM OBSERVERS (#52) — run ALONGSIDE the flow now that each
+	#      node's throughput/backlog for this tick is known. Nothing here re-routes
+	#      material or changes the split; the extruder/MFI models publish telemetry,
+	#      the motor-overload model can only STOP a jammed rotor conveying (mass then
+	#      backs up — conserving), and air duty is reported to the header.
+	_tick_advanced_systems(delta)
+	# 2.55) Bunker/shredder-2 MOL interlock — must run AFTER _tick_advanced_systems
+	# so this tick's mol.tick()/is_tripped() result (set inside that loop) is
+	# already current, not last tick's value.
+	_tick_bunker_shredder2_interlock()
+	# 2.6) #99 — DRD batch dryer cycles. Step both drums of every registered
+	#      pair (and any unpaired single drum) so the L/R BEFULLEN swap is
+	#      driven by real elapsed time. The router (section 3 below) reads
+	#      cycle.step on the same tick to decide which drum receives flake.
+	_tick_dryer_pairs(delta)
+
+	# 2.7) QA bench delay + assessment clock. Pure observers: neither touches
+	#      material, so the conservation ledger is unaffected. Deliberately
+	#      driven from here rather than SimTick, which runs PROCESS_MODE_ALWAYS
+	#      (SimTick.gd:41) and would resolve bench samples behind a pause menu —
+	#      reasoning recorded in the QaLab.gd header.
+	if _qa_lab != null:
+		_qa_lab.tick(delta)
+	if _assessment != null:
+		_assessment.tick(delta)
+
+	_tick_route_outputs(delta)
+	# #52 push live line state + key process params to the SCADA dashboard (throttled).
+	_push_scada(delta)
+
+	_update_label()
+
+
+func _tick_cache_spatial_queries() -> void:
 	# Cache spatial queries once per tick for heavy inner loops like _dump_waste
 	# and the feed bale-pickup scan.
 	var tree = get_tree()
@@ -2125,6 +2163,8 @@ func tick(delta: float) -> void:
 		_bales_cache.clear()
 		_deliverable_bales_cache.clear()
 
+
+func _tick_plc_power_downstream(delta: float) -> void:
 	# 0) PLC powers the line up DOWNSTREAM-FIRST; each powered machine then ramps
 	#    its rotor over SPIN_UP_S. The live spin (0..1) gates how fast it conveys,
 	#    so nothing moves until the rotor is actually turning (#145).
@@ -2202,6 +2242,8 @@ func tick(delta: float) -> void:
 		if die_s != null and is_instance_valid(die_s):
 			PlaceableCatalog.show_die_face_state(die_s, 1 if flowing_s else -1)
 
+
+func _tick_feed(delta: float) -> void:
 	# 1) Feed — OFF unless deliberately enabled. When on, a head node draws from a
 	#    bale on its feed point and DEPLETES that bale (finite); the bale is removed
 	#    when empty, so the line can never feed from thin air or forever.
@@ -2261,6 +2303,8 @@ func tick(delta: float) -> void:
 			if remaining <= 0.0:
 				bale.queue_free()
 
+
+func _tick_process_machines(delta: float) -> void:
 	# 2) Each machine processes up to rate·delta. It fights water + dirt in the
 	#    same order a real line does: strip contaminant → sort off-spec → drive
 	#    water off / take water on → shed mechanical yield loss. The extruder
@@ -2383,32 +2427,8 @@ func tick(delta: float) -> void:
 		else:
 			(nd["out"] as MaterialBatch).add(flow)
 
-	# 2.5) ADVANCED-SYSTEM OBSERVERS (#52) — run ALONGSIDE the flow now that each
-	#      node's throughput/backlog for this tick is known. Nothing here re-routes
-	#      material or changes the split; the extruder/MFI models publish telemetry,
-	#      the motor-overload model can only STOP a jammed rotor conveying (mass then
-	#      backs up — conserving), and air duty is reported to the header.
-	_tick_advanced_systems(delta)
-	# 2.55) Bunker/shredder-2 MOL interlock — must run AFTER _tick_advanced_systems
-	# so this tick's mol.tick()/is_tripped() result (set inside that loop) is
-	# already current, not last tick's value.
-	_tick_bunker_shredder2_interlock()
-	# 2.6) #99 — DRD batch dryer cycles. Step both drums of every registered
-	#      pair (and any unpaired single drum) so the L/R BEFULLEN swap is
-	#      driven by real elapsed time. The router (section 3 below) reads
-	#      cycle.step on the same tick to decide which drum receives flake.
-	_tick_dryer_pairs(delta)
 
-	# 2.7) QA bench delay + assessment clock. Pure observers: neither touches
-	#      material, so the conservation ledger is unaffected. Deliberately
-	#      driven from here rather than SimTick, which runs PROCESS_MODE_ALWAYS
-	#      (SimTick.gd:41) and would resolve bench samples behind a pause menu —
-	#      reasoning recorded in the QaLab.gd header.
-	if _qa_lab != null:
-		_qa_lab.tick(delta)
-	if _assessment != null:
-		_assessment.tick(delta)
-
+func _tick_route_outputs(delta: float) -> void:
 	# 3) Carry each output DOWN ITS CONNECTOR as a delay-line. Material entering a
 	#    link rides PIPE_STAGES slots that shift forward one slot every stage_dt,
 	#    so it takes the full transit_time to reach the downstream machine. Feeding
@@ -2569,10 +2589,6 @@ func tick(delta: float) -> void:
 				pipe[s] = pipe[s - 1]
 			pipe[0] = MaterialBatch.new()
 
-	# #52 push live line state + key process params to the SCADA dashboard (throttled).
-	_push_scada(delta)
-
-	_update_label()
 
 # ── #52 advanced-system per-tick observers ────────────────────────────────────
 ## Step each attached observer for one tick. Order matters for the extruder pair:
