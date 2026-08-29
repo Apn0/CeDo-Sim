@@ -43,10 +43,15 @@ func _init() -> void:
 
 	# Test 4: _would_cut_anything
 	# We mock a shell and its original surfaces.
-	var shell = MeshInstance3D.new()
+	# NAMED mock_shell, not shell: PR #158 already declares `shell` at the top of
+	# this same _init() scope. GDScript has no block scoping, so a second `var shell`
+	# is a hard parse error -- and an unparseable test file stops the WHOLE regression
+	# harness at its parse gate. git merges the two PRs with no conflict at all, so
+	# nothing but an actual parse check catches this.
+	var mock_shell = MeshInstance3D.new()
 	# The method uses _shell.global_transform if inside tree, otherwise IDENTITY.
 	# We will not put it in the tree, so it uses Transform3D.IDENTITY
-	openings._shell = shell
+	openings._shell = mock_shell
 
 	# Create a simple triangle: a wall section standing on the X-axis from x=-5 to x=5, height 5 (at Z=0).
 	var wall_tri = {
@@ -73,7 +78,7 @@ func _init() -> void:
 	# The wall triangle is at Z=0.
 	assert(openings._would_cut_anything(Vector3(4, 0, 0), Vector3(2, 2, 2), 0.0), "Expected true for edge intersection")
 
-	shell.free()
+	mock_shell.free()
 	openings.free()
 
 
