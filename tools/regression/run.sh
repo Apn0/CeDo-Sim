@@ -258,7 +258,18 @@ fi
 # per-line design rate (docs/plant/misc_sources.md:190/206). line_1 and
 # line_sort/line_intake_3a3b remain unasserted -- no documented feed-rate
 # source was found for line_1, and the other two are out of scope.
-for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_line3a_identity test_line3b_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_humanoid_rig_conformance test_line1_flow_conformance test_line3a_flow_conformance test_line3b_flow_conformance test_shredder_rate_reconciliation test_line1_no_false_overload test_project_sweep_guards; do
+# test_line_builder_ghost (2026-08-29): operator report — placing a whole-line
+# macro (Line 1, ~40+ machines) only showed a generic single box + arrow as
+# the ghost, no way to see where the REST of the train would land before
+# committing. BuildMode._build_full_line grew a `preview` param that reuses
+# the SAME position math (turns/branches/transportband stacking/at_entry/
+# saved deltas) as the real build but emits cheap unparented placeholder
+# boxes instead of real machines with zero side effects on _placed_root or
+# LineFlow. Also covers the pinned "NEW LINE BUILDER" catalog section asked
+# for in the same report. Mutation-tested: skipping preview entries past
+# index 0 (simulating the pre-fix single-box ghost) drops the ghost from 50
+# children to 1 and breaks the real-vs-preview count parity check — red.
+for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_line3a_identity test_line3b_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_humanoid_rig_conformance test_line1_flow_conformance test_line3a_flow_conformance test_line3b_flow_conformance test_shredder_rate_reconciliation test_line1_no_false_overload test_line_builder_ghost test_project_sweep_guards; do
 	echo "== $t =="
 	"$GODOT" --headless --path "$PROJ" "res://src/tests/$t.tscn" > "$OUT/$t.log" 2>&1
 	grep -E "^  (ok|FAIL)|Result|RESULT" "$OUT/$t.log" || true

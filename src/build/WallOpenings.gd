@@ -56,6 +56,9 @@ func setup(shell: MeshInstance3D, thin_collision_source: Mesh = null) -> void:
 	# always read from the visible shell so the lit, textured wall is what the
 	# player sees.
 	_cache_surfaces_from(thin_collision_source if thin_collision_source != null else _shell.mesh, _orig_surfaces)
+	# See _coplanar_tol's comment (#GATECARVE fix, 2026-08-29) — the two skins'
+	# real separation depends on which geometry path this instance is fed.
+	_coplanar_tol = WALL_THICK if solidify_enabled else _CLOSED_SHELL_COPLANAR_TOL
 	if solidify_enabled:
 		_visual_surfaces = _solidify_surfaces(_orig_surfaces)
 	elif thin_collision_source != null:
@@ -394,8 +397,47 @@ var _carve_remaining : int = 0
 ## Previously this used recursive midpoint subdivision which created a triangular
 ## staircase along the rectangle boundary — 342 boundary edges instead of 8 on a
 ## simple wall+door test (see src/tests/test_door_carve.gd).
-const _COPLANAR_TOL    : float = 0.05    # 5 cm; tri verts beyond this from the box mid-plane = non-wall
+## #GATECARVE fix (2026-08-29) — MEASURED, not guessed. The coplanarity
+## tolerance now tracks `solidify_enabled` (an existing per-instance switch
+## every caller already sets correctly for its own geometry — see setup()):
+##
+##   solidify_enabled=true  (thin imported mesh + runtime-solidified skins,
+##     e.g. test_door_carve.gd's synthetic wall): the two skins are EXACTLY
+##     WALL_THICK apart by construction, so tol = WALL_THICK (0.05 m, same
+##     number as always — this path's behaviour is BIT-FOR-BIT UNCHANGED).
+##
+##   solidify_enabled=false (a pre-built closed-volume shell, e.g. the live
+##     BuildingShellLoader.gd path via tools/generate_building.py): a
+##     throwaway probe booting the real MainWorld and dumping every
+##     _orig_surfaces/_visual_surfaces triangle's box-local Z near a live wall
+##     (world (-254.77,-8.00,95.84), the same wall test_gate_carve.gd's own
+##     outside->inside raycast finds) measured the inner skin at z=-0.2954
+##     (outer skin at z=0.0046 — box mid-plane sits on the outer face where
+##     the probe ray hits) — matching generate_building.py's own T=0.30 wall-
+##     thickness constant almost exactly. The old 0.05 m tolerance was 5.9x
+##     too small to ever reach that inner skin, so it was silently left
+##     un-carved — solid from the inside, matching the operator's report
+##     exactly (measured passability before this fix: 0/5 sample points
+##     clear, test_gate_carve.gd). tol = 0.35 m = 0.30 m measured gap + 0.05 m
+##     margin (rotation/corner slop) — still strictly inside the opening
+##     box's own 1.0 m half-depth, so it can only pull in triangles that
+##     already passed the box-overlap test, never geometry from an unrelated
+##     wall.
+##
+## Tying the tolerance to solidify_enabled — rather than widening one global
+## constant — is what keeps test_door_carve.gd's synthetic-wall path
+## untouched: a bare global widen (tried first) let that test's solidify rim
+## connectors (which span the full WALL_THICK between skins, at exactly the
+## old tolerance's boundary) start passing too, flattening into 13 new
+## off-plane teeth — a real regression, not a hypothetical one. Kept the same
+## per-vertex-absolute-distance algorithm shape throughout (NOT the
+## angle-based approach tried and reverted the same day).
+var _coplanar_tol : float = WALL_THICK
 const _SLIVER_AREA_TOL : float = 1e-6    # m²; drop triangles smaller than this
+## Wider tolerance for the solidify_enabled=false (pre-built closed-volume
+## shell) case — see _coplanar_tol's comment for the measured 0.2954 m gap
+## this must clear.
+const _CLOSED_SHELL_COPLANAR_TOL : float = 0.35
 func _carve_triangle(a: Vector3, b: Vector3, c: Vector3, boxes: Array, depth: int) -> Array:
 	# Classify against each box. Fully inside any → drop. Fully outside all → keep.
 	var first_partial_box : Variant = null
@@ -447,7 +489,7 @@ func _clip_triangle_against_box(a: Vector3, b: Vector3, c: Vector3, box: Diction
 	var v1 := _to_box(b - c0, cs, sn)
 	var v2 := _to_box(c - c0, cs, sn)
 	# Coplanarity check — wall-plane carving only (the box's Z=0 is the wall).
-	if absf(v0.z) > _COPLANAR_TOL or absf(v1.z) > _COPLANAR_TOL or absf(v2.z) > _COPLANAR_TOL:
+	if absf(v0.z) > _coplanar_tol or absf(v1.z) > _coplanar_tol or absf(v2.z) > _coplanar_tol:
 		return [a, b, c]
 	var tri : Array = [Vector2(v0.x, v0.y), Vector2(v1.x, v1.y), Vector2(v2.x, v2.y)]
 	var hx : float = half.x; var hy : float = half.y
