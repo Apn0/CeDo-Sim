@@ -226,18 +226,50 @@ zoomed. **Nothing in sections 2-5 is contradicted.** The following are additions
 | **Blue motors below deck** | Three blue motors with fan cowls, below and right of the bordes, on the friction separators. Standard CeDo blue; rule 8b applies normally to these. | OPERATOR + PHOTO |
 | **Railing gap / ladder** | The caged galvanised ladder lands exactly at the gap in the yellow railing on the right-hand side, with the red/white construction tape wrapped around its base. | OPERATOR + PHOTO |
 
-### 9b. NEW — visible in the file, not previously recorded, not yet modelled
+### 9b. NEW — visible in the file, not previously recorded
 
 | Item | Detail | Tag |
 |---|---|---|
-| **`+BP2` control cabinet** | A grey/galvanised electrical cabinet stands on the deck between the drive drum and the motor, stencilled **`+BP2`**, with green and red pushbutton/indicator lamps on its face. | PHOTO |
+| **`+BP2` control cabinet** — **MODELLED 2026-08-30** | A light-grey painted electrical enclosure stands on the deck between the drive drum and the cream motor, stencilled **`+BP2`**. Across the door: a row of three devices (grey button / **GREEN** lamp / grey button) plus a fourth lower down, and a bundle of black cable leaving the bottom and running off toward the motor. The face is **smooth light grey with no galvanising spangle** — a painted RAL 7035 enclosure, not raw galvanised steel; the first attempt used the galvanised material and rendered far too dark. | PHOTO |
 | **Instrument panel** | A small dark vertical panel (gauge or local HMI) mounted on a post immediately left of the `+BP2` cabinet. | PHOTO |
-| **Tool board** | A yellow board on the deck's far-left railing carrying a large open-ended **spanner** — a shadow-board for the mill's own tools. This is very likely the "tools (probably for opening the mill)" the operator mentioned in section 5. | PHOTO |
+| **Tool shadow board** — **MODELLED 2026-08-30** | A yellow board hangs on the inside of the railing carrying **two numbered tool silhouettes**. Position **1** still has its large single open-ended **spanner** on the board; position **2**'s silhouette (a combination spanner — ring one end, open jaw the other) is **empty, the tool is missing**. The missing tool is modelled deliberately: it is what the photograph shows, and a shadow board with a gap in it is what a working shadow board looks like. Very likely the "tools (probably for opening the mill)" of section 5. | PHOTO |
 | **Motor sticker** | A small yellow sticker on the motor's fan cowl. | PHOTO |
 | **Yellow GRP grating** | Yellow perforated/GRP grating panels below deck around the friction separators — distinct from the yellow *mesh belt guard* and from the galvanised steel grating of the mill's own bordes. Three different yellow surfaces, do not conflate them. | PHOTO |
 | **Infeed screw livery** | The transport screw discharging into the mill's hopper is **galvanised grey**, not cream, and carries its own yellow name sticker. | PHOTO |
 | **Hopper lid clamps** | A row of white clamp cylinders / hinged-lid hardware along the top-right edge of the infeed hopper. | PHOTO |
 | **Under-deck discharge** | The mill's discharge below deck is a large cream/grey hopper box with a steeply angled bottom, ending in pointed outlets. | PHOTO |
+
+### 9b-i. What was modelled on 2026-08-30, and what is still open
+
+`PlaceableCatalog._m_mill` gained the `+BP2` cabinet and the tool shadow board.
+The cabinet **replaces** an invented `TYPICAL` 0.30 x 0.42 x 0.22 control box that
+used to stand on the +Z edge with nothing behind it — a sourced object displacing
+an imagined one, which is the direction this file should always move in.
+
+Model count 207 -> **231** parts. Verified by
+`src/tests/verify_mill_addons_2026_08_30.gd` (13 checks, all green, and
+mutation-tested: displacing either item, or nudging the cabinet 0.15 m so it
+fouls the motor skid, turns the suite red).
+
+Measured clearances, not eyeballed — cabinet union `X[-0.256, 0.356]`,
+`Y[1.930, 2.730]`, `Z[-1.227, -0.897]`: it stands exactly on the grating
+(base 1.9300 = deck top), stops 0.043 m short of the motor skid at X 0.3995,
+0.115 m short of the cutting chamber at Z -0.782, and 0.337 m inside the -Z
+railing. Board union `X[-1.453, -1.365]`, `Y[2.056, 2.836]`, `Z[0.351, 1.151]`:
+below the 2.95 top rail, above the toe board, inside the railing line, and
+intersecting neither the chamber nor the yellow near-side chute.
+
+Still NOT modelled from section 9b: the framed document/drawing holder beside the
+cabinet, the yellow sticker on the motor fan cowl, the yellow GRP grating below
+deck, the galvanised-grey livery and sticker of the infeed screw, the hopper lid
+clamps, and the under-deck discharge hopper's pointed outlets.
+
+**Flagged for the operator, NOT acted on:** at full resolution the big rust-brown
+object on the deck reads less like a bare flywheel and more like a **curved
+rust-coloured sheet-metal hood over the belt drive**, with the fine yellow mesh
+closing its open end/underside. The model currently builds a flywheel disc plus a
+separate flat mesh guard. Changing that is a geometry ruling, not a detail tweak,
+so it is left alone pending an answer.
 
 ### 9c. Construction-only in the file — re-confirmed, do NOT model
 

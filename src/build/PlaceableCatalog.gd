@@ -4930,6 +4930,55 @@ static func _m_mill(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> voi
 	for sx5 in [-1.0, 1.0]:
 		_box(p, Vector3(0.05, 0.76, 0.05), Vector3(yc_x + float(sx5) * 0.30, deck_top - 0.38, yc_z), aged)
 
+	# ── PHOTO: tool shadow board hung inside the -X railing ───────────────
+	# A yellow board hangs off the railing carrying two numbered tool
+	# silhouettes. Position 1 still has its big open-ended spanner ON the board;
+	# position 2 has lost its spanner and only the painted outline is left.
+	# That gap is modelled deliberately -- it is what the photograph shows, and
+	# a shadow board with a missing tool is what a working shadow board looks
+	# like. This is very likely the "tools (probably for opening the mill)" the
+	# operator listed among the environment items.
+	#
+	# PHOTO: existence, the railing mounting, the yellow board, two positions,
+	# the 1 / 2 numbering, tool 1 present and tool 2 missing, and the two shapes
+	# (1 = single open-ended spanner, 2 = combination spanner, ring + open jaw).
+	# TYPICAL: the board size, sized to one railing bay, and which bay it hangs in.
+	var tb_x : float = -hw + 0.03
+	var tb_z : float = hd * 0.48
+	var tb_cy : float = rail_base + rail_h * 0.52
+	var tb_w : float = 0.80                            # board spans Z
+	var tb_h : float = 0.78                            # board spans Y
+	var tb_face : float = tb_x + 0.0125                # painted, deck-facing (+X) surface
+	var tb_pnt : float = tb_face + 0.002               # silhouette paint plane
+	var tb_tool : float = tb_face + 0.018              # a real tool hangs proud of the board
+	_box(p, Vector3(0.025, tb_h, tb_w), Vector3(tb_x, tb_cy, tb_z), yellow_f)
+	for tbz in [-1.0, 1.0]:
+		_box(p, Vector3(0.05, 0.06, 0.05),
+			Vector3(tb_x - 0.018, tb_cy + tb_h * 0.46, tb_z + float(tbz) * tb_w * 0.42), aged)
+	# Position 1 -- painted silhouette WITH the actual spanner still on it.
+	var t1_z : float = tb_z - 0.19
+	_box(p, Vector3(0.006, 0.52, 0.078), Vector3(tb_pnt, tb_cy - 0.02, t1_z), placard)
+	_box(p, Vector3(0.028, 0.40, 0.052), Vector3(tb_tool, tb_cy + 0.04, t1_z), rust)
+	_box(p, Vector3(0.030, 0.09, 0.125), Vector3(tb_tool, tb_cy - 0.19, t1_z), rust)
+	for tbj in [-1.0, 1.0]:
+		_box(p, Vector3(0.030, 0.085, 0.040),
+			Vector3(tb_tool, tb_cy - 0.272, t1_z + float(tbj) * 0.042), rust)
+	# Position 2 -- silhouette ONLY. The tool is missing off the board.
+	var t2_z : float = tb_z + 0.19
+	_box(p, Vector3(0.006, 0.34, 0.036), Vector3(tb_pnt, tb_cy - 0.02, t2_z), placard)
+	_cyl(p, 0.058, 0.058, 0.006, Vector3(tb_pnt, tb_cy + 0.20, t2_z), placard, "x")
+	_cyl(p, 0.034, 0.034, 0.008, Vector3(tb_pnt + 0.002, tb_cy + 0.20, t2_z), yellow_f, "x")
+	_box(p, Vector3(0.006, 0.075, 0.104), Vector3(tb_pnt, tb_cy - 0.205, t2_z), placard)
+	_box(p, Vector3(0.008, 0.050, 0.038), Vector3(tb_pnt + 0.002, tb_cy - 0.248, t2_z), yellow_f)
+	if not ghost:
+		for tbi in 2:
+			var num := _stencil_label(p, "1" if tbi == 0 else "2", Vector3(0.07, 0.07, 0.01), "+X")
+			num.position = Vector3(tb_pnt + 0.004, tb_cy + tb_h * 0.40, (t1_z if tbi == 0 else t2_z))
+			for ch4 in num.get_children():
+				if ch4 is Label3D:
+					(ch4 as Label3D).modulate = Color(0.17, 0.15, 0.10)
+					(ch4 as Label3D).outline_modulate = Color(1.0, 1.0, 1.0, 0.0)
+
 	# ── B4: yellow MAALMOLEN equipment sticker on the landing-facing (-Z) wall ─
 	# WORD ONLY. Line3CDef.gd:66 says L3C.6, but the operator could not read the
 	# number on the real sticker and was explicitly unsure, so none is stencilled.
@@ -4942,15 +4991,69 @@ static func _m_mill(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> voi
 				(ch2 as Label3D).modulate = Color(0.12, 0.12, 0.12)
 				(ch2 as Label3D).outline_modulate = Color(1.0, 1.0, 1.0, 0.0)
 
-	# ── Deck-side control box + E-stop (TYPICAL) ──────────────────────────────
-	var cb_x : float = -hw * 0.83
-	var cb_z : float = hd * 0.575
-	_box(p, Vector3(0.30, 0.42, 0.22), Vector3(cb_x, deck_top + 0.21, cb_z), aged)
-	_box(p, Vector3(0.24, 0.10, 0.008), Vector3(cb_x, deck_top + 0.26, cb_z + 0.114), placard)
+	# ── +BP2 control cabinet on the deck (PHOTO 2026-08-29) ─────────────────
+	# REPLACES an invented TYPICAL 0.30 x 0.42 x 0.22 box that used to stand on
+	# the +Z edge with no source behind it. The operator photograph
+	# (docs/plant/photos/maalmolen_3c_construction_2026-08-29.jpg, read in
+	# docs/plant/maalmolen_3c_photo_reading_2026-08-29.md section 9b) shows the
+	# real thing: a light-grey PAINTED sheet-steel enclosure standing on the
+	# grating BETWEEN the belt drive and the cream motor -- the face is smooth,
+	# with none of galvanising's spangle, so it is a RAL 7035 painted cabinet,
+	# not raw galvanised steel. Stencilled +BP2, with a row of
+	# three devices across the door -- grey button, GREEN lamp, grey button --
+	# a fourth device lower down, and a bundle of black cable leaving the bottom
+	# and running off along the deck toward the motor.
+	#
+	# PHOTO: existence, position, the light-grey painted livery, the +BP2
+	# stencil, the device layout and the cable bundle.
+	# TYPICAL: the enclosure dimensions (a standard ~600 x 800 x 300 mm floor
+	# box -- the photo gives no scale reference near it) and the red mushroom
+	# E-stop, which is mandatory on a granulator panel but is not legible in the
+	# photograph. Both are labelled as such rather than passed off as sourced.
+	#
+	# Clearances, computed not eyeballed: the motor skid starts at X 0.3995 and
+	# the cabinet ends at X 0.35 (0.05 m); the chamber -Z face is at -0.782 and
+	# the cabinet +Z face at -0.90 (0.12 m); the -Z railing is at -1.564 and the
+	# cabinet -Z face at -1.20 (0.36 m). Nothing on the drive reaches X < 0.80.
+	var bp_w : float = 0.60
+	var bp_h : float = 0.80
+	var bp_d : float = 0.30
+	var bp_x : float = 0.05
+	var bp_z : float = -1.05
+	var bp_y : float = deck_top + bp_h * 0.5
+	var bp_f : float = bp_z - bp_d * 0.5 - 0.004       # door plane, faces -Z
+	# GAP: the palette has no light-grey enclosure paint. Electrical cabinets are
+	# finished RAL 7035 light grey, and the photo shows a SMOOTH light-grey face
+	# with none of galvanising's spangle -- so `galv` reads far too dark and too
+	# mottled here. Local material until MaterialPalette gains one.
+	var cabgrey : StandardMaterial3D = _mat(Color(0.74, 0.74, 0.72), ghost, 0.20, 0.45)
+	_box(p, Vector3(bp_w, bp_h, bp_d), Vector3(bp_x, bp_y, bp_z), cabgrey)
+	_box(p, Vector3(bp_w * 0.90, bp_h * 0.92, 0.012), Vector3(bp_x, bp_y, bp_f), cabgrey)
+	_box(p, Vector3(bp_w * 0.96, 0.022, 0.024),
+		Vector3(bp_x, bp_y + bp_h * 0.5 - 0.011, bp_z - bp_d * 0.5 + 0.012), aged)
+	for bph in [-1.0, 1.0]:
+		_box(p, Vector3(0.05, 0.07, 0.05),
+			Vector3(bp_x + bp_w * 0.46, bp_y + float(bph) * bp_h * 0.32, bp_z - bp_d * 0.40), aged)
+	_box(p, Vector3(bp_w * 1.02, 0.03, bp_d * 1.02), Vector3(bp_x, deck_top + 0.015, bp_z), aged)
+	# Cable bundle out of the bottom, running off toward the motor.
+	_cyl(p, 0.05, 0.05, 0.24, Vector3(bp_x + 0.14, deck_top + 0.06, bp_z), rubber, "x")
+	_cyl(p, 0.05, 0.05, 0.34, Vector3(bp_x + 0.26, deck_top + 0.06, bp_z - 0.17), rubber, "z")
 	if not ghost:
-		_cyl(p, 0.022, 0.022, 0.014, Vector3(cb_x - 0.06, deck_top + 0.11, cb_z + 0.115), P.mat_indicator_green(), "z")
-		_cyl(p, 0.022, 0.022, 0.014, Vector3(cb_x + 0.06, deck_top + 0.11, cb_z + 0.115), P.mat_indicator_red(), "z")
-		_cyl(p, 0.045, 0.045, 0.026, Vector3(cb_x, deck_top + 0.36, cb_z + 0.121), P.mat_indicator_red(), "z")
+		# Row of three across the door: grey, GREEN lamp, grey.
+		for bpi in 3:
+			var bpx : float = bp_x + (float(bpi) - 1.0) * 0.15
+			var bpm : StandardMaterial3D = P.mat_indicator_green() if bpi == 1 else galv
+			_cyl(p, 0.026, 0.026, 0.022, Vector3(bpx, bp_y + 0.05, bp_f - 0.008), bpm, "z")
+		# Fourth device, lower left.
+		_cyl(p, 0.026, 0.026, 0.022, Vector3(bp_x - 0.11, bp_y - 0.26, bp_f - 0.008), galv, "z")
+		# TYPICAL -- red mushroom emergency stop (see the note above).
+		_cyl(p, 0.042, 0.042, 0.026, Vector3(bp_x + 0.17, bp_y - 0.26, bp_f - 0.010), P.mat_indicator_red(), "z")
+		var bp_tag := _stencil_label(p, "+BP2", Vector3(0.20, 0.09, 0.01), "-Z")
+		bp_tag.position = Vector3(bp_x + 0.13, bp_y + 0.25, bp_f - 0.006)
+		for ch3 in bp_tag.get_children():
+			if ch3 is Label3D:
+				(ch3 as Label3D).modulate = Color(0.13, 0.13, 0.14)
+				(ch3 as Label3D).outline_modulate = Color(1.0, 1.0, 1.0, 0.0)
 
 	# ── Caged access ladder on the +X face ────────────────────────────────────
 	_caged_ladder(p, Vector3(hw + 0.10, 0.0, hd * 0.35), deck_y + 0.9, galv, ghost)
