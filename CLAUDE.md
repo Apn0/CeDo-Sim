@@ -210,6 +210,7 @@ this one as re-checkable too — `find src -name '*.gd' | wc -l`):
 | `docs/AUDIT_handoffs_2026-08-16.md` | **Read before trusting any handoff doc.** Two 2026-08-16 handoffs claimed "Stable / Verified"; three of five claims described code not in the repo. Records 12 unmentioned defects (4 critical, now fixed + tested), the Rule 1 blocks, and the 3 findings that were refuted |
 | `docs/AUDIT_project_sweep_2026-08-23.md` | **The sweep that found `main` did not compile.** Why both harness compile checks missed it, the BaleYardManager merge repair, FULL_LOGIC_AUDIT #7 confirmed + fixed and #12 REFUTED, the headless MultiMesh limit, and what a fresh clone can/cannot prove |
 | `docs/audit/pr_merge_2026-08-29.md` | **Ten bot PRs, all reported "mergeable ✅", two of which merge cleanly into a file that does not parse.** Records the `shell` collision that would have taken the harness down, why GitHub structurally cannot see it, the pre-merge `uniq -d` check, and the LineFlow correlation that looked damning and was measured wrong |
+| `docs/audit/harness_wiring_2026-08-30.md` | **The five merged suites nothing ran, and why wiring them as-merged would have hung the harness.** Measured both ways: the bare-`assert()` form ran 90 s without exiting, the counted form exits rc 1 red. Mutation proof per suite, the verdict-before-teardown false green, the live Polyhaven call a unit test was making, four vacuous Walkie checks, and why `test_walkie` was NOT excluded after all — plus the worktree-vs-checkout baseline correction (9 vs 5) |
 | `docs/audit/material_trace_2026-08-18.md` | Follow one bale end-to-end: the symbol-flow + material-census tools, mass-minting proven structurally closed, and the spawn-clearance check that was unsatisfiable for 4 weeks |
 | `docs/BACKLOG_ultracode_2026-07-19.md` | Deferred queue — 16 of 40 findings landed; also records the npc-05 vacuous-green correction |
 | `docs/DESIGN_SUGGESTIONS_2026-07-08.md` | Ranked roadmap, P1-P8 physicalization + Q1-Q8 QoL, every item file-cited |
@@ -268,16 +269,44 @@ this one as re-checkable too — `find src -name '*.gd' | wc -l`):
   ```
   Non-empty output = the merge will not parse. Then confirm with
   `godot --headless --path . --check-only --script res://<file>`.
-- **Most `src/tests/*.gd` files are never executed by the harness.** `run.sh:261`
-  runs an explicit allow-list of `.tscn` suites; anything not on it is only seen by
-  the full-tree parse sweep, which proves the file PARSES and nothing more. As of
-  2026-08-29 that includes `test_push_gate.gd`, `test_walkie.gd` and the
-  `test_wall_openings.gd` / `test_tool_placement_mode.gd` additions. Adding a test
-  file therefore buys **no** regression protection until it is wired into that
-  loop. When wiring one in, give it a `--quit-after` guard and an explicit
-  `quit(1)` on every failure path — a GDScript `assert()` failure aborts before the
-  final `quit()`, so an unguarded suite **hangs** the harness instead of failing
-  it (the "idles forever" mode documented at `run.sh:48-54`).
+- **Most `src/tests/*.gd` files are never executed by the harness.** The scene
+  loop runs an explicit allow-list of `.tscn` suites; anything not on it is only
+  seen by the full-tree parse sweep, which proves the file PARSES and nothing
+  more. Measured 2026-08-30: **98 of 133 files in `src/tests/` are executed by
+  nothing.** Adding a test file therefore buys **no** regression protection until
+  it is wired in. The five suites the 2026-08-29 batch produced were wired on
+  2026-08-30 (`docs/audit/harness_wiring_2026-08-30.md`); `test_crew_panel.gd` is
+  the remaining bare-`assert()` file and carries the hang risk below.
+- **A bare `assert()` in a suite HANGS the harness instead of failing it.**
+  MEASURED 2026-08-30, both directions, same file and same broken claim: the
+  bare-`assert()` form ran **90 s without exiting** (`timeout` rc 124, after
+  printing `Assertion failed: …`), because a failed `assert()` aborts the
+  enclosing function before its `quit()` and the `SceneTree` just keeps
+  iterating; the counted-check form exits **rc 1** with a printed red verdict.
+  `assert()` is ALSO compiled out of release builds while `$GODOT` is overridable
+  by design (`run.sh:17-21`), so under a template the assert form runs top to
+  bottom checking **nothing** and prints a pass. When wiring a suite in: convert
+  its asserts to counted checks, gate on `Result: <n> ok, 0 fail` with n ≥ 1
+  (plain `Result: PASS` is printed honestly by a suite that ran zero checks), and
+  give `--script` invocations a `--quit-after` backstop.
+- **Print the verdict LAST, immediately before `quit()`.** `run.sh` judges a
+  suite purely on that line, and the scene loop has no `--quit-after`. A verdict
+  printed above the teardown block leaves `Result: PASS` in the log while a
+  crash in teardown keeps the process alive — a green log and a hung harness at
+  the same time. Found in `test_tool_placement_mode.gd` and fixed 2026-08-30.
+- **The harness is NOT hermetic — it talks to the internet.**
+  `PolyhavenMaterials._ready()` calls `request_pbr_set` at autoload boot
+  (`PolyhavenMaterials.gd:84`) and `run.sh` never sets `CEDO_OFFLINE`, so every
+  headless suite attempts outbound fetches to the Polyhaven API. Keep new suites
+  from adding their own (`test_texture_cache.gd` forces its instance offline for
+  the one request that would otherwise fetch), and do not read a network-flaky
+  suite as a code regression.
+- **A worktree is for isolating EDITS, not for establishing a BASELINE.**
+  `assets/` is gitignored, so a worktree runs without it and several suites fail
+  for purely environmental reasons. Measured 2026-08-30: the same tree baselines
+  at **9 failures in a worktree and 5 in the real checkout**, with
+  `test_map_frame`, `test_outdoor_route`, `test_jam_baseline` and
+  `test_gate_carve` green here and red there.
 
 ## Operator feedback channel
 
