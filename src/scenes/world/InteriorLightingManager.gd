@@ -102,6 +102,32 @@ func _spawn_overhead_lights() -> void:
 	# FITTED Z axis now, no PC detour (atan2(-dz, dx) = Godot +Y yaw that
 	# rotates local +X onto that direction).
 	var bar_yaw : float = atan2(-f_z.y, f_z.x)
+	var spots : Array = _get_grid_spots()
+	var rod_mat := StandardMaterial3D.new()
+	rod_mat.albedo_color = Color(0.16, 0.16, 0.17)
+	rod_mat.roughness = 0.7
+	var n_built : int = 0
+	for s in spots:
+		var xz : Vector2 = f_o + f_x * float(s[0]) + f_z * float(s[2])
+		var pos : Vector3 = Vector3(xz.x, floor_y + float(s[1]), xz.y)
+		_build_overhead_fixture(root, pos)
+		var fixture := root.get_child(root.get_child_count() - 1) as Node3D
+		if fixture != null:
+			fixture.rotation.y = bar_yaw
+			# Mounting rod: thin steel drop from the roof underside to the bar.
+			var rod_len : float = maxf(float(s[3]) - float(s[1]), 0.15)
+			var rod := MeshInstance3D.new()
+			rod.name = "MountRod"
+			var rb := BoxMesh.new()
+			rb.size = Vector3(0.05, rod_len, 0.05)
+			rod.mesh = rb
+			rod.material_override = rod_mat
+			fixture.add_child(rod)
+			rod.position = Vector3(0.0, 0.12 + rod_len * 0.5, 0.0)
+		n_built += 1
+	await _stretch_rods_to_roof(root, n_built)
+
+func _get_grid_spots() -> Array:
 	# Realistic first pass — one row of 6 under each arc crest, plus rows in
 	# the flat west wing / SE wing / low annex. Operator tunes count later.
 	# Each spot: [bf_x, bar_height, bf_z, roof_underside_height]. The 4th value
@@ -125,28 +151,9 @@ func _spawn_overhead_lights() -> void:
 		# stay at z=66 where the annex extends fully south.
 		var az : float = 63.5 if ax < 81.0 else 66.0
 		spots.append([ax, 4.1, az, 4.55])
-	var rod_mat := StandardMaterial3D.new()
-	rod_mat.albedo_color = Color(0.16, 0.16, 0.17)
-	rod_mat.roughness = 0.7
-	var n_built : int = 0
-	for s in spots:
-		var xz : Vector2 = f_o + f_x * float(s[0]) + f_z * float(s[2])
-		var pos : Vector3 = Vector3(xz.x, floor_y + float(s[1]), xz.y)
-		_build_overhead_fixture(root, pos)
-		var fixture := root.get_child(root.get_child_count() - 1) as Node3D
-		if fixture != null:
-			fixture.rotation.y = bar_yaw
-			# Mounting rod: thin steel drop from the roof underside to the bar.
-			var rod_len : float = maxf(float(s[3]) - float(s[1]), 0.15)
-			var rod := MeshInstance3D.new()
-			rod.name = "MountRod"
-			var rb := BoxMesh.new()
-			rb.size = Vector3(0.05, rod_len, 0.05)
-			rod.mesh = rb
-			rod.material_override = rod_mat
-			fixture.add_child(rod)
-			rod.position = Vector3(0.0, 0.12 + rod_len * 0.5, 0.0)
-		n_built += 1
+	return spots
+
+func _stretch_rods_to_roof(root: Node3D, n_built: int):
 	# MEASURE THE ROOF, don't assume it. The rod length used to come from s[3],
 	# a per-zone hand-typed "roof underside" constant. Measured 2026-07-20 by the
 	# regression raycast: 38 of 39 rods ended in MID-AIR, worst 5.67 m short —
