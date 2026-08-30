@@ -63,9 +63,9 @@ Ask before "correcting" a sourced-looking claim. (Contrast the NIR sorter at
 | 4 | Sits on an **elevated grating platform** — galvanised/grey deck | PHOTO |
 | 5 | **YELLOW railings** around the platform (current model already yellow — correct) | PHOTO |
 | 6 | **Caged vertical ladder** down from the platform | PHOTO |
-| 7 | Rust-coloured **flywheel/pulley** at one end | PHOTO |
-| 8 | **Drive-belt guard = fine YELLOW MESH** over the belts driving the main shaft (safety guard) | OPERATOR + PHOTO |
-| 9 | Yellow **chute/hopper** on the platform's near side | PHOTO |
+| 7 | ~~Rust-coloured flywheel/pulley at one end~~ — **WRONG, RETRACTED 2026-08-30.** It is a **MOBILE INDUSTRIAL FAN** parked on the deck. See §9e. | ~~PHOTO~~ → corrected |
+| 8 | Drive-belt guard over the belts driving the main shaft — **MATERIAL UNDER QUERY.** Narration said "fine yellow mesh"; on 2026-08-30 the operator said of the yellow object on the deck "it is not a mesh. It is a plate". Whether that ruling covers the BELT GUARD or only the loose plate is unresolved, so the guard is still built as mesh. **Ask before changing it.** | OPERATOR, conflicting |
+| 9 | ~~Yellow chute/hopper on the platform's near side~~ — **WRONG, RETRACTED 2026-08-30.** It is a flat yellow **PLATE** standing on the deck. Operator: "a yellow shoot like thing [...] is not anywhere on the image and also doesn't make sense". See §9e. | ~~PHOTO~~ → corrected |
 
 ### 2a. ⚠ MOTOR COLOUR — a documented EXCEPTION to global rule 8b
 
@@ -270,6 +270,71 @@ rust-coloured sheet-metal hood over the belt drive**, with the fine yellow mesh
 closing its open end/underside. The model currently builds a flywheel disc plus a
 separate flat mesh guard. Changing that is a geometry ruling, not a detail tweak,
 so it is left alone pending an answer.
+
+### 9e. Operator corrections, 2026-08-30 — two readings were WRONG
+
+Shown the rebuilt model, the operator corrected two things that had been carried
+as PHOTO facts since the first reading. Both are now fixed in
+`PlaceableCatalog._m_mill`, and both are recorded here so nobody "restores" them.
+
+**1. The rust-coloured drum is a MOBILE INDUSTRIAL FAN, not a flywheel.**
+
+> **OPERATOR:** *"the rusty thing is a industrial fan. You can see the two wheels
+> in its bottom right. And you can see the pivot point [...] in the center above
+> the wheels."*
+
+Re-zooming the filed photograph confirms it in full: a rusty barrel shroud, a
+wire finger-guard over the impeller, two rubber wheels under a tubular trolley,
+and a black spoked hand-knob on the side trunnion that locks the tilt. It is a
+loose object parked on the platform — almost certainly the **"blower fan at the
+top of the bordes/catwalk"** already listed among the props in §5, which means
+that prop was in the photo all along and was simply mis-identified.
+
+It was previously built as a 1.25 m rust flywheel disc with spokes, a hub, a
+shaft stub and a bearing pedestal, keyed to the rotor axis. **None of that was
+real.** The mill's actual drive — cream motor, twin pulleys, three V-belts on
+the +X side — was never touched and is unaffected.
+
+**2. The yellow object is a flat PLATE, not a chute and not a mesh.**
+
+> **OPERATOR:** *"that yellow [...] is not a mesh. It is a plate."* and
+> *"you also drew like a yellow shoot like thing? which is not anywhere on the
+> image and also doesn't make sense."*
+
+It was built as a converging `_flare4` hopper hanging 0.78 m through the deck.
+It is now one flat sheet standing on the grating inside the near railing, with a
+folded lip along its top edge. What the plate is FOR is unknown and is not
+guessed at; a loose guard panel parked on a deck mid-construction is plausible
+but unconfirmed.
+
+*Deviation, flagged:* at the photo's apparent size the plate spanned the whole
+deck front, which turned it into an opaque billboard hiding the machine and stood
+it directly in front of the granulator's interactive screen-cradle door. It was
+cut to 0.95 x 0.95 m and moved to the -X end so a player can still reach that
+door. Faithfulness lost on purpose, for playability.
+
+**3. The second wrench is modelled, and it is PRESENT.**
+
+> **OPERATOR:** *"please model the second [wrench] [...] it's not on the photo,
+> but you can see that it's just the same one, but [...] smaller."*
+
+Position 2 on the shadow board previously carried paint only, because the tool is
+not legible in the photograph. The operator has settled it from his own knowledge
+of the machine: it is the same single open-ended spanner as position 1, smaller.
+Built at 0.72 scale, and the painted silhouette was changed to match — the
+ring-ended combination spanner the low-resolution outline had suggested was an
+artefact of the image, not the tool.
+
+**Still open after this pass:** the operator also said *"the stairs should come up
+next to it"*, which the model does not do — the flight currently runs parallel to
+the -Z deck edge and turns onto a landing at the railing gap, a bearing that was
+always tagged TYPICAL because the photo shows the stair lying down. Exactly which
+feature it should come up next to has been asked and is not yet answered. **Do
+not re-route the stair until it is.**
+
+Model count after this pass: **250 parts.** Verified by
+`src/tests/verify_mill_addons_2026_08_30.gd` — 23 checks, all green, each
+mutation-tested.
 
 ### 9c. Construction-only in the file — re-confirmed, do NOT model
 

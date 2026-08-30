@@ -37,6 +37,7 @@ func _ready() -> void:
 	var hd := sz.z * 0.34
 	var deck_top := deck_y + 0.01
 	var ch_hz := hd * 0.50
+	var ch_hx := hw * 0.55
 
 	# --- collect world AABBs of every mesh, then bucket by region -------------
 	var boxes: Array = []
@@ -83,7 +84,6 @@ func _ready() -> void:
 	# hangs at the railing plane, 0.6 m outside the chamber in X), so test the
 	# thing that actually matters: no volume intersection with the chamber, and
 	# none with the yellow near-side chute either.
-	var ch_hx := hw * 0.55
 	var base_y := deck_y + 0.06
 	var chamber := AABB(Vector3(-ch_hx, base_y, -ch_hz),
 		Vector3(ch_hx * 2.0, sz.y * 0.26, ch_hz * 2.0))
@@ -95,6 +95,89 @@ func _ready() -> void:
 	_check("board does not intersect the yellow near-side chute",
 		not brd_aabb.intersects(yc),
 		"board %s vs chute %s" % [str(brd_aabb), str(yc)])
+
+	# ── 2026-08-30 operator corrections ──────────────────────────────────────
+	# (a) the rust drum is a mobile FAN parked on the deck, not a flywheel keyed
+	#     to the shaft; (b) the yellow object is a flat PLATE, not a chute that
+	#     hangs through the deck; (c) the tool board's position 2 now carries the
+	#     real second (smaller) wrench, not just paint.
+	# X upper bound is -0.81, not -0.78: the cutting chamber's split-line flange
+	# carries bolt heads whose centres sit exactly on x = -ch_hx = -0.792, and a
+	# looser window swept one of them into the fan's bounding box and reported a
+	# clearance failure that belonged to the chamber, not to the fan.
+	var fan := _region(boxes, -hw - 0.02, -0.81, deck_top - 0.02, 2.90, -1.05, -0.05)
+	_check("fan parts present on the deck", fan.size() >= 12, "found %d" % fan.size())
+	var fan_aabb := _union(fan)
+	print("[ADDONS] fan union pos=%s size=%s" % [str(fan_aabb.position), str(fan_aabb.size)])
+	_check("fan sits ON the grating, not floating",
+		fan_aabb.position.y >= deck_top - 0.02 and fan_aabb.position.y < deck_top + 0.06,
+		"fan minY %.4f vs deck_top %.4f" % [fan_aabb.position.y, deck_top])
+	_check("fan stays inside the deck footprint in X",
+		fan_aabb.position.x > -hw - 0.02,
+		"fan minX %.4f vs deck edge %.4f" % [fan_aabb.position.x, -hw])
+	_check("fan clears the cutting chamber in X",
+		fan_aabb.position.x + fan_aabb.size.x < -ch_hx,
+		"fan maxX %.4f vs chamber %.4f" % [fan_aabb.position.x + fan_aabb.size.x, -ch_hx])
+
+	# The old flywheel was a 1.248 m DISC on the rotor axis at x -1.06. Keying
+	# this to a bounding box was wrong -- the first version caught the -X top
+	# rail, whose centre sits exactly on y 2.95. Key it to the thing that
+	# actually distinguishes a flywheel instead: sheer size. Nothing legitimate
+	# in that strip is over 0.9 m tall (rails are 0.04, the fan drum 0.50), so a
+	# tall part there means the disc came back.
+	var fly_ghost: Array = []
+	for fb in boxes:
+		var fa: AABB = fb
+		var fc := fa.position + fa.size * 0.5
+		# -hw + 0.05, not -hw: the railing posts stand ON the -X plane and are
+		# 1.05 m tall, so the looser bound flagged a post as a returning flywheel.
+		if fc.x > -hw + 0.05 and fc.x < -ch_hx and fc.z > -0.60 and fc.z < 0.60 \
+				and fa.size.y > 0.90:
+			fly_ghost.append(fa)
+	_check("the invented flywheel disc is GONE (no tall part left on the -X rotor axis)",
+		fly_ghost.size() == 0, "%d oversized part(s) still there" % fly_ghost.size())
+
+	# The old chute was a _flare4 descending to deck_top - 0.78. A plate does not.
+	var plate := _region(boxes, -1.25, 1.25, deck_top - 0.90, deck_top + 1.30, 1.05, 1.45)
+	_check("yellow plate parts present", plate.size() >= 2, "found %d" % plate.size())
+	var plate_aabb := _union(plate)
+	print("[ADDONS] plate union pos=%s size=%s" % [str(plate_aabb.position), str(plate_aabb.size)])
+	_check("the plate stands ON the deck, nothing hangs through it any more",
+		plate_aabb.position.y > deck_top - 0.06,
+		"plate minY %.4f vs deck_top %.4f" % [plate_aabb.position.y, deck_top])
+	_check("the plate is FLAT, not a converging chute (thin in Z)",
+		plate_aabb.size.z < 0.30,
+		"plate Z depth %.4f" % plate_aabb.size.z)
+
+	# Position 2 on the tool board: real tool geometry proud of the paint plane.
+	var tb_x2 := -hw + 0.03
+	var paint_plane := tb_x2 + 0.0125 + 0.002
+	var t2_tools: Array = []
+	for b in boxes:
+		var a: AABB = b
+		var c := a.position + a.size * 0.5
+		if c.x > paint_plane + 0.008 and c.z > 0.88 and c.z < 1.01 \
+				and c.y > deck_top and c.y < 3.0:
+			t2_tools.append(a)
+	_check("position 2 now carries the real second wrench, not only paint",
+		t2_tools.size() >= 4, "found %d tool part(s) proud of the board" % t2_tools.size())
+	var t2_aabb := _union(t2_tools)
+	var t1_tools: Array = []
+	for b2 in boxes:
+		var a2: AABB = b2
+		var c2 := a2.position + a2.size * 0.5
+		if c2.x > paint_plane + 0.008 and c2.z > 0.49 and c2.z < 0.63 \
+				and c2.y > deck_top and c2.y < 3.0:
+			t1_tools.append(a2)
+	var t1_aabb := _union(t1_tools)
+	print("[ADDONS] wrench1 h=%.4f   wrench2 h=%.4f" % [t1_aabb.size.y, t2_aabb.size.y])
+	# Lower floor is 0.30, not 0.20. Godot CLAMPS degenerate BoxMesh dimensions,
+	# so scaling the wrench to zero still measures 0.219 m and squeaked past a
+	# 0.20 floor — the assertion looked live but could not catch a collapsed
+	# tool. Real value is 0.394 m, so 0.30 keeps margin both ways.
+	_check("the second wrench is SMALLER than the first, as the operator described",
+		t2_aabb.size.y < t1_aabb.size.y - 0.05 and t2_aabb.size.y > 0.30,
+		"wrench2 %.4f m vs wrench1 %.4f m" % [t2_aabb.size.y, t1_aabb.size.y])
 
 	# The removed TYPICAL box lived at X -1.1952, Z +0.8993 on the deck.
 	var old_spot := _region(boxes, -1.36, -1.03, deck_top, deck_top + 0.45, 0.78, 1.02)

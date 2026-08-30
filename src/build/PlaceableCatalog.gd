@@ -4628,10 +4628,17 @@ static func _flare4(parent: Node3D, cx: float, cz: float, y_bot: float, y_top: f
 ##            while the line was still being built. Read it before editing here.
 ##   OPERATOR + PHOTO  brand "NEUE HERBOLD" in BLUE lettering on the angled
 ##            infeed hopper; body and hopper are CREAM/WHITE; elevated grating
-##            platform; YELLOW railings; caged vertical ladder; rust-coloured
-##            flywheel/pulley at one end; the drive belts are covered by a FINE
-##            YELLOW MESH guard; a yellow chute on the platform's near side;
-##            yellow equipment sticker reading MAALMOLEN.
+##            platform; YELLOW railings; caged vertical ladder; the drive belts
+##            are covered by a yellow guard; yellow equipment sticker reading
+##            MAALMOLEN; a light-grey `+BP2` control cabinet and a yellow tool
+##            shadow board on the deck.
+##   OPERATOR (2026-08-30 CORRECTIONS — two earlier readings were WRONG)
+##            (1) the rust-coloured drum on the deck is NOT a flywheel or a
+##            pulley. It is a MOBILE INDUSTRIAL FAN on two wheels with a tilt
+##            pivot — a prop parked on the platform, not part of the machine.
+##            (2) the yellow object on the deck is NOT a chute and NOT a mesh.
+##            It is a flat PLATE standing inside the railing. Both are built
+##            that way below. Do not "restore" the flywheel or the chute.
 ##   OPERATOR (2026-08-29 ruling — the CLAUDE.md rule 8b EXCEPTION)  the mill's
 ##            OWN shaft motor is CREAM, the same colour as the mill body. It is
 ##            the one motor in the plant that is not CeDo dark blue, so it is
@@ -4655,9 +4662,10 @@ static func _flare4(parent: Node3D, cx: float, cz: float, y_bot: float, y_top: f
 ##            the -Z edge with a quarter-turn at the landing was chosen because
 ##            it keeps the flight inside the machine's X footprint); the
 ##            belt-drive layout (motor offset in -Z, twin pulleys, three
-##            V-belts); the discharge chute below the deck; the control box /
-##            E-stop; the concrete footing pads; the exact geometry of the
-##            near-side yellow chute; the weathering grade of each finish.
+##            V-belts); the discharge chute below the deck; the `+BP2` cabinet's
+##            dimensions and its E-stop; the concrete footing pads; the size and
+##            parking spot of the fan and of the yellow plate; the tool board's
+##            size and bay; the weathering grade of each finish.
 static func _m_mill(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> void:
 	var P = MaterialPalette
 	# Ghost previews must stay see-through (BuildMode drags them across the
@@ -4830,22 +4838,85 @@ static func _m_mill(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> voi
 				(ch as Label3D).modulate = Color(0.098, 0.118, 0.424)      # NEUE HERBOLD blue
 				(ch as Label3D).outline_modulate = Color(1.0, 1.0, 1.0, 0.85)
 
-	# ── A2: rust flywheel/pulley on the -X end — now ON the deck, on a bearing ─
-	# It used to sit at x = -hw*1.18, spanning -1.80..-1.60 with the deck edge at
-	# -1.44: hanging in mid-air outside its own railing with nothing under it.
-	# Brought inboard onto the deck and given the shaft stub + bearing pedestal
-	# it always implied. PHOTO confirms the rust-coloured flywheel itself.
-	var fly_r : float = ch_h * 0.50
-	var fly_x : float = -ch_hx - fly_r * 0.43
-	_cyl(p, 0.09, 0.09, 0.45, Vector3((fly_x - ch_hx) * 0.5, ch_cy, 0), galv, "x")
-	var ped_h : float = ch_cy - 0.09 - deck_top
-	_box(p, Vector3(0.13, ped_h, 0.30), Vector3(fly_x + 0.18, deck_top + ped_h * 0.5, 0), castiron)
-	_cyl(p, fly_r, fly_r, 0.20, Vector3(fly_x, ch_cy, 0), rust, "x")
-	_cyl(p, fly_r * 1.04, fly_r * 1.04, 0.06, Vector3(fly_x - 0.08, ch_cy, 0), rust, "x")   # rim band
-	_cyl(p, 0.16, 0.16, 0.26, Vector3(fly_x, ch_cy, 0), castiron, "x")                      # hub
-	for sk2 in 6:
-		var spoke := _box(p, Vector3(0.05, fly_r * 1.3, 0.06), Vector3(fly_x - 0.12, ch_cy, 0), rust)
-		spoke.rotation.x = TAU * float(sk2) / 6.0
+	# ── PROP: mobile industrial FAN standing on the deck (OPERATOR 2026-08-30) ────────
+	# CORRECTION. This used to be a "rust flywheel/pulley" keyed to the mill's
+	# shaft. It is nothing of the kind. The operator, looking at the same photo:
+	#
+	#   "the rusty thing is a industrial fan. You can see the two wheels in its
+	#    bottom right. And you can see the pivot point [...] in the center above
+	#    the wheels."
+	#
+	# Confirmed by zooming the filed photograph: a barrel shroud with a wire
+	# finger-guard on one end, two rubber wheels under a tubular trolley, and a
+	# black spoked hand-knob on the side trunnion for locking the tilt. It is the
+	# "blower fan at the top of the bordes/catwalk" already listed among the props
+	# in section 5 of the photo-reading doc -- a loose object parked on the
+	# platform, NOT part of the granulator. It is deliberately still built here
+	# (rather than as its own placeable) so the mill reads as the photo does; if
+	# it ever needs to be moved independently, lift it out to its own id.
+	#
+	# The mill's real drive is the +X belt run below -- motor, twin pulleys and
+	# V-belts. Nothing was removed from the drivetrain by this change; what went
+	# was an invented flywheel disc that the machine never had.
+	#
+	# OPERATOR + PHOTO: that it is a fan, the wheels, the tilt pivot, the rust.
+	# TYPICAL: a 560 mm drum (no scale reference near it in the photo), and the
+	# fan's exact parking spot on the deck.
+	# 500 mm drum, not 560: the -X deck strip between the railing (-1.44) and the
+	# cutting chamber (-0.792) is only 0.648 m wide, and the trunnions and the
+	# tilt knob have to fit inside it too. Measured, not guessed -- the first
+	# attempt at 560 mm overhung the deck by 0.035 m and pushed the knob 0.030 m
+	# into the chamber's footprint.
+	var fan_r : float = 0.25
+	var fan_len : float = 0.62
+	var fan_x : float = -1.115                      # centred in the -X deck strip
+	var fan_z : float = -0.55
+	var fan_cy : float = deck_top + 0.55
+	var fan_face : float = fan_z + fan_len * 0.5 + 0.03
+	# Trolley: two rubber wheels + a tubular frame + a push handle.
+	for fwx in [-1.0, 1.0]:
+		_cyl(p, 0.085, 0.085, 0.05,
+			Vector3(fan_x + float(fwx) * 0.19, deck_top + 0.085, fan_z + 0.16), rubber, "x")
+		_box(p, Vector3(0.045, 0.50, 0.045),
+			Vector3(fan_x + float(fwx) * 0.19, deck_top + 0.30, fan_z + 0.16), aged)
+	_box(p, Vector3(0.42, 0.05, 0.045), Vector3(fan_x, deck_top + 0.055, fan_z - 0.22), aged)
+	_box(p, Vector3(0.42, 0.045, 0.045), Vector3(fan_x, deck_top + 0.86, fan_z + 0.16), aged)
+	# Barrel shroud, rusted, with the two rolled rim bands.
+	_cyl(p, fan_r, fan_r, fan_len, Vector3(fan_x, fan_cy, fan_z), rust, "z")
+	for fbz in [-1.0, 1.0]:
+		_cyl(p, fan_r * 1.05, fan_r * 1.05, 0.05,
+			Vector3(fan_x, fan_cy, fan_z + float(fbz) * fan_len * 0.45), rust, "z")
+	# Tilt pivot: a trunnion boss each side, and the black spoked locking knob.
+	for ftx in [-1.0, 1.0]:
+		_cyl(p, 0.05, 0.05, 0.05,
+			Vector3(fan_x + float(ftx) * (fan_r + 0.015), fan_cy, fan_z + 0.16), castiron, "x")
+	_cyl(p, 0.070, 0.070, 0.024,
+		Vector3(fan_x + fan_r + 0.045, fan_cy, fan_z + 0.16), rubber, "x")
+	for fkn in 6:
+		var knob := _box(p, Vector3(0.024, 0.125, 0.020),
+			Vector3(fan_x + fan_r + 0.045, fan_cy, fan_z + 0.16), rubber)
+		knob.rotation.x = PI * float(fkn) / 6.0
+	# Motor can behind the impeller.
+	_cyl(p, 0.10, 0.10, 0.20, Vector3(fan_x, fan_cy, fan_z - fan_len * 0.5 - 0.09), castiron, "z")
+	if not ghost:
+		# Impeller: hub + 3 blades, set back inside the shroud.
+		_cyl(p, 0.055, 0.055, 0.10, Vector3(fan_x, fan_cy, fan_z + 0.10), castiron, "z")
+		for fbl in 3:
+			var blade := _box(p, Vector3(0.015, fan_r * 1.5, 0.10),
+				Vector3(fan_x, fan_cy, fan_z + 0.10), aged)
+			blade.rotation.z = TAU * float(fbl) / 3.0
+		# Wire finger-guard: three concentric rings + eight radial spokes. Built
+		# under a pivot because `_torus` lays its ring in the XZ plane.
+		var fan_guard := Node3D.new()
+		fan_guard.name = "FanGuard"
+		p.add_child(fan_guard)
+		fan_guard.position = Vector3(fan_x, fan_cy, fan_face)
+		fan_guard.rotation.x = PI * 0.5
+		for fgr in [0.093, 0.168, 0.240]:
+			_torus(fan_guard, float(fgr), float(fgr) + 0.014, Vector3.ZERO, galv)
+		for fgs in 8:
+			var spoke2 := _box(fan_guard, Vector3(0.012, 0.012, fan_r * 2.0), Vector3.ZERO, galv)
+			spoke2.rotation.y = PI * float(fgs) / 8.0
 
 	# ── A3 + B1: drive on the +X end — CREAM motor, twin pulleys, V-belts ─────
 	# The old `_motor_unit` sat at x = 1.757 with a 1.008 m body: it spanned
@@ -4923,12 +4994,38 @@ static func _m_mill(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> voi
 	_hollow_box(p, 0.44, deck_y * 0.25, 0.38, Vector3(0, base_y - deck_y * 0.575, 0), 0.05, aged)
 	_box(p, Vector3(0.60, 0.05, 0.54), Vector3(0, base_y - deck_y * 0.71, 0), castiron)
 
-	# ── PHOTO: yellow chute/hopper on the platform's NEAR (+Z) side ───────────
-	var yc_x : float = -hw * 0.42
-	var yc_z : float = hd * 0.755
-	_flare4(p, yc_x, yc_z, deck_top - 0.78, deck_top, 0.42, 0.34, 0.72, 0.56, 0.04, yellow_f)
-	for sx5 in [-1.0, 1.0]:
-		_box(p, Vector3(0.05, 0.76, 0.05), Vector3(yc_x + float(sx5) * 0.30, deck_top - 0.38, yc_z), aged)
+	# ── PHOTO: loose yellow PLATE standing on the deck (OPERATOR 2026-08-30) ────
+	# CORRECTION. This used to be a converging yellow chute/hopper hanging
+	# through the deck, built from the narration-only reading "yellow chute on
+	# the platform's near side". The operator, on seeing it: "you also drew like
+	# a yellow shoot like thing? which is not anywhere on the image and also
+	# doesn't make sense" -- and, of the yellow object that IS in the photo:
+	# "that yellow [...] is not a mesh. It is a plate."
+	#
+	# So: one flat yellow sheet-steel panel standing on the grating just inside
+	# the near railing, leaning back very slightly, with a folded lip along its
+	# top edge at one end. It carries nothing and drains nothing. In a photo taken
+	# mid-construction a loose guard panel parked on the deck is exactly what you
+	# would expect, but its PURPOSE is unknown and is not guessed at here.
+	#
+	# PHOTO: that it is flat, yellow, full-height-ish, stands on the deck inside
+	# the railing, and has a folded top lip.
+	# TYPICAL: its size, its lean angle, and where along the railing it stands.
+	# Pulled to the -X end and cut to 0.95 x 0.95 m. Spanning the full deck front
+	# at the photo's apparent size, it became an opaque billboard that hid the
+	# machine from every near-side camera AND stood in front of the granulator's
+	# interactive screen-cradle door (X -0.612..0.612 on the +Z face), which a
+	# player has to reach. This is a deliberate deviation from the photo's exact
+	# placement, for playability -- flagged here rather than silently made.
+	var yp_len : float = 0.95
+	var yp_h : float = 0.95
+	var yp_x : float = -0.95
+	var yp_z : float = hd * 0.80
+	var yp := _box(p, Vector3(yp_len, yp_h, 0.03),
+		Vector3(yp_x, deck_top + yp_h * 0.5, yp_z), yellow_f)
+	yp.rotation.x = deg_to_rad(4.0)
+	_box(p, Vector3(yp_len * 0.42, 0.05, 0.15),
+		Vector3(yp_x - yp_len * 0.26, deck_top + yp_h - 0.03, yp_z - 0.07), yellow_f)
 
 	# ── PHOTO: tool shadow board hung inside the -X railing ───────────────
 	# A yellow board hangs off the railing carrying two numbered tool
@@ -4963,13 +5060,25 @@ static func _m_mill(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> voi
 	for tbj in [-1.0, 1.0]:
 		_box(p, Vector3(0.030, 0.085, 0.040),
 			Vector3(tb_tool, tb_cy - 0.272, t1_z + float(tbj) * 0.042), rust)
-	# Position 2 -- silhouette ONLY. The tool is missing off the board.
+	# Position 2 -- the SECOND wrench. OPERATOR 2026-08-30: "please model the
+	# second [wrench] [...] it's not on the photo, but you can see that it's just
+	# the same one, but [...] smaller". So it is the same single open-ended
+	# spanner as position 1 at 0.72 scale, and it is PRESENT on the board -- the
+	# earlier build left this position empty because the tool is not legible in
+	# the photograph, which the operator has now settled from his own knowledge
+	# of the machine. Silhouette matches: a smaller copy of position 1's, not the
+	# ring-ended combination spanner the low-resolution outline suggested.
 	var t2_z : float = tb_z + 0.19
-	_box(p, Vector3(0.006, 0.34, 0.036), Vector3(tb_pnt, tb_cy - 0.02, t2_z), placard)
-	_cyl(p, 0.058, 0.058, 0.006, Vector3(tb_pnt, tb_cy + 0.20, t2_z), placard, "x")
-	_cyl(p, 0.034, 0.034, 0.008, Vector3(tb_pnt + 0.002, tb_cy + 0.20, t2_z), yellow_f, "x")
-	_box(p, Vector3(0.006, 0.075, 0.104), Vector3(tb_pnt, tb_cy - 0.205, t2_z), placard)
-	_box(p, Vector3(0.008, 0.050, 0.038), Vector3(tb_pnt + 0.002, tb_cy - 0.248, t2_z), yellow_f)
+	var t2_s : float = 0.72                            # scale vs position 1
+	_box(p, Vector3(0.006, 0.52 * t2_s, 0.078 * t2_s),
+		Vector3(tb_pnt, tb_cy + 0.03, t2_z), placard)
+	_box(p, Vector3(0.026, 0.40 * t2_s, 0.052 * t2_s),
+		Vector3(tb_tool, tb_cy + 0.085, t2_z), rust)
+	_box(p, Vector3(0.028, 0.09 * t2_s, 0.125 * t2_s),
+		Vector3(tb_tool, tb_cy - 0.075, t2_z), rust)
+	for tbj2 in [-1.0, 1.0]:
+		_box(p, Vector3(0.028, 0.085 * t2_s, 0.040 * t2_s),
+			Vector3(tb_tool, tb_cy - 0.134, t2_z + float(tbj2) * 0.042 * t2_s), rust)
 	if not ghost:
 		for tbi in 2:
 			var num := _stencil_label(p, "1" if tbi == 0 else "2", Vector3(0.07, 0.07, 0.01), "+X")
