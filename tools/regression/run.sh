@@ -463,5 +463,25 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/walkie.log"; then
 	[ $code -eq 0 ] && code=1
 fi
 
+# #A3 silo level sensor. build_node() picks a body class from a long if/elif
+# chain, and this entry's category is "Control" — so while the `category ==
+# "Control"` arm was tested BEFORE the `id == "silo_level_sensor"` arm, the id
+# arm was UNREACHABLE and every placed sensor silently got Hmi.gd. That one line
+# was the ONLY instantiation of SiloLevelSensor.gd in the repo, so LineFlow's
+# get_nodes_in_group("silo_level_sensor") index (LineFlow.gd:410) was permanently
+# empty and #A3 had never run in any build. TagMap.gd:60 had already recorded the
+# downstream symptom ("current_level_pct IS A DEAD SOURCE") without anyone
+# tracing it back to the ordering. Mutation-proven: restoring the old order turns
+# 3 checks red with "got: res://src/build/Hmi.gd" and exits 1.
+# An ordering bug is invisible to the parse sweep and to any check that only asks
+# whether the catalog HAS an entry — this one builds the node and reads its script.
+echo "== silo level sensor wiring (#A3) =="
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_silo_level_sensor_wired.gd --quit-after 300 > "$OUT/silo_level_sensor.log" 2>&1
+grep -aE "^  (ok|FAIL)  |^Result:" "$OUT/silo_level_sensor.log" || true
+if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/silo_level_sensor.log"; then
+	echo "FAIL  : silo level sensor wiring (see $OUT/silo_level_sensor.log)"
+	[ $code -eq 0 ] && code=1
+fi
+
 echo "== done (exit $code) — see $OUT/topdown.png =="
 exit $code
