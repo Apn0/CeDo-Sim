@@ -1,12 +1,20 @@
 # Maalmolen 3C (NEUE HERBOLD granulator) — operator photo reading, 2026-08-29
 
-Source photograph: supplied by the operator in session on **2026-08-29**. Shows the
+Source photograph: `docs/plant/photos/maalmolen_3c_construction_2026-08-29.jpg`
+(operator's own camera; camera filename `IMG-20250912-WA0008.jpg`, camera date
+**2025-09-12**). Supplied in session **2026-08-29**, filed **2026-08-30**. Shows the
 REAL machine — **line 3C's mill** (`L3C.6 Maalmolen`, catalog id `mill`).
 
-> **PHOTO NOT YET IN THE REPO.** The operator pasted it into the session; it has
-> not been saved to `assets/reference_photos/machines/` yet. Until it is, the
-> statements below are the record. Requested filename when it lands:
-> `assets/reference_photos/machines/maalmolen_3c_construction_2026-08-29.<ext>`
+> **PHOTO IS NOW IN THE REPO (filed 2026-08-30).** The operator supplied the
+> original camera file (`IMG-20250912-WA0008.jpg`, 1536 x 2040, 412 KB). Filed as:
+>
+> - `docs/plant/photos/maalmolen_3c_construction_2026-08-29.jpg` — **tracked in git**
+> - `assets/reference_photos/machines/maalmolen_3c_construction_2026-08-29.jpg` —
+>   the conventional library home, but `assets/` is gitignored (`.gitignore:2`),
+>   so that copy is local-only. The `docs/` copy is the durable one.
+>
+> The filename keeps the 2026-08-29 session date (when the reading was made), not
+> the camera's own 2025-09-12 stamp — the camera date is recorded here instead.
 
 **CRITICAL CONTEXT — the photo was taken DURING CONSTRUCTION.** Several things
 visible in it are NOT how the machine looks in normal operation. They are called
@@ -186,8 +194,61 @@ The operator confirmed the mills on **3C and 6 are the same machine**, so the
 
 ---
 
-## 8. Open question for the operator
+## 8. Open questions for the operator
 
-The yellow equipment sticker's tag number. `Line3CDef.gd:66` says `L3C.6`; the
-operator recalled "8-point-something" but was explicitly unsure. **Do not stencil
-a number until this is settled.**
+1. **The yellow equipment sticker's tag number — STILL OPEN.** Now that the photo
+   is on disk it was re-read at full resolution and zoomed: the stickers are a
+   three-line layout (small top line / bold machine name / smaller tag line) but
+   the text is **below the resolution of the image** — illegible even zoomed.
+   `Line3CDef.gd:66` says `L3C.6`; the operator recalled "8-point-something" and
+   was unsure. **Do not stencil a number until this is settled.** The model
+   currently stencils the word `MAALMOLEN` only, which is correct.
+2. **The friction separators' brand.** A blue-on-white maker's plate with a swoosh
+   logo is fixed to the machine at bottom-right of frame. The legible fragment is
+   **"...antec"** — the first letters are hidden behind the caged ladder's upright.
+   Recorded as a fragment, deliberately NOT guessed into a full brand name.
+
+---
+
+## 9. Second reading, 2026-08-30 — from the filed full-resolution file
+
+Everything in sections 2-5 above was written from the operator's narration while
+the photo was only in the chat. With the file on disk it was re-read directly and
+zoomed. **Nothing in sections 2-5 is contradicted.** The following are additions.
+
+### 9a. Confirmed visually (previously OPERATOR-only, now OPERATOR + PHOTO)
+
+| Item | What the file shows | Tag |
+|---|---|---|
+| **Cream shaft motor** | Large white/cream finned motor with a fan cowl, on a cream I-beam skid, standing on the deck to the right of the drive drum. Unambiguous — this is the rule-8b exception, now photographically confirmed, not just stated. | OPERATOR + PHOTO |
+| **Brand text** | Reads **`NEUE HERBOLD`** with a stylised blue globe for the O, followed by **`.com`** — the full mark is `NEUE HERBOLD.com`. The model stencils `NEUE HERBOLD`; adding `.com` would be more faithful. | PHOTO |
+| **Fine yellow mesh guard** | Confirmed as an open mesh/crosshatch panel around the belt run behind the rust-brown drive drum — not a solid plate. The rebuilt model already uses a mesh grid. | OPERATOR + PHOTO |
+| **Blue motors below deck** | Three blue motors with fan cowls, below and right of the bordes, on the friction separators. Standard CeDo blue; rule 8b applies normally to these. | OPERATOR + PHOTO |
+| **Railing gap / ladder** | The caged galvanised ladder lands exactly at the gap in the yellow railing on the right-hand side, with the red/white construction tape wrapped around its base. | OPERATOR + PHOTO |
+
+### 9b. NEW — visible in the file, not previously recorded, not yet modelled
+
+| Item | Detail | Tag |
+|---|---|---|
+| **`+BP2` control cabinet** | A grey/galvanised electrical cabinet stands on the deck between the drive drum and the motor, stencilled **`+BP2`**, with green and red pushbutton/indicator lamps on its face. | PHOTO |
+| **Instrument panel** | A small dark vertical panel (gauge or local HMI) mounted on a post immediately left of the `+BP2` cabinet. | PHOTO |
+| **Tool board** | A yellow board on the deck's far-left railing carrying a large open-ended **spanner** — a shadow-board for the mill's own tools. This is very likely the "tools (probably for opening the mill)" the operator mentioned in section 5. | PHOTO |
+| **Motor sticker** | A small yellow sticker on the motor's fan cowl. | PHOTO |
+| **Yellow GRP grating** | Yellow perforated/GRP grating panels below deck around the friction separators — distinct from the yellow *mesh belt guard* and from the galvanised steel grating of the mill's own bordes. Three different yellow surfaces, do not conflate them. | PHOTO |
+| **Infeed screw livery** | The transport screw discharging into the mill's hopper is **galvanised grey**, not cream, and carries its own yellow name sticker. | PHOTO |
+| **Hopper lid clamps** | A row of white clamp cylinders / hinged-lid hardware along the top-right edge of the infeed hopper. | PHOTO |
+| **Under-deck discharge** | The mill's discharge below deck is a large cream/grey hopper box with a steeply angled bottom, ending in pointed outlets. | PHOTO |
+
+### 9c. Construction-only in the file — re-confirmed, do NOT model
+
+Stairs lying flat on the floor at bottom-left, with a green and a purple lifting
+sling and an orange-capped bottle on them; wooden pallets and loose square steel
+ducts under the deck; the red/white barrier tape; and the **blue forklift** at
+bottom-left, which is the contractor's and was explicitly excluded by the operator.
+
+### 9d. Provenance status
+
+The section 1 lesson stands and is now closed: the docstring's *"modelled from the
+operator photo"* claim was **correct**, and the photograph it referred to is this
+file, which simply had never been filed into the repo. `photo_audit.md`'s Maalmolen
+row is updated from "no photo / never reviewed" to reference this file.
