@@ -1424,16 +1424,40 @@ func _has_incoming(idx: int) -> bool:
 	return false
 
 # ── #145 transport helpers ────────────────────────────────────────────────────
-## ALL conveying rotors of a machine — every direct child in the "mechanism"
+## ALL conveying rotors of a machine — every descendant in the "mechanism"
 ## group that exposes current_rpm() (a RotatingMechanism). Multi-rotor
 ## machines (doseersilo's 3 augers, frictiewasser's 2 stirrers) MUST get
 ## set_running() driven on every one of them, otherwise only the first
 ## listed mechanism spins. Returns [] when the machine has no modelled rotor.
+##
+## MEASURED 2026-08-29 — this used to walk get_children() only, and found ZERO
+## rotors on a real macro-built line_1. PlaceableCatalog builds every rotor under
+## the machine's "Model" child (PlaceableCatalog.gd:1495-1497 creates Model, then
+## _spinning_cyl() parents the RotatingMechanism under it), so a direct-children
+## scan can never see one. Census on line_1: 52 LineFlow nodes, direct-children
+## rotors = 0, recursive rotors = 36 — i.e. the whole set_running cascade at
+## :2201-2220 was driving an empty array and NOTHING on the line visibly turned.
+## Proven by mutation with src/tests/probe_line1_rotorfix.tscn (patch nd["mechs"]
+## with the recursive list and nothing else): turning 0 → 36/36.
+##
+## The nested-rotor guard is the same one _cache_rotors() uses (:1746-1755): a
+## rotor parented under another rotor (a drive band riding a drum, measured at
+## Model/@Node3D@1636/@Node3D@1640 on the compactorband) already inherits its
+## parent's spin, so driving it separately would double-rotate it.
 func _find_mechanisms(machine: Node) -> Array:
 	var out : Array = []
-	for c in machine.get_children():
-		if c.is_in_group("mechanism") and c.has_method("current_rpm"):
-			out.append(c)
+	for m in machine.find_children("*", "", true, false):
+		if not (m.is_in_group("mechanism") and m.has_method("current_rpm")):
+			continue
+		var anc : Node = m.get_parent()
+		var nested := false
+		while anc != null and anc != machine:
+			if anc.is_in_group("mechanism"):
+				nested = true
+				break
+			anc = anc.get_parent()
+		if not nested:
+			out.append(m)
 	return out
 
 ## Backward-compat: the FIRST rotor in mechanism order. K-mode HUD widgets
@@ -1445,8 +1469,16 @@ func _find_mechanism(machine: Node) -> Node:
 	return list[0] if not list.is_empty() else null
 
 ## The machine's FilmFlakeField visual layer (if it has one), for #173 coupling.
+##
+## MEASURED 2026-08-29 — same direct-children bug as _find_mechanisms above. The
+## flotation tank's field is built at body-relative path "Model/FilmField"
+## (PlaceableCatalog.gd:4960-4970), so the old get_children() scan returned null
+## and nd["view"] stayed NULL on every node of a real line_1. Consequence: the
+## set_live_state drive at :2230-2235 never ran and the tank's 70-flake LDPE raft
+## + 5 sinkers were never made visible. Probed with probe_line1_flakes.tscn:
+## visible_count 0 → 70 after a single manual set_live_state().
 func _find_film_field(machine: Node) -> Node:
-	for c in machine.get_children():
+	for c in machine.find_children("*", "", true, false):
 		if c.is_in_group("film_field") and c.has_method("set_live_state"):
 			return c
 	return null
