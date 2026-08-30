@@ -4598,85 +4598,371 @@ static func _m_door(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void
 		_box(p, Vector3(size.x * 0.9, size.y * 0.12, size.z * 0.6), \
 			Vector3(0.0, size.y * 0.08 + float(i) * (size.y * 0.13), 0.0), body_mat)
 
-# ── mill / granulator: heavy chamber + feed hopper + big motor, guard, flywheel ─
-## NEUE HERBOLD granulator on an elevated, railed, grated work platform — with a
-## big angled white infeed hopper, a rust rotor/flywheel on one end, a drive motor
-## + belt guard on the other, blue drive motors on the ground, a caged access
-## ladder, and a ground stair to the right-rear (modelled from the operator photo).
+## Four converging panels forming a REAL TAPERED HOPPER (a flare) — not a tilted
+## box. A rectangular mouth (`tw` x `td`) at `y_top` narrows to a throat
+## (`bw` x `bd`) at `y_bot`, centred on (`cx`, ., `cz`). Each wall is a slab
+## rotated onto the taper line, the way a folded-plate hopper is actually made.
+## Panel spans are widened 6 % (the same trick `_half_pipe` uses) so the corner
+## mitres close instead of showing daylight.
+static func _flare4(parent: Node3D, cx: float, cz: float, y_bot: float, y_top: float,
+		bw: float, bd: float, tw: float, td: float, thick: float, mat: StandardMaterial3D) -> void:
+	var h : float = y_top - y_bot
+	var cy : float = (y_bot + y_top) * 0.5
+	var dx : float = (tw - bw) * 0.5
+	var dz : float = (td - bd) * 0.5
+	for sx in [-1.0, 1.0]:
+		var pnx := _box(parent, Vector3(thick, sqrt(h * h + dx * dx), (bd + td) * 0.53),
+			Vector3(cx + float(sx) * (bw + tw) * 0.25, cy, cz), mat)
+		pnx.rotation.z = -float(sx) * atan2(dx, h)
+	for sz in [-1.0, 1.0]:
+		var pnz := _box(parent, Vector3((bw + tw) * 0.53, sqrt(h * h + dz * dz), thick),
+			Vector3(cx, cy, cz + float(sz) * (bd + td) * 0.25), mat)
+		pnz.rotation.x = float(sz) * atan2(dz, h)
+
+# ── mill / granulator (maalmolen) — line 3C's L3C.6, also placed on line 1 ────
+## NEUE HERBOLD granulator on an elevated, railed, grated work platform.
+##
+## SOURCING (vocabulary per docs/DETAIL_STANDARD_audit_2026-08-18.md Q1):
+##   DOC (primary) docs/plant/maalmolen_3c_photo_reading_2026-08-29.md — the
+##            operator's own reading of a real photograph of THIS machine, taken
+##            while the line was still being built. Read it before editing here.
+##   OPERATOR + PHOTO  brand "NEUE HERBOLD" in BLUE lettering on the angled
+##            infeed hopper; body and hopper are CREAM/WHITE; elevated grating
+##            platform; YELLOW railings; caged vertical ladder; rust-coloured
+##            flywheel/pulley at one end; the drive belts are covered by a FINE
+##            YELLOW MESH guard; a yellow chute on the platform's near side;
+##            yellow equipment sticker reading MAALMOLEN.
+##   OPERATOR (2026-08-29 ruling — the CLAUDE.md rule 8b EXCEPTION)  the mill's
+##            OWN shaft motor is CREAM, the same colour as the mill body. It is
+##            the one motor in the plant that is not CeDo dark blue, so it is
+##            built by hand below instead of through `_motor_unit`, which
+##            hard-codes the blue and MUST keep doing so for every other
+##            machine. The blue motors visible under this platform in the photo
+##            drive the two FRICTION SEPARATORS (`friction_sep` -> `_m_friction`,
+##            which builds its own rule-8b blue `_motor_unit`) — they are not
+##            this machine's and are not modelled here.
+##   OPERATOR  the stairs lie flat on the floor in the photo only because the
+##            line was under construction. Installed, they rise to a small
+##            SQUARE LANDING that connects to a GAP IN THE RAILING. Built that
+##            way below. The red/white barrier tape and the contractor's blue
+##            forklift in the same photo are construction-only — not modelled.
+##   DOC      Line3CDef.gd:66 records this unit as L3C.6, but the tag NUMBER on
+##            the yellow sticker was NOT readable and the operator was
+##            explicitly unsure ("8-point-something"), so the sticker carries
+##            the WORD ONLY. Do not stencil a guessed number.
+##   TYPICAL (invented — flagged) stair bearing (the photo shows the flight
+##            lying down, so its installed direction is unknown; run parallel to
+##            the -Z edge with a quarter-turn at the landing was chosen because
+##            it keeps the flight inside the machine's X footprint); the
+##            belt-drive layout (motor offset in -Z, twin pulleys, three
+##            V-belts); the discharge chute below the deck; the control box /
+##            E-stop; the concrete footing pads; the exact geometry of the
+##            near-side yellow chute; the weathering grade of each finish.
 static func _m_mill(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> void:
-	var white   := _mat(Color(0.85, 0.85, 0.81), ghost, 0.2, 0.6)   # NEUE HERBOLD cream
-	var steel   := _mat(_STEEL, ghost, 0.55, 0.4)
-	var dark    := _mat(_DARK, ghost, 0.5, 0.55)
-	var grating := _mat(Color(0.36, 0.40, 0.38), ghost, 0.3, 0.85)
-	var yellow  := _mat(_SAFETY, ghost, 0.2, 0.6)
-	var rust    := _mat(Color(0.46, 0.30, 0.24), ghost, 0.35, 0.7)
-	var blue    := _mat(Color(0.14, 0.34, 0.62), ghost, 0.35, 0.5)
+	var P = MaterialPalette
+	# Ghost previews must stay see-through (BuildMode drags them across the
+	# world), so the palette finishes are used only for the real build and
+	# `_mat(..., ghost, ...)` supplies the translucent stand-in during placement.
+	var cream    : StandardMaterial3D = _mat(Color(0.82, 0.80, 0.74), ghost, 0.10, 0.55) if ghost else P.mat_paint_cream_steel()
+	var aged     : StandardMaterial3D = _mat(_DARK, ghost, 0.25, 0.60) if ghost else P.mat_steel_dark_aged()
+	var galv     : StandardMaterial3D = _mat(_STEEL, ghost, 0.55, 0.35) if ghost else P.mat_steel_galvanised()
+	var yellow   : StandardMaterial3D = _mat(_SAFETY, ghost, 0.0, 0.92) if ghost else P.mat_paint_yellow_peeling()
+	var yellow_f : StandardMaterial3D = _mat(_SAFETY, ghost, 0.0, 0.60) if ghost else P.mat_paint_safety_yellow()
+	var rustplate: StandardMaterial3D = _mat(Color(0.30, 0.26, 0.22), ghost, 0.30, 0.65) if ghost else P.mat_steel_riveted_rust()
+	# GAP: MaterialPalette has no BRIGHT rust. `mat_steel_riveted_rust` is a dark
+	# rust-streaked plate and reads near-black across a 1.25 m flywheel disc,
+	# which contradicts the operator's "rust-coloured flywheel". Keeping the
+	# original measured-from-photo colour here until the palette gains one.
+	var rust     : StandardMaterial3D = _mat(Color(0.46, 0.30, 0.24), ghost, 0.35, 0.70)
+	var castiron : StandardMaterial3D = _mat(Color(0.18, 0.19, 0.21), ghost, 0.40, 0.75) if ghost else P.mat_cast_iron_rough()
+	var rubber   : StandardMaterial3D = _mat(Color(0.07, 0.07, 0.08), ghost, 0.0, 0.95) if ghost else P.mat_rubber_tire_solid()
+	var placard  : StandardMaterial3D = _mat(Color(0.20, 0.20, 0.20), ghost, 0.30, 0.85) if ghost else P.mat_text_embossed_dark()
+	var concrete : StandardMaterial3D = _mat(Color(0.40, 0.40, 0.38), ghost, 0.0, 0.90) if ghost else P.mat_concrete_worn()
+	var grease   : StandardMaterial3D = _mat(Color(0.10, 0.09, 0.07), ghost, 0.10, 0.35) if ghost else P.mat_oil_grease()
+	var tray     : StandardMaterial3D = _mat(Color(0.42, 0.43, 0.44), ghost, 0.55, 0.55) if ghost else P.mat_grating_steel()
 
-	var deck_y : float = size.y * 0.40
-	var hw : float = size.x * 0.40    # deck half-width (X)
-	var hd : float = size.z * 0.34    # deck half-depth (Z); rear is left clear for the stair
+	# ── Derived frame of reference — every extent below is checked against these ─
+	var deck_y : float = size.y * 0.40                 # grating deck mid-plane
+	var hw : float = size.x * 0.40                     # deck half-width  (X)
+	var hd : float = size.z * 0.34                     # deck half-depth  (Z)
+	var deck_top : float = deck_y + 0.01               # walkable surface (grating is 0.02 thick)
+	var base_y : float = deck_y + 0.06                 # machine skid top = chamber underside
+	var ch_h : float = size.y * 0.26                   # cutting-chamber height
+	var ch_hx : float = hw * 0.55                      # chamber half-X
+	var ch_hz : float = hd * 0.50                      # chamber half-Z
+	var ch_cy : float = base_y + ch_h * 0.5            # rotor axis height
+	var ch_top : float = base_y + ch_h
+	var rail_base : float = deck_y - 0.02              # so the toe board lands ON the grating
 
-	# ── Elevated platform: 4 legs + perimeter beams + grated deck ─────────────
+	# ── Elevated platform: 4 legs on poured pads + perimeter beams + grating ──
 	for sx in [-1.0, 1.0]:
 		for sz in [-1.0, 1.0]:
-			_box(p, Vector3(0.14, deck_y, 0.14), Vector3(sx * hw, deck_y * 0.5, sz * hd), steel)
-	_box(p, Vector3(hw * 2.0, 0.10, 0.10), Vector3(0, deck_y - 0.12,  hd), steel)
-	_box(p, Vector3(hw * 2.0, 0.10, 0.10), Vector3(0, deck_y - 0.12, -hd), steel)
-	_box(p, Vector3(0.10, 0.10, hd * 2.0), Vector3( hw, deck_y - 0.12, 0), steel)
-	_box(p, Vector3(0.10, 0.10, hd * 2.0), Vector3(-hw, deck_y - 0.12, 0), steel)
-	_box(p, Vector3(hw * 2.0, 0.06, hd * 2.0), Vector3(0, deck_y, 0), grating)
-	# railing — open on +X (ladder) and -Z (stair landing)
-	_railing(p, hw, hd, deck_y + 0.03, yellow, ["+x", "-z"])
+			_box(p, Vector3(0.34, 0.08, 0.34), Vector3(float(sx) * hw, 0.04, float(sz) * hd), concrete)
+			_box(p, Vector3(0.14, deck_y, 0.14), Vector3(float(sx) * hw, deck_y * 0.5, float(sz) * hd), galv)
+	# Beams raised to deck_y - 0.06 so their tops meet the grating underside; at
+	# the old deck_y - 0.12 they hung 0.06 m clear of the deck they carry.
+	_box(p, Vector3(hw * 2.0, 0.10, 0.10), Vector3(0, deck_y - 0.06,  hd), galv)
+	_box(p, Vector3(hw * 2.0, 0.10, 0.10), Vector3(0, deck_y - 0.06, -hd), galv)
+	_box(p, Vector3(0.10, 0.10, hd * 2.0), Vector3( hw, deck_y - 0.06, 0), galv)
+	_box(p, Vector3(0.10, 0.10, hd * 2.0), Vector3(-hw, deck_y - 0.06, 0), galv)
+	# Real see-through walkway grating (this used to be a flat grey slab).
+	_grating_deck(p, hw * 2.0, hd * 2.0, Vector3(0, deck_y, 0))
+
+	# ── Access: stair -> square landing -> GAP in the -Z railing ──────────────
+	# OPERATOR: the flight rises to a small square landing that meets a gap in
+	# the railing. The landing footprint and the railing gap are derived from the
+	# SAME two numbers, so they cannot drift apart.
+	var land_h : float = 0.50                          # landing half-side (1.00 m square)
+	var land_x : float = -hw * 0.32                    # landing centre X
+	var land_z : float = -hd - land_h                  # landing abuts the deck's -Z edge
+	var gap_x0 : float = land_x - land_h               # railing gap == landing edges, exactly
+	var gap_x1 : float = land_x + land_h
+	var land := Node3D.new()
+	land.name = "StairLanding"
+	land.position = Vector3(land_x, 0.0, land_z)
+	p.add_child(land)
+	for sx2 in [-1.0, 1.0]:
+		for sz2 in [-1.0, 1.0]:
+			_box(land, Vector3(0.28, 0.08, 0.28), Vector3(float(sx2) * 0.44, 0.04, float(sz2) * 0.44), concrete)
+			_box(land, Vector3(0.12, deck_y, 0.12), Vector3(float(sx2) * 0.44, deck_y * 0.5, float(sz2) * 0.44), galv)
+	_box(land, Vector3(land_h * 2.0, 0.10, 0.10), Vector3(0, deck_y - 0.06, -land_h), galv)
+	for sx3 in [-1.0, 1.0]:
+		_box(land, Vector3(0.10, 0.10, land_h * 2.0), Vector3(float(sx3) * land_h, deck_y - 0.06, 0), galv)
+	_grating_deck(land, land_h * 2.0, land_h * 2.0, Vector3(0, deck_y, 0))
+	# Landing rails: open on +Z (steps out onto the deck) and +X (stair arrives).
+	_railing(land, land_h, land_h, rail_base, yellow, ["+z", "+x"])
+
+	# Deck railing. -Z is built by hand below because `_railing` can only skip a
+	# WHOLE side and the operator described a GAP, not an open edge. +X stays
+	# open for the caged-ladder climb-out (unchanged — no photo detail for it).
+	_railing(p, hw, hd, rail_base, yellow, ["+x", "-z"])
+	var rail_h := 1.05
+	var rail_t := 0.04
+	for seg in [[(gap_x0 - hw) * 0.5, gap_x0 + hw], [(gap_x1 + hw) * 0.5, hw - gap_x1]]:
+		var scx : float = float(seg[0])
+		var slen : float = float(seg[1])
+		_box(p, Vector3(slen, rail_t, rail_t), Vector3(scx, rail_base + rail_h, -hd), yellow)
+		_box(p, Vector3(slen, rail_t, rail_t), Vector3(scx, rail_base + rail_h * 0.5, -hd), yellow)
+		_box(p, Vector3(slen, 0.10, 0.02), Vector3(scx, rail_base + 0.08, -hd), yellow)
+	for px in [-hw, gap_x0, gap_x1, hw]:
+		_box(p, Vector3(rail_t, rail_h, rail_t), Vector3(float(px), rail_base + rail_h * 0.5, -hd), yellow)
+
+	# Stair (TYPICAL bearing): runs parallel to the -Z deck edge and climbs in
+	# -X, so the whole flight stays inside the machine's X footprint instead of
+	# marching 2.2 m out into the aisle. `_stair` only climbs in +Z, so it is
+	# built under a pivot yawed -90 deg (local +Z -> world -X, local +X -> world
+	# +Z). The run mirrors `_stair`'s own step maths, so the top tread's nominal
+	# edge lands EXACTLY on the landing's +X edge = the railing gap edge.
+	var stair_pivot := Node3D.new()
+	stair_pivot.name = "StairPivot"
+	stair_pivot.rotation.y = -PI * 0.5
+	p.add_child(stair_pivot)
+	var stair_run : float = float(maxi(int(deck_y / 0.22), 4)) * 0.27
+	_stair(stair_pivot, Vector3(land_z, 0.0, -gap_x1 - stair_run), deck_y, 0.90, tray, yellow)
 
 	# ── Granulator body ON the deck ───────────────────────────────────────────
-	var base_y : float = deck_y + 0.06
-	var ch_h : float = size.y * 0.26
-	_box(p, Vector3(hw * 1.1, ch_h, hd * 1.0), Vector3(0, base_y + ch_h * 0.5, 0), white)   # cutting chamber
+	# Skid rails bridge the 0.05 m between the grating top and the chamber
+	# underside (the chamber used to hover over that gap) and leave the middle
+	# clear for the discharge throat.
+	for sk1 in [-1.0, 1.0]:
+		_box(p, Vector3(ch_hx * 2.15, 0.05, 0.14),
+			Vector3(0, (deck_top + base_y) * 0.5, float(sk1) * ch_hz * 0.92), aged)
+		_box(p, Vector3(0.14, 0.05, ch_hz * 2.12),
+			Vector3(float(sk1) * ch_hx * 0.95, (deck_top + base_y) * 0.5, 0), aged)
+	_box(p, Vector3(ch_hx * 2.0, ch_h, ch_hz * 2.0), Vector3(0, ch_cy, 0), cream)   # cutting chamber
+	# Split-line flange + bolt heads — a granulator housing opens on this seam.
+	_box(p, Vector3(ch_hx * 2.06, 0.07, ch_hz * 2.06), Vector3(0, ch_cy + ch_h * 0.18, 0), aged)
+	for bk in 12:
+		_box(p, Vector3(0.06, 0.05, 0.06),
+			Vector3(-ch_hx + float(bk) / 12.0 * ch_hx * 2.0, ch_cy + ch_h * 0.18, -ch_hz * 1.04), aged)
 
 	# Interactive hinged screen cradle access door on the front (+Z) face
 	var mill_door := _interactive_hatch(p, Vector3(hw * 0.85, ch_h * 0.75, 0.04),
-		Vector3(0.0, base_y + ch_h * 0.5, hd * 0.50 + 0.02), "Granulator Screen Cradle Door", 100.0, 1.0, white, ghost)
+		Vector3(0.0, ch_cy, ch_hz + 0.02), "Granulator Screen Cradle Door", 100.0, 1.0, cream, ghost)
 	if not ghost:
 		# Transparent grimy viewing window on the door
 		_box(mill_door, Vector3(hw * 0.45, ch_h * 0.35, 0.02),
 			Vector3(-hw * 0.425, 0.0, 0.02), MaterialPalette.mat_glass_inspection_grime())
 		# Heavy tightening clamping bolts
-		_cyl(mill_door, 0.025, 0.025, 0.06, Vector3(-hw * 0.425, ch_h * 0.25, 0.03), dark, "z")
-		_cyl(mill_door, 0.025, 0.025, 0.06, Vector3(-hw * 0.425, -ch_h * 0.25, 0.03), dark, "z")
+		_cyl(mill_door, 0.025, 0.025, 0.06, Vector3(-hw * 0.425, ch_h * 0.25, 0.03), castiron, "z")
+		_cyl(mill_door, 0.025, 0.025, 0.06, Vector3(-hw * 0.425, -ch_h * 0.25, 0.03), castiron, "z")
 
 	# Rotating internal granulator rotor with 3 heavy rotary blades
 	var mill_rotor := _spinning_cyl(p, ch_h * 0.35, ch_h * 0.35, hw * 0.95,
-		Vector3(0.0, base_y + ch_h * 0.5, 0.0), steel, "x", Vector3.RIGHT, ghost, 120.0)
+		Vector3(0.0, ch_cy, 0.0), galv, "x", Vector3.RIGHT, ghost, 120.0)
 	if not ghost:
 		for bi in 3:
 			var b_ang : float = TAU * float(bi) / 3.0
 			var blade := _box(mill_rotor, Vector3(hw * 0.92, 0.025, 0.08),
-				Vector3(0.0, cos(b_ang) * ch_h * 0.30, sin(b_ang) * ch_h * 0.30), rust)
+				Vector3(0.0, cos(b_ang) * ch_h * 0.30, sin(b_ang) * ch_h * 0.30), rustplate)
 			blade.rotation.x = b_ang
 
-	# Angled infeed hopper (leans back over the chamber) with transparent grimy intake strip
-	var hop := _box(p, Vector3(hw * 1.0, size.y * 0.30, hd * 0.8), Vector3(0, base_y + ch_h + size.y * 0.11, -hd * 0.15), white)
-	hop.rotation.x = deg_to_rad(20.0)
-	_box(p, Vector3(hw * 0.6, size.y * 0.12, 0.02),
-		Vector3(0, base_y + ch_h + size.y * 0.12, -hd * 0.15 + hd * 0.40), MaterialPalette.mat_glass_inspection_grime())
+	# ── Angled infeed hopper — a REAL converging flare, not a rotated crate ────
+	# PHOTO: wide-mouth funnel narrowing into the cutting chamber. Its four walls
+	# lean outward as they rise; that lean IS the "angled hopper" the brand sits
+	# on. (It used to be a plain box tipped 20 deg, which read as a tilted crate.)
+	var hop_h : float = 0.99
+	var hop_cz : float = -0.10
+	var mouth_hx : float = 1.12
+	var mouth_hz : float = 0.68
+	var throat_d : float = 0.66
+	_flare4(p, 0.0, hop_cz, ch_top, ch_top + hop_h, 0.90, throat_d, mouth_hx * 2.0, mouth_hz * 2.0, 0.06, cream)
+	for sz4 in [-1.0, 1.0]:
+		_box(p, Vector3(mouth_hx * 2.11, 0.06, 0.10),
+			Vector3(0, ch_top + hop_h + 0.03, hop_cz + float(sz4) * mouth_hz), galv)
+		_box(p, Vector3(0.10, 0.06, mouth_hz * 2.15),
+			Vector3(float(sz4) * mouth_hx, ch_top + hop_h + 0.03, hop_cz), galv)
+	var hop_tilt : float = atan2((mouth_hz * 2.0 - throat_d) * 0.5, hop_h)
+	var hop_wall : float = (throat_d + mouth_hz * 2.0) * 0.25
+	if not ghost:
+		# Grimy sight strip on the rear wall, laid onto the panel's own angle.
+		var sight := _box(p, Vector3(0.70, 0.30, 0.02),
+			Vector3(0.0, ch_top + hop_h * 0.5 - sin(hop_tilt) * 0.045,
+				hop_cz - hop_wall - cos(hop_tilt) * 0.045), MaterialPalette.mat_glass_inspection_grime())
+		sight.rotation.x = -hop_tilt
+		# OPERATOR + PHOTO: "NEUE HERBOLD" in BLUE lettering on the angled hopper.
+		var brand := _stencil_label(p, "NEUE HERBOLD", Vector3(1.30, 0.20, 0.01), "+Z")
+		brand.position = Vector3(0.0, ch_top + hop_h * 0.5 - sin(hop_tilt) * 0.05,
+			hop_cz + hop_wall + cos(hop_tilt) * 0.05)
+		brand.rotation.x = hop_tilt
+		for ch in brand.get_children():
+			if ch is Label3D:
+				(ch as Label3D).modulate = Color(0.098, 0.118, 0.424)      # NEUE HERBOLD blue
+				(ch as Label3D).outline_modulate = Color(1.0, 1.0, 1.0, 0.85)
 
-	# Rotor / flywheel end (rust) on -X
-	_cyl(p, ch_h * 0.55, ch_h * 0.55, 0.20, Vector3(-hw * 1.18, base_y + ch_h * 0.5, 0), rust, "x")
-	# Drive motor + V-belt guard on +X
-	_motor_unit(p, ch_h * 0.34, hw * 0.7, Vector3(hw * 1.22, base_y + ch_h * 0.4, 0), "x", ghost)
-	_guard(p, Vector3(hw * 0.5, ch_h * 0.7, 0.10), Vector3(hw * 0.9, base_y + ch_h * 0.5, hd * 0.32), ghost)
-	# Discharge hopper under the chamber (between the legs)
-	_box(p, Vector3(hw * 0.8, deck_y * 0.55, hd * 0.8), Vector3(0, deck_y * 0.5, 0), dark)
+	# ── A2: rust flywheel/pulley on the -X end — now ON the deck, on a bearing ─
+	# It used to sit at x = -hw*1.18, spanning -1.80..-1.60 with the deck edge at
+	# -1.44: hanging in mid-air outside its own railing with nothing under it.
+	# Brought inboard onto the deck and given the shaft stub + bearing pedestal
+	# it always implied. PHOTO confirms the rust-coloured flywheel itself.
+	var fly_r : float = ch_h * 0.50
+	var fly_x : float = -ch_hx - fly_r * 0.43
+	_cyl(p, 0.09, 0.09, 0.45, Vector3((fly_x - ch_hx) * 0.5, ch_cy, 0), galv, "x")
+	var ped_h : float = ch_cy - 0.09 - deck_top
+	_box(p, Vector3(0.13, ped_h, 0.30), Vector3(fly_x + 0.18, deck_top + ped_h * 0.5, 0), castiron)
+	_cyl(p, fly_r, fly_r, 0.20, Vector3(fly_x, ch_cy, 0), rust, "x")
+	_cyl(p, fly_r * 1.04, fly_r * 1.04, 0.06, Vector3(fly_x - 0.08, ch_cy, 0), rust, "x")   # rim band
+	_cyl(p, 0.16, 0.16, 0.26, Vector3(fly_x, ch_cy, 0), castiron, "x")                      # hub
+	for sk2 in 6:
+		var spoke := _box(p, Vector3(0.05, fly_r * 1.3, 0.06), Vector3(fly_x - 0.12, ch_cy, 0), rust)
+		spoke.rotation.x = TAU * float(sk2) / 6.0
 
-	# ── Blue drive/pump motors on the ground beside the platform ──────────────
-	_box(p, Vector3(0.5, 0.6, 0.5), Vector3( hw * 0.55, 0.30,  hd + 0.45), blue)
-	_box(p, Vector3(0.5, 0.6, 0.5), Vector3(-hw * 0.30, 0.30,  hd + 0.45), blue)
+	# ── A3 + B1: drive on the +X end — CREAM motor, twin pulleys, V-belts ─────
+	# The old `_motor_unit` sat at x = 1.757 with a 1.008 m body: it spanned
+	# 1.25..2.26 against a deck edge of 1.44, i.e. mostly off the platform.
+	# EXCEPTION to CLAUDE.md rule 8b (operator 2026-08-29): this motor is CREAM,
+	# the same colour as the mill body — the one motor in the plant that is not
+	# CeDo dark blue. That is why it is built by hand here; `_motor_unit` stays
+	# blue for everything else. Do NOT "fix" this back to blue.
+	# The drive sits on the -Z half so the guard clears the ladder cage hoops.
+	var belt_x : float = hw * 0.833                    # common pulley plane
+	var mot_r : float = 0.26
+	var mot_len : float = 0.62
+	var mot_z : float = -(ch_hz + 0.36)
+	var mot_x : float = belt_x - 0.40
+	var skid_y : float = deck_top + 0.03
+	_box(p, Vector3(0.80, 0.06, 0.66), Vector3(mot_x, skid_y, mot_z), aged)                 # motor skid
+	var mot_y : float = skid_y + 0.03 + mot_r
+	_cyl(p, mot_r, mot_r, mot_len, Vector3(mot_x, mot_y, mot_z), cream, "x")                # CREAM motor body
+	for fk in 5:
+		_cyl(p, mot_r * 1.06, mot_r * 1.06, 0.03,
+			Vector3(mot_x - mot_len * 0.36 + float(fk) * mot_len * 0.18, mot_y, mot_z), cream, "x")
+	_box(p, Vector3(mot_r * 0.8, mot_r * 0.5, mot_len * 0.45),
+		Vector3(mot_x, mot_y + mot_r * 0.95, mot_z), aged)                                  # terminal box
+	_cyl(p, 0.055, 0.055, 0.20, Vector3(belt_x - 0.02, mot_y, mot_z), galv, "x")            # motor shaft
+	_cyl(p, 0.16, 0.16, 0.09, Vector3(belt_x, mot_y, mot_z), castiron, "x")                 # driving pulley
+	_cyl(p, 0.085, 0.085, (belt_x - ch_hx) + 0.14,
+		Vector3((belt_x + ch_hx) * 0.5 - 0.07, ch_cy, 0), galv, "x")                        # rotor shaft out
+	_cyl(p, 0.30, 0.30, 0.09, Vector3(belt_x, ch_cy, 0), castiron, "x")                     # driven pulley
+	# Three V-belts, each drawn as the two straight runs between the pulleys.
+	var b_dy : float = mot_y - ch_cy
+	var b_len : float = sqrt(b_dy * b_dy + mot_z * mot_z)
+	var b_ang : float = atan2(-b_dy, mot_z)
+	for bi2 in 3:
+		for off in [0.23, -0.23]:
+			var belt := _box(p, Vector3(0.055, 0.022, b_len),
+				Vector3(belt_x - 0.03 + float(bi2) * 0.03,
+					ch_cy + b_dy * 0.5 + float(off) * cos(b_ang),
+					mot_z * 0.5 + float(off) * sin(b_ang)), rubber)
+			belt.rotation.x = b_ang
+	# Grease staining on the grating under the drive — every plant has it.
+	_box(p, Vector3(0.60, 0.006, 0.44), Vector3(hw * 0.764, deck_top + 0.004, mot_z * 0.92), grease)
+
+	# ── B2: drive-belt guard = FINE YELLOW MESH (OPERATOR + PHOTO) ────────────
+	# Built with this file's established mesh stand-in idiom (N thin bars — see
+	# the vw_trommel cage), not the single solid yellow plate `_guard` gives.
+	var g_y0 : float = deck_top + 0.06
+	var g_y1 : float = ch_cy + 0.36
+	var g_z0 : float = mot_z - 0.26
+	var g_z1 : float = 0.32
+	var g_cy : float = (g_y0 + g_y1) * 0.5
+	var g_cz : float = (g_z0 + g_z1) * 0.5
+	var g_h : float = g_y1 - g_y0
+	var g_d : float = g_z1 - g_z0
+	var g_face : float = belt_x + 0.09
+	_box(p, Vector3(0.18, 0.04, g_d), Vector3(belt_x, g_y1, g_cz), yellow_f)
+	_box(p, Vector3(0.18, 0.04, g_d), Vector3(belt_x, g_y0, g_cz), yellow_f)
+	for gz in [g_z0, g_z1]:
+		_box(p, Vector3(0.18, g_h, 0.04), Vector3(belt_x, g_cy, float(gz)), yellow_f)
+		_box(p, Vector3(0.06, 0.10, 0.06), Vector3(belt_x, deck_top + 0.05, float(gz) + (0.08 if gz < 0.0 else -0.08)), yellow_f)
+	for mk in 14:
+		_box(p, Vector3(0.010, g_h - 0.04, 0.012),
+			Vector3(g_face, g_cy, g_z0 + (float(mk) + 0.5) * g_d / 14.0), yellow_f)
+	for mk2 in 8:
+		_box(p, Vector3(0.010, 0.012, g_d - 0.04),
+			Vector3(g_face, g_y0 + (float(mk2) + 0.5) * g_h / 8.0, g_cz), yellow_f)
+	# Grating drip tray under the belt run.
+	_box(p, Vector3(0.34, 0.02, 0.60), Vector3(belt_x, deck_top + 0.005, -0.35), tray)
+
+	# ── A4: discharge chute — now MEETS the chamber it drains ─────────────────
+	# Its top used to stop at y = 1.488 with the machine underside at 1.98: a
+	# 0.40 m air gap between the chute and the mill it is supposed to empty.
+	# Now a converging flare straight off the chamber underside, down through the
+	# deck, into a straight outlet duct with a flange.
+	_flare4(p, 0.0, 0.0, base_y - deck_y * 0.45, base_y, 0.44, 0.38, ch_hx * 1.24, ch_hz * 1.10, 0.05, aged)
+	_hollow_box(p, 0.44, deck_y * 0.25, 0.38, Vector3(0, base_y - deck_y * 0.575, 0), 0.05, aged)
+	_box(p, Vector3(0.60, 0.05, 0.54), Vector3(0, base_y - deck_y * 0.71, 0), castiron)
+
+	# ── PHOTO: yellow chute/hopper on the platform's NEAR (+Z) side ───────────
+	var yc_x : float = -hw * 0.42
+	var yc_z : float = hd * 0.755
+	_flare4(p, yc_x, yc_z, deck_top - 0.78, deck_top, 0.42, 0.34, 0.72, 0.56, 0.04, yellow_f)
+	for sx5 in [-1.0, 1.0]:
+		_box(p, Vector3(0.05, 0.76, 0.05), Vector3(yc_x + float(sx5) * 0.30, deck_top - 0.38, yc_z), aged)
+
+	# ── B4: yellow MAALMOLEN equipment sticker on the landing-facing (-Z) wall ─
+	# WORD ONLY. Line3CDef.gd:66 says L3C.6, but the operator could not read the
+	# number on the real sticker and was explicitly unsure, so none is stencilled.
+	_box(p, Vector3(0.66, 0.24, 0.012), Vector3(0.0, ch_cy + ch_h * 0.32, -ch_hz - 0.006), yellow_f)
+	if not ghost:
+		var tag := _stencil_label(p, "MAALMOLEN", Vector3(0.58, 0.15, 0.01), "-Z")
+		tag.position = Vector3(0.0, ch_cy + ch_h * 0.32, -ch_hz - 0.016)
+		for ch2 in tag.get_children():
+			if ch2 is Label3D:
+				(ch2 as Label3D).modulate = Color(0.12, 0.12, 0.12)
+				(ch2 as Label3D).outline_modulate = Color(1.0, 1.0, 1.0, 0.0)
+
+	# ── Deck-side control box + E-stop (TYPICAL) ──────────────────────────────
+	var cb_x : float = -hw * 0.83
+	var cb_z : float = hd * 0.575
+	_box(p, Vector3(0.30, 0.42, 0.22), Vector3(cb_x, deck_top + 0.21, cb_z), aged)
+	_box(p, Vector3(0.24, 0.10, 0.008), Vector3(cb_x, deck_top + 0.26, cb_z + 0.114), placard)
+	if not ghost:
+		_cyl(p, 0.022, 0.022, 0.014, Vector3(cb_x - 0.06, deck_top + 0.11, cb_z + 0.115), P.mat_indicator_green(), "z")
+		_cyl(p, 0.022, 0.022, 0.014, Vector3(cb_x + 0.06, deck_top + 0.11, cb_z + 0.115), P.mat_indicator_red(), "z")
+		_cyl(p, 0.045, 0.045, 0.026, Vector3(cb_x, deck_top + 0.36, cb_z + 0.121), P.mat_indicator_red(), "z")
 
 	# ── Caged access ladder on the +X face ────────────────────────────────────
-	_caged_ladder(p, Vector3(hw + 0.10, 0.0, hd * 0.35), deck_y + 0.9, steel, ghost)
+	_caged_ladder(p, Vector3(hw + 0.10, 0.0, hd * 0.35), deck_y + 0.9, galv, ghost)
 
-	# ── Ground stair to the right-rear (+X, -Z), ascending toward the deck ────
-	_stair(p, Vector3(hw * 0.55, 0.0, -hd - 1.0), deck_y, 0.9, grating, yellow)
+	# NOTE — the two bare blue 0.5 x 0.6 x 0.5 cubes that used to stand on the
+	# ground here are GONE on purpose. The operator (2026-08-29) identified the
+	# blue motors under this platform as the drives of the two FRICTION
+	# SEPARATORS, which are their own catalog placeable (`friction_sep` ->
+	# `_m_friction`, which already builds its own rule-8b blue `_motor_unit`).
+	# Modelling them here duplicated another machine's drives, dragged them along
+	# whenever the mill was moved, and had no photo detail behind them at all.
+
 
 ## DOSEER (dosing) SILO — NOT a vertical round silo. It's a round silo laid on its
 ## side, cut horizontally in half: a long HALF-CYLINDER TROUGH (open top) with 3
