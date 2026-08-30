@@ -64,7 +64,7 @@ Ask before "correcting" a sourced-looking claim. (Contrast the NIR sorter at
 | 5 | **YELLOW railings** around the platform (current model already yellow — correct) | PHOTO |
 | 6 | **Caged vertical ladder** down from the platform | PHOTO |
 | 7 | ~~Rust-coloured flywheel/pulley at one end~~ — **WRONG, RETRACTED 2026-08-30.** It is a **MOBILE INDUSTRIAL FAN** parked on the deck. See §9e. | ~~PHOTO~~ → corrected |
-| 8 | Drive-belt guard over the belts driving the main shaft — **MATERIAL UNDER QUERY.** Narration said "fine yellow mesh"; on 2026-08-30 the operator said of the yellow object on the deck "it is not a mesh. It is a plate". Whether that ruling covers the BELT GUARD or only the loose plate is unresolved, so the guard is still built as mesh. **Ask before changing it.** | OPERATOR, conflicting |
+| 8 | **Drive-belt guard = fine YELLOW MESH** over the belts driving the main shaft. **SETTLED 2026-08-30.** The 2026-08-30 "it is not a mesh, it is a plate" ruling was about the loose yellow plate on the deck, NOT this guard — operator: *"i believe we are talking about a separate part there"*. Two different yellow objects. The guard stays MESH. | OPERATOR + PHOTO |
 | 9 | ~~Yellow chute/hopper on the platform's near side~~ — **WRONG, RETRACTED 2026-08-30.** It is a flat yellow **PLATE** standing on the deck. Operator: "a yellow shoot like thing [...] is not anywhere on the image and also doesn't make sense". See §9e. | ~~PHOTO~~ → corrected |
 
 ### 2a. ⚠ MOTOR COLOUR — a documented EXCEPTION to global rule 8b
@@ -108,7 +108,7 @@ a number. *(OPERATOR, uncertain — do NOT stencil a guessed number.)*
 
 | Item | Reality in normal operation | Tag |
 |---|---|---|
-| **Stairs lying flat on the floor** | They belong **upright**: they rise to a small **square landing platform** which connects to the **gap in the railing** at upper-left of the platform. Model them installed, not lying down. | OPERATOR |
+| **Stairs lying flat on the floor** | They belong **upright**. **LOCATION SETTLED 2026-08-30** — operator: *"note stairs location, starts pretty much next to the ladder"*. The flight is on the **same face as the caged ladder**, its foot immediately beside the ladder's foot, climbing onto the deck's open +X edge. The earlier "square landing at a gap in the railing" reading put it on the opposite side of the machine and is superseded; the landing and the hand-built railing gap are both gone and the -Z railing is continuous again. See §9f. | OPERATOR |
 | **Red/white barrier tape** at the ladder base | Present only because the railing gap was an open fall hazard during construction. **Removed in normal operation.** | OPERATOR |
 | **Blue forklift** | Belongs to the **contractor** that built the line, NOT to CeDo. **DO NOT MODEL IT.** | OPERATOR (explicit) |
 
@@ -335,6 +335,49 @@ not re-route the stair until it is.**
 Model count after this pass: **250 parts.** Verified by
 `src/tests/verify_mill_addons_2026_08_30.gd` — 23 checks, all green, each
 mutation-tested.
+
+### 9f. Stair relocated to the ladder side, 2026-08-30
+
+> **OPERATOR:** *"I think the model is a bit weird. because the stairs should come
+> up next to it. Right?"* — and, when asked which feature: *"note stairs location,
+> starts pretty much next to the ladder"*.
+
+The stair bearing had been tagged TYPICAL from the start, because the photo shows
+the flight lying flat on the floor and its installed direction was unknown. The
+guess was wrong: it ran along the **-Z** deck edge and turned onto a square
+landing at a hand-built gap in the -Z railing — the far side of the machine from
+the caged ladder.
+
+It is now on the **+X face, immediately -Z of the ladder**, climbing in -X
+straight onto the deck. Because the +X edge already carries no railing (it is the
+ladder's climb-out) the flight tops out flush with the deck edge and the player
+walks straight on: the landing, its four legs and pads, its own railing and the
+hand-built railing gap are all deleted, and the **-Z railing is a continuous run
+again**. Model count 250 → 225 parts — the stair rework removed more geometry
+than the fan and plate added.
+
+Measured clearances, not eyeballed. `_caged_ladder` at (1.54, 0, 0.547) occupies
+X [1.056, 2.024] (0.484 m hoop radius) and Z [0.394, 1.362] (hoops offset +0.33,
+outer cage bar at +0.792). The flight is 0.90 m wide on centreline z = -0.30, so
+Z [-0.75, 0.15] — **0.244 m clear of the ladder's -Z face**. Stair foot at world
+(3.60, 0, -0.30) against the ladder's foot at (1.54, 0, 0.547): **2.23 m apart on
+the same side**, where before they were 2.69 m apart around a corner.
+
+*Still TYPICAL:* the 0.30 m -Z offset (picked purely for ladder clearance) and the
+0.90 m flight width.
+
+### 9g. The yellow mesh belt guard is a SEPARATE part — settled
+
+The 2026-08-30 correction *"that yellow [...] is not a mesh. It is a plate"* raised
+a real ambiguity, because the operator had earlier described the mill's drive belts
+as *"covered in yellow tiny mesh"*. Asked directly which object the ruling covered:
+
+> **OPERATOR:** *"i believe we are talking about a separate part there"*
+
+So there are **two different yellow objects** and both readings stand: the loose
+**plate** on the deck (§9e), and the fine yellow **mesh** guard over the belt
+drive. The belt guard was left as mesh throughout and needs no change. §2 item 8
+is restored to OPERATOR + PHOTO.
 
 ### 9c. Construction-only in the file — re-confirmed, do NOT model
 

@@ -4649,18 +4649,20 @@ static func _flare4(parent: Node3D, cx: float, cz: float, y_bot: float, y_top: f
 ##            which builds its own rule-8b blue `_motor_unit`) — they are not
 ##            this machine's and are not modelled here.
 ##   OPERATOR  the stairs lie flat on the floor in the photo only because the
-##            line was under construction. Installed, they rise to a small
-##            SQUARE LANDING that connects to a GAP IN THE RAILING. Built that
-##            way below. The red/white barrier tape and the contractor's blue
-##            forklift in the same photo are construction-only — not modelled.
+##            line was under construction. Their INSTALLED position (ruled
+##            2026-08-30): "starts pretty much next to the ladder" — same face
+##            as the caged ladder, climbing straight onto the deck's open +X
+##            edge. The earlier "square landing at a gap in the -Z railing"
+##            reading was a guess and is superseded; landing and gap are gone.
+##            The red/white barrier tape and the contractor's blue forklift in
+##            the same photo are construction-only — not modelled.
 ##   DOC      Line3CDef.gd:66 records this unit as L3C.6, but the tag NUMBER on
 ##            the yellow sticker was NOT readable and the operator was
 ##            explicitly unsure ("8-point-something"), so the sticker carries
 ##            the WORD ONLY. Do not stencil a guessed number.
-##   TYPICAL (invented — flagged) stair bearing (the photo shows the flight
-##            lying down, so its installed direction is unknown; run parallel to
-##            the -Z edge with a quarter-turn at the landing was chosen because
-##            it keeps the flight inside the machine's X footprint); the
+##   TYPICAL (invented — flagged) the stair's 0.30 m -Z offset from the ladder
+##            (picked for cage clearance) and its 0.90 m width — the SIDE it is
+##            on is now OPERATOR, only the exact offset is invented; the
 ##            belt-drive layout (motor offset in -Z, twin pulleys, three
 ##            V-belts); the discharge chute below the deck; the `+BP2` cabinet's
 ##            dimensions and its E-stop; the concrete footing pads; the size and
@@ -4716,57 +4718,52 @@ static func _m_mill(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> voi
 	# Real see-through walkway grating (this used to be a flat grey slab).
 	_grating_deck(p, hw * 2.0, hd * 2.0, Vector3(0, deck_y, 0))
 
-	# ── Access: stair -> square landing -> GAP in the -Z railing ──────────────
-	# OPERATOR: the flight rises to a small square landing that meets a gap in
-	# the railing. The landing footprint and the railing gap are derived from the
-	# SAME two numbers, so they cannot drift apart.
-	var land_h : float = 0.50                          # landing half-side (1.00 m square)
-	var land_x : float = -hw * 0.32                    # landing centre X
-	var land_z : float = -hd - land_h                  # landing abuts the deck's -Z edge
-	var gap_x0 : float = land_x - land_h               # railing gap == landing edges, exactly
-	var gap_x1 : float = land_x + land_h
-	var land := Node3D.new()
-	land.name = "StairLanding"
-	land.position = Vector3(land_x, 0.0, land_z)
-	p.add_child(land)
-	for sx2 in [-1.0, 1.0]:
-		for sz2 in [-1.0, 1.0]:
-			_box(land, Vector3(0.28, 0.08, 0.28), Vector3(float(sx2) * 0.44, 0.04, float(sz2) * 0.44), concrete)
-			_box(land, Vector3(0.12, deck_y, 0.12), Vector3(float(sx2) * 0.44, deck_y * 0.5, float(sz2) * 0.44), galv)
-	_box(land, Vector3(land_h * 2.0, 0.10, 0.10), Vector3(0, deck_y - 0.06, -land_h), galv)
-	for sx3 in [-1.0, 1.0]:
-		_box(land, Vector3(0.10, 0.10, land_h * 2.0), Vector3(float(sx3) * land_h, deck_y - 0.06, 0), galv)
-	_grating_deck(land, land_h * 2.0, land_h * 2.0, Vector3(0, deck_y, 0))
-	# Landing rails: open on +Z (steps out onto the deck) and +X (stair arrives).
-	_railing(land, land_h, land_h, rail_base, yellow, ["+z", "+x"])
-
-	# Deck railing. -Z is built by hand below because `_railing` can only skip a
-	# WHOLE side and the operator described a GAP, not an open edge. +X stays
-	# open for the caged-ladder climb-out (unchanged — no photo detail for it).
-	_railing(p, hw, hd, rail_base, yellow, ["+x", "-z"])
+	# ── Access: stair beside the LADDER on the +X face (OPERATOR 2026-08-30) ──────
+	# CORRECTION. The flight used to run along the -Z deck edge and turn onto a
+	# square landing that met a hand-built gap in the -Z railing. That put the
+	# stair on the OPPOSITE side of the machine from the ladder, and the operator
+	# said so:
+	#
+	#   "I think the model is a bit weird. because the stairs should come up next
+	#    to it. Right?"  ...  "note stairs location, starts pretty much next to
+	#    the ladder"
+	#
+	# So the stair now stands on the SAME face as the caged ladder, immediately
+	# -Z of it, and climbs in -X straight onto the deck. The +X edge already
+	# carries no railing (it is the ladder's climb-out), so the flight tops out
+	# flush with the deck edge and the player walks straight on -- no landing and
+	# no railing gap are needed any more, and the -Z railing is now continuous.
+	#
+	# Clearances, computed not eyeballed. `_caged_ladder` at (hw+0.10, 0, hd*0.35)
+	# = (1.54, 0, 0.547) occupies X [1.056, 2.024] (0.484 hoop radius) and
+	# Z [0.394, 1.362] (hoops offset +0.33, cage bar at +0.792). The flight is
+	# 0.90 wide centred on z = -0.30, i.e. Z [-0.75, 0.15] -- clear of the
+	# ladder's -Z face by 0.244 m, so the two never touch even though they share
+	# the +X aisle.
+	#
+	# Stair foot lands at world (3.60, 0, -0.30); the ladder's foot is at
+	# (1.54, 0, 0.547). They are 2.23 m apart on the same side of the machine,
+	# against 2.69 m apart around a corner before. `_stair` climbs in local +Z
+	# only, so it is built under a pivot yawed -90 deg: local +Z -> world -X,
+	# local +X -> world +Z. The run is taken from `_stair`'s own step maths so
+	# the top tread's nominal edge lands EXACTLY on the deck edge, x = hw.
+	#
+	# OPERATOR: which side the stair is on, and that its foot is beside the
+	# ladder's. TYPICAL: the 0.30 m -Z offset (chosen for ladder clearance) and
+	# the 0.90 m flight width.
+	_railing(p, hw, hd, rail_base, yellow, ["+x"])
+	# `_railing` hard-codes this same height; the tool shadow board below hangs
+	# itself off rail_base + rail_h, so it is kept as a named constant.
 	var rail_h := 1.05
-	var rail_t := 0.04
-	for seg in [[(gap_x0 - hw) * 0.5, gap_x0 + hw], [(gap_x1 + hw) * 0.5, hw - gap_x1]]:
-		var scx : float = float(seg[0])
-		var slen : float = float(seg[1])
-		_box(p, Vector3(slen, rail_t, rail_t), Vector3(scx, rail_base + rail_h, -hd), yellow)
-		_box(p, Vector3(slen, rail_t, rail_t), Vector3(scx, rail_base + rail_h * 0.5, -hd), yellow)
-		_box(p, Vector3(slen, 0.10, 0.02), Vector3(scx, rail_base + 0.08, -hd), yellow)
-	for px in [-hw, gap_x0, gap_x1, hw]:
-		_box(p, Vector3(rail_t, rail_h, rail_t), Vector3(float(px), rail_base + rail_h * 0.5, -hd), yellow)
 
-	# Stair (TYPICAL bearing): runs parallel to the -Z deck edge and climbs in
-	# -X, so the whole flight stays inside the machine's X footprint instead of
-	# marching 2.2 m out into the aisle. `_stair` only climbs in +Z, so it is
-	# built under a pivot yawed -90 deg (local +Z -> world -X, local +X -> world
-	# +Z). The run mirrors `_stair`'s own step maths, so the top tread's nominal
-	# edge lands EXACTLY on the landing's +X edge = the railing gap edge.
 	var stair_pivot := Node3D.new()
 	stair_pivot.name = "StairPivot"
 	stair_pivot.rotation.y = -PI * 0.5
 	p.add_child(stair_pivot)
 	var stair_run : float = float(maxi(int(deck_y / 0.22), 4)) * 0.27
-	_stair(stair_pivot, Vector3(land_z, 0.0, -gap_x1 - stair_run), deck_y, 0.90, tray, yellow)
+	var stair_z : float = -0.30                        # flight centreline, world Z
+	# world (x, z) = (-local_z, local_x) under the -90 deg yaw above.
+	_stair(stair_pivot, Vector3(stair_z, 0.0, -(hw + stair_run)), deck_y, 0.90, tray, yellow)
 
 	# ── Granulator body ON the deck ───────────────────────────────────────────
 	# Skid rails bridge the 0.05 m between the grating top and the chamber
@@ -4912,11 +4909,17 @@ static func _m_mill(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> voi
 		p.add_child(fan_guard)
 		fan_guard.position = Vector3(fan_x, fan_cy, fan_face)
 		fan_guard.rotation.x = PI * 0.5
-		for fgr in [0.093, 0.168, 0.240]:
-			_torus(fan_guard, float(fgr), float(fgr) + 0.014, Vector3.ZERO, galv)
-		for fgs in 8:
-			var spoke2 := _box(fan_guard, Vector3(0.012, 0.012, fan_r * 2.0), Vector3.ZERO, galv)
-			spoke2.rotation.y = PI * float(fgs) / 8.0
+		# Wire gauge is deliberately over-scale. A real finger-guard is ~4 mm wire.
+		# Built at 13 mm first and the operator could not see it at all ("i cant
+		# see the mesh shroud?"); 26 mm was legible but read as a chunky cage at
+		# close range, not a wire guard -- `_torus` only gives 6 rings x 18
+		# segments, so a fat tube shows its polygons. 17 mm is the compromise:
+		# visible from the walkway, still wire-like with your nose against it.
+		for fgr in [0.068, 0.130, 0.190, 0.245]:
+			_torus(fan_guard, float(fgr), float(fgr) + 0.017, Vector3.ZERO, galv)
+		for fgs in 10:
+			var spoke2 := _box(fan_guard, Vector3(0.014, 0.014, fan_r * 2.06), Vector3.ZERO, galv)
+			spoke2.rotation.y = PI * float(fgs) / 10.0
 
 	# ── A3 + B1: drive on the +X end — CREAM motor, twin pulleys, V-belts ─────
 	# The old `_motor_unit` sat at x = 1.757 with a 1.008 m body: it spanned

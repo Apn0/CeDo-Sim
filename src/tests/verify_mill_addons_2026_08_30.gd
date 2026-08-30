@@ -156,7 +156,11 @@ func _ready() -> void:
 	for b in boxes:
 		var a: AABB = b
 		var c := a.position + a.size * 0.5
-		if c.x > paint_plane + 0.008 and c.z > 0.88 and c.z < 1.01 \
+		# The upper X bound is essential. Without it this swept in the STAIR's
+		# posts once the stair moved to the +X face — they sit at z ~ 1.0 and
+		# passed every other term, which made the wrench measure 2.43 m tall.
+		if c.x > paint_plane + 0.008 and c.x < paint_plane + 0.08 \
+				and c.z > 0.88 and c.z < 1.01 \
 				and c.y > deck_top and c.y < 3.0:
 			t2_tools.append(a)
 	_check("position 2 now carries the real second wrench, not only paint",
@@ -166,7 +170,8 @@ func _ready() -> void:
 	for b2 in boxes:
 		var a2: AABB = b2
 		var c2 := a2.position + a2.size * 0.5
-		if c2.x > paint_plane + 0.008 and c2.z > 0.49 and c2.z < 0.63 \
+		if c2.x > paint_plane + 0.008 and c2.x < paint_plane + 0.08 \
+				and c2.z > 0.49 and c2.z < 0.63 \
 				and c2.y > deck_top and c2.y < 3.0:
 			t1_tools.append(a2)
 	var t1_aabb := _union(t1_tools)
@@ -178,6 +183,58 @@ func _ready() -> void:
 	_check("the second wrench is SMALLER than the first, as the operator described",
 		t2_aabb.size.y < t1_aabb.size.y - 0.05 and t2_aabb.size.y > 0.30,
 		"wrench2 %.4f m vs wrench1 %.4f m" % [t2_aabb.size.y, t1_aabb.size.y])
+
+	# ── Stair relocated beside the ladder (OPERATOR 2026-08-30) ──────────────
+	# `_caged_ladder` sits at (hw+0.10, 0, hd*0.35) and its hoops reach 0.484 m,
+	# so it owns X [1.056, 2.024] and Z [0.394, 1.362]. The flight must share the
+	# +X aisle with it without touching it.
+	var ladder_foot := Vector3(hw + 0.10, 0.0, hd * 0.35)
+	var steps: Array = []
+	for sb in boxes:
+		var sa: AABB = sb
+		var sc := sa.position + sa.size * 0.5
+		# Treads only: outboard of the deck, below deck height, thin, and wide
+		# enough to be a tread rather than a rail.
+		if sc.x > hw + 0.05 and sc.y > 0.05 and sc.y < deck_y + 0.02 				and sa.size.y < 0.12 and sa.size.z > 0.40:
+			steps.append(sa)
+	_check("stair treads found outboard of the +X deck edge",
+		steps.size() >= 6, "found %d" % steps.size())
+	var st_aabb := _union(steps)
+	print("[ADDONS] stair union pos=%s size=%s" % [str(st_aabb.position), str(st_aabb.size)])
+	_check("the stair is on the SAME face as the ladder (+X), not the -Z face",
+		st_aabb.position.x > hw,
+		"stair minX %.4f vs deck edge %.4f" % [st_aabb.position.x, hw])
+	_check("the stair tops out flush with the deck edge",
+		absf(st_aabb.position.x - hw) < 0.20,
+		"stair minX %.4f vs hw %.4f" % [st_aabb.position.x, hw])
+	var foot := Vector3(st_aabb.position.x + st_aabb.size.x, 0.0,
+		st_aabb.position.z + st_aabb.size.z * 0.5)
+	var gap := Vector2(foot.x - ladder_foot.x, foot.z - ladder_foot.z).length()
+	_check("the stair foot is beside the ladder foot (within 2.6 m)",
+		gap < 2.6, "%.2f m apart" % gap)
+	# Ladder cage volume; the flight must not intersect it.
+	var cage := AABB(Vector3(ladder_foot.x - 0.484, 0.0, ladder_foot.z - 0.154),
+		Vector3(0.968, deck_y + 0.9, 0.968))
+	_check("the stair does not intersect the caged ladder",
+		not st_aabb.intersects(cage),
+		"stair %s vs cage %s" % [str(st_aabb), str(cage)])
+
+	# The -Z railing used to be hand-built in two segments around a gap. With the
+	# stair moved it is one continuous run again, so no rail should stop short.
+	var mid_rail: Array = []
+	for rb in boxes:
+		var ra: AABB = rb
+		var rc := ra.position + ra.size * 0.5
+		# The Y band matters. The deck's -Z PERIMETER BEAM also sits on z = -hd,
+		# is wider than 0.5 m and is thin, so without it this check stayed green
+		# even with the entire -Z railing deleted — it was measuring the beam.
+		if absf(rc.z + hd) < 0.05 and ra.size.x > 0.5 and ra.size.y < 0.12 \
+				and rc.y > deck_top + 0.30:
+			mid_rail.append(ra)
+	var rail_span := _union(mid_rail)
+	_check("the -Z railing is CONTINUOUS again (no leftover stair gap)",
+		mid_rail.size() > 0 and rail_span.size.x > hw * 2.0 - 0.10,
+		"%d rail run(s), widest span %.4f vs deck %.4f" % [mid_rail.size(), rail_span.size.x, hw * 2.0])
 
 	# The removed TYPICAL box lived at X -1.1952, Z +0.8993 on the deck.
 	var old_spot := _region(boxes, -1.36, -1.03, deck_top, deck_top + 0.45, 0.78, 1.02)
