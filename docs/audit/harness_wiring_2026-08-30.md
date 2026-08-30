@@ -125,11 +125,51 @@ Use a worktree to isolate *edits*, never to establish a *baseline*.
 - **98 of 133 files in `src/tests/` are executed by nothing.** This batch closed
   five. `test_crew_panel.gd` is the remaining bare-`assert()` file and carries
   the same hang risk the moment anyone wires it.
-- **The harness is not hermetic.** `PolyhavenMaterials._ready()` calls
-  `request_pbr_set` at autoload boot (`PolyhavenMaterials.gd:84`), `run.sh` never
-  sets `CEDO_OFFLINE`, so **every** headless suite already attempts outbound
-  fetches to the Polyhaven API. Pre-existing and harness-wide; only the new
-  suite's own call was closed here. Setting `CEDO_OFFLINE=1` for the whole
-  harness is the obvious fix and was left alone as out of scope — it would
-  change the conditions under which all 40 suites run and belongs in its own
-  measured change.
+- ~~The harness is not hermetic.~~ **FIXED in this same change** — see below.
+  This was found while wiring `test_texture_cache` and turned out to be
+  harness-wide rather than specific to the new suite.
+
+## The harness talked to the internet (fixed)
+
+Found while closing `test_texture_cache`'s own outbound call, and much bigger
+than that one call: `PolyhavenMaterials._ready()` requests its PBR sets at
+autoload boot (`PolyhavenMaterials.gd:84`), `TextureCache` opens an
+`HTTPRequest` to the Polyhaven API for anything not already on disk
+(`TextureCache.gd:96-101`), and `run.sh` never set `CEDO_OFFLINE`.
+
+So **every** suite in the harness reached the public internet on every run. A
+regression harness was quietly dependent on a third party being up, on the
+machine having a network, and on nobody rate-limiting us — none of which any
+suite asserts anything about. That is a flaky-red generator pointed at code that
+did not change, which is how a harness teaches you to ignore it.
+
+`run.sh` now exports `CEDO_OFFLINE=1`.
+
+Safe by construction rather than by hope:
+
+- No wired suite references `PolyhavenMaterials`, `TextureCache` or
+  `pbr_set_ready` at all — grepped across the whole allow-list.
+- The offline path is a documented **degrade**, not a failure: `_build(kind)`
+  still produces the flat-colour `StandardMaterial3D` and only the HD upgrade
+  never arrives (`PolyhavenMaterials.gd:70`).
+- `test_texture_cache` is immune: it sets `CEDO_OFFLINE` to both values itself
+  and restores whatever it found.
+
+Validated on three representative suites with the flag exported — a world boot,
+a pure-data suite, and the one suite that actually asserts on the flag:
+
+```
+test_map_frame             Result: PASS (0 fail)      [rc 139 = the documented
+                                                       teardown segfault, not a
+                                                       failure; verdict printed]
+test_line3c_seq_alignment  Result: 11 ok, 0 fail
+test_texture_cache         Result: 19 ok, 0 fail, 0 skip
+```
+
+The flag is confirmed to have reached the child process, not just the shell —
+`[TextureCache] CEDO_OFFLINE=1 — disk cache only, no network fetches` appears in
+the world suite's own log.
+
+NOT YET DONE: a full 41-suite run with the flag exported. Deferred deliberately
+— the operator was using the machine, and the harness and a live game session
+both write `user://`. Run it before this is relied on as a whole-harness claim.

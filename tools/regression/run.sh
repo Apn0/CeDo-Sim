@@ -24,6 +24,24 @@ UD="${UD:-C:/Users/arnod/AppData/Roaming/Godot/app_userdata/CeDo Simulator}"
 OUT="$PROJ/tools/regression/out"
 mkdir -p "$OUT"
 
+# HERMETIC. Without this every single suite below reaches the public internet:
+# PolyhavenMaterials._ready() requests its PBR sets at autoload boot
+# (PolyhavenMaterials.gd:84) and TextureCache opens an HTTPRequest to the
+# Polyhaven API for anything not already on disk (TextureCache.gd:96-101). That
+# made a regression harness quietly dependent on a third party being up, on the
+# machine having a network, and on nobody rate-limiting us — none of which any
+# suite here actually asserts anything about.
+#
+# Safe by construction, not by hope: no wired suite references PolyhavenMaterials,
+# TextureCache or pbr_set_ready at all (grepped), and the offline path is a
+# documented degrade rather than a failure — _build(kind) still produces the
+# flat-colour StandardMaterial3D and only the HD upgrade never arrives
+# (PolyhavenMaterials.gd:70). test_texture_cache is immune because it sets
+# CEDO_OFFLINE explicitly to both values itself and restores what it found.
+#
+# Export, so it reaches every child Godot process below.
+export CEDO_OFFLINE=1
+
 echo "== importing =="
 "$GODOT" --headless --path "$PROJ" --import >/dev/null 2>&1
 

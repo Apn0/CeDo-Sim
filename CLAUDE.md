@@ -37,18 +37,31 @@ was wrong and would fail on the first command.
 > tried and rejected — is in `docs/AUDIT_project_sweep_2026-08-23.md`. **When a
 > merge touches this repo, run the sweep before trusting anything else.**
 
-`tools/regression/run.sh` runs **23 suites**. Since the perimeter-fence
-deletion (operator order 2026-08-07) it ends `== done (exit 1) ==`:
-`test_jam_baseline`'s jam1 leg now wedges **10.0 s (budget 3.0) on the parked
-`VolvoV40Placeholder` in the staff parking lot** — the fence used to wall that
-lot off the yard→plant bearing, and the pilot dead-reckons (route planning
-already returns NO ROUTE because the target is inside the building — a
-pre-existing gap). Measured with an intersect_shape probe at the recorded wedge
-point (-115.26, -8.60, 138.19). The fix direction (pilot evade vs outdoor road
-routing vs re-baselining the leg) is an operator decision — do not silently
-re-tune the budget. Every other suite is green.
-Last full run 2026-08-07, after the fix below; `test_l3c_unit_screens` alone is
-`Result: 120 ok, 0 fail, 0 skip` and takes minutes, not hours.
+`tools/regression/run.sh` runs **41 gated suites** and ends
+`== done (exit 1) ==`. Measured 2026-08-30, twice, on this machine's real
+checkout — **5 failures**:
+
+| failing check | note |
+|---|---|
+| `regression verdict` | the `regression_world_save` boot |
+| `test_nav_connectivity` | |
+| `test_npc05_realworld` | EXPECTED red — the DRIVE_TO_INDOOR stall, see below. Do not silence it |
+| `test_line3b_flow_conformance` | `the plasmaq is fed AND feeds onward (in false / out true)` — a missing input edge in LineFlow topology discovery. NOT caused by the 2026-08-29 LineFlow refactor; proven pre-existing by a baseline run without it |
+| `test_project_sweep_guards` | |
+
+Everything else is green, including `test_jam_baseline`, `test_map_frame`,
+`test_outdoor_route` and `test_gate_carve`.
+
+> **This paragraph used to say "23 suites" and blame `test_jam_baseline`'s
+> 10.0 s wedge on the parked `VolvoV40Placeholder` for the exit 1.** That is the
+> stale-constant disease this file warns about, in this file. `test_jam_baseline`
+> passes now. If you are about to quote a count or a red list from any doc here,
+> re-run first — `grep -c '^FAIL  :'` on a fresh log costs seconds.
+
+Beware of two numbers that look like the harness total and are not:
+`test_l3c_unit_screens` alone reports `Result: 120 ok, 0 fail, 0 skip`, and
+`regression_world_save` alone reports `16 ok, 0 fail, 2 skip`. Quoting either as
+the harness result is how a multi-day hang once stayed invisible.
 
 **History — the `1b29087` "hang" (red 2026-08-02 → fixed 2026-08-07).** The
 suite never looped: `src/data/plant/l3c_unit_screens.gd` was committed with raw
@@ -294,13 +307,16 @@ this one as re-checkable too — `find src -name '*.gd' | wc -l`):
   printed above the teardown block leaves `Result: PASS` in the log while a
   crash in teardown keeps the process alive — a green log and a hung harness at
   the same time. Found in `test_tool_placement_mode.gd` and fixed 2026-08-30.
-- **The harness is NOT hermetic — it talks to the internet.**
-  `PolyhavenMaterials._ready()` calls `request_pbr_set` at autoload boot
-  (`PolyhavenMaterials.gd:84`) and `run.sh` never sets `CEDO_OFFLINE`, so every
-  headless suite attempts outbound fetches to the Polyhaven API. Keep new suites
-  from adding their own (`test_texture_cache.gd` forces its instance offline for
-  the one request that would otherwise fetch), and do not read a network-flaky
-  suite as a code regression.
+- **The harness reaches the internet unless you stop it.** `PolyhavenMaterials`
+  requests its PBR sets at autoload boot (`PolyhavenMaterials.gd:84`) and
+  `TextureCache` opens an `HTTPRequest` for anything not on disk
+  (`TextureCache.gd:96-101`), so EVERY headless suite used to hit the Polyhaven
+  API. `run.sh` now `export CEDO_OFFLINE=1` (2026-08-30). Keep it that way, and
+  keep new suites from opening their own sockets — `test_texture_cache.gd` builds
+  an instance with `CEDO_OFFLINE=0` deliberately and has to force `_offline` back
+  on before the one request that would otherwise fetch. If you ever need the
+  network path exercised, do it in a suite that ASSERTS something about it; a
+  third-party dependency nothing asserts on is just a flaky-red generator.
 - **A worktree is for isolating EDITS, not for establishing a BASELINE.**
   `assets/` is gitignored, so a worktree runs without it and several suites fail
   for purely environmental reasons. Measured 2026-08-30: the same tree baselines
