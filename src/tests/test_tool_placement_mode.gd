@@ -7,8 +7,13 @@ const ToolPlacementMode = preload("res://src/build/ToolPlacementMode.gd")
 const MockTool = preload("res://src/tests/test_tool_placement_mode_mock_tool.gd")
 
 var _fails := 0
+# Counted so the verdict can report "N ok, 0 fail". The harness gate requires a
+# NON-ZERO check count: a suite that executed nothing would otherwise print an
+# honest PASS while proving nothing.
+var _checks := 0
 
 func _check(cond: bool, msg: String) -> void:
+    _checks += 1
     if cond:
         print("  ok    : %s" % msg)
     else:
@@ -109,8 +114,6 @@ func _ready() -> void:
         ghost3.queue_free()
     empty_node.queue_free()
 
-    print("Result: %s" % ("PASS" if _fails == 0 else "FAIL (%d)" % _fails))
-
     test_slot.queue_free()
     tool_no_id.queue_free()
     tool_hammer.queue_free()
@@ -121,5 +124,13 @@ func _ready() -> void:
     slot2.queue_free()
     tool_coffee.queue_free()
     tool_sandwich.queue_free()
+
+    # The verdict prints LAST, immediately before quit(). It used to print above
+    # the teardown block: run.sh judges a suite purely on this line, and the
+    # .tscn loop has no --quit-after, so a runtime error anywhere in the eleven
+    # calls above would have left "Result: PASS" in the log while the process
+    # stayed alive — a green verdict and a hung harness at the same time.
+    print("Result: %d ok, %d fail" % [_checks - _fails, _fails])
+    print("Result: %s" % ("PASS" if _fails == 0 else "FAIL (%d)" % _fails))
 
     get_tree().quit(0 if _fails == 0 else 1)
