@@ -1,4 +1,26 @@
 extends SceneTree
+## Headless test for the Walkie autoload.
+##
+## Run: godot --headless --path . --script res://src/tests/test_walkie.gd --quit-after 300
+##
+## Counted checks, not assert(). Two reasons, both measured rather than assumed:
+## a failing assert() aborts _run_tests before quit(), so the SceneTree keeps
+## iterating and the harness HANGS instead of going red; and assert() is compiled
+## out of release builds, while run.sh:17-21 makes $GODOT overridable by design —
+## under an export template the assert form would run top to bottom checking
+## nothing and still print a pass.
+
+var _pass := 0
+var _fail := 0
+var _skip := 0
+
+func _ok(cond: bool, msg: String) -> void:
+	if cond:
+		print("  ok    : %s" % msg)
+		_pass += 1
+	else:
+		print("  FAIL  : %s" % msg)
+		_fail += 1
 
 func _initialize() -> void:
 	call_deferred("_run_tests")
