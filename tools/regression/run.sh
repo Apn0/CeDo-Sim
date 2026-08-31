@@ -287,7 +287,17 @@ fi
 # for in the same report. Mutation-tested: skipping preview entries past
 # index 0 (simulating the pre-fix single-box ghost) drops the ghost from 50
 # children to 1 and breaks the real-vs-preview count parity check — red.
-for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_line3a_identity test_line3b_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_humanoid_rig_conformance test_line1_flow_conformance test_line3a_flow_conformance test_line3b_flow_conformance test_shredder_rate_reconciliation test_line1_no_false_overload test_line_builder_ghost test_project_sweep_guards; do
+# test_tool_placement_mode (2026-08-30): merged 2026-08-29 by PRs #154/#163 and
+# never run by anything until it was wired here. RE-ADDED 2026-08-31: the
+# 2026-08-31 batch merge replaced this whole `for t in` line with PR #168's
+# version of it, which silently dropped this suite — git merged one line over
+# another with no conflict. It is a pure unit proof of ToolPlacementMode with
+# no world boot, so it belongs in this loop: it ships a .tscn that roots it and
+# it ends in get_tree().quit(). Its verdict print sits BELOW its teardown --
+# this loop has no --quit-after, so a verdict printed before the last eleven
+# statements would leave "Result: PASS" in the log with the process still
+# alive: a green log and a hung harness at once.
+for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_line3a_identity test_line3b_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_humanoid_rig_conformance test_line1_flow_conformance test_line3a_flow_conformance test_line3b_flow_conformance test_shredder_rate_reconciliation test_line1_no_false_overload test_line_builder_ghost test_project_sweep_guards test_tool_placement_mode; do
 	echo "== $t =="
 	"$GODOT" --headless --path "$PROJ" "res://src/tests/$t.tscn" > "$OUT/$t.log" 2>&1
 	grep -E "^  (ok|FAIL)|Result|RESULT" "$OUT/$t.log" || true

@@ -31,6 +31,9 @@ func _run_tests() -> void:
 	# The real autoloads already own the "AudioManager" and "VoiceService" names under /root,
 	# so we must free or rename them before inserting our mocks to ensure Walkie's
 	# get_node_or_null("/root/AudioManager") finds our mocks.
+	# This works because Walkie caches neither: every touch is a fresh
+	# get_node_or_null("/root/...") inside the method that needs it, so a rename
+	# performed before the first call is enough (Walkie.gd:175, 238, 267, 277, 303).
 	if root.has_node("AudioManager"):
 		root.get_node("AudioManager").name = "AudioManager_Real"
 	if root.has_node("VoiceService"):
@@ -55,89 +58,102 @@ func _run_tests() -> void:
 
 	# 1. Initial State
 	print("Test: Initial state")
-	assert(walkie.battery_percent() == 100, "Initial battery should be 100%")
-	assert(walkie.battery_alive() == true, "Initial battery should be alive")
-	assert(walkie.headset_on == true, "Headset should be on by default")
-	assert(abs(walkie.volume - 0.6) < 0.001, "Volume should default to 0.6")
+	_ok(walkie.battery_percent() == 100, "Initial battery should be 100%")
+	_ok(walkie.battery_alive() == true, "Initial battery should be alive")
+	_ok(walkie.headset_on == true, "Headset should be on by default")
+	_ok(abs(walkie.volume - 0.6) < 0.001, "Volume should default to 0.6")
 
 	# 2. Swap Battery
 	print("Test: Swap battery")
 	var flat = BatteryType.new(0.0)
 	var fresh = walkie.swap_battery(flat)
-	assert(walkie.battery_alive() == false, "Walkie should be dead with flat battery")
-	assert(walkie.battery_percent() == 0, "Flat battery should show 0%")
+	_ok(walkie.battery_alive() == false, "Walkie should be dead with flat battery")
+	_ok(walkie.battery_percent() == 0, "Flat battery should show 0%")
 	walkie.swap_battery(fresh) # put it back
-	assert(walkie.battery_alive() == true, "Walkie should be alive again")
-	assert(walkie.battery_percent() == 100, "Fresh battery should show 100%")
+	_ok(walkie.battery_alive() == true, "Walkie should be alive again")
+	_ok(walkie.battery_percent() == 100, "Fresh battery should show 100%")
 
 	# 3. Headset and Volume
 	print("Test: Headset and Volume")
-	assert(abs(walkie.effective_loudness() - (0.6 * 0.55)) < 0.001, "Headset loudness capped")
+	_ok(abs(walkie.effective_loudness() - (0.6 * 0.55)) < 0.001, "Headset loudness capped")
 	walkie.toggle_headset()
-	assert(walkie.headset_on == false, "Headset should be toggled off")
-	assert(abs(walkie.effective_loudness() - 0.6) < 0.001, "Speaker loudness is full volume")
+	_ok(walkie.headset_on == false, "Headset should be toggled off")
+	_ok(abs(walkie.effective_loudness() - 0.6) < 0.001, "Speaker loudness is full volume")
 
 	walkie.volume_up()
-	assert(abs(walkie.volume - 0.7) < 0.001, "Volume should increment by 0.1")
+	_ok(abs(walkie.volume - 0.7) < 0.001, "Volume should increment by 0.1")
 	walkie.volume_down()
-	assert(abs(walkie.volume - 0.6) < 0.001, "Volume should decrement by 0.1")
+	_ok(abs(walkie.volume - 0.6) < 0.001, "Volume should decrement by 0.1")
 
 	# 4. Receive Call
 	print("Test: Receive Call")
 	am.calls.clear()
 	vs.calls.clear()
 	walkie.receive_call("Mohammed", "Hello")
-	assert(am.calls.size() == 1, "AudioManager should play radio call")
-	assert(am.calls[0].method == "play_radio_call", "Wrong am method called")
-	if vs.calls.size() > 0:
-		assert(vs.calls.size() == 1, "VoiceService should synthesize")
-		assert(vs.calls[0].voice_id == "mohammed", "Voice ID lookup failed")
+	# Size claim first, index claim gated on it: a counted check does not abort,
+	# so an unguarded calls[0] on an empty array would crash before the verdict
+	# print — the hang bug wearing a different hat. The dependent claim still
+	# counts as a FAIL (never a skip) when the guard trips.
+	var am_call_one: bool = am.calls.size() == 1
+	_ok(am_call_one, "AudioManager should play radio call")
+	_ok(am_call_one and am.calls[0].method == "play_radio_call", "Wrong am method called")
+	# The `if vs.calls.size() > 0:` guard that used to wrap the next two checks is
+	# deliberately GONE. It silently deleted them precisely when VoiceService
+	# stopped being asked to speak — i.e. it was blind to the one regression this
+	# section exists to catch, which is the npc-05 vacuous-green shape this repo
+	# has been bitten by before. MEASURED 2026-08-30: the mock IS called, so these
+	# hold unconditionally and there is nothing to guard against.
+	var vs_call_one: bool = vs.calls.size() == 1
+	_ok(vs_call_one, "VoiceService should synthesize")
+	_ok(vs_call_one and vs.calls[0].voice_id == "mohammed", "Voice ID lookup failed")
 
 	# 5. Transmit Freeform
 	print("Test: Transmit Freeform")
 	am.calls.clear()
 	vs.calls.clear()
 	var tx_res = walkie.transmit_freeform("Copy")
-	assert(tx_res == true, "Should transmit successfully")
-	assert(am.calls.size() == 1, "AudioManager should play uplink")
-	assert(am.calls[0].method == "play_radio_uplink", "Wrong am method called")
-	if vs.calls.size() > 0:
-		assert(vs.calls.size() == 1, "VoiceService should synthesize operator")
-		assert(vs.calls[0].voice_id == "operator", "Transmit must use operator voice")
+	_ok(tx_res == true, "Should transmit successfully")
+	var am_tx_one: bool = am.calls.size() == 1
+	_ok(am_tx_one, "AudioManager should play uplink")
+	_ok(am_tx_one and am.calls[0].method == "play_radio_uplink", "Wrong am method called")
+	# Same de-guarding as section 4, same measurement.
+	var vs_tx_one: bool = vs.calls.size() == 1
+	_ok(vs_tx_one, "VoiceService should synthesize operator")
+	_ok(vs_tx_one and vs.calls[0].voice_id == "operator", "Transmit must use operator voice")
 
 	# 6. Live Mic PTT
 	print("Test: Live Mic")
 	am.calls.clear()
 	var mic_res = walkie.start_mic_ptt()
-	assert(mic_res == true, "Mic should start")
-	assert(am.calls.size() == 1, "AudioManager should start mic")
-	assert(am.calls[0].method == "start_mic_transmission", "Wrong am method called")
+	_ok(mic_res == true, "Mic should start")
+	var am_mic_one: bool = am.calls.size() == 1
+	_ok(am_mic_one, "AudioManager should start mic")
+	_ok(am_mic_one and am.calls[0].method == "start_mic_transmission", "Wrong am method called")
 
 	walkie.stop_mic_ptt()
-	assert(am.calls.size() == 2, "AudioManager should stop mic")
-	assert(am.calls[1].method == "stop_mic_transmission", "Wrong am method called")
+	var am_mic_two: bool = am.calls.size() == 2
+	_ok(am_mic_two, "AudioManager should stop mic")
+	_ok(am_mic_two and am.calls[1].method == "stop_mic_transmission", "Wrong am method called")
 
 	# 7. Dead Battery Silence
 	print("Test: Dead Battery Silence")
 	walkie.swap_battery(flat)
-	assert(walkie.effective_loudness() == 0.0, "Dead battery loudness should be 0")
+	_ok(walkie.effective_loudness() == 0.0, "Dead battery loudness should be 0")
 
 	am.calls.clear()
 	vs.calls.clear()
 	walkie.receive_call("Mohammed", "Hello")
-	assert(am.calls.size() == 0, "No audio should play if battery is dead")
-	assert(vs.calls.size() == 0, "No TTS should happen if battery is dead")
+	_ok(am.calls.size() == 0, "No audio should play if battery is dead")
+	_ok(vs.calls.size() == 0, "No TTS should happen if battery is dead")
 
 	tx_res = walkie.transmit_freeform("Copy")
-	assert(tx_res == false, "Should not transmit if battery is dead")
-	assert(am.calls.size() == 0, "No uplink audio should play")
-	assert(vs.calls.size() == 0, "No TTS should happen")
+	_ok(tx_res == false, "Should not transmit if battery is dead")
+	_ok(am.calls.size() == 0, "No uplink audio should play")
+	_ok(vs.calls.size() == 0, "No TTS should happen")
 
 	mic_res = walkie.start_mic_ptt()
-	assert(mic_res == false, "Should not start mic if battery is dead")
-	assert(am.calls.size() == 0, "No mic transmission should start")
-
-	print("All tests passed.")
+	_ok(mic_res == false, "Should not start mic if battery is dead")
+	_ok(am.calls.size() == 0, "No mic transmission should start")
 
 	# Cleanup
 	root.remove_child(walkie)
@@ -153,7 +169,15 @@ func _run_tests() -> void:
 	if root.has_node("VoiceService_Real"):
 		root.get_node("VoiceService_Real").name = "VoiceService"
 
-	quit(0)
+	_finish()
+
+func _finish() -> void:
+	print("\n=========================================")
+	print("Result: %d ok, %d fail, %d skip" % [_pass, _fail, _skip])
+	print("Result: %s" % ("PASS" if _fail == 0 else "FAIL"))
+	print("RESULT: %s" % ("PASS" if _fail == 0 else "FAIL"))
+	print("=========================================")
+	quit(0 if _fail == 0 else 1)
 
 class MockAudioManager extends Node:
 	var calls : Array = []
