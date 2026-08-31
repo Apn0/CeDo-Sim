@@ -31,7 +31,14 @@ any earlier guesswork about the laser-filter discharge / head-filter arrangement
 |------|--------------------|-----------------------|
 | **3C** | **YES** (gear pump) | Head filter unit + safety hood |
 | **1, 3A, 3B** | **NO** (omit — vacuum feeds straight to head filter) | Head filter unit + safety hood |
-| **6** | (per 1/3A/3B unless told otherwise) | **Britas** instead of head filters |
+| **6** | **YES** (gear pump) — *operator-confirmed 2026-08-31* | **Britas ABMF** (screen-belt) instead of head filters |
+
+**CORRECTION 2026-08-31 (operator ruling).** The line-6 melt-pump cell previously read
+"(per 1/3A/3B unless told otherwise)", i.e. NO. The operator has now told otherwise: **3C AND 6 both
+have a melt pump; 1, 3A and 3B have none.** The operator also confirmed that **every line has the
+laserfilter** — line 6 runs the laserfilter *upstream* of the Britas, and the Britas replaces only
+the head filter. `misc_sources.md:112-114` already carried this map correctly and should be treated
+as the port target. See `operator_rulings_2026-08-31.md` §1.
 
 ## Discharge / cart / platform (operator 2026-07-15, refined)
 - The laser filter has TWO afvoerschroeven (front = voorzijde, rear = achterzijde), each with its **own cart** (one cart per side).

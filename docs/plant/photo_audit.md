@@ -109,13 +109,13 @@ Legend: ☐ todo · ◑ read/awaiting operator · ⚙ fixing · ✓ done · ⚠ 
 | Extruder silo | all | `extruder_silo` | machines/_extruder_silo.png | ✓ | ☐ |
 | Compactorband | all | `compactor_belt` / `compactorband` | machines/_compactor_belt.png, _2.png | ✓ | ☐ |
 | Compactor (PCU) | all | `compactor` / `cutter_compactor` | machines/_extruder_start_and_PCU.png | ✓ | ☐ operator: PCU E-kast |
-| Extruder | all | `extruder_3a/3b/1/3c/6` | machines/_extruder_start_and_PCU.png | ✓ | ☐ |
-| Vacuum degas (op extruder) | all | `vacuum_degas` | machines/_vacuum.png | ✓ | ☐ |
+| Extruder | all | `extruder_3a/3b/1/3c/6` | machines/_extruder_start_and_PCU.png | ✓ | ☐ ◑ **2026-08-30**: `extruder_6` is placed by zero macros (build-menu prop only) and has no `Extruder6.tres` — it runs 3B's numbers. See `operator_rulings_2026-08-30.md` §5. |
+| Vacuum degas (op extruder) | all | `vacuum_degas` | machines/_vacuum.png | ✓ | ☐ ◑ **2026-08-30**: degassing physics is fully modelled (`ExtruderModel.gd:745-790`) but its input `set_volatile_load()` has **0 callers** — gassy pellets can never occur. See `operator_rulings_2026-08-30.md` §3. |
 
 ### H · Filtering
 | Machine | Line | Placeable | Photo | Model | Status |
 |---|---|---|---|---|---|
-| Laserfilter + lump discharge | all | `laser_filter`,`lump_cart`,`lump_platform` | _laserfilter.png, laserfilter_lump_cart_discharge.jpg, ~/laser_filter_3B.jpg | ✓ | ✓ **DONE 2026-07-14** (twin nozzles ±X, carts on bordes, fork channels) |
+| Laserfilter + lump discharge | all | `laser_filter`,`lump_cart`,`lump_platform` | _laserfilter.png, laserfilter_lump_cart_discharge.jpg, ~/laser_filter_3B.jpg | ✓ | ✓ **DONE 2026-07-14** (twin nozzles ±X, carts on bordes, fork channels) · ⚠ **REOPENED for LINE 6 (2026-08-30)** — `machines/VID-20250912-WA0010.mp4` is the first line-6 laserfilter footage in the tree; the "all" in the Line column was generalised from a 3B photo and was never tested against 6. Video shows a rotary disc + **twin chutes discharging simultaneously as ropes**, landing NOT in the cart. **CORRECTION 2026-08-31:** this row first claimed the video contradicts `extruder_line_layout.md:34` ("Britas instead of head filters" on 6). It does not — that table row is about the FINAL/head-filter position, so a disc upstream and a Britas at the die can coexist. The real conflict is internal: `extruder_line_layout.md:127` says **band** filter, `misc_sources.md:114` says **rotary** — and the HMI photo transcript at `hmi_screen_inventory_2026-07-28.md:149` settles it as a screen-**belt** filter ("Verbruikte zeefband 9645,000 m"), so `misc_sources.md:114` is the error. **RESOLVED 2026-08-31 (operator):** line 6 runs the laserfilter AND a Britas, laserfilter upstream; the Britas replaces only the head filter. The "all" in this row's Line column is therefore operator-confirmed correct — every line has the laserfilter. See `operator_rulings_2026-08-31.md` §1. See `operator_rulings_2026-08-30.md` §1 and §5. |
 | Kopfilter & heetafslag (diekop) | all | `kopfilter` / `heetafslag` | machines/_kopfilters.jfif | ✓ | ☐ operator: head-filter **change tool + its safety box** |
 
 ### I · Pelletizing & back-end

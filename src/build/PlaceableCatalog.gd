@@ -11815,11 +11815,16 @@ static func _m_extruder_unit(p: Node3D, size: Vector3, color: Color, ghost: bool
 			Vector3(size.x * 0.10, vac_y + size.x * 0.02, vz), glass, "x")
 
 	# ═══ SECTION 6: MELTPUMP (gear-pump block) on the barrel front ═══
-	# #225.3 spec: ONLY line 3C has the smeltpomp (gear pump) fitted — the other
-	# extruder lines (1 / 3A / 3B / 6) feed the die head directly. Gated on the
-	# per-line tag so the doubled/incorrect pump no longer renders everywhere.
+	# Lines 3C AND 6 have the smeltpomp (gear pump) fitted; lines 1 / 3A / 3B feed
+	# the die head directly. Gated on the per-line tag so the doubled/incorrect
+	# pump no longer renders everywhere.
 	# (PHOTO-erema-bluport-lijn3C-smeltpomp1-productie__295_CeDo62_3.md is a 3C shot.)
-	if line_tag == "3C":
+	# CORRECTION 2026-08-31 (operator ruling): the earlier "#225.3 spec: ONLY line
+	# 3C" reading excluded line 6. The operator ruled that 3C AND 6 both carry a
+	# melt pump and only 1 / 3A / 3B go without — matching the variant map at
+	# docs/plant/misc_sources.md:112-114 (V3_BRITAS_PUMP -> line 6 "+ melt pump").
+	# See docs/plant/operator_rulings_2026-08-31.md §1.
+	if line_tag in ["3C", "6"]:
 		var mp_z : float = size.z * 0.30
 		_box(p, Vector3(size.x * 0.30, barrel_cy * 0.55, size.z * 0.05), Vector3(0.0, hood_cy, mp_z), body)         # pump block
 		for sx4 in [-0.10, 0.10]:

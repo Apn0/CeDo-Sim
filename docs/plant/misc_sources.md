@@ -113,6 +113,14 @@ V1_HEAD_NO_PUMP   -> lines 1, 3A, 3B   (laserfilter, head filter, NO melt pump)
 V2_HEAD_PUMP      -> line 3C           (adds a melt pump)
 V3_BRITAS_PUMP    -> line 6            (Britas rotary melt filter + melt pump)
 ```
+**OPERATOR-CONFIRMED 2026-08-31 — this map is CORRECT; port it as written.** The operator ruled that
+every line runs the laserfilter, that line 6 adds a **Britas in place of the head filter** with the
+laserfilter still upstream of it, and that **3C and 6 both have a melt pump while 1/3A/3B have
+none** — exactly the V1/V2/V3 split above. This map supersedes the line-6 melt-pump cell that
+`extruder_line_layout.md:34` used to carry. **One wording fix:** the Britas is a screen-**belt**
+filter (*Automatischer Bandfilter*), not "rotary" — the rotary disc on that line is the laserfilter,
+a different machine. Evidence: `hmi_screen_inventory_2026-07-28.md:149` (`Verbruikte zeefband
+9645,000 m`). See `operator_rulings_2026-08-31.md` §1.
 Barrel segment order (feed→die): feed_interface, solids_conveying, compression, melting,
 melt_stabilization, filtration_interface, **Laserfilter**, homogenization_plus_zone,
 **vacuum_zone_1**, **vacuum_zone_2**, metering_discharge, die_interface; downstream filter =
