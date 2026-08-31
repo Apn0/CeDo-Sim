@@ -1368,7 +1368,21 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 	# the player can interact with them — proximity prompt + UI overlay.
 	# Everything else is a plain StaticBody3D (machines / surfaces don't move).
 	var body : PhysicsBody3D
-	if category == "Control":
+	if id == "silo_level_sensor":
+		# Operator-anecdote mechanic (#A3). Attach SiloLevelSensor.gd so the body
+		# exposes the bridge toggle + level read; upstream feed scripts call
+		# wants_throttle() to decide whether to clamp output.
+		#
+		# MUST BE TESTED BEFORE the `category == "Control"` arm below, not after.
+		# This entry's category IS "Control" (see its row in items()), so while the
+		# id test sat lower in the chain it was UNREACHABLE and this line was dead:
+		# `:1407` was the only instantiation of SiloLevelSensor.gd in the repo, so
+		# LineFlow's `get_nodes_in_group("silo_level_sensor")` lookup was
+		# permanently empty and #A3 had never run in any build. TagMap.gd:60
+		# already recorded the downstream symptom ("current_level_pct IS A DEAD
+		# SOURCE") without anyone tracing it back to this ordering.
+		body = load("res://src/sim/SiloLevelSensor.gd").new()
+	elif category == "Control":
 		body = load("res://src/build/Hmi.gd").new()
 	elif id == "waste_container" or id == "skip_steel" or id == "fines_bin" or id == "cyclone_bin" or id == "ibc_tote":
 		# Real physical buffer entity — has capacity / density / overflow state,
@@ -1400,11 +1414,6 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 		# on the online cavity (no self-clean), and the two operator
 		# procedures: SWAP (~5 s line dip) and REPACK (no line dip).
 		body = load("res://src/sim/HeadFilter.gd").new()
-	elif id == "silo_level_sensor":
-		# Operator-anecdote mechanic (#A3). Attach SiloLevelSensor.gd so
-		# the body exposes the bridge toggle + level read; upstream feed
-		# scripts call wants_throttle() to decide whether to clamp output.
-		body = load("res://src/sim/SiloLevelSensor.gd").new()
 	elif id == "lump_cart":
 		# #98 — Real-life mass ~40 kg. Operator can either shove it by walking
 		# into it (slow at this weight), or grab the handle (crosshair + E) for
