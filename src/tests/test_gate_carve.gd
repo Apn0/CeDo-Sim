@@ -22,31 +22,35 @@ extends Node
 # its next order. ALSO proves the mirror: deleting the gate re-triggers the
 # carve removal and invalidates the grid again.
 #
-# ROOT CAUSE #2 (measured, NOT fixed here — separate, deeper, out of scope):
-# on the operator's OWN building, WallOpenings' triangle carve did not
-# actually open a passable hole at the wall location this test picked, even
-# though _carve_structure_opening ran correctly (has_opening() true,
-# "[WallOpenings] Rebuilt — 1 openings" logged). Traced two contributing
-# causes in WallOpenings._clip_triangle_against_box:
-#   (a) the shell's procedural wall faces are single GIANT triangles (measured
-#       50+ m edges) — its coplanarity test compares each VERTEX'S absolute
-#       distance from the box mid-plane against a fixed 5 cm tolerance, and a
-#       rot_y accurate to a small fraction of a degree still pushes a vertex
-#       50 m away out past that;
-#   (b) the shell reads as a THICK, double-sided volume at this spot — an
-#       outer-facing and an inner-facing triangle a few cm apart were both
-#       found near the carve point, with opposite normals — so even a fix for
-#       (a) only opens the outer skin; the inner skin, offset by the wall's
-#       real thickness, still needs a separate resolution.
-# A same-day attempt to widen the coplanarity test (angle-based instead of
-# per-vertex-absolute, tolerance widened to the box's own half-depth) fixed
-# both symptoms on THIS building but REGRESSED the existing
-# src/tests/test_door_carve.gd (0 -> 13 visible teeth) — WallOpenings is
-# shared by every wall/door/gate/window in the game, and that is not an
-# acceptable trade blind, under time pressure, without its own dedicated
-# session and regression coverage. Reverted; reported here instead. The
-# passability checks below are DIAGNOSTIC (info-only), not gating, until that
-# work happens.
+# ROOT CAUSE #2 (measured, FIXED 2026-08-29): on the operator's OWN building,
+# WallOpenings' triangle carve did not actually open a passable hole at the
+# wall location this test picks, even though _carve_structure_opening ran
+# correctly (has_opening() true, "[WallOpenings] Rebuilt — 1 openings"
+# logged). A same-day attempt to widen the coplanarity test (angle-based
+# instead of per-vertex-absolute, tolerance widened to the box's own
+# half-depth) fixed passability on THIS building but REGRESSED the existing
+# src/tests/test_door_carve.gd (0 -> 13 visible teeth). Reverted; the real
+# cause was measured properly afterward with a throwaway diagnostic booting
+# this same MainWorld and dumping every WallOpenings._orig_surfaces /
+# _visual_surfaces triangle's box-local Z near this exact wall
+# (-254.77,-8.00,95.84): the wall is a real closed box (built by
+# tools/generate_building.py, T=0.30 wall thickness) — outer skin at
+# box-local z=0.0046, inner skin at z=-0.2954, i.e. ~0.30 m apart along the
+# opening's depth axis. WallOpenings._COPLANAR_TOL (5 cm) was 5.9x too small
+# to ever reach that inner skin, so it silently stayed un-carved — solid from
+# the inside, exactly matching the operator's report.
+#
+# FIX (src/build/WallOpenings.gd): the coplanarity tolerance now tracks the
+# existing `solidify_enabled` switch instead of being one fixed global
+# constant — solidify_enabled=true (thin mesh + runtime solidify, e.g.
+# test_door_carve.gd's synthetic wall) keeps tol = WALL_THICK (0.05 m,
+# BIT-FOR-BIT unchanged — a bare global widen was tried first and regressed
+# test_door_carve.gd 0 -> 13 teeth the same way the angle-based attempt did);
+# solidify_enabled=false (the live parametric shell) uses tol = 0.35 m (the
+# measured 0.2954 m gap + margin). Same per-vertex-absolute-distance algorithm
+# throughout — only which constant applies changed, keyed off geometry the
+# caller already declares. Passability on this exact wall: 0/5 -> 5/5. The
+# passability check below is now a GATING assertion, not diagnostic.
 #
 #   GODOT --headless --path . res://src/tests/test_gate_carve.tscn
 # =============================================================================
@@ -194,20 +198,18 @@ func _ready() -> void:
 	_check(gate_node != null and bool(wall_openings.call("has_opening", oid)),
 		"WallOpenings registered the opening immediately (has_opening true, no save/reload)")
 
-	# ── ROOT CAUSE #2 (reported, NOT gated — see file header): whether the
-	# opening is actually passable depends on a separate, unfixed WallOpenings
-	# limitation on THIS building's geometry. Measure and print it honestly;
-	# do not fail the test on it and do not hide it either.
+	# ── ROOT CAUSE #2 (GATING, fixed 2026-08-29 — see file header for the
+	# measured gap and the WallOpenings.gd fix). Require at least 4/5 sample
+	# points clear (ideally 5/5); a regression here means the coplanarity
+	# tolerance stopped reaching the live building's real double-skin gap.
 	var open_count := 0
 	for off in sample_offsets:
 		if not _wall_blocks(space, probe_centre + parallel * off, normal):
 			open_count += 1
-	if open_count >= sample_offsets.size() - 1:
-		_info("PASSABILITY: open across %d/%d sample points — the wall is clear here"
-			% [open_count, sample_offsets.size()])
-	else:
-		_info("PASSABILITY: only %d/%d sample points clear — root cause #2 (large-triangle / thick-shell coplanarity, see file header) is NOT fixed by this change. Reported, not asserted."
-			% [open_count, sample_offsets.size()])
+	_info("PASSABILITY: open across %d/%d sample points" % [open_count, sample_offsets.size()])
+	_check(open_count >= sample_offsets.size() - 1,
+		"PASSABILITY: at least %d/%d sample points clear (got %d)"
+			% [sample_offsets.size() - 1, sample_offsets.size(), open_count])
 
 	_check(BaseVehicle._route_grid == null,
 		"placing the gate invalidated the shared vehicle route grid")
