@@ -937,6 +937,13 @@ func _build_ui() -> void:
 	surf_help.add_theme_color_override("font_color", Color(0.6, 0.6, 0.66))
 	vbox.add_child(surf_help)
 
+	# #linebuilder-menu (2026-08-29) — pinned quick-access section, top of the
+	# catalog: operator feedback was that the "Lines" category (with Line 1
+	# among ~7 other whole-line macros) was hard to find buried in the
+	# alphabetical category list below. Line 1 is also still reachable there —
+	# this is a shortcut, not a move.
+	_build_new_line_builder_panel(vbox)
+
 	# #MSB — Macro Save-Back panel: after placing a line macro and jogging
 	# machines in EDIT mode (K), the operator can save the new layout back
 	# so future placements emit it. Reset wipes the override file and
@@ -1018,6 +1025,31 @@ func _build_popup() -> void:
 	cancel_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	cancel_btn.pressed.connect(_cancel_surface)
 	row.add_child(cancel_btn)
+
+# #linebuilder-menu — pinned "NEW LINE BUILDER" section, top of the catalog
+# panel (same slot pattern as the Surface tool button above it). One button
+# per line currently in scope: just Line 1 for now, per the operator ask —
+# add more entries here as other whole-line macros need the same shortcut.
+func _build_new_line_builder_panel(parent: VBoxContainer) -> void:
+	var sep := Label.new()
+	sep.text = "— NEW LINE BUILDER —"
+	sep.add_theme_font_size_override("font_size", 13)
+	sep.add_theme_color_override("font_color", Color(0.55, 0.85, 0.55))
+	parent.add_child(sep)
+
+	var item := PlaceableCatalog.get_item("line_1")
+	var btn := Button.new()
+	btn.text = String(item.get("name", "▶ Build Line 1 (full)"))
+	btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	btn.add_theme_color_override("font_color", Color(0.75, 1.0, 0.75))
+	btn.pressed.connect(_select_item.bind("line_1"))
+	parent.add_child(btn)
+
+	var hint := Label.new()
+	hint.text = "  ghost shows every machine — line it up, then click to build"
+	hint.add_theme_font_size_override("font_size", 11)
+	hint.add_theme_color_override("font_color", Color(0.6, 0.6, 0.66))
+	parent.add_child(hint)
 
 # #MSB — build a Save-as-spec / Reset-to-default pair of buttons per macro.
 # Place once into the catalog; presses route into save_macro_overrides() /
@@ -1824,29 +1856,34 @@ func _try_pole_snap(hit: Dictionary) -> Dictionary:
 func _spawn_ghost(id: String) -> void:
 	_clear_ghost()
 	if id.begins_with("line_"):
-		_ghost = _make_line_ghost()   # macro: simple box + forward arrow
+		_ghost = _make_line_ghost(id)   # macro: every machine, placeholder boxes
 	else:
 		_ghost = PlaceableCatalog.build_node(id, true)
 	if _ghost:
 		add_child(_ghost)
 
-## Placeholder ghost for a whole-line macro: a small translucent box with a
-## forward-pointing arrow so the operator can see WHERE the line will start and
-## which way it will march (the ghost's local -Z).
-func _make_line_ghost() -> Node3D:
-	var root := Node3D.new()
+## Whole-line macro ghost (#linebuilder-ghost, 2026-08-29). Was a single
+## generic box + arrow showing only where the FIRST machine would land —
+## operator feedback: with a ~40-machine line, that's not enough to judge
+## whether the whole train actually fits/clears before committing. Now reuses
+## _build_full_line's own preview mode so every machine in the sequence shows
+## its real footprint as a translucent box (same position math as the real
+## build — turns, branches, transportband stacking, saved macro overrides all
+## included), plus a forward-pointing arrow so the march direction stays
+## legible even with many overlapping boxes.
+func _make_line_ghost(line_id: String) -> Node3D:
+	var root : Node3D = _build_full_line(line_id, Vector3.ZERO, 0.0, true)
+	if root == null:
+		root = Node3D.new()
 	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.35, 0.65, 1.0, 0.4)
+	mat.albedo_color = Color(1.0, 0.85, 0.25, 0.85)
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	var box := MeshInstance3D.new()
-	var bm := BoxMesh.new(); bm.size = Vector3(2.5, 1.5, 2.5)
-	box.mesh = bm; box.material_override = mat; box.position = Vector3(0, 0.75, 0)
-	root.add_child(box)
-	# Arrow shaft pointing -Z (forward / march direction).
+	# Arrow shaft pointing -Z (forward / march direction), floating above the
+	# machine boxes so it stays visible regardless of what's stacked below it.
 	var arrow := MeshInstance3D.new()
 	var am := BoxMesh.new(); am.size = Vector3(0.3, 0.3, 4.0)
-	arrow.mesh = am; arrow.material_override = mat; arrow.position = Vector3(0, 0.75, -3.0)
+	arrow.mesh = am; arrow.material_override = mat; arrow.position = Vector3(0, 2.2, -3.0)
 	root.add_child(arrow)
 	return root
 
@@ -2059,7 +2096,18 @@ func _place_current() -> void:
 ## chain-style cumulative delta (machine N's drift is the sum of all earlier
 ## indices' explicit overrides; an unmoved machine inherits its previous
 ## machine's accumulated drift).
-func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
+## `preview` (#linebuilder-ghost, 2026-08-29): when true, this builds cheap
+## translucent placeholder boxes into a returned, UNPARENTED ghost root instead
+## of real machines into `_placed_root` — same position math (turns / branches
+## / transportband Y-stacking / at_entry anchoring / saved macro deltas), just
+## skipping the heavy PlaceableCatalog build, _finalize_placed, macro-meta
+## stamping and LineFlow edge bookkeeping. Lets the whole-line ghost show every
+## machine's real footprint at once instead of just the first, so the operator
+## can line the whole train up before committing. Real placement (preview =
+## false, the default) is BYTE-FOR-BYTE unchanged — every new branch below is
+## gated on `preview`.
+func _build_full_line(line_id: String, start: Vector3, rot_y: float, preview: bool = false) -> Node3D:
+	var ghost_root : Node3D = Node3D.new() if preview else null
 	var seq : Array[Dictionary] = LINE_3A_SEQ
 	if line_id == "line_3b":
 		seq = LINE_3B_SEQ
@@ -2237,9 +2285,12 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 		elif not is_tb and not is_branch:
 			# Leaving the chain — reset.
 			prev_tb_outlet_y = -1.0
-		var node := PlaceableCatalog.build_node(mid, false)
+		var node : Node3D = _make_ghost_placeholder_box(item, mid) if preview else PlaceableCatalog.build_node(mid, false)
 		if node != null:
-			_placed_root.add_child(node)
+			if preview:
+				ghost_root.add_child(node)
+			else:
+				_placed_root.add_child(node)
 			# #MSB — apply operator-saved chain delta (in macro local frame).
 			# dx → lateral (rgt), dz → forward (fwd), dy → vertical.
 			var d : Dictionary = macro_deltas.get(entry_idx, {})
@@ -2265,106 +2316,133 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float) -> void:
 			node.rotation.y = leg_rot + PI + d_drot
 			if d_scale != Vector3.ONE:
 				node.scale = d_scale
-			# #fold — {"extend_legs": true} passes the entry's y lift through to
-			# _finalize_placed so the machine's own legs stretch to the floor
-			# (e.g. the elevated sga_feed_chute at the drum head). Opt-in:
-			# existing lifted entries (lump carts on the 0.12 m bordes) keep
-			# their legacy no-frame behaviour.
-			_finalize_placed(node, mid, entry_y if bool(entry.get("extend_legs", false)) else 0.0)
-			# #MSB — stamp macro-membership metas so save-back can find this
-			# node and recover its local-frame pose later.
-			node.set_meta("macro_id", line_id)
-			node.set_meta("macro_index", entry_idx)
-			# #fold — the anchor is THIS NODE'S LEG, not the macro's entry
-			# point. save_macro_overrides inverts per node with this.
-			node.set_meta("macro_anchor", {"start": leg_start, "rot_y": leg_rot})
 			built += 1
-			# ── #71 branch state transitions ───────────────────────────────────
-			# I1 fix (component_flags_review.md, confirmed 2026-07-06): utilities
-			# whose MachineFlow role is "none" (water pumps, kleine LA, lump cart
-			# + spot, …) must NOT take part in branch/parallel bookkeeping.
-			# LineFlow marks any node with a non-empty lf_explicit_outs meta as
-			# explicit_src BEFORE checking that its targets resolve and then skips
-			# the geometry fallback for it — but a role-none target is never
-			# discovered, so the edge is dropped and the source machine ends the
-			# linker with ZERO outgoing edges (fresh line_3a: transfer_chute lost
-			# its edge because of the side-lane water_pump). Role-none entries are
-			# placement-only: no _add_explicit_out, no chain/sibling membership,
-			# and (symmetrically) a role-none MAIN entry never becomes
-			# last_main_node or closes an open branch.
-			var flow_relevant : bool = _is_flow_relevant(mid) and not graph_topology
-			if not flow_relevant:
-				pass   # placement only — invisible to the flow topology
-			elif is_branch:
-				if is_parallel:
-					# Parallel sibling — share branch_source with peers, tag now.
-					if parallel_source == null:
-						parallel_source = last_main_node
-					if parallel_source != null:
-						_add_explicit_out(parallel_source, node, false)
-					parallel_siblings.append(node)
-				else:
-					# Chained branch entry — first one carries the start link.
-					if branch_chain.is_empty():
-						branch_source = last_main_node
-						branch_recirc = bool(entry.get("branch_recirc", false))
-						if branch_source != null:
-							_add_explicit_out(branch_source, node, false)
-					branch_chain.append(node)
-			else:
-				# A new main-centreline machine — close any open branches.
-				if not branch_chain.is_empty():
-					var last_chain : Node3D = branch_chain[branch_chain.size() - 1] as Node3D
-					var last_role : String = String(MachineFlow.profile(
-						String(last_chain.get_meta("placeable_id"))).get("role", ""))
-					if branch_recirc and branch_source != null:
-						# Recirc: last branch entry returns to the branch source.
-						_add_explicit_out(last_chain, branch_source, true)
-						# 2026-08-28 SEVERED-MAIN FIX (found by the 3A doc-walk
-						# test): tagging the source with lf_explicit_outs makes
-						# LineFlow SKIP its geometry fallback (LineFlow.gd:1142),
-						# and nothing ever reconnected it to the next main — so
-						# 3A's line was silently DEAD past the mengsilo: the
-						# side-loop closed but mengsilo → M11b never existed.
-						# A recirc loop is a side-circuit; the main path must
-						# continue from its source.
-						_add_explicit_out(branch_source, node, false)
-					elif last_role == "sink" and branch_source != null:
-						# Chain dead-ends in a SINK (e.g. the 3A bigbag
-						# station): the sink banks material and LineFlow never
-						# emits from sinks (:1137), so an edge out of it would
-						# be dead anyway — the MAIN path continues from the
-						# branch source instead.
-						_add_explicit_out(branch_source, node, false)
+			if not preview:
+				# #fold — {"extend_legs": true} passes the entry's y lift through to
+				# _finalize_placed so the machine's own legs stretch to the floor
+				# (e.g. the elevated sga_feed_chute at the drum head). Opt-in:
+				# existing lifted entries (lump carts on the 0.12 m bordes) keep
+				# their legacy no-frame behaviour.
+				_finalize_placed(node, mid, entry_y if bool(entry.get("extend_legs", false)) else 0.0)
+				# #MSB — stamp macro-membership metas so save-back can find this
+				# node and recover its local-frame pose later.
+				node.set_meta("macro_id", line_id)
+				node.set_meta("macro_index", entry_idx)
+				# #fold — the anchor is THIS NODE'S LEG, not the macro's entry
+				# point. save_macro_overrides inverts per node with this.
+				node.set_meta("macro_anchor", {"start": leg_start, "rot_y": leg_rot})
+				# ── #71 branch state transitions ───────────────────────────────────
+				# I1 fix (component_flags_review.md, confirmed 2026-07-06): utilities
+				# whose MachineFlow role is "none" (water pumps, kleine LA, lump cart
+				# + spot, …) must NOT take part in branch/parallel bookkeeping.
+				# LineFlow marks any node with a non-empty lf_explicit_outs meta as
+				# explicit_src BEFORE checking that its targets resolve and then skips
+				# the geometry fallback for it — but a role-none target is never
+				# discovered, so the edge is dropped and the source machine ends the
+				# linker with ZERO outgoing edges (fresh line_3a: transfer_chute lost
+				# its edge because of the side-lane water_pump). Role-none entries are
+				# placement-only: no _add_explicit_out, no chain/sibling membership,
+				# and (symmetrically) a role-none MAIN entry never becomes
+				# last_main_node or closes an open branch.
+				var flow_relevant : bool = _is_flow_relevant(mid) and not graph_topology
+				if not flow_relevant:
+					pass   # placement only — invisible to the flow topology
+				elif is_branch:
+					if is_parallel:
+						# Parallel sibling — share branch_source with peers, tag now.
+						if parallel_source == null:
+							parallel_source = last_main_node
+						if parallel_source != null:
+							_add_explicit_out(parallel_source, node, false)
+						parallel_siblings.append(node)
 					else:
-						# Normal chained branch: last entry feeds this new main.
-						_add_explicit_out(last_chain, node, false)
-					branch_chain.clear()
-					branch_source = null
-					branch_recirc = false
-				if not parallel_siblings.is_empty():
-					for sib in parallel_siblings:
-						_add_explicit_out(sib as Node3D, node, false)
-					parallel_siblings.clear()
-					parallel_source = null
-				# ── {"explicit_from_prev": true} (#fold-up, 2026-08-28) ──
-				# Force an explicit edge from the previous main machine to
-				# this one. Needed when an operator-sourced pipe run puts two
-				# consecutive mains beyond LineFlow's MAX_LINK_DIST (14 m) —
-				# first real case: 3B's plasmaq → tussenventilator, a ~15 m
-				# pneumatic line (ruling 3.1-B). Found live by the 3B
-				# conformance test's severed-main guard.
-				if bool(entry.get("explicit_from_prev", false)) and last_main_node != null:
-					_add_explicit_out(last_main_node, node, false)
-				last_main_node = node
+						# Chained branch entry — first one carries the start link.
+						if branch_chain.is_empty():
+							branch_source = last_main_node
+							branch_recirc = bool(entry.get("branch_recirc", false))
+							if branch_source != null:
+								_add_explicit_out(branch_source, node, false)
+						branch_chain.append(node)
+				else:
+					# A new main-centreline machine — close any open branches.
+					if not branch_chain.is_empty():
+						var last_chain : Node3D = branch_chain[branch_chain.size() - 1] as Node3D
+						var last_role : String = String(MachineFlow.profile(
+							String(last_chain.get_meta("placeable_id"))).get("role", ""))
+						if branch_recirc and branch_source != null:
+							# Recirc: last branch entry returns to the branch source.
+							_add_explicit_out(last_chain, branch_source, true)
+							# 2026-08-28 SEVERED-MAIN FIX (found by the 3A doc-walk
+							# test): tagging the source with lf_explicit_outs makes
+							# LineFlow SKIP its geometry fallback (LineFlow.gd:1142),
+							# and nothing ever reconnected it to the next main — so
+							# 3A's line was silently DEAD past the mengsilo: the
+							# side-loop closed but mengsilo → M11b never existed.
+							# A recirc loop is a side-circuit; the main path must
+							# continue from its source.
+							_add_explicit_out(branch_source, node, false)
+						elif last_role == "sink" and branch_source != null:
+							# Chain dead-ends in a SINK (e.g. the 3A bigbag
+							# station): the sink banks material and LineFlow never
+							# emits from sinks (:1137), so an edge out of it would
+							# be dead anyway — the MAIN path continues from the
+							# branch source instead.
+							_add_explicit_out(branch_source, node, false)
+						else:
+							# Normal chained branch: last entry feeds this new main.
+							_add_explicit_out(last_chain, node, false)
+						branch_chain.clear()
+						branch_source = null
+						branch_recirc = false
+					if not parallel_siblings.is_empty():
+						for sib in parallel_siblings:
+							_add_explicit_out(sib as Node3D, node, false)
+						parallel_siblings.clear()
+						parallel_source = null
+					# ── {"explicit_from_prev": true} (#fold-up, 2026-08-28) ──
+					# Force an explicit edge from the previous main machine to
+					# this one. Needed when an operator-sourced pipe run puts two
+					# consecutive mains beyond LineFlow's MAX_LINK_DIST (14 m) —
+					# first real case: 3B's plasmaq → tussenventilator, a ~15 m
+					# pneumatic line (ruling 3.1-B). Found live by the 3B
+					# conformance test's severed-main guard.
+					if bool(entry.get("explicit_from_prev", false)) and last_main_node != null:
+						_add_explicit_out(last_main_node, node, false)
+					last_main_node = node
 		# Explicit cursor push to clear a split/recombine (e.g. past parallel dryers).
 		if entry.has("main_advance"):
 			main_z += float(entry["main_advance"])
 	total_run += main_z
+	if preview:
+		return ghost_root
 	print("[BuildMode] Built %s — %d machines over %.1f m in %d leg(s)" % [line_id, built, total_run, leg_idx + 1])
 	if _status:
 		_status.text = "Built %s — %d machines.  Use [K] edit mode to jog each into place." % [
 			line_id.to_upper(), built]
+	return null
+
+## Cheap translucent placeholder for the whole-line ghost preview (#linebuilder-
+## ghost) — just the catalog item's real footprint as a box, no real machine
+## detail ("the chutes do not have to be perfect", per the operator ask). Falls
+## back to a generic box for ids with no catalog entry (e.g. structural-only
+## SEQ rows) so the preview never silently drops a slot.
+func _make_ghost_placeholder_box(item: Dictionary, mid: String) -> Node3D:
+	var body := Node3D.new()
+	body.name = "ghost_%s" % mid
+	var gsize : Vector3 = (item["size"] as Vector3) if not item.is_empty() else Vector3(1.5, 1.5, 2.0)
+	var gcol : Color = (item["color"] as Color) if item.has("color") else Color(0.5, 0.7, 1.0)
+	var mesh := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = gsize
+	mesh.mesh = box
+	mesh.position = Vector3(0.0, gsize.y * 0.5, 0.0)
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(gcol.r, gcol.g, gcol.b, 0.35)
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mesh.material_override = mat
+	body.add_child(mesh)
+	return body
 
 ## #71 — record an explicit downstream edge from `src` to `tgt` on src's
 ## `lf_explicit_outs` meta. LineFlow's linker reads this list and adds each

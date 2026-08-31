@@ -257,6 +257,10 @@ var _manual_rows  : Array = []           # [{section, lamp:ColorRect, btn:Button
 # the ordinal half of the key is only stable between two LineFlow rebuilds.
 var _selected_machine_key : String = ""
 var _machines_list_vb    : VBoxContainer = null   # left column: scrollable list
+
+# Cached machine lists for performance
+var _extruder_machines : Array = []
+var _laser_filters : Array = []
 var _machines_detail_vb  : VBoxContainer = null   # right column: live detail
 var _machines_list_rows  : Array = []             # [{key, id, btn, lamp, lbl}]
 # Rebuilt every time the selection changes; refresh() updates only the live widgets.
@@ -308,6 +312,22 @@ func _ready() -> void:
 	_build_chrome()
 	visible = false
 	call_deferred("_find_line_flow")
+
+	get_tree().node_added.connect(_on_node_added)
+	get_tree().node_removed.connect(_on_node_removed)
+	_update_machine_lists()
+
+func _update_machine_lists() -> void:
+	_extruder_machines = get_tree().get_nodes_in_group("extruder_machine")
+	_laser_filters = get_tree().get_nodes_in_group("laser_filter")
+
+func _on_node_added(node: Node) -> void:
+	if node.is_in_group("extruder_machine") or node.is_in_group("laser_filter"):
+		_update_machine_lists()
+
+func _on_node_removed(node: Node) -> void:
+	if node.is_in_group("extruder_machine") or node.is_in_group("laser_filter"):
+		call_deferred("_update_machine_lists")
 
 func _find_line_flow() -> void:
 	# Don't overwrite an already-resolved reference (the test harness assigns
@@ -516,7 +536,7 @@ func _find_extruder_model_for_scope() -> Object:
 		if m != null:
 			return m
 	# No line tag (or no match): take the first extruder machine's model.
-	for em in get_tree().get_nodes_in_group("extruder_machine"):
+	for em in _extruder_machines:
 		if em != null and is_instance_valid(em) and "model" in em and em.model != null:
 			return em.model
 	return null
@@ -531,14 +551,14 @@ func _find_laser_filter_for_scope() -> Object:
 	var lf : Object = _closest_laser_filter_to(extruder_node)
 	if lf != null:
 		return lf
-	var filters : Array = get_tree().get_nodes_in_group("laser_filter")
+	var filters : Array = _laser_filters
 	return filters[0] if not filters.is_empty() else null
 
 ## The LaserFilter nearest to `node` (mirrors ExtruderMachine's own
 ## _closest_in_group). Returns null when no laser_filter is in the scene or when
 ## `node` is null and the group is empty.
 func _closest_laser_filter_to(node: Node3D) -> Object:
-	var filters : Array = get_tree().get_nodes_in_group("laser_filter")
+	var filters : Array = _laser_filters
 	if filters.is_empty():
 		return null
 	if node == null or not is_instance_valid(node):
@@ -559,7 +579,7 @@ func _closest_laser_filter_to(node: Node3D) -> Object:
 func _find_extruder_machine_for_scope() -> Node3D:
 	var want := _line_id_from_scope().to_lower()
 	var first : Node3D = null
-	for em in get_tree().get_nodes_in_group("extruder_machine"):
+	for em in _extruder_machines:
 		var n3 := em as Node3D
 		if n3 == null or not is_instance_valid(n3):
 			continue
@@ -1754,12 +1774,12 @@ func _compute_faults() -> Array:
 	# 5) EREMA canonical fault labels (from operator-style HMI emulator).
 	# Walks every extruder_machine in the scene, asks the registry for live
 	# trip detections and appends them in the standard {code, text, scope} form.
-	for em in get_tree().get_nodes_in_group("extruder_machine"):
+	for em in _extruder_machines:
 		var model : Object = null
-		if "model" in em and em.model != null:
+		if em != null and is_instance_valid(em) and "model" in em and em.model != null:
 			model = em.model
 		var line_id : String = ""
-		if "line_id" in em:
+		if em != null and is_instance_valid(em) and "line_id" in em:
 			line_id = String(em.line_id)
 		# #bullet-10 (FIX 5) — hand the registry the laser_filter serving this
 		# extruder so the documented 6522/6557 alarms detect off live state.
@@ -2157,7 +2177,7 @@ func _find_extruder_model_for(machine_id: String) -> Object:
 	if not machine_id.begins_with(prefix):
 		return null
 	var want := machine_id.substr(prefix.length()).to_lower()
-	for em in get_tree().get_nodes_in_group("extruder_machine"):
+	for em in _extruder_machines:
 		if em == null or not is_instance_valid(em):
 			continue
 		var cfg = em.get("config_resource")
