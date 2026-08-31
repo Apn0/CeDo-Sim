@@ -107,27 +107,19 @@ func _init() -> void:
 
 	# Test 5: _solidify_surfaces with empty array
 	var res1 = openings._solidify_surfaces([])
-	_ok(res1.size() == 0, "Expected empty array for empty input")
+	assert(res1.size() == 0, "Expected empty array for empty input")
 
 	# Test 6: _solidify_surfaces with empty surface
-	# GUARD: size claim is evaluated into a local FIRST and the index claim is
-	# gated behind it. GDScript `and` short-circuits, so res2[0] is never
-	# evaluated when the array is empty (an out-of-bounds index would crash the
-	# script before the verdict print). Still one check, one message, so a
-	# regression in either half turns the suite red exactly as before.
 	var res2 = openings._solidify_surfaces([{"v": PackedVector3Array()}])
-	var res2_size_ok := res2.size() == 1
-	_ok(res2_size_ok and res2[0]["v"].size() == 0, "Expected empty surface for empty input surface")
+	assert(res2.size() == 1 and res2[0]["v"].size() == 0, "Expected empty surface for empty input surface")
 
 	# Test 7: _solidify_surfaces with degenerate triangle (area ~ 0)
 	var res3 = openings._solidify_surfaces([{"v": PackedVector3Array([Vector3.ZERO, Vector3.ZERO, Vector3.ZERO])}])
-	var res3_size_ok := res3.size() == 1
-	_ok(res3_size_ok and res3[0]["v"].size() == 0, "Expected empty surface for degenerate triangle")
+	assert(res3.size() == 1 and res3[0]["v"].size() == 0, "Expected empty surface for degenerate triangle")
 
 	# Test 8: _solidify_surfaces with valid triangle
 	var res4 = openings._solidify_surfaces([{"v": PackedVector3Array([Vector3(0,0,0), Vector3(1,0,0), Vector3(0,1,0)])}])
-	var res4_size_ok := res4.size() == 1
-	_ok(res4_size_ok and res4[0]["v"].size() == 24, "Expected 24 vertices for a single valid triangle (front, back, and 3 rim quads)")
+	assert(res4.size() == 1 and res4[0]["v"].size() == 24, "Expected 24 vertices for a single valid triangle (front, back, and 3 rim quads)")
 	openings.free()
 
 
