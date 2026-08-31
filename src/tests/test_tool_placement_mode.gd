@@ -114,6 +114,8 @@ func _ready() -> void:
         ghost3.queue_free()
     empty_node.queue_free()
 
+    print("Result: %s" % ("PASS" if _fails == 0 else "FAIL (%d)" % _fails))
+
     test_slot.queue_free()
     tool_no_id.queue_free()
     tool_hammer.queue_free()
