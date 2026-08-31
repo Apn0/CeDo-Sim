@@ -1139,6 +1139,16 @@ func _toggle_crew_panel() -> void:
 		_crew_assign_panel.call("toggle_for", crew_manager)
 
 func _input(event: InputEvent) -> void:
+	if _handle_walkie_input(event):
+		return
+	if _handle_crew_panel_input(event):
+		return
+	if _handle_map_input(event):
+		return
+	if _handle_pause_menu_input(event):
+		return
+
+func _handle_walkie_input(event: InputEvent) -> bool:
 	# ── Walkie-talkie (J = headset/speaker, , / . = volume, U = message menu) ─
 	var w := get_node_or_null("/root/Walkie")
 	if w != null:
@@ -1148,27 +1158,27 @@ func _input(event: InputEvent) -> void:
 			if event.is_action_pressed("walkie_ptt"):
 				_close_walkie_menu()
 				get_viewport().set_input_as_handled()
-				return
+				return true
 			if event.is_action_pressed("ui_cancel"):
 				_close_walkie_menu()
 				get_viewport().set_input_as_handled()
-				return
+				return true
 			if event.is_action_pressed("ui_accept"):
 				_send_walkie_menu_selection()
 				get_viewport().set_input_as_handled()
-				return
+				return true
 			if event.is_action_pressed("ui_up"):
 				if not _walkie_menu_rows.is_empty():
 					_walkie_menu_sel = (_walkie_menu_sel - 1 + _walkie_menu_rows.size()) % _walkie_menu_rows.size()
 					_refresh_walkie_menu()
 				get_viewport().set_input_as_handled()
-				return
+				return true
 			if event.is_action_pressed("ui_down"):
 				if not _walkie_menu_rows.is_empty():
 					_walkie_menu_sel = (_walkie_menu_sel + 1) % _walkie_menu_rows.size()
 					_refresh_walkie_menu()
 				get_viewport().set_input_as_handled()
-				return
+				return true
 			# Numeric hotkeys 1..9 — fire and close immediately.
 			if event is InputEventKey and (event as InputEventKey).pressed and not (event as InputEventKey).echo:
 				var kc : int = (event as InputEventKey).keycode
@@ -1178,45 +1188,49 @@ func _input(event: InputEvent) -> void:
 						_walkie_menu_sel = idx
 						_send_walkie_menu_selection()
 					get_viewport().set_input_as_handled()
-					return
+					return true
 			# Other KEY/BUTTON presses while open are swallowed so they can't leak
 			# through to vehicle / player controls behind the overlay. Mouse motion
 			# is intentionally let through — the menu is non-modal cursor-wise, so
 			# the operator can keep looking around while choosing a message.
 			if event is InputEventKey or event is InputEventMouseButton:
 				get_viewport().set_input_as_handled()
-			return
+			return true
 		if event.is_action_pressed("walkie_headset"):
 			w.toggle_headset()
 			get_viewport().set_input_as_handled()
-			return
+			return true
 		if event.is_action_pressed("walkie_vol_down"):
 			w.volume_down()
 			get_viewport().set_input_as_handled()
-			return
+			return true
 		if event.is_action_pressed("walkie_vol_up"):
 			w.volume_up()
 			get_viewport().set_input_as_handled()
-			return
+			return true
 		if event.is_action_pressed("walkie_ptt"):
 			# U now opens the message picker instead of firing a canned line
 			# blindly. Second U (or Esc) closes; number keys / Enter send.
 			_open_walkie_menu()
 			get_viewport().set_input_as_handled()
-			return
+			return true
+	return false
 
+func _handle_crew_panel_input(event: InputEvent) -> bool:
 	# ── Crew assignment panel (Numpad ".") ───────────────────────────────────
 	if event.is_action_pressed("crew_panel"):
 		_toggle_crew_panel()
 		get_viewport().set_input_as_handled()
-		return
+		return true
+	return false
 
+func _handle_map_input(event: InputEvent) -> bool:
 	# ── Site map (M to toggle, scroll to zoom, ESC to close) ──────────────────
 	if event.is_action_pressed("map_toggle"):
 		if _map_overlay:
 			_map_overlay.toggle()
 		get_viewport().set_input_as_handled()
-		return
+		return true
 	if _map_overlay and _map_overlay.is_open():
 		# While the map is up it owns the wheel (zoom) and ESC (close).
 		if event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
@@ -1224,16 +1238,18 @@ func _input(event: InputEvent) -> void:
 			if btn == MOUSE_BUTTON_WHEEL_UP:
 				_map_overlay.handle_zoom(1)
 				get_viewport().set_input_as_handled()
-				return
+				return true
 			elif btn == MOUSE_BUTTON_WHEEL_DOWN:
 				_map_overlay.handle_zoom(-1)
 				get_viewport().set_input_as_handled()
-				return
+				return true
 		if event.is_action_pressed("ui_cancel"):
 			_map_overlay.close()
 			get_viewport().set_input_as_handled()
-			return
+			return true
+	return false
 
+func _handle_pause_menu_input(event: InputEvent) -> bool:
 	# P opens the pause menu directly (skipping the modal-close path that ESC has
 	# to do because operators reach the Settings card from any state via P).
 	if event.is_action_pressed("menu_toggle") and (_settings_menu == null or not _settings_menu.visible):
@@ -1242,11 +1258,11 @@ func _input(event: InputEvent) -> void:
 			_do_resume()
 		else:
 			_do_pause()
-		return
+		return true
 	if event.is_action_pressed("ui_cancel"):
 		if _end_of_shift_overlay and _end_of_shift_overlay.visible:
 			get_viewport().set_input_as_handled()
-			return
+			return true
 
 		# Modal overlays such as the HMI own the first ESC press. Close them here in
 		# _input before the pause menu toggles behind their _unhandled_input handler.
@@ -1255,16 +1271,18 @@ func _input(event: InputEvent) -> void:
 				if overlay.has_method("close_overlay"):
 					overlay.call("close_overlay")
 					get_viewport().set_input_as_handled()
-					return
+					return true
 		# When the settings overlay is open, let IT handle ESC (cancel rebind
 		# capture, or close the menu) — don't toggle the pause card behind it.
 		if _settings_menu and _settings_menu.visible:
-			return
+			return true
 		get_viewport().set_input_as_handled()
 		if _pause_overlay.visible:
 			_do_resume()
 		else:
 			_do_pause()
+		return true
+	return false
 
 # =============================================================================
 # PAUSE / RESUME

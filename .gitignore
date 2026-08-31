@@ -14,3 +14,9 @@ tools/regression/out/
 *.bak
 __pycache__/
 *.bak_*
+
+# A/B compare snapshots: verbatim copies of a whole source file at some past
+# commit, used by src/scenes/world/MillCompareWorld.gd. Regenerated on demand
+# with `git show <commit>:<path>` (see that file header) — never committed, or
+# every grep of src/ would return a duplicate hit for every symbol in them.
+src/tests/_catalog_pre_*.gd
