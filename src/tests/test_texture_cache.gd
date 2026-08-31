@@ -90,6 +90,16 @@ func _run_test() -> void:
 
 	# Check corrupted file behavior
 	# If a file is not a valid png, it should be deleted
+	#
+	# Forced offline for THIS request only, so the suite is hermetic. tc2 was
+	# built with CEDO_OFFLINE=0 (above, deliberately, to prove the flag parses),
+	# and "bad_asset" can never satisfy all three maps — so request_pbr_set would
+	# fall past its offline gate and open a live HTTPRequest to the Polyhaven API
+	# (TextureCache.gd:96-101), inside a harness run, against a third party.
+	# The claim under test is unaffected: the corrupt-entry DirAccess.remove is in
+	# the cache-validation loop at TextureCache.gd:79, which runs BEFORE the
+	# `if _offline: return` at :92. Deletion still happens; only the fetch stops.
+	tc2._offline = true
 	var bad_path = tc2._map_path("bad_asset", res, "albedo")
 	var file = FileAccess.open(bad_path, FileAccess.WRITE)
 	file.store_string("this is not a valid png")
