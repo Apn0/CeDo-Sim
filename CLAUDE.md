@@ -37,18 +37,31 @@ was wrong and would fail on the first command.
 > tried and rejected — is in `docs/AUDIT_project_sweep_2026-08-23.md`. **When a
 > merge touches this repo, run the sweep before trusting anything else.**
 
-`tools/regression/run.sh` runs **23 suites**. Since the perimeter-fence
-deletion (operator order 2026-08-07) it ends `== done (exit 1) ==`:
-`test_jam_baseline`'s jam1 leg now wedges **10.0 s (budget 3.0) on the parked
-`VolvoV40Placeholder` in the staff parking lot** — the fence used to wall that
-lot off the yard→plant bearing, and the pilot dead-reckons (route planning
-already returns NO ROUTE because the target is inside the building — a
-pre-existing gap). Measured with an intersect_shape probe at the recorded wedge
-point (-115.26, -8.60, 138.19). The fix direction (pilot evade vs outdoor road
-routing vs re-baselining the leg) is an operator decision — do not silently
-re-tune the budget. Every other suite is green.
-Last full run 2026-08-07, after the fix below; `test_l3c_unit_screens` alone is
-`Result: 120 ok, 0 fail, 0 skip` and takes minutes, not hours.
+`tools/regression/run.sh` runs **41 gated suites** and ends
+`== done (exit 1) ==`. Measured 2026-08-30, twice, on this machine's real
+checkout — **5 failures**:
+
+| failing check | note |
+|---|---|
+| `regression verdict` | the `regression_world_save` boot |
+| `test_nav_connectivity` | |
+| `test_npc05_realworld` | EXPECTED red — the DRIVE_TO_INDOOR stall, see below. Do not silence it |
+| `test_line3b_flow_conformance` | `the plasmaq is fed AND feeds onward (in false / out true)` — a missing input edge in LineFlow topology discovery. NOT caused by the 2026-08-29 LineFlow refactor; proven pre-existing by a baseline run without it |
+| `test_project_sweep_guards` | |
+
+Everything else is green, including `test_jam_baseline`, `test_map_frame`,
+`test_outdoor_route` and `test_gate_carve`.
+
+> **This paragraph used to say "23 suites" and blame `test_jam_baseline`'s
+> 10.0 s wedge on the parked `VolvoV40Placeholder` for the exit 1.** That is the
+> stale-constant disease this file warns about, in this file. `test_jam_baseline`
+> passes now. If you are about to quote a count or a red list from any doc here,
+> re-run first — `grep -c '^FAIL  :'` on a fresh log costs seconds.
+
+Beware of two numbers that look like the harness total and are not:
+`test_l3c_unit_screens` alone reports `Result: 120 ok, 0 fail, 0 skip`, and
+`regression_world_save` alone reports `16 ok, 0 fail, 2 skip`. Quoting either as
+the harness result is how a multi-day hang once stayed invisible.
 
 **History — the `1b29087` "hang" (red 2026-08-02 → fixed 2026-08-07).** The
 suite never looped: `src/data/plant/l3c_unit_screens.gd` was committed with raw
@@ -124,7 +137,14 @@ read `Result:` AND the `note  :` lines in `tools/regression/out/last_run.log`.
 8b. **All factory motors are CeDo-logo dark blue** (#191E6C — operator
    2026-08-28: "All motors in the factory are blue … the blue from that
    logo"). Global in `PlaceableCatalog._motor_unit`; never paint a motor
-   another colour.
+   another colour — EXCEPT where an operator ruling records one, below.
+   * **KNOWN EXCEPTION — the maalmolen's own shaft motor** is cream/white,
+     the same colour as the mill body (operator 2026-08-29, from the real
+     3C photo: "the motor of the shaft of the mill is in the same colour as
+     the rest of the mill (exception to the blue motors)"). The blue motors
+     under that platform drive the FRICTION SEPARATORS, not the mill, and
+     those do follow 8b. See `docs/plant/maalmolen_3c_photo_reading_2026-08-29.md`.
+     Do not "fix" the mill's motor back to blue.
 9. Audit renders get a **per-line unique filename** (`shot_flotation_tank_3A.png`),
    never a shared name that overwrites the previous line's shot. Renders come from
    `src/tests/shot_placeable.tscn`:
@@ -209,6 +229,8 @@ this one as re-checkable too — `find src -name '*.gd' | wc -l`):
 | `docs/anim_rig_unification_2026-08-28.md` | **Why the humanoid never animated:** limb meshes sat on dead pivot nodes while the AnimationTree drove boneless bones. Also the face-up prone, the 4 %-deep crouch found by MEASURING, the poses that sank through the floor, the double-player-body (`rebuild_appearance` didn't know the name `PlayerBody`), and the NPC jump latch that cleared on the impulse tick. 12 review findings, mutation-verified |
 | `docs/AUDIT_handoffs_2026-08-16.md` | **Read before trusting any handoff doc.** Two 2026-08-16 handoffs claimed "Stable / Verified"; three of five claims described code not in the repo. Records 12 unmentioned defects (4 critical, now fixed + tested), the Rule 1 blocks, and the 3 findings that were refuted |
 | `docs/AUDIT_project_sweep_2026-08-23.md` | **The sweep that found `main` did not compile.** Why both harness compile checks missed it, the BaleYardManager merge repair, FULL_LOGIC_AUDIT #7 confirmed + fixed and #12 REFUTED, the headless MultiMesh limit, and what a fresh clone can/cannot prove |
+| `docs/audit/pr_merge_2026-08-29.md` | **Ten bot PRs, all reported "mergeable ✅", two of which merge cleanly into a file that does not parse.** Records the `shell` collision that would have taken the harness down, why GitHub structurally cannot see it, the pre-merge `uniq -d` check, and the LineFlow correlation that looked damning and was measured wrong |
+| `docs/audit/material_trace_2026-08-18.md` | Follow one bale end-to-end: the symbol-flow + material-census tools, mass-minting proven structurally closed, and the spawn-clearance check that was unsatisfiable for 4 weeks |
 | `docs/BACKLOG_ultracode_2026-07-19.md` | Deferred queue — 16 of 40 findings landed; also records the npc-05 vacuous-green correction |
 | `docs/DESIGN_SUGGESTIONS_2026-07-08.md` | Ranked roadmap, P1-P8 physicalization + Q1-Q8 QoL, every item file-cited |
 | `docs/FULL_LOGIC_AUDIT_2026-07-08.md` | Runtime-behaviour audit, 25 findings. **Snapshot, no per-finding status.** Bug 0 / HIGH #1 / #2 / #7 are DONE (#7 fixed 2026-08-23, guarded by `test_project_sweep_guards`); **#12 Walkie→VoiceService is REFUTED — measured, the connect works**; 5 dead files still unverified. Two findings re-measured, one was wrong: re-measure before acting |
@@ -251,6 +273,31 @@ this one as re-checkable too — `find src -name '*.gd' | wc -l`):
   its own copy. Measure from the mesh, not from a saved number.
 - **GauntletWorld is a visual bench only.** It omits LineFlow/crew/SCADA.
   Trustworthy for "does it spawn/render", never for behaviour.
+- **Two PRs can each be "mergeable ✅" and still produce a file that does not
+  parse.** MEASURED 2026-08-29 on real branches, not hypothesised. PRs #155 and
+  #158 each added `var shell` to `test_wall_openings.gd`'s `_init()`. Different
+  hunks, so git merged them with **zero conflict** and GitHub reported both as
+  cleanly mergeable — GDScript has no block scoping, so the merged result is
+  `Parse Error: There is already a variable named "shell" declared in this scope`,
+  which stops the WHOLE harness at its parse gate (`run.sh:40`). GitHub computes
+  each PR's mergeability against `main` *independently*, so it structurally cannot
+  see this, and **this repo has no CI** — nothing but an actual parse run catches
+  it. Before merging any batch that touches one file more than once:
+  ```bash
+  sed -n 's/^[[:space:]]*var \([A-Za-z_][A-Za-z0-9_]*\).*/\1/p' <file> | sort | uniq -d
+  ```
+  Non-empty output = the merge will not parse. Then confirm with
+  `godot --headless --path . --check-only --script res://<file>`.
+- **Most `src/tests/*.gd` files are never executed by the harness.** `run.sh:261`
+  runs an explicit allow-list of `.tscn` suites; anything not on it is only seen by
+  the full-tree parse sweep, which proves the file PARSES and nothing more. As of
+  2026-08-29 that includes `test_push_gate.gd`, `test_walkie.gd` and the
+  `test_wall_openings.gd` / `test_tool_placement_mode.gd` additions. Adding a test
+  file therefore buys **no** regression protection until it is wired into that
+  loop. When wiring one in, give it a `--quit-after` guard and an explicit
+  `quit(1)` on every failure path — a GDScript `assert()` failure aborts before the
+  final `quit()`, so an unguarded suite **hangs** the harness instead of failing
+  it (the "idles forever" mode documented at `run.sh:48-54`).
 
 ## Operator feedback channel
 
