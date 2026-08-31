@@ -24,6 +24,24 @@ UD="${UD:-C:/Users/arnod/AppData/Roaming/Godot/app_userdata/CeDo Simulator}"
 OUT="$PROJ/tools/regression/out"
 mkdir -p "$OUT"
 
+# HERMETIC. Without this every single suite below reaches the public internet:
+# PolyhavenMaterials._ready() requests its PBR sets at autoload boot
+# (PolyhavenMaterials.gd:84) and TextureCache opens an HTTPRequest to the
+# Polyhaven API for anything not already on disk (TextureCache.gd:96-101). That
+# made a regression harness quietly dependent on a third party being up, on the
+# machine having a network, and on nobody rate-limiting us — none of which any
+# suite here actually asserts anything about.
+#
+# Safe by construction, not by hope: no wired suite references PolyhavenMaterials,
+# TextureCache or pbr_set_ready at all (grepped), and the offline path is a
+# documented degrade rather than a failure — _build(kind) still produces the
+# flat-colour StandardMaterial3D and only the HD upgrade never arrives
+# (PolyhavenMaterials.gd:70). test_texture_cache is immune because it sets
+# CEDO_OFFLINE explicitly to both values itself and restores what it found.
+#
+# Export, so it reaches every child Godot process below.
+export CEDO_OFFLINE=1
+
 echo "== importing =="
 "$GODOT" --headless --path "$PROJ" --import >/dev/null 2>&1
 
@@ -258,7 +276,18 @@ fi
 # per-line design rate (docs/plant/misc_sources.md:190/206). line_1 and
 # line_sort/line_intake_3a3b remain unasserted -- no documented feed-rate
 # source was found for line_1, and the other two are out of scope.
-for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_line3a_identity test_line3b_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_humanoid_rig_conformance test_line1_flow_conformance test_line3a_flow_conformance test_line3b_flow_conformance test_shredder_rate_reconciliation test_line1_no_false_overload test_project_sweep_guards; do
+# test_line_builder_ghost (2026-08-29): operator report — placing a whole-line
+# macro (Line 1, ~40+ machines) only showed a generic single box + arrow as
+# the ghost, no way to see where the REST of the train would land before
+# committing. BuildMode._build_full_line grew a `preview` param that reuses
+# the SAME position math (turns/branches/transportband stacking/at_entry/
+# saved deltas) as the real build but emits cheap unparented placeholder
+# boxes instead of real machines with zero side effects on _placed_root or
+# LineFlow. Also covers the pinned "NEW LINE BUILDER" catalog section asked
+# for in the same report. Mutation-tested: skipping preview entries past
+# index 0 (simulating the pre-fix single-box ghost) drops the ghost from 50
+# children to 1 and breaks the real-vs-preview count parity check — red.
+for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_line3a_identity test_line3b_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_humanoid_rig_conformance test_line1_flow_conformance test_line3a_flow_conformance test_line3b_flow_conformance test_shredder_rate_reconciliation test_line1_no_false_overload test_line_builder_ghost test_project_sweep_guards; do
 	echo "== $t =="
 	"$GODOT" --headless --path "$PROJ" "res://src/tests/$t.tscn" > "$OUT/$t.log" 2>&1
 	grep -E "^  (ok|FAIL)|Result|RESULT" "$OUT/$t.log" || true
@@ -355,6 +384,103 @@ echo "== hmi web overlay (nav + vals logic) =="
 grep -E "^  ok|RESULT FAIL|PASS —" "$OUT/hmi_web.log" || true
 if ! grep -q "PASS —" "$OUT/hmi_web.log"; then
 	echo "FAIL  : hmi web overlay (see $OUT/hmi_web.log)"
+	[ $code -eq 0 ] && code=1
+fi
+
+# ---------------------------------------------------------------------------
+# Unit suites from the 2026-08-29 PR batch (#154-#165). Every one of them was
+# merged to main and then executed by NOTHING: the .tscn allow-list above never
+# named them, so the only thing that had ever looked at them was the full-tree
+# parse sweep, which proves a file PARSES and makes no claim about what it does.
+# docs/audit/pr_merge_2026-08-29.md measured that gap ("The finding that
+# outlives this merge"); this block and the loop entry above close it.
+#
+# Two things had to change before wiring them was even safe:
+#
+#   1. test_wall_openings.gd and test_push_gate.gd asserted with bare assert().
+#      A failing assert() aborts the enclosing function BEFORE its quit(), so
+#      the SceneTree keeps iterating and the process idles — the harness HANGS
+#      instead of going red (the "idles forever" mode at run.sh:48-54). Both now
+#      count checks and reach a verdict on every path. assert() is ALSO compiled
+#      out of release builds, and $GODOT is overridable by design (run.sh:17-21)
+#      precisely so this harness can run off a template on Linux/CI — under that
+#      binary the old files would have run top to bottom checking nothing at all
+#      and printed a pass. The counted form is the only one immune to both.
+#
+#   2. The gate below is `Result: <n> ok, 0 fail` with n >= 1, NOT `Result: PASS`.
+#      A suite that executed zero checks prints PASS perfectly honestly; demanding
+#      a non-zero count is what makes "it ran but did nothing" red. Same reason
+#      the motor-overload gate at run.sh:344 is written that way.
+#
+# --quit-after 300 on each: --quit-after counts main-loop ITERATIONS, not
+# seconds, so a slow machine cannot false-fire it (slowness makes an iteration
+# longer, not more numerous, and all three do their work inside one). It is the
+# backstop that turns an abort-before-quit into a red instead of a hang, and 300
+# is reused from the hmi_web invocation above rather than inventing a number.
+echo "== wall openings (carve bookkeeping, unit) =="
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_wall_openings.gd --quit-after 300 > "$OUT/wall_openings.log" 2>&1
+grep -aE "^  (ok|FAIL)  |^Result:" "$OUT/wall_openings.log" || true
+if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/wall_openings.log"; then
+	echo "FAIL  : wall openings (see $OUT/wall_openings.log)"
+	[ $code -eq 0 ] && code=1
+fi
+
+echo "== push gate (free-side local-space math, unit) =="
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_push_gate.gd --quit-after 300 > "$OUT/push_gate.log" 2>&1
+grep -aE "^  (ok|FAIL)  |^Result:" "$OUT/push_gate.log" || true
+if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/push_gate.log"; then
+	echo "FAIL  : push gate (see $OUT/push_gate.log)"
+	[ $code -eq 0 ] && code=1
+fi
+
+# TextureCache: disk-cache hit path, manifest bookkeeping, corrupt-entry eviction.
+# The suite forces its own instance offline before the corrupt-entry case (see the
+# comment at that line) so this harness never opens a socket to the Polyhaven API.
+echo "== texture cache (disk cache + manifest, unit) =="
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_texture_cache.gd --quit-after 300 > "$OUT/texture_cache.log" 2>&1
+grep -aE "^  (ok|FAIL)  |^Result:" "$OUT/texture_cache.log" || true
+if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/texture_cache.log"; then
+	echo "FAIL  : texture cache (see $OUT/texture_cache.log)"
+	[ $code -eq 0 ] && code=1
+fi
+
+# Walkie (#161). docs/audit/pr_merge_2026-08-29.md holds this suite back as
+# measured-broken: mocks silently overridden by the real autoloads, a failure at
+# line 60, and a reachable TTS backend. That was true of the PR AS REVIEWED and
+# is NOT true of what was merged — the author reworked it, and the fix is the
+# /root rename block now at the top of _run_tests. Re-measured 2026-08-30 on the
+# merged file: 35 ok, 0 fail, exit 0, no hang. The audit doc has been corrected.
+# Safe because Walkie caches neither dependency — every AudioManager/VoiceService
+# touch is a fresh get_node_or_null("/root/...") (Walkie.gd:175/238/267/277/303),
+# so renaming the real nodes before the first call is sufficient, and the real
+# VoiceService (the only OS.execute in src/, VoiceService.gd:524) is never
+# reached. Four VoiceService checks that an `if vs.calls.size() > 0:` guard had
+# made vacuous were de-guarded when it was wired; they pass hard.
+echo "== walkie (battery/headset/PTT + dead-battery silence, unit) =="
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_walkie.gd --quit-after 300 > "$OUT/walkie.log" 2>&1
+grep -aE "^  (ok|FAIL)  |^Result:" "$OUT/walkie.log" || true
+if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/walkie.log"; then
+	echo "FAIL  : walkie (see $OUT/walkie.log)"
+	[ $code -eq 0 ] && code=1
+fi
+
+# #A3 silo level sensor. build_node() picks a body class from a long if/elif
+# chain, and this entry's category is "Control" — so while the `category ==
+# "Control"` arm was tested BEFORE the `id == "silo_level_sensor"` arm, the id
+# arm was UNREACHABLE and every placed sensor silently got Hmi.gd. That one line
+# was the ONLY instantiation of SiloLevelSensor.gd in the repo, so LineFlow's
+# get_nodes_in_group("silo_level_sensor") index (LineFlow.gd:410) was permanently
+# empty and #A3 had never run in any build. TagMap.gd:60 had already recorded the
+# downstream symptom ("current_level_pct IS A DEAD SOURCE") without anyone
+# tracing it back to the ordering. Mutation-proven: restoring the old order turns
+# 3 checks red with "got: res://src/build/Hmi.gd" and exits 1.
+# An ordering bug is invisible to the parse sweep and to any check that only asks
+# whether the catalog HAS an entry — this one builds the node and reads its script.
+echo "== silo level sensor wiring (#A3) =="
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_silo_level_sensor_wired.gd --quit-after 300 > "$OUT/silo_level_sensor.log" 2>&1
+grep -aE "^  (ok|FAIL)  |^Result:" "$OUT/silo_level_sensor.log" || true
+if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/silo_level_sensor.log"; then
+	echo "FAIL  : silo level sensor wiring (see $OUT/silo_level_sensor.log)"
 	[ $code -eq 0 ] && code=1
 fi
 

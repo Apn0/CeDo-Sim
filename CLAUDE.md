@@ -37,18 +37,31 @@ was wrong and would fail on the first command.
 > tried and rejected — is in `docs/AUDIT_project_sweep_2026-08-23.md`. **When a
 > merge touches this repo, run the sweep before trusting anything else.**
 
-`tools/regression/run.sh` runs **23 suites**. Since the perimeter-fence
-deletion (operator order 2026-08-07) it ends `== done (exit 1) ==`:
-`test_jam_baseline`'s jam1 leg now wedges **10.0 s (budget 3.0) on the parked
-`VolvoV40Placeholder` in the staff parking lot** — the fence used to wall that
-lot off the yard→plant bearing, and the pilot dead-reckons (route planning
-already returns NO ROUTE because the target is inside the building — a
-pre-existing gap). Measured with an intersect_shape probe at the recorded wedge
-point (-115.26, -8.60, 138.19). The fix direction (pilot evade vs outdoor road
-routing vs re-baselining the leg) is an operator decision — do not silently
-re-tune the budget. Every other suite is green.
-Last full run 2026-08-07, after the fix below; `test_l3c_unit_screens` alone is
-`Result: 120 ok, 0 fail, 0 skip` and takes minutes, not hours.
+`tools/regression/run.sh` runs **41 gated suites** and ends
+`== done (exit 1) ==`. Measured 2026-08-30, twice, on this machine's real
+checkout — **5 failures**:
+
+| failing check | note |
+|---|---|
+| `regression verdict` | the `regression_world_save` boot |
+| `test_nav_connectivity` | |
+| `test_npc05_realworld` | EXPECTED red — the DRIVE_TO_INDOOR stall, see below. Do not silence it |
+| `test_line3b_flow_conformance` | `the plasmaq is fed AND feeds onward (in false / out true)` — a missing input edge in LineFlow topology discovery. NOT caused by the 2026-08-29 LineFlow refactor; proven pre-existing by a baseline run without it |
+| `test_project_sweep_guards` | |
+
+Everything else is green, including `test_jam_baseline`, `test_map_frame`,
+`test_outdoor_route` and `test_gate_carve`.
+
+> **This paragraph used to say "23 suites" and blame `test_jam_baseline`'s
+> 10.0 s wedge on the parked `VolvoV40Placeholder` for the exit 1.** That is the
+> stale-constant disease this file warns about, in this file. `test_jam_baseline`
+> passes now. If you are about to quote a count or a red list from any doc here,
+> re-run first — `grep -c '^FAIL  :'` on a fresh log costs seconds.
+
+Beware of two numbers that look like the harness total and are not:
+`test_l3c_unit_screens` alone reports `Result: 120 ok, 0 fail, 0 skip`, and
+`regression_world_save` alone reports `16 ok, 0 fail, 2 skip`. Quoting either as
+the harness result is how a multi-day hang once stayed invisible.
 
 **History — the `1b29087` "hang" (red 2026-08-02 → fixed 2026-08-07).** The
 suite never looped: `src/data/plant/l3c_unit_screens.gd` was committed with raw
@@ -124,7 +137,14 @@ read `Result:` AND the `note  :` lines in `tools/regression/out/last_run.log`.
 8b. **All factory motors are CeDo-logo dark blue** (#191E6C — operator
    2026-08-28: "All motors in the factory are blue … the blue from that
    logo"). Global in `PlaceableCatalog._motor_unit`; never paint a motor
-   another colour.
+   another colour — EXCEPT where an operator ruling records one, below.
+   * **KNOWN EXCEPTION — the maalmolen's own shaft motor** is cream/white,
+     the same colour as the mill body (operator 2026-08-29, from the real
+     3C photo: "the motor of the shaft of the mill is in the same colour as
+     the rest of the mill (exception to the blue motors)"). The blue motors
+     under that platform drive the FRICTION SEPARATORS, not the mill, and
+     those do follow 8b. See `docs/plant/maalmolen_3c_photo_reading_2026-08-29.md`.
+     Do not "fix" the mill's motor back to blue.
 9. Audit renders get a **per-line unique filename** (`shot_flotation_tank_3A.png`),
    never a shared name that overwrites the previous line's shot. Renders come from
    `src/tests/shot_placeable.tscn`:
