@@ -519,6 +519,11 @@ func _scan_dirty_floor(tree: SceneTree, seen: Dictionary) -> void:
 # SHOVEL_PILE_MIN_KG the heap starts blocking lanes / intakes, so an idle NPC
 # grabs a shovel-worth of it into the nearest waste_container until it's low.
 const SHOVEL_PILE_MIN_KG : float = 60.0
+# 2026-08-31 review: this script used to be load()ed inside the per-pile loop
+# below — a synchronous ResourceLoader hit per big heap on every 5 s scan.
+# Hoisted to a parse-time preload (checked: neither ShovelFloorPileTask nor its
+# base NpcAutonomyTask loads this board back, so no preload cycle).
+const SHOVEL_TASK_SCRIPT : Variant = preload("res://src/scenes/world/tasks/ShovelFloorPileTask.gd")
 func _scan_floor_piles(tree: SceneTree, seen: Dictionary) -> void:
 	var mw_ref : Node = _find_main_world(tree)
 	var pri_mod : int = _cleaning_priority_modifier(mw_ref)
@@ -535,10 +540,9 @@ func _scan_floor_piles(tree: SceneTree, seen: Dictionary) -> void:
 			continue
 		if pile.has_meta("autonomy_claimed_by"):
 			continue
-		var script := load("res://src/scenes/world/tasks/ShovelFloorPileTask.gd")
-		if script == null:
-			continue
-		var task : NpcAutonomyTask = script.new(pile as Node3D, mw_ref)
+		if SHOVEL_TASK_SCRIPT == null:
+			continue   # same skip-this-pile degrade as the old per-loop load()
+		var task : NpcAutonomyTask = SHOVEL_TASK_SCRIPT.new(pile as Node3D, mw_ref)
 		task.base_priority = task.priority   # npc-09 — snapshot for in-place refresh
 		task.priority += pri_mod
 		_open_tasks[tid] = task

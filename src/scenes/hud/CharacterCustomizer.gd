@@ -735,6 +735,14 @@ func _rebuild_world_bodies() -> void:
 		# read the freshest appearance.
 		player_node.set_meta("appearance", ap)
 	# Rebuild NPC bodies (single outfit)
+	# 2026-08-31 review — the old code did scene_root.find_child(<npc name>,
+	# true, false) INSIDE this loop: a full recursive tree scan per NPC. MainWorld
+	# puts NPCs in no group (checked: only scada_dashboard / line_flow / navmesh /
+	# crew_manager exist), so instead build a name→node lookup ONCE with a single
+	# recursive traversal. Built lazily on the first NPC that needs it, so the
+	# zero-NPC call stays traversal-free like before.
+	var name_lookup : Dictionary = {}
+	var name_lookup_built : bool = false
 	for npc_id in _all_outfits:
 		if npc_id == "player":
 			continue
@@ -745,7 +753,18 @@ func _rebuild_world_bodies() -> void:
 		if not npc_data is Dictionary or not npc_data.has(npc_id):
 			continue
 		var data : Dictionary = npc_data[npc_id]
-		var npc_node : Node = scene_root.find_child(String(data.get("name", npc_id)), true, false)
+		var npc_name : String = String(data.get("name", npc_id))
+		var npc_node : Node = null
+		if npc_name.contains("*") or npc_name.contains("?"):
+			# find_child() matches names with String.match(), so * / ? act as
+			# wildcards. NPC names never carry them, but if one ever did, only
+			# the real find_child reproduces that matching — fall through to it.
+			npc_node = scene_root.find_child(npc_name, true, false)
+		else:
+			if not name_lookup_built:
+				name_lookup_built = true
+				_collect_descendants_by_name(scene_root, name_lookup)
+			npc_node = name_lookup.get(npc_name)
 		if npc_node == null:
 			continue
 		var old_body := npc_node.find_child("HumanoidBody", false, false)
@@ -757,6 +776,21 @@ func _rebuild_world_bodies() -> void:
 		var body : Node3D = humanoid_script.build(data["color"], variant, ap)
 		body.name = "HumanoidBody"
 		npc_node.add_child(body)
+
+## 2026-08-31 review — one preorder pass replacing the per-NPC recursive
+## find_child scans in _rebuild_world_bodies. Mirrors Node.find_child(name,
+## true, false) semantics for literal (wildcard-free) names: preorder DFS over
+## ALL descendants (internal children included via get_children(true), the root
+## itself excluded, each child checked before its own subtree is descended),
+## owned=false ⇒ every node is a candidate, and first match in tree order wins —
+## hence only the FIRST node per name is recorded. A name absent from the dict
+## yields null from Dictionary.get(), matching find_child's null return.
+static func _collect_descendants_by_name(node: Node, into: Dictionary) -> void:
+	for c in node.get_children(true):
+		var nm := String(c.name)
+		if not into.has(nm):
+			into[nm] = c
+		_collect_descendants_by_name(c, into)
 
 static func _set_render_layers_recursive(node: Node, mask: int) -> void:
 	if node is MeshInstance3D:

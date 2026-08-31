@@ -98,11 +98,15 @@ func take(tool: Node3D) -> bool:
 ## Idempotent: self-heals freed slot refs (this autoload outlives the tool NODES
 ## across a scene reload) and skips any tool_id already held, so calling it on
 ## every spawn re-arms without duplicating.
+## 2026-08-31 review: these were path strings load()ed at runtime inside
+## give_starter_tools() — four synchronous disk hits on every spawn. Preload
+## once at parse time instead (preload() only takes literal paths, hence the
+## literal list of preload calls).
 const STARTER_TOOL_SCRIPTS : Array = [
-	"res://src/scenes/world/WireCutter.gd",     # scissors
-	"res://src/scenes/world/BarcodeScanner.gd", # scanner
-	"res://src/scenes/world/LineCouplerTool.gd",# line coupler / PLC wire tool
-	"res://src/scenes/world/ShovelTool.gd",     # shovel
+	preload("res://src/scenes/world/WireCutter.gd"),     # scissors
+	preload("res://src/scenes/world/BarcodeScanner.gd"), # scanner
+	preload("res://src/scenes/world/LineCouplerTool.gd"),# line coupler / PLC wire tool
+	preload("res://src/scenes/world/ShovelTool.gd"),     # shovel
 ]
 
 func give_starter_tools() -> void:
@@ -120,8 +124,7 @@ func give_starter_tools() -> void:
 	for t in slots:
 		if t != null and is_instance_valid(t) and "tool_id" in t:
 			have[String(t.get("tool_id"))] = true
-	for path in STARTER_TOOL_SCRIPTS:
-		var scr = load(path)
+	for scr in STARTER_TOOL_SCRIPTS:   # 2026-08-31 review: entries are preloaded scripts now
 		if scr == null:
 			continue
 		var tool_node : Node3D = scr.new()
