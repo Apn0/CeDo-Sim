@@ -494,5 +494,138 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/silo_level_sensor.log"; t
 	[ $code -eq 0 ] && code=1
 fi
 
+
+# =============================================================================
+# 2026-08-31 REVIEW SUITES. Nine suites from the external review of that date
+# (docs/audit/review_findings_2026-08-31.md): eight new + test_inventory, which
+# had existed unwired since it was written. All are SceneTree --script suites in
+# the counted-check shape — the [1-9][0-9]* gate refuses both a red run and a
+# vacuous "0 ok" run, and --quit-after 300 (main-loop iterations, not seconds)
+# bounds a hang without being able to false-fire on a slow machine.
+# =============================================================================
+# Gate.gd state semantics (2026-08-31 review finding: is_fully_open/is_fully_closed
+# at src/build/Gate.gd:101/104 were untested). Proves the 0.999/0.001 threshold
+# boundaries, set_drive clamping to [-1,1], and _physics_process travel with
+# limit-switch auto-stop and [0,1] clamping, via direct deterministic dt stepping.
+echo "== Gate state (is_fully_open / is_fully_closed / drive) =="
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_gate_state.gd --quit-after 300 > "$OUT/gate_state.log" 2>&1
+grep -aE "^  (ok|FAIL)  |^Result:" "$OUT/gate_state.log" || true
+if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/gate_state.log"; then
+	echo "FAIL  : Gate state (see $OUT/gate_state.log)"
+	[ $code -eq 0 ] && code=1
+fi
+
+# ScadaDashboard public API — set_state (state stored verbatim, grey-iff-Running colour,
+# micro-stop true/false return incl. exact-60s boundary), set_param (in/above/below band ->
+# grey/red/amber + is_param_alarming, repeat key updates not duplicates), set_text_param
+# (is_alarming true/false, sentinel alarm flag, em-dash empty text). 2026-08-31 review finding.
+echo "== ScadaDashboard API (set_state/set_param/set_text_param) =="
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_scada_dashboard.gd --quit-after 300 > "$OUT/scada_dashboard.log" 2>&1
+grep -aE "^  (ok|FAIL)  |^Result:" "$OUT/scada_dashboard.log" || true
+if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/scada_dashboard.log"; then
+	echo "FAIL  : ScadaDashboard API (see $OUT/scada_dashboard.log)"
+	[ $code -eq 0 ] && code=1
+fi
+
+# ShredderFeedBelt public API — request_start/request_stop (:416), fault latches
+# is_faulted/belt_jam_active/reset_faults (:541), and can_accept/accept_bale gates (:605),
+# all untested per the 2026-08-31 review. State-only SceneTree suite (no physics stepping);
+# scope split from test_shredder_feed_belt.gd (held_kg conservation) and test_feed_belt_orientation.gd (#211a timer).
+echo "== ShredderFeedBelt public API =="
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_shredder_feed_belt_api.gd --quit-after 300 > "$OUT/shredder_feed_belt_api.log" 2>&1
+grep -aE "^  (ok|FAIL)  |^Result:" "$OUT/shredder_feed_belt_api.log" || true
+if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/shredder_feed_belt_api.log"; then
+	echo "FAIL  : ShredderFeedBelt public API (see $OUT/shredder_feed_belt_api.log)"
+	[ $code -eq 0 ] && code=1
+fi
+
+# HmiOverlay open_for/is_open/close_overlay — real class, real _ready (2026-08-31 review).
+# Proves: fresh overlay closed; open_for sets station/header, deep-copies scope, picks the
+# scope-correct HOOFDMENU tile grid, resolves LineFlow via the line_flow group; re-open replaces
+# scope wholesale + clears MACHINES selection; close tears down subscope; double-close harmless.
+echo "== HmiOverlay open/close =="
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_hmi_overlay_open_close.gd --quit-after 300 > "$OUT/hmi_overlay_open_close.log" 2>&1
+grep -aE "^  (ok|FAIL)  |^Result:" "$OUT/hmi_overlay_open_close.log" || true
+if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/hmi_overlay_open_close.log"; then
+	echo "FAIL  : HmiOverlay open/close (see $OUT/hmi_overlay_open_close.log)"
+	[ $code -eq 0 ] && code=1
+fi
+
+# MapOverlay.handle_zoom — direction (+1 in / -1 out), dir=0 else-branch, 50x
+# repeated clamping pinned EXACTLY at MIN_RADIUS/MAX_RADIUS without overshoot,
+# and the downstream effect: zoom drives view_params().scale_px and the _to_px
+# pixel projection _draw() consumes (2026-08-31 review: handle_zoom untested).
+echo "== MapOverlay zoom =="
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_map_overlay_zoom.gd --quit-after 300 > "$OUT/map_overlay_zoom.log" 2>&1
+grep -aE "^  (ok|FAIL)  |^Result:" "$OUT/map_overlay_zoom.log" || true
+if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/map_overlay_zoom.log"; then
+	echo "FAIL  : MapOverlay zoom (see $OUT/map_overlay_zoom.log)"
+	[ $code -eq 0 ] && code=1
+fi
+
+# test_inventory.gd existed but was wired NOWHERE (found during the 2026-08-31
+# review's preload work). It directly
+# guards src/autoload/Inventory.gd (take/mass/is_full/slots) and just proved it can go
+# red under mutation. It is a SceneTree --script suite predating the two-line verdict
+# convention: it prints only "Result: N ok, M fail" (no "Result: PASS" line), so it
+# cannot join the .tscn for-loop — key off the counted verdict instead.
+echo "== test_inventory =="
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_inventory.gd --quit-after 300 > "$OUT/test_inventory.log" 2>&1
+grep -aE "^  (ok|FAIL)|^Result" "$OUT/test_inventory.log" || true
+if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/test_inventory.log"; then
+	echo "FAIL  : test_inventory (see $OUT/test_inventory.log)"
+	[ $code -eq 0 ] && code=1
+fi
+
+# NPC state-API suite (2026-08-31 review): pins the four NPC.gd transition APIs —
+# set/clear_autonomy_destination (:61, incl. #202 boarded routing to the chassis),
+# assign/clear_forced_task (:207, real start()/release() lifecycle), assign_post/
+# return_to_post/clear_post (:956), board/disembark_vehicle (:87, real OperatorContext).
+echo "== NPC state API (autonomy dest / forced task / post / vehicle) =="
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_npc_state_api.gd --quit-after 300 > "$OUT/npc_state_api.log" 2>&1
+grep -aE "^  (ok|FAIL)  |^Result:" "$OUT/npc_state_api.log" || true
+if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/npc_state_api.log"; then
+	echo "FAIL  : NPC state API (see $OUT/npc_state_api.log)"
+	[ $code -eq 0 ] && code=1
+fi
+
+# 2026-08-31 review: 'LaserFilterScope setup and update untested' (LaserFilterScope.gd:558).
+# Line 558 is setup() on the PressureBox INNER class (the outer scope has no setup/update).
+# Suite proves PressureBox.setup() builds the real Control tree (label text/colour, min sizes,
+# panel StyleBoxFlat) and update() formats the value, clamps the gauge fill 0..1, and bands
+# green/yellow/red at the documented 250/300-bar bounds (318-bar trip stays red).
+echo "== LaserFilterScope PressureBox =="
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_laserscope_pressure_box.gd --quit-after 300 > "$OUT/laserscope_pressure_box.log" 2>&1
+grep -aE "^  (ok|FAIL)  |^Result:" "$OUT/laserscope_pressure_box.log" || true
+if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/laserscope_pressure_box.log"; then
+	echo "FAIL  : LaserFilterScope PressureBox (see $OUT/laserscope_pressure_box.log)"
+	[ $code -eq 0 ] && code=1
+fi
+
+# gather_vals() payload proof (2026-08-31 review: HmiWebOverlay.gd:275 untested in
+# counted-check shape). Mocks the exact read API: LineFlow group node, /root/
+# NpcAutonomyBoard, ShiftClock via tree fallback. Proves units/pills/alarm/clock
+# derivation, per-code exclusions, 0.05 boundary, and every degrade path.
+echo "== hmi web gather_vals =="
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_hmi_web_gather_vals.gd --quit-after 300 > "$OUT/hmi_web_gather_vals.log" 2>&1
+grep -aE "^  (ok|FAIL)  |^Result:" "$OUT/hmi_web_gather_vals.log" || true
+if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/hmi_web_gather_vals.log"; then
+	echo "FAIL  : hmi web gather_vals (see $OUT/hmi_web_gather_vals.log)"
+	[ $code -eq 0 ] && code=1
+fi
+
+# CharacterCustomizer._rebuild_world_bodies — promoted 2026-08-31 from the review
+# mutation probe: no other wired suite observes this loop, so the same-day
+# find_child->cached-lookup perf change would otherwise be invisible to the harness.
+# Proves nested-NPC resolution, first-match-in-tree-order, ghost-name tolerance,
+# and the one-body invariant across a second rebuild.
+echo "== customizer world bodies =="
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_customizer_world_bodies.gd --quit-after 300 > "$OUT/customizer_world_bodies.log" 2>&1
+grep -aE "^  (ok|FAIL)  |^Result:" "$OUT/customizer_world_bodies.log" || true
+if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/customizer_world_bodies.log"; then
+	echo "FAIL  : customizer world bodies (see $OUT/customizer_world_bodies.log)"
+	[ $code -eq 0 ] && code=1
+fi
+
 echo "== done (exit $code) — see $OUT/topdown.png =="
 exit $code
