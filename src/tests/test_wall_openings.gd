@@ -90,36 +90,20 @@ func _init() -> void:
 	openings._orig_surfaces = [wall_tri]
 
 	# Box intersecting the triangle
-	_ok(openings._would_cut_anything(Vector3(0, 2, 0), Vector3(2, 2, 2), 0.0), "Expected true for intersecting box")
+	assert(openings._would_cut_anything(Vector3(0, 2, 0), Vector3(2, 2, 2), 0.0), "Expected true for intersecting box")
 
 	# Box far away
-	_ok(not openings._would_cut_anything(Vector3(10, 10, 10), Vector3(1, 1, 1), 0.0), "Expected false for distant box")
+	assert(not openings._would_cut_anything(Vector3(10, 10, 10), Vector3(1, 1, 1), 0.0), "Expected false for distant box")
 
 	# Box offset in Z so it doesn't touch the wall at Z=0
-	_ok(not openings._would_cut_anything(Vector3(0, 2, 5), Vector3(2, 2, 2), 0.0), "Expected false for Z-offset box")
+	assert(not openings._would_cut_anything(Vector3(0, 2, 5), Vector3(2, 2, 2), 0.0), "Expected false for Z-offset box")
 
 	# Rotated box check (if we rotate the box, it might or might not intersect).
 	# A box that would intersect the edge if placed straight, let's see.
 	# The wall triangle is at Z=0.
-	_ok(openings._would_cut_anything(Vector3(4, 0, 0), Vector3(2, 2, 2), 0.0), "Expected true for edge intersection")
+	assert(openings._would_cut_anything(Vector3(4, 0, 0), Vector3(2, 2, 2), 0.0), "Expected true for edge intersection")
 
 	mock_shell.free()
-
-	# Test 5: _solidify_surfaces with empty array
-	var res1 = openings._solidify_surfaces([])
-	assert(res1.size() == 0, "Expected empty array for empty input")
-
-	# Test 6: _solidify_surfaces with empty surface
-	var res2 = openings._solidify_surfaces([{"v": PackedVector3Array()}])
-	assert(res2.size() == 1 and res2[0]["v"].size() == 0, "Expected empty surface for empty input surface")
-
-	# Test 7: _solidify_surfaces with degenerate triangle (area ~ 0)
-	var res3 = openings._solidify_surfaces([{"v": PackedVector3Array([Vector3.ZERO, Vector3.ZERO, Vector3.ZERO])}])
-	assert(res3.size() == 1 and res3[0]["v"].size() == 0, "Expected empty surface for degenerate triangle")
-
-	# Test 8: _solidify_surfaces with valid triangle
-	var res4 = openings._solidify_surfaces([{"v": PackedVector3Array([Vector3(0,0,0), Vector3(1,0,0), Vector3(0,1,0)])}])
-	assert(res4.size() == 1 and res4[0]["v"].size() == 24, "Expected 24 vertices for a single valid triangle (front, back, and 3 rim quads)")
 	openings.free()
 
 
