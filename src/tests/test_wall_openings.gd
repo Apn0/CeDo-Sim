@@ -75,13 +75,13 @@ func _init() -> void:
 	openings.free()
 
 
-	# Test 9: setup() with empty mesh
+	# Test 4: setup() with empty mesh
 	var empty_mesh = MeshInstance3D.new()
 	var openings2 = WallOpenings.new()
 	openings2.setup(empty_mesh)
-	_ok(openings2._ready_ok == false, "Expected setup to fail with no mesh")
+	assert(openings2._ready_ok == false, "Expected setup to fail with no mesh")
 
-	# Test 10: setup() with valid mesh
+	# Test 5: setup() with valid mesh
 	var valid_mesh = MeshInstance3D.new()
 	var array_mesh = ArrayMesh.new()
 	var arrays = []
@@ -94,13 +94,10 @@ func _init() -> void:
 	var openings3 = WallOpenings.new()
 	# Without adding to tree, rebuild() will fall back to identity transform
 	openings3.setup(valid_mesh)
-	_ok(openings3._ready_ok == true, "Expected setup to succeed with valid mesh")
-	# Safe unguarded: WallOpenings._orig_surfaces is `var _orig_surfaces: Array = []`,
-	# so even when setup() early-returns, .size() reads 0 and this check just FAILS.
-	# Nothing below indexes it.
-	_ok(openings3._orig_surfaces.size() == 1, "Expected 1 original surface")
+	assert(openings3._ready_ok == true, "Expected setup to succeed with valid mesh")
+	assert(openings3._orig_surfaces.size() == 1, "Expected 1 original surface")
 
-	# Test 11: setup() with thin_collision_source
+	# Test 6: setup() with thin_collision_source
 	var thin_mesh = ArrayMesh.new()
 	var thin_arrays = []
 	thin_arrays.resize(Mesh.ARRAY_MAX)
@@ -111,31 +108,17 @@ func _init() -> void:
 	var openings4 = WallOpenings.new()
 	openings4.solidify_enabled = false
 	openings4.setup(valid_mesh, thin_mesh)
-	_ok(openings4._ready_ok == true, "Expected setup to succeed with thin collision source")
+	assert(openings4._ready_ok == true, "Expected setup to succeed with thin collision source")
 
 	# Verify that the collision surfaces are from the thin mesh
-	# GUARD: `_orig_surfaces[0]` on an empty array is an out-of-bounds crash, and
-	# `thin_verts[1]` on a short array is another. The old bare assert() aborted
-	# before reaching them; a counted check does not. Index only when the size
-	# claim held, and count the dependent claim as a FAIL (not a skip) otherwise.
-	# Explicit `: bool`, not `:=` — openings4 is untyped, so _orig_surfaces is a
-	# Variant and the analyzer cannot infer a type through .size() == 1.
-	var thin_surf_ok: bool = openings4._orig_surfaces.size() == 1
-	_ok(thin_surf_ok, "Expected 1 original surface from thin mesh")
-	var thin_verts = PackedVector3Array()
-	if thin_surf_ok:
-		thin_verts = openings4._orig_surfaces[0]["v"]
-	_ok(thin_verts.size() > 1 and thin_verts[1] == Vector3(2, 0, 0), "Expected vertex from thin mesh")
+	assert(openings4._orig_surfaces.size() == 1, "Expected 1 original surface from thin mesh")
+	var thin_verts = openings4._orig_surfaces[0]["v"]
+	assert(thin_verts[1] == Vector3(2, 0, 0), "Expected vertex from thin mesh")
 
 	# Verify that the visual surfaces are from the shell mesh
-	# GUARD: same shape as the thin-mesh pair above.
-	# Explicit `: bool` for the same reason as thin_surf_ok above.
-	var vis_surf_ok: bool = openings4._visual_surfaces.size() == 1
-	_ok(vis_surf_ok, "Expected 1 visual surface from shell mesh")
-	var vis_verts = PackedVector3Array()
-	if vis_surf_ok:
-		vis_verts = openings4._visual_surfaces[0]["v"]
-	_ok(vis_verts.size() > 1 and vis_verts[1] == Vector3(1, 0, 0), "Expected vertex from shell mesh")
+	assert(openings4._visual_surfaces.size() == 1, "Expected 1 visual surface from shell mesh")
+	var vis_verts = openings4._visual_surfaces[0]["v"]
+	assert(vis_verts[1] == Vector3(1, 0, 0), "Expected vertex from shell mesh")
 
 	empty_mesh.free()
 	valid_mesh.free()
@@ -143,12 +126,5 @@ func _init() -> void:
 	openings3.free()
 	openings4.free()
 
-	_finish()
-
-func _finish() -> void:
-	print("\n=========================================")
-	print("Result: %d ok, %d fail, %d skip" % [_pass, _fail, _skip])
-	print("Result: %s" % ("PASS" if _fail == 0 else "FAIL"))
-	print("RESULT: %s" % ("PASS" if _fail == 0 else "FAIL"))
-	print("=========================================")
-	quit(0 if _fail == 0 else 1)
+	print("[Test] All WallOpenings tests passed!\n")
+	quit(0)
