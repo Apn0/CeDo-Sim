@@ -73,8 +73,7 @@ func _process(delta: float) -> void:
 	# Ramp the live rpm toward target (motors don't snap to speed). The commanded
 	# rpm is CAPPED at the rated maximum (nominal_rpm) so a bad setpoint — e.g.
 	# 6000 on a 60-rpm screw — can never spin it past spec.
-	var capped : float = clampf(rpm, 0.0, nominal_rpm) if nominal_rpm > 0.0 else maxf(rpm, 0.0)
-	_rpm_target = capped if running else 0.0
+	_rpm_target = commanded_rpm()
 	# Exponential approach via SmoothedRate (tau ≈ spin_up_s / 3, so ~95% of
 	# the step is reached in `spin_up_s` seconds — the historic linear ramp
 	# hit the target exactly at that time, this asymptotically approaches it
@@ -119,8 +118,25 @@ func scrub_fraction() -> float:
 	return scrub if _rpm_cur > nominal_rpm * 0.5 else 0.0
 
 ## Live speed (rpm), after spin-up ramp. For HMI / debugging.
+## FRAME-time state: it only advances in _process. Sim logic that runs inside
+## LineFlow.tick() must read commanded_rpm() instead — see its comment.
 func current_rpm() -> float:
 	return _rpm_cur
+
+## The rpm the ramp is chasing RIGHT NOW: the commanded setpoint capped at the
+## rated maximum, 0 while not running. Pure SIM state — driven by
+## set_running()/set_target_rpm(), no dependency on _process having run.
+## This distinction is load-bearing: current_rpm() ramps in FRAME time, so a
+## caller driving LineFlow.tick() in a tight loop with no engine frames
+## (test_tag_snapshot's 400-tick drive, any headless fast-forward) reads
+## current_rpm() == 0 forever regardless of what the sim commanded. Measured
+## 2026-08-31 at 5382cca: that stalled every rotor-bearing 3C stage
+## (_mech_fraction 0.000 for the whole 40 s), the force-fed doseersilo crossed
+## OVERLOAD_KG at ~31 s and e-stopped the line.
+func commanded_rpm() -> float:
+	if not running:
+		return 0.0
+	return clampf(rpm, 0.0, nominal_rpm) if nominal_rpm > 0.0 else maxf(rpm, 0.0)
 
 func set_running(v: bool) -> void:
 	running = v
@@ -146,9 +162,7 @@ func set_target_rpm(v: float) -> void:
 ## `set_target_rpm(v)` so the motor's spin-up is honored.
 func snap_to_rpm(v: float) -> void:
 	rpm = v
-	_rpm_target = clampf(v, 0.0, nominal_rpm) if nominal_rpm > 0.0 else maxf(v, 0.0)
-	if not running:
-		_rpm_target = 0.0
+	_rpm_target = commanded_rpm()
 	_rpm_cur = _rpm_target
 	if _smoother != null:
 		_smoother.snap_to(_rpm_cur)

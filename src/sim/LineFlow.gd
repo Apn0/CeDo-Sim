@@ -1523,8 +1523,24 @@ func _find_die_switcher(machine: Node) -> Node:
 	machine.set_meta("_cached_die_switcher", found)
 	return found
 
-## Live conveying fraction (0..1.25) from a node's rotor rpm vs its nominal. 1.0
-## when the node has no rotor (the spin gate alone then governs it).
+## Conveying fraction (0..1.25) from a node's rotor COMMANDED rpm vs its
+## nominal. 1.0 when the node has no rotor (the spin gate alone then governs it).
+##
+## COMMANDED (commanded_rpm), never current_rpm(): the visual ramp advances in
+## RotatingMechanism._process — FRAME time — while this function gates material
+## flow inside tick() — SIM time. A caller that drives tick() without pumping
+## frames (test_tag_snapshot's 400×0.1 s loop, any headless fast-forward) reads
+## current_rpm() == 0 forever no matter what the sim commands. MEASURED
+## 2026-08-31: this gate was dead until 5382cca (discovery found no rotors, so
+## `mech` was always null and this returned 1.0); the moment 5382cca found the
+## real rotors, every rotor-bearing 3C stage conveyed 0.000× in the tag-snapshot
+## drive, the force-fed doseersilo crossed OVERLOAD_KG at ~31 s and the
+## buffer-overload e-stop killed it — em/status false with no MotorOverload
+## trip, the exact red. With commanded rpm the tight loop and the in-game
+## frame loop agree; spin-up lag is already modelled in SIM time by nd["spin"]
+## (SPIN_UP_S), and a per-rotor HMI setpoint still bites because
+## set_target_rpm() writes the commanded rpm this reads. Evidence + probe:
+## docs/audit/tag_snapshot_regression_2026-08-31.md.
 func _mech_fraction(nd: Dictionary) -> float:
 	var mech = nd.get("mech")
 	if mech == null or not is_instance_valid(mech):
@@ -1534,7 +1550,7 @@ func _mech_fraction(nd: Dictionary) -> float:
 	var nom : float = float(mech.nominal_rpm)
 	if nom <= 0.0:
 		return 1.0
-	return clampf(float(mech.call("current_rpm")) / nom, 0.0, 1.25)
+	return clampf(float(mech.call("commanded_rpm")) / nom, 0.0, 1.25)
 
 ## Turn every link into a fixed-resolution delay-line: PIPE_STAGES MaterialBatch
 ## slots that shift forward one slot every stage_dt, so a parcel takes the whole
