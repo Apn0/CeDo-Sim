@@ -259,6 +259,28 @@ func _run_tests() -> void:
 	_ok(v2.calls.size() == v2_calls_before, "second disembark is a no-op (not seated)")
 	_ok(npc._seated_in_vehicle == false, "still unseated after the no-op disembark")
 
+	# ── (e) forced task autonomy tick ───────────────────────────────────────
+	print("Test: (e) forced task _autonomy_tick")
+	var t_tick := RecordingTask.new()
+	npc.assign_forced_task(t_tick)
+	npc._autonomy_tick(0.1)
+	_ok(t_tick.tick_calls == 1, "_autonomy_tick calls tick() on the forced task")
+	_ok(npc._forced_task == t_tick, "task stays active if tick returns false and is_done is false")
+
+	t_tick.mock_tick_ret = true
+	npc._autonomy_tick(0.1)
+	_ok(t_tick.tick_calls == 2, "second _autonomy_tick calls tick() again")
+	_ok(npc._forced_task == null, "_autonomy_tick clears the forced task if tick() returns true")
+	_ok(t_tick.release_calls == 1, "clearing via tick() return value calls release()")
+
+	var t_done := RecordingTask.new()
+	npc.assign_forced_task(t_done)
+	t_done.mock_done = true
+	npc._autonomy_tick(0.1)
+	_ok(t_done.tick_calls == 0, "_autonomy_tick does not call tick() if is_done() is already true")
+	_ok(npc._forced_task == null, "_autonomy_tick clears the forced task if is_done() is true")
+	_ok(t_done.release_calls == 1, "clearing via is_done() calls release()")
+
 	# Cleanup — free every node we created; verdict prints LAST, after teardown.
 	root.remove_child(npc)
 	npc.free()
@@ -302,6 +324,17 @@ class RecordingTask extends NpcAutonomyTask:
 	func release(npc: Node) -> void:
 		release_calls += 1
 		super.release(npc)
+
+	var tick_calls    : int = 0
+	var mock_done     : bool = false
+	var mock_tick_ret : bool = false
+
+	func tick(npc: Node, delta: float) -> bool:
+		tick_calls += 1
+		return mock_tick_ret
+
+	func is_done() -> bool:
+		return mock_done
 
 ## Mocks exactly the surface OperatorContext probes on a vehicle during
 ## npc_board_vehicle / npc_disembark_vehicle / npc_vehicle_of routing:
