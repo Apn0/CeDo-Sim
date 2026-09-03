@@ -40,7 +40,14 @@ enum ShiftPhase { OFF_SHIFT, STARTUP, MID, HANDOVER }
 # spawning duplicates.
 var _open_tasks : Dictionary = {}   # int -> NpcAutonomyTask
 # Active tasks (claimed by an NPC). Cleared on done/failed.
-var _active : Dictionary = {}       # int -> NpcAutonomyTask, key = npc instance id
+var _active : Dictionary = {}
+
+const SHOVEL_TASK_SCRIPT : Variant = preload("res://src/scenes/world/tasks/ShovelFloorPileTask.gd")
+const BLOW_LEAVES_TASK_SCRIPT : Variant = preload("res://src/scenes/world/tasks/BlowLeavesTask.gd")
+const HOSE_SWEEP_TASK_SCRIPT : Variant = preload("res://src/scenes/world/tasks/HoseSweepTask.gd")
+const OVERFLOW_DUMP_TASK_SCRIPT : Variant = preload("res://src/scenes/world/tasks/OverflowDumpTask.gd")
+const REFUEL_BLOWER_TASK_SCRIPT : Variant = preload("res://src/scenes/world/tasks/RefuelBlowerTask.gd")
+const EMPTY_CART_TASK_SCRIPT : Variant = preload("res://src/scenes/world/tasks/EmptyLumpCartTask.gd")
 
 # ── Storing fixen (operator 2026-08-07) ──────────────────────────────────────
 # Active storingen, key "<machine_id>/<alarm_id>" -> {machine_id, alarm_id,
@@ -201,7 +208,7 @@ func _build_forced_task(tree: SceneTree, npc: Node, kind: String) -> NpcAutonomy
 			var blower : Node3D = _nearest_in_group(tree, "leaf_blower", npc)
 			if blower == null:
 				return null
-			var s := load("res://src/scenes/world/tasks/BlowLeavesTask.gd")
+			var s : Variant = BLOW_LEAVES_TASK_SCRIPT
 			if s == null:
 				return null
 			return s.new(blower, mw_ref)
@@ -209,7 +216,7 @@ func _build_forced_task(tree: SceneTree, npc: Node, kind: String) -> NpcAutonomy
 			var nozzle : Node3D = _nearest_in_group(tree, "hose_nozzle", npc)
 			if nozzle == null:
 				return null
-			var s := load("res://src/scenes/world/tasks/HoseSweepTask.gd")
+			var s : Variant = HOSE_SWEEP_TASK_SCRIPT
 			if s == null:
 				return null
 			return s.new(nozzle, mw_ref)
@@ -217,7 +224,7 @@ func _build_forced_task(tree: SceneTree, npc: Node, kind: String) -> NpcAutonomy
 			var pile : Node3D = _nearest_in_group(tree, "floor_pile", npc)
 			if pile == null:
 				return null
-			var s := load("res://src/scenes/world/tasks/ShovelFloorPileTask.gd")
+			var s : Variant = SHOVEL_TASK_SCRIPT
 			if s == null:
 				return null
 			return s.new(pile, mw_ref)
@@ -228,7 +235,7 @@ func _build_forced_task(tree: SceneTree, npc: Node, kind: String) -> NpcAutonomy
 			var dest : Node3D = _choose_lumps_destination(tree)
 			if dest == null:
 				return null
-			var s := load("res://src/scenes/world/tasks/EmptyLumpCartTask.gd")
+			var s : Variant = EMPTY_CART_TASK_SCRIPT
 			if s == null:
 				return null
 			return s.new(cart, dest)
@@ -244,7 +251,7 @@ func _build_forced_task(tree: SceneTree, npc: Node, kind: String) -> NpcAutonomy
 			var dump_dest : Node3D = _choose_lumps_destination(tree, bin)
 			if dump_dest == null:
 				return null
-			var s := load("res://src/scenes/world/tasks/OverflowDumpTask.gd")
+			var s : Variant = OVERFLOW_DUMP_TASK_SCRIPT
 			if s == null:
 				return null
 			return s.new(bin, dump_dest)
@@ -257,7 +264,7 @@ func _build_forced_task(tree: SceneTree, npc: Node, kind: String) -> NpcAutonomy
 			var can : Node3D = _nearest_in_group(tree, "jerrycan", npc)
 			if can == null:
 				return null
-			var s := load("res://src/scenes/world/tasks/RefuelBlowerTask.gd")
+			var s : Variant = REFUEL_BLOWER_TASK_SCRIPT
 			if s == null:
 				return null
 			return s.new(blower, can, mw_ref)
@@ -357,7 +364,7 @@ func _scan_lump_carts(tree: SceneTree, seen: Dictionary) -> void:
 		var dest : Node3D = _choose_lumps_destination(tree)
 		if dest == null:
 			continue
-		var script := load("res://src/scenes/world/tasks/EmptyLumpCartTask.gd")
+		var script : Variant = EMPTY_CART_TASK_SCRIPT
 		if script == null:
 			continue
 		var task : NpcAutonomyTask = script.new(cart, dest)
@@ -477,7 +484,7 @@ func _scan_dirty_floor(tree: SceneTree, seen: Dictionary) -> void:
 			continue
 		if blower.has_meta("autonomy_claimed_by"):
 			continue
-		var script := load("res://src/scenes/world/tasks/BlowLeavesTask.gd")
+		var script : Variant = BLOW_LEAVES_TASK_SCRIPT
 		if script == null:
 			continue
 		var task : NpcAutonomyTask = script.new(blower as Node3D, mw_ref)
@@ -486,7 +493,7 @@ func _scan_dirty_floor(tree: SceneTree, seen: Dictionary) -> void:
 		_open_tasks[tid] = task
 	# Hose nozzles (water + air, same group, distinguished by `air_mode` flag).
 	# Emit one HoseSweepTask per nozzle whose mode-specific cooldown is met.
-	var hose_script := load("res://src/scenes/world/tasks/HoseSweepTask.gd")
+	var hose_script : Variant = HOSE_SWEEP_TASK_SCRIPT
 	for nz in tree.get_nodes_in_group("hose_nozzle"):
 		if not is_instance_valid(nz):
 			continue
@@ -523,7 +530,6 @@ const SHOVEL_PILE_MIN_KG : float = 60.0
 # below — a synchronous ResourceLoader hit per big heap on every 5 s scan.
 # Hoisted to a parse-time preload (checked: neither ShovelFloorPileTask nor its
 # base NpcAutonomyTask loads this board back, so no preload cycle).
-const SHOVEL_TASK_SCRIPT : Variant = preload("res://src/scenes/world/tasks/ShovelFloorPileTask.gd")
 func _scan_floor_piles(tree: SceneTree, seen: Dictionary) -> void:
 	var mw_ref : Node = _find_main_world(tree)
 	var pri_mod : int = _cleaning_priority_modifier(mw_ref)
@@ -672,7 +678,7 @@ func _scan_overflow_containers(tree: SceneTree, seen: Dictionary) -> void:
 	if not has_idle_forklift:
 		return
 
-	var script := load("res://src/scenes/world/tasks/OverflowDumpTask.gd")
+	var script : Variant = OVERFLOW_DUMP_TASK_SCRIPT
 	if script == null:
 		return
 
@@ -714,7 +720,7 @@ func _scan_low_fuel_blowers(tree: SceneTree, seen: Dictionary) -> void:
 	var jerrycans : Array = tree.get_nodes_in_group("jerrycan")
 	if jerrycans.is_empty():
 		return   # nowhere to refuel from — don't emit
-	var rb_script := load("res://src/scenes/world/tasks/RefuelBlowerTask.gd")
+	var rb_script : Variant = REFUEL_BLOWER_TASK_SCRIPT
 	if rb_script == null:
 		return
 	# Read FUEL_LOW_FRACTION off the loaded script (avoids a hard class_name
