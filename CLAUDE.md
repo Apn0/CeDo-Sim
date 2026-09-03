@@ -50,6 +50,15 @@ paragraph without one.
 | failing check | note |
 |---|---|
 | `regression verdict` | `all 1 door(s)/gate(s) sit on a wall (on-wall 0)` (17 ok, 1 fail, 1 skip) in the `regression_world_save` boot. Reproduced 2026-08-31 on a clean D: worktree and 2026-09-02 on this checkout, identical message — so it is NOT local tree state, contrary to the note in still-open PR #190 |
+`tools/regression/run.sh` runs **51 gated suites** and ends
+`== done (exit 1) ==`. Measured 2026-08-31 ~04:10 on this machine's real
+checkout (main 32a35ce, post-#188) — **7 failures**: the five from the
+2026-08-30 measurement, plus two NEW ones from the 2026-08-31 61-commit
+merge wave (both green on 2026-08-30):
+
+| failing check | note |
+|---|---|
+| `regression verdict` | the `regression_world_save` boot. Green on a CLEAN worktree (371 ok) — the red is local tree-state, not code |
 | `test_nav_connectivity` | |
 | `test_jam_baseline` | **red since the 2026-08-31 61-commit wave**, green on 2026-08-30. `jam1_yard_to_plant` and `jam3_indoor_to_outdoor` both `stalled`; the forklift ends 57.34 m from the outdoor skip pose (limit 3.5, baseline was 6.95 m short). NOT caused by the `commanded_rpm` fix — byte-identical with that fix reverted. A concurrent session's unfinished fix attempt for it is parked, unpushed, on `wip/gate-carve` |
 | `test_npc05_realworld` | EXPECTED red — the DRIVE_TO_INDOOR stall, see below. Do not silence it |
@@ -74,6 +83,12 @@ wave, fixed, see below), `test_map_frame`, `test_outdoor_route`,
 > reds above are the seven measured pre-fix minus this one — the fix removes
 > exactly one red and adds none. Full story, probe, and the
 > user://-dependent bisect trap: `docs/audit/tag_snapshot_regression_2026-08-31.md`.
+| `test_project_sweep_guards` | Green on a CLEAN worktree — red comes from stray local files |
+| `test_jam_baseline` | **NEW 2026-08-31** — jam1_yard_to_plant and jam3_indoor_to_outdoor both `stalled`, forklift 57.34 m short of the skip pose. Suspects: the 207-part maalmolen rebuild / stair move (d059007, 1ece58a) blocking the route |
+| `test_tag_snapshot` | **NEW 2026-08-31** — doseersilo `em/status` false + `em/snelheid` 0, deterministic (same signature on two machines). Suspects: LineFlow discovery fix 5382cca or the tick refactor (#179) |
+
+Everything else is green, including `test_jam_baseline`, `test_map_frame`,
+`test_outdoor_route` and `test_gate_carve`.
 
 > **This paragraph used to say "23 suites" and blame `test_jam_baseline`'s
 > 10.0 s wedge on the parked `VolvoV40Placeholder` for the exit 1.** That is the
