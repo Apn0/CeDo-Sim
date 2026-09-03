@@ -329,7 +329,12 @@ class RecordingTask extends NpcAutonomyTask:
 	var mock_done     : bool = false
 	var mock_tick_ret : bool = false
 
-	func tick(npc: Node, delta: float) -> bool:
+	# `_npc` / `_delta`, not `npc` / `delta`. This mock ignores both, and
+	# tools/regression/run.sh's unused-parameter lint is a GATE, not a warning:
+	# it aborts the entire harness before a single suite runs. That has now
+	# happened twice in one day — #197 with one parameter, #210 with these two —
+	# so the underscore is load-bearing, not style.
+	func tick(_npc: Node, _delta: float) -> bool:
 		tick_calls += 1
 		return mock_tick_ret
 
