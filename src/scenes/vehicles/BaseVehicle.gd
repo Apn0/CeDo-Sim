@@ -918,6 +918,11 @@ var _pilot             : VehiclePilot = null   # npc-06 local sensing, built on 
 var _npc_goal    : Vector3 = Vector3.ZERO
 var _npc_route   : PackedVector3Array = PackedVector3Array()
 var _npc_route_i : int = 0
+## Metres the last ordered goal sat from a standable cell — see
+## npc_goal_clearance_m(). PER-VEHICLE deliberately: the route grid is a shared
+## static, so this cannot live on the grid without one vehicle reporting
+## another's goal.
+var _npc_goal_clearance_m : float = 0.0
 ## Shared across every vehicle: the occupancy grid describes the plant, not the
 ## driver. Rebuilt when the world changes so a test that boots a second MainWorld
 ## cannot inherit the first one's obstacles.
@@ -1035,6 +1040,22 @@ func npc_set_target(p: Vector3, carry_first: bool = false) -> void:
 			_npc_reverse = to_local(cp.global_position).z > 0.0
 
 ## Stop driving (hold position).
+## DOES NOT CLEAR _npc_route, AND THAT IS LOAD-BEARING — do not "tidy" it.
+##
+## npc_route_points() reads _npc_route, which survives a stop, so it reports the
+## LAST order's route rather than "no order". That looks like an obvious bug and
+## has been logged as one (docs/audit/jam_baseline_2026-09-03.md). Clearing it
+## here silently breaks test_jam_baseline: _drive_leg calls npc_stop() and THEN
+## calls _route_exists() (npc_route_points() > 0) both at test_jam_baseline.gd:474
+## and again from _test_jam3 at :338. With the route cleared, _route_exists()
+## returns false after every leg, the suite's "no doorway, skip the check" branch
+## re-arms, and the three checks that finally went green on 2026-09-03 go back to
+## being SILENTLY SKIPPED — an 11 ok / 0 fail / 3 skipped result that reads like a
+## pass. The same field is what _npc_goal_clearance_m follows.
+##
+## So the stale read is a real defect with a real trap around it: fix the READER
+## (_route_exists) first, or fix both in one change with the suite re-run to prove
+## the skip count stayed at 0.
 func npc_stop() -> void:
 	_npc_target_active = false
 
@@ -1055,13 +1076,42 @@ func npc_arrived() -> bool:
 func npc_route_points() -> int:
 	return _npc_route.size()
 
+## Metres the last ORDERED goal sat from standable ground, as measured by the
+## route grid when the order was placed. 0.0 means the pose was free. Greater
+## than NPC_ARRIVE_TOL means npc_arrived() can never return true for it. -1.0
+## means no free cell was found at all. Per-vehicle, so it is safe to read even
+## though the grid itself is shared.
+func npc_goal_clearance_m() -> float:
+	return _npc_goal_clearance_m
+
 ## Plan a vehicle-scale route to `p`. An empty result means dead reckoning, which
 ## is the shipped behaviour and the correct degradation: a world whose grid
 ## cannot build must still move its vehicles.
 func _plan_route(p: Vector3) -> PackedVector3Array:
 	var grid := _ensure_route_grid()
 	if grid == null:
+		_npc_goal_clearance_m = 0.0
 		return PackedVector3Array()
+	# Ask, before routing, whether the ordered pose is standable at all. route()
+	# appends it verbatim as the final waypoint either way (deliberately — see
+	# VehicleRouteGrid.goal_clearance), so this is the only thing that can tell a
+	# caller apart from a goal it will reach and one it cannot.
+	_npc_goal_clearance_m = grid.goal_clearance(p)
+	# WARN ONLY WHEN ARRIVAL IS IMPOSSIBLE, and that threshold is derived, not
+	# picked: npc_arrived() succeeds within NPC_ARRIVE_TOL of the ordered pose, so
+	# a goal snapped LESS than that is still reachable and warning about it would
+	# spam every legitimate container-mouth and cart-seat order. Snapped further
+	# and npc_arrived() can never return true, which is the undebuggable case.
+	if _npc_goal_clearance_m > NPC_ARRIVE_TOL or _npc_goal_clearance_m < 0.0:
+		push_warning(("[BaseVehicle] %s (%s): ORDERED GOAL IS NOT STANDABLE — %s is "
+			+ "%s from the nearest vehicle-sized free cell, and npc_arrived() only "
+			+ "succeeds within %.1f m, so this order can never complete. The route "
+			+ "still ends on it. Check whether the pose is inside a machine, a "
+			+ "container, or occupied by a body.")
+			% [name, vehicle_type, str(p.round()),
+				"unreachable at any distance" if _npc_goal_clearance_m < 0.0
+					else "%.2f m" % _npc_goal_clearance_m,
+				NPC_ARRIVE_TOL])
 	var r := grid.route(global_position, p)
 	if r.is_empty():
 		# NAMED, not silent. An empty route means the grid found no vehicle-sized

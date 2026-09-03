@@ -387,6 +387,26 @@ func _drive_leg(fl: Node3D, leg_name: String, start: Vector3, goal: Vector3) -> 
 	# "31/31 green while zero kilograms moved".
 	if fl.has_method("npc_route_points"):
 		rec.note_path_points(int(fl.call("npc_route_points")))
+	# Was the ordered pose inside STATIC geometry? Reported, not asserted: the
+	# arithmetic is proved deterministically by test_route_goal_clearance.
+	#
+	# READ THIS NUMBER NARROWLY. VehicleRouteGrid._blocks() only counts
+	# StaticBody3D, so 0.00 m means "no machine or wall here", NOT "nobody is
+	# standing here". jam1's original goal — the factory anchor, which IS
+	# player_spawn — reports 0.00 m while a hull probe there returns
+	# BLOCKED by ["Player"]. That is why jam1 parks JAM1_GOAL_STANDOFF_M short
+	# instead of relying on this line to catch it.
+	if fl.has_method("npc_goal_clearance_m"):
+		var gc : float = float(fl.call("npc_goal_clearance_m"))
+		if gc < 0.0:
+			_info("%s ordered goal: NO standable cell found at all" % leg_name)
+		elif gc <= 0.0001:
+			_info("%s ordered goal sits on free ground (clearance 0.00 m)" % leg_name)
+		else:
+			_info("%s ordered goal is %.2f m from standable ground%s"
+				% [leg_name, gc,
+					" — FURTHER than the 2.2 m arrival tolerance, so this leg cannot complete"
+						if gc > 2.2 else ""])
 
 	var outcome := "timeout"
 	# Early abort on non-convergence. A vehicle that circles closes no distance,

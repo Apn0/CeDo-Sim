@@ -67,7 +67,11 @@ class QuietNPC extends "res://src/scenes/world/NPC.gd":
 
 class MockOperatorContext extends Node:
 	var _veh: Node
-	func npc_vehicle_of(npc: Node) -> Node:
+	# `_npc`, not `npc`: the mock returns the same vehicle whoever asks, so the
+	# parameter is genuinely unused and run.sh's unused-parameter lint gate
+	# ABORTS THE WHOLE HARNESS on it before a single suite runs — it is a gate,
+	# not a warning. Landed unnoticed with #197 on 2026-09-03.
+	func npc_vehicle_of(_npc: Node) -> Node:
 		return _veh
 
 class MockVehicleMissingMethod extends Node:
