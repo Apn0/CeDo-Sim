@@ -25,6 +25,17 @@ var _drive       : int   = 0     # -1 = closing (down), 0 = stop, +1 = opening (
 var _open_t      : float = 0.0   # 0.0 closed, 1.0 fully open
 var _scaler      : Node3D = null
 var _opened_min  : float = 0.04  # minimum visible leaf when fully rolled up
+# The physics leaf. A DIRECT child of this StaticBody3D (a shape nested under
+# LeafScaler never registers — measured 2026-08-31, shape owners 0) — so
+# _apply_open_t must resize it by hand; parent scale cannot do the work.
+var _leaf_col    : CollisionShape3D = null
+var _leaf_h      : float = 0.0
+## Y of the leaf's TOP edge in gate-local space. The leaf rolls UP into the
+## drum, so this edge is the one that never moves — every open state is
+## "hang `_leaf_h * s` downward from here". build_gate stamps it because the two
+## placement paths anchor a gate differently (centre vs base); deriving the box
+## from it instead of from the origin is what keeps physics on the visual.
+var _leaf_top    : float = 0.0
 
 var _player_near : bool = false
 
@@ -32,6 +43,10 @@ var _player_near : bool = false
 func _ready() -> void:
 	add_to_group("gate")
 	_scaler = get_node_or_null("LeafScaler") as Node3D
+	_leaf_col = get_node_or_null("LeafCol") as CollisionShape3D
+	if _leaf_col != null and _leaf_col.shape is BoxShape3D:
+		_leaf_h = (_leaf_col.shape as BoxShape3D).size.y
+	_leaf_top = float(get_meta("leaf_top_y", _leaf_h * 0.5))
 	# Default state = fully closed. Drive remains 0 until a button is pressed.
 	_apply_open_t(0.0)
 	_build_interact_trigger()
@@ -87,10 +102,18 @@ func _physics_process(delta: float) -> void:
 		_drive = 0
 
 func _apply_open_t(t: float) -> void:
-	if _scaler == null:
-		return
 	var s : float = lerpf(1.0, _opened_min, clampf(t, 0.0, 1.0))
-	_scaler.scale = Vector3(1.0, s, 1.0)
+	if _scaler != null:
+		_scaler.scale = Vector3(1.0, s, 1.0)
+	# Keep the physics leaf congruent with the visual: both shrink toward the
+	# TOP edge of the opening, so the box's centre rises as its height drops.
+	if _leaf_col != null and _leaf_h > 0.0 and _leaf_col.shape is BoxShape3D:
+		var b := _leaf_col.shape as BoxShape3D
+		b.size.y = _leaf_h * s
+		# Hang the remaining leaf from the fixed top edge. One formula, both
+		# anchor conventions: closed (s = 1) puts the centre half a height below
+		# the top, fully open leaves a sliver tucked under the drum.
+		_leaf_col.position.y = _leaf_top - _leaf_h * s * 0.5
 
 # =============================================================================
 # PUBLIC — called by GateButtonStation buttons.

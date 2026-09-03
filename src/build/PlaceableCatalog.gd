@@ -1247,7 +1247,9 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 		if ghost:
 			return _simple_ghost(Vector3(item["size"]))
 		var gsz : Vector3 = item["size"]
-		return _finalize_placeable(build_gate(gsz.x, gsz.y, "Gate"), "gate_roller")
+		# anchor_base: BuildMode places a catalog gate at the wall hit point, which
+		# is the BOTTOM of the cut, not its middle.
+		return _finalize_placeable(build_gate(gsz.x, gsz.y, "Gate", true), "gate_roller")
 	if id == "window_frame":
 		if ghost:
 			return _simple_ghost(Vector3(item["size"]))
@@ -10062,7 +10064,20 @@ static func build_door(width: float, height: float, thickness: float, label: Str
 ##
 ## The Gate node carries `placeable_id` = "surface" and group "placed_object",
 ## so it deletes + persists exactly like a door.
-static func build_gate(width: float, height: float, label: String) -> StaticBody3D:
+## `anchor_base` selects where the gate's ORIGIN sits relative to its opening,
+## because the two callers disagree and always have:
+##   * false (default) — origin at the opening's CENTRE. The 4-point Surface
+##     tool places a gate on the quad centroid, so a surface gate's origin is
+##     the middle of its own hole.
+##   * true — origin at the opening's BASE. The catalog branch (:1246) places
+##     `gate_roller` at the wall hit point, i.e. the bottom of the cut.
+## Measured 2026-09-03 with the default on a catalog gate: the carved opening
+## spanned y -8.000 .. -4.400 while the leaf (visual AND collision) spanned
+## -9.800 .. -6.200 — a full half-height low, 1.8 m of leaf underground and the
+## top half of the doorway standing open. Invisible until the leaf gained
+## collision, because a ghost covering the wrong half looks identical to a
+## ghost covering the right one. See docs/audit/jam_baseline_2026-09-03.md.
+static func build_gate(width: float, height: float, label: String, anchor_base: bool = false) -> StaticBody3D:
 	var gate: StaticBody3D = load("res://src/build/Gate.gd").new()
 	gate.name = "Gate" if label.is_empty() else label
 	# #194 — see build_door note; the catalog "gate_roller" branch sets
@@ -10080,13 +10095,18 @@ static func build_gate(width: float, height: float, label: String) -> StaticBody
 	# stacking the box (single mesh is fine, leave for the polish pass).
 
 	# ── LeafScaler: anchored at the TOP edge of the opening ───────────────────
-	# Y-scale on this node shrinks the leaf upward into the drum (top stays put,
-	# bottom rises). Collision shrinks with the mesh because CollisionShape3D is
-	# affected by its parent scale.
+	# Y-scale on this node shrinks the VISUAL leaf upward into the drum (top
+	# stays put, bottom rises).
+	# The scaler sits ON the opening's top edge; everything else is derived from
+	# it, so the anchor convention lives in exactly this one number.
+	var leaf_top_y : float = height if anchor_base else height * 0.5
 	var scaler := Node3D.new()
 	scaler.name = "LeafScaler"
-	scaler.position = Vector3(0.0, height * 0.5, 0.0)   # top of the opening
+	scaler.position = Vector3(0.0, leaf_top_y, 0.0)   # top of the opening
 	gate.add_child(scaler)
+	# Gate._apply_open_t derives the collision box from this, so the physics leaf
+	# can never drift from the visual one regardless of which anchor was used.
+	gate.set_meta("leaf_top_y", leaf_top_y)
 
 	var leaf := MeshInstance3D.new()
 	leaf.name = "Leaf"
@@ -10097,13 +10117,17 @@ static func build_gate(width: float, height: float, label: String) -> StaticBody
 	leaf.position = Vector3(0.0, -height * 0.5, 0.0)    # top edge at scaler origin
 	scaler.add_child(leaf)
 
+	# Collision must be a DIRECT child of the StaticBody3D or Godot never
+	# registers it (measured 2026-08-31: shape owners 0, closed gates blocked
+	# nothing — vehicles and the route grid drove straight through the leaf).
+	# Gate._apply_open_t resizes this box to track the visual leaf.
 	var col := CollisionShape3D.new()
-	col.name = "Col"
+	col.name = "LeafCol"
 	var lshape := BoxShape3D.new()
 	lshape.size = Vector3(width, height, 0.10)
 	col.shape = lshape
-	col.position = Vector3(0.0, -height * 0.5, 0.0)
-	scaler.add_child(col)
+	col.position = Vector3(0.0, leaf_top_y - height * 0.5, 0.0)  # closed: fills the opening
+	gate.add_child(col)
 
 	# ── Drum housing (the visible roll on top) ────────────────────────────────
 	var drum_mat := StandardMaterial3D.new()
