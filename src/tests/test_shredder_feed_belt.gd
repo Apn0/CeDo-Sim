@@ -94,6 +94,15 @@ func _run() -> void:
 	_check(after < throat_kg - 1.0,
 		"S4 held_kg() drops once digestion resumes (%.2f -> %.2f)" % [throat_kg, after])
 
+	# ── S5 HMI control requests
+	_check(belt.is_running(), "S5 belt is running before stop request")
+	belt.request_stop()
+	_check(not belt.start_requested, "S5 request_stop() sets start_requested to false")
+	_check(not belt.is_running(), "S5 belt is_running() is false after stop request")
+	belt.request_start()
+	_check(belt.start_requested, "S5 request_start() sets start_requested to true")
+	_check(belt.is_running(), "S5 belt is_running() is true after start request")
+
 	if _fails == 0:
 		print("[TEST] ShredderFeedBelt.held_kg() PASS")
 	else:
