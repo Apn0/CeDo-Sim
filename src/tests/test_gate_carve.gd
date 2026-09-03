@@ -214,6 +214,68 @@ func _ready() -> void:
 	_check(BaseVehicle._route_grid == null,
 		"placing the gate invalidated the shared vehicle route grid")
 
+	# ── LEAF PHYSICS (added 2026-08-31) — a closed gate is a real obstacle ──
+	# The leaf's CollisionShape3D must be REGISTERED on the body. Before this
+	# check existed the shape sat nested under LeafScaler, which Godot ignores
+	# (measured 2026-09-03 at main d0f7e32: shape owners 0), so a CLOSED gate
+	# blocked nothing at all — rays fired straight through the leaf from both
+	# sides. build_gate was the only one of 17 add_child(col) sites in
+	# PlaceableCatalog.gd parenting a CollisionShape3D to a plain Node3D;
+	# build_door, 52 lines earlier, always did it correctly.
+	#
+	# NOT the cause of test_jam_baseline going red — an earlier version of this
+	# comment claimed it was, citing a bisect document that was never written.
+	# A ghost leaf cannot stop a forklift. The real story, measured both ways:
+	# docs/audit/jam_baseline_2026-09-03.md
+	# NB: `shape_owner_id`, NOT `oid`. GDScript has no block scoping, and `oid`
+	# is already the opening-id String declared at :197 and read again at :248.
+	# Re-using the name here is a hard parse error ("There is already a variable
+	# named \"oid\" declared in this scope") that takes the WHOLE harness down at
+	# the parse sweep, not just this suite -- it did exactly that from
+	# 2026-08-31 06:00 until 2026-09-03. Same collision class as the 08-29
+	# `var shell` merge.
+	var owner_shapes : int = 0
+	if gate_node is CollisionObject3D:
+		var body := gate_node as CollisionObject3D
+		for shape_owner_id in body.get_shape_owners():
+			owner_shapes += body.shape_owner_get_shape_count(int(shape_owner_id))
+	_check(owner_shapes >= 1,
+		"the gate body registers its leaf collision (%d shapes — 0 means the leaf is a ghost)"
+			% owner_shapes)
+	# TWO physics frames before probing: the leaf's CollisionShape3D was added to
+	# the body during this same frame, and PhysicsDirectSpaceState3D does not see
+	# a shape until the space has stepped. Measured 2026-09-03 — without this
+	# await the CLOSED probe reports "no hit" on a leaf that is demonstrably
+	# there, while the OPEN probe below (which already awaited) reads correctly.
+	# A test that races the physics server measures the server, not the gate.
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	# Where the leaf actually IS, versus where we are probing. Printed always:
+	# the first version of the CLOSED-leaf check below failed for four runs
+	# because nobody had compared these two numbers.
+	var lcs := gate_node.get_node_or_null("LeafCol") as CollisionShape3D
+	if lcs != null and lcs.shape is BoxShape3D:
+		var half : float = (lcs.shape as BoxShape3D).size.y * 0.5
+		_info("LeafCol spans y %.3f .. %.3f (gate origin y=%.3f), probing at y=%.3f"
+			% [lcs.global_position.y - half, lcs.global_position.y + half,
+				gate_node.global_position.y, probe_centre.y])
+	var lvis := gate_node.get_node_or_null("LeafScaler/Leaf") as MeshInstance3D
+	if lvis != null and lvis.mesh is BoxMesh:
+		var vh : float = (lvis.mesh as BoxMesh).size.y * lvis.global_transform.basis.get_scale().y * 0.5
+		_info("visual Leaf spans y %.3f .. %.3f — collision must track THIS"
+			% [lvis.global_position.y - vh, lvis.global_position.y + vh])
+	_info("the carved opening is expected to span y %.3f .. %.3f"
+		% [gate_node.global_position.y, gate_node.global_position.y + gate_h])
+	_check(_leaf_blocks(space, probe_centre, normal, gate_node),
+		"the CLOSED leaf physically blocks the opening centre")
+	gate_node.call("_apply_open_t", 1.0)
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	_check(not _leaf_blocks(space, probe_centre, normal, gate_node),
+		"the OPEN leaf clears the opening centre")
+	gate_node.call("_apply_open_t", 0.0)
+	await get_tree().physics_frame
+
 	# ── THE MIRROR: deleting the gate removes the opening registration ─────
 	BaseVehicle._route_grid = VehicleRouteGrid.new()
 	_check(BaseVehicle._route_grid != null, "route-grid sentinel re-armed before deletion")
@@ -250,6 +312,28 @@ func _wall_blocks(space: PhysicsDirectSpaceState3D, centre: Vector3, normal: Vec
 			return false
 		if _is_shell_hit(hit.get("collider")):
 			return true
+		excl.append(hit["rid"])
+	return false
+
+## True when the ray through the opening hits a collider that belongs to
+## `gate_node` — the leaf (or any other gate part), NOT the shell and NOT some
+## third body standing in the gap. The mirror image of _wall_blocks' exclusion.
+func _leaf_blocks(space: PhysicsDirectSpaceState3D, centre: Vector3, normal: Vector3, gate_node: Node3D) -> bool:
+	var a := centre + normal * WALL_PROBE_HALF_M
+	var b := centre - normal * WALL_PROBE_HALF_M
+	var excl : Array[RID] = []
+	for _attempt in 6:
+		var q := PhysicsRayQueryParameters3D.create(a, b)
+		q.collide_with_areas = false
+		q.exclude = excl
+		var hit := space.intersect_ray(q)
+		if hit.is_empty():
+			return false
+		var n := hit.get("collider") as Node
+		while n != null:
+			if n == gate_node:
+				return true
+			n = n.get_parent()
 		excl.append(hit["rid"])
 	return false
 
