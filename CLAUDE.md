@@ -37,17 +37,21 @@ was wrong and would fail on the first command.
 > tried and rejected — is in `docs/AUDIT_project_sweep_2026-08-23.md`. **When a
 > merge touches this repo, run the sweep before trusting anything else.**
 
-`tools/regression/run.sh` runs **41 gated suites** and ends
-`== done (exit 1) ==`. Measured 2026-08-30, twice, on this machine's real
-checkout — **5 failures**:
+`tools/regression/run.sh` runs **51 gated suites** and ends
+`== done (exit 1) ==`. Measured 2026-08-31 ~04:10 on this machine's real
+checkout (main 32a35ce, post-#188) — **7 failures**: the five from the
+2026-08-30 measurement, plus two NEW ones from the 2026-08-31 61-commit
+merge wave (both green on 2026-08-30):
 
 | failing check | note |
 |---|---|
-| `regression verdict` | the `regression_world_save` boot |
+| `regression verdict` | the `regression_world_save` boot. Green on a CLEAN worktree (371 ok) — the red is local tree-state, not code |
 | `test_nav_connectivity` | |
 | `test_npc05_realworld` | EXPECTED red — the DRIVE_TO_INDOOR stall, see below. Do not silence it |
 | `test_line3b_flow_conformance` | `the plasmaq is fed AND feeds onward (in false / out true)` — a missing input edge in LineFlow topology discovery. NOT caused by the 2026-08-29 LineFlow refactor; proven pre-existing by a baseline run without it |
-| `test_project_sweep_guards` | |
+| `test_project_sweep_guards` | Green on a CLEAN worktree — red comes from stray local files |
+| `test_jam_baseline` | **NEW 2026-08-31** — jam1_yard_to_plant and jam3_indoor_to_outdoor both `stalled`, forklift 57.34 m short of the skip pose. Suspects: the 207-part maalmolen rebuild / stair move (d059007, 1ece58a) blocking the route |
+| `test_tag_snapshot` | **NEW 2026-08-31** — doseersilo `em/status` false + `em/snelheid` 0, deterministic (same signature on two machines). Suspects: LineFlow discovery fix 5382cca or the tick refactor (#179) |
 
 Everything else is green, including `test_jam_baseline`, `test_map_frame`,
 `test_outdoor_route` and `test_gate_carve`.
