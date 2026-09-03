@@ -50,7 +50,7 @@ func _run() -> void:
 	# 'mill' deliberately UNCHANGED — no real line-1 figure exists (see
 	# MachineFlow.gd's comment on the "mill" arm for why the 3C/Lijn-5 amp
 	# readings don't transfer). This asserts the non-fix is intentional, not
-	# a leftover TODO — if 'mill' ever gets a real number this check should
+	# an oversight — if 'mill' ever gets a real number this check should
 	# be updated to match it, not deleted.
 	_check(is_equal_approx(float(MachineFlow.profile("mill")["rate"]), 6.0),
 		"'mill' stays on the generic default — no real line-1 HMI figure exists yet")
