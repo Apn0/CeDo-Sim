@@ -208,11 +208,73 @@ NPC pilot, not geometry and not the gate. It is now the only thing between the
 plant and a working indoor→outdoor haul, and it is a real red rather than a
 skipped check for the first time.
 
+## Second follow-up, 2026-09-03 — the pilot was never broken
+
+🤮 The claim above — "the pilot cannot thread an open doorway it has a route
+through" — is **REFUTED**, by me, with the instrument I should have built first
+(`src/tests/probe_pilot_convergence.gd`). Driving the identical leg through the
+identical `npc_set_target` entry point with a larger budget and progress
+measured ALONG THE ROUTE:
+
+```
+LEG: jam3   route points = 6
+t=  0.0s  wp=1/6  d_goal= 17.50  pilot=RUN
+t= 40.0s  wp=2/6  d_goal= 56.57  pilot=RUN     <- the old metric aborted here
+t= 74.0s  wp=5/6  d_goal= 21.81  pilot=RUN
+t= 84.0s  wp=5/6  d_goal=  3.51  pilot=RUN
+outcome: arrived   waypoints 5 of 6   path 148.4 m   evades 0 during the leg
+```
+
+The forklift ticks every waypoint off, stays in `RUN` the whole way at a steady
+1.83 m/s, and **arrives**. Three test-side defects were producing the red:
+
+1. **The no-progress abort measured the wrong thing.** It watched the
+   straight-line XZ distance to the goal and aborted after 40 s without gain
+   (`test_jam_baseline.gd`). The plant has exactly ONE doorway, so jam3's route
+   runs 58 m in the opposite direction to reach it: that distance is
+   *guaranteed* to grow for the whole outbound run. The "57.34 m from target"
+   the suite reported is exactly where the vehicle was at t=46 s, driving
+   correctly. Now measured per waypoint — index advanced, or the current
+   waypoint closed by 0.5 m — which is strictly MORE sensitive to real circling
+   and immune to a legal detour.
+2. **`DRIVE_FRAMES` was too small.** 7200 frames = 120 s; jam1 needs 158 s to
+   cover 279.6 m of path at the ~1.8 m/s `NPC_CRUISE_FRAC` allows. Raised to
+   14400 (240 s), sized from that measurement.
+3. **jam1's goal was the player's spawn point.** `_anchor` IS `player_spawn`, and
+   a hull probe at it returns `BLOCKED by ["Player"]` — the player body stands
+   there in every headless boot. The forklift drove 352 m, closed to 2.32 m
+   against a 2.2 m tolerance, correctly refused to drive through the player, and
+   orbited in EVADE until the budget expired. Ordering a vehicle into an
+   occupied pose asserts nothing about navigation, so jam1 now parks
+   `JAM1_GOAL_STANDOFF_M` = 4.0 m short of the anchor on the approach bearing.
+
+Result, on the operator checkout:
+
+```
+jam1_yard_to_plant:      arrived after 166.3 s, 2.20 m from target, covered 289.5 m, path 7 pts
+jam3_indoor_to_outdoor:  arrived after 100.8 s, 2.20 m from target, covered 166.9 m, path 6 pts
+Result: PASS (14 ok, 0 fail, 0 skipped)
+```
+
+**All fourteen checks evaluated and green — the first time this suite has ever
+done that.** It has previously been 11 ok + 3 silently skipped, or 11 ok + 3
+failing. Nothing was loosened to get here: the three formerly-skipped checks are
+hard, `0 skipped` is printed, and the wedge and anti-vacuity assertions are
+untouched.
+
 ## Open defects, measured, not fixed here
 
-1. **The NPC pilot does not converge through the gate** — the trace above. The
-   route is 6–7 waypoints, the opening is passable, the vehicle keeps moving and
-   never arrives.
+1. **`VehicleRouteGrid.route()` appends the ordered goal verbatim** after
+   snapping its endpoints with `_nearest_free`, so a goal inside geometry
+   produces a route whose final waypoint can never be reached. jam1 hit exactly
+   this. A caller has no way to learn that its target was unreachable — the
+   route comes back looking valid.
+2. **`_route_exists()` reads a stale snapshot.** `npc_route_points()` returns
+   `_npc_route.size()` (`BaseVehicle.gd:1055`), assigned once per order at
+   `:1028`, and `npc_stop()` does not clear it.
+3. **`regression_world_save`'s on-wall check uses a stale frame** — see the
+   earlier section; `all 1 door(s)/gate(s) sit on a wall (on-wall 0)` is
+   evidence about the check, not the gate.
 3. **`regression_world_save`'s on-wall check uses a stale frame.** `BF_O` /
    `BF_XU` / `BF_OUTLINE` (`regression_world_save.gd:30-32`, `:101-104`) describe
    a footprint spanning world Z 60.9–132.7, against a runtime-measured shell AABB

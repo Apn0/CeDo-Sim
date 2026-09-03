@@ -38,11 +38,8 @@ was wrong and would fail on the first command.
 > merge touches this repo, run the sweep before trusting anything else.**
 
 `tools/regression/run.sh` ends `== done (exit 1) ==`. Measured **2026-09-03**
-on this machine's real checkout, at `main` `741509b` plus the gate-operation
-fixes — **6 failures**. It was 5 before those fixes, and the sixth is not a
-regression: opening the gates gave the forklift a route for the first time, so
-`test_jam_baseline`'s three skipped checks became hard checks and failed. A
-skip turning into a red IS the harness getting better.
+on this machine's real checkout, at `main` `45fcc0a` plus the jam-metric
+fixes — **5 failures**.
 
 Count convention, because neither the old "41 gated suites" nor "51 gated
 suites" could be re-derived: the run wrote **54** logs into
@@ -56,10 +53,25 @@ paragraph without one.
 |---|---|
 | `regression verdict` | `all 1 door(s)/gate(s) sit on a wall (on-wall 0)` (17 ok, 1 fail, 1 skip) in the `regression_world_save` boot. Reproduced 2026-08-31 on a clean D: worktree and 2026-09-02 on this checkout, identical message — so it is NOT local tree state. An earlier version of this table claimed "green on a CLEAN worktree (371 ok)"; that did not reproduce |
 | `test_nav_connectivity` | |
-| `test_jam_baseline` | EXPECTED red since 2026-09-03, and an honest one — these three checks were SKIPPED, not passing, until gates started spawning open. `jam1` ends 79.37 m from target after driving 203.7 m, `jam3` closes to 16.94 m and then retreats to 57.34 m; both finish within 6 m of the gate centre, `wedged 0.0 s in 0 stall(s)`. The route is 6–7 waypoints and the open doorway admits a 2.4 × 2.2 m hull (measured), so this is a route-following defect in the NPC pilot — not geometry, not the gate. Do not silence it and do not "fix" it by closing the gates |
 | `test_npc05_realworld` | EXPECTED red — the DRIVE_TO_INDOOR stall, see below. Do not silence it |
 | `test_line3b_flow_conformance` | `the plasmaq is fed AND feeds onward (in false / out true)` — a missing input edge in LineFlow topology discovery. NOT caused by the 2026-08-29 LineFlow refactor; proven pre-existing by a baseline run without it |
 | `test_project_sweep_guards` | `B1b WorldLayout.structure_items starts empty (1 entries)` — local `user://` world state, not code |
+
+**`test_jam_baseline` is `14 ok, 0 fail, 0 skipped` — the first time this suite
+has ever evaluated all fourteen of its checks.** It was 11 ok + 3 silently
+skipped for as long as the plant had no doorway, then 11 ok + 3 failing once one
+existed. The pilot was never the problem: three test-side defects were, and all
+three were measured with `src/tests/probe_pilot_convergence.gd` before anything
+was changed. (1) The no-progress abort watched the STRAIGHT-LINE distance to the
+goal, which is guaranteed to grow while a vehicle drives the 58 m detour to the
+plant's only doorway — it now measures progress per waypoint, which is strictly
+more sensitive to real circling. (2) `DRIVE_FRAMES` was 120 s; jam1 needs 158 s
+for its 279.6 m of path. (3) jam1's goal was `_anchor`, which IS `player_spawn`
+— a hull probe there returns `BLOCKED by ["Player"]`, so the forklift correctly
+refused to drive through the player and orbited. It now parks 4 m short.
+Measured after: `jam1 arrived after 166.3 s`, `jam3 arrived after 100.8 s`, both
+2.20 m from target. Nothing was loosened — the wedge and anti-vacuity checks are
+untouched and `0 skipped` is printed every run.
 
 Everything else is green, including `test_tag_snapshot` (29 ok — red in the
 wave, fixed, see below), `test_map_frame`, `test_outdoor_route`,
@@ -80,8 +92,8 @@ wave, fixed, see below), `test_map_frame`, `test_outdoor_route`,
 > station sat at `-height * 0.5 + 1.30`, which on a base-anchored catalog gate
 > put the buttons **half a metre under the floor**, unreachable even for the
 > player. Both the leaf and the station now derive from `leaf_top_y`.
-> Consequence, deliberate: a routable doorway un-skips three
-> `test_jam_baseline` checks and they fail. See the table.
+> Consequence: a routable doorway un-skips three `test_jam_baseline` checks.
+> They failed at first, on a bad metric — see the next paragraph.
 
 > **2026-08-31 — `test_tag_snapshot` went red in the 61-commit wave and is
 > fixed.** Bisected to `5382cca` (rotor discovery going recursive activated the
