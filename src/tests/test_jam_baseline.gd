@@ -43,6 +43,11 @@ const JAM1_POS : Vector3 = Vector3(-79.90, -7.93, 157.13)
 # chain to wander into it: the defect is "drives into the first solid on the
 # bearing", and this puts a solid on the bearing every run.
 const JAM1_BACKOFF_M : float = 22.0
+## How far short of the factory anchor jam 1 parks. The anchor is player_spawn
+## and the player occupies it headless, so the ordered goal has to stand off it.
+## 4.0 m, from the measured clearance sweep: the nearest hull-clear pose along
+## the approach bearing is 2.0 m out, and NPC_ARRIVE_TOL is 2.2 m.
+const JAM1_GOAL_STANDOFF_M : float = 4.0
 
 # JAM 3 — the outdoor-skip A/B recorded in ContainerGuide.gd:103-113. Offset
 # (12, 0, 45.5) from the factory anchor is 6.9 m past the facade and
@@ -76,14 +81,19 @@ const WEDGE_BUDGET_S : float = 3.0
 
 const BOOT_FRAMES   : int = 120
 const SETTLE_FRAMES : int = 60
-## 180 s at 60 Hz. Sized like OverflowDumpTask's own travel budget (leg length at
-## a pessimistic 1.0 m/s, OverflowDumpTask.gd:21) rather than picked: jam 1 is a
-## 136 m leg, so a 60 s window fails a vehicle that is converging perfectly well.
-## The measured jams stall permanently, so a longer window cannot rescue them.
-const DRIVE_FRAMES  : int = 7200
+## 240 s at 60 Hz. RESIZED FROM MEASUREMENT 2026-09-03, not picked: the old
+## 7200 (120 s) was too small for jam 1 now that a route through the gate
+## exists. probe_pilot_convergence.gd drove that leg to `arrived` in 158 s over
+## 279.6 m of path — the straight line is 156 m but the only doorway forces a
+## detour, and NPC_CRUISE_FRAC caps the forklift near 1.8 m/s. jam 3 arrives in
+## 85 s. 240 s leaves headroom on the slower leg without doubling suite time,
+## because the route-progress abort below catches a genuine stall in 40 s.
+const DRIVE_FRAMES  : int = 14400
 const BAKE_WAIT_FRAMES : int = 600
-## 40 s without closing half a metre on the goal. Long enough that a legitimate
-## detour round the long side of the building is not mistaken for circling.
+## 40 s without either reaching the next waypoint or closing half a metre on it.
+## Waypoint-relative on purpose — see the long comment in _drive_leg. A
+## goal-relative version of this constant is what made a legitimate 58 m detour
+## to the plant's only doorway look like a circling vehicle.
 const NO_PROGRESS_FRAMES : int = 2400
 
 var _backups : Dictionary = {}
@@ -278,7 +288,16 @@ func _test_jam1() -> void:
 	to_plant.y = 0.0
 	to_plant = to_plant.normalized()
 	var start : Vector3 = JAM1_POS - to_plant * JAM1_BACKOFF_M
-	var leg := await _drive_leg(fl, "jam1_yard_to_plant", start, _anchor)
+	# NOT `_anchor` itself. The factory anchor IS player_spawn — measured
+	# 2026-09-03: a 2.4 x 2.2 x 4.0 m hull at the anchor comes back
+	# `BLOCKED by ["Player"]`, because the player body stands on that exact
+	# point in every headless boot. The forklift drove 352 m, got to 2.32 m of
+	# it (tolerance 2.2 m), refused to run the player over, and orbited in EVADE
+	# until the budget ran out. Ordering a vehicle into an occupied pose asserts
+	# nothing about navigation. Park 4 m short of the anchor on the approach
+	# bearing instead: measured `arrived`, 158 s, 279.6 m travelled, best 2.22 m.
+	var goal : Vector3 = _anchor - to_plant * JAM1_GOAL_STANDOFF_M
+	var leg := await _drive_leg(fl, "jam1_yard_to_plant", start, goal)
 	if leg.is_empty():
 		return
 	var stall : float = VehicleJamRecorder.wedge_seconds_near(leg, JAM1_POS, JAM_RADIUS_M)
@@ -374,7 +393,24 @@ func _drive_leg(fl: Node3D, leg_name: String, start: Vector3, goal: Vector3) -> 
 	# and burning the full budget to learn that costs ~20 minutes of wall clock per
 	# leg. "stalled" and "timeout" are BOTH failures — this only makes the failure
 	# arrive sooner, it can never turn a red into a green.
-	var best : float = INF
+	# PROGRESS IS MEASURED ALONG THE ROUTE, NOT AS THE CROW FLIES.
+	#
+	# This used to watch the straight-line XZ distance to `goal` and abort when
+	# it stopped shrinking. That metric cannot work in this plant and it produced
+	# two false reds for four days. The building has exactly ONE doorway, the
+	# 3A/3B gate. jam3's goal is 17.5 m from its start, but the route out runs
+	# 58 m in the OPPOSITE direction to reach that gate, so the straight-line
+	# distance is guaranteed to grow for the whole outbound run. Measured
+	# 2026-09-03 with src/tests/probe_pilot_convergence.gd: the forklift ticks
+	# all six waypoints and ARRIVES in 85 s, 148.4 m travelled, pilot in RUN the
+	# whole way. The old abort fired at 40 s and reported "57.34 m from target"
+	# — which is exactly where the vehicle was at t=46 s, driving correctly.
+	#
+	# A vehicle that is genuinely circling advances no waypoint AND closes on
+	# none, so this is strictly the more sensitive test of the two, not a
+	# loosening.
+	var best_idx : int = -1
+	var best_wp_d : float = INF
 	var since_gain : int = 0
 	for _i in range(DRIVE_FRAMES):
 		await get_tree().physics_frame
@@ -384,9 +420,17 @@ func _drive_leg(fl: Node3D, leg_name: String, start: Vector3, goal: Vector3) -> 
 		if bool(fl.call("npc_arrived")):
 			outcome = "arrived"
 			break
-		var d : float = Vector2(fl.global_position.x - goal.x, fl.global_position.z - goal.z).length()
-		if d < best - 0.5:
-			best = d
+		# With a 0-point route _npc_target IS the goal, so this degrades to the
+		# old straight-line behaviour exactly where that behaviour was correct.
+		var idx : int = int(fl.get("_npc_route_i"))
+		var wp : Vector3 = fl.get("_npc_target")
+		var d_wp : float = Vector2(fl.global_position.x - wp.x, fl.global_position.z - wp.z).length()
+		if idx > best_idx:
+			best_idx = idx
+			best_wp_d = d_wp
+			since_gain = 0
+		elif d_wp < best_wp_d - 0.5:
+			best_wp_d = d_wp
 			since_gain = 0
 		else:
 			since_gain += 1
