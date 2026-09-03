@@ -37,6 +37,19 @@ was wrong and would fail on the first command.
 > tried and rejected — is in `docs/AUDIT_project_sweep_2026-08-23.md`. **When a
 > merge touches this repo, run the sweep before trusting anything else.**
 
+`tools/regression/run.sh` ends `== done (exit 1) ==`. Measured **2026-09-02**
+on this machine's real checkout at `dc017bb` (post-#189) plus the
+`commanded_rpm` fix below — **6 failures**. Count convention, because the
+old "41 suites" number was not reproducible: the run wrote **54** logs into
+`tools/regression/out/`, of which two (`parse_gate`, `parse_sweep`) are gates
+rather than suites, and `last_run.log` — excluded from the 54 — carries the
+`regression verdict` check. Re-derive with
+`ls tools/regression/out/*.log | wc -l` right after a run; do not quote this
+paragraph without one.
+
+| failing check | note |
+|---|---|
+| `regression verdict` | `all 1 door(s)/gate(s) sit on a wall (on-wall 0)` (17 ok, 1 fail, 1 skip) in the `regression_world_save` boot. Reproduced 2026-08-31 on a clean D: worktree and 2026-09-02 on this checkout, identical message — so it is NOT local tree state, contrary to the note in still-open PR #190 |
 `tools/regression/run.sh` runs **51 gated suites** and ends
 `== done (exit 1) ==`. Measured 2026-08-31 ~04:10 on this machine's real
 checkout (main 32a35ce, post-#188) — **7 failures**: the five from the
@@ -47,8 +60,29 @@ merge wave (both green on 2026-08-30):
 |---|---|
 | `regression verdict` | the `regression_world_save` boot. Green on a CLEAN worktree (371 ok) — the red is local tree-state, not code |
 | `test_nav_connectivity` | |
+| `test_jam_baseline` | **red since the 2026-08-31 61-commit wave**, green on 2026-08-30. `jam1_yard_to_plant` and `jam3_indoor_to_outdoor` both `stalled`; the forklift ends 57.34 m from the outdoor skip pose (limit 3.5, baseline was 6.95 m short). NOT caused by the `commanded_rpm` fix — byte-identical with that fix reverted. A concurrent session's unfinished fix attempt for it is parked, unpushed, on `wip/gate-carve` |
 | `test_npc05_realworld` | EXPECTED red — the DRIVE_TO_INDOOR stall, see below. Do not silence it |
 | `test_line3b_flow_conformance` | `the plasmaq is fed AND feeds onward (in false / out true)` — a missing input edge in LineFlow topology discovery. NOT caused by the 2026-08-29 LineFlow refactor; proven pre-existing by a baseline run without it |
+| `test_project_sweep_guards` | `B1b WorldLayout.structure_items starts empty (1 entries)` — local `user://` world state, not code |
+
+Everything else is green, including `test_tag_snapshot` (29 ok — red in the
+wave, fixed, see below), `test_map_frame`, `test_outdoor_route`,
+`test_gate_carve`, and all nine suites #189 wired
+(`test_gate_state`, `test_scada_dashboard`, `test_npc_state_api`,
+`test_map_overlay_zoom`, `test_laserscope_pressure_box`,
+`test_hmi_overlay_open_close`, `test_hmi_web_gather_vals`,
+`test_customizer_world_bodies`, `test_shredder_feed_belt_api`).
+
+> **2026-08-31 — `test_tag_snapshot` went red in the 61-commit wave and is
+> fixed.** Bisected to `5382cca` (rotor discovery going recursive activated the
+> never-before-live `_mech_fraction` gate, which read FRAME-time rotor rpm
+> inside SIM-time `tick()` — a frame-less test drive stalled every rotor stage
+> and e-stopped the fed doseersilo). Fix: `_mech_fraction` reads the new
+> `RotatingMechanism.commanded_rpm()`. Confirmed 2026-09-02 in the full
+> harness at `dc017bb` + fix: `test_tag_snapshot` 29 ok / 0 fail, and the six
+> reds above are the seven measured pre-fix minus this one — the fix removes
+> exactly one red and adds none. Full story, probe, and the
+> user://-dependent bisect trap: `docs/audit/tag_snapshot_regression_2026-08-31.md`.
 | `test_project_sweep_guards` | Green on a CLEAN worktree — red comes from stray local files |
 | `test_jam_baseline` | **NEW 2026-08-31** — jam1_yard_to_plant and jam3_indoor_to_outdoor both `stalled`, forklift 57.34 m short of the skip pose. Suspects: the 207-part maalmolen rebuild / stair move (d059007, 1ece58a) blocking the route |
 | `test_tag_snapshot` | **NEW 2026-08-31** — doseersilo `em/status` false + `em/snelheid` 0, deterministic (same signature on two machines). Suspects: LineFlow discovery fix 5382cca or the tick refactor (#179) |
