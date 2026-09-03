@@ -170,9 +170,25 @@ func _run_tests() -> void:
 	_ok(rej_once and reject_reasons[0] == "load zone occupied", "C16 rejection reason: load zone occupied")
 	_ok(int(belt_c.call("rider_count")) == 1 and int(belt_c.get("bales_accepted")) == 1,
 		"C17 refused bale neither tracked nor counted")
+
+	# Clear the load zone to test can_accept() -> true and the lane argument
+	var riders : Array = belt_c.get("_riders")
+	var path_total : float = float(belt_c.get("_path_total"))
+	# Advance progress so that `progress * _path_total >= LOAD_ZONE_M (which is 1.4)`
+	riders[0]["progress"] = 2.0 / maxf(path_total, 1.0)
+	_ok(bool(belt_c.call("can_accept")), "C17a rider cleared load zone: can_accept() true")
+
+	# Test accept_bale lane argument
+	var deck_width : float = float(belt_c.get("deck_width"))
+	_ok(bool(belt_c.call("accept_bale", bale2, 1)), "C17b second bale accepted in lane 1")
+	_ok(int(belt_c.call("rider_count")) == 2, "C17c second bale tracked as rider")
+	var second_rider : Dictionary = riders[1]
+	_ok(is_equal_approx(float(second_rider["lane_x"]), 0.5 * deck_width * 0.5), "C17d lane 1 sets lane_x offset correctly")
+
 	# Fault gate sits BEFORE the load-zone gate in accept_bale.
+	var bale3 := _make_bale(true, 350.0)
 	belt_c.call("_raise_fault", "belt_jam", "BELT-JAM")
-	_ok(bool(belt_c.call("accept_bale", bale2)) == false, "C18 faulted belt refuses a bale")
+	_ok(bool(belt_c.call("accept_bale", bale3)) == false, "C18 faulted belt refuses a bale")
 	var rej_twice : bool = reject_reasons.size() == 2
 	_ok(rej_twice, "C19 fault refusal emitted bale_rejected")
 	_ok(rej_twice and reject_reasons[1] == "belt fault", "C20 rejection reason: belt fault")
