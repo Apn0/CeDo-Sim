@@ -11,9 +11,16 @@ class_name Gate
 ##
 ## Driven externally — NOT by pressing E on the leaf itself. A wall-mounted
 ## 3-button push-button station next to the gate calls set_drive(+1) for UP,
-## set_drive(-1) for DOWN, and set_drive(0) for STOP. This matches the deadman
-## controls on a real overhead-door operator. The leaf itself is just collision
-## and visual; you can't interact with it directly.
+## set_drive(-1) for DOWN, and set_drive(0) for STOP. The leaf itself is just
+## collision and visual; you can't interact with it directly.
+##
+## OPERATOR RULING 2026-09-03, on the real 3A/3B gate: it "is usually open",
+## and the station is press-once-and-it-runs, not a held deadman —
+##   * TOP button, up arrow    -> press once, the gate runs open and stops itself
+##   * CENTRE button           -> stops it mid-travel
+##   * BOTTOM button, down arrow, red -> press once, the gate runs shut
+## So the gate SPAWNS OPEN (see _ready) and each button latches _drive until a
+## limit switch or a STOP press.
 ##
 ## Built by PlaceableCatalog.build_gate() / the 4-point surface tool, which
 ## constructs the children (Drum, LeafScaler/Leaf/Col, brackets) before
@@ -47,8 +54,17 @@ func _ready() -> void:
 	if _leaf_col != null and _leaf_col.shape is BoxShape3D:
 		_leaf_h = (_leaf_col.shape as BoxShape3D).size.y
 	_leaf_top = float(get_meta("leaf_top_y", _leaf_h * 0.5))
-	# Default state = fully closed. Drive remains 0 until a button is pressed.
-	_apply_open_t(0.0)
+	# DEFAULT STATE = FULLY OPEN. Operator ruling 2026-09-03: the real 3A/3B
+	# gate "is usually open" and is driven shut deliberately with the button
+	# station, not left closed between passes.
+	#
+	# This is not cosmetic. A closed leaf is a real collider (since 2026-09-03),
+	# VehicleRouteGrid shape-casts real colliders, and a gate that spawns closed
+	# is a sealed doorway no NPC can open — there is no NPC-presses-a-button
+	# path anywhere in the tree. Spawning closed made every indoor->outdoor haul
+	# unroutable and silently re-armed test_jam_baseline's skip branch.
+	_open_t = 1.0
+	_apply_open_t(_open_t)
 	_build_interact_trigger()
 
 # #122 — wall-button station is the realistic interface but operators expect
@@ -100,6 +116,13 @@ func _physics_process(delta: float) -> void:
 	# Auto-stop when we hit the end of travel — real operators trip a limit switch.
 	if (_drive > 0 and _open_t >= 1.0) or (_drive < 0 and _open_t <= 0.0):
 		_drive = 0
+		# The shared vehicle route grid samples real colliders ONCE and caches.
+		# A gate that just finished opening or closing changed exactly that
+		# geometry, so without this every vehicle already in the world keeps
+		# routing against the leaf's old state for the rest of the session —
+		# the same defect BuildMode already guards on placement
+		# (BaseVehicle.gd:928-935). Cheap: drops the cache, rebuild stays lazy.
+		BaseVehicle.invalidate_route_grid()
 
 func _apply_open_t(t: float) -> void:
 	var s : float = lerpf(1.0, _opened_min, clampf(t, 0.0, 1.0))

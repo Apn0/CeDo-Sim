@@ -55,14 +55,33 @@ func _run_tests() -> void:
 	gate.add_child(scaler)
 	root.add_child(gate)  # runs the real _ready
 
-	# ---- 1. Fresh gate: default state is fully closed -----------------------
-	print("Test: Fresh gate defaults")
-	_ok(gate.is_fully_closed() == true, "Fresh gate is_fully_closed() true")
-	_ok(gate.is_fully_open() == false, "Fresh gate is_fully_open() false")
-	_ok(gate._drive == 0, "Fresh gate drive is 0 (stopped)")
+	# ---- 1. Fresh gate: default state is fully OPEN -------------------------
+	# Changed 2026-09-03 on the operator's ruling that the real 3A/3B gate "is
+	# usually open". These three checks used to assert the opposite; they are
+	# not flipped to make anything pass. A gate that spawns CLOSED is a sealed
+	# doorway, because a closed leaf is a real collider, VehicleRouteGrid
+	# shape-casts real colliders, and nothing in this codebase lets an NPC press
+	# a button. The old default made every indoor->outdoor haul unroutable.
+	print("Test: Fresh gate defaults (OPEN — operator ruling 2026-09-03)")
+	_ok(gate.is_fully_open() == true, "Fresh gate is_fully_open() true (usually-open ruling)")
+	_ok(gate.is_fully_closed() == false, "Fresh gate is_fully_closed() false")
+	_ok(gate._drive == 0, "Fresh gate drive is 0 (stopped, not still travelling)")
 	var scaler_ok: bool = gate._scaler != null
 	_ok(scaler_ok, "_ready resolved LeafScaler")
-	_ok(scaler_ok and absf(gate._scaler.scale.y - 1.0) < 0.0001, "Closed leaf at full scale (y=1.0)")
+	_ok(scaler_ok and absf(gate._scaler.scale.y - 0.04) < 0.0001,
+		"Fresh leaf rolled up to _opened_min scale (y=0.04), so the doorway is clear")
+
+	# The gate must still be closable — a default is not a lock.
+	gate.travel_time = 4.0
+	gate.set_drive(-1)
+	for _i in 4:
+		gate._physics_process(1.0)
+	_ok(gate.is_fully_closed() == true, "A fresh gate still drives fully shut on DOWN")
+	_ok(gate._drive == 0, "Closing trips the limit switch and stops the drive")
+	gate.set_drive(1)
+	for _j in 4:
+		gate._physics_process(1.0)
+	_ok(gate.is_fully_open() == true, "...and drives fully open again on UP")
 
 	# ---- 2. Threshold semantics of is_fully_open / is_fully_closed ----------
 	print("Test: Threshold boundaries")

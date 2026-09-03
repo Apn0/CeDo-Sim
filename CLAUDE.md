@@ -38,8 +38,11 @@ was wrong and would fail on the first command.
 > merge touches this repo, run the sweep before trusting anything else.**
 
 `tools/regression/run.sh` ends `== done (exit 1) ==`. Measured **2026-09-03**
-on this machine's real checkout, at `main` `d0f7e32` plus the gate-leaf and
-skip-accounting fixes — **5 failures**.
+on this machine's real checkout, at `main` `741509b` plus the gate-operation
+fixes — **6 failures**. It was 5 before those fixes, and the sixth is not a
+regression: opening the gates gave the forklift a route for the first time, so
+`test_jam_baseline`'s three skipped checks became hard checks and failed. A
+skip turning into a red IS the harness getting better.
 
 Count convention, because neither the old "41 gated suites" nor "51 gated
 suites" could be re-derived: the run wrote **54** logs into
@@ -53,6 +56,7 @@ paragraph without one.
 |---|---|
 | `regression verdict` | `all 1 door(s)/gate(s) sit on a wall (on-wall 0)` (17 ok, 1 fail, 1 skip) in the `regression_world_save` boot. Reproduced 2026-08-31 on a clean D: worktree and 2026-09-02 on this checkout, identical message — so it is NOT local tree state. An earlier version of this table claimed "green on a CLEAN worktree (371 ok)"; that did not reproduce |
 | `test_nav_connectivity` | |
+| `test_jam_baseline` | EXPECTED red since 2026-09-03, and an honest one — these three checks were SKIPPED, not passing, until gates started spawning open. `jam1` ends 79.37 m from target after driving 203.7 m, `jam3` closes to 16.94 m and then retreats to 57.34 m; both finish within 6 m of the gate centre, `wedged 0.0 s in 0 stall(s)`. The route is 6–7 waypoints and the open doorway admits a 2.4 × 2.2 m hull (measured), so this is a route-following defect in the NPC pilot — not geometry, not the gate. Do not silence it and do not "fix" it by closing the gates |
 | `test_npc05_realworld` | EXPECTED red — the DRIVE_TO_INDOOR stall, see below. Do not silence it |
 | `test_line3b_flow_conformance` | `the plasmaq is fed AND feeds onward (in false / out true)` — a missing input edge in LineFlow topology discovery. NOT caused by the 2026-08-29 LineFlow refactor; proven pre-existing by a baseline run without it |
 | `test_project_sweep_guards` | `B1b WorldLayout.structure_items starts empty (1 entries)` — local `user://` world state, not code |
@@ -65,11 +69,19 @@ wave, fixed, see below), `test_map_frame`, `test_outdoor_route`,
 `test_hmi_overlay_open_close`, `test_hmi_web_gather_vals`,
 `test_customizer_world_bodies`, `test_shredder_feed_belt_api`).
 
-`test_jam_baseline` is green — **`11 ok, 0 fail, 3 skipped`**, and the three
-skips are the point, not a footnote. They are the two leg-completion checks and
-the outdoor-skip-pose check, all gated behind a vehicle route existing, and they
-cannot run while the only doorway is a closed gate no NPC can open. Quote the
-skip count with the pass or do not quote the pass.
+> **2026-09-03 — gates are OPEN by default, and that is an operator ruling.**
+> The real 3A/3B gate "is usually open"; the station is press-once, not a held
+> deadman — top button up arrow runs it open, centre stops it mid-travel, bottom
+> button (red, down arrow) runs it shut. So `Gate._ready` spawns the leaf rolled
+> up, and finishing a travel calls `BaseVehicle.invalidate_route_grid()`,
+> because that grid samples colliders once and caches — without it every vehicle
+> already in the world keeps routing against the old leaf for the rest of the
+> session. A second unswept centre-anchor constant died here too: the button
+> station sat at `-height * 0.5 + 1.30`, which on a base-anchored catalog gate
+> put the buttons **half a metre under the floor**, unreachable even for the
+> player. Both the leaf and the station now derive from `leaf_top_y`.
+> Consequence, deliberate: a routable doorway un-skips three
+> `test_jam_baseline` checks and they fail. See the table.
 
 > **2026-08-31 — `test_tag_snapshot` went red in the 61-commit wave and is
 > fixed.** Bisected to `5382cca` (rotor discovery going recursive activated the

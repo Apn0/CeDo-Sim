@@ -10166,7 +10166,13 @@ static func build_gate(width: float, height: float, label: String, anchor_base: 
 	# Offset to +X past the leaf edge; sits at chest height ~1.3 m above floor
 	# (so its centre is ~ -height/2 + 1.3 in gate-local Y, since gate is centred).
 	var station := _build_gate_button_station(gate)
-	var station_y : float = -height * 0.5 + 1.30
+	# 1.30 m above the OPENING'S FLOOR, whichever anchor this gate uses. The
+	# constant used to be `-height * 0.5 + 1.30`, which silently assumed the
+	# centre anchor: on a base-anchored catalog gate (origin y -8.000, opening
+	# -8.000..-4.400) that put the buttons at y -8.500 — half a metre under the
+	# floor, unreachable even for the player. Derived from leaf_top_y so it can
+	# never drift from the leaf again.
+	var station_y : float = leaf_top_y - height + 1.30
 	# Push +X past the drum bracket so it sits cleanly on the wall.
 	var station_x : float = width * 0.5 + 0.45
 	station.position = Vector3(station_x, station_y, 0.0)
@@ -10192,12 +10198,16 @@ static func _build_gate_button_station(gate: Node3D) -> Node3D:
 	root.add_child(box)
 
 	# Three buttons stacked vertically on the front face (+Z side of the box).
-	# Order top → bottom: UP (green), STOP (red mushroom), DOWN (black).
+	# Layout to the operator's description, 2026-09-03: top carries an UP arrow
+	# and runs the gate open, the centre stops it mid-travel, the bottom carries
+	# a DOWN arrow and is red ("usually red") and runs it shut. One press each.
+	# STOP keeps the wide mushroom head so two red caps are never confusable by
+	# shape — the thing your hand finds without looking.
 	var GateButton_t : Script = load("res://src/build/GateButton.gd")
 	var BTN_DEFS := [
-		{"kind": 0, "y":  0.10, "color": Color(0.20, 0.65, 0.25), "mushroom": false},  # UP green
-		{"kind": 1, "y":  0.00, "color": Color(0.78, 0.10, 0.10), "mushroom": true},   # STOP red
-		{"kind": 2, "y": -0.10, "color": Color(0.06, 0.06, 0.07), "mushroom": false},  # DOWN black
+		{"kind": 0, "y":  0.10, "color": Color(0.20, 0.65, 0.25), "mushroom": false, "arrow":  1},  # UP green, up arrow
+		{"kind": 1, "y":  0.00, "color": Color(0.78, 0.10, 0.10), "mushroom": true,  "arrow":  0},  # STOP red mushroom
+		{"kind": 2, "y": -0.10, "color": Color(0.72, 0.11, 0.11), "mushroom": false, "arrow": -1},  # DOWN red, down arrow
 	]
 	for def in BTN_DEFS:
 		var btn : StaticBody3D = GateButton_t.new()
@@ -10229,6 +10239,24 @@ static func _build_gate_button_station(gate: Node3D) -> Node3D:
 			cap.position = Vector3(0.0, 0.0, 0.01)
 		cap.material_override = cap_mat
 		visual.add_child(cap)
+		# Direction arrow on the cap face. A flat triangular prism, off-white so
+		# it reads against both the green and the red cap; +Y points up, so the
+		# DOWN button is the same mesh rolled 180 degrees.
+		var arrow_dir : int = int(def.get("arrow", 0))
+		if arrow_dir != 0:
+			var arrow_mat := StandardMaterial3D.new()
+			arrow_mat.albedo_color = Color(0.94, 0.94, 0.92)
+			arrow_mat.roughness = 0.6
+			var arrow := MeshInstance3D.new()
+			arrow.name = "Arrow"
+			var pm := PrismMesh.new()
+			pm.size = Vector3(0.030, 0.030, 0.006)
+			arrow.mesh = pm
+			arrow.material_override = arrow_mat
+			arrow.position = Vector3(0.0, 0.0, 0.036)
+			if arrow_dir < 0:
+				arrow.rotation = Vector3(0.0, 0.0, deg_to_rad(180.0))
+			visual.add_child(arrow)
 		btn.add_child(visual)
 		# Collision so the player's interact ray hits it.
 		var bcs := CollisionShape3D.new()

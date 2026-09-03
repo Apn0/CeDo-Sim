@@ -162,21 +162,57 @@ reads **14 ok, 0 fail**.
   disappears and the three checks legitimately skip again — but now visibly, in
   the verdict line.
 
+## Follow-up, 2026-09-03 — the gate opens now, and the pilot still fails
+
+Two of the four open defects below are resolved, one is REFUTED by a better
+measurement of my own, and what is left is a single clean defect.
+
+**RESOLVED — NPCs cannot operate gates.** Operator ruling: the real 3A/3B gate
+"is usually open", and its station is press-once, not a held deadman — top
+button up arrow runs it open, centre stops it mid-travel, bottom button, red,
+down arrow, runs it shut. Gates therefore now SPAWN OPEN (`Gate._ready`), the
+station carries those arrows and colours, and finishing a travel calls
+`BaseVehicle.invalidate_route_grid()` so the router stops seeing the old leaf
+state. A second unswept centre-anchor constant surfaced and is fixed: the
+station sat at `-height * 0.5 + 1.30`, which on a base-anchored catalog gate put
+the buttons at y −8.500 — **half a metre under the floor**, unreachable even for
+the player. It is now derived from `leaf_top_y` like the leaf.
+
+**REFUTED — "a route exists that no vehicle can physically follow."** That was
+my own inference from a bad probe. The box cast that reported the shell
+overlapping a hull at every width from 2.4 m down to 0.8 m used a **4.0 m deep**
+box centred on the wall plane; at that depth the box clips the jambs no matter
+how narrow it is. Re-measured with a 0.6 m deep, correctly oriented
+2.4 × 2.2 m hull at the open gate: **clear at every centre height from −7.60 m
+upward**, hitting only `ExteriorGroundBody` at −8.60 and −8.10 where the box
+dips below the floor. The opening admits a forklift. The wall is not the
+problem.
+
+**WHAT IS LEFT — the pilot cannot thread an open doorway it has a route
+through.** With gates open, `_route_exists()` is true, the three gated checks go
+hard, and they fail:
+
+```
+jam1_yard_to_plant: stalled after 116.4 s — final (-244.71, -8.60, 161.36),
+  79.37 m from target (best 67.25 m), covered 203.7 m, path 7 pts, wedged 0.0 s
+jam3_indoor_to_outdoor: stalled after 45.7 s — final (-244.98, -8.60, 157.91),
+  57.34 m from target (best 16.94 m), covered 77.9 m, path 6 pts, wedged 0.0 s
+Result: FAIL (11 ok, 3 fail, 0 skipped)
+```
+
+Both legs end within 6 m of the gate centre (−246.38, 155.98) having driven
+203.7 m and 77.9 m respectively, never stationary, never wedged. jam3 closed to
+**16.94 m of its goal and then went back out to 57.34 m** — it approaches,
+turns away, and returns to the gate. That is a route-following defect in the
+NPC pilot, not geometry and not the gate. It is now the only thing between the
+plant and a working indoor→outdoor haul, and it is a real red rather than a
+skipped check for the first time.
+
 ## Open defects, measured, not fixed here
 
-1. **A route exists that no vehicle can physically follow.** With the leaf still
-   a ghost, an oriented box cast at the gate centre (`probe_gate_passable.gd`)
-   reports the shell collision body
-   `BuildingShell/ShellMesh/@StaticBody3D@385` overlapping a hull at **every**
-   width tried — 2.4 m down to 0.8 m — while horizontal rays through the same
-   opening at five heights all read `clear`. The route grid's cell probe accepts
-   those cells; a vehicle-sized volume does not fit. That is the most likely
-   reason both legs approach the gate and never converge (jam1 ends 5.63 m from
-   the gate centre, jam3 2.38 m, both `wedged 0.0 s in 0 stall(s)` — never
-   stopped, never arrived). **Inference from two measurements, not yet proven.**
-2. **NPCs cannot operate gates.** A closed gate is now a real obstacle, and
-   `GateButtonStation` needs a human. Any indoor→outdoor haul is blocked
-   whenever the only doorway is a closed gate.
+1. **The NPC pilot does not converge through the gate** — the trace above. The
+   route is 6–7 waypoints, the opening is passable, the vehicle keeps moving and
+   never arrives.
 3. **`regression_world_save`'s on-wall check uses a stale frame.** `BF_O` /
    `BF_XU` / `BF_OUTLINE` (`regression_world_save.gd:30-32`, `:101-104`) describe
    a footprint spanning world Z 60.9–132.7, against a runtime-measured shell AABB

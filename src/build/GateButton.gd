@@ -2,7 +2,9 @@ extends StaticBody3D
 class_name GateButton
 
 ## One physical push-button on a GateButtonStation. Three of these sit on the
-## station panel: UP (green dome), STOP (red mushroom E-stop), DOWN (black dome).
+## station panel, top to bottom: UP (green dome, up arrow), STOP (red mushroom),
+## DOWN (red dome, down arrow). Layout and colours per the operator's
+## description of the real 3A/3B station, 2026-09-03.
 ##
 ## Interaction: the player aims the crosshair at the button and clicks (the
 ## standard `crosshair_interact` hook used by Door / panels). The button calls
