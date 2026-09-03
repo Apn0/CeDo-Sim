@@ -38,9 +38,12 @@ was wrong and would fail on the first command.
 > merge touches this repo, run the sweep before trusting anything else.**
 
 `tools/regression/run.sh` ends `== done (exit 1) ==`. Measured **2026-09-02**
-on this machine's real checkout at `dc017bb` (post-#189) plus the
-`commanded_rpm` fix below — **6 failures**. Count convention, because the
-old "41 suites" number was not reproducible: the run wrote **54** logs into
+on this machine's real checkout at `dc017bb` plus the `commanded_rpm` fix —
+which is exactly the code now on `main` at `d0f7e32`, because #190 and #191
+added only documentation on top of it — **6 failures**.
+
+Count convention, because neither the old "41 gated suites" nor "51 gated
+suites" could be re-derived: the run wrote **54** logs into
 `tools/regression/out/`, of which two (`parse_gate`, `parse_sweep`) are gates
 rather than suites, and `last_run.log` — excluded from the 54 — carries the
 `regression verdict` check. Re-derive with
@@ -49,18 +52,9 @@ paragraph without one.
 
 | failing check | note |
 |---|---|
-| `regression verdict` | `all 1 door(s)/gate(s) sit on a wall (on-wall 0)` (17 ok, 1 fail, 1 skip) in the `regression_world_save` boot. Reproduced 2026-08-31 on a clean D: worktree and 2026-09-02 on this checkout, identical message — so it is NOT local tree state, contrary to the note in still-open PR #190 |
-`tools/regression/run.sh` runs **51 gated suites** and ends
-`== done (exit 1) ==`. Measured 2026-08-31 ~04:10 on this machine's real
-checkout (main 32a35ce, post-#188) — **7 failures**: the five from the
-2026-08-30 measurement, plus two NEW ones from the 2026-08-31 61-commit
-merge wave (both green on 2026-08-30):
-
-| failing check | note |
-|---|---|
-| `regression verdict` | the `regression_world_save` boot. Green on a CLEAN worktree (371 ok) — the red is local tree-state, not code |
+| `regression verdict` | `all 1 door(s)/gate(s) sit on a wall (on-wall 0)` (17 ok, 1 fail, 1 skip) in the `regression_world_save` boot. Reproduced 2026-08-31 on a clean D: worktree and 2026-09-02 on this checkout, identical message — so it is NOT local tree state. An earlier version of this table claimed "green on a CLEAN worktree (371 ok)"; that did not reproduce |
 | `test_nav_connectivity` | |
-| `test_jam_baseline` | **red since the 2026-08-31 61-commit wave**, green on 2026-08-30. `jam1_yard_to_plant` and `jam3_indoor_to_outdoor` both `stalled`; the forklift ends 57.34 m from the outdoor skip pose (limit 3.5, baseline was 6.95 m short). NOT caused by the `commanded_rpm` fix — byte-identical with that fix reverted. A concurrent session's unfinished fix attempt for it is parked, unpushed, on `wip/gate-carve` |
+| `test_jam_baseline` | **red since the 2026-08-31 61-commit wave**, green on 2026-08-30. `jam1_yard_to_plant` and `jam3_indoor_to_outdoor` both `stalled`; the forklift ends 57.34 m from the outdoor skip pose (limit 3.5, baseline was 6.95 m short). NOT caused by the `commanded_rpm` fix — byte-identical with that fix reverted. Suspects named on 2026-08-31 but never bisected: the 207-part maalmolen rebuild and the stair move (`d059007`, `1ece58a`) |
 | `test_npc05_realworld` | EXPECTED red — the DRIVE_TO_INDOOR stall, see below. Do not silence it |
 | `test_line3b_flow_conformance` | `the plasmaq is fed AND feeds onward (in false / out true)` — a missing input edge in LineFlow topology discovery. NOT caused by the 2026-08-29 LineFlow refactor; proven pre-existing by a baseline run without it |
 | `test_project_sweep_guards` | `B1b WorldLayout.structure_items starts empty (1 entries)` — local `user://` world state, not code |
@@ -83,18 +77,26 @@ wave, fixed, see below), `test_map_frame`, `test_outdoor_route`,
 > reds above are the seven measured pre-fix minus this one — the fix removes
 > exactly one red and adds none. Full story, probe, and the
 > user://-dependent bisect trap: `docs/audit/tag_snapshot_regression_2026-08-31.md`.
-| `test_project_sweep_guards` | Green on a CLEAN worktree — red comes from stray local files |
-| `test_jam_baseline` | **NEW 2026-08-31** — jam1_yard_to_plant and jam3_indoor_to_outdoor both `stalled`, forklift 57.34 m short of the skip pose. Suspects: the 207-part maalmolen rebuild / stair move (d059007, 1ece58a) blocking the route |
-| `test_tag_snapshot` | **NEW 2026-08-31** — doseersilo `em/status` false + `em/snelheid` 0, deterministic (same signature on two machines). Suspects: LineFlow discovery fix 5382cca or the tick refactor (#179) |
 
-Everything else is green, including `test_jam_baseline`, `test_map_frame`,
-`test_outdoor_route` and `test_gate_carve`.
+> **2026-09-03 — this section was mangled by a "keep both sides" merge and is
+> the repair.** #190 (red-list as measured pre-fix at `32a35ce`) and #191 (the
+> `commanded_rpm` fix, carrying a newer red-list measured at `dc017bb` + fix)
+> both edited this exact block. The conflict was resolved by keeping both
+> sides, which left `main` with two intro paragraphs, two table headers, three
+> orphaned table rows stranded below a blockquote, and four direct
+> contradictions — including a table row calling `test_tag_snapshot` red
+> directly above a blockquote saying it was fixed. Nothing was lost, only
+> duplicated. **When two PRs touch this table, take the NEWER measurement
+> whole and delete the older one; never union the rows.** A merged red-list is
+> not a red list, it is two of them.
 
 > **This paragraph used to say "23 suites" and blame `test_jam_baseline`'s
 > 10.0 s wedge on the parked `VolvoV40Placeholder` for the exit 1.** That is the
-> stale-constant disease this file warns about, in this file. `test_jam_baseline`
-> passes now. If you are about to quote a count or a red list from any doc here,
-> re-run first — `grep -c '^FAIL  :'` on a fresh log costs seconds.
+> stale-constant disease this file warns about, in this file. It then said
+> "`test_jam_baseline` passes now", which stopped being true on 2026-08-31 and
+> stayed in the file anyway — the same disease, one paragraph later. If you are
+> about to quote a count or a red list from any doc here, re-run first —
+> `grep -c '^FAIL  :'` on a fresh log costs seconds.
 
 Beware of two numbers that look like the harness total and are not:
 `test_l3c_unit_screens` alone reports `Result: 120 ok, 0 fail, 0 skip`, and
