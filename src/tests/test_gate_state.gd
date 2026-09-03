@@ -91,13 +91,21 @@ func _run_tests() -> void:
 
 	gate._open_t = 0.9995  # just above the 0.999 threshold
 	_ok(gate.is_fully_open() == true, "_open_t=0.9995 (>0.999) -> fully open")
+	gate._open_t = 0.999   # on the threshold
+	_ok(gate.is_fully_open() == true, "_open_t=0.999 (==0.999) -> fully open")
 	gate._open_t = 0.998   # just below the 0.999 threshold
 	_ok(gate.is_fully_open() == false, "_open_t=0.998 (<0.999) -> NOT fully open")
 
 	gate._open_t = 0.0005  # just below the 0.001 threshold
 	_ok(gate.is_fully_closed() == true, "_open_t=0.0005 (<0.001) -> fully closed")
+	gate._open_t = 0.001   # on the threshold
+	_ok(gate.is_fully_closed() == true, "_open_t=0.001 (==0.001) -> fully closed")
 	gate._open_t = 0.002   # just above the 0.001 threshold
 	_ok(gate.is_fully_closed() == false, "_open_t=0.002 (>0.001) -> NOT fully closed")
+
+	gate._open_t = 0.0     # extreme case
+	_ok(gate.is_fully_closed() == true, "_open_t=0.0 -> fully closed")
+	_ok(gate.is_fully_open() == false, "_open_t=0.0 -> NOT fully open")
 
 	gate._open_t = 0.5
 	_ok(gate.is_fully_open() == false, "Mid-travel 0.5: not fully open")
