@@ -1,0 +1,11 @@
+== importing ==
+== parse gate ==
+== full-tree parse sweep ==
+=== FULL-TREE PARSE SWEEP — 372 GDScript files ===
+  FAIL  : res://src/scenes/world/Humanoid.gd does not parse
+  FAIL  : res://src/tests/test_lump_cart_coverage.gd does not parse
+  FAIL  : res://src/tests/test_nav_connectivity.gd does not parse
+  FAIL  : res://src/tests/test_spawn_clearance.gd does not parse
+note  : 85 file(s) parsed but reported ERR_COMPILATION_FAILED — see the header, not gated
+Result: 368 ok, 4 fail
+FAIL  : one or more project scripts do not parse (see ./tools/regression/out/parse_sweep.log)
