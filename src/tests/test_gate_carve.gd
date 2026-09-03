@@ -245,8 +245,7 @@ func _ready() -> void:
 	# TWO physics frames before probing: the leaf's CollisionShape3D was added to
 	# the body during this same frame, and PhysicsDirectSpaceState3D does not see
 	# a shape until the space has stepped. Measured 2026-09-03 — without this
-	# await the CLOSED probe reports "no hit" on a leaf that is demonstrably
-	# there, while the OPEN probe below (which already awaited) reads correctly.
+	# await the probe reports "no hit" on a leaf that is demonstrably there.
 	# A test that races the physics server measures the server, not the gate.
 	await get_tree().physics_frame
 	await get_tree().physics_frame
@@ -266,15 +265,28 @@ func _ready() -> void:
 			% [lvis.global_position.y - vh, lvis.global_position.y + vh])
 	_info("the carved opening is expected to span y %.3f .. %.3f"
 		% [gate_node.global_position.y, gate_node.global_position.y + gate_h])
+	# A freshly placed gate SPAWNS OPEN (operator ruling 2026-09-03: the real
+	# 3A/3B gate is usually open). Check that first — it is the state every
+	# vehicle and NPC actually meets, and the state the route grid is sampled
+	# against.
+	_check(bool(gate_node.call("is_fully_open")),
+		"a freshly placed gate spawns OPEN (operator: 'usually open')")
+	_check(not _leaf_blocks(space, probe_centre, normal, gate_node),
+		"the OPEN leaf clears the opening centre")
+	# Now drive it shut and prove the leaf is a real obstacle. Until 2026-09-03
+	# it registered ZERO collision shapes, so a closed gate blocked nothing at
+	# all and this check could not have failed for the right reason.
+	gate_node.call("_apply_open_t", 0.0)
+	await get_tree().physics_frame
+	await get_tree().physics_frame
 	_check(_leaf_blocks(space, probe_centre, normal, gate_node),
 		"the CLOSED leaf physically blocks the opening centre")
+	# ...and back open, so the rest of the suite runs against the real default.
 	gate_node.call("_apply_open_t", 1.0)
 	await get_tree().physics_frame
 	await get_tree().physics_frame
 	_check(not _leaf_blocks(space, probe_centre, normal, gate_node),
-		"the OPEN leaf clears the opening centre")
-	gate_node.call("_apply_open_t", 0.0)
-	await get_tree().physics_frame
+		"re-opening clears the opening centre again")
 
 	# ── THE MIRROR: deleting the gate removes the opening registration ─────
 	BaseVehicle._route_grid = VehicleRouteGrid.new()
