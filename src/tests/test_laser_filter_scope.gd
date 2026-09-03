@@ -66,6 +66,32 @@ func _run() -> void:
 	else:
 		print("  ok    : _press_delta readout updated")
 
+	var press_inlet = scope.get("_press_inlet")
+	if press_inlet == null:
+		print("FAIL: _press_inlet not built")
+		_fail += 1
+	elif press_inlet.get("_label").text != "MP < MF":
+		print("FAIL: _press_inlet setup label mismatch, got ", press_inlet.get("_label").text)
+		_fail += 1
+	elif abs(press_inlet.get("_value_bar") - inlet_bar) > 0.01:
+		print("FAIL: _press_inlet readout not updated")
+		_fail += 1
+	else:
+		print("  ok    : _press_inlet setup and update verified")
+
+	var press_outlet = scope.get("_press_outlet")
+	if press_outlet == null:
+		print("FAIL: _press_outlet not built")
+		_fail += 1
+	elif press_outlet.get("_label").text != "MP > MF":
+		print("FAIL: _press_outlet setup label mismatch, got ", press_outlet.get("_label").text)
+		_fail += 1
+	elif abs(press_outlet.get("_value_bar") - maxf(0.0, inlet_bar - delta_bar)) > 0.01:
+		print("FAIL: _press_outlet readout not updated")
+		_fail += 1
+	else:
+		print("  ok    : _press_outlet setup and update verified")
+
 	scope.call("set_filter", null)
 	scope.call("_process", 0.1)
 	print("  ok    : Process tick with null filter")
