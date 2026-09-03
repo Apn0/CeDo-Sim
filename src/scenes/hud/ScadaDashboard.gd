@@ -75,6 +75,10 @@ func _ready() -> void:
 	_refresh_state_visual()
 	_refresh_microstop_counter()
 
+	# Initialise UI for any params pushed before _ready()
+	for key in _params:
+		_refresh_param(key)
+
 func _engine_time_s() -> float:
 	# Production default — wall-clock seconds. The test replaces this Callable so
 	# the deterministic path never depends on it.

@@ -192,9 +192,42 @@ func _run_tests() -> void:
 	# ── 6. Misc guards ────────────────────────────────────────────────────────
 	_ok(dash.is_param_alarming("no_such_key") == false, "unknown key never alarms")
 
+	# ── 7. Pre-Tree Configuration (is_inside_tree branches) ───────────────────
+	print("Test: Pre-tree configuration")
+	var dash2 = SD.new()
+	dash2.set_time_source(Callable(self, "_mock_time_s"))
+	# Update state and params BEFORE adding to tree
+	dash2.set_state("Fault")
+	dash2.set_param("pre_pressure", 15.0, 0.0, 10.0, "Pre Pressure")
+	dash2.set_text_param("pre_status", "ERR", true, "Pre Status")
+
+	_ok(dash2.get_state() == "Fault", "state is stored pre-tree")
+	_ok(dash2.is_param_alarming("pre_pressure") == true, "param alarms pre-tree")
+	_ok(dash2.is_param_alarming("pre_status") == true, "text param alarms pre-tree")
+
+	root.add_child(dash2)
+	# Now inside tree, UI is built. Verify UI reflects the pre-set state and params
+	var dash2_lbl_ok: bool = dash2._state_label != null
+	_ok(dash2_lbl_ok and dash2._state_label.text == "FAULT", "state label reflects pre-set state after add_child")
+	_ok(dash2_lbl_ok and dash2._state_label.get_theme_color("font_color") == SD.COL_STATE_BAD, "state label color reflects pre-set state after add_child")
+
+	var have_pre_prow: bool = dash2._param_rows.has("pre_pressure")
+	_ok(have_pre_prow, "row built for pre-set param")
+	var pre_prow: Dictionary = dash2._param_rows.get("pre_pressure", {})
+	_ok(have_pre_prow and pre_prow["value_lbl"].text == "15", "value label shows pre-set param")
+	_ok(have_pre_prow and pre_prow["value_lbl"].get_theme_color("font_color") == SD.COL_ALARM_HI, "value label color reflects pre-set alarm")
+
+	var have_pre_srow: bool = dash2._param_rows.has("pre_status")
+	_ok(have_pre_srow, "row built for pre-set text param")
+	var pre_srow: Dictionary = dash2._param_rows.get("pre_status", {})
+	_ok(have_pre_srow and pre_srow["value_lbl"].text == "ERR", "value label shows pre-set text param")
+	_ok(have_pre_srow and pre_srow["value_lbl"].get_theme_color("font_color") == SD.COL_ALARM_HI, "value label color reflects pre-set text alarm")
+
 	# Cleanup — CanvasLayer.free() frees the whole built label tree with it.
 	root.remove_child(dash)
 	dash.free()
+	root.remove_child(dash2)
+	dash2.free()
 
 	_finish()
 
