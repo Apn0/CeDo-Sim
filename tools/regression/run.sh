@@ -515,6 +515,20 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/gate_state.log"; then
 	[ $code -eq 0 ] && code=1
 fi
 
+# VehicleRouteGrid.goal_clearance — route() deliberately appends the RAW ordered
+# pose as its final waypoint (a goal is routinely inside a container or a cart
+# pocket), so before 2026-09-03 a caller could not tell a reachable goal from one
+# inside a machine. Measured cost: test_jam_baseline ordered a forklift onto
+# player_spawn and it orbited for 352 m with nothing reporting why. Unit form on a
+# synthetic occupancy grid — no world boot, no A*, no physics, milliseconds.
+echo "== VehicleRouteGrid goal clearance =="
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_route_goal_clearance.gd --quit-after 300 > "$OUT/route_goal_clearance.log" 2>&1
+grep -aE "^  (ok|FAIL)  |^Result:" "$OUT/route_goal_clearance.log" || true
+if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/route_goal_clearance.log"; then
+	echo "FAIL  : VehicleRouteGrid goal clearance (see $OUT/route_goal_clearance.log)"
+	[ $code -eq 0 ] && code=1
+fi
+
 # ScadaDashboard public API — set_state (state stored verbatim, grey-iff-Running colour,
 # micro-stop true/false return incl. exact-60s boundary), set_param (in/above/below band ->
 # grey/red/amber + is_param_alarming, repeat key updates not duplicates), set_text_param
