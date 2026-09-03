@@ -37,10 +37,9 @@ was wrong and would fail on the first command.
 > tried and rejected — is in `docs/AUDIT_project_sweep_2026-08-23.md`. **When a
 > merge touches this repo, run the sweep before trusting anything else.**
 
-`tools/regression/run.sh` ends `== done (exit 1) ==`. Measured **2026-09-02**
-on this machine's real checkout at `dc017bb` plus the `commanded_rpm` fix —
-which is exactly the code now on `main` at `d0f7e32`, because #190 and #191
-added only documentation on top of it — **6 failures**.
+`tools/regression/run.sh` ends `== done (exit 1) ==`. Measured **2026-09-03**
+on this machine's real checkout, at `main` `d0f7e32` plus the gate-leaf and
+skip-accounting fixes — **5 failures**.
 
 Count convention, because neither the old "41 gated suites" nor "51 gated
 suites" could be re-derived: the run wrote **54** logs into
@@ -54,7 +53,6 @@ paragraph without one.
 |---|---|
 | `regression verdict` | `all 1 door(s)/gate(s) sit on a wall (on-wall 0)` (17 ok, 1 fail, 1 skip) in the `regression_world_save` boot. Reproduced 2026-08-31 on a clean D: worktree and 2026-09-02 on this checkout, identical message — so it is NOT local tree state. An earlier version of this table claimed "green on a CLEAN worktree (371 ok)"; that did not reproduce |
 | `test_nav_connectivity` | |
-| `test_jam_baseline` | **red since the 2026-08-31 61-commit wave**, green on 2026-08-30. `jam1_yard_to_plant` and `jam3_indoor_to_outdoor` both `stalled`; the forklift ends 57.34 m from the outdoor skip pose (limit 3.5, baseline was 6.95 m short). NOT caused by the `commanded_rpm` fix — byte-identical with that fix reverted. Suspects named on 2026-08-31 but never bisected: the 207-part maalmolen rebuild and the stair move (`d059007`, `1ece58a`) |
 | `test_npc05_realworld` | EXPECTED red — the DRIVE_TO_INDOOR stall, see below. Do not silence it |
 | `test_line3b_flow_conformance` | `the plasmaq is fed AND feeds onward (in false / out true)` — a missing input edge in LineFlow topology discovery. NOT caused by the 2026-08-29 LineFlow refactor; proven pre-existing by a baseline run without it |
 | `test_project_sweep_guards` | `B1b WorldLayout.structure_items starts empty (1 entries)` — local `user://` world state, not code |
@@ -67,6 +65,12 @@ wave, fixed, see below), `test_map_frame`, `test_outdoor_route`,
 `test_hmi_overlay_open_close`, `test_hmi_web_gather_vals`,
 `test_customizer_world_bodies`, `test_shredder_feed_belt_api`).
 
+`test_jam_baseline` is green — **`11 ok, 0 fail, 3 skipped`**, and the three
+skips are the point, not a footnote. They are the two leg-completion checks and
+the outdoor-skip-pose check, all gated behind a vehicle route existing, and they
+cannot run while the only doorway is a closed gate no NPC can open. Quote the
+skip count with the pass or do not quote the pass.
+
 > **2026-08-31 — `test_tag_snapshot` went red in the 61-commit wave and is
 > fixed.** Bisected to `5382cca` (rotor discovery going recursive activated the
 > never-before-live `_mech_fraction` gate, which read FRAME-time rotor rpm
@@ -77,6 +81,20 @@ wave, fixed, see below), `test_map_frame`, `test_outdoor_route`,
 > reds above are the seven measured pre-fix minus this one — the fix removes
 > exactly one red and adds none. Full story, probe, and the
 > user://-dependent bisect trap: `docs/audit/tag_snapshot_regression_2026-08-31.md`.
+
+> **2026-09-03 — `test_jam_baseline` was never a regression; its GREEN was
+> vacuous.** Three of its fourteen checks sit behind `_route_exists()`, and
+> while the model carved no doorway the router accepted, those three were
+> skipped — with nothing in `Result: PASS (11 ok, 0 fail)` to say so. The
+> 2026-08-30 green measured a forklift that stalled 101 m from its target.
+> `10d9ed4` (dual-skin wall carve, on `main` via `98d2cf4` at 2026-08-31 02:34)
+> finally punched the operator's gate through both wall skins, the router
+> started returning routes, and the three checks ran for the first time. The
+> named suspects `d059007` / `1ece58a` are **cleared**. The suite now prints
+> `(N ok, M fail, K skipped)` plus a `NOTE:` line, the gate leaf is a real
+> collider at last (it registered **zero** shapes before), and its anchor bug —
+> leaf hanging a half-height below its own opening — is fixed.
+> `docs/audit/jam_baseline_2026-09-03.md`.
 
 > **2026-09-03 — this section was mangled by a "keep both sides" merge and is
 > the repair.** #190 (red-list as measured pre-fix at `32a35ce`) and #191 (the

@@ -89,6 +89,16 @@ const NO_PROGRESS_FRAMES : int = 2400
 var _backups : Dictionary = {}
 var _fails : int = 0
 var _oks   : int = 0
+## Checks DOWNGRADED to a report because the world offered no route.
+## Counted and printed, never silent. On 2026-08-30 this suite reported
+## "11 ok, 0 fail" while THREE of its fourteen checks never ran: both
+## "<leg> completed" assertions and "reached the outdoor skip pose" sit behind
+## _route_exists(), which was false while the model carved no doorway. That
+## green measured a world with nowhere to drive and read exactly like a green
+## that measured a working pilot -- and it was quoted as one for four days. A
+## skip missing from the verdict line is a lie the harness tells once and
+## everybody repeats.
+var _skips : int = 0
 var _world : Node3D = null
 var _anchor : Vector3 = Vector3.ZERO
 
@@ -99,6 +109,14 @@ func _check(cond: bool, label: String) -> void:
 	else:
 		_fails += 1
 		print("  FAIL  : %s" % label)
+
+## Record a check that could not be evaluated. Prints like a check, counts like
+## a check, and lands in the verdict line -- so "0 fail" can never again be read
+## as "everything was measured".
+func _skip(label: String, why: String) -> void:
+	_skips += 1
+	print("  SKIP  : %s" % label)
+	print("        : %s" % why)
 
 func _info(label: String) -> void:
 	print("  info  : %s" % label)
@@ -138,8 +156,11 @@ func _ready() -> void:
 	await _test_jam3()
 
 	print("\n=========================================")
-	print("Result: %s (%d ok, %d fail)"
-		% ["PASS" if _fails == 0 else "FAIL", _oks, _fails])
+	print("Result: %s (%d ok, %d fail, %d skipped)"
+		% ["PASS" if _fails == 0 else "FAIL", _oks, _fails, _skips])
+	if _skips > 0:
+		print("NOTE: %d check(s) were NOT evaluated — this PASS is narrower than it looks."
+			% _skips)
 	print("=========================================")
 	_finish(0 if _fails == 0 else 1)
 
@@ -296,9 +317,10 @@ func _test_jam3() -> void:
 	# is a missing-door DATA gap, not a driving defect, so it is reported loudly
 	# instead of gating. It becomes a hard check the moment a gate is placed.
 	if not _route_exists(fl):
-		print("  BLOCKED: outdoor skip pose unreachable (%.2f m away, no doorways in the model);" \
-			% float(leg.get("final_dist_m", 1e9)))
-		print("           place a gate/door in the facade and this becomes a hard check.")
+		_skip("the forklift reached the outdoor skip pose (%.2f m away)"
+				% float(leg.get("final_dist_m", 1e9)),
+			"no vehicle route to the target — the model carves no doorway the router "
+			+ "accepts. Not a pilot failure. Place a gate/door and this becomes a hard check.")
 	else:
 		_check(float(leg.get("final_dist_m", 1e9)) <= 3.5,
 			"the forklift reached the outdoor skip pose (%.2f m, limit 3.5 — baseline was 6.95 m short)"
@@ -386,8 +408,9 @@ func _drive_leg(fl: Node3D, leg_name: String, start: Vector3, goal: Vector3) -> 
 	# a vacuous green does from the other side. The WEDGE assertions stay hard;
 	# only unreachability is downgraded, and it is reported loudly every run.
 	if outcome != "arrived" and not _route_exists(fl):
-		print("  BLOCKED: %s — no vehicle route to the target (no doorways in the model);" % leg_name)
-		print("           not a pilot failure. Place a gate/door and this becomes a hard check.")
+		_skip("%s completed (outcome '%s')" % [leg_name, outcome],
+			"no vehicle route to the target — the model carves no doorway the router "
+			+ "accepts. Not a pilot failure. Place a gate/door and this becomes a hard check.")
 		return leg
 	_check(outcome == "arrived", "%s completed (outcome '%s')" % [leg_name, outcome])
 	return leg
