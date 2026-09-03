@@ -341,14 +341,7 @@ func _find_line_flow() -> void:
 	# /23 links yet this lookup missed it). Try the robust anchors too: LineFlow is
 	# ALWAYS added to the "line_flow" group (MainWorld.gd:268) and hangs under root.
 	var tree := get_tree()
-	var lf : Node = tree.get_first_node_in_group("line_flow")
-	if lf == null:
-		var root := tree.current_scene
-		if root:
-			lf = root.find_child("LineFlow", true, false)
-	if lf == null:
-		lf = tree.root.find_child("LineFlow", true, false)
-	_line_flow = lf
+	_line_flow = tree.get_first_node_in_group("line_flow")
 
 # =============================================================================
 # OPEN / CLOSE

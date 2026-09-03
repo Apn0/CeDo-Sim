@@ -208,11 +208,86 @@ NPC pilot, not geometry and not the gate. It is now the only thing between the
 plant and a working indoor→outdoor haul, and it is a real red rather than a
 skipped check for the first time.
 
+## Second follow-up, 2026-09-03 — the pilot was never broken
+
+🤮 The claim above — "the pilot cannot thread an open doorway it has a route
+through" — is **REFUTED**, by me, with the instrument I should have built first
+(`src/tests/probe_pilot_convergence.gd`). Driving the identical leg through the
+identical `npc_set_target` entry point with a larger budget and progress
+measured ALONG THE ROUTE:
+
+```
+LEG: jam3   route points = 6
+t=  0.0s  wp=1/6  d_goal= 17.50  pilot=RUN
+t= 40.0s  wp=2/6  d_goal= 56.57  pilot=RUN     <- the old metric aborted here
+t= 74.0s  wp=5/6  d_goal= 21.81  pilot=RUN
+t= 84.0s  wp=5/6  d_goal=  3.51  pilot=RUN
+outcome: arrived   waypoints 5 of 6   path 148.4 m   evades 0 during the leg
+```
+
+The forklift ticks every waypoint off, stays in `RUN` the whole way at a steady
+1.83 m/s, and **arrives**. Three test-side defects were producing the red:
+
+1. **The no-progress abort measured the wrong thing.** It watched the
+   straight-line XZ distance to the goal and aborted after 40 s without gain
+   (`test_jam_baseline.gd`). The plant has exactly ONE doorway, so jam3's route
+   runs 58 m in the opposite direction to reach it: that distance is
+   *guaranteed* to grow for the whole outbound run. The "57.34 m from target"
+   the suite reported is exactly where the vehicle was at t=46 s, driving
+   correctly. Now measured per waypoint — index advanced, or the current
+   waypoint closed by 0.5 m — which is strictly MORE sensitive to real circling
+   and immune to a legal detour.
+2. **`DRIVE_FRAMES` was too small.** 7200 frames = 120 s; jam1 needs 158 s to
+   cover 279.6 m of path at the ~1.8 m/s `NPC_CRUISE_FRAC` allows. Raised to
+   14400 (240 s), sized from that measurement.
+3. **jam1's goal was the player's spawn point.** `_anchor` IS `player_spawn`, and
+   a hull probe at it returns `BLOCKED by ["Player"]` — the player body stands
+   there in every headless boot. The forklift drove 352 m, closed to 2.32 m
+   against a 2.2 m tolerance, correctly refused to drive through the player, and
+   orbited in EVADE until the budget expired. Ordering a vehicle into an
+   occupied pose asserts nothing about navigation, so jam1 now parks
+   `JAM1_GOAL_STANDOFF_M` = 4.0 m short of the anchor on the approach bearing.
+
+Result, on the operator checkout:
+
+```
+jam1_yard_to_plant:      arrived after 166.3 s, 2.20 m from target, covered 289.5 m, path 7 pts
+jam3_indoor_to_outdoor:  arrived after 100.8 s, 2.20 m from target, covered 166.9 m, path 6 pts
+Result: PASS (14 ok, 0 fail, 0 skipped)
+```
+
+**All fourteen checks evaluated and green — the first time this suite has ever
+done that.** It has previously been 11 ok + 3 silently skipped, or 11 ok + 3
+failing. Nothing was loosened to get here: the three formerly-skipped checks are
+hard, `0 skipped` is printed, and the wedge and anti-vacuity assertions are
+untouched.
+
 ## Open defects, measured, not fixed here
 
-1. **The NPC pilot does not converge through the gate** — the trace above. The
-   route is 6–7 waypoints, the opening is passable, the vehicle keeps moving and
-   never arrives.
+1. ~~**`VehicleRouteGrid.route()` appends the ordered goal verbatim**~~ —
+   **FIXED 2026-09-03**, see the section below.
+2. **`goal_clearance` is blind to dynamic bodies** — see above. A pose occupied
+   by the player, a crew NPC or a settling bale reports 0.00 m. Closing it needs a
+   live shape query beside the grid answer, not a change to the grid.
+3. **`_route_exists()` reads a stale snapshot, and the staleness is currently
+   LOAD-BEARING.** `npc_route_points()` returns `_npc_route.size()`, assigned once
+   per order, and `npc_stop()` does not clear it. 🔑 Do not "fix" that by clearing
+   the route in `npc_stop()`: `_drive_leg` calls `npc_stop()` and *then* calls
+   `_route_exists()` (`test_jam_baseline.gd:474`, and again from `_test_jam3` at
+   `:338`). Clearing it makes `_route_exists()` false after every leg, which
+   re-arms the "no doorway, skip the check" branch and silently returns this suite
+   to `11 ok, 0 fail, 3 skipped` — a result that reads like a pass. Fix the reader
+   first, or fix both together and re-run the suite to prove the skip count stayed
+   at 0. A warning now sits on `npc_stop()` itself.
+
+   Also corrected while verifying this: `route()`'s docstring names
+   EmptyLumpCartTask's seat pose as the caller that needs an unreachable goal, but
+   `LumpCart extends RigidBody3D` and `_blocks()` admits only `StaticBody3D`, so
+   nothing snaps there at all — the raw-append is a no-op for it. The callers that
+   really snap are the `WasteContainer` legs (`extends StaticBody3D`).
+4. **`regression_world_save`'s on-wall check uses a stale frame** — see the
+   earlier section; `all 1 door(s)/gate(s) sit on a wall (on-wall 0)` is
+   evidence about the check, not the gate.
 3. **`regression_world_save`'s on-wall check uses a stale frame.** `BF_O` /
    `BF_XU` / `BF_OUTLINE` (`regression_world_save.gd:30-32`, `:101-104`) describe
    a footprint spanning world Z 60.9–132.7, against a runtime-measured shell AABB
@@ -230,3 +305,85 @@ skipped check for the first time.
   session's original work, preserved verbatim.
 * A/B proof logs live in this session's scratchpad; per-suite logs are in
   `tools/regression/out/`.
+
+## Third follow-up, 2026-09-03 — the router now says when a goal is not standable
+
+`route()` still appends the raw ordered pose as its final waypoint, and it still
+should: its docstring is right that a goal is routinely inside a container or a
+cart pocket, and a router that refused those would break working tasks. What was
+missing was any way for a caller to tell that apart from a goal it can actually
+reach. jam1 ordering a forklift onto `player_spawn` is what that costs — 352 m
+driven, 2.32 m short of a 2.2 m tolerance, an EVADE orbit until the budget
+expired, and nothing anywhere explaining it.
+
+**`VehicleRouteGrid.goal_clearance(to) -> float`** — metres the ordered pose sits
+from a vehicle-sized free cell. `0.0` when it is already free, `-1.0` when no
+free cell exists within `_nearest_free`'s ring bound.
+
+Two things about it are deliberate and were both forced by measurement:
+
+* **Stateless.** `BaseVehicle` caches ONE grid in a `static`
+  (`BaseVehicle.gd:924`) that every vehicle shares, so a "last `route()` result"
+  field on the grid would be overwritten by whichever vehicle ordered most
+  recently and would report another vehicle's goal. Recomputed on demand: two
+  cell lookups plus a bounded ring walk, no A*, no physics.
+* **It reports the cell `_nearest_free` actually picks, not the geometrically
+  nearest one.** That scan returns the first free cell in ring order, so from a
+  lone solid cell's centre it answers 2.83 m (the diagonal) where an orthogonal
+  neighbour sits at 2.00 m. `route()` snaps through the same function, so this
+  has to agree with where the vehicle will really be taken. `_nearest_free` is
+  left alone — its own comment records a measured-and-reverted attempt to make it
+  cleverer, and "a wrong route is worse than no route" applies to its callers too.
+
+`BaseVehicle` records it per-vehicle at order time and exposes
+`npc_goal_clearance_m()`. It warns on exactly one condition, and the threshold is
+derived rather than picked: `npc_arrived()` succeeds within `NPC_ARRIVE_TOL`, so a
+goal snapped **further than that** can never complete, while a container-mouth
+goal snapped less than that still arrives and must not produce a warning on every
+legitimate order.
+
+### What it cannot see, and why that matters here
+
+🤮 The first version of this function's docstring cited jam1's
+`BLOCKED by ["Player"]` trace as its motivation. **That is the one case it
+misses.** `VehicleRouteGrid._blocks()` returns false for anything that is not a
+`StaticBody3D`, and `Player.tscn`'s root is a `CharacterBody3D` — so the grid is
+blind to the player, to crew NPCs, and to `RigidBody3D` yard bales.
+`goal_clearance` reports jam1's original goal as **0.00 m, free**, while a hull
+probe at the same point returns `BLOCKED by ["Player"]`. Both verified by reading
+`_blocks()` and `Player.tscn` directly, after an adversarial review caught the
+over-claim.
+
+What the function actually answers is "is this pose inside the plant's **static**
+geometry" — machines, walls, `WasteContainer`s — which is the common case and the
+only thing a once-sampled occupancy grid can know. Catching an *occupied* pose
+needs a live shape query against the physics space, which this deliberately does
+not do. That is the named follow-up, not a silent gap: every place that claims
+otherwise has been corrected, and `test_jam_baseline`'s info line says so inline,
+which is also why jam1 parks `JAM1_GOAL_STANDOFF_M` short rather than trusting
+this number to catch it.
+
+### A refinement to the jam1 orbit story
+
+The adversarial pass also corrected the mechanism I had written for jam1's EVADE
+orbit. Because `route()` appends the raw goal, `_npc_drive`'s last-leg waypoint
+test (`dist <= NPC_ARRIVE_TOL`) and `npc_arrived()` are the **same XZ
+predicate** — so "the final waypoint is consumed but `npc_arrived()` is still
+false" is unreachable. What actually happens is the inverse: the final waypoint is
+**never** consumed, the vehicle lives in the last leg forever, and the pilot cycles
+EVADE ↔ REVERSE against the body standing on the goal.
+
+Proved by `src/tests/test_route_goal_clearance.gd` — **15 ok, 0 fail** — a unit
+suite on a synthetic occupancy grid, wired into `run.sh` beside the other
+`--script` suites. No world boot, no A*, no physics: milliseconds, not the ~90 s
+a `MainWorld` boot costs. It earned its keep immediately by **failing on a real
+bug in the first implementation**: clamping the cell before testing it for
+freeness made a pose 120 m off the survey clamp onto a free edge cell and report
+`0.00 m` — the exact opposite of the truth. It now tests the raw cell for bounds
+and reports 142.84 m. Two further checks in it were my own wrong expectations
+about the diagonal, corrected in the test with the reasoning recorded rather than
+quietly relaxed.
+
+`test_jam_baseline` prints the clearance for each leg every run. Reported, not
+asserted: crew NPCs and the player move between boots, so a hard check there
+would be flaky, and the arithmetic is proved deterministically in the unit suite.

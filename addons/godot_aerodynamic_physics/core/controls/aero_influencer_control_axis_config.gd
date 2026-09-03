@@ -60,11 +60,11 @@ func _init(_axis_name : String = "", _contribution : Vector3 = Vector3.ZERO) -> 
 func get_value(command : float, aero_influencer : AeroInfluencer3D, axis_sign : Vector3 = Vector3.ONE) -> Vector3:
 	var running_contribution := contribution
 	if not expression_x == "":
-		running_contribution.x = exp_x.execute([], aero_influencer)
+		running_contribution.x = exp_x.execute([], aero_influencer, true, true)
 	if not expression_y == "":
-		running_contribution.y = exp_y.execute([], aero_influencer)
+		running_contribution.y = exp_y.execute([], aero_influencer, true, true)
 	if not expression_z == "":
-		running_contribution.z = exp_z.execute([], aero_influencer)
+		running_contribution.z = exp_z.execute([], aero_influencer, true, true)
 	
 	return running_contribution * AeroMathUtils.improved_ease(command, easing) * get_axis_flip(axis_sign)
 

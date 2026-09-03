@@ -184,6 +184,83 @@ func route(from: Vector3, to: Vector3) -> PackedVector3Array:
 	out.append(Vector3(to.x, floor_y, to.z))
 	return out
 
+## Metres the ORDERED pose would have to move to stand on free ground. 0.0 when
+## it is already free; -1.0 when no free cell exists within _nearest_free's ring
+## bound, which is the same miss route() reports by returning empty.
+##
+## WHY THIS EXISTS. route() deliberately replaces its final grid waypoint with
+## the raw ordered pose, because a goal is routinely inside a container or a cart
+## pocket and a router that refused those would break working tasks. The cost was
+## that a caller could not tell the difference between "your goal is free" and
+## "your goal is inside a machine and you will never arrive" — the second case
+## produces an order that can never complete, and nothing reported it.
+##
+## WHAT IT CANNOT SEE, stated up front because the story that prompted it is
+## exactly the case it MISSES. _blocks() (:122) returns false for anything that is
+## not a StaticBody3D, so this grid — and therefore this function — is blind to
+## every dynamic body: the player (Player.tscn's root is a CharacterBody3D), crew
+## NPCs, vehicles, and settling yard bales (RigidBody3D). The 2026-09-03
+## test_jam_baseline failure that motivated the work was a forklift ordered onto
+## the factory anchor, which IS player_spawn: a hull probe there returned
+## BLOCKED by ["Player"], and goal_clearance reports that same pose as 0.00 m —
+## FREE — because the player is not static. It drove 352 m, closed to 2.32 m
+## against a 2.2 m tolerance, correctly refused to drive through the player, and
+## orbited until the budget expired.
+##
+## So what this function actually answers is "is the ordered pose inside the
+## plant's STATIC geometry" — machines, walls, WasteContainers (StaticBody3D) —
+## which is the common case and the one the grid is built to know. Catching an
+## occupied pose needs a live shape query against the physics space, which this
+## deliberately does not do: the whole point of an occupancy grid is that it is
+## sampled once and cached. See docs/audit/jam_baseline_2026-09-03.md.
+##
+## WHICH CALLERS ACTUALLY SNAP, since route()'s own docstring above names the
+## wrong one. It cites EmptyLumpCartTask's seat pose as the reason not to refuse
+## unreachable goals — but LumpCart extends RigidBody3D, so it marks no cell
+## solid, _nearest_free returns the seat cell unchanged, and the raw-append is a
+## NO-OP for that caller. The callers that really do get snapped are the container
+## legs (OverflowDumpTask's indoor/outdoor drives and EmptyLumpCartTask's HAUL),
+## which aim at a WasteContainer centre — StaticBody3D, therefore solid. Those
+## three are the ones a "refuse solid goals" rule would break, and the ones this
+## number is most useful to.
+##
+## STATELESS ON PURPOSE, and that is not a style choice. BaseVehicle caches ONE
+## grid in a STATIC (BaseVehicle.gd:924) that every vehicle shares, so a
+## "last route() result" member field on this object would be overwritten by
+## whichever vehicle ordered most recently and would silently report another
+## vehicle's goal. Recomputed on demand instead: two cell lookups plus, at worst,
+## _nearest_free's bounded ring walk. Uses no A*, so it answers on a grid that
+## never built one.
+##
+## Off-map poses are CLAMPED, exactly as route() clamps them, so a goal past the
+## site edge reports the real (large) distance to the nearest surveyed free cell
+## rather than pretending to be free.
+##
+## THE NUMBER IS THE DISTANCE TO THE CELL _nearest_free ACTUALLY PICKS, which is
+## not always the geometrically closest one: its ring scan returns the first free
+## cell in iteration order, so from a lone solid cell's centre it reports the
+## DIAGONAL neighbour at 2.83 m even though an orthogonal one sits at 2.00 m.
+## That is deliberate. route() snaps through the same function, so this has to
+## agree with where the route will actually take the vehicle; a prettier minimum
+## here would describe a cell the router never chose. _nearest_free is left alone
+## on purpose — its own comment records a measured-and-reverted attempt to make it
+## smarter, and "a wrong route is worse than no route" applies to its callers too.
+func goal_clearance(to: Vector3) -> float:
+	# in_bounds on the RAW cell, not the clamped one. Clamping first and then
+	# asking "is it free" reported 0.00 m for a pose 100 m off the survey, because
+	# it clamps onto a free edge cell — measured by this function's own test
+	# before it shipped. An off-map pose has to fall through to the distance
+	# measurement below.
+	var raw := world_to_cell(to)
+	if in_bounds(raw) and not is_solid(raw):
+		return 0.0
+	var c := _clamp_cell(raw)
+	var free := _nearest_free(c)
+	if free == Vector2i(-1, -1):
+		return -1.0
+	var w := cell_to_world(free)
+	return Vector2(to.x - w.x, to.z - w.y).length()
+
 ## Drop intermediate points the vehicle can drive straight past. Without this the
 ## route is one waypoint every 2 m and _npc_drive's 2.2 m arrival tolerance makes
 ## the vehicle chase points it is already standing on.

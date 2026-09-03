@@ -150,6 +150,37 @@ func _run_tests() -> void:
 	_ok(npc.is_walking == false, "clear_post stops the walk")
 	_ok(npc.is_available() == false, "cleared worker no longer available")
 
+	npc.dispatch_to(AWAY_POS, "machine_4", 12.5)
+	_ok(npc.service_station_id == "machine_4", "dispatch_to stores the service station id")
+	_ok(npc.service_secs == 12.5, "dispatch_to stores the service duration if > 0")
+	_ok(npc.target_position.is_equal_approx(AWAY_POS), "dispatch_to sets target_position")
+	_ok(npc._purpose == NPC.Purpose.SERVICE, "dispatch_to sets purpose SERVICE")
+	_ok(npc.task_state == NPC.Task.GOING, "dispatch_to sets task_state GOING")
+	_ok(npc.is_walking == true, "dispatch_to starts walk")
+	_ok(absf(npc.walk_speed - 2.2) < 0.001, "dispatch_to sets brisk 2.2 pace")
+
+	npc.go_on_break(Vector3(10, 0, 10))
+	_ok(npc.target_position.is_equal_approx(Vector3(10, 0, 10)), "go_on_break sets target_position")
+	_ok(npc._purpose == NPC.Purpose.BREAK, "go_on_break sets purpose BREAK")
+	_ok(npc.task_state == NPC.Task.GOING, "go_on_break sets task_state GOING")
+	_ok(npc.is_walking == true, "go_on_break starts walk")
+	_ok(absf(npc.walk_speed - 1.4) < 0.001, "go_on_break sets relaxed 1.4 pace")
+
+	var callback_called := false
+	npc._operate_callback = func(reason: String): callback_called = true
+	npc.set_off_duty(true)
+	_ok(npc.on_duty == false, "set_off_duty(true) marks on_duty false")
+	_ok(npc.task_state == NPC.Task.OFF_DUTY, "set_off_duty(true) forces OFF_DUTY task_state")
+	_ok(npc.is_walking == false, "set_off_duty(true) halts walk")
+	_ok(npc._operate_callback.is_valid() == false, "set_off_duty(true) clears in-flight operate callback")
+	_ok(callback_called == false, "cleared callback is not executed")
+
+	npc.set_off_duty(false)
+	_ok(npc.on_duty == true, "set_off_duty(false) marks on_duty true")
+	_ok(npc.task_state == NPC.Task.GOING, "set_off_duty(false) from OFF_DUTY delegates to return_to_post")
+	_ok(npc.target_position.is_equal_approx(POST_POS), "return_to_post targets home_position")
+	_ok(npc._purpose == NPC.Purpose.POST, "return_to_post sets Purpose.POST")
+
 	# ── (d) board/disembark via the REAL OperatorContext ────────────────────
 	print("Test: (d) board_vehicle / disembark_vehicle")
 	var v0 := MockVehicle.new()
@@ -228,6 +259,28 @@ func _run_tests() -> void:
 	_ok(v2.calls.size() == v2_calls_before, "second disembark is a no-op (not seated)")
 	_ok(npc._seated_in_vehicle == false, "still unseated after the no-op disembark")
 
+	# ── (e) forced task autonomy tick ───────────────────────────────────────
+	print("Test: (e) forced task _autonomy_tick")
+	var t_tick := RecordingTask.new()
+	npc.assign_forced_task(t_tick)
+	npc._autonomy_tick(0.1)
+	_ok(t_tick.tick_calls == 1, "_autonomy_tick calls tick() on the forced task")
+	_ok(npc._forced_task == t_tick, "task stays active if tick returns false and is_done is false")
+
+	t_tick.mock_tick_ret = true
+	npc._autonomy_tick(0.1)
+	_ok(t_tick.tick_calls == 2, "second _autonomy_tick calls tick() again")
+	_ok(npc._forced_task == null, "_autonomy_tick clears the forced task if tick() returns true")
+	_ok(t_tick.release_calls == 1, "clearing via tick() return value calls release()")
+
+	var t_done := RecordingTask.new()
+	npc.assign_forced_task(t_done)
+	t_done.mock_done = true
+	npc._autonomy_tick(0.1)
+	_ok(t_done.tick_calls == 0, "_autonomy_tick does not call tick() if is_done() is already true")
+	_ok(npc._forced_task == null, "_autonomy_tick clears the forced task if is_done() is true")
+	_ok(t_done.release_calls == 1, "clearing via is_done() calls release()")
+
 	# Cleanup — free every node we created; verdict prints LAST, after teardown.
 	root.remove_child(npc)
 	npc.free()
@@ -271,6 +324,17 @@ class RecordingTask extends NpcAutonomyTask:
 	func release(npc: Node) -> void:
 		release_calls += 1
 		super.release(npc)
+
+	var tick_calls    : int = 0
+	var mock_done     : bool = false
+	var mock_tick_ret : bool = false
+
+	func tick(npc: Node, delta: float) -> bool:
+		tick_calls += 1
+		return mock_tick_ret
+
+	func is_done() -> bool:
+		return mock_done
 
 ## Mocks exactly the surface OperatorContext probes on a vehicle during
 ## npc_board_vehicle / npc_disembark_vehicle / npc_vehicle_of routing:
