@@ -14,34 +14,13 @@ class StubLineFlow extends Node:
 	func get_machines() -> Array: return []
 	func get_section_status(keys: Array) -> int: return 0
 
-# Test wrapper for testing HmiOverlay methods without triggering UI dependency cascades
-class TestableHmiOverlay extends CanvasLayer:
-	var _station = ""
-	var _scope = {}
-	var _selected_machine_key = ""
-	var _line_flow = null
-	var _last_fed_mass = 0.0
-
-	func open_for(label: String, scope: Dictionary = {}) -> void:
-		_station = label.to_upper()
-		_scope = scope.duplicate(true) if not scope.is_empty() else {}
-		_selected_machine_key = ""
-		_find_line_flow()
-		if _line_flow and "fed_mass" in _line_flow:
-			_last_fed_mass = float(_line_flow.fed_mass)
-		_show_screen(0)
-		visible = true
-
-	func close_overlay() -> void:
-		close_subscope()
-		visible = false
-
-	func close_subscope() -> void:
+# To mock GDScript native methods or complex headless-incompatible UI setup, we
+# extend the original class and override `_ready` and `_build_chrome` with `pass`.
+class MockHmiOverlay extends "res://src/scenes/hud/HmiOverlay.gd":
+	func _ready() -> void:
 		pass
-
-	func _find_line_flow() -> void:
-		_line_flow = get_tree().root.get_node_or_null("root/LineFlow")
-
+	func _build_chrome() -> void:
+		pass
 	func _show_screen(_s: int) -> void:
 		pass
 
@@ -49,19 +28,13 @@ func _fail(msg: String) -> void:
 	print("RESULT FAIL: %s" % msg)
 	quit(1)
 
-var _ran := false
+func _initialize() -> void:
+	call_deferred("_run")
 
-func _process(_delta: float) -> bool:
-	if _ran:
-		return false
-	_ran = true
-	_run()
-	return false
-
-func _run():
+func _run() -> void:
 	print("==== HMI OVERLAY TEST ====")
 
-	var hmi = TestableHmiOverlay.new()
+	var hmi = MockHmiOverlay.new()
 	var root_node = Node.new()
 	root_node.name = "root"
 	root.add_child(root_node)
@@ -69,7 +42,11 @@ func _run():
 
 	var mock_line_flow = StubLineFlow.new()
 	mock_line_flow.name = "LineFlow"
+	mock_line_flow.add_to_group("line_flow")
 	root_node.add_child(mock_line_flow)
+
+	# Setup required references manually since we skipped _ready
+	hmi._line_flow = mock_line_flow
 
 	hmi._station = ""
 
@@ -95,5 +72,5 @@ func _run():
 		_fail("close_overlay failed to set visibility to false"); return
 	print("  ok    : close_overlay sets visibility to false")
 
-	print("PASS — HmiOverlay logic verified headless")
+	print("Result: PASS")
 	quit(0)
