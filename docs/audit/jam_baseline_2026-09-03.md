@@ -387,3 +387,83 @@ quietly relaxed.
 `test_jam_baseline` prints the clearance for each leg every run. Reported, not
 asserted: crew NPCs and the player move between boots, so a hard check there
 would be flaky, and the arithmetic is proved deterministically in the unit suite.
+
+## Fourth follow-up, 2026-09-05 — the fixture check was a stale 40, and this suite hid it a second time
+
+**TL;DR.** After #211/#213 merged, the full harness at `00cc51c2` (2026-09-04
+06:22) printed `FAIL : machine fixture present (39 static placed bodies)` in
+`test_jam_baseline` — the suite's first red since the pilot fix. Both legs still
+arrived (`166.3 s` / `100.8 s`, `2.20 m` from target, identical to the green
+run). The only failing check was `machines >= 40`, a constant typed on
+2026-07-22 (`94c685b`) when `LINE_3A_SEQ` had **42** entries. Operator rulings
+on 2026-08-28 — `5f4e7c3` (ruling 2.1-B, 42 → 38) and `5b854d8` (heater
+cabinet, 38 → 39) — took the line to **39**, and the constant never followed.
+`BuildMode` prints `Built line_3a — 39 machines`. From 2026-08-28 the check was
+unsatisfiable by the very fixture it verifies.
+
+### How it stayed green here for a week
+
+`test_nav_connectivity.gd:142` carries the identical check and has printed
+`FAIL : machine fixture present (39 …)` in **every** harness log this checkout
+holds. It was filed as a known red with an empty note in the CLAUDE.md table.
+
+`test_jam_baseline` printed `ok : machine fixture present (198 …)` in the same
+runs. The difference was `user://__jambaseline___factory.json`: **166 leftover
+machines** (`blower` ×19, `transport_screw` ×16, `cyclone` ×13, `friction_sep`
+×8, …) autosaved by an earlier run whose teardown never restored the slot.
+`_finish()` calls `_restore_files()` only *after* `_world.queue_free()` plus one
+frame, so the documented teardown segfault (exit 139) skips it and the slot
+persists; every later run then backs the residue up, boots on it, and restores
+it. 166 + 39 = the 198 the suite kept reporting (a few of the 166 are not
+`StaticBody3D`, hence 198 rather than 205 — inferred from the counts, not
+re-measured).
+
+On 2026-09-03 20:35 that file was moved out of `user://` as probe residue. The
+next harness loaded `[BuildMode] Loaded 0 placed objects (per-save)`, counted
+39, and the suite finally agreed with its sibling. **The suite did not regress;
+it stopped passing on contamination.** The evidence file is preserved at
+`D:\cedo_wt_stray_backup\probe_leftovers_2026-09-03\` (sha256 `ebfa8192…`).
+
+### What changed (PR #216)
+
+Both suites now assert `machines >= BuildMode.LINE_3A_SEQ.size()`, read at run
+time, and print both numbers so a future non-static SEQ entry shows as a visible
+gap instead of a silent false red. Nothing else in either suite changed.
+
+Proof, both directions on the same code path:
+
+```
+red   — harness at 00cc51c2, threshold 40:
+          FAIL : machine fixture present (39 static placed bodies)        [both suites]
+green — full harness on the fix branch, 2026-09-05:
+          test_jam_baseline      ok : machine fixture present (39 static placed bodies, LINE_3A_SEQ has 39)
+                                 Result: PASS (14 ok, 0 fail, 0 skipped)
+          test_nav_connectivity  ok : machine fixture present (39 static placed bodies, LINE_3A_SEQ has 39)
+                                 Result: FAIL (9 ok, 1 fail)   <- was 8 ok, 2 fail
+```
+
+Harness total: **6 → 5**. The remaining `test_nav_connectivity` red is
+`every on-site post routes to the canteen and back (2 broken: Abdellilah
+canteen<-post (ends 14.32 m short; post at (-215.6, 82.7)), Mohammed …)` —
+untouched by this change, and now recorded in the CLAUDE.md row that had been
+blank.
+
+### Solo boots are not the harness — measured, cause not established
+
+Running `test_jam_baseline.tscn` alone without `CEDO_OFFLINE=1` produced a
+navmesh of **6 polygons** where the harness measures 276, from the same
+`NavRegion re-baking (37 source bodies)`; with the harness's `CEDO_OFFLINE=1`
+exported, the solo run matched (276). A solo `test_nav_connectivity.tscn` boot
+failed `the shell has a measurable footprint` (`NavSiteBounds.body_aabb` returned
+a zero AABB for the node `_shell()` found) and skipped its inside↔outside
+section, while the same check passes in-harness. Treat a solo boot as a smoke
+test of one check, never as the suite's verdict; the harness is the authority.
+
+### Open
+
+- Move `_restore_files()` ahead of `_world.queue_free()` in `_finish()` (or into
+  `_exit_tree`) so a teardown crash can never leave the slot behind again. The
+  same shape exists in `test_nav_connectivity` and every suite that PROTECTs
+  `user://` files.
+- Two suites, one identical fixture block. Extract it, or the next stale
+  constant lands twice again.
