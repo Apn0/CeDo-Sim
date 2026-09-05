@@ -672,9 +672,14 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	# of the wet train's east run.
 	{"id": "flotation_tank", "turn_deg": -90.0},
 	{"id": "dewater_screw"},
-	# #fold — leg F (LEFT +90): the long tail heads east again. ASSUMED (see
-	# the leg map at the top of this SEQ) — sketch ends at the flotation tank;
-	# east matches the floor plan's east-west extruder-1 block in Hal 2.
+	# #fold — leg F (LEFT +90): the long tail heads east again. CONFIRMED by the
+	# operator: 2026-08-28 "leg F is correct", re-confirmed 2026-09-06. East
+	# matches the floor plan's east-west extruder-1 block in Hal 2.
+	# The sketch itself stops at the flotation tank, so this leg WAS an
+	# assumption when the fold first landed — and this comment still read
+	# "ASSUMED" on 2026-09-06 while the leg map at the top of this SEQ already
+	# read "CONFIRMED", i.e. the file contradicted itself and pointed each
+	# reader at the other half. Settled now; do not re-litigate.
 	{"id": "friction_sep", "turn_deg": 90.0},
 	{"id": "kufferath_sieve", "x": -2.5, "z": 1.0},
 	{"id": "kufferath_sieve", "x":  2.5, "z": 1.0, "main_advance": 4.5},
@@ -1856,7 +1861,7 @@ func _try_pole_snap(hit: Dictionary) -> Dictionary:
 func _spawn_ghost(id: String) -> void:
 	_clear_ghost()
 	if id.begins_with("line_"):
-		_ghost = _make_line_ghost(id)   # macro: every machine, placeholder boxes
+		_ghost = _make_line_ghost(id)   # macro: every machine, real ghost geometry
 	else:
 		_ghost = PlaceableCatalog.build_node(id, true)
 	if _ghost:
@@ -1867,10 +1872,13 @@ func _spawn_ghost(id: String) -> void:
 ## operator feedback: with a ~40-machine line, that's not enough to judge
 ## whether the whole train actually fits/clears before committing. Now reuses
 ## _build_full_line's own preview mode so every machine in the sequence shows
-## its real footprint as a translucent box (same position math as the real
-## build — turns, branches, transportband stacking, saved macro overrides all
-## included), plus a forward-pointing arrow so the march direction stays
-## legible even with many overlapping boxes.
+## up (same position math as the real build — turns, branches, transportband
+## stacking, saved macro overrides all included), plus a forward-pointing arrow
+## so the march direction stays legible even with many overlapping machines.
+##
+## #linebuilder-geometry 2026-09-06: each slot is now the REAL machine in ghost
+## material, not a footprint box — see _make_line_ghost_node for the ruling and
+## for why the box survives as a fallback.
 func _make_line_ghost(line_id: String) -> Node3D:
 	var root : Node3D = _build_full_line(line_id, Vector3.ZERO, 0.0, true)
 	if root == null:
@@ -2096,12 +2104,16 @@ func _place_current() -> void:
 ## chain-style cumulative delta (machine N's drift is the sum of all earlier
 ## indices' explicit overrides; an unmoved machine inherits its previous
 ## machine's accumulated drift).
-## `preview` (#linebuilder-ghost, 2026-08-29): when true, this builds cheap
-## translucent placeholder boxes into a returned, UNPARENTED ghost root instead
-## of real machines into `_placed_root` — same position math (turns / branches
+## `preview` (#linebuilder-ghost, 2026-08-29): when true, this builds translucent
+## ghost machines into a returned, UNPARENTED ghost root instead of real
+## machines into `_placed_root` — same position math (turns / branches
 ## / transportband Y-stacking / at_entry anchoring / saved macro deltas), just
-## skipping the heavy PlaceableCatalog build, _finalize_placed, macro-meta
-## stamping and LineFlow edge bookkeeping. Lets the whole-line ghost show every
+## skipping _finalize_placed, macro-meta stamping and LineFlow edge bookkeeping.
+## (#linebuilder-geometry 2026-09-06: the per-slot node is now the real machine
+## via PlaceableCatalog.build_node(id, true) — collision-free and unsaveable by
+## that call's own contract — where it used to be a cheap footprint box. The
+## PlaceableCatalog build is therefore no longer skipped; see
+## _make_line_ghost_node.) Lets the whole-line ghost show every
 ## machine's real footprint at once instead of just the first, so the operator
 ## can line the whole train up before committing. Real placement (preview =
 ## false, the default) is BYTE-FOR-BYTE unchanged — every new branch below is
@@ -2285,7 +2297,7 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float, preview: bo
 		elif not is_tb and not is_branch:
 			# Leaving the chain — reset.
 			prev_tb_outlet_y = -1.0
-		var node : Node3D = _make_ghost_placeholder_box(item, mid) if preview else PlaceableCatalog.build_node(mid, false)
+		var node : Node3D = _make_line_ghost_node(item, mid) if preview else PlaceableCatalog.build_node(mid, false)
 		if node != null:
 			if preview:
 				ghost_root.add_child(node)
@@ -2317,6 +2329,17 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float, preview: bo
 			if d_scale != Vector3.ONE:
 				node.scale = d_scale
 			built += 1
+			# #linebuilder-geometry — preview parity for lifted entries. The real
+			# build stretches an elevated machine's legs down to the floor via
+			# _finalize_placed (just below); with real geometry in the ghost the
+			# same has to happen here, or line 1's 3.48 m sga_feed_chute previews
+			# floating on stub legs at the leg-C→D corner. Safe on an unparented
+			# ghost root: extend_machine_legs only raycasts when the node is
+			# inside the tree (PlaceableCatalog.gd:2133) and otherwise just runs
+			# the legs the full drop. Boxes have no "machine_leg" meshes, so this
+			# is a no-op on the fallback path.
+			if preview and bool(entry.get("extend_legs", false)):
+				PlaceableCatalog.extend_machine_legs(node, entry_y)
 			if not preview:
 				# #fold — {"extend_legs": true} passes the entry's y lift through to
 				# _finalize_placed so the machine's own legs stretch to the floor
@@ -2414,6 +2437,7 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float, preview: bo
 			main_z += float(entry["main_advance"])
 	total_run += main_z
 	if preview:
+		_make_preview_inert(ghost_root)
 		return ghost_root
 	print("[BuildMode] Built %s — %d machines over %.1f m in %d leg(s)" % [line_id, built, total_run, leg_idx + 1])
 	if _status:
@@ -2421,11 +2445,132 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float, preview: bo
 			line_id.to_upper(), built]
 	return null
 
-## Cheap translucent placeholder for the whole-line ghost preview (#linebuilder-
-## ghost) — just the catalog item's real footprint as a box, no real machine
-## detail ("the chutes do not have to be perfect", per the operator ask). Falls
-## back to a generic box for ids with no catalog entry (e.g. structural-only
-## SEQ rows) so the preview never silently drops a slot.
+## Strip everything physical and everything gameplay-visible off a whole-line
+## preview (#linebuilder-geometry, 2026-09-06). Visuals survive; nothing else.
+##
+## MEASURED, not assumed. The first real-geometry build of the line_1 preview
+## leaked **14 CollisionShape3D and 1 "placed_object" member** into the ghost —
+## caught by the new section-5 checks in test_line_builder_ghost, which is why
+## they exist. PlaceableCatalog gates the GENERIC machine collider and group on
+## `not ghost` (PlaceableCatalog.gd:1525), but a few model builders reached from
+## _build_model construct their OWN StaticBody3D + CollisionShape3D children and
+## never saw the flag.
+##
+## Probed 2026-09-06 over all 31 distinct line_1 ids, so these are names, not
+## suspicions — and the two of them sum to exactly the 14 observed:
+##   vw_trommel   6 shapes / 6 bodies
+##   mill         8 shapes / 8 bodies
+##   shredder_1, laser_filter, lump_cart   1 live script each
+##   extruder_1   4 bodies carrying no shape (inert, layers zeroed anyway)
+## Everything else in line 1 ghosts clean. NOTE the same probe proves the
+## SINGLE-ITEM placement ghost has the identical defect for those two ids —
+## `build_node(id, true)` is the same call, just without this sanitiser. That
+## is pre-existing behaviour and deliberately left alone here; fixing it means
+## touching the snap/blocker paths that read the single-item ghost.
+##
+## That leak was invisible while the ghost was a footprint box, and it is not
+## survivable now: the operator walks around a ~50-machine preview while aiming
+## it, and would collide with — or stand on — machines that are not placed yet.
+##
+## Belt-and-braces on purpose, because the failure mode is silent and physical:
+## free every shape, zero every body's layer AND mask, and strip the gameplay
+## groups. Far cheaper than auditing ~200 catalog builders, and it cannot rot —
+## a builder added next year is neutralised here too, without knowing about it.
+##
+## Safe to free immediately (not queue_free): the ghost root is UNPARENTED at
+## this point, so nothing is mid-traversal in the SceneTree, and the test
+## asserts on the same frame — a queued free would still be visible to it.
+static func _make_preview_inert(root: Node3D) -> void:
+	if root == null:
+		return
+	for cs in root.find_children("*", "CollisionShape3D", true, false):
+		if is_instance_valid(cs):
+			cs.free()
+	for co in root.find_children("*", "CollisionObject3D", true, false):
+		var body := co as CollisionObject3D
+		if body != null:
+			body.collision_layer = 0
+			body.collision_mask = 0
+	# Groups carry behaviour even without a collider. These four are the ones
+	# that reach outside the node (verified against every add_to_group call in
+	# PlaceableCatalog.gd):
+	#   placed_object — what save / delete / K-edit enumerate
+	#   belt          — PlayerController drags the operator along the deck (:249)
+	#   lump_cart     — LaserFilter binds _closest_in_group("lump_cart"), so a
+	#                   ghost cart could win the search and swallow real lumps
+	#   bale          — bale handling would see previewed stock as real
+	# "machine_leg" / "machine_foot" stay: they are pure visual markers that
+	# extend_machine_legs reads, and a ghost that keeps them can be re-extended.
+	# "steam_plume" stays too — cosmetic, and a preview is cosmetic by nature.
+	var all : Array[Node] = root.find_children("*", "", true, false)
+	all.append(root)
+	for n in all:
+		for g in ["placed_object", "belt", "lump_cart", "bale"]:
+			if n.is_in_group(g):
+				n.remove_from_group(g)
+
+	# ── The part that is easy to miss ────────────────────────────────────────
+	# Stripping groups here is NOT enough on its own, and the test proved it:
+	# after the collider fix, one node was STILL in "placed_object". Cause —
+	# _build_full_line hands back an UNPARENTED root, so no _ready has run yet;
+	# the moment the caller parents the ghost (_spawn_ghost's add_child, and the test's
+	# own add_child), every scripted machine in it wakes up and re-registers.
+	#
+	# So a real-geometry ghost is not just geometry — it is ~50 LIVE machines:
+	# ExtruderMachine, ShredderMachine, BezinkTank and friends running _ready,
+	# connecting signals, starting timers, publishing SCADA tags. That was never
+	# true of the footprint boxes, and it is not something a preview may do.
+	#
+	# Cheapest total fix: take the scripts off. A preview is a picture. The
+	# catalog builds every mesh procedurally at CONSTRUCTION time, not in _ready
+	# (measured: mesh count is identical before and after this strip), so
+	# nothing visual is lost — only behaviour that a ghost must not have.
+	# process_mode is belted on top for any node that acquires a script later.
+	for n in all:
+		if n.get_script() != null:
+			n.set_script(null)
+		n.process_mode = Node.PROCESS_MODE_DISABLED
+
+## One slot of the whole-line ghost preview (#linebuilder-geometry, 2026-09-06).
+##
+## OPERATOR RULING 2026-09-06: "real geometry ghosts". This REVERSES the
+## 2026-08-29 compromise, where every previewed machine was a flat footprint box
+## because "the chutes do not have to be perfect" — with ~42 boxes the operator
+## could judge that the train FITS, but not what it actually is.
+##
+## Uses the very same builder the single-item placement ghost uses at
+## _spawn_ghost — `PlaceableCatalog.build_node(mid, true)`. Its contract
+## (PlaceableCatalog.gd:1145) is what makes this safe in a preview:
+##   ghost = true → translucent (_mat drops every albedo to alpha 0.40),
+##                  NO collision and NO "placed_object" group (both gated on
+##                  `not ghost` at PlaceableCatalog.gd:1525), no
+##                  _finalize_placeable, never saved.
+## So a real-geometry ghost still cannot be walked into, saved, K-edited, or
+## seen by LineFlow — exactly like the boxes it replaces.
+##
+## Falls back to the old placeholder box when the catalog yields no node
+## (retired id, unknown id, structural-only SEQ row). That fallback is
+## LOAD-BEARING, not politeness: test_line_builder_ghost asserts the preview's
+## child count EQUALS the real build's machine count, so a dropped slot goes
+## red — and showing fewer machines than you are about to commit is precisely
+## the failure the whole-line ghost exists to prevent.
+func _make_line_ghost_node(item: Dictionary, mid: String) -> Node3D:
+	var n : Node3D = PlaceableCatalog.build_node(mid, true)
+	if n == null:
+		return _make_ghost_placeholder_box(item, mid)
+	# Keep the "ghost_<id>" naming the box path established: the preview tree
+	# stays greppable in a remote debugger, and the name can never collide with
+	# a real placed machine (those carry the catalog's human name).
+	n.name = "ghost_%s" % mid
+	return n
+
+## Cheap translucent placeholder for one whole-line ghost slot (#linebuilder-
+## ghost) — just the catalog item's real footprint as a box, no machine detail.
+##
+## Was the preview's ONLY node builder until the 2026-09-06 "real geometry
+## ghosts" ruling; it is now the FALLBACK inside _make_line_ghost_node, used
+## for ids the catalog cannot build (retired / unknown / structural-only SEQ
+## rows) so the preview never silently drops a slot.
 func _make_ghost_placeholder_box(item: Dictionary, mid: String) -> Node3D:
 	var body := Node3D.new()
 	body.name = "ghost_%s" % mid
