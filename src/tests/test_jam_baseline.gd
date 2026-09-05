@@ -176,7 +176,8 @@ func _ready() -> void:
 
 # ── Fixture: the machine row every interior routing claim is measured against ──
 # Without machines the interior is an empty slab and "a path exists" proves
-# nothing. line_3a is the operator's real 42-machine line and the same fixture
+# nothing. line_3a is the operator's real line (39 entries since the 2026-08-28
+# rulings; it was 42 when this fixture was written) and the same fixture
 # tools/regression/run.sh builds, so the two harnesses talk about one plant.
 func _build_line_3a() -> void:
 	_section("FIXTURE — build line_3a (clean seed)")
@@ -200,7 +201,21 @@ func _build_line_3a() -> void:
 	for n in get_tree().get_nodes_in_group("placed_object"):
 		if n is StaticBody3D:
 			machines += 1
-	_check(machines >= 40, "machine fixture present (%d static placed bodies)" % machines)
+	# DERIVED, not typed. This was `>= 40`, written 2026-07-22 (94c685b) when
+	# LINE_3A_SEQ had 42 entries. Operator rulings 5f4e7c3 (2.1-B) and 5b854d8
+	# took the line to 39 on 2026-08-28 and the constant never followed, so from
+	# that day the check was unsatisfiable by the very fixture it verifies. It
+	# kept passing here only while a stale __jambaseline___factory.json (166
+	# leftover machines) sat in user://; test_nav_connectivity, whose slot is
+	# clean, was red on this exact line the whole time. Measured at 00cc51c2:
+	# BuildMode reports "Built line_3a — 39 machines" and every SEQ entry yields
+	# one StaticBody3D in the placed_object group, so the counts are equal, not
+	# merely >=. Both numbers print so a future non-static SEQ entry shows up as
+	# a visible gap instead of a silent false red.
+	var seq_n : int = BuildMode.LINE_3A_SEQ.size()
+	_check(machines >= seq_n,
+		"machine fixture present (%d static placed bodies, LINE_3A_SEQ has %d)"
+			% [machines, seq_n])
 	for _i in range(SETTLE_FRAMES):
 		await get_tree().process_frame
 
