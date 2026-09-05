@@ -37,22 +37,25 @@ was wrong and would fail on the first command.
 > tried and rejected — is in `docs/AUDIT_project_sweep_2026-08-23.md`. **When a
 > merge touches this repo, run the sweep before trusting anything else.**
 
-`tools/regression/run.sh` ends `== done (exit 1) ==`. Measured **2026-09-03**
-on this machine's real checkout, at `main` `45fcc0a` plus the jam-metric
-fixes — **5 failures**.
+`tools/regression/run.sh` ends `== done (exit 1) ==`. Measured **2026-09-05**
+on this machine's real checkout, at `main` `00cc51c2` plus #216's derived
+fixture threshold — **5 failures**. (`00cc51c2` alone, 2026-09-04, measured
+**6**: the sixth was `test_jam_baseline`'s stale-40 fixture check — see the
+2026-09-05 note below.)
 
 Count convention, because neither the old "41 gated suites" nor "51 gated
 suites" could be re-derived: the run wrote **54** logs into
 `tools/regression/out/`, of which two (`parse_gate`, `parse_sweep`) are gates
 rather than suites, and `last_run.log` — excluded from the 54 — carries the
-`regression verdict` check. Re-derive with
-`ls tools/regression/out/*.log | wc -l` right after a run; do not quote this
-paragraph without one.
+`regression verdict` check. Re-derive right after a run — by mtime, not `ls | wc -l`: `out/` is never
+cleared, and on 2026-09-05 the run wrote **57** logs while **73** were present
+(16 strays from July–August). Do not quote this paragraph without a fresh
+count.
 
 | failing check | note |
 |---|---|
 | `regression verdict` | `all 1 door(s)/gate(s) sit on a wall (on-wall 0)` (17 ok, 1 fail, 1 skip) in the `regression_world_save` boot. Reproduced 2026-08-31 on a clean D: worktree and 2026-09-02 on this checkout, identical message — so it is NOT local tree state. An earlier version of this table claimed "green on a CLEAN worktree (371 ok)"; that did not reproduce |
-| `test_nav_connectivity` | |
+| `test_nav_connectivity` | `every on-site post routes to the canteen and back (2 broken: Abdellilah canteen<-post (ends 14.32 m short; post at (-215.6, 82.7)), Mohammed …)` — 9 ok, 1 fail since #216. Its OTHER red, `machine fixture present (39 …)`, was a stale `>= 40` against a 39-entry `LINE_3A_SEQ` — fixed 2026-09-05, see below |
 | `test_npc05_realworld` | EXPECTED red — the DRIVE_TO_INDOOR stall, see below. Do not silence it |
 | `test_line3b_flow_conformance` | `the plasmaq is fed AND feeds onward (in false / out true)` — a missing input edge in LineFlow topology discovery. NOT caused by the 2026-08-29 LineFlow refactor; proven pre-existing by a baseline run without it |
 | `test_project_sweep_guards` | `B1b WorldLayout.structure_items starts empty (1 entries)` — local `user://` world state, not code |
@@ -72,6 +75,18 @@ refused to drive through the player and orbited. It now parks 4 m short.
 Measured after: `jam1 arrived after 166.3 s`, `jam3 arrived after 100.8 s`, both
 2.20 m from target. Nothing was loosened — the wedge and anti-vacuity checks are
 untouched and `0 skipped` is printed every run.
+
+> **2026-09-05 — `test_jam_baseline`'s green was vacuous a SECOND time, and it
+> was a stale constant.** Its fixture check `machines >= 40` was typed on
+> 2026-07-22 when `LINE_3A_SEQ` had 42 entries; the 2026-08-28 rulings
+> (`5f4e7c3`, `5b854d8`) took the line to 39 and the 40 never moved.
+> `test_nav_connectivity` — identical check, clean scratch slot — was red on it
+> the whole time and got filed as a known red. This suite kept reporting 198
+> because `user://__jambaseline___factory.json` held 166 leftover machines from
+> a run whose teardown segfaulted before `_restore_files()`. Sweeping that file
+> out on 2026-09-03 made the suite honest and red (39). #216 derives the
+> threshold from `BuildMode.LINE_3A_SEQ.size()` in both suites: harness 6 → 5.
+> Full story: `docs/audit/jam_baseline_2026-09-03.md`, fourth follow-up.
 
 Everything else is green, including `test_tag_snapshot` (29 ok — red in the
 wave, fixed, see below), `test_map_frame`, `test_outdoor_route`,
@@ -292,10 +307,10 @@ are **geometry keys**, not placeable ids, and stay.
 previous "285 / 105,241 / 72 tests" in this table was ~6 months stale, so treat
 this one as re-checkable too — `find src -name '*.gd' | wc -l`):
 
-| dir | files | what |
+| dir | tracked `.gd` (2026-09-05) | what |
 |---|---|---|
-| `src/scenes/` | 133 | world, player, NPC, vehicles, HUD/HMI |
-| `src/tests/` | 93 | every proof; also the render + shot tools |
+| `src/scenes/` | 135 | world, player, NPC, vehicles, HUD/HMI |
+| `src/tests/` | 151 | every proof; also the render + shot tools (109 are `test_*.gd`) |
 | `src/sim/` | 47 | LineFlow, TagMap, MachineFlow, machine models |
 | `src/autoload/` | 19 | singletons (WorldLayout, SettingsManager, AudioManager…) |
 | `src/build/` | 16 | `PlaceableCatalog` + `BuildMode` — the two biggest files |
@@ -305,7 +320,7 @@ this one as re-checkable too — `find src -name '*.gd' | wc -l`):
 
 | Doc | What it holds |
 |---|---|
-| `docs/plant/` | **Primary source of truth for the plant — start at `docs/plant/README.md`, the corpus index.** 419 `.md` (counted 2026-08-28): SWI procedures, HMI screens, trends, photo-audit ledger |
+| `docs/plant/` | **Primary source of truth for the plant — start at `docs/plant/README.md`, the corpus index.** 422 `.md` (counted 2026-09-05): SWI procedures, HMI screens, trends, photo-audit ledger |
 | `docs/plant/hmi_screen_inventory_2026-07-28.md` | Ground truth for the 34 HMI mockups — the **photos are authoritative**, the mockups are layout only |
 | `docs/AUDIO_sound_engine_state_2026-08-03.md` | Both audio systems, the verified RD frame for the 43 positional clips, loop-crossfade + IMA_ADPCM trap, 3 open findings |
 | `docs/anim_rig_unification_2026-08-28.md` | **Why the humanoid never animated:** limb meshes sat on dead pivot nodes while the AnimationTree drove boneless bones. Also the face-up prone, the 4 %-deep crouch found by MEASURING, the poses that sank through the floor, the double-player-body (`rebuild_appearance` didn't know the name `PlayerBody`), and the NPC jump latch that cleared on the impulse tick. 12 review findings, mutation-verified |
