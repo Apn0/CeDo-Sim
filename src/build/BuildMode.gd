@@ -2320,7 +2320,15 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float, preview: bo
 		var node : Node3D = _make_line_ghost_node(item, mid) if preview else PlaceableCatalog.build_node(mid, false)
 		if node != null:
 			if preview:
-				ghost_root.add_child(node)
+				# force_readable_name — line 1 places 7 machines as side-by-side
+				# PAIRS, so the second of each pair arrives with a name its
+				# sibling already has. Godot's default conflict handling then
+				# assigns the fast internal form (@StaticBody3D@2425), and
+				# MEASURED 2026-09-06: 17 of 51 preview slots lost their
+				# "ghost_<id>" name that way, breaking the greppability
+				# _make_line_ghost_node's comment promises. `true` makes the
+				# uniquifier readable instead ("ghost_mech_dryer2").
+				ghost_root.add_child(node, true)
 			else:
 				_placed_root.add_child(node)
 			# #MSB — apply operator-saved chain delta (in macro local frame).
@@ -2581,6 +2589,9 @@ func _make_line_ghost_node(item: Dictionary, mid: String) -> Node3D:
 	# Keep the "ghost_<id>" naming the box path established: the preview tree
 	# stays greppable in a remote debugger, and the name can never collide with
 	# a real placed machine (those carry the catalog's human name).
+	# Duplicate ids inside one line (the side-by-side pairs) are uniquified by
+	# _build_full_line's add_child(node, true) into "ghost_<id>2", so the prefix
+	# survives — test_line_builder_ghost:138 matches on it.
 	n.name = "ghost_%s" % mid
 	return n
 

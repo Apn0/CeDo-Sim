@@ -134,6 +134,70 @@ Covered by `test_line_builder_ghost` section 6, which drives `_spawn_ghost` and 
 awaits a frame — testing `build_node` in isolation would miss the group leak entirely,
 since it only appears after parenting.
 
+## Looking at it — `shot_line1_ghost`
+
+Every check above is geometric: part counts, collider counts, positions. None of
+them can see how the ~50-machine preview **reads on screen**. `src/tests/shot_line1_ghost.gd`
+closes that: it boots MainWorld, calls the real `_spawn_ghost("line_1")`, drops the
+result at `world_layout` `line_starts["1"]`, hides `BuildingShell` and the six
+`CanvasLayer`s, and saves three content-checked renders. Run it **windowed** —
+`--headless` has no rendering device and every frame would be blank:
+
+```
+Godot --path . res://src/tests/shot_line1_ghost.tscn
+```
+
+| Render | mean_lum |
+|---|---|
+| `docs/plant/renders/shot_line1_ghost_overview_2026_09_06.png` | 0.6787 |
+| `docs/plant/renders/shot_line1_ghost_plan_2026_09_06.png` | 0.6851 |
+| `docs/plant/renders/shot_line1_ghost_drumhead_2026_09_06.png` | 0.6923 |
+
+Measured on the built ghost: **51 slots, 1433 `MeshInstance3D`, 0 `CollisionShape3D`**,
+visual AABB `size=(114.01, 10.64, 23.81)`. The 23.8 m lateral spread is itself the
+fold — a straight line would be about 4 m wide.
+
+### The fold, measured
+
+The tool walks the slots in build order and prints the legs. The step from one slot
+to the next is *not* the leg heading — line 1 lays 7 stations as side-by-side PAIRS,
+so the raw walk zigzags ±135°. Differencing over a **two-slot window** cancels that
+jog; the result is then quantised to the nearest axis.
+
+| Leg | Axis | Run | From → to |
+|---|---|---|---|
+| A | −Z | 11.2 m | `opzetband_1` → `transport_belt` |
+| B | −X | 6.3 m | `transport_belt` → `transport_belt2` |
+| C | +Z | 12.9 m | `transport_belt2` → `vw_trommel` |
+| D | −X | 34.7 m | `vw_trommel` → `transport_screw2` |
+| E | −Z | 14.2 m | `transport_screw2` → `friction_sep3` |
+| F | −X | 37.5 m | `friction_sep3` → `lump_platform` |
+
+−Z, −X, +Z, −X, −Z, −X is **L, L, R, R, L** — exactly the five `turn_deg` entries in
+`LINE_1_SEQ`'s `#fold 2026-08-28` leg map, now measured in the built ghost rather
+than read off the source. The tool also prints legs G–I; those are the lump-cart
+branch furniture and leg F's own tail continuing to `voorraad_silo`, which jog
+laterally off the main axis by design.
+
+### Defect found by looking: 17 of 51 slots had no name
+
+`_make_line_ghost_node` names every slot `ghost_<id>` and its comment promises the
+preview tree "stays greppable in a remote debugger". It did not. Line 1 contains
+duplicate ids (the pairs), and `add_child()` with the default `force_readable_name`
+resolves a sibling name clash by assigning Godot's fast internal form —
+`@StaticBody3D@2425`. Measured: **17 of 51** preview slots.
+
+Fixed with `ghost_root.add_child(node, true)` (preview arm only — real placement is
+untouched), which uniquifies readably to `ghost_mech_dryer2`. After the fix the child
+table has **zero** anonymous names, and `test_line_builder_ghost` still reports
+`PASS 29 ok, 0 fail` — its name-prefix fallback (`:138`) keeps working because the
+prefix survives.
+
+One earlier suspicion did **not** survive measurement: a 109 m step in the first leg
+walk looked like a stray node far from the train. The child table showed it is the
+march-direction arrow `_make_line_ghost` adds at the origin (`BuildMode.gd:1912`) —
+last in build order, first in space. The walk now drops it.
+
 ## Open
 
 - The operator's original line-1 layout sketch image is still not archived
