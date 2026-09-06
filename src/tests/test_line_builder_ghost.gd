@@ -159,6 +159,62 @@ func _ready() -> void:
 		var lf_nodes_after : int = (lf.get("_nodes") as Array).size()
 		_info("LineFlow node count before/after this test's real build: %d -> %d" % [lf_nodes_before, lf_nodes_after])
 
+	# ── 5. #linebuilder-geometry — the slots are REAL MACHINES, not boxes ──
+	# Checks 1-3 above pass IDENTICALLY for footprint boxes and for real
+	# geometry: they count slots, prove zero side effects, and compare
+	# positions. None of them can see WHAT was drawn. This block is the only
+	# thing holding the operator's 2026-09-06 "real geometry ghosts" ruling in
+	# place — without it, a revert to _make_ghost_placeholder_box stays green.
+	#
+	# The discriminator: a placeholder box is exactly ONE MeshInstance3D, while
+	# a catalog machine is built from dozens of parts — and ghosts deliberately
+	# skip StaticMerge (PlaceableCatalog.gd:1522), so those parts stay separate
+	# nodes. Measured 2026-09-06 on line_1: 50 slots, 1383 mesh instances,
+	# 48 of 50 slots multi-part. The thresholds below sit well under those
+	# numbers so ordinary catalog detail work does not trip them; only a
+	# wholesale revert to single-box placeholders does.
+	var total_meshes := 0
+	var multi_part_slots := 0
+	for c in ghost.get_children():
+		var mcount : int = (c as Node3D).find_children("*", "MeshInstance3D", true, false).size()
+		total_meshes += mcount
+		if mcount > 1:
+			multi_part_slots += 1
+	_info("ghost geometry: %d MeshInstance3D across %d slots; %d slots multi-part"
+		% [total_meshes, ghost_children, multi_part_slots])
+	_check(multi_part_slots * 10 >= ghost_children * 8,
+		"at least 80%% of ghost slots are real multi-part machines, not single-box placeholders (got %d/%d)"
+			% [multi_part_slots, ghost_children])
+	_check(total_meshes > ghost_children * 5,
+		"the ghost carries real machine detail — over 5 mesh parts per slot on average (got %d parts across %d slots)"
+			% [total_meshes, ghost_children])
+
+	# The safety half of the ruling. Real geometry is only safe in a preview
+	# because PlaceableCatalog gates collision + the placed_object group on
+	# `not ghost` (PlaceableCatalog.gd:1525). Lock that contract here: if a
+	# future catalog edit ever leaks a collider into a ghost, the operator
+	# would silently walk into an object that is not there yet.
+	var ghost_colliders : int = ghost.find_children("*", "CollisionShape3D", true, false).size()
+	_check(ghost_colliders == 0,
+		"the real-geometry ghost carries ZERO CollisionShape3D — a preview must never be solid (got %d)"
+			% ghost_colliders)
+	# Same for the behaviour-carrying groups. "belt" would drag the operator
+	# along a deck that is not there; "lump_cart" would let a previewed cart win
+	# LaserFilter's _closest_in_group search and swallow real lumps.
+	var ghost_grouped := 0
+	var grouped_names : Array[String] = []
+	var ghost_all : Array[Node] = ghost.find_children("*", "", true, false)
+	ghost_all.append(ghost)
+	for n in ghost_all:
+		for g in ["placed_object", "belt", "lump_cart", "bale"]:
+			if n.is_in_group(g):
+				ghost_grouped += 1
+				if not grouped_names.has(g):
+					grouped_names.append(g)
+	_check(ghost_grouped == 0,
+		"no ghost node is in a behaviour group (placed_object/belt/lump_cart/bale) — a preview is never saveable, walkable or feedable (got %d in %s)"
+			% [ghost_grouped, str(grouped_names)])
+
 	# ── 4. Pinned menu section exists and sits above the old Lines category ─
 	var catalog : Control = bm.get("_catalog")
 	_check(catalog != null, "BuildMode._catalog panel exists")
