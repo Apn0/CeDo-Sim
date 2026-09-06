@@ -96,12 +96,46 @@ docs were right and only the code comment was stale. Re-confirmed by the operato
 2026-09-06 and corrected; the contradiction is recorded in place so it is not
 re-litigated.
 
+## Single-item ghosts had it too (fixed in the same PR)
+
+The whole-line preview was never the only ghost. `_spawn_ghost`'s `else` arm builds
+ONE machine via the same `PlaceableCatalog.build_node(id, true)` and parents it at
+the cursor — with no sanitiser. So **aiming a `mill` or a `vw_trommel` put a solid
+object under the cursor**, and had done since long before this change.
+
+`_make_preview_inert` now runs on every placement preview, single-item included, and
+**before** `add_child` — the scripts have to come off while `_ready` still hasn't run,
+or they get one tick to register themselves first.
+
+Two latent bugs fall out with it:
+
+- `_find_machine_snap`'s comment asserts *"the ghost is NOT in this group —
+  `build_node(id, true)` intentionally skips the group for ghosts"*. True at
+  construction; **false one frame later** for ids carrying a live script. Measured:
+  a `shredder_1` ghost re-adds itself to `placed_object` in `_ready`, making the
+  preview a snap target for itself.
+- `extend_machine_legs` raycasts each leg downward and excludes only the **root's**
+  own RID. A `mill` ghost's 8 nested bodies are not excluded, so its own legs read
+  themselves as an obstacle and get hidden.
+
+Mutation proof (sanitiser call removed from `_spawn_ghost`), which also re-measures
+the defect through the real path rather than a probe:
+
+| id | shapes | scripts | grouped | meshes |
+|---|---|---|---|---|
+| `mill` | 8 | 0 | 0 | 190 |
+| `vw_trommel` | 6 | 0 | 0 | 119 |
+| `shredder_1` | 0 | 1 | 1 | 57 |
+
+→ `FAIL 25 ok, 4 fail`. With the fix: `PASS 29 ok, 0 fail`, all counts zero and mesh
+counts **unchanged** (190 / 119 / 57), so no geometry was lost here either.
+
+Covered by `test_line_builder_ghost` section 6, which drives `_spawn_ghost` and then
+awaits a frame — testing `build_node` in isolation would miss the group leak entirely,
+since it only appears after parenting.
+
 ## Open
 
-- **Single-item placement ghosts have the same collider defect** for `vw_trommel`
-  and `mill` — `build_node(id, true)` is the same call, just without the sanitiser.
-  Proven by the same probe, pre-existing, deliberately not fixed here: it means
-  touching the snap and blocker paths that read the single-item ghost.
 - The operator's original line-1 layout sketch image is still not archived
   (`docs/plant/line1_layout_sketch_2026-08-28.md` carries the warning).
 - 3A / 3B / 3C carry zero `turn_deg` entries. The turn machinery in

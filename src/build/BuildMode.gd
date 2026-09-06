@@ -1865,6 +1865,26 @@ func _spawn_ghost(id: String) -> void:
 	else:
 		_ghost = PlaceableCatalog.build_node(id, true)
 	if _ghost:
+		# #linebuilder-geometry 2026-09-06 — sanitise EVERY placement preview,
+		# single-item as well as whole-line, and do it BEFORE add_child: the
+		# scripts have to come off while _ready still hasn't run, or they get one
+		# tick to register themselves before we strip them.
+		#
+		# The single-item ghost was never inert either. Probed over all 31 distinct
+		# line_1 ids: `mill` builds 8 CollisionShape3D and `vw_trommel` 6, even when
+		# asked for a ghost, because their model builders make their own bodies and
+		# never see the flag. So aiming either machine put a SOLID object at the
+		# cursor. Two things that were quietly wrong because of it:
+		#   • _find_machine_snap's comment claims "the ghost is NOT in the
+		#     placed_object group — build_node(id, true) intentionally skips it".
+		#     True at construction, FALSE one frame later for the ids that carry a
+		#     live script (shredder_1 / laser_filter / lump_cart) — their _ready
+		#     re-adds the group, and the ghost becomes a snap target for itself.
+		#   • extend_machine_legs raycasts each leg downward and excludes only the
+		#     ROOT's own RID. A mill ghost's 8 nested bodies are not excluded, so
+		#     its own legs read themselves as an obstacle and get hidden.
+		# Both disappear once the preview carries no collision and no script.
+		_make_preview_inert(_ghost)
 		add_child(_ghost)
 
 ## Whole-line macro ghost (#linebuilder-ghost, 2026-08-29). Was a single

@@ -241,6 +241,53 @@ func _ready() -> void:
 		var btn := _find_button_for_id(catalog, "line_1")
 		_check(btn != null, "a catalog button wired to line_1 exists (the pinned quick-access button, or the original Lines-category one)")
 
+	# ── 6. #linebuilder-geometry — SINGLE-ITEM ghosts are inert too ─────────
+	# The whole-line preview is not the only ghost. _spawn_ghost's `else` arm
+	# builds ONE machine via PlaceableCatalog.build_node(id, true) and parents it
+	# at the cursor, and that path was never inert either: probed 2026-09-06,
+	# `mill` builds 8 CollisionShape3D and `vw_trommel` 6 even when asked for a
+	# ghost, because their model builders make their own bodies and never see the
+	# flag. Aiming either machine put a SOLID object under the cursor.
+	#
+	# This drives the REAL path — _spawn_ghost, then a frame — so any script's
+	# _ready has actually had its chance to run and re-register its groups.
+	# Testing build_node in isolation would miss precisely that: the group leak
+	# only appears AFTER parenting, which is why the line preview still showed
+	# one placed_object member after the collider fix was already in.
+	for gid in ["mill", "vw_trommel", "shredder_1"]:
+		bm.call("_spawn_ghost", gid)
+		await get_tree().process_frame
+		var g : Node3D = bm.get("_ghost") as Node3D
+		if g == null:
+			_check(false, "single-item ghost for '%s' was spawned" % gid)
+			continue
+		var g_all : Array[Node] = g.find_children("*", "", true, false)
+		g_all.append(g)
+		var g_shapes : int = g.find_children("*", "CollisionShape3D", true, false).size()
+		var g_meshes : int = g.find_children("*", "MeshInstance3D", true, false).size()
+		var g_scripts := 0
+		var g_grouped := 0
+		for n in g_all:
+			if n.get_script() != null:
+				g_scripts += 1
+			for grp in ["placed_object", "belt", "lump_cart", "bale"]:
+				if n.is_in_group(grp):
+					g_grouped += 1
+		_info("single-item ghost '%s': %d meshes, %d shapes, %d scripts, %d grouped"
+			% [gid, g_meshes, g_shapes, g_scripts, g_grouped])
+		_check(g_meshes > 1,
+			"single-item ghost '%s' kept its real geometry (%d meshes)" % [gid, g_meshes])
+		_check(g_shapes == 0,
+			"single-item ghost '%s' carries ZERO CollisionShape3D — a preview is never solid (got %d)"
+				% [gid, g_shapes])
+		_check(g_scripts == 0,
+			"single-item ghost '%s' runs NO script — a preview is not a live machine (got %d)"
+				% [gid, g_scripts])
+		_check(g_grouped == 0,
+			"single-item ghost '%s' is in no behaviour group — cannot self-snap or be saved (got %d)"
+				% [gid, g_grouped])
+	bm.call("_clear_ghost")
+
 	print("\n=========================================")
 	print("Result: %s (%d ok, %d fail)" % ["PASS" if _fails == 0 else "FAIL", _oks, _fails])
 	print("=========================================")
