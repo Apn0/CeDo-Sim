@@ -198,6 +198,44 @@ walk looked like a stray node far from the train. The child table showed it is t
 march-direction arrow `_make_line_ghost` adds at the origin (`BuildMode.gd:1912`) —
 last in build order, first in space. The walk now drops it.
 
+## Perf: the ghost is free — `perf_line1_ghost`
+
+With the ghost up the PERF overlay read `FPS 2, avg 7, Draw calls 3462`. That was
+**observed, never measured against a baseline**, so the ghost was never actually
+shown to be the cause. `src/tests/perf_line1_ghost.gd` settles the plant, then runs
+six interleaved A/B pairs (ghost down / ghost up) and differences them **pairwise**.
+
+```
+Godot --path . res://src/tests/perf_line1_ghost.tscn
+```
+
+| | ghost down | ghost up | delta |
+|---|---|---|---|
+| frame time | 132.51 ms | 132.81 ms | **median −0.06 ms** (mean +0.29 ± 2.00) |
+| draw calls | 1042 | 1802 | **+760** |
+| primitives | — | — | **+182 239** |
+
+Per-pair B−A: `+2.7 +0.1 −0.2 −0.5 −2.7 +2.3` ms.
+
+**The ghost adds 1433 meshes and 760 draw calls at no measurable frame cost.** The
+plant sits at 7.5 fps / 133 ms *with the ghost down too*, and the overlay reports it
+CPU-bound on scripts and physics. The `FPS 2` observation is not attributable to this
+change — the baseline is the problem, ghost or no ghost. Flag retracted.
+
+Two method notes, both learned by getting them wrong first:
+
+- **Settle before measuring.** A single quiet window is not settled — the plant hit
+  3.9 % drift at window 1 and then still fell from 133 ms to 60 ms afterwards. The
+  probe now requires 3 consecutive windows under 4 % (took 18 windows).
+- **Median, not mean.** On a run where the baseline was still moving, two of six
+  pairs read +55.1 and +46.2 ms while the other four read ≈0. Those two measure the
+  baseline moving, not the ghost, and they drag the mean to +16 ms — inventing a cost
+  that is not there.
+
+**Do not `StaticMerge` the ghost to "fix" the draw calls.** It would buy nothing
+measurable, and it would break `test_line_builder_ghost` section 5: the box-vs-real
+discriminator *is* the unmerged part count (`PlaceableCatalog.gd:1522`).
+
 ## Open
 
 - The operator's original line-1 layout sketch image is still not archived
