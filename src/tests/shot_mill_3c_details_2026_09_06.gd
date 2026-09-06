@@ -23,16 +23,16 @@ const SHOTS := [
 	 "from": Vector3(2.73, 4.60, 1.10), "at": Vector3(1.13, 4.05, -0.10)},
 	# The grille FACES -X. A station on the -Z side alone looks at the motor's
 	# flank and the cowl end is hidden behind the fin rings, so this one sits
-	# off the -X corner. It crosses the -Z rail plane at y 2.53, between the
-	# mid rail (2.405-2.445) and the top rail (2.93-2.97).
-	# and it must also miss the +BP2 cabinet, which stands at x -0.38..0.22,
-	# z -1.20..-0.90. This line reaches the cabinet's -Z face at x 0.275, just
-	# outside it, and crosses the -Z railing at y 2.28 — between the toe board
-	# (1.98) and the mid rail (2.405).
+	# off the -X corner, and it must also miss the +BP2 cabinet, which stands at
+	# x -0.38..0.22, z -1.20..-0.90. This line reaches the cabinet's -Z face at
+	# x 0.275, just outside it, and crosses the -Z railing at y 2.28 — between
+	# the toe board (1.98) and the mid rail (2.405).
 	{"name": "shot_mill_3c_cowl_2026_09_06.png",
 	 "from": Vector3(-0.60, 2.30, -1.85), "at": Vector3(0.3535, 2.25, -1.142)},
+	# Aimed low enough to take in the whole Y: the legs run from y 1.15 down to
+	# y 0.33. Crosses the deck edge at x 0.73, clear of the platform leg at 1.44.
 	{"name": "shot_mill_3c_underdeck_2026_09_06.png",
-	 "from": Vector3(0.90, 1.35, 2.40), "at": Vector3(0.00, 1.60, 0.35)},
+	 "from": Vector3(1.50, 1.20, 3.00), "at": Vector3(0.00, 1.05, 0.20)},
 ]
 
 func _ready() -> void:

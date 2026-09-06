@@ -5109,15 +5109,53 @@ static func _m_mill(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> voi
 	# Finish corrected 2026-09-06: this was `aged` (mat_steel_dark_aged), which
 	# renders near-black. The photograph shows the under-deck discharge as a
 	# mid-GREY box, the same family as the galvanised frame it hangs in — so it
-	# is `galv`. Section 9b's "ending in pointed outlets" is RETRACTED: see the
-	# retraction note in the photo reading. The pointed shapes in that part of
-	# the frame are the gusset tops of two floor-standing support posts, not
-	# outlets on this chute, and nothing is invented here to match the old
-	# reading. What IS unmistakable — a bolted access plate and a yellow name
-	# sticker on the chute's +Z face — is built below.
+	# is `galv`. The bolted access plate and yellow name sticker on its +Z face
+	# are built below, and the trunk splits into the Y further down.
+	#
+	# WARNING to a future reader: between these two facts a 2026-09-06 pass
+	# briefly RETRACTED section 9b's "ending in pointed outlets", on a reading
+	# that the pointed shapes were gusset tops of support posts. The operator
+	# corrected that the same day — it is a splitter chute and the outlets are
+	# real. Do not re-derive the retraction from the photograph alone; the
+	# structure is genuinely ambiguous at that resolution.
 	_flare4(p, 0.0, 0.0, base_y - deck_y * 0.45, base_y, 0.44, 0.38, ch_hx * 1.24, ch_hz * 1.10, 0.05, galv)
-	_hollow_box(p, 0.44, deck_y * 0.25, 0.38, Vector3(0, base_y - deck_y * 0.575, 0), 0.05, galv)
-	_box(p, Vector3(0.60, 0.05, 0.54), Vector3(0, base_y - deck_y * 0.71, 0), castiron)
+	# ── OPERATOR 2026-09-06: it is an UPSIDE-DOWN Y SPLITTER ──────────────────
+	#   "the frame under the mill is the chute that is an upside down Y splitter,
+	#    dividing material from the mill left and right again to the friction
+	#    separators > transportation screws towards the flotation tank inlet
+	#    paddle"
+	#
+	# This REINSTATES what a 2026-09-06 re-reading of the photograph had wrongly
+	# retracted. Section 9b's original "ending in pointed outlets" was right; the
+	# retraction that called the pointed shapes "gusset tops of support posts"
+	# was the error. See §9h/§9i of the photo reading.
+	#
+	# The split axis is +/-X, and that is not a guess: `BuildMode.LINE_3C_SEQ`
+	# places L3C.9L at x -3.0 and L3C.9R at x +3.0 relative to the mill, and
+	# `Line3CDef.LINKS` carries ["L3C.6","L3C.9L"] and ["L3C.6","L3C.9R"]. The
+	# sim topology already matched the operator's description exactly — only the
+	# geometry was missing.
+	#
+	# Replaces a single straight outlet duct + flange on the centreline, which
+	# fed nothing and split nothing.
+	var y_thr : float = base_y - deck_y * 0.45          # trunk throat, 1.116
+	# The divider: two plates meeting in a ridge on the centreline, apex UP into
+	# the falling stream. This is the "pointed" element in the photograph.
+	for sxd in [-1.0, 1.0]:
+		var divp := _box(p, Vector3(0.30, 0.016, 0.38),
+			Vector3(float(sxd) * 0.105, y_thr - 0.10, 0.0), galv)
+		divp.rotation.z = -float(sxd) * 0.62
+	# The two legs. Each is a duct under its own pivot: `_hollow_box` is
+	# axis-aligned, so the lean has to come from the parent transform.
+	var leg_ang : float = atan2(0.51, 0.55)             # 42.8 deg off vertical
+	for sxl in [-1.0, 1.0]:
+		var leg := Node3D.new()
+		leg.name = "DischargeLeg" + ("L" if sxl < 0.0 else "R")
+		p.add_child(leg)
+		leg.position = Vector3(float(sxl) * 0.365, y_thr - 0.375, 0.0)
+		leg.rotation.z = float(sxl) * leg_ang
+		_hollow_box(leg, 0.36, 0.78, 0.38, Vector3.ZERO, 0.05, galv)
+		_box(leg, Vector3(0.46, 0.04, 0.48), Vector3(0.0, -0.41, 0.0), castiron)
 	# Bolted access plate + name sticker, laid on `_flare4`'s own +Z panel using
 	# that panel's own centre and tilt, so it tracks any re-proportioning.
 	var dis_h : float = deck_y * 0.45
