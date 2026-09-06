@@ -233,11 +233,11 @@ zoomed. **Nothing in sections 2-5 is contradicted.** The following are additions
 | **`+BP2` control cabinet** — **MODELLED 2026-08-30** | A light-grey painted electrical enclosure stands on the deck between the drive drum and the cream motor, stencilled **`+BP2`**. Across the door: a row of three devices (grey button / **GREEN** lamp / grey button) plus a fourth lower down, and a bundle of black cable leaving the bottom and running off toward the motor. The face is **smooth light grey with no galvanising spangle** — a painted RAL 7035 enclosure, not raw galvanised steel; the first attempt used the galvanised material and rendered far too dark. | PHOTO |
 | **Instrument panel** | A small dark vertical panel (gauge or local HMI) mounted on a post immediately left of the `+BP2` cabinet. | PHOTO |
 | **Tool shadow board** — **MODELLED 2026-08-30** | A yellow board hangs on the inside of the railing carrying **two numbered tool silhouettes**. Position **1** still has its large single open-ended **spanner** on the board; position **2**'s silhouette (a combination spanner — ring one end, open jaw the other) is **empty, the tool is missing**. The missing tool is modelled deliberately: it is what the photograph shows, and a shadow board with a gap in it is what a working shadow board looks like. Very likely the "tools (probably for opening the mill)" of section 5. | PHOTO |
-| **Motor sticker** | A small yellow sticker on the motor's fan cowl. | PHOTO |
+| **Motor sticker** — **MODELLED 2026-09-06** | A small yellow sticker on the motor's fan cowl. Building it exposed that the model had **no cowl at all**; the cowl, its chord-fitted crosshatch grille, the square hub, a lifting eye and the fin-block nameplate were all built with it. See §9h. | PHOTO |
 | **Yellow GRP grating** | Yellow perforated/GRP grating panels below deck around the friction separators — distinct from the yellow *mesh belt guard* and from the galvanised steel grating of the mill's own bordes. Three different yellow surfaces, do not conflate them. | PHOTO |
 | **Infeed screw livery** | The transport screw discharging into the mill's hopper is **galvanised grey**, not cream, and carries its own yellow name sticker. | PHOTO |
-| **Hopper lid clamps** | A row of white clamp cylinders / hinged-lid hardware along the top-right edge of the infeed hopper. | PHOTO |
-| **Under-deck discharge** | The mill's discharge below deck is a large cream/grey hopper box with a steeply angled bottom, ending in pointed outlets. | PHOTO |
+| **Hopper lid clamps** — **MODELLED 2026-09-06** | A row of white clamp cylinders / hinged-lid hardware along the top-right edge of the infeed hopper. Zoomed: **three** bracket + dark-pad assemblies and **two** spindle clamps with barrel nuts, one trailing a hose, on the **+X** wall. See §9h. | PHOTO |
+| **Under-deck discharge** — **PART MODELLED / PART RETRACTED 2026-09-06** | The grey box is real: its finish is fixed (was near-black `aged`, now `galv`) and its bolted access plate and yellow sticker are built. ~~ending in pointed outlets~~ — **WRONG, RETRACTED.** Those are the gusset tops of two floor-standing support posts and they point *upward*. See §9h. | PHOTO, partly corrected |
 
 ### 9b-i. What was modelled on 2026-08-30, and what is still open
 
@@ -378,6 +378,94 @@ So there are **two different yellow objects** and both readings stand: the loose
 **plate** on the deck (§9e), and the fine yellow **mesh** guard over the belt
 drive. The belt guard was left as mesh throughout and needs no change. §2 item 8
 is restored to OPERATOR + PHOTO.
+
+### 9h. Third reading, 2026-09-06 — four §9b items built, one §9b item RETRACTED
+
+Four of the items §9b listed as seen-but-not-modelled are now in
+`PlaceableCatalog._m_mill`. All four are PHOTO-tagged and were re-zoomed on the
+filed file before anything was written; nothing here is TYPICAL.
+
+**1. Hopper-lid CLAMP BANK (built).** §9b called it "a row of white clamp
+cylinders / hinged-lid hardware". Zoomed it resolves fully: **three** cream
+clamp brackets, each a gusset rib + a top plate + a **dark contact pad** at the
+outer tip, with **two** spindles between them — a galvanised stem through a cast
+barrel nut, hex head on top — and a hose trailing off the -Z spindle. On a Neue
+Herbold granulator this is the hardware that locks the hinged hopper section
+down for knife changes.
+
+*Which wall:* the **+X** one. The brand is stencilled on +Z, and in the
+photograph the clamp wall is the face clockwise from the brand wall, toward the
+ladder — which the model puts at +X. The bank is built under a pivot that reuses
+`_flare4`'s own +X panel transform, so it stays welded to the wall if the hopper
+is ever re-proportioned.
+
+**2. Motor FAN COWL, grille and yellow sticker (built).** §9b recorded only "a
+small yellow sticker on the motor's fan cowl" — but the model had **no cowl at
+all**, just the body and its fin rings, so the sticker had nothing to sit on.
+Zoomed, the photograph gives the whole non-drive end: a smooth cream cowl, a
+fine crosshatch grille with a **square hub**, the sticker high on the cowl's
+shoulder, a lifting eye on the body and a dark nameplate on the fin block. All
+of it is built. The grille bars are chord-fitted to the disc so they stop at the
+rim instead of overhanging as a square patch.
+
+**3. `NEUE HERBOLD.com` (built).** §9a noted the model stencilled only
+`NEUE HERBOLD` and that the suffix would be more faithful. The suffix is a much
+smaller lockup low and right of the wordmark, so it is a **second label** — one
+`Label3D` can carry only one glyph size. **Still not modelled:** the stylised
+blue globe standing in for the O. A `Label3D` cannot express it and faking it
+with an emissive disc would be a guess at the artwork. Ask before adding one.
+
+**4. Under-deck discharge — finish FIXED, "pointed outlets" RETRACTED.**
+
+> §9b said: *"a large cream/grey hopper box with a steeply angled bottom, ending
+> in **pointed outlets**."*
+
+The finish half of that is right and is now fixed: the chute was built with
+`aged` (`mat_steel_dark_aged`, 0.22/0.22/0.24), which renders near-black; the
+photograph shows a **mid-grey** box, the same family as the galvanised frame it
+hangs in, so it is `galv` now. The bolted **access plate** (ten bolt heads) and
+the **yellow name sticker** on its +Z face are built, both unmistakable in the
+file.
+
+**The "pointed outlets" are RETRACTED — they are not outlets.** Re-zoomed, the
+pointed shapes in that part of the frame are the **gusset tops of two
+floor-standing support posts**: each post has a base plate bolted to the floor,
+a square-section column, a round pivot boss, and a triangular gusset plate above
+it, with a cross-beam and a turnbuckle running between the two posts under the
+chute. They point **upward**, which an outlet would not. Nothing was invented to
+match the old reading. This is the third §9b/§2 reading to be overturned by
+zooming the file — after the flywheel→fan and the chute→plate corrections of
+§9e — so treat every remaining un-modelled §9b line as provisional until it has
+been re-zoomed.
+
+*Open, and the one question worth his time:* what that two-post frame under the
+mill actually is — a support stand for the discharge, or the mounting for
+something else that had not been installed when the photo was taken. It is not
+modelled until he says.
+
+**Still NOT modelled from §9b**, unchanged by this pass: the instrument panel on
+its post; the yellow GRP grating below deck (unowned — the mill's own bordes is
+galvanised and must not be recoloured); the infeed screw's galvanised livery and
+sticker (they live in the shared `_m_transport_screw`, so a mill-only variant is
+a design call, not a photo reading); the blue globe in the wordmark; and the two
+questions of §8 — the sticker's tag number and the "…antec" maker's plate.
+
+**A collision the first green run did not catch.** The cowl pushes the motor's
+non-drive end 166 mm further -X, and that put the grille plane 10 mm *inside* the
+`+BP2` cabinet — the cabinet's +X face was at x 0.350, the grille at x 0.333. All
+of the new geometry checks still passed, because none of them looked at the
+neighbouring part; it showed up in the render, where the camera saw the cabinet
+where the grille should have been. The cabinet moved 130 mm -X and the cowl 20 mm
+toward the motor body, restoring the gap the photograph shows. There is now an
+explicit AABB check for it, and the cabinet's box is *found in the model* rather
+than written into the test — the first version hardcoded it and stayed green when
+the cabinet was moved back into the cowl.
+
+Model count **250 → 275 parts.** Verified by
+`src/tests/verify_mill_photo_details_2026_09_06.gd` — 29 checks, all green, each
+one mutation-tested (24 mutations, every assertion proven to fire).
+`verify_mill_addons_2026_08_30.gd` still passes 29/29 after the cabinet move.
+Renders: `docs/plant/renders/shot_mill_3c_{clamps,cowl,underdeck}_2026_09_06.png`.
 
 ### 9c. Construction-only in the file — re-confirmed, do NOT model
 

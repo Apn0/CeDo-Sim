@@ -4828,6 +4828,48 @@ static func _m_mill(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> voi
 			Vector3(0, ch_top + hop_h + 0.03, hop_cz + float(sz4) * mouth_hz), galv)
 		_box(p, Vector3(0.10, 0.06, mouth_hz * 2.15),
 			Vector3(float(sz4) * mouth_hx, ch_top + hop_h + 0.03, hop_cz), galv)
+
+	# ── PHOTO: hopper-lid CLAMP BANK on the +X wall (2026-09-06) ──────────────
+	# Section 9b of the photo reading: "a row of white clamp cylinders /
+	# hinged-lid hardware along the top-right edge of the infeed hopper". Zoomed
+	# on the filed photograph it resolves into a bank of THREE cream clamp
+	# brackets — each a gusset rib, a top plate, and a DARK contact pad at the
+	# outer tip — with TWO spindles between them, each a galvanised stem through
+	# a cast barrel nut, and a hose trailing off the -Z spindle. On a Neue
+	# Herbold granulator this is the hardware that locks the hinged hopper
+	# section down for knife changes.
+	#
+	# The +X wall is the one the ladder side looks at: the brand is stencilled
+	# on +Z, and in the photograph the clamp wall is the face clockwise from the
+	# brand wall, i.e. toward the ladder, which the model puts at +X.
+	#
+	# Built under a pivot that reuses `_flare4`'s OWN +X panel transform, so the
+	# bank stays welded to the wall if the hopper is ever re-proportioned:
+	#   local +X = wall outward normal, +Y = up-slope, +Z = world Z.
+	var hop_dx : float = (mouth_hx * 2.0 - 0.90) * 0.5         # _flare4's dx
+	var hop_lean : float = atan2(hop_dx, hop_h)                # _flare4's own angle
+	var up_s := Vector3(sin(hop_lean), cos(hop_lean), 0.0)
+	var out_n := Vector3(cos(hop_lean), -sin(hop_lean), 0.0)
+	var clamps := Node3D.new()
+	clamps.name = "HopperClamps"
+	p.add_child(clamps)
+	clamps.rotation.z = -hop_lean
+	clamps.position = Vector3((0.90 + mouth_hx * 2.0) * 0.25, ch_top + hop_h * 0.5, hop_cz) \
+		+ up_s * 0.40 + out_n * 0.03                           # just under the rim, on the face
+	for cz3 in [-0.44, 0.0, 0.44]:
+		_box(clamps, Vector3(0.17, 0.31, 0.020), Vector3(0.085, 0.0, float(cz3)), cream)      # gusset rib
+		_box(clamps, Vector3(0.22, 0.032, 0.105), Vector3(0.110, 0.150, float(cz3)), cream)   # top plate
+		_box(clamps, Vector3(0.050, 0.040, 0.105), Vector3(0.196, 0.150, float(cz3)), placard)  # dark pad
+	for cz2 in [-0.22, 0.22]:
+		_cyl(clamps, 0.024, 0.024, 0.22, Vector3(0.125, 0.030, float(cz2)), galv)             # spindle stem
+		_cyl(clamps, 0.058, 0.058, 0.080, Vector3(0.125, -0.055, float(cz2)), castiron)       # barrel nut
+		_cyl(clamps, 0.042, 0.042, 0.032, Vector3(0.125, 0.150, float(cz2)), galv)            # hex head
+	# The hose off the -Z spindle, trailing down the wall (PHOTO).
+	var hose_a := _cyl(clamps, 0.016, 0.016, 0.24, Vector3(0.100, -0.20, -0.255), rubber)
+	hose_a.rotation.x = 0.30
+	var hose_b := _cyl(clamps, 0.016, 0.016, 0.22, Vector3(0.075, -0.38, -0.330), rubber)
+	hose_b.rotation.x = 0.62
+
 	var hop_tilt : float = atan2((mouth_hz * 2.0 - throat_d) * 0.5, hop_h)
 	var hop_wall : float = (throat_d + mouth_hz * 2.0) * 0.25
 	if not ghost:
@@ -4845,6 +4887,23 @@ static func _m_mill(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> voi
 			if ch is Label3D:
 				(ch as Label3D).modulate = Color(0.098, 0.118, 0.424)      # NEUE HERBOLD blue
 				(ch as Label3D).outline_modulate = Color(1.0, 1.0, 1.0, 0.85)
+		# PHOTO: the full mark is `NEUE HERBOLD.com` — the suffix is a separate,
+		# much smaller lockup low and right of the wordmark, so it is a second
+		# label rather than four more characters on the first (one Label3D can
+		# only carry one glyph size). `_stencil_label` derives glyph size from
+		# the SMALLER side, so size.y is what sets it: 0.08 against the
+		# wordmark's 0.20 gives the ~40 % suffix the photograph shows.
+		# STILL NOT MODELLED: the stylised blue globe standing in for the O.
+		# A Label3D cannot express it and faking it with an emissive disc would
+		# be a guess at its artwork — ask before adding one.
+		var brand_com := _stencil_label(p, ".com", Vector3(0.34, 0.08, 0.01), "+Z")
+		brand_com.position = brand.position \
+			+ Vector3(0.72, -0.070 * cos(hop_tilt), -0.070 * sin(hop_tilt))
+		brand_com.rotation.x = hop_tilt
+		for ch2 in brand_com.get_children():
+			if ch2 is Label3D:
+				(ch2 as Label3D).modulate = Color(0.098, 0.118, 0.424)
+				(ch2 as Label3D).outline_modulate = Color(1.0, 1.0, 1.0, 0.85)
 
 	# ── PROP: mobile industrial FAN standing on the deck (OPERATOR 2026-08-30) ────────
 	# CORRECTION. This used to be a "rust flywheel/pulley" keyed to the mill's
@@ -4954,6 +5013,49 @@ static func _m_mill(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> voi
 			Vector3(mot_x - mot_len * 0.36 + float(fk) * mot_len * 0.18, mot_y, mot_z), cream, "x")
 	_box(p, Vector3(mot_r * 0.8, mot_r * 0.5, mot_len * 0.45),
 		Vector3(mot_x, mot_y + mot_r * 0.95, mot_z), aged)                                  # terminal box
+	# ── PHOTO: fan cowl, its wire grille, and the YELLOW STICKER (2026-09-06) ──
+	# Section 9b recorded only "a small yellow sticker on the motor's fan cowl",
+	# but the model had no cowl at all — just the body and its fin rings — so
+	# there was nothing for the sticker to sit on. Zoomed, the photograph shows
+	# the whole non-drive end: a smooth cream cowl, a fine crosshatch grille
+	# with a square hub at its centre, the sticker high on the cowl's shoulder,
+	# a lifting eye on the body, and a dark nameplate on the fin block.
+	# The cowl is on the -X end because the shaft and pulley leave on +X. That
+	# end faces the `+BP2` cabinet, and adding the cowl put the grille 10 mm
+	# INSIDE it: the cabinet's +X face was at x 0.35 and the new grille plane at
+	# x 0.333. The cabinet moved 130 mm -X (`bp_x`) and the cowl 20 mm toward the
+	# motor body, which restores the gap the photograph shows between the two.
+	# `verify_mill_photo_details_2026_09_06` now asserts they do not intersect.
+	var cowl_r : float = mot_r * 1.10
+	var cowl_x : float = mot_x - mot_len * 0.5 - 0.05
+	_cyl(p, cowl_r, cowl_r, 0.16, Vector3(cowl_x, mot_y, mot_z), cream, "x")                # fan cowl
+	# Grille: this file's crosshatch idiom (thin bars), chord-fitted to a disc so
+	# the bars stop at the cowl rim instead of overhanging it as a square patch.
+	var gr : float = cowl_r * 0.72
+	var grille_x : float = cowl_x - 0.086
+	for gk in 7:
+		var gt : float = (float(gk) + 0.5) / 7.0 * 2.0 - 1.0
+		var chord : float = 2.0 * gr * sqrt(maxf(1.0 - gt * gt, 0.0))
+		_box(p, Vector3(0.005, 0.009, chord), Vector3(grille_x, mot_y + gt * gr, mot_z), castiron)
+		_box(p, Vector3(0.005, chord, 0.009), Vector3(grille_x, mot_y, mot_z + gt * gr), castiron)
+	_box(p, Vector3(0.012, 0.076, 0.076), Vector3(grille_x - 0.005, mot_y, mot_z), galv)     # square hub
+	# Sticker on the cowl shoulder, laid tangent to the barrel (PHOTO). A box
+	# whose normal is +Y is rotated about X by (angle - 90 deg) to sit radial.
+	var st_a : float = deg_to_rad(52.0)
+	var mot_sticker := _box(p, Vector3(0.105, 0.003, 0.070),
+		Vector3(cowl_x + 0.012, mot_y + cowl_r * sin(st_a), mot_z + cowl_r * cos(st_a)), yellow_f)
+	mot_sticker.rotation.x = st_a - PI * 0.5
+	# Lifting eye. `_torus` lies in the XZ plane, so it needs a pivot to stand up.
+	_cyl(p, 0.017, 0.017, 0.07, Vector3(mot_x + 0.02, mot_y + mot_r + 0.030, mot_z), galv)
+	var eye := Node3D.new()
+	eye.name = "MotorLiftEye"
+	p.add_child(eye)
+	eye.position = Vector3(mot_x + 0.02, mot_y + mot_r + 0.088, mot_z)
+	eye.rotation.x = PI * 0.5
+	_torus(eye, 0.021, 0.039, Vector3.ZERO, galv)
+	var mot_plate := _box(p, Vector3(0.10, 0.055, 0.003),
+		Vector3(mot_x + 0.15, mot_y + mot_r * 0.86, mot_z + 0.13), placard)                  # nameplate
+	mot_plate.rotation.x = -atan2(0.13, mot_r * 0.86)
 	_cyl(p, 0.055, 0.055, 0.20, Vector3(belt_x - 0.02, mot_y, mot_z), galv, "x")            # motor shaft
 	_cyl(p, 0.16, 0.16, 0.09, Vector3(belt_x, mot_y, mot_z), castiron, "x")                 # driving pulley
 	_cyl(p, 0.085, 0.085, (belt_x - ch_hx) + 0.14,
@@ -5004,9 +5106,38 @@ static func _m_mill(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> voi
 	# 0.40 m air gap between the chute and the mill it is supposed to empty.
 	# Now a converging flare straight off the chamber underside, down through the
 	# deck, into a straight outlet duct with a flange.
-	_flare4(p, 0.0, 0.0, base_y - deck_y * 0.45, base_y, 0.44, 0.38, ch_hx * 1.24, ch_hz * 1.10, 0.05, aged)
-	_hollow_box(p, 0.44, deck_y * 0.25, 0.38, Vector3(0, base_y - deck_y * 0.575, 0), 0.05, aged)
+	# Finish corrected 2026-09-06: this was `aged` (mat_steel_dark_aged), which
+	# renders near-black. The photograph shows the under-deck discharge as a
+	# mid-GREY box, the same family as the galvanised frame it hangs in — so it
+	# is `galv`. Section 9b's "ending in pointed outlets" is RETRACTED: see the
+	# retraction note in the photo reading. The pointed shapes in that part of
+	# the frame are the gusset tops of two floor-standing support posts, not
+	# outlets on this chute, and nothing is invented here to match the old
+	# reading. What IS unmistakable — a bolted access plate and a yellow name
+	# sticker on the chute's +Z face — is built below.
+	_flare4(p, 0.0, 0.0, base_y - deck_y * 0.45, base_y, 0.44, 0.38, ch_hx * 1.24, ch_hz * 1.10, 0.05, galv)
+	_hollow_box(p, 0.44, deck_y * 0.25, 0.38, Vector3(0, base_y - deck_y * 0.575, 0), 0.05, galv)
 	_box(p, Vector3(0.60, 0.05, 0.54), Vector3(0, base_y - deck_y * 0.71, 0), castiron)
+	# Bolted access plate + name sticker, laid on `_flare4`'s own +Z panel using
+	# that panel's own centre and tilt, so it tracks any re-proportioning.
+	var dis_h : float = deck_y * 0.45
+	var dis_bd : float = 0.38
+	var dis_td : float = ch_hz * 1.10
+	var dis_dz : float = (dis_td - dis_bd) * 0.5
+	var dis_tilt : float = atan2(dis_dz, dis_h)
+	var acc := Node3D.new()
+	acc.name = "DischargeAccessPlate"
+	p.add_child(acc)
+	acc.position = Vector3(0.0, base_y - dis_h * 0.5, (dis_bd + dis_td) * 0.25) \
+		+ Vector3(0.0, -sin(dis_tilt), cos(dis_tilt)) * 0.028
+	acc.rotation.x = dis_tilt
+	_box(acc, Vector3(0.42, 0.34, 0.012), Vector3.ZERO, galv)
+	for bxi in [-0.18, -0.06, 0.06, 0.18]:
+		for byi in [-0.14, 0.14]:
+			_cyl(acc, 0.011, 0.011, 0.016, Vector3(float(bxi), float(byi), 0.012), castiron, "z")
+	for bsi in [-0.18, 0.18]:
+		_cyl(acc, 0.011, 0.011, 0.016, Vector3(float(bsi), 0.0, 0.012), castiron, "z")
+	_box(acc, Vector3(0.11, 0.07, 0.004), Vector3(0.27, 0.22, 0.010), yellow_f)   # yellow name sticker
 
 	# ── PHOTO: loose yellow PLATE standing on the deck (OPERATOR 2026-08-30) ────
 	# CORRECTION. This used to be a converging yellow chute/hopper hanging
@@ -5141,7 +5272,7 @@ static func _m_mill(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> voi
 	var bp_w : float = 0.60
 	var bp_h : float = 0.80
 	var bp_d : float = 0.30
-	var bp_x : float = 0.05
+	var bp_x : float = -0.08              # -X of the motor: see the cowl clearance note
 	var bp_z : float = -1.05
 	var bp_y : float = deck_top + bp_h * 0.5
 	var bp_f : float = bp_z - bp_d * 0.5 - 0.004       # door plane, faces -Z
