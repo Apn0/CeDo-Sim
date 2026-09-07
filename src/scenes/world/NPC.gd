@@ -926,8 +926,6 @@ func _step_operate_brain(delta: float) -> String:
 				_claimed_lift = null
 				_finish_operate("ok")
 				return "operate_done"
-		_:
-			pass
 	return ""
 
 ## Command the claimed lift to raise its platform so the operator on board can
