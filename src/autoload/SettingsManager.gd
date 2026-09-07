@@ -290,9 +290,11 @@ func _migrate_legacy_keybinds() -> void:
 	var kept : Array = []
 	var had_stale := false
 	for ev in ct:
-		if ev is InputEventKey and (ev as InputEventKey).keycode in [KEY_P, KEY_F10]:
-			had_stale = true
-			continue
+		if ev is InputEventKey:
+			var evk := ev as InputEventKey
+			if evk.keycode in [KEY_P, KEY_F10] or evk.physical_keycode in [KEY_P, KEY_F10]:
+				had_stale = true
+				continue
 		kept.append(ev)
 	if had_stale:
 		_current_keybinds["camera_toggle"] = kept
@@ -313,9 +315,11 @@ func _migrate_legacy_keybinds() -> void:
 	var lpg_kept : Array = []
 	var had_stale_lpg := false
 	for ev in lpg:
-		if ev is InputEventKey and (ev as InputEventKey).keycode in [KEY_J, KEY_BACKSLASH]:
-			had_stale_lpg = true
-			continue
+		if ev is InputEventKey:
+			var evk := ev as InputEventKey
+			if evk.keycode in [KEY_J, KEY_BACKSLASH] or evk.physical_keycode in [KEY_J, KEY_BACKSLASH]:
+				had_stale_lpg = true
+				continue
 		lpg_kept.append(ev)
 	if had_stale_lpg:
 		_current_keybinds["lpg_switch_active"] = lpg_kept
@@ -565,7 +569,12 @@ func _reserve_feedback_key() -> void:
 			continue
 		var kept: Array = []
 		for ev in _current_keybinds[action]:
-			if ev is InputEventKey and (ev as InputEventKey).keycode == KEY_F10:
+			var is_f10 := false
+			if ev is InputEventKey:
+				var evk := ev as InputEventKey
+				if evk.keycode == KEY_F10 or evk.physical_keycode == KEY_F10:
+					is_f10 = true
+			if is_f10:
 				if InputMap.has_action(action):
 					InputMap.action_erase_event(action, ev)
 			else:

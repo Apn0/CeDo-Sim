@@ -18,9 +18,21 @@ func _ready() -> void:
 		get_tree().quit(1); return
 
 	if InputMap.has_action("camera_toggle"):
-		var bad := InputEventKey.new()
-		bad.keycode = KEY_F10
-		InputMap.action_add_event("camera_toggle", bad)
+		var bad1 := InputEventKey.new()
+		bad1.keycode = KEY_F10
+		var bad2 := InputEventKey.new()
+		bad2.physical_keycode = KEY_F10
+		InputMap.action_add_event("camera_toggle", bad1)
+		InputMap.action_add_event("camera_toggle", bad2)
+
+		# Also inject directly into SettingsManager's working model, because _apply_keybinds
+		# overwrites the InputMap with _current_keybinds, which would wipe our test data
+		# before _reserve_feedback_key even gets a chance to see it.
+		var cur_binds = sm.get("_current_keybinds")
+		if typeof(cur_binds) == TYPE_DICTIONARY and cur_binds.has("camera_toggle"):
+			cur_binds["camera_toggle"].append(bad1)
+			cur_binds["camera_toggle"].append(bad2)
+
 		if sm.has_method("_apply_keybinds"):
 			sm.call("_apply_keybinds")   # runs _reserve_feedback_key()
 		elif sm.has_method("_reserve_feedback_key"):
@@ -31,9 +43,11 @@ func _ready() -> void:
 		if String(action) == "feedback_capture":
 			continue
 		for ev in InputMap.action_get_events(action):
-			if ev is InputEventKey and (ev as InputEventKey).keycode == KEY_F10:
-				print("  FAIL  : action '%s' still bound to F10" % action)
-				fails += 1
+			if ev is InputEventKey:
+				var evk := ev as InputEventKey
+				if evk.keycode == KEY_F10 or evk.physical_keycode == KEY_F10:
+					print("  FAIL  : action '%s' still bound to F10" % action)
+					fails += 1
 
 	if fails == 0:
 		print("  ok    : no non-feedback action is bound to F10 (camera_toggle clean)")
