@@ -31,8 +31,10 @@ func _ready() -> void:
 	_check(not store.delta_sane(0.0, -40696.5, 0.0, 0.0), "corrupt live dy=-40696 REJECTED")
 	_check(not store.delta_sane(0.0, INF, 0.0, 0.0), "non-finite INF rejected")
 	_check(not store.delta_sane(0.0, NAN, 0.0, 0.0), "non-finite NAN rejected")
-	_check(store.delta_sane(0.0, 99.9, 0.0, 0.0), "at-cap 99.9 m accepted")
-	_check(not store.delta_sane(0.0, 100.1, 0.0, 0.0), "just over 100 m cap rejected")
+	_check(store.delta_sane(99.9, 0.0, 0.0, 0.0), "at-cap 99.9 m X accepted")
+	_check(not store.delta_sane(100.1, 0.0, 0.0, 0.0), "just over 100 m X cap rejected")
+	_check(store.delta_sane(0.0, 9.9, 0.0, 0.0), "at-cap 9.9 m Y accepted")
+	_check(not store.delta_sane(0.0, 10.1, 0.0, 0.0), "just over 10 m Y cap rejected")
 
 	# --- load filter: get_overrides drops the poisoned entry, keeps the rest ---
 	store._cache["line_3a"] = {
