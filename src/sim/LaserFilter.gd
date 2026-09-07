@@ -908,6 +908,3 @@ func _advance_change(delta: float) -> void:
 				# Padlock comes off last, then the scraper restart.
 				_change_state = Change.REMOVE_LOTO
 				_change_step_t = 0.0
-		_:
-			# Operator-driven states: nothing to do here, waiting for E.
-			pass
