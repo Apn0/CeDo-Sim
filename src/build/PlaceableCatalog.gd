@@ -12171,14 +12171,6 @@ static func _m_extruder_unit(p: Node3D, size: Vector3, color: Color, ghost: bool
 ## until the blades sweep). We arrange the 20 strands in a horizontal row
 ## centred under the die orifice ring so the operator sees the active state
 ## from outside the cabinet.
-##
-## TODO (perf, lower priority): each pelletizer produces 60 MeshInstance3D
-## (3 groups × 20 strands) + 20 wisp QuadMesh. Across 6 heetafslag
-## placements that's 360+ draw calls just for die-face viz. Refactor to a
-## single MultiMeshInstance3D per group (visibility toggled via the
-## InstanceCount or per-instance scale to zero) — same visual, ~6 draw calls
-## total. Not a current FPS bottleneck so deferred; revisit if Phase 3 perf
-## audit flags it.
 static func _build_heetafslag_strand_switcher(p: Node3D, die_r: float,
 		barrel_cy: float, die_z: float, ghost: bool) -> void:
 	var switcher := Node3D.new()
