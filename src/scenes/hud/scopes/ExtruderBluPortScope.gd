@@ -480,13 +480,11 @@ func _build_numpad() -> PanelContainer:
 		var b := Button.new()
 		b.text = String(k)
 		b.custom_minimum_size = Vector2(46, 32)
-		b.pressed.connect(_on_numpad_key.bind(String(k)))
 		grid.add_child(b)
 
 	var esc := Button.new()
 	esc.text = "ESC"
 	esc.custom_minimum_size = Vector2(0, 28)
-	esc.pressed.connect(_on_numpad_key.bind("ESC"))
 	v.add_child(esc)
 
 	return panel
@@ -873,12 +871,6 @@ func _on_autopro_toggled(p: bool) -> void:
 	if _model != null and is_instance_valid(_model) \
 			and _model.has_method("set_autopro_enabled"):
 		_model.call("set_autopro_enabled", p)
-
-func _on_numpad_key(_k: String) -> void:
-	# Recipe entry is line-6 only; for now we just absorb the press.
-	# A future revision could buffer the keys and dispatch a recipe lookup
-	# when "Nu" (Numeric enter) is pressed.
-	pass
 
 # =============================================================================
 # Line-id reactive layout
