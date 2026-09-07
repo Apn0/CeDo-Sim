@@ -112,7 +112,7 @@ func relieve(kg: float) -> void:
 ## itself (e.g. a MaterialBatch buffer) and just wants the motor model to
 ## mirror it, rather than emitting separate arrived/departed events.
 ##
-## 2026-08-29 bug fix: LineFlow.gd used to call
+## 2026-08-29 historical defect fix: LineFlow.gd used to call
 ## `add_load(_backlog_kg); relieve(_moved_kg)` every tick, where `_backlog_kg`
 ## is the node's CURRENT buffer level (a stock), not a one-off inflow event. A
 ## stock re-added on top of itself every tick — instead of replacing the
