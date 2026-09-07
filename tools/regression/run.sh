@@ -649,5 +649,13 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/customizer_world_bodies.l
 	[ $code -eq 0 ] && code=1
 fi
 
+echo "== SettingsManager apply =="
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_settings_manager_apply.gd --quit-after 300 > "$OUT/settings_manager_apply.log" 2>&1
+grep -aE "^  (ok|FAIL)  |^Result:" "$OUT/settings_manager_apply.log" || true
+if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/settings_manager_apply.log"; then
+	echo "FAIL  : SettingsManager apply (see $OUT/settings_manager_apply.log)"
+	[ $code -eq 0 ] && code=1
+fi
+
 echo "== done (exit $code) — see $OUT/topdown.png =="
 exit $code
