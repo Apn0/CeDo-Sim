@@ -323,8 +323,8 @@ func load_model() -> void:
 	# BMW-as-AClass) override this to prune the 9 unwanted cars FIRST, so the
 	# wheel/door classifier in _walk_model only sees the target car's parts
 	# and proximity-based articulation can't steal wheels from neighbours.
-	# Default implementation = no-op.
-	_filter_imported_tree(root)
+	if has_method("_filter_imported_tree"):
+		call("_filter_imported_tree", root)
 	_walk_model(root)
 	if _paint_color.a > 0.001:
 		_paint_hit_any = false
@@ -417,11 +417,6 @@ func _scale_vehicle_wheels(factor: float) -> void:
 			var wheel_mesh := vw.get_node_or_null("WheelMesh") as Node3D
 			if wheel_mesh != null:
 				wheel_mesh.scale = wheel_mesh.scale * factor
-
-## #157 — pre-classify hook called between the GLB instantiation and the
-## wheel/door classifier walk. Default no-op; pack-car placeholders override.
-func _filter_imported_tree(_root: Node) -> void:
-	pass
 
 func _walk_model(n: Node) -> void:
 	if n is Node3D:
