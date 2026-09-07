@@ -58,13 +58,14 @@ const STORE_VERSION : int = 1
 ## plant footprint is ~150 m, so no legitimate single-machine jog approaches
 ## this cap.
 const MAX_ABS_DELTA_M : float = 100.0
+const MAX_ABS_DELTA_Y_M : float = 10.0
 
 ## True when a per-machine pose delta is finite and within the sane range.
 ## Shared by the save-back guard and the load-time filter.
 static func delta_sane(dx: float, dy: float, dz: float, drot_y: float) -> bool:
 	if not (is_finite(dx) and is_finite(dy) and is_finite(dz) and is_finite(drot_y)):
 		return false
-	return absf(dx) <= MAX_ABS_DELTA_M and absf(dy) <= MAX_ABS_DELTA_M and absf(dz) <= MAX_ABS_DELTA_M
+	return absf(dx) <= MAX_ABS_DELTA_M and absf(dy) <= MAX_ABS_DELTA_Y_M and absf(dz) <= MAX_ABS_DELTA_M
 
 ## APPEND-ONLY. Each id maps to a SEQ in BuildMode; macro_index is the position
 ## in that SEQ, so an id removed here orphans every user://macros/<id>.json delta.
