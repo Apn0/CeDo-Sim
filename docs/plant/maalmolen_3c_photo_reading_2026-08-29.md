@@ -237,7 +237,7 @@ zoomed. **Nothing in sections 2-5 is contradicted.** The following are additions
 | **Yellow GRP grating** | Yellow perforated/GRP grating panels below deck around the friction separators — distinct from the yellow *mesh belt guard* and from the galvanised steel grating of the mill's own bordes. Three different yellow surfaces, do not conflate them. | PHOTO |
 | **Infeed screw livery** | The transport screw discharging into the mill's hopper is **galvanised grey**, not cream, and carries its own yellow name sticker. | PHOTO |
 | **Hopper lid clamps** — **MODELLED 2026-09-06** | A row of white clamp cylinders / hinged-lid hardware along the top-right edge of the infeed hopper. Zoomed: **three** bracket + dark-pad assemblies and **two** spindle clamps with barrel nuts, one trailing a hose, on the **+X** wall. See §9h. | PHOTO |
-| **Under-deck discharge** — **PART MODELLED / PART RETRACTED 2026-09-06** | The grey box is real: its finish is fixed (was near-black `aged`, now `galv`) and its bolted access plate and yellow sticker are built. ~~ending in pointed outlets~~ — **WRONG, RETRACTED.** Those are the gusset tops of two floor-standing support posts and they point *upward*. See §9h. | PHOTO, partly corrected |
+| **Under-deck discharge** — **MODELLED 2026-09-06** | An upside-down **Y SPLITTER** (operator, §9i): trunk off the chamber, a divider ridge, two legs to outlets 1.29 m apart feeding the L/R friction separators. Finish fixed (was near-black `aged`, now `galv`); bolted access plate and yellow sticker built. The “pointed outlets” in this line are **correct** — a same-day retraction of them in §9h was itself wrong and is withdrawn. | PHOTO |
 
 ### 9b-i. What was modelled on 2026-08-30, and what is still open
 
@@ -415,7 +415,7 @@ smaller lockup low and right of the wordmark, so it is a **second label** — on
 blue globe standing in for the O. A `Label3D` cannot express it and faking it
 with an emissive disc would be a guess at the artwork. Ask before adding one.
 
-**4. Under-deck discharge — finish FIXED, "pointed outlets" RETRACTED.**
+**4. Under-deck discharge — finish FIXED. ⚠ The "pointed outlets" retraction below is ITSELF WITHDRAWN — see §9i.** Kept here only so the mistake is legible.
 
 > §9b said: *"a large cream/grey hopper box with a steeply angled bottom, ending
 > in **pointed outlets**."*
@@ -466,6 +466,49 @@ Model count **250 → 275 parts.** Verified by
 one mutation-tested (24 mutations, every assertion proven to fire).
 `verify_mill_addons_2026_08_30.gd` still passes 29/29 after the cabinet move.
 Renders: `docs/plant/renders/shot_mill_3c_{clamps,cowl,underdeck}_2026_09_06.png`.
+
+### 9i. The under-deck chute is a Y SPLITTER — operator, 2026-09-06
+
+> **OPERATOR:** *"the frame under the mill is the chute that is an upside down Y
+> splitter, dividing material from the mill left and right again to the friction
+> separators > transportation screws towards the flotation tank inlet paddle"*
+
+**This overturns §9h's retraction, not §9b.** §9b's original *"ending in pointed
+outlets"* was RIGHT. The 2026-09-06 re-reading that called the pointed shapes
+"gusset tops of two floor-standing support posts" and retracted the outlets was
+the error — the second wrong reading of this same object, and this time the
+wrong reading was mine correcting a right one. §9b item **Under-deck discharge**
+is restored to plain **PHOTO**.
+
+*Lesson, and it is the opposite of §9e's.* §9e taught that a confident reading of
+a photograph can be wrong and the operator's correction wins. §9h then applied
+that lesson too eagerly: re-zooming produced a new confident reading and
+retracted a claim that was actually correct. **A retraction needs the same
+standard of evidence as the claim it retracts.** At this resolution the
+structure is genuinely ambiguous — a chute with two outlets, hanging in a frame
+of two posts, photographed at a steep angle. Do not re-derive either reading
+from the photograph alone.
+
+**What is now modelled.** The trunk still converges off the chamber underside and
+through the deck. Below the deck it now carries a **divider ridge** — two plates
+meeting in an apex on the centreline, pointing up into the falling stream, which
+is the pointed element in the photograph — and **two legs** leaning out at 42.8°
+from vertical to outlets 1.29 m apart, against a 0.44 m throat. This replaces a
+single straight duct on the centreline that split nothing.
+
+**The split axis is +/-X, and that is measured, not chosen.**
+`BuildMode.LINE_3C_SEQ` places `L3C.9L` at **x -3.0** and `L3C.9R` at **x +3.0**
+relative to the mill, and `Line3CDef.LINKS` already carries
+`["L3C.6","L3C.9L"]` and `["L3C.6","L3C.9R"]`, then `L3C.9L/R -> L3C.10L/R ->
+L3C.11 Flotatietank`.
+
+**The sim topology already matched the operator's description exactly** — mill
+-> two friction separators -> two transport screws -> flotation tank. Only the
+geometry was missing. No flow defect to fix.
+
+*Still not modelled from this answer:* the **flotation tank inlet paddle** named
+at the end of the operator's chain. It is a separate machine
+(`flotation_tank_wide`, `L3C.11`) and was not inspected in this pass.
 
 ### 9c. Construction-only in the file — re-confirmed, do NOT model
 

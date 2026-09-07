@@ -320,6 +320,65 @@ func _ready() -> void:
 			off > 0.015 and off < 0.06,
 			"perpendicular offset %.4f m from the panel plane" % off)
 
+	# ── 5. the Y splitter (OPERATOR 2026-09-06) ──────────────────────────────
+	# "an upside down Y splitter, dividing material from the mill left and right
+	# again to the friction separators". Split axis is +/-X because
+	# BuildMode.LINE_3C_SEQ puts L3C.9L at x -3.0 and L3C.9R at x +3.0.
+	var legs: Array = []
+	var leg_c: Array = []
+	for lname in ["DischargeLegL", "DischargeLegR"]:
+		var ln := _find(root, lname)
+		var lb: Array = []
+		if ln != null:
+			_collect(ln, lb)
+		legs.append(lb)
+		leg_c.append(_union(lb) if lb.size() > 0 else AABB())
+	_check("BOTH discharge legs exist (L and R)",
+		(legs[0] as Array).size() >= 4 and (legs[1] as Array).size() >= 4,
+		"L=%d parts, R=%d parts" % [(legs[0] as Array).size(), (legs[1] as Array).size()])
+	var la: AABB = leg_c[0]
+	var ra: AABB = leg_c[1]
+	if (legs[0] as Array).size() > 0 and (legs[1] as Array).size() > 0:
+		var lc := la.position + la.size * 0.5
+		var rc := ra.position + ra.size * 0.5
+		_check("the legs go opposite ways in X — it SPLITS, not drops straight",
+			lc.x < -0.20 and rc.x > 0.20,
+			"L centre x %.4f, R centre x %.4f" % [lc.x, rc.x])
+		# The real point of a splitter: the OUTLETS end up further apart than the
+		# throat they came from (0.44 m). Measured on the lowest part of each leg
+		# — its outlet flange — not on the leg's own centre, which sits half way
+		# up the lean and understates the spread (0.79 m against the true 1.29).
+		var lo := _lowest(legs[0] as Array)
+		var ro := _lowest(legs[1] as Array)
+		var los := lo.position.x + lo.size.x * 0.5
+		var ros := ro.position.x + ro.size.x * 0.5
+		_check("the OUTLETS are further apart than the trunk throat",
+			ros - los > 0.90,
+			"outlet centres %.4f m apart vs throat 0.44 m" % (ros - los))
+		_check("the two legs are symmetric about the centreline",
+			absf(lc.x + rc.x) < 0.02, "L %.4f vs R %.4f" % [lc.x, rc.x])
+		var both := la.merge(ra)
+		_check("the splitter hangs BELOW the deck, nothing pokes through",
+			both.position.y + both.size.y < deck_y,
+			"splitter maxY %.4f vs deck %.4f" % [both.position.y + both.size.y, deck_y])
+		_check("the splitter stays inside the machine footprint in X",
+			both.position.x > -hw and both.position.x + both.size.x < hw,
+			"splitter X[%.4f,%.4f] vs +-%.4f" % [both.position.x,
+				both.position.x + both.size.x, hw])
+	# The divider ridge that makes it a splitter rather than a wye of two pipes.
+	var y_thr := base_y - deck_y * 0.45
+	var divs := _region(parts, -0.30, 0.30, 0.90, 1.12, -0.25, 0.25)
+	_check("the divider ridge is there, two plates", divs.size() == 2,
+		"%d parts at the throat" % divs.size())
+	if divs.size() == 2:
+		var da := _union(divs)
+		var dc := da.position + da.size * 0.5
+		_check("the divider apex sits ON the centreline, under the throat",
+			absf(dc.x) < 0.02 and da.position.y + da.size.y < y_thr + 0.01
+				and da.position.y + da.size.y > y_thr - 0.10,
+			"apex x %.4f, apex y %.4f vs throat %.4f" % [dc.x,
+				da.position.y + da.size.y, y_thr])
+
 	print("[PHOTO0906] RESULT: %d ok, %d fail" % [_ok, _fail])
 	print("RESULT: %s" % ("PASS" if _fail == 0 else "FAIL"))
 	get_tree().quit(0 if _fail == 0 else 1)
@@ -380,6 +439,14 @@ func _region(boxes: Array, x0: float, x1: float, y0: float, y1: float,
 		if c.x >= x0 and c.x <= x1 and c.y >= y0 and c.y <= y1 and c.z >= z0 and c.z <= z1:
 			hit.append(a)
 	return hit
+
+func _lowest(boxes: Array) -> AABB:
+	var best: AABB = boxes[0]
+	for b in boxes:
+		var a: AABB = b
+		if a.position.y + a.size.y * 0.5 < best.position.y + best.size.y * 0.5:
+			best = a
+	return best
 
 func _union(boxes: Array) -> AABB:
 	if boxes.is_empty():
