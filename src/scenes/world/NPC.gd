@@ -520,16 +520,14 @@ func _physics_process(delta: float) -> void:
 	# (or the board hands one out this tick), it owns the target_position.
 	# Falls through to the legacy wander/managed code path only when idle.
 	_autonomy_tick(delta)
-	if _autonomy_destination_active:
-		# Task is steering the NPC; skip the free-wander / managed-post motion
-		# decisions and let the locomotion code drive the body toward
-		# target_position. The task's tick() will clear the destination when
-		# it advances or completes.
-		pass
-	elif not managed:
-		_update_wander(delta)            # legacy free wander
-	else:
-		_managed_motion(delta)
+	# If an autonomy task is steering the NPC, skip the free-wander / managed-post
+	# motion decisions and let the locomotion code drive the body toward target_position.
+	# The task's tick() will clear the destination when it advances or completes.
+	if not _autonomy_destination_active:
+		if not managed:
+			_update_wander(delta)            # legacy free wander
+		else:
+			_managed_motion(delta)
 
 	# Phase 2 (#146): pick / apply the locomotion state (IDLE / WALK / CROUCH /
 	# JUMP / PRONE) BEFORE deriving velocity so the speed multiplier + jump
