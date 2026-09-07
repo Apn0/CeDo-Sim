@@ -310,10 +310,20 @@ func _load() -> void:
 		return
 	var f := FileAccess.open(LAYOUT_PATH, FileAccess.READ)
 	if f == null: return
-	var parsed = JSON.parse_string(f.get_as_text())
+	var json = JSON.new()
+	var error = json.parse(f.get_as_text())
+	if error != OK:
+		push_warning("[WorldLayout] %s failed to parse: %s" % [LAYOUT_PATH, json.get_error_message()])
+		return
+	var parsed = json.get_data()
 	if typeof(parsed) != TYPE_DICTIONARY:
 		push_warning("[WorldLayout] %s is not a JSON object — ignoring" % LAYOUT_PATH)
 		return
+
+	if _get_max_depth(parsed) > 64:
+		push_warning("[WorldLayout] %s is too deeply nested — ignoring to prevent stack overflow" % LAYOUT_PATH)
+		return
+
 	# Frame check FIRST — everything below decides what to trust based on it.
 	_check_marker_frame(parsed)
 	factory_center = _read_v3(parsed.get("factory_center", {}))
@@ -455,6 +465,22 @@ func _load() -> void:
 		c /= float(corners.size())
 		var d := Vector2(c.x - player_spawn.x, c.z - player_spawn.z).length()
 		print("    yard '%s' : %.1f m away (centroid)" % [(y as Dictionary).get("supplier_id", "?"), d])
+
+func _get_max_depth(val: Variant, current_depth: int = 1, limit: int = 64) -> int:
+	if current_depth > limit:
+		return current_depth
+	var max_d = current_depth
+	if typeof(val) == TYPE_DICTIONARY:
+		for key in val:
+			var d = _get_max_depth(val[key], current_depth + 1, limit)
+			if d > limit: return d
+			if d > max_d: max_d = d
+	elif typeof(val) == TYPE_ARRAY:
+		for item in val:
+			var d = _get_max_depth(item, current_depth + 1, limit)
+			if d > limit: return d
+			if d > max_d: max_d = d
+	return max_d
 
 # ── JSON helpers ─────────────────────────────────────────────────────────────
 func _v3(v: Vector3) -> Dictionary:
