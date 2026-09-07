@@ -249,9 +249,6 @@ func _advance_proc(delta: float) -> void:
 			if _proc_t >= T_SWAP_REPRESSURIZE_S:
 				_proc = Proc.IDLE
 				_proc_t = 0.0
-		_:
-			# Repack states are E-driven, nothing to do here.
-			pass
 
 func _advance_repack_step() -> void:
 	_proc_t = 0.0
