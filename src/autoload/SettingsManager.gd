@@ -564,6 +564,17 @@ func _apply_keybinds() -> void:
 ## is never re-saved — leaving F10 to feedback alone. Runs after every keybind
 ## apply, so no saved config can reintroduce the collision.
 func _reserve_feedback_key() -> void:
+	# 1. Sweep the live InputMap to catch ALL actions (including ui_* and runtime ones)
+	for action in InputMap.get_actions():
+		if String(action) == "feedback_capture":
+			continue
+		for ev in InputMap.action_get_events(action):
+			if ev is InputEventKey:
+				var evk := ev as InputEventKey
+				if evk.keycode == KEY_F10 or evk.physical_keycode == KEY_F10:
+					InputMap.action_erase_event(action, ev)
+
+	# 2. Sweep the in-memory model so it doesn't get saved to settings
 	for action in _current_keybinds.keys():
 		if action == "feedback_capture":
 			continue
@@ -574,13 +585,9 @@ func _reserve_feedback_key() -> void:
 				var evk := ev as InputEventKey
 				if evk.keycode == KEY_F10 or evk.physical_keycode == KEY_F10:
 					is_f10 = true
-			if is_f10:
-				if InputMap.has_action(action):
-					InputMap.action_erase_event(action, ev)
-			else:
+			if not is_f10:
 				kept.append(ev)
 		_current_keybinds[action] = kept
-
 func _apply_fov_to_current_camera() -> void:
 	# Defer one frame so the camera is current after a display mode change.
 	call_deferred("_set_fov_on_current_camera")
