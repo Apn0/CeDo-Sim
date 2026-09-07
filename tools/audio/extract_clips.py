@@ -124,10 +124,11 @@ def main() -> int:
             shutil.rmtree(stage)
         stage.mkdir(parents=True)
 
+    VALID_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
     for entry in layout:
-        if not re.match(r"^[A-Za-z0-9_.-]+$", entry["clip_name"]):
+        if not VALID_NAME_RE.match(entry["clip_name"]):
             sys.exit(f"Invalid clip_name: {entry['clip_name']}")
-        if not re.match(r"^[A-Za-z0-9_.-]+$", entry["source_file"]):
+        if not VALID_NAME_RE.match(entry["source_file"]):
             sys.exit(f"Invalid source_file: {entry['source_file']}")
 
         name = entry["clip_name"]
