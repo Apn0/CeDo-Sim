@@ -3,7 +3,7 @@ extends Node
 ##
 ##   godot --headless --path . res://src/tests/test_line1_no_false_overload.tscn
 ##
-## Regression guard for the 2026-08-29 MotorOverload bug: LineFlow used to call
+## Regression guard for the 2026-08-29 MotorOverload historical defect: LineFlow used to call
 ## `mol.add_load(_backlog_kg)` EVERY TICK, where `_backlog_kg` is the node's
 ## CURRENT BUFFER LEVEL (a stock), not a one-off inflow event — so a machine
 ## comfortably processing a small, stable queue still had that same standing
