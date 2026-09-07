@@ -96,6 +96,8 @@ func set_first_person_camera(cam: Camera3D) -> void:
 		_cab_initial_xf = cam.transform
 	if _active:
 		_apply_active_camera()
+	elif cam:
+		cam.current = false
 
 ## Take ownership of the viewport. Activates the current mode's camera.
 ## Called by PlayerController._ready and by BaseVehicle.on_operator_entered.
