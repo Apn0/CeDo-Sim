@@ -142,7 +142,7 @@ func _init() -> void:
 	m4.tick(DT)
 	_ok(m4.current_amps < m4.trip_threshold, "cleared motor runs normally (under threshold) after reset(true)")
 
-	# ── 6. set_load() — the 2026-08-29 bug this method exists to fix ───────────
+	# ── 6. set_load() — the 2026-08-29 historical defect this method exists to fix ───────────
 	# LineFlow.gd used to call add_load(_backlog_kg) EVERY TICK, where
 	# _backlog_kg is a STOCK (the buffer's current level), not a one-off inflow
 	# event — so the same standing kg got re-counted as fresh load forever.
