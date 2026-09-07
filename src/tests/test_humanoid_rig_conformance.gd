@@ -28,6 +28,10 @@ func _bone_angle_deg(skel: Skeleton3D, bone: String) -> float:
 	var q : Quaternion = skel.get_bone_pose_rotation(skel.find_bone(bone))
 	return rad_to_deg(2.0 * acos(clampf(absf(q.w), -1.0, 1.0)))
 
+func _bone_idx_angle_deg(skel: Skeleton3D, bone_idx: int) -> float:
+	var q : Quaternion = skel.get_bone_pose_rotation(bone_idx)
+	return rad_to_deg(2.0 * acos(clampf(absf(q.w), -1.0, 1.0)))
+
 ## World-space vertical extent of every mesh in the rig — the same measurement
 ## probe_stance_extents prints. Used to prove a pose neither sinks through the
 ## floor nor merely pretends to crouch.
@@ -114,9 +118,10 @@ func _run() -> void:
 		await get_tree().process_frame
 	atree.set("parameters/locomotion/blend_position", Vector2(1.0, 0.0))
 	var max_swing : float = 0.0
+	var l_upper_leg_idx : int = skel.find_bone("LUpperLeg")
 	for _f in 90:
 		await get_tree().process_frame
-		max_swing = maxf(max_swing, _bone_angle_deg(skel, "LUpperLeg"))
+		max_swing = maxf(max_swing, _bone_idx_angle_deg(skel, l_upper_leg_idx))
 	_check(max_swing >= 15.0, "walk cycle swings LUpperLeg (peak %.1f°, statue would be ~0°)" % max_swing)
 	# Jump: travel and confirm the tuck lands on the bone (60 frames ≈ 1 s so
 	# the 0.25 s crossfade is fully finished before the gate reads the bone).
@@ -137,21 +142,24 @@ func _run() -> void:
 	# Prone: whole chain flat AND face-down. The face-down sign is the +90°
 	# Hips X rotation — the -90° regression (face-up, arms skyward) keys the
 	# quaternion with a NEGATIVE x component.
+	var ba_head := skel.get_node("BA_Head") as Node3D
+	var ba_lfoot := skel.get_node("BA_LFoot") as Node3D
 	pb.travel("prone")
 	for _f3 in 60:
 		await get_tree().process_frame
 	var hips_q : Quaternion = skel.get_bone_pose_rotation(skel.find_bone("Hips"))
 	_check(hips_q.x > 0.6, "prone is FACE-DOWN (+90° Hips pitch; face-up bug had x=%.2f)" % hips_q.x)
-	var head_y : float = (skel.get_node("BA_Head") as Node3D).global_position.y
-	var foot_y : float = (skel.get_node("BA_LFoot") as Node3D).global_position.y
+	var head_y : float = ba_head.global_position.y
+	var foot_y : float = ba_lfoot.global_position.y
 	_check(head_y < -0.2, "prone lays the HEAD near the floor (y=%.2f)" % head_y)
 	_check(foot_y < 0.0, "prone lays the FEET down too — the standing-legs bug (y=%.2f)" % foot_y)
 	# Ground poses must not sink through the floor: the standing sole sits at
 	# y = -0.90, so nothing may go below that. (Measured with
 	# probe_stance_extents; prone was -0.97 and crouch -0.97 before the fix.)
-	_check(_lowest_mesh_y(body) > -0.92,
+	var prone_low_y : float = _lowest_mesh_y(body)
+	_check(prone_low_y > -0.92,
 		"prone rests ON the floor plane, not through it (low %.2f, stand sole -0.90)"
-		% _lowest_mesh_y(body))
+		% prone_low_y)
 	# Crouch must be a REAL crouch. The first cut measured 1.70 m against a
 	# 1.78 m stand — a 4%% squat the operator read as "crouching does nothing".
 	pb.travel("crouch")
@@ -159,8 +167,9 @@ func _run() -> void:
 		await get_tree().process_frame
 	var crouch_h : float = _height(body)
 	_check(crouch_h < 1.50, "crouch actually crouches (%.2f m vs 1.78 m standing)" % crouch_h)
-	_check(_lowest_mesh_y(body) > -0.92 and _lowest_mesh_y(body) < -0.85,
-		"crouch keeps the feet PLANTED on the floor plane (low %.2f)" % _lowest_mesh_y(body))
+	var crouch_low_y : float = _lowest_mesh_y(body)
+	_check(crouch_low_y > -0.92 and crouch_low_y < -0.85,
+		"crouch keeps the feet PLANTED on the floor plane (low %.2f)" % crouch_low_y)
 
 	# ── S3 — rebuild_appearance keeps exactly ONE body ──────────────────────
 	print("  -- S3: rebuild one-body guard --")
