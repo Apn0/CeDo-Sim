@@ -31,6 +31,8 @@ WELD_Q = 1000.0  # weld tolerance: round positions to 1 mm
 # RD coordinates, and picking the connected component it falls inside.
 
 
+_layout_cache = {}
+
 def find_factory_center_rd(obj_aabb_center):
     """Return (rd_x, rd_z) of the factory_center marker, or None if unavailable."""
     appdata = os.environ.get("APPDATA", "")
@@ -40,7 +42,10 @@ def find_factory_center_rd(obj_aabb_center):
     for path in candidates:
         if os.path.isfile(path):
             try:
-                d = json.load(open(path))
+                if path not in _layout_cache:
+                    with open(path, "r", encoding="utf-8") as f:
+                        _layout_cache[path] = json.load(f)
+                d = _layout_cache[path]
                 fc = d.get("factory_center")
                 if fc and (fc.get("x") or fc.get("z")):
                     # local -> RD: WorldSetup shifts the model by -aabb_center, so
