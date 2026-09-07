@@ -13,8 +13,8 @@ extends Node3D
 ##   set_param(key, value) -> void
 
 const FEATURES : Array = [
-	"res://src/scenes/menus/feature_tester/WaterPipeFeature.gd",
-	"res://src/scenes/menus/feature_tester/BaleClampDeformationFeature.gd",
+	preload("res://src/scenes/menus/feature_tester/WaterPipeFeature.gd"),
+	preload("res://src/scenes/menus/feature_tester/BaleClampDeformationFeature.gd"),
 ]
 
 var _feature_root : Node3D = null
@@ -103,7 +103,7 @@ func _build_ui() -> void:
 	if FEATURES.size() > 1:
 		var picker := OptionButton.new()
 		for i in FEATURES.size():
-			var f := load(FEATURES[i]).new() as Node
+			var f := FEATURES[i].new() as Node
 			picker.add_item(f.call("feature_title") if f.has_method("feature_title") else "Feature %d" % i, i)
 			f.free()
 		picker.item_selected.connect(_load_feature)
@@ -125,9 +125,9 @@ func _load_feature(idx: int) -> void:
 	for ch in _dials_box.get_children():
 		ch.queue_free()
 
-	var script := load(FEATURES[idx])
+	var script = FEATURES[idx]
 	if script == null:
-		push_error("[FeatureTester] could not load feature %s" % FEATURES[idx])
+		push_error("[FeatureTester] could not load feature at index %d" % idx)
 		return
 	_feature = script.new() as Node3D
 	_feature_root.add_child(_feature)
