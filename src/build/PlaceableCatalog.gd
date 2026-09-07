@@ -1173,6 +1173,7 @@ const _INTAKE_BELT_SPEED_MPS : float = 0.5
 # = downstream flow. *0.25 keeps the apparent slat march matching the carry
 # meta (0.5 m/s) — the texture's internal slat period adds the missing factor.
 const _INTAKE_BELT_SHADER_SCROLL : float = _INTAKE_BELT_SPEED_MPS * 0.25
+const _RM_SCRIPT := preload("res://src/sim/RotatingMechanism.gd")
 ## `simple` builds a cheap LOD model for bales (single box + minimal wire bands)
 ## instead of the full ~10-sheet + 24-wire-segment model — used to fill bale
 ## yards (hundreds of bales) without thousands of draw calls. A simple bale is
@@ -2367,7 +2368,7 @@ static func _spinning_auger(parent: Node3D, length: float, pos: Vector3, shaft_r
 	if ghost:
 		_auger(parent, length, pos, shaft_r, flight_r, shaft_mat, flight_mat)
 		return
-	var rm = preload("res://src/sim/RotatingMechanism.gd").new()
+	var rm = _RM_SCRIPT.new()
 	rm.axis = Vector3.BACK            # spin about the screw's long (Z) axis
 	rm.rpm = rpm
 	rm.nominal_rpm = rpm
@@ -2389,7 +2390,7 @@ static func _spinning_cyl(parent: Node3D, r_top: float, r_bot: float, length: fl
 	if ghost:
 		_cyl(parent, r_top, r_bot, length, pos, mat, cyl_axis)
 		return parent
-	var rm = preload("res://src/sim/RotatingMechanism.gd").new()
+	var rm = _RM_SCRIPT.new()
 	rm.axis = spin_axis
 	rm.rpm = rpm
 	rm.nominal_rpm = rpm
@@ -2437,7 +2438,7 @@ static func _spinning_tube(parent: Node3D, radius: float, length: float, pos: Ve
 	if ghost:
 		_tube(parent, radius, length, pos, mat, rot_x)
 		return parent
-	var rm = preload("res://src/sim/RotatingMechanism.gd").new()
+	var rm = _RM_SCRIPT.new()
 	rm.axis = spin_axis
 	rm.rpm = rpm
 	rm.nominal_rpm = rpm
@@ -2512,9 +2513,8 @@ static func _m_overband_magnet(p: Node3D, size: Vector3, _color: Color, ghost: b
 
 	# Rotating cross-belt drums & cleated rubber belt
 	if not ghost:
-		var rm_script := preload("res://src/sim/RotatingMechanism.gd")
 		for zz in [-hz * 0.75, hz * 0.75]:
-			var rm = rm_script.new()
+			var rm = _RM_SCRIPT.new()
 			rm.axis = Vector3.RIGHT; rm.rpm = 40.0; rm.nominal_rpm = 40.0; rm.capacity_kg_s = 1.0
 			rm.position = Vector3(0.0, size.y * 0.80, zz)
 			p.add_child(rm)
@@ -2573,9 +2573,8 @@ static func _scraper_conveyor_extras(p: Node3D, _deck_root: Node3D, size: Vector
 	_box(inc, Vector3(size.x * 0.7, size.y * 0.25, size.z * 0.7), Vector3(0.0, 0.0, size.z * 0.35), steel)
 	_box(p, Vector3(size.x * 0.5, size.y * 0.2, 0.5), Vector3(0.0, size.y * 0.92, hz * 0.9), dark)
 	if not ghost:
-		var rm_script := preload("res://src/sim/RotatingMechanism.gd")
 		for zz in [-hz * 0.7, hz * 0.05]:
-			var rm = rm_script.new()
+			var rm = _RM_SCRIPT.new()
 			rm.axis = Vector3.RIGHT; rm.rpm = 12.0; rm.nominal_rpm = 12.0; rm.capacity_kg_s = 3.0
 			rm.position = Vector3(0.0, size.y * 0.25, zz)
 			p.add_child(rm)
@@ -4336,7 +4335,7 @@ static func _m_blower(p: Node3D, size: Vector3, color: Color, ghost: bool) -> vo
 	# Spinning impeller visible at the +X inlet eye: a hub + radial blades on a
 	# RotatingMechanism (axis X) so the fan obviously turns.
 	if not ghost:
-		var imp := preload("res://src/sim/RotatingMechanism.gd").new()
+		var imp := _RM_SCRIPT.new()
 		imp.axis = Vector3.RIGHT; imp.rpm = 220.0; imp.nominal_rpm = 220.0; imp.capacity_kg_s = 1.0
 		imp.position = Vector3(size.x * 0.24, size.y * 0.5, 0.0)
 		p.add_child(imp)
