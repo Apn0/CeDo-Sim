@@ -172,6 +172,29 @@ func _ready() -> void:
 		hint = hud.get_node_or_null("TutorialHint") as Label
 		_ok(hint == null or not hint.visible, "tutorial_hints=false → TutorialHint hidden")
 
+	# ── 10. set_pending and set_pending_keybind API ────────────────────────
+	_section("set_pending API")
+	sm.set_pending("graphics", "test_graphics_key", "gfx_val")
+	sm.set_pending("audio", "test_audio_key", 42.5)
+	sm.set_pending("gameplay", "test_gameplay_key", true)
+
+	var mock_event := InputEventKey.new()
+	mock_event.keycode = KEY_Y
+	sm.set_pending_keybind("test_action", [mock_event])
+
+	var p_gfx = sm.pending_graphics()
+	_ok(p_gfx.get("test_graphics_key") == "gfx_val", "set_pending(graphics) → pending_graphics has key")
+
+	var p_aud = sm.pending_audio()
+	_ok(p_aud.get("test_audio_key") == 42.5, "set_pending(audio) → pending_audio has key")
+
+	var p_gp = sm.pending_gameplay()
+	_ok(p_gp.get("test_gameplay_key") == true, "set_pending(gameplay) → pending_gameplay has key")
+
+	var p_kb = sm.pending_keybinds()
+	var events : Array = p_kb.get("test_action", [])
+	_ok(events.size() == 1 and events[0] is InputEventKey and events[0].keycode == KEY_Y, "set_pending_keybind() → pending_keybinds has event")
+
 	_finish()
 
 func _finish() -> void:
