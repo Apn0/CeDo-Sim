@@ -1680,18 +1680,16 @@ static func _default_components_for(id: String) -> Dictionary:
 	elif lid.find("shredder") >= 0 or lid.find("mill") >= 0:
 		out["rotor"] = 1.0
 	elif lid.find("bunker") >= 0:
-		# 2026-07-06 bunker rebuild (bunker.md): the machine is now a travelling
+		# 2026-07-06 bunker rebuild: the machine is now a travelling
 		# buffer CONVEYOR with ONE discharge bunkerrol (SWI-039), not a 4-roller
 		# bank. The component KEY stays the legacy "uittrekrol" so old saves and
-		# existing HMI addressing keep working (bunker.md flag F15) — the catalog
+		# existing HMI addressing keep working (legacy flag F15) — the catalog
 		# tags the new bunkerrol's RotatingMechanism with comp == "uittrekrol".
 		# Documented names are "belt" (deck drive) + "bunkerrol"; rename here and
 		# in the catalog together in a dedicated save-migration pass.
 		# Bunker/shredder-2 MOL interlock: see _tick_bunker_shredder2_interlock()
-		# below. (Was TODO-cited to "bunker.md §3.3" — that doc does not exist
-		# anywhere in the repo, confirmed by the 2026-08-18 catalog audit,
-		# findings C7/H14; the interlock itself is implemented per operator
-		# instruction 2026-08-26, not per that citation.)
+		# below. (The interlock is implemented per operator
+		# instruction 2026-08-26.)
 		# Relay trips (ruling B3 2026-07-06): speed settings BELOW 200
 		# (settable, sim cap 1000) fire relay-trip/motor-stall events
 		# ~every 15 min, worse the lower. Handled in _tick_advanced_systems.
