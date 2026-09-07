@@ -649,5 +649,22 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/customizer_world_bodies.l
 	[ $code -eq 0 ] && code=1
 fi
 
+# Gate is_fully_closed specific test to ensure explicit coverage of this function
+
+echo "== Gate is_fully_closed specific test =="
+
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_gate_is_fully_closed.gd --quit-after 300 > "$OUT/gate_is_fully_closed.log" 2>&1
+
+grep -aE "^  (ok|FAIL)  |^Result:" "$OUT/gate_is_fully_closed.log" || true
+
+if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/gate_is_fully_closed.log"; then
+
+	echo "FAIL  : Gate is_fully_closed specific test (see $OUT/gate_is_fully_closed.log)"
+
+	[ $code -eq 0 ] && code=1
+
+fi
+
+
 echo "== done (exit $code) — see $OUT/topdown.png =="
 exit $code
