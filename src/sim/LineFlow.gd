@@ -2992,7 +2992,6 @@ func _dump_waste(pos: Vector3, w: MaterialBatch, containers: Array, cls: int = -
 			leftover = pile.call("add", leftover, _stream_density(cls))
 	# Anything still rejected (pile maxed too) is silently lost at this layer — the
 	# waste_mass counter at the call site keeps the ledger.
-	pass
 
 ## #154 — drop a fresh FloorPile directly under a chute mouth that nothing is
 ## catching. Coloured by stream so reject heaps read differently (dirt vs film).

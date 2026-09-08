@@ -340,12 +340,8 @@ func load_model() -> void:
 	# (e.g. Swift's driver-door / passenger-door proximity triggers) plug in
 	# AFTER the canonical wrap + auto-ruler + classify path has finished —
 	# so each car script no longer has to duplicate the whole loader/walker.
-	_post_load_hook()
-
-## Subclass override point — called by load_model() after wheels/doors/glass/
-## steering/seat have all been wired. Default no-op.
-func _post_load_hook() -> void:
-	pass
+	if has_method("_post_load_hook"):
+		call("_post_load_hook")
 
 ## Look up the wrapped door pivots that were created by _articulate_doors_generic.
 ## Subclasses use this to install door-proximity triggers without re-walking

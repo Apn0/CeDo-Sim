@@ -150,8 +150,8 @@ def main() -> int:
         dur = float(entry["end_s"]) - start
         subprocess.run(  # nosec B603
             [ffmpeg(), "-v", "error", "-y", "-ss", str(start), "-t", f"{dur:.3f}",
-             "-i", str(src), "-vn", "-acodec", CODEC,
-             "-ar", str(SAMPLE_RATE), "-ac", str(CHANNELS), str(stage / f"{name}.wav")],
+             "-i", str(src.absolute()), "-vn", "-acodec", CODEC,
+             "-ar", str(SAMPLE_RATE), "-ac", str(CHANNELS), str((stage / f"{name}.wav").absolute())],
             check=True,
         )
         made += 1

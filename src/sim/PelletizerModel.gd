@@ -34,8 +34,6 @@ func tick(delta_s : float, running : bool) -> void:
 				if _accum_h[i] >= KNIFE_DECAY_HOURS_FOUTIEF_TO_BESCHADIGD:
 					knife_states[i] = KnifeState.BESCHADIGD
 					_accum_h[i] = 0.0
-			_:
-				pass
 
 func count_worn_knives() -> int:
 	var n := 0

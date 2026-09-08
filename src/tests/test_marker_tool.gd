@@ -23,10 +23,36 @@ func _check(cond: bool, msg: String) -> void:
 func _ready() -> void:
 	print("=== MarkerTool headless proof ===")
 	_test_pure_math()
+	_test_place_method()
 	_test_place_and_persist()
 	await _test_live_raycast()
 	print("Result: %s" % ("PASS" if _fails == 0 else "FAIL (%d)" % _fails))
 	get_tree().quit(0 if _fails == 0 else 1)
+
+# ── place() direct method test ────────────────────────────────────────────────
+func _test_place_method() -> void:
+	print("[place method]")
+	var mt : Node3D = MarkerToolScript.new()
+	add_child(mt)
+
+	mt.markers.clear()
+	mt._has_point = false
+	mt.place()
+	_check(mt.markers.size() == 0, "place() does nothing when _has_point is false")
+
+	mt._has_point = true
+	mt._last_point = Vector3(1, 2, 3)
+	mt._last_ctx = {"test_key": "val"}
+	mt.place()
+
+	_check(mt.markers.size() == 1, "place() adds a marker when _has_point is true")
+	var m : Dictionary = mt.markers[0]
+	_check(m["index"] == 1, "marker index is 1")
+	var w : Array = m["world_point"]
+	_check(w[0] == 1.0 and w[1] == 2.0 and w[2] == 3.0, "marker world_point matches _last_point")
+	_check(m.get("test_key") == "val", "marker context inherits _last_ctx values")
+
+	mt.queue_free()
 
 # ── pure snap math ────────────────────────────────────────────────────────────
 func _test_pure_math() -> void:

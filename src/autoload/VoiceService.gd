@@ -514,7 +514,7 @@ func _exec_tool(tool_path: String, args: Array, output: Array) -> int:
 		return -1
 
 	var re := RegEx.new()
-	re.compile("[&|;<>`$\n\r%\\^]")
+	re.compile("[&|;<>`$\n\r%\\^\\\"'\\\\()\\[\\]\\{\\}!\\*\\?\\~]")
 	for arg in args:
 		var s := String(arg)
 		if re.search(s) != null:
