@@ -677,6 +677,22 @@ fi
 
 # Gate is_fully_closed specific test to ensure explicit coverage of this function
 
+echo "== camera rig set first person camera =="
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_camera_rig_set_first_person_camera.gd --quit-after 300 > "$OUT/camera_rig_set_first_person_camera.log" 2>&1
+grep -aE "^  (ok|FAIL)|^Result" "$OUT/camera_rig_set_first_person_camera.log" || true
+if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/camera_rig_set_first_person_camera.log"; then
+	echo "FAIL  : camera rig set first person camera (see $OUT/camera_rig_set_first_person_camera.log)"
+	[ $code -eq 0 ] && code=1
+fi
+
+echo "== camera rig active =="
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_camera_rig_active.gd --quit-after 300 > "$OUT/camera_rig_active.log" 2>&1
+grep -aE "^  (ok|FAIL)|^Result" "$OUT/camera_rig_active.log" || true
+if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/camera_rig_active.log"; then
+	echo "FAIL  : camera rig active (see $OUT/camera_rig_active.log)"
+	[ $code -eq 0 ] && code=1
+fi
+
 echo "== Gate is_fully_closed specific test =="
 
 "$GODOT" --headless --path "$PROJ" --script res://src/tests/test_gate_is_fully_closed.gd --quit-after 300 > "$OUT/gate_is_fully_closed.log" 2>&1
