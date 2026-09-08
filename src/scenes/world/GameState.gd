@@ -117,11 +117,15 @@ func load_game() -> void:
 				push_error("Save file root is not a JSON object")
 				return
 
-			is_new_save = data.get("is_new_save", false)
+			is_new_save = data.get("is_new_save", false) if typeof(data.get("is_new_save")) == TYPE_BOOL else false
 			
 			var fc = data.get("factory_center", {})
 			if typeof(fc) == TYPE_DICTIONARY and fc.has("x"):
-				factory_center = Vector3(fc["x"], fc.get("y", 0), fc.get("z", 0))
+				var fx = fc.get("x")
+				var fy = fc.get("y", 0)
+				var fz = fc.get("z", 0)
+				if (typeof(fx) in [TYPE_FLOAT, TYPE_INT]) and (typeof(fy) in [TYPE_FLOAT, TYPE_INT]) and (typeof(fz) in [TYPE_FLOAT, TYPE_INT]):
+					factory_center = Vector3(float(fx), float(fy), float(fz))
 				
 			shift_data = data.get("shift", {}) if typeof(data.get("shift")) == TYPE_DICTIONARY else {}
 			player_data = data.get("player", {}) if typeof(data.get("player")) == TYPE_DICTIONARY else {}
