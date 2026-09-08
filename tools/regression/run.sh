@@ -495,6 +495,24 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/silo_level_sensor.log"; t
 fi
 
 
+# SettingsManager.set_pending_keybind
+
+echo "== SettingsManager set_pending_keybind =="
+
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_settings_manager_pending_keybinds.gd --quit-after 300 > "$OUT/settings_manager_pending_keybinds.log" 2>&1
+
+grep -aE "^  (ok|FAIL)  |^Result:" "$OUT/settings_manager_pending_keybinds.log" || true
+
+if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/settings_manager_pending_keybinds.log"; then
+
+	echo "FAIL  : SettingsManager pending keybinds (see $OUT/settings_manager_pending_keybinds.log)"
+
+	[ $code -eq 0 ] && code=1
+
+fi
+
+
+
 # =============================================================================
 # 2026-08-31 REVIEW SUITES. Nine suites from the external review of that date
 # (docs/audit/review_findings_2026-08-31.md): eight new + test_inventory, which
