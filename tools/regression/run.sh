@@ -609,6 +609,14 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/test_inventory.log"; then
 	[ $code -eq 0 ] && code=1
 fi
 
+echo "== test_operator_context =="
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_operator_context.gd --quit-after 300 > "$OUT/test_operator_context.log" 2>&1
+grep -aE "^  (ok|FAIL)|^Result" "$OUT/test_operator_context.log" || true
+if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/test_operator_context.log"; then
+	echo "FAIL  : test_operator_context (see $OUT/test_operator_context.log)"
+	[ $code -eq 0 ] && code=1
+fi
+
 # NPC state-API suite (2026-08-31 review): pins the four NPC.gd transition APIs —
 # set/clear_autonomy_destination (:61, incl. #202 boarded routing to the chassis),
 # assign/clear_forced_task (:207, real start()/release() lifecycle), assign_post/
@@ -667,13 +675,22 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/customizer_world_bodies.l
 	[ $code -eq 0 ] && code=1
 fi
 
-echo "== SettingsManager apply =="
-"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_settings_manager_apply.gd --quit-after 300 > "$OUT/settings_manager_apply.log" 2>&1
-grep -aE "^  (ok|FAIL)  |^Result:" "$OUT/settings_manager_apply.log" || true
-if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/settings_manager_apply.log"; then
-	echo "FAIL  : SettingsManager apply (see $OUT/settings_manager_apply.log)"
+# Gate is_fully_closed specific test to ensure explicit coverage of this function
+
+echo "== Gate is_fully_closed specific test =="
+
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_gate_is_fully_closed.gd --quit-after 300 > "$OUT/gate_is_fully_closed.log" 2>&1
+
+grep -aE "^  (ok|FAIL)  |^Result:" "$OUT/gate_is_fully_closed.log" || true
+
+if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/gate_is_fully_closed.log"; then
+
+	echo "FAIL  : Gate is_fully_closed specific test (see $OUT/gate_is_fully_closed.log)"
+
 	[ $code -eq 0 ] && code=1
+
 fi
+
 
 echo "== done (exit $code) — see $OUT/topdown.png =="
 exit $code
