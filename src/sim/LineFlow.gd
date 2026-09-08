@@ -1029,9 +1029,18 @@ func _tick_dryer_pairs(delta: float) -> void:
 			cyc.dryer.tick(delta, inflow, outflow)
 		cyc.tick(delta)
 
-		# Drive the visual gates if they exist
-		var n3d : Node3D = nd.get("node", null) as Node3D
-		if n3d != null and is_instance_valid(n3d):
+		# Drive the visual gates if they exist.
+		# is_instance_valid runs BEFORE the cast, not after it. `as Node3D` on a
+		# freed object throws "Trying to cast a freed object" and returns before
+		# the guard below ever executes, so the guard the author wrote here was
+		# unreachable for exactly the case it was written for. Measured at
+		# 5a02158 on 2026-09-06: 7 throws per test_line3c_identity boot, inside a
+		# suite printing "Result: 25 ok, 0 fail" — the code was failing and the
+		# green was blind to it. Behaviour is unchanged: a freed node was never
+		# usable, it is now skipped quietly instead of throwing.
+		var raw : Variant = nd.get("node", null)
+		var n3d : Node3D = (raw as Node3D) if is_instance_valid(raw) else null
+		if n3d != null:
 			var bg = n3d.get_node_or_null("besch_gate")
 			if bg != null:
 				bg.visible = bool(cyc.besch_open)
