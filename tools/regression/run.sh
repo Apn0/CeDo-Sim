@@ -609,6 +609,14 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/test_inventory.log"; then
 	[ $code -eq 0 ] && code=1
 fi
 
+echo "== test_operator_context =="
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_operator_context.gd --quit-after 300 > "$OUT/test_operator_context.log" 2>&1
+grep -aE "^  (ok|FAIL)|^Result" "$OUT/test_operator_context.log" || true
+if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/test_operator_context.log"; then
+	echo "FAIL  : test_operator_context (see $OUT/test_operator_context.log)"
+	[ $code -eq 0 ] && code=1
+fi
+
 # NPC state-API suite (2026-08-31 review): pins the four NPC.gd transition APIs —
 # set/clear_autonomy_destination (:61, incl. #202 boarded routing to the chassis),
 # assign/clear_forced_task (:207, real start()/release() lifecycle), assign_post/
