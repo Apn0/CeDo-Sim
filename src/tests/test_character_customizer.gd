@@ -33,12 +33,12 @@ func _ready() -> void:
 	_check(Input.mouse_mode == Input.MOUSE_MODE_VISIBLE, "Open sets mouse mode to visible")
 
 	# Test 2: Close(false) cancels and reverts state
-	var cancelled_emitted = false
-	cust.cancelled.connect(func(): cancelled_emitted = true)
+	var cancelled_box := [false]
+	cust.cancelled.connect(func(): cancelled_box[0] = true)
 
 	cust.close(false)
 
-	_check(cancelled_emitted, "Close(false) emits cancelled signal")
+	_check(cancelled_box[0], "Close(false) emits cancelled signal")
 	_check(get_tree().paused == initial_paused, "Close(false) reverts tree paused state")
 	_check(Input.mouse_mode == initial_mouse_mode, "Close(false) reverts mouse mode")
 	_check(not cust.committed, "Close(false) does not commit to gamestate")
@@ -52,12 +52,12 @@ func _ready() -> void:
 	add_child(cust2)
 	cust2.open() # Need to open to set _was_paused and _prev_mouse_mode
 
-	var saved_emitted = false
-	cust2.saved.connect(func(app): saved_emitted = true)
+	var saved_box := [false]
+	cust2.saved.connect(func(_app): saved_box[0] = true)
 
 	cust2.close(true)
 
-	_check(saved_emitted, "Close(true) emits saved signal")
+	_check(saved_box[0], "Close(true) emits saved signal")
 	_check(cust2.committed, "Close(true) commits to gamestate")
 
 	# Wait for queue_free to process
@@ -66,6 +66,8 @@ func _ready() -> void:
 
 	if _fails == 0:
 		print("[TEST] CharacterCustomizer PASS")
+		print("Result: PASS")
+		print("RESULT: PASS")
 	else:
 		print("[TEST] CharacterCustomizer FAIL (%d)" % _fails)
 

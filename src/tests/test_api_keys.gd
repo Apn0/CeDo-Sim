@@ -27,6 +27,8 @@ func _init() -> void:
 
 	print("\n=========================================")
 	print("Result: %d ok, %d fail" % [_pass, _fail])
+	if _fail == 0:
+		print("RESULT: PASS")
 	print("=========================================")
 	quit(0 if _fail == 0 else 1)
 
@@ -101,14 +103,7 @@ func _test_bootstrap_from_env() -> void:
 
 	# Verify it's encrypted on disk by loading it back
 	var check_cfg = ConfigFile.new()
-
-	# Can we load it using the new key?
-	var test_key = ""
-	var key_file = FileAccess.open(KEY_PATH, FileAccess.READ)
-	if key_file:
-		test_key = key_file.get_as_text().strip_edges()
-		key_file.close()
-
+	var test_key = OS.get_unique_id()
 	var enc_err = check_cfg.load_encrypted_pass(CFG_PATH, test_key)
 	_ok(enc_err == OK, "File can be loaded with the generated encryption key")
 
@@ -134,41 +129,35 @@ func _test_migration_from_plaintext() -> void:
 	_ok(api.google() == "plain_google", "Migrated Google key from plaintext")
 	_ok(api.openai() == "plain_openai", "Migrated OpenAI key from plaintext")
 
-	var test_key = ""
-	var key_file = FileAccess.open(KEY_PATH, FileAccess.READ)
-	if key_file:
-		test_key = key_file.get_as_text().strip_edges()
-		key_file.close()
-
 	var check_cfg = ConfigFile.new()
-	var secure_err = check_cfg.load_encrypted_pass(CFG_PATH, test_key)
+	var secure_err = check_cfg.load_encrypted_pass(CFG_PATH, OS.get_unique_id())
 	_ok(secure_err == OK, "File is now stored with the secure key")
 
 	api.free()
 
 func _test_migration_from_os_id() -> void:
-	print("\n[4] Migration from OS ID encryption")
+	print("\n[4] Migration from legacy key file encryption")
 	_clear_test_files()
 
+	var legacy_key := "legacy_secret_key_789"
 	var cfg = ConfigFile.new()
-	cfg.set_value("google", "api_key", "os_google")
-	cfg.set_value("openai", "api_key", "os_openai")
-	cfg.save_encrypted_pass(CFG_PATH, OS.get_unique_id())
+	cfg.set_value("google", "api_key", "legacy_google")
+	cfg.set_value("openai", "api_key", "legacy_openai")
+	cfg.save_encrypted_pass(CFG_PATH, legacy_key)
+
+	var kf = FileAccess.open(KEY_PATH, FileAccess.WRITE)
+	kf.store_string(legacy_key)
+	kf.close()
 
 	var api = MockApiKeys.new()
 	api._ready()
 
-	_ok(api.google() == "os_google", "Migrated Google key from OS ID encryption")
-	_ok(api.openai() == "os_openai", "Migrated OpenAI key from OS ID encryption")
+	_ok(api.google() == "legacy_google", "Migrated Google key from legacy key file")
+	_ok(api.openai() == "legacy_openai", "Migrated OpenAI key from legacy key file")
+	_ok(not FileAccess.file_exists(KEY_PATH), "Legacy key file was removed after migration")
 
 	var check_cfg = ConfigFile.new()
-	var test_key = ""
-	var key_file = FileAccess.open(KEY_PATH, FileAccess.READ)
-	if key_file:
-		test_key = key_file.get_as_text().strip_edges()
-		key_file.close()
-
-	var secure_err = check_cfg.load_encrypted_pass(CFG_PATH, test_key)
-	_ok(secure_err == OK, "File is now stored with the secure key")
+	var secure_err = check_cfg.load_encrypted_pass(CFG_PATH, OS.get_unique_id())
+	_ok(secure_err == OK, "File is now stored with the secure OS ID key")
 
 	api.free()

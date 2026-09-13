@@ -32,8 +32,10 @@ func _init() -> void:
 	_run()
 	if _fail == 0:
 		print("\nALL BALE-LOD CHECKS PASSED")
+		print("RESULT: PASS")
 	else:
 		print("\n%d CHECK(S) FAILED" % _fail)
+		print("RESULT: FAIL")
 	# Non-zero exit code on failure so CI / a shell `&&` chain can tell.
 	quit(0 if _fail == 0 else 1)
 

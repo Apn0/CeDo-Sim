@@ -1209,12 +1209,45 @@ func _on_leegdraaien() -> void:
 
 func _on_toggle_auto() -> void:
 	_automaat = not _automaat
+	if _line_flow != null and "_nodes" in _line_flow:
+		if _automaat:
+			_manual_run.clear()
+			for nd in _line_flow._nodes:
+				var nid := String(nd.get("id", ""))
+				var nline := String(nd.get("line", ""))
+				var nkey := String(nd.get("key", nid))
+				if _scope_has_node(nid, nline):
+					if _line_flow.has_method("set_machine_hand_mode"):
+						_line_flow.call("set_machine_hand_mode", nkey, false)
+		else:
+			for nd in _line_flow._nodes:
+				var nid := String(nd.get("id", ""))
+				var nline := String(nd.get("line", ""))
+				var nkey := String(nd.get("key", nid))
+				if _scope_has_node(nid, nline):
+					if _line_flow.has_method("set_machine_hand_mode"):
+						_line_flow.call("set_machine_hand_mode", nkey, true)
+					if _line_flow.has_method("set_machine_manual_on"):
+						_line_flow.call("set_machine_manual_on", nkey, false)
 	_refresh()
 
 func _on_manual_toggle(section: String) -> void:
 	if _automaat:
 		return                                  # HAND-modus required
-	_manual_run[section] = not bool(_manual_run.get(section, false))
+	var will_run := not bool(_manual_run.get(section, false))
+	_manual_run[section] = will_run
+	if _line_flow != null and "_nodes" in _line_flow:
+		var sec_def := _section_def(section)
+		var tokens : Array = sec_def.get("tokens", [])
+		for nd in _line_flow._nodes:
+			var nid := String(nd.get("id", ""))
+			var nline := String(nd.get("line", ""))
+			var nkey := String(nd.get("key", nid))
+			if _id_matches(nid, tokens) and _scope_has_node(nid, nline):
+				if _line_flow.has_method("set_machine_hand_mode"):
+					_line_flow.call("set_machine_hand_mode", nkey, true)
+				if _line_flow.has_method("set_machine_manual_on"):
+					_line_flow.call("set_machine_manual_on", nkey, will_run)
 	_refresh()
 
 func _on_kwitteren() -> void:
