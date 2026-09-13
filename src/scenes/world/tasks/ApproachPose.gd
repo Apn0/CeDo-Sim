@@ -54,13 +54,16 @@ static func for_target(target: Node3D, from: Node3D,
 	if to_veh.length_squared() < 0.01:
 		return centre
 	# Pick the horizontal face whose outward normal points most nearly at the
-	# vehicle. Aligning to the target's own axes (rather than just offsetting
-	# along the line of sight) puts the forklift square to the face it has to
-	# work against instead of at a corner.
+	# vehicle, preferring faces that are physically unobstructed (clear of machines/walls).
+	# Aligning to the target's own axes puts the forklift square to the face.
 	var half := _half_extents(target)
 	var best_n := Vector3.ZERO
 	var best_dot := -INF
 	var best_half := FALLBACK_HALF_M
+	var fallback_n := Vector3.ZERO
+	var fallback_dot := -INF
+	var fallback_half := FALLBACK_HALF_M
+
 	for axis in [target.global_transform.basis.x, target.global_transform.basis.z]:
 		for s in [1.0, -1.0]:
 			var n : Vector3 = (axis * s)
@@ -69,13 +72,48 @@ static func for_target(target: Node3D, from: Node3D,
 				continue
 			n = n.normalized()
 			var d : float = n.dot(to_veh.normalized())
-			if d > best_dot:
-				best_dot = d
-				best_n = n
-				best_half = half.x if axis == target.global_transform.basis.x else half.z
+			var h : float = half.x if axis == target.global_transform.basis.x else half.z
+			var candidate : Vector3 = centre + n * (h + standoff_m)
+			var is_free := _pose_free(target, candidate)
+			if is_free:
+				if d > best_dot:
+					best_dot = d
+					best_n = n
+					best_half = h
+			else:
+				if d > fallback_dot:
+					fallback_dot = d
+					fallback_n = n
+					fallback_half = h
+
+	if best_n == Vector3.ZERO:
+		best_n = fallback_n
+		best_half = fallback_half
 	if best_n == Vector3.ZERO:
 		return centre
 	return centre + best_n * (best_half + standoff_m)
+
+## Test whether a candidate stand-off pose is free of solid colliders (machines, walls)
+## and standable for a vehicle.
+static func _pose_free(target: Node3D, pose: Vector3) -> bool:
+	if target.is_inside_tree() and target.get_world_3d() != null:
+		var space := target.get_world_3d().direct_space_state
+		if space != null:
+			var shape := BoxShape3D.new()
+			shape.size = Vector3(1.4, 1.4, 1.4)
+			var query := PhysicsShapeQueryParameters3D.new()
+			query.shape = shape
+			query.transform = Transform3D(Basis(), pose + Vector3(0.0, 0.7, 0.0))
+			query.collision_mask = 1
+			query.exclude = [target.get_rid()]
+			var hits := space.intersect_shape(query, 1)
+			if not hits.is_empty():
+				return false
+	if BaseVehicle._route_grid != null:
+		var clr : float = BaseVehicle._route_grid.goal_clearance(pose)
+		if clr > BaseVehicle.NPC_ARRIVE_TOL or clr < 0.0:
+			return false
+	return true
 
 ## XZ distance test against a bare position. Deliberately NOT 3D: the shipped
 ## _close_enough measures full length including Y, so an elevated container

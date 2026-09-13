@@ -91,7 +91,10 @@ var _scanner_banner_fade  : float = 0.0   # seconds remaining
 # "✓ Saved" toast (top-right, under the line banner) — confirms every save
 # (autosave tick, pause-card Save, Save & Quit) actually reached disk. Before
 # this, saving only print()ed to console — invisible in multi-hour shifts.
+# #Q1 — also shows the save name + wall-clock time so the operator knows
+# WHICH file is on disk and WHEN it landed, without opening the menu.
 var _save_toast_panel : PanelContainer
+var _save_toast_label : Label   # #Q1 — text updated at each save with name+time
 var _save_toast_fade  : float = 0.0   # seconds remaining
 
 # =============================================================================
@@ -1486,7 +1489,7 @@ func _build_save_toast() -> void:
 	_save_toast_panel.anchor_right  = 1.0
 	_save_toast_panel.anchor_top    = 0.0
 	_save_toast_panel.anchor_bottom = 0.0
-	_save_toast_panel.offset_left   = -110.0
+	_save_toast_panel.offset_left   = -220.0   # #Q1 widened: fits "✓ Opgeslagen — <name>  HH:MM"
 	_save_toast_panel.offset_right  = -12.0
 	_save_toast_panel.offset_top    = 50.0
 	_save_toast_panel.offset_bottom = 50.0
@@ -1507,14 +1510,30 @@ func _build_save_toast() -> void:
 	lbl.add_theme_font_size_override("font_size", 13)
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_save_toast_panel.add_child(lbl)
+	_save_toast_label = lbl   # #Q1 — keep ref so _on_autosave_completed can update it
 	_save_toast_panel.visible = false
 	add_child(_save_toast_panel)
 
 func _on_autosave_completed() -> void:
 	if _save_toast_panel == null:
 		return
+	# #Q1 — show save name + wall-clock time so the operator knows which file
+	# landed on disk and when, without opening the pause menu.
+	var save_name := "shift"
+	if has_node("/root/GameState"):
+		var gs := get_node("/root/GameState")
+		if "save_file_path" in gs:
+			var fp : String = String(gs.save_file_path)
+			# e.g. user://mijn_world_save.json → "mijn_world"
+			save_name = fp.get_file().trim_suffix("_save.json").trim_suffix(".json")
+			if save_name == "" or save_name == "cedo_simulator":
+				save_name = "default"
+	var t := Time.get_datetime_dict_from_system()
+	var ts := "%02d:%02d" % [int(t.get("hour", 0)), int(t.get("minute", 0))]
+	if _save_toast_label != null:
+		_save_toast_label.text = "✓ Opgeslagen — %s  %s" % [save_name, ts]
 	_save_toast_panel.visible = true
-	_save_toast_fade = 1.5
+	_save_toast_fade = 2.5   # slightly longer so the operator can read the name
 
 func _on_scanner_banner(text: String, is_error: bool = false) -> void:
 	if _scanner_banner_label == null:

@@ -186,7 +186,19 @@ func _on_startup_completed_wired(scene_root : Node) -> void:
 		return
 	for belt in tree.get_nodes_in_group("shredder_feed_belt"):
 		if belt != null and belt.has_method("request_start"):
-			belt.request_start()
+			# #audit-H9 — only start the belts that belong to THIS sorteerlijn
+			# (bunker + SGA). Without this filter, startup_completed on line 1's
+			# sorteerlijn would request_start on every ShredderFeedBelt in the
+			# scene, including those on unrelated lines. We identify the sorteerlijn
+			# belt by macro_id containing "bunker" or "sga" (the two machine types
+			# that spawn ShredderFeedBelt). Any belt without a macro_id meta is also
+			# accepted for backwards compatibility with hand-placed or test belt nodes.
+			var owns_belt := true
+			if (belt as Node3D).has_meta("macro_id"):
+				var mid := String((belt as Node3D).get_meta("macro_id"))
+				owns_belt = mid.contains("bunker") or mid.contains("sga")
+			if owns_belt:
+				belt.request_start()
 
 # -----------------------------------------------------------------------------
 # UI top-level

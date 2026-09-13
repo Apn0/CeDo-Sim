@@ -223,6 +223,11 @@ func npc_board_vehicle(npc: Node, vehicle: Node) -> bool:
 		npc.set("_seated_in_vehicle", true)
 	elif npc.has_method("set_physics_process"):
 		npc.set_physics_process(false)
+	for child in npc.get_children():
+		if child is CollisionShape3D:
+			child.disabled = true
+	if vehicle is CollisionObject3D and npc is CollisionObject3D:
+		(vehicle as CollisionObject3D).add_collision_exception_with(npc)
 	vehicle.call("on_npc_entered", npc)
 	_npc_vehicles[npc.get_instance_id()] = vehicle
 	return true
@@ -246,6 +251,11 @@ func npc_disembark_vehicle(npc: Node) -> void:
 		if vehicle.has_method("on_npc_exited"):
 			vehicle.call("on_npc_exited", npc)
 	if is_instance_valid(npc):
+		for child in npc.get_children():
+			if child is CollisionShape3D:
+				child.disabled = false
+		if vehicle != null and is_instance_valid(vehicle) and vehicle is CollisionObject3D and npc is CollisionObject3D:
+			(vehicle as CollisionObject3D).remove_collision_exception_with(npc)
 		# npc-05 — mirror of the boarding branch above.
 		if "_seated_in_vehicle" in npc:
 			npc.set("_seated_in_vehicle", false)

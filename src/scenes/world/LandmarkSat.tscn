@@ -1,6 +1,6 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene format=3 uid="uid://jri0novyd4c2"]
 
-[ext_resource type="Script" path="res://src/scenes/world/LandmarkPicker.gd" id="2"]
+[ext_resource type="Script" uid="uid://dtu788wvm5ro7" path="res://src/scenes/world/LandmarkPicker.gd" id="2"]
 
 [sub_resource type="Environment" id="env"]
 background_mode = 1
@@ -12,16 +12,15 @@ ambient_light_energy = 1.6
 [sub_resource type="PlaneMesh" id="ground"]
 size = Vector2(300, 300)
 
-[node name="LandmarkPicker" type="Node3D"]
+[node name="LandmarkPicker" type="Node3D" unique_id=1909501675]
 script = ExtResource("2")
 
-[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1178617259]
 environment = SubResource("env")
 
-[node name="Ground" type="MeshInstance3D" parent="."]
+[node name="Ground" type="MeshInstance3D" parent="." unique_id=1945177744]
 mesh = SubResource("ground")
 
-[node name="Camera3D" type="Camera3D" parent="."]
+[node name="Camera3D" type="Camera3D" parent="." unique_id=498852906]
 transform = Transform3D(1, 0, 0, 0, 0.0008, -1, 0, 1, 0.0008, 0, 190, 0)
 fov = 70.0
-far = 4000.0

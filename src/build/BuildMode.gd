@@ -25,7 +25,7 @@ enum State { INACTIVE, BROWSING, PLACING, SURFACE, EDIT, SEQUENTIAL }
 # Press K (anytime) to enter EDIT: aim the crosshair at a placed machine, [LMB]
 # to select it, then jog it for precise alignment:
 #   arrows = move X/Z   ·   R/F = up/down   ·   Q/E = rotate   ·   +/- = uniform scale
-#   7/4 = X scale   ·   8/5 = Y scale   ·   9/6 = Z scale   ·   Shift = fine
+#   7/4 = X scale   ·   8/5 = Y scale   ·   9/6 = Z scale
 #   Shift = fine step    ·   X = delete      ·   K or RMB = exit
 # All continuous (hold the key). Changes persist to factory_layout.json.
 const JOG_MOVE_COARSE  : float = 0.6     # m/s while held
@@ -485,7 +485,11 @@ const LINE_3B_SEQ : Array[Dictionary] = [
 	# gap 15.0 — OPERATOR-sourced pipe run: "material goes about fifteen
 	# meters to a new cyclone".  Plasmaq's outlet blower is built into the
 	# machine (model-detail note), not a separate placeable.
-	{"id": "plasmaq", "gap": 15.0},  # PLASMAQ = the diagram's "Thermische droger" on 3B
+	# explicit_from_prev — the cyclone → plasmaq leg is also ~15 m (exceeds
+	# MAX_LINK_DIST 14 m), so this edge must be tagged explicitly too.
+	# Without it the geometry fallback silently drops the edge, leaving the
+	# plasmaq with no incoming flow (td_in = false in test_line3b_flow_conformance).
+	{"id": "plasmaq", "gap": 15.0, "explicit_from_prev": true},  # PLASMAQ = the diagram's "Thermische droger" on 3B
 	# ── Ruling 3.1-C — the DECOMMISSIONED thermische droger. The plasmaq
 	# replaced it during the operator's tenure, but the machine still stands
 	# there, disconnected ("a pipe of like twenty centimeters that sticks
@@ -493,8 +497,8 @@ const LINE_3B_SEQ : Array[Dictionary] = [
 	# the run it used to serve. x/z are PLACEHOLDERS — the operator's coming
 	# 3B layout drawing will pin the true spot.
 	{"id": "thermal_dryer_decommissioned", "x": -3.5, "z": -8.0},
-	# explicit_from_prev — the 15 m run exceeds LineFlow's MAX_LINK_DIST
-	# (14 m), so the plasmaq → tussenventilator edge is tagged explicitly.
+	# explicit_from_prev — the plasmaq → tussenventilator leg is also ~15 m
+	# (exceeds MAX_LINK_DIST 14 m), so this edge is tagged explicitly too.
 	{"id": "cyclone", "explicit_from_prev": true},  # TUSSENVENTILATOR — its cyclone…
 	{"id": "blower"},                # …and its booster blower
 	{"id": "extruder_silo"},

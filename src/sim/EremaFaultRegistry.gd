@@ -161,7 +161,16 @@ static func detect_active(extruder_model : Object, laser_filter : Object = null)
 	var setpt : float = 230.0
 	if "config" in extruder_model and extruder_model.config != null and "melt_temp_setpoint_c" in extruder_model.config:
 		setpt = float(extruder_model.config.melt_temp_setpoint_c)
-	if "melt_temp_c" in extruder_model:
+	elif "config" in extruder_model and extruder_model.config != null and "melt_temp_setpoint" in extruder_model.config:
+		setpt = float(extruder_model.config.melt_temp_setpoint)
+	# #audit-H11 — ExtruderModel.gd:191 names the field `melt_temp`, not
+	# `melt_temp_c`. The old guard `"melt_temp_c" in extruder_model` was
+	# always false → F_MELT_TEMP_HIGH could never fire. Probe both names so
+	# legacy ExtruderModel subclasses that renamed the field still work.
+	if "melt_temp" in extruder_model:
+		if float(extruder_model.melt_temp) > setpt + MELT_TEMP_HIGH_OFFSET_C:
+			out.append(F_MELT_TEMP_HIGH)
+	elif "melt_temp_c" in extruder_model:
 		if float(extruder_model.melt_temp_c) > setpt + MELT_TEMP_HIGH_OFFSET_C:
 			out.append(F_MELT_TEMP_HIGH)
 

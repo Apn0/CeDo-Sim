@@ -133,23 +133,14 @@ func _tick_drive_to_indoor(npc: Node) -> void:
 	if indoor_container == null or not is_instance_valid(indoor_container):
 		mark_failed("indoor_gone")
 		return
-	# npc-05 JAM 2 — NOT YET REWIRED TO ApproachPose, and this is a deliberate
-	# stop, not an oversight. src/scenes/world/tasks/ApproachPose.gd is written and
-	# documents the real mechanism (the waypoint sits INSIDE the container body, so
-	# the chassis wedges before the origin can close to APPROACH_DIST_VEH — the
-	# radius is not what is wrong; NPC_ARRIVE_TOL 2.2 < 3.5 means the gate IS
-	# satisfiable by a vehicle that reaches its waypoint).
-	#
-	# Wiring it in was tried and MEASURED: the npc-05 bench went red on 4 checks —
-	# "scooping happened at the bin (7.80 m <= 5.0 m)" and the matching dump check —
-	# because a flat 3.0 m clearance ON TOP OF the container's own half-extent puts
-	# the forklift 7.8 m from the container CENTRE, which those assertions measure.
-	# The stand-off almost certainly wants deriving from the VEHICLE's half-length
-	# rather than a flat constant, but picking a number that happens to satisfy the
-	# bench would be tuning to the test. Left unwired until it can be measured
-	# against the real chain (test_npc05_realworld, asserted on container kg).
-	if not _close_enough(_forklift, indoor_container, APPROACH_DIST_VEH):
-		_set_destination(npc, indoor_container.global_position)
+	if _forklift == null or not is_instance_valid(_forklift):
+		mark_failed("forklift_gone")
+		return
+	# npc-05 — route to a reachable stand-off pose outside the container body
+	# via ApproachPose, so the forklift chassis does not wedge on the hull.
+	var approach_pos : Vector3 = ApproachPose.for_target(indoor_container, _forklift)
+	if not ApproachPose.arrived_at(_forklift, approach_pos, APPROACH_DIST_VEH):
+		_set_destination(npc, approach_pos)
 		return
 	_enter_phase(Phase.SCOOP_BULK, null, null)
 
@@ -180,9 +171,13 @@ func _tick_drive_to_outdoor(npc: Node) -> void:
 	if outdoor_container == null or not is_instance_valid(outdoor_container):
 		mark_failed("outdoor_gone")
 		return
-	# See the note in _tick_drive_to_indoor: ApproachPose is written but unwired.
-	if not _close_enough(_forklift, outdoor_container, APPROACH_DIST_VEH):
-		_set_destination(npc, outdoor_container.global_position)
+	if _forklift == null or not is_instance_valid(_forklift):
+		mark_failed("forklift_gone")
+		return
+	# npc-05 — stand-off pose outside the outdoor skip
+	var approach_pos : Vector3 = ApproachPose.for_target(outdoor_container, _forklift)
+	if not ApproachPose.arrived_at(_forklift, approach_pos, APPROACH_DIST_VEH):
+		_set_destination(npc, approach_pos)
 		return
 	_enter_phase(Phase.DUMP, null, null)
 

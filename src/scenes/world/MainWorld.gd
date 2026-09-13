@@ -174,7 +174,7 @@ func _ready() -> void:
 	# Yasin silently never got seated. Audit-caught (#157 follow-up).
 	var car_spawner := ShiftCarSpawner.new()
 	car_spawner.name = "ShiftCarSpawner"   # #206 — same fix, named explicitly so downstream find_child lookups work
-	add_child(car_spawner); car_spawner.setup(self, staff_parking, npcs, operator_context, player, _player_spawn_pos)
+	add_child(car_spawner); car_spawner.setup(self, staff_parking, npcs, operator_context, player, _player_spawn_pos, shift_clock)
 	_spawn_hud()
 	# Performance overlay + auto-logger (F3 toggles; logs a [PERF] snapshot every
 	# 5 s so the lag can be diagnosed straight from the console).
