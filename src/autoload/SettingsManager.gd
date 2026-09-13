@@ -127,7 +127,7 @@ const ACTION_GROUPS := [
 	},
 	{
 		"label":   "Interaction & UI",
-		"actions": ["interact", "flashlight", "ui_cancel", "menu_toggle", "camera_toggle", "map_toggle", "crew_panel", "crew_start_line", "freecam_save", "debug_unstuck"],
+		"actions": ["interact", "flashlight", "ui_cancel", "menu_toggle", "camera_toggle", "map_toggle", "crew_panel", "crew_start_line", "toggle_line_flow_hud", "toggle_scada_dashboard", "freecam_save", "debug_unstuck"],
 	},
 	{
 		"label":   "Walkie-talkie",
@@ -193,6 +193,8 @@ const ACTION_LABELS := {
 	"map_toggle":               "Open / close the site map (M)",
 	"crew_panel":               "Open crew assignment panel — assign workers → posts (Numpad .)",
 	"crew_start_line":          "Lijn 1 opstarten met ploeg (Insert)",
+	"toggle_line_flow_hud":     "Lijnflow overlay tonen/verbergen (F6)",
+	"toggle_scada_dashboard":   "SCADA dashboard tonen/verbergen (F2)",
 	"debug_unstuck":            "Unstuck me — lift +2 m, else teleport to PlayerSpawn (F12)",
 	"walkie_headset":           "Walkie: toggle earpiece / speaker (J)",
 	"walkie_vol_down":          "Walkie: volume down (,)",
@@ -771,6 +773,8 @@ func _ensure_aux_actions() -> void:
 		# but many keyboards don't have a numpad, so we add a second route.
 		"crew_panel":        KEY_C,
 		"crew_start_line":   KEY_INSERT,
+		"toggle_line_flow_hud": KEY_F6,
+		"toggle_scada_dashboard": KEY_F2,
 		# F8 toggles Inspect Mode (#inspect) — registered here so the Settings
 		# Controls tab knows about it and so the binding survives a fresh
 		# install with no user://settings.cfg. The runtime fallback in

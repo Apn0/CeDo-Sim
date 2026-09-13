@@ -9,6 +9,7 @@ class StubLineFlow extends Node:
 	var _nodes : Array = []
 	var _started : bool = false
 	var feed_enabled : bool = false
+	var fed_mass : float = 0.0
 
 	func start_line() -> void:
 		_started = true

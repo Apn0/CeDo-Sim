@@ -445,7 +445,12 @@ func _refresh_line_panel() -> void:
 		state = "DRAAIT";               col = Color(0.35, 0.85, 0.45)
 	var gran : float = float(line_flow.get("gran_mass"))
 	var amps : float = float(line_flow.call("live_line_amps"))
-	_line_label.text = "LIJN  ·  %s   ·   %.0f A   ·   gran %.0f kg" % [state, amps, gran]
+	var line_name : String = "LIJN"
+	if line_flow.has_method("active_line_name"):
+		var an : String = String(line_flow.call("active_line_name"))
+		if an != "":
+			line_name = an
+	_line_label.text = "%s  ·  %s   ·   %.0f A   ·   gran %.0f kg" % [line_name, state, amps, gran]
 	_line_label.add_theme_color_override("font_color", col)
 
 # =============================================================================
