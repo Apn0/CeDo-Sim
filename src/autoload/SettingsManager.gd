@@ -127,7 +127,7 @@ const ACTION_GROUPS := [
 	},
 	{
 		"label":   "Interaction & UI",
-		"actions": ["interact", "flashlight", "ui_cancel", "menu_toggle", "camera_toggle", "map_toggle", "crew_panel", "freecam_save", "debug_unstuck"],
+		"actions": ["interact", "flashlight", "ui_cancel", "menu_toggle", "camera_toggle", "map_toggle", "crew_panel", "crew_start_line", "freecam_save", "debug_unstuck"],
 	},
 	{
 		"label":   "Walkie-talkie",
@@ -192,6 +192,7 @@ const ACTION_LABELS := {
 	"camera_toggle":            "Cycle camera mode (F4-tap)\n  F4 + ←/→/↑/↓ pan orbit · F4 + scroll wheel zoom",
 	"map_toggle":               "Open / close the site map (M)",
 	"crew_panel":               "Open crew assignment panel — assign workers → posts (Numpad .)",
+	"crew_start_line":          "Lijn 1 opstarten met ploeg (Insert)",
 	"debug_unstuck":            "Unstuck me — lift +2 m, else teleport to PlayerSpawn (F12)",
 	"walkie_headset":           "Walkie: toggle earpiece / speaker (J)",
 	"walkie_vol_down":          "Walkie: volume down (,)",
@@ -769,6 +770,7 @@ func _ensure_aux_actions() -> void:
 		# C also opens the crew assignment panel — Numpad . is the legacy default
 		# but many keyboards don't have a numpad, so we add a second route.
 		"crew_panel":        KEY_C,
+		"crew_start_line":   KEY_INSERT,
 		# F8 toggles Inspect Mode (#inspect) — registered here so the Settings
 		# Controls tab knows about it and so the binding survives a fresh
 		# install with no user://settings.cfg. The runtime fallback in

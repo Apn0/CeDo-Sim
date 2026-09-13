@@ -1060,10 +1060,16 @@ func current_task() -> String:
 			return "post: %s" % assigned_station_id
 		Task.GOING:
 			match _purpose:
-				Purpose.SERVICE: return "→ storing %s" % service_station_id
+				Purpose.SERVICE:
+					if service_station_id.begins_with("opstart"):
+						return "→ %s" % service_station_id
+					return "→ storing %s" % service_station_id
 				Purpose.BREAK:   return "→ pauze"
 				_:               return "→ post"
-		Task.SERVICING: return "verhelpt %s" % service_station_id
+		Task.SERVICING:
+			if service_station_id.begins_with("opstart"):
+				return "helpt bij %s" % service_station_id.trim_prefix("opstart ")
+			return "verhelpt %s" % service_station_id
 		Task.ON_BREAK:  return "pauze"
 		Task.OFF_DUTY:  return "vrij (rust)"
 		_:              return "rondlopen"

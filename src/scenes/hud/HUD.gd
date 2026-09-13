@@ -709,6 +709,7 @@ func _ensure_map_action() -> void:
 		"walkie_vol_up":   KEY_PERIOD,
 		"walkie_ptt":      KEY_U,    # opens the canned-message picker (#179 fix).
 		"crew_panel":      KEY_KP_PERIOD,   # Numpad "." — open the crew assignment panel
+		"crew_start_line": KEY_INSERT,      # Insert — deploy crew to start Line 1
 		# Was V, but V = forklift_forks_widen (clamp release) in the cab, so
 		# releasing the clamp also keyed the radio. Moved to U (unused) so the
 		# two never double-fire. Operators can still talk while driving.
@@ -1146,6 +1147,8 @@ func _input(event: InputEvent) -> void:
 		return
 	if _handle_crew_panel_input(event):
 		return
+	if _handle_crew_start_line_input(event):
+		return
 	if _handle_map_input(event):
 		return
 	if _handle_pause_menu_input(event):
@@ -1225,6 +1228,24 @@ func _handle_crew_panel_input(event: InputEvent) -> bool:
 		_toggle_crew_panel()
 		get_viewport().set_input_as_handled()
 		return true
+	return false
+
+func _handle_crew_start_line_input(event: InputEvent) -> bool:
+	# ── Line 1 Startup with Crew (Insert) ────────────────────────────────────
+	var triggered := false
+	if event.is_action_pressed("crew_start_line"):
+		triggered = true
+	elif event is InputEventKey and (event as InputEventKey).pressed and not (event as InputEventKey).echo:
+		if (event as InputEventKey).keycode == KEY_INSERT:
+			triggered = true
+	if triggered:
+		var cm : CrewManager = crew_manager
+		if cm == null and get_tree() != null:
+			cm = get_tree().get_first_node_in_group("crew_manager") as CrewManager
+		if cm != null and cm.has_method("start_line_1_with_crew"):
+			cm.start_line_1_with_crew()
+			get_viewport().set_input_as_handled()
+			return true
 	return false
 
 func _handle_map_input(event: InputEvent) -> bool:
