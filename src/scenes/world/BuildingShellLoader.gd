@@ -97,7 +97,10 @@ func _generate_floor_from_shell(shell_mesh: MeshInstance3D) -> void:
 		floor_y = 0.0
 	print("[BuildingShellLoader] Operating floor detected at world Y = %.3f" % floor_y)
 
-	var floor_node := shell_mesh.get_tree().current_scene.find_child("TempFloor", true, false) as StaticBody3D
+	var scene_root : Node = _world if _world != null else (shell_mesh.get_tree().current_scene if shell_mesh.get_tree() != null else null)
+	var floor_node : StaticBody3D = null
+	if scene_root != null:
+		floor_node = scene_root.find_child("TempFloor", true, false) as StaticBody3D
 	if floor_node == null:
 		push_error("[BuildingShellLoader] TempFloor node missing — cannot install floor"); return
 

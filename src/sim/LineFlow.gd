@@ -2330,8 +2330,8 @@ func _tick_plc_power_downstream(delta: float) -> void:
 	# fault + upstream OFF (downstream keeps its PLC power and drains).
 	_estop_step()
 	for nd_s in _nodes:
-		var tgt : float = 1.0 if bool(nd_s["powered"]) else 0.0
-		nd_s["spin"] = move_toward(float(nd_s["spin"]), tgt, delta / maxf(SPIN_UP_S, 0.01))
+		var tgt : float = 1.0 if bool(nd_s.get("powered", false)) else 0.0
+		nd_s["spin"] = move_toward(float(nd_s.get("spin", 0.0)), tgt, delta / maxf(SPIN_UP_S, 0.01))
 		# Multi-rotor cascade: walk EVERY mechanism child, not just the
 		# first one. Without this, doseersilo (3 augers) + frictiewasser
 		# (2 stirrers) only see their primary rotor respond to PLC power,
@@ -2393,7 +2393,7 @@ func _tick_feed(delta: float) -> void:
 		var bales := _deliverable_bales_cache
 		for i in _nodes.size():
 			var nd: Dictionary = _nodes[i]
-			if String(nd["role"]) == "sink" or _has_incoming(i):
+			if String(nd.get("role", "")) == "sink" or _has_incoming(i):
 				continue
 			# A node dict can outlive its Node3D: anything that frees a placed
 			# machine WITHOUT an immediate rebuild() (a save-reload cycle, a scripted
@@ -2442,14 +2442,16 @@ func _tick_process_machines(delta: float) -> void:
 	#    (sink) does the last melt-filter + degas and grades the granulaat.
 	var dt := maxf(delta, 0.0001)
 	for nd in _nodes:
-		var bin: MaterialBatch = nd["in"]
+		var bin : MaterialBatch = nd.get("in", null) as MaterialBatch
+		if bin == null:
+			continue
 		nd["buffer"] = bin.mass_kg
 		# #52 per-tick load bookkeeping for the motor-overload observer. These are
 		# pure OBSERVATIONS of the existing split (set below), never inputs to it.
 		nd["_backlog_kg"] = 0.0
 		nd["_moved_kg"]   = 0.0
-		if bin.mass_kg <= 0.0:
-			nd["thru"] = lerpf(float(nd["thru"]), 0.0, 0.2)   # spin down when starved
+		if (bin as MaterialBatch).mass_kg <= 0.0:
+			nd["thru"] = lerpf(float(nd.get("thru", 0.0)), 0.0, 0.2)   # spin down when starved
 			continue
 		# Effective conveying rate is GATED by live rotation: design rate × spin-up
 		# × rotor rpm-fraction. A stopped or still-spinning-up rotor moves nothing,
@@ -2457,7 +2459,7 @@ func _tick_process_machines(delta: float) -> void:
 		# Effective rate = design × spin × mech × HMI overrides (rpm slider AND the
 		# avg of the per-component RPMs — inlet/transports/outlet for tanks).
 		var rate_mul : float = float(nd.get("rpm_pct", 1.0)) * _component_pct_multiplier(nd)
-		var eff_rate: float = float(nd["rate"]) * float(nd["spin"]) * _mech_fraction(nd) * rate_mul
+		var eff_rate: float = float(nd.get("rate", 0.0)) * float(nd.get("spin", 0.0)) * _mech_fraction(nd) * rate_mul
 		# #52 air gating — an air-driven consumer (TITECH ejector / PCU ram) starved of
 		# header pressure conveys slower. This is a GENTLE rate multiplier only: it
 		# slows flow, the un-moved mass simply backs up in the buffer (conserving). At
@@ -3548,8 +3550,12 @@ func _update_label() -> void:
 		return
 	var in_transit := 0.0
 	for nd in _nodes:
-		in_transit += (nd["in"] as MaterialBatch).mass_kg
-		in_transit += (nd["out"] as MaterialBatch).mass_kg
+		var bin = nd.get("in", null)
+		if bin is MaterialBatch:
+			in_transit += (bin as MaterialBatch).mass_kg
+		var bout = nd.get("out", null)
+		if bout is MaterialBatch:
+			in_transit += (bout as MaterialBatch).mass_kg
 	in_transit += pipe_mass()    # #145: material riding the connectors counts too
 	# Full ledger: what came IN (fed + process water) must equal what went OUT
 	# (granulaat + mechanical waste + dirt scraped + water driven off + polymer

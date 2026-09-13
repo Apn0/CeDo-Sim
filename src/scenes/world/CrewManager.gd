@@ -268,9 +268,10 @@ func assign_posts() -> void:
 	for w in workers:
 		if _pinned.has(w):
 			continue   # operator assigned this one by hand — leave their post alone
-		var best : Dictionary = _nearest_in_zone(w.npc_role, w.global_position, machines)
+		var w_pos := _safe_npc_pos(w)
+		var best : Dictionary = _nearest_in_zone(w.npc_role, w_pos, machines)
 		var sid  : String  = ""
-		var pos  : Vector3 = w.global_position
+		var pos  : Vector3 = w_pos
 		if best.is_empty():
 			# No machine in this role's zone — floaters roam the line centre,
 			# everyone else just holds their spawn spot.
@@ -279,8 +280,8 @@ func assign_posts() -> void:
 				sid = "(rondgang)"
 		else:
 			sid = String(best["id"])
-			pos = _post_pos_on_aisle(best, w.global_position)
-		pos.y = w.global_position.y      # keep them on the floor
+			pos = _post_pos_on_aisle(best, w_pos)
+		pos.y = w_pos.y      # keep them on the floor
 		w.assign_post(sid, pos)
 
 ## A machine's own global_position sits INSIDE its collider — which MainWorld also
@@ -626,10 +627,19 @@ func _nearest_in_zone(role: String, from: Vector3, machines: Array) -> Dictionar
 			best = m
 	return best
 
+func _safe_npc_pos(w: Node) -> Vector3:
+	if w != null and is_instance_valid(w) and w is Node3D:
+		if (w as Node3D).is_inside_tree():
+			return (w as Node3D).global_position
+		return (w as Node3D).position
+	return Vector3.ZERO
+
 func _node_pos(nd: Dictionary) -> Vector3:
 	var n = nd.get("node", null)
-	if n != null and is_instance_valid(n):
-		return (n as Node3D).global_position
+	if n != null and is_instance_valid(n) and n is Node3D:
+		if (n as Node3D).is_inside_tree():
+			return (n as Node3D).global_position
+		return (n as Node3D).position
 	return nd.get("win", Vector3.ZERO)
 
 func _node_by_id(id: String) -> Dictionary:
@@ -1440,28 +1450,29 @@ func start_line_1_with_crew() -> void:
 			w._abandon_autonomy_task()
 
 		var role := String(w.npc_role)
+		var w_pos := _safe_npc_pos(w)
 
 		# Role: Feeders -> Line 1 intake
 		if role == "feeder" or role == "permanent_feeder":
-			var target = intake_mach if not intake_mach.is_empty() else _nearest_in_zone(role, w.global_position, l1_machines)
+			var target = intake_mach if not intake_mach.is_empty() else _nearest_in_zone(role, w_pos, l1_machines)
 			if not target.is_empty():
-				var pos := _post_pos_on_aisle(target, w.global_position)
+				var pos := _post_pos_on_aisle(target, w_pos)
 				w.assign_post(String(target["id"]), pos)
 				w.dispatch_to(pos, "opstart %s" % String(target["id"]), 5.0)
 
 		# Role: Extruder operators -> Line 1 extrusion
 		elif role == "extruder_op":
-			var target = extruder_mach if not extruder_mach.is_empty() else _nearest_in_zone(role, w.global_position, l1_machines)
+			var target = extruder_mach if not extruder_mach.is_empty() else _nearest_in_zone(role, w_pos, l1_machines)
 			if not target.is_empty():
-				var pos := _post_pos_on_aisle(target, w.global_position)
+				var pos := _post_pos_on_aisle(target, w_pos)
 				w.assign_post(String(target["id"]), pos)
 				w.dispatch_to(pos, "opstart %s" % String(target["id"]), 5.0)
 
 		# Role: Transitional -> Buffer / Intermediate
 		elif role == "transitional":
-			var target = buffer_mach if not buffer_mach.is_empty() else _nearest_in_zone(role, w.global_position, l1_machines)
+			var target = buffer_mach if not buffer_mach.is_empty() else _nearest_in_zone(role, w_pos, l1_machines)
 			if not target.is_empty():
-				var pos := _post_pos_on_aisle(target, w.global_position)
+				var pos := _post_pos_on_aisle(target, w_pos)
 				w.assign_post(String(target["id"]), pos)
 				w.dispatch_to(pos, "opstart %s" % String(target["id"]), 5.0)
 
@@ -1474,10 +1485,10 @@ func start_line_1_with_crew() -> void:
 			var sid := "(toezicht L1)"
 			var pos := l1_centre
 			if not intake_mach.is_empty() and role == "asst_shift_leader":
-				pos = _post_pos_on_aisle(intake_mach, w.global_position)
+				pos = _post_pos_on_aisle(intake_mach, w_pos)
 				sid = "(invoer toezicht)"
 			elif not extruder_mach.is_empty() and role == "shift_leader":
-				pos = _post_pos_on_aisle(extruder_mach, w.global_position)
+				pos = _post_pos_on_aisle(extruder_mach, w_pos)
 				sid = "(lijn coördinatie)"
 			w.assign_post(sid, pos)
 			w.dispatch_to(pos, "opstart Lijn 1", 7.0)
@@ -1534,17 +1545,18 @@ func _start_allrounder_startup_patrol(w: NPC, machines: Array) -> void:
 		"mill", "flotation_tank", "dewater_screw", "kufferath_sieve",
 		"mas_droger", "extruder_silo", "compactorband", "laser_filter"
 	]
+	var w_pos := _safe_npc_pos(w)
 	for token in PATROL_ORDER:
 		for m in machines:
 			var mid := String(m["id"])
 			if mid.find(token) != -1:
-				var pos := _post_pos_on_aisle(m, w.global_position)
+				var pos := _post_pos_on_aisle(m, w_pos)
 				stations_to_visit.append({"id": mid, "pos": pos, "node": m.get("node", null)})
 				break
 
 	if stations_to_visit.is_empty():
 		for m in machines:
-			stations_to_visit.append({"id": String(m["id"]), "pos": _post_pos_on_aisle(m, w.global_position), "node": m.get("node", null)})
+			stations_to_visit.append({"id": String(m["id"]), "pos": _post_pos_on_aisle(m, w_pos), "node": m.get("node", null)})
 
 	_allrounder_patrols[w] = {
 		"stations": stations_to_visit,

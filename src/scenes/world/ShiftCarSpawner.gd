@@ -84,7 +84,7 @@ func setup(world: Node, staff_parking: Node, npcs: Dictionary,
 	# original boot. Re-running would duplicate them.
 	if shift_clock != null and shift_clock.has_method("is_pre_shift"):
 		if not bool(shift_clock.is_pre_shift()):
-			push_warning("[ShiftCarSpawner] #H5 resumed mid-shift — skipping car spawn (already parked)")
+			print("[ShiftCarSpawner] #H5 resumed mid-shift — skipping car spawn (already parked)")
 			return
 	_spawn_shift_cars_and_player_drive_in()
 
