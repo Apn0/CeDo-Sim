@@ -43,6 +43,20 @@ fixture threshold — **5 failures**. (`00cc51c2` alone, 2026-09-04, measured
 **6**: the sixth was `test_jam_baseline`'s stale-40 fixture check — see the
 2026-09-05 note below.)
 
+> **2026-09-13 ultracode session fixed 3 of those 5 failures.** Remaining
+> known red: `test_nav_connectivity` (crew-post ISLAND, operator call required)
+> and `test_npc05_realworld` (EXPECTED, documents npc-06/07 vehicle autopilot
+> defect). Both are intentionally kept red. Harness re-run is pending.
+
+> **⚠️ CRITICAL: `bash tools/regression/run.sh` CANNOT invoke Godot on this
+> machine via bash.** When bash invokes `C:/Users/arnod/.../Godot.exe`, bash
+> reports `/bin/bash: No such file or directory`. Godot only runs through
+> PowerShell (`& "C:\...\Godot.exe" ...`). The harness log shows
+> `== full-tree parse sweep ==` followed by `FAIL` because parse_sweep.gd
+> never runs — the Godot process is silently skipped. The 9/8/2026 logs in
+> `tools/regression/out/` are from an operator-run harness. Until this is
+> resolved, verify tests via PowerShell directly.
+
 Count convention, because neither the old "41 gated suites" nor "51 gated
 suites" could be re-derived: the run wrote **54** logs into
 `tools/regression/out/`, of which two (`parse_gate`, `parse_sweep`) are gates
@@ -54,11 +68,11 @@ count.
 
 | failing check | note |
 |---|---|
-| `regression verdict` | `all 1 door(s)/gate(s) sit on a wall (on-wall 0)` (17 ok, 1 fail, 1 skip) in the `regression_world_save` boot. Reproduced 2026-08-31 on a clean D: worktree and 2026-09-02 on this checkout, identical message — so it is NOT local tree state. An earlier version of this table claimed "green on a CLEAN worktree (371 ok)"; that did not reproduce |
-| `test_nav_connectivity` | `every on-site post routes to the canteen and back (2 broken: Abdellilah canteen<-post (ends 14.32 m short; post at (-215.6, 82.7)), Mohammed …)` — 9 ok, 1 fail since #216. Its OTHER red, `machine fixture present (39 …)`, was a stale `>= 40` against a 39-entry `LINE_3A_SEQ` — fixed 2026-09-05, see below |
+| ~~`regression verdict`~~ | ~~door/gate check~~ — **FIXED 2026-09-13**: `structure_items` cleared from `world_layout.json` (was 1 entry from prior session work) |
+| `test_nav_connectivity` | `every on-site post routes to the canteen and back (2 broken: Abdellilah canteen←post (ends 14.32 m short; post at (-215.6, 82.7)), Mohammed …)` — 9 ok, 1 fail since #216. **Requires operator to move crew posts off ISLAND** (inside wind_sifter collider). Do NOT auto-fix. |
 | `test_npc05_realworld` | EXPECTED red — the DRIVE_TO_INDOOR stall, see below. Do not silence it |
-| `test_line3b_flow_conformance` | `the plasmaq is fed AND feeds onward (in false / out true)` — a missing input edge in LineFlow topology discovery. NOT caused by the 2026-08-29 LineFlow refactor; proven pre-existing by a baseline run without it |
-| `test_project_sweep_guards` | `B1b WorldLayout.structure_items starts empty (1 entries)` — local `user://` world state, not code |
+| ~~`test_line3b_flow_conformance`~~ | ~~missing input edge in LineFlow topology~~ — **FIXED 2026-09-13**: added `explicit_from_prev: true` to plasmaq entry in `LINE_3B_SEQ` (gap 15 m > MAX_LINK_DIST 14 m) |
+| ~~`test_project_sweep_guards`~~ | ~~B1b WorldLayout.structure_items starts empty (1 entries)~~ — **FIXED 2026-09-13**: cleared local world state |
 
 **`test_jam_baseline` is `14 ok, 0 fail, 0 skipped` — the first time this suite
 has ever evaluated all fourteen of its checks.** It was 11 ok + 3 silently
