@@ -84,7 +84,11 @@ echo "== full-tree parse sweep =="
 "$GODOT" --headless --path "$PROJ" \
 	--script res://tools/regression/parse_sweep.gd > "$OUT/parse_sweep.log" 2>&1
 grep -E "^===|^  FAIL|^note  :|^Result:" "$OUT/parse_sweep.log" || true
-if ! grep -q "^RESULT: PASS" "$OUT/parse_sweep.log"; then
+# #CRLF-fix: parse_sweep.gd runs inside Godot (Windows build) and emits \r\n.
+# bash grep -q "^RESULT: PASS" treats \r as part of the line content so the
+# anchor match fails — the line is "RESULT: PASS\r" not "RESULT: PASS".
+# Strip \r before the grep so this check works on both Windows and Linux CI.
+if ! tr -d '\r' < "$OUT/parse_sweep.log" | grep -q "^RESULT: PASS"; then
 	echo "FAIL  : one or more project scripts do not parse (see $OUT/parse_sweep.log)"
 	exit 1
 fi
@@ -297,7 +301,7 @@ fi
 # this loop has no --quit-after, so a verdict printed before the last eleven
 # statements would leave "Result: PASS" in the log with the process still
 # alive: a green log and a hung harness at once.
-for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_line3a_identity test_line3b_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_humanoid_rig_conformance test_line1_flow_conformance test_line3a_flow_conformance test_line3b_flow_conformance test_shredder_rate_reconciliation test_line1_no_false_overload test_line_builder_ghost test_project_sweep_guards test_tool_placement_mode; do
+for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_line3a_identity test_line3b_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_humanoid_rig_conformance test_line1_flow_conformance test_line3a_flow_conformance test_line3b_flow_conformance test_shredder_rate_reconciliation test_line1_no_false_overload test_line_builder_ghost test_project_sweep_guards test_tool_placement_mode test_scada_dashboard_scene; do
 	echo "== $t =="
 	"$GODOT" --headless --path "$PROJ" "res://src/tests/$t.tscn" > "$OUT/$t.log" 2>&1
 	grep -E "^  (ok|FAIL)|Result|RESULT" "$OUT/$t.log" || true
@@ -339,7 +343,7 @@ for cfg in "NOLINE" "LINE"; do
 	grep -aE "^  (ok|FAIL|ADVIS)  |^Result" "$OUT/spawn_clearance_$cfg.log" || true
 	# Verdict-based, like every step above: Godot segfaults in teardown after a
 	# clean pass on this one (observed with "0 fail" already printed).
-	if ! grep -qaE "^Result: PASS" "$OUT/spawn_clearance_$cfg.log"; then
+	if ! tr -d '\r' < "$OUT/spawn_clearance_$cfg.log" | grep -qE "^Result: PASS"; then
 		echo "FAIL  : spawn clearance $cfg (see $OUT/spawn_clearance_$cfg.log)"
 		[ $code -eq 0 ] && code=1
 	fi
