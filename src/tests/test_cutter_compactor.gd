@@ -184,6 +184,17 @@ func _test_reset_behaviour() -> void:
 	_ok(cc.state == cc.State.OFF, "machine back to OFF after reset")
 	_ok(cc.is_stalled() == false, "no longer stalled after reset")
 
+	# Softstarter trip recovery: budget & breaker flags cleared
+	cc.pot_temperature = 50.0
+	cc.softstarter_budget_kws = cc.POWER_KW_SOFTSTARTER_BUDGET_KWS + 10.0
+	cc.softstarter_tripped = true
+	cc.breaker_tripped = true
+	cc._set_state(cc.State.DONUT_STALL)
+	_ok(cc.reset() == true, "reset() clears softstarter trip on cooled pot")
+	_ok(cc.softstarter_tripped == false, "softstarter_tripped cleared")
+	_ok(cc.breaker_tripped == false, "breaker_tripped cleared")
+	_ok(cc.softstarter_budget_kws == 0.0, "softstarter budget reset to 0")
+
 # ── 6. Mass conservation through the pot (MaterialBatch ledger) ────────────────
 func _test_mass_conservation() -> void:
 	_section("mass conservation")
@@ -231,5 +242,6 @@ func _flake(kg: float) -> MaterialBatch:
 func _finish() -> void:
 	print("\n=========================================")
 	print("Result: %d ok, %d fail" % [_pass, _fail])
+	print("RESULT: %s" % ["PASS" if _fail == 0 else "FAIL"])
 	print("=========================================")
 	get_tree().quit(0 if _fail == 0 else 1)

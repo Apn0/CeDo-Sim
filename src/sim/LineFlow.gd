@@ -263,17 +263,29 @@ func _build_ui() -> void:
 	_label = Label.new()
 	_label.anchor_left = 1.0
 	_label.anchor_right = 1.0
-	_label.offset_left = -320.0
-	# Below the ScadaDashboard cockpit panel (its offset_bottom is 320 —
-	# ScadaDashboard.gd:216). At 70 this label sat INSIDE that panel and the
-	# two texts interleaved unreadably (operator screenshot 2026-08-07).
-	_label.offset_top = 328.0
+	_label.anchor_top = 1.0
+	_label.anchor_bottom = 1.0
+	_label.offset_left = -330.0
 	_label.offset_right = -12.0
+	_label.offset_top = -140.0
+	_label.offset_bottom = -12.0
 	_label.add_theme_font_size_override("font_size", 13)
 	_label.add_theme_color_override("font_color", Color(0.8, 1.0, 0.85))
 	_label.add_theme_color_override("font_outline_color", Color.BLACK)
 	_label.add_theme_constant_override("outline_size", 5)
 	_ui.add_child(_label)
+
+## Toggle the line flow ledger overlay visible/hidden (hotkey F6).
+func toggle_hud_overlay() -> void:
+	if _label != null and is_instance_valid(_label):
+		_label.visible = not _label.visible
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo:
+		var k := event as InputEventKey
+		if k.keycode == KEY_F6 or k.physical_keycode == KEY_F6 \
+				or (InputMap.has_action("toggle_line_flow_hud") and event.is_action_pressed("toggle_line_flow_hud")):
+			toggle_hud_overlay()
 
 # =============================================================================
 # GRAPH
@@ -2074,6 +2086,65 @@ func pipe_mass() -> float:
 			m += (st as MaterialBatch).mass_kg
 	return m
 
+## Determines the human-readable name of the active line based on placed equipment.
+## Returns "LIJN 1", "LIJN 3A", "LIJN 3B", "LIJN 3C", "SORTEERLIJN", etc., or "" if no line.
+func active_line_name() -> String:
+	if _nodes.is_empty():
+		return ""
+	var counts : Dictionary = {}
+	for nd in _nodes:
+		var node3d = nd.get("node", null)
+		var mid : String = ""
+		if node3d != null and is_instance_valid(node3d) and (node3d is Node3D):
+			if (node3d as Node3D).has_meta("macro_id"):
+				mid = String((node3d as Node3D).get_meta("macro_id"))
+		if mid == "":
+			var l3c : String = String(nd.get("l3c_code", ""))
+			if l3c != "":
+				mid = "line_3c"
+			else:
+				var id : String = String(nd.get("id", "")).to_lower()
+				if id.find("_3c") != -1 or id.find("line_3c") != -1:
+					mid = "line_3c"
+				elif id.find("_3b") != -1 or id.find("line_3b") != -1:
+					mid = "line_3b"
+				elif id.find("_3a") != -1 or id.find("line_3a") != -1:
+					mid = "line_3a"
+				elif id.find("_1") != -1 or id.find("line_1") != -1:
+					mid = "line_1"
+		if mid != "":
+			counts[mid] = counts.get(mid, 0) + 1
+
+	# If extruder exists, heavily weight the extruder's line
+	for nd in _nodes:
+		var id : String = String(nd.get("id", "")).to_lower()
+		if id.begins_with("extruder_1") or id == "extruder":
+			counts["line_1"] = counts.get("line_1", 0) + 50
+		elif id.begins_with("extruder_3a"):
+			counts["line_3a"] = counts.get("line_3a", 0) + 50
+		elif id.begins_with("extruder_3b"):
+			counts["line_3b"] = counts.get("line_3b", 0) + 50
+		elif id.begins_with("extruder_3c"):
+			counts["line_3c"] = counts.get("line_3c", 0) + 50
+
+	var best_mid : String = ""
+	var best_cnt : int = 0
+	for k in counts:
+		if counts[k] > best_cnt:
+			best_cnt = counts[k]
+			best_mid = k
+
+	match best_mid:
+		"line_1":           return "LIJN 1"
+		"line_3a":          return "LIJN 3A"
+		"line_3b":          return "LIJN 3B"
+		"line_3c":          return "LIJN 3C"
+		"line_sort":        return "SORTEERLIJN"
+		"line_intake_3a3b": return "INVOER 3A/3B"
+		"line_intake_3c6":  return "INVOER 3C/6"
+		_:
+			return "LIJN 1" if best_cnt > 0 else "LIJN 1"
+
 ## Total live current (A) the whole line is drawing right now — the sum of every
 ## metered stage's calibrated draw (#173). Only stages carrying an l3c_code are
 ## metered, i.e. only a world where the `line_3c` macro has been placed; a 3A/3B/1
@@ -2259,8 +2330,8 @@ func _tick_plc_power_downstream(delta: float) -> void:
 	# fault + upstream OFF (downstream keeps its PLC power and drains).
 	_estop_step()
 	for nd_s in _nodes:
-		var tgt : float = 1.0 if bool(nd_s["powered"]) else 0.0
-		nd_s["spin"] = move_toward(float(nd_s["spin"]), tgt, delta / maxf(SPIN_UP_S, 0.01))
+		var tgt : float = 1.0 if bool(nd_s.get("powered", false)) else 0.0
+		nd_s["spin"] = move_toward(float(nd_s.get("spin", 0.0)), tgt, delta / maxf(SPIN_UP_S, 0.01))
 		# Multi-rotor cascade: walk EVERY mechanism child, not just the
 		# first one. Without this, doseersilo (3 augers) + frictiewasser
 		# (2 stirrers) only see their primary rotor respond to PLC power,
@@ -2322,7 +2393,7 @@ func _tick_feed(delta: float) -> void:
 		var bales := _deliverable_bales_cache
 		for i in _nodes.size():
 			var nd: Dictionary = _nodes[i]
-			if String(nd["role"]) == "sink" or _has_incoming(i):
+			if String(nd.get("role", "")) == "sink" or _has_incoming(i):
 				continue
 			# A node dict can outlive its Node3D: anything that frees a placed
 			# machine WITHOUT an immediate rebuild() (a save-reload cycle, a scripted
@@ -2371,14 +2442,16 @@ func _tick_process_machines(delta: float) -> void:
 	#    (sink) does the last melt-filter + degas and grades the granulaat.
 	var dt := maxf(delta, 0.0001)
 	for nd in _nodes:
-		var bin: MaterialBatch = nd["in"]
+		var bin : MaterialBatch = nd.get("in", null) as MaterialBatch
+		if bin == null:
+			continue
 		nd["buffer"] = bin.mass_kg
 		# #52 per-tick load bookkeeping for the motor-overload observer. These are
 		# pure OBSERVATIONS of the existing split (set below), never inputs to it.
 		nd["_backlog_kg"] = 0.0
 		nd["_moved_kg"]   = 0.0
-		if bin.mass_kg <= 0.0:
-			nd["thru"] = lerpf(float(nd["thru"]), 0.0, 0.2)   # spin down when starved
+		if (bin as MaterialBatch).mass_kg <= 0.0:
+			nd["thru"] = lerpf(float(nd.get("thru", 0.0)), 0.0, 0.2)   # spin down when starved
 			continue
 		# Effective conveying rate is GATED by live rotation: design rate × spin-up
 		# × rotor rpm-fraction. A stopped or still-spinning-up rotor moves nothing,
@@ -2386,7 +2459,7 @@ func _tick_process_machines(delta: float) -> void:
 		# Effective rate = design × spin × mech × HMI overrides (rpm slider AND the
 		# avg of the per-component RPMs — inlet/transports/outlet for tanks).
 		var rate_mul : float = float(nd.get("rpm_pct", 1.0)) * _component_pct_multiplier(nd)
-		var eff_rate: float = float(nd["rate"]) * float(nd["spin"]) * _mech_fraction(nd) * rate_mul
+		var eff_rate: float = float(nd.get("rate", 0.0)) * float(nd.get("spin", 0.0)) * _mech_fraction(nd) * rate_mul
 		# #52 air gating — an air-driven consumer (TITECH ejector / PCU ram) starved of
 		# header pressure conveys slower. This is a GENTLE rate multiplier only: it
 		# slows flow, the un-moved mass simply backs up in the buffer (conserving). At
@@ -2825,6 +2898,9 @@ func _push_scada(delta: float) -> void:
 		elif line_powered_fraction() > 0.0:
 			state = "Running"
 		_scada.call("set_state", state)
+	if _scada.has_method("set_title"):
+		var lname := active_line_name()
+		_scada.call("set_title", lname if lname != "" else "GEEN ACTIEVE LIJN")
 	if not _scada.has_method("set_param"):
 		return
 	# Line amps — the summed live draw across every metered stage.
@@ -3467,15 +3543,19 @@ func _basis_along(axis_world: Vector3, which: String) -> Basis:
 
 # =============================================================================
 func _update_label() -> void:
-	if _label == null:
+	if _label == null or not _label.visible:
 		return
 	if _nodes.is_empty():
 		_label.text = ""
 		return
 	var in_transit := 0.0
 	for nd in _nodes:
-		in_transit += (nd["in"] as MaterialBatch).mass_kg
-		in_transit += (nd["out"] as MaterialBatch).mass_kg
+		var bin = nd.get("in", null)
+		if bin is MaterialBatch:
+			in_transit += (bin as MaterialBatch).mass_kg
+		var bout = nd.get("out", null)
+		if bout is MaterialBatch:
+			in_transit += (bout as MaterialBatch).mass_kg
 	in_transit += pipe_mass()    # #145: material riding the connectors counts too
 	# Full ledger: what came IN (fed + process water) must equal what went OUT
 	# (granulaat + mechanical waste + dirt scraped + water driven off + polymer

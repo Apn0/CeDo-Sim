@@ -53,9 +53,11 @@ const BF_OUTLINE : Array = [
 	Vector2(57, 61), Vector2(0, 61)]
 
 # Classification radii (XZ metres).
-const ANCHOR_M  : float = 45.0    # a work rig this close to the anchor is "on plant"
-const PARKING_M : float = 25.0    # a car this close to a bay is "at parking"
-const SWIFT_M   : float = 30.0    # tolerance around the Swift's road marker
+const ANCHOR_M     : float = 45.0    # a work rig this close to the anchor is "on plant"
+const PARKING_M    : float = 25.0    # a car this close to a bay is "at parking"
+const SWIFT_M      : float = 30.0    # tolerance around the Swift's road marker
+const YARD_M       : float = 30.0    # a work rig this close to a bale yard is "on plant"
+const BLDG_APRON_M : float = 25.0    # loading apron / roll-up door perimeter outside building
 
 # Frames to let MainWorld's _ready cascade + deferred vehicle spawns finish, then
 # extra frames for the pre-shift sequence (car spawner, player seating) to run.
@@ -153,9 +155,13 @@ func _ready() -> void:
 	# ── VEHICLE CENSUS ───────────────────────────────────────────────────────
 	var stranded : Array[String] = []
 	var counts : Dictionary = {"ON_PLANT": 0, "AT_PARKING": 0, "ON_ROAD_PRESHIFT": 0, "STRANDED": 0}
+	var yard_mgr = _world.get("bale_yard_manager")
+	var yard_polys : Array = []
+	if yard_mgr != null and yard_mgr.has_method("get_yard_polygons"):
+		yard_polys = yard_mgr.get_yard_polygons()
 	print("\n--- VEHICLE CENSUS (every node in group 'vehicle') ---")
-	print("  %-22s %-16s %-9s %8s %8s %6s %-3s %s" % [
-		"name", "type", "class", "d_anch", "d_park", "inB", "tri", "scene pos"])
+	print("  %-22s %-16s %-9s %8s %8s %8s %8s %6s %-3s %s" % [
+		"name", "type", "class", "d_anch", "d_park", "d_yard", "d_bldg", "inB", "tri", "scene pos"])
 	var vehicles : Array = get_tree().get_nodes_in_group("vehicle")
 	# Deterministic order for a readable, diffable table.
 	vehicles.sort_custom(func(a, b): return String(a.name) < String(b.name))
@@ -168,12 +174,14 @@ func _ready() -> void:
 		var xz := Vector2(gp.x, gp.z)
 		var d_anchor : float = xz.distance_to(Vector2(anchor.x, anchor.z))
 		var d_park : float = _nearest_bay_dist(xz, bays, parking_c)
+		var d_yard : float = _nearest_yard_dist(xz, yard_polys)
+		var d_bldg : float = _nearest_poly_dist(xz, poly)
 		var inside : bool = poly.size() >= 3 and Geometry2D.is_point_in_polygon(xz, poly)
 		var is_tri : bool = (v is BaseVehicle) and v.get_parent() == _world
 		var d_swift : float = xz.distance_to(Vector2(swift_pos.x, swift_pos.z)) if swift != null else INF
 
 		var cls : String = "STRANDED"
-		if inside or d_anchor <= ANCHOR_M:
+		if inside or d_anchor <= ANCHOR_M or d_yard <= YARD_M or d_bldg <= BLDG_APRON_M:
 			cls = "ON_PLANT"
 		elif d_park <= PARKING_M:
 			cls = "AT_PARKING"
@@ -181,10 +189,10 @@ func _ready() -> void:
 			cls = "ON_ROAD_PRESHIFT"
 		counts[cls] = int(counts[cls]) + 1
 		if cls == "STRANDED":
-			stranded.append("%s(%s) @scene(%.1f,%.1f) d_anch=%.1f d_park=%.1f tri=%s" % [
-				v.name, vtype, gp.x, gp.z, d_anchor, d_park, "Y" if is_tri else "n"])
-		print("  %-22s %-16s %-9s %7.1f %7.1f  %-5s %-3s (%.1f, %.1f)" % [
-			v.name.substr(0, 22), vtype.substr(0, 16), cls, d_anchor, d_park,
+			stranded.append("%s(%s) @scene(%.1f,%.1f) d_anch=%.1f d_park=%.1f d_yard=%.1f d_bldg=%.1f tri=%s" % [
+				v.name, vtype, gp.x, gp.z, d_anchor, d_park, d_yard, d_bldg, "Y" if is_tri else "n"])
+		print("  %-22s %-16s %-9s %7.1f %7.1f %7.1f %7.1f  %-5s %-3s (%.1f, %.1f)" % [
+			v.name.substr(0, 22), vtype.substr(0, 16), cls, d_anchor, d_park, d_yard, d_bldg,
 			"IN" if inside else "out", "Y" if is_tri else "n", gp.x, gp.z])
 
 	print("\n  totals: ON_PLANT=%d  AT_PARKING=%d  ON_ROAD_PRESHIFT=%d  STRANDED=%d  (of %d vehicles)" % [
@@ -297,6 +305,38 @@ func _nearest_bay_dist(xz: Vector2, bays: Array, fallback: Vector3) -> float:
 	return best
 
 
+func _dist_point_to_segment(p: Vector2, a: Vector2, b: Vector2) -> float:
+	var ab := b - a
+	var ab_len_sq := ab.length_squared()
+	if ab_len_sq < 1e-6:
+		return p.distance_to(a)
+	var t := clampf((p - a).dot(ab) / ab_len_sq, 0.0, 1.0)
+	var proj := a + ab * t
+	return p.distance_to(proj)
+
+
+func _nearest_poly_dist(xz: Vector2, poly: PackedVector2Array) -> float:
+	if poly.size() < 3:
+		return INF
+	if Geometry2D.is_point_in_polygon(xz, poly):
+		return 0.0
+	var best : float = INF
+	for i in poly.size():
+		var a : Vector2 = poly[i]
+		var b : Vector2 = poly[(i + 1) % poly.size()]
+		best = minf(best, _dist_point_to_segment(xz, a, b))
+	return best
+
+
+func _nearest_yard_dist(xz: Vector2, yard_polys: Array) -> float:
+	if yard_polys.is_empty():
+		return INF
+	var best : float = INF
+	for poly in yard_polys:
+		best = minf(best, _nearest_poly_dist(xz, poly))
+	return best
+
+
 func _find_swift() -> Node3D:
 	for vn in get_tree().get_nodes_in_group("vehicle"):
 		var v := vn as Node3D
@@ -311,6 +351,7 @@ func _find_swift() -> Node3D:
 func _finish() -> void:
 	print("\n=========================================")
 	print("Result: %s (%d ok, %d fail)" % ["PASS" if _fails == 0 else "FAIL", _oks, _fails])
+	print("RESULT: %s" % ["PASS" if _fails == 0 else "FAIL"])
 	print("=========================================")
 	if _world != null and is_instance_valid(_world):
 		get_tree().current_scene = null

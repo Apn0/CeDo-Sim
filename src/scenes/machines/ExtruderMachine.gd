@@ -177,15 +177,23 @@ func _readable_status() -> String:
 func _interact_hint() -> String:
 	match model.state:
 		ExtruderModel.State.OFF:
+			if model.flooded_dismantle_required or model.vacuum_line_gunk_kg >= ExtruderModel.VACUUM_FLOOD_DISMANTLE_THRESHOLD_KG:
+				return "clean vacuum lines (clear gunk)"
 			return "start production" if model.preheat_ready() else "start warm-up"
 		ExtruderModel.State.PREHEAT:
 			if model.preheat_ready():
 				return "start production (barrel at temperature)"
 			return "warming up — %.0f%%" % (100.0 * model.preheat_progress())
-		ExtruderModel.State.IDLE:           return "start production"
+		ExtruderModel.State.IDLE:
+			if model.flooded_dismantle_required or model.vacuum_line_gunk_kg >= ExtruderModel.VACUUM_FLOOD_DISMANTLE_THRESHOLD_KG:
+				return "clean vacuum lines (clear gunk)"
+			return "start production"
 		ExtruderModel.State.RUNNING:        return "simulate vacuum loss (test the 120s cascade)"
 		ExtruderModel.State.VACUUM_ALARM:   return "restore vacuum (clear alarm)"
-		ExtruderModel.State.FAULT:          return "operator-clear fault → back to OFF"
+		ExtruderModel.State.FAULT:
+			if model.flooded_dismantle_required or model.vacuum_line_gunk_kg >= ExtruderModel.VACUUM_FLOOD_DISMANTLE_THRESHOLD_KG:
+				return "clean vacuum lines & clear fault"
+			return "operator-clear fault → back to OFF"
 		ExtruderModel.State.EMERGENCY_STOP: return "reset emergency stop (over-pressure trip)"
 		_:                                  return ""
 
@@ -528,6 +536,14 @@ func _broadcast(events: Array[String]) -> void:
 				model.melt_temp)
 		elif ev == "vacuum_alarm_cleared":
 			EventBus.machine_alarm_cleared.emit(config_resource.line_id, "vacuum")
+		elif ev == "vacuum_lines_cleaned":
+			EventBus.machine_alarm_cleared.emit(config_resource.line_id, "vacuum_gunk")
+
+## Direct maintenance call: clean vacuum lines and restore 100% degassing capacity.
+func clean_vacuum_lines() -> void:
+	if model != null:
+		model.clean_vacuum_lines()
+		print("[%s] Vacuum lines cleaned (capacity restored 100%%)" % (config_resource.line_id if config_resource else "extruder"))
 
 # =============================================================================
 # PLAYER INTERACTION — testing harness for the cascade
@@ -574,16 +590,23 @@ func _unhandled_input(event: InputEvent) -> void:
 					   model.melt_temp, config_resource.melt_temp_setpoint]
 					+ "button is not live yet.")
 		elif model.state in [ExtruderModel.State.OFF, ExtruderModel.State.IDLE]:
-			# On a cold barrel the model routes this to PREHEAT rather than
-			# STARTING — see ExtruderModel._route_start_request(). Pressing E on
-			# a cold machine used to guarantee a torque trip 2 s later.
-			_pending["start_production"] = true
-			if model.preheat_ready():
-				print("[%s] Operator started production" % config_resource.line_id)
+			if model.flooded_dismantle_required or model.vacuum_line_gunk_kg >= ExtruderModel.VACUUM_FLOOD_DISMANTLE_THRESHOLD_KG:
+				_pending["clean_vacuum_lines"] = true
+				print("[%s] Operator cleaned vacuum lines (clear gunk)" % config_resource.line_id)
 			else:
-				print("[%s] Operator started warm-up (barrel cold, %.0f °C)"
-					% [config_resource.line_id, model.melt_temp])
+				# On a cold barrel the model routes this to PREHEAT rather than
+				# STARTING — see ExtruderModel._route_start_request(). Pressing E on
+				# a cold machine used to guarantee a torque trip 2 s later.
+				_pending["start_production"] = true
+				if model.preheat_ready():
+					print("[%s] Operator started production" % config_resource.line_id)
+				else:
+					print("[%s] Operator started warm-up (barrel cold, %.0f °C)"
+						% [config_resource.line_id, model.melt_temp])
 		elif model.state == ExtruderModel.State.FAULT:
+			if model.flooded_dismantle_required or model.vacuum_line_gunk_kg >= ExtruderModel.VACUUM_FLOOD_DISMANTLE_THRESHOLD_KG:
+				_pending["clean_vacuum_lines"] = true
+				print("[%s] Operator cleaned vacuum lines during fault recovery" % config_resource.line_id)
 			_pending["operator_clear_fault"] = true
 			print("[%s] Operator cleared fault" % config_resource.line_id)
 		elif model.state == ExtruderModel.State.EMERGENCY_STOP:

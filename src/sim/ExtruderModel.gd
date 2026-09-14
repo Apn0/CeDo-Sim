@@ -306,13 +306,19 @@ func tick(delta: float, inputs: Dictionary) -> Array[String]:
 	match state:
 		State.OFF:
 			_tick_off(delta)
-			if inputs.get("preheat_on", false):
+			if inputs.get("clean_vacuum_lines", false):
+				clean_vacuum_lines()
+				events.append("vacuum_lines_cleaned")
+			elif inputs.get("preheat_on", false):
 				_transition(State.PREHEAT, events)
 			elif inputs.get("start_production", false):
 				_route_start_request(events)
 		State.IDLE:
 			_tick_idle(delta)
-			if inputs.get("preheat_on", false):
+			if inputs.get("clean_vacuum_lines", false):
+				clean_vacuum_lines()
+				events.append("vacuum_lines_cleaned")
+			elif inputs.get("preheat_on", false):
 				_transition(State.PREHEAT, events)
 			elif inputs.get("start_production", false):
 				_route_start_request(events)
@@ -345,6 +351,9 @@ func tick(delta: float, inputs: Dictionary) -> Array[String]:
 			_tick_vacuum_alarm(delta, inputs, events)
 		State.FAULT:
 			_tick_fault(delta, inputs, events)
+			if inputs.get("clean_vacuum_lines", false):
+				clean_vacuum_lines()
+				events.append("vacuum_lines_cleaned")
 		State.EMERGENCY_STOP:
 			_tick_e_stop(delta)
 			if inputs.get("reset_after_estop", false):

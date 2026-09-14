@@ -96,7 +96,7 @@ FACTORY_EXCLUSION_RADIUS_M = 80.0  # buildings within this of bbox-centre are
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 PDOK_BGT_WFS = "https://service.pdok.nl/lv/bgt/wfs/v1_0"
 AHN_ATOM     = "https://service.pdok.nl/rws/ahn/atom/dtm_05m.xml"
-BAG3D_BASE   = "https://3dbag.nl"
+BAG3D_BASE   = "https://api.3dbag.nl"
 
 # BGT layers we ingest (operator's spec).
 BGT_LAYERS = [
@@ -447,9 +447,12 @@ def build_heightmesh(ahn_urls, south, west, north, east,
     H = np.zeros((grid_n, grid_n), dtype=np.float32)
     # Open each tif lazily; rasterio handles HTTPS range reads.
     open_tifs = []
+    tif_data = {}
     for url in ahn_urls:
         try:
-            open_tifs.append(rasterio.open(url))
+            ds = rasterio.open(url)
+            open_tifs.append(ds)
+            tif_data[ds.name] = ds.read(1)
         except Exception:
             pass
     print("[bake]   opened %d AHN5 tifs for sampling" % len(open_tifs))
@@ -461,13 +464,12 @@ def build_heightmesh(ahn_urls, south, west, north, east,
                     if (ds.bounds.left <= x <= ds.bounds.right and
                             ds.bounds.bottom <= y <= ds.bounds.top):
                         row, col = ds.index(x, y)
-                        val = ds.read(1, window=((row, row + 1),
-                                                 (col, col + 1)))[0, 0]
+                        val = tif_data[ds.name][row, col]
                         if val is not None and not math.isnan(val):
-                            h = float(val)
+                            h = float(val) - 45.0  # normalize to plant local Y=0
                             break
                 except Exception:
-                    continue
+                    pass
             H[i, j] = h
     # Triangulate
     verts = []
@@ -507,7 +509,7 @@ def fetch_3dbag(south, west, north, east):
     nx, ny = wgs84_to_rd(north, east)
     rd_bbox = "%.1f,%.1f,%.1f,%.1f" % (
         min(sx, nx), min(sy, ny), max(sx, nx), max(sy, ny))
-    idx_url = "%s/api/tile?bbox=%s" % (BAG3D_BASE, rd_bbox)
+    idx_url = "%s/tiles?bbox=%s" % (BAG3D_BASE, rd_bbox)
     print("[bake] 3DBAG tile index %s" % idx_url)
     tile_ids = []
     try:
@@ -519,7 +521,7 @@ def fetch_3dbag(south, west, north, east):
     print("[bake]   %d tile ids in bbox" % len(tile_ids))
     cityjson_docs = []
     for tid in tile_ids[:16]:  # ~1km bbox should hit ≤4 tiles; cap for safety
-        url = "%s/api/v1/tile/%s/lod12.city.json" % (BAG3D_BASE, tid)
+        url = "%s/v1/tiles/%s/lod12.city.json" % (BAG3D_BASE, tid)
         try:
             tr = requests.get(url, timeout=90)
             tr.raise_for_status()
@@ -847,3 +849,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

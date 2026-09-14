@@ -91,7 +91,10 @@ var _scanner_banner_fade  : float = 0.0   # seconds remaining
 # "✓ Saved" toast (top-right, under the line banner) — confirms every save
 # (autosave tick, pause-card Save, Save & Quit) actually reached disk. Before
 # this, saving only print()ed to console — invisible in multi-hour shifts.
+# #Q1 — also shows the save name + wall-clock time so the operator knows
+# WHICH file is on disk and WHEN it landed, without opening the menu.
 var _save_toast_panel : PanelContainer
+var _save_toast_label : Label   # #Q1 — text updated at each save with name+time
 var _save_toast_fade  : float = 0.0   # seconds remaining
 
 # =============================================================================
@@ -442,7 +445,12 @@ func _refresh_line_panel() -> void:
 		state = "DRAAIT";               col = Color(0.35, 0.85, 0.45)
 	var gran : float = float(line_flow.get("gran_mass"))
 	var amps : float = float(line_flow.call("live_line_amps"))
-	_line_label.text = "LIJN  ·  %s   ·   %.0f A   ·   gran %.0f kg" % [state, amps, gran]
+	var line_name : String = "LIJN"
+	if line_flow.has_method("active_line_name"):
+		var an : String = String(line_flow.call("active_line_name"))
+		if an != "":
+			line_name = an
+	_line_label.text = "%s  ·  %s   ·   %.0f A   ·   gran %.0f kg" % [line_name, state, amps, gran]
 	_line_label.add_theme_color_override("font_color", col)
 
 # =============================================================================
@@ -706,6 +714,7 @@ func _ensure_map_action() -> void:
 		"walkie_vol_up":   KEY_PERIOD,
 		"walkie_ptt":      KEY_U,    # opens the canned-message picker (#179 fix).
 		"crew_panel":      KEY_KP_PERIOD,   # Numpad "." — open the crew assignment panel
+		"crew_start_line": KEY_INSERT,      # Insert — deploy crew to start Line 1
 		# Was V, but V = forklift_forks_widen (clamp release) in the cab, so
 		# releasing the clamp also keyed the radio. Moved to U (unused) so the
 		# two never double-fire. Operators can still talk while driving.
@@ -1143,6 +1152,8 @@ func _input(event: InputEvent) -> void:
 		return
 	if _handle_crew_panel_input(event):
 		return
+	if _handle_crew_start_line_input(event):
+		return
 	if _handle_map_input(event):
 		return
 	if _handle_pause_menu_input(event):
@@ -1222,6 +1233,24 @@ func _handle_crew_panel_input(event: InputEvent) -> bool:
 		_toggle_crew_panel()
 		get_viewport().set_input_as_handled()
 		return true
+	return false
+
+func _handle_crew_start_line_input(event: InputEvent) -> bool:
+	# ── Line 1 Startup with Crew (Insert) ────────────────────────────────────
+	var triggered := false
+	if event.is_action_pressed("crew_start_line"):
+		triggered = true
+	elif event is InputEventKey and (event as InputEventKey).pressed and not (event as InputEventKey).echo:
+		if (event as InputEventKey).keycode == KEY_INSERT:
+			triggered = true
+	if triggered:
+		var cm : CrewManager = crew_manager
+		if cm == null and get_tree() != null:
+			cm = get_tree().get_first_node_in_group("crew_manager") as CrewManager
+		if cm != null and cm.has_method("start_line_1_with_crew"):
+			cm.start_line_1_with_crew()
+			get_viewport().set_input_as_handled()
+			return true
 	return false
 
 func _handle_map_input(event: InputEvent) -> bool:
@@ -1486,7 +1515,7 @@ func _build_save_toast() -> void:
 	_save_toast_panel.anchor_right  = 1.0
 	_save_toast_panel.anchor_top    = 0.0
 	_save_toast_panel.anchor_bottom = 0.0
-	_save_toast_panel.offset_left   = -110.0
+	_save_toast_panel.offset_left   = -220.0   # #Q1 widened: fits "✓ Opgeslagen — <name>  HH:MM"
 	_save_toast_panel.offset_right  = -12.0
 	_save_toast_panel.offset_top    = 50.0
 	_save_toast_panel.offset_bottom = 50.0
@@ -1507,14 +1536,30 @@ func _build_save_toast() -> void:
 	lbl.add_theme_font_size_override("font_size", 13)
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_save_toast_panel.add_child(lbl)
+	_save_toast_label = lbl   # #Q1 — keep ref so _on_autosave_completed can update it
 	_save_toast_panel.visible = false
 	add_child(_save_toast_panel)
 
 func _on_autosave_completed() -> void:
 	if _save_toast_panel == null:
 		return
+	# #Q1 — show save name + wall-clock time so the operator knows which file
+	# landed on disk and when, without opening the pause menu.
+	var save_name := "shift"
+	if has_node("/root/GameState"):
+		var gs := get_node("/root/GameState")
+		if "save_file_path" in gs:
+			var fp : String = String(gs.save_file_path)
+			# e.g. user://mijn_world_save.json → "mijn_world"
+			save_name = fp.get_file().trim_suffix("_save.json").trim_suffix(".json")
+			if save_name == "" or save_name == "cedo_simulator":
+				save_name = "default"
+	var t := Time.get_datetime_dict_from_system()
+	var ts := "%02d:%02d" % [int(t.get("hour", 0)), int(t.get("minute", 0))]
+	if _save_toast_label != null:
+		_save_toast_label.text = "✓ Opgeslagen — %s  %s" % [save_name, ts]
 	_save_toast_panel.visible = true
-	_save_toast_fade = 1.5
+	_save_toast_fade = 2.5   # slightly longer so the operator can read the name
 
 func _on_scanner_banner(text: String, is_error: bool = false) -> void:
 	if _scanner_banner_label == null:

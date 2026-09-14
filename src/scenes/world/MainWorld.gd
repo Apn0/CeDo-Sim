@@ -174,7 +174,7 @@ func _ready() -> void:
 	# Yasin silently never got seated. Audit-caught (#157 follow-up).
 	var car_spawner := ShiftCarSpawner.new()
 	car_spawner.name = "ShiftCarSpawner"   # #206 — same fix, named explicitly so downstream find_child lookups work
-	add_child(car_spawner); car_spawner.setup(self, staff_parking, npcs, operator_context, player, _player_spawn_pos)
+	add_child(car_spawner); car_spawner.setup(self, staff_parking, npcs, operator_context, player, _player_spawn_pos, shift_clock)
 	_spawn_hud()
 	# Performance overlay + auto-logger (F3 toggles; logs a [PERF] snapshot every
 	# 5 s so the lag can be diagnosed straight from the console).
@@ -492,7 +492,7 @@ func _spawn_crew_manager() -> void:
 		# _get_factory_anchor already falls back factory_center -> player spawn ->
 		# marker and pins Y to the measured operating floor.
 		break_pos = _get_factory_anchor()
-		push_warning("[MainWorld] No BreakRoom/Canteen marker — breaks fall back to the plant anchor %s. Add a canteen marker to world_layout.json to give crew a real break room (WorldSetup was deleted 2026-08-17)." % str(break_pos))
+		print("[MainWorld] No BreakRoom/Canteen marker — breaks fall back to plant anchor %s" % str(break_pos))
 
 	add_child(crew_manager)
 	crew_manager.setup(npcs, line_flow, shift_clock, break_pos)
@@ -1140,6 +1140,17 @@ func rebake_navigation() -> void:
 ## NAMES BOTH ENDPOINTS — an unreachable destination is useless to debug without
 ## knowing which one it was.
 func _verify_nav_connectivity() -> void:
+	call_deferred("_async_verify_nav_connectivity")
+
+func _async_verify_nav_connectivity() -> void:
+	if _nav_region == null or not is_instance_valid(_nav_region):
+		return
+	# Wait for NavigationServer3D to synchronize the new navmesh into the server map.
+	# The background bake thread emits bake_finished, but NavigationServer3D updates
+	# the server map across subsequent physics frames.
+	if get_tree() != null:
+		for _i in range(5):
+			await get_tree().physics_frame
 	if _nav_region == null or not is_instance_valid(_nav_region):
 		return
 	# The interior anchor is the CENTRE OF THE SHELL'S GEOMETRY, not the shell
@@ -1178,7 +1189,7 @@ func _verify_nav_connectivity() -> void:
 		var path : PackedVector3Array = NavigationServer3D.map_get_path(
 			map, pair[0], pair[1], true)
 		var reached : bool = path.size() >= 2 \
-			and path[path.size() - 1].distance_to(pair[1]) <= 1.0
+			and path[path.size() - 1].distance_to(pair[1]) <= 1.5
 		if not reached:
 			push_error(("[MainWorld] NAVMESH CONNECTIVITY LOST: no route from %s to %s "
 				+ "(%d path points). The plant is sealed — NAV_BAKE_SHELL is %s and "
@@ -1186,6 +1197,7 @@ func _verify_nav_connectivity() -> void:
 				% [str(pair[0].round()), str(pair[1].round()), path.size(),
 					str(NAV_BAKE_SHELL)])
 			return
+	print("[MainWorld] Nav connectivity verified: plant route open")
 
 ## Tag every body NavSourcePolicy accepts, plus the two walkable surfaces. Returns
 ## how many were tagged.

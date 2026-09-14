@@ -111,9 +111,18 @@ func _build() -> void:
 	_list_vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(_list_vb)
 
+	var btn_row := HBoxContainer.new()
+	btn_row.add_theme_constant_override("separation", 12)
+	vb.add_child(btn_row)
+
+	var start_l1_btn := _flat_button("▶ LIJN 1 OPSTARTEN MET PLOEG (Insert)", Color(0.18, 0.45, 0.28, 1.0))
+	start_l1_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	start_l1_btn.pressed.connect(_on_start_line_1_pressed)
+	btn_row.add_child(start_l1_btn)
+
 	var closeb := _flat_button("SLUITEN  (Esc)", Color(0.40, 0.22, 0.20, 1.0))
 	closeb.pressed.connect(close_panel)
-	vb.add_child(closeb)
+	btn_row.add_child(closeb)
 
 ## Rebuild the worker rows + post dropdowns from the current crew + stations.
 func _populate() -> void:
@@ -347,6 +356,11 @@ func _process(_dt: float) -> void:
 		var w = r["worker"]
 		if is_instance_valid(w):
 			(r["task_lbl"] as Label).text = w.current_task()
+
+func _on_start_line_1_pressed() -> void:
+	if _cm != null and _cm.has_method("start_line_1_with_crew"):
+		_cm.start_line_1_with_crew()
+		_populate()
 
 func _input(event: InputEvent) -> void:
 	if visible and event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:

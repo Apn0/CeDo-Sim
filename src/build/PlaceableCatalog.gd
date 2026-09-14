@@ -6618,6 +6618,7 @@ static func _m_bale_simple(p: Node3D, id: String, size: Vector3, color: Color, g
 	var box := _box(p, Vector3(size.x * 0.98, size.y * 0.98, size.z * 0.98), \
 		Vector3(0.0, size.y * 0.5, 0.0), body_mat)
 	box.name = "SimpleBody"
+	box.set_meta("no_merge", true)
 	if not ghost:
 		_lod_cull(box, 54.0)
 
@@ -6774,6 +6775,13 @@ static func _m_bale_simple(p: Node3D, id: String, size: Vector3, color: Color, g
 			Vector3(size.x * 0.18, size.y * 0.62, size.z * 0.5 + 0.005), sticker_mat)
 		sticker.name = "CloseLODSticker"
 		_lod_cull(sticker, 24.0)
+
+		# Merge all close-LOD static parts (slabs, seams, wires, overlays, sticker)
+		# into a single merged mesh instance to collapse ~90 draw calls into 1.
+		StaticMerge.merge_static(p)
+		var merged_node := p.get_node_or_null("StaticMerged") as GeometryInstance3D
+		if merged_node != null:
+			_lod_cull(merged_node, 28.0)
 
 ## Upgrade a simple (LOD) yard bale to the full sheet/wire model on demand. Called
 ## when a bale is grabbed, so the cut→film-pile feature works on any bale the

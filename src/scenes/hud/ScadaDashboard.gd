@@ -61,6 +61,8 @@ var _time_source : Callable = Callable(self, "_engine_time_s")
 
 # ── UI nodes ────────────────────────────────────────────────────────────────────
 var _root_panel   : PanelContainer
+var _title_label  : Label
+var _title_text   : String = "LINE 3C"
 var _state_label  : Label
 var _state_chip   : PanelContainer
 var _param_rows   : Dictionary = {}   # key -> {row, name_lbl, value_lbl, chip}
@@ -182,6 +184,27 @@ func micro_stop_count() -> int:
 func is_shutdown_visible() -> bool:
 	return _root_panel != null and not _root_panel.visible
 
+## Set the line title displayed on the cockpit panel header (e.g. "LIJN 1", "LINE 3C").
+func set_title(text: String) -> void:
+	_title_text = text
+	if _title_label != null and is_instance_valid(_title_label):
+		_title_label.text = text
+
+func get_title() -> String:
+	return _title_text
+
+## Toggle dashboard panel visibility.
+func toggle_visibility() -> void:
+	if _root_panel != null and is_instance_valid(_root_panel):
+		_root_panel.visible = not _root_panel.visible
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo:
+		var k := event as InputEventKey
+		if k.keycode == KEY_F2 or k.physical_keycode == KEY_F2 \
+				or (InputMap.has_action("toggle_scada_dashboard") and event.is_action_pressed("toggle_scada_dashboard")):
+			toggle_visibility()
+
 # =============================================================================
 # MICRO-STOP LOGGING
 # =============================================================================
@@ -240,12 +263,12 @@ func _build_ui() -> void:
 	header.add_theme_constant_override("separation", 8)
 	vbox.add_child(header)
 
-	var title := Label.new()
-	title.text = "LINE 3C"
-	title.add_theme_font_size_override("font_size", 13)
-	title.add_theme_color_override("font_color", COL_GREY_LABEL)
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	header.add_child(title)
+	_title_label = Label.new()
+	_title_label.text = _title_text
+	_title_label.add_theme_font_size_override("font_size", 13)
+	_title_label.add_theme_color_override("font_color", COL_GREY_LABEL)
+	_title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(_title_label)
 
 	# State chip (its own backing so the state reads as a discrete annunciator).
 	_state_chip = PanelContainer.new()

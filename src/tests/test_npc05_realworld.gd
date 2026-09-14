@@ -349,12 +349,32 @@ func _run() -> void:
 			_last_phase = ph
 			_phase_first_seen_frame = frames
 
-		# Boarding-deadlock guard: while the worker is seated its physics
-		# processing is off, and the task's own clock must keep advancing
-		# anyway. Counting both halves separately is what distinguishes "never
-		# boarded" from "boarded and frozen".
+		if frames % 60 == 0:
+			var fk = task._forklift
+			if fk != null and is_instance_valid(fk):
+				var p : Vector3 = fk.global_position
+				var tgt = fk.get("_npc_target")
+				var spd = float(fk.get("_current_speed_mps"))
+				var pilot = fk.get("_pilot")
+				var pmode = int(pilot._mode) if pilot != null else -1
+				var pblk = float(pilot._blocked_secs) if pilot != null else 0.0
+				var r_sz = fk.get("_npc_route").size() if fk.get("_npc_route") != null else 0
+				_info("FK pos=(%.1f, %.1f) spd=%.2f tgt=%s r_sz=%d mode=%d blk=%.1f pt=%.1f/%.1f"
+					% [p.x, p.z, spd, str(tgt), r_sz, pmode, pblk, float(task._phase_t), float(task._phase_budget)])
+			if task.is_failed():
+				_info("TASK IS FAILED: reason=%s" % task._fail_reason)
+
+		# _seated_in_vehicle or disabled physics processing), the task's own clock
+		# must keep advancing anyway. Counting both halves separately is what
+		# distinguishes "never boarded" from "boarded and frozen".
 		var pt := float(task._phase_t)
-		if npc is Node3D and not (npc as Node3D).is_physics_processing():
+		var is_seated := false
+		if npc != null and is_instance_valid(npc):
+			if "_seated_in_vehicle" in npc and bool(npc.get("_seated_in_vehicle")):
+				is_seated = true
+			elif not (npc as Node3D).is_physics_processing():
+				is_seated = true
+		if is_seated:
 			_seen_seated_frames += 1
 			if pt > _last_phase_t + 1e-6:
 				_seen_seated_ticking += 1

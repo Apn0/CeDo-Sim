@@ -228,6 +228,15 @@ func _check_preheat() -> void:
 		and int(ExtruderModel.State.PREHEAT) == 8,
 		"State enum numbering unchanged, PREHEAT appended as 8")
 
+	# Vacuum lines maintenance test
+	var vm := ExtruderModel.new(ExtruderConfig.new())
+	vm.vacuum_line_gunk_kg = 5.2
+	vm.flooded_dismantle_required = true
+	var evs := vm.tick(0.1, {"clean_vacuum_lines": true})
+	_check(vm.vacuum_line_gunk_kg == 0.0 and not vm.flooded_dismantle_required,
+		"clean_vacuum_lines resets gunk to 0 and clears dismantle flag")
+	_check(evs.has("vacuum_lines_cleaned"), "emits vacuum_lines_cleaned event on tick")
+
 
 func _backup_files() -> void:
 	for p in _protect:
@@ -255,4 +264,5 @@ func _finish(code: int) -> void:
 	_restore_files()
 	print("Result: %s (%d ok, %d fail)"
 		% ["PASS" if _fails == 0 else "FAIL", _oks, _fails])
+	print("RESULT: %s" % ["PASS" if _fails == 0 else "FAIL"])
 	get_tree().quit(code)

@@ -31,13 +31,16 @@ const MAX_ON_BREAK   : int   = 1        # only ever one post unmanned at a time
 
 # Which machines each role is responsible for (matched as id substrings).
 const ZONES : Dictionary = {
-	"extruder_op":      ["extruder", "mengsilo", "compactor", "mas_bak"],
+	"extruder_op":      ["extruder", "mengsilo", "compactor", "mas_bak", "laser_filter", "heetafslag", "extruder_silo", "compactorband"],
 	"permanent_feeder": ["bunker", "shredder", "inclined_belt", "feed_hopper",
-						  "sga", "metal_belt", "ballistic", "wind_sifter", "titech"],
-	"feeder":           ["bunker", "shredder", "inclined_belt", "feed_hopper"],
+						  "sga", "metal_belt", "ballistic", "wind_sifter", "titech",
+						  "opzetband", "westa_band", "overband_magnet"],
+	"feeder":           ["bunker", "shredder", "inclined_belt", "feed_hopper",
+						  "opzetband", "westa_band", "overband_magnet"],
 	"all_rounder":      ["prewash", "friction", "intensive", "flotation", "rotation",
-						  "kufferath", "rafter", "dewater", "mech_dryer", "centrifuge"],
-	"transitional":     ["feed_hopper", "prewash", "mengsilo"],
+						  "kufferath", "rafter", "dewater", "mech_dryer", "centrifuge",
+						  "vw_trommel", "trommel", "mill", "scheidingsgoot", "droger", "mas_bak", "mas_droger"],
+	"transitional":     ["feed_hopper", "prewash", "mengsilo", "sga", "shredder", "compactor", "opzetband"],
 }
 # Roles that roam centrally and may respond ANYWHERE as cover (no fixed post).
 const FLOATERS : Array[String] = ["shift_leader", "asst_shift_leader",
@@ -72,6 +75,8 @@ var _pin_marker : Dictionary = {}   # NPC -> Node3D (visible flag in the world)
 # section reuses (and re-homes) the existing feeder instead of spawning duplicates.
 var _section_feeders : Dictionary = {}   # section_key -> FeederWorker
 var _feeder_owner    : Dictionary = {}   # #233 section_key -> the REAL crew NPC driving that feeder
+# All-rounder Line 1 startup patrol state: NPC -> {stations: Array, idx: int, active: bool}
+var _allrounder_patrols : Dictionary = {}
 
 # EventBus is an autoload at runtime, but autoloads aren't registered as global
 # identifiers when this script is compiled inside the headless harness. Resolve it
@@ -263,9 +268,10 @@ func assign_posts() -> void:
 	for w in workers:
 		if _pinned.has(w):
 			continue   # operator assigned this one by hand — leave their post alone
-		var best : Dictionary = _nearest_in_zone(w.npc_role, w.global_position, machines)
+		var w_pos := _safe_npc_pos(w)
+		var best : Dictionary = _nearest_in_zone(w.npc_role, w_pos, machines)
 		var sid  : String  = ""
-		var pos  : Vector3 = w.global_position
+		var pos  : Vector3 = w_pos
 		if best.is_empty():
 			# No machine in this role's zone — floaters roam the line centre,
 			# everyone else just holds their spawn spot.
@@ -274,8 +280,8 @@ func assign_posts() -> void:
 				sid = "(rondgang)"
 		else:
 			sid = String(best["id"])
-			pos = _post_pos_on_aisle(best, w.global_position)
-		pos.y = w.global_position.y      # keep them on the floor
+			pos = _post_pos_on_aisle(best, w_pos)
+		pos.y = w_pos.y      # keep them on the floor
 		w.assign_post(sid, pos)
 
 ## A machine's own global_position sits INSIDE its collider — which MainWorld also
@@ -319,10 +325,14 @@ func tick(delta: float) -> void:
 	for w in workers:
 		var done : String = w.step_brain(delta)
 		if done != "":
-			_relieve(_node_by_id(done))
+			var raw_id := done.trim_prefix("opstart ")
+			_relieve(_node_by_id(raw_id))
 			_handling.erase(done)
-			_emit("npc_finished_helping", [String(w.npc_name), "", done, true])
-			_emit("machine_alarm_cleared", [done, "BUF-300"])
+			_handling.erase(raw_id)
+			_emit("npc_finished_helping", [String(w.npc_name), "", raw_id, true])
+			_emit("machine_alarm_cleared", [raw_id, "BUF-300"])
+			if _allrounder_patrols.has(w) and _allrounder_patrols[w].get("active", false):
+				_step_allrounder_patrol(w)
 
 	# 2) Dispatch the nearest available responder to the worst un-handled jam.
 	var jam := _worst_jam()
@@ -405,25 +415,31 @@ func _update_breaks(delta: float) -> void:
 ## headset/speaker, volume). Best-effort: silently does nothing in the headless
 ## harness where the autoload isn't present.
 func _radio_break_call(worker) -> void:
-	var ml := Engine.get_main_loop()
-	if not (ml is SceneTree):
-		return
-	var walkie := (ml as SceneTree).root.get_node_or_null("Walkie")
-	if walkie == null or not walkie.has_method("receive_call"):
-		return
 	var nm := String(worker.npc_name)
-	walkie.receive_call(nm, "%s hier — ik ga even pauzeren." % nm)
+	_radio_call(nm, "%s hier — ik ga even pauzeren." % nm)
 
 ## A floater announces a machine inspection check over the walkie.
 func _radio_inspection_call(worker, station_id: String) -> void:
+	var nm := String(worker.npc_name)
+	_radio_call(nm, "%s: inspectieronde bij %s — lagers en temperaturen normaal." % [nm, station_id])
+
+## Broadcast a message through the Walkie autoload (if present).
+func _radio_call(from_name: String, text: String) -> void:
 	var ml := Engine.get_main_loop()
 	if not (ml is SceneTree):
 		return
 	var walkie := (ml as SceneTree).root.get_node_or_null("Walkie")
-	if walkie == null or not walkie.has_method("receive_call"):
-		return
-	var nm := String(worker.npc_name)
-	walkie.receive_call(nm, "%s: inspectieronde bij %s — lagers en temperaturen normaal." % [nm, station_id])
+	if walkie != null and walkie.has_method("receive_call"):
+		walkie.receive_call(from_name, text)
+
+## Schedule a deferred radio call after delay seconds so messages do not collide.
+func _schedule_radio_call(delay: float, from_name: String, text: String) -> void:
+	var ml := Engine.get_main_loop()
+	if ml is SceneTree:
+		var timer := (ml as SceneTree).create_timer(delay)
+		timer.timeout.connect(func(): _radio_call(from_name, text))
+	else:
+		_radio_call(from_name, text)
 
 ## Resolve the EventBus autoload lazily (cached). Returns null when it isn't present
 ## (e.g. the headless harness), in which case event broadcasts are skipped.
@@ -611,10 +627,19 @@ func _nearest_in_zone(role: String, from: Vector3, machines: Array) -> Dictionar
 			best = m
 	return best
 
+func _safe_npc_pos(w: Node) -> Vector3:
+	if w != null and is_instance_valid(w) and w is Node3D:
+		if (w as Node3D).is_inside_tree():
+			return (w as Node3D).global_position
+		return (w as Node3D).position
+	return Vector3.ZERO
+
 func _node_pos(nd: Dictionary) -> Vector3:
 	var n = nd.get("node", null)
-	if n != null and is_instance_valid(n):
-		return (n as Node3D).global_position
+	if n != null and is_instance_valid(n) and n is Node3D:
+		if (n as Node3D).is_inside_tree():
+			return (n as Node3D).global_position
+		return (n as Node3D).position
 	return nd.get("win", Vector3.ZERO)
 
 func _node_by_id(id: String) -> Dictionary:
@@ -1360,3 +1385,223 @@ func _clear_pin_marker(worker) -> void:
 	if existing is Node3D and is_instance_valid(existing):
 		existing.queue_free()
 	_pin_marker.erase(worker)
+
+# =============================================================================
+# LINE 1 CREW STARTUP SEQUENCE (Insert)
+# =============================================================================
+## Operator triggered the Line 1 start command (Insert hotkey or CrewPanel button).
+## Powers on Line 1's physical PLC sequence, deploys each colleague to their
+## assigned section of Line 1, and engages all-rounders in active roving support
+## across all machines from head to sink.
+func start_line_1_with_crew() -> void:
+	print("[CrewManager] === LIJN 1 OPSTARTEN MET PLOEG (Insert) ===")
+
+	# 1) Collect machines belonging to Line 1
+	var l1_machines := _line_1_machine_list()
+	if l1_machines.is_empty():
+		l1_machines = _machine_list()
+	if l1_machines.is_empty():
+		push_warning("[CrewManager] start_line_1_with_crew: no machines found on line")
+		return
+
+	# 2) Power up Line 1 via LineFlow PLC Sequencer
+	if line_flow != null:
+		if line_flow.has_method("start_line"):
+			line_flow.call("start_line")
+		if "feed_enabled" in line_flow:
+			line_flow.feed_enabled = true
+
+	# Start any shredder feeder belts belonging to Line 1
+	var ml := Engine.get_main_loop()
+	if ml is SceneTree:
+		for belt in (ml as SceneTree).get_nodes_in_group("shredder_feed_belt"):
+			if belt != null and belt.has_method("request_start"):
+				var owns := true
+				if (belt as Node3D).has_meta("macro_id"):
+					var mid := String((belt as Node3D).get_meta("macro_id"))
+					owns = mid == "line_1" or mid.contains("bunker") or mid.contains("sga")
+				if owns:
+					belt.call("request_start")
+
+	# 3) Radio transmissions & visual banner
+	_radio_call("Romain", "Ploeg attentie: Lijn 1 wordt opgestart! Iedereen naar je werkplek.")
+	_emit("scanner_banner", ["▶ Lijn 1 Opstarten: Ploeg ingezet (Insert)", false])
+
+	# Staggered radio confirmations from the floor
+	_schedule_radio_call(2.5, "Pascal", "Invoer Lijn 1: opzetband en shredder gereed voor start.")
+	_schedule_radio_call(5.0, "Emrah", "Emrah: All-rounder paraat — ik loop de waslijn en drogers langs ter ondersteuning.")
+	_schedule_radio_call(7.5, "Kevin", "Extruder 1 op temperatuur en compactor gecheckt.")
+
+	# 4) Target stations across Line 1
+	var l1_centre := _avg_pos(l1_machines)
+	var intake_mach := _find_first_matching(l1_machines, ["opzetband", "shredder", "transport_belt", "bunker"])
+	var extruder_mach := _find_first_matching(l1_machines, ["extruder_1", "extruder", "compactorband", "extruder_silo"])
+	var buffer_mach := _find_first_matching(l1_machines, ["vw_trommel", "scheidingsgoot", "sga", "prewash"])
+
+	# 5) Deploy colleagues depending on their assignment
+	for w in workers:
+		if not (w is NPC):
+			continue
+		# Bring worker on duty & clear non-essential tasks
+		w.set_off_duty(false)
+		_break_until.erase(w)
+		w.clear_forced_task()
+		if w.has_method("_abandon_autonomy_task"):
+			w._abandon_autonomy_task()
+
+		var role := String(w.npc_role)
+		var w_pos := _safe_npc_pos(w)
+
+		# Role: Feeders -> Line 1 intake
+		if role == "feeder" or role == "permanent_feeder":
+			var target = intake_mach if not intake_mach.is_empty() else _nearest_in_zone(role, w_pos, l1_machines)
+			if not target.is_empty():
+				var pos := _post_pos_on_aisle(target, w_pos)
+				w.assign_post(String(target["id"]), pos)
+				w.dispatch_to(pos, "opstart %s" % String(target["id"]), 5.0)
+
+		# Role: Extruder operators -> Line 1 extrusion
+		elif role == "extruder_op":
+			var target = extruder_mach if not extruder_mach.is_empty() else _nearest_in_zone(role, w_pos, l1_machines)
+			if not target.is_empty():
+				var pos := _post_pos_on_aisle(target, w_pos)
+				w.assign_post(String(target["id"]), pos)
+				w.dispatch_to(pos, "opstart %s" % String(target["id"]), 5.0)
+
+		# Role: Transitional -> Buffer / Intermediate
+		elif role == "transitional":
+			var target = buffer_mach if not buffer_mach.is_empty() else _nearest_in_zone(role, w_pos, l1_machines)
+			if not target.is_empty():
+				var pos := _post_pos_on_aisle(target, w_pos)
+				w.assign_post(String(target["id"]), pos)
+				w.dispatch_to(pos, "opstart %s" % String(target["id"]), 5.0)
+
+		# Role: All-rounders -> Active roving assistance across the entire Line 1!
+		elif role == "all_rounder":
+			_start_allrounder_startup_patrol(w, l1_machines)
+
+		# Role: Shift leaders / Asst / Production manager -> Line supervision & coordination
+		else:
+			var sid := "(toezicht L1)"
+			var pos := l1_centre
+			if not intake_mach.is_empty() and role == "asst_shift_leader":
+				pos = _post_pos_on_aisle(intake_mach, w_pos)
+				sid = "(invoer toezicht)"
+			elif not extruder_mach.is_empty() and role == "shift_leader":
+				pos = _post_pos_on_aisle(extruder_mach, w_pos)
+				sid = "(lijn coördinatie)"
+			w.assign_post(sid, pos)
+			w.dispatch_to(pos, "opstart Lijn 1", 7.0)
+
+## Filter the machine list down to nodes belonging to Line 1.
+func _line_1_machine_list() -> Array:
+	var all := _machine_list()
+	var l1 : Array = []
+	for m in all:
+		var n = m.get("node", null)
+		var is_l1 := false
+		if n != null and is_instance_valid(n) and (n is Node3D):
+			if (n as Node3D).has_meta("macro_id") and String((n as Node3D).get_meta("macro_id")) == "line_1":
+				is_l1 = true
+			elif (n as Node3D).has_meta("line") and String((n as Node3D).get_meta("line")) == "line_1":
+				is_l1 = true
+		if not is_l1:
+			var mid : String = String(m.get("id", ""))
+			if mid.ends_with("_1") or mid.find("line_1") != -1 or _is_line_1_item(mid):
+				is_l1 = true
+		if is_l1:
+			l1.append(m)
+	return l1
+
+## Check whether a machine id belongs to Line 1's standard equipment sequence.
+func _is_line_1_item(id: String) -> bool:
+	const L1_ITEMS := [
+		"opzetband", "shredder", "westa_band", "sga_feed_chute", "vw_trommel",
+		"scheidingsgoot", "friction_sep", "mech_dryer", "mill", "flotation_tank",
+		"dewater_screw", "kufferath_sieve", "mas_bak", "mas_droger", "extruder_silo",
+		"compactorband", "extruder_1", "laser_filter", "heetafslag", "ontwaterzeef",
+		"centrifuge", "weegschaal", "voorraad_silo"
+	]
+	var lid := id.to_lower()
+	for item in L1_ITEMS:
+		if lid.find(item) != -1:
+			return true
+	return false
+
+## Helper: find first machine in the list matching any of the search tokens.
+func _find_first_matching(machines: Array, tokens: Array) -> Dictionary:
+	for tk in tokens:
+		for m in machines:
+			var id := String(m["id"])
+			if id.find(String(tk)) != -1:
+				return m
+	return {}
+
+## Initialize an active multi-stage startup patrol for an all-rounder on Line 1.
+func _start_allrounder_startup_patrol(w: NPC, machines: Array) -> void:
+	var stations_to_visit : Array = []
+	const PATROL_ORDER := [
+		"vw_trommel", "scheidingsgoot", "friction_sep", "mech_dryer",
+		"mill", "flotation_tank", "dewater_screw", "kufferath_sieve",
+		"mas_droger", "extruder_silo", "compactorband", "laser_filter"
+	]
+	var w_pos := _safe_npc_pos(w)
+	for token in PATROL_ORDER:
+		for m in machines:
+			var mid := String(m["id"])
+			if mid.find(token) != -1:
+				var pos := _post_pos_on_aisle(m, w_pos)
+				stations_to_visit.append({"id": mid, "pos": pos, "node": m.get("node", null)})
+				break
+
+	if stations_to_visit.is_empty():
+		for m in machines:
+			stations_to_visit.append({"id": String(m["id"]), "pos": _post_pos_on_aisle(m, w_pos), "node": m.get("node", null)})
+
+	_allrounder_patrols[w] = {
+		"stations": stations_to_visit,
+		"idx": 0,
+		"active": true
+	}
+
+	if not stations_to_visit.is_empty():
+		var first = stations_to_visit[0]
+		w.assign_post("(all-rounder)", first["pos"])
+		w.dispatch_to(first["pos"], "opstart %s" % String(first["id"]), 3.5)
+
+## Advance the all-rounder to their next patrol checkpoint on Line 1.
+func _step_allrounder_patrol(w: NPC) -> void:
+	if not _allrounder_patrols.has(w):
+		return
+	var p : Dictionary = _allrounder_patrols[w]
+	if not p.get("active", false):
+		return
+	var stations : Array = p.get("stations", [])
+	if stations.is_empty():
+		return
+
+	p["idx"] = int(p.get("idx", 0)) + 1
+	var idx : int = int(p["idx"])
+
+	if idx < stations.size():
+		var next_mach = stations[idx]
+		var next_pos : Vector3 = next_mach["pos"]
+		var next_sid : String = String(next_mach["id"])
+		w.assign_post("(all-rounder)", next_pos)
+		w.dispatch_to(next_pos, "opstart %s" % next_sid, 3.5)
+
+		# Progress callouts over the radio
+		if idx == 2:
+			_radio_call(String(w.npc_name), "%s: Voorwas en frictiegroep Lijn 1 draait stabiel." % String(w.npc_name))
+		elif idx == 5:
+			_radio_call(String(w.npc_name), "%s: Flotatie en ontwaterzeef op niveau, flow loopt door." % String(w.npc_name))
+		elif idx == 8:
+			_radio_call(String(w.npc_name), "%s: Drogen en extrudervoeding stabiel. Lijn 1 draait volledig!" % String(w.npc_name))
+	else:
+		# Completed full circuit — announce and loop to keep assisting
+		_radio_call(String(w.npc_name), "%s: Lijn 1 opstart ondersteund — ik blijf rondlopen voor storingen en hulp." % String(w.npc_name))
+		p["idx"] = 0
+		var loop_mach = stations[0]
+		w.assign_post("(all-rounder)", loop_mach["pos"])
+		w.dispatch_to(loop_mach["pos"], "opstart %s" % String(loop_mach["id"]), 3.5)
+

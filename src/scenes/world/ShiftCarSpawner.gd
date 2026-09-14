@@ -64,15 +64,30 @@ func _ready() -> void:
 
 ## Hand-off from MainWorld: store the references the original functions used
 ## to read out of MainWorld's own state, then run the spawn pipeline.
+## #audit-H5 — guard: a mid-shift resume must NOT re-run the shift-start
+## pipeline (parking lot is already filled from the original boot; a second
+## call spawns duplicate NPC cars AND a second Swift on the road). Only run
+## on a TRUE shift-start (shift_elapsed < 0 still counting down, i.e.
+## is_pre_shift() == true on the ShiftClock). Shifted saves skip this block
+## and rely on the saved vehicle positions instead.
 func setup(world: Node, staff_parking: Node, npcs: Dictionary,
-		operator_context: Node, player: Node, player_spawn_pos: Vector3) -> void:
+		operator_context: Node, player: Node, player_spawn_pos: Vector3,
+		shift_clock: Node = null) -> void:
 	_world = world
 	_staff_parking = staff_parking
 	_npcs = npcs
 	_operator_context = operator_context
 	_player = player
 	_player_spawn_pos = player_spawn_pos
+	# #H5 — skip on resume: if a ShiftClock is provided and the shift has
+	# already started (elapsed >= 0), the cars were already spawned at the
+	# original boot. Re-running would duplicate them.
+	if shift_clock != null and shift_clock.has_method("is_pre_shift"):
+		if not bool(shift_clock.is_pre_shift()):
+			print("[ShiftCarSpawner] #H5 resumed mid-shift — skipping car spawn (already parked)")
+			return
 	_spawn_shift_cars_and_player_drive_in()
+
 
 func _spawn_shift_cars_and_player_drive_in() -> void:
 	if _staff_parking == null:

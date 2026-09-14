@@ -982,8 +982,10 @@ func _tick_feed_starvation_monitor(delta: float) -> void:
 	var lf : Node = cm.get("line_flow")
 	if lf == null or not is_instance_valid(lf):
 		return
-	var enabled : bool = bool(lf.get("feed_enabled"))
-	var fed : float = float(lf.get("fed_mass"))
+	var enabled_val = lf.get("feed_enabled")
+	var enabled : bool = bool(enabled_val) if enabled_val != null else false
+	var fed_val = lf.get("fed_mass")
+	var fed : float = float(fed_val) if (fed_val != null and (fed_val is float or fed_val is int)) else 0.0
 	var key := "invoer/INV-101"
 	if not enabled:
 		_no_feed_t = 0.0

@@ -352,7 +352,7 @@ func _first_extruder_node(lf: Node) -> Dictionary:
 	for nd in lf.get("_nodes"):
 		if not (nd is Dictionary):
 			continue
-		var id := String(nd.get("id", ""))
+		var id := str(nd.get("id", ""))
 		if id.begins_with("extruder_") or id == "extruder_3a" or id == "extruder_3b":
 			return nd
 	return {}

@@ -90,6 +90,9 @@ var _wear_state  : String = "on_duty"
 var _drag_active : bool = false
 var _drag_last_x : float = 0.0
 
+func _init() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS    # works while the game is paused
+
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS    # works while the game is paused
 	layer = 100                                # above HUD
@@ -112,13 +115,13 @@ func open() -> void:
 	get_tree().paused = true
 
 func close(commit: bool) -> void:
+	get_tree().paused = _was_paused
+	Input.mouse_mode = _prev_mouse_mode
 	if commit:
 		_commit_to_gamestate()
 		saved.emit(_appearance.duplicate())
 	else:
 		cancelled.emit()
-	get_tree().paused = _was_paused
-	Input.mouse_mode = _prev_mouse_mode
 	queue_free()
 
 # ── UI ────────────────────────────────────────────────────────────────────────

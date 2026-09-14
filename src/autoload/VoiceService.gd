@@ -535,7 +535,7 @@ func _openai_key() -> String:
 # voice-stack errors in godot.log without spamming the console — each tool's
 # failure is recorded once (see _local_*_ok flags above).
 func _log_clear(msg: String) -> void:
-	push_warning("[VoiceService] " + msg)
+	print("[VoiceService] " + msg)
 
 func _seed_default_paths() -> void:
 	_paths_cfg.set_value("tools", "whisper",       DEFAULT_WHISPER_PATH)

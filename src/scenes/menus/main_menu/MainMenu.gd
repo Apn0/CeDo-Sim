@@ -129,6 +129,24 @@ func _delete_save_file(display_name: String) -> bool:
 		push_error("[MainMenu] failed to delete %s (err %d)" % [path, err])
 		return false
 	print("[MainMenu] deleted %s" % path)
+	# #audit-Q3 — also delete the paired factory sidecar. GameState writes a
+	# separate `<stem>_factory.json` for the build-mode machine layout; if the
+	# save is deleted but the sidecar is not, the next new-save with the same
+	# display name inherits a stale factory file (machines from the old world
+	# appear on a fresh map). The factory file is optional, so a missing-file
+	# result here is silently ignored.
+	var stem : String = display_name
+	if stem == "default":
+		stem = "cedo_simulator"
+	var factory_path := "user://%s_factory.json" % stem
+	if FileAccess.file_exists(factory_path):
+		var ferr := DirAccess.remove_absolute(ProjectSettings.globalize_path(factory_path))
+		if ferr != OK:
+			ferr = DirAccess.remove_absolute(factory_path)
+		if ferr == OK:
+			print("[MainMenu] deleted sidecar %s" % factory_path)
+		else:
+			push_warning("[MainMenu] Q3: could not delete factory sidecar %s (err %d)" % [factory_path, ferr])
 	return true
 
 ## The canonical save (display) name for a Tree row. Stored in the TreeItem's

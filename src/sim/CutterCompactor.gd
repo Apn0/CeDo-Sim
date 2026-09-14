@@ -328,6 +328,8 @@ func reset_breaker() -> void:
 		breaker_tripped = false
 		softstarter_tripped = false
 		softstarter_budget_kws = 0.0
+		_emit_bus("machine_alarm_cleared", [machine_id, "SOFTSTARTER-TRIP"])
+		_emit_bus("machine_alarm_cleared", [machine_id, "HARDWARE-BREAKER-TRIP"])
 
 # Power-cap ramp helpers — the manual prescribes raising the cap in 5 kW steps
 # while watching pot temperature climb. Operator HMI's up/down buttons should
@@ -392,10 +394,13 @@ func feed(batch: MaterialBatch) -> void:
 ## still-molten pot). Returns true if the reset succeeded.
 func reset() -> bool:
 	if state != State.DONUT_STALL:
+		if breaker_tripped or softstarter_tripped:
+			reset_breaker()
 		return true
 	if pot_temperature > T_RESET_BELOW:
 		return false
 	stalled = false
+	reset_breaker()
 	_set_state(State.OFF)
 	donut_stall_cleared.emit(machine_id)
 	_emit_bus("machine_alarm_cleared", [machine_id, "DONUT-STALL"])
