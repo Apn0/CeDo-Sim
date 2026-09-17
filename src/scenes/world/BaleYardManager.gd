@@ -58,6 +58,7 @@ func setup(world: Node, shift_clock: Node) -> void:
 	_spawn_bale_yards_from_layout()
 	_consumed_slots = PackedByteArray()
 	_consumed_slots.resize(_yard_slots.size())
+	_consumed_slots.fill(0)
 	_update_vehicle_cache()
 
 func get_yard_polygons() -> Array[PackedVector2Array]:
@@ -114,7 +115,8 @@ func tick(delta: float) -> void:
 		
 		if not alive:
 			_despawn_scratch.append(slot_idx)
-			_consumed_slots[slot_idx] = 1
+			if slot_idx >= 0 and slot_idx < _consumed_slots.size():
+				_consumed_slots[slot_idx] = 1
 			continue
 			
 		var rb3 : Node3D = tracked as Node3D
@@ -137,7 +139,8 @@ func tick(delta: float) -> void:
 			
 			if drift > 0.35 or was_detailed or reparented:
 				# Operator-owned / hauled bale: stays alive, slot is spent
-				_consumed_slots[slot_idx] = 1
+				if slot_idx >= 0 and slot_idx < _consumed_slots.size():
+					_consumed_slots[slot_idx] = 1
 			else:
 				# Pristine and far: despawn collider, restore MM visibility
 				rb3.queue_free()
@@ -469,18 +472,23 @@ func reset_yard_bales() -> int:
 		if not rb.has_meta("yard_origin"):
 			continue   
 			
-		# Resolve slot index with bounds checking and external compatibility
+		var origin : Vector3 = rb.get_meta("yard_origin")
+		
+		# Resolve slot index with strict identity and bounds checking
 		var target_slot_idx : int = -1
-		if rb.has_meta("slot_idx"):
-			target_slot_idx = int(rb.get_meta("slot_idx"))
-		elif rb.has_meta("slot_key"):
+		if rb.has_meta("slot_key"):
 			target_slot_idx = _key_to_slot_idx.get(String(rb.get_meta("slot_key")), -1)
+		elif rb.has_meta("slot_idx"):
+			var raw_idx = rb.get_meta("slot_idx")
+			if typeof(raw_idx) == TYPE_INT:
+				var sidx : int = raw_idx
+				if sidx >= 0 and sidx < _yard_slots.size():
+					if _yard_slots[sidx].spawn_pos.is_equal_approx(origin):
+						target_slot_idx = sidx
 			
-		if target_slot_idx >= 0 and target_slot_idx < _yard_slots.size():
+		if target_slot_idx >= 0 and target_slot_idx < _consumed_slots.size():
 			_active_bale_rbs[target_slot_idx] = rb
 			_consumed_slots[target_slot_idx] = 0
-			
-		var origin : Vector3 = rb.get_meta("yard_origin")
 		var yaw    : float   = float(rb.get_meta("yard_origin_yaw", 0.0))
 		var drift  : float   = rb.global_position.distance_to(origin)
 		var was_detailed : bool = not bool(rb.get_meta("simple_bale", true))
