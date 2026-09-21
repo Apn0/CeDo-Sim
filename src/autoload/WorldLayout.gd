@@ -7,6 +7,15 @@ extends Node
 
 const LAYOUT_PATH := "user://world_layout.json"
 
+## Redirects save()/_load() to another file. Empty (always, in the shipped game)
+## means the real LAYOUT_PATH. A suite or bench that keeps a world booted past
+## MainWorld's 60 s autosave sets this FIRST — that autosave ends in save(), i.e.
+## a rewrite of the operator's world ground truth, which lives in git nowhere.
+var layout_path_override : String = ""
+
+func get_layout_path() -> String:
+	return layout_path_override if layout_path_override != "" else LAYOUT_PATH
+
 const VEHICLE_IDS := ["forklift", "bale_clamp", "merlo", "merlo_p40", "mast_lift"]
 const LINE_IDS    := ["1", "3a", "3b", "3c", "6"]
 # Legacy id alias — old layouts wrote "scissor" before we renamed to "mast_lift".
@@ -190,15 +199,18 @@ func save() -> void:
 		},
 		"structure_items": structure_items,
 	}
-	var f := FileAccess.open(LAYOUT_PATH, FileAccess.WRITE)
-	if f == null:
-		push_error("[WorldLayout] Could not write %s" % LAYOUT_PATH)
+	# Crash-safe: .tmp + last-good .bak + swap (see AtomicFile). The old direct
+	# FileAccess.WRITE truncated the world file to 0 bytes before writing a byte
+	# of it, so a kill mid-save left the demo-spawn fallback in place of the world.
+	var path := get_layout_path()
+	var err := AtomicFile.write_json(path, data, "  ")
+	if err != OK:
+		push_error("[WorldLayout] Could not write %s (error %d) — the previous file is untouched" % [path, err])
 		return
-	f.store_string(JSON.stringify(data, "  "))
 	# Verbose confirmation so the user can verify which player_spawn / vehicle
 	# spawns / yard count actually hit disk. Read this whenever the satellite
 	# or in-game spawn seems "off" — the line below is the source of truth.
-	print("[WorldLayout] saved → %s" % LAYOUT_PATH)
+	print("[WorldLayout] saved → %s" % path)
 	print("  player_spawn   = (%.2f, %.2f, %.2f)" % [player_spawn.x, player_spawn.y, player_spawn.z])
 	print("  factory_center = (%.2f, %.2f, %.2f)" % [factory_center.x, factory_center.y, factory_center.z])
 	print("  vehicle_spawns = %d entries  %s" % [vehicle_spawns.size(), str(vehicle_spawns.keys())])
@@ -270,7 +282,7 @@ func _warn_if_mixed_frame() -> void:
 	if rd.is_empty() or local.is_empty():
 		return
 	push_warning("[WorldLayout] MIXED COORDINATE FRAMES in %s — %d RD-scale marker(s) %s alongside %d scene-absolute marker(s) %s. Only the RD ones are converted; re-place the others by editing world_layout.json (WorldSetup was deleted 2026-08-17; seed copy at src/data/world/world_layout_seed.json)." % [
-		LAYOUT_PATH, rd.size(), str(rd.slice(0, 6)), local.size(), str(local.slice(0, 6))])
+		get_layout_path(), rd.size(), str(rd.slice(0, 6)), local.size(), str(local.slice(0, 6))])
 
 ## Compare the file's frame tag against MARKER_FRAME. An untagged file predates
 ## the tag and is scene-absolute by construction (WorldSetup has only ever
@@ -284,7 +296,7 @@ func _check_marker_frame(parsed: Dictionary) -> void:
 	marker_frame_trusted = (tag == MARKER_FRAME)
 	if not marker_frame_trusted:
 		push_error("[WorldLayout] %s declares marker_frame='%s' but this build only understands '%s' — markers are being loaded VERBATIM and may be misplaced. Re-save the layout by hand (WorldSetup was deleted 2026-08-17; seed copy at src/data/world/world_layout_seed.json)." % [
-			LAYOUT_PATH, tag, MARKER_FRAME])
+			get_layout_path(), tag, MARKER_FRAME])
 
 ## Bring a marker into the scene-absolute frame ONLY if it is itself RD-scale.
 ## Markers already in that frame pass through untouched — that per-marker rule is
@@ -306,22 +318,20 @@ func _has_any_rd_marker() -> bool:
 	return false
 
 func _load() -> void:
-	if not FileAccess.file_exists(LAYOUT_PATH):
+	var path := get_layout_path()
+	if not AtomicFile.exists_any(path):
 		return
-	var f := FileAccess.open(LAYOUT_PATH, FileAccess.READ)
-	if f == null: return
-	var json = JSON.new()
-	var error = json.parse(f.get_as_text())
-	if error != OK:
-		push_warning("[WorldLayout] %s failed to parse: %s" % [LAYOUT_PATH, json.get_error_message()])
-		return
-	var parsed = json.get_data()
-	if typeof(parsed) != TYPE_DICTIONARY:
-		push_warning("[WorldLayout] %s is not a JSON object — ignoring" % LAYOUT_PATH)
+	# Recovering read. A truncated or empty primary (what a kill mid-save used to
+	# leave behind) falls back to the .tmp / .bak generation instead of being
+	# treated as "no layout" — which reverted the world to the demo spawns and
+	# let the next save overwrite the damage. A wrong root type counts as damage.
+	var parsed = AtomicFile.read_json(path, TYPE_DICTIONARY)
+	if parsed == null:
+		push_warning("[WorldLayout] %s is unreadable and has no valid .tmp/.bak — ignoring" % path)
 		return
 
 	if _get_max_depth(parsed) > 64:
-		push_warning("[WorldLayout] %s is too deeply nested — ignoring to prevent stack overflow" % LAYOUT_PATH)
+		push_warning("[WorldLayout] %s is too deeply nested — ignoring to prevent stack overflow" % path)
 		return
 
 	# Frame check FIRST — everything below decides what to trust based on it.
@@ -439,7 +449,7 @@ func _load() -> void:
 				if corners[i] is Vector3:
 					corners[i] = _to_scene_frame(corners[i], shift)
 			y["corners"] = corners
-	print("[WorldLayout] loaded from %s" % LAYOUT_PATH)
+	print("[WorldLayout] loaded from %s" % get_layout_path())
 	print("  player_spawn   = (%.2f, %.2f, %.2f)" % [player_spawn.x, player_spawn.y, player_spawn.z])
 	print("  vehicle_spawns = %d entries" % vehicle_spawns.size())
 	print("  line_starts    = %d entries" % line_starts.size())

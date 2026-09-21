@@ -726,14 +726,10 @@ static func _ensure_overrides_loaded() -> void:
 	if _size_overrides_loaded:
 		return
 	_size_overrides_loaded = true
-	if not FileAccess.file_exists(_SIZE_OVERRIDES_PATH):
+	if not AtomicFile.exists_any(_SIZE_OVERRIDES_PATH):
 		return
-	var f := FileAccess.open(_SIZE_OVERRIDES_PATH, FileAccess.READ)
-	if f == null:
-		return
-	var raw : String = f.get_as_text()
-	f.close()
-	var parsed = JSON.parse_string(raw)
+	# Recovering read (AtomicFile): a truncated file falls back to its .tmp / .bak.
+	var parsed = AtomicFile.read_json(_SIZE_OVERRIDES_PATH, TYPE_DICTIONARY)
 	if not (parsed is Dictionary):
 		push_warning("[PlaceableCatalog] size-overrides JSON malformed; ignoring")
 		return
@@ -753,12 +749,9 @@ static func _save_overrides_to_disk() -> void:
 	for k in _size_overrides.keys():
 		var v : Vector3 = _size_overrides[k]
 		out[String(k)] = {"size": [v.x, v.y, v.z]}
-	var f := FileAccess.open(_SIZE_OVERRIDES_PATH, FileAccess.WRITE)
-	if f == null:
-		push_warning("[PlaceableCatalog] could not write %s" % _SIZE_OVERRIDES_PATH)
-		return
-	f.store_string(JSON.stringify(out, "\t"))
-	f.close()
+	var werr := AtomicFile.write_json(_SIZE_OVERRIDES_PATH, out, "\t")
+	if werr != OK:
+		push_warning("[PlaceableCatalog] could not write %s (error %d) — the previous file is untouched" % [_SIZE_OVERRIDES_PATH, werr])
 
 ## Persist a new base size for `id`. Future `build_node(id)` calls return
 ## meshes at this size in every world / save. Pass `Vector3.ZERO` (or call

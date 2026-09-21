@@ -24,6 +24,22 @@ UD="${UD:-C:/Users/arnod/AppData/Roaming/Godot/app_userdata/CeDo Simulator}"
 OUT="$PROJ/tools/regression/out"
 mkdir -p "$OUT"
 
+# HANG GUARD for the scene-suite loop below. That loop passes no --quit-after and
+# had no timeout, so one suite that never reaches its own quit() (a script that
+# failed to attach, a wait that never resolves — the documented "idles forever"
+# mode) stalled the WHOLE harness with nothing printed. `timeout` was measured on
+# 2026-09-21 to kill a hung headless Godot on schedule (rc 124, no process left
+# behind). 900 s is 4.4x the slowest scene-loop suite in the 29-minute full run
+# of that day (test_npc05_realworld, 206 s — it watches 180 s by design; derived
+# from log mtimes). Override with SUITE_TIMEOUT_S=; without a `timeout` binary the
+# guard is simply absent.
+SUITE_TIMEOUT_S="${SUITE_TIMEOUT_S:-900}"
+if command -v timeout >/dev/null 2>&1; then
+	SUITE_TO=(timeout --kill-after=15 "$SUITE_TIMEOUT_S")
+else
+	SUITE_TO=()
+fi
+
 # HERMETIC. Without this every single suite below reaches the public internet:
 # PolyhavenMaterials._ready() requests its PBR sets at autoload boot
 # (PolyhavenMaterials.gd:84) and TextureCache opens an HTTPRequest to the
@@ -301,14 +317,77 @@ fi
 # this loop has no --quit-after, so a verdict printed before the last eleven
 # statements would leave "Result: PASS" in the log with the process still
 # alive: a green log and a hung harness at once.
-for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_line3a_identity test_line3b_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_humanoid_rig_conformance test_line1_flow_conformance test_line3a_flow_conformance test_line3b_flow_conformance test_shredder_rate_reconciliation test_line1_no_false_overload test_line_builder_ghost test_project_sweep_guards test_tool_placement_mode test_scada_dashboard_scene; do
+# test_atomic_file (2026-09-21): crash-safe persistence — AtomicFile and the
+# writers that now use it (WorldLayout, BuildMode, LineMacroStore, GameState,
+# PlaceableCatalog size overrides). A save killed mid-write used to load back as
+# an EMPTY factory / the demo-spawn world, and the 60 s autosave made that
+# permanent. 50 checks, each recovery check preceded by an undamaged-file
+# control, plus delete-safety (a .bak must never resurrect a deleted save).
+# MUTATION-TESTED five ways, each turning specific checks red and restoring
+# byte-identical: no .bak fallback (6 red), poisoned .bak (2), resurrecting
+# deletes (2), the ORIGINAL BuildMode (2 red — the factory loads back with 0
+# objects, i.e. the reported bug reproduced end to end), the old WorldLayout
+# load (1 red — spawn (0,0,0)). It touches only `__atomicfile_*` names in user://
+# and points WorldLayout at a scratch path via layout_path_override.
+for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_line3a_identity test_line3b_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_humanoid_rig_conformance test_line1_flow_conformance test_line3a_flow_conformance test_line3b_flow_conformance test_shredder_rate_reconciliation test_line1_no_false_overload test_line_builder_ghost test_project_sweep_guards test_tool_placement_mode test_scada_dashboard_scene test_atomic_file test_extruder_brain_wired test_vehicle_census test_map_overlay_init test_qa_loop test_qa_spec test_assessment_procedure test_character_customizer test_f10_reserved test_bale_sticker_supplier test_hose_reel_round test_macro_delta_guard; do
 	echo "== $t =="
-	"$GODOT" --headless --path "$PROJ" "res://src/tests/$t.tscn" > "$OUT/$t.log" 2>&1
+	${SUITE_TO[@]+"${SUITE_TO[@]}"} "$GODOT" --headless --path "$PROJ" "res://src/tests/$t.tscn" > "$OUT/$t.log" 2>&1
+	rc=$?
+	[ "$rc" -eq 124 ] && echo "TIMEOUT: $t hung past ${SUITE_TIMEOUT_S}s and was killed (no verdict was printed)"
 	grep -E "^  (ok|FAIL)|Result|RESULT" "$OUT/$t.log" || true
 	# Key off the printed verdict, not the exit code: Godot can segfault in
 	# teardown after a clean PASS (observed exit 139 with every check ok).
 	if ! grep -qE "Result: PASS|RESULT: PASS" "$OUT/$t.log"; then
 		echo "FAIL  : $t (see $OUT/$t.log)"
+		[ $code -eq 0 ] && code=1
+	fi
+done
+
+# 2026-09-21 — SUITES THAT WERE NEVER RUN. 34 test scenes existed that nothing
+# invoked (found by diffing src/tests/*.tscn against this file). 26 of them were
+# measured green that day and are wired here / above (11 already print the
+# canonical `Result: PASS` and joined the loop above). The other 15 print their
+# verdict in their OWN dialect (docs/audit/test_inventory_2026-09-06.md §6), which
+# the loop above would score as a false red. Loosening that loop's grep would let
+# any suite's stray "PASS" bless another, so each suite here is gated on ITS OWN
+# exact verdict line, and must also have printed at least one `  ok` (a 0-check
+# suite is a vacuous green, project rule 3) and no `  FAIL`.
+# Each pattern was proven against the real log of its suite and REJECTS the logs
+# of the two red suites (test_feed_belt_to_shredder_flow,
+# test_line1_automated_4bales — both untracked local files, not in git) — see
+# docs/audit/robustness_and_coverage_2026-09-21.md.
+# NOT wired, on purpose: test_marker_tool (writes into the operator's real
+# user://feedback channel and leaves the directory there), the three suites that
+# print no verdict at all (test_leafblower_refuel, test_player_ladder,
+# test_hmi_screen_base — the last runs 0 checks), and the two red ones above.
+dialect_re() {
+	case "$1" in
+		test_layout_load|test_new_world_wipe|test_world_layout_coords|test_cutter_compactor|test_extruder_screw|test_mast_jib|test_merlo_p40|test_spawn_transform)
+			echo '^Result: [0-9]+ ok, 0 fail' ;;
+		test_appearance_persistence)        echo '^\[TEST\] appearance persistence PASS' ;;
+		test_customizer_resolves_gamestate) echo '^\[TEST\] customizer resolve PASS' ;;
+		test_bunker_relay_trip)             echo '^\[TEST\] bunker relay trip PASS' ;;
+		test_bunker_shredder2_interlock)    echo '^\[TEST\] bunker/shredder-2 MOL interlock PASS' ;;
+		test_feeder_sequence)               echo '^\[TEST\] feeder sequence PASS' ;;
+		test_npc_appearance_apply)          echo '^\[TEST\] npc appearance apply PASS' ;;
+		test_shredder_machine)              echo '^\[TEST\] shredder machine PASS' ;;
+	esac
+}
+for t in test_layout_load test_new_world_wipe test_world_layout_coords test_cutter_compactor test_extruder_screw test_mast_jib test_merlo_p40 test_spawn_transform test_appearance_persistence test_customizer_resolves_gamestate test_bunker_relay_trip test_bunker_shredder2_interlock test_feeder_sequence test_npc_appearance_apply test_shredder_machine; do
+	echo "== $t (own-dialect verdict) =="
+	${SUITE_TO[@]+"${SUITE_TO[@]}"} "$GODOT" --headless --path "$PROJ" "res://src/tests/$t.tscn" > "$OUT/$t.log" 2>&1
+	rc=$?
+	[ "$rc" -eq 124 ] && echo "TIMEOUT: $t hung past ${SUITE_TIMEOUT_S}s and was killed (no verdict was printed)"
+	re="$(dialect_re "$t")"
+	grep -aE "^  (ok|FAIL)|^Result|^\[TEST\]" "$OUT/$t.log" | tail -3 || true
+	if ! tr -d '\r' < "$OUT/$t.log" | grep -aqE "$re"; then
+		echo "FAIL  : $t — its own verdict line ($re) was not printed (see $OUT/$t.log)"
+		[ $code -eq 0 ] && code=1
+	elif tr -d '\r' < "$OUT/$t.log" | grep -aqE '^  FAIL'; then
+		echo "FAIL  : $t — verdict line printed but a check reported FAIL (see $OUT/$t.log)"
+		[ $code -eq 0 ] && code=1
+	elif ! tr -d '\r' < "$OUT/$t.log" | grep -aqE '^  ok'; then
+		echo "FAIL  : $t — verdict printed but ZERO checks ran (vacuous) (see $OUT/$t.log)"
 		[ $code -eq 0 ] && code=1
 	fi
 done
@@ -621,6 +700,19 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/test_operator_context.log
 	[ $code -eq 0 ] && code=1
 fi
 
+# npc_board_vehicle / npc_vehicle_of (16 checks, incl. the legacy-NPC
+# set_physics_process(false) path). Written as test_operator_context.gd by
+# 69013ab; a second bot PR (1b5907f) created a DIFFERENT test under the same
+# name and merge #268 (30cc5f4) kept only that one. Restored 2026-09-21 under
+# its own name from 58a95ba — measured 16 ok, 0 fail on 34bd56c.
+echo "== test_operator_context_board_vehicle =="
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_operator_context_board_vehicle.gd --quit-after 300 > "$OUT/test_operator_context_board_vehicle.log" 2>&1
+grep -aE "^  (ok|FAIL)|^Result" "$OUT/test_operator_context_board_vehicle.log" || true
+if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/test_operator_context_board_vehicle.log"; then
+	echo "FAIL  : test_operator_context_board_vehicle (see $OUT/test_operator_context_board_vehicle.log)"
+	[ $code -eq 0 ] && code=1
+fi
+
 # NPC state-API suite (2026-08-31 review): pins the four NPC.gd transition APIs —
 # set/clear_autonomy_destination (:61, incl. #202 boarded routing to the chassis),
 # assign/clear_forced_task (:207, real start()/release() lifecycle), assign_post/
@@ -676,6 +768,17 @@ echo "== customizer world bodies =="
 grep -aE "^  (ok|FAIL)  |^Result:" "$OUT/customizer_world_bodies.log" || true
 if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/customizer_world_bodies.log"; then
 	echo "FAIL  : customizer world bodies (see $OUT/customizer_world_bodies.log)"
+	[ $code -eq 0 ] && code=1
+fi
+
+# Re-wired 2026-09-21: merge #258 (6338e79) resolved its conflict by REPLACING
+# this block with the gate test below, so the suite silently stopped running
+# while its test file stayed in the tree. Measured 5 ok, 0 fail on 34bd56c.
+echo "== SettingsManager apply =="
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_settings_manager_apply.gd --quit-after 300 > "$OUT/settings_manager_apply.log" 2>&1
+grep -aE "^  (ok|FAIL)  |^Result:" "$OUT/settings_manager_apply.log" || true
+if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/settings_manager_apply.log"; then
+	echo "FAIL  : SettingsManager apply (see $OUT/settings_manager_apply.log)"
 	[ $code -eq 0 ] && code=1
 fi
 

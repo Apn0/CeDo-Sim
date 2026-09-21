@@ -64,9 +64,11 @@ func _spawn_build_mode() -> void:
 	var fpath := _factory_layout_path()
 	var gs = _world.game_state
 	var is_new : bool = gs != null and gs.is_new_save
-	if is_new and FileAccess.file_exists(fpath):
+	if is_new and (FileAccess.file_exists(fpath) or FileAccess.file_exists(fpath + AtomicFile.BAK_SUFFIX)):
 		# Same-named save reused after a delete: force it to truly start fresh.
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(fpath))
+		# AtomicFile.delete also removes the .bak/.tmp generations — a new world
+		# must not be able to "recover" the previous one's factory from those.
+		AtomicFile.delete(fpath)
 		print("[SystemsSpawner] New save — wiped stale %s" % fpath)
 	print("[SystemsSpawner] Save factory layout: %s (new_save=%s)" % [fpath, str(is_new)])
 	var build_mode := BuildMode.new()

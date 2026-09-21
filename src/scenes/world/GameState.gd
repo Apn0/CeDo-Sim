@@ -91,28 +91,28 @@ func save_game() -> void:
 		"player_name": player_name,
 	}
 
-	var json = JSON.stringify(save_data)
-	var file = FileAccess.open(save_file_path, FileAccess.WRITE)
-
-	if file:
-		file.store_string(json)
+	# Crash-safe write (AtomicFile). The direct FileAccess.WRITE truncated the save
+	# before writing it; a kill in that window loaded back as a default game and
+	# the next autosave made it permanent. Compact JSON, as before (indent "").
+	var save_err := AtomicFile.write_json(save_file_path, save_data, "")
+	if save_err == OK:
 		print("Game saved to: ", save_file_path)
 		emit_signal("game_saved")
 	else:
-		push_error("Failed to save game to: ", save_file_path)
+		push_error("Failed to save game to: %s (error %d) — the previous save is untouched" % [save_file_path, save_err])
 
 func load_game() -> void:
 	"""Load complete game state from file."""
-	var file = FileAccess.open(save_file_path, FileAccess.READ)
+	# Recovering read (AtomicFile): a truncated/empty save falls back to its .tmp /
+	# .bak generation instead of loading as a blank game. A non-object root counts
+	# as damage and is handled the same way.
+	var have_save : bool = AtomicFile.exists_any(save_file_path)
+	var parsed_save = AtomicFile.read_json(save_file_path, TYPE_DICTIONARY) if have_save else null
 
-	if file:
-		var json_string = file.get_as_text()
-		var json = JSON.new()
-		var error = json.parse(json_string)
+	if have_save:
+		if parsed_save != null:
+			var data = parsed_save
 
-		if error == OK:
-			var data = json.data
-			
 			if typeof(data) != TYPE_DICTIONARY:
 				push_error("Save file root is not a JSON object")
 				return
@@ -152,15 +152,10 @@ func load_game() -> void:
 # empty-in-memory save doesn't blank out a customization already on disk. Called
 # from save_game() when all three appearance dicts are empty.
 func _recover_appearance_from_disk() -> void:
-	if not FileAccess.file_exists(save_file_path):
+	if not AtomicFile.exists_any(save_file_path):
 		return
-	var file = FileAccess.open(save_file_path, FileAccess.READ)
-	if file == null:
-		return
-	var json = JSON.new()
-	if json.parse(file.get_as_text()) != OK:
-		return
-	var data = json.data
+	# Recovering read, so a damaged save file cannot blank the customization.
+	var data = AtomicFile.read_json(save_file_path, TYPE_DICTIONARY)
 	if typeof(data) != TYPE_DICTIONARY:
 		return
 	if typeof(data.get("player_appearance")) == TYPE_DICTIONARY:
@@ -219,6 +214,7 @@ func clear_save() -> void:
 	if ResourceLoader.exists(save_file_path):
 		var error = DirAccess.remove_absolute(save_file_path)
 		if error == OK:
+			AtomicFile.delete(save_file_path)   # its .bak/.tmp generations must not outlive it
 			print("Save file deleted")
 			is_new_save = true
 			factory_center = Vector3.ZERO
