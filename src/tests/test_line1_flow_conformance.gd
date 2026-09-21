@@ -89,21 +89,52 @@ func _run() -> void:
 		"NO separate sga_drum — the ruling merged HPS/SGA into vw_trommel")
 	_check(_idx(seq, "prewash_drum") < 0,
 		"line 1 uses the photo-signed-off vw_trommel, NOT the prewash_drum stub (audit C5)")
-	# Chain: westa -> hoekgoot -> drum -> Y-goot -> friction L/R.
+	# Chain: drum_feed_belt -> hoekgoot -> drum -> Y-goot -> friction L/R.
+	# (drum_feed_belt was named "westa_band_1" before #fold 2026-09-16 moved the
+	# real Westa Band to the shredder infeed — see LINE_1_SEQ.)
 	var i_hoek := _idx(seq, "sga_feed_chute")
-	var i_westa := _idx(seq, "westa_band_1")
+	var i_westa := _idx(seq, "drum_feed_belt")
 	_check(i_hoek >= 0, "sga_feed_chute (90° hoekgoot) is back in LINE_1_SEQ with the fold")
-	_check(i_westa >= 0 and i_westa < i_hoek, "westa band climbs into the hoekgoot")
+	_check(i_westa >= 0 and i_westa < i_hoek, "drum_feed_belt climbs into the hoekgoot")
+	# The real Westa Band (shredder infeed, #fold 2026-09-16) sits right after
+	# opzetband_1 and before shredder_1.
+	var i_opzet := _idx(seq, "opzetband_1")
+	var i_westa_feed := _idx(seq, "westa_band_1")
+	var i_shred1 := _idx(seq, "shredder_1")
+	_check(i_westa_feed >= 0 and i_opzet >= 0 and i_shred1 >= 0
+			and i_opzet < i_westa_feed and i_westa_feed < i_shred1,
+		"westa_band_1 sits between opzetband_1 and shredder_1 (shredder-infeed Westa)")
 	_check(i_hoek < i_pre, "hoekgoot comes before the drum it feeds")
 	_check(i_pre < i_goot, "drum comes before the Y-splitgoot (goot sits at the drum's END)")
 	_check(i_goot < i_fric, "Y-splitgoot comes before the frictiescheiders it splits into")
-	# The fold itself: the SEQ carries the sketch's turn pattern L,L,R,R,L.
+	# The fold itself, as ANGLES rather than signs. It used to assert signf()
+	# only, which cannot tell a 90° corner from the 180° U-turn that the
+	# flotation tank now makes — the whole point of the 2026-09-17 correction —
+	# so the sign list would have gone on passing while the tank pointed the
+	# wrong way. Assert the real numbers.
+	#
+	#   +90  entry 0   compensating LEFT: gives the through-the-wall feeder its
+	#                  own leg (without it the next RIGHT rotates legs B-G)
+	#   -90  leg A     opzetband_1 -> westa_band_1, the south afslag
+	#   +90  leg B     uitvoerband + overband magnet
+	#   +90  leg C     short belt -> drum_feed_belt climb
+	#   -90  leg D     the drum axis -> Y-splitgoot -> wet street -> mill
+	#  +180  leg E     THE U-TURN — flotation tank runs back against the drum.
+	#                  OPERATOR 2026-09-17: "the direction of travel through the
+	#                  drum is 180 deg opposite of the direction of travel in the
+	#                  flotation tank, top-down." Measured end-to-end in S5.
+	#   +90  leg F     friction -> Kuferath -> MAS, running off the tank's
+	#                  discharge end (the sketch draws this train below the tank)
+	#   +90  leg G     back to east for the extruder group, so extruder 1 stays
+	#                  the long east-west block the floor plan puts on Hal 2's
+	#                  south wall. Added with leg E's U-turn, which rotated every
+	#                  leg behind it.
 	var turns : Array = []
 	for e in seq:
 		if (e as Dictionary).has("turn_deg"):
-			turns.append(signf(float((e as Dictionary)["turn_deg"])))
-	_check(turns == [1.0, 1.0, -1.0, -1.0, 1.0],
-		"turn pattern is LEFT,LEFT,RIGHT,RIGHT,LEFT (sketch legs A→F), got %s" % str(turns))
+			turns.append(float((e as Dictionary)["turn_deg"]))
+	_check(turns == [90.0, -90.0, 90.0, 90.0, -90.0, 180.0, 90.0, 90.0],
+		"turn pattern is +90,-90,+90,+90,-90,+180 (tank U-turn),+90,+90 (legs A->G), got %s" % str(turns))
 
 	# ── S1b — gap 1.2: the intake screws belong AFTER the mill ───────────────
 	# Doc edges 14-19: maalmolen_1 -> ventilator_10a/b -> intrekschroef_11a/b ->
@@ -267,8 +298,11 @@ func _run() -> void:
 	# shared port helpers, so a resize of the belt, the chute or the drum (or a
 	# broken turn transform) goes red here instead of silently misfeeding:
 	#   S4   the hoekgoot's OUT port hangs over the vw_trommel feed funnel
-	#   S4b  the westa band's discharge lip hangs over the hoekgoot's IN port
-	print("  -- S4: hoekgoot OUT over funnel · S4b: westa lip over hoekgoot IN --")
+	#   S4b  drum_feed_belt's discharge lip hangs over the hoekgoot's IN port
+	# (drum_feed_belt was named "westa_band_1" before #fold 2026-09-16 moved
+	# the real Westa Band to the shredder infeed — see LINE_1_SEQ. Local var
+	# kept as `westa` below to minimize churn; it now points at drum_feed_belt.)
+	print("  -- S4: hoekgoot OUT over funnel · S4b: drum_feed_belt lip over hoekgoot IN --")
 	var westa : Node3D = null
 	var trommel : Node3D = null
 	var hoek : Node3D = null
@@ -279,13 +313,13 @@ func _run() -> void:
 		if String(n3.get_meta("macro_id")) != "line_1":
 			continue
 		var pid := String(n3.get_meta("placeable_id"))
-		if pid == "westa_band_1":
+		if pid == "drum_feed_belt":
 			westa = n3
 		elif pid == "vw_trommel":
 			trommel = n3
 		elif pid == "sga_feed_chute":
 			hoek = n3
-	_check(westa != null, "westa_band_1 found in the built line")
+	_check(westa != null, "drum_feed_belt found in the built line")
 	_check(trommel != null, "vw_trommel found in the built line")
 	_check(hoek != null, "sga_feed_chute found in the built line")
 	# Review finding (2026-08-28, CONFIRMED by live mutation): this guard used
@@ -293,7 +327,7 @@ func _run() -> void:
 	# — the suite printed PASS with 4 fewer checks and nothing noticed. The
 	# guard's failure is now itself a red check.
 	_check(westa == null or westa.has_method("_discharge_lip_pos"),
-		"westa exposes _discharge_lip_pos (S4/S4b cannot run without it)")
+		"drum_feed_belt exposes _discharge_lip_pos (S4/S4b cannot run without it)")
 	if westa != null and trommel != null and hoek != null \
 			and westa.has_method("_discharge_lip_pos"):
 		var t_size : Vector3 = PlaceableCatalog.get_item("vw_trommel")["size"]
@@ -316,16 +350,74 @@ func _run() -> void:
 			"S4 chute OUT centred over the funnel (horiz %.2f m, gate 0.35)" % h1)
 		_check(d1 >= 0.05 and d1 <= 0.9,
 			"S4 chute OUT is a sane drop above the mouth (%.2f m, want 0.05–0.9)" % d1)
-		# S4b — westa lip over the chute IN (channel half-width ≈ 0.38 m; allow
-		# a little slack for the lip's own overhang).
+		# S4b — drum_feed_belt lip over the chute IN (channel half-width ≈ 0.38 m;
+		# allow a little slack for the lip's own overhang).
 		var h2 : float = Vector2(lip.x - in_w.x, lip.z - in_w.z).length()
 		var d2 : float = lip.y - in_w.y
-		print("  info   : westa lip (%.2f, %.2f, %.2f)  chute IN (%.2f, %.2f, %.2f)  horiz %.2f  drop %.2f"
+		print("  info   : drum_feed_belt lip (%.2f, %.2f, %.2f)  chute IN (%.2f, %.2f, %.2f)  horiz %.2f  drop %.2f"
 			% [lip.x, lip.y, lip.z, in_w.x, in_w.y, in_w.z, h2, d2])
 		_check(h2 <= 0.35,
-			"S4b westa lip lands on the hoekgoot infeed (horiz %.2f m, gate 0.35)" % h2)
+			"S4b drum_feed_belt lip lands on the hoekgoot infeed (horiz %.2f m, gate 0.35)" % h2)
 		_check(d2 >= 0.05 and d2 <= 0.6,
-			"S4b westa lip is a sane drop above the infeed (%.2f m, want 0.05–0.6)" % d2)
+			"S4b drum_feed_belt lip is a sane drop above the infeed (%.2f m, want 0.05–0.6)" % d2)
+
+	# ── S6 — the shredder-infeed head, measured end to end ─────────────
+	# opzetband_1 lip → westa_band_1 deck tail → shredder_1 throat. This is the
+	# #fold 2026-09-16 corner, and it is the one place on line 1 where a silent
+	# miss does not just look wrong but STOPS THE LINE: LineFlow links by
+	# nearest-input, so a Westa whose discharge falls short of the throat gets
+	# skipped and the material routes straight onto the uitvoerband, leaving
+	# shredder_1 with no infeed edge at all. That is exactly what the catalog-box
+	# placeholder did before the geometry was derived. Both legs of the transfer
+	# are measured in the built world, not recomputed from the builder's own
+	# expressions.
+	print("  -- S6: opzetband lip → westa deck · S6b: westa lip → shredder throat --")
+	var opz : Node3D = null
+	var wsta : Node3D = null
+	var shr : Node3D = null
+	for m6 in get_tree().get_nodes_in_group("placed_object"):
+		var n6 := m6 as Node3D
+		if n6 == null or not n6.has_meta("placeable_id") 				or not n6.has_meta("macro_id") 				or String(n6.get_meta("macro_id")) != "line_1":
+			continue
+		match String(n6.get_meta("placeable_id")):
+			"opzetband_1":  opz = n6
+			"westa_band_1": wsta = n6
+			"shredder_1":   shr = n6
+	_check(opz != null, "opzetband_1 found in the built line")
+	_check(wsta != null, "westa_band_1 found in the built line")
+	_check(shr != null, "shredder_1 found in the built line")
+	# Same self-guard as S4's: a vanished method must go RED, not skip silently.
+	_check(opz == null or opz.has_method("_discharge_lip_pos"),
+		"opzetband_1 exposes _discharge_lip_pos (S6 cannot run without it)")
+	_check(wsta == null or wsta.has_method("_discharge_lip_pos"),
+		"westa_band_1 exposes _discharge_lip_pos (S6b cannot run without it)")
+	if opz != null and wsta != null and shr != null 			and opz.has_method("_discharge_lip_pos") 			and wsta.has_method("_discharge_lip_pos"):
+		# S6 — opzetband_1's lip over the Westa's deck tail (its inlet, which sits
+		# at the belt's own origin because deck_length is 0).
+		var o_lip : Vector3 = opz.call("_discharge_lip_pos")
+		var w_deck : Vector3 = wsta.to_global(Vector3(0.0, float(wsta.get("deck_height")), 0.0))
+		var h3 : float = Vector2(o_lip.x - w_deck.x, o_lip.z - w_deck.z).length()
+		var d3 : float = o_lip.y - w_deck.y
+		print("  info   : opzetband lip (%.2f, %.2f, %.2f)  westa deck (%.2f, %.2f, %.2f)  horiz %.2f  drop %.2f"
+			% [o_lip.x, o_lip.y, o_lip.z, w_deck.x, w_deck.y, w_deck.z, h3, d3])
+		_check(h3 <= 0.35,
+			"S6 opzetband_1 lip lands on the Westa deck (horiz %.2f m, gate 0.35)" % h3)
+		_check(d3 >= 0.05 and d3 <= 0.9,
+			"S6 opzetband_1 lip is a sane drop above the Westa deck (%.2f m, want 0.05–0.9)" % d3)
+		# S6b — the Westa's lip over shredder_1's throat. The throat comes from
+		# PlaceableCatalog.shredder_infeed_local, which mirrors MachineFlow's `in`
+		# fraction; measuring it here is what stops those two drifting apart.
+		var w_lip : Vector3 = wsta.call("_discharge_lip_pos")
+		var throat : Vector3 = shr.to_global(PlaceableCatalog.shredder_infeed_local(
+			Vector3(PlaceableCatalog.get_item("shredder_1")["size"])))
+		var h4 : float = Vector2(w_lip.x - throat.x, w_lip.z - throat.z).length()
+		var d4 : float = w_lip.y - throat.y
+		print("  info   : westa lip (%.2f, %.2f, %.2f)  shredder throat (%.2f, %.2f, %.2f)  horiz %.2f  drop %.2f"
+			% [w_lip.x, w_lip.y, w_lip.z, throat.x, throat.y, throat.z, h4, d4])
+		_check(h4 <= 0.35,
+			"S6b westa_band_1 lip lands in the shredder throat (horiz %.2f m, gate 0.35)" % h4)
+		_check(d4 >= 0.05 and d4 <= 0.9,
+			"S6b westa_band_1 lip is a sane drop above the throat (%.2f m, want 0.05–0.9)" % d4)
 
 	# ── S5 — the fold itself: legs, headings, plan box, and mirror parity ────
 	print("  -- S5: fold geometry (operator sketch) --")
@@ -355,19 +447,91 @@ func _run() -> void:
 		var d_ab : float = wrapf(n_magnet.rotation.y - n_shred.rotation.y, -PI, PI)
 		var d_bc : float = wrapf(westa.rotation.y - n_magnet.rotation.y, -PI, PI)
 		var d_cd : float = wrapf(trommel.rotation.y - hoek.rotation.y, -PI, PI)
-		var d_de : float = wrapf(n_flot.rotation.y - n_mill.rotation.y, -PI, PI)
-		var d_ef : float = wrapf(n_ext.rotation.y - n_flot.rotation.y, -PI, PI)
 		_check(absf(d_ab - PI / 2.0) < 0.01, "leg A→B turns LEFT 90° (got %.1f°)" % rad_to_deg(d_ab))
 		_check(absf(d_bc - PI / 2.0) < 0.01, "leg B→C turns LEFT 90° (got %.1f°)" % rad_to_deg(d_bc))
 		_check(absf(d_cd + PI / 2.0) < 0.01, "leg C→D turns RIGHT 90° (got %.1f°)" % rad_to_deg(d_cd))
-		_check(absf(d_de + PI / 2.0) < 0.01, "leg D→E turns RIGHT 90° (got %.1f°)" % rad_to_deg(d_de))
-		_check(absf(d_ef - PI / 2.0) < 0.01, "leg E→F turns LEFT 90° (got %.1f°)" % rad_to_deg(d_ef))
+		# ── THE OPERATOR'S OWN SENTENCE, 2026-09-17, measured on the built world:
+		# "the direction of travel through the drum is 180 deg opposite of the
+		# direction of travel in the flotation tank, when looking from top-down."
+		# Read off the DRUM itself rather than the mill (same leg, but the drum is
+		# what he named), and compared as an ABSOLUTE separation so it passes at
+		# any macro placement rotation. absf(±PI) is the only accepted answer —
+		# 90° in either direction is the bug this replaced.
+		var d_drum_tank : float = wrapf(n_flot.rotation.y - trommel.rotation.y, -PI, PI)
+		_check(absf(absf(d_drum_tank) - PI) < 0.01,
+			"drum and flotation tank are ANTI-PARALLEL in plan — 180°, operator 2026-09-17 (got %.1f°)"
+				% rad_to_deg(d_drum_tank))
+		# ...and the tank is offset SIDEWAYS from the drum's street, not on it:
+		# anti-parallel alone would also be satisfied by the tank sitting in the
+		# middle of the wet train, running back through it.
+		var lateral : float = (n_flot.global_position - trommel.global_position) \
+			.rotated(Vector3.UP, -trommel.rotation.y).x
+		_check(absf(lateral) > 3.0,
+			"the tank is laid BESIDE the drum street, not on it (lateral offset %.2f m)" % lateral)
+		# Legs F and G — the rest of the serpentine the U-turn produced.
+		var n_kuf : Node3D = by_idx.get(_idx(seq, "kufferath_sieve"))
+		if n_kuf != null:
+			var d_ef : float = wrapf(n_kuf.rotation.y - n_flot.rotation.y, -PI, PI)
+			_check(absf(d_ef - PI / 2.0) < 0.01,
+				"leg E→F turns LEFT 90° off the tank's discharge end (got %.1f°)" % rad_to_deg(d_ef))
+			var d_fg : float = wrapf(n_ext.rotation.y - n_kuf.rotation.y, -PI, PI)
+			_check(absf(d_fg - PI / 2.0) < 0.01,
+				"leg F→G turns LEFT 90° back to east for the extruder (got %.1f°)" % rad_to_deg(d_fg))
+		# The extruder must still run EAST-WEST along the hall (floor plan, Hal 2
+		# south wall) — that is what the operator's "leg F is correct" ruling
+		# protects, and the U-turn rotated every leg behind it.
+		var d_drum_ext : float = wrapf(n_ext.rotation.y - trommel.rotation.y, -PI, PI)
+		_check(absf(absf(d_drum_ext) - PI) < 0.01 or absf(d_drum_ext) < 0.01,
+			"extruder 1 stays on the drum's east-west axis (got %.1f° off it)" % rad_to_deg(d_drum_ext))
+		# ── SAVE-BACK PARITY (#serpentine 2026-09-17) ───────────────────────
+		# save_macro_overrides walks its OWN copy of the cursor and must stay in
+		# lockstep with the builder, or every machine downstream of a mismatch is
+		# inverted against the wrong origin and drifts on each save/reload.
+		# `leg_offset` is deliberately NOT mirrored there: it shifts leg_start
+		# only, and the save side recovers each leg's origin from the per-node
+		# `macro_anchor` meta, which is stamped AFTER the shift. This asserts
+		# that reasoning rather than trusting it — run the same inversion the
+		# save path runs and demand it lands back on the nominal pose.
+		#
+		# Done INLINE rather than by calling save_macro_overrides, because that
+		# function WRITES user://macros/line_1.json as a side effect; a test must
+		# not leave real macro overrides behind for the game to load.
+		#
+		# lump_cart is excluded: it is a physics prop that settles in Y after
+		# placement, so it carries a small dy on EVERY macro (measured 2026-09-17
+		# at -0.35 on line 1 and -0.07 on 3A/3B/3C alike — pre-existing and
+		# unrelated to the fold). X/Z parity is what this check is for.
+		var nominal : Array = bm.call("_macro_nominal_poses", seq)
+		var drifted : Array = []
+		for idx in by_idx.keys():
+			var nn : Node3D = by_idx[idx]
+			var pid : String = String(nn.get_meta("placeable_id", ""))
+			if pid == "lump_cart" or int(idx) >= nominal.size():
+				continue
+			var nom2 : Dictionary = nominal[int(idx)]
+			var anc : Dictionary = nn.get_meta("macro_anchor")
+			var a_rot2 : float = float(anc.get("rot_y", 0.0))
+			var rel : Vector3 = nn.global_position - (anc.get("start", Vector3.ZERO) as Vector3)
+			var ddx : float = rel.dot(Vector3(cos(a_rot2), 0.0, -sin(a_rot2))) - float(nom2.get("x", 0.0))
+			var ddz : float = rel.dot(Vector3(-sin(a_rot2), 0.0, -cos(a_rot2))) - float(nom2.get("z", 0.0))
+			if absf(ddx) > 0.01 or absf(ddz) > 0.01:
+				drifted.append("%d:%s(%+.2f,%+.2f)" % [int(idx), pid, ddx, ddz])
+		_check(drifted.is_empty(),
+			"save-back inverts every machine back onto its nominal pose — builder walk and save mirror agree (drifted: %s)"
+				% ("none" if drifted.is_empty() else ", ".join(drifted)))
 		# Plan relationships at build rot 0 (leg A = -Z, legs B/D/F = -X,
 		# leg C = +Z, leg E = -Z): the sketch's shape, not just the turns.
+		# NOTE (#fold 2026-09-16): leg A now has an internal 90° turn
+		# (opzetband_1 -> westa_band_1 -> shredder_1) that this specific
+		# same-axis position check predates. It's LEFT AS-IS pending a real
+		# in-game measurement pass (see the geometry-placeholder note on
+		# westa_band_1 in PlaceableCatalog._build_opzetband) — it may need
+		# rewriting from a Z-comparison to something turn-aware once the new
+		# leg's real geometry is measured instead of guessed.
 		_check(n_shred.global_position.z < n_opzet.global_position.z,
 			"shredder sits downstream (leg A) of the opzetband")
 		_check(westa.global_position.z > n_magnet.global_position.z,
-			"westa climbs BACK up leg C, north of the magnet run")
+			"drum_feed_belt climbs BACK up leg C, north of the magnet run")
 		_check(trommel.global_position.x < hoek.global_position.x,
 			"drum runs leg D away from the corner chute")
 		_check(n_flot.global_position.z < trommel.global_position.z,
@@ -402,19 +566,19 @@ func _run() -> void:
 		# reproduce the builder's world positions exactly. This is the check
 		# that makes save-back trustworthy — and would have caught the old
 		# gap-override drift between the two walks.
-		var nominal : Array = bm.call("_macro_nominal_poses", seq)
+		var nominal_mirror : Array = bm.call("_macro_nominal_poses", seq)
 		var worst := 0.0
 		var checked := 0
 		for i3 in by_idx:
 			var node3 : Node3D = by_idx[i3]
-			if i3 >= nominal.size() or not node3.has_meta("macro_anchor"):
+			if i3 >= nominal_mirror.size() or not node3.has_meta("macro_anchor"):
 				continue
 			# lump_cart is a live physics prop — it settles/rolls after spawn
 			# (measured −0.29 m of y-settle), so it can't witness PLACEMENT
 			# fidelity. Everything bolted down stays in the check.
 			if String(node3.get_meta("placeable_id")) == "lump_cart":
 				continue
-			var nomp : Dictionary = nominal[i3]
+			var nomp : Dictionary = nominal_mirror[i3]
 			var anc : Dictionary = node3.get_meta("macro_anchor")
 			var a_s : Vector3 = anc.get("start", Vector3.ZERO)
 			var a_r : float = float(anc.get("rot_y", 0.0))

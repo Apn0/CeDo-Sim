@@ -214,6 +214,14 @@ var fault_reason : String = ""
 # otherwise filled with config.melt_temp_setpoint on first tick / construction.
 var zone_temp_setpoints : Array[float] = []
 
+# Operator screw speed setpoint (rpm). Seeded from config.screw_rpm_nominal in
+# _init(): a hard-coded 120 here would silently re-rate every line whose config
+# has a different nominal (throughput scales with setpoint / nominal in
+# _tick_running). 0 means "no operator setpoint — run at nominal".
+var screw_rpm_setpoint : float = 0.0
+# Live actual temperatures for the 7 individual zones.
+var actual_zone_temps : Array[float] = [113.0, 157.0, 184.0, 213.0, 215.0, 215.0, 215.0]
+
 # Motor torque (% of design max). Computed from average zone-setpoint shortfall.
 # > TORQUE_TRIP_PCT for TORQUE_TRIP_SUSTAIN_S → FAULT (motor_torque_trip).
 # > LUMP_PASSTHROUGH_TORQUE_PCT → un-melted lumps go downstream to the laser
@@ -282,6 +290,8 @@ func _init(cfg: ExtruderConfig) -> void:
 	# array we adopt it; otherwise every zone inherits the global
 	# `melt_temp_setpoint` and the operator can drop individual zones later
 	# via set_zone_temp() (e.g. to avoid burning paper/cellulose).
+	if config != null:
+		screw_rpm_setpoint = config.screw_rpm_nominal
 	zone_temp_setpoints = []
 	zone_temp_setpoints.resize(ZONE_COUNT)
 	var use_cfg : bool = config != null \
@@ -472,8 +482,12 @@ func _tick_idle(delta: float) -> void:
 func _tick_running(delta: float, inputs: Dictionary, events: Array[String]) -> void:
 	# Ramp throughput from idle to nominal over startup_ramp_s
 	var ramp := clampf(runtime_s / config.startup_ramp_s, 0.0, 1.0)
-	screw_rpm = lerpf(config.screw_rpm_idle, config.screw_rpm_nominal, ramp)
-	throughput_kg_h = lerpf(config.idle_kg_per_h, config.nominal_kg_per_h, ramp)
+	var target_rpm : float = screw_rpm_setpoint if screw_rpm_setpoint > 0.0 else config.screw_rpm_nominal
+	var desired_rpm : float = lerpf(config.screw_rpm_idle, target_rpm, ramp)
+	screw_rpm = move_toward(screw_rpm, desired_rpm, 25.0 * delta)
+	throughput_kg_h = lerpf(config.idle_kg_per_h, config.nominal_kg_per_h * (target_rpm / maxf(config.screw_rpm_nominal, 1.0)), ramp)
+	for i in range(min(actual_zone_temps.size(), zone_temp_setpoints.size())):
+		actual_zone_temps[i] = move_toward(actual_zone_temps[i], zone_temp_setpoints[i], 1.5 * delta)
 	if pelletizer != null:
 		pelletizer.tick(delta, state == State.RUNNING)
 		throughput_kg_h *= pelletizer.get_throughput_multiplier()
@@ -827,6 +841,21 @@ func get_zone_temp(zone_index: int) -> float:
 	if zone_index < 0 or zone_index >= ZONE_COUNT:
 		return 0.0
 	return zone_temp_setpoints[zone_index]
+
+## Read live actual zone temperature by index (clamped).
+func get_actual_zone_temp(zone_index: int) -> float:
+	if zone_index >= 0 and zone_index < actual_zone_temps.size():
+		return actual_zone_temps[zone_index]
+	return melt_temp
+
+func set_screw_rpm_setpoint(rpm: float) -> void:
+	screw_rpm_setpoint = clampf(rpm, 0.0, 250.0)
+
+func set_primary_suction(pct: float) -> void:
+	primary_suction_pct = clampf(pct, 0.0, 1.0)
+
+func set_secondary_suction(pct: float) -> void:
+	secondary_suction_pct = clampf(pct, 0.0, 1.0)
 
 ## Average of the seven zone setpoints — used as the torque-shortfall reference.
 func _avg_zone_setpoint() -> float:

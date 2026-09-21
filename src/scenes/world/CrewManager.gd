@@ -34,9 +34,9 @@ const ZONES : Dictionary = {
 	"extruder_op":      ["extruder", "mengsilo", "compactor", "mas_bak", "laser_filter", "heetafslag", "extruder_silo", "compactorband"],
 	"permanent_feeder": ["bunker", "shredder", "inclined_belt", "feed_hopper",
 						  "sga", "metal_belt", "ballistic", "wind_sifter", "titech",
-						  "opzetband", "westa_band", "overband_magnet"],
+						  "opzetband", "westa_band", "drum_feed_belt", "overband_magnet"],
 	"feeder":           ["bunker", "shredder", "inclined_belt", "feed_hopper",
-						  "opzetband", "westa_band", "overband_magnet"],
+						  "opzetband", "westa_band", "drum_feed_belt", "overband_magnet"],
 	"all_rounder":      ["prewash", "friction", "intensive", "flotation", "rotation",
 						  "kufferath", "rafter", "dewater", "mech_dryer", "centrifuge",
 						  "vw_trommel", "trommel", "mill", "scheidingsgoot", "droger", "mas_bak", "mas_droger"],
@@ -725,7 +725,7 @@ const SECTION_POSTS := [
 const SECTION_ZONES : Dictionary = {
 	"feed_3a":     ["bunker_3a", "shredder_1", "opzetband_3a3b"],
 	"feed_3b":     ["bunker_3b", "shredder_1", "opzetband_3a3b"],
-	"feed_1":      ["bunker_1",  "opzetband_1", "westa_band_1"],
+	"feed_1":      ["bunker_1",  "opzetband_1"],
 	"feed_3c":     ["bunker_3c", "opzetband_3c6"],
 	"feed_6":      ["bunker_6",  "opzetband_3c6"],
 	"intake_3a3b": ["transportband_", "switch_belt", "vss_silo", "u_bay"],
@@ -735,7 +735,7 @@ const SECTION_ZONES : Dictionary = {
 	"wash_3b":     ["prewash_3b", "friction_3b", "intensive_3b", "flotation_3b",
 					"rotation_3b", "kufferath_3b", "dewater_3b", "mech_dryer_3b", "centrifuge_3b"],
 	"wash_1":      ["prewash_1", "friction_1", "intensive_1", "flotation_1",
-					"rotation_1", "kufferath_1", "dewater_1", "mech_dryer_1", "centrifuge_1"],
+					"rotation_1", "kufferath_1", "dewater_1", "mech_dryer_1", "centrifuge_1", "drum_feed_belt"],
 	"extruder_3a": ["extruder_3a", "mengsilo_3a", "compactor_3a", "mas_bak_3a"],
 	"extruder_3b": ["extruder_3b", "mengsilo_3b", "compactor_3b", "mas_bak_3b"],
 	"extruder_1":  ["extruder_1",  "mengsilo_1",  "compactor_1",  "mas_bak_1"],
@@ -1126,11 +1126,14 @@ func _feeder_world() -> Node:
 	return tree.current_scene if tree != null else null
 
 ## opzetband placeable_id that a Feed section feeds. Reads SECTION_ZONES tokens and
-## returns the first "opzetband*" / "westa_band*" token (the physical feed belt).
+## returns the first "opzetband*" / "westa_band*" / "drum_feed_belt*" token (the
+## physical feed belt). drum_feed_belt added #fold 2026-09-16 — it's the belt
+## formerly named "westa_band_1" in the wash_1 zone list (renamed when the real
+## Westa Band moved to the shredder infeed; see BuildMode.gd LINE_1_SEQ).
 func _opzetband_id_for_section(section_key: String) -> String:
 	for tk in _zone_for_section(section_key):
 		var t := String(tk)
-		if t.begins_with("opzetband") or t.begins_with("westa_band"):
+		if t.begins_with("opzetband") or t.begins_with("westa_band") or t.begins_with("drum_feed_belt"):
 			return t
 	return ""
 
@@ -1151,6 +1154,11 @@ func _nearest_feed_belt(from: Vector3) -> Node3D:
 	for b in get_tree().get_nodes_in_group("shredder_feed_belt"):
 		var bn := b as Node3D
 		if bn == null or not is_instance_valid(bn):
+			continue
+		var pid := String(bn.get_meta("placeable_id", ""))
+		# Intermediate wash/transfer conveyors (westa_band_1) carry shredded flake between
+		# machines and do not take raw bales from yard forklifts; only opzetband intakes do.
+		if pid == "westa_band_1" or bool(bn.get_meta("intermediate_conveyor", false)):
 			continue
 		var d : float = from.distance_to(bn.global_position)
 		if d < best_d:
@@ -1411,7 +1419,7 @@ func start_line_1_with_crew() -> void:
 		if "feed_enabled" in line_flow:
 			line_flow.feed_enabled = true
 
-	# Start any shredder feeder belts belonging to Line 1
+	# Start any shredder feeder belts and shredders belonging to Line 1
 	var ml := Engine.get_main_loop()
 	if ml is SceneTree:
 		for belt in (ml as SceneTree).get_nodes_in_group("shredder_feed_belt"):
@@ -1422,6 +1430,17 @@ func start_line_1_with_crew() -> void:
 					owns = mid == "line_1" or mid.contains("bunker") or mid.contains("sga")
 				if owns:
 					belt.call("request_start")
+		for shredder in (ml as SceneTree).get_nodes_in_group("shredder"):
+			if shredder != null and is_instance_valid(shredder):
+				var owns_s := true
+				if (shredder as Node3D).has_meta("macro_id"):
+					var smid := String((shredder as Node3D).get_meta("macro_id"))
+					owns_s = smid == "line_1" or smid.contains("shredder_1")
+				if owns_s:
+					if shredder.has_method("start"):
+						shredder.call("start")
+					elif shredder.has_method("set_running"):
+						shredder.call("set_running", true)
 
 	# 3) Radio transmissions & visual banner
 	_radio_call("Romain", "Ploeg attentie: Lijn 1 wordt opgestart! Iedereen naar je werkplek.")
@@ -1516,7 +1535,7 @@ func _line_1_machine_list() -> Array:
 ## Check whether a machine id belongs to Line 1's standard equipment sequence.
 func _is_line_1_item(id: String) -> bool:
 	const L1_ITEMS := [
-		"opzetband", "shredder", "westa_band", "sga_feed_chute", "vw_trommel",
+		"opzetband", "shredder", "westa_band", "drum_feed_belt", "sga_feed_chute", "vw_trommel",
 		"scheidingsgoot", "friction_sep", "mech_dryer", "mill", "flotation_tank",
 		"dewater_screw", "kufferath_sieve", "mas_bak", "mas_droger", "extruder_silo",
 		"compactorband", "extruder_1", "laser_filter", "heetafslag", "ontwaterzeef",
@@ -1604,4 +1623,3 @@ func _step_allrounder_patrol(w: NPC) -> void:
 		var loop_mach = stations[0]
 		w.assign_post("(all-rounder)", loop_mach["pos"])
 		w.dispatch_to(loop_mach["pos"], "opstart %s" % String(loop_mach["id"]), 3.5)
-

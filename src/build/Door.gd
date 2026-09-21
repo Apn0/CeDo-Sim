@@ -53,6 +53,12 @@ func _build_hinge_pivot() -> void:
 	var hinge_sign : float = -1.0 if hinge_side_idx == 0 else 1.0
 	_pivot = AnimatableBody3D.new()
 	_pivot.name = "HingePivot"
+	# sync_to_physics OFF — it defaults to TRUE, which pins the body to the
+	# global transform it has at build time and ignores any later move of an
+	# ancestor, stranding the pivot wherever the door was first assembled (see
+	# InteractiveHatch's note for the line-1 measurement that found this). The
+	# leaf is tween-driven, so kinematic push velocity is not wanted here.
+	_pivot.sync_to_physics = false
 	_pivot.position = Vector3(hinge_sign * width * 0.5, 0.0, 0.0)
 	add_child(_pivot)
 	# Gather the leaf children, re-parent under pivot, shift each so they keep

@@ -26,6 +26,9 @@ class_name LineFlow
 ## without forcing a rebuild() that would destroy node state.
 signal observer_placed(placeable_id : String)
 
+func _enter_tree() -> void:
+	add_to_group("line_flow")
+
 const MAX_LINK_DIST : float = 14.0
 const FEED_RATE     : float = 8.0     # kg/s drawn from a bale sitting on the feed point
 const FEED_DENSITY  : float = 320.0   # kg/m³ for the injected feed volume
@@ -214,6 +217,7 @@ var _bales_cache : Array = []
 # boot (caught by the windowed HMI proof run 2026-08-09; the headless feeder
 # bench never passed this cache in, so it stayed green — bench-greens rule).
 var _deliverable_bales_cache : Array[Node] = []
+var _balance_log_t : float = 0.0
 
 # ── #52 advanced-systems wiring state ─────────────────────────────────────────
 # The AirNetwork is a plant-wide autoload, so its compressors are registered ONCE
@@ -493,14 +497,38 @@ func granulaat_quality() -> float:
 ## bounding-box fraction with their persisted vb_start endpoint — without this,
 ## the fractional `inf` would land in the wrong place for a span that's longer
 ## than its catalog bounding-box size.
+## A ShredderFeedBelt knows its own deck tail and discharge lip, and for an
+## INCLINED belt those disagree with MachineFlow's generic fractions, which put
+## the inlet high at the back and the outlet low at the front — the profile of a
+## machine you pour into, not of a belt that climbs. Line 1's head is three such
+## belts in a row, and reading the fractions there put westa_band_1's discharge
+## 5.7 m BELOW shredder_1's throat, so the geometry linker skipped the shredder
+## and wired the Westa straight to the uitvoerband. Same shape of fix as the
+## variable_belt override above: when the node can measure its own ports, ask it.
+func _belt_ports(node3d: Node3D) -> Array:
+	var belt := node3d as ShredderFeedBelt
+	if belt == null:
+		return []
+	return [belt.to_global(Vector3(0.0, belt.deck_height, 0.0)), belt._discharge_lip_pos()]
+
+## Input port world position for `node3d`. Variable belts override the standard
+## bounding-box fraction with their persisted vb_start endpoint — without this,
+## the fractional `inf` would land in the wrong place for a span that's longer
+## than its catalog bounding-box size.
 func _node_win(node3d: Node3D, id: String, inf: Vector3, size: Vector3) -> Vector3:
 	if id == "variable_belt" and node3d.has_meta("vb_start"):
 		return node3d.get_meta("vb_start")
+	var bp : Array = _belt_ports(node3d)
+	if not bp.is_empty():
+		return bp[0]
 	return node3d.to_global(Vector3(inf.x * size.x, inf.y * size.y, inf.z * size.z))
 
 func _node_wout(node3d: Node3D, id: String, outf: Vector3, size: Vector3) -> Vector3:
 	if id == "variable_belt" and node3d.has_meta("vb_end"):
 		return node3d.get_meta("vb_end")
+	var bp : Array = _belt_ports(node3d)
+	if not bp.is_empty():
+		return bp[1]
 	return node3d.to_global(Vector3(outf.x * size.x, outf.y * size.y, outf.z * size.z))
 
 ## #54 — splitter's second output port. Returns the wout's value when the
@@ -2044,10 +2072,17 @@ func _trigger_estop(fault_order: int, fault_node: int) -> void:
 	_estop_fault_node = fault_node
 	feed_enabled = false
 	var fid := String(_nodes[fault_node].get("id", "?"))
+	var fkey := String(_nodes[fault_node].get("key", "?"))
+	var fbuf := float(_nodes[fault_node].get("buffer", 0.0))
+	var frate := float(_nodes[fault_node].get("rate", 0.0))
+	var fspin := float(_nodes[fault_node].get("spin", 0.0))
+	var fpow := bool(_nodes[fault_node].get("powered", false))
+	var fmech := float(_mech_fraction(_nodes[fault_node]))
 	var bus := get_node_or_null("/root/EventBus")
 	if bus and bus.has_signal("machine_alarm_raised"):
 		bus.emit_signal("machine_alarm_raised", fid, "OVERLOAD-ESTOP", 3)
-	print("[LineFlow] E-STOP: overload at '%s' — upstream stopped, downstream emptying." % fid)
+	print("[LineFlow] E-STOP: overload at '%s' (key=%s, buf=%.1f, rate=%.1f, spin=%.2f, pow=%s, mech=%.2f) — upstream stopped, downstream emptying."
+		% [fid, fkey, fbuf, frate, fspin, str(fpow), fmech])
 
 func _clear_estop() -> void:
 	var fid := estop_fault_id()
@@ -2268,6 +2303,10 @@ func tick(delta: float) -> void:
 	_push_scada(delta)
 
 	_update_label()
+	_balance_log_t += delta
+	if _balance_log_t >= 10.0:
+		_balance_log_t = 0.0
+		_log_mass_balance()
 
 
 func _tick_cache_spatial_queries() -> void:
@@ -2349,6 +2388,12 @@ func _tick_plc_power_downstream(delta: float) -> void:
 			for m in mechs_s:
 				if m != null and is_instance_valid(m) and m.has_method("set_running"):
 					m.call("set_running", bool(nd_s["powered"]))
+		var n_obj = nd_s.get("node")
+		if n_obj != null and is_instance_valid(n_obj) and n_obj.has_method("set_running"):
+			if bool(nd_s["powered"]):
+				n_obj.call("set_running", true)
+			elif _estop_active or (_plc != null and _plc.has_method("is_stopping") and bool(_plc.call("is_stopping"))):
+				n_obj.call("set_running", false)
 		# Live current (#173): a stage draws its full HMI amps at full material
 		# load, sags to the motor idle current when starved, and 0 when stopped.
 		# Load is gauged against the machine's OWN design rate (self-consistent).
@@ -2962,6 +3007,11 @@ func _first_cc_node() -> Dictionary:
 			return nd
 	return {}
 
+## Public accessor for the active CutterCompactor model, or null if none placed.
+func get_first_cutter_compactor() -> CutterCompactor:
+	var nd := _first_cc_node()
+	return nd.get("cc", null) as CutterCompactor
+
 ## Remaining material in a bale (kg). Initialised from its weight on first use.
 func _bale_remaining(bale: Node3D) -> float:
 	if bale.has_meta("remaining_kg"):
@@ -3301,7 +3351,7 @@ static func _is_belt_id(id: String) -> bool:
 	if id == "transport_belt" or id == "variable_belt" \
 			or id == "inclined_belt_8m" or id == "metal_belt" \
 			or id == "compactorband" or id == "compactor_belt" \
-			or id == "switch_belt":
+			or id == "switch_belt" or id == "drum_feed_belt":
 		return true
 	return id.begins_with("transportband_") or id.begins_with("opzetband") \
 			or id.begins_with("westa_band")
@@ -3569,3 +3619,20 @@ func _update_label() -> void:
 		+ "waste: %.0f kg   dirt out: %.0f kg\n" % [waste_mass, contam_removed] \
 		+ "H2O out: %.0f kg   reject poly: %.0f kg\n" % [water_removed, poly_rejected] \
 		+ "in line: %.0f kg   balance err: %.2f kg" % [in_transit, residual]
+
+func _log_mass_balance() -> void:
+	if _nodes.is_empty() and fed_mass <= 0.0:
+		return
+	var in_transit := 0.0
+	for nd in _nodes:
+		var bin = nd.get("in", null)
+		if bin is MaterialBatch:
+			in_transit += (bin as MaterialBatch).mass_kg
+		var bout = nd.get("out", null)
+		if bout is MaterialBatch:
+			in_transit += (bout as MaterialBatch).mass_kg
+	in_transit += pipe_mass()
+	var residual := fed_mass + water_added \
+		- gran_mass - waste_mass - contam_removed - water_removed - poly_rejected - in_transit
+	print("[LineFlow Balance] Fed: %.1f kg | In-Transit: %.1f kg | Granulate: %.1f kg | Waste: %.1f kg (contam: %.1f, poly: %.1f) | Balance Err: %.2f kg"
+		% [fed_mass, in_transit, gran_mass, waste_mass, contam_removed, poly_rejected, residual])

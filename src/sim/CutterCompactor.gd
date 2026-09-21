@@ -119,6 +119,7 @@ const POT_CAPACITY_KG : float = 60.0      # how much flake the pot holds before 
 # =============================================================================
 var disc_rpm_setpoint : float = 0.0        # commanded disc speed (0 = motor off)
 var dosing_gate       : float = 0.0        # 0..1 — how far the flake feed gate is open
+var pot_temperature_setpoint : float = 105.0 # commanded target pot temperature (°C)
 
 # =============================================================================
 # OPERATOR-ANECDOTE MECHANICS  (#A1 / #A2 / #A4)
@@ -303,6 +304,19 @@ func set_rpm(rpm: float) -> void:
 
 func set_dosing_gate(g: float) -> void:
 	dosing_gate = clampf(g, 0.0, 1.0)
+
+func set_target_temperature(t: float) -> void:
+	pot_temperature_setpoint = clampf(t, 40.0, 150.0)
+
+func get_pot_load_pct() -> float:
+	return _pot_load_fraction() * 100.0
+
+func get_fill_level_cm() -> float:
+	# An empty pot reads 0. It used to return 45.0 — the value on the HMI
+	# photo — so an empty compactor showed a plausible fill level forever.
+	if charge != null and charge.mass_kg > 0.0:
+		return clampf((charge.mass_kg / POT_CAPACITY_KG) * 100.0, 0.0, 300.0)
+	return 0.0
 
 # #A1 — operator-tunable power cap, intentionally NOT clamped to rated.
 # Lets the operator set a cap above POWER_KW_RATED to push throughput on a

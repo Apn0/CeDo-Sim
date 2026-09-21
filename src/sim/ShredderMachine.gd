@@ -188,7 +188,8 @@ func _physics_process(delta: float) -> void:
 		var cap_dt : float = rated_kg_h * _spin_frac / 3600.0 * delta
 		var processed : float = minf(avail, cap_dt)
 		buffer_kg = maxf(0.0, avail - processed)
-		throughput_kg_h = (processed / delta * 3600.0) if delta > 0.0 else 0.0
+		var inst_thru : float = (processed / delta * 3600.0) if delta > 0.0 else 0.0
+		throughput_kg_h = lerpf(throughput_kg_h, inst_thru, clampf(delta / 0.3, 0.0, 1.0))
 		# Motor load rises with commanded feed vs rated (>100% when overfed).
 		var target_load : float = clampf(feed_kg_h / rated_kg_h * 100.0, 0.0, 160.0)
 		motor_load_pct = lerpf(motor_load_pct, target_load, clampf(delta / LOAD_TAU, 0.0, 1.0))
@@ -237,6 +238,12 @@ func stop() -> void:
 	if running:
 		running = false
 		state_changed.emit()
+
+func set_running(v: bool) -> void:
+	if v:
+		start()
+	else:
+		stop()
 
 func set_key_position(pos: int) -> void:
 	pos = clampi(pos, Key.AUTO, Key.ONDERHOUD)

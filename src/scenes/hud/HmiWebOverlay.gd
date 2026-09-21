@@ -49,6 +49,79 @@ var _shift_clock : Node = null
 var _scope : Dictionary = {}
 var _accum := 0.0
 
+# Persistent setpoints registry across screens & channels.
+# Defaults seeded with captured real plant operational values.
+var _setpoints : Dictionary = {
+	# EREMA Extruder channels (Plant photo capture)
+	"schuif": 100.0,
+	"ex_belasting": 100.0,
+	"extr_rpm": 120.0,
+	"sv_temperatuur": 105.0,
+	"ez_1": 115.0,
+	"zz_1": 160.0,
+	"zz_2": 185.0,
+	"zz_3": 215.0,
+	"sv_vulpeil": 45.0,
+	"afzuiging_1": 55.0,
+	"afzuiging_2": 0.0,
+	"sv_belasting": 60.0,
+	"sv_vermogen": 190.0,
+	# Line 3C Siemens Motors & Timers (FORM-008 & Plant capture)
+	"starttijd": 5.0,
+	"stoptijd": 60.0,
+	"leegdraaitijd": 30.0,
+	"loopbewaking": 9000.0,
+	"frequentie": 35.0,
+	"schroef_1_frequentie": 50.0,
+	"schroef_2_frequentie": 50.0,
+	"schroef_3_frequentie": 50.0,
+	"maalmolen_frequentie": 50.0,
+	"doseersluis_frequentie": 45.0,
+	"snelheid": 50.0,
+	# Sorteerlijn Bunker Setpoints
+	"bunkersnelheid": 220.0,
+	"speed_autom": 100.0,
+	"filling_setpoint": 258.0,
+	"conveyor_speed": 125.0,
+	# Shredder & Water Circuit
+	"vulpeil": 56.0,
+	"toevoer_stop": 8.0,
+	"toevoer_start": 7.0,
+	"druk": 2750.0,
+	"flow": 800.0,
+	"niveau": 1380.0,
+}
+
+# Live simulated actual values (drift / ramp toward setpoints)
+var _actuals : Dictionary = {
+	"schuif": 100.0,
+	"ex_belasting": 102.0,
+	"extr_rpm": 120.0,
+	"sv_temperatuur": 108.0,
+	"ez_1": 113.0,
+	"zz_1": 157.0,
+	"zz_2": 184.0,
+	"zz_3": 213.0,
+	"sv_vulpeil": 45.0,
+	"afzuiging_1": 55.0,
+	"afzuiging_2": 0.0,
+	"sv_belasting": 61.0,
+	"sv_vermogen": 193.0,
+	"starttijd": 5.0,
+	"stoptijd": 60.0,
+	"leegdraaitijd": 30.0,
+	"loopbewaking": 9000.0,
+	"frequentie": 35.0,
+	"schroef_1_frequentie": 50.0,
+	"schroef_2_frequentie": 50.0,
+	"schroef_3_frequentie": 50.0,
+	"bunkersnelheid": 219.0,
+	"vulpeil": 56.0,
+	"druk": 2218.0,
+	"flow": 804.2,
+	"niveau": 1379.0,
+}
+
 func _init() -> void:
 	layer = 46            # one above HmiOverlay (45) — never both open anyway
 	visible = false
@@ -63,12 +136,13 @@ static func webview_available() -> bool:
 	return DisplayServer.get_name() != "headless" and ClassDB.class_exists("WebView")
 
 ## Mirrors HmiOverlay.open_for(label, scope) — called by Hmi.gd on interact.
-func open_for(_label: String, scope: Dictionary) -> void:
+func open_for(label: String, scope: Dictionary) -> void:
 	_scope = scope
 	var start := String(scope.get("web_screen", INDEX_FILE))
+	print("[HmiWebOverlay] open_for: label='%s' screen='%s'" % [label, start])
 	_ensure_webview()
 	visible = true
-	if _web != null:
+	if _web != null and is_instance_valid(_web):
 		_web.visible = true
 	if _shell_ready:
 		_send_screen(start)
@@ -173,21 +247,69 @@ func _on_ipc(message: String) -> void:
 				push_warning("[HmiWebOverlay] refused open of unknown screen '%s'" % f)
 		"close":
 			close()
+		"set_setpoint":
+			var ch := String(d.get("channel", "")).strip_edges().to_lower()
+			var val := float(d.get("value", 0.0))
+			var scr := String(d.get("screen", ""))
+			var u := String(d.get("unit", ""))
+			_apply_setpoint(scr, ch, val, u)
+			_push_vals()
 		"event":
 			var btn_name := String(d.get("name", "")).to_lower().strip_edges()
 			
-			if btn_name == "aan" or btn_name == "start":
+			if btn_name == "aan" or btn_name == "start" or btn_name == "⚡":
 				var lf := _find_line_flow()
 				if lf and lf.has_method("start_line"):
 					lf.call("start_line")
 					print("[HmiWebOverlay] Line started via HMI button.")
-			elif btn_name == "uit" or btn_name == "stop":
+				var tree := get_tree()
+				if tree:
+					for belt in tree.get_nodes_in_group("shredder_feed_belt"):
+						if belt.has_method("request_start"):
+							belt.call("request_start")
+			elif btn_name == "uit" or btn_name == "stop" or btn_name == "stop runtime":
 				var lf := _find_line_flow()
 				if lf and lf.has_method("stop_line"):
 					lf.call("stop_line")
 					print("[HmiWebOverlay] Line stopped via HMI button.")
-			elif btn_name == "⌂" or btn_name == "home":
+				var tree := get_tree()
+				if tree:
+					for belt in tree.get_nodes_in_group("shredder_feed_belt"):
+						if belt.has_method("request_stop"):
+							belt.call("request_stop")
+			elif btn_name == "reset":
+				var lf := _find_line_flow()
+				if lf and lf.has_method("clear_estop"):
+					lf.call("clear_estop")
+				var tree := get_tree()
+				if tree:
+					for belt in tree.get_nodes_in_group("shredder_feed_belt"):
+						if belt.has_method("reset_faults"):
+							belt.call("reset_faults")
+				print("[HmiWebOverlay] Faults reset via HMI button.")
+			elif btn_name == "⌂" or btn_name == "home" or btn_name == "index" \
+					or btn_name == "start scherm" or btn_name == "f1" or btn_name == "logout":
 				_send_screen(INDEX_FILE)
+			elif btn_name == "overzicht" or btn_name == "▤" or btn_name == "📋" or btn_name == "f2":
+				_send_screen("Waslijn 3C Overzicht.dc.html")
+			elif btn_name == "⚠" or btn_name == "alarm" or btn_name == "storing" or btn_name == "f3":
+				_send_screen("Waslijn 3C Storingen.dc.html")
+			elif btn_name == "◀" or btn_name == "‹" or btn_name == "«" or btn_name == "<" \
+					or btn_name == "prev" or btn_name == "vorige" or btn_name == "f4" or btn_name == "f5":
+				_send_screen(_nav_target("prev"))
+			elif btn_name == "▶" or btn_name == "›" or btn_name == "»" or btn_name == ">" \
+					or btn_name == "next" or btn_name == "volgende" or btn_name == "f6":
+				_send_screen(_nav_target("next"))
+			elif btn_name == "f7" or btn_name == "trend":
+				_send_screen("Waslijn 3C Stroom Trend.dc.html")
+			elif btn_name == "f8" or btn_name == "water":
+				_send_screen("Water Circuit Lijn 3C-6.dc.html")
+			elif btn_name == "f9" or btn_name == "extruder":
+				_send_screen("EREMA Extruder Scherm 3C.dc.html")
+			elif btn_name == "f10" or btn_name == "bluport":
+				_send_screen("BluPort Overzicht Lijn 3C.dc.html")
+			elif btn_name == "clean screen" or btn_name == "clean\nscreen":
+				print("[HmiWebOverlay] Clean screen acknowledged.")
 			else:
 				# Log unwired buttons so we know what else needs wiring
 				push_warning("[HmiWebOverlay] HMI button '%s' on %s (not wired)"
@@ -245,6 +367,7 @@ func _send_screen(file: String) -> void:
 		push_warning("[HmiWebOverlay] screen file empty/missing: %s" % file)
 		return
 	_current_screen = file
+	print("[HmiWebOverlay] _send_screen: '%s'" % file)
 	_post({"type": "screen", "file": file, "b64": Marshalls.utf8_to_base64(html)})
 
 func _post(d: Dictionary) -> void:
@@ -322,9 +445,207 @@ func gather_vals() -> Dictionary:
 		"screen": _current_screen,
 		"pills": pills,
 		"units": units,
+		"extruder": _gather_extruder_vals(),
+		"screen_vals": _gather_screen_vals(),
 		"alarm": _top_alarm(),
 		"clock": _clock_lines(),
 	}
+
+func _find_extruder_model() -> ExtruderModel:
+	var tree := get_tree()
+	if tree != null:
+		var machines := tree.get_nodes_in_group("extruder_machine")
+		for em in machines:
+			if em != null and is_instance_valid(em):
+				var m = em.get("model")
+				if m == null and em.has_meta("model"):
+					m = em.get_meta("model")
+				if m != null:
+					return m as ExtruderModel
+	return null
+
+func _find_cutter_compactor() -> CutterCompactor:
+	var lf := _find_line_flow()
+	if lf != null and is_instance_valid(lf):
+		if lf.has_method("get_first_cutter_compactor"):
+			var c = lf.call("get_first_cutter_compactor")
+			if c != null:
+				return c as CutterCompactor
+		var nodes = lf.get("_nodes")
+		if nodes is Array:
+			for nd in nodes:
+				if nd is Dictionary and nd.get("cc") != null:
+					return nd.get("cc") as CutterCompactor
+	return null
+
+func _apply_setpoint(scr: String, ch: String, val: float, u: String) -> void:
+	_setpoints[ch] = val
+	print("[HmiWebOverlay] setpoint changed: %s = %s (%s) on screen '%s'" % [ch, str(val), u, scr])
+	
+	var ex_model := _find_extruder_model()
+	var cc := _find_cutter_compactor()
+	
+	if ch == "extr_rpm" or ch.ends_with("screw_rpm"):
+		if ex_model != null and ex_model.has_method("set_screw_rpm_setpoint"):
+			ex_model.set_screw_rpm_setpoint(val)
+	elif ch == "sv_temperatuur" or ch.ends_with("pcu_temp") or ch.ends_with("pot_temp"):
+		if cc != null and cc.has_method("set_target_temperature"):
+			cc.set_target_temperature(val)
+	elif ch == "sv_vermogen" or ch.ends_with("power_cap"):
+		if cc != null and "power_cap_kw_setpoint" in cc:
+			cc.power_cap_kw_setpoint = val
+	elif ch == "schuif" or ch.ends_with("dosing_gate"):
+		if cc != null and cc.has_method("set_dosing_gate"):
+			cc.set_dosing_gate(val / 100.0 if val > 1.0 else val)
+	elif ch == "afzuiging_1" or ch.ends_with("primary_suction"):
+		if ex_model != null and ex_model.has_method("set_primary_suction"):
+			ex_model.set_primary_suction(val / 100.0 if val > 1.0 else val)
+	elif ch == "afzuiging_2" or ch.ends_with("secondary_suction"):
+		if ex_model != null and ex_model.has_method("set_secondary_suction"):
+			ex_model.set_secondary_suction(val / 100.0 if val > 1.0 else val)
+	elif ch == "ez_1":
+		if ex_model != null and ex_model.has_method("set_zone_temp"):
+			ex_model.set_zone_temp(0, val)
+	elif ch == "zz_1":
+		if ex_model != null and ex_model.has_method("set_zone_temp"):
+			ex_model.set_zone_temp(1, val)
+	elif ch == "zz_2":
+		if ex_model != null and ex_model.has_method("set_zone_temp"):
+			ex_model.set_zone_temp(2, val)
+	elif ch == "zz_3":
+		if ex_model != null and ex_model.has_method("set_zone_temp"):
+			ex_model.set_zone_temp(3, val)
+			
+	var lf := _find_line_flow()
+	if lf != null and is_instance_valid(lf):
+		if lf.has_method("set_machine_setpoint"):
+			lf.call("set_machine_setpoint", ch, val)
+
+func _gather_extruder_vals() -> Dictionary:
+	var ex_model := _find_extruder_model()
+	var cc := _find_cutter_compactor()
+	
+	if ex_model != null:
+		_actuals["extr_rpm"] = ex_model.screw_rpm
+		_actuals["ex_belasting"] = clampf(ex_model.motor_torque_pct, 0.0, 150.0)
+		_actuals["afzuiging_1"] = ex_model.primary_suction_pct * 100.0
+		_actuals["afzuiging_2"] = ex_model.secondary_suction_pct * 100.0
+		_actuals["ez_1"] = ex_model.get_actual_zone_temp(0)
+		_actuals["zz_1"] = ex_model.get_actual_zone_temp(1)
+		_actuals["zz_2"] = ex_model.get_actual_zone_temp(2)
+		_actuals["zz_3"] = ex_model.get_actual_zone_temp(3)
+		_setpoints["extr_rpm"] = ex_model.screw_rpm_setpoint
+		if ex_model.zone_temp_setpoints.size() >= 4:
+			_setpoints["ez_1"] = ex_model.zone_temp_setpoints[0]
+			_setpoints["zz_1"] = ex_model.zone_temp_setpoints[1]
+			_setpoints["zz_2"] = ex_model.zone_temp_setpoints[2]
+			_setpoints["zz_3"] = ex_model.zone_temp_setpoints[3]
+	
+	if cc != null:
+		_actuals["sv_temperatuur"] = cc.pot_temperature
+		_actuals["schuif"] = cc.dosing_gate * 100.0
+		_actuals["sv_belasting"] = cc.get_pot_load_pct()
+		_actuals["sv_vermogen"] = cc.power_kw
+		_actuals["sv_vulpeil"] = cc.get_fill_level_cm()
+		_setpoints["sv_temperatuur"] = cc.pot_temperature_setpoint
+		_setpoints["sv_vermogen"] = cc.power_cap_kw_setpoint
+		_setpoints["schuif"] = cc.dosing_gate * 100.0
+	
+	var units_map := {
+		"schuif": "%",
+		"ex_belasting": "%",
+		"extr_rpm": "rpm",
+		"sv_temperatuur": "°C",
+		"ez_1": "°C",
+		"zz_1": "°C",
+		"zz_2": "°C",
+		"zz_3": "°C",
+		"sv_vulpeil": "cm",
+		"afzuiging_1": "%",
+		"afzuiging_2": "%",
+		"sv_belasting": "%",
+		"sv_vermogen": "kW",
+	}
+	
+	# Physical cross-coupling when running simulated or standalone
+	var lf := _find_line_flow()
+	var estop_active := false
+	if lf != null and is_instance_valid(lf) and lf.has_method("estop_fault_key"):
+		estop_active = (String(lf.call("estop_fault_key")) != "")
+
+	var gate_fraction := clampf(float(_setpoints.get("schuif", 100.0)) / 100.0, 0.0, 1.0)
+	var target_load := 12.0 + gate_fraction * 50.0 # 12% idle to 62% full load
+	var target_power := 25.0 + gate_fraction * 170.0 # 25 kW idle to 195 kW full power
+	var target_rpm := float(_setpoints.get("extr_rpm", 120.0))
+	var avg_temp : float = (float(_actuals.get("ez_1", 115.0)) + float(_actuals.get("zz_1", 160.0)) + float(_actuals.get("zz_2", 185.0)) + float(_actuals.get("zz_3", 215.0))) / 4.0
+	var temp_shortfall := maxf(0.0, 170.0 - avg_temp)
+	var target_ex_load := (target_rpm / 120.0) * 100.0 + temp_shortfall * 0.8
+	
+	if estop_active:
+		target_load = 0.0
+		target_power = 0.0
+		target_ex_load = 0.0
+
+	if cc == null:
+		_actuals["sv_belasting"] = move_toward(float(_actuals.get("sv_belasting", 61.0)), target_load, 1.5)
+		_actuals["sv_vermogen"] = move_toward(float(_actuals.get("sv_vermogen", 193.0)), target_power, 3.0)
+	if ex_model == null:
+		_actuals["ex_belasting"] = move_toward(float(_actuals.get("ex_belasting", 102.0)), target_ex_load, 2.0)
+
+	var res : Dictionary = {}
+	var t_msec := Time.get_ticks_msec()
+	for k in units_map.keys():
+		var target : float = float(_setpoints.get(k, 0.0))
+		var cur : float = float(_actuals.get(k, target))
+		if (ex_model == null and k in ["extr_rpm", "afzuiging_1", "afzuiging_2", "ez_1", "zz_1", "zz_2", "zz_3"]) or (cc == null and k in ["sv_temperatuur", "schuif", "sv_vulpeil"]):
+			if estop_active and k in ["extr_rpm", "afzuiging_1", "afzuiging_2"]:
+				cur = move_toward(cur, 0.0, 5.0)
+			else:
+				cur = move_toward(cur, target, 2.5)
+			_actuals[k] = cur
+		
+		# Subtle realistic sensor jitter (~±0.25%) when machines are operational
+		var jitter : float = 0.0
+		if not estop_active and cur > 5.0 and k in ["ex_belasting", "sv_belasting", "sv_vermogen", "extr_rpm"]:
+			jitter = sin(t_msec * 0.003 + float(k.hash() % 100)) * 0.35
+			
+		res[k] = {
+			"actual": cur + jitter,
+			"setpoint": target,
+			"unit": units_map[k],
+		}
+	return res
+
+func _gather_screen_vals() -> Dictionary:
+	var res : Dictionary = {}
+	var lf := _find_line_flow()
+	var estop_active := false
+	if lf != null and is_instance_valid(lf) and lf.has_method("estop_fault_key"):
+		estop_active = (String(lf.call("estop_fault_key")) != "")
+
+	var t_msec := Time.get_ticks_msec()
+	for k in _setpoints.keys():
+		var target : float = float(_setpoints[k])
+		var cur : float = float(_actuals.get(k, target))
+		
+		# "unless there's a problem, of course":
+		var is_motion_ch : bool = (k.ends_with("rpm") or k.ends_with("frequentie") or k.ends_with("belasting") or k.ends_with("amps") or k.ends_with("speed") or k.ends_with("stroom") or k.ends_with("vermogen"))
+		if estop_active and is_motion_ch:
+			cur = move_toward(cur, 0.0, 3.0)
+		else:
+			cur = move_toward(cur, target, 2.0)
+			
+		_actuals[k] = cur
+		
+		var jitter : float = 0.0
+		if not estop_active and cur > 5.0:
+			jitter = sin(t_msec * 0.0025 + float(k.hash() % 100)) * (cur * 0.002)
+
+		res[k] = {
+			"actual": cur + jitter,
+			"setpoint": target,
+		}
+	return res
 
 ## The two header clock lines. The designs ship a frozen Gregorian date+time
 ## (e.g. "zaterdag 10 augustus 2024 / 18:00:30"); a screen standing in the plant
