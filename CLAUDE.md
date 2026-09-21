@@ -48,7 +48,15 @@ fixture threshold — **5 failures**. (`00cc51c2` alone, 2026-09-04, measured
 > and `test_npc05_realworld` (EXPECTED, documents npc-06/07 vehicle autopilot
 > defect). Both are intentionally kept red. Harness re-run is pending.
 
-> **⚠️ CRITICAL: `bash tools/regression/run.sh` CANNOT invoke Godot on this
+> **2026-09-21 — the warning below did NOT reproduce.** In a Git Bash session
+> `"$GODOT" --version` printed `4.6.3.stable.official` and the **full**
+> `bash tools/regression/run.sh` ran end to end (29 min, 71 sections,
+> `== done (exit 1)`) with every Godot process launched by the script. The
+> failure it describes may be specific to whichever shell or launcher produced
+> it; if `No such file or directory` recurs, fall back to PowerShell as it says.
+> Measured, not assumed — details in `docs/audit/robustness_and_coverage_2026-09-21.md`.
+
+> **⚠️ (older, 2026-09-13 — see the note above) CRITICAL: `bash tools/regression/run.sh` CANNOT invoke Godot on this
 > machine via bash.** When bash invokes `C:/Users/arnod/.../Godot.exe`, bash
 > reports `/bin/bash: No such file or directory`. Godot only runs through
 > PowerShell (`& "C:\...\Godot.exe" ...`). The harness log shows
@@ -73,6 +81,31 @@ count.
 | `test_npc05_realworld` | EXPECTED red — the DRIVE_TO_INDOOR stall, see below. Do not silence it |
 | ~~`test_line3b_flow_conformance`~~ | ~~missing input edge in LineFlow topology~~ — **FIXED 2026-09-13**: added `explicit_from_prev: true` to plasmaq entry in `LINE_3B_SEQ` (gap 15 m > MAX_LINK_DIST 14 m) |
 | ~~`test_project_sweep_guards`~~ | ~~B1b WorldLayout.structure_items starts empty (1 entries)~~ — **FIXED 2026-09-13**: cleared local world state |
+
+> **2026-09-21 — full harness on the DIRTY tree (`58a95ba` + 216 uncommitted
+> entries), before the persistence/coverage changes: `== done (exit 1)`, four
+> failing steps.** `test_nav_connectivity` (2 checks — the `38 static bodies vs
+> 39 LINE_3A_SEQ entries` fixture, **identical at clean HEAD**, plus the
+> crew-post gap), `test_jam_baseline` (4), `test_gate_carve` (1) and
+> `test_npc05_realworld` (expected). **`test_gate_carve` is red ONLY because of
+> the uncommitted `src/build/WallOpenings.gd`** — bisected on a clean-HEAD copy:
+> HEAD = 16 ok; the two rotation-sign flips in `_from_box` / `_to_box` alone
+> reproduce `PASSABILITY 0/5`, the `queue_free()`→`free()` edit alone passes. The
+> navmesh collapse in `test_jam_baseline` (10 polygons vs 276 at HEAD) is
+> **INTERMITTENT** on the dirty tree — 2 collapses in 3 runs; one full harness
+> baked 273 polygons and passed that part. An earlier revision of this note said
+> it "did not recur"; that was one lucky run, not a measurement of the rate. Full
+> evidence: `docs/audit/robustness_and_coverage_2026-09-21.md` §5.2.
+
+> **2026-09-21 — everything CeDo that is not this repo lives in ONE folder:
+> `D:\cedo_archive`.** Old bisect/merge/verify worktrees and clones were removed
+> after their uncommitted edits, untracked files and (for standalone clones) a
+> verified `repo.bundle` incl. stashes were saved to `git_copies\<name>\`. Also
+> there: `snapshots\` (was `D:\cedo_snapshots`), `userdata\` test copies,
+> `backups\`, `CeDo_Simulator_data\`, `CeDo_assets\` (was `V:\_Claude`),
+> `projects\ExtruderSim` + `projects\cedo-audio-placer`, `drive_download\`.
+> Doc citations to the old paths (`CeDo_Simulator_data`, `ExtruderSim`, …) are
+> provenance, not live paths — look under `D:\cedo_archive`.
 
 **`test_jam_baseline` is `14 ok, 0 fail, 0 skipped` — the first time this suite
 has ever evaluated all fourteen of its checks.** It was 11 ok + 3 silently
@@ -342,13 +375,14 @@ this one as re-checkable too — `find src -name '*.gd' | wc -l`):
 | `docs/AUDIT_project_sweep_2026-08-23.md` | **The sweep that found `main` did not compile.** Why both harness compile checks missed it, the BaleYardManager merge repair, FULL_LOGIC_AUDIT #7 confirmed + fixed and #12 REFUTED, the headless MultiMesh limit, and what a fresh clone can/cannot prove |
 | `docs/audit/pr_merge_2026-08-29.md` | **Ten bot PRs, all reported "mergeable ✅", two of which merge cleanly into a file that does not parse.** Records the `shell` collision that would have taken the harness down, why GitHub structurally cannot see it, the pre-merge `uniq -d` check, and the LineFlow correlation that looked damning and was measured wrong |
 | `docs/audit/material_trace_2026-08-18.md` | Follow one bale end-to-end: the symbol-flow + material-census tools, mass-minting proven structurally closed, and the spawn-clearance check that was unsatisfiable for 4 weeks |
+| `docs/audit/robustness_and_coverage_2026-09-21.md` | **Crash-safe persistence (`AtomicFile`) and 26 formerly-unrun suites now gated.** Why a save killed mid-write used to load back as an empty factory and get autosaved over; the delete-resurrection bug caught in the first draft; 5 mutation proofs. Plus the bisect that pins the `test_gate_carve` red on two rotation-sign flips in the uncommitted `WallOpenings.gd`, which reds are identical at clean HEAD, and what was measured but not touched |
 | `docs/BACKLOG_ultracode_2026-07-19.md` | Deferred queue — 16 of 40 findings landed; also records the npc-05 vacuous-green correction |
 | `docs/DESIGN_SUGGESTIONS_2026-07-08.md` | Ranked roadmap, P1-P8 physicalization + Q1-Q8 QoL, every item file-cited |
 | `docs/FULL_LOGIC_AUDIT_2026-07-08.md` | Runtime-behaviour audit, 25 findings. **Snapshot, no per-finding status.** Bug 0 / HIGH #1 / #2 / #7 are DONE (#7 fixed 2026-08-23, guarded by `test_project_sweep_guards`); **#12 Walkie→VoiceService is REFUTED — measured, the connect works**; 5 dead files still unverified. Two findings re-measured, one was wrong: re-measure before acting |
 | `docs/DESIGN_hmi_tag_bridge_2026-07-22.md` | **Verdict: do NOT build the WebSocket HMI bridge.** Plus the slice that WAS built: `src/sim/TagMap.gd` |
 | `docs/DESIGN_npc05_container_chain_2026-07-20.md` | Container-chain design (Dutch). ⚠️ Its "GEBOUWD" status was corrected 2026-07-21 — that proof was a vacuous green |
 | `docs/research_film_physics_feasibility.md` | Film-physics R&D — GO on Jolt + GPUParticles3D + custom buoyancy; NO-GO on a Rapier backend swap. Correctly targets 4.6.3 |
-| `docs/MESHROOM_BUILDING_HANDOFF.md` | Building photogrammetry handoff. Its `scratchpad/production_run.py` re-run path is **lost**; the 17 GB Meshroom cache now lives at `D:\CeDo_meshroom_cache` |
+| `docs/MESHROOM_BUILDING_HANDOFF.md` | Building photogrammetry handoff. Its `scratchpad/production_run.py` re-run path is **lost**; the 17 GB Meshroom cache now lives at `D:\cedo_archive\meshroom\CeDo_meshroom_cache` (moved from `D:\CeDo_meshroom_cache` 2026-09-21) |
 
 ## Traps that have bitten before
 
@@ -399,6 +433,23 @@ this one as re-checkable too — `find src -name '*.gd' | wc -l`):
   ```
   Non-empty output = the merge will not parse. Then confirm with
   `godot --headless --path . --check-only --script res://<file>`.
+- **A bot PR's conflict resolution can delete a suite without touching its test
+  file.** MEASURED 2026-09-21 on `origin/main` `34bd56c`, three ways at once:
+  merge #258 (`6338e79`) resolved a `run.sh` conflict by *replacing* the
+  `SettingsManager apply` block, so that suite stopped running while
+  `test_settings_manager_apply.gd` stayed in the tree; two bot PRs created two
+  *different* tests both named `test_operator_context.gd`, and merge #268
+  (`30cc5f4`) kept one and dropped 16 `npc_board_vehicle` checks; and the
+  survivor never ran a check — it `preload`ed `OperatorContext.gd`, which uses
+  the `EventBus` autoload, and in a `--script` suite a preload compiles before
+  autoload names exist (`Identifier not found: EventBus`), so it printed no
+  `Result:` line and was red from the day it was wired. All three restored
+  locally and measured green (5 / 16 / 5 ok). Lessons: an **add/add conflict on
+  a test file means two tests — rename one, never pick a side**; after pulling
+  bot merges, `git diff <old> <new> -- tools/regression/run.sh | grep '^-echo "=='`
+  lists every dropped step (it named exactly `SettingsManager apply` on the
+  real range, and nothing on a tree that only adds); and in `--script` suites,
+  `load()` anything that touches an autoload at runtime — never `preload()` it.
 - **Most `src/tests/*.gd` files are never executed by the harness.** `run.sh:261`
   runs an explicit allow-list of `.tscn` suites; anything not on it is only seen by
   the full-tree parse sweep, which proves the file PARSES and nothing more. As of
@@ -409,6 +460,45 @@ this one as re-checkable too — `find src -name '*.gd' | wc -l`):
   `quit(1)` on every failure path — a GDScript `assert()` failure aborts before the
   final `quit()`, so an unguarded suite **hangs** the harness instead of failing
   it (the "idles forever" mode documented at `run.sh:48-54`).
+  **2026-09-21:** diffing `src/tests/test_*.tscn` against `run.sh` found 34 such
+  suites; 26 measured green and are now wired (11 in the main loop, 15 in a
+  second loop that gates each on its OWN verdict line — see `run.sh`). The scene
+  loops also now have a per-suite `timeout` (`SUITE_TIMEOUT_S`, default 900).
+  Still unwired on purpose: `test_marker_tool` (leaves a directory in the real
+  `user://feedback`), `test_hmi_screen_base` (0 checks), `test_leafblower_refuel`
+  and `test_player_ladder` (no verdict line), plus two that are red
+  (`test_feed_belt_to_shredder_flow`, `test_line1_automated_4bales` — both
+  untracked files on the operator's machine, not in git). To re-derive:
+  `w=$(grep -E '^for t in' tools/regression/run.sh | tr -d ';' | tr ' ' '\n' | grep '^test_'); for f in src/tests/test_*.tscn; do b=$(basename $f .tscn); echo "$w" | grep -qx "$b" || echo $b; done`
+  (read only the `for t in` lists — a plain `grep` of `run.sh` also matches the
+  comments that NAME the unwired suites; it also lists suites that have their own
+  dedicated block, such as `test_spawn_clearance`).
+
+## Save files go through `AtomicFile` (2026-09-21)
+
+Do not open a save, layout, macro or override file with `FileAccess.WRITE`
+directly. That truncates it to 0 bytes *before* the first byte is written, and
+the loaders used to read the result as "no data": `BuildMode` loaded an empty
+factory, `WorldLayout` fell back to the demo spawns, and the 60 s autosave then
+overwrote the damage. Use `src/util/AtomicFile.gd` — `write_json` / `write_text`
+(`.tmp`, byte-length verify, last good generation kept as `.bak`),
+`read_json` / `read_text` (primary → `.tmp` → `.bak`), `exists_any`, and
+**`delete`**.
+
+Two rules that were wrong in the first draft and are now guarded by
+`test_atomic_file` (50 checks, mutation-proven):
+
+- **A missing primary recovers from `.tmp` only, never from `.bak`.** The game
+  deletes saves by removing the primary file; a leftover `.bak` must not bring
+  them back. Anything that deliberately deletes one of these files calls
+  `AtomicFile.delete()` so the `.bak`/`.tmp` go with it (`MainMenu`,
+  `SystemsSpawner`, `GameState.clear_save`, `LineMacroStore.reset` do).
+- **A corrupt primary must never be copied over the last good `.bak`.**
+
+Limits, stated once: Godot has no `fsync`, so this survives a killed process and
+a short write, not an OS crash with the page cache unflushed. Tests that keep a
+world booted past the 60 s autosave must set `WorldLayout.layout_path_override`
+first, or that autosave rewrites the real `world_layout.json`.
 
 ## Operator feedback channel
 

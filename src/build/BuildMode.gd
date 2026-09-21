@@ -3664,10 +3664,13 @@ func _save_layout() -> void:
 				shared.append(entry)
 			else:
 				arr.append(entry)
-	var f := FileAccess.open(layout_path, FileAccess.WRITE)
-	if f:
-		f.store_string(JSON.stringify(arr, "\t"))
-		f.close()
+	# Crash-safe write (see AtomicFile). This used to open the live file with
+	# FileAccess.WRITE — truncating it to 0 bytes first — and, when the open failed,
+	# skipped the save without a word. A kill mid-write loaded back as an EMPTY
+	# factory and the 60 s autosave then made that permanent.
+	var save_err := AtomicFile.write_json(layout_path, arr, "\t")
+	if save_err != OK:
+		push_error("[BuildMode] layout NOT saved to %s (error %d) — the previous file is untouched" % [layout_path, save_err])
 	# Push the SHARED structure list to WorldLayout and persist it so EVERY save
 	# (including brand-new ones) inherits the building's walls / doors / gates / windows.
 	#
@@ -3711,38 +3714,34 @@ func load_layout() -> void:
 	# loads the SHARED structure (walls / doors / gates / windows) below.
 	var data : Array = []
 	var path := layout_path
-	var have_file := FileAccess.file_exists(path)
+	# exists_any: a per-save file that a crash left missing/damaged but that still
+	# has a .tmp/.bak generation is a save to RECOVER, not a new empty one.
+	var have_file := AtomicFile.exists_any(path)
 	if not have_file and allow_legacy_fallback and path != LEGACY_LAYOUT_PATH \
 			and FileAccess.file_exists(LEGACY_LAYOUT_PATH):
 		path = LEGACY_LAYOUT_PATH
 		have_file = true
 		print("[BuildMode] Per-save layout missing — migrating legacy %s" % LEGACY_LAYOUT_PATH)
 	if have_file:
-		var f := FileAccess.open(path, FileAccess.READ)
-		if f != null:
-			var raw := f.get_as_text()
-			f.close()
-			# Guard against empty / malformed legacy files. The legacy layout file
-			# from an early build was sometimes written as an empty placeholder,
-			# which raises "Parse JSON failed. Error at line 0" — survivable, just
-			# skip the migration and continue with the per-save layout (often the
-			# new save is also empty, so this just means starting clean).
-			var parsed : Variant = null
-			if raw.strip_edges() != "":
-				parsed = JSON.parse_string(raw)
-				if parsed == null:
-					push_warning("[BuildMode] Could not parse %s — skipping migration" % path)
-			if parsed is Array:
-				# #29 — entries without the current version marker are from before this patch.
-				var versioned := false
-				for entry in (parsed as Array):
-					if entry is Dictionary and int((entry as Dictionary).get("layout_version", 0)) == LAYOUT_VERSION:
-						versioned = true
-						break
-				if versioned:
-					data = parsed as Array
-				else:
-					print("[BuildMode] Ignoring obsolete saved layout (pre-v%d) — clean start (#29)." % LAYOUT_VERSION)
+		# Recovering read: primary -> .tmp -> .bak. An empty / truncated / wrong-
+		# root file (the legacy layout from an early build was sometimes an empty
+		# placeholder; a kill mid-save leaves a truncated one) is never mistaken
+		# for "no data". With nothing valid to recover it returns null and we
+		# start clean, exactly as before.
+		var parsed : Variant = AtomicFile.read_json(path, TYPE_ARRAY)
+		if parsed == null:
+			push_warning("[BuildMode] Could not read %s (no valid file, .tmp or .bak) — starting clean" % path)
+		if parsed is Array:
+			# #29 — entries without the current version marker are from before this patch.
+			var versioned := false
+			for entry in (parsed as Array):
+				if entry is Dictionary and int((entry as Dictionary).get("layout_version", 0)) == LAYOUT_VERSION:
+					versioned = true
+					break
+			if versioned:
+				data = parsed as Array
+			else:
+				print("[BuildMode] Ignoring obsolete saved layout (pre-v%d) — clean start (#29)." % LAYOUT_VERSION)
 	var count := 0
 	for entry in data:
 		if _apply_layout_entry(entry):

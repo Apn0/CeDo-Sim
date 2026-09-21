@@ -1,6 +1,12 @@
 extends SceneTree
 
-const OperatorContext = preload("res://src/operator/OperatorContext.gd")
+# OperatorContext.gd is LOADED in _initialize(), never preloaded. It references the
+# EventBus autoload, and a preload compiles it while this script is still compiling —
+# before autoload names exist — so it failed "Identifier not found: EventBus", .new()
+# errored, no check ran and no Result line was printed: this suite was red in run.sh
+# from the day it was wired (measured 2026-09-21). test_operator_context_board_vehicle.gd
+# uses the same runtime load.
+const OPERATOR_CONTEXT_PATH := "res://src/operator/OperatorContext.gd"
 
 var _pass := 0
 var _fail := 0
@@ -16,7 +22,7 @@ func _ok(cond: bool, msg: String) -> void:
 func _initialize() -> void:
 	print("=== OperatorContext interactable verification ===")
 
-	var oc = OperatorContext.new()
+	var oc = load(OPERATOR_CONTEXT_PATH).new()
 	root.add_child(oc)
 
 	_ok(oc.interactable_vehicle == null, "interactable_vehicle starts as null")

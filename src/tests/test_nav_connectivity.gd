@@ -136,8 +136,15 @@ func _build_line_3a() -> void:
 	for _i in range(20):
 		await get_tree().process_frame
 	var machines : int = 0
+	# lump_cart is built as a RigidBody3D (PlaceableCatalog, bespoke compound
+	# collision) and there are two per extruder since the 2026-08-03 ruling, so a
+	# StaticBody3D-only count sits below LINE_3A_SEQ.size() by exactly the carts
+	# (measured 2026-09-21: 40 placed = 38 static + 2 lump_cart rigid, SEQ 39).
+	# Count them as fixture, and ONLY them, so any other non-static entry still
+	# shows up as a gap.
 	for n in get_tree().get_nodes_in_group("placed_object"):
-		if n is StaticBody3D:
+		if n is StaticBody3D \
+				or (n is RigidBody3D and String(n.get_meta("placeable_id", "")) == "lump_cart"):
 			machines += 1
 	# DERIVED, not typed. This was `>= 40`, written 2026-07-22 (94c685b) when
 	# LINE_3A_SEQ had 42 entries. Operator rulings 5f4e7c3 (2.1-B) and 5b854d8
@@ -152,7 +159,7 @@ func _build_line_3a() -> void:
 	# a visible gap instead of a silent false red.
 	var seq_n : int = BuildMode.LINE_3A_SEQ.size()
 	_check(machines >= seq_n,
-		"machine fixture present (%d static placed bodies, LINE_3A_SEQ has %d)"
+		"machine fixture present (%d placed bodies [static + lump_cart], LINE_3A_SEQ has %d)"
 			% [machines, seq_n])
 	for _i in range(SETTLE_FRAMES):
 		await get_tree().process_frame

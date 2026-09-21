@@ -101,16 +101,12 @@ func _file_for(macro_id: String) -> String:
 
 func _load_one(macro_id: String) -> void:
 	var path := _file_for(macro_id)
-	if not FileAccess.file_exists(path):
+	if not AtomicFile.exists_any(path):
 		_cache[macro_id] = {}
 		return
-	var f := FileAccess.open(path, FileAccess.READ)
-	if f == null:
-		_cache[macro_id] = {}
-		return
-	var raw := f.get_as_text()
-	f.close()
-	var parsed = JSON.parse_string(raw) if raw.strip_edges() != "" else null
+	# Recovering read: a truncated/empty override file falls back to its .tmp /
+	# .bak generation instead of silently dropping the operator's overrides.
+	var parsed = AtomicFile.read_json(path, TYPE_DICTIONARY)
 	if typeof(parsed) != TYPE_DICTIONARY:
 		push_warning("[LineMacroStore] Corrupt %s — ignoring" % path)
 		_cache[macro_id] = {}
@@ -184,12 +180,12 @@ func save_overrides(macro_id: String, deltas: Dictionary, machine_count: int) ->
 		"deltas":        on_disk,
 	}
 	var path := _file_for(macro_id)
-	var f := FileAccess.open(path, FileAccess.WRITE)
-	if f == null:
-		push_error("[LineMacroStore] Could not write %s" % path)
+	# Crash-safe (AtomicFile): these are the operator's hand-tuned line positions;
+	# the old FileAccess.WRITE truncated the file before writing it.
+	var werr := AtomicFile.write_json(path, payload, "\t")
+	if werr != OK:
+		push_error("[LineMacroStore] Could not write %s (error %d) — the previous file is untouched" % [path, werr])
 		return false
-	f.store_string(JSON.stringify(payload, "\t"))
-	f.close()
 	_cache[macro_id] = payload
 	print("[LineMacroStore] saved %d overrides → %s" % [on_disk.size(), path])
 	emit_signal("macro_saved", macro_id)
@@ -207,6 +203,9 @@ func reset(macro_id: String) -> bool:
 			if err != OK:
 				push_warning("[LineMacroStore] remove %s failed (%d)" % [path, err])
 				return false
+	# A reset is a deliberate delete: take the .bak/.tmp generations too, or a
+	# later damaged write could "recover" the very overrides just reset.
+	AtomicFile.delete(path)
 	_cache[macro_id] = {}
 	emit_signal("macro_reset", macro_id)
 	print("[LineMacroStore] reset %s — next placement uses const seed" % macro_id)

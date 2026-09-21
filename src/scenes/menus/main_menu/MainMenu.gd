@@ -129,6 +129,10 @@ func _delete_save_file(display_name: String) -> bool:
 		push_error("[MainMenu] failed to delete %s (err %d)" % [path, err])
 		return false
 	print("[MainMenu] deleted %s" % path)
+	# Saves are written through AtomicFile, which keeps <file>.bak / <file>.tmp
+	# generations. A deleted save must take them with it, or the next save with
+	# this name could be "recovered" into the world the operator just deleted.
+	AtomicFile.delete(path)
 	# #audit-Q3 — also delete the paired factory sidecar. GameState writes a
 	# separate `<stem>_factory.json` for the build-mode machine layout; if the
 	# save is deleted but the sidecar is not, the next new-save with the same
@@ -147,6 +151,9 @@ func _delete_save_file(display_name: String) -> bool:
 			print("[MainMenu] deleted sidecar %s" % factory_path)
 		else:
 			push_warning("[MainMenu] Q3: could not delete factory sidecar %s (err %d)" % [factory_path, ferr])
+	# The sidecar's .bak/.tmp generations go too, even when the primary was
+	# already missing (see above).
+	AtomicFile.delete(factory_path)
 	return true
 
 ## The canonical save (display) name for a Tree row. Stored in the TreeItem's
