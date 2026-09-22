@@ -850,6 +850,20 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/gate_is_fully_closed.log"
 
 fi
 
+# phys-07 — LumpChunk must not tunnel the 2.5 cm cart floor. Counts PHYSICS
+# TICKS, so it gets the SUITE_TO kill timer and NO --quit-after 300: measured
+# 2026-09-22, --quit-after 300 ends a 150-tick run early with exit 0 and no
+# verdict. The suite's own watchdog turns a mid-verdict script error into
+# "Result: 0 ok, 1 fail" (exit 2) instead of a hang or a silent exit 0.
+echo "== lump chunk CCD (phys-07) =="
+${SUITE_TO[@]+"${SUITE_TO[@]}"} "$GODOT" --headless --path "$PROJ" --script res://src/tests/test_lump_chunk_ccd.gd > "$OUT/lump_chunk_ccd.log" 2>&1
+rc=$?
+[ "$rc" -eq 124 ] && echo "TIMEOUT: test_lump_chunk_ccd hung past ${SUITE_TIMEOUT_S}s and was killed (no verdict was printed)"
+grep -aE "^  (ok|FAIL)|^Result" "$OUT/lump_chunk_ccd.log" || true
+if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/lump_chunk_ccd.log"; then
+	echo "FAIL  : lump chunk CCD (phys-07) (see $OUT/lump_chunk_ccd.log)"
+	[ $code -eq 0 ] && code=1
+fi
 
 echo "== done (exit $code) — see $OUT/topdown.png =="
 exit $code

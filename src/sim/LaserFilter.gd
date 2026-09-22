@@ -594,6 +594,34 @@ func _ensure_sausage(i: int) -> void:
 	st["mi"] = mi
 	st["mat"] = mat
 
+## A broken-off lump as a free RigidBody3D (not yet in the tree). Static so
+## test_lump_chunk_ccd builds the exact production chunk.
+## continuous_cd (phys-07): measured 2026-09-22 under Rapier3D, a chunk crossing
+## the 2.5 cm cart-floor plate at -50 m/s from outside the contact-prediction
+## margin tunnels straight through without it and is caught with it. A normal
+## 1.5 m drop (~5.4 m/s) is caught either way — this covers flung/launched chunks.
+static func make_lump_chunk(ln: float, mat: StandardMaterial3D) -> RigidBody3D:
+	var chunk := RigidBody3D.new()
+	chunk.name = "LumpChunk"
+	chunk.mass = max(0.05, ln * PI * (SAUSAGE_DIAMETER_M * 0.5) ** 2 * 950.0)
+	chunk.continuous_cd = true
+	chunk.add_to_group("lump_chunk")
+	var cmi := MeshInstance3D.new()
+	var cyl := CylinderMesh.new()
+	cyl.height = ln
+	cyl.top_radius = SAUSAGE_DIAMETER_M * 0.5
+	cyl.bottom_radius = SAUSAGE_DIAMETER_M * 0.5
+	cmi.mesh = cyl
+	cmi.material_override = mat.duplicate() if mat else null
+	chunk.add_child(cmi)
+	var col := CollisionShape3D.new()
+	var sh := CylinderShape3D.new()
+	sh.height = ln
+	sh.radius = SAUSAGE_DIAMETER_M * 0.5
+	col.shape = sh
+	chunk.add_child(col)
+	return chunk
+
 ## Break channel i's in-progress rope off and spawn a fallen chunk under gravity.
 ## The chunk inherits the rope's CURRENT colour and lands wherever physics takes
 ## it (into the bound cart under that nozzle, or on the floor as honest litter).
@@ -603,25 +631,7 @@ func _break_off_chan(i: int) -> void:
 	if mi == null or not is_instance_valid(mi):
 		return
 	var ln : float = max(0.02, float(st["len"]))
-	var chunk := RigidBody3D.new()
-	chunk.name = "LumpChunk"
-	chunk.mass = max(0.05, ln * PI * (SAUSAGE_DIAMETER_M * 0.5) ** 2 * 950.0)
-	chunk.add_to_group("lump_chunk")
-	var cmi := MeshInstance3D.new()
-	var cyl := CylinderMesh.new()
-	cyl.height = ln
-	cyl.top_radius = SAUSAGE_DIAMETER_M * 0.5
-	cyl.bottom_radius = SAUSAGE_DIAMETER_M * 0.5
-	cmi.mesh = cyl
-	var mat : StandardMaterial3D = st["mat"]
-	cmi.material_override = mat.duplicate() if mat else null
-	chunk.add_child(cmi)
-	var col := CollisionShape3D.new()
-	var sh := CylinderShape3D.new()
-	sh.height = ln
-	sh.radius = SAUSAGE_DIAMETER_M * 0.5
-	col.shape = sh
-	chunk.add_child(col)
+	var chunk := make_lump_chunk(ln, st["mat"])
 	# Parent to the world (our parent's parent — the MainWorld scene) at the
 	# rope's CURRENT world transform. Fall back to our parent if unreachable.
 	var dest : Node = get_parent().get_parent() if get_parent() != null and get_parent().get_parent() != null else get_parent()

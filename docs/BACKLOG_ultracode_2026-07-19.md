@@ -93,10 +93,23 @@ is the queue for the next rounds, with the reason each item waited.
   3-arg emit passes `false` through — GDScript signals don't support default
   parameter values in the `signal` declaration itself, only on the receiving
   function, which is why this needed both sides changed.
-- **phys-07** Lump chunks can tunnel through the 2.5 cm cart-floor plate (no CCD) —
-  fold into phys-02's collision relayout. Still open (re-verified 2026-09-22:
-  `LaserFilter._break_off_chan()` still builds a plain `RigidBody3D` with no
-  `continuous_cd`, cart floor is still exactly 2.5 cm).
+- ~~**phys-07** Lump chunks can tunnel through the 2.5 cm cart-floor plate (no
+  CCD)~~ — **FIXED 2026-09-22, done standalone, not folded into phys-02.**
+  Chunk construction moved into `LaserFilter.make_lump_chunk()`, which sets
+  `continuous_cd = true`; `_break_off_chan()` calls it. Measured under Rapier3D
+  first, because the risk turned out narrower than this entry assumed: a normal
+  1.5 m drop (~5.4 m/s) is caught by the isolated plate AND by the real cart
+  (plate backed by the underframe) with or without CCD. The tunnel is real only
+  at high speed: at -50 m/s from outside Rapier's contact-prediction margin the
+  chunk falls straight through the isolated plate without CCD and is caught
+  with it. So this guards flung/launched chunks, not ordinary drops.
+  Guard: `src/tests/test_lump_chunk_ccd.gd` (5 checks, wired in `run.sh`),
+  mutation-proven both ways — removing the flag from the helper turns checks
+  1/2/5 red, bypassing the helper at the call site turns check 5 red. Check 3 is
+  an anti-vacuity control: CCD forced off MUST tunnel, or the suite fails.
+  Trap met on the way: a first probe that started the chunk 2 cm above the plate
+  (inside the prediction margin) "never tunnelled" even at -200 m/s, which
+  briefly looked like proof the flag was a no-op — that test could not fail.
 - ~~**phys-09** Orphaned `Player.tscn`~~ — **DELETED 2026-09-22** (backed up to
   `Player.tscn.bak` first, per Rule 5). Re-confirmed zero references beyond a
   descriptive comment in `VehicleRouteGrid.gd` before removing.
