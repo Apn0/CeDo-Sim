@@ -79,7 +79,7 @@ func _build_trigger() -> void:
 	area.monitoring = true
 	var cs := CollisionShape3D.new()
 	var box := BoxShape3D.new()
-	box.size = Vector3(2.0, 2.4, 2.0)
+	box.size = Vector3(4.0, 3.0, 4.0)
 	cs.shape = box
 	cs.position = Vector3(0.0, 1.0, 0.0)
 	area.add_child(cs)
@@ -99,10 +99,10 @@ func _on_body_exited(body: Node3D) -> void:
 	EventBus.interaction_prompt_hide.emit(self)
 
 func crosshair_prompt(_player: Node3D) -> String:
-	return "Open %s" % _label if (_scoped and _player_near) else ""
+	return "Open %s" % _label if _scoped else ""
 
 func crosshair_interact(_player: Node3D) -> void:
-	if _scoped and _player_near:
+	if _scoped:
 		_open_overlay()
 
 ## Lazy-loads the shared overlay on first use, then opens it scoped to THIS

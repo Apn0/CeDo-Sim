@@ -1,0 +1,34 @@
+{
+  "belt": {
+    "deck": 0.955999970436096,
+    "pos": "Vector3(-158.76, 0.281, 33.543)",
+    "size": "Vector3(1, 0.9, 4)"
+  },
+  "mag": {
+    "pos": "Vector3(-158.76, 0, 33.543)"
+  },
+  "opz": {
+    "deck_h": 0.7,
+    "deck_width": 4.0,
+    "funnel_min_width": 2.0,
+    "funnel_narrow_m": 4.5,
+    "funnel_start_m": 1.5,
+    "incline_deg": 25.0,
+    "incline_run": 9.0630778703665,
+    "lip": "Vector3(-156.76308, 4.9261827, 42.9)",
+    "tail": "Vector3(-147.7, 0, 42.9)"
+  },
+  "shr": {
+    "out_y": 1.35000005364418,
+    "pos": "Vector3(-156.76, 0, 36.543)",
+    "size": "Vector3(4, 9, 5)",
+    "throat": "Vector3(-156.76, 7.65, 36.543)"
+  },
+  "wes": {
+    "deck_h": 4.62618274688721,
+    "incline_deg": 30.0,
+    "incline_run": 5.75702052264662,
+    "lip": "Vector3(-156.76, 7.9500003, 36.54298)",
+    "tail": "Vector3(-156.76, 4.6261826, 42.9)"
+  }
+}

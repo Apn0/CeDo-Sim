@@ -163,14 +163,18 @@ func _build_fixture() -> void:
 	if n_slots == 0:
 		return
 
+	# Slots are BaleYardManager.SlotRecord objects since #269 (1b7613d), not
+	# Dictionaries. The old `(s as Dictionary)["spawn_pos"]` cast aborted this
+	# fixture, so every check below reported against a vehicle that was never
+	# placed ("0 colliders for 32 slots"). Read the fields by name.
 	_yard_centre = Vector3.ZERO
 	for s in slots:
-		_yard_centre += (s as Dictionary)["spawn_pos"] as Vector3
+		_yard_centre += s.spawn_pos as Vector3
 	_yard_centre /= float(n_slots)
 	_info("yard centroid %s, %d slots" % [str(_yard_centre), n_slots])
 
 	# One MultiMesh instance per slot, every one full-scale at spawn.
-	var mmi : MultiMeshInstance3D = (slots[0] as Dictionary)["mmi"]
+	var mmi : MultiMeshInstance3D = slots[0].mmi
 	_ok(mmi != null and mmi.multimesh != null, "yard MultiMesh exists")
 	if mmi == null or mmi.multimesh == null:
 		return
@@ -190,7 +194,7 @@ func _build_fixture() -> void:
 		# during the fill and reads back at the origin.
 		_info("renderer does NOT store MultiMesh transforms (inst0 reads %s, spawned at %s)"
 			% [str(mmi.multimesh.get_instance_transform(0).origin),
-			   str((slots[0] as Dictionary)["spawn_pos"])])
+			   str(slots[0].spawn_pos)])
 		_info("visibility check uses the slot-key ledger instead (CPU-side, same strictness)")
 
 	# The stand-in vehicle. tick() sweeps every node in group "vehicle".
@@ -456,7 +460,7 @@ func _move_rig(to: Vector3) -> void:
 func _nearest_slot_distance(from: Vector3) -> float:
 	var best := INF
 	for s in (_mgr.get("_yard_slots") as Array):
-		var d : float = (from - ((s as Dictionary)["spawn_pos"] as Vector3)).length()
+		var d : float = (from - (s.spawn_pos as Vector3)).length()
 		if d < best:
 			best = d
 	return best

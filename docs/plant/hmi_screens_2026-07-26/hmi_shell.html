@@ -42,6 +42,27 @@ window.onerror = function (m, s, l) { window.__lastErr = m + " @" + s + ":" + l;
   #stage { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; }
   #frame { border:0; background:#0a0a0a; flex:none; transform-origin:center center; }
   #frame.fluid { width:100%; height:100%; transform:none; }
+  #topNav {
+    position:fixed; top:8px; left:12px; z-index:10;
+    display:flex; align-items:center; gap:6px;
+    background:rgba(20,24,32,.85); border:1px solid rgba(120,135,160,.4);
+    border-radius:4px; padding:3px 6px; user-select:none;
+    opacity:.85; transition:opacity .15s;
+  }
+  #topNav:hover { opacity:1; }
+  .shellBtn {
+    height:26px; padding:0 8px; display:inline-flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.08); color:#d0d8e8; border:1px solid rgba(120,135,160,.35);
+    border-radius:3px; font:600 12px/1 Tahoma,Verdana,sans-serif; cursor:pointer;
+    transition:background .15s, color .15s, border-color .15s;
+  }
+  .shellBtn:hover { background:#2a50a8; color:#fff; border-color:#4a70c8; }
+  #screenSelect {
+    height:26px; background:#121620; color:#d0d8e8; border:1px solid rgba(120,135,160,.35);
+    border-radius:3px; padding:0 6px; font:12px/24px Tahoma,Verdana,sans-serif;
+    outline:none; cursor:pointer; max-width:320px;
+  }
+  #screenSelect option { background:#121620; color:#d0d8e8; }
   /* Top-right of the WINDOW, which in game is letterbox gutter, not artwork:
      a 1280x800 design in a 1920x1080 window scales 1.35x to 1728 wide, leaving
      96 px of empty gutter each side. It only touches the design in the rare
@@ -64,6 +85,12 @@ window.onerror = function (m, s, l) { window.__lastErr = m + " @" + s + ":" + l;
 </head>
 <body>
 <div id="stage"><iframe id="frame"></iframe></div>
+<div id="topNav">
+  <button type="button" class="shellBtn" id="navHomeBtn" title="Naar overzicht (Index)">⌂ Index</button>
+  <button type="button" class="shellBtn" id="navPrevBtn" title="Vorig scherm">◀</button>
+  <button type="button" class="shellBtn" id="navNextBtn" title="Volgend scherm">▶</button>
+  <select id="screenSelect" title="Kies scherm"></select>
+</div>
 <div id="closeBtn" title="Sluiten (Esc)">✕</div>
 <div id="err"></div>
 <script>
@@ -109,10 +136,67 @@ function transform(html) {
   return html;
 }
 
+var ALL_SCREENS = [
+  { file: "HMI Index.dc.html", label: "00. HMI Index (Overzicht)" },
+  { file: "BluPort Overzicht Lijn 3C.dc.html", label: "01. BluPort Overzicht (Lijn 3C / 6)" },
+  { file: "BluPort Modulegrid Lijn 3C.dc.html", label: "02. BluPort Modulegrid" },
+  { file: "BluPort Storingstabel Lijn 3C.dc.html", label: "03. BluPort Storingstabel" },
+  { file: "SV Toevoer Trend 3A.dc.html", label: "04. SV Toevoer Trend (3A)" },
+  { file: "EREMA Touch Laserfilter 3A.dc.html", label: "05. EREMA Touch Laserfilter (3A)" },
+  { file: "COAD Waslijn 3A Overzicht.dc.html", label: "06. COAD Waslijn 3A Overzicht" },
+  { file: "Sorteerlijn Overzicht.dc.html", label: "07. Sorteerlijn Overzicht" },
+  { file: "Sorteerlijn Bunker Setpoints.dc.html", label: "08. Sorteerlijn Bunker Setpoints" },
+  { file: "MAS DRD Parameter Lijn 1.dc.html", label: "09. MAS DRD Parameter (Lijn 1)" },
+  { file: "Water Circuit Lijn 3C-6.dc.html", label: "10. Water Circuit (Lijn 3C / 6)" },
+  { file: "Hotwash Lijn 6 Tankniveau.dc.html", label: "11. Hotwash Lijn 6 Tankniveau" },
+  { file: "Waslijn 3A Storingen Lijst.dc.html", label: "12. Waslijn 3A Storingen Lijst" },
+  { file: "WEIMA Shredder Vulpeil Trechter.dc.html", label: "13. WEIMA Shredder Vulpeil Trechter" },
+  { file: "EREMA Extruder Scherm 3C.dc.html", label: "14. EREMA Extruder Scherm (3C)" },
+  { file: "BRITAS ABMF Overzicht.dc.html", label: "15. BRITAS ABMF Overzicht" },
+  { file: "BRITAS ABMF Extruder Interface.dc.html", label: "16. BRITAS ABMF Extruder Interface" },
+  { file: "BRITAS ABMF Trend Zeefwisselcyclus.dc.html", label: "17. BRITAS ABMF Trend Zeefwisselcyclus" },
+  { file: "Waslijn 3C Overzicht.dc.html", label: "18. Waslijn 3C Overzicht" },
+  { file: "Waslijn 3C Storingen.dc.html", label: "19. Waslijn 3C Storingen" },
+  { file: "Waslijn 3C Stroom Trend.dc.html", label: "20. Waslijn 3C Stroom Trend" },
+  { file: "Waslijn 3C L3C.1 Doseer Silo.dc.html", label: "21. Waslijn 3C L3C.1 Doseer Silo" },
+  { file: "Waslijn 3C L3C.3 Bezinkafscheider.dc.html", label: "22. Waslijn 3C L3C.3 Bezinkafscheider" },
+  { file: "Waslijn 3C L3C.4 Frictiescheider.dc.html", label: "23. Waslijn 3C L3C.4 Frictiescheider" },
+  { file: "Waslijn 3C L3C.5 Transportschroef.dc.html", label: "24. Waslijn 3C L3C.5 Transportschroef" },
+  { file: "Waslijn 3C L3C.6 Maalmolen.dc.html", label: "25. Waslijn 3C L3C.6 Maalmolen" },
+  { file: "Waslijn 3C L3C.10 Transportschroef.dc.html", label: "26. Waslijn 3C L3C.10 Transportschroef" },
+  { file: "Waslijn 3C L3C.11 Flotatietank.dc.html", label: "27. Waslijn 3C L3C.11 Flotatietank" },
+  { file: "Waslijn 3C L3C.12 Transportschroef.dc.html", label: "28. Waslijn 3C L3C.12 Transportschroef" },
+  { file: "Waslijn 3C L3C.14 Mech Droger Links.dc.html", label: "29. Waslijn 3C L3C.14 Mech Droger Links" },
+  { file: "Waslijn 3C L3C.14 Mech Droger Rechts.dc.html", label: "30. Waslijn 3C L3C.14 Mech Droger Rechts" },
+  { file: "Waslijn 3C L3C.16 Plasmaq.dc.html", label: "31. Waslijn 3C L3C.16 Plasmaq" },
+  { file: "Waslijn 3C L3C.18 Extruder Silo.dc.html", label: "32. Waslijn 3C L3C.18 Extruder Silo" },
+  { file: "Waslijn 3C L3C.19 Rondmengventilator.dc.html", label: "33. Waslijn 3C L3C.19 Rondmengventilator" }
+];
+
+var screenSelect = document.getElementById("screenSelect");
+if (screenSelect) {
+  ALL_SCREENS.forEach(function (s) {
+    var opt = document.createElement("option");
+    opt.value = s.file;
+    opt.textContent = s.label;
+    screenSelect.appendChild(opt);
+  });
+  screenSelect.addEventListener("change", function () {
+    if (screenSelect.value) sendIpc({ type: "open", file: screenSelect.value });
+  });
+}
+var homeBtn = document.getElementById("navHomeBtn");
+if (homeBtn) homeBtn.addEventListener("click", function () { sendIpc({ type: "nav", dir: "home" }); });
+var prevBtn = document.getElementById("navPrevBtn");
+if (prevBtn) prevBtn.addEventListener("click", function () { sendIpc({ type: "nav", dir: "prev" }); });
+var nextBtn = document.getElementById("navNextBtn");
+if (nextBtn) nextBtn.addEventListener("click", function () { sendIpc({ type: "nav", dir: "next" }); });
+
 function openScreen(file, html) {
   currentFile = file;
   errBox.style.display = "none";
   mimic = null;
+  if (screenSelect && file) screenSelect.value = file;
   frame.srcdoc = transform(html);
   loadMimic(file);
 }
@@ -244,6 +328,9 @@ function applyVals(msg) {
 window.__shellNav = function (dir) { sendIpc({ type: "nav", dir: dir }); };
 window.__shellOpen = function (file) { sendIpc({ type: "open", file: file }); };
 window.__shellEvent = function (name) { sendIpc({ type: "event", name: name, screen: currentFile }); };
+window.__shellSetSetpoint = function (channel, value, unit) {
+  sendIpc({ type: "set_setpoint", screen: currentFile, channel: channel, value: value, unit: unit });
+};
 
 document.getElementById("closeBtn").addEventListener("click", function () {
   sendIpc({ type: "close" });
@@ -258,7 +345,7 @@ function hmiBoot(win) {
 
   function shell() { return win.parent; }
 
-  /* 1. Click wiring — Index links + the (dead-by-design) bottom nav bar. */
+  /* 1. Click wiring — Index links + bottom nav bar + F-keys + interactive controls. */
   doc.addEventListener("click", function (e) {
     var a = e.target.closest ? e.target.closest("a[href]") : null;
     if (a) {
@@ -266,18 +353,60 @@ function hmiBoot(win) {
       try { shell().__shellOpen(decodeURI(a.getAttribute("href"))); } catch (err) {}
       return;
     }
-    var el = e.target.closest ? e.target.closest("div") : null;
-    while (el && el.style && el.style.cursor !== "pointer") el = el.parentElement;
-    if (!el || !el.style || el.style.cursor !== "pointer") return;
-    var t = (el.textContent || "").trim();
+
     var s = shell();
-    try {
-      if (t === "◀") s.__shellNav("prev");
-      else if (t === "▶") s.__shellNav("next");
-      else if (t === "" && el.querySelector("svg path")) s.__shellNav("home");
-      else if (t === "Logout") s.__shellNav("home");
-      else s.__shellEvent(t.replace(/\s+/g, " ").slice(0, 40) || "?");
-    } catch (err) {}
+    if (!s) return;
+
+    var target = e.target;
+    // Don't intercept inputs or setpoint edit fields
+    if (target.tagName === "INPUT" || target.tagName === "SELECT" || (target.closest && target.closest(".hmi-drawer"))) {
+      return;
+    }
+
+    var cur = target;
+    var interactiveEl = null;
+
+    while (cur && cur !== doc.body && cur !== doc.documentElement) {
+      var txt = (cur.textContent || "").trim();
+      var tag = cur.tagName ? cur.tagName.toUpperCase() : "";
+
+      // Navigation symbols and labels
+      if (/^(⌂|home|index|overzicht|start\s*scherm|logout|f1)$/i.test(txt)) {
+        s.__shellNav("home");
+        return;
+      }
+      if (/^(◀|‹|<|«|prev|previous|vorige|f4|f5)$/i.test(txt)) {
+        s.__shellNav("prev");
+        return;
+      }
+      if (/^(▶|›|>|»|next|volgende|f6)$/i.test(txt)) {
+        s.__shellNav("next");
+        return;
+      }
+      if (cur.querySelector && cur.querySelector("svg path") && (cur.clientHeight > 0 && cur.clientHeight < 100)) {
+        s.__shellNav("home");
+        return;
+      }
+
+      if (!interactiveEl) {
+        var cursorStyle = (cur.style && cur.style.cursor) || (win.getComputedStyle ? win.getComputedStyle(cur).cursor : "");
+        if (cursorStyle === "pointer" || tag === "BUTTON" || /^F\d+$/i.test(txt)) {
+          interactiveEl = cur;
+        }
+      }
+
+      cur = cur.parentElement;
+    }
+
+    if (interactiveEl) {
+      var t = (interactiveEl.textContent || "").trim();
+      try {
+        if (/^(⌂|home|index|overzicht|start\s*scherm|logout|f1)$/i.test(t)) s.__shellNav("home");
+        else if (/^(◀|‹|<|«|prev|previous|vorige|f4|f5)$/i.test(t)) s.__shellNav("prev");
+        else if (/^(▶|›|>|»|next|volgende|f6)$/i.test(t)) s.__shellNav("next");
+        else if (t) s.__shellEvent(t.replace(/\s+/g, " ").slice(0, 40));
+      } catch (err) {}
+    }
   }, true);
 
   /* 2. Live clock — any header block showing a Dutch date + hh:mm:ss.
@@ -536,6 +665,523 @@ function hmiBoot(win) {
     return !probe.el.isConnected;
   }
 
+  /* ── 4. Universal Interactive Process Values & Blue Drawer Setpoints ──── */
+  var extruderBindings = {}; // chKey -> { actualEl, spEl, drawerEl, unit }
+  var universalBindings = {}; // key -> { actualEl, spEl, drawerEl, unit }
+  var activeInput = null; // currently focused <input>
+
+  var CHANNEL_LIMITS = {
+    // Extruder specific channels
+    "schuif": { min: 0, max: 100, step: 1, unit: "%" },
+    "ex_belasting": { min: 0, max: 150, step: 1, unit: "%" },
+    "extr_rpm": { min: 0, max: 200, step: 1, unit: "rpm" },
+    "sv_temperatuur": { min: 20, max: 150, step: 1, unit: "°C" },
+    "ez_1": { min: 20, max: 320, step: 1, unit: "°C" },
+    "zz_1": { min: 20, max: 320, step: 1, unit: "°C" },
+    "zz_2": { min: 20, max: 320, step: 1, unit: "°C" },
+    "zz_3": { min: 20, max: 320, step: 1, unit: "°C" },
+    "sv_vulpeil": { min: 0, max: 150, step: 1, unit: "cm" },
+    "afzuiging_1": { min: 0, max: 100, step: 1, unit: "%" },
+    "afzuiging_2": { min: 0, max: 100, step: 1, unit: "%" },
+    "sv_belasting": { min: 0, max: 150, step: 1, unit: "%" },
+    "sv_vermogen": { min: 0, max: 350, step: 1, unit: "kW" }
+  };
+
+  function getLimits(chKey, unit) {
+    if (CHANNEL_LIMITS[chKey]) return CHANNEL_LIMITS[chKey];
+    var u = (unit || "").trim().toLowerCase();
+    if (u === "%") return { min: 0, max: 100, step: 1, unit: "%" };
+    if (u === "°c") return { min: 20, max: 320, step: 1, unit: "°C" };
+    if (u === "rpm") return { min: 0, max: 3000, step: 5, unit: "rpm" };
+    if (u === "kw") return { min: 0, max: 1000, step: 1, unit: "kW" };
+    if (u === "bar" || u === "psi") return { min: 0, max: 30, step: 0.1, unit: u };
+    if (u === "hz") return { min: 0, max: 60, step: 0.1, unit: "Hz" };
+    if (u === "a") return { min: 0, max: 500, step: 1, unit: "A" };
+    if (u === "s" || u === "sec." || u === "sec") return { min: 0, max: 3600, step: 1, unit: "s" };
+    if (u === "ms") return { min: 0, max: 10000, step: 10, unit: "ms" };
+    if (u === "cm") return { min: 0, max: 300, step: 1, unit: "cm" };
+    if (u === "kg/h") return { min: 0, max: 5000, step: 10, unit: "kg/h" };
+    if (u === "m3/h") return { min: 0, max: 500, step: 5, unit: "m3/h" };
+    return { min: 0, max: 9999, step: 1, unit: unit || "" };
+  }
+
+  function wireEditableSetpoint(spEl, containerEl, chKey, unitText) {
+    if (!spEl || spEl._wired) return;
+    spEl._wired = true;
+    var limits = getLimits(chKey, unitText);
+
+    spEl.style.cursor = "pointer";
+    spEl.style.transition = "background 0.15s, color 0.15s";
+    spEl.setAttribute("title", "Klik om setpoint te wijzigen (" + limits.min + ".." + limits.max + " " + (limits.unit || "") + ") en druk op Enter");
+
+    spEl.addEventListener("mouseenter", function () {
+      if (!spEl._editing) spEl.style.textDecoration = "underline";
+    });
+    spEl.addEventListener("mouseleave", function () {
+      if (!spEl._editing) spEl.style.textDecoration = "none";
+    });
+
+    spEl.addEventListener("click", function (ev) {
+      ev.stopPropagation();
+      if (spEl._editing) return;
+      spEl._editing = true;
+
+      var currentVal = (spEl.textContent || "").trim();
+      var editWrap = doc.createElement("div");
+      editWrap.style.cssText = "display:inline-flex;align-items:center;gap:4px;vertical-align:middle;";
+
+      var input = doc.createElement("input");
+      input.type = "number";
+      input.step = String(limits.step);
+      input.min = String(limits.min);
+      input.max = String(limits.max);
+      input.value = currentVal;
+      input.style.cssText = "width:74px;font-size:20px;font-weight:700;color:#111;background:#fff;border:2px solid #ffcc00;border-radius:3px;padding:2px 4px;outline:none;box-shadow:0 0 6px rgba(255,204,0,0.8);text-align:right;";
+
+      var btnOk = doc.createElement("button");
+      btnOk.type = "button";
+      btnOk.textContent = "✓";
+      btnOk.title = "Opslaan (Enter)";
+      btnOk.style.cssText = "padding:2px 6px;font-size:15px;font-weight:bold;color:#fff;background:#28a745;border:none;border-radius:3px;cursor:pointer;line-height:1.2;";
+
+      var btnCancel = doc.createElement("button");
+      btnCancel.type = "button";
+      btnCancel.textContent = "✕";
+      btnCancel.title = "Annuleren (Esc)";
+      btnCancel.style.cssText = "padding:2px 6px;font-size:15px;font-weight:bold;color:#fff;background:#6c757d;border:none;border-radius:3px;cursor:pointer;line-height:1.2;";
+
+      editWrap.appendChild(input);
+      editWrap.appendChild(btnOk);
+      editWrap.appendChild(btnCancel);
+
+      function commit() {
+        if (!spEl._editing) return;
+        spEl._editing = false;
+        var num = parseFloat(input.value);
+        if (!isNaN(num)) {
+          // Clamp to engineering limits
+          if (num < limits.min) num = limits.min;
+          if (num > limits.max) num = limits.max;
+          spEl.textContent = String(num);
+          var s = shell();
+          if (s && typeof s.__shellSetSetpoint === "function") {
+            s.__shellSetSetpoint(chKey, num, unitText);
+          }
+        }
+        if (editWrap.parentNode) {
+          editWrap.parentNode.replaceChild(spEl, editWrap);
+        }
+        activeInput = null;
+      }
+
+      function cancel() {
+        if (!spEl._editing) return;
+        spEl._editing = false;
+        if (editWrap.parentNode) {
+          editWrap.parentNode.replaceChild(spEl, editWrap);
+        }
+        activeInput = null;
+      }
+
+      btnOk.addEventListener("click", function (e) {
+        e.stopPropagation();
+        commit();
+      });
+
+      btnCancel.addEventListener("click", function (e) {
+        e.stopPropagation();
+        cancel();
+      });
+
+      input.addEventListener("keydown", function (ke) {
+        ke.stopPropagation();
+        if (ke.key === "Enter") {
+          ke.preventDefault();
+          commit();
+        } else if (ke.key === "Escape") {
+          ke.preventDefault();
+          cancel();
+        }
+      });
+
+      input.addEventListener("blur", function () {
+        setTimeout(function () {
+          if (spEl._editing && doc.activeElement !== btnOk && doc.activeElement !== btnCancel && doc.activeElement !== input) {
+            commit();
+          }
+        }, 120);
+      });
+
+      activeInput = input;
+      spEl.parentNode.replaceChild(editWrap, spEl);
+      input.focus();
+      input.select();
+    });
+  }
+
+  function scanExtruderBoxes() {
+    var CH_MAP = {
+      "schuif": "schuif",
+      "ex - belasting": "ex_belasting",
+      "ex-belasting": "ex_belasting",
+      "extr rpm": "extr_rpm",
+      "sv-temperatuur": "sv_temperatuur",
+      "ez-1": "ez_1",
+      "zz-1": "zz_1",
+      "zz-2": "zz_2",
+      "zz-3": "zz_3",
+      "sv-vulpeil": "sv_vulpeil",
+      "afzuiging 1": "afzuiging_1",
+      "afzuiging 2": "afzuiging_2",
+      "sv-belasting": "sv_belasting",
+      "sv-vermogen": "sv_vermogen"
+    };
+
+    Array.prototype.forEach.call(doc.querySelectorAll("div"), function (box) {
+      if (!box.children || box.children.length < 2) return;
+      var titleDiv = box.children[0];
+      if (!titleDiv || titleDiv.tagName !== "DIV") return;
+      var titleText = (titleDiv.textContent || "").trim().toLowerCase();
+      var chKey = CH_MAP[titleText];
+      if (!chKey) return;
+      if (extruderBindings[chKey] && extruderBindings[chKey].actualEl && extruderBindings[chKey].actualEl.isConnected) {
+        return;
+      }
+
+      var sensorRow = box.children[1];
+      if (!sensorRow || sensorRow.tagName !== "DIV") return;
+      var actualEl = sensorRow.querySelector("span");
+      if (!actualEl) return;
+
+      var spans = sensorRow.querySelectorAll("span");
+      var unitText = "";
+      if (spans.length >= 2) {
+        unitText = (spans[1].textContent || "").trim();
+      }
+
+      var limits = getLimits(chKey, unitText);
+      var drawerEl = null;
+      var spEl = null;
+      for (var i = 2; i < box.children.length; i++) {
+        var child = box.children[i];
+        if (child.style && (child.style.backgroundColor === "rgb(42, 79, 168)" || (child.style.background && child.style.background.indexOf("#2a4fa8") >= 0))) {
+          drawerEl = child;
+          spEl = drawerEl.querySelector("span");
+          break;
+        }
+      }
+
+      if (!drawerEl) {
+        drawerEl = doc.createElement("div");
+        drawerEl.className = "hmi-drawer";
+        drawerEl.setAttribute("data-hmi-drawer", "true");
+        drawerEl.style.cssText = "display:none;align-items:center;gap:8px;padding:6px 10px;border-top:1px solid #ccc;background:#2a4fa8;cursor:pointer;position:relative;";
+        
+        var spLabel = doc.createElement("span");
+        spLabel._boundUnit = true;
+        spLabel.style.cssText = "font-size:10px;font-weight:700;letter-spacing:0.8px;color:#9ec2ff;text-transform:uppercase;user-select:none;";
+        spLabel.textContent = "SP";
+        drawerEl.appendChild(spLabel);
+
+        spEl = doc.createElement("span");
+        spEl._boundUnit = true;
+        spEl.style.cssText = "font-size:24px;font-weight:600;color:#fff;cursor:pointer;border-bottom:1px dashed #9ec2ff;padding:0 2px;";
+        spEl.textContent = "0";
+        drawerEl.appendChild(spEl);
+
+        if (unitText) {
+          var unitSpan = doc.createElement("span");
+          unitSpan._boundUnit = true;
+          unitSpan.style.cssText = "color:#dfe6f2;font-size:14px;";
+          unitSpan.textContent = unitText;
+          drawerEl.appendChild(unitSpan);
+        }
+
+        var rangeBadge = doc.createElement("span");
+        rangeBadge._boundUnit = true;
+        rangeBadge.style.cssText = "margin-left:auto;font-size:10px;color:#9ec2ff;font-family:monospace;opacity:0.85;user-select:none;";
+        rangeBadge.textContent = "[" + limits.min + ".." + limits.max + "]";
+        drawerEl.appendChild(rangeBadge);
+
+        var indicator = box.querySelector('div[style*="height:6px"], div[style*="height: 6px"]');
+        if (indicator) {
+          box.insertBefore(drawerEl, indicator);
+        } else {
+          box.appendChild(drawerEl);
+        }
+      } else if (!drawerEl._enriched) {
+        drawerEl._enriched = true;
+        drawerEl.className = "hmi-drawer";
+        drawerEl.setAttribute("data-hmi-drawer", "true");
+        drawerEl.style.position = "relative";
+        var firstChild = drawerEl.firstChild;
+        var spLabel = doc.createElement("span");
+        spLabel._boundUnit = true;
+        spLabel.style.cssText = "font-size:10px;font-weight:700;letter-spacing:0.8px;color:#9ec2ff;text-transform:uppercase;margin-right:6px;user-select:none;";
+        spLabel.textContent = "SP";
+        drawerEl.insertBefore(spLabel, firstChild);
+        if (spEl) {
+          spEl._boundUnit = true;
+          spEl.style.borderBottom = "1px dashed #9ec2ff";
+          spEl.style.padding = "0 2px";
+        }
+        var rangeBadge = doc.createElement("span");
+        rangeBadge._boundUnit = true;
+        rangeBadge.style.cssText = "margin-left:auto;font-size:10px;color:#9ec2ff;font-family:monospace;opacity:0.85;user-select:none;";
+        rangeBadge.textContent = "[" + limits.min + ".." + limits.max + "]";
+        drawerEl.appendChild(rangeBadge);
+      }
+
+      // Chevron toggle indicator on sensorRow
+      if (!box._chevron) {
+        var chevron = doc.createElement("span");
+        chevron.className = "hmi-box-chevron";
+        chevron.style.cssText = "margin-left:auto;font-size:11px;color:#707070;font-weight:bold;user-select:none;padding:0 4px;";
+        chevron.textContent = (drawerEl.style.display === "none") ? "▼" : "▲";
+        sensorRow.style.display = "flex";
+        sensorRow.style.alignItems = "baseline";
+        sensorRow.appendChild(chevron);
+        box._chevron = chevron;
+      }
+
+      box.style.cursor = "pointer";
+      box.style.transition = "border-color 0.2s, box-shadow 0.2s";
+      sensorRow.style.cursor = "pointer";
+      sensorRow.setAttribute("title", "Klik om instelwaarde (setpoint) te tonen/verbergen");
+
+      function toggleBox() {
+        if (drawerEl.style.display === "none") {
+          drawerEl.style.display = "flex";
+          if (box._chevron) {
+            box._chevron.textContent = "▲";
+            box._chevron.style.color = "#2a4fa8";
+          }
+          box.style.borderColor = "#2a4fa8";
+          box.style.boxShadow = "0 0 6px rgba(42, 79, 168, 0.4)";
+          box.style.zIndex = "10";
+        } else {
+          drawerEl.style.display = "none";
+          if (box._chevron) {
+            box._chevron.textContent = "▼";
+            box._chevron.style.color = "#707070";
+          }
+          box.style.borderColor = "";
+          box.style.boxShadow = "";
+          box.style.zIndex = "";
+        }
+      }
+
+      sensorRow.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        toggleBox();
+      });
+      titleDiv.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        toggleBox();
+      });
+
+      wireEditableSetpoint(spEl, drawerEl, chKey, unitText);
+
+      extruderBindings[chKey] = {
+        box: box,
+        sensorRow: sensorRow,
+        actualEl: actualEl,
+        drawerEl: drawerEl,
+        spEl: spEl,
+        unit: unitText
+      };
+    });
+  }
+
+  function scanUniversalBoxes() {
+    var UNIT_RE = /^([0-9]+(?:[.,][0-9]+)?)\s*(%|°C|rpm|kW|bar|psi|Hz|A|s|sec\.|ms|cm|kg\/h|m3\/h)$/i;
+    var UNIT_ONLY_RE = /^(%|°C|rpm|kW|bar|psi|Hz|A|s|sec\.|ms|cm|kg\/h|m3\/h)$/i;
+    var valCells = doc.querySelectorAll('div, span');
+
+    Array.prototype.forEach.call(valCells, function (el) {
+      if (el._boundUnit) return;
+      if (el.closest && (el.closest('[data-screen-label="EREMA extruder"]') || el.closest('.hmi-drawer') || el.closest('[data-hmi-drawer]'))) return;
+
+      var numStr = "";
+      var unitStr = "";
+      var numEl = null;
+
+      var txt = (el.textContent || "").trim();
+      var m = UNIT_RE.exec(txt);
+      if (m && (!el.children || el.children.length === 0)) {
+        numStr = m[1];
+        unitStr = m[2];
+        numEl = el;
+      } else if (UNIT_ONLY_RE.test(txt) && (!el.children || el.children.length === 0)) {
+        var prev = el.previousElementSibling;
+        if (prev && /^[0-9]+(?:[.,][0-9]+)?$/.test((prev.textContent || "").trim())) {
+          numStr = (prev.textContent || "").trim();
+          unitStr = txt;
+          numEl = prev;
+        }
+      }
+
+      if (!numEl || !unitStr) return;
+      if (numEl._boundUnit) return;
+
+      var parent = numEl.parentElement;
+      if (!parent) return;
+      if (parent.closest && (parent.closest('.hmi-drawer') || parent.closest('[data-hmi-drawer]'))) return;
+
+      // Extract label from preceding elements or card header
+      var label = "";
+      var prevNode = numEl.previousElementSibling;
+      while (prevNode && !label) {
+        var pt = (prevNode.textContent || "").trim();
+        if (pt && !UNIT_RE.test(pt) && !UNIT_ONLY_RE.test(pt)) label = pt;
+        prevNode = prevNode.previousElementSibling;
+      }
+      if (!label && parent.previousElementSibling) {
+        label = (parent.previousElementSibling.textContent || "").trim();
+      }
+      var cardHeader = parent.closest ? parent.closest('div[style*="background:#c8cdd6"], div[style*="border"]') : null;
+      if (cardHeader) {
+        var headText = cardHeader.querySelector ? cardHeader.querySelector('div[style*="background:#35c23a"], div[style*="font-weight:600"]') : null;
+        if (headText && headText.textContent) {
+          var prefix = headText.textContent.trim();
+          if (prefix && (!label || label.toLowerCase().indexOf(prefix.toLowerCase()) < 0)) {
+            label = prefix + "_" + (label || "val");
+          }
+        }
+      }
+      if (!label) label = "param_" + Object.keys(universalBindings).length;
+
+      var chKey = label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+      var limits = getLimits(chKey, unitStr);
+
+      var isExplicitSetpoint = false;
+      var node = numEl;
+      for (var depth = 0; depth < 4 && node && node !== doc.body; depth++) {
+        var prevSib = node.previousElementSibling;
+        while (prevSib) {
+          var st = (prevSib.textContent || "").trim().toLowerCase();
+          if (st === "gewenst" || st === "setpoint" || st === "setpoint.") {
+            isExplicitSetpoint = true;
+            break;
+          }
+          prevSib = prevSib.previousElementSibling;
+        }
+        if (isExplicitSetpoint) break;
+        node = node.parentElement;
+      }
+
+      if (isExplicitSetpoint) {
+        numEl._boundUnit = true;
+        el._boundUnit = true;
+        wireEditableSetpoint(numEl, parent, chKey, unitStr);
+        universalBindings[chKey] = { spEl: numEl, unit: unitStr };
+      } else {
+        var grandParent = parent.parentElement;
+        var container = (parent.style && (parent.style.border || parent.style.background)) ? parent : grandParent;
+        if (container && !container._hasDrawer && container.tagName === "DIV") {
+          if (container.querySelector && container.querySelector('.hmi-drawer, [data-hmi-drawer]')) {
+            container._hasDrawer = true;
+            return;
+          }
+          container._hasDrawer = true;
+          numEl._boundUnit = true;
+          el._boundUnit = true;
+
+          var drawer = doc.createElement("div");
+          drawer.className = "hmi-drawer";
+          drawer.setAttribute("data-hmi-drawer", "true");
+          drawer.style.cssText = "display:none;align-items:center;gap:6px;padding:4px 8px;margin-top:4px;border-top:1px solid #ccc;background:#2a4fa8;cursor:pointer;color:#fff;border-radius:0 0 2px 2px;";
+          
+          var spLabel = doc.createElement("span");
+          spLabel._boundUnit = true;
+          spLabel.style.cssText = "font-size:9px;font-weight:700;letter-spacing:0.8px;color:#9ec2ff;text-transform:uppercase;user-select:none;";
+          spLabel.textContent = "SP";
+          drawer.appendChild(spLabel);
+
+          var spSpan = doc.createElement("span");
+          spSpan._boundUnit = true;
+          spSpan.style.cssText = "font-weight:700;color:#fff;cursor:pointer;border-bottom:1px dashed #9ec2ff;padding:0 2px;";
+          spSpan.textContent = numStr;
+          drawer.appendChild(spSpan);
+
+          var uSpan = doc.createElement("span");
+          uSpan._boundUnit = true;
+          uSpan.style.cssText = "color:#dfe6f2;font-size:11px;";
+          uSpan.textContent = unitStr;
+          drawer.appendChild(uSpan);
+
+          var rangeBadge = doc.createElement("span");
+          rangeBadge._boundUnit = true;
+          rangeBadge.style.cssText = "margin-left:auto;font-size:9px;color:#9ec2ff;font-family:monospace;opacity:0.85;user-select:none;";
+          rangeBadge.textContent = "[" + limits.min + ".." + limits.max + "]";
+          drawer.appendChild(rangeBadge);
+
+          container.appendChild(drawer);
+
+          var chevron = null;
+          if (el.parentNode && !el.parentNode.querySelector('.hmi-box-chevron')) {
+            chevron = doc.createElement("span");
+            chevron.className = "hmi-box-chevron";
+            chevron.style.cssText = "margin-left:4px;font-size:10px;color:#707070;font-weight:bold;user-select:none;cursor:pointer;";
+            chevron.textContent = "▼";
+            el.parentNode.appendChild(chevron);
+          } else if (el.parentNode) {
+            chevron = el.parentNode.querySelector('.hmi-box-chevron');
+          }
+
+          container.style.cursor = "pointer";
+          container.style.transition = "border-color 0.2s, box-shadow 0.2s";
+          numEl.style.cursor = "pointer";
+          numEl.setAttribute("title", "Klik om instelwaarde (setpoint) te tonen/verbergen");
+
+          function toggleUniversal() {
+            if (drawer.style.display === "none") {
+              drawer.style.display = "flex";
+              if (chevron) {
+                chevron.textContent = "▲";
+                chevron.style.color = "#2a4fa8";
+              }
+              container.style.borderColor = "#2a4fa8";
+              container.style.boxShadow = "0 0 6px rgba(42, 79, 168, 0.4)";
+              container.style.zIndex = "10";
+            } else {
+              drawer.style.display = "none";
+              if (chevron) {
+                chevron.textContent = "▼";
+                chevron.style.color = "#707070";
+              }
+              container.style.borderColor = "";
+              container.style.boxShadow = "";
+              container.style.zIndex = "";
+            }
+          }
+
+          numEl.addEventListener("click", function (ev) {
+            ev.stopPropagation();
+            toggleUniversal();
+          });
+          if (chevron) {
+            chevron.addEventListener("click", function (ev) {
+              ev.stopPropagation();
+              toggleUniversal();
+            });
+          }
+
+          wireEditableSetpoint(spSpan, drawer, chKey, unitStr);
+          universalBindings[chKey] = { actualEl: numEl, spEl: spSpan, drawerEl: drawer, unit: unitStr };
+        }
+      }
+    });
+  }
+
+  // Initial pass to wire up interactive elements
+  scanExtruderBoxes();
+  scanUniversalBoxes();
+  win.setInterval(function () {
+    scanExtruderBoxes();
+    scanUniversalBoxes();
+  }, 1000);
+
   win.__hmiApply = function (msg) {
     if (msg.clock && msg.clock.date) win.__hmiClock = msg.clock;
     if (bindingsStale()) bindings = scan();
@@ -567,6 +1213,42 @@ function hmiBoot(win) {
         bindings.alarm.nr.textContent = "";
         bindings.alarm.text.textContent = "";
       }
+    }
+
+    // ── Extruder specific telemetry binding ──
+    scanExtruderBoxes();
+    if (msg.extruder) {
+      Object.keys(msg.extruder).forEach(function (ch) {
+        var b = extruderBindings[ch];
+        if (!b) return;
+        var data = msg.extruder[ch];
+        if (b.actualEl && typeof data.actual === "number") {
+          b.actualEl.textContent = String(Math.round(data.actual));
+        }
+        if (b.spEl && !b.spEl._editing && typeof data.setpoint === "number") {
+          b.spEl.textContent = String(Math.round(data.setpoint));
+        }
+      });
+    }
+
+    // ── Universal screen values binding ──
+    scanUniversalBoxes();
+    if (msg.screen_vals) {
+      Object.keys(msg.screen_vals).forEach(function (k) {
+        var b = universalBindings[k];
+        if (!b) return;
+        var data = msg.screen_vals[k];
+        if (b.actualEl && typeof data.actual === "number") {
+          var fmt = String(Math.round(data.actual));
+          if (b.unit) fmt += " " + b.unit;
+          b.actualEl.textContent = fmt;
+        }
+        if (b.spEl && !b.spEl._editing && typeof data.setpoint === "number") {
+          var sfmt = String(Math.round(data.setpoint));
+          if (b.unit && !b.drawerEl) sfmt += " " + b.unit;
+          b.spEl.textContent = sfmt;
+        }
+      });
     }
   };
 }

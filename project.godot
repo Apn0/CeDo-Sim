@@ -18,9 +18,9 @@ config/name="CeDo Simulator"
 config/description="A 1:1 real-time shift simulator for LDPE plastic film recycling operations at CeDo Geleen."
 config/version="0.1.0"
 run/main_scene="res://src/scenes/menus/main_menu/MainMenu.tscn"
-run/max_log_files=20
 config/features=PackedStringArray("4.6")
 config/icon="res://cedo_logo.svg"
+run/max_log_files=20
 
 [audio]
 

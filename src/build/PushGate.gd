@@ -68,6 +68,13 @@ func _build_hinge_pivot() -> void:
 	var hinge_sign : float = -1.0 if hinge_side_idx == 0 else 1.0
 	_pivot = AnimatableBody3D.new()
 	_pivot.name = "HingePivot"
+	# sync_to_physics OFF — it defaults to TRUE, which pins the body to the
+	# global transform it has at build time and ignores any later move of an
+	# ancestor. The silo is built at the catalog's local origin and moved into
+	# place by the line macro afterwards, so an on-by-default pivot ended up at
+	# the world origin (measured 2026-09-16 — see InteractiveHatch's note). The
+	# leaf is tween-driven, so kinematic push velocity is not wanted here.
+	_pivot.sync_to_physics = false
 	# The gate sits along ±Z (top-of-ladder is at the -X face of the silo, so
 	# the gate runs in Z). Hinge edge offset is along Z by half-width.
 	_pivot.position = Vector3(0.0, 0.0, hinge_sign * width * 0.5)

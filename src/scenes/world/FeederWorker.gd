@@ -525,10 +525,15 @@ func _physics_process(delta: float) -> void:
 			var phase := _name_for_state(_state)
 			if _fetching:
 				phase = "TOOL_FETCH(state %s frozen)" % phase
-			elif _boarding_walk:
-				phase = "BOARDING_WALK(state %s frozen)" % phase
-			push_warning("[Feeder %s] stuck in %s for %.0fs"
-					% [worker_name, phase, _state_held_secs])
+			var extra : String = ""
+			if _state == State.FEED and _belt != null and is_instance_valid(_belt):
+				var faulted := bool(_belt.call("is_faulted")) if _belt.has_method("is_faulted") else false
+				var can_acc := bool(_belt.call("can_accept")) if _belt.has_method("can_accept") else false
+				var running := bool(_belt.call("is_running")) if _belt.has_method("is_running") else false
+				var count := int(_belt.call("rider_count")) if _belt.has_method("rider_count") else -1
+				extra = " (belt: %s, running=%s, faulted=%s, can_accept=%s, riders=%d)" % [_belt.name, running, faulted, can_acc, count]
+			push_warning("[Feeder %s] stuck in %s for %.0fs%s"
+					% [worker_name, phase, _state_held_secs, extra])
 	# NaN-transform watchdog (see BaseVehicle): a worker whose transform goes bad
 	# would spam instance_set_transform via its capsule + name tag + held tools. Snap
 	# back to the last good pose + report ONCE rather than flood the log.
@@ -1044,6 +1049,11 @@ func _resolve_belt() -> void:
 			continue
 		var bn := b as Node3D
 		if bn == null:
+			continue
+		var pid := String(bn.get_meta("placeable_id", ""))
+		# Skip intermediate wash/transfer conveyors (westa_band_1) — feeder operators
+		# only feed infeed hoppers/belts (opzetbanden), not intermediate flakers/elevators.
+		if pid == "westa_band_1" or bool(bn.get_meta("intermediate_conveyor", false)):
 			continue
 		var d := bn.global_position.distance_to(global_position)
 		if d < best_d:

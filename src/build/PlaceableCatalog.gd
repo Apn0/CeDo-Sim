@@ -230,14 +230,29 @@ static func items() -> Array[Dictionary]:
 			# here is the rough bounding box (W × H × L) for the build-mode footprint.
 			{"id": "opzetband_3a3b", "name": "Opzetband 3A/3B (8m flat + 10m@25° + 1m top)", "category": "Conveyance", "size": Vector3(2.0, 4.93, 18.06), "color": Color(0.20, 0.40, 0.80)},
 			{"id": "opzetband_3c6",  "name": "Opzetband 3C/6 (4m flat + 8m@35°)",            "category": "Conveyance", "size": Vector3(2.5, 5.4, 10.6), "color": Color(0.20, 0.40, 0.80)},
-			# westa_band_1 size re-derived 2026-08-28 (#fold). The belt's rise
-			# is DERIVED in _build_opzetband from the chute/funnel port
-			# helpers (lip ≈ 5.22 → run 4.52, extent 4.52+0.6 = 5.12 m of
-			# one-sided geometry from the origin). y: lip + guide rails ≈ 5.6.
-			# z: geometry-honest wrap (5.12 + margin). The chute is lined up
-			# under the lip via LINE_1_SEQ's westa gap (derivation there), NOT
-			# via this box — guarded live by test_line1_flow_conformance S4b.
-			{"id": "westa_band_1",   "name": "Westa band 1 (45° feeder to SGA hoekgoot)", "category": "Conveyance", "size": Vector3(1.6, 5.6, 5.8),  "color": Color(0.20, 0.40, 0.80)},
+			# ── #fold 2026-09-16 — operator correction (live chat, superseding the
+			# 2026-08-28 sketch transcription): there is only ONE real Westa Band,
+			# and it sits at the SHREDDER INFEED — the funnel-shaped opzetband_1
+			# feeds it through a 90° right turn, and Westa Band 1 feeds shredder_1.
+			# The belt that used to be called "westa_band_1" here (climbing from
+			# the post-shredder magnet run up to the SGA hoekgoot / drum) is NOT a
+			# Westa Band — it's a plain conveyor and has been renamed
+			# `drum_feed_belt` below, geometry unchanged. See LINE_1_SEQ in
+			# BuildMode.gd for the corrected leg order.
+			# Geometry TODO: the size/incline below for THIS id (pre-shredder use)
+			# is a rough placeholder derived from the old bounding box, NOT a real
+			# measurement of the shredder inlet — needs an operator photo/measurement
+			# pass before test_line1_flow_conformance gets a real S-check for it.
+			{"id": "westa_band_1",   "name": "Westa band 1 (30° feeder, opzetband → shredder infeed)", "category": "Conveyance", "size": Vector3(1.6, 5.6, 5.8),  "color": Color(0.20, 0.40, 0.80)},
+			# drum_feed_belt = the old westa_band_1 geometry/derivation, renamed
+			# (#fold 2026-09-16) now that "Westa Band" refers to the shredder-infeed
+			# belt instead. Box unchanged: rise DERIVED in _build_opzetband from the
+			# chute/funnel port helpers (lip ≈ 5.22 → run 4.52, extent 4.52+0.6 =
+			# 5.12 m of one-sided geometry from the origin). y: lip + guide rails ≈
+			# 5.6. z: geometry-honest wrap (5.12 + margin). The chute is lined up
+			# under the lip via LINE_1_SEQ's gap (derivation there), NOT via this
+			# box — guarded live by test_line1_flow_conformance S4b.
+			{"id": "drum_feed_belt", "name": "Drum feed belt (45° climb to SGA hoekgoot)", "category": "Conveyance", "size": Vector3(1.6, 5.6, 5.8),  "color": Color(0.20, 0.40, 0.80)},
 			{"id": "opzetband_1",    "name": "Opzetband 1 (10m@25°, 4m wide, integrated magnet head)", "category": "Conveyance", "size": Vector3(4.0, 5.0, 10.0),  "color": Color(0.20, 0.40, 0.80)},
 			# Inclined belt — climbs 8 m vertically over 8 m horizontal (45°).
 			# Goes from Shredder 2's output up to the feed hopper at the top.
@@ -1310,7 +1325,7 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 	# pipelines can't see the opzetband at all (the early return skipped the
 	# generic body's tagging at line ~895). Also attach a BeltSurface so dropped
 	# material is physically carried.
-	if id == "opzetband_3a3b" or id == "opzetband_3c6" or id == "westa_band_1" or id == "opzetband_1":
+	if id == "opzetband_3a3b" or id == "opzetband_3c6" or id == "westa_band_1" or id == "opzetband_1" or id == "drum_feed_belt":
 		var op : Node3D = _build_opzetband(id, Vector3(item["size"]), ghost)
 		if op != null and not ghost:
 			_finalize_placeable(op, id)
@@ -2094,6 +2109,68 @@ static func _cyl(parent: Node3D, r_top: float, r_bot: float, height: float, \
 	parent.add_child(mi)
 	return mi
 
+## An open cylinder (tube with no end caps) along axis: "y", "z", or "x".
+static func _open_cyl(parent: Node3D, r: float, height: float, \
+		pos: Vector3, mat: StandardMaterial3D, axis: String = "z", segments: int = 32) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var cm := CylinderMesh.new()
+	cm.top_radius = r
+	cm.bottom_radius = r
+	cm.height = height
+	cm.cap_top = false
+	cm.cap_bottom = false
+	cm.radial_segments = segments
+	mi.mesh = cm
+	mi.material_override = mat
+	mi.position = pos
+	if axis == "z":
+		mi.rotation = Vector3(PI / 2.0, 0.0, 0.0)
+	elif axis == "x":
+		mi.rotation = Vector3(0.0, 0.0, PI / 2.0)
+	parent.add_child(mi)
+	return mi
+
+## A continuous helical flighting / corkscrew ribbon running along Z inside a cylinder.
+static func _corkscrew_flight(parent: Node3D, r_outer: float, r_inner: float, length: float, \
+		turns: float, pos: Vector3, mat: StandardMaterial3D, segments_per_turn: int = 32) -> MeshInstance3D:
+	var total_segs : int = int(turns * float(segments_per_turn))
+	if total_segs < 4:
+		return null
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in total_segs:
+		var t0 : float = float(i) / float(total_segs)
+		var t1 : float = float(i + 1) / float(total_segs)
+		var z0 : float = -length * 0.5 + t0 * length
+		var z1 : float = -length * 0.5 + t1 * length
+		var a0 : float = t0 * turns * TAU
+		var a1 : float = t1 * turns * TAU
+		var cos0 := cos(a0); var sin0 := sin(a0)
+		var cos1 := cos(a1); var sin1 := sin(a1)
+		var v0 := Vector3(sin0 * r_inner, cos0 * r_inner, z0)
+		var v1 := Vector3(sin0 * r_outer, cos0 * r_outer, z0)
+		var v2 := Vector3(sin1 * r_outer, cos1 * r_outer, z1)
+		var v3 := Vector3(sin1 * r_inner, cos1 * r_inner, z1)
+		st.set_uv(Vector2(0.0, t0 * turns))
+		st.add_vertex(v0)
+		st.set_uv(Vector2(1.0, t0 * turns))
+		st.add_vertex(v1)
+		st.set_uv(Vector2(1.0, t1 * turns))
+		st.add_vertex(v2)
+		st.set_uv(Vector2(0.0, t0 * turns))
+		st.add_vertex(v0)
+		st.set_uv(Vector2(1.0, t1 * turns))
+		st.add_vertex(v2)
+		st.set_uv(Vector2(0.0, t1 * turns))
+		st.add_vertex(v3)
+	st.generate_normals()
+	var mi := MeshInstance3D.new()
+	mi.mesh = st.commit()
+	mi.material_override = mat
+	mi.position = pos
+	parent.add_child(mi)
+	return mi
+
 static func _legs(parent: Node3D, size: Vector3, top_y: float, mat: StandardMaterial3D) -> void:
 	var hx := size.x * 0.42
 	var hz := size.z * 0.42
@@ -2118,7 +2195,7 @@ static func extend_machine_legs(root: Node3D, drop: float) -> int:
 	var dw : float = maxf(0.0, drop)                  # world-space drop down to the floor
 	var sy : float = maxf(0.01, root.scale.y)
 	var d : float = dw / sy                            # same drop in machine-local space
-	var base_world_y : float = root.global_position.y
+	var base_world_y : float = root.global_position.y if root.is_inside_tree() else root.position.y
 	var floor_world_y : float = base_world_y - dw
 	# Obstacle raycast: a leg that would run straight down THROUGH another machine is
 	# hidden rather than clipping through it. Exclude THIS machine's own bodies so a leg
@@ -2447,6 +2524,11 @@ static func _interactive_hatch(p: Node3D, size: Vector3, pos: Vector3, name: Str
 		return _box(p, size, pos, mat)
 	var hatch_script := preload("res://src/build/InteractiveHatch.gd")
 	var h : AnimatableBody3D = hatch_script.new()
+	# sync_to_physics OFF — see the note on InteractiveHatch. A machine is built
+	# here at the catalog's local origin and MOVED into place afterwards by the
+	# macro; with sync_to_physics on, this body would stay pinned to the global
+	# transform it had at build time and end up at the world origin.
+	h.sync_to_physics = false
 	h.hatch_name = name
 	h.open_angle_deg = angle_deg * hinge_side
 	# Pivot sits at hinge side
@@ -3803,6 +3885,27 @@ static func _m_belt(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> voi
 	# to the legacy in-function geometry: 4 legs, 2 spinning end rollers,
 	# 1 scrolling deck skin, 2 steel side rails.
 	var spec : Dictionary = BeltBuilder.make_spec()
+	# ── #overband 2026-09-17 — skirt-board rails, NOT the default trough rails ──
+	# The default profile (height_frac 0.18, y_frac 0.28) stands a rail 0.333 m
+	# proud of the deck with its bottom floating 0.171 m clear of the belt. On
+	# line 1 this belt is the uitvoerband, and it runs under the overband magnet
+	# at a 0.25 m working clearance — the rails alone were TALLER than the gap,
+	# so no arrangement of the two could satisfy it (raising the belt drove the
+	# rails through the magnet drums; lowering the magnet put its face under the
+	# rail tops). Operator's call, 2026-09-17: the rails are the thing that is
+	# wrong.
+	#
+	# Replaced with a skirt board that STANDS ON the deck and is
+	# UITVOERBAND_RAIL_H_M tall. Both fracs are derived from that one metre value
+	# and this belt's own size, so the profile cannot drift from the constant:
+	#   height_frac = h / size.y          -> rail is h metres tall
+	#   y_frac      = (h * 0.5) / size.y  -> rail CENTRE is h/2 above the deck,
+	#                                        i.e. its bottom sits on the deck
+	# STILL UNMEASURED: the 0.15 m itself is a plausible skirt-board height, not
+	# an operator figure — see the constant's own note. Guarded in-world by
+	# test_line1_overband_mount T5/T6.
+	spec["side_rail_height_frac"] = UITVOERBAND_RAIL_H_M / size.y
+	spec["side_rail_y_frac"] = (UITVOERBAND_RAIL_H_M * 0.5) / size.y
 	BeltBuilder.build_internal(p, "transport_belt", size, spec, ghost)
 
 # ── funnel: wide top cone narrowing to a spout — drops material from a machine
@@ -6178,10 +6281,20 @@ static func _build_tool(id: String, size: Vector3, ghost: bool) -> Node3D:
 ##
 ##   • opzetband_3a3b — 4 m flat + 6 m at 40° + 0.5 m horizontal top
 ##   • opzetband_3c6  — 4 m flat + 8 m at 35°
-##   • westa_band_1   — 45° climb + 0.6 m top flat, run DERIVED from the
+##   • drum_feed_belt — 45° climb + 0.6 m top flat, run DERIVED from the
 ##                     hoekgoot/funnel port helpers (NOT the operator's old
 ##                     "8 m at 35°" — that stale bullet outlived two rewrites
-##                     of the branch below; review finding 2026-08-28)
+##                     of the branch below; review finding 2026-08-28). This id
+##                     used to be called "westa_band_1" — renamed 2026-09-16,
+##                     see the catalog-list comment above.
+##   • westa_band_1   — (as of 2026-09-16) the REAL Westa Band: feeder from
+##                     opzetband_1's discharge (after a 90° right turn) into
+##                     shredder_1. Its deck height and run are DERIVED from the
+##                     two ends it has to meet (see the branch below), the same
+##                     way drum_feed_belt is derived from the chute/funnel. The
+##                     angle is WESTA_BAND_1_INCLINE_DEG = 30° (operator
+##                     2026-09-17, replacing the 45° placeholder — see
+##                     docs/plant/line1_layout_sketch_2026-08-28.md).
 ##   • opzetband_1    — 5 m at 25°, 3 m wide, funnel walls
 ##                     (0–0.75 m straight wide, 0.75–3.0 m narrowing to 1.5 m wide,
 ##                      3.0–5.0 m straight narrow)
@@ -6205,8 +6318,11 @@ static func _build_opzetband(id: String, size: Vector3, ghost: bool) -> Node3D:
 			belt.incline_deg = 35.0
 			belt.incline_run = 8.0 * cos(deg_to_rad(35.0))
 			belt.deck_width  = 2.5
-		"westa_band_1":
-			# #196 — the 45° feeder belt at the end of the wash-feed group.
+		"drum_feed_belt":
+			# #196 — the 45° belt at the end of the wash-feed group. Renamed from
+			# "westa_band_1" 2026-09-16 (operator correction: the real Westa Band
+			# is at the shredder infeed, not here — see the "westa_band_1" case
+			# below and the catalog-list comment). Geometry UNCHANGED by the rename.
 			# #fold 2026-08-28: with the line-1 fold laid out, the belt climbs
 			# leg C (north) and discharges into the sga_feed_chute's IN port;
 			# the chute makes the operator's "90 deg right turn" and drops
@@ -6224,13 +6340,52 @@ static func _build_opzetband(id: String, size: Vector3, ghost: bool) -> Node3D:
 			# Short flat at the top so material drops cleanly INTO the chute's
 			# infeed rather than skidding off the end of the slope.
 			belt.top_flat_m  = 0.6
+			belt.require_shredder = false
+			belt.set_meta("intermediate_conveyor", true)
 			var vt_mouth_y : float = vw_trommel_funnel_mouth_local(
 				Vector3(get_item("vw_trommel")["size"])).y
 			var c_ports : Dictionary = sga_feed_chute_ports_local(
 				Vector3(get_item("sga_feed_chute")["size"]))
-			var chute_lift : float = vt_mouth_y + 0.30 - (c_ports["out"] as Vector3).y
+			# VW_TROMMEL_LIFT_M — the drum no longer sits on the slab (operator
+			# 2026-09-17, +2.5 m), and vw_trommel_funnel_mouth_local() is a LOCAL
+			# height, so the belt has to climb the drum's stand-off as well as its
+			# own geometry. Without this term the belt keeps aiming at where the
+			# funnel used to be and discharges 2.5 m short.
+			var chute_lift : float = VW_TROMMEL_LIFT_M + vt_mouth_y + 0.30 \
+				- (c_ports["out"] as Vector3).y
 			var lip_y : float = (c_ports["in"] as Vector3).y + chute_lift + 0.15
 			belt.incline_run = (lip_y - belt.deck_height) \
+				/ tan(deg_to_rad(belt.incline_deg))
+		"westa_band_1":
+			# #fold 2026-09-16 — operator correction (live chat): the REAL Westa
+			# Band sits at the shredder infeed: opzetband_1 (funnel feeder) → 90°
+			# right turn → westa_band_1 → shredder_1. Placed in LINE_1_SEQ as the
+			# entry right after opzetband_1, before shredder_1.
+			# The belt has to bridge two ends that are both already fixed by
+			# other, independently-sourced geometry, so DERIVE it from them
+			# rather than from the catalog box (which said 5.8 m and put the
+			# discharge 5.7 m BELOW the shredder throat — the line then bypassed
+			# the shredder entirely). Same derivation style as drum_feed_belt:
+			#   deck (inlet) = opzetband_1's discharge lip, one transfer drop down
+			#   lip (outlet) = shredder_1's throat, one transfer drop above
+			# The ANGLE is the one number the two ends cannot supply — they fix
+			# the rise, not how far the belt travels to achieve it — so it is the
+			# only figure here that has to come from outside. Operator, 2026-09-17:
+			# 30°, replacing the 45° placeholder this inherited. At 30° the belt
+			# runs 5.76 m horizontally instead of 3.32 m for the same 3.32 m rise,
+			# which is why LINE_1_SEQ's gap after this entry moved from −1.48 to
+			# +0.957 — that literal is derived FROM this angle, so the two move
+			# together. Guarded live by test_line1_flow_conformance S6/S6b.
+			belt.deck_length = 0.0
+			belt.incline_deg = WESTA_BAND_1_INCLINE_DEG
+			belt.deck_width  = 1.2
+			belt.top_flat_m  = 0.6
+			belt.require_shredder = true
+			belt.set_meta("intermediate_conveyor", true)
+			belt.deck_height = opzetband_1_lip_local().y - BELT_TRANSFER_DROP_M
+			var throat_y : float = shredder_infeed_local(
+				Vector3(get_item("shredder_1")["size"])).y
+			belt.incline_run = (throat_y + BELT_TRANSFER_DROP_M - belt.deck_height) \
 				/ tan(deg_to_rad(belt.incline_deg))
 		"opzetband_1":
 			# #196 — 2× scale: 10 m @ 25° (was 5 m), 4 m wide (was 3 m). Metal
@@ -6238,8 +6393,8 @@ static func _build_opzetband(id: String, size: Vector3, ghost: bool) -> Node3D:
 			# (see _attach_metaaldetector_head below) so the legacy standalone
 			# metaaldetector entry was dropped from LINE_1_SEQ.
 			belt.deck_length = 0.0
-			belt.incline_deg = 25.0
-			belt.incline_run = 10.0 * cos(deg_to_rad(25.0))
+			belt.incline_deg = OPZETBAND_1_INCLINE_DEG
+			belt.incline_run = OPZETBAND_1_SLOPE_M * cos(deg_to_rad(OPZETBAND_1_INCLINE_DEG))
 			belt.deck_width  = 4.0
 			belt.funnel_start_m   = 1.5    # parallel-and-wide for the first 1.5 m
 			belt.funnel_narrow_m  = 4.5    # then narrows linearly for 4.5 m
@@ -11045,6 +11200,74 @@ static func _m_metaaldetector(p: Node3D, size: Vector3, color: Color, ghost: boo
 ## All materials pulled from MaterialPalette so future visual passes stay
 ## consistent. The drum still uses _spinning_cyl so it animates at runtime.
 
+## Vertical clearance a belt's discharge lip is given over whatever it drops
+## into. Shared by every derived belt-to-machine fit on line 1 so the transfers
+## are all the same height instead of each carrying its own baked number.
+const BELT_TRANSFER_DROP_M : float = 0.30
+
+## Working clearance between the overband magnet's lowest part and the deck of
+## the conveyor it straddles. Operator figure, 2026-09-16 ("+/- 25cm").
+const OVERBAND_CLEARANCE_M : float = 0.25
+
+## Side-rail (skirt board) height on `transport_belt`, standing on the deck.
+##
+## STILL UNMEASURED — this is a plausible skirt-board height, not an operator
+## number. What IS operator-given is the constraint that produced it: the rails
+## have to be shorter than OVERBAND_CLEARANCE_M or the uitvoerband cannot pass
+## under the magnet at all (the default profile stood 0.333 m proud of the deck,
+## taller than the clearance itself). 0.15 m clears that bound with room to
+## spare. A real measurement pass only has to correct this one value — the rail
+## fracs, the belt's lift and the shredder drop all re-derive from it.
+const UITVOERBAND_RAIL_H_M : float = 0.15
+
+## opzetband_1's operator-given slope: 10 m of belt at 25°. SINGLE SOURCE for
+## both the belt build itself and opzetband_1_lip_local() below — writing the
+## 10/25 pair twice is how the drum_feed_belt spec drifted from its own comment.
+const OPZETBAND_1_SLOPE_M     : float = 10.0
+const OPZETBAND_1_INCLINE_DEG : float = 25.0
+
+## How far vw_trommel (the voorwastrommel) stands off the floor on line 1.
+## OPERATOR FIGURE, 2026-09-17: "the trommel/drum is too low, increase height by
+## 2.5 meters." The drum used to sit flat on the slab at y 0.
+##
+## SINGLE SOURCE for the whole feed chain that has to arrive at its funnel:
+## LINE_1_SEQ's `y` on the drum entry, the sga_feed_chute lift above it, and
+## drum_feed_belt's derived incline_run all read THIS. Raising a gravity-fed
+## machine without raising what feeds it just disconnects the line — the belt
+## would climb to the old mouth height and discharge into 2.5 m of air — so the
+## lift belongs in one place that every dependent number is computed from.
+## Guarded relationally by test_line1_flow_conformance S4/S4b, which measure the
+## chute OVER the funnel and the belt lip OVER the chute in the built world.
+const VW_TROMMEL_LIFT_M : float = 2.5
+
+## Incline of westa_band_1, the shredder-infeed belt. OPERATOR FIGURE
+## (2026-09-17), replacing the 45° placeholder the derivation was seeded with.
+## Everything else about this belt follows from the two ends it has to meet
+## (opzetband_1's discharge lip below, shredder_1's throat above), so this angle
+## is the only number in it that is not derived — and LINE_1_SEQ's gap after the
+## entry is derived from it in turn, so they must be changed together.
+const WESTA_BAND_1_INCLINE_DEG : float = 30.0
+
+## Local position of opzetband_1's discharge lip — the top of its 10 m @ 25°
+## climb, measured in the belt's own frame (origin at the foot of the deck,
+## +Z along the flow). ShredderFeedBelt's own _discharge_lip_pos() is the
+## runtime equivalent; this is the build-time copy the westa_band_1 spec needs
+## before any belt node exists. `y` uses ShredderFeedBelt's default deck_height
+## (0.7) because opzetband_1 does not override it.
+static func opzetband_1_lip_local() -> Vector3:
+	var a : float = deg_to_rad(OPZETBAND_1_INCLINE_DEG)
+	return Vector3(0.0,
+		0.7 + OPZETBAND_1_SLOPE_M * sin(a),
+		OPZETBAND_1_SLOPE_M * cos(a))
+
+## Local position of shredder_1's infeed throat for a shredder of `size`. Mirrors
+## MachineFlow's `in` fraction for shredder_1/shredder_2 (0, 0.85, 0). Kept here
+## rather than imported because MachineFlow already depends on this file and a
+## back-reference would close a parse cycle; test_line1_flow_conformance S6b
+## measures the two against each other in-world so they cannot drift apart.
+static func shredder_infeed_local(size: Vector3) -> Vector3:
+	return Vector3(0.0, size.y * 0.85, 0.0)
+
 ## Local position of the TOP of the vw_trommel's feed-funnel mouth (the -Z
 ## intake cone) for a trommel of `size`. SINGLE SOURCE OF TRUTH shared by
 ## _m_vw_trommel (which places the cone with it) and the westa_band_1 spec in
@@ -11062,11 +11285,12 @@ static func vw_trommel_funnel_mouth_local(size: Vector3) -> Vector3:
 
 static func _m_vw_trommel(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> void:
 	var P = MaterialPalette
-	var shell    : StandardMaterial3D = P.mat_stainless_weathered()
+	var shell    : StandardMaterial3D = P.mat_trommel_solid()    # solid wall steel drum shell (no holes, no mesh, two-sided)
+	var slurry   : StandardMaterial3D = P.mat_slurry_wash()       # murky wash slurry bath inside drum
 	var seam     : StandardMaterial3D = P.mat_steel_dark_aged()
 	var tire     : StandardMaterial3D = P.mat_rubber_tire_solid()
 	var cage_yel : StandardMaterial3D = P.mat_paint_yellow_peeling()
-	var frame_bl : StandardMaterial3D = P.mat_paint_blue_oxidised()
+	var frame_bl : StandardMaterial3D = P.mat_paint_blue_industrial()
 	var aged     : StandardMaterial3D = P.mat_steel_dark_aged()
 	var stainless: StandardMaterial3D = P.mat_steel_galvanised()
 	var grating  : StandardMaterial3D = P.mat_grating_steel()
@@ -11076,41 +11300,119 @@ static func _m_vw_trommel(p: Node3D, size: Vector3, _color: Color, ghost: bool) 
 	var i_blu    : StandardMaterial3D = P.mat_indicator_blue()
 
 	var W := size.x; var H := size.y; var D := size.z
-	var drum_r   : float = minf(W * 0.46, 1.55)                 # ~1.5 m for 50,000 L
-	var drum_len : float = D * 0.85                              # leave space for collars
-	var leg_top  : float = H * 0.12                              # foundation height
-	var drum_cy  : float = leg_top + drum_r + 0.18               # drum centre Y
+	var drum_r   : float = minf(W * 0.46, 1.55)                 # ~1.55 m for 50,000 L
+	var drum_len : float = D * 0.85                              # 6.80 m
+	var leg_top  : float = H * 0.12                              # foundation height (0.54 m)
+	var drum_cy  : float = leg_top + drum_r + 0.18               # drum centre Y (2.27 m)
+	var tilt_deg : float = 4.0
+	var tilt_rad : float = deg_to_rad(tilt_deg)                 # +4.0° downhill incline (high at -Z infeed, low at +Z discharge)
 
-	# ── SPINNING DRUM (stainless, weathered, 3 sections with raised seam rings) ─
-	var drum := _spinning_cyl(p, drum_r, drum_r, drum_len,
-		Vector3(0.0, drum_cy, 0.0), shell, "z", Vector3.BACK, ghost, 14.0)
+	# ── INCLINED DRUM PIVOT (downhill from -Z infeed to +Z discharge) ─────────
+	var drum_pivot := Node3D.new()
+	drum_pivot.position = Vector3(0.0, drum_cy, 0.0)
+	drum_pivot.rotation.x = tilt_rad
+	p.add_child(drum_pivot)
+
+	# Spinning rotor node: RotatingMechanism if not ghost, static drum_pivot if ghost.
+	var drum_rotor : Node3D = drum_pivot
 	if not ghost:
-		drum.rotation.x = deg_to_rad(-4.0)                       # downhill incline
-	var band_y : float = 0.0 if not ghost else drum_cy
-	# Three raised seam rings (proud discs) at the section joints, plus an end
-	# ring at each end (typical for a sectional welded shell).
-	for t_band in [-0.40, -0.13, 0.13, 0.40]:
-		_cyl(drum, drum_r * 1.06, drum_r * 1.06, 0.10,
-			Vector3(0.0, band_y, drum_len * float(t_band)), seam, "z")
-	# Embossed text placard (capacity / TANK ID) on the drum side — dark recessed.
-	_box(drum, Vector3(1.40, 0.30, 0.012),
-		Vector3(0.0, band_y + drum_r * 0.55, drum_len * -0.32), placard)
-	_box(drum, Vector3(0.95, 0.18, 0.012),
-		Vector3(0.0, band_y + drum_r * 0.40, drum_len * -0.32), placard)
+		var rm = _RM_SCRIPT.new()
+		rm.axis = Vector3.BACK
+		rm.rpm = 14.0
+		rm.nominal_rpm = 14.0
+		rm.capacity_kg_s = 2.0
+		drum_pivot.add_child(rm)
+		drum_rotor = rm
 
-	# ── BOLTED FLANGE DRIVE RING at the +Z end (segmented circle with bolt heads) ─
-	var flange_z : float = drum_len * 0.5 + 0.10
-	_cyl(drum, drum_r * 1.18, drum_r * 1.18, 0.14, Vector3(0.0, band_y, flange_z), aged, "z")
-	# Bolt heads ringing the flange.
-	for k in 16:
-		var ang : float = float(k) * TAU / 16.0
-		var bx : float = cos(ang) * drum_r * 1.10
-		var by : float = sin(ang) * drum_r * 1.10
-		_box(drum, Vector3(0.06, 0.06, 0.04),
-			Vector3(bx, band_y + by, flange_z + 0.08), aged)
-	# Stainless discharge collar (shroud) just past the flange.
-	_cyl(p, drum_r * 0.95, drum_r * 0.95, 0.50,
-		Vector3(0.0, drum_cy, drum_len * 0.5 + 0.50), stainless, "z")
+	# ── SOLID WALL STEEL DRUM SHELL (no mesh, no holes, visible from outside & inside) ──
+	_open_cyl(drum_rotor, drum_r, drum_len, Vector3.ZERO, shell, "z", 32)
+
+	# Raised seam rings at section joints, plus end rings
+	for t_band in [-0.42, -0.14, 0.14, 0.42]:
+		_open_cyl(drum_rotor, drum_r * 1.04, 0.10,
+			Vector3(0.0, 0.0, drum_len * float(t_band)), seam, "z", 24)
+
+	# ── INTERNAL CORKSCREW HELICAL FLIGHTING (continuous spiral inside drum) ──
+	# Continuous Archimedes screw flight welded to the inner wall (matching Image 3).
+	# Solid steel flight ribbon conveys flakes forward through the wash slurry.
+	var screw_mat   : StandardMaterial3D = P.mat_trommel_corkscrew()
+	var screw_len   : float = drum_len * 0.96
+	var screw_turns : float = 8.0
+	var screw_r_out : float = drum_r * 0.99
+	var flight_depth: float = 0.40
+	var screw_r_in  : float = screw_r_out - flight_depth
+	_corkscrew_flight(drum_rotor, screw_r_out, screw_r_in, screw_len, screw_turns,
+		Vector3.ZERO, screw_mat, 32)
+
+	# Gusset brackets / lifter tabs along the corkscrew turns (matching Image 3)
+	# Welded in the outer corner between the spiral flights and the drum shell.
+	var n_tabs : int = int(screw_turns * 4.0)
+	for ti in n_tabs:
+		var tt : float = float(ti) / float(n_tabs)
+		var tz : float = -screw_len * 0.5 + tt * screw_len
+		var ta : float = tt * screw_turns * TAU
+		var tr : float = drum_r - 0.10
+		var tab_piv := Node3D.new()
+		tab_piv.position = Vector3(sin(ta) * tr, cos(ta) * tr, tz)
+		tab_piv.rotation.z = -ta
+		drum_rotor.add_child(tab_piv)
+		_box(tab_piv, Vector3(0.025, 0.15, 0.12), Vector3.ZERO, aged)
+
+	# Internal retaining rings at infeed and discharge edges
+	for t_rib in [-0.46, 0.46]:
+		_open_cyl(drum_rotor, drum_r * 0.985, 0.08,
+			Vector3(0.0, 0.0, drum_len * float(t_rib)), aged, "z", 24)
+
+	# ── WASH WATER / SLURRY POOL (pooled at the bottom of the drum) ───────────
+	# Parented to drum_pivot (static relative to spin) so it stays pooled at the
+	# bottom while the drum shell and lifter blades rotate through it.
+	_box(drum_pivot, Vector3(2.10, 0.05, drum_len * 0.94),
+		Vector3(0.0, -drum_r * 0.72, 0.0), slurry)
+
+	# ── SOLID-TIRE SUPPORT ROLLERS & CRADLE FRAME (two pairs, adjusted for tilt) ─
+	# Tilted drum axis means upstream pair (-Z) sits higher and downstream (+Z) lower.
+	var tire_r : float = 0.45
+	var tire_w : float = 0.30
+	var tx     : float = drum_r * 0.65                     # cradle wheel lateral offset (~1.01 m)
+	var contact_y_drop : float = sqrt(drum_r * drum_r - tx * tx) # ~1.178 m below drum axis
+	for sz in [-0.32, 0.32]:
+		var tz : float = float(sz) * drum_len
+		var axis_y_at_z : float = drum_cy - tz * sin(tilt_rad)
+		var tire_y : float = axis_y_at_z - contact_y_drop - 0.03
+		var cur_ped_h : float = maxf(0.20, tire_y - tire_r - 0.12)
+		for sx in [-1.0, 1.0]:
+			var cx : float = float(sx) * tx
+			# Pedestal column
+			_box(p, Vector3(0.32, cur_ped_h, 0.45),
+				Vector3(cx, cur_ped_h * 0.5 + 0.12, tz), frame_bl)
+			# Solid rubber cradle tire (axle along X)
+			_cyl(p, tire_r, tire_r, tire_w,
+				Vector3(cx, tire_y, tz), tire, "x")
+			# Steel axle hub
+			_cyl(p, 0.10, 0.10, tire_w + 0.03,
+				Vector3(cx, tire_y, tz), stainless, "x")
+		# Cross-member connecting left and right pedestals
+		_box(p, Vector3(tx * 2.1, 0.18, 0.30),
+			Vector3(0.0, cur_ped_h * 0.4 + 0.12, tz), frame_bl)
+
+	# Heavy blue steel longitudinal cradle frame beams along each side
+	for sx in [-1.0, 1.0]:
+		var cx : float = float(sx) * tx
+		_box(p, Vector3(0.28, 0.20, drum_len * 0.78),
+			Vector3(cx, 0.22, 0.0), frame_bl)
+
+	# ── DISCHARGE HOOD / CANOPY at +Z (deflects slurry into scheidingsgoot) ────
+	# Over top half of drum discharge end, deflecting splashing slurry down (Images 4 & 5).
+	var d_axis_y : float = drum_cy - (drum_len * 0.5) * sin(tilt_rad)
+	var d_z : float = drum_len * 0.5 + 0.22
+	# Hood canopy roof over top half of drum mouth
+	_box(p, Vector3(drum_r * 1.80, 0.06, 0.55),
+		Vector3(0.0, d_axis_y + drum_r * 1.02, d_z), frame_bl)
+	# Side cheek splash plates on left (+X) and right (-X) of discharge mouth
+	for sx in [-1.0, 1.0]:
+		var scx : float = float(sx) * (drum_r * 0.92)
+		_box(p, Vector3(0.05, drum_r * 1.10, 0.55),
+			Vector3(scx, d_axis_y + drum_r * 0.45, d_z), frame_bl)
 
 	# ── FEED HOPPER + INPUT CHUTE at the -Z (high) end ─────────────────────────
 	# Placed via vw_trommel_funnel_mouth_local() (mouth = cone TOP, so the cone
@@ -11120,29 +11422,10 @@ static func _m_vw_trommel(p: Node3D, size: Vector3, _color: Color, ghost: bool) 
 	_cyl(p, drum_r * 0.55, drum_r * 0.30, H * 0.32,
 		funnel_mouth - Vector3(0.0, H * 0.16, 0.0), aged)
 
-	# ── SOLID-TIRE SUPPORT ROLLERS (two pairs, one near each end) ──────────────
-	# Each pair has TWO tires below the drum, angled inward like trommel cradle
-	# wheels. They sit on heavy steel pedestals on the foundation slab.
-	var tire_r : float = 0.45
-	var tire_w : float = 0.30
-	var ped_h  : float = drum_cy - drum_r * 0.65 - tire_r
-	for sz in [-0.32, 0.32]:                                    # near each drum end
-		for sx in [-1.0, 1.0]:                                  # left + right cradle
-			var tx : float = float(sx) * (drum_r * 0.65)
-			var tz : float = float(sz) * drum_len
-			# Pedestal box.
-			_box(p, Vector3(0.30, ped_h, 0.40), Vector3(tx, ped_h * 0.5 + 0.12, tz), frame_bl)
-			# Tire (solid rubber, axle along X).
-			_cyl(p, tire_r, tire_r, tire_w,
-				Vector3(tx, ped_h + 0.12 + tire_r, tz), tire, "x")
-			# Bright steel hub at axle.
-			_cyl(p, 0.10, 0.10, tire_w + 0.02,
-				Vector3(tx, ped_h + 0.12 + tire_r, tz), stainless, "x")
-
 	# ── AXIAL THRUST ASSEMBLY UNIT — small bolted bracket with ID plate ────────
 	var thrust_x : float = drum_r * 1.30
-	var thrust_y : float = drum_cy
 	var thrust_z : float = drum_len * 0.40
+	var thrust_y : float = drum_cy - thrust_z * sin(tilt_rad)
 	_box(p, Vector3(0.30, 0.40, 0.30), Vector3(thrust_x, thrust_y, thrust_z), frame_bl)
 	# ID plate on the thrust bracket (dark recessed).
 	_box(p, Vector3(0.20, 0.14, 0.008),
@@ -11153,7 +11436,7 @@ static func _m_vw_trommel(p: Node3D, size: Vector3, _color: Color, ghost: bool) 
 		Vector3(0.0, 0.07, 0.0), aged)                          # slab base
 	slab.add_to_group("machine_foot")
 	slab.set_meta("foot_y", 0.07)
-	# Grating bars running along Z, ten parallel bars across the X span.
+	# Grating bars running along Z, eleven parallel bars across the X span.
 	var n_bars : int = 11
 	for k in n_bars:
 		var bx : float = -drum_r * 0.9 + float(k) * (drum_r * 1.8 / float(n_bars - 1))
@@ -11199,29 +11482,21 @@ static func _m_vw_trommel(p: Node3D, size: Vector3, _color: Color, ghost: bool) 
 
 	# Floor legs (auto-extend on raise per #70).
 	_legs(p, size, leg_top, aged)
-	# #212.9 — large solid rubber drive contact wheel pressing against the
-	# trommel shell perpendicular to the drum axis. Real prewash trommels are
-	# driven by a friction wheel against the outer shell; this adds the
-	# missing visual.
+
+	# Drive friction contact wheel against shell (perpendicular to drum axis)
 	if not ghost:
 		var rubber := _mat(Color(0.15, 0.15, 0.15), ghost, 0.0, 0.95)
 		_cyl(p, 0.18, 0.18, 0.12,
 			Vector3(drum_r + 0.18, drum_cy - drum_r * 0.55, 0.0), rubber, "z")
-		# Hub at the centre of the drive wheel.
 		_cyl(p, 0.04, 0.04, 0.14,
 			Vector3(drum_r + 0.18, drum_cy - drum_r * 0.55, 0.0), stainless, "z")
-		# Capacity stencil "TANK A   MAX CAP 50000(L)" on the side of the
-		# trommel (uses the file-top helper).
 		var cap_lbl := _stencil_label(p, "TANK A   MAX CAP 50000(L)",
 			Vector3(1.40, 0.20, 0.01), "+X")
 		cap_lbl.position = Vector3(drum_r + 0.02, drum_cy + drum_r * 0.20, drum_len * -0.10)
 
-	# ── BORDES (grate) + STAIRS — operator's line-1 drawing 2026-08-28
-	# (line1_washing_flow_sketch: yellow grate walkway along the drum with
-	# stairs at the upstream end). Rafter-#231 idiom: grated deck at working
-	# height on the -X aisle flank, safety-yellow railing on the outer edge,
-	# grating stair descending at the -Z (chute/upstream) end.
-	var bordes_y : float = drum_cy - drum_r * 0.55          # deck under the drum's belly line
+	# ── BORDES (grate) + STAIRS + DISCHARGE END RAILING (Images 4 & 5) ────────
+	# Grated walkway along the drum with stairs at -Z and safety end railing at +Z.
+	var bordes_y : float = drum_cy - drum_r * 0.55          # deck under drum's belly line (1.42 m)
 	var bordes_w : float = 0.95
 	var bordes_x : float = -(drum_r + bordes_w * 0.5 + 0.05)
 	var bordes_len : float = drum_len * 0.92
@@ -11233,13 +11508,28 @@ static func _m_vw_trommel(p: Node3D, size: Vector3, _color: Color, ghost: bool) 
 	for szb in [-0.42, 0.0, 0.42]:
 		_box(p, Vector3(0.07, bordes_y, 0.07),
 			Vector3(bordes_x - bordes_w * 0.35, bordes_y * 0.5, bordes_len * szb), b_dark)
-	# Railing along the OUTER (-X) edge + the two ends; open toward the drum.
-	for szr in [-1.0, 1.0]:
-		_box(p, Vector3(0.05, 0.05, bordes_len), Vector3(bordes_x - bordes_w * 0.48, bordes_y + 1.0, 0.0), safety)
-		_box(p, Vector3(0.05, 1.0, 0.05), Vector3(bordes_x - bordes_w * 0.48, bordes_y + 0.5, float(szr) * bordes_len * 0.48), safety)
-	_box(p, Vector3(0.05, 0.05, bordes_len), Vector3(bordes_x - bordes_w * 0.48, bordes_y + 0.55, 0.0), safety)
+	# Outer (-X) railing along walkway length
+	_box(p, Vector3(0.05, 0.05, bordes_len),
+		Vector3(bordes_x - bordes_w * 0.48, bordes_y + 1.05, 0.0), safety)
+	_box(p, Vector3(0.05, 0.05, bordes_len),
+		Vector3(bordes_x - bordes_w * 0.48, bordes_y + 0.55, 0.0), safety)
+	_box(p, Vector3(0.05, 0.12, bordes_len),
+		Vector3(bordes_x - bordes_w * 0.48, bordes_y + 0.06, 0.0), safety)
+	for szr in [-0.5, 0.0, 0.5]:
+		_box(p, Vector3(0.05, 1.05, 0.05),
+			Vector3(bordes_x - bordes_w * 0.48, bordes_y + 0.525, bordes_len * szr), safety)
+	# DISCHARGE END RAILING at +Z (where operator stands inspecting the discharge)
+	_box(p, Vector3(bordes_w, 0.05, 0.05),
+		Vector3(bordes_x, bordes_y + 1.05, bordes_len * 0.5), safety)
+	_box(p, Vector3(bordes_w, 0.05, 0.05),
+		Vector3(bordes_x, bordes_y + 0.55, bordes_len * 0.5), safety)
+	_box(p, Vector3(bordes_w, 0.12, 0.03),
+		Vector3(bordes_x, bordes_y + 0.06, bordes_len * 0.5), safety)
+	_box(p, Vector3(0.05, 1.05, 0.05),
+		Vector3(bordes_x + bordes_w * 0.48, bordes_y + 0.525, bordes_len * 0.5), safety)
 	# Stair down at the -Z (upstream/chute) end, descending away from the drum.
 	_stair(p, Vector3(bordes_x, bordes_y, -bordes_len * 0.5 - 0.1), bordes_y, bordes_w * 0.8, b_steel, safety)
+
 
 # ── scheidingsgoot — the Y-SPLITGOOT at the discharge end of the SGA drum. ────
 # Operator spec 2026-08-28 (line-1 HPS/SGA doc walk), verbatim:

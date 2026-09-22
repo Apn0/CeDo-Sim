@@ -307,6 +307,28 @@ fi
 # for in the same report. Mutation-tested: skipping preview entries past
 # index 0 (simulating the pre-fix single-box ghost) drops the ghost from 50
 # children to 1 and breaks the real-vs-preview count parity check — red.
+# test_macro_part_placement (2026-09-16): operator report — a cluster of stray
+# panels and hinges floating at roughly (0, 3, 0) in the built world. 47 visible
+# meshes on line 1 resolved >40 m from their own machine (shredder_1's hatch at
+# global (1.76, 3.19, 0.00) while the shredder stood at (-156.76, 0, 38.98)).
+# Cause: AnimatableBody3D.sync_to_physics defaults to TRUE, so Godot drives the
+# body FROM the physics server, and the server is only notified when the body's
+# OWN transform is written — moving an ANCESTOR never reaches it. Machines are
+# built at the catalog's local origin and moved into place by the macro AFTER,
+# so each such body stayed pinned to the global transform it had at build time,
+# which was its intended LOCAL offset. Fixed at all three construction sites
+# (PlaceableCatalog._interactive_hatch, PushGate._build_hinge_pivot,
+# Door._build_hinge_pivot) and, for hatches, enforced in InteractiveHatch._ready
+# so a fourth site cannot forget. Nothing caught it before: the geometry suites
+# assert where MACHINES land, never where a machine's own PARTS land relative
+# to it. This asserts that missing invariant over three macros, each built at a
+# start far from the world origin — building at Vector3.ZERO would hide the
+# entire bug class. MUTATION-TESTED twice, on two different code paths, both
+# red on all three macros: sync_to_physics=true at the catalog hatch site gave
+# 37/14/18 stray parts at 143-265 m, and at PushGate._build_hinge_pivot gave
+# 10/10/10 stray silo-gate leaves at 143-266 m. Green run for comparison:
+# 451/279/290 visible parts checked, 0 stray, worst legitimate overhang 10.5 m
+# against a 17.9 m limit.
 # test_tool_placement_mode (2026-08-30): merged 2026-08-29 by PRs #154/#163 and
 # never run by anything until it was wired here. RE-ADDED 2026-08-31: the
 # 2026-08-31 batch merge replaced this whole `for t in` line with PR #168's
@@ -329,7 +351,7 @@ fi
 # objects, i.e. the reported bug reproduced end to end), the old WorldLayout
 # load (1 red — spawn (0,0,0)). It touches only `__atomicfile_*` names in user://
 # and points WorldLayout at a scratch path via layout_path_override.
-for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_line3a_identity test_line3b_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_humanoid_rig_conformance test_line1_flow_conformance test_line3a_flow_conformance test_line3b_flow_conformance test_shredder_rate_reconciliation test_line1_no_false_overload test_line_builder_ghost test_project_sweep_guards test_tool_placement_mode test_scada_dashboard_scene test_atomic_file test_extruder_brain_wired test_vehicle_census test_map_overlay_init test_qa_loop test_qa_spec test_assessment_procedure test_character_customizer test_f10_reserved test_bale_sticker_supplier test_hose_reel_round test_macro_delta_guard; do
+for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_line3a_identity test_line3b_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_humanoid_rig_conformance test_line1_flow_conformance test_line1_throughput test_line1_overband_mount test_line1_twin_streams test_line3a_flow_conformance test_line3b_flow_conformance test_shredder_rate_reconciliation test_line1_no_false_overload test_line_builder_ghost test_macro_part_placement test_project_sweep_guards test_tool_placement_mode test_scada_dashboard_scene test_atomic_file test_extruder_brain_wired test_vehicle_census test_map_overlay_init test_qa_loop test_qa_spec test_assessment_procedure test_character_customizer test_f10_reserved test_bale_sticker_supplier test_hose_reel_round test_macro_delta_guard; do
 	echo "== $t =="
 	${SUITE_TO[@]+"${SUITE_TO[@]}"} "$GODOT" --headless --path "$PROJ" "res://src/tests/$t.tscn" > "$OUT/$t.log" 2>&1
 	rc=$?
@@ -710,6 +732,20 @@ echo "== test_operator_context_board_vehicle =="
 grep -aE "^  (ok|FAIL)|^Result" "$OUT/test_operator_context_board_vehicle.log" || true
 if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/test_operator_context_board_vehicle.log"; then
 	echo "FAIL  : test_operator_context_board_vehicle (see $OUT/test_operator_context_board_vehicle.log)"
+	[ $code -eq 0 ] && code=1
+fi
+
+# test_hmi_universal_interactive (2026-09-17 HMI work, wired 2026-09-22): an
+# operator setpoint typed on the web HMI must reach the machine model and move
+# its actual value — extruder screw rpm and zone temps, the SV compactor's pot
+# temperature and power cap, and generic per-screen setpoints — and an active
+# e-stop must decay a running frequency. It existed untracked for five days and
+# nothing ran it; measured 22 ok, 0 fail on the working tree it was written in.
+echo "== test_hmi_universal_interactive =="
+"$GODOT" --headless --path "$PROJ" --script res://src/tests/test_hmi_universal_interactive.gd --quit-after 300 > "$OUT/test_hmi_universal_interactive.log" 2>&1
+grep -aE "^  (ok|FAIL)|^Result" "$OUT/test_hmi_universal_interactive.log" || true
+if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/test_hmi_universal_interactive.log"; then
+	echo "FAIL  : test_hmi_universal_interactive (see $OUT/test_hmi_universal_interactive.log)"
 	[ $code -eq 0 ] && code=1
 fi
 

@@ -35,7 +35,7 @@ const PROTECT : Array[String] = [
 ]
 const BOOT_FRAMES : int = 120
 const OUT_DIR : String = "res://docs/plant/renders/"
-const STAMP : String = "2026_09_06"
+const STAMP : String = "2026_09_16"
 
 var _backups : Dictionary = {}
 var _world : Node3D = null

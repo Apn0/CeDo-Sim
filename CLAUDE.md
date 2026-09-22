@@ -17,7 +17,16 @@ bash tools/regression/run.sh          # the one command that proves things
 ```
 
 Engine: **`C:/Users/arnod/AppData/Local/Godot/Godot_v4.6.3-stable_win64_console.exe`**
-— this is what `tools/regression/run.sh:17` defaults to, override with `GODOT=`.
+— this is what `tools/regression/run.sh:21` defaults to, override with `GODOT=`.
+
+**`run.sh` tests `PROJ`, and `PROJ` defaults to the operator's checkout**
+(`run.sh:22`, `C:/Users/arnod/Documents/CeDo_Simulator`), not to the tree the
+script lives in. From a worktree or clone you must run
+`PROJ=<that tree> bash tools/regression/run.sh`, or you silently re-test the
+main checkout and read its result as yours. A worktree also needs real copies
+of `assets/` and `.godot/` (gitignored) to run the world suites — **copy them,
+never link them**: a linked `assets/` is how the 2026-09-21 cleanup of old
+worktrees emptied the real one (`docs/audit/assets_loss_and_restore_2026-09-21.md`).
 
 `project.godot` declares `config/features=PackedStringArray("4.6")`.
 **Do not use `C:/Users/arnod/AppData/Local/Godot/godot.exe`** — that file is
@@ -97,6 +106,24 @@ count.
 > it "did not recur"; that was one lucky run, not a measurement of the rate. Full
 > evidence: `docs/audit/robustness_and_coverage_2026-09-21.md` §5.2.
 
+> **2026-09-22 — the newest measurement; it supersedes the reds above.** The full
+> harness ran on branch `feat/line1-relayout-hmi-part-fixes-2026-09-22`:
+> `9b7bbd4` plus the reviewed part of that dirty tree, in a clean worktree with
+> the restored `assets/`. Result: `== done (exit 1)`, 104 steps, 55 min, and
+> exactly the **two known reds**:
+> - `test_nav_connectivity`: the crew-post island, 14.67 m short.
+> - `test_npc05_realworld`: expected, the chain does not complete.
+>
+> The other three reds from the dirty tree are all gone:
+> - `test_gate_carve`: 16 ok, because the sign flips were left out.
+> - `test_jam_baseline`: no navmesh collapse in this run (279 polygons).
+> - `test_bale_yard_mass_conservation`: 34 ok. It had been broken on `main` by
+>   #269, which turned `_yard_slots` into `SlotRecord` objects the test still
+>   cast to `Dictionary`.
+>
+> The same night, the dirty tree measured **5** reds. The 3 extra were the
+> WallOpenings flips, the intermittent navmesh collapse, and the #269 test break.
+
 > **2026-09-21 — everything CeDo that is not this repo lives in ONE folder:
 > `D:\cedo_archive`.** Old bisect/merge/verify worktrees and clones were removed
 > after their uncommitted edits, untracked files and (for standalone clones) a
@@ -107,8 +134,21 @@ count.
 > Doc citations to the old paths (`CeDo_Simulator_data`, `ExtruderSim`, …) are
 > provenance, not live paths — look under `D:\cedo_archive`.
 
-**`test_jam_baseline` is `14 ok, 0 fail, 0 skipped` — the first time this suite
-has ever evaluated all fourteen of its checks.** It was 11 ok + 3 silently
+> **2026-09-22 — that "14 ok, 0 skipped" is no longer true. Measured today:
+> `PASS (11 ok, 0 fail, 3 skipped)`, and the suite prints
+> `NOTE: 3 check(s) were NOT evaluated`.** The three route checks are gated on
+> a doorway the vehicle router accepts. The doorway lived in the operator's
+> `user://world_layout.json` as its one `structure_items` entry. The 2026-09-13
+> session cleared that entry to turn `regression verdict` and
+> `test_project_sweep_guards` B1b green (see the table above), which quietly put
+> this suite back on its old vacuous green. `structure_items` is 0 today. The
+> log says it plainly: `NO VEHICLE ROUTE … (no doorways exist in world_layout
+> structure_items)`. Placing a gate re-arms the checks. Which of the two suites
+> should own the door is an operator call. Until then, read this suite's
+> `NOTE:` line, not its PASS.
+
+**`test_jam_baseline` was `14 ok, 0 fail, 0 skipped` (2026-09-03) — the first time this suite
+had ever evaluated all fourteen of its checks.** It was 11 ok + 3 silently
 skipped for as long as the plant had no doorway, then 11 ok + 3 failing once one
 existed. The pilot was never the problem: three test-side defects were, and all
 three were measured with `src/tests/probe_pilot_convergence.gd` before anything
@@ -376,6 +416,7 @@ this one as re-checkable too — `find src -name '*.gd' | wc -l`):
 | `docs/audit/pr_merge_2026-08-29.md` | **Ten bot PRs, all reported "mergeable ✅", two of which merge cleanly into a file that does not parse.** Records the `shell` collision that would have taken the harness down, why GitHub structurally cannot see it, the pre-merge `uniq -d` check, and the LineFlow correlation that looked damning and was measured wrong |
 | `docs/audit/material_trace_2026-08-18.md` | Follow one bale end-to-end: the symbol-flow + material-census tools, mass-minting proven structurally closed, and the spawn-clearance check that was unsatisfiable for 4 weeks |
 | `docs/audit/robustness_and_coverage_2026-09-21.md` | **Crash-safe persistence (`AtomicFile`) and 26 formerly-unrun suites now gated.** Why a save killed mid-write used to load back as an empty factory and get autosaved over; the delete-resurrection bug caught in the first draft; 5 mutation proofs. Plus the bisect that pins the `test_gate_carve` red on two rotation-sign flips in the uncommitted `WallOpenings.gd`, which reds are identical at clean HEAD, and what was measured but not touched |
+| `docs/audit/assets_loss_and_restore_2026-09-21.md` | **`assets/` was wiped and restored.** Godot's `.md5` fingerprints identify originals byte for byte: 159 of 273 are back exact and 101 are cache-only (listed; do not re-import them). Also the `Merlo.fbx` re-import trap, what `winfr` did and did not recover (nothing exact), and the method to reuse |
 | `docs/BACKLOG_ultracode_2026-07-19.md` | Deferred queue — 16 of 40 findings landed; also records the npc-05 vacuous-green correction |
 | `docs/DESIGN_SUGGESTIONS_2026-07-08.md` | Ranked roadmap, P1-P8 physicalization + Q1-Q8 QoL, every item file-cited |
 | `docs/FULL_LOGIC_AUDIT_2026-07-08.md` | Runtime-behaviour audit, 25 findings. **Snapshot, no per-finding status.** Bug 0 / HIGH #1 / #2 / #7 are DONE (#7 fixed 2026-08-23, guarded by `test_project_sweep_guards`); **#12 Walkie→VoiceService is REFUTED — measured, the connect works**; 5 dead files still unverified. Two findings re-measured, one was wrong: re-measure before acting |
@@ -386,11 +427,63 @@ this one as re-checkable too — `find src -name '*.gd' | wc -l`):
 
 ## Traps that have bitten before
 
+- **A macro SEQ is a PLACEMENT list, not a topology — reading it tells you
+  nothing about what the material does.** Which machine feeds which is decided
+  afterwards, partly by the builder's `lf_explicit_outs` tagging and partly by
+  LineFlow's nearest-input-port geometry fallback. Line 1's whole wet section
+  looked right in the SEQ and was wired four different kinds of wrong at once: a
+  chute with three outputs instead of two, both frictiescheiders discharging
+  straight into the mill past their own dryer/blower/cyclone train, two blowers
+  feeding EACH OTHER in a closed loop, and two cyclones with no inlet at all. A
+  side-by-side L/R pair is where this bites hardest, because the fallback picks
+  by distance and the sibling is always the nearest port. **Dump the graph
+  (`src/tests/dump_line1_graph.tscn`) before believing any claim about flow**,
+  and tag real parallel trains with `{"stream": "L"/"R"}` instead of letting
+  geometry guess. A sibling 2-cycle passes every naive check — both nodes have
+  exactly one in-edge and one out-edge — so test for it by name.
+- **Lifting a gravity-fed machine without lifting what feeds it silently
+  disconnects the line.** The feed chain's heights are DERIVED from the target's
+  local port helpers, which know nothing about the `y` a macro entry applies. Put
+  the lift in one constant every dependent number reads
+  (`PlaceableCatalog.VW_TROMMEL_LIFT_M`), and remember a derived `gap` moves too:
+  at 45° a belt's horizontal run grows by exactly the lift, at any other angle it
+  does not.
+- **A turn-pattern test that asserts `signf(turn_deg)` cannot tell a 90° corner
+  from a 180° U-turn.** Line 1's fold test passed unchanged while the flotation
+  tank sat 90° out from where the operator's drawing puts it. Assert the angles.
+- **`AnimatableBody3D.sync_to_physics` defaults to TRUE, and that strands any
+  sub-assembly a macro moves later.** With it on, Godot drives the body FROM the
+  physics server every tick (`global_transform = state.transform`), and the
+  server only learns a new transform when the body's OWN transform is written —
+  moving an ANCESTOR never notifies it. Machines are built at the catalog's local
+  origin and moved into place afterwards by the line macro, so these bodies stay
+  pinned to the global transform they held at build time, which was their
+  intended LOCAL offset. Measured 2026-09-16: 47 visible parts on line 1 (plus 14
+  on line 3A) were floating in a cluster at the world origin — `shredder_1`'s
+  inspection hatch sat at global `(1.76, 3.19, 0.00)` while the shredder stood at
+  `(-156.76, 0, 38.98)`. It survived 30 physics frames, so it is not a sync-timing
+  artefact, and turning the flag off afterwards does NOT recover the overwritten
+  local — it has to be cleared at construction. All three sites now do
+  (`PlaceableCatalog._interactive_hatch`, `PushGate._build_hinge_pivot`,
+  `Door._build_hinge_pivot`); the flag is only wanted for engine-animated
+  platforms that must shove rigid bodies, never for a tween-driven door.
+  Guarded by `test_macro_part_placement`. Nothing caught it for months because
+  the geometry suites check where MACHINES land, not where a machine's own parts
+  land relative to it.
 - **`assets/` is gitignored** (`.gitignore:2`). 2.9 GB, `git ls-files assets` → 0.
   Every WAV, model and `.import` setting is local-only and does **not** survive a
   fresh clone. On a clean clone `PlantAudio` fails at its first check
   (`PlantAudio.gd:50`, missing `assets/audio/audio_layout.json`) — it does not
   merely lose the crossfade.
+  **2026-09-21 it was wiped (deleting an old test copy followed a link) and
+  restored.** Of the 273 imported sources in it, 159 came back byte-exact and 101
+  are **cache-only**: the game runs, the editor has nothing to re-import them
+  from. Do not re-import them or change their import settings, and do not
+  force-reimport `Merlo.fbx` (measured: 0 texture links instead of 21). To check
+  any restored file, compare its MD5 with `source_md5` in
+  `.godot/imported/<name>-<md5 of res path>.md5`. The list and method are in
+  `docs/audit/assets_loss_and_restore_2026-09-21.md`. `.godot/imported/` is what
+  made the restore possible: never delete it while assets are missing.
 - **`user://world_layout.json` is the world's ground truth and is in git nowhere.**
   `WorldLayout.gd`'s `LAYOUT_PATH` has no `res://` fallback. Losing your
   `app_userdata` loses the world.

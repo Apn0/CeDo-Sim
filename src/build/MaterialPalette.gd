@@ -237,6 +237,24 @@ static func mat_grating_steel() -> StandardMaterial3D:
 static func mat_concrete_wet_mirror() -> StandardMaterial3D:
 	return _lazy("concrete_wet_mirror", Color(0.22, 0.24, 0.28), 0.10, 0.10)
 
+## Solid steel trommel drum shell (solid wall, no holes/mesh, two-sided dark wet industrial steel).
+static func mat_trommel_solid() -> StandardMaterial3D:
+	return _lazy("trommel_solid_v2", Color(0.27, 0.28, 0.30), 0.55, 0.35,
+		Color(0, 0, 0, 0), 0.0, true)
+
+## Internal spiral corkscrew helical flighting inside the trommel (two-sided dark wet steel).
+static func mat_trommel_corkscrew() -> StandardMaterial3D:
+	return _lazy("trommel_corkscrew_v2", Color(0.23, 0.24, 0.26), 0.60, 0.30,
+		Color(0, 0, 0, 0), 0.0, true)
+
+## Legacy alias pointing to solid shell
+static func mat_trommel_screen() -> StandardMaterial3D:
+	return mat_trommel_solid()
+
+## Turbid wash bath slurry (water + suspended dirt/film) pooled inside the trommel.
+static func mat_slurry_wash() -> StandardMaterial3D:
+	return _lazy("slurry_wash", Color(0.24, 0.22, 0.18), 0.15, 0.20)
+
 
 # ── LIGHTS (emissive — used for fixtures, NOT for actual illumination) ──────
 ## Cool-white fluorescent strip light fixture (the bright bar shape itself).

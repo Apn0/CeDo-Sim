@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/tests/test_line1_overband_mount.gd" id="1"]
+
+[node name="TestLine1OverbandMount" type="Node"]
+script = ExtResource("1")

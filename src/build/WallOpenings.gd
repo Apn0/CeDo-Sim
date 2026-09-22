@@ -353,9 +353,30 @@ func _fix_winding_outward(verts: PackedVector3Array) -> PackedVector3Array:
 func _regen_collision(boxes: Array) -> void:
 	# Drop old collision, then build a fresh concave shape from the CLEAN thin
 	# triangles (carved), so collision is smooth — no rim lips from the thick mesh.
+	#
+	# IMPORTANT: use free() (immediate) NOT queue_free() (deferred). If we use
+	# queue_free(), the old uncarved body stays alive until end-of-frame, and
+	# Rapier3D only removes it from its broadphase on the NEXT physics tick —
+	# so for one full process+physics cycle both the old solid wall AND the new
+	# carved body exist. Any VehicleRouteGrid built in that window still sees
+	# the old wall as solid, defeating the whole purpose of the carve.
+	# free() is safe here because we are in a process callback (not a physics
+	# callback), so Rapier3D is not mid-step and the body can be removed now.
 	for ch in _shell.get_children():
 		if ch is StaticBody3D:
-			ch.queue_free()
+			ch.free()
+	# Also clean any sibling bodies previously tagged by us (from an earlier
+	# rebuild that placed the body under the shell's parent rather than the shell
+	# itself, or collision bodies auto-created by Godot's mesh importer).
+	if _shell.get_parent() != null:
+		for sib in _shell.get_parent().get_children():
+			if sib == _shell:
+				continue
+			if not (sib is StaticBody3D):
+				continue
+			var n := (sib as Node).name
+			if sib.get_meta("_wall_openings_shell", false) or String(n).ends_with("_col"):
+				sib.free()
 	var faces := PackedVector3Array()
 	for surf in _orig_surfaces:
 		var sv: PackedVector3Array = surf["v"]
@@ -369,6 +390,7 @@ func _regen_collision(boxes: Array) -> void:
 	if faces.is_empty():
 		return
 	var body := StaticBody3D.new()
+	body.set_meta("_wall_openings_shell", true)  # mark so future rebuilds find it
 	var cs := CollisionShape3D.new()
 	var shape := ConcavePolygonShape3D.new()
 	shape.set_faces(faces)

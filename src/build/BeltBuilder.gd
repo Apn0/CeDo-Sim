@@ -531,13 +531,23 @@ static func build_rails(deck_parent: Node3D, size: Vector3, deck_y: float, spec:
 	var rail_t : float = float(spec.get("side_rail_thickness_m", 0.06))
 	var rail_h : float = size.y * float(spec.get("side_rail_height_frac", 0.18))
 	# Rail Y — same logic as rollers: DeckPivot is already at deck_y so rails
-	# sit at +0.28 * size.y relative; the sliding 'Deck' root + flat `p` both
-	# sit at world origin so rails sit at deck_y + 0.28 * size.y absolute.
+	# sit at `side_rail_y_frac` * size.y relative; the sliding 'Deck' root and a
+	# flat `p` both sit at world origin so rails sit at deck_y + that absolute.
+	#
+	# This was the bare literal 0.28 until 2026-09-17. Paired with the default
+	# 0.18 height it puts a rail's TOP 0.333 * size.y above the deck and its
+	# BOTTOM floating 0.171 * size.y clear of it — fine for a deep trough belt,
+	# impossible for line 1's uitvoerband, which has to pass under an overband
+	# magnet at a 0.25 m working clearance: the rails alone stood 0.333 m proud
+	# of the deck, taller than the clearance itself. Promoted to a spec key so
+	# that ONE belt can carry a skirt-board profile without moving every belt
+	# built from the defaults.
+	var rail_frac : float = float(spec.get("side_rail_y_frac", 0.28))
 	var rail_y : float
 	if deck_parent.name == "DeckPivot":
-		rail_y = size.y * 0.28
+		rail_y = size.y * rail_frac
 	else:
-		rail_y = deck_y + size.y * 0.28
+		rail_y = deck_y + size.y * rail_frac
 	# Rail X-offset — outside the deck width.
 	var rail_x : float = size.x * 0.44
 	if deck_parent.name == "Deck":
