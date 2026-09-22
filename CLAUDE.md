@@ -427,6 +427,19 @@ this one as re-checkable too — `find src -name '*.gd' | wc -l`):
 
 ## Traps that have bitten before
 
+- **A stop that is written AFTER the conveying split is not a stop.** LineFlow's
+  tick is `_tick_plc_power_downstream` (PLC writes `powered`, runs the spin and
+  mechanism ramp) → `_tick_feed` → `_tick_process_machines` (conveys on `spin`)
+  → `_tick_advanced_systems` (MotorOverload trips here). Measured 2026-09-23
+  with `test_motor_trip_stops_conveying`: a tripped shredder-2 kept conveying
+  at its full 0.61 kg/s and its rotors stayed at 45 rpm, because the trip only
+  dropped `powered` after the split and the PLC re-wrote `true` at the top of
+  the next tick; the bunker/shredder-2 interlock moved 31 kg in 3.1 s the same
+  way. Every end-of-tick reader (HMI amps, the interlock test's one-tick check)
+  saw a perfect trip. Latched trips are now applied inside the PLC step
+  (`_apply_trip_latches`). When you add any "stop this machine" rule, put it
+  where `powered` is WRITTEN, not where it is read, and prove it with
+  `_moved_kg` over several ticks, never with `powered` after one.
 - **A macro SEQ is a PLACEMENT list, not a topology — reading it tells you
   nothing about what the material does.** Which machine feeds which is decided
   afterwards, partly by the builder's `lf_explicit_outs` tagging and partly by

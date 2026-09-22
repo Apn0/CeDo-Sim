@@ -1355,6 +1355,27 @@ func _tick_bunker_shredder2_interlock() -> void:
 	for i in _node_indices_by_macro(_SORT_MACRO_ID, _SORT_BUNKER_OUT_IDX):
 		_nodes[i]["powered"] = false
 
+## True when this node's own MotorOverload relay is latched. A latched trip is a
+## dropped-out contactor: no PLC run command or HAND switch re-energises the
+## drive until a human calls mol.reset().
+static func _is_trip_latched(nd: Dictionary) -> bool:
+	var mol = nd.get("mol")
+	return mol != null and bool(mol.call("is_tripped"))
+
+## Drop `powered` on every trip-latched node and on the nodes the
+## bunker/shredder-2 interlock holds — called from _tick_plc_power_downstream
+## right after the PLC / HAND-mode writes and BEFORE the spin ramp, the
+## mechanism set_running() cascade and the conveying split read `powered`.
+## Without this the trip only ever surfaced after conveying had already run
+## (see the call site for the 2026-09-23 measurement). The interlock is also
+## evaluated after _tick_advanced_systems so a trip that fires mid-tick shows
+## on `powered` in the same tick; conveying and the rotors stop from the next.
+func _apply_trip_latches() -> void:
+	for nd in _nodes:
+		if _is_trip_latched(nd):
+			nd["powered"] = false
+	_tick_bunker_shredder2_interlock()
+
 ## When only one VSS is full the switch belt's buffer-aware split (#137)
 ## already biases against it, so there's no need to flip C8 in that case.
 ## #211d — extended to ALSO trip pack-up when an upstream ShredderFeedBelt
@@ -2365,6 +2386,18 @@ func _tick_plc_power_downstream(delta: float) -> void:
 	for nd_h in _nodes:
 		if bool(nd_h.get("hand_mode", false)):
 			nd_h["powered"] = bool(nd_h.get("manual_on", false))
+	# LATCHED TRIPS OVERRIDE THE RUN COMMAND — applied HERE, before the spin ramp
+	# and the mechanism set_running() below read `powered`, and before
+	# _tick_process_machines conveys on it. Measured 2026-09-23
+	# (test_motor_trip_stops_conveying, pre-fix): the only place a MotorOverload
+	# trip dropped `powered` was _tick_advanced_systems, which runs AFTER the
+	# conveying split — so every tick the PLC re-wrote powered=true up here, the
+	# rotor stayed at full spin, and a "tripped" shredder-2 kept moving 0.061 kg
+	# per tick (its full 0.61 kg/s design rate) with 0 A on the readout. The
+	# bunker/shredder-2 interlock lost its effect the same way (31 kg conveyed in
+	# 3.1 s "stopped"). A tripped relay is a dropped-out contactor: HAND mode
+	# bypasses the PLC, not the motor protection, so this runs after both.
+	_apply_trip_latches()
 	# #9 — overflow/e-stop override: trip on an overloaded buffer, then force the
 	# fault + upstream OFF (downstream keeps its PLC power and drains).
 	_estop_step()
@@ -2392,7 +2425,7 @@ func _tick_plc_power_downstream(delta: float) -> void:
 		if n_obj != null and is_instance_valid(n_obj) and n_obj.has_method("set_running"):
 			if bool(nd_s["powered"]):
 				n_obj.call("set_running", true)
-			elif _estop_active or (_plc != null and _plc.has_method("is_stopping") and bool(_plc.call("is_stopping"))):
+			elif _estop_active or _is_trip_latched(nd_s) 					or (_plc != null and _plc.has_method("is_stopping") and bool(_plc.call("is_stopping"))):
 				n_obj.call("set_running", false)
 		# Live current (#173): a stage draws its full HMI amps at full material
 		# load, sags to the motor idle current when starved, and 0 when stopped.
@@ -2827,7 +2860,13 @@ func _tick_advanced_systems(delta: float) -> void:
 			nd["amps"] = float(cc.get("motor_amps"))
 		# 3) MOTOR-OVERLOAD — mirror the node's own buffer level as the pile,
 		#    advance the trip clock. A sustained overload trips the relay; we then drop
-		#    this node's `powered` so it stops CONVEYING (material backs up — conserving).
+		#    this node's `powered` for the rest of THIS tick (telemetry, interlock
+		#    readers). The stop that actually matters — no spin, mechanisms at 0 rpm,
+		#    no conveying (material backs up — conserving) — is applied at the top of
+		#    the NEXT tick by _apply_trip_latches() inside _tick_plc_power_downstream,
+		#    because this loop runs after the conveying split. Measured 2026-09-23:
+		#    without that, the drop here was overwritten by the PLC every tick and a
+		#    tripped drive kept conveying at full rate.
 		#    The model raises its own EventBus alarm on the trip edge.
 		#
 		#    2026-08-29 fix: this used to call add_load(_backlog_kg) every tick —
