@@ -23,6 +23,7 @@ var _pause_overlay: Control   # full-screen dim + card; hidden by default
 var _end_of_shift_overlay: Control # end of shift full-screen dim + card
 var _settings_menu: CanvasLayer   # lazy-instantiated settings overlay
 var _map_overlay  : MapOverlay    # top-down site map, toggled with M
+var _keybind_sheet : KeybindSheet  # Q4 — every action + its live key, toggled with F1
 
 # Walkie-talkie status (bottom-left): battery %, route (headset/speaker), volume.
 var _walkie_panel  : PanelContainer
@@ -105,6 +106,7 @@ func _ready() -> void:
 	_build_crew_panel()
 	_build_line_panel()
 	_build_map_overlay()
+	_build_keybind_sheet()
 	_build_walkie_panel()
 	_build_walkie_menu()
 	_build_pause_menu()
@@ -461,6 +463,14 @@ func _build_map_overlay() -> void:
 	_map_overlay.name = "MapOverlay"
 	add_child(_map_overlay)
 
+## Q4 — the F1 key sheet. Content comes from SettingsManager's action tables +
+## the live InputMap (KeybindSheet.build_rows), so it can never disagree with
+## the Controls tab or with what the keys actually do.
+func _build_keybind_sheet() -> void:
+	_keybind_sheet = KeybindSheet.new()
+	_keybind_sheet.name = "KeybindSheet"
+	add_child(_keybind_sheet)
+
 # =============================================================================
 # WALKIE-TALKIE PANEL (bottom-left) — battery / route / volume + incoming calls
 # =============================================================================
@@ -707,6 +717,7 @@ func _ensure_map_action() -> void:
 	# action name -> the physical keycode it should be bound to.
 	var fallbacks := {
 		"map_toggle":      KEY_M,
+		"help_overlay":    KEY_F1,   # Q4 — key sheet (F1 was unbound everywhere; H is the handbrake)
 		"crouch_toggle":   KEY_CTRL,
 		"prone_toggle":    KEY_Z,
 		"walkie_headset":  KEY_J,
@@ -854,6 +865,15 @@ func _build_pause_menu() -> void:
 	save_btn.custom_minimum_size = Vector2(164.0, 36.0)
 	save_btn.pressed.connect(_on_save_pressed)
 	vbox.add_child(save_btn)
+
+	# Q2 — a stamped checkpoint (copy of the live slot) the operator can reload
+	# from the main menu after a risky action, without quitting. Save and the
+	# autosave overwrite the one slot; this keeps a known-good point.
+	var cp_btn := Button.new()
+	cp_btn.text = "Checkpoint"
+	cp_btn.custom_minimum_size = Vector2(164.0, 36.0)
+	cp_btn.pressed.connect(_on_checkpoint_pressed)
+	vbox.add_child(cp_btn)
 
 	var quit_btn := Button.new()
 	quit_btn.text = "Save & Quit"
@@ -1154,6 +1174,8 @@ func _input(event: InputEvent) -> void:
 		return
 	if _handle_crew_start_line_input(event):
 		return
+	if _handle_keybind_sheet_input(event):
+		return
 	if _handle_map_input(event):
 		return
 	if _handle_pause_menu_input(event):
@@ -1251,6 +1273,19 @@ func _handle_crew_start_line_input(event: InputEvent) -> bool:
 			cm.start_line_1_with_crew()
 			get_viewport().set_input_as_handled()
 			return true
+	return false
+
+func _handle_keybind_sheet_input(event: InputEvent) -> bool:
+	# ── Key sheet (F1 to toggle, ESC or F1 to close) — Q4 ────────────────────
+	if event.is_action_pressed("help_overlay"):
+		if _keybind_sheet:
+			_keybind_sheet.toggle()
+		get_viewport().set_input_as_handled()
+		return true
+	if _keybind_sheet and _keybind_sheet.is_open() and event.is_action_pressed("ui_cancel"):
+		_keybind_sheet.close()
+		get_viewport().set_input_as_handled()
+		return true
 	return false
 
 func _handle_map_input(event: InputEvent) -> bool:
@@ -1386,6 +1421,18 @@ func _on_save_pressed() -> void:
 	# SaveCoordinator emits autosave_completed, which pops the "✓ Saved" toast.
 	if main_world:
 		main_world.save_game()
+
+func _on_checkpoint_pressed() -> void:
+	# Stay paused. SaveCoordinator saves the live slot first (→ the usual
+	# "✓ Opgeslagen" toast) and then copies it under a stamped name; the banner
+	# names that copy so the operator knows what to pick in the main menu.
+	if main_world == null or not main_world.has_method("save_checkpoint"):
+		return
+	var stem : String = String(main_world.call("save_checkpoint"))
+	if stem == "":
+		_on_scanner_banner("Checkpoint NOT written — the live save is untouched", true)
+	else:
+		_on_scanner_banner("✓ Checkpoint: %s" % stem, false)
 
 func _on_save_quit_pressed() -> void:
 	if main_world:

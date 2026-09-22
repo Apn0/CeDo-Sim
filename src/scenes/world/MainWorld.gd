@@ -1435,6 +1435,13 @@ func save_and_quit() -> void:
 	else:
 		get_tree().change_scene_to_file("res://src/scenes/menus/main_menu/MainMenu.tscn")
 
+## Q2 — stamped copy of the live slot; returns its stem ("" = nothing written).
+func save_checkpoint() -> String:
+	var sc := find_child("SaveCoordinator", false, false)
+	if sc and sc.has_method("save_checkpoint"):
+		return String(sc.call("save_checkpoint"))
+	return ""
+
 
 # ── NPC Egress from Commuter Cars ─────────────────────────────────────────────
 func spawn_npc_at_car(npc_id: String, car: Node3D) -> void:

@@ -168,6 +168,44 @@ a maxed chute pile. The honest model there is that the machine backs up
 (cannot discharge) until the pile is shovelled, which changes the throughput
 every conformance suite measures — not a change to make unattended.
 
+## 3. Q2 checkpoint save and Q4 F1 key sheet (done)
+
+**Q2 — checkpoint.** `SaveCoordinator.save_checkpoint()`: save the live slot,
+then copy `<stem>_save.json` and the `<stem>_factory.json` sidecar to
+`<stem>_cp_<YYYYMMDD-HHMMSS>_*` through `AtomicFile`. The main menu's scan
+lists every `*_save.json`, so a checkpoint is a normal loadable save with its
+own `saved_at`. Same-second stamps get `-2`, `-3` …; any failure returns `""`
+and writes nothing. Pause card gets a **Checkpoint** button between Save and
+Save & Quit; the HUD banner names the copy. `test_save_checkpoint`: 22 checks
+on the REAL `GameState` + `SaveCoordinator` with no world (both are null-safe),
+`__cptest__` files only, deleted at the end and proven gone.
+
+**Q4 — key sheet.** `KeybindSheet` (new, under HUD), F1 via the new
+`help_overlay` action (project.godot + `_ensure_aux_actions` + HUD's
+fallback map, like `map_toggle`). H, the design doc's pick, is taken (vehicle
+handbrake, marker-tool clear); F1 was unbound everywhere. `build_rows()` is
+static and is exactly what is rendered: 69 actions in 10 groups, live
+InputMap bindings, rebuilt on open. `test_keybind_sheet`: 24 checks.
+
+**Found by the sheet suite, fixed:** six Controls-tab actions (`sprint`,
+`fast_run`, `feedback_capture`, `opening_capture`, `debug_fill_silo`,
+`debug_force_fault`) were registered only by `PlayerController._ready()`, so
+before a player existed — the main menu's Settings → Controls — the tab showed
+"—" for keys that work. They are now registered at autoload time in
+`SettingsManager._ensure_aux_actions` with the same physical keycodes
+(`fast_run`'s Alt stays debug-build-only). The suite now asserts every tab
+action is bound at boot; `test_f10_reserved` still passes (F10 stays
+`feedback_capture`'s alone).
+
+| suite | result |
+|---|---|
+| `test_save_checkpoint` (new) | PASS (22 ok, 0 fail) |
+| `test_keybind_sheet` (new) | first run 22 ok / 1 fail (the six-actions finding); PASS (24 ok, 0 fail) after the registration fix |
+| `test_f10_reserved` | PASS |
+| `test_scada_dashboard_scene` | 29 ok, 0 fail |
+| `test_map_overlay_init` (full MainWorld boot, HUD with the new sheet) | PASS |
+| parse sweep | 416 ok, 0 fail |
+
 ## Things for the operator to look at in-game (not guessed)
 
 - **P2 smoke / heat-shimmer on a packed-up drive:** does the real one smoke? If
@@ -182,6 +220,13 @@ every conformance suite measures — not a change to make unattended.
 - **P6 and the forklift:** lift a cart out of a mound with the forklift — the
   mound is soft (no collider) so the cart comes free, but the visual of the
   cone left behind at the spot has not been looked at.
+- **Q2 Checkpoint button:** open the pause card (P) and press Checkpoint —
+  the banner should name `<slot>_cp_<stamp>`, and the main menu should list
+  it. The button's placement on the card (4th of 5) is unseen.
+- **Q4 F1 sheet:** press F1 on foot and in a cab. The panel is 760 × 560 px
+  clamped to 90 % × 75 % of the window; whether the 69 rows read well at the
+  real window size, and whether the sheet should pause the shift (it does
+  not, like the map), are judgement calls.
 - **Watch a real trip once:** stand at shredder-2 (or any friction separator),
   overload it, and confirm the rotor visibly coasts to a stop over ~2.5 s. The
   ramp is measured headless (`commanded_rpm` 45 → 0, `spin` 1 → 0); the frame
