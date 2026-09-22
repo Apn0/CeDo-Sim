@@ -148,11 +148,20 @@ Rebuild those 21 PNGs before letting Merlo re-import.
 | Undelete output | `D:\Recovery_20260921_233450` |
 | Sandbox (holds the Merlo re-import test) | `D:\cedo_archive\sandbox_restore` |
 
+## Backup added, 2026-09-22
+
+`assets/` is now in the operator's Google Drive documents backup
+(`V:\_Claude\config-backup\documents-paths.txt`, entry `cedo-assets`), landing at
+`Documents-Backup/cedo-assets/assets/`. It wasn't before tonight — that's why this whole
+document exists. Uploaded and verified: 422 files, 1.88 GiB, `rclone` exit 0, remote file
+count matches. Next time this happens, restore from there before doing anything else;
+this doc's method is the fallback for whatever's missing after that.
+
 ## Lessons
 
 - Before deleting any copy of a project, list its reparse points and remove each link on
   its own first. Record file counts of the gitignored folders beforehand, and compare
   them afterwards.
-- `assets/` needs a backup. It was on no backup list.
+- `assets/` needs a backup. It was on no backup list. **Fixed 2026-09-22** — see above.
 - Keep `.godot/imported/` intact when assets go missing. Do not open the editor until the
   sources are back.
