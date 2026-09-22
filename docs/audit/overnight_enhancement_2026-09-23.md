@@ -245,6 +245,29 @@ them on this machine, headless:
 The other 65 sites are one-shot (`_ready`, `setup`, `_bind_nodes`) or
 event-driven and were left alone.
 
+## 5. phys-05 interim — the Lumpenwagen can no longer be flung (done)
+
+BACKLOG phys-05: frozen-kinematic vehicles have infinite mass, so a cart
+caught between a forklift and a wall left at whatever velocity the solver
+needed to resolve the overlap. The backlog's own interim suggestion was a
+speed clamp in `LumpCart.gd`; the file already had `MAX_SPEED := 3.5` with no
+reader. Now `_integrate_forces` caps linear velocity at 6 m/s (above a hand
+push at ~1.8 m/s and a forklift shove at ~4 m/s) and angular velocity at
+6 rad/s.
+
+Measured (`test_lump_cart_speed_clamp`, real catalog cart on a floor):
+
+| impulse | integrator disabled (mutation run) | with the clamp |
+|---|---|---|
+| 50 m/s central impulse, read next tick | 48.09 m/s | 5.76 m/s |
+| 500 N·m·s twist | 53.33 rad/s | 5.58 rad/s |
+| 1.2 m/s walking shove | 1.04 m/s | 1.04 m/s (untouched) |
+
+`Result: PASS (6 ok, 0 fail)`; the mutation run reads `FAIL (4 ok, 2 fail)`
+on exactly the two clamp checks. Wired into `run.sh`. This bounds the symptom
+for the cart only — bales and containers can still be ejected, and the
+AnimatableBody chassis re-architecture remains the real phys-05 fix.
+
 ## Things for the operator to look at in-game (not guessed)
 
 - **P2 smoke / heat-shimmer on a packed-up drive:** does the real one smoke? If

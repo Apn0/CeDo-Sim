@@ -15,7 +15,20 @@ const HOLD_DIST    : float = 0.95                 # cart sits this far in front 
 const STIFF        : float = 14.0                 # how hard the cart chases the target
 const YAW_STIFF    : float = 6.0
 const RELEASE_DIST : float = 2.6
-const MAX_SPEED    : float = 3.5
+# phys-05 interim (2026-09-23): the hard ceiling on how fast this cart can ever
+# travel, enforced in _integrate_forces. The vehicles are frozen-kinematic
+# bodies with infinite mass (BACKLOG phys-05), so a cart caught between a
+# forklift and a wall used to be squeezed out at whatever velocity the solver
+# needed to resolve the overlap — tens of m/s across the hall. A hand-pushed
+# cart tops out at ~1.8 m/s (see _max_speed_for_load) and a forklift shoving
+# one at ~4 m/s; 6 m/s keeps every legitimate push untouched and turns an
+# ejection into a shove. Measured with the clamp disabled: a 50 m/s impulse
+# left the cart at 48.09 m/s; with it, 5.76 m/s (test_lump_cart_speed_clamp).
+# Angular velocity is capped the same way (a cart does not spin like a top:
+# 53.33 → 5.58 rad/s). The real fix — an AnimatableBody chassis — is still
+# phys-05.
+const MAX_SPEED    : float = 6.0
+const MAX_SPIN_RAD : float = 6.0     # ~1 rev/s
 
 var _grabbed_by : Node3D = null
 
@@ -347,6 +360,18 @@ func _exit_rolling() -> void:
 ## derates from a brisk push (empty) to a heavy trudge (full).
 func _max_speed_for_load() -> float:
 	return lerpf(1.8, 1.1, clampf(lumps_kg / CAPACITY_KG, 0.0, 1.0))
+
+## phys-05 interim — see MAX_SPEED. Runs after the solver has integrated the
+## step, so a squeeze-eject impulse is clamped before it moves the cart.
+func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
+	var v := state.linear_velocity
+	var sp := v.length()
+	if sp > MAX_SPEED:
+		state.linear_velocity = v * (MAX_SPEED / sp)
+	var w := state.angular_velocity
+	var ws := w.length()
+	if ws > MAX_SPIN_RAD:
+		state.angular_velocity = w * (MAX_SPIN_RAD / ws)
 
 func _physics_process(delta: float) -> void:
 	# P6 — the heap cools visibly: refresh its tint once a second while loaded.

@@ -16,7 +16,16 @@ is the queue for the next rounds, with the reason each item waited.
   harness iteration. phys-03 (CoM pin, DONE this session) was its precondition.
 - **phys-05 Frozen-kinematic vehicles** bulldoze props with infinite mass
   (squeeze-eject risk). Real fix = AnimatableBody chassis re-architecture, high blast
-  radius across every vehicle. Interim MAX_SPEED clamp possible in LumpCart.gd.
+  radius across every vehicle. ~~Interim MAX_SPEED clamp possible in LumpCart.gd.~~
+  **Interim clamp LANDED 2026-09-23:** `LumpCart._integrate_forces` caps linear
+  velocity at `MAX_SPEED` (6 m/s — above any legitimate push: hand ~1.8 m/s,
+  forklift shove ~4 m/s) and angular velocity at `MAX_SPIN_RAD` (6 rad/s). The
+  old `MAX_SPEED := 3.5` constant had no reader at all. Measured with the
+  integrator disabled: a 50 m/s impulse left the cart at 48.09 m/s and a twist
+  at 53.33 rad/s; with the clamp 5.76 m/s / 5.58 rad/s, and a 1.2 m/s walking
+  shove is untouched. Guard `test_lump_cart_speed_clamp` (6 checks), in `run.sh`.
+  This bounds the SYMPTOM for the cart only; the chassis re-architecture is
+  still the fix, and other props (bales, containers) can still be ejected.
 - **tex-05 `_pmat(role)` pipeline**: migrate `_mat()` builders machine-by-machine
   riding the photo_audit loop, one operator render approval per machine.
 
