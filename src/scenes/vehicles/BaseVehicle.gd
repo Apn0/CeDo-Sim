@@ -1295,6 +1295,12 @@ func platform_node() -> Node3D:
 func enter_refusal_reason() -> String:
 	return ""
 
+## Short human reason the E-to-exit press was refused. Default covers the only
+## gate can_exit() checks today (forward speed); subclasses with other exit
+## gates (e.g. a raised platform) can override.
+func exit_refusal_reason() -> String:
+	return "Stop moving first"
+
 ## Public speed accessor — m/s. HUD reads this for the km/h readout.
 func get_speed_mps() -> float:
 	return absf(_current_speed_mps)

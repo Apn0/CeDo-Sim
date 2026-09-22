@@ -136,7 +136,7 @@ const ACTION_GROUPS := [
 	{
 		"label":   "Hand tools (on foot)",
 		"actions": ["tool_use", "tool_place_mode", "hose_advance_back",
-					"hotbar_1", "hotbar_2", "hotbar_3", "hotbar_4", "hotbar_drop"],
+					"hotbar_1", "hotbar_2", "hotbar_3", "hotbar_4", "hotbar_5", "hotbar_drop"],
 	},
 	{
 		"label":   "Walkie-talkie (extra)",
@@ -189,7 +189,7 @@ const ACTION_LABELS := {
 	"flashlight":               "Toggle flashlight (F)",
 	"ui_cancel":                "Pause / cancel",
 	"menu_toggle":              "Open / close pause menu (P) — Resume · Settings · Save & Quit",
-	"camera_toggle":            "Cycle camera mode (F4-tap)\n  F4 + ←/→/↑/↓ pan orbit · F4 + scroll wheel zoom",
+	"camera_toggle":            "Cycle camera mode (F4-tap) · double-tap F4 to reset\n  F4 + ←/→/↑/↓ pan orbit · F4 + scroll wheel zoom",
 	"map_toggle":               "Open / close the site map (M)",
 	"crew_panel":               "Open crew assignment panel — assign workers → posts (Numpad .)",
 	"crew_start_line":          "Lijn 1 opstarten met ploeg (Insert)",
@@ -205,6 +205,7 @@ const ACTION_LABELS := {
 	"hotbar_2":                 "Hand: slot 2 (2)",
 	"hotbar_3":                 "Hand: slot 3 (3)",
 	"hotbar_4":                 "Hand: slot 4 (4)",
+	"hotbar_5":                 "Hand: slot 5 (5)",
 	"hotbar_drop":              "Drop held tool (Q)",
 	"hose_advance_back":        "Hose: unanchor last ground point / return tip to reel (F)",
 	"walkie_ptt":               "Walkie: open message menu (U)",

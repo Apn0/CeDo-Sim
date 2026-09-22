@@ -59,9 +59,21 @@ func _unhandled_input(event: InputEvent) -> void:
 		# Boarding on foot is owned by PlayerController's crosshair ray; standing
 		# inside a VehicleEnterArea only marks that vehicle as reachable.
 		return
-	elif current_mode != "on_foot" and current_vehicle != null \
-			and current_vehicle.has_method("can_exit") and current_vehicle.can_exit():
-		_exit_vehicle()
+	elif current_mode != "on_foot" and current_vehicle != null and current_vehicle.has_method("can_exit"):
+		if current_vehicle.can_exit():
+			_exit_vehicle()
+		else:
+			var reason := "Stop moving first"
+			if current_vehicle.has_method("exit_refusal_reason"):
+				reason = String(current_vehicle.call("exit_refusal_reason"))
+			var vehicle := current_vehicle
+			EventBus.interaction_prompt_show.emit(vehicle, reason, false)
+			# One-shot refusal toast — nothing else hides it while driving (unlike
+			# the on-foot crosshair loop, which re-shows/hides every frame), so
+			# clear it ourselves. HUD only clears if `vehicle` is still the active
+			# prompt source, so this is a no-op if a newer prompt replaced it.
+			get_tree().create_timer(1.5).timeout.connect(
+				func(): EventBus.interaction_prompt_hide.emit(vehicle))
 
 func enter_interactable_vehicle(vehicle: Node3D) -> void:
 	if current_mode != "on_foot" or vehicle == null or vehicle != interactable_vehicle:
@@ -70,7 +82,7 @@ func enter_interactable_vehicle(vehicle: Node3D) -> void:
 		var reason := ""
 		if vehicle.has_method("enter_refusal_reason"):
 			reason = String(vehicle.call("enter_refusal_reason"))
-		EventBus.interaction_prompt_show.emit(vehicle, reason if reason != "" else "Cannot enter right now")
+		EventBus.interaction_prompt_show.emit(vehicle, reason if reason != "" else "Cannot enter right now", false)
 		return
 	_enter_vehicle(vehicle)
 

@@ -899,9 +899,9 @@ func _build_interaction_prompt() -> void:
 	_prompt_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_prompt_panel.add_child(_prompt_label)
 
-func _on_prompt_show(source: Node, prompt: String) -> void:
+func _on_prompt_show(source: Node, prompt: String, show_key_hint: bool = true) -> void:
 	_prompt_source = source
-	_prompt_label.text = "[E]  %s" % prompt
+	_prompt_label.text = ("[E]  %s" % prompt) if show_key_hint else prompt
 	# Settings → Gameplay → "Show interaction prompts": if off, swallow the show.
 	var allow := true
 	if has_node("/root/SettingsManager"):

@@ -74,17 +74,35 @@ is the queue for the next rounds, with the reason each item waited.
   current status.
 
 ## Deferred — cheap follow-ups (bundle into next QoL round)
-- **qol-06** E-to-exit a moving vehicle is silently ignored — add "stop first" prompt
-  (touches OperatorContext.gd; bundle with qol-08).
-- **qol-07** Hotbar slot 5 missing from Controls tab / not rebindable.
-- **qol-08** Hardcoded "[E]" prefix on every prompt including refusal messages
-  (4 files, 3 lanes — do as its own pass).
+- ~~**qol-06** E-to-exit a moving vehicle is silently ignored~~ — **FIXED
+  2026-09-22**: `OperatorContext._unhandled_input` now shows
+  `BaseVehicle.exit_refusal_reason()` ("Stop moving first" by default) as a
+  one-shot toast, auto-hidden after 1.5 s. Re-verified still-open by a fresh
+  read on 2026-09-22 before fixing (the 2026-07-19 entry was accurate).
+- ~~**qol-07** Hotbar slot 5 missing from Controls tab / not rebindable~~ —
+  **FIXED 2026-09-22**: added to `SettingsManager.ACTION_GROUPS` +
+  `ACTION_LABELS`. The action itself (`hotbar_5`, key 5) already existed and
+  worked in-game; it just never surfaced in the rebind UI.
+- ~~**qol-08** Hardcoded "[E]" prefix on every prompt including refusal
+  messages~~ — **FIXED 2026-09-22**: `EventBus.interaction_prompt_show`
+  gained a `show_key_hint` arg (default true, so the 5 existing 2-arg emit
+  sites — Door.gd, PlayerController.gd ×3, ExtruderMachine.gd — are
+  untouched); the two refusal emitters (enter- and exit-refusal in
+  OperatorContext.gd) now pass `false`. Proved with a throwaway `--script`
+  probe (deleted after use) that a 2-arg emit still defaults to `true` and a
+  3-arg emit passes `false` through — GDScript signals don't support default
+  parameter values in the `signal` declaration itself, only on the receiving
+  function, which is why this needed both sides changed.
 - **phys-07** Lump chunks can tunnel through the 2.5 cm cart-floor plate (no CCD) —
-  fold into phys-02's collision relayout.
-- **phys-09** Orphaned `Player.tscn` (wrong capsule radius + collision-node name,
-  referenced nowhere) — deletion candidate.
-- **keybinds comment**: BaleClamp.gd ~206-209 comments still say "H" for the LPG
-  valve; key is now I (code correct, comment stale).
+  fold into phys-02's collision relayout. Still open (re-verified 2026-09-22:
+  `LaserFilter._break_off_chan()` still builds a plain `RigidBody3D` with no
+  `continuous_cd`, cart floor is still exactly 2.5 cm).
+- ~~**phys-09** Orphaned `Player.tscn`~~ — **DELETED 2026-09-22** (backed up to
+  `Player.tscn.bak` first, per Rule 5). Re-confirmed zero references beyond a
+  descriptive comment in `VehicleRouteGrid.gd` before removing.
+- ~~**keybinds comment**: BaleClamp.gd ~206-209 comments still say "H" for the
+  LPG valve~~ — **FIXED 2026-09-22**, comment now says I (code was already
+  correct).
 
 ## Where the full audit lives
 Raw findings (40, with file:line evidence) + the lane plan were produced by the

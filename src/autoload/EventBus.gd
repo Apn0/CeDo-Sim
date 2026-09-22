@@ -51,7 +51,10 @@ signal operator_exited_vehicle(vehicle: Node)
 ## `_show` when the player enters its range, `_hide` when they leave. HUD
 ## tracks the most recent source — if the active source emits `_hide`, the
 ## prompt clears; if a different source emits `_show`, it replaces.
-signal interaction_prompt_show(source: Node, prompt: String)
+## `show_key_hint` (default true): whether the HUD prefixes the prompt with
+## "[E]". Refusal/status text ("Cannot enter right now", "Stop moving first")
+## passes false — there is no key that fixes those, so the hint is misleading.
+signal interaction_prompt_show(source: Node, prompt: String, show_key_hint: bool)
 signal interaction_prompt_hide(source: Node)
 
 # ── Barcode scanner ───────────────────────────────────────────────────────────

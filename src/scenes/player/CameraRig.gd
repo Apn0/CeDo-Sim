@@ -43,6 +43,8 @@ var _orbit_pitch        : float = -0.25
 var _orbit_distance     : float = 6.0
 var _f4_held            : bool  = false
 var _f4_acted_this_hold : bool  = false   # any modifier action fired since F4 went down
+const F4_DOUBLE_TAP_MS  : int   = 350      # 2nd tap within this window resets instead of cycling
+var _last_f4_tap_ms     : int   = -F4_DOUBLE_TAP_MS
 
 var _free_move_position : Vector3
 var _free_move_initialized : bool = false
@@ -124,6 +126,7 @@ func is_active() -> bool:
 # =============================================================================
 func cycle_mode() -> void:
 	set_mode(((int(_mode) + 1) % 3) as Mode)
+	_flash_mode_banner("Camera: %s" % mode_name())
 
 func set_mode(m: Mode) -> void:
 	_mode = m
@@ -275,9 +278,20 @@ func handle_input(event: InputEvent) -> bool:
 				return true
 			else:
 				_f4_held = false
-				# Tap (no other camera action while held) = cycle mode
+				# Tap (no other camera action while held) = cycle mode, UNLESS
+				# it's the second tap within the double-tap window — then reset.
+				# Home is already BuildMode's Sequential Line Builder toggle
+				# (BuildMode.gd:1517-1518, unconditional _input, beats us to the
+				# event), so double-tap is the only free way to bind "reset".
 				if not _f4_acted_this_hold:
-					cycle_mode()
+					var now := Time.get_ticks_msec()
+					if now - _last_f4_tap_ms <= F4_DOUBLE_TAP_MS:
+						reset()
+						_flash_mode_banner("Camera reset")
+						_last_f4_tap_ms = -F4_DOUBLE_TAP_MS   # consume — no triple-tap chaining
+					else:
+						cycle_mode()
+						_last_f4_tap_ms = now
 				return true
 		# Arrows only consumed while F4 is held + camera is in non-1st mode
 		if _f4_held and _mode != Mode.FIRST_PERSON and k.pressed:
@@ -347,6 +361,16 @@ func _get_settings_node() -> Node:
 	if get_tree() == null or get_tree().root == null:
 		return null
 	return get_tree().root.get_node_or_null("SettingsManager")
+
+## Same "look up by /root name, never by bare identifier" discipline as
+## _get_settings_node() — EventBus is an autoload and does not exist when this
+## script is preloaded standalone in a --script-mode test (test_camera_rig_*.gd).
+func _flash_mode_banner(text: String) -> void:
+	if get_tree() == null or get_tree().root == null:
+		return
+	var bus := get_tree().root.get_node_or_null("EventBus")
+	if bus != null:
+		bus.scanner_banner.emit(text, false)
 
 ## Re-applies _cab_yaw / _cab_pitch on top of the cab camera's snapshotted
 ## INITIAL transform — so the offset is always relative to "looking forward",
