@@ -268,6 +268,38 @@ on exactly the two clamp checks. Wired into `run.sh`. This bounds the symptom
 for the cart only — bales and containers can still be ejected, and the
 AnimatableBody chassis re-architecture remains the real phys-05 fix.
 
+## 6. Soak: does a running world grow? (measured — no)
+
+`src/tests/probe_world_soak_growth.tscn` (kept, not wired). It replaces a
+first "frame cost" probe once `bench_mainworld_perf.gd` (2026-09-21) turned
+out to own per-frame cost already; the probe owns growth. It uses the bench's
+discipline — a `__soak__` scratch slot and `WorldLayout.layout_path_override`
+set BEFORE the boot, so the 60 s autosave can never reach the real
+`world_layout.json` (md5 checked identical before and after). This machine has
+no real save slot (user:// holds only `__test__` slots), so it boots a fresh
+world and places `line_3b` + `line_sort` through BuildMode (52 LineFlow nodes,
+line started), then samples two 300-frame windows 1500 frames apart.
+
+| quantity | window 1 (lines just placed) | window 2 (16.6 s later) | growth |
+|---|---|---|---|
+| nodes | 4533 | 4533 | +0 |
+| orphan nodes | 3 | 3 | +0 |
+| objects | 15356 | 15362 | +6 (+21.6/min) |
+| resources | 524 | 524 | +0 |
+| static memory | 896.75 MB | 896.80 MB | +0.05 MB (+0.18 MB/min) |
+| TIME_PROCESS mean | 25.4 ms (max 104.9, settling) | 9.42 ms (min 9.25, max 9.64) | −16.0 ms |
+| wall ms/frame (headless) | 11.0 | 11.7 | +0.7 |
+
+No leak signature at this timescale: node and resource counts are flat, the
+six extra objects over 16.6 s are within what parcels in the flow pipes
+account for, and memory moves by 50 KB. What the numbers DO say: a booted
+world with two lines costs a steady **9.4 ms of CPU-side process time per
+frame headless** — the "proc floor" the bench header records without
+attribution. That is the next performance target; the bench's ablation was
+measured too noisy to attribute it (its own header), so attribution needs a
+different instrument (timing `LineFlow.tick`, `CrewManager.tick` and the NPC
+`_physics_process` directly). Not done tonight.
+
 ## Things for the operator to look at in-game (not guessed)
 
 - **P2 smoke / heat-shimmer on a packed-up drive:** does the real one smoke? If
