@@ -86,11 +86,102 @@ BEFORE the trip; the 8 pre-fix reds are exactly the trip-effect checks, and
 the fix turns them green without touching the checks. The suite is wired into
 `run.sh`'s main loop.
 
+## 2. P6 — a full Lumpenwagen overflows onto the floor, visibly (done)
+
+**Backlog entry:** DESIGN P6. **Checked first:** `LumpCart.receive_lump()`
+returned at `is_full()` and dropped the kg, under a comment saying "the
+upstream filter will see is_full() and stop pushing" — a grep shows nothing in
+`LaserFilter` ever read `is_full()`. `lumps_kg_this_shift` counted kg that then
+existed nowhere. The cart never showed its load either: a chunk that came to
+rest inside the bucket was freed on absorption, so a 90 kg cart looked empty.
+
+**What changed** (`src/sim/LumpCart.gd`, `src/sim/LaserFilter.gd`,
+`src/sim/FloorPile.gd`):
+
+- `receive_lump()` returns the refused kg. It accepts up to `CAPACITY_KG`
+  (100) — the operator's 2026-07-11 figures make 90 kg "full, worth emptying"
+  and 100 kg "the discharge truly can't add more", so the last 10 kg heap over
+  the rim and are still taken.
+- `LaserFilter._disc_advance()` routes refused kg, and the kg of a nozzle with
+  no cart under it, into one soft `FloorPile` per nozzle straight under the
+  nozzle (around the cart's base). New counters `lumps_kg_on_floor` and
+  `lumps_kg_lost` (the latter only moves when the mound itself is at its
+  1.0 m radius, ~270 kg).
+- A visible heap (`LumpHeap`) inside the bucket, sized from the cart's own
+  collision plate and walls — measured, not copied from the catalog — rising
+  with `lumps_kg`, tinted hot→cool on the cart's own cool-down clock.
+- A full cart no longer absorbs settled chunks (they stay as overflow, still
+  litter-capped at 16).
+- `FloorPile.solid` (default true): false = no collider.
+- `LumpCart._now_sim_s()` caches the ShiftClock instead of a whole-tree
+  `find_child` per call (polled per cart by the autonomy board; ~9k nodes in a
+  booted world).
+
+**Two things the suite caught in the change itself, in order:**
+
+1. The heap top at 90 kg sat 1.25 cm above the wall top (0.7340 vs 0.7215 m):
+   the catalog's wall boxes start at the floor plate's CENTRE, so "wall box
+   height" over-reads the rim. `h_max` is now wall-top minus plate-top.
+2. The first draft put a SOLID pile beside the cart, outward along the
+   filter's X. The suite's shape query at that point hit `Extruder 3B`,
+   `Extruder 1` and `Extruder 3A` (all three achter sides; 3C and every voor
+   side were free): the achter cart stands on its bordes between the filter
+   and the extruder's 14 m collider, so there is no free floor there. A
+   candidate search (outward X, then ±Z) fell back every time for the same
+   reason. Physically, lumps that overflow heap over the rim and slide down
+   the cart's sides, so the mound now sits under the nozzle around the cart's
+   footprint and is soft — a StaticBody3D growing inside a RigidBody3D cart's
+   footprint ejects the cart. A solid pile beside the cart would also have
+   walled off the forklift's approach for the npc-05 chain.
+
+A third red was a fixture artefact: with no floor body under a BuildMode-only
+line the voor carts (no bordes) sank 6.7 cm in the frames the suite runs; the
+fixture now has a floor.
+
+**Measured** (`src/tests/test_lump_cart_overflow.tscn`, real `line_3b` macro,
+production purge path `_disc_advance()` with 2000 g of cake → 1.7 kg per
+advance):
+
+| step | result |
+|---|---|
+| bucket measured from the cart's collision boxes | w 0.688, d 1.084, plate top 0.265, rim 0.4565 m above it |
+| heap at 45 / 90 / 100 kg | 0.228 m / on the rim (0.7215 = wall top) / 0.507 m (over the rim) |
+| `receive_lump(15)` at 90 kg | 10 accepted, 5.000 refused |
+| purge into a full achter cart | achter 100 → 100 kg, voor +0.85, mound +0.85, lost 0 |
+| mound position | XZ 0.000 m off the nozzle, y 0.120 on the bordes the cart stands on (cart base 0.119) |
+| second purge | same mound reused, 1.700 kg |
+| settled chunk in a full cart | kept; absorbed after `empty()` |
+| no cart under either nozzle | the whole 1.7 kg lands on the mound |
+| conservation | shed 5.100 == voor 1.700 + floor 3.400 + lost 0.000 |
+| mound points, all 4 lines × 2 nozzles | under the nozzle, on the cart's surface (0.12 bordes / 0.0 floor) |
+
+`Result: PASS (45 ok, 0 fail)`; wired into `run.sh`.
+
+**Assumptions stated:** lump bulk density 400 kg/m³ (solid LDPE ~920 kg/m³,
+~40 % packing of 70 mm rope chunks; FloorPile's 200 default is loose film).
+The whole heap takes the colour of the newest lump (the real top layer is
+hot, the bottom cooled). The mound is not persisted across save/load — the
+same gap LineFlow's chute piles have.
+
+**Not done:** the other half of P6, `LineFlow._dump_waste` losing reject past
+a maxed chute pile. The honest model there is that the machine backs up
+(cannot discharge) until the pile is shovelled, which changes the throughput
+every conformance suite measures — not a change to make unattended.
+
 ## Things for the operator to look at in-game (not guessed)
 
 - **P2 smoke / heat-shimmer on a packed-up drive:** does the real one smoke? If
   yes, a short particle burst at the motor housing on the trip edge is ~20
   lines; if no, the rotor stopping plus the alarm is the whole event.
+- **P6 heap and mound, on foot:** fill a Lumpenwagen (Numpad 9 fills the
+  aimed machine; the cart itself fills through the laser filter) and look at
+  the `LumpHeap` box inside the bucket and the grey mound that forms around
+  the cart's wheels once it is at 100 kg. Both are sized from measured
+  geometry, but nobody has SEEN them. Two questions only the eye answers: does
+  a flat box read as lumps, and should the mound's 1.0 m radius be smaller.
+- **P6 and the forklift:** lift a cart out of a mound with the forklift — the
+  mound is soft (no collider) so the cart comes free, but the visual of the
+  cone left behind at the spot has not been looked at.
 - **Watch a real trip once:** stand at shredder-2 (or any friction separator),
   overload it, and confirm the rotor visibly coasts to a stop over ~2.5 s. The
   ramp is measured headless (`commanded_rpm` 45 → 0, `spin` 1 → 0); the frame

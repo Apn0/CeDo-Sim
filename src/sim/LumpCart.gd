@@ -50,6 +50,7 @@ var _cool_time_s      : float = COOL_TIME_S_MIN   # randomised per receive
 ## forklift lifts feels the real weight.
 func _sync_mass() -> void:
 	mass = EMPTY_MASS_KG + lumps_kg
+	_update_heap()
 
 func is_full() -> bool:
 	return lumps_kg >= FULL_THRESHOLD_KG
@@ -66,20 +67,32 @@ func is_cool() -> bool:
 	return (now_s - _last_received_at) >= _cool_time_s
 
 ## Called by the laser-filter discharge when a lump drops into this cart.
-func receive_lump(mass_kg: float) -> void:
+## Returns the kg the cart could NOT take (0.0 normally).
+##
+## P6 (2026-09-23). This used to `return` at is_full() with the comment "when
+## full, the discharge backs up / overflows on the floor — but the simulator
+## doesn't model that yet ... the upstream filter will see is_full() and stop
+## pushing". Neither half was true: nothing in LaserFilter ever read is_full(),
+## so every purge into a full cart was credited to lumps_kg_this_shift and then
+## vanished. Now the refused kg is RETURNED and LaserFilter._disc_advance()
+## puts it on the floor as a FloorPile beside the cart (the operator's spec),
+## so cart + floor == what the scraper shed. Per the operator's 2026-07-11
+## figures a full cart is FULL_THRESHOLD_KG (90, "is_full" — worth emptying)
+## and CAPACITY_KG (100) is where the discharge "truly can't add more": the
+## last 10 kg heap over the rim and are still accepted; past that, refused.
+func receive_lump(mass_kg: float) -> float:
 	if mass_kg <= 0.0:
-		return
-	if is_full():
-		# Operator spec: when full, the discharge backs up / overflows on the
-		# floor — but the simulator doesn't model that yet. For now we hard-cap
-		# the cart's mass and the upstream filter will see is_full() and stop
-		# pushing.
-		return
-	lumps_kg = clampf(lumps_kg + mass_kg, 0.0, CAPACITY_KG)
+		return 0.0
+	var room : float = maxf(0.0, CAPACITY_KG - lumps_kg)
+	var accepted : float = minf(mass_kg, room)
+	if accepted <= 0.0:
+		return mass_kg
+	lumps_kg += accepted
 	_sync_mass()
 	_last_received_at = _now_sim_s()
 	# Each receive resets the cool-down with a fresh random sample in [min,max].
 	_cool_time_s = randf_range(COOL_TIME_S_MIN, COOL_TIME_S_MAX)
+	return mass_kg - accepted
 
 ## Called by the EmptyLumpCartTask after the forklift dumps the cart into the
 ## lumps_container. Returns how many kg were dumped (so the receiving container
@@ -117,11 +130,139 @@ func restore_fill(kg: float, cool_left_s: float) -> void:
 
 ## Sim time in seconds since the ShiftClock's day-zero epoch. Falls back to the
 ## wall-clock if the shift clock isn't reachable (test scenes).
+## The ShiftClock is looked up ONCE and cached: this used to run
+## find_child(recursive) over the whole tree (~9k nodes in a booted world) on
+## every call, and is_cool()/cool_remaining_s() are polled by the autonomy
+## board for every cart, plus once a second by the heap colour below.
+var _shift_clock : Node = null
+var _shift_clock_looked_up : bool = false
 func _now_sim_s() -> float:
-	var sc := get_tree().get_root().find_child("ShiftClock", true, false)
-	if sc and "shift_elapsed_seconds" in sc:
-		return float(sc.shift_elapsed_seconds)
+	if not _shift_clock_looked_up or (_shift_clock != null and not is_instance_valid(_shift_clock)):
+		_shift_clock_looked_up = true
+		_shift_clock = null
+		var root : Node = get_tree().get_root() if is_inside_tree() else null
+		if root != null:
+			var sc := root.find_child("ShiftClock", true, false)
+			if sc != null and "shift_elapsed_seconds" in sc:
+				_shift_clock = sc
+	if _shift_clock != null:
+		return float(_shift_clock.shift_elapsed_seconds)
 	return Time.get_ticks_msec() / 1000.0
+
+# =============================================================================
+# P6 (2026-09-23) — the fill is VISIBLE: a heap grows inside the bucket with
+# lumps_kg. Its footprint is MEASURED from the cart's own collision boxes (the
+# floor plate and the walls PlaceableCatalog._lump_cart_compound_collision
+# builds), never copied from the catalog's constants — a copied number is how
+# stale-constant disease starts (CLAUDE.md). The heap reaches the rim at
+# FULL_THRESHOLD_KG and heaps a little over it toward CAPACITY_KG (operator
+# 2026-07-11: "a small heap over the rim before the discharge truly can't add
+# more"). Colour runs from the rope's hot orange to its cooled grey on the
+# cart's own cool-down clock, so a fresh load reads hot from across the hall.
+# =============================================================================
+const HEAP_HOT_COLOR       : Color = Color(1.00, 0.32, 0.06)   # = LaserFilter.SAUSAGE_HOT_COLOR
+const HEAP_COOL_COLOR      : Color = Color(0.18, 0.16, 0.14)   # = LaserFilter.SAUSAGE_COOL_COLOR
+const HEAP_COLOR_REFRESH_S : float = 1.0
+var _heap        : MeshInstance3D = null
+var _heap_mat    : StandardMaterial3D = null
+var _bucket      : Dictionary = {}    # w, d, floor_top_y, h_max — see _measure_bucket()
+var _heap_color_t : float = 0.0
+
+func _ready() -> void:
+	_build_heap()
+	_update_heap()
+
+## Interior of the bucket, read off the CollisionShape3D boxes on this body:
+## the floor plate is the thin (<= 3 cm) box wider than half a metre, the walls
+## are the tallest boxes and the thinner of their two horizontal extents is the
+## wall thickness. Empty when the body carries no such shapes (a bare script
+## instance in a probe) — then there is nothing to size a heap against.
+func _measure_bucket() -> Dictionary:
+	var plate_size := Vector3.ZERO
+	var plate_pos  := Vector3.ZERO
+	var wall_h := 0.0
+	var wall_t := 0.0
+	var wall_top := 0.0
+	for c in get_children():
+		var cs := c as CollisionShape3D
+		if cs == null or not (cs.shape is BoxShape3D):
+			continue
+		var sz : Vector3 = (cs.shape as BoxShape3D).size
+		if sz.y <= 0.03 and sz.x > 0.5 and sz.x > plate_size.x:
+			plate_size = sz
+			plate_pos  = cs.position
+		if sz.y > wall_h:
+			wall_h = sz.y
+			wall_t = minf(sz.x, sz.z)
+			wall_top = cs.position.y + sz.y * 0.5
+	if plate_size.x <= 0.0 or wall_h <= 0.0:
+		return {}
+	var floor_top : float = plate_pos.y + plate_size.y * 0.5
+	# The rim is the walls' TOP FACE minus the plate's top face — not the wall
+	# box height: the catalog's wall boxes start at the plate's centre, so they
+	# overlap it by half a plate (measured 1.25 cm, test_lump_cart_overflow S2).
+	return {
+		"w": maxf(plate_size.x - 2.0 * wall_t - 0.01, 0.05),
+		"d": maxf(plate_size.z - 2.0 * wall_t - 0.01, 0.05),
+		"floor_top_y": floor_top,
+		"h_max": maxf(wall_top - floor_top, 0.01),
+	}
+
+func _build_heap() -> void:
+	if _heap != null:
+		return
+	_bucket = _measure_bucket()
+	if _bucket.is_empty():
+		return
+	_heap = MeshInstance3D.new()
+	_heap.name = "LumpHeap"
+	var box := BoxMesh.new()
+	box.size = Vector3(float(_bucket["w"]), 0.01, float(_bucket["d"]))
+	_heap.mesh = box
+	_heap_mat = StandardMaterial3D.new()
+	_heap_mat.albedo_color = HEAP_COOL_COLOR
+	_heap_mat.roughness = 0.85
+	_heap.material_override = _heap_mat
+	_heap.visible = false
+	add_child(_heap)
+
+## Height of the visible load: the rim at FULL_THRESHOLD_KG, heaped a little
+## over it up to CAPACITY_KG. 0 when the bucket could not be measured.
+func heap_height_m() -> float:
+	if _bucket.is_empty():
+		return 0.0
+	var frac : float = clampf(lumps_kg / FULL_THRESHOLD_KG, 0.0, CAPACITY_KG / FULL_THRESHOLD_KG)
+	return frac * float(_bucket["h_max"])
+
+func _update_heap() -> void:
+	if _heap == null:
+		return
+	var h := heap_height_m()
+	if h <= 0.001:
+		_heap.visible = false
+		return
+	var box := _heap.mesh as BoxMesh
+	box.size = Vector3(float(_bucket["w"]), h, float(_bucket["d"]))
+	_heap.position = Vector3(0.0, float(_bucket["floor_top_y"]) + h * 0.5, 0.0)
+	_heap.visible = true
+	_refresh_heap_color()
+
+## 1.0 = the newest lump just landed (hot), 0.0 = cooled through the cart's own
+## cool-down clock. The whole heap takes the colour of the latest arrival — a
+## stated simplification (the real top layer is hot, the bottom has cooled).
+func heap_hot_fraction() -> float:
+	if lumps_kg <= 0.001 or _cool_time_s <= 0.0:
+		return 0.0
+	return clampf(cool_remaining_s() / _cool_time_s, 0.0, 1.0)
+
+func _refresh_heap_color() -> void:
+	if _heap_mat == null:
+		return
+	var hot := heap_hot_fraction()
+	_heap_mat.albedo_color = HEAP_COOL_COLOR.lerp(HEAP_HOT_COLOR, hot)
+	_heap_mat.emission_enabled = hot > 0.01
+	_heap_mat.emission = HEAP_HOT_COLOR
+	_heap_mat.emission_energy_multiplier = lerpf(0.0, 1.2, hot)
 
 func crosshair_prompt(_p: Node3D) -> String:
 	if _grabbed_by != null:
@@ -208,6 +349,12 @@ func _max_speed_for_load() -> float:
 	return lerpf(1.8, 1.1, clampf(lumps_kg / CAPACITY_KG, 0.0, 1.0))
 
 func _physics_process(delta: float) -> void:
+	# P6 — the heap cools visibly: refresh its tint once a second while loaded.
+	if _heap != null and _heap.visible:
+		_heap_color_t += delta
+		if _heap_color_t >= HEAP_COLOR_REFRESH_S:
+			_heap_color_t = 0.0
+			_refresh_heap_color()
 	# phys-01 — decay the body-shove rolling window: once nothing has pushed
 	# for PUSH_ROLL_TIMEOUT_S the parked friction/damp come back.
 	if _grabbed_by == null and _push_roll_left > 0.0:

@@ -57,6 +57,8 @@ extends StaticBody3D
 #   starve the feed (no melt is going through an open filter housing).
 # =============================================================================
 
+const FloorPileScript = preload("res://src/sim/FloorPile.gd")   # P6 — floor overflow beside a full cart
+
 # ── Tunables ─────────────────────────────────────────────────────────────────
 # #223 docs→code — the disc + discharge are MOTOR-driven, NOT ΔP-driven.
 # ΔMP is a READOUT only (+ the 318-bar upstream trip below). EREMA LF 2/406 HMI:
@@ -463,8 +465,18 @@ func _disc_advance() -> void:
 		var share_kg : float = lumps_kg / float(act.size())
 		for i in act:
 			var c : Node = lump_cart_achter if i == 0 else lump_cart_voor
+			var refused : float = share_kg
 			if c != null and is_instance_valid(c) and c.has_method("receive_lump"):
-				c.call("receive_lump", share_kg)
+				var r = c.call("receive_lump", share_kg)
+				refused = float(r) if r != null else 0.0
+			# P6 (2026-09-23): what the cart could not take — it is at CAPACITY,
+			# or no cart is parked under this nozzle — lands on the floor as a
+			# FloorPile beside the cart instead of vanishing (it used to be
+			# counted in lumps_kg_this_shift and then dropped; nothing ever read
+			# is_full()). Operator spec, LumpCart.gd 2026-07-11: when full "the
+			# discharge backs up / overflows on the floor".
+			if refused > 0.0:
+				_spill_to_floor(i, refused)
 	# Discharge each ACTIVE nozzle's in-progress rope as a discrete chunk.
 	for i in act:
 		_break_off_chan(i)
@@ -717,6 +729,11 @@ func _absorb_settled_chunks(delta: float) -> void:
 			var cart3 := cart as Node3D
 			if cart3 == null or not is_instance_valid(cart3):
 				continue
+			# P6: a full cart does not swallow chunks — they stay where they
+			# landed (on the heap, over the rim) as the visible overflow. The
+			# litter cap below still bounds them.
+			if cart3.has_method("is_full") and bool(cart3.call("is_full")):
+				continue
 			var dp : Vector3 = chunk.global_position - cart3.global_position
 			# Inside the bucket footprint, below rim height, and settled.
 			if absf(dp.x) <= 0.42 and absf(dp.z) <= 0.64 and dp.y <= 1.05 \
@@ -732,6 +749,120 @@ func _absorb_settled_chunks(delta: float) -> void:
 		if old != null and is_instance_valid(old):
 			old.queue_free()
 	_live_chunks = kept
+
+# =============================================================================
+# P6 (2026-09-23) — floor overflow at a full (or absent) cart.
+# The refused kg from _disc_advance() goes into ONE FloorPile per nozzle (the
+# same class LineFlow uses for uncaught chute reject, so the operator shovels
+# it with the same tool). WHERE: at the cart's own spot, straight under the
+# nozzle — which is where the rope and the chunks physically land. Lumps that
+# no longer fit heap over the rim and slide down the sides, so the mound
+# grows AROUND the cart's base (its cone stays under the underframe until it
+# spreads past the wheels). The mound is SOFT (FloorPile.solid = false): a
+# StaticBody3D growing inside a RigidBody3D cart's footprint ejects the cart.
+# A first draft put a solid pile BESIDE the cart instead; measured 2026-09-23
+# (test_lump_cart_overflow S9) that on lines 1, 3A and 3B the achter cart
+# stands on its bordes between the filter and the extruder's 14 m collider,
+# so no free floor exists on that side at all — and a solid pile there would
+# have blocked the forklift's corridor to the cart. Bulk density is an
+# assumption stated once: solid LDPE is ~920 kg/m³ and a heap of ~70 mm rope
+# chunks packs at roughly 40 %, so 400 kg/m³ (FloorPile's 200 default is
+# loose film). Not persisted across save/load — the same gap LineFlow's chute
+# piles have.
+# =============================================================================
+const SPILL_PILE_RADIUS_M : float = 1.0     # ~270 kg at 400 kg/m³ before FloorPile refuses more
+const SPILL_SEARCH_M      : float = 1.5     # reuse a FloorPile already within this of the spill point
+const LUMP_BULK_DENSITY   : float = 400.0
+var lumps_kg_on_floor : float = 0.0   # spilled beside the carts this shift (conserved; shovelable)
+var lumps_kg_lost     : float = 0.0   # refused even by a maxed pile — the only place kg still vanishes
+var _spill_piles : Array = [null, null]
+var _spill_lost_warned : bool = false
+
+## Floor point the overflow of nozzle `chan` lands on (global): straight under
+## the nozzle, on whatever the cart stands on (floor or bordes).
+func spill_point_global(chan: int) -> Vector3:
+	var e : Vector3 = _chan_eject_local(chan)
+	var above : Vector3 = to_global(e)
+	var p : Vector3 = above
+	p.y = _floor_y_below(above)
+	return p
+
+## Floor height under `from` (ray down 6 m). Skips this body, carts, chunks and
+## piles — the things that stand ON the floor there — by re-casting past each,
+## so the mound lands on the floor the cart stands on, not on the cart. Falls
+## back to the filter's own base height when nothing is hit (no floor body in
+## a probe).
+func _floor_y_below(from: Vector3) -> float:
+	var w3d := get_world_3d()
+	if w3d == null or w3d.direct_space_state == null:
+		return global_position.y
+	var excl : Array[RID] = [get_rid()]
+	for _pass in 6:
+		var q := PhysicsRayQueryParameters3D.create(from, from + Vector3(0.0, -6.0, 0.0))
+		q.exclude = excl
+		var hit := w3d.direct_space_state.intersect_ray(q)
+		if not hit.has("position"):
+			return global_position.y
+		var col = hit.get("collider")
+		var n := col as Node
+		var skip := false
+		if n != null:
+			var par := n.get_parent()
+			skip = n.is_in_group("lump_cart") or n.is_in_group("lump_chunk") \
+				or (par != null and par.is_in_group("floor_pile"))
+		if skip and hit.has("rid"):
+			excl.append(hit["rid"])
+			continue
+		return float((hit["position"] as Vector3).y)
+	return global_position.y
+
+## The pile for nozzle `chan`: the one already bound, else a FloorPile already
+## lying at the spill point (after a rebuild, or LineFlow's own chute pile),
+## else a new one parented like the chunks (the world scene).
+func _spill_pile(chan: int) -> Node:
+	var cur = _spill_piles[chan]
+	if cur != null and is_instance_valid(cur):
+		return cur
+	var at : Vector3 = spill_point_global(chan)
+	var best : Node = null
+	var best_d : float = SPILL_SEARCH_M
+	for p in get_tree().get_nodes_in_group("floor_pile"):
+		var p3 := p as Node3D
+		if p3 == null:
+			continue
+		var d : float = p3.global_position.distance_to(at)
+		if d < best_d:
+			best_d = d
+			best = p3
+	if best == null:
+		var pile = FloorPileScript.new()
+		pile.name = "LumpSpill%d" % chan
+		pile.max_radius_m = SPILL_PILE_RADIUS_M
+		pile.pile_color = SAUSAGE_COOL_COLOR
+		pile.solid = false   # soft — see the header: a collider here ejects the cart
+		var dest : Node = get_parent().get_parent() if get_parent() != null and get_parent().get_parent() != null else get_parent()
+		if dest == null:
+			dest = self
+		dest.add_child(pile)
+		(pile as Node3D).global_position = at
+		best = pile
+	_spill_piles[chan] = best
+	return best
+
+func _spill_to_floor(chan: int, kg: float) -> void:
+	if kg <= 0.0:
+		return
+	var pile : Node = _spill_pile(chan)
+	var left : float = kg
+	if pile != null and pile.has_method("add"):
+		left = float(pile.call("add", kg, LUMP_BULK_DENSITY))
+	lumps_kg_on_floor += kg - left
+	if left > 0.0:
+		lumps_kg_lost += left
+		if not _spill_lost_warned:
+			_spill_lost_warned = true
+			push_warning("[LaserFilter] lump spill pile at nozzle %d is at its %.1f m radius — %.2f kg refused (counted in lumps_kg_lost; shovel it or park an empty cart)"
+				% [chan, SPILL_PILE_RADIUS_M, left])
 
 ## Quick check used by autonomy / HMI to know whether a change is overdue.
 func filter_change_needed() -> bool:
