@@ -418,11 +418,25 @@ func _try_cut_wires() -> void:
 # =============================================================================
 ## When carrying with clamp_force above the bale's wire compliance, the top
 ## wire segments visibly rise — that's the player's cue to use Shift+B to cut.
+# The carried bale's "Wires" subtree, looked up ONCE per carried bale. This ran
+# a recursive find_child over the whole bale (~100 nodes of sheets and wires)
+# every physics tick for as long as a bale was carried — measured 2026-09-23
+# with probe_find_child_cost (numbers in docs/audit/overnight_enhancement_
+# 2026-09-23.md). A bale whose wires are gone (cut on foot) caches null and is
+# not searched again until a different bale is picked up.
+var _carried_wires : Node = null
+var _wires_of      : Node = null
+
 func _update_wire_bulge() -> void:
 	if _carried_bale == null:
+		_carried_wires = null
+		_wires_of = null
 		return
-	var wires := _carried_bale.find_child("Wires", true, false)
-	if wires == null:
+	if _wires_of != _carried_bale:
+		_wires_of = _carried_bale
+		_carried_wires = _carried_bale.find_child("Wires", true, false)
+	var wires := _carried_wires
+	if wires == null or not is_instance_valid(wires):
 		return
 	var compliance: float = float(_carried_bale.get_meta("wire_compliance", 0.55))
 	var bulge := 0.0

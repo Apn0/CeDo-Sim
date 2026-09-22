@@ -70,6 +70,11 @@ func _ready() -> void:
 	_label = String(scope.get("label", "HMI"))
 	_build_trigger()
 
+## The scope's human title ("Shredder lijn 1"); "HMI" for an inert panel.
+## Read by MapOverlay for its wayfinding label (Q5, 2026-09-23).
+func scope_label() -> String:
+	return _label
+
 func _build_trigger() -> void:
 	# Proximity zone around the HMI head — the player gets a prompt when in
 	# range and can press the interact key to open the panel.

@@ -206,6 +206,45 @@ action is bound at boot; `test_f10_reserved` still passes (F10 stays
 | `test_map_overlay_init` (full MainWorld boot, HUD with the new sheet) | PASS |
 | parse sweep | 416 ok, 0 fail |
 
+## 4. Q5 map wayfinding labels, and two per-frame tree searches (done)
+
+**Q5.** `MapOverlay`: machines labelled by catalog display name
+(`machine_label_for`), crew dots named (`crew_label_for`), HMI panels drawn as
+violet diamonds with their scope label (`hmi_markers()`, new
+`Hmi.scope_label()`), legend row added. All sources are live nodes. Guard
+`test_map_labels`: pure helpers, a real MainWorld boot for the crew names, two
+catalog-built HMI panels, a zoomed redraw. One fixture red on the way: the
+dummy display server's window is 64 px, so the closest radius only reaches
+`scale_px` 1.05 and no label is drawn — the suite now sizes the overlay to
+1152 × 648 itself. Also green after the change: `test_map_overlay_init`,
+`test_map_frame`, `test_hmi_retired` (70 ok), `test_vehicle_census`,
+`test_nested_vehicle_drift`.
+
+**Per-frame tree searches.** A script listed every recursive `find_child` /
+`find_children` in game code by enclosing function (68 sites); three ran
+inside per-frame code. `probe_find_child_cost` (kept, not wired) measured
+them on this machine, headless:
+
+| search | cost |
+|---|---|
+| `bale.find_child("Wires", true)` on a real 115-node bale | 4.5 µs per call |
+| the cached reference instead | 0.17 µs per call |
+| `root.find_child("ShiftClock", true)` MISS on a 3151-node tree | 252.8 µs per call |
+
+- `LumpCart._now_sim_s()` did the whole-tree search on EVERY call (fixed in
+  the P6 commit: the ShiftClock is cached once). A booted world is ~9k nodes,
+  so each call was in the order of 0.7 ms; the autonomy board polls
+  `is_cool()` per cart and the new heap colour would have added one call per
+  cart per second.
+- `BaleClamp._update_wire_bulge()` ran the bale search every physics tick
+  while carrying (4.5 µs × 60 Hz — small, but it is now one lookup per
+  carried bale).
+- `DayNightCycle._process()` searched the WHOLE tree every frame for as long
+  as no ShiftClock existed (bench worlds, forever): now a 2 s retry.
+
+The other 65 sites are one-shot (`_ready`, `setup`, `_bind_nodes`) or
+event-driven and were left alone.
+
 ## Things for the operator to look at in-game (not guessed)
 
 - **P2 smoke / heat-shimmer on a packed-up drive:** does the real one smoke? If
@@ -227,6 +266,10 @@ action is bound at boot; `test_f10_reserved` still passes (F10 stays
   clamped to 90 % × 75 % of the window; whether the 69 rows read well at the
   real window size, and whether the sheet should pause the shift (it does
   not, like the map), are judgement calls.
+- **Q5 map:** open the map (M) near a line and zoom in two or three notches:
+  machine names in Dutch, crew names beside the dots, violet diamonds on the
+  HMI panels. Whether violet reads well on the dark panel, and whether names
+  should also show at the default 90 m radius, are eye judgements.
 - **Watch a real trip once:** stand at shredder-2 (or any friction separator),
   overload it, and confirm the rotor visibly coasts to a stop over ~2.5 s. The
   ramp is measured headless (`commanded_rpm` 45 → 0, `spin` 1 → 0); the frame
