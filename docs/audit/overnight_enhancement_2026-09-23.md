@@ -13,6 +13,22 @@ Every Godot run was wrapped in `timeout --kill-after=10 N`, judged on its
 suites were run with `--path .` from the worktree, never against the
 operator's checkout.
 
+## 0. What landed, in order (branch `claude/ready-daacfa`, on top of `a619b1e`)
+
+| commit | what | proof |
+|---|---|---|
+| `fb065f0` | **P2** — a latched MotorOverload trip now really stops the drive (it kept conveying at full rate) | `test_motor_trip_stops_conveying` 28 ok; pre-fix 20 ok / 8 fail |
+| `41ecca4` | **P6** — a full Lumpenwagen overflows onto the floor, visibly; no lump kg vanishes | `test_lump_cart_overflow` 45 ok |
+| `ac7f668` | **Q2** Checkpoint save; **Q4** F1 key sheet; six Controls-tab actions bound at boot | `test_save_checkpoint` 22 ok; `test_keybind_sheet` 24 ok |
+| `e248861` | **Q5** map wayfinding labels; two per-frame recursive tree searches cached | `test_map_labels` 18 ok; `probe_find_child_cost` |
+| `f74b4a9` | **phys-05 interim** — the cart can no longer be flung or spun by a squeeze-eject | `test_lump_cart_speed_clamp` 6 ok; mutation 4 ok / 2 fail |
+| `eee57e8` | soak probe (no growth over 16.6 s; 9.4 ms/frame CPU floor) | `probe_world_soak_growth` |
+| `577d7d4` | docs for the soak | — |
+
+Seven new suites are wired into `run.sh`'s main loop. The full harness was run
+once on the branch at the end of the night — see §7 for the measurement.
+Sections 1-6 below are the per-item evidence, in the order the work was done.
+
 ## 1. P2 — a MotorOverload trip did not stop the drive (fixed)
 
 **Backlog entry:** DESIGN P2 said a trip "surfaces only as an EventBus alarm +
@@ -300,6 +316,148 @@ measured too noisy to attribute it (its own header), so attribution needs a
 different instrument (timing `LineFlow.tick`, `CrewManager.tick` and the NPC
 `_physics_process` directly). Not done tonight.
 
+## 7. The full harness on the branch (measured 2026-09-23, 01:57 → 02:32)
+
+`PROJ="V:/_Claude/CeDo_Simulator/ready-daacfa" bash tools/regression/run.sh`
+from the worktree, detached from any tool timeout, at commit `577d7d4`
+(everything in §0 in place; the nav-bake and sight-glass changes below were
+applied AFTER this run). `== done (exit 1)`, **111 steps in 35 minutes, 105
+logs written** (counted by mtime, as CLAUDE.md asks), 0 timeouts, and exactly
+**three** `FAIL  :` lines:
+
+| red | verdict |
+|---|---|
+| `test_nav_connectivity` | the known crew-post island: Abdellilah and Mohammed, canteen←post ends **14.67 m short** at (-215.7, 83.2) — byte-for-byte the 2026-09-22 measurement. Operator call, untouched. |
+| `test_jam_baseline` | `6 polygons, 7 vertices` — the "intermittent navmesh collapse". **Root-caused tonight, see §8**: the suite read the mesh before the fixture bake finished. |
+| `test_npc05_realworld` | expected: the chain holds DRIVE_TO_INDOOR from frame 6583 to the end of the 180 s window. Untouched. |
+
+Everything else green, including the seven suites added tonight, the 15
+own-dialect suites, both spawn-clearance configurations and the door carve.
+`test_tag_snapshot` still reports its pre-existing `28 ok, 0 fail, 1 skip`.
+
+So against the 2026-09-22 measurement (two reds) the branch shows one more,
+and that one is a measurement defect in the suite, not a change in the world.
+
+## 8. The "intermittent navmesh collapse" was the suite reading too early (root-caused, fixed)
+
+`test_jam_baseline` red in the harness with `6 polygons, 7 vertices`. CLAUDE.md
+carries this as INTERMITTENT (2 collapses in 3 runs on the 2026-09-21 dirty
+tree, one clean pass on 2026-09-22); the operator checkout's own last jam log
+reads `10 polygons, 8 vertices` — the same thing.
+
+**What the log shows.** The world bakes three times: at boot (2 source bodies),
+once deferred from `_ready` (1 body), and once when the suite calls
+`rebake_navigation()` after placing the 39-machine fixture (37 bodies). The
+suite then waited for the polygon count to hold still for 60 frames and read
+`6 polygons` — and the world's own `bake_finished` handler ("Nav connectivity
+verified: plant route open") printed AFTER the suite's FAIL lines. The 37-body
+bake was still on its thread; the suite measured the previous, 1-body mesh
+(floor + one body = 6 polygons). In the healthy `test_nav_connectivity` run of
+the same harness the identical heuristic happened to outlast the bake and read
+281 polygons. A threaded bake of ~37 bodies at this cell size takes about one
+second, which is exactly the 60-frame window: a coin toss, hence "intermittent".
+
+**Fix.** Both suites now wait on the engine's own flag —
+`NavigationRegion3D.is_baking()` — until it clears (plus five quiet frames to
+catch a queued re-bake starting), and only then run the old stability loop.
+`MainWorld.rebake_navigation()` additionally queues a rebake that lands while
+a bake is still running and re-issues it from `bake_finished` (defensive: a
+BuildMode commit-time rebake during the boot bake would otherwise be dropped
+silently; that is not what happened tonight).
+
+**Measured after the fix** (each run a full MainWorld boot + the 39-machine
+fixture):
+
+| run | bake thread finished after | polygons / vertices | verdict |
+|---|---|---|---|
+| `test_jam_baseline` #1 | 69 frames | 279 / 299 | PASS (11 ok, 0 fail, 3 skipped — the doorway-gated checks) |
+| `test_jam_baseline` #2 | 72 frames | 279 / 299 | PASS (11 ok, 0 fail, 3 skipped) |
+| `test_jam_baseline` #3 | 71 frames | 279 / 299 | PASS (11 ok, 0 fail, 3 skipped) |
+| `test_nav_connectivity` #1 | 29 frames | 281 | FAIL (9 ok, 1 fail — the known crew-post island, 14.67 m, unchanged) |
+| `test_nav_connectivity` #2 | 39 frames | 281 | FAIL (9 ok, 1 fail — same) |
+
+Three jam runs, three bakes that took 69-72 frames: every one of them would
+have latched onto the stale 6-polygon mesh under the old 60-frame rule. The
+"intermittent" red was a measurement of the machine's bake speed, not of the
+world. The nav suite's bake is faster (29-39 frames, its LineFlow rebuild runs
+first) which is why it read the right mesh in the harness by luck.
+
+The `bake thread finished after N frames` line each run prints is the
+evidence the old window was too short whenever N is above 60.
+
+## 9. The compactor's kijkglas now shows the pot's load (done, docs-backed)
+
+DESIGN P5 asked for a visible silo level. The plant docs do not describe a
+level indicator on any silo; they do on the compactor: Cedo PROD-SWI-012 p7
+step 6, "Vul de compactor op hand tot het kijkglas" (fill the compactor by
+hand up to the sight glass). The model already had that glass on the cleanout
+door (`_m_compactor`) and the load (`CutterCompactor.charge / POT_CAPACITY_KG`);
+nothing connected them, so the glass showed a grimy disc over an empty drum.
+
+**What changed.** `_m_compactor` adds a `PotFill` flake column standing on the
+cutter disc, carrying its own geometry as meta (base, range, the glass's centre
+and radius) so no reader copies a constant; `PlaceableCatalog.set_pot_fill()`
+sizes it; `CutterCompactor.pot_fill_fraction()` exposes the load; LineFlow's
+compactor block publishes `nd["cc_fill"]` and drives the column every tick,
+caching the PotFill lookup per node. Ghosts get no column. Colour is the
+washed-flake base tint `FilmFlakeField` already uses.
+
+**Measured** (`test_compactor_sight_glass`, catalog PCU + a real LineFlow node
+with 60 kg injected):
+
+| check | result |
+|---|---|
+| column geometry read off the mesh's meta | base 1.288 m, range 2.037 m, glass at 1.950 ± 0.12 m (size.y 3.9) |
+| the glass lies inside the fill range | level enters the glass at 27 %, leaves it at 38 % of the pot |
+| half / full / over-full | height 0.5 × range on the base; top at base + range; 1.7 clamped to the lid |
+| at the glass fraction the top is in the window | yes |
+| LineFlow drive, 300 ticks | column height == fraction × range every tick, `cc_fill` matches, 0 mismatches; peak fill 100 % |
+| the level moved while fed and discharged | yes |
+
+`Result: PASS (21 ok, 0 fail)`; wired into `run.sh`. One fixture
+assumption fell on the way: a lone head node is fed by LineFlow's own head
+feed during start-up (the pot read 100 % before any injection), so the
+pre-injection check is consistency, not emptiness.
+
+**Honest limits.** The column is a plain cylinder of one tint (real flake is
+mixed colour, and the operator fills "to the glass", ~30 %, by hand — the model
+fills from the belt). Whether the level reads through the grimy glass at all
+from where the operator stands is an eye judgement (operator list). Silos stay
+without a level indicator — no document describes one (Rule 1).
+
+## 10. Where the CPU frame time goes (measured — LineFlow ticks every frame)
+
+`src/tests/probe_tick_cost.tscn` (kept, not wired) calls each per-frame entry
+point itself N times and takes the wall clock — the function's own cost, not a
+difference of two noisy windows (the bench's ablation). Fresh world +
+`line_3b` + `line_sort` (52 LineFlow nodes), 9 workers, 9 vehicles, headless:
+
+| system | µs per call | calls/s | ms per frame at 60 Hz |
+|---|---|---|---|
+| `LineFlow.tick(1/60)` — its `_process` calls `tick(delta)` EVERY FRAME | 2845.9 | 60 | **2.846** |
+| `NPC._physics_process` × 9 workers (sum) | 1625.0 | 60 | 1.625 |
+| `BaseVehicle._physics_process` × 9 vehicles (sum) | 1248.8 | 60 | 1.249 |
+| `CrewManager._physics_process` | 30.5 | 60 | 0.031 |
+| `SimTick.sim_tick.emit(0.1)` (1 subscriber) | 157.1 | 10 | 0.026 |
+| `HUD._process` | 20.9 | 60 | 0.021 |
+| `NpcAutonomyBoard._process` | 4.5 | 60 | 0.005 |
+
+Attributed: 5.80 ms of a 16.18 ms `TIME_PROCESS` reference in that run (the
+reference was taken 240 frames after placing the lines, still settling; the
+soak's steady state was 9.4 ms). The rest is the engine, the physics server
+and navigation.
+
+**The finding.** `LineFlow` runs its whole flow step — spatial-query caches,
+52 nodes of PLC/feed/split/observer work — at frame rate, while the
+project's own sim clock (`SimTick`) is 10 Hz and **every suite drives
+`LineFlow.tick(0.1)`**: the tested rate is not the shipped rate. Ticking the
+flow at 10 Hz from an accumulator in `_process` would cut 2.85 ms/frame to
+~0.47 ms and make the game run the rate the harness proves. Not done tonight:
+the EMA smoothing constants in `tick()` are per-tick (the HMI's `thru` would
+settle in ~1.3 s instead of ~0.2 s wall time) and the MainWorld-based suites
+carry time-based expectations, so it needs its own full harness run and an
+operator look at the HMI response — listed as the next performance step.
+
 ## Things for the operator to look at in-game (not guessed)
 
 - **P2 smoke / heat-shimmer on a packed-up drive:** does the real one smoke? If
@@ -325,6 +483,11 @@ different instrument (timing `LineFlow.tick`, `CrewManager.tick` and the NPC
   machine names in Dutch, crew names beside the dots, violet diamonds on the
   HMI panels. Whether violet reads well on the dark panel, and whether names
   should also show at the default 90 m radius, are eye judgements.
+- **Compactor kijkglas:** stand at the PCU's cleanout door on 3C while the
+  line runs and look into the glass: a grey flake level should sit behind it
+  between ~27 % and ~38 % pot load, and be gone below/above. Whether it reads
+  through the grime material at all, and whether the flake tint is right, are
+  eye judgements.
 - **Watch a real trip once:** stand at shredder-2 (or any friction separator),
   overload it, and confirm the rotor visibly coasts to a stop over ~2.5 s. The
   ramp is measured headless (`commanded_rpm` 45 → 0, `spin` 1 → 0); the frame
