@@ -489,3 +489,83 @@ meta equality at 1e-6, because `RigidBody3D.mass` is single precision
 conveyor (§11) — queued, `metal_chance` waits for it. Whether the yard
 should spawn LINE_1_FOLIE bales by itself (today they come from the catalog /
 build menu like every origin).
+
+## Task 12 — flake where he sees it on the wet side (task 1c, rulings §1 / §12) — DONE 2026-09-24
+
+**Asked / answered (rounds 2-4).** Where flake is visible wet: "Kufferath
+sieve / scheidingsgoot; dewatering screw trough; open top tanks, transitions
+cyclones to blowers"; how it looks: "Same flake, wet and darker"; how to build
+it: "Use the textured soil simulation for this". The open-top list (§12): the
+doseersilo, the bunker, the bezinkafscheider, the ontwaterschroef ONLY after
+the flotation tank, VSS 3A/3B, the prewash drum.
+
+**Built.** `BeltBuilder.attach_film_field` beds — the belts' heap + GPU flake
+layer, wet-tinted by LineFlow's moisture — on five machines:
+- **Kufferath sieve** (`_m_kufferath`): one bed on the screen deck. The deck
+  was tilted −14°, which in Godot tips local −Z DOWN — its feed box (at −Z,
+  "the high end" per the builder's own comment) sat at the LOW end and the
+  ports (inlet high −Z, outlet low +Z) disagreed with the mesh. Now +14°: the
+  deck descends toward the outlet and the bed slides downhill.
+- **Scheidingsgoot** (`_m_scheidingsgoot`): a bed in each of its five
+  segments (stem, two branches, two run-outs). `_goot_segment` hands its pivot
+  back through an optional array; each bed sits on a child turned 180° so it
+  scrolls along the goot's −Z, downhill.
+- **Dewatering screw** (`_m_dewater`): BOTH looks are built (no_merge): the
+  closed tube (default) and an open half-pipe trough climbing +Z with the
+  screw visible inside and a bed riding it. `LineFlow.rebuild()` calls
+  `PlaceableCatalog.set_dewater_open` per instance from the graph it built:
+  open when a flotation tank feeds it, closed otherwise (§12: "ONLY after the
+  flotation tank; after e.g. the rafter it is closed"). Line 1's and 3A's
+  screws follow a flotation tank; 3B's first follows the rafter.
+- **Bunker**: a snipper bed on the travelling deck at the deck's own creep.
+- **Doseersilo**: a bed on the flat bottom between the augers.
+LineFlow drives EVERY field of a node now (`views`; the old first-match
+`view` would have left four of the goot's five dead), reads a bed's transport
+speed off the field (`bed_speed_mps` — placeholders: sieve 0.40, goot 0.60,
+screw 0.15, augers 0.05 m/s) when the body has no belt_speed, and darkens the
+bed with the node's moisture as before. The bed's kg include the wash water
+the stream carries (open: the wet bed reads deeper than the dry flake in it).
+
+**Measured.** `test_wet_side_beds`: `PASS (31 ok, 0 fail)`. B: the sieve
+deck's +Z axis points DOWN (y −0.24), 1 sieve bed at 0.40 m/s, 5 goot beds
+all downhill, both dewater looks with the tube showing and the trough hidden,
+`set_dewater_open` flips them, the trough bed climbs, the auger sits inside;
+the bunker bed at the deck's 0.0167 m/s; the doseersilo bed on `Trough`. P:
+build_node keeps 1/5/1/1/1 beds through StaticMerge and both dewater looks.
+G: flotation_tank → dw1 OPEN, rafter → dw2 CLOSED after a real `rebuild()`.
+L: line 1 built by `BuildMode._build_full_line`, one Rotterdam bale, 4000
+ticks (400 s): three of the four watched beds carried flake — scheidingsgoot
+peak 7.8 cm at 27.8 % moisture, tint r 0.64; dewatering screw 13.7 cm at
+21.9 %, r 0.74; Kufferath sieve #28 3.9 cm at 32.2 %, r 0.63 (dry = 1.00);
+line 1's screw open. The fourth, Kufferath sieve #29, saw 0.0 kg: the graph
+dump (`dump_line1_graph`) shows it has NO feed edge — `friction_sep#27 →
+kufferath_sieve#28` only, `kufferath_sieve#29 → mas_bak#31` with nothing
+into it. Pre-existing wiring on the L/R tail, not touched here; listed for
+the operator below. The first two runs of the suite were red on the SUITE:
+it keyed a Dictionary by LineFlow's node dicts (whose contents change every
+tick, so the hash changes — `Invalid access to property or key`), then read
+the tint off `_mat`, which is null in belt mode (the tint lives on the heap
+material and the flake shader). Both fixed in the test; nothing in the code
+was weakened. Neighbours: `test_belt_film_field` 142 ok,
+`test_doseersilo_trough` 14 ok, `test_silo_level_windows` 52 ok,
+`test_line1_flow_conformance` / `test_line1_throughput` /
+`test_line1_twin_streams` PASS, `test_line3a_identity` / `3b` / `3c` PASS
+(two teardown segfaults after the verdict — the known 24 % mode),
+`test_line3a_flow_conformance` / `3b` PASS, `test_line3c_seq_alignment`
+11 ok, `test_tag_snapshot` 28 ok / 1 skip (unchanged), `test_l3c_unit_screens`
+PASS, `test_shredder_rate_reconciliation` PASS. Parse sweep 435 ok, lint 0.
+Renders (`shot_belt_bed.gd`, now filterable by label):
+`shot_belt_bed_{kufferath_sieve_wet, scheidingsgoot_wet,
+dewater_screw_open_wet, bunker_snippers, doseersilo_bed, bunker_snippers_top,
+doseersilo_bed_top}.png` — looked at; the walled two only show their bed from
+above (the top views: the bunker's deck carpeted, the doseersilo's three
+augers standing in theirs).
+
+**Not built, and why (Phase B).** VSS 3A/3B silos and the bezinkafscheider
+raft: a round silo needs a circular bed and the bezink tank's water surface
+moves (BezinkTank) — both wanted a look at the real thing first. The prewash
+drum's "slurry, quite turbulent": no photo of the drum interior. The
+cyclone → blower gap: in every SEQ the blower stands 2-3 m BESIDE its cyclone
+on the floor, while he describes the blower's suction box 10-15 cm UNDER the
+cyclone mouth — a relayout question for him before any stream is drawn.
+Also for him: Kufferath sieve #29's missing feed.

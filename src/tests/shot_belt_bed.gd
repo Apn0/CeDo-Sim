@@ -24,6 +24,15 @@ const CASES : Array = [
 	{"id": "compactorband",    "label": "compactorband_0p61kgps_4cmps", "thru": 0.61, "v": 0.04, "wet": 0.0, "yaw": 40.0, "pitch": 20.0, "k": 1.10},
 	{"id": "inclined_belt_8m", "label": "inclined_belt_8m_after",       "thru": 1.5,  "v": 0.4, "wet": 0.0, "yaw": 55.0, "pitch": 12.0, "k": 1.05},
 	{"id": "inclined_belt_8m", "label": "inclined_belt_8m_before",      "thru": 0.0,  "v": 0.4, "wet": 0.0, "yaw": 55.0, "pitch": 12.0, "k": 1.05, "before": true},
+	# task 1c (2026-09-24) — the wet-side beds; run with labels as args to render only these
+	{"id": "kufferath_sieve", "label": "kufferath_sieve_wet",     "thru": 1.0, "v": 0.40,   "wet": 1.0, "yaw": 35.0, "pitch": 28.0, "k": 0.9},
+	{"id": "scheidingsgoot",  "label": "scheidingsgoot_wet",      "thru": 2.0, "v": 0.60,   "wet": 1.0, "yaw": 25.0, "pitch": 30.0, "k": 0.9},
+	{"id": "dewater_screw",   "label": "dewater_screw_open_wet",  "thru": 1.0, "v": 0.15,   "wet": 1.0, "yaw": 40.0, "pitch": 25.0, "k": 0.9, "dewater_open": true},
+	{"id": "bunker",          "label": "bunker_snippers",         "thru": 1.0, "v": 0.0167, "wet": 0.0, "yaw": 35.0, "pitch": 30.0, "k": 0.8},
+	{"id": "doseersilo",      "label": "doseersilo_bed",          "thru": 1.0, "v": 0.05,   "wet": 0.3, "yaw": 35.0, "pitch": 32.0, "k": 0.8},
+	# the two walled vessels hide their bed from the side: look down into them
+	{"id": "bunker",          "label": "bunker_snippers_top",     "thru": 1.0, "v": 0.0167, "wet": 0.0, "yaw": 20.0, "pitch": 68.0, "k": 0.75},
+	{"id": "doseersilo",      "label": "doseersilo_bed_top",      "thru": 1.0, "v": 0.05,   "wet": 0.3, "yaw": 20.0, "pitch": 66.0, "k": 0.7},
 ]
 
 func _ready() -> void:
@@ -50,7 +59,11 @@ func _ready() -> void:
 	add_child(cam)
 	cam.make_current()
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUT_DIR))
+	# Optional args: labels or ids to render (everything when none are given).
+	var only : PackedStringArray = OS.get_cmdline_user_args()
 	for c in CASES:
+		if only.size() > 0 and not only.has(String(c["label"])) and not only.has(String(c["id"])):
+			continue
 		await _shoot(c, cam)
 	get_tree().quit(0)
 
@@ -78,6 +91,8 @@ func _shoot(c: Dictionary, cam: Camera3D) -> void:
 			(node as RigidBody3D).freeze = true
 	node.global_position = Vector3.ZERO
 	await get_tree().process_frame
+	if bool(c.get("dewater_open", false)):
+		PlaceableCatalog.set_dewater_open(node, true)
 	# drive every field on it to the case's bed (1200 ticks = 120 s: past the
 	# 96 s transit time of the 4 cm/s compactorband)
 	for f in node.find_children("*", "", true, false):

@@ -389,6 +389,10 @@ static func attach_film_field(parent: Node3D, deck_w: float, deck_len: float, to
 	field.set("flow_speed", speed_mps)
 	field.set("bed_bulk_density", bulk_density)
 	field.call("set_belt_mode", true)
+	# LineFlow._belt_speed_of reads this when the machine body carries no
+	# belt_speed of its own (the wet-side beds of task 1c: sieve deck, goot,
+	# screw trough, bunker deck, doseersilo bottom).
+	field.set_meta("bed_speed_mps", speed_mps)
 	parent.add_child(field)
 	return field
 

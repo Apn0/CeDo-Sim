@@ -416,6 +416,7 @@ func rebuild() -> void:
 				nd["nir_ctrl"] = s["nir_ctrl"]
 			if s["dryer_cycle"] != null: nd["dryer_cycle"] = s["dryer_cycle"]
 	_init_pipes()       # #145: turn each link into a transit delay-line
+	_apply_dewater_open()   # rulings §12: open the screw troughs a flotation tank feeds
 	_init_plc()         # #145: stage the downstream-first power-up;
 						# _init_plc reads _survivor_powered to pre-power
 						# survivor stages so they DON'T re-stagger.
@@ -716,6 +717,7 @@ func _process_discovered_node(node3d: Node3D, id_ordinal: Dictionary, code_owner
 		# #173 visual coupling: the machine's FilmFlakeField (if any), driven
 		# each tick from this node's live telemetry so the look matches the sim.
 		"view":    _find_film_field(node3d),
+		"views":   _find_film_fields(node3d),   # task 1c: ALL of them (a goot has five)
 		# P5 (2026-09-23) — the silo's level windows (PlaceableCatalog.SiloFill);
 		# driven every tick from this node's buffer against SILO_FULL_KG.
 		"silo_fill": _find_silo_fill(node3d),
@@ -1658,7 +1660,31 @@ func _belt_speed_of(nd: Dictionary) -> float:
 	var body = nd.get("node")
 	if body != null and is_instance_valid(body) and body.has_meta("belt_speed"):
 		return float(body.get_meta("belt_speed"))
+	# Task 1c (2026-09-24): a wet-side bed (sieve deck, goot segment, screw
+	# trough, bunker deck, doseersilo bottom) carries its own transport speed.
+	var view = nd.get("view")
+	if view != null and is_instance_valid(view) and view.has_meta("bed_speed_mps"):
+		return float(view.get_meta("bed_speed_mps"))
 	return 0.4
+
+## Rulings §12 (2026-09-23): the dewatering screw is open-top ONLY after a
+## flotation tank. Decided per instance from the graph just built — the
+## topology is the truth, a SEQ is only a placement list — and applied to the
+## body's two prebuilt looks through PlaceableCatalog.set_dewater_open.
+func _apply_dewater_open() -> void:
+	for i in _nodes.size():
+		var nd : Dictionary = _nodes[i]
+		if String(nd.get("id", "")) != "dewater_screw":
+			continue
+		var open := false
+		for e in _edges:
+			if int(e["b"]) == i:
+				var src_id : String = String((_nodes[int(e["a"])] as Dictionary).get("id", ""))
+				if src_id.begins_with("flotation_tank"):
+					open = true
+		var n3d = nd.get("node")
+		if n3d != null and is_instance_valid(n3d):
+			PlaceableCatalog.set_dewater_open(n3d, open)
 
 ## The machine's FilmFlakeField visual layer (if it has one), for #173 coupling.
 ##
@@ -1674,6 +1700,15 @@ func _find_film_field(machine: Node) -> Node:
 		if c.is_in_group("film_field") and c.has_method("set_live_state"):
 			return c
 	return null
+
+## Task 1c (2026-09-24): ALL of a machine's fields. The scheidingsgoot has one
+## per segment (five); the first-match drive above would leave four dead.
+func _find_film_fields(machine: Node) -> Array:
+	var out : Array = []
+	for c in machine.find_children("*", "", true, false):
+		if c.is_in_group("film_field") and c.has_method("set_live_state"):
+			out.append(c)
+	return out
 
 ## The machine's steam plume (GPUParticles in group "steam_plume"), searched
 ## recursively since it lives under the model subtree. Gated on real flow so an
@@ -2571,14 +2606,17 @@ func _tick_plc_power_downstream(delta: float) -> void:
 			float(nd_s["amps_nominal"]), load_s, float(nd_s["spin"]) > 0.1)
 		# Drive the visual flake layer from the live state (#173): material present
 		# → flake density, throughput → drift speed, moisture/contam → wet/dirty look.
-		var view_s = nd_s.get("view")
-		if view_s != null and is_instance_valid(view_s):
-			var moist01_s : float = clampf(float(nd_s["moist"]) / 40.0, 0.0, 1.0)
-			var contam01_s : float = clampf(float(nd_s["contam"]) / 15.0, 0.0, 1.0)
+		var moist01_s : float = clampf(float(nd_s["moist"]) / 40.0, 0.0, 1.0)
+		var contam01_s : float = clampf(float(nd_s["contam"]) / 15.0, 0.0, 1.0)
+		for view_s in (nd_s.get("views", []) as Array):
+			if view_s == null or not is_instance_valid(view_s):
+				continue
 			if bool(view_s.get("belt_mode")):
 				# P1 (2026-09-23) — a belt's field shows the BED: kg/m is what this
 				# node moved (thru) over the deck speed it moved it at (the body's
 				# belt_speed × the power ramp); a stopped deck holds what is on it.
+				# Task 1c: the wet-side beds ride the same call (their speed comes
+				# off the field, their darkness off this node's moisture).
 				var spin_s : float = float(nd_s["spin"])
 				view_s.call("set_belt_state", float(nd_s["thru"]),
 					_belt_speed_of(nd_s) * spin_s, spin_s > 0.05,

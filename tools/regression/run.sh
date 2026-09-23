@@ -397,6 +397,12 @@ fi
 # LineFlow's remaining_kg all read that one figure, the light→full upgrade
 # keeps it; and LINE_1_FOLIE (2.0 × 1.7 × 1.5 m, 1000 kg) exists for line 1.
 # 17 checks on 40 built bales — 40 distinct weights, SD measured, ±3 σ range.
+# test_wet_side_beds (2026-09-24, task 1c, rulings §1/§12): flake beds where
+# the operator sees flake on the wet side — the Kufferath sieve deck (which
+# now descends toward its outlet), every scheidingsgoot segment (5), the
+# dewatering screw's trough (open ONLY after a flotation tank, decided from
+# the LineFlow graph), the bunker deck and the doseersilo bottom — through
+# build_node/StaticMerge, and driven WET by a real bale through line 1.
 # test_chute_choke (2026-09-23, P6 second half): a machine whose reject pile
 # refuses material chokes — latched like a trip, one CHUTE-BLOCKED alarm,
 # nothing conveyed, the refused kg back in the machine (ledger incl. wash
@@ -424,7 +430,7 @@ fi
 # CutterCompactor's pot load. Geometry read off the mesh's own meta, the glass
 # window proven inside the fill range, and the production LineFlow path driving
 # the column tick by tick from an injected charge.
-for t in test_motor_trip_stops_conveying test_lump_cart_overflow test_lump_cart_speed_clamp test_save_checkpoint test_keybind_sheet test_map_labels test_compactor_sight_glass test_belt_film_field test_silo_level_windows test_chute_choke test_trip_smoke test_vacuum_pot_visual test_doseersilo_trough test_bale_weight_variance test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_line3a_identity test_line3b_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_humanoid_rig_conformance test_line1_flow_conformance test_line1_throughput test_line1_overband_mount test_line1_twin_streams test_line3a_flow_conformance test_line3b_flow_conformance test_shredder_rate_reconciliation test_line1_no_false_overload test_line_builder_ghost test_macro_part_placement test_project_sweep_guards test_tool_placement_mode test_scada_dashboard_scene test_atomic_file test_extruder_brain_wired test_vehicle_census test_map_overlay_init test_qa_loop test_qa_spec test_assessment_procedure test_character_customizer test_f10_reserved test_bale_sticker_supplier test_hose_reel_round test_macro_delta_guard; do
+for t in test_motor_trip_stops_conveying test_lump_cart_overflow test_lump_cart_speed_clamp test_save_checkpoint test_keybind_sheet test_map_labels test_compactor_sight_glass test_belt_film_field test_silo_level_windows test_chute_choke test_trip_smoke test_vacuum_pot_visual test_doseersilo_trough test_bale_weight_variance test_wet_side_beds test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_line3a_identity test_line3b_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_humanoid_rig_conformance test_line1_flow_conformance test_line1_throughput test_line1_overband_mount test_line1_twin_streams test_line3a_flow_conformance test_line3b_flow_conformance test_shredder_rate_reconciliation test_line1_no_false_overload test_line_builder_ghost test_macro_part_placement test_project_sweep_guards test_tool_placement_mode test_scada_dashboard_scene test_atomic_file test_extruder_brain_wired test_vehicle_census test_map_overlay_init test_qa_loop test_qa_spec test_assessment_procedure test_character_customizer test_f10_reserved test_bale_sticker_supplier test_hose_reel_round test_macro_delta_guard; do
 	echo "== $t =="
 	${SUITE_TO[@]+"${SUITE_TO[@]}"} "$GODOT" --headless --path "$PROJ" "res://src/tests/$t.tscn" > "$OUT/$t.log" 2>&1
 	rc=$?

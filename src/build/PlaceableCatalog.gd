@@ -1200,6 +1200,24 @@ const DOSEERSILO_DEPTH_M  : float = 1.0
 # (size.z 5.5 × 0.92), so the trough is 0.9 × and 1.1 × those.
 const DOSEERSILO_WIDTH_M  : float = 2.98
 const DOSEERSILO_LENGTH_M : float = 5.57
+# ── Wet-side flake beds (task 1c, rulings §1 / §12, built 2026-09-24) ──────
+# Operator: where flake is SEEN on the wet side — "Kufferath sieve /
+# scheidingsgoot; dewatering screw trough; open top tanks" — and how: "Same
+# flake, wet and darker", "Use the textured soil simulation for this". So
+# these are BeltBuilder.attach_film_field beds (the belts' heap + GPU flake
+# layer) on: the Kufferath sieve deck, every segment of the scheidingsgoot,
+# the dewatering screw's trough (open ONLY after a flotation tank, §12), the
+# bunker's travelling deck and the doseersilo's flat bottom. LineFlow drives
+# them like belts — kg/s over a transport speed gives the bed — and its
+# moisture tint darkens them. The SPEEDS are stated placeholders (no operator
+# figure yet); each field carries its own on `bed_speed_mps` and
+# LineFlow._belt_speed_of reads it when the body has no belt_speed. The
+# bed's kg include the wash water the stream carries (open item: the wet bed
+# reads deeper than the dry flake in it).
+const KUFFERATH_BED_SPEED_MPS  : float = 0.40   # flake sliding down the wedge-wire deck
+const GOOT_BED_SPEED_MPS       : float = 0.60   # slurry down a 30-60° goot
+const DEWATER_BED_SPEED_MPS    : float = 0.15   # screw advance along the open trough
+const DOSEERSILO_BED_SPEED_MPS : float = 0.05   # three augers metering along the trough
 # Shader scroll value passed to make_belt_material for intake belts. With the
 # #140 fix below (make_belt_material no longer negates), positive caller value
 # = downstream flow. *0.25 keeps the apparent slat march matching the carry
@@ -5594,6 +5612,13 @@ static func _m_doseersilo(p: Node3D, _size: Vector3, color: Color, ghost: bool) 
 		_motor_unit(trough, width * 0.05, width * 0.11, Vector3(ax, aug_y, length * 0.5 + 0.30), "z", ghost)
 		aug_i += 1
 
+	# Task 1c (2026-09-24): the trough is open-top (§12, §17) — a flake bed on
+	# the flat bottom between the augers, metered along at the augers' advance.
+	if not ghost:
+		var bed : Node3D = BeltBuilder.attach_film_field(trough, width * 0.9, length * 0.92, 0.0,
+			DOSEERSILO_BED_SPEED_MPS, BeltBuilder.FLAKE_BULK_KGM3)
+		bed.set_meta("wet_bed", "doseersilo")
+
 	# ── level windows (§3) on the side walls, tilting with the trough ─────────
 	if not ghost:
 		var ds_fill : Node3D = _silo_fill_root(trough, 0.0, depth)
@@ -6200,7 +6225,37 @@ static func _m_dewater(p: Node3D, size: Vector3, color: Color, ghost: bool) -> v
 	# lives INSIDE this tube (not visible from outside, per the operator's spec
 	# for plant screws). The tube IS the encapsulation. Tilts UPWARD (+Z end is
 	# the high/discharge end; -Z is the low/inlet where the catch bowl sits).
-	_tube(p, size.x * 0.3, size.z * 0.95, Vector3(0.0, size.y * 0.55, 0.0), steel, PI / 2.0 - tilt)
+	# The closed tube is the default look. Rulings §12 (2026-09-23): the
+	# ontwaterschroef is OPEN-TOP "ONLY after the flotation tank (after e.g.
+	# the rafter it is closed)". Both variants are built (no_merge, so
+	# StaticMerge leaves them switchable) and LineFlow.rebuild() opens the
+	# trough on every instance the graph shows fed by a flotation tank
+	# (set_dewater_open). Open = a half-pipe trough climbing +Z (low -Z inlet,
+	# high +Z outlet, as the ports say) with the screw visible inside and a
+	# wet flake bed riding it (task 1c).
+	var tube := _tube(p, size.x * 0.3, size.z * 0.95, Vector3(0.0, size.y * 0.55, 0.0), steel, PI / 2.0 - tilt)
+	tube.name = "DewaterTube"
+	tube.set_meta("no_merge", true)
+	if not ghost:
+		var r : float = size.x * 0.3
+		var trough := Node3D.new()
+		trough.name = "DewaterTrough"
+		trough.set_meta("no_merge", true)
+		trough.position = Vector3(0.0, size.y * 0.55, 0.0)
+		trough.rotation = Vector3(-tilt, 0.0, 0.0)          # negative X rotation: local +Z rises
+		trough.visible = false
+		p.add_child(trough)
+		_half_pipe(trough, r, size.z * 0.95, Vector3.ZERO, steel, 9)
+		var flight := _mat(Color(0.78, 0.55, 0.16), ghost, 0.3, 0.5)
+		_spinning_auger(trough, size.z * 0.90, Vector3(0.0, -r * 0.42, 0.0), r * 0.10, r * 0.50,
+			steel, flight, ghost, 40.0, "dewater_auger")
+		var bed_piv := Node3D.new()
+		bed_piv.name = "TroughBed"
+		bed_piv.position = Vector3(0.0, -r * 0.55, 0.0)
+		trough.add_child(bed_piv)
+		var fld : Node3D = BeltBuilder.attach_film_field(bed_piv, r * 1.5, size.z * 0.90, 0.0,
+			DEWATER_BED_SPEED_MPS, BeltBuilder.FLAKE_BULK_KGM3)
+		fld.set_meta("wet_bed", "dewater_screw")
 	# water collection trough at the bottom end
 	_box(p, Vector3(size.x * 0.55, 0.15, size.z * 0.35), Vector3(0.0, size.y * 0.18, -size.z * 0.3), dark)
 	# drive motor at the top (+Z) end — uses _spinning_cyl so the motor coupling
@@ -9205,6 +9260,11 @@ static func _m_bunker(p: Node3D, size: Vector3, color: Color, ghost: bool) -> vo
 			deck_body.set_script(belt_script)
 			deck_body.set("belt_speed_mps", carry)
 			deck_body.set("belt_ramp_tau_s", 2.5)
+		# Task 1c (2026-09-24): the bunker is an open-top buffer (rulings §12)
+		# — its snipper bed rides the travelling deck at the deck's own creep.
+		var bed : Node3D = BeltBuilder.attach_film_field(p, deck_w, size.z * 0.98, deck_y,
+			carry, BeltBuilder.SNIPPER_BULK_KGM3)
+		bed.set_meta("wet_bed", "bunker")
 
 	# Walls
 	var wall_h : float = wall_top - deck_y
@@ -10156,8 +10216,24 @@ static func _m_kufferath(p: Node3D, size: Vector3, color: Color, ghost: bool) ->
 	# enclosing housing
 	_box(p, Vector3(size.x * 0.8, size.y * 0.42, size.z * 0.9), Vector3(0.0, size.y * 0.62, 0.0), steel)
 	# inclined wedge-wire screen deck visible on top
-	var deck := _box(p, Vector3(size.x * 0.7, 0.05, size.z * 0.84), Vector3(0.0, size.y * 0.84, 0.0), screen)
-	deck.rotation = Vector3(deg_to_rad(-14.0), 0.0, 0.0)
+	# The deck DESCENDS toward +Z: the feed box is at the high -Z end (next
+	# line) and MachineFlow's ports put the inlet high at -Z and the outlet
+	# low at +Z. It was built with -14°, which in Godot tips local -Z DOWN
+	# (the goot's own comment, and probe_deck_orientation) — the feed box sat
+	# at the LOW end. Fixed 2026-09-24 with the wet bed, which slides downhill.
+	var deck_len : float = size.z * 0.84
+	var deck := _box(p, Vector3(size.x * 0.7, 0.05, deck_len), Vector3(0.0, size.y * 0.84, 0.0), screen)
+	deck.rotation = Vector3(deg_to_rad(14.0), 0.0, 0.0)
+	if not ghost:
+		# Task 1c: the wet flake bed on the screen deck (rulings §1/§12).
+		var bed_piv := Node3D.new()
+		bed_piv.name = "SieveDeck"
+		bed_piv.position = deck.position
+		bed_piv.rotation = deck.rotation
+		p.add_child(bed_piv)
+		var fld : Node3D = BeltBuilder.attach_film_field(bed_piv, size.x * 0.7, deck_len, 0.025,
+			KUFFERATH_BED_SPEED_MPS, BeltBuilder.FLAKE_BULK_KGM3)
+		fld.set_meta("wet_bed", "kufferath_sieve")
 	# feed box at the high (-Z) end
 	_box(p, Vector3(size.x * 0.5, size.y * 0.2, size.z * 0.16), Vector3(0.0, size.y * 0.95, -size.z * 0.4), dark)
 	# filtrate launder (drained water) along the low side
@@ -11937,7 +12013,8 @@ static func _m_scheidingsgoot(p: Node3D, size: Vector3, color: Color, ghost: boo
 
 	# 1) STEM — ~1 m at 30° down, straight. Double width: both legs still share
 	#    one channel until the split.
-	var stem_end := _goot_segment(p, start, 1.0, 30.0, 0.0, leg_w * 2.0, wall_h, steel)
+	var beds : Array = []                        # every segment's pivot, for the wet beds below
+	var stem_end := _goot_segment(p, start, 1.0, 30.0, 0.0, leg_w * 2.0, wall_h, steel, beds)
 
 	# Splitter nose — the wedge that divides the stream left/right.
 	_box(p, Vector3(0.06, wall_h * 1.4, 0.34),
@@ -11948,10 +12025,27 @@ static func _m_scheidingsgoot(p: Node3D, size: Vector3, color: Color, ghost: boo
 	#    axis) and keeps feeding the next machine.
 	# +yaw is toward -X (see _goot_segment), so 35.0 = left leg, -35.0 = right.
 	for yaw in [35.0, -35.0]:
-		var br_end := _goot_segment(p, stem_end, 1.0, 60.0, yaw, leg_w, wall_h, steel)
-		var out_end := _goot_segment(p, br_end, 0.8, 15.0, 0.0, leg_w, wall_h, steel)
+		var br_end := _goot_segment(p, stem_end, 1.0, 60.0, yaw, leg_w, wall_h, steel, beds)
+		var out_end := _goot_segment(p, br_end, 0.8, 15.0, 0.0, leg_w, wall_h, steel, beds)
 		# Open discharge lip so the leg reads as feeding, not holding.
 		_box(p, Vector3(leg_w * 1.05, 0.05, 0.08), out_end + Vector3(0.0, -0.02, 0.0), dark)
+
+	# Task 1c (2026-09-24): a wet flake bed in EVERY segment (rulings §1/§12
+	# — the scheidingsgoot is the first place he named). A goot segment runs
+	# along its pivot's -Z (downhill); a belt-mode field scrolls along its own
+	# +Z, so each bed sits on a child turned 180° about Y.
+	if not ghost:
+		for b in beds:
+			var seg_piv : Node3D = b["piv"]
+			var seg_len : float = float(b["len"])
+			var bed_piv := Node3D.new()
+			bed_piv.name = "GootBed"
+			bed_piv.position = Vector3(0.0, 0.025, -seg_len * 0.5)
+			bed_piv.rotation = Vector3(0.0, PI, 0.0)
+			seg_piv.add_child(bed_piv)
+			var fld : Node3D = BeltBuilder.attach_film_field(bed_piv, float(b["w"]), seg_len, 0.0,
+				GOOT_BED_SPEED_MPS, BeltBuilder.FLAKE_BULK_KGM3)
+			fld.set_meta("wet_bed", "scheidingsgoot")
 
 	# Four floor legs that lengthen to the floor when raised (#70).
 	_legs(p, size, size.y * 0.28, dark)
@@ -11962,7 +12056,7 @@ static func _m_scheidingsgoot(p: Node3D, size: Vector3, color: Color, ghost: boo
 ## `parent` space so segments chain without hand-baked coordinates.
 static func _goot_segment(parent: Node3D, start: Vector3, length: float, \
 		pitch_deg: float, yaw_deg: float, width: float, wall_h: float, \
-		mat: StandardMaterial3D) -> Vector3:
+		mat: StandardMaterial3D, beds: Array = []) -> Vector3:
 	var pitch := deg_to_rad(pitch_deg)
 	var yaw   := deg_to_rad(yaw_deg)
 	var piv := Node3D.new()
@@ -11974,6 +12068,7 @@ static func _goot_segment(parent: Node3D, start: Vector3, length: float, \
 	for sx in [-1.0, 1.0]:
 		_box(piv, Vector3(0.05, wall_h, length),
 			Vector3(float(sx) * width * 0.5, wall_h * 0.5, -length * 0.5), mat)
+	beds.append({"piv": piv, "len": length, "w": width})   # for the caller's wet beds (task 1c)
 	# End point = start + R·(0,0,-L), with R = Ry(yaw)·Rx(-pitch).
 	return start + Vector3(
 		-sin(yaw) * cos(pitch),
@@ -13306,3 +13401,20 @@ static func _m_concrete_v_beam(p: Node3D, size: Vector3, color: Color, ghost: bo
 		Vector3(0.0, 0.05, 0.0), yel)
 	if not ghost:
 		_finalize_placeable(p, "concrete_v_beam")
+
+## Rulings §12 (2026-09-23): the dewatering screw's trough is open ONLY after a
+## flotation tank. Both looks are built by _m_dewater; this flips which one
+## shows and records `dewater_open` on the body. LineFlow.rebuild() calls it
+## from the graph it just built. Returns false on a body without the variants
+## (a ghost, or not a dewater screw).
+static func set_dewater_open(machine: Node, open: bool) -> bool:
+	if machine == null or not is_instance_valid(machine):
+		return false
+	var tube := machine.find_child("DewaterTube", true, false) as Node3D
+	var trough := machine.find_child("DewaterTrough", true, false) as Node3D
+	if tube == null or trough == null:
+		return false
+	tube.visible = not open
+	trough.visible = open
+	machine.set_meta("dewater_open", open)
+	return true

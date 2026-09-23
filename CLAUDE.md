@@ -176,6 +176,22 @@ count.
 > `test_chute_choke`, `test_trip_smoke` in the main loop, and the jam
 > baseline's own doorway. `docs/audit/operator_session_2026-09-23.md`.
 
+> **2026-09-24 00:09 — the newest measurement; it supersedes the night one
+> above.** Full harness on `claude/ready-daacfa` at `9cc6ea4` (on top of
+> `99fc375`: P3 stage A vacuum pots, the doseersilo as an open tilted trough,
+> per-bale weight variance + LINE_1_FOLIE, and the lint fix): `== done (exit
+> 1)`, **119 steps, 41 min (00:09:29 → 00:50:49), 112 logs by mtime, 0
+> timeouts, 0 SCRIPT ERROR lines, ONE red — `test_npc05_realworld`
+> (expected).** Inside the run: `test_nav_connectivity` PASS (10 ok),
+> `test_jam_baseline` PASS (16 ok, 0 fail, 0 skipped), the two new suites
+> `test_doseersilo_trough` 14 ok and `test_bale_weight_variance` 17 ok. Two
+> things worth knowing about reading that log: `grep -c 'SCRIPT ERROR'` says 1,
+> and it is `test_map_labels`' own check text ("no SCRIPT ERROR above = the
+> draw ran"), not an error — grep `^SCRIPT ERROR` instead; and the first
+> attempt at `8d43c87` stopped at step 4, the unused-parameter lint, because
+> the rebuilt doseersilo no longer reads its `size` parameter (renamed
+> `_size`, the lint's own suggestion). `docs/audit/operator_session_2026-09-23.md`.
+
 > **2026-09-21 — everything CeDo that is not this repo lives in ONE folder:
 > `D:\cedo_archive`.** Old bisect/merge/verify worktrees and clones were removed
 > after their uncommitted edits, untracked files and (for standalone clones) a
@@ -514,6 +530,26 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   `INSTANCE_CUSTOM`) costs the CPU ~3 µs per field per frame for 14 000
   flakes where CPU-animated instances cost 1 ms for 3 500 — animate with
   uniforms, write transforms once.
+- **A Dictionary whose contents change cannot be a Dictionary KEY.** Measured
+  2026-09-24, `test_wet_side_beds` first run: the suite keyed a Dictionary by
+  LineFlow's node dicts, the lookups worked before the first `tick()` and threw
+  `Invalid access to property or key '{ "node": … }' on a base object of type
+  'Dictionary'` after it — a Dictionary key is hashed by CONTENT, and `thru`,
+  `moist`, `spin` change every tick. Key by the node's instance id, or keep an
+  Array of records that hold the dict by reference. Same run, same lesson in
+  another coat: a belt-mode `FilmFlakeField` has NO `_mat` (its flakes wear a
+  ShaderMaterial); the wet tint lives on `_heap_mat` and the shader's `tint`
+  uniform, so a test that reads `_mat.albedo_color` reads a null.
+- **Check a deck's tilt sign against the machine's PORTS, not its comment.**
+  The Kufferath sieve's screen deck was built at −14° with the comment "feed
+  box at the high (-Z) end" — but −14° tips local −Z DOWN (the goot builder's
+  own note, and `probe_deck_orientation`), so the feed box had stood at the
+  LOW end since the day it was built while MachineFlow's ports (inlet high at
+  −Z, outlet low at +Z) said otherwise. Nothing caught it because no material
+  was ever drawn on the deck. Found 2026-09-24 the moment a bed had to slide
+  DOWN it; fixed to +14° and guarded by `test_wet_side_beds` (the deck's
+  `basis.z.y` must be negative). When a builder tilts a surface, assert which
+  end is low against `MachineFlow` — the two agree nowhere by construction.
 - **An opaque shell hides whatever you put inside it — a "sight glass" over a
   closed drum shows the drum, not the level.** Measured 2026-09-23 by
   rendering: the compactor kijkglas built that morning (a flat glass disc on
