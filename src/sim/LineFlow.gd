@@ -2855,6 +2855,19 @@ func _tick_advanced_systems(delta: float) -> void:
 			nd["pot_temp"]    = float(cc.get("pot_temperature"))
 			nd["cc_band"]     = String(cc.call("band"))
 			nd["cc_fill_eff"] = float(cc.get("screw_fill_efficiency"))
+			# KIJKGLAS LEVEL (2026-09-23): publish the pot load and drive the flake
+			# column behind the compactor's sight glass. The PotFill node is looked
+			# up once per node dict (a rebuild, or a freed machine, re-caches).
+			var fill_frac : float = float(cc.call("pot_fill_fraction"))
+			nd["cc_fill"] = fill_frac
+			var cc_n3d = nd.get("node")
+			if cc_n3d != null and is_instance_valid(cc_n3d):
+				var cached = nd.get("_pot_fill_node", null)
+				if not nd.has("_pot_fill_node") or (cached != null and not is_instance_valid(cached)):
+					cached = (cc_n3d as Node3D).find_child("PotFill", true, false)
+					nd["_pot_fill_node"] = cached
+				if cached != null:
+					PlaceableCatalog.set_pot_fill(cc_n3d as Node3D, fill_frac, cached as MeshInstance3D)
 			if bool(cc.get("stalled")):
 				nd["powered"] = false             # Donut stall halts the drive
 			nd["amps"] = float(cc.get("motor_amps"))

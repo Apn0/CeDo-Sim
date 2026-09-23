@@ -62,11 +62,10 @@ So a lot of the "make it physical" work is wiring, not inventing.
 - **Payoff:** removes the "material teleports at transfers" feel — exactly where the eye looks. Math is done.
 - **Files:** `BeltSurface.gd`, `LineFlow.gd`, `MachineFlow.gd`
 
-### P5 — Silo/buffer level as a visible rising column  · effort M
-- **Now:** `SiloLevelSensor` reads `level_pct` and drives the bridge/surge mechanic (`LineFlow.gd:2122`) but the flake inside the silo isn't drawn. FloorPile cones + WasteContainer mounds are the only visible accumulation.
-- **Do:** a single scaled heap/MultiMesh inside each silo whose height tracks `level_pct` (reuse FloorPile cone growth). Tint/animate past `HIGH_LEVEL_PCT` so surge risk is readable across the floor.
-- **Risk:** low — one mesh on an existing 0..1 signal; may need a cutaway/gauge window if silo bodies are solid.
-- **Files:** `SiloLevelSensor.gd`, `FloorPile.gd`, `MachineFlow.gd`
+### P5 — Silo/buffer level as a visible rising column  · effort M — **partly done 2026-09-23, on the machine the docs support**
+- **Docs check first (Rule 1):** nothing in `docs/plant/` describes a level indicator on a silo. The plant DOES document one on the compactor: SWI-012 p7 step 6, "Vul de compactor op hand tot het kijkglas". So the visible level landed there: a `PotFill` flake column behind the PCU's existing sight glass, driven every tick by `CutterCompactor.pot_fill_fraction()` (`PlaceableCatalog.set_pot_fill`, `LineFlow` compactor block). The glass window covers 27-38 % of the pot — "fill to the glass" is a real, reachable mark. Guard `test_compactor_sight_glass`, in `run.sh`.
+- **Still open:** the silos themselves (`SiloLevelSensor.level_pct` → nothing drawn). Building a gauge or cutaway on a closed steel silo without a photo or an operator statement would be modelling from imagination; ask the operator whether the real VSS/doseersilo/mengsilo carry a sight strip or only the HMI level.
+- **Files:** `SiloLevelSensor.gd`, `FloorPile.gd`, `MachineFlow.gd` (unchanged); `PlaceableCatalog.gd`, `CutterCompactor.gd`, `LineFlow.gd` (the compactor half).
 
 ### ~~P6~~ — LumpCart overflow as visible floor mess — **DONE 2026-09-23 (cart half); the `_dump_waste` half is still open**
 - **Measured before:** `LumpCart.receive_lump()` returned at `is_full()` and dropped the kg; its own comment claimed "the upstream filter will see is_full() and stop pushing" — nothing in `LaserFilter` ever read `is_full()`. `lumps_kg_this_shift` counted kg that existed nowhere. The cart also never showed its load: settled chunks were freed on absorption, so a 90 kg cart looked empty.

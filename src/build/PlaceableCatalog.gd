@@ -8140,6 +8140,32 @@ static func _m_mas_bak(p: Node3D, size: Vector3, color: Color, ghost: bool) -> v
 #    spins inside; flake is friction-heated, dried + densified, then fed out the
 #    side into the extruder screw. (Labelled 3C HMI: 112 °C, 169 kW — the PCU is
 #    THIS upright unit, NOT the big round laserfilter disc downstream.) ───────────
+## KIJKGLAS LEVEL — size a compactor's PotFill column to `frac` (0..1) of the
+## pot. LineFlow calls this each tick with CutterCompactor.pot_fill_fraction(),
+## passing the PotFill node it cached; without one it is looked up (recursive,
+## so callers on a per-tick path must cache). Returns the node, or null when
+## the machine has no PotFill (a ghost, or a different builder).
+static func set_pot_fill(machine: Node3D, frac: float, fill_node: MeshInstance3D = null) -> MeshInstance3D:
+	var fill := fill_node
+	if fill == null or not is_instance_valid(fill):
+		if machine == null:
+			return null
+		fill = machine.find_child("PotFill", true, false) as MeshInstance3D
+	if fill == null:
+		return null
+	var base : float = float(fill.get_meta("pot_fill_base_y", 0.0))
+	var rng  : float = float(fill.get_meta("pot_fill_range_y", 0.0))
+	var h : float = clampf(frac, 0.0, 1.0) * rng
+	if h <= 0.002:
+		fill.visible = false
+		return fill
+	var cm := fill.mesh as CylinderMesh
+	if cm != null:
+		cm.height = h
+	fill.position = Vector3(0.0, base + h * 0.5, 0.0)
+	fill.visible = true
+	return fill
+
 static func _m_compactor(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
 	var body_mat := _mat(color, ghost, 0.4, 0.45)
 	var dark := _mat(_DARK, ghost, 0.5, 0.5)
@@ -8221,6 +8247,35 @@ static func _m_compactor(p: Node3D, size: Vector3, color: Color, ghost: bool) ->
 	_cyl(p, size.x * 0.13, size.x * 0.13, size.z * 0.36, Vector3(0.0, size.y * 0.34, size.z * 0.44), dark, "z")
 	# Big cutter drive motor under the drum.
 	_motor_unit(p, size.x * 0.22, size.y * 0.28, Vector3(0.0, size.y * 0.2, -size.z * 0.22), "y", ghost)
+	# ── KIJKGLAS LEVEL (2026-09-23). Cedo PROD-SWI-012 p7 step 6: "Vul de
+	#    compactor op hand tot het kijkglas" — the sight glass on the cleanout
+	#    door (above) is the operator's fill reference, so what shows behind it
+	#    must be the pot's real load. A flake column standing on the cutter disc
+	#    whose height is CutterCompactor.pot_fill_fraction() of the drum's free
+	#    height; LineFlow drives it every tick through set_pot_fill(). It is
+	#    only ever seen through the glass — the drum is opaque — and it carries
+	#    its own geometry as meta, so the driver and the test read the mesh, not
+	#    a copied constant. Colour = the washed-flake base tint FilmFlakeField
+	#    already uses (0.78, 0.80, 0.82).
+	if not ghost:
+		var fill_base_y : float = cutter_y + 0.03 + 0.01          # top face of the 0.06 m cutter disc + 1 cm
+		var fill_top_y  : float = size.y * 0.88 - size.y * 0.025 - 0.01   # underside of the 0.05·size.y lid − 1 cm
+		var fill := MeshInstance3D.new()
+		fill.name = "PotFill"
+		var fm := CylinderMesh.new()
+		fm.top_radius = drum_r * 0.92
+		fm.bottom_radius = drum_r * 0.92
+		fm.height = 0.01
+		fm.radial_segments = 24
+		fill.mesh = fm
+		fill.material_override = _mat(Color(0.78, 0.80, 0.82), false, 0.05, 0.9)
+		fill.position = Vector3(0.0, fill_base_y + 0.005, 0.0)
+		fill.visible = false
+		fill.set_meta("pot_fill_base_y", fill_base_y)
+		fill.set_meta("pot_fill_range_y", fill_top_y - fill_base_y)
+		fill.set_meta("kijkglas_y", size.y * 0.50)   # the hatch's glass centre (see the hatch above)
+		fill.set_meta("kijkglas_r", 0.12)
+		p.add_child(fill)
 
 # ── Extruder (3C screw): horizontal barrel, screw drive/gearbox at the feed (-Z)
 #    end, a feed throat on top fed by the PCU, TWO vacuum degas domes on the barrel
