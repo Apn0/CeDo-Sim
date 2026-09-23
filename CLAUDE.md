@@ -186,6 +186,15 @@ count.
 > structure_items)`. Placing a gate re-arms the checks. Which of the two suites
 > should own the door is an operator call. Until then, read this suite's
 > `NOTE:` line, not its PASS.
+>
+> **2026-09-23 evening — ruled and fixed: the SUITE owns the door.** The
+> operator chose "suite builds its own gate", so `test_jam_baseline` now
+> carves his 3A/3B gate itself, in memory, from the entry his own
+> `world_layout.json` backups still hold (`_build_line_3a`, through
+> `BuildMode._apply_layout_entry`), and asserts `WorldLayout.structure_items`
+> stays empty. Measured: `PASS (16 ok, 0 fail, 0 skipped)`, jam 1 arrived
+> after 158.6 s, jam 3 after 94.1 s. `regression verdict` and B1b are
+> untouched. `docs/audit/operator_session_2026-09-23.md` task 5.
 
 **`test_jam_baseline` was `14 ok, 0 fail, 0 skipped` (2026-09-03) — the first time this suite
 had ever evaluated all fourteen of its checks.** It was 11 ok + 3 silently

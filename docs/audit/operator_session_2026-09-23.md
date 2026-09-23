@@ -259,8 +259,10 @@ the id in `smoke_alarms`, and dispatches the nearest free responder.
 | parse sweep | `Result: 430 ok, 0 fail` |
 | two fixture facts worth keeping | a FloorPile blends density by mass, so "room left" must be stated in VOLUME (a 1.5 kg fines pre-fill grew to a 6.8 kg capacity once dirt landed on it); a washer adds process water, so a machine-level mass ledger must count `water_added` |
 
-Wide batch on this code (detached, 21:25-21:33): 24 suites, all green, 0
-SCRIPT ERROR lines — `test_chute_choke`, `test_trip_smoke`, `test_motor_trip_stops_conveying`, `test_hmi_retired`, `test_hmi_overlay_open_close`, `test_hmi_web_gather_vals`, `test_scada_dashboard_scene`, `test_line1_throughput`, `test_line3a_flow_conformance`, `test_line3b_flow_conformance`, `test_tag_snapshot`, `test_l3c_unit_screens`, `test_extruder_brain_wired`, `test_lump_cart_overflow`, `test_nav_connectivity`, `test_bunker_relay_trip`, `test_bunker_shredder2_interlock`, `test_belt_film_field`, `test_silo_level_windows`, `test_compactor_sight_glass`, `test_project_sweep_guards`, `test_qa_loop`, `test_line1_no_false_overload`, `test_shredder_rate_reconciliation` (`test_bunker_relay_trip` and
+Wide batch on this code (detached, 21:25-21:33): 22 suites ran, all green, 0
+SCRIPT ERROR lines (`test_hmi_overlay_open_close` and
+`test_hmi_web_gather_vals` are `--script` suites without a scene and the batch
+runner skipped them) — `test_chute_choke`, `test_trip_smoke`, `test_motor_trip_stops_conveying`, `test_hmi_retired`, `test_hmi_overlay_open_close`, `test_hmi_web_gather_vals`, `test_scada_dashboard_scene`, `test_line1_throughput`, `test_line3a_flow_conformance`, `test_line3b_flow_conformance`, `test_tag_snapshot`, `test_l3c_unit_screens`, `test_extruder_brain_wired`, `test_lump_cart_overflow`, `test_nav_connectivity`, `test_bunker_relay_trip`, `test_bunker_shredder2_interlock`, `test_belt_film_field`, `test_silo_level_windows`, `test_compactor_sight_glass`, `test_project_sweep_guards`, `test_qa_loop`, `test_line1_no_false_overload`, `test_shredder_rate_reconciliation` (`test_bunker_relay_trip` and
 `test_bunker_shredder2_interlock` print their own verdict line; 0 FAIL lines
 in both). `test_nav_connectivity` stays green (45 ok) with the crew change,
 `test_motor_trip_stops_conveying` (28 ok) with the trip-edge hook,
@@ -272,3 +274,48 @@ operator's eye (a render needs a running trip, so none was taken). The HMI
 reset resets the chute, not the overload relay — the operator resets the
 drive separately (the choke suite does both). Shovelling is the crew's
 service; the player's ShovelTool path was not changed.
+
+## Task 5 — the doorway the forklift checks needed (DONE: the suite owns it)
+
+**Asked / answered.** "Suite builds its own gate (Recommended)".
+
+**What was wrong.** `test_jam_baseline`'s three forklift-pilot checks are
+gated on `_route_exists()`: without a doorway the vehicle router accepts,
+they SKIP, and the suite has said so in a `NOTE:` line since 2026-09-22. The
+doorway used to be the operator's own 3A/3B gate in his `world_layout.json`
+`structure_items`; the 2026-09-13 session cleared that entry to turn
+`regression verdict` and `test_project_sweep_guards` B1b green, which put
+the three checks back on their vacuous skip (11 ok + 3 skipped).
+
+**Built.** The entry is reproduced IN MEMORY by the suite itself, from the
+operator's own backups (`user://world_layout.json.bak_prerun_20260902`,
+`.bak_tagsnap_20260831`, `.bak_premerge_2026-09-08`,
+`.bak_ultracode_20260913_061442` — byte-identical in all four): a four-point
+`surface` gate labelled "3A/3B gate" on the facade,
+`p = [[-248.650, -8.924, 154.075], [-248.622, -4.091, 154.098],
+[-244.101, -4.200, 157.892], [-244.135, -8.842, 157.863]]`. After the line
+3A fixture is built, `_build_line_3a` passes it to
+`BuildMode._apply_layout_entry` — the same call a save load makes — which
+builds the leaf, has `WallOpenings` carve both wall skins and calls
+`BaseVehicle.invalidate_route_grid()`. `WorldLayout.structure_items` is not
+touched (asserted), so nothing can leak into the operator's file; the
+autosave was already redirected by `layout_path_override`. Two new checks
+assert the cut happened (`opening_id` on the gate) and the layout list is
+still empty.
+
+**Measured.**
+
+| run | result |
+|---|---|
+| 1 | `Result: PASS (16 ok, 0 fail, 0 skipped)` — `DOORWAY fixture: … carved (op_1)`, jam 1 `arrived after 158.6 s`, 2.19 m from target, 281.4 m covered, wedged 0.0 s; jam 3 `arrived after 94.1 s`, 2.19 m, 158.1 m covered; the route around the machine row 15 points, ends 0.00 m off |
+| 2 | `Result: PASS (16 ok, 0 fail, 0 skipped)` — jam 1 arrived after 158.6 s, jam 3 after 94.1 s (both 2.19 m from target; the same order as run 1) |
+
+Before the fixture (this morning's harness): `PASS (11 ok, 0 fail, 3 skipped)`
+plus the `NOTE:` line. On 2026-09-03 with the operator's gate in his world:
+jam 1 166.3 s, jam 3 100.8 s — the same order as today.
+
+**Honest limits.** The gate is a fixture of this suite alone;
+`regression_world_save`'s "doors on walls" and macro checks still skip on
+the (empty) operator world, and `test_nav_connectivity`'s pedestrian mesh is
+unaffected (vehicles route on their own grid). The building still has no
+door survey — this is the one doorway the operator ever placed.
