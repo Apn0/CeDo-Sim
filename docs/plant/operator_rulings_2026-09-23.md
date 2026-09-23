@@ -151,3 +151,52 @@ the ladder is. Think of a long face in four quadrants; each window sits in
 the inner sub-quadrant of its quadrant — "the most centre of the centre, but
 not actually in the centre overlapping", not touching. Vertical (taller than
 wide). This supersedes the #98/#99 layout (two windows per short face).
+
+## 10. Standby lump carts (task 7, round 4)
+
+"It is not per se within the six meter mark … for extruder six, I think at
+least 10 meters. But it is different per extruder." The operator will place
+the yellow areas himself with the build menu (Tab) and mark them with F10 if
+needed. Spaces are NOT line-owned: when 3A produced lumps fast ("two cards
+every 25 minutes") and 3B slowly ("two cards in two hours"), 3A used 3B's
+carts and spaces. → Nothing to build: standby areas are operator-placed
+`lump_cart_spot`s, shared between lines.
+
+## 11. Line 1 — what it processes, and its metal-detecting first conveyor (round 4)
+
+- **LINE 1 (normally) ONLY PROCESSES AGRICULTURAL (BLACK) FILM** — the
+  "stretch film" farmers use (asparagus etc.), NOT the Rotterdam / Alba /
+  Zwolle bales the other four lines run.
+- Line 1 bales are bigger: ~1.70 m high, ~2 m wide, ~1.5 m thick, plus a
+  ~30 % smaller version. They can hold extreme metal: car wheels, plough
+  parts, "very sometimes even an anvil" (put in on purpose for weight),
+  large nails, balls of wire, farm scrap. Such a part in any shredder
+  "causes a crash of the shredder" — knives break off and slam around.
+- Only line 1 has metal detection. The very first conveyor, before the
+  Westa conveyor, has a sensor at about three quarters of its length: on
+  detection it slows to a stop, reverses about one full conveyor length to
+  clear the debris, slows to a stop, and runs forward again until an
+  operator stops it or the next detection. The 3A/3B shredder and the 3C/6
+  shredders have no magnet or metal sensor before the bale — those parts
+  are "basically never" in those bales.
+
+## 12. Where flake is seen on the wet side (round 4, completing §1)
+
+- Chutes are mainly closed. The VW drum's exit chute on line 1 is open-top
+  (already modelled). The prewash drum / voorwastrommel of line 1 holds "a
+  slurry of water and film, quite turbulent" driven by the inside flight.
+- **Cyclone → blower:** the cyclone tapers to a bottom mouth; the blower's
+  suction box sits 10-15 cm BELOW it with a round hole. The film falls that
+  gap through open air (air goes up the cyclone's centre, so the blower
+  must draw from a gap, not a sealed pipe) — "at that point you can see the
+  film physically".
+- **Open-top vessels:** the dosing silo (doseersilo), the bunker, the
+  bezinkafscheider (settling separator), the ontwaterschroef ONLY after the
+  flotation tank (after e.g. the rafter it is closed), VSS 3A and VSS 3B, the
+  prewash drum. (The "none besides the flotation tank" box was ticked too;
+  his text is the ruling.)
+
+## 13. Vacuum pots (task 9) and the in-game look (task 8)
+
+Vacuum pots: "Use the EREMA diagrams" — look them up, show what was found
+before building (Rule 1). In-game look: "After the full harness".
