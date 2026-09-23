@@ -74,6 +74,21 @@ const VSS_FULL_KG       : float = 150.0
 # kg-scaled like the VSS (150 kg = "full" for the pack-up cascade), not to
 # the real vessels' cubic metres — one convention for every silo glass.
 const SILO_FULL_KG      : float = VSS_FULL_KG
+# CHOKE (P6's second half, operator 2026-09-23, rulings §4): when the reject
+# pile under a machine's chute is full and refuses more, "the machine chokes
+# and stops"; it comes back by "shovel, then reset on the HMI". A choked node
+# is latched like a trip (_is_trip_latched → powered off, conveying stops,
+# rotors stop); reset_choke() only takes once the pile is below this fraction
+# of its capacity — a reset with the chute still blocked does nothing.
+const CHOKE_CLEAR_FRAC  : float = 0.5
+# SMOKE (P2's second half, operator 2026-09-23, rulings §5): a packed-up drive
+# smokes "sometimes", and when it does it is "heavy smoke, people react". On a
+# MotorOverload trip edge the node's SmokePlume runs for SMOKE_S with
+# probability smoke_chance (a stated assumption for "sometimes"; suites set it
+# to 1 or 0), and a SMOKE alarm goes out so the crew react (CrewManager).
+const SMOKE_S           : float = 25.0
+var smoke_chance : float = 0.35
+var _rng := RandomNumberGenerator.new()
 # ── #52 advanced-systems OBSERVERS (additive, conserving) ─────────────────────
 # These pure-sim modules run ALONGSIDE the material flow purely as observers: the
 # extruder thermal/rheology + MFI soft-sensor publish telemetry, the motor-overload
@@ -338,6 +353,8 @@ func rebuild() -> void:
 			"cc":          nd.get("cc", null),
 			"nir_ctrl":    nd.get("nir_ctrl", null),
 			"dryer_cycle": nd.get("dryer_cycle", null),
+			"choked":      nd.get("choked", false),
+			"choke_pile":  nd.get("choke_pile", null),
 		}
 	# #99 — preserve the prior pair registry across the rebuild so freshly-
 	# rediscovered pairs are detected (not yet present here) but the L/R
@@ -378,6 +395,8 @@ func rebuild() -> void:
 			if s["out"] != null:  nd["out"] = s["out"]
 			nd["hand_mode"] = s["hand_mode"]
 			nd["manual_on"] = s["manual_on"]
+			nd["choked"]    = bool(s.get("choked", false))
+			nd["choke_pile"] = s.get("choke_pile", null)
 			nd["rpm_pct"]   = s["rpm_pct"]
 			# #218 — survivor-PLC integration flag. The per-tick PLC
 			# override (`_nodes[ni]["powered"] = _plc.is_powered(stage)`)
@@ -1366,8 +1385,42 @@ func _tick_bunker_shredder2_interlock() -> void:
 ## dropped-out contactor: no PLC run command or HAND switch re-energises the
 ## drive until a human calls mol.reset().
 static func _is_trip_latched(nd: Dictionary) -> bool:
+	return _is_mol_tripped(nd) or bool(nd.get("choked", false))
+
+## The MotorOverload relay alone (a choke is latched separately, see above).
+static func _is_mol_tripped(nd: Dictionary) -> bool:
 	var mol = nd.get("mol")
 	return mol != null and bool(mol.call("is_tripped"))
+
+## "Shovel, then reset on the HMI" (operator 2026-09-23). Clears a choke only
+## when the pile that refused has been dug below CHOKE_CLEAR_FRAC of its
+## capacity (or is gone); returns whether the machine is free to run again.
+## The HMI's RESETTEN calls this for every machine in its scope; the crew's
+## jam service does the shovelling (CrewManager._relieve).
+func reset_choke(id: String) -> bool:
+	var nd := _resolve(id)
+	if nd.is_empty():
+		return false
+	if not bool(nd.get("choked", false)):
+		return true
+	var pile = nd.get("choke_pile", null)
+	if pile != null and is_instance_valid(pile) and pile.has_method("fill_fraction"):
+		if float(pile.call("fill_fraction")) > CHOKE_CLEAR_FRAC:
+			print("[LineFlow] reset refused at '%s': the reject pile is still %.0f %% full — shovel first."
+				% [id, float(pile.call("fill_fraction")) * 100.0])
+			return false
+	nd["choked"] = false
+	nd["choke_pile"] = null
+	var bus := get_node_or_null("/root/EventBus")
+	if bus and bus.has_signal("machine_alarm_cleared"):
+		bus.emit_signal("machine_alarm_cleared", id, "CHUTE-BLOCKED")
+	print("[LineFlow] '%s' reset — chute clear, running again." % id)
+	return true
+
+## True when this node is choked (its reject pile refused material).
+func is_choked(id: String) -> bool:
+	var nd := _resolve(id)
+	return not nd.is_empty() and bool(nd.get("choked", false))
 
 ## Drop `powered` on every trip-latched node and on the nodes the
 ## bunker/shredder-2 interlock holds — called from _tick_plc_power_downstream
@@ -1379,9 +1432,51 @@ static func _is_trip_latched(nd: Dictionary) -> bool:
 ## on `powered` in the same tick; conveying and the rotors stop from the next.
 func _apply_trip_latches() -> void:
 	for nd in _nodes:
-		if _is_trip_latched(nd):
+		var mol_tripped : bool = _is_mol_tripped(nd)
+		if mol_tripped and not bool(nd.get("_was_tripped", false)):
+			_on_trip_edge(nd)
+		nd["_was_tripped"] = mol_tripped
+		if mol_tripped or bool(nd.get("choked", false)):
 			nd["powered"] = false
 	_tick_bunker_shredder2_interlock()
+
+## The leading edge of a MotorOverload trip: sometimes heavy smoke at the motor.
+func _on_trip_edge(nd: Dictionary) -> void:
+	if _rng.randf() >= smoke_chance:
+		return
+	var body = nd.get("node")
+	if body == null or not is_instance_valid(body) or not (body is Node3D):
+		return
+	var plume = body.find_child("SmokePlume", true, false)
+	if plume == null:
+		plume = PlaceableCatalog.install_smoke_plume(body as Node3D)
+	if plume == null:
+		return
+	plume.emitting = true
+	nd["smoke_plume"] = plume
+	nd["_smoke_left_s"] = SMOKE_S
+	var bus := get_node_or_null("/root/EventBus")
+	if bus and bus.has_signal("machine_alarm_raised"):
+		bus.emit_signal("machine_alarm_raised", String(nd.get("id", "?")), "SMOKE", 3)
+	print("[LineFlow] SMOKE at '%s' — the packed-up drive is smoking (%.0f s)." % [String(nd.get("id", "?")), SMOKE_S])
+
+## Run each smoking plume down; particles already in the air fade on their own.
+func _tick_smoke(delta: float) -> void:
+	for nd in _nodes:
+		var left : float = float(nd.get("_smoke_left_s", 0.0))
+		if left <= 0.0:
+			continue
+		left -= delta
+		nd["_smoke_left_s"] = left
+		if left <= 0.0:
+			var plume = nd.get("smoke_plume")
+			if plume != null and is_instance_valid(plume):
+				plume.emitting = false
+
+## True while this node's drive is smoking (for the HUD, suites, the crew).
+func is_smoking(id: String) -> bool:
+	var nd := _resolve(id)
+	return not nd.is_empty() and float(nd.get("_smoke_left_s", 0.0)) > 0.0
 
 ## When only one VSS is full the switch belt's buffer-aware split (#137)
 ## already biases against it, so there's no need to flip C8 in that case.
@@ -2347,6 +2442,7 @@ func tick(delta: float) -> void:
 	#      driven by real elapsed time. The router (section 3 below) reads
 	#      cycle.step on the same tick to decide which drum receives flake.
 	_tick_dryer_pairs(delta)
+	_tick_smoke(delta)
 
 	# 2.7) QA bench delay + assessment clock. Pure observers: neither touches
 	#      material, so the conservation ledger is unaffected. Deliberately
@@ -2644,7 +2740,12 @@ func _tick_process_machines(delta: float) -> void:
 			var dirt := flow.remove_contaminant(cr)
 			if dirt > 0.0:
 				contam_removed += dirt
-				_dump_waste(nd["wout"] as Vector3, _dirt_batch(dirt), _waste_containers_cache, 2)   # Stream.DIRT
+				var dirt_left : float = _dump_waste(nd["wout"] as Vector3, _dirt_batch(dirt), _waste_containers_cache, 2, nd)   # Stream.DIRT
+				if dirt_left > 0.0:
+					# The scraper bin and the pile are full: the dirt that could not
+					# leave stays in the machine (conserving); the node is now choked.
+					contam_removed -= dirt_left
+					bin.add(_dirt_batch(dirt_left))
 
 		# b) off-spec polymer rejected (optical/float sort) → reject stream
 		var ro: float = nd["reject_other"]
@@ -2673,7 +2774,10 @@ func _tick_process_machines(delta: float) -> void:
 		if wfrac > 0.0:
 			var w := flow.split_fraction(wfrac)
 			waste_mass += w.mass_kg
-			_dump_waste(nd["wout"] as Vector3, w, _waste_containers_cache, _waste_stream_for_role(String(nd["role"]), String(nd["process"])))
+			var w_left : float = _dump_waste(nd["wout"] as Vector3, w, _waste_containers_cache, _waste_stream_for_role(String(nd["role"]), String(nd["process"])), nd)
+			if w_left > 0.0:
+				waste_mass -= w_left
+				bin.add(w.split_mass(w_left))   # the reject that could not leave stays in the machine
 
 		# Live telemetry: smoothed output rate + a snapshot of what's leaving, so the
 		# HMI shows real per-machine moisture / dirt / quality, not just kg in buffer.
@@ -3208,14 +3312,21 @@ func _bale_at(pos: Vector3, bales: Array[Node] = []) -> Node3D:
 	return best
 
 ## Route a waste batch to the nearest compatible WasteContainer. The container's
-## API now models capacity + density + overflow; if no stream-specific bin is in
+## API models capacity + density + overflow; if no stream-specific bin is in
 ## range OR it's full and refuses the rest, we fall back to the nearest catch-all
-## bin (a container with no accepted_streams filter). Anything still unaccepted
-## is currently dropped on the floor as a counter — Wave 5 will turn that into
-## a visible floor pile.
-func _dump_waste(pos: Vector3, w: MaterialBatch, containers: Array, cls: int = -1) -> void:
+## bin (a container with no accepted_streams filter), then to the floor pile
+## under the chute (spawned on demand, #154).
+##
+## Returns the kg that NOTHING would take (bins full, pile at its maximum
+## radius). With `nd` given, that refusal CHOKES the node (operator 2026-09-23:
+## "the machine chokes and stops"): latched like a trip (see _is_trip_latched),
+## one CHUTE-BLOCKED alarm on the edge, and the pile that refused is remembered
+## so reset_choke() can check it was shovelled. The caller puts the refused kg
+## back into the machine, so no mass is lost — before 2026-09-23 it was
+## "silently lost at this layer" while the machine ran on.
+func _dump_waste(pos: Vector3, w: MaterialBatch, containers: Array, cls: int = -1, nd: Dictionary = {}) -> float:
 	if w.mass_kg <= 0.0:
-		return
+		return 0.0
 	var stream_specific : Node = _nearest_container(pos, cls, true, containers)
 	var leftover : float = w.mass_kg
 	if stream_specific != null:
@@ -3225,18 +3336,26 @@ func _dump_waste(pos: Vector3, w: MaterialBatch, containers: Array, cls: int = -
 		var catch_all : Node = _nearest_container(pos, cls, false, containers)
 		if catch_all != null and catch_all != stream_specific:
 			leftover = catch_all.call("add", leftover, _stream_density(cls), cls)
+	var pile : Node = null
 	if leftover > 0.0:
 		# No bin caught it — the reject spills onto the floor. Use a pile already
 		# under this chute if one exists; otherwise SPAWN one right here (#154), so
 		# an uncaught chute visibly heaps up instead of vanishing. The operator then
 		# shovels it (ShovelTool) or parks a container under the chute to catch it.
-		var pile : Node = _nearest_floor_pile(pos)
+		pile = _nearest_floor_pile(pos)
 		if pile == null:
 			pile = _spawn_chute_pile(pos, cls)
 		if pile != null:
 			leftover = pile.call("add", leftover, _stream_density(cls))
-	# Anything still rejected (pile maxed too) is silently lost at this layer — the
-	# waste_mass counter at the call site keeps the ledger.
+	if leftover > 0.0 and not nd.is_empty() and not bool(nd.get("choked", false)):
+		nd["choked"] = true
+		nd["choke_pile"] = pile
+		var bus := get_node_or_null("/root/EventBus")
+		if bus and bus.has_signal("machine_alarm_raised"):
+			bus.emit_signal("machine_alarm_raised", String(nd.get("id", "?")), "CHUTE-BLOCKED", 2)
+		print("[LineFlow] CHOKE: '%s' cannot discharge its reject (%.2f kg refused, pile full) — stopped. Shovel, then reset on the HMI."
+			% [String(nd.get("id", "?")), leftover])
+	return leftover
 
 ## #154 — drop a fresh FloorPile directly under a chute mouth that nothing is
 ## catching. Coloured by stream so reject heaps read differently (dirt vs film).

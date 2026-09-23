@@ -1257,6 +1257,24 @@ func _on_kwitteren() -> void:
 
 func _on_reset_faults() -> void:
 	_acked_faults.clear()
+	# 2026-09-23 — RESETTEN also clears a CHOKE (operator: "shovel, then reset
+	# on the HMI") for every machine in this panel's scope. LineFlow refuses
+	# while the reject pile is still over CHOKE_CLEAR_FRAC, so pressing it
+	# before the shovel does nothing — as it should.
+	if _line_flow != null and is_instance_valid(_line_flow) and _line_flow.has_method("reset_choke"):
+		var tokens : Array = _scope.get("tokens", []) if not _scope.is_empty() else []
+		for nd in (_line_flow.get("_nodes") as Array):
+			var ndd := nd as Dictionary
+			if not bool(ndd.get("choked", false)):
+				continue
+			var nid := String(ndd.get("id", ""))
+			var in_scope : bool = tokens.is_empty()
+			for tk in tokens:
+				if nid.find(String(tk)) != -1:
+					in_scope = true
+					break
+			if in_scope:
+				_line_flow.call("reset_choke", String(ndd.get("key", nid)))
 	_refresh()
 
 # =============================================================================

@@ -2266,6 +2266,11 @@ static func _motor_unit(parent: Node3D, r: float, length: float, pos: Vector3, a
 	# logo, it would be the blue from that logo." cedo_logo.svg fill #191E6C.
 	var motor_blue := _mat(Color(0.098, 0.118, 0.424), ghost, 0.35, 0.5)
 	var blk := _mat(Color(0.12, 0.12, 0.13), ghost, 0.3, 0.6)
+	# The machine's FIRST motor is where a packed-up drive smokes (P2's second
+	# half, 2026-09-23): remember it on the parent so install_smoke_plume() can
+	# find the housing after StaticMerge has folded the mesh away.
+	if not parent.has_meta("motor_pos_local"):
+		parent.set_meta("motor_pos_local", pos)
 	_cyl(parent, r, r, length, pos, motor_blue, axis)
 	# terminal/junction box sits on top regardless of motor axis
 	_box(parent, Vector3(r * 0.8, r * 0.5, length * 0.45), pos + Vector3(0.0, r * 0.95, 0.0), blk)
@@ -3609,21 +3614,47 @@ static func _m_wardrobe_locker(p: Node3D, size: Vector3, color: Color, ghost: bo
 ## `radius` sizes the emission disc (~drum exhaust = 0.15, extruder die = 0.10).
 ## `tint` is the steam colour (white-grey for water steam; warmer for extruder).
 ## Skipped on ghost builds (placement preview shouldn't churn particles).
+## The smoke a packed-up drive gives off (operator 2026-09-23, rulings §5:
+## "visible smoke sometimes" — "heavy smoke, people react"). Same construction
+## as the steam plume but dark, dense and slower; seated on the machine's first
+## motor housing (the `motor_pos_local` meta _motor_unit leaves on its parent),
+## or 1.5 m above the machine's origin when it has no motor. Starts idle;
+## LineFlow turns it on for SMOKE_S on a trip edge. Returns the emitter.
+static func install_smoke_plume(body: Node3D) -> GPUParticles3D:
+	if body == null:
+		return null
+	var existing := body.find_child("SmokePlume", true, false) as GPUParticles3D
+	if existing != null:
+		return existing
+	var local_pos := Vector3(0.0, 1.5, 0.0)
+	var holder : Node3D = null
+	if body.has_meta("motor_pos_local"):
+		holder = body
+	else:
+		for c in body.find_children("*", "", true, false):
+			if c is Node3D and c.has_meta("motor_pos_local"):
+				holder = c
+				break
+	if holder != null:
+		local_pos = body.to_local(holder.to_global(holder.get_meta("motor_pos_local")))
+	return _install_steam_plume(body, local_pos, 0.45, 3.5, Color(0.2, 0.2, 0.2), false, "SmokePlume", "smoke_plume", true)
+
 static func _install_steam_plume(parent: Node3D, local_pos: Vector3,
-		radius: float, height: float, tint: Color, ghost: bool) -> void:
+		radius: float, height: float, tint: Color, ghost: bool,
+		emitter_name: String = "SteamPlume", group: String = "steam_plume", dark: bool = false) -> GPUParticles3D:
 	if ghost or parent == null:
-		return
+		return null
 	var emitter := GPUParticles3D.new()
-	emitter.name = "SteamPlume"
+	emitter.name = emitter_name
 	# Group tag so a machine's run-state controller (or an immersive bench that
 	# wants a COLD machine) can find and gate every plume without knowing the
 	# model's internal node layout. A real extruder/dryer only steams when hot.
-	emitter.add_to_group("steam_plume")
+	emitter.add_to_group(group)
 	# Idle machines emit NOTHING (operator 2026-07-16: steam invented from nothing).
 	# LineFlow flips .emitting true per-tick only while real material flows.
 	emitter.emitting = false
-	emitter.amount = 80                              # more puffs, lower alpha each → volumetric density
-	emitter.lifetime = 7.0                           # long life so column fills out
+	emitter.amount = 160 if dark else 80             # more puffs, lower alpha each → volumetric density
+	emitter.lifetime = 6.0 if dark else 7.0          # long life so column fills out
 	emitter.one_shot = false
 	emitter.preprocess = 3.5
 	emitter.explosiveness = 0.0
@@ -3641,7 +3672,7 @@ static func _install_steam_plume(parent: Node3D, local_pos: Vector3,
 	pm.spread = 16.0
 	pm.initial_velocity_min = height * 0.14
 	pm.initial_velocity_max = height * 0.26
-	pm.gravity = Vector3(0.0, 0.20, 0.0)
+	pm.gravity = Vector3(0.0, 0.32 if dark else 0.20, 0.0)
 	pm.damping_min = 0.15
 	pm.damping_max = 0.40
 	# Per-puff rotation — critical for organic look; without this all puffs are identical.
@@ -3662,18 +3693,20 @@ static func _install_steam_plume(parent: Node3D, local_pos: Vector3,
 	pm.turbulence_noise_scale = 3.0
 	pm.turbulence_noise_speed_random = 0.4
 	# Color: born dark-grey at base (dense, shadowed), lightens as it rises and disperses.
-	var col_base := Color(0.80, 0.82, 0.86)
+	# Smoke (dark): near-black at the housing, sooty grey as it thins, twice the alpha.
+	var col_base := Color(0.80, 0.82, 0.86) if not dark else Color(0.30, 0.29, 0.28)
 	col_base = col_base.lerp(tint, 0.20)
-	var dark := Color(col_base.r * 0.55, col_base.g * 0.56, col_base.b * 0.60)
+	var dark_c := Color(col_base.r * 0.55, col_base.g * 0.56, col_base.b * 0.60)
 	var mid  := Color(col_base.r * 0.78, col_base.g * 0.80, col_base.b * 0.84)
 	var lite := col_base
+	var a_mul : float = 2.2 if dark else 1.0
 	var grad := Gradient.new()
-	grad.set_color(0, Color(dark.r, dark.g, dark.b, 0.0))
+	grad.set_color(0, Color(dark_c.r, dark_c.g, dark_c.b, 0.0))
 	grad.set_color(1, Color(lite.r, lite.g, lite.b, 0.0))
-	grad.add_point(0.06, Color(dark.r, dark.g, dark.b, 0.10))
-	grad.add_point(0.25, Color(mid.r,  mid.g,  mid.b,  0.13))
-	grad.add_point(0.55, Color(lite.r, lite.g, lite.b, 0.09))
-	grad.add_point(0.82, Color(lite.r, lite.g, lite.b, 0.04))
+	grad.add_point(0.06, Color(dark_c.r, dark_c.g, dark_c.b, 0.10 * a_mul))
+	grad.add_point(0.25, Color(mid.r,  mid.g,  mid.b,  0.13 * a_mul))
+	grad.add_point(0.55, Color(lite.r, lite.g, lite.b, 0.09 * a_mul))
+	grad.add_point(0.82, Color(lite.r, lite.g, lite.b, 0.04 * a_mul))
 	var gt := GradientTexture1D.new()
 	gt.gradient = grad
 	pm.color_ramp = gt
@@ -3720,6 +3753,8 @@ static func _install_steam_plume(parent: Node3D, local_pos: Vector3,
 	# Back-to-front sort so low-alpha puffs blend into density instead of popping.
 	emitter.draw_order = GPUParticles3D.DRAW_ORDER_VIEW_DEPTH
 	emitter.position = local_pos
+	parent.add_child(emitter)
+	return emitter
 	parent.add_child(emitter)
 	# Player-passage disturbance: an Area3D that, while a body is inside, bumps
 	# the emitter's spread + radial velocity outward so the column visibly

@@ -220,3 +220,55 @@ mengsilo's side are placements, not his numbers. The kijkglas port is square
 the door; the witness under it does too, but the interior column does not
 (nobody sees it). `SILO_FULL_KG` = 150 is the sim's kg scale, not a vessel
 volume.
+
+## Task 4 — the choked chute (DONE) and Task 6 — smoke on a packed-up drive (DONE)
+
+**Asked / answered.** Task 4: "The machine chokes and stops"; it comes back by
+"Shovel, then reset on the HMI". Task 6: "Visible smoke sometimes" — "Heavy
+smoke, people react".
+
+**Built (task 4).** `LineFlow._dump_waste` returns what nothing would take;
+both dump sites put the refused kg back into the machine and the node chokes
+(`nd["choked"]`, `nd["choke_pile"]`), latched through `_is_trip_latched` so
+the existing trip path drops power in the PLC step (the 2026-09-23 morning
+lesson: stop where `powered` is written). One `CHUTE-BLOCKED` alarm on the
+edge. `reset_choke(id)` refuses while the pile is above `CHOKE_CLEAR_FRAC`
+(0.5) and takes after; `is_choked(id)`. `CrewManager._relieve` on a choked
+node shovels `SHOVEL_KG` off that pile instead of moving buffer kg. The HMI's
+RESETTEN calls `reset_choke` for every machine in its scope. Choke state
+survives `rebuild()` (survivor copy).
+
+**Built (task 6).** `_motor_unit` leaves a `motor_pos_local` meta on its
+parent (the first motor per model);
+`PlaceableCatalog.install_smoke_plume(body)` seats a dark, dense variant of
+the steam plume there (`_install_steam_plume` grew name/group/dark
+parameters and now returns the emitter). `LineFlow._apply_trip_latches`
+detects the MotorOverload trip EDGE per node; `_on_trip_edge` rolls
+`smoke_chance` (0.35, stated) and, when it hits, emits for `SMOKE_S` = 25 s,
+raises `SMOKE` (severity 3) and prints; `_tick_smoke` runs it down;
+`is_smoking(id)`. `CrewManager` hooks `machine_alarm_raised` lazily: on
+SMOKE it radios ("Rook bij <id>! Iedereen weg daar — ik ga kijken."), logs
+the id in `smoke_alarms`, and dispatches the nearest free responder.
+
+**Measured.**
+
+| what | result |
+|---|---|
+| `test_chute_choke` | `Result: PASS (24 ok, 0 fail)` — a friction separator over a pile pre-filled to 99.5 % of its volume at dirt density chokes on the first refused dump, alarms once, drops power, conveys 0 kg over 2 s with its buffer untouched, ledger closed to 1e-3 (injected + wash water taken on), the pile holds exactly what left, reset refused at 102 % fill, the crew service shovels it to 0 %, the choke survives a rebuild, reset then takes and after `start_line()` the machine conveys again |
+| `test_trip_smoke` | `Result: PASS (21 ok, 0 fail)` — no plume before any trip; with chance 1 a forced trip installs and starts a `smoke_plume` on the motor anchor (0.000 m off), 160 puffs, one SMOKE alarm, `is_smoking` true, still emitting at half time, off after 25 s; with chance 0 a second trip neither smokes nor alarms and the node is reused; a third trip with chance 1 smokes again; the crew log SMOKE and ignore BUF-300. The autonomy board also raised the storing (`[NpcAutonomyBoard] storing raised: friction_sep/SMOKE`) |
+| parse sweep | `Result: 430 ok, 0 fail` |
+| two fixture facts worth keeping | a FloorPile blends density by mass, so "room left" must be stated in VOLUME (a 1.5 kg fines pre-fill grew to a 6.8 kg capacity once dirt landed on it); a washer adds process water, so a machine-level mass ledger must count `water_added` |
+
+Wide batch on this code (detached, 21:25-21:33): 24 suites, all green, 0
+SCRIPT ERROR lines — `test_chute_choke`, `test_trip_smoke`, `test_motor_trip_stops_conveying`, `test_hmi_retired`, `test_hmi_overlay_open_close`, `test_hmi_web_gather_vals`, `test_scada_dashboard_scene`, `test_line1_throughput`, `test_line3a_flow_conformance`, `test_line3b_flow_conformance`, `test_tag_snapshot`, `test_l3c_unit_screens`, `test_extruder_brain_wired`, `test_lump_cart_overflow`, `test_nav_connectivity`, `test_bunker_relay_trip`, `test_bunker_shredder2_interlock`, `test_belt_film_field`, `test_silo_level_windows`, `test_compactor_sight_glass`, `test_project_sweep_guards`, `test_qa_loop`, `test_line1_no_false_overload`, `test_shredder_rate_reconciliation` (`test_bunker_relay_trip` and
+`test_bunker_shredder2_interlock` print their own verdict line; 0 FAIL lines
+in both). `test_nav_connectivity` stays green (45 ok) with the crew change,
+`test_motor_trip_stops_conveying` (28 ok) with the trip-edge hook,
+`test_hmi_retired` (70 ok) with the RESETTEN hook.
+
+**Honest limits.** `smoke_chance` 0.35 is a reading of "sometimes". The
+plume is the steam plume's construction in dark; its look in-game is for the
+operator's eye (a render needs a running trip, so none was taken). The HMI
+reset resets the chute, not the overload relay — the operator resets the
+drive separately (the choke suite does both). Shovelling is the crew's
+service; the player's ShovelTool path was not changed.
