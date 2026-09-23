@@ -5527,7 +5527,10 @@ static func _m_mill(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> voi
 ## screw augers along the bottom that meter material out the bottom discharge. The
 ## outer two augers ride higher up the curved walls than the centre one (operator:
 ## "the 3 screws are angled upwards from the side walls"). Output is at the bottom.
-static func _m_doseersilo(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
+static func _m_doseersilo(p: Node3D, _size: Vector3, color: Color, ghost: bool) -> void:
+	# `_size` is unused on purpose: this trough's dimensions are the RULED
+	# constants below, and the catalog box (3.3, 5.0, 6.2) was derived from
+	# them — not the other way round (the unused-parameter lint agrees).
 	# REBUILT 2026-09-23 from the operator's reading of three renders of the
 	# old model (docs/plant/operator_rulings_2026-09-23.md §17): "basically
 	# more like a flotation tank. With the three screws going on like the
