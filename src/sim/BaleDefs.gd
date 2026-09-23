@@ -103,6 +103,39 @@ static func nominal_weight(o: Dictionary) -> float:
 const WEIGHT_SD_FRAC : float = 0.15
 static var _weight_seq : int = 0
 
+# ── Metal in line-1 bales (rulings §11) ─────────────────────────────────────
+# "car wheels, plough parts, very sometimes even an anvil, large nails, balls
+# of wire, farm scrap". Rolled once per bale in assign_weight() from the
+# origin's `metal_chance` (only LINE_1_FOLIE has one). The mix and the kg per
+# kind are STATED PLACEHOLDERS; the anvil is rare on purpose ("very sometimes").
+const METAL_KINDS : Array = [
+	{"id": "wheel",       "kg": 12.0, "cum": 0.30},
+	{"id": "plough_part", "kg": 25.0, "cum": 0.55},
+	{"id": "wire_ball",   "kg": 4.0,  "cum": 0.80},
+	{"id": "nails",       "kg": 2.0,  "cum": 0.96},
+	{"id": "anvil",       "kg": 50.0, "cum": 1.00},
+]
+
+static func roll_metal(body: Node, origin_id: String, seq: int) -> bool:
+	var o : Dictionary = get_origin(origin_id) if origin_id != "" else {}
+	var chance : float = float(o.get("metal_chance", 0.0)) if not o.is_empty() else 0.0
+	if body == null or chance <= 0.0:
+		return false
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(origin_id) * 17 + seq * 7919 + 3
+	if rng.randf() >= chance:
+		return false
+	var u : float = rng.randf()
+	var kind : Dictionary = METAL_KINDS.back()
+	for k in METAL_KINDS:
+		if u < float(k["cum"]):
+			kind = k
+			break
+	body.set_meta("metal_pieces", 1)
+	body.set_meta("metal_kind", String(kind["id"]))
+	body.set_meta("metal_kg", float(kind["kg"]))
+	return true
+
 static func weight_factor(seq: int, origin_id: String = "") -> float:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(origin_id) * 31 + seq * 104729
@@ -123,6 +156,7 @@ static func assign_weight(body: Node, size: Vector3, origin_id: String = "") -> 
 	if body != null:
 		body.set_meta("weight_kg", w)
 		body.set_meta("weight_nominal_kg", nominal)
+		roll_metal(body, origin_id, _weight_seq)     # rulings §11: line-1 bales can hide scrap
 	return w
 
 ## The polymer mix (fractions of the PLASTIC) for an origin. LDPE is the target;

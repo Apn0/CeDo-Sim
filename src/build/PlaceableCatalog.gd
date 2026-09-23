@@ -6554,11 +6554,26 @@ static func _build_opzetband(id: String, size: Vector3, ghost: bool) -> Node3D:
 			# Marker meta so the post-build pass knows to graft on the metal-detector
 			# head at 3/4 along the slope. Read by the caller in build_node().
 			belt.set_meta("attach_metaaldetector_head_at_frac", 0.75)
+			# Rulings §11 (2026-09-23): the sensor LOGIC — stop, reverse one
+			# length, stop, forward again — lives in ShredderFeedBelt and is
+			# switched on for this belt only.
+			belt.metal_detect = true
+			belt.metal_sensor_frac = 0.75
 	# #196 — if this belt asked for an integrated metal-detector head (currently
 	# only opzetband_1), graft it onto the incline at the requested fraction.
 	if not ghost and belt.has_meta("attach_metaaldetector_head_at_frac"):
-		_attach_metaaldetector_head_to_opzetband(belt,
-			float(belt.get_meta("attach_metaaldetector_head_at_frac")))
+		# The head grafts onto the belt's InclinePivot, which ShredderFeedBelt
+		# only builds in _ready() — once the belt is in the tree, which it is
+		# NOT here (build_node adds the model afterwards). Measured 2026-09-24
+		# with a probe: since #196 the head had never once been attached in a
+		# real build — the coil tunnel, cabinet, lamps and REJECT placard
+		# existed only in code. Graft on `ready` (one shot), or now if the
+		# belt already is.
+		var head_frac : float = float(belt.get_meta("attach_metaaldetector_head_at_frac"))
+		if belt.is_node_ready():
+			_attach_metaaldetector_head_to_opzetband(belt, head_frac)
+		else:
+			belt.ready.connect(_attach_metaaldetector_head_to_opzetband.bind(belt, head_frac), CONNECT_ONE_SHOT)
 	return belt
 
 ## #196 — Build a simplified search-coil + reverse-reject head and parent it onto
@@ -6639,10 +6654,15 @@ static func _attach_metaaldetector_head_to_opzetband(belt: Node, frac: float) ->
 	# Two indicator dots (CLEAR / METAL) below the screen.
 	var green_mat := _mat(Color(0.20, 0.78, 0.30), false, 0.0, 0.5)
 	var red_mat   := _mat(Color(0.82, 0.16, 0.14), false, 0.0, 0.5)
-	_box(head, Vector3(0.07, 0.07, 0.03),
+	# Named + no_merge so ShredderFeedBelt._set_metal_lamp can light them.
+	var lamp_clear := _box(head, Vector3(0.07, 0.07, 0.03),
 		Vector3((tunnel_w * 0.5) + 0.45 - 0.10, tunnel_h * 0.25, -coil_len * 0.5 - cab_d - 0.016), green_mat)
-	_box(head, Vector3(0.07, 0.07, 0.03),
+	lamp_clear.name = "LampClear"
+	lamp_clear.set_meta("no_merge", true)
+	var lamp_metal := _box(head, Vector3(0.07, 0.07, 0.03),
 		Vector3((tunnel_w * 0.5) + 0.45 + 0.10, tunnel_h * 0.25, -coil_len * 0.5 - cab_d - 0.016), red_mat)
+	lamp_metal.name = "LampMetal"
+	lamp_metal.set_meta("no_merge", true)
 	# ── Side-reject chute: a small angled gutter on +X just past the coil that
 	# catches the ferrous reject when the belt reverses momentarily. ──────────
 	var chute_l : float = 1.0

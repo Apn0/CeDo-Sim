@@ -530,6 +530,24 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   `INSTANCE_CUSTOM`) costs the CPU ~3 µs per field per frame for 14 000
   flakes where CPU-animated instances cost 1 ms for 3 500 — animate with
   uniforms, write transforms once.
+- **A visual grafted onto a node before that node's `_ready()` is a visual
+  that does not exist.** `_build_opzetband` attached the #196 metal-detector
+  head to the belt's `InclinePivot`, which `ShredderFeedBelt` builds in
+  `_ready()` — after `build_node` returns and the caller adds the model to
+  the tree. So the graft looked for a pivot that was not there yet, returned,
+  and for the whole life of #196 no real build ever carried the head; the
+  coil tunnel and its REJECT placard were code only. Measured 2026-09-24
+  (`build_node("opzetband_1")` + 2 frames → no `MetaalDetectorHead`). Fixed
+  by grafting on `ready`; guarded by `test_line1_metal_detect`. When a builder
+  decorates a SCRIPTED node, check whether that node builds itself in
+  `_ready()` — if it does, decorate on its `ready` signal, and assert the
+  decoration on a node that has been in the tree for a frame.
+- **GDScript lambdas capture locals BY VALUE.** `var done := false;
+  x.connect(func(): done = true)` never changes the outer `done` — the lambda
+  writes its own copy. Measured 2026-09-24 in `test_line1_metal_detect`: two
+  "fed through" checks waited their full 240 s on such a flag. Read the state
+  from the object (`rider_count()`), or capture a Dictionary/Array (reference
+  types) and write into it.
 - **A Dictionary whose contents change cannot be a Dictionary KEY.** Measured
   2026-09-24, `test_wet_side_beds` first run: the suite keyed a Dictionary by
   LineFlow's node dicts, the lookups worked before the first `tick()` and threw

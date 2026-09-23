@@ -569,3 +569,70 @@ cyclone → blower gap: in every SEQ the blower stands 2-3 m BESIDE its cyclone
 on the floor, while he describes the blower's suction box 10-15 cm UNDER the
 cyclone mouth — a relayout question for him before any stream is drawn.
 Also for him: Kufferath sieve #29's missing feed.
+
+## Task 13 — line 1's metal-detecting first conveyor (rulings §11) — DONE 2026-09-24
+
+**Asked / answered (round 4).** Line-1 bales hide "car wheels, plough parts,
+very sometimes even an anvil, large nails, balls of wire"; only line 1 has
+detection; "the very first conveyor, before the Westa conveyor, has a sensor
+at about three quarters of its length: on detection it slows to a stop,
+reverses about one full conveyor length to clear the debris, slows to a stop,
+and runs forward again until an operator stops it or the next detection."
+
+**Built.** `BaleDefs.roll_metal` (inside `assign_weight`): a LINE_1_FOLIE bale
+rolls `metal_chance` 0.10 (placeholder) once, deterministically, and carries
+`metal_pieces` / `metal_kind` / `metal_kg` (the kinds and their kg are
+stated placeholders; the anvil is 4 % of hits, "very sometimes").
+`ShredderFeedBelt` grew the cycle: `metal_detect` + `metal_sensor_frac`
+(0.75), switched on for opzetband_1 only in `_build_opzetband`. A rider
+crossing the sensor FORWARD with metal trips it → DECEL (setpoint 0) →
+REVERSE (−belt_speed for one `_path_total`) → DECEL2 → NONE (forward again).
+Riders move with the sign of the live speed and clamp at the load end. Going
+back below the sensor re-arms it, so the belt keeps cycling on the same bale;
+`request_stop()` ends the cycle where it is. On the first trip a `MetalScrap`
+prop (new, `src/scenes/world/MetalScrap.gd`: wheel / plough part / wire ball
+/ nails / anvil) is spawned on the bale; E takes it into the hotbar
+(`crosshair_interact`), which takes the piece and its kg off the bale and
+clears the alarm and the head's METAL lamp (the two dots on the detector
+cabinet are now named and no_merge). Dropping it within 3 m of a waste
+container puts its kg in as METAL (class 3). One `METAL-DETECT` alarm per
+trip on the bus, severity 2, not a latched belt fault.
+
+**Found on the way: the #196 detector head had never once been attached in
+a real build.** `_build_opzetband` grafted it onto the belt's `InclinePivot`,
+which `ShredderFeedBelt` only builds in `_ready()` — and the belt is not in
+the tree when `_build_opzetband` runs (build_node adds the model afterwards),
+so the graft found no pivot and returned. Probed 2026-09-24: `build_node(
+"opzetband_1")` + two frames → no `MetaalDetectorHead`. The coil tunnel,
+cabinet, lamps and REJECT placard existed only in code. Now grafted on the
+belt's `ready` (one shot), or at once if it is ready; `test_line1_metal_detect`
+asserts the head is on the built belt. First render of the belt WITH its
+head: `docs/plant/renders/shot_opzetband_1_head_on.png`.
+
+**Measured.** `test_line1_metal_detect`: `PASS (22 ok, 0 fail)`. M: of 60
+LINE_1_FOLIE bales 11 hid metal, all with a kind and kg; Rotterdam 0 of 30.
+C (a 10 m @ 25° belt at 0.12 m/s, `_process` driven at 0.1 s): trip 1 at
+64.9 s at progress 0.751; min live speed −0.120 m/s (a full reversal); the
+rider carried back to progress 0.000; trip 2 167.0 s after the first on the
+same bale; 2 alarms on the bus; a wheel `MetalScrap` on the bale; the
+operator's stop → speed 0.000 after 15 s, cycle off; scrap taken → bale
+clean, alarm cleared, scrap a world prop; restart → no further trip, the
+bale fed through in 248 ticks. N: the same bale on a belt without the sensor
+fed straight through in 897 ticks, 0 trips. P: opzetband_1 built with the
+sensor at 3/4, the head present, lamps named; opzetband_3a3b without. Three
+test-side defects on the way, all in the suite: the bale rode CROSS-WISE and
+both belts latched BELT-JAM after 5 s (laid lengthwise now, as
+`test_shredder_feed_belt` does); the stop check read the speed 6 s into a
+2.5 s ramp (0.011); and two "fed through" flags were set from a lambda —
+GDScript lambdas capture locals BY VALUE, so the outer flag never moved
+(the checks now read `rider_count()`). Neighbours: `test_shredder_feed_belt`
+PASS, `test_bale_weight_variance` 17 ok, `test_line1_throughput` PASS,
+`test_line1_flow_conformance` PASS, `test_line1_overband_mount` PASS,
+`test_bale_yard_mass_conservation` PASS, `test_line1_no_false_overload` PASS, `test_line1_twin_streams` PASS, `test_bale_sticker_supplier` PASS. Parse sweep
+437 ok, lint 0.
+
+**Open (for him).** What the scrap looks like and weighs, and how often a
+line-1 bale hides one; whether the belt really re-trips on the same bale
+until someone intervenes (built that way from his words); where the removed
+scrap goes in Geleen (a scrap bin?); whether the #196 head's side-reject
+chute exists at all — his §11 describes a reversal, not a side reject.
