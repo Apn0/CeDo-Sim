@@ -30,10 +30,22 @@ const BREAK_DURATION : float = 30.0     # how long a break lasts (counted once a
 const MAX_ON_BREAK   : int   = 1        # only ever one post unmanned at a time
 
 # Which machines each role is responsible for (matched as id substrings).
+#
+# Operator 2026-09-23 (docs/plant/operator_rulings_2026-09-23.md §2): the
+# permanent feeder is a LINE 1 role — "he drives the Merlo and check containers
+# etc. for washing line one" — and "nobody" has a fixed post at any windzifter,
+# on the wash lines or the sorting line: it runs unattended and crew come when
+# it blocks. `wind_sifter` therefore left this zone. Before, on a world with
+# only line 3A built (the test_nav_connectivity fixture, and any save without
+# the shredder hall), the windzifter was the ONLY zone match for both
+# permanent feeders, so assign_posts() parked them 1 m off its edge — inside
+# the neighbouring blower's collider, on no navmesh, the month-old harness
+# red. A jam at the windzifter still gets a responder: _pick_responder falls
+# through to the floaters when no zone owner is free.
 const ZONES : Dictionary = {
 	"extruder_op":      ["extruder", "mengsilo", "compactor", "mas_bak", "laser_filter", "heetafslag", "extruder_silo", "compactorband"],
 	"permanent_feeder": ["bunker", "shredder", "inclined_belt", "feed_hopper",
-						  "sga", "metal_belt", "ballistic", "wind_sifter", "titech",
+						  "sga", "metal_belt", "ballistic", "titech",
 						  "opzetband", "westa_band", "drum_feed_belt", "overband_magnet"],
 	"feeder":           ["bunker", "shredder", "inclined_belt", "feed_hopper",
 						  "opzetband", "westa_band", "drum_feed_belt", "overband_magnet"],

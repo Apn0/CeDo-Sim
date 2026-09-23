@@ -86,7 +86,7 @@ count.
 | failing check | note |
 |---|---|
 | ~~`regression verdict`~~ | ~~door/gate check~~ — **FIXED 2026-09-13**: `structure_items` cleared from `world_layout.json` (was 1 entry from prior session work) |
-| `test_nav_connectivity` | `every on-site post routes to the canteen and back (2 broken: Abdellilah canteen←post (ends 14.32 m short; post at (-215.6, 82.7)), Mohammed …)` — 9 ok, 1 fail since #216. **Requires operator to move crew posts off ISLAND** (inside wind_sifter collider). Do NOT auto-fix. |
+| ~~`test_nav_connectivity`~~ | ~~9 ok, 1 fail since #216, "requires operator to move crew posts off ISLAND"~~ — **FIXED 2026-09-23 by an operator RULING, not a navmesh change**: nobody has a post at any windzifter, and the permanent feeder is a line-1 role (Merlo + containers). `wind_sifter` left `CrewManager.ZONES["permanent_feeder"]`; on a 3A-only world the two feeders now hold their spawn spot (the suite's own `ADVIS`) instead of a post inside the blower next to the windzifter. `PASS (10 ok)` 3 of 3. `docs/audit/operator_session_2026-09-23.md` task 2 |
 | `test_npc05_realworld` | EXPECTED red — the DRIVE_TO_INDOOR stall, see below. Do not silence it |
 | ~~`test_line3b_flow_conformance`~~ | ~~missing input edge in LineFlow topology~~ — **FIXED 2026-09-13**: added `explicit_from_prev: true` to plasmaq entry in `LINE_3B_SEQ` (gap 15 m > MAX_LINK_DIST 14 m) |
 | ~~`test_project_sweep_guards`~~ | ~~B1b WorldLayout.structure_items starts empty (1 entries)~~ — **FIXED 2026-09-13**: cleared local world state |
@@ -153,6 +153,16 @@ count.
 > `test_save_checkpoint`, `test_keybind_sheet`, `test_map_labels`,
 > `test_compactor_sight_glass`, plus `test_lump_chunk_ccd` from the previous
 > session. Full story: `docs/audit/overnight_enhancement_2026-09-23.md`.
+
+> **2026-09-23 evening — the newest measurement; it supersedes the morning
+> one above.** Full harness on `claude/ready-daacfa` at `99b3a35` (the P1
+> belt beds committed, 15 commits on top of `a619b1e`): `== done (exit 1)`,
+> **113 steps, 33 min, 106 logs by mtime, 0 timeouts, 0 SCRIPT ERROR lines,
+> 2 reds** — `test_nav_connectivity` (14.67 m short, identical) and
+> `test_npc05_realworld` (expected). The next commit turned the first one
+> green by an operator ruling (see the table above), measured 3 of 3, so the
+> branch's honest red list is **`test_npc05_realworld` alone**.
+> `docs/audit/operator_session_2026-09-23.md`.
 
 > **2026-09-21 — everything CeDo that is not this repo lives in ONE folder:
 > `D:\cedo_archive`.** Old bisect/merge/verify worktrees and clones were removed

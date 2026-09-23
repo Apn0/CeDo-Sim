@@ -55,3 +55,34 @@ that). Where an answer set a number in code, the code cites this file.
    carries snippers and should get one.
 6. `metal_belt`, `scraper_conveyor`, `compactor_belt` (bespoke decks, deck_kind
    'none') carry no bed yet.
+
+## 2. Crew posts (task 2 — the `test_nav_connectivity` red)
+
+| question | answer (verbatim) | where it lands |
+|---|---|---|
+| Where does the permanent feeder (Abdellilah, Mohammed) actually stand on 3A/3B? The sim posted them at the windzifter, the only machine of their zone on a 3A-only world | "line 1, he drives the Merlo and check containers etc. for washing line one" | the permanent feeder is a LINE 1 role: Merlo bale feeding + container checks for wash line 1. No fixed post on 3A/3B |
+| Does anyone have a fixed post at a windzifter (3A/3B wash line or the sorting line)? | "No, nobody" | `CrewManager.ZONES["permanent_feeder"]` loses `wind_sifter` (jams there fall to the floaters, as "crew only come when it blocks") |
+| May a blocked post slide along the aisle to the nearest clear spot (≤ 3 m)? | "depends on height (use of mast lift needed) or other accessibility option like the fixed stair/walkway (flotation tanks) (or ladder, but that is not added yet and low prio)" | not a slide: a post belongs at the machine's ACCESS point — a mast lift where it is high, the fixed stair/walkway on the flotation tanks, a ladder later. Recorded as a design item (crew posts at access points), not built today |
+
+## 3. Silo level windows (task 3 — P5's silo half)
+
+| silo | answer (verbatim) |
+|---|---|
+| which silos show a level from OUTSIDE | Doseersilo, Mengsilo, Extruder silo (NOT the VSS / vuilsnippersilo) |
+| doseersilo | "dosing silo 2 square windows approx 30x30 cm horizontal distance 90cm between them centered along the tank, on both sides" |
+| mengsilo | "mixing silo 1 small 15x15cm window 1/3 the way up on 1 side" |
+| extruder silo | "extruder silo 4 vertical windows on each side" |
+
+## 4. Choked reject pile (task 4 — P6's `_dump_waste` half)
+
+| question | answer (verbatim) |
+|---|---|
+| when the reject pile under a chute is not cleared and keeps growing | "The machine chokes and stops" |
+| how it comes back | "Shovel, then reset on the HMI" — an alarm shows, someone clears the pile, the machine is restarted by hand |
+
+## 5. Smoke on a packed-up drive (task 6 — P2's second half)
+
+| question | answer (verbatim) |
+|---|---|
+| does the real one smoke | "Visible smoke sometimes" |
+| what it looks like | "Heavy smoke, people react" |

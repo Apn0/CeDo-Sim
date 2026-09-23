@@ -123,3 +123,45 @@ This belt is placed by the sort line (×4) and the 3B/3C climbs.
   per-machine list).
 - A 4 cm/s compactorband fills over 96 s; the bed is correct but slow to
   appear after a start — that is the physics, not a bug.
+
+## Task 2 — crew posts at the windzifter (DONE: the month-old red was a crew defect, ruled)
+
+**Asked.** Where does the permanent feeder stand on 3A/3B; does anyone have
+a post at a windzifter; may a blocked post slide along the aisle.
+**Answered.** "line 1, he drives the Merlo and check containers etc. for
+washing line one"; "No, nobody"; and on sliding: "depends on height (use of
+mast lift needed) or other accessibility option like the fixed stair/walkway
+(flotation tanks) (or ladder, but that is not added yet and low prio)".
+
+**Why it was red.** Abdellilah and Mohammed are both `permanent_feeder`. That
+role's `CrewManager.ZONES` list carried `wind_sifter`, and on a world with
+only line 3A built (the suite's fixture, and any save without the shredder
+hall) the windzifter was the ONLY zone match for both, so `assign_posts()`
+parked them 1 m off its edge — inside the neighbouring blower's 1.2 × 1.0 m
+collider, on no floor-level navmesh (the `why` line: nearest mesh 1.02 m
+away and 1.10 m up, ISLAND, inside `@StaticBody3D@2339`). Every earlier
+diagnosis chased the navmesh or the post-placement search; the post itself
+was fiction.
+
+**Fix.** `wind_sifter` left the permanent feeder's zone (one line, with the
+ruling in the comment). A jam at the windzifter still gets a responder:
+`_pick_responder` falls through to the floaters, which is his "crew only come
+when it blocks". His sliding answer is recorded as a design item — a post
+belongs at the machine's ACCESS point (mast lift for height, the fixed
+stair/walkway on the flotation tanks, ladders later) — not built today.
+
+**Measured.** `test_nav_connectivity`: `Result: PASS (10 ok, 0 fail)` on 3 of
+3 runs; the seven stationed posts carry the same station ids on every run
+(two positions differ by 0.1 m between runs — the aisle side is picked from
+where the worker happens to stand, which is the suite's documented
+provenance rule, not a flake); the two
+feeders now appear as the suite's own `ADVIS: 2 post(s) assigned OUTSIDE the
+site` (their spawn spot, since a 3A-only world has no line-1 station for
+them) instead of a fake post. Before the fix, in the full harness at
+`99b3a35` the same evening: `FAIL (9 ok, 1 fail)`, 14.67 m short.
+
+**Full harness at `99b3a35`** (task 1 committed, before this fix): `== done
+(exit 1)`, 113 steps, 33 min (17:44 → 18:17), 106 logs by mtime, 0 timeouts,
+0 SCRIPT ERROR lines, exactly two reds — `test_nav_connectivity` (this one)
+and `test_npc05_realworld` (expected). So after this commit the branch's
+honest red list is `test_npc05_realworld` alone.
