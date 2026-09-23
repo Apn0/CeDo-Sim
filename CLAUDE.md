@@ -124,6 +124,28 @@ count.
 > The same night, the dirty tree measured **5** reds. The 3 extra were the
 > WallOpenings flips, the intermittent navmesh collapse, and the #269 test break.
 
+> **2026-09-23 — the newest measurement; it supersedes the 2026-09-22 one
+> above.** Full harness on branch `claude/ready-daacfa` at `577d7d4` (seven
+> commits on top of `a619b1e`: P2 trip stop, P6 cart overflow, Q2/Q4/Q5,
+> phys-05 clamp, soak probe), run detached from the worktree with `PROJ=`
+> set: `== done (exit 1)`, **111 steps, 35 min, 105 logs by mtime, 0
+> timeouts, 3 reds** — the two known ones (`test_nav_connectivity` 14.67 m
+> short, identical; `test_npc05_realworld` expected) plus `test_jam_baseline`
+> at `6 polygons, 7 vertices`. That third one is the "intermittent navmesh
+> collapse" and it is now root-caused: the suite waited for the polygon count
+> to hold still for 60 frames, which latched onto the PREVIOUS bake's mesh
+> whenever the 37-body fixture bake took longer than that on its thread (the
+> world's own `bake_finished` handler printed AFTER the FAIL lines in the log;
+> the operator checkout's last jam log shows the same latch at 10 polygons).
+> Both suites now wait on `NavigationRegion3D.is_baking()` first, and
+> `MainWorld.rebake_navigation()` queues a rebake that lands during a running
+> bake. Measured rate after the fix: see
+> `docs/audit/overnight_enhancement_2026-09-23.md` §8. Seven new suites are
+> wired into `run.sh`: `test_motor_trip_stops_conveying`,
+> `test_lump_cart_overflow`, `test_lump_cart_speed_clamp`,
+> `test_save_checkpoint`, `test_keybind_sheet`, `test_map_labels`,
+> `test_compactor_sight_glass`.
+
 > **2026-09-21 — everything CeDo that is not this repo lives in ONE folder:
 > `D:\cedo_archive`.** Old bisect/merge/verify worktrees and clones were removed
 > after their uncommitted edits, untracked files and (for standalone clones) a
