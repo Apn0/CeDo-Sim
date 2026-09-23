@@ -1543,6 +1543,15 @@ func _find_mechanism(machine: Node) -> Node:
 	var list := _find_mechanisms(machine)
 	return list[0] if not list.is_empty() else null
 
+## The deck speed a belt node's film bed drifts at: the body's `belt_speed`
+## meta — the same number BeltSurface carries the player and rigid bodies
+## with, so the bed, the slats and a rider all move together.
+func _belt_speed_of(nd: Dictionary) -> float:
+	var body = nd.get("node")
+	if body != null and is_instance_valid(body) and body.has_meta("belt_speed"):
+		return float(body.get_meta("belt_speed"))
+	return 0.4
+
 ## The machine's FilmFlakeField visual layer (if it has one), for #173 coupling.
 ##
 ## MEASURED 2026-08-29 — same direct-children bug as _find_mechanisms above. The
@@ -2455,10 +2464,19 @@ func _tick_plc_power_downstream(delta: float) -> void:
 		# → flake density, throughput → drift speed, moisture/contam → wet/dirty look.
 		var view_s = nd_s.get("view")
 		if view_s != null and is_instance_valid(view_s):
-			view_s.call("set_live_state", load_s,
-				clampf(float(nd_s["moist"]) / 40.0, 0.0, 1.0),
-				clampf(float(nd_s["contam"]) / 15.0, 0.0, 1.0),
-				clampf(float(nd_s["buffer"]) / 40.0, 0.0, 1.0))
+			var moist01_s : float = clampf(float(nd_s["moist"]) / 40.0, 0.0, 1.0)
+			var contam01_s : float = clampf(float(nd_s["contam"]) / 15.0, 0.0, 1.0)
+			if bool(view_s.get("belt_mode")):
+				# P1 (2026-09-23) — a belt's field shows the BED: kg/m is what this
+				# node moved (thru) over the deck speed it moved it at (the body's
+				# belt_speed × the power ramp); a stopped deck holds what is on it.
+				var spin_s : float = float(nd_s["spin"])
+				view_s.call("set_belt_state", float(nd_s["thru"]),
+					_belt_speed_of(nd_s) * spin_s, spin_s > 0.05,
+					moist01_s, contam01_s, delta)
+			else:
+				view_s.call("set_live_state", load_s, moist01_s, contam01_s,
+					clampf(float(nd_s["buffer"]) / 40.0, 0.0, 1.0))
 		# Flow-gated emitters: material actually moving through this machine?
 		var flowing_s : bool = float(nd_s["thru"]) > 0.001
 		var plume_s = nd_s.get("plume")

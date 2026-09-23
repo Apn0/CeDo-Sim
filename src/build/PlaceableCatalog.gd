@@ -1176,6 +1176,12 @@ const _BELT_CARRY_SPEED : float = 0.4   # m/s along the belt deck's local +Z
 # while the carry meta was never even set on intake belts (they weren't in
 # _BELT_IDS) — visual lied, physics didn't fire at all.
 const _INTAKE_BELT_SPEED_MPS : float = 0.5
+# Compactorband (extruder silo → compactor) deck speed. Operator 2026-09-23:
+# "more like 4 centimeters per second" — it creeps, which is why its bed is
+# heaped (docs/plant/operator_rulings_2026-09-23.md). Used for the carry meta,
+# BeltSurface, the roller rpm and the film bed's drift; the belt used to run
+# at the generic 0.4 m/s.
+const COMPACTORBAND_SPEED_MPS : float = 0.04
 # Shader scroll value passed to make_belt_material for intake belts. With the
 # #140 fix below (make_belt_material no longer negates), positive caller value
 # = downstream flow. *0.25 keeps the apparent slat march matching the carry
@@ -1488,6 +1494,8 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 	if not ghost and (id in _BELT_IDS or _is_intake):
 		body.add_to_group("belt")
 		var carry : float = _INTAKE_BELT_SPEED_MPS if _is_intake else _BELT_CARRY_SPEED
+		if id == "compactorband":
+			carry = COMPACTORBAND_SPEED_MPS
 		body.set_meta("belt_speed", carry)
 		# #214 belt-speed ramp — per-belt coast-down time-constant. Heavy intake
 		# belts (the C3 climb from the U-bay and similar lift conveyors with
@@ -3906,6 +3914,9 @@ static func _m_belt(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> voi
 	# test_line1_overband_mount T5/T6.
 	spec["side_rail_height_frac"] = UITVOERBAND_RAIL_H_M / size.y
 	spec["side_rail_y_frac"] = (UITVOERBAND_RAIL_H_M * 0.5) / size.y
+	# P1 — this belt carries shredded film (line 1's uitvoerband, the sort
+	# line's transfer belts): the bed's depth uses the fluffy snipper density.
+	spec["bed_bulk_density"] = BeltBuilder.SNIPPER_BULK_KGM3
 	BeltBuilder.build_internal(p, "transport_belt", size, spec, ghost)
 
 # ── funnel: wide top cone narrowing to a spout — drops material from a machine
@@ -4096,6 +4107,8 @@ static func _m_intake_belt(p: Node3D, id: String, size: Vector3, _color: Color, 
 	s.chute = "discharge_intake"
 	s.chute_size_m = Vector3(0.30, 0.25, 0.30)
 	s.belt_speed_mps = _INTAKE_BELT_SPEED_MPS
+	# P1 — the intake network ferries shredded film (snippers) to the VSS silos.
+	s.bed_bulk_density = BeltBuilder.SNIPPER_BULK_KGM3
 	# Caller (build_node) already tags the body as a belt and attaches
 	# BeltSurface — disable the builder's tagging path so we don't run the same
 	# work twice and (incidentally) overwrite metas the caller already set.
@@ -4149,6 +4162,8 @@ static func _m_switch_belt(p: Node3D, size: Vector3, _color: Color, ghost: bool)
 	spec.chute = "none"
 	spec.decorations = ["switch_belt_marker_meta"]   # sets meta('switch_belt')
 	spec.extras = [Callable(PlaceableCatalog, "_switch_belt_chassis_extras")]
+	spec.bed_bulk_density = BeltBuilder.SNIPPER_BULK_KGM3   # P1 — same snippers as C1..C11
+	spec.belt_speed_mps = _INTAKE_BELT_SPEED_MPS            # the field drifts at the intake speed build_node tags
 	spec.tag_as_belt = false            # build_node() still owns belt tagging
 	BeltBuilder.build(p, "switch_belt", size, spec, ghost)
 
@@ -8386,7 +8401,7 @@ static func _m_compactorband(p: Node3D, size: Vector3, color: Color, ghost: bool
 	spec.has_legs           = false                   # legacy uses tapered legs (short -Z, tall +Z)
 	spec.motor              = "none"                  # legacy motor has custom r/length and position
 	spec.chute              = "none"                  # legacy discharge lip at Y=size.y*0.82 (not relative to deck_y)
-	spec.belt_speed_mps     = _BELT_CARRY_SPEED       # legacy tagging at build_node line 862-877 already handles this
+	spec.belt_speed_mps     = COMPACTORBAND_SPEED_MPS # build_node's tagging block sets the same per-id carry
 	# NB call-site at line 1100 still passes the child Model node (not the
 	# StaticBody3D). The parent body is already tagged at build_node (lines
 	# 862-877) so we go through build_internal (geometry only) — calling
@@ -8423,15 +8438,22 @@ static func _m_compactorband(p: Node3D, size: Vector3, color: Color, ghost: bool
 		inc.position = Vector3(0.0, eff_size.y * 0.55, 0.0)
 		inc.rotation.x = -deg_to_rad(20.0)
 		body.add_child(inc)
-		PlaceableCatalog._box(inc, Vector3(eff_size.x * 0.78, 0.06, eff_size.z * 0.96),
-			Vector3.ZERO, ldark)                                                       # belt deck
+		var cb_deck : MeshInstance3D = PlaceableCatalog._box(inc,
+			Vector3(eff_size.x * 0.78, 0.06, eff_size.z * 0.96), Vector3.ZERO, ldark)   # belt deck
+		cb_deck.name = "DeckSkin"
+		# P1 (2026-09-23) — the flake bed on this deck. Operator: "heaped, 20 cm
+		# or more" of washed, dried flake → FLAKE density. Seated on the deck's
+		# top face (0.06 thick, centred on the incline frame's origin).
+		if not is_ghost:
+			BeltBuilder.attach_film_field(inc, eff_size.x * 0.78, eff_size.z * 0.96, 0.03,
+				COMPACTORBAND_SPEED_MPS, BeltBuilder.FLAKE_BULK_KGM3)
 		PlaceableCatalog._box(inc, Vector3(0.05, eff_size.y * 0.16, eff_size.z * 0.96),
 			Vector3(eff_size.x * 0.4, eff_size.y * 0.1, 0.0), lskirt)
 		PlaceableCatalog._box(inc, Vector3(0.05, eff_size.y * 0.16, eff_size.z * 0.96),
 			Vector3(-eff_size.x * 0.4, eff_size.y * 0.1, 0.0), lskirt)
 		# End rollers (crosswise) at each end of the incline. D4 — spin at v/r.
 		var cb_r : float = eff_size.y * 0.12
-		var cb_rpm : float = (_BELT_CARRY_SPEED * 60.0) / (TAU * cb_r)
+		var cb_rpm : float = (COMPACTORBAND_SPEED_MPS * 60.0) / (TAU * cb_r)
 		PlaceableCatalog._spinning_cyl(inc, cb_r, cb_r, eff_size.x * 0.84,
 			Vector3(0.0, 0.0,  hz * 0.94), ldark, "x", Vector3.RIGHT, is_ghost, cb_rpm)
 		PlaceableCatalog._spinning_cyl(inc, cb_r, cb_r, eff_size.x * 0.84,
@@ -9188,6 +9210,7 @@ static func _m_inclined_belt(p: Node3D, _size: Vector3, _color: Color, ghost: bo
 	# Callable must reference the class (not `self` — this is a static func, so
 	# `self` is null). PlaceableCatalog._inclined_belt_extras is itself static.
 	spec.extras = [Callable(PlaceableCatalog, "_inclined_belt_extras")]
+	spec.film_field = false   # P1 — the extras seat the field on the real diagonal deck
 	BeltBuilder.build_internal(p, "inclined_belt_8m", _size, spec, ghost)
 
 # Extras callable for inclined_belt_8m — invoked by BeltBuilder after standard
@@ -9205,15 +9228,34 @@ static func _inclined_belt_extras(p: Node3D, _deck_root: Node3D, _size: Vector3,
 	# Diagonal belt deck — rotated about local X so its long axis lies along
 	# the (Y+Z) diagonal. Inner span = 0.85 m wide. Textured scrolling material
 	# so the inclined belt visibly moves when it's running.
+	# Rotation sign MEASURED 2026-09-23 (src/tests/probe_deck_orientation.gd):
+	# Node3D rotation.x = +45° sends local +Z to (0, -0.707, +0.707) — the +Z
+	# end DOWN. The rollers and A-frames climb from (y 0.25, z 0.25) to
+	# (7.75, 7.75), so a deck rotated +angle ran the OTHER diagonal, top-left to
+	# bottom-right, crossing its own frame at mid-height. -angle puts the deck
+	# on the frame (the convention BeltBuilder's tilted DeckPivot already uses),
+	# and the rails now stand on the deck's normal instead of a world-Y offset.
+	var n_up := Vector3(0.0, cos(angle), -sin(angle))   # the (corrected) deck's normal
 	var deck := _box(p, Vector3(0.85, 0.06, diag), mid, dark)
-	deck.rotation = Vector3(angle, 0.0, 0.0)
+	deck.name = "DeckSkin"
+	deck.rotation = Vector3(-angle, 0.0, 0.0)
 	if not ghost:
 		deck.material_override = make_belt_material(0.5, Vector2(1.0, diag * 0.5))
-	# Side rails
+	# Side rails — centred 0.12 m up the deck's normal (0.03 deck half + 0.09 rail half).
 	for sx in [-1.0, 1.0]:
 		var rail := _box(p, Vector3(0.06, 0.18, diag), \
-			mid + Vector3(sx * 0.42, 0.10, 0.0), steel)
-		rail.rotation = Vector3(angle, 0.0, 0.0)
+			mid + Vector3(sx * 0.42, 0.0, 0.0) + n_up * 0.12, steel)
+		rail.rotation = Vector3(-angle, 0.0, 0.0)
+	# P1 (2026-09-23) — the flake bed, in a frame whose +Z climbs the diagonal
+	# and whose +Y is the deck's normal; shredded film → SNIPPER density.
+	if not ghost:
+		var frame := Node3D.new()
+		frame.name = "DeckFrame"
+		frame.position = mid
+		frame.rotation = Vector3(-angle, 0.0, 0.0)
+		p.add_child(frame)
+		BeltBuilder.attach_film_field(frame, 0.85, diag, 0.03,
+			_BELT_CARRY_SPEED, BeltBuilder.SNIPPER_BULK_KGM3)
 	# End rollers (axis along X, crossing the belt). D4 — spin at v/r.
 	var ib_rpm : float = (_BELT_CARRY_SPEED * 60.0) / (TAU * 0.22)
 	_spinning_cyl(p, 0.22, 0.22, 0.95, Vector3(0.0, 0.25, 0.25), dark, "x", Vector3.RIGHT, ghost, ib_rpm)               # bottom roller

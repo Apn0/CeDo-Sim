@@ -447,6 +447,8 @@ the one before that ~6 months stale — treat this one as re-checkable too):
 | `docs/audit/material_trace_2026-08-18.md` | Follow one bale end-to-end: the symbol-flow + material-census tools, mass-minting proven structurally closed, and the spawn-clearance check that was unsatisfiable for 4 weeks |
 | `docs/audit/robustness_and_coverage_2026-09-21.md` | **Crash-safe persistence (`AtomicFile`) and 26 formerly-unrun suites now gated.** Why a save killed mid-write used to load back as an empty factory and get autosaved over; the delete-resurrection bug caught in the first draft; 5 mutation proofs. Plus the bisect that pins the `test_gate_carve` red on two rotation-sign flips in the uncommitted `WallOpenings.gd`, which reds are identical at clean HEAD, and what was measured but not touched |
 | `docs/audit/overnight_enhancement_2026-09-23.md` | **The unattended 2026-09-23 run: 12 commits, every one measured first.** A MotorOverload trip that never stopped conveying, a Lumpenwagen that lost kg when full, checkpoint saves, the F1 key sheet, map labels, the cart speed clamp, the compactor kijkglas, LineFlow moved to 10 Hz (2.85 → 0.54 ms/frame), and two harness reds root-caused as frame-count races (navmesh bake, bale streaming). Two full harness runs, the operator list at the end |
+| `docs/audit/operator_session_2026-09-23.md` | **The interactive 2026-09-23 session: tasks ranked by operator effort against sim impact, each answered by AskUserQuestion then built and measured.** Task 1: film beds on every belt (P1), the inclined belt's deck running the wrong diagonal, the cost probe, the renders; per-task evidence and the open questions each one left |
+| `docs/plant/operator_rulings_2026-09-23.md` | **Operator answers from memory, 2026-09-23** — film look, colour order, bed depth per belt, where wet flake is visible, screws "differ". Recollections, not documents: cite them as such |
 | `docs/audit/assets_loss_and_restore_2026-09-21.md` | **`assets/` was wiped and restored.** Godot's `.md5` fingerprints identify originals byte for byte: 159 of 273 are back exact and 101 are cache-only (listed; do not re-import them). Also the `Merlo.fbx` re-import trap, what `winfr` did and did not recover (nothing exact), and the method to reuse |
 | `docs/BACKLOG_ultracode_2026-07-19.md` | Deferred queue — 16 of 40 findings landed; also records the npc-05 vacuous-green correction |
 | `docs/DESIGN_SUGGESTIONS_2026-07-08.md` | Ranked roadmap, P1-P8 physicalization + Q1-Q8 QoL, every item file-cited |
@@ -458,6 +460,28 @@ the one before that ~6 months stale — treat this one as re-checkable too):
 
 ## Traps that have bitten before
 
+- **`Node3D.rotation.x = +θ` sends the local +Z end DOWN, and a symmetric deck
+  box hides a wrong sign for months.** Measured 2026-09-23
+  (`src/tests/probe_deck_orientation.gd`): Rx(+45°) maps +Z to
+  (0, −0.707, +0.707). `inclined_belt_8m`'s 11 m deck was rotated +angle while
+  its rollers and A-frames climbed the other way, so the deck crossed its own
+  frame at mid-height with the motor floating in the air
+  (`docs/plant/renders/shot_belt_bed_inclined_belt_8m_before.png`); every
+  render "looked like a belt" because a box has no front. BeltBuilder's
+  tilted decks use −incline for exactly this reason. When you seat anything on
+  a deck, read the built skin's `global_transform.basis.z` and check it climbs
+  toward the top roller; never derive the sign from the builder's comment.
+  Since P1 every BeltBuilder deck also carries a `FilmFlakeField` in belt mode
+  (a belt that builds its own deck in `extras` seats one with
+  `BeltBuilder.attach_film_field`), and a spec that zeroes the deck's width or
+  thickness now gets NO skin instead of a zero-volume one. Two more measured
+  facts from the same day: `NoiseTexture2D` generates on a thread and renders
+  blank until it is done (the first heap render was black — build a texture
+  from an `Image` when a capture or a first frame must show it), and a
+  MultiMesh driven from a vertex shader (`world_vertex_coords`, per-instance
+  `INSTANCE_CUSTOM`) costs the CPU ~3 µs per field per frame for 14 000
+  flakes where CPU-animated instances cost 1 ms for 3 500 — animate with
+  uniforms, write transforms once.
 - **A frame-counted wait against a wall-clock cadence is a frame-rate
   lottery.** Two suites went red on healthy worlds this way on 2026-09-23:
   `test_jam_baseline` waited 60 stable frames for a threaded navmesh bake that

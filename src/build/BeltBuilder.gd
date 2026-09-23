@@ -42,6 +42,22 @@ extends RefCounted
 
 # ── Imports / prefab constants ─────────────────────────────────────────────────
 const _BELT_SURFACE_PATH : String = "res://src/sim/BeltSurface.gd"
+const _FILM_FIELD_SCRIPT := preload("res://src/sim/FilmFlakeField.gd")
+
+# P1 (2026-09-23) — bulk densities the film BED on a belt derives its depth
+# from (kg/m ÷ (density × bed width), see FilmFlakeField.set_belt_state). Two
+# stated assumptions, visual-only (never a conservation quantity):
+#   SNIPPER — freshly shredded film, fluffy: ~60 kg/m³. A 7 cm shred of 50 µm
+#             film weighs ~0.2 g; loose shreds pack at a few percent of solid
+#             LDPE's 920 kg/m³.
+#   FLAKE   — washed, dried flake on the compactorband: 90 kg/m³. Derived from
+#             two operator statements (2026-09-23): the deck creeps at ~4 cm/s
+#             and the bed is "heaped, 20 cm or more" at production; at 3A/3B's
+#             0.61 kg/s that is 15 kg/m, and 15 kg/m over a 0.86 m bed is 20 cm
+#             at ~90 kg/m³. Loose dried LDPE flake sits in the 50-150 range;
+#             180 (ShredderFeedBelt.OUTPUT_DENSITY, a SETTLED pile) gave 10 cm.
+const SNIPPER_BULK_KGM3 : float = 60.0
+const FLAKE_BULK_KGM3   : float = 90.0
 
 # Carry speeds (kept in sync with PlaceableCatalog defaults — see _BELT_CARRY_SPEED
 # and _INTAKE_BELT_SPEED_MPS there). Duplicated here so BeltBuilder is usable
@@ -168,6 +184,13 @@ static func make_spec() -> Dictionary:
 		# Per-id payload passed verbatim to internal_builder_path instance via
 		# set(key, value).
 		"internal_overrides": {},
+		# P1 — seat a FilmFlakeField (belt mode) on the deck skin. A belt that
+		# builds its own deck in `extras` (deck_kind 'none') seats the field
+		# itself with attach_film_field(); the flag is then moot.
+		"film_field": true,
+		# Bulk density the field derives its bed depth from — SNIPPER_BULK_KGM3
+		# for shredded film, FLAKE_BULK_KGM3 for washed flake.
+		"bed_bulk_density": FLAKE_BULK_KGM3,
 	}
 
 # ── Public entry point ─────────────────────────────────────────────────────────
@@ -284,13 +307,18 @@ static func build_deck(p: Node3D, size: Vector3, spec: Dictionary, ghost: bool) 
 		deck_w = size.x * float(spec.get("deck_width_frac", 0.82))
 	var deck_t : float = float(spec.get("deck_thickness_m", 0.05))
 	var dark : StandardMaterial3D = _resolve_mat(String(spec.get("deck_material", "DARK")), ghost)
+	# A spec that zeroes the deck width or thickness (inclined_belt_8m: its extras
+	# build the real diagonal deck) wants NO skin here. It used to get a
+	# zero-volume box anyway; since the film field seats on the skin (P1), that
+	# box would also have carried a second, degenerate field.
+	var degenerate : bool = deck_w <= 0.01 or deck_t <= 0.0
 
 	# Build (or reuse) the deck PARENT — what subsequent rollers/rails attach to.
 	var deck_parent : Node3D = p
 	# deck_kind='none' = caller builds the deck themselves (in extras / bespoke
 	# legacy geometry). Skip the standard deck_skin box entirely; deck_parent
 	# stays as `p` so any subsequent rollers/rails (if not 'none') still attach.
-	if deck_kind == "none":
+	if deck_kind == "none" or degenerate:
 		return deck_parent
 	if bool(spec.get("sliding_deck", false)):
 		# switch_belt: inner 'Deck' Node3D that SwitchBelt.gd translates ±1.5 m.
@@ -325,8 +353,7 @@ static func build_deck(p: Node3D, size: Vector3, spec: Dictionary, ghost: bool) 
 		skin_y = deck_y + size.y * 0.22
 	var deck_skin : MeshInstance3D = _box(deck_parent, Vector3(deck_w, deck_t, size.z * 0.9),
 		Vector3(0.0, skin_y, 0.0), dark)
-	if bool(spec.get("sliding_deck", false)):
-		deck_skin.name = "DeckSkin"
+	deck_skin.name = "DeckSkin"   # named for every kind: the film field is seated on it (P1)
 	# Scrolling material overlay — only when deck_scroll != 0 (compactor_belt
 	# etc. stay plain dark).
 	var scroll : float = float(spec.get("deck_scroll", 0.6))
@@ -334,7 +361,36 @@ static func build_deck(p: Node3D, size: Vector3, spec: Dictionary, ghost: bool) 
 		var uv_y_frac : float = float(spec.get("deck_uv_tile_y_frac", 0.5))
 		deck_skin.material_override = _make_belt_material(scroll,
 			Vector2(1.0, size.z * uv_y_frac))
+	# P1 (2026-09-23) — the film bed. One field per deck, on the skin's top face,
+	# spanning it; LineFlow drives it (set_belt_state) from what the node moves.
+	if not ghost and bool(spec.get("film_field", true)):
+		attach_film_field(deck_parent, deck_w, size.z * 0.9, skin_y + deck_t * 0.5,
+			float(spec.get("belt_speed_mps", _BELT_CARRY_SPEED)),
+			float(spec.get("bed_bulk_density", FLAKE_BULK_KGM3)))
 	return deck_parent
+
+## Seat a belt-mode FilmFlakeField on a deck. `parent` is the node whose local
+## +Z runs DOWNSTREAM along the deck and whose local +Y is the deck's normal
+## (BeltBuilder's deck parent, or a bespoke frame the caller rotates the same
+## way); `top_y` is the deck skin's top face in that frame. The field spans
+## 92 % of the deck width and the given length, with a flake budget of ~120 per
+## m² of bed (120..1500 — one MultiMesh draw and no per-flake CPU work). Public so
+## belts that build their own deck (compactorband, inclined_belt_8m) use the
+## same seat. Returns the field.
+static func attach_film_field(parent: Node3D, deck_w: float, deck_len: float, top_y: float,
+		speed_mps: float, bulk_density: float) -> Node3D:
+	var field : Node3D = _FILM_FIELD_SCRIPT.new()
+	field.name = "FilmField"
+	var w : float = deck_w * 0.92
+	field.set("area", Vector2(w, deck_len))
+	field.set("surface_y", top_y + 0.005)
+	field.set("flake_size", 0.07)
+	field.set("flake_count", clampi(int(round(w * deck_len * 120.0)), 120, 1500))   # GPU-scrolled: ~120 per m²
+	field.set("flow_speed", speed_mps)
+	field.set("bed_bulk_density", bulk_density)
+	field.call("set_belt_mode", true)
+	parent.add_child(field)
+	return field
 
 ## Standard 4-leg support frame. Legs are tagged 'machine_leg' + meta('leg_h')
 ## so extend_machine_legs() can stretch them to the floor when the body is
