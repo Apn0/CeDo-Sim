@@ -3231,7 +3231,9 @@ func _bale_remaining(bale: Node3D) -> float:
 	if bale.has_meta("remaining_kg"):
 		return float(bale.get_meta("remaining_kg"))
 	var w := 350.0
-	if bale.has_meta("material_origin"):
+	if bale.has_meta("weight_kg"):
+		w = float(bale.get_meta("weight_kg"))          # the bale's OWN weight (rulings 2026-09-23 §18)
+	elif bale.has_meta("material_origin"):
 		var item := PlaceableCatalog.get_item(String(bale.get_meta("material_origin")))
 		if not item.is_empty():
 			w = BaleDefs.estimated_weight(item["size"] as Vector3)

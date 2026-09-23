@@ -445,3 +445,47 @@ heuristic, not the render.
 **Open.** The wall depth; whether the auger motors sit at the high end (taken
 from "the top is the output side"); the outlet lip. First-hand corrections
 welcome on the `_v2` renders.
+
+## Task 11 — LINE_1_FOLIE and a weight for every bale (rulings §18) — DONE 2026-09-24
+
+**Asked / answered.** Bale type name LINE_1_FOLIE; large bales ~1000 kg,
+±15 % one SD; "apply this variance/ratio whatever to all bale types that are
+present in the sim thus far (since I noticed while testing that e.g. all
+Rotterdam bales are the exact same weight → which is not realistic)".
+
+**Built.** `BaleDefs`: origins `line_1_folie` (2.00 × 1.70 × 1.50 m from
+§11's "about 1.70 m high, 2 m wide, 1.5 thick", `weight_kg` 1000, black,
+the dirtiest and wettest feed, tagged line "1", `metal_chance` 0.10 as a
+PLACEHOLDER for the metal-detect conveyor build — unused today) and
+`line_1_folie_small` (each side × 0.7, 343 kg — a stated reading of "a 30
+percent smaller version"); `nominal_weight(o)` (the origin's `weight_kg`,
+else footprint × bulk density as before); `WEIGHT_SD_FRAC` 0.15;
+`weight_factor(seq, origin)` — a Gaussian draw clipped at ±3 σ, seeded by
+origin and build sequence so a headless boot reproduces its yard;
+`assign_weight(body, size, origin)` sets `weight_kg` / `weight_nominal_kg`
+meta and is idempotent (a body that already carries `weight_kg` keeps it).
+`PlaceableCatalog`: the three bale-mass sites (`build_node`,
+`_build_light_bale`, `build_yard_bale_mm`) draw through it; the yellow label
+prints the body's own weight — the old ±50 kg label jitter is gone, it
+faked variance on the sticker while every body weighed the same; the light
+bale's label info likewise; the supplier sticker texture keeps the nominal
+(one texture per supplier). `LineFlow._bale_remaining` starts from
+`weight_kg` when the bale carries it. `ShredderFeedBelt` already read that
+meta.
+
+**Measured.** `test_bale_weight_variance`: `PASS (17 ok, 0 fail)`. 40
+Rotterdam bales: 40 distinct weights (the old yard had 1), mean 415 kg
+against a nominal 396 (+4.8 %), SD 14.0 % of the mean, range 299-536 kg
+inside the ±3 σ clip (218-574), `detail_bale()` keeps 345.8 kg, LineFlow's
+remaining_kg starts at that 345.8, a built LINE_1_FOLIE weighs 1106 kg with
+nominal 1000 recorded. First run had one red on correct code: the mass ↔
+meta equality at 1e-6, because `RigidBody3D.mass` is single precision
+(CLAUDE.md trap). Neighbours: `test_bale_yard_mass_conservation` PASS,
+`test_bale_sticker_supplier` PASS, `test_shredder_feed_belt` PASS,
+`test_line1_throughput` PASS, `test_lump_cart_coverage` PASS. Parse sweep
+434 ok.
+
+**Open.** Metal in line-1 bales and the reversing metal-detect first
+conveyor (§11) — queued, `metal_chance` waits for it. Whether the yard
+should spawn LINE_1_FOLIE bales by itself (today they come from the catalog /
+build menu like every origin).

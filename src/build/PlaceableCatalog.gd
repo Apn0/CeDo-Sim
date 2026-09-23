@@ -1487,7 +1487,7 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 		rb.can_sleep = true
 		rb.sleeping = true
 		rb.contact_monitor = false
-		rb.mass = maxf(BaleDefs.estimated_weight(size), 1.0)
+		rb.mass = maxf(BaleDefs.assign_weight(rb, size, id), 1.0)   # per-bale weight (rulings 2026-09-23 §18)
 		# Slow rotation a bit so a stacked bale settles before drifting
 		rb.linear_damp  = 0.4
 		rb.angular_damp = 1.2
@@ -1628,14 +1628,14 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 			# floating billboards), and the BarcodeScanner reads label_info
 			# off it.
 			if not ghost:
-				# Per-bale weight jitter ±50 kg so no two labels read identically
-				# (real bales vary with fill/moisture). Seeded off the running
-				# label sequence so each spawned bale gets its own value but it
-				# stays fixed once built.
+				# The label carries the bale's OWN weight (the real yellow labels
+				# carry the measured weight): BaleDefs.assign_weight() drew it above
+				# (rulings 2026-09-23 §18). The ±50 kg cosmetic label jitter that
+				# used to fake variance is gone — the body's weight_kg IS the
+				# variance now. The rng only numbers the batch.
 				var jitter_rng := RandomNumberGenerator.new()
 				jitter_rng.seed = hash(id) + _bale_label_seq * 7919
-				var weight_kg : int = int(round(BaleDefs.estimated_weight(size))) \
-					+ jitter_rng.randi_range(-50, 50)
+				var weight_kg : int = int(round(float(body.get_meta("weight_kg", BaleDefs.estimated_weight(size)))))
 				var info := {
 					"item":       String(item["name"]),
 					"origin":     id,
@@ -6710,7 +6710,7 @@ static func _build_light_bale(origin: String, ghost: bool) -> Node3D:
 	rb.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
 	rb.can_sleep = true
 	rb.sleeping = true
-	rb.mass = maxf(BaleDefs.estimated_weight(size), 1.0)
+	rb.mass = maxf(BaleDefs.assign_weight(rb, size, origin), 1.0)   # per-bale weight (rulings 2026-09-23 §18)
 	rb.linear_damp = 0.4
 	rb.angular_damp = 1.2
 	if not ghost:
@@ -6726,7 +6726,7 @@ static func _build_light_bale(origin: String, ghost: bool) -> Node3D:
 		var info := {
 			"item":       "%s bale" % String(o.get("name", origin)),
 			"origin":     origin,
-			"weight_kg":  int(round(BaleDefs.estimated_weight(size))),
+			"weight_kg":  int(round(float(rb.get_meta("weight_kg", BaleDefs.estimated_weight(size))))),
 			"batch":      "B-%04d" % (hash(origin + str(size)) & 0xFFFF),
 			"dimensions": "%.2f x %.2f x %.2f m" % [size.x, size.y, size.z],
 		}
@@ -7256,7 +7256,7 @@ static func _bale_sticker_texture(id: String = "rotterdam") -> ImageTexture:
 	var o := BaleDefs.get_origin(id)
 	var supplier_name : String = String(o.get("name", id)).to_upper()
 	var sz : Vector3 = o.get("size", Vector3(1.45, 1.25, 1.25))
-	var net_kg : int = int(round(BaleDefs.estimated_weight(sz)))
+	var net_kg : int = int(round(BaleDefs.nominal_weight(o)))   # one texture per supplier: the nominal
 	var img := Image.create(_BALE_STICKER_TEX_W, _BALE_STICKER_TEX_H, false, Image.FORMAT_RGB8)
 	# #170 — yellow shipping label, matching the LabelItem sticker colour the
 	# operator confirmed earlier.
@@ -7335,7 +7335,7 @@ static func build_yard_bale_mm(id: String, mmi: MultiMeshInstance3D, idx: int) -
 	rb.can_sleep = true
 	rb.sleeping = true
 	rb.contact_monitor = false
-	rb.mass = maxf(BaleDefs.estimated_weight(size), 1.0)
+	rb.mass = maxf(BaleDefs.assign_weight(rb, size, id), 1.0)   # per-bale weight (rulings 2026-09-23 §18)
 	rb.linear_damp = 0.4
 	rb.angular_damp = 1.2
 	rb.name = String(item["name"])

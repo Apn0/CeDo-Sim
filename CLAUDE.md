@@ -534,6 +534,11 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   headless frame rate from 55 to 140 fps. Wait on the thing you mean
   (`is_baking()`, the body count, wall time), never on a frame count, and
   print how long it actually took so the next reader can see the margin.
+- **`RigidBody3D.mass` reads back single-precision.** Write 415.7 kg from a
+  double and `mass` returns it ±3e-5. An equality against the meta the value
+  came from, at 1e-6, failed on CORRECT code (2026-09-24,
+  `test_bale_weight_variance`, first run). Compare masses at 1e-3, and treat
+  any 1e-6 float assertion against an engine property as suspect.
 - **LineFlow ticks at 10 Hz, not per frame (since 2026-09-23).** Its
   `_process` accumulates frame time and calls `tick(FLOW_TICK_DT)` at 0.1 s —
   the rate `SimTick` runs and the rate EVERY suite has always driven
