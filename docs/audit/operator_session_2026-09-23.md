@@ -398,3 +398,50 @@ reverse degassing in the screw, the degassing zone); the Laserfilter presses
 the melt through two laser-bored screen discs with a scraper disc rotating
 between them and discharges through screws — the operator's §7 picture. No
 pot geometry anywhere public; the photos remain the source.
+
+## Task 10 — the doseersilo as he described it (rulings §17) — DONE 2026-09-24
+
+**Asked / answered.** The top: "Open, no grating." The shape, from the three
+renders of the old model: "basically more like a flotation tank … the three
+screws going on like the bottom flat of it … tilted up slightly, about 20
+degrees or 25 degrees … the bottom is the input side, the top is the output
+side … the very bottom point sits at a height of about 1.7 meters … no
+semicircular shapes on top of it at all … maybe 10% less wide and 10%
+longer."
+
+**Built.** `PlaceableCatalog._m_doseersilo` rebuilt: an open flat-bottomed
+trough on a `Trough` frame rotated −22.5° about X (so local +Z rises —
+`DOSEERSILO_TILT_DEG`, the middle of his 20-25), vertical side walls, flat
+end plates, three augers along the bottom driven from the high end, four
+legs cut to the tilted bottom so the body's lowest point is
+`DOSEERSILO_LOW_Y` 1.7 m. The width and length come from the model he was
+judging: the old half-pipe measured 3.31 m across (size.x 3.6 × 0.92) and
+5.06 m long (size.z 5.5 × 0.92), so `DOSEERSILO_WIDTH_M` 2.98 = 0.9× and
+`DOSEERSILO_LENGTH_M` 5.57 = 1.1×. Catalog box (3.6, 2.6, 5.5) → (3.3, 5.0,
+6.2) to hold the tilt. The two 30 × 30 windows per side (§3) sit on the
+trough walls and lean with it; the level range is the wall height in the
+trough's frame. `MachineFlow` gives "doseersilo" its own ports instead of
+sharing "silo": inlet at the low −Z end (box y 0.50), outlet at the high +Z
+end (y 0.95). The grating, the half-discs, the bottom hopper are gone; the
+wall depth 1.0 m (`DOSEERSILO_DEPTH_M`) is a placeholder — he gave no depth.
+
+**Measured.** `test_doseersilo_trough`: `PASS (14 ok, 0 fail)` — tilt 22.5°,
+flat bottom, 2 walls + 2 flat ends, 0 half-discs, 0 grating, lowest point
+1.70 m, 2.98 / 5.57 m, 3 augers on the tilted frame, 4 legs, LineFlow finds
+it, inlet at −Z / outlet at +Z, outlet ≥ 1.5 m higher, both ports in the
+height band. `test_silo_level_windows`: `PASS (52 ok, 0 fail)` (was 50; the
+doseersilo checks now measure the pane pairs 0.90 m apart in 3-D, centred on
+the trough's plane, witnesses leaning 22.5°). Line-3C neighbours:
+`test_line3c_identity` PASS, `test_line3c_seq_alignment` 11 ok,
+`test_waslijn3c_overzicht` PASS (a teardown segfault after the verdict — the
+known 24 % mode), `test_l3c_unit_screens` PASS, `test_tag_snapshot`
+`28 ok, 0 fail, 1 skip` — identical to the 22:23 harness log, so the skip is
+not new. Parse sweep 434 ok. Renders `shot_doseersilo_{topdown,
+topfrontright, topfrontleft}_v2.png`, looked at and sent. The shot checker
+called the top-down "blank/flat" (variance 0.000179) while it plainly shows
+the trough and augers: the floor fills the frame at pitch 89, so that is the
+heuristic, not the render.
+
+**Open.** The wall depth; whether the auger motors sit at the high end (taken
+from "the top is the output side"); the outlet lip. First-hand corrections
+welcome on the `_v2` renders.

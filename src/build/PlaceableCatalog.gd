@@ -106,7 +106,7 @@ static func items() -> Array[Dictionary]:
 		# reference photo proportions (the silo is a TALL, slim box on stilts,
 		# not the squat block the prior dimensions implied).
 		{"id": "extruder_silo",  "name": "Extruder feed silo (elevated, 2 cyclones)", "category": "Structure", "size": Vector3(1.80, 6.5, 2.13), "color": Color(0.80, 0.77, 0.71)},
-		{"id": "doseersilo",     "name": "Doseer Silo",        "category": "Structure",  "size": Vector3(3.6, 2.6, 5.5),  "color": Color(0.66, 0.67, 0.70)},
+		{"id": "doseersilo",     "name": "Doseer Silo",        "category": "Structure",  "size": Vector3(3.3, 5.0, 6.2),  "color": Color(0.66, 0.67, 0.70)},   # 2026-09-23: tilted open trough (rulings section 17)
 			# ── Whole-line macros ────────────────────────────────────────────
 			# Placing one lays the ENTIRE line front-to-back from the click point,
 			# each machine an individually-joggable placed_object (K edit mode).
@@ -1188,6 +1188,18 @@ const _INTAKE_BELT_SPEED_MPS : float = 1.5
 # BeltSurface, the roller rpm and the film bed's drift; the belt used to run
 # at the generic 0.4 m/s.
 const COMPACTORBAND_SPEED_MPS : float = 0.04
+# Doseersilo (operator 2026-09-23, rulings §17): an open trough tilted "about
+# 20 degrees or 25 degrees" (middle taken), lowest point "about 1.7 meters"
+# up; the wall height is a stated placeholder (a flotation-tank-like trough
+# deep enough for three augers and a bed).
+const DOSEERSILO_TILT_DEG : float = 22.5
+const DOSEERSILO_LOW_Y    : float = 1.7
+const DOSEERSILO_DEPTH_M  : float = 1.0
+# "maybe 10% less wide and 10% longer" than the model he was shown — that
+# half-pipe measured 3.31 m across (size.x 3.6 × 0.92) and 5.06 m long
+# (size.z 5.5 × 0.92), so the trough is 0.9 × and 1.1 × those.
+const DOSEERSILO_WIDTH_M  : float = 2.98
+const DOSEERSILO_LENGTH_M : float = 5.57
 # Shader scroll value passed to make_belt_material for intake belts. With the
 # #140 fix below (make_belt_material no longer negates), positive caller value
 # = downstream flow. *0.25 keeps the apparent slat march matching the carry
@@ -5516,79 +5528,91 @@ static func _m_mill(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> voi
 ## outer two augers ride higher up the curved walls than the centre one (operator:
 ## "the 3 screws are angled upwards from the side walls"). Output is at the bottom.
 static func _m_doseersilo(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
+	# REBUILT 2026-09-23 from the operator's reading of three renders of the
+	# old model (docs/plant/operator_rulings_2026-09-23.md §17): "basically
+	# more like a flotation tank. With the three screws going on like the
+	# bottom flat of it. And then the thing as a whole, without the support
+	# construction legs, is tilted up slightly … about 20 degrees or 25
+	# degrees. So the bottom is the input side, the top is the output side.
+	# And then the legs are added so that the very bottom point sits at a
+	# height of about 1.7 meters. There is no semicircular shapes on top of it
+	# at all … maybe 10% less wide and 10% longer." And §17 first line: "Open,
+	# no grating." So: an OPEN flat-bottomed trough with vertical side walls
+	# and flat end plates, tilted DOSEERSILO_TILT_DEG about X so local +Z (the
+	# macro's downstream) rises — low end = inlet, high end = outlet — three
+	# augers along the flat bottom driven from the high end, legs from the
+	# floor to the trough, the lowest point of the body at DOSEERSILO_LOW_Y.
+	# The old half-pipe, its half-disc end plates, the walk-on grating and the
+	# bottom discharge hopper are gone. The two 30 × 30 cm level windows per
+	# long side (§3, 90 cm apart, centred) sit on the side walls and tilt with
+	# the trough; the level range is the wall height in the trough's frame.
 	var shell  := _mat(color, ghost, 0.45, 0.45)
 	var steel  := _mat(_STEEL, ghost, 0.60, 0.35)
 	var dark   := _mat(_DARK, ghost, 0.5, 0.55)
 	var flight := _mat(Color(0.78, 0.55, 0.16), ghost, 0.3, 0.5)   # auger flighting (brassy)
-	var grating := _mat(Color(0.36, 0.40, 0.38), ghost, 0.3, 0.85)
-	var yellow := _mat(_SAFETY, ghost, 0.2, 0.6)
 
-	var radius : float = size.x * 0.46
-	var length : float = size.z * 0.92
-	var leg_h : float = size.y * 0.34
-	var axis_y : float = leg_h + radius            # trough axis height; bottom sits at leg_h
-	var axis := Vector3(0.0, axis_y, 0.0)
+	var tilt : float = deg_to_rad(DOSEERSILO_TILT_DEG)
+	var depth : float = DOSEERSILO_DEPTH_M
+	var length : float = DOSEERSILO_LENGTH_M
+	var width : float = DOSEERSILO_WIDTH_M
+	# The frame's origin: the trough's bottom-plate centre. The lowest point of
+	# the body is the bottom plate's underside at the low (-Z) end.
+	var origin_y : float = DOSEERSILO_LOW_Y + length * 0.5 * sin(tilt) + 0.06 * cos(tilt)
+	var trough := Node3D.new()
+	trough.name = "Trough"
+	trough.position = Vector3(0.0, origin_y, 0.0)
+	trough.rotation = Vector3(-tilt, 0.0, 0.0)      # negative X rotation: +Z rises (measured, probe_deck_orientation)
+	trough.set_meta("tilt_deg", DOSEERSILO_TILT_DEG)
+	trough.set_meta("inner_w", width)
+	trough.set_meta("inner_l", length)
+	trough.set_meta("depth", depth)
+	p.add_child(trough)
 
-	# ── Heavy Structural Support Legs with Diagonal K-Bracing ─────────────────
+	# ── the open trough ────────────────────────────────────────────────────────
+	var bottom := _box(trough, Vector3(width + 0.12, 0.06, length), Vector3(0.0, -0.03, 0.0), shell)
+	bottom.name = "TroughBottom"
 	for sx in [-1.0, 1.0]:
-		for sz in [-1.0, 1.0]:
-			var lg := _box(p, Vector3(0.16, leg_h, 0.16), Vector3(sx * radius * 0.8, leg_h * 0.5, sz * length * 0.42), steel)
-			lg.add_to_group("machine_leg")
-			lg.set_meta("leg_h", leg_h)
-			_box(p, Vector3(0.26, 0.04, 0.26), Vector3(sx * radius * 0.8, 0.02, sz * length * 0.42), dark)
-	_box(p, Vector3(radius * 1.8, 0.12, 0.12), Vector3(0, leg_h - 0.08,  length * 0.42), steel)
-	_box(p, Vector3(radius * 1.8, 0.12, 0.12), Vector3(0, leg_h - 0.08, -length * 0.42), steel)
-	# Diagonal sway braces
-	for sx2 in [-1.0, 1.0]:
-		_box(p, Vector3(0.08, 0.08, length * 0.85), Vector3(sx2 * radius * 0.8, leg_h * 0.45, 0.0), steel)
-
-	# ── Half-cylinder trough (open top) + heavy bolted end plates + rim ───────
-	_half_pipe(p, radius, length, axis, shell, 9)
+		var wall := _box(trough, Vector3(0.06, depth, length), Vector3(sx * (width * 0.5 + 0.03), depth * 0.5, 0.0), shell)
+		wall.name = "TroughWall_L" if sx < 0.0 else "TroughWall_R"
+		_box(trough, Vector3(0.14, 0.08, length), Vector3(sx * (width * 0.5 + 0.03), depth + 0.02, 0.0), steel)   # rim flange
 	for sz in [-1.0, 1.0]:
-		_box(p, Vector3(radius * 2.0, radius, 0.08), Vector3(0, axis_y - radius * 0.5, sz * length * 0.5), shell)
-		_cyl(p, radius * 1.02, radius * 1.02, 0.04, Vector3(0, axis_y, sz * length * 0.5), steel, "z")
-	# Top rim flanges along the open edges
-	_box(p, Vector3(0.14, 0.10, length), Vector3( radius, axis_y, 0), steel)
-	_box(p, Vector3(0.14, 0.10, length), Vector3(-radius, axis_y, 0), steel)
+		var endp := _box(trough, Vector3(width + 0.12, depth, 0.06), Vector3(0.0, depth * 0.5, sz * (length * 0.5 + 0.03)), shell)
+		endp.name = "TroughEnd_low" if sz < 0.0 else "TroughEnd_high"
+	# Outlet lip at the high (+Z) end: the augers push the film over it.
+	_box(trough, Vector3(width * 0.6, 0.06, 0.45), Vector3(0.0, depth * 0.55, length * 0.5 + 0.25), steel)
 
-	# Level windows (operator 2026-09-23, rulings §3): "2 square windows approx
-	# 30x30 cm, horizontal distance 90 cm between them, centered along the
-	# tank, on both sides". Height on the wall is not specified: they sit on
-	# the trough's curved wall 35° below the axis, upright to the wall. The
-	# level range is the trough bottom up to the axis (the grating above).
+	# ── 3 augers along the flat bottom, driven from the high end ─────────────
+	var shaft_r : float = width * 0.03
+	var flight_r : float = width * 0.09
+	var aug_y : float = flight_r + 0.03
+	var aug_i : int = 1
+	for ax in [-width * 0.25, 0.0, width * 0.25]:
+		_spinning_auger(trough, length * 0.96, Vector3(ax, aug_y, 0.0), shaft_r, flight_r, steel, flight, ghost, 60.0, "auger_%d" % aug_i)
+		_motor_unit(trough, width * 0.05, width * 0.11, Vector3(ax, aug_y, length * 0.5 + 0.30), "z", ghost)
+		aug_i += 1
+
+	# ── level windows (§3) on the side walls, tilting with the trough ─────────
 	if not ghost:
-		var ds_fill : Node3D = _silo_fill_root(p, axis_y - radius, radius)
-		var ang : float = deg_to_rad(35.0)
+		var ds_fill : Node3D = _silo_fill_root(trough, 0.0, depth)
 		for sx in [-1.0, 1.0]:
-			var n := Vector3(sx * cos(ang), -sin(ang), 0.0)
 			for zz in [-0.45, 0.45]:
-				var centre := Vector3(0.0, axis_y, zz) + n * radius
-				_level_window(p, ds_fill, _window_port(centre, n), 0.30, 0.30, steel, ghost)
+				var centre := Vector3(sx * (width * 0.5 + 0.06), depth * 0.45, zz)
+				_level_window(trough, ds_fill, _window_port(centre, Vector3(sx, 0.0, 0.0)), 0.30, 0.30, steel, ghost)
 
-	# Safety walk-on grating & yellow safety borders covering open top
-	if not ghost:
-		_box(p, Vector3(radius * 1.9, 0.04, length * 0.96), Vector3(0, axis_y + 0.02, 0), grating)
-		_box(p, Vector3(radius * 2.0, 0.02, 0.08), Vector3(0, axis_y + 0.05,  length * 0.48), yellow)
-		_box(p, Vector3(radius * 2.0, 0.02, 0.08), Vector3(0, axis_y + 0.05, -length * 0.48), yellow)
-
-	# ── 3 independent augers along the bottom: centre lowest, outer two ride up walls ──
-	var shaft_r : float = radius * 0.06
-	var flight_r : float = radius * 0.17
-	var clr : float = flight_r * 1.15
-	var side_x : float = radius * 0.5
-	var side_y : float = axis_y - sqrt(maxf(radius * radius - side_x * side_x, 0.0)) + clr
-	_spinning_auger(p, length, Vector3(0.0, axis_y - radius + clr, 0.0), shaft_r, flight_r, steel, flight, ghost, 60.0, "auger_1")
-	_spinning_auger(p, length, Vector3(-side_x, side_y, 0.0), shaft_r, flight_r, steel, flight, ghost, 60.0, "auger_2")
-	_spinning_auger(p, length, Vector3( side_x, side_y, 0.0), shaft_r, flight_r, steel, flight, ghost, 60.0, "auger_3")
-
-	# ── Bottom discharge hopper & metered slide gate between legs ─────────────
-	_box(p, Vector3(radius * 0.95, leg_h * 0.72, length * 0.32), Vector3(0, leg_h * 0.5, 0), dark)
-	_box(p, Vector3(radius * 1.05, 0.06, length * 0.38), Vector3(0, leg_h * 0.15, 0), steel)
-
-	# ── 3 independent auger drive gearmotors on the rear (+Z) face ─────────────
-	_motor_unit(p, radius * 0.16, radius * 0.38, Vector3(0, axis_y - radius + clr, length * 0.5 + radius * 0.28), "z", ghost)
-	_motor_unit(p, radius * 0.14, radius * 0.34, Vector3(-side_x, side_y, length * 0.5 + radius * 0.25), "z", ghost)
-	_motor_unit(p, radius * 0.14, radius * 0.34, Vector3( side_x, side_y, length * 0.5 + radius * 0.25), "z", ghost)
+	# ── legs from the floor to the trough bottom, wherever the bottom is ──────
+	var xf : Transform3D = trough.transform
+	for lz in [-length * 0.38, length * 0.38]:
+		for lx in [-width * 0.40, width * 0.40]:
+			var foot : Vector3 = xf * Vector3(lx, -0.06, lz)     # the bottom plate's underside there
+			var h : float = maxf(foot.y, 0.2)
+			var lg := _box(p, Vector3(0.16, h, 0.16), Vector3(foot.x, h * 0.5, foot.z), steel)
+			lg.add_to_group("machine_leg")
+			lg.set_meta("leg_h", h)
+			_box(p, Vector3(0.26, 0.04, 0.26), Vector3(foot.x, 0.02, foot.z), dark)
+	# cross braces between the leg pairs at half height
+	for lz in [-length * 0.38, length * 0.38]:
+		var foot_c : Vector3 = xf * Vector3(0.0, -0.06, lz)
+		_box(p, Vector3(width * 0.8, 0.10, 0.10), Vector3(0.0, foot_c.y * 0.5, foot_c.z), steel)
 
 # ── flotation tank: long water bath, inlet roll, transport rolls, big outlet roll
 # Survey-fixed (#230): raised on a real ~3.5 m stand, side profile tapered inward

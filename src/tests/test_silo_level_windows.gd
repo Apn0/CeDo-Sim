@@ -99,25 +99,50 @@ func _s1() -> void:
 			sides["-x"] += 1
 	_check(ok_size, "S1 doseersilo windows are 0.30 x 0.30 m squares")
 	_check(sides["+x"] == 2 and sides["-x"] == 2, "S1 doseersilo: two windows on each long side (+x %d, -x %d)" % [sides["+x"], sides["-x"]])
-	zs.sort()
-	var mean_z : float = 0.0
-	for z in zs:
-		mean_z += z
-	mean_z /= maxf(float(zs.size()), 1.0)
-	_check(dp.size() == 4 and absf((zs[3] - zs[0]) - 0.90) < 1e-3 and absf(mean_z) < 1e-3,
-		"S1 doseersilo windows 0.90 m apart along the tank and centred (span %.3f, mean z %.3f)" % [zs[3] - zs[0] if zs.size() == 4 else -1.0, mean_z])
+	# The trough is TILTED (rulings §17), so "90 cm apart along the tank" is a
+	# distance along the trough, measured here as the 3-D distance between the
+	# two panes of one side, and "centred" as the pair's midpoint sitting on
+	# the trough's centre plane (z = 0 in the trough's frame).
+	var trough := ds.find_child("Trough", true, false) as Node3D
+	_check(trough != null, "S1 doseersilo has its tilted Trough frame")
+	var pair_ok := true
+	var centred_ok := true
+	for side in [1.0, -1.0]:
+		var pts : Array = []
+		for w in dp:
+			if (w["normal"] as Vector3).x * side > 0.5:
+				pts.append(w["pos"])
+		if pts.size() != 2:
+			pair_ok = false
+			continue
+		if absf((pts[0] as Vector3).distance_to(pts[1]) - 0.90) > 1e-3:
+			pair_ok = false
+		if trough != null:
+			var mid_local : Vector3 = trough.to_local(((pts[0] as Vector3) + (pts[1] as Vector3)) * 0.5)
+			if absf(mid_local.z) > 1e-3:
+				centred_ok = false
+	_check(pair_ok, "S1 doseersilo windows 0.90 m apart along the tank on each side")
+	_check(centred_ok, "S1 doseersilo window pairs centred along the tank")
 	var ds_fill := ds.find_child("SiloFill", true, false) as Node3D
-	_check(ds_fill != null and float(ds_fill.get_meta("silo_fill_range_y", 0.0)) > 1.0,
-		"S1 doseersilo level range %.2f m (trough bottom to axis)" % (float(ds_fill.get_meta("silo_fill_range_y", 0.0)) if ds_fill else -1.0))
+	_check(ds_fill != null and float(ds_fill.get_meta("silo_fill_range_y", 0.0)) > 0.8,
+		"S1 doseersilo level range %.2f m (the trough wall's height, in the trough's frame)" % (float(ds_fill.get_meta("silo_fill_range_y", 0.0)) if ds_fill else -1.0))
+	var mean_z : float = 0.0
 	if ds_fill != null:
+		# The walls are vertical in the trough's frame and the whole trough is
+		# tilted (rulings §17): every witness holder's up-axis leans off world
+		# up by the trough's tilt, and the pane sits flat on the wall (no
+		# slope scaling, unlike the old half-pipe).
 		var wits : int = 0
-		var tilted := true
+		var leaning := true
+		var lean_deg : float = 0.0
 		for h in ds_fill.get_children():
 			if h.has_meta("win_bottom_y"):
 				wits += 1
-				if absf(float(h.get_meta("win_y_scale")) - 1.0) < 0.01:
-					tilted = false
-		_check(wits == 4 and tilted, "S1 doseersilo: 4 witnesses on a sloped wall (y scale < 1)")
+				var up : Vector3 = (h as Node3D).global_transform.basis.y.normalized()
+				lean_deg = rad_to_deg(acos(clampf(up.dot(Vector3.UP), -1.0, 1.0)))
+				if lean_deg < 20.0 or lean_deg > 25.0:
+					leaning = false
+		_check(wits == 4 and leaning, "S1 doseersilo: 4 witnesses leaning with the trough (%.1f° off vertical, operator: 20-25)" % lean_deg)
 	# mengsilo
 	var ms := _build_unmerged("mengsilo")
 	await get_tree().process_frame

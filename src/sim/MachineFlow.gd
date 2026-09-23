@@ -365,9 +365,16 @@ static func profile(id: String) -> Dictionary:
 			pr["role"] = "sink"
 			pr["in"]   = Vector3(0.0, 0.95, 0.0)
 			pr["rate"] = 4.0
-		"silo", "doseersilo":
+		"silo":
 			pr["in"]  = Vector3(0.0, 0.9, 0.0)
 			pr["out"] = Vector3(0.0, 0.12, 0.0)
+		"doseersilo":
+			# 2026-09-23 (rulings §17): a trough tilted up along +Z — "the bottom
+			# is the input side, the top is the output side". Fractions of the
+			# catalog box (3.4 × 5.2 × 6.2): the low-end rim sits ~2.6 m up, the
+			# high-end rim ~4.9 m.
+			pr["in"]  = Vector3(0.0, 0.50, -0.42)
+			pr["out"] = Vector3(0.0, 0.95, 0.42)
 		# ── gravity connectors (funnel / transfer chute): passive pass-throughs, NOT
 		# throttles or operator machines. High rate so they never bottleneck; LineFlow's
 		# flow graph already routes machine→connector→machine by geometry. (#48) ──
