@@ -200,3 +200,93 @@ carts and spaces. → Nothing to build: standby areas are operator-placed
 
 Vacuum pots: "Use the EREMA diagrams" — look them up, show what was found
 before building (Rule 1). In-game look: "After the full harness".
+
+### EREMA / BritAS findings for task 9 (looked up 2026-09-23 evening; shown before building)
+
+Sources: EREMA INTAREMA TVEplus product page
+(https://www.erema.com/en/intarema_tveplus/) and brochure
+(https://www.erema.com/assets/media_center/folder/intarema_tveplus_2024_11_en.pdf),
+EREMA Laserfilter article, Kunststoffe 2014
+(https://www.erema.com/assets/press/bilder/2014_04_kunststoffe_Laserfilter_EN.pdf),
+BritAS ABMF product page (https://www.britas.de/en/product/abmf/).
+
+- **TVEplus sequence** (brochure callouts): Preconditioning Unit (cut, mix,
+  heat, dry, compact, buffer) → extruder screw with REVERSE degassing (3) →
+  at the end of the plasticising zone the melt is directed OUT of the
+  extruder, cleaned in the fully automatic self-cleaning filter (4) and
+  returned → final homogenisation (5) → the degassing zone (6) → melt pump →
+  the tool (8, e.g. the pelletiser) "at extremely low pressure". "Optimised
+  triple degassing": preconditioning unit, reverse degassing in the screw,
+  the extruder degassing zone. Filtration is upstream of degassing.
+- **Laserfilter**: the contaminated melt is pressed through TWO laser-bored
+  screen discs in parallel; a scraper disc ("scraper star") rotates BETWEEN
+  the static screen discs, lifts the contaminants off immediately and conveys
+  them to the discharge system (discharge screws); contamination such as
+  wood, paper, aluminium, copper; fineness 90-130 µm; up to 3,500 kg/h. This
+  is the operator's §7 picture: one filter per side, knives, side nozzles.
+- **BritAS ABMF** (line 6): "automatic belt melt filter" — fresh screen mesh
+  is fed at every filter change without stopping production; the melt is
+  stored temporarily while the belt advances. No discharge screw, as §7 says.
+- **Vacuum pots**: neither source gives their geometry. The sim's two vacuum
+  domes on the barrel already come from the operator's own 2026-07-20
+  photos (`gr-HMI_or-laserfilter_bl-vacuumpots_ye-vacuumcatchresiduebin…`),
+  and `ExtruderModel` already tracks two pots at 18 kg each with the lid-open
+  → VACUUM_ALARM cascade and `vacuum_line_gunk_kg` → `clean_vacuum_lines()`.
+  So P3 needs no new geometry source: a level behind each pot's sight glass
+  (the same proud witness port as the silos), the lid lifting on the alarm, a
+  gunk deposit on the riser, and the hold-E clean. Proposed to the operator.
+
+## 14. Vacuum pots — the cleaning is an OPERATOR MINI-GAME, not a hold-E (task 9, round 5; voice, transcribed)
+
+"This is a simulator, this is operator simulation stuff … I have never held
+any E's inside the factory." The end game is simulating operator tasks; first
+a working factory. What happens at a flooded vacuum pot:
+
+1. The lid has popped open. Pull it off — the plastic sticks to it more and
+   more, harder the longer the pot has been out of vacuum.
+2. With a **plamuurmes** (putty knife; "Emrah, who is Turkish, would say
+   müürmes") clear the melt off every inner plane of the pot: the TOP
+   section (top-left → top-right → bottom-right → bottom-left of that
+   plane), the BOTTOM flat plane the same way, then the side walls (for the
+   left: left-front, left-rear, left-bottom, left-front plane; the right
+   likewise). The tool is narrower than a plane, so it has to be pushed in
+   several times; sometimes it only goes halfway — pull it out, move it
+   aside when it is not touching the melt, push again; a spot that took
+   only half may take three quarters or all of it the next time, "depending
+   on how stiff the melt is".
+3. For testing: a plane counts as cleared at ≥ 90 %. When all four planes
+   are ≥ 90 % the melt block visibly moves — "drops down and forwards,
+   towards the player by like a centimetre" — and can be taken out BY HAND
+   (no tool) and placed or thrown anywhere: the ground, a container, the
+   lump pile under a filling cart, into the lump cart if there is room.
+4. Which pot: laser-filter trouble clogs the FIRST pot; head-filter (second
+   melt filter) trouble clogs the RIGHT pot; sometimes both.
+5. Put the lid back; if the seal is good, start the extruder again; the
+   vacuum pump reaches vacuum and the alarm clears.
+6. **The two-minute rule.** If you are at the pots when the alarm sounds and
+   you get the lid off, the pot clean and the lid back within about two
+   minutes, the extruder sees the vacuum restored, silences the alarm and
+   keeps running. Past two minutes it shuts down INSTANTLY — the extruder
+   screw motor, the vacuum pump, the laser-filter knife motor, water pumps,
+   the pelletiser head, everything on the extruder; the vacuum alarm stops
+   (no vacuum needed when off) and a different HMI alarm sounds saying it
+   shut down because of the laser-filter error.
+
+(`ExtruderModel`'s VACUUM_ALARM → FAULT cascade already runs 120 s; the
+mini-game and the by-hand block removal are new. Staged: A = the visible
+state — pot level behind the sight glass, lid lifting, gunk; B = the lid,
+the plamuurmes planes, the block, the re-lid and the seal.)
+
+## 15. Line 1 — queued (round 5)
+
+"Yes, both": the black agricultural-film bale type (≈1.7 × 2.0 × 1.5 m and
+a ~30 % smaller one, sometimes with scrap metal inside) and the first
+conveyor's metal detection with the reverse-one-length cycle (§11).
+
+## 16. Doseersilo top (round 5)
+
+Undecided until he sees it: "show top down image of it/them as well as
+top-front-right and top-front-left view" — rendered
+(`docs/plant/renders/shot_doseersilo_topdown.png`, `_topfrontright.png`,
+`_topfrontleft.png`) and sent. Build order after the look: "not decided
+yet, not relevant. ALL need to be done for alpha build anyways."

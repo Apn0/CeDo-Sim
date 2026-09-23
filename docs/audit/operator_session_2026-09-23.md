@@ -319,3 +319,53 @@ jam 1 166.3 s, jam 3 100.8 s — the same order as today.
 the (empty) operator world, and `test_nav_connectivity`'s pedestrian mesh is
 unaffected (vehicles route on their own grid). The building still has no
 door survey — this is the one doorway the operator ever placed.
+
+## The operator's in-game look (task 8 — after the full harness, his choice)
+
+Run the branch from the worktree (it has real `assets/` and `.godot/`):
+open `V:\_Claude\CeDo_Simulatoready-daacfa` in Godot 4.6.3 and press
+Play, or `Godot_v4.6.3-stable_win64_console.exe --path V:/_Claude/CeDo_Simulator/ready-daacfa`.
+Nothing below is guessed; each is a thing only the eye settles.
+
+**Today (2026-09-23 evening)**
+1. **Belt beds** (P1): stand at any 3A/3B transportband, line 1's belts after
+   shredder 1, or the compactorband while the line runs. A textured film heap
+   with crumpled shreds riding it, scrolling at the belt's speed; thin on the
+   intake belts (they run 1.5 m/s now), heaped on the compactorband (4 cm/s).
+   Judge: does the heap read as film; is the intake bed too thin; do the
+   shreds look right in size and colour order (white, blue, others, black).
+2. **Belt speeds**: 1.5 m/s intake, 1.0 m/s other conveyors — stand on one.
+3. **Silo windows** (P5): doseersilo two squares per long side, mengsilo one
+   small glass low on the +Z side, extruder silo 2×2 per long face — with the
+   line filling them, a film level in the glass. Judge: positions and sizes
+   against Geleen; does a level read through the glass at all in real light.
+4. **Compactor kijkglas**: now a boxed port on the cleanout door; a level
+   between ~27 % and ~38 % pot load.
+5. **Choke**: let a reject pile under a washer or screen fill (or block the
+   chute deliberately); the machine stops with `CHUTE-BLOCKED`; crew shovel
+   it on their service; RESETTEN on that HMI takes only after the shovel;
+   then start the line again. Judge: does the flow feel right.
+6. **Smoke**: overload a shredder or friction separator until it trips; about
+   one trip in three smokes heavily at the motor for 25 s, the radio calls
+   it, a responder walks over. Judge: the plume's look and amount.
+7. **Crew**: nobody stands at a windzifter any more; the two feeders are
+   line-1 men.
+
+**Last night (2026-09-23 morning, still unseen)**
+8. The Lumpenwagen heap in the bucket and the grey mound around a full cart
+   (Numpad 9 fills the aimed machine); lift a cart out of a mound.
+9. Checkpoint button on the pause card (P), 4th of 5.
+10. F1 key sheet on foot and in a cab.
+11. Map (M): Dutch machine names, crew names, violet HMI diamonds.
+12. A real trip: the rotor coasting to a stop over ~2.5 s.
+13. HMI readouts settling over ~0.4 s at the 10 Hz flow.
+
+## Full harness after the five task commits (`99fc375`)
+
+`== done (exit 1)`, 116 steps, 36 min (22:06 → 22:42), 109 logs by mtime,
+0 timeouts, 0 SCRIPT ERROR lines, one red: `test_npc05_realworld`
+(expected, the DRIVE_TO_INDOOR stall). Inside the run: `test_nav_connectivity`
+PASS (10 ok), `test_jam_baseline` PASS (16 ok, 0 fail, 0 skipped),
+`test_belt_film_field` 142, `test_silo_level_windows` 50, `test_chute_choke`
+24, `test_trip_smoke` 21. The morning's harness at `99b3a35` had 113 steps
+and two reds; the difference is the crew ruling and three new suites.

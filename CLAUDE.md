@@ -164,6 +164,18 @@ count.
 > branch's honest red list is **`test_npc05_realworld` alone**.
 > `docs/audit/operator_session_2026-09-23.md`.
 
+> **2026-09-23 night — the newest measurement; it supersedes the evening one
+> above.** Full harness on `claude/ready-daacfa` at `99fc375` (the interactive
+> session's five task commits on top: P1 belt beds, the crew ruling, P5 silo
+> windows + belt speeds, P6/P2 choke + smoke, the jam-baseline doorway):
+> `== done (exit 1)`, **116 steps, 36 min (22:06 → 22:42), 109 logs by mtime,
+> 0 timeouts, 0 SCRIPT ERROR lines, ONE red — `test_npc05_realworld`
+> (expected).** `test_nav_connectivity` PASS (10 ok) and `test_jam_baseline`
+> PASS (16 ok, 0 fail, **0 skipped**) inside the run. Five suites are new
+> since the morning: `test_belt_film_field`, `test_silo_level_windows`,
+> `test_chute_choke`, `test_trip_smoke` in the main loop, and the jam
+> baseline's own doorway. `docs/audit/operator_session_2026-09-23.md`.
+
 > **2026-09-21 — everything CeDo that is not this repo lives in ONE folder:
 > `D:\cedo_archive`.** Old bisect/merge/verify worktrees and clones were removed
 > after their uncommitted edits, untracked files and (for standalone clones) a
