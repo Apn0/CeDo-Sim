@@ -24,10 +24,16 @@ operator's checkout.
 | `f74b4a9` | **phys-05 interim** — the cart can no longer be flung or spun by a squeeze-eject | `test_lump_cart_speed_clamp` 6 ok; mutation 4 ok / 2 fail |
 | `eee57e8` | soak probe (no growth over 16.6 s; 9.4 ms/frame CPU floor) | `probe_world_soak_growth` |
 | `577d7d4` | docs for the soak | — |
+| `6f7b413` | **kijkglas** — the compactor's sight glass shows the pot's real load (SWI-012 p7 step 6) | `test_compactor_sight_glass` 21 ok |
+| `309018f` | **navmesh** — the "intermittent collapse" root-caused: the suite read the mesh before the bake finished | jam-baseline 3/3 PASS at 69/72/71 bake frames |
+| `f9cd335` | tick-cost probe — LineFlow ticked every frame, 2.85 ms of the CPU floor | `probe_tick_cost` |
+| `564e7e7` | **perf** — LineFlow ticks at the sim clock's 10 Hz, the rate every suite proves; 2.2 ms/frame saved | 14 flow suites green; second full harness §11 |
+| (closing) | spawn-clearance suite waits on wall time (the second frame-count race, §11); docs | NOLINE 12 ok / LINE 11 ok |
 
-Seven new suites are wired into `run.sh`'s main loop. The full harness was run
-once on the branch at the end of the night — see §7 for the measurement.
-Sections 1-6 below are the per-item evidence, in the order the work was done.
+Eight new suites are wired into `run.sh`'s main loop. The full harness was run
+twice on the branch — §7 (before the navmesh fix and the 10 Hz flow) and §11
+(after). The sections below are the per-item evidence, in the order the work
+was done.
 
 ## 1. P2 — a MotorOverload trip did not stop the drive (fixed)
 
@@ -447,16 +453,90 @@ reference was taken 240 frames after placing the lines, still settling; the
 soak's steady state was 9.4 ms). The rest is the engine, the physics server
 and navigation.
 
-**The finding.** `LineFlow` runs its whole flow step — spatial-query caches,
-52 nodes of PLC/feed/split/observer work — at frame rate, while the
-project's own sim clock (`SimTick`) is 10 Hz and **every suite drives
-`LineFlow.tick(0.1)`**: the tested rate is not the shipped rate. Ticking the
-flow at 10 Hz from an accumulator in `_process` would cut 2.85 ms/frame to
-~0.47 ms and make the game run the rate the harness proves. Not done tonight:
-the EMA smoothing constants in `tick()` are per-tick (the HMI's `thru` would
-settle in ~1.3 s instead of ~0.2 s wall time) and the MainWorld-based suites
-carry time-based expectations, so it needs its own full harness run and an
-operator look at the HMI response — listed as the next performance step.
+**The finding, then the change.** `LineFlow` ran its whole flow step —
+spatial-query caches, 52 nodes of PLC/feed/split/observer work — at frame
+rate, while the project's own sim clock (`SimTick`) is 10 Hz and **every
+suite drives `LineFlow.tick(0.1)`**: the tested rate was not the shipped
+rate. `LineFlow._process` now accumulates frame time and ticks at
+`FLOW_TICK_DT` = 0.1 s (catch-up capped at 1 s; the node still pauses with
+the tree, so nothing advances behind the pause menu — the reason it does not
+subscribe to `SimTick`, which is PROCESS_MODE_ALWAYS).
+
+Measured with the probe's extra row, same fixture:
+
+| | per frame at 60 Hz |
+|---|---|
+| `LineFlow.tick(1/60)` if called every frame | 2.749 ms |
+| `LineFlow._process(1/60)` as shipped (10 Hz accumulator) | **0.539 ms** |
+| reference `TIME_PROCESS` in that run | 10.03 ms (was 16.18 ms in the every-frame run) |
+| wall per frame, headless | 7.13 ms / 140 fps (was 18.13 ms / 55 fps) |
+
+The reference rows carry run-to-run variance (different settle state), the
+two LineFlow rows do not: 2.2 ms per frame is what the change removes.
+
+**What changes for the operator.** Per-tick EMA constants in `tick()` (the
+`thru` readouts, `lerpf(..., 0.25)` per tick) now settle in about 0.4 s of
+wall time instead of 0.07 s — instrument damping rather than frame-rate
+flicker; rotors, belts and flake fields keep their per-frame animation
+(`RotatingMechanism._process` is untouched). The HMI updates flow numbers at
+10 Hz. This is the rate the whole harness has always proven.
+
+**Verification:** the 14 suites that read flow state through a booted world or drive
+the flow directly, run against the 10 Hz LineFlow before the full harness:
+`test_l3c_unit_screens` 119 ok (1 pre-existing skip), `test_waslijn3c_overzicht`
+14 ok (1 skip), `test_hmi_screen_zeroing` 29 ok, `test_scada_dashboard_scene`
+29 ok, `test_tag_snapshot` 28 ok (1 skip, unchanged), `test_line1_throughput`,
+`test_line3a_flow_conformance`, `test_extruder_brain_wired` 24 ok,
+`test_qa_loop` 14 ok, `test_assessment_procedure` 10 ok,
+`test_shredder_rate_reconciliation`, `test_line1_no_false_overload`,
+`test_motor_trip_stops_conveying` 28 ok, `test_hmi_retired` 70 ok — all
+PASS, no verdict or count moved. The second full harness (§11) is the deciding
+run.
+
+## 11. The second full harness (02:58 → 03:30), and one more frame-count race
+
+Run with the navmesh fix, the kijkglas and the 10 Hz LineFlow in place:
+`== done (exit 1)`, **112 steps in 32 minutes, 0 timeouts, three reds**:
+
+| red | verdict |
+|---|---|
+| `test_nav_connectivity` | the known island, 14.67 m — unchanged; its bake now reads 281 polygons after 54 frames |
+| `test_npc05_realworld` | expected, same DRIVE_TO_INDOOR stall |
+| `spawn clearance NOLINE` | **new** — `bale RBs materialised so far: 0 (7 probe(s), 180 frames of drain)` |
+
+`test_jam_baseline` passed inside this run (71 bake frames, 279 polygons):
+the §8 fix holds under harness load.
+
+**The new red is the same class of defect as §8, exposed by the perf change.**
+`BaleYardManager.tick()` refreshes its "vehicle" cache every **2.0 s of wall
+time**, and the suite's yard probes are only seen at that refresh — but the
+suite waited a fixed **180 frames**. At the first harness's 55 fps that was
+3.3 s and bales streamed; with LineFlow at 10 Hz the same world runs at ~140
+fps, 180 frames is 1.3 s, the refresh never came, and the vacuity guard went
+red on a healthy world. The LINE configuration passed only because its heavier
+world runs at ~21 fps. Fix: the suite waits on wall time and on the condition
+(first body seen, then at least 3.0 s of drain; 12 s cap). Measured after:
+NOLINE `PASS (12 ok)` with 3234 bodies after 166 frames / 3.1 s; LINE
+`PASS (11 ok, 2 advisory)` after 64 frames / 3.0 s (exit 139 = the documented
+teardown segfault after the verdict).
+
+So the branch's honest red list is the two operator-owned reds, and two
+suites that used to be frame-rate lotteries now wait on the thing they mean.
+
+## Rule 5 backups left in the tree (gitignored)
+
+Every replaced file was copied first: `LineFlow.gd.bak_overnight`,
+`.bak_kijkglas`, `.bak_tick10`; `LumpCart.gd.bak_overnight`, `.bak_overnight2`;
+`LaserFilter.gd.bak_overnight`; `FloorPile.gd.bak_overnight`;
+`MapOverlay.gd`, `Hmi.gd`, `BaleClamp.gd`, `DayNightCycle.gd`,
+`SaveCoordinator.gd`, `MainWorld.gd`, `HUD.gd`, `SettingsManager.gd`,
+`PlaceableCatalog.gd`, `CutterCompactor.gd` (`.bak_overnight` / `.bak_kijkglas`
+/ `.bak_navbake`); `test_jam_baseline.gd.bak_navbake`,
+`test_nav_connectivity.gd.bak_navbake`, `test_spawn_clearance.gd.bak_drain`.
+All match `*.bak_*` in `.gitignore`; delete them once the branch is reviewed.
+The operator's `world_layout.json` has three fresh byte-identical backups next
+to it (`.bak-overnight-20260923-004258`, `.bak_preharness_20260923`) and its
+md5 (`741014d8ad70…`) never changed during the night.
 
 ## Things for the operator to look at in-game (not guessed)
 
@@ -488,6 +568,12 @@ operator look at the HMI response — listed as the next performance step.
   between ~27 % and ~38 % pot load, and be gone below/above. Whether it reads
   through the grime material at all, and whether the flake tint is right, are
   eye judgements.
+- **LineFlow at 10 Hz:** the flow now steps at the sim clock's 10 Hz instead
+  of every frame (2.2 ms/frame saved). Watch an HMI throughput readout and a
+  belt's flake field while a line runs: the numbers now settle over ~0.4 s
+  instead of flickering per frame, and nothing visual should stutter (the
+  rotors and flake animation are still per frame). If a readout feels
+  sluggish, `LineFlow.FLOW_TICK_DT` is the one constant.
 - **Watch a real trip once:** stand at shredder-2 (or any friction separator),
   overload it, and confirm the rotor visibly coasts to a stop over ~2.5 s. The
   ramp is measured headless (`commanded_rpm` 45 → 0, `spin` 1 → 0); the frame

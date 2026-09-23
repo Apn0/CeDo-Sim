@@ -139,12 +139,20 @@ count.
 > the operator checkout's last jam log shows the same latch at 10 polygons).
 > Both suites now wait on `NavigationRegion3D.is_baking()` first, and
 > `MainWorld.rebake_navigation()` queues a rebake that lands during a running
-> bake. Measured rate after the fix: see
-> `docs/audit/overnight_enhancement_2026-09-23.md` §8. Seven new suites are
-> wired into `run.sh`: `test_motor_trip_stops_conveying`,
+> bake; measured after the fix, jam-baseline 3 of 3 green at 69/72/71 bake
+> frames (§8 of the audit doc). A **second full harness** the same night, with
+> that fix, the compactor kijkglas and LineFlow at 10 Hz in place: 112 steps,
+> 32 min, again 3 reds — the two operator-owned ones plus `spawn clearance
+> NOLINE`, which was the SAME class of defect: the suite waited 180 frames for
+> bale bodies while `BaleYardManager` refreshes its vehicle cache every 2.0 s
+> of wall time, and the faster frame rate (55 → 140 fps headless) turned 180
+> frames into 1.3 s. Fixed to wait on wall time; NOLINE 12 ok / LINE 11 ok
+> after. So the honest red list on the branch is the two operator-owned reds.
+> Eight new suites are wired into `run.sh`: `test_motor_trip_stops_conveying`,
 > `test_lump_cart_overflow`, `test_lump_cart_speed_clamp`,
 > `test_save_checkpoint`, `test_keybind_sheet`, `test_map_labels`,
-> `test_compactor_sight_glass`.
+> `test_compactor_sight_glass`, plus `test_lump_chunk_ccd` from the previous
+> session. Full story: `docs/audit/overnight_enhancement_2026-09-23.md`.
 
 > **2026-09-21 — everything CeDo that is not this repo lives in ONE folder:
 > `D:\cedo_archive`.** Old bisect/merge/verify worktrees and clones were removed
@@ -412,18 +420,18 @@ are **geometry keys**, not placeable ids, and stay.
 
 ## Where things are
 
-313 GDScript files, 109,663 lines under `src/` (measured 2026-08-23; the
-previous "285 / 105,241 / 72 tests" in this table was ~6 months stale, so treat
-this one as re-checkable too — `find src -name '*.gd' | wc -l`):
+417 tracked GDScript files, 132,980 lines under `src/` (measured 2026-09-23
+with `git ls-files 'src/*.gd'`; the 2026-08-23 figure was 313 / 109,663 and
+the one before that ~6 months stale — treat this one as re-checkable too):
 
-| dir | tracked `.gd` (2026-09-05) | what |
+| dir | tracked `.gd` (2026-09-23) | what |
 |---|---|---|
-| `src/scenes/` | 135 | world, player, NPC, vehicles, HUD/HMI |
-| `src/tests/` | 151 | every proof; also the render + shot tools (109 are `test_*.gd`) |
+| `src/scenes/` | 136 | world, player, NPC, vehicles, HUD/HMI |
+| `src/tests/` | 193 | every proof; also the render + shot tools and probes (138 are `test_*.gd`) |
 | `src/sim/` | 47 | LineFlow, TagMap, MachineFlow, machine models |
 | `src/autoload/` | 19 | singletons (WorldLayout, SettingsManager, AudioManager…) |
 | `src/build/` | 16 | `PlaceableCatalog` + `BuildMode` — the two biggest files |
-| `src/data/`, `src/operator/`, `src/util/` | 5 | plant data, operator context |
+| `src/data/`, `src/operator/`, `src/util/` | 6 | plant data, operator context |
 
 ## Doc index — `docs/`
 
@@ -449,6 +457,26 @@ this one as re-checkable too — `find src -name '*.gd' | wc -l`):
 
 ## Traps that have bitten before
 
+- **A frame-counted wait against a wall-clock cadence is a frame-rate
+  lottery.** Two suites went red on healthy worlds this way on 2026-09-23:
+  `test_jam_baseline` waited 60 stable frames for a threaded navmesh bake that
+  takes ~70 frames, and `test_spawn_clearance` waited 180 frames for bale
+  bodies that only stream after `BaleYardManager`'s 2.0 s wall-clock cache
+  refresh — the second one only surfaced when a perf change raised the
+  headless frame rate from 55 to 140 fps. Wait on the thing you mean
+  (`is_baking()`, the body count, wall time), never on a frame count, and
+  print how long it actually took so the next reader can see the margin.
+- **LineFlow ticks at 10 Hz, not per frame (since 2026-09-23).** Its
+  `_process` accumulates frame time and calls `tick(FLOW_TICK_DT)` at 0.1 s —
+  the rate `SimTick` runs and the rate EVERY suite has always driven
+  (`lf.tick(0.1)`). Before, `_process` called `tick(delta)` every frame:
+  measured with `probe_tick_cost` at 2.85 ms of every 60 Hz frame for 52
+  nodes, the largest single item of the CPU floor, and a rate nothing tested.
+  Per-tick EMAs in `tick()` (`thru` etc.) therefore settle in ~0.4 s of wall
+  time. If you add flow logic, make it delta-correct at 0.1 s and prove it with
+  `tick(0.1)` — do not reintroduce per-frame calls, and do not subscribe
+  LineFlow to `SimTick` (that autoload is PROCESS_MODE_ALWAYS and would run the
+  flow behind the pause menu — the QaLab header explains).
 - **A stop that is written AFTER the conveying split is not a stop.** LineFlow's
   tick is `_tick_plc_power_downstream` (PLC writes `powered`, runs the spin and
   mechanism ramp) → `_tick_feed` → `_tick_process_machines` (conveys on `spin`)
