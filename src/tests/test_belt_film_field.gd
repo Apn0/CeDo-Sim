@@ -382,7 +382,12 @@ func _s4() -> void:
 	var held : float = float(v1.call("bed_kg_per_m"))
 	for _t in 40:
 		lf.tick(TICK_S)
-	_check(held > 1.0, "S4 the stopped belt still carries %.2f kg/m" % held)
+	# How much is left depends on the transit time against the 2.5 s spin-down:
+	# at the operator's 1.0 m/s a 4 m belt empties in 4 s, so most of the bed
+	# has left before the deck stands; at the old 0.4 m/s (10 s transit) about
+	# three quarters stayed. The drain slows with the deck (transit is taken at
+	# the live speed), which is why something always remains.
+	_check(held > 0.0, "S4 the stopped belt still carries %.2f kg/m" % held)
 	_check(float(v1.call("bed_kg_per_m")) == held, "S4 the bed holds exactly through 4 s stopped (%.3f kg/m)" % held)
 	_check(float(v1.call("belt_speed_mps")) == 0.0, "S4 the stopped belt's flakes drift nothing")
 

@@ -86,3 +86,68 @@ that). Where an answer set a number in code, the code cites this file.
 |---|---|
 | does the real one smoke | "Visible smoke sometimes" |
 | what it looks like | "Heavy smoke, people react" |
+
+## 6. Doorway fixture (task 5)
+
+"Suite builds its own gate (Recommended)" — `test_jam_baseline` is to place
+its own 3A/3B gate fixture; the operator's world stays without a door.
+
+## 7. Extruder lump carts, the laser filter, line 6 (task 7 — voice answers, transcribed as given)
+
+**3C carts / smeltfilter 1 and 2.** Smeltfilter 1 is the LASER FILTER, the
+first filter seen from the PCU (input) side: a cylinder standing with its
+flat sides along the barrel, the bottom of its round part 10-20 cm above the
+barrel's highest point; on each flat side a smaller cylinder ~8-9 cm in
+diameter sticks out 25-30 cm, with a hole at its end and a short pipe
+(~6 cm long, ~75 mm wide) pointing down — that pushes the scraped-off
+material out and down into the lump cart, one cart on either side. Inside:
+two filters (one per side), three knives each, scraping the bad product off
+and expelling it through the side nozzles. Smeltfilter 2 is the HEAD FILTERS
+(kopfilter): they capture the dirt, are changed as filter changes, and have
+NO lump carts — they have the cabinets with the two expanding filter-head
+changer units, one top and one bottom. Look up EREMA (the extruder's maker)
+for diagrams of the laser filter, head filters, vacuum units, barrel/screw,
+and probably the pelletizer.
+
+**Layout along the barrel (material direction):** PCU intake slider →
+extruder screw start → (past the HMI on its stand, at the FRONT, between the
+PCU and the laser filter) → laser filter + vacuum pots (one unit with two
+pots) → head filters → melt pump on 3C and 6 only → die and pelletizer head.
+The platform is at the REAR of the extruder, the PCU side.
+
+**Carts:** "there is no carts for an extruder. They are optionally bought
+extra." Geleen had FOUR carts per extruder at least: two on standby (empty),
+two under the laser filter (one either side) once the extruder runs. A full
+cart is swapped for an empty one and parked in the yellow-marked area; after
+cooling it is emptied with the forklift and parked back empty on the yellow
+line, ready for the next swap. So 3C = 2 carts in use + 2 standby, not 4 in
+use. (Corrects the "2 or 4?" question in `docs/plant/extruder_line_layout.md`.)
+
+**Line 6 — Britas.** "There is a misunderstanding": the Britas unit
+(extruder 6 only, a different maker) is an ABMF, automatic band melt filter:
+a long filter band, one side new mesh; during a change the melt pressure is
+lowered and the band is pulled ~30 cm across the barrel head so clean mesh
+faces the extruder; the dirty material sticks to the sieve. NO discharge
+screw, NO lump carts. (Corrects the "uittrekschroeven" reading.)
+
+## 8. Conveyor speeds, and how wrong speeds should play (conflict 1)
+
+"Every conveyor can be running at a different speed" from its HMI settings.
+If today's estimates are wrong, that is gameplay: one conveyor too fast into
+one too slow → too much material on the second → a heap → a blockage in the
+transition chute → material builds up, pressure on conveyor two, the motor
+gets hot, draws more amps and TRIPS → all conveyors in that section stop →
+the operator goes there, shovels, finds the cause and fixes the speed. "If we
+just have good estimates, or at least good enough, then the rest of it is
+basically my gameplay." → today's numbers stand: intake transportbanden
+~1.5 m/s, the other conveyors ~50 % slower (~1.0 m/s). The mismatch → chute
+blockage → overload trip chain is a DESIGN ITEM (belt capacity from speed ×
+bed, chute overload) — not yet modelled.
+
+## 9. Extruder silo windows (conflict 2)
+
+"It's four windows per side" — on the LONG sides, not the short sides where
+the ladder is. Think of a long face in four quadrants; each window sits in
+the inner sub-quadrant of its quadrant — "the most centre of the centre, but
+not actually in the centre overlapping", not touching. Vertical (taller than
+wide). This supersedes the #98/#99 layout (two windows per short face).

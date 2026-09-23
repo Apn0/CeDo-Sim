@@ -165,3 +165,58 @@ them) instead of a fake post. Before the fix, in the full harness at
 0 SCRIPT ERROR lines, exactly two reds — `test_nav_connectivity` (this one)
 and `test_npc05_realworld` (expected). So after this commit the branch's
 honest red list is `test_npc05_realworld` alone.
+
+## Task 3 — silo level windows (DONE), and the belt speeds he settled on the way
+
+**Asked.** Which silos show a level from outside, and what the indicator is.
+**Answered.** Doseersilo, mengsilo, extruder silo (not the VSS): "dosing silo
+2 square windows approx 30x30 cm horizontal distance 90cm between them
+centered along the tank, on both sides. mixing silo 1 small 15x15cm window
+1/3 the way up on 1 side, extruder silo 4 vertical windows on each side" —
+and, when the last one collided with the #98/#99 layout: "It's four windows
+per side. And the sides I mean are not the short sides where the ladder would
+be. But the long sides … every window would be in the … most centre of the
+centre, but not actually in the centre overlapping."
+
+**Built.** `PlaceableCatalog._level_window` (a proud sight-glass port: ring,
+gauge glass, dark back, `LevelWitness` slab), `_silo_fill_root`,
+`set_silo_fill`, `_window_port`; the doseersilo's two 0.30 m squares per long
+side at z = ±0.45 on the trough wall 35° below the axis (his numbers give the
+spacing, not the height — that is a stated placement), the mengsilo's 0.15 m
+window at a third of the height above the legs on +Z (the invented vertical
+strip is gone), the extruder silo's eight 0.29 × 0.61 m windows on the ±X
+faces at ±bd/8 and ±box_h/8 (ribs 1 and 2 removed, the short-face windows and
+the #89 static flake pile removed). LineFlow finds each node's `SiloFill` and
+drives it every tick from the input batch's kg against `SILO_FULL_KG` (150,
+the VSS convention). **The morning's compactor kijkglas turned out invisible**
+— rendered at 33 % pot load: a grey door plate — because the door and drum
+are opaque and the PotFill column is inside; it is now the same proud port
+under the hatch, driven by `set_pot_fill()`.
+
+**Measured.**
+
+| what | result |
+|---|---|
+| `test_silo_level_windows` | `Result: PASS (50 ok, 0 fail)` — S1 counts, sizes, faces, spacing, a-third-up, inner sub-quadrants, no-touch gaps, VSS none; S2 witnesses hidden / partial / full, top ON the level line (also on the 35° trough wall), monotonic; S3 build_node keeps `SiloFill` through StaticMerge and a real LineFlow mengsilo reads 0.50 after one tick with 75 kg injected, falling as it discharges; S4 the compactor port at the kijkglas height shows nothing at 20 %, a partial line at 33 %, full at 50 % |
+| `test_compactor_sight_glass` | 21 ok (the PotFill column and its meta are unchanged) |
+| renders (`shot_silo_level.gd`) | `docs/plant/renders/shot_silo_level_{doseersilo_47pct, mengsilo_10pct, extruder_silo_45pct, compactor_kijkglas_33pct, compactor_kijkglas_33pct_back}.png` — looked at: the doseersilo pair and the mengsilo glass show the film level; the extruder silo's lower pair shows it at 45 % and the upper pair the dark cavity; the compactor render before the fix showed no level at all |
+| belt speeds (rulings §8) | `_BELT_CARRY_SPEED` 0.4 → 1.0, `_INTAKE_BELT_SPEED_MPS` 0.5 → 1.5 (both files). `test_belt_film_field` 142 ok after one expectation moved with the physics (a 4 m belt at 1.0 m/s empties in 4 s, so little bed remains after the 2.5 s spin-down; the hold check now asserts the remainder holds exactly, not a size); the belt/line batch below |
+
+Belt/line batch on this code (detached, 21:00-21:05): 23 of 23 green —
+`test_belt_film_field` 142, `test_silo_level_windows` 50,
+`test_compactor_sight_glass` 21, the four line conformance/throughput suites,
+`test_belt_discharge_geometry`, `test_line1_overband_mount`,
+`test_macro_part_placement`, `test_line_builder_ghost` 29,
+`test_line1_twin_streams`, `test_line1_no_false_overload`,
+`test_shredder_rate_reconciliation`, `test_tag_snapshot` 28 (1 skip,
+unchanged), `test_shredder_feed_belt`, `test_feed_belt_orientation`,
+`test_lump_cart_coverage`, the three line identity suites (3A exit 139 =
+the documented teardown segfault after its PASS), `test_project_sweep_guards`
+19, `test_macro_delta_guard`; 0 SCRIPT ERROR lines. Parse sweep 428 ok.
+
+**Honest limits.** The doseersilo windows' height on the trough wall and the
+mengsilo's side are placements, not his numbers. The kijkglas port is square
+(0.24 m) where the real one is round. A port on the cleanout door swings with
+the door; the witness under it does too, but the interior column does not
+(nobody sees it). `SILO_FULL_KG` = 150 is the sim's kg scale, not a vessel
+volume.

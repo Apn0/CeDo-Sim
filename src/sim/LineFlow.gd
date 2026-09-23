@@ -70,6 +70,10 @@ const Conveyor8Script    = preload("res://src/sim/Conveyor8.gd")    # #138
 # #138 — VSS buffer over this fraction-of-capacity counts as "FULL" for the
 # overflow trip. When BOTH VSS_3A and VSS_3B are over this, C8 reverses.
 const VSS_FULL_KG       : float = 150.0
+# The buffer at which a silo's level windows read FULL. The sim's silos are
+# kg-scaled like the VSS (150 kg = "full" for the pack-up cascade), not to
+# the real vessels' cubic metres — one convention for every silo glass.
+const SILO_FULL_KG      : float = VSS_FULL_KG
 # ── #52 advanced-systems OBSERVERS (additive, conserving) ─────────────────────
 # These pure-sim modules run ALONGSIDE the material flow purely as observers: the
 # extruder thermal/rheology + MFI soft-sensor publish telemetry, the motor-overload
@@ -693,6 +697,9 @@ func _process_discovered_node(node3d: Node3D, id_ordinal: Dictionary, code_owner
 		# #173 visual coupling: the machine's FilmFlakeField (if any), driven
 		# each tick from this node's live telemetry so the look matches the sim.
 		"view":    _find_film_field(node3d),
+		# P5 (2026-09-23) — the silo's level windows (PlaceableCatalog.SiloFill);
+		# driven every tick from this node's buffer against SILO_FULL_KG.
+		"silo_fill": _find_silo_fill(node3d),
 		# Flow-gated visuals: steam plume + extruder die-face melt strands only
 		# show while material is actually being processed (no invention from nothing).
 		"plume":       _find_steam_plume(node3d),
@@ -1542,6 +1549,12 @@ func _find_mechanisms(machine: Node) -> Array:
 func _find_mechanism(machine: Node) -> Node:
 	var list := _find_mechanisms(machine)
 	return list[0] if not list.is_empty() else null
+
+## The silo's SiloFill root (level windows), or null for machines without one.
+func _find_silo_fill(machine: Node) -> Node:
+	if machine == null:
+		return null
+	return machine.find_child("SiloFill", true, false)
 
 ## The deck speed a belt node's film bed drifts at: the body's `belt_speed`
 ## meta — the same number BeltSurface carries the player and rigid bodies
@@ -2477,6 +2490,16 @@ func _tick_plc_power_downstream(delta: float) -> void:
 			else:
 				view_s.call("set_live_state", load_s, moist01_s, contam01_s,
 					clampf(float(nd_s["buffer"]) / 40.0, 0.0, 1.0))
+		# P5 — silo level windows track the buffer (kg) against SILO_FULL_KG. Read
+		# the input batch itself: nd["buffer"] is only refreshed later in the
+		# tick by _tick_process_machines, so it would lag the glass by one tick.
+		var sf_s = nd_s.get("silo_fill")
+		if sf_s != null and is_instance_valid(sf_s):
+			var n3d_s = nd_s.get("node")
+			var bin_s : MaterialBatch = nd_s.get("in", null) as MaterialBatch
+			var kg_s : float = float(bin_s.mass_kg) if bin_s != null else float(nd_s["buffer"])
+			PlaceableCatalog.set_silo_fill(n3d_s as Node3D,
+				clampf(kg_s / SILO_FULL_KG, 0.0, 1.0), sf_s as Node3D)
 		# Flow-gated emitters: material actually moving through this machine?
 		var flowing_s : bool = float(nd_s["thru"]) > 0.001
 		var plume_s = nd_s.get("plume")

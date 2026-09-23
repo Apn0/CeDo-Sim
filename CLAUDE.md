@@ -492,6 +492,17 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   `INSTANCE_CUSTOM`) costs the CPU ~3 µs per field per frame for 14 000
   flakes where CPU-animated instances cost 1 ms for 3 500 — animate with
   uniforms, write transforms once.
+- **An opaque shell hides whatever you put inside it — a "sight glass" over a
+  closed drum shows the drum, not the level.** Measured 2026-09-23 by
+  rendering: the compactor kijkglas built that morning (a flat glass disc on
+  the cleanout door, a PotFill column inside the drum, 21 green checks on the
+  geometry) showed a grey door plate at 33 % pot load, and the mengsilo's
+  vertical "sight strip" had never shown anything either. A level you can see
+  needs the film OUTSIDE the shell: `PlaceableCatalog._level_window` builds a
+  proud port (ring, gauge glass, dark back, a `LevelWitness` slab that
+  `set_silo_fill()` sizes to the live level). Any new sight glass goes through
+  it, and any claim that a level "reads through the glass" is a render, not a
+  geometry check (`src/tests/shot_silo_level.gd`).
 - **A frame-counted wait against a wall-clock cadence is a frame-rate
   lottery.** Two suites went red on healthy worlds this way on 2026-09-23:
   `test_jam_baseline` waited 60 stable frames for a threaded navmesh bake that

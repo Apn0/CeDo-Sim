@@ -1168,14 +1168,20 @@ static var _bale_label_seq : int = 0
 const _BELT_IDS : Array[String] = [
 	"transport_belt", "inclined_belt_8m", "compactorband", "metal_belt", "scraper_conveyor",
 ]
-const _BELT_CARRY_SPEED : float = 0.4   # m/s along the belt deck's local +Z
+# Operator 2026-09-23 (docs/plant/operator_rulings_2026-09-23.md §8): the
+# 3A/3B intake transportbanden run "closer to 1.5 m/s" and "50 % faster than
+# the other conveyors" — so 1.0 m/s here for the generic belts. These are his
+# estimates; every conveyor has its own HMI speed, and a wrong estimate is
+# meant to PLAY OUT (heap → chute blockage → overload trip → fix the speed),
+# not to be tuned away here. The earlier note read "0.4–0.6 m/s is the
+# operator-confirmed middle"; that was superseded the same day.
+const _BELT_CARRY_SPEED : float = 1.0   # m/s along the belt deck's local +Z
 # Single source of truth for intake transportband (1..12 + switch_belt) speed:
 # the player carry speed AND the shader scroll value below both derive from
-# this. Real CeDo intake belts run roughly 0.4–0.6 m/s; 0.5 m/s is the
-# operator-confirmed middle. Previously the shader ran at apparent 1.2 m/s
-# while the carry meta was never even set on intake belts (they weren't in
-# _BELT_IDS) — visual lied, physics didn't fire at all.
-const _INTAKE_BELT_SPEED_MPS : float = 0.5
+# this. Previously the shader ran at apparent 1.2 m/s while the carry meta was
+# never even set on intake belts (they weren't in _BELT_IDS) — visual lied,
+# physics didn't fire at all.
+const _INTAKE_BELT_SPEED_MPS : float = 1.5
 # Compactorband (extruder silo → compactor) deck speed. Operator 2026-09-23:
 # "more like 4 centimeters per second" — it creeps, which is why its bed is
 # heaped (docs/plant/operator_rulings_2026-09-23.md). Used for the carry meta,
@@ -5510,6 +5516,20 @@ static func _m_doseersilo(p: Node3D, size: Vector3, color: Color, ghost: bool) -
 	_box(p, Vector3(0.14, 0.10, length), Vector3( radius, axis_y, 0), steel)
 	_box(p, Vector3(0.14, 0.10, length), Vector3(-radius, axis_y, 0), steel)
 
+	# Level windows (operator 2026-09-23, rulings §3): "2 square windows approx
+	# 30x30 cm, horizontal distance 90 cm between them, centered along the
+	# tank, on both sides". Height on the wall is not specified: they sit on
+	# the trough's curved wall 35° below the axis, upright to the wall. The
+	# level range is the trough bottom up to the axis (the grating above).
+	if not ghost:
+		var ds_fill : Node3D = _silo_fill_root(p, axis_y - radius, radius)
+		var ang : float = deg_to_rad(35.0)
+		for sx in [-1.0, 1.0]:
+			var n := Vector3(sx * cos(ang), -sin(ang), 0.0)
+			for zz in [-0.45, 0.45]:
+				var centre := Vector3(0.0, axis_y, zz) + n * radius
+				_level_window(p, ds_fill, _window_port(centre, n), 0.30, 0.30, steel, ghost)
+
 	# Safety walk-on grating & yellow safety borders covering open top
 	if not ghost:
 		_box(p, Vector3(radius * 1.9, 0.04, length * 0.96), Vector3(0, axis_y + 0.02, 0), grating)
@@ -8160,6 +8180,142 @@ static func _m_mas_bak(p: Node3D, size: Vector3, color: Color, ghost: bool) -> v
 ## passing the PotFill node it cached; without one it is looked up (recursive,
 ## so callers on a per-tick path must cache). Returns the node, or null when
 ## the machine has no PotFill (a ghost, or a different builder).
+## A level SIGHT WINDOW on a silo wall (P5; operator rulings 2026-09-23 §3 and
+## §9). `port_xf` places it: origin at the window's centre ON the wall's outer
+## surface, local +Z = outward normal, local +Y = "up along the wall". Builds
+## the frame (proud), the transparent sight-gauge glass, a dark cavity back
+## recessed into the wall, and — under `fill_root` (the machine's `SiloFill`
+## node) — a LevelWitness slab that set_silo_fill() sizes from the window's
+## bottom edge up to the live level. That is what reads as "the flake level
+## behind the glass" without cutting a hole in the shell: an opaque shell hides
+## any interior fill, which is why the mengsilo's old sight strip never showed
+## anything. The witness holder carries the window's vertical extent in MACHINE
+## y (win_bottom_y / win_top_y) and the local→world y scale of the wall
+## (win_y_scale) so the level line stays horizontal on a sloped trough wall.
+static func _level_window(p: Node3D, fill_root: Node3D, port_xf: Transform3D, w: float, h: float,
+		frame_mat: StandardMaterial3D, ghost: bool) -> void:
+	# Everything sits OUTSIDE the wall surface (local z > 0): the shell mesh is
+	# opaque, so a cavity cut "into" it would be hidden behind its own face.
+	# The port is a boxed sight glass 7 cm proud of the wall — a steel ring
+	# around the pane, the glass at the outer end, a dark back plate just off
+	# the wall, and the witness slab in between.
+	var port := Node3D.new()
+	port.name = "SiloWindow"
+	port.transform = port_xf
+	p.add_child(port)
+	var t : float = 0.03
+	var d : float = 0.07
+	_box(port, Vector3(t, h + 2.0 * t, d), Vector3( (w + t) * 0.5, 0.0, d * 0.5), frame_mat)
+	_box(port, Vector3(t, h + 2.0 * t, d), Vector3(-(w + t) * 0.5, 0.0, d * 0.5), frame_mat)
+	_box(port, Vector3(w, t, d), Vector3(0.0,  (h + t) * 0.5, d * 0.5), frame_mat)
+	_box(port, Vector3(w, t, d), Vector3(0.0, -(h + t) * 0.5, d * 0.5), frame_mat)
+	var back := _box(port, Vector3(w, h, 0.01), Vector3(0.0, 0.0, 0.01), _mat(Color(0.05, 0.05, 0.06), ghost, 0.0, 0.9))
+	back.name = "WindowBack"
+	var glass_mat : StandardMaterial3D = MaterialPalette.mat_glass_sight_gauge() if not ghost \
+		else _mat(Color(0.35, 0.50, 0.55), ghost, 0.05, 0.1)
+	var pane := _box(port, Vector3(w, h, 0.02), Vector3(0.0, 0.0, d - 0.01), glass_mat)
+	pane.name = "WindowGlass"
+	pane.set_meta("window_size", Vector2(w, h))
+	if ghost or fill_root == null:
+		return
+	var holder := Node3D.new()
+	holder.name = "Witness"
+	holder.transform = port_xf
+	var ys : float = maxf(port_xf.basis.y.y, 0.05)
+	holder.set_meta("win_bottom_y", port_xf.origin.y - port_xf.basis.y.y * h * 0.5)
+	holder.set_meta("win_top_y",    port_xf.origin.y + port_xf.basis.y.y * h * 0.5)
+	holder.set_meta("win_y_scale",  ys)
+	holder.set_meta("win_h",        h)
+	fill_root.add_child(holder)
+	var wit := MeshInstance3D.new()
+	wit.name = "LevelWitness"
+	var bm := BoxMesh.new()
+	bm.size = Vector3(w - 0.02, 0.01, 0.02)
+	wit.mesh = bm
+	wit.material_override = _silo_fill_material()
+	wit.position = Vector3(0.0, -h * 0.5, 0.035)
+	wit.visible = false
+	holder.add_child(wit)
+
+## The film mass seen through a silo window: the belt bed's own texture,
+## triplanar so every face of a thin slab tiles at the same 0.5 m.
+static var _silo_fill_mat : StandardMaterial3D = null
+static func _silo_fill_material() -> StandardMaterial3D:
+	if _silo_fill_mat != null:
+		return _silo_fill_mat
+	FilmFlakeField._bed_textures()
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = FilmFlakeField._bed_albedo_tex
+	m.uv1_triplanar = true
+	m.uv1_scale = Vector3(2.0, 2.0, 2.0)
+	m.roughness = 0.80
+	_silo_fill_mat = m
+	return m
+
+## The `SiloFill` root a silo builder hangs its window witnesses under. Carries
+## the silo's level range in machine y (base = empty, base + range = full);
+## no_merge keeps the witnesses out of StaticMerge so they can be resized.
+static func _silo_fill_root(p: Node3D, base_y: float, range_y: float) -> Node3D:
+	var root := Node3D.new()
+	root.name = "SiloFill"
+	root.set_meta("no_merge", true)
+	root.set_meta("silo_fill_base_y", base_y)
+	root.set_meta("silo_fill_range_y", range_y)
+	root.set_meta("silo_fill_frac", 0.0)
+	p.add_child(root)
+	return root
+
+## Drive a silo's level windows to `frac` of its range (0 = empty, 1 = full).
+## LineFlow calls this every tick with buffer / SILO_FULL_KG. Each witness is
+## sized from its window's bottom edge up to the level line, clamped to the
+## window; below the window's bottom it is hidden, above its top it is full.
+static func set_silo_fill(machine: Node3D, frac: float, fill_node: Node3D = null) -> Node3D:
+	var fill := fill_node
+	if fill == null or not is_instance_valid(fill):
+		if machine == null:
+			return null
+		fill = machine.find_child("SiloFill", true, false) as Node3D
+	if fill == null:
+		return null
+	var f : float = clampf(frac, 0.0, 1.0)
+	var base : float = float(fill.get_meta("silo_fill_base_y", 0.0))
+	var rng  : float = float(fill.get_meta("silo_fill_range_y", 0.0))
+	var level_y : float = base + f * rng
+	fill.set_meta("silo_fill_frac", f)
+	fill.set_meta("silo_fill_level_y", level_y)
+	for holder in fill.get_children():
+		if not holder.has_meta("win_bottom_y"):
+			continue
+		var wit := holder.get_node_or_null("LevelWitness") as MeshInstance3D
+		if wit == null:
+			continue
+		var wb : float = float(holder.get_meta("win_bottom_y"))
+		var wt : float = float(holder.get_meta("win_top_y"))
+		var ys : float = float(holder.get_meta("win_y_scale"))
+		var wh : float = float(holder.get_meta("win_h"))
+		var vis_world : float = clampf(level_y - wb, 0.0, wt - wb)
+		var vis_local : float = vis_world / maxf(ys, 0.05)
+		if vis_local <= 0.003:
+			wit.visible = false
+			continue
+		var bm := wit.mesh as BoxMesh
+		if bm != null:
+			bm.size = Vector3(bm.size.x, vis_local, bm.size.z)
+		wit.position = Vector3(0.0, -wh * 0.5 + vis_local * 0.5, 0.035)
+		wit.visible = true
+	return fill
+
+## A window port transform on a wall: `centre` on the wall's outer surface,
+## `normal` pointing out of the silo. Local +Y is world-up projected onto the
+## wall, so on a sloped trough wall the window still reads upright.
+static func _window_port(centre: Vector3, normal: Vector3) -> Transform3D:
+	var n := normal.normalized()
+	var y_axis := (Vector3.UP - n * n.dot(Vector3.UP)).normalized()
+	if y_axis.length() < 0.5:
+		y_axis = Vector3.FORWARD
+	var x_axis := y_axis.cross(n).normalized()
+	return Transform3D(Basis(x_axis, y_axis, n), centre)
+
 static func set_pot_fill(machine: Node3D, frac: float, fill_node: MeshInstance3D = null) -> MeshInstance3D:
 	var fill := fill_node
 	if fill == null or not is_instance_valid(fill):
@@ -8173,12 +8329,17 @@ static func set_pot_fill(machine: Node3D, frac: float, fill_node: MeshInstance3D
 	var h : float = clampf(frac, 0.0, 1.0) * rng
 	if h <= 0.002:
 		fill.visible = false
+		if machine != null:
+			set_silo_fill(machine, 0.0)
 		return fill
 	var cm := fill.mesh as CylinderMesh
 	if cm != null:
 		cm.height = h
 	fill.position = Vector3(0.0, base + h * 0.5, 0.0)
 	fill.visible = true
+	# The kijkglas witness on the cleanout door follows the same fraction.
+	if machine != null:
+		set_silo_fill(machine, frac)
 	return fill
 
 static func _m_compactor(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
@@ -8242,9 +8403,19 @@ static func _m_compactor(p: Node3D, size: Vector3, color: Color, ghost: bool) ->
 	var pcu_hatch := _interactive_hatch(p, Vector3(0.04, 0.45, 0.45),
 		Vector3(drum_r * 0.98, size.y * 0.50, 0.0), "PCU Compactor Cleanout Door", 105.0, 1.0, steel, ghost)
 	if not ghost:
-		# Transparent grimy circular sight-glass into the compaction chamber
-		_cyl(pcu_hatch, 0.12, 0.12, 0.02, Vector3(0.02, 0.0, 0.0), MaterialPalette.mat_glass_inspection_grime(), "x")
-		_cyl(pcu_hatch, 0.14, 0.14, 0.015, Vector3(0.01, 0.0, 0.0), dark, "x")
+		# The kijkglas. 2026-09-23 (evening): the flat grimy disc that used to sit
+		# here showed NOTHING — rendered at 33 % pot load, inside the glass band,
+		# only a grey door plate (docs/plant/renders/shot_silo_level_compactor_
+		# kijkglas_33pct.png): the door and the drum are opaque, so the PotFill
+		# column inside can never be seen through them. It is now the same proud
+		# sight-glass port the silos use (_level_window): a ring 7 cm off the
+		# door, glass at the outer end, a dark back and a film witness that
+		# set_pot_fill() drives through set_silo_fill(). The port and its
+		# witness hang under the hatch so they swing with the door; the fill
+		# root's range is therefore in HATCH-local y (the hatch is a translated,
+		# unrotated frame while closed).
+		# (the port itself is built in the KIJKGLAS LEVEL block below, once the
+		# cutter disc height that fixes the pot's range is known)
 		_box(pcu_hatch, Vector3(0.02, 0.12, 0.04), Vector3(0.03, 0.0, 0.18), steel)
 
 	# High-speed rotating bottom cutter disc with 4 carbide knives inside the drum
@@ -8291,6 +8462,13 @@ static func _m_compactor(p: Node3D, size: Vector3, color: Color, ghost: bool) ->
 		fill.set_meta("kijkglas_y", size.y * 0.50)   # the hatch's glass centre (see the hatch above)
 		fill.set_meta("kijkglas_r", 0.12)
 		p.add_child(fill)
+		# The kijkglas port on the cleanout door (see the note at the hatch): a
+		# SiloFill root under the hatch whose range is the pot's, in HATCH-local
+		# y, and the proud sight-glass port with its witness. set_pot_fill()
+		# drives it through set_silo_fill() every tick.
+		var hatch_y : float = size.y * 0.50
+		var kg_root : Node3D = _silo_fill_root(pcu_hatch, fill_base_y - hatch_y, fill_top_y - fill_base_y)
+		_level_window(pcu_hatch, kg_root, _window_port(Vector3(0.02, 0.0, 0.0), Vector3.RIGHT), 0.24, 0.24, steel, ghost)
 
 # ── Extruder (3C screw): horizontal barrel, screw drive/gearbox at the feed (-Z)
 #    end, a feed throat on top fed by the PCU, TWO vacuum degas domes on the barrel
@@ -9915,10 +10093,19 @@ static func _m_mengsilo(p: Node3D, size: Vector3, color: Color, ghost: bool) -> 
 	_cyl(p, r, r, size.y * 0.46, Vector3(0.0, leg_h + size.y * 0.47, 0.0), shell)
 	_cyl(p, r * 0.3, r, size.y * 0.08, Vector3(0.0, leg_h + size.y * 0.74, 0.0), shell)
 
-	# Transparent vertical level sight-glass strip on +Z face
-	var win_h : float = size.y * 0.42
-	_box(p, Vector3(0.12, win_h + 0.04, 0.02), Vector3(0.0, leg_h + size.y * 0.47, r + 0.01), steel)
-	_box(p, Vector3(0.08, win_h, 0.025), Vector3(0.0, leg_h + size.y * 0.47, r + 0.015), MaterialPalette.mat_glass_sight_gauge())
+	# Level window (operator 2026-09-23, rulings §3): "mixing silo 1 small
+	# 15x15cm window 1/3 the way up on 1 side". A third of the silo's height
+	# above the legs, on the +Z face (the side is not specified). The old
+	# invented vertical strip is gone. The level range is the cylindrical body
+	# (leg_h + 0.24 h .. + 0.70 h): the window sits just above the cone, so it
+	# reads the last ~10 % — a "nearly empty" glass.
+	var body_bot_y : float = leg_h + size.y * 0.24
+	var body_h_m : float = size.y * 0.46
+	var win_y : float = leg_h + (size.y - leg_h) / 3.0
+	var fill_root : Node3D = null
+	if not ghost:
+		fill_root = _silo_fill_root(p, body_bot_y, body_h_m)
+	_level_window(p, fill_root, _window_port(Vector3(0.0, win_y, r), Vector3.BACK), 0.15, 0.15, steel, ghost)
 
 	# Interactive clean-out maintenance hatch on the bottom cone (-X side)
 	var hatch_y : float = leg_h + size.y * 0.10
@@ -11829,7 +12016,8 @@ static func _m_extruder_silo(p: Node3D, size: Vector3, color: Color, ghost: bool
 	var shell  := _mat(color, ghost, 0.35, 0.55)               # light-grey silo skin
 	var steel  := _mat(_STEEL, ghost, 0.6, 0.4)                # frame / ribs / cyclones
 	var dark   := _mat(_DARK, ghost, 0.4, 0.6)                 # legs / outlet / window frame
-	var glass  := _mat(Color(0.10, 0.12, 0.16), ghost, 0.3, 0.4)  # dark inspection windows
+	# (the dark opaque "inspection windows" material is gone — the windows are
+	# real sight glasses now, see the WINDOWS block)
 	var yellow := _mat(_SAFETY, ghost, 0.2, 0.6)               # safety-yellow guardrails
 	var white  := _mat(Color(0.92, 0.92, 0.90), ghost, 0.1, 0.7)  # danger-sign plate
 	var red    := _mat(Color(0.82, 0.14, 0.12), ghost, 0.2, 0.6)  # danger-sign strip
@@ -11890,72 +12078,37 @@ static func _m_extruder_silo(p: Node3D, size: Vector3, color: Color, ghost: bool
 	# ── SILO BOX: light-grey body occupying the upper portion, full W×D ──────────
 	_box(p, Vector3(bw, box_h, bd), Vector3(0.0, box_cy, 0.0), shell)
 	# Horizontal stiffener ribs wrapping the box faces (proud of the skin).
-	# #99 — rib 2 (i=2, Y≈4.628) is OMITTED because the lifted bottom window
-	# (#99 lift +0.37) now spans 4.339..4.947 and would be cut in half by it.
-	# Ribs 0, 1, 3 remain; rib 3 (i=3, Y≈5.338, topmost) doubles as the top
-	# frame edge of the top window (see WINDOWS block below).
-	for i in 4:
-		if i == 2:
-			continue  # #99: rib 2 crosses the lifted bottom window — omit
+	# 2026-09-23: ribs 0 and 3 only. The operator's window layout (rulings §9:
+	# four windows per long face, in the inner sub-quadrants) puts a window row
+	# at 0.375 and one at 0.625 of the box height; ribs 1 (0.39) and 2 (0.60)
+	# would cut straight through them, so both are gone. Rib 3 (topmost) stays
+	# as #99 asked.
+	for i in [0, 3]:
 		var rib_y : float = frame_top + box_h * (0.18 + 0.21 * float(i))
 		_box(p, Vector3(bw + 0.06, 0.07, bd + 0.06), Vector3(0.0, rib_y, 0.0), steel)
 
-	# ── WINDOWS: tall thin recessed dark rectangles on BOTH ±Z faces ─────────────
-	# Two columns per face — LEFT pair at -X, RIGHT pair at +X.
-	# #98 — was front-face only; mirrored to the -Z face per operator.
-	# #98 — operator: window WIDTHS halved. #99 — operator: HALVE THEM AGAIN
-	# (cumulative 0.04 = 25% of original 0.16). Window widths are in world-unit
-	# size.x terms so they stay constant when the body widens (#99).
-	# OPERATOR PASS (post-resize): with the silo footprint shrunk to its
-	# correct W=1.80 / D=2.13 m, the prior halvings made the inspection windows
-	# unreadably narrow. Restored to the original 0.16 × size.x coefficient so
-	# the four ports read as actual sight glasses against the much narrower
-	# body. With size.x = 1.80 → win_w ≈ 0.29 m — a real human-scale window.
-	# #99 — operator: LIFT bottom windows by +0.37 m (half the gap between
-	# top-of-bottom-window and bottom-of-top-window in the prior layout). After
-	# the lift, rib 2 at Y=4.628 now CROSSES the bottom window (window spans
-	# 4.339..4.947, rib spans 4.593..4.663), so rib 2 is REMOVED in the rib loop
-	# above (now 3 ribs not 4).
-	# #99 — operator: keep the TOPMOST rib (rib 3, Y=5.338) and use its bottom
-	# edge (5.303) as the TOP edge of the top window. The top window is REPOSITIONED
-	# below rib 3 (was tucked above it under the box ceiling). Its bottom must
-	# clear the lifted bottom window top (4.947) — a 0.05 m steel separator gives
-	# bottom-window-top → top-window-bottom = 5.000. Top window height = 0.303
-	# (shrunk from 0.608) so it spans 5.000..5.303 cleanly between bottom window
-	# and rib 3 used-as-frame-top.
-	var win_w_top : float = size.x * 0.16         # operator pass: restored from 0.04
-	var win_w_bot : float = size.x * 0.16         # operator pass: restored from 0.04
-	# Bottom window keeps its prior height; it just rises by 0.37.
-	var win_h_bottom : float = box_h * 0.18        # 0.608 — unchanged
-	# Top window shrinks so its TOP aligns with rib 3 bottom and its BOTTOM clears
-	# the lifted bottom window top with a 0.05 m frame gap.
-	var win_h_top : float = 0.303                  # #99: top window shrunk to fit
-	# Bottom window center: prior 4.273 + 0.370 = 4.643.
-	var rib_mid_y : float = frame_top + box_h * (0.18 + 0.21 * 1.0)   # 3.918 — still present
-	var rib_upper_y : float = frame_top + box_h * (0.18 + 0.21 * 2.0) # 4.628 — REMOVED in rib loop
-	var bot_cy : float = (rib_mid_y + rib_upper_y) * 0.5 + 0.37       # 4.273 + 0.37 = 4.643
-	# Top window center: top edge = rib_top_y - rib_half (5.338 - 0.035 = 5.303),
-	# so center = 5.303 - win_h_top * 0.5 = 5.303 - 0.1515 = 5.1515.
-	var rib_top_y : float = frame_top + box_h * (0.18 + 0.21 * 3.0)   # 5.338
-	var top_y : float = (rib_top_y - 0.035) - win_h_top * 0.5         # ≈ 5.1515
-	for face_sz in [1.0, -1.0]:
-		var face_z : float = face_sz * (bd * 0.5 + 0.015)
-		# `out_n` is the local +Z direction of the surround/glass meshes so the
-		# light frame sits BEHIND the glass relative to the face normal on both
-		# sides. Without this the back-face windows render inside-out.
-		var surround_offset : float = -0.01 * face_sz
-		for col_x in [-size.x * 0.22, size.x * 0.22]:
-			# TOP window — narrow, halved width, top edge flush under topmost rib.
-			_box(p, Vector3(win_w_top + 0.08, win_h_top + 0.08, 0.02),
-				Vector3(col_x, top_y, face_z + surround_offset), steel)
-			_box(p, Vector3(win_w_top, win_h_top, 0.03),
-				Vector3(col_x, top_y, face_z), glass)
-			# BOTTOM window — halved width, shrunk + lifted to sit between
-			# the two middle ribs (3.918 and 4.628) with no overlap.
-			_box(p, Vector3(win_w_bot + 0.08, win_h_bottom + 0.08, 0.02),
-				Vector3(col_x, bot_cy, face_z + surround_offset), steel)
-			_box(p, Vector3(win_w_bot, win_h_bottom, 0.03),
-				Vector3(col_x, bot_cy, face_z), glass)
+	# ── WINDOWS (operator 2026-09-23, rulings §9) ───────────────────────────────
+	# "It's four windows per side" — the LONG sides (±X faces, `bd` wide), not
+	# the short sides where the ladder is. Picture a long face in four
+	# quadrants; each window sits in the inner sub-quadrant of its quadrant:
+	# "the most centre of the centre, but not actually in the centre
+	# overlapping", not touching. Vertical (taller than wide). Centres at
+	# ±bd/8 along the face and ±box_h/8 up/down from the box centre. This
+	# supersedes the #98/#99 layout of two windows per SHORT (±Z) face, whose
+	# operator-tuned width (size.x × 0.16 ≈ 0.29 m, "a real human-scale
+	# window") is kept; height 0.18 box_h ≈ 0.61 m. The level range is the
+	# whole box (frame_top .. box_top). These are real sight glasses over a
+	# recessed cavity with a level witness — see _level_window.
+	var win_w : float = size.x * 0.16
+	var win_h : float = box_h * 0.18
+	if not ghost:
+		var es_fill : Node3D = _silo_fill_root(p, frame_top, box_h)
+		for sx in [-1.0, 1.0]:
+			var n := Vector3(sx, 0.0, 0.0)
+			for qz in [-1.0, 1.0]:
+				for qy in [-1.0, 1.0]:
+					var centre := Vector3(sx * bw * 0.5, box_cy + qy * box_h * 0.125, qz * bd * 0.125)
+					_level_window(p, es_fill, _window_port(centre, n), win_w, win_h, steel, ghost)
 	# #98 — operator: the previous arbitrary white-and-black stripe with a red
 	# centre line on the +Z face is NOT on the reference photo. Removed.
 	var _ignored_red := red
@@ -12054,53 +12207,11 @@ static func _m_extruder_silo(p: Node3D, size: Vector3, color: Color, ghost: bool
 	# itself, which was operator-corrected. Removed; place a `lump_cart` from the
 	# build menu at the extruder filter discharge instead.
 
-	# ── #89 FILM-LEVEL VIEW: sparse off-white flake fill ONLY visible behind the
-	# windows (no point rendering bulk fill the user can't see — saves draw calls
-	# AND matches reality: the silo body is opaque, you only see flake through the
-	# inspection ports). Per operator: in equilibrium the level LEANS toward the
-	# compactor-belt side (the silo's discharge), because material settles into
-	# the cone above the outlet. We render the BACK-of-box (further from the
-	# discharge — i.e. the inside surface visible through the upper windows) with
-	# a LOWER flake profile, and the FRONT-of-box surface (right behind the
-	# inspection ports) with a HIGHER flake profile, so the eye reads "more
-	# material has piled up here near the outlet" through the glass. Tuned to
-	# match the four-window layout above (two columns × two rows on +Z).
-	var flake_mat := _mat(Color(0.86, 0.84, 0.78), ghost, 0.05, 0.85)
-	var win_z : float = bd * 0.5 + 0.015   # restored for the flake-pile block below
-	# #98 — windows were resized + repositioned above; references to the old
-	# `win_h` / `win_w` are now to the per-row split values.
-	var row_data := [
-		{"cy": bot_cy, "win_h": win_h_bottom, "win_w": win_w_bot, "factor": 0.70},
-		{"cy": top_y,  "win_h": win_h_top,    "win_w": win_w_top, "factor": 0.30},
-	]
-	for col_x in [-size.x * 0.22, size.x * 0.22]:
-		for row in row_data:
-			var w_cy : float = float((row as Dictionary)["cy"])
-			var row_win_h : float = float((row as Dictionary)["win_h"])
-			var row_win_w : float = float((row as Dictionary)["win_w"])
-			# Flake pile thicker for the LOWER window row (more accumulation toward
-			# the bottom of the silo where the cone narrows) — also closer to the
-			# glass surface to read clearly through it.
-			var pile_h : float = row_win_h * float((row as Dictionary)["factor"])
-			var pile_z_offset : float = -0.05         # 5 cm behind the +Z window plane
-			# Small cluster of flake clumps spanning the window width, with a slight
-			# downward slope from the back (-Z side, into the box) toward the
-			# compactor-belt face (+Z, the discharge side). 4 clumps per window.
-			var clump_w : float = row_win_w * 0.22
-			var clump_h : float = pile_h * 0.55
-			var base_y : float = w_cy - row_win_h * 0.5 + clump_h * 0.5
-			for ci in 4:
-				var t : float = float(ci) / 3.0   # 0..1 across the window width
-				var clump_x : float = col_x - row_win_w * 0.5 * 0.7 + row_win_w * 0.7 * t
-				# Slope: the back of the silo (deeper -Z) holds slightly LESS flake
-				# (it slid forward toward the discharge) — the front clumps sit
-				# slightly higher, riding on top of the settled cone toward outlet.
-				var clump_y : float = base_y + (t * 0.10) * pile_h
-				_box(p, Vector3(clump_w, clump_h, 0.10),
-					Vector3(clump_x, clump_y, win_z + pile_z_offset - 0.06), flake_mat)
-				# Second-row clump behind the first to give depth through the glass.
-				_box(p, Vector3(clump_w * 0.85, clump_h * 0.7, 0.08),
-					Vector3(clump_x, clump_y + clump_h * 0.45, win_z + pile_z_offset - 0.15), flake_mat)
+	# ── #89's static "film-level view" (off-white clumps glued behind the old
+	# ±Z ports) is gone as of 2026-09-23: the level behind each window is now
+	# the live LevelWitness that set_silo_fill() drives from the machine's
+	# buffer (see the WINDOWS block and _level_window). A painted-on level that
+	# never moved was exactly the kind of invented visual Rule 1 forbids.
 
 # ── Consolidated extruder UNIT (#92): ONE model = the whole EREMA-style line,
 #    reconstructed REAR(-Z)->FRONT(+Z) from the operator's 5 photos. Sim brands:

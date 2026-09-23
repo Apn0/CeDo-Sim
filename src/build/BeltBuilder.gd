@@ -62,8 +62,8 @@ const FLAKE_BULK_KGM3   : float = 90.0
 # Carry speeds (kept in sync with PlaceableCatalog defaults — see _BELT_CARRY_SPEED
 # and _INTAKE_BELT_SPEED_MPS there). Duplicated here so BeltBuilder is usable
 # without importing PlaceableCatalog state.
-const _BELT_CARRY_SPEED : float = 0.4
-const _INTAKE_BELT_SPEED_MPS : float = 0.5
+const _BELT_CARRY_SPEED : float = 1.0      # operator 2026-09-23: intake 1.5, others ~50 % slower
+const _INTAKE_BELT_SPEED_MPS : float = 1.5
 
 # ── Spec defaults ──────────────────────────────────────────────────────────────
 ## Returns a BeltSpec dict with every key set to its default. Caller pattern:
