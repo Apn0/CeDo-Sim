@@ -290,3 +290,26 @@ top-front-right and top-front-left view" — rendered
 (`docs/plant/renders/shot_doseersilo_topdown.png`, `_topfrontright.png`,
 `_topfrontleft.png`) and sent. Build order after the look: "not decided
 yet, not relevant. ALL need to be done for alpha build anyways."
+
+## 17. Doseersilo — open top and a corrected shape (round 6)
+
+"Open, no grating." And, from the three renders: "The thing is basically
+more like a flotation tank. With the three screws going on like the bottom
+flat of it. And then the thing as a whole, without the support construction
+legs, is tilted up slightly. I would say about 20 degrees or 25 degrees. So
+the bottom is the input side, the top is the output side. And then the legs
+are added so that the very bottom point sits at a height of about 1.7
+meters. There is no semicircular shapes on top of it at all. And looking at
+the images that you sent me, it would be maybe 10% less wide and 10% longer,
+looking at the top-down view." → an open, flat-bottomed trough tilted
+20-25° (low end = inlet, high end = outlet), three augers along the flat
+bottom, no half-disc end plates, lowest point 1.7 m above the floor, 0.9×
+width and 1.1× length of the rendered model; the two 30 × 30 cm windows per
+long side (§3) stay.
+
+## 18. Line 1 bales: LINE_1_FOLIE, and weight variance for every bale (round 6)
+
+Bale type name: **LINE_1_FOLIE**. Large bales ~1000 kg, ±15 % (one standard
+deviation). "Apply this variance/ratio whatever to all bale types that are
+present in the sim thus far (since I noticed while testing that e.g. all
+Rotterdam bales are the exact same weight → which is not realistic)."
