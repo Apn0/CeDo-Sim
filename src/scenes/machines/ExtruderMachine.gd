@@ -127,7 +127,35 @@ func _closest_in_group(group: String) -> Node:
 			best = n
 	return best
 
+# P3 stage A — the catalog body's vacuum pots (VacPot_primary / VacPot_secondary)
+# show the model's pot fill, the lid and the gunk. Roots are cached after the
+# first find; a body without pots (a bench placeholder) switches the drive off.
+var _pot_roots : Dictionary = {}
+var _pot_visual_ok : bool = true
+
+func _drive_pot_visual() -> void:
+	if model == null or not _pot_visual_ok:
+		return
+	var body := get_parent() as Node3D
+	if body == null:
+		_pot_visual_ok = false
+		return
+	var cap : float = ExtruderModel.VACUUM_POT_CAPACITY_KG
+	var gunk_frac : float = model.vacuum_line_gunk_kg / ExtruderModel.VACUUM_FLOOD_DISMANTLE_THRESHOLD_KG
+	var fills := {"primary": model.primary_pot_fill_kg, "secondary": model.secondary_pot_fill_kg}
+	for pot_name in fills.keys():
+		var kg : float = float(fills[pot_name])
+		# The lid is pushed open by the melt once the pot is at capacity — the
+		# model's own alarm trigger (ExtruderModel: "vacuum_lid_pushed_open").
+		var r : Node3D = PlaceableCatalog.set_vacuum_pot_state(body, String(pot_name), kg / cap,
+			kg >= cap, gunk_frac, _pot_roots.get(pot_name, null))
+		if r == null:
+			_pot_visual_ok = false
+			return
+		_pot_roots[pot_name] = r
+
 func _process(_delta: float) -> void:
+	_drive_pot_visual()
 	# Debug visualisation (until diegetic PLC screens land)
 	if _debug_lbl and model:
 		var status_line := _readable_status()

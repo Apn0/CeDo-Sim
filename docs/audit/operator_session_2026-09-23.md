@@ -369,3 +369,32 @@ PASS (10 ok), `test_jam_baseline` PASS (16 ok, 0 fail, 0 skipped),
 `test_belt_film_field` 142, `test_silo_level_windows` 50, `test_chute_choke`
 24, `test_trip_smoke` 21. The morning's harness at `99b3a35` had 113 steps
 and two reds; the difference is the crew ruling and three new suites.
+
+## Task 9 — vacuum pots, stage A (DONE); stage B is a mini-game (queued)
+
+**Asked / answered.** How to get the pot geometry: "Use the EREMA diagrams".
+Then, on the build: yes, on the photo domes — but not as a hold-E: the
+cleaning is an operator mini-game (rulings §14, transcribed in full).
+
+**Built.** Per pot a `VacPot_<name>` root under the catalog body: the dome's
+sight glass as a proud witness port, a `Lid` that lifts 12 cm and tilts at
+capacity, a `Gunk` sphere at the riser scaled by the gunk fraction.
+`PlaceableCatalog.set_vacuum_pot_state(machine, pot, frac, lid_open, gunk)`;
+`ExtruderMachine._drive_pot_visual()` every frame from the model's
+`primary/secondary_pot_fill_kg` (18 kg each), lid open ⇔ at capacity (the
+model's alarm trigger), gunk ⇔ `vacuum_line_gunk_kg / 4 kg`.
+
+**Measured.** `test_vacuum_pot_visual`: `PASS (22 ok, 0 fail)` — roots,
+witness inside the pot's range, empty → dark/closed/no gunk, 50 % → the line
+in the glass, capacity → glass full, lid lifted 0.12 m and tilted, the other
+lid closed, gunk at half threshold scale 0.50, `clean_vacuum_lines()` clears
+it, emptied → lid back; a ghost has none. `test_extruder_brain_wired` 24 ok.
+Parse sweep 432 ok. Renders `shot_vacuum_pots_{empty, primary_half,
+primary_full_lid_gunk}.png` looked at. Extruder-side batch on this code (detached, 23:00-23:06): 15 suites, 0 non-pass, 0 SCRIPT ERROR lines — `test_vacuum_pot_visual`, `test_extruder_brain_wired`, `test_line3a_flow_conformance`, `test_line3b_flow_conformance`, `test_line1_flow_conformance`, `test_line3c_identity`, `test_line3a_identity`, `test_line3b_identity`, `test_macro_part_placement`, `test_hmi_screen_zeroing`, `test_scada_dashboard_scene`, `test_l3c_unit_screens`, `test_line1_throughput`, `test_tag_snapshot`, `test_qa_loop`.
+
+**EREMA facts found (rulings §13 addendum, with sources):** filtration
+upstream of degassing; "optimised triple degassing" (preconditioning unit,
+reverse degassing in the screw, the degassing zone); the Laserfilter presses
+the melt through two laser-bored screen discs with a scraper disc rotating
+between them and discharges through screws — the operator's §7 picture. No
+pot geometry anywhere public; the photos remain the source.

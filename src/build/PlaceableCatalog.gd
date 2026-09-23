@@ -8340,6 +8340,40 @@ static func set_silo_fill(machine: Node3D, frac: float, fill_node: Node3D = null
 		wit.visible = true
 	return fill
 
+## Drive one vacuum pot's visible state (P3 stage A): the level behind its
+## sight glass (frac of the 18 kg pot), the lid (closed on the dome, or lifted
+## and tilted when the melt has pushed it open) and the gunk deposit at the
+## riser's foot (frac of the dismantle threshold). `pot_name` is "primary" or
+## "secondary"; pass the cached root to skip the tree search. Returns the root,
+## or null when this machine has no such pot (a bench placeholder).
+static func set_vacuum_pot_state(machine: Node3D, pot_name: String, frac: float,
+		lid_open: bool, gunk_frac: float, root: Node3D = null) -> Node3D:
+	var r := root
+	if r == null or not is_instance_valid(r):
+		if machine == null:
+			return null
+		r = machine.find_child("VacPot_" + pot_name, true, false) as Node3D
+	if r == null:
+		return null
+	set_silo_fill(machine, frac, r)
+	var lid := r.get_node_or_null("Lid") as MeshInstance3D
+	if lid != null:
+		var cy : float = float(lid.get_meta("lid_closed_y", lid.position.y))
+		if lid_open:
+			lid.position.y = cy + 0.12
+			lid.rotation = Vector3(0.0, 0.0, deg_to_rad(28.0))
+		else:
+			lid.position.y = cy
+			lid.rotation = Vector3.ZERO
+	var gunk := r.get_node_or_null("Gunk") as MeshInstance3D
+	if gunk != null:
+		var g : float = clampf(gunk_frac, 0.0, 1.0)
+		gunk.visible = g > 0.02
+		gunk.scale = Vector3.ONE * maxf(g, 0.001)
+	r.set_meta("lid_open", lid_open)
+	r.set_meta("gunk_frac", clampf(gunk_frac, 0.0, 1.0))
+	return r
+
 ## A window port transform on a wall: `centre` on the wall's outer surface,
 ## `normal` pointing out of the silo. Local +Y is world-up projected onto the
 ## wall, so on a sloped trough wall the window still reads upright.
@@ -12556,17 +12590,57 @@ static func _m_extruder_unit(p: Node3D, size: Vector3, color: Color, ghost: bool
 	# #223 docs->code TRAIN-extruderen-p3__108_CeDo24.md / OTHER-training-extruderen-4__105_CeDo25.md.
 	# Kept a clearly-different colour from the head filter so they stay distinguishable.
 	var vac_mat := _mat(Color(0.45, 0.48, 0.52), ghost, 0.55, 0.4)
+	# P3 stage A (2026-09-23, operator rulings 2026-09-23 §14): the pot's STATE
+	# is visible. ExtruderModel already carries it — backflush melt fills each
+	# pot (primary_pot_fill_kg / secondary_pot_fill_kg, 18 kg each); at
+	# capacity the melt pushes the lid open → VACUUM_ALARM → the two-minute
+	# cascade; melt creeping up the vacuum line is gunk (vacuum_line_gunk_kg →
+	# clean_vacuum_lines()). Per pot, one SiloFill-style root named so the
+	# driver (ExtruderMachine._drive_pot_visual → set_vacuum_pot_state) can tell
+	# them apart:
+	#   VacPot_<name>/Witness/…  the level behind the dome's sight-glass port
+	#   VacPot_<name>/Lid        a disc on the dome; lifts and tilts when open
+	#   VacPot_<name>/Gunk       a dark deposit around the riser's foot
+	# The first dome (nearer the laser filter) is the PRIMARY pot — the one a
+	# laser-filter problem clogs; the second is the secondary (head filters).
+	# Stage B — the lid, the plamuurmes planes, the block by hand — is queued.
+	var pot_names : Array[String] = ["primary", "secondary"]
+	var pot_i : int = 0
 	for vz in [size.z * 0.06, size.z * 0.13]:
 		var vac_y : float = hood_top + size.x * 0.04
+		var dome_h : float = size.x * 0.10
+		var dome_r : float = size.x * 0.10
 		# Dome (hemisphere) sitting on the hood — flattened cyl reads as a dome.
-		_cyl(p, size.x * 0.10, size.x * 0.06, size.x * 0.10,
-			Vector3(0.0, vac_y, vz), vac_mat)
+		_cyl(p, dome_r, size.x * 0.06, dome_h, Vector3(0.0, vac_y, vz), vac_mat)
 		# Riser pipe up to the vacuum line above.
 		_cyl(p, 0.04, 0.04, size.x * 0.30,
 			Vector3(0.0, vac_y + size.x * 0.20, vz), dark)
-		# Small sight glass on the +X side.
-		_cyl(p, 0.025, 0.025, 0.05,
-			Vector3(size.x * 0.10, vac_y + size.x * 0.02, vz), glass, "x")
+		if not ghost:
+			var pot_root : Node3D = _silo_fill_root(p, vac_y - dome_h * 0.5, dome_h)
+			pot_root.name = "VacPot_" + pot_names[pot_i]
+			pot_root.set_meta("pot_name", pot_names[pot_i])
+			# The sight glass on the +X side of the dome, now a proud port with a
+			# level witness (the flat disc it replaces showed nothing — see the
+			# silo windows, same reason: an opaque dome).
+			_level_window(p, pot_root, _window_port(Vector3(dome_r * 0.92, vac_y, vz), Vector3.RIGHT),
+				0.06, 0.06, steel, ghost)
+			var lid_y : float = vac_y + dome_h * 0.5 + 0.015
+			var lid : MeshInstance3D = _cyl(pot_root, size.x * 0.07, size.x * 0.07, 0.03,
+				Vector3(0.0, lid_y, vz), steel)
+			lid.name = "Lid"
+			lid.set_meta("lid_closed_y", lid_y)
+			var gunk := MeshInstance3D.new()
+			gunk.name = "Gunk"
+			var gm := SphereMesh.new()
+			gm.radius = 0.09
+			gm.height = 0.14
+			gunk.mesh = gm
+			gunk.material_override = _mat(Color(0.09, 0.08, 0.07), false, 0.1, 0.95)
+			gunk.position = Vector3(0.0, lid_y + 0.05, vz)
+			gunk.scale = Vector3(0.001, 0.001, 0.001)
+			gunk.visible = false
+			pot_root.add_child(gunk)
+		pot_i += 1
 
 	# ═══ SECTION 6: MELTPUMP (gear-pump block) on the barrel front ═══
 	# Lines 3C AND 6 have the smeltpomp (gear pump) fitted; lines 1 / 3A / 3B feed
