@@ -2270,8 +2270,25 @@ func take_product_sample(kg: float) -> MaterialBatch:
 # =============================================================================
 # FLOW TICK
 # =============================================================================
+## The flow steps at SimTick's rate (10 Hz, FLOW_TICK_DT), accumulated from
+## frame time — NOT once per frame. Measured 2026-09-23 (probe_tick_cost): one
+## tick over 52 nodes costs 2.85 ms, which at frame rate was 2.85 ms of every
+## 60 Hz frame — the largest single item of the CPU floor; at 10 Hz it is
+## ~0.47 ms per frame. Every regression suite has always driven tick(0.1)
+## directly, so 10 Hz is the rate the harness proves; frame-rate ticking was
+## the rate nothing tested. Catch-up is capped at one second so a stall cannot
+## burst hundreds of ticks. This node pauses with the tree (unlike SimTick,
+## which is PROCESS_MODE_ALWAYS — see the QaLab header for why LineFlow must
+## not subscribe to it), so nothing advances behind the pause menu.
+const FLOW_TICK_DT       : float = 0.1
+const FLOW_CATCHUP_MAX_S : float = 1.0
+var _flow_acc : float = 0.0
+
 func _process(delta: float) -> void:
-	tick(delta)
+	_flow_acc = minf(_flow_acc + delta, FLOW_CATCHUP_MAX_S)
+	while _flow_acc >= FLOW_TICK_DT:
+		_flow_acc -= FLOW_TICK_DT
+		tick(FLOW_TICK_DT)
 
 ## The flow step. Split out from _process so a headless test can drive it with a
 ## FIXED delta — deterministic sim time, independent of engine frame pacing (the

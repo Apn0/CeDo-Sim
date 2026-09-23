@@ -142,6 +142,9 @@ func _run() -> void:
 		# LineFlow._process(delta) calls tick(delta) EVERY FRAME (LineFlow.gd, FLOW
 		# TICK) — not at SimTick's 10 Hz — so its per-frame cost is one tick(1/60).
 		rows.append(["LineFlow.tick(1/60) per frame  ×%d nodes" % lf._nodes.size(), _time_calls(func(): lf.tick(1.0 / 60.0), 60), 60.0])
+		# What the game actually pays per frame: _process accumulates frame time and
+		# ticks at FLOW_TICK_DT (10 Hz) — 60 calls of _process(1/60) = 10 ticks.
+		rows.append(["LineFlow._process(1/60) as shipped (10 Hz accumulator)", _time_calls(func(): lf._process(1.0 / 60.0), 60), 60.0])
 	var st := get_node_or_null("/root/SimTick")
 	if st != null:
 		rows.append(["SimTick.sim_tick.emit(0.1)  (%d subscribers)" % int(st.call("subscriber_count")),
