@@ -126,6 +126,16 @@ is the queue for the next rounds, with the reason each item waited.
   LPG valve~~ — **FIXED 2026-09-22**, comment now says I (code was already
   correct).
 
+## 2026-09-23 overnight run — what moved from this queue and what did not
+
+Closed or advanced that night (evidence in `docs/audit/overnight_enhancement_2026-09-23.md`):
+DESIGN P2 (trip really stops the drive), P6 cart half (overflow + visible
+fill), P5 compactor half (kijkglas level), Q2 (checkpoint), Q4 (F1 key sheet),
+Q5 (map labels), phys-05 interim (cart speed clamp), plus LineFlow at 10 Hz
+and two harness reds root-caused. Still queued exactly as listed above:
+npc-06/npc-07 (the DRIVE_TO_INDOOR stall is untouched), phys-02, phys-05's real
+chassis fix, tex-02/05/07, npc-10, and the `_dump_waste` half of P6.
+
 ## Where the full audit lives
 Raw findings (40, with file:line evidence) + the lane plan were produced by the
 2026-07-19 ultracode audit workflow. The implemented set: qol-01..05, npc-01/02/03/
