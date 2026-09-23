@@ -208,9 +208,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		_camera_rig.cycle_mode()
 		get_viewport().set_input_as_handled()
 		return
-	# H → switch the active LPG cylinder (bale-clamp dual-tank valve). The base
+	# I → switch the active LPG cylinder (bale-clamp dual-tank valve). The base
 	# vehicle does the safe-handover (current level back to its tank, load
-	# from the new one). H only does something while occupied + LPG-powered.
+	# from the new one). I only does something while occupied + LPG-powered.
 	if event.is_action_pressed("lpg_switch_active"):
 		switch_active_lpg_tank()
 		get_viewport().set_input_as_handled()

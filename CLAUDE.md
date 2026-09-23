@@ -543,6 +543,21 @@ this one as re-checkable too — `find src -name '*.gd' | wc -l`):
   lists every dropped step (it named exactly `SettingsManager apply` on the
   real range, and nothing on a tree that only adds); and in `--script` suites,
   `load()` anything that touches an autoload at runtime — never `preload()` it.
+- **A headless run that outlives its expected time is HUNG, and exit 0 is not a
+  pass.** Measured 2026-09-22 on a throwaway `--script` probe that idled until
+  the session was killed. Three silent modes: (1) a runtime `SCRIPT ERROR` in
+  `_physics_process` aborts only that call, so a one-shot
+  `if _pf == END_TICK: … quit()` never fires again → hangs forever; (2) the same
+  error inside a helper that `_physics_process` calls before `return true` ends
+  the loop with **exit 0 and no verdict**; (3) `--quit-after 300` — used by every
+  `--script` block in `run.sh` — ends a 150-physics-tick run early, again exit 0,
+  no verdict (it counts frames, not physics ticks). For any probe or suite:
+  wrap it in `timeout --kill-after=10 <s>`; put a tick watchdog at the TOP of
+  `_physics_process` that prints a failing `Result:` and `quit(2)`; let the
+  verdict function call `quit()` itself and never `return true` after it; gate
+  on the `Result:` line plus zero `SCRIPT ERROR` lines, never on the exit code.
+  Worked example: `src/tests/test_lump_chunk_ccd.gd` (watchdog proven by
+  injecting that exact error: exit 2 with a failing verdict in 11 s).
 - **Most `src/tests/*.gd` files are never executed by the harness.** `run.sh:261`
   runs an explicit allow-list of `.tscn` suites; anything not on it is only seen by
   the full-tree parse sweep, which proves the file PARSES and nothing more. As of

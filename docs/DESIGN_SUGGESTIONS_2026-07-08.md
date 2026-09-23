@@ -90,14 +90,14 @@ So a lot of the "make it physical" work is wiring, not inventing.
 
 ## 2. Quality of life (ranked)
 
-### Q1 — Show which save is live + last-autosave time  · effort S · **high**
-`save_file_path` is set at boot (`GameState.gd:35-41`) but never shown; autosave silently overwrites every 60 s. With ~18 saves you can't tell which is live. Add "Playing: `<name>` — last autosaved 14:32" to the pause header (+ optional HUD corner). `SaveCoordinator.gd`, `HUD.gd`.
+### ~~Q1~~ — Show which save is live + last-autosave time — **DONE** (landed before 2026-09-22, verified that date)
+Closed via a HUD toast (`HUD._on_autosave_completed`, commit `091b231`), not the pause-header line this item originally proposed — "✓ Opgeslagen — `<name>` HH:MM" on every save, fades after 2.5 s. The pause-menu card itself still shows no save name/time, so if the operator wants to check after the toast fades they still can't — a real but much smaller residual gap than the original "never shown at all."
 
 ### Q2 — Manual checkpoint / named quicksave before risky actions  · effort M · **high**
 Only save paths are 60 s autosave (overwrites) + "save and quit." No way to branch a safe point before a BuildMode edit or wire cut without quitting. Add a pause-menu quicksave writing `<name>_checkpoint_<ts>_save.json` via the existing save path. `SaveCoordinator.gd`, `GameState.gd`.
 
-### Q3 — Delete the paired `_factory.json` when deleting a save  · effort S · **high**
-`MainMenu._delete_save_file` (`:135-154`) removes only `<name>_save.json`, never the paired factory sidecar — orphans accumulate and a re-created same-name save inherits a stale layout. Also unlink `SystemsSpawner._factory_layout_path(name)`. This is a hidden cause of the save clutter. `MainMenu.gd`, `SystemsSpawner.gd`.
+### ~~Q3~~ — Delete the paired `_factory.json` when deleting a save — **DONE** (landed before 2026-09-22, verified that date)
+`MainMenu.gd` (commit `091b231`, tagged `#audit-Q3`) now deletes the paired `_factory.json` sidecar right after the save, via `AtomicFile.delete()` (also strips `.bak`/`.tmp`).
 
 ### Q4 — In-game keybind cheat-sheet overlay  · effort M · **high**
 Onboarding is one fixed string (`HUD.gd:207-216`) but the real control surface is huge and scattered (F4 camera, F3 perf, F10 markers, M map, walkie keys, Shift+B wire cut, freecam numpad). Add a hold-H help overlay reading the same keybind config the rebind tab uses. `HUD.gd`, `SettingsMenu.gd`, `CameraRig.gd`.
@@ -105,14 +105,14 @@ Onboarding is one fixed string (`HUD.gd:207-216`) but the real control surface i
 ### Q5 — Map wayfinding: station names + HMI markers + crew names  · effort M · medium
 `MapOverlay` labels machines by trimmed id only past `scale_px>3` (`:124-133`); crew are anonymous dots. Mirror the `HmiScopes` station names onto the map, mark machines with a real HMI, label crew dots. All data already on live nodes — draw-layer work. `MapOverlay.gd`, `HmiOverlay.gd`.
 
-### Q6 — Signal real HMIs vs stub tiles  · effort M · medium
-~8 stub tiles silently bail (`HmiOverlay.gd:342-347`) vs 5 real scopes — indistinguishable until you walk up and press E (wasted trips). Give real HMIs a world-space glow/[E] hint; make stubs show "not yet available." `HmiOverlay.gd`, `PlayerController.gd`.
+### ~~Q6~~ — Signal real HMIs vs stub tiles — **CLOSED BY ELIMINATION** (verified 2026-09-22)
+Not fixed by the suggested UI change — closed instead by the 2026-08-15 HMI retirement (`CLAUDE.md`'s "exactly 12 HMI panels" section): the two generic/cosmetic stub ids that used to open a plant-wide "generic" scope were deleted outright, so there is no stub tile left to be fooled by — every placeable HMI is now one of the 12 real, fully-scoped panels. Residual, lower-stakes gap: no world-space glow/beacon exists for real HMIs at a distance, so discovery still means walking into the ~4×3×4 m proximity box.
 
-### Q7 — Show camera mode on F4 + a reset-camera key  · effort S · medium
-`CameraRig.mode_name()` exists but is never shown; `reset()` is only auto-called on vehicle enter. Flash a 2–3 s mode label on F4 (reuse the scanner banner) and bind `reset()` to a key (Home / F4 double-tap). `CameraRig.gd`, `HUD.gd`.
+### ~~Q7~~ — Show camera mode on F4 + a reset-camera key — **DONE 2026-09-22**
+`CameraRig.cycle_mode()` now flashes "Camera: `<mode>`" via the scanner banner (through a `/root`-lookup helper, not a bare `EventBus` reference — this file is loaded standalone by `test_camera_rig_*.gd`, which has no autoloads). Reset is bound to **F4 double-tap** (350 ms window), not Home — Home is already `BuildMode`'s Sequential Line Builder toggle (`BuildMode.gd:1517-1518`, an unconditional `_input` that runs before `_unhandled_input` and would have silently eaten the key). Verified via the existing `test_camera_rig_active`/`test_camera_rig_set_first_person_camera` suites (still green) plus a full-tree parse sweep; not verified in a live play session (no in-game visual confirmation of the banner text/timing).
 
-### Q8 — F10 markers: add shift-clock timestamp + a note field  · effort S · low
-MarkerTool writes coords but no note (WHY) and no in-game time, so "glitched at 13:40" can't be reconstructed. Add `ShiftClock` time to `context.json` + a short typed note per capture. `MarkerTool.gd`, `ShiftClock.gd`.
+### Q8 — F10 markers: add shift-clock timestamp + a note field  · **half done 2026-09-22**
+Shift-clock time landed: `MarkerTool._shift_time_string()` writes `shift_time` into both `markers.json` and `context.json` (lazy `/root` lookup, null-safe — `ShiftClock` is not an autoload and genuinely doesn't exist in bench/probe scenes). **The typed-note field is still open by design choice, not oversight**: it needs a focus-grabbing text-input UI layered onto a tool that otherwise owns all keyboard/mouse input for 3D placement (LMB/G/H/RMB), and that interaction can't be verified without a live play session — shipping it unverified would be exactly the "bench green proves the mock" mistake this repo's Rule 3 warns about. `MarkerTool.gd`.
 
 ---
 

@@ -48,6 +48,7 @@ var _last_point  : Vector3 = Vector3.ZERO
 var _last_ctx    : Dictionary = {}
 var _has_point   : bool = false
 var _vert_cache  : Dictionary = {}   # collider instance id -> PackedVector3Array (world space)
+var _shift_clock : ShiftClock = null # lazy-found; ShiftClock is not an autoload
 
 # ── lifecycle ────────────────────────────────────────────────────────────────
 
@@ -293,6 +294,7 @@ func _build_markers_json() -> Dictionary:
 	var payload := {
 		"format":      "cedo-markers-v1",
 		"captured_at": Time.get_datetime_string_from_system(true),
+		"shift_time":  _shift_time_string(),   # "" if no ShiftClock (e.g. a bench scene)
 		"count":       list.size(),
 		"grid_size_m": GRID_SIZE,
 		"markers":     list,
@@ -329,6 +331,7 @@ func _write_capture() -> String:
 	var ctx := {
 		"format":      "cedo-feedback-v1",
 		"captured_at": data["captured_at"],
+		"shift_time":  data.get("shift_time", ""),
 		"kind":        "markers",
 		"marker_count": data["count"],
 		"markers":     data["markers"],
@@ -340,6 +343,19 @@ func _write_capture() -> String:
 		cf.store_string(JSON.stringify(ctx, "  "))
 		cf.close()
 	return ProjectSettings.globalize_path(dir_path)
+
+## In-shift clock time, e.g. "13:40" ("glitched at 13:40" instead of only a
+## wall-clock ISO stamp). Same lazy /root lookup discipline as DayNightCycle /
+## Walkie / HmiWebOverlay — ShiftClock is not an autoload, and may genuinely
+## not exist (bench/probe scenes have no shift), so this must stay null-safe.
+func _shift_time_string() -> String:
+	if _shift_clock == null or not is_instance_valid(_shift_clock):
+		var tree := get_tree()
+		if tree != null and tree.root != null:
+			_shift_clock = tree.root.find_child("ShiftClock", true, false)
+	if _shift_clock != null and is_instance_valid(_shift_clock):
+		return _shift_clock.get_time_string()
+	return ""
 
 # ── visuals ──────────────────────────────────────────────────────────────────
 
