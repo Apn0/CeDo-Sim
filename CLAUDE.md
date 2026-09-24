@@ -524,6 +524,7 @@ the one before that ~6 months stale — treat this one as re-checkable too):
 | `docs/audit/overnight_enhancement_2026-09-23.md` | **The unattended 2026-09-23 run: 12 commits, every one measured first.** A MotorOverload trip that never stopped conveying, a Lumpenwagen that lost kg when full, checkpoint saves, the F1 key sheet, map labels, the cart speed clamp, the compactor kijkglas, LineFlow moved to 10 Hz (2.85 → 0.54 ms/frame), and two harness reds root-caused as frame-count races (navmesh bake, bale streaming). Two full harness runs, the operator list at the end |
 | `docs/audit/operator_session_2026-09-23.md` | **The interactive 2026-09-23 session: tasks ranked by operator effort against sim impact, each answered by AskUserQuestion then built and measured.** Task 1: film beds on every belt (P1), the inclined belt's deck running the wrong diagonal, the cost probe, the renders; per-task evidence and the open questions each one left |
 | `docs/DESIGN_vacuum_pot_minigame_2026-09-23.md` | **P3 stage B as the operator described it: not a hold-E but a mini-game** — lid pull that stiffens with time, plamuurmes planes at 90 %, the block by hand, re-lid, the two-minute race. Systems, parameters (his vs placeholder), test strategy. **Built 2026-09-24** (`test_vacuum_pot_minigame`, 33 ok); the feel is his to play |
+| `docs/AUDIO_machine_sounds_2026-09-25.md` | **The operator's 11 plant-floor recordings, on their machines, driven by the sim.** File-name cutting grammar (`5s+_`, `25s-35s_`, `loop_3x_`, `_in_operation`, `_loop_4x`) and the rulings behind each bake; `MachineSoundSpec` `.tres` per placeable with the `gain_db` slider (every level a PLACEHOLDER until play-tested); loop seams measured against each loop's own fluctuation; ramps generated from the run loop; the 60 line-macro machines still without a recording. `test_machine_sounds` 80 ok |
 | `docs/plant/operator_rulings_2026-09-23.md` | **Operator answers from memory, 2026-09-23** — film look, colour order, bed depth per belt, where wet flake is visible, screws "differ". Recollections, not documents: cite them as such |
 | `docs/audit/assets_loss_and_restore_2026-09-21.md` | **`assets/` was wiped and restored.** Godot's `.md5` fingerprints identify originals byte for byte: 159 of 273 are back exact and 101 are cache-only (listed; do not re-import them). Also the `Merlo.fbx` re-import trap, what `winfr` did and did not recover (nothing exact), and the method to reuse |
 | `docs/BACKLOG_ultracode_2026-07-19.md` | Deferred queue — 16 of 40 findings landed; also records the npc-05 vacuous-green correction |
@@ -918,6 +919,27 @@ places an orb, G snaps to grid/edge, H clears, RMB/F10 exits and writes
 `user://feedback/<stamp>/markers.json` + `context.json` + a screenshot. When the
 operator says "check feedback", read the newest directory under
 `%APPDATA%/Godot/app_userdata/CeDo Simulator/feedback/`.
+
+## Placed machines get their sound the same way (2026-09-25)
+
+A placeable has a sound iff `src/audio/machine_sounds/<placeable_id>.tres`
+exists (a `MachineSoundSpec`). `MachineSoundBank.attach(body, id)` runs at the
+tail of `build_node` beside `MachineBrains.attach`, and `LineFlow` drives the
+resulting `MachineSound` every tick with `spin × rotor fraction` — so a machine
+that is not powered is *stopped*, not quiet, and a machine that leaves the flow
+graph winds down on the component's own 1 s watchdog. Ramp-up and ramp-down
+are generated from the run loop (pitch + level, over the spec's ramp times or
+the sim's `SPIN_UP_S`); a real start/stop recording goes in `start_clip` /
+`stop_clip`. The WAVs live in `assets/audio/machines/` (gitignored, plus the
+`.gdignore`d `_source/` recordings) and are rebuilt from the committed recipe
+`tools/audio/machine_sounds.json` by `tools/audio/machine_clips.py`; every
+loop is RMS-normalised to −20 dBFS so the `.tres` `gain_db` slider is the only
+place relative loudness lives. **Every level in those `.tres` is a placeholder
+until the operator has played** — the notes say so. Guard:
+`test_machine_sounds` (80 checks, in `run.sh`). Three rulings this hangs on:
+the compactor's 1:11–1:14 ×3 sequence is a LOOP (not an event), the two dryer
+windows await an L/R assignment, and which valve the crank was recorded on is
+an assumption (hose-reel base valve + IBC drain). `docs/AUDIO_machine_sounds_2026-09-25.md`.
 
 ## Placed machines must be given a sim brain
 
