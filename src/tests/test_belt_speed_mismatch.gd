@@ -9,13 +9,16 @@ extends Node
 ## charge injected into the first transport belt's buffer every tick, the
 ## SECOND belt slowed with set_machine_rpm_pct (what the HMI slider calls):
 ##   D — its deck runs slower (the bed field's speed follows the setting)
-##   H — its backlog grows and a heap (FloorPile, mirroring the kg) stands at
-##       its infeed; the heap is not a reject catch
-##   T — its drive's current climbs past the trip threshold and trips after
-##       3 s: MOTOR-OVERLOAD on the bus, the belt stops, its bed holds
+##   H — the excess packs the transfer chute first (rulings §21 "both, in
+##       that order"); the overflow beyond it stands as a heap (FloorPile,
+##       mirroring the kg) at the slow belt's infeed; the heap is not a reject
+##       catch
+##   T — the UPSTREAM belt's drive (pushing into the packed chute) climbs past
+##       its trip current and trips after 3 s: MOTOR-OVERLOAD on the bus, it
+##       stops, its bed holds; the slow belt itself does not trip
 ##   A — anti-vacuity: the same feed at full speed never trips
-##   R — RESETTEN (reset_trip) clears the trip; at full speed the backlog
-##       drains and the heap goes
+##   R — RESETTEN (reset_trip) on the tripped drive clears it; at full speed
+##       the backlog drains and the heap goes
 
 const WATCHDOG_S := 300.0
 const INJECT_KGPS := 3.0
@@ -89,8 +92,11 @@ func _run() -> void:
 	var v2 = n2.get("view")
 	_check(v2 != null and bool(v2.get("belt_mode")), "F1 the second belt has a belt-mode bed field")
 	var mol2 = n2.get("mol")
+	var mol1 = n1.get("mol")
 	_check(mol2 != null and float(mol2.get("load_capacity_kg")) > 10.0,
 		"F2 the second belt's drive carries a MotorOverload sized to its deck (%.0f kg)" % (float(mol2.get("load_capacity_kg")) if mol2 != null else -1.0))
+	_check(mol1 != null and float(mol1.get("load_capacity_kg")) > 10.0,
+		"F2 …and so does the first (%.0f kg)" % (float(mol1.get("load_capacity_kg")) if mol1 != null else -1.0))
 	var key2 := String(n2.get("key", ""))
 	# wait for the PLC to power the belts up
 	var t := 0
@@ -115,8 +121,8 @@ func _run() -> void:
 			print("  info  : A t=%3d s belt1 thru %.2f backlog %.1f | belt2 thru %.2f backlog %.1f powered %s spin %.2f amps %.1f tripped %s estop '%s'" % [
 				i / 10, float(n1["thru"]), float(n1.get("_backlog_kg", 0.0)), float(n2["thru"]), float(n2.get("_backlog_kg", 0.0)),
 				str(n2["powered"]), float(n2["spin"]), float(mol2.get("current_amps")), str(mol2.call("is_tripped")), String(lf.call("estop_fault_id"))])
-	_check(not bool(mol2.call("is_tripped")) and float(n2.get("_backlog_kg", 0.0)) < 20.0,
-		"A1 at full speed 90 s of %.1f kg/s never trips the second belt (backlog %.1f kg)" % [INJECT_KGPS, float(n2.get("_backlog_kg", 0.0))])
+	_check(not bool(mol2.call("is_tripped")) and not bool(mol1.call("is_tripped")) and float(n2.get("_backlog_kg", 0.0)) < 20.0,
+		"A1 at full speed 90 s of %.1f kg/s trips neither belt (belt 2 backlog %.1f kg)" % [INJECT_KGPS, float(n2.get("_backlog_kg", 0.0))])
 	_check(float(lf.call("belt_heap_kg", key2)) == 0.0, "A1 …and no heap stands at its infeed")
 	# ── D the HMI slider: slow the second belt to 25 % ──
 	lf.call("set_machine_rpm_pct", key2, 0.25)
@@ -126,48 +132,68 @@ func _run() -> void:
 	var slow_speed : float = float(v2.call("belt_speed_mps"))
 	_check(absf(slow_speed / maxf(base_speed, 1e-6) - 0.25) < 0.03,
 		"D1 the deck runs at the setting: %.3f m/s vs %.3f at 100 %% (ratio %.2f)" % [slow_speed, base_speed, slow_speed / maxf(base_speed, 1e-6)])
-	# ── H the heap, T the trip ──
-	var t_heap := -1.0
+	# ── H the chute packs, T the upstream drive trips ──
+	var t_pack := -1.0
 	var t_trip := -1.0
-	var heap_at_trip := 0.0
-	var backlog_at_trip := 0.0
 	var amps_max := 0.0
 	var tt := 0
 	while tt < 3000 and t_trip < 0.0:
 		bin1.add(MaterialBatch.new(INJECT_KGPS * 0.1, INJECT_KGPS * 0.1 / LineFlow.FEED_DENSITY, LineFlow.DEFAULT_COMP.duplicate(), "test_inject", 0.0, 0.0))
 		lf.call("tick", 0.1)
 		tt += 1
-		amps_max = maxf(amps_max, float(mol2.get("current_amps")))
-		if t_heap < 0.0 and float(lf.call("belt_heap_kg", key2)) > 0.0:
-			t_heap = tt * 0.1
-		if bool(mol2.call("is_tripped")):
+		amps_max = maxf(amps_max, float(mol1.get("current_amps")))
+		if t_pack < 0.0 and float(lf.call("_packed_chute_kg_out_of", n1)) > 0.0:
+			t_pack = tt * 0.1
+		if bool(mol1.call("is_tripped")):
 			t_trip = tt * 0.1
-			heap_at_trip = float(lf.call("belt_heap_kg", key2))
-			backlog_at_trip = float(n2.get("_backlog_kg", 0.0))
-	print("  info  : heap appeared at %.1f s, trip at %.1f s, backlog %.0f kg, heap %.0f kg, max %.0f A (threshold %.0f A, capacity %.0f kg)" % [t_heap, t_trip, backlog_at_trip, heap_at_trip, amps_max, float(mol2.get("trip_threshold")), float(mol2.get("load_capacity_kg"))])
-	_check(t_heap > 0.0, "H1 a heap appeared at the slowed belt's infeed after %.1f s" % t_heap)
-	_check(t_trip > 0.0, "T1 the slowed belt's drive TRIPPED after %.1f s (fed %.1f kg/s at 25 %% speed)" % [t_trip, INJECT_KGPS])
-	_check(heap_at_trip > 0.9 * backlog_at_trip and backlog_at_trip > float(mol2.get("load_capacity_kg")),
-		"H2 the heap mirrors the backlog (%.0f of %.0f kg) and the backlog is past the deck's capacity" % [heap_at_trip, backlog_at_trip])
+	var excess_at_trip : float = float(lf.call("_belt_excess_kg", n2))
+	print("  info  : chute packing from %.1f s, upstream trip at %.1f s with belt-2 excess %.0f kg (chute holds %.0f), max %.0f A on belt 1 (threshold %.0f A)" % [t_pack, t_trip, excess_at_trip, LineFlow.CHUTE_PACK_KG, amps_max, float(mol1.get("trip_threshold"))])
+	_check(t_pack > 0.0 and t_trip > t_pack, "H1 the transfer chute packs FIRST (%.1f s); the drive pushing into it trips after (%.1f s)" % [t_pack, t_trip])
+	_check(t_trip > 0.0 and not bool(mol2.call("is_tripped")), "T1 the UPSTREAM belt's drive tripped; the slow belt itself did not")
 	_check(int(_alarms.get("transport_belt/MOTOR-OVERLOAD", 0)) >= 1, "T1 MOTOR-OVERLOAD on the bus for the belt (%d)" % int(_alarms.get("transport_belt/MOTOR-OVERLOAD", 0)))
+	_check(float(lf.call("belt_heap_kg", key2)) == 0.0, "H1 no spill yet: the trip stopped the feed before the overflow (%.0f kg excess, chute %.0f)" % [excess_at_trip, LineFlow.CHUTE_PACK_KG])
+	# ── H2 reset WITHOUT fixing the speed: the overflow spills, the drive re-trips ──
+	var key1 := String(n1.get("key", ""))
+	_check(bool(lf.call("reset_trip", key1)), "H2 RESETTEN on the tripped drive (speed still at 25 %%)")
+	var t_heap := -1.0
+	var t_retrip := -1.0
+	var heap_kg := 0.0
+	var excess_at_heap := 0.0
+	var t2 := 0
+	while t2 < 900 and (t_heap < 0.0 or t_retrip < 0.0):
+		bin1.add(MaterialBatch.new(INJECT_KGPS * 0.1, INJECT_KGPS * 0.1 / LineFlow.FEED_DENSITY, LineFlow.DEFAULT_COMP.duplicate(), "test_inject", 0.0, 0.0))
+		lf.call("tick", 0.1)
+		t2 += 1
+		if t_heap < 0.0 and float(lf.call("belt_heap_kg", key2)) > 0.0:
+			t_heap = t2 * 0.1
+			heap_kg = float(lf.call("belt_heap_kg", key2))
+			excess_at_heap = float(lf.call("_belt_excess_kg", n2))
+		if t_retrip < 0.0 and bool(mol1.call("is_tripped")):
+			t_retrip = t2 * 0.1
+	print("  info  : after the reset — heap from %.1f s (%.0f kg spilled, excess %.0f), re-trip at %.1f s" % [t_heap, heap_kg, excess_at_heap, t_retrip])
+	_check(t_heap > 0.0, "H2 fed on at the wrong speed, the overflow beyond the packed chute SPILLS as a heap at the slow belt's infeed (%.1f s after the reset)" % t_heap)
+	_check(absf(heap_kg - maxf(excess_at_heap - LineFlow.CHUTE_PACK_KG, 0.0)) < 1e-3 and heap_kg > 0.0,
+		"H2 the heap is the overflow beyond the chute: %.0f kg = excess %.0f − chute %.0f" % [heap_kg, excess_at_heap, LineFlow.CHUTE_PACK_KG])
 	var pile_ok := false
 	for pl in get_tree().get_nodes_in_group("floor_pile"):
 		if pl.name == "BeltHeap" and pl.has_meta("mirror_kg"):
 			pile_ok = true
 	_check(pile_ok, "H2 the heap is a FloorPile named BeltHeap marked as a mirror (never a reject catch)")
-	# the belt stops (the spin runs down over a few seconds) and THEN its bed
-	# holds — the bed keeps slewing while the deck is still coasting.
+	_check(t_retrip > 0.0, "T1 …and the drive trips AGAIN %.1f s after a reset that did not fix the speed" % t_retrip)
+	# the tripped belt stops (the spin runs down over a few seconds) and THEN its
+	# bed holds — the bed keeps slewing while the deck is still coasting.
+	var v1 = n1.get("view")
 	for i in 60:
 		lf.call("tick", 0.1)
-	_check(float(n2["spin"]) < 0.1 and not bool(n2["powered"]), "T2 the tripped belt is unpowered and its spin ran down (%.2f)" % float(n2["spin"]))
-	var bed_stopped : float = float(v2.call("bed_kg_per_m"))
+	_check(float(n1["spin"]) < 0.1 and not bool(n1["powered"]), "T2 the tripped upstream belt is unpowered and its spin ran down (%.2f)" % float(n1["spin"]))
+	var bed_stopped : float = float(v1.call("bed_kg_per_m"))
 	for i in 60:
 		lf.call("tick", 0.1)
-	_check(absf(float(v2.call("bed_kg_per_m")) - bed_stopped) < 1e-6 and float(v2.call("belt_speed_mps")) == 0.0,
+	_check(absf(float(v1.call("bed_kg_per_m")) - bed_stopped) < 1e-6 and float(v1.call("belt_speed_mps")) == 0.0,
 		"T2 its bed holds what was on it once stopped (%.2f kg/m over 6 s, deck 0 m/s)" % bed_stopped)
 	# ── R RESETTEN at full speed: the trip clears, the backlog drains, the heap goes ──
 	lf.call("set_machine_rpm_pct", key2, 1.0)
-	_check(bool(lf.call("reset_trip", key2)), "R1 RESETTEN resets the tripped drive")
+	_check(bool(lf.call("reset_trip", key1)), "R1 RESETTEN resets the tripped upstream drive")
 	_check(int(_cleared.get("transport_belt/MOTOR-OVERLOAD", 0)) >= 1, "R1 …and the alarm clears on the bus")
 	var drained := false
 	var td := 0
@@ -175,9 +201,9 @@ func _run() -> void:
 		lf.call("tick", 0.1)
 		td += 1
 		drained = float(lf.call("belt_heap_kg", key2)) == 0.0 and float(n2.get("_backlog_kg", 0.0)) < 5.0
-	_check(float(n2["spin"]) >= 0.99, "R2 the belt runs again at full speed (spin %.2f)" % float(n2["spin"]))
+	_check(float(n1["spin"]) >= 0.99 and float(n2["spin"]) >= 0.99, "R2 both belts run again at full speed (spin %.2f / %.2f)" % [float(n1["spin"]), float(n2["spin"])])
 	_check(drained, "R2 the backlog drained and the heap is gone after %.1f s" % (td * 0.1))
-	_check(not bool(mol2.call("is_tripped")), "R2 no re-trip at full speed")
+	_check(not bool(mol1.call("is_tripped")) and not bool(mol2.call("is_tripped")), "R2 no re-trip at full speed")
 	_finish()
 
 func _finish() -> void:

@@ -91,7 +91,12 @@ const CHOKE_CLEAR_FRAC  : float = 0.5
 # buffer; the pile is never a reject catch nor a shovel target).
 const BELT_MOTOR_AMPS_NOMINAL : float = 12.0    # PLACEHOLDER: a small conveyor drive
 const BELT_TRIP_DELAY_S       : float = 3.0
-const BELT_HEAP_SHOW_KG       : float = 10.0    # the infeed heap appears past this backlog
+const BELT_HEAP_SHOW_KG       : float = 10.0    # the infeed heap appears past this spill
+# Rulings §21 ("Both, in that order"): the excess a slow belt cannot take
+# first PACKS the transfer chute from the belt before it — that UPSTREAM
+# drive, pushing into a packed chute, is the one that trips — and only the
+# overflow beyond what the chute holds spills as the pile at the infeed.
+const CHUTE_PACK_KG           : float = 15.0    # PLACEHOLDER: what a transfer chute holds when packed
 # (a belt without a bed field gets NO motor model — see _attach_advanced_systems)
 # SMOKE (P2's second half, operator 2026-09-23, rulings §5): a packed-up drive
 # smokes "sometimes", and when it does it is "heavy smoke, people react". On a
@@ -3129,7 +3134,16 @@ func _tick_advanced_systems(delta: float) -> void:
 			# drive accrues no trip time, and a re-powered one re-energises.
 			if mol.has_method("set_running") and not bool(mol.call("is_tripped")):
 				mol.call("set_running", bool(nd["powered"]))
-			mol.call("set_load", float(nd.get("_backlog_kg", 0.0)))
+			var nid_m := String(nd.get("id", ""))
+			if _is_belt_id(nid_m):
+				# Rulings §21: a belt's drive is loaded by the chute it pushes INTO
+				# when the belt after it cannot take what arrives (the packed
+				# chute), scaled so a chute packed past CHUTE_PACK_KG reads as
+				# the deck's full load. Its own buffer is the bed it carries.
+				var cap_m : float = maxf(float(mol.get("load_capacity_kg")), 1.0)
+				mol.call("set_load", cap_m * _packed_chute_kg_out_of(nd) / CHUTE_PACK_KG)
+			else:
+				mol.call("set_load", float(nd.get("_backlog_kg", 0.0)))
 			mol.call("tick", delta)
 			if bool(mol.call("is_tripped")):
 				nd["powered"] = false           # stop conveying (conserving)
@@ -3475,13 +3489,40 @@ func _stream_color(cls: int) -> Color:
 
 ## Nearest FloorPile to `pos` within a generous 40 m. Used as final spillover sink
 ## for waste mass that no WasteContainer can accept.
-## Round 8 — the heap at a belt's infeed: a FloorPile whose mass MIRRORS the
-## belt's backlog (the kg stay in the buffer; the pile only shows them). It
-## appears past BELT_HEAP_SHOW_KG and goes when the backlog drains. Marked
-## `mirror_kg` so it is never a reject catch (_nearest_floor_pile skips it)
-## and never a choke pile.
+## The kg a belt cannot take: its buffer beyond the bed its deck carries at
+## full depth (the field's full load). 0 for a belt keeping up.
+func _belt_excess_kg(nd: Dictionary) -> float:
+	var view = nd.get("view")
+	if view == null or not is_instance_valid(view) or not bool(view.get("belt_mode")):
+		return 0.0
+	var cap : float = float(view.call("belt_full_kg_per_m")) * float((view.get("area") as Vector2).y)
+	return maxf(0.0, float(nd.get("_backlog_kg", 0.0)) - cap)
+
+## The kg backed up against the chute OUT of belt `nd`: the excess of the
+## belt(s) it feeds — the packed chute (CHUTE_PACK_KG) and the spill behind
+## it. Uncapped on purpose: the drive pushes against all of it, and a chute
+## packed past its hold is what takes it over its trip current (the first
+## cut capped this at CHUTE_PACK_KG, so the load never passed nominal and
+## nothing ever tripped — measured 12 A against an 18 A threshold).
+func _packed_chute_kg_out_of(nd: Dictionary) -> float:
+	var i : int = _nodes.find(nd)
+	if i < 0:
+		return 0.0
+	var packed := 0.0
+	for e in _edges:
+		if int(e["a"]) != i:
+			continue
+		var dst : Dictionary = _nodes[int(e["b"])]
+		if _is_belt_id(String(dst.get("id", ""))):
+			packed = maxf(packed, _belt_excess_kg(dst))
+	return packed
+
+## Round 8/9 — the heap at a belt's infeed: the OVERFLOW beyond the packed
+## chute (rulings §21), a FloorPile whose mass MIRRORS those kg (they stay in
+## the buffer; the pile only shows them). Marked `mirror_kg` so it is never a
+## reject catch nor a choke pile.
 func _tick_belt_heap(nd: Dictionary) -> void:
-	var backlog : float = float(nd.get("_backlog_kg", 0.0))
+	var backlog : float = maxf(0.0, _belt_excess_kg(nd) - CHUTE_PACK_KG)
 	var pile = nd.get("heap_pile")
 	if pile != null and not is_instance_valid(pile):
 		pile = null
@@ -3501,7 +3542,7 @@ func _tick_belt_heap(nd: Dictionary) -> void:
 			ground.y = _floor_y_below(wpos)
 			(pile as Node3D).global_position = ground
 			nd["heap_pile"] = pile
-			print("[LineFlow] HEAP at '%s': %.0f kg waiting at the infeed — the belt is fed faster than it runs." % [String(nd.get("id", "?")), backlog])
+			print("[LineFlow] HEAP at '%s': the transfer chute is packed and %.0f kg spilled at the infeed — the belt is fed faster than it runs." % [String(nd.get("id", "?")), backlog])
 		pile.set("mass_kg", backlog)
 		pile.call("_update_visual")
 	elif pile != null and backlog < BELT_HEAP_SHOW_KG * 0.5:

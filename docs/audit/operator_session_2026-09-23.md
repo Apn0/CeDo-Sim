@@ -853,3 +853,74 @@ PASS (granulate 23.7 kg), `test_line1_no_false_overload` PASS,
 **Open (for him).** The belt drive's 12 A and the 3 s delay; whether the heap
 should also choke the discharge chute of the belt BEFORE it (his "chute
 blockage") — today the heap is the infeed pile and the trip is the belt's own.
+
+## Task 19 — round nine: the heap's order, metal every shift, and the play-test handover — 2026-09-24
+
+**Asked / answered.** Next: "Play-test first". Heap: "Both, in that order"
+(the transfer chute packs, the drive pushing into it trips, then the
+overflow spills). Metal: "Several times a shift". Drum slurry: "Through the
+open drum ends" (queued with wet side phase B).
+
+**Built.** Belt speed mismatch reordered to his words: a slow belt's excess
+(its buffer beyond the bed its deck carries at full depth) first PACKS the
+transfer chute from the belt before it; that UPSTREAM drive carries the
+backed-up kg as its load (deck capacity × excess / `CHUTE_PACK_KG` 15 kg,
+PLACEHOLDER) and trips MOTOR-OVERLOAD; the slow belt itself does not trip;
+the overflow beyond what the chute holds is the heap at the slow belt's
+infeed. Because the trip stops the feed, no heap forms on the first trip —
+the heap grows when the operator RESETS without fixing the speed, and the
+drive trips again. `metal_chance` 0.10 → 0.25 (stated: ~16 big bales a shift
+→ ~4 trips). Harness run 5 (adb6cbd) was stopped at 6 min for this: the full
+harness must not run while he plays — it writes into the same
+`app_userdata` (test saves, the protected `world_layout.json`).
+
+**Measured.** `test_belt_speed_mismatch`: `PASS (24 ok, 0 fail)`. At 100 % speed 90 s of 3.0 kg/s trip neither belt (belt 2 receives 3.00 kg/s, backlog 0, no heap). At the 25 % setting the deck runs 0.250 m/s; the transfer chute packs from 9.5 s; the UPSTREAM belt trips at 18.8 s with belt 2's excess at 25 kg (chute holds 15) and 42 A against its 18 A threshold — the slow belt itself does not trip; no spill yet, because the trip stopped the feed. RESETTEN at the wrong speed: the overflow spills 0.2 s later (10 kg = excess 25 − chute 15, a `BeltHeap` mirror pile at the slow belt's infeed) and the drive trips again 3.0 s after the reset. Stopped, its bed holds (0.36 kg/m over 6 s, deck 0 m/s). RESETTEN at 100 %: both belts run, the backlog drains and the heap is gone after 9.6 s, no re-trip.
+Neighbours: `test_line1_metal_detect` 27 ok (bounds for 0.25),
+`test_line1_no_false_overload` PASS, `test_line1_throughput` PASS (23.7 kg),
+`test_motor_trip_stops_conveying` 28 ok, `test_bunker_shredder2_interlock`
+PASS, `test_chute_choke` 24 ok, `test_trip_smoke` 21 ok. Sweep 444 ok, lint 0.
+
+### The play-test handover — what to open and what to look at
+
+Open `V:\_Claude\CeDo_Simulator\ready-daacfa\project.godot` in Godot 4.6.3
+(the branch `claude/ready-daacfa`; your own checkout in Documents is
+untouched and does not have any of this). Nothing runs in the background
+while you play. F10 marks a spot (LMB orb, RMB/F10 exits) — say "check
+feedback" afterwards and I read the markers.
+
+1. **Belts** — film beds on every belt; 3A/3B belts at 1.5 m/s and about
+   twice the material; the compactorband creeping at 4 cm/s, heaped; the
+   inclined belt's deck climbing WITH its rollers.
+2. **Wet side** — dark wet flake on the Kufferath sieves (deck sloping down
+   to the outlet), in every channel of the scheidingsgoot, in the OPEN
+   trough of the dewatering screw after the flotation tank (the one after
+   the 3B rafter stays a closed tube), on the bunker's deck, on the
+   doseersilo's bottom between the augers.
+3. **Silo windows** — two 30×30 panes per side on the doseersilo (now the
+   open tilted trough at 1.70 m), one 15×15 on the mengsilo, four per long
+   side on the extruder silo; the compactor's kijkglas under its hatch.
+4. **Line 1 metal** — put a LINE_1_FOLIE bale (build menu, Bales) on
+   opzetband 1; about one in four hides scrap; at 3/4 of the belt the
+   detector head (coil tunnel, cabinet with CLEAR/METAL lamps) trips: the
+   belt slows, reverses a full length, stops, runs forward, trips again.
+   Stop it on the HMI, pick the scrap off the bale (E), drop it (hotbar drop
+   key) near the SCHROOT bin beside the belt.
+5. **Vacuum pots** — on any extruder, the pot's front lid pushes open when
+   full (or press E on the extruder while RUNNING to force a vacuum loss);
+   hold E on the pot to pull the lid; take the plamuurmes from the build
+   menu (Tools → Plamuurmes) and press E on the opening to push, E again to
+   pull out, until the planes read 90 %; E takes the block; E puts the lid
+   back — within two minutes or the line is down with the laser-filter
+   alarm.
+6. **Belt speed** — on a belt's HMI panel pull the drive slider down to
+   25 % while the line runs: the bed deepens, the chute from the belt before
+   it packs, that belt trips MOTOR-OVERLOAD; RESETTEN without fixing the
+   speed → a heap spills at the infeed and it trips again; RESETTEN at 100 %
+   → it drains.
+7. **Chokes and smoke** — a reject chute with nowhere to go stops its
+   machine (CHUTE-BLOCKED); shovel the pile, RESETTEN; a packed-up drive
+   sometimes smokes heavily and the crew comes.
+8. **Doseersilo** — the open tilted trough, three augers driven from the
+   high end, lowest point 1.70 m.
+
+Report what is wrong, what is missing, what reads wrong at first sight.

@@ -64,14 +64,14 @@ static func origins() -> Array[Dictionary]:
 				"size": Vector3(2.00, 1.70, 1.50), "weight_kg": 1000.0,
 				"ldpe_min": 0.84, "ldpe_max": 0.94, "stack": 2,
 				"tint": Color(0.10, 0.10, 0.11), "dirt": 0.18, "moisture": 0.15, "blue": 0.0,
-				"line": "1", "metal_chance": 0.10,
+				"line": "1", "metal_chance": 0.25,   # rulings §21: "several times a shift" (~16 bales → ~4 trips; stated)
 			},
 			{
 				"id": "line_1_folie_small", "name": "LINE_1_FOLIE (klein)",
 				"size": Vector3(1.40, 1.19, 1.05), "weight_kg": 343.0,
 				"ldpe_min": 0.84, "ldpe_max": 0.94, "stack": 3,
 				"tint": Color(0.10, 0.10, 0.11), "dirt": 0.18, "moisture": 0.15, "blue": 0.0,
-				"line": "1", "metal_chance": 0.10,
+				"line": "1", "metal_chance": 0.25,
 			},
 		]
 	return _origins

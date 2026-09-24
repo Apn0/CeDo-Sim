@@ -370,3 +370,20 @@ committed (`8b52fc5`):
 - **Next build: the belt speed mismatch gameplay** — a belt fed faster than
   it runs heaps up → chute blockage → overload trip, the HMI speed settings
   as the lever.
+
+## 21. Round nine (2026-09-24, ~16:55): play-test first, the heap's order, metal every shift, the drum's ends
+
+- **Next: "Play-test first"** — he walks the checklist (audit doc, task 19)
+  and reports; fixes before more building.
+- **Belt speed mismatch — where the heap forms: "Both, in that order."**
+  First the transfer chute between the two belts packs solid and the
+  UPSTREAM belt's drive (the one pushing into the packed chute) trips; then
+  the overflow spills as a pile; "whichever drive is packed trips". → The
+  first build (pile at the slow belt's infeed, the slow belt's own drive
+  tripping) is reordered: the chute packs to CHUTE_PACK_KG, the upstream
+  belt's motor carries that load and trips, the excess beyond the chute
+  spills as the heap.
+- **Metal in line-1 bales: "Several times a shift."** The placeholder 1 in
+  10 becomes 1 in 4 (stated: ~16 big bales a shift → ~4 trips).
+- **Prewash drum slurry: "Through the open drum ends."** Queued with wet
+  side phase B: a slurry field visible through the drum's inlet/outlet ends.

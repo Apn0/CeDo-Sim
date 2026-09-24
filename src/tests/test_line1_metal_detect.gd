@@ -115,7 +115,7 @@ func _run() -> void:
 		l1.append(b)
 		if int(b.get_meta("metal_pieces", 0)) > 0:
 			n_rot += 1
-	_check(n_metal >= 1 and n_metal <= 15, "M1 of 60 LINE_1_FOLIE bales, %d hide metal (chance 0.10: some, not all)" % n_metal)
+	_check(n_metal >= 5 and n_metal <= 28, "M1 of 60 LINE_1_FOLIE bales, %d hide metal (chance 0.25 — 'several times a shift': some, not all)" % n_metal)
 	_check(kinds_ok, "M1 every metal bale names its scrap kind and weight")
 	_check(n_rot == 0, "M1 Rotterdam bales never carry metal (%d of 30)" % n_rot)
 	for b in l1:

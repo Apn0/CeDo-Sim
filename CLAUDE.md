@@ -176,6 +176,15 @@ count.
 > `test_chute_choke`, `test_trip_smoke` in the main loop, and the jam
 > baseline's own doorway. `docs/audit/operator_session_2026-09-23.md`.
 
+> **2026-09-24 16:57 — harness run 5 at `adb6cbd` was STOPPED at 6 min by
+> hand.** The operator chose to play-test next; the harness writes its test
+> saves into the same `app_userdata` he plays in, so it must not run beside
+> a game. The round-9 changes on top (`test_belt_speed_mismatch` reordered
+> to his "chute packs first", `metal_chance` 0.25) were measured suite by
+> suite (audit doc task 19); the last FULL harness is the 15:40 one below.
+> Killing a detached harness needs its bash AND its Godot child — the child
+> survives the shell — and only the CONSOLE binary is ever the harness's.
+
 > **2026-09-24 15:40 — the newest measurement; it supersedes the 01:23 one
 > above.** Full harness on `claude/ready-daacfa` at `8b52fc5` (the vacuum-pot
 > mini-game on top of the line-1 tail fix): `== done (exit 1)`, **122 steps,
