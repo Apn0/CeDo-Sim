@@ -53,7 +53,7 @@ const F_LF_UPSTREAM_OVERPRESSURE := { "nr": 5518, "msg": "Smeltdruk stroomopwaar
 ## smeltdruk boven een grenswaarde (160 bar) stijgt, worden de Compactor
 ## (configureerbaar), de extruder en het pelletiseersysteem onmiddellijk
 ## uitgeschakeld." MP<PEL = smeltdruk stroomopwaarts van de pelletiseermachine
-## (the die-head / meltpump-outlet melt pressure the model computes).
+## (ExtruderModel.mp_pel_bar, nominal 140 bar — the kopfilter operating band).
 const F_PEL_MELT_PRESSURE_HI := { "nr": 5516, "msg": "Massadruk voor pelletiseermachine [MP<PEL] te hoog (160 bar) - uitschakeling" }
 
 ## Pelletiser melt-pressure interlock trip (bar) — EREMA §4.3.7 (169_CeDo84).
@@ -115,11 +115,12 @@ static func detect_active(extruder_model : Object, laser_filter : Object = null)
 
 	# #223 docs->code (item 17) — pelletiser 160-bar MP<PEL melt-pressure
 	# interlock. MP<PEL (smeltdruk stroomopwaarts van de pelletiseermachine) is
-	# the die-head pressure the model computes as die_pressure_psi. Convert to bar
-	# (same psi->bar factor the sibling detectors above use) and surface the
+	# the melt pressure upstream of the pelletiser the model exposes as
+	# mp_pel_bar (die_pressure_psi is the PRE-meltfilter pressure, nominal 280
+	# bar, and would trip this 160-bar row on every nominal run). Surface the
 	# documented row while the condition holds; ExtruderMachine latches + trips.
-	if "die_pressure_psi" in extruder_model:
-		var pel_bar : float = float(extruder_model.die_pressure_psi) * 0.0689
+	if "mp_pel_bar" in extruder_model:
+		var pel_bar : float = float(extruder_model.mp_pel_bar)
 		if pel_bar > PEL_MELT_PRESSURE_TRIP_BAR:
 			out.append(F_PEL_MELT_PRESSURE_HI)
 

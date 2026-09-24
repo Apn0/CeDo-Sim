@@ -536,6 +536,31 @@ the one before that ~6 months stale — treat this one as re-checkable too):
 
 ## Traps that have bitten before
 
+- **A unit error can hold up every consumer built on top of it — fix the unit
+  and they all fall over.** Measured 2026-09-24: `ExtruderModel` carried the
+  plant's 280 as PSI (`DIE_PRESSURE_BASE_PSI = 280.0`, 19.3 bar on the BluPort
+  chart); every plant source gives 280 BAR before the meltfilter (SWI-054 p1,
+  the 3C BluPort screen, the 3A trend p50 271 / p95 280 bar), and the operator
+  confirmed it. At bar scale three consumers broke at once, each only working
+  because the number was 14.5x too small: the 160-bar MP<PEL interlock read the
+  PRE-filter pressure (would E-STOP every nominal run — it now reads
+  `mp_pel_bar`, 140 bar nominal from the kopfilter band), the laser filter's
+  inlet was fed the kopfilter's ΔP (downstream of it, and on 3A/3B line 3C's),
+  and the pressure rode a torque proxy that made one zone 30 °C down read 320
+  bar and trip the line (it now follows melt temperature at the 3A trend fit,
+  6.83 bar/°C — a weak fit, refit when a longer export exists). Guarded by
+  `test_die_pressure_bar`. Before changing a unit, list every reader
+  (`grep -rn <var>`), and measure each one at the new scale.
+- **A helper moved to a utility class leaves `world.call("_name")` callers
+  silently broken.** `call()` by string is not checked at parse time: when
+  MainWorld's `_local_aabb` / `_fit_box_collider` moved to `GeometryUtils`,
+  `LegacyPropsSpawner` kept calling them on MainWorld for months — 3 SCRIPT
+  ERRORs per unconfigured boot, no colliders on the legacy props, feeder
+  station aborted. Nobody saw it: that path only runs on a world with no
+  `world_layout.json`. Guarded by `test_legacy_props_spawner`. To audit:
+  `grep -rhoE 'world\.call\("[A-Za-z_]+"' src | sort -u` and check each name
+  exists as a `func` on MainWorld.
+
 - **`Node3D.rotation.x = +θ` sends the local +Z end DOWN, and a symmetric deck
   box hides a wrong sign for months.** Measured 2026-09-23
   (`src/tests/probe_deck_orientation.gd`): Rx(+45°) maps +Z to

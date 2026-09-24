@@ -1890,6 +1890,12 @@ func _record_fault_transitions(active: Array) -> void:
 			"suppressed": _shielded_faults.has(code),
 		})
 		_fault_first_seen.erase(code)
+		# The KWITTEREN belonged to THAT occurrence. Keeping it keyed by code
+		# meant a re-trip after a self-clear came back already acknowledged —
+		# no bell, no unacked row — until someone pressed RESETTEN. A fresh
+		# occurrence must be acknowledged again (TVE-micro logic.py models
+		# the same thing as one alarm object per occurrence).
+		_acked_faults.erase(code)
 
 func _push_fault_history(entry: Dictionary) -> void:
 	_fault_history.append(entry)
