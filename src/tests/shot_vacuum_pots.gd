@@ -9,7 +9,12 @@ const CASES : Array = [
 	{"label": "empty",                 "p": 0.0,  "s": 0.0,  "gunk": 0.0},
 	{"label": "primary_half",          "p": 0.5,  "s": 0.2,  "gunk": 0.0},
 	{"label": "primary_full_lid_gunk", "p": 1.0,  "s": 0.6,  "gunk": 0.7},
+	# P3 stage B (2026-09-24): the lid pulled off and parked, the melt block
+	# inside; then the block freed by the plamuurmes (dropped 1 cm).
+	{"label": "lid_off_block",         "p": 1.0,  "s": 0.6,  "gunk": 0.0, "lid_off": true},
+	{"label": "block_free",            "p": 1.0,  "s": 0.6,  "gunk": 0.0, "lid_off": true, "free": true},
 ]
+const VPS := preload("res://src/scenes/interactions/VacuumPotService.gd")
 
 func _ready() -> void:
 	var we := WorldEnvironment.new()
@@ -45,6 +50,19 @@ func _ready() -> void:
 			model.primary_pot_fill_kg = float(c["p"]) * ExtruderModel.VACUUM_POT_CAPACITY_KG
 			model.secondary_pot_fill_kg = float(c["s"]) * ExtruderModel.VACUUM_POT_CAPACITY_KG
 			model.vacuum_line_gunk_kg = float(c["gunk"]) * ExtruderModel.VACUUM_FLOOD_DISMANTLE_THRESHOLD_KG
+		if bool(c.get("lid_off", false)) and model != null:
+			var root : Node3D = body.find_child("VacPot_primary", true, false)
+			if not bool(VPS.state(root)["lid_off"]):
+				VPS.complete_lid_pull(model, root)
+			if bool(c.get("free", false)):
+				var guard := 0
+				while not VPS.block_free(root) and guard < 400:
+					var nc := VPS.next_cell(root)
+					if String(nc[0]) == "":
+						break
+					VPS.push(model, root, String(nc[0]), int(nc[1]))
+					VPS.pull_out(root)
+					guard += 1
 		var yr := deg_to_rad(62.0)
 		var pr := deg_to_rad(22.0)
 		var dist := 2.6

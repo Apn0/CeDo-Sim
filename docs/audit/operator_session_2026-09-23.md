@@ -676,3 +676,79 @@ PASS, `test_line1_flow_conformance` PASS, `test_line1_throughput` PASS
 `test_shredder_rate_reconciliation` PASS, `test_wet_side_beds` 31 ok (both
 sieve beds filled). Not touched: whether the other lines' tails (3A/3B/3C
 extruder ends) lean on the same fallback — worth one dump each.
+
+## Task 15 — the vacuum-pot cleaning mini-game (P3 stage B, rulings §14) — DONE 2026-09-24
+
+**Asked / answered.** Round 5: P3 yes, "but this is operator simulation
+stuff" — not a hold-E, a mini-game he narrated end to end (§14, the design in
+`docs/DESIGN_vacuum_pot_minigame_2026-09-23.md`). Round 7: build it next.
+
+**Built.** Six pieces, every step of his sequence one call:
+- `ExtruderModel`: `vacuum_alarm_pot` names the pot whose lid the melt
+  pushed; `vacuum_alarm_elapsed_s` counts the seconds the vacuum has been
+  gone — through VACUUM_ALARM and on into the FAULT it cascades to; a new
+  input `pot_emptied` zeroes a pot in any state; `vacuum_restored` is REFUSED
+  while a pot is at capacity (event `vacuum_restore_refused_pot_full`), so the
+  old hold-E on the extruder can no longer wave a pushed-open lid away (it
+  still clears the manual `vacuum_lost`).
+- `VacuumPotService` (static, `src/scenes/interactions/`): the lid pull —
+  required seconds = 2 + 1 per minute the vacuum has been gone (his "harder
+  and harder"); letting go springs it back; the parked lid; a `MeltBlock` of
+  the pot's kg spawned inside; four planes × four cells; `push()` gains
+  1.0 → 0.45 of a cell as the melt stiffens over three minutes, times a
+  0.6-1.0 draw (his "might only go halfway … then three quarters or all the
+  way"); a push with the tool still in is refused — `pull_out()` first; every
+  plane ≥ 0.90 (his testing value) frees the block, which drops 1 cm down and
+  forward; `take_block()` hands it out and tells the model; `relid()` seats
+  the lid and asks for the vacuum. Every number marked PLACEHOLDER in the
+  file is his to set after playing.
+- `VacuumPotInteract` (`VacPot_<name>/PotService`, a crosshair body around
+  each dome): hold E pulls the lid; E pushes the plamuurmes into the cell the
+  crosshair ray hits on the dome (upper = top plane, lower = bottom, else
+  left/right; the cell by quadrant), E again pulls it out; E takes the freed
+  block into the hotbar; E puts the lid back. Prompts say which.
+- `MeltBlock` (carryable): dropped within 3 m of a lump cart with room it
+  goes in as lumps (`receive_lump`), else into a waste container, else it
+  lands as a prop; mass conserved (`dump_into`).
+- `PlamuurmesTool` (catalog `tool_plamuurmes`, Tools): the putty knife, held
+  like the wrench; the pot checks it is the active slot.
+- `PlayerController._update_generic_hold`: any crosshair interactable with
+  `crosshair_hold_tick(delta, player) -> 0..1` gets E held on it; the first
+  user is the lid.
+- `ExtruderMachine`: the E hint at the extruder now says "pot primary is
+  full — pull its lid and clean it (at the pot)"; past the two minutes the
+  FAULT broadcast adds `laserfilter_error` (primary pot) / `headfilter_error`
+  (secondary) — his "a different HMI alarm reports the shutdown due to laser
+  filter error"; both clear when FAULT is left.
+- `PlaceableCatalog.set_vacuum_pot_state` leaves a lid alone while the pot's
+  root carries `lid_off` (the parked lid used to be driven back every frame).
+
+**Measured.** `test_vacuum_pot_minigame`: `PASS (33 ok, 0 fail)` on a real
+`extruder_3a` build with its SimBrain. The full pot → VACUUM_ALARM naming
+'primary', one 'vacuum' alarm on the bus; the shortcut refused; only the full
+pot's lid pullable; 2.0 s at the alarm, 7.0 s five minutes in; a half pull
+springs back; the lid off after 2.1 s, parked 9 cm below its seat and
+leaning; an 18 kg block inside; the first push 68 %, the second refused; 31
+pushes to free it, top/bottom/left 1.00, right 0.94; the block 1 cm down and
+forward; taken → pot 0.0000 kg (the alarm tick's degassing re-condenses
+micrograms — the check reads < 0.01); 18 kg into the cart whole; the lid
+back at 2.4 s → RUNNING, 'vacuum' cleared; a second full pot untouched for
+125 s → FAULT with 'fault' + 'laserfilter_error' and no head-filter alarm;
+the lid then needs 4.1 s and can still be cleaned in FAULT; the line stays
+FAULT until `operator_clear_fault`. Neighbours: `test_vacuum_pot_visual` 22
+ok, `test_extruder_brain_wired` PASS, `test_line3a_flow_conformance` PASS,
+`test_tool_placement_mode` PASS, `test_hmi_screen_zeroing` PASS,
+`test_scada_dashboard_scene` PASS, `test_keybind_sheet` 24 ok. Parse sweep
+442 ok, lint 0. Two suite-side faults on the way, in the audit trail of
+CLAUDE.md's traps: a new `class_name` is unknown to a standalone headless run
+(the suite idled to its watchdog — the service is now referenced by preload
+path), and `call()` into an `Array[String]` parameter needs a typed array.
+Renders: `shot_tool_plamuurmes.png`; `shot_vacuum_pots_lid_off_block.png`
+and `shot_vacuum_pots_block_free.png` from the stage-A shot tool (the lid
+leaning against the dome, the block inside).
+
+**Not proven headless, for him to play.** The feel: every PLACEHOLDER (pull
+time, stiffness curve, cells per plane, the push draw); which way "towards
+the player" is (the block shifts +X, the sight-glass side); whether the
+cell the ray picks on a 25 cm dome reads as his planes; the hotbar carry of
+an 18 kg block (no weight penalty yet).

@@ -217,7 +217,10 @@ func _interact_hint() -> String:
 				return "clean vacuum lines (clear gunk)"
 			return "start production"
 		ExtruderModel.State.RUNNING:        return "simulate vacuum loss (test the 120s cascade)"
-		ExtruderModel.State.VACUUM_ALARM:   return "restore vacuum (clear alarm)"
+		ExtruderModel.State.VACUUM_ALARM:
+			if not model.pots_below_capacity():
+				return "pot %s is full — pull its lid and clean it (at the pot)" % model.vacuum_alarm_pot
+			return "restore vacuum (clear alarm)"
 		ExtruderModel.State.FAULT:
 			if model.flooded_dismantle_required or model.vacuum_line_gunk_kg >= ExtruderModel.VACUUM_FLOOD_DISMANTLE_THRESHOLD_KG:
 				return "clean vacuum lines & clear fault"
@@ -550,8 +553,18 @@ func _broadcast(events: Array[String]) -> void:
 				EventBus.machine_alarm_raised.emit(config_resource.line_id, "vacuum", 2)
 			elif new_s == ExtruderModel.State.FAULT:
 				EventBus.machine_alarm_raised.emit(config_resource.line_id, "fault", 3)
+				# P3 stage B (rulings §14): past the two minutes "a different HMI
+				# alarm reports the shutdown due to laser filter error" — the
+				# primary pot is the laser filter's, the secondary the head filter's.
+				if model.fault_reason == "vacuum_lid_pushed_open":
+					if model.vacuum_alarm_pot == "primary" or model.vacuum_alarm_pot == "both":
+						EventBus.machine_alarm_raised.emit(config_resource.line_id, "laserfilter_error", 3)
+					if model.vacuum_alarm_pot == "secondary" or model.vacuum_alarm_pot == "both":
+						EventBus.machine_alarm_raised.emit(config_resource.line_id, "headfilter_error", 3)
 			elif old_s == ExtruderModel.State.FAULT:
 				EventBus.machine_alarm_cleared.emit(config_resource.line_id, "fault")
+				EventBus.machine_alarm_cleared.emit(config_resource.line_id, "laserfilter_error")
+				EventBus.machine_alarm_cleared.emit(config_resource.line_id, "headfilter_error")
 		elif ev == "fault_lump_produced":
 			EventBus.machine_lump_produced.emit(
 				config_resource.line_id,
@@ -604,8 +617,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			_pending["vacuum_lost"] = true
 			print("[%s] Operator triggered vacuum loss — 120s grace begins" % config_resource.line_id)
 		elif model.state == ExtruderModel.State.VACUUM_ALARM:
-			_pending["vacuum_restored"] = true
-			print("[%s] Operator restored vacuum — alarm cleared" % config_resource.line_id)
+			if model.pots_below_capacity():
+				_pending["vacuum_restored"] = true
+				print("[%s] Operator restored vacuum — alarm cleared" % config_resource.line_id)
+			else:
+				# P3 stage B: a pushed-open lid is the mini-game at the pot, not
+				# a press here (rulings §14).
+				print("[%s] Vacuum pot %s is full — its lid stays pushed open until it is cleaned"
+					% [config_resource.line_id, model.vacuum_alarm_pot])
 		elif model.state == ExtruderModel.State.PREHEAT:
 			# The green pushbutton is only live once the display block is green.
 			if model.preheat_ready():

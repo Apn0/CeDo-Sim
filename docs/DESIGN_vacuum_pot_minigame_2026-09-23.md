@@ -85,3 +85,14 @@ same day; this stage is NOT built yet.
 The laser filter's own knives/nozzles (already modelled), the head-filter
 change, the pelletiser. The two "open top tanks" and the cyclone-to-blower
 gap belong to the wet-side flake work (task 1c).
+
+## 6. Built — 2026-09-24 (stage B shipped headless-proven; the feel is his)
+
+Everything in §2 exists in code as of `test_vacuum_pot_minigame` (33 ok):
+`VacuumPotService` (the state and the rules), `VacuumPotInteract` (E /
+hold-E on the pot's crosshair body), `MeltBlock`, `PlamuurmesTool`
+(`tool_plamuurmes`), `PlayerController._update_generic_hold`, and the model's
+`pot_emptied` input, `vacuum_alarm_pot`, `vacuum_alarm_elapsed_s` and the
+guarded `vacuum_restored`. The §3 parameters stand as written — his three,
+and every placeholder marked in the code. What was measured and what he
+still has to play: `docs/audit/operator_session_2026-09-23.md`, task 15.

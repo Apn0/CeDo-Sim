@@ -505,7 +505,7 @@ the one before that ~6 months stale — treat this one as re-checkable too):
 | `docs/audit/robustness_and_coverage_2026-09-21.md` | **Crash-safe persistence (`AtomicFile`) and 26 formerly-unrun suites now gated.** Why a save killed mid-write used to load back as an empty factory and get autosaved over; the delete-resurrection bug caught in the first draft; 5 mutation proofs. Plus the bisect that pins the `test_gate_carve` red on two rotation-sign flips in the uncommitted `WallOpenings.gd`, which reds are identical at clean HEAD, and what was measured but not touched |
 | `docs/audit/overnight_enhancement_2026-09-23.md` | **The unattended 2026-09-23 run: 12 commits, every one measured first.** A MotorOverload trip that never stopped conveying, a Lumpenwagen that lost kg when full, checkpoint saves, the F1 key sheet, map labels, the cart speed clamp, the compactor kijkglas, LineFlow moved to 10 Hz (2.85 → 0.54 ms/frame), and two harness reds root-caused as frame-count races (navmesh bake, bale streaming). Two full harness runs, the operator list at the end |
 | `docs/audit/operator_session_2026-09-23.md` | **The interactive 2026-09-23 session: tasks ranked by operator effort against sim impact, each answered by AskUserQuestion then built and measured.** Task 1: film beds on every belt (P1), the inclined belt's deck running the wrong diagonal, the cost probe, the renders; per-task evidence and the open questions each one left |
-| `docs/DESIGN_vacuum_pot_minigame_2026-09-23.md` | **P3 stage B as the operator described it: not a hold-E but a mini-game** — lid pull that stiffens with time, plamuurmes planes at 90 %, the block by hand, re-lid, the two-minute race. Systems, parameters (his vs placeholder), test strategy. Not built |
+| `docs/DESIGN_vacuum_pot_minigame_2026-09-23.md` | **P3 stage B as the operator described it: not a hold-E but a mini-game** — lid pull that stiffens with time, plamuurmes planes at 90 %, the block by hand, re-lid, the two-minute race. Systems, parameters (his vs placeholder), test strategy. **Built 2026-09-24** (`test_vacuum_pot_minigame`, 33 ok); the feel is his to play |
 | `docs/plant/operator_rulings_2026-09-23.md` | **Operator answers from memory, 2026-09-23** — film look, colour order, bed depth per belt, where wet flake is visible, screws "differ". Recollections, not documents: cite them as such |
 | `docs/audit/assets_loss_and_restore_2026-09-21.md` | **`assets/` was wiped and restored.** Godot's `.md5` fingerprints identify originals byte for byte: 159 of 273 are back exact and 101 are cache-only (listed; do not re-import them). Also the `Merlo.fbx` re-import trap, what `winfr` did and did not recover (nothing exact), and the method to reuse |
 | `docs/BACKLOG_ultracode_2026-07-19.md` | Deferred queue — 16 of 40 findings landed; also records the npc-05 vacuous-green correction |
@@ -540,6 +540,17 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   `INSTANCE_CUSTOM`) costs the CPU ~3 µs per field per frame for 14 000
   flakes where CPU-animated instances cost 1 ms for 3 500 — animate with
   uniforms, write transforms once.
+- **A fresh `class_name` is unknown to a standalone headless run.** Godot
+  resolves class names through `.godot/global_script_class_cache.cfg`, which
+  the editor (or the harness's `== importing ==` step) rebuilds — a bare
+  `godot --headless --path . res://…tscn` after adding a script with
+  `class_name X` sees `Identifier "X" not declared`, the suite fails to parse,
+  its scene boots with no script and idles to the watchdog. Measured
+  2026-09-24 with `VacuumPotService` (254 s lost). Reference NEW scripts by
+  `preload("res://…")` from the code and suites written the same day; leave
+  the `class_name` for the editor. Same day, next door: `call()` into a
+  method whose parameter is `Array[String]` needs a typed array
+  (`var evs : Array[String] = […]`), or it is an `Invalid type` SCRIPT ERROR.
 - **Two consecutive MAIN entries of a line SEQ have NO edge of their own —
   LineFlow's nearest-input-port fallback wires them, and it picks whatever
   inlet is closest.** Measured 2026-09-24 with `dump_line1_graph`: at line 1's

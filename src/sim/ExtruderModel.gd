@@ -208,6 +208,13 @@ var _last_lump_emit_s : float = -100.0
 # the PCU model — see CutterCompactor.gd / PCUModel — we accept the value
 # here only when ExtruderMachine forwards it for unified HMI display).
 var fault_reason : String = ""
+# P3 stage B (2026-09-24, rulings §14): which pot pushed its lid at the last
+# lid alarm ("primary" / "secondary" / "both"), and how long the vacuum has
+# been gone — through VACUUM_ALARM and on into the FAULT it cascades to — for
+# the lid's stickiness ("harder and harder, the longer the vacuum has been not
+# in vacuum") and the melt's stiffness under the plamuurmes.
+var vacuum_alarm_pot : String = ""
+var vacuum_alarm_elapsed_s : float = 0.0
 
 # Seven-zone temperature setpoints (operator-tunable). Built from
 # config.zone_temp_setpoints if that's set with length == ZONE_COUNT,
@@ -312,6 +319,15 @@ func _init(cfg: ExtruderConfig) -> void:
 func tick(delta: float, inputs: Dictionary) -> Array[String]:
 	var events: Array[String] = []
 	time_since_state_change += delta
+	# P3 stage B: the operator lifted the melt block out of a pot (MeltBlock via
+	# VacuumPotService.take_block). Any state — a pot can be cleaned in FAULT too.
+	if inputs.has("pot_emptied"):
+		var emptied : String = String(inputs["pot_emptied"])
+		if emptied == "primary" or emptied == "both":
+			primary_pot_fill_kg = 0.0
+		if emptied == "secondary" or emptied == "both":
+			secondary_pot_fill_kg = 0.0
+		events.append("pot_emptied:" + emptied)
 
 	match state:
 		State.OFF:
@@ -541,6 +557,8 @@ func _tick_running(delta: float, inputs: Dictionary, events: Array[String]) -> v
 	if primary_pot_fill_kg >= VACUUM_POT_CAPACITY_KG \
 			or secondary_pot_fill_kg >= VACUUM_POT_CAPACITY_KG:
 		fault_reason = "vacuum_lid_pushed_open"
+		vacuum_alarm_pot = _pots_at_capacity()
+		vacuum_alarm_elapsed_s = 0.0
 		_transition(State.VACUUM_ALARM, events)
 		return
 	# (b) Back-compat: explicit `vacuum_lost` input still triggers (manual
@@ -602,6 +620,7 @@ func _tick_vacuum_alarm(delta: float, inputs: Dictionary, events: Array[String])
 		vacuum_alarm_remaining_s = config.vacuum_alarm_grace_s
 
 	vacuum_alarm_remaining_s -= delta
+	vacuum_alarm_elapsed_s += delta
 	# Screw + throughput unchanged during alarm — sim still produces.
 	screw_rpm = config.screw_rpm_nominal
 	throughput_kg_h = config.nominal_kg_per_h
@@ -620,14 +639,22 @@ func _tick_vacuum_alarm(delta: float, inputs: Dictionary, events: Array[String])
 	_step_degassing(delta)
 
 	if inputs.get("vacuum_restored", false):
-		# Operator addressed the alarm — clear the cause string so the SCADA
-		# "fault_reason" chip drops back to grey on the next push. Without this
-		# the dashboard would keep painting the chip alarm-red (e.g. carrying
-		# "vacuum_lost_input") well after the line resumed RUNNING.
-		fault_reason = ""
-		_transition(State.RUNNING, events)
-		events.append("vacuum_alarm_cleared")
-		return
+		# P3 stage B: a pot whose lid the melt pushed open cannot hold vacuum
+		# until it is EMPTIED (the mini-game) — the hold-E shortcut alone no
+		# longer clears a lid alarm; it still clears the manual vacuum_lost.
+		if not pots_below_capacity():
+			events.append("vacuum_restore_refused_pot_full")
+		else:
+			# Operator addressed the alarm — clear the cause string so the SCADA
+			# "fault_reason" chip drops back to grey on the next push. Without this
+			# the dashboard would keep painting the chip alarm-red (e.g. carrying
+			# "vacuum_lost_input") well after the line resumed RUNNING.
+			fault_reason = ""
+			vacuum_alarm_pot = ""
+			vacuum_alarm_elapsed_s = 0.0
+			_transition(State.RUNNING, events)
+			events.append("vacuum_alarm_cleared")
+			return
 
 	if vacuum_alarm_remaining_s <= 0.0:
 		# fault_reason is preserved from the original VACUUM_ALARM trigger
@@ -636,6 +663,10 @@ func _tick_vacuum_alarm(delta: float, inputs: Dictionary, events: Array[String])
 		events.append("vacuum_cascade_failure")
 
 func _tick_fault(delta: float, inputs: Dictionary, events: Array[String]) -> void:
+	# P3 stage B: the lid keeps getting stickier through the FAULT a lid alarm
+	# cascaded into (VacuumPotService.lid_pull_required_s reads this).
+	if fault_reason.begins_with("vacuum"):
+		vacuum_alarm_elapsed_s += delta
 	# ── NEW FAULT SEMANTICS (operator-confirmed) ─────────────────────────────
 	# Per the operator, the real-plant FAULT cascade halts EVERYTHING IN THE
 	# LINE EXCEPT THE PCU: extruder screw, both vacuum units, laser filter,
@@ -700,6 +731,9 @@ func _transition(new_state: State, events: Array[String]) -> void:
 	var old := state
 	state = new_state
 	time_since_state_change = 0.0
+	if new_state == State.OFF or new_state == State.IDLE:
+		vacuum_alarm_pot = ""              # the lid episode is over either way
+		vacuum_alarm_elapsed_s = 0.0
 	# Reset the lump-emit clock so a fresh fault state emits its first lump
 	# 3 s in (not stalled because the tracker still holds the old high time).
 	_last_lump_emit_s = -100.0
@@ -713,6 +747,22 @@ func get_progress_percent_alarm() -> float:
 	if state != State.VACUUM_ALARM:
 		return 0.0
 	return 1.0 - (vacuum_alarm_remaining_s / config.vacuum_alarm_grace_s)
+
+## P3 stage B: no pot at capacity — the condition for a vacuum to be restorable.
+func pots_below_capacity() -> bool:
+	return primary_pot_fill_kg < VACUUM_POT_CAPACITY_KG \
+		and secondary_pot_fill_kg < VACUUM_POT_CAPACITY_KG
+
+func _pots_at_capacity() -> String:
+	var p_full : bool = primary_pot_fill_kg >= VACUUM_POT_CAPACITY_KG
+	var s_full : bool = secondary_pot_fill_kg >= VACUUM_POT_CAPACITY_KG
+	if p_full and s_full:
+		return "both"
+	if p_full:
+		return "primary"
+	if s_full:
+		return "secondary"
+	return ""
 
 # =============================================================================
 # DEGASSING — six-stage pipeline with two vacuum ports

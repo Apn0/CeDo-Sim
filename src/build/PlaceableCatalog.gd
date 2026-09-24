@@ -598,6 +598,7 @@ static func items() -> Array[Dictionary]:
 			# #210b — Maat-7 dopsleutel: 7 mm socket wrench used to swap the
 			# pelletizer cutting knife. Item-only here (pickup + held visual);
 			# the knife-swap interaction itself lives downstream in #210.
+			{"id": "tool_plamuurmes","name": "Plamuurmes (putty knife)", "category": "Tools",      "size": Vector3(0.10, 0.04, 0.28),"color": Color(0.72, 0.74, 0.76)},   # P3 stage B: clears a vacuum pot's planes
 			{"id": "socket_wrench_7","name": "Maat-7 dopsleutel",  "category": "Tools",      "size": Vector3(0.05, 0.06, 0.20),"color": Color(0.55, 0.57, 0.60)},
 			# ── Hoses, reels, compressors (housekeeping + process air supply) ────
 			# Wall-mount reel holding a ~10 m thick YELLOW water hose; ball valve at the
@@ -6423,6 +6424,7 @@ static func _build_tool(id: String, size: Vector3, ghost: bool) -> Node3D:
 		"tool_leafblower": return load("res://src/operator/LeafBlower.gd").new()
 		"tool_jerrycan":   return load("res://src/scenes/world/JerryCan.gd").new()
 		"socket_wrench_7": return load("res://src/scenes/world/SocketWrench7.gd").new()
+		"tool_plamuurmes": return load("res://src/scenes/world/PlamuurmesTool.gd").new()
 	return null
 
 ## Build one of the four operator-spec opzetband variants. Each is a ShredderFeedBelt
@@ -8459,7 +8461,9 @@ static func set_vacuum_pot_state(machine: Node3D, pot_name: String, frac: float,
 		return null
 	set_silo_fill(machine, frac, r)
 	var lid := r.get_node_or_null("Lid") as MeshInstance3D
-	if lid != null:
+	# Stage B: a lid the operator pulled off is parked by VacuumPotService and
+	# must not be driven back onto the dome every frame (root meta lid_off).
+	if lid != null and not bool(r.get_meta("lid_off", false)):
 		var cy : float = float(lid.get_meta("lid_closed_y", lid.position.y))
 		if lid_open:
 			lid.position.y = cy + 0.12
@@ -12782,6 +12786,21 @@ static func _m_extruder_unit(p: Node3D, size: Vector3, color: Color, ghost: bool
 			gunk.scale = Vector3(0.001, 0.001, 0.001)
 			gunk.visible = false
 			pot_root.add_child(gunk)
+			# P3 stage B (2026-09-24): the pot is something the operator WORKS
+			# on — a crosshair body around the dome carries VacuumPotInteract
+			# (E / hold-E → VacuumPotService) and the pot's geometry for it.
+			pot_root.set_meta("pot_centre", Vector3(0.0, vac_y, vz))
+			pot_root.set_meta("dome_r", dome_r)
+			pot_root.set_meta("dome_h", dome_h)
+			var svc : StaticBody3D = load("res://src/scenes/world/VacuumPotInteract.gd").new()
+			svc.name = "PotService"
+			svc.position = Vector3(0.0, vac_y, vz)
+			var svc_col := CollisionShape3D.new()
+			var svc_box := BoxShape3D.new()
+			svc_box.size = Vector3(dome_r * 2.4, dome_h + 0.14, dome_r * 2.4)
+			svc_col.shape = svc_box
+			svc.add_child(svc_col)
+			pot_root.add_child(svc)
 		pot_i += 1
 
 	# ═══ SECTION 6: MELTPUMP (gear-pump block) on the barrel front ═══
