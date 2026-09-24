@@ -93,8 +93,12 @@ Two side effects of cache-only files:
 - **Not measured:** whether an export includes cache-only files. The exporter works from
   the editor's file list, which does not contain them. Check before shipping a build.
 
-The scripts are in the session scratchpad (`recover_match.py`, `sweep.py`,
-`classify.py`, `build_staging.py`, `regen_clips.py`, `snap.py`). The inputs and results
+**The scripts are gone.** They lived in the session scratchpad (`recover_match.py`,
+`sweep.py`, `classify.py`, `build_staging.py`, `regen_clips.py`, `snap.py`,
+`neutralize_detect.py`) — per-session storage, which has since been cleared. Measured
+2026-09-24: every scratchpad for this project under the Claude temp root is empty.
+Rebuild them from the Method section above, which is complete, and keep the next set
+somewhere durable. What survives is the record — the inputs and results
 are in `D:\cedo_archive\assets_restore_20260922\restore_manifest.csv`, one row per file
 with its status, source and UID origin.
 

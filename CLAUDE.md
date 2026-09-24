@@ -1068,8 +1068,11 @@ sequence matters more than either endpoint:
   mesh within reach is a sliver ~1.1 m up (`cell_height` 0.60 quantisation) on
   top of the neighbouring kit.
 
-  A post-placement fix was tried 2026-08-28 and **measured as not working** —
-  kept at `scratchpad/CrewManager.gd.attempt_navpost.bak`. It searched the
+  A post-placement fix was tried 2026-08-28 and **measured as not working**. This
+  paragraph used to say it was "kept at
+  `scratchpad/CrewManager.gd.attempt_navpost.bak`" — that file is GONE. There is no
+  `scratchpad/` in the repo, and an all-drive name search on 2026-09-24 found no copy
+  anywhere. The description that follows is all that is left of it. It searched the
   worker's side plus four cardinals, accepting only spots that were physically
   clear AND had floor-level navmesh within 0.75 m. Every direction was rejected
   out to `STAND_MAX_PUSH_M` (4.0 m), i.e. **there is no floor-level navmesh
