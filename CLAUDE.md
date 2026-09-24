@@ -547,7 +547,8 @@ the one before that ~6 months stale — treat this one as re-checkable too):
 | `docs/audit/hmi_fault_rearm_2026-09-24.md` | **HMI alarms: KWITTEREN acknowledges one occurrence of an alarm (#279), and the same EREMA code on two lines is two alarms (#282).** Probes, the guard suites `test_hmi_fault_rearm` and `test_hmi_fault_per_line` with their mutation matrices, and the full harness on `04eaa77`. **Open:** every panel lists every line's EREMA alarms (found by reading the code, not measured); Afschermen does not exist (the Onderdrukt tab reads a table nothing writes); RESETTEN clearing every acknowledgement has not been ruled on |
 | `docs/audit/operator_session_2026-09-23.md` | **The interactive 2026-09-23 session: tasks ranked by operator effort against sim impact, each answered by AskUserQuestion then built and measured.** Task 1: film beds on every belt (P1), the inclined belt's deck running the wrong diagonal, the cost probe, the renders; per-task evidence and the open questions each one left |
 | `docs/DESIGN_vacuum_pot_minigame_2026-09-23.md` | **P3 stage B as the operator described it: not a hold-E but a mini-game** — lid pull that stiffens with time, plamuurmes planes at 90 %, the block by hand, re-lid, the two-minute race. Systems, parameters (his vs placeholder), test strategy. **Built 2026-09-24** (`test_vacuum_pot_minigame`, 33 ok); the feel is his to play |
-| `docs/plant/operator_rulings_2026-09-24.md` | **Extruder melt pressures, 2026-09-24**: the "280 psi" die pressure was 280 BAR, a safe maximum before the laserfilter under the 318-bar shutdown (he runs ~220). Two pressures: before the laserfilter = melt-set after + dMP; MP<PEL (160 bar) = dP across the kopfilter; per-line FORM-008 kopdruk. Recollections; what was measured before/after, and what is still open (3B above its one-session trend). §6: merged with #275, which fixed the same finding in parallel. The melt-set pressures follow MELT temperature (3A fit 6.83 bar/°C, weak). §7: the screen's dMP follows it too (operator 2026-09-25), measured before/after |
+| `docs/audit/extruder_screw_die_plate_2026-09-24.md` | **LineFlow's OWN screw model (not ExtruderModel) read 0.11 "bar" at the die, at 200 rpm and a 195 °C melt.** The MFI estimate was 1491 g/10min, so every QA sample graded REJECT, and on lines 1/3A/3B the terminal and SCADA read the `extruder_silo`. Now: die plate after the kopfilter (operator ruling), per-line rpm, melt and output from the WinCC trends, MFI anchor re-solved. Open: the plant's kopdruk is flat with output (R² ≤ 0.04), and the model's is proportional |
+| `docs/plant/operator_rulings_2026-09-24.md` | **Extruder melt pressures, 2026-09-24**: the "280 psi" die pressure was 280 BAR, a safe maximum before the laserfilter under the 318-bar shutdown (he runs ~220). Two pressures: before the laserfilter = melt-set after + dMP; MP<PEL (160 bar) = dP across the kopfilter; per-line FORM-008 kopdruk. Recollections; what was measured before/after, and what is still open (3B above its one-session trend). §6: merged with #275, which fixed the same finding in parallel. The melt-set pressures follow MELT temperature (3A fit 6.83 bar/°C, weak), and whether the screen's dMP does too is open |
 | `docs/plant/operator_rulings_2026-09-23.md` | **Operator answers from memory, 2026-09-23** — film look, colour order, bed depth per belt, where wet flake is visible, screws "differ". Recollections, not documents: cite them as such |
 | `docs/audit/assets_loss_and_restore_2026-09-21.md` | **`assets/` was wiped and restored.** Godot's `.md5` fingerprints identify originals byte for byte: 159 of 273 are back exact and 101 are cache-only (listed; do not re-import them). Also the `Merlo.fbx` re-import trap, what `winfr` did and did not recover (nothing exact), and the method to reuse |
 | `docs/BACKLOG_ultracode_2026-07-19.md` | Deferred queue — 16 of 40 findings landed; also records the npc-05 vacuous-green correction |
@@ -579,6 +580,17 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   "Operator-documented" entry below. Guarded by `test_die_pressure_bar` and
   `test_extruder_melt_pressures`. Before changing a unit, list every reader
   (`grep -rn <var>`), and measure each one at the new scale.
+  **The same disease, a second model, the same day:** LineFlow's
+  `ExtruderScrew` is not `ExtruderModel`, and its `die_pressure` read 0.11 bar
+  (1/1300 of the plant). It fed an ABSOLUTE soft sensor (`MfiProxy`:
+  MFI = gain·Q/(P·η)), which read 1491 g/10min, and `QaSpec` REJECTed every
+  sample. Both unit suites stayed green: `test_extruder_screw` asserted `> 0`
+  and an ordering, and `test_mfi_proxy` asserts only ratios. **A suite that
+  checks only proportions cannot see a scale error, so guard any number a
+  grader or a gauge reads against a documented band** (`test_screw_die_plate_bar`).
+  Next door: `_is_extruder()` was `id.begins_with("extruder")`, which also
+  matched `extruder_silo`, so the terminal showed a silo's "melt 195 °C". A
+  prefix dispatch needs a check on what the thing DOES (process `meltfilter`).
 - **A helper moved to a utility class leaves `world.call("_name")` callers
   silently broken.** `call()` by string is not checked at parse time: when
   MainWorld's `_local_aabb` / `_fit_box_collider` moved to `GeometryUtils`,
