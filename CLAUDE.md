@@ -251,6 +251,28 @@ count.
 > stays empty. Measured: `PASS (16 ok, 0 fail, 0 skipped)`, jam 1 arrived
 > after 158.6 s, jam 3 after 94.1 s. `regression verdict` and B1b are
 > untouched. `docs/audit/operator_session_2026-09-23.md` task 5.
+>
+> **2026-09-24 — that door LEAKED into the operator's real world_layout.json.**
+> The suite's comment said the autosave was redirected by
+> `layout_path_override`, but the suite never set it. Every 60 s autosave
+> runs `BuildMode._save_layout`, which moves every door/gate under
+> `_placed_root` into `WorldLayout.structure_items` and writes the real
+> file. The fixture gate went with them. `_finish` put the bytes back, so
+> the gate only stayed when a run died before `_finish`. One did: a harness
+> stopped at 17:15, with its log ending mid-jam1. His file now holds
+> `"3A/3B gate (jam-baseline fixture)"` (md5 `e046af7d…`). That turns
+> `regression verdict` and this suite's "structure_items untouched" check
+> red **on his machine only**. Even green runs left the gate in
+> `world_layout.json.bak`. Reproduced byte for byte in an isolated APPDATA.
+> Fixed with three changes:
+> - the override is set before boot;
+> - three LEAK GUARD checks on the real file's md5, mutation-proven (3 red);
+> - the restore runs before teardown.
+>
+> Measured after: `PASS (19 ok, 0 fail, 0 skipped)`. **He chose to KEEP the
+> leaked entry (asked 2026-09-24), so those two reds are environmental. Do
+> not edit his world_layout.json without asking him.**
+> `docs/audit/jam_baseline_layout_leak_2026-09-24.md`.
 
 **`test_jam_baseline` was `14 ok, 0 fail, 0 skipped` (2026-09-03) — the first time this suite
 had ever evaluated all fourteen of its checks.** It was 11 ok + 3 silently

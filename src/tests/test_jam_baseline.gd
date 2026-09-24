@@ -32,6 +32,28 @@ const PROTECT : Array[String] = [
 	"user://__jambaseline___factory.json",
 ]
 
+## The operator's world ground truth, and where this suite's world saves go
+## instead. LEAKED 2026-09-24: the suite never set layout_path_override, although
+## a comment in _build_line_3a said it did. So each 60 s autosave ran
+## BuildMode._save_layout, which moves every door/gate under _placed_root
+## (the in-memory DOORWAY fixture included) into WorldLayout.structure_items
+## and writes WorldLayout.save() to the REAL user://world_layout.json. The
+## in-memory backup put the bytes back in _finish(). But a harness stopped by
+## hand 3.5 min into this suite (17:15, `ready-daacfa`, log ends mid-jam1 after
+## two `[WorldLayout] saved → user://world_layout.json`) never reached _finish,
+## and the operator's world kept "3A/3B gate (jam-baseline fixture)". That
+## turned `regression verdict` red on every later run, and this suite's own
+## "structure_items untouched" check too. The headless teardown segfault
+## (~1 run in 4, CLAUDE.md) skipped the same restore. Even a GREEN run left
+## the gate in world_layout.json.bak, AtomicFile's recovery generation, which
+## the restore never touched (measured on HEAD, isolated APPDATA). Now every
+## save goes to WL_SCRATCH, the LEAK GUARD checks compare the real file's
+## bytes, and _finish restores before it tears the world down.
+## docs/audit/jam_baseline_layout_leak_2026-09-24.md
+const WL_REAL    : String = "user://world_layout.json"
+const WL_SCRATCH : String = "user://__jambaseline___world_layout.json"
+const FIXTURE_GATE_LABEL : String = "3A/3B gate (jam-baseline fixture)"
+
 # ── Measured jam coordinates (see docs/BACKLOG_ultracode_2026-07-19.md) ───────
 # JAM 1 — the yard forklift drives at the plant and wedges against the perimeter
 # fence's east end post. Reproduced to 0.13 m across runs, and a control with all
@@ -113,6 +135,12 @@ var _oks   : int = 0
 var _skips : int = 0
 var _world : Node3D = null
 var _anchor : Vector3 = Vector3.ZERO
+## MD5 of the real world_layout.json before the world booted ("" = no file).
+var _wl_real_md5 : String = ""
+## WorldLayout.save() calls observed during the run: the LEAK GUARD's forced
+## save plus every autosave. Reported so a reader can see that the end-of-run
+## check covered the autosaves, not just a quiet run.
+var _wl_saves : int = 0
 
 func _check(cond: bool, label: String) -> void:
 	if cond:
@@ -142,6 +170,19 @@ func _ready() -> void:
 		print("FATAL: WorldLayout autoload missing (boot via the .tscn, not --script)")
 		get_tree().quit(2); return
 	_backup_files()
+	# REDIRECT BEFORE BOOT. WorldLayout already holds the operator's layout (it
+	# loaded in its own _ready), so the world boots on his real markers. Only the
+	# WRITES move to the scratch path. If the redirect does not take, stop here:
+	# otherwise the first autosave carries the fixture gate into his file.
+	_wl_real_md5 = FileAccess.get_md5(WL_REAL) if FileAccess.file_exists(WL_REAL) else ""
+	_remove_scratch()   # a killed earlier run can leave one behind
+	WorldLayout.layout_path_override = WL_SCRATCH
+	if WorldLayout.get_layout_path() != WL_SCRATCH:
+		print("FATAL: WorldLayout.layout_path_override not honoured — refusing to run "
+			+ "(the fixture gate would be autosaved into the operator's world_layout.json)")
+		WorldLayout.layout_path_override = ""
+		get_tree().quit(2); return
+	WorldLayout.layout_changed.connect(_on_layout_saved)
 
 	var bus := get_node_or_null("/root/EventBus")
 	if bus:
@@ -166,6 +207,16 @@ func _ready() -> void:
 	await _test_interior_routing()
 	await _test_jam1()
 	await _test_jam3()
+
+	# The drive legs outlast the 60 s autosave, and every autosave writes the
+	# world layout with the fixture gate in it. Checked here, BEFORE _finish's
+	# restore, which would put the original bytes back and hide a leak.
+	_section("LEAK GUARD — after the drive legs")
+	_info("WorldLayout.save() ran %d time(s) during this run (1 forced + autosaves), all to %s"
+		% [_wl_saves, WorldLayout.get_layout_path()])
+	_check(_real_layout_untouched(),
+		"the operator's world_layout.json is byte-identical after %d world save(s) (md5 %s)"
+			% [_wl_saves, _wl_real_md5 if _wl_real_md5 != "" else "none — no file"])
 
 	print("\n=========================================")
 	print("Result: %s (%d ok, %d fail, %d skipped)"
@@ -209,11 +260,14 @@ func _build_line_3a() -> void:
 	# gate" on the facade) through the same _apply_layout_entry a save load
 	# uses: the leaf is built, WallOpenings carves both wall skins, and
 	# BaseVehicle.invalidate_route_grid() makes the router see it.
-	# WorldLayout.structure_items is NOT touched, so nothing can leak into the
-	# operator's file (the 60 s autosave is redirected by layout_path_override
-	# as well), and test_project_sweep_guards' B1b stays true.
+	# Placing the gate does not touch WorldLayout.structure_items (checked
+	# below). SAVING the world does: _save_layout moves every door/gate under
+	# _placed_root into structure_items and writes WorldLayout. That is how this
+	# gate reached the operator's file on 2026-09-24 (see WL_SCRATCH). The
+	# redirect in _ready handles it, and the LEAK GUARD below forces that save
+	# to prove it.
 	var gate_entry := {
-		"kind": "surface", "type": "gate", "label": "3A/3B gate (jam-baseline fixture)",
+		"kind": "surface", "type": "gate", "label": FIXTURE_GATE_LABEL,
 		"p": [[-248.650161743164, -8.9238166809082, 154.07470703125],
 			  [-248.622482299805, -4.09112167358398, 154.097915649414],
 			  [-244.100952148438, -4.19967889785767, 157.892044067383],
@@ -230,6 +284,21 @@ func _build_line_3a() -> void:
 			% (opening if opening != "" else "NO CUT — the gate stands in front of an intact wall"))
 	_check((WorldLayout.structure_items as Array).is_empty(),
 		"DOORWAY fixture: WorldLayout.structure_items untouched (%d entries)" % (WorldLayout.structure_items as Array).size())
+	# ── LEAK GUARD: the save that leaked, forced now instead of waiting for it ──
+	# Same call SaveCoordinator.save_game makes on its autosave timer. Two
+	# checks, and both are needed. With the real file unchanged, "no leak" and
+	# "no save happened" look the same. The scratch file must also hold this
+	# gate, so the write is known to have happened and gone somewhere else.
+	# Mutation, measured 2026-09-24: clearing the override right after the
+	# refuse-to-run guard in _ready turns all three LEAK GUARD checks red
+	# (FAIL 16 ok, 3 fail).
+	bm.call("_save_layout")
+	_check(_real_layout_untouched(),
+		"LEAK GUARD: a world save with the fixture gate placed leaves the operator's world_layout.json byte-identical (md5 %s)"
+			% (_wl_real_md5 if _wl_real_md5 != "" else "none — no file"))
+	_check(_scratch_holds_fixture_gate(),
+		"LEAK GUARD: that save landed in %s and carries '%s' (the write happened, and went to scratch)"
+			% [WL_SCRATCH, FIXTURE_GATE_LABEL])
 	for _i in range(5):
 		await get_tree().process_frame
 	var machines : int = 0
@@ -657,12 +726,41 @@ const BF_ZU : Vector2 = Vector2(-0.76604, -0.64279)
 func _bf_to_pc(bf: Vector2) -> Vector2:
 	return BF_O + bf.x * BF_XU + bf.y * BF_ZU
 
+## Restore BEFORE the world is freed, then again after. The headless teardown
+## segfault lands inside world teardown (CLAUDE.md, 15 of 62 boots), so a
+## restore that only runs after queue_free() is skipped along with it. The
+## second pass catches anything teardown itself writes. The override is lifted
+## last, once nothing of the world is left to save.
 func _finish(code: int) -> void:
+	_restore_files()
 	if _world != null and is_instance_valid(_world):
 		_world.queue_free()
 	await get_tree().process_frame
 	_restore_files()
+	_remove_scratch()
+	WorldLayout.layout_path_override = ""
 	get_tree().quit(code)
+
+func _on_layout_saved() -> void:
+	_wl_saves += 1
+
+func _real_layout_untouched() -> bool:
+	var now : String = FileAccess.get_md5(WL_REAL) if FileAccess.file_exists(WL_REAL) else ""
+	return now == _wl_real_md5
+
+func _scratch_holds_fixture_gate() -> bool:
+	var parsed : Variant = AtomicFile.read_json(WL_SCRATCH, TYPE_DICTIONARY)
+	if not (parsed is Dictionary):
+		return false
+	for e in (parsed as Dictionary).get("structure_items", []):
+		if e is Dictionary and String((e as Dictionary).get("label", "")) == FIXTURE_GATE_LABEL:
+			return true
+	return false
+
+## The scratch layout is this suite's own file. AtomicFile.delete takes its
+## .tmp and .bak with it.
+func _remove_scratch() -> void:
+	AtomicFile.delete(WL_SCRATCH)
 
 func _backup_files() -> void:
 	for p in PROTECT:
@@ -673,6 +771,10 @@ func _backup_files() -> void:
 		else:
 			_backups[p] = null
 
+## A file that still holds its original bytes is left alone. With the redirect
+## in place, the operator's world_layout.json is never opened for writing,
+## including here. FileAccess.WRITE truncates before it writes, so a
+## needless restore of an untouched file was itself a chance to damage it.
 func _restore_files() -> void:
 	for p in PROTECT:
 		var data = _backups.get(p, null)
@@ -680,6 +782,8 @@ func _restore_files() -> void:
 			if FileAccess.file_exists(p):
 				DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
 		else:
+			if FileAccess.file_exists(p) and FileAccess.get_file_as_bytes(p) == data:
+				continue
 			var f := FileAccess.open(p, FileAccess.WRITE)
 			f.store_buffer(data)
 			f.close()
