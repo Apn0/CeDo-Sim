@@ -203,7 +203,7 @@ var _scope : Dictionary = {}
 var _automaat       : bool = true
 var _leegdraaien    : bool = false       # empty-run flag (display only)
 var _manual_run     : Dictionary = {}    # section name -> bool (HANDBEDIENING)
-var _acked_faults   : Dictionary = {}    # fault code -> true
+var _acked_occurrences : Dictionary = {} # fault OCCURRENCE id -> true (see _fault_occ)
 var _last_fed_mass  : float = 0.0
 var _no_feed_secs   : float = 0.0
 var _show_all_machines : bool = false    # toggle to see all plant machines on PLC tab
@@ -225,6 +225,17 @@ var _alarm_bell_flash : float = 0.0       # 0..1 sin-driven flash amount
 # Fault timestamp + history (#207c).
 # Active fault scope -> first-seen tijd_s (s, in-game wall clock from Time.get_ticks_msec).
 var _fault_first_seen : Dictionary = {}
+# Active fault code -> the id of its current OCCURRENCE (2026-09-24). A code
+# that clears and trips again is a NEW occurrence with a new id, so the
+# KWITTEREN given to the first one does not silence the second. The ack used to
+# be a per-CODE set that only RESETTEN cleared: 6557 tripped, was acked, cleared
+# by itself, tripped again — and came back already "gekwiteerd", off the Actief
+# tab, bell amber. Same model as Apn0/TVE-micro logic.py _latch_alarm, which
+# dedupes only against an UNCLEARED alarm of the same type (ISA-18.2). Whether
+# the real BluPort re-arms is not documented — an assumption, not a ruling.
+# Guarded by test_hmi_fault_rearm.
+var _fault_occ : Dictionary = {}
+var _fault_occ_seq : int = 0
 # Ring buffer of every fault transition (cap 256). Each entry: {code, tijd_s, msg, state, suppressed}
 # state: "active" | "cleared". Most-recent at the END.
 var _fault_history : Array = []
@@ -648,8 +659,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func _process(delta: float) -> void:
-	if not visible:
-		return
+	# 2026-09-24 — the plant is watched whether the panel is open or not; only
+	# the drawing waits for an open panel. This returned on `not visible`, so a
+	# fault that cleared and tripped again while the operator was away was never
+	# seen to clear, and on reopen it was still the old, already-KWITTEREN'd
+	# occurrence (test_hmi_fault_rearm B1). This overlay is ONE shared instance
+	# under the root (Hmi.gd `static var _overlay`) and outlives the world; a
+	# freed LineFlow reads false below and _find_line_flow() re-binds the next
+	# world's (phase D of the same suite).
 	# Track feed-starvation for the synthetic "no material" alarm.
 	if _line_flow and "feed_enabled" in _line_flow and bool(_line_flow.feed_enabled):
 		var fed := float(_line_flow.fed_mass) if "fed_mass" in _line_flow else 0.0
@@ -666,7 +683,14 @@ func _process(delta: float) -> void:
 	_refresh_acc += delta
 	if _refresh_acc >= 0.25:
 		_refresh_acc = 0.0
-		_refresh()
+		if visible:
+			_refresh()
+		else:
+			# Closed: observe, don't draw. No LineFlow means no plant (main menu,
+			# a world being torn down) — nothing to watch and no PLC-000 to log.
+			_find_line_flow()
+			if _line_flow != null:
+				_compute_faults()
 
 # =============================================================================
 # CHROME (persistent: bezel + header + content slot + footer nav)
@@ -1251,12 +1275,14 @@ func _on_manual_toggle(section: String) -> void:
 	_refresh()
 
 func _on_kwitteren() -> void:
+	# Acknowledges the occurrences that are active NOW; a later re-trip of the
+	# same code is a new occurrence and needs its own KWITTEREN.
 	for f in _compute_faults():
-		_acked_faults[String(f["code"])] = true
+		_acked_occurrences[int(f["occ"])] = true
 	_refresh()
 
 func _on_reset_faults() -> void:
-	_acked_faults.clear()
+	_acked_occurrences.clear()
 	# 2026-09-23 — RESETTEN also clears a CHOKE (operator: "shovel, then reset
 	# on the HMI") for every machine in this panel's scope. LineFlow refuses
 	# while the reject pile is still over CHOKE_CLEAR_FRAC, so pressing it
@@ -1313,7 +1339,7 @@ func _refresh() -> void:
 	var unacked := 0
 	for f in faults:
 		var fcode := String(f["code"])
-		if _acked_faults.has(fcode):
+		if _is_acked(fcode):
 			continue
 		if board != null and board.has_method("npc_acked") and bool(board.call("npc_acked", fcode)):
 			continue
@@ -1482,7 +1508,7 @@ func _rows_for_tab(active_faults: Array) -> Array:
 				var code := String(f.get("code", ""))
 				if _shielded_faults.has(code):
 					continue
-				if _acked_faults.has(code):
+				if _is_acked(code):
 					continue
 				rows.append({
 					"code": code,
@@ -1500,7 +1526,7 @@ func _rows_for_tab(active_faults: Array) -> Array:
 				var code := String(h.get("code", ""))
 				if seen.has(code):
 					continue
-				if not _acked_faults.has(code):
+				if not _acked_occurrences.has(int(h.get("occ", 0))):
 					continue
 				seen[code] = true
 				rows.append({
@@ -1524,7 +1550,9 @@ func _rows_for_tab(active_faults: Array) -> Array:
 					"msg": String(h.get("msg", "")),
 					"state": String(h.get("state", "active")),
 					"suppressed": bool(h.get("suppressed", false)),
-					"acked": _acked_faults.has(code),
+					# Per occurrence: an earlier trip that was acked stays
+					# "gekwiteerd" here while its re-trip is not.
+					"acked": _acked_occurrences.has(int(h.get("occ", 0))),
 				})
 		FaultTab.SHIELD:
 			for code_v in _shielded_faults.keys():
@@ -1535,7 +1563,7 @@ func _rows_for_tab(active_faults: Array) -> Array:
 					"msg": String(_shielded_faults[code_v]),
 					"state": "shielded",
 					"suppressed": true,
-					"acked": _acked_faults.has(code),
+					"acked": _is_acked(code),
 				})
 	return rows
 
@@ -1866,17 +1894,23 @@ func _record_fault_transitions(active: Array) -> void:
 		active_codes[code] = true
 		if not _fault_first_seen.has(code):
 			_fault_first_seen[code] = now_s
+			_fault_occ_seq += 1
+			_fault_occ[code] = _fault_occ_seq
 			_push_fault_history({
 				"code": code,
 				"tijd_s": now_s,
 				"msg": String(f.get("text", "")),
 				"state": "active",
 				"suppressed": _shielded_faults.has(code),
+				"occ": _fault_occ_seq,
 			})
-		# Stamp tijd_s on the entry so consumers (rows builder, refresh) can read it.
+		# Stamp tijd_s + occurrence on the entry so consumers (rows builder,
+		# refresh, KWITTEREN) can read them.
 		f["tijd_s"] = float(_fault_first_seen.get(code, now_s))
-	# Detect transitions to cleared: drop the first-seen on the way out so a
-	# future re-trip carries a fresh tijd_s.
+		f["occ"] = int(_fault_occ[code])
+	# Detect transitions to cleared: drop the first-seen and the occurrence on
+	# the way out so a future re-trip carries a fresh tijd_s AND is a new
+	# occurrence that needs its own KWITTEREN.
 	for code_v in _fault_first_seen.keys():
 		var code := String(code_v)
 		if active_codes.has(code):
@@ -1888,19 +1922,26 @@ func _record_fault_transitions(active: Array) -> void:
 			"msg": "Hersteld",
 			"state": "cleared",
 			"suppressed": _shielded_faults.has(code),
+			"occ": int(_fault_occ.get(code, 0)),
 		})
 		_fault_first_seen.erase(code)
-		# The KWITTEREN belonged to THAT occurrence. Keeping it keyed by code
-		# meant a re-trip after a self-clear came back already acknowledged —
-		# no bell, no unacked row — until someone pressed RESETTEN. A fresh
-		# occurrence must be acknowledged again (TVE-micro logic.py models
-		# the same thing as one alarm object per occurrence).
-		_acked_faults.erase(code)
+		# The KWITTEREN belonged to THAT occurrence and ends with it (#275 erased
+		# a per-code ack here; the ack is per occurrence since).
+		_fault_occ.erase(code)
+
+## True when the CURRENT occurrence of `code` has been KWITTEREN'd. An ack given
+## to an earlier occurrence of the same code never carries over to a re-trip.
+func _is_acked(code: String) -> bool:
+	return _fault_occ.has(code) and _acked_occurrences.has(_fault_occ[code])
 
 func _push_fault_history(entry: Dictionary) -> void:
 	_fault_history.append(entry)
 	while _fault_history.size() > FAULT_HISTORY_CAP:
-		_fault_history.pop_front()
+		var gone : Dictionary = _fault_history.pop_front()
+		# A "cleared" entry is the last one its occurrence ever gets, so once it
+		# leaves the ring nothing can show that occurrence's ack any more.
+		if String(gone.get("state", "")) == "cleared":
+			_acked_occurrences.erase(int(gone.get("occ", 0)))
 
 # =============================================================================
 # HELPERS
