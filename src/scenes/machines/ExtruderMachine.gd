@@ -338,6 +338,9 @@ func _forward_melt_pressures() -> void:
 	if laser_ok and _laser_filter.has_method("set_mp_after_filter_bar"):
 		_laser_filter.call("set_mp_after_filter_bar",
 			model.mp_after_laserfilter_bar if producing else 0.0)
+	# The screen's dMP follows the melt's viscosity too (operator 2026-09-25).
+	if laser_ok and _laser_filter.has_method("set_melt_viscosity_factor"):
+		_laser_filter.call("set_melt_viscosity_factor", model.melt_viscosity_factor)
 	var laser_dp : float = 0.0
 	if producing and laser_ok and "delta_p_psi" in _laser_filter:
 		laser_dp = float(_laser_filter.delta_p_psi) / PSI_PER_BAR
