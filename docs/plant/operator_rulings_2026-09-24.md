@@ -75,7 +75,7 @@ asked whether the 280 was bar, and at which point it applies.
 | Quantity | Model field | Nominal | Where the number comes from |
 |---|---|---|---|
 | after the laserfilter, MP>MF | `mp_after_laserfilter_bar` | 25 bar × throughput × melt factor | 3A screen (`hmi_reference.md` §1); melt factor §6 |
-| laserfilter dMP | `laserfilter_dp_bar` (from LaserFilter) | 175–235 bar sawtooth | unchanged LaserFilter calibration (#223) |
+| laserfilter dMP | `laserfilter_dp_bar` (from LaserFilter) | 175–235 bar sawtooth × melt factor | unchanged LaserFilter calibration (#223); melt factor §7 |
 | before the laserfilter, MP<MF | `mp_before_laserfilter_bar` = after + dMP | measured 197.6–260.0 bar | operator: ≤ 280 safe, 318 trip |
 | die plate (out of the kopfilter) | `die_plate_bar` | 3A 120, 3B 140 bar × throughput × melt factor | **DERIVED**: bottom of each FORM-008 window |
 | kopfilter dP | `kopfilter_dp_bar` (from HeadFilter) | 0 fresh → 11.5 bar after 8 h | unchanged HeadFilter rate |
@@ -147,7 +147,8 @@ Source: `src/tests/test_extruder_melt_pressures.tscn`, wired into `run.sh`,
   (`(torque − 95) × 5 g/s`) against the cake calibration (2500 psi per g).
   Both predate this change, and neither has a source. Before this change the
   same event saturated dMP at 350 bar and ran on.
-- **The melt-temperature fit is ON MP<MF, and the merged model moves MP<MF
+- **ANSWERED 2026-09-25, see §7: dMP rises too.** The question as it stood:
+  **The melt-temperature fit is ON MP<MF, and the merged model moves MP<MF
   far less (see §6).** The fit is 6.83 bar/°C on the pressure before the
   laserfilter. In the two-pressure model the melt factor reaches MP<MF only
   through MP>MF: 25 bar × 2.44 % = 0.61 bar/°C. By the fit, a melt 12 °C colder
@@ -234,3 +235,73 @@ Measured on the merged tree (2026-09-24 23:47–23:53, isolated `APPDATA`):
   The zone-drop check (C2) does not catch the torque proxy on its own. In the
   two-pressure model, torque scales only the 25-bar melt-set part, so neither
   factor lets one zone reach 318. A7c is the check that tells them apart.
+
+## 7. The laserfilter's dMP follows the melt too (2026-09-25)
+
+Asked right after the merge (AskUserQuestion, same session, just after
+midnight): when the melt runs colder, does the laserfilter's own dMP rise
+too? **"Yes, dMP rises too."** This is a recollection, like the rest of this
+file.
+
+**What the code does**
+
+- `ExtruderModel.melt_viscosity_factor` is the melt's viscosity relative to
+  setpoint: 1.0 at setpoint, +2.44 % per °C colder (the §6 fit).
+  ExtruderMachine forwards it to the LaserFilter every tick.
+- The LaserFilter multiplies both faces' ΔP by it, the clean-screen part and
+  the cake alike. A colder, thicker melt needs more pressure through the
+  same screen.
+- Two things do not change:
+  - the M1 disc-motor load reads the cake's `loading_g` directly;
+  - the disc advances on a timer, not on dMP.
+- MP<MF therefore moves about 6.6 bar/°C at a 271-bar reading, close to the
+  fit's 6.83 at 280.
+
+**Measured on the wired 3B rig** (a temporary probe for before and after, and
+the suite for after):
+
+| Case | Before | After |
+|---|---|---|
+| Melt held 5 °C under setpoint, 60–120 s | peak 271.9 bar | peak 301.5 bar, no trip |
+| Melt held 9 °C under | peak 281.5 bar, no trip | **318 trip after 6.6 s** |
+| Melt held 12 °C under | peak 288.8 bar, no trip | 318 trip after 4.8 s |
+| Start at the preheat-ready melt (196.25 °C, 18.75 °C under) | peak 260.0 bar, no trip | peak 267.9 bar, no trip |
+| Normal stop from nominal | not measured | peak 222.0 bar, OFF after 21.7 s, no trip |
+
+Notes on the table:
+
+- The fit predicts ~332 bar for a melt 9 °C cold (271 + 9 × 6.83), so the
+  9 °C trip is what the fit implies.
+- During the stop the factor reaches 2.36 as the melt cools, but the no-flow
+  gate holds dMP at 0.
+- The 5 °C case peaks above his 280-bar safe maximum and under 318. That
+  matches his description of 280 as the level that keeps a
+  temperature-driven spike clear of the shutdown.
+
+**Guards**
+
+- `test_extruder_melt_pressures`, a new section, now 53 ok:
+  - 5 °C cold holds;
+  - 9 °C cold trips through the screen, with torque under the lump
+    threshold and no lumps;
+  - a start at the preheat-ready melt does not trip.
+- `test_die_pressure_bar` A7d checks that the model exposes the factor
+  (21 ok).
+- Mutations:
+
+  | Mutation | Checks red |
+  |---|---|
+  | The screen ignores the factor | 1 |
+  | The extruder never forwards it | 3 |
+
+**Limits, measured, not changed**
+
+- While RUNNING, the model's melt drifts back to the GLOBAL setpoint
+  (0.3 °C/s) whatever the zones do. So today only the start and an injected
+  melt exercise this path. A zone drop raises torque and lumps, not melt
+  cold.
+- The factor compares the melt with its setpoint, not with an absolute
+  temperature (#275's formula). If gameplay could ever raise the setpoint
+  while running, the lagging melt would read as cold and could trip.
+  Nothing writes `melt_temp_setpoint` at runtime today (grep of `src/`).
+- The kopfilter pack's dP does not scale with the melt. That was not asked.
