@@ -176,6 +176,16 @@ count.
 > `test_chute_choke`, `test_trip_smoke` in the main loop, and the jam
 > baseline's own doorway. `docs/audit/operator_session_2026-09-23.md`.
 
+> **2026-09-24 01:23 — the newest measurement; it supersedes the 00:09 one
+> above.** Full harness on `claude/ready-daacfa` at `9471d84` (the wet-side
+> beds and the metal-detecting first conveyor on top of `9cc6ea4`): `== done
+> (exit 1)`, **121 steps, 36 min (01:23:34 → 01:59:22), 114 logs by mtime, 0
+> timeouts, 0 `^SCRIPT ERROR` lines, ONE red — `test_npc05_realworld`
+> (expected).** Inside: `test_wet_side_beds` 31 ok, `test_line1_metal_detect`
+> 22 ok, `test_nav_connectivity` 10 ok, `test_jam_baseline` 16 ok / 0 skipped.
+> Not in this run (committed after it): the line-1 tail fix, which the line-1
+> suites measured green individually (task 14 in the audit doc).
+
 > **2026-09-24 00:09 — the newest measurement; it supersedes the night one
 > above.** Full harness on `claude/ready-daacfa` at `9cc6ea4` (on top of
 > `99fc375`: P3 stage A vacuum pots, the doseersilo as an open tilted trough,
@@ -530,6 +540,20 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   `INSTANCE_CUSTOM`) costs the CPU ~3 µs per field per frame for 14 000
   flakes where CPU-animated instances cost 1 ms for 3 500 — animate with
   uniforms, write transforms once.
+- **Two consecutive MAIN entries of a line SEQ have NO edge of their own —
+  LineFlow's nearest-input-port fallback wires them, and it picks whatever
+  inlet is closest.** Measured 2026-09-24 with `dump_line1_graph`: at line 1's
+  tail the nearest inlet to the cyclone's bottom mouth AND to the
+  compactorband's lip was blower L's, so the graph held a blower → cyclone →
+  blower 2-cycle, blower L at in-degree 3, and an extruder that nothing fed —
+  for as long as that tail existed. No suite failed: they assert the head
+  chain and the twin streams. `test_line1_throughput`'s ungated info line
+  read `granulaat banked 0.0 kg after 600 s` the whole time and 23.7 kg the
+  moment the two edges were pinned with `"explicit_from_prev": true`. When a
+  SEQ's next main machine is not the geometrically nearest inlet of the
+  previous one — a silo fed from above, a compactor beyond a blower — pin the
+  edge; and read the info lines a suite prints without gating, they are
+  measurements too.
 - **A visual grafted onto a node before that node's `_ready()` is a visual
   that does not exist.** `_build_opzetband` attached the #196 metal-detector
   head to the belt's `InclinePivot`, which `ShredderFeedBelt` builds in

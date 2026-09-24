@@ -636,3 +636,43 @@ line-1 bale hides one; whether the belt really re-trips on the same bale
 until someone intervenes (built that way from his words); where the removed
 scrap goes in Geleen (a scrap bin?); whether the #196 head's side-reject
 chute exists at all — his §11 describes a reversal, not a side reject.
+
+## Task 14 — the line-1 tail: one separator feeds both sieves, and the extruder end was never fed (round 7) — DONE 2026-09-24
+
+**Asked / answered.** "Line 1's tail: after the dewatering screw there is ONE
+friction separator, then TWO Kufferath sieves side by side… the graph shows
+only one sieve is fed." → **"One separator feeds both sieves (split)."**
+
+**Built.** The tail pairs in `LINE_1_SEQ` (Kufferath sieves, MAS bakken, MAS
+dryers, blowers) carry `"stream": "L"/"R"` tags: the separator becomes the
+split (first member of each train), each side chains head-to-tail to its
+blower, both blowers merge at the cyclone — the same mechanism as the
+scheidingsgoot split. Measured before/after with `dump_line1_graph`: the
+tag adds exactly one edge (`friction_sep#27 → kufferath_sieve#29`); both
+Kufferath beds now fill in the wet-side suite (2.4 cm each, 32.2 % moisture,
+tint r 0.63 — the flow halves, 3.9 cm on one sieve before).
+
+**Found on the way, and fixed: line 1's extruder end had never been fed.**
+The same dump showed `cyclone#36 → blower#34` (a blower → cyclone → blower
+2-cycle) and `compactorband#38 → blower#34`, with `blower#34` at in-degree 3
+and `extruder_1#39` fed by nothing. Cause: consecutive MAIN entries of a SEQ
+get no explicit edge; LineFlow's nearest-input-port fallback wires them, and
+at the tail the nearest inlet to both the cyclone's bottom mouth and the
+compactorband's lip is blower L's. Both edges are pinned with
+`explicit_from_prev` (the flag 3B already uses for its 15 m pneumatic legs).
+After: `cyclone#36 → extruder_silo#37 → compactorband#38 → extruder_1#39 →
+laser_filter#40`, no cycle, no merge at the blower — and
+`test_line1_throughput` banks **23.7 kg of granulate after 600 s where it
+banked 0.0** (its own ungated info line, unchanged text, first non-zero
+reading). Neither the 2-cycle nor the dead extruder had a failing check:
+the tests assert the head chain and the twin streams, and the graph trap in
+CLAUDE.md said to dump before believing — this is that trap on the other end
+of the same line.
+
+**Measured.** `dump_line1_graph` before/after (above). `test_line1_twin_streams`
+PASS, `test_line1_flow_conformance` PASS, `test_line1_throughput` PASS
+(granulate 23.7 kg), `test_line1_no_false_overload` PASS,
+`test_macro_delta_guard` PASS, `test_line1_overband_mount` PASS,
+`test_shredder_rate_reconciliation` PASS, `test_wet_side_beds` 31 ok (both
+sieve beds filled). Not touched: whether the other lines' tails (3A/3B/3C
+extruder ends) lean on the same fallback — worth one dump each.

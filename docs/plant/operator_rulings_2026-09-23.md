@@ -313,3 +313,25 @@ Bale type name: **LINE_1_FOLIE**. Large bales ~1000 kg, ±15 % (one standard
 deviation). "Apply this variance/ratio whatever to all bale types that are
 present in the sim thus far (since I noticed while testing that e.g. all
 Rotterdam bales are the exact same weight → which is not realistic)."
+
+## 19. Round seven (2026-09-24, ~01:30): doseersilo accepted, the cyclone gap, the sieve split, what next
+
+Asked through AskUserQuestion after the wet-side beds and the metal-detect
+conveyor were built and committed:
+
+- **Doseersilo v2** (open tilted trough, 22.5°, lowest point 1.70 m,
+  2.98 × 5.57 m, three augers driven from the high end, two windows per
+  side): **"Yes, move on."**
+- **Cyclone → blower:** the blower is **"Beside it, ducted"** — the cyclone's
+  mouth drops into a short chute/duct that runs sideways into the blower;
+  the open-air gap where "you can see the film physically" (§12) is at the
+  chute mouth, NOT under the cyclone. The sim's beside-on-the-floor blowers
+  are therefore right; the gap stream belongs at the cyclone's mouth into a
+  short lateral chute. (Queued: build that chute + stream.)
+- **Line 1 tail:** after the dewatering screw there is ONE friction
+  separator and it **feeds BOTH Kufferath sieves** ("One separator feeds
+  both sieves (split)"). The SEQ's second sieve had no feed edge until this
+  ruling; fixed with L/R stream tags on the tail pairs.
+- **Next build:** **the vacuum-pot cleaning mini-game** (P3 stage B,
+  `docs/DESIGN_vacuum_pot_minigame_2026-09-23.md`), ahead of the belt-speed
+  mismatch gameplay and the in-game look.
