@@ -138,6 +138,65 @@ Rebuild those 21 PNGs before letting Merlo re-import.
 - Files Godot does not import (`.json`, `.tres`, …) leave no fingerprint, so there is no
   complete list of what else `assets/` held. The NTFS change journal
   (`fsutil usn readjournal C:`, needs admin) may still list the deleted names.
+  **Found 2026-09-24:** `assets/reference_photos/` was one of these — see the next section.
+
+## Missed on 09-22, restored 2026-09-24: `assets/reference_photos/`
+
+The operator's plant photos, the ground truth that `docs/plant/photo_audit.md`,
+`hmi_reference.md` and `hmi_screen_inventory_2026-07-28.md` cite by path. Godot never imported
+them, so they left no cache fingerprint, and the method above could not see the loss. The
+whole folder was gone, including its index `MAPPING.md`. Nobody noticed until a session
+went to file a video there on 2026-09-24.
+
+**Restored: 96 files.** 79 `hmi/`, 12 `machines/`, 4 `instructions/`, 1 `building/`. Every
+copy is md5-identical to its source and decodes. The index was rebuilt as
+`assets/reference_photos/MAPPING.md` (gitignored): one row per file with its source and
+evidence. The original rows were recovered verbatim, up to the `people/` heading, from a
+session transcript that had printed that part of the file.
+
+**Method.** The fingerprint method needs the import cache, so this used different evidence:
+
+1. **The file list.** `D:\Recovery_20260921_233450` (the `winfr` run above) holds 157 Godot
+   `.import` sidecars. Their contents are overwritten, but their **names** survived.
+   - 34 of those names are files independently proven to be in `hmi/`, so the list is
+     `hmi/`'s real content: about 157 photos, not the ~30 the docs name.
+   - The other folders' contents come from the docs that cite them.
+2. **The contents.** `winfr` also kept each file's **name and exact byte size**, but every
+   image it recovered is corrupt (all tested). A healthy file of that exact size anywhere on
+   C:/D:/F:/G:/V: is the original. Each hit was then cross-checked by:
+   - EXIF capture time against the filename. Pixel `PXL_` names are UTC and EXIF is local
+     time: +1 h in winter, +2 h in summer.
+   - `docs/plant/hmi_screens_2026-07-26/PROVENANCE_processed_log.md`, which pairs each mockup
+     alias (`wash3c_NN`, `britas_N`) with its filename.
+3. **Where the survivors were:**
+   - `C:\Users\arnod\Documents\HMI screens mockup\refs\` and `\source\`: the HMI photos,
+     under alias names.
+   - `D:\cedo_archive\ref_images_from_Desktop_Cache_Offload\`: the Desktop originals of the
+     renamed stock EREMA files, plus operator photos and documents.
+   - `F:\Citizen\Downloads\Photos-1-001\` and `G:\_drive_tmp\Photo's N Images\camera\`:
+     phone photos.
+   - `D:\drive-download-20251124T130330Z-1-001\`: the `hmi/` PDFs, which are byte-identical
+     to SWI photo-PDFs.
+
+**Scripts, results and the recovered original index text are kept durably** at
+`D:\cedo_archive\reference_photos_restore_20260924\`.
+
+**Still lost: 31 named files plus 111 `hmi/` sidecar names**, with no copy on any drive.
+The named losses include 23 `machines/` photos (ringleiding, trilzeef, voorwas trommel,
+flotatietanks, shredder 2 in/out, pelletizer, vacuum unit/pump, …) and the 3 `building/`
+textures. The full list is at the bottom of `MAPPING.md`. The operator's phone is the only
+remaining source.
+
+**Side findings, recorded in `MAPPING.md` but not yet folded into the plant docs:**
+
+- **HMI aliases.** Four aliases that `hmi_screen_inventory_2026-07-28.md` §5 lists as
+  unidentified are now identified by EXIF: `wash3c_02`, `_04`, `_05` and `_10`. The
+  inventory's inferred `wash3c_13 = IMG-20240811-WA0006.jpg` is now size-confirmed.
+- **Line-6 cleaning checklist** (`instructions/PXL_20250116_092949925.jpg`). It lists both
+  "Laserfilter wissel lijn 6" and "Britas smelt weghalen", which corroborates
+  `docs/plant/operator_rulings_2026-08-31.md` §1.
+- **Line-performance whiteboards, 21-3-2025.** Line 3A has a target of **1000 kg/h** and
+  line 3B **1250 kg/h**, with per-hour actuals and reject reasons written in.
 
 ## Where things are
 
@@ -163,5 +222,8 @@ this doc's method is the fallback for whatever's missing after that.
   its own first. Record file counts of the gitignored folders beforehand, and compare
   them afterwards.
 - `assets/` needs a backup. It was on no backup list. **Fixed 2026-09-22** — see above.
+- A recovery keyed on Godot's import cache is blind to folders Godot never imported.
+  `reference_photos/` went unnoticed for three days because of that. List every gitignored
+  folder's contents directly instead of trusting the cache.
 - Keep `.godot/imported/` intact when assets go missing. Do not open the editor until the
   sources are back.
