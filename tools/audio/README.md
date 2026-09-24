@@ -29,6 +29,51 @@ Source recordings are operator video and are not in the repo. As of 2026-08-03
 they live in `C:\Users\arnod\Desktop\tmp\` (`VID-20250912-WA0010.mp4`,
 `VID-20250912-WA0011.mp4`).
 
+## Machine sounds — `machine_clips.py` + `machine_sounds.json` (2026-09-25)
+
+The second chain: the operator's **per-machine recordings**, made on the plant
+floor 2026-09-22 and dropped as 11 mp3s. They live in
+`assets/audio/machines/_source/` (gitignored with the rest of `assets/`, and
+`.gdignore`d so Godot never imports the mp3s). The bakes land beside them in
+`assets/audio/machines/*.wav` with a `compress/mode=0` `.import` sidecar each.
+What IS committed is the recipe: `machine_sounds.json` says, per output, which
+seconds of which recording to take and what to make of them, with the measured
+reasoning in every `note`.
+
+The **file names carry the cutting instructions** (operator, 2026-09-25):
+
+| name fragment | meaning |
+|---|---|
+| `5s+_` / `17s+_` | usable audio starts at exactly that second |
+| `25s-35s_` | take exactly that window |
+| `loop_3x_1m11s-1m14s_` | take 1:11–1:14, play it three times in a row, and **loop that whole sequence** |
+| `_in_operation` | the running sound only — no ramp-up, ramp-down, start or stop in the clip |
+| `_starter_idle_revving` | several sounds in one file: split them |
+| `_loop_4x` | four similar takes of one action: pick one for opening, another for closing |
+
+```bash
+python tools/audio/machine_clips.py --analyze          # RMS envelopes of every source
+python tools/audio/machine_clips.py --check            # what would be baked
+python tools/audio/machine_clips.py                    # bake what is missing
+python tools/audio/machine_clips.py --force            # rebake everything
+python tools/audio/machine_clips.py --only trilzeef_run
+```
+
+Loops are cut at a correlated seam with an equal-power crossfade (the same
+construction as `loopify_wavs.py`), RMS-normalised to −20 dBFS under a −1 dBFS
+ceiling, and carry a `smpl` chunk; one-shots are peak-normalised. Which machine
+plays what is data: `src/audio/machine_sounds/<placeable_id>.tres`
+(`MachineSoundSpec`), attached at the tail of `PlaceableCatalog.build_node` by
+`MachineSoundBank` and driven by LineFlow's `spin`, the tool/valve scripts and
+`Hmi`. Every level in those `.tres` is a **placeholder until the operator has
+play-tested** — `gain_db` is the slider. Proof: `src/tests/test_machine_sounds.tscn`.
+
+Open, and the operator's to decide: the mechanical dryer recording yields two
+loops (`mech_dryer_run_30s`, `mech_dryer_run_43s`); both L3C.14 dryers are the
+one placeable id `mech_dryer` (told apart by `"stream": "L"/"R"` in the line
+SEQ), and which window is which dryer is his call. `mech_dryer.tres` points at
+`_43s` as an interim default.
+
 ## Traps
 
 **`loopify_wavs.py` is not idempotent.** It applies a 100 ms equal-power
@@ -70,10 +115,11 @@ the other 47 clips).
 
 ## `placer/` — the mapper
 
-Vendored copy of `C:\Users\arnod\Documents\cedo-audio-placer`. **That repo has no
-git remote**, so this is its only backup. Open `placer/index.html` in a browser;
-no install. `machines.json` mirrors `PlaceableCatalog` and drives the per-clip
-machine checklist.
+Vendored copy of the `cedo-audio-placer` repo — `https://github.com/Apn0/cedo-audio-placer`,
+local clone `C:\Users\arnod\cedo-audio-placer` (the `Documents\cedo-audio-placer` clone this
+paragraph used to cite was retired 2026-09-24). It has had a remote since PR #3, so this copy is
+a snapshot for reference, not its backup. Open `placer/index.html` in a browser; no install.
+`machines.json` mirrors `PlaceableCatalog` and drives the per-clip machine checklist.
 
 The operator has **not** used that checklist: all 46 layout entries have empty
 `notes` and no `machines`/`tags`/`filename_stem` keys at all (that export predates
