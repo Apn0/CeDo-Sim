@@ -47,6 +47,7 @@ const PACK_LIMIT_PSI            : float = 420.0   # operator should swap before 
 const PACK_HARD_LIMIT_PSI       : float = 500.0   # filter_change_needed() = true above this
 const LOADING_PER_KG_THROUGHPUT : float = 0.10    # g loading per kg melt — half the laser-filter rate
 const DELTA_P_PER_LOADING_G     : float = 0.22    # psi per g loading
+const PSI_PER_BAR               : float = 14.5038 # the operator reads the pack dP in bar
 # Mesh stock: real stockroom mix of pack sizes. Higher mesh # = finer.
 const MESH_OPTIONS              : Array[int] = [60, 80, 100, 120]
 
@@ -119,7 +120,11 @@ func _physics_process(delta: float) -> void:
 	if on.pack_present:
 		var add_g_s : float = feed_throughput_kg_h / 3600.0 * LOADING_PER_KG_THROUGHPUT
 		on.loading_g += add_g_s * delta
-		on.delta_p_psi = clampf(on.loading_g * DELTA_P_PER_LOADING_G, 0.0, 600.0)
+		# No ceiling: a pack nobody swaps keeps clogging until the 160-bar MP<PEL
+		# interlock stops the line (the dP across THIS filter, operator ruling
+		# 2026-09-24; ExtruderMachine._check_pressure_trips). The old 600 psi
+		# (41 bar) clamp had no source and made that interlock unreachable.
+		on.delta_p_psi = maxf(0.0, on.loading_g * DELTA_P_PER_LOADING_G)
 		# Once the pack has carried real melt for a while it's no longer "fresh".
 		if on.loading_g > 5.0:
 			on.fresh = false
@@ -165,6 +170,11 @@ func delta_p_psi() -> float:
 	var on : Cavity = cavities[_active_idx]
 	return on.delta_p_psi
 
+## The same dP in bar — what ExtruderMachine mirrors into the model, where it
+## is MP<PEL (the 160-bar pelletiser interlock) and the rise of kopdruk.
+func delta_p_bar() -> float:
+	return delta_p_psi() / PSI_PER_BAR
+
 func filter_change_needed() -> bool:
 	var on : Cavity = cavities[_active_idx]
 	return on.delta_p_psi >= PACK_HARD_LIMIT_PSI \
@@ -188,10 +198,10 @@ func crosshair_prompt(_p: Node3D) -> String:
 			var on  : Cavity = _online()
 			var off : Cavity = _offline()
 			if off.fresh and on.delta_p_psi >= PACK_LIMIT_PSI:
-				return "Schuif schermwissel — start [E]   (ΔP %.0f psi)" % on.delta_p_psi
+				return "Schuif schermwissel — start [E]   (ΔP %.1f bar)" % (on.delta_p_psi / PSI_PER_BAR)
 			if not off.pack_present or not off.fresh:
-				return "Offline cavity hervullen [E]   (online ΔP %.0f psi)" % on.delta_p_psi
-			return "Kopfilter ΔP: %.0f psi   (offline gereed)" % on.delta_p_psi
+				return "Offline cavity hervullen [E]   (online ΔP %.1f bar)" % (on.delta_p_psi / PSI_PER_BAR)
+			return "Kopfilter ΔP: %.1f bar   (offline gereed)" % (on.delta_p_psi / PSI_PER_BAR)
 		Proc.SWAP_DEPRESSURIZE: return "Drukverlaging vóór slide…"
 		Proc.SWAP_SLIDE:        return "Schuif beweegt…"
 		Proc.SWAP_REPRESSURIZE: return "Druk opbouwen…"

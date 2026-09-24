@@ -274,30 +274,6 @@ var per_stage_extracted_g_s  : Array[float] = []   # gas pulled by each degas st
 var residual_volatile_g_per_kg : float = 0.0       # what's left when the melt reaches the die
 var pellet_defect_rate       : float = 0.0         # 0..1 — what the SCADA shows the operator
 
-# Melt pressure BEFORE the meltfilter (smeltdruk voor meltfilter, HMI "MP<MF"),
-# carried in psi for the laser-filter / BluPort consumers. Derived from the
-# rheology proxy — viscosity x throughput. A clean LDPE run at nominal RPM +
-# nominal throughput + setpoint melt lands on DIE_PRESSURE_BASE_BAR. Climbs when:
-#   * throughput rises (more mass through the same die orifice)
-#   * the melt runs colder than setpoint (DIE_PRESSURE_BAR_PER_C)
-# This is the OUTPUT signal forwarded to the LaserFilter as its "upstream
-# pressure indicator" — the inlet reading and the 318-bar upstream trip.
-#
-# 2026-09-24 — the base was `280.0` PSI (19.3 bar on the BluPort chart) while
-# every plant source gives 280 in BAR: SWI-054 p1 ("laserfilter ... bij een
-# druk van 280 / 300 bar"), the 3C BluPort screen (280/284/287 bar pre-filter),
-# and the 3A WinCC trend "Smeltdruk voor meltfilter" p50 271 / p95 280 bar.
-# Operator ruling 2026-09-24: 280 is BAR, pre-meltfilter.
-const PSI_PER_BAR           : float = 14.5038
-const DIE_PRESSURE_BASE_BAR : float = 280.0
-const DIE_PRESSURE_BASE_PSI : float = DIE_PRESSURE_BASE_BAR * PSI_PER_BAR
-## Melt pressure upstream of the pelletiser (MP<PEL), which the 160-bar
-## interlock watches. EREMA manual §4.3.7 (EREMA-manual-4.3.7-pelletiseersysteem
-## __169_CeDo84) places that limit "just above the FORM-008 kopfilter operating
-## pressures" — checklist_3a_3b.md row 25 kopdruk 120-150 bar; WinCC trend "Druk
-## voor kopfilter" p50 3A 140 / 3B 143 bar. Same viscosity x throughput proxy as
-## the pre-meltfilter pressure, anchored on that nominal instead.
-const MP_PEL_NOMINAL_BAR    : float = 140.0
 ## Melt-temperature sensitivity of the pre-meltfilter pressure, bar per °C of
 ## melt BELOW setpoint (negative above it). Least-squares fit of the 3A WinCC
 ## trends "Smeltdruk voor meltfilter" vs "Smelt temperatuur voor meltfilter"
@@ -306,10 +282,34 @@ const MP_PEL_NOMINAL_BAR    : float = 140.0
 ## pressure series covers only 2023-06-28 08:41-09:54, and 948 of the 967
 ## pairs sit in one 5 °C bin. Refit when a longer pressure export exists.
 const DIE_PRESSURE_BAR_PER_C : float = 6.83
-var mp_pel_bar : float:
-	get:
-		return die_pressure_psi / PSI_PER_BAR * (MP_PEL_NOMINAL_BAR / DIE_PRESSURE_BASE_BAR)
-var die_pressure_psi         : float = 0.0
+## The pre-meltfilter level that slope was taken at (the operator's 280-bar safe
+## maximum; 3A trend p50 271 / p95 280). The melt-set pressures scale by the
+## same FRACTION per °C, 6.83 / 280 = 2.44 %/°C, as #275 did.
+const MELT_FIT_LEVEL_BAR : float = 280.0
+# ── Melt pressures, BAR (2026-09-24) ─────────────────────────────────────────
+# Replaces the single `die_pressure_psi` (base "280 psi", no source). Every plant
+# source gives ~280 in BAR, and the one number fed two trips that sit at two
+# different points of the line, so neither could fire. Operator rulings
+# (docs/plant/operator_rulings_2026-09-24.md), line order screw -> laserfilter
+# (MF1) -> degassing -> melt pump -> kopfilter (MF2) -> heetafslag:
+#   * BEFORE the laserfilter (MP<MF) = the melt-set pressure AFTER it (MP>MF)
+#     + the screen's own dMP. 280 bar there is a safe maximum, kept under the
+#     318-bar emergency shutdown (LaserFilter, the trip authority).
+#   * MP<PEL, the 160-bar pelletiser interlock, reads the dP ACROSS the kopfilter.
+# The melt-set parts follow the rheology proxy — pressure ∝ throughput ×
+# viscosity — with viscosity read off the MELT temperature (DIE_PRESSURE_BAR_PER_C,
+# #275's operator ruling), not motor torque: a zone drop raises torque, and
+# pressure only once the melt really cools.
+var mp_after_laserfilter_bar  : float = 0.0   # MP>MF: melt-set, after the screen
+var die_plate_bar             : float = 0.0   # melt pump vs die plate, out of the kopfilter
+# Filter dPs, mirrored in by ExtruderMachine from the live LaserFilter / HeadFilter
+# (0 while not producing, or with no filter placed).
+var laserfilter_dp_bar        : float = 0.0   # dMP-MF1
+var kopfilter_dp_bar          : float = 0.0   # dP across the kopfilter pack
+# Derived readouts (_refresh_line_pressures):
+var mp_before_laserfilter_bar : float = 0.0   # MP<MF = after + dMP
+var kopdruk_bar               : float = 0.0   # into the kopfilter (MD_vor_SF2) = die plate + pack dP
+var mp_pel_bar                : float = 0.0   # MP<PEL = kopfilter dP (operator ruling)
 
 var die_face_state : int = DieFaceState.OFF
 var pelletizer : PelletizerModel = null
@@ -430,7 +430,7 @@ func _tick_off(delta: float) -> void:
 	melt_temp = move_toward(melt_temp, AMBIENT_C, 0.5 * delta)
 	screw_rpm = 0.0
 	throughput_kg_h = 0.0
-	die_pressure_psi = 0.0
+	_set_melt_pressures(0.0)
 	motor_torque_pct = 0.0
 	lump_passthrough_rate_g_s = 0.0
 	die_face_state = DieFaceState.OFF
@@ -498,7 +498,7 @@ func _tick_preheat(delta: float, events: Array[String]) -> void:
 	melt_temp = move_toward(melt_temp, config.melt_temp_setpoint, rate * delta)
 	screw_rpm = 0.0
 	throughput_kg_h = 0.0
-	die_pressure_psi = 0.0
+	_set_melt_pressures(0.0)
 	motor_torque_pct = 0.0
 	lump_passthrough_rate_g_s = 0.0
 	die_face_state = DieFaceState.OFF
@@ -513,7 +513,7 @@ func _tick_idle(delta: float) -> void:
 	# carry stale post-RUN values from before the operator paused production.
 	screw_rpm = config.screw_rpm_idle
 	throughput_kg_h = config.idle_kg_per_h
-	die_pressure_psi = 0.0
+	_set_melt_pressures(0.0)
 	motor_torque_pct = 0.0
 	lump_passthrough_rate_g_s = 0.0
 	_drift_melt_temp_toward(config.melt_temp_setpoint, delta)
@@ -556,7 +556,7 @@ func _tick_running(delta: float, inputs: Dictionary, events: Array[String]) -> v
 	# torque). Above LUMP_PASSTHROUGH_TORQUE_PCT, un-melted lumps start
 	# passing into the laser filter — exposed for LaserFilter to read.
 	# Computed BEFORE _step_degassing so everything that tick reads the
-	# CURRENT torque (the die pressure itself follows melt temperature since
+	# CURRENT torque (the melt pressures themselves follow melt temperature since
 	# 2026-09-24 — see _step_degassing).
 	_update_motor_torque(delta, events)
 	# If the torque trip fired the FAULT transition above, abandon the rest of
@@ -613,12 +613,12 @@ func _tick_starting(delta: float, _inputs: Dictionary, events: Array[String]) ->
 	_update_motor_torque(delta, events)
 	# Die pressure is allowed to climb proportionally — no fault triggers in
 	# this state since nothing's at nominal yet.
-	die_pressure_psi *= rpm_frac
+	_scale_melt_pressures(rpm_frac)
 
 ## Time-constant decay (rpm *= exp(-delta / STOP_DECAY_S)). Frame-rate
 ## independent and matches the emulator's `*= 0.9` decay step at 0.5 s tick.
 ## Production continues at the residual rpm fraction so downstream catches
-## the tail-end material; no new lumps are emitted (die_pressure = 0).
+## the tail-end material; no new lumps are emitted (melt pressures follow the rpm down).
 func _tick_stopping(delta: float, _inputs: Dictionary, _events: Array[String]) -> void:
 	var nominal := config.screw_rpm_nominal
 	# Exponential decay: rpm_new = rpm_old * exp(-delta / tau)
@@ -631,7 +631,7 @@ func _tick_stopping(delta: float, _inputs: Dictionary, _events: Array[String]) -
 	_drift_melt_temp_toward(config.melt_temp_setpoint * 0.85, delta)
 	_evaluate_die_face_state()
 	motor_torque_pct = motor_torque_pct * rpm_frac
-	die_pressure_psi = die_pressure_psi * rpm_frac
+	_scale_melt_pressures(rpm_frac)
 	# Lump passthrough stops as the screw stops — no fresh un-melted material.
 	lump_passthrough_rate_g_s = 0.0
 
@@ -704,7 +704,7 @@ func _tick_fault(delta: float, inputs: Dictionary, events: Array[String]) -> voi
 	throughput_kg_h = 0.0
 	motor_torque_pct = 0.0
 	lump_passthrough_rate_g_s = 0.0
-	die_pressure_psi = 0.0   # screw stopped → no flow → no head pressure
+	_set_melt_pressures(0.0)   # screw stopped → no flow → no head pressure
 	# Melt temp slowly drifts toward setpoint while halted (heaters stay on
 	# but nothing is being pushed through). No more runaway integration.
 	_drift_melt_temp_toward(config.melt_temp_setpoint, delta)
@@ -722,7 +722,7 @@ func _tick_fault(delta: float, inputs: Dictionary, events: Array[String]) -> voi
 func _tick_e_stop(delta: float) -> void:
 	screw_rpm = 0.0
 	throughput_kg_h = 0.0
-	die_pressure_psi = 0.0
+	_set_melt_pressures(0.0)
 	motor_torque_pct = 0.0
 	lump_passthrough_rate_g_s = 0.0
 	melt_temp = move_toward(melt_temp, AMBIENT_C, 0.5 * delta)
@@ -787,6 +787,40 @@ func _pots_at_capacity() -> String:
 	return ""
 
 # =============================================================================
+# MELT PRESSURES (bar) — see the field block near the top
+# =============================================================================
+## `factor` = throughput_norm × melt_factor: 1.0 at nominal throughput and
+## melt, 0.0 with the screw stopped.
+func _set_melt_pressures(factor: float) -> void:
+	var f : float = maxf(0.0, factor)
+	mp_after_laserfilter_bar = config.mp_after_laserfilter_nominal_bar * f
+	die_plate_bar = config.die_plate_nominal_bar * f
+	_refresh_line_pressures()
+
+## STARTING / STOPPING scale the last pressures by the rpm fraction, as the old
+## single die pressure did.
+func _scale_melt_pressures(rpm_frac: float) -> void:
+	mp_after_laserfilter_bar *= rpm_frac
+	die_plate_bar *= rpm_frac
+	_refresh_line_pressures()
+
+## ExtruderMachine mirrors the live filter dPs in every tick (bar). The laser
+## filter stays the authority for its own 318-bar trip — it sums the same two
+## terms itself (LaserFilter.mp_before_filter_bar()); this copy is the readout
+## the HMI, SCADA and Storingstabel read off the model.
+func set_filter_pressure_drops(laser_dp_bar: float, kop_dp_bar: float) -> void:
+	laserfilter_dp_bar = maxf(0.0, laser_dp_bar)
+	kopfilter_dp_bar = maxf(0.0, kop_dp_bar)
+	_refresh_line_pressures()
+
+func _refresh_line_pressures() -> void:
+	mp_before_laserfilter_bar = mp_after_laserfilter_bar + laserfilter_dp_bar
+	kopdruk_bar = die_plate_bar + kopfilter_dp_bar
+	# Operator ruling 2026-09-24: MP<PEL, the 160-bar interlock (EREMA manual
+	# 4.3.7), is the pressure difference across the kopfilter (MF2).
+	mp_pel_bar = kopfilter_dp_bar
+
+# =============================================================================
 # DEGASSING — six-stage pipeline with two vacuum ports
 # =============================================================================
 ## Called from the upstream wash/dry line each tick to tell the extruder how
@@ -817,23 +851,25 @@ func _step_degassing(delta: float) -> void:
 	# residence per unit length). Reference is the nominal-RPM transit time.
 	var rpm_frac : float = max(0.001, screw_rpm / max(config.screw_rpm_nominal, 1.0))
 	residence_time_s = BARREL_TRANSIT_S_AT_NOMINAL / rpm_frac
-	# Pre-meltfilter melt pressure ∝ throughput × viscosity (non-Newtonian die
-	# flow). throughput_norm = throughput / nominal. Viscosity follows the MELT
-	# temperature at the slope the plant's own data shows (DIE_PRESSURE_BAR_PER_C).
+	# Melt-set pressures (bar). Standard non-Newtonian extruder rheology says
+	# pressure ∝ viscosity × throughput. throughput_norm = throughput / nominal.
+	# Viscosity follows the MELT temperature at the slope the plant's own data
+	# shows (DIE_PRESSURE_BAR_PER_C, as a fraction of MELT_FIT_LEVEL_BAR). A
+	# starved screw (throughput → 0) drops both toward zero. The filter dPs add
+	# on top of these in _refresh_line_pressures().
 	#
-	# 2026-09-24 — it used to be motor_torque_pct / motor_torque_base_pct, and
-	# torque carries the ZONE-SETPOINT shortfall (avg zone setpoint vs melt).
-	# Harmless while the base was 280 psi; at 280 bar it put ~9.3 bar per °C
-	# of shortfall on the gauge, so dropping ONE zone 30 °C (the paper practice)
-	# read 320 bar and tripped the 318-bar laserfilter interlock. Operator
-	# ruling 2026-09-24: pressure follows melt temperature only — a zone drop
-	# raises torque as before, and pressure only once the melt really cools.
+	# 2026-09-24 (#275) — viscosity used to be motor_torque_pct /
+	# motor_torque_base_pct, and torque carries the ZONE-SETPOINT shortfall (avg
+	# zone setpoint vs melt), not the melt itself. Operator ruling 2026-09-24:
+	# pressure follows melt temperature only — a zone drop raises torque as
+	# before (and torque still drives the lumps into the laserfilter), and
+	# pressure only once the melt really cools.
 	var throughput_norm : float = 0.0
 	if config.nominal_kg_per_h > 0.001:
 		throughput_norm = throughput_kg_h / config.nominal_kg_per_h
 	var melt_factor : float = maxf(0.1,
-		1.0 + (config.melt_temp_setpoint - melt_temp) * DIE_PRESSURE_BAR_PER_C / DIE_PRESSURE_BASE_BAR)
-	die_pressure_psi = DIE_PRESSURE_BASE_PSI * throughput_norm * melt_factor
+		1.0 + (config.melt_temp_setpoint - melt_temp) * DIE_PRESSURE_BAR_PER_C / MELT_FIT_LEVEL_BAR)
+	_set_melt_pressures(throughput_norm * melt_factor)
 	# Per-stage residence + degas extraction in serial order.
 	per_stage_residence_s = []
 	per_stage_extracted_g_s = []
