@@ -571,9 +571,10 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   PRE-filter pressure (would E-STOP every nominal run), the laser filter's
   inlet was fed the kopfilter's ΔP (downstream of it, and on 3A/3B line 3C's),
   and the pressure rode a torque proxy that made one zone 30 °C down read 320
-  bar and trip the line (the melt-set pressures now follow melt temperature at
-  the 3A trend fit, 6.83 bar/°C as 2.44 % of 280 bar — a weak fit, refit when
-  a longer export exists). Two sessions fixed this the same evening (#275 and
+  bar and trip the line (the melt-set pressures AND the laserfilter's dMP now
+  follow melt temperature at the 3A trend fit, 6.83 bar/°C as 2.44 % of 280
+  bar — a weak fit, refit when a longer export exists; a melt held 9 °C under
+  setpoint trips 318 through the screen). Two sessions fixed this the same evening (#275 and
   #278); the merged model is the operator's TWO pressures — MP<PEL is the dP
   across the kopfilter, not a 140-bar copy of the pre-filter pressure — see the
   "Operator-documented" entry below. Guarded by `test_die_pressure_bar` and
@@ -599,6 +600,13 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   `world_layout.json`. Guarded by `test_legacy_props_spawner`. To audit:
   `grep -rhoE 'world\.call\("[A-Za-z_]+"' src | sort -u` and check each name
   exists as a `func` on MainWorld.
+  The same trap caught a merge on 2026-09-25. #278 removed
+  `LaserFilter.set_upstream_pressure_indicator()`. #279 and #282, merged the
+  same night, called it by string from their suites. `main` then had
+  `test_hmi_fault_rearm` at 15 fail and `test_hmi_fault_per_line` at 19 fail,
+  and the parse sweep stayed green. Before merging a PR that removes or renames
+  a method, grep the target branch for the name in quotes:
+  `grep -rn '"<name>"' src tools`.
   The damage was bigger than the error lines, because a failed `call()` ABORTS
   the calling function: the diesel pump was never spawned at all (the outlet's
   call came one line before it), the feeder shredder stood at the world origin

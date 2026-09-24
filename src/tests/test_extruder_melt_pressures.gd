@@ -37,6 +37,10 @@ extends Node
 #   kopfilter >= 1x per dienst .. FORM-008 row 27 -> one 8 h shift of pack loading
 #   318 bar ..................... LaserFilter.UPSTREAM_TRIP_BAR (062_CeDo72; plant 318)
 #   160 bar ..................... EREMA manual 4.3.7 (169_CeDo84)
+#   6.83 bar/C at 280 bar ....... 3A trend fit of MP<MF against melt temperature
+#                                 (#275; ExtruderModel.DIE_PRESSURE_BAR_PER_C doc).
+#                                 The operator (2026-09-25): a colder melt raises
+#                                 the laserfilter's own dMP too.
 #
 #   godot --headless --path . res://src/tests/test_extruder_melt_pressures.tscn
 #
@@ -126,6 +130,7 @@ func _ready() -> void:
 	_check_pel_trip(lines["3A"])
 	_check_upstream_trip_caked_screen(lines["3B"])
 	_check_upstream_trip_cold_melt()
+	_check_upstream_trip_melt_viscosity()
 	_finish()
 
 
@@ -444,6 +449,84 @@ func _check_upstream_trip_cold_melt() -> void:
 		"cold zones -> lumps -> caked screen -> 318-bar trip, %.1f s after the setpoints dropped" % t)
 	_check(torque_peak < ExtruderModel.TORQUE_TRIP_PCT,
 		"it is the PRESSURE trip, not the 110 %% torque trip, that stops it (torque peak %.0f %%)" % torque_peak)
+
+
+# ── 318 bar before the laserfilter: a cold melt through the screen ────────────
+## Operator 2026-09-25: when the melt runs colder, the laserfilter's own dMP
+## rises too, not only the melt-set pressure after it. The 3A trend fit (#275)
+## puts 6.83 bar/C on MP<MF, typed below rather than read from the model: a
+## melt 9 C under setpoint (+61 bar on the 260-bar sawtooth top) must reach
+## 318, and 5 C (+34) must not. The melt is HELD below setpoint, because the
+## model's melt drifts back to setpoint while running and nothing in gameplay
+## holds it colder yet. Torque stays under the lump threshold, so the trip
+## comes through the screen and not through lumps. The gameplay negative
+## control is a start at the preheat-ready melt, the coldest melt the green
+## button accepts.
+func _check_upstream_trip_melt_viscosity() -> void:
+	print("  -- 318 bar before the laserfilter: a cold melt through the screen (fresh 3B) --")
+	var fit_bar_per_c := 6.83   # 3A trend fit, #275
+	var fit_level_bar := 280.0
+	for c in [[5.0, false], [9.0, true]]:
+		var cold : float = c[0]
+		var rig := _build_rig("3B", "extruder_3b", 5000.0 + cold * 100.0)
+		if rig.is_empty():
+			return
+		var model = rig["model"]
+		var laser = rig["laser"]
+		var sp : float = model.config.melt_temp_setpoint
+		_start(rig)
+		for _i in range(int(300.0 / DT)):
+			_step(rig)
+		var peak := 0.0
+		var torque_peak := 0.0
+		var lump_peak := 0.0
+		var t := -1.0
+		for i in range(int(60.0 / DT)):
+			model.melt_temp = sp - cold
+			_step(rig)
+			peak = maxf(peak, _call_num(laser, "mp_before_filter_bar"))
+			torque_peak = maxf(torque_peak, model.motor_torque_pct)
+			lump_peak = maxf(lump_peak, model.lump_passthrough_rate_g_s)
+			if model.state == ExtruderModel.State.EMERGENCY_STOP:
+				t = (i + 1) * DT
+				break
+		var want_f : float = 1.0 + cold * fit_bar_per_c / fit_level_bar
+		_check(absf(_num(laser, "melt_viscosity_factor") - want_f) < 0.01,
+			"melt %.0f C cold: the laserfilter's dMP is scaled x%.3f (fit x%.3f)"
+			% [cold, _num(laser, "melt_viscosity_factor"), want_f])
+		if bool(c[1]):
+			_check(t > 0.0 and String(model.fault_reason) == "laserfilter_upstream_overpressure_318bar",
+				"melt %.0f C cold -> the screen's dMP climbs -> 318-bar trip after %.1f s ('%s')"
+				% [cold, t, model.fault_reason])
+			_check(lump_peak == 0.0 and torque_peak < ExtruderModel.LUMP_PASSTHROUGH_TORQUE_PCT,
+				"...through the screen, not lumps: torque peak %.0f %% (lump threshold %.0f %%), lumps %.1f g/s"
+				% [torque_peak, ExtruderModel.LUMP_PASSTHROUGH_TORQUE_PCT, lump_peak])
+		else:
+			_check(t < 0.0 and model.state == ExtruderModel.State.RUNNING and peak < LaserFilter.UPSTREAM_TRIP_BAR,
+				"melt %.0f C cold for 60 s: MP<MF peak %.1f bar, no trip (%s)" % [cold, peak, model.get_state_name()])
+
+	var rs := _build_rig("3B", "extruder_3b", 6500.0)
+	if rs.is_empty():
+		return
+	var ms = rs["model"]
+	var ready_c : float = float(ms.call("_preheat_ready_temp"))
+	ms.melt_temp = ready_c
+	_start(rs)
+	_step(rs)                  # a cold barrel goes to PREHEAT first
+	ms.melt_temp = ready_c
+	_start(rs)                 # the green button, at the coldest melt it accepts
+	_step(rs)
+	var started : bool = ms.state == ExtruderModel.State.STARTING
+	var speak := 0.0
+	for _i in range(int(400.0 / DT)):
+		_step(rs)
+		speak = maxf(speak, _call_num(rs["laser"], "mp_before_filter_bar"))
+		if ms.state == ExtruderModel.State.EMERGENCY_STOP:
+			break
+	_check(started and ms.state == ExtruderModel.State.RUNNING and not bool(rs["laser"].get("is_tripped"))
+			and speak < LaserFilter.UPSTREAM_TRIP_BAR,
+		"a start at the preheat-ready melt (%.2f C, %.2f C cold) runs up without a trip: MP<MF peak %.1f bar"
+		% [ready_c, ms.config.melt_temp_setpoint - ready_c, speak])
 
 
 # ── verdict ───────────────────────────────────────────────────────────────────

@@ -286,6 +286,15 @@ const DIE_PRESSURE_BAR_PER_C : float = 6.83
 ## maximum; 3A trend p50 271 / p95 280). The melt-set pressures scale by the
 ## same FRACTION per °C, 6.83 / 280 = 2.44 %/°C, as #275 did.
 const MELT_FIT_LEVEL_BAR : float = 280.0
+## Melt viscosity relative to a melt at setpoint, from the fit above: 1.0 at
+## setpoint, +2.44 % per °C colder. It scales the melt-set pressures here, and
+## ExtruderMachine forwards it to the LaserFilter, where it scales the screen's
+## own dMP too (operator 2026-09-25: "dMP rises too" when the melt runs colder).
+## That puts the fit's 6.83 bar/°C on MP<MF itself, not only on its 25-bar
+## melt-set part. Computed, so every state reads the current melt.
+var melt_viscosity_factor : float:
+	get:
+		return maxf(0.1, 1.0 + (config.melt_temp_setpoint - melt_temp) * DIE_PRESSURE_BAR_PER_C / MELT_FIT_LEVEL_BAR)
 # ── Melt pressures, BAR (2026-09-24) ─────────────────────────────────────────
 # Replaces the single `die_pressure_psi` (base "280 psi", no source). Every plant
 # source gives ~280 in BAR, and the one number fed two trips that sit at two
@@ -789,7 +798,7 @@ func _pots_at_capacity() -> String:
 # =============================================================================
 # MELT PRESSURES (bar) — see the field block near the top
 # =============================================================================
-## `factor` = throughput_norm × melt_factor: 1.0 at nominal throughput and
+## `factor` = throughput_norm × melt_viscosity_factor: 1.0 at nominal throughput and
 ## melt, 0.0 with the screw stopped.
 func _set_melt_pressures(factor: float) -> void:
 	var f : float = maxf(0.0, factor)
@@ -867,9 +876,7 @@ func _step_degassing(delta: float) -> void:
 	var throughput_norm : float = 0.0
 	if config.nominal_kg_per_h > 0.001:
 		throughput_norm = throughput_kg_h / config.nominal_kg_per_h
-	var melt_factor : float = maxf(0.1,
-		1.0 + (config.melt_temp_setpoint - melt_temp) * DIE_PRESSURE_BAR_PER_C / MELT_FIT_LEVEL_BAR)
-	_set_melt_pressures(throughput_norm * melt_factor)
+	_set_melt_pressures(throughput_norm * melt_viscosity_factor)
 	# Per-stage residence + degas extraction in serial order.
 	per_stage_residence_s = []
 	per_stage_extracted_g_s = []
