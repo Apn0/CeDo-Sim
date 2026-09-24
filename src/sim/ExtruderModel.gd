@@ -274,18 +274,29 @@ var per_stage_extracted_g_s  : Array[float] = []   # gas pulled by each degas st
 var residual_volatile_g_per_kg : float = 0.0       # what's left when the melt reaches the die
 var pellet_defect_rate       : float = 0.0         # 0..1 — what the SCADA shows the operator
 
-# Die-head melt pressure (psi). Derived from the rheology model — viscosity ×
-# throughput. Matches the head-filter / laser-filter pressure scale (psi) the
-# operator HMI uses for ΔP readouts. Constants tuned so a clean LDPE run at
-# nominal RPM + nominal throughput + setpoint melt temp lands at the operator-
-# documented ~280 psi die-head pressure. Climbs when:
-#   * throughput rises (more mass through the same die orifice)
-#   * viscosity rises (cold zones → motor torque climbs → die pressure climbs)
-# This is the OUTPUT signal forwarded to the LaserFilter as the "upstream
-# pressure indicator" — feeds the front-loading amplification cascade so the
-# operator's "right side clogged again" diagnostic reads correctly.
-const DIE_PRESSURE_BASE_PSI : float = 280.0
-var die_pressure_psi         : float = 0.0
+# ── Melt pressures, BAR (2026-09-24) ─────────────────────────────────────────
+# Replaces the single `die_pressure_psi` (base "280 psi", no source). Every plant
+# source gives ~280 in BAR, and the one number fed two trips that sit at two
+# different points of the line, so neither could fire. Operator rulings
+# (docs/plant/operator_rulings_2026-09-24.md), line order screw -> laserfilter
+# (MF1) -> degassing -> melt pump -> kopfilter (MF2) -> heetafslag:
+#   * BEFORE the laserfilter (MP<MF) = the melt-set pressure AFTER it (MP>MF)
+#     + the screen's own dMP. 280 bar there is a safe maximum, kept under the
+#     318-bar emergency shutdown (LaserFilter, the trip authority).
+#   * MP<PEL, the 160-bar pelletiser interlock, reads the dP ACROSS the kopfilter.
+# The melt-set parts follow the old rheology proxy — pressure ∝ throughput ×
+# viscosity, viscosity read off motor torque — so they climb with throughput
+# and with cold zones exactly as the old number did.
+var mp_after_laserfilter_bar  : float = 0.0   # MP>MF: melt-set, after the screen
+var die_plate_bar             : float = 0.0   # melt pump vs die plate, out of the kopfilter
+# Filter dPs, mirrored in by ExtruderMachine from the live LaserFilter / HeadFilter
+# (0 while not producing, or with no filter placed).
+var laserfilter_dp_bar        : float = 0.0   # dMP-MF1
+var kopfilter_dp_bar          : float = 0.0   # dP across the kopfilter pack
+# Derived readouts (_refresh_line_pressures):
+var mp_before_laserfilter_bar : float = 0.0   # MP<MF = after + dMP
+var kopdruk_bar               : float = 0.0   # into the kopfilter (MD_vor_SF2) = die plate + pack dP
+var mp_pel_bar                : float = 0.0   # MP<PEL = kopfilter dP (operator ruling)
 
 var die_face_state : int = DieFaceState.OFF
 var pelletizer : PelletizerModel = null
@@ -406,7 +417,7 @@ func _tick_off(delta: float) -> void:
 	melt_temp = move_toward(melt_temp, AMBIENT_C, 0.5 * delta)
 	screw_rpm = 0.0
 	throughput_kg_h = 0.0
-	die_pressure_psi = 0.0
+	_set_melt_pressures(0.0)
 	motor_torque_pct = 0.0
 	lump_passthrough_rate_g_s = 0.0
 	die_face_state = DieFaceState.OFF
@@ -474,7 +485,7 @@ func _tick_preheat(delta: float, events: Array[String]) -> void:
 	melt_temp = move_toward(melt_temp, config.melt_temp_setpoint, rate * delta)
 	screw_rpm = 0.0
 	throughput_kg_h = 0.0
-	die_pressure_psi = 0.0
+	_set_melt_pressures(0.0)
 	motor_torque_pct = 0.0
 	lump_passthrough_rate_g_s = 0.0
 	die_face_state = DieFaceState.OFF
@@ -489,7 +500,7 @@ func _tick_idle(delta: float) -> void:
 	# carry stale post-RUN values from before the operator paused production.
 	screw_rpm = config.screw_rpm_idle
 	throughput_kg_h = config.idle_kg_per_h
-	die_pressure_psi = 0.0
+	_set_melt_pressures(0.0)
 	motor_torque_pct = 0.0
 	lump_passthrough_rate_g_s = 0.0
 	_drift_melt_temp_toward(config.melt_temp_setpoint, delta)
@@ -591,12 +602,12 @@ func _tick_starting(delta: float, _inputs: Dictionary, events: Array[String]) ->
 	_update_motor_torque(delta, events)
 	# Die pressure is allowed to climb proportionally — no fault triggers in
 	# this state since nothing's at nominal yet.
-	die_pressure_psi *= rpm_frac
+	_scale_melt_pressures(rpm_frac)
 
 ## Time-constant decay (rpm *= exp(-delta / STOP_DECAY_S)). Frame-rate
 ## independent and matches the emulator's `*= 0.9` decay step at 0.5 s tick.
 ## Production continues at the residual rpm fraction so downstream catches
-## the tail-end material; no new lumps are emitted (die_pressure = 0).
+## the tail-end material; no new lumps are emitted (melt pressures follow the rpm down).
 func _tick_stopping(delta: float, _inputs: Dictionary, _events: Array[String]) -> void:
 	var nominal := config.screw_rpm_nominal
 	# Exponential decay: rpm_new = rpm_old * exp(-delta / tau)
@@ -609,7 +620,7 @@ func _tick_stopping(delta: float, _inputs: Dictionary, _events: Array[String]) -
 	_drift_melt_temp_toward(config.melt_temp_setpoint * 0.85, delta)
 	_evaluate_die_face_state()
 	motor_torque_pct = motor_torque_pct * rpm_frac
-	die_pressure_psi = die_pressure_psi * rpm_frac
+	_scale_melt_pressures(rpm_frac)
 	# Lump passthrough stops as the screw stops — no fresh un-melted material.
 	lump_passthrough_rate_g_s = 0.0
 
@@ -682,7 +693,7 @@ func _tick_fault(delta: float, inputs: Dictionary, events: Array[String]) -> voi
 	throughput_kg_h = 0.0
 	motor_torque_pct = 0.0
 	lump_passthrough_rate_g_s = 0.0
-	die_pressure_psi = 0.0   # screw stopped → no flow → no head pressure
+	_set_melt_pressures(0.0)   # screw stopped → no flow → no head pressure
 	# Melt temp slowly drifts toward setpoint while halted (heaters stay on
 	# but nothing is being pushed through). No more runaway integration.
 	_drift_melt_temp_toward(config.melt_temp_setpoint, delta)
@@ -700,7 +711,7 @@ func _tick_fault(delta: float, inputs: Dictionary, events: Array[String]) -> voi
 func _tick_e_stop(delta: float) -> void:
 	screw_rpm = 0.0
 	throughput_kg_h = 0.0
-	die_pressure_psi = 0.0
+	_set_melt_pressures(0.0)
 	motor_torque_pct = 0.0
 	lump_passthrough_rate_g_s = 0.0
 	melt_temp = move_toward(melt_temp, AMBIENT_C, 0.5 * delta)
@@ -765,6 +776,40 @@ func _pots_at_capacity() -> String:
 	return ""
 
 # =============================================================================
+# MELT PRESSURES (bar) — see the field block near the top
+# =============================================================================
+## `factor` = throughput_norm × viscosity_factor: 1.0 at nominal throughput and
+## melt, 0.0 with the screw stopped.
+func _set_melt_pressures(factor: float) -> void:
+	var f : float = maxf(0.0, factor)
+	mp_after_laserfilter_bar = config.mp_after_laserfilter_nominal_bar * f
+	die_plate_bar = config.die_plate_nominal_bar * f
+	_refresh_line_pressures()
+
+## STARTING / STOPPING scale the last pressures by the rpm fraction, as the old
+## single die pressure did.
+func _scale_melt_pressures(rpm_frac: float) -> void:
+	mp_after_laserfilter_bar *= rpm_frac
+	die_plate_bar *= rpm_frac
+	_refresh_line_pressures()
+
+## ExtruderMachine mirrors the live filter dPs in every tick (bar). The laser
+## filter stays the authority for its own 318-bar trip — it sums the same two
+## terms itself (LaserFilter.mp_before_filter_bar()); this copy is the readout
+## the HMI, SCADA and Storingstabel read off the model.
+func set_filter_pressure_drops(laser_dp_bar: float, kop_dp_bar: float) -> void:
+	laserfilter_dp_bar = maxf(0.0, laser_dp_bar)
+	kopfilter_dp_bar = maxf(0.0, kop_dp_bar)
+	_refresh_line_pressures()
+
+func _refresh_line_pressures() -> void:
+	mp_before_laserfilter_bar = mp_after_laserfilter_bar + laserfilter_dp_bar
+	kopdruk_bar = die_plate_bar + kopfilter_dp_bar
+	# Operator ruling 2026-09-24: MP<PEL, the 160-bar interlock (EREMA manual
+	# 4.3.7), is the pressure difference across the kopfilter (MF2).
+	mp_pel_bar = kopfilter_dp_bar
+
+# =============================================================================
 # DEGASSING — six-stage pipeline with two vacuum ports
 # =============================================================================
 ## Called from the upstream wash/dry line each tick to tell the extruder how
@@ -795,20 +840,20 @@ func _step_degassing(delta: float) -> void:
 	# residence per unit length). Reference is the nominal-RPM transit time.
 	var rpm_frac : float = max(0.001, screw_rpm / max(config.screw_rpm_nominal, 1.0))
 	residence_time_s = BARREL_TRANSIT_S_AT_NOMINAL / rpm_frac
-	# Real die-pressure read (replaces the old 250 + 0.5×rpm proxy that the
-	# scene controller forwarded). Standard non-Newtonian extruder rheology
-	# says die_pressure ∝ viscosity × throughput. Both proxies are already in
-	# the model: throughput_norm = throughput / nominal_throughput;
-	# viscosity_factor = motor_torque_pct / motor_torque_base_pct (motor
-	# torque already integrates zone temp shortfall + cold melt loading +
-	# lump effects). A starved screw (throughput → 0) drops pressure toward
-	# zero; an over-torqued cold screw spikes it well above the 280 psi base.
+	# Melt-set pressures (bar). Standard non-Newtonian extruder rheology says
+	# pressure ∝ viscosity × throughput. Both proxies are already in the model:
+	# throughput_norm = throughput / nominal_throughput; viscosity_factor =
+	# motor_torque_pct / motor_torque_base_pct (motor torque already integrates
+	# zone temp shortfall + cold melt loading + lump effects). A starved screw
+	# (throughput → 0) drops both toward zero; an over-torqued cold screw
+	# spikes them above their nominal. The filter dPs add on top of these in
+	# _refresh_line_pressures().
 	var throughput_norm : float = 0.0
 	if config.nominal_kg_per_h > 0.001:
 		throughput_norm = throughput_kg_h / config.nominal_kg_per_h
 	var torque_base : float = max(1.0, config.motor_torque_base_pct)
 	var viscosity_factor : float = max(0.1, motor_torque_pct / torque_base)
-	die_pressure_psi = DIE_PRESSURE_BASE_PSI * throughput_norm * viscosity_factor
+	_set_melt_pressures(throughput_norm * viscosity_factor)
 	# Per-stage residence + degas extraction in serial order.
 	per_stage_residence_s = []
 	per_stage_extracted_g_s = []

@@ -1,11 +1,11 @@
-[gd_resource type="Resource" script_class="ExtruderConfig" load_steps=2 format=3 uid="uid://b3bextrudercfg01"]
+[gd_resource type="Resource" script_class="ExtruderConfig" load_steps=2 format=3]
 
 [ext_resource type="Script" path="res://src/sim/ExtruderConfig.gd" id="1_cfg"]
 
 [resource]
 script = ExtResource("1_cfg")
-line_id = "3B"
-display_name = "Extruder 3B (EREMA)"
+line_id = "3A"
+display_name = "Extruder 3A (EREMA)"
 nominal_kg_per_h = 950.0
 startup_ramp_s = 180.0
 idle_kg_per_h = 50.0
@@ -25,5 +25,5 @@ compactor_fill_low_pct = 0.2
 compactor_fill_high_pct = 0.85
 compactor_silo_min_fill_pct = 0.05
 mp_after_laserfilter_nominal_bar = 25.0
-die_plate_nominal_bar = 140.0
-kopdruk_window_bar = Vector2(140, 155)
+die_plate_nominal_bar = 120.0
+kopdruk_window_bar = Vector2(120, 150)

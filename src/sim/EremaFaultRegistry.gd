@@ -53,7 +53,8 @@ const F_LF_UPSTREAM_OVERPRESSURE := { "nr": 5518, "msg": "Smeltdruk stroomopwaar
 ## smeltdruk boven een grenswaarde (160 bar) stijgt, worden de Compactor
 ## (configureerbaar), de extruder en het pelletiseersysteem onmiddellijk
 ## uitgeschakeld." MP<PEL = smeltdruk stroomopwaarts van de pelletiseermachine
-## (the die-head / meltpump-outlet melt pressure the model computes).
+## Operator ruling 2026-09-24: on 3A/3B that is the dP across the kopfilter
+## (ExtruderModel.mp_pel_bar).
 const F_PEL_MELT_PRESSURE_HI := { "nr": 5516, "msg": "Massadruk voor pelletiseermachine [MP<PEL] te hoog (160 bar) - uitschakeling" }
 
 ## Pelletiser melt-pressure interlock trip (bar) — EREMA §4.3.7 (169_CeDo84).
@@ -94,9 +95,10 @@ static func detect_active(extruder_model : Object, laser_filter : Object = null)
 	# so a bound filter still trips even if the model is null.
 	if laser_filter != null and is_instance_valid(laser_filter):
 		# 6557 - massadruk VOOR snelwissel-filter te hoog, uitschakeling. The
-		# before-filter pressure is the filter's upstream indicator (psi -> bar).
-		if "upstream_pressure_psi_indicator" in laser_filter:
-			var up_bar : float = float(laser_filter.upstream_pressure_psi_indicator) * 0.0689
+		# before-filter pressure = the melt-set pressure after it + its own dMP
+		# (LaserFilter.mp_before_filter_bar, bar).
+		if laser_filter.has_method("mp_before_filter_bar"):
+			var up_bar : float = float(laser_filter.call("mp_before_filter_bar"))
 			if up_bar > MPF1_PRESSURE_TRIP_BAR:
 				out.append(F_MPF1_PRESSURE_HI)
 		# 6522 - snelwissel-filter bedrijf niet vrijgegeven: the quick-change
@@ -114,12 +116,12 @@ static func detect_active(extruder_model : Object, laser_filter : Object = null)
 		return out
 
 	# #223 docs->code (item 17) — pelletiser 160-bar MP<PEL melt-pressure
-	# interlock. MP<PEL (smeltdruk stroomopwaarts van de pelletiseermachine) is
-	# the die-head pressure the model computes as die_pressure_psi. Convert to bar
-	# (same psi->bar factor the sibling detectors above use) and surface the
-	# documented row while the condition holds; ExtruderMachine latches + trips.
-	if "die_pressure_psi" in extruder_model:
-		var pel_bar : float = float(extruder_model.die_pressure_psi) * 0.0689
+	# interlock. MP<PEL (smeltdruk stroomopwaarts van de pelletiseermachine) is,
+	# per the operator's ruling of 2026-09-24, the dP across the kopfilter; the
+	# model carries it in bar as mp_pel_bar. Surface the documented row while
+	# the condition holds; ExtruderMachine latches + trips.
+	if "mp_pel_bar" in extruder_model:
+		var pel_bar : float = float(extruder_model.mp_pel_bar)
 		if pel_bar > PEL_MELT_PRESSURE_TRIP_BAR:
 			out.append(F_PEL_MELT_PRESSURE_HI)
 
@@ -139,7 +141,7 @@ static func detect_active(extruder_model : Object, laser_filter : Object = null)
 	if "primary_lf" in extruder_model and extruder_model.primary_lf != null:
 		var lf : Object = extruder_model.primary_lf
 		if "delta_p_psi" in lf:
-			var bar : float = float(lf.delta_p_psi) * 0.0689
+			var bar : float = float(lf.delta_p_psi) / LaserFilter.PSI_PER_BAR
 			if bar > FILTER_DP_HIGH_BAR:
 				out.append(F_FILTER_PRESSURE_HI)
 

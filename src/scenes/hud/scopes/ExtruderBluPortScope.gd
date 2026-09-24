@@ -592,16 +592,23 @@ func _read_field(key: String, dflt: float) -> float:
 		"load_pct", "ex1_load_pct":
 			if "motor_torque_pct" in _model:
 				return float(_model.motor_torque_pct)
+		# Three pressure rails, bar, as the model carries them (2026-09-24). They
+		# used to be one "psi" die pressure /14.504 and scaled by 0.92 and 0.82 —
+		# 19.3 bar where the real screens read 280. The real BluPort rails read
+		# before the melt filter / after it / into the next filter (3C 280/24/201,
+		# line 6 279/18/172 bar — PHOTO-erema-bluport-lijn3C__214, -lijn6__226).
 		"melt_pressure":
-			# die_pressure is psi; convert (1 bar = 14.504 psi)
-			if "die_pressure_psi" in _model:
-				return float(_model.die_pressure_psi) / 14.504
+			# MP < MF: before the laserfilter = melt-set after + its dMP.
+			if "mp_before_laserfilter_bar" in _model:
+				return float(_model.mp_before_laserfilter_bar)
 		"screen_changer":
-			if "die_pressure_psi" in _model:
-				return float(_model.die_pressure_psi) / 14.504 * 0.92
+			# Kopdruk: into the kopfilter (the piston screen changer at the head).
+			if "kopdruk_bar" in _model:
+				return float(_model.kopdruk_bar)
 		"post_filter":
-			if "die_pressure_psi" in _model:
-				return float(_model.die_pressure_psi) / 14.504 * 0.82
+			# MP > MF: after the laserfilter.
+			if "mp_after_laserfilter_bar" in _model:
+				return float(_model.mp_after_laserfilter_bar)
 		"ex1_kw", "total_kw", "pcu_kw":
 			# Coarse proxy: motor_torque_pct × rpm × scalar
 			var rpm : float = float(_model.screw_rpm) if "screw_rpm" in _model else 0.0

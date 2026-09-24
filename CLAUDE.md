@@ -524,6 +524,7 @@ the one before that ~6 months stale — treat this one as re-checkable too):
 | `docs/audit/overnight_enhancement_2026-09-23.md` | **The unattended 2026-09-23 run: 12 commits, every one measured first.** A MotorOverload trip that never stopped conveying, a Lumpenwagen that lost kg when full, checkpoint saves, the F1 key sheet, map labels, the cart speed clamp, the compactor kijkglas, LineFlow moved to 10 Hz (2.85 → 0.54 ms/frame), and two harness reds root-caused as frame-count races (navmesh bake, bale streaming). Two full harness runs, the operator list at the end |
 | `docs/audit/operator_session_2026-09-23.md` | **The interactive 2026-09-23 session: tasks ranked by operator effort against sim impact, each answered by AskUserQuestion then built and measured.** Task 1: film beds on every belt (P1), the inclined belt's deck running the wrong diagonal, the cost probe, the renders; per-task evidence and the open questions each one left |
 | `docs/DESIGN_vacuum_pot_minigame_2026-09-23.md` | **P3 stage B as the operator described it: not a hold-E but a mini-game** — lid pull that stiffens with time, plamuurmes planes at 90 %, the block by hand, re-lid, the two-minute race. Systems, parameters (his vs placeholder), test strategy. **Built 2026-09-24** (`test_vacuum_pot_minigame`, 33 ok); the feel is his to play |
+| `docs/plant/operator_rulings_2026-09-24.md` | **Extruder melt pressures, 2026-09-24**: the "280 psi" die pressure was 280 BAR, a safe maximum before the laserfilter under the 318-bar shutdown (he runs ~220). Two pressures: before the laserfilter = melt-set after + dMP; MP<PEL (160 bar) = dP across the kopfilter; per-line FORM-008 kopdruk. Recollections; what was measured before/after, and what is still open (3B above its one-session trend) |
 | `docs/plant/operator_rulings_2026-09-23.md` | **Operator answers from memory, 2026-09-23** — film look, colour order, bed depth per belt, where wet flake is visible, screws "differ". Recollections, not documents: cite them as such |
 | `docs/audit/assets_loss_and_restore_2026-09-21.md` | **`assets/` was wiped and restored.** Godot's `.md5` fingerprints identify originals byte for byte: 159 of 273 are back exact and 101 are cache-only (listed; do not re-import them). Also the `Merlo.fbx` re-import trap, what `winfr` did and did not recover (nothing exact), and the method to reuse |
 | `docs/BACKLOG_ultracode_2026-07-19.md` | Deferred queue — 16 of 40 findings landed; also records the npc-05 vacuous-green correction |
@@ -652,6 +653,22 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   `set_silo_fill()` sizes to the live level). Any new sight glass goes through
   it, and any claim that a level "reads through the glass" is a render, not a
   geometry check (`src/tests/shot_silo_level.gd`).
+- **"Operator-documented" with no file named is unsourced, and a pressure
+  with the wrong unit hides for months because nothing reads it against a
+  trip.** Measured 2026-09-24: `ExtruderModel.die_pressure_psi` sat on a
+  280 "psi" base ("operator-documented", no source) while every HMI photo,
+  SWI and trend gives 280 BAR. The BluPort showed 19.3 bar, and the one number
+  fed two trips at two different points of the line (318 bar before the
+  laserfilter, 160 bar MP<PEL at the kopfilter), so neither could ever fire.
+  The model topped out near 46 bar. On 3A the laserfilter read the KOPFILTER's
+  dP as its upstream, although the kopfilter sits after it. Now two pressures
+  in bar, per the operator (`docs/plant/operator_rulings_2026-09-24.md`),
+  guarded by `test_extruder_melt_pressures`, which REACHES both trips from
+  gameplay causes. LaserFilter and HeadFilter keep psi internally; convert at
+  their boundary with 14.5038 (the old `0.0689` factors were 0.07 % off). A
+  new trip is not done until a suite reaches it TWICE. The first reachable
+  318 trip exposed a latch (`LaserFilter.is_tripped`) that only a screen
+  change cleared, so after one E-stop reset it could never fire again.
 - **A frame-counted wait against a wall-clock cadence is a frame-rate
   lottery.** Two suites went red on healthy worlds this way on 2026-09-23:
   `test_jam_baseline` waited 60 stable frames for a threaded navmesh bake that

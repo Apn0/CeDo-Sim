@@ -29,7 +29,9 @@ func _run() -> void:
 	get_root().add_child(filter)
 
 	filter.set("delta_p_psi", 100.0)
-	filter.set("upstream_pressure_psi_indicator", 200.0)
+	# 2026-09-24: the filter is told the melt-set pressure AFTER it (bar); the
+	# inlet (MP < MF) is that plus its own dMP. Was a psi "upstream indicator".
+	filter.set("mp_after_filter_bar", 25.0)
 	filter.set("scraper_rpm", 30.0)
 	filter.set("front_loading_g", 10.0)
 	filter.set("is_halted", false)
@@ -44,14 +46,14 @@ func _run() -> void:
 	var delta_bar = scope.get("_cur_delta_bar")
 	var inlet_bar = scope.get("_cur_inlet_bar")
 
-	if abs(delta_bar - 100.0 * 0.0689) > 0.01:
+	if abs(delta_bar - 100.0 / 14.5038) > 0.01:
 		print("FAIL: Expected delta bar ~6.89, got ", delta_bar)
 		_fail += 1
 	else:
 		print("  ok    : delta bar converted correctly")
 
-	if abs(inlet_bar - 200.0 * 0.0689) > 0.01:
-		print("FAIL: Expected inlet bar ~13.78, got ", inlet_bar)
+	if abs(inlet_bar - (25.0 + 100.0 / 14.5038)) > 0.01:
+		print("FAIL: Expected inlet bar ~31.89 (25 after + 6.89 dMP), got ", inlet_bar)
 		_fail += 1
 	else:
 		print("  ok    : inlet bar converted correctly")

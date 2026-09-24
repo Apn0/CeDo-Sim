@@ -36,7 +36,8 @@ var _head_filter  : Node = null
 var _upstream_trip_latched : bool = false   # laserfilter 318-bar upstream trip
 var _pel_trip_latched      : bool = false   # pelletiser 160-bar MP<PEL interlock
 var _lf_trip_connected     : bool = false   # connect upstream_pressure_trip once
-# psi->bar for the MP<PEL die-head reading — matches LaserFilter.PSI_PER_BAR.
+# psi->bar for the laser filter's dMP, which LaserFilter keeps in psi
+# internally — matches LaserFilter.PSI_PER_BAR. Everything the model carries is bar.
 const PSI_PER_BAR : float = 14.5038
 
 # #scada-surfacing — cached ScadaDashboard handle (resolved lazily via group
@@ -306,19 +307,6 @@ func _update_downstream_signals() -> void:
 			and is_instance_valid(_laser_filter):
 		if _laser_filter.has_method("set_extruder_rpm_indicator"):
 			_laser_filter.call("set_extruder_rpm_indicator", model.screw_rpm)
-		if _laser_filter.has_method("set_upstream_pressure_indicator"):
-			# Real upstream pressure: prefer the head filter's live ΔP (it's
-			# physically the laser filter's immediate upstream and is already
-			# psi-scale) — falls back to the model's die_pressure_psi (rheology-
-			# derived from throughput × viscosity) if no head filter is cached.
-			# Both surfaces are psi and on the same scale the operator HMI uses.
-			var upstream_psi : float = 0.0
-			if _head_filter != null and is_instance_valid(_head_filter) \
-					and _head_filter.has_method("delta_p_psi"):
-				upstream_psi = float(_head_filter.call("delta_p_psi"))
-			if upstream_psi <= 0.0 and "die_pressure_psi" in model:
-				upstream_psi = model.die_pressure_psi
-			_laser_filter.call("set_upstream_pressure_indicator", upstream_psi)
 		if _laser_filter.has_method("set_lump_feed_rate") \
 				and "lump_passthrough_rate_g_s" in model:
 			_laser_filter.call("set_lump_feed_rate", model.lump_passthrough_rate_g_s)
@@ -328,22 +316,48 @@ func _update_downstream_signals() -> void:
 		# phantom over-pressure trip with zero flow (operator 2026-07-16).
 		if _laser_filter.has_method("set_lump_feed_rate"):
 			_laser_filter.call("set_lump_feed_rate", 0.0)
-		if _laser_filter.has_method("set_upstream_pressure_indicator"):
-			_laser_filter.call("set_upstream_pressure_indicator", 0.0)
 		if _laser_filter.has_method("set_extruder_rpm_indicator"):
 			_laser_filter.call("set_extruder_rpm_indicator", 0.0)
+	_forward_melt_pressures()
+
+## Melt pressures, bar (2026-09-24). The melt-set pressure after the laser
+## filter goes TO the filter (its trip adds its own dMP); the two filter dPs
+## come BACK into the model, which derives MP<MF, kopdruk and MP<PEL from them.
+## Pressure follows flow, so this uses the producing gate of
+## _update_downstream_throughput rather than the RUNNING-only one above: the
+## melt still flows in STARTING, STOPPING and VACUUM_ALARM, and the 160-bar
+## interlock is armed in all three. The kopfilter's dP is a pack-resistance
+## figure that stays put when the flow stops, so it is only mirrored while
+## melt moves; the laser filter parks its own dMP at no flow.
+func _forward_melt_pressures() -> void:
+	var producing : bool = model.state in [
+		ExtruderModel.State.STARTING, ExtruderModel.State.RUNNING,
+		ExtruderModel.State.STOPPING, ExtruderModel.State.VACUUM_ALARM]
+	var laser_ok : bool = _laser_filter != null and is_instance_valid(_laser_filter)
+	var head_ok : bool = _head_filter != null and is_instance_valid(_head_filter)
+	if laser_ok and _laser_filter.has_method("set_mp_after_filter_bar"):
+		_laser_filter.call("set_mp_after_filter_bar",
+			model.mp_after_laserfilter_bar if producing else 0.0)
+	var laser_dp : float = 0.0
+	if producing and laser_ok and "delta_p_psi" in _laser_filter:
+		laser_dp = float(_laser_filter.delta_p_psi) / PSI_PER_BAR
+	var kop_dp : float = 0.0
+	if producing and head_ok and _head_filter.has_method("delta_p_bar"):
+		kop_dp = float(_head_filter.call("delta_p_bar"))
+	model.set_filter_pressure_drops(laser_dp, kop_dp)
 
 func _check_pressure_trips() -> void:
 	# #223 docs->code (item 17) — pelletiser 160-bar MP<PEL melt-pressure
-	# interlock. Read the die-head / meltpump-outlet melt pressure the model
-	# computes (die_pressure_psi = "smeltdruk stroomopwaarts van de
-	# pelletiseermachine"), convert to bar, and fire the SAME trio shutdown as the
-	# 318-bar upstream trip when it exceeds the documented 160-bar limit. Latching;
-	# only armed while the extruder is actually pushing melt.
+	# interlock. MP<PEL ("smeltdruk stroomopwaarts van de pelletiseermachine")
+	# is, per the operator's ruling of 2026-09-24, the pressure difference ACROSS
+	# the kopfilter (MF2), which sits between the melt pump and the heetafslag —
+	# the model mirrors it in as mp_pel_bar. Fire the SAME trio shutdown as the
+	# 318-bar upstream trip when it exceeds the documented 160-bar limit.
+	# Latching; only armed while the extruder is actually pushing melt.
 	# doc: docs/plant/swi/EREMA-manual-4.3.7-pelletiseersysteem__169_CeDo84.md
-	if not _pel_trip_latched and "die_pressure_psi" in model \
+	if not _pel_trip_latched \
 			and model.state in [ExtruderModel.State.RUNNING, ExtruderModel.State.STARTING, ExtruderModel.State.VACUUM_ALARM]:
-		var mp_pel_bar : float = model.die_pressure_psi / PSI_PER_BAR
+		var mp_pel_bar : float = model.mp_pel_bar
 		if mp_pel_bar > EremaFaultRegistry.PEL_MELT_PRESSURE_TRIP_BAR:
 			_pel_trip_latched = true
 			model.fault_reason = "pelletiser_meltdruk_160bar"
@@ -352,7 +366,7 @@ func _check_pressure_trips() -> void:
 			_trip_shutdown_all_three("pelletiser_melt_pressure_160bar", mp_pel_bar)
 	# #223 docs->code (items 14/17) — keep the over-pressure cause asserted while
 	# latched. The model wipes fault_reason to "" on the emergency_stop transition
-	# and die_pressure drops to 0 once stopped, so without this the operator loses
+	# and the melt pressures drop to 0 once stopped, so without this the operator loses
 	# the reason the line died. Re-assert it so the SCADA chip + Storingstabel row
 	# (EremaFaultRegistry reads fault_reason) persist until the operator resets.
 	if model.state == ExtruderModel.State.EMERGENCY_STOP and model.fault_reason == "":
@@ -382,6 +396,11 @@ func _handle_state_transitions(prev_state: int) -> void:
 	if prev_state == ExtruderModel.State.EMERGENCY_STOP and model.state != ExtruderModel.State.EMERGENCY_STOP:
 		_upstream_trip_latched = false
 		_pel_trip_latched = false
+		# The laser filter latches its own is_tripped; re-arm it too, or the
+		# 318-bar trip never fires again after this reset (it signals on the edge).
+		if _laser_filter != null and is_instance_valid(_laser_filter) \
+				and _laser_filter.has_method("rearm_upstream_trip"):
+			_laser_filter.call("rearm_upstream_trip")
 		model.fault_reason = ""   # clear the persisted trip cause so the next run is clean
 		_cascade_resume_downstream()
 	# Feed AudioManager urgency data every tick while the cascade is running
@@ -425,7 +444,10 @@ func _cascade_stop_downstream() -> void:
 ## etc.). Nominal bands:
 ##   defect      0..2 % is OK, alarms over 2 %
 ##   gunk_kg     under 4 kg is OK (= flooded dismantle threshold). Alarms over.
-##   die_psi     200..420 psi is the operating envelope. Alarms outside.
+##   mpmf        pressure before the laserfilter, bar. Alarms over 280 — the
+##               operator's safe maximum under the 318-bar shutdown (2026-09-24).
+##   kopdruk     pressure into the kopfilter, bar. Alarms outside this line's
+##               FORM-008 window (config.kopdruk_window_bar).
 ##   fault       OK if empty; any non-empty fault_reason colours alarm-red.
 func _push_extruder_params_to_scada() -> void:
 	if _scada == null or not is_instance_valid(_scada):
@@ -444,12 +466,17 @@ func _push_extruder_params_to_scada() -> void:
 			model.vacuum_line_gunk_kg,
 			0.0, 4.0,
 			"Ex %s Vac gunk  (kg)" % line)
-	if "die_pressure_psi" in model:
-		_scada.call("set_param",
-			prefix + "diepsi",
-			model.die_pressure_psi,
-			200.0, 420.0,
-			"Ex %s Die  (psi)" % line)
+	_scada.call("set_param",
+		prefix + "mpmf",
+		model.mp_before_laserfilter_bar,
+		0.0, 280.0,
+		"Ex %s MP<MF  (bar)" % line)
+	var win : Vector2 = config_resource.kopdruk_window_bar
+	_scada.call("set_param",
+		prefix + "kopdruk",
+		model.kopdruk_bar,
+		win.x, win.y,
+		"Ex %s Kopdruk  (bar)" % line)
 	# Fault reason as a status string. Alarming when non-empty. Uses the
 	# dedicated set_text_param branch in the dashboard (grey when "", red
 	# when carrying any of the operator-confirmed fault keys).
