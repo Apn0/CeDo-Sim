@@ -108,7 +108,9 @@ const SCREW_RPM_MAX      : float = 200.0
 #                    3A 120–150 / 3B 140–155 bar (docs/plant/checklist_3a_3b.md):
 #                    kopdruk = die plate + the kopfilter's dP, and a fresh pack's
 #                    dP is ~0, so the bottom of each window is that line's die
-#                    plate.
+#                    plate. ExtruderModel's die_plate_bar (#278) uses the same
+#                    numbers (Extruder3A/3B.tres die_plate_nominal_bar); the
+#                    guard's A4b check fails if the two drift apart.
 # test_screw_die_plate_bar reads the trend numbers back out of the JSON, so a
 # drift between this table and the data turns a check red instead of rotting.
 const PROFILES : Dictionary = {

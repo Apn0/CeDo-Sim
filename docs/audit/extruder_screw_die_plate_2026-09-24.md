@@ -5,7 +5,7 @@ every extruder node, and it is **separate from `ExtruderModel`**. It feeds the
 MFI soft-sensor (`MfiProxy`), the Quality terminal (`QualityAnalysisTerminal`),
 the QA bench's grading (`QaLab` → `QaSpec`) and the SCADA panel's melt and MFI
 rows. The ExtruderModel's own pressures (BluPort, interlocks) are not touched
-here. They were fixed in #275 and are being reworked in a sibling session (see §6).
+here. They were fixed in #275 and #278 (see §6).
 
 ## 1. What was measured before the fix
 
@@ -108,7 +108,8 @@ cannot place.
 
 `src/tests/test_screw_die_plate_bar.tscn` (wired into `run.sh`) puts four macro
 lines on one LineFlow, 400 m apart. It feeds each extruder at its profile's
-nominal output for 300 s. Result: **PASS (34 ok, 0 fail)**, 68 s.
+nominal output for 300 s. Result: **PASS (34 ok, 0 fail)**, 68 s, on the
+pre-merge tree. After merging `main` (#278) and adding A4b: **PASS (36 ok, 0 fail)**.
 
 | extruder | profile | screw | output | melt | die plate | MFI | QaSpec |
 |---|---|---|---|---|---|---|---|
@@ -150,11 +151,12 @@ it?), and a decision on what the MFI estimate should key on once it is.
 
 ## 6. Other open items
 
-- **The sibling ExtruderModel rework is not on `main`.** The worktree
-  `clever-hypatia-945f15` holds an uncommitted rework (`die_plate_bar`,
-  `kopdruk_bar`, `mp_before_laserfilter_bar`, `docs/plant/operator_rulings_2026-09-24.md`)
-  that derives ExtruderModel's die plate the same way (3A 120 / 3B 140 bar).
-  When it lands, both models will carry the same derivation in two places.
+- **Two models carry the same die plate.** #278 (merged while this change was
+  in review) gave ExtruderModel `die_plate_bar`, `kopdruk_bar` and
+  `mp_before_laserfilter_bar` (`docs/plant/operator_rulings_2026-09-24.md`),
+  with the same derivation: `Extruder3A/3B.tres` `die_plate_nominal_bar` 120 /
+  140 bar. Check A4b of the guard asserts the two numbers agree, so a change
+  to one without the other goes red.
 - **`test_mfi_proxy` is not in `run.sh`.** It is a `--script` suite, and every
   check it makes is a ratio. The absolute level is now guarded by B8 and A6 of
   `test_screw_die_plate_bar`.
@@ -169,7 +171,7 @@ it?), and a decision on what the MFI estimate should key on once it is.
 
 Each mutation was applied alone to the fixed tree, the guard was run, and the
 file was restored from a saved copy (verified byte-identical afterwards). All
-seven turn it red with 0 SCRIPT ERROR lines.
+eight turn it red with 0 SCRIPT ERROR lines.
 
 | # | mutation | result | what went red |
 |---|---|---|---|
@@ -180,6 +182,7 @@ seven turn it red with 0 SCRIPT ERROR lines.
 | M5 | `MFI_GAIN` back to 0.263 | 32 ok, **2 fail** | A6 (anchor reads 3.07), B8 (3A MFI 4.37 → REGRADE) |
 | M6 | terminal back to `begins_with("extruder_")` | 31 ok, **3 fail** | C1 (reads the silo), C2 ("0.00 bar"), C3 (SCADA reads another node) |
 | M7 | LineFlow skips `configure_for_extruder` | 29 ok, **5 fail** | B2 ×3 (profiles not set / not flagged), B4 (3A at 110 rpm), B5 (3A melt 244 °C) |
+| M8 | `Extruder3A.tres` `die_plate_nominal_bar` 120 → 125 (after the merge) | 35 ok, **1 fail** | A4b (screw 120 vs ExtruderModel 125) |
 
 ## 8. The extruder_silo's edges (measured, not fixed)
 
@@ -215,3 +218,9 @@ the screw model, and left for their own change.
 
 `user://world_layout.json` hashed identical before and after the two MainWorld
 suites, and matches the `.bak` taken first.
+
+After merging `origin/main` (`bae70ee`, which brought #278's ExtruderModel
+rework): parse sweep `Result: 454 ok, 0 fail`; `test_screw_die_plate_bar`
+PASS (36 ok); `test_extruder_screw` 13 ok; `test_mfi_proxy` 20 ok;
+`test_die_pressure_bar` PASS (20 ok, main's revision); `test_extruder_melt_pressures`
+PASS (44 ok); `test_qa_spec` PASS; `lint_unused_params` 0.

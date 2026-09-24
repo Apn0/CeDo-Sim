@@ -123,6 +123,12 @@ func _run() -> void:
 		_check(is_equal_approx(float(prof["die_plate_bar"]), float(FORM008_KOPDRUK[line][0])),
 			"A4 %s die_plate_bar %.0f == bottom of FORM-008's kopdruk window %.0f–%.0f"
 			% [line, prof["die_plate_bar"], FORM008_KOPDRUK[line][0], FORM008_KOPDRUK[line][1]])
+		# ExtruderModel (#278) derives its die plate the same way. Two models, one
+		# number: a drift between them is a red check here, not a silent split.
+		var cfg := load("res://src/data/machines/Extruder%s.tres" % line.to_upper()) as ExtruderConfig
+		_check(cfg != null and is_equal_approx(float(prof["die_plate_bar"]), cfg.die_plate_nominal_bar),
+			"A4b %s screw die plate %.0f == ExtruderModel's Extruder%s.tres die_plate_nominal_bar %s"
+			% [line, prof["die_plate_bar"], line.to_upper(), str(cfg.die_plate_nominal_bar) if cfg != null else "<missing>"])
 	# The MFI anchor is 3B's nominal point, and it reads CAL_MFI.
 	_check(is_equal_approx(MfiProxyScript.CAL_Q_KG_H, _p50("3b", "Output"))
 		and is_equal_approx(MfiProxyScript.CAL_T_C, _p50("3b", "Smelt temperatuur voor meltfilter"))
