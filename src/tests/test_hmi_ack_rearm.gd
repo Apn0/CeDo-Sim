@@ -14,6 +14,9 @@ extends Node
 ##
 ## Measured before the fix (mutation: the `_acked_faults.erase(code)` line
 ## removed): check 4 and 5 red — the re-trip reported acked=true.
+## Since the same day the ack is keyed by OCCURRENCE id (`_acked_occurrences`,
+## `_is_acked()`), and a closed panel keeps observing — test_hmi_fault_rearm
+## drives both through the real panel's buttons.
 
 const WATCHDOG_S := 60.0
 const CODE := "RUN-200"   # "Leegdraaien actief" — a row the overlay raises off its own flag
@@ -86,14 +89,14 @@ func _run() -> void:
 
 	ov._leegdraaien = true
 	var f4 : Array = ov._compute_faults()
-	_check(not ov._acked_faults.has(CODE),
-		"4 the re-trip is a NEW occurrence — its code is not in the ack table")
+	_check(not ov._is_acked(CODE),
+		"4 the re-trip is a NEW occurrence — not acknowledged")
 	_check(_unacked_row(ov, f4),
 		"5 the re-trip shows as an UNACKED row on the ACTIVE tab (was hidden as acked)")
 
 	ov._on_kwitteren()
 	ov._on_reset_faults()
-	_check(ov._acked_faults.is_empty(), "6 RESETTEN still empties the ack table")
+	_check(ov._acked_occurrences.is_empty(), "6 RESETTEN still empties the ack table")
 	_finish()
 
 func _finish() -> void:
