@@ -30,10 +30,22 @@ const BREAK_DURATION : float = 30.0     # how long a break lasts (counted once a
 const MAX_ON_BREAK   : int   = 1        # only ever one post unmanned at a time
 
 # Which machines each role is responsible for (matched as id substrings).
+#
+# Operator 2026-09-23 (docs/plant/operator_rulings_2026-09-23.md §2): the
+# permanent feeder is a LINE 1 role — "he drives the Merlo and check containers
+# etc. for washing line one" — and "nobody" has a fixed post at any windzifter,
+# on the wash lines or the sorting line: it runs unattended and crew come when
+# it blocks. `wind_sifter` therefore left this zone. Before, on a world with
+# only line 3A built (the test_nav_connectivity fixture, and any save without
+# the shredder hall), the windzifter was the ONLY zone match for both
+# permanent feeders, so assign_posts() parked them 1 m off its edge — inside
+# the neighbouring blower's collider, on no navmesh, the month-old harness
+# red. A jam at the windzifter still gets a responder: _pick_responder falls
+# through to the floaters when no zone owner is free.
 const ZONES : Dictionary = {
 	"extruder_op":      ["extruder", "mengsilo", "compactor", "mas_bak", "laser_filter", "heetafslag", "extruder_silo", "compactorband"],
 	"permanent_feeder": ["bunker", "shredder", "inclined_belt", "feed_hopper",
-						  "sga", "metal_belt", "ballistic", "wind_sifter", "titech",
+						  "sga", "metal_belt", "ballistic", "titech",
 						  "opzetband", "westa_band", "drum_feed_belt", "overband_magnet"],
 	"feeder":           ["bunker", "shredder", "inclined_belt", "feed_hopper",
 						  "opzetband", "westa_band", "drum_feed_belt", "overband_magnet"],
@@ -316,7 +328,44 @@ func _post_pos_on_aisle(machine: Dictionary, from: Vector3) -> Vector3:
 # =============================================================================
 # MAIN LOOP
 # =============================================================================
+## "Heavy smoke, people react" (operator 2026-09-23): LineFlow raises a SMOKE
+## alarm on the trip edge that smokes; the crew radio it and the nearest free
+## responder goes to look. Hooked to the EventBus lazily (it is an autoload at
+## runtime, absent in some benches).
+var _alarm_hooked : bool = false
+var smoke_alarms : Array = []   # machine ids that smoked, in order (suites read it)
+
+func _ensure_alarm_hook() -> void:
+	if _alarm_hooked:
+		return
+	var bus := _event_bus()
+	if bus == null or not bus.has_signal("machine_alarm_raised"):
+		return
+	bus.connect("machine_alarm_raised", _on_machine_alarm)
+	_alarm_hooked = true
+
+func _on_machine_alarm(machine_id: String, alarm_id: String, _severity: int) -> void:
+	if alarm_id != "SMOKE":
+		return
+	smoke_alarms.append(machine_id)
+	var caller := "Ploegleider"
+	for w in workers:
+		if w != null and is_instance_valid(w) and String(w.get("npc_role")) == "shift_leader":
+			caller = String(w.get("npc_name"))
+			break
+	_radio_call(caller, "Rook bij %s! Iedereen weg daar — ik ga kijken." % machine_id)
+	var nd := _node_by_id(machine_id)
+	if nd.is_empty():
+		return
+	var pos : Vector3 = _node_pos(nd)
+	var resp : NPC = _pick_responder(machine_id, pos)
+	if resp != null and not _handling.has(machine_id):
+		resp.dispatch_to(pos, machine_id, SERVICE_SECS)
+		_handling[machine_id] = resp
+		_emit("npc_called_for_help", ["crew", String(resp.npc_name), machine_id])
+
 func tick(delta: float) -> void:
+	_ensure_alarm_hook()
 	if workers.is_empty():
 		return
 
@@ -484,8 +533,19 @@ func relieve_station(station_id: String) -> void:
 ## Clear a backlog: move RELIEF_KG from the machine's input to its output. This is
 ## ledger-neutral for LineFlow (in-transit total is unchanged) — it just represents
 ## the operator unchoking the machine so material flows on again.
+## How much one service at a CHOKED machine shovels off its reject pile
+## (operator 2026-09-23: "shovel, then reset on the HMI"). The reset itself
+## stays with the HMI — LineFlow.reset_choke() refuses while the pile is full.
+const SHOVEL_KG : float = 60.0
+
 func _relieve(nd: Dictionary) -> void:
 	if nd.is_empty():
+		return
+	if bool(nd.get("choked", false)):
+		var pile = nd.get("choke_pile", null)
+		if pile != null and is_instance_valid(pile) and pile.has_method("scoop"):
+			var dug : float = float(pile.call("scoop", SHOVEL_KG))
+			print("[CrewManager] shovelled %.1f kg off the reject pile at '%s'" % [dug, String(nd.get("id", "?"))])
 		return
 	var bin  = nd.get("in", null)
 	var bout = nd.get("out", null)

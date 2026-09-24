@@ -34,6 +34,7 @@ signal bale_consumed(bale: Node3D)
 signal belt_jam(belt_id: String)             # #211a — a bale rode cross-wise too long
 signal intake_overfill(belt_id: String)      # #211b — bales packed too tight
 signal thermal_shutdown(belt_id: String)     # #211c — sustained over-occupancy
+signal metal_detected(belt_id: String)        # rulings §11 — the sensor fired (not a latched fault)
 
 @export var deck_length   : float = 5.0     # horizontal run (m)
 @export var deck_width    : float = 2.5     # wide enough for 2 bales side by side
@@ -59,6 +60,22 @@ signal thermal_shutdown(belt_id: String)     # #211c — sustained over-occupanc
 ## existing saves keep working because the runtime value persists once set.
 ## request_start() / request_stop() still drive it from the HMI at runtime.
 @export var start_requested  : bool  = true
+## Rulings §11 (2026-09-23) — line 1's FIRST conveyor "has a sensor at about
+## three quarters of its length: on detection it slows to a stop, reverses
+## about one full conveyor length to clear the debris, slows to a stop, and
+## runs forward again until an operator stops it or the next detection." Only
+## opzetband_1 sets this (PlaceableCatalog._build_opzetband); the 3A/3B and
+## 3C/6 belts have no sensor. The cycle is NOT a latched fault: the belt keeps
+## cycling on the same piece until the operator stops it (request_stop) and
+## takes the scrap off the bale (MetalScrap), or until the metal is gone.
+@export var metal_detect : bool = false
+@export var metal_sensor_frac : float = 0.75
+enum MetalCycle { NONE, DECEL, REVERSE, DECEL2 }
+var _metal_cycle : int = MetalCycle.NONE
+var _metal_reverse_left_m : float = 0.0
+var metal_detections : int = 0               # cumulative sensor trips (HUD / tests)
+const _ALARM_METAL : String = "METAL-DETECT"
+const _METAL_SCRAP_SCRIPT : String = "res://src/scenes/world/MetalScrap.gd"
 
 # ── Optional shape extensions (opzetband variants) ─────────────────────────────
 ## A short HORIZONTAL discharge piece at the very top, after the incline (e.g. the
@@ -419,6 +436,7 @@ func request_start() -> void:
 ## #218 — HMI hook: STOP / fault clear / shift-end routes here to park the belt.
 func request_stop() -> void:
 	start_requested = false
+	_metal_cycle = MetalCycle.NONE     # "until an operator stops it": the cycle ends where it is
 
 var _cached_shredder: Node3D = null
 
@@ -846,7 +864,9 @@ func _process(delta: float) -> void:
 	# behaviour upstream is preserved — is_running() flipping false IS the
 	# stop intent, the ramp just stretches its physical effect.
 	var setpoint : float = belt_speed if running else 0.0
+	setpoint = _metal_cycle_setpoint(setpoint)                 # rulings §11: stop / reverse / stop
 	var live_speed : float = _belt_speed_smooth.approach(setpoint, delta) if _belt_speed_smooth != null else setpoint
+	_metal_cycle_advance(live_speed, delta)
 	# Drive the textured belt scroll speed from the live RAMPED state so a stopping
 	# belt is OBVIOUSLY winding down (the slats slow visibly) and a starting one
 	# is OBVIOUSLY winding up. Scale by live_speed so a slow belt scrolls slowly.
@@ -910,9 +930,13 @@ func _process(delta: float) -> void:
 			# Riding the belt toward the top — at the live (ramped) speed so the
 			# rider keeps gliding during coast-down even though `running` may
 			# already be false.
-			if live_speed > 0.0001:
-				r["progress"] = minf(1.0, r["progress"] + (live_speed * delta) / maxf(_path_total, 0.001))
+			if absf(live_speed) > 0.0001:
+				# A reversing belt (rulings §11) carries its riders BACK, down to
+				# the load end (progress 0) — "one full conveyor length".
+				var p_before : float = float(r["progress"])
+				r["progress"] = clampf(p_before + (live_speed * delta) / maxf(_path_total, 0.001), 0.0, 1.0)
 				_place_rider(r)
+				_metal_sense(r, p_before, float(r["progress"]))
 				if r["progress"] >= 1.0:
 					r["feeding"] = true
 		i -= 1
@@ -982,6 +1006,114 @@ func _tick_feeding_rules(delta: float) -> void:
 			_thermal_grace_t = 0.0
 
 ## Position a rider bale along the path from its progress (0..1).
+# ── Rulings §11 — the metal-detect cycle of line 1's first conveyor ──────────
+## The speed the cycle wants instead of the normal one: 0 while slowing to a
+## stop (DECEL / DECEL2), -belt_speed while reversing, else the caller's.
+func _metal_cycle_setpoint(normal: float) -> float:
+	if not metal_detect or _metal_cycle == MetalCycle.NONE:
+		return normal
+	if not start_requested:
+		_metal_cycle = MetalCycle.NONE
+		return 0.0
+	if _metal_cycle == MetalCycle.REVERSE:
+		return -belt_speed
+	return 0.0
+
+func _metal_cycle_advance(live_speed: float, delta: float) -> void:
+	if _metal_cycle == MetalCycle.DECEL:
+		if absf(live_speed) < 0.005:
+			_metal_cycle = MetalCycle.REVERSE
+			_metal_reverse_left_m = _path_total          # "about one full conveyor length"
+	elif _metal_cycle == MetalCycle.REVERSE:
+		_metal_reverse_left_m -= absf(live_speed) * delta
+		if _metal_reverse_left_m <= 0.0:
+			_metal_cycle = MetalCycle.DECEL2
+	elif _metal_cycle == MetalCycle.DECEL2:
+		if absf(live_speed) < 0.005:
+			_metal_cycle = MetalCycle.NONE               # "runs forward again"
+
+## The sensor sits at metal_sensor_frac of the path. A rider trips it when it
+## crosses that point going FORWARD while it still carries metal; going back
+## below it re-arms the sensor for the next pass, which is how the belt keeps
+## cycling on the same piece until the operator intervenes.
+func _metal_sense(r: Dictionary, p_before: float, p_after: float) -> void:
+	if not metal_detect:
+		return
+	var node = r.get("node")
+	if node == null or not is_instance_valid(node):
+		return
+	if p_after < metal_sensor_frac:
+		r["metal_armed"] = true
+		return
+	if p_before < metal_sensor_frac and bool(r.get("metal_armed", true)):
+		r["metal_armed"] = false
+		if int(node.get_meta("metal_pieces", 0)) > 0:
+			_on_metal_detected(r)
+
+func _on_metal_detected(r: Dictionary) -> void:
+	metal_detections += 1
+	_metal_cycle = MetalCycle.DECEL
+	var bale : Node3D = r["node"]
+	_ensure_metal_scrap(bale)
+	_set_metal_lamp(true)
+	var bid := _belt_id_for_bus()
+	metal_detected.emit(bid)
+	var bus := get_node_or_null("/root/EventBus")
+	if bus and bus.has_signal("machine_alarm_raised"):
+		bus.emit_signal("machine_alarm_raised", bid, _ALARM_METAL, 2)
+	print("[ShredderFeedBelt] METAL on '%s' at %.0f %% of the belt (%s) — slowing, reversing one length (detection #%d)"
+		% [bid, metal_sensor_frac * 100.0, String(bale.get_meta("metal_kind", "?")), metal_detections])
+
+## The scrap prop the operator can see and take: one per bale, spawned on the
+## first detection, riding the bale.
+func _ensure_metal_scrap(bale: Node3D) -> Node:
+	for c in bale.get_children():
+		if c.is_in_group("metal_scrap"):
+			return c
+	var scr : Node3D = load(_METAL_SCRAP_SCRIPT).new()
+	scr.set("kind", String(bale.get_meta("metal_kind", "wheel")))
+	scr.set("kg", float(bale.get_meta("metal_kg", 10.0)))
+	scr.set("source_bale", bale)
+	scr.set("belt", self)
+	var sz := Vector3(1.4, 1.2, 1.2)
+	for c in bale.get_children():
+		if c is CollisionShape3D and (c as CollisionShape3D).shape is BoxShape3D:
+			sz = ((c as CollisionShape3D).shape as BoxShape3D).size
+	scr.position = Vector3(sz.x * 0.25, sz.y * 0.55, sz.z * 0.20)   # poking out of the top
+	bale.add_child(scr)
+	return scr
+
+## MetalScrap calls this when the last piece leaves the bale: the rider is that
+## much lighter, the lamp goes back to CLEAR, the HMI alarm clears.
+func metal_cleared(bale: Node, kg: float) -> void:
+	for r in _riders:
+		if r.get("node") == bale:
+			r["kg_total"] = maxf(0.0, float(r.get("kg_total", 0.0)) - kg)
+	_set_metal_lamp(false)
+	var bus := get_node_or_null("/root/EventBus")
+	if bus and bus.has_signal("machine_alarm_cleared"):
+		bus.emit_signal("machine_alarm_cleared", _belt_id_for_bus(), _ALARM_METAL)
+
+func metal_cycle_active() -> bool:
+	return _metal_cycle != MetalCycle.NONE
+
+## The CLEAR / METAL dots on the detector head's cabinet (PlaceableCatalog
+## _attach_metaaldetector_head_to_opzetband names them, no_merge).
+func _set_metal_lamp(on: bool) -> void:
+	var head := find_child("MetaalDetectorHead", true, false)
+	if head == null:
+		return
+	for pair in [["LampMetal", on], ["LampClear", not on]]:
+		var lamp := head.get_node_or_null(String(pair[0])) as MeshInstance3D
+		if lamp == null:
+			continue
+		var m := lamp.material_override as StandardMaterial3D
+		if m == null:
+			continue
+		m.emission_enabled = bool(pair[1])
+		m.emission = m.albedo_color
+		m.emission_energy_multiplier = 2.5 if bool(pair[1]) else 0.0
+
 func _place_rider(r: Dictionary) -> void:
 	# Untyped fetch first — a typed declaration on a freed instance throws
 	# before the guard below could ever run (see the rider-loop note above).

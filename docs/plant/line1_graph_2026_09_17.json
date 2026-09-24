@@ -4,368 +4,362 @@
       "i": 0,
       "node": "opzetband_1#0(x-5.0)",
       "outs": [
-        "westa_band_1#1(x-14.1)"
+        "westa_band_1#2(x-14.1)"
       ]
     },
     {
       "i": 1,
-      "node": "westa_band_1#1(x-14.1)",
+      "node": "westa_band_1#2(x-14.1)",
       "outs": [
-        "shredder_1#2(x-14.1)"
+        "shredder_1#3(x-14.1)"
       ]
     },
     {
       "i": 2,
-      "node": "shredder_1#2(x-14.1)",
+      "node": "shredder_1#3(x-14.1)",
       "outs": [
-        "transport_belt#3(x-16.1)"
+        "transport_belt#4(x-16.1)"
       ]
     },
     {
       "i": 3,
-      "node": "transport_belt#3(x-16.1)",
+      "node": "transport_belt#4(x-16.1)",
       "outs": [
-        "transport_belt#5(x-18.6)"
+        "transport_belt#6(x-18.6)"
       ]
     },
     {
       "i": 4,
-      "node": "overband_magnet#4(x-16.1)",
+      "node": "transport_belt#6(x-18.6)",
       "outs": [
-        "transport_belt#5(x-18.6)"
+        "drum_feed_belt#7(x-18.6)"
       ]
     },
     {
       "i": 5,
-      "node": "transport_belt#5(x-18.6)",
+      "node": "drum_feed_belt#7(x-18.6)",
       "outs": [
-        "drum_feed_belt#6(x-18.6)"
+        "sga_feed_chute#8(x-18.6)"
       ]
     },
     {
       "i": 6,
-      "node": "drum_feed_belt#6(x-18.6)",
+      "node": "sga_feed_chute#8(x-18.6)",
       "outs": [
-        "sga_feed_chute#7(x-18.6)"
+        "vw_trommel#9(x-23.1)"
       ]
     },
     {
       "i": 7,
-      "node": "sga_feed_chute#7(x-18.6)",
+      "node": "vw_trommel#9(x-23.1)",
       "outs": [
-        "vw_trommel#8(x-23.1)"
+        "scheidingsgoot#10(x-29.1)"
       ]
     },
     {
       "i": 8,
-      "node": "vw_trommel#8(x-23.1)",
+      "node": "scheidingsgoot#10(x-29.1)",
       "outs": [
-        "scheidingsgoot#9(x-29.1)"
+        "friction_sep#11(x-32.1)",
+        "friction_sep#12(x-32.1)"
       ]
     },
     {
       "i": 9,
-      "node": "scheidingsgoot#9(x-29.1)",
-      "outs": [
-        "friction_sep#10(x-32.1)",
-        "friction_sep#11(x-32.1)"
-      ]
-    },
-    {
-      "i": 10,
-      "node": "friction_sep#10(x-32.1)",
-      "outs": [
-        "mech_dryer#12(x-37.1)"
-      ]
-    },
-    {
-      "i": 11,
       "node": "friction_sep#11(x-32.1)",
       "outs": [
         "mech_dryer#13(x-37.1)"
       ]
     },
     {
-      "i": 12,
-      "node": "mech_dryer#12(x-37.1)",
+      "i": 10,
+      "node": "friction_sep#12(x-32.1)",
       "outs": [
-        "blower#14(x-41.6)"
+        "mech_dryer#14(x-37.1)"
       ]
     },
     {
-      "i": 13,
+      "i": 11,
       "node": "mech_dryer#13(x-37.1)",
       "outs": [
         "blower#15(x-41.6)"
       ]
     },
     {
-      "i": 14,
-      "node": "blower#14(x-41.6)",
+      "i": 12,
+      "node": "mech_dryer#14(x-37.1)",
       "outs": [
-        "cyclone#16(x-46.4)"
+        "blower#16(x-41.6)"
       ]
     },
     {
-      "i": 15,
+      "i": 13,
       "node": "blower#15(x-41.6)",
       "outs": [
         "cyclone#17(x-46.4)"
       ]
     },
     {
-      "i": 16,
-      "node": "cyclone#16(x-46.4)",
+      "i": 14,
+      "node": "blower#16(x-41.6)",
       "outs": [
-        "mill#18(x-48.8)"
+        "cyclone#18(x-46.4)"
+      ]
+    },
+    {
+      "i": 15,
+      "node": "cyclone#17(x-46.4)",
+      "outs": [
+        "mill#19(x-48.8)"
+      ]
+    },
+    {
+      "i": 16,
+      "node": "cyclone#18(x-46.4)",
+      "outs": [
+        "mill#19(x-48.8)"
       ]
     },
     {
       "i": 17,
-      "node": "cyclone#17(x-46.4)",
+      "node": "mill#19(x-48.8)",
       "outs": [
-        "mill#18(x-48.8)"
+        "blower#20(x-52.2)",
+        "blower#21(x-52.2)"
       ]
     },
     {
       "i": 18,
-      "node": "mill#18(x-48.8)",
-      "outs": [
-        "blower#19(x-52.2)",
-        "blower#20(x-52.2)"
-      ]
-    },
-    {
-      "i": 19,
-      "node": "blower#19(x-52.2)",
-      "outs": [
-        "cyclone#21(x-54.7)"
-      ]
-    },
-    {
-      "i": 20,
       "node": "blower#20(x-52.2)",
       "outs": [
         "cyclone#22(x-54.7)"
       ]
     },
     {
-      "i": 21,
-      "node": "cyclone#21(x-54.7)",
+      "i": 19,
+      "node": "blower#21(x-52.2)",
       "outs": [
-        "transport_screw#23(x-57.7)"
+        "cyclone#23(x-54.7)"
       ]
     },
     {
-      "i": 22,
+      "i": 20,
       "node": "cyclone#22(x-54.7)",
       "outs": [
         "transport_screw#24(x-57.7)"
       ]
     },
     {
-      "i": 23,
-      "node": "transport_screw#23(x-57.7)",
+      "i": 21,
+      "node": "cyclone#23(x-54.7)",
       "outs": [
-        "flotation_tank#25(x-57.7)"
+        "transport_screw#25(x-57.7)"
+      ]
+    },
+    {
+      "i": 22,
+      "node": "transport_screw#24(x-57.7)",
+      "outs": [
+        "flotation_tank#26(x-57.7)"
+      ]
+    },
+    {
+      "i": 23,
+      "node": "transport_screw#25(x-57.7)",
+      "outs": [
+        "flotation_tank#26(x-57.7)"
       ]
     },
     {
       "i": 24,
-      "node": "transport_screw#24(x-57.7)",
+      "node": "flotation_tank#26(x-57.7)",
       "outs": [
-        "flotation_tank#25(x-57.7)"
+        "dewater_screw#27(x-50.4)"
       ]
     },
     {
       "i": 25,
-      "node": "flotation_tank#25(x-57.7)",
+      "node": "dewater_screw#27(x-50.4)",
       "outs": [
-        "dewater_screw#26(x-50.4)"
+        "friction_sep#28(x-47.7)"
       ]
     },
     {
       "i": 26,
-      "node": "dewater_screw#26(x-50.4)",
+      "node": "friction_sep#28(x-47.7)",
       "outs": [
-        "friction_sep#27(x-47.7)"
+        "kufferath_sieve#29(x-50.2)",
+        "kufferath_sieve#30(x-45.2)"
       ]
     },
     {
       "i": 27,
-      "node": "friction_sep#27(x-47.7)",
+      "node": "kufferath_sieve#29(x-50.2)",
       "outs": [
-        "kufferath_sieve#28(x-50.2)"
+        "mas_bak#31(x-50.2)"
       ]
     },
     {
       "i": 28,
-      "node": "kufferath_sieve#28(x-50.2)",
+      "node": "kufferath_sieve#30(x-45.2)",
       "outs": [
-        "mas_bak#30(x-50.2)"
+        "mas_bak#32(x-45.2)"
       ]
     },
     {
       "i": 29,
-      "node": "kufferath_sieve#29(x-45.2)",
+      "node": "mas_bak#31(x-50.2)",
       "outs": [
-        "mas_bak#31(x-45.2)"
+        "mas_droger#33(x-50.2)"
       ]
     },
     {
       "i": 30,
-      "node": "mas_bak#30(x-50.2)",
+      "node": "mas_bak#32(x-45.2)",
       "outs": [
-        "mas_droger#32(x-50.2)"
+        "mas_droger#34(x-45.2)"
       ]
     },
     {
       "i": 31,
-      "node": "mas_bak#31(x-45.2)",
+      "node": "mas_droger#33(x-50.2)",
       "outs": [
-        "mas_droger#33(x-45.2)"
+        "blower#35(x-49.7)"
       ]
     },
     {
       "i": 32,
-      "node": "mas_droger#32(x-50.2)",
+      "node": "mas_droger#34(x-45.2)",
       "outs": [
-        "blower#34(x-49.7)"
+        "blower#36(x-45.7)"
       ]
     },
     {
       "i": 33,
-      "node": "mas_droger#33(x-45.2)",
+      "node": "blower#35(x-49.7)",
       "outs": [
-        "blower#35(x-45.7)"
+        "cyclone#37(x-48.5)"
       ]
     },
     {
       "i": 34,
-      "node": "blower#34(x-49.7)",
+      "node": "blower#36(x-45.7)",
       "outs": [
-        "cyclone#36(x-48.5)"
+        "cyclone#37(x-48.5)"
       ]
     },
     {
       "i": 35,
-      "node": "blower#35(x-45.7)",
+      "node": "cyclone#37(x-48.5)",
       "outs": [
-        "cyclone#36(x-48.5)"
+        "extruder_silo#38(x-50.8)"
       ]
     },
     {
       "i": 36,
-      "node": "cyclone#36(x-48.5)",
+      "node": "extruder_silo#38(x-50.8)",
       "outs": [
-        "blower#34(x-49.7)"
+        "compactorband#39(x-54.4)"
       ]
     },
     {
       "i": 37,
-      "node": "extruder_silo#37(x-50.8)",
+      "node": "compactorband#39(x-54.4)",
       "outs": [
-        "compactorband#38(x-54.4)"
+        "extruder_1#40(x-63.9)"
       ]
     },
     {
       "i": 38,
-      "node": "compactorband#38(x-54.4)",
+      "node": "extruder_1#40(x-63.9)",
       "outs": [
-        "blower#34(x-49.7)"
+        "laser_filter#41(x-66.4)"
       ]
     },
     {
       "i": 39,
-      "node": "extruder_1#39(x-63.9)",
+      "node": "laser_filter#41(x-66.4)",
       "outs": [
-        "laser_filter#40(x-66.4)"
+        "lump_cart#46(x-66.4)"
       ]
     },
     {
       "i": 40,
-      "node": "laser_filter#40(x-66.4)",
+      "node": "lump_platform#42(x-66.4)",
       "outs": [
-        "lump_cart#45(x-66.4)"
+        "lump_cart_spot#43(x-66.4)"
       ]
     },
     {
       "i": 41,
-      "node": "lump_platform#41(x-66.4)",
+      "node": "lump_cart_spot#43(x-66.4)",
       "outs": [
-        "lump_cart_spot#42(x-66.4)"
+        "lump_cart#44(x-66.4)"
       ]
     },
     {
       "i": 42,
-      "node": "lump_cart_spot#42(x-66.4)",
+      "node": "lump_cart#44(x-66.4)",
       "outs": [
-        "lump_cart#43(x-66.4)"
+        "lump_cart_spot#43(x-66.4)"
       ]
     },
     {
       "i": 43,
-      "node": "lump_cart#43(x-66.4)",
+      "node": "lump_cart_spot#45(x-66.4)",
       "outs": [
-        "lump_cart_spot#42(x-66.4)"
+        "lump_cart#46(x-66.4)"
       ]
     },
     {
       "i": 44,
-      "node": "lump_cart_spot#44(x-66.4)",
+      "node": "lump_cart#46(x-66.4)",
       "outs": [
-        "lump_cart#45(x-66.4)"
+        "heetafslag#47(x-72.6)"
       ]
     },
     {
       "i": 45,
-      "node": "lump_cart#45(x-66.4)",
+      "node": "heetafslag#47(x-72.6)",
       "outs": [
-        "heetafslag#46(x-72.6)"
+        "ontwaterzeef#48(x-75.9)"
       ]
     },
     {
       "i": 46,
-      "node": "heetafslag#46(x-72.6)",
+      "node": "ontwaterzeef#48(x-75.9)",
       "outs": [
-        "ontwaterzeef#47(x-75.9)"
+        "centrifuge#49(x-79.0)"
       ]
     },
     {
       "i": 47,
-      "node": "ontwaterzeef#47(x-75.9)",
+      "node": "centrifuge#49(x-79.0)",
       "outs": [
-        "centrifuge#48(x-79.0)"
+        "weegschaal#50(x-81.1)"
       ]
     },
     {
       "i": 48,
-      "node": "centrifuge#48(x-79.0)",
+      "node": "weegschaal#50(x-81.1)",
       "outs": [
-        "weegschaal#49(x-81.1)"
+        "centrifuge#49(x-79.0)"
       ]
     },
     {
       "i": 49,
-      "node": "weegschaal#49(x-81.1)",
-      "outs": [
-        "centrifuge#48(x-79.0)"
-      ]
-    },
-    {
-      "i": 50,
-      "node": "voorraad_silo#50(x-83.7)",
+      "node": "voorraad_silo#51(x-83.7)",
       "outs": []
     },
     {
-      "i": 51,
+      "i": 50,
       "node": "compressor_a#-1(x-182.7)",
       "outs": [
         "compressor_b#-1(x-180.7)"
       ]
     },
     {
-      "i": 52,
+      "i": 51,
       "node": "compressor_b#-1(x-180.7)",
       "outs": [
         "compressor_a#-1(x-182.7)"

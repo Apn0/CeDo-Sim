@@ -600,6 +600,10 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	# 9.06 − 5.0 = 4.06 m past where the cursor would otherwise turn. Pushing
 	# the gap out by exactly that puts the corner pivot UNDER the lip.
 	{"id": "opzetband_1", "turn_deg": 90.0, "gap": 4.06},
+	# Rulings §20 (2026-09-24): "A scrap bin near the belt" — the scrap taken
+	# off a bale after the metal detector trips goes in here. Placement-only
+	# (role none), beside the first conveyor's loading end. x/z PLACEHOLDER.
+	{"id": "scrap_bin", "x": 3.4, "z": -2.5},
 	# turn_advance −2.9 — the Westa's deck tail is at its origin (deck_length 0),
 	# and the macro would centre it half a box (5.8/2) down the new leg, so the
 	# leg pre-advances back by that half to land the tail on the pivot, i.e.
@@ -642,12 +646,16 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	# discharging to +X); only the placement was wrong, and as a sequence entry it
 	# also pushed every machine after it ~4 m further along leg B.
 	#
-	# mount_over 3 is the uitvoerband's ENTRY INDEX (this entry is 4), not its
+	# mount_over 4 is the uitvoerband's ENTRY INDEX (this entry is 5), not its
 	# position — inserting any entry above this line shifts it and the magnet
 	# silently lands on the wrong machine. Guarded in-world by
 	# test_line1_overband_mount, which measures the two centres against each
 	# other rather than trusting the index.
-	{"id": "overband_magnet", "mount_over": 3},
+	# 2026-09-24: 3 → 4 — the scrap_bin entry inserted after opzetband_1
+	# (rulings §20) shifted every index after it by one; this anchor is an
+	# ENTRY INDEX and had to follow (test_line1_overband_mount caught it:
+	# 2.73 m off its belt). No operator line_1.json macro existed to re-save.
+	{"id": "overband_magnet", "mount_over": 4},
 	{"id": "transport_belt", "turn_deg": 90.0,
 	 "main_advance": 1.0},                             # short belt — leg C (north)
 	# drum_feed_belt gap 2.14 (né westa_band_1, #fold 2026-09-16) — DERIVED:
@@ -840,14 +848,23 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	# read "CONFIRMED", i.e. the file contradicted itself and pointed each
 	# reader at the other half. Settled now; do not re-litigate.
 	{"id": "friction_sep", "turn_deg": 90.0},
-	{"id": "kufferath_sieve", "x": -2.5, "z": 1.0},
-	{"id": "kufferath_sieve", "x":  2.5, "z": 1.0, "main_advance": 4.5},
-	{"id": "mas_bak",     "x": -2.5, "z": 1.0},
-	{"id": "mas_bak",     "x":  2.5, "z": 1.0, "main_advance": 4.0},
-	{"id": "mas_droger",  "x": -2.5, "z": 1.0},
-	{"id": "mas_droger",  "x":  2.5, "z": 1.0, "main_advance": 5.0},
-	{"id": "blower",      "x": -2.0, "z": 0.5},
-	{"id": "blower",      "x":  2.0, "z": 0.5, "main_advance": 2.5},
+	# ── #streams 2026-09-24 — OPERATOR RULING (round 7): this ONE friction
+	# separator feeds BOTH Kufferath sieves ("One separator feeds both sieves
+	# (split)"). Until today the pairs below carried only x-offsets, and the
+	# graph (dump_line1_graph) showed friction_sep → kufferath_sieve#28 ONLY —
+	# the second sieve, its MAS bak, dryer and blower saw no material, ever
+	# (measured in test_wet_side_beds: 0.0 kg in 400 s). The stream tags make
+	# the separator the split (first member of each train) and chain each side
+	# head-to-tail to its blower; the trains merge at the next main entry, the
+	# cyclone, exactly like the split after the scheidingsgoot.
+	{"id": "kufferath_sieve", "x": -2.5, "z": 1.0, "stream": "L"},
+	{"id": "kufferath_sieve", "x":  2.5, "z": 1.0, "stream": "R", "main_advance": 4.5},
+	{"id": "mas_bak",     "x": -2.5, "z": 1.0, "stream": "L"},
+	{"id": "mas_bak",     "x":  2.5, "z": 1.0, "stream": "R", "main_advance": 4.0},
+	{"id": "mas_droger",  "x": -2.5, "z": 1.0, "stream": "L"},
+	{"id": "mas_droger",  "x":  2.5, "z": 1.0, "stream": "R", "main_advance": 5.0},
+	{"id": "blower",      "x": -2.0, "z": 0.5, "stream": "L"},
+	{"id": "blower",      "x":  2.0, "z": 0.5, "stream": "R", "main_advance": 2.5},
 	# ── #serpentine 2026-09-17 — leg G, the turn back to east. ────────────────
 	# Consequence of the flotation-tank correction above, not a free choice.
 	# Rotating leg E by 180° rotates every leg behind it, and leg F's unchanged
@@ -866,11 +883,18 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	# now keeps it, since the leg that used to supply it has been rotated.
 	# Guarded by test_line1_flow_conformance S5 (plan box vs the building shell).
 	{"id": "cyclone", "turn_deg": 90.0},
-	{"id": "extruder_silo"},
+	# ── 2026-09-24 — the tail's two silent fall-backs. Consecutive MAIN entries
+	# get NO explicit edge; LineFlow's nearest-input-port fallback wires them,
+	# and here it picked blower L's inlet for BOTH the cyclone (a 2-cycle
+	# blower → cyclone → blower) and the compactorband — so extruder_silo was
+	# never fed and extruder_1 never received the compactorband's film
+	# (dump_line1_graph before the fix; test_line1_throughput's ungated
+	# "granulaat banked 0.0 kg"). explicit_from_prev pins both edges.
+	{"id": "extruder_silo", "explicit_from_prev": true},
 	# Gap 1.3 — see the matching note in LINE_3A_SEQ. Flow diagram edge 32:
 	# extruder_silo → compactor_band. The PCU stays integrated in the extruder.
 	{"id": "compactorband"},
-	{"id": "extruder_1"},
+	{"id": "extruder_1", "explicit_from_prev": true},
 	# #98 — Lump cart parking spot at the extruder's filter discharge. Same
 	# +X / partway-back offset as 3A/3B so the laser_filter outlet sits above
 	# the cart (was missing — Line 1's LaserFilter had no cart under it and

@@ -16,7 +16,16 @@ is the queue for the next rounds, with the reason each item waited.
   harness iteration. phys-03 (CoM pin, DONE this session) was its precondition.
 - **phys-05 Frozen-kinematic vehicles** bulldoze props with infinite mass
   (squeeze-eject risk). Real fix = AnimatableBody chassis re-architecture, high blast
-  radius across every vehicle. Interim MAX_SPEED clamp possible in LumpCart.gd.
+  radius across every vehicle. ~~Interim MAX_SPEED clamp possible in LumpCart.gd.~~
+  **Interim clamp LANDED 2026-09-23:** `LumpCart._integrate_forces` caps linear
+  velocity at `MAX_SPEED` (6 m/s — above any legitimate push: hand ~1.8 m/s,
+  forklift shove ~4 m/s) and angular velocity at `MAX_SPIN_RAD` (6 rad/s). The
+  old `MAX_SPEED := 3.5` constant had no reader at all. Measured with the
+  integrator disabled: a 50 m/s impulse left the cart at 48.09 m/s and a twist
+  at 53.33 rad/s; with the clamp 5.76 m/s / 5.58 rad/s, and a 1.2 m/s walking
+  shove is untouched. Guard `test_lump_cart_speed_clamp` (6 checks), in `run.sh`.
+  This bounds the SYMPTOM for the cart only; the chassis re-architecture is
+  still the fix, and other props (bales, containers) can still be ejected.
 - **tex-05 `_pmat(role)` pipeline**: migrate `_mat()` builders machine-by-machine
   riding the photo_audit loop, one operator render approval per machine.
 
@@ -116,6 +125,16 @@ is the queue for the next rounds, with the reason each item waited.
 - ~~**keybinds comment**: BaleClamp.gd ~206-209 comments still say "H" for the
   LPG valve~~ — **FIXED 2026-09-22**, comment now says I (code was already
   correct).
+
+## 2026-09-23 overnight run — what moved from this queue and what did not
+
+Closed or advanced that night (evidence in `docs/audit/overnight_enhancement_2026-09-23.md`):
+DESIGN P2 (trip really stops the drive), P6 cart half (overflow + visible
+fill), P5 compactor half (kijkglas level), Q2 (checkpoint), Q4 (F1 key sheet),
+Q5 (map labels), phys-05 interim (cart speed clamp), plus LineFlow at 10 Hz
+and two harness reds root-caused. Still queued exactly as listed above:
+npc-06/npc-07 (the DRIVE_TO_INDOOR stall is untouched), phys-02, phys-05's real
+chassis fix, tex-02/05/07, npc-10, and the `_dump_waste` half of P6.
 
 ## Where the full audit lives
 Raw findings (40, with file:line evidence) + the lane plan were produced by the

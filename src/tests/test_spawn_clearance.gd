@@ -104,7 +104,16 @@ const PEN_VEHICLE : float = 0.10
 const PEN_SOLID : float = 0.20
 # Frames given to BaleYardManager's drain queue once the probes are parked. The
 # queue is time-sliced at 2 ms/frame, so a yard materialises over many frames.
-const BALE_DRAIN_FRAMES : int = 180
+# Bale streaming is waited for in WALL time and on the condition, never a frame
+# count: BaleYardManager.tick() refreshes its "vehicle" cache every 2.0 s of
+# wall time, and the probes below are only seen at that refresh. Measured
+# 2026-09-23: a fixed 180-frame window streamed bales at 55 fps (3.3 s) and
+# streamed NONE at 140 fps (1.3 s — the frame rate after LineFlow moved to
+# 10 Hz), turning the vacuity guard red on a healthy world. MIN keeps the old
+# window's wall-clock worth of drain after the first body; MAX bounds a world
+# that never streams (which then fails the guard, as it should).
+const BALE_DRAIN_MIN_S : float = 3.0
+const BALE_DRAIN_MAX_S : float = 12.0
 
 # Bodies parked on layer 20 with mask 0 are QUERY-ONLY proxies (ShiftCarSpawner
 # .gd:177-178). They are reported but never scored: nothing can physically
@@ -725,15 +734,23 @@ func _check_c_bale_yards(machines: Array) -> void:
 		add_child(probe)
 		probe.global_position = Vector3(pc.x, Plant.floor_top_y(), pc.y)
 		probes.append(probe)
-	for _f in range(BALE_DRAIN_FRAMES):
+	var t_drain0 := Time.get_ticks_msec()
+	var drain_frames := 0
+	var drain_s := 0.0
+	while true:
 		await get_tree().process_frame
+		drain_frames += 1
+		drain_s = float(Time.get_ticks_msec() - t_drain0) / 1000.0
+		var so_far : int = get_tree().get_nodes_in_group("yard_bale_rb").size()
+		if (so_far > 0 and drain_s >= BALE_DRAIN_MIN_S) or drain_s >= BALE_DRAIN_MAX_S:
+			break
 
 	# Bale bodies vs solid geometry. Only the RBs the time-sliced drain queue has
 	# actually produced exist yet; the count is printed so a small population can
 	# never be mistaken for a clean result.
 	var rbs : Array = get_tree().get_nodes_in_group("yard_bale_rb")
-	_info("bale RBs materialised so far: %d (%d probe(s), %d frames of drain)"
-		% [rbs.size(), probes.size(), BALE_DRAIN_FRAMES])
+	_info("bale RBs materialised so far: %d (%d probe(s), %d frames / %.1f s of drain)"
+		% [rbs.size(), probes.size(), drain_frames, drain_s])
 	if rbs.is_empty():
 		_check(false, "at least one bale body exists to test — 0 would make this check vacuous")
 		_free_probes(probes)

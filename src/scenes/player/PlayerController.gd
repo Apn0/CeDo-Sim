@@ -90,6 +90,9 @@ var _look_prompt: String = ""
 # NOT implement crosshair_prompt/crosshair_interact (it'd require touching
 # every catalog-built body and stomp the simpler "tap E with wrench" feel).
 var _knife_target : Node3D = null   # node currently under the crosshair (knife body)
+# ── P3 stage B — GENERIC hold-E (VacuumPotInteract.crosshair_hold_tick) ──────
+var _hold_target : Node = null
+var _hold_active : bool = false
 var _knife_holding : bool = false   # E currently held + hold-E in flight
 var _knife_prompt_text : String = "" # last text we pushed to interaction_prompt_show
 const _KNIFE_REPLACE := preload("res://src/scenes/interactions/PelletizerKnifeReplace.gd")
@@ -413,6 +416,7 @@ func _physics_process(delta: float) -> void:
 	_update_crosshair_interaction()
 	_update_knife_replace_hold(delta)
 	_update_shaft_cut_hold(delta)
+	_update_generic_hold(delta)
 	# Animation Phase 1: feed the body's BlendSpace2D so 3rd-person/orbit shows
 	# a real walk cycle. No-op for first-person (the body's head is on a
 	# hidden layer + the FP eye sits between the body's shoulders).
@@ -2003,3 +2007,32 @@ func _update_animation_blend() -> void:
 var _in_vehicle_seated : bool = false
 func set_in_vehicle_animation(seated: bool) -> void:
 	_in_vehicle_seated = seated
+
+## P3 stage B (2026-09-24) — a GENERIC hold-E. Any crosshair interactable that
+## implements crosshair_hold_tick(delta, player) -> float (0..1) gets E held
+## on it integrated here; 1.0 means it completed itself. Releasing E, or the
+## crosshair drifting off it, calls crosshair_hold_cancel(). First user: the
+## vacuum pot's lid pull (VacuumPotInteract), whose required time grows with
+## the minutes since the alarm. A plain press still goes to crosshair_interact
+## (the pot ignores presses while its lid is on).
+func _update_generic_hold(delta: float) -> void:
+	var target : Node = _look_interactable
+	var can : bool = target != null and is_instance_valid(target) and target.has_method("crosshair_hold_tick")
+	var e_held : bool = Input.is_action_pressed("interact") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
+	if not can or not e_held:
+		if _hold_active and _hold_target != null and is_instance_valid(_hold_target) \
+				and _hold_target.has_method("crosshair_hold_cancel"):
+			_hold_target.call("crosshair_hold_cancel")
+		_hold_active = false
+		_hold_target = null
+		return
+	if _hold_target != target:
+		if _hold_active and _hold_target != null and is_instance_valid(_hold_target) \
+				and _hold_target.has_method("crosshair_hold_cancel"):
+			_hold_target.call("crosshair_hold_cancel")
+		_hold_target = target
+	_hold_active = true
+	var p : float = float(target.call("crosshair_hold_tick", delta, self))
+	if p >= 1.0:
+		_hold_active = false
+		_hold_target = null

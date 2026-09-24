@@ -86,7 +86,7 @@ count.
 | failing check | note |
 |---|---|
 | ~~`regression verdict`~~ | ~~door/gate check~~ — **FIXED 2026-09-13**: `structure_items` cleared from `world_layout.json` (was 1 entry from prior session work) |
-| `test_nav_connectivity` | `every on-site post routes to the canteen and back (2 broken: Abdellilah canteen←post (ends 14.32 m short; post at (-215.6, 82.7)), Mohammed …)` — 9 ok, 1 fail since #216. **Requires operator to move crew posts off ISLAND** (inside wind_sifter collider). Do NOT auto-fix. |
+| ~~`test_nav_connectivity`~~ | ~~9 ok, 1 fail since #216, "requires operator to move crew posts off ISLAND"~~ — **FIXED 2026-09-23 by an operator RULING, not a navmesh change**: nobody has a post at any windzifter, and the permanent feeder is a line-1 role (Merlo + containers). `wind_sifter` left `CrewManager.ZONES["permanent_feeder"]`; on a 3A-only world the two feeders now hold their spawn spot (the suite's own `ADVIS`) instead of a post inside the blower next to the windzifter. `PASS (10 ok)` 3 of 3. `docs/audit/operator_session_2026-09-23.md` task 2 |
 | `test_npc05_realworld` | EXPECTED red — the DRIVE_TO_INDOOR stall, see below. Do not silence it |
 | ~~`test_line3b_flow_conformance`~~ | ~~missing input edge in LineFlow topology~~ — **FIXED 2026-09-13**: added `explicit_from_prev: true` to plasmaq entry in `LINE_3B_SEQ` (gap 15 m > MAX_LINK_DIST 14 m) |
 | ~~`test_project_sweep_guards`~~ | ~~B1b WorldLayout.structure_items starts empty (1 entries)~~ — **FIXED 2026-09-13**: cleared local world state |
@@ -124,6 +124,102 @@ count.
 > The same night, the dirty tree measured **5** reds. The 3 extra were the
 > WallOpenings flips, the intermittent navmesh collapse, and the #269 test break.
 
+> **2026-09-23 — the newest measurement; it supersedes the 2026-09-22 one
+> above.** Full harness on branch `claude/ready-daacfa` at `577d7d4` (seven
+> commits on top of `a619b1e`: P2 trip stop, P6 cart overflow, Q2/Q4/Q5,
+> phys-05 clamp, soak probe), run detached from the worktree with `PROJ=`
+> set: `== done (exit 1)`, **111 steps, 35 min, 105 logs by mtime, 0
+> timeouts, 3 reds** — the two known ones (`test_nav_connectivity` 14.67 m
+> short, identical; `test_npc05_realworld` expected) plus `test_jam_baseline`
+> at `6 polygons, 7 vertices`. That third one is the "intermittent navmesh
+> collapse" and it is now root-caused: the suite waited for the polygon count
+> to hold still for 60 frames, which latched onto the PREVIOUS bake's mesh
+> whenever the 37-body fixture bake took longer than that on its thread (the
+> world's own `bake_finished` handler printed AFTER the FAIL lines in the log;
+> the operator checkout's last jam log shows the same latch at 10 polygons).
+> Both suites now wait on `NavigationRegion3D.is_baking()` first, and
+> `MainWorld.rebake_navigation()` queues a rebake that lands during a running
+> bake; measured after the fix, jam-baseline 3 of 3 green at 69/72/71 bake
+> frames (§8 of the audit doc). A **second full harness** the same night, with
+> that fix, the compactor kijkglas and LineFlow at 10 Hz in place: 112 steps,
+> 32 min, again 3 reds — the two operator-owned ones plus `spawn clearance
+> NOLINE`, which was the SAME class of defect: the suite waited 180 frames for
+> bale bodies while `BaleYardManager` refreshes its vehicle cache every 2.0 s
+> of wall time, and the faster frame rate (55 → 140 fps headless) turned 180
+> frames into 1.3 s. Fixed to wait on wall time; NOLINE 12 ok / LINE 11 ok
+> after. So the honest red list on the branch is the two operator-owned reds.
+> Eight new suites are wired into `run.sh`: `test_motor_trip_stops_conveying`,
+> `test_lump_cart_overflow`, `test_lump_cart_speed_clamp`,
+> `test_save_checkpoint`, `test_keybind_sheet`, `test_map_labels`,
+> `test_compactor_sight_glass`, plus `test_lump_chunk_ccd` from the previous
+> session. Full story: `docs/audit/overnight_enhancement_2026-09-23.md`.
+
+> **2026-09-23 evening — the newest measurement; it supersedes the morning
+> one above.** Full harness on `claude/ready-daacfa` at `99b3a35` (the P1
+> belt beds committed, 15 commits on top of `a619b1e`): `== done (exit 1)`,
+> **113 steps, 33 min, 106 logs by mtime, 0 timeouts, 0 SCRIPT ERROR lines,
+> 2 reds** — `test_nav_connectivity` (14.67 m short, identical) and
+> `test_npc05_realworld` (expected). The next commit turned the first one
+> green by an operator ruling (see the table above), measured 3 of 3, so the
+> branch's honest red list is **`test_npc05_realworld` alone**.
+> `docs/audit/operator_session_2026-09-23.md`.
+
+> **2026-09-23 night — the newest measurement; it supersedes the evening one
+> above.** Full harness on `claude/ready-daacfa` at `99fc375` (the interactive
+> session's five task commits on top: P1 belt beds, the crew ruling, P5 silo
+> windows + belt speeds, P6/P2 choke + smoke, the jam-baseline doorway):
+> `== done (exit 1)`, **116 steps, 36 min (22:06 → 22:42), 109 logs by mtime,
+> 0 timeouts, 0 SCRIPT ERROR lines, ONE red — `test_npc05_realworld`
+> (expected).** `test_nav_connectivity` PASS (10 ok) and `test_jam_baseline`
+> PASS (16 ok, 0 fail, **0 skipped**) inside the run. Five suites are new
+> since the morning: `test_belt_film_field`, `test_silo_level_windows`,
+> `test_chute_choke`, `test_trip_smoke` in the main loop, and the jam
+> baseline's own doorway. `docs/audit/operator_session_2026-09-23.md`.
+
+> **2026-09-24 16:57 — harness run 5 at `adb6cbd` was STOPPED at 6 min by
+> hand.** The operator chose to play-test next; the harness writes its test
+> saves into the same `app_userdata` he plays in, so it must not run beside
+> a game. The round-9 changes on top (`test_belt_speed_mismatch` reordered
+> to his "chute packs first", `metal_chance` 0.25) were measured suite by
+> suite (audit doc task 19); the last FULL harness is the 15:40 one below.
+> Killing a detached harness needs its bash AND its Godot child — the child
+> survives the shell — and only the CONSOLE binary is ever the harness's.
+
+> **2026-09-24 15:40 — the newest measurement; it supersedes the 01:23 one
+> above.** Full harness on `claude/ready-daacfa` at `8b52fc5` (the vacuum-pot
+> mini-game on top of the line-1 tail fix): `== done (exit 1)`, **122 steps,
+> 47 min (15:40:10 → 16:27:13), 115 logs by mtime, 0 timeouts, 0 `^SCRIPT
+> ERROR` lines, ONE red — `test_npc05_realworld` (expected).** Inside:
+> `test_vacuum_pot_minigame` 33 ok, `test_line1_metal_detect` 22 ok,
+> `test_wet_side_beds` 31 ok, `test_nav_connectivity` 10 ok,
+> `test_jam_baseline` 16 ok / 0 skipped.
+
+> **2026-09-24 01:23 — the newest measurement; it supersedes the 00:09 one
+> above.** Full harness on `claude/ready-daacfa` at `9471d84` (the wet-side
+> beds and the metal-detecting first conveyor on top of `9cc6ea4`): `== done
+> (exit 1)`, **121 steps, 36 min (01:23:34 → 01:59:22), 114 logs by mtime, 0
+> timeouts, 0 `^SCRIPT ERROR` lines, ONE red — `test_npc05_realworld`
+> (expected).** Inside: `test_wet_side_beds` 31 ok, `test_line1_metal_detect`
+> 22 ok, `test_nav_connectivity` 10 ok, `test_jam_baseline` 16 ok / 0 skipped.
+> Not in this run (committed after it): the line-1 tail fix, which the line-1
+> suites measured green individually (task 14 in the audit doc).
+
+> **2026-09-24 00:09 — the newest measurement; it supersedes the night one
+> above.** Full harness on `claude/ready-daacfa` at `9cc6ea4` (on top of
+> `99fc375`: P3 stage A vacuum pots, the doseersilo as an open tilted trough,
+> per-bale weight variance + LINE_1_FOLIE, and the lint fix): `== done (exit
+> 1)`, **119 steps, 41 min (00:09:29 → 00:50:49), 112 logs by mtime, 0
+> timeouts, 0 SCRIPT ERROR lines, ONE red — `test_npc05_realworld`
+> (expected).** Inside the run: `test_nav_connectivity` PASS (10 ok),
+> `test_jam_baseline` PASS (16 ok, 0 fail, 0 skipped), the two new suites
+> `test_doseersilo_trough` 14 ok and `test_bale_weight_variance` 17 ok. Two
+> things worth knowing about reading that log: `grep -c 'SCRIPT ERROR'` says 1,
+> and it is `test_map_labels`' own check text ("no SCRIPT ERROR above = the
+> draw ran"), not an error — grep `^SCRIPT ERROR` instead; and the first
+> attempt at `8d43c87` stopped at step 4, the unused-parameter lint, because
+> the rebuilt doseersilo no longer reads its `size` parameter (renamed
+> `_size`, the lint's own suggestion). `docs/audit/operator_session_2026-09-23.md`.
+
 > **2026-09-21 — everything CeDo that is not this repo lives in ONE folder:
 > `D:\cedo_archive`.** Old bisect/merge/verify worktrees and clones were removed
 > after their uncommitted edits, untracked files and (for standalone clones) a
@@ -146,6 +242,15 @@ count.
 > structure_items)`. Placing a gate re-arms the checks. Which of the two suites
 > should own the door is an operator call. Until then, read this suite's
 > `NOTE:` line, not its PASS.
+>
+> **2026-09-23 evening — ruled and fixed: the SUITE owns the door.** The
+> operator chose "suite builds its own gate", so `test_jam_baseline` now
+> carves his 3A/3B gate itself, in memory, from the entry his own
+> `world_layout.json` backups still hold (`_build_line_3a`, through
+> `BuildMode._apply_layout_entry`), and asserts `WorldLayout.structure_items`
+> stays empty. Measured: `PASS (16 ok, 0 fail, 0 skipped)`, jam 1 arrived
+> after 158.6 s, jam 3 after 94.1 s. `regression verdict` and B1b are
+> untouched. `docs/audit/operator_session_2026-09-23.md` task 5.
 
 **`test_jam_baseline` was `14 ok, 0 fail, 0 skipped` (2026-09-03) — the first time this suite
 had ever evaluated all fourteen of its checks.** It was 11 ok + 3 silently
@@ -390,18 +495,18 @@ are **geometry keys**, not placeable ids, and stay.
 
 ## Where things are
 
-313 GDScript files, 109,663 lines under `src/` (measured 2026-08-23; the
-previous "285 / 105,241 / 72 tests" in this table was ~6 months stale, so treat
-this one as re-checkable too — `find src -name '*.gd' | wc -l`):
+417 tracked GDScript files, 132,980 lines under `src/` (measured 2026-09-23
+with `git ls-files 'src/*.gd'`; the 2026-08-23 figure was 313 / 109,663 and
+the one before that ~6 months stale — treat this one as re-checkable too):
 
-| dir | tracked `.gd` (2026-09-05) | what |
+| dir | tracked `.gd` (2026-09-23) | what |
 |---|---|---|
-| `src/scenes/` | 135 | world, player, NPC, vehicles, HUD/HMI |
-| `src/tests/` | 151 | every proof; also the render + shot tools (109 are `test_*.gd`) |
+| `src/scenes/` | 136 | world, player, NPC, vehicles, HUD/HMI |
+| `src/tests/` | 193 | every proof; also the render + shot tools and probes (138 are `test_*.gd`) |
 | `src/sim/` | 47 | LineFlow, TagMap, MachineFlow, machine models |
 | `src/autoload/` | 19 | singletons (WorldLayout, SettingsManager, AudioManager…) |
 | `src/build/` | 16 | `PlaceableCatalog` + `BuildMode` — the two biggest files |
-| `src/data/`, `src/operator/`, `src/util/` | 5 | plant data, operator context |
+| `src/data/`, `src/operator/`, `src/util/` | 6 | plant data, operator context |
 
 ## Doc index — `docs/`
 
@@ -416,6 +521,10 @@ this one as re-checkable too — `find src -name '*.gd' | wc -l`):
 | `docs/audit/pr_merge_2026-08-29.md` | **Ten bot PRs, all reported "mergeable ✅", two of which merge cleanly into a file that does not parse.** Records the `shell` collision that would have taken the harness down, why GitHub structurally cannot see it, the pre-merge `uniq -d` check, and the LineFlow correlation that looked damning and was measured wrong |
 | `docs/audit/material_trace_2026-08-18.md` | Follow one bale end-to-end: the symbol-flow + material-census tools, mass-minting proven structurally closed, and the spawn-clearance check that was unsatisfiable for 4 weeks |
 | `docs/audit/robustness_and_coverage_2026-09-21.md` | **Crash-safe persistence (`AtomicFile`) and 26 formerly-unrun suites now gated.** Why a save killed mid-write used to load back as an empty factory and get autosaved over; the delete-resurrection bug caught in the first draft; 5 mutation proofs. Plus the bisect that pins the `test_gate_carve` red on two rotation-sign flips in the uncommitted `WallOpenings.gd`, which reds are identical at clean HEAD, and what was measured but not touched |
+| `docs/audit/overnight_enhancement_2026-09-23.md` | **The unattended 2026-09-23 run: 12 commits, every one measured first.** A MotorOverload trip that never stopped conveying, a Lumpenwagen that lost kg when full, checkpoint saves, the F1 key sheet, map labels, the cart speed clamp, the compactor kijkglas, LineFlow moved to 10 Hz (2.85 → 0.54 ms/frame), and two harness reds root-caused as frame-count races (navmesh bake, bale streaming). Two full harness runs, the operator list at the end |
+| `docs/audit/operator_session_2026-09-23.md` | **The interactive 2026-09-23 session: tasks ranked by operator effort against sim impact, each answered by AskUserQuestion then built and measured.** Task 1: film beds on every belt (P1), the inclined belt's deck running the wrong diagonal, the cost probe, the renders; per-task evidence and the open questions each one left |
+| `docs/DESIGN_vacuum_pot_minigame_2026-09-23.md` | **P3 stage B as the operator described it: not a hold-E but a mini-game** — lid pull that stiffens with time, plamuurmes planes at 90 %, the block by hand, re-lid, the two-minute race. Systems, parameters (his vs placeholder), test strategy. **Built 2026-09-24** (`test_vacuum_pot_minigame`, 33 ok); the feel is his to play |
+| `docs/plant/operator_rulings_2026-09-23.md` | **Operator answers from memory, 2026-09-23** — film look, colour order, bed depth per belt, where wet flake is visible, screws "differ". Recollections, not documents: cite them as such |
 | `docs/audit/assets_loss_and_restore_2026-09-21.md` | **`assets/` was wiped and restored.** Godot's `.md5` fingerprints identify originals byte for byte: 159 of 273 are back exact and 101 are cache-only (listed; do not re-import them). Also the `Merlo.fbx` re-import trap, what `winfr` did and did not recover (nothing exact), and the method to reuse |
 | `docs/BACKLOG_ultracode_2026-07-19.md` | Deferred queue — 16 of 40 findings landed; also records the npc-05 vacuous-green correction |
 | `docs/DESIGN_SUGGESTIONS_2026-07-08.md` | Ranked roadmap, P1-P8 physicalization + Q1-Q8 QoL, every item file-cited |
@@ -427,6 +536,160 @@ this one as re-checkable too — `find src -name '*.gd' | wc -l`):
 
 ## Traps that have bitten before
 
+- **`Node3D.rotation.x = +θ` sends the local +Z end DOWN, and a symmetric deck
+  box hides a wrong sign for months.** Measured 2026-09-23
+  (`src/tests/probe_deck_orientation.gd`): Rx(+45°) maps +Z to
+  (0, −0.707, +0.707). `inclined_belt_8m`'s 11 m deck was rotated +angle while
+  its rollers and A-frames climbed the other way, so the deck crossed its own
+  frame at mid-height with the motor floating in the air
+  (`docs/plant/renders/shot_belt_bed_inclined_belt_8m_before.png`); every
+  render "looked like a belt" because a box has no front. BeltBuilder's
+  tilted decks use −incline for exactly this reason. When you seat anything on
+  a deck, read the built skin's `global_transform.basis.z` and check it climbs
+  toward the top roller; never derive the sign from the builder's comment.
+  Since P1 every BeltBuilder deck also carries a `FilmFlakeField` in belt mode
+  (a belt that builds its own deck in `extras` seats one with
+  `BeltBuilder.attach_film_field`), and a spec that zeroes the deck's width or
+  thickness now gets NO skin instead of a zero-volume one. Two more measured
+  facts from the same day: `NoiseTexture2D` generates on a thread and renders
+  blank until it is done (the first heap render was black — build a texture
+  from an `Image` when a capture or a first frame must show it), and a
+  MultiMesh driven from a vertex shader (`world_vertex_coords`, per-instance
+  `INSTANCE_CUSTOM`) costs the CPU ~3 µs per field per frame for 14 000
+  flakes where CPU-animated instances cost 1 ms for 3 500 — animate with
+  uniforms, write transforms once.
+- **A fixture that reaches the flow graph with no wired input gets whatever
+  inlet is nearest — and that can be the machine beside it, both ways.**
+  Measured 2026-09-24: the overband magnet (mounted OVER the uitvoerband,
+  MachineFlow process "sort") had no in-edge, so the fallback wired
+  `transport_belt#5 → magnet → transport_belt#5`; belt 2 received 8.6 kg/s
+  with 3 kg/s injected and the magnet "moved" 6 kg/s — the sibling 2-cycle of
+  the graph trap above, at the head of line 1, unnoticed because every suite
+  asserted the head chain and the twin streams and none the kg into belt 2.
+  Anything the material does not pass THROUGH is role none. And a belt's
+  `_backlog_kg` is not a heap: it is whatever the buffer holds after the tick's
+  move — a model sized to a fallback capacity tripped the field-less 10 m feed
+  belts on their ordinary transit load and the e-stop cut line 1's feed
+  (`test_line1_throughput` red for two runs). Size a motor model to the deck it
+  drives, or do not attach one.
+- **Inserting an entry into a line SEQ shifts every index after it, and
+  `mount_over` / `at_entry` are indices.** 2026-09-24: a `scrap_bin` entry after
+  opzetband 1 put the overband magnet 2.73 m off its belt until its
+  `mount_over: 3` became 4 (`test_line1_overband_mount`). Before inserting,
+  grep the SEQ for `mount_over|at_entry` and check `user://macros/` for a saved
+  override of that line (its chain is indexed the same way).
+- **A fresh `class_name` is unknown to a standalone headless run.** Godot
+  resolves class names through `.godot/global_script_class_cache.cfg`, which
+  the editor (or the harness's `== importing ==` step) rebuilds — a bare
+  `godot --headless --path . res://…tscn` after adding a script with
+  `class_name X` sees `Identifier "X" not declared`, the suite fails to parse,
+  its scene boots with no script and idles to the watchdog. Measured
+  2026-09-24 with `VacuumPotService` (254 s lost). Reference NEW scripts by
+  `preload("res://…")` from the code and suites written the same day; leave
+  the `class_name` for the editor. Same day, next door: `call()` into a
+  method whose parameter is `Array[String]` needs a typed array
+  (`var evs : Array[String] = […]`), or it is an `Invalid type` SCRIPT ERROR.
+- **Two consecutive MAIN entries of a line SEQ have NO edge of their own —
+  LineFlow's nearest-input-port fallback wires them, and it picks whatever
+  inlet is closest.** Measured 2026-09-24 with `dump_line1_graph`: at line 1's
+  tail the nearest inlet to the cyclone's bottom mouth AND to the
+  compactorband's lip was blower L's, so the graph held a blower → cyclone →
+  blower 2-cycle, blower L at in-degree 3, and an extruder that nothing fed —
+  for as long as that tail existed. No suite failed: they assert the head
+  chain and the twin streams. `test_line1_throughput`'s ungated info line
+  read `granulaat banked 0.0 kg after 600 s` the whole time and 23.7 kg the
+  moment the two edges were pinned with `"explicit_from_prev": true`. When a
+  SEQ's next main machine is not the geometrically nearest inlet of the
+  previous one — a silo fed from above, a compactor beyond a blower — pin the
+  edge; and read the info lines a suite prints without gating, they are
+  measurements too.
+- **A visual grafted onto a node before that node's `_ready()` is a visual
+  that does not exist.** `_build_opzetband` attached the #196 metal-detector
+  head to the belt's `InclinePivot`, which `ShredderFeedBelt` builds in
+  `_ready()` — after `build_node` returns and the caller adds the model to
+  the tree. So the graft looked for a pivot that was not there yet, returned,
+  and for the whole life of #196 no real build ever carried the head; the
+  coil tunnel and its REJECT placard were code only. Measured 2026-09-24
+  (`build_node("opzetband_1")` + 2 frames → no `MetaalDetectorHead`). Fixed
+  by grafting on `ready`; guarded by `test_line1_metal_detect`. When a builder
+  decorates a SCRIPTED node, check whether that node builds itself in
+  `_ready()` — if it does, decorate on its `ready` signal, and assert the
+  decoration on a node that has been in the tree for a frame.
+- **GDScript lambdas capture locals BY VALUE.** `var done := false;
+  x.connect(func(): done = true)` never changes the outer `done` — the lambda
+  writes its own copy. Measured 2026-09-24 in `test_line1_metal_detect`: two
+  "fed through" checks waited their full 240 s on such a flag. Read the state
+  from the object (`rider_count()`), or capture a Dictionary/Array (reference
+  types) and write into it.
+- **A Dictionary whose contents change cannot be a Dictionary KEY.** Measured
+  2026-09-24, `test_wet_side_beds` first run: the suite keyed a Dictionary by
+  LineFlow's node dicts, the lookups worked before the first `tick()` and threw
+  `Invalid access to property or key '{ "node": … }' on a base object of type
+  'Dictionary'` after it — a Dictionary key is hashed by CONTENT, and `thru`,
+  `moist`, `spin` change every tick. Key by the node's instance id, or keep an
+  Array of records that hold the dict by reference. Same run, same lesson in
+  another coat: a belt-mode `FilmFlakeField` has NO `_mat` (its flakes wear a
+  ShaderMaterial); the wet tint lives on `_heap_mat` and the shader's `tint`
+  uniform, so a test that reads `_mat.albedo_color` reads a null.
+- **Check a deck's tilt sign against the machine's PORTS, not its comment.**
+  The Kufferath sieve's screen deck was built at −14° with the comment "feed
+  box at the high (-Z) end" — but −14° tips local −Z DOWN (the goot builder's
+  own note, and `probe_deck_orientation`), so the feed box had stood at the
+  LOW end since the day it was built while MachineFlow's ports (inlet high at
+  −Z, outlet low at +Z) said otherwise. Nothing caught it because no material
+  was ever drawn on the deck. Found 2026-09-24 the moment a bed had to slide
+  DOWN it; fixed to +14° and guarded by `test_wet_side_beds` (the deck's
+  `basis.z.y` must be negative). When a builder tilts a surface, assert which
+  end is low against `MachineFlow` — the two agree nowhere by construction.
+- **An opaque shell hides whatever you put inside it — a "sight glass" over a
+  closed drum shows the drum, not the level.** Measured 2026-09-23 by
+  rendering: the compactor kijkglas built that morning (a flat glass disc on
+  the cleanout door, a PotFill column inside the drum, 21 green checks on the
+  geometry) showed a grey door plate at 33 % pot load, and the mengsilo's
+  vertical "sight strip" had never shown anything either. A level you can see
+  needs the film OUTSIDE the shell: `PlaceableCatalog._level_window` builds a
+  proud port (ring, gauge glass, dark back, a `LevelWitness` slab that
+  `set_silo_fill()` sizes to the live level). Any new sight glass goes through
+  it, and any claim that a level "reads through the glass" is a render, not a
+  geometry check (`src/tests/shot_silo_level.gd`).
+- **A frame-counted wait against a wall-clock cadence is a frame-rate
+  lottery.** Two suites went red on healthy worlds this way on 2026-09-23:
+  `test_jam_baseline` waited 60 stable frames for a threaded navmesh bake that
+  takes ~70 frames, and `test_spawn_clearance` waited 180 frames for bale
+  bodies that only stream after `BaleYardManager`'s 2.0 s wall-clock cache
+  refresh — the second one only surfaced when a perf change raised the
+  headless frame rate from 55 to 140 fps. Wait on the thing you mean
+  (`is_baking()`, the body count, wall time), never on a frame count, and
+  print how long it actually took so the next reader can see the margin.
+- **`RigidBody3D.mass` reads back single-precision.** Write 415.7 kg from a
+  double and `mass` returns it ±3e-5. An equality against the meta the value
+  came from, at 1e-6, failed on CORRECT code (2026-09-24,
+  `test_bale_weight_variance`, first run). Compare masses at 1e-3, and treat
+  any 1e-6 float assertion against an engine property as suspect.
+- **LineFlow ticks at 10 Hz, not per frame (since 2026-09-23).** Its
+  `_process` accumulates frame time and calls `tick(FLOW_TICK_DT)` at 0.1 s —
+  the rate `SimTick` runs and the rate EVERY suite has always driven
+  (`lf.tick(0.1)`). Before, `_process` called `tick(delta)` every frame:
+  measured with `probe_tick_cost` at 2.85 ms of every 60 Hz frame for 52
+  nodes, the largest single item of the CPU floor, and a rate nothing tested.
+  Per-tick EMAs in `tick()` (`thru` etc.) therefore settle in ~0.4 s of wall
+  time. If you add flow logic, make it delta-correct at 0.1 s and prove it with
+  `tick(0.1)` — do not reintroduce per-frame calls, and do not subscribe
+  LineFlow to `SimTick` (that autoload is PROCESS_MODE_ALWAYS and would run the
+  flow behind the pause menu — the QaLab header explains).
+- **A stop that is written AFTER the conveying split is not a stop.** LineFlow's
+  tick is `_tick_plc_power_downstream` (PLC writes `powered`, runs the spin and
+  mechanism ramp) → `_tick_feed` → `_tick_process_machines` (conveys on `spin`)
+  → `_tick_advanced_systems` (MotorOverload trips here). Measured 2026-09-23
+  with `test_motor_trip_stops_conveying`: a tripped shredder-2 kept conveying
+  at its full 0.61 kg/s and its rotors stayed at 45 rpm, because the trip only
+  dropped `powered` after the split and the PLC re-wrote `true` at the top of
+  the next tick; the bunker/shredder-2 interlock moved 31 kg in 3.1 s the same
+  way. Every end-of-tick reader (HMI amps, the interlock test's one-tick check)
+  saw a perfect trip. Latched trips are now applied inside the PLC step
+  (`_apply_trip_latches`). When you add any "stop this machine" rule, put it
+  where `powered` is WRITTEN, not where it is read, and prove it with
+  `_moved_kg` over several ticks, never with `powered` after one.
 - **A macro SEQ is a PLACEMENT list, not a topology — reading it tells you
   nothing about what the material does.** Which machine feeds which is decided
   afterwards, partly by the builder's `lf_explicit_outs` tagging and partly by

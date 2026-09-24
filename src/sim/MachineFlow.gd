@@ -365,9 +365,16 @@ static func profile(id: String) -> Dictionary:
 			pr["role"] = "sink"
 			pr["in"]   = Vector3(0.0, 0.95, 0.0)
 			pr["rate"] = 4.0
-		"silo", "doseersilo":
+		"silo":
 			pr["in"]  = Vector3(0.0, 0.9, 0.0)
 			pr["out"] = Vector3(0.0, 0.12, 0.0)
+		"doseersilo":
+			# 2026-09-23 (rulings §17): a trough tilted up along +Z — "the bottom
+			# is the input side, the top is the output side". Fractions of the
+			# catalog box (3.4 × 5.2 × 6.2): the low-end rim sits ~2.6 m up, the
+			# high-end rim ~4.9 m.
+			pr["in"]  = Vector3(0.0, 0.50, -0.42)
+			pr["out"] = Vector3(0.0, 0.95, 0.42)
 		# ── gravity connectors (funnel / transfer chute): passive pass-throughs, NOT
 		# throttles or operator machines. High rate so they never bottleneck; LineFlow's
 		# flow graph already routes machine→connector→machine by geometry. (#48) ──
@@ -389,7 +396,15 @@ static func profile(id: String) -> Dictionary:
 		# the `hmi_` prefix branch below covers every HMI that still exists.
 		"door", "pcu_cabinet", "surface", "waste_container", "water_pump", "zss_water", \
 		"kleine_la", "tankje_tussen_extruders", "pomp_c1", "pomp_zeefbocht", "eop_endpoint", \
-		"heater_cabinet", "thermal_dryer_decommissioned":
+		"heater_cabinet", "thermal_dryer_decommissioned", "scrap_bin", "overband_magnet":
+			# overband_magnet (2026-09-24): it HANGS OVER a belt and pulls ferrous
+			# out of the stream — a fixture, not a machine the film passes
+			# through. As a flow node it had no wired input, so LineFlow's
+			# nearest-port fallback closed a 2-cycle with the belt beside it
+			# (transport_belt#5 → magnet → transport_belt#5) and that belt was
+			# fed its own output on top of the line's: measured 8.6 kg/s into a
+			# 6 kg/s belt with 3 kg/s injected (test_belt_speed_mismatch, first
+			# runs). Ferrous fines are not in MaterialBatch; nothing is lost.
 			pr["role"] = "none"   # info screens / fixtures — NOT material-flow machines
 		_:
 			# #165 — every scoped HMI id (`hmi_shredder_l1`, etc.) is a control

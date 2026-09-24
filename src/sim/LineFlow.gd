@@ -70,6 +70,42 @@ const Conveyor8Script    = preload("res://src/sim/Conveyor8.gd")    # #138
 # #138 — VSS buffer over this fraction-of-capacity counts as "FULL" for the
 # overflow trip. When BOTH VSS_3A and VSS_3B are over this, C8 reverses.
 const VSS_FULL_KG       : float = 150.0
+# The buffer at which a silo's level windows read FULL. The sim's silos are
+# kg-scaled like the VSS (150 kg = "full" for the pack-up cascade), not to
+# the real vessels' cubic metres — one convention for every silo glass.
+const SILO_FULL_KG      : float = VSS_FULL_KG
+# CHOKE (P6's second half, operator 2026-09-23, rulings §4): when the reject
+# pile under a machine's chute is full and refuses more, "the machine chokes
+# and stops"; it comes back by "shovel, then reset on the HMI". A choked node
+# is latched like a trip (_is_trip_latched → powered off, conveying stops,
+# rotors stop); reset_choke() only takes once the pile is below this fraction
+# of its capacity — a reset with the chute still blocked does nothing.
+const CHOKE_CLEAR_FRAC  : float = 0.5
+# ── Belt speed mismatch (operator, round 8, 2026-09-24): "a belt fed faster
+# than it runs heaps up → chute blockage → overload trip", the HMI speed
+# setting as the lever. Every belt carries a MotorOverload sized to its own
+# deck: a backlog past the deck's full load (kg/m at 20 cm × its length) puts
+# the drive over its trip current for BELT_TRIP_DELAY_S and it trips
+# (MOTOR-OVERLOAD, latched until RESETTEN). The heap is visible: a FloorPile
+# at the belt's infeed mirrors the backlog kg (a MIRROR — the kg stay in the
+# buffer; the pile is never a reject catch nor a shovel target).
+const BELT_MOTOR_AMPS_NOMINAL : float = 12.0    # PLACEHOLDER: a small conveyor drive
+const BELT_TRIP_DELAY_S       : float = 3.0
+const BELT_HEAP_SHOW_KG       : float = 10.0    # the infeed heap appears past this spill
+# Rulings §21 ("Both, in that order"): the excess a slow belt cannot take
+# first PACKS the transfer chute from the belt before it — that UPSTREAM
+# drive, pushing into a packed chute, is the one that trips — and only the
+# overflow beyond what the chute holds spills as the pile at the infeed.
+const CHUTE_PACK_KG           : float = 15.0    # PLACEHOLDER: what a transfer chute holds when packed
+# (a belt without a bed field gets NO motor model — see _attach_advanced_systems)
+# SMOKE (P2's second half, operator 2026-09-23, rulings §5): a packed-up drive
+# smokes "sometimes", and when it does it is "heavy smoke, people react". On a
+# MotorOverload trip edge the node's SmokePlume runs for SMOKE_S with
+# probability smoke_chance (a stated assumption for "sometimes"; suites set it
+# to 1 or 0), and a SMOKE alarm goes out so the crew react (CrewManager).
+const SMOKE_S           : float = 25.0
+var smoke_chance : float = 0.35
+var _rng := RandomNumberGenerator.new()
 # ── #52 advanced-systems OBSERVERS (additive, conserving) ─────────────────────
 # These pure-sim modules run ALONGSIDE the material flow purely as observers: the
 # extruder thermal/rheology + MFI soft-sensor publish telemetry, the motor-overload
@@ -334,6 +370,8 @@ func rebuild() -> void:
 			"cc":          nd.get("cc", null),
 			"nir_ctrl":    nd.get("nir_ctrl", null),
 			"dryer_cycle": nd.get("dryer_cycle", null),
+			"choked":      nd.get("choked", false),
+			"choke_pile":  nd.get("choke_pile", null),
 		}
 	# #99 — preserve the prior pair registry across the rebuild so freshly-
 	# rediscovered pairs are detected (not yet present here) but the L/R
@@ -374,6 +412,8 @@ func rebuild() -> void:
 			if s["out"] != null:  nd["out"] = s["out"]
 			nd["hand_mode"] = s["hand_mode"]
 			nd["manual_on"] = s["manual_on"]
+			nd["choked"]    = bool(s.get("choked", false))
+			nd["choke_pile"] = s.get("choke_pile", null)
 			nd["rpm_pct"]   = s["rpm_pct"]
 			# #218 — survivor-PLC integration flag. The per-tick PLC
 			# override (`_nodes[ni]["powered"] = _plc.is_powered(stage)`)
@@ -393,6 +433,7 @@ func rebuild() -> void:
 				nd["nir_ctrl"] = s["nir_ctrl"]
 			if s["dryer_cycle"] != null: nd["dryer_cycle"] = s["dryer_cycle"]
 	_init_pipes()       # #145: turn each link into a transit delay-line
+	_apply_dewater_open()   # rulings §12: open the screw troughs a flotation tank feeds
 	_init_plc()         # #145: stage the downstream-first power-up;
 						# _init_plc reads _survivor_powered to pre-power
 						# survivor stages so they DON'T re-stagger.
@@ -693,6 +734,10 @@ func _process_discovered_node(node3d: Node3D, id_ordinal: Dictionary, code_owner
 		# #173 visual coupling: the machine's FilmFlakeField (if any), driven
 		# each tick from this node's live telemetry so the look matches the sim.
 		"view":    _find_film_field(node3d),
+		"views":   _find_film_fields(node3d),   # task 1c: ALL of them (a goot has five)
+		# P5 (2026-09-23) — the silo's level windows (PlaceableCatalog.SiloFill);
+		# driven every tick from this node's buffer against SILO_FULL_KG.
+		"silo_fill": _find_silo_fill(node3d),
 		# Flow-gated visuals: steam plume + extruder die-face melt strands only
 		# show while material is actually being processed (no invention from nothing).
 		"plume":       _find_steam_plume(node3d),
@@ -832,6 +877,28 @@ func _attach_advanced_systems() -> void:
 					# Trip threshold sits a touch above nominal; locked-rotor ~5× nominal.
 					var mol = MotorOverloadScript.new(id, nom, nom * 5.0, maxf(nom * 1.5, 120.0), 3.0)
 					nd["mol"] = mol
+		# 3b) Belt speed mismatch (round 8): every BELT drive carries a
+		#     MotorOverload too, sized to the deck it drives — capacity = the
+		#     bed field's full load (kg/m at 20 cm × deck length), so a belt fed
+		#     faster than it runs heaps up at its infeed and trips.
+		#     ONLY belts that carry a bed field: the capacity is the field's
+		#     deck. Measured 2026-09-24: with a 60 kg fallback the 10 m feed
+		#     belts (opzetband/westa, no field, 0.12 m/s creep) tripped on their
+		#     own transit load and the e-stop cut line 1's feed.
+		var bview = nd.get("view")
+		var has_bed : bool = bview != null and is_instance_valid(bview) and bool(bview.get("belt_mode"))
+		if _is_belt_id(id) and has_bed and nd.get("mol", null) == null:
+			var prior_bmol = prior.get("mol", null) if not prior.is_empty() else null
+			if prior_bmol != null:
+				nd["mol"] = prior_bmol
+			else:
+				var cap_kg : float = float(bview.call("belt_full_kg_per_m")) * float((bview.get("area") as Vector2).y)
+				var bnom : float = float(nd.get("amps_nominal", 0.0))
+				if bnom <= 0.0:
+					bnom = BELT_MOTOR_AMPS_NOMINAL
+				var bmol = MotorOverloadScript.new(id, bnom, bnom * 5.0, bnom * 1.5, BELT_TRIP_DELAY_S)
+				bmol.set("load_capacity_kg", maxf(cap_kg, 1.0))
+				nd["mol"] = bmol
 		# 4) Air consumer registration (one global header; consumers re-register in
 		#    place on rebuild, so this is safe to call every rebuild).
 		var air_id : String = _air_consumer_id(id, proc)
@@ -1355,6 +1422,103 @@ func _tick_bunker_shredder2_interlock() -> void:
 	for i in _node_indices_by_macro(_SORT_MACRO_ID, _SORT_BUNKER_OUT_IDX):
 		_nodes[i]["powered"] = false
 
+## True when this node's own MotorOverload relay is latched. A latched trip is a
+## dropped-out contactor: no PLC run command or HAND switch re-energises the
+## drive until a human calls mol.reset().
+static func _is_trip_latched(nd: Dictionary) -> bool:
+	return _is_mol_tripped(nd) or bool(nd.get("choked", false))
+
+## The MotorOverload relay alone (a choke is latched separately, see above).
+static func _is_mol_tripped(nd: Dictionary) -> bool:
+	var mol = nd.get("mol")
+	return mol != null and bool(mol.call("is_tripped"))
+
+## "Shovel, then reset on the HMI" (operator 2026-09-23). Clears a choke only
+## when the pile that refused has been dug below CHOKE_CLEAR_FRAC of its
+## capacity (or is gone); returns whether the machine is free to run again.
+## The HMI's RESETTEN calls this for every machine in its scope; the crew's
+## jam service does the shovelling (CrewManager._relieve).
+func reset_choke(id: String) -> bool:
+	var nd := _resolve(id)
+	if nd.is_empty():
+		return false
+	if not bool(nd.get("choked", false)):
+		return true
+	var pile = nd.get("choke_pile", null)
+	if pile != null and is_instance_valid(pile) and pile.has_method("fill_fraction"):
+		if float(pile.call("fill_fraction")) > CHOKE_CLEAR_FRAC:
+			print("[LineFlow] reset refused at '%s': the reject pile is still %.0f %% full — shovel first."
+				% [id, float(pile.call("fill_fraction")) * 100.0])
+			return false
+	nd["choked"] = false
+	nd["choke_pile"] = null
+	var bus := get_node_or_null("/root/EventBus")
+	if bus and bus.has_signal("machine_alarm_cleared"):
+		bus.emit_signal("machine_alarm_cleared", id, "CHUTE-BLOCKED")
+	print("[LineFlow] '%s' reset — chute clear, running again." % id)
+	return true
+
+## True when this node is choked (its reject pile refused material).
+func is_choked(id: String) -> bool:
+	var nd := _resolve(id)
+	return not nd.is_empty() and bool(nd.get("choked", false))
+
+## Drop `powered` on every trip-latched node and on the nodes the
+## bunker/shredder-2 interlock holds — called from _tick_plc_power_downstream
+## right after the PLC / HAND-mode writes and BEFORE the spin ramp, the
+## mechanism set_running() cascade and the conveying split read `powered`.
+## Without this the trip only ever surfaced after conveying had already run
+## (see the call site for the 2026-09-23 measurement). The interlock is also
+## evaluated after _tick_advanced_systems so a trip that fires mid-tick shows
+## on `powered` in the same tick; conveying and the rotors stop from the next.
+func _apply_trip_latches() -> void:
+	for nd in _nodes:
+		var mol_tripped : bool = _is_mol_tripped(nd)
+		if mol_tripped and not bool(nd.get("_was_tripped", false)):
+			_on_trip_edge(nd)
+		nd["_was_tripped"] = mol_tripped
+		if mol_tripped or bool(nd.get("choked", false)):
+			nd["powered"] = false
+	_tick_bunker_shredder2_interlock()
+
+## The leading edge of a MotorOverload trip: sometimes heavy smoke at the motor.
+func _on_trip_edge(nd: Dictionary) -> void:
+	if _rng.randf() >= smoke_chance:
+		return
+	var body = nd.get("node")
+	if body == null or not is_instance_valid(body) or not (body is Node3D):
+		return
+	var plume = body.find_child("SmokePlume", true, false)
+	if plume == null:
+		plume = PlaceableCatalog.install_smoke_plume(body as Node3D)
+	if plume == null:
+		return
+	plume.emitting = true
+	nd["smoke_plume"] = plume
+	nd["_smoke_left_s"] = SMOKE_S
+	var bus := get_node_or_null("/root/EventBus")
+	if bus and bus.has_signal("machine_alarm_raised"):
+		bus.emit_signal("machine_alarm_raised", String(nd.get("id", "?")), "SMOKE", 3)
+	print("[LineFlow] SMOKE at '%s' — the packed-up drive is smoking (%.0f s)." % [String(nd.get("id", "?")), SMOKE_S])
+
+## Run each smoking plume down; particles already in the air fade on their own.
+func _tick_smoke(delta: float) -> void:
+	for nd in _nodes:
+		var left : float = float(nd.get("_smoke_left_s", 0.0))
+		if left <= 0.0:
+			continue
+		left -= delta
+		nd["_smoke_left_s"] = left
+		if left <= 0.0:
+			var plume = nd.get("smoke_plume")
+			if plume != null and is_instance_valid(plume):
+				plume.emitting = false
+
+## True while this node's drive is smoking (for the HUD, suites, the crew).
+func is_smoking(id: String) -> bool:
+	var nd := _resolve(id)
+	return not nd.is_empty() and float(nd.get("_smoke_left_s", 0.0)) > 0.0
+
 ## When only one VSS is full the switch belt's buffer-aware split (#137)
 ## already biases against it, so there's no need to flip C8 in that case.
 ## #211d — extended to ALSO trip pack-up when an upstream ShredderFeedBelt
@@ -1522,6 +1686,45 @@ func _find_mechanism(machine: Node) -> Node:
 	var list := _find_mechanisms(machine)
 	return list[0] if not list.is_empty() else null
 
+## The silo's SiloFill root (level windows), or null for machines without one.
+func _find_silo_fill(machine: Node) -> Node:
+	if machine == null:
+		return null
+	return machine.find_child("SiloFill", true, false)
+
+## The deck speed a belt node's film bed drifts at: the body's `belt_speed`
+## meta — the same number BeltSurface carries the player and rigid bodies
+## with, so the bed, the slats and a rider all move together.
+func _belt_speed_of(nd: Dictionary) -> float:
+	var body = nd.get("node")
+	if body != null and is_instance_valid(body) and body.has_meta("belt_speed"):
+		return float(body.get_meta("belt_speed"))
+	# Task 1c (2026-09-24): a wet-side bed (sieve deck, goot segment, screw
+	# trough, bunker deck, doseersilo bottom) carries its own transport speed.
+	var view = nd.get("view")
+	if view != null and is_instance_valid(view) and view.has_meta("bed_speed_mps"):
+		return float(view.get_meta("bed_speed_mps"))
+	return 0.4
+
+## Rulings §12 (2026-09-23): the dewatering screw is open-top ONLY after a
+## flotation tank. Decided per instance from the graph just built — the
+## topology is the truth, a SEQ is only a placement list — and applied to the
+## body's two prebuilt looks through PlaceableCatalog.set_dewater_open.
+func _apply_dewater_open() -> void:
+	for i in _nodes.size():
+		var nd : Dictionary = _nodes[i]
+		if String(nd.get("id", "")) != "dewater_screw":
+			continue
+		var open := false
+		for e in _edges:
+			if int(e["b"]) == i:
+				var src_id : String = String((_nodes[int(e["a"])] as Dictionary).get("id", ""))
+				if src_id.begins_with("flotation_tank"):
+					open = true
+		var n3d = nd.get("node")
+		if n3d != null and is_instance_valid(n3d):
+			PlaceableCatalog.set_dewater_open(n3d, open)
+
 ## The machine's FilmFlakeField visual layer (if it has one), for #173 coupling.
 ##
 ## MEASURED 2026-08-29 — same direct-children bug as _find_mechanisms above. The
@@ -1536,6 +1739,15 @@ func _find_film_field(machine: Node) -> Node:
 		if c.is_in_group("film_field") and c.has_method("set_live_state"):
 			return c
 	return null
+
+## Task 1c (2026-09-24): ALL of a machine's fields. The scheidingsgoot has one
+## per segment (five); the first-match drive above would leave four dead.
+func _find_film_fields(machine: Node) -> Array:
+	var out : Array = []
+	for c in machine.find_children("*", "", true, false):
+		if c.is_in_group("film_field") and c.has_method("set_live_state"):
+			out.append(c)
+	return out
 
 ## The machine's steam plume (GPUParticles in group "steam_plume"), searched
 ## recursively since it lives under the model subtree. Gated on real flow so an
@@ -2249,8 +2461,25 @@ func take_product_sample(kg: float) -> MaterialBatch:
 # =============================================================================
 # FLOW TICK
 # =============================================================================
+## The flow steps at SimTick's rate (10 Hz, FLOW_TICK_DT), accumulated from
+## frame time — NOT once per frame. Measured 2026-09-23 (probe_tick_cost): one
+## tick over 52 nodes costs 2.85 ms, which at frame rate was 2.85 ms of every
+## 60 Hz frame — the largest single item of the CPU floor; at 10 Hz it is
+## ~0.47 ms per frame. Every regression suite has always driven tick(0.1)
+## directly, so 10 Hz is the rate the harness proves; frame-rate ticking was
+## the rate nothing tested. Catch-up is capped at one second so a stall cannot
+## burst hundreds of ticks. This node pauses with the tree (unlike SimTick,
+## which is PROCESS_MODE_ALWAYS — see the QaLab header for why LineFlow must
+## not subscribe to it), so nothing advances behind the pause menu.
+const FLOW_TICK_DT       : float = 0.1
+const FLOW_CATCHUP_MAX_S : float = 1.0
+var _flow_acc : float = 0.0
+
 func _process(delta: float) -> void:
-	tick(delta)
+	_flow_acc = minf(_flow_acc + delta, FLOW_CATCHUP_MAX_S)
+	while _flow_acc >= FLOW_TICK_DT:
+		_flow_acc -= FLOW_TICK_DT
+		tick(FLOW_TICK_DT)
 
 ## The flow step. Split out from _process so a headless test can drive it with a
 ## FIXED delta — deterministic sim time, independent of engine frame pacing (the
@@ -2287,6 +2516,7 @@ func tick(delta: float) -> void:
 	#      driven by real elapsed time. The router (section 3 below) reads
 	#      cycle.step on the same tick to decide which drum receives flake.
 	_tick_dryer_pairs(delta)
+	_tick_smoke(delta)
 
 	# 2.7) QA bench delay + assessment clock. Pure observers: neither touches
 	#      material, so the conservation ledger is unaffected. Deliberately
@@ -2365,6 +2595,18 @@ func _tick_plc_power_downstream(delta: float) -> void:
 	for nd_h in _nodes:
 		if bool(nd_h.get("hand_mode", false)):
 			nd_h["powered"] = bool(nd_h.get("manual_on", false))
+	# LATCHED TRIPS OVERRIDE THE RUN COMMAND — applied HERE, before the spin ramp
+	# and the mechanism set_running() below read `powered`, and before
+	# _tick_process_machines conveys on it. Measured 2026-09-23
+	# (test_motor_trip_stops_conveying, pre-fix): the only place a MotorOverload
+	# trip dropped `powered` was _tick_advanced_systems, which runs AFTER the
+	# conveying split — so every tick the PLC re-wrote powered=true up here, the
+	# rotor stayed at full spin, and a "tripped" shredder-2 kept moving 0.061 kg
+	# per tick (its full 0.61 kg/s design rate) with 0 A on the readout. The
+	# bunker/shredder-2 interlock lost its effect the same way (31 kg conveyed in
+	# 3.1 s "stopped"). A tripped relay is a dropped-out contactor: HAND mode
+	# bypasses the PLC, not the motor protection, so this runs after both.
+	_apply_trip_latches()
 	# #9 — overflow/e-stop override: trip on an overloaded buffer, then force the
 	# fault + upstream OFF (downstream keeps its PLC power and drains).
 	_estop_step()
@@ -2392,7 +2634,7 @@ func _tick_plc_power_downstream(delta: float) -> void:
 		if n_obj != null and is_instance_valid(n_obj) and n_obj.has_method("set_running"):
 			if bool(nd_s["powered"]):
 				n_obj.call("set_running", true)
-			elif _estop_active or (_plc != null and _plc.has_method("is_stopping") and bool(_plc.call("is_stopping"))):
+			elif _estop_active or _is_trip_latched(nd_s) 					or (_plc != null and _plc.has_method("is_stopping") and bool(_plc.call("is_stopping"))):
 				n_obj.call("set_running", false)
 		# Live current (#173): a stage draws its full HMI amps at full material
 		# load, sags to the motor idle current when starved, and 0 when stopped.
@@ -2403,12 +2645,34 @@ func _tick_plc_power_downstream(delta: float) -> void:
 			float(nd_s["amps_nominal"]), load_s, float(nd_s["spin"]) > 0.1)
 		# Drive the visual flake layer from the live state (#173): material present
 		# → flake density, throughput → drift speed, moisture/contam → wet/dirty look.
-		var view_s = nd_s.get("view")
-		if view_s != null and is_instance_valid(view_s):
-			view_s.call("set_live_state", load_s,
-				clampf(float(nd_s["moist"]) / 40.0, 0.0, 1.0),
-				clampf(float(nd_s["contam"]) / 15.0, 0.0, 1.0),
-				clampf(float(nd_s["buffer"]) / 40.0, 0.0, 1.0))
+		var moist01_s : float = clampf(float(nd_s["moist"]) / 40.0, 0.0, 1.0)
+		var contam01_s : float = clampf(float(nd_s["contam"]) / 15.0, 0.0, 1.0)
+		for view_s in (nd_s.get("views", []) as Array):
+			if view_s == null or not is_instance_valid(view_s):
+				continue
+			if bool(view_s.get("belt_mode")):
+				# P1 (2026-09-23) — a belt's field shows the BED: kg/m is what this
+				# node moved (thru) over the deck speed it moved it at (the body's
+				# belt_speed × the power ramp); a stopped deck holds what is on it.
+				# Task 1c: the wet-side beds ride the same call (their speed comes
+				# off the field, their darkness off this node's moisture).
+				var spin_s : float = float(nd_s["spin"])
+				view_s.call("set_belt_state", float(nd_s["thru"]),
+					_belt_speed_of(nd_s) * spin_s * float(nd_s.get("rpm_pct", 1.0)) * _component_pct_multiplier(nd_s), spin_s > 0.05,
+					moist01_s, contam01_s, delta)
+			else:
+				view_s.call("set_live_state", load_s, moist01_s, contam01_s,
+					clampf(float(nd_s["buffer"]) / 40.0, 0.0, 1.0))
+		# P5 — silo level windows track the buffer (kg) against SILO_FULL_KG. Read
+		# the input batch itself: nd["buffer"] is only refreshed later in the
+		# tick by _tick_process_machines, so it would lag the glass by one tick.
+		var sf_s = nd_s.get("silo_fill")
+		if sf_s != null and is_instance_valid(sf_s):
+			var n3d_s = nd_s.get("node")
+			var bin_s : MaterialBatch = nd_s.get("in", null) as MaterialBatch
+			var kg_s : float = float(bin_s.mass_kg) if bin_s != null else float(nd_s["buffer"])
+			PlaceableCatalog.set_silo_fill(n3d_s as Node3D,
+				clampf(kg_s / SILO_FULL_KG, 0.0, 1.0), sf_s as Node3D)
 		# Flow-gated emitters: material actually moving through this machine?
 		var flowing_s : bool = float(nd_s["thru"]) > 0.001
 		var plume_s = nd_s.get("plume")
@@ -2553,7 +2817,12 @@ func _tick_process_machines(delta: float) -> void:
 			var dirt := flow.remove_contaminant(cr)
 			if dirt > 0.0:
 				contam_removed += dirt
-				_dump_waste(nd["wout"] as Vector3, _dirt_batch(dirt), _waste_containers_cache, 2)   # Stream.DIRT
+				var dirt_left : float = _dump_waste(nd["wout"] as Vector3, _dirt_batch(dirt), _waste_containers_cache, 2, nd)   # Stream.DIRT
+				if dirt_left > 0.0:
+					# The scraper bin and the pile are full: the dirt that could not
+					# leave stays in the machine (conserving); the node is now choked.
+					contam_removed -= dirt_left
+					bin.add(_dirt_batch(dirt_left))
 
 		# b) off-spec polymer rejected (optical/float sort) → reject stream
 		var ro: float = nd["reject_other"]
@@ -2582,7 +2851,10 @@ func _tick_process_machines(delta: float) -> void:
 		if wfrac > 0.0:
 			var w := flow.split_fraction(wfrac)
 			waste_mass += w.mass_kg
-			_dump_waste(nd["wout"] as Vector3, w, _waste_containers_cache, _waste_stream_for_role(String(nd["role"]), String(nd["process"])))
+			var w_left : float = _dump_waste(nd["wout"] as Vector3, w, _waste_containers_cache, _waste_stream_for_role(String(nd["role"]), String(nd["process"])), nd)
+			if w_left > 0.0:
+				waste_mass -= w_left
+				bin.add(w.split_mass(w_left))   # the reject that could not leave stays in the machine
 
 		# Live telemetry: smoothed output rate + a snapshot of what's leaving, so the
 		# HMI shows real per-machine moisture / dirt / quality, not just kg in buffer.
@@ -2822,12 +3094,31 @@ func _tick_advanced_systems(delta: float) -> void:
 			nd["pot_temp"]    = float(cc.get("pot_temperature"))
 			nd["cc_band"]     = String(cc.call("band"))
 			nd["cc_fill_eff"] = float(cc.get("screw_fill_efficiency"))
+			# KIJKGLAS LEVEL (2026-09-23): publish the pot load and drive the flake
+			# column behind the compactor's sight glass. The PotFill node is looked
+			# up once per node dict (a rebuild, or a freed machine, re-caches).
+			var fill_frac : float = float(cc.call("pot_fill_fraction"))
+			nd["cc_fill"] = fill_frac
+			var cc_n3d = nd.get("node")
+			if cc_n3d != null and is_instance_valid(cc_n3d):
+				var cached = nd.get("_pot_fill_node", null)
+				if not nd.has("_pot_fill_node") or (cached != null and not is_instance_valid(cached)):
+					cached = (cc_n3d as Node3D).find_child("PotFill", true, false)
+					nd["_pot_fill_node"] = cached
+				if cached != null:
+					PlaceableCatalog.set_pot_fill(cc_n3d as Node3D, fill_frac, cached as MeshInstance3D)
 			if bool(cc.get("stalled")):
 				nd["powered"] = false             # Donut stall halts the drive
 			nd["amps"] = float(cc.get("motor_amps"))
 		# 3) MOTOR-OVERLOAD — mirror the node's own buffer level as the pile,
 		#    advance the trip clock. A sustained overload trips the relay; we then drop
-		#    this node's `powered` so it stops CONVEYING (material backs up — conserving).
+		#    this node's `powered` for the rest of THIS tick (telemetry, interlock
+		#    readers). The stop that actually matters — no spin, mechanisms at 0 rpm,
+		#    no conveying (material backs up — conserving) — is applied at the top of
+		#    the NEXT tick by _apply_trip_latches() inside _tick_plc_power_downstream,
+		#    because this loop runs after the conveying split. Measured 2026-09-23:
+		#    without that, the drop here was overwritten by the PLC every tick and a
+		#    tripped drive kept conveying at full rate.
 		#    The model raises its own EventBus alarm on the trip edge.
 		#
 		#    2026-08-29 fix: this used to call add_load(_backlog_kg) every tick —
@@ -2843,7 +3134,16 @@ func _tick_advanced_systems(delta: float) -> void:
 			# drive accrues no trip time, and a re-powered one re-energises.
 			if mol.has_method("set_running") and not bool(mol.call("is_tripped")):
 				mol.call("set_running", bool(nd["powered"]))
-			mol.call("set_load", float(nd.get("_backlog_kg", 0.0)))
+			var nid_m := String(nd.get("id", ""))
+			if _is_belt_id(nid_m):
+				# Rulings §21: a belt's drive is loaded by the chute it pushes INTO
+				# when the belt after it cannot take what arrives (the packed
+				# chute), scaled so a chute packed past CHUTE_PACK_KG reads as
+				# the deck's full load. Its own buffer is the bed it carries.
+				var cap_m : float = maxf(float(mol.get("load_capacity_kg")), 1.0)
+				mol.call("set_load", cap_m * _packed_chute_kg_out_of(nd) / CHUTE_PACK_KG)
+			else:
+				mol.call("set_load", float(nd.get("_backlog_kg", 0.0)))
 			mol.call("tick", delta)
 			if bool(mol.call("is_tripped")):
 				nd["powered"] = false           # stop conveying (conserving)
@@ -2852,6 +3152,8 @@ func _tick_advanced_systems(delta: float) -> void:
 				# Mirror the live motor current onto the node so the HMI/SCADA amp
 				# readout reflects the binding load on these high-load drives.
 				nd["amps"] = float(mol.get("current_amps"))
+		if _is_belt_id(String(nd.get("id", ""))):
+			_tick_belt_heap(nd)
 
 		# NIR SHAFT-WRAP — accumulate fibrous wrap on the sorter shaft from the
 		# material that ACTUALLY MOVED this tick (_moved_kg). Using moved (not the
@@ -3017,7 +3319,9 @@ func _bale_remaining(bale: Node3D) -> float:
 	if bale.has_meta("remaining_kg"):
 		return float(bale.get_meta("remaining_kg"))
 	var w := 350.0
-	if bale.has_meta("material_origin"):
+	if bale.has_meta("weight_kg"):
+		w = float(bale.get_meta("weight_kg"))          # the bale's OWN weight (rulings 2026-09-23 §18)
+	elif bale.has_meta("material_origin"):
 		var item := PlaceableCatalog.get_item(String(bale.get_meta("material_origin")))
 		if not item.is_empty():
 			w = BaleDefs.estimated_weight(item["size"] as Vector3)
@@ -3098,14 +3402,21 @@ func _bale_at(pos: Vector3, bales: Array[Node] = []) -> Node3D:
 	return best
 
 ## Route a waste batch to the nearest compatible WasteContainer. The container's
-## API now models capacity + density + overflow; if no stream-specific bin is in
+## API models capacity + density + overflow; if no stream-specific bin is in
 ## range OR it's full and refuses the rest, we fall back to the nearest catch-all
-## bin (a container with no accepted_streams filter). Anything still unaccepted
-## is currently dropped on the floor as a counter — Wave 5 will turn that into
-## a visible floor pile.
-func _dump_waste(pos: Vector3, w: MaterialBatch, containers: Array, cls: int = -1) -> void:
+## bin (a container with no accepted_streams filter), then to the floor pile
+## under the chute (spawned on demand, #154).
+##
+## Returns the kg that NOTHING would take (bins full, pile at its maximum
+## radius). With `nd` given, that refusal CHOKES the node (operator 2026-09-23:
+## "the machine chokes and stops"): latched like a trip (see _is_trip_latched),
+## one CHUTE-BLOCKED alarm on the edge, and the pile that refused is remembered
+## so reset_choke() can check it was shovelled. The caller puts the refused kg
+## back into the machine, so no mass is lost — before 2026-09-23 it was
+## "silently lost at this layer" while the machine ran on.
+func _dump_waste(pos: Vector3, w: MaterialBatch, containers: Array, cls: int = -1, nd: Dictionary = {}) -> float:
 	if w.mass_kg <= 0.0:
-		return
+		return 0.0
 	var stream_specific : Node = _nearest_container(pos, cls, true, containers)
 	var leftover : float = w.mass_kg
 	if stream_specific != null:
@@ -3115,18 +3426,26 @@ func _dump_waste(pos: Vector3, w: MaterialBatch, containers: Array, cls: int = -
 		var catch_all : Node = _nearest_container(pos, cls, false, containers)
 		if catch_all != null and catch_all != stream_specific:
 			leftover = catch_all.call("add", leftover, _stream_density(cls), cls)
+	var pile : Node = null
 	if leftover > 0.0:
 		# No bin caught it — the reject spills onto the floor. Use a pile already
 		# under this chute if one exists; otherwise SPAWN one right here (#154), so
 		# an uncaught chute visibly heaps up instead of vanishing. The operator then
 		# shovels it (ShovelTool) or parks a container under the chute to catch it.
-		var pile : Node = _nearest_floor_pile(pos)
+		pile = _nearest_floor_pile(pos)
 		if pile == null:
 			pile = _spawn_chute_pile(pos, cls)
 		if pile != null:
 			leftover = pile.call("add", leftover, _stream_density(cls))
-	# Anything still rejected (pile maxed too) is silently lost at this layer — the
-	# waste_mass counter at the call site keeps the ledger.
+	if leftover > 0.0 and not nd.is_empty() and not bool(nd.get("choked", false)):
+		nd["choked"] = true
+		nd["choke_pile"] = pile
+		var bus := get_node_or_null("/root/EventBus")
+		if bus and bus.has_signal("machine_alarm_raised"):
+			bus.emit_signal("machine_alarm_raised", String(nd.get("id", "?")), "CHUTE-BLOCKED", 2)
+		print("[LineFlow] CHOKE: '%s' cannot discharge its reject (%.2f kg refused, pile full) — stopped. Shovel, then reset on the HMI."
+			% [String(nd.get("id", "?")), leftover])
+	return leftover
 
 ## #154 — drop a fresh FloorPile directly under a chute mouth that nothing is
 ## catching. Coloured by stream so reject heaps read differently (dirt vs film).
@@ -3170,12 +3489,99 @@ func _stream_color(cls: int) -> Color:
 
 ## Nearest FloorPile to `pos` within a generous 40 m. Used as final spillover sink
 ## for waste mass that no WasteContainer can accept.
+## The kg a belt cannot take: its buffer beyond the bed its deck carries at
+## full depth (the field's full load). 0 for a belt keeping up.
+func _belt_excess_kg(nd: Dictionary) -> float:
+	var view = nd.get("view")
+	if view == null or not is_instance_valid(view) or not bool(view.get("belt_mode")):
+		return 0.0
+	var cap : float = float(view.call("belt_full_kg_per_m")) * float((view.get("area") as Vector2).y)
+	return maxf(0.0, float(nd.get("_backlog_kg", 0.0)) - cap)
+
+## The kg backed up against the chute OUT of belt `nd`: the excess of the
+## belt(s) it feeds — the packed chute (CHUTE_PACK_KG) and the spill behind
+## it. Uncapped on purpose: the drive pushes against all of it, and a chute
+## packed past its hold is what takes it over its trip current (the first
+## cut capped this at CHUTE_PACK_KG, so the load never passed nominal and
+## nothing ever tripped — measured 12 A against an 18 A threshold).
+func _packed_chute_kg_out_of(nd: Dictionary) -> float:
+	var i : int = _nodes.find(nd)
+	if i < 0:
+		return 0.0
+	var packed := 0.0
+	for e in _edges:
+		if int(e["a"]) != i:
+			continue
+		var dst : Dictionary = _nodes[int(e["b"])]
+		if _is_belt_id(String(dst.get("id", ""))):
+			packed = maxf(packed, _belt_excess_kg(dst))
+	return packed
+
+## Round 8/9 — the heap at a belt's infeed: the OVERFLOW beyond the packed
+## chute (rulings §21), a FloorPile whose mass MIRRORS those kg (they stay in
+## the buffer; the pile only shows them). Marked `mirror_kg` so it is never a
+## reject catch nor a choke pile.
+func _tick_belt_heap(nd: Dictionary) -> void:
+	var backlog : float = maxf(0.0, _belt_excess_kg(nd) - CHUTE_PACK_KG)
+	var pile = nd.get("heap_pile")
+	if pile != null and not is_instance_valid(pile):
+		pile = null
+	if backlog >= BELT_HEAP_SHOW_KG:
+		if pile == null:
+			var wpos : Vector3 = nd.get("win", Vector3.ZERO)
+			pile = FloorPileScript.new()
+			pile.name = "BeltHeap"
+			pile.set_meta("mirror_kg", true)
+			pile.max_radius_m = 1.6
+			pile.density_kg_m3 = 60.0                    # loose snippers (BeltBuilder.SNIPPER_BULK_KGM3)
+			var root : Node = get_tree().current_scene
+			if root == null:
+				root = self
+			root.add_child(pile)
+			var ground := wpos
+			ground.y = _floor_y_below(wpos)
+			(pile as Node3D).global_position = ground
+			nd["heap_pile"] = pile
+			print("[LineFlow] HEAP at '%s': the transfer chute is packed and %.0f kg spilled at the infeed — the belt is fed faster than it runs." % [String(nd.get("id", "?")), backlog])
+		pile.set("mass_kg", backlog)
+		pile.call("_update_visual")
+	elif pile != null and backlog < BELT_HEAP_SHOW_KG * 0.5:
+		pile.queue_free()
+		nd["heap_pile"] = null
+
+## Live heap kg at a belt's infeed (0 when there is none) — for the HMI and tests.
+func belt_heap_kg(key: String) -> float:
+	for nd in _nodes:
+		if String(nd.get("key", "")) == key or String(nd.get("id", "")) == key:
+			var pile = nd.get("heap_pile")
+			if pile != null and is_instance_valid(pile):
+				return float(pile.get("mass_kg"))
+			return 0.0
+	return 0.0
+
+## RESETTEN on the HMI (round 8): a tripped drive (MotorOverload, latched) is
+## reset here — the heap that tripped it is still there, so a belt fed the same
+## way trips again; the operator's lever is the speed setting. Returns true
+## when a trip was cleared.
+func reset_trip(key: String) -> bool:
+	for nd in _nodes:
+		if String(nd.get("key", "")) != key and String(nd.get("id", "")) != key:
+			continue
+		var mol = nd.get("mol")
+		if mol == null or not bool(mol.call("is_tripped")):
+			return false
+		mol.call("reset", false)
+		nd["_was_tripped"] = false
+		print("[LineFlow] RESET: '%s' drive reset after its overload trip." % String(nd.get("id", "?")))
+		return true
+	return false
+
 func _nearest_floor_pile(pos: Vector3) -> Node:
 	var best : Node = null
 	var best_d := 40.0
 	for p in _floor_piles_cache:
 		var pn := p as Node3D
-		if pn == null:
+		if pn == null or pn.has_meta("mirror_kg"):
 			continue
 		var d := pn.global_position.distance_to(pos)
 		if d < best_d:

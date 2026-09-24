@@ -351,7 +351,106 @@ fi
 # objects, i.e. the reported bug reproduced end to end), the old WorldLayout
 # load (1 red — spawn (0,0,0)). It touches only `__atomicfile_*` names in user://
 # and points WorldLayout at a scratch path via layout_path_override.
-for t in test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_line3a_identity test_line3b_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_humanoid_rig_conformance test_line1_flow_conformance test_line1_throughput test_line1_overband_mount test_line1_twin_streams test_line3a_flow_conformance test_line3b_flow_conformance test_shredder_rate_reconciliation test_line1_no_false_overload test_line_builder_ghost test_macro_part_placement test_project_sweep_guards test_tool_placement_mode test_scada_dashboard_scene test_atomic_file test_extruder_brain_wired test_vehicle_census test_map_overlay_init test_qa_loop test_qa_spec test_assessment_procedure test_character_customizer test_f10_reserved test_bale_sticker_supplier test_hose_reel_round test_macro_delta_guard; do
+# test_motor_trip_stops_conveying (2026-09-23): a latched MotorOverload trip must
+# actually STOP the drive. Measured before the fix: LineFlow's PLC step re-wrote
+# powered=true at the top of every tick and the trip only dropped it after the
+# conveying split, so a "tripped" shredder-2 kept conveying at its full 0.61 kg/s
+# with 0 A on the readout, its rotors stayed at 45 rpm, and the bunker/shredder-2
+# interlock moved 31 kg in 3.1 s "stopped". 28 checks on the real line_sort macro:
+# anti-vacuity (both machines convey BEFORE the trip), zero kg moved and spin/rpm
+# at 0 while tripped, buffer untouched (conserving), TITECH unaffected, reset
+# restores conveying. Pre-fix run: 20 ok / 8 fail (the 8 are the defect).
+# test_lump_cart_overflow (2026-09-23, P6): a full Lumpenwagen overflows onto the
+# floor instead of losing kg, and its fill is visible. Real line_3b macro, the
+# production purge path (LaserFilter._disc_advance) into a cart filled through
+# receive_lump(); then line_1/3A/3C for the mound placement. Conservation check:
+# shed == voor cart + floor + lost. Before: receive_lump() dropped kg at is_full()
+# and nothing ever read is_full().
+# test_save_checkpoint (2026-09-23, Q2): SaveCoordinator.save_checkpoint() copies
+# the live slot + factory sidecar under a stamped stem the main menu lists; same-
+# second stamps get -2/-3; no GameState → "" and nothing written. Real GameState +
+# SaveCoordinator, __cptest__ files only, all deleted at the end (22 checks).
+# test_keybind_sheet (2026-09-23, Q4): the F1 key sheet — one row per Controls-tab
+# action, keys == the live InputMap, F1 owned by help_overlay alone, the sheet
+# renders one row per action and follows a runtime rebind.
+# test_map_labels (2026-09-23, Q5): the site map names machines by catalog display
+# name, names the crew dots and draws every HMI panel with its scope label. Real
+# MainWorld boot for the crew, two catalog-built HMI panels, a zoomed redraw.
+# test_lump_cart_speed_clamp (2026-09-23, phys-05 interim): a Lumpenwagen can
+# never be flung past LumpCart.MAX_SPEED (6 m/s) or spun past MAX_SPIN_RAD —
+# the squeeze-eject between a frozen-kinematic vehicle and a wall. Mutation-
+# measured: integrator disabled → 48.09 m/s / 53.33 rad/s; with it 5.76 / 5.58.
+# A 1.2 m/s walking shove is untouched (anti-vacuity).
+# test_vacuum_pot_visual (2026-09-23, P3 stage A): the extruder's two vacuum
+# pots show ExtruderModel's state through the catalog body — the melt level
+# behind each dome's sight-glass port, the lid pushed open at capacity, the
+# gunk at the riser — driven every frame by the SimBrain. 22 checks.
+# test_doseersilo_trough (2026-09-24, rulings §17): the doseersilo is the
+# operator's open tilted trough — 22.5° up toward +Z, flat bottom, vertical
+# walls, flat ends, no half-discs, no grating, lowest point 1.70 m, 2.98 m
+# wide × 5.57 m long (0.9× / 1.1× the model he was shown), three augers on
+# the tilted frame, four legs; LineFlow's ports low-end in / high-end out.
+# 14 checks, read off the built node and a real LineFlow rebuild.
+# test_bale_weight_variance (2026-09-24, rulings §18): no two bales weigh the
+# same — every bale body draws its own weight (Gaussian, σ 15 %, clipped ±3 σ)
+# around its origin's nominal, the RigidBody mass, the yellow label and
+# LineFlow's remaining_kg all read that one figure, the light→full upgrade
+# keeps it; and LINE_1_FOLIE (2.0 × 1.7 × 1.5 m, 1000 kg) exists for line 1.
+# 17 checks on 40 built bales — 40 distinct weights, SD measured, ±3 σ range.
+# test_wet_side_beds (2026-09-24, task 1c, rulings §1/§12): flake beds where
+# the operator sees flake on the wet side — the Kufferath sieve deck (which
+# now descends toward its outlet), every scheidingsgoot segment (5), the
+# dewatering screw's trough (open ONLY after a flotation tank, decided from
+# the LineFlow graph), the bunker deck and the doseersilo bottom — through
+# build_node/StaticMerge, and driven WET by a real bale through line 1.
+# test_line1_metal_detect (2026-09-24, rulings §11): line-1 bales can hide
+# scrap (BaleDefs rolls it per bale; other origins never); the first conveyor's
+# sensor at 3/4 trips on a metal bale → slows to a stop, reverses one full
+# length, stops, runs forward, trips AGAIN on the same bale; the operator's
+# stop ends the cycle; taking the scrap off the bale clears it; a belt without
+# the sensor never trips; opzetband_1 is built with it, opzetband_3a3b not.
+# test_vacuum_pot_minigame (2026-09-24, P3 stage B, rulings §14): a full pot
+# pushes its lid → VACUUM_ALARM naming the pot; the hold-E shortcut can no
+# longer clear it; the lid pull (longer the longer the vacuum is gone), the
+# plamuurmes planes (push / pull out, stiffness from elapsed time), the block
+# freed at 90 % and shifted 1 cm, taken out (pot emptied, mass conserved into
+# a lump cart), the lid back within two minutes → RUNNING; past two minutes →
+# FAULT with the laser-filter alarm on the bus. Driven headless through
+# VacuumPotService on a real catalog extruder + SimBrain.
+# test_belt_speed_mismatch (2026-09-24, round 8): a belt fed faster than it
+# runs heaps up at its infeed (a mirrored FloorPile), its deck slows with the
+# HMI speed setting, its drive trips MOTOR-OVERLOAD after 3 s over current and
+# the belt stops holding its bed; at full speed the same feed never trips
+# (anti-vacuity); RESETTEN clears the trip and the heap drains. Real line 1
+# through BuildMode + LineFlow, an injected charge, no mocks.
+# test_chute_choke (2026-09-23, P6 second half): a machine whose reject pile
+# refuses material chokes — latched like a trip, one CHUTE-BLOCKED alarm,
+# nothing conveyed, the refused kg back in the machine (ledger incl. wash
+# water), the crew service shovels the pile, reset refused while it is full
+# and taken after, survives a rebuild. 24 checks.
+# test_trip_smoke (2026-09-23, P2 second half): a MotorOverload trip edge
+# sometimes (chance forced to 1 / 0 here) starts a heavy SmokePlume at the
+# motor housing for SMOKE_S, raises a SMOKE alarm, the crew log it; the plume
+# is reused, the edge re-arms after a reset. 21 checks.
+# test_silo_level_windows (2026-09-23, P5): the doseersilo, mengsilo and
+# extruder silo carry the level windows the operator described (counts, sizes,
+# faces, spacing), each a proud sight-glass port with a film witness that
+# set_silo_fill() drives; LineFlow drives it from the node's buffer; the
+# compactor kijkglas rides the same port (the morning's flat glass showed
+# nothing — measured by render). 50 checks.
+# test_belt_film_field (2026-09-23, P1): every conveyor deck carries a
+# FilmFlakeField in belt mode, seated on the deck skin's top face (measured
+# unmerged, and through build_node's static merge); the bed is kg/m =
+# thru / deck speed over a per-stage bulk density; a HAND-off belt holds its
+# bed; colour order and size spread as the operator described; line 1 booted
+# for real with a steady injection. 118 checks. Also pins the inclined belt's
+# deck to the diagonal its rollers climb (it ran the other diagonal before).
+# test_compactor_sight_glass (2026-09-23): SWI-012 p7 step 6 "Vul de compactor op
+# hand tot het kijkglas" — the flake column behind the compactor's sight glass IS
+# CutterCompactor's pot load. Geometry read off the mesh's own meta, the glass
+# window proven inside the fill range, and the production LineFlow path driving
+# the column tick by tick from an injected charge.
+for t in test_motor_trip_stops_conveying test_lump_cart_overflow test_lump_cart_speed_clamp test_save_checkpoint test_keybind_sheet test_map_labels test_compactor_sight_glass test_belt_film_field test_silo_level_windows test_chute_choke test_trip_smoke test_vacuum_pot_visual test_doseersilo_trough test_bale_weight_variance test_wet_side_beds test_line1_metal_detect test_vacuum_pot_minigame test_belt_speed_mismatch test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_line3a_identity test_line3b_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_humanoid_rig_conformance test_line1_flow_conformance test_line1_throughput test_line1_overband_mount test_line1_twin_streams test_line3a_flow_conformance test_line3b_flow_conformance test_shredder_rate_reconciliation test_line1_no_false_overload test_line_builder_ghost test_macro_part_placement test_project_sweep_guards test_tool_placement_mode test_scada_dashboard_scene test_atomic_file test_extruder_brain_wired test_vehicle_census test_map_overlay_init test_qa_loop test_qa_spec test_assessment_procedure test_character_customizer test_f10_reserved test_bale_sticker_supplier test_hose_reel_round test_macro_delta_guard; do
 	echo "== $t =="
 	${SUITE_TO[@]+"${SUITE_TO[@]}"} "$GODOT" --headless --path "$PROJ" "res://src/tests/$t.tscn" > "$OUT/$t.log" 2>&1
 	rc=$?

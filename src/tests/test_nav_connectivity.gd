@@ -178,6 +178,27 @@ func _wait_for_bake() -> void:
 	if region == null:
 		_check(false, "a NavigationRegion3D exists in the world")
 		return
+	# 2026-09-23 — WAIT FOR THE BAKE ITSELF, not for a still count. The stability
+	# loop below latched onto the PREVIOUS bake's mesh whenever the fixture bake
+	# took longer than its 60-frame window: measured in the 2026-09-23 harness as
+	# "6 polygons, 7 vertices" with the world's own bake_finished handler ("Nav
+	# connectivity verified") printing AFTER the FAIL lines; the operator
+	# checkout's last log shows the same latch at 10 polygons, and the 2026-09-21
+	# audit's "2 collapses in 3 runs" was this too. The bake is threaded and
+	# is_baking() is the engine's own flag; a few quiet frames after it clears
+	# catch a queued re-bake (MainWorld.rebake_navigation) starting up.
+	var baking_frames : int = 0
+	var quiet_frames : int = 0
+	while baking_frames + quiet_frames < BAKE_WAIT_FRAMES:
+		await get_tree().process_frame
+		if region.is_baking():
+			baking_frames += 1
+			quiet_frames = 0
+		else:
+			quiet_frames += 1
+			if quiet_frames >= 5:
+				break
+	_info("bake thread finished after %d frames (is_baking false)" % baking_frames)
 	for _i in range(BAKE_WAIT_FRAMES):
 		await get_tree().process_frame
 		var nm := region.navigation_mesh

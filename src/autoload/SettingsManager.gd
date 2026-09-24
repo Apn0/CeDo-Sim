@@ -127,7 +127,7 @@ const ACTION_GROUPS := [
 	},
 	{
 		"label":   "Interaction & UI",
-		"actions": ["interact", "flashlight", "ui_cancel", "menu_toggle", "camera_toggle", "map_toggle", "crew_panel", "crew_start_line", "toggle_line_flow_hud", "toggle_scada_dashboard", "freecam_save", "debug_unstuck"],
+		"actions": ["interact", "flashlight", "ui_cancel", "menu_toggle", "camera_toggle", "map_toggle", "help_overlay", "crew_panel", "crew_start_line", "toggle_line_flow_hud", "toggle_scada_dashboard", "freecam_save", "debug_unstuck"],
 	},
 	{
 		"label":   "Walkie-talkie",
@@ -191,6 +191,7 @@ const ACTION_LABELS := {
 	"menu_toggle":              "Open / close pause menu (P) — Resume · Settings · Save & Quit",
 	"camera_toggle":            "Cycle camera mode (F4-tap) · double-tap F4 to reset\n  F4 + ←/→/↑/↓ pan orbit · F4 + scroll wheel zoom",
 	"map_toggle":               "Open / close the site map (M)",
+	"help_overlay":             "Key sheet — every action and its live key (F1)",
 	"crew_panel":               "Open crew assignment panel — assign workers → posts (Numpad .)",
 	"crew_start_line":          "Lijn 1 opstarten met ploeg (Insert)",
 	"toggle_line_flow_hud":     "Lijnflow overlay tonen/verbergen (F6)",
@@ -776,6 +777,10 @@ func _ensure_aux_actions() -> void:
 		"crew_start_line":   KEY_INSERT,
 		"toggle_line_flow_hud": KEY_F6,
 		"toggle_scada_dashboard": KEY_F2,
+		# Q4 (2026-09-23): F1 = key sheet. F1 was bound nowhere (grepped); H,
+		# the design doc's first pick, is the vehicle handbrake and the marker
+		# tool's clear key.
+		"help_overlay":      KEY_F1,
 		# F8 toggles Inspect Mode (#inspect) — registered here so the Settings
 		# Controls tab knows about it and so the binding survives a fresh
 		# install with no user://settings.cfg. The runtime fallback in
@@ -820,6 +825,34 @@ func _ensure_aux_actions() -> void:
 			var k := InputEventKey.new()
 			k.keycode = key_code as Key
 			InputMap.action_add_event(action_name, k)
+	# Q4 (2026-09-23): the six actions PlayerController registers lazily in its
+	# own _ready (PlayerController.gd, "Register the ... keybind" block) were
+	# absent from the InputMap until a player spawned, so the main menu's
+	# Controls tab and the F1 key sheet showed "—" for keys that work
+	# (measured by test_keybind_sheet). Same events, PHYSICAL keycodes, so the
+	# player's fallback finds them present and adds nothing. fast_run keeps
+	# its debug-build-only Alt (a 90 km/h dev traverse aid — #223 audit).
+	var physical := {
+		"opening_capture":   [KEY_F11],
+		"sprint":            [KEY_SHIFT],
+		"fast_run":          [KEY_ALT] if OS.is_debug_build() else [],
+		"debug_force_fault": [KEY_0, KEY_KP_0],
+		"debug_fill_silo":   [KEY_KP_9],
+		"feedback_capture":  [KEY_F10],
+	}
+	for action_name in physical:
+		if not InputMap.has_action(action_name):
+			InputMap.add_action(action_name)
+		for pk in physical[action_name]:
+			var have := false
+			for ev in InputMap.action_get_events(action_name):
+				if ev is InputEventKey and ((ev as InputEventKey).physical_keycode == int(pk) or (ev as InputEventKey).keycode == int(pk)):
+					have = true
+					break
+			if not have:
+				var kp := InputEventKey.new()
+				kp.physical_keycode = int(pk) as Key
+				InputMap.action_add_event(action_name, kp)
 
 func _capture_default_keybinds() -> void:
 	for action in InputMap.get_actions():

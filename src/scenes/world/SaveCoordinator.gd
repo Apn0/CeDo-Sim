@@ -91,6 +91,58 @@ func save_and_quit() -> void:
 	get_tree().change_scene_to_file("res://src/scenes/menus/main_menu/MainMenu.tscn")
 
 # =============================================================================
+# Q2 (2026-09-23) — CHECKPOINT: a stamped copy of the live slot the operator
+# can reload from the main menu after a risky action (a BuildMode edit, a wire
+# cut), without quitting. The 60 s autosave and the pause-card Save both
+# OVERWRITE the one slot; before this there was no way to keep a known-good
+# point.
+# =============================================================================
+## Saves the live slot first (so the copy is exactly what the operator sees),
+## then copies `<stem>_save.json` and, if present, `<stem>_factory.json` to
+## `<stem>_cp_<YYYYMMDD-HHMMSS>_save.json` / `_factory.json`. The main menu
+## lists every `*_save.json`, so a checkpoint appears there as its own
+## loadable save with its own `saved_at`. Same-second stamps get a `-2`,
+## `-3` … suffix instead of overwriting. Returns the checkpoint stem, or "" when
+## nothing could be written — the live slot is never touched by a failure.
+func save_checkpoint() -> String:
+	if _game_state == null or not ("save_file_path" in _game_state):
+		push_warning("[SaveCoordinator] checkpoint: no GameState — nothing written")
+		return ""
+	save_game()
+	var live_path : String = String(_game_state.save_file_path)
+	var base : String = live_path.get_base_dir()
+	var stem : String = live_path.get_file().trim_suffix("_save.json").trim_suffix(".json")
+	if stem == "" or not AtomicFile.exists_any(live_path):
+		push_warning("[SaveCoordinator] checkpoint: live save '%s' missing — nothing written" % live_path)
+		return ""
+	var t := Time.get_datetime_dict_from_system()
+	var stamp := "%04d%02d%02d-%02d%02d%02d" % [int(t.year), int(t.month), int(t.day),
+		int(t.hour), int(t.minute), int(t.second)]
+	var cp_stem := "%s_cp_%s" % [stem, stamp]
+	var n := 1
+	while AtomicFile.exists_any(base.path_join(cp_stem + "_save.json")):
+		n += 1
+		cp_stem = "%s_cp_%s-%d" % [stem, stamp, n]
+	var save_text : String = AtomicFile.read_text(live_path)
+	if save_text == "":
+		push_warning("[SaveCoordinator] checkpoint: live save read back empty — nothing written")
+		return ""
+	var cp_save := base.path_join(cp_stem + "_save.json")
+	var err := AtomicFile.write_text(cp_save, save_text)
+	if err != OK:
+		push_error("[SaveCoordinator] checkpoint: could not write %s (error %d)" % [cp_save, err])
+		return ""
+	var factory_path := base.path_join(stem + "_factory.json")
+	if AtomicFile.exists_any(factory_path):
+		var factory_text : String = AtomicFile.read_text(factory_path)
+		if factory_text != "":
+			var ferr := AtomicFile.write_text(base.path_join(cp_stem + "_factory.json"), factory_text)
+			if ferr != OK:
+				push_error("[SaveCoordinator] checkpoint: save copied but the factory layout was not (error %d) — %s will load with the layout it finds" % [ferr, cp_stem])
+	print("[SaveCoordinator] Checkpoint written: %s" % cp_stem)
+	return cp_stem
+
+# =============================================================================
 # AUTOSAVE (every 60 s of real play time)
 # =============================================================================
 func _setup_autosave() -> void:

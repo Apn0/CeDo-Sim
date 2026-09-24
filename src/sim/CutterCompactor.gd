@@ -742,6 +742,11 @@ func _trigger_donut() -> void:
 func _pot_load_fraction() -> float:
 	return clampf(charge.mass_kg / POT_CAPACITY_KG, 0.0, 1.0)
 
+## The same 0..1 pot load for readers outside the model — LineFlow publishes it
+## as nd["cc_fill"] and drives the kijkglas flake column from it (2026-09-23).
+func pot_fill_fraction() -> float:
+	return _pot_load_fraction()
+
 func _set_state(new_state: State) -> void:
 	if new_state == state:
 		return

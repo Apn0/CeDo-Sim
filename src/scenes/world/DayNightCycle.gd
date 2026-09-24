@@ -42,8 +42,17 @@ func _bind_sky() -> void:
 		if s.sky_material is ProceduralSkyMaterial:
 			_sky_mat = s.sky_material as ProceduralSkyMaterial
 
-func _process(_delta: float) -> void:
+# A world with no ShiftClock (bench scenes) used to run a recursive find_child
+# over the WHOLE tree every frame, forever. Retry on a cooldown instead.
+const _SHIFT_CLOCK_RETRY_S : float = 2.0
+var _shift_clock_retry_t : float = 0.0
+
+func _process(delta: float) -> void:
 	if _shift_clock == null:
+		_shift_clock_retry_t -= delta
+		if _shift_clock_retry_t > 0.0:
+			return
+		_shift_clock_retry_t = _SHIFT_CLOCK_RETRY_S
 		_shift_clock = get_tree().root.find_child("ShiftClock", true, false)
 		if _shift_clock == null:
 			return

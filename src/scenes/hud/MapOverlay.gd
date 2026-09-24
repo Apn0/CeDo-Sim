@@ -37,6 +37,7 @@ const C_LIFT    := Color(0.36, 0.62, 0.95, 1.0)
 const C_PLAYER  := Color(1.0, 0.90, 0.30, 1.0)
 const C_TEXT    := Color(0.86, 0.90, 0.84, 1.0)
 const C_DIM     := Color(0.74, 0.78, 0.72, 1.0)
+const C_HMI     := Color(0.85, 0.55, 0.95, 1.0)   # Q5 — HMI panels; violet is used by nothing else on the map
 
 var _font : Font
 
@@ -144,7 +145,7 @@ func _draw() -> void:
 		var cl := _clamp_to(px, panel)
 		draw_rect(Rect2(cl - Vector2(2.5, 2.5), Vector2(5, 5)), C_MACHINE)
 		if label_machines and cl == px:
-			_text_nc(cl + Vector2(5, 3), _short_id(String(nd.get("id", ""))), 10, C_DIM)
+			_text_nc(cl + Vector2(5, 3), machine_label_for(String(nd.get("id", ""))), 10, C_DIM)
 
 	# Loose bales (small tan squares)
 	for b in _bales():
@@ -155,7 +156,7 @@ func _draw() -> void:
 		var cl := _clamp_to(px, panel)
 		draw_rect(Rect2(cl - Vector2(2, 2), Vector2(4, 4)), C_BALE)
 
-	# Crew (dots in each worker's tag colour)
+	# Crew (dots in each worker's tag colour; named when zoomed in — Q5)
 	for npc in _npcs():
 		var nn := npc as Node3D
 		if nn == null:
@@ -163,6 +164,19 @@ func _draw() -> void:
 		var px := _to_px(nn.global_position, center_px, scale_px, origin)
 		var cl := _clamp_to(px, panel)
 		draw_circle(cl, 3.0, _npc_color(nn))
+		if label_machines and cl == px:
+			_text_nc(cl + Vector2(5, 3), crew_label_for(nn), 10, _npc_color(nn))
+
+	# HMI panels (violet diamonds; scope label when zoomed in) — Q5. The 12 real
+	# panels are where the operator goes to start or stop a line, so they are
+	# wayfinding targets in their own right; before this the map did not show them.
+	for h in hmi_markers():
+		var hm : Dictionary = h
+		var hp := _to_px(hm["pos"], center_px, scale_px, origin)
+		var hc := _clamp_to(hp, panel)
+		_draw_diamond(hc, 4.0, C_HMI)
+		if label_machines and hc == hp:
+			_text_nc(hc + Vector2(6, 3), String(hm["label"]), 10, C_HMI)
 
 	# Vehicles (heading triangles; labelled when on-map)
 	for v in _vehicles():
@@ -323,6 +337,10 @@ func _draw_heading_tri(c: Vector2, dir: Vector2, s: float, col: Color) -> void:
 	])
 	draw_colored_polygon(pts, col)
 
+func _draw_diamond(c: Vector2, s: float, col: Color) -> void:
+	draw_colored_polygon(PackedVector2Array([
+		c + Vector2(0.0, -s), c + Vector2(s, 0.0), c + Vector2(0.0, s), c + Vector2(-s, 0.0)]), col)
+
 func _draw_scalebar(panel: Rect2, scale_px: float) -> void:
 	# Pick a round number of metres about a quarter of the view
 	var target := view_radius_m * 0.5
@@ -344,6 +362,7 @@ func _draw_legend(panel: Rect2) -> void:
 		[C_VEHICLE, "Vehicle"],
 		[C_LIFT,    "Scissor lift"],
 		[C_MACHINE, "Machine"],
+		[C_HMI,     "HMI panel"],
 		[C_BALE,    "Bale"],
 		[Color(C_BALE.r, C_BALE.g, C_BALE.b, 0.45), "Bale yard"],
 		[C_BUILDING, "CeDo building"],
@@ -464,13 +483,63 @@ func _npc_color(n: Node) -> Color:
 		return n.get_meta("map_color")
 	return Color.CORNFLOWER_BLUE
 
-func _short_id(id: String) -> String:
+static func _short_id(id: String) -> String:
 	# Trim a trailing "_1"/"_2" instance suffix for a tidier label.
 	var parts := id.split("_")
 	if parts.size() > 1 and parts[parts.size() - 1].is_valid_int():
 		parts.remove_at(parts.size() - 1)
 		return "_".join(parts)
 	return id
+
+# ── Q5 (2026-09-23) — wayfinding labels ──────────────────────────────────────
+# Operator 2026-07-20 called the id-only labels "very poor". Machines now carry
+# the catalog's display name (the Dutch operator vocabulary — trilzeef,
+# maalmolen, Lumpenwagen), crew dots carry the worker's name, and the HMI
+# panels are drawn at all. Every source is a live node; nothing is stored here.
+
+## The catalog display name for a LineFlow node id, cut at the first " (" or
+## " — " so "Lumpenwagen (extruder filter catch)" reads "Lumpenwagen". An id
+## the catalog does not know falls back to the trimmed id, exactly as before.
+static func machine_label_for(id: String) -> String:
+	var base := _short_id(id)
+	var item : Dictionary = PlaceableCatalog.get_item(base)
+	if item.is_empty():
+		return base
+	var nm := String(item.get("name", "")).strip_edges()
+	if nm == "":
+		return base
+	for cut in [" (", " — ", " - "]:
+		var k := nm.find(String(cut))
+		if k > 0:
+			nm = nm.substr(0, k)
+	return nm
+
+## A worker's name for the crew dot: NPC.npc_name (set from the node name at
+## spawn), capitalised — "yassine" → "Yassine".
+static func crew_label_for(n: Node) -> String:
+	var s := ""
+	if n != null and "npc_name" in n:
+		s = String(n.npc_name)
+	if s == "" and n != null:
+		s = String(n.name)
+	return s.capitalize()
+
+## Every placed HMI panel (group "hmi") with its scope label and scene
+## position: {node, pos, label}. A panel whose id has no scope (left inert by
+## Hmi.gd) is still drawn, labelled "HMI".
+func hmi_markers() -> Array:
+	var out : Array = []
+	if not is_inside_tree():
+		return out
+	for h in get_tree().get_nodes_in_group("hmi"):
+		var h3 := h as Node3D
+		if h3 == null:
+			continue
+		var lbl := "HMI"
+		if h3.has_method("scope_label"):
+			lbl = String(h3.call("scope_label"))
+		out.append({"node": h3, "pos": h3.global_position, "label": lbl})
+	return out
 
 func _vehicle_short(vtype: String) -> String:
 	match vtype:

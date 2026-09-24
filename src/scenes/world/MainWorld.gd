@@ -1118,14 +1118,35 @@ var _nav_region : NavigationRegion3D = null
 ## BuildMode: a machine the operator places that is not in the mesh is the
 ## current bug in miniature. Callers must DEBOUNCE — this is a commit-time
 ## operation, never a per-frame ghost-drag one.
+var _rebake_pending : bool = false
+
 func rebake_navigation() -> void:
 	if _nav_region == null or not is_instance_valid(_nav_region):
+		return
+	if not _nav_region.is_connected("bake_finished", Callable(self, "_flush_pending_rebake")):
+		_nav_region.connect("bake_finished", Callable(self, "_flush_pending_rebake"))
+	# 2026-09-23 — the bake is threaded, and a bake_navigation_mesh() issued
+	# while the previous one is still on its thread does not stack: a
+	# commit-time rebake from BuildMode that lands during the boot bake would
+	# leave the placed machine out of the mesh for good, with nothing printed.
+	# Queue it and re-issue it from bake_finished instead. (Defensive: the
+	# harness collapse of 2026-09-23 was the SUITE reading the mesh too early,
+	# not a dropped bake — see test_jam_baseline._test_navmesh.)
+	if _nav_region.is_baking():
+		_rebake_pending = true
+		print("[MainWorld] NavRegion re-bake queued (a bake is still running)")
 		return
 	var tagged := _tag_nav_sources()
 	if not _nav_region.is_connected("bake_finished", Callable(self, "_verify_nav_connectivity")):
 		_nav_region.connect("bake_finished", Callable(self, "_verify_nav_connectivity"))
 	_nav_region.bake_navigation_mesh(true)
 	print("[MainWorld] NavRegion re-baking (%d source bodies)" % tagged)
+
+func _flush_pending_rebake() -> void:
+	if not _rebake_pending:
+		return
+	_rebake_pending = false
+	call_deferred("rebake_navigation")
 
 ## npc-07 SEALED-PLANT GUARD.
 ##
@@ -1434,6 +1455,13 @@ func save_and_quit() -> void:
 		sc.save_and_quit()
 	else:
 		get_tree().change_scene_to_file("res://src/scenes/menus/main_menu/MainMenu.tscn")
+
+## Q2 — stamped copy of the live slot; returns its stem ("" = nothing written).
+func save_checkpoint() -> String:
+	var sc := find_child("SaveCoordinator", false, false)
+	if sc and sc.has_method("save_checkpoint"):
+		return String(sc.call("save_checkpoint"))
+	return ""
 
 
 # ── NPC Egress from Commuter Cars ─────────────────────────────────────────────

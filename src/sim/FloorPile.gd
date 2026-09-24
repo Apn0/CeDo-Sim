@@ -20,6 +20,11 @@ signal blocked
 @export var max_radius_m   : float = 3.0         # how far the pile is allowed to spread
 @export var angle_repose   : float = 33.0        # degrees from horizontal
 @export var pile_color     : Color = Color(0.42, 0.40, 0.36)
+## P6 (2026-09-23): false = a SOFT mound with no collider. Used for the lump
+## spill that heaps around a Lumpenwagen's base: a StaticBody3D growing inside
+## a RigidBody3D cart's footprint ejects the cart, so that mound must stay
+## walkable. Everything else (chute reject, #159) keeps the solid default.
+@export var solid          : bool  = true
 
 var mass_kg              : float = 0.0
 var density_kg_m3        : float = 200.0
@@ -146,7 +151,7 @@ func _update_visual() -> void:
 		_cshape.radius = maxf(r, 0.05)
 		_cshape.height = maxf(h, 0.02)
 		_col.position = Vector3(0.0, h * 0.5, 0.0)
-		_col.disabled = false
+		_col.disabled = not solid
 	var frac := fill_fraction()
 	if absf(frac - _last_frac) > 0.01:
 		_last_frac = frac

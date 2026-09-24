@@ -103,7 +103,9 @@ var _oks   : int = 0
 ## Counted and printed, never silent. On 2026-08-30 this suite reported
 ## "11 ok, 0 fail" while THREE of its fourteen checks never ran: both
 ## "<leg> completed" assertions and "reached the outdoor skip pose" sit behind
-## _route_exists(), which was false while the model carved no doorway. That
+## _route_exists(), which was false while the model carved no doorway. Since
+## 2026-09-23 the suite carves the operator's own 3A/3B gate itself (see the
+## DOORWAY fixture in _build_line_3a), so those checks run every time. That
 ## green measured a world with nowhere to drive and read exactly like a green
 ## that measured a working pilot -- and it was quoted as one for four days. A
 ## skip missing from the verdict line is a lie the harness tells once and
@@ -197,6 +199,39 @@ func _build_line_3a() -> void:
 	bm.call("_build_full_line", "line_3a", start, atan2(-fdir.x, -fdir.z))
 	for _i in range(20):
 		await get_tree().process_frame
+	# ── THE DOORWAY (2026-09-23; operator: "suite builds its own gate") ───────
+	# The building's only doorway is the operator's 3A/3B gate. His
+	# world_layout lost that entry on 2026-09-13 (cleared to turn two guard
+	# suites green), which put the three forklift checks below back on their
+	# vacuous skip. The entry is reproduced here IN MEMORY from his own backups
+	# (user://world_layout.json.bak_prerun_20260902 … bak_ultracode_20260913,
+	# byte-identical in all four: a four-point "surface" gate labelled "3A/3B
+	# gate" on the facade) through the same _apply_layout_entry a save load
+	# uses: the leaf is built, WallOpenings carves both wall skins, and
+	# BaseVehicle.invalidate_route_grid() makes the router see it.
+	# WorldLayout.structure_items is NOT touched, so nothing can leak into the
+	# operator's file (the 60 s autosave is redirected by layout_path_override
+	# as well), and test_project_sweep_guards' B1b stays true.
+	var gate_entry := {
+		"kind": "surface", "type": "gate", "label": "3A/3B gate (jam-baseline fixture)",
+		"p": [[-248.650161743164, -8.9238166809082, 154.07470703125],
+			  [-248.622482299805, -4.09112167358398, 154.097915649414],
+			  [-244.100952148438, -4.19967889785767, 157.892044067383],
+			  [-244.134506225586, -8.84195232391357, 157.862808227539]],
+	}
+	var gate_ok : bool = bool(bm.call("_apply_layout_entry", gate_entry))
+	var gate_node : Node = null
+	for n in get_tree().get_nodes_in_group("placed_object"):
+		if n.has_meta("surface_data") 				and String((n.get_meta("surface_data") as Dictionary).get("type", "")) == "gate":
+			gate_node = n
+	var opening : String = String(gate_node.get_meta("opening_id")) if gate_node != null and gate_node.has_meta("opening_id") else ""
+	_check(gate_ok and opening != "",
+		"DOORWAY fixture: the operator's 3A/3B gate is built and its wall opening carved (%s)"
+			% (opening if opening != "" else "NO CUT — the gate stands in front of an intact wall"))
+	_check((WorldLayout.structure_items as Array).is_empty(),
+		"DOORWAY fixture: WorldLayout.structure_items untouched (%d entries)" % (WorldLayout.structure_items as Array).size())
+	for _i in range(5):
+		await get_tree().process_frame
 	var machines : int = 0
 	# lump_cart is built as a RigidBody3D (PlaceableCatalog, bespoke compound
 	# collision) and there are two per extruder since the 2026-08-03 ruling, so a
@@ -239,6 +274,27 @@ func _test_navmesh() -> void:
 	# wrong-object mistake these assertions exist to catch.
 	if _world.has_method("rebake_navigation"):
 		_world.call("rebake_navigation")
+	# 2026-09-23 — WAIT FOR THE BAKE ITSELF, not for a still count. The stability
+	# loop below latched onto the PREVIOUS bake's mesh whenever the fixture bake
+	# took longer than its 60-frame window: measured in the 2026-09-23 harness as
+	# "6 polygons, 7 vertices" with the world's own bake_finished handler ("Nav
+	# connectivity verified") printing AFTER the FAIL lines; the operator
+	# checkout's last log shows the same latch at 10 polygons, and the 2026-09-21
+	# audit's "2 collapses in 3 runs" was this too. The bake is threaded and
+	# is_baking() is the engine's own flag; a few quiet frames after it clears
+	# catch a queued re-bake (MainWorld.rebake_navigation) starting up.
+	var baking_frames : int = 0
+	var quiet_frames : int = 0
+	while baking_frames + quiet_frames < BAKE_WAIT_FRAMES:
+		await get_tree().process_frame
+		if region.is_baking():
+			baking_frames += 1
+			quiet_frames = 0
+		else:
+			quiet_frames += 1
+			if quiet_frames >= 5:
+				break
+	_info("bake thread finished after %d frames (is_baking false)" % baking_frames)
 	# The bake is threaded. Wait for the count to STOP CHANGING, and never break on
 	# the first sample: an early-exit on two equal reads latches onto the stale
 	# pre-bake value (measured — it reported 2 while the routing probe on the same

@@ -128,11 +128,17 @@ its 0.98 m funnel lip sits below a bordes-cart rim at ~1.07 m (0.95 rim +
 0.12 deck), so it would clip. Needs the item-3 render + operator confirm.
 
 ### Still open (ask the operator / needs photos — do NOT build)
-1. **3C MF1/MF2**: the LIJN 3C alarm list names Smeltfilter 1 AND Smeltfilter 2.
-   If 3C physically carries two filter heads, is the ruling 2 carts total or 2
-   per head (= 4)? Built as 2 total for now.
-2. **Line 6 (Britas/ABMF band filter)**: it has uittrekschroeven (3-8 rpm sticky
-   note) so a discharge exists, but no doc places its cart(s).
+1. ~~**3C MF1/MF2**~~ — **RULED 2026-09-23** (`docs/plant/operator_rulings_2026-09-23.md`
+   §7): Smeltfilter 1 is the LASER FILTER (two carts under it, one per side);
+   Smeltfilter 2 is the HEAD FILTERS, which have NO carts (cabinets with two
+   filter-head changer units). So 3C = 2 carts in use, as built — plus, per
+   the same ruling, every extruder had 2 STANDBY carts in a yellow-marked
+   area, swapped in when one fills (cooled, emptied by forklift, parked back).
+   The standby pair is not built yet (placement needs a render + confirm).
+2. ~~**Line 6 (Britas/ABMF band filter)**~~ — **RULED 2026-09-23** (§7): the
+   Britas is an automatic band melt filter — the band is pulled ~30 cm across
+   the barrel head when the pressure rises, dirt stays on the sieve. NO
+   discharge screw, NO lump carts. The "uittrekschroeven" reading was wrong.
 3. The **asymmetric nozzle VISUAL** (achter exits HIGHER, voor LOWER — poster
    cross-section above) is half-done and on the WRONG SIDES: `_m_laser_filter`
    #234 builds the high screw on local -X and the low one on local +X, but
