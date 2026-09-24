@@ -423,6 +423,21 @@ fi
 # the belt stops holding its bed; at full speed the same feed never trips
 # (anti-vacuity); RESETTEN clears the trip and the heap drains. Real line 1
 # through BuildMode + LineFlow, an injected charge, no mocks.
+# test_hmi_fault_rearm (2026-09-24): a fault that clears by itself and trips
+# again is a NEW occurrence — the KWITTEREN given to the first must not silence
+# the second (the ack was per CODE until RESETTEN). EREMA 6557 driven through a
+# real LaserFilter + EremaFaultRegistry into the real HmiOverlay.tscn, operated
+# by its own buttons: re-trip with the panel open, and with it CLOSED (the
+# overlay only watched while open); controls that a still-active fault stays
+# acked; a world swapped under a closed panel logs no PLC-000 / false INV-101.
+# 32 checks, 6 mutations each red on their own checks.
+# test_hmi_fault_per_line (2026-09-24): the same EREMA code on two extruders is
+# two alarms. Keyed by code, a 3C 6557 that tripped while an acknowledged 3A
+# 6557 was still active never lit the bell, got no Actief or Historie row; and
+# a real ExtruderMachine's line (config_resource.line_id) never reached the
+# alarm at all. Two real catalog extruders + filters into the real
+# HmiOverlay.tscn, operated by its own buttons; rows must name their line.
+# 26 checks; main's overlay and 6 mutations each red on their own checks.
 # test_chute_choke (2026-09-23, P6 second half): a machine whose reject pile
 # refuses material chokes — latched like a trip, one CHUTE-BLOCKED alarm,
 # nothing conveyed, the refused kg back in the machine (ledger incl. wash
