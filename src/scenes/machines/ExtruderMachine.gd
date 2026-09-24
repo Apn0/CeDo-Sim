@@ -307,16 +307,14 @@ func _update_downstream_signals() -> void:
 		if _laser_filter.has_method("set_extruder_rpm_indicator"):
 			_laser_filter.call("set_extruder_rpm_indicator", model.screw_rpm)
 		if _laser_filter.has_method("set_upstream_pressure_indicator"):
-			# Real upstream pressure: prefer the head filter's live ΔP (it's
-			# physically the laser filter's immediate upstream and is already
-			# psi-scale) — falls back to the model's die_pressure_psi (rheology-
-			# derived from throughput × viscosity) if no head filter is cached.
-			# Both surfaces are psi and on the same scale the operator HMI uses.
+			# The laser filter's inlet pressure IS the pre-meltfilter melt
+			# pressure (MP<MF) the model computes. It used to prefer the head
+			# filter's ΔP, but the kopfilter sits DOWNSTREAM of the laser filter
+			# (LINE_3C_SEQ: 23 laser_filter -> 26 kopfilter), a ΔP is not a
+			# pressure, and on 3A/3B `_closest_in_group("head_filter")` found
+			# LINE 3C's kopfilter — another line's filter drove this inlet.
 			var upstream_psi : float = 0.0
-			if _head_filter != null and is_instance_valid(_head_filter) \
-					and _head_filter.has_method("delta_p_psi"):
-				upstream_psi = float(_head_filter.call("delta_p_psi"))
-			if upstream_psi <= 0.0 and "die_pressure_psi" in model:
+			if "die_pressure_psi" in model:
 				upstream_psi = model.die_pressure_psi
 			_laser_filter.call("set_upstream_pressure_indicator", upstream_psi)
 		if _laser_filter.has_method("set_lump_feed_rate") \
@@ -336,14 +334,15 @@ func _update_downstream_signals() -> void:
 func _check_pressure_trips() -> void:
 	# #223 docs->code (item 17) — pelletiser 160-bar MP<PEL melt-pressure
 	# interlock. Read the die-head / meltpump-outlet melt pressure the model
-	# computes (die_pressure_psi = "smeltdruk stroomopwaarts van de
-	# pelletiseermachine"), convert to bar, and fire the SAME trio shutdown as the
+	# computes (mp_pel_bar = "smeltdruk stroomopwaarts van de
+	# pelletiseermachine" — NOT die_pressure_psi, which is the pre-meltfilter
+	# pressure, nominal 280 bar), and fire the SAME trio shutdown as the
 	# 318-bar upstream trip when it exceeds the documented 160-bar limit. Latching;
 	# only armed while the extruder is actually pushing melt.
 	# doc: docs/plant/swi/EREMA-manual-4.3.7-pelletiseersysteem__169_CeDo84.md
-	if not _pel_trip_latched and "die_pressure_psi" in model \
+	if not _pel_trip_latched and "mp_pel_bar" in model \
 			and model.state in [ExtruderModel.State.RUNNING, ExtruderModel.State.STARTING, ExtruderModel.State.VACUUM_ALARM]:
-		var mp_pel_bar : float = model.die_pressure_psi / PSI_PER_BAR
+		var mp_pel_bar : float = float(model.mp_pel_bar)
 		if mp_pel_bar > EremaFaultRegistry.PEL_MELT_PRESSURE_TRIP_BAR:
 			_pel_trip_latched = true
 			model.fault_reason = "pelletiser_meltdruk_160bar"
@@ -445,11 +444,13 @@ func _push_extruder_params_to_scada() -> void:
 			0.0, 4.0,
 			"Ex %s Vac gunk  (kg)" % line)
 	if "die_pressure_psi" in model:
+		# Bar, like every EREMA pressure readout. Band: the 3B trend p50
+		# (177 bar) up to the SWI-054 laserfilter-change pressure (300 bar).
 		_scada.call("set_param",
-			prefix + "diepsi",
-			model.die_pressure_psi,
-			200.0, 420.0,
-			"Ex %s Die  (psi)" % line)
+			prefix + "diebar",
+			model.die_pressure_psi / PSI_PER_BAR,
+			170.0, 300.0,
+			"Ex %s Druk voor meltfilter  (bar)" % line)
 	# Fault reason as a status string. Alarming when non-empty. Uses the
 	# dedicated set_text_param branch in the dashboard (grey when "", red
 	# when carrying any of the operator-confirmed fault keys).

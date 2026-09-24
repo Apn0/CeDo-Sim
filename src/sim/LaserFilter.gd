@@ -137,8 +137,12 @@ const FRONT_LOAD_BIAS           : float = 0.85
 # Root-cause amplification thresholds. Upstream pressure proxy and extruder
 # RPM are reported into this node by ExtruderMachine; high values mean the
 # inlet face is being slammed harder, so the front-side loading rate grows.
-const UPSTREAM_PRESSURE_BASE_PSI : float = 250.0
-const UPSTREAM_PRESSURE_SCALE_PSI : float = 250.0  # +1.0× amplification per this many psi over base
+# Anchored in BAR since 2026-09-24. They were 250 / 250 PSI, tuned against an
+# upstream signal that sat at 280 psi (a unit error — the plant's 280 is bar).
+# Scaling both by the same factor keeps the amplification at nominal identical
+# (+0.12x at 280 bar) now that the signal carries real bar-scale pressure.
+const UPSTREAM_PRESSURE_BASE_PSI : float = 250.0 * PSI_PER_BAR
+const UPSTREAM_PRESSURE_SCALE_PSI : float = 250.0 * PSI_PER_BAR  # +1.0× amplification per 250 bar over base
 const EXTRUDER_RPM_BASE          : float = 110.0   # above this, additional front amplification kicks in
 const EXTRUDER_RPM_SCALE         : float = 60.0    # +1.0× per this many rpm over base
 
