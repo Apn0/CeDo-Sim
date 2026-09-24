@@ -587,6 +587,13 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   `world_layout.json`. Guarded by `test_legacy_props_spawner`. To audit:
   `grep -rhoE 'world\.call\("[A-Za-z_]+"' src | sort -u` and check each name
   exists as a `func` on MainWorld.
+  The same trap caught a merge on 2026-09-25. #278 removed
+  `LaserFilter.set_upstream_pressure_indicator()`. #279 and #282, merged the
+  same night, called it by string from their suites. `main` then had
+  `test_hmi_fault_rearm` at 15 fail and `test_hmi_fault_per_line` at 19 fail,
+  and the parse sweep stayed green. Before merging a PR that removes or renames
+  a method, grep the target branch for the name in quotes:
+  `grep -rn '"<name>"' src tools`.
   The damage was bigger than the error lines, because a failed `call()` ABORTS
   the calling function: the diesel pump was never spawned at all (the outlet's
   call came one line before it), the feeder shredder stood at the world origin
