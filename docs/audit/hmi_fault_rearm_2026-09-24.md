@@ -167,14 +167,112 @@ rebased onto `fcb53e1`. **No full harness has run on the rebased tree.**
   erased on `machine_alarm_cleared`, so it already re-arms. Nothing changed
   there.
 
+## Follow-up — the same code on two lines is two alarms (2026-09-25)
+
+`src/scenes/hud/HmiOverlay.gd`, guarded by
+`src/tests/test_hmi_fault_per_line.tscn` (in `run.sh`'s main scene loop).
+
+### The defect, as measured
+
+`_compute_faults` emits `EREMA-6557` once per extruder whose filter trips, and
+the overlay keyed first-seen, occurrence, history and shield by CODE. Under it
+sat a second cause: `_compute_faults` read the line from `em.line_id`, and a
+real `ExtruderMachine` has no such property. Its line lives on
+`config_resource.line_id` (MachineBrains sets it per placeable), which is what
+`_find_extruder_machine_for_scope` in the same file already read. Measured:
+two real catalog brains print `'line_id' in node=false`,
+`config_resource.line_id=3A` / `3C`, and both alarms came out as
+`EREMA-6557@extruder`. So the two lines were identical all the way down.
+
+Probe: `src/tests/probe_hmi_fault_code_collision.tscn`. It uses two real
+catalog extruders (3A, 3C) 100 m apart, each with a catalog laser filter
+beside it, and the panel operated through its own buttons, with an isolated
+`APPDATA`. Each brain's SimTick handler is disconnected so it does not write
+0.0 over the pressure. Measured on `main` `500af33`, and identically (with
+`line_id` stand-ins) on `b8bda8a` before #275, so it predates both fixes:
+
+| step | detected | bell | Actief | Historie |
+|---|---|---|---|---|
+| 1 control: 3A trips alone | 6557@extruder | **red** | 1 | 1 |
+| 2 KWITTEREN | 6557@extruder | amber | 0 | 1 (gekwiteerd) |
+| 3 **3C trips**, 3A still active | 6557@extruder ×2 | **amber** | **0** | **1** |
+| 4 3A clears, 3C still active | 6557@extruder | amber | 0 | **1** (no Hersteld) |
+| 5 3C clears | — | none | 0 | 2 (one Hersteld, "gekwiteerd") |
+
+So the 3C trip never reached the operator. It lit no bell and got no row in
+Actief or Historie, and its clear was logged "Hersteld (gekwiteerd)" although
+nobody acknowledged it. 3A's own clear was never logged.
+
+### Ruled (operator, 2026-09-24, AskUserQuestion)
+
+- **One alarm per line**, and each row shows its line (`EREMA-6557 3C`).
+- **A shield covers its own line only.** Caveat, found only after asking:
+  nothing in the sim writes `_shielded_faults`. There is no Afschermen
+  action; the Onderdrukt tab only lists the table. It is now keyed per line,
+  so it follows the ruling if shielding is ever built. No test can exercise
+  it today.
+
+### The fix
+
+- Every fault has a **key** (`_fault_key`): `code@line` for an EREMA alarm,
+  or `code@#<instance id>` for an extruder with no line id, so two unlabelled
+  extruders still raise two alarms. Plant-wide faults (INV-101, RUN-200, …)
+  keep the bare code. First-seen, occurrence, the new `_fault_meta` (code +
+  line of an active key), history, shield and `_is_acked` are all keyed by
+  it. The KWITTEREN was already per occurrence and did not change.
+- The line comes from `_extruder_line_id(em)`: `config_resource.line_id`,
+  then a `line_id` on the node, then "".
+- Rows carry the line, and the code column shows it (min width 90 → 120 px).
+  Historie keeps it on "Hersteld" rows too. Gekwitteerd de-duplicates per
+  key, so both lines' acks are listed.
+- The scope of a real extruder's alarm is now `extruder_3A` where it was
+  `extruder`. Measured, the tile lamps did not move: with 3A tripped, exactly
+  the two EXTRUDER tiles (HOOFDMENU and OVERZICHT) show fault, the same set as
+  `main`'s overlay (suite check A1).
+- NpcAutonomyBoard's npc-ack is keyed by its own alarm names (`overpressure`,
+  `vacuum`, …), never by overlay codes, so the change cannot reach it.
+
+### The guard suite
+
+`test_hmi_fault_per_line`: 26 checks, `PASS (26 ok, 0 fail)` 3 of 3 runs,
+0 `SCRIPT ERROR`. Phase A: 3A trips, KWITTEREN, then 3C trips while 3A is
+still active (bell red, Actief shows 3C only, Historie separate), and both
+acks listed. Then 3A clears (Hersteld 3A, none for 3C), 3A re-trips while 3C
+is acked (red: 3C's ack does not cover it), and Historie holds exactly the 6
+transitions. Phase B blanks both configs' line id: the fallback still raises
+two alarms.
+
+| mutation | `test_hmi_fault_per_line` |
+|---|---|
+| K0 `main`'s overlay (`500af33`) | 15 / **11 fail** |
+| K1 key = code (the defect) | 16 / **10**: A3 ×2, A4, A5, A6, A7 ×2, A8, B3 ×2 |
+| K2 line read from the node only (the old read) | 19 / **7**: every line label. The alarms still separate via the fallback |
+| K3 no-line fallback collapses | 24 / **2**: B3 ×2 |
+| K4 Gekwitteerd de-duplicated by code | 25 / **1**: A5 |
+| K5 "Hersteld" row loses its line | 24 / **2**: A6, A8 |
+| K6 row label without the line | 19 / **7**: every line label |
+
+(K1–K6 were measured before the A1 lamp check was added, at 25 checks. The
+lamp check passes on the fixed and on `main`'s overlay alike, so their ok
+counts would each be one higher now. K0 was measured at 26.)
+
+Neighbours on this tree: parse sweep 451 ok / 0 fail;
+`test_hmi_fault_rearm` 32 ok, `test_hmi_ack_rearm` 7 ok,
+`test_die_pressure_bar` 23 ok, `test_hmi_screen_zeroing`,
+`test_hmi_retired`, `test_scada_dashboard_scene`,
+`test_hmi_overlay_open_close`, `test_hmi_web_gather_vals`,
+`test_hmi_universal_interactive` and `test_hmi_web` PASS, all 0 `SCRIPT
+ERROR`. `test_extruder_brain_wired` failed 4 checks in the empty isolated
+user dir ("the world under test is CONFIGURED"). It passed 24 ok / 0 fail
+against a scratch copy of the operator's userdata, so the failures were only
+the missing world.
+
 ## Open
 
-- **Same code from two extruders is one fault.** `_compute_faults` emits
-  `EREMA-6557` for every extruder whose filter trips, with only `scope`
-  telling them apart. Occurrence identity (and `_fault_first_seen`, history
-  and shield) is keyed by code, so a 3C 6557 that trips while an acknowledged
-  3A 6557 is still active joins the acknowledged occurrence. This predates the
-  change. **Found by code reading only, NOT yet measured.** A probe waits for
-  the full harness run to finish, so it does not compete for CPU with its
-  wall-clock suites.
+- **Every panel lists every line's EREMA faults.** Found by code reading
+  only: `_compute_faults` walks all `_extruder_machines` whatever `_scope`
+  the panel was opened with, so a shredder or washing panel would list an
+  extruder's 6557 too. Not measured.
+- **Afschermen does not exist** (above): the Onderdrukt tab reads a table
+  nothing writes.
 - RESETTEN clearing every ack (above) is unruled.
