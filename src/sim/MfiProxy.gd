@@ -9,9 +9,11 @@ class_name MfiProxy
 ##     MFI ∝ Q / (P_die · η(T))
 ##
 ##   • Q       — mass throughput (kg/h) pushed through the die.
-##   • P_die   — melt pressure at the die head (bar). For a FIXED die geometry
-##               and a fixed Q, a HIGHER pressure means the melt is harder to
-##               push → stiffer, higher-molecular-weight, LOWER-MFI material.
+##   • P_die   — melt pressure at the die plate (bar), after the kopfilter
+##               (operator ruling 2026-09-24; LineFlow feeds ExtruderScrew's
+##               die_pressure). For a FIXED die geometry and a fixed Q, a HIGHER
+##               pressure means the melt is harder to push → stiffer,
+##               higher-molecular-weight, LOWER-MFI material.
 ##               So at constant Q and T, predicted_mfi is INVERSELY proportional
 ##               to P_die — the property this proxy exists to surface.
 ##   • η(T)    — shear/temperature viscosity. Hotter melt flows easier (lower η),
@@ -20,8 +22,10 @@ class_name MfiProxy
 ##
 ## The proportionality constant MFI_GAIN folds the die geometry (length, radius,
 ## the 2.16 kg ISO-1133 test weight, unit conversions) into one calibration
-## number, tuned so a healthy LDPE-film reclaim melt lands in a believable
-## 0.3–2.0 g/10 min band at nominal Q / P / T.
+## number. It is DERIVED from an anchor point (CAL_*), not typed. The output is
+## ABSOLUTE, not a ratio: QaSpec grades it against fixed limits and the SCADA
+## panel draws it against a fixed band, so the anchor has to move whenever the
+## scale of its inputs does.
 ##
 ## DOWNSTREAM VISUALS (particles / shaders) — predicted_mfi is a single float in
 ## a known band, so a consumer can normalise it once and drive a look:
@@ -33,12 +37,26 @@ class_name MfiProxy
 ## call normalized()) every frame straight after the sim tick with no smoothing lag.
 
 # ── Calibration (folds die geometry + test weight + unit scaling) ──────────────
-## Overall gain on Q / (P·η). Tuned so nominal Line-3B numbers (Q≈950 kg/h,
-## P≈250 bar, η at 215 °C where η==1.0) yield ~1.0 g/10 min:
-##   0.263 · 950 / (250 · 1.0) ≈ 1.0
-## Purely a scaling constant — it NEVER changes the proportions the proxy
-## reports, only their absolute level.
-const MFI_GAIN : float = 0.263
+## The anchor: line 3B's nominal point from the plant. Output p50 799 kg/h and
+## melt p50 246 °C come from the EREMA WinCC archive (docs/plant/
+## trends_overview.md §2). The 140 bar die plate is ExtruderScrew.PROFILES
+## "3B": the bottom of FORM-008 row 26's kopdruk window, per the operator's
+## 2026-09-24 ruling that this pressure is the die plate after the kopfilter.
+## Until 2026-09-24 the anchor was an invented 950 kg/h / 250 bar / 215 °C
+## (MFI_GAIN 0.263). Fed the plant's point, that gain reads 4.3 on line 3A,
+## which QaSpec grades REGRADE.
+const CAL_Q_KG_H : float = 799.0
+const CAL_P_BAR  : float = 140.0
+const CAL_T_C    : float = 246.0
+## The MFI the anchor reads. NOT a plant number: no document gives CeDo's
+## granulaat MFI, and QaSpec's band is a labelled placeholder. 1.0 is this
+## proxy's own original design target. It is kept so that a nominal line lands
+## where QaSpec and the SCADA band expect it.
+const CAL_MFI    : float = 1.0
+## Overall gain on Q / (P·η), solved from the anchor. It never changes the
+## proportions the proxy reports, only their absolute level.
+const MFI_GAIN : float = (CAL_MFI * CAL_P_BAR * VISCOSITY_REF
+	* pow(2.0, (REF_TEMP_C - CAL_T_C) / TEMP_DECADE_C) / CAL_Q_KG_H)
 
 # ── Viscosity model η(T) ───────────────────────────────────────────────────────
 ## Reference viscosity (arbitrary normalised Pa·s-like units) at REF_TEMP_C.
@@ -75,7 +93,7 @@ var last_viscosity    : float = 0.0   # η   (resolved, normalised units)
 ## no averaging, no lab delay.
 ##
 ##   Q                  — throughput (kg/h). Non-positive → 0 melt flowing → MFI 0.
-##   die_pressure       — die-head melt pressure (bar). Clamped away from 0 so a
+##   die_pressure       — die-plate melt pressure (bar). Clamped away from 0 so a
 ##                        starved/zeroed sensor can't divide-by-zero into infinity.
 ##   viscosity_or_temp  — EITHER a viscosity (≤ VISCOSITY_TEMP_THRESHOLD) used as
 ##                        η directly, OR a melt temperature in °C (> threshold)

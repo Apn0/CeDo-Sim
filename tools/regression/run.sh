@@ -431,6 +431,13 @@ fi
 # overlay only watched while open); controls that a still-active fault stays
 # acked; a world swapped under a closed panel logs no PLC-000 / false INV-101.
 # 32 checks, 6 mutations each red on their own checks.
+# test_hmi_fault_per_line (2026-09-24): the same EREMA code on two extruders is
+# two alarms. Keyed by code, a 3C 6557 that tripped while an acknowledged 3A
+# 6557 was still active never lit the bell, got no Actief or Historie row; and
+# a real ExtruderMachine's line (config_resource.line_id) never reached the
+# alarm at all. Two real catalog extruders + filters into the real
+# HmiOverlay.tscn, operated by its own buttons; rows must name their line.
+# 26 checks; main's overlay and 6 mutations each red on their own checks.
 # test_chute_choke (2026-09-23, P6 second half): a machine whose reject pile
 # refuses material chokes — latched like a trip, one CHUTE-BLOCKED alarm,
 # nothing conveyed, the refused kg back in the machine (ledger incl. wash
@@ -458,13 +465,23 @@ fi
 # CutterCompactor's pot load. Geometry read off the mesh's own meta, the glass
 # window proven inside the fill range, and the production LineFlow path driving
 # the column tick by tick from an injected charge.
+# test_extruder_melt_pressures (2026-09-24): the 3A/3B melt pressures in BAR at
+# the two points the operator ruled — before the laserfilter = the melt-set
+# pressure after it + the screen's dMP, and kopdruk into the kopfilter with a
+# per-line FORM-008 nominal — land in the documented bands on a real catalog
+# extruder + LaserFilter + HeadFilter; both trips are reachable (a caked screen
+# and cold zones past 318 bar; 165 bar dP across the kopfilter for the 160-bar
+# MP<PEL, with 155 bar as the negative control), and the 318 trip is armed
+# again after an E-stop reset. Since 2026-09-25 the screen's dMP follows the
+# melt too: a melt held 9 °C cold trips 318 through the screen, 5 °C does not,
+# and a start at the preheat-ready melt runs up clean. 53 checks, eight
+# mutations red.
 # 2026-09-24 — three guards from the cross-repo review (convergence map C1/C6/C11):
-# test_die_pressure_bar: the extruder's pre-meltfilter pressure reads the plant's
-# 280 BAR (it read 19.3 bar off a psi base), the laser filter's inlet is that
-# pressure and not the kopfilter's ΔP, and the 160-bar MP<PEL interlock reads
-# the pelletiser-side pressure (140 bar nominal); a one-zone 30 °C drop does
-# not trip (pressure follows melt temperature, 3A trend fit 6.83 bar/°C).
-# 23 checks, 4 mutations red.
+# test_die_pressure_bar: the melt-set pressures follow melt temperature (3A trend
+# fit 6.83 bar/°C, as a fraction of 280 bar), the laser filter's inlet is the
+# model's pressure and not the kopfilter's ΔP, and a one-zone 30 °C drop on
+# the real rig raises torque but trips nothing. Merged with
+# test_extruder_melt_pressures' two-pressure model (see its comment above).
 # test_hmi_ack_rearm: a KWITTEREN belongs to one occurrence — a fault that
 # clears and re-trips is unacked again. 7 checks, mutation red.
 # test_legacy_props_spawner: an UNCONFIGURED world (first launch) boots its
@@ -475,13 +492,23 @@ fi
 # every world.call name in the spawner on the booted MainWorld, proves each solid
 # collider live in the physics space, pins the shredder to its belt's discharge,
 # and never writes world_layout.json. Own slot. 35 checks, 5 mutations red.
+# test_screw_die_plate_bar (2026-09-24): LineFlow's OWN screw model (not
+# ExtruderModel) read 0.11 "bar" at the die, at a flat 200 rpm and a 195 °C
+# melt, which put the MFI proxy at 1491 g/10min and made the QA bench REJECT
+# every sample; on lines 1/3A/3B the terminal and SCADA also read the
+# extruder_silo. Now the die plate (after the kopfilter, operator ruling) is
+# anchored at FORM-008's kopdruk window and the rpm, melt and output at the
+# WinCC trend p50s (read from the JSON). Four macro lines on one LineFlow.
+# 36 checks, 8 mutations red (old die formula 7, silo back 2, flat 200 rpm 7,
+# 195 °C barrel 8, old MFI gain 2, terminal prefix pick 3, no profile 5,
+# ExtruderModel's Extruder3A.tres die plate drifted 1).
 # test_machine_sounds (2026-09-25): the operator's recordings on their machines.
 # Every MachineSoundSpec .tres and its WAVs (16-bit stereo 44.1 kHz, loops
 # looping), the build_node attach contract, drive → pitch/level/stop semantics,
 # LineFlow driving from spin, the leaf blower's start/idle/rev/stop, the valve
 # cranks, the compactor flush period, the wash panel's alarm beep + KWITTEREN.
 # Needs assets/audio/machines/ (gitignored — tools/audio/machine_clips.py).
-for t in test_machine_sounds test_motor_trip_stops_conveying test_die_pressure_bar test_hmi_ack_rearm test_legacy_props_spawner test_legacy_props_unconfigured_boot test_lump_cart_overflow test_lump_cart_speed_clamp test_save_checkpoint test_keybind_sheet test_map_labels test_compactor_sight_glass test_belt_film_field test_silo_level_windows test_chute_choke test_trip_smoke test_vacuum_pot_visual test_doseersilo_trough test_bale_weight_variance test_wet_side_beds test_line1_metal_detect test_vacuum_pot_minigame test_belt_speed_mismatch test_hmi_fault_rearm test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_line3a_identity test_line3b_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_humanoid_rig_conformance test_line1_flow_conformance test_line1_throughput test_line1_overband_mount test_line1_twin_streams test_line3a_flow_conformance test_line3b_flow_conformance test_shredder_rate_reconciliation test_line1_no_false_overload test_line_builder_ghost test_macro_part_placement test_project_sweep_guards test_tool_placement_mode test_scada_dashboard_scene test_atomic_file test_extruder_brain_wired test_vehicle_census test_map_overlay_init test_qa_loop test_qa_spec test_assessment_procedure test_character_customizer test_f10_reserved test_bale_sticker_supplier test_hose_reel_round test_macro_delta_guard; do
+for t in test_machine_sounds test_extruder_melt_pressures test_motor_trip_stops_conveying test_die_pressure_bar test_screw_die_plate_bar test_hmi_ack_rearm test_legacy_props_spawner test_legacy_props_unconfigured_boot test_lump_cart_overflow test_lump_cart_speed_clamp test_save_checkpoint test_keybind_sheet test_map_labels test_compactor_sight_glass test_belt_film_field test_silo_level_windows test_chute_choke test_trip_smoke test_vacuum_pot_visual test_doseersilo_trough test_bale_weight_variance test_wet_side_beds test_line1_metal_detect test_vacuum_pot_minigame test_belt_speed_mismatch test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_line3a_identity test_line3b_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_humanoid_rig_conformance test_line1_flow_conformance test_line1_throughput test_line1_overband_mount test_line1_twin_streams test_line3a_flow_conformance test_line3b_flow_conformance test_shredder_rate_reconciliation test_line1_no_false_overload test_line_builder_ghost test_macro_part_placement test_project_sweep_guards test_tool_placement_mode test_scada_dashboard_scene test_atomic_file test_extruder_brain_wired test_vehicle_census test_map_overlay_init test_qa_loop test_qa_spec test_assessment_procedure test_character_customizer test_f10_reserved test_bale_sticker_supplier test_hose_reel_round test_macro_delta_guard; do
 	echo "== $t =="
 	${SUITE_TO[@]+"${SUITE_TO[@]}"} "$GODOT" --headless --path "$PROJ" "res://src/tests/$t.tscn" > "$OUT/$t.log" 2>&1
 	rc=$?

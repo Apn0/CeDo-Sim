@@ -45,6 +45,29 @@ class_name ExtruderConfig
 @export var backflush_threshold_grams       : float = 4_000_000.0
 @export var backflush_lump_mass_kg          : float = 35.0   # avg lump produced
 
+@export_group("Melt pressures (bar)")
+## All in BAR — every plant HMI, SWI and trend is (2026-09-24; the model used to
+## carry one "280 psi" die pressure that had no source). Two points, per the
+## operator's ruling (docs/plant/operator_rulings_2026-09-24.md). The line runs
+## screw -> laserfilter (MF1) -> degassing -> melt pump -> kopfilter (MF2) ->
+## heetafslag.
+##
+## Pressure AFTER the laserfilter at nominal throughput and melt, MP > MF. The
+## melt sets it; the pressure BEFORE the laserfilter is this plus the screen's
+## own dMP (LaserFilter). 25 bar = the 3A laserfilter screen, MP<MF 207 /
+## dMP 182 / MP>MF 25 (docs/plant/hmi_reference.md sec 1). Line 6 reads 18-22,
+## 3C 24-26 (PHOTO-erema-bluport-lijn6__226, -lijn3C-trend-8curves-2__293).
+@export var mp_after_laserfilter_nominal_bar : float = 25.0
+## Kopdruk (pressure INTO the kopfilter, PLC tag MD_vor_SF2) with a CLEAN pack at
+## nominal throughput and melt: the melt pump's work against the die plate.
+## A loading pack adds its dP on top. DERIVED, not documented: the bottom of
+## this line's FORM-008 window, so one shift of pack loading (FORM-008 row 27,
+## "1x per dienst minimaal wisselen") stays inside it. 3B = 140 (window 140-155).
+@export var die_plate_nominal_bar : float = 140.0
+## FORM-008 kopdruk window, bar (docs/plant/checklist_3a_3b.md rows 25/26):
+## 3A 120-150, 3B 140-155. The SCADA gauge alarms outside it.
+@export var kopdruk_window_bar : Vector2 = Vector2(140.0, 155.0)
+
 @export_group("Startup — barrel warm-up")
 ## Minimum seconds from a cold barrel (ambient) to melt setpoint.
 ##

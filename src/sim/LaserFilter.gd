@@ -134,15 +134,17 @@ const SCREEN_GRADES : Dictionary = {
 # before the back face. Operator-confirmed bias: ~85% of new loading lands on
 # the front face. The screen is symmetric — the asymmetry is purely in LOADING.
 const FRONT_LOAD_BIAS           : float = 0.85
-# Root-cause amplification thresholds. Upstream pressure proxy and extruder
-# RPM are reported into this node by ExtruderMachine; high values mean the
-# inlet face is being slammed harder, so the front-side loading rate grows.
-# Anchored in BAR since 2026-09-24. They were 250 / 250 PSI, tuned against an
-# upstream signal that sat at 280 psi (a unit error — the plant's 280 is bar).
-# Scaling both by the same factor keeps the amplification at nominal identical
-# (+0.12x at 280 bar) now that the signal carries real bar-scale pressure.
-const UPSTREAM_PRESSURE_BASE_PSI : float = 250.0 * PSI_PER_BAR
-const UPSTREAM_PRESSURE_SCALE_PSI : float = 250.0 * PSI_PER_BAR  # +1.0× amplification per 250 bar over base
+# Root-cause amplification thresholds. The extruder's melt push and RPM are
+# reported into this node by ExtruderMachine; high values mean the inlet face
+# is being slammed harder, so the front-side loading rate grows.
+# The push is the MELT-SET pressure after the filter (mp_after_filter_bar), not
+# the pressure before it: that one contains our own dMP and would feed the cake
+# back into itself. Both constants were 250 "psi" against a 280 "psi" nominal
+# push (no source for either); they keep that same 250/280 ratio against the
+# 25-bar nominal after-filter pressure (ExtruderConfig), so the amplification
+# curve is unchanged: +0.12 at nominal, +1.0 per 250/280 of nominal over base.
+const UPSTREAM_PRESSURE_BASE_BAR  : float = 25.0 * 250.0 / 280.0
+const UPSTREAM_PRESSURE_SCALE_BAR : float = 25.0 * 250.0 / 280.0  # +1.0× amplification per this many bar over base
 const EXTRUDER_RPM_BASE          : float = 110.0   # above this, additional front amplification kicks in
 const EXTRUDER_RPM_SCALE         : float = 60.0    # +1.0× per this many rpm over base
 
@@ -208,7 +210,17 @@ var delta_p_back_psi     : float = 0.0
 
 # Upstream root-cause indicators (set by ExtruderMachine each tick). Read by
 # the HMI to explain why the front face is clogging so fast.
-var upstream_pressure_psi_indicator : float = 0.0
+# MP > MF in BAR: the melt-set pressure AFTER this filter (ExtruderModel.
+# mp_after_laserfilter_bar). The pressure BEFORE it is this plus our own dMP —
+# mp_before_filter_bar(), the 318-bar trip input. Replaced the old psi
+# "upstream_pressure_psi_indicator" (2026-09-24), which on a line with a
+# kopfilter was fed the KOPFILTER's dP — a filter that sits after this one.
+var mp_after_filter_bar             : float = 0.0
+# Melt viscosity relative to a melt at setpoint (ExtruderModel.
+# melt_viscosity_factor, forwarded each tick; 1.0 when no extruder feeds it).
+# Both faces' dMP scale by it: a colder, thicker melt needs more pressure
+# through the same screen and cake (operator 2026-09-25, "dMP rises too").
+var melt_viscosity_factor           : float = 1.0
 var extruder_rpm_indicator          : float = 0.0
 # Un-melted lump feed rate (g/s) from cold extruder zones — slams the inlet
 # face. Reported by ExtruderMachine when motor_torque_pct is high.
@@ -327,14 +339,6 @@ func _physics_process(delta: float) -> void:
 		m1_load_pct        = 0.0
 		lump_feed_rate_g_s = 0.0
 		return
-	# #223 — 320-bar UPSTREAM hard trip: immediate shutdown of compactor +
-	# extruder + pelletiser. Latches; halts the filter (is_line_down → the
-	# upstream ExtruderModel stops feeding) and signals ExtruderMachine to stop
-	# the trio together.
-	if not is_tripped and upstream_pressure_psi_indicator / PSI_PER_BAR > UPSTREAM_TRIP_BAR:
-		is_tripped = true
-		is_halted = true
-		upstream_pressure_trip.emit(upstream_pressure_psi_indicator / PSI_PER_BAR)
 	# Loading rises with melt throughput. Discrete disc advances purge it
 	# (see _disc_advance); BETWEEN advances loading rises monotonically so ΔP
 	# climbs in a sawtooth pattern.
@@ -345,7 +349,7 @@ func _physics_process(delta: float) -> void:
 	# (operator-confirmed root causes — the inlet face is being slammed
 	# harder, so debris compacts onto it faster).
 	var front_amp : float = 1.0
-	front_amp += maxf(0.0, (upstream_pressure_psi_indicator - UPSTREAM_PRESSURE_BASE_PSI) / UPSTREAM_PRESSURE_SCALE_PSI)
+	front_amp += maxf(0.0, (mp_after_filter_bar - UPSTREAM_PRESSURE_BASE_BAR) / UPSTREAM_PRESSURE_SCALE_BAR)
 	front_amp += maxf(0.0, (extruder_rpm_indicator          - EXTRUDER_RPM_BASE)          / EXTRUDER_RPM_SCALE)
 	# Un-melted lumps coming in from a cold extruder slam the inlet face.
 	# Added straight onto the front loading (not split).
@@ -358,6 +362,18 @@ func _physics_process(delta: float) -> void:
 	# #223 docs->code — item 13: bar-realistic ΔP = clean-screen base + cake.
 	delta_p_front_psi = _face_delta_p_psi(front_loading_g)
 	delta_p_back_psi  = _face_delta_p_psi(back_loading_g)
+	# #223 — 318-bar UPSTREAM hard trip: immediate shutdown of compactor +
+	# extruder + pelletiser. Latches; halts the filter (is_line_down → the
+	# upstream ExtruderModel stops feeding) and signals ExtruderMachine to stop
+	# the trio together. Read on THIS tick's dMP (so after the cake update):
+	# the pressure before the filter is the melt-set pressure after it plus our
+	# own dMP, so a caking screen climbs toward the trip — SWI-054 changes the
+	# 3A/3B screen "bij een druk van 280 / 300 bar", under it (operator ruling
+	# 2026-09-24: 280 is the safe maximum, 318 the emergency shutdown).
+	if not is_tripped and mp_before_filter_bar() > UPSTREAM_TRIP_BAR:
+		is_tripped = true
+		is_halted = true
+		upstream_pressure_trip.emit(mp_before_filter_bar())
 	# #223 — ΔMP is a READOUT ONLY now (front/back split, computed above). It no
 	# longer changes disc speed — the disc indexes at the M1 motor rpm.
 	# ── Sawtooth advance gate ───────────────────────────────────────────────
@@ -396,13 +412,27 @@ func _physics_process(delta: float) -> void:
 func set_feed_throughput(kg_h: float) -> void:
 	feed_throughput_kg_h = maxf(0.0, kg_h)
 
-## Upstream pressure proxy (head-filter or extruder die ΔP). ExtruderMachine
-## calls this every tick. High values amplify the FRONT loading rate — this
-## is the operator-confirmed root-cause path for "right side clogged again":
-## head filter is too clogged → upstream pressure climbs → front of laser
-## filter gets slammed → front_loading_g runs away faster than back.
-func set_upstream_pressure_indicator(p_psi: float) -> void:
-	upstream_pressure_psi_indicator = maxf(0.0, p_psi)
+## The melt-set pressure AFTER this filter, bar (ExtruderModel.
+## mp_after_laserfilter_bar). ExtruderMachine calls this every tick, 0 when the
+## extruder is not producing. High values amplify the FRONT loading rate (the
+## extruder slamming the inlet face → front_loading_g runs away faster than
+## back — the "right side clogged again" diagnostic). It used to be fed the
+## kopfilter's dP; the kopfilter sits AFTER this filter and the melt pump
+## (operator 2026-09-24), so its clogging cannot push on this face.
+func set_mp_after_filter_bar(bar: float) -> void:
+	mp_after_filter_bar = maxf(0.0, bar)
+
+## Melt viscosity relative to setpoint (ExtruderModel.melt_viscosity_factor).
+## Scales this screen's dMP: the 3A trend fit (6.83 bar/°C) is on MP<MF, the
+## pressure BEFORE the filter, and most of that pressure is this dMP.
+func set_melt_viscosity_factor(f: float) -> void:
+	melt_viscosity_factor = maxf(0.1, f)
+
+## Melt pressure BEFORE this filter, bar (the HMI's "MP < MF"): the melt-set
+## pressure after it plus our own dMP. The 318-bar trip reads this. With no
+## melt flowing both terms are 0 (the no-flow gate parks dMP).
+func mp_before_filter_bar() -> float:
+	return mp_after_filter_bar + delta_p_psi / PSI_PER_BAR
 
 ## Extruder RPM proxy. Above ~110 rpm the inlet face gets additional debris
 ## velocity → more aggressive front-side packing. Set by ExtruderMachine each
@@ -439,14 +469,27 @@ func cascade_stop() -> void:
 func cascade_resume() -> void:
 	is_halted = false
 
+## ExtruderMachine calls this when the operator resets the over-pressure
+## EMERGENCY_STOP, beside re-arming its own latch. is_tripped used to clear
+## only on a screen change (INSERT), and upstream_pressure_trip fires only on
+## its rising edge — so once the 318-bar trip became reachable (2026-09-24), a
+## reset-and-restart left it dead for the rest of the session. The cake is left
+## as it is: restarting onto a screen still caked past the trip trips again,
+## and the screen change (SWI-054 "bij 280 / 300 bar", SWI-074) is the way out.
+func rearm_upstream_trip() -> void:
+	is_tripped = false
+
 # #223 docs->code — item 13: bar-realistic ΔP for one filter face.
 # docs/plant/hmi_reference.md §1 (ΔMP 175–235 bar) + docs/plant/swi/laserfilter-
 # smeltdrukverschil__062_CeDo72.md (0–300 bar band). ΔP = clean-screen BASE
 # (flow resistance ∝ throughput, both faces) + CAKE (this face's loading_g).
-# Clamped to the 350 bar HMI scale.
+# Clamped to the 350 bar HMI scale. Both terms scale with the melt's viscosity
+# (melt_viscosity_factor, 1.0 at setpoint): a colder melt needs more pressure
+# through the same screen and the same cake. The M1 disc-motor load reads the
+# cake's loading_g directly, so it does not follow the melt.
 func _face_delta_p_psi(loading_g: float) -> float:
 	var base_psi : float = feed_throughput_kg_h * CLEAN_BASE_PSI_PER_KG_H
-	return clampf(base_psi + loading_g * CAKE_PSI_PER_G, 0.0, DELTA_P_MAX_PSI)
+	return clampf((base_psi + loading_g * CAKE_PSI_PER_G) * melt_viscosity_factor, 0.0, DELTA_P_MAX_PSI)
 
 # Sawtooth ΔMP cycle: purge most of the accumulated cake in one step and break off the in-progress sausage.
 func _disc_advance() -> void:

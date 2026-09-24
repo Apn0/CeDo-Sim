@@ -116,7 +116,7 @@ class_name TagMap
 ##    are sensors/valves/sumps, not machines on the HMI overview
 ##    (src/sim/Line3CDef.gd:21-22). Nothing to bind.
 ##  * EXTRUDER BACK-END: the sim's richest live models (ExtruderModel melt_temp /
-##    screw_rpm / filter_loading_g / die_pressure_psi, CutterCompactor, MfiProxy,
+##    screw_rpm / filter_loading_g / melt pressures (bar), CutterCompactor, MfiProxy,
 ##    LaserFilter) have NO tags in this export — it stops at unit 20 and
 ##    Line3CDef's 12 back-end stages carry RECONSTRUCTED codes
 ##    (src/sim/Line3CDef.gd:84-95). Real simulation, no real tag: the reverse gap.
