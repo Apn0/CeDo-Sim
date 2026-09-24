@@ -524,7 +524,7 @@ the one before that ~6 months stale — treat this one as re-checkable too):
 | `docs/audit/overnight_enhancement_2026-09-23.md` | **The unattended 2026-09-23 run: 12 commits, every one measured first.** A MotorOverload trip that never stopped conveying, a Lumpenwagen that lost kg when full, checkpoint saves, the F1 key sheet, map labels, the cart speed clamp, the compactor kijkglas, LineFlow moved to 10 Hz (2.85 → 0.54 ms/frame), and two harness reds root-caused as frame-count races (navmesh bake, bale streaming). Two full harness runs, the operator list at the end |
 | `docs/audit/operator_session_2026-09-23.md` | **The interactive 2026-09-23 session: tasks ranked by operator effort against sim impact, each answered by AskUserQuestion then built and measured.** Task 1: film beds on every belt (P1), the inclined belt's deck running the wrong diagonal, the cost probe, the renders; per-task evidence and the open questions each one left |
 | `docs/DESIGN_vacuum_pot_minigame_2026-09-23.md` | **P3 stage B as the operator described it: not a hold-E but a mini-game** — lid pull that stiffens with time, plamuurmes planes at 90 %, the block by hand, re-lid, the two-minute race. Systems, parameters (his vs placeholder), test strategy. **Built 2026-09-24** (`test_vacuum_pot_minigame`, 33 ok); the feel is his to play |
-| `docs/plant/operator_rulings_2026-09-24.md` | **Extruder melt pressures, 2026-09-24**: the "280 psi" die pressure was 280 BAR, a safe maximum before the laserfilter under the 318-bar shutdown (he runs ~220). Two pressures: before the laserfilter = melt-set after + dMP; MP<PEL (160 bar) = dP across the kopfilter; per-line FORM-008 kopdruk. Recollections; what was measured before/after, and what is still open (3B above its one-session trend) |
+| `docs/plant/operator_rulings_2026-09-24.md` | **Extruder melt pressures, 2026-09-24**: the "280 psi" die pressure was 280 BAR, a safe maximum before the laserfilter under the 318-bar shutdown (he runs ~220). Two pressures: before the laserfilter = melt-set after + dMP; MP<PEL (160 bar) = dP across the kopfilter; per-line FORM-008 kopdruk. Recollections; what was measured before/after, and what is still open (3B above its one-session trend). §6: merged with #275, which fixed the same finding in parallel. The melt-set pressures follow MELT temperature (3A fit 6.83 bar/°C, weak), and whether the screen's dMP does too is open |
 | `docs/plant/operator_rulings_2026-09-23.md` | **Operator answers from memory, 2026-09-23** — film look, colour order, bed depth per belt, where wet flake is visible, screws "differ". Recollections, not documents: cite them as such |
 | `docs/audit/assets_loss_and_restore_2026-09-21.md` | **`assets/` was wiped and restored.** Godot's `.md5` fingerprints identify originals byte for byte: 159 of 273 are back exact and 101 are cache-only (listed; do not re-import them). Also the `Merlo.fbx` re-import trap, what `winfr` did and did not recover (nothing exact), and the method to reuse |
 | `docs/BACKLOG_ultracode_2026-07-19.md` | Deferred queue — 16 of 40 findings landed; also records the npc-05 vacuous-green correction |
@@ -536,6 +536,49 @@ the one before that ~6 months stale — treat this one as re-checkable too):
 | `docs/MESHROOM_BUILDING_HANDOFF.md` | Building photogrammetry handoff. Its `scratchpad/production_run.py` re-run path is **lost**; the 17 GB Meshroom cache now lives at `D:\cedo_archive\meshroom\CeDo_meshroom_cache` (moved from `D:\CeDo_meshroom_cache` 2026-09-21) |
 
 ## Traps that have bitten before
+
+- **A unit error can hold up every consumer built on top of it — fix the unit
+  and they all fall over.** Measured 2026-09-24: `ExtruderModel` carried the
+  plant's 280 as PSI (`DIE_PRESSURE_BASE_PSI = 280.0`, 19.3 bar on the BluPort
+  chart); every plant source gives 280 BAR before the meltfilter (SWI-054 p1,
+  the 3C BluPort screen, the 3A trend p50 271 / p95 280 bar), and the operator
+  confirmed it. At bar scale three consumers broke at once, each only working
+  because the number was 14.5x too small: the 160-bar MP<PEL interlock read the
+  PRE-filter pressure (would E-STOP every nominal run), the laser filter's
+  inlet was fed the kopfilter's ΔP (downstream of it, and on 3A/3B line 3C's),
+  and the pressure rode a torque proxy that made one zone 30 °C down read 320
+  bar and trip the line (the melt-set pressures now follow melt temperature at
+  the 3A trend fit, 6.83 bar/°C as 2.44 % of 280 bar — a weak fit, refit when
+  a longer export exists). Two sessions fixed this the same evening (#275 and
+  #278); the merged model is the operator's TWO pressures — MP<PEL is the dP
+  across the kopfilter, not a 140-bar copy of the pre-filter pressure — see the
+  "Operator-documented" entry below. Guarded by `test_die_pressure_bar` and
+  `test_extruder_melt_pressures`. Before changing a unit, list every reader
+  (`grep -rn <var>`), and measure each one at the new scale.
+- **A helper moved to a utility class leaves `world.call("_name")` callers
+  silently broken.** `call()` by string is not checked at parse time: when
+  MainWorld's `_local_aabb` / `_fit_box_collider` moved to `GeometryUtils`,
+  `LegacyPropsSpawner` kept calling them on MainWorld for months — 3 SCRIPT
+  ERRORs per unconfigured boot, no colliders on the legacy props, feeder
+  station aborted. Nobody saw it: that path only runs on a world with no
+  `world_layout.json`. Guarded by `test_legacy_props_spawner`. To audit:
+  `grep -rhoE 'world\.call\("[A-Za-z_]+"' src | sort -u` and check each name
+  exists as a `func` on MainWorld.
+  The damage was bigger than the error lines, because a failed `call()` ABORTS
+  the calling function: the diesel pump was never spawned at all (the outlet's
+  call came one line before it), the feeder shredder stood at the world origin
+  303 m from its belt, and the feeder worker, his bale clamp and tools never
+  existed. Second guard, written in parallel the same evening:
+  `test_legacy_props_unconfigured_boot` (35 checks) counts the boot's
+  "Nonexistent function" errors with an engine `Logger` (Godot 4.6 has
+  `OS.add_logger`), runs the audit above as a check (`has_method` on the booted
+  world), and proves each collider live in the physics space. Open, measured,
+  not changed: on that world the Merlo P40 parks 0.50 m from the power outlet,
+  hull through the post (since `2d4c8da`, 2026-06-10); frozen kinematic, it
+  drives off the same with or without the outlet's collider. Both suites were
+  written by two sessions sharing one `app_userdata`, first under the SAME test
+  name and slot: never run two harnesses at once, give every suite its own slot,
+  and never let a suite restore `world_layout.json` over bytes it did not write.
 
 - **`Node3D.rotation.x = +θ` sends the local +Z end DOWN, and a symmetric deck
   box hides a wrong sign for months.** Measured 2026-09-23
@@ -1085,8 +1128,11 @@ sequence matters more than either endpoint:
   mesh within reach is a sliver ~1.1 m up (`cell_height` 0.60 quantisation) on
   top of the neighbouring kit.
 
-  A post-placement fix was tried 2026-08-28 and **measured as not working** —
-  kept at `scratchpad/CrewManager.gd.attempt_navpost.bak`. It searched the
+  A post-placement fix was tried 2026-08-28 and **measured as not working**. This
+  paragraph used to say it was "kept at
+  `scratchpad/CrewManager.gd.attempt_navpost.bak`" — that file is GONE. There is no
+  `scratchpad/` in the repo, and an all-drive name search on 2026-09-24 found no copy
+  anywhere. The description that follows is all that is left of it. It searched the
   worker's side plus four cardinals, accepting only spots that were physically
   clear AND had floor-level navmesh within 0.75 m. Every direction was rejected
   out to `STAND_MAX_PUSH_M` (4.0 m), i.e. **there is no floor-level navmesh

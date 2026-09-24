@@ -74,10 +74,10 @@ asked whether the 280 was bar, and at which point it applies.
 
 | Quantity | Model field | Nominal | Where the number comes from |
 |---|---|---|---|
-| after the laserfilter, MP>MF | `mp_after_laserfilter_bar` | 25 bar × throughput × viscosity | 3A screen (`hmi_reference.md` §1) |
+| after the laserfilter, MP>MF | `mp_after_laserfilter_bar` | 25 bar × throughput × melt factor | 3A screen (`hmi_reference.md` §1); melt factor §6 |
 | laserfilter dMP | `laserfilter_dp_bar` (from LaserFilter) | 175–235 bar sawtooth | unchanged LaserFilter calibration (#223) |
 | before the laserfilter, MP<MF | `mp_before_laserfilter_bar` = after + dMP | measured 197.6–260.0 bar | operator: ≤ 280 safe, 318 trip |
-| die plate (out of the kopfilter) | `die_plate_bar` | 3A 120, 3B 140 bar × throughput × viscosity | **DERIVED**: bottom of each FORM-008 window |
+| die plate (out of the kopfilter) | `die_plate_bar` | 3A 120, 3B 140 bar × throughput × melt factor | **DERIVED**: bottom of each FORM-008 window |
 | kopfilter dP | `kopfilter_dp_bar` (from HeadFilter) | 0 fresh → 11.5 bar after 8 h | unchanged HeadFilter rate |
 | kopdruk (into the kopfilter, `MD_vor_SF2`) | `kopdruk_bar` = die plate + pack dP | 3A 120.1 → 131.5, 3B 140.1 → 151.5 bar over a shift | FORM-008 windows |
 | MP<PEL | `mp_pel_bar` = kopfilter dP | 0.2 bar fresh | operator ruling above |
@@ -147,3 +147,90 @@ Source: `src/tests/test_extruder_melt_pressures.tscn`, wired into `run.sh`,
   (`(torque − 95) × 5 g/s`) against the cake calibration (2500 psi per g).
   Both predate this change, and neither has a source. Before this change the
   same event saturated dMP at 350 bar and ran on.
+- **The melt-temperature fit is ON MP<MF, and the merged model moves MP<MF
+  far less (see §6).** The fit is 6.83 bar/°C on the pressure before the
+  laserfilter. In the two-pressure model the melt factor reaches MP<MF only
+  through MP>MF: 25 bar × 2.44 % = 0.61 bar/°C. By the fit, a melt 12 °C colder
+  adds ~82 bar (271 → ~353, past 318). The model adds ~7 bar. The two agree
+  only if the laserfilter screen's dMP also rises with viscosity. No plant
+  source here says whether it does. What would settle it: the operator's
+  recollection of whether the laserfilter's dMP climbs when the melt runs
+  colder, or a trend export that pairs dMP with melt temperature.
+
+## 6. Merged with #275 (same evening)
+
+A second session fixed the same finding in parallel. Its fix is #275
+(`1588462`), which reached `main` before this branch (PR #278). Both agree that
+280 is bar. They differed on two points, and the operator was asked again
+(AskUserQuestion, 2026-09-24, late evening):
+
+- **MP<PEL: "ΔP across kopfilter".** He chose this over #275's version, a copy
+  of the pre-filter pressure scaled to 140 bar nominal, taken from the EREMA
+  manual's wording. It confirms §2.
+- **The melt-set pressures follow MELT temperature: "Yes, melt
+  temperature".**
+  - #275 records the ruling behind this: pressure follows melt temperature,
+    not motor torque. On the torque proxy, one zone 30 °C down read 320 bar and
+    tripped the line.
+  - Its number is a fit, not the operator's. It pairs the 3A WinCC trends
+    "Smeltdruk voor meltfilter" and "Smelt temperatuur voor meltfilter": slope
+    −6.83 bar/°C, r = −0.76, n = 967. The fit is **weak**: one 73-minute
+    pressure window, and 948 of the 967 pairs in one 5 °C bin.
+  - The merged model scales the melt-set pressures (MP>MF and the die plate)
+    by 6.83 / 280 = **2.44 % per °C** of melt below setpoint, as #275 did
+    (`ExtruderModel.DIE_PRESSURE_BAR_PER_C` / `MELT_FIT_LEVEL_BAR`).
+  - Torque still drives the lumps into the laserfilter. So the cold-zone trip
+    in §4 still comes through the screen.
+
+What the merge did to #275's suite, `test_die_pressure_bar` (the original is
+kept as `.bak`):
+
+- **Kept:**
+  - the melt sensitivity check, now as a fraction of the melt-set pressures;
+  - the laserfilter inlet is not the kopfilter's ΔP;
+  - a nominal run latches neither trip;
+  - one zone 30 °C down trips nothing. This check now runs on the wired rig
+    with the filters stepped, because on the rig the other way to 318 is
+    through the screen.
+- **Rewritten**, because it asserted the single-pressure model:
+  - a bare model reading 280 bar before the filter. With no screen there is
+    no dMP.
+  - MP<PEL at 120–150 bar. That band is now kopdruk's, checked against 3B's
+    FORM-008 window and the 3B trend.
+  - a 12 °C colder melt alone crossing 318. That is the open item in §5.
+
+Measured on the merged tree (2026-09-24 23:47–23:53, isolated `APPDATA`):
+
+- **Parse sweep:** 449 ok, 0 fail.
+- **Suites:**
+
+  | Suite | Result |
+  |---|---|
+  | `test_extruder_melt_pressures` | 44 ok; §4's numbers unchanged, since the melt factor is 1.0 at setpoint |
+  | `test_die_pressure_bar` | 20 ok |
+  | `test_extruder_bluport_scope` | 20 ok |
+  | `test_laser_filter_scope` | 8 ok |
+  | `test_laserscope_pressure_box` | PASS |
+  | `test_extruder_screw` | 12 ok |
+  | `test_extruder_brain_wired` | 24 ok |
+  | `test_hmi_ack_rearm` | 7 ok |
+  | `test_legacy_props_spawner` | 5 ok |
+  | `test_legacy_props_unconfigured_boot` | 35 ok |
+  | `test_tag_snapshot` | 28 ok, 1 data-gated skip: no `allernieuwste_*.json` in the isolated copy |
+
+  Every suite had 0 `^SCRIPT ERROR` lines.
+- **One zone 30 °C down on the wired rig:** torque 60.0 → 68.6 %, under the
+  95 % lump threshold. MP<MF peaked at 260.0 bar (the normal sawtooth top),
+  no trip.
+- **1 °C colder melt:** +2.37 % (fit 2.44 %). That is MP>MF +0.59 bar and die
+  plate +3.31 bar.
+- **Mutations of `test_die_pressure_bar`:**
+
+  | Mutation | Red checks |
+  |---|---|
+  | Torque proxy restored | 1 (A7c, 3.23 %/°C) |
+  | Laserfilter fed the kopfilter's ΔP | 2 (B1, B2) |
+
+  The zone-drop check (C2) does not catch the torque proxy on its own. In the
+  two-pressure model, torque scales only the 25-bar melt-set part, so neither
+  factor lets one zone reach 318. A7c is the check that tells them apart.

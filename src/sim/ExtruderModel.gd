@@ -274,6 +274,18 @@ var per_stage_extracted_g_s  : Array[float] = []   # gas pulled by each degas st
 var residual_volatile_g_per_kg : float = 0.0       # what's left when the melt reaches the die
 var pellet_defect_rate       : float = 0.0         # 0..1 — what the SCADA shows the operator
 
+## Melt-temperature sensitivity of the pre-meltfilter pressure, bar per °C of
+## melt BELOW setpoint (negative above it). Least-squares fit of the 3A WinCC
+## trends "Smeltdruk voor meltfilter" vs "Smelt temperatuur voor meltfilter"
+## (src/data/plant/trends/3a_*.json, samples paired within 120 s, running only:
+## P > 150 bar, T > 200 °C): slope -6.83 bar/°C, r = -0.76, n = 967. WEAK: the
+## pressure series covers only 2023-06-28 08:41-09:54, and 948 of the 967
+## pairs sit in one 5 °C bin. Refit when a longer pressure export exists.
+const DIE_PRESSURE_BAR_PER_C : float = 6.83
+## The pre-meltfilter level that slope was taken at (the operator's 280-bar safe
+## maximum; 3A trend p50 271 / p95 280). The melt-set pressures scale by the
+## same FRACTION per °C, 6.83 / 280 = 2.44 %/°C, as #275 did.
+const MELT_FIT_LEVEL_BAR : float = 280.0
 # ── Melt pressures, BAR (2026-09-24) ─────────────────────────────────────────
 # Replaces the single `die_pressure_psi` (base "280 psi", no source). Every plant
 # source gives ~280 in BAR, and the one number fed two trips that sit at two
@@ -284,9 +296,10 @@ var pellet_defect_rate       : float = 0.0         # 0..1 — what the SCADA sho
 #     + the screen's own dMP. 280 bar there is a safe maximum, kept under the
 #     318-bar emergency shutdown (LaserFilter, the trip authority).
 #   * MP<PEL, the 160-bar pelletiser interlock, reads the dP ACROSS the kopfilter.
-# The melt-set parts follow the old rheology proxy — pressure ∝ throughput ×
-# viscosity, viscosity read off motor torque — so they climb with throughput
-# and with cold zones exactly as the old number did.
+# The melt-set parts follow the rheology proxy — pressure ∝ throughput ×
+# viscosity — with viscosity read off the MELT temperature (DIE_PRESSURE_BAR_PER_C,
+# #275's operator ruling), not motor torque: a zone drop raises torque, and
+# pressure only once the melt really cools.
 var mp_after_laserfilter_bar  : float = 0.0   # MP>MF: melt-set, after the screen
 var die_plate_bar             : float = 0.0   # melt pump vs die plate, out of the kopfilter
 # Filter dPs, mirrored in by ExtruderMachine from the live LaserFilter / HeadFilter
@@ -542,11 +555,9 @@ func _tick_running(delta: float, inputs: Dictionary, events: Array[String]) -> v
 	# Motor torque from zone-temp shortfall (cold zones ⇒ thick melt ⇒ high
 	# torque). Above LUMP_PASSTHROUGH_TORQUE_PCT, un-melted lumps start
 	# passing into the laser filter — exposed for LaserFilter to read.
-	# Computed BEFORE _step_degassing so the die-pressure formula
-	# (viscosity_factor = motor_torque_pct / base) reads the CURRENT tick's
-	# torque, not last tick's stale value. Without this, the first RUNNING
-	# tick after a state change uses a zeroed torque and dumps a one-tick
-	# bogus low-pressure reading to the SCADA.
+	# Computed BEFORE _step_degassing so everything that tick reads the
+	# CURRENT torque (the melt pressures themselves follow melt temperature since
+	# 2026-09-24 — see _step_degassing).
 	_update_motor_torque(delta, events)
 	# If the torque trip fired the FAULT transition above, abandon the rest of
 	# the RUNNING tick — don't keep accumulating filter loading or evaluating
@@ -778,7 +789,7 @@ func _pots_at_capacity() -> String:
 # =============================================================================
 # MELT PRESSURES (bar) — see the field block near the top
 # =============================================================================
-## `factor` = throughput_norm × viscosity_factor: 1.0 at nominal throughput and
+## `factor` = throughput_norm × melt_factor: 1.0 at nominal throughput and
 ## melt, 0.0 with the screw stopped.
 func _set_melt_pressures(factor: float) -> void:
 	var f : float = maxf(0.0, factor)
@@ -841,19 +852,24 @@ func _step_degassing(delta: float) -> void:
 	var rpm_frac : float = max(0.001, screw_rpm / max(config.screw_rpm_nominal, 1.0))
 	residence_time_s = BARREL_TRANSIT_S_AT_NOMINAL / rpm_frac
 	# Melt-set pressures (bar). Standard non-Newtonian extruder rheology says
-	# pressure ∝ viscosity × throughput. Both proxies are already in the model:
-	# throughput_norm = throughput / nominal_throughput; viscosity_factor =
-	# motor_torque_pct / motor_torque_base_pct (motor torque already integrates
-	# zone temp shortfall + cold melt loading + lump effects). A starved screw
-	# (throughput → 0) drops both toward zero; an over-torqued cold screw
-	# spikes them above their nominal. The filter dPs add on top of these in
-	# _refresh_line_pressures().
+	# pressure ∝ viscosity × throughput. throughput_norm = throughput / nominal.
+	# Viscosity follows the MELT temperature at the slope the plant's own data
+	# shows (DIE_PRESSURE_BAR_PER_C, as a fraction of MELT_FIT_LEVEL_BAR). A
+	# starved screw (throughput → 0) drops both toward zero. The filter dPs add
+	# on top of these in _refresh_line_pressures().
+	#
+	# 2026-09-24 (#275) — viscosity used to be motor_torque_pct /
+	# motor_torque_base_pct, and torque carries the ZONE-SETPOINT shortfall (avg
+	# zone setpoint vs melt), not the melt itself. Operator ruling 2026-09-24:
+	# pressure follows melt temperature only — a zone drop raises torque as
+	# before (and torque still drives the lumps into the laserfilter), and
+	# pressure only once the melt really cools.
 	var throughput_norm : float = 0.0
 	if config.nominal_kg_per_h > 0.001:
 		throughput_norm = throughput_kg_h / config.nominal_kg_per_h
-	var torque_base : float = max(1.0, config.motor_torque_base_pct)
-	var viscosity_factor : float = max(0.1, motor_torque_pct / torque_base)
-	_set_melt_pressures(throughput_norm * viscosity_factor)
+	var melt_factor : float = maxf(0.1,
+		1.0 + (config.melt_temp_setpoint - melt_temp) * DIE_PRESSURE_BAR_PER_C / MELT_FIT_LEVEL_BAR)
+	_set_melt_pressures(throughput_norm * melt_factor)
 	# Per-stage residence + degas extraction in serial order.
 	per_stage_residence_s = []
 	per_stage_extracted_g_s = []

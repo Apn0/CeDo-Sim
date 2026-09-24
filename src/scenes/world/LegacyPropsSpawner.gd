@@ -10,9 +10,14 @@ class_name LegacyPropsSpawner
 # =============================================================================
 # Static-helpers pattern: every function takes `world: Node` (MainWorld) as
 # its first argument and routes back to MainWorld helpers via that ref —
-# _get_factory_anchor(), _vehicle_anchor(), _floor_top_y(), _player_spawn_node(),
-# _local_aabb(...), _fit_box_collider(...). Spawned nodes are still parented
-# under MainWorld so the scene-tree shape is identical to pre-extract.
+# _get_factory_anchor(), _vehicle_anchor(), _floor_top_y(), _player_spawn_node().
+# Geometry helpers are GeometryUtils.local_aabb / fit_box_collider: they moved
+# out of MainWorld and these calls were left pointing at `world.call("_local_aabb")`
+# / `("_fit_box_collider")`, which no longer existed — every unconfigured-world
+# boot raised 3 SCRIPT ERRORs, left the battery station / outlet / pump without
+# a solid collider and aborted the legacy shredder placement (2026-09-24,
+# test_legacy_props_spawner). Spawned nodes are still parented under MainWorld
+# so the scene-tree shape is identical to pre-extract.
 
 # #11 — rebuilt to drive the REAL clamp controls (no teleport-grab).
 const FEEDERS_ENABLED : bool = true
@@ -96,7 +101,7 @@ static func _spawn_battery_station(world: Node) -> void:
 	world.add_child(station)
 	station.global_position = anchor
 	_build_battery_station_model(world, station)
-	world.call("_fit_box_collider", station)   # #10 — solid bench, not just a proximity trigger
+	GeometryUtils.fit_box_collider(station)   # #10 — solid bench, not just a proximity trigger
 	print("[LegacyPropsSpawner] Battery station (walkie charger) @ %s" % str(anchor))
 
 ## #3 — the shift-leader's desk + computer in the office, beside the walkie-battery
@@ -174,7 +179,7 @@ static func _spawn_service_stations(world: Node) -> void:
 	world.add_child(outlet)
 	outlet.global_position = anchor + Vector3(22.5, 0.0, 0.0)
 	_build_outlet_model(world, outlet)
-	world.call("_fit_box_collider", outlet)   # #10 — solid post
+	GeometryUtils.fit_box_collider(outlet)   # #10 — solid post
 
 	# Diesel pump — near the Merlo (which parks at +15 on X).
 	var pump := ServiceStation.new()
@@ -183,7 +188,7 @@ static func _spawn_service_stations(world: Node) -> void:
 	world.add_child(pump)
 	pump.global_position = anchor + Vector3(13.0, 0.0, -3.0)
 	_build_pump_model(world, pump)
-	world.call("_fit_box_collider", pump)   # #10 — solid bowser
+	GeometryUtils.fit_box_collider(pump)   # #10 — solid bowser
 	print("[LegacyPropsSpawner] Service stations: outlet @ %s · pump @ %s"
 		% [str(outlet.global_position), str(pump.global_position)])
 
@@ -310,7 +315,7 @@ static func _spawn_feeder_station(world: Node, station: Vector3, worker_name: St
 		shredder.add_to_group("shredder")
 		var disc := (belt as Node3D).to_global(Vector3(0.0, 0.0, belt.deck_length + belt.incline_run + 2.0))
 		disc.y = world.call("_floor_top_y")
-		var sbb : AABB = world.call("_local_aabb", shredder)
+		var sbb : AABB = GeometryUtils.local_aabb(shredder)
 		shredder.global_position = Vector3(disc.x, disc.y - sbb.position.y, disc.z)
 
 	# (No bale lot / prepped bales — feedstock is built from the build menu now. #32)
