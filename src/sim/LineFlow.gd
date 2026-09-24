@@ -129,8 +129,6 @@ const NirSorterScript       = preload("res://src/sim/NirSorter.gd")
 # 180° antiphase so a fresh drum is always accepting flake.
 const MechDryerCycleScript  = preload("res://src/sim/MechDryerCycle.gd")
 const MechDryerModelScript  = preload("res://src/sim/MechDryerModel.gd")
-# A spinning extruder screw's max rpm (ExtruderScrew.SCREW_RPM_MAX); rpm_pct scales it.
-const EXTRUDER_SCREW_MAX_RPM : float = 200.0
 # The cutter-compactor's NOMINAL_RPM (see CutterCompactor.gd) — rpm_pct scales it.
 const CC_NOMINAL_RPM         : float = 1500.0
 
@@ -781,9 +779,14 @@ func _process_discovered_node(node3d: Node3D, id_ordinal: Dictionary, code_owner
 func set_scada(scada: Node) -> void:
 	_scada = scada
 
-## True for any node whose id begins with "extruder" (extruder_1/3a/3b/3c/6/screw).
-static func _is_extruder(id: String) -> bool:
-	return id.begins_with("extruder")
+## True for the extruders themselves (extruder_1/3a/3b/3c/6/screw): an
+## "extruder" id that melt-filters. The id prefix alone also caught the
+## extruder_silo, a buffer with no screw and no melt. Measured 2026-09-24
+## (probe_screw_die_pressure): on lines 1, 3A and 3B the silo got an
+## ExtruderScrew and sat BEFORE the extruder in _nodes, so the Quality terminal
+## and the SCADA panel showed the silo's "melt 195 °C" and its own die pressure.
+static func _is_extruder(id: String, process: String) -> bool:
+	return id.begins_with("extruder") and process == "meltfilter"
 
 ## True for the high mechanical-load process drives the motor-overload model covers:
 ## the Maalmolen (mill), the shredders, and the friction separators/washers. Matched
@@ -849,10 +852,15 @@ func _attach_advanced_systems() -> void:
 			rk = String(nd.get("id", "")) + "@" + String(n3d.get_path())
 		var prior : Dictionary = _restore_state.get(rk, {}) if rk != "" else {}
 		# 1) Extruder thermal/rheology model + 2) its MFI soft-sensor.
-		if _is_extruder(id):
+		if _is_extruder(id, proc):
 			if nd.get("ex", null) == null:
 				var prior_ex = prior.get("ex", null) if not prior.is_empty() else null
-				nd["ex"] = prior_ex if prior_ex != null else ExtruderScrewScript.new()
+				if prior_ex == null:
+					# Per-line operating point (rpm, melt window, output, die plate);
+					# ExtruderScrew.PROFILES says where each number comes from.
+					prior_ex = ExtruderScrewScript.new()
+					prior_ex.call("configure_for_extruder", id)
+				nd["ex"] = prior_ex
 			if nd.get("mfi", null) == null:
 				var prior_mfi = prior.get("mfi", null) if not prior.is_empty() else null
 				nd["mfi"] = prior_mfi if prior_mfi != null else MfiProxyScript.new()
@@ -3056,14 +3064,16 @@ func _tick_advanced_systems(delta: float) -> void:
 		#    still flows through the extruder node exactly as before.
 		var ex = nd.get("ex")
 		if ex != null:
-			ex.call("set_rpm", float(nd.get("rpm_pct", 1.0)) * EXTRUDER_SCREW_MAX_RPM)
+			# rpm_pct 1.0 is the line's nominal screw speed (trend p50: 3A 95,
+			# 3B 110 rpm). It used to be a flat 200 rpm on every line.
+			ex.call("set_rpm", float(nd.get("rpm_pct", 1.0)) * float(ex.get("rpm_nominal")))
 			ex.call("set_throughput", float(nd["thru"]))
 			ex.call("tick", delta)
 			nd["die_pressure"] = float(ex.get("die_pressure"))
 			nd["melt_temp"]    = float(ex.get("melt_temp"))
 			nd["viscosity"]    = float(ex.get("viscosity"))
 			# 2) MFI soft-sensor — pure/instantaneous. Q in kg/h (thru kg/s × 3600);
-			#    the proxy reads the extruder's die pressure (bar) + melt temp (°C; it
+			#    the proxy reads the extruder's die-plate pressure (bar) + melt temp (°C; it
 			#    treats a >20 value as a temperature and converts via η(T) internally).
 			var mfi = nd.get("mfi")
 			if mfi != null:
@@ -3257,7 +3267,10 @@ func _push_scada(delta: float) -> void:
 	# Extruder melt temp + MFI from the first extruder node that has the models.
 	var ex_nd := _first_extruder_node()
 	if not ex_nd.is_empty():
-		_scada.call("set_param", "melt_temp", float(ex_nd.get("melt_temp", 0.0)), 185.0, 205.0, "Melt Temp  (C)")
+		# Green band = that line's melt window (trend p5–p95), not a fixed 185–205.
+		var ex_m = ex_nd.get("ex")
+		_scada.call("set_param", "melt_temp", float(ex_nd.get("melt_temp", 0.0)),
+			float(ex_m.get("melt_target_lo")), float(ex_m.get("melt_target_hi")), "Melt Temp  (C)")
 		_scada.call("set_param", "mfi", float(ex_nd.get("mfi_value", 0.0)), 0.3, 2.0, "MFI  (g/10min)")
 	# Header air pressure from the AirNetwork autoload.
 	var air := _air_network()

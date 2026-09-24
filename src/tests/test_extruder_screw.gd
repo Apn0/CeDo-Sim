@@ -8,7 +8,12 @@ extends Node
 ## Asserts the spec's three headline behaviours:
 ##   1. rpm↑  →  viscosity↓  AND  shear_heat↑   (shear-thinning + viscous dissipation)
 ##   2. melt_temp can EXCEED the barrel setpoint purely on friction (adiabatic)
-##   3. the cooling fan pulls a runaway melt BACK into the 190–200 °C window
+##   3. the cooling fan pulls a runaway melt BACK toward its melt window
+##
+## Since 2026-09-24 the screw runs at a per-line operating point from plant data
+## (ExtruderScrew.PROFILES: 3B = 110 rpm, melt 230–257 °C, p50 246). This suite
+## runs at the default profile's barrel setpoint; the band, the rpm and the die
+## plate on a real line are guarded by test_screw_die_plate_bar.
 ##
 ## Follows the test_settings_wiring.gd pattern: _ok/_section helpers, a pass/fail
 ## summary, and get_tree().quit() with a non-zero code on failure.
@@ -39,9 +44,12 @@ func _run(ex, secs: float) -> void:
 func _ready() -> void:
 	print("=== Extruder screw physics verification (#45) ===")
 
-	# Build at the 195 °C barrel setpoint, started warm (already at setpoint) so the
-	# tests isolate SHEAR behaviour rather than a cold-start transient.
-	var barrel := 195.0
+	# Build at the default profile's barrel setpoint, started warm (already at
+	# setpoint) so the tests isolate SHEAR behaviour rather than a cold-start
+	# transient. "Hard-driving" is the screw's own ceiling: at a ~250 °C melt the
+	# shear heat at 150 rpm barely beats the ambient loss.
+	var barrel : float = ExtruderScrewScript.new().barrel_temp
+	var hard_rpm : float = ExtruderScrewScript.SCREW_RPM_MAX
 
 	# ── 1. Shear-thinning + viscous dissipation: rpm↑ → viscosity↓, shear_heat↑ ──
 	_section("shear-thinning (rpm vs viscosity & shear heat)")
@@ -88,26 +96,29 @@ func _ready() -> void:
 	_section("adiabatic melt overshoot (no fan)")
 	var hot = ExtruderScrewScript.new(barrel, barrel)
 	hot.set_fan_manual(0.0)          # fans OFF — nothing to brake the self-heating
-	hot.set_rpm(150.0)
+	hot.set_rpm(hard_rpm)
 	_run(hot, 90.0)
-	print("    150rpm, fan off: melt=%.1f°C  barrel=%.0f°C  superheat=+%.1f°C" % [hot.melt_temp, hot.barrel_temp, hot.superheat_over_barrel()])
+	print("    %.0frpm, fan off: melt=%.1f°C  barrel=%.0f°C  superheat=+%.1f°C" % [hard_rpm, hot.melt_temp, hot.barrel_temp, hot.superheat_over_barrel()])
 	_ok(hot.melt_temp > hot.barrel_temp,
 		"melt_temp exceeds barrel setpoint via friction: %.1f°C > %.0f°C" % [hot.melt_temp, hot.barrel_temp])
 	_ok(hot.superheat_over_barrel() > 0.0,
 		"superheat_over_barrel() reports +%.1f °C" % hot.superheat_over_barrel())
 
 	# ── 3. Cooling fan pulls a runaway melt back into 190–200 °C ─────────────────
-	_section("cooling fan holds the 190–200 °C target")
+	_section("cooling fan holds the melt window")
 	var ctl = ExtruderScrewScript.new(barrel, barrel)
 	ctl.set_fan_auto()               # PI fan controller engaged
-	ctl.set_rpm(150.0)               # same hard-driving rpm that overshot above
+	ctl.set_rpm(hard_rpm)            # same hard-driving rpm that overshot above
 	# Let it run to steady state (rpm ramp + thermal settle + controller convergence).
 	_run(ctl, 180.0)
-	print("    150rpm, fan AUTO: melt=%.1f°C  fan=%.0f%%  (target 190–200°C)" % [ctl.melt_temp, ctl.cooling_fan_level * 100.0])
+	print("    %.0frpm, fan AUTO: melt=%.1f°C  fan=%.1f%%  (window %.0f–%.0f°C, mid %.0f)" % [hard_rpm, ctl.melt_temp,
+		ctl.cooling_fan_level * 100.0, ctl.melt_target_lo, ctl.melt_target_hi, ctl.melt_target_mid])
 	_ok(ctl.cooling_fan_level > 0.0,
-		"fan ramped up to fight the heat (%.0f%%)" % (ctl.cooling_fan_level * 100.0))
+		"fan ramped up to fight the heat (%.1f%%)" % (ctl.cooling_fan_level * 100.0))
 	_ok(ctl.melt_in_target_band(),
-		"fan held melt in 190–200 °C window (%.1f°C)" % ctl.melt_temp)
+		"fan held melt in the %.0f–%.0f °C window (%.1f°C)" % [ctl.melt_target_lo, ctl.melt_target_hi, ctl.melt_temp])
+	_ok(absf(ctl.melt_temp - ctl.melt_target_mid) < absf(hot.melt_temp - ctl.melt_target_mid),
+		"fan pulled the melt toward its %.0f °C setpoint (%.1f°C vs %.1f°C unfanned)" % [ctl.melt_target_mid, ctl.melt_temp, hot.melt_temp])
 	# And it's strictly cooler than the identical un-fanned run — the fan did work.
 	_ok(ctl.melt_temp < hot.melt_temp,
 		"fanned melt is cooler than the un-fanned run (%.1f°C < %.1f°C)" % [ctl.melt_temp, hot.melt_temp])
@@ -119,12 +130,12 @@ func _ready() -> void:
 	var thick = ExtruderScrewScript.new(barrel, barrel)
 	thick.set_fan_manual(0.0)
 	thick.set_rpm(40.0)
-	thick.set_throughput(0.5)
+	thick.set_throughput(thick.nominal_throughput_kg_s)
 	_run(thick, 60.0)
 	var thin = ExtruderScrewScript.new(barrel, barrel)
 	thin.set_fan_manual(0.0)
 	thin.set_rpm(140.0)
-	thin.set_throughput(0.5)
+	thin.set_throughput(thin.nominal_throughput_kg_s)
 	_run(thin, 60.0)
 	_ok(thin.die_pressure < thick.die_pressure,
 		"thinner melt ⇒ lower die pressure at equal flow (%.2f < %.2f bar)" % [thin.die_pressure, thick.die_pressure])
