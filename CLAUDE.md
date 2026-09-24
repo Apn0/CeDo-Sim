@@ -560,6 +560,21 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   `world_layout.json`. Guarded by `test_legacy_props_spawner`. To audit:
   `grep -rhoE 'world\.call\("[A-Za-z_]+"' src | sort -u` and check each name
   exists as a `func` on MainWorld.
+  The damage was bigger than the error lines, because a failed `call()` ABORTS
+  the calling function: the diesel pump was never spawned at all (the outlet's
+  call came one line before it), the feeder shredder stood at the world origin
+  303 m from its belt, and the feeder worker, his bale clamp and tools never
+  existed. Second guard, written in parallel the same evening:
+  `test_legacy_props_unconfigured_boot` (35 checks) counts the boot's
+  "Nonexistent function" errors with an engine `Logger` (Godot 4.6 has
+  `OS.add_logger`), runs the audit above as a check (`has_method` on the booted
+  world), and proves each collider live in the physics space. Open, measured,
+  not changed: on that world the Merlo P40 parks 0.50 m from the power outlet,
+  hull through the post (since `2d4c8da`, 2026-06-10); frozen kinematic, it
+  drives off the same with or without the outlet's collider. Both suites were
+  written by two sessions sharing one `app_userdata`, first under the SAME test
+  name and slot: never run two harnesses at once, give every suite its own slot,
+  and never let a suite restore `world_layout.json` over bytes it did not write.
 
 - **`Node3D.rotation.x = +θ` sends the local +Z end DOWN, and a symmetric deck
   box hides a wrong sign for months.** Measured 2026-09-23

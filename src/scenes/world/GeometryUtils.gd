@@ -4,8 +4,9 @@ class_name GeometryUtils
 
 # Pure utility math extracted from MainWorld.gd. All functions are static and
 # take no MainWorld state — they operate on the Node3D arguments alone.
-# Call from MainWorld via GeometryUtils.local_aabb(node) /
-# GeometryUtils.fit_box_collider(body).
+# Call as GeometryUtils.local_aabb(node) / GeometryUtils.fit_box_collider(body)
+# — LegacyPropsSpawner does. MainWorld has NO _local_aabb / _fit_box_collider
+# any more; a world.call() to either aborts the caller (2026-09-24).
 
 ## Combined AABB of all of `node`'s mesh descendants, expressed in `node`'s OWN
 ## local space (accounts for nested child transforms). Used to seat a machine's
