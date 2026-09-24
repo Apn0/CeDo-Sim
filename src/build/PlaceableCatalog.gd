@@ -488,6 +488,7 @@ static func items() -> Array[Dictionary]:
 			{"id": "fines_bin",      "name": "Fines bin (under-conveyor)",   "category": "Logistics","size": Vector3(0.9, 1.1, 0.9),  "color": Color(0.18, 0.18, 0.20)},
 			{"id": "cyclone_bin",    "name": "Cyclone underflow bin",        "category": "Logistics","size": Vector3(1.1, 1.1, 1.1),  "color": Color(0.50, 0.52, 0.54)},
 			{"id": "ibc_tote",       "name": "IBC tote (1 m³, fluids)",      "category": "Logistics","size": Vector3(1.0, 1.2, 1.2),  "color": Color(0.86, 0.86, 0.84)},
+			{"id": "scrap_bin",      "name": "Scrap bin (schroot, bij de metaaldetectie)", "category": "Logistics", "size": Vector3(1.0, 0.9, 1.0), "color": Color(0.40, 0.42, 0.45)},   # rulings §20
 			# #98 - Lumpenwagen (lump cart): wheeled blue steel dumpster the operator parks
 			# under the extruder's screen-changer outlet. Unmelted polymer agglomerates
 			# (gels, cross-linked chunks) drop into it as the screen pack catches them.
@@ -1438,6 +1439,10 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 		body = load("res://src/sim/SiloLevelSensor.gd").new()
 	elif category == "Control":
 		body = load("res://src/build/Hmi.gd").new()
+	elif id == "scrap_bin":
+		# Rulings §20 (2026-09-24): the bin by line 1's first conveyor that the
+		# scrap picked off a bale goes into (MetalScrap._drop → add_scrap).
+		body = load("res://src/sim/ScrapBin.gd").new()
 	elif id == "waste_container" or id == "skip_steel" or id == "fines_bin" or id == "cyclone_bin" or id == "ibc_tote":
 		# Real physical buffer entity — has capacity / density / overflow state,
 		# accepts only its configured stream class(es), routes spillover to the
@@ -1783,6 +1788,7 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 		"compactor":      _m_compactor(p, size, color, ghost)
 		"cutter_compactor": _m_compactor(p, size, color, ghost)
 		"waste_container":_m_waste_container(p, size, color, ghost)
+		"scrap_bin":      _m_scrap_bin(p, size, color, ghost)
 		"skip_steel":     _m_steel_skip(p, size, color, ghost)
 		"fines_bin":      _m_fines_bin(p, size, color, ghost)
 		"cyclone_bin":    _m_cyclone_bin(p, size, color, ghost)
@@ -8465,7 +8471,17 @@ static func set_vacuum_pot_state(machine: Node3D, pot_name: String, frac: float,
 	# must not be driven back onto the dome every frame (root meta lid_off).
 	if lid != null and not bool(r.get_meta("lid_off", false)):
 		var cy : float = float(lid.get_meta("lid_closed_y", lid.position.y))
-		if lid_open:
+		if bool(lid.get_meta("lid_side", false)):
+			# Rulings §20: the lid is on the FRONT face — the melt pushes it OUT
+			# along +X and it hangs tilted; closed it sits back on its seat.
+			var home : Vector3 = lid.get_meta("lid_home", lid.position)
+			if lid_open:
+				lid.position = home + Vector3(0.10, -0.03, 0.0)
+				lid.rotation = Vector3(0.0, 0.0, PI * 0.5 - deg_to_rad(28.0))
+			else:
+				lid.position = home
+				lid.rotation = Vector3(0.0, 0.0, PI * 0.5)
+		elif lid_open:
 			lid.position.y = cy + 0.12
 			lid.rotation = Vector3(0.0, 0.0, deg_to_rad(28.0))
 		else:
@@ -9205,6 +9221,29 @@ static func _m_ibc_tote(p: Node3D, size: Vector3, color: Color, ghost: bool) -> 
 		Vector3(size.x * 0.3, 0.32, size.z * 0.5 + 0.12), "IBC Drain Valve Handle", 90.0, 1.0, red, ghost)
 
 # ── waste container (schraperbak skip): open-top bin with interactive front swing gate ────────
+## Rulings §20 — the scrap bin by the metal detector: a squat open steel box
+## on forklift pockets, a SCHROOT stencil on the front, no door (scrap is
+## dropped in from above). The ScrapBin script heaps the pieces inside.
+static func _m_scrap_bin(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
+	var steel := _mat(color, ghost, 0.5, 0.5)
+	var dark := _mat(_DARK, ghost, 0.5, 0.6)
+	var wy : float = size.y * 0.55
+	_box(p, Vector3(size.x * 0.96, 0.08, size.z * 0.96), Vector3(0.0, 0.16, 0.0), steel)             # floor plate
+	for sx in [-1.0, 1.0]:
+		_box(p, Vector3(0.06, size.y * 0.78, size.z * 0.96), Vector3(sx * size.x * 0.47, wy, 0.0), steel)
+	for sz in [-1.0, 1.0]:
+		_box(p, Vector3(size.x * 0.96, size.y * 0.78, 0.06), Vector3(0.0, wy, sz * size.z * 0.47), steel)
+	# open top: a rim of four bars, not a plate (the first render closed the bin)
+	for sx3 in [-1.0, 1.0]:
+		_box(p, Vector3(0.08, 0.05, size.z * 1.0), Vector3(sx3 * size.x * 0.48, size.y * 0.96, 0.0), dark)
+	for sz3 in [-1.0, 1.0]:
+		_box(p, Vector3(size.x * 1.0, 0.05, 0.08), Vector3(0.0, size.y * 0.96, sz3 * size.z * 0.48), dark)
+	for sx2 in [-0.25, 0.25]:
+		_box(p, Vector3(size.x * 0.22, 0.12, size.z * 1.0), Vector3(sx2 * size.x, 0.06, 0.0), dark)  # forklift pockets
+	if not ghost:
+		var lbl := _stencil_label(p, "SCHROOT", Vector3(0.40, 0.09, 0.01), "+Z")
+		lbl.position = Vector3(0.0, wy, size.z * 0.5 + 0.005)
+
 static func _m_waste_container(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
 	var steel := _mat(color, ghost, 0.5, 0.5)
 	var dark := _mat(_DARK, ghost, 0.5, 0.6)
@@ -12768,13 +12807,22 @@ static func _m_extruder_unit(p: Node3D, size: Vector3, color: Color, ghost: bool
 			# The sight glass on the +X side of the dome, now a proud port with a
 			# level witness (the flat disc it replaces showed nothing — see the
 			# silo windows, same reason: an opaque dome).
-			_level_window(p, pot_root, _window_port(Vector3(dome_r * 0.92, vac_y, vz), Vector3.RIGHT),
+			_level_window(p, pot_root, _window_port(Vector3(0.0, vac_y, vz + dome_r * 0.92), Vector3.BACK),
 				0.06, 0.06, steel, ghost)
-			var lid_y : float = vac_y + dome_h * 0.5 + 0.015
+			# Rulings §20 (2026-09-24): the opening is ON THE SIDE, FACING THE
+			# OPERATOR — "the lid is on the pot's front face at working height;
+			# I look INTO the pot horizontally and the block comes out towards
+			# me". So the Lid is a vertical disc on the +X (aisle) face, and the
+			# melt pushes it OUT along +X, not up. lid_closed_y stays the seat's
+			# height for the driver; the seat itself is meta lid_home.
+			var lid_y : float = vac_y
 			var lid : MeshInstance3D = _cyl(pot_root, size.x * 0.07, size.x * 0.07, 0.03,
-				Vector3(0.0, lid_y, vz), steel)
+				Vector3(dome_r + 0.015, lid_y, vz), steel)
 			lid.name = "Lid"
+			lid.rotation = Vector3(0.0, 0.0, PI * 0.5)          # disc normal along +X
 			lid.set_meta("lid_closed_y", lid_y)
+			lid.set_meta("lid_home", Vector3(dome_r + 0.015, lid_y, vz))
+			lid.set_meta("lid_side", true)
 			var gunk := MeshInstance3D.new()
 			gunk.name = "Gunk"
 			var gm := SphereMesh.new()

@@ -63,9 +63,9 @@ func _ready() -> void:
 					VPS.push(model, root, String(nc[0]), int(nc[1]))
 					VPS.pull_out(root)
 					guard += 1
-		var yr := deg_to_rad(62.0)
-		var pr := deg_to_rad(22.0)
-		var dist := 2.6
+		var yr := deg_to_rad(78.0)     # from the +X (aisle) side — the opening faces this way (rulings §20)
+		var pr := deg_to_rad(14.0)
+		var dist := 2.2
 		cam.global_position = focus + Vector3(sin(yr) * cos(pr) * dist, sin(pr) * dist, cos(yr) * cos(pr) * dist)
 		cam.look_at(focus, Vector3.UP)
 		await get_tree().process_frame

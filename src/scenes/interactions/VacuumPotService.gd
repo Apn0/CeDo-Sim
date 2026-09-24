@@ -118,7 +118,10 @@ static func complete_lid_pull(model, pot_root: Node) -> Node:
 	var centre : Vector3 = pot_root.get_meta("pot_centre", Vector3.ZERO)
 	var dome_r : float = float(pot_root.get_meta("dome_r", 0.12))
 	block.set("size_m", dome_r * 1.1)
-	block.position = centre + Vector3(0.0, -dome_r * 0.15, 0.0)
+	# Rulings §20: the opening faces the operator (+X). The block sits IN the
+	# opening, half proud of the front face, so it is seen the moment the lid
+	# is off; its release then drops it down and out towards him.
+	block.position = centre + Vector3(dome_r * 0.55, -dome_r * 0.10, 0.0)
 	pot_root.add_child(block)
 	st["block"] = block
 	return block
@@ -132,14 +135,20 @@ static func _park_lid(pot_root: Node, off: bool) -> void:
 	if not lid.has_meta("lid_home"):
 		lid.set_meta("lid_home", Vector3(lid.position.x, float(lid.get_meta("lid_closed_y", lid.position.y)), lid.position.z))
 	var home : Vector3 = lid.get_meta("lid_home")
+	var side : bool = bool(lid.get_meta("lid_side", false))
 	if off:
 		var dome_r : float = float(pot_root.get_meta("dome_r", 0.12))
 		var dome_h : float = float(pot_root.get_meta("dome_h", 0.12))
-		lid.position = home + Vector3(dome_r * 1.7, -dome_h * 0.35, 0.0)
-		lid.rotation = Vector3(0.0, 0.0, deg_to_rad(78.0))
+		if side:
+			# leaning against the hood under the opening, out of the way
+			lid.position = home + Vector3(dome_r * 0.9, -dome_h * 0.9, dome_r * 1.2)
+			lid.rotation = Vector3(0.0, 0.0, deg_to_rad(12.0))
+		else:
+			lid.position = home + Vector3(dome_r * 1.7, -dome_h * 0.35, 0.0)
+			lid.rotation = Vector3(0.0, 0.0, deg_to_rad(78.0))
 	else:
 		lid.position = home
-		lid.rotation = Vector3.ZERO
+		lid.rotation = Vector3(0.0, 0.0, PI * 0.5) if side else Vector3.ZERO
 
 # ── 3. the plamuurmes ────────────────────────────────────────────────────────
 static func plane_progress(pot_root: Node) -> Dictionary:
@@ -217,8 +226,8 @@ static func _release_block(pot_root: Node) -> void:
 	var block = st["block"]
 	if block != null and is_instance_valid(block):
 		# "drops down and forwards, towards the player by like a centimetre":
-		# down, and out toward the sight-glass side (+X) — PLACEHOLDER for
-		# "towards the player".
+		# down, and out through the opening (+X, the face he stands at —
+		# rulings §20).
 		(block as Node3D).position += Vector3(BLOCK_SHIFT_M, -BLOCK_SHIFT_M, 0.0)
 		block.set("free", true)
 

@@ -98,13 +98,19 @@ func _run() -> void:
 	var lid_p := primary.get_node("Lid") as MeshInstance3D
 	var lid_s := secondary.get_node("Lid") as MeshInstance3D
 	var closed_y : float = float(lid_p.get_meta("lid_closed_y"))
+	# Rulings §20 (2026-09-24): the lid is on the pot's FRONT face (+X). Closed
+	# it sits on its seat (meta lid_home) as a vertical disc (rotation.z = 90°);
+	# pushed open by the melt it moves OUT along +X and tilts.
+	var home_p : Vector3 = lid_p.get_meta("lid_home")
+	var home_s : Vector3 = lid_s.get_meta("lid_home")
 	# ── empty ──
 	model.primary_pot_fill_kg = 0.0
 	model.secondary_pot_fill_kg = 0.0
 	model.vacuum_line_gunk_kg = 0.0
 	await _frames(2)
 	_check(_witness_h(primary) == 0.0 and _witness_h(secondary) == 0.0, "S1 empty pots: both glasses dark")
-	_check(absf(lid_p.position.y - closed_y) < 1e-6 and lid_p.rotation.z == 0.0, "S1 lid closed on the dome")
+	_check(lid_p.position.distance_to(home_p) < 1e-6 and absf(lid_p.rotation.z - PI * 0.5) < 1e-6 and absf(home_p.y - closed_y) < 1e-6,
+		"S1 lid closed on its seat on the front face (a vertical disc)")
 	_check(not (primary.get_node("Gunk") as MeshInstance3D).visible, "S1 no gunk")
 	# ── primary half full ──
 	var cap : float = ExtruderModel.VACUUM_POT_CAPACITY_KG
@@ -113,13 +119,13 @@ func _run() -> void:
 	var h_half : float = _witness_h(primary)
 	_check(h_half > 0.0 and h_half < 0.06, "S2 primary at 50 %%: the level line is in the glass (%.3f of 0.06 m)" % h_half)
 	_check(_witness_h(secondary) == 0.0, "S2 secondary still dark")
-	_check(absf(lid_p.position.y - closed_y) < 1e-6, "S2 lid still closed below capacity")
+	_check(lid_p.position.distance_to(home_p) < 1e-6, "S2 lid still closed below capacity")
 	# ── primary at capacity: the melt pushes the lid open ──
 	model.primary_pot_fill_kg = cap
 	await _frames(2)
 	_check(absf(_witness_h(primary) - 0.06) < 1e-4, "S3 primary full: glass full")
-	_check(lid_p.position.y > closed_y + 0.1 and absf(lid_p.rotation.z) > 0.3, "S3 lid pushed open (lifted %.2f m, tilted)" % (lid_p.position.y - closed_y))
-	_check(absf(lid_s.position.y - float(lid_s.get_meta("lid_closed_y"))) < 1e-6, "S3 secondary lid stays closed")
+	_check(lid_p.position.x > home_p.x + 0.05 and absf(lid_p.rotation.z - PI * 0.5) > 0.3, "S3 lid pushed open OUT of the front face (%.2f m out, tilted)" % (lid_p.position.x - home_p.x))
+	_check(lid_s.position.distance_to(home_s) < 1e-6, "S3 secondary lid stays closed")
 	_check(bool(primary.get_meta("lid_open")) and not bool(secondary.get_meta("lid_open")), "S3 roots record which lid is open")
 	# ── gunk grows and is cleaned ──
 	model.vacuum_line_gunk_kg = ExtruderModel.VACUUM_FLOOD_DISMANTLE_THRESHOLD_KG * 0.5
@@ -132,7 +138,7 @@ func _run() -> void:
 	# ── emptied pot: lid back down, glass dark ──
 	model.primary_pot_fill_kg = 0.0
 	await _frames(2)
-	_check(absf(lid_p.position.y - closed_y) < 1e-6 and _witness_h(primary) == 0.0, "S5 emptied: lid back on the dome, glass dark")
+	_check(lid_p.position.distance_to(home_p) < 1e-6 and _witness_h(primary) == 0.0, "S5 emptied: lid back on its seat, glass dark")
 	# ── a ghost has none of it ──
 	var ghost : Node3D = PlaceableCatalog.build_node(EXTRUDER_ID, true)
 	_check(ghost != null and ghost.find_child("VacPot_primary", true, false) == null, "N1 a build-mode ghost carries no pot roots")

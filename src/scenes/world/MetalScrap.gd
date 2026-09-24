@@ -134,6 +134,24 @@ func remove_from_bale() -> void:
 	if n <= 0 and belt != null and is_instance_valid(belt) and belt.has_method("metal_cleared"):
 		belt.call("metal_cleared", b, kg)
 
+## Hand the piece to a scrap bin (add_scrap) or a waste container (add, as
+## METAL). Returns the kg accepted; frees itself when it went in.
+func dump_into(target: Node) -> float:
+	if target == null or not is_instance_valid(target) or kg <= 0.0:
+		return 0.0
+	var accepted := 0.0
+	if target.has_method("add_scrap"):
+		accepted = float(target.call("add_scrap", kg, kind))
+	elif target.has_method("add"):
+		target.call("add", kg, METAL_DENSITY_KGM3, METAL_CLASS)
+		accepted = kg
+	if accepted > 0.0:
+		var inv := get_node_or_null("/root/Inventory")
+		if inv and _held_by != null:
+			inv.call("remove", self)
+		queue_free()
+	return accepted
+
 ## Hotbar drop (PlayerController calls _drop on the active tool).
 func _drop() -> void:
 	if _held_by == null:
@@ -145,9 +163,21 @@ func _drop() -> void:
 	_held_by = null
 	var scene_root := get_tree().current_scene
 	var drop_world : Vector3 = player.global_transform * Vector3(0.0, -0.6, -0.8)
-	# Into a waste container when one is close: the metal is conserved there.
+	# Rulings §20: the scrap bin by the belt first…
 	var best : Node = null
 	var best_d : float = DUMP_RANGE
+	for c in get_tree().get_nodes_in_group("scrap_bin"):
+		if c is Node3D and c.has_method("add_scrap"):
+			var d0 : float = (c as Node3D).global_position.distance_to(drop_world)
+			if d0 < best_d:
+				best_d = d0
+				best = c
+	if best != null:
+		var got0 : float = dump_into(best)
+		print("[MetalScrap] %s (%.0f kg) into the scrap bin %s" % [kind, got0, best.name])
+		return
+	# …else a waste container when one is close: the metal is conserved there.
+	best_d = DUMP_RANGE
 	for c in get_tree().get_nodes_in_group("waste_container"):
 		if c is Node3D and c.has_method("add"):
 			var d : float = (c as Node3D).global_position.distance_to(drop_world)

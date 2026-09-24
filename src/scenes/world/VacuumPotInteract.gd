@@ -146,6 +146,10 @@ func _aim(player: Node) -> Array:
 		q.exclude = [player.get_rid()]
 		var hit := get_world_3d().direct_space_state.intersect_ray(q)
 		if not hit.is_empty() and hit.get("collider") == self:
+			# Rulings §20: the opening is the +X face; the operator looks in
+			# along -X. Upper part of the opening = the top plane, lower = the
+			# bottom plane, else the wall on his LEFT (+Z when facing -X) or
+			# RIGHT (-Z); the cell by the quadrant of the hit point.
 			var lp : Vector3 = to_local(hit["position"])
 			var box : BoxShape3D = null
 			for c in get_children():
@@ -157,9 +161,9 @@ func _aim(player: Node) -> Array:
 				plane = "top"
 			elif lp.y < -h * 0.25:
 				plane = "bottom"
-			elif lp.x >= 0.0:
+			elif lp.z < 0.0:
 				plane = "right"
-			var cell : int = (0 if lp.x < 0.0 else 1) + (0 if lp.z < 0.0 else 2)
+			var cell : int = (0 if lp.z >= 0.0 else 1) + (0 if lp.y >= 0.0 else 2)
 			return [plane, cell]
 	return VPS.next_cell(root)
 

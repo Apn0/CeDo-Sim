@@ -176,6 +176,15 @@ count.
 > `test_chute_choke`, `test_trip_smoke` in the main loop, and the jam
 > baseline's own doorway. `docs/audit/operator_session_2026-09-23.md`.
 
+> **2026-09-24 15:40 — the newest measurement; it supersedes the 01:23 one
+> above.** Full harness on `claude/ready-daacfa` at `8b52fc5` (the vacuum-pot
+> mini-game on top of the line-1 tail fix): `== done (exit 1)`, **122 steps,
+> 47 min (15:40:10 → 16:27:13), 115 logs by mtime, 0 timeouts, 0 `^SCRIPT
+> ERROR` lines, ONE red — `test_npc05_realworld` (expected).** Inside:
+> `test_vacuum_pot_minigame` 33 ok, `test_line1_metal_detect` 22 ok,
+> `test_wet_side_beds` 31 ok, `test_nav_connectivity` 10 ok,
+> `test_jam_baseline` 16 ok / 0 skipped.
+
 > **2026-09-24 01:23 — the newest measurement; it supersedes the 00:09 one
 > above.** Full harness on `claude/ready-daacfa` at `9471d84` (the wet-side
 > beds and the metal-detecting first conveyor on top of `9cc6ea4`): `== done
@@ -540,6 +549,26 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   `INSTANCE_CUSTOM`) costs the CPU ~3 µs per field per frame for 14 000
   flakes where CPU-animated instances cost 1 ms for 3 500 — animate with
   uniforms, write transforms once.
+- **A fixture that reaches the flow graph with no wired input gets whatever
+  inlet is nearest — and that can be the machine beside it, both ways.**
+  Measured 2026-09-24: the overband magnet (mounted OVER the uitvoerband,
+  MachineFlow process "sort") had no in-edge, so the fallback wired
+  `transport_belt#5 → magnet → transport_belt#5`; belt 2 received 8.6 kg/s
+  with 3 kg/s injected and the magnet "moved" 6 kg/s — the sibling 2-cycle of
+  the graph trap above, at the head of line 1, unnoticed because every suite
+  asserted the head chain and the twin streams and none the kg into belt 2.
+  Anything the material does not pass THROUGH is role none. And a belt's
+  `_backlog_kg` is not a heap: it is whatever the buffer holds after the tick's
+  move — a model sized to a fallback capacity tripped the field-less 10 m feed
+  belts on their ordinary transit load and the e-stop cut line 1's feed
+  (`test_line1_throughput` red for two runs). Size a motor model to the deck it
+  drives, or do not attach one.
+- **Inserting an entry into a line SEQ shifts every index after it, and
+  `mount_over` / `at_entry` are indices.** 2026-09-24: a `scrap_bin` entry after
+  opzetband 1 put the overband magnet 2.73 m off its belt until its
+  `mount_over: 3` became 4 (`test_line1_overband_mount`). Before inserting,
+  grep the SEQ for `mount_over|at_entry` and check `user://macros/` for a saved
+  override of that line (its chain is indexed the same way).
 - **A fresh `class_name` is unknown to a standalone headless run.** Godot
   resolves class names through `.godot/global_script_class_cache.cfg`, which
   the editor (or the harness's `== importing ==` step) rebuilds — a bare

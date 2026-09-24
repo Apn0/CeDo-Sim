@@ -752,3 +752,104 @@ time, stiffness curve, cells per plane, the push draw); which way "towards
 the player" is (the block shifts +X, the sight-glass side); whether the
 cell the ray picks on a 25 cm dome reads as his planes; the hotbar carry of
 an 18 kg block (no weight penalty yet).
+
+## Task 16 — the pot opens towards the operator (rulings §20) — DONE 2026-09-24
+
+**Asked / answered.** "Opening on the side, facing me" — the lid is on the
+pot's front face at working height, he looks INTO the pot horizontally, the
+block comes out towards him.
+
+**Built.** The Lid is a vertical disc on each dome's +X (aisle) face (meta
+`lid_side`, seat in `lid_home`); the melt pushes it OUT along +X and tilts it
+(`set_vacuum_pot_state`), a pulled lid leans under the opening
+(`VacuumPotService._park_lid`); the sight-glass port moved round to +Z so the
+two do not share a face; the MeltBlock spawns IN the opening, half proud of
+the front face, and its release drops it 1 cm down and 1 cm OUT (+X);
+`VacuumPotInteract._aim` reads the planes on the front face — upper part of
+the opening = top, lower = bottom, else the wall on his left (+Z, facing −X)
+or right (−Z), the cell by quadrant. The stage-A shot tool looks from the
+aisle side.
+
+**Measured.** `test_vacuum_pot_minigame` `PASS (35 ok)` (+2: the lid on the
+front face; the block proud of it) and `test_vacuum_pot_visual` `PASS (22 ok)`
+with its lid assertions rewritten for a side lid (closed on its seat at 90°,
+pushed 0.10 m OUT when open). Renders `shot_vacuum_pots_lid_off_block.png`
+and `_block_free.png` (front view): the lid leaning below the opening, the
+dark block standing in it.
+
+## Task 17 — the scrap bin by the metal detector (rulings §20) — DONE 2026-09-24
+
+**Asked / answered.** After the belt is stopped and the scrap taken off the
+bale: "A scrap bin near the belt."
+
+**Built.** `scrap_bin` (catalog, Logistics; `ScrapBin.gd`, role none): a
+squat open steel box on forklift pockets with a SCHROOT stencil; `add_scrap(kg,
+kind)` counts the pieces, sums the kg and heaps a lump per piece inside.
+`LINE_1_SEQ` places one beside opzetband 1's loading end (x 3.4, z −2.5,
+PLACEHOLDER). `MetalScrap._drop` puts the piece into the nearest scrap bin
+within 3 m first, then a waste container, then the floor; `dump_into()` for
+tests. Inserting the entry shifted every later sequence index by one: the
+overband magnet's `mount_over: 3` (an entry index) had to become 4 —
+`test_line1_overband_mount` caught the magnet 2.73 m off its belt before the
+bump; no operator `line_1.json` macro existed to re-save.
+
+**Measured.** `test_line1_metal_detect` `PASS (27 ok)` (+5: the bin builds,
+a 25 kg plough part goes in whole with one lump shown, line 1 places the bin
+beside opzetband 1, it is not a flow node). `test_line1_overband_mount` PASS
+after the anchor bump, `test_line1_flow_conformance` / `test_macro_delta_guard`
+/ `test_line1_twin_streams` PASS. Render `shot_scrap_bin.png` (the first cut
+closed the bin with a plate for a rim — four bars now).
+
+## Task 18 — belt speed mismatch: heap → chute blockage → overload trip (round 8) — DONE 2026-09-24
+
+**Asked / answered.** Next build: "a belt fed faster than it runs heaps up →
+chute blockage → overload trip", the HMI speed setting as the lever.
+
+**Built.** Every belt WITH a bed field carries a `MotorOverload` sized to
+its own deck (capacity = the field's full load, kg/m at 20 cm × deck length;
+12 A nominal PLACEHOLDER, trip at 1.5× after 3 s). LineFlow drives the deck
+at the HMI setting (`rpm_pct` × the drive component), so a slowed belt's bed
+deepens; the material it cannot take piles at its infeed — a `FloorPile`
+named `BeltHeap` that MIRRORS the backlog kg (meta `mirror_kg`: never a
+reject catch, never a shovel target), appearing past 10 kg and going when the
+backlog drains. The trip stops the belt (the existing latch), MOTOR-OVERLOAD
+on the bus. RESETTEN on the HMI now also resets tripped drives in the panel's
+scope (`LineFlow.reset_trip`) — until today no HMI path reset a MotorOverload
+at all ("drive until a human calls mol.reset()" was the whole story).
+
+**Found on the way, and fixed: a two-node cycle at the head of line 1.** The
+overband magnet — a fixture hanging over the uitvoerband — was a flow node
+(process "sort") with no wired input, so LineFlow's nearest-port fallback
+gave it `transport_belt#5 → magnet → transport_belt#5`: belt 2 was fed its own
+output on top of the line's. Measured with the new suite's diagnostics:
+belt 2 received 8.6 kg/s against a 6 kg/s rate with 3.0 kg/s injected, the
+magnet "moved" 6 kg/s, belt 2's buffer grew at full speed. This is the
+sibling 2-cycle the CLAUDE.md graph trap describes, one machine further on.
+The magnet is role none now (ferrous fines are not in MaterialBatch; nothing
+is lost); belt 2 receives exactly 3.00 kg/s at full speed with zero backlog.
+The first version also put a 60 kg fallback model on the field-less feed
+belts, whose normal transit load (a 10 m belt at 0.12 m/s carries ~160 kg)
+tripped them and the e-stop cut line 1's feed — `test_line1_throughput` and
+`test_line1_no_false_overload` went red for two runs. Field-less belts get no
+model.
+
+**Measured.** `test_belt_speed_mismatch`: `PASS (19 ok, 0 fail)` on real line
+1: at 100 % speed, 90 s of 3.0 kg/s — belt 2 receives 3.00 kg/s, backlog 0,
+no trip, no heap; at the 25 % setting the deck runs 0.250 m/s, the heap
+appears after 0.9 s, the drive trips after 13.9 s at 29 A (threshold 18 A,
+capacity 33 kg, backlog 44 kg mirrored by a 44 kg heap), MOTOR-OVERLOAD on
+the bus, the belt unpowered and spun down, its bed holding once stopped;
+RESETTEN at 100 % resets the drive, clears the alarm, the backlog drains and
+the heap is gone after 8.1 s, no re-trip. Neighbours: `test_line1_throughput`
+PASS (granulate 23.7 kg), `test_line1_no_false_overload` PASS,
+`test_motor_trip_stops_conveying` 28 ok, `test_chute_choke` 24 ok,
+`test_trip_smoke` 21 ok, `test_bunker_shredder2_interlock` PASS,
+`test_line1_flow_conformance` / `twin_streams` / `3a` / `3b` PASS,
+`test_line3c_seq_alignment` PASS, `test_belt_film_field` 142 ok,
+`test_tag_snapshot` / `test_l3c_unit_screens` / `test_extruder_brain_wired` /
+`test_hmi_retired` / `test_tool_placement_mode` / `test_macro_delta_guard` /
+`test_project_sweep_guards` PASS. Parse sweep 444 ok, lint 0.
+
+**Open (for him).** The belt drive's 12 A and the 3 s delay; whether the heap
+should also choke the discharge chute of the belt BEFORE it (his "chute
+blockage") — today the heap is the infeed pile and the trip is the belt's own.

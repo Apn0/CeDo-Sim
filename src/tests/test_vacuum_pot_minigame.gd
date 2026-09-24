@@ -93,7 +93,9 @@ func _run() -> void:
 	var svc_col := svc.get_child(0) if svc != null else null
 	_check(svc_col is CollisionShape3D, "G1 the pot body has a collision shape for the crosshair ray")
 	var lid : Node3D = primary.get_node("Lid")
-	var lid_home_y : float = float(lid.get_meta("lid_closed_y"))
+	var lid_home : Vector3 = lid.get_meta("lid_home")
+	_check(bool(lid.get_meta("lid_side", false)) and lid_home.x > float(primary.get_meta("dome_r")) and absf(lid.rotation.z - PI * 0.5) < 1e-4,
+		"G1 the lid is on the pot's FRONT face (+X), a vertical disc — rulings §20 (lid at x %.2f, dome r %.2f)" % [lid_home.x, float(primary.get_meta("dome_r"))])
 	var cap : float = ExtruderModel.VACUUM_POT_CAPACITY_KG
 	# ── A the alarm ──
 	model.state = ExtruderModel.State.RUNNING
@@ -134,11 +136,15 @@ func _run() -> void:
 	_check(pulled >= 1.0 and bool(VPS.state(primary)["lid_off"]) and bool(primary.get_meta("lid_off", false)),
 		"L4 the lid came off after %.1f s of pulling (required %.1f s)" % [pulls * 0.1, need0])
 	await _frames(2)
-	_check(absf(lid.position.y - lid_home_y) > 0.01 and absf(lid.rotation.z) > 1.0,
-		"L4 the lid is parked beside the dome and the driver leaves it there (y %.3f vs seat %.3f)" % [lid.position.y, lid_home_y])
+	_check(lid.position.distance_to(lid_home) > 0.05 and absf(lid.rotation.z - PI * 0.5) > 0.5,
+		"L4 the lid is parked under the opening and the driver leaves it there (%.2f m from its seat)" % lid.position.distance_to(lid_home))
 	var block : Node = VPS.state(primary)["block"]
 	_check(block != null and block.get_parent() == primary and absf(float(block.get("kg")) - cap) < 1e-6,
 		"L5 a MeltBlock of the pot's %.0f kg sits inside the open pot" % cap)
+	var centre : Vector3 = primary.get_meta("pot_centre")
+	_check(block != null and (block as Node3D).position.x > centre.x + 0.02,
+		"L5 …in the opening on the front face, proud of it (x %.3f vs centre %.3f)" % [(block as Node3D).position.x, centre.x])
+	var block_before : Vector3 = (block as Node3D).position
 	# ── P the planes ──
 	var first := VPS.next_cell(primary)
 	var r1 : Dictionary = VPS.push(model, primary, String(first[0]), int(first[1]))
@@ -161,11 +167,9 @@ func _run() -> void:
 	var pp := VPS.plane_progress(primary)
 	print("  info  : P planes after %d pushes — top %.2f bottom %.2f left %.2f right %.2f" % [pushes, pp["top"], pp["bottom"], pp["left"], pp["right"]])
 	_check(freed and VPS.all_planes_clear(primary), "P3 every plane ≥ 90 %% after %d pushes: the block is FREE" % pushes)
-	var centre : Vector3 = primary.get_meta("pot_centre")
-	var dome_r : float = float(primary.get_meta("dome_r"))
-	var expect : Vector3 = centre + Vector3(0.0, -dome_r * 0.15, 0.0) + Vector3(0.01, -0.01, 0.0)
-	_check((block as Node3D).position.distance_to(expect) < 1e-4 and bool(block.get("free")),
-		"P4 the freed block dropped down and forward by 1 cm")
+	var shift : Vector3 = (block as Node3D).position - block_before
+	_check(shift.distance_to(Vector3(0.01, -0.01, 0.0)) < 1e-4 and bool(block.get("free")),
+		"P4 the freed block dropped 1 cm down and 1 cm out towards the operator (shift %s)" % str(shift))
 	_check(String(svc.call("crosshair_prompt", null)).begins_with("E: take the melt block out"),
 		"G3 the prompt now offers the block: '%s'" % String(svc.call("crosshair_prompt", null)))
 	# ── B the block ──
@@ -192,7 +196,7 @@ func _run() -> void:
 	_check(model.state == ExtruderModel.State.RUNNING and int(_cleared.get("vacuum", 0)) == 1,
 		"R2 within the window (%.1f s since the alarm): RUNNING again, 'vacuum' cleared on the bus" % elapsed_before)
 	await _frames(2)
-	_check(absf(lid.position.y - lid_home_y) < 1e-4 and lid.rotation.z == 0.0 and not bool(primary.get_meta("lid_off", false)),
+	_check(lid.position.distance_to(lid_home) < 1e-4 and absf(lid.rotation.z - PI * 0.5) < 1e-4 and not bool(primary.get_meta("lid_off", false)),
 		"R2 the lid sits back on its seat and the driver owns it again")
 	# ── R the lapse ──
 	model.primary_pot_fill_kg = cap

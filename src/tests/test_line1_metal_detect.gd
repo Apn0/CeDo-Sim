@@ -18,6 +18,8 @@ extends Node
 ## N — a belt without the sensor never trips on the same bale.
 ## P — production: opzetband_1 is built with the sensor and named lamps,
 ##     opzetband_3a3b without.
+## S — the scrap bin (rulings §20): builds, takes a piece with its kg and
+##     shows it, stands beside opzetband 1 in line 1, is not a flow node.
 
 const WATCHDOG_S := 300.0
 const DT := 0.1
@@ -226,6 +228,46 @@ func _run() -> void:
 			if c is ShredderFeedBelt:
 				fb3 = c
 	_check(fb3 is ShredderFeedBelt and not bool(fb3.get("metal_detect")), "P1 opzetband_3a3b has NO sensor (operator: only line 1)")
+	# ── S the scrap bin (rulings §20: "a scrap bin near the belt") ──
+	var bin : Node3D = PlaceableCatalog.build_node("scrap_bin", false)
+	add_child(bin)
+	await get_tree().process_frame
+	_check(bin != null and bin.is_in_group("scrap_bin") and bin.has_method("add_scrap"), "S1 scrap_bin builds as a ScrapBin (group scrap_bin, add_scrap)")
+	var piece : Node3D = load("res://src/scenes/world/MetalScrap.gd").new()
+	piece.set("kind", "plough_part")
+	piece.set("kg", 25.0)
+	add_child(piece)
+	await get_tree().process_frame
+	var got : float = float(piece.call("dump_into", bin))
+	_check(absf(got - 25.0) < 1e-6 and absf(float(bin.get("scrap_kg")) - 25.0) < 1e-6 and int(bin.call("piece_count")) == 1,
+		"S2 a plough part dropped in: 25 kg, 1 piece in the bin, the prop gone")
+	_check(bin.find_child("ScrapHeap", true, false) != null and bin.find_child("ScrapHeap", true, false).get_child_count() == 1,
+		"S2 a lump of it shows in the bin")
+	var bm := BuildMode.new()
+	add_child(bm)
+	await get_tree().process_frame
+	bm.call("_build_full_line", "line_1", Vector3.ZERO, 0.0)
+	await get_tree().process_frame
+	var oz_pos := Vector3.INF
+	var bin_pos := Vector3.INF
+	for n in get_tree().get_nodes_in_group("placed_object"):
+		var pid := String(n.get_meta("placeable_id", ""))
+		if pid == "opzetband_1":
+			oz_pos = (n as Node3D).global_position
+		elif pid == "scrap_bin":
+			bin_pos = (n as Node3D).global_position
+	_check(oz_pos != Vector3.INF and bin_pos != Vector3.INF and oz_pos.distance_to(bin_pos) < 8.0,
+		"S3 line 1 places a scrap bin beside opzetband 1 (%.1f m apart)" % (oz_pos.distance_to(bin_pos) if oz_pos != Vector3.INF and bin_pos != Vector3.INF else -1.0))
+	var lf := LineFlow.new()
+	add_child(lf)
+	await get_tree().process_frame
+	lf.set("feed_enabled", false)
+	lf.call("rebuild")
+	var bin_in_flow := false
+	for nd in (lf.get("_nodes") as Array):
+		if String(nd.get("id", "")) == "scrap_bin":
+			bin_in_flow = true
+	_check(not bin_in_flow, "S3 the scrap bin is NOT a flow node (role none)")
 	_finish()
 
 func _finish() -> void:

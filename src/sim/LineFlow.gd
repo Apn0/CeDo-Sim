@@ -81,6 +81,18 @@ const SILO_FULL_KG      : float = VSS_FULL_KG
 # rotors stop); reset_choke() only takes once the pile is below this fraction
 # of its capacity — a reset with the chute still blocked does nothing.
 const CHOKE_CLEAR_FRAC  : float = 0.5
+# ── Belt speed mismatch (operator, round 8, 2026-09-24): "a belt fed faster
+# than it runs heaps up → chute blockage → overload trip", the HMI speed
+# setting as the lever. Every belt carries a MotorOverload sized to its own
+# deck: a backlog past the deck's full load (kg/m at 20 cm × its length) puts
+# the drive over its trip current for BELT_TRIP_DELAY_S and it trips
+# (MOTOR-OVERLOAD, latched until RESETTEN). The heap is visible: a FloorPile
+# at the belt's infeed mirrors the backlog kg (a MIRROR — the kg stay in the
+# buffer; the pile is never a reject catch nor a shovel target).
+const BELT_MOTOR_AMPS_NOMINAL : float = 12.0    # PLACEHOLDER: a small conveyor drive
+const BELT_TRIP_DELAY_S       : float = 3.0
+const BELT_HEAP_SHOW_KG       : float = 10.0    # the infeed heap appears past this backlog
+# (a belt without a bed field gets NO motor model — see _attach_advanced_systems)
 # SMOKE (P2's second half, operator 2026-09-23, rulings §5): a packed-up drive
 # smokes "sometimes", and when it does it is "heavy smoke, people react". On a
 # MotorOverload trip edge the node's SmokePlume runs for SMOKE_S with
@@ -860,6 +872,28 @@ func _attach_advanced_systems() -> void:
 					# Trip threshold sits a touch above nominal; locked-rotor ~5× nominal.
 					var mol = MotorOverloadScript.new(id, nom, nom * 5.0, maxf(nom * 1.5, 120.0), 3.0)
 					nd["mol"] = mol
+		# 3b) Belt speed mismatch (round 8): every BELT drive carries a
+		#     MotorOverload too, sized to the deck it drives — capacity = the
+		#     bed field's full load (kg/m at 20 cm × deck length), so a belt fed
+		#     faster than it runs heaps up at its infeed and trips.
+		#     ONLY belts that carry a bed field: the capacity is the field's
+		#     deck. Measured 2026-09-24: with a 60 kg fallback the 10 m feed
+		#     belts (opzetband/westa, no field, 0.12 m/s creep) tripped on their
+		#     own transit load and the e-stop cut line 1's feed.
+		var bview = nd.get("view")
+		var has_bed : bool = bview != null and is_instance_valid(bview) and bool(bview.get("belt_mode"))
+		if _is_belt_id(id) and has_bed and nd.get("mol", null) == null:
+			var prior_bmol = prior.get("mol", null) if not prior.is_empty() else null
+			if prior_bmol != null:
+				nd["mol"] = prior_bmol
+			else:
+				var cap_kg : float = float(bview.call("belt_full_kg_per_m")) * float((bview.get("area") as Vector2).y)
+				var bnom : float = float(nd.get("amps_nominal", 0.0))
+				if bnom <= 0.0:
+					bnom = BELT_MOTOR_AMPS_NOMINAL
+				var bmol = MotorOverloadScript.new(id, bnom, bnom * 5.0, bnom * 1.5, BELT_TRIP_DELAY_S)
+				bmol.set("load_capacity_kg", maxf(cap_kg, 1.0))
+				nd["mol"] = bmol
 		# 4) Air consumer registration (one global header; consumers re-register in
 		#    place on rebuild, so this is safe to call every rebuild).
 		var air_id : String = _air_consumer_id(id, proc)
@@ -2619,7 +2653,7 @@ func _tick_plc_power_downstream(delta: float) -> void:
 				# off the field, their darkness off this node's moisture).
 				var spin_s : float = float(nd_s["spin"])
 				view_s.call("set_belt_state", float(nd_s["thru"]),
-					_belt_speed_of(nd_s) * spin_s, spin_s > 0.05,
+					_belt_speed_of(nd_s) * spin_s * float(nd_s.get("rpm_pct", 1.0)) * _component_pct_multiplier(nd_s), spin_s > 0.05,
 					moist01_s, contam01_s, delta)
 			else:
 				view_s.call("set_live_state", load_s, moist01_s, contam01_s,
@@ -3104,6 +3138,8 @@ func _tick_advanced_systems(delta: float) -> void:
 				# Mirror the live motor current onto the node so the HMI/SCADA amp
 				# readout reflects the binding load on these high-load drives.
 				nd["amps"] = float(mol.get("current_amps"))
+		if _is_belt_id(String(nd.get("id", ""))):
+			_tick_belt_heap(nd)
 
 		# NIR SHAFT-WRAP — accumulate fibrous wrap on the sorter shaft from the
 		# material that ACTUALLY MOVED this tick (_moved_kg). Using moved (not the
@@ -3439,12 +3475,72 @@ func _stream_color(cls: int) -> Color:
 
 ## Nearest FloorPile to `pos` within a generous 40 m. Used as final spillover sink
 ## for waste mass that no WasteContainer can accept.
+## Round 8 — the heap at a belt's infeed: a FloorPile whose mass MIRRORS the
+## belt's backlog (the kg stay in the buffer; the pile only shows them). It
+## appears past BELT_HEAP_SHOW_KG and goes when the backlog drains. Marked
+## `mirror_kg` so it is never a reject catch (_nearest_floor_pile skips it)
+## and never a choke pile.
+func _tick_belt_heap(nd: Dictionary) -> void:
+	var backlog : float = float(nd.get("_backlog_kg", 0.0))
+	var pile = nd.get("heap_pile")
+	if pile != null and not is_instance_valid(pile):
+		pile = null
+	if backlog >= BELT_HEAP_SHOW_KG:
+		if pile == null:
+			var wpos : Vector3 = nd.get("win", Vector3.ZERO)
+			pile = FloorPileScript.new()
+			pile.name = "BeltHeap"
+			pile.set_meta("mirror_kg", true)
+			pile.max_radius_m = 1.6
+			pile.density_kg_m3 = 60.0                    # loose snippers (BeltBuilder.SNIPPER_BULK_KGM3)
+			var root : Node = get_tree().current_scene
+			if root == null:
+				root = self
+			root.add_child(pile)
+			var ground := wpos
+			ground.y = _floor_y_below(wpos)
+			(pile as Node3D).global_position = ground
+			nd["heap_pile"] = pile
+			print("[LineFlow] HEAP at '%s': %.0f kg waiting at the infeed — the belt is fed faster than it runs." % [String(nd.get("id", "?")), backlog])
+		pile.set("mass_kg", backlog)
+		pile.call("_update_visual")
+	elif pile != null and backlog < BELT_HEAP_SHOW_KG * 0.5:
+		pile.queue_free()
+		nd["heap_pile"] = null
+
+## Live heap kg at a belt's infeed (0 when there is none) — for the HMI and tests.
+func belt_heap_kg(key: String) -> float:
+	for nd in _nodes:
+		if String(nd.get("key", "")) == key or String(nd.get("id", "")) == key:
+			var pile = nd.get("heap_pile")
+			if pile != null and is_instance_valid(pile):
+				return float(pile.get("mass_kg"))
+			return 0.0
+	return 0.0
+
+## RESETTEN on the HMI (round 8): a tripped drive (MotorOverload, latched) is
+## reset here — the heap that tripped it is still there, so a belt fed the same
+## way trips again; the operator's lever is the speed setting. Returns true
+## when a trip was cleared.
+func reset_trip(key: String) -> bool:
+	for nd in _nodes:
+		if String(nd.get("key", "")) != key and String(nd.get("id", "")) != key:
+			continue
+		var mol = nd.get("mol")
+		if mol == null or not bool(mol.call("is_tripped")):
+			return false
+		mol.call("reset", false)
+		nd["_was_tripped"] = false
+		print("[LineFlow] RESET: '%s' drive reset after its overload trip." % String(nd.get("id", "?")))
+		return true
+	return false
+
 func _nearest_floor_pile(pos: Vector3) -> Node:
 	var best : Node = null
 	var best_d := 40.0
 	for p in _floor_piles_cache:
 		var pn := p as Node3D
-		if pn == null:
+		if pn == null or pn.has_meta("mirror_kg"):
 			continue
 		var d := pn.global_position.distance_to(pos)
 		if d < best_d:

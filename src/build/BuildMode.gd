@@ -600,6 +600,10 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	# 9.06 − 5.0 = 4.06 m past where the cursor would otherwise turn. Pushing
 	# the gap out by exactly that puts the corner pivot UNDER the lip.
 	{"id": "opzetband_1", "turn_deg": 90.0, "gap": 4.06},
+	# Rulings §20 (2026-09-24): "A scrap bin near the belt" — the scrap taken
+	# off a bale after the metal detector trips goes in here. Placement-only
+	# (role none), beside the first conveyor's loading end. x/z PLACEHOLDER.
+	{"id": "scrap_bin", "x": 3.4, "z": -2.5},
 	# turn_advance −2.9 — the Westa's deck tail is at its origin (deck_length 0),
 	# and the macro would centre it half a box (5.8/2) down the new leg, so the
 	# leg pre-advances back by that half to land the tail on the pivot, i.e.
@@ -642,12 +646,16 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	# discharging to +X); only the placement was wrong, and as a sequence entry it
 	# also pushed every machine after it ~4 m further along leg B.
 	#
-	# mount_over 3 is the uitvoerband's ENTRY INDEX (this entry is 4), not its
+	# mount_over 4 is the uitvoerband's ENTRY INDEX (this entry is 5), not its
 	# position — inserting any entry above this line shifts it and the magnet
 	# silently lands on the wrong machine. Guarded in-world by
 	# test_line1_overband_mount, which measures the two centres against each
 	# other rather than trusting the index.
-	{"id": "overband_magnet", "mount_over": 3},
+	# 2026-09-24: 3 → 4 — the scrap_bin entry inserted after opzetband_1
+	# (rulings §20) shifted every index after it by one; this anchor is an
+	# ENTRY INDEX and had to follow (test_line1_overband_mount caught it:
+	# 2.73 m off its belt). No operator line_1.json macro existed to re-save.
+	{"id": "overband_magnet", "mount_over": 4},
 	{"id": "transport_belt", "turn_deg": 90.0,
 	 "main_advance": 1.0},                             # short belt — leg C (north)
 	# drum_feed_belt gap 2.14 (né westa_band_1, #fold 2026-09-16) — DERIVED:

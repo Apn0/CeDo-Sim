@@ -1275,6 +1275,24 @@ func _on_reset_faults() -> void:
 					break
 			if in_scope:
 				_line_flow.call("reset_choke", String(ndd.get("key", nid)))
+	# Round 8 (2026-09-24): RESETTEN also resets a TRIPPED drive (MotorOverload,
+	# latched until now with no HMI path at all — "drive until a human calls
+	# mol.reset()" was the whole story) for every machine in this panel's scope.
+	if _line_flow != null and is_instance_valid(_line_flow) and _line_flow.has_method("reset_trip"):
+		var tokens2 : Array = _scope.get("tokens", []) if not _scope.is_empty() else []
+		for nd2 in (_line_flow.get("_nodes") as Array):
+			var nd2d := nd2 as Dictionary
+			var mol2 = nd2d.get("mol")
+			if mol2 == null or not bool(mol2.call("is_tripped")):
+				continue
+			var nid2 := String(nd2d.get("id", ""))
+			var in_scope2 : bool = tokens2.is_empty()
+			for tk2 in tokens2:
+				if nid2.find(String(tk2)) != -1:
+					in_scope2 = true
+					break
+			if in_scope2:
+				_line_flow.call("reset_trip", String(nd2d.get("key", nid2)))
 	_refresh()
 
 # =============================================================================

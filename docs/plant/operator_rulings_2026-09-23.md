@@ -335,3 +335,38 @@ conveyor were built and committed:
 - **Next build:** **the vacuum-pot cleaning mini-game** (P3 stage B,
   `docs/DESIGN_vacuum_pot_minigame_2026-09-23.md`), ahead of the belt-speed
   mismatch gameplay and the in-game look.
+
+## 20. Round eight (2026-09-24, ~15:45): the pot opens towards you, the scrap bin, open screws, what next
+
+Asked through AskUserQuestion after the mini-game (P3 stage B) was built and
+committed (`8b52fc5`):
+
+- **Vacuum pot — where the opening is: "Opening on the side, facing me."**
+  The lid is on the pot's FRONT face at working height; the operator looks
+  INTO the pot horizontally; the freed block comes out towards him. That is
+  why his planes are "top, bottom flat, left, right" and the block "drops
+  down and forwards, towards the player". The stage-A/B build put the lid on
+  TOP of the dome — to be rebuilt: lid on the front face, block visible in
+  the opening, the aim's planes read on the front face.
+- **Line-1 metal scrap: "A scrap bin near the belt."** A dedicated scrap
+  container stands by the first conveyor; the piece taken off the bale goes
+  in there. (Queued: a `scrap_bin` placeable beside opzetband 1, and
+  MetalScrap drops into it.)
+- **Which screws are open (verbatim):** "dosing screws are open top while
+  inside the machine, so for instance, inside the dosing silo for line 3C,
+  since the dosing silo is open top, the screws are also open on the top.
+  But for instance, for the extruder silo from line 3C, it has a closed top.
+  And the screws do not have like an additional solid layer over top of
+  them. So they are effectively open. But there is still the top of the silo
+  itself. But when the screw exits the silo and sticks out a bit so that the
+  material can go onto the compactor belt, that is closed though — so if any
+  dosing screw leaves the enclosure in which it is sitting in or taking
+  material from, whenever it leaves outside of the walls or bottom, then
+  there is a closed top." Plus: "The dewatering screw after each flotation
+  tank" (open). → In the sim: the doseersilo's augers are open (built, with
+  the bed); the extruder silo's screws sit under the silo's closed top
+  (nothing to show); every screw section outside its enclosure is a closed
+  tube; the transport screws between machines stay closed.
+- **Next build: the belt speed mismatch gameplay** — a belt fed faster than
+  it runs heaps up → chute blockage → overload trip, the HMI speed settings
+  as the lever.
