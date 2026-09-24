@@ -25,8 +25,9 @@ class_name LaserFilterScope
 ## current values with a green/yellow/red colour-band on the bar gauge.
 ##
 ## Units:
-##   * LaserFilter exposes pressures in PSI (`upstream_pressure_psi_indicator`,
-##     `delta_p_psi`). This screen displays in BAR — convert via PSI_TO_BAR.
+##   * LaserFilter keeps its dMP in PSI internally (`delta_p_psi`); this screen
+##     displays in BAR — convert via PSI_TO_BAR (= 1 / LaserFilter.PSI_PER_BAR).
+##     The inlet (MP < MF) comes from `mp_before_filter_bar()`, already bar.
 ##   * Motor 1 speed comes from `scraper_rpm` (the operator's setpoint, already
 ##     in real RPM).
 ##   * Melt temperature isn't tracked on LaserFilter itself — we read the
@@ -46,7 +47,7 @@ signal request_advance()
 @export var filter_id : String = "MPF1"
 
 # ── Constants ────────────────────────────────────────────────────────────────
-const PSI_TO_BAR : float = 0.0689
+const PSI_TO_BAR : float = 1.0 / 14.5038   # = 1 / LaserFilter.PSI_PER_BAR (was 0.0689, 0.07 % off)
 const CHART_WINDOW_S : float = 30.0 * 60.0   # 30-min rolling window
 const CHART_SAMPLE_HZ : float = 2.0          # 2 samples/s → ~3600 points/window
 const CHART_MAX_SAMPLES : int = 3700
@@ -157,8 +158,10 @@ func _pull_telemetry() -> void:
 		return
 	# ── ΔMP (the headline pressure) — psi → bar.
 	_cur_delta_bar = _filter.delta_p_psi * PSI_TO_BAR
-	# ── Inlet pressure (MP < MF) — upstream proxy reported by ExtruderMachine.
-	_cur_inlet_bar = _filter.upstream_pressure_psi_indicator * PSI_TO_BAR
+	# ── Inlet pressure (MP < MF) — the melt-set pressure after the filter
+	# (ExtruderMachine forwards it) plus the filter's own dMP, bar. So the
+	# outlet box below (inlet - dMP) reads MP > MF, as on the real screen.
+	_cur_inlet_bar = float(_filter.call("mp_before_filter_bar")) if _filter.has_method("mp_before_filter_bar") else 0.0
 	# ── Motor 1 speed = disc-motor rpm (operator setpoint; #223 — no ΔP boost).
 	_cur_motor_rpm = clampf(_filter.get("scraper_rpm") if "scraper_rpm" in _filter else 0.0, 0.0, 60.0)
 	# ── Melt temperature: LaserFilter doesn't track this, so probe the parent
