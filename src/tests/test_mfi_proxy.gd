@@ -9,7 +9,9 @@ extends SceneTree
 ## Run:  godot --headless --script res://src/tests/test_mfi_proxy.gd
 ##
 ## Asserts the headline property — predicted_mfi RISES when die_pressure FALLS at
-## constant Q and T — plus that the MFI ∝ Q / (P·η(T)) proportions hold exactly.
+## constant Q and T — plus that the MFI ∝ Q^n / (P·η(T)) proportions hold exactly
+## (n = MfiProxy.DIE_FLOW_INDEX, the power-law die's index: on 2026-09-25 the die
+## plate it reads went from linear in Q to Q^n, and the proxy's Q term with it).
 
 var _fail := 0
 var _pass := 0
@@ -72,16 +74,29 @@ func _test_inverse_pressure() -> void:
 # 2) The exact proportions of MFI ∝ Q / (P · η).
 # -----------------------------------------------------------------------------
 func _test_proportions() -> void:
-	print("\n[2] MFI ∝ Q / (P · η) proportions hold")
+	print("\n[2] MFI ∝ Q^n / (P · η) proportions hold")
 	var mfi := MfiProxy.new()
 	const T := 215.0
+	var n := MfiProxy.DIE_FLOW_INDEX
+	# The checks below read n from the proxy itself, so on their own they
+	# follow ANY exponent (measured 2026-09-25: with DIE_FLOW_INDEX forced to
+	# 1.0 they stayed 21 ok). This one pins it to the die it is read against.
+	_ok(is_equal_approx(n, ExtruderScrew.POWER_LAW_N),
+		"Q exponent %.2f == the die plate's flow index ExtruderScrew.POWER_LAW_N %.2f" % [n, ExtruderScrew.POWER_LAW_N])
 
 	var base := mfi.update(900.0, 240.0, T)
 
-	# Linear in Q: doubling throughput doubles MFI (P, T fixed).
+	# Q^n: doubling throughput scales MFI by 2^n (P, T fixed), not 2x. A
+	# power-law die needs Q^n of pressure, so a linear Q would read a faster
+	# line on the same melt as a runnier one.
 	var double_q := mfi.update(1800.0, 240.0, T)
-	_ok(_approx(double_q, base * 2.0, base * 1e-3),
-		"2x throughput → 2x MFI (%.4f vs %.4f)" % [double_q, base * 2.0])
+	_ok(_approx(double_q, base * pow(2.0, n), base * 1e-3),
+		"2x throughput → 2^%.2f = %.4fx MFI (%.4f vs %.4f)" % [n, pow(2.0, n), double_q, base * pow(2.0, n)])
+	# The pair the proxy is read against: the power-law die at 2x flow needs
+	# 2^n x the pressure, and the MFI does not move.
+	var die_pair := mfi.update(1800.0, 240.0 * pow(2.0, n), T)
+	_ok(_approx(die_pair, base, base * 1e-4),
+		"2x flow at the power-law die's 2^n pressure → same MFI (%.4f vs %.4f)" % [die_pair, base])
 
 	# Inverse in P: halving die pressure doubles MFI (Q, T fixed).
 	var half_p := mfi.update(900.0, 120.0, T)
@@ -94,9 +109,9 @@ func _test_proportions() -> void:
 	_ok(_approx(eta_3x, eta_base / 3.0, eta_base * 1e-3),
 		"3x viscosity → 1/3 MFI (%.4f vs %.4f)" % [eta_3x, eta_base / 3.0])
 
-	# Combined: product rule. Q×k_q, P×k_p, η×k_e → MFI × (k_q / (k_p·k_e)).
+	# Combined: product rule. Q×k_q, P×k_p, η×k_e → MFI × (k_q^n / (k_p·k_e)).
 	var combo := mfi.update(900.0 * 1.5, 240.0 * 2.0, 2.0)   # eta_base had η=1.0
-	var expected := eta_base * (1.5 / (2.0 * 2.0))
+	var expected := eta_base * (pow(1.5, n) / (2.0 * 2.0))
 	_ok(_approx(combo, expected, eta_base * 1e-3),
 		"combined Q/P/η scaling matches product rule (%.4f vs %.4f)" % [combo, expected])
 

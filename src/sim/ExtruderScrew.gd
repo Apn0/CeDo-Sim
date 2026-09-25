@@ -46,11 +46,13 @@ class_name ExtruderScrew
 ##
 ##   • DIE-PLATE PRESSURE (for the downstream MFI-proxy task to read):
 ##       the melt pressure at the die plate (matrijs), AFTER the kopfilter —
-##       operator ruling 2026-09-24. Drag/pressure-flow balance →
-##       die_pressure ∝ eta_app · throughput, anchored so the profile's nominal
-##       rpm, melt and output read the profile's die_plate_bar. A thinner
-##       (hotter / faster-sheared) melt at the same output drops it; this is the
-##       raw signal a melt-flow-index proxy keys on.
+##       operator ruling 2026-09-24. A power-law melt through a fixed die →
+##       die_pressure ∝ K(T) · throughput^n, n = POWER_LAW_N (operator ruling
+##       2026-09-25), anchored so the profile's nominal output and melt read the
+##       profile's die_plate_bar. A hotter melt at the same output drops it. The
+##       screw's rpm enters only through the heat it puts into the melt: the die
+##       sees the flow and the melt it is handed, not the screw's shear rate.
+##       This is the raw signal a melt-flow-index proxy keys on.
 ##
 ## All temperatures are °C, rpm is screw rev/min, viscosity is Pa·s (apparent),
 ## pressure is bar. The rheology and heat coefficients are heuristic and have
@@ -143,7 +145,7 @@ var melt_target_lo          : float  = 0.0
 var melt_target_mid         : float  = 0.0    # PI setpoint of the cooling fan
 var melt_target_hi          : float  = 0.0
 var die_plate_nominal_bar   : float  = 0.0
-var _eta_nominal            : float  = 1.0    # viscosity at the nominal rpm + melt
+var _eta_nominal            : float  = 1.0    # viscosity at the nominal rpm + melt (the die's K anchor)
 
 # ── Command / load inputs (set by the caller; sensible standalone defaults) ────
 var rpm_setpoint      : float = 0.0     # commanded screw rpm (slews toward it)
@@ -256,14 +258,22 @@ func tick(delta: float) -> void:
 	melt_temp += dT_dt * dt
 	melt_temp = maxf(melt_temp, AMBIENT_C)   # can't drop below ambient
 
-	# 6) Die-plate pressure — drag-flow vs die-resistance balance. Thinner melt
-	#    (hotter / faster sheared) at the same throughput drops it; the MFI proxy
-	#    keys on exactly this signal. Starved screw ⇒ no pressure. Anchored at the
-	#    profile's nominal point instead of a free resistance constant: the old
-	#    DIE_RESISTANCE 6.5e-4 · eta · flow read 0.11 bar at 950 kg/h, which put
-	#    the MFI proxy at 1491 g/10min and made the QA bench REJECT every sample.
+	# 6) Die-plate pressure — a power-law melt through a fixed die. The wall
+	#    stress is K(T) · (die shear rate)^n and the die's shear rate is ∝ the
+	#    flow, so P ∝ K(T) · Q^n, n = POWER_LAW_N. K(T) is read as the melt's
+	#    viscosity at ONE fixed shear rate (the nominal screw's), so only the
+	#    melt temperature moves it. Starved screw ⇒ no pressure. Anchored at the
+	#    profile's nominal output and melt (die_plate_nominal_bar).
+	#    History: the old DIE_RESISTANCE 6.5e-4 · eta · flow read 0.11 bar at
+	#    950 kg/h (the MFI proxy at 1491 g/10min, every QA sample REJECT). Then,
+	#    until 2026-09-25, die_plate_nominal · (eta_screw / eta_nominal) · Q/Q_nom,
+	#    with eta taken at the SCREW's shear rate: a die plate that fell when the
+	#    screw turned faster at the same flow. Operator ruling 2026-09-25 and the
+	#    band it is gated against: docs/plant/operator_rulings_2026-09-25.md,
+	#    test_screw_die_plate_bar section D.
 	var flow_norm : float = throughput / nominal_throughput_kg_s if nominal_throughput_kg_s > 0.0 else 0.0
-	die_pressure = die_plate_nominal_bar * (viscosity / maxf(_eta_nominal, VISC_MIN_PAS)) * flow_norm
+	var k_ratio : float = _apparent_viscosity(rpm_nominal * RPM_TO_SHEAR, melt_temp) / maxf(_eta_nominal, VISC_MIN_PAS)
+	die_pressure = die_plate_nominal_bar * k_ratio * pow(flow_norm, POWER_LAW_N)
 
 # =============================================================================
 # RHEOLOGY
