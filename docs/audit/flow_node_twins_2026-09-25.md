@@ -181,6 +181,11 @@ Parse sweep after the fix: `Result: 465 ok, 0 fail`. Unused-parameter lint:
   BuildMode rebuilds LineFlow while a shredder ghost exists. If it does, the
   placement preview becomes a flow node at the cursor. The suite leaves
   ghosts out for this reason.
+  **Fixed the same day** (`shredder_ghost_placed_object_2026-09-25.md`). It
+  does rebuild, on every placement, but BuildMode's own ghost was never a
+  flow node: `_spawn_ghost` strips the script before `_ready`. The raw
+  catalog ghost was one. `ShredderMachine._ready` no longer adds the group,
+  and `test_ghost_census` checks all 200 catalog ghosts.
 - **The opzetband skips its shredder on both 3A3B feed macros.** After the
   fix, on `line_intake_3a3b` the geometry fallback wires `opzetband_3a3b →
   inclined_belt_8m`, and `shredder_2` has no in-edge. On `line_sort` it wires

@@ -37,7 +37,7 @@ const WATCHDOG_S : float = 180.0
 const CFG_PATH := "res://src/data/machines/Extruder3B.tres"
 const LAW_TOL_PCT : float = 0.001      # the law is exact: same inputs, same formula
 const TICK_TOL_PCT : float = 0.05      # the same stop at 0.1 s and 0.05 s ticks
-const RUN_TO_NOMINAL_S : float = 300.0 # startup_ramp_s is 180 s
+const RUN_TO_NOMINAL_S : float = 300.0 # the start + the raise to nominal, then steady
 const STOP_PROBE_S : float = 1.2       # where the defect was first measured
 const MARKS : Array = [1.2, 4.0, 8.0]
 const ZONE_DROP_C : float = 30.0       # 60 % + 30 °C x 2 %/°C = 120 %, over the 110 % trip
@@ -91,6 +91,9 @@ func _running_model(cfg: ExtruderConfig, dt: float) -> ExtruderModel:
 	var m := ExtruderModel.new(cfg.duplicate())
 	m.melt_temp = m.config.melt_temp_setpoint
 	m.tick(dt, {"start_production": true})
+	# A new extruder's rpm setpoint is 60 (operator 2026-09-25); these stops
+	# are from NOMINAL, so raise it as the player does.
+	m.set_screw_rpm_setpoint(m.config.screw_rpm_nominal)
 	for _i in range(int(RUN_TO_NOMINAL_S / dt)):
 		m.tick(dt, {})
 	return m
@@ -270,8 +273,10 @@ func _check_wired_rig() -> void:
 	m.melt_temp = m.config.melt_temp_setpoint
 	var pend : Dictionary = brain.get("_pending")
 	pend["start_production"] = true
-	for _i in range(int(RUN_TO_NOMINAL_S / DT)):
+	for i in range(int(RUN_TO_NOMINAL_S / DT)):
 		_step(brain, laser, head)
+		if i == 0:
+			m.set_screw_rpm_setpoint(m.config.screw_rpm_nominal)   # the player raises it
 	var run_t : float = m.motor_torque_pct
 	_check(m.state == ExtruderModel.State.RUNNING and run_t > 0.0,
 		"W0 the wired extruder_3b runs through its SimTick handler (%s, %.2f %%)" % [m.get_state_name(), run_t])

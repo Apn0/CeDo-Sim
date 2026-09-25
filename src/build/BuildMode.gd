@@ -2098,6 +2098,9 @@ func _find_machine_snap(ghost_pos: Vector3) -> Dictionary:
 	# PlaceableCatalog.build_node, so the group is the canonical entry point.
 	# The ghost is parented under BuildMode and is NOT in this group — build_node(
 	# id, true) intentionally skips the group for ghosts — so it can't self-snap.
+	# Guarded for every catalog id by test_ghost_census (until 2026-09-25 the
+	# shredder ghosts re-added it from ShredderMachine._ready; _spawn_ghost's
+	# _make_preview_inert kept it off this ghost anyway).
 	for child in get_tree().get_nodes_in_group("placed_object"):
 		if not (child is Node3D):
 			continue
@@ -2172,6 +2175,10 @@ func _spawn_ghost(id: String) -> void:
 		#     True at construction, FALSE one frame later for the ids that carry a
 		#     live script (shredder_1 / laser_filter / lump_cart) — their _ready
 		#     re-adds the group, and the ghost becomes a snap target for itself.
+		#     (Measured 2026-09-25 over all 200 catalog ghosts: only shredder_1 and
+		#     shredder_2 re-added "placed_object", from ShredderMachine._ready, now
+		#     removed; the other scripted bodies join their OWN groups — lump_cart,
+		#     laser_filter, hmi, waste_container, … — test_ghost_census prints them.)
 		#   • extend_machine_legs raycasts each leg downward and excludes only the
 		#     ROOT's own RID. A mill ghost's 8 nested bodies are not excluded, so
 		#     its own legs read themselves as an obstacle and get hidden.

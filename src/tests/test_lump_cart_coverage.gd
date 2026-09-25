@@ -35,9 +35,11 @@ extends Node3D
 ## user:// SAFETY: same discipline as test_waslijn3c_overzicht — every touched
 ## file byte-backed-up + restored, operator allernieuwste_* saves hash-guarded.
 
-const BF_O  := Vector2(573.404, 463.647)
-const BF_XU := Vector2(-0.64279, 0.76604)
-const BF_ZU := Vector2(-0.76604, -0.64279)
+# Line fixtures are placed in the building frame the game FITS from the shell
+# (building_frame.gd; the typed BF_O/XU/ZU constants mapped through
+# Plant.pc_to_scene rotated the frame a second time and put machines outside
+# the real building, measured 2026-09-25).
+const BFrame := preload("res://src/tests/building_frame.gd")
 
 const TEST_SLOT := "__lumpcov__"
 ## This slot's own files. The operator's world_layout.json is not on the list:
@@ -48,13 +50,19 @@ const TOUCHED := [
 	"user://__lumpcov___save.json", "user://__lumpcov___factory.json",
 ]
 
-## All four extruder lines, spread the same 20 bf-units apart the waslijn3c
-## test uses so nothing overlaps.
+## All four extruder lines, placed so no two footprints overlap. In the
+## shell-fitted frame (building_frame.gd) the halls are 61 bf-units wide and
+## lines 3A/3B/3C are ~20 wide each, so they sit at bf y 10/31/52, all 108
+## machines under the roof (measured 2026-09-25). Line 1 folds across 85 m and
+## fits nowhere in this shell (the operator's own line-1 start is outside it
+## too), so it stands clear of the building at bf(175,92): no wall crossed, no
+## overlap. The old spacing (y 22/42/65/82) was chosen in the double-rotated
+## frame; in the real one those four lines overlapped in 30 places.
 const LINES := {
-	"line_1":  Vector2(4.0, 82.0),
-	"line_3a": Vector2(4.0, 22.0),
-	"line_3b": Vector2(4.0, 42.0),
-	"line_3c": Vector2(4.0, 65.0),
+	"line_1":  Vector2(175.0, 92.0),
+	"line_3a": Vector2(4.0, 10.0),
+	"line_3b": Vector2(4.0, 31.0),
+	"line_3c": Vector2(4.0, 52.0),
 }
 const EXPECT_FILTERS := 4
 const EXPECT_CARTS   := 8
@@ -76,8 +84,6 @@ func _ok(cond: bool, msg: String) -> void:
 		print("  FAIL  : %s" % msg); _fail += 1
 
 
-func _bf_to_pc(bf: Vector2) -> Vector2:
-	return BF_O + bf.x * BF_XU + bf.y * BF_ZU
 
 
 func _ready() -> void:
@@ -221,10 +227,12 @@ func _place_macro(bm, macro_id: String, start_bf: Vector2) -> void:
 	var lms := get_node_or_null("/root/LineMacroStore")
 	if lms != null:
 		lms._cache[macro_id] = {}       # clean const seed, on-disk macro untouched
-	var start : Vector3 = Plant.pc_to_scene(_bf_to_pc(start_bf))
-	var fdir : Vector3 = Plant.pc_to_scene(_bf_to_pc(start_bf + Vector2(1.0, 0.0))) - start
-	fdir = fdir.normalized()
-	bm.call("_build_full_line", macro_id, start, atan2(-fdir.x, -fdir.z))
+	var fr : Dictionary = await BFrame.wait_fitted(bm)
+	_ok(not fr.is_empty(), "%s: building frame FITTED from the shell (InteriorLightingManager)" % macro_id)
+	if fr.is_empty():
+		return
+	var start : Vector3 = BFrame.to_scene(fr, start_bf, Plant.floor_top_y())
+	bm.call("_build_full_line", macro_id, start, BFrame.forward_rot_y(fr))
 	for _i in range(10):
 		await get_tree().process_frame
 

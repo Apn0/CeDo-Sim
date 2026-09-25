@@ -9,7 +9,7 @@ It touches `INTAKE_3A3B_SEQ` only, plus the U-bay's MachineFlow profile.
 
 Branch `claude/focused-jackson-bff053`, worktree `mystifying-franklin-db632a`,
 on `origin/main` `a4b2031` (#307, the twin fix). Operator rulings:
-`docs/plant/operator_rulings_2026-09-25.md`, third part ("Transportbanden
+`docs/plant/operator_rulings_2026-09-25.md`, fourth part ("Transportbanden
 3A/3B").
 
 ## 1. The defect, measured
