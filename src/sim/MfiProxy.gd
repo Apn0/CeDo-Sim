@@ -6,9 +6,15 @@ class_name MfiProxy
 ##
 ## PHYSICS — capillary / die flow (Hagen–Poiseuille intuition):
 ##
-##     MFI ∝ Q / (P_die · η(T))
+##     MFI ∝ Q^n / (P_die · η(T)),   n = DIE_FLOW_INDEX
 ##
-##   • Q       — mass throughput (kg/h) pushed through the die.
+##   • Q       — mass throughput (kg/h) pushed through the die. Raised to the
+##               melt's flow index n because the die plate it is read against
+##               is a power-law die, P_die ∝ K(T) · Q^n (ExtruderScrew, operator
+##               ruling 2026-09-25). P_die / Q^n is the melt's stiffness at the
+##               die whatever the output, so a line running faster on the same
+##               melt reads the same MFI. With the old linear Q, that pair made
+##               the estimate climb as Q^(1−n) with output.
 ##   • P_die   — melt pressure at the die plate (bar), after the kopfilter
 ##               (operator ruling 2026-09-24; LineFlow feeds ExtruderScrew's
 ##               die_pressure). For a FIXED die geometry and a fixed Q, a HIGHER
@@ -53,10 +59,15 @@ const CAL_T_C    : float = 246.0
 ## proxy's own original design target. It is kept so that a nominal line lands
 ## where QaSpec and the SCADA band expect it.
 const CAL_MFI    : float = 1.0
-## Overall gain on Q / (P·η), solved from the anchor. It never changes the
+## The die's flow index: ExtruderScrew's own LDPE power-law n (a heuristic
+## 0.35, no plant source), one number for the die plate and the estimate that
+## reads it.
+const _ScrewScript := preload("res://src/sim/ExtruderScrew.gd")
+const DIE_FLOW_INDEX : float = _ScrewScript.POWER_LAW_N
+## Overall gain on Q^n / (P·η), solved from the anchor. It never changes the
 ## proportions the proxy reports, only their absolute level.
 const MFI_GAIN : float = (CAL_MFI * CAL_P_BAR * VISCOSITY_REF
-	* pow(2.0, (REF_TEMP_C - CAL_T_C) / TEMP_DECADE_C) / CAL_Q_KG_H)
+	* pow(2.0, (REF_TEMP_C - CAL_T_C) / TEMP_DECADE_C) / pow(CAL_Q_KG_H, DIE_FLOW_INDEX))
 
 # ── Viscosity model η(T) ───────────────────────────────────────────────────────
 ## Reference viscosity (arbitrary normalised Pa·s-like units) at REF_TEMP_C.
@@ -114,7 +125,7 @@ func update(Q: float, die_pressure: float, viscosity_or_temp: float) -> float:
 	# Guard the denominator: a real die never sees 0 bar while extruding, but a
 	# cold/starved sensor can report ~0. Floor it so MFI stays finite.
 	var p := maxf(die_pressure, 0.001)
-	predicted_mfi = MFI_GAIN * Q / (p * eta)
+	predicted_mfi = MFI_GAIN * pow(Q, DIE_FLOW_INDEX) / (p * eta)
 	return predicted_mfi
 
 ## η(T): viscosity at melt temperature T (°C). Arrhenius-style — hotter melt is

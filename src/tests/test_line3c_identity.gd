@@ -204,9 +204,18 @@ func _build_world(bm, lf) -> void:
 		await get_tree().process_frame
 
 	var listed : Array = lf.call("machine_list")
-	_ok(listed.size() >= BuildMode.LINE_3C_SEQ.size(),
-		"the macro really built: %d LineFlow machines for %d SEQ entries"
-			% [listed.size(), BuildMode.LINE_3C_SEQ.size()])
+	# Bound on the entries LineFlow CAN discover: it drops every MachineFlow
+	# role-"none" id. Until 2026-09-25 the 3C furniture tail (1 lump platform,
+	# 2 spots, 2 carts) defaulted to role "process", so all 37 entries were
+	# flow nodes and the raw SEQ size worked as the bound; with that furniture
+	# at role none the line builds 32 (docs/audit/cycle_guard_swap_2026-09-25.md).
+	var flow_entries := 0
+	for e in BuildMode.LINE_3C_SEQ:
+		if String(MachineFlow.profile(String((e as Dictionary).get("id", ""))).get("role", "")) != "none":
+			flow_entries += 1
+	_ok(listed.size() >= flow_entries and flow_entries > 0,
+		"the macro really built: %d LineFlow machines for %d flow SEQ entries (%d SEQ entries in all)"
+			% [listed.size(), flow_entries, BuildMode.LINE_3C_SEQ.size()])
 	_dump["machines"] = listed.size()
 
 

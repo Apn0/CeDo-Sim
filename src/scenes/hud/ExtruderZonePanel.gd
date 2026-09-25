@@ -45,6 +45,14 @@ var _readouts : Array[Label] = []
 var _die_chip_cold : PanelContainer = null
 var _die_chip_good : PanelContainer = null
 var _die_chip_hot  : PanelContainer = null
+# Screw speed setpoint (2026-09-25). A start ramps the screw to this setpoint,
+# and after a 318-bar trip the operator lowers it to 60 to get the line going
+# again (operator ruling). The touchscreen had zone sliders but no rpm control,
+# so this row is that control on the MACHINES -> extruder_<line> detail, bound
+# to that line's own model. Slider range = what the model accepts
+# (screw_rpm_min..max).
+var _rpm_slider : HSlider = null
+var _rpm_readout : Label = null
 
 func _ready() -> void:
 	custom_minimum_size = Vector2(320, 0)
@@ -70,6 +78,8 @@ func bind(model: Object) -> void:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 4)
 	add_child(box)
+	_add_rpm_row(box)
+	box.add_child(HSeparator.new())
 	var header := Label.new()
 	header.text = "EXTRUDER ZONE SETPOINTS  (°C)"
 	header.add_theme_font_size_override("font_size", 13)
@@ -101,6 +111,56 @@ func bind(model: Object) -> void:
 	die_row.add_child(_die_chip_hot)
 	# Initial paint so the panel doesn't flash all-dark for one frame.
 	_refresh_die_face_chips()
+
+## "SCHROEFTOERENTAL": the rpm setpoint slider plus a setpoint / actual readout.
+## Only built for a model that has the setpoint API and a config.
+func _add_rpm_row(box: VBoxContainer) -> void:
+	_rpm_slider = null
+	_rpm_readout = null
+	if not _model.has_method("set_screw_rpm_setpoint") or not ("config" in _model) \
+			or _model.config == null:
+		return
+	var header := Label.new()
+	header.text = "SCHROEFTOERENTAL  (rpm)"
+	header.add_theme_font_size_override("font_size", 13)
+	box.add_child(header)
+	var row := HBoxContainer.new()
+	row.name = "ScrewRpmRow"
+	row.add_theme_constant_override("separation", 8)
+	box.add_child(row)
+	var sl := HSlider.new()
+	sl.name = "ScrewRpmSlider"
+	sl.min_value = float(_model.config.screw_rpm_min)
+	sl.max_value = maxf(sl.min_value, float(_model.config.screw_rpm_max))
+	sl.step = 1.0
+	sl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sl.set_value_no_signal(float(_model.screw_rpm_setpoint))
+	row.add_child(sl)
+	var read := Label.new()
+	read.name = "ScrewRpmReadout"
+	read.custom_minimum_size = Vector2(150, 0)
+	read.add_theme_font_size_override("font_size", 12)
+	read.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	row.add_child(read)
+	sl.value_changed.connect(func(v: float):
+		if _model != null and is_instance_valid(_model):
+			_model.call("set_screw_rpm_setpoint", v)
+		_refresh_rpm_row()
+	)
+	_rpm_slider = sl
+	_rpm_readout = read
+	_refresh_rpm_row()
+
+## Mirror the model into the rpm row. The web HMI's line strip writes the same
+## setpoint, so the slider must follow the model, not the other way round.
+func _refresh_rpm_row() -> void:
+	if _rpm_slider == null or _model == null or not is_instance_valid(_model):
+		return
+	var sp : float = float(_model.screw_rpm_setpoint)
+	if not is_equal_approx(_rpm_slider.value, sp):
+		_rpm_slider.set_value_no_signal(sp)
+	if _rpm_readout != null:
+		_rpm_readout.text = "sp %.0f  |  act %.0f rpm" % [sp, float(_model.screw_rpm)]
 
 func _add_zone_row(box: VBoxContainer, i: int, zone_names: Array) -> void:
 	var row := HBoxContainer.new()
@@ -199,6 +259,7 @@ func _process(_dt: float) -> void:
 	# the panel only mirrors it.
 	if _die_chip_cold != null:
 		_refresh_die_face_chips()
+	_refresh_rpm_row()
 
 ## Refresh the displayed values from the model (e.g. after another caller
 ## changed a setpoint via the API). Doesn't fire value_changed.
@@ -212,3 +273,4 @@ func refresh_from_model() -> void:
 		_sliders[i].set_value_no_signal(v)
 		_readouts[i].text = "%.0f °C" % v
 	_refresh_die_face_chips()
+	_refresh_rpm_row()

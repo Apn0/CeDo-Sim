@@ -384,6 +384,15 @@ func _snapshot(tm: TagMap, lf, bm) -> void:
 		var sid := String((entry as Dictionary).get("id", ""))
 		if sid == "":
 			continue
+		# Only what LineFlow can discover: _process_discovered_node drops every
+		# MachineFlow role-"none" id, so the seed side must too. Before
+		# 2026-09-25 the role-none entries here (pomp_c1, heater_cabinet) had
+		# unique ids and added 0 collisions either way, so the two figures
+		# agreed by accident. When the lump furniture (2 carts, 2 spots) went
+		# to role none (docs/audit/cycle_guard_swap_2026-09-25.md) the live
+		# figure fell 9 → 7 and the unfiltered seed stayed at 9.
+		if String(MachineFlow.profile(sid).get("role", "")) == "none":
+			continue
 		seq_total += 1
 		seq_ids[sid] = int(seq_ids.get(sid, 0)) + 1
 	# The 20 SCADA-aligned Line 3C units collapse onto how many distinct ids?

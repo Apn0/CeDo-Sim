@@ -45,7 +45,7 @@ const DT : float = 0.1
 const WATCHDOG_S : float = 180.0
 const CFG_PATH := "res://src/data/machines/Extruder3B.tres"
 const LAW_TOL_BAR : float = 0.01      # the law is exact: same inputs, same formula
-const RUN_TO_NOMINAL_S : float = 300.0 # startup_ramp_s is 180 s
+const RUN_TO_NOMINAL_S : float = 300.0 # the start + the raise to nominal, then steady
 const STOP_PROBE_S : float = 1.2       # where the defect was first measured
 
 var _oks : int = 0
@@ -111,10 +111,17 @@ func _law_mp(m: ExtruderModel) -> float:
 func _law_err(m: ExtruderModel) -> float:
 	return maxf(absf(m.die_plate_bar - _law_die(m)), absf(m.mp_after_laserfilter_bar - _law_mp(m)))
 
+## Flow fraction at the model's rpm setpoint (a start ends STARTING there).
+func _q_setpoint(m: ExtruderModel) -> float:
+	return m.screw_rpm_setpoint / maxf(m.config.screw_rpm_nominal, 1.0)
+
 func _running_model(cfg: ExtruderConfig, dt: float) -> ExtruderModel:
 	var m := ExtruderModel.new(cfg.duplicate())
 	m.melt_temp = m.config.melt_temp_setpoint
 	m.tick(dt, {"start_production": true})
+	# A new extruder's setpoint is 60 rpm (operator 2026-09-25); the player
+	# raises it on the HMI.
+	m.set_screw_rpm_setpoint(m.config.screw_rpm_nominal)
 	for _i in range(int(RUN_TO_NOMINAL_S / dt)):
 		m.tick(dt, {})
 	return m
@@ -218,14 +225,18 @@ func _check_starting(cfg: ExtruderConfig) -> void:
 	_check(zero_ticks == 0,
 		"U2 no STARTING tick with melt flowing reads 0 bar at the die plate (%d did; the compounding scale read 0 on all of them)"
 		% zero_ticks)
-	_check(last_die >= 0.9 * run_die,
-		"U3 the last STARTING tick reads %.1f bar = %.3f of running (the screw is at >= 0.95 of nominal rpm there)"
-		% [last_die, last_die / maxf(run_die, 0.001)])
+	# STARTING ends at the rpm setpoint (a new extruder's is 60 of 110, operator
+	# 2026-09-25), so the last STARTING tick carries the die plate of that flow.
+	var start_die : float = cfg.die_plate_nominal_bar * pow(_q_setpoint(m), _n)
+	_check(last_die >= 0.9 * start_die,
+		"U3 the last STARTING tick reads %.1f bar = %.3f of the die plate at the setpoint's flow (%.1f bar at q %.3f; running at nominal %.1f)"
+		% [last_die, last_die / maxf(start_die, 0.001), start_die, _q_setpoint(m), run_die])
 
 
-## A start after the line has run before (runtime_s past startup_ramp_s):
-## RUNNING takes over at nominal flow, so the gauge must not jump there.
-## (A FIRST start re-ramps from idle in RUNNING — see _info below.)
+## A start after the line has run at nominal before: STARTING ramps to the
+## setpoint the operator left and hands over to RUNNING there, so the gauge must
+## not jump. (Until 2026-09-25 a FIRST start re-ramped from idle in RUNNING
+## whatever the setpoint; test_extruder_start_rpm holds both to one start.)
 func _check_warm_restart(cfg: ExtruderConfig) -> void:
 	var m := _running_model(cfg, DT)
 	var run_die : float = m.die_plate_bar
@@ -250,7 +261,9 @@ func _check_warm_restart(cfg: ExtruderConfig) -> void:
 	_check(last_start > 0.0 and first_run > 0.0 and jump <= 0.05,
 		"U4 a warm restart hands STARTING (%.1f bar) to RUNNING (%.1f bar) with a %.1f %% step (the compounding scale stepped 0 -> %.0f)"
 		% [last_start, first_run, jump * 100.0, run_die])
-	# Measured, not gated: a model's FIRST start re-ramps from idle in RUNNING.
+	# Measured, not gated: a model's FIRST start. It used to re-ramp from idle in
+	# RUNNING (a lifetime-runtime ramp); since 2026-09-25 every start ramps to
+	# the setpoint and RUNNING holds it, so first and warm starts hand over alike.
 	var f := ExtruderModel.new(cfg.duplicate())
 	f.melt_temp = f.config.melt_temp_setpoint
 	f.tick(DT, {"start_production": true})
@@ -262,8 +275,8 @@ func _check_warm_restart(cfg: ExtruderConfig) -> void:
 			f_last = f.die_plate_bar
 		elif f.state == ExtruderModel.State.RUNNING:
 			break
-	_info("a FIRST start (runtime_s 0) hands STARTING %.1f bar to RUNNING %.1f bar: RUNNING restarts its own %.0f s ramp from idle_kg_per_h, so the flow and the gauge drop to q %.3f (not this suite's defect; recorded)"
-		% [f_last, f.die_plate_bar, cfg.startup_ramp_s, _q(f)])
+	_info("a FIRST start (runtime_s 0) hands STARTING %.1f bar to RUNNING %.1f bar at q %.3f (it dropped to q 0.053 while RUNNING re-ramped from idle; see test_extruder_start_rpm A8)"
+		% [f_last, f.die_plate_bar, _q(f)])
 
 
 ## STOPPING -> STARTING (the operator restarts during the coast-down). The
@@ -329,16 +342,20 @@ func _check_wired_rig() -> void:
 		var was_starting : bool = m.state == ExtruderModel.State.STARTING
 		_step(brain, laser, head)
 		run_steps += 1
+		if run_steps == 1:
+			# A new extruder's setpoint is 60 rpm; the player raises it.
+			m.set_screw_rpm_setpoint(m.config.screw_rpm_nominal)
 		if was_starting:
 			start_ticks += 1
 			var fed : float = float(laser.get("mp_after_filter_bar"))
 			if absf(fed - m.mp_after_laserfilter_bar) > LAW_TOL_BAR:
 				start_mismatch += 1
 			start_last = fed
+	var start_mp : float = m.config.mp_after_laserfilter_nominal_bar * _q_setpoint(m)
 	_check(start_ticks >= 20 and start_mismatch == 0
-			and start_last >= 0.9 * m.config.mp_after_laserfilter_nominal_bar,
-		"W1 through %d STARTING ticks the laserfilter's MP>MF is the model's (%d mismatches), %.1f bar on the last one (nominal %.0f; the compounding scale fed 0)"
-		% [start_ticks, start_mismatch, start_last, m.config.mp_after_laserfilter_nominal_bar])
+			and start_last >= 0.9 * start_mp,
+		"W1 through %d STARTING ticks the laserfilter's MP>MF is the model's (%d mismatches), %.1f bar on the last one (%.1f at the setpoint's flow; the compounding scale fed 0)"
+		% [start_ticks, start_mismatch, start_last, start_mp])
 	var run_mp : float = m.mp_after_laserfilter_bar
 	pend["stop_production"] = true
 	_step(brain, laser, head)

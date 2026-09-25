@@ -188,8 +188,13 @@ func _readable_status() -> String:
 				config_resource.melt_temp_setpoint]
 		ExtruderModel.State.IDLE:
 			return "Warm, screw at idle rpm, awaiting feed."
+		ExtruderModel.State.STARTING:
+			return "Starting — screw ramping up to its %.0f rpm setpoint." % model.screw_rpm_setpoint
 		ExtruderModel.State.RUNNING:
-			return "Producing — feed flowing, screw at production rpm."
+			# The rpm setpoint is set per line on the extruder HMI; 60 is the
+			# lowest (operator 2026-09-25).
+			return "Producing — screw at %.0f rpm (setpoint %.0f, set on the extruder HMI)." % [
+				model.screw_rpm, model.screw_rpm_setpoint]
 		ExtruderModel.State.VACUUM_ALARM:
 			return "Vacuum lost — production continues but cascade clock running."
 		ExtruderModel.State.FAULT:
@@ -659,8 +664,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			# The green pushbutton is only live once the display block is green.
 			if model.preheat_ready():
 				_pending["start_production"] = true
-				print("[%s] Operator started production (barrel at temperature)"
-					% config_resource.line_id)
+				print("[%s] Operator started production (barrel at temperature) — screw ramps to its %.0f rpm setpoint"
+					% [config_resource.line_id, model.screw_rpm_setpoint])
 			else:
 				print("[%s] Still warming — %.0f%% (%.0f/%.0f °C). The green "
 					% [config_resource.line_id, 100.0 * model.preheat_progress(),
@@ -676,7 +681,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				# a cold machine used to guarantee a torque trip 2 s later.
 				_pending["start_production"] = true
 				if model.preheat_ready():
-					print("[%s] Operator started production" % config_resource.line_id)
+					print("[%s] Operator started production — screw ramps to its %.0f rpm setpoint"
+						% [config_resource.line_id, model.screw_rpm_setpoint])
 				else:
 					print("[%s] Operator started warm-up (barrel cold, %.0f °C)"
 						% [config_resource.line_id, model.melt_temp])

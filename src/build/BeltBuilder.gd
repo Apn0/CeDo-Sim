@@ -24,6 +24,12 @@ extends RefCounted
 ## (usually `p` itself; for internal_builder_path specs it returns the
 ## instantiated script-backed root e.g. ShredderFeedBelt).
 ##
+## build() makes `p` a placeable (placeable_id + group placed_object). An
+## `_m_*` model builder is handed the body's `Model` child, which build_node
+## has already wrapped in a tagged body — those call build_internal(). Four of
+## them called build() until 2026-09-25, and every such belt was a LineFlow
+## node twice (test_flow_node_unique).
+##
 ## Tagging contract (non-ghost only): the returned node ends up with
 ##   meta('placeable_id') = id
 ##   group 'placed_object'

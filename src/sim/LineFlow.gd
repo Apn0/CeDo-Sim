@@ -602,6 +602,13 @@ func _process_discovered_node(node3d: Node3D, id_ordinal: Dictionary, code_owner
 	# build path tagged them placed_object.
 	if node3d.is_in_group("waste_container") or node3d.is_in_group("floor_pile"):
 		return
+	# A macro entry marked {"flow": false} (BuildMode._macro_entry_in_flow) is
+	# placed but carries nothing, although its id is a flow machine elsewhere:
+	# the sort line's two reject belts. A sorter's reject leaves as a counted
+	# loss (poly_rejected), so as nodes they were feed heads the fallback wired
+	# into the line. Without this they come back on every rebuild.
+	if bool(node3d.get_meta("lf_placement_only", false)):
+		return
 	var id := String(node3d.get_meta("placeable_id"))
 	var prof := MachineFlow.profile(id)
 	if String(prof["role"]) == "none":
@@ -1257,6 +1264,11 @@ func _link() -> void:
 		for entry in outs:
 			if not (entry is Dictionary):
 				continue
+			# An unresolvable path keeps the source explicit and adds no edge:
+			# the machine it named was deleted (a live delete leaves the freed
+			# node's path; a reload stamps an EMPTY path with "missing_index",
+			# BuildMode._add_explicit_hole). Either way the source is a dead end,
+			# never handed to the geometry fallback.
 			var tpath = entry.get("path", null)
 			if tpath == null or not path_idx.has(tpath):
 				continue
@@ -1331,7 +1343,19 @@ func _link_best_target(src_idx: int, source_port: Vector3, src_proc: String, exc
 		var b_proc : String = String(_nodes[best].get("process", ""))
 		if _is_invalid_flow_direction(src_proc, b_proc):
 			continue
-		if _creates_cycle(best, src_idx):
+		# The edge being proposed is src_idx → best, and _creates_cycle(from, to)
+		# asks "would edge from → to close a cycle" (DFS from `to` looking for
+		# `from`). Until 2026-09-25 this read _creates_cycle(best, src_idx): it
+		# asked whether the SOURCE already reached the target, and in this pass a
+		# source has no out-edges yet, so the guard never refused anything and
+		# #78's "full DAG cycle prevention" never ran. Measured with
+		# dump_line_graph on all seven macros: 36 edges sat on cycles
+		# (wind_sifter ↔ infeed blower 2 on 3A, centrifuge ↔ weegschaal on 1 and
+		# 3B, lump_cart ↔ lump_cart_spot, compressor_a ↔ compressor_b, …); after
+		# the swap, 0. A refused candidate falls through to the NEXT one, which is
+		# not automatically right — see docs/audit/cycle_guard_swap_2026-09-25.md
+		# for what each rerouted edge became and how it was settled.
+		if _creates_cycle(src_idx, best):
 			continue
 		return best
 	return -1

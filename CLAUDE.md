@@ -289,6 +289,13 @@ count.
 > Measured after: `PASS (19 ok, 0 fail, 0 skipped)`. **He chose to KEEP the
 > leaked entry (asked 2026-09-24), so those two reds are environmental. Do
 > not edit his world_layout.json without asking him.**
+> **It is FOUR reds, not two** (full harness 2026-09-25 at `2c217c0` on a copy
+> of his `app_userdata`). The same one entry also fails two more checks:
+> - `test_project_sweep_guards` B1b (`structure_items starts empty (1 entries)`);
+> - `test_new_world_wipe`: a new world boots with `Loaded 0 placed objects
+>   (per-save) + 1 shared structure`, so `PlacedObjects` holds 1 child.
+>
+> `docs/audit/cycle_guard_swap_2026-09-25.md` §8.
 > `docs/audit/jam_baseline_layout_leak_2026-09-24.md`.
 >
 > **2026-09-25 — ruled: it is his real gate, keep it.** Shown renders of where
@@ -576,9 +583,19 @@ the one before that ~6 months stale — treat this one as re-checkable too):
 | `docs/audit/material_trace_2026-08-18.md` | Follow one bale end-to-end: the symbol-flow + material-census tools, mass-minting proven structurally closed, and the spawn-clearance check that was unsatisfiable for 4 weeks |
 | `docs/audit/robustness_and_coverage_2026-09-21.md` | **Crash-safe persistence (`AtomicFile`) and 26 formerly-unrun suites now gated.** Why a save killed mid-write used to load back as an empty factory and get autosaved over; the delete-resurrection bug caught in the first draft; 5 mutation proofs. Plus the bisect that pins the `test_gate_carve` red on two rotation-sign flips in the uncommitted `WallOpenings.gd`, which reds are identical at clean HEAD, and what was measured but not touched |
 | `docs/audit/overnight_enhancement_2026-09-23.md` | **The unattended 2026-09-23 run: 12 commits, every one measured first.** A MotorOverload trip that never stopped conveying, a Lumpenwagen that lost kg when full, checkpoint saves, the F1 key sheet, map labels, the cart speed clamp, the compactor kijkglas, LineFlow moved to 10 Hz (2.85 → 0.54 ms/frame), and two harness reds root-caused as frame-count races (navmesh bake, bale streaming). Two full harness runs, the operator list at the end |
+| `docs/audit/cycle_guard_swap_2026-09-25.md` | **LineFlow's fallback cycle guard was called with swapped arguments and never refused an edge.** Every rerouted edge, on all seven macros, before and after the swap. The per-edge rulings: swap alone, a 3A pin, or fixtures moved to role `none`. The reload measurement (0 cycles, still wrong without pins). `test_fallback_chains` and its mutation table. Found, not fixed at the time: the sort line's topology and the intake belts discovered twice, both fixed the same day (next two rows) |
+| `docs/audit/sort_line_topology_2026-09-25.md` | **The sort line (`LINE_SORT_SEQ`) was wired by guesses: its side lanes sat in one branch chain.** The opzetband fed the bunker past shredder 1, the sorters fed the final climb belt past shredder 2, and shredder 2 had no in-edge. Every link is now declared: main-chain pins, `titech`/`tomra` streams with the sorters in SERIES per lane (operator ruling 2026-09-25), and the new `{"flow": false}` SEQ flag for the reject belts (placed, not flow nodes). Before/after graphs, what settles each link, `test_sort_line_topology` (by name and by kg, incl. "every kg passes both sorter stages") and its mutation table. Open for the operator: the trilzeef, Tomra's missing sort model, the line's geometry |
+| `docs/audit/flow_node_twins_2026-09-25.md` | **Every intake belt was two LineFlow nodes: the body's `Model` child was a placeable too.** The mechanism (`BeltBuilder.build()` in 4 belt builders, an inner `_finalize_placeable` in 10 more, 31 catalog ids), what the twin did (feed heads, a double-fed next belt, every intake film bed at 0.000 kg/m, two controllers per deck, K-mode resolving hatch colliders to the Model), the dumps before/after, `test_flow_node_unique` and its mutation table. Found, not fixed: the opzetband bypasses its shredder on both 3A3B feed macros (the shredder ghosts it also found are fixed, next row) |
+| `docs/audit/shredder_ghost_placed_object_2026-09-25.md` | **A shredder placement ghost was a `placed_object`:** `ShredderMachine._ready` added the group without knowing it was a ghost, so a raw `build_node(id, true)` became a LineFlow feed head. Measured: BuildMode rebuilds LineFlow with the ghost alive on every placement, but its own ghost was never a flow node (`_make_preview_inert` strips the script first). The fix, why real shredders are unchanged, `test_ghost_census` (all 200 catalog ghosts) and its mutation table. Found, not fixed: raw ghosts still join their own behaviour groups (`shredder`, `lump_cart`, `waste_container`, `hmi`, …) |
+| `docs/audit/macro_edges_reload_2026-09-25.md` | **A macro line's explicit flow edges (pins, streams, split, recirc) now survive a save → load.** Before, a reloaded world had 0 of them (47 tagged nodes → 0). One function, `BuildMode.macro_flow_edges`, serves the build and the load, and the refactored build is diffed identical to the old one (269 rows). Covers `macro_instance`, the hole and dead-end rules for deleted machines, when a save is refused, the guard `test_macro_edges_reload` and its mutation matrix, and what the load does with every macro-bearing layout on this machine |
 | `docs/audit/hmi_fault_rearm_2026-09-24.md` | **HMI alarms: KWITTEREN acknowledges one occurrence of an alarm (#279), and the same EREMA code on two lines is two alarms (#282).** Probes, the guard suites `test_hmi_fault_rearm` and `test_hmi_fault_per_line` with their mutation matrices, and the full harness on `04eaa77`. **Open:** every panel lists every line's EREMA alarms (found by reading the code, not measured); Afschermen does not exist (the Onderdrukt tab reads a table nothing writes); RESETTEN clearing every acknowledgement has not been ruled on |
 | `docs/audit/operator_session_2026-09-23.md` | **The interactive 2026-09-23 session: tasks ranked by operator effort against sim impact, each answered by AskUserQuestion then built and measured.** Task 1: film beds on every belt (P1), the inclined belt's deck running the wrong diagonal, the cost probe, the renders; per-task evidence and the open questions each one left |
 | `docs/DESIGN_vacuum_pot_minigame_2026-09-23.md` | **P3 stage B as the operator described it: not a hold-E but a mini-game** — lid pull that stiffens with time, plamuurmes planes at 90 %, the block by hand, re-lid, the two-minute race. Systems, parameters (his vs placeholder), test strategy. **Built 2026-09-24** (`test_vacuum_pot_minigame`, 33 ok); the feel is his to play |
+| `docs/audit/extruder_stop_torque_2026-09-25.md` | **The extruder's load through a stop, from the plant's raw WinCC archive.** The model compounded the torque every STOPPING tick (0.142 of running 1.2 s in at 0.1 s ticks, 0.024 at 0.05 s). Now it is entry torque x rpm / entry rpm, the law the 17 samples caught mid-stop show (slope 0.969). Open, for the operator: the plant's screw stops within one ~5 s log cycle in 70 of 83 stops, while the model coasts for 21.6 s; 26 of 83 stops were run empty first |
+| `docs/audit/extruder_screw_die_plate_2026-09-24.md` | **LineFlow's OWN screw model (not ExtruderModel) read 0.11 "bar" at the die, at 200 rpm and a 195 °C melt.** The MFI estimate was 1491 g/10min, so every QA sample graded REJECT, and on lines 1/3A/3B the terminal and SCADA read the `extruder_silo`. Now: die plate after the kopfilter (operator ruling), per-line rpm, melt and output from the WinCC trends, MFI anchor re-solved. §10 (2026-09-25): the "flat kopdruk vs proportional model" gap was a probe holding rpm fixed; both models now carry a power-law die, P ∝ Q^0.35, gated across the trend's output band |
+| `docs/audit/extruder_warm_restart_2026-09-25.md` | **A warm extruder restart at the green button tripped 318 bar** (4.3-4.8 s after green, 3A and 3B, through the plain stop / PREHEAT / green path too): a model that had run before went on at nominal flow, and only a first start re-ramped. Also found: only the FIRST extruder in the group could have its rpm set, and the green button accepted a melt that passes lumps. Built from operator rulings: start ramps to the persisted setpoint, 60 floor and new-extruder setpoint, green from the lump point too (201.875 °C), a per-line rpm control. Probe, 27-check suite, 11 mutations; open items (interlocks, ~5 s ramp in the archive, OFF cooling rate, the lump law's knife edge) |
+| `docs/plant/operator_rulings_2026-09-25.md` | **The die plate against output, 2026-09-25**: the flat kopdruk in the June-2023 trends is "operator-specific", perhaps an office test without head filters (CLAIMED; the downsampled curves cannot tell). Power-law die P ∝ Q^0.35 in ExtruderScrew AND ExtruderModel, MfiProxy only the matching exponent (MFI itself deferred to the beta). Open: melt pump on 3A/3B (08-31 says none, 09-24 names one), the profiles' rpm is not the rpm at the nominal output **Third session, §E1-§E7: extruder start, rpm setpoint, green button** — a start ramps to the setpoint the operator left (not always to 60); 60 is the floor, the remedy after a 318 trip and a new extruder's setpoint; green waits out the lumps (201.875 °C); 3 s to 60 kept against the raw archive's ~5 s; a line choice on the HMI. Recollections beside the raw WinCC archive's 126 starts. Open: start interlocks, the left "easy work" button |
+| `docs/plant/operator_rulings_2026-09-24.md` | **Extruder melt pressures, 2026-09-24**: the "280 psi" die pressure was 280 BAR, a safe maximum before the laserfilter under the 318-bar shutdown (he runs ~220). Two pressures: before the laserfilter = melt-set after + dMP; MP<PEL (160 bar) = dP across the kopfilter; per-line FORM-008 kopdruk. Recollections; what was measured before/after, and what is still open (3B above its one-session trend). §6: merged with #275, which fixed the same finding in parallel. The melt-set pressures follow MELT temperature (3A fit 6.83 bar/°C, weak). §7: the screen's dMP follows it too (operator 2026-09-25), measured before/after |
 | `docs/AUDIO_machine_sounds_2026-09-25.md` | **The operator's 11 plant-floor recordings, on their machines, driven by the sim.** File-name cutting grammar (`5s+_`, `25s-35s_`, `loop_3x_`, `_in_operation`, `_loop_4x`) and the rulings behind each bake; `MachineSoundSpec` `.tres` per placeable with the `gain_db` slider (every level a PLACEHOLDER until play-tested); loop seams measured against each loop's own fluctuation; ramps generated from the run loop; the 60 line-macro machines still without a recording. `test_machine_sounds` 80 ok |
 | `docs/plant/operator_rulings_2026-09-23.md` | **Operator answers from memory, 2026-09-23** — film look, colour order, bed depth per belt, where wet flake is visible, screws "differ". Recollections, not documents: cite them as such |
 | `docs/audit/assets_loss_and_restore_2026-09-21.md` | **`assets/` was wiped and restored.** Godot's `.md5` fingerprints identify originals byte for byte: 159 of 273 are back exact and 101 are cache-only (listed; do not re-import them). Also the `Merlo.fbx` re-import trap, what `winfr` did and did not recover (nothing exact), and the method to reuse |
@@ -734,20 +751,61 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   back-edge. The same swapped guard leaves further 2-cycles on these lines
   (3A's infeed wind_sifter ↔ blower 2, which starves the big top cyclone;
   centrifuge ↔ weegschaal on 1 and 3B, which starves voorraad_silo). They
-  are measured, not fixed. The 3A/3B tails are pinned in the SEQs, guarded
+  were fixed the same night by swapping the arguments (the next entry). The
+  3A/3B tails are pinned in the SEQs, guarded
   by `test_extruder_silo_chain` (by name and by kg: no node of the chain may
   process more than was fed, which is how a 2-cycle shows up in flow).
   `src/tests/dump_line_graph.tscn -- <line_id>` dumps any macro line, marks
   every edge explicit or geometry, and lists every cycle.
-  **And no pin survives a reload.** `lf_explicit_outs` is stamped only by
-  `_build_full_line` and is not in `_save_layout`, so a world loaded from a
-  save carries 0 explicit edges. Measured with
-  `probe_explicit_edges_roundtrip` under a scratch APPDATA: 47 tagged nodes
-  before a save/load, 0 after, and all three silo tails back to broken
-  wiring. That also covers line 1's pins, the 3B split and the 3A recirc.
-  A macro-flow suite that builds its lines fresh proves the session the
-  line is built in, not a reloaded world.
-  `docs/audit/extruder_silo_tail_2026-09-25.md`.
+  **And no pin survived a reload — fixed the same day.** `lf_explicit_outs`
+  holds NodePaths, so it is never saved. Until then it was stamped only
+  inside `_build_full_line`'s loop, so a reloaded world had 0 explicit
+  edges. Measured with `probe_explicit_edges_roundtrip`: 47 tagged nodes
+  before a save/load and 0 after, with all three silo tails, line 1's
+  streams, the 3B split and the 3A recirc gone. Now the SEQ bookkeeping
+  lives in ONE function, `BuildMode.macro_flow_edges` (SEQ indices in, edge
+  triples out). The build stamps from it after placing, and `load_layout`
+  re-stamps every saved line from it (`_rederive_macro_flow_edges`),
+  grouped by the new `macro_instance` meta. Three rules:
+  - A deleted machine is a HOLE. Nothing is rewired around it, and its
+    upstream stays an explicit dead end, as after a live delete.
+  - A save whose ids or indices do not match the SEQ is REFUSED, loudly, and
+    that line falls back to geometry.
+  - Never add topology logic to the build loop. Put it in
+    `macro_flow_edges`, or a reload will not have it.
+
+  Guarded by `test_macro_edges_reload` (60 checks): every macro round-trips
+  by name, kg reach each named extruder after a reload, and a partial line
+  reloads into exactly the live session's graph.
+  `docs/audit/macro_edges_reload_2026-09-25.md`.
+- **A guard called with its arguments swapped never fires, and fixing it
+  REROUTES edges rather than repairing them.** Measured 2026-09-25 with
+  `dump_line_graph` on all seven macros: `_link_best_target` now calls
+  `_creates_cycle(src_idx, best)`, and the 36 edges that sat on cycles are 0.
+  But a refused back-edge falls to the source's NEXT candidate. Three of those
+  were wrong too:
+  - 3A's infeed blower 2 went to doseerschroef M11b, skipping the mengsilo.
+    It is now pinned to the big top cyclone (ruling 2.1-B).
+  - Every lump cart fed the laser filter (vacuum_degas on 3C).
+  - One compressor of the pair became a feed head.
+
+  The carts, their spots, the lump platform and both visible compressors now
+  have MachineFlow role `none`. Three code comments already claimed that, and
+  the code never did it. Two consequences:
+  - The post-extruder chain on 1/3A/3B is `extruder → laser_filter →
+    heetafslag`, no longer THROUGH a cart.
+  - `weegschaal → voorraad_silo` on 1 and 3B came from the swap alone.
+
+  When you fix a guard, dump every graph it touches before and after, and
+  read each rerouted edge against the docs. A fixed guard proves only that
+  there are no cycles, not that the wiring is right. Measured on a world
+  reloaded from a save, BEFORE the reload fix in the entry above: every pin
+  lost, and 0 cycles there too (60 before), but not right. Since that fix a
+  reload re-stamps the pins (`test_macro_edges_reload`).
+  Guarded by `test_fallback_chains`: no cycle on any line, fixtures out of
+  the graph, only the plant's own feed heads, and the 3A infeed and the 1/3B
+  granulate tails by name and by kg.
+  `docs/audit/cycle_guard_swap_2026-09-25.md`.
 - **A visual grafted onto a node before that node's `_ready()` is a visual
   that does not exist.** `_build_opzetband` attached the #196 metal-detector
   head to the belt's `InclinePivot`, which `ShredderFeedBelt` builds in
@@ -813,6 +871,16 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   new trip is not done until a suite reaches it TWICE. The first reachable
   318 trip exposed a latch (`LaserFilter.is_tripped`) that only a screen
   change cleared, so after one E-stop reset it could never fire again.
+- **Judging a model against a trend one input at a time can invent a
+  model-form question.** Measured 2026-09-25: `test_screw_die_plate_bar`
+  printed the screw's die plate at 3B 534 / 799 / 1263 kg/h as 96 / 144 /
+  227 bar against a flat plant kopdruk, and it was filed as an open
+  model-form question. The probe held the screw at 110 rpm. The plant turns
+  60 / 80 / 120 rpm at those outputs (output follows rpm, 3B exponent 1.01,
+  R² 0.92), and along that path the same law read 120 / 144 / 170. When a
+  model's inputs are coupled in the plant, drive it along the plant's own
+  joint path (pair the curves, as `tools/audit/fit_kopdruk_vs_output.py`
+  does) before calling its form wrong.
 - **A frame-counted wait against a wall-clock cadence is a frame-rate
   lottery.** Two suites went red on healthy worlds this way on 2026-09-23:
   `test_jam_baseline` waited 60 stable frames for a threaded navmesh bake that
@@ -851,6 +919,31 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   (`_apply_trip_latches`). When you add any "stop this machine" rule, put it
   where `powered` is WRITTEN, not where it is read, and prove it with
   `_moved_kg` over several ticks, never with `powered` after one.
+- **A builder that tags the node it is HANDED makes the Model a second
+  machine.** `build_node` tags the body; every `_m_*` builder is handed the
+  body's `Model` child. Four belt builders passed it to `BeltBuilder.build()`,
+  which tags whatever it gets `placeable_id` + `placed_object`, and ten more
+  ended with `_finalize_placeable(p, id)`. So 31 catalog ids carried a second
+  placeable inside the first. Measured 2026-09-25: LineFlow found every intake
+  transportband and both switch belts twice (30 intake nodes for 17 machines).
+  The twin sat at the body's own ports with no in-edge, so it was a feed head,
+  and it double-fed the next belt. It also drove the same film bed with 0 kg/s
+  after the body, so every intake bed read 0.000 kg/m, and it hung a second
+  SwitchBelt / Conveyor8 controller on the deck. K-mode's walk to the first
+  `placed_object` stopped at the Model for hatch colliders under it. No save
+  held it, and every load rebuilt it. In an `_m_*` builder call
+  `BeltBuilder.build_internal`, never `build()` or `_finalize_placeable`. This
+  must print nothing:
+  `grep -nE "_finalize_placeable\(p[,)]|BeltBuilder\.build\(p" src/build/PlaceableCatalog.gd`.
+  Guarded by `test_flow_node_unique`: every catalog id, seven macros fresh and
+  reloaded, 4 mutations red. `docs/audit/flow_node_twins_2026-09-25.md`.
+  **The same rule for a script on the body:** its `_ready` must not add
+  `placed_object`, because it cannot tell a ghost from a machine.
+  `ShredderMachine._ready` did, and every raw `build_node("shredder_*", true)`
+  became a LineFlow feed head (fixed 2026-09-25). `build_node` tags the real
+  body in its `if not ghost:` block. Guarded by `test_ghost_census`: every
+  catalog id built as a ghost, none `placed_object`, 0 LineFlow nodes.
+  `docs/audit/shredder_ghost_placed_object_2026-09-25.md`.
 - **A macro SEQ is a PLACEMENT list, not a topology — reading it tells you
   nothing about what the material does.** Which machine feeds which is decided
   afterwards, partly by the builder's `lf_explicit_outs` tagging and partly by
@@ -865,6 +958,15 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   and tag real parallel trains with `{"stream": "L"/"R"}` instead of letting
   geometry guess. A sibling 2-cycle passes every naive check — both nodes have
   exactly one in-edge and one out-edge — so test for it by name.
+  **2026-09-25, the sort line:** all eight side-lane entries fell into one
+  `branch_chain`, and shredder 2 ended up with no in-edge. Measured with
+  `dump_line_graph.tscn -- line_sort`. Two tools came out of the fix:
+  - `{"flow": false}` places an entry but keeps it out of the flow graph.
+    Use it when the id is a flow machine elsewhere (the reject belts are
+    plain `transport_belt`s), so MachineFlow role `none` cannot do it.
+  - A per-branch kg check cannot tell SERIES from PARALLEL. Each branch
+    "passes its kg on" either way. Assert that the whole split passes BOTH
+    stages. `docs/audit/sort_line_topology_2026-09-25.md`.
 - **Lifting a gravity-fed machine without lifting what feeds it silently
   disconnects the line.** The feed chain's heights are DERIVED from the target's
   local port helpers, which know nothing about the `y` a macro entry applies. Put
@@ -986,6 +1088,16 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   lists every dropped step (it named exactly `SettingsManager apply` on the
   real range, and nothing on a tree that only adds); and in `--script` suites,
   `load()` anything that touches an autoload at runtime — never `preload()` it.
+  **2026-09-25, the other way round: a merge KEPT both sides of the main
+  `for t in …; do` line** (`59acf8f`, #308 merging `main` with #309). #308
+  had added `test_extruder_start_rpm` to that line and #309 `test_ghost_census`.
+  Two headers with one body and one `done` leave the first loop unclosed, and
+  `main`'s `run.sh` stopped parsing: `syntax error: unexpected end of file`.
+  bash runs every step before that line, then exits without
+  `== done (exit N) ==`. After any merge that touches `run.sh`, run
+  `bash -n tools/regression/run.sh` and check
+  `grep -c '^for t in test_machine_sounds' tools/regression/run.sh` is 1.
+  Resolve such a conflict by merging the two suite lists into one line.
 - **A headless run that outlives its expected time is HUNG, and exit 0 is not a
   pass.** Measured 2026-09-22 on a throwaway `--script` probe that idled until
   the session was killed. Three silent modes: (1) a runtime `SCRIPT ERROR` in
@@ -1032,17 +1144,27 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   read 0 bar all the way up, because OFF parks the pressures at 0. The fix
   recomputes the pressures from the current flow every tick
   (`_set_melt_pressures_from_flow`), guarded by `test_extruder_ramp_pressures`.
-  `motor_torque_pct *= rpm_frac` in `_tick_stopping` has the same shape and
-  measured the same fractions; it is NOT fixed, because nothing documents a
-  coast-down torque. To find more:
+  `motor_torque_pct *= rpm_frac` in `_tick_stopping` had the same shape and
+  measured the same fractions (the BluPort's "belasting" read 9 % 1.2 s into a
+  stop from 60 %). It is fixed too: the torque is now entry torque x rpm /
+  entry rpm, guarded by `test_extruder_stop_torque`. No SWI documents a
+  coast-down torque, but the plant's RAW WinCC archive does
+  (`F:/Citizen/Documents/CeDo/Gegevens extruder 3A|3B`, load and speed logged
+  in the same ~5 s cycle; `tools/audit/fit_stop_load_vs_rpm.py`). The
+  downsampled curves in `src/data/plant/trends/` are 6-minute medians and
+  cannot show any transient, so go to the raw files for one.
+  `docs/audit/extruder_stop_torque_2026-09-25.md`. To find more:
   `grep -rnE '^\s+(\w+) = \1 \*|^\s+\w+ \*= ' src/sim --include=*.gd`
-  (7 hits on 2026-09-25) — then read each: a value assigned fresh earlier in
-  the same tick is fine, and so is `x * exp(-delta / tau)`, a decay that is
-  tick-size independent by design (the screw's own coast-down). To prove a fix:
-  run the same stop at two tick sizes, and the reading at the same time must
-  agree. `docs/audit/extruder_ramp_pressures_2026-09-25.md`, which also
-  records that a WARM restart at the preheat-ready melt trips 318 bar (old code
-  and new).
+  (7 hits on 2026-09-25, 6 after the torque fix) — then read each: a value
+  assigned fresh earlier in the same tick is fine, and so is
+  `x * exp(-delta / tau)`, a decay that is tick-size independent by design (the
+  screw's own coast-down). To prove a fix: run the same stop at two tick sizes,
+  and the reading at the same time must agree — and check the law as well,
+  because a value that is simply HELD agrees at every tick size (the torque
+  suite's mutation M5). `docs/audit/extruder_ramp_pressures_2026-09-25.md`,
+  which also records that a WARM restart at the preheat-ready melt trips 318 bar
+  (old code and new) — resolved the same day by operator rulings, see "The
+  extruder warm-up" below and `docs/audit/extruder_warm_restart_2026-09-25.md`.
 
 ## Save files go through `AtomicFile` (2026-09-21)
 
@@ -1173,9 +1295,30 @@ turned the heaters back on.** Measured over a recorded shift: **81 % of starts o
 `State.PREHEAT` fixes that. Pressing start on a cold barrel routes to PREHEAT
 (`ExtruderModel._route_start_request`), the heaters warm the melt toward
 setpoint, and the green button is not live until `preheat_ready()`. The ready
-threshold is *derived* from the trip rather than picked: it is the melt
-temperature at which cold-melt torque still leaves 25 % headroom under
-`TORQUE_TRIP_PCT`.
+threshold is *derived* rather than picked: the melt temperature at which
+cold-melt torque still leaves 25 % headroom under `TORQUE_TRIP_PCT` (110 %)
+AND under `LUMP_PASSTHROUGH_TORQUE_PCT` (95 %, where un-melted lumps start
+reaching the laserfilter), whichever is warmer: **201.875 °C** on 3A/3B.
+Until 2026-09-25 only the torque trip counted (196.25 °C, i.e. 97.5 % torque),
+so the green button accepted a melt that passes lumps; a restart pressed the
+moment it went green caked the screen and tripped 318 bar in 3.3 s. Operator
+ruling, `docs/plant/operator_rulings_2026-09-25.md` §E3.
+
+**How a start runs (operator rulings 2026-09-25, same file §E1-§E5).** A start
+ramps the screw from standstill to the operator's rpm SETPOINT at 20 rpm/s
+(60 rpm in ~3 s), and a stop does not change the setpoint. 60 rpm is the floor
+(`ExtruderConfig.screw_rpm_min`) and a new extruder's setpoint; after a 318 trip
+the operator drops a line to 60 to get it going again, because at 100+ rpm it
+re-trips while ramping (measured: a caked screen re-trips at 110 at 4.7 s, and
+runs at 60). He rejected "every start goes to 60" in so many words: *"That's not
+how operating works."* The setpoint is set per line: the all-lines web HMI has a
+line strip above the WebView (it used to drive only the FIRST extruder in the
+group), and the touchscreen's extruder zone panel has an rpm row. A model's
+first start no longer re-ramps from idle over `startup_ramp_s` (a
+LIFETIME-runtime ramp that made first and later starts differ; the field is no
+longer read). Guard: `test_extruder_start_rpm` (27 checks, 11 mutations red).
+The raw WinCC archive agrees on the floor and on starts returning to the old rpm
+after short stops, and points at a ~5 s ramp where he says 3 s; he kept 3 s.
 
 **Duration comes from the docs, not from feel.** `ExtruderConfig.preheat_min_s`
 = 1800 s, from Cedo-PROD-SWI-042 p4 step 19: starting the 3a/3b extruder

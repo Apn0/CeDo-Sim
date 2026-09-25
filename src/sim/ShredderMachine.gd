@@ -132,7 +132,11 @@ signal state_changed()
 # =============================================================================
 func _ready() -> void:
 	add_to_group("shredder")
-	add_to_group("placed_object")
+	# NOT "placed_object": PlaceableCatalog.build_node tags the real body at its
+	# non-ghost site. This node is also the body of the placement GHOST, and it
+	# cannot tell: adding the group here made every raw shredder ghost a
+	# placed_object and a LineFlow feed head (measured 2026-09-25,
+	# test_ghost_census; docs/audit/shredder_ghost_placed_object_2026-09-25.md).
 	var pid : String = String(get_meta("placeable_id")) if has_meta("placeable_id") else "shredder_1"
 	if pid == "shredder_2":
 		kind = Kind.FINE

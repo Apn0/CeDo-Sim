@@ -135,7 +135,15 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 	# drops into the silo. gap −2.3 pulls the silo's centre under the cyclone
 	# (cyc_half 0.8 + gap + silo_half 1.5 = 0); y 5.9 seats the cone on the
 	# 6.5 m silo's dome. Model detail (twin opposed inlets) → detail program.
-	{"id": "cyclone", "y": 5.9, "gap": -2.3},
+	# ── 2026-09-25 — blower 2 → this cyclone is PINNED (ruling 2.1-B above:
+	# "another blower that blows it in the top of the silo in one cyclone").
+	# The lifted cyclone's inlet sits 7.6 m from blower 2's discharge, and
+	# doseerschroef M11b's is 4.1 m, so the geometry fallback never picks it:
+	# while LineFlow's cycle guard was swapped, blower 2 fed the windzifter
+	# back (a 2-cycle) and this cyclone had NO in-edge; with the guard fixed,
+	# blower 2 fell through to M11b and the infeed skipped the mengsilo.
+	# dump_line_graph.tscn -- line_3a; guarded by test_fallback_chains.
+	{"id": "cyclone", "y": 5.9, "gap": -2.3, "explicit_from_prev": true},
 	{"id": "mengsilo"},
 	# ── RONDMENG-LUS (branch, +X side) — the ALWAYS-ON (while running)
 	# heated drying circulation. Material: silo → doseerschroef M11a₂ →
@@ -283,28 +291,63 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 #  14. Shredder 2 (fine shredder)
 #  15. Inclined belt 8m (climb out of Shredder 2)
 # Hand-off at tail goes into Transportband 1 (start of Transportbanden 3A/3B C1-C12).
+#
+# ── FLOW TOPOLOGY (2026-09-25) — every edge is declared, none is guessed ──
+# Measured with src/tests/dump_line_graph.tscn -- line_sort before this: all
+# the side-lane entries fell into ONE branch_chain, only its last member was
+# wired, and LineFlow's nearest-inlet fallback guessed the rest. The opzetband
+# fed the BUNKER (its 18 m deck discharges 6 m past shredder 1's throat, so
+# shredder 1 was a feed head); the Tomra lane's incline and both first sorters
+# had no in-edge; Titan 1 → Titan 2 → the FINAL climb belt, skipping m17, m18
+# and shredder 2; the long transfer conveyor fed a sorter back; the Tomra
+# reject belt fed the accept conveyor; shredder 2 had NO in-edge. The
+# placement on this line is not a wiring source: the incline tops sit 6 m above
+# the sorter inlets, and m17/m18 are main entries whose "z" is never read.
+# So every link is written down:
+#   * main chain 0 → 1 → 2 → 3 → 4 → 5 → 6 pinned (explicit_from_prev):
+#     opzetband → shredder 1 → belt 1012 → bunker → belt 1040 (operator
+#     interview 2026-07-05, question_answers.json Q16; SWI-048 p1 step 1).
+#   * two lanes from the split belt (6), streams "titech" / "tomra": the
+#     operator's SOP switches film to "beide sorteerlijnen" with button
+#     2040/2035 (docs/plant/hmi_reference.md §21). Per lane the two sorters
+#     run in SERIES, Titan 1 → Titan 2 and Tomra 1 → Tomra 2 — operator ruling
+#     2026-09-25, matching CEDO.xlsx's two ×0.7 stages (misc_sources.md §2e).
+#   * both lanes merge on the accept collection conveyor (17), then 17 → 18 →
+#     shredder 2 (19) → climb belt (20) pinned: sorters → shredder 2 per
+#     CEDO.xlsx, the operator's notes (misc_sources.md §1b) and the
+#     2026-08-26 bunker/shredder-2 interlock ruling (LineFlow.gd).
+#   * the reject belts (15, 16) are "flow": false — placement only. A sorter's
+#     reject leaves the sim as a counted loss (LineFlow.poly_rejected), so no
+#     edge carries it; on the plant the reject belts run to the balenpers
+#     (operator 2026-09-25). docs/plant/operator_rulings_2026-09-25.md.
+# Guarded by src/tests/test_sort_line_topology.gd, by name and by kg.
+# OPEN (operator, "discuss tomorrow" 2026-09-25): the trilzeef the operator's
+# notes put before Titech/Tomra (not in this SEQ since 2026-08-16), and
+# tomra_sort having no MachineFlow profile (the Tomra lane does not sort).
+# Indices are keyed on elsewhere (LineFlow._SORT_*_IDX): flags only, never
+# insert or reorder here.
 const LINE_SORT_SEQ : Array[Dictionary] = [
 	{"id": "opzetband_3a3b"},                                      # 0: Infeed conveyor
-	{"id": "shredder_1"},                                          # 1: Coarse shredder (red)
-	{"id": "transport_belt"},                                      # 2: Outfeed belt under Shredder 1
-	{"id": "bunker"},                                              # 3: Buffer metering conveyor
-	{"id": "transport_belt"},                                      # 4: Outfeed belt from bunker
-	{"id": "transport_belt"},                                      # 5: Transfer conveyor
-	{"id": "switch_belt"},                                         # 6: Split conveyor (Titan vs Tomra)
+	{"id": "shredder_1", "explicit_from_prev": true},              # 1: Coarse shredder (red)
+	{"id": "transport_belt", "explicit_from_prev": true},          # 2: Outfeed belt under Shredder 1
+	{"id": "bunker", "explicit_from_prev": true},                  # 3: Buffer metering conveyor
+	{"id": "transport_belt", "explicit_from_prev": true},          # 4: Outfeed belt from bunker
+	{"id": "transport_belt", "explicit_from_prev": true},          # 5: Transfer conveyor
+	{"id": "switch_belt", "explicit_from_prev": true},             # 6: Split conveyor (Titan vs Tomra)
 	{"id": "overband_magnet", "x": -2.5, "z": 0.0},                # 7: Magnet (Titan side)
 	{"id": "overband_magnet", "x":  2.5, "z": 0.0},                # 8: Magnet (Tomra side)
-	{"id": "inclined_belt_8m", "x": -2.5, "z": 2.0},               # 9: Incline infeed (Titan)
-	{"id": "inclined_belt_8m", "x":  2.5, "z": 2.0},               # 10: Incline infeed (Tomra)
-	{"id": "titech_sort",      "x": -3.5, "z": 6.0},               # 11: Titan 1 (TITECH NIR)
-	{"id": "titech_sort",      "x": -3.5, "z": 10.0},              # 12: Titan 2 (TITECH NIR)
-	{"id": "tomra_sort",       "x":  3.5, "z": 6.0},               # 13: Tomra 1 (TOMRA Autosort)
-	{"id": "tomra_sort",       "x":  3.5, "z": 10.0},              # 14: Tomra 2 (TOMRA Autosort)
-	{"id": "transport_belt",   "x": -6.0, "z": 8.0, "furniture": true},  # 15: Waste reject belt (Titan)
-	{"id": "transport_belt",   "x":  6.0, "z": 8.0, "furniture": true},  # 16: Waste reject belt (Tomra)
-	{"id": "transport_belt",   "x":  0.0, "z": 12.0},              # 17: LDPE accept collection conveyor
-	{"id": "transport_belt",   "x":  0.0, "z": 18.0},              # 18: Long transfer conveyor to Shredder 2
-	{"id": "shredder_2"},                                          # 19: Fine shredder (blue)
-	{"id": "inclined_belt_8m"},                                    # 20: Climb conveyor to Transportband 1
+	{"id": "inclined_belt_8m", "x": -2.5, "z": 2.0, "stream": "titech"},  # 9: Incline infeed (Titan)
+	{"id": "inclined_belt_8m", "x":  2.5, "z": 2.0, "stream": "tomra"},   # 10: Incline infeed (Tomra)
+	{"id": "titech_sort",      "x": -3.5, "z": 6.0, "stream": "titech"},  # 11: Titan 1 (TITECH NIR)
+	{"id": "titech_sort",      "x": -3.5, "z": 10.0, "stream": "titech"}, # 12: Titan 2 (TITECH NIR)
+	{"id": "tomra_sort",       "x":  3.5, "z": 6.0, "stream": "tomra"},   # 13: Tomra 1 (TOMRA Autosort)
+	{"id": "tomra_sort",       "x":  3.5, "z": 10.0, "stream": "tomra"},  # 14: Tomra 2 (TOMRA Autosort)
+	{"id": "transport_belt",   "x": -6.0, "z": 8.0, "furniture": true, "flow": false},  # 15: Waste reject belt (Titan)
+	{"id": "transport_belt",   "x":  6.0, "z": 8.0, "furniture": true, "flow": false},  # 16: Waste reject belt (Tomra)
+	{"id": "transport_belt",   "x":  0.0, "z": 12.0},              # 17: LDPE accept collection conveyor (the lanes' merge)
+	{"id": "transport_belt",   "x":  0.0, "z": 18.0, "explicit_from_prev": true},  # 18: Long transfer conveyor to Shredder 2
+	{"id": "shredder_2", "explicit_from_prev": true},              # 19: Fine shredder (blue)
+	{"id": "inclined_belt_8m", "explicit_from_prev": true},        # 20: Climb conveyor to Transportband 1
 ]
 
 
@@ -408,7 +451,7 @@ const LINE_3C_SEQ : Array[Dictionary] = [
 ]
 
 ## Macros whose flow topology comes from an AUTHORED graph rather than from the
-## branch/parallel bookkeeping in _build_full_line. For these, no node is stamped
+## branch/parallel bookkeeping in macro_flow_edges. For these, no node is stamped
 ## with lf_explicit_outs, because LineFlow treats that meta as "downstream fully
 ## specified" and skips its Line3CDef.LINKS pass entirely (LineFlow.gd:1026).
 const GRAPH_TOPOLOGY_MACROS : Array[String] = ["line_3c"]
@@ -459,7 +502,7 @@ const LINE_3B_SEQ : Array[Dictionary] = [
 	# Kleine LA — open waterbak at the 3B flotation-tank material-EXIT side
 	# (checklist row 16 "Nét overlopen kleine LA I" — water_small.md §1). Side
 	# lane like 3A's pomp_c1 (#81): role="none" water fixture, no flow edge
-	# (placement-only thanks to the I1 guard in _build_full_line).
+	# (placement-only thanks to the I1 guard in macro_flow_edges).
 	# x/z are PLACEHOLDERS — "towards Hal 0" is a world-frame fact the macro
 	# local frame cannot express; flag for operator (water_small.md F1/F2).
 	# NOTE: this insertion shifts macro_index for entries 7+ — any operator-saved
@@ -469,7 +512,7 @@ const LINE_3B_SEQ : Array[Dictionary] = [
 	{"id": "friction_sep"},        # frictiescheider L-R — throws material both ways
 	# ── L-R SPLIT: a mechanical dryer on each side, then recombine at the ventilator ──
 	# #71 — `parallel_branch` flags both dryers as sibling parallel branches.
-	# _build_full_line tags friction_sep with TWO explicit downstream edges (one
+	# macro_flow_edges tags friction_sep with TWO explicit downstream edges (one
 	# to each dryer) and both dryers with an explicit edge to the next main entry
 	# (the recombine blower). Geometry-fallback would only pick the nearest dryer
 	# without these tags, so only ONE side would carry material.
@@ -774,7 +817,7 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	# `parallel_branch` used to sit on the friction pair and is gone: it links
 	# its siblings to the next MAIN entry, which here meant both frictiescheiders
 	# discharged straight into the mill and the whole dryer/blower/cyclone train
-	# hung off nothing. See the stream_chains note in _build_full_line for the
+	# hung off nothing. See the #streams note in macro_flow_edges for the
 	# full measured before-picture.
 	#
 	# The 50/50 the operator asked for is LineFlow's default share for a
@@ -2028,6 +2071,9 @@ func _find_machine_snap(ghost_pos: Vector3) -> Dictionary:
 	# PlaceableCatalog.build_node, so the group is the canonical entry point.
 	# The ghost is parented under BuildMode and is NOT in this group — build_node(
 	# id, true) intentionally skips the group for ghosts — so it can't self-snap.
+	# Guarded for every catalog id by test_ghost_census (until 2026-09-25 the
+	# shredder ghosts re-added it from ShredderMachine._ready; _spawn_ghost's
+	# _make_preview_inert kept it off this ghost anyway).
 	for child in get_tree().get_nodes_in_group("placed_object"):
 		if not (child is Node3D):
 			continue
@@ -2102,6 +2148,10 @@ func _spawn_ghost(id: String) -> void:
 		#     True at construction, FALSE one frame later for the ids that carry a
 		#     live script (shredder_1 / laser_filter / lump_cart) — their _ready
 		#     re-adds the group, and the ghost becomes a snap target for itself.
+		#     (Measured 2026-09-25 over all 200 catalog ghosts: only shredder_1 and
+		#     shredder_2 re-added "placed_object", from ShredderMachine._ready, now
+		#     removed; the other scripted bodies join their OWN groups — lump_cart,
+		#     laser_filter, hmi, waste_container, … — test_ghost_census prints them.)
 		#   • extend_machine_legs raycasts each leg downward and excludes only the
 		#     ROOT's own RID. A mill ghost's 8 nested bodies are not excluded, so
 		#     its own legs read themselves as an obstacle and get hidden.
@@ -2379,9 +2429,6 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float, preview: bo
 	# Each index's delta is added in the macro's LOCAL frame (x/z lateral,
 	# y vertical, rot_y around vertical). Empty dict = use const seed verbatim.
 	var macro_deltas : Dictionary = LineMacroStore.accumulated_chain(line_id, seq.size())
-	# Authored-graph macro: place geometry only, stamp NO lf_explicit_outs. See
-	# GRAPH_TOPOLOGY_MACROS — that meta suppresses LineFlow's Line3CDef.LINKS pass.
-	var graph_topology : bool = GRAPH_TOPOLOGY_MACROS.has(line_id)
 	# ── LEG STATE (#fold 2026-08-28) ─────────────────────────────────────────
 	# A line is a chain of straight LEGS. A main entry carrying {"turn_deg": a}
 	# rotates the heading by `a` degrees (POSITIVE = LEFT, i.e. CCW seen from
@@ -2415,45 +2462,14 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float, preview: bo
 	# past the Line3CDef.STAGES spine, so no macro_index → l3c_code address ever
 	# shifts) while still being placed beside entry 23's laser filter.
 	var entry_z_by_idx : Dictionary = {}
-	# #71 branch tracking — explicit edges for split / recirc topology.
-	# Two distinct kinds of branch are supported:
-	#   CHAINED  (3A recirc loop): one machine after another along +X side lane,
-	#            connected to each other by geometry-fallback; only the FIRST
-	#            and LAST entries need explicit edges to/from the main path.
-	#   PARALLEL (3B L-R split): two sibling branches at the same Z but opposite
-	#            X, each independent. The branch source feeds BOTH; both feed
-	#            the recombine target.
-	# `last_main_node` tracks the most recent x==0 placement so we know where a
-	# starting branch was fed from.
-	var last_main_node : Node3D = null
-	var branch_chain : Array = []      # consecutive chained branch nodes (3A recirc)
-	var branch_source : Node3D = null  # main node feeding the current chain
-	var branch_recirc : bool = false
-	var parallel_siblings : Array = [] # nodes flagged "parallel_branch"
-	var parallel_source : Node3D = null
-	# ── #streams 2026-09-17 — operator correction (live chat) ─────────────────
-	# {"stream": "L"} / {"stream": "R"} builds a TRUE parallel train: every entry
-	# carrying the same tag chains head-to-tail with the previous entry of that
-	# tag, and the two tags never touch each other. A stream OPENS at the last
-	# main node (the split) and CLOSES on the next main node (the merge), which
-	# is the only place the two halves meet again.
-	#
-	# WHY THIS WAS NEEDED — measured, not assumed (src/tests/dump_line1_graph.gd):
-	# line 1's wet section used `parallel_branch` for the friction pair and plain
-	# x-offset branch entries for everything behind it, and the graph that came
-	# out was nonsense. `parallel_branch` links its siblings to the NEXT MAIN
-	# entry, so both frictiescheiders fed the MILL directly, skipping dryer,
-	# blower and cyclone. The x-offset entries behind them all landed in ONE
-	# `branch_chain`, where only the LAST member is wired, so the other five fell
-	# through to LineFlow's nearest-port geometry fallback — which paired the two
-	# blowers with EACH OTHER (blower L -> blower R -> blower L, a closed loop
-	# that fed no cyclone at all) and left both pre-mill cyclones with no inlet.
-	# Neither failure is visible in the SEQ; both are obvious in the graph dump.
-	#
-	# `stream` governs TOPOLOGY only. Placement still comes from `x`/`z`/
-	# `main_advance` exactly as before, the same split `mount_over` made between
-	# `off_cursor` and `is_branch` — so tagging an entry moves no machine.
-	var stream_chains : Dictionary = {}   # tag → Array[Node3D], in placement order
+	# Flow topology (#71 branches, #streams, explicit_from_prev) is not decided
+	# in this loop any more. The loop records which node landed at which SEQ
+	# index; after it, macro_flow_edges() derives the edges from the SEQ alone
+	# and _stamp_macro_flow_edges() writes them. load_layout re-derives a saved
+	# line through the same two functions (_rederive_macro_flow_edges), so a
+	# reloaded line is wired by the code that wired it when it was built.
+	var placed_by_idx : Dictionary = {}   # entry_idx → placed Node3D
+	var instance_id : String = "" if preview else _new_macro_instance_id(line_id)
 	# #141 — transportband chain Y-stacking + head-to-tail spacing. Consecutive
 	# transportband_* IDs stack vertically (each belt's inlet sits CHUTE_DROP_M
 	# below the previous belt's outlet, so the chutes baked into the belt body
@@ -2479,18 +2495,14 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float, preview: bo
 		# every machine after it 4 m too far along the leg.
 		#
 		# POSITIONING is branch-like for a mounted entry; its FLOW ROLE is not.
-		# Branch bookkeeping (explicit edges, chain/parallel membership) keys off
-		# `is_branch`, and a mounted machine is still on the main material path,
-		# so only the placement half is diverted here — `off_cursor` gates
-		# geometry, `is_branch` still gates topology. Keeping the two separate is
-		# what makes this a geometry change and nothing more.
+		# Branch bookkeeping (explicit edges, chain/parallel membership, in
+		# macro_flow_edges) keys off a non-zero `x` only, and a mounted machine is
+		# still on the main material path, so only the placement half is diverted
+		# here — `off_cursor` gates geometry and nothing else. Keeping the two
+		# separate is what makes this a geometry change and nothing more.
 		var mount_over : int = int(entry.get("mount_over", -1))
 		var is_branch : bool = not is_equal_approx(x, 0.0)
 		var off_cursor : bool = is_branch or mount_over >= 0
-		var is_parallel : bool = bool(entry.get("parallel_branch", false))
-		# #streams — see the stream_chains declaration above. Empty = not on a
-		# tagged stream, i.e. the legacy main / parallel / chained-branch paths.
-		var stream_tag : String = String(entry.get("stream", ""))
 		# ── #fold — turn the line heading before placing this entry ──────────
 		if entry.has("turn_deg"):
 			if is_branch:
@@ -2669,109 +2681,13 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float, preview: bo
 				# #fold — the anchor is THIS NODE'S LEG, not the macro's entry
 				# point. save_macro_overrides inverts per node with this.
 				node.set_meta("macro_anchor", {"start": leg_start, "rot_y": leg_rot})
-				# ── #71 branch state transitions ───────────────────────────────────
-				# I1 fix (component_flags_review.md, confirmed 2026-07-06): utilities
-				# whose MachineFlow role is "none" (water pumps, kleine LA, lump cart
-				# + spot, …) must NOT take part in branch/parallel bookkeeping.
-				# LineFlow marks any node with a non-empty lf_explicit_outs meta as
-				# explicit_src BEFORE checking that its targets resolve and then skips
-				# the geometry fallback for it — but a role-none target is never
-				# discovered, so the edge is dropped and the source machine ends the
-				# linker with ZERO outgoing edges (fresh line_3a: transfer_chute lost
-				# its edge because of the side-lane water_pump). Role-none entries are
-				# placement-only: no _add_explicit_out, no chain/sibling membership,
-				# and (symmetrically) a role-none MAIN entry never becomes
-				# last_main_node or closes an open branch.
-				var flow_relevant : bool = _is_flow_relevant(mid) and not graph_topology
-				if not flow_relevant:
-					pass   # placement only — invisible to the flow topology
-				elif stream_tag != "":
-					# #streams — chain head-to-tail WITHIN this tag. The first
-					# member of a tag is fed by the split (the last main node);
-					# every later member is fed by its own predecessor, so the two
-					# trains never cross. The merge is written when the next main
-					# entry arrives (see the close block below).
-					var chain : Array = stream_chains.get(stream_tag, [])
-					if chain.is_empty():
-						if last_main_node != null:
-							_add_explicit_out(last_main_node, node, false)
-					else:
-						_add_explicit_out(chain[chain.size() - 1] as Node3D, node, false)
-					chain.append(node)
-					stream_chains[stream_tag] = chain
-				elif is_branch:
-					if is_parallel:
-						# Parallel sibling — share branch_source with peers, tag now.
-						if parallel_source == null:
-							parallel_source = last_main_node
-						if parallel_source != null:
-							_add_explicit_out(parallel_source, node, false)
-						parallel_siblings.append(node)
-					else:
-						# Chained branch entry — first one carries the start link.
-						if branch_chain.is_empty():
-							branch_source = last_main_node
-							branch_recirc = bool(entry.get("branch_recirc", false))
-							if branch_source != null:
-								_add_explicit_out(branch_source, node, false)
-						branch_chain.append(node)
-				else:
-					# A new main-centreline machine — close any open branches.
-					if not branch_chain.is_empty():
-						var last_chain : Node3D = branch_chain[branch_chain.size() - 1] as Node3D
-						var last_role : String = String(MachineFlow.profile(
-							String(last_chain.get_meta("placeable_id"))).get("role", ""))
-						if branch_recirc and branch_source != null:
-							# Recirc: last branch entry returns to the branch source.
-							_add_explicit_out(last_chain, branch_source, true)
-							# 2026-08-28 SEVERED-MAIN FIX (found by the 3A doc-walk
-							# test): tagging the source with lf_explicit_outs makes
-							# LineFlow SKIP its geometry fallback (LineFlow.gd:1142),
-							# and nothing ever reconnected it to the next main — so
-							# 3A's line was silently DEAD past the mengsilo: the
-							# side-loop closed but mengsilo → M11b never existed.
-							# A recirc loop is a side-circuit; the main path must
-							# continue from its source.
-							_add_explicit_out(branch_source, node, false)
-						elif last_role == "sink" and branch_source != null:
-							# Chain dead-ends in a SINK (e.g. the 3A bigbag
-							# station): the sink banks material and LineFlow never
-							# emits from sinks (:1137), so an edge out of it would
-							# be dead anyway — the MAIN path continues from the
-							# branch source instead.
-							_add_explicit_out(branch_source, node, false)
-						else:
-							# Normal chained branch: last entry feeds this new main.
-							_add_explicit_out(last_chain, node, false)
-						branch_chain.clear()
-						branch_source = null
-						branch_recirc = false
-					# #streams — this main entry is the MERGE. Every open stream's
-					# LAST member discharges into it, and only its last member:
-					# that is what makes the trains converge here and nowhere
-					# earlier. Cleared afterwards so the next split starts fresh
-					# (line 1 splits twice — before the mill and after it).
-					if not stream_chains.is_empty():
-						for tag in stream_chains.keys():
-							var sc : Array = stream_chains[tag]
-							if not sc.is_empty():
-								_add_explicit_out(sc[sc.size() - 1] as Node3D, node, false)
-						stream_chains.clear()
-					if not parallel_siblings.is_empty():
-						for sib in parallel_siblings:
-							_add_explicit_out(sib as Node3D, node, false)
-						parallel_siblings.clear()
-						parallel_source = null
-					# ── {"explicit_from_prev": true} (#fold-up, 2026-08-28) ──
-					# Force an explicit edge from the previous main machine to
-					# this one. Needed when an operator-sourced pipe run puts two
-					# consecutive mains beyond LineFlow's MAX_LINK_DIST (14 m) —
-					# first real case: 3B's plasmaq → tussenventilator, a ~15 m
-					# pneumatic line (ruling 3.1-B). Found live by the 3B
-					# conformance test's severed-main guard.
-					if bool(entry.get("explicit_from_prev", false)) and last_main_node != null:
-						_add_explicit_out(last_main_node, node, false)
-					last_main_node = node
+				# Which BUILD of this macro the node belongs to, so a world holding
+				# two copies of one line can be told apart on reload (see
+				# _rederive_macro_flow_edges). Saved and restored with the others.
+				node.set_meta("macro_instance", instance_id)
+				# Flow topology is stamped once, after the loop, from the SEQ
+				# alone (macro_flow_edges) — the same function load_layout uses.
+				placed_by_idx[entry_idx] = node
 		# Explicit cursor push to clear a split/recombine (e.g. past parallel dryers).
 		if entry.has("main_advance"):
 			main_z += float(entry["main_advance"])
@@ -2779,6 +2695,7 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float, preview: bo
 	if preview:
 		_make_preview_inert(ghost_root)
 		return ghost_root
+	_stamp_macro_flow_edges(line_id, seq, placed_by_idx)
 	print("[BuildMode] Built %s — %d machines over %.1f m in %d leg(s)" % [line_id, built, total_run, leg_idx + 1])
 	if _status:
 		_status.text = "Built %s — %d machines.  Use [K] edit mode to jog each into place." % [
@@ -2944,6 +2861,331 @@ func _add_explicit_out(src: Node3D, tgt: Node3D, recirc: bool) -> void:
 		outs = []
 	outs.append({"path": tgt.get_path(), "recirc": recirc})
 	src.set_meta("lf_explicit_outs", outs)
+
+## A fresh `macro_instance` id for one _build_full_line call. Two builds of the
+## same line in one world share every macro_id / macro_index pair, so without
+## this a reload cannot tell which silo belongs to which band.
+func _new_macro_instance_id(line_id: String) -> String:
+	return "%s-%d-%08x" % [line_id, int(Time.get_unix_time_from_system() * 1000.0), randi()]
+
+## True when a SEQ entry yields no machine at all: an empty id, or one that
+## PlaceableCatalog.build_node refuses (retired, unknown). Such an entry is
+## treated as NOT IN THE SEQ by macro_flow_edges, which is what the build loop
+## always did (its bookkeeping sat inside `if node != null`). A machine that
+## exists in the SEQ but is missing from a loaded world is a different case, a
+## HOLE, and is handled by _stamp_macro_flow_edges instead.
+func _macro_entry_absent(mid: String) -> bool:
+	return mid == "" or PlaceableCatalog.is_retired(mid) or PlaceableCatalog.get_item(mid).is_empty()
+
+## Meta LineFlow reads to leave a placed node out of the flow graph
+## (LineFlow._process_discovered_node). Stamped by _stamp_macro_flow_edges on
+## every macro entry that carries {"flow": false}.
+const LF_PLACEMENT_ONLY_META : String = "lf_placement_only"
+
+## False for a SEQ entry marked {"flow": false}: it is placed, but it is not a
+## flow node — no edge in macro_flow_edges and no LineFlow node. Added
+## 2026-09-25 for the sort line's two reject belts. They are transport_belts, a
+## flow machine everywhere else, so MachineFlow's per-id role "none" cannot
+## express it. As flow nodes they had no in-edge (feed heads) and the fallback
+## wired them into the line (the Tomra reject belt fed the accept conveyor, the
+## Titan one fed Titan 2). A sorter's reject leaves the sim as a counted loss
+## (LineFlow.poly_rejected), so nothing flows on them.
+func _macro_entry_in_flow(entry: Dictionary) -> bool:
+	return bool(entry.get("flow", true))
+
+## The explicit flow edges a macro SEQ declares, as [src_index, tgt_index,
+## recirc] triples in SEQ-index space, in the order they are stamped. This is
+## the ONE implementation of the #71 branch / #streams / explicit_from_prev
+## bookkeeping: _build_full_line stamps a new line from it, and load_layout
+## re-stamps a saved line from it (_rederive_macro_flow_edges). It reads the
+## SEQ and nothing else — no node, no pose, no saved delta — so an operator's
+## user://macros jog cannot change a line's topology, and neither can a reload.
+##
+## Until 2026-09-25 this ran INSIDE the build loop and stamped nodes as they
+## were placed; nothing re-ran it on load, so every explicit edge of every macro
+## (the silo-tail pins, line 1's streams, the 3B split, the 3A recirc) was gone
+## after a save → load (docs/audit/macro_edges_reload_2026-09-25.md).
+##
+## Branch kinds, as they have always worked:
+##   CHAINED  (3A recirc loop): one machine after another along a side lane,
+##            connected to each other by the geometry fallback; only the FIRST
+##            and LAST entries get explicit edges to/from the main path.
+##   PARALLEL (3B L-R split): two sibling branches at the same Z, opposite X,
+##            each independent. The branch source feeds BOTH; both feed the
+##            recombine target (the next main entry).
+##   STREAM   (#streams 2026-09-17, operator correction): {"stream": "L"/"R"}
+##            builds a TRUE parallel train. Every entry with a tag chains
+##            head-to-tail with the previous entry of that tag, and the tags
+##            never touch. A stream OPENS at the last main entry (the split)
+##            and CLOSES on the next main entry (the merge). Measured before it
+##            existed (src/tests/dump_line1_graph.gd): `parallel_branch` on line
+##            1's friction pair fed both frictiescheiders straight into the MILL,
+##            and the x-offset entries behind them fell to the nearest-port
+##            fallback, which paired the two blowers with EACH OTHER and left
+##            both pre-mill cyclones with no inlet. `stream` is topology only.
+## `last_main` is the most recent x == 0 flow-relevant entry: where a starting
+## branch is fed from. A `mount_over` entry sits on the main path for topology
+## (its x is 0); only its placement is branch-like.
+func macro_flow_edges(line_id: String, seq: Array) -> Array:
+	var out : Array = []
+	# Authored-graph macro: place geometry only, stamp NO lf_explicit_outs. See
+	# GRAPH_TOPOLOGY_MACROS — that meta suppresses LineFlow's Line3CDef.LINKS pass.
+	if GRAPH_TOPOLOGY_MACROS.has(line_id):
+		return out
+	var last_main : int = -1
+	var branch_chain : Array = []     # consecutive chained branch entries (3A recirc)
+	var branch_source : int = -1      # main entry feeding the current chain
+	var branch_recirc : bool = false
+	var parallel_siblings : Array = [] # entries flagged "parallel_branch"
+	var parallel_source : int = -1
+	var stream_chains : Dictionary = {} # tag → Array[int], in SEQ order
+	for entry_idx in range(seq.size()):
+		var entry : Dictionary = seq[entry_idx]
+		var mid : String = String(entry.get("id", ""))
+		if _macro_entry_absent(mid):
+			continue
+		# I1 fix (component_flags_review.md, confirmed 2026-07-06): utilities
+		# whose MachineFlow role is "none" (water pumps, kleine LA, lump cart
+		# + spot, …) must NOT take part in branch/parallel bookkeeping.
+		# LineFlow marks any node with a non-empty lf_explicit_outs meta as
+		# explicit_src BEFORE checking that its targets resolve and then skips
+		# the geometry fallback for it — but a role-none target is never
+		# discovered, so the edge is dropped and the source machine ends the
+		# linker with ZERO outgoing edges (fresh line_3a: transfer_chute lost
+		# its edge because of the side-lane water_pump). Role-none entries are
+		# placement-only: no edge, no chain/sibling membership, and
+		# (symmetrically) a role-none MAIN entry never becomes last_main or
+		# closes an open branch.
+		if not _is_flow_relevant(mid):
+			continue
+		# {"flow": false} — the same for ONE entry whose id is a flow machine
+		# elsewhere (the sort line's reject belts are plain transport_belts).
+		# _stamp_macro_flow_edges keeps the node out of LineFlow too.
+		if not _macro_entry_in_flow(entry):
+			continue
+		var is_branch : bool = not is_equal_approx(float(entry.get("x", 0.0)), 0.0)
+		var stream_tag : String = String(entry.get("stream", ""))
+		if stream_tag != "":
+			# #streams — chain head-to-tail WITHIN this tag. The first member of
+			# a tag is fed by the split (the last main entry); every later member
+			# is fed by its own predecessor, so the two trains never cross. The
+			# merge is written when the next main entry arrives (below).
+			var chain : Array = stream_chains.get(stream_tag, [])
+			if chain.is_empty():
+				if last_main >= 0:
+					out.append([last_main, entry_idx, false])
+			else:
+				out.append([int(chain[chain.size() - 1]), entry_idx, false])
+			chain.append(entry_idx)
+			stream_chains[stream_tag] = chain
+		elif is_branch:
+			if bool(entry.get("parallel_branch", false)):
+				# Parallel sibling — share the source with its peers.
+				if parallel_source < 0:
+					parallel_source = last_main
+				if parallel_source >= 0:
+					out.append([parallel_source, entry_idx, false])
+				parallel_siblings.append(entry_idx)
+			else:
+				# Chained branch entry — the first one carries the start link.
+				if branch_chain.is_empty():
+					branch_source = last_main
+					branch_recirc = bool(entry.get("branch_recirc", false))
+					if branch_source >= 0:
+						out.append([branch_source, entry_idx, false])
+				branch_chain.append(entry_idx)
+		else:
+			# A new main-centreline entry — close any open branches.
+			if not branch_chain.is_empty():
+				var last_chain : int = int(branch_chain[branch_chain.size() - 1])
+				var last_role : String = String(MachineFlow.profile(
+					String((seq[last_chain] as Dictionary).get("id", ""))).get("role", ""))
+				if branch_recirc and branch_source >= 0:
+					# Recirc: the last branch entry returns to the branch source.
+					out.append([last_chain, branch_source, true])
+					# 2026-08-28 SEVERED-MAIN FIX (found by the 3A doc-walk test):
+					# tagging the source with lf_explicit_outs makes LineFlow SKIP
+					# its geometry fallback, and nothing ever reconnected it to the
+					# next main — so 3A's line was silently DEAD past the mengsilo:
+					# the side-loop closed but mengsilo → M11b never existed. A
+					# recirc loop is a side-circuit; the main path must continue
+					# from its source.
+					out.append([branch_source, entry_idx, false])
+				elif last_role == "sink" and branch_source >= 0:
+					# Chain dead-ends in a SINK (e.g. the 3A bigbag station): the
+					# sink banks material and LineFlow never emits from sinks, so
+					# an edge out of it would be dead anyway — the MAIN path
+					# continues from the branch source instead.
+					out.append([branch_source, entry_idx, false])
+				else:
+					# Normal chained branch: the last entry feeds this new main.
+					out.append([last_chain, entry_idx, false])
+				branch_chain.clear()
+				branch_source = -1
+				branch_recirc = false
+			# #streams — this main entry is the MERGE. Every open stream's LAST
+			# member discharges into it, and only its last member: that is what
+			# makes the trains converge here and nowhere earlier. Cleared after,
+			# so the next split starts fresh (line 1 splits twice — before the
+			# mill and after it).
+			if not stream_chains.is_empty():
+				for tag in stream_chains.keys():
+					var sc : Array = stream_chains[tag]
+					if not sc.is_empty():
+						out.append([int(sc[sc.size() - 1]), entry_idx, false])
+				stream_chains.clear()
+			if not parallel_siblings.is_empty():
+				for sib in parallel_siblings:
+					out.append([int(sib), entry_idx, false])
+				parallel_siblings.clear()
+				parallel_source = -1
+			# ── {"explicit_from_prev": true} (#fold-up, 2026-08-28) ──────────
+			# Force an explicit edge from the previous main machine to this one.
+			# Needed when an operator-sourced pipe run puts two consecutive mains
+			# beyond LineFlow's MAX_LINK_DIST (14 m) — first real case: 3B's
+			# plasmaq → tussenventilator, a ~15 m pneumatic line (ruling 3.1-B).
+			# Found live by the 3B conformance test's severed-main guard. Also
+			# every extruder-silo tail (2026-09-24 line 1, 2026-09-25 3A/3B).
+			if bool(entry.get("explicit_from_prev", false)) and last_main >= 0:
+				out.append([last_main, entry_idx, false])
+			last_main = entry_idx
+	return out
+
+## Stamp one macro instance's explicit edges (macro_flow_edges) onto its placed
+## nodes; `nodes_by_idx` maps SEQ index → Node3D. Returns the number stamped
+## (edges between two present machines; holes are not counted).
+##
+## An index with no node is a HOLE, not an absent entry. Nothing is rewired
+## around it: a missing silo must not turn into a "feeder → band" pin the SEQ
+## never declared, and a missing stream member must not join its neighbours
+## into one train. An edge FROM a hole is dropped. An edge TO a hole is kept as
+## a hole entry (_add_explicit_hole), so its source stays an explicit source
+## with nowhere to send material — exactly what a live delete leaves: the pin
+## still names the freed machine, LineFlow cannot resolve it, and the source
+## gets no edge at all, the geometry fallback included. A reload must not
+## change that: measured on 3B, the fallback would hand the silo's booster
+## blower its own tussenventilator cyclone, the 2-cycle the pins exist to stop.
+func _stamp_macro_flow_edges(line_id: String, seq: Array, nodes_by_idx: Dictionary) -> int:
+	var n : int = 0
+	# {"flow": false} entries: placement only. The meta is derived from the SEQ
+	# here, on the build and on every reload, and never saved — like the edges.
+	for idx in nodes_by_idx.keys():
+		var n3 : Node3D = nodes_by_idx[idx] as Node3D
+		if n3 == null or int(idx) < 0 or int(idx) >= seq.size():
+			continue
+		if _macro_entry_in_flow(seq[int(idx)] as Dictionary):
+			if n3.has_meta(LF_PLACEMENT_ONLY_META):
+				n3.remove_meta(LF_PLACEMENT_ONLY_META)
+		else:
+			n3.set_meta(LF_PLACEMENT_ONLY_META, true)
+	for e in macro_flow_edges(line_id, seq):
+		var a : Node3D = nodes_by_idx.get(int(e[0]), null) as Node3D
+		if a == null:
+			continue
+		var b : Node3D = nodes_by_idx.get(int(e[1]), null) as Node3D
+		if b == null:
+			_add_explicit_hole(a, int(e[1]))
+			continue
+		_add_explicit_out(a, b, bool(e[2]))
+		n += 1
+	return n
+
+## A declared downstream that is not in the world (a deleted macro machine).
+## The entry's path is EMPTY, which LineFlow's resolver never matches, so the
+## source stays in LineFlow's explicit set with no edge from this entry — the
+## same outcome as the dangling path a live delete leaves behind.
+## `missing_index` is the SEQ index, for whoever reads the meta.
+func _add_explicit_hole(src: Node3D, missing_index: int) -> void:
+	var outs : Array = src.get_meta("lf_explicit_outs") if src.has_meta("lf_explicit_outs") else []
+	if not (outs is Array):
+		outs = []
+	outs.append({"path": NodePath(), "recirc": false, "missing_index": missing_index})
+	src.set_meta("lf_explicit_outs", outs)
+
+## What the last _rederive_macro_flow_edges() pass did, one Dictionary per macro
+## instance it found: {macro_id, instance, members, seq_size, edges, status,
+## reason}. status is "stamped", "authored" (GRAPH_TOPOLOGY_MACROS: nothing to
+## stamp) or "refused". Read by test_macro_edges_reload.
+var last_macro_rederive : Array = []
+
+## Re-derive the explicit flow edges of every macro line a load restored.
+##
+## `lf_explicit_outs` holds NodePaths, so it is never saved; what IS saved per
+## machine is macro_id, macro_index and (since 2026-09-25) macro_instance. This
+## groups the loaded machines by (macro_id, macro_instance), puts each group in
+## SEQ order by macro_index, and stamps macro_flow_edges over it — the function
+## the build used. Measured before it existed (probe_explicit_edges_roundtrip):
+## lines 1/3A/3B built → 47 tagged nodes; saved and reloaded → 0, and all three
+## extruder-silo tails back on the geometry fallback's 2-cycles.
+##
+## A group is REFUSED (nothing stamped, one warning, the line keeps the geometry
+## fallback it had before this existed) when the save cannot be matched to the
+## SEQ with certainty. Stamping a wrong pin is worse than stamping none: it
+## defeats the fallback AND the pin.
+##   * unknown macro_id
+##   * a macro_index outside the SEQ, or a machine whose id is not the SEQ's id
+##     at its index — the SEQ changed since the save (an insertion shifts every
+##     later index; an in-place id swap changes one)
+##   * two machines at one macro_index — two builds of the line in a save
+##     written before macro_instance existed
+## A group with MISSING indices (machines the operator deleted, or retired ids
+## the load dropped) is not refused. Its holes are handled the way a live delete
+## leaves them (_stamp_macro_flow_edges): no edge from a hole, nothing rewired
+## around one, and a machine whose declared target is gone stays a dead end.
+func _rederive_macro_flow_edges() -> void:
+	last_macro_rederive.clear()
+	var groups : Dictionary = {}   # "macro_id|instance" → {mid, inst, nodes: Array}
+	var order : Array = []
+	for child in _placed_root.get_children():
+		var n3 := child as Node3D
+		if n3 == null or not n3.has_meta("macro_id") or not n3.has_meta("macro_index"):
+			continue
+		var mid : String = String(n3.get_meta("macro_id"))
+		var inst : String = String(n3.get_meta("macro_instance", ""))
+		var key : String = "%s|%s" % [mid, inst]
+		if not groups.has(key):
+			groups[key] = {"mid": mid, "inst": inst, "nodes": []}
+			order.append(key)
+		(groups[key]["nodes"] as Array).append(n3)
+	for key in order:
+		var g : Dictionary = groups[key]
+		var mid : String = g["mid"]
+		var members : Array = g["nodes"]
+		var seq : Array = _macro_seed(mid)
+		var rep : Dictionary = {"macro_id": mid, "instance": String(g["inst"]),
+			"members": members.size(), "seq_size": seq.size(), "edges": 0,
+			"status": "refused", "reason": ""}
+		var by_idx : Dictionary = {}
+		if seq.is_empty():
+			rep["reason"] = "unknown macro_id"
+		else:
+			for n3 in members:
+				var idx : int = int((n3 as Node3D).get_meta("macro_index"))
+				var pid : String = String((n3 as Node3D).get_meta("placeable_id", ""))
+				if idx < 0 or idx >= seq.size():
+					rep["reason"] = "macro_index %d is outside the %d-entry SEQ (saved with an older SEQ)" % [idx, seq.size()]
+					break
+				var want : String = String((seq[idx] as Dictionary).get("id", ""))
+				if pid != want:
+					rep["reason"] = "index %d is '%s' in the save and '%s' in the SEQ (saved with an older SEQ)" % [idx, pid, want]
+					break
+				if by_idx.has(idx):
+					rep["reason"] = "two machines at index %d: two builds of this line, saved before macro_instance existed" % idx
+					break
+				by_idx[idx] = n3
+		if rep["reason"] == "":
+			for n3 in members:
+				if (n3 as Node3D).has_meta("lf_explicit_outs"):
+					(n3 as Node3D).remove_meta("lf_explicit_outs")
+			rep["edges"] = _stamp_macro_flow_edges(mid, seq, by_idx)
+			rep["status"] = "authored" if GRAPH_TOPOLOGY_MACROS.has(mid) else "stamped"
+			print("[BuildMode] %s: %d of %d SEQ machines loaded, %d explicit flow edges re-derived%s"
+				% [mid, members.size(), seq.size(), int(rep["edges"]),
+					" (authored graph: none to stamp)" if rep["status"] == "authored" else ""])
+		else:
+			push_warning("[BuildMode] %s: flow edges NOT re-derived (%d machines) — %s. This line is wired by LineFlow's geometry fallback only."
+				% [mid, members.size(), String(rep["reason"])])
+		last_macro_rederive.append(rep)
 
 # =============================================================================
 # MACRO SAVE-BACK (#MSB) — capture in-world edits to a placed macro back into
@@ -3936,6 +4178,10 @@ func _save_layout() -> void:
 				entry["macro_id"] = String(child.get_meta("macro_id"))
 			if child.has_meta("macro_index"):
 				entry["macro_index"] = int(child.get_meta("macro_index"))
+			# Which build of the line this machine came from — what lets
+			# _rederive_macro_flow_edges keep two copies of one line apart.
+			if child.has_meta("macro_instance"):
+				entry["macro_instance"] = String(child.get_meta("macro_instance"))
 			if child.has_meta("macro_anchor"):
 				var anc : Dictionary = child.get_meta("macro_anchor")
 				var anc_start : Vector3 = anc.get("start", Vector3.ZERO)
@@ -4074,6 +4320,10 @@ func load_layout() -> void:
 	# first physics frame runs on them.
 	_denest_loaded_vehicles()
 	print("[BuildMode] Loaded %d placed objects (per-save) + %d shared structure" % [count, shared_count])
+	# Macro lines come back as bare machines: their explicit flow edges are
+	# NodePaths and are not saved. Re-derive them from the SEQ before anything
+	# rebuilds LineFlow on this world.
+	_rederive_macro_flow_edges()
 	_report_retired_drops()
 
 ## One line per retired placeable id that this save still contained, with the
@@ -4356,6 +4606,8 @@ func _apply_layout_entry(entry: Variant) -> bool:
 		node.set_meta("macro_id", String(dict["macro_id"]))
 	if dict.has("macro_index"):
 		node.set_meta("macro_index", int(dict["macro_index"]))
+	if dict.has("macro_instance"):
+		node.set_meta("macro_instance", String(dict["macro_instance"]))
 	if dict.has("macro_anchor"):
 		var anc_raw : Variant = dict["macro_anchor"]
 		if anc_raw is Dictionary:

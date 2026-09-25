@@ -146,6 +146,12 @@ CLAUDE.md forbids two harnesses sharing it.
 
 ## 7. The pins do NOT survive a save → load (measured, not fixed)
 
+> **FIXED the same day:** `docs/audit/macro_edges_reload_2026-09-25.md`.
+> `load_layout` re-derives every saved line's explicit edges with the function
+> the build uses (`BuildMode.macro_flow_edges`), and `test_macro_edges_reload`
+> guards it by name and by kg. The measurement below is the before-picture
+> and is left as it was.
+
 `src/tests/probe_explicit_edges_roundtrip.tscn` builds lines 1, 3A and 3B and
 calls `BuildMode._save_layout()`. It then boots a fresh BuildMode from that
 file (`load_layout()`, the same call MainWorld makes) and rebuilds LineFlow.
