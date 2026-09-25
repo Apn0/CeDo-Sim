@@ -973,6 +973,25 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   (read only the `for t in` lists — a plain `grep` of `run.sh` also matches the
   comments that NAME the unwired suites; it also lists suites that have their own
   dedicated block, such as `test_spawn_clearance`).
+- **`x *= f` inside a per-tick function compounds.** It follows the product of
+  every tick's `f`, not `f`, and the tick size sets how fast it falls. Measured
+  2026-09-25: `ExtruderModel._scale_melt_pressures(rpm_frac)` did that in
+  STARTING and STOPPING. 1.2 s into a stop the die plate read 0.142 of running
+  at 0.1 s ticks and 0.024 at 0.05 s ticks, against 0.747 for the flow. A start
+  read 0 bar all the way up, because OFF parks the pressures at 0. The fix
+  recomputes the pressures from the current flow every tick
+  (`_set_melt_pressures_from_flow`), guarded by `test_extruder_ramp_pressures`.
+  `motor_torque_pct *= rpm_frac` in `_tick_stopping` has the same shape and
+  measured the same fractions; it is NOT fixed, because nothing documents a
+  coast-down torque. To find more:
+  `grep -rnE '^\s+(\w+) = \1 \*|^\s+\w+ \*= ' src/sim --include=*.gd`
+  (7 hits on 2026-09-25) — then read each: a value assigned fresh earlier in
+  the same tick is fine, and so is `x * exp(-delta / tau)`, a decay that is
+  tick-size independent by design (the screw's own coast-down). To prove a fix:
+  run the same stop at two tick sizes, and the reading at the same time must
+  agree. `docs/audit/extruder_ramp_pressures_2026-09-25.md`, which also
+  records that a WARM restart at the preheat-ready melt trips 318 bar (old code
+  and new).
 
 ## Save files go through `AtomicFile` (2026-09-21)
 
