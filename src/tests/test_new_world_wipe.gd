@@ -143,11 +143,28 @@ func _run_mainworld_new_save() -> void:
 	var placed : Node = null
 	if bm:
 		placed = bm.find_child("PlacedObjects", true, false)
+	# A NEW save starts with no PER-SAVE build. The SHARED site structure
+	# (walls, doors, gates, windows in WorldLayout.structure_items) is overlaid
+	# on every save by design (BuildMode.load_layout), so it is counted apart:
+	# since 2026-09-25 the operator's world keeps his 3A/3B gate there.
+	# Shared = exactly what _save_layout writes back to the shared layer.
 	var cc := -1
+	var shared_n := 0
 	if placed:
-		cc = placed.get_child_count()
+		cc = 0
+		for c in placed.get_children():
+			var sd : Dictionary = c.get_meta("surface_data", {})
+			var t : String = String(sd.get("type", ""))
+			if t == "door" or t == "gate" or t == "window" \
+					or PlaceableCatalog.is_wall(String(c.get_meta("placeable_id", ""))):
+				shared_n += 1
+			else:
+				cc += 1
 	_ok(cc == 0,
-		"NEW world via real MainWorld → PlacedObjects EMPTY (child_count=%d), legacy ignored" % cc)
+		"NEW world via real MainWorld → no per-save objects (count=%d), legacy ignored" % cc)
+	var want_shared : int = (WorldLayout.structure_items as Array).size()
+	_ok(shared_n == want_shared,
+		"NEW world still carries the shared site structure (%d placed, %d in structure_items)" % [shared_n, want_shared])
 	_world = world
 
 
