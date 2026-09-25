@@ -324,8 +324,7 @@ func _section_g(lid: String, placeable: String) -> void:
 ## Only meaningful on the 60-rpm-start model: a restart at the preheat-ready
 ## melt, then the HMI setpoint goes to nominal `after_s` into RUNNING.
 func _section_i(after_s: float) -> void:
-	print("
--- I  3B WARM restart at the ready melt, the player sets nominal %.0f s into RUNNING --" % after_s)
+	print("\n-- I  3B WARM restart at the ready melt, the player sets nominal %.0f s into RUNNING --" % after_s)
 	var rig := _build_rig("3B", "extruder_3b")
 	var model = rig["model"]
 	var ready_c : float = float(model.call("_preheat_ready_temp"))
@@ -358,8 +357,7 @@ func _section_i(after_s: float) -> void:
 
 # ── J: fine scan near the ready melt, with torque and lumps at RUNNING entry ──
 func _section_j() -> void:
-	print("
--- J  3B WARM restart, fine scan near the preheat-ready melt (torque / lumps on the first RUNNING tick) --")
+	print("\n-- J  3B WARM restart, fine scan near the preheat-ready melt (torque / lumps on the first RUNNING tick) --")
 	for d in [16.0, 16.5, 17.0, 17.25, 17.5, 17.75, 18.0, 18.25, 18.5, 18.75]:
 		var rig := _build_rig("3B", "extruder_3b")
 		var model = rig["model"]
