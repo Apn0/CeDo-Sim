@@ -289,6 +289,13 @@ count.
 > Measured after: `PASS (19 ok, 0 fail, 0 skipped)`. **He chose to KEEP the
 > leaked entry (asked 2026-09-24), so those two reds are environmental. Do
 > not edit his world_layout.json without asking him.**
+> **It is FOUR reds, not two** (full harness 2026-09-25 at `2c217c0` on a copy
+> of his `app_userdata`). The same one entry also fails two more checks:
+> - `test_project_sweep_guards` B1b (`structure_items starts empty (1 entries)`);
+> - `test_new_world_wipe`: a new world boots with `Loaded 0 placed objects
+>   (per-save) + 1 shared structure`, so `PlacedObjects` holds 1 child.
+>
+> `docs/audit/cycle_guard_swap_2026-09-25.md` §8.
 > `docs/audit/jam_baseline_layout_leak_2026-09-24.md`.
 
 **`test_jam_baseline` was `14 ok, 0 fail, 0 skipped` (2026-09-03) — the first time this suite
@@ -566,7 +573,9 @@ the one before that ~6 months stale — treat this one as re-checkable too):
 | `docs/audit/hmi_fault_rearm_2026-09-24.md` | **HMI alarms: KWITTEREN acknowledges one occurrence of an alarm (#279), and the same EREMA code on two lines is two alarms (#282).** Probes, the guard suites `test_hmi_fault_rearm` and `test_hmi_fault_per_line` with their mutation matrices, and the full harness on `04eaa77`. **Open:** every panel lists every line's EREMA alarms (found by reading the code, not measured); Afschermen does not exist (the Onderdrukt tab reads a table nothing writes); RESETTEN clearing every acknowledgement has not been ruled on |
 | `docs/audit/operator_session_2026-09-23.md` | **The interactive 2026-09-23 session: tasks ranked by operator effort against sim impact, each answered by AskUserQuestion then built and measured.** Task 1: film beds on every belt (P1), the inclined belt's deck running the wrong diagonal, the cost probe, the renders; per-task evidence and the open questions each one left |
 | `docs/DESIGN_vacuum_pot_minigame_2026-09-23.md` | **P3 stage B as the operator described it: not a hold-E but a mini-game** — lid pull that stiffens with time, plamuurmes planes at 90 %, the block by hand, re-lid, the two-minute race. Systems, parameters (his vs placeholder), test strategy. **Built 2026-09-24** (`test_vacuum_pot_minigame`, 33 ok); the feel is his to play |
-| `docs/AUDIO_machine_sounds_2026-09-25.md` | **The operator's 11 plant-floor recordings, on their machines, driven by the sim.** File-name cutting grammar (`5s+_`, `25s-35s_`, `loop_3x_`, `_in_operation`, `_loop_4x`) and the rulings behind each bake; `MachineSoundSpec` `.tres` per placeable with the `gain_db` slider (every level a PLACEHOLDER until play-tested); loop seams measured against each loop's own fluctuation; ramps generated from the run loop; the 60 line-macro machines still without a recording. `test_machine_sounds` 80 ok |
+| `docs/audit/extruder_stop_torque_2026-09-25.md` | **The extruder's load through a stop, from the plant's raw WinCC archive.** The model compounded the torque every STOPPING tick (0.142 of running 1.2 s in at 0.1 s ticks, 0.024 at 0.05 s). Now it is entry torque x rpm / entry rpm, the law the 17 samples caught mid-stop show (slope 0.969). Open, for the operator: the plant's screw stops within one ~5 s log cycle in 70 of 83 stops, while the model coasts for 21.6 s; 26 of 83 stops were run empty first |
+| `docs/audit/extruder_screw_die_plate_2026-09-24.md` | **LineFlow's OWN screw model (not ExtruderModel) read 0.11 "bar" at the die, at 200 rpm and a 195 °C melt.** The MFI estimate was 1491 g/10min, so every QA sample graded REJECT, and on lines 1/3A/3B the terminal and SCADA read the `extruder_silo`. Now: die plate after the kopfilter (operator ruling), per-line rpm, melt and output from the WinCC trends, MFI anchor re-solved. Open: the plant's kopdruk is flat with output (R² ≤ 0.04), and the model's is proportional |
+| `docs/plant/operator_rulings_2026-09-24.md` | **Extruder melt pressures, 2026-09-24**: the "280 psi" die pressure was 280 BAR, a safe maximum before the laserfilter under the 318-bar shutdown (he runs ~220). Two pressures: before the laserfilter = melt-set after + dMP; MP<PEL (160 bar) = dP across the kopfilter; per-line FORM-008 kopdruk. Recollections; what was measured before/after, and what is still open (3B above its one-session trend). §6: merged with #275, which fixed the same finding in parallel. The melt-set pressures follow MELT temperature (3A fit 6.83 bar/°C, weak). §7: the screen's dMP follows it too (operator 2026-09-25), measured before/after |
 | `docs/plant/operator_rulings_2026-09-23.md` | **Operator answers from memory, 2026-09-23** — film look, colour order, bed depth per belt, where wet flake is visible, screws "differ". Recollections, not documents: cite them as such |
 | `docs/audit/assets_loss_and_restore_2026-09-21.md` | **`assets/` was wiped and restored.** Godot's `.md5` fingerprints identify originals byte for byte: 159 of 273 are back exact and 101 are cache-only (listed; do not re-import them). Also the `Merlo.fbx` re-import trap, what `winfr` did and did not recover (nothing exact), and the method to reuse |
 | `docs/BACKLOG_ultracode_2026-07-19.md` | Deferred queue — 16 of 40 findings landed; also records the npc-05 vacuous-green correction |
@@ -721,7 +730,8 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   back-edge. The same swapped guard leaves further 2-cycles on these lines
   (3A's infeed wind_sifter ↔ blower 2, which starves the big top cyclone;
   centrifuge ↔ weegschaal on 1 and 3B, which starves voorraad_silo). They
-  are measured, not fixed. The 3A/3B tails are pinned in the SEQs, guarded
+  were fixed the same night by swapping the arguments (the next entry). The
+  3A/3B tails are pinned in the SEQs, guarded
   by `test_extruder_silo_chain` (by name and by kg: no node of the chain may
   process more than was fed, which is how a 2-cycle shows up in flow).
   `src/tests/dump_line_graph.tscn -- <line_id>` dumps any macro line, marks
@@ -1012,17 +1022,26 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   read 0 bar all the way up, because OFF parks the pressures at 0. The fix
   recomputes the pressures from the current flow every tick
   (`_set_melt_pressures_from_flow`), guarded by `test_extruder_ramp_pressures`.
-  `motor_torque_pct *= rpm_frac` in `_tick_stopping` has the same shape and
-  measured the same fractions; it is NOT fixed, because nothing documents a
-  coast-down torque. To find more:
+  `motor_torque_pct *= rpm_frac` in `_tick_stopping` had the same shape and
+  measured the same fractions (the BluPort's "belasting" read 9 % 1.2 s into a
+  stop from 60 %). It is fixed too: the torque is now entry torque x rpm /
+  entry rpm, guarded by `test_extruder_stop_torque`. No SWI documents a
+  coast-down torque, but the plant's RAW WinCC archive does
+  (`F:/Citizen/Documents/CeDo/Gegevens extruder 3A|3B`, load and speed logged
+  in the same ~5 s cycle; `tools/audit/fit_stop_load_vs_rpm.py`). The
+  downsampled curves in `src/data/plant/trends/` are 6-minute medians and
+  cannot show any transient, so go to the raw files for one.
+  `docs/audit/extruder_stop_torque_2026-09-25.md`. To find more:
   `grep -rnE '^\s+(\w+) = \1 \*|^\s+\w+ \*= ' src/sim --include=*.gd`
-  (7 hits on 2026-09-25) — then read each: a value assigned fresh earlier in
-  the same tick is fine, and so is `x * exp(-delta / tau)`, a decay that is
-  tick-size independent by design (the screw's own coast-down). To prove a fix:
-  run the same stop at two tick sizes, and the reading at the same time must
-  agree. `docs/audit/extruder_ramp_pressures_2026-09-25.md`, which also
-  records that a WARM restart at the preheat-ready melt trips 318 bar (old code
-  and new).
+  (7 hits on 2026-09-25, 6 after the torque fix) — then read each: a value
+  assigned fresh earlier in the same tick is fine, and so is
+  `x * exp(-delta / tau)`, a decay that is tick-size independent by design (the
+  screw's own coast-down). To prove a fix: run the same stop at two tick sizes,
+  and the reading at the same time must agree — and check the law as well,
+  because a value that is simply HELD agrees at every tick size (the torque
+  suite's mutation M5). `docs/audit/extruder_ramp_pressures_2026-09-25.md`,
+  which also records that a WARM restart at the preheat-ready melt trips 318 bar
+  (old code and new).
 
 ## Save files go through `AtomicFile` (2026-09-21)
 

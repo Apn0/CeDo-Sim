@@ -135,7 +135,15 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 	# drops into the silo. gap −2.3 pulls the silo's centre under the cyclone
 	# (cyc_half 0.8 + gap + silo_half 1.5 = 0); y 5.9 seats the cone on the
 	# 6.5 m silo's dome. Model detail (twin opposed inlets) → detail program.
-	{"id": "cyclone", "y": 5.9, "gap": -2.3},
+	# ── 2026-09-25 — blower 2 → this cyclone is PINNED (ruling 2.1-B above:
+	# "another blower that blows it in the top of the silo in one cyclone").
+	# The lifted cyclone's inlet sits 7.6 m from blower 2's discharge, and
+	# doseerschroef M11b's is 4.1 m, so the geometry fallback never picks it:
+	# while LineFlow's cycle guard was swapped, blower 2 fed the windzifter
+	# back (a 2-cycle) and this cyclone had NO in-edge; with the guard fixed,
+	# blower 2 fell through to M11b and the infeed skipped the mengsilo.
+	# dump_line_graph.tscn -- line_3a; guarded by test_fallback_chains.
+	{"id": "cyclone", "y": 5.9, "gap": -2.3, "explicit_from_prev": true},
 	{"id": "mengsilo"},
 	# ── RONDMENG-LUS (branch, +X side) — the ALWAYS-ON (while running)
 	# heated drying circulation. Material: silo → doseerschroef M11a₂ →
