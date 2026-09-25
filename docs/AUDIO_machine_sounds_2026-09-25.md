@@ -133,3 +133,95 @@ baked. On 2026-09-25 they were COPIED (never linked — `docs/audit/assets_loss_
 into the operator's checkout `C:\Users\arnod\Documents\CeDo_Simulator\assets\audio\machines\`
 (36 files; SHA256 identical on the three sampled). The two superseded bakes
 (`compactor_ringleiding_flush.wav`, `mech_dryer_run.wav`) are kept beside them as `.bak`.
+
+## Loop seams, measured against each loop's own fluctuation
+
+"During constant operation loops should NOT be noticeable" (operator). What can
+be measured headless is whether the seam steps out of the loop's own level
+spread, and whether the wrap is a click. For every loop: the level step between
+its last and first 20 ms, that step's percentile among all consecutive 20 ms
+steps inside the loop, and the sample jump at the wrap relative to the median
+consecutive-sample jump (a click is hundreds of times that).
+
+| loop | seam step | percentile (p50 / p95 of the loop) | wrap jump |
+|---|---|---|---|
+| blower_run | 0.64 dB | 50 % (0.64 / 1.80) | 0.10× |
+| compactor_ringleiding_loop | 0.88 dB | 49 % (0.92 / 2.95) | 0.41× |
+| laser_filter_run | 0.39 dB | 37 % (0.55 / 1.63) | 1.9× |
+| leafblower_idle | 0.71 dB | 63 % (0.55 / 1.59) | 0.17× |
+| leafblower_rev | 0.95 dB | 49 % (0.97 / 5.18) | 2.1× |
+| mech_dryer_run_30s | 0.30 dB | 75 % (0.16 / 0.51) | 2.8× |
+| mech_dryer_run_43s | 1.92 dB | 90 % (0.60 / 2.91) | 4.0× |
+| plasmaq_run | 0.02 dB | 1 % (1.50 / 4.55) | 0.65× |
+| shredder_2_run | 1.79 dB | 44 % (2.12 / 5.94) | 3.1× |
+| trilzeef_run | 2.97 dB | 72 % (2.38 / 3.75) | 0.96× |
+| verdeelwals_run | 0.38 dB | 16 % (1.15 / 3.44) | 4.2× |
+
+No seam is outside its loop's p95 and no wrap is a click. Whether a seam is
+*audible* is still the operator's ear: the dryer 43 s window (90th percentile)
+and the trilzeef (a tonal shaker, 2.97 dB) are the two to listen for. Each
+machine's loop also starts at a random offset, so two of a kind never beat.
+
+## Still missing — "more sounds are still required"
+
+Derived 2026-09-25 from `BuildMode.LINE_*_SEQ` against `src/audio/machine_sounds/`:
+
+| macro | entries | distinct ids | with a sound |
+|---|---|---|---|
+| LINE_1 | 52 | 33 | 3 |
+| LINE_3A | 39 | 30 | 4 |
+| LINE_3B | 32 | 25 | 4 |
+| LINE_3C | 37 | 25 | 5 |
+| LINE_SORT | 21 | 10 | 1 |
+| LINE_3C6 | 4 | 4 | 1 |
+
+**60 distinct ids without a recording**: bigbag_station, bunker, centrifuge,
+compactorband, cyclone, dewater_screw, doseersilo, drum_feed_belt, extruder_1,
+extruder_3a, extruder_3b, extruder_screw, extruder_silo, flotation_tank,
+flotation_tank_wide, friction_sep, friction_washer, heater_cabinet,
+heetafslag, inclined_belt_8m, kleine_la, kopfilter, kufferath_sieve,
+lump_cart, lump_cart_spot, lump_platform, mas_bak, mas_droger, melt_pump,
+mengsilo, mill, ontwaterzeef, opzetband_1, opzetband_3a3b, opzetband_3c6,
+overband_magnet, pomp_c1, rafter, ringleiding_3a, scheidingsgoot, scrap_bin,
+sga_feed_chute, shredder_1, silo, sink_float, switch_belt,
+thermal_dryer_decommissioned, titech_sort, tomra_sort, transfer_chute,
+transport_belt, transport_screw, vacuum_degas, voorraad_silo, vss_silo,
+vuilsnippersilo, vw_trommel, weegschaal, westa_band_1, wind_sifter. Some of
+those are furniture (lump_cart_spot, weegschaal) and never make a sound; the
+extruders still use the procedural hum in `AudioManager.gd`; the belts have a
+live deck speed in their `FilmFlakeField`, so a belt loop with pitch on speed
+is the same mechanism. Also missing everywhere: a real ramp-up / ramp-down
+recording (every ramp today is generated), and a motor loop for the compactor
+(it has only the ring-line sequence).
+
+Adding one is data: bake the clip (a manifest entry), write
+`src/audio/machine_sounds/<placeable_id>.tres`, done — the suite's S1 checks
+the WAV, S2 the attach.
+
+## What bit, kept for the next session
+
+- `HoseReel.gd` hangs under the reel's *model* node, one level below the placed
+  body. The first attach put the sound there and `MachineSoundBank.find(body)`
+  found nothing (S6 red on the first run). `MachineSoundBank.placed_body_of()`
+  climbs to the node with the `placeable_id` meta; use it from any controller
+  that lives inside a model subtree.
+- An in-tree body with `Area3D` children must be `queue_free()`d in a suite, then
+  given two frames; an immediate `free()` made godot_rapier print
+  `Expected Area` from its collision callback on the next physics step.
+- A DECREASE in drive is governed by `ramp_down_s` as well: "hold 0.5 for 0.8 s"
+  on the trilzeef's 3 s coast measured 0.73, not 0.5 (S3 red on the first run,
+  test-side; the hold is now sized from the spec).
+- The leaf blower's own `_physics_process` resets it to OFF every physics frame
+  while it is not held. A suite that drives its state by hand must
+  `set_physics_process(false)` first (S5 red on the first run, test-side).
+- Two decoders, two peaks: librosa reads the over-driven dryer mp3 at +2.5 dBFS,
+  ffmpeg at −0.5 dBFS. The bakes use ffmpeg; the RMS target makes it moot.
+- Two Claude sessions (this one and a fork carrying the operator's answers)
+  edited this worktree at the same time. `find … -newermt` and `git status`
+  before every edit, and a cross-session message, were what kept them from
+  overwriting each other; the manifest, the compactor/dryer specs and this doc
+  were merged rather than picked.
+
+## Full harness
+
+_(appended when the detached run on this tree finishes — started 01:51.)_
