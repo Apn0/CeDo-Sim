@@ -372,3 +372,181 @@ MachineFlow `no_outlet` on `u_bay`.
   0.8 m, 5.1 m from shredder 2's inlet at 5.1 m high; C8.5 stands beside C8's
   forward half, while the operator's notes put it "on one side of conveyor 8, and conveyor
   9 … on the other end". The pins make the flow right; the layout is the operator's pass.
+
+---
+
+# In-world HMI screens and interact keys — fifth session, same day
+
+Source: Arno's request of 2026-09-25, relayed to the Claude session as a
+written brief (worktree `inworld-hmi`, branch
+`docs/inworld-hmi-survey-2026-09-25`), then four AskUserQuestion rounds. It is a **recollection of how the plant works, not a document
+or a photo**. Everything in §H1 is labelled **CLAIMED** for that reason. The
+"today in the sim" column is **VERIFIED**: each cell was read from the code
+at `4c1fb12` and cites the file it was read from. The citations were re-checked against `main`
+`256f828` (131 commits later) on the same day, and the line numbers are main's. The survey behind this section
+is `docs/DESIGN_inworld_hmi_2026-09-25.md`. Nothing has been built yet.
+
+## H1. The request (CLAIMED — operator recollection)
+
+| # | what he said | what the sim does today (VERIFIED) |
+|---|---|---|
+| 1 | In the plant, if you open a page on an HMI (his example: the **PCU overview**) and walk away, **it is still open when you come back**. | Every open resets the page to the main menu: `HmiOverlay.open_for()` ends in `_show_screen(Screen.HOOFDMENU)` (`src/scenes/hud/HmiOverlay.gd:397`). All 11 non-relay panels share ONE overlay instance (`Hmi.gd:37-41`), so the page is not even per panel. The web pages reload the scope's start page on every open (`HmiWebOverlay.gd:154-156`). |
+| 2 | You can **read the display from 3–5 m** away. | Nothing is drawn on the panel's screen. It is a flat emissive box, 0.49 × 0.315 m (`PlaceableCatalog._m_hmi`, `PlaceableCatalog.gd:6414`, material `_screen_mat` `:6383`). |
+| 3 | In the sim you press **E**, get a **2D pop-up**, and have to **navigate to the right screen every time**. That is annoying. | Correct. The crosshair ray plus E calls `Hmi.crosshair_interact` → `_open_overlay` (`Hmi.gd:110-112, 124`), which opens a full-screen CanvasLayer (layer 45, `HmiOverlay.gd:338`) or a native WebView window (layer 46, `HmiWebOverlay.gd:141`). The mouse is freed, and walking stops while it is open (`PlayerController.gd:343-356`). |
+| 4 | He wants the HMI **rendered in the world, on the panel's own screen**, with the page **kept per panel**, and **no 2D pop-up**. | There is no in-world screen of any kind in `src/`: no SubViewport on a mesh, no ViewportTexture, no `push_input`; `src/` searched for all three on 2026-09-25. |
+| 5 | **Drop goes to Q**; E must stop dropping tools. | **Q already drops.** `hotbar_drop` is Q (`project.godot:402`), handled at `PlayerController.gd:1067-1071`. E ALSO drops, through each held tool's own `_unhandled_input` when the crosshair has no target: ShovelTool `:85`, WireCutter `:111`, BarcodeScanner, SocketWrench7, LineCouplerTool, LeafBlower, CabinProp, LabelItem, ChargingPlug, LPGTank (`docs/DESIGN_inworld_hmi_2026-09-25.md` §4). |
+| 6 | **Hold F → "interact mode"**, as in Star Citizen: a **small centre dot** to aim with. Aiming at an HMI button **within arm's reach** and **clicking** operates it, straight from walking mode. | There is no hold-F. F is bound to four actions: `flashlight` on foot (`project.godot:140`), `forklift_lift_down` (`:180`), `build_lower` (`:257`) and `hose_advance_back` (`SettingsManager.gd:769`). The HUD crosshair is a fixed 5×5 dot (`HUD.gd:124-133`). The interact ray is 3.75 m (`PlayerController.gd:49`) and forwards only the collider, not a hit point (`:1179-1225`). |
+| 7 | This also removes the **keyboard-focus bug** of the 2D overlay (tracked separately). | Not investigated here. The only focus handling in the HMI code is in `HmiWebOverlay.close()` (`:172-180`). HmiOverlay has no focus calls at all. |
+
+## H2. Answers to the design questions
+
+Asked with AskUserQuestion on 2026-09-25. These are design choices, not plant
+facts, so they are rulings rather than CLAIMED/VERIFIED statements.
+
+### Round 1
+
+| question | answer | what it means for the build |
+|---|---|---|
+| The 7 web panels cannot paint their `.dc.html` design onto a 3D screen (the WebView is a native window). What goes on those screens in the world? | **"Godot pages now"** (the recommended option) | Each web panel's in-world screen shows the Godot-built page that already exists, with the same live data and an older look. The web designs get redrawn as Godot pages one at a time afterwards, starting with the extruder/PCU. |
+| Which panel is built first, for play-testing? | **"Extruder/PCU first"** (the recommended option) | `hmi_extruder_all` gets its in-world screen first, on the Godot `ExtruderBluPortScope` page. |
+| Reading from 3–5 m (the screen is ~115 × 74 px at 3 m on 1080p) | **Free text, verbatim:** "if you press the F key, as long as you hold it down, it should, if the camera is in third person view, it should switch to first person view while remembering the location of the third person view camera. So it can switch back to the exact same location if the F key is released. And if it is already in first person, it will zoom in by 20% or so. And then you can use the scroll wheel to zoom in further. So if you're scrolling forwards, which would be up normally, then the zoom increases, uh, I don't know, to like a value like, uh, I don't know what would be good uh, value, uh, I think maybe 30x zoom or something." | Hold-F is ALSO the reading zoom, not only the interact mode. In a third-person camera (`CameraRig` ORBIT / FREE_MOVE), holding F switches to first person and remembers the rig's exact state; releasing F restores it. Already in first person, holding F zooms in by ~20 %. Wheel up while F is held zooms further, up to a maximum he put at **"maybe 30x"**. He said he does not know the right value, so 30× is **his placeholder, not a ruling**. For scale: to show a 1280-px design 1:1 at 5 m on 1080p needs ~18.5× (1280 / 69 px). Today the wheel on foot cycles the hotbar (`PlayerController.gd:1059-1063`), and F4 + wheel zooms the orbit camera (`CameraRig.gd:305-309`), so wheel-while-F-held must zoom and must NOT cycle the hotbar. |
+| Reach for pressing an on-screen button in F-mode | **"About 1.5 m"** | The click ray in F-mode is ~1.5 m. Today's E ray (3.75 m, `PlayerController.gd:49`) is unchanged for everything else. |
+
+### Round 2
+
+| question | answer | what it means for the build |
+|---|---|---|
+| What should E on an HMI still do once the screens are in the world? | **Free text, verbatim:** "the F key would be the interaction key. So also picking up, like, for instance, the leaf blower. Or opening a door from a vehicle. Or pushing a button from a gate to make the gate go up or down or something. Or pushing an emergency button, anything like that, would be... Done with the F key. Then the E key. Is basically free or something. Please check if the. If there are any other bindings to the E key, if there are, please let me know. If there are not, we could maybe use the E key to pick up things like the leaf blower and the shovel and stuff, and the hoses. That way, it's also possible to interact with stuff without per se picking it up, which might be useful for some cases. Not all, of course. You shouldn't be able to shovel without holding the shovel just by interacting with it while it's on the ground, but you know what I mean. So indeed, E on the HMI would not do anything." | **F becomes THE interaction key** (doors, gate buttons, e-stops, vehicle doors), and **E becomes pick-up**, a separate verb. E on an HMI does nothing, so **no pop-up at all**. The consequence he did not state: the 7 web designs cannot be seen in-game until they are redrawn in Godot (round 1). **E is NOT free today**; the answer to his check is in §H3 below. |
+| Flashlight, now that F is F-mode | **"Move flashlight to L"** (the recommended option) | On foot L = flashlight. In a cab L stays `vehicle_lights` (`SettingsManager.gd:760`). |
+| Panel page after save / load | **"Saved with the game"** (the recommended option) | Each panel's current page is part of the save. |
+| Can you walk while F is held? | **Free text, verbatim:** "Yes, keep walking uh, is possible. Jumping as well. Crouching and lying down as well. Looking using the mouse, for instance, would also still be possible. […] the more zoomed in the view is, the less sensitive the look direction and stuff would be. So walking would remain the same speed and stuff. But if I move […] my mouse to the left, instead of, you know, turning 45 degrees with the same movement when zoomed in, it would do only one tenth or something" — then the crosshair, below. | All movement stays live in F-mode: walk, jump, crouch, prone and mouse-look. Walking speed is unchanged. **Look sensitivity scales down with zoom.** His "one tenth" is an example, not a number to type in. |
+| (same answer, continued) **the F-mode crosshair** | **Verbatim:** "the center dot would already be there. […] when you press and hold down the F key, a like slightly, slightly larger glowing between like gold and like translucent dot would appear at the exact same location in the center and then using the mouse […] if you move left with the mouse 100 pixels your view would […] change by like seventy five percent, so like seventy pix seventy five pixels, and that glowing golden translucent dot crosshair kind of thing would only move. 33 percent so about 33 pixels from the center […] that golden dot thing is of course still the aim target so do not use the center as the aim target it should of course be the point where the golden dot Crosshair thing is pointing." | The existing 5×5 centre dot (`HUD.gd:124-133`) stays. Holding F adds a **slightly larger, glowing, gold, translucent dot** at the centre. Mouse movement is split: **the view turns ~75 %** of its normal amount and **the gold dot moves ~33 %** of the mouse movement away from the centre. **The ray goes through the gold dot, not the centre.** 75 % and 33 % are his "like" figures and are tunables. What happens at the dot's edge limit, and whether it re-centres on release, was not said; the default is re-centre on each F press. |
+| (same answer, continued) **an options menu** | **Verbatim:** "if there are multiple options for something, like in Star Citizen […] you point at the gun laying on the floor, you hold the F key, you move the dot over it. You can choose like equip or store or inspect, you know, several options. Maybe we can use that uh, mechanic too. If not, then maybe uh, just document it and write it for later." | A context menu when the gold dot is on a target that has more than one action. **Build or defer is asked in round 3.** |
+
+### Round 3
+
+| question | answer | what it means for the build |
+|---|---|---|
+| How do you do a simple action (door, gate button, e-stop) with F? | **Free text, verbatim:** "a combination of holding F, aiming the dot and clicking for, for instance, uh, operating a gate because there is three buttons, you know, the arrow up to open it, the button in the middle below it to stop opening or closing it and the button at the bottom, the third button, which is the arrow down, which is to close it. Just pressing F will not be good enough because it's not known exactly where you're aiming and what control to pick, right? So then holding F would be good because you can aim at the up arrow and make the gate go open, you know? But if there is only one option available, for instance, opening a door, then tapping F would also be sufficient, but it should like show this. So it has to like show some kind of like small tooltip when you're aiming at the door." | **Two gestures, chosen by the target.** (1) A target with **several controls** (the gate station's ▲ / stop / ▼, an HMI screen) is used with **hold F + gold dot + left click**. (2) A target with **exactly one action** (a door) also accepts a **tap of F**, and it must show a **small tooltip** while you aim at it. That is the existing interaction prompt (`EventBus.interaction_prompt_show`), which today reads "E"; it will read "F". Consequence: a tap must be told apart from a hold, which is asked in round 4. |
+| In a cab, F is lift/boom down. What should F do there? | **"F interacts in cab too"** | F is the interaction key in the cab as well (vehicle doors, getting out). **Lift/boom down (`forklift_lift_down`, F today) needs a new key.** He named none; asked in round 4. |
+| Hold jobs (vacuum-pot lid, knife replace, shaft cut) | **"F-mode + hold left mouse"** (the recommended option) | Hold F, gold dot on the lid, knife or shaft, then **hold the left mouse** for the timed job. They replace hold-E (`PlayerController.gd:1360-1367, 1520-1526, 2018-2038`). |
+| Star Citizen-style options menu | **"Write down, build later"** (the recommended option) | Not built. The design is recorded in §H4 below and gets built when an object gets a second action. |
+
+### Round 4
+
+| question | answer | what it means for the build |
+|---|---|---|
+| Tap vs hold, and the camera | **Free text, verbatim:** "I want the F mode to temporarily switch to third person view because if you're in third person view, your character is blocking the view of what your character is looking at, right? So that's why holding down the F key causes first person view. And since the F key is activated, it would activate actually the interaction mode, slightly zoomed in version of the first person view. But when you release the F key, which I might have for forgotten to uh, tell you, is that it should undo the slight zoom of the interaction mode. And in case that before pressing the F key, the camera was in third person mode, it should go back to that. If you start in first person mode and you hold F and then you release F, you should still be in first person mode at the correct FOV that was set before you press the F key. Uh, FOV would also be the same before and after pressing the F key if you were in third person mode." Then, asked again: **"No jump: F-mode after ~0.2 s"** (the recommended option). | His first words say "third person"; the rest of the answer means FIRST person (third person blocks the view, "holding down the F key causes first person view"). Read that way: **F-mode = first person + the ~20 % interaction zoom, whatever camera you started in.** **Releasing F restores the exact prior state**: the camera mode (and, in third person, the rig's exact position) and the FOV as it was, including any wheel zoom. **A tap under ~0.2 s** does the single action and never moves the camera. **Held longer, F-mode starts.** 0.2 s is a tunable. |
+| Lift/boom down, now that F interacts in the cab | **"E"** (the recommended option) | In a cab: **R = lift/boom up, E = lift/boom down, F = interact/exit.** |
+| Hose nozzle "unanchor / return tip to reel" (F today) | **"R"** (the recommended option) | `hose_advance_back` moves from F to R. On foot R is otherwise unbound; build mode's R (`build_raise`) is a different context. |
+
+Not asked, kept by default (say so if wrong): **build mode keys are
+unchanged** (E/Q rotate, R/F raise/lower). F-mode and the new interaction key
+are for walking and the cab only.
+
+## H3. What E is bound to today (his round-2 check) — VERIFIED
+
+E is **not** free. It is the `interact` action (`project.godot:135`), and every
+"do something with what I look at" in the game goes through it:
+
+- **Crosshair targets** (everything with `crosshair_interact`): HMIs, gate
+  buttons, boarding vehicles on foot (`BaseVehicle.gd:859-871`) and the other
+  crosshair objects (`PlayerController.gd:997-1001`).
+- **Proximity handlers** that run when the crosshair did not take the press:
+  - Door, Gate and PushGate. These read `KEY_E` **directly**, so a rebind
+    would not move them (`Door.gd:136`, `Gate.gd:97`, `PushGate.gd:171`).
+  - Hose reel and hose nozzle, LPG tank, charging plug, jerrycan.
+  - Extruder, bezinktank, waste container, service station, shift-leader
+    desk, quality bench.
+- **Hold-E actions**: knife replace, shaft cut, and the vacuum-pot lid
+  mini-game (`PlayerController.gd:1360-1367, 1520-1526, 2018-2038`;
+  `VacuumPotInteract.gd:66-133`).
+- **In a cab**: E exits the vehicle (`OperatorContext.gd:55-76`). On the Merlo
+  P40, E opens the door (`MerloP40.gd:730`). On the mast lift, holding E
+  lowers it (`MastLift.gd:302`).
+- **Dropping**: 10 held tools drop on E when nothing is targeted, for example
+  `ShovelTool.gd:85` and `WireCutter.gd:111`. Q already drops (`hotbar_drop`,
+  `project.godot:402`).
+- **Build mode**: E is `build_rotate_cw` (`project.godot:246`); Q is its
+  counter-clockwise pair.
+
+Under his plan, F takes every item above except build mode's rotate. E is
+left with pick-up, which is a new verb.
+
+F's own current bindings also have to move or stay by context:
+
+| context | F today |
+|---|---|
+| on foot | `flashlight` → moves to L (round 2) |
+| in a cab | `forklift_lift_down` (forklift, bale clamp, Merlo) — R is lift up |
+| build mode | `build_lower` |
+| holding the hose nozzle | `hose_advance_back` ("return tip to reel") |
+
+## H4. Deferred: the options menu (his round-2 idea, "write down, build later")
+
+When the gold dot rests on a target that offers more than one action, a
+small menu lists them, for example "equip / store / inspect" on an item on the
+floor, as in Star Citizen. The player picks one with the gold dot and a click.
+**Build it when the first object gets a second action.** Under the E/F split,
+almost every object has one F action and, if it can be carried, one E action.
+
+## H5. The spec these answers add up to (nothing built yet)
+
+1. **In-world HMI screens.** Each placed panel shows its page on its own
+   0.49 × 0.315 m screen. The page belongs to that panel, persists while
+   playing, and is **saved with the game**. There is **no 2D pop-up**, and
+   **E on an HMI does nothing**. The 7 web panels show their existing Godot
+   page. Their `.dc.html` designs are redrawn in Godot one at a time
+   afterwards, extruder/PCU first, and cannot be seen in-game until then.
+2. **First to build:** `hmi_extruder_all` on `ExtruderBluPortScope`.
+3. **F-mode** (hold F longer than ~0.2 s, on foot and in a cab):
+   - It switches to first person with a ~20 % zoom, whatever camera you
+     started in.
+   - Wheel up zooms further. His placeholder maximum is "maybe 30x" (~18.5×
+     shows a 1280-px design 1:1 at 5 m on 1080p).
+   - Look sensitivity scales down with zoom. Walk, jump, crouch, prone and
+     mouse-look all stay live, and walking speed is unchanged.
+   - A slightly larger, glowing, gold, translucent dot appears over the
+     existing 5×5 centre dot. The view turns ~75 % of the mouse movement and
+     the gold dot moves ~33 % of it off centre.
+   - **The interaction ray goes through the gold dot.** Its reach is ~1.5 m
+     for pressing screen controls.
+   - Left click presses the control under the gold dot. **Holding the left
+     mouse** does the timed jobs: vacuum-pot lid, knife replace, shaft cut.
+   - Releasing F restores the exact camera mode, third-person rig position
+     and FOV from before.
+4. **Tap F** (under ~0.2 s) does the single action of a one-action target
+   (a door). A small tooltip shows while you aim at such a target. A
+   multi-control target (the gate's ▲ / stop / ▼, a screen) needs F-mode.
+5. **Keys:**
+
+   | context | E | F | Q | R | L |
+   |---|---|---|---|---|---|
+   | on foot | **pick up** (tools, hoses, the leaf blower) | interact: tap = single action, hold = F-mode | drop (already) | hose: unanchor / return tip to reel | flashlight |
+   | in a cab | lift/boom **down** | interact / get out / vehicle door | — | lift/boom up | vehicle lights (already) |
+   | build mode | rotate (unchanged) | lower (unchanged) | rotate (unchanged) | raise (unchanged) | — |
+
+   E no longer drops anything, so the E branch in the 10 tool scripts goes.
+   Door, Gate and PushGate read `KEY_E` directly and must move to the action.
+   Saved bindings in `user://settings.cfg` override defaults per action, so
+   the change needs a settings migration (as `_migrate_legacy_keybinds` did).
+   It also needs the F1 sheet's labels (`SettingsManager.gd` `ACTION_LABELS`)
+   updated.
+
+### Open — not asked yet, and not to be guessed
+
+- **Where the 12 panels stand.** `HmiScopes.MOUNTS` is 0 of 12 set. An
+  in-world screen shows only on a panel he has placed.
+- **The real panel's physical size.** The sim's 0.49 × 0.315 m face is not
+  sourced. A photo with a known object beside the panel, or the SIMATIC model
+  number, would settle it.
+- **The gold dot's travel limit** (how far off centre it can go), and what
+  happens when F is released mid-click.
+- **Alarm acknowledgement.** Since 2026-09-25 a panel beeps until KWITTEREN
+  (`Hmi._setup_alarm_sound`), and that count reads the ONE shared overlay's
+  fault list. With twelve in-world screens, does KWITTEREN on one panel
+  silence the others that show the same fault? INFERRED: yes, as in a PLC.
+  To confirm.
+- **Automaat / hand mode per panel or per machine.** Today it lives on the
+  one shared overlay (`HmiOverlay.gd:206-209`). In the plant it is the PLC's
+  state, so two panels showing one machine should agree. INFERRED; to confirm.
