@@ -147,7 +147,8 @@ only:
 | logs | census |
 |---|---|
 | this worktree's full harness of 16:01 (`a4b2031` + the intake fix), 132 logs | 1 bad: `route_goal_clearance.log` (fixed here); `parse_sweep.log` excused |
-| the harness runner's run of `main` `3a00ddb` (started 18:24, in progress when read), RUNNER_COUNT | RUNNER_RESULT |
+| the harness runner's full run of `main` `3a00ddb` (18:24 → 19:02, #317), 134 logs, read after it released its lock | 1 bad: `route_goal_clearance.log` (the same 2 lines; fixed here); `parse_sweep.log` excused |
+| `test_extruder_start_interlock`, the one suite `main` wired after `3a00ddb` (#313), run alone | `PASS (32 ok, 0 fail)`, 0 lines |
 
 So once this lands, the runner's next run should show the census step green,
 with `route_goal_clearance.log` clean. Any other log that turns up with a
