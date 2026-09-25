@@ -20,13 +20,16 @@ extends Node
 
 const TEST_SLOT := "__mapoverlayinit__"
 const BOOT_FRAMES := 80
+## This slot's own files. The operator's world_layout.json is not on the list:
+## world saves go to the guard's scratch file, and the real one is only
+## compared, never written (src/tests/world_layout_guard.gd).
 const PROTECT := [
-	"user://world_layout.json",
 	"user://__mapoverlayinit___save.json",
 	"user://__mapoverlayinit___factory.json",
 ]
 
-var _backups : Dictionary = {}
+const WorldLayoutGuard := preload("res://src/tests/world_layout_guard.gd")
+var _wlg := WorldLayoutGuard.new(TEST_SLOT, PROTECT)
 var _fails := 0
 
 func _ok(cond: bool, msg: String) -> void:
@@ -46,7 +49,9 @@ func _run() -> void:
 		print("FATAL: WorldLayout autoload missing (boot via the .tscn, not --script)")
 		get_tree().quit(2); return
 
-	_backup_files()
+	# Before boot, so no world save can reach the operator's world_layout.json.
+	if not _wlg.arm(get_tree()):
+		get_tree().quit(2); return
 	var bus := get_node_or_null("/root/EventBus")
 	if bus:
 		bus.set_meta("pending_save_name", TEST_SLOT)
@@ -134,35 +139,23 @@ func _run() -> void:
 	_ok(overlay.visible == true, "S5 toggle() from closed: opens")
 	overlay.toggle()
 	_ok(overlay.visible == false, "S5 toggle() from open: closes")
+	for c in _wlg.final_checks(world):
+		_ok(c[0], c[1])
 
 	print("\n=========================================")
 	print("Result: %s (%d fail)" % ["PASS" if _fails == 0 else "FAIL", _fails])
 	print("=========================================")
 	_finish(world, 0 if _fails == 0 else 1)
 
+## user:// is restored BEFORE the world is freed, then again after: the
+## headless teardown segfault lands inside world teardown (CLAUDE.md, 15 of 62
+## boots) and never reaches code after it.
 func _finish(world: Node, code: int) -> void:
+	_wlg.restore()
 	if world != null:
 		world.queue_free()
 		await get_tree().process_frame
-	_restore_files()
+	_wlg.restore()
+	_wlg.disarm()
 	get_tree().quit(code)
 
-func _backup_files() -> void:
-	for p in PROTECT:
-		if FileAccess.file_exists(p):
-			var f := FileAccess.open(p, FileAccess.READ)
-			_backups[p] = f.get_buffer(f.get_length())
-			f.close()
-		else:
-			_backups[p] = null
-
-func _restore_files() -> void:
-	for p in PROTECT:
-		var data = _backups.get(p, null)
-		if data == null:
-			if FileAccess.file_exists(p):
-				DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
-		else:
-			var f := FileAccess.open(p, FileAccess.WRITE)
-			f.store_buffer(data)
-			f.close()

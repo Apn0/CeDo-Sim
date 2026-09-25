@@ -10,6 +10,14 @@ extends Node3D
 ##                  populated legacy global present → its BuildMode is EMPTY.
 ##
 ## All touched user:// files are backed up + restored, so real saves are untouched.
+## The phase-2 boot is a real MainWorld with the world's own BuildMode, whose
+## _save_layout ends in WorldLayout.save(). world_layout.json was never on the
+## backup list above, so any save in this run would have gone to the operator's
+## file with nothing to put it back. Measured 2026-09-25: no save happened (0 in
+## the HEAD log; the run.sh sentinel saw the file unchanged). The guard is here
+## so a change to the boot path cannot start writing it unseen. WorldLayout's
+## writes go to a scratch file, and the real one is only compared, never
+## written (src/tests/world_layout_guard.gd).
 ##   godot --headless --main-scene res://src/tests/test_new_world_wipe.tscn
 
 const LEGACY          := "user://factory_layout.json"
@@ -24,7 +32,11 @@ const LAYOUT_VERSION  := 2   # must match BuildMode.LAYOUT_VERSION
 
 var _pass := 0
 var _fail := 0
-var _backups : Dictionary = {}
+const WorldLayoutGuard := preload("res://src/tests/world_layout_guard.gd")
+var _wlg := WorldLayoutGuard.new(TEST_SAVE_SLOT,
+	[LEGACY, PER_SAVE_NEW, PER_SAVE_CONT, PER_SAVE_OWN, CONSUMED_FLAG, TEST_SAVE_PATH, TEST_SAVE_FACT])
+## The phase-2 world, kept alive until the guard's final save has run.
+var _world : Node = null
 
 
 func _ok(cond: bool, msg: String) -> void:
@@ -38,7 +50,9 @@ func _ok(cond: bool, msg: String) -> void:
 
 func _ready() -> void:
 	print("=== #90 — per-save factory layout (new=empty, continue=restored) ===")
-	_backup([LEGACY, PER_SAVE_NEW, PER_SAVE_CONT, PER_SAVE_OWN, CONSUMED_FLAG, TEST_SAVE_PATH, TEST_SAVE_FACT])
+	# Before any BuildMode or world exists, so no save can reach world_layout.json.
+	if not _wlg.arm(get_tree()):
+		get_tree().quit(2); return
 
 	# Plant a populated, CURRENT-version LEGACY global (3 machines) + an OWN per-save
 	# file (1 machine). Without the version marker BuildMode would ignore them (#29),
@@ -65,10 +79,26 @@ func _ready() -> void:
 	print("\n[Phase 2 — real MainWorld, new save]")
 	await _run_mainworld_new_save()
 
-	_restore()
+	print("\n[LEAK GUARD]")
+	if _world != null:
+		for c in _wlg.final_checks(_world):
+			_ok(c[0], c[1])
+	else:
+		var c : Array = _wlg.real_layout_check()
+		_ok(c[0], c[1])
+
+	# The verdict is printed and user:// restored BEFORE the world is freed,
+	# then restored again after: the headless teardown segfault lands inside
+	# world teardown (CLAUDE.md, 15 of 62 boots) and never reaches code after it.
+	_wlg.restore()
 	print("\n=========================================")
 	print("Result: %d ok, %d fail" % [_pass, _fail])
 	print("=========================================")
+	if _world != null and is_instance_valid(_world):
+		_world.queue_free()
+		await get_tree().process_frame
+	_wlg.restore()
+	_wlg.disarm()
 	get_tree().quit(0 if _fail == 0 else 1)
 
 
@@ -135,8 +165,7 @@ func _run_mainworld_new_save() -> void:
 	var want_shared : int = (WorldLayout.structure_items as Array).size()
 	_ok(shared_n == want_shared,
 		"NEW world still carries the shared site structure (%d placed, %d in structure_items)" % [shared_n, want_shared])
-	world.queue_free()
-	await get_tree().process_frame
+	_world = world
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -154,28 +183,3 @@ func _write(path: String, text: String) -> void:
 	if f:
 		f.store_string(text)
 		f.close()
-
-
-func _backup(paths: Array) -> void:
-	for p in paths:
-		if FileAccess.file_exists(p):
-			var f := FileAccess.open(p, FileAccess.READ)
-			_backups[p] = (f.get_as_text() if f else null)
-			if f:
-				f.close()
-		else:
-			_backups[p] = null
-
-
-func _restore() -> void:
-	for p in _backups.keys():
-		var orig = _backups[p]
-		if orig is String:
-			_write(p, orig)
-		elif FileAccess.file_exists(p):
-			DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
-	# Clean throwaway files the test may have created beyond the backup set.
-	for p in [TEST_SAVE_PATH, TEST_SAVE_FACT, PER_SAVE_NEW, PER_SAVE_CONT, PER_SAVE_OWN]:
-		if not _backups.has(p) and FileAccess.file_exists(p):
-			DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
-	print("  (restored all touched user:// files)")

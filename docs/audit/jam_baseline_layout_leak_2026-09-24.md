@@ -168,7 +168,14 @@ Measured on isolated APPDATA copies (2026-09-25 02:07–02:39):
 Parse sweep 454 ok, 0 fail; 0 `^SCRIPT ERROR` lines in every suite log; his
 real `world_layout.json` unchanged (md5 `e046af7d…`).
 
-## Still exposed (not changed here)
+## Still exposed (not changed here) — closed 2026-09-25
+
+Every suite this section describes now uses the same redirect, through a shared
+helper (`src/tests/world_layout_guard.gd`). `tools/regression/run.sh` also
+fingerprints the real file after every step. See
+`docs/audit/world_layout_guard_2026-09-25.md`. The text below is the state as of
+2026-09-24.
+
 
 The other MainWorld suites that boot on the real layout without
 `layout_path_override`, `test_gate_carve` among them, still write the real

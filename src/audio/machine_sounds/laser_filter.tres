@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="MachineSoundSpec" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/audio/MachineSoundSpec.gd" id="1_spec"]
+
+[resource]
+script = ExtResource("1_spec")
+gain_db = -3.0
+unit_size_m = 2.0
+max_distance_m = 22.0
+run_loop = "res://assets/audio/machines/laser_filter_run.wav"
+pitch_floor = 0.7
+ramp_db_floor = -18.0
+notes = "EREMA laserfilter. Source 25s-35s_laserfilter.mp3, the 25-35 s window the operator marked. Level (gain_db), attenuation radii, pitch_floor and the ramp times are PLACEHOLDERS chosen by ear-less reasoning on 2026-09-25 — tune them in this inspector after play-testing. The clip is the operator's own recording of 2026-09-22 (assets/audio/machines/_source/), baked by tools/audio/machine_clips.py, RMS-normalised to -20 dBFS so gain_db is the only relative level."

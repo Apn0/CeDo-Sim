@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="MachineSoundSpec" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/audio/MachineSoundSpec.gd" id="1_spec"]
+
+[resource]
+script = ExtResource("1_spec")
+gain_db = 0.0
+unit_size_m = 2.0
+max_distance_m = 25.0
+alarm_clip = "res://assets/audio/machines/washing_alarm_beep.wav"
+alarm_period_s = 1.2
+notes = "Waslijn HMI panel: the 3A wash-line alarm beep (washing_3A_alarm.mp3, one 0.37 s beep) repeated every alarm_period_s while the panel holds an UNACKNOWLEDGED fault in its scope — an EventBus machine_alarm_raised on a wash-line machine, or an overlay fault scoped to one. KWITTEREN on the overlay silences it; the fault clearing silences it. The period is a PLACEHOLDER. Level (gain_db), attenuation radii, pitch_floor and the ramp times are PLACEHOLDERS chosen by ear-less reasoning on 2026-09-25 — tune them in this inspector after play-testing. The clip is the operator's own recording of 2026-09-22 (assets/audio/machines/_source/), baked by tools/audio/machine_clips.py, RMS-normalised to -20 dBFS so gain_db is the only relative level."

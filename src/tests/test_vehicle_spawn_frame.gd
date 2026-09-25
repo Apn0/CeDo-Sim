@@ -26,16 +26,18 @@ extends Node
 #   Plant — reverting _layout_to_scene to the rotate+anchor form must turn CHECK
 #   B red, which is the mutation test this file exists to survive.
 #
-# world_layout.json is byte-backed-up and restored (MainWorld autosaves).
+# World saves go to a scratch file; world_layout.json is only READ (the raw
+# expectation above) and compared, never written (src/tests/world_layout_guard.gd).
 # =============================================================================
 
 const LAYOUT_PATH := "user://world_layout.json"
 const TILE_OBJ    := "res://assets/models/CeDo_building.obj"
 const TEST_SLOT   := "__spawnframe__"
 
-# Files MainWorld may write during a boot. All byte-restored in _finish.
+## This slot's own files. The operator's world_layout.json is not on the list:
+## world saves go to the guard's scratch file, and the real one is only
+## compared, never written (src/tests/world_layout_guard.gd).
 const PROTECT : Array[String] = [
-	"user://world_layout.json",
 	"user://__spawnframe___save.json",
 	"user://__spawnframe___factory.json",
 ]
@@ -52,7 +54,8 @@ const TOL_M : float = 3.0
 # every extra frame is more physics settling between spawn and measurement.
 const BOOT_FRAMES : int = 90
 
-var _backups : Dictionary = {}
+const WorldLayoutGuard := preload("res://src/tests/world_layout_guard.gd")
+var _wlg := WorldLayoutGuard.new(TEST_SLOT, PROTECT)
 var _oks   : int = 0
 var _fails : int = 0
 var _world : Node3D = null
@@ -77,7 +80,10 @@ func _ready() -> void:
 		print("FATAL: WorldLayout autoload missing (boot via the .tscn, not --script)")
 		get_tree().quit(2)
 		return
-	_backup_files()
+	# Before boot, so no world save can reach the operator's world_layout.json.
+	if not _wlg.arm(get_tree()):
+		get_tree().quit(2)
+		return
 
 	# ── EXPECTATION, derived from disk without consulting any game transform ──
 	var expected : Dictionary = _expected_from_disk()
@@ -111,6 +117,8 @@ func _ready() -> void:
 	_check_b_marker_identity(expected, spawned)
 	_check_c_header_agrees(expected, spawned)
 	_check_d_pc_path(expected)
+	for c in _wlg.final_checks(_world):
+		_check(c[0], c[1])
 	await _finish()
 
 
@@ -351,7 +359,11 @@ func _check_d_pc_path(expected: Dictionary) -> void:
 # =============================================================================
 # Teardown
 # =============================================================================
+## The verdict is printed and user:// restored BEFORE the world is freed, then
+## restored again after: the headless teardown segfault lands inside world
+## teardown (CLAUDE.md, 15 of 62 boots) and never reaches code after it.
 func _finish() -> void:
+	_wlg.restore()
 	print("\n=========================================")
 	print("Result: %s (%d ok, %d fail)" % ["PASS" if _fails == 0 else "FAIL", _oks, _fails])
 	print("=========================================")
@@ -359,27 +371,8 @@ func _finish() -> void:
 		get_tree().current_scene = null
 		_world.queue_free()
 		await get_tree().process_frame
-	_restore_files()
+	_wlg.restore()
+	_wlg.disarm()
 	get_tree().quit(0 if _fails == 0 else 1)
 
 
-func _backup_files() -> void:
-	for p in PROTECT:
-		if FileAccess.file_exists(p):
-			var f := FileAccess.open(p, FileAccess.READ)
-			_backups[p] = f.get_buffer(f.get_length())
-			f.close()
-		else:
-			_backups[p] = null
-
-
-func _restore_files() -> void:
-	for p in PROTECT:
-		var data = _backups.get(p, null)
-		if data == null:
-			if FileAccess.file_exists(p):
-				DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
-		else:
-			var f := FileAccess.open(p, FileAccess.WRITE)
-			f.store_buffer(data)
-			f.close()

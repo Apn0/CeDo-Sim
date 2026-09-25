@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="MachineSoundSpec" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/audio/MachineSoundSpec.gd" id="1_spec"]
+
+[resource]
+script = ExtResource("1_spec")
+gain_db = 0.0
+unit_size_m = 1.5
+max_distance_m = 15.0
+event_clips = {
+"valve_close": "res://assets/audio/machines/valve_crank_3.wav",
+"valve_open": "res://assets/audio/machines/valve_crank_1.wav"
+}
+notes = "Hose reel BASE valve (E cycles DICHT/WEINIG/OPEN). Source turn-crank_old_metal_manually_operated_valve_loop_4x.mp3: four takes, take 1 = open, take 3 = close (takes 2/4 are baked too — swap them here). ASSUMPTION: the operator did not say which valve he recorded; the hose-reel base valve and the IBC tote drain are the only hand-operated valves in the sim. Level (gain_db), attenuation radii, pitch_floor and the ramp times are PLACEHOLDERS chosen by ear-less reasoning on 2026-09-25 — tune them in this inspector after play-testing. The clip is the operator's own recording of 2026-09-22 (assets/audio/machines/_source/), baked by tools/audio/machine_clips.py, RMS-normalised to -20 dBFS so gain_db is the only relative level."

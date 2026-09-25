@@ -74,6 +74,10 @@ var _held_by     : Node3D = null
 var _player_near : bool   = false
 var _player_node : Node   = null
 
+# Sound (2026-09-25) — see _ready / _update_sound.
+const _SOUND_BANK := preload("res://src/audio/MachineSoundBank.gd")
+var _snd : Node = null
+
 # Wind sensor + occlusion ray (built procedurally in _build_wind_volume).
 var _wind_area : Area3D = null
 var _wind_cs   : CollisionShape3D = null
@@ -88,6 +92,10 @@ func _ready() -> void:
 	_build_pickup_trigger()
 	_build_wind_volume()
 	_refresh_fuel_led()
+	# Sound (2026-09-25): the operator's own recording split into start / idle /
+	# rev / stop (src/audio/machine_sounds/tool_leafblower.tres). Driven from
+	# the spool below; null when the .tres or its WAVs are missing.
+	_snd = _SOUND_BANK.attach(self, "tool_leafblower")
 
 ## Orange housing + dark grip + dark nozzle. Sized so a held pose reads cleanly.
 func _build_visual() -> void:
@@ -355,6 +363,7 @@ func _physics_process(delta: float) -> void:
 	if _held_by == null:
 		_state = State.OFF
 		_spool = 0.0
+		_update_sound()
 		return
 	var inv := get_node_or_null("/root/Inventory")
 	var is_active := (inv == null) or bool(inv.call("is_active", self))
@@ -395,6 +404,7 @@ func _physics_process(delta: float) -> void:
 	var f := fuel_pct()
 	if f > 0.0 and f < STUTTER_THRESHOLD:
 		_spool = minf(_spool, IDLE_SPOOL)
+	_update_sound()
 	# Burn fuel proportional to live spool — half-throttle uses half-rate.
 	if _spool > 0.0001:
 		var burn := (fuel_capacity_l / RUN_SECONDS_FULL) * _spool * delta
@@ -435,6 +445,23 @@ func _physics_process(delta: float) -> void:
 		# scrap is pushed FORWARD (in the blow direction), the way a real blower works.
 		var atten := 1.0 / (1.0 + dist * dist)
 		body.apply_central_force(aim * force_mag * atten)
+
+# =============================================================================
+# SOUND (2026-09-25)
+# =============================================================================
+## What the engine sound follows: 0 when OFF (loops stopped, the stop clip
+## plays once), else the live spool — idle loop near 0, the rev loop taking
+## over above the spec's idle_to_run_at, start clip on the OFF → SPOOLING_UP
+## edge. A sputtering low-fuel engine (spool capped at IDLE_SPOOL) therefore
+## sounds like an idle, which is what it is.
+func sound_drive() -> float:
+	if _state == State.OFF:
+		return 0.0
+	return clampf(_spool, 0.0, 1.0)
+
+func _update_sound() -> void:
+	if _snd != null and is_instance_valid(_snd):
+		_snd.call("set_drive", sound_drive())
 
 # =============================================================================
 # FUEL — public API + UX
