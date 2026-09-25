@@ -44,9 +44,11 @@ extends Node
 ## autosave), so nothing here writes user://.
 ##
 ## SCOPE — a line in the session it is BUILT. `lf_explicit_outs` is not
-## persisted by _save_layout, so a world reloaded from a save has none of these
-## pins (measured: probe_explicit_edges_roundtrip, 47 tagged nodes → 0). That
-## is a separate defect; this suite does not claim to cover it.
+## persisted by _save_layout, and until 2026-09-25 nothing re-stamped it, so a
+## reloaded world had none of these pins (probe_explicit_edges_roundtrip, 47
+## tagged nodes → 0). load_layout now re-derives them from the SEQ
+## (BuildMode._rederive_macro_flow_edges); the RELOADED world, these chains
+## included, is test_macro_edges_reload's job, by name and by kg.
 
 const FEED_KG_H : float = 950.0        # ExtruderConfig's 3B nominal, as the probe used
 # Measured 2026-09-25 on the fixed tree: the first kg reaches the extruder
