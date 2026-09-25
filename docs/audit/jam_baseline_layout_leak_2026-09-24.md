@@ -119,7 +119,14 @@ Asked 2026-09-24 whether to remove the leaked entry from `world_layout.json`
 this environmental reason. Do not edit his `world_layout.json` to turn them
 green without asking him.
 
-## Still exposed (not changed here)
+## Still exposed (not changed here) — closed 2026-09-25
+
+Every suite this section describes now uses the same redirect, through a shared
+helper (`src/tests/world_layout_guard.gd`). `tools/regression/run.sh` also
+fingerprints the real file after every step. See
+`docs/audit/world_layout_guard_2026-09-25.md`. The text below is the state as of
+2026-09-24.
+
 
 The other MainWorld suites that boot on the real layout without
 `layout_path_override`, `test_gate_carve` among them, still write the real

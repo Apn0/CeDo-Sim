@@ -2,6 +2,13 @@ extends Node3D
 ## Task #17 — Headless verification that MainWorld loads a saved WorldLayout
 ## correctly, with NO dependency on the user's real world_layout.json.
 ##
+## The synthetic layout is written to a SCRATCH file and WorldLayout is pointed
+## at it (src/tests/world_layout_guard.gd), so the real file is never opened
+## for writing. Until 2026-09-25 this suite wrote the synthetic RD layout OVER
+## the operator's world_layout.json with a truncating FileAccess.WRITE and put
+## his bytes back at the end, so a kill in between left the synthetic layout
+## as his world.
+##
 ## Boots via the project main-scene path so the autoloads (esp. WorldLayout)
 ## register as real globals, exactly like test_settings_wiring.gd:
 ##
@@ -61,16 +68,20 @@ var _pass := 0
 var _fail := 0
 var _skip := 0
 
-# Files we touch and MUST restore so the user's real save is untouched.
-const LAYOUT_PATH   := "user://world_layout.json"
+# Files we touch and MUST restore so the user's real save is untouched. The
+# operator's world_layout.json is not one of them: see the header.
 const CONSUMED_FLAG := "user://world_layout_consumed.flag"
 const FACTORY_LAYOUT := "user://factory_layout.json"
 # Isolate ALL GameState writes to a throwaway slot so the user's real save is
 # never touched (GameState.save_file_path is derived from this EventBus meta).
 const TEST_SAVE_SLOT := "__layout_load_test_tmp"
 const TEST_SAVE_PATH := "user://__layout_load_test_tmp_save.json"
-# path → backed-up contents (String) or null if the file did not exist.
-var _backups : Dictionary = {}
+const TEST_SAVE_FACT := "user://__layout_load_test_tmp_factory.json"
+const WorldLayoutGuard := preload("res://src/tests/world_layout_guard.gd")
+var _wlg := WorldLayoutGuard.new(TEST_SAVE_SLOT,
+	[CONSUMED_FLAG, FACTORY_LAYOUT, TEST_SAVE_PATH, TEST_SAVE_FACT])
+## The Tier 2 world, kept alive until the guard's final save has run.
+var _world : Node = null
 
 
 func _ok(cond: bool, msg: String) -> void:
@@ -92,7 +103,11 @@ func _ready() -> void:
 		print("FAIL: WorldLayout autoload not present (boot via --main-scene, not --script)")
 		get_tree().quit(1); return
 
-	_backup_user_layout()
+	# Every WorldLayout read and write now goes to the guard's scratch file: the
+	# synthetic layout below, _load() reading it back, and the new-save boot's
+	# save_game() in Tier 2.
+	if not _wlg.arm(get_tree()):
+		get_tree().quit(2); return
 	# Author the synthetic RD-scale layout on disk, then drive the REAL loader.
 	_write_synthetic_layout()
 	wl.call("_load")
@@ -100,7 +115,13 @@ func _ready() -> void:
 	_test_load_finite(wl)
 	await _test_layout_to_scene_and_spawns(wl)
 
-	_restore_user_layout()
+	_section("LEAK GUARD")
+	if _world != null:
+		for c in _wlg.final_checks(_world):
+			_ok(c[0], c[1])
+	else:
+		var c : Array = _wlg.real_layout_check()
+		_ok(c[0], c[1])
 	_finish()
 
 
@@ -256,7 +277,7 @@ func _test_layout_to_scene_and_spawns(_wl: Node) -> void:
 		_ok(yard_ok, "every spawned bale finite + within %.0f m of anchor (worst %.1f m, %d bales)"
 			% [SANE_RADIUS_M, yard_worst, bale_nodes.size()])
 
-	world.queue_free()
+	_world = world
 
 
 # =============================================================================
@@ -312,12 +333,13 @@ func _write_synthetic_layout() -> void:
 			"scale_m": 100.0, "rot_deg": 35.0,
 		},
 	}
-	var f := FileAccess.open(LAYOUT_PATH, FileAccess.WRITE)
+	var path : String = _wlg.scratch
+	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f == null:
-		push_error("[test_layout_load] could not write synthetic %s" % LAYOUT_PATH); return
+		push_error("[test_layout_load] could not write synthetic %s" % path); return
 	f.store_string(JSON.stringify(data, "  "))
 	f.close()
-	print("  (wrote synthetic RD-scale layout to %s)" % LAYOUT_PATH)
+	print("  (wrote synthetic RD-scale layout to %s)" % path)
 
 
 func _corners_json() -> Array:
@@ -331,35 +353,17 @@ func _j(v: Vector3) -> Dictionary:
 	return {"x": v.x, "y": v.y, "z": v.z}
 
 
-func _backup_user_layout() -> void:
-	# Snapshot every user:// file MainWorld / WorldLayout / GameState might touch,
-	# so we can restore the user's machine to its exact prior state afterwards.
-	for p in [LAYOUT_PATH, CONSUMED_FLAG, FACTORY_LAYOUT, TEST_SAVE_PATH]:
-		if FileAccess.file_exists(p):
-			var f := FileAccess.open(p, FileAccess.READ)
-			_backups[p] = f.get_as_text() if f else null
-			if f: f.close()
-		else:
-			_backups[p] = null
-
-
-func _restore_user_layout() -> void:
-	# Put each file back exactly as found: rewrite originals, delete ones we
-	# created. This is what keeps the test from depending on / harming real saves.
-	for p in _backups.keys():
-		var original = _backups[p]
-		if original is String:
-			var f := FileAccess.open(p, FileAccess.WRITE)
-			if f:
-				f.store_string(original); f.close()
-		else:
-			if FileAccess.file_exists(p):
-				DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
-	print("  (restored all touched user:// files to their original state)")
-
-
+## The verdict is printed and user:// restored BEFORE the world is freed, then
+## restored again after: the headless teardown segfault lands inside world
+## teardown (CLAUDE.md, 15 of 62 boots) and never reaches code after it.
 func _finish() -> void:
+	_wlg.restore()
 	print("\n=========================================")
 	print("Result: %d ok, %d fail, %d skip" % [_pass, _fail, _skip])
 	print("=========================================")
+	if _world != null and is_instance_valid(_world):
+		_world.queue_free()
+		await get_tree().process_frame
+	_wlg.restore()
+	_wlg.disarm()
 	get_tree().quit(0 if _fail == 0 else 1)

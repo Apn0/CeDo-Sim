@@ -29,13 +29,16 @@ const FIT_WAIT_FRAMES := 1200      # ILM waits <=300 frames for Plant + physics
 const PX_EPS := 0.01               # projection identity tolerance (px)
 const AREA_REL_TOL := 0.05         # rigid mapping: <=5% area drift allowed
 
+## This slot's own files. The operator's world_layout.json is not on the list:
+## world saves go to the guard's scratch file, and the real one is only
+## compared, never written (src/tests/world_layout_guard.gd).
 const PROTECT := [
-	"user://world_layout.json",
 	"user://__mapframe___save.json",
 	"user://__mapframe___factory.json",
 ]
 
-var _backups : Dictionary = {}
+const WorldLayoutGuard := preload("res://src/tests/world_layout_guard.gd")
+var _wlg := WorldLayoutGuard.new(TEST_SLOT, PROTECT)
 
 func _ready() -> void:
 	print("=== TEST — map frame invariants (MapOverlay canonical projection) ===")
@@ -44,7 +47,9 @@ func _ready() -> void:
 		print("FATAL: WorldLayout autoload missing (boot via the .tscn, not --script)")
 		get_tree().quit(2); return
 
-	_backup_files()
+	# Before boot, so no world save can reach the operator's world_layout.json.
+	if not _wlg.arm(get_tree()):
+		get_tree().quit(2); return
 
 	var bus := get_node_or_null("/root/EventBus")
 	if bus:
@@ -53,7 +58,7 @@ func _ready() -> void:
 
 	var scn := load("res://src/scenes/world/MainWorld.tscn") as PackedScene
 	if scn == null:
-		print("FATAL: MainWorld.tscn failed to load"); _restore_files(); get_tree().quit(2); return
+		print("FATAL: MainWorld.tscn failed to load"); _wlg.restore(); _wlg.disarm(); get_tree().quit(2); return
 	var world : Node = scn.instantiate()
 	await get_tree().process_frame
 	get_tree().root.add_child(world)
@@ -145,15 +150,27 @@ func _ready() -> void:
 			fails += 1
 			print("  FAIL  : outline area %.0f m^2 vs shape %.0f m^2 — projection distorts the building" % [area_m2, expected_m2])
 
+	for c in _wlg.final_checks(world):
+		if c[0]:
+			print("  ok    : %s" % c[1])
+		else:
+			fails += 1
+			print("  FAIL  : %s" % c[1])
+
 	print("\n=========================================")
 	print("Result: %s (%d fail)" % ["PASS" if fails == 0 else "FAIL", fails])
 	print("=========================================")
 	_finish(world, 0 if fails == 0 else 1)
 
+## user:// is restored BEFORE the world is freed, then again after: the
+## headless teardown segfault lands inside world teardown (CLAUDE.md, 15 of 62
+## boots) and never reaches code after it.
 func _finish(world: Node, code: int) -> void:
+	_wlg.restore()
 	world.queue_free()
 	await get_tree().process_frame
-	_restore_files()
+	_wlg.restore()
+	_wlg.disarm()
 	get_tree().quit(code)
 
 static func _poly_centroid(poly: PackedVector2Array) -> Vector2:
@@ -177,22 +194,3 @@ static func _shoelace(poly: PackedVector2Array) -> float:
 		s += p.x * q.y - q.x * p.y
 	return s * 0.5
 
-func _backup_files() -> void:
-	for p in PROTECT:
-		if FileAccess.file_exists(p):
-			var f := FileAccess.open(p, FileAccess.READ)
-			_backups[p] = f.get_buffer(f.get_length())
-			f.close()
-		else:
-			_backups[p] = null
-
-func _restore_files() -> void:
-	for p in PROTECT:
-		var data = _backups.get(p, null)
-		if data == null:
-			if FileAccess.file_exists(p):
-				DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
-		else:
-			var f := FileAccess.open(p, FileAccess.WRITE)
-			f.store_buffer(data)
-			f.close()
