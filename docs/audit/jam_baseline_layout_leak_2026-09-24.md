@@ -119,6 +119,55 @@ Asked 2026-09-24 whether to remove the leaked entry from `world_layout.json`
 this environmental reason. Do not edit his `world_layout.json` to turn them
 green without asking him.
 
+## Operator ruling 2026-09-25: it is the real gate, keep it
+
+He was shown where the entry stands in the game: renders from above and from
+both sides at eye level, made on an isolated copy of his userdata. It sits on
+the south-west outer wall of the southern hall, 5.9 m wide and 4.8 m tall, an
+open roller door with the hall behind it. Its history, read from his backups:
+
+| When | Gate in `world_layout.json` |
+|---|---|
+| 10 Jun | "3A/3B" at nearly this spot (0.6 m off), plus a second gate labelled "sad" |
+| 23 Jun – 17 Aug | none |
+| 31 Aug – 12 Sep | "3A/3B gate", exactly this spot |
+| 13 Sep | cleared by a session, to turn two suites green |
+| since 24 Sep ~17:15 | back, as this suite's leaked fixture |
+
+Who first placed it is not recorded. His answer: **"that gate looks correct.
+That is indeed the line 3A, line 3B gate through which the feeder can drive
+outside to the bale lot, which is close by there."**
+
+So the entry stays, and the four suites that went red on it now expect shared
+site structure:
+
+- **`regression verdict`** (`regression_world_save.gd`): each gate must stand
+  in a wall opening that the carve cut in the REAL shell (`opening_id` on its
+  placed node). The old test compared the centre with six typed wall lines of
+  a building frame. Drawn through `Plant`, that frame comes out square to the
+  scene axes, while the 3D shell stands diagonal, so his gate read "on-wall 0".
+- **`test_jam_baseline`**: uses his gate when the loaded world already stands
+  one there in a carved opening, and builds the in-memory fixture only on a
+  world without it, so there are never two leaves in one opening. It checks
+  that `structure_items` is unchanged from the start of the run, not that it
+  is empty, and the leak guard finds the gate by position, not by label.
+- **`test_project_sweep_guards` B1b**: requires no WALL entry before its wall
+  placement. A gate cannot make B3 pass.
+- **`test_new_world_wipe`**: a new save must have no per-save objects. Shared
+  site structure (doors, gates, windows, walls) is overlaid on every save by
+  design, so it is counted apart, and a second check asserts it is there.
+
+Measured on isolated APPDATA copies (2026-09-25 02:07–02:39):
+
+| World | regression | sweep guards | new-world wipe | jam baseline |
+|---|---|---|---|---|
+| his, with the gate | 18 ok, 1 skip | 19 ok | 9 ok | 19 ok, 0 skipped (his gate) |
+| without the gate (23 Sep backup) | 17 ok, 2 skip | 19 ok | 9 ok | 19 ok, 0 skipped (fixture) |
+| mutation: gate moved 8 m into the yard | **1 fail**: "carved 0" | — | 9 ok | — |
+
+Parse sweep 454 ok, 0 fail; 0 `^SCRIPT ERROR` lines in every suite log; his
+real `world_layout.json` unchanged (md5 `e046af7d…`).
+
 ## Still exposed (not changed here)
 
 The other MainWorld suites that boot on the real layout without

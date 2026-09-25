@@ -208,11 +208,17 @@ func _check_wall_persistence(world: Node) -> void:
 	if wall_id == "":
 		return
 
-	# NON-VACUITY: structure_items must be empty first, or a wall shipped with
-	# the site would make B2 pass without this placement doing anything.
+	# NON-VACUITY: structure_items must hold no WALL first, or a wall shipped
+	# with the site would make B3 pass without this placement doing anything.
+	# Other site structure is fine: since 2026-09-25 the operator's world keeps
+	# his 3A/3B gate there (a gate is not a wall, so B3 cannot mistake it).
 	var before : int = WorldLayout.structure_items.size()
-	_ok(before == 0,
-		"B1b WorldLayout.structure_items starts empty (%d entries)" % before)
+	var walls_before : int = 0
+	for e in WorldLayout.structure_items:
+		if String((e as Dictionary).get("id", "")).begins_with("wall_"):
+			walls_before += 1
+	_ok(walls_before == 0,
+		"B1b WorldLayout.structure_items holds no wall before the placement (%d wall(s) among %d entries)" % [walls_before, before])
 
 	# Drive BuildMode's own two-point placement path — not build_wall() directly,
 	# because the defect was in the caller, not the builder.
