@@ -212,6 +212,33 @@ Measured one at a time under a scratch APPDATA, before the merge with main:
 (#296) dropped it. Main put it back in parallel (#299, `1c4977c`), so the
 merge took main's line and added `test_sort_line_topology` after it.
 
+### The full harness, on the merged tree
+
+The tree was `8b19892`: this fix merged with `origin/main` `6cc82b0`
+(#298–#304). The parse sweep ran first, as CLAUDE.md asks after a merge:
+469 ok, 0 fail. Then the full harness ran from the worktree with
+`PROJ=` set, under an APPDATA holding a copy of the operator's
+`app_userdata`. EBWebView, vulkan and shader_cache were left out of the copy.
+
+Result: `== done (exit 1)`, **140 steps, 31 min (06:53:16 → 07:23:58), 131
+logs by mtime, 0 timeouts, 0 `^SCRIPT ERROR` lines, 2 reds:**
+
+- `test_npc05_realworld`: expected, as recorded in CLAUDE.md.
+- `test_machine_sounds`: environmental. This worktree's `assets/` copy had
+  no `assets/audio/machines/` (gitignored). All 22 fails were "WAV missing".
+  I copied the operator's 37 files in (a copy, not a link) and imported them,
+  and the suite then passed on its own: `PASS (80 ok, 0 fail)`.
+
+Inside the run: `test_sort_line_topology` 97 ok, `test_fallback_chains` 83 ok,
+`test_macro_edges_reload` 60 ok, `test_motor_trip_stops_conveying` 28 ok,
+`test_bunker_shredder2_interlock` PASS, `test_bunker_relay_trip` PASS. The
+operator's real `world_layout.json` and its `.bak` kept their md5 and mtime
+(`e046af7d…`, 06:24:56 and 03:12:41).
+
+An earlier harness on the unmerged branch was stopped at its parse sweep by
+hand, once main was found to have moved. Only this worktree's three processes
+were killed: bash, run.sh and the Godot child.
+
 ## 7. Known, owned elsewhere: the BeltBuilder twin
 
 `BeltBuilder.build()` tags the `Model` child it builds under a placeable's
