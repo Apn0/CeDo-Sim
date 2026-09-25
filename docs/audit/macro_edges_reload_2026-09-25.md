@@ -356,6 +356,32 @@ Measured on that merged tree:
 
 The full harness was NOT re-run on the merged tree; the operator runs it.
 
+### How it landed
+
+- **#295** merged this branch at `54b2ddb` (06:12), before the #294 merge
+  above had been pushed. Its GitHub-side "Merge branch 'main'" commit
+  (`f90d69d`) resolved `CLAUDE.md` and `run.sh` by taking this branch's side,
+  which lost three things #294 had put on `main` minutes before:
+  - `test_fallback_chains` from the scene loop, with its comment;
+  - the `cycle_guard_swap` doc-index row;
+  - its CLAUDE.md trap entry.
+
+  This was the fourth loop-line drop of the day. The code was not affected.
+- **#298** merged `e23450c` (06:20): the union resolution from the section
+  above, with all three pieces in it. Checked on `main` afterwards:
+  - `test_fallback_chains`, `test_macro_edges_reload`, `test_machine_sounds`,
+    `test_hmi_fault_rearm` and `test_screw_die_plate_bar` are each in the loop
+    once;
+  - both index rows and both trap entries are present;
+  - there are no conflict markers.
+
+  `BuildMode.gd` (md5 `f4013a15…`), `LineFlow.gd`, `MachineFlow.gd` and the
+  three suites are byte-identical to the tree measured above.
+
+A merge done in the GitHub web editor can drop another PR's lines even when
+it shows no conflict markers. Diff the `for t in` lists against both parents,
+as CLAUDE.md says. `grep '^-echo "=='` cannot see a suite leaving a loop line.
+
 ## 8. Not changed here
 
 - **The live delete path.** It still leaves the dangling pin, and with it the
