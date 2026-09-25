@@ -270,3 +270,34 @@ scratch APPDATA. The full harness was not run, per the one-runner ruling.
   18-32 ms of a 75-83 ms `_save_layout` (84 bodies, 81.6 KB). The file is written
   tab-indented, as it always was, which about triples its size. By key (compact
   JSON), the pipes' kg in transit are the biggest part: 5.7 of about 11 KB.
+
+### 7.1 After the merge with `origin/main` (#322, the extruder silo's feed stop)
+
+#322 landed while this was built, and it added LineFlow state (`_silo_state`: the
+silo sensor's level and its feed-stop latch). The resume now carries it per silo
+body (§2 table), guarded by B1/B3's silo checks and M14. The merge conflicted only
+in `run.sh`'s main `for` line. It was resolved to ONE line with both suite lists:
+`bash -n` clean, one `for t in test_machine_sounds`, no step dropped against
+`origin/main`.
+
+On the merged tree:
+
+- **Parse sweep:** 484 ok, 0 fail.
+- **`test_plant_resume`:** PASS (62 ok, 0 fail) on the bare APPDATA and on the D:
+  copy of the operator's userdata. On the copy, MainWorld reported *"Resumed the
+  plant as saved: 71 machines (70 LineFlow nodes, 9 machine parts)"* and the
+  copy's world_layout.json md5 was unchanged.
+- **Re-run, all PASS:** test_extruder_start_interlock (32), test_extruder_start_rpm
+  (27), test_extruder_silo_chain (41), test_macro_edges_reload (62),
+  test_chute_choke (24), test_motor_trip_stops_conveying (28),
+  test_flow_node_unique (34), test_save_checkpoint (22), test_lump_cart_overflow
+  (45), test_hmi_fault_rearm (32).
+- **#322's own `test_extruder_silo_feed_stop`:**
+  - On the D: copy of the operator's userdata: PASS (17 ok, 0 fail).
+  - On the bare APPDATA: FAIL (16 ok, 1 fail), and **identically with
+    `origin/main`'s own code** (my files swapped back to main's in this worktree,
+    same assets). So the red is #322's, not this change's.
+  - The failing check is S3, "the stopped screw's input rises less than 1.0 kg".
+    It measured 0.0 → 1.1 kg on the bare world and 0.2 → 1.2 kg on the copy, so
+    it sits on its own threshold. Worth widening, or measuring over more runs,
+    in #322's suite. Not changed here.
