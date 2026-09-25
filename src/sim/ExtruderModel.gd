@@ -229,13 +229,19 @@ var screw_rpm_setpoint : float = 0.0
 # Live actual temperatures for the 7 individual zones.
 var actual_zone_temps : Array[float] = [113.0, 157.0, 184.0, 213.0, 215.0, 215.0, 215.0]
 
-# Motor torque (% of design max). Computed from average zone-setpoint shortfall.
+# Motor torque (% of design max). Computed from average zone-setpoint shortfall;
+# in STOPPING it follows the rpm down instead (_coast_down_torque_pct).
 # > TORQUE_TRIP_PCT for TORQUE_TRIP_SUSTAIN_S → FAULT (motor_torque_trip).
 # > LUMP_PASSTHROUGH_TORQUE_PCT → un-melted lumps go downstream to the laser
 # filter; the LaserFilter reads `lump_passthrough_rate_g_s` and ups its loading.
 var motor_torque_pct          : float = 0.0
 var _torque_trip_accum_s      : float = 0.0
 var lump_passthrough_rate_g_s : float = 0.0
+# STOPPING: the torque and screw rpm on the tick the stop was entered. The
+# coast-down torque is scaled from them (_coast_down_torque_pct), so it depends
+# on how far the screw has slowed, not on how many ticks that took.
+var _stop_entry_torque_pct    : float = 0.0
+var _stop_entry_rpm           : float = 0.0
 
 # Vacuum flooding (operator-confirmed failure mode). Thin melt + high suction
 # lets melt creep up the vacuum line as "gunk". Slow build (~30 min of risky
@@ -286,6 +292,12 @@ const DIE_PRESSURE_BAR_PER_C : float = 6.83
 ## maximum; 3A trend p50 271 / p95 280). The melt-set pressures scale by the
 ## same FRACTION per °C, 6.83 / 280 = 2.44 %/°C, as #275 did.
 const MELT_FIT_LEVEL_BAR : float = 280.0
+## The die plate's flow index: die_plate_bar ∝ throughput^n, a power-law melt
+## through a fixed die. It IS LineFlow's screw's own LDPE n (a heuristic 0.35,
+## no plant source), so the BluPort and the Quality terminal carry one die law
+## (operator ruling 2026-09-25, docs/plant/operator_rulings_2026-09-25.md).
+const _ScrewLaw := preload("res://src/sim/ExtruderScrew.gd")
+const DIE_FLOW_INDEX : float = _ScrewLaw.POWER_LAW_N
 ## Melt viscosity relative to a melt at setpoint, from the fit above: 1.0 at
 ## setpoint, +2.44 % per °C colder. It scales the melt-set pressures here, and
 ## ExtruderMachine forwards it to the LaserFilter, where it scales the screen's
@@ -306,7 +318,8 @@ var melt_viscosity_factor : float:
 #     318-bar emergency shutdown (LaserFilter, the trip authority).
 #   * MP<PEL, the 160-bar pelletiser interlock, reads the dP ACROSS the kopfilter.
 # The melt-set parts follow the rheology proxy — pressure ∝ throughput ×
-# viscosity — with viscosity read off the MELT temperature (DIE_PRESSURE_BAR_PER_C,
+# viscosity, the die plate ∝ throughput^DIE_FLOW_INDEX × viscosity (2026-09-25)
+# — with viscosity read off the MELT temperature (DIE_PRESSURE_BAR_PER_C,
 # #275's operator ruling), not motor torque: a zone drop raises torque, and
 # pressure only once the melt really cools.
 var mp_after_laserfilter_bar  : float = 0.0   # MP>MF: melt-set, after the screen
@@ -439,7 +452,7 @@ func _tick_off(delta: float) -> void:
 	melt_temp = move_toward(melt_temp, AMBIENT_C, 0.5 * delta)
 	screw_rpm = 0.0
 	throughput_kg_h = 0.0
-	_set_melt_pressures(0.0)
+	_set_melt_pressures(0.0, 1.0)
 	motor_torque_pct = 0.0
 	lump_passthrough_rate_g_s = 0.0
 	die_face_state = DieFaceState.OFF
@@ -507,7 +520,7 @@ func _tick_preheat(delta: float, events: Array[String]) -> void:
 	melt_temp = move_toward(melt_temp, config.melt_temp_setpoint, rate * delta)
 	screw_rpm = 0.0
 	throughput_kg_h = 0.0
-	_set_melt_pressures(0.0)
+	_set_melt_pressures(0.0, 1.0)
 	motor_torque_pct = 0.0
 	lump_passthrough_rate_g_s = 0.0
 	die_face_state = DieFaceState.OFF
@@ -522,7 +535,7 @@ func _tick_idle(delta: float) -> void:
 	# carry stale post-RUN values from before the operator paused production.
 	screw_rpm = config.screw_rpm_idle
 	throughput_kg_h = config.idle_kg_per_h
-	_set_melt_pressures(0.0)
+	_set_melt_pressures(0.0, 1.0)
 	motor_torque_pct = 0.0
 	lump_passthrough_rate_g_s = 0.0
 	_drift_melt_temp_toward(config.melt_temp_setpoint, delta)
@@ -628,7 +641,8 @@ func _tick_starting(delta: float, _inputs: Dictionary, events: Array[String]) ->
 ## Time-constant decay (rpm *= exp(-delta / STOP_DECAY_S)). Frame-rate
 ## independent and matches the emulator's `*= 0.9` decay step at 0.5 s tick.
 ## Production continues at the residual rpm fraction so downstream catches
-## the tail-end material; no new lumps are emitted (melt pressures follow the flow down).
+## the tail-end material; no new lumps are emitted (melt pressures follow the flow
+## down, the motor torque follows the rpm down from where the stop began).
 func _tick_stopping(delta: float, _inputs: Dictionary, _events: Array[String]) -> void:
 	var nominal := config.screw_rpm_nominal
 	# Exponential decay: rpm_new = rpm_old * exp(-delta / tau)
@@ -640,7 +654,9 @@ func _tick_stopping(delta: float, _inputs: Dictionary, _events: Array[String]) -
 	# Heaters slowly stop holding setpoint — drift toward a cooler hold-temp.
 	_drift_melt_temp_toward(config.melt_temp_setpoint * 0.85, delta)
 	_evaluate_die_face_state()
-	motor_torque_pct = motor_torque_pct * rpm_frac
+	# Not _update_motor_torque(): that runs the 110 % trip accumulator, and a
+	# coasting screw is already stopping.
+	motor_torque_pct = _coast_down_torque_pct()
 	_set_melt_pressures_from_flow()
 	# Lump passthrough stops as the screw stops — no fresh un-melted material.
 	lump_passthrough_rate_g_s = 0.0
@@ -714,7 +730,7 @@ func _tick_fault(delta: float, inputs: Dictionary, events: Array[String]) -> voi
 	throughput_kg_h = 0.0
 	motor_torque_pct = 0.0
 	lump_passthrough_rate_g_s = 0.0
-	_set_melt_pressures(0.0)   # screw stopped → no flow → no head pressure
+	_set_melt_pressures(0.0, 1.0)   # screw stopped → no flow → no head pressure
 	# Melt temp slowly drifts toward setpoint while halted (heaters stay on
 	# but nothing is being pushed through). No more runaway integration.
 	_drift_melt_temp_toward(config.melt_temp_setpoint, delta)
@@ -732,7 +748,7 @@ func _tick_fault(delta: float, inputs: Dictionary, events: Array[String]) -> voi
 func _tick_e_stop(delta: float) -> void:
 	screw_rpm = 0.0
 	throughput_kg_h = 0.0
-	_set_melt_pressures(0.0)
+	_set_melt_pressures(0.0, 1.0)
 	motor_torque_pct = 0.0
 	lump_passthrough_rate_g_s = 0.0
 	melt_temp = move_toward(melt_temp, AMBIENT_C, 0.5 * delta)
@@ -763,6 +779,10 @@ func _transition(new_state: State, events: Array[String]) -> void:
 	var old := state
 	state = new_state
 	time_since_state_change = 0.0
+	if new_state == State.STOPPING:
+		# This tick's torque and rpm, from the state the stop was pressed in.
+		_stop_entry_torque_pct = motor_torque_pct
+		_stop_entry_rpm = screw_rpm
 	if new_state == State.OFF or new_state == State.IDLE:
 		vacuum_alarm_pot = ""              # the lid episode is over either way
 		vacuum_alarm_elapsed_s = 0.0
@@ -799,12 +819,20 @@ func _pots_at_capacity() -> String:
 # =============================================================================
 # MELT PRESSURES (bar) — see the field block near the top
 # =============================================================================
-## `factor` = throughput_norm × melt_viscosity_factor: 1.0 at nominal throughput and
-## melt, 0.0 with the screw stopped.
-func _set_melt_pressures(factor: float) -> void:
-	var f : float = maxf(0.0, factor)
-	mp_after_laserfilter_bar = config.mp_after_laserfilter_nominal_bar * f
-	die_plate_bar = config.die_plate_nominal_bar * f
+## `throughput_norm` = throughput / nominal and `melt_factor` = the melt
+## temperature term (`melt_viscosity_factor`): both 1.0 at nominal,
+## throughput 0.0 with the screw stopped.
+## MP>MF stays proportional to the flow. The die plate is a power-law die,
+## ∝ throughput^n with LineFlow's screw's own n (DIE_FLOW_INDEX): one die law
+## in both models (operator ruling 2026-09-25,
+## docs/plant/operator_rulings_2026-09-25.md). Both arguments are required on
+## purpose: a one-argument `_set_melt_pressures(q * m)` from before 2026-09-25
+## would compute pow(q·m, n), quietly wrong, so it must fail to compile.
+func _set_melt_pressures(throughput_norm: float, melt_factor: float) -> void:
+	var q : float = maxf(0.0, throughput_norm)
+	var m : float = maxf(0.0, melt_factor)
+	mp_after_laserfilter_bar = config.mp_after_laserfilter_nominal_bar * q * m
+	die_plate_bar = config.die_plate_nominal_bar * pow(q, DIE_FLOW_INDEX) * m
 	_refresh_line_pressures()
 
 ## The melt-set pressures for the CURRENT flow and melt: throughput / nominal
@@ -825,7 +853,7 @@ func _set_melt_pressures_from_flow() -> void:
 	var throughput_norm : float = 0.0
 	if config.nominal_kg_per_h > 0.001:
 		throughput_norm = throughput_kg_h / config.nominal_kg_per_h
-	_set_melt_pressures(throughput_norm * melt_viscosity_factor)
+	_set_melt_pressures(throughput_norm, melt_viscosity_factor)
 
 ## ExtruderMachine mirrors the live filter dPs in every tick (bar). The laser
 ## filter stays the authority for its own 318-bar trip — it sums the same two
@@ -874,8 +902,9 @@ func _step_degassing(delta: float) -> void:
 	# residence per unit length). Reference is the nominal-RPM transit time.
 	var rpm_frac : float = max(0.001, screw_rpm / max(config.screw_rpm_nominal, 1.0))
 	residence_time_s = BARREL_TRANSIT_S_AT_NOMINAL / rpm_frac
-	# Melt-set pressures (bar). Standard non-Newtonian extruder rheology says
-	# pressure ∝ viscosity × throughput. throughput_norm = throughput / nominal.
+	# Melt-set pressures (bar). MP>MF ∝ viscosity × throughput; the die plate is
+	# a power-law die, ∝ viscosity × throughput^DIE_FLOW_INDEX (operator ruling
+	# 2026-09-25). throughput_norm = throughput / nominal.
 	# Viscosity follows the MELT temperature at the slope the plant's own data
 	# shows (DIE_PRESSURE_BAR_PER_C, as a fraction of MELT_FIT_LEVEL_BAR). A
 	# starved screw (throughput → 0) drops both toward zero. The filter dPs add
@@ -1036,6 +1065,26 @@ func _update_motor_torque(delta: float, events: Array[String]) -> void:
 		lump_passthrough_rate_g_s = (motor_torque_pct - LUMP_PASSTHROUGH_TORQUE_PCT) * 5.0
 	else:
 		lump_passthrough_rate_g_s = 0.0
+
+## Motor torque while the screw coasts down in STOPPING: the torque on the tick
+## the stop was entered, times rpm / the rpm it was entered at.
+##
+## From the plant, not from feel. The raw EREMA archive for 3A and 3B logs
+## load_extruder (the "belasting" the BluPort, the HMI and SCADA show from this
+## field) and speed_extruder in the same ~5 s cycle. 83 stops from a steady run,
+## 17 samples caught mid-stop: load / entry load = 0.969 x rpm / entry rpm, mean
+## error 0.098 of the entry load; a held load is off by 0.369, rpm^2 by 0.237.
+## tools/audit/fit_stop_load_vs_rpm.py, docs/audit/extruder_stop_torque_2026-09-25.md.
+##
+## It used to be `motor_torque_pct *= rpm_frac` every tick, which follows the
+## product of every tick's fraction: 1.2 s into a stop from nominal it read
+## 0.142 of running at 0.1 s ticks and 0.024 at 0.05 s ticks. screw_rpm decays as
+## exp(-t / STOP_DECAY_S), so this ratio depends on time alone. Guarded by
+## test_extruder_stop_torque.
+func _coast_down_torque_pct() -> float:
+	if _stop_entry_rpm <= 0.001:
+		return 0.0
+	return _stop_entry_torque_pct * clampf(screw_rpm / _stop_entry_rpm, 0.0, 1.0)
 
 # =============================================================================
 # VACUUM-LINE FLOODING MAINTENANCE

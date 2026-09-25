@@ -137,8 +137,37 @@ func _ready() -> void:
 	thin.set_rpm(140.0)
 	thin.set_throughput(thin.nominal_throughput_kg_s)
 	_run(thin, 60.0)
-	_ok(thin.die_pressure < thick.die_pressure,
-		"thinner melt ⇒ lower die pressure at equal flow (%.2f < %.2f bar)" % [thin.die_pressure, thick.die_pressure])
+	_ok(thin.melt_temp > thick.melt_temp and thin.die_pressure < thick.die_pressure,
+		"hotter melt (140 rpm's shear heat, %.2f vs %.2f °C) ⇒ lower die pressure at equal flow (%.2f < %.2f bar)"
+		% [thin.melt_temp, thick.melt_temp, thin.die_pressure, thick.die_pressure])
+	# The die sees the flow and the melt, not the screw (power-law die, operator
+	# ruling 2026-09-25): pin both melts equal and re-tick over tick()'s 0.1 ms
+	# floor. A 0.1 s tick would not do: 140 rpm's shear heat warms its melt
+	# ~0.19 °C more than 40 rpm's in that step, which alone is 0.37 bar. Until
+	# 2026-09-25 the die read the SCREW's shear-thinned viscosity, so the two
+	# screws differed by the rpm ratio^(n-1) at one flow and one melt (measured
+	# with that law put back: 119.7 bar at 140 rpm vs 270.2 at 40).
+	thick.melt_temp = barrel
+	thin.melt_temp = barrel
+	thick.tick(0.0001)
+	thin.tick(0.0001)
+	_ok(absf(thin.die_pressure - thick.die_pressure) < 0.01,
+		"at a matched melt, screw rpm alone does not move the die plate (%.2f bar at 140 rpm vs %.2f at 40)"
+		% [thin.die_pressure, thick.die_pressure])
+	# P ∝ Q^n: twice the flow at the same rpm (throughput is not in the heat
+	# balance, so the melt stays identical) reads 2^n, not 2x.
+	var q1 = ExtruderScrewScript.new(barrel, barrel)
+	q1.set_rpm(q1.rpm_nominal)
+	q1.set_throughput(q1.nominal_throughput_kg_s)
+	_run(q1, 30.0)
+	var q2 = ExtruderScrewScript.new(barrel, barrel)
+	q2.set_rpm(q2.rpm_nominal)
+	q2.set_throughput(q2.nominal_throughput_kg_s * 2.0)
+	_run(q2, 30.0)
+	var want : float = pow(2.0, ExtruderScrewScript.POWER_LAW_N)
+	var got : float = q2.die_pressure / maxf(q1.die_pressure, 0.001)
+	_ok(q1.melt_temp == q2.melt_temp and absf(got - want) < 1e-4,
+		"2x flow ⇒ die plate x%.4f == 2^n %.4f (n = %.2f; a linear die reads x2)" % [got, want, ExtruderScrewScript.POWER_LAW_N])
 
 	_finish()
 

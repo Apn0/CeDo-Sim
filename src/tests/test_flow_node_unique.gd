@@ -340,12 +340,16 @@ func _graph_checks(lf: Node, tag: String) -> void:
 	_check(stray.is_empty(), "B3 %s: every LineFlow node carries a macro_id %s"
 		% [tag, str(stray) if not stray.is_empty() else "(all %d)" % nodes.size()])
 	# B4 — per line, flow nodes against the placed roots LineFlow should see:
-	# macro members that are placed_object, with a flow role, not a sink bin.
+	# macro members that are placed_object, with a flow role, not a sink bin,
+	# and not a SEQ entry marked {"flow": false} (BuildMode stamps it
+	# lf_placement_only; the sort line's reject belts, 2026-09-25).
 	var roots_by_line : Dictionary = {}
 	for po in get_tree().get_nodes_in_group("placed_object"):
 		if not (po is Node3D) or not po.has_meta("macro_id") or not po.has_meta("placeable_id"):
 			continue
 		if po.is_in_group("waste_container") or po.is_in_group("floor_pile"):
+			continue
+		if bool(po.get_meta("lf_placement_only", false)):
 			continue
 		var pid : String = String(po.get_meta("placeable_id"))
 		if String(MachineFlow.profile(pid)["role"]) == "none" or PlaceableCatalog.get_item(pid).is_empty():

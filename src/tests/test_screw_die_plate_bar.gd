@@ -29,10 +29,23 @@ extends Node
 ## that the terminal and SCADA read the extruder. Anti-vacuity: the fed
 ## extruders must actually carry the fed rate, and the silos must exist.
 ##
-## Measured, NOT gated (printed as info): the plant's kopdruk does not follow
-## output (trend fit exponent -0.13 on 3A, 0.007 on 3B, R² ≤ 0.04), while this
-## model's die plate is proportional to it. That is an open model-form question.
-## docs/audit/extruder_screw_die_plate_2026-09-24.md.
+## D (2026-09-25): the die plate across the trend's OUTPUT band. A standalone
+## screw per line at the band's low edge, p50 and high edge, turning the plant's
+## own rpm for that output (read from the paired per-sample curves). The die
+## plate must sit inside the kopdruk trend band at all three. At an unchanged
+## melt the die plate follows Q^n and the MFI does not follow Q at all. E: the
+## ExtruderModel (the BluPort's model) carries the same die law.
+##
+## Why D changed (operator rulings 2026-09-25, docs/plant/operator_rulings_2026-09-25.md):
+## this suite used to print, ungated, "3B at 534 / 799 / 1263 kg/h → 96 / 144 /
+## 227 bar" and call the plant's flat kopdruk an open model-form question. That
+## probe held the screw at 110 rpm while the output more than doubled; the plant
+## turns 60 / 80 / 120 rpm at those outputs. The operator called the flatness
+## operator-specific, perhaps even an office test run without head filters,
+## so the trend is a band to stay inside, not a law to fit. He chose the
+## textbook power-law die, P ∝ Q^0.35, for both models, with MfiProxy taking
+## only the matching exponent (the MFI itself is low priority until the beta).
+## docs/audit/extruder_screw_die_plate_2026-09-24.md §10.
 
 ## Measured 68 s idle and 156 s beside another session's suites (2026-09-25);
 ## run.sh's own per-suite timeout is 900 s.
@@ -57,8 +70,13 @@ const LINES := [["line_1", Vector3(0, 0, 0)], ["line_3a", Vector3(0, 0, 400)],
 const EXTRUDER_LINE := {"extruder_1": "", "extruder_3a": "3a", "extruder_3b": "3b",
 	"extruder_screw": ""}
 
+## An rpm sample pairs with an output sample within this window (s): the rpm
+## curve is downsampled to ~6 min buckets (fit_kopdruk_vs_output.py's window).
+const RPM_PAIR_S := 400.0
+
 var _fails := 0
 var _oks := 0
+var _pairs_cache : Dictionary = {}   # line → Array[Vector2(output kg/h, rpm)]
 
 func _check(c: bool, msg: String) -> void:
 	print(("  ok    : " if c else "  FAIL  : ") + msg)
@@ -246,24 +264,142 @@ func _run() -> void:
 	_check(String(s_nd.get("id", "")) == t_id,
 		"C3 the SCADA panel reads the same extruder (%s)" % s_nd.get("id", "<none>"))
 
-	# ── D. measured, not gated: die plate across the trend's output band ─────
-	# The model is proportional to output; the plant's kopdruk is flat with it.
-	var probe = ExtruderScrewScript.new()
-	probe.configure_for_extruder("extruder_3b")
-	var ob : Dictionary = _trend("3b", "Output").get("operating_band", {})
-	var kb3 : Dictionary = _trend("3b", "Smeltdruk voor kopfilter").get("operating_band", {})
-	if not ob.is_empty():
-		for q in [float(ob["low"]), float(probe.nominal_throughput_kg_s) * 3600.0, float(ob["high"])]:
-			var e = ExtruderScrewScript.new(NAN, probe.melt_target_mid)
-			e.configure_for_extruder("extruder_3b")
-			e.melt_temp = e.melt_target_mid
-			e.set_rpm(e.rpm_nominal)
-			e.set_throughput(q / 3600.0)
-			for _i in 1800:
-				e.tick(0.1)
-			print("  info  : 3B at %.0f kg/h → die plate %.1f bar (plant kopdruk band %s, flat with output)"
-				% [q, e.die_pressure, str(kb3)])
+	# ── D. the die plate across the trend's output band ──────────────────────
+	# rpm per output is the plant's own: the "Snelheid hoofdmotor" sample paired
+	# with each "Output" sample, median at that output, scaled onto the profile's
+	# rpm_nominal by the plant's rpm at the output p50. The scaling is needed
+	# because rpm_nominal is the rpm curve's OWN p50 (3B 110), while the plant
+	# turns 80 rpm at its output p50: two independent p50s, recorded in §10.
+	var n_die : float = ExtruderScrewScript.POWER_LAW_N
+	for line in ["3a", "3b"]:
+		var id : String = "extruder_" + line
+		var ob : Dictionary = _trend(line, "Output").get("operating_band", {})
+		var kb : Dictionary = _trend(line, String(KOPDRUK_SIGNAL[line])).get("operating_band", {})
+		var q50 := _p50(line, "Output")
+		var rpm50 := _plant_rpm_at(line, q50)
+		_check(not ob.is_empty() and not kb.is_empty() and rpm50 > 0.0,
+			"D0 %s output band %s, kopdruk band %s, plant rpm %.0f at the output p50 %.0f (paired curves)"
+			% [line, str(ob), str(kb), rpm50, q50])
+		if ob.is_empty() or kb.is_empty() or rpm50 <= 0.0:
+			continue
+		var rpm_nom : float = float(ExtruderScrewScript.PROFILES[line.to_upper()]["rpm_nominal"])
+		for q in [float(ob["low"]), q50, float(ob["high"])]:
+			var plant_rpm := _plant_rpm_at(line, q)
+			var rpm : float = rpm_nom * plant_rpm / rpm50
+			var e = _settled_screw(id, q, rpm)
+			_check(plant_rpm > 0.0 and e.die_pressure >= float(kb["low"]) and e.die_pressure <= float(kb["high"]),
+				"D1 %s at %.0f kg/h, %.1f rpm (the plant's %.0f rpm there, onto rpm_nominal %.0f): die plate %.1f bar inside the kopdruk trend band %.0f–%.0f (melt %.1f °C)"
+				% [id, q, rpm, plant_rpm, rpm_nom, e.die_pressure, kb["low"], kb["high"], e.melt_temp])
+			var capped = _settled_screw(id, q, rpm_nom)
+			print("  info  : %s at %.0f kg/h on the nominal %.0f rpm (rpm_pct 1.0, LineFlow's cap): die plate %.1f bar, MFI %.3f"
+				% [id, q, rpm_nom, capped.die_pressure, _mfi_of(capped, q)])
+		# The law, at an unchanged melt: throughput does not enter the screw's
+		# heat balance, so two screws at one rpm carry the same melt and differ
+		# only in the flow through the die.
+		var lo = _settled_screw(id, float(ob["low"]), rpm_nom)
+		var hi = _settled_screw(id, float(ob["high"]), rpm_nom)
+		var want_ratio : float = pow(float(ob["high"]) / float(ob["low"]), n_die)
+		var got_ratio : float = hi.die_pressure / maxf(lo.die_pressure, 0.001)
+		_check(is_equal_approx(lo.melt_temp, hi.melt_temp) and absf(got_ratio - want_ratio) < 1e-4,
+			"D2 %s die plate at %.0f / %.0f kg/h, one melt (%.2f °C): ratio %.4f == (Q ratio)^%.2f %.4f (a linear die reads %.4f)"
+			% [id, ob["high"], ob["low"], hi.melt_temp, got_ratio, n_die, want_ratio, float(ob["high"]) / float(ob["low"])])
+		var mfi_lo := _mfi_of(lo, float(ob["low"]))
+		var mfi_hi := _mfi_of(hi, float(ob["high"]))
+		_check(absf(mfi_hi - mfi_lo) < 1e-6 * maxf(mfi_lo, 1.0) and mfi_lo > 0.0,
+			"D3 %s at an unchanged melt the MFI does not follow output: %.4f at %.0f kg/h == %.4f at %.0f kg/h"
+			% [id, mfi_lo, ob["low"], mfi_hi, ob["high"]])
+
+	# ── E. ExtruderModel (the BluPort's model) carries the same die law ──────
+	_check(is_equal_approx(ExtruderModel.DIE_FLOW_INDEX, n_die),
+		"E0 ExtruderModel.DIE_FLOW_INDEX %.2f == ExtruderScrew.POWER_LAW_N %.2f" % [ExtruderModel.DIE_FLOW_INDEX, n_die])
+	var cfg_3b := load("res://src/data/machines/Extruder3B.tres") as ExtruderConfig
+	var ob3 : Dictionary = _trend("3b", "Output").get("operating_band", {})
+	var q50b := _p50("3b", "Output")
+	if cfg_3b == null or ob3.is_empty():
+		_check(false, "E1 Extruder3B.tres and the 3B output band load")
+		_finish(); return
+	for r in [float(ob3["low"]) / q50b, 1.0, float(ob3["high"]) / q50b]:
+		var m := ExtruderModel.new(cfg_3b.duplicate())
+		m.melt_temp = cfg_3b.melt_temp_setpoint
+		m.set_screw_rpm_setpoint(cfg_3b.screw_rpm_nominal * r)
+		m.tick(0.1, {"start_production": true})
+		for _i in 3000:   # 300 s, test_die_pressure_bar's own run to nominal
+			m.tick(0.1, {})
+		var qn : float = m.throughput_kg_h / cfg_3b.nominal_kg_per_h
+		var melt_factor : float = 1.0 + (cfg_3b.melt_temp_setpoint - m.melt_temp) \
+			* ExtruderModel.DIE_PRESSURE_BAR_PER_C / ExtruderModel.MELT_FIT_LEVEL_BAR
+		var got_die : float = m.die_plate_bar / cfg_3b.die_plate_nominal_bar
+		var want_die : float = pow(qn, n_die) * melt_factor
+		_check(m.state == ExtruderModel.State.RUNNING and absf(qn - r) < 0.02,
+			"E1 anti-vacuity: ExtruderModel 3B RUNNING at %.1f rpm carries %.3f × nominal (asked %.3f; state %s)"
+			% [m.screw_rpm, qn, r, m.get_state_name()])
+		_check(absf(got_die - want_die) < 1e-3,
+			"E2 ExtruderModel 3B die plate %.1f bar = %.0f × (Q %.3f)^%.2f × melt %.4f (%.4f vs %.4f); MP>MF stays linear, %.1f bar"
+			% [m.die_plate_bar, cfg_3b.die_plate_nominal_bar, qn, n_die, melt_factor, got_die, want_die, m.mp_after_laserfilter_bar])
 	_finish()
+
+## A standalone screw on `id`'s profile, fed `q_kg_h` at `rpm`, started at the
+## profile's melt midpoint and run 300 s (the section-B settle).
+func _settled_screw(id: String, q_kg_h: float, rpm: float):
+	var e = ExtruderScrewScript.new(NAN, 0.0)
+	e.configure_for_extruder(id)
+	e.melt_temp = e.melt_target_mid
+	e.set_rpm(rpm)
+	e.set_throughput(q_kg_h / 3600.0)
+	for _i in int(SETTLE_S / 0.1):
+		e.tick(0.1)
+	return e
+
+## The MFI LineFlow would publish for a settled screw at `q_kg_h`.
+func _mfi_of(e, q_kg_h: float) -> float:
+	var mfi = MfiProxyScript.new()
+	return float(mfi.update(q_kg_h, e.die_pressure, e.melt_temp))
+
+## One per-sample trend curve as [unix times, values] (src/data/plant/trends/).
+func _curve(file: String) -> Array:
+	var f := FileAccess.open("res://src/data/plant/trends/" + file, FileAccess.READ)
+	if f == null:
+		return [PackedFloat64Array(), PackedFloat64Array()]
+	var d = JSON.parse_string(f.get_as_text())
+	var ts := PackedFloat64Array()
+	var vs := PackedFloat64Array()
+	if typeof(d) == TYPE_DICTIONARY:
+		for i in (d["t_iso"] as Array).size():
+			ts.append(float(Time.get_unix_time_from_datetime_string(String(d["t_iso"][i]))))
+			vs.append(float(d["v"][i]))
+	return [ts, vs]
+
+## The plant's median main-motor speed at an output: each "Output" sample
+## paired with the nearest "Snelheid hoofdmotor" sample within RPM_PAIR_S,
+## running pairs only (output > 300 kg/h, rpm > 40: the fit script's cut), the
+## median over pairs within ±10 % of `q`. 0.0 when nothing pairs.
+## tools/audit/fit_kopdruk_vs_output.py prints the same medians.
+func _plant_rpm_at(line: String, q: float) -> float:
+	if not _pairs_cache.has(line):
+		var out := _curve("%s_output.json" % line)
+		var rpm := _curve("%s_snelheid_hoofdmotor.json" % line)
+		var pairs : Array = []
+		var tr : PackedFloat64Array = rpm[0]
+		for i in (out[0] as PackedFloat64Array).size():
+			var t : float = out[0][i]
+			var j : int = tr.bsearch(t)
+			var best := -1
+			for k in [j - 1, j]:
+				if k >= 0 and k < tr.size() and absf(tr[k] - t) <= RPM_PAIR_S \
+						and (best < 0 or absf(tr[k] - t) < absf(tr[best] - t)):
+					best = k
+			if best >= 0 and float(out[1][i]) > 300.0 and float(rpm[1][best]) > 40.0:
+				pairs.append(Vector2(out[1][i], rpm[1][best]))
+		_pairs_cache[line] = pairs
+	var near : Array = []
+	for p in _pairs_cache[line]:
+		if absf((p as Vector2).x - q) <= 0.1 * q:
+			near.append((p as Vector2).y)
+	if near.is_empty():
+		return 0.0
+	near.sort()
+	var n := near.size()
+	return float(near[n / 2]) if n % 2 == 1 else 0.5 * (float(near[n / 2 - 1]) + float(near[n / 2]))
 
 func _finish() -> void:
 	if _fails == 0:

@@ -187,10 +187,11 @@ Parse sweep after the fix: `Result: 465 ok, 0 fail`. Unused-parameter lint:
   `opzetband_3a3b → bunker`, and `shredder_1` has no in-edge. So fed film
   bypasses shredding. That is why `test_fallback_chains` H still leaves those
   two macros out: their remaining heads are not the plant's heads either.
-  The sort line is being re-wired in a parallel session (branch
-  `claude/unruffled-vaughan-c64987`, `test_sort_line_topology`,
-  `sort_line_topology_2026-09-25.md`). It was not merged when this was
-  written, and its fix was not measured here. The intake macro is still open.
+  The sort line was re-wired the same day in a parallel session (#306,
+  `test_sort_line_topology`, `sort_line_topology_2026-09-25.md`). With both
+  fixes merged, `line_sort` dumps as 17 nodes and 17 edges, and its only head
+  is `opzetband_3a3b[m0]`. The intake macro is unchanged: 17 nodes, with
+  `opzetband_3a3b`, `shredder_2` and `u_bay` as heads. It is still open.
 - **The intake switch belt in a real world.** Before the fix, the switch belt
   fed its twin: that inlet was the belt's own, 3.6 m from its outlet. In a
   world that also holds the VSS silos, the linker would have picked whichever

@@ -602,6 +602,13 @@ func _process_discovered_node(node3d: Node3D, id_ordinal: Dictionary, code_owner
 	# build path tagged them placed_object.
 	if node3d.is_in_group("waste_container") or node3d.is_in_group("floor_pile"):
 		return
+	# A macro entry marked {"flow": false} (BuildMode._macro_entry_in_flow) is
+	# placed but carries nothing, although its id is a flow machine elsewhere:
+	# the sort line's two reject belts. A sorter's reject leaves as a counted
+	# loss (poly_rejected), so as nodes they were feed heads the fallback wired
+	# into the line. Without this they come back on every rebuild.
+	if bool(node3d.get_meta("lf_placement_only", false)):
+		return
 	var id := String(node3d.get_meta("placeable_id"))
 	var prof := MachineFlow.profile(id)
 	if String(prof["role"]) == "none":
@@ -1257,6 +1264,11 @@ func _link() -> void:
 		for entry in outs:
 			if not (entry is Dictionary):
 				continue
+			# An unresolvable path keeps the source explicit and adds no edge:
+			# the machine it named was deleted (a live delete leaves the freed
+			# node's path; a reload stamps an EMPTY path with "missing_index",
+			# BuildMode._add_explicit_hole). Either way the source is a dead end,
+			# never handed to the geometry fallback.
 			var tpath = entry.get("path", null)
 			if tpath == null or not path_idx.has(tpath):
 				continue

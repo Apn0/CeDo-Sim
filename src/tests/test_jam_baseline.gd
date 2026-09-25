@@ -53,6 +53,8 @@ const PROTECT : Array[String] = [
 const WL_REAL    : String = "user://world_layout.json"
 const WL_SCRATCH : String = "user://__jambaseline___world_layout.json"
 const FIXTURE_GATE_LABEL : String = "3A/3B gate (jam-baseline fixture)"
+const GATE_MATCH_M : float = 0.5   # corner-point centre match: same gate, same spot
+var _gate_centre : Vector3 = Vector3.ZERO
 
 # ── Measured jam coordinates (see docs/BACKLOG_ultracode_2026-07-19.md) ───────
 # JAM 1 — the yard forklift drives at the plant and wedges against the perimeter
@@ -273,17 +275,27 @@ func _build_line_3a() -> void:
 			  [-244.100952148438, -4.19967889785767, 157.892044067383],
 			  [-244.134506225586, -8.84195232391357, 157.862808227539]],
 	}
-	var gate_ok : bool = bool(bm.call("_apply_layout_entry", gate_entry))
-	var gate_node : Node = null
-	for n in get_tree().get_nodes_in_group("placed_object"):
-		if n.has_meta("surface_data") 				and String((n.get_meta("surface_data") as Dictionary).get("type", "")) == "gate":
-			gate_node = n
+	# 2026-09-25 — the operator's world_layout.json holds this gate again, and he
+	# ruled it right ("that is the line 3A / line 3B gate through which the
+	# feeder can drive outside to the bale lot"). When the loaded world already
+	# stands a gate here in a carved opening, the suite uses THAT one; the
+	# in-memory fixture is built only on a world without it (a fresh clone, a
+	# scratch userdata), so there are never two leaves in one opening.
+	_gate_centre = _entry_centre(gate_entry["p"])
+	var si_before : String = JSON.stringify(WorldLayout.structure_items)
+	var gate_ok : bool = true
+	var gate_src : String = "the operator's own, loaded from world_layout.json"
+	var gate_node : Node = _gate_near(_gate_centre)
+	if gate_node == null or not gate_node.has_meta("opening_id"):
+		gate_ok = bool(bm.call("_apply_layout_entry", gate_entry))
+		gate_node = _gate_near(_gate_centre)
+		gate_src = "the in-memory fixture"
 	var opening : String = String(gate_node.get_meta("opening_id")) if gate_node != null and gate_node.has_meta("opening_id") else ""
 	_check(gate_ok and opening != "",
-		"DOORWAY fixture: the operator's 3A/3B gate is built and its wall opening carved (%s)"
-			% (opening if opening != "" else "NO CUT — the gate stands in front of an intact wall"))
-	_check((WorldLayout.structure_items as Array).is_empty(),
-		"DOORWAY fixture: WorldLayout.structure_items untouched (%d entries)" % (WorldLayout.structure_items as Array).size())
+		"DOORWAY: the 3A/3B gate stands in a carved wall opening (%s; %s)"
+			% [gate_src, opening if opening != "" else "NO CUT — the gate stands in front of an intact wall"])
+	_check(JSON.stringify(WorldLayout.structure_items) == si_before,
+		"DOORWAY: placing the gate leaves WorldLayout.structure_items as it was (%d entries)" % (WorldLayout.structure_items as Array).size())
 	# ── LEAK GUARD: the save that leaked, forced now instead of waiting for it ──
 	# Same call SaveCoordinator.save_game makes on its autosave timer. Two
 	# checks, and both are needed. With the real file unchanged, "no leak" and
@@ -296,9 +308,9 @@ func _build_line_3a() -> void:
 	_check(_real_layout_untouched(),
 		"LEAK GUARD: a world save with the fixture gate placed leaves the operator's world_layout.json byte-identical (md5 %s)"
 			% (_wl_real_md5 if _wl_real_md5 != "" else "none — no file"))
-	_check(_scratch_holds_fixture_gate(),
-		"LEAK GUARD: that save landed in %s and carries '%s' (the write happened, and went to scratch)"
-			% [WL_SCRATCH, FIXTURE_GATE_LABEL])
+	_check(_scratch_holds_gate_at(_gate_centre),
+		"LEAK GUARD: that save landed in %s and carries the 3A/3B gate (the write happened, and went to scratch)"
+			% WL_SCRATCH)
 	for _i in range(5):
 		await get_tree().process_frame
 	var machines : int = 0
@@ -478,8 +490,9 @@ func _test_jam3() -> void:
 	if leg.is_empty():
 		return
 	# npc-06/07 — same split as _drive_leg: the outdoor skip pose sits on the far
-	# side of the facade, and this world models NO doorways (structure_items is
-	# empty), so the router returns a 0-point route and no pilot can arrive. That
+	# side of the facade; on a world with NO doorway (no gate in structure_items
+	# and no fixture carved) the router returns a 0-point route and no pilot can
+	# arrive. That
 	# is a missing-door DATA gap, not a driving defect, so it is reported loudly
 	# instead of gating. It becomes a hard check the moment a gate is placed.
 	if not _route_exists(fl):
@@ -612,8 +625,8 @@ func _drive_leg(fl: Node3D, leg_name: String, start: Vector3, goal: Vector3) -> 
 	rec.queue_free()
 	# npc-06/07 — separate "the pilot failed" from "the world has nowhere to go".
 	# Both jam-1 and jam-3 targets sit on the far side of the building facade, and
-	# this world models NO doorways at all (world_layout structure_items is empty),
-	# so the router correctly returns a 0-point route. No code change can make a
+	# a world with NO doorway at all (no gate in structure_items and no fixture
+	# carved) makes the router correctly return a 0-point route. No code change can make a
 	# vehicle cross a solid wall, and gating on it would leave a permanently red
 	# harness step — which trains everyone to ignore the harness, the same damage
 	# a vacuous green does from the other side. The WEDGE assertions stay hard;
@@ -748,14 +761,35 @@ func _real_layout_untouched() -> bool:
 	var now : String = FileAccess.get_md5(WL_REAL) if FileAccess.file_exists(WL_REAL) else ""
 	return now == _wl_real_md5
 
-func _scratch_holds_fixture_gate() -> bool:
+## By POSITION, not label: the gate may be the operator's own entry (whatever
+## he labels it) or the fixture; both stand at the same corner points.
+func _scratch_holds_gate_at(centre: Vector3) -> bool:
 	var parsed : Variant = AtomicFile.read_json(WL_SCRATCH, TYPE_DICTIONARY)
 	if not (parsed is Dictionary):
 		return false
 	for e in (parsed as Dictionary).get("structure_items", []):
-		if e is Dictionary and String((e as Dictionary).get("label", "")) == FIXTURE_GATE_LABEL:
+		if e is Dictionary and String((e as Dictionary).get("type", "")) == "gate" \
+				and _entry_centre((e as Dictionary).get("p", [])).distance_to(centre) < GATE_MATCH_M:
 			return true
 	return false
+
+## Mean of a surface entry's corner points.
+func _entry_centre(pts: Array) -> Vector3:
+	var c := Vector3.ZERO
+	for p in pts:
+		c += Vector3(float(p[0]), float(p[1]), float(p[2]))
+	return c / maxf(1.0, float(pts.size()))
+
+## The placed gate standing at `centre` (the operator's or the fixture), or null.
+func _gate_near(centre: Vector3) -> Node:
+	for n in get_tree().get_nodes_in_group("placed_object"):
+		if not n.has_meta("surface_data"):
+			continue
+		var sd : Dictionary = n.get_meta("surface_data")
+		if String(sd.get("type", "")) == "gate" \
+				and _entry_centre(sd.get("p", [])).distance_to(centre) < GATE_MATCH_M:
+			return n
+	return null
 
 ## The scratch layout is this suite's own file. AtomicFile.delete takes its
 ## .tmp and .bak with it.
