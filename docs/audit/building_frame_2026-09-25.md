@@ -169,3 +169,19 @@ before chasing it.
   isolated copy only. Exit 139 is the known teardown segfault, after the verdict.
 - `probe_tagsnap_mech` (mode A, line 3C at the new bf(4,44)): ran to its
   verdict (`estop=false`, doseersilo buffer 217.4 kg), 0 `SCRIPT ERROR`.
+
+## 9. Re-measured on `main`
+
+`main` moved while this was measured (#305 merged the helper, and #306–#310
+landed), and three files overlapped: CLAUDE.md, `test_line3c_identity.gd` and
+`test_tag_snapshot.gd`. Both suites now count only flow entries, after #307. The
+merge of `9b97864` was clean, and it added no duplicate `var`s in either suite.
+Measured after `--import`:
+- parse sweep: 476 ok, 0 fail;
+- all 12 suites: the same ok counts as §4, 0 fail, 0 `SCRIPT ERROR`;
+- `test_line3c_identity`: "32 LineFlow machines for 32 flow SEQ entries (37
+  SEQ entries in all)";
+- jam: jam1 159.0 s, jam3 96.0 s, 543 polygons.
+
+No full `run.sh` was run: the change touches only the 17 files above, and
+every suite among them is in this table.
