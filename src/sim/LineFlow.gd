@@ -181,6 +181,15 @@ var feed_enabled : bool = true
 # Auto-clears once the fault is relieved (crew) AND the downstream has drained.
 const OVERLOAD_KG : float = 250.0          # ~2× the crew jam threshold (BUF-300 = 120)
 var _estop_active : bool = false
+## Machines an extruder's PLC runs instead of the line's (operator ruling
+## 2026-09-25, docs/plant/operator_rulings_2026-09-25.md §I4): the extruder
+## itself and its natraject (laserfilter, heetafslag, ontwaterzeef,
+## centrifuge, weegschaal). body instance id -> {"owner": owner instance id,
+## "run": bool}. Keyed by the placed body, so it survives rebuild(); an entry
+## whose owner is gone is ignored and the line's PLC governs again.
+var _owned : Dictionary = {}
+## body instance id -> _nodes index, rebuilt on a miss (see _nd_for_body).
+var _body_index : Dictionary = {}
 var _estop_fault_order : int = -1          # flow-order position of the fault
 var _estop_fault_node  : int = -1          # node index of the fault
 
@@ -440,6 +449,13 @@ func rebuild() -> void:
 	# Consume the snapshot — one-shot for this rebuild. Subsequent reads
 	# (HMI placement scans, per-tick code) must see an empty dict.
 	_restore_state = {}
+	# Every extruder claims its own flow node and its natraject NOW (rulings
+	# 2026-09-25 §I4), not on its next SimTick: otherwise whether the line's
+	# PLC or the extruder runs those machines for the first ticks depends on
+	# whether a SimTick lands before them (a suite that ticks LineFlow in a
+	# tight loop would get either, run to run).
+	if is_inside_tree():
+		get_tree().call_group("extruder_machine", "on_line_flow_rebuilt", self)
 	print("[LineFlow] %d machines, %d links (transport physicalized)" % [_nodes.size(), _edges.size()])
 
 ## #218 — Explicit shift telemetry reset. The shift-reset button on the
@@ -2066,6 +2082,103 @@ func _resolve(handle: String) -> Dictionary:
 func code_conflicts() -> Array[Dictionary]:
 	return _code_conflicts
 
+## ── Extruder-owned machines (operator ruling 2026-09-25, §I4) ─────────────
+## An extruder claims the machines its PLC runs (itself and its natraject) and
+## commands each one on or off; the line's PLC no longer powers them. A claim
+## held by another live owner is refused. Returns whether `owner` holds it.
+func claim_node(body: Node3D, owner: Object) -> bool:
+	if body == null or not is_instance_valid(body) or owner == null:
+		return false
+	var bid := body.get_instance_id()
+	var own : Dictionary = _owned.get(bid, {})
+	if not own.is_empty() and int(own["owner"]) != owner.get_instance_id() 			and is_instance_id_valid(int(own["owner"])):
+		return false
+	if own.is_empty() or int(own["owner"]) != owner.get_instance_id():
+		_owned[bid] = {"owner": owner.get_instance_id(), "run": false}
+	return true
+
+## Run command for a claimed machine. Ignored unless `owner` holds the claim.
+func command_node(body: Node3D, owner: Object, run: bool) -> void:
+	if body == null or not is_instance_valid(body) or owner == null:
+		return
+	var own : Dictionary = _owned.get(body.get_instance_id(), {})
+	if not own.is_empty() and int(own["owner"]) == owner.get_instance_id():
+		own["run"] = run
+
+## Drop every claim `owner` holds; those machines go back to the line's PLC.
+func release_nodes(owner: Object) -> void:
+	if owner == null:
+		return
+	var oid := owner.get_instance_id()
+	for bid in _owned.keys():
+		if int(_owned[bid]["owner"]) == oid:
+			_owned.erase(bid)
+
+## The live owner of a machine's claim, or null.
+func node_owner(body: Node3D) -> Object:
+	if body == null or not is_instance_valid(body):
+		return null
+	var own : Dictionary = _owned.get(body.get_instance_id(), {})
+	if own.is_empty() or not is_instance_id_valid(int(own["owner"])):
+		return null
+	return instance_from_id(int(own["owner"]))
+
+## What an owner reads about one machine: whether it is in the flow graph,
+## whether it may be started (not tripped, choked, in HAND or held off by the
+## line's e-stop) and why not, and whether it is powered and spun up.
+func natraject_status(body: Node3D) -> Dictionary:
+	var ni := _nd_for_body(body)
+	if ni < 0:
+		return {"found": false, "available": false, "why": "niet gevonden",
+			"powered": false, "spin": 0.0}
+	var nd : Dictionary = _nodes[ni]
+	var why := ""
+	if _is_mol_tripped(nd):
+		why = "motor uitgevallen (thermisch)"
+	elif bool(nd.get("choked", false)):
+		why = "verstopt"
+	elif bool(nd.get("hand_mode", false)):
+		why = "staat in HAND"
+	elif _estop_active and _plc_stage_node.find(ni) <= _estop_fault_order and _plc_stage_node.find(ni) >= 0:
+		why = "noodstop lijn actief"
+	return {
+		"found": true,
+		"available": why == "",
+		"why": why if why != "" else "gestopt",
+		"powered": bool(nd.get("powered", false)),
+		"spin": float(nd.get("spin", 0.0)),
+		"key": String(nd.get("key", "")),
+	}
+
+## The LineFlow node dict for a placed body, or {} when it is not a flow node.
+func node_for_body(body: Node3D) -> Dictionary:
+	var ni := _nd_for_body(body)
+	return _nodes[ni] if ni >= 0 else {}
+
+## Every flow node's placed body with its placeable id, for owners to pick
+## their machines from: [{"body": Node3D, "id": String}].
+func flow_bodies() -> Array:
+	var out : Array = []
+	for nd in _nodes:
+		var b = nd.get("node", null)
+		if b != null and is_instance_valid(b):
+			out.append({"body": b, "id": String(nd.get("id", ""))})
+	return out
+
+func _nd_for_body(body: Node3D) -> int:
+	if body == null or not is_instance_valid(body):
+		return -1
+	var bid := body.get_instance_id()
+	var ni : int = int(_body_index.get(bid, -1))
+	if ni >= 0 and ni < _nodes.size() and _nodes[ni].get("node", null) == body:
+		return ni
+	_body_index.clear()
+	for i in _nodes.size():
+		var b = _nodes[i].get("node", null)
+		if b != null and is_instance_valid(b):
+			_body_index[(b as Object).get_instance_id()] = i
+	return int(_body_index.get(bid, -1))
+
 ## Public HMI surface — every setter quietly noops on an unknown handle so the
 ## panel can be opened before the line has been built without crashing.
 func set_machine_hand_mode(id: String, on: bool) -> void:
@@ -2637,6 +2750,17 @@ func _tick_plc_power_downstream(delta: float) -> void:
 				nd_t["powered"] = true
 			else:
 				nd_t["powered"] = plc_says
+	# EXTRUDER-OWNED machines (operator ruling 2026-09-25, §I4): the line's PLC
+	# does not run an extruder or its natraject; the extruder's start sequence
+	# does (ExtruderStartSequence via ExtruderMachine). HAND, the trip latches
+	# and the e-stop below still override it, as they override the PLC.
+	for nd_o in _nodes:
+		var body_o = nd_o.get("node", null)
+		if body_o == null or not is_instance_valid(body_o):
+			continue
+		var own : Dictionary = _owned.get((body_o as Object).get_instance_id(), {})
+		if not own.is_empty() and is_instance_id_valid(int(own["owner"])):
+			nd_o["powered"] = bool(own["run"])
 	# HMI HAND-mode override (#new-hmi): when the operator has switched a machine to
 	# HAND on the per-machine HMI screen, the PLC + safeguards are BYPASSED for that
 	# machine — `manual_on` directly drives powered. Operator's responsibility (the

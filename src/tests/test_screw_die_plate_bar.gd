@@ -210,12 +210,44 @@ func _run() -> void:
 	var feed : Dictionary = {}
 	for id in ex_by_id:
 		feed[id] = float(((ex_by_id[id] as Dictionary)["ex"]).nominal_throughput_kg_s)
+	# The extruders run their own LineFlow node (operator rulings 2026-09-25
+	# §I4, docs/plant/operator_rulings_2026-09-25.md): the line's start no
+	# longer makes an extruder that was never started convey, so every extruder
+	# brain is started the way a player does it (hot barrel, the start button,
+	# its natraject first) and stepped with LineFlow. Measured 2026-09-25
+	# without this: 3A and 3B read 0 kg/h and 0.0 bar. 3C's extruder_screw has
+	# no brain and runs on the line's PLC as before.
+	var st : Node = get_node("/root/SimTick")
+	var brains : Array = get_tree().get_nodes_in_group("extruder_machine")
+	for b in brains:
+		var cb := Callable(b, "_on_sim_tick")
+		if st.sim_tick.is_connected(cb):
+			st.sim_tick.disconnect(cb)
+		var bmod : ExtruderModel = b.get("model")
+		bmod.melt_temp = bmod.config.melt_temp_setpoint
+		(b.get("_pending") as Dictionary)["start_production"] = true
+	var running : int = 0
+	for _k in range(300):
+		for b in brains:
+			b.call("_on_sim_tick", 0.1)
+		lf.call("tick", 0.1)
+		running = 0
+		for b in brains:
+			if (b.get("model") as ExtruderModel).state == ExtruderModel.State.RUNNING:
+				running += 1
+		if running == brains.size():
+			break
+	_check(brains.size() >= 2 and running == brains.size(),
+		"B2b every extruder brain (%d) is started through its natraject before the feed (%d RUNNING)"
+		% [brains.size(), running])
 	var steps : int = int(SETTLE_S / 0.1)
 	for _s in steps:
 		for id in ex_by_id:
 			var m : float = float(feed[id]) * 0.1
 			((ex_by_id[id] as Dictionary)["in"] as MaterialBatch).add(MaterialBatch.new(m,
 				m / LineFlow.FEED_DENSITY, LineFlow.DEFAULT_COMP.duplicate(), "test", 0.0, 0.0))
+		for b in brains:
+			b.call("_on_sim_tick", 0.1)
 		lf.call("tick", 0.1)
 
 	var spec := QaSpecScript.default_ldpe()

@@ -22,6 +22,12 @@ const F_FILTER_PRESSURE_HI  := { "nr": 5503, "msg": "Filter-massadruk te hoog (�
 const F_COOLING_FLOW_LOW    := { "nr": 4101, "msg": "Koelwater-debiet te laag" }
 const F_VACUUM_PUMP_FAIL    := { "nr": 4201, "msg": "Vacuümpomp storing" }
 const F_PELLET_KNIFE_WEAR   := { "nr": 4301, "msg": "Pelletizer-messen versleten" }
+## The start button's latched alarm: a start refused by a failed check, a start
+## aborted, or a natraject machine that stopped under a running screw
+## (operator rulings 2026-09-25, rulings file §I1/§I5/§I6). A SIM code in the
+## emulator tier: no photo shows the plant's number or text for it. The live
+## text (which machine, why) replaces "msg" when it is raised.
+const F_NATRAJECT_START     := { "nr": 4401, "msg": "Startblokkering natraject" }
 
 ## Documented BluPort alarms — VERBATIM from the LIJN 3C Storingstabel photo
 ## (hmi_reference.md:59-65, file 3C_errors_screen.png, GENUINE). These are the
@@ -136,6 +142,12 @@ static func detect_active(extruder_model : Object, laser_filter : Object = null)
 			out.append(F_LF_UPSTREAM_OVERPRESSURE)
 		elif fr == "pelletiser_meltdruk_160bar" and not out.has(F_PEL_MELT_PRESSURE_HI):
 			out.append(F_PEL_MELT_PRESSURE_HI)
+
+	# The start button's latched alarm (4401), up until it is reset on the HMI.
+	if "start_seq" in extruder_model and extruder_model.start_seq != null:
+		var sa : String = String(extruder_model.start_seq.alarm)
+		if sa != "":
+			out.append({"nr": int(F_NATRAJECT_START["nr"]), "msg": sa})
 
 	# Filter pressure high — laser filter ΔMP (psi) above a comfortable bar
 	if "primary_lf" in extruder_model and extruder_model.primary_lf != null:

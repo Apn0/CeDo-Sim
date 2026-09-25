@@ -53,6 +53,13 @@ var _die_chip_hot  : PanelContainer = null
 # (screw_rpm_min..max).
 var _rpm_slider : HSlider = null
 var _rpm_readout : Label = null
+# The start button (operator rulings 2026-09-25, §I1-§I7): ring lamp, what the
+# start sequence does or why it is blocked, the alarm reset (on the HMI, never
+# at the machine) and the hidden "natraject" setting.
+var _start_lamp : Label = null
+var _start_text : Label = null
+var _start_reset : Button = null
+var _natraject_toggle : CheckButton = null
 
 func _ready() -> void:
 	custom_minimum_size = Vector2(320, 0)
@@ -78,6 +85,7 @@ func bind(model: Object) -> void:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 4)
 	add_child(box)
+	_add_start_row(box)
 	_add_rpm_row(box)
 	box.add_child(HSeparator.new())
 	var header := Label.new()
@@ -111,6 +119,76 @@ func bind(model: Object) -> void:
 	die_row.add_child(_die_chip_hot)
 	# Initial paint so the panel doesn't flash all-dark for one frame.
 	_refresh_die_face_chips()
+
+## "STARTKNOP": the right white ring as a lamp, the sequence / alarm line, the
+## alarm reset and the natraject setting. Only for a model with a start_seq.
+func _add_start_row(box: VBoxContainer) -> void:
+	_start_lamp = null
+	_start_text = null
+	_start_reset = null
+	_natraject_toggle = null
+	if _model.get("start_seq") == null:
+		return
+	var header := Label.new()
+	header.text = "STARTKNOP  (rechts, witte ring)"
+	header.add_theme_font_size_override("font_size", 13)
+	box.add_child(header)
+	var row := HBoxContainer.new()
+	row.name = "StartRow"
+	row.add_theme_constant_override("separation", 8)
+	box.add_child(row)
+	_start_lamp = Label.new()
+	_start_lamp.name = "StartRingLamp"
+	_start_lamp.add_theme_font_size_override("font_size", 18)
+	row.add_child(_start_lamp)
+	_start_text = Label.new()
+	_start_text.name = "StartStatus"
+	_start_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_start_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_start_text.add_theme_font_size_override("font_size", 12)
+	row.add_child(_start_text)
+	var row2 := HBoxContainer.new()
+	row2.add_theme_constant_override("separation", 8)
+	box.add_child(row2)
+	_start_reset = Button.new()
+	_start_reset.name = "StartAlarmReset"
+	_start_reset.text = "ALARM RESET"
+	_start_reset.pressed.connect(func():
+		var seq = _model.get("start_seq") if _model != null else null
+		if seq != null:
+			seq.reset_alarm()
+		_refresh_start_row()
+	)
+	row2.add_child(_start_reset)
+	_natraject_toggle = CheckButton.new()
+	_natraject_toggle.name = "NatrajectToggle"
+	_natraject_toggle.text = "Natraject"
+	_natraject_toggle.tooltip_text = "Diepe instelling: UIT = geen controle en geen start van het natraject, alleen de schroef. Niet voor normaal bedrijf."
+	_natraject_toggle.toggled.connect(func(on: bool):
+		var seq = _model.get("start_seq") if _model != null else null
+		if seq != null:
+			seq.natraject_enabled = on
+		_refresh_start_row()
+	)
+	row2.add_child(_natraject_toggle)
+	box.add_child(HSeparator.new())
+	_refresh_start_row()
+
+func _refresh_start_row() -> void:
+	if _start_lamp == null or _model == null or not is_instance_valid(_model):
+		return
+	var seq = _model.get("start_seq")
+	if seq == null:
+		return
+	var lit : bool = bool(seq.led_lit())
+	_start_lamp.text = "●" if lit else "◯"
+	_start_lamp.add_theme_color_override("font_color",
+		Color(0.97, 0.97, 1.0) if lit else Color(0.30, 0.31, 0.34))
+	_start_text.text = String(seq.status_text())
+	_start_text.add_theme_color_override("font_color",
+		Color(1.0, 0.45, 0.35) if String(seq.alarm) != "" else Color(0.85, 0.88, 0.92))
+	_start_reset.disabled = String(seq.alarm) == ""
+	_natraject_toggle.set_pressed_no_signal(bool(seq.natraject_enabled))
 
 ## "SCHROEFTOERENTAL": the rpm setpoint slider plus a setpoint / actual readout.
 ## Only built for a model that has the setpoint API and a config.
@@ -260,6 +338,7 @@ func _process(_dt: float) -> void:
 	if _die_chip_cold != null:
 		_refresh_die_face_chips()
 	_refresh_rpm_row()
+	_refresh_start_row()
 
 ## Refresh the displayed values from the model (e.g. after another caller
 ## changed a setpoint via the API). Doesn't fire value_changed.
@@ -274,3 +353,4 @@ func refresh_from_model() -> void:
 		_readouts[i].text = "%.0f °C" % v
 	_refresh_die_face_chips()
 	_refresh_rpm_row()
+	_refresh_start_row()

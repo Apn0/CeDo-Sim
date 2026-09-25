@@ -1339,7 +1339,33 @@ func _on_reset_faults() -> void:
 					break
 			if in_scope2:
 				_line_flow.call("reset_trip", String(nd2d.get("key", nid2)))
+	# 2026-09-25 — RESETTEN also resets the extruder start button's latched
+	# alarm (a refused start, an aborted one, a natraject trip) on this panel's
+	# lines. The plant resets it on the HMI, never at the machine (operator,
+	# rulings file §I6).
+	reset_extruder_start_alarms()
 	_refresh()
+
+## Reset the start alarm of every extruder this panel serves: an extruder
+## panel's own lines (a panel whose tokens do not name the extruder leaves it
+## alone). Returns how many were reset.
+func reset_extruder_start_alarms() -> int:
+	var tokens : Array = _scope.get("tokens", []) if not _scope.is_empty() else []
+	if not tokens.is_empty() and not tokens.has("extruder"):
+		return 0
+	var lines : Array = _scope.get("lines", []) if not _scope.is_empty() else []
+	var n := 0
+	for em in _extruder_machines:
+		if em == null or not is_instance_valid(em) or not ("model" in em) or em.model == null:
+			continue
+		var lid := _extruder_line_id(em).to_lower()
+		if not lines.is_empty() and not lid.is_empty() and not lines.has(lid):
+			continue
+		var seq = em.model.get("start_seq")
+		if seq != null and String(seq.alarm) != "":
+			seq.reset_alarm()
+			n += 1
+	return n
 
 # =============================================================================
 # REFRESH (4 Hz) — only the active screen's dynamic widgets
