@@ -127,6 +127,11 @@ Mutation proofs are in §7.
 
 ### The open model-form question: the plant's die-side pressure does not follow output
 
+> **Answered 2026-09-25, see §10.** The 96 / 227 bar below came from a probe
+> that held the screw at 110 rpm while the output more than doubled. Both
+> models now carry a power-law die, P ∝ Q^0.35, by operator ruling
+> (`docs/plant/operator_rulings_2026-09-25.md`).
+
 `tools/audit/fit_kopdruk_vs_output.py` pairs every kopdruk sample with the
 nearest output and rpm samples from the downsampled WinCC curves (running
 samples only):
@@ -224,3 +229,206 @@ rework): parse sweep `Result: 454 ok, 0 fail`; `test_screw_die_plate_bar`
 PASS (36 ok); `test_extruder_screw` 13 ok; `test_mfi_proxy` 20 ok;
 `test_die_pressure_bar` PASS (20 ok, main's revision); `test_extruder_melt_pressures`
 PASS (44 ok); `test_qa_spec` PASS; `lint_unused_params` 0.
+
+## 10. The model-form question, answered (2026-09-25)
+
+Operator rulings, with his words and what the data could and could not settle:
+`docs/plant/operator_rulings_2026-09-25.md`. Every trend number below is
+printed by `tools/audit/fit_kopdruk_vs_output.py`.
+
+### 10.1 The gap was the probe
+
+§5's 96.0 / 143.7 / 227.1 bar came from the old section D. It fed a 3B screw
+534, 799 and 1263 kg/h while holding it at **110 rpm**. The plant does not run
+that way. Pair each output sample with the nearest main-motor sample and the
+plant turns **60 / 80 / 120 rpm** at those three outputs (3A: 60 / 88 / 110 at
+595 / 908 / 1082 kg/h). The old law took the viscosity at the SCREW's shear
+rate, which falls as rpm^(n−1). Along the plant's own rpm path it therefore
+read roughly Q^0.35 already: **3A 111.6 / 128.2 / 128.4 bar, 3B 120.2 / 143.7 /
+170.0 bar**, against kopdruk bands of 103–173 and 106–166. These are the D1
+lines of mutation M1 below, which puts the old law back into the new suite.
+
+§5's other claim, that "with P ∝ η·Q, Q cancels in Q / (P·η)", held only at a
+fixed rpm. The η in the die was the screw's, so along the plant's path the MFI
+climbed as rpm^0.65.
+
+### 10.2 The ruling
+
+- Why the plant is flat: *"operator-specific, could even be a test experiment
+  from the office to run without head fitters inzstalled"*. So the trend is a
+  band to stay inside, not a law to fit. CLAIMED. The downsampled curves can
+  neither confirm nor rule out the packs (rulings doc §3).
+- What the MFI should key on: *"leave as low-priority for the beta version"*.
+- ExtruderModel: *"Both models"*.
+- Which law, asked after he saw 10.1: *"P ∝ Q^0.35"*, with MfiProxy taking
+  only the matching exponent.
+
+No melt pump explains it on 3A/3B: `operator_rulings_2026-08-31.md` §1 says
+lines 1, 3A and 3B have none. `operator_rulings_2026-09-24.md` §2 puts "the MPU
+or melt pump" upstream of the kopfilter. That contradiction is still open.
+
+### 10.3 What changed
+
+| file | change |
+|---|---|
+| `ExtruderScrew.gd` | `die_pressure = die_plate_nominal · K(T)/K(T_mid) · (Q/Q_nom)^n`, n = `POWER_LAW_N`. K(T) is the melt's viscosity at ONE shear rate (the nominal screw's), so only the melt temperature moves it; the screw's rpm enters only through the heat it puts in the melt |
+| `ExtruderModel.gd` | `DIE_FLOW_INDEX` = `ExtruderScrew.POWER_LAW_N` (preloaded, one number). `_set_melt_pressures(throughput_norm, melt_factor)`: the die plate is `nominal · throughput_norm^n · melt_factor`; MP>MF stays linear in throughput |
+| `MfiProxy.gd` | `MFI = MFI_GAIN · Q^n / (P · η(T))`, `DIE_FLOW_INDEX` from the screw, `MFI_GAIN` re-solved so the anchor still reads exactly 1.0. Nothing else: the MFI is the operator's "low priority" |
+| `test_screw_die_plate_bar` | D gated (D0–D3), E added (E0–E2): 34 → 53 checks; 55 after merging `main`, whose A4b (#285) came in beside them |
+| `test_extruder_screw` | the "thinner melt" check now requires the hotter melt it names; + "at a matched melt, rpm alone does not move the die plate", + "2x flow → 2^n": 13 → 15 |
+| `test_mfi_proxy` | proportions in Q^n; + "2x flow at the power-law die's 2^n pressure → same MFI"; + "Q exponent == `ExtruderScrew.POWER_LAW_N`" (see M3): 20 → 22 |
+| `fit_kopdruk_vs_output.py` | second half: melt vs output, plant rpm per output, sawtooth check |
+
+### 10.4 Measured after
+
+`test_screw_die_plate_bar`, **PASS (53 ok, 0 fail)**, 0 SCRIPT ERROR lines:
+
+| line | output (band low / p50 / high) | rpm driven (the plant's, onto `rpm_nominal`) | die plate | kopdruk band | at the nominal rpm (info) |
+|---|---|---|---|---|---|
+| 3A | 595 / 908 / 1082 kg/h | 64.8 / 95.0 / 118.8 | **114.6 / 128.2 / 132.4 bar** | 103–173 | 110.6 / 128.2 / 136.3 |
+| 3B | 534 / 799 / 1263 kg/h | 82.5 / 110.0 / 165.0 | **129.5 / 143.7 / 164.3 bar** | 106–166 | 124.8 / 143.7 / 168.7 |
+
+- D2: at one melt the die plate's high/low ratio is (Q ratio)^0.35 (3A 1.2328,
+  3B 1.3516; a linear die reads 1.8185 / 2.3652).
+- D3: at one melt the MFI does not follow output (3A 1.3094, 3B 0.9303 at both
+  band edges).
+- E: ExtruderModel 3B, run to RUNNING at 73.5 / 110.0 / 173.9 rpm, carries
+  0.668 / 1.000 / 1.581 × nominal and reads a die plate of 121.6 / 140.0 /
+  164.3 bar = 140 × Q^0.35. MP>MF stays linear: 16.7 / 25.0 / 39.5 bar.
+- The nominal points of sections B and C did not move (3A 128.2 bar, 3B 143.7
+  bar). 3A's nominal MFI went 1.42 → 1.31, because 3A's nominal output (908)
+  is not the 799 kg/h anchor. It still grades ACCEPT.
+
+### 10.5 Mutation proofs
+
+Each mutation was applied alone to the fixed tree and the suites were run.
+The files were then restored from saved copies, and md5 was checked identical
+after every one. Every run printed its verdict with 0 `^SCRIPT ERROR` lines.
+
+| # | mutation | `test_screw_die_plate_bar` | unit suite | what went red |
+|---|---|---|---|---|
+| M1 | the old screw law, η(screw rpm)/η_nom · Q | 48 ok, **5 fail** | `test_extruder_screw` 13 ok, **2 fail** | D1 3B top 170.0 bar; D2 ×2 (ratios 1.8185 / 2.3652); D3 ×2 (the new proxy on the old die: MFI 1.72 → 1.17 on 3A); matched melt 119.7 vs 270.2 bar; 2x flow → x2.0000 |
+| M2 | linear exponent, temperature-only K | 46 ok, **7 fail** | `test_extruder_screw` 14 ok, **1 fail** | D1 ×3 (3A low 87.0, 3B low 99.7, 3B high 221.3 bar); D2 ×2; D3 ×2; 2x flow |
+| M3 | MfiProxy not changed with the die (`DIE_FLOW_INDEX` 1.0) | 51 ok, **2 fail** | `test_mfi_proxy` 21 ok, **1 fail** | D3 ×2 (MFI 1.08 → 1.59 on 3A, 0.72 → 1.25 on 3B across the band); the new "Q exponent == the die's n" check |
+| M4 | ExtruderModel's die plate linear in Q | 51 ok, **2 fail** | — | E2 ×2 (93.6 / 221.3 bar instead of 121.6 / 164.3) |
+| M5 | ExtruderModel's index drifts to 0.5 | 50 ok, **3 fail** | — | E0; E2 ×2 |
+| M6 | test-side: section D at the fixed nominal rpm | 52 ok, **1 fail** | — | D1 3B top 168.7 bar. D1 is not vacuous: along the plant's rpm it is the law that keeps 3B inside the band |
+
+M3's first run against `test_mfi_proxy` stayed **21 ok, 0 fail**. Its proportion
+checks read the exponent from the proxy itself, so they follow any exponent.
+The check pinning it to `ExtruderScrew.POWER_LAW_N` was added for that reason,
+and M3 then turned it red (row above).
+
+### 10.6 Verification run
+
+On the fixed tree (`6b28207` + this change), 2026-09-25 02:39–03:01, one suite
+at a time. Every line below is the suite's own verdict, with 0 `^SCRIPT ERROR`
+lines in every log.
+
+| step | result |
+|---|---|
+| parse sweep | `Result: 454 ok, 0 fail`, `RESULT: PASS`. No SCRIPT ERROR line names a changed file |
+| `test_screw_die_plate_bar` | PASS (53 ok, 0 fail) |
+| `test_extruder_screw` | 15 ok, 0 fail |
+| `test_mfi_proxy` | 22 ok, 0 fail |
+| `test_die_pressure_bar` | PASS (20 ok, 0 fail); exit 139 in teardown, after the verdict. It also reads 20 ok on `6b28207` with this change reverted: §9's 23 is from before #278's merge rewrote the suite |
+| `test_extruder_melt_pressures` | PASS (44 ok, 0 fail) |
+| `test_extruder_brain_wired` | PASS (24 ok, 0 fail) |
+| `test_qa_loop` | 14 ok, 0 fail, 0 skip. Its sample grades REGRADE by design: the suite feeds a NaN MFI (`mfi_unavailable`, `polymer_impure`) |
+| `test_qa_spec` | 24 ok, 0 fail, 0 skip |
+| `test_qa_terminal` | Failures: 0 |
+| `test_tag_snapshot` | 28 ok, 0 fail, 1 skip. The skip is data-gated, as in §9 |
+| `lint_unused_params` | 449 files, 0 unused parameters |
+
+`user://world_layout.json` hashed `e046af7d…` (the operator's kept file) before
+and after, and every MainWorld suite first checked that hash.
+
+**After merging `origin/main` (`64921ff`: #284's melt-following dMP and #285's
+A4b).** The conflict in `ExtruderModel` was resolved to the two-argument
+`_set_melt_pressures(throughput_norm, melt_viscosity_factor)`, which uses #284's
+new property. Its one-argument call would not have parsed against this change.
+Results: parse sweep `454 ok, 0 fail`; `test_screw_die_plate_bar` PASS (55 ok);
+`test_extruder_screw` 15 ok; `test_mfi_proxy` 22 ok; `test_die_pressure_bar`
+PASS (21 ok); `test_extruder_melt_pressures` PASS (53 ok, main's dMP suite);
+`test_extruder_brain_wired` PASS (24 ok); `test_qa_loop` 14 ok; `test_qa_terminal`
+0 failures; `lint_unused_params` 0; `test_qa_spec` 24 ok; `test_tag_snapshot`
+28 ok, 1 data-gated skip. Every log had 0 `^SCRIPT ERROR` lines. The last two
+first waited out another session's `test_jam_baseline`, and
+`world_layout.json` hashed `e046af7d…` before and after.
+
+**After merging `origin/main` again (`5afb880`: #287/#288 machine sounds, #289
+the 3A/3B silo tails, #290 the ramp pressures).** #290's shared helper
+`_set_melt_pressures_from_flow()` arrived with a one-argument call. On this
+branch that is a parse error, and it was changed to
+`_set_melt_pressures(throughput_norm, melt_viscosity_factor)`, the resolution
+#290's session and this one agreed on. Results: parse sweep `462 ok, 0 fail`;
+`test_extruder_ramp_pressures` PASS (21 ok), and its own info line reads
+`die plate ∝ q^0.350 x melt (ExtruderModel.DIE_FLOW_INDEX)`, so it ran on
+this law; `test_extruder_silo_chain` PASS (41 ok); `test_screw_die_plate_bar`
+PASS (55 ok); `test_extruder_screw` 15 ok; `test_die_pressure_bar` PASS (21 ok);
+`test_extruder_melt_pressures` PASS (53 ok); `test_extruder_brain_wired` PASS
+(24 ok); `test_qa_loop` 14 ok; `test_qa_spec` 24 ok; `test_tag_snapshot` 28 ok,
+1 data-gated skip; `test_mfi_proxy` 22 ok; `test_qa_terminal` 0 failures;
+`lint_unused_params` 0 of 457 files. 0 `^SCRIPT ERROR` lines, and
+`world_layout.json` hashed `e046af7d…` before and after. Merge #288 had
+replaced two CLAUDE.md index rows (this doc's and
+`operator_rulings_2026-09-24.md`) with its AUDIO row; this merge keeps all
+of them.
+
+**And once more (`d29ceb5`, #291–#297: the coast-down torque, the cycle-guard
+swap, macro edges that survive a reload).** `main` had lost
+`test_extruder_ramp_pressures` from `run.sh`: #292 and then #295 dropped it
+while resolving conflicts, and the test file stayed in the tree. It is back in
+the loop. #296 had also swapped the AUDIO index row out for the two rows #288
+removed; all of them are kept. Results on the merged tree: parse sweep
+`468 ok, 0 fail`; `test_extruder_ramp_pressures` 21 ok; `test_extruder_stop_torque`
+21 ok; `test_extruder_silo_chain` 41 ok; `test_screw_die_plate_bar` 55 ok (the
+cycle-guard rewiring moved none of its numbers); `test_extruder_screw` 15 ok;
+`test_die_pressure_bar` 21 ok; `test_extruder_melt_pressures` 53 ok;
+`test_extruder_brain_wired` 26 ok; `test_qa_loop` 16 ok; `test_qa_spec` 24 ok;
+`test_tag_snapshot` 30 ok, 1 data-gated skip; `test_mfi_proxy` 22 ok;
+`test_qa_terminal` 0 failures; lint 0 of 463 files. 0 `^SCRIPT ERROR` lines, and
+`world_layout.json` hashed `e046af7d…` before and after.
+
+**A fourth merge (`cd58df7`, #298–#300: docs and `run.sh` only, no GDScript).**
+Merge #299 had dropped `test_machine_sounds`, `test_hmi_fault_rearm` and
+`test_macro_edges_reload` from `run.sh`'s loops, and they are back. Measured on
+this tree: 80 ok, 32 ok and 60 ok. `test_machine_sounds` needs the baked WAVs
+in the gitignored `assets/audio/machines/`; without them it reads 58 ok / 22
+fail, which is environmental.
+
+**An incident during this session, not caused by it.** At 02:34:33 the file was
+rewritten to `bd62352d…`, with the jam-baseline fixture gate in
+`structure_items` **twice**. At that moment two OTHER sessions were running
+`test_jam_baseline` at once on the shared `app_userdata` (worktrees
+`clever-hypatia-945f15` and `cedo-sim-sound-processing-0667d4`, from 02:27:38
+and 02:28:52). The first verification batch was stopped before its MainWorld
+suites, so it could not snapshot and restore that version. After both jam runs
+ended, the file was back to `e046af7d…` at 02:38:01. **`world_layout.json.bak`
+still holds the two-gate version** (11108 bytes, 02:36:08): it is AtomicFile's
+fallback if the primary is ever unreadable. It was left alone
+(`CLAUDE.md`: do not edit that file without asking him).
+
+### 10.7 Still open
+
+- **3B's top edge at the nominal rpm reads 168.7 bar**, 2.7 above the band
+  (info line, not gated). LineFlow caps `rpm_pct` at 1.0, which is the
+  profile's `rpm_nominal`, so a 3B fed 1263 kg/h in a world turns 110 rpm and
+  reads that. The plant turns 120 rpm there, and scaled onto the profile that
+  is 165 rpm.
+- **The profile pairs two independent p50s.** `rpm_nominal` is the rpm
+  curve's own p50 (3A 95, 3B 110). Paired, the plant turns 88 / 80 rpm at the
+  output p50 (908 / 799 kg/h). D scales the plant's rpm by its ratio for that
+  reason. The profile is unchanged.
+- **ExtruderModel's stop ramp compounds.** `_scale_melt_pressures(rpm_frac)`
+  multiplies the previous tick's pressures by rpm_frac every tick. Measured:
+  1.2 s into STOPPING the screw is at 76 % rpm and the die plate at 19 % (26.9
+  of 140 bar). The same holds for MP>MF. It was there before this change and
+  is being fixed in its own session (worktree `elegant-liskov-dd1577`, on
+  `main`). **When the two branches meet**, STARTING/STOPPING must call
+  `_set_melt_pressures(throughput_norm, melt_factor)`. Both arguments are
+  required, so a leftover one-argument `_set_melt_pressures(q * m)` is a parse
+  error (measured) rather than a silent `pow(q·m, n)`.
+- **The MFI's temperature sign** (a hotter melt reads a higher MFI, unlike a lab
+  MFI at 190 °C), and whether the MFI should key on the material at all: the
+  operator's "beta".

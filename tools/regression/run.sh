@@ -552,6 +552,10 @@ wl_sentinel "vehicle spawn (clamp nesting)"
 # 36 checks, 8 mutations red (old die formula 7, silo back 2, flat 200 rpm 7,
 # 195 °C barrel 8, old MFI gain 2, terminal prefix pick 3, no profile 5,
 # ExtruderModel's Extruder3A.tres die plate drifted 1).
+# 2026-09-25: + D, the die plate across the trend's output band at the plant's
+# own rpm per output, inside the kopdruk band, P ∝ Q^0.35 at one melt, MFI flat
+# with output; + E, ExtruderModel's die plate on the same law (operator ruling,
+# docs/plant/operator_rulings_2026-09-25.md). 55 checks; six more mutations red.
 # test_extruder_ramp_pressures (2026-09-25): the melt pressures through STARTING
 # and STOPPING follow the flow the ramp moves. ExtruderModel scaled the LAST
 # tick's pressures by the rpm fraction every tick, so a stop compounded them (the
