@@ -102,11 +102,11 @@ count.
 
 | failing check | note |
 |---|---|
-| ~~`regression verdict`~~ | ~~door/gate check~~ — **FIXED 2026-09-13**: `structure_items` cleared from `world_layout.json` (was 1 entry from prior session work) |
+| ~~`regression verdict`~~ | ~~door/gate check~~ — cleared 2026-09-13 by emptying `structure_items`. **Superseded 2026-09-25: the one entry is the operator's real 3A/3B gate and he ruled KEEP it** ("the gate through which the feeder can drive outside to the bale lot"). The check now asks whether the gate's carve cut the real shell (`opening_id`), not whether it lies on six typed wall lines: those lines sit in a typed building frame that does not line up with the 3D shell (measured 2026-09-25; the frame itself is still open) |
 | ~~`test_nav_connectivity`~~ | ~~9 ok, 1 fail since #216, "requires operator to move crew posts off ISLAND"~~ — **FIXED 2026-09-23 by an operator RULING, not a navmesh change**: nobody has a post at any windzifter, and the permanent feeder is a line-1 role (Merlo + containers). `wind_sifter` left `CrewManager.ZONES["permanent_feeder"]`; on a 3A-only world the two feeders now hold their spawn spot (the suite's own `ADVIS`) instead of a post inside the blower next to the windzifter. `PASS (10 ok)` 3 of 3. `docs/audit/operator_session_2026-09-23.md` task 2 |
 | `test_npc05_realworld` | EXPECTED red — the DRIVE_TO_INDOOR stall, see below. Do not silence it |
 | ~~`test_line3b_flow_conformance`~~ | ~~missing input edge in LineFlow topology~~ — **FIXED 2026-09-13**: added `explicit_from_prev: true` to plasmaq entry in `LINE_3B_SEQ` (gap 15 m > MAX_LINK_DIST 14 m) |
-| ~~`test_project_sweep_guards`~~ | ~~B1b WorldLayout.structure_items starts empty (1 entries)~~ — **FIXED 2026-09-13**: cleared local world state |
+| ~~`test_project_sweep_guards`~~ | ~~B1b WorldLayout.structure_items starts empty (1 entries)~~ — cleared 2026-09-13 by emptying the world state. **Superseded 2026-09-25**: B1b now requires no WALL entries before its wall placement, so the operator's gate no longer trips it (same for `test_new_world_wipe`, which counts shared site structure apart from per-save objects, and `test_jam_baseline`, which uses his gate when the world has it) |
 
 > **2026-09-21 — full harness on the DIRTY tree (`58a95ba` + 216 uncommitted
 > entries), before the persistence/coverage changes: `== done (exit 1)`, four
@@ -297,6 +297,20 @@ count.
 >
 > `docs/audit/cycle_guard_swap_2026-09-25.md` §8.
 > `docs/audit/jam_baseline_layout_leak_2026-09-24.md`.
+>
+> **2026-09-25 — ruled: it is his real gate, keep it.** Shown renders of where
+> the entry stands (the south-west wall of the southern hall, an open roller
+> door), he answered: "that is indeed the line 3A, line 3B gate through which
+> the feeder can drive outside to the bale lot". So the four suites that were
+> red on it now expect shared site structure instead of an empty list:
+> `regression verdict` (the gate must stand in a wall opening carved in the
+> real shell), `test_jam_baseline` (uses his gate when the world has one,
+> builds its fixture otherwise; "structure_items as it was"),
+> `test_project_sweep_guards` B1b (no WALL before its wall placement) and
+> `test_new_world_wipe` (per-save objects counted apart from shared
+> structure). Measured on isolated copies: his world 18 / 19 / 19 / 9 ok, a
+> world without the gate 17 / 19 / 19 / 9 ok, 0 `SCRIPT ERROR`; the gate
+> moved 8 m into the yard turns the carve check red.
 
 **`test_jam_baseline` was `14 ok, 0 fail, 0 skipped` (2026-09-03) — the first time this suite
 had ever evaluated all fourteen of its checks.** It was 11 ok + 3 silently
