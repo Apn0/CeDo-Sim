@@ -767,6 +767,21 @@ wl_sentinel "vehicle spawn (clamp nesting)"
 # B a real 3B line + a 3C line beside it (kg through the natraject, the trip,
 # the latch), C the HMI reset and the natraject switch. 32 checks, 14
 # mutations red (audit doc §5).
+# test_plant_resume (2026-09-25): a save comes back as it was (operator ruling,
+# docs/plant/operator_rulings_2026-09-25.md §R1-§R3), replacing the 2026-07-08
+# "cold start on load". Before: a running line reloaded with 0 machines powered,
+# the extruder OFF and cooling, its setpoints at their defaults, HAND gone and
+# 0 kg in the line. A: lines 1 and 3B running (3B's extruder at a changed rpm and
+# zone setpoint, a belt in HAND, a component at 60 %, a hot lump cart) saved and
+# reloaded: every body's run state identical by name, a save before the resume
+# writes the stash back, the line keeps running (none drops, screw stays at its
+# rpm, granulate keeps coming), the kg ledger balances, a rebuild keeps the
+# settings. B: latched faults (motor trip, choke on a full pile, e-stop, the
+# 318-bar trip, the start alarm) come back latched, their alarms are raised
+# again, they hold, and they reset as before. C: a real MainWorld boot resumes
+# the plant through its own load path, 4 h into the shift, and a hot lump cart
+# is still hot. Own slot files; world_layout guard. 62 checks, 14 mutations red
+# (docs/audit/plant_resume_2026-09-25.md §5).
 # test_extruder_silo_feed_stop (2026-09-25): the extruder silo's laser level
 # sensor and its feed stop, operator rulings (rulings file §I11, §I13). The
 # sensor reports a 1 s running average once per second as % of the sim's silo
@@ -790,7 +805,7 @@ wl_sentinel "vehicle spawn (clamp nesting)"
 # the connector between them is lost), no "Cannot get path" engine error
 # after a BuildMode-style delete.
 # 26 checks; 7 mutations red, and main's LineFlow red. docs/audit/rebuild_pipe_carry_2026-09-25.md.
-for t in test_machine_sounds test_extruder_melt_pressures test_rebuild_pipe_carry test_extruder_ramp_pressures test_extruder_start_rpm test_extruder_start_interlock test_extruder_silo_feed_stop test_extruder_stop_torque test_motor_trip_stops_conveying test_die_pressure_bar test_screw_die_plate_bar test_hmi_ack_rearm test_hmi_fault_rearm test_hmi_fault_per_line test_legacy_props_spawner test_legacy_props_unconfigured_boot test_lump_cart_overflow test_lump_cart_speed_clamp test_save_checkpoint test_keybind_sheet test_map_labels test_compactor_sight_glass test_belt_film_field test_silo_level_windows test_chute_choke test_trip_smoke test_vacuum_pot_visual test_doseersilo_trough test_bale_weight_variance test_wet_side_beds test_line1_metal_detect test_vacuum_pot_minigame test_belt_speed_mismatch test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_line3a_identity test_line3b_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_humanoid_rig_conformance test_line1_flow_conformance test_line1_throughput test_line1_overband_mount test_line1_twin_streams test_line3a_flow_conformance test_line3b_flow_conformance test_extruder_silo_chain test_macro_edges_reload test_fallback_chains test_flow_node_unique test_ghost_census test_sort_line_topology test_shredder_rate_reconciliation test_line1_no_false_overload test_line_builder_ghost test_macro_part_placement test_project_sweep_guards test_tool_placement_mode test_scada_dashboard_scene test_atomic_file test_extruder_brain_wired test_vehicle_census test_map_overlay_init test_qa_loop test_qa_spec test_assessment_procedure test_character_customizer test_f10_reserved test_bale_sticker_supplier test_hose_reel_round test_macro_delta_guard; do
+for t in test_machine_sounds test_extruder_melt_pressures test_rebuild_pipe_carry test_extruder_ramp_pressures test_extruder_start_rpm test_extruder_start_interlock test_extruder_silo_feed_stop test_extruder_stop_torque test_motor_trip_stops_conveying test_die_pressure_bar test_screw_die_plate_bar test_hmi_ack_rearm test_hmi_fault_rearm test_hmi_fault_per_line test_legacy_props_spawner test_legacy_props_unconfigured_boot test_lump_cart_overflow test_lump_cart_speed_clamp test_save_checkpoint test_keybind_sheet test_map_labels test_compactor_sight_glass test_belt_film_field test_silo_level_windows test_chute_choke test_trip_smoke test_vacuum_pot_visual test_doseersilo_trough test_bale_weight_variance test_wet_side_beds test_line1_metal_detect test_vacuum_pot_minigame test_belt_speed_mismatch test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_line3a_identity test_line3b_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_humanoid_rig_conformance test_line1_flow_conformance test_line1_throughput test_line1_overband_mount test_line1_twin_streams test_line3a_flow_conformance test_line3b_flow_conformance test_extruder_silo_chain test_macro_edges_reload test_plant_resume test_fallback_chains test_flow_node_unique test_ghost_census test_sort_line_topology test_shredder_rate_reconciliation test_line1_no_false_overload test_line_builder_ghost test_macro_part_placement test_project_sweep_guards test_tool_placement_mode test_scada_dashboard_scene test_atomic_file test_extruder_brain_wired test_vehicle_census test_map_overlay_init test_qa_loop test_qa_spec test_assessment_procedure test_character_customizer test_f10_reserved test_bale_sticker_supplier test_hose_reel_round test_macro_delta_guard; do
 	echo "== $t =="
 	${SUITE_TO[@]+"${SUITE_TO[@]}"} "$GODOT" --headless --path "$PROJ" "res://src/tests/$t.tscn" > "$OUT/$t.log" 2>&1
 	rc=$?

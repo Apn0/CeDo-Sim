@@ -161,6 +161,18 @@ func crosshair_prompt(_p: Node3D) -> String:
 	return "%s — niveau %.0f %% [E overbruggen — WAARSCHUWING]" % \
 		[sensor_label, _last_level * 100.0]
 
+## Resume on load (operator 2026-09-25, rulings file §R1-§R3;
+## src/sim/PlantResume.gd): a bridged sensor stays bridged (the operator's
+## own act), and the throttle holds its hysteresis side.
+func save_run_state() -> Dictionary:
+	if not bridged and not _throttling:
+		return {}
+	return {"bridged": bridged, "_throttling": _throttling}
+
+func restore_run_state(d: Dictionary) -> void:
+	bridged = bool(d.get("bridged", false))
+	_throttling = bool(d.get("_throttling", false))
+
 func crosshair_interact(_p: Node3D) -> void:
 	bridged = not bridged
 	sensor_bridged_changed.emit(bridged)

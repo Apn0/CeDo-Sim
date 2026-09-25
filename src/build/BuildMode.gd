@@ -1036,6 +1036,9 @@ var player_body : CharacterBody3D = null
 var wall_openings : WallOpenings = null
 # Injected by MainWorld — re-links the material line when machines change.
 var line_flow : LineFlow = null
+## Resume on load (rulings 2026-09-25 §R1-§R3). See take_pending_plant_run().
+var pending_plant_run : Dictionary = {}
+const _PlantResume := preload("res://src/sim/PlantResume.gd")
 
 var _state        : int    = State.INACTIVE
 var _active_id    : String = ""
@@ -4181,6 +4184,13 @@ func _surface_geometry(points: Array) -> Dictionary:
 # =============================================================================
 func _save_layout() -> void:
 	var arr: Array = [{"layout_version": LAYOUT_VERSION}]   # #29 marker — see load_layout
+	# RESUME ON LOAD (operator 2026-09-25, rulings §R1-§R3): the line's own run
+	# state (kg ledger, PLC, e-stop, the loose floor piles) as its own entry, and
+	# every body's below with its pose. A load that has not resumed yet writes
+	# back what it read (see PlantResume.capture_body).
+	var plant_run : Dictionary = pending_plant_run if not pending_plant_run.is_empty() \
+		else _PlantResume.capture_line(line_flow, get_tree() if is_inside_tree() else null)
+	arr.append({"plant_run": plant_run})
 	# STRUCTURE (walls + surface doors/gates/windows) goes to the SHARED layer
 	# (WorldLayout) so every save inherits it; MACHINES stay per-save.
 	var shared : Array = []
@@ -4239,6 +4249,10 @@ func _save_layout() -> void:
 					and float(child.get("lumps_kg")) > 0.001:
 				entry["lumps_kg"] = float(child.get("lumps_kg"))
 				entry["cool_left_s"] = float(child.call("cool_remaining_s"))
+			# Resume on load: this machine's run state (PlantResume.capture_body).
+			var run : Dictionary = _PlantResume.capture_body(child as Node3D, line_flow)
+			if not run.is_empty():
+				entry["run"] = run
 			# #MSB — round-trip macro membership so a reopened save can still
 			# invoke save-back on previously placed macro members.
 			if child.has_meta("macro_id"):
@@ -4369,6 +4383,10 @@ func load_layout() -> void:
 				data = parsed as Array
 			else:
 				print("[BuildMode] Ignoring obsolete saved layout (pre-v%d) — clean start (#29)." % LAYOUT_VERSION)
+	pending_plant_run = {}
+	for entry in data:
+		if entry is Dictionary and (entry as Dictionary).get("plant_run", null) is Dictionary:
+			pending_plant_run = (entry as Dictionary)["plant_run"]
 	var count := 0
 	for entry in data:
 		if _apply_layout_entry(entry):
@@ -4567,6 +4585,7 @@ func _apply_layout_entry(entry: Variant) -> bool:
 		var vb := PlaceableCatalog.build_variable_belt(sv, ev, false)
 		if vb != null:
 			_placed_root.add_child(vb)
+			_stash_run_state(vb, dict)
 			return true
 		return false
 
@@ -4683,7 +4702,24 @@ func _apply_layout_entry(entry: Variant) -> bool:
 				"start": Vector3(float(d_anc.get("sx", 0.0)), float(d_anc.get("sy", 0.0)), float(d_anc.get("sz", 0.0))),
 				"rot_y": float(d_anc.get("rot_y", 0.0)),
 			})
+	_stash_run_state(node, dict)
 	return true
+
+## Resume on load: park the entry's saved run state on the body until
+## PlantResume.resume_world() applies it (after LineFlow's rebuild and the shift
+## clock's load — MainWorld._spawn_world_items). Applying it here would be too
+## early: LineFlow has no node for the body yet.
+func _stash_run_state(node: Node, dict: Dictionary) -> void:
+	if node != null and dict.get("run", null) is Dictionary and not (dict["run"] as Dictionary).is_empty():
+		node.set_meta(_PlantResume.META, dict["run"])
+
+## The line-level run state load_layout read and nothing has applied yet
+## (PlantResume.resume_world takes it). _save_layout writes it back unchanged
+## while it is pending, so a save during the load keeps the saved state.
+func take_pending_plant_run() -> Dictionary:
+	var d := pending_plant_run
+	pending_plant_run = {}
+	return d
 
 ## #194 — Re-instantiate a single-click structure placeable (door_personnel /
 ## gate_roller / window_frame) AND replay the wall carve so the hole the door

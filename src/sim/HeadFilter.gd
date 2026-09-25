@@ -102,6 +102,31 @@ func _ready() -> void:
 		c.fresh = true
 		c.pack_present = true
 
+## Resume on load (operator 2026-09-25, rulings file §R1-§R3;
+## src/sim/PlantResume.gd): both packs as fitted (mesh, loading, dP, fresh,
+## present), which cavity is online, where a swap or repack stands, the halt.
+const RESUME_FIELDS : Array[String] = ["_active_idx", "_proc", "_proc_t", "is_halted"]
+const CAVITY_FIELDS : Array[String] = ["mesh", "loading_g", "delta_p_psi", "fresh", "pack_present"]
+
+func save_run_state() -> Dictionary:
+	var R := preload("res://src/sim/PlantResume.gd")
+	var out : Dictionary = R.pack(self, RESUME_FIELDS)
+	var cav : Array = []
+	for c in cavities:
+		cav.append(R.pack(c, CAVITY_FIELDS))
+	out["cavities"] = cav
+	return out
+
+func restore_run_state(d: Dictionary) -> void:
+	var R := preload("res://src/sim/PlantResume.gd")
+	var fields : Dictionary = d.duplicate()
+	fields.erase("cavities")
+	R.unpack(self, fields)
+	var cav : Array = d.get("cavities", [])
+	for i in mini(cav.size(), cavities.size()):
+		if cav[i] is Dictionary:
+			R.unpack(cavities[i], cav[i])
+
 # =============================================================================
 func _physics_process(delta: float) -> void:
 	# Cascade halt: extruder is in FAULT, nothing is moving through the line,
