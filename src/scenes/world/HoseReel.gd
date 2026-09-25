@@ -120,11 +120,15 @@ func _deploy_to_player() -> void:
 			# operator can grab the hose, walk off, and spray with LMB (tip valve)
 			# alone — no return trip to crack the base valve first. E at the reel
 			# still cycles it (little → lot → closed → little).
+			var prev_state := base_valve_state
 			base_valve_state = 1
+			_valve_sound(prev_state, base_valve_state)
 	_refresh_prompt()
 
 func _cycle_base_valve() -> void:
+	var prev := base_valve_state
 	base_valve_state = (base_valve_state + 1) % 3
+	_valve_sound(prev, base_valve_state)
 	_refresh_prompt()
 
 ## Called by HoseNozzle.return_to_owner() — we close the base valve as a safety
@@ -133,5 +137,27 @@ func on_nozzle_returned(n: Node) -> void:
 	if _deployed_nozzle == n:
 		_deployed_nozzle.queue_free()
 		_deployed_nozzle = null
+	var prev := base_valve_state
 	base_valve_state = 0
+	_valve_sound(prev, base_valve_state)
 	_refresh_prompt()
+
+# ── Sound (2026-09-25) ────────────────────────────────────────────────────────
+# The operator's "turn-crank old metal manually operated valve" recording:
+# src/audio/machine_sounds/hose_reel_valve.tres, event "valve_open" on every
+# opening turn (DICHT→WEINIG, WEINIG→OPEN) and "valve_close" on OPEN→DICHT. The
+# MachineSound is attached lazily to the PLACED reel body (see _valve_sound)
+# and is idempotent, so the first turn creates it and every later turn reuses it.
+const _SOUND_BANK := preload("res://src/audio/MachineSoundBank.gd")
+
+func _valve_sound(prev: int, now: int) -> void:
+	if prev == now:
+		return
+	# This controller hangs under the reel's MODEL node; the sound belongs on the
+	# PLACED body above it (the ancestor with the placeable_id meta), where
+	# LineFlow, tests and the bank all look for it.
+	var body : Node = _SOUND_BANK.placed_body_of(get_parent() if get_parent() != null else self)
+	var snd : Node = _SOUND_BANK.attach(body, "hose_reel_valve")
+	if snd == null:
+		return
+	snd.call("play_event", "valve_close" if now == 0 else "valve_open")

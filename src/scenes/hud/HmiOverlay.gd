@@ -30,6 +30,9 @@ enum Screen { HOOFDMENU, OVERZICHT, STORINGEN, HANDBEDIENING, MACHINES }
 # Signal emitted when a tile on the new HOOFDMENU grid is pressed.
 # Carries a scope_id string that open_subscope() can route to a panel.
 signal request_subscope(scope_id)
+# Sound (2026-09-25): the physical panels (Hmi.gd) stop their alarm beep on
+# KWITTEREN. Emitted after the active occurrences have been acknowledged.
+signal faults_acknowledged
 
 # Storingen sub-tab routing.
 enum FaultTab { HISTORY, ACTIVE, ACKNOWLEDGE, SHIELD }
@@ -246,6 +249,10 @@ var _fault_meta : Dictionary = {}
 # Guarded by test_hmi_fault_rearm.
 var _fault_occ : Dictionary = {}
 var _fault_occ_seq : int = 0
+# The fault list from the most recent _compute_faults() — read by the physical
+# panels' alarm beep (unacked_count_for_tokens) at their own 4 Hz, so N panels
+# do not recompute the plant N times.
+var _last_faults : Array = []
 # Ring buffer of every fault transition (cap 256). Each entry:
 # {code, key, line, tijd_s, msg, state, suppressed, occ}
 # state: "active" | "cleared". Most-recent at the END.
@@ -1292,6 +1299,7 @@ func _on_kwitteren() -> void:
 	# same code is a new occurrence and needs its own KWITTEREN.
 	for f in _compute_faults():
 		_acked_occurrences[int(f["occ"])] = true
+	faults_acknowledged.emit()
 	_refresh()
 
 func _on_reset_faults() -> void:
@@ -1843,6 +1851,7 @@ func _compute_faults() -> Array:
 	if _line_flow == null:
 		out.append({"code": "PLC-000", "text": "Geen lijn-PLC gekoppeld in deze scene", "scope": ""})
 		_record_fault_transitions(out)
+		_last_faults = out
 		return out
 	# --- operating state ---------------------------------------------------
 	if _feed_on() and _no_feed_secs > 3.0:
@@ -1914,7 +1923,29 @@ func _compute_faults() -> Array:
 			})
 	# #207c — persistent tijd_s + ring buffer of fault transitions.
 	_record_fault_transitions(out)
+	_last_faults = out
 	return out
+
+## Sound (2026-09-25): how many of the CURRENT faults are (a) scoped to a
+## machine matching `tokens` and (b) not yet KWITTEREN'd — by the player here
+## or by a storing-fixen worker (NpcAutonomyBoard.npc_acked). Global faults
+## (empty scope: PLC-000, INV-101, RUN-200) do not count: they belong to no
+## panel. Reads the last computed list; the overlay recomputes at 4 Hz whether
+## it is open or closed.
+func unacked_count_for_tokens(tokens: Array) -> int:
+	var board := get_node_or_null("/root/NpcAutonomyBoard")
+	var n := 0
+	for f in _last_faults:
+		var scope := String(f.get("scope", ""))
+		if scope == "" or not _id_matches(scope, tokens):
+			continue
+		var code := String(f.get("code", ""))
+		if _is_acked(code):
+			continue
+		if board != null and board.has_method("npc_acked") and bool(board.call("npc_acked", code)):
+			continue
+		n += 1
+	return n
 
 # Tags each active fault with its first-seen tijd_s (seconds since boot), pushes
 # new-active / new-cleared transitions onto the ring buffer (cap 256). Keyed by
