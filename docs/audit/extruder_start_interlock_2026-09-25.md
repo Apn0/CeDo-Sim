@@ -368,6 +368,8 @@ final tree, md5 restored after each):**
 - **After a save load, every extruder is OFF**, like the rest of the line: a
   load starts cold (his 2026-07-08 ruling). He now wants the plant as the last
   shift left it, and a realistic running state for a new save (rulings §I12).
-  That is a separate task.
+  That is a separate task. **Done the same day for loads** (rulings §R1-§R4,
+  `docs/audit/plant_resume_2026-09-25.md`); a new save's starting state is
+  deferred.
 - **The E key still clears an extruder FAULT and an e-stop at the machine.**
   §I6's principle says the HMI. Not changed here.

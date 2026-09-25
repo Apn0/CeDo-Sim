@@ -448,6 +448,42 @@ func on_line_flow_rebuilt(lf: Node) -> void:
 func natraject_bodies() -> Dictionary:
 	return _natraject.duplicate()
 
+## Resume on load (operator 2026-09-25, rulings file §R1-§R3). PlantResume
+## finds this on the placed body ("SimBrain") and saves it with the body's
+## factory entry: the model (state, barrel, setpoints, pots, pressures, start
+## sequence, pelletiser) and the brain's own two pressure-trip latches.
+func save_run_state() -> Dictionary:
+	if model == null:
+		return {}
+	return {
+		"model": model.save_run_state(),
+		"upstream_trip_latched": _upstream_trip_latched,
+		"pel_trip_latched": _pel_trip_latched,
+	}
+
+## Called once the load's LineFlow rebuild is done (PlantResume.resume_world),
+## which then re-runs on_line_flow_rebuilt so the natraject's run commands reach
+## LineFlow before its next tick. The state the model comes back in is announced
+## the way a live transition is (_broadcast), so the HMI, SCADA and audio see a
+## RUNNING or FAULTED extruder that was never "entered" in this session.
+func restore_run_state(d: Dictionary) -> void:
+	if model == null or not (d.get("model", null) is Dictionary):
+		return
+	var missed : Array = model.restore_run_state(d["model"])
+	if not missed.is_empty():
+		push_warning("[%s] resume: saved fields not on the model: %s" % [config_resource.line_id, str(missed)])
+	_upstream_trip_latched = bool(d.get("upstream_trip_latched", false))
+	_pel_trip_latched = bool(d.get("pel_trip_latched", false))
+	if model.state != ExtruderModel.State.OFF:
+		var ev : Array[String] = ["state_changed:%d:%d" % [ExtruderModel.State.OFF, model.state]]
+		_broadcast(ev)
+	# The over-pressure trip raised its own alarm beside the state change
+	# (_trip_shutdown_all_three); a latched one comes back with it.
+	if model.state == ExtruderModel.State.EMERGENCY_STOP and (_upstream_trip_latched or _pel_trip_latched):
+		EventBus.machine_alarm_raised.emit(config_resource.line_id, "overpressure", 3)
+	print("[%s] resumed: %s, melt %.1f °C, screw %.1f rpm (setpoint %.0f)" % [config_resource.line_id,
+		model.get_state_name(), model.melt_temp, model.screw_rpm, model.screw_rpm_setpoint])
+
 func _exit_tree() -> void:
 	if _line_flow != null and is_instance_valid(_line_flow):
 		_line_flow.call("release_nodes", self)

@@ -249,6 +249,23 @@ func set_running(v: bool) -> void:
 	else:
 		stop()
 
+## Resume on load (operator 2026-09-25, rulings file §R1-§R3;
+## src/sim/PlantResume.gd): the relay panel (key, run, e-stop and overload
+## latches, housing open, rotor block), the throat's backlog and the rotor's
+## speed fraction, so a running shredder does not spin up again.
+const RESUME_FIELDS : Array[String] = [
+	"key_position", "running", "e_stop_latched", "is_tripped", "is_open", "rotor_locked",
+	"feed_kg_h", "throughput_kg_h", "motor_load_pct", "buffer_kg", "overflow_kg",
+	"_overload_t", "_spin_frac",
+]
+
+func save_run_state() -> Dictionary:
+	return preload("res://src/sim/PlantResume.gd").pack(self, RESUME_FIELDS)
+
+func restore_run_state(d: Dictionary) -> void:
+	preload("res://src/sim/PlantResume.gd").unpack(self, d)
+	state_changed.emit()
+
 func set_key_position(pos: int) -> void:
 	pos = clampi(pos, Key.AUTO, Key.ONDERHOUD)
 	if pos == key_position:

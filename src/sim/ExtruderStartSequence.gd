@@ -260,3 +260,19 @@ func _enter(p: int) -> void:
 		_blink_t = 0.0
 	phase = p
 	step_t = 0.0
+
+
+## Resume on load (rulings file §R1-§R3): where the sequence is, its latched
+## alarm, the hidden natraject setting, and each natraject machine's run command.
+## The switch log is an audit trail of one press and is not saved.
+const RESUME_FIELDS : Array[String] = [
+	"phase", "step", "step_t", "alarm", "natraject_enabled", "run_cmd",
+	"_blink_t", "_was_on", "_screw_pending", "_screw_seen", "_screw_wait_t",
+]
+const _Resume := preload("res://src/sim/PlantResume.gd")
+
+func save_run_state() -> Dictionary:
+	return _Resume.pack(self, RESUME_FIELDS)
+
+func restore_run_state(d: Dictionary) -> void:
+	_Resume.unpack(self, d)

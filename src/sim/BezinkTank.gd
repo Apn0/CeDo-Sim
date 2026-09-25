@@ -153,6 +153,18 @@ func _update_water_visual() -> void:
 		if is_instance_valid(node):
 			node.position.y = lerpf(float(w["lo"]), float(w["hi"]), water_level)
 
+## Resume on load (operator 2026-09-25, rulings file §R1-§R3;
+## src/sim/PlantResume.gd): the level, the valve and pump, AUTOMAAT/HAND and
+## the operator's two setpoints. The water surface follows the level.
+const RESUME_FIELDS : Array[String] = ["water_level", "valve_auto", "valve_open", "pump_on", "sp_low", "sp_high"]
+
+func save_run_state() -> Dictionary:
+	return preload("res://src/sim/PlantResume.gd").pack(self, RESUME_FIELDS)
+
+func restore_run_state(d: Dictionary) -> void:
+	preload("res://src/sim/PlantResume.gd").unpack(self, d)
+	_update_water_visual()
+
 # ── HMI API (called by BezinkHmi) ─────────────────────────────────────────────
 func toggle_auto() -> void:
 	valve_auto = not valve_auto

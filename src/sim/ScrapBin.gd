@@ -30,6 +30,24 @@ func add_scrap(kg: float, kind: String = "scrap") -> float:
 func piece_count() -> int:
 	return pieces.size()
 
+## Resume on load (operator 2026-09-25, rulings file §R1-§R3;
+## src/sim/PlantResume.gd): the shift's catch, pieces and kg; the heap is
+## regrown piece by piece so it looks the same.
+func save_run_state() -> Dictionary:
+	if pieces.is_empty():
+		return {}
+	return {"scrap_kg": scrap_kg, "pieces": pieces.duplicate()}
+
+func restore_run_state(d: Dictionary) -> void:
+	pieces.clear()
+	if _heap != null and is_instance_valid(_heap):
+		_heap.free()
+		_heap = null
+	for p in (d.get("pieces", []) as Array):
+		pieces.append(String(p))
+		_grow_heap(String(p))
+	scrap_kg = float(d.get("scrap_kg", 0.0))
+
 func crosshair_prompt(_player: Node3D) -> String:
 	if pieces.is_empty():
 		return "Scrap bin — empty"

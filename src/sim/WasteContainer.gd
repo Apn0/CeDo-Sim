@@ -202,6 +202,21 @@ func empty() -> float:
 	_update_state()
 	return removed
 
+## Resume on load (operator 2026-09-25, rulings file §R1-§R3;
+## src/sim/PlantResume.gd): what is in the bin and spilled around it. The
+## overflow state is re-derived from those (_update_state), which also redraws
+## the mound and the gauge.
+func save_run_state() -> Dictionary:
+	if mass_kg <= 0.0 and overflow_mass_kg <= 0.0:
+		return {}
+	return {"mass_kg": mass_kg, "blended_density": blended_density, "overflow_mass_kg": overflow_mass_kg}
+
+func restore_run_state(d: Dictionary) -> void:
+	mass_kg = float(d.get("mass_kg", 0.0))
+	blended_density = float(d.get("blended_density", 200.0))
+	overflow_mass_kg = float(d.get("overflow_mass_kg", 0.0))
+	_update_state()
+
 # ── #198 NPC-autonomy lumps API ──────────────────────────────────────────────
 # Thin aliases so EmptyLumpCartTask (and the board's destination logic) can treat
 # a WasteContainer as a lumps sink without knowing its SI add()/fill model. Lumps

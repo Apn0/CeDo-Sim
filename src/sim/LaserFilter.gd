@@ -284,6 +284,27 @@ func _ready() -> void:
 	# µm inside its band per spawn (stock room holds a mix of grades).
 	_pick_screen_grade()
 
+## Resume on load (operator 2026-09-25, rulings file §R1-§R3;
+## src/sim/PlantResume.gd). The screen fitted (grade + µm, rolled at the first
+## spawn and kept from then on), how loaded and worn it is, the operator's
+## setpoints, the 318-bar trip latch and the cascade halt, where a filter change
+## stands, the shift's lump and spill counters. The spilled lumps themselves are
+## floor piles and come back with the line.
+const RESUME_FIELDS : Array[String] = [
+	"lumps_kg_this_shift", "koperen_rings_used", "plates_to_cleaning", "plates_scrapped",
+	"screen_mesh_um", "screen_grade", "screen_thickness_mm", "scraper_rpm", "afvoervijzel_rpm",
+	"m1_load_pct", "is_tripped", "_change_state", "_change_step_t", "_rotation_timer",
+	"front_loading_g", "back_loading_g", "delta_p_front_psi", "delta_p_back_psi",
+	"mp_after_filter_bar", "melt_viscosity_factor", "lump_feed_rate_g_s", "is_halted",
+	"lumps_kg_on_floor", "lumps_kg_lost",
+]
+
+func save_run_state() -> Dictionary:
+	return preload("res://src/sim/PlantResume.gd").pack(self, RESUME_FIELDS)
+
+func restore_run_state(d: Dictionary) -> void:
+	preload("res://src/sim/PlantResume.gd").unpack(self, d)
+
 # #223 docs->code — item 21: pick a random screen grade and a concrete µm inside
 # its documented band. Sets both screen_grade (L1/L3a/L3b) and screen_mesh_um.
 # docs/plant/swi/TRAIN-de-laserfilter-3A-typen__121_CeDo33.md.
