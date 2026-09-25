@@ -135,7 +135,15 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 	# drops into the silo. gap −2.3 pulls the silo's centre under the cyclone
 	# (cyc_half 0.8 + gap + silo_half 1.5 = 0); y 5.9 seats the cone on the
 	# 6.5 m silo's dome. Model detail (twin opposed inlets) → detail program.
-	{"id": "cyclone", "y": 5.9, "gap": -2.3},
+	# ── 2026-09-25 — blower 2 → this cyclone is PINNED (ruling 2.1-B above:
+	# "another blower that blows it in the top of the silo in one cyclone").
+	# The lifted cyclone's inlet sits 7.6 m from blower 2's discharge, and
+	# doseerschroef M11b's is 4.1 m, so the geometry fallback never picks it:
+	# while LineFlow's cycle guard was swapped, blower 2 fed the windzifter
+	# back (a 2-cycle) and this cyclone had NO in-edge; with the guard fixed,
+	# blower 2 fell through to M11b and the infeed skipped the mengsilo.
+	# dump_line_graph.tscn -- line_3a; guarded by test_fallback_chains.
+	{"id": "cyclone", "y": 5.9, "gap": -2.3, "explicit_from_prev": true},
 	{"id": "mengsilo"},
 	# ── RONDMENG-LUS (branch, +X side) — the ALWAYS-ON (while running)
 	# heated drying circulation. Material: silo → doseerschroef M11a₂ →
@@ -163,7 +171,17 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 	# #107 — was plain `silo`; the extruder's hot end has to be fed by the
 	# elevated extruder_silo (frame + 2 cyclones on top + lump bin + windows),
 	# not a generic dosing silo. Same change applied to 3B and Line 1 below.
-	{"id": "extruder_silo", "gap": 1.5},  # extruder needs maintenance clearance at both ends
+	# ── 2026-09-25 — the tail is PINNED, blower → silo → band → extruder
+	# (doc edges 28-31; the blower is M11b's, ruling 2.1-B). Unpinned, the
+	# extruder's inlet sat 15.22 m from the band's discharge — beyond
+	# LineFlow.MAX_LINK_DIST (14) — so the band's fallback wired the nearest inlet
+	# behind it, the silo: a silo ↔ band 2-cycle that circulated 1230 kg
+	# through the silo from 63 kg fed, while extruder_3a received 0 kg
+	# (dump_line_graph.tscn). The blower → silo edge was right, by 0.3 m of
+	# nearest-inlet margin; it is pinned so a jog cannot flip it. Guarded by
+	# test_extruder_silo_chain. NOT persisted: a reloaded save loses every
+	# explicit edge (docs/audit/extruder_silo_tail_2026-09-25.md §7).
+	{"id": "extruder_silo", "gap": 1.5, "explicit_from_prev": true},  # extruder needs maintenance clearance at both ends
 	# ── DOC-WALK GAP FIX 2026-08-28 (gap 1.3) ───────────────────────────────
 	# Every line's flow diagram runs extruder_silo → COMPACTOR BAND → compactor
 	# → extruder (line_flow_graphs.json edges 32/33/34, identical for 1, 3A and
@@ -181,8 +199,8 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 	# as separate process BLOCKS, which is not a claim about separate machines.
 	# Carries the 1.5 m gap so the extruder keeps its maintenance clearance —
 	# that clearance belongs next to the extruder, not next to the silo.
-	{"id": "compactorband", "gap": 1.5},
-	{"id": "extruder_3a"},
+	{"id": "compactorband", "gap": 1.5, "explicit_from_prev": true},
+	{"id": "extruder_3a", "explicit_from_prev": true},
 	# #98 — Lump cart parking spot next to the extruder's screen-changer
 	# discharge. Operator's responsibility to make sure a lump_cart is parked
 	# here BEFORE the extruder starts. Spot is at +X offset, partway along the
@@ -501,11 +519,23 @@ const LINE_3B_SEQ : Array[Dictionary] = [
 	# (exceeds MAX_LINK_DIST 14 m), so this edge is tagged explicitly too.
 	{"id": "cyclone", "explicit_from_prev": true},  # TUSSENVENTILATOR — its cyclone…
 	{"id": "blower"},                # …and its booster blower
-	{"id": "extruder_silo"},
+	# ── 2026-09-25 — the tail is PINNED, booster blower → silo → band →
+	# extruder (doc edges 19-22; ruling 3.1-B: the tussenventilator blows "all
+	# the way into the extruder silo"). Unpinned, three fallbacks went wrong
+	# at once (dump_line_graph.tscn): the booster blower's nearest inlet was
+	# its own cyclone's (2.43 m vs the silo's 4.66 m), making a cyclone ↔
+	# blower 2-cycle that circulated 1584 kg from 63 kg fed and left the silo
+	# with NO in-edge; and extruder_3b's inlet sat 14.24 m from the band's
+	# discharge, past MAX_LINK_DIST (14), so the band fed the blower back.
+	# Behind all three: LineFlow's fallback cycle guard is called with its
+	# arguments swapped and never refuses a back-edge (see the suite header).
+	# extruder_3b received 0 kg. Guarded by test_extruder_silo_chain. NOT
+	# persisted across a save/load — see the 3A note above.
+	{"id": "extruder_silo", "explicit_from_prev": true},
 	# Gap 1.3 — see the matching note in LINE_3A_SEQ. Flow diagram edge 32:
 	# extruder_silo → compactor_band. The PCU stays integrated in the extruder.
-	{"id": "compactorband"},
-	{"id": "extruder_3b"},
+	{"id": "compactorband", "explicit_from_prev": true},
+	{"id": "extruder_3b", "explicit_from_prev": true},
 	# #98 — Lump cart parking spot at the extruder's filter discharge.
 	# #225 — the LIVE laserfilter is a standalone machine beside the extruder
 	# (ExtruderMachine binds _closest_in_group("laser_filter"); the macros never

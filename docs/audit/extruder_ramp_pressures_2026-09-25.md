@@ -62,10 +62,14 @@ on that tick, where it fed 0 before.
 When the power-law die lands (`DIE_FLOW_INDEX`, operator ruling 2026-09-25,
 uncommitted in worktree `unruffled-keller-219387` when this was written), the
 helper's one call becomes `_set_melt_pressures(throughput_norm, melt_viscosity_factor)`.
-It must NOT become `_set_melt_pressures(throughput_norm * melt_viscosity_factor)`:
-that still parses against a default `melt_factor = 1.0`, but it computes
-`pow(q * m, n)` instead of `pow(q, n) * m`. Mutation M3b below proves the suite
-catches that.
+It must NOT become `_set_melt_pressures(throughput_norm * melt_viscosity_factor)`,
+which computes `pow(q * m, n)` instead of `pow(q, n) * m`. That session's first
+version gave `melt_factor` a default of 1.0, so a one-argument call parsed and
+went quietly wrong. It has since dropped the default (read in its worktree,
+2026-09-25: `func _set_melt_pressures(throughput_norm: float, melt_factor: float)`,
+the zero calls are `(0.0, 1.0)`). A surviving one-argument call is now a parse
+error that the parse sweep gates on. This suite's mutation M3b (below) catches
+the default-argument form as well.
 
 ## 3. The guard and its mutation matrix
 
