@@ -115,8 +115,7 @@ func _ready() -> void:
 	if hp != null:
 		hp.call("_dump_report")
 
-	print("
--- baseline: %d windows of %d frames --" % [REPS, _frames])
+	print("\n-- baseline: %d windows of %d frames --" % [REPS, _frames])
 	var base_windows : Array = []
 	for r in REPS:
 		var w := await _sample(_frames)
@@ -131,8 +130,7 @@ func _ready() -> void:
 	var groups := _processing_nodes_by_script()
 	var labels : Array = groups.keys()
 	labels.sort_custom(func(a, b): return (groups[a] as Array).size() > (groups[b] as Array).size())
-	print("
-%d distinct processing scripts under the world; ablating the top %d by node count (+ ALL)" % [labels.size(), top_n])
+	print("\n%d distinct processing scripts under the world; ablating the top %d by node count (+ ALL)" % [labels.size(), top_n])
 
 	# ABLATION. Each target is switched OFF and back ON REPS times, ALTERNATING
 	# (off, on, off, on, ...), one window each. The delta is the MEDIAN of the paired
@@ -175,8 +173,7 @@ func _ready() -> void:
 		})
 
 	rows.sort_custom(func(a, b): return (a["d_proc"] + a["d_phys"]) > (b["d_proc"] + b["d_phys"]))
-	print("
--- attributed cost per frame/tick (ms): median of %d paired on-minus-off windows --" % REPS)
+	print("\n-- attributed cost per frame/tick (ms): median of %d paired on-minus-off windows --" % REPS)
 	print("  %-34s %6s %9s %9s %9s %9s" % ["script", "nodes", "proc_ms", "+/-range", "phys_ms", "+/-range"])
 	for r in rows:
 		print("  %-34s %6d %9.2f %9.2f %9.2f %9.2f" % [r["label"], r["nodes"], r["d_proc"], r["s_proc"], r["d_phys"], r["s_phys"]])
