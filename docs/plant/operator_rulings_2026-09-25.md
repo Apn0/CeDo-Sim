@@ -288,14 +288,15 @@ touchscreen fallback had no rpm field. So no line but one could be set, and a
 tripped line could not be dropped to 60. The rule covers all extruders (1, 3A,
 3B, 3C, 6).
 
-## E6. Open — start interlocks (not built)
+## E6. Start interlocks — settled in the fourth session (§I1-§I10 below)
 
 **His words:** the screw starts only once *"the water at the front of the
 extruder"*, *"the centrifuge ... to dry the pellets"* and *"the shaking sieve"*
 are running. **Ruling:** record it, build it in a separate task. Also said, and
 not understood yet: the start is the *"LED white ring button, the right one,
 because the left one is for easy work"*. What the left button does is not known.
-Asking him settles it.
+Asking him settles it. **Asked and built the same day: §I1-§I10.** The left
+button starts the PCU (§I8).
 
 ## E7. Open — found while measuring, not ruled on
 
@@ -309,6 +310,154 @@ Asking him settles it.
 
 ---
 
+# Extruder start button and its natraject — fourth session, same day
+
+Asked on 2026-09-25 with AskUserQuestion, in two rounds, after the code and
+the plant docs had been searched. The build, the suite and the measurements
+are in `docs/audit/extruder_start_interlock_2026-09-25.md`.
+
+What was on the table before the first question:
+
+- **No plant document lists the extruder's start conditions** (VERIFIED, by
+  search of `docs/plant/`). SWI-042 p4 rows 19-20 say *"Nog SWI maken opstarten
+  extruders"*. Line 1's SWI-012 p7-p8 is the only written start sequence, and
+  it names no start condition.
+- **The raw WinCC archive logs none of these machines** (VERIFIED).
+  `F:/Citizen/Documents/CeDo/Gegevens extruder 3A|3B` hold screw speed and load,
+  melt pressures and temperatures, output and the compactor. The 3C tag list
+  (`Random Exports/3c_tags.xlsx`) covers the wash side only.
+- In the docs **"trilzeef" is the sort-line screen**. The sieve after the
+  pelletizer is the **ontwaterzeef** (`lijn_1_flow.md`, `lijn_3a_flow.md`,
+  `lijn_3b_flow.md`). His "shaking sieve" was taken to be the ontwaterzeef, and
+  he did not correct it.
+- In the sim, only the barrel temperature could refuse a start. The line's
+  start powered the pellet side and pushed material through the extruder
+  whether or not it had been started (LineFlow and ExtruderModel never read
+  each other).
+
+Everything below is his recollection (CLAIMED), quoted where it matters. He
+said himself: *"don't quote me on this because I might forget something here
+and there"*.
+
+## I1. The button runs safety checks first, and an alarm blocks it until reset
+
+If a check fails, nothing starts: *"if the pelletizer head is not closed, the
+lid, and locked securely, with the lever ... if you push the button, it will not
+do anything, nothing will be started ... it will just immediately ring the
+alarm"*. The operator puts it right and **resets the alarm**: *"That's
+important. If you don't reset the alarm, still nothing's going to happen."*
+Other checks he named: the extruder zones within a minimum and a maximum
+temperature, and pressures at several measuring points (*"before the filter
+after the filter"*). A failed check *"will sound an alarm. And it will show what
+the problem is."* The limits are in the deep EREMA settings (*"advanced EREMA
+settings"*), not on the overview pages and not in any data we have.
+
+## I2. The start order
+
+With every check passed (his best recollection):
+
+1. the blower that carries the granulate from the centrifuge to the top of the
+   weighing scale;
+2. *"after a few seconds like when that blower is started up"*, the centrifuge;
+3. *"if that's spinning"*, the sieve starts shaking;
+4. the water to the pelletizer head;
+5. the pelletizer's four knives;
+6. *"probably in short sequence ... logically I would start the laser filter
+   scraper first And then the extruder screw"*, and the vacuum pump.
+
+Depending on the PCU belt's mode (auto, continuous, off, manual) it may also
+start that belt and the dosing screw (*"I'm not sure"*). The fume hood is
+probably running already. **Not the extruder's:** the pneumatic conveying after
+the scale (the WISSEL station in the basement, out to the silos) is *"always
+running"* and sits *"after the part where the PLC are responsible for the
+extruder"*.
+
+## I3. The ring
+
+There are two white LED rings. The right one blinks through the start
+sequence: *"for now we can do 0.5 seconds off ... 0.5 seconds on"* (he has the
+exact ratio somewhere). *"when the extruder screw is starting to spin ... that
+LED ring is solid white."* On a trip, for example the 318-320 bar laser-filter
+pressure, *"the extruder screw obviously is stopped first"*. The ring blinks
+again while the rest stops, *"about the same not exactly in reverse"*, and goes
+off once everything stands.
+
+## I4. Ruling on the sim: the extruder runs its natraject
+
+He was asked who runs these machines, given that the line's start used to run
+them. **Ruling: the extruder.** The extruder, its laser filter and the pellet
+side run only when the extruder's sequence runs them. While the extruder is off
+the silos fill (SWI-042 p4 §19).
+
+## I5. Ruling on the sim: a natraject machine that stops trips the extruder
+
+First answer: he was not in the technical department. An extruder CAN run with
+the pelletizer head open, on some extruders only by bridging a safety sensor.
+The shift leader decides that when the centrifuge or the sieve has a problem
+that would take too long. The reason is that a PCU full of hot material cannot
+sit for hours: *"like a hundred kilograms of material at like 115 degrees"* at
+about 180 kW (*"a very rough guess"*). The strands then run into lump carts
+under the die, emptied by forklift, until the PCU runs empty. **Ruling (second
+round):** the extruder trips. The screw stops first, the alarm names the
+machine, and the rest runs down with the ring blinking.
+
+## I6. The alarm is reset on the HMI
+
+Offered "E at the extruder", he refused: *"it can only be done via the HMI
+because I can't press E in real life by looking at the extruder and then that
+it would restart. That doesn't happen."*
+
+## I7. The "natraject" setting
+
+*"somewhere in the settings menu, you can ... either enable, which is actually
+the default state ... I think they call it N-A-T-R-A-J, ECT"*: natraject, the
+tail of the process. Disabled, *"it will not check whether those are running or
+not. In fact, it will not even start them. But it will then start the
+extruder."* It is not used: *"I think it was even not allowed to do it. And it
+was a bit like hidden."* **Ruling:** the player can switch it on the extruder
+panel, and it is ON by default.
+
+## I8. The left button starts the PCU
+
+*"the other LED ring is the one on the left and that's ... the one to start the
+PCU"*: on or off, no blinking. It checks its own safeties (door closed, motor
+amperage, optical sensors) and is separate from the extruder. A deep setting
+can stop the PCU when an extruder failure stops the extruder. This settles
+§E6's *"the left one is for easy work"*, most likely a transcription of "for
+the PCU" (a reading, not his words).
+
+## I9. HMI wishes, raised in the same answer (separate tasks, not built here)
+
+- Closing an HMI with its X leaves the keyboard dead until an Alt+Tab /
+  Shift+Tab dance. *"that is annoying and it has to be fixed."*
+- The HMI screens should stay open in the world, like the real ones: a page
+  left open is still open when you come back, readable from 3-5 m. They should
+  be operated by aiming a centre dot while holding F (*"like in Star
+  Citizen"*), and dropping tools moves from E to Q.
+
+## I10. Built, and not built
+
+Built (see the audit doc): the checks the sim can make, the start order, the
+ring, the trip, the run-down, the HMI reset, the natraject switch, and the
+extruder owning its LineFlow node and natraject.
+
+Not built, and why:
+
+- **The pelletizer lid and its lever.** The sim has no lid.
+- **Zone and pressure limits.** The numbers are in the deep settings, and we
+  have none.
+- **The blower** has no machine in the sim. The weegschaal step stands for "up
+  to the scale".
+- **Water, then knives, as two steps.** The heetafslag is one LineFlow node, so
+  it is one step.
+- **The vacuum pump, the PCU belt and the dosing screw.** No run state in the
+  sim, or *"not sure"*.
+- **Running with the head open into lump carts.** A gameplay feature of its own.
+- **The left (PCU) button.**
+- **The ring as a physical button.** Where the two buttons sit on 3A/3B is not
+  documented. The ring shows on the HMI and in the prompt.
+- **Lines 3C and 6.** The 3C macro runs `extruder_screw`, which has no brain,
+  so its pellet side still runs on the line's PLC. Line 6 has no macro.
 # Transportbanden 3A/3B — fourth session, same day (the intake macro's head and conveyor 8)
 
 Source: Arno, answering two AskUserQuestion rounds in the Claude session of

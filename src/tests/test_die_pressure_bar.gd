@@ -160,6 +160,11 @@ func _run() -> void:
 	if brain == null:
 		_finish(); return
 	var bm : ExtruderModel = brain.get("model")
+	# A bench rig has no pellet side, so its hidden "natraject" setting goes
+	# OFF and the start button starts the screw alone, as before 2026-09-25
+	# (operator rulings, rulings file §I7). The natraject itself is
+	# test_extruder_start_interlock's.
+	bm.start_seq.natraject_enabled = false
 	bm.melt_temp = bm.config.melt_temp_setpoint
 	# A loaded kopfilter: 300 psi of ΔP on its online cavity. The old wiring
 	# forwarded exactly this number as the laser filter's inlet pressure.

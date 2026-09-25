@@ -146,6 +146,11 @@ func _build_rig(lid: String, placeable: String, x: float) -> Dictionary:
 	if brain == null or brain.get("model") == null:
 		_check(false, "%s carries a SimBrain with a model" % placeable)
 		return {}
+	# A bench rig has no pellet side, so its hidden "natraject" setting goes
+	# OFF and the start button starts the screw alone, as before 2026-09-25
+	# (operator rulings, rulings file §I7). The natraject itself is
+	# test_extruder_start_interlock's.
+	brain.get("model").start_seq.natraject_enabled = false
 	var laser : Node3D = load("res://src/sim/LaserFilter.gd").new()
 	add_child(laser)
 	laser.global_position = Vector3(x + 6.0, 0.0, 0.0)

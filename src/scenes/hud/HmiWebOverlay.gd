@@ -63,6 +63,16 @@ var _extruder_line : String = ""          # lower-case line id, "" = not chosen 
 var _line_bar : PanelContainer = null
 var _line_bar_box : HBoxContainer = null
 var _line_bar_lines : Array[String] = []
+# The selected line's start button (operator rulings 2026-09-25, §I1-§I7): the
+# right white ring as a lamp, what the start sequence is doing or why it is
+# blocked, the alarm reset (the plant resets it here, at the HMI, never at the
+# machine) and the hidden "natraject" setting.
+var _start_lamp : Label = null
+var _start_text : Label = null
+var _start_reset : Button = null
+var _natraject_toggle : CheckButton = null
+const RING_LIT := Color(0.97, 0.97, 1.0)
+const RING_DARK := Color(0.30, 0.31, 0.34)
 
 # Persistent setpoints registry across screens & channels.
 # Defaults seeded with captured real plant operational values.
@@ -188,6 +198,8 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func _process(delta: float) -> void:
+	if visible:
+		_refresh_start_controls()   # the ring blinks at 1 Hz; cheap, and needs no WebView
 	if not visible or _web == null or not _shell_ready:
 		return
 	_accum += delta
@@ -591,13 +603,84 @@ func _refresh_line_bar() -> void:
 			b.focus_mode = Control.FOCUS_NONE
 			b.pressed.connect(select_extruder_line.bind(l))
 			_line_bar_box.add_child(b)
+		_add_start_controls()
 	for c in _line_bar_box.get_children():
 		if c is Button:
 			(c as Button).set_pressed_no_signal(String(c.name) == "Line_" + _extruder_line)
+	_refresh_start_controls()
 	var show := not lines.is_empty()
 	_line_bar.visible = show
 	if _web != null and is_instance_valid(_web):
 		_web.offset_top = LINE_BAR_H if show else 0.0
+
+func _add_start_controls() -> void:
+	_line_bar_box.add_child(VSeparator.new())
+	_start_lamp = Label.new()
+	_start_lamp.name = "StartRingLamp"
+	_start_lamp.text = "◯"
+	_start_lamp.tooltip_text = "Startknop (rechts, witte ring)"
+	_start_lamp.add_theme_font_size_override("font_size", 18)
+	_line_bar_box.add_child(_start_lamp)
+	_start_text = Label.new()
+	_start_text.name = "StartStatus"
+	_start_text.clip_text = true
+	_start_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_start_text.custom_minimum_size = Vector2(160.0, 0.0)
+	_start_text.add_theme_font_size_override("font_size", 13)
+	_line_bar_box.add_child(_start_text)
+	_start_reset = Button.new()
+	_start_reset.name = "StartAlarmReset"
+	_start_reset.text = "ALARM RESET"
+	_start_reset.focus_mode = Control.FOCUS_NONE
+	_start_reset.pressed.connect(func(): reset_start_alarm())
+	_line_bar_box.add_child(_start_reset)
+	_natraject_toggle = CheckButton.new()
+	_natraject_toggle.name = "NatrajectToggle"
+	_natraject_toggle.text = "Natraject"
+	_natraject_toggle.tooltip_text = "Diepe instelling: UIT = geen controle en geen start van het natraject, alleen de schroef. Niet voor normaal bedrijf."
+	_natraject_toggle.focus_mode = Control.FOCUS_NONE
+	_natraject_toggle.toggled.connect(func(on: bool): set_natraject(on))
+	_line_bar_box.add_child(_natraject_toggle)
+
+func _selected_start_seq():
+	var m = _extruders_by_line().get(_extruder_line, null)
+	if m == null:
+		return null
+	return m.get("start_seq")
+
+## Reset the selected line's start alarm. Returns whether one was latched.
+func reset_start_alarm() -> bool:
+	var seq = _selected_start_seq()
+	if seq == null or String(seq.alarm) == "":
+		return false
+	seq.reset_alarm()
+	_refresh_start_controls()
+	return true
+
+## The selected line's hidden "natraject" setting.
+func set_natraject(on: bool) -> void:
+	var seq = _selected_start_seq()
+	if seq != null:
+		seq.natraject_enabled = on
+	_refresh_start_controls()
+
+func _refresh_start_controls() -> void:
+	if _start_lamp == null or not is_instance_valid(_start_lamp):
+		return
+	var seq = _selected_start_seq()
+	var has : bool = seq != null
+	for c in [_start_lamp, _start_text, _start_reset, _natraject_toggle]:
+		(c as Control).visible = has
+	if not has:
+		return
+	var lit : bool = bool(seq.led_lit())
+	_start_lamp.text = "●" if lit else "◯"
+	_start_lamp.add_theme_color_override("font_color", RING_LIT if lit else RING_DARK)
+	_start_text.text = String(seq.status_text())
+	_start_text.add_theme_color_override("font_color",
+		Color(1.0, 0.45, 0.35) if String(seq.alarm) != "" else Color(0.85, 0.88, 0.92))
+	_start_reset.disabled = String(seq.alarm) == ""
+	_natraject_toggle.set_pressed_no_signal(bool(seq.natraject_enabled))
 
 func _find_cutter_compactor() -> CutterCompactor:
 	var lf := _find_line_flow()
