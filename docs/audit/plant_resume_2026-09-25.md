@@ -48,7 +48,7 @@ newer machine state with an older ledger.
 
 | state | where | fields |
 |---|---|---|
-| a machine's LineFlow node | `LineFlow.RESUME_NODE_FIELDS` + `node_run_state` / `restore_node_run_state` | powered, spin, buffer, in/out batches, hand_mode, manual_on, rpm_pct, per-component rpm, choked (+ the pile's position), thru / moist / contam / quality, `_was_tripped`, e-stop fault flag, the kg in each out-pipe (per edge, with the target's id and the stage timer) |
+| a machine's LineFlow node | `LineFlow.RESUME_NODE_FIELDS` + `node_run_state` / `restore_node_run_state` | powered, spin, buffer, in/out batches, hand_mode, manual_on, rpm_pct, per-component rpm, choked (+ the pile's position), thru / moist / contam / quality, `_was_tripped`, e-stop fault flag, the kg in each out-pipe (per edge, with the target's id and the stage timer), and for an extruder silo its level sensor and feed-stop latch (`_silo_state`, #322) |
 | its observers | `RESUME_MOL_FIELDS`, `RESUME_SCREW_FIELDS`, `RESUME_CC_FIELDS`, `RESUME_DRD_*` | motor overload (trip latch, load, timer); LineFlow's own screw model; the cutter-compactor (setpoints, pot, charge, knives, trips); the DRD cycle and dryer; the NIR wrap |
 | the line | `LineFlow.RESUME_LINE_FIELDS` + `line_run_state` | the shift's kg ledger, `_gran_q_accum`, feed on/off, the PLC phase/index/timer, e-stop active |
 | the extruder | `ExtruderModel.RESUME_FIELDS`, `ExtruderStartSequence.RESUME_FIELDS`, `ExtruderMachine.save_run_state` | state and time in it, melt, screw rpm and **setpoint**, **zone setpoints**, actual zones, torque and trip accumulators, suction, bypass, pots, vacuum gunk, all melt pressures, die face, fault reason, natraject trip text; the start sequence (phase, step, timers, **alarm**, **natraject setting**, run commands); the pelletiser's knives; the brain's two pressure-trip latches |
@@ -87,7 +87,7 @@ unchanged (§R3).
 
 ## 3. The guard: `test_plant_resume` (in `run.sh`'s main loop)
 
-`godot --headless --path . res://src/tests/test_plant_resume.tscn`: 60 checks,
+`godot --headless --path . res://src/tests/test_plant_resume.tscn`: 62 checks,
 three phases plus Z. It has a watchdog, a `Result:` line and a per-phase
 last-line assertion (Z2). It writes only its own slot files and arms the
 world_layout guard for the whole run.
@@ -117,14 +117,16 @@ world_layout guard for the whole run.
   is `extruder_screw`, which has no brain), a compactor, a TITECH sorter, a
   kopfilter, a sink_float (bezinktank), a waste bin (120 kg) and a bridged level
   sensor. Each
-  fault comes from its own code path: a friction washer's `force_trip`; the
+  fault comes from its own code path: 230 kg into 3A's extruder silo until
+  its level sensor holds the feed (§I11, #322); a friction washer's `force_trip`; the
   flotation tank's reject refused by a full chute pile (`_dump_waste`, choke); 400
   kg into the VSS (e-stop); the laserfilter caked until its own physics tick trips
   318 bar, which puts the extruder in EMERGENCY_STOP; a start pressed with failing
   checks (the start alarm). After the reload:
   - B2: both DRD cycles are in the save, and every run state and the pile are
     identical by name.
-  - B3: every latch is back on the same machine.
+  - B3: every latch is back on the same machine, and the silo's feed stop holds
+    at the saved level before its first new report.
   - B4: MOTOR-OVERLOAD, CHUTE-BLOCKED, OVERLOAD-ESTOP and overpressure are raised
     again.
   - B5: a second later the tripped and choked machines are still stopped, and the
@@ -138,8 +140,9 @@ world_layout guard for the whole run.
   - C4: the lump cart is still hot, 7296 s to cool against 7392 saved.
   - Two LEAK GUARD checks.
 
-Measured: `Result: PASS (60 ok, 0 fail)`, 0 `^SCRIPT ERROR` lines, on two
-worlds:
+Measured: `Result: PASS (62 ok, 0 fail)` on the tree merged with `origin/main`
+(#322), and `PASS (60 ok, 0 fail)` before the merge (without the silo checks).
+0 `^SCRIPT ERROR` lines. It ran on two worlds:
 - a bare scratch APPDATA (no world_layout.json, so C boots the unconfigured world
   with the legacy props);
 - a copy of the operator's `app_userdata` on D:, where C boots his authoritative
@@ -147,8 +150,8 @@ worlds:
   (70 LineFlow nodes, 9 machine parts)`) and the copy's world_layout.json kept
   its md5.
 
-A run takes 60-105 s. The mutations of §5 ran before line 3C and B2's DRD check
-were added (59 checks then).
+A run takes 60-130 s. M1-M13 of §5 ran before line 3C, B2's DRD check and the
+silo checks were added (59 checks then); M14 ran on the merged tree (62).
 
 ## 4. Found while building (measured)
 
@@ -184,10 +187,10 @@ were added (59 checks then).
 
 Each mutation was applied to the source alone, the suite was run under a scratch
 APPDATA, and the file was restored and md5-checked. The runner is a session
-scratch script, not committed. The 13 runs were made before the empty-batch
-compaction in `PlantResume.batch_out` (§7). None of the mutated lines changed
-with it, and the suite is green after it. Every run printed 0 `^SCRIPT ERROR`
-lines.
+scratch script, not committed. M1-M13 were made before the empty-batch
+compaction in `PlantResume.batch_out` (§7) and before the merge with #322. None
+of the mutated lines changed with either, and the suite is green after both. M14
+was made on the merged tree. Every run printed 0 `^SCRIPT ERROR` lines.
 
 | # | mutation | file | verdict | red checks |
 |---|---|---|---|---|
@@ -204,6 +207,7 @@ lines.
 | M11 | rebuild's survivor list without `components` (§4.1) | LineFlow | FAIL (58 ok, 1 fail) | A10 |
 | M12 | a field the fresh node lacks is skipped (`_was_tripped`, §4.6) | LineFlow | FAIL (57 ok, 2 fail) | A6 B2 |
 | M13 | the laserfilter's state is not restored | LaserFilter | FAIL (56 ok, 3 fail) | A6 B2 B3 |
+| M14 | the extruder silo's feed-stop state (#322) is not restored | LineFlow | FAIL (59 ok, 3 fail) | A6 B2 B3 |
 
 ## 6. Not done, and open
 
@@ -241,7 +245,7 @@ scratch APPDATA. The full harness was not run, per the one-runner ruling.
 - **Parse sweep:** `Result: 483 ok, 0 fail`. `BuildMode`, `ExtruderMachine` and
   `MainWorld` are in the not-gated compile note only for autoload names
   (`LineMacroStore`, `SimTick`), which is the sweep's known noise.
-- **`test_plant_resume`:** PASS (60 ok, 0 fail) on both worlds (§3).
+- **`test_plant_resume`:** PASS (60 ok, 0 fail) on both worlds before the merge, PASS (62 ok, 0 fail) after it (§3).
 - **The suites this change touches, bare scratch APPDATA:**
 
   | result | suites |

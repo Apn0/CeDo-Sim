@@ -458,6 +458,76 @@ Not built, and why:
   documented. The ring shows on the HMI and in the prompt.
 - **Lines 3C and 6.** The 3C macro runs `extruder_screw`, which has no brain,
   so its pellet side still runs on the line's PLC. Line 6 has no macro.
+
+## I11. The extruder silo's level sensor stops the VSS dosing screw
+
+Asked after the first build, because an extruder left off now backs its line
+up: on 3B at 950 kg/h the sim's 250 kg overload e-stop fired after 16 min,
+inside a cold barrel's 30-min warm-up (audit doc §4). His answer
+(recollection):
+
+- **The sensor.** *"a fill level sensor in the extruder silo ... like a single
+  beam laser sensor"* at the top, measuring the distance down to the material
+  in millimetres. The HMI shows it as a percentage. 100 % is a *"safe cutoff
+  value"*, 0 % is no material. His example, *"for instance"*: 1780 mm reads
+  100 %, 4950 mm reads 0 %.
+- **Averaging.** The sensor reads *"many many times per second"* and reports a
+  running average. For the sim: *"I would use ... just one time per second"*.
+- **The interlock.** *"if the silo reports that it's full ... it stops the
+  dosing screw from the VSS. All machines will keep running, just the dosing
+  screw will stop until the level is not full anymore."*
+- **Overfill.** The material already in the wash line (flotation tank, dryers)
+  still arrives. With the compactor belt not running, the silo can read more
+  than 100 %, *"like you know 114%, 120%"*.
+
+## I12. Save and load: the plant as the last shift left it (separate task)
+
+First asked with a **wrong premise**: the question said a load brings the rest
+of the line up running and only the extruders OFF. In fact a load starts
+nothing (his 2026-07-08 ruling, "cold start on load", `MainWorld.gd`: the line
+is commissioned again from the HMI START). His first answer, *"as they were"*,
+answered the wrong question. Asked again with the correction:
+
+- *"during normal gameplay or during normal shifts, I would like the state to
+  be as it was at the end of the shift before."*
+- A NEW save has no previous shift. He gave two options: (1) a cold start once,
+  where he goes through every line setting realistic values, saves that, and
+  it becomes the starting state of every new save; or (2) instead of the zeros
+  on the HMIs (which he put there deliberately), values from the live readings
+  in the captured HMI photos plus his own knowledge.
+- *"it is unrealistic that at the five shift operation you will arrive at work
+  and that every time the extruder is cold nothing is running ... it should
+  always be running always be ready to run."*
+
+**Not built here.** It overturns the 07-08 cold start and touches every
+machine's saved state, so it is its own task. Until then a load starts cold and
+every extruder is OFF with default settings.
+
+**Built the same day, as that task: §R1-§R4 below** (resume on load; how a NEW
+save starts is deferred by him there).
+
+## I13. The feed stop's restart, and line 1
+
+- **3A/3B:** *"If it's a hundred or more, it will stop"*, at once. The restart
+  is not at the first reading under 100 %: *"it will take a continuous 10
+  seconds of being below 100 before it will start again."* Neither value can be
+  changed by a non-technical employee.
+- **The VSS's own fill** is not the extruder silo. It reads in bar (the pressure
+  of its hydraulic mixer, the VSS being a tank of water and film). His example
+  for 3B: start filling at 2 bar, stop at 8 bar. It fits FORM-008's
+  "full/empty" readings, 3B 7-9 / 2 bar, and was not built.
+- **3C and 6** are *"a bit more sophisticated"*. The 3C screen's "stop vullen"
+  (225 cm) is not 100 %: the silo still fills above it, up to a maximum he does
+  not know (*"let's say for instance 250. That's a guess, do not implement
+  that"*). **Later**, once the line runs.
+- **Line 1 has no VSS; its "dosing screw" is the shredder.** On an overload
+  downstream (dryers, transport screws) the shredder pauses: the ram stops
+  pushing and goes back up, the rotor stops driving while the motor keeps its
+  rpm, and about 10 s after the overload clears the rotor spins up again and it
+  carries on. Its hopper is line 1's VSS, and it holds no water.
+
+---
+
 # Transportbanden 3A/3B — fourth session, same day (the intake macro's head and conveyor 8)
 
 Source: Arno, answering two AskUserQuestion rounds in the Claude session of
@@ -706,8 +776,9 @@ almost every object has one F action and, if it can be carried, one E action.
 
 Source: Arno's request of 2026-09-25, relayed to the Claude session as a written
 brief (worktree `unruffled-keller-219387`), then one AskUserQuestion round. The
-request is a **recollection of how shifts work, not a document** and is labelled
-**CLAIMED**. The answers are design choices, so they are rulings. What was
+request was first recorded in §I12 (fourth session), which set it aside as its
+own task; this is that task. The request is a **recollection of how shifts
+work, not a document** and is labelled **CLAIMED**. The answers are design choices, so they are rulings. What was
 measured before and after is in `docs/audit/plant_resume_2026-09-25.md`.
 
 ## R1. The request (CLAIMED — operator recollection)

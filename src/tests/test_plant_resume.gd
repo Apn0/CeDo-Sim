@@ -568,6 +568,14 @@ func _phase_b() -> void:
 	if bez != null:
 		bez.set("valve_auto", false)
 		bez.set("sp_high", 0.7)
+	# 0) The extruder silo overfills: its level sensor holds the silo's feed
+	#    (rulings §I11, LineFlow._tick_silo_feed_stops) at its next 1 s report.
+	var silo_b := _find(bm1, "extruder_silo", "line_3a")
+	var silo_i : int = _node_index(lf1, silo_b)
+	if silo_i >= 0:
+		((nodes[silo_i] as Dictionary)["in"] as MaterialBatch).add(MaterialBatch.new(230.0, 230.0 / LineFlow.FEED_DENSITY, LineFlow.DEFAULT_COMP.duplicate(), "fixture"))
+	_tick(bm1, lf1, 1.5)
+	var sl1 : Dictionary = lf1.call("silo_level_for", silo_b) if silo_b != null else {}
 	# 1) A friction separator's motor trips.
 	var mol_key := ""
 	var mol_body : Node = null
@@ -623,6 +631,8 @@ func _phase_b() -> void:
 	_check(m.state == ExtruderModel.State.EMERGENCY_STOP and bool(laser.get("is_tripped")) and bool(br.get("_upstream_trip_latched")),
 		"B1 before the save the 318-bar trip holds: extruder %s, laserfilter tripped, brain latched" % m.get_state_name())
 	_check(String(m.start_seq.alarm) != "", "B1 before the save the start alarm is latched ('%s')" % m.start_seq.alarm)
+	_check(bool(sl1.get("held", false)), "B1 before the save 3A's extruder silo holds its feed (%.0f %%)" % float(sl1.get("pct", -1.0)))
+	var sl_save : Dictionary = lf1.call("silo_level_for", silo_b) if silo_b != null else {}
 	var ordsb : Dictionary = _ordinals(bm1)
 	var mol_label : String = _label(mol_body, ordsb) if mol_body != null else ""
 	var choke_label : String = _label(choke_body, ordsb) if choke_body != null else ""
@@ -677,6 +687,11 @@ func _phase_b() -> void:
 	_check(m2.state == ExtruderModel.State.EMERGENCY_STOP and m2.fault_reason == "laserfilter_upstream_overpressure_318bar" \
 			and bool(laser2.get("is_tripped")) and bool(laser2.get("is_halted")) and bool(br2.get("_upstream_trip_latched")),
 		"B3 the 318-bar trip is back: extruder %s (%s), laserfilter tripped + halted, brain latched" % [m2.get_state_name(), m2.fault_reason])
+	var silo_b2 := _find(bm2, "extruder_silo", "line_3a")
+	var sl2 : Dictionary = lf2.call("silo_level_for", silo_b2) if silo_b2 != null else {}
+	_check(bool(sl2.get("held", false)) and absf(float(sl2.get("pct", 0.0)) - float(sl_save.get("pct", -1.0))) < 1e-6,
+		"B3 the silo's feed stop still holds before its first report (%.0f %% as saved %.0f %%, held %s)"
+		% [float(sl2.get("pct", -1.0)), float(sl_save.get("pct", -1.0)), str(sl2.get("held", "?"))])
 	_check(String(m2.start_seq.alarm) == String(m.start_seq.alarm) and String(m2.start_seq.alarm) != "",
 		"B3 the start alarm is still latched ('%s')" % m2.start_seq.alarm)
 	var est2 : String = ""

@@ -290,6 +290,7 @@ func _on_sim_tick(delta: float) -> void:
 	var prev_state := model.state
 	var events := model.tick(delta, inputs)
 	_command_natraject()
+	_update_silo_level()
 
 	_resolve_lazy_dependencies()
 	_update_telemetry(delta)
@@ -420,6 +421,21 @@ func _command_natraject() -> void:
 	var me := _owner_body()
 	if me != null:
 		_line_flow.call("command_node", me, self, _screw_driven() or model.screw_rpm > 0.5)
+
+## The extruder silo's level as its laser sensor reports it (LineFlow, rulings
+## §I11), copied onto the model so every HMI that reaches the model shows it.
+func _update_silo_level() -> void:
+	var me := _owner_body()
+	if me == null or _line_flow == null or not is_instance_valid(_line_flow) \
+			or not _line_flow.has_method("silo_level_for"):
+		model.silo_level_known = false
+		return
+	var lv : Dictionary = _line_flow.call("silo_level_for", me)
+	model.silo_level_known = bool(lv.get("found", false))
+	if model.silo_level_known:
+		model.silo_level_pct = float(lv["pct"])
+		model.silo_level_mm = float(lv["mm"])
+		model.silo_feed_stopped = bool(lv["held"])
 
 ## LineFlow.rebuild() calls this on every extruder so the claims are in place
 ## before LineFlow's next tick.
