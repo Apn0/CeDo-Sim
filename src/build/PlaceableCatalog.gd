@@ -1250,6 +1250,14 @@ const _SOUND_BANK := preload("res://src/audio/MachineSoundBank.gd")
 ## Returns `node` for fluent use: `return _finalize_placeable(node, id)`.
 ## No-op on a null node (ghost paths and missing-asset paths return null
 ## upstream).
+##
+## Only ever on the node build_node RETURNS — never on the `p` an `_m_*`
+## builder is handed, which is the body's `Model` child. Ten builders did that
+## (and _m_intake_belt / _m_switch_belt / _m_scraper_conveyor /
+## _m_compactor_belt through BeltBuilder.build): each made the Model a second
+## placed_object, so LineFlow discovered the machine twice and K-mode resolved
+## a hatch or valve collider under the Model to the Model, not the machine.
+## Guarded by test_flow_node_unique (2026-09-25).
 static func _finalize_placeable(node: Node3D, id: String) -> Node3D:
 	if node == null:
 		return null
@@ -2693,9 +2701,11 @@ static func _m_scraper_conveyor(p: Node3D, size: Vector3, _color: Color, ghost: 
 	spec.motor = "none"
 	spec.chute = "none"
 	spec.belt_speed_mps = _BELT_CARRY_SPEED
-	spec.tag_as_belt = true
 	spec.extras = [Callable(PlaceableCatalog, "_scraper_conveyor_extras")]
-	BeltBuilder.build(p, "scraper_conveyor", size, spec, ghost)
+	# build_internal: `p` is the Model. The body is tagged 'belt' and gets
+	# BeltSurface from build_node (scraper_conveyor is in _BELT_IDS); build()
+	# tagged this Model placed_object as well — a second LineFlow node.
+	BeltBuilder.build_internal(p, "scraper_conveyor", size, spec, ghost)
 
 static func _scraper_conveyor_extras(p: Node3D, _deck_root: Node3D, size: Vector3, _spec: Dictionary, ghost: bool) -> void:
 	var steel := _mat(_STEEL, ghost, 0.5, 0.4)
@@ -4199,7 +4209,11 @@ static func _m_intake_belt(p: Node3D, id: String, size: Vector3, _color: Color, 
 	# BeltSurface — disable the builder's tagging path so we don't run the same
 	# work twice and (incidentally) overwrite metas the caller already set.
 	s.tag_as_belt = false
-	BeltBuilder.build(p, id, size, s, ghost)
+	# build_internal, not build: `p` is the body's Model child, and build()
+	# stamps placeable_id + group placed_object on whatever it is handed, so
+	# LineFlow discovered every intake belt twice — the body and this Model
+	# (measured 2026-09-25, test_flow_node_unique).
+	BeltBuilder.build_internal(p, id, size, s, ghost)
 
 # ── switch_belt (= conveyor 12, operator-spec #137): flat belt whose ENTIRE
 #    DECK slides along its conveying axis ±1.5 m, feeding either VSS_3A
@@ -4251,7 +4265,9 @@ static func _m_switch_belt(p: Node3D, size: Vector3, _color: Color, ghost: bool)
 	spec.bed_bulk_density = BeltBuilder.SNIPPER_BULK_KGM3   # P1 — same snippers as C1..C11
 	spec.belt_speed_mps = _INTAKE_BELT_SPEED_MPS            # the field drifts at the intake speed build_node tags
 	spec.tag_as_belt = false            # build_node() still owns belt tagging
-	BeltBuilder.build(p, "switch_belt", size, spec, ghost)
+	# build_internal: `p` is the Model, and build() would tag it placed_object
+	# (a second LineFlow node and a second SwitchBelt controller on this deck).
+	BeltBuilder.build_internal(p, "switch_belt", size, spec, ghost)
 
 # `extras` callable for switch_belt — builds the two orange position-rail
 # chassis housings under `p` (NOT the sliding Deck root). These are wider than
@@ -4659,8 +4675,9 @@ static func _m_compactor_belt(p: Node3D, size: Vector3, _color: Color, ghost: bo
 	# tag_as_belt=false preserves the legacy contract: compactor_belt is not in
 	# _BELT_IDS (line 688) and not _is_intake, so it was never tagged 'belt' /
 	# never got meta('belt_speed') / never got BeltSurface — it's a static
-	# visual. BeltBuilder still writes meta('placeable_id') and adds the body
-	# to 'placed_object' so K-edit / delete / save-load find it.
+	# visual. build_node tags the BODY placeable_id + 'placed_object' so K-edit
+	# / delete / save-load find it. BeltBuilder.build() wrote the same tags on
+	# `p` — this Model — which made a second LineFlow node; hence build_internal.
 	var spec := BeltBuilder.make_spec()
 	spec.deck_kind = "none"           # caller owns the deck (built in extras)
 	spec.has_legs = false             # bespoke I-beam legs in extras
@@ -4670,7 +4687,7 @@ static func _m_compactor_belt(p: Node3D, size: Vector3, _color: Color, ghost: bo
 	spec.chute = "none"
 	spec.tag_as_belt = false          # static visual — preserve legacy no-carry
 	spec.extras = [Callable(PlaceableCatalog, "_compactor_belt_extras")]
-	BeltBuilder.build(p, "compactor_belt", size, spec, ghost)
+	BeltBuilder.build_internal(p, "compactor_belt", size, spec, ghost)
 
 # `extras` callable for compactor_belt — builds the full bespoke geometry
 # (Z-rotated belt body + I-beam legs + drive-motor box + wire-mesh guard rail +
@@ -10705,7 +10722,6 @@ static func _m_vacuum_unit(p: Node3D, size: Vector3, _color: Color, ghost: bool)
 			tq.position = Vector3(sx4 * (size.x * 0.5 + 0.001), size.y * 0.55, 0.0)
 			tq.rotation = Vector3(0.0, sx4 * PI * 0.5, 0.0)
 			p.add_child(tq)
-	_finalize_placeable(p, "vacuum_unit")
 
 ## Vacuum pump — bronze liquid-ring pump with spinning impeller & sight window (#208b).
 static func _m_vacuum_pump(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> void:
@@ -10734,7 +10750,6 @@ static func _m_vacuum_pump(p: Node3D, size: Vector3, _color: Color, ghost: bool)
 	for sx in [-1.0, 1.0]:
 		_cyl(p, 0.025, 0.025, 0.04, Vector3(sx * pump_r * 0.45, pump_r * 0.25, size.z * 0.5 + 0.02), dark, "z")
 	_box(p, Vector3(0.18, 0.18, size.z * 0.6), Vector3(0.0, pump_r * 0.6, -size.z * 0.3), motor_grey)
-	_finalize_placeable(p, "vacuum_pump")
 
 ## A floor "hot spot" placeable that accumulates dirt over time. Visual is just a
 ## small brown wear mark on the floor; the actual dirt pile (cone) is spawned by
@@ -13270,8 +13285,6 @@ static func _m_hazard_decal(p: Node3D, id: String, size: Vector3,
 	var lbl := _stencil_label(p, text,
 		Vector3(size.x - brd * 2.4, size.y - brd * 2.4, 0.01), "+Z")
 	lbl.position = Vector3(0.0, size.y * 0.5, fz + 0.003)
-	if not ghost:
-		_finalize_placeable(p, id)
 
 # ── #212.11 overhead crane: yellow PPE gantry crane (legs + beam + trolley) ──
 # ── #212.11 overhead crane: yellow PPE gantry crane with hoist & pendant ──
@@ -13309,9 +13322,6 @@ static func _m_overhead_crane(p: Node3D, size: Vector3, color: Color, ghost: boo
 	var _crane_pendant := _interactive_hatch(p, Vector3(0.08, 0.22, 0.06),
 		Vector3(size.x * 0.18 + 0.35, trolley_y - size.y * 0.45, 0.0), "Crane Operator Pendant", 45.0, 1.0, yel, ghost)
 
-	if not ghost:
-		_finalize_placeable(p, "overhead_crane")
-
 # ── #212.12 fire_riser: tall red pipe with interactive inspector test valve ─────
 static func _m_fire_riser(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
 	var red := _mat(color, ghost, 0.3, 0.5)
@@ -13340,9 +13350,6 @@ static func _m_fire_riser(p: Node3D, size: Vector3, color: Color, ghost: bool) -
 	_cyl(p, 0.06, 0.06, 0.02, Vector3(0.0, size.y * 0.65, size.x * 0.52), dark, "z")
 	_cyl(p, 0.05, 0.05, 0.01, Vector3(0.0, size.y * 0.65, size.x * 0.53), brass, "z")
 
-	if not ghost:
-		_finalize_placeable(p, "fire_riser")
-
 # ── #212.12 fire extinguisher with interactive discharge squeeze lever ─────
 static func _m_fire_extinguisher(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
 	var red := _mat(color, ghost, 0.3, 0.5)
@@ -13368,9 +13375,6 @@ static func _m_fire_extinguisher(p: Node3D, size: Vector3, color: Color, ghost: 
 	_box(p, Vector3(size.x * 0.7, size.y * 0.2, 0.002),
 		Vector3(0.0, size.y * 0.45, size.x * 0.46 - 0.002), yel)
 
-	if not ghost:
-		_finalize_placeable(p, "fire_extinguisher")
-
 # ── #212.13 drainage grating: dark grey with diagonal slots + puddle decal ──
 static func _m_drainage_grating(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
 	var dark := _mat(color, ghost, 0.45, 0.7)
@@ -13395,8 +13399,6 @@ static func _m_drainage_grating(p: Node3D, size: Vector3, color: Color, ghost: b
 	pmi.position = Vector3(0.0, size.y + 0.006, 0.0)
 	pmi.rotation = Vector3(-PI * 0.5, 0.0, 0.0)
 	p.add_child(pmi)
-	if not ghost:
-		_finalize_placeable(p, "drainage_grating")
 
 # ── #212.14 scissor lift: yellow base + 4 X-arms + interactive top platform control ──
 static func _m_scissor_lift(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
@@ -13441,9 +13443,6 @@ static func _m_scissor_lift(p: Node3D, size: Vector3, color: Color, ghost: bool)
 	if not ghost:
 		_cyl(_lift_ctrl, 0.02, 0.02, 0.02, Vector3(0.0, 0.05, 0.05), red, "z")
 
-	if not ghost:
-		_finalize_placeable(p, "scissor_lift")
-
 # ── #212.15 riveted steel arch column: box + rivet bumps in grid ────────────
 static func _m_riveted_steel_column(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
 	var steel := _mat(color, ghost, 0.6, 0.4)
@@ -13478,8 +13477,6 @@ static func _m_riveted_steel_column(p: Node3D, size: Vector3, color: Color, ghos
 					var lz : float = size.z * (-0.4 + float(c) / float(cols - 1) * 0.8)
 					_cyl(p, 0.025, 0.025, 0.012,
 						Vector3(face_x, y, lz), rivet, "x")
-	if not ghost:
-		_finalize_placeable(p, "riveted_steel_column")
 
 # ── #212.15 concrete V-beam: 2 angled boxes + yellow caution decal at base ──
 static func _m_concrete_v_beam(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
@@ -13494,8 +13491,6 @@ static func _m_concrete_v_beam(p: Node3D, size: Vector3, color: Color, ghost: bo
 	# Yellow caution stripe at the base.
 	_box(p, Vector3(size.x, 0.10, size.z * 1.05),
 		Vector3(0.0, 0.05, 0.0), yel)
-	if not ghost:
-		_finalize_placeable(p, "concrete_v_beam")
 
 ## Rulings §12 (2026-09-23): the dewatering screw's trough is open ONLY after a
 ## flotation tank. Both looks are built by _m_dewater; this flips which one
