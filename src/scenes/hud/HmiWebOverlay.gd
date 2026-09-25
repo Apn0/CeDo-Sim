@@ -49,6 +49,22 @@ var _shift_clock : Node = null
 var _scope : Dictionary = {}
 var _accum := 0.0
 
+# ── Extruder line choice (2026-09-25) ─────────────────────────────────────────
+# One HMI serves every extruder line ("hmi_extruder_all"), and the web screens
+# carry no line of their own, so every extruder channel (rpm, zones, suction)
+# went to the FIRST extruder in the group: the other lines had no rpm control
+# at all. Since every start leaves the screw at screw_rpm_min for the operator
+# to raise (operator 2026-09-25), they would have run at 60 rpm for good. A
+# Godot strip ABOVE the native WebView picks the line (operator: "add a line
+# choice"); the WebView is inset by its height so the native window, which
+# floats over all Godot output, cannot cover it.
+const LINE_BAR_H := 34.0
+const _LINE_ORDER : Array[String] = ["1", "3a", "3b", "3c", "6"]
+var _extruder_line : String = ""          # lower-case line id, "" = not chosen yet
+var _line_bar : PanelContainer = null
+var _line_bar_box : HBoxContainer = null
+var _line_bar_lines : Array[String] = []
+
 # Persistent setpoints registry across screens & channels.
 # Defaults seeded with captured real plant operational values.
 var _setpoints : Dictionary = {
@@ -141,6 +157,11 @@ func open_for(label: String, scope: Dictionary) -> void:
 	var start := String(scope.get("web_screen", INDEX_FILE))
 	print("[HmiWebOverlay] open_for: label='%s' screen='%s'" % [label, start])
 	_ensure_webview()
+	# Each panel opens on its own line (the first of its scope's lines that has
+	# an extruder); the strip can move it to any other.
+	_extruder_line = _default_extruder_line()
+	_ensure_line_bar()
+	_refresh_line_bar()
 	visible = true
 	if _web != null and is_instance_valid(_web):
 		_web.visible = true
@@ -386,6 +407,7 @@ func _find_line_flow() -> Node:
 	return _line_flow
 
 func _push_vals() -> void:
+	_refresh_line_bar()   # an extruder placed while the panel is open gets a button
 	if _current_screen == "":
 		return
 	var payload := gather_vals()
@@ -451,18 +473,132 @@ func gather_vals() -> Dictionary:
 		"clock": _clock_lines(),
 	}
 
+## The model of the SELECTED line's extruder (see the line strip). Every
+## extruder channel reads and writes through this, so the strip decides which
+## line the rpm, zone and suction setpoints reach.
 func _find_extruder_model() -> ExtruderModel:
+	var by := _extruders_by_line()
+	if by.is_empty():
+		return null
+	if not by.has(_extruder_line):
+		_extruder_line = _default_extruder_line()
+	return by.get(_extruder_line) as ExtruderModel
+
+## Extruder machines in the world that carry a model, by lower-case line id
+## (their ExtruderConfig.line_id). The first one of a line wins.
+func _extruders_by_line() -> Dictionary:
+	var out := {}
 	var tree := get_tree()
-	if tree != null:
-		var machines := tree.get_nodes_in_group("extruder_machine")
-		for em in machines:
-			if em != null and is_instance_valid(em):
-				var m = em.get("model")
-				if m == null and em.has_meta("model"):
-					m = em.get_meta("model")
-				if m != null:
-					return m as ExtruderModel
-	return null
+	if tree == null:
+		return out
+	for em in tree.get_nodes_in_group("extruder_machine"):
+		if em == null or not is_instance_valid(em):
+			continue
+		var m = em.get("model")
+		if m == null and em.has_meta("model"):
+			m = em.get_meta("model")
+		if m == null:
+			continue
+		var lid := ""
+		var cfg = em.get("config_resource")
+		if cfg != null:
+			lid = String(cfg.get("line_id")).to_lower()
+		elif m.get("config") != null:
+			lid = String(m.config.line_id).to_lower()
+		if not out.has(lid):
+			out[lid] = m
+	return out
+
+## The extruder lines in the world, in plant order (1, 3A, 3B, 3C, 6, then any
+## other line id alphabetically).
+func extruder_lines() -> Array[String]:
+	var by := _extruders_by_line()
+	var out : Array[String] = []
+	for l in _LINE_ORDER:
+		if by.has(l):
+			out.append(l)
+	var rest : Array = by.keys().filter(func(k): return not _LINE_ORDER.has(String(k)))
+	rest.sort()
+	for k in rest:
+		out.append(String(k))
+	return out
+
+func selected_extruder_line() -> String:
+	return _extruder_line
+
+## Point every extruder channel at this line's extruder. Returns false, and
+## changes nothing, when no extruder of that line is in the world.
+func select_extruder_line(line: String) -> bool:
+	var l := line.strip_edges().to_lower()
+	if not _extruders_by_line().has(l):
+		return false
+	_extruder_line = l
+	_refresh_line_bar()
+	if visible and _shell_ready:
+		_push_vals()
+	return true
+
+## A panel opens on the first of its scope's own lines that has an extruder,
+## else on the first extruder line in plant order.
+func _default_extruder_line() -> String:
+	var lines := extruder_lines()
+	if lines.is_empty():
+		return ""
+	for l in _scope.get("lines", []):
+		if lines.has(String(l).to_lower()):
+			return String(l).to_lower()
+	return lines[0]
+
+func _ensure_line_bar() -> void:
+	if _line_bar != null and is_instance_valid(_line_bar):
+		return
+	_line_bar = PanelContainer.new()
+	_line_bar.name = "ExtruderLineBar"
+	_line_bar.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	_line_bar.offset_bottom = LINE_BAR_H
+	_line_bar.custom_minimum_size = Vector2(0.0, LINE_BAR_H)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.11, 0.13, 0.17)
+	sb.content_margin_left = 10.0
+	sb.content_margin_right = 10.0
+	sb.content_margin_top = 3.0
+	sb.content_margin_bottom = 3.0
+	_line_bar.add_theme_stylebox_override("panel", sb)
+	_line_bar_box = HBoxContainer.new()
+	_line_bar_box.add_theme_constant_override("separation", 6)
+	_line_bar.add_child(_line_bar_box)
+	add_child(_line_bar)
+
+## One toggle button per extruder line; the selected one is pressed. Hidden,
+## and the WebView back to full height, when the world has no extruder.
+func _refresh_line_bar() -> void:
+	if _line_bar == null or not is_instance_valid(_line_bar):
+		return
+	var lines := extruder_lines()
+	if lines != _line_bar_lines:
+		_line_bar_lines = lines
+		for c in _line_bar_box.get_children():
+			_line_bar_box.remove_child(c)
+			c.queue_free()
+		var lbl := Label.new()
+		lbl.text = "Extruder-lijn (toerental, zones, vacuüm):"
+		lbl.add_theme_font_size_override("font_size", 14)
+		_line_bar_box.add_child(lbl)
+		for l in lines:
+			var b := Button.new()
+			b.name = "Line_" + l
+			b.text = "Lijn " + l.to_upper()
+			b.toggle_mode = true
+			b.focus_mode = Control.FOCUS_NONE
+			b.pressed.connect(select_extruder_line.bind(l))
+			_line_bar_box.add_child(b)
+	for c in _line_bar_box.get_children():
+		if c is Button:
+			(c as Button).set_pressed_no_signal(String(c.name) == "Line_" + _extruder_line)
+	var show := not lines.is_empty()
+	_line_bar.visible = show
+	if _web != null and is_instance_valid(_web):
+		_web.offset_top = LINE_BAR_H if show else 0.0
 
 func _find_cutter_compactor() -> CutterCompactor:
 	var lf := _find_line_flow()

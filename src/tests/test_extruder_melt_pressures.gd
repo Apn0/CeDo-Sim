@@ -52,7 +52,7 @@ extends Node
 
 const DT : float = 0.1
 const RUN_S : float = 600.0          # same span as the 2026-09-24 probe
-const SAMPLE_FROM_S : float = 300.0  # startup_ramp_s is 180 s; sample the steady tail
+const SAMPLE_FROM_S : float = 300.0  # sample the steady tail (was startup_ramp_s 180 s + margin)
 const SHIFT_H : float = 8.0          # FORM-008 row 27: kopfilters >= 1x per dienst
 const PSI_PER_BAR : float = 14.5038
 const WATCHDOG_S : float = 240.0
@@ -172,6 +172,14 @@ func _start(rig: Dictionary) -> void:
 	pend["start_production"] = true
 
 
+## Every start leaves the screw at screw_rpm_min (60) and the operator raises it
+## on the HMI (operator 2026-09-25). The nominal-run checks here are about a line
+## AT nominal, so they raise it on the tick after the start, as a player would.
+func _raise_to_nominal(rig: Dictionary) -> void:
+	var m = rig["model"]
+	m.set_screw_rpm_setpoint(m.config.screw_rpm_nominal)
+
+
 # ── per-line configuration ────────────────────────────────────────────────────
 func _check_per_line_config(lid: String, rig: Dictionary) -> void:
 	var path := "res://src/data/machines/Extruder%s.tres" % lid
@@ -194,6 +202,8 @@ func _run_nominal(lid: String, rig: Dictionary) -> void:
 	var tripped_at := -1.0
 	for i in range(n):
 		_step(rig)
+		if i == 0:
+			_raise_to_nominal(rig)
 		var t := (i + 1) * DT
 		if tripped_at < 0.0 and model.state == ExtruderModel.State.EMERGENCY_STOP:
 			tripped_at = t
@@ -354,10 +364,12 @@ func _check_upstream_trip_caked_screen(rig: Dictionary) -> void:
 	var model = rig["model"]
 	var laser = rig["laser"]
 	var after := _num(model, "mp_after_laserfilter_bar")
-	var feed : float = float(laser.get("feed_throughput_kg_h"))
-	var base_psi : float = feed * LaserFilter.CLEAN_BASE_PSI_PER_KG_H
-	# Front-face cake that puts dMP at `dp_bar`, no disc advance in between.
+	# Front-face cake that puts dMP at `dp_bar`, no disc advance in between. The
+	# clean-screen base is read from the LIVE feed on every call: the restart
+	# below runs at 60 rpm (every start does, operator 2026-09-25), and a base
+	# frozen at the nominal 950 kg/h left the cake ~73 bar short of the trip.
 	var set_dp := func(dp_bar: float) -> void:
+		var base_psi : float = float(laser.get("feed_throughput_kg_h")) * LaserFilter.CLEAN_BASE_PSI_PER_KG_H
 		laser.set("front_loading_g", maxf(0.0, (dp_bar * PSI_PER_BAR - base_psi) / LaserFilter.CAKE_PSI_PER_G))
 		laser.set("_rotation_timer", 0.0)
 
@@ -428,8 +440,10 @@ func _check_upstream_trip_cold_melt() -> void:
 		return
 	var model = rig["model"]
 	_start(rig)
-	for _i in range(int(300.0 / DT)):
+	for i in range(int(300.0 / DT)):
 		_step(rig)
+		if i == 0:
+			_raise_to_nominal(rig)
 	var sp : float = model.config.melt_temp_setpoint
 	for z in range(ExtruderModel.ZONE_COUNT):
 		model.set_zone_temp(z, sp - 20.0)
@@ -460,8 +474,8 @@ func _check_upstream_trip_cold_melt() -> void:
 ## model's melt drifts back to setpoint while running and nothing in gameplay
 ## holds it colder yet. Torque stays under the lump threshold, so the trip
 ## comes through the screen and not through lumps. The gameplay negative
-## control is a start at the preheat-ready melt, the coldest melt the green
-## button accepts.
+## controls are a start at the preheat-ready melt, the coldest melt the green
+## button accepts, on a fresh model AND on a warm one (2026-09-25).
 func _check_upstream_trip_melt_viscosity() -> void:
 	print("  -- 318 bar before the laserfilter: a cold melt through the screen (fresh 3B) --")
 	var fit_bar_per_c := 6.83   # 3A trend fit, #275
@@ -475,8 +489,10 @@ func _check_upstream_trip_melt_viscosity() -> void:
 		var laser = rig["laser"]
 		var sp : float = model.config.melt_temp_setpoint
 		_start(rig)
-		for _i in range(int(300.0 / DT)):
+		for i in range(int(300.0 / DT)):
 			_step(rig)
+			if i == 0:
+				_raise_to_nominal(rig)
 		var peak := 0.0
 		var torque_peak := 0.0
 		var lump_peak := 0.0
@@ -527,6 +543,47 @@ func _check_upstream_trip_melt_viscosity() -> void:
 			and speak < LaserFilter.UPSTREAM_TRIP_BAR,
 		"a start at the preheat-ready melt (%.2f C, %.2f C cold) runs up without a trip: MP<MF peak %.1f bar"
 		% [ready_c, ms.config.melt_temp_setpoint - ready_c, speak])
+
+	# The same start on a WARM model: one that ran at nominal before and was
+	# stopped. The check above only ever started FRESH models, and a fresh model
+	# used to re-ramp from idle in RUNNING (a lifetime-runtime ramp) while a warm
+	# one went straight to nominal flow — measured 2026-09-25: MP<MF 317.6 bar
+	# and a 318 trip 4.3 s after the green button (probe_warm_restart_pressure).
+	# Now every start runs to 60 rpm and the green waits out the lumps
+	# (operator rulings 2026-09-25; test_extruder_start_rpm has the rest).
+	var rw := _build_rig("3B", "extruder_3b", 7000.0)
+	if rw.is_empty():
+		return
+	var mw = rw["model"]
+	_start(rw)
+	for i in range(int(300.0 / DT)):
+		_step(rw)
+		if i == 0:
+			_raise_to_nominal(rw)
+	var warm_rt : float = mw.runtime_s
+	rw["brain"].get("_pending")["stop_production"] = true
+	for _i in range(int(60.0 / DT)):
+		_step(rw)
+		if mw.state == ExtruderModel.State.OFF:
+			break
+	var ready_w : float = float(mw.call("_preheat_ready_temp"))
+	mw.melt_temp = ready_w
+	_start(rw)
+	_step(rw)                  # OFF cools 0.05 C first: PREHEAT
+	mw.melt_temp = ready_w
+	_start(rw)                 # the green button
+	_step(rw)
+	var wstarted : bool = mw.state == ExtruderModel.State.STARTING
+	var wpeak := 0.0
+	for _i in range(int(400.0 / DT)):
+		_step(rw)
+		wpeak = maxf(wpeak, _call_num(rw["laser"], "mp_before_filter_bar"))
+		if mw.state == ExtruderModel.State.EMERGENCY_STOP:
+			break
+	_check(warm_rt > 180.0 and wstarted and mw.state == ExtruderModel.State.RUNNING
+			and not bool(rw["laser"].get("is_tripped")) and wpeak < LaserFilter.UPSTREAM_TRIP_BAR,
+		"a WARM restart (ran %.0f s, stopped) at the preheat-ready melt %.2f C runs up without a trip: MP<MF peak %.1f bar"
+		% [warm_rt, ready_w, wpeak])
 
 
 # ── verdict ───────────────────────────────────────────────────────────────────

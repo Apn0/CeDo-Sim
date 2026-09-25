@@ -14,11 +14,27 @@ class_name ExtruderConfig
 
 @export_group("Throughput")
 @export var nominal_kg_per_h    : float = 950.0   # design throughput
-@export var startup_ramp_s      : float = 180.0   # 0 → nominal over this time
+## NOT READ since 2026-09-25. It was RUNNING's own idle -> nominal ramp, timed
+## off the model's LIFETIME runtime_s, so only a model's first start ever used
+## it; a later start ran straight to nominal flow on a still-cold melt and
+## tripped 318 bar. A start now ramps to screw_rpm_min and the operator raises
+## the rpm (see screw_rpm_min). Kept only so the .tres files still load clean.
+@export var startup_ramp_s      : float = 180.0
 @export var idle_kg_per_h       : float = 50.0    # screw turning, no feed
 @export var screw_rpm_idle      : float = 35.0
 @export var screw_rpm_nominal   : float = 110.0
 @export var screw_rpm_max       : float = 145.0
+## The lowest screw speed the operator can set, and the speed EVERY start runs
+## the screw up to (from standstill, in ExtruderModel.START_RAMP_S). The screw
+## then stays there until the operator raises the rpm setpoint on the HMI.
+## Operator 2026-09-25 (recollection): "the minimum value possible to set 60
+## rpm and it will ramp up in about two and a half to three seconds ... to that
+## 60 rpm and then that's it basically extruder is running at 60 rpm". Matches
+## the EREMA WinCC archive (src/data/plant/trends/3{a,b}_snelheid_hoofdmotor.json,
+## 2023-06-19..28, 6-min median buckets): no bucket between 0 and 60 rpm on
+## either line, and most starts read 60 in their first bucket before the rpm
+## climbs in steps. Applies to every extruder (operator, same day).
+@export var screw_rpm_min       : float = 60.0
 
 @export_group("Thermals")
 @export var melt_temp_setpoint  : float = 215.0   # °C

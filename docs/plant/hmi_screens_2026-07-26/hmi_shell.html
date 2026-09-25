@@ -674,7 +674,10 @@ function hmiBoot(win) {
     // Extruder specific channels
     "schuif": { min: 0, max: 100, step: 1, unit: "%" },
     "ex_belasting": { min: 0, max: 150, step: 1, unit: "%" },
-    "extr_rpm": { min: 0, max: 200, step: 1, unit: "rpm" },
+    // 60 = the lowest screw speed the drive accepts (operator 2026-09-25, and
+    // the WinCC trends: nothing between 0 and 60); 145 = ExtruderConfig.
+    // screw_rpm_max. ExtruderModel.set_screw_rpm_setpoint clamps to the same.
+    "extr_rpm": { min: 60, max: 145, step: 1, unit: "rpm" },
     "sv_temperatuur": { min: 20, max: 150, step: 1, unit: "°C" },
     "ez_1": { min: 20, max: 320, step: 1, unit: "°C" },
     "zz_1": { min: 20, max: 320, step: 1, unit: "°C" },

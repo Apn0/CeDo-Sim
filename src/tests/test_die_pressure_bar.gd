@@ -82,7 +82,10 @@ func _trend(line: String, sig_name: String) -> Dictionary:
 func _run_to_nominal(m: ExtruderModel) -> void:
 	m.melt_temp = m.config.melt_temp_setpoint
 	m.tick(0.1, {"start_production": true})
-	for _i in range(3000):   # 300 s — the probe measured nominal by 240 s
+	# Every start leaves the screw at 60 rpm and the operator raises it on the
+	# HMI (operator 2026-09-25); this suite is about a line AT nominal.
+	m.set_screw_rpm_setpoint(m.config.screw_rpm_nominal)
+	for _i in range(3000):   # 300 s — steady long before that
 		m.tick(0.1, {})
 
 func _has_nr(rows: Array, nr: int) -> bool:
@@ -166,6 +169,8 @@ func _run() -> void:
 		kop_cav.loading_g = 300.0 / 0.22
 		kop_cav.delta_p_psi = 300.0
 		brain.call("_on_sim_tick", 0.1)
+		if _i == 0:
+			bm.set_screw_rpm_setpoint(bm.config.screw_rpm_nominal)   # the player raises it
 	_check(bm.state == ExtruderModel.State.RUNNING, "brain model RUNNING (state %s)" % bm.get_state_name())
 	var kop_bar : float = 300.0 / PSI_PER_BAR
 	var inlet_bar : float = float(lf.get("mp_after_filter_bar"))
