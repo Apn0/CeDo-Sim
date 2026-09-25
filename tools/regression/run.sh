@@ -552,6 +552,27 @@ wl_sentinel "vehicle spawn (clamp nesting)"
 # 36 checks, 8 mutations red (old die formula 7, silo back 2, flat 200 rpm 7,
 # 195 °C barrel 8, old MFI gain 2, terminal prefix pick 3, no profile 5,
 # ExtruderModel's Extruder3A.tres die plate drifted 1).
+# 2026-09-25: + D, the die plate across the trend's output band at the plant's
+# own rpm per output, inside the kopdruk band, P ∝ Q^0.35 at one melt, MFI flat
+# with output; + E, ExtruderModel's die plate on the same law (operator ruling,
+# docs/plant/operator_rulings_2026-09-25.md). 55 checks; six more mutations red.
+# test_extruder_ramp_pressures (2026-09-25): the melt pressures through STARTING
+# and STOPPING follow the flow the ramp moves. ExtruderModel scaled the LAST
+# tick's pressures by the rpm fraction every tick, so a stop compounded them (the
+# die plate at 0.142 of running 1.2 s in, 0.024 at 0.05 s ticks, flow 0.747) and
+# a start read 0 bar for the whole ramp, laserfilter inlet included. The die law
+# is read off the script (DIE_FLOW_INDEX, else linear), so the suite holds under
+# the power-law die too. 21 checks, 4 mutations measured: the old scale 11 red,
+# ramps that hold the last value 7 red, a power-law die with a correct
+# (two-argument) call 0 red, with the melt folded into the flow (pow(q*m, n)) 3 red.
+# test_extruder_stop_torque (2026-09-25): the motor torque (the load the BluPort,
+# HMI and SCADA show) through STOPPING. It was `motor_torque_pct *= rpm_frac`
+# every tick, so it compounded: 0.142 of running 1.2 s into a stop at 0.1 s
+# ticks, 0.024 at 0.05 s ticks, 0 by 4 s. Now entry torque x rpm / entry rpm,
+# the law the plant's raw 3A/3B archive shows (tools/audit/fit_stop_load_vs_rpm.py).
+# 21 checks, 5 mutations red: the old product 8, _update_motor_torque in
+# STOPPING (the trip accumulator) 5, entry captured once 1, nominal rpm instead
+# of entry rpm 2, the entry torque held 6.
 # test_extruder_silo_chain (2026-09-25): on lines 1, 3A and 3B, built in ONE
 # world with ONE LineFlow, the extruder silo is fed only by its SEQ feeder, it
 # feeds only its compactorband, and the band feeds only THE extruder. Each edge
@@ -577,8 +598,7 @@ wl_sentinel "vehicle spawn (clamp nesting)"
 # (MachineFlow role none); 1/3A/3B/3C have only their own feed heads and no
 # dead ends; the 3A infeed (blower 2 -> top cyclone, ruling 2.1-B, pinned) and
 # the 1/3B granulate tails (weegschaal -> voorraad_silo) exact by name, then
-# 950 kg/h along each must arrive by name without circulating. Wired by 2c217c0,
-# dropped by merge 7cd9474 (#296), restored 2026-09-25 with the sort line below.
+# 950 kg/h along each must arrive by name without circulating.
 # test_sort_line_topology (2026-09-25): LINE_SORT_SEQ is wired as the plant
 # runs it. Before, every side-lane entry sat in one branch_chain and the
 # nearest-inlet fallback guessed: the opzetband fed the bunker past shredder 1,
@@ -592,7 +612,7 @@ wl_sentinel "vehicle spawn (clamp nesting)"
 # kg through the split must pass both sorter stages, nothing may circulate.
 # 97 checks; 7 mutations red (whole fix 45, reject belts back 10, shredder-1 pin
 # 5, parallel sorters 7, tail pins 3, LineFlow meta skip 5, meta stamp 7).
-for t in test_machine_sounds test_extruder_melt_pressures test_motor_trip_stops_conveying test_die_pressure_bar test_screw_die_plate_bar test_hmi_ack_rearm test_legacy_props_spawner test_legacy_props_unconfigured_boot test_lump_cart_overflow test_lump_cart_speed_clamp test_save_checkpoint test_keybind_sheet test_map_labels test_compactor_sight_glass test_belt_film_field test_silo_level_windows test_chute_choke test_trip_smoke test_vacuum_pot_visual test_doseersilo_trough test_bale_weight_variance test_wet_side_beds test_line1_metal_detect test_vacuum_pot_minigame test_belt_speed_mismatch test_hmi_fault_rearm test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_line3a_identity test_line3b_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_humanoid_rig_conformance test_line1_flow_conformance test_line1_throughput test_line1_overband_mount test_line1_twin_streams test_line3a_flow_conformance test_line3b_flow_conformance test_extruder_silo_chain test_macro_edges_reload test_fallback_chains test_sort_line_topology test_shredder_rate_reconciliation test_line1_no_false_overload test_line_builder_ghost test_macro_part_placement test_project_sweep_guards test_tool_placement_mode test_scada_dashboard_scene test_atomic_file test_extruder_brain_wired test_vehicle_census test_map_overlay_init test_qa_loop test_qa_spec test_assessment_procedure test_character_customizer test_f10_reserved test_bale_sticker_supplier test_hose_reel_round test_macro_delta_guard; do
+for t in test_machine_sounds test_extruder_melt_pressures test_extruder_ramp_pressures test_extruder_stop_torque test_motor_trip_stops_conveying test_die_pressure_bar test_screw_die_plate_bar test_hmi_ack_rearm test_hmi_fault_rearm test_hmi_fault_per_line test_legacy_props_spawner test_legacy_props_unconfigured_boot test_lump_cart_overflow test_lump_cart_speed_clamp test_save_checkpoint test_keybind_sheet test_map_labels test_compactor_sight_glass test_belt_film_field test_silo_level_windows test_chute_choke test_trip_smoke test_vacuum_pot_visual test_doseersilo_trough test_bale_weight_variance test_wet_side_beds test_line1_metal_detect test_vacuum_pot_minigame test_belt_speed_mismatch test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_line3a_identity test_line3b_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_humanoid_rig_conformance test_line1_flow_conformance test_line1_throughput test_line1_overband_mount test_line1_twin_streams test_line3a_flow_conformance test_line3b_flow_conformance test_extruder_silo_chain test_macro_edges_reload test_fallback_chains test_sort_line_topology test_shredder_rate_reconciliation test_line1_no_false_overload test_line_builder_ghost test_macro_part_placement test_project_sweep_guards test_tool_placement_mode test_scada_dashboard_scene test_atomic_file test_extruder_brain_wired test_vehicle_census test_map_overlay_init test_qa_loop test_qa_spec test_assessment_procedure test_character_customizer test_f10_reserved test_bale_sticker_supplier test_hose_reel_round test_macro_delta_guard; do
 	echo "== $t =="
 	${SUITE_TO[@]+"${SUITE_TO[@]}"} "$GODOT" --headless --path "$PROJ" "res://src/tests/$t.tscn" > "$OUT/$t.log" 2>&1
 	rc=$?
