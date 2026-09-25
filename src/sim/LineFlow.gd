@@ -400,20 +400,12 @@ func rebuild() -> void:
 	# in/out batches and its hand-mode HMI overrides. New nodes (no matching
 	# key in old_state) start at the defaults their fresh dict was built with.
 	var old_state : Dictionary = {}
+	# The kg riding the connectors. _link() drops every edge and _init_pipes()
+	# builds empty ones, so without this every rebuild deleted them (measured
+	# 2026-09-25: 13.35 kg on a running 3B line, ledger 13.35 kg off for good).
+	var old_pipes : Array = _snapshot_pipes()
 	for nd in _nodes:
-		# UNTYPED on purpose. `var node3d : Node = ...` THROWS "Trying to assign
-		# invalid previously freed instance" when the dict still holds a machine
-		# that was queue_free()d — the typed assignment fails BEFORE the
-		# is_instance_valid() guard below can run, and the throw aborts rebuild(),
-		# leaving _nodes pinned to the freed set for the rest of the session. Same
-		# untyped-var-plus-guard idiom as _silo_feed_multiplier (:397-407).
-		var node3d = nd.get("node", null)
-		var key : String = ""
-		if node3d != null and is_instance_valid(node3d):
-			key = String(nd.get("id", "")) + "@" + String(node3d.get_path())
-		else:
-			key = String(nd.get("id", "")) + "#" + str(nd.get("index", _nodes.find(nd)))
-		old_state[key] = {
+		old_state[_survivor_key(nd)] = {
 			"powered":     nd.get("powered", false),
 			"spin":        nd.get("spin", 0.0),
 			"buffer":      nd.get("buffer", 0.0),
@@ -451,18 +443,7 @@ func rebuild() -> void:
 	# #218 — Rehydrate survivors BEFORE _init_plc() (which used to slam
 	# powered=false / spin=0.0 unconditionally). Match by id @ scene path.
 	for nd in _nodes:
-		# UNTYPED on purpose. `var node3d : Node = ...` THROWS "Trying to assign
-		# invalid previously freed instance" when the dict still holds a machine
-		# that was queue_free()d — the typed assignment fails BEFORE the
-		# is_instance_valid() guard below can run, and the throw aborts rebuild(),
-		# leaving _nodes pinned to the freed set for the rest of the session. Same
-		# untyped-var-plus-guard idiom as _silo_feed_multiplier (:397-407).
-		var node3d = nd.get("node", null)
-		var key : String = ""
-		if node3d != null and is_instance_valid(node3d):
-			key = String(nd.get("id", "")) + "@" + String(node3d.get_path())
-		else:
-			key = String(nd.get("id", "")) + "#" + str(nd.get("index", _nodes.find(nd)))
+		var key : String = _survivor_key(nd)
 		if old_state.has(key):
 			var s : Dictionary = old_state[key]
 			nd["powered"]   = s["powered"]
@@ -493,6 +474,7 @@ func rebuild() -> void:
 				nd["nir_ctrl"] = s["nir_ctrl"]
 			if s["dryer_cycle"] != null: nd["dryer_cycle"] = s["dryer_cycle"]
 	_init_pipes()       # #145: turn each link into a transit delay-line
+	_carry_pipes(old_pipes) # and put back the kg that were riding them
 	_apply_dewater_open()   # rulings §12: open the screw troughs a flotation tank feeds
 	_init_plc()         # #145: stage the downstream-first power-up;
 						# _init_plc reads _survivor_powered to pre-power
@@ -511,6 +493,89 @@ func rebuild() -> void:
 	if is_inside_tree():
 		get_tree().call_group("extruder_machine", "on_line_flow_rebuilt", self)
 	print("[LineFlow] %d machines, %d links (transport physicalized)" % [_nodes.size(), _edges.size()])
+
+## The key rebuild() matches a node on across the rebuild: `id @ scene path`,
+## or `id # index` when the body is freed or already out of the tree (BuildMode
+## removes a deleted machine from its parent before it rebuilds, and get_path()
+## on it is an engine ERROR that returns an empty path).
+func _survivor_key(nd: Dictionary) -> String:
+	# UNTYPED on purpose. `var node3d : Node = ...` THROWS "Trying to assign
+	# invalid previously freed instance" when the dict still holds a machine
+	# that was queue_free()d — the typed assignment fails BEFORE the
+	# is_instance_valid() guard below can run, and the throw aborts rebuild(),
+	# leaving _nodes pinned to the freed set for the rest of the session. Same
+	# untyped-var-plus-guard idiom as _silo_feed_multiplier.
+	var node3d = nd.get("node", null)
+	if node3d != null and is_instance_valid(node3d) and (node3d as Node).is_inside_tree():
+		return String(nd.get("id", "")) + "@" + String(node3d.get_path())
+	return String(nd.get("id", "")) + "#" + str(nd.get("index", _nodes.find(nd)))
+
+## What the last rebuild() did with the kg on the connectors: `carried` rode on
+## in the same edge, `to_source` went back into the source's out batch (the edge
+## is gone, the source is not), `to_target` into the target's in batch (only the
+## target is left), `lost` had neither end left. Empty before the first rebuild.
+var last_pipe_carry : Dictionary = {}
+
+## Every edge's delay line, keyed by its two ends' survivor keys. Taken before
+## _discover() replaces _nodes, since the edges hold node INDICES.
+func _snapshot_pipes() -> Array:
+	var out : Array = []
+	for e in _edges:
+		if not e.has("pipe"):
+			continue
+		out.append({"src": _survivor_key(_nodes[int(e["a"])]),
+			"dst": _survivor_key(_nodes[int(e["b"])]),
+			"pipe": e["pipe"], "stage_t": float(e.get("stage_t", 0.0))})
+	return out
+
+## Put the connectors' kg back after _init_pipes(). An edge whose two ends both
+## survived gets its stages and its phase back, so a rebuild that changes
+## nothing changes nothing on the belts. An edge that is gone (its target was
+## deleted, or the linker picked another target) puts its kg back into the
+## source's out batch, which the next tick routes down the source's edges as
+## they are now; a source that is gone itself hands them to the target. Only an
+## edge with neither end left loses its kg, with the two machines' own buffers.
+func _carry_pipes(old_pipes: Array) -> void:
+	var idx_by_key : Dictionary = {}
+	for i in _nodes.size():
+		idx_by_key[_survivor_key(_nodes[i])] = i
+	var edge_by_ends : Dictionary = {}
+	for e in _edges:
+		edge_by_ends[Vector2i(int(e["a"]), int(e["b"]))] = e
+	var carried := 0.0
+	var to_source := 0.0
+	var to_target := 0.0
+	var lost := 0.0
+	for p in old_pipes:
+		var ai : int = int(idx_by_key.get(p["src"], -1))
+		var bi : int = int(idx_by_key.get(p["dst"], -1))
+		var kg := 0.0
+		for s in (p["pipe"] as Array):
+			kg += (s as MaterialBatch).mass_kg
+		var e = edge_by_ends.get(Vector2i(ai, bi), null) if ai >= 0 and bi >= 0 else null
+		if e != null:
+			e["pipe"] = p["pipe"]
+			e["stage_t"] = float(p["stage_t"])
+			carried += kg
+			continue
+		if kg <= 0.0:
+			continue
+		var into : MaterialBatch = null
+		if ai >= 0:
+			into = _nodes[ai]["out"]
+			to_source += kg
+		elif bi >= 0:
+			into = _nodes[bi]["in"]
+			to_target += kg
+		else:
+			lost += kg
+			continue
+		for s in (p["pipe"] as Array):
+			into.add(s as MaterialBatch)
+	last_pipe_carry = {"carried": carried, "to_source": to_source, "to_target": to_target, "lost": lost}
+	if to_source + to_target + lost > 0.0:
+		print("[LineFlow] rebuild: %.3f kg from connectors that are gone went back into their source, %.3f kg into their target, %.3f kg left with both machines" % [
+			to_source, to_target, lost])
 
 ## #218 — Explicit shift telemetry reset. The shift-reset button on the
 ## supervisor HMI calls this; rebuild() must NOT touch these counters or a
