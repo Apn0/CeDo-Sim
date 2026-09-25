@@ -26,3 +26,7 @@ src/tests/_catalog_pre_*.gd
 # harness's `== importing ==` step made these on 2026-09-25, byte-identical to
 # the tracked DLLs). Recreated on every load; never commit them.
 addons/**/~*.dll
+
+# The Steam build's starting world: tools/steam/build_windows.sh copies the
+# operator's user://world_layout.json here at export time. His data, not source.
+/steam_seed/
