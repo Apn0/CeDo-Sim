@@ -1069,6 +1069,16 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   lists every dropped step (it named exactly `SettingsManager apply` on the
   real range, and nothing on a tree that only adds); and in `--script` suites,
   `load()` anything that touches an autoload at runtime — never `preload()` it.
+  **2026-09-25, the other way round: a merge KEPT both sides of the main
+  `for t in …; do` line** (`59acf8f`, #308 merging `main` with #309). #308
+  had added `test_extruder_start_rpm` to that line and #309 `test_ghost_census`.
+  Two headers with one body and one `done` leave the first loop unclosed, and
+  `main`'s `run.sh` stopped parsing: `syntax error: unexpected end of file`.
+  bash runs every step before that line, then exits without
+  `== done (exit N) ==`. After any merge that touches `run.sh`, run
+  `bash -n tools/regression/run.sh` and check
+  `grep -c '^for t in test_machine_sounds' tools/regression/run.sh` is 1.
+  Resolve such a conflict by merging the two suite lists into one line.
 - **A headless run that outlives its expected time is HUNG, and exit 0 is not a
   pass.** Measured 2026-09-22 on a throwaway `--script` probe that idled until
   the session was killed. Three silent modes: (1) a runtime `SCRIPT ERROR` in
