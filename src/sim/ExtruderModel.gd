@@ -620,14 +620,15 @@ func _tick_starting(delta: float, _inputs: Dictionary, events: Array[String]) ->
 	# Motor torque comes online with the screw so the SCADA chart shows a
 	# realistic surge during start-up rather than a flat 0 → step.
 	_update_motor_torque(delta, events)
-	# Die pressure is allowed to climb proportionally — no fault triggers in
-	# this state since nothing's at nominal yet.
-	_scale_melt_pressures(rpm_frac)
+	# The melt pressures climb with the flow the ramp moves. The model raises no
+	# pressure fault of its own here; the laserfilter's 318-bar trip and the
+	# 160-bar MP<PEL interlock (ExtruderMachine) are armed in STARTING.
+	_set_melt_pressures_from_flow()
 
 ## Time-constant decay (rpm *= exp(-delta / STOP_DECAY_S)). Frame-rate
 ## independent and matches the emulator's `*= 0.9` decay step at 0.5 s tick.
 ## Production continues at the residual rpm fraction so downstream catches
-## the tail-end material; no new lumps are emitted (melt pressures follow the rpm down).
+## the tail-end material; no new lumps are emitted (melt pressures follow the flow down).
 func _tick_stopping(delta: float, _inputs: Dictionary, _events: Array[String]) -> void:
 	var nominal := config.screw_rpm_nominal
 	# Exponential decay: rpm_new = rpm_old * exp(-delta / tau)
@@ -640,7 +641,7 @@ func _tick_stopping(delta: float, _inputs: Dictionary, _events: Array[String]) -
 	_drift_melt_temp_toward(config.melt_temp_setpoint * 0.85, delta)
 	_evaluate_die_face_state()
 	motor_torque_pct = motor_torque_pct * rpm_frac
-	_scale_melt_pressures(rpm_frac)
+	_set_melt_pressures_from_flow()
 	# Lump passthrough stops as the screw stops — no fresh un-melted material.
 	lump_passthrough_rate_g_s = 0.0
 
@@ -806,12 +807,25 @@ func _set_melt_pressures(factor: float) -> void:
 	die_plate_bar = config.die_plate_nominal_bar * f
 	_refresh_line_pressures()
 
-## STARTING / STOPPING scale the last pressures by the rpm fraction, as the old
-## single die pressure did.
-func _scale_melt_pressures(rpm_frac: float) -> void:
-	mp_after_laserfilter_bar *= rpm_frac
-	die_plate_bar *= rpm_frac
-	_refresh_line_pressures()
+## The melt-set pressures for the CURRENT flow and melt: throughput / nominal
+## and melt_viscosity_factor. Every state in which melt moves calls this —
+## RUNNING and VACUUM_ALARM through _step_degassing, STARTING and STOPPING
+## directly — so a pressure is a function of the flow it reads, never of the
+## previous tick's pressure.
+##
+## 2026-09-25 — STARTING / STOPPING used to call `_scale_melt_pressures(rpm_frac)`,
+## which multiplied the LAST tick's pressures by the rpm fraction every tick. On
+## the way down they fell as the product of every rpm fraction so far, and the
+## tick size set how fast: 1.2 s into a stop (rpm 0.74 of nominal) the die plate
+## read 0.142 of running at 0.1 s ticks and 0.024 at 0.05 s ticks, against 0.747
+## for the flow. On the way up they started from the 0 that OFF / PREHEAT / IDLE
+## park them at, so they read 0 bar for the whole ramp. Guarded by
+## test_extruder_ramp_pressures.
+func _set_melt_pressures_from_flow() -> void:
+	var throughput_norm : float = 0.0
+	if config.nominal_kg_per_h > 0.001:
+		throughput_norm = throughput_kg_h / config.nominal_kg_per_h
+	_set_melt_pressures(throughput_norm * melt_viscosity_factor)
 
 ## ExtruderMachine mirrors the live filter dPs in every tick (bar). The laser
 ## filter stays the authority for its own 318-bar trip — it sums the same two
@@ -873,10 +887,7 @@ func _step_degassing(delta: float) -> void:
 	# pressure follows melt temperature only — a zone drop raises torque as
 	# before (and torque still drives the lumps into the laserfilter), and
 	# pressure only once the melt really cools.
-	var throughput_norm : float = 0.0
-	if config.nominal_kg_per_h > 0.001:
-		throughput_norm = throughput_kg_h / config.nominal_kg_per_h
-	_set_melt_pressures(throughput_norm * melt_viscosity_factor)
+	_set_melt_pressures_from_flow()
 	# Per-stage residence + degas extraction in serial order.
 	per_stage_residence_s = []
 	per_stage_extracted_g_s = []
