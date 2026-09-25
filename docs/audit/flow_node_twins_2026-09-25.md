@@ -236,3 +236,20 @@ Inside the run:
   the same two lines.
 
 The operator's real `world_layout.json` kept md5 `e046af7d…`.
+
+**Again on the merged tree** (this branch + `origin/main` `6692816`, with
+#306's sort-line re-wire), `62a455a`: `== done (exit 1)`, 141 steps, 33 min
+(12:13:23 → 12:46:42), 132 logs by mtime, 0 timeouts, and the sentinel
+reported "untouched by every step". There was **1 red,
+`test_npc05_realworld`** (expected). The four gate reds are green on this tree
+because main reworded those checks: `test_jam_baseline` now reads "leaves
+structure_items as it was", and B1b reads "holds no wall". This change did
+not do that. Inside the run:
+
+| suite | result |
+|---|---|
+| `test_flow_node_unique` | 34 ok |
+| `test_sort_line_topology` | 97 ok (twin NOTE 0) |
+| `test_fallback_chains` | 83 ok |
+
+The same two logs carry the pre-existing `^SCRIPT ERROR` noise as above.
