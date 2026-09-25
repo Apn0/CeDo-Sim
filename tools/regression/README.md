@@ -51,4 +51,9 @@ that same, validated transform.
 - `src/tests/regression_world_save.gd` / `.tscn` — the in-engine harness.
 - `tools/regression/topdown_render.py` — data-driven top-down PNG (matplotlib).
 - `tools/regression/run.sh` — one-command runner.
-- `out/` — generated: `topdown.png`, `positions.json`, `last_run.log`.
+- `tools/regression/script_error_census.sh` — run by `run.sh` last: fails every log
+  of the run that carries a `SCRIPT ERROR` line (a runtime error aborts only the
+  function it hits, so a suite can lose a phase and still print PASS). Excuses
+  `parse_sweep.log` only; its header says why.
+- `out/` — generated: `topdown.png`, `positions.json`, `last_run.log`, one log per
+  step, and `.run_start` (the census reads only logs newer than it).

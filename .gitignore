@@ -20,3 +20,9 @@ __pycache__/
 # with `git show <commit>:<path>` (see that file header) — never committed, or
 # every grep of src/ would return a duplicate hit for every symbol in them.
 src/tests/_catalog_pre_*.gd
+
+# GDExtension load copies. On Windows the editor loads each extension library
+# from a "~"-prefixed copy beside it, so the original stays replaceable (the
+# harness's `== importing ==` step made these on 2026-09-25, byte-identical to
+# the tracked DLLs). Recreated on every load; never commit them.
+addons/**/~*.dll

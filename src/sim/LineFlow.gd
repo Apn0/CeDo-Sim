@@ -753,6 +753,9 @@ func _process_discovered_node(node3d: Node3D, id_ordinal: Dictionary, code_owner
 		"line":  String(node3d.get_meta("line")) if node3d.has_meta("line") else "",
 		"hmi_id": String(node3d.get_meta("hmi_id")) if node3d.has_meta("hmi_id") else "",
 		"role":  String(prof["role"]),
+		# MachineFlow `no_outlet` (the U-bay): the geometry fallback gives it no
+		# out-edge. It is not a sink: it holds what it takes, it does not bank it.
+		"no_outlet": bool(prof.get("no_outlet", false)),
 		"waste": p_waste,
 		"rate":  float(prof["rate"]),
 		"process":       String(prof["process"]),
@@ -1350,6 +1353,8 @@ func _link() -> void:
 		var a: Dictionary = _nodes[i]
 		if String(a["role"]) == "sink":
 			continue                       # sinks consume, never feed downstream
+		if bool(a.get("no_outlet", false)):
+			continue                       # a dump (the U-bay) holds, never feeds downstream
 		# #71 — node was tagged with `lf_explicit_outs` by the macro builder:
 		# its downstreams are fully specified above. Skip geometry fallback to
 		# avoid adding a SPURIOUS third edge alongside an L-R split or recirc.

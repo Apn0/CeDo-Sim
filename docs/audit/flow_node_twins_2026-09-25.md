@@ -197,6 +197,9 @@ Parse sweep after the fix: `Result: 465 ok, 0 fail`. Unused-parameter lint:
   fixes merged, `line_sort` dumps as 17 nodes and 17 edges, and its only head
   is `opzetband_3a3b[m0]`. The intake macro is unchanged: 17 nodes, with
   `opzetband_3a3b`, `shredder_2` and `u_bay` as heads. It is still open.
+  **Fixed the same day** in `intake_3a3b_topology_2026-09-25.md`: entry 0 is a
+  plain belt pinned into shredder 2, and C8 / C8.5 / U-bay run on an
+  `overflow` stream. The only head is entry 0.
 - **The intake switch belt in a real world.** Before the fix, the switch belt
   fed its twin: that inlet was the belt's own, 3.6 m from its outlet. In a
   world that also holds the VSS silos, the linker would have picked whichever

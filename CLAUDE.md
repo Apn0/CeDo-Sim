@@ -12,8 +12,46 @@ searching — and treat every number here as re-checkable, not as gospel.**
 
 ## Engine
 
+> **ONE HARNESS RUNNER (operator ruling 2026-09-25): do not run the full
+> harness from a working session.** Sessions each ran `run.sh` on their own
+> branch, up to four at once. That meant four slightly different trees, a full
+> C: drive, and eight healthy suites red on AtomicFile short writes. Now one
+> designated Claude session, the harness runner, runs the full harness on
+> `origin/main` after merges, isolated on D:, and reports reds to the operator.
+> Every other session:
+> - runs the suites its change touches, one at a time, under a scratch `APPDATA`:
+>   `APPDATA=<scratch> "$GODOT" --headless --path <tree> res://src/tests/<suite>.tscn`;
+> - runs the parse sweep, plus `bash -n tools/regression/run.sh` if it touched run.sh;
+> - opens and merges its PR as before. The runner tests `main` after the merge.
+>
+> It is enforced twice:
+> - **A user-level Claude Code hook**, `~/.claude/hooks/cedo_harness_guard.py`,
+>   refuses any command that EXECUTES `…/regression/run.sh` without
+>   `CEDO_HARNESS_RUNNER=1`. Its 42 test cases are in
+>   `cedo_harness_guard_test.py` beside it. Measured: it also reached a session
+>   that was already running, without a restart.
+> - **`run.sh` itself** exits 3 without that flag. It exits 4 while another full
+>   harness runs, detected two ways: its lock directory `~/.cedo_harness.lock`,
+>   which it takes over once the owning process is gone; and a scan of `/proc`
+>   for any other `bash …/regression/run.sh`, which also catches older copies
+>   of the script.
+>
+> **Never set the flag yourself.** If you think a full run is needed now, ask
+> the operator. He runs it by hand the same way.
+>
+> **The runner's cycle**, for the runner session or whoever takes it over:
+> 1. Fetch. If `origin/main` has not moved since the last run, check again in
+>    about 20 min.
+> 2. Check it out detached in the runner's worktree (it needs real copies of
+>    `assets/` and `.godot/`).
+> 3. Copy the operator's `app_userdata` to `D:\cedo_archive\userdata\harness_runner\`
+>    and run with `APPDATA`, `UD` and `PROJ` pointing there and at the worktree.
+> 4. Take the verdict from each suite's own log in `tools/regression/out/`, not
+>    from the redirected stdout. `test_npc05_realworld` is the known red; any
+>    other red goes to the operator.
+
 ```bash
-bash tools/regression/run.sh          # the one command that proves things
+CEDO_HARNESS_RUNNER=1 bash tools/regression/run.sh   # the harness runner only, see above
 ```
 
 Engine: **`C:/Users/arnod/AppData/Local/Godot/Godot_v4.6.3-stable_win64_console.exe`**
@@ -43,7 +81,7 @@ output). A planted undeclared symbol, one inheriting by `res://` path and one by
 For an isolated run (never the operator's `app_userdata`), redirect `APPDATA`
 and pass the matching `UD`, or the world_layout sentinel watches his real
 folder while Godot writes the copy:
-`APPDATA="$(cygpath -w <scratch>)" PROJ=<tree> UD=<scratch>/Godot/app_userdata/"CeDo Simulator" bash tools/regression/run.sh`
+`CEDO_HARNESS_RUNNER=1 APPDATA="$(cygpath -w <scratch>)" PROJ=<tree> UD=<scratch>/Godot/app_userdata/"CeDo Simulator" bash tools/regression/run.sh`
 
 `project.godot` declares `config/features=PackedStringArray("4.6")`.
 **Do not use `C:/Users/arnod/AppData/Local/Godot/godot.exe`** — that file is
@@ -585,11 +623,14 @@ the one before that ~6 months stale — treat this one as re-checkable too):
 | `docs/audit/overnight_enhancement_2026-09-23.md` | **The unattended 2026-09-23 run: 12 commits, every one measured first.** A MotorOverload trip that never stopped conveying, a Lumpenwagen that lost kg when full, checkpoint saves, the F1 key sheet, map labels, the cart speed clamp, the compactor kijkglas, LineFlow moved to 10 Hz (2.85 → 0.54 ms/frame), and two harness reds root-caused as frame-count races (navmesh bake, bale streaming). Two full harness runs, the operator list at the end |
 | `docs/audit/cycle_guard_swap_2026-09-25.md` | **LineFlow's fallback cycle guard was called with swapped arguments and never refused an edge.** Every rerouted edge, on all seven macros, before and after the swap. The per-edge rulings: swap alone, a 3A pin, or fixtures moved to role `none`. The reload measurement (0 cycles, still wrong without pins). `test_fallback_chains` and its mutation table. Found, not fixed at the time: the sort line's topology and the intake belts discovered twice, both fixed the same day (next two rows) |
 | `docs/audit/sort_line_topology_2026-09-25.md` | **The sort line (`LINE_SORT_SEQ`) was wired by guesses: its side lanes sat in one branch chain.** The opzetband fed the bunker past shredder 1, the sorters fed the final climb belt past shredder 2, and shredder 2 had no in-edge. Every link is now declared: main-chain pins, `titech`/`tomra` streams with the sorters in SERIES per lane (operator ruling 2026-09-25), and the new `{"flow": false}` SEQ flag for the reject belts (placed, not flow nodes). Before/after graphs, what settles each link, `test_sort_line_topology` (by name and by kg, incl. "every kg passes both sorter stages") and its mutation table. Open for the operator: the trilzeef, Tomra's missing sort model, the line's geometry |
-| `docs/audit/flow_node_twins_2026-09-25.md` | **Every intake belt was two LineFlow nodes: the body's `Model` child was a placeable too.** The mechanism (`BeltBuilder.build()` in 4 belt builders, an inner `_finalize_placeable` in 10 more, 31 catalog ids), what the twin did (feed heads, a double-fed next belt, every intake film bed at 0.000 kg/m, two controllers per deck, K-mode resolving hatch colliders to the Model), the dumps before/after, `test_flow_node_unique` and its mutation table. Found, not fixed: the opzetband bypasses its shredder on both 3A3B feed macros (the shredder ghosts it also found are fixed, next row) |
+| `docs/audit/intake_3a3b_topology_2026-09-25.md` | **The 3A/3B intake (`INTAKE_3A3B_SEQ`): the opzetband fed the climb belt past shredder 2, and conveyor 8 only ever fed the overflow.** Entry 0 is now a plain `transport_belt` (operator 2026-09-25: no bale is ever put on the belt into shredder 2), the head is pinned to shredder 2 → climb belt → transportband 1, and C8 → C9 (forward, edge 0) / C8 → C8.5 → U-bay (reverse) runs on an `overflow` stream that ends at the U-bay (MachineFlow `no_outlet`). Before/after dumps, `test_fallback_chains` H/G/F3/O and its mutation table. Found, not fixed: the #139 pack-up cascade stops C8.5 and C8 within 4 s of both VSSs full, against the operator's notes; the layout; old saves with the opzetband refuse to re-pin; C: measured 0 GB free |
+| `docs/audit/flow_node_twins_2026-09-25.md` | **Every intake belt was two LineFlow nodes: the body's `Model` child was a placeable too.** The mechanism (`BeltBuilder.build()` in 4 belt builders, an inner `_finalize_placeable` in 10 more, 31 catalog ids), what the twin did (feed heads, a double-fed next belt, every intake film bed at 0.000 kg/m, two controllers per deck, K-mode resolving hatch colliders to the Model), the dumps before/after, `test_flow_node_unique` and its mutation table. Both things it found and left are fixed since: the shredder ghosts (next row) and the opzetband bypassing its shredder (the sort line in `sort_line_topology_2026-09-25.md`, the 3A/3B intake in `intake_3a3b_topology_2026-09-25.md`) |
 | `docs/audit/shredder_ghost_placed_object_2026-09-25.md` | **A shredder placement ghost was a `placed_object`:** `ShredderMachine._ready` added the group without knowing it was a ghost, so a raw `build_node(id, true)` became a LineFlow feed head. Measured: BuildMode rebuilds LineFlow with the ghost alive on every placement, but its own ghost was never a flow node (`_make_preview_inert` strips the script first). The fix, why real shredders are unchanged, `test_ghost_census` (all 200 catalog ghosts) and its mutation table. Found, not fixed: raw ghosts still join their own behaviour groups (`shredder`, `lump_cart`, `waste_container`, `hmi`, …) |
+| `docs/audit/aborted_phase_guard_2026-09-25.md` | **A suite lost a whole phase and still printed PASS, and `run.sh` would have passed it.** With C: full, `test_macro_edges_reload`'s phase-D save failed and the typed read after it was a runtime error: `PASS (51 ok)` instead of 60. The fix: the suite checks its save (D-1) and asserts every phase reached its last line (Z3); `run.sh` ends with `script_error_census.sh`, which fails any log of the run with a `^SCRIPT ERROR` line (only `parse_sweep.log` excused); `test_route_goal_clearance`'s pre-autoload compile noise removed. Census tests on real and fabricated logs, the suite's mutation table, the full harness |
 | `docs/audit/macro_edges_reload_2026-09-25.md` | **A macro line's explicit flow edges (pins, streams, split, recirc) now survive a save → load.** Before, a reloaded world had 0 of them (47 tagged nodes → 0). One function, `BuildMode.macro_flow_edges`, serves the build and the load, and the refactored build is diffed identical to the old one (269 rows). Covers `macro_instance`, the hole and dead-end rules for deleted machines, when a save is refused, the guard `test_macro_edges_reload` and its mutation matrix, and what the load does with every macro-bearing layout on this machine |
 | `docs/audit/hmi_fault_rearm_2026-09-24.md` | **HMI alarms: KWITTEREN acknowledges one occurrence of an alarm (#279), and the same EREMA code on two lines is two alarms (#282).** Probes, the guard suites `test_hmi_fault_rearm` and `test_hmi_fault_per_line` with their mutation matrices, and the full harness on `04eaa77`. **Open:** every panel lists every line's EREMA alarms (found by reading the code, not measured); Afschermen does not exist (the Onderdrukt tab reads a table nothing writes); RESETTEN clearing every acknowledgement has not been ruled on |
 | `docs/audit/operator_session_2026-09-23.md` | **The interactive 2026-09-23 session: tasks ranked by operator effort against sim impact, each answered by AskUserQuestion then built and measured.** Task 1: film beds on every belt (P1), the inclined belt's deck running the wrong diagonal, the cost probe, the renders; per-task evidence and the open questions each one left |
+| `docs/DESIGN_inworld_hmi_2026-09-25.md` | **HMI screens IN the world + hold-F interact mode — SURVEY and operator decisions, nothing built.** Why the 7 web panels cannot go on a mesh (godot_wry is a native window), the pixel budget of a 0.49 m screen at 3–5 m, every key E/F/Q is bound to today, which suites assume a pop-up or the one shared overlay, and the cost probe. The operator's answers (F = interact, E = pick up, F-mode camera/zoom/gold dot) are in `docs/plant/operator_rulings_2026-09-25.md` §H5 |
 | `docs/DESIGN_vacuum_pot_minigame_2026-09-23.md` | **P3 stage B as the operator described it: not a hold-E but a mini-game** — lid pull that stiffens with time, plamuurmes planes at 90 %, the block by hand, re-lid, the two-minute race. Systems, parameters (his vs placeholder), test strategy. **Built 2026-09-24** (`test_vacuum_pot_minigame`, 33 ok); the feel is his to play |
 | `docs/audit/extruder_stop_torque_2026-09-25.md` | **The extruder's load through a stop, from the plant's raw WinCC archive.** The model compounded the torque every STOPPING tick (0.142 of running 1.2 s in at 0.1 s ticks, 0.024 at 0.05 s). Now it is entry torque x rpm / entry rpm, the law the 17 samples caught mid-stop show (slope 0.969). Open, for the operator: the plant's screw stops within one ~5 s log cycle in 70 of 83 stops, while the model coasts for 21.6 s; 26 of 83 stops were run empty first |
 | `docs/audit/extruder_screw_die_plate_2026-09-24.md` | **LineFlow's OWN screw model (not ExtruderModel) read 0.11 "bar" at the die, at 200 rpm and a 195 °C melt.** The MFI estimate was 1491 g/10min, so every QA sample graded REJECT, and on lines 1/3A/3B the terminal and SCADA read the `extruder_silo`. Now: die plate after the kopfilter (operator ruling), per-line rpm, melt and output from the WinCC trends, MFI anchor re-solved. §10 (2026-09-25): the "flat kopdruk vs proportional model" gap was a probe holding rpm fixed; both models now carry a power-law die, P ∝ Q^0.35, gated across the trend's output band |
@@ -968,6 +1009,22 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   - A per-branch kg check cannot tell SERIES from PARALLEL. Each branch
     "passes its kg on" either way. Assert that the whole split passes BOTH
     stages. `docs/audit/sort_line_topology_2026-09-25.md`.
+  **2026-09-25, the 3A/3B intake, same disease:** the opzetband fed the climb
+  belt past shredder 2 (5.78 m against 6.44 m). The C8.5 / U-bay
+  `branch_chain` pinned `C8 → C8.5` as C8's ONLY edge, so C8 never ran
+  forward, and it pinned `U-bay → C9`. Two more things came out of that fix:
+  - **A splitter's edge ORDER is topology.** LineFlow's Conveyor8 overlay
+    reads C8's edge 0 as forward and edge 1 as reverse (the order the geometry
+    linker emits `wout` / `wout2`). With pins, the order is the order in
+    `lf_explicit_outs`, i.e. the order `macro_flow_edges` writes them.
+    Appending the forward edge after the overflow's opening edge sent C8's
+    forward share into the overflow (mutation M4).
+  - A stream whose last member feeds nothing (a sink, or MachineFlow
+    `no_outlet`, the U-bay) ends there. No merge edge is written, and the main
+    path continues from the split, inserted as the split's FIRST edge. Do not
+    make a dump a `sink` to get this: LineFlow counts everything a sink takes
+    as granulaat.
+  `docs/audit/intake_3a3b_topology_2026-09-25.md`.
 - **Lifting a gravity-fed machine without lifting what feeds it silently
   disconnects the line.** The feed chain's heights are DERIVED from the target's
   local port helpers, which know nothing about the `y` a macro entry applies. Put
@@ -1029,10 +1086,11 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   dummy renderer keeps no CPU-side copy. A check written against those readings
   fails on CORRECT code, and the instinct is then to weaken it. Assert a
   MultiMesh's shape and node graph; never its contents.
-- **F8 is a trap.** The project binds F8 to Inspect Mode (`SettingsManager.gd:660`),
+- **F8 is a trap.** The project binds F8 to Inspect Mode (`SettingsManager.gd:788`
+  since at least 2026-09-25; an older revision of this line said `:660`),
   but when the game runs embedded in the editor F8 is the editor's **Stop**
-  shortcut — `NpcTaskBench.gd:68`: "it killed the session." Use the observer key
-  `O` in benches instead.
+  shortcut — the now-deleted `NpcTaskBench.gd:68` recorded "it killed the
+  session." Use the observer key `O` in benches instead.
 - **Stale-constant disease.** Geometry/UI built from hand-baked constants instead
   of measured runtime values. The harness once validated a stale constant against
   its own copy. Measure from the mesh, not from a saved number.
@@ -1114,6 +1172,22 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   on the `Result:` line plus zero `SCRIPT ERROR` lines, never on the exit code.
   Worked example: `src/tests/test_lump_chunk_ccd.gd` (watchdog proven by
   injecting that exact error: exit 2 with a failing verdict in 11 s).
+  **A fourth mode, measured 2026-09-25: a suite that PASSES without a phase.**
+  `await _phase_d()` returns as if D were done when D dies on a runtime error,
+  so `_run` reaches the verdict. With C: full, `test_macro_edges_reload`'s D
+  save failed, and the typed read after it aborted the phase. The suite printed
+  `PASS (51 ok)` instead of 60, and every `run.sh` step reads only its verdict
+  line. Since then:
+  - `run.sh` ends with `tools/regression/script_error_census.sh`, which fails
+    every log of the run that carries a `^SCRIPT ERROR` line. Only
+    `parse_sweep.log` is excused.
+  - A suite that awaits phases should record each one's LAST line and assert
+    all of them (`test_macro_edges_reload` Z3).
+  - A `--script` suite must not name a class whose script uses an autoload.
+    `BaseVehicle.NPC_ARRIVE_TOL` in `test_route_goal_clearance` made the
+    pre-autoload compile fail on `EventBus`. It ran anyway, but its log carried
+    2 `SCRIPT ERROR` lines until the constant was read through `load()`.
+  `docs/audit/aborted_phase_guard_2026-09-25.md`.
 - **Most `src/tests/*.gd` files are never executed by the harness.** `run.sh:261`
   runs an explicit allow-list of `.tscn` suites; anything not on it is only seen by
   the full-tree parse sweep, which proves the file PARSES and nothing more. As of
