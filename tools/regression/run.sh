@@ -536,6 +536,12 @@ wl_sentinel "vehicle spawn (clamp nesting)"
 # every world.call name in the spawner on the booted MainWorld, proves each solid
 # collider live in the physics space, pins the shredder to its belt's discharge,
 # and never writes world_layout.json. Own slot. 35 checks, 5 mutations red.
+# test_machine_sounds (2026-09-25): the operator's recordings on their machines.
+# Every MachineSoundSpec .tres and its WAVs (16-bit stereo 44.1 kHz, loops
+# looping), the build_node attach contract, drive → pitch/level/stop semantics,
+# LineFlow driving from spin, the leaf blower's start/idle/rev/stop, the valve
+# cranks, the compactor flush period, the wash panel's alarm beep + KWITTEREN.
+# Needs assets/audio/machines/ (gitignored — tools/audio/machine_clips.py).
 # test_screw_die_plate_bar (2026-09-24): LineFlow's OWN screw model (not
 # ExtruderModel) read 0.11 "bar" at the die, at a flat 200 rpm and a 195 °C
 # melt, which put the MFI proxy at 1491 g/10min and made the QA bench REJECT
@@ -572,6 +578,14 @@ wl_sentinel "vehicle spawn (clamp nesting)"
 # 3A's silo <-> band and 3B's cyclone <-> blower circulated the mass, and both
 # extruders got 0 kg. 41 checks; the whole-fix revert and each load-bearing
 # pin are red on their own.
+# test_macro_edges_reload (2026-09-25): those pins, and every other explicit
+# flow edge of every macro, survive _save_layout → load_layout. Before, the
+# load stamped none (47 tagged nodes → 0) and every reloaded line fell back to
+# geometry wiring. All 7 macros plus a second line_3a: explicit and LineFlow
+# edge sets identical by name after a reload, kg reach each named extruder,
+# deleted machines are HOLES (nothing rewired around them), a LineMacroStore
+# jog keeps its pin, and a stale or ambiguous save is refused. Writes only
+# its own user:// slot; md5 LEAK GUARD on the operator's files.
 # test_fallback_chains (2026-09-25): LineFlow's geometry fallback called its
 # cycle guard as _creates_cycle(best, src) against a (from, to) contract, so it
 # never refused a back-edge: 36 edges sat on cycles across the seven macros.

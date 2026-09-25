@@ -1257,6 +1257,11 @@ func _link() -> void:
 		for entry in outs:
 			if not (entry is Dictionary):
 				continue
+			# An unresolvable path keeps the source explicit and adds no edge:
+			# the machine it named was deleted (a live delete leaves the freed
+			# node's path; a reload stamps an EMPTY path with "missing_index",
+			# BuildMode._add_explicit_hole). Either way the source is a dead end,
+			# never handed to the geometry fallback.
 			var tpath = entry.get("path", null)
 			if tpath == null or not path_idx.has(tpath):
 				continue
