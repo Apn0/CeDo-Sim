@@ -886,6 +886,32 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   DOWN it; fixed to +14° and guarded by `test_wet_side_beds` (the deck's
   `basis.z.y` must be negative). When a builder tilts a surface, assert which
   end is low against `MachineFlow` — the two agree nowhere by construction.
+  **The same class twice more on 2026-09-25, found only from a SIDE view.**
+  The scheidingsgoot stood back to front: inlet at the far end, 1.2 m under the
+  drum's lip, draining back toward the drum. And `_m_friction`'s tube was
+  tipped `PI/2 + tilt` (the sign `_m_transport_screw` already records as wrong),
+  high at its inlet and low at the dryer, with its hopper buried inside the
+  housing. Every plan render looked right. A macro places a machine with its
+  local +Z downstream (rotation = leg + PI), so a model built "toward −Z"
+  arrives reversed. Read the side view, or assert heights at the two ports.
+  `docs/plant/operator_rulings_2026-09-25.md` L6.
+- **A per-entry SEQ trim must be re-applied on reload, or a reloaded line
+  quietly gets the part back.** Line 1's shredder loses its own discharge
+  conveyor (`no_discharge_conveyor`), its tank loses its catwalk (`no_catwalk`),
+  and its right-hand friction separator is mirrored (`mirror`). No save holds
+  any of that: a load rebuilds each machine from the catalog. So all three live
+  in ONE function, `BuildMode._apply_macro_entry_trims`, called after the build
+  places a node AND from `_rederive_macro_flow_edges` on load. A new trim goes
+  in there, not in the build loop. The same goes for `yaw_deg` and `shift_x`:
+  they must also be in `_macro_nominal_poses`, or `save_macro_overrides`
+  records the rotation or offset as an operator edit.
+- **A check measured along one leg cannot see a SEQ key that moves a machine
+  along another.** `turn_advance` on a turned entry moves the machine along its
+  OWN new run. On line 1's dewatering screw that is sideways to the drum's axis,
+  and `test_line1_layout`'s first version measured the stair and the tank
+  against the screw only along that axis. A 0.25 m mutation of it stayed green
+  (M7, 2026-09-26). Mutate every number the rulings rest on, one at a time, and
+  add a check for each one that stays green.
 - **An opaque shell hides whatever you put inside it — a "sight glass" over a
   closed drum shows the drum, not the level.** Measured 2026-09-23 by
   rendering: the compactor kijkglas built that morning (a flat glass disc on

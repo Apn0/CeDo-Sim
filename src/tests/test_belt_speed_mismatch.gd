@@ -6,7 +6,8 @@ extends Node
 ##   godot --headless --path . res://src/tests/test_belt_speed_mismatch.tscn
 ##
 ## Real line 1 (BuildMode._build_full_line + LineFlow), the head feed off, a
-## charge injected into the first transport belt's buffer every tick, the
+## charge injected into the uitvoerband's buffer every tick (it throws onto a
+## transport belt; two transport belts until 2026-09-25), the
 ## SECOND belt slowed with set_machine_rpm_pct (what the HMI slider calls):
 ##   D — its deck runs slower (the bed field's speed follows the setting)
 ##   H — the excess packs the transfer chute first (rulings §21 "both, in
@@ -71,20 +72,22 @@ func _run() -> void:
 	lf.call("start_line")
 	var nodes : Array = lf.get("_nodes")
 	var edges : Array = lf.get("_edges")
-	# the first two transport belts in flow order (belt#3 feeds belt#5 on line 1)
+	# Two belts in series with a transfer between them: since 2026-09-25 line
+	# 1's uitvoerband (under shredder 1) throws onto the transport belt that
+	# feeds the drum. Until then these were two transport_belts.
 	var b1 := -1
 	var b2 := -1
 	for i in nodes.size():
-		if String(nodes[i].get("id", "")) == "transport_belt":
-			if b1 < 0:
-				b1 = i
-			elif b2 < 0:
-				b2 = i
+		if String(nodes[i].get("id", "")) == "uitvoerband_1":
+			b1 = i
+	for e in edges:
+		if int(e["a"]) == b1 and String(nodes[int(e["b"])].get("id", "")) == "transport_belt":
+			b2 = int(e["b"])
 	var linked := false
 	for e in edges:
 		if int(e["a"]) == b1 and int(e["b"]) == b2:
 			linked = true
-	_check(b1 >= 0 and b2 >= 0 and linked, "F1 two transport belts in series on line 1 (#%d → #%d)" % [b1, b2])
+	_check(b1 >= 0 and b2 >= 0 and linked, "F1 the uitvoerband feeds a transport belt on line 1 (#%d → #%d)" % [b1, b2])
 	if not linked:
 		_finish(); return
 	var n1 : Dictionary = nodes[b1]
@@ -150,7 +153,7 @@ func _run() -> void:
 	print("  info  : chute packing from %.1f s, upstream trip at %.1f s with belt-2 excess %.0f kg (chute holds %.0f), max %.0f A on belt 1 (threshold %.0f A)" % [t_pack, t_trip, excess_at_trip, LineFlow.CHUTE_PACK_KG, amps_max, float(mol1.get("trip_threshold"))])
 	_check(t_pack > 0.0 and t_trip > t_pack, "H1 the transfer chute packs FIRST (%.1f s); the drive pushing into it trips after (%.1f s)" % [t_pack, t_trip])
 	_check(t_trip > 0.0 and not bool(mol2.call("is_tripped")), "T1 the UPSTREAM belt's drive tripped; the slow belt itself did not")
-	_check(int(_alarms.get("transport_belt/MOTOR-OVERLOAD", 0)) >= 1, "T1 MOTOR-OVERLOAD on the bus for the belt (%d)" % int(_alarms.get("transport_belt/MOTOR-OVERLOAD", 0)))
+	_check(int(_alarms.get(String(n1["id"]) + "/MOTOR-OVERLOAD", 0)) >= 1, "T1 MOTOR-OVERLOAD on the bus for the belt (%d)" % int(_alarms.get(String(n1["id"]) + "/MOTOR-OVERLOAD", 0)))
 	_check(float(lf.call("belt_heap_kg", key2)) == 0.0, "H1 no spill yet: the trip stopped the feed before the overflow (%.0f kg excess, chute %.0f)" % [excess_at_trip, LineFlow.CHUTE_PACK_KG])
 	# ── H2 reset WITHOUT fixing the speed: the overflow spills, the drive re-trips ──
 	var key1 := String(n1.get("key", ""))
@@ -194,7 +197,7 @@ func _run() -> void:
 	# ── R RESETTEN at full speed: the trip clears, the backlog drains, the heap goes ──
 	lf.call("set_machine_rpm_pct", key2, 1.0)
 	_check(bool(lf.call("reset_trip", key1)), "R1 RESETTEN resets the tripped upstream drive")
-	_check(int(_cleared.get("transport_belt/MOTOR-OVERLOAD", 0)) >= 1, "R1 …and the alarm clears on the bus")
+	_check(int(_cleared.get(String(n1["id"]) + "/MOTOR-OVERLOAD", 0)) >= 1, "R1 …and the alarm clears on the bus")
 	var drained := false
 	var td := 0
 	while td < 3000 and not drained:

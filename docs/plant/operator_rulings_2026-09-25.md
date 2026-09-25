@@ -987,8 +987,9 @@ Asked (AskUserQuestion, with a side view showing the goot back to front):
   output-chute of the dryer and the blower encasing"**;
 - the dryer→blower duct (an L with a sharp corner): **"Curve those too"**.
 
-**Built and measured** (`shot_line1_plan_*_2026_09_25_v10/v11`, and the new
-wet-street plan and side views of `shot_line1_plan`):
+**Built and measured** (revisions v10/v11 of `shot_line1_plan`, archived, and
+its new wet-street plan and side views; the side view that showed the goot back
+to front is `shot_line1_side_wetstreet_2026_09_25_v9b.png`):
 - The thin rectangles are the overhead TL light fixtures (1.7 m, 9.6 m up, along
   the halls). Their projected positions matched the five in the first full render
   to a few pixels. Plan renders now hide them.
@@ -1041,7 +1042,7 @@ about 85% up. And the curvature … looks more like parentheses. It should look
 more like the letter J." (The transcript read "Leftmost point of flotation tank:
 2. Rightmost point of mill: 6 meters"; read as "to".)
 
-**Built and measured** (`shot_line1_plan_*_2026_09_25_v14`):
+**Built and measured** (revision v14 of `shot_line1_plan`, archived):
 - The tank's own catwalk, posts and stair come off on line 1
   (`{"no_catwalk": true}`, re-applied on reload); the same tank elsewhere keeps
   them.
@@ -1100,3 +1101,52 @@ more like the letter J." (The transcript read "Leftmost point of flotation tank:
 - **Line 1 in the building shell.** At his line-1 start the line still crosses
   the shell (`docs/audit/building_frame_2026-09-25.md` §7): 17 legs stop on the
   shell's surface in the render.
+
+## L9. Renders, and the suite that holds these rulings
+
+**Renders kept in `docs/plant/renders/`:** the line as it was on `main`
+(`line1_wet_tail_as_built_2026_09_25.png`, `shot_line1_plan_annotated_`,
+`shot_line1_plan_full_`, `shot_line1_plan_head_`,
+`shot_line1_elevation_magnet_2026_09_25.png` and its `.json`); the two head
+side views of L4; the goot side view of L6 (`_v9b`); and the final layout,
+`_v15` (full plan, head, wet-street plan and side view, magnet elevation, and
+the `.json` of every machine's position). The revisions in between (new, v2 to
+v14, and the wet-tail sketches) are in
+`D:\cedo_archive\renders\line1_2026-09-25\`, not in git.
+
+**Guard:** `src/tests/test_line1_layout.tscn` (in `run.sh`) builds line 1 from
+`LINE_1_SEQ` and measures each ruling above as a distance between two built
+machines, 2 cm tolerance: 54 checks, from the Westa's 0.30 m into the hopper to
+the tank's 6.000 m from the mill. Mutation-proven with 8 changes to the SEQ and
+the catalog, every one red:
+
+| mutation | red checks |
+|---|---|
+| magnet `x` 0.2 → 0.0 | magnet 0.20 m toward the top (1) |
+| right separator not mirrored | flush against the goot, mirrored (2) |
+| tank keeps its catwalk | no catwalk, 6 m to the mill, clears the dryer (3; the catwalk widens the tank) |
+| mill `shift_x` 4.905 → 4.5 | mill on the tank's centre line (1) |
+| `VW_TROMMEL_STAIR_Z_M` 1.679 → 1.709 | stair against the screw (1) |
+| `WESTA_BAND_1_RUN_M` 4.757 → 4.9 | 0.30 m into the hopper (1) |
+| dewatering screw `turn_advance` −2.25 → −2.0 | flush with the tank's side, 1.5 m past the other (2) |
+| tank `gap` 0.6 → 0.3 | stair against the screw, screw flush with the tank (2) |
+
+The first version of the suite missed the dewatering screw's
+sideways position (L2, "flush with the tank's right side, 1.5 m past its
+left"): `turn_advance` on that entry moves the screw along its own run, which no
+check measured. It has three checks for that now.
+
+**Found while updating the suites: the uitvoerband had lost its flake bed.**
+The transport_belt it replaced carried a P1 film bed, and on a LineFlow belt
+node the bed is also what sizes its MotorOverload (round 8, the belt speed
+mismatch). `uitvoerband_1` is built on the feed-belt model, which had no bed,
+so the belt under the magnet showed no flake and could not trip.
+`test_belt_film_field` (S4) and `test_belt_speed_mismatch` went red on it.
+`ShredderFeedBelt.film_bed` now seats a bed on the flat deck and one on the
+climb (snipper density, as for shredded film elsewhere), switched on for
+`uitvoerband_1` only: the opzetband and Westa carry whole bales. Measured after:
+143 ok and 24 ok, `test_line1_no_false_overload` green (the new overload model
+does not trip on line 1's own load), and `drum_feed_belt` still listed as open
+without a bed, as before. Observed, not changed: the receiving belt now gets its
+3.00 kg/s in steps (its input alternates 0.0 / 0.3 / 0.6 kg per 0.1 s tick,
+2.97–3.03 kg/s over any 10 s), where the old 4 m belt handed it on smoothly.

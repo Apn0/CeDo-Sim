@@ -193,7 +193,8 @@ func _run() -> void:
 
 	# ── T7 — each post-mill side runs blower → cyclone → screw → tank, alone ──
 	var re_conv : int = 0
-	var expect2 : Array = ["cyclone", "transport_screw"]
+	# 2026-09-25: the intake screws are `intrekschroef` now (operator).
+	var expect2 : Array = ["cyclone", "intrekschroef"]
 	for side in m_out:
 		_check(_id_of(nodes, int(side)) == "blower",
 			"each side leaves the bottom of the mill into a blower (got %s)" % _id_of(nodes, int(side)))
@@ -213,7 +214,7 @@ func _run() -> void:
 	# specific failure the geometry fallback produced (blower L <-> blower R) and
 	# it is invisible to every check above: a 2-cycle between siblings still
 	# leaves each node with one in and one out.
-	for pair_id in ["friction_sep", "mech_dryer", "blower", "cyclone", "transport_screw"]:
+	for pair_id in ["friction_sep", "mech_dryer", "blower", "cyclone", "intrekschroef"]:
 		var idxs := _find_all(nodes, pair_id)
 		var sib_edges : int = 0
 		for e in edges:

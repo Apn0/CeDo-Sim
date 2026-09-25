@@ -92,6 +92,13 @@ const _METAL_SCRAP_SCRIPT : String = "res://src/scenes/world/MetalScrap.gd"
 @export var funnel_start_m   : float = 0.0
 @export var funnel_narrow_m  : float = 0.0
 @export var funnel_min_width : float = 0.0
+## A flake bed (P1's belt-mode FilmFlakeField) on the flat deck and on the
+## climb, for a feed belt that carries SHREDDED film: line 1's uitvoerband
+## (2026-09-25). It replaced a transport_belt that had one, and a bed is also
+## what gives LineFlow's belt node its MotorOverload (belt speed mismatch,
+## round 8). The bale feeders (opzetband, Westa) carry whole bales and stay
+## without one.
+@export var film_bed : bool = false
 
 var fill : float = 0.0
 ## Kilograms currently in the throat. `fill` is the 0..1 geometric fill level;
@@ -222,6 +229,28 @@ func _build_visual() -> void:
 	_build_deck_visual(steel, belt_mat, guard)
 	var inc_pivot := _build_incline_visual(steel, belt_mat, guard)
 	_build_top_end_visual(inc_pivot, steel, belt_mat, guard)
+	if film_bed:
+		_build_film_beds(inc_pivot)
+
+## The beds sit on the belt skins' top faces (deck and climb boxes are 0.10 m
+## thick). A belt-mode field scrolls along its own +Z, which is this belt's
+## travel on both sections. The flat deck's bed is the FIRST child, because
+## LineFlow sizes the belt's MotorOverload from the first field it finds.
+func _build_film_beds(inc_pivot: Node3D) -> void:
+	if deck_length > 0.01:
+		var flat := Node3D.new()
+		flat.name = "DeckBed"
+		flat.position = Vector3(0.0, 0.0, deck_length * 0.5)
+		add_child(flat)
+		move_child(flat, 0)
+		BeltBuilder.attach_film_field(flat, deck_width, deck_length, deck_height + 0.05,
+			belt_speed, BeltBuilder.SNIPPER_BULK_KGM3)
+	var slope := Node3D.new()
+	slope.name = "InclineBed"
+	slope.position = Vector3(0.0, 0.0, _incline_hyp * 0.5)
+	inc_pivot.add_child(slope)
+	BeltBuilder.attach_film_field(slope, deck_width * 0.8, _incline_hyp, 0.05,
+		belt_speed, BeltBuilder.SNIPPER_BULK_KGM3)
 
 func _build_top_end_visual(inc_pivot: Node3D, steel: StandardMaterial3D, belt_mat: StandardMaterial3D, guard: StandardMaterial3D) -> void:
 	var hyp := _incline_hyp

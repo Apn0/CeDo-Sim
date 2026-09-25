@@ -6764,6 +6764,8 @@ static func _build_opzetband(id: String, size: Vector3, ghost: bool) -> Node3D:
 			belt.guard_h     = UITVOERBAND_RAIL_H_M
 			belt.belt_speed  = _BELT_CARRY_SPEED
 			belt.require_shredder = false
+			# Its flake bed, as the transport_belt it replaced had (P1).
+			belt.film_bed = not ghost
 			belt.set_meta("intermediate_conveyor", true)
 		"opzetband_1":
 			# #196 — 2× scale: 10 m @ 25° (was 5 m), 4 m wide (was 3 m). Metal

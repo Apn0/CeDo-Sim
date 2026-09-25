@@ -48,12 +48,12 @@ func _run() -> void:
 			"opzetband_1": opz = n3
 			"westa_band_1": wes = n3
 			"shredder_1": shr = n3
-			"overband_magnet": mag = n3
-			"transport_belt":
-				# The uitvoerband is the FIRST transport_belt on the line; the
-				# other is the short leg-C belt one turn downstream.
-				if belt == null:
-					belt = n3
+			# 2026-09-25 (operator): one uitvoerband_1 under the rotors with a
+			# 20° climb, and a cross-belt magnet over it. Until then the
+			# uitvoerband was the first transport_belt and the magnet the
+			# shared overband_magnet.
+			"overband_magnet_l1": mag = n3
+			"uitvoerband_1": belt = n3
 	if opz == null or wes == null or shr == null or belt == null or mag == null:
 		print("FATAL: head machines missing (opz=%s wes=%s shr=%s belt=%s mag=%s)"
 			% [opz != null, wes != null, shr != null, belt != null, mag != null])
@@ -61,9 +61,7 @@ func _run() -> void:
 		return
 
 	var ssz : Vector3 = PlaceableCatalog.get_item("shredder_1")["size"]
-	var bsz : Vector3 = PlaceableCatalog.get_item("transport_belt")["size"]
-	# Deck top from BeltBuilder's own default rather than a copy of it.
-	var frac : float = float(BeltBuilder.make_spec().get("deck_y_frac", 0.75))
+	var bsz : Vector3 = PlaceableCatalog.get_item("uitvoerband_1")["size"]
 
 	var d : Dictionary = {
 		"opz": {
@@ -93,8 +91,12 @@ func _run() -> void:
 		},
 		"belt": {
 			"pos": var_to_str(belt.global_position),
-			"deck": belt.global_position.y + bsz.y * frac,
+			"deck": belt.global_position.y + float(belt.get("deck_height")),
 			"size": var_to_str(bsz),
+			"flat_m": float(belt.get("deck_length")),
+			"incline_deg": float(belt.get("incline_deg")),
+			"incline_run": float(belt.get("incline_run")),
+			"lip": var_to_str(belt.call("_discharge_lip_pos")),
 		},
 		"mag": {"pos": var_to_str(mag.global_position)},
 	}

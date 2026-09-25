@@ -20,6 +20,12 @@ extends Node
 ## against each other — the SEQ names entry index 3, and an index is exactly the
 ## kind of thing that goes stale the moment somebody inserts a station above it.
 ##
+## 2026-09-25 (operator, from plan views): the uitvoerband is ONE conveyor under
+## shredder_1's rotors with a 20° climb (uitvoerband_1), and the magnet is a
+## CROSS-belt magnet (overband_magnet_l1) over that climb, 0.20 m toward the top
+## of the plan, 0.25 m over the deck at the highest point under it. The checks
+## below follow that; the operator's placement numbers are in test_line1_layout.
+##
 ## NOT asserted here yet: the 25 cm working clearance between the magnet's
 ## pick-up face and the belt deck. The magnet's face currently sits 0.57 m above
 ## the deck, and closing that to 0.25 m is a separate decision about HOW (shrink
@@ -64,9 +70,12 @@ func _run() -> void:
 	bm.call("_build_full_line", "line_1", Vector3(-142.7, 0.0, 42.9), 0.0)
 	await get_tree().process_frame
 
+	# 2026-09-25 (operator): the uitvoerband is ONE conveyor under shredder_1's
+	# rotors with a 20° climb (uitvoerband_1), and the magnet is a CROSS-belt
+	# magnet over that climb (overband_magnet_l1). Both found by id.
 	var magnet : Node3D = null
 	var belt : Node3D = null
-	var belts : Array = []
+	var shredder : Node3D = null
 	for n in get_tree().root.find_children("*", "Node3D", true, false):
 		var n3 := n as Node3D
 		if n3 == null or not n3.has_meta("macro_id"):
@@ -74,139 +83,88 @@ func _run() -> void:
 		if String(n3.get_meta("macro_id")) != "line_1":
 			continue
 		match String(n3.get_meta("placeable_id", "")):
-			"overband_magnet":
+			"overband_magnet_l1":
 				magnet = n3
-			"transport_belt":
-				belts.append(n3)
+			"uitvoerband_1":
+				belt = n3
+			"shredder_1":
+				shredder = n3
 
-	_check(magnet != null, "T1 overband_magnet was placed on line 1")
-	_check(belts.size() >= 2, "T1 both transport_belts were placed (%d)" % belts.size())
-	if magnet == null or belts.is_empty():
+	_check(magnet != null, "T1 overband_magnet_l1 was placed on line 1")
+	_check(belt != null, "T1 uitvoerband_1 was placed on line 1")
+	if magnet == null or belt == null:
 		_finish(); return
 
-	# The uitvoerband is whichever transport_belt the magnet is nearest — resolved
-	# by MEASUREMENT, so this does not depend on the SEQ's entry index staying put.
-	var best := INF
-	for b in belts:
-		var d : float = (b as Node3D).global_position.distance_to(magnet.global_position)
-		if d < best:
-			best = d
-			belt = b as Node3D
-
-	# ── T2 — mounted: the two centres coincide in plan ───────────────────────
+	# Leg frame of the uitvoerband: along its run, and across it.
+	var anc : Dictionary = belt.get_meta("macro_anchor", {}) as Dictionary
+	var rot : float = float(anc.get("rot_y", 0.0))
+	var start : Vector3 = anc.get("start", Vector3.ZERO)
+	var fwd := Vector3(-sin(rot), 0.0, -cos(rot))
+	var rgt := Vector3(cos(rot), 0.0, -sin(rot))
 	var mp : Vector3 = magnet.global_position
 	var bp : Vector3 = belt.global_position
-	var horiz : float = Vector2(mp.x - bp.x, mp.z - bp.z).length()
-	_check(horiz <= CENTRE_TOL_M,
-		"T2 magnet is centred on the uitvoerband (%.3f m off, tol %.2f)" % [horiz, CENTRE_TOL_M])
 
-	# ── T3 — it straddles that belt rather than standing in the line ─────────
-	# Measured on the real AABBs: the magnet must be WIDER than the belt (its
-	# legs land outside the belt's sides) and no LONGER than it along the run
-	# (centred over it, not overhanging either end).
+	# ── T2 — mounted: over the belt, 0.20 m toward the top of the plan ───────
+	# (operator 2026-09-25: "move the magnet towards the top of the image about
+	# 20 centimeters"). Its along position is the operator's midpoint rule,
+	# measured in test_line1_layout.
+	var off : float = (mp - bp).dot(rgt)
+	_check(absf(off - 0.20) <= CENTRE_TOL_M,
+		"T2 magnet hangs over the uitvoerband, %.3f m off its centre line (0.20, tol %.2f)"
+			% [off, CENTRE_TOL_M])
+	var u_len : float = float(belt.get("deck_length")) + float(belt.get("incline_run")) + float(belt.get("top_flat_m"))
+	var m_al : float = (mp - start).dot(fwd)
+	var b0 : float = (bp - start).dot(fwd)
+	_check(m_al > b0 and m_al < b0 + u_len,
+		"T2 ... over the belt's own length (%.2f m of %.2f m)" % [m_al - b0, u_len])
+
+	# ── T3 — it straddles the belt: its own belt runs ACROSS it ─────────────
 	var mb : AABB = _aabb(magnet)
 	var bb : AABB = _aabb(belt)
-	var belt_runs_x : bool = bb.size.x > bb.size.z       # leg B runs along world X
-	var m_across : float = mb.size.z if belt_runs_x else mb.size.x
-	var b_across : float = bb.size.z if belt_runs_x else bb.size.x
-	var m_along  : float = mb.size.x if belt_runs_x else mb.size.z
-	var b_along  : float = bb.size.x if belt_runs_x else bb.size.z
+	var m_across : float = absf(mb.size.x * rgt.x) + absf(mb.size.z * rgt.z)
+	var m_along : float = absf(mb.size.x * fwd.x) + absf(mb.size.z * fwd.z)
+	var b_across : float = absf(bb.size.x * rgt.x) + absf(bb.size.z * rgt.z)
 	_check(m_across > b_across,
 		"T3 magnet spans wider than the belt, so its legs clear it (%.2f m vs %.2f m)"
 			% [m_across, b_across])
-	_check(m_along <= b_along + 0.01,
-		"T3 magnet sits within the belt's length (%.2f m over %.2f m)" % [m_along, b_along])
+	_check(m_across > m_along,
+		"T3 a cross-belt magnet: longer across the conveyor than along it (%.2f m vs %.2f m)"
+			% [m_across, m_along])
 
-	# ── T4 — the mount did NOT advance the macro cursor ──────────────────────
-	# The other transport_belt is the short leg-C belt, one 90 degree turn on from
-	# the uitvoerband. Straight-line distance is therefore NOT the leg-B run — the
-	# corner cuts it — so this compares against a threshold derived from what a
-	# SEQUENCE placement would have had to insert: the magnet's own 3.0 m depth
-	# plus half a belt. MEASURED 2026-09-16, both ways round:
-	#   magnet as a sequence entry -> the belts are 6.32 m apart  (fails)
-	#   magnet mounted on the belt -> the belts are 3.20 m apart  (passes)
-	# so the 5.0 m line sits well clear of both readings rather than hugging one.
-	var other : Node3D = null
-	for b in belts:
-		if b != belt:
-			other = b as Node3D
-			break
-	if other != null:
-		var step : float = other.global_position.distance_to(bp)
-		var mag_depth : float = float((PlaceableCatalog.get_item("overband_magnet")["size"] as Vector3).z)
-		var belt_half : float = float((PlaceableCatalog.get_item("transport_belt")["size"] as Vector3).z) * 0.5
-		var limit : float = mag_depth + belt_half
-		_check(step < limit,
-			"T4 leg B was not stretched by the magnet's footprint (%.2f m < %.2f m)"
-				% [step, limit])
+	# (T4, "leg B was not stretched by the magnet", compared two transport_belts
+	# that no longer exist as such: the magnet still mounts without advancing the
+	# cursor, and the receiving belt's place is now the throw's landing point,
+	# measured in test_line1_layout.)
 
-	# ── T5 — the magnet clears the conveyor it straddles ─────────────────────
-	# The pick-up face is the bottom of the cross-belt drums, found by MEASURING
-	# the rotating assembly rather than re-deriving the model's own fractions:
-	# the drums hang under RotatingMachine nodes, so they are the meshes whose
-	# parent exposes an `axis`. (Reading it off size.y * 0.69 would be a second
-	# copy of a number _m_overband_magnet already owns.)
-	#
-	# This asserts NON-INTERPENETRATION, which holds whichever datum the 25 cm
-	# clearance is eventually measured from, so it does not have to be rewritten
-	# when that is settled. Both candidate clearances are printed below.
-	var face_y : float = INF
-	for m in magnet.find_children("*", "MeshInstance3D", true, false):
-		var mi := m as MeshInstance3D
-		if mi == null or mi.mesh == null or not mi.is_visible_in_tree() or mi.top_level:
-			continue
-		var par := mi.get_parent()
-		if par == null or par.get("axis") == null:
-			continue
-		face_y = minf(face_y, (mi.global_transform * mi.get_aabb()).position.y)
-	_check(is_finite(face_y), "T5 the magnet's cross-belt drums were found")
-	var belt_top : float = bb.position.y + bb.size.y
-	if is_finite(face_y):
-		_check(face_y > belt_top,
-			"T5 nothing on the conveyor reaches the magnet (%.3f m of air, belt tops out at %.3f m)"
-				% [face_y - belt_top, belt_top])
+	# ── T5/T6 — clearance over the deck, where the belt is highest under it ──
+	# The magnet's lowest part over the belt is the bottom of its cooling fins,
+	# which span ±0.31·size.x along the conveyor (the core, turned with the
+	# cross-belt). The deck rises at 20° from the end of its flat part.
+	var msz : Vector3 = PlaceableCatalog.get_item("overband_magnet")["size"]
+	var low : float = mp.y + msz.y * 0.80 - msz.y * 0.22 * 0.5
+	var flat_end : float = b0 + float(belt.get("deck_length"))
+	var probe : float = m_al + msz.x * 0.62 * 0.5
+	var deck : float = bp.y + float(belt.get("deck_height")) \
+		+ maxf(0.0, probe - flat_end) * tan(deg_to_rad(float(belt.get("incline_deg"))))
+	var rails : float = deck + 0.03 + float(belt.get("guard_h"))
+	_check(low > rails,
+		"T5 the conveyor's skirt boards stay under the magnet (%.3f m of air)" % (low - rails))
+	_check(absf((low - deck) - PlaceableCatalog.OVERBAND_CLEARANCE_M) <= 0.02,
+		"T6 magnet sits %.3f m over the belt deck (target %.2f m +-0.02)"
+			% [low - deck, PlaceableCatalog.OVERBAND_CLEARANCE_M])
+	_check(float(belt.get("guard_h")) < PlaceableCatalog.OVERBAND_CLEARANCE_M,
+		"T6 the conveyor's own superstructure stays under the clearance (%.3f m < %.2f m)"
+			% [float(belt.get("guard_h")), PlaceableCatalog.OVERBAND_CLEARANCE_M])
 
-	# ── T6 — the operator's working clearance, over the DECK ─────────────────
-	# Belt deck top from BeltBuilder's own default, not a copy of it: a hand-baked
-	# 0.675 here would rot the moment deck_y_frac changed. Measured to the
-	# magnet's LOWEST part, so the clearance is a floor and not an average.
-	var bsize : Vector3 = PlaceableCatalog.get_item("transport_belt")["size"]
-	var frac : float = float(BeltBuilder.make_spec().get("deck_y_frac", 0.75))
-	var deck_top : float = belt.global_position.y + bsize.y * frac
-	if is_finite(face_y):
-		var clear : float = face_y - deck_top
-		_check(absf(clear - PlaceableCatalog.OVERBAND_CLEARANCE_M) <= 0.02,
-			"T6 magnet sits %.3f m over the belt deck (target %.2f m +-0.02)"
-				% [clear, PlaceableCatalog.OVERBAND_CLEARANCE_M])
-		# The rails had to come down before the belt could be raised at all — if
-		# they creep back up they eat the clearance from below without T6 moving.
-		_check(belt_top - deck_top < PlaceableCatalog.OVERBAND_CLEARANCE_M,
-			"T6 the conveyor's own superstructure stays under the clearance (%.3f m < %.2f m)"
-				% [belt_top - deck_top, PlaceableCatalog.OVERBAND_CLEARANCE_M])
-
-	# ── T7 — the shredder drop, RE-DERIVED after the lift ────────────────────
-	# Raising the uitvoerband 0.281 m shortened the fall out of shredder_1 from
-	# 0.675 m to 0.394 m. That is still a real drop (the belt is below the
-	# outlet, material falls onto it) and still generous next to the 0.30 m
-	# BELT_TRANSFER_DROP_M used for belt-to-belt transfers, so the transfer is
-	# asserted as a BAND rather than a magic number: it must not invert (belt
-	# above the outlet) and must not become a free-fall.
-	var shredder : Node3D = null
-	for n in get_tree().root.find_children("*", "Node3D", true, false):
-		var n3 := n as Node3D
-		if n3 != null and n3.has_meta("macro_id") \
-			and String(n3.get_meta("macro_id")) == "line_1" \
-			and String(n3.get_meta("placeable_id", "")) == "shredder_1":
-			shredder = n3
-			break
+	# ── T7 — the shredder drops onto the uitvoerband ─────────────────────────
 	_check(shredder != null, "T7 shredder_1 was placed")
 	if shredder != null:
 		var ssz : Vector3 = PlaceableCatalog.get_item("shredder_1")["size"]
 		var outf : Vector3 = MachineFlow.profile("shredder_1")["out"]
 		var out_y : float = shredder.global_position.y + outf.y * ssz.y
-		var drop : float = out_y - deck_top
+		var drop : float = out_y - (bp.y + float(belt.get("deck_height")))
 		_check(drop > 0.05 and drop < 1.0,
-			"T7 shredder_1 still discharges DOWN onto the raised uitvoerband (%.3f m drop)" % drop)
+			"T7 shredder_1 discharges DOWN onto the uitvoerband (%.3f m drop)" % drop)
 
 	_finish()
 
