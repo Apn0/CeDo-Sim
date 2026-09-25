@@ -390,6 +390,13 @@ cycle-guard rewiring moved none of its numbers); `test_extruder_screw` 15 ok;
 `test_qa_terminal` 0 failures; lint 0 of 463 files. 0 `^SCRIPT ERROR` lines, and
 `world_layout.json` hashed `e046af7d…` before and after.
 
+**A fourth merge (`cd58df7`, #298–#300: docs and `run.sh` only, no GDScript).**
+Merge #299 had dropped `test_machine_sounds`, `test_hmi_fault_rearm` and
+`test_macro_edges_reload` from `run.sh`'s loops, and they are back. Measured on
+this tree: 80 ok, 32 ok and 60 ok. `test_machine_sounds` needs the baked WAVs
+in the gitignored `assets/audio/machines/`; without them it reads 58 ok / 22
+fail, which is environmental.
+
 **An incident during this session, not caused by it.** At 02:34:33 the file was
 rewritten to `bd62352d…`, with the jam-baseline fixture gate in
 `structure_items` **twice**. At that moment two OTHER sessions were running
