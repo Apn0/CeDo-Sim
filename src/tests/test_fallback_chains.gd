@@ -345,6 +345,38 @@ func _run() -> void:
 	_check(runs.size() == CHAINS.size(), "G5 all %d chains resolved to measure (anti-vacuity)" % CHAINS.size())
 
 	# ── F — real kg along each chain ─────────────────────────────────────────
+	# The extruders run their own natraject (operator rulings 2026-09-25 §I4,
+	# docs/plant/operator_rulings_2026-09-25.md): the line's start no longer
+	# powers laserfilter -> heetafslag -> ... -> weegschaal, so a granulate
+	# chain carries kg only once its extruder is started. Every extruder brain
+	# is started the way a player does it (hot barrel, the start button) and
+	# stepped with LineFlow from here on. Measured 2026-09-25 without this:
+	# 0.0 of 31.7 kg reached voorraad_silo on line 1 and on 3B.
+	var st : Node = get_node("/root/SimTick")
+	var brains : Array = get_tree().get_nodes_in_group("extruder_machine")
+	for b in brains:
+		var cb := Callable(b, "_on_sim_tick")
+		if st.sim_tick.is_connected(cb):
+			st.sim_tick.disconnect(cb)
+		var bmod : ExtruderModel = b.get("model")
+		bmod.melt_temp = bmod.config.melt_temp_setpoint
+		(b.get("_pending") as Dictionary)["start_production"] = true
+	var running : int = 0
+	var start_ticks : int = 0
+	for _k in range(300):
+		for b in brains:
+			b.call("_on_sim_tick", 0.1)
+		lf.call("tick", 0.1)
+		start_ticks += 1
+		running = 0
+		for b in brains:
+			if (b.get("model") as ExtruderModel).state == ExtruderModel.State.RUNNING:
+				running += 1
+		if running == brains.size():
+			break
+	_check(brains.size() >= 2 and running == brains.size(),
+		"F- every extruder brain (%d) is started through its natraject before the kg are fed: %d RUNNING after %.1f s"
+		% [brains.size(), running, start_ticks * 0.1])
 	var feed_kg_tick : float = FEED_KG_H / 3600.0 * 0.1
 	var moved : Dictionary = {}
 	for r in runs:
@@ -362,6 +394,8 @@ func _run() -> void:
 					feed_kg_tick, feed_kg_tick / LineFlow.FEED_DENSITY,
 					LineFlow.DEFAULT_COMP.duplicate(), "fallback_chain", 0.0, 0.0))
 			fed += feed_kg_tick
+		for b in brains:
+			b.call("_on_sim_tick", 0.1)
 		lf.call("tick", 0.1)
 		for i in moved.keys():
 			var m : float = float((nodes[int(i)] as Dictionary).get("_moved_kg", 0.0))

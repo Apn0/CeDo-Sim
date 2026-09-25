@@ -594,7 +594,8 @@ the one before that ~6 months stale — treat this one as re-checkable too):
 | `docs/audit/extruder_stop_torque_2026-09-25.md` | **The extruder's load through a stop, from the plant's raw WinCC archive.** The model compounded the torque every STOPPING tick (0.142 of running 1.2 s in at 0.1 s ticks, 0.024 at 0.05 s). Now it is entry torque x rpm / entry rpm, the law the 17 samples caught mid-stop show (slope 0.969). Open, for the operator: the plant's screw stops within one ~5 s log cycle in 70 of 83 stops, while the model coasts for 21.6 s; 26 of 83 stops were run empty first |
 | `docs/audit/extruder_screw_die_plate_2026-09-24.md` | **LineFlow's OWN screw model (not ExtruderModel) read 0.11 "bar" at the die, at 200 rpm and a 195 °C melt.** The MFI estimate was 1491 g/10min, so every QA sample graded REJECT, and on lines 1/3A/3B the terminal and SCADA read the `extruder_silo`. Now: die plate after the kopfilter (operator ruling), per-line rpm, melt and output from the WinCC trends, MFI anchor re-solved. §10 (2026-09-25): the "flat kopdruk vs proportional model" gap was a probe holding rpm fixed; both models now carry a power-law die, P ∝ Q^0.35, gated across the trend's output band |
 | `docs/audit/extruder_warm_restart_2026-09-25.md` | **A warm extruder restart at the green button tripped 318 bar** (4.3-4.8 s after green, 3A and 3B, through the plain stop / PREHEAT / green path too): a model that had run before went on at nominal flow, and only a first start re-ramped. Also found: only the FIRST extruder in the group could have its rpm set, and the green button accepted a melt that passes lumps. Built from operator rulings: start ramps to the persisted setpoint, 60 floor and new-extruder setpoint, green from the lump point too (201.875 °C), a per-line rpm control. Probe, 27-check suite, 11 mutations; open items (interlocks, ~5 s ramp in the archive, OFF cooling rate, the lump law's knife edge) |
-| `docs/plant/operator_rulings_2026-09-25.md` | **The die plate against output, 2026-09-25**: the flat kopdruk in the June-2023 trends is "operator-specific", perhaps an office test without head filters (CLAIMED; the downsampled curves cannot tell). Power-law die P ∝ Q^0.35 in ExtruderScrew AND ExtruderModel, MfiProxy only the matching exponent (MFI itself deferred to the beta). Open: melt pump on 3A/3B (08-31 says none, 09-24 names one), the profiles' rpm is not the rpm at the nominal output **Third session, §E1-§E7: extruder start, rpm setpoint, green button** — a start ramps to the setpoint the operator left (not always to 60); 60 is the floor, the remedy after a 318 trip and a new extruder's setpoint; green waits out the lumps (201.875 °C); 3 s to 60 kept against the raw archive's ~5 s; a line choice on the HMI. Recollections beside the raw WinCC archive's 126 starts. Open: start interlocks, the left "easy work" button |
+| `docs/audit/extruder_start_interlock_2026-09-25.md` | **The extruder's start button and its natraject, from operator rulings.** Checks first (a failed one latches alarm 4401 until the HMI resets it), then blower + weegschaal, centrifuge, ontwaterzeef, heetafslag and laserfilter in order, then the screw; the ring; a trip when one stops; the run-down; the hidden natraject switch. The extruder owns its LineFlow node and natraject, so the line's start no longer runs them. Measured on a real 3B line, the mutation matrix, the six bench suites switched to natraject OFF, `test_fallback_chains` starting its extruders, main's unparseable run.sh repaired. Open: an off extruder backs its line up to the 250 kg e-stop in 16 min, inside a 30-min warm-up |
+| `docs/plant/operator_rulings_2026-09-25.md` | **The die plate against output, 2026-09-25**: the flat kopdruk in the June-2023 trends is "operator-specific", perhaps an office test without head filters (CLAIMED; the downsampled curves cannot tell). Power-law die P ∝ Q^0.35 in ExtruderScrew AND ExtruderModel, MfiProxy only the matching exponent (MFI itself deferred to the beta). Open: melt pump on 3A/3B (08-31 says none, 09-24 names one), the profiles' rpm is not the rpm at the nominal output **Third session, §E1-§E7: extruder start, rpm setpoint, green button** — a start ramps to the setpoint the operator left (not always to 60); 60 is the floor, the remedy after a 318 trip and a new extruder's setpoint; green waits out the lumps (201.875 °C); 3 s to 60 kept against the raw archive's ~5 s; a line choice on the HMI. Recollections beside the raw WinCC archive's 126 starts. **Fourth session, §I1-§I10: the start button and its natraject** — checks, an alarm reset only on the HMI, the start order, the ring, the extruder (not the line) runs its natraject, a stop under the screw trips it, the hidden natraject setting; the left button starts the PCU |
 | `docs/plant/operator_rulings_2026-09-24.md` | **Extruder melt pressures, 2026-09-24**: the "280 psi" die pressure was 280 BAR, a safe maximum before the laserfilter under the 318-bar shutdown (he runs ~220). Two pressures: before the laserfilter = melt-set after + dMP; MP<PEL (160 bar) = dP across the kopfilter; per-line FORM-008 kopdruk. Recollections; what was measured before/after, and what is still open (3B above its one-session trend). §6: merged with #275, which fixed the same finding in parallel. The melt-set pressures follow MELT temperature (3A fit 6.83 bar/°C, weak). §7: the screen's dMP follows it too (operator 2026-09-25), measured before/after |
 | `docs/AUDIO_machine_sounds_2026-09-25.md` | **The operator's 11 plant-floor recordings, on their machines, driven by the sim.** File-name cutting grammar (`5s+_`, `25s-35s_`, `loop_3x_`, `_in_operation`, `_loop_4x`) and the rulings behind each bake; `MachineSoundSpec` `.tres` per placeable with the `gain_db` slider (every level a PLACEHOLDER until play-tested); loop seams measured against each loop's own fluctuation; ramps generated from the run loop; the 60 line-macro machines still without a recording. `test_machine_sounds` 80 ok |
 | `docs/plant/operator_rulings_2026-09-23.md` | **Operator answers from memory, 2026-09-23** — film look, colour order, bed depth per belt, where wet flake is visible, screws "differ". Recollections, not documents: cite them as such |
@@ -1069,6 +1070,13 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   lists every dropped step (it named exactly `SettingsManager apply` on the
   real range, and nothing on a tree that only adds); and in `--script` suites,
   `load()` anything that touches an autoload at runtime — never `preload()` it.
+  **A merge can also keep BOTH loop headers.** The #308/#309 merge
+  (`59acf8f`, on `main` as `147cff1`) left two `for t in ...; do` lines for one
+  loop body, and `bash -n tools/regression/run.sh` said "syntax error:
+  unexpected end of file": the harness would stop before its first suite.
+  Repaired 2026-09-25 (`docs/audit/extruder_start_interlock_2026-09-25.md`
+  §7). After any merge that touches `run.sh`, run `bash -n` and diff the
+  `for t in` lists against both parents.
 - **A headless run that outlives its expected time is HUNG, and exit 0 is not a
   pass.** Measured 2026-09-22 on a throwaway `--script` probe that idled until
   the session was killed. Three silent modes: (1) a runtime `SCRIPT ERROR` in
@@ -1290,6 +1298,31 @@ LIFETIME-runtime ramp that made first and later starts differ; the field is no
 longer read). Guard: `test_extruder_start_rpm` (27 checks, 11 mutations red).
 The raw WinCC archive agrees on the floor and on starts returning to the old rpm
 after short stops, and points at a ~5 s ramp where he says 3 s; he kept 3 s.
+
+**The start button and its natraject (operator rulings 2026-09-25, same file
+§I1-§I10).** The press (E at the machine, or `_pending["start_production"]`)
+is the RIGHT white LED ring button, and it no longer starts the screw by
+itself. `ExtruderStartSequence` (held as `model.start_seq`, ticked by
+`ExtruderMachine`):
+- runs the checks the sim can make (each natraject machine found, not tripped,
+  choked, in HAND or held by the line's e-stop);
+- then switches on blower + weegschaal, centrifuge, ontwaterzeef, heetafslag and
+  laserfilter, each once the one before is up, then the screw;
+- blinks the ring 0.5 s off / 0.5 s on meanwhile, solid with the screw.
+
+A failed check latches alarm 4401 (a SIM code) and the button is dead until the
+HMI resets it: RESETTEN on the extruder panel, or ALARM RESET on the extruder
+panel or the web strip. Never E at the machine: *"I can't press E in real life
+by looking at the extruder"*. A natraject machine that stops under the screw
+trips it (FAULT `natraject_stopped`), and a stop runs the natraject down in
+reverse after the screw stands. The extruder, not the line, runs its own
+LineFlow node and natraject (`LineFlow.claim_node`; the line's start no longer
+powers them). The hidden "natraject" setting (default ON, a switch on both
+extruder HMIs) turns all of it off: the screw alone. A bench rig with no pellet
+side switches it off. Guard: `test_extruder_start_interlock` (32 checks, 14 mutations red).
+Measured consequence, open: a line feeding an extruder that is off e-stops at
+250 kg after 16 min at 950 kg/h, inside a cold barrel's 30-min warm-up
+(`docs/audit/extruder_start_interlock_2026-09-25.md` §4).
 
 **Duration comes from the docs, not from feel.** `ExtruderConfig.preheat_min_s`
 = 1800 s, from Cedo-PROD-SWI-042 p4 step 19: starting the 3a/3b extruder

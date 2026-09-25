@@ -47,6 +47,25 @@ var _scada              : Node  = null
 var _scada_push_t       : float = 0.0
 const SCADA_PUSH_DT_S   : float = 0.2     # 5 Hz refresh — matches LineFlow's cadence
 
+# ── Start button and natraject (operator rulings 2026-09-25, §I1-§I9) ─────────
+# The press (E here, _pending["start_production"] from tests and HMIs) is the
+# RIGHT white LED ring button. It no longer starts the screw: it hands the
+# model's start_seq (ExtruderStartSequence) the state of the natraject, which
+# checks it, starts it in order and only then asks the model for the screw.
+# This extruder claims its LineFlow node and its natraject nodes, so the line's
+# PLC no longer powers them (§I4).
+const _SEQ := preload("res://src/sim/ExtruderStartSequence.gd")
+## A free-built extruder (not part of a line macro) takes the nearest machine
+## of each natraject kind within this reach. No plant number: in the line
+## macros the natraject runs from 3.5 m (laserfilter) to ~14 m (weegschaal)
+## from the extruder, and a macro extruder takes its own line's machines.
+const NATRAJECT_REACH_M : float = 30.0
+## How often the natraject is looked up again (a machine placed or deleted).
+const NATRAJECT_RESOLVE_S : float = 2.0
+var _line_flow : Node = null
+var _natraject : Dictionary = {}          # step id -> placed body (Node3D)
+var _natraject_resolve_t : float = INF
+
 # =============================================================================
 func _ready() -> void:
 	if not config_resource:
@@ -177,6 +196,9 @@ func _process(_delta: float) -> void:
 
 # Plain-English explanation of the current state.
 func _readable_status() -> String:
+	var seq = model.start_seq
+	if seq.alarm != "" or seq.phase == _SEQ.Phase.NATRAJECT_UP or seq.phase == _SEQ.Phase.RUN_DOWN:
+		return seq.status_text()
 	match model.state:
 		ExtruderModel.State.OFF:
 			return "Powered off — cold, no rotation."
@@ -209,6 +231,12 @@ func _readable_status() -> String:
 
 # What the interact key (E) will do in the current state.
 func _interact_hint() -> String:
+	var seq = model.start_seq
+	if seq.alarm != "" and model.state in [ExtruderModel.State.OFF, ExtruderModel.State.IDLE,
+			ExtruderModel.State.PREHEAT, ExtruderModel.State.STOPPING]:
+		return "start button dead — %s. Reset the alarm on the extruder HMI" % seq.alarm
+	if seq.phase == _SEQ.Phase.NATRAJECT_UP:
+		return "start sequence running — %s (ring blinking)" % seq.status_text()
 	match model.state:
 		ExtruderModel.State.OFF:
 			if model.flooded_dismantle_required or model.vacuum_line_gunk_kg >= ExtruderModel.VACUUM_FLOOD_DISMANTLE_THRESHOLD_KG:
@@ -240,8 +268,28 @@ func _interact_hint() -> String:
 func _on_sim_tick(delta: float) -> void:
 	var inputs := _pending.duplicate()
 	_pending.clear()
+	_natraject_resolve_t += delta
+	if _natraject_resolve_t >= NATRAJECT_RESOLVE_S or _natraject_stale():
+		_natraject_resolve_t = 0.0
+		_resolve_natraject(_line_flow)
+	var nat_status := _natraject_status()
+	_route_start_button(inputs, nat_status)
+	var seq_out : Dictionary = model.start_seq.tick(delta, nat_status, _screw_driven(),
+		model.screw_rpm > 0.5)
+	if bool(seq_out["start_screw"]):
+		inputs["start_production"] = true
+	if String(seq_out["trip"]) != "":
+		inputs["natraject_trip"] = String(seq_out["trip"])
+		print("[%s] %s — the extruder trips" % [config_resource.line_id, String(seq_out["trip"])])
+	# While the natraject comes up the heaters hold the barrel: from OFF the
+	# model goes to PREHEAT (it would cool 0.5 °C/s in OFF, and the green
+	# threshold is only ~13 °C under the setpoint).
+	if model.start_seq.phase == _SEQ.Phase.NATRAJECT_UP \
+			and model.state in [ExtruderModel.State.OFF, ExtruderModel.State.IDLE]:
+		inputs["preheat_on"] = true
 	var prev_state := model.state
 	var events := model.tick(delta, inputs)
+	_command_natraject()
 
 	_resolve_lazy_dependencies()
 	_update_telemetry(delta)
@@ -252,6 +300,141 @@ func _on_sim_tick(delta: float) -> void:
 
 	_check_pressure_trips()
 	_handle_state_transitions(prev_state)
+
+## The press of the start button. A cold barrel still goes to its warm-up
+## (PREHEAT) without the natraject, as before; a barrel at temperature, or a
+## screw still coasting, runs the start sequence. An alarm not yet reset on the
+## HMI makes the button dead (rulings §I1: "If you don't reset the alarm, still
+## nothing's going to happen"). Anything else keeps the old route: the model
+## ignores it.
+func _route_start_button(inputs: Dictionary, nat_status: Dictionary) -> void:
+	if not bool(inputs.get("start_production", false)):
+		return
+	inputs.erase("start_production")
+	var st := model.state
+	var startable : bool = st in [ExtruderModel.State.OFF, ExtruderModel.State.IDLE,
+		ExtruderModel.State.PREHEAT, ExtruderModel.State.STOPPING]
+	if startable and model.start_seq.alarm != "":
+		print("[%s] Start button: nothing happens — %s" % [config_resource.line_id, model.start_seq.alarm])
+		return
+	if st in [ExtruderModel.State.OFF, ExtruderModel.State.IDLE] and not model.preheat_ready():
+		inputs["start_production"] = true   # cold barrel: the model routes it to PREHEAT
+		return
+	if st == ExtruderModel.State.PREHEAT and not model.preheat_ready():
+		return                               # the green button is not live yet
+	if startable and not model.start_seq.natraject_enabled:
+		# "Natraject" off (the hidden setting): no checks, nothing started, the
+		# press goes to the screw exactly as it did before the sequence existed.
+		inputs["start_production"] = true
+		return
+	if startable:
+		var why : String = model.start_seq.press(nat_status)
+		if why != "":
+			print("[%s] Start button: %s" % [config_resource.line_id, why])
+		return
+	inputs["start_production"] = true
+
+func _screw_driven() -> bool:
+	return model.state in [ExtruderModel.State.STARTING, ExtruderModel.State.RUNNING,
+		ExtruderModel.State.VACUUM_ALARM]
+
+## The catalog body this brain sits on (MachineBrains.attach adds it as a
+## child). It is also the extruder's own LineFlow node. Null on a bench scene.
+func _owner_body() -> Node3D:
+	var p := get_parent() as Node3D
+	if p != null and p.has_meta("placeable_id"):
+		return p
+	return null
+
+func _natraject_stale() -> bool:
+	for b in _natraject.values():
+		if b == null or not is_instance_valid(b):
+			return true
+	return false
+
+## Look up this extruder's natraject in LineFlow and claim it, with the
+## extruder's own flow node. A macro-built extruder takes the machines of its
+## own build (macro_instance); a free-built one the nearest of each kind within
+## NATRAJECT_REACH_M that no macro line and no other extruder holds.
+func _resolve_natraject(lf_hint: Node = null) -> void:
+	if not is_inside_tree():
+		return
+	var lf : Node = lf_hint if lf_hint != null and is_instance_valid(lf_hint) 		else get_tree().get_first_node_in_group("line_flow")
+	if lf == null or not lf.has_method("flow_bodies"):
+		_line_flow = null
+		_natraject.clear()
+		return
+	if _line_flow != null and is_instance_valid(_line_flow) and _line_flow != lf:
+		_line_flow.call("release_nodes", self)
+	_line_flow = lf
+	var me := _owner_body()
+	var here : Vector3 = me.global_position if me != null else global_position
+	var inst : String = String(me.get_meta("macro_instance")) if me != null and me.has_meta("macro_instance") else ""
+	var best : Dictionary = {}
+	var best_d : Dictionary = {}
+	for e in lf.call("flow_bodies"):
+		var id : String = String(e["id"])
+		if not _SEQ.STEP_IDS.has(id):
+			continue
+		var b : Node3D = e["body"]
+		var o = lf.call("node_owner", b)
+		if o != null and o != self:
+			continue
+		var d : float = (b.global_position - here).length()
+		if inst != "":
+			if not b.has_meta("macro_instance") or String(b.get_meta("macro_instance")) != inst:
+				continue
+		else:
+			if b.has_meta("macro_instance") or d > NATRAJECT_REACH_M:
+				continue
+		if d < float(best_d.get(id, INF)):
+			best[id] = b
+			best_d[id] = d
+	lf.call("release_nodes", self)
+	_natraject = best
+	for id2 in best:
+		lf.call("claim_node", best[id2], self)
+	if me != null:
+		lf.call("claim_node", me, self)
+
+func _natraject_status() -> Dictionary:
+	var st : Dictionary = {}
+	for id in _SEQ.STEP_IDS:
+		var b = _natraject.get(id, null)
+		if _line_flow == null or not is_instance_valid(_line_flow) or b == null or not is_instance_valid(b):
+			st[id] = {"found": false, "available": false, "why": "niet gevonden",
+				"powered": false, "spin": 0.0}
+		else:
+			st[id] = _line_flow.call("natraject_status", b)
+	return st
+
+## Write the sequence's run commands into LineFlow, and run the extruder's own
+## flow node while its screw turns.
+func _command_natraject() -> void:
+	if _line_flow == null or not is_instance_valid(_line_flow):
+		return
+	for id in _SEQ.STEP_IDS:
+		var b = _natraject.get(id, null)
+		if b != null and is_instance_valid(b):
+			_line_flow.call("command_node", b, self, bool(model.start_seq.run_cmd.get(id, false)))
+	var me := _owner_body()
+	if me != null:
+		_line_flow.call("command_node", me, self, _screw_driven() or model.screw_rpm > 0.5)
+
+## LineFlow.rebuild() calls this on every extruder so the claims are in place
+## before LineFlow's next tick.
+func on_line_flow_rebuilt(lf: Node) -> void:
+	_natraject_resolve_t = 0.0
+	_resolve_natraject(lf)
+	_command_natraject()
+
+## The natraject machine bodies this extruder found, by step id (tests, HMI).
+func natraject_bodies() -> Dictionary:
+	return _natraject.duplicate()
+
+func _exit_tree() -> void:
+	if _line_flow != null and is_instance_valid(_line_flow):
+		_line_flow.call("release_nodes", self)
 
 func _resolve_lazy_dependencies() -> void:
 	# Lazy fallback in case the filters spawned after our _ready (e.g. when
@@ -664,7 +847,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			# The green pushbutton is only live once the display block is green.
 			if model.preheat_ready():
 				_pending["start_production"] = true
-				print("[%s] Operator started production (barrel at temperature) — screw ramps to its %.0f rpm setpoint"
+				print("[%s] Operator pressed start (barrel at temperature) — natraject first, then the screw to its %.0f rpm setpoint"
 					% [config_resource.line_id, model.screw_rpm_setpoint])
 			else:
 				print("[%s] Still warming — %.0f%% (%.0f/%.0f °C). The green "
@@ -681,7 +864,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				# a cold machine used to guarantee a torque trip 2 s later.
 				_pending["start_production"] = true
 				if model.preheat_ready():
-					print("[%s] Operator started production — screw ramps to its %.0f rpm setpoint"
+					print("[%s] Operator pressed start — natraject first, then the screw to its %.0f rpm setpoint"
 						% [config_resource.line_id, model.screw_rpm_setpoint])
 				else:
 					print("[%s] Operator started warm-up (barrel cold, %.0f °C)"

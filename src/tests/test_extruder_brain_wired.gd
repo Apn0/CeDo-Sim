@@ -150,6 +150,12 @@ func _ready() -> void:
 	for m in machines:
 		var pend = m.get("_pending")
 		if pend != null:
+			# This proves the brain ticks. A lone placed extruder has no pellet
+			# side, so with the hidden "natraject" setting ON (the default,
+			# rulings 2026-09-25 §I7) its start is refused and nothing changes
+			# state; switched off, the press starts the screw as before. The
+			# natraject is test_extruder_start_interlock's.
+			m.get("model").start_seq.natraject_enabled = false
 			pend["start_production"] = true
 			driven = true
 	_check(driven, "the brain exposes the same _pending dict the E key writes to")
