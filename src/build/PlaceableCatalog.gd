@@ -253,6 +253,11 @@ static func items() -> Array[Dictionary]:
 			# under the lip via LINE_1_SEQ's gap (derivation there), NOT via this
 			# box — guarded live by test_line1_flow_conformance S4b.
 			{"id": "drum_feed_belt", "name": "Drum feed belt (45° climb to SGA hoekgoot)", "category": "Conveyance", "size": Vector3(1.6, 5.6, 5.8),  "color": Color(0.20, 0.40, 0.80)},
+			# Line 1's uitvoerband (operator 2026-09-25): ONE conveyor under
+			# shredder_1's rotors, flat under the shredder, then a 20° climb. Built
+			# from its origin like the other feed belts (see uitvoerband_1_spec_m);
+			# the box's Z is its plan length, 6.04 m for shredder_1's 4.0 m width.
+			{"id": "uitvoerband_1", "name": "Uitvoerband 1 (under shredder 1, flat + 20° climb)", "category": "Conveyance", "size": Vector3(1.0, 1.8, 6.04),  "color": Color(0.20, 0.20, 0.22)},
 			{"id": "opzetband_1",    "name": "Opzetband 1 (10m@25°, 4m wide, integrated magnet head)", "category": "Conveyance", "size": Vector3(4.0, 5.0, 10.0),  "color": Color(0.20, 0.40, 0.80)},
 			# Inclined belt — climbs 8 m vertically over 8 m horizontal (45°).
 			# Goes from Shredder 2's output up to the feed hopper at the top.
@@ -342,8 +347,22 @@ static func items() -> Array[Dictionary]:
 			{"id": "flotation_tank_wide", "name": "Flotation tank (wide 2x, Line 3C/6)", "category": "Separation", "size": Vector3(6.0, 5.0, 9.0),  "color": Color(0.32, 0.46, 0.56)},
 			{"id": "sink_float",     "name": "Bezinkafscheider",   "category": "Separation","size": Vector3(2.6, 2.0, 4.0),"color": Color(0.34, 0.46, 0.50)},
 			{"id": "friction_sep",   "name": "Friction separator", "category": "Separation", "size": Vector3(1.8, 2.0, 4.5),  "color": Color(0.52, 0.54, 0.58)},
+			# Line 1's L-R frictiescheider (operator 2026-09-25): ONE machine lying
+			# ACROSS the flow, fed in the middle of its back side, splitting the
+			# material left/right inside, with an outlet at each far end of its front.
+			# Long axis is X, so it lies across the line without a yaw key.
+			{"id": "friction_sep_lr", "name": "Frictiescheider L-R (line 1)", "category": "Separation", "size": Vector3(4.5, 2.8, 1.8),  "color": Color(0.52, 0.54, 0.58)},
 			{"id": "dewater_screw",  "name": "Dewatering screw",   "category": "Separation", "size": Vector3(1.2, 2.6, 4.5),  "color": Color(0.56, 0.58, 0.62)},
+			# Line 1's dewatering screw (operator 2026-09-25, from the top-down view):
+			# beside the flotation tank's discharge end, NOT over it, its low end
+			# flush with the tank's far side and its high end 1.5 m past the near
+			# side: tank width 4.5 + 1.5 = 6.0 m. Same model as dewater_screw.
+			{"id": "dewater_screw_l1", "name": "Dewatering screw (line 1, 6 m)", "category": "Separation", "size": Vector3(1.2, 2.6, 6.0),  "color": Color(0.56, 0.58, 0.62)},
 			{"id": "overband_magnet","name": "Overband magnet",    "category": "Separation", "size": Vector3(1.6, 1.8, 3.0),  "color": Color(0.30, 0.32, 0.38)},
+			# Line 1's cross-belt overband magnet (operator 2026-09-25): the same
+			# magnet turned so its own belt runs across the uitvoerband, scrap off
+			# its +X end into the skip (_m_overband_magnet_l1).
+			{"id": "overband_magnet_l1","name": "Overband magnet (line 1, cross-belt)", "category": "Separation", "size": Vector3(3.0, 1.8, 1.6),  "color": Color(0.30, 0.32, 0.38)},
 			{"id": "scraper_conveyor","name":"Coarse scraper conveyor","category": "Separation","size": Vector3(1.4, 2.6, 6.0), "color": Color(0.46, 0.50, 0.54)},
 			{"id": "verdeelwals",    "name": "Verdeelwals (distribution roller)","category": "Separation","size": Vector3(2.0, 1.8, 1.4),"color": Color(0.55, 0.55, 0.58)},
 			# Operator 2026-08-28 (line-1 HPS/SGA walk): the goot after the SGA drum is
@@ -353,7 +372,10 @@ static func items() -> Array[Dictionary]:
 			# line with the drum axis) and keep feeding into the next machine.
 			# Height raised 1.4 → 2.0 to fit the operator's real 1.37 m of total drop
 			# (30° leg 0.50 m + 60° leg 0.87 m); footprint X/Z unchanged.
-			{"id": "scheidingsgoot", "name": "Scheidingsgoot (Y-splitgoot, na SGA-trommel)","category": "Separation","size": Vector3(1.6, 2.0, 3.0),"color": Color(0.55, 0.57, 0.60)},
+			# 2026-09-25: 1.6 x 3.0 x 1.8 (was 1.6 x 2.0 x 3.0). Rebuilt short and high:
+			# its inlet under the lifted drum's lip, the legs out to the friction
+			# separators beside it (scheidingsgoot_layout_local).
+			{"id": "scheidingsgoot", "name": "Scheidingsgoot (Y-splitgoot, na SGA-trommel)","category": "Separation","size": Vector3(1.6, 3.0, 1.8),"color": Color(0.55, 0.57, 0.60)},
 			# Operator 2026-08-28: between band 2 and the SGA drum sits a chute that
 			# makes a 90° RIGHT turn off the conveyor and feeds the drum on its TOP
 			# side. The flow diagrams draw blocks only, never chutes — this one is
@@ -415,6 +437,12 @@ static func items() -> Array[Dictionary]:
 			# (oversize that slides down to the discharge).
 			{"id": "trilzeef",       "name": "Trilzeef (vibrating sieve, 6-row)", "category": "Separation", "size": Vector3(1.8, 2.6, 4.2), "color": Color(0.12, 0.18, 0.34)},
 			{"id": "transport_screw","name": "Transport screw",    "category": "Conveyance", "size": Vector3(1.0, 2.4, 4.5),  "color": Color(0.55, 0.57, 0.61)},
+			# Line 1's intrekschroef (operator 2026-09-25, line 1 only): from the
+			# bottom of a post-mill cyclone 30° DOWN into the flotation tank, 1.5-2 m
+			# long, crossing the tank wall and discharging ~0.5 m inside into the
+			# water. Inlet HIGH at +Z, outlet LOW at -Z, so on the macro leg it
+			# discharges BACK toward the tank that the next turn lays out.
+			{"id": "intrekschroef",  "name": "Intrekschroef (line 1, cycloon → flotatietank)", "category": "Conveyance", "size": Vector3(0.6, 1.45, 1.8),  "color": Color(0.55, 0.57, 0.61)},
 			# ── Extrusion prep ───────────────────────────────────────────────
 			{"id": "mas_bak",        "name": "MAS trough",         "category": "Extrusion prep","size": Vector3(2.2, 1.8, 3.0),"color": Color(0.50, 0.52, 0.50)},
 			# #106 — height bumped from 2.6 → 3.9 m to match real PCU footprint per
@@ -1382,7 +1410,8 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 	# pipelines can't see the opzetband at all (the early return skipped the
 	# generic body's tagging at line ~895). Also attach a BeltSurface so dropped
 	# material is physically carried.
-	if id == "opzetband_3a3b" or id == "opzetband_3c6" or id == "westa_band_1" or id == "opzetband_1" or id == "drum_feed_belt":
+	if id == "opzetband_3a3b" or id == "opzetband_3c6" or id == "westa_band_1" or id == "opzetband_1" or id == "drum_feed_belt" \
+			or id == "uitvoerband_1":
 		var op : Node3D = _build_opzetband(id, Vector3(item["size"]), ghost)
 		if op != null and not ghost:
 			_finalize_placeable(op, id)
@@ -1782,7 +1811,8 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 		"flotation_tank_wide": _m_flotation(p, size, color, ghost, true)
 		"sink_float":     _m_sinkfloat(p, size, color, ghost)
 		"friction_sep":   _m_friction(p, size, color, ghost)
-		"dewater_screw":  _m_dewater(p, size, color, ghost)
+		"friction_sep_lr":_m_friction_lr(p, size, color, ghost)
+		"dewater_screw", "dewater_screw_l1":  _m_dewater(p, size, color, ghost)
 		"water_pump":     _m_pump(p, size, color, ghost)
 		# pump_large / waterpomp / ringleiding_3a removed — see comments at
 		# their (formerly) catalog entries. water_pump + ringleiding are the
@@ -1800,6 +1830,7 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 		"rafter":         _m_rafter(p, size, color, ghost)
 		"trilzeef":       _m_trilzeef(p, size, color, ghost)
 		"transport_screw":_m_transport_screw(p, size, color, ghost)
+		"intrekschroef":  _m_intrekschroef(p, size, color, ghost)
 		"mas_bak":        _m_mas_bak(p, size, color, ghost)
 		"compactor":      _m_compactor(p, size, color, ghost)
 		"cutter_compactor": _m_compactor(p, size, color, ghost)
@@ -1858,6 +1889,7 @@ static func _build_model(p: Node3D, id: String, category: String, size: Vector3,
 		"laser_filter":   _m_laser_filter(p, size, color, ghost)
 		"melt_pump":      _m_melt_pump(p, size, color, ghost)
 		"overband_magnet":_m_overband_magnet(p, size, color, ghost)
+		"overband_magnet_l1":_m_overband_magnet_l1(p, size, color, ghost)
 		"scraper_conveyor":_m_scraper_conveyor(p, size, color, ghost)
 		"verdeelwals":    _m_verdeelwals(p, size, color, ghost)
 		"ringleiding":    _m_ringleiding(p, size, color, ghost)
@@ -2264,6 +2296,11 @@ static func extend_machine_legs(root: Node3D, drop: float) -> int:
 	var d : float = dw / sy                            # same drop in machine-local space
 	var base_world_y : float = root.global_position.y if root.is_inside_tree() else root.position.y
 	var floor_world_y : float = base_world_y - dw
+	# A stair that hangs from a walkway (_floor_stair) is rebuilt to reach the
+	# floor, not stretched: stretching would pull its steps apart.
+	for fs in root.find_children("FloorStair", "Node3D", true, false):
+		if (fs as Node).is_in_group("floor_stair"):
+			_build_floor_stair_flight(fs as Node3D, float((fs as Node).get_meta("base_rise")) + d)
 	# Obstacle raycast: a leg that would run straight down THROUGH another machine is
 	# hidden rather than clipping through it. Exclude THIS machine's own bodies so a leg
 	# never trips on its own belt/housing.
@@ -2439,6 +2476,43 @@ static func _caged_ladder(parent: Node3D, base: Vector3, height: float, mat: Sta
 	area.body_exited.connect(func(body: Node3D) -> void:
 		if body.has_method("exit_ladder"): body.exit_ladder())
 	parent.add_child(area)
+
+## A stair that hangs from its TOP (a walkway edge) and reaches the floor:
+## `top` is where the top tread lands, `yaw` turns the flight so it climbs
+## toward the landing (0 = climbs +Z), `rise` is the height of `top` above the
+## machine's own floor. The flight lives under a "FloorStair" node that
+## extend_machine_legs rebuilds for a raised machine, so the foot always stands
+## on the real floor (2026-09-25: the vw_trommel's stair hung 2.5 m up on line 1).
+static func _floor_stair(parent: Node3D, top: Vector3, yaw: float, rise: float, width: float,
+		tread_mat: StandardMaterial3D, rail_mat: StandardMaterial3D) -> Node3D:
+	var fs := Node3D.new()
+	fs.name = "FloorStair"
+	fs.position = top
+	fs.rotation.y = yaw
+	fs.add_to_group("floor_stair")
+	# Rebuilt after placement, so StaticMerge must not bake the first flight.
+	fs.set_meta("no_merge", true)
+	fs.set_meta("base_rise", rise)
+	fs.set_meta("stair_width", width)
+	fs.set_meta("tread_mat", tread_mat)
+	fs.set_meta("rail_mat", rail_mat)
+	parent.add_child(fs)
+	_build_floor_stair_flight(fs, rise)
+	return fs
+
+## (Re)build a FloorStair's flight for a total `rise`, its top at the node's
+## origin. Idempotent: nothing is rebuilt when the rise has not changed.
+static func _build_floor_stair_flight(fs: Node3D, rise: float) -> void:
+	if fs.has_meta("built_rise") and absf(float(fs.get_meta("built_rise")) - rise) < 0.001:
+		return
+	for c in fs.get_children():
+		fs.remove_child(c)
+		c.free()
+	var steps := maxi(int(rise / 0.22), 4)
+	var run := float(steps) * 0.27
+	_stair(fs, Vector3(0.0, -rise, -run), rise, float(fs.get_meta("stair_width")),
+		fs.get_meta("tread_mat") as StandardMaterial3D, fs.get_meta("rail_mat") as StandardMaterial3D)
+	fs.set_meta("built_rise", rise)
 
 ## A straight ground stair climbing `rise` in +Z from its foot `base`, `width`
 ## wide. Grating treads + side posts + sloped handrails.
@@ -2621,8 +2695,25 @@ static func _interactive_hatch(p: Node3D, size: Vector3, pos: Vector3, name: Str
 	h.add_child(col)
 	return h
 
+# ── Line 1's overband magnet (operator 2026-09-25) ───────────────────────────────
+#    A CROSS-belt magnet: its own belt runs ACROSS the uitvoerband, "the
+#    underside … moving in the direction of the bottom of the image, towards the
+#    skip and container below it". The shared model runs its belt along its own
+#    Z and throws the scrap out a side chute, and on line 1 it stood with that
+#    belt along the uitvoerband. This variant builds the same magnet turned −90°
+#    in a pivot, so its belt runs along the node's X (across the conveyor), with
+#    the scrap chute at the discharge END: pivot −Z, node +X. The drums already
+#    turn the underside toward pivot −Z (+40 rpm about +X). The sort line's two
+#    magnets keep the shared model.
+static func _m_overband_magnet_l1(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
+	var piv := Node3D.new()
+	piv.name = "CrossBeltPivot"
+	piv.rotation.y = -PI / 2.0
+	p.add_child(piv)
+	_m_overband_magnet(piv, Vector3(size.z, size.y, size.x), color, ghost, true)
+
 # ── Overband magnet: suspended self-cleaning cross-belt separator above the conveyor ────
-static func _m_overband_magnet(p: Node3D, size: Vector3, _color: Color, ghost: bool) -> void:
+static func _m_overband_magnet(p: Node3D, size: Vector3, _color: Color, ghost: bool, end_discharge: bool = false) -> void:
 	var steel := _mat(_STEEL, ghost, 0.6, 0.35)
 	var dark := _mat(_DARK, ghost, 0.5, 0.55)
 	var magnet_mat := _mat(Color(0.12, 0.13, 0.16), ghost, 0.3, 0.65)
@@ -2675,12 +2766,20 @@ static func _m_overband_magnet(p: Node3D, size: Vector3, _color: Color, ghost: b
 			var scrap_z : float = (float(i % 3) - 1.0) * 0.18
 			_box(p, Vector3(0.05, 0.04, 0.07), Vector3(scrap_x, size.y * 0.68, scrap_z), steel)
 
-	# Side discharge chute flinging scrap into collection hopper (+X)
-	_box(p, Vector3(0.55, size.y * 0.24, size.z * 0.44),
-		Vector3(size.x * 0.58, size.y * 0.58, hz * 0.65), dark)
-	# Rubber deflector skirt on chute mouth
-	_box(p, Vector3(0.03, size.y * 0.16, size.z * 0.40),
-		Vector3(size.x * 0.84, size.y * 0.50, hz * 0.65), magnet_mat)
+	if end_discharge:
+		# Line 1 (operator 2026-09-25): the scrap leaves off the END the
+		# underside runs toward (−Z), into the skip below it.
+		_box(p, Vector3(size.x * 0.62, size.y * 0.24, 0.55),
+			Vector3(0.0, size.y * 0.58, -hz * 0.75 - 0.40), dark)
+		_box(p, Vector3(size.x * 0.58, size.y * 0.16, 0.03),
+			Vector3(0.0, size.y * 0.50, -hz * 0.75 - 0.68), magnet_mat)
+	else:
+		# Side discharge chute flinging scrap into collection hopper (+X)
+		_box(p, Vector3(0.55, size.y * 0.24, size.z * 0.44),
+			Vector3(size.x * 0.58, size.y * 0.58, hz * 0.65), dark)
+		# Rubber deflector skirt on chute mouth
+		_box(p, Vector3(0.03, size.y * 0.16, size.z * 0.40),
+			Vector3(size.x * 0.84, size.y * 0.50, hz * 0.65), magnet_mat)
 
 	# Electric drive motor + torque reaction arm on +X side
 	_motor_unit(p, size.x * 0.14, size.z * 0.20, Vector3(size.x * 0.38, size.y * 0.80, -hz * 0.75), "x", ghost)
@@ -4459,9 +4558,12 @@ static func _m_cyclone(p: Node3D, size: Vector3, color: Color, ghost: bool) -> v
 	# Central clean-air outlet pipe up the middle.
 	_cyl(p, r * 0.35, r * 0.35, size.y * 0.18,
 		Vector3(0.0, body_cy + body_h * 0.5 + size.y * 0.08, 0.0), steel)
-	# Tangential inlet near the top of the body (+X side).
-	_box(p, Vector3(size.x * 0.5, size.y * 0.16, size.z * 0.28),
-		Vector3(size.x * 0.36, body_cy + body_h * 0.15, 0.0), steel)
+	# Tangential inlet near the top of the body (+X side). 2026-09-25, operator:
+	# the ducts entered "about halfway", it should be "about 85% up": the inlet
+	# is at 85 % of the barrel (was 65 %) and 0.30 m high (was 0.48) so it stays
+	# under the barrel's top. cyclone_inlet_local() reads the same numbers.
+	_box(p, Vector3(size.x * 0.5, size.y * 0.10, size.z * 0.28),
+		Vector3(size.x * 0.36, leg_h + cone_h + body_h * 0.85, 0.0), steel)
 
 # #79 ── CYCLONE ON SUPPORT TOWER ──────────────────────────────────────────────
 # A standalone elevated cyclone for cyclone→silo gravity-drop placements: the
@@ -5985,24 +6087,34 @@ static func _m_flotation(p: Node3D, size: Vector3, color: Color, ghost: bool, wi
 		var cw_hx : float = 0.60
 		var cw_cx : float = -(top_hx + 0.16 + cw_hx)
 		var cw_hz : float = hz * 0.82
+		# Every catwalk part is tagged "tank_catwalk" (and kept out of
+		# StaticMerge) so remove_tank_catwalk can take it off: on line 1 the
+		# tank shares the drum's walkway (operator 2026-09-25).
+		var catwalk : Array = []
 		for wsx in [-1.0, 1.0]:
 			for wsz in [-1.0, 1.0]:
-				_box(p, Vector3(0.12, cw_top, 0.12),
-					Vector3(cw_cx + float(wsx) * (cw_hx - 0.10), cw_top * 0.5, float(wsz) * (cw_hz - 0.2)), blue_mat)
+				catwalk.append(_box(p, Vector3(0.12, cw_top, 0.12),
+					Vector3(cw_cx + float(wsx) * (cw_hx - 0.10), cw_top * 0.5, float(wsz) * (cw_hz - 0.2)), blue_mat))
 		# WALKABLE deck → real collision (operator 2026-07-16: "impossible to walk
 		# through a mesh"). _box_static_body wraps a StaticBody3D+BoxShape (survives
 		# StaticMerge); 0.10 m thick so a fast capsule can't tunnel it.
-		_box_static_body(p, Vector3(cw_hx * 2.0, 0.10, cw_hz * 2.0), Vector3(cw_cx, cw_top - 0.025, 0.0), grt_mat)
+		catwalk.append(_box_static_body(p, Vector3(cw_hx * 2.0, 0.10, cw_hz * 2.0),
+			Vector3(cw_cx, cw_top - 0.025, 0.0), grt_mat).get_parent())
 		var cw_rail := Node3D.new()
 		cw_rail.position = Vector3(cw_cx, cw_top + 0.03, 0.0)
 		p.add_child(cw_rail)
 		_railing(cw_rail, cw_hx, cw_hz, 0.0, yel_mat, ["+x", "-z"])   # open +x (toward tank) + -z (stair)
+		catwalk.append(cw_rail)
 		# Grating stair from the catwalk -Z end down to the floor.
 		var fst_run : float = float(maxi(int(cw_top / 0.22), 4)) * 0.27
 		var fst_pivot := Node3D.new()
 		fst_pivot.position = Vector3(cw_cx, 0.0, -(cw_hz + fst_run))
 		p.add_child(fst_pivot)
 		_stair(fst_pivot, Vector3.ZERO, cw_top, 0.9, grt_mat, yel_mat)
+		catwalk.append(fst_pivot)
+		for cw_part in catwalk:
+			(cw_part as Node).set_meta("tank_catwalk", true)
+			(cw_part as Node).set_meta("no_merge", true)
 		# Placards on the upper +X wall (HOPPER 4A only on the 3A/3B standard tank).
 		var lbl_b := _stencil_label(p, "MAX LOAD 500KG", Vector3(1.05, 0.20, 0.01), "+X")
 		lbl_b.position = Vector3(top_hx * 0.96, rim_y - 0.22, hz * 0.22)
@@ -6221,16 +6333,67 @@ static func _m_friction(p: Node3D, size: Vector3, color: Color, ghost: bool) -> 
 	var body_mat := _mat(color, ghost, 0.4, 0.45)
 	var dark := _mat(_DARK, ghost, 0.5, 0.5)
 	var tilt := deg_to_rad(15.0)
-	# Tube underside sits at ~size.y*0.25 (center size.y*0.62 minus radius size.x*0.42).
-	# Legs were running half a metre up THROUGH the tube and motor — terminate at the underside.
-	_legs(p, size, size.y * 0.25, dark)
-	# inclined housing (fatter, runs much faster than the dewatering screw)
-	_tube(p, size.x * 0.42, size.z * 0.82, Vector3(0.0, size.y * 0.62, 0.0), body_mat, PI / 2.0 + tilt)
+	var axis_y : float = size.y * 0.62
+	var r : float = size.x * 0.42
+	# inclined housing (fatter, runs much faster than the dewatering screw).
+	# 2026-09-25, operator: the separator is LOW at its inlet and rises toward
+	# its discharge (the dryer). It was built PI/2 + tilt, which tips the +Z end
+	# DOWN (the same sign mistake _m_transport_screw records), so the housing
+	# was high at the inlet and the hopper below sat buried inside it (top of
+	# the hopper 2.04 m, of the housing there 2.38 m). PI/2 - tilt: the -Z inlet
+	# end is low, the hopper stands 0.38 m proud of the housing.
+	_tube(p, r, size.z * 0.82, Vector3(0.0, axis_y, 0.0), body_mat, PI / 2.0 - tilt)
+	# Four legs, each up to the housing's underside where it stands (it rises
+	# toward +Z). A leg shorter than 5 cm is left out: the low end sits near the
+	# floor. Same positions and section as _legs.
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			var lz : float = float(sz) * size.z * 0.42
+			var top_y : float = axis_y + lz * tan(tilt) - r / cos(tilt)
+			if top_y < 0.05:
+				continue
+			var lg := _box(p, Vector3(0.08, top_y, 0.08), Vector3(float(sx) * size.x * 0.42, top_y * 0.5, lz), dark)
+			lg.add_to_group("machine_leg")
+			lg.set_meta("leg_h", top_y)
 	# inlet hopper at the low (-Z) end
 	_cyl(p, size.x * 0.34, size.x * 0.12, size.y * 0.4, Vector3(0.0, size.y * 0.82, -size.z * 0.3), dark)
 	# large drive motor + V-belt guard at the low side
 	_motor_unit(p, size.x * 0.26, size.z * 0.3, Vector3(size.x * 0.34, size.y * 0.4, -size.z * 0.28), "z", ghost)
 	_guard(p, Vector3(size.x * 0.2, size.y * 0.4, size.z * 0.3), Vector3(size.x * 0.32, size.y * 0.55, -size.z * 0.08), ghost)
+
+# ── L-R frictiescheider, line 1 (operator 2026-09-25) ───────────────────────────
+#    One horizontal housing lying ACROSS the flow (long axis X). Fed in the
+#    middle of its BACK side (-Z) by the dewatering screw; the fast screw inside
+#    sends what lands on the left half to the left end and the right half to the
+#    right end, and each half leaves through its own spout on the FRONT side (+Z)
+#    at that far end. MachineFlow's "out" / "out2" sit on the two spouts, and
+#    LineFlow draws each Kufferath's chute from the nearer one.
+#    Heights are NOT from the plant: the housing is raised so the spouts sit just
+#    above the Kufferath inlet (1.5 m) and material falls into it.
+static func _m_friction_lr(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
+	var body_mat := _mat(color, ghost, 0.4, 0.45)
+	var dark := _mat(_DARK, ghost, 0.5, 0.5)
+	var axis_y : float = size.y * 0.68
+	var r : float = size.z * 0.30
+	var half_len : float = size.x * 0.42
+	# four legs from the floor to the housing underside
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			_box(p, Vector3(0.12, axis_y - r, 0.12),
+				Vector3(sx * half_len * 0.85, (axis_y - r) * 0.5, sz * r * 0.7), dark)
+	# the housing: a cylinder along X
+	var housing := _tube(p, r, half_len * 2.0, Vector3(0.0, axis_y, 0.0), body_mat, 0.0)
+	housing.rotation = Vector3(0.0, 0.0, PI / 2.0)
+	# inlet hopper in the MIDDLE, on the BACK (-Z) half of the housing top
+	_cyl(p, size.z * 0.20, size.z * 0.09, size.y * 0.12,
+		Vector3(0.0, axis_y + r + size.y * 0.04, -r * 0.4), dark)
+	# two outlet spouts on the FRONT (+Z) side, one at each far end
+	for sx in [-1.0, 1.0]:
+		_box(p, Vector3(size.x * 0.10, size.y * 0.11, size.z * 0.30),
+			Vector3(sx * half_len * 0.90, axis_y - size.y * 0.07, r + size.z * 0.10), dark)
+	# drive motor + V-belt guard at the +X end, on the shaft axis
+	_motor_unit(p, r * 0.45, size.x * 0.08, Vector3(half_len + size.x * 0.05, axis_y, 0.0), "x", ghost)
+	_guard(p, Vector3(size.x * 0.03, r * 1.4, r * 1.2), Vector3(half_len + size.x * 0.01, axis_y, 0.0), ghost)
 
 # ── dewatering screw: inclined perforated tube + water trough + top drive ──────
 static func _m_dewater(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
@@ -6240,9 +6403,14 @@ static func _m_dewater(p: Node3D, size: Vector3, color: Color, ghost: bool) -> v
 	# A-frame supports: short legs at -Z (low/inlet), tall at +Z (high/outlet)
 	# Leg heights match the tilted tube's underside at each end: at z=±size.z*0.35
 	# the tube bottom sits at size.y*0.55 + z*tan(20°) - (size.x*0.3)/cos(20°), which
-	# for size.y=2.6 lands at y≈0.47 (low) and y≈1.62 (high) → fractions 0.18 / 0.62.
-	var lo_h : float = size.y * 0.18
-	var hi_h : float = size.y * 0.62
+	# for the 1.2 x 2.6 x 4.5 screw lands at y≈0.47 (low) and y≈1.62 (high). They
+	# used to be the fractions 0.18 / 0.62 of size.y, which only hold for that
+	# size: line 1's 6 m screw (2026-09-25) would stand on legs 0.2 m short of its
+	# tube. Computed now; the 4.5 m screw's legs move by under 1 cm.
+	var leg_dz : float = size.z * 0.35 * tan(tilt)
+	var tube_under : float = size.y * 0.55 - (size.x * 0.3) / cos(tilt)
+	var lo_h : float = tube_under - leg_dz
+	var hi_h : float = tube_under + leg_dz
 	var lg_lo_r := _box(p, Vector3(0.1, lo_h, 0.1), Vector3( size.x * 0.3, lo_h * 0.5, -size.z * 0.35), dark)
 	var lg_lo_l := _box(p, Vector3(0.1, lo_h, 0.1), Vector3(-size.x * 0.3, lo_h * 0.5, -size.z * 0.35), dark)
 	var lg_hi_r := _box(p, Vector3(0.1, hi_h, 0.1), Vector3( size.x * 0.3, hi_h * 0.5, size.z * 0.35), dark)
@@ -6476,10 +6644,11 @@ static func _build_tool(id: String, size: Vector3, ghost: bool) -> Node3D:
 ##                     opzetband_1's discharge (after a 90° right turn) into
 ##                     shredder_1. Its deck height and run are DERIVED from the
 ##                     two ends it has to meet (see the branch below), the same
-##                     way drum_feed_belt is derived from the chute/funnel. The
-##                     angle is WESTA_BAND_1_INCLINE_DEG = 30° (operator
-##                     2026-09-17, replacing the 45° placeholder — see
-##                     docs/plant/line1_layout_sketch_2026-08-28.md).
+##                     way drum_feed_belt is derived from the chute/funnel.
+##                     Since 2026-09-25 its PLAN run is given
+##                     (WESTA_BAND_1_RUN_M, operator) and its angle follows
+##                     from clearing shredder_1's hopper rim (≈44.5°; was the
+##                     operator's 30° of 2026-09-17).
 ##   • opzetband_1    — 5 m at 25°, 3 m wide, funnel walls
 ##                     (0–0.75 m straight wide, 0.75–3.0 m narrowing to 1.5 m wide,
 ##                      3.0–5.0 m straight narrow)
@@ -6561,17 +6730,41 @@ static func _build_opzetband(id: String, size: Vector3, ghost: bool) -> Node3D:
 			# which is why LINE_1_SEQ's gap after this entry moved from −1.48 to
 			# +0.957 — that literal is derived FROM this angle, so the two move
 			# together. Guarded live by test_line1_flow_conformance S6/S6b.
+			#
+			# ── 2026-09-25 — the two ends changed (operator, from a top-down and
+			# a side view). The lip aimed at the throat, a point INSIDE the 9 m
+			# shredder's hopper 1.35 m under its rim, so the belt ran through the
+			# hopper wall to its middle. Now the PLAN run is the given number,
+			# WESTA_BAND_1_RUN_M (1 m shorter, ending 0.3 m into the hopper), and
+			# the lip clears the hopper RIM by one transfer drop. The angle is
+			# what follows from those two, ≈44.5°; it was the given 30°.
 			belt.deck_length = 0.0
-			belt.incline_deg = WESTA_BAND_1_INCLINE_DEG
 			belt.deck_width  = 1.2
 			belt.top_flat_m  = 0.6
 			belt.require_shredder = true
 			belt.set_meta("intermediate_conveyor", true)
 			belt.deck_height = opzetband_1_lip_local().y - BELT_TRANSFER_DROP_M
-			var throat_y : float = shredder_infeed_local(
+			var rim_y : float = shredder_1_hopper_rim_local(
 				Vector3(get_item("shredder_1")["size"])).y
-			belt.incline_run = (throat_y + BELT_TRANSFER_DROP_M - belt.deck_height) \
-				/ tan(deg_to_rad(belt.incline_deg))
+			belt.incline_run = WESTA_BAND_1_RUN_M
+			belt.incline_deg = rad_to_deg(atan(
+				(rim_y + BELT_TRANSFER_DROP_M - belt.deck_height) / belt.incline_run))
+		"uitvoerband_1":
+			# Line 1's output conveyor under shredder_1 (operator 2026-09-25; see
+			# the UITVOERBAND_1_* constants): flat under the shredder, a 20° climb,
+			# a 5 cm tray. It carries the shredded material at the speed of the
+			# transport belt it replaces, with the uitvoerband's skirt boards.
+			var us : Dictionary = uitvoerband_1_spec_m()
+			belt.deck_length = float(us["flat"])
+			belt.incline_deg = UITVOERBAND_1_INCLINE_DEG
+			belt.incline_run = float(us["incline_run"])
+			belt.top_flat_m  = UITVOERBAND_1_TRAY_M
+			belt.deck_width  = 1.0
+			belt.deck_height = UITVOERBAND_1_DECK_M
+			belt.guard_h     = UITVOERBAND_RAIL_H_M
+			belt.belt_speed  = _BELT_CARRY_SPEED
+			belt.require_shredder = false
+			belt.set_meta("intermediate_conveyor", true)
 		"opzetband_1":
 			# #196 — 2× scale: 10 m @ 25° (was 5 m), 4 m wide (was 3 m). Metal
 			# detector + reverse-reject head is built INTO this belt at 3/4 along
@@ -8132,6 +8325,30 @@ static func _m_transport_screw(p: Node3D, size: Vector3, color: Color, ghost: bo
 	# drive at the HIGH end (+Z)
 	_motor_unit(p, size.x * 0.18, size.z * 0.18, Vector3(0.0, size.y * 0.9, size.z * 0.42), "z", ghost)
 
+# ── intrekschroef, line 1 (operator 2026-09-25, "only the rule for line one") ───
+#    A short enclosed screw hanging from the bottom of a post-mill cyclone and
+#    running 30° DOWN into the flotation tank: inlet boot HIGH at +Z (under the
+#    cyclone spout), discharge LOW at -Z (inside the tank, into the water). Tube
+#    1.75 m, the middle of the operator's 1.5-2 m. No floor legs: it is carried
+#    by the cyclone above it and the tank wall it crosses. Drive at the high end.
+static func _m_intrekschroef(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
+	var steel := _mat(color, ghost, 0.5, 0.4)
+	var dark := _mat(_DARK, ghost, 0.5, 0.5)
+	var tilt := deg_to_rad(30.0)
+	var tube_len : float = 1.75
+	var r : float = size.x * 0.27
+	var lo_y : float = size.y * 0.17        # tube axis at the low (-Z) end
+	var dz : float = tube_len * cos(tilt)   # 1.52 m horizontal
+	var dy : float = tube_len * sin(tilt)   # 0.875 m drop
+	# PI/2 - tilt ascends toward +Z (see _m_transport_screw): high inlet at +Z
+	_tube(p, r, tube_len, Vector3(0.0, lo_y + dy * 0.5, 0.0), steel, PI / 2.0 - tilt)
+	# inlet boot on top of the high end, under the cyclone spout
+	_cyl(p, r * 1.1, r * 0.8, size.y * 0.12, Vector3(0.0, lo_y + dy + r + size.y * 0.06, dz * 0.5), dark)
+	# discharge spout turning down at the low end
+	_box(p, Vector3(r * 1.6, size.y * 0.14, r * 1.6), Vector3(0.0, lo_y - r * 0.6, -dz * 0.5), dark)
+	# drive at the high end, on the shaft axis beyond the inlet
+	_motor_unit(p, r * 0.6, size.z * 0.10, Vector3(0.0, lo_y + dy + r * 0.2, dz * 0.5 + size.z * 0.08), "z", ghost)
+
 # ── frictiewasser (stirring tank): open-top rectangular tank split by a centre
 #    baffle into two chambers, each with a top-mounted vertical motor driving a
 #    vigorous stirrer shaft + blades. Material passes UNDER the baffle (0.2 m gap)
@@ -9519,6 +9736,9 @@ static func _m_shredder_1(p: Node3D, size: Vector3, color: Color, ghost: bool, w
 		Vector3(-hx * 0.78, chamber_cy, hz * 0.2), ghost)
 
 	# ── DISCHARGE CONVEYOR — dead-centre under the shredder, along Z ──────────
+	# Every part from here to the end is tagged (below) so a line that brings
+	# its own conveyor can drop this one: remove_shredder_discharge_conveyor.
+	var conv_first : int = p.get_child_count()
 	var conv_w : float = 1.0
 	var conv_y0 : float = 0.75            # deck height under the chamber
 	var level_z0 : float = -hz            # starts under the far (-Z) edge
@@ -9548,6 +9768,46 @@ static func _m_shredder_1(p: Node3D, size: Vector3, color: Color, ghost: bool, w
 	var top_z : float = level_z1 + run
 	_box(p, Vector3(0.16, top_y, 0.16), Vector3(0.0, top_y * 0.5, top_z - 0.25), steel)
 	_cyl(p, 0.2, 0.2, conv_w + 0.12, Vector3(0.0, top_y, top_z), steel, "x")
+	# Kept out of StaticMerge so they stay separate, removable meshes.
+	for ci in range(conv_first, p.get_child_count()):
+		var cpart := p.get_child(ci)
+		cpart.set_meta("shredder_discharge_conveyor", true)
+		cpart.set_meta("no_merge", true)
+
+## Line 1's shredder_1 stands over its own uitvoerband (uitvoerband_1), so the
+## model's built-in discharge conveyor is removed there (operator 2026-09-25:
+## "it is a single conveyor"). Frees every part _m_shredder_1 tagged and returns
+## how many. The same shredder on the other lines keeps it. BuildMode calls this
+## for a line-1 entry with {"no_discharge_conveyor": true}, when the line is
+## built AND when a saved line is reloaded.
+static func remove_shredder_discharge_conveyor(machine: Node) -> int:
+	var parts : Array = []
+	_collect_with_meta(machine, "shredder_discharge_conveyor", parts)
+	for n in parts:
+		(n as Node).get_parent().remove_child(n)
+		(n as Node).free()
+	return parts.size()
+
+## Line 1's flotation tank has no catwalk of its own: "the walkway from the
+## washing drum is actually shared with the one from the flotation tank"
+## (operator 2026-09-25). Frees every part _m_flotation tagged "tank_catwalk"
+## (posts, deck and its collider, railing, stair) and returns how many.
+## BuildMode calls it for a line entry with {"no_catwalk": true}, on build and
+## on reload; the same tank elsewhere keeps its catwalk.
+static func remove_tank_catwalk(machine: Node) -> int:
+	var parts : Array = []
+	_collect_with_meta(machine, "tank_catwalk", parts)
+	for n in parts:
+		(n as Node).get_parent().remove_child(n)
+		(n as Node).free()
+	return parts.size()
+
+static func _collect_with_meta(n: Node, key: String, out: Array) -> void:
+	for c in n.get_children():
+		if c.has_meta(key):
+			out.append(c)
+		else:
+			_collect_with_meta(c, key, out)
 
 # ── Shredder 2 (compact fine shredder): smaller, faster, single rotor ─────────
 static func _m_shredder_2(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
@@ -11762,6 +12022,42 @@ const OVERBAND_CLEARANCE_M : float = 0.25
 ## fracs, the belt's lift and the shredder drop all re-derive from it.
 const UITVOERBAND_RAIL_H_M : float = 0.15
 
+## Line 1's uitvoerband (operator 2026-09-25, from the top-down view): "the
+## output conveyor from the shredder" runs ALONG the rotors, centred under the
+## gap between them, starting 10 cm past the rotors' right end, flat under the
+## shredder until 30 cm past its side, then "a slight incline upwards, about 20
+## degrees", ending 2.5 m past the rotors' left end. A single conveyor; the
+## shredder's own built-in conveyor goes on line 1 (remove_shredder_discharge_
+## conveyor). Distances are measured from shredder_1's model: rotors
+## size.x*0.86 long, body size.x wide.
+const UITVOERBAND_1_START_PAST_ROTOR_M : float = 0.10
+const UITVOERBAND_1_FLAT_PAST_SHREDDER_M : float = 0.30
+const UITVOERBAND_1_END_PAST_ROTOR_M : float = 2.50
+const UITVOERBAND_1_INCLINE_DEG : float = 20.0
+## Deck height of the flat part: the old uitvoerband's (0.675 + its 0.281 lift).
+## Under the shredder it keeps the 0.394 m drop from shredder_1's discharge and
+## its 0.15 m skirt boards clear the shredder's base plates (1.19 m).
+const UITVOERBAND_1_DECK_M : float = 0.956
+## A 5 cm discharge tray: without a top flat the feed-belt model builds a 0.8 m
+## drop snout, which would lengthen the belt past where the operator ends it.
+const UITVOERBAND_1_TRAY_M : float = 0.05
+
+## {flat, incline_run, total} of line 1's uitvoerband, in metres, from
+## shredder_1's catalog size.
+static func uitvoerband_1_spec_m() -> Dictionary:
+	var ssz : Vector3 = get_item("shredder_1")["size"]
+	var rotor_half : float = ssz.x * 0.86 * 0.5
+	var body_half : float = ssz.x * 0.5
+	var start : float = rotor_half + UITVOERBAND_1_START_PAST_ROTOR_M     # before the centre
+	var flat_end : float = body_half + UITVOERBAND_1_FLAT_PAST_SHREDDER_M  # past the centre
+	var end : float = rotor_half + UITVOERBAND_1_END_PAST_ROTOR_M
+	return {
+		"start_before_centre": start,
+		"flat": start + flat_end,
+		"incline_run": end - flat_end - UITVOERBAND_1_TRAY_M,
+		"total": start + end,
+	}
+
 ## opzetband_1's operator-given slope: 10 m of belt at 25°. SINGLE SOURCE for
 ## both the belt build itself and opzetband_1_lip_local() below — writing the
 ## 10/25 pair twice is how the drum_feed_belt spec drifted from its own comment.
@@ -11782,13 +12078,21 @@ const OPZETBAND_1_INCLINE_DEG : float = 25.0
 ## chute OVER the funnel and the belt lip OVER the chute in the built world.
 const VW_TROMMEL_LIFT_M : float = 2.5
 
-## Incline of westa_band_1, the shredder-infeed belt. OPERATOR FIGURE
-## (2026-09-17), replacing the 45° placeholder the derivation was seeded with.
-## Everything else about this belt follows from the two ends it has to meet
-## (opzetband_1's discharge lip below, shredder_1's throat above), so this angle
-## is the only number in it that is not derived — and LINE_1_SEQ's gap after the
-## entry is derived from it in turn, so they must be changed together.
-const WESTA_BAND_1_INCLINE_DEG : float = 30.0
+## westa_band_1, the shredder-infeed belt. Until 2026-09-25 its given number was
+## the ANGLE (WESTA_BAND_1_INCLINE_DEG = 30°, operator 2026-09-17, replacing a 45°
+## placeholder) and its run was derived from the throat. Now the run is given and
+## the angle derived:
+##
+## Operator 2026-09-25, from the top-down view: the Westa band "is one meter too
+## long", and it should stick only "about 30 centimeters" into the shredder's
+## hopper instead of running to its centre ("the material would fall next to the
+## shredder"). Shown next that its end then sat 1.63 m under the 9 m hopper's rim
+## (a side view; it was 1.05 m under it before): "Westa should climb steeper".
+## So the PLAN run is fixed: the 2026-09-17 run at 30° (5.757 m) less the metre.
+## The angle follows from the rim (shredder_1_hopper_rim_local), ≈44.5°.
+## LINE_1_SEQ's gap after the Westa is derived from this run and the overlap.
+const WESTA_BAND_1_RUN_M : float = 4.757
+const SHREDDER_1_HOPPER_OVERLAP_M : float = 0.3
 
 ## Local position of opzetband_1's discharge lip — the top of its 10 m @ 25°
 ## climb, measured in the belt's own frame (origin at the foot of the deck,
@@ -11809,6 +12113,126 @@ static func opzetband_1_lip_local() -> Vector3:
 ## measures the two against each other in-world so they cannot drift apart.
 static func shredder_infeed_local(size: Vector3) -> Vector3:
 	return Vector3(0.0, size.y * 0.85, 0.0)
+
+## Local position of the vw_trommel's DISCHARGE LIP: the bottom of the drum
+## shell at its open +Z end, where the flakes and water fall out (under the
+## discharge hood). Mirrors _m_vw_trommel's drum_cy, radius, length and 4° tilt.
+## Add VW_TROMMEL_LIFT_M for a line-1 drum.
+static func vw_trommel_discharge_lip_local(size: Vector3) -> Vector3:
+	var drum_r  : float = minf(size.x * 0.46, 1.55)
+	var drum_cy : float = size.y * 0.12 + drum_r + 0.18
+	var drum_len : float = size.z * 0.85
+	var axis_y : float = drum_cy - (drum_len * 0.5) * sin(deg_to_rad(4.0))
+	return Vector3(0.0, axis_y - drum_r, drum_len * 0.5)
+
+## Centre of the vw_trommel's walkway stair along the drum axis (+Z toward the
+## discharge end), in the drum's frame. Operator 2026-09-25: "right side of
+## dewatering screw should be aligned against the left side of the stairs to the
+## washing drum". On line 1 the dewatering screw's right (east) side is 2.309 m
+## past the drum's centre toward its discharge end (measured, shot_line1_plan
+## 2026_09_25_v14: screw x −168.210, drum centre −165.901); the stair's left
+## side goes there. The 1.2 m stair measures 1.26 m across its side stringers
+## (0.06 m each, centred on the tread edges): 2.309 − 0.63. It moves if the
+## tank or its screw does.
+const VW_TROMMEL_STAIR_Z_M : float = 1.679
+
+## The +Z end of the vw_trommel's discharge hood (_m_vw_trommel: d_z + half its
+## 0.55 m depth), the furthest point of the drum along its axis.
+static func vw_trommel_hood_end_z(size: Vector3) -> float:
+	return size.z * 0.85 * 0.5 + 0.22 + 0.275
+
+## Local top-centre of a friction_sep's inlet hopper (_m_friction: a 0.8 m
+## tall cone centred at size.y*0.82, size.z*0.3 upstream of the centre).
+static func friction_sep_hopper_top_local(size: Vector3) -> Vector3:
+	return Vector3(0.0, size.y * 0.82 + size.y * 0.2, -size.z * 0.3)
+
+## How far a friction_sep reaches upstream of its centre: its 15°-tilted
+## housing, size.z*0.82 long and size.x*0.42 in radius.
+static func friction_sep_upstream_extent(size: Vector3) -> float:
+	var tilt : float = deg_to_rad(15.0)
+	return size.z * 0.82 * 0.5 * cos(tilt) + size.x * 0.42 * sin(tilt)
+
+## How far a friction_sep reaches sideways on its plain (non-motor) side: its
+## legs at size.x*0.42 plus half their 0.08 m section.
+static func friction_sep_side_extent(size: Vector3) -> float:
+	return size.x * 0.42 + 0.04
+
+## Line 1's scheidingsgoot and the friction separators beside it (operator
+## 2026-09-25, from the plan and side views): the goot's inlet sits under the
+## drum's discharge, flush against the drum shell's end; the two separators sit
+## flush against the goot's left and right sides, their upstream ends in line
+## with the drum's discharge hood; each goot leg slopes sideways down into the
+## hopper of the separator beside it. Everything below follows from the models
+## and those rules; the two angles are not plant figures.
+const SCHEIDINGSGOOT_WALL_H_M : float = 0.22
+## The drum's lip clears the top of the goot's walls by this much.
+const SCHEIDINGSGOOT_LIP_CLEAR_M : float = 0.05
+## A leg's discharge floor stays this far above the hopper's top.
+const SCHEIDINGSGOOT_HOPPER_CLEAR_M : float = 0.08
+## Stem pitch. The 2026-08-28 description (stem 30°, legs 60°) falls 1.37 m;
+## since the drum was lifted 2.5 m (2026-09-17) only ~0.59 m is left between
+## its lip and the hoppers, so the stem is gentler and the legs take the rest.
+const SCHEIDINGSGOOT_STEM_PITCH_DEG : float = 12.0
+
+## The layout above in the goot's own frame (+Z downstream, +X the flow's left),
+## for a goot of catalog `size`. Keys: inlet (stem floor at the upstream face),
+## stem_len, stem_pitch, junction_z (centre of the band the legs leave from),
+## junction_y, leg_run, leg_len, leg_pitch, leg_w, stem_w, side (separator
+## centre offset), hopper_y.
+static func scheidingsgoot_layout_local(size: Vector3) -> Dictionary:
+	var dsize : Vector3 = get_item("vw_trommel")["size"]
+	var fsize : Vector3 = get_item("friction_sep")["size"]
+	var lip : Vector3 = vw_trommel_discharge_lip_local(dsize)
+	var stem_w : float = size.x - 0.05
+	var leg_w : float = size.x * 0.44
+	var floor_in : float = VW_TROMMEL_LIFT_M + lip.y - SCHEIDINGSGOOT_LIP_CLEAR_M - SCHEIDINGSGOOT_WALL_H_M
+	var up_face : float = -size.z * 0.5
+	# The separators start at the hood's end, the goot at the shell's end.
+	var hopper_from_shell : float = (vw_trommel_hood_end_z(dsize) - lip.z) \
+		+ friction_sep_upstream_extent(fsize) + friction_sep_hopper_top_local(fsize).z
+	var junction_z : float = up_face + hopper_from_shell
+	var stem_run : float = junction_z - leg_w * 0.5 - (up_face + 0.05)
+	var sp : float = deg_to_rad(SCHEIDINGSGOOT_STEM_PITCH_DEG)
+	var junction_y : float = floor_in - stem_run * tan(sp)
+	var side : float = size.x * 0.5 + friction_sep_side_extent(fsize)
+	var hopper_y : float = friction_sep_hopper_top_local(fsize).y
+	var leg_run : float = side - stem_w * 0.5
+	var leg_drop : float = junction_y - (hopper_y + SCHEIDINGSGOOT_HOPPER_CLEAR_M)
+	var lp : float = clampf(atan2(leg_drop, leg_run), deg_to_rad(5.0), deg_to_rad(60.0))
+	return {
+		"inlet": Vector3(0.0, floor_in, up_face + 0.05),
+		"stem_len": stem_run / cos(sp), "stem_pitch": SCHEIDINGSGOOT_STEM_PITCH_DEG,
+		"junction_z": junction_z, "junction_y": junction_y,
+		"leg_run": leg_run, "leg_len": leg_run / cos(lp), "leg_pitch": rad_to_deg(lp),
+		"leg_w": leg_w, "stem_w": stem_w, "side": side, "hopper_y": hopper_y,
+	}
+
+## Local centre of the plain cyclone's tangential inlet opening: the outer face
+## of the inlet box _m_cyclone builds on its +X side. LineFlow aims the ducts
+## here. (MachineFlow's cyclone "in" port sits lower, at 0.8·size.y; it steers
+## the flow linker and is left alone.)
+static func cyclone_inlet_local(size: Vector3) -> Vector3:
+	var body_h : float = size.y * 0.40
+	return Vector3(size.x * 0.61, size.y * 0.55 + size.y * 0.45 + body_h * 0.85, 0.0)
+
+## Local centre of a mech_dryer's air-outlet stub end (_m_dryer, +Z face): the
+## duct to its blower starts here.
+static func mech_dryer_air_outlet_local(size: Vector3) -> Vector3:
+	var rad : float = size.x * 0.42
+	return Vector3(0.0, 0.7 + rad - rad * 0.5, size.z * 0.5 + 0.30)
+
+## Local centre of a blower's inlet eye (_m_blower: impeller at +X) and the top
+## of its outlet duct.
+static func blower_eye_local(size: Vector3) -> Vector3:
+	return Vector3(size.x * 0.30, size.y * 0.5, 0.0)
+
+static func blower_outlet_top_local(size: Vector3) -> Vector3:
+	return Vector3(0.0, size.y * 1.025, 0.0)
+
+## Local centre of shredder_1's hopper RIM, the top of the flared collar that
+## _m_shredder_1 builds up to size.y. The Westa band's lip clears it (2026-09-25).
+static func shredder_1_hopper_rim_local(size: Vector3) -> Vector3:
+	return Vector3(0.0, size.y, 0.0)
 
 ## Local position of the TOP of the vw_trommel's feed-funnel mouth (the -Z
 ## intake cone) for a trommel of `size`. SINGLE SOURCE OF TRUTH shared by
@@ -12042,24 +12466,61 @@ static func _m_vw_trommel(p: Node3D, size: Vector3, _color: Color, ghost: bool) 
 	var bordes_w : float = 0.95
 	var bordes_x : float = -(drum_r + bordes_w * 0.5 + 0.05)
 	var bordes_len : float = drum_len * 0.92
+	# 2026-09-25 (operator, plan view): the stair was "very thin"; it is 1.2 m
+	# wide now (was bordes_w*0.8 = 0.76). The width is not his figure.
+	var stair_w : float = 1.2
 	var safety := _mat(_SAFETY, ghost, 0.2, 0.6)
 	var b_dark := _mat(_DARK, ghost, 0.5, 0.6)
 	var b_steel := _mat(_STEEL, ghost, 0.5, 0.4)
 	_grating_deck(p, bordes_w, bordes_len, Vector3(bordes_x, bordes_y, 0.0))
-	# Deck support legs to the floor.
+	# Deck support legs to the floor. Tagged as machine legs (2026-09-25): on
+	# line 1 the drum stands VW_TROMMEL_LIFT_M up, and untagged they stopped
+	# 2.5 m above the floor.
 	for szb in [-0.42, 0.0, 0.42]:
-		_box(p, Vector3(0.07, bordes_y, 0.07),
+		var bl := _box(p, Vector3(0.07, bordes_y, 0.07),
 			Vector3(bordes_x - bordes_w * 0.35, bordes_y * 0.5, bordes_len * szb), b_dark)
-	# Outer (-X) railing along walkway length
-	_box(p, Vector3(0.05, 0.05, bordes_len),
-		Vector3(bordes_x - bordes_w * 0.48, bordes_y + 1.05, 0.0), safety)
-	_box(p, Vector3(0.05, 0.05, bordes_len),
-		Vector3(bordes_x - bordes_w * 0.48, bordes_y + 0.55, 0.0), safety)
-	_box(p, Vector3(0.05, 0.12, bordes_len),
-		Vector3(bordes_x - bordes_w * 0.48, bordes_y + 0.06, 0.0), safety)
-	for szr in [-0.5, 0.0, 0.5]:
+		bl.add_to_group("machine_leg")
+		bl.set_meta("leg_h", bordes_y)
+	# STAIR (operator 2026-09-25, from the plan views): it leaves the walkway's
+	# OUTER side and descends away from the drum (-X), "a 90 degree turn" from
+	# the old flight that ran up along the walkway from its -Z end; and "right
+	# side of dewatering screw should be aligned against the left side of the
+	# stairs". So its centre sits VW_TROMMEL_STAIR_Z_M along the walkway (see
+	# there). FloorStair rebuilds it down to the real floor when the drum is
+	# lifted (extend_machine_legs), so it no longer hangs 2.5 m up on line 1.
+	var up_end : float = -bordes_len * 0.5
+	var stair_z : float = VW_TROMMEL_STAIR_Z_M
+	_floor_stair(p, Vector3(bordes_x - bordes_w * 0.5, bordes_y, stair_z), PI * 0.5,
+		bordes_y, stair_w, b_steel, safety)
+	# Outer (-X) railing along the walkway, open where the stair lands.
+	var gap0 : float = stair_z - stair_w * 0.5 - 0.05
+	var gap1 : float = stair_z + stair_w * 0.5 + 0.05
+	for seg in [[up_end, gap0], [gap1, bordes_len * 0.5]]:
+		var z0 : float = float(seg[0])
+		var z1 : float = float(seg[1])
+		if z1 - z0 < 0.1:
+			continue
+		var seg_len : float = z1 - z0
+		var seg_cz : float = (z0 + z1) * 0.5
+		_box(p, Vector3(0.05, 0.05, seg_len),
+			Vector3(bordes_x - bordes_w * 0.48, bordes_y + 1.05, seg_cz), safety)
+		_box(p, Vector3(0.05, 0.05, seg_len),
+			Vector3(bordes_x - bordes_w * 0.48, bordes_y + 0.55, seg_cz), safety)
+		_box(p, Vector3(0.05, 0.12, seg_len),
+			Vector3(bordes_x - bordes_w * 0.48, bordes_y + 0.06, seg_cz), safety)
+		for rz in [z0, seg_cz, z1]:
+			_box(p, Vector3(0.05, 1.05, 0.05),
+				Vector3(bordes_x - bordes_w * 0.48, bordes_y + 0.525, rz), safety)
+	# UPSTREAM END RAILING at -Z: the stair used to come in over this end.
+	_box(p, Vector3(bordes_w, 0.05, 0.05),
+		Vector3(bordes_x, bordes_y + 1.05, up_end), safety)
+	_box(p, Vector3(bordes_w, 0.05, 0.05),
+		Vector3(bordes_x, bordes_y + 0.55, up_end), safety)
+	_box(p, Vector3(bordes_w, 0.12, 0.03),
+		Vector3(bordes_x, bordes_y + 0.06, up_end), safety)
+	for rx in [-0.48, 0.48]:
 		_box(p, Vector3(0.05, 1.05, 0.05),
-			Vector3(bordes_x - bordes_w * 0.48, bordes_y + 0.525, bordes_len * szr), safety)
+			Vector3(bordes_x + bordes_w * rx, bordes_y + 0.525, up_end), safety)
 	# DISCHARGE END RAILING at +Z (where operator stands inspecting the discharge)
 	_box(p, Vector3(bordes_w, 0.05, 0.05),
 		Vector3(bordes_x, bordes_y + 1.05, bordes_len * 0.5), safety)
@@ -12069,8 +12530,6 @@ static func _m_vw_trommel(p: Node3D, size: Vector3, _color: Color, ghost: bool) 
 		Vector3(bordes_x, bordes_y + 0.06, bordes_len * 0.5), safety)
 	_box(p, Vector3(0.05, 1.05, 0.05),
 		Vector3(bordes_x + bordes_w * 0.48, bordes_y + 0.525, bordes_len * 0.5), safety)
-	# Stair down at the -Z (upstream/chute) end, descending away from the drum.
-	_stair(p, Vector3(bordes_x, bordes_y, -bordes_len * 0.5 - 0.1), bordes_y, bordes_w * 0.8, b_steel, safety)
 
 
 # ── scheidingsgoot — the Y-SPLITGOOT at the discharge end of the SGA drum. ────
@@ -12082,39 +12541,55 @@ static func _m_vw_trommel(p: Node3D, size: Vector3, _color: Color, ghost: bool) 
 #    then both sides turn straight (in line with the drum orientation) while
 #    still feeding material+water into the next machine)"
 # Open U-channel throughout — it carries WATER as well as film, so no lid.
-# Was a plain straight U-trough until this walk; the split was faked entirely by
-# LineFlow's scheidingsgoot→friction_sep connector rule, so the machine that
-# actually does the splitting had no splitting geometry.
-# #196's direction is preserved: material enters at +Z (under the drum's
-# discharge) and runs downhill toward -Z, where LineFlow still spawns the
-# glijgoot connectors on to the two friction washers.
+#
+# 2026-09-25, rebuilt (operator, from the plan and side views): the goot sits
+# flush against the drum's end with its inlet under the discharge; the two
+# friction separators sit flush against its left and right sides; each leg
+# slopes sideways down into the hopper of the separator beside it. Confirmed as
+# the rule: "the goot starts right under the drum's discharge, splits in two,
+# and each leg slopes down sideways into the inlet hopper of the friction
+# separator beside it". Until then it was built BACK TO FRONT: this model ran
+# downhill toward its own -Z, while a placed machine's +Z points downstream, so
+# its high inlet stood at the far end and it drained back toward the drum, 1.2 m
+# under the drum's lip. It now runs toward +Z. The 30°/60° angles above no
+# longer fit: see SCHEIDINGSGOOT_STEM_PITCH_DEG. All positions come from
+# scheidingsgoot_layout_local(), which LINE_1_SEQ's numbers are derived from.
 static func _m_scheidingsgoot(p: Node3D, size: Vector3, color: Color, ghost: bool) -> void:
 	var steel := _mat(color, ghost, 0.5, 0.4)
 	var dark  := _mat(_DARK, ghost, 0.5, 0.6)
-
-	var leg_w : float = size.x * 0.44            # channel width of ONE branch (~0.70 m)
-	var wall_h : float = 0.22
-	var inlet_y : float = size.y * 0.92          # under the SGA drum's discharge mouth
-	var start := Vector3(0.0, inlet_y, size.z * 0.48)
-
-	# 1) STEM — ~1 m at 30° down, straight. Double width: both legs still share
-	#    one channel until the split.
+	var g : Dictionary = scheidingsgoot_layout_local(size)
+	var wall_h : float = SCHEIDINGSGOOT_WALL_H_M
+	var stem_w : float = float(g["stem_w"])
+	var leg_w : float = float(g["leg_w"])
+	var inlet : Vector3 = g["inlet"]
 	var beds : Array = []                        # every segment's pivot, for the wet beds below
-	var stem_end := _goot_segment(p, start, 1.0, 30.0, 0.0, leg_w * 2.0, wall_h, steel, beds)
 
-	# Splitter nose — the wedge that divides the stream left/right.
-	_box(p, Vector3(0.06, wall_h * 1.4, 0.34),
-		stem_end + Vector3(0.0, wall_h * 0.7, -0.16), dark)
+	# 1) STEM, from under the drum's lip toward +Z (yaw 180: a segment travels
+	#    along its pivot's -Z). A back plate closes the upstream end.
+	_box(p, Vector3(stem_w, wall_h, 0.05), inlet + Vector3(0.0, wall_h * 0.5, -0.025), steel)
+	var stem_end := _goot_segment(p, inlet, float(g["stem_len"]), float(g["stem_pitch"]), 180.0,
+		stem_w, wall_h, steel, beds)
 
-	# 2) BRANCHES — ~1 m at 60° down, yawed ~35° out, then
-	# 3) RUN-OUTS — each leg turns back straight (yaw 0, in line with the drum
-	#    axis) and keeps feeding the next machine.
-	# +yaw is toward -X (see _goot_segment), so 35.0 = left leg, -35.0 = right.
-	for yaw in [35.0, -35.0]:
-		var br_end := _goot_segment(p, stem_end, 1.0, 60.0, yaw, leg_w, wall_h, steel, beds)
-		var out_end := _goot_segment(p, br_end, 0.8, 15.0, 0.0, leg_w, wall_h, steel, beds)
+	# 2) JUNCTION: a floor band the width of the stem, its far wall, and the
+	#    splitter plate that divides the stream left and right.
+	var jz : float = float(g["junction_z"])
+	var jy : float = float(g["junction_y"])
+	_box(p, Vector3(stem_w, 0.05, leg_w), Vector3(0.0, jy, jz), steel)
+	_box(p, Vector3(stem_w, wall_h, 0.05), Vector3(0.0, jy + wall_h * 0.5, jz + leg_w * 0.5), steel)
+	_box(p, Vector3(0.06, wall_h * 1.3, leg_w), Vector3(0.0, jy + wall_h * 0.65, jz), dark)
+	# Close the gap between the stem's end and the junction band.
+	var gap : float = (jz - leg_w * 0.5) - stem_end.z
+	if gap > 0.01:
+		_box(p, Vector3(stem_w, 0.05, gap), Vector3(0.0, jy, stem_end.z + gap * 0.5), steel)
+
+	# 3) LEGS, out of the junction's sides, down into the hoppers. +yaw is
+	#    toward -X, so the +X (left) leg is yaw -90.
+	for sx in [1.0, -1.0]:
+		var ls := Vector3(float(sx) * stem_w * 0.5, jy, jz)
+		var leg_end := _goot_segment(p, ls, float(g["leg_len"]), float(g["leg_pitch"]),
+			-90.0 * float(sx), leg_w, wall_h, steel, beds)
 		# Open discharge lip so the leg reads as feeding, not holding.
-		_box(p, Vector3(leg_w * 1.05, 0.05, 0.08), out_end + Vector3(0.0, -0.02, 0.0), dark)
+		_box(p, Vector3(0.08, 0.05, leg_w * 1.05), leg_end + Vector3(0.0, -0.02, 0.0), dark)
 
 	# Task 1c (2026-09-24): a wet flake bed in EVERY segment (rulings §1/§12
 	# — the scheidingsgoot is the first place he named). A goot segment runs
@@ -12133,8 +12608,15 @@ static func _m_scheidingsgoot(p: Node3D, size: Vector3, color: Color, ghost: boo
 				GOOT_BED_SPEED_MPS, BeltBuilder.FLAKE_BULK_KGM3)
 			fld.set_meta("wet_bed", "scheidingsgoot")
 
-	# Four floor legs that lengthen to the floor when raised (#70).
-	_legs(p, size, size.y * 0.28, dark)
+	# Four posts from the floor to the stem and the junction (lengthen to the
+	# floor when raised, #70).
+	for sx in [-1.0, 1.0]:
+		for pz in [inlet.z + 0.15, jz]:
+			var h : float = inlet.y if pz < jz else jy
+			var post := _box(p, Vector3(0.08, h, 0.08),
+				Vector3(float(sx) * (stem_w * 0.5 - 0.08), h * 0.5, pz), dark)
+			post.add_to_group("machine_leg")
+			post.set_meta("leg_h", h)
 
 ## One straight open-U segment of a goot: floor plate + two side walls, pitched
 ## `pitch_deg` below horizontal and yawed `yaw_deg` (POSITIVE = toward -X).
