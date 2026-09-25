@@ -272,6 +272,13 @@ count.
 > Measured after: `PASS (19 ok, 0 fail, 0 skipped)`. **He chose to KEEP the
 > leaked entry (asked 2026-09-24), so those two reds are environmental. Do
 > not edit his world_layout.json without asking him.**
+> **It is FOUR reds, not two** (full harness 2026-09-25 at `2c217c0` on a copy
+> of his `app_userdata`). The same one entry also fails two more checks:
+> - `test_project_sweep_guards` B1b (`structure_items starts empty (1 entries)`);
+> - `test_new_world_wipe`: a new world boots with `Loaded 0 placed objects
+>   (per-save) + 1 shared structure`, so `PlacedObjects` holds 1 child.
+>
+> `docs/audit/cycle_guard_swap_2026-09-25.md` §8.
 > `docs/audit/jam_baseline_layout_leak_2026-09-24.md`.
 
 **`test_jam_baseline` was `14 ok, 0 fail, 0 skipped` (2026-09-03) — the first time this suite

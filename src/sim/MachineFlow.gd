@@ -405,10 +405,10 @@ static func profile(id: String) -> Dictionary:
 			# track"), and LineFlow._spawn_visible_compressors ("they don't enter
 			# LineFlow's material graph") — but none of the five was listed here,
 			# so each fell to the default role "process". Measured with
-			# dump_line_graph: every line wired lump_cart ↔ lump_cart_spot and
-			# compressor_a ↔ compressor_b as 2-cycles, and 3A/3B carried their
-			# pelletising melt THROUGH a lump cart (laser_filter → lump_cart →
-			# heetafslag). Once the fallback's cycle guard worked, each cart fell
+			# dump_line_graph: lines 1/3A/3B/3C wired lump_cart ↔ lump_cart_spot,
+			# every line with air users wired compressor_a ↔ compressor_b, both as
+			# 2-cycles, and 1/3A/3B carried their pelletising melt THROUGH a lump
+			# cart (laser_filter → lump_cart → heetafslag). Once the fallback's cycle guard worked, each cart fell
 			# through to the next inlet — the laser filter on 1/3A/3B, vacuum_degas
 			# on 3C. The laser filter drops lumps into a cart by physics
 			# (LaserFilter._closest_lump_cart, group "lump_cart"), and the air bank

@@ -138,7 +138,8 @@ change's 3A cyclone pin.
     The mengsilo's two explicit outs and the ring's recirc are lost.
   - **3B:** `blower[m17] → compactorband`, `compactorband → laser_filter`,
     `extruder_3b → heetafslag`. Heads appear at the silo, the extruder,
-    `mech_dryer` and the post-plasmaq cyclone.
+    `mech_dryer` and the post-plasmaq cyclone, and `plasmaq` dead-ends (its
+    15 m pipe to the cyclone was a pin).
   - **line 1:** the wet-side streams and the tail pins are lost (7 new heads).
   - **3C:** unchanged, because it runs on `Line3CDef.LINKS`, not on tags.
 
@@ -197,8 +198,103 @@ First kg at the mengsilo came at 26.8 s, and at the voorraad silo at 15.3 s
 
 ### Mutation proofs
 
-MUTATIONS_PLACEHOLDER
+Each mutation was applied alone to the fixed tree and run under a scratch
+`APPDATA`. The files were restored after each run and checked byte-identical
+(`cmp`), and no run printed a `^SCRIPT ERROR` line. "Before" means the state
+of `main` + #289.
+
+| # | mutation | result | red |
+|---|---|---|---|
+| — | fixed tree | **83 ok, 0 fail** | — |
+| M0 | whole fix reverted (`LineFlow`, `MachineFlow`, `BuildMode` at `7f8d798`) | 39 ok, **44 fail** | every C, X, H1 and G check the defect touches, and all three chains in F: 3A mengsilo **0.0 kg** (the windzifter processed 789.3 kg), line 1 and 3B voorraad silo **0.0 kg** (the centrifuges processed 783.6 and 777.0 kg), all from 31.7 kg fed |
+| M1 | swap reverted only | 65 ok, **18 fail** | C1 on 1, 3B, intake 3A3B, sort and intake 3C6, and C2 (the intake twins); G and F on both granulate chains: voorraad silo 0.0 kg, centrifuge 799.0 / 794.9 kg. The 3A infeed stays green because the pin holds it. |
+| M2 | role `none` reverted only | 63 ok, **20 fail** | X1/X2 × 5; H1 on 1/3A/3B/3C (lump furniture as heads); G1–G3 on both granulate chains (`laser_filter → lump_cart`, `lump_cart → heetafslag`) |
+| M3 | 3A cyclone pin removed only | 79 ok, **4 fail** | H1 3A (the cyclone is a head), G2/G3 (`blower[m14] → transport_screw[m22]`, the cyclone has no in-edge), F1 (mengsilo 0.0 kg) |
+
+M3's F2 stays green: the infeed mass moves on through M11b instead of
+circulating. A pin that is lost therefore shows up as kg arriving in the wrong
+place, not as circulation, and F1 is the check that catches it.
+
+### `test_tag_snapshot`'s collision cross-check
+
+`test_tag_snapshot` compares the id collisions of line 3A's live LineFlow
+nodes against the same count over `BuildMode.LINE_3A_SEQ`.
+
+- **Before this change:** the seed side counted every entry, role `none`
+  included, and it agreed with the live side only by accident. The role-none
+  entries it held (`pomp_c1`, `heater_cabinet`) had unique ids, so they added
+  0 collisions.
+- **After it:** the lump furniture (2 carts, 2 spots) left the graph, and the
+  measurement came out live **7** against seed **9**.
+- **Fix:** the seed side now skips role-`none` ids, the same filter
+  `LineFlow._process_discovered_node` applies. Measured: 7 == 7, 32 nodes and
+  25 distinct ids on both sides. At HEAD it was 9 == 9.
+
+The same runs show two other reds, identical at HEAD in the same scratch
+`APPDATA`, so they are not this change: the 3C doseersilo's `em/status` and
+`em/snelheid` rows. §8 has what the full harness said about them.
 
 ## 8. Verification
 
-VERIFICATION_PLACEHOLDER
+**Parse sweep** at `2c217c0`: `Result: 458 ok, 0 fail`, `RESULT: PASS`. No
+SCRIPT ERROR line names a changed file.
+
+**Full harness at `2c217c0`.** It ran with `PROJ=` set to this worktree, and
+`APPDATA` and `UD=` pointed at a scratch copy of the operator's
+`app_userdata`. That copy includes his `world_layout.json`, md5 `e046af7d…`.
+Five other sessions were running at the time, so the harness never shared
+`user://` with their suites.
+
+Result: `== done (exit 1)`, 131 steps, 70.5 min, 0 timeouts, 0 `^SCRIPT ERROR`
+lines. The machine was heavily loaded; the operator's recorded runs take 33–47
+min. Six reds:
+
+| red | failing check | cause |
+|---|---|---|
+| `regression verdict` | `all 1 door(s)/gate(s) sit on a wall (on-wall 0)` | **environmental**: the leaked `"3A/3B gate (jam-baseline fixture)"` in `world_layout.json`, which the operator chose to keep (CLAUDE.md, 2026-09-24) |
+| `test_jam_baseline` | `DOORWAY fixture: WorldLayout.structure_items untouched (1 entries)`; 18 ok, 0 skipped | **environmental**, the same entry (CLAUDE.md names this check) |
+| `test_project_sweep_guards` | `B1b WorldLayout.structure_items starts empty (1 entries)` | **environmental**, the same entry |
+| `test_new_world_wipe` | `PlacedObjects EMPTY (child_count=1)`; its log reads `Loaded 0 placed objects (per-save) + 1 shared structure` | **environmental**, the same entry. The one child is that gate. Green in the operator checkout's last run (2026-09-22, 8 ok), before the leak. |
+| `test_npc05_realworld` | the DRIVE_TO_INDOOR stall | **expected** (CLAUDE.md) |
+| `test_line3c_identity` | `the macro really built: 32 LineFlow machines for 37 SEQ entries` | **this change**, and fixed after the run (below) |
+
+`test_line3c_identity`'s non-vacuity bound was `machine_list().size() >=
+LINE_3C_SEQ.size()`. It held only while the 3C furniture tail (1 lump
+platform, 2 spots, 2 carts) counted as flow machines. The operator
+checkout's last run printed `37 LineFlow machines for 37 SEQ entries`.
+
+The bound now counts only SEQ entries LineFlow can discover: role != `none`,
+37 − 5 = 32. The 3A/3B identity suites already say furniture is not tracked,
+and use `> 0`.
+
+**Not re-run.** The operator asked that the harness not be run again: he runs
+it when all sessions are done. What was checked instead:
+
+- A `--check-only` of the edited file reports the same single error as HEAD's
+  copy: `Identifier not found: Plant`, an autoload, which a bare
+  `--check-only` never loads.
+- The bound was worked out from the numbers this run measured (32 listed, 32
+  flow entries), not from a new run.
+
+The same run, for the suites this change touches:
+
+| suite | result |
+|---|---|
+| `test_fallback_chains` | `PASS (83 ok, 0 fail)` |
+| `test_extruder_silo_chain` | `PASS (41 ok, 0 fail)` |
+| `test_lump_cart_overflow` | `PASS (45 ok, 0 fail)` |
+| `test_lump_cart_coverage` | `38 ok, 0 fail, 0 skip` |
+| `test_lump_cart_speed_clamp` | `PASS (6 ok, 0 fail)` |
+| `test_tag_snapshot` | `28 ok, 0 fail, 1 skip` |
+| `test_line3a_identity` / `3b` | `3 ok, 0 fail, 1 skip` each, identical to the operator checkout's 2026-09-22 log |
+| `test_line1_flow_conformance`, `test_line1_throughput`, `test_line1_twin_streams`, `test_line3a_flow_conformance`, `test_line3b_flow_conformance` | `PASS (0 fail)` each |
+| `test_nav_connectivity` | `PASS (10 ok, 0 fail)` |
+
+`test_tag_snapshot` is green here, including the 3C doseersilo `em/status`
+and `em/snelheid` rows. Those two rows were red in the near-empty scratch
+`APPDATA` of §7, identically at HEAD, so they depend on the user data and not
+on this change.
+
+The `.uid` files the harness's import step wrote are left untracked, apart
+from `test_fallback_chains.gd.uid`. The others belong to #289's scripts and to
+scripts that other merged PRs never committed a `.uid` for.
