@@ -122,7 +122,9 @@ Special cases:
 `.bak` and `.tmp`. The fingerprint is taken once at the top, and `wl_sentinel
 "<step>"` runs after every step from `running regression` on: both scene loops
 per suite, both spawn-clearance configs, and each of the 30 `--script` blocks.
-That makes 35 call sites. A change prints `FAIL  : <step> changed the
+That makes 34 call sites: the 30 blocks, `running regression`, one in each
+scene loop and one in the spawn-clearance loop (`grep -c 'wl_sentinel '
+tools/regression/run.sh`). A change prints `FAIL  : <step> changed the
 operator's world_layout.json — left as is, NOT restored`, with the before/after
 lines, and sets exit 1. The fingerprint is then re-taken, so later steps are
 blamed only for their own change. The last line before `== done` names every
