@@ -172,21 +172,70 @@ Headless facts that matter for new tests:
   button) but **never the pixels**.
 - A readability claim needs a windowed render, per Rule 2.
 
-## 6. Cost: what is not known
+## 6. Cost — MEASURED 2026-09-25 (`src/tests/probe_inworld_hmi_cost.tscn`)
 
-I don't know the frame cost of 12 live SubViewports on this GPU. It would be
-settled by a windowed probe that places N panels (1, 4, 12), sizes each
-SubViewport at 640×400 and at 1280×800, refreshes at 4 Hz, and reports ms per
-frame against a baseline. Two cheap limits are available whatever the probe
-measures:
+**Setup.** The probe ran windowed on the operator's PC (NVIDIA GTX 1070,
+1280×720 window, vsync off), with `APPDATA` pointed at an empty folder on D: so
+`user://` was not his.
 
-- redraw on the 4 Hz data tick (`UPDATE_ONCE` re-armed) rather than every
-  frame;
-- stop redrawing panels that are off-screen or beyond a distance.
+- Twelve quads are built at the screen face size, all in view.
+- N of them are textured by a SubViewport that hosts the **real**
+  `HmiOverlay.tscn`, opened on `hmi_extruder_all` with the ExtruderBluPort
+  page.
+- The 2D is laid out at 1280×800 and stretched onto the texture.
+- 2 s warm-up, then 4 s measured per configuration.
+- Another session's headless suites were running at the same time and shared
+  the CPU. The baseline repeated at the end of each run within 0.2 ms.
+- Two runs: the full grid, then an attribution pass (`-- --attrib`).
 
-CPU: today's `_refresh` rebuilds the header, the fault list and the active
-page at 4 Hz for **one** panel. Twelve would do that 12×. INFERRED: this is
-modest, but the same probe should print it.
+**Full grid** (mean frame-time delta against the baseline of 2.11 ms; GPU = the
+SubViewports' measured GPU time):
+
+| screens | texture | redraw every frame | redraw on the 4 Hz tick |
+|---|---|---|---|
+| 1 | 640×400 | +4.2 ms | +3.7 ms |
+| 1 | 1280×800 | +4.6 ms | +3.9 ms |
+| 4 | 640×400 | +11.7 ms | +10.0 ms |
+| 4 | 1280×800 | +12.3 ms | +10.4 ms |
+| 12 | 640×400 | +32.5 ms (GPU 0.59 ms) | +22.5 ms |
+| 12 | 1280×800 | +28.7 ms (GPU 0.88 ms) | +26.7 ms |
+
+**Attribution** (12 screens, 640×400; baseline 1.67 ms):
+
+| what changed | delta |
+|---|---|
+| BluPort page, redrawn on the 4 Hz tick | +22.7 ms |
+| BluPort page, SubViewport **never draws** (`UPDATE_DISABLED`) | +21.9 ms |
+| BluPort page with its own `_process` switched off | **+1.6 ms** |
+| HOOFDMENU page, redrawn on the 4 Hz tick | **+0.8 ms** |
+| HOOFDMENU page, never draws | +0.6 ms |
+
+**What this says:**
+
+- **Drawing is cheap.** Twelve screens cost 0.6–0.9 ms of GPU time when they
+  redraw every frame. Redrawing a HOOFDMENU page at 4 Hz adds about 0.25 ms
+  over never drawing it. Texture size (640×400 vs 1280×800) made no difference
+  to frame time that stands above the noise.
+- **The cost is the ExtruderBluPort page's own `_process`, about 1.8 ms per
+  screen per frame.** `ExtruderBluPortScope._process`
+  (`src/scenes/hud/scopes/ExtruderBluPortScope.gd:184`) updates its rail,
+  right panel, schematic overlays and clock, and redraws its chart, on
+  **every frame**. That work does not depend on whether the texture is drawn.
+  It already costs that much today, in the pop-up, but only while one pop-up
+  is open.
+- **Consequences for the build:**
+  - Before any page lives in the world, its per-frame updates move onto the
+    overlay's 4 Hz tick, and only for screens the player can see.
+  - Every page that goes in-world gets measured the same way.
+  - With that done, the HOOFDMENU figure (0.8 ms for twelve) is the order of
+    cost to expect.
+
+**Not measured, and why:**
+
+- No LineFlow and no extruder model were bound, so pages drew defaults, and a
+  running plant makes the 4 Hz refresh do more work.
+- Distance and off-screen culling were not tried, because every screen was in
+  view.
 
 ## 7. Placement
 
@@ -214,10 +263,15 @@ short:
 
 Each step lands with its own measurement.
 
-1. **Cost probe first** (§6). Run it windowed, because the dummy renderer
-   cannot measure GPU cost. The result picks the SubViewport size and the
-   redraw policy.
-2. **Extruder panel in the world:**
+1. **Cost probe first** (§6). **DONE 2026-09-25.** It runs windowed, because
+   the dummy renderer cannot measure GPU cost. The result:
+   - use 640×400 textures, redrawn on the 4 Hz tick;
+   - drawing is not the problem; the ExtruderBluPort page's per-frame
+     `_process` is, at ~1.8 ms per screen per frame.
+2. **Move the ExtruderBluPort page's per-frame updates onto the 4 Hz tick**
+   (and only for screens in view). Re-run the probe, which should read near
+   the HOOFDMENU figure.
+3. **Extruder panel in the world:**
    - Move `HmiOverlay`'s chrome and pages out of the CanvasLayer into a
      Control that one SubViewport per panel hosts.
    - Put the ViewportTexture on a **named** screen MeshInstance.
@@ -229,19 +283,19 @@ Each step lands with its own measurement.
      - a synthetic click pushed into the SubViewport reaches the right button;
      - the page round-trips through save and load.
    - Readability needs a windowed render at 1, 3 and 5 m.
-3. **F-mode:**
+4. **F-mode:**
    - hold/tap detection;
    - the camera state save/restore in `CameraRig`, with the FOV;
    - zoom and look-sensitivity scaling;
    - the gold dot;
    - the ray through the gold dot → the screen plane → UV →
      `SubViewport.push_input`.
-4. **Key migration** (E/F/Q/R/L in both contexts):
+5. **Key migration** (E/F/Q/R/L in both contexts):
    - the Door/Gate/PushGate raw `KEY_E` reads;
    - the 10 tool E-drop branches;
    - a `settings.cfg` migration;
    - the F1 sheet labels;
    - `test_keybind_sheet`.
-5. **Retire the pop-up paths.** Update `test_hmi_overlay_open_close`,
+6. **Retire the pop-up paths.** Update `test_hmi_overlay_open_close`,
    `test_hmi_web` and `test_hmi_retired` (§5) to assert the in-world screen
    instead. Never delete the old suites; `.bak` them (Rule 5).
