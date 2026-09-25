@@ -28,6 +28,16 @@ extends Node
 #   F  deficit scan: warm restart at setpoint minus d, for d 0 .. 18.75 C
 #   G  what-if, first-start re-ramp on EVERY start: B with runtime_s = 0
 #   H  3A: B and G
+#   I  the player raises to nominal N s into RUNNING
+#   J  fine scan near the green temperature: torque and lumps at RUNNING entry
+#   K  a 318 trip on a caked screen, reset, restarted at the old rpm or at 60
+#   L  a warm restart at the green temperature, per persisted rpm setpoint
+#
+# A-J were written against the model as it was (a start ran to nominal, the
+# green at 196.25 C) and, in between, against a first reading of the rulings
+# (every start to 60). Their numbers for both are in
+# docs/audit/extruder_warm_restart_2026-09-25.md. On today's model a melt below
+# the green (201.875 C) cannot start, so F/J rows under it read "STARTING false".
 # =============================================================================
 
 const DT : float = 0.1
@@ -62,6 +72,9 @@ func _ready() -> void:
 	_section_i(30.0)
 	_section_i(70.0)
 	_section_j()
+	_section_k(-1.0)
+	_section_k(60.0)
+	_section_l()
 	_done = true
 	print("PROBE DONE")
 	get_tree().quit(0)
@@ -373,6 +386,74 @@ func _section_j() -> void:
 			d, model.config.melt_temp_setpoint - d, float(first.get("melt", 0.0)), float(first.get("torque", 0.0)),
 			float(first.get("lump", 0.0)), lump_ticks, lump_max, peak,
 			"NO TRIP" if trip_t < 0.0 else "TRIP at %.1f s" % trip_t])
+
+
+# ── K: a 318 trip on a caked screen, then a restart at the old rpm or at 60 ──
+## Operator 2026-09-25: after a 318 trip "it is not possible to leave the
+## extruder at 100 RPM ... as it ramps up, it reaches the 318 plus bar again ...
+## So you can put it at 60 RPM." The screen keeps its cake through the E-stop
+## reset (LaserFilter.rearm_upstream_trip). `setpoint` < 0 = leave it at nominal.
+func _section_k(setpoint: float) -> void:
+	print("\n-- K  3B tripped 318 on a caked screen, reset, restarted at %s --" % (
+		"the old nominal setpoint" if setpoint < 0.0 else "%.0f rpm" % setpoint))
+	var rig := _build_rig("3B", "extruder_3b")
+	var model = rig["model"]
+	var laser = rig["laser"]
+	_press(rig, "start_production")
+	_step(rig)
+	model.set_screw_rpm_setpoint(model.config.screw_rpm_nominal)
+	for _i in range(int(RUN_S / DT)):
+		_step(rig)
+	# Cake the front face 151.5 bar deep (at setpoint melt): MP<MF 25 + 161.5 +
+	# 151.5 = 338 bar at nominal flow, 13.6 + 88 + 151.5 = 253 bar at 60 rpm.
+	var cake_g : float = 151.5 * PSI_PER_BAR / LaserFilter.CAKE_PSI_PER_G
+	var t_trip := -1.0
+	for i in range(50):
+		laser.set("front_loading_g", cake_g)
+		laser.set("_rotation_timer", 0.0)
+		_step(rig)
+		if _estop(model):
+			t_trip = (i + 1) * DT
+			break
+	print("  first trip after %.1f s at %.0f rpm ('%s')" % [t_trip, model.config.screw_rpm_nominal, model.fault_reason])
+	_press(rig, "reset_after_estop")
+	for _i in range(10):
+		_step(rig)
+		if model.state == ExtruderModel.State.OFF:
+			break
+	laser.set("front_loading_g", cake_g)       # the cake stays on the screen
+	laser.set("_rotation_timer", 0.0)
+	if setpoint > 0.0:
+		model.set_screw_rpm_setpoint(setpoint)
+	var ok := _hand_restart(rig, model.config.melt_temp_setpoint)
+	print("  reset -> %s, setpoint %.0f rpm, restart reached STARTING %s" % [model.get_state_name(), model.screw_rpm_setpoint, str(ok)])
+	var peak := 0.0
+	var trip2 := -1.0
+	var rpm_at := 0.0
+	for i in range(int(30.0 / DT)):
+		_step(rig)
+		peak = maxf(peak, _mp_before(rig))
+		if _estop(model):
+			trip2 = (i + 1) * DT
+			break
+		rpm_at = model.screw_rpm
+	print("  restart: MP<MF peak %.1f bar, %s, screw at %.1f rpm" % [peak,
+		"NO TRIP over 30 s" if trip2 < 0.0 else "TRIPS AGAIN after %.1f s" % trip2, rpm_at])
+
+
+# ── L: a cold start at the green temperature, per setpoint ────────────────────
+func _section_l() -> void:
+	print("\n-- L  3B WARM restart at the green temperature, per persisted setpoint --")
+	for sp in [60.0, 70.0, 80.0, 90.0, 100.0, 110.0]:
+		var rig := _build_rig("3B", "extruder_3b")
+		var model = rig["model"]
+		_warm_up_and_stop(rig)
+		model.set_screw_rpm_setpoint(sp)
+		_hand_restart(rig, float(model.call("_preheat_ready_temp")))
+		var r := _watch(rig, false)
+		print("  setpoint %3.0f rpm: RUNNING at %.1f s, MP<MF peak %6.1f bar, >280 for %.1f s, %s" % [
+			sp, r["t_running"], r["peak"], r["over_280_s"],
+			"NO TRIP" if r["trip_t"] < 0.0 else "TRIP at %.1f s" % r["trip_t"]])
 
 
 func _on_watchdog() -> void:

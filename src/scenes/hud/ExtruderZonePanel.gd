@@ -45,11 +45,12 @@ var _readouts : Array[Label] = []
 var _die_chip_cold : PanelContainer = null
 var _die_chip_good : PanelContainer = null
 var _die_chip_hot  : PanelContainer = null
-# Screw speed setpoint (2026-09-25). Every start leaves the screw at
-# config.screw_rpm_min (60) and the operator raises it on the HMI (operator
-# ruling). The touchscreen had zone sliders but no rpm control, so this row is
-# that control on the MACHINES -> extruder_<line> detail, bound to that line's
-# own model. Slider range = what the model accepts (screw_rpm_min..max).
+# Screw speed setpoint (2026-09-25). A start ramps the screw to this setpoint,
+# and after a 318-bar trip the operator lowers it to 60 to get the line going
+# again (operator ruling). The touchscreen had zone sliders but no rpm control,
+# so this row is that control on the MACHINES -> extruder_<line> detail, bound
+# to that line's own model. Slider range = what the model accepts
+# (screw_rpm_min..max).
 var _rpm_slider : HSlider = null
 var _rpm_readout : Label = null
 
@@ -150,8 +151,8 @@ func _add_rpm_row(box: VBoxContainer) -> void:
 	_rpm_readout = read
 	_refresh_rpm_row()
 
-## Mirror the model into the rpm row. A start resets the model's setpoint to
-## screw_rpm_min, so the slider must follow the model, not the other way round.
+## Mirror the model into the rpm row. The web HMI's line strip writes the same
+## setpoint, so the slider must follow the model, not the other way round.
 func _refresh_rpm_row() -> void:
 	if _rpm_slider == null or _model == null or not is_instance_valid(_model):
 		return

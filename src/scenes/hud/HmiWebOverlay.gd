@@ -53,11 +53,10 @@ var _accum := 0.0
 # One HMI serves every extruder line ("hmi_extruder_all"), and the web screens
 # carry no line of their own, so every extruder channel (rpm, zones, suction)
 # went to the FIRST extruder in the group: the other lines had no rpm control
-# at all. Since every start leaves the screw at screw_rpm_min for the operator
-# to raise (operator 2026-09-25), they would have run at 60 rpm for good. A
-# Godot strip ABOVE the native WebView picks the line (operator: "add a line
-# choice"); the WebView is inset by its height so the native window, which
-# floats over all Godot output, cannot cover it.
+# at all, so an operator could not drop a tripped line to 60 rpm to restart it
+# (operator 2026-09-25). A Godot strip ABOVE the native WebView picks the line
+# (operator: "add a line choice"); the WebView is inset by its height so the
+# native window, which floats over all Godot output, cannot cover it.
 const LINE_BAR_H := 34.0
 const _LINE_ORDER : Array[String] = ["1", "3a", "3b", "3c", "6"]
 var _extruder_line : String = ""          # lower-case line id, "" = not chosen yet

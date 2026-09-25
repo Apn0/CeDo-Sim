@@ -82,8 +82,8 @@ func _trend(line: String, sig_name: String) -> Dictionary:
 func _run_to_nominal(m: ExtruderModel) -> void:
 	m.melt_temp = m.config.melt_temp_setpoint
 	m.tick(0.1, {"start_production": true})
-	# Every start leaves the screw at 60 rpm and the operator raises it on the
-	# HMI (operator 2026-09-25); this suite is about a line AT nominal.
+	# A new extruder's rpm setpoint is 60 (operator 2026-09-25) and the operator
+	# raises it on the HMI; this suite is about a line AT nominal.
 	m.set_screw_rpm_setpoint(m.config.screw_rpm_nominal)
 	for _i in range(3000):   # 300 s — steady long before that
 		m.tick(0.1, {})

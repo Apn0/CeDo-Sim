@@ -133,11 +133,14 @@ const DEFECT_RESIDUAL_SCRAP_G_PER_KG : float = 12.0
 const DIE_FACE_COLD_OFFSET_C := 15.0
 const DIE_FACE_HOT_OFFSET_C  := 20.0
 
-## STARTING: the screw runs from standstill up to config.screw_rpm_min in this
-## time, then the model is RUNNING at that rpm until the operator raises the
-## setpoint. Operator 2026-09-25: "it will ramp up in about two and a half to
-## three seconds let's say three seconds to that 60 rpm". (Was 4 s from idle to
-## NOMINAL, after the emulator's step; a real start never goes to nominal.)
+## STARTING: the screw ramps from standstill up to the operator's rpm setpoint
+## at config.screw_rpm_min per START_RAMP_S (60 rpm in 3 s = 20 rpm/s), then the
+## model is RUNNING. Operator 2026-09-25: a start "will ramp up to that 80. It
+## will not be 80 instantly. Because there is the ramp up curve", and "it will
+## ramp up in about ... three seconds to that 60 rpm". The RATE is derived from
+## the 3 s to 60 (his number, kept against the raw archive's ~5 s, rulings file
+## §4); that the same rate carries on above 60 is a modelling choice. (Was 4 s
+## from idle to NOMINAL, whatever the setpoint.)
 const START_RAMP_S        : float = 3.0
 ## STOPPING → OFF decay. Time-constant; `rpm *= exp(-delta / STOP_DECAY_S)`
 ## so framerate-independent. 4 s ≈ the emulator's `*= 0.9` step at 0.5 s tick.
@@ -223,10 +226,11 @@ var vacuum_alarm_elapsed_s : float = 0.0
 # otherwise filled with config.melt_temp_setpoint on first tick / construction.
 var zone_temp_setpoints : Array[float] = []
 
-# Operator screw speed setpoint (rpm). Seeded from config.screw_rpm_nominal in
-# _init(): a hard-coded 120 here would silently re-rate every line whose config
-# has a different nominal (throughput scales with setpoint / nominal in
-# _tick_running). 0 means "no operator setpoint — run at nominal".
+# Operator screw speed setpoint (rpm). A start ramps the screw to it and a stop
+# leaves it alone. A NEW extruder starts at config.screw_rpm_min (60), not at
+# nominal (operator ruling 2026-09-25): at nominal, a first start at the green
+# button's temperature tripped 318 bar ~15 s in. It is not saved, so a reloaded
+# world starts at 60 too. 0 means "no operator setpoint — run at nominal".
 var screw_rpm_setpoint : float = 0.0
 # Live actual temperatures for the 7 individual zones.
 var actual_zone_temps : Array[float] = [113.0, 157.0, 184.0, 213.0, 215.0, 215.0, 215.0]
@@ -339,7 +343,7 @@ func _init(cfg: ExtruderConfig) -> void:
 	# `melt_temp_setpoint` and the operator can drop individual zones later
 	# via set_zone_temp() (e.g. to avoid burning paper/cellulose).
 	if config != null:
-		screw_rpm_setpoint = config.screw_rpm_nominal
+		screw_rpm_setpoint = config.screw_rpm_min
 	zone_temp_setpoints = []
 	zone_temp_setpoints.resize(ZONE_COUNT)
 	var use_cfg : bool = config != null \
@@ -394,7 +398,7 @@ func tick(delta: float, inputs: Dictionary) -> Array[String]:
 			# Operator can abort mid-ramp; falls through to STOPPING
 			if inputs.get("stop_production", false):
 				_transition(State.STOPPING, events)
-			elif is_equal_approx(screw_rpm, _start_rpm()):
+			elif is_equal_approx(screw_rpm, _setpoint_rpm()):
 				_transition(State.RUNNING, events)
 		State.RUNNING:
 			_tick_running(delta, inputs, events)
@@ -549,14 +553,13 @@ func _tick_idle(delta: float) -> void:
 	die_face_state = DieFaceState.OFF
 
 func _tick_running(delta: float, inputs: Dictionary, events: Array[String]) -> void:
-	# The screw runs at the operator's setpoint. A start leaves it at
-	# screw_rpm_min (60); raising it is the operator's job on the HMI, as in the
-	# plant (operator 2026-09-25; the WinCC trends climb 60 -> 80 -> 100 -> 120
-	# over 10-60 min). There used to be an idle -> nominal ramp here over
+	# The screw runs at the operator's setpoint, which a stop does not change
+	# (operator 2026-09-25). There used to be an idle -> nominal ramp here over
 	# startup_ramp_s, timed off the LIFETIME runtime_s: a model's first start
-	# re-ramped, and every later start ran straight to nominal flow. Measured
-	# 2026-09-25 (probe_warm_restart_pressure): a restart at the preheat-ready
-	# melt then tripped 318 bar 4.3-4.8 s after the green button.
+	# re-ramped from idle whatever the setpoint, and every later start ran on at
+	# nominal flow. Measured 2026-09-25 (probe_warm_restart_pressure): a restart
+	# at the preheat-ready melt then tripped 318 bar 4.3-4.8 s after the green
+	# button, and nothing the operator set could change that.
 	_drive_screw_to_setpoint(delta)
 	for i in range(min(actual_zone_temps.size(), zone_temp_setpoints.size())):
 		actual_zone_temps[i] = move_toward(actual_zone_temps[i], zone_temp_setpoints[i], 1.5 * delta)
@@ -618,14 +621,14 @@ func _tick_running(delta: float, inputs: Dictionary, events: Array[String]) -> v
 		fault_reason = "vacuum_lost_input"
 		_transition(State.VACUUM_ALARM, events)
 
-## 0 -> screw_rpm_min (60) in START_RAMP_S (3 s), operator 2026-09-25. Material
-## flows during the ramp in proportion to the screw.
+## Standstill -> the operator's setpoint at 20 rpm/s (60 rpm in START_RAMP_S,
+## operator 2026-09-25). Material flows during the ramp in proportion to the screw.
 func _tick_starting(delta: float, _inputs: Dictionary, events: Array[String]) -> void:
-	# Linear ramp to the start rpm, from standstill — or, on a restart during
-	# the coast-down, from wherever the screw still is. The per-tick step keeps
+	# Linear ramp to the setpoint, from standstill — or, on a restart during the
+	# coast-down, from wherever the screw still is. The per-tick step keeps
 	# consumers (RotatingMechanism) smooth.
-	var start_rpm : float = _start_rpm()
-	screw_rpm = move_toward(screw_rpm, start_rpm, start_rpm * delta / maxf(0.01, START_RAMP_S))
+	var rate : float = _min_rpm() / maxf(0.01, START_RAMP_S)
+	screw_rpm = move_toward(screw_rpm, _setpoint_rpm(), rate * delta)
 	# The flow follows the screw, the same law as RUNNING: 0 at standstill.
 	throughput_kg_h = _flow_at_rpm(screw_rpm)
 	if pelletizer != null:
@@ -674,9 +677,8 @@ func _tick_vacuum_alarm(delta: float, inputs: Dictionary, events: Array[String])
 	vacuum_alarm_elapsed_s += delta
 	# Screw + throughput unchanged during alarm — sim still produces. They used
 	# to be forced to NOMINAL here, which the comment above never said: a line
-	# the operator runs at 60 rpm (every start leaves it there since 2026-09-25)
-	# jumped to 110 rpm and full flow the moment a pot lid popped. Same law as
-	# RUNNING now.
+	# the operator runs at 60 or 80 rpm jumped to 110 rpm and full flow the
+	# moment a pot lid popped. Same law as RUNNING now.
 	_drive_screw_to_setpoint(delta)
 	_drift_melt_temp_toward(config.melt_temp_setpoint, delta)
 	_evaluate_die_face_state()
@@ -766,9 +768,14 @@ func _tick_e_stop(delta: float) -> void:
 func _drift_melt_temp_toward(target: float, delta: float) -> void:
 	melt_temp = move_toward(melt_temp, target, config.melt_temp_drift_per_s * delta)
 
-## The rpm every start runs the screw up to (config.screw_rpm_min).
-func _start_rpm() -> float:
+## The lowest screw speed the drive accepts (config.screw_rpm_min, 60).
+func _min_rpm() -> float:
 	return maxf(0.0, config.screw_rpm_min)
+
+## Where a start ramps the screw to and RUNNING holds it: the operator's
+## setpoint, which persists across stops. 0 means "no setpoint: nominal".
+func _setpoint_rpm() -> float:
+	return screw_rpm_setpoint if screw_rpm_setpoint > 0.0 else config.screw_rpm_nominal
 
 ## Melt output at a screw speed: nominal_kg_per_h at screw_rpm_nominal, in
 ## proportion (the law RUNNING has always applied to an operator setpoint).
@@ -779,8 +786,7 @@ func _flow_at_rpm(rpm: float) -> float:
 ## 25 rpm/s, and the flow follows the screw, times the pelletiser's knife-wear
 ## multiplier.
 func _drive_screw_to_setpoint(delta: float) -> void:
-	var target_rpm : float = screw_rpm_setpoint if screw_rpm_setpoint > 0.0 else config.screw_rpm_nominal
-	screw_rpm = move_toward(screw_rpm, target_rpm, 25.0 * delta)
+	screw_rpm = move_toward(screw_rpm, _setpoint_rpm(), 25.0 * delta)
 	throughput_kg_h = _flow_at_rpm(screw_rpm)
 	if pelletizer != null:
 		pelletizer.tick(delta, true)
@@ -805,11 +811,6 @@ func _transition(new_state: State, events: Array[String]) -> void:
 	var old := state
 	state = new_state
 	time_since_state_change = 0.0
-	# Every start runs the screw to screw_rpm_min and leaves it there: the
-	# setpoint follows, so RUNNING holds 60 until the operator raises it
-	# (operator 2026-09-25). Whatever the HMI held before the stop is gone.
-	if new_state == State.STARTING:
-		screw_rpm_setpoint = _start_rpm()
 	if new_state == State.STOPPING:
 		# This tick's torque and rpm, from the state the stop was pressed in.
 		_stop_entry_torque_pct = motor_torque_pct

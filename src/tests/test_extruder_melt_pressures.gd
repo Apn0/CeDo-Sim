@@ -172,9 +172,9 @@ func _start(rig: Dictionary) -> void:
 	pend["start_production"] = true
 
 
-## Every start leaves the screw at screw_rpm_min (60) and the operator raises it
-## on the HMI (operator 2026-09-25). The nominal-run checks here are about a line
-## AT nominal, so they raise it on the tick after the start, as a player would.
+## A new extruder's rpm setpoint is 60 (operator 2026-09-25) and the operator
+## raises it on the HMI. The nominal-run checks here are about a line AT
+## nominal, so they raise it on the tick after the start, as a player would.
 func _raise_to_nominal(rig: Dictionary) -> void:
 	var m = rig["model"]
 	m.set_screw_rpm_setpoint(m.config.screw_rpm_nominal)
@@ -549,8 +549,10 @@ func _check_upstream_trip_melt_viscosity() -> void:
 	# used to re-ramp from idle in RUNNING (a lifetime-runtime ramp) while a warm
 	# one went straight to nominal flow — measured 2026-09-25: MP<MF 317.6 bar
 	# and a 318 trip 4.3 s after the green button (probe_warm_restart_pressure).
-	# Now every start runs to 60 rpm and the green waits out the lumps
-	# (operator rulings 2026-09-25; test_extruder_start_rpm has the rest).
+	# Now a start ramps to the setpoint the operator left, and on a barrel that is
+	# only just warm the operator puts it at 60 first (operator rulings
+	# 2026-09-25; test_extruder_start_rpm has the rest, including the same
+	# restart left at 110, which trips).
 	var rw := _build_rig("3B", "extruder_3b", 7000.0)
 	if rw.is_empty():
 		return
@@ -567,6 +569,7 @@ func _check_upstream_trip_melt_viscosity() -> void:
 		if mw.state == ExtruderModel.State.OFF:
 			break
 	var ready_w : float = float(mw.call("_preheat_ready_temp"))
+	mw.set_screw_rpm_setpoint(60.0)   # the operator's 60 on a just-warm barrel (typed: a config read blesses any value)
 	mw.melt_temp = ready_w
 	_start(rw)
 	_step(rw)                  # OFF cools 0.05 C first: PREHEAT
@@ -582,8 +585,8 @@ func _check_upstream_trip_melt_viscosity() -> void:
 			break
 	_check(warm_rt > 180.0 and wstarted and mw.state == ExtruderModel.State.RUNNING
 			and not bool(rw["laser"].get("is_tripped")) and wpeak < LaserFilter.UPSTREAM_TRIP_BAR,
-		"a WARM restart (ran %.0f s, stopped) at the preheat-ready melt %.2f C runs up without a trip: MP<MF peak %.1f bar"
-		% [warm_rt, ready_w, wpeak])
+		"a WARM restart (ran %.0f s at nominal, stopped, set back to %.0f rpm) at the preheat-ready melt %.2f C runs up without a trip: MP<MF peak %.1f bar"
+		% [warm_rt, mw.screw_rpm_setpoint, ready_w, wpeak])
 
 
 # ── verdict ───────────────────────────────────────────────────────────────────
