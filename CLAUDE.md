@@ -12,8 +12,46 @@ searching — and treat every number here as re-checkable, not as gospel.**
 
 ## Engine
 
+> **ONE HARNESS RUNNER (operator ruling 2026-09-25): do not run the full
+> harness from a working session.** Sessions each ran `run.sh` on their own
+> branch, up to four at once. That meant four slightly different trees, a full
+> C: drive, and eight healthy suites red on AtomicFile short writes. Now one
+> designated Claude session, the harness runner, runs the full harness on
+> `origin/main` after merges, isolated on D:, and reports reds to the operator.
+> Every other session:
+> - runs the suites its change touches, one at a time, under a scratch `APPDATA`:
+>   `APPDATA=<scratch> "$GODOT" --headless --path <tree> res://src/tests/<suite>.tscn`;
+> - runs the parse sweep, plus `bash -n tools/regression/run.sh` if it touched run.sh;
+> - opens and merges its PR as before. The runner tests `main` after the merge.
+>
+> It is enforced twice:
+> - **A user-level Claude Code hook**, `~/.claude/hooks/cedo_harness_guard.py`,
+>   refuses any command that EXECUTES `…/regression/run.sh` without
+>   `CEDO_HARNESS_RUNNER=1`. Its 42 test cases are in
+>   `cedo_harness_guard_test.py` beside it. Measured: it also reached a session
+>   that was already running, without a restart.
+> - **`run.sh` itself** exits 3 without that flag. It exits 4 while another full
+>   harness runs, detected two ways: its lock directory `~/.cedo_harness.lock`,
+>   which it takes over once the owning process is gone; and a scan of `/proc`
+>   for any other `bash …/regression/run.sh`, which also catches older copies
+>   of the script.
+>
+> **Never set the flag yourself.** If you think a full run is needed now, ask
+> the operator. He runs it by hand the same way.
+>
+> **The runner's cycle**, for the runner session or whoever takes it over:
+> 1. Fetch. If `origin/main` has not moved since the last run, check again in
+>    about 20 min.
+> 2. Check it out detached in the runner's worktree (it needs real copies of
+>    `assets/` and `.godot/`).
+> 3. Copy the operator's `app_userdata` to `D:\cedo_archive\userdata\harness_runner\`
+>    and run with `APPDATA`, `UD` and `PROJ` pointing there and at the worktree.
+> 4. Take the verdict from each suite's own log in `tools/regression/out/`, not
+>    from the redirected stdout. `test_npc05_realworld` is the known red; any
+>    other red goes to the operator.
+
 ```bash
-bash tools/regression/run.sh          # the one command that proves things
+CEDO_HARNESS_RUNNER=1 bash tools/regression/run.sh   # the harness runner only, see above
 ```
 
 Engine: **`C:/Users/arnod/AppData/Local/Godot/Godot_v4.6.3-stable_win64_console.exe`**
@@ -43,7 +81,7 @@ output). A planted undeclared symbol, one inheriting by `res://` path and one by
 For an isolated run (never the operator's `app_userdata`), redirect `APPDATA`
 and pass the matching `UD`, or the world_layout sentinel watches his real
 folder while Godot writes the copy:
-`APPDATA="$(cygpath -w <scratch>)" PROJ=<tree> UD=<scratch>/Godot/app_userdata/"CeDo Simulator" bash tools/regression/run.sh`
+`CEDO_HARNESS_RUNNER=1 APPDATA="$(cygpath -w <scratch>)" PROJ=<tree> UD=<scratch>/Godot/app_userdata/"CeDo Simulator" bash tools/regression/run.sh`
 
 `project.godot` declares `config/features=PackedStringArray("4.6")`.
 **Do not use `C:/Users/arnod/AppData/Local/Godot/godot.exe`** — that file is
