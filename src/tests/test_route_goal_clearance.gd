@@ -125,9 +125,19 @@ func _run() -> void:
 			block.append(Vector2i(dx, dz))
 	var g2 := _make_grid(12, 12, block)
 	var d_block : float = g2.goal_clearance(Vector3(11.0, 0.0, 11.0))   # centre of the 3x3
-	_ok(d_block > BaseVehicle.NPC_ARRIVE_TOL,
+	# NPC_ARRIVE_TOL is read at RUNTIME through load(), never as
+	# `BaseVehicle.NPC_ARRIVE_TOL`: a --script suite is compiled once before the
+	# autoloads exist, and naming the class made that compile fail on
+	# BaseVehicle.gd's EventBus ("Identifier not found: EventBus", then "Failed
+	# to load script"). The checks ran anyway, but the log carried two SCRIPT
+	# ERROR lines, and run.sh now fails any log that has one
+	# (tools/regression/script_error_census.sh).
+	var arrive_tol : float = float((load("res://src/scenes/vehicles/BaseVehicle.gd") as Script)
+		.get_script_constant_map().get("NPC_ARRIVE_TOL", -1.0))
+	_ok(arrive_tol > 0.0, "BaseVehicle.NPC_ARRIVE_TOL resolves at runtime (%.2f m)" % arrive_tol)
+	_ok(d_block > arrive_tol,
 		"the centre of a 3 x 3 solid block is further than NPC_ARRIVE_TOL from free ground (%.2f m > %.2f m) — an order there can never complete"
-			% [d_block, BaseVehicle.NPC_ARRIVE_TOL])
+			% [d_block, arrive_tol])
 	_ok(absf(d_block - (VehicleRouteGrid.CELL_M * 2.0 * sqrt(2.0))) < 0.0001,
 		"and it is two DIAGONAL cells out (%.2f m), consistent with the same ring scan" % d_block)
 
