@@ -150,13 +150,15 @@ func _census() -> void:
 	for sid in SCRIPTED_BODY_IDS:
 		if not ids.has(sid):
 			missing.append(sid)
-	var n_control : int = 0
+	# HMI panels get an Hmi.gd body (the Control category carries hmi_id).
+	var n_hmi : int = 0
 	for pid in ids:
-		if String(PlaceableCatalog.get_item(String(pid)).get("category", "")) == "Control":
-			n_control += 1
-	_check(ids.size() > 100 and missing.is_empty() and n_control > 0 and not_ready.is_empty(),
+		var item : Dictionary = PlaceableCatalog.get_item(String(pid))
+		if String(item.get("category", "")) == "Control" and item.has("hmi_id"):
+			n_hmi += 1
+	_check(ids.size() > 100 and missing.is_empty() and n_hmi > 0 and not_ready.is_empty(),
 		"G0 the census built %d ghosts, incl. every scripted body %s and %d HMI panel(s), all ready (missing %s, not ready %s)"
-		% [ids.size(), str(SCRIPTED_BODY_IDS), n_control, str(missing), str(not_ready)])
+		% [ids.size(), str(SCRIPTED_BODY_IDS), n_hmi, str(missing), str(not_ready)])
 	_check(placed.is_empty(), "G1 no node inside a placement ghost is placed_object %s"
 		% (str(placed) if not placed.is_empty() else "(0 of %d ghosts)" % ids.size()))
 	for pid in groups_by_id.keys():
