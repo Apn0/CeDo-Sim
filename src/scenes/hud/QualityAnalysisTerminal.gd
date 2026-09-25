@@ -198,7 +198,9 @@ func _refresh_telemetry() -> void:
 	var rows : Array = []
 	rows.append(["MFI-proxy (g/10min)", _fmt_metric(lf, "mfi_value", " g/10min")])
 	rows.append(["Smelttemperatuur",     _fmt_metric(lf, "melt_temp",  " °C")])
-	rows.append(["Spuitkop-druk",        _fmt_metric(lf, "die_pressure", " bar")])
+	# The die plate, after the kopfilter (operator ruling 2026-09-24). This row
+	# used to say "Spuitkop-druk", a word that appears in no plant document.
+	rows.append(["Matrijsdruk (na kopfilter)", _fmt_metric(lf, "die_pressure", " bar")])
 	rows.append(["Doorzet (kg/s)",       _fmt_metric(lf, "thru", " kg/s")])
 	rows.append(["Vochtigheid",          _fmt_metric(lf, "moist", " %")])
 	rows.append(["Verontreiniging",      _fmt_metric(lf, "contam", " %")])
@@ -346,14 +348,16 @@ func _fmt_metric(lf: Node, field: String, suffix: String) -> String:
 	var v : float = float(sample[field])
 	return "%.2f%s" % [v, suffix]
 
+## The first node carrying LineFlow's ExtruderScrew, the same pick as
+## LineFlow._first_extruder_node() for the SCADA panel. It used to match
+## `id.begins_with("extruder_")`, which returned the extruder_silo on lines 1,
+## 3A and 3B: the silo comes first in _nodes, so every row here showed the
+## silo (measured 2026-09-24, probe_screw_die_pressure).
 func _first_extruder_node(lf: Node) -> Dictionary:
 	if lf == null or not "_nodes" in lf:
 		return {}
 	for nd in lf.get("_nodes"):
-		if not (nd is Dictionary):
-			continue
-		var id := str(nd.get("id", ""))
-		if id.begins_with("extruder_") or id == "extruder_3a" or id == "extruder_3b":
+		if nd is Dictionary and nd.get("ex") != null:
 			return nd
 	return {}
 

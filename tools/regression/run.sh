@@ -472,7 +472,10 @@ fi
 # extruder + LaserFilter + HeadFilter; both trips are reachable (a caked screen
 # and cold zones past 318 bar; 165 bar dP across the kopfilter for the 160-bar
 # MP<PEL, with 155 bar as the negative control), and the 318 trip is armed
-# again after an E-stop reset. 44 checks, six mutations red.
+# again after an E-stop reset. Since 2026-09-25 the screen's dMP follows the
+# melt too: a melt held 9 °C cold trips 318 through the screen, 5 °C does not,
+# and a start at the preheat-ready melt runs up clean. 53 checks, eight
+# mutations red.
 # 2026-09-24 — three guards from the cross-repo review (convergence map C1/C6/C11):
 # test_die_pressure_bar: the melt-set pressures follow melt temperature (3A trend
 # fit 6.83 bar/°C, as a fraction of 280 bar), the laser filter's inlet is the

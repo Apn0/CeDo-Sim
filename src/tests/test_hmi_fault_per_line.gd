@@ -27,7 +27,7 @@ extends Node
 ##     attaches the brain and its per-line ExtruderConfig), 100 m apart, each
 ##     with a real catalog laser_filter beside it; the real EremaFaultRegistry.
 ##   * NOT real: the pressure, written through LaserFilter's own
-##     set_upstream_pressure_indicator(). Each brain's SimTick handler is
+##     set_mp_after_filter_bar(). Each brain's SimTick handler is
 ##     disconnected, because OFF it writes 0.0 over that every tick
 ##     (ExtruderMachine `_update_downstream_signals`); nothing else is touched.
 ##   * phase B blanks both configs' line_id to reach the no-line fallback.
@@ -71,9 +71,13 @@ func _on_watchdog() -> void:
 
 # ── operator-side helpers (as in test_hmi_fault_rearm) ──────────────────────
 
+## (2026-09-25: this was set_upstream_pressure_indicator(psi), inverted
+## through the registry's old psi * 0.0689. #278 split the melt pressure in two
+## and removed that setter. With no melt flowing the filter's no-flow gate holds
+## its dMP at 0, so the pressure BEFORE the filter, mp_before_filter_bar(),
+## which EREMA 6557 reads, is exactly the bar written here.)
 func _set_bar(i: int, bar: float) -> void:
-	# The registry reads psi * 0.0689 as bar; invert that exactly.
-	(_filters[i] as Node).call("set_upstream_pressure_indicator", bar / 0.0689)
+	(_filters[i] as Node).call("set_mp_after_filter_bar", bar)
 
 func _live_buttons(root: Node) -> Array:
 	var out : Array = []

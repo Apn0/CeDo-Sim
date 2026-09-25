@@ -26,8 +26,7 @@ extends Node
 ##     phase D, which swaps it for a second one under the closed panel);
 ##   * a real catalog laser_filter, and the real EremaFaultRegistry detector.
 ##   * NOT real: the pressure. It is written through LaserFilter's own
-##     set_upstream_pressure_indicator(), the setter ExtruderMachine calls while
-##     RUNNING. A real brain cannot hold it: OFF it writes 0.0 every tick
+##     set_mp_after_filter_bar(), the setter ExtruderMachine calls every tick. A real brain cannot hold it: OFF it writes 0.0 every tick
 ##     (ExtruderMachine.gd `_update_downstream_signals`), RUNNING needs the
 ##     30-minute preheat and a clogged head filter. So the extruder here is a
 ##     bare Node3D in the "extruder_machine" group — the registry's
@@ -81,9 +80,13 @@ func _on_watchdog() -> void:
 
 # ── operator-side helpers ───────────────────────────────────────────────────
 
+## (2026-09-25: this was set_upstream_pressure_indicator(psi), inverted
+## through the registry's old psi * 0.0689. #278 split the melt pressure in two
+## and removed that setter. With no melt flowing the filter's no-flow gate holds
+## its dMP at 0, so the pressure BEFORE the filter, mp_before_filter_bar(),
+## which EREMA 6557 reads, is exactly the bar written here.)
 func _set_bar(bar: float) -> void:
-	# The registry reads psi * 0.0689 as bar; invert that exactly.
-	_filter.call("set_upstream_pressure_indicator", bar / 0.0689)
+	_filter.call("set_mp_after_filter_bar", bar)
 
 func _live_buttons(root: Node) -> Array:
 	var out : Array = []
@@ -192,7 +195,7 @@ func _run() -> void:
 	add_child(lf)
 	lf.feed_enabled = false
 	_filter = PlaceableCatalog.build_node("laser_filter", false)
-	_check(_filter != null and _filter.has_method("set_upstream_pressure_indicator"),
+	_check(_filter != null and _filter.has_method("set_mp_after_filter_bar"),
 		"the catalog built a real LaserFilter")
 	if _filter == null:
 		_finish(); return
