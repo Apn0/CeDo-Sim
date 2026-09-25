@@ -216,6 +216,11 @@ var delta_p_back_psi     : float = 0.0
 # "upstream_pressure_psi_indicator" (2026-09-24), which on a line with a
 # kopfilter was fed the KOPFILTER's dP — a filter that sits after this one.
 var mp_after_filter_bar             : float = 0.0
+# Melt viscosity relative to a melt at setpoint (ExtruderModel.
+# melt_viscosity_factor, forwarded each tick; 1.0 when no extruder feeds it).
+# Both faces' dMP scale by it: a colder, thicker melt needs more pressure
+# through the same screen and cake (operator 2026-09-25, "dMP rises too").
+var melt_viscosity_factor           : float = 1.0
 var extruder_rpm_indicator          : float = 0.0
 # Un-melted lump feed rate (g/s) from cold extruder zones — slams the inlet
 # face. Reported by ExtruderMachine when motor_torque_pct is high.
@@ -417,6 +422,12 @@ func set_feed_throughput(kg_h: float) -> void:
 func set_mp_after_filter_bar(bar: float) -> void:
 	mp_after_filter_bar = maxf(0.0, bar)
 
+## Melt viscosity relative to setpoint (ExtruderModel.melt_viscosity_factor).
+## Scales this screen's dMP: the 3A trend fit (6.83 bar/°C) is on MP<MF, the
+## pressure BEFORE the filter, and most of that pressure is this dMP.
+func set_melt_viscosity_factor(f: float) -> void:
+	melt_viscosity_factor = maxf(0.1, f)
+
 ## Melt pressure BEFORE this filter, bar (the HMI's "MP < MF"): the melt-set
 ## pressure after it plus our own dMP. The 318-bar trip reads this. With no
 ## melt flowing both terms are 0 (the no-flow gate parks dMP).
@@ -472,10 +483,13 @@ func rearm_upstream_trip() -> void:
 # docs/plant/hmi_reference.md §1 (ΔMP 175–235 bar) + docs/plant/swi/laserfilter-
 # smeltdrukverschil__062_CeDo72.md (0–300 bar band). ΔP = clean-screen BASE
 # (flow resistance ∝ throughput, both faces) + CAKE (this face's loading_g).
-# Clamped to the 350 bar HMI scale.
+# Clamped to the 350 bar HMI scale. Both terms scale with the melt's viscosity
+# (melt_viscosity_factor, 1.0 at setpoint): a colder melt needs more pressure
+# through the same screen and the same cake. The M1 disc-motor load reads the
+# cake's loading_g directly, so it does not follow the melt.
 func _face_delta_p_psi(loading_g: float) -> float:
 	var base_psi : float = feed_throughput_kg_h * CLEAN_BASE_PSI_PER_KG_H
-	return clampf(base_psi + loading_g * CAKE_PSI_PER_G, 0.0, DELTA_P_MAX_PSI)
+	return clampf((base_psi + loading_g * CAKE_PSI_PER_G) * melt_viscosity_factor, 0.0, DELTA_P_MAX_PSI)
 
 # Sawtooth ΔMP cycle: purge most of the accumulated cake in one step and break off the in-progress sausage.
 func _disc_advance() -> void:

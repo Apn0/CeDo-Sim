@@ -129,6 +129,8 @@ takes its user dir from `APPDATA`; `XDG_DATA_HOME` is ignored). Tree:
 `b8bda8a` plus this change. It was **stopped after 88 steps** (in the
 own-dialect loop at `test_bunker_relay_trip`) because the branch was then
 rebased onto `fcb53e1`. **No full harness has run on the rebased tree.**
+(The follow-up's full harness, below, ran on `04eaa77`, which includes this
+change.)
 
 - `test_hmi_fault_rearm` inside the harness: `PASS (32 ok, 0 fail)`.
 - `test_npc05_realworld`: red, the known expected one.
@@ -266,6 +268,30 @@ ERROR`. `test_extruder_brain_wired` failed 4 checks in the empty isolated
 user dir ("the world under test is CONFIGURED"). It passed 24 ok / 0 fail
 against a scratch copy of the operator's userdata, so the failures were only
 the missing world.
+
+### Full harness (2026-09-25, on `04eaa77`)
+
+Isolated like the partial run above, with one more override: `UD` also points
+at the scratch copy, because `run.sh:23` defaults it to the real userdata (it
+is only read for `cp regression_positions.json`). `PROJ` points at the
+worktree. Result: `== done (exit 1)`, 129 steps, 41 min (00:17 → 00:58), 122
+logs by mtime, 0 timeouts, 0 `^SCRIPT ERROR` lines. This tree carries the
+occurrence fix above as well, so it is also the full harness the rebased #279
+tree never got.
+
+- Inside the run: `test_hmi_fault_per_line` 26 ok, `test_hmi_fault_rearm`
+  32 ok, `test_hmi_ack_rearm` 7 ok.
+- Five reds, one failing check each:
+  - `test_npc05_realworld`: `the chain completed` — the known expected red.
+  - The same four as in the partial run, with identical failing checks:
+    `regression verdict`, `test_jam_baseline`, `test_project_sweep_guards`,
+    `test_new_world_wipe`. The cause is unchanged: the operator's live
+    `world_layout.json` still holds one `structure_items` entry, a `gate`
+    (md5 `e046af7dbae5017380c1bbd36dfc7f65`, the same before and after the
+    run).
+- Those four stay red on every harness run until the operator rules on that
+  gate: keep it (the four suites then have to expect it) or remove it (they
+  go green again).
 
 ## Open
 
