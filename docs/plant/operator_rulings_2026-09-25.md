@@ -306,3 +306,69 @@ Asking him settles it.
 - **The lump law** (`(torque - 95) x 5 g/s`) and the cake's `2500 psi/g` have no
   source either. Together they make the green threshold a knife edge: half a
   degree decided trip or no trip (audit doc §2).
+
+---
+
+# Transportbanden 3A/3B — fourth session, same day (the intake macro's head and conveyor 8)
+
+Source: Arno, answering two AskUserQuestion rounds in the Claude session of
+2026-09-25 (worktree `mystifying-franklin-db632a`, branch
+`claude/focused-jackson-bff053`). The first round asked in terms Arno did not
+recognise ("macro head", "C8/C9"). Arno asked for an explanation of both, got
+it, and answered the reworded round. The answers are quoted as typed or
+picked. They are **recollections and choices, not documents**.
+
+The fix they settle, the guard and the before/after graphs are in
+`docs/audit/intake_3a3b_topology_2026-09-25.md`.
+
+## T1. The belt into shredder 2 is a plain conveyor, and shredder 2 is mill-like
+
+**Asked:** where film should enter the Transportbanden 3A/3B section when it
+is placed on its own. Shown first: in the plant the opzetband feeds shredder 1
+on the sort line, and shredder 2 is fed by the sort line's long belt; the
+macro's opzetband in front of shredder 2 was added 2026-06-14 (commit
+`a3fa4b4`, "D4") with no source; today it skips shredder 2 and drops straight
+onto the climb belt. Options: keep the opzetband as the section's feed point,
+or leave it standing and let film enter at shredder 2.
+
+**Answered (typed, not an option):** "the conveyor that is feeding into
+Shredder 2 is actually not an offset band. Op Z band. … O P Z E T B A N D.
+It is called Shredder 2, but it is actually more similar like uh, a mill on
+the other lines. So it's just a conveyor that feeds it. And there is no bills
+being placed anywhere on that conveyor."
+
+Read as: the belt into shredder 2 is a plain conveyor, not an opzetband; no
+bale is ever put on it; shredder 2 behaves like the mills on the other lines.
+
+In code: `INTAKE_3A3B_SEQ` entry 0 is `transport_belt` (the id the sort line
+uses for the same belt, `LINE_SORT_SEQ` 18), pinned into shredder 2. Nothing
+was changed about how shredder 2 itself is modelled (MachineFlow process
+`shred`); "more like a mill" is recorded here, not built.
+
+## T2. Conveyor 8 forward to 9, reversed to 8.5 → U, and the U feeds nothing
+
+**Picked:** "Yes, fix it now (Recommended)", on: "Wire conveyor 8 / 8.5 / U
+as your notes describe, in this same change? Normal: conveyor 8 → conveyor 9.
+Both VSSs full: conveyor 8 reverses → 8.5 → U, and the U feeds nothing (the
+Merlo empties it)."
+
+Shown first: the operator's own notes (`misc_sources.md` §1b) and the measured graph,
+where conveyor 8 only ever fed 8.5, 8.5 fed conveyor 9, and the U got nothing
+yet fed conveyor 9.
+
+In code: the `overflow` stream on entries 11–12, which ends at the U-bay;
+MachineFlow `no_outlet` on `u_bay`.
+
+## T3. Found while measuring, not asked
+
+- **The pack-up cascade does not match the operator's notes.** The notes: when both VSSs
+  are FULL, "every conveyor up to the trilzeef pauses in 1s sequence from the
+  bunker", the trilzeef keeps shaking, and the flakes still coming through
+  shredder 2 go C8 (reversed) → 8.5 → U. `LineFlow._PACK_UP_ORDER` instead
+  pauses C11, C10, C9, **C8.5 at 3 s, C8 at 4 s**, then C7 … C1, the trilzeef
+  and the bunker. So in the sim the U can take at most a few seconds of flow
+  (C8's reversal alone takes 2 + 2 s). Read from the code, not driven.
+- **The geometry does not match the flow.** The feed conveyor discharges at
+  0.8 m, 5.1 m from shredder 2's inlet at 5.1 m high; C8.5 stands beside C8's
+  forward half, while the operator's notes put it "on one side of conveyor 8, and conveyor
+  9 … on the other end". The pins make the flow right; the layout is the operator's pass.
