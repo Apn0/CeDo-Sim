@@ -234,6 +234,19 @@ that). Suites marked * were changed here:
 
 0 `SCRIPT ERROR` lines in any of them.
 
+**After merging `main` at `1b3c4e0`** (#312 moved the world suites into the
+building frame), these were run again on the merged tree, all green with 0
+`SCRIPT ERROR` lines:
+- test_extruder_start_interlock 32 ok, test_fallback_chains 84 ok,
+  test_screw_die_plate_bar 56 ok, test_extruder_start_rpm 27 ok,
+  test_extruder_silo_chain 41 ok, test_macro_edges_reload 60 ok.
+- test_nav_connectivity 13 ok, test_jam_baseline 20 ok / 0 skipped.
+- test_extruder_brain_wired, test_qa_loop, test_tag_snapshot,
+  test_lump_cart_coverage, test_line3a/3b/3c_identity, test_l3c_unit_screens and
+  test_waslijn3c_overzicht all PASS.
+
+Parse sweep on the merged tree: 479 ok, 0 fail.
+
 ## 7. run.sh on main did not parse
 
 `main` as merged at `147cff1` (the #308/#309 merge, `59acf8f`) kept two
