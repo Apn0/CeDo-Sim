@@ -343,6 +343,15 @@ var die_face_state : int = DieFaceState.OFF
 ## Which machine stopped, for the last natraject trip (fault_reason
 ## "natraject_stopped"); shown beside it on SCADA.
 var natraject_trip_text : String = ""
+## The extruder silo in front of this extruder, as its laser level sensor
+## reports it (LineFlow, rulings §I11): % of the safe cutoff (can read over
+## 100), the distance in mm, and whether its feed stop holds. Written by
+## ExtruderMachine every tick; plain data for the HMIs. `silo_level_known` is
+## false where the extruder has no macro-built silo.
+var silo_level_known : bool = false
+var silo_level_pct : float = 0.0
+var silo_level_mm : float = 0.0
+var silo_feed_stopped : bool = false
 var pelletizer : PelletizerModel = null
 ## The start button and its natraject (operator rulings 2026-09-25, rulings
 ## file §I1-§I9). Plain data kept here so every HMI that reaches the model can
