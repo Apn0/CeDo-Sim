@@ -154,6 +154,9 @@ change.
   at the identical inlet and outlet. Each twin has no in-edge, so it is a
   feed head. This is unchanged by this fix. The swap only removed the twin's
   back-edges; the intake's `switch_belt[m16]` now feeds its own twin.
+  **Fixed the same day:** the twin was the body's own `Model`, tagged
+  `placed_object` by `BeltBuilder.build()` and by ten builders' inner
+  `_finalize_placeable`. See `flow_node_twins_2026-09-25.md`.
 - **The sort line's topology.** The sorters feed the final climb belt
   (`inclined_belt_8m[m20]`) directly, which skips the collection conveyors
   (m17, m18) and shredder 2. Titan 1 → Titan 2 and Tomra 1 → Tomra 2 run in

@@ -77,9 +77,11 @@ const FIXTURE_IDS : Array = ["lump_platform", "lump_cart_spot", "lump_cart", "co
 
 # H — the plant's own feed heads. The wash lines start at the VSS and the
 # vuilsnippersilo (both filled from outside the macro), line 1 at its opzetband,
-# 3C at its doseersilo. Sort / intake macros are left out on purpose: their
-# BeltBuilder belts are discovered twice (an older, separate defect), so every
-# twin is a head there.
+# 3C at its doseersilo. Sort / intake macros are left out on purpose. Their
+# belts used to be discovered twice, which made every twin a head; that is
+# fixed (test_flow_node_unique). The sort line's heads and edges are asserted
+# by test_sort_line_topology. The intake is still not the plant: its opzetband
+# bypasses shredder 2, which is a head (flow_node_twins_2026-09-25.md §6).
 const HEADS : Dictionary = {
 	"line_1":  ["opzetband_1"],
 	"line_3a": ["vss_silo", "vuilsnippersilo"],
