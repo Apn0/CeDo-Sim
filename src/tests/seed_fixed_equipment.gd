@@ -14,12 +14,14 @@ extends Node3D
 ##
 ##   godot --headless --main-scene res://src/tests/seed_fixed_equipment.tscn
 ##
-## Reuses the operator-verified bf→PC affine + interior rectangles from
-## regression_world_save.gd (single source of truth for "inside the building").
+## Lays the grid out in the building frame the game FITS from the shell
+## (building_frame.gd) and verifies each spot against the shell's measured roof.
+## Until 2026-09-25 it used the typed BF_O/XU/ZU affine through
+## Plant.pc_to_scene, which rotated the frame twice, and it "verified"
+## containment by mapping the same point straight back through the same
+## affine, so no spot could ever fail, wherever it really stood.
 
-const BF_O  := Vector2(573.404, 463.647)
-const BF_XU := Vector2(-0.64279, 0.76604)
-const BF_ZU := Vector2(-0.76604, -0.64279)
+const BFrame := preload("res://src/tests/building_frame.gd")
 const BF_RECTS := [
 	[0.0, 120.0, 0.0, 61.0], [120.0, 150.7, 0.0, 31.5], [120.0, 131.5, 31.5, 61.0],
 	[57.0, 81.0, 61.0, 66.0], [81.0, 131.5, 61.0, 71.5],
@@ -38,11 +40,6 @@ const GROUP_ORDER := ["water", "air", "silo", "control", "utility", "structure",
 const X_START := 10.0
 const X_STEP  := 6.0
 
-func _bf_to_pc(bf: Vector2) -> Vector2:
-	return BF_O + bf.x * BF_XU + bf.y * BF_ZU
-func _pc_to_bf(pc: Vector2) -> Vector2:
-	var d := pc - BF_O
-	return Vector2(d.dot(BF_XU), d.dot(BF_ZU))
 func _bf_inside(bf: Vector2, margin: float) -> bool:
 	for r in BF_RECTS:
 		if bf.x >= r[0] - margin and bf.x <= r[1] + margin \
@@ -75,6 +72,10 @@ func _ready() -> void:
 	if not Plant.has_method("pc_to_scene"):
 		print("FATAL: Plant.pc_to_scene missing"); get_tree().quit(2); return
 	var floor_y : float = Plant.floor_top_y()
+	var fr : Dictionary = await BFrame.wait_fitted(world)
+	if fr.is_empty():
+		print("FATAL: no building frame fitted from the shell"); get_tree().quit(2); return
+	var tris : Dictionary = BFrame.shell_triangles(world)
 	print("floor_top_y = %.2f" % floor_y)
 
 	# Lay out grouped grid, place, verify inside footprint.
@@ -90,9 +91,7 @@ func _ready() -> void:
 				continue
 			var bf := Vector2(X_START + float(col) * X_STEP, z)
 			col += 1
-			var pc := _bf_to_pc(bf)
-			var pos : Vector3 = Plant.pc_to_scene(pc)
-			pos.y = floor_y
+			var pos : Vector3 = BFrame.to_scene(fr, bf, floor_y)
 			var id := String(it.get("id", ""))
 			# Build to confirm the id is real; verify containment; then free.
 			var node = PlaceableCatalog.build_node(id, false)
@@ -100,8 +99,9 @@ func _ready() -> void:
 				bad_ids.append(id); continue
 			placed += 1
 			node.free()
-			var bf_back := _pc_to_bf(Plant.scene_to_pc(pos))
-			var is_in := _bf_inside(bf_back, INSIDE_MARGIN)
+			var bf_back := BFrame.from_scene(fr, pos)
+			# Inside = the bf rectangles AND a measured roof face above the spot.
+			var is_in := _bf_inside(bf_back, INSIDE_MARGIN) and BFrame.under_roof(tris, pos)
 			if is_in:
 				inside += 1
 			else:

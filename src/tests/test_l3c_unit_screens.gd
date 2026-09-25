@@ -98,9 +98,11 @@ const SOURCE_HTML := {
 ## never transcription-checked — the one way a fabricated screen could slip in.
 ## Asserted at run time rather than trusted.
 
-const BF_O  := Vector2(573.404, 463.647)
-const BF_XU := Vector2(-0.64279, 0.76604)
-const BF_ZU := Vector2(-0.76604, -0.64279)
+# Line fixtures are placed in the building frame the game FITS from the shell
+# (building_frame.gd; the typed BF_O/XU/ZU constants mapped through
+# Plant.pc_to_scene rotated the frame a second time and put machines outside
+# the real building, measured 2026-09-25).
+const BFrame := preload("res://src/tests/building_frame.gd")
 
 const TEST_SLOT := "__l3cunit__"
 ## This slot's own files. The operator's world_layout.json is not on the list:
@@ -113,7 +115,10 @@ const TOUCHED := [
 const DUMP_PATH := "user://l3c_unit_screens_report.json"
 
 const MACRO_3C := "line_3c"
-const LINE_3C_START_BF := Vector2(4.0, 62.0)
+# bf(4,62) put line 3C on the hall edge: 9 of its 37 machines outside the
+# shell even in the fitted frame (measured 2026-09-25). bf(4,44) keeps it
+# 37/37 under the roof beside line 3A at bf(4,22), no footprint overlap.
+const LINE_3C_START_BF := Vector2(4.0, 44.0)
 const MACRO_ID := "line_3a"
 const LINE_START_BF := Vector2(4.0, 22.0)
 
@@ -175,8 +180,6 @@ func _note(msg: String) -> void:
 func _section(t: String) -> void:
 	print("\n[%s]" % t)
 
-func _bf_to_pc(bf: Vector2) -> Vector2:
-	return BF_O + bf.x * BF_XU + bf.y * BF_ZU
 
 
 # =============================================================================
@@ -573,10 +576,12 @@ func _place_macro(bm, macro_id: String, start_bf: Vector2) -> void:
 	var lms := get_node_or_null("/root/LineMacroStore")
 	if lms != null:
 		lms._cache[macro_id] = {}
-	var start : Vector3 = Plant.pc_to_scene(_bf_to_pc(start_bf))
-	var fdir : Vector3 = Plant.pc_to_scene(_bf_to_pc(start_bf + Vector2(1.0, 0.0))) - start
-	fdir = fdir.normalized()
-	bm.call("_build_full_line", macro_id, start, atan2(-fdir.x, -fdir.z))
+	var fr : Dictionary = await BFrame.wait_fitted(bm)
+	_ok(not fr.is_empty(), "%s: building frame FITTED from the shell (InteriorLightingManager)" % macro_id)
+	if fr.is_empty():
+		return
+	var start : Vector3 = BFrame.to_scene(fr, start_bf, Plant.floor_top_y())
+	bm.call("_build_full_line", macro_id, start, BFrame.forward_rot_y(fr))
 	for _i in range(10):
 		await get_tree().process_frame
 
