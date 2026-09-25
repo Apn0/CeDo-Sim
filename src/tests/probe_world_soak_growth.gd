@@ -19,10 +19,12 @@ extends Node
 const SCRATCH := "__soak__"
 const WL_SCRATCH := "user://__soak___world.json"
 const BOOT_FRAMES := 120
-# Building-frame → plant-coordinate frame, as test_lump_cart_coverage.gd places its lines.
-const BF_O  := Vector2(573.404, 463.647)
-const BF_XU := Vector2(-0.64279, 0.76604)
-const BF_ZU := Vector2(-0.76604, -0.64279)
+# Building frame (bf), as test_lump_cart_coverage.gd places its lines.
+# Line fixtures are placed in the building frame the game FITS from the shell
+# (building_frame.gd; the typed BF_O/XU/ZU constants mapped through
+# Plant.pc_to_scene rotated the frame a second time and put machines outside
+# the real building, measured 2026-09-25).
+const BFrame := preload("res://src/tests/building_frame.gd")
 var _flag_before : PackedByteArray = PackedByteArray()
 const SAMPLE_FRAMES := 300
 const WATCHDOG_S := 900.0
@@ -190,8 +192,9 @@ func _run() -> void:
 				var start_bf : Vector2 = entry[1]
 				if lms != null:
 					lms._cache[macro_id] = {}
-				var start : Vector3 = Plant.pc_to_scene(BF_O + start_bf.x * BF_XU + start_bf.y * BF_ZU)
-				var ahead : Vector3 = Plant.pc_to_scene(BF_O + (start_bf.x + 1.0) * BF_XU + start_bf.y * BF_ZU)
+				var fr : Dictionary = await BFrame.wait_fitted(bm)
+				var start : Vector3 = BFrame.to_scene(fr, start_bf, Plant.floor_top_y())
+				var ahead : Vector3 = BFrame.to_scene(fr, start_bf + Vector2(1.0, 0.0), Plant.floor_top_y())
 				var fdir : Vector3 = (ahead - start).normalized()
 				bm.call("_build_full_line", macro_id, start, atan2(-fdir.x, -fdir.z))
 				for _i in range(10):

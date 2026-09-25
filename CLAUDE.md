@@ -102,7 +102,7 @@ count.
 
 | failing check | note |
 |---|---|
-| ~~`regression verdict`~~ | ~~door/gate check~~ — cleared 2026-09-13 by emptying `structure_items`. **Superseded 2026-09-25: the one entry is the operator's real 3A/3B gate and he ruled KEEP it** ("the gate through which the feeder can drive outside to the bale lot"). The check now asks whether the gate's carve cut the real shell (`opening_id`), not whether it lies on six typed wall lines: those lines sit in a typed building frame that does not line up with the 3D shell (measured 2026-09-25; the frame itself is still open) |
+| ~~`regression verdict`~~ | ~~door/gate check~~ — cleared 2026-09-13 by emptying `structure_items`. **Superseded 2026-09-25: the one entry is the operator's real 3A/3B gate and he ruled KEEP it** ("the gate through which the feeder can drive outside to the bale lot"). The check now asks whether the gate's carve cut the real shell (`opening_id`), not whether it lies on six typed wall lines: those lines sit in a typed building frame that does not line up with the 3D shell (measured 2026-09-25; the suites moved to the frame fitted from the shell the same day, see the building-frame trap) |
 | ~~`test_nav_connectivity`~~ | ~~9 ok, 1 fail since #216, "requires operator to move crew posts off ISLAND"~~ — **FIXED 2026-09-23 by an operator RULING, not a navmesh change**: nobody has a post at any windzifter, and the permanent feeder is a line-1 role (Merlo + containers). `wind_sifter` left `CrewManager.ZONES["permanent_feeder"]`; on a 3A-only world the two feeders now hold their spawn spot (the suite's own `ADVIS`) instead of a post inside the blower next to the windzifter. `PASS (10 ok)` 3 of 3. `docs/audit/operator_session_2026-09-23.md` task 2 |
 | `test_npc05_realworld` | EXPECTED red — the DRIVE_TO_INDOOR stall, see below. Do not silence it |
 | ~~`test_line3b_flow_conformance`~~ | ~~missing input edge in LineFlow topology~~ — **FIXED 2026-09-13**: added `explicit_from_prev: true` to plasmaq entry in `LINE_3B_SEQ` (gap 15 m > MAX_LINK_DIST 14 m) |
@@ -443,7 +443,7 @@ things this file used to claim were "proven" are among the skips:
 
 | claimed proof | reality |
 |---|---|
-| machines inside the building, TL bars, round-trip | genuinely checked (the fence 0-crossing check died with the fence — deleted per operator order 2026-08-03) |
+| machines inside the building, TL bars, round-trip | TL bars and round-trip genuinely checked (the fence 0-crossing check died with the fence — deleted per operator order 2026-08-03). **"Machines inside" was a false green until 2026-09-25**: it mapped each machine back through the same double-rotated frame that placed it, and printed 39/39 while 8 stood outside the shell. It now uses the frame fitted from the shell and also asks for a measured roof face above every machine (see the building-frame trap below) |
 | **doors on walls** | **SKIPPED** — `no structure_items (doors) in world_layout` (`src/tests/regression_world_save.gd:204`) |
 | **macro-corruption guard** | **SKIPPED** — `no operator macros present` (`regression_world_save.gd:575`) |
 | top-down PNG | emitted to `tools/regression/out/topdown.png`, but the step is **non-gating** (`\|\| true`) |
@@ -933,6 +933,25 @@ the one before that ~6 months stale — treat this one as re-checkable too):
 - **Stale-constant disease.** Geometry/UI built from hand-baked constants instead
   of measured runtime values. The harness once validated a stale constant against
   its own copy. Measure from the mesh, not from a saved number.
+- **A check that maps a result back through the frame that placed it cannot
+  fail — and the world suites' building frame was rotated twice.** Measured
+  2026-09-25: 17 files under `src/tests/` (12 suites, 3 probes, 2 tools) used
+  typed constants (`BF_O/BF_XU/BF_ZU`) mapped through `Plant.pc_to_scene`, which now
+  applies the world yaw a second time. The shell's walls run at 40.00° (mod
+  90); that frame ran at −0.2°, six of its ten outline corners stood
+  3.6–39.8 m from any wall, and line 3A had 8 of 39 machines outside the
+  building, while `regression_world_save` said "39/39 inside" (it mapped each
+  machine back through the same frame). Every suite now uses the frame the
+  game fits from the shell at runtime (`src/tests/building_frame.gd` over
+  `InteriorLightingManager.get_building_frame()`), and refuses to run without
+  one. `regression_world_save` adds two checks that measure the frame instead
+  of trusting it: the outline corners on the shell's walls (worst 0.03 m) and
+  a roof face above every machine (39/39). Mutation-proven: the old frame
+  turns both red (39.75 m, 31/39) while "inside footprint" stays 39/39 green.
+  Line 3C moved to bf(4,44) in three suites, the QA loop's 3C to bf(4,22),
+  and the lump-cart suite's four lines to 3A/3B/3C at bf y 10/31/52 with line
+  1 at bf(175,92), outside: it fits nowhere in this shell.
+  `docs/audit/building_frame_2026-09-25.md`.
 - **GauntletWorld is a visual bench only.** It omits LineFlow/crew/SCADA.
   Trustworthy for "does it spawn/render", never for behaviour.
 - **Two PRs can each be "mergeable ✅" and still produce a file that does not

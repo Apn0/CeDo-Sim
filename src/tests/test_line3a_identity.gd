@@ -42,11 +42,13 @@ const DUMP_PATH := "user://line3a_identity.json"
 
 const MACRO_ID := "line_3a"
 
-# ── Building frame (bf) -> Plant Coordinates affine — same constants
-# regression_world_save.gd / test_tag_snapshot.gd / test_line3c_identity.gd use.
-const BF_O  := Vector2(573.404, 463.647)
-const BF_XU := Vector2(-0.64279, 0.76604)
-const BF_ZU := Vector2(-0.76604, -0.64279)
+# ── Building frame (bf) — the same fitted frame regression_world_save.gd,
+# test_tag_snapshot.gd and test_line3c_identity.gd use.
+# Line fixtures are placed in the building frame the game FITS from the shell
+# (building_frame.gd; the typed BF_O/XU/ZU constants mapped through
+# Plant.pc_to_scene rotated the frame a second time and put machines outside
+# the real building, measured 2026-09-25).
+const BFrame := preload("res://src/tests/building_frame.gd")
 # Anchor matches test_lump_cart_coverage.gd's LINES["line_3a"] so this stays
 # clear of every other test's synthetic line at the same 20-bf-unit spacing.
 const LINE_START_BF := Vector2(4.0, 22.0)
@@ -79,8 +81,6 @@ func _note(msg: String) -> void:
 func _section(t: String) -> void:
 	print("\n[%s]" % t)
 
-func _bf_to_pc(bf: Vector2) -> Vector2:
-	return BF_O + bf.x * BF_XU + bf.y * BF_ZU
 
 
 func _ready() -> void:
@@ -154,11 +154,12 @@ func _build_world(bm, lf) -> void:
 	if lms != null:
 		lms._cache[MACRO_ID] = {}
 
-	var start : Vector3 = Plant.pc_to_scene(_bf_to_pc(LINE_START_BF))
-	var fdir : Vector3 = Plant.pc_to_scene(_bf_to_pc(LINE_START_BF + Vector2(1.0, 0.0))) - start
-	fdir = fdir.normalized()
-	var rot_y : float = atan2(-fdir.x, -fdir.z)
-	bm.call("_build_full_line", MACRO_ID, start, rot_y)
+	var fr : Dictionary = await BFrame.wait_fitted(bm)
+	_ok(not fr.is_empty(), "building frame FITTED from the shell (InteriorLightingManager)")
+	if fr.is_empty():
+		return
+	var start : Vector3 = BFrame.to_scene(fr, LINE_START_BF, Plant.floor_top_y())
+	bm.call("_build_full_line", MACRO_ID, start, BFrame.forward_rot_y(fr))
 	for _i in range(10):
 		await get_tree().process_frame
 	lf.call("rebuild")

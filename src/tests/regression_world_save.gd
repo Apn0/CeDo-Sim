@@ -18,9 +18,13 @@ extends Node3D
 ##   - every id in LINE_3A_SEQ resolves in the catalog (no silent drops);
 ##   - a line built from the macro places the expected machine count;
 ##   - EVERY placed machine lands INSIDE the true building footprint —
-##     tested by converting each machine's scene position back to the
-##     building frame (Plant.scene_to_pc -> bf) and checking the real wall
-##     rectangles, NOT the rotated AABB (which is the trap that hid this);
+##     tested twice: its scene position mapped back into the building frame
+##     the game FITS from the shell (building_frame.gd) against the wall
+##     rectangles, and a measured roof face of the shell straight above it;
+##   - the building frame itself sits on the shell: every outline corner is
+##     within 1 m of a real wall (2026-09-25: the typed frame, mapped through
+##     Plant.pc_to_scene, was rotated twice and 8 of line 3A's 39 machines
+##     stood outside the building while this suite said 39/39 inside);
 ##   - save -> clear -> reload reproduces every machine position to <1 cm
 ##     (round-trip fidelity — the loader is not silently shifting anything).
 ##
@@ -30,18 +34,11 @@ extends Node3D
 ## never written: every world save, the round-trip's own _save_layout included,
 ## goes to a scratch file (src/tests/world_layout_guard.gd).
 
-# ── Building frame (bf) -> Plant Coordinates affine (operator-verified) ────────
-const BF_O  := Vector2(573.404, 463.647)
-const BF_XU := Vector2(-0.64279, 0.76604)
-const BF_ZU := Vector2(-0.76604, -0.64279)
-
-# True outer wall outline in bf (the 10-corner union, NOT an AABB).
-const BF_OUTLINE := [
-	Vector2(0.0, 0.0), Vector2(150.7, 0.0), Vector2(150.7, 31.5),
-	Vector2(131.5, 31.5), Vector2(131.5, 71.5), Vector2(81.0, 71.5),
-	Vector2(81.0, 66.0), Vector2(57.0, 66.0), Vector2(57.0, 61.0),
-	Vector2(0.0, 61.0),
-]
+# Line fixtures are placed in the building frame the game FITS from the shell
+# (building_frame.gd; the typed BF_O/XU/ZU constants mapped through
+# Plant.pc_to_scene rotated the frame a second time and put machines outside
+# the real building, measured 2026-09-25).
+const BFrame := preload("res://src/tests/building_frame.gd")
 # Interior as axis-aligned bf rectangles [xmin, xmax, zmin, zmax] — exact
 # containment test after mapping a machine back into the building frame.
 const BF_RECTS := [
@@ -85,16 +82,12 @@ func _section(t: String) -> void:
 	print("\n[%s]" % t)
 
 
-# ── bf helpers ────────────────────────────────────────────────────────────────
-func _bf_to_pc(bf: Vector2) -> Vector2:
-	return BF_O + bf.x * BF_XU + bf.y * BF_ZU
-
-func _pc_to_bf(pc: Vector2) -> Vector2:
-	var d := pc - BF_O
-	return Vector2(d.dot(BF_XU), d.dot(BF_ZU))
+# ── bf helpers: the shell-fitted frame (building_frame.gd) ──────────────────
+var _fr : Dictionary = {}      # set after boot; {} when the world has no fit
+var _tris : Dictionary = {}    # the shell's wall / roof triangles, scene space
 
 func _scene_to_bf(pos: Vector3) -> Vector2:
-	return _pc_to_bf(Plant.scene_to_pc(pos))
+	return BFrame.from_scene(_fr, pos) if not _fr.is_empty() else Vector2(INF, INF)
 
 func _bf_inside(bf: Vector2, margin: float) -> bool:
 	for r in BF_RECTS:
@@ -151,6 +144,8 @@ func _ready() -> void:
 	# Let _ready cascade + deferred spawns settle.
 	for i in range(80):
 		await get_tree().process_frame
+	_fr = await BFrame.wait_fitted(world)
+	_tris = BFrame.shell_triangles(world)
 
 	_dump["meta"] = {
 		"world_yaw_deg": rad_to_deg(Plant.world_yaw_rad()) if Plant.is_initialized() else null,
@@ -219,6 +214,20 @@ func _test_world_creation(world: Node, wl: Node) -> void:
 		var ab : AABB = shell.mesh.get_aabb()
 		_ok(ab.size.x > 50.0 and ab.size.z > 30.0,
 			"shell footprint non-trivial (aabb %.0f x %.0f)" % [ab.size.x, ab.size.z])
+
+	# The building frame every check below reads: FITTED from the shell at
+	# runtime, then measured against it. Its outline corners must sit on the
+	# shell's real walls — the typed frame this replaced missed six of ten by
+	# 3.6-39.8 m, and nothing here noticed.
+	_ok(not _fr.is_empty(), "building frame FITTED from the shell (InteriorLightingManager; mean roof err %.2f m)"
+		% float(_fr.get("err", NAN)))
+	if not _fr.is_empty():
+		var offs : Array = BFrame.outline_off_wall_m(_fr, _tris, Plant.floor_top_y())
+		var worst := 0.0
+		for d in offs:
+			worst = maxf(worst, float(d))
+		_ok(worst <= 1.0, "the bf outline sits on the shell's walls: all %d corners within 1.0 m (worst %.2f m)"
+			% [offs.size(), worst])
 
 	# Doors: each structure_item must stand in a wall opening that WallOpenings
 	# cut in the REAL shell. BuildMode stamps opening_id on the placed node only
@@ -307,11 +316,11 @@ func _test_save_creation(world: Node) -> void:
 	# (bf +X) axis so it fits. bf(4,22): near the NE gable, mid-depth, with room
 	# for the +X advance and lateral branch lanes.
 	var start_bf := Vector2(4.0, 22.0)
-	var start : Vector3 = Plant.pc_to_scene(_bf_to_pc(start_bf))
-	var fdir : Vector3 = Plant.pc_to_scene(_bf_to_pc(Vector2(5.0, 22.0))) \
-		- Plant.pc_to_scene(_bf_to_pc(Vector2(4.0, 22.0)))
-	fdir = fdir.normalized()
-	var rot_y : float = atan2(-fdir.x, -fdir.z)   # so _build_full_line fwd == +bf X
+	if _fr.is_empty():
+		_ok(false, "line_3a placed in the fitted building frame (no frame: cannot anchor the line)")
+		return
+	var start : Vector3 = BFrame.to_scene(_fr, start_bf, Plant.floor_top_y())
+	var rot_y : float = BFrame.forward_rot_y(_fr)   # so _build_full_line fwd == +bf X
 	bm.call("_build_full_line", "line_3a", start, rot_y)
 	for i in range(10):
 		await get_tree().process_frame
@@ -325,19 +334,26 @@ func _test_save_creation(world: Node) -> void:
 	# (c) inside-building check for every placed machine.
 	var machine_dump : Array = []
 	var inside := 0
+	var roofed := 0
 	for n in placed:
 		var pos : Vector3 = (n as Node3D).global_position
 		var bf := _scene_to_bf(pos)
 		var is_in := _bf_inside(bf, INSIDE_MARGIN)
 		if is_in:
 			inside += 1
+		# MEASURED, frame-free: a roof face of the shell straight above it.
+		var under := BFrame.under_roof(_tris, Vector3(pos.x, Plant.floor_top_y(), pos.z))
+		if under:
+			roofed += 1
 		machine_dump.append({
 			"id": _placed_id(n), "pos": [pos.x, pos.y, pos.z],
 			"rot_y": (n as Node3D).rotation.y, "bf": [bf.x, bf.y],
-			"inside": is_in, "resolved": true})
+			"inside": is_in, "under_roof": under, "resolved": true})
 	_dump["machines"] = machine_dump
 	_ok(inside == placed.size(),
 		"ALL placed machines inside building footprint (%d/%d)" % [inside, placed.size()])
+	_ok(roofed == placed.size() and placed.size() > 0,
+		"ALL placed machines stand under the shell's roof, measured (%d/%d)" % [roofed, placed.size()])
 
 	# (d) round-trip: snapshot -> save -> clear -> reload -> compare.
 	var before : Array = []
@@ -381,9 +397,9 @@ func _test_save_creation(world: Node) -> void:
 func _collect_footprint_and_doors(wl: Node) -> void:
 	# True footprint polygon in scene coords for the top-down render.
 	var poly : Array = []
-	if Plant.is_initialized():
-		for bf in BF_OUTLINE:
-			var s : Vector3 = Plant.pc_to_scene(_bf_to_pc(bf))
+	if Plant.is_initialized() and not _fr.is_empty():
+		for bf in BFrame.OUTLINE:
+			var s : Vector3 = BFrame.to_scene(_fr, bf, Plant.floor_top_y())
 			poly.append([s.x, s.y, s.z])
 	_dump["building_footprint"] = poly
 	# line starts (scene) for context.
@@ -407,9 +423,9 @@ func _test_exterior(world: Node) -> void:
 
 	# True building footprint polygon in scene XZ.
 	var poly := PackedVector2Array()
-	if Plant.is_initialized():
-		for bf in BF_OUTLINE:
-			var s : Vector3 = Plant.pc_to_scene(_bf_to_pc(bf))
+	if Plant.is_initialized() and not _fr.is_empty():
+		for bf in BFrame.OUTLINE:
+			var s : Vector3 = BFrame.to_scene(_fr, bf, Plant.floor_top_y())
 			poly.append(Vector2(s.x, s.z))
 
 	# (FENCE check removed 2026-08-03 — the perimeter fence itself was deleted

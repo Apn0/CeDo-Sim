@@ -18,18 +18,15 @@ const ORBS := [
 	[5, Vector3(-253.09, -3.97, 110.16)],
 	[6, Vector3(-259.44, -4.22, 113.56)],
 ]
-# building-frame affine (same as the regression harness) for inside/outside + wall side
-const BF_O  := Vector2(573.404, 463.647)
-const BF_XU := Vector2(-0.64279, 0.76604)
-const BF_ZU := Vector2(-0.76604, -0.64279)
+# The building frame the game FITS from the shell (building_frame.gd), for the
+# inside/outside + wall-side readout. The typed BF_O/XU/ZU affine this used,
+# mapped through Plant.scene_to_pc, was rotated twice (measured 2026-09-25).
+const BFrame := preload("res://src/tests/building_frame.gd")
 const BF_RECTS := [
 	[0.0, 120.0, 0.0, 61.0], [120.0, 150.7, 0.0, 31.5], [120.0, 131.5, 31.5, 61.0],
 	[57.0, 81.0, 61.0, 66.0], [81.0, 131.5, 61.0, 71.5],
 ]
 
-func _pc_to_bf(pc: Vector2) -> Vector2:
-	var d := pc - BF_O
-	return Vector2(d.dot(BF_XU), d.dot(BF_ZU))
 func _bf_inside(bf: Vector2, m: float) -> bool:
 	for r in BF_RECTS:
 		if bf.x >= r[0]-m and bf.x <= r[1]+m and bf.y >= r[2]-m and bf.y <= r[3]+m:
@@ -52,6 +49,7 @@ func _ready() -> void:
 	var floor_y : float = Plant.floor_top_y() if Plant.is_initialized() else -9.0
 	print("floor_top_y = %.2f   camera = %s" % [floor_y, str(CAM)])
 	var space := get_world_3d().direct_space_state
+	var fr : Dictionary = await BFrame.wait_fitted(world)
 
 	for entry in ORBS:
 		var idx : int = entry[0]
@@ -64,7 +62,7 @@ func _ready() -> void:
 		q.collide_with_bodies = true
 		var hit := space.intersect_ray(q)
 
-		var bf := _pc_to_bf(Plant.scene_to_pc(orb)) if Plant.is_initialized() else Vector2.ZERO
+		var bf := BFrame.from_scene(fr, orb) if not fr.is_empty() else Vector2.ZERO
 		var inside := _bf_inside(bf, 0.6)
 		print("\n[#%d] orb=(%.1f, %.1f, %.1f)  %.1f m above floor  bf=(%.1f, %.1f)  %s" % [
 			idx, orb.x, orb.y, orb.z, orb.y - floor_y, bf.x, bf.y,

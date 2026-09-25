@@ -10,10 +10,12 @@ extends Node3D
 ##                 recursive-discovery fix.
 ## Prints measurements only; the caller compares runs. No assert().
 
-const BF_O  := Vector2(573.404, 463.647)
-const BF_XU := Vector2(-0.64279, 0.76604)
-const BF_ZU := Vector2(-0.76604, -0.64279)
-const LINE_3C_START_BF := Vector2(4.0, 62.0)
+# Line fixtures are placed in the building frame the game FITS from the shell
+# (building_frame.gd; the typed BF_O/XU/ZU constants mapped through
+# Plant.pc_to_scene rotated the frame a second time and put machines outside
+# the real building, measured 2026-09-25).
+const BFrame := preload("res://src/tests/building_frame.gd")
+const LINE_3C_START_BF := Vector2(4.0, 44.0)   # as test_tag_snapshot
 const TICK_DT := 0.1
 const TICK_COUNT := 400
 const FEED_RATE := 8.0
@@ -27,8 +29,6 @@ const TOUCHED := [
 var _backups : Dictionary = {}
 var _mode := "A"
 
-func _bf_to_pc(bf: Vector2) -> Vector2:
-	return BF_O + bf.x * BF_XU + bf.y * BF_ZU
 
 func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
@@ -63,8 +63,9 @@ func _ready() -> void:
 	var lms := get_node_or_null("/root/LineMacroStore")
 	if lms != null:
 		lms._cache["line_3c"] = {}
-	var start : Vector3 = Plant.pc_to_scene(_bf_to_pc(LINE_3C_START_BF))
-	var fdir : Vector3 = Plant.pc_to_scene(_bf_to_pc(LINE_3C_START_BF + Vector2(1.0, 0.0))) - start
+	var fr : Dictionary = await BFrame.wait_fitted(bm)
+	var start : Vector3 = BFrame.to_scene(fr, LINE_3C_START_BF, Plant.floor_top_y())
+	var fdir : Vector3 = BFrame.to_scene(fr, LINE_3C_START_BF + Vector2(1.0, 0.0), Plant.floor_top_y()) - start
 	fdir = fdir.normalized()
 	bm.call("_build_full_line", "line_3c", start, atan2(-fdir.x, -fdir.z))
 	for _i in range(10):

@@ -64,11 +64,13 @@ const PROTECT : Array[String] = [
 	"user://__spawnclear___factory.json",
 ]
 
-# ── Building-frame affine, only used to ANCHOR the test line (never to judge a
-# result). Same operator-verified constants regression_world_save.gd:31-34 uses.
-const BF_O  := Vector2(573.404, 463.647)
-const BF_XU := Vector2(-0.64279, 0.76604)
-const BF_ZU := Vector2(-0.76604, -0.64279)
+# ── Building frame (bf), only used to ANCHOR the test line (never to judge a
+# result). The same fitted frame regression_world_save.gd uses.
+# Line fixtures are placed in the building frame the game FITS from the shell
+# (building_frame.gd; the typed BF_O/XU/ZU constants mapped through
+# Plant.pc_to_scene rotated the frame a second time and put machines outside
+# the real building, measured 2026-09-25).
+const BFrame := preload("res://src/tests/building_frame.gd")
 const LINE_START_BF := Vector2(4.0, 22.0)
 
 # Frames to let MainWorld's _ready cascade + deferred spawns finish.
@@ -241,8 +243,6 @@ func _ready() -> void:
 # POPULATION — build the real machine line, so the overlap test has something
 # to be wrong about. An empty shell would make every green below meaningless.
 # =============================================================================
-func _bf_to_pc(bf: Vector2) -> Vector2:
-	return BF_O + bf.x * BF_XU + bf.y * BF_ZU
 
 
 func _populate_line_3a() -> Array:
@@ -266,9 +266,12 @@ func _populate_line_3a() -> Array:
 	var lms := get_node_or_null("/root/LineMacroStore")
 	if lms != null:
 		lms._cache["line_3a"] = {}
-	var start : Vector3 = Plant.pc_to_scene(_bf_to_pc(LINE_START_BF))
-	var fdir : Vector3 = (Plant.pc_to_scene(_bf_to_pc(LINE_START_BF + Vector2(1.0, 0.0))) - start).normalized()
-	bm.call("_build_full_line", "line_3a", start, atan2(-fdir.x, -fdir.z))
+	var fr : Dictionary = await BFrame.wait_fitted(_world)
+	_check(not fr.is_empty(), "building frame FITTED from the shell (InteriorLightingManager)")
+	if fr.is_empty():
+		return []
+	var start : Vector3 = BFrame.to_scene(fr, LINE_START_BF, Plant.floor_top_y())
+	bm.call("_build_full_line", "line_3a", start, BFrame.forward_rot_y(fr))
 	for _i in range(20):
 		await get_tree().process_frame
 
