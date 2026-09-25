@@ -547,6 +547,7 @@ the one before that ~6 months stale — treat this one as re-checkable too):
 | `docs/audit/hmi_fault_rearm_2026-09-24.md` | **HMI alarms: KWITTEREN acknowledges one occurrence of an alarm (#279), and the same EREMA code on two lines is two alarms (#282).** Probes, the guard suites `test_hmi_fault_rearm` and `test_hmi_fault_per_line` with their mutation matrices, and the full harness on `04eaa77`. **Open:** every panel lists every line's EREMA alarms (found by reading the code, not measured); Afschermen does not exist (the Onderdrukt tab reads a table nothing writes); RESETTEN clearing every acknowledgement has not been ruled on |
 | `docs/audit/operator_session_2026-09-23.md` | **The interactive 2026-09-23 session: tasks ranked by operator effort against sim impact, each answered by AskUserQuestion then built and measured.** Task 1: film beds on every belt (P1), the inclined belt's deck running the wrong diagonal, the cost probe, the renders; per-task evidence and the open questions each one left |
 | `docs/DESIGN_vacuum_pot_minigame_2026-09-23.md` | **P3 stage B as the operator described it: not a hold-E but a mini-game** — lid pull that stiffens with time, plamuurmes planes at 90 %, the block by hand, re-lid, the two-minute race. Systems, parameters (his vs placeholder), test strategy. **Built 2026-09-24** (`test_vacuum_pot_minigame`, 33 ok); the feel is his to play |
+| `docs/AUDIO_machine_sounds_2026-09-25.md` | **The operator's 11 plant-floor recordings, on their machines, driven by the sim.** File-name cutting grammar (`5s+_`, `25s-35s_`, `loop_3x_`, `_in_operation`, `_loop_4x`) and the rulings behind each bake; `MachineSoundSpec` `.tres` per placeable with the `gain_db` slider (every level a PLACEHOLDER until play-tested); loop seams measured against each loop's own fluctuation; ramps generated from the run loop; the 60 line-macro machines still without a recording. `test_machine_sounds` 80 ok |
 | `docs/audit/extruder_screw_die_plate_2026-09-24.md` | **LineFlow's OWN screw model (not ExtruderModel) read 0.11 "bar" at the die, at 200 rpm and a 195 °C melt.** The MFI estimate was 1491 g/10min, so every QA sample graded REJECT, and on lines 1/3A/3B the terminal and SCADA read the `extruder_silo`. Now: die plate after the kopfilter (operator ruling), per-line rpm, melt and output from the WinCC trends, MFI anchor re-solved. Open: the plant's kopdruk is flat with output (R² ≤ 0.04), and the model's is proportional |
 | `docs/plant/operator_rulings_2026-09-24.md` | **Extruder melt pressures, 2026-09-24**: the "280 psi" die pressure was 280 BAR, a safe maximum before the laserfilter under the 318-bar shutdown (he runs ~220). Two pressures: before the laserfilter = melt-set after + dMP; MP<PEL (160 bar) = dP across the kopfilter; per-line FORM-008 kopdruk. Recollections; what was measured before/after, and what is still open (3B above its one-session trend). §6: merged with #275, which fixed the same finding in parallel. The melt-set pressures follow MELT temperature (3A fit 6.83 bar/°C, weak). §7: the screen's dMP follows it too (operator 2026-09-25), measured before/after |
 | `docs/plant/operator_rulings_2026-09-23.md` | **Operator answers from memory, 2026-09-23** — film look, colour order, bed depth per belt, where wet flake is visible, screws "differ". Recollections, not documents: cite them as such |
@@ -1008,6 +1009,27 @@ places an orb, G snaps to grid/edge, H clears, RMB/F10 exits and writes
 `user://feedback/<stamp>/markers.json` + `context.json` + a screenshot. When the
 operator says "check feedback", read the newest directory under
 `%APPDATA%/Godot/app_userdata/CeDo Simulator/feedback/`.
+
+## Placed machines get their sound the same way (2026-09-25)
+
+A placeable has a sound iff `src/audio/machine_sounds/<placeable_id>.tres`
+exists (a `MachineSoundSpec`). `MachineSoundBank.attach(body, id)` runs at the
+tail of `build_node` beside `MachineBrains.attach`, and `LineFlow` drives the
+resulting `MachineSound` every tick with `spin × rotor fraction` — so a machine
+that is not powered is *stopped*, not quiet, and a machine that leaves the flow
+graph winds down on the component's own 1 s watchdog. Ramp-up and ramp-down
+are generated from the run loop (pitch + level, over the spec's ramp times or
+the sim's `SPIN_UP_S`); a real start/stop recording goes in `start_clip` /
+`stop_clip`. The WAVs live in `assets/audio/machines/` (gitignored, plus the
+`.gdignore`d `_source/` recordings) and are rebuilt from the committed recipe
+`tools/audio/machine_sounds.json` by `tools/audio/machine_clips.py`; every
+loop is RMS-normalised to −20 dBFS so the `.tres` `gain_db` slider is the only
+place relative loudness lives. **Every level in those `.tres` is a placeholder
+until the operator has played** — the notes say so. Guard:
+`test_machine_sounds` (80 checks, in `run.sh`). Three rulings this hangs on:
+the compactor's 1:11–1:14 ×3 sequence is a LOOP (not an event), the two dryer
+windows await an L/R assignment, and which valve the crank was recorded on is
+an assumption (hose-reel base valve + IBC drain). `docs/AUDIO_machine_sounds_2026-09-25.md`.
 
 ## Placed machines must be given a sim brain
 
