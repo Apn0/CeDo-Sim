@@ -322,6 +322,38 @@ On the merged tree, after an `--import` for `main`'s three new `class_name`s:
 - `test_extruder_silo_chain`: `PASS (41 ok)`;
 - both suites with 0 `^SCRIPT ERROR` lines.
 
+### And again, on top of #293/#294 (the cycle-guard fix)
+
+#294 landed on `main` while this was being pushed. It swaps LineFlow's
+fallback cycle guard, pins 3A's infeed blower 2 to the big top cyclone, and
+makes the lump furniture and the visible compressors role `none`. Its merge
+into `main` had also dropped `test_machine_sounds` and `test_hmi_fault_rearm`
+from the scene loop, the same loop-line drop as above. The loop was resolved
+as the union again:
+
+- nothing from `main`'s list is missing;
+- `test_machine_sounds` and `test_hmi_fault_rearm` are restored;
+- `test_macro_edges_reload` is added.
+
+`test_hmi_fault_per_line` is not added: that re-wiring is another session's
+held commit. CLAUDE.md's reload paragraph replaces the old "no pin survives a
+reload" one, and #294's cycle-guard entry keeps its reload measurement, now
+dated as before this fix.
+
+Measured on that merged tree:
+
+- The build path is still unchanged. `probe_macro_edges_dump` on `main`'s
+  `BuildMode.gd` (which has #294's pins and the old in-loop bookkeeping) and
+  on the merged one gives 243 rows each (52 explicit sources, 191 LineFlow
+  edges, 188 nodes), and `diff` finds them **identical**.
+- parse sweep: `Result: 467 ok, 0 fail`.
+- `test_macro_edges_reload`: `PASS (60 ok)`. The round trip now carries 69
+  explicit edges from 61 sources and 223 LineFlow edges, identical before and
+  after the reload (#294's cyclone pin included).
+- `test_extruder_silo_chain`: `PASS (41 ok)`.
+- `test_fallback_chains`: `PASS (83 ok)`.
+- All three suites: 0 `^SCRIPT ERROR` lines.
+
 The full harness was NOT re-run on the merged tree; the operator runs it.
 
 ## 8. Not changed here
@@ -330,10 +362,9 @@ The full harness was NOT re-run on the merged tree; the operator runs it.
   dead end described in §2. The reload now reproduces that state; neither
   path rewires anything.
 - **LineFlow's swapped cycle guard, and role-none furniture** (§5 of the
-  silo-tail doc). A parallel session (`claude/cool-wing-61fec6`) is changing
-  both. `macro_flow_edges` reads `_is_flow_relevant` at run time, so a
-  role-none `lump_cart` drops out of the build and the reload alike, with no
-  change here.
+  silo-tail doc). Fixed in parallel by #294 and merged under this change (§7).
+  `macro_flow_edges` reads `_is_flow_relevant` at run time, so a role-none
+  `lump_cart` drops out of the build and the reload alike.
 - **`save_macro_overrides`** still gathers siblings by `macro_id` alone. With
   two builds of one line in a world, it mixes them. That was true before this
   change and is not touched by it.
