@@ -5,7 +5,7 @@ Branch `claude/brave-turing-7b2143`. It started on `be319d6` (#290) and merged
 `C:/Users/arnod/AppData/Local/Godot/Godot_v4.6.3-stable_win64_console.exe`.
 Every number below was produced with `src/tests/probe_warm_restart_pressure.tscn`
 or the suites named. The operator's answers are in
-`docs/plant/operator_rulings_2026-09-25.md`.
+`docs/plant/operator_rulings_2026-09-25.md`, third session (§E1-§E7).
 
 ## 1. The finding, reproduced
 
@@ -58,7 +58,7 @@ The cake is not the cause: wiping it (C) changes nothing.
 | 196.5 °C | 95.3 % | 1.5 g/s | 289 bar | over 280, no trip |
 | 196.25 °C (old green) | 95.7 % | 3.4 g/s | 350 | **trip 3.3 s** |
 
-## 3. What was built (operator rulings, rulings file §1-§5)
+## 3. What was built (operator rulings, rulings file §E1-§E5)
 
 - **A start ramps to the operator's setpoint, and a stop does not change it.**
   `_tick_starting` moves the screw toward `_setpoint_rpm()` at
@@ -74,8 +74,12 @@ The cake is not the cause: wiping it (C) changes nothing.
   against its own comment ("unchanged during alarm"). A line at 80 rpm jumped to
   110 when a pot lid popped.
 - **`ExtruderConfig.screw_rpm_min` = 60**, the floor. `set_screw_rpm_setpoint`
-  clamps to 60..`screw_rpm_max`; it was 0..250. The web shell's `extr_rpm`
-  range is now 60..145.
+  clamps to 60..250; it was 0..250. Only the floor was ruled. A first version
+  also capped the top at `screw_rpm_max` (145), and #304's
+  `test_screw_die_plate_bar` E1, which drives 3B to ~174 rpm across its output
+  band, went red on the merge, so the top stays 250. The web shell's `extr_rpm`
+  range is now 60..200 (was 0..200). The touchscreen slider runs to the line's
+  `screw_rpm_max`.
 - **A new extruder's setpoint is 60** (it was nominal).
 - **Green = 201.875 °C** on 3A/3B: the warmer of the torque-trip and
   lump-point derivations, each with the 25 % margin.
@@ -103,7 +107,7 @@ From `test_extruder_start_rpm` (27 ok) and the probe:
 | warm restart at green, setpoint left at 60 / 70 / 80 / 90 / 100 | 165 / 192 / 220 / 252 / 285 bar, no trip |
 | warm restart at green, setpoint left at 110 (not gated) | peak 317.2 bar, **trips at 18.1 s** |
 
-The caked-screen rows are the operator's own account (rulings file §1). The last
+The caked-screen rows are the operator's own account (rulings file §E1). The last
 row is the consequence he accepted with the "new extruder starts at 60" ruling:
 a player who leaves a line at 110 and restarts it on a just-warm barrel trips
 it, and 60 gets it going. It is an `info` line, not a check. The margin is 0.8
@@ -125,7 +129,7 @@ the source, run, and restored; md5 was identical after each.
 | M3 every start resets the setpoint to 60 (this branch's first, wrong reading) | 4 | 0 |
 | M4 green from the torque trip only | 6 | 2 |
 | M5 VACUUM_ALARM forces nominal | 1 | — |
-| M6 the 0..250 setpoint clamp | 2 | — |
+| M6 the 0..250 setpoint clamp (no floor) | 2 | — |
 | M7 the web HMI back on the first extruder | 3 | — |
 | M8 the touchscreen slider does not follow the model | 1 | — |
 | M9 a new extruder seeded at nominal | 4 | 1 |
@@ -166,10 +170,10 @@ and never imported them ("not an AudioStreamWAV"). The branch touches no audio.
 ## 7. Open
 
 - Start interlocks (heetafslag water, centrifuge, trilzeef running), rulings
-  file §6. Not built.
+  file §E6. Not built.
 - The raw archive points at a ~5 s ramp to 60 rpm; the model keeps his 3 s
-  (rulings file §4). The rate above 60 is a modelling choice.
-- OFF cools the melt 0.5 °C/s with no source (rulings file §7). It sends every
+  (rulings file §E4). The rate above 60 is a modelling choice.
+- OFF cools the melt 0.5 °C/s with no source (rulings file §E7). It sends every
   restart more than ~35 s after a stop through PREHEAT, where the plant restarts
   short stops hot.
 - The lump law and the cake's 2500 psi/g have no source, and they make the

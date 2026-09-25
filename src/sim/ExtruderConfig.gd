@@ -35,7 +35,7 @@ class_name ExtruderConfig
 ## 3A/3B speed_extruder has no reading between 0 and 60 rpm (6-min medians,
 ## 2023-06-19..28, and the raw ~5 s export), and the raw starts land on 60
 ## after long stops, back on the old rpm after short ones
-## (docs/plant/operator_rulings_2026-09-25.md). Applies to every extruder.
+## (docs/plant/operator_rulings_2026-09-25.md §E1). Applies to every extruder.
 @export var screw_rpm_min       : float = 60.0
 
 @export_group("Thermals")

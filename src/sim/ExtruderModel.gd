@@ -139,7 +139,7 @@ const DIE_FACE_HOT_OFFSET_C  := 20.0
 ## will not be 80 instantly. Because there is the ramp up curve", and "it will
 ## ramp up in about ... three seconds to that 60 rpm". The RATE is derived from
 ## the 3 s to 60 (his number, kept against the raw archive's ~5 s, rulings file
-## §4); that the same rate carries on above 60 is a modelling choice. (Was 4 s
+## §E4); that the same rate carries on above 60 is a modelling choice. (Was 4 s
 ## from idle to NOMINAL, whatever the setpoint.)
 const START_RAMP_S        : float = 3.0
 ## STOPPING → OFF decay. Time-constant; `rpm *= exp(-delta / STOP_DECAY_S)`
@@ -298,6 +298,12 @@ const DIE_PRESSURE_BAR_PER_C : float = 6.83
 ## maximum; 3A trend p50 271 / p95 280). The melt-set pressures scale by the
 ## same FRACTION per °C, 6.83 / 280 = 2.44 %/°C, as #275 did.
 const MELT_FIT_LEVEL_BAR : float = 280.0
+## The die plate's flow index: die_plate_bar ∝ throughput^n, a power-law melt
+## through a fixed die. It IS LineFlow's screw's own LDPE n (a heuristic 0.35,
+## no plant source), so the BluPort and the Quality terminal carry one die law
+## (operator ruling 2026-09-25, docs/plant/operator_rulings_2026-09-25.md).
+const _ScrewLaw := preload("res://src/sim/ExtruderScrew.gd")
+const DIE_FLOW_INDEX : float = _ScrewLaw.POWER_LAW_N
 ## Melt viscosity relative to a melt at setpoint, from the fit above: 1.0 at
 ## setpoint, +2.44 % per °C colder. It scales the melt-set pressures here, and
 ## ExtruderMachine forwards it to the LaserFilter, where it scales the screen's
@@ -318,7 +324,8 @@ var melt_viscosity_factor : float:
 #     318-bar emergency shutdown (LaserFilter, the trip authority).
 #   * MP<PEL, the 160-bar pelletiser interlock, reads the dP ACROSS the kopfilter.
 # The melt-set parts follow the rheology proxy — pressure ∝ throughput ×
-# viscosity — with viscosity read off the MELT temperature (DIE_PRESSURE_BAR_PER_C,
+# viscosity, the die plate ∝ throughput^DIE_FLOW_INDEX × viscosity (2026-09-25)
+# — with viscosity read off the MELT temperature (DIE_PRESSURE_BAR_PER_C,
 # #275's operator ruling), not motor torque: a zone drop raises torque, and
 # pressure only once the melt really cools.
 var mp_after_laserfilter_bar  : float = 0.0   # MP>MF: melt-set, after the screen
@@ -451,7 +458,7 @@ func _tick_off(delta: float) -> void:
 	melt_temp = move_toward(melt_temp, AMBIENT_C, 0.5 * delta)
 	screw_rpm = 0.0
 	throughput_kg_h = 0.0
-	_set_melt_pressures(0.0)
+	_set_melt_pressures(0.0, 1.0)
 	motor_torque_pct = 0.0
 	lump_passthrough_rate_g_s = 0.0
 	die_face_state = DieFaceState.OFF
@@ -531,7 +538,7 @@ func _tick_preheat(delta: float, events: Array[String]) -> void:
 	melt_temp = move_toward(melt_temp, config.melt_temp_setpoint, rate * delta)
 	screw_rpm = 0.0
 	throughput_kg_h = 0.0
-	_set_melt_pressures(0.0)
+	_set_melt_pressures(0.0, 1.0)
 	motor_torque_pct = 0.0
 	lump_passthrough_rate_g_s = 0.0
 	die_face_state = DieFaceState.OFF
@@ -546,7 +553,7 @@ func _tick_idle(delta: float) -> void:
 	# carry stale post-RUN values from before the operator paused production.
 	screw_rpm = config.screw_rpm_idle
 	throughput_kg_h = config.idle_kg_per_h
-	_set_melt_pressures(0.0)
+	_set_melt_pressures(0.0, 1.0)
 	motor_torque_pct = 0.0
 	lump_passthrough_rate_g_s = 0.0
 	_drift_melt_temp_toward(config.melt_temp_setpoint, delta)
@@ -738,7 +745,7 @@ func _tick_fault(delta: float, inputs: Dictionary, events: Array[String]) -> voi
 	throughput_kg_h = 0.0
 	motor_torque_pct = 0.0
 	lump_passthrough_rate_g_s = 0.0
-	_set_melt_pressures(0.0)   # screw stopped → no flow → no head pressure
+	_set_melt_pressures(0.0, 1.0)   # screw stopped → no flow → no head pressure
 	# Melt temp slowly drifts toward setpoint while halted (heaters stay on
 	# but nothing is being pushed through). No more runaway integration.
 	_drift_melt_temp_toward(config.melt_temp_setpoint, delta)
@@ -756,7 +763,7 @@ func _tick_fault(delta: float, inputs: Dictionary, events: Array[String]) -> voi
 func _tick_e_stop(delta: float) -> void:
 	screw_rpm = 0.0
 	throughput_kg_h = 0.0
-	_set_melt_pressures(0.0)
+	_set_melt_pressures(0.0, 1.0)
 	motor_torque_pct = 0.0
 	lump_passthrough_rate_g_s = 0.0
 	melt_temp = move_toward(melt_temp, AMBIENT_C, 0.5 * delta)
@@ -851,12 +858,20 @@ func _pots_at_capacity() -> String:
 # =============================================================================
 # MELT PRESSURES (bar) — see the field block near the top
 # =============================================================================
-## `factor` = throughput_norm × melt_viscosity_factor: 1.0 at nominal throughput and
-## melt, 0.0 with the screw stopped.
-func _set_melt_pressures(factor: float) -> void:
-	var f : float = maxf(0.0, factor)
-	mp_after_laserfilter_bar = config.mp_after_laserfilter_nominal_bar * f
-	die_plate_bar = config.die_plate_nominal_bar * f
+## `throughput_norm` = throughput / nominal and `melt_factor` = the melt
+## temperature term (`melt_viscosity_factor`): both 1.0 at nominal,
+## throughput 0.0 with the screw stopped.
+## MP>MF stays proportional to the flow. The die plate is a power-law die,
+## ∝ throughput^n with LineFlow's screw's own n (DIE_FLOW_INDEX): one die law
+## in both models (operator ruling 2026-09-25,
+## docs/plant/operator_rulings_2026-09-25.md). Both arguments are required on
+## purpose: a one-argument `_set_melt_pressures(q * m)` from before 2026-09-25
+## would compute pow(q·m, n), quietly wrong, so it must fail to compile.
+func _set_melt_pressures(throughput_norm: float, melt_factor: float) -> void:
+	var q : float = maxf(0.0, throughput_norm)
+	var m : float = maxf(0.0, melt_factor)
+	mp_after_laserfilter_bar = config.mp_after_laserfilter_nominal_bar * q * m
+	die_plate_bar = config.die_plate_nominal_bar * pow(q, DIE_FLOW_INDEX) * m
 	_refresh_line_pressures()
 
 ## The melt-set pressures for the CURRENT flow and melt: throughput / nominal
@@ -877,7 +892,7 @@ func _set_melt_pressures_from_flow() -> void:
 	var throughput_norm : float = 0.0
 	if config.nominal_kg_per_h > 0.001:
 		throughput_norm = throughput_kg_h / config.nominal_kg_per_h
-	_set_melt_pressures(throughput_norm * melt_viscosity_factor)
+	_set_melt_pressures(throughput_norm, melt_viscosity_factor)
 
 ## ExtruderMachine mirrors the live filter dPs in every tick (bar). The laser
 ## filter stays the authority for its own 318-bar trip — it sums the same two
@@ -926,8 +941,9 @@ func _step_degassing(delta: float) -> void:
 	# residence per unit length). Reference is the nominal-RPM transit time.
 	var rpm_frac : float = max(0.001, screw_rpm / max(config.screw_rpm_nominal, 1.0))
 	residence_time_s = BARREL_TRANSIT_S_AT_NOMINAL / rpm_frac
-	# Melt-set pressures (bar). Standard non-Newtonian extruder rheology says
-	# pressure ∝ viscosity × throughput. throughput_norm = throughput / nominal.
+	# Melt-set pressures (bar). MP>MF ∝ viscosity × throughput; the die plate is
+	# a power-law die, ∝ viscosity × throughput^DIE_FLOW_INDEX (operator ruling
+	# 2026-09-25). throughput_norm = throughput / nominal.
 	# Viscosity follows the MELT temperature at the slope the plant's own data
 	# shows (DIE_PRESSURE_BAR_PER_C, as a fraction of MELT_FIT_LEVEL_BAR). A
 	# starved screw (throughput → 0) drops both toward zero. The filter dPs add
@@ -1029,12 +1045,13 @@ func get_actual_zone_temp(zone_index: int) -> float:
 		return actual_zone_temps[zone_index]
 	return melt_temp
 
-## The operator's rpm setpoint, clamped to what the drive accepts: no lower
-## than screw_rpm_min (operator 2026-09-25: "the minimum value possible to set
-## 60 rpm"), no higher than the line's screw_rpm_max. (Was 0..250, where 0
-## meant "run at nominal".)
+## The operator's rpm setpoint: no lower than screw_rpm_min (operator
+## 2026-09-25: "the minimum value possible to set 60 rpm"; was 0, which meant
+## "run at nominal"). The 250 top is unchanged and was not ruled on:
+## test_screw_die_plate_bar drives 3B to ~174 rpm across its output band, above
+## the config's screw_rpm_max 145 (source unknown).
 func set_screw_rpm_setpoint(rpm: float) -> void:
-	screw_rpm_setpoint = clampf(rpm, config.screw_rpm_min, maxf(config.screw_rpm_min, config.screw_rpm_max))
+	screw_rpm_setpoint = clampf(rpm, config.screw_rpm_min, maxf(config.screw_rpm_min, 250.0))
 
 func set_primary_suction(pct: float) -> void:
 	primary_suction_pct = clampf(pct, 0.0, 1.0)

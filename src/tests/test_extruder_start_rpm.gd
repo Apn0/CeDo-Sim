@@ -17,7 +17,7 @@ extends Node
 # which only starts fresh models, never saw it, and nothing the operator set
 # could change either.
 #
-# Operator rulings 2026-09-25 (docs/plant/operator_rulings_2026-09-25.md):
+# Operator rulings 2026-09-25 (docs/plant/operator_rulings_2026-09-25.md §E1-§E5):
 #   * 60 rpm is "the minimum value possible to set"; a start "will ramp up to
 #     that 80 [the setpoint]. It will not be 80 instantly"; ~3 s to 60, so the
 #     ramp runs at 20 rpm/s. After a 318 trip, restarting at 100 rpm trips again
@@ -194,11 +194,13 @@ func _part_a_model(cfg: ExtruderConfig) -> void:
 
 	m.set_screw_rpm_setpoint(40.0)
 	var lo := m.screw_rpm_setpoint
-	m.set_screw_rpm_setpoint(400.0)
+	m.set_screw_rpm_setpoint(0.0)
+	var zero := m.screw_rpm_setpoint
+	m.set_screw_rpm_setpoint(174.0)
 	var hi := m.screw_rpm_setpoint
-	_check(absf(lo - MIN_RPM_DOC) < 1e-6 and absf(hi - m.config.screw_rpm_max) < 1e-6,
-		"A6 the setpoint cannot go under %.0f rpm (40 reads %.0f) nor past the line's max (400 reads %.0f)"
-		% [MIN_RPM_DOC, lo, hi])
+	_check(absf(lo - MIN_RPM_DOC) < 1e-6 and absf(zero - MIN_RPM_DOC) < 1e-6 and absf(hi - 174.0) < 1e-6,
+		"A6 the setpoint cannot go under %.0f rpm (40 reads %.0f, 0 reads %.0f); the top is not ruled and stays open (174 reads %.0f)"
+		% [MIN_RPM_DOC, lo, zero, hi])
 
 	# A stop leaves the setpoint where the operator had it, and the restart ramps
 	# back up to it (operator: "it will ramp up to that 80").

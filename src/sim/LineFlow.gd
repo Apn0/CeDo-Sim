@@ -602,6 +602,13 @@ func _process_discovered_node(node3d: Node3D, id_ordinal: Dictionary, code_owner
 	# build path tagged them placed_object.
 	if node3d.is_in_group("waste_container") or node3d.is_in_group("floor_pile"):
 		return
+	# A macro entry marked {"flow": false} (BuildMode._macro_entry_in_flow) is
+	# placed but carries nothing, although its id is a flow machine elsewhere:
+	# the sort line's two reject belts. A sorter's reject leaves as a counted
+	# loss (poly_rejected), so as nodes they were feed heads the fallback wired
+	# into the line. Without this they come back on every rebuild.
+	if bool(node3d.get_meta("lf_placement_only", false)):
+		return
 	var id := String(node3d.get_meta("placeable_id"))
 	var prof := MachineFlow.profile(id)
 	if String(prof["role"]) == "none":
