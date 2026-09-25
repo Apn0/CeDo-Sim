@@ -60,9 +60,10 @@ extends Node
 ## Production path: PlaceableCatalog.build_node, BuildMode._build_full_line,
 ## LineFlow.rebuild / start_line / tick(0.1). The BuildMode writes only its own
 ## slot file (SLOT), never world_layout.json: load_shared_structure is false,
-## so _save_layout never calls WorldLayout.save(). Ghost builds are not
-## checked here: ShredderMachine._ready adds even a ghost to placed_object
-## (found 2026-09-25, not fixed — see docs/audit/flow_node_twins_2026-09-25.md).
+## so _save_layout never calls WorldLayout.save(). Ghost builds are checked by
+## the sibling suite test_ghost_census: ShredderMachine._ready added even a
+## ghost to placed_object (found 2026-09-25, fixed the same day —
+## docs/audit/shredder_ghost_placed_object_2026-09-25.md).
 
 const WATCHDOG_MS : int = 420000
 const SLOT : String = "user://__flowunique_factory.json"
