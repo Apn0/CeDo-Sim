@@ -251,6 +251,28 @@ count.
 > stays empty. Measured: `PASS (16 ok, 0 fail, 0 skipped)`, jam 1 arrived
 > after 158.6 s, jam 3 after 94.1 s. `regression verdict` and B1b are
 > untouched. `docs/audit/operator_session_2026-09-23.md` task 5.
+>
+> **2026-09-24 — that door LEAKED into the operator's real world_layout.json.**
+> The suite's comment said the autosave was redirected by
+> `layout_path_override`, but the suite never set it. Every 60 s autosave
+> runs `BuildMode._save_layout`, which moves every door/gate under
+> `_placed_root` into `WorldLayout.structure_items` and writes the real
+> file. The fixture gate went with them. `_finish` put the bytes back, so
+> the gate only stayed when a run died before `_finish`. One did: a harness
+> stopped at 17:15, with its log ending mid-jam1. His file now holds
+> `"3A/3B gate (jam-baseline fixture)"` (md5 `e046af7d…`). That turns
+> `regression verdict` and this suite's "structure_items untouched" check
+> red **on his machine only**. Even green runs left the gate in
+> `world_layout.json.bak`. Reproduced byte for byte in an isolated APPDATA.
+> Fixed with three changes:
+> - the override is set before boot;
+> - three LEAK GUARD checks on the real file's md5, mutation-proven (3 red);
+> - the restore runs before teardown.
+>
+> Measured after: `PASS (19 ok, 0 fail, 0 skipped)`. **He chose to KEEP the
+> leaked entry (asked 2026-09-24), so those two reds are environmental. Do
+> not edit his world_layout.json without asking him.**
+> `docs/audit/jam_baseline_layout_leak_2026-09-24.md`.
 
 **`test_jam_baseline` was `14 ok, 0 fail, 0 skipped` (2026-09-03) — the first time this suite
 had ever evaluated all fourteen of its checks.** It was 11 ok + 3 silently
@@ -522,6 +544,7 @@ the one before that ~6 months stale — treat this one as re-checkable too):
 | `docs/audit/material_trace_2026-08-18.md` | Follow one bale end-to-end: the symbol-flow + material-census tools, mass-minting proven structurally closed, and the spawn-clearance check that was unsatisfiable for 4 weeks |
 | `docs/audit/robustness_and_coverage_2026-09-21.md` | **Crash-safe persistence (`AtomicFile`) and 26 formerly-unrun suites now gated.** Why a save killed mid-write used to load back as an empty factory and get autosaved over; the delete-resurrection bug caught in the first draft; 5 mutation proofs. Plus the bisect that pins the `test_gate_carve` red on two rotation-sign flips in the uncommitted `WallOpenings.gd`, which reds are identical at clean HEAD, and what was measured but not touched |
 | `docs/audit/overnight_enhancement_2026-09-23.md` | **The unattended 2026-09-23 run: 12 commits, every one measured first.** A MotorOverload trip that never stopped conveying, a Lumpenwagen that lost kg when full, checkpoint saves, the F1 key sheet, map labels, the cart speed clamp, the compactor kijkglas, LineFlow moved to 10 Hz (2.85 → 0.54 ms/frame), and two harness reds root-caused as frame-count races (navmesh bake, bale streaming). Two full harness runs, the operator list at the end |
+| `docs/audit/hmi_fault_rearm_2026-09-24.md` | **HMI alarms: KWITTEREN acknowledges one occurrence of an alarm (#279), and the same EREMA code on two lines is two alarms (#282).** Probes, the guard suites `test_hmi_fault_rearm` and `test_hmi_fault_per_line` with their mutation matrices, and the full harness on `04eaa77`. **Open:** every panel lists every line's EREMA alarms (found by reading the code, not measured); Afschermen does not exist (the Onderdrukt tab reads a table nothing writes); RESETTEN clearing every acknowledgement has not been ruled on |
 | `docs/audit/operator_session_2026-09-23.md` | **The interactive 2026-09-23 session: tasks ranked by operator effort against sim impact, each answered by AskUserQuestion then built and measured.** Task 1: film beds on every belt (P1), the inclined belt's deck running the wrong diagonal, the cost probe, the renders; per-task evidence and the open questions each one left |
 | `docs/DESIGN_vacuum_pot_minigame_2026-09-23.md` | **P3 stage B as the operator described it: not a hold-E but a mini-game** — lid pull that stiffens with time, plamuurmes planes at 90 %, the block by hand, re-lid, the two-minute race. Systems, parameters (his vs placeholder), test strategy. **Built 2026-09-24** (`test_vacuum_pot_minigame`, 33 ok); the feel is his to play |
 | `docs/AUDIO_machine_sounds_2026-09-25.md` | **The operator's 11 plant-floor recordings, on their machines, driven by the sim.** File-name cutting grammar (`5s+_`, `25s-35s_`, `loop_3x_`, `_in_operation`, `_loop_4x`) and the rulings behind each bake; `MachineSoundSpec` `.tres` per placeable with the `gain_db` slider (every level a PLACEHOLDER until play-tested); loop seams measured against each loop's own fluctuation; ramps generated from the run loop; the 60 line-macro machines still without a recording. `test_machine_sounds` 80 ok |
@@ -544,14 +567,29 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   the 3C BluPort screen, the 3A trend p50 271 / p95 280 bar), and the operator
   confirmed it. At bar scale three consumers broke at once, each only working
   because the number was 14.5x too small: the 160-bar MP<PEL interlock read the
-  PRE-filter pressure (would E-STOP every nominal run — it now reads
-  `mp_pel_bar`, 140 bar nominal from the kopfilter band), the laser filter's
+  PRE-filter pressure (would E-STOP every nominal run), the laser filter's
   inlet was fed the kopfilter's ΔP (downstream of it, and on 3A/3B line 3C's),
   and the pressure rode a torque proxy that made one zone 30 °C down read 320
-  bar and trip the line (it now follows melt temperature at the 3A trend fit,
-  6.83 bar/°C — a weak fit, refit when a longer export exists). Guarded by
-  `test_die_pressure_bar`. Before changing a unit, list every reader
+  bar and trip the line (the melt-set pressures AND the laserfilter's dMP now
+  follow melt temperature at the 3A trend fit, 6.83 bar/°C as 2.44 % of 280
+  bar — a weak fit, refit when a longer export exists; a melt held 9 °C under
+  setpoint trips 318 through the screen). Two sessions fixed this the same evening (#275 and
+  #278); the merged model is the operator's TWO pressures — MP<PEL is the dP
+  across the kopfilter, not a 140-bar copy of the pre-filter pressure — see the
+  "Operator-documented" entry below. Guarded by `test_die_pressure_bar` and
+  `test_extruder_melt_pressures`. Before changing a unit, list every reader
   (`grep -rn <var>`), and measure each one at the new scale.
+  **The same disease, a second model, the same day:** LineFlow's
+  `ExtruderScrew` is not `ExtruderModel`, and its `die_pressure` read 0.11 bar
+  (1/1300 of the plant). It fed an ABSOLUTE soft sensor (`MfiProxy`:
+  MFI = gain·Q/(P·η)), which read 1491 g/10min, and `QaSpec` REJECTed every
+  sample. Both unit suites stayed green: `test_extruder_screw` asserted `> 0`
+  and an ordering, and `test_mfi_proxy` asserts only ratios. **A suite that
+  checks only proportions cannot see a scale error, so guard any number a
+  grader or a gauge reads against a documented band** (`test_screw_die_plate_bar`).
+  Next door: `_is_extruder()` was `id.begins_with("extruder")`, which also
+  matched `extruder_silo`, so the terminal showed a silo's "melt 195 °C". A
+  prefix dispatch needs a check on what the thing DOES (process `meltfilter`).
 - **A helper moved to a utility class leaves `world.call("_name")` callers
   silently broken.** `call()` by string is not checked at parse time: when
   MainWorld's `_local_aabb` / `_fit_box_collider` moved to `GeometryUtils`,
@@ -561,6 +599,13 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   `world_layout.json`. Guarded by `test_legacy_props_spawner`. To audit:
   `grep -rhoE 'world\.call\("[A-Za-z_]+"' src | sort -u` and check each name
   exists as a `func` on MainWorld.
+  The same trap caught a merge on 2026-09-25. #278 removed
+  `LaserFilter.set_upstream_pressure_indicator()`. #279 and #282, merged the
+  same night, called it by string from their suites. `main` then had
+  `test_hmi_fault_rearm` at 15 fail and `test_hmi_fault_per_line` at 19 fail,
+  and the parse sweep stayed green. Before merging a PR that removes or renames
+  a method, grep the target branch for the name in quotes:
+  `grep -rn '"<name>"' src tools`.
   The damage was bigger than the error lines, because a failed `call()` ABORTS
   the calling function: the diesel pump was never spawned at all (the outlet's
   call came one line before it), the feeder shredder stood at the world origin
@@ -644,6 +689,33 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   previous one — a silo fed from above, a compactor beyond a blower — pin the
   edge; and read the info lines a suite prints without gating, they are
   measurements too.
+  **2026-09-25 — the same on 3A and 3B, and WHY the fallback makes 2-cycles
+  at all.** The extruder's inlet sits 15.22 m (3A) / 14.24 m (3B, and line 1)
+  from its compactorband's discharge, past `MAX_LINK_DIST` (14, exclusive),
+  so the band never sees the extruder and falls back to the nearest inlet
+  BEHIND it: on 3A a silo ↔ band 2-cycle, on 3B a band → booster blower
+  edge, with the booster blower ↔ tussenventilator-cyclone 2-cycle beside it
+  and no in-edge on the silo. `extruder_3a` and `extruder_3b` received 0 kg
+  from 63 kg fed. A 2-cycle survives at all because `_link_best_target`
+  calls `_creates_cycle(best, src_idx)` against a `(from, to)` contract. That
+  asks whether the source already reaches the target, and never refuses a
+  back-edge. The same swapped guard leaves further 2-cycles on these lines
+  (3A's infeed wind_sifter ↔ blower 2, which starves the big top cyclone;
+  centrifuge ↔ weegschaal on 1 and 3B, which starves voorraad_silo). They
+  are measured, not fixed. The 3A/3B tails are pinned in the SEQs, guarded
+  by `test_extruder_silo_chain` (by name and by kg: no node of the chain may
+  process more than was fed, which is how a 2-cycle shows up in flow).
+  `src/tests/dump_line_graph.tscn -- <line_id>` dumps any macro line, marks
+  every edge explicit or geometry, and lists every cycle.
+  **And no pin survives a reload.** `lf_explicit_outs` is stamped only by
+  `_build_full_line` and is not in `_save_layout`, so a world loaded from a
+  save carries 0 explicit edges. Measured with
+  `probe_explicit_edges_roundtrip` under a scratch APPDATA: 47 tagged nodes
+  before a save/load, 0 after, and all three silo tails back to broken
+  wiring. That also covers line 1's pins, the 3B split and the 3A recirc.
+  A macro-flow suite that builds its lines fresh proves the session the
+  line is built in, not a reloaded world.
+  `docs/audit/extruder_silo_tail_2026-09-25.md`.
 - **A visual grafted onto a node before that node's `_ready()` is a visual
   that does not exist.** `_build_opzetband` attached the #196 metal-detector
   head to the belt's `InclinePivot`, which `ShredderFeedBelt` builds in
@@ -693,6 +765,22 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   `set_silo_fill()` sizes to the live level). Any new sight glass goes through
   it, and any claim that a level "reads through the glass" is a render, not a
   geometry check (`src/tests/shot_silo_level.gd`).
+- **"Operator-documented" with no file named is unsourced, and a pressure
+  with the wrong unit hides for months because nothing reads it against a
+  trip.** Measured 2026-09-24: `ExtruderModel.die_pressure_psi` sat on a
+  280 "psi" base ("operator-documented", no source) while every HMI photo,
+  SWI and trend gives 280 BAR. The BluPort showed 19.3 bar, and the one number
+  fed two trips at two different points of the line (318 bar before the
+  laserfilter, 160 bar MP<PEL at the kopfilter), so neither could ever fire.
+  The model topped out near 46 bar. On 3A the laserfilter read the KOPFILTER's
+  dP as its upstream, although the kopfilter sits after it. Now two pressures
+  in bar, per the operator (`docs/plant/operator_rulings_2026-09-24.md`),
+  guarded by `test_extruder_melt_pressures`, which REACHES both trips from
+  gameplay causes. LaserFilter and HeadFilter keep psi internally; convert at
+  their boundary with 14.5038 (the old `0.0689` factors were 0.07 % off). A
+  new trip is not done until a suite reaches it TWICE. The first reachable
+  318 trip exposed a latch (`LaserFilter.is_tripped`) that only a screen
+  change cleared, so after one E-stop reset it could never fire again.
 - **A frame-counted wait against a wall-clock cadence is a frame-rate
   lottery.** Two suites went red on healthy worlds this way on 2026-09-23:
   `test_jam_baseline` waited 60 stable frames for a threaded navmesh bake that

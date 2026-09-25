@@ -431,6 +431,13 @@ fi
 # overlay only watched while open); controls that a still-active fault stays
 # acked; a world swapped under a closed panel logs no PLC-000 / false INV-101.
 # 32 checks, 6 mutations each red on their own checks.
+# test_hmi_fault_per_line (2026-09-24): the same EREMA code on two extruders is
+# two alarms. Keyed by code, a 3C 6557 that tripped while an acknowledged 3A
+# 6557 was still active never lit the bell, got no Actief or Historie row; and
+# a real ExtruderMachine's line (config_resource.line_id) never reached the
+# alarm at all. Two real catalog extruders + filters into the real
+# HmiOverlay.tscn, operated by its own buttons; rows must name their line.
+# 26 checks; main's overlay and 6 mutations each red on their own checks.
 # test_chute_choke (2026-09-23, P6 second half): a machine whose reject pile
 # refuses material chokes — latched like a trip, one CHUTE-BLOCKED alarm,
 # nothing conveyed, the refused kg back in the machine (ledger incl. wash
@@ -458,13 +465,23 @@ fi
 # CutterCompactor's pot load. Geometry read off the mesh's own meta, the glass
 # window proven inside the fill range, and the production LineFlow path driving
 # the column tick by tick from an injected charge.
+# test_extruder_melt_pressures (2026-09-24): the 3A/3B melt pressures in BAR at
+# the two points the operator ruled — before the laserfilter = the melt-set
+# pressure after it + the screen's dMP, and kopdruk into the kopfilter with a
+# per-line FORM-008 nominal — land in the documented bands on a real catalog
+# extruder + LaserFilter + HeadFilter; both trips are reachable (a caked screen
+# and cold zones past 318 bar; 165 bar dP across the kopfilter for the 160-bar
+# MP<PEL, with 155 bar as the negative control), and the 318 trip is armed
+# again after an E-stop reset. Since 2026-09-25 the screen's dMP follows the
+# melt too: a melt held 9 °C cold trips 318 through the screen, 5 °C does not,
+# and a start at the preheat-ready melt runs up clean. 53 checks, eight
+# mutations red.
 # 2026-09-24 — three guards from the cross-repo review (convergence map C1/C6/C11):
-# test_die_pressure_bar: the extruder's pre-meltfilter pressure reads the plant's
-# 280 BAR (it read 19.3 bar off a psi base), the laser filter's inlet is that
-# pressure and not the kopfilter's ΔP, and the 160-bar MP<PEL interlock reads
-# the pelletiser-side pressure (140 bar nominal); a one-zone 30 °C drop does
-# not trip (pressure follows melt temperature, 3A trend fit 6.83 bar/°C).
-# 23 checks, 4 mutations red.
+# test_die_pressure_bar: the melt-set pressures follow melt temperature (3A trend
+# fit 6.83 bar/°C, as a fraction of 280 bar), the laser filter's inlet is the
+# model's pressure and not the kopfilter's ΔP, and a one-zone 30 °C drop on
+# the real rig raises torque but trips nothing. Merged with
+# test_extruder_melt_pressures' two-pressure model (see its comment above).
 # test_hmi_ack_rearm: a KWITTEREN belongs to one occurrence — a fault that
 # clears and re-trips is unacked again. 7 checks, mutation red.
 # test_legacy_props_spawner: an UNCONFIGURED world (first launch) boots its

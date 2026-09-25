@@ -12,7 +12,7 @@ class MockExtruderModel extends Object:
 	var throughput_kg_h := 800.0
 	var runtime_s := 3600.0 * 2.5 # 2.5 h
 	var motor_torque_pct := 75.0
-	var die_pressure_psi := 1450.4 # 100 bar
+	var mp_before_laserfilter_bar := 100.0 # bar (2026-09-24; was die_pressure_psi 1450.4)
 	var primary_suction_pct := 0.45
 	var primary_pot_fill_kg := 25.0
 	var config: Dictionary = {"screw_rpm_nominal": 150.0}
@@ -27,7 +27,7 @@ class MockExtruderModelAlarm extends Object:
 	var throughput_kg_h := 800.0
 	var runtime_s := 3600.0 * 2.5
 	var motor_torque_pct := 75.0
-	var die_pressure_psi := 1450.4
+	var mp_before_laserfilter_bar := 100.0
 	var primary_suction_pct := 0.45
 	var primary_pot_fill_kg := 25.0
 	var config: Dictionary = {"screw_rpm_nominal": 150.0}

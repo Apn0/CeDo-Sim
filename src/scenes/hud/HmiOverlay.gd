@@ -226,9 +226,19 @@ var _alarm_bell_btn   : Button = null     # the BELL button (bg flashes when fau
 var _alarm_bell_flash : float = 0.0       # 0..1 sin-driven flash amount
 
 # Fault timestamp + history (#207c).
-# Active fault scope -> first-seen tijd_s (s, in-game wall clock from Time.get_ticks_msec).
+# Every per-fault table below is keyed by the fault KEY (_fault_key), not the
+# code: an EREMA alarm is raised once per extruder, so "EREMA-6557@3A" and
+# "EREMA-6557@3C" are two alarms, each with its own row, occurrence and
+# KWITTEREN. Keyed by code, a 3C 6557 that tripped while an acknowledged 3A
+# 6557 was still active joined 3A's occurrence: no bell, no Actief row, no
+# Historie row (measured 2026-09-24, probe_hmi_fault_code_collision; guarded
+# by test_hmi_fault_per_line). Plant-wide faults (INV-101, RUN-200, …) are
+# keyed by their code alone.
+# Active fault key -> first-seen tijd_s (s, in-game wall clock from Time.get_ticks_msec).
 var _fault_first_seen : Dictionary = {}
-# Active fault code -> the id of its current OCCURRENCE (2026-09-24). A code
+# Active fault key -> {"code", "line"}, so a clear can be logged with both.
+var _fault_meta : Dictionary = {}
+# Active fault key -> the id of its current OCCURRENCE (2026-09-24). A fault
 # that clears and trips again is a NEW occurrence with a new id, so the
 # KWITTEREN given to the first one does not silence the second. The ack used to
 # be a per-CODE set that only RESETTEN cleared: 6557 tripped, was acked, cleared
@@ -247,7 +257,9 @@ var _last_faults : Array = []
 # state: "active" | "cleared". Most-recent at the END.
 var _fault_history : Array = []
 const FAULT_HISTORY_CAP : int = 256
-# User-suppressed fault codes (#207c — shield sub-tab).
+# User-suppressed fault KEYS -> msg (#207c — shield sub-tab). Per line (operator
+# 2026-09-24): shielding 3A's 6557 must not hide a 3C trip. Nothing writes this
+# table yet — the sim has no Afschermen action; the Onderdrukt tab lists it.
 var _shielded_faults : Dictionary = {}
 # Currently selected sub-tab inside the STORINGEN screen.
 var _fault_tab : int = FaultTab.ACTIVE
@@ -1347,7 +1359,7 @@ func _refresh() -> void:
 	var unacked := 0
 	for f in faults:
 		var fcode := String(f["code"])
-		if _is_acked(fcode):
+		if _is_acked(_fault_key(f)):
 			continue
 		if board != null and board.has_method("npc_acked") and bool(board.call("npc_acked", fcode)):
 			continue
@@ -1470,11 +1482,14 @@ func _build_fault_row(f: Dictionary) -> PanelContainer:
 	hr.add_theme_constant_override("separation", 6)
 	line.add_child(hr)
 	var code := Label.new()
-	code.text = String(f.get("code", ""))
+	# The line, when the fault is raised per extruder: one panel covers all
+	# extruder lines, so "EREMA-6557" alone cannot say which one tripped.
+	var line_id := String(f.get("line", ""))
+	code.text = String(f.get("code", "")) + ("" if line_id.is_empty() else " " + line_id)
 	code.add_theme_font_size_override("font_size", 13)
 	code.add_theme_color_override("font_color", Color(0.3, 0.25, 0.2, 1))
 	code.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	code.custom_minimum_size = Vector2(90, 0)
+	code.custom_minimum_size = Vector2(120, 0)
 	hr.add_child(code)
 	var tijd := Label.new()
 	tijd.text = _format_tijd(float(f.get("tijd_s", 0.0)))
@@ -1514,13 +1529,15 @@ func _rows_for_tab(active_faults: Array) -> Array:
 		FaultTab.ACTIVE:
 			for f in active_faults:
 				var code := String(f.get("code", ""))
-				if _shielded_faults.has(code):
+				var key := _fault_key(f)
+				if _shielded_faults.has(key):
 					continue
-				if _is_acked(code):
+				if _is_acked(key):
 					continue
 				rows.append({
 					"code": code,
-					"tijd_s": _fault_first_seen.get(code, 0.0),
+					"line": String(f.get("line", "")),
+					"tijd_s": _fault_first_seen.get(key, 0.0),
 					"msg": String(f.get("text", "")),
 					"state": "active",
 					"suppressed": false,
@@ -1532,13 +1549,15 @@ func _rows_for_tab(active_faults: Array) -> Array:
 			for i in range(_fault_history.size() - 1, -1, -1):
 				var h : Dictionary = _fault_history[i]
 				var code := String(h.get("code", ""))
-				if seen.has(code):
+				var key := String(h.get("key", code))
+				if seen.has(key):
 					continue
 				if not _acked_occurrences.has(int(h.get("occ", 0))):
 					continue
-				seen[code] = true
+				seen[key] = true
 				rows.append({
 					"code": code,
+					"line": String(h.get("line", "")),
 					"tijd_s": h.get("tijd_s", 0.0),
 					"msg": String(h.get("msg", "")),
 					"state": String(h.get("state", "active")),
@@ -1554,6 +1573,7 @@ func _rows_for_tab(active_faults: Array) -> Array:
 				var code := String(h.get("code", ""))
 				rows.append({
 					"code": code,
+					"line": String(h.get("line", "")),
 					"tijd_s": h.get("tijd_s", 0.0),
 					"msg": String(h.get("msg", "")),
 					"state": String(h.get("state", "active")),
@@ -1563,15 +1583,17 @@ func _rows_for_tab(active_faults: Array) -> Array:
 					"acked": _acked_occurrences.has(int(h.get("occ", 0))),
 				})
 		FaultTab.SHIELD:
-			for code_v in _shielded_faults.keys():
-				var code := String(code_v)
+			for key_v in _shielded_faults.keys():
+				var key := String(key_v)
+				var meta : Dictionary = _fault_meta.get(key, {})
 				rows.append({
-					"code": code,
-					"tijd_s": _fault_first_seen.get(code, 0.0),
-					"msg": String(_shielded_faults[code_v]),
+					"code": String(meta.get("code", key.get_slice("@", 0))),
+					"line": String(meta.get("line", "")),
+					"tijd_s": _fault_first_seen.get(key, 0.0),
+					"msg": String(_shielded_faults[key_v]),
 					"state": "shielded",
 					"suppressed": true,
-					"acked": _is_acked(code),
+					"acked": _is_acked(key),
 				})
 	return rows
 
@@ -1877,17 +1899,26 @@ func _compute_faults() -> Array:
 		var model : Object = null
 		if em != null and is_instance_valid(em) and "model" in em and em.model != null:
 			model = em.model
-		var line_id : String = ""
-		if em != null and is_instance_valid(em) and "line_id" in em:
-			line_id = String(em.line_id)
+		# A real ExtruderMachine carries its line on config_resource, not on the
+		# node — reading only `em.line_id` (as this did until 2026-09-24) gave
+		# every real extruder the scope "extruder" and no line at all.
+		var line_id : String = _extruder_line_id(em)
+		# The alarm's source: the line, or — for an extruder with no line id —
+		# the node itself, so two unlabelled extruders still raise two alarms.
+		var src : String = line_id
+		if src.is_empty():
+			src = "#%d" % (em.get_instance_id() if is_instance_valid(em) else 0)
 		# #bullet-10 (FIX 5) — hand the registry the laser_filter serving this
 		# extruder so the documented 6522/6557 alarms detect off live state.
 		var lf : Object = _closest_laser_filter_to(em as Node3D)
 		for f in _EREMA_FAULTS.detect_active(model, lf):
+			var code := "EREMA-%04d" % int(f.get("nr", 0))
 			out.append({
-				"code":  "EREMA-%04d" % int(f.get("nr", 0)),
+				"code":  code,
 				"text":  String(f.get("msg", "")),
 				"scope": "extruder" if line_id.is_empty() else "extruder_" + line_id,
+				"line":  line_id,
+				"key":   "%s@%s" % [code, src],
 			})
 	# #207c — persistent tijd_s + ring buffer of fault transitions.
 	_record_fault_transitions(out)
@@ -1916,54 +1947,88 @@ func unacked_count_for_tokens(tokens: Array) -> int:
 	return n
 
 # Tags each active fault with its first-seen tijd_s (seconds since boot), pushes
-# new-active / new-cleared transitions onto the ring buffer (cap 256).
+# new-active / new-cleared transitions onto the ring buffer (cap 256). Keyed by
+# _fault_key, so the same code on two lines is two faults.
 func _record_fault_transitions(active: Array) -> void:
 	var now_s := float(Time.get_ticks_msec()) / 1000.0
-	var active_codes := {}
+	var active_keys := {}
 	for f in active:
 		var code := String(f.get("code", ""))
-		active_codes[code] = true
-		if not _fault_first_seen.has(code):
-			_fault_first_seen[code] = now_s
+		var key := _fault_key(f)
+		var line_id := String(f.get("line", ""))
+		active_keys[key] = true
+		if not _fault_first_seen.has(key):
+			_fault_first_seen[key] = now_s
+			_fault_meta[key] = {"code": code, "line": line_id}
 			_fault_occ_seq += 1
-			_fault_occ[code] = _fault_occ_seq
+			_fault_occ[key] = _fault_occ_seq
 			_push_fault_history({
 				"code": code,
+				"key": key,
+				"line": line_id,
 				"tijd_s": now_s,
 				"msg": String(f.get("text", "")),
 				"state": "active",
-				"suppressed": _shielded_faults.has(code),
+				"suppressed": _shielded_faults.has(key),
 				"occ": _fault_occ_seq,
 			})
-		# Stamp tijd_s + occurrence on the entry so consumers (rows builder,
-		# refresh, KWITTEREN) can read them.
-		f["tijd_s"] = float(_fault_first_seen.get(code, now_s))
-		f["occ"] = int(_fault_occ[code])
+		# Stamp key + tijd_s + occurrence on the entry so consumers (rows
+		# builder, refresh, KWITTEREN) can read them.
+		f["key"] = key
+		f["tijd_s"] = float(_fault_first_seen.get(key, now_s))
+		f["occ"] = int(_fault_occ[key])
 	# Detect transitions to cleared: drop the first-seen and the occurrence on
 	# the way out so a future re-trip carries a fresh tijd_s AND is a new
 	# occurrence that needs its own KWITTEREN.
-	for code_v in _fault_first_seen.keys():
-		var code := String(code_v)
-		if active_codes.has(code):
+	for key_v in _fault_first_seen.keys():
+		var key := String(key_v)
+		if active_keys.has(key):
 			continue
 		# Was active last tick, now gone — record the clear and forget the timestamp.
+		var meta : Dictionary = _fault_meta.get(key, {})
 		_push_fault_history({
-			"code": code,
+			"code": String(meta.get("code", key)),
+			"key": key,
+			"line": String(meta.get("line", "")),
 			"tijd_s": now_s,
 			"msg": "Hersteld",
 			"state": "cleared",
-			"suppressed": _shielded_faults.has(code),
-			"occ": int(_fault_occ.get(code, 0)),
+			"suppressed": _shielded_faults.has(key),
+			"occ": int(_fault_occ.get(key, 0)),
 		})
-		_fault_first_seen.erase(code)
+		_fault_first_seen.erase(key)
+		_fault_meta.erase(key)
 		# The KWITTEREN belonged to THAT occurrence and ends with it (#275 erased
 		# a per-code ack here; the ack is per occurrence since).
-		_fault_occ.erase(code)
+		_fault_occ.erase(key)
 
-## True when the CURRENT occurrence of `code` has been KWITTEREN'd. An ack given
-## to an earlier occurrence of the same code never carries over to a re-trip.
-func _is_acked(code: String) -> bool:
-	return _fault_occ.has(code) and _acked_occurrences.has(_fault_occ[code])
+## A fault's identity: "code@source" for a fault raised per machine (EREMA
+## alarms, one per extruder — see _compute_faults), the bare code for a
+## plant-wide one. Every per-fault table is keyed by this.
+func _fault_key(f: Dictionary) -> String:
+	return String(f.get("key", f.get("code", "")))
+
+## The line an extruder serves: its ExtruderConfig's line_id (where a real
+## ExtruderMachine keeps it), else a `line_id` on the node itself, else "".
+## Untyped on purpose: the group list can briefly hold a freed extruder (its
+## refresh is deferred), and a freed instance may not bind to a typed Object.
+func _extruder_line_id(em) -> String:
+	if em == null or not is_instance_valid(em):
+		return ""
+	var cfg = em.get("config_resource")
+	if cfg is Object and cfg != null and "line_id" in cfg:
+		var from_cfg := String(cfg.get("line_id"))
+		if not from_cfg.is_empty():
+			return from_cfg
+	if "line_id" in em:
+		return String(em.get("line_id"))
+	return ""
+
+## True when the CURRENT occurrence of fault `key` (see _fault_key) has been
+## KWITTEREN'd. An ack given to an earlier occurrence never carries over to a
+## re-trip, and an ack given on one line never covers another line.
+func _is_acked(key: String) -> bool:
+	return _fault_occ.has(key) and _acked_occurrences.has(_fault_occ[key])
 
 func _push_fault_history(entry: Dictionary) -> void:
 	_fault_history.append(entry)
