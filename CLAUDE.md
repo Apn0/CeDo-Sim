@@ -583,6 +583,7 @@ the one before that ~6 months stale — treat this one as re-checkable too):
 | `docs/audit/material_trace_2026-08-18.md` | Follow one bale end-to-end: the symbol-flow + material-census tools, mass-minting proven structurally closed, and the spawn-clearance check that was unsatisfiable for 4 weeks |
 | `docs/audit/robustness_and_coverage_2026-09-21.md` | **Crash-safe persistence (`AtomicFile`) and 26 formerly-unrun suites now gated.** Why a save killed mid-write used to load back as an empty factory and get autosaved over; the delete-resurrection bug caught in the first draft; 5 mutation proofs. Plus the bisect that pins the `test_gate_carve` red on two rotation-sign flips in the uncommitted `WallOpenings.gd`, which reds are identical at clean HEAD, and what was measured but not touched |
 | `docs/audit/overnight_enhancement_2026-09-23.md` | **The unattended 2026-09-23 run: 12 commits, every one measured first.** A MotorOverload trip that never stopped conveying, a Lumpenwagen that lost kg when full, checkpoint saves, the F1 key sheet, map labels, the cart speed clamp, the compactor kijkglas, LineFlow moved to 10 Hz (2.85 → 0.54 ms/frame), and two harness reds root-caused as frame-count races (navmesh bake, bale streaming). Two full harness runs, the operator list at the end |
+| `docs/audit/cycle_guard_swap_2026-09-25.md` | **LineFlow's fallback cycle guard was called with swapped arguments and never refused an edge.** Every rerouted edge, on all seven macros, before and after the swap. The per-edge rulings: swap alone, a 3A pin, or fixtures moved to role `none`. The reload measurement (0 cycles, still wrong without pins). `test_fallback_chains` and its mutation table. Found, not fixed: intake belts discovered twice; the sort line's topology |
 | `docs/audit/macro_edges_reload_2026-09-25.md` | **A macro line's explicit flow edges (pins, streams, split, recirc) now survive a save → load.** Before, a reloaded world had 0 of them (47 tagged nodes → 0). One function, `BuildMode.macro_flow_edges`, serves the build and the load, and the refactored build is diffed identical to the old one (269 rows). Covers `macro_instance`, the hole and dead-end rules for deleted machines, when a save is refused, the guard `test_macro_edges_reload` and its mutation matrix, and what the load does with every macro-bearing layout on this machine |
 | `docs/audit/hmi_fault_rearm_2026-09-24.md` | **HMI alarms: KWITTEREN acknowledges one occurrence of an alarm (#279), and the same EREMA code on two lines is two alarms (#282).** Probes, the guard suites `test_hmi_fault_rearm` and `test_hmi_fault_per_line` with their mutation matrices, and the full harness on `04eaa77`. **Open:** every panel lists every line's EREMA alarms (found by reading the code, not measured); Afschermen does not exist (the Onderdrukt tab reads a table nothing writes); RESETTEN clearing every acknowledgement has not been ruled on |
 | `docs/audit/operator_session_2026-09-23.md` | **The interactive 2026-09-23 session: tasks ranked by operator effort against sim impact, each answered by AskUserQuestion then built and measured.** Task 1: film beds on every belt (P1), the inclined belt's deck running the wrong diagonal, the cost probe, the renders; per-task evidence and the open questions each one left |
@@ -771,6 +772,34 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   by name, kg reach each named extruder after a reload, and a partial line
   reloads into exactly the live session's graph.
   `docs/audit/macro_edges_reload_2026-09-25.md`.
+- **A guard called with its arguments swapped never fires, and fixing it
+  REROUTES edges rather than repairing them.** Measured 2026-09-25 with
+  `dump_line_graph` on all seven macros: `_link_best_target` now calls
+  `_creates_cycle(src_idx, best)`, and the 36 edges that sat on cycles are 0.
+  But a refused back-edge falls to the source's NEXT candidate. Three of those
+  were wrong too:
+  - 3A's infeed blower 2 went to doseerschroef M11b, skipping the mengsilo.
+    It is now pinned to the big top cyclone (ruling 2.1-B).
+  - Every lump cart fed the laser filter (vacuum_degas on 3C).
+  - One compressor of the pair became a feed head.
+
+  The carts, their spots, the lump platform and both visible compressors now
+  have MachineFlow role `none`. Three code comments already claimed that, and
+  the code never did it. Two consequences:
+  - The post-extruder chain on 1/3A/3B is `extruder → laser_filter →
+    heetafslag`, no longer THROUGH a cart.
+  - `weegschaal → voorraad_silo` on 1 and 3B came from the swap alone.
+
+  When you fix a guard, dump every graph it touches before and after, and
+  read each rerouted edge against the docs. A fixed guard proves only that
+  there are no cycles, not that the wiring is right. Measured on a world
+  reloaded from a save, BEFORE the reload fix in the entry above: every pin
+  lost, and 0 cycles there too (60 before), but not right. Since that fix a
+  reload re-stamps the pins (`test_macro_edges_reload`).
+  Guarded by `test_fallback_chains`: no cycle on any line, fixtures out of
+  the graph, only the plant's own feed heads, and the 3A infeed and the 1/3B
+  granulate tails by name and by kg.
+  `docs/audit/cycle_guard_swap_2026-09-25.md`.
 - **A visual grafted onto a node before that node's `_ready()` is a visual
   that does not exist.** `_build_opzetband` attached the #196 metal-detector
   head to the belt's `InclinePivot`, which `ShredderFeedBelt` builds in
