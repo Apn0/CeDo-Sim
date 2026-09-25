@@ -104,9 +104,9 @@ var setup_overlay : CanvasLayer = null
 
 # #218 — was this run a RESUMED save (vs a NEW game)? Captured BEFORE the
 # WorldLayout / setup-mode branches flip game_state.is_new_save to false on a
-# new run, so the first LineFlow.rebuild() in _spawn_world_items() can tell
-# resume-from-save (warm boot — preserve powered state) from new-game (cold
-# start — operator commissions the line via the HMI).
+# new run. NOTHING READS IT (checked 2026-09-25): the warm-boot call it was for
+# went with the 2026-07-08 cold start, and the resume that replaced that
+# (_resume_plant, PlantResume.gd) needs no flag: a new save has nothing stashed.
 var _is_resumed_save : bool = false
 
 # ── NPC catalogue ─────────────────────────────────────────────────────────────
@@ -141,9 +141,8 @@ func _ready() -> void:
 	if not game_state:  push_error("[MainWorld] GameState node missing")
 
 	# #218 — capture the resume-vs-new flag NOW, before _spawn_world_items() or
-	# the setup-mode branch flips is_new_save to false on a fresh world. Used by
-	# _spawn_world_items() to call line_flow.mark_warm_boot() ahead of the first
-	# rebuild() so a resumed save's PLC powered-state survives the topology pass.
+	# the setup-mode branch flips is_new_save to false on a fresh world (see the
+	# declaration: nothing reads it today).
 	_is_resumed_save = (game_state != null and not game_state.is_new_save)
 
 	var shell_loader := BuildingShellLoader.new(); add_child(shell_loader); shell_loader.setup(self, building_shell_path); shell_loader.load_shell_and_openings()
@@ -219,6 +218,21 @@ func _ready() -> void:
 	else:
 		_spawn_world_items()
 
+## Put every loaded machine back in the state it was saved in (PlantResume).
+## A new save, or a save written before 2026-09-25, has nothing stashed and is
+## left exactly as it was built.
+func _resume_plant() -> void:
+	if build_mode == null or line_flow == null:
+		return
+	var rep : Dictionary = preload("res://src/sim/PlantResume.gd").resume_build_mode(
+		build_mode, line_flow, get_tree().current_scene if get_tree().current_scene != null else self)
+	if rep.is_empty() or (int(rep.get("bodies", 0)) == 0 and int(rep.get("piles", 0)) == 0):
+		return
+	print("[MainWorld] Resumed the plant as saved: %d machines (%d LineFlow nodes, %d machine parts), %d floor piles"
+		% [int(rep["bodies"]), int(rep["lf_nodes"]), int(rep["parts"]), int(rep["piles"])])
+	for m in (rep.get("missed", []) as Array):
+		push_warning("[MainWorld] resume: %s" % String(m))
+
 func _start_setup_mode() -> void:
 	is_setup_mode = true
 	setup_overlay = CanvasLayer.new()
@@ -289,18 +303,17 @@ func _spawn_world_items() -> void:
 		bale_yard_manager.setup(self, shift_clock)
 
 	# Final LineFlow discovery pass — AFTER every machine exists.
-	# #218 — RESUMED save: flip the warm-boot flag BEFORE the first rebuild() so
-	# the PLC's powered/spin state survives the topology pass and the line keeps
-	# running. NEW games skip this on purpose — operator must commission the
-	# line via the HMI (cold start), matching real plant power-up procedure.
 	if line_flow:
-		# #audit-2026-07-08 — COLD START ON LOAD (operator decision). The warm-boot
-		# path called LineFlow.force_all_powered() UNCONDITIONALLY for every resumed
-		# save, so loading ANY save started the whole line RUNNING — even a world the
-		# operator never commissioned. Loading must NOT start production; the operator
-		# commissions the line via the HMI START (matching real plant power-up). True
-		# mid-run resume (option B) would require persisting per-machine run state and
-		# is deferred; mark_warm_boot()/force_all_powered() remain in LineFlow for that.
+		# RESUME ON LOAD (operator 2026-09-25, docs/plant/operator_rulings_2026-09-25.md
+		# §R1-§R3) replaces the 2026-07-08 "cold start on load" decision. That one
+		# was right about its trigger: the old warm-boot path called
+		# LineFlow.force_all_powered() for EVERY resumed save, so any load started
+		# the whole line, commissioned or not. Now each machine comes back in the
+		# state it was SAVED in (run state, settings, material, latched faults),
+		# saved per machine in its factory entry (src/sim/PlantResume.gd), and
+		# applied below once the shift clock has loaded. A line that was stopped
+		# comes back stopped; a machine placed new still starts cold (§R3).
+		# mark_warm_boot()/force_all_powered() stay in LineFlow, unused.
 		line_flow.rebuild()
 		# Discoverable by group so a released bale can ask "am I at a feed point?"
 		# without a hard reference (BaseVehicle._release → is_near_line_feed_point).
@@ -314,6 +327,12 @@ func _spawn_world_items() -> void:
 	var shift_lc := ShiftLifecycleManager.new()
 	shift_lc.name = "ShiftLifecycleManager"   # #206 — explicit name for find_child lookups
 	add_child(shift_lc); shift_lc.setup(self, shift_clock, staff_parking, _player_spawn_pos)
+	# Resume on load (see the note at the rebuild above). AFTER the shift clock's
+	# load: a lump cart's cool timer is anchored to sim time. BEFORE the
+	# SaveCoordinator: no save may run on a world that has not resumed (the
+	# stash would be written back anyway — PlantResume.capture_body — but the
+	# order keeps that a guard, not the path).
+	_resume_plant()
 	var save_coord := SaveCoordinator.new()
 	save_coord.name = "SaveCoordinator"   # #206 — explicit name so save_game()/save_and_quit()'s find_child("SaveCoordinator") resolves; auto-name broke Save & Quit (it changed scene WITHOUT saving)
 	add_child(save_coord); save_coord.setup(self, player, game_state, shift_clock, crew_manager)

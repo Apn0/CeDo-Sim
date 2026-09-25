@@ -95,6 +95,33 @@ var fill : float = 0.0
 ## belt can hand REAL mass downstream instead of inventing it from a constant.
 var _throat_kg : float = 0.0
 
+## Resume on load (operator 2026-09-25, rulings file §R1-§R3;
+## src/sim/PlantResume.gd): the throat (fill and its kg), start/stop, the metal
+## cycle, the counters, and the three fault latches, which come back through
+## _raise_fault so the alarm is raised the way it was the first time. NOT the
+## bales riding the belt: bales are not in the save at all (they are yard or
+## vehicle objects), so what they still carried is not restored.
+const RESUME_FIELDS : Array[String] = [
+	"fill", "_throat_kg", "start_requested", "_metal_cycle", "_metal_reverse_left_m",
+	"metal_detections", "bales_accepted", "bales_rejected", "untraced_count",
+	"_spacing_violation_frames", "_thermal_grace_t",
+]
+
+func save_run_state() -> Dictionary:
+	var out : Dictionary = preload("res://src/sim/PlantResume.gd").pack(self, RESUME_FIELDS)
+	out["faults"] = [_fault_belt_jam, _fault_intake_overfill, _fault_thermal_shutdown]
+	return out
+
+func restore_run_state(d: Dictionary) -> void:
+	var fields : Dictionary = d.duplicate()
+	fields.erase("faults")
+	preload("res://src/sim/PlantResume.gd").unpack(self, fields)
+	var f : Array = d.get("faults", [false, false, false])
+	if f.size() >= 3:
+		if bool(f[0]): _raise_fault("belt_jam", _ALARM_BELT_JAM)
+		if bool(f[1]): _raise_fault("intake_overfill", _ALARM_INTAKE_OVERFILL)
+		if bool(f[2]): _raise_fault("thermal_shutdown", _ALARM_THERMAL_SHUTDOWN)
+
 ## Total kg the belt is holding right now (riders still to feed + throat).
 ## Exists so a conservation test can sum the belt without reaching into privates.
 func held_kg() -> float:

@@ -227,8 +227,9 @@ var _plc_stage_node : Array = []
 ## When true, PLCSequencer.start() fires immediately after rebuild() and
 ## walks the line tail-to-head, powering each node on stagger_s apart.
 ## Defaults to FALSE — operator must press START on the HMI to begin
-## production. The save loader flips _warm_boot=true so an already-running
-## save resumes correctly on first rebuild without forcing a cold start.
+## production. _warm_boot is NOT used by the save loader (2026-09-25): a save
+## resumes machine by machine (restore_node_run_state, src/sim/PlantResume.gd),
+## so a stopped line comes back stopped instead of every stage forced on.
 var auto_start : bool = false
 var _warm_boot : bool = false
 
@@ -369,6 +370,9 @@ func rebuild() -> void:
 			"hand_mode":   nd.get("hand_mode", false),
 			"manual_on":   nd.get("manual_on", false),
 			"rpm_pct":     nd.get("rpm_pct", 1.0),
+			# Per-component rpm (HMI sliders). Missing until 2026-09-25: every
+			# rebuild (an HMI placed mid-shift) put them back to 100 %.
+			"components":  (nd.get("components", {}) as Dictionary).duplicate(),
 			# #218 — preserve observer modules so _attach_advanced_systems()
 			# guards see existing instances and don't reconstruct them.
 			"ex":          nd.get("ex", null),
@@ -422,6 +426,8 @@ func rebuild() -> void:
 			nd["choked"]    = bool(s.get("choked", false))
 			nd["choke_pile"] = s.get("choke_pile", null)
 			nd["rpm_pct"]   = s["rpm_pct"]
+			if not (s["components"] as Dictionary).is_empty():
+				nd["components"] = s["components"]
 			# #218 — survivor-PLC integration flag. The per-tick PLC
 			# override (`_nodes[ni]["powered"] = _plc.is_powered(stage)`)
 			# would otherwise immediately re-drop a survivor stage to
@@ -471,9 +477,10 @@ func reset_shift_telemetry() -> void:
 	poly_rejected = 0.0
 	_gran_q_accum = 0.0
 
-## Save-file loader must call this BEFORE the first rebuild() after a
-## resume so the line picks up where it left off rather than cold-starting.
-## auto_start stays false — only _warm_boot fires once.
+## Forces EVERY stage on at the next rebuild(). No caller: the save loader
+## resumes each machine as it was saved instead (PlantResume, 2026-09-25), and
+## the old unconditional warm boot is what the 2026-07-08 cold-start decision
+## removed. auto_start stays false — only _warm_boot fires once.
 func mark_warm_boot() -> void:
 	_warm_boot = true
 
@@ -2163,6 +2170,243 @@ func flow_bodies() -> Array:
 		var b = nd.get("node", null)
 		if b != null and is_instance_valid(b):
 			out.append({"body": b, "id": String(nd.get("id", ""))})
+	return out
+
+## ── Resume on load (operator 2026-09-25, rulings file §R1-§R3) ──────────
+## What a machine's LineFlow node carries into a save and back
+## (src/sim/PlantResume.gd holds the whole scheme). The node's run state, its
+## material, the operator's settings, its latched faults, its observers, and the
+## kg in the pipes leaving it. Keep this list beside rebuild()'s survivor list:
+## a field that must survive a rebuild must almost always survive a save too.
+const RESUME_NODE_FIELDS : Array[String] = [
+	"powered", "spin", "buffer", "hand_mode", "manual_on", "rpm_pct",
+	"choked", "thru", "moist", "contam", "quality", "_was_tripped",
+]
+const RESUME_MOL_FIELDS : Array[String] = [
+	"accumulated_kg", "current_amps", "running", "_tripped", "_overload_timer",
+]
+const RESUME_SCREW_FIELDS : Array[String] = [
+	"screw_rpm", "viscosity", "shear_heat", "barrel_temp", "melt_temp",
+	"cooling_fan_level", "die_pressure", "rpm_setpoint", "throughput",
+	"fan_auto", "_fan_integral",
+]
+const RESUME_CC_FIELDS : Array[String] = [
+	"disc_rpm_setpoint", "dosing_gate", "pot_temperature_setpoint",
+	"power_cap_kw_setpoint", "feed_moisture_pct", "power_kw", "breaker_tripped",
+	"softstarter_tripped", "softstarter_budget_kws", "lumps_kg_this_shift",
+	"knife_sharpness", "_knife_sharpen_remaining_s", "air_flush_on",
+	"emergency_water_uses_shift", "_ewi_cooldown_remaining_s",
+	"process_unstable_flag", "state", "pot_temperature", "disc_rpm",
+	"motor_amps", "charge", "screw_fill_efficiency", "throughput_kg_s",
+	"stalled", "_last_friction_w", "_last_cooling_w", "_time_in_state",
+	"total_fed_kg", "discharged_kg", "water_removed_kg",
+]
+const RESUME_DRD_CYCLE_FIELDS : Array[String] = [
+	"trockenzeit_s", "befuelstop_pct", "entleerstop_pct", "temp_sollwert_c",
+	"cycle_enabled", "step", "step_elapsed_s", "entleer_open", "besch_open", "_gate_t",
+]
+const RESUME_DRD_MODEL_FIELDS : Array[String] = [
+	"fill_pct", "temp_c", "residual_moisture_pct", "throughput_kg_s", "heater_on", "setpoint_c",
+]
+const RESUME_LINE_FIELDS : Array[String] = [
+	"fed_mass", "gran_mass", "waste_mass", "water_added", "water_removed",
+	"contam_removed", "poly_rejected", "_gran_q_accum", "feed_enabled",
+]
+const _Resume := preload("res://src/sim/PlantResume.gd")
+## Set by restore_node_run_state on the node that held the e-stop; consumed by
+## restore_line_run_state (the e-stop is keyed by node index, which a load does
+## not keep, so it travels on the fault machine's own entry).
+var _resume_estop_ni : int = -1
+
+## The run state of `body`'s node, {} when it is not a flow node.
+func node_run_state(body: Node3D) -> Dictionary:
+	var ni := _nd_for_body(body)
+	if ni < 0:
+		return {}
+	var nd : Dictionary = _nodes[ni]
+	var out : Dictionary = {}
+	for f in RESUME_NODE_FIELDS:
+		if nd.has(f):
+			out[f] = _Resume.to_json(nd[f])
+	out["in"] = _Resume.batch_out(nd.get("in", null))
+	out["out"] = _Resume.batch_out(nd.get("out", null))
+	out["components"] = _Resume.to_json(nd.get("components", {}))
+	if bool(nd.get("choked", false)):
+		var pile = nd.get("choke_pile", null)
+		if pile != null and is_instance_valid(pile):
+			out["choke_pile_pos"] = _Resume.to_json((pile as Node3D).global_position)
+	if _estop_active and _estop_fault_node == ni:
+		out["estop_fault"] = true
+	if nd.get("mol", null) != null:
+		out["mol"] = _Resume.pack(nd["mol"], RESUME_MOL_FIELDS)
+	if nd.get("ex", null) != null:
+		out["screw"] = _Resume.pack(nd["ex"], RESUME_SCREW_FIELDS)
+	if nd.get("cc", null) != null:
+		out["cc"] = _Resume.pack(nd["cc"], RESUME_CC_FIELDS)
+	var nir = nd.get("nir_ctrl", null)
+	if nir != null and is_instance_valid(nir):
+		out["nir"] = {"wrap_g": float(nir.shaft_wrap.wrap_g), "_alarm_raised": bool(nir.get("_alarm_raised"))}
+	var cyc = nd.get("dryer_cycle", null)
+	if cyc != null:
+		out["drd"] = _Resume.pack(cyc, RESUME_DRD_CYCLE_FIELDS)
+		if cyc.get("dryer") != null:
+			out["drd_model"] = _Resume.pack(cyc.get("dryer"), RESUME_DRD_MODEL_FIELDS)
+	# The kg on their way OUT of this machine, per out-edge in _edges order, with
+	# the target's id so a reload that wires this machine differently puts them
+	# back in the machine instead of into the wrong pipe.
+	var pipes : Array = []
+	for e in _edges:
+		if int(e["a"]) != ni:
+			continue
+		var stages : Array = []
+		var kg := 0.0
+		for s in (e.get("pipe", []) as Array):
+			stages.append(_Resume.batch_out(s))
+			kg += (s as MaterialBatch).mass_kg
+		pipes.append({"to": String(_nodes[int(e["b"])].get("id", "")),
+			"stage_t": float(e.get("stage_t", 0.0)), "stages": stages if kg > 0.0 else []})
+	if not pipes.is_empty():
+		out["pipes"] = pipes
+	return out
+
+## Put a saved node state back on `body`'s node (after the load's rebuild).
+## Returns false when the body is not a flow node here.
+func restore_node_run_state(body: Node3D, d: Dictionary) -> bool:
+	var ni := _nd_for_body(body)
+	if ni < 0:
+		return false
+	var nd : Dictionary = _nodes[ni]
+	for f in RESUME_NODE_FIELDS:
+		# A field the fresh node does not carry yet (_was_tripped is created on
+		# the first tick) is set as saved: a latched trip must not look like a
+		# new trip edge on the first tick after the load (smoke, alarm).
+		if d.has(f):
+			var v : Variant = _Resume.from_json(d[f])
+			nd[f] = _Resume.coerce(nd[f], v) if nd.has(f) else v
+	if d.get("in", {}) is Dictionary and not (d.get("in", {}) as Dictionary).is_empty():
+		nd["in"] = _Resume.batch_in(d["in"])
+	if d.get("out", {}) is Dictionary and not (d.get("out", {}) as Dictionary).is_empty():
+		nd["out"] = _Resume.batch_in(d["out"])
+	var comps : Variant = _Resume.from_json(d.get("components", {}))
+	if comps is Dictionary:
+		var c : Dictionary = nd.get("components", {})
+		for k in comps:
+			if c.has(k):
+				c[k] = float(comps[k])
+	# The power the node had, held through the PLC's per-tick override the way a
+	# rebuild's survivor is (see _init_plc): stage pre-powered, flag set.
+	var on : bool = bool(nd.get("powered", false))
+	nd["_survivor_powered"] = on
+	var stage : int = _plc_stage_node.find(ni)
+	if _plc != null and stage >= 0:
+		_plc.set_stage_powered(stage, on)
+	# The rotors the HMI settings drive (a setting reaches them only through its
+	# setter, so apply them the same way): rpm_pct on every rotor, then each
+	# component that has rotors of its own. NOT a component without tagged
+	# rotors: on a single-drive machine _apply_component_rotor writes the
+	# component's value INTO rpm_pct (measured: a belt saved at 70 % came back
+	# at 100 %, its "drive" component's default).
+	_apply_rotor_rpm(nd)
+	_cache_component_rotors(nd)
+	var tagged : Dictionary = nd.get("component_rotors", {})
+	for comp in (nd.get("components", {}) as Dictionary):
+		if tagged.has(comp):
+			_apply_component_rotor(nd, String(comp))
+	if bool(nd.get("choked", false)) and d.has("choke_pile_pos"):
+		var at : Variant = _Resume.from_json(d["choke_pile_pos"])
+		if at is Vector3:
+			_floor_piles_cache = get_tree().get_nodes_in_group("floor_pile") if is_inside_tree() else []
+			nd["choke_pile"] = _nearest_floor_pile(at)
+	if bool(d.get("estop_fault", false)):
+		_resume_estop_ni = ni
+	if nd.get("mol", null) != null and d.get("mol", null) is Dictionary:
+		_Resume.unpack(nd["mol"], d["mol"])
+	if nd.get("ex", null) != null and d.get("screw", null) is Dictionary:
+		_Resume.unpack(nd["ex"], d["screw"])
+	if nd.get("cc", null) != null and d.get("cc", null) is Dictionary:
+		_Resume.unpack(nd["cc"], d["cc"])
+	var nir = nd.get("nir_ctrl", null)
+	if nir != null and is_instance_valid(nir) and d.get("nir", null) is Dictionary:
+		nir.shaft_wrap.wrap_g = float((d["nir"] as Dictionary).get("wrap_g", 0.0))
+		nir.set("_alarm_raised", bool((d["nir"] as Dictionary).get("_alarm_raised", false)))
+	var cyc = nd.get("dryer_cycle", null)
+	if cyc != null and d.get("drd", null) is Dictionary:
+		_Resume.unpack(cyc, d["drd"])
+		if cyc.get("dryer") != null and d.get("drd_model", null) is Dictionary:
+			_Resume.unpack(cyc.get("dryer"), d["drd_model"])
+	# Pipes: matched by position among this node's out-edges AND the target id.
+	# A pipe with no matching edge goes back into this machine's out batch, so no
+	# kg is lost when a reload wires the machine differently.
+	var saved_pipes : Array = d.get("pipes", [])
+	var k : int = 0
+	for e in _edges:
+		if int(e["a"]) != ni:
+			continue
+		if k < saved_pipes.size():
+			var sp : Dictionary = saved_pipes[k]
+			if String(sp.get("to", "")) == String(_nodes[int(e["b"])].get("id", "")):
+				var st : Array = sp.get("stages", [])
+				var pipe : Array = e.get("pipe", [])
+				if st.is_empty() or st.size() == pipe.size():
+					for i in st.size():
+						pipe[i] = _Resume.batch_in(st[i])
+					e["stage_t"] = float(sp.get("stage_t", 0.0))
+					saved_pipes[k] = {}
+		k += 1
+	for sp2 in saved_pipes:
+		for sd in ((sp2 as Dictionary).get("stages", []) as Array):
+			var b := _Resume.batch_in(sd)
+			if b.mass_kg > 0.0:
+				(nd["out"] as MaterialBatch).add(b)
+	return true
+
+## The line's own state: the shift's kg ledger, whether the feed is on, the PLC.
+func line_run_state() -> Dictionary:
+	var out := _Resume.pack(self, RESUME_LINE_FIELDS)
+	if _plc != null:
+		out["plc"] = {"phase": int(_plc.get("_phase")), "idx": int(_plc.get("_idx")),
+			"timer": float(_plc.get("_timer")), "stages": _plc_stage_node.size()}
+	out["estop_active"] = _estop_active
+	return out
+
+func restore_line_run_state(d: Dictionary) -> void:
+	_Resume.unpack(self, _only(d, RESUME_LINE_FIELDS))
+	var plc_d : Variant = d.get("plc", null)
+	if _plc != null and plc_d is Dictionary:
+		var phase : int = int((plc_d as Dictionary).get("phase", 0))
+		if int((plc_d as Dictionary).get("stages", -1)) == _plc_stage_node.size():
+			_plc.set("_phase", phase)
+			_plc.set("_idx", int((plc_d as Dictionary).get("idx", 0)))
+			_plc.set("_timer", float((plc_d as Dictionary).get("timer", 0.0)))
+		elif phase == 1:
+			_plc.start()      # a different graph: continue the power-up from the tail
+		elif phase == -1:
+			_plc.stop()
+	if bool(d.get("estop_active", false)) and _resume_estop_ni >= 0:
+		_estop_active = true
+		_estop_fault_node = _resume_estop_ni
+		_estop_fault_order = _plc_stage_node.find(_resume_estop_ni)
+		feed_enabled = false
+	_resume_estop_ni = -1
+	# The alarms a latched fault raised when it happened, raised again for the
+	# listeners of this session (HMI alarm lists, SCADA, crew): a latch that
+	# comes back silent is a latch nobody can see.
+	var bus := get_node_or_null("/root/EventBus")
+	if bus == null or not bus.has_signal("machine_alarm_raised"):
+		return
+	if _estop_active and _estop_fault_node >= 0:
+		bus.emit_signal("machine_alarm_raised", String(_nodes[_estop_fault_node].get("id", "?")), "OVERLOAD-ESTOP", 3)
+	for nd in _nodes:
+		if bool(nd.get("choked", false)):
+			bus.emit_signal("machine_alarm_raised", String(nd.get("id", "?")), "CHUTE-BLOCKED", 2)
+		if _is_mol_tripped(nd):
+			bus.emit_signal("machine_alarm_raised", String(nd["mol"].get("machine_id")), MotorOverloadScript.ALARM_ID, 3)
+
+static func _only(d: Dictionary, keys: Array) -> Dictionary:
+	var out : Dictionary = {}
+	for k in keys:
+		if d.has(k):
+			out[k] = d[k]
 	return out
 
 func _nd_for_body(body: Node3D) -> int:
