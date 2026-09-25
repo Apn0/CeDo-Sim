@@ -71,6 +71,8 @@ var _start_lamp : Label = null
 var _start_text : Label = null
 var _start_reset : Button = null
 var _natraject_toggle : CheckButton = null
+var _silo_level : Label = null
+const ExtruderZonePanelScript := preload("res://src/scenes/hud/ExtruderZonePanel.gd")
 const RING_LIT := Color(0.97, 0.97, 1.0)
 const RING_DARK := Color(0.30, 0.31, 0.34)
 
@@ -641,6 +643,10 @@ func _add_start_controls() -> void:
 	_natraject_toggle.focus_mode = Control.FOCUS_NONE
 	_natraject_toggle.toggled.connect(func(on: bool): set_natraject(on))
 	_line_bar_box.add_child(_natraject_toggle)
+	_silo_level = Label.new()
+	_silo_level.name = "SiloLevel"
+	_silo_level.add_theme_font_size_override("font_size", 13)
+	_line_bar_box.add_child(_silo_level)
 
 func _selected_start_seq():
 	var m = _extruders_by_line().get(_extruder_line, null)
@@ -671,6 +677,10 @@ func _refresh_start_controls() -> void:
 	var has : bool = seq != null
 	for c in [_start_lamp, _start_text, _start_reset, _natraject_toggle]:
 		(c as Control).visible = has
+	var m = _extruders_by_line().get(_extruder_line, null)
+	if _silo_level != null and is_instance_valid(_silo_level):
+		_silo_level.text = ExtruderZonePanelScript.silo_text(m)
+		_silo_level.visible = _silo_level.text != ""
 	if not has:
 		return
 	var lit : bool = bool(seq.led_lit())

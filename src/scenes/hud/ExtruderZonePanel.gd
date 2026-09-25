@@ -60,6 +60,7 @@ var _start_lamp : Label = null
 var _start_text : Label = null
 var _start_reset : Button = null
 var _natraject_toggle : CheckButton = null
+var _silo_level : Label = null
 
 func _ready() -> void:
 	custom_minimum_size = Vector2(320, 0)
@@ -171,6 +172,10 @@ func _add_start_row(box: VBoxContainer) -> void:
 		_refresh_start_row()
 	)
 	row2.add_child(_natraject_toggle)
+	_silo_level = Label.new()
+	_silo_level.name = "SiloLevel"
+	_silo_level.add_theme_font_size_override("font_size", 12)
+	box.add_child(_silo_level)
 	box.add_child(HSeparator.new())
 	_refresh_start_row()
 
@@ -189,6 +194,19 @@ func _refresh_start_row() -> void:
 		Color(1.0, 0.45, 0.35) if String(seq.alarm) != "" else Color(0.85, 0.88, 0.92))
 	_start_reset.disabled = String(seq.alarm) == ""
 	_natraject_toggle.set_pressed_no_signal(bool(seq.natraject_enabled))
+	if _silo_level != null:
+		_silo_level.text = silo_text(_model)
+		_silo_level.visible = _silo_level.text != ""
+
+## "Extrudersilo 87 %  (2194 mm)", and what the full silo stopped, or "" when
+## the extruder has no macro-built silo (rulings §I11).
+static func silo_text(m) -> String:
+	if m == null or not bool(m.get("silo_level_known")):
+		return ""
+	var t := "Extrudersilo %.0f %%  (%.0f mm)" % [float(m.get("silo_level_pct")), float(m.get("silo_level_mm"))]
+	if bool(m.get("silo_feed_stopped")):
+		t += "  —  vol: toevoer gestopt"
+	return t
 
 ## "SCHROEFTOERENTAL": the rpm setpoint slider plus a setpoint / actual readout.
 ## Only built for a model that has the setpoint API and a config.

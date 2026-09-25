@@ -12,10 +12,16 @@ extends Node
 ## plant's silos hold far more than 250 kg; the sim's cap is its own.
 ##
 ## A real 3B line (BuildMode._build_full_line -> LineFlow.rebuild ->
-## start_line), 950 kg/h fed at the blower before the extruder silo (as
-## test_extruder_silo_chain), 60 min of sim time, the brain stepped by hand:
+## start_line), 950 kg/h fed at its head (vss_silo), 60 min of sim time, the
+## brain stepped by hand:
 ##   case OFF — the extruder is never started;
 ##   case ON  — the start button is pressed at t = 0 (control).
+##
+## Measured 2026-09-25 BEFORE the silo feed stop (§I11/§I13), fed at the blower
+## before the extruder silo: OFF e-stopped at 16.0 min (extruder_3b, 250 kg);
+## ON ran 60 min without one. Since then the PCU belt stops at a full pot, the
+## silo fills, and at 100 % the VSS dosing screw stops; this now prints when
+## each of those happened and where the backlog waits.
 
 const DT : float = 0.1
 const FEED_KG_H : float = 950.0
@@ -63,10 +69,13 @@ func _case(start_it: bool) -> void:
 	for e in lf.call("flow_bodies"):
 		var b : Node3D = e["body"]
 		var mi : int = int(b.get_meta("macro_index", -1))
-		if mi == mi_silo - 1:
-			feed_body = b
+		if mi == 0:
+			feed_body = b          # vss_silo, the head of the wash line
 		elif mi == mi_silo:
 			silo = b
+	var pcu_t := -1.0
+	var full_t := -1.0
+	var peak := 0.0
 	var m : ExtruderModel = brain.get("model")
 	if start_it:
 		m.melt_temp = m.config.melt_temp_setpoint
@@ -91,17 +100,28 @@ func _case(start_it: bool) -> void:
 			var fi : int = int(lf.get("_estop_fault_node"))
 			estop_at = String(((lf.get("_nodes") as Array)[fi] as Dictionary).get("id", "?"))
 			print("  E-STOP at %.0f s (%.1f min): overload at '%s', fed %.0f kg" % [estop_t, estop_t / 60.0, estop_at, fed])
+		var lv : Dictionary = lf.call("silo_level_for", silo)
+		peak = maxf(peak, float(lv.get("pct", 0.0)))
+		if pcu_t < 0.0 and bool(lv.get("pcu_full", false)):
+			pcu_t = t + DT
+			print("  PCU pot full at %.0f s (%.1f min): PCU belt and silo discharge stop" % [pcu_t, pcu_t / 60.0])
+		if full_t < 0.0 and bool(lv.get("held", false)):
+			full_t = t + DT
+			print("  silo 100 %% at %.0f s (%.1f min): VSS dosing screw stops" % [full_t, full_t / 60.0])
 		if t >= next_report:
 			next_report += 300.0
 			var exn : Dictionary = lf.call("node_for_body", ex)
-			var sn : Dictionary = lf.call("node_for_body", silo)
-			print("  t %5.0f s  fed %6.1f kg  extruder %-9s buffer %6.1f kg  silo buffer %6.1f kg  estop %s"
-				% [t, fed, m.get_state_name(), float(exn.get("buffer", 0.0)), float(sn.get("buffer", 0.0)),
-				str(lf.get("_estop_active"))])
+			var fbn : Dictionary = lf.call("node_for_body", feed_body)
+			var tgt = lv.get("target", null)
+			var tgn : Dictionary = lf.call("node_for_body", tgt) if tgt != null else {}
+			print("  t %5.0f s  fed %6.1f kg  extruder %-9s pot %6.1f kg  silo %6.1f %%  VSS %6.1f kg  screw in %6.1f kg  estop %s"
+				% [t, fed, m.get_state_name(), float(exn.get("buffer", 0.0)), float(lv.get("pct", 0.0)),
+				float(fbn.get("buffer", 0.0)), float(tgn.get("buffer", 0.0)), str(lf.get("_estop_active"))])
 		if estop_t > 0.0 and t > estop_t + 60.0:
 			break
-	print("  RESULT case %s: e-stop %s" % ["ON" if start_it else "OFF",
-		("at %.0f s (%.1f min) on '%s'" % [estop_t, estop_t / 60.0, estop_at]) if estop_t > 0.0 else "none in %.0f min" % (RUN_S / 60.0)])
+	print("  RESULT case %s: e-stop %s; silo peak %.1f %%" % ["ON" if start_it else "OFF",
+		("at %.0f s (%.1f min) on '%s'" % [estop_t, estop_t / 60.0, estop_at]) if estop_t > 0.0 else "none in %.0f min" % (RUN_S / 60.0),
+		peak])
 	lf.call("release_nodes", brain)
 	lf.queue_free()
 	bm.queue_free()

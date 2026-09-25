@@ -137,11 +137,10 @@ at the blower before the extruder silo, for 60 min of sim time:
 
 The operator ruled that the silos fill while the extruder is off (§I4). The sim
 caps any machine's input at 250 kg and has no silo capacity. So a cold barrel,
-whose warm-up takes at least 30 min (SWI-042 p4 §19), cannot be warmed up with
-its line feeding at nominal: the line e-stops at 16 min. Before this change the
-extruder node swallowed the material whether or not it ran, so the question
-never came up. **Open for the operator:** how much the extruder silo holds,
-and what the plant does upstream when it is full. Not changed here.
+whose warm-up takes at least 30 min (SWI-042 p4 §19), could not be warmed up
+with its line feeding at nominal: the line e-stopped at 16 min. Before this
+change the extruder node swallowed the material whether or not it ran, so the
+question never came up. **He was asked; the answer is built in §8.**
 
 ## 5. Mutation matrix
 
@@ -259,9 +258,100 @@ line and added only `test_extruder_start_interlock`, after
 `test_extruder_start_rpm`. The `for t in` lists were diffed against `main`:
 none missing, one added.
 
-## 8. Open
+## 8. The extruder silo's level sensor and its feed stop
 
-- **§4:** the backlog e-stop against the warm-up.
+Asked after §4 (rulings §I11, §I13). Built:
+
+- **The PCU belt stops at a full pot.** On lines 1/3A/3B the extruder's flow
+  node is the PCU and the screw in one, so its input buffer is the pot. At
+  `CutterCompactor.POT_CAPACITY_KG` (60 kg, the sim's own number; his rough
+  guess for a full PCU was about 100 kg) the compactorband and the extruder
+  silo's discharge are held. The silo then fills, which is what he described:
+  *"if the compactor belt is not running ..."*.
+- **The level sensor** (`LineFlow._tick_silo_feed_stops`) averages the silo's
+  content over each second and reports once per second, as % of `SILO_FULL_KG`
+  (150 kg, the silo-full the level windows already show; no plant capacity is
+  documented) and as mm on his example scale (1780 mm = 100 %, 4950 mm = 0 %).
+- **The feed stop.** At >= 100 % the silo's feed is held at once. On 3A/3B that
+  is the VSS dosing screw M11a (the `transport_screw` after the
+  `vuilsnippersilo`) and the VSS's own discharge (`vss_silo`; in the sim graph
+  it feeds the screw directly, so without it the VSS empties into the stopped
+  screw). On line 1 it is the shredder (§I13: its hopper is line 1's VSS). The
+  feed runs again after 10 reports in a row under 100 %.
+- **HAND bypasses it**, as HAND bypasses every PLC safeguard. It is applied
+  where the PLC writes, before HAND.
+- The extruder model carries the reading (`silo_level_pct`, `silo_level_mm`,
+  `silo_feed_stopped`), and both extruder HMIs show "Extrudersilo NN %
+  (NNNN mm)" and "vol: toevoer gestopt".
+
+Measured with `test_extruder_silo_feed_stop` (17 checks) on a real 3B line and
+line 1 (plus 3A for the pairing), fed 950 kg/h at the head for 20 min with the
+extruders off:
+
+| what | 3B | line 1 |
+|---|---|---|
+| pairs with | extruder_silo #18 → transport_screw #2 (+ vss_silo) | extruder_silo #38 → shredder_1 #3 |
+| PCU pot full, belt + silo discharge stop | 309 s | 298 s |
+| silo at 100 %, feed stopped at once | 957 s (15.9 min) | 872 s |
+| the wash line runs empty on top | peak 106.0 % | peak 109.8 % |
+| overload e-stop in 25 min | none | none |
+| where the backlog waits | the VSS, 63.5 kg; the stopped screw's input stays at 1.2 kg | the shredder hopper, 86.9 kg |
+| extruder started: feed runs again | 10 reports under 100 %, 9.0 s after the first | the same |
+
+Other checks:
+- The reports come once per second (60 in the first 60 s).
+- Each is the average of the second before it, checked against the suite's own
+  record of the silo over 60 reports.
+- The dosing screw in HAND + AAN runs despite a full silo; back in AUTO it is
+  held again.
+
+`probe_extruder_off_backlog` (3B fed at its VSS, extruder never started):
+
+| | before §8 | after |
+|---|---|---|
+| PCU pot full | — | 5.1 min |
+| silo at 100 % | — | 15.9 min |
+| silo peak | — | 106.0 % |
+| e-stop | 16.0 min at `extruder_3b` | 31.8 min at `vss_silo` (250 kg) |
+
+The probe feeds the VSS directly, past the intake. In the plant the intake has
+its own "VSS full" logic (`VSS_FULL_KG` 150 kg: the C8 reverse and the pack-up
+pause, when both VSSes are full), which this probe does not exercise. Whether
+the whole intake keeps a cold extruder's line off the e-stop through a full
+30-min warm-up was not measured.
+
+**Mutation matrix (`mutate_silo.py` in the session scratchpad, run on the
+final tree, md5 restored after each):**
+
+| mutation | red | which |
+|---|---|---|
+| MS1 a full silo does not stop its feed | 8 | S2, S3, S4, S5 |
+| MS2 the feed runs again at the first report under 100 % | 2 | S5 |
+| MS3 the sensor reports the instant content, not the 1 s average | 1 | S1 |
+| MS4 the sensor reports every tick | 4 | S1, S3, S5 |
+| MS5 a full PCU pot does not stop the belt and the silo's discharge | 10 | S2, S3, S4, S5 |
+| MS6 the stop applied after HAND (HAND cannot bypass it) | 1 | S4 |
+| MS7 3B's silo stops the vss_silo instead of the dosing screw | 1 | S0 (the suite stops there) |
+| MS8 the extruder model does not carry the reading | 2 | S6, S7 |
+| MS9 3B's VSS keeps emptying into the stopped dosing screw | 1 | S3 |
+
+**Open, from his answers:**
+- The PCU pot's real size (60 kg is the sim's; his guess was about 100 kg), and
+  the PCU belt's other modes (continuous, off, manual).
+- The silo's real capacity (the mm scale is his "for instance").
+- 3C/6's stop/start band ("stop vullen" 225 cm, and a maximum above it): his
+  "later".
+- The VSS's own fill in bar (3B: start 2, stop 8).
+- Line 1's shredder pause is a flow hold: the ram and the motor that keeps its
+  rpm are not modelled.
+- The sim's `vss_silo` and `vuilsnippersilo` are two nodes for what is probably
+  one silo (found by the code search, not changed).
+
+## 9. Open
+
+- **§4/§8:** the backlog is now held in the VSS; whether the intake's own
+  VSS-full logic keeps a cold extruder's line running through a full warm-up
+  was not measured.
 - **Checks the sim cannot make yet:**
   - the pelletizer lid and lever (no lid in the sim);
   - zone and pressure limits (in the deep EREMA settings; no numbers).
@@ -275,9 +365,9 @@ none missing, one added.
   - a physical ring button (its place on 3A/3B is not documented).
 - **Lines 3C and 6.** The 3C macro's `extruder_screw` has no brain, so its
   pellet side still runs on the line's PLC. Line 6 has no macro.
-- **After a save load, every extruder is OFF.** The extruder state is not
-  saved, so its pellet side and flow node stay off until it is started again,
-  while `LineFlow.mark_warm_boot()` brings the rest of the line up hot. Found by
-  reading the code, not measured.
+- **After a save load, every extruder is OFF**, like the rest of the line: a
+  load starts cold (his 2026-07-08 ruling). He now wants the plant as the last
+  shift left it, and a realistic running state for a new save (rulings §I12).
+  That is a separate task.
 - **The E key still clears an extruder FAULT and an e-stop at the machine.**
   §I6's principle says the HMI. Not changed here.
