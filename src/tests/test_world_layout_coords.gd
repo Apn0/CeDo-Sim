@@ -11,11 +11,17 @@ extends Node3D
 ## 228 m of vehicle misplacement. Expected values below are derived from the
 ## mesh centre, not copied from WorldLayout's own arithmetic.
 ##
-## Backs up + restores the real user://world_layout.json.
+## The three fixtures are written to a SCRATCH file, and each fresh WorldLayout
+## instance reads them through layout_path_override. The operator's
+## user://world_layout.json is never opened for writing, only compared at the
+## end (src/tests/world_layout_guard.gd). Until 2026-09-25 each fixture went
+## OVER his file with a truncating FileAccess.WRITE, and his bytes were written
+## back at the end, so a kill mid-run left one of the fixtures as his world.
 ##   godot --headless --main-scene res://src/tests/test_world_layout_coords.tscn
 
-const PATH := "user://world_layout.json"
 const TILE_OBJ := "res://assets/models/CeDo_building.obj"
+const WorldLayoutGuard := preload("res://src/tests/world_layout_guard.gd")
+var _wlg := WorldLayoutGuard.new("__wlcoords__")
 
 ## Independent derivation of the RD→scene shift: read the tile mesh directly
 ## instead of asking WorldLayout what it used.
@@ -28,7 +34,6 @@ func _tile_shift() -> Vector2:
 
 var _pass := 0
 var _fail := 0
-var _backup = null
 
 
 func _ok(c: bool, m: String) -> void:
@@ -39,10 +44,8 @@ func _ok(c: bool, m: String) -> void:
 
 func _ready() -> void:
 	print("=== world_layout coordinate conversion (377 km bug) ===")
-	if FileAccess.file_exists(PATH):
-		var f := FileAccess.open(PATH, FileAccess.READ)
-		_backup = f.get_as_text()
-		f.close()
+	if not _wlg.arm(get_tree()):
+		get_tree().quit(2); return
 
 	# ── Case 1: MIXED file (the user's actual corruption shape) ────────────────
 	_write_layout({
@@ -59,6 +62,7 @@ func _ready() -> void:
 	var shift := _tile_shift()
 	_ok(shift != Vector2.ZERO, "tile mesh readable — RD shift derived independently %s" % str(shift))
 	var wl = load("res://src/autoload/WorldLayout.gd").new()
+	wl.layout_path_override = _wlg.scratch
 	wl._load()
 	# The RD player_spawn must land where the tile anchor puts it — NOT at zero.
 	# A zero here means the loader re-centred on the marker itself, which is the
@@ -86,6 +90,7 @@ func _ready() -> void:
 		"vehicle_spawns": {"forklift": [{"x": 183900.0, "y": 0.0, "z": -329200.0}]},
 	})
 	var wl2 = load("res://src/autoload/WorldLayout.gd").new()
+	wl2.layout_path_override = _wlg.scratch
 	wl2._load()
 	var fk2 : Vector3 = wl2.vehicle_spawns["forklift"][0]
 	var want_fk2 := Vector2(183900.0 - shift.x, -329200.0 - shift.y)
@@ -106,28 +111,22 @@ func _ready() -> void:
 		"vehicle_spawns": {"forklift": [{"x": 42.6, "y": 0.0, "z": -43.3}]},
 	})
 	var wl3 = load("res://src/autoload/WorldLayout.gd").new()
+	wl3.layout_path_override = _wlg.scratch
 	wl3._load()
 	var fk3 : Vector3 = wl3.vehicle_spawns["forklift"][0]
 	_ok(absf(fk3.x - 42.6) < 0.01 and absf(fk3.z + 43.3) < 0.01,
 		"ALL-LOCAL: markers untouched on load")
 	wl3.free()
 
-	_restore()
+	var c : Array = _wlg.real_layout_check()
+	_ok(c[0], c[1])
+	_wlg.disarm()
 	print("\nResult: %d ok, %d fail" % [_pass, _fail])
 	get_tree().quit(0 if _fail == 0 else 1)
 
 
 func _write_layout(d: Dictionary) -> void:
-	var f := FileAccess.open(PATH, FileAccess.WRITE)
+	var f := FileAccess.open(_wlg.scratch, FileAccess.WRITE)
 	f.store_string(JSON.stringify(d, "\t"))
 	f.close()
 
-
-func _restore() -> void:
-	if _backup is String:
-		var f := FileAccess.open(PATH, FileAccess.WRITE)
-		f.store_string(_backup)
-		f.close()
-	elif FileAccess.file_exists(PATH):
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(PATH))
-	print("  (restored original world_layout.json)")

@@ -24,6 +24,48 @@ UD="${UD:-C:/Users/arnod/AppData/Roaming/Godot/app_userdata/CeDo Simulator}"
 OUT="$PROJ/tools/regression/out"
 mkdir -p "$OUT"
 
+# WORLD LAYOUT SENTINEL. user://world_layout.json is the operator's world and is
+# in git nowhere. Every suite that boots a world must redirect its saves
+# (WorldLayout.layout_path_override, src/tests/world_layout_guard.gd) and never
+# write this file. A suite that forgets did so silently: its in-memory restore
+# ran only if the process got that far, and a killed run left his world as the
+# test last saved it (docs/audit/jam_baseline_layout_leak_2026-09-24.md). So
+# the file is fingerprinted here once and compared after EVERY step: md5 AND
+# mtime of the file and its AtomicFile .bak/.tmp. md5 alone misses a save that
+# wrote the same bytes, and that save still rotates .bak. A change is a FAIL
+# that names the step. The file is NEVER restored here: this script cannot tell
+# a leak from the game's own save, and writing old bytes over the second would
+# lose his edit. The fingerprint is then re-taken, so each later step is
+# blamed only for its own change.
+# Watches "$UD": when APPDATA is redirected for an isolated run, pass the
+# matching UD= too, or this watches the real folder while Godot writes another.
+wl_state() {
+	local f
+	for f in "$UD/world_layout.json" "$UD/world_layout.json.bak" "$UD/world_layout.json.tmp"; do
+		if [ -e "$f" ]; then
+			printf '%s md5 %s mtime %s\n' "${f##*/}" "$(md5sum < "$f" | cut -c1-32)" "$(stat -c %Y "$f")"
+		else
+			printf '%s absent\n' "${f##*/}"
+		fi
+	done
+}
+WL_BASE="$(wl_state)"
+WL_BLAMED=()
+# $1 = the step that just ran.
+wl_sentinel() {
+	local now
+	now="$(wl_state)"
+	[ "$now" = "$WL_BASE" ] && return 0
+	echo "FAIL  : $1 changed the operator's world_layout.json — left as is, NOT restored:"
+	diff <(printf '%s\n' "$WL_BASE") <(printf '%s\n' "$now") | grep -E '^[<>]' | sed 's/^/          /'
+	WL_BASE="$now"
+	WL_BLAMED+=("$1")
+	[ "${code:-0}" -eq 0 ] && code=1
+	return 0
+}
+echo "== world_layout sentinel: $UD/world_layout.json =="
+printf '%s\n' "$WL_BASE" | sed 's/^/   /'
+
 # HANG GUARD for the scene-suite loop below. That loop passes no --quit-after and
 # had no timeout, so one suite that never reaches its own quit() (a script that
 # failed to attach, a wait that never resolves — the documented "idles forever"
@@ -167,6 +209,7 @@ else
 	echo "FAIL  : regression verdict missing or non-zero fail count (see $OUT/last_run.log)"
 	code=1
 fi
+wl_sentinel "running regression (regression_world_save)"
 
 echo "== rendering top-down =="
 cp "$UD/regression_positions.json" "$OUT/positions.json" 2>/dev/null || true
@@ -186,6 +229,7 @@ if ! grep -q "Result: PASS" "$OUT/clamp_spawn.log"; then
 	echo "FAIL  : clamp spawn regression (see $OUT/clamp_spawn.log)"
 	[ $code -eq 0 ] && code=1
 fi
+wl_sentinel "vehicle spawn (clamp nesting)"
 
 # Fixes proven this session — each asserts the exact defect the operator hit, so
 # none of them can silently rot: map frame (player inside the shell renders
@@ -492,26 +536,13 @@ fi
 # every world.call name in the spawner on the booted MainWorld, proves each solid
 # collider live in the physics space, pins the shredder to its belt's discharge,
 # and never writes world_layout.json. Own slot. 35 checks, 5 mutations red.
-# test_screw_die_plate_bar (2026-09-24): LineFlow's OWN screw model (not
-# ExtruderModel) read 0.11 "bar" at the die, at a flat 200 rpm and a 195 °C
-# melt, which put the MFI proxy at 1491 g/10min and made the QA bench REJECT
-# every sample; on lines 1/3A/3B the terminal and SCADA also read the
-# extruder_silo. Now the die plate (after the kopfilter, operator ruling) is
-# anchored at FORM-008's kopdruk window and the rpm, melt and output at the
-# WinCC trend p50s (read from the JSON). Four macro lines on one LineFlow.
-# 36 checks, 8 mutations red (old die formula 7, silo back 2, flat 200 rpm 7,
-# 195 °C barrel 8, old MFI gain 2, terminal prefix pick 3, no profile 5,
-# ExtruderModel's Extruder3A.tres die plate drifted 1).
-# test_extruder_ramp_pressures (2026-09-25): the melt pressures through STARTING
-# and STOPPING follow the flow the ramp moves. ExtruderModel scaled the LAST
-# tick's pressures by the rpm fraction every tick, so a stop compounded them (the
-# die plate at 0.142 of running 1.2 s in, 0.024 at 0.05 s ticks, flow 0.747) and
-# a start read 0 bar for the whole ramp, laserfilter inlet included. The die law
-# is read off the script (DIE_FLOW_INDEX, else linear), so the suite holds under
-# the power-law die too. 21 checks, 4 mutations measured: the old scale 11 red,
-# ramps that hold the last value 7 red, a power-law die with a correct
-# (two-argument) call 0 red, with the melt folded into the flow (pow(q*m, n)) 3 red.
-for t in test_extruder_melt_pressures test_extruder_ramp_pressures test_motor_trip_stops_conveying test_die_pressure_bar test_screw_die_plate_bar test_hmi_ack_rearm test_legacy_props_spawner test_legacy_props_unconfigured_boot test_lump_cart_overflow test_lump_cart_speed_clamp test_save_checkpoint test_keybind_sheet test_map_labels test_compactor_sight_glass test_belt_film_field test_silo_level_windows test_chute_choke test_trip_smoke test_vacuum_pot_visual test_doseersilo_trough test_bale_weight_variance test_wet_side_beds test_line1_metal_detect test_vacuum_pot_minigame test_belt_speed_mismatch test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_line3a_identity test_line3b_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_humanoid_rig_conformance test_line1_flow_conformance test_line1_throughput test_line1_overband_mount test_line1_twin_streams test_line3a_flow_conformance test_line3b_flow_conformance test_shredder_rate_reconciliation test_line1_no_false_overload test_line_builder_ghost test_macro_part_placement test_project_sweep_guards test_tool_placement_mode test_scada_dashboard_scene test_atomic_file test_extruder_brain_wired test_vehicle_census test_map_overlay_init test_qa_loop test_qa_spec test_assessment_procedure test_character_customizer test_f10_reserved test_bale_sticker_supplier test_hose_reel_round test_macro_delta_guard; do
+# test_machine_sounds (2026-09-25): the operator's recordings on their machines.
+# Every MachineSoundSpec .tres and its WAVs (16-bit stereo 44.1 kHz, loops
+# looping), the build_node attach contract, drive → pitch/level/stop semantics,
+# LineFlow driving from spin, the leaf blower's start/idle/rev/stop, the valve
+# cranks, the compactor flush period, the wash panel's alarm beep + KWITTEREN.
+# Needs assets/audio/machines/ (gitignored — tools/audio/machine_clips.py).
+for t in test_machine_sounds test_extruder_melt_pressures test_motor_trip_stops_conveying test_die_pressure_bar test_hmi_ack_rearm test_legacy_props_spawner test_legacy_props_unconfigured_boot test_lump_cart_overflow test_lump_cart_speed_clamp test_save_checkpoint test_keybind_sheet test_map_labels test_compactor_sight_glass test_belt_film_field test_silo_level_windows test_chute_choke test_trip_smoke test_vacuum_pot_visual test_doseersilo_trough test_bale_weight_variance test_wet_side_beds test_line1_metal_detect test_vacuum_pot_minigame test_belt_speed_mismatch test_hmi_fault_rearm test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_line3a_identity test_line3b_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_humanoid_rig_conformance test_line1_flow_conformance test_line1_throughput test_line1_overband_mount test_line1_twin_streams test_line3a_flow_conformance test_line3b_flow_conformance test_extruder_silo_chain test_shredder_rate_reconciliation test_line1_no_false_overload test_line_builder_ghost test_macro_part_placement test_project_sweep_guards test_tool_placement_mode test_scada_dashboard_scene test_atomic_file test_extruder_brain_wired test_vehicle_census test_map_overlay_init test_qa_loop test_qa_spec test_assessment_procedure test_character_customizer test_f10_reserved test_bale_sticker_supplier test_hose_reel_round test_macro_delta_guard; do
 	echo "== $t =="
 	${SUITE_TO[@]+"${SUITE_TO[@]}"} "$GODOT" --headless --path "$PROJ" "res://src/tests/$t.tscn" > "$OUT/$t.log" 2>&1
 	rc=$?
@@ -523,6 +554,7 @@ for t in test_extruder_melt_pressures test_extruder_ramp_pressures test_motor_tr
 		echo "FAIL  : $t (see $OUT/$t.log)"
 		[ $code -eq 0 ] && code=1
 	fi
+	wl_sentinel "$t"
 done
 
 # 2026-09-21 — SUITES THAT WERE NEVER RUN. 34 test scenes existed that nothing
@@ -572,6 +604,7 @@ for t in test_layout_load test_new_world_wipe test_world_layout_coords test_cutt
 		echo "FAIL  : $t — verdict printed but ZERO checks ran (vacuous) (see $OUT/$t.log)"
 		[ $code -eq 0 ] && code=1
 	fi
+	wl_sentinel "$t"
 done
 
 # Spawn clearance. The 9334310 marker-frame fix moved 9 vehicles 120-270 m and
@@ -608,6 +641,7 @@ for cfg in "NOLINE" "LINE"; do
 		echo "FAIL  : spawn clearance $cfg (see $OUT/spawn_clearance_$cfg.log)"
 		[ $code -eq 0 ] && code=1
 	fi
+	wl_sentinel "spawn clearance ($cfg)"
 done
 
 # npc-05 container chain bench: DELETED 2026-08-17 on operator order along with
@@ -634,6 +668,7 @@ if ! grep -q "PASS —" "$OUT/door_carve.log"; then
 	echo "FAIL  : door carve (see $OUT/door_carve.log)"
 	[ $code -eq 0 ] && code=1
 fi
+wl_sentinel "door carve (visible-teeth regression)"
 
 # MotorOverload unit test — existed since before this session but was NEVER
 # wired into the harness. Now guards the 2026-08-29 set_load() fix directly:
@@ -649,6 +684,7 @@ if ! grep -qE "^Result: [0-9]+ ok, 0 fail" "$OUT/motor_overload.log"; then
 	echo "FAIL  : motor overload (see $OUT/motor_overload.log)"
 	[ $code -eq 0 ] && code=1
 fi
+wl_sentinel "motor overload (set_load fix + trip/reset logic)"
 
 # HmiWebOverlay (task #2): the WebView itself can't exist headless, so this
 # covers everything Godot owns around it — Index-derived nav order, the
@@ -661,6 +697,7 @@ if ! grep -q "PASS —" "$OUT/hmi_web.log"; then
 	echo "FAIL  : hmi web overlay (see $OUT/hmi_web.log)"
 	[ $code -eq 0 ] && code=1
 fi
+wl_sentinel "hmi web overlay (nav + vals logic)"
 
 # ---------------------------------------------------------------------------
 # Unit suites from the 2026-08-29 PR batch (#154-#165). Every one of them was
@@ -699,6 +736,7 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/wall_openings.log"; then
 	echo "FAIL  : wall openings (see $OUT/wall_openings.log)"
 	[ $code -eq 0 ] && code=1
 fi
+wl_sentinel "wall openings (carve bookkeeping, unit)"
 
 echo "== push gate (free-side local-space math, unit) =="
 "$GODOT" --headless --path "$PROJ" --script res://src/tests/test_push_gate.gd --quit-after 300 > "$OUT/push_gate.log" 2>&1
@@ -707,6 +745,7 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/push_gate.log"; then
 	echo "FAIL  : push gate (see $OUT/push_gate.log)"
 	[ $code -eq 0 ] && code=1
 fi
+wl_sentinel "push gate (free-side local-space math, unit)"
 
 # TextureCache: disk-cache hit path, manifest bookkeeping, corrupt-entry eviction.
 # The suite forces its own instance offline before the corrupt-entry case (see the
@@ -718,6 +757,7 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/texture_cache.log"; then
 	echo "FAIL  : texture cache (see $OUT/texture_cache.log)"
 	[ $code -eq 0 ] && code=1
 fi
+wl_sentinel "texture cache (disk cache + manifest, unit)"
 
 # Walkie (#161). docs/audit/pr_merge_2026-08-29.md holds this suite back as
 # measured-broken: mocks silently overridden by the real autoloads, a failure at
@@ -738,6 +778,7 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/walkie.log"; then
 	echo "FAIL  : walkie (see $OUT/walkie.log)"
 	[ $code -eq 0 ] && code=1
 fi
+wl_sentinel "walkie (battery/headset/PTT + dead-battery silence, unit)"
 
 # #A3 silo level sensor. build_node() picks a body class from a long if/elif
 # chain, and this entry's category is "Control" — so while the `category ==
@@ -758,6 +799,7 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/silo_level_sensor.log"; t
 	echo "FAIL  : silo level sensor wiring (see $OUT/silo_level_sensor.log)"
 	[ $code -eq 0 ] && code=1
 fi
+wl_sentinel "silo level sensor wiring (#A3)"
 
 
 # SettingsManager.set_pending_keybind
@@ -775,6 +817,7 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/settings_manager_pending_
 	[ $code -eq 0 ] && code=1
 
 fi
+wl_sentinel "SettingsManager set_pending_keybind"
 
 
 
@@ -797,6 +840,7 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/gate_state.log"; then
 	echo "FAIL  : Gate state (see $OUT/gate_state.log)"
 	[ $code -eq 0 ] && code=1
 fi
+wl_sentinel "Gate state (is_fully_open / is_fully_closed / drive)"
 
 # VehicleRouteGrid.goal_clearance — route() deliberately appends the RAW ordered
 # pose as its final waypoint (a goal is routinely inside a container or a cart
@@ -811,6 +855,7 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/route_goal_clearance.log"
 	echo "FAIL  : VehicleRouteGrid goal clearance (see $OUT/route_goal_clearance.log)"
 	[ $code -eq 0 ] && code=1
 fi
+wl_sentinel "VehicleRouteGrid goal clearance"
 
 # ScadaDashboard public API — set_state (state stored verbatim, grey-iff-Running colour,
 # micro-stop true/false return incl. exact-60s boundary), set_param (in/above/below band ->
@@ -823,6 +868,7 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/scada_dashboard.log"; the
 	echo "FAIL  : ScadaDashboard API (see $OUT/scada_dashboard.log)"
 	[ $code -eq 0 ] && code=1
 fi
+wl_sentinel "ScadaDashboard API (set_state/set_param/set_text_param)"
 
 # ShredderFeedBelt public API — request_start/request_stop (:416), fault latches
 # is_faulted/belt_jam_active/reset_faults (:541), and can_accept/accept_bale gates (:605),
@@ -835,6 +881,7 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/shredder_feed_belt_api.lo
 	echo "FAIL  : ShredderFeedBelt public API (see $OUT/shredder_feed_belt_api.log)"
 	[ $code -eq 0 ] && code=1
 fi
+wl_sentinel "ShredderFeedBelt public API"
 
 # HmiOverlay open_for/is_open/close_overlay — real class, real _ready (2026-08-31 review).
 # Proves: fresh overlay closed; open_for sets station/header, deep-copies scope, picks the
@@ -847,6 +894,7 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/hmi_overlay_open_close.lo
 	echo "FAIL  : HmiOverlay open/close (see $OUT/hmi_overlay_open_close.log)"
 	[ $code -eq 0 ] && code=1
 fi
+wl_sentinel "HmiOverlay open/close"
 
 # MapOverlay.handle_zoom — direction (+1 in / -1 out), dir=0 else-branch, 50x
 # repeated clamping pinned EXACTLY at MIN_RADIUS/MAX_RADIUS without overshoot,
@@ -859,6 +907,7 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/map_overlay_zoom.log"; th
 	echo "FAIL  : MapOverlay zoom (see $OUT/map_overlay_zoom.log)"
 	[ $code -eq 0 ] && code=1
 fi
+wl_sentinel "MapOverlay zoom"
 
 # test_inventory.gd existed but was wired NOWHERE (found during the 2026-08-31
 # review's preload work). It directly
@@ -873,6 +922,7 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/test_inventory.log"; then
 	echo "FAIL  : test_inventory (see $OUT/test_inventory.log)"
 	[ $code -eq 0 ] && code=1
 fi
+wl_sentinel "test_inventory"
 
 echo "== test_operator_context =="
 "$GODOT" --headless --path "$PROJ" --script res://src/tests/test_operator_context.gd --quit-after 300 > "$OUT/test_operator_context.log" 2>&1
@@ -881,6 +931,7 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/test_operator_context.log
 	echo "FAIL  : test_operator_context (see $OUT/test_operator_context.log)"
 	[ $code -eq 0 ] && code=1
 fi
+wl_sentinel "test_operator_context"
 
 # npc_board_vehicle / npc_vehicle_of (16 checks, incl. the legacy-NPC
 # set_physics_process(false) path). Written as test_operator_context.gd by
@@ -894,6 +945,7 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/test_operator_context_boa
 	echo "FAIL  : test_operator_context_board_vehicle (see $OUT/test_operator_context_board_vehicle.log)"
 	[ $code -eq 0 ] && code=1
 fi
+wl_sentinel "test_operator_context_board_vehicle"
 
 # test_hmi_universal_interactive (2026-09-17 HMI work, wired 2026-09-22): an
 # operator setpoint typed on the web HMI must reach the machine model and move
@@ -908,6 +960,7 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/test_hmi_universal_intera
 	echo "FAIL  : test_hmi_universal_interactive (see $OUT/test_hmi_universal_interactive.log)"
 	[ $code -eq 0 ] && code=1
 fi
+wl_sentinel "test_hmi_universal_interactive"
 
 # NPC state-API suite (2026-08-31 review): pins the four NPC.gd transition APIs —
 # set/clear_autonomy_destination (:61, incl. #202 boarded routing to the chassis),
@@ -920,6 +973,7 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/npc_boarding.log"; then
 	echo "FAIL  : NPC boarding logic (see $OUT/npc_boarding.log)"
 	[ $code -eq 0 ] && code=1
 fi
+wl_sentinel "NPC boarding logic"
 
 echo "== NPC state API (autonomy dest / forced task / post / vehicle) =="
 "$GODOT" --headless --path "$PROJ" --script res://src/tests/test_npc_state_api.gd --quit-after 300 > "$OUT/npc_state_api.log" 2>&1
@@ -928,6 +982,7 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/npc_state_api.log"; then
 	echo "FAIL  : NPC state API (see $OUT/npc_state_api.log)"
 	[ $code -eq 0 ] && code=1
 fi
+wl_sentinel "NPC state API (autonomy dest / forced task / post / vehicle)"
 
 # 2026-08-31 review: 'LaserFilterScope setup and update untested' (LaserFilterScope.gd:558).
 # Line 558 is setup() on the PressureBox INNER class (the outer scope has no setup/update).
@@ -941,6 +996,7 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/laserscope_pressure_box.l
 	echo "FAIL  : LaserFilterScope PressureBox (see $OUT/laserscope_pressure_box.log)"
 	[ $code -eq 0 ] && code=1
 fi
+wl_sentinel "LaserFilterScope PressureBox"
 
 # gather_vals() payload proof (2026-08-31 review: HmiWebOverlay.gd:275 untested in
 # counted-check shape). Mocks the exact read API: LineFlow group node, /root/
@@ -953,6 +1009,7 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/hmi_web_gather_vals.log";
 	echo "FAIL  : hmi web gather_vals (see $OUT/hmi_web_gather_vals.log)"
 	[ $code -eq 0 ] && code=1
 fi
+wl_sentinel "hmi web gather_vals"
 
 # CharacterCustomizer._rebuild_world_bodies — promoted 2026-08-31 from the review
 # mutation probe: no other wired suite observes this loop, so the same-day
@@ -966,6 +1023,7 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/customizer_world_bodies.l
 	echo "FAIL  : customizer world bodies (see $OUT/customizer_world_bodies.log)"
 	[ $code -eq 0 ] && code=1
 fi
+wl_sentinel "customizer world bodies"
 
 # Re-wired 2026-09-21: merge #258 (6338e79) resolved its conflict by REPLACING
 # this block with the gate test below, so the suite silently stopped running
@@ -977,6 +1035,7 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/settings_manager_apply.lo
 	echo "FAIL  : SettingsManager apply (see $OUT/settings_manager_apply.log)"
 	[ $code -eq 0 ] && code=1
 fi
+wl_sentinel "SettingsManager apply"
 
 # Gate is_fully_closed specific test to ensure explicit coverage of this function
 
@@ -987,6 +1046,7 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/camera_rig_set_first_pers
 	echo "FAIL  : camera rig set first person camera (see $OUT/camera_rig_set_first_person_camera.log)"
 	[ $code -eq 0 ] && code=1
 fi
+wl_sentinel "camera rig set first person camera"
 
 echo "== camera rig active =="
 "$GODOT" --headless --path "$PROJ" --script res://src/tests/test_camera_rig_active.gd --quit-after 300 > "$OUT/camera_rig_active.log" 2>&1
@@ -995,6 +1055,7 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/camera_rig_active.log"; t
 	echo "FAIL  : camera rig active (see $OUT/camera_rig_active.log)"
 	[ $code -eq 0 ] && code=1
 fi
+wl_sentinel "camera rig active"
 
 echo "== Gate is_fully_closed specific test =="
 
@@ -1009,6 +1070,7 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/gate_is_fully_closed.log"
 	[ $code -eq 0 ] && code=1
 
 fi
+wl_sentinel "Gate is_fully_closed specific test"
 
 # phys-07 — LumpChunk must not tunnel the 2.5 cm cart floor. Counts PHYSICS
 # TICKS, so it gets the SUITE_TO kill timer and NO --quit-after 300: measured
@@ -1024,6 +1086,12 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/lump_chunk_ccd.log"; then
 	echo "FAIL  : lump chunk CCD (phys-07) (see $OUT/lump_chunk_ccd.log)"
 	[ $code -eq 0 ] && code=1
 fi
+wl_sentinel "lump chunk CCD (phys-07)"
 
+if [ ${#WL_BLAMED[@]} -eq 0 ]; then
+	echo "== world_layout sentinel: untouched by every step =="
+else
+	echo "== world_layout sentinel: FAIL — changed by ${#WL_BLAMED[@]} step(s): ${WL_BLAMED[*]} =="
+fi
 echo "== done (exit $code) — see $OUT/topdown.png =="
 exit $code

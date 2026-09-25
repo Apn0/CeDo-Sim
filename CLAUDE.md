@@ -28,6 +28,23 @@ of `assets/` and `.godot/` (gitignored) to run the world suites — **copy them,
 never link them**: a linked `assets/` is how the 2026-09-21 cleanup of old
 worktrees emptied the real one (`docs/audit/assets_loss_and_restore_2026-09-21.md`).
 
+**The directory you start `run.sh` from no longer matters (fixed 2026-09-25).**
+`tools/audit/symbol_flow.py` resolved `extends "res://…"` against the CURRENT
+directory (`--project` defaulted to `.`). Started from another tree with `PROJ=`
+set, `== symbol flow audit ==` reported 38 "parse-breaking" symbols, all
+members that `L3CUnitScreen.gd` and `WashingScope.gd` inherit from
+`HmiScreenBase.gd`, and the harness stopped before any world suite. Started
+from another drive, it crashed in `os.path.relpath`. `res://` now means the
+`project.godot` directory at or above `--root`, and a missing one is an error.
+Measured the same from four directories (0 parse-breaking, byte-identical
+output). A planted undeclared symbol, one inheriting by `res://` path and one by
+`class_name`, is reported from all of them.
+
+For an isolated run (never the operator's `app_userdata`), redirect `APPDATA`
+and pass the matching `UD`, or the world_layout sentinel watches his real
+folder while Godot writes the copy:
+`APPDATA="$(cygpath -w <scratch>)" PROJ=<tree> UD=<scratch>/Godot/app_userdata/"CeDo Simulator" bash tools/regression/run.sh`
+
 `project.godot` declares `config/features=PackedStringArray("4.6")`.
 **Do not use `C:/Users/arnod/AppData/Local/Godot/godot.exe`** — that file is
 byte-identical to `Godot_v4.2-stable_win64.exe` (`--version` → `4.2.stable`) and
@@ -398,11 +415,12 @@ Two consequences you must not repeat:
   harness total. Quoting it as the harness result is how this hang stayed
   invisible. Both mistakes were made in this repo on 2026-08-03.
 
-Killing a mid-run suite leaves residue: `test_l3c_unit_screens` backs up its
-`TOUCHED` `user://` files **in memory only** and restores them in `_finish()`, so
-a kill loses the backups. Verified 2026-08-03 that `world_layout.json` survived
-intact; `world_layout_consumed.flag` was left behind but no production code reads
-it — only tests do.
+Killing a mid-run suite leaves residue: the suites back up their own slot files
+(`__<slot>___save.json`, `_factory.json`, `world_layout_consumed.flag`) **in
+memory only**, so a kill loses those backups. It no longer reaches
+`world_layout.json`. Since 2026-09-25 every world-booting suite sends its world
+saves to `user://<slot>_world_layout.json` (`src/tests/world_layout_guard.gd`)
+and never writes the real file. See "Save files go through `AtomicFile`" below.
 
 ### Within the suites that do run
 
@@ -1015,9 +1033,30 @@ Two rules that were wrong in the first draft and are now guarded by
 - **A corrupt primary must never be copied over the last good `.bak`.**
 
 Limits, stated once: Godot has no `fsync`, so this survives a killed process and
-a short write, not an OS crash with the page cache unflushed. Tests that keep a
-world booted past the 60 s autosave must set `WorldLayout.layout_path_override`
-first, or that autosave rewrites the real `world_layout.json`.
+a short write, not an OS crash with the page cache unflushed.
+
+**A test that boots a world must never write `world_layout.json` (2026-09-25).**
+The 60 s autosave is only one of the writers. `BuildMode._save_layout` also runs
+on every placement and deletion, and it calls `WorldLayout.save()` whenever
+`load_shared_structure` is true. The world's own BuildMode has it true. The old
+guard was an in-memory copy written back after `queue_free()`, which a kill, a
+`SUITE_TIMEOUT` or the teardown segfault skipped. Every save also rotated
+AtomicFile's `.bak`, which the write-back never repaired. Any suite that boots
+`MainWorld.tscn` or builds a BuildMode with shared structure uses
+`src/tests/world_layout_guard.gd`, preloaded:
+- `arm()` before boot: it redirects `layout_path_override` to
+  `user://<slot>_world_layout.json`, and the suite refuses to run if the
+  redirect does not take.
+- `final_checks(world)` before the verdict: it forces one `_save_layout` and
+  proves the save landed in scratch. It also proves the real file and its
+  `.bak`/`.tmp` kept their md5 AND mtime.
+- `restore()` before and after the world is freed. It skips unchanged bytes and
+  never writes the real file.
+
+`tools/regression/run.sh` fingerprints the real file the same way and fails
+any step that changes it, naming the step, without restoring. The measurements,
+including which suites wrote the file before, are in
+`docs/audit/world_layout_guard_2026-09-25.md`.
 
 ## Operator feedback channel
 
@@ -1326,6 +1365,9 @@ already flags as being in git nowhere — is simply skipped. It came through eve
 boot byte-identical against a `.bak`, so nothing is lost today; the exposure is
 the finding, and it is the same failure mode already recorded for killed runs.
 Take a `.bak` of `world_layout.json` before batch-running any MainWorld suite.
+(2026-09-25: the suites no longer write it at all, and the restore of their own
+slot files now runs BEFORE the world is freed as well as after; see "Save files
+go through `AtomicFile`".)
 
 ## `test_outdoor_route` does not share the navmesh race — it has no navmesh
 

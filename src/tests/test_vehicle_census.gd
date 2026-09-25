@@ -31,15 +31,18 @@ extends Node
 #   FAIL = at least one STRANDED vehicle.
 #
 # This is a PURE READ. It boots into the __census__ scratch slot and NEVER calls
-# _place_current / _save_layout, so world_layout.json is not rewritten. The file
-# is byte-backed-up and restored regardless (MainWorld autosaves on a timer,
-# which is stopped as soon as the boot settles).
+# _place_current. MainWorld autosaves on a timer, stopped as soon as the boot
+# settles. Every world save goes to a scratch file regardless, and
+# world_layout.json is only compared, never written (src/tests/world_layout_guard.gd,
+# whose final check forces one save to prove the redirect).
 # =============================================================================
 
 const TEST_SLOT := "__census__"
 
+## This slot's own files. The operator's world_layout.json is not on the list:
+## world saves go to the guard's scratch file, and the real one is only
+## compared, never written (src/tests/world_layout_guard.gd).
 const PROTECT : Array[String] = [
-	"user://world_layout.json",
 	"user://__census___save.json",
 	"user://__census___factory.json",
 ]
@@ -64,7 +67,8 @@ const BLDG_APRON_M : float = 25.0    # loading apron / roll-up door perimeter ou
 const BOOT_FRAMES    : int = 120
 const PRESHIFT_FRAMES : int = 180
 
-var _backups : Dictionary = {}
+const WorldLayoutGuard := preload("res://src/tests/world_layout_guard.gd")
+var _wlg := WorldLayoutGuard.new(TEST_SLOT, PROTECT)
 var _oks   : int = 0
 var _fails : int = 0
 var _world : Node3D = null
@@ -89,7 +93,10 @@ func _ready() -> void:
 		print("FATAL: WorldLayout autoload missing (boot via the .tscn, not --script)")
 		get_tree().quit(2)
 		return
-	_backup_files()
+	# Before boot, so no world save can reach the operator's world_layout.json.
+	if not _wlg.arm(get_tree()):
+		get_tree().quit(2)
+		return
 
 	var bus := get_node_or_null("/root/EventBus")
 	if bus:
@@ -244,6 +251,8 @@ func _ready() -> void:
 	_check(int(counts["STRANDED"]) == 0,
 		"NO vehicle is STRANDED (outside building, not at parking, not the pre-shift Swift) — %d found %s" % [
 			int(counts["STRANDED"]), str(stranded)])
+	for c in _wlg.final_checks(_world):
+		_check(c[0], c[1])
 	await _finish()
 
 
@@ -348,7 +357,11 @@ func _find_swift() -> Node3D:
 # =============================================================================
 # Teardown
 # =============================================================================
+## The verdict is printed and user:// restored BEFORE the world is freed, then
+## restored again after: the headless teardown segfault lands inside world
+## teardown (CLAUDE.md, 15 of 62 boots) and never reaches code after it.
 func _finish() -> void:
+	_wlg.restore()
 	print("\n=========================================")
 	print("Result: %s (%d ok, %d fail)" % ["PASS" if _fails == 0 else "FAIL", _oks, _fails])
 	print("RESULT: %s" % ["PASS" if _fails == 0 else "FAIL"])
@@ -357,27 +370,8 @@ func _finish() -> void:
 		get_tree().current_scene = null
 		_world.queue_free()
 		await get_tree().process_frame
-	_restore_files()
+	_wlg.restore()
+	_wlg.disarm()
 	get_tree().quit(0 if _fails == 0 else 1)
 
 
-func _backup_files() -> void:
-	for p in PROTECT:
-		if FileAccess.file_exists(p):
-			var f := FileAccess.open(p, FileAccess.READ)
-			_backups[p] = f.get_buffer(f.get_length())
-			f.close()
-		else:
-			_backups[p] = null
-
-
-func _restore_files() -> void:
-	for p in PROTECT:
-		var data = _backups.get(p, null)
-		if data == null:
-			if FileAccess.file_exists(p):
-				DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
-		else:
-			var f := FileAccess.open(p, FileAccess.WRITE)
-			f.store_buffer(data)
-			f.close()
