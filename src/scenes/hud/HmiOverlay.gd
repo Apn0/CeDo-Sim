@@ -253,8 +253,7 @@ var _fault_occ_seq : int = 0
 # panels' alarm beep (unacked_count_for_tokens) at their own 4 Hz, so N panels
 # do not recompute the plant N times.
 var _last_faults : Array = []
-# Ring buffer of every fault transition (cap 256). Each entry:
-# {code, key, line, tijd_s, msg, state, suppressed, occ}
+# Ring buffer of every fault transition (cap 256). Each entry: {code, tijd_s, msg, state, suppressed}
 # state: "active" | "cleared". Most-recent at the END.
 var _fault_history : Array = []
 const FAULT_HISTORY_CAP : int = 256
