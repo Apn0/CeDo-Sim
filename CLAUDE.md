@@ -102,7 +102,7 @@ count.
 
 | failing check | note |
 |---|---|
-| ~~`regression verdict`~~ | ~~door/gate check~~ — cleared 2026-09-13 by emptying `structure_items`. **Superseded 2026-09-25: the one entry is the operator's real 3A/3B gate and he ruled KEEP it** ("the gate through which the feeder can drive outside to the bale lot"). The check now asks whether the gate's carve cut the real shell (`opening_id`), not whether it lies on six typed wall lines: those lines sit in a typed building frame that does not line up with the 3D shell (measured 2026-09-25; the frame itself is still open) |
+| ~~`regression verdict`~~ | ~~door/gate check~~ — cleared 2026-09-13 by emptying `structure_items`. **Superseded 2026-09-25: the one entry is the operator's real 3A/3B gate and he ruled KEEP it** ("the gate through which the feeder can drive outside to the bale lot"). The check now asks whether the gate's carve cut the real shell (`opening_id`), not whether it lies on six typed wall lines: those lines sit in a typed building frame that does not line up with the 3D shell (measured 2026-09-25; the suites moved to the frame fitted from the shell the same day, see the building-frame trap) |
 | ~~`test_nav_connectivity`~~ | ~~9 ok, 1 fail since #216, "requires operator to move crew posts off ISLAND"~~ — **FIXED 2026-09-23 by an operator RULING, not a navmesh change**: nobody has a post at any windzifter, and the permanent feeder is a line-1 role (Merlo + containers). `wind_sifter` left `CrewManager.ZONES["permanent_feeder"]`; on a 3A-only world the two feeders now hold their spawn spot (the suite's own `ADVIS`) instead of a post inside the blower next to the windzifter. `PASS (10 ok)` 3 of 3. `docs/audit/operator_session_2026-09-23.md` task 2 |
 | `test_npc05_realworld` | EXPECTED red — the DRIVE_TO_INDOOR stall, see below. Do not silence it |
 | ~~`test_line3b_flow_conformance`~~ | ~~missing input edge in LineFlow topology~~ — **FIXED 2026-09-13**: added `explicit_from_prev: true` to plasmaq entry in `LINE_3B_SEQ` (gap 15 m > MAX_LINK_DIST 14 m) |
@@ -450,7 +450,7 @@ things this file used to claim were "proven" are among the skips:
 
 | claimed proof | reality |
 |---|---|
-| machines inside the building, TL bars, round-trip | genuinely checked (the fence 0-crossing check died with the fence — deleted per operator order 2026-08-03) |
+| machines inside the building, TL bars, round-trip | TL bars and round-trip genuinely checked (the fence 0-crossing check died with the fence — deleted per operator order 2026-08-03). **"Machines inside" was a false green until 2026-09-25**: it mapped each machine back through the same double-rotated frame that placed it, and printed 39/39 while 8 stood outside the shell. It now uses the frame fitted from the shell and also asks for a measured roof face above every machine (see the building-frame trap below) |
 | **doors on walls** | **SKIPPED** — `no structure_items (doors) in world_layout` (`src/tests/regression_world_save.gd:204`) |
 | **macro-corruption guard** | **SKIPPED** — `no operator macros present` (`regression_world_save.gd:575`) |
 | top-down PNG | emitted to `tools/regression/out/topdown.png`, but the step is **non-gating** (`\|\| true`) |
@@ -594,7 +594,7 @@ the one before that ~6 months stale — treat this one as re-checkable too):
 | `docs/audit/extruder_stop_torque_2026-09-25.md` | **The extruder's load through a stop, from the plant's raw WinCC archive.** The model compounded the torque every STOPPING tick (0.142 of running 1.2 s in at 0.1 s ticks, 0.024 at 0.05 s). Now it is entry torque x rpm / entry rpm, the law the 17 samples caught mid-stop show (slope 0.969). Open, for the operator: the plant's screw stops within one ~5 s log cycle in 70 of 83 stops, while the model coasts for 21.6 s; 26 of 83 stops were run empty first |
 | `docs/audit/extruder_screw_die_plate_2026-09-24.md` | **LineFlow's OWN screw model (not ExtruderModel) read 0.11 "bar" at the die, at 200 rpm and a 195 °C melt.** The MFI estimate was 1491 g/10min, so every QA sample graded REJECT, and on lines 1/3A/3B the terminal and SCADA read the `extruder_silo`. Now: die plate after the kopfilter (operator ruling), per-line rpm, melt and output from the WinCC trends, MFI anchor re-solved. §10 (2026-09-25): the "flat kopdruk vs proportional model" gap was a probe holding rpm fixed; both models now carry a power-law die, P ∝ Q^0.35, gated across the trend's output band |
 | `docs/audit/extruder_warm_restart_2026-09-25.md` | **A warm extruder restart at the green button tripped 318 bar** (4.3-4.8 s after green, 3A and 3B, through the plain stop / PREHEAT / green path too): a model that had run before went on at nominal flow, and only a first start re-ramped. Also found: only the FIRST extruder in the group could have its rpm set, and the green button accepted a melt that passes lumps. Built from operator rulings: start ramps to the persisted setpoint, 60 floor and new-extruder setpoint, green from the lump point too (201.875 °C), a per-line rpm control. Probe, 27-check suite, 11 mutations; open items (interlocks, ~5 s ramp in the archive, OFF cooling rate, the lump law's knife edge) |
-| `docs/audit/extruder_start_interlock_2026-09-25.md` | **The extruder's start button and its natraject, from operator rulings.** Checks first (a failed one latches alarm 4401 until the HMI resets it), then blower + weegschaal, centrifuge, ontwaterzeef, heetafslag and laserfilter in order, then the screw; the ring; a trip when one stops; the run-down; the hidden natraject switch. The extruder owns its LineFlow node and natraject, so the line's start no longer runs them. Measured on a real 3B line, the mutation matrix, the six bench suites switched to natraject OFF, `test_fallback_chains` starting its extruders, main's unparseable run.sh repaired. Open: an off extruder backs its line up to the 250 kg e-stop in 16 min, inside a 30-min warm-up |
+| `docs/audit/extruder_start_interlock_2026-09-25.md` | **The extruder's start button and its natraject, from operator rulings.** Checks first (a failed one latches alarm 4401 until the HMI resets it), then blower + weegschaal, centrifuge, ontwaterzeef, heetafslag and laserfilter in order, then the screw; the ring; a trip when one stops; the run-down; the hidden natraject switch. The extruder owns its LineFlow node and natraject, so the line's start no longer runs them. Measured on a real 3B line, the mutation matrix, the six bench suites switched to natraject OFF, `test_fallback_chains` starting its extruders. Open: an off extruder backs its line up to the 250 kg e-stop in 16 min, inside a 30-min warm-up |
 | `docs/plant/operator_rulings_2026-09-25.md` | **The die plate against output, 2026-09-25**: the flat kopdruk in the June-2023 trends is "operator-specific", perhaps an office test without head filters (CLAIMED; the downsampled curves cannot tell). Power-law die P ∝ Q^0.35 in ExtruderScrew AND ExtruderModel, MfiProxy only the matching exponent (MFI itself deferred to the beta). Open: melt pump on 3A/3B (08-31 says none, 09-24 names one), the profiles' rpm is not the rpm at the nominal output **Third session, §E1-§E7: extruder start, rpm setpoint, green button** — a start ramps to the setpoint the operator left (not always to 60); 60 is the floor, the remedy after a 318 trip and a new extruder's setpoint; green waits out the lumps (201.875 °C); 3 s to 60 kept against the raw archive's ~5 s; a line choice on the HMI. Recollections beside the raw WinCC archive's 126 starts. **Fourth session, §I1-§I10: the start button and its natraject** — checks, an alarm reset only on the HMI, the start order, the ring, the extruder (not the line) runs its natraject, a stop under the screw trips it, the hidden natraject setting; the left button starts the PCU |
 | `docs/plant/operator_rulings_2026-09-24.md` | **Extruder melt pressures, 2026-09-24**: the "280 psi" die pressure was 280 BAR, a safe maximum before the laserfilter under the 318-bar shutdown (he runs ~220). Two pressures: before the laserfilter = melt-set after + dMP; MP<PEL (160 bar) = dP across the kopfilter; per-line FORM-008 kopdruk. Recollections; what was measured before/after, and what is still open (3B above its one-session trend). §6: merged with #275, which fixed the same finding in parallel. The melt-set pressures follow MELT temperature (3A fit 6.83 bar/°C, weak). §7: the screen's dMP follows it too (operator 2026-09-25), measured before/after |
 | `docs/AUDIO_machine_sounds_2026-09-25.md` | **The operator's 11 plant-floor recordings, on their machines, driven by the sim.** File-name cutting grammar (`5s+_`, `25s-35s_`, `loop_3x_`, `_in_operation`, `_loop_4x`) and the rulings behind each bake; `MachineSoundSpec` `.tres` per placeable with the `gain_db` slider (every level a PLACEHOLDER until play-tested); loop seams measured against each loop's own fluctuation; ramps generated from the run loop; the 60 line-macro machines still without a recording. `test_machine_sounds` 80 ok |
@@ -1036,6 +1036,25 @@ the one before that ~6 months stale — treat this one as re-checkable too):
 - **Stale-constant disease.** Geometry/UI built from hand-baked constants instead
   of measured runtime values. The harness once validated a stale constant against
   its own copy. Measure from the mesh, not from a saved number.
+- **A check that maps a result back through the frame that placed it cannot
+  fail — and the world suites' building frame was rotated twice.** Measured
+  2026-09-25: 17 files under `src/tests/` (12 suites, 3 probes, 2 tools) used
+  typed constants (`BF_O/BF_XU/BF_ZU`) mapped through `Plant.pc_to_scene`, which now
+  applies the world yaw a second time. The shell's walls run at 40.00° (mod
+  90); that frame ran at −0.2°, six of its ten outline corners stood
+  3.6–39.8 m from any wall, and line 3A had 8 of 39 machines outside the
+  building, while `regression_world_save` said "39/39 inside" (it mapped each
+  machine back through the same frame). Every suite now uses the frame the
+  game fits from the shell at runtime (`src/tests/building_frame.gd` over
+  `InteriorLightingManager.get_building_frame()`), and refuses to run without
+  one. `regression_world_save` adds two checks that measure the frame instead
+  of trusting it: the outline corners on the shell's walls (worst 0.03 m) and
+  a roof face above every machine (39/39). Mutation-proven: the old frame
+  turns both red (39.75 m, 31/39) while "inside footprint" stays 39/39 green.
+  Line 3C moved to bf(4,44) in three suites, the QA loop's 3C to bf(4,22),
+  and the lump-cart suite's four lines to 3A/3B/3C at bf y 10/31/52 with line
+  1 at bf(175,92), outside: it fits nowhere in this shell.
+  `docs/audit/building_frame_2026-09-25.md`.
 - **GauntletWorld is a visual bench only.** It omits LineFlow/crew/SCADA.
   Trustworthy for "does it spawn/render", never for behaviour.
 - **Two PRs can each be "mergeable ✅" and still produce a file that does not
@@ -1070,13 +1089,16 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   lists every dropped step (it named exactly `SettingsManager apply` on the
   real range, and nothing on a tree that only adds); and in `--script` suites,
   `load()` anything that touches an autoload at runtime — never `preload()` it.
-  **A merge can also keep BOTH loop headers.** The #308/#309 merge
-  (`59acf8f`, on `main` as `147cff1`) left two `for t in ...; do` lines for one
-  loop body, and `bash -n tools/regression/run.sh` said "syntax error:
-  unexpected end of file": the harness would stop before its first suite.
-  Repaired 2026-09-25 (`docs/audit/extruder_start_interlock_2026-09-25.md`
-  §7). After any merge that touches `run.sh`, run `bash -n` and diff the
-  `for t in` lists against both parents.
+  **2026-09-25, the other way round: a merge KEPT both sides of the main
+  `for t in …; do` line** (`59acf8f`, #308 merging `main` with #309). #308
+  had added `test_extruder_start_rpm` to that line and #309 `test_ghost_census`.
+  Two headers with one body and one `done` leave the first loop unclosed, and
+  `main`'s `run.sh` stopped parsing: `syntax error: unexpected end of file`.
+  bash runs every step before that line, then exits without
+  `== done (exit N) ==`. After any merge that touches `run.sh`, run
+  `bash -n tools/regression/run.sh` and check
+  `grep -c '^for t in test_machine_sounds' tools/regression/run.sh` is 1.
+  Resolve such a conflict by merging the two suite lists into one line.
 - **A headless run that outlives its expected time is HUNG, and exit 0 is not a
   pass.** Measured 2026-09-22 on a throwaway `--script` probe that idled until
   the session was killed. Three silent modes: (1) a runtime `SCRIPT ERROR` in

@@ -1,6 +1,7 @@
 # The extruder's start button and its natraject — 2026-09-25
 
-Branch `claude/extruder-start-interlocks`, off `main` `147cff1` (#308 merged).
+Branch `claude/extruder-start-interlocks`, off `main` `147cff1` (#308 merged),
+with `main` merged in again at `1b3c4e0` (#310, #311, #312).
 Engine `C:/Users/arnod/AppData/Local/Godot/Godot_v4.6.3-stable_win64_console.exe`.
 The operator's answers are in `docs/plant/operator_rulings_2026-09-25.md`,
 fourth session (§I1-§I10). Every number below was produced by
@@ -235,13 +236,15 @@ that). Suites marked * were changed here:
 
 ## 7. run.sh on main did not parse
 
-`main` as merged (`147cff1`, the #308/#309 merge `59acf8f`) kept two
-`for t in ...` headers for the main suite loop. One lacked
-`test_ghost_census`, the other `test_extruder_start_rpm`. `bash -n` said
+`main` as merged at `147cff1` (the #308/#309 merge, `59acf8f`) kept two
+`for t in ...` headers for the main suite loop. One lacked `test_ghost_census`,
+the other `test_extruder_start_rpm`. `bash -n` said
 `line 1204: syntax error: unexpected end of file`, so the harness would stop
-before its first suite. Fixed here with one header holding both, compared
-against both merge parents: no suite missing from either. The new suite is
-wired after `test_extruder_start_rpm`.
+before its first suite. This branch repaired it (`86cc7c5`), and #310 repaired
+it on `main` the same day. The merge of `main` into this branch kept #310's
+line and added only `test_extruder_start_interlock`, after
+`test_extruder_start_rpm`. The `for t in` lists were diffed against `main`:
+none missing, one added.
 
 ## 8. Open
 

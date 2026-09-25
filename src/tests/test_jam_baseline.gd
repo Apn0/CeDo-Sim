@@ -246,10 +246,12 @@ func _build_line_3a() -> void:
 	if lms != null:
 		lms._cache["line_3a"] = {}
 	var start_bf := Vector2(4.0, 22.0)
-	var start : Vector3 = Plant.pc_to_scene(_bf_to_pc(start_bf))
-	var fdir : Vector3 = (Plant.pc_to_scene(_bf_to_pc(Vector2(5.0, 22.0)))
-		- Plant.pc_to_scene(_bf_to_pc(Vector2(4.0, 22.0)))).normalized()
-	bm.call("_build_full_line", "line_3a", start, atan2(-fdir.x, -fdir.z))
+	var fr : Dictionary = await BFrame.wait_fitted(_world)
+	_check(not fr.is_empty(), "FIXTURE: building frame FITTED from the shell (InteriorLightingManager)")
+	if fr.is_empty():
+		return
+	var start : Vector3 = BFrame.to_scene(fr, start_bf, Plant.floor_top_y())
+	bm.call("_build_full_line", "line_3a", start, BFrame.forward_rot_y(fr))
 	for _i in range(20):
 		await get_tree().process_frame
 	# ── THE DOORWAY (2026-09-23; operator: "suite builds its own gate") ───────
@@ -729,15 +731,15 @@ func _ground_y_at(pos: Vector3) -> float:
 	var hit := space.intersect_ray(q)
 	return float((hit as Dictionary).get("position", Vector3(0.0, -9.0, 0.0)).y) if hit else -9.0
 
-## Building-frame -> plant-coordinate basis. Same triple regression_world_save.gd
-## uses (BF_O / BF_XU / BF_ZU, :31-33) so both harnesses build the line_3a
-## fixture at the identical anchor and their measurements stay comparable.
-const BF_O  : Vector2 = Vector2(573.404, 463.647)
-const BF_XU : Vector2 = Vector2(-0.64279, 0.76604)
-const BF_ZU : Vector2 = Vector2(-0.76604, -0.64279)
+## Building frame (bf): the same fitted frame regression_world_save.gd uses, so
+## both harnesses build the line_3a fixture at the identical anchor and their
+## measurements stay comparable.
+# Line fixtures are placed in the building frame the game FITS from the shell
+# (building_frame.gd; the typed BF_O/XU/ZU constants mapped through
+# Plant.pc_to_scene rotated the frame a second time and put machines outside
+# the real building, measured 2026-09-25).
+const BFrame := preload("res://src/tests/building_frame.gd")
 
-func _bf_to_pc(bf: Vector2) -> Vector2:
-	return BF_O + bf.x * BF_XU + bf.y * BF_ZU
 
 ## Restore BEFORE the world is freed, then again after. The headless teardown
 ## segfault lands inside world teardown (CLAUDE.md, 15 of 62 boots), so a
