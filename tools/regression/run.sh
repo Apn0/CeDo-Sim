@@ -10,17 +10,121 @@
 #
 # Exit code 0 = all green. Non-zero = a check failed (see the log / PNG).
 #
-# Usage:   bash tools/regression/run.sh
-# Override the engine path with:  GODOT=/path/to/godot bash tools/regression/run.sh
+# Usage:   CEDO_HARNESS_RUNNER=1 bash tools/regression/run.sh
+#          (only the harness-runner session; see ONE HARNESS RUNNER below)
+# Override the engine path with:  GODOT=/path/to/godot
 set -uo pipefail
 
 # All three are overridable so the harness runs off-Windows (Linux CI, a cloud
 # session) without editing this file. The defaults are the operator's Windows
-# paths and are unchanged — plain `bash tools/regression/run.sh` on that machine
-# behaves exactly as before.
+# paths.
 GODOT="${GODOT:-C:/Users/arnod/AppData/Local/Godot/Godot_v4.6.3-stable_win64_console.exe}"
 PROJ="${PROJ:-C:/Users/arnod/Documents/CeDo_Simulator}"
 UD="${UD:-C:/Users/arnod/AppData/Roaming/Godot/app_userdata/CeDo Simulator}"
+
+# ONE HARNESS RUNNER (operator ruling 2026-09-25). Sessions each ran this script
+# on their own branch, up to four at once: four slightly different trees, C:
+# filled up, and eight healthy suites went red on AtomicFile short writes. Now
+# ONE designated Claude session runs the full harness, on main, and reports to
+# the operator. Every other session runs only the suites its change touches.
+# So this script refuses to start without CEDO_HARNESS_RUNNER=1, and refuses
+# while another full harness runs on this machine: a lock directory, plus a
+# scan for any other `bash …/regression/run.sh`, which also catches older
+# copies of this script that take no lock. A user-level Claude Code hook
+# (~/.claude/hooks/cedo_harness_guard.py) refuses the command before it gets
+# here. CLAUDE.md, "One harness runner".
+if [ "${CEDO_HARNESS_RUNNER:-}" != "1" ]; then
+	cat >&2 <<'EOF'
+REFUSED: the full harness is run by ONE harness-runner session (operator
+ruling 2026-09-25, CLAUDE.md "One harness runner"). Do not set
+CEDO_HARNESS_RUNNER yourself. Run the suites your change touches instead,
+under a scratch APPDATA:
+  APPDATA=<scratch> "$GODOT" --headless --path <tree> res://src/tests/<suite>.tscn
+plus the parse sweep (tools/regression/parse_sweep.gd) and, if you touched
+run.sh, `bash -n tools/regression/run.sh`. The operator runs it by hand with
+CEDO_HARNESS_RUNNER=1.
+EOF
+	exit 3
+fi
+HARNESS_LOCK="${CEDO_HARNESS_LOCK:-$HOME/.cedo_harness.lock}"
+MY_WINPID=""
+read -r MY_WINPID 2>/dev/null < "/proc/$$/winpid" || MY_WINPID=""
+# True while the process that took $HARNESS_LOCK is still running. Git Bash:
+# the Windows pid, via tasklist (MSYS pids are not unique across runtimes).
+lock_owner_alive() {
+	local pid="" wp=""
+	read -r pid 2>/dev/null < "$HARNESS_LOCK/pid" || pid=""
+	read -r wp 2>/dev/null < "$HARNESS_LOCK/winpid" || wp=""
+	if [ -n "$wp" ] && command -v tasklist >/dev/null 2>&1; then
+		tasklist //FI "PID eq $wp" //NH 2>/dev/null | grep -qw -- "$wp"
+	elif [ -n "$pid" ]; then
+		kill -0 "$pid" 2>/dev/null
+	else
+		return 1
+	fi
+}
+if ! mkdir "$HARNESS_LOCK" 2>/dev/null; then
+	if lock_owner_alive; then
+		echo "REFUSED: another full harness holds $HARNESS_LOCK:" >&2
+		sed 's/^/  /' "$HARNESS_LOCK/info" >&2 2>/dev/null
+		exit 4
+	fi
+	echo "== harness lock: taking over a stale lock (its process is gone) ==" >&2
+	sed 's/^/  /' "$HARNESS_LOCK/info" >&2 2>/dev/null
+	rm -rf "$HARNESS_LOCK"
+	if ! mkdir "$HARNESS_LOCK" 2>/dev/null; then
+		echo "REFUSED: another harness took $HARNESS_LOCK first" >&2
+		exit 4
+	fi
+fi
+printf '%s\n' "$$" > "$HARNESS_LOCK/pid"
+printf '%s\n' "$MY_WINPID" > "$HARNESS_LOCK/winpid"
+printf 'started %s  pid %s  winpid %s\nPROJ %s\nHEAD %s\n' "$(date '+%F %T')" "$$" \
+	"${MY_WINPID:-?}" "$PROJ" \
+	"$(git -C "$PROJ" rev-parse --short HEAD 2>/dev/null || echo '?')" > "$HARNESS_LOCK/info"
+trap 'rm -rf "$HARNESS_LOCK"' EXIT
+trap 'exit 143' TERM INT HUP
+# Any other interpreter running a regression/run.sh (Git Bash lists every MSYS
+# process in /proc, other sessions' included). Builtins only in this loop: a
+# forked subshell would carry this script's own argv and count itself.
+# Skipped: our own ancestors, `bash -c` wrappers and `bash -n` syntax checks.
+HARNESS_OTHERS=()
+_anc=" $$ $BASHPID "
+_p=$$
+while read -r _p 2>/dev/null < "/proc/$_p/ppid" && [ -n "$_p" ] && [ "$_p" != 0 ] && [ "$_p" != 1 ]; do
+	case "$_anc" in *" $_p "*) break ;; esac
+	_anc="$_anc$_p "
+done
+for _f in /proc/[0-9]*/cmdline; do
+	_p="${_f#/proc/}"; _p="${_p%/cmdline}"
+	case "$_anc" in *" $_p "*) continue ;; esac
+	_args=()
+	mapfile -d '' -t _args 2>/dev/null < "$_f" || continue
+	[ "${#_args[@]}" -ge 2 ] || continue
+	case "${_args[0]##*[/\\]}" in bash|bash.exe|sh|sh.exe) ;; *) continue ;; esac
+	_i=1; _skip=0
+	while [ "$_i" -lt "${#_args[@]}" ]; do
+		case "${_args[$_i]}" in
+			--*) ;;
+			-*[cn]*) _skip=1 ;;
+			-*) ;;
+			*) break ;;
+		esac
+		_i=$((_i + 1))
+	done
+	[ "$_skip" -eq 0 ] && [ "$_i" -lt "${#_args[@]}" ] || continue
+	case "${_args[$_i]}" in
+		*regression[/\\]run.sh) HARNESS_OTHERS+=("pid $_p: ${_args[*]}") ;;
+	esac
+done
+if [ "${#HARNESS_OTHERS[@]}" -gt 0 ]; then
+	echo "REFUSED: another full harness is running on this machine:" >&2
+	printf '  %s\n' "${HARNESS_OTHERS[@]}" >&2
+	exit 4
+fi
+unset _anc _p _f _args _i _skip
+echo "== harness lock: $HARNESS_LOCK (pid $$, winpid ${MY_WINPID:-?}) =="
+
 OUT="$PROJ/tools/regression/out"
 mkdir -p "$OUT"
 
