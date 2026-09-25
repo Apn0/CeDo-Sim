@@ -12,8 +12,11 @@ extends Node
 ## Exercises the exact identity trap the fix exists to avoid: LINE_SORT_SEQ
 ## places catalog id "transport_belt" 7 times (indices 2, 4, 5, 15, 16, 17,
 ## 18); S2 below asserts specifically that macro_index 4 (the bunker's real
-## outfeed) loses power while the other six "transport_belt" instances do not
+## outfeed) loses power while the other "transport_belt" flow nodes do not
 ## — a same-id, wrong-instance mutation would go undetected without it.
+## Since 2026-09-25 the reject belts (15, 16) are {"flow": false}, placed but
+## not LineFlow nodes (test_sort_line_topology), so four others remain; the
+## expected count is derived from the SEQ, not typed.
 
 var _fails : int = 0
 
@@ -67,9 +70,14 @@ func _run() -> void:
 	_check(bunker_i >= 0, "bunker instance found (macro_index 3)")
 	_check(outfeed_i >= 0, "bunker's outfeed belt found (macro_index 4)")
 	_check(shredder2_i >= 0, "shredder-2 instance found (macro_index 19)")
-	_check(other_transport_belts.size() >= 5,
-		"multiple OTHER transport_belt instances exist to prove id-matching wasn't enough (%d found)"
-			% other_transport_belts.size())
+	var want_others : int = 0
+	for k in BuildMode.LINE_SORT_SEQ.size():
+		var e : Dictionary = BuildMode.LINE_SORT_SEQ[k]
+		if k != 4 and String(e.get("id", "")) == "transport_belt" and bool(e.get("flow", true)):
+			want_others += 1
+	_check(want_others >= 2 and other_transport_belts.size() == want_others,
+		"multiple OTHER transport_belt instances exist to prove id-matching wasn't enough (%d found, %d flow entries in the SEQ)"
+			% [other_transport_belts.size(), want_others])
 
 	if bunker_i < 0 or outfeed_i < 0 or shredder2_i < 0:
 		print("[TEST] bunker/shredder-2 MOL interlock FAIL (setup incomplete)")

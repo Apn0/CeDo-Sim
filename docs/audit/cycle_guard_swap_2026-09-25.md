@@ -160,6 +160,9 @@ change.
   series. `shredder_2` has no in-edge. Before the swap, its only in-edge was
   its own downstream belt. The cause is the one CLAUDE.md records for line 1:
   every side-lane entry falls into one branch chain.
+  **FIXED the same day:** `sort_line_topology_2026-09-25.md` (pins, lane
+  streams with the sorters in series per the operator, reject belts out of the
+  graph; guard `test_sort_line_topology`).
 - **Not measured: the guard is greedy in discovery order.** It refuses an
   edge whose target already reaches the source, at the moment the source is
   linked. Macro nodes are discovered in SEQ order, so the upstream links

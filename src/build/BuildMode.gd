@@ -291,28 +291,63 @@ const LINE_3A_SEQ : Array[Dictionary] = [
 #  14. Shredder 2 (fine shredder)
 #  15. Inclined belt 8m (climb out of Shredder 2)
 # Hand-off at tail goes into Transportband 1 (start of Transportbanden 3A/3B C1-C12).
+#
+# ── FLOW TOPOLOGY (2026-09-25) — every edge is declared, none is guessed ──
+# Measured with src/tests/dump_line_graph.tscn -- line_sort before this: all
+# the side-lane entries fell into ONE branch_chain, only its last member was
+# wired, and LineFlow's nearest-inlet fallback guessed the rest. The opzetband
+# fed the BUNKER (its 18 m deck discharges 6 m past shredder 1's throat, so
+# shredder 1 was a feed head); the Tomra lane's incline and both first sorters
+# had no in-edge; Titan 1 → Titan 2 → the FINAL climb belt, skipping m17, m18
+# and shredder 2; the long transfer conveyor fed a sorter back; the Tomra
+# reject belt fed the accept conveyor; shredder 2 had NO in-edge. The
+# placement on this line is not a wiring source: the incline tops sit 6 m above
+# the sorter inlets, and m17/m18 are main entries whose "z" is never read.
+# So every link is written down:
+#   * main chain 0 → 1 → 2 → 3 → 4 → 5 → 6 pinned (explicit_from_prev):
+#     opzetband → shredder 1 → belt 1012 → bunker → belt 1040 (operator
+#     interview 2026-07-05, question_answers.json Q16; SWI-048 p1 step 1).
+#   * two lanes from the split belt (6), streams "titech" / "tomra": the
+#     operator's SOP switches film to "beide sorteerlijnen" with button
+#     2040/2035 (docs/plant/hmi_reference.md §21). Per lane the two sorters
+#     run in SERIES, Titan 1 → Titan 2 and Tomra 1 → Tomra 2 — operator ruling
+#     2026-09-25, matching CEDO.xlsx's two ×0.7 stages (misc_sources.md §2e).
+#   * both lanes merge on the accept collection conveyor (17), then 17 → 18 →
+#     shredder 2 (19) → climb belt (20) pinned: sorters → shredder 2 per
+#     CEDO.xlsx, the operator's notes (misc_sources.md §1b) and the
+#     2026-08-26 bunker/shredder-2 interlock ruling (LineFlow.gd).
+#   * the reject belts (15, 16) are "flow": false — placement only. A sorter's
+#     reject leaves the sim as a counted loss (LineFlow.poly_rejected), so no
+#     edge carries it; on the plant the reject belts run to the balenpers
+#     (operator 2026-09-25). docs/plant/operator_rulings_2026-09-25.md.
+# Guarded by src/tests/test_sort_line_topology.gd, by name and by kg.
+# OPEN (operator, "discuss tomorrow" 2026-09-25): the trilzeef the operator's
+# notes put before Titech/Tomra (not in this SEQ since 2026-08-16), and
+# tomra_sort having no MachineFlow profile (the Tomra lane does not sort).
+# Indices are keyed on elsewhere (LineFlow._SORT_*_IDX): flags only, never
+# insert or reorder here.
 const LINE_SORT_SEQ : Array[Dictionary] = [
 	{"id": "opzetband_3a3b"},                                      # 0: Infeed conveyor
-	{"id": "shredder_1"},                                          # 1: Coarse shredder (red)
-	{"id": "transport_belt"},                                      # 2: Outfeed belt under Shredder 1
-	{"id": "bunker"},                                              # 3: Buffer metering conveyor
-	{"id": "transport_belt"},                                      # 4: Outfeed belt from bunker
-	{"id": "transport_belt"},                                      # 5: Transfer conveyor
-	{"id": "switch_belt"},                                         # 6: Split conveyor (Titan vs Tomra)
+	{"id": "shredder_1", "explicit_from_prev": true},              # 1: Coarse shredder (red)
+	{"id": "transport_belt", "explicit_from_prev": true},          # 2: Outfeed belt under Shredder 1
+	{"id": "bunker", "explicit_from_prev": true},                  # 3: Buffer metering conveyor
+	{"id": "transport_belt", "explicit_from_prev": true},          # 4: Outfeed belt from bunker
+	{"id": "transport_belt", "explicit_from_prev": true},          # 5: Transfer conveyor
+	{"id": "switch_belt", "explicit_from_prev": true},             # 6: Split conveyor (Titan vs Tomra)
 	{"id": "overband_magnet", "x": -2.5, "z": 0.0},                # 7: Magnet (Titan side)
 	{"id": "overband_magnet", "x":  2.5, "z": 0.0},                # 8: Magnet (Tomra side)
-	{"id": "inclined_belt_8m", "x": -2.5, "z": 2.0},               # 9: Incline infeed (Titan)
-	{"id": "inclined_belt_8m", "x":  2.5, "z": 2.0},               # 10: Incline infeed (Tomra)
-	{"id": "titech_sort",      "x": -3.5, "z": 6.0},               # 11: Titan 1 (TITECH NIR)
-	{"id": "titech_sort",      "x": -3.5, "z": 10.0},              # 12: Titan 2 (TITECH NIR)
-	{"id": "tomra_sort",       "x":  3.5, "z": 6.0},               # 13: Tomra 1 (TOMRA Autosort)
-	{"id": "tomra_sort",       "x":  3.5, "z": 10.0},              # 14: Tomra 2 (TOMRA Autosort)
-	{"id": "transport_belt",   "x": -6.0, "z": 8.0, "furniture": true},  # 15: Waste reject belt (Titan)
-	{"id": "transport_belt",   "x":  6.0, "z": 8.0, "furniture": true},  # 16: Waste reject belt (Tomra)
-	{"id": "transport_belt",   "x":  0.0, "z": 12.0},              # 17: LDPE accept collection conveyor
-	{"id": "transport_belt",   "x":  0.0, "z": 18.0},              # 18: Long transfer conveyor to Shredder 2
-	{"id": "shredder_2"},                                          # 19: Fine shredder (blue)
-	{"id": "inclined_belt_8m"},                                    # 20: Climb conveyor to Transportband 1
+	{"id": "inclined_belt_8m", "x": -2.5, "z": 2.0, "stream": "titech"},  # 9: Incline infeed (Titan)
+	{"id": "inclined_belt_8m", "x":  2.5, "z": 2.0, "stream": "tomra"},   # 10: Incline infeed (Tomra)
+	{"id": "titech_sort",      "x": -3.5, "z": 6.0, "stream": "titech"},  # 11: Titan 1 (TITECH NIR)
+	{"id": "titech_sort",      "x": -3.5, "z": 10.0, "stream": "titech"}, # 12: Titan 2 (TITECH NIR)
+	{"id": "tomra_sort",       "x":  3.5, "z": 6.0, "stream": "tomra"},   # 13: Tomra 1 (TOMRA Autosort)
+	{"id": "tomra_sort",       "x":  3.5, "z": 10.0, "stream": "tomra"},  # 14: Tomra 2 (TOMRA Autosort)
+	{"id": "transport_belt",   "x": -6.0, "z": 8.0, "furniture": true, "flow": false},  # 15: Waste reject belt (Titan)
+	{"id": "transport_belt",   "x":  6.0, "z": 8.0, "furniture": true, "flow": false},  # 16: Waste reject belt (Tomra)
+	{"id": "transport_belt",   "x":  0.0, "z": 12.0},              # 17: LDPE accept collection conveyor (the lanes' merge)
+	{"id": "transport_belt",   "x":  0.0, "z": 18.0, "explicit_from_prev": true},  # 18: Long transfer conveyor to Shredder 2
+	{"id": "shredder_2", "explicit_from_prev": true},              # 19: Fine shredder (blue)
+	{"id": "inclined_belt_8m", "explicit_from_prev": true},        # 20: Climb conveyor to Transportband 1
 ]
 
 
@@ -2835,6 +2870,22 @@ func _new_macro_instance_id(line_id: String) -> String:
 func _macro_entry_absent(mid: String) -> bool:
 	return mid == "" or PlaceableCatalog.is_retired(mid) or PlaceableCatalog.get_item(mid).is_empty()
 
+## Meta LineFlow reads to leave a placed node out of the flow graph
+## (LineFlow._process_discovered_node). Stamped by _stamp_macro_flow_edges on
+## every macro entry that carries {"flow": false}.
+const LF_PLACEMENT_ONLY_META : String = "lf_placement_only"
+
+## False for a SEQ entry marked {"flow": false}: it is placed, but it is not a
+## flow node — no edge in macro_flow_edges and no LineFlow node. Added
+## 2026-09-25 for the sort line's two reject belts. They are transport_belts, a
+## flow machine everywhere else, so MachineFlow's per-id role "none" cannot
+## express it. As flow nodes they had no in-edge (feed heads) and the fallback
+## wired them into the line (the Tomra reject belt fed the accept conveyor, the
+## Titan one fed Titan 2). A sorter's reject leaves the sim as a counted loss
+## (LineFlow.poly_rejected), so nothing flows on them.
+func _macro_entry_in_flow(entry: Dictionary) -> bool:
+	return bool(entry.get("flow", true))
+
 ## The explicit flow edges a macro SEQ declares, as [src_index, tgt_index,
 ## recirc] triples in SEQ-index space, in the order they are stamped. This is
 ## the ONE implementation of the #71 branch / #streams / explicit_from_prev
@@ -2899,6 +2950,11 @@ func macro_flow_edges(line_id: String, seq: Array) -> Array:
 		# (symmetrically) a role-none MAIN entry never becomes last_main or
 		# closes an open branch.
 		if not _is_flow_relevant(mid):
+			continue
+		# {"flow": false} — the same for ONE entry whose id is a flow machine
+		# elsewhere (the sort line's reject belts are plain transport_belts).
+		# _stamp_macro_flow_edges keeps the node out of LineFlow too.
+		if not _macro_entry_in_flow(entry):
 			continue
 		var is_branch : bool = not is_equal_approx(float(entry.get("x", 0.0)), 0.0)
 		var stream_tag : String = String(entry.get("stream", ""))
@@ -3004,6 +3060,17 @@ func macro_flow_edges(line_id: String, seq: Array) -> Array:
 ## blower its own tussenventilator cyclone, the 2-cycle the pins exist to stop.
 func _stamp_macro_flow_edges(line_id: String, seq: Array, nodes_by_idx: Dictionary) -> int:
 	var n : int = 0
+	# {"flow": false} entries: placement only. The meta is derived from the SEQ
+	# here, on the build and on every reload, and never saved — like the edges.
+	for idx in nodes_by_idx.keys():
+		var n3 : Node3D = nodes_by_idx[idx] as Node3D
+		if n3 == null or int(idx) < 0 or int(idx) >= seq.size():
+			continue
+		if _macro_entry_in_flow(seq[int(idx)] as Dictionary):
+			if n3.has_meta(LF_PLACEMENT_ONLY_META):
+				n3.remove_meta(LF_PLACEMENT_ONLY_META)
+		else:
+			n3.set_meta(LF_PLACEMENT_ONLY_META, true)
 	for e in macro_flow_edges(line_id, seq):
 		var a : Node3D = nodes_by_idx.get(int(e[0]), null) as Node3D
 		if a == null:

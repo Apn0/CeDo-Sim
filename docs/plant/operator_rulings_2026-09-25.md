@@ -131,3 +131,77 @@ along the plant's own path. It rose linearly only when rpm was held fixed.
   at the same pressure and output reads a HIGHER MFI. A lab MFI is measured at a
   fixed 190 °C and would read that melt as stiffer. Offered as the "material
   only" option in Q2; left for the beta with the rest of the MFI.
+
+---
+
+# Sorteerlijn 3A/3B — second session, same day (the sort line's wiring)
+
+Source: Arno, answering one AskUserQuestion batch in the Claude session of
+2026-09-25 (worktree `wonderful-euclid-80a5da`, branch
+`claude/unruffled-vaughan-c64987`). These are **choices, not documents or
+photos**. The option he picked is quoted as he saw it. What he was shown first
+is listed under each answer, so the choice can be read against it.
+
+The fix they settle, the guard, and the before/after graphs are in
+`docs/audit/sort_line_topology_2026-09-25.md`.
+
+## S1. The two sorters of a lane run in series
+
+**Picked:** "Series per lane (Recommended)": Titech 1 → Titech 2 on one lane,
+Tomra 1 → Tomra 2 on the other, so every flake is scanned twice.
+
+Shown first:
+
+- four units, named "Titech 1 en 2" and "Tomra 1 en 2" in SWI-015 p5 steps
+  18–19;
+- two lanes: the SOP sends the film to "beide sorteerlijnen" with button
+  2040/2035 (`hmi_reference.md` §21);
+- CEDO.xlsx's loss cascade, 4300 → ×0.7 → 3010 → ×0.7 → 2107 kg/h
+  (`misc_sources.md` §2e), which reads as two stages in series.
+
+The alternatives offered were parallel within a lane and crossed stages
+(stage 1 = Titech 1 + Tomra 1, the lanes merge, then stage 2).
+
+In code: streams `"titech"` / `"tomra"` on `LINE_SORT_SEQ` entries 9, 11, 12
+and 10, 13, 14, which chain each lane head to tail.
+
+## S2. The reject belts run to the balenpers
+
+**Picked:** "Reject belt → bale press": the reject belts carry the removed
+fraction to the balenpers in Hal 8.
+
+Shown first: in the sim a sorter's reject leaves as a counted loss
+(`LineFlow.poly_rejected`) and no belt carries it, so the two reject belts
+leave the flow graph whatever the answer.
+
+In code: `{"flow": false}` on entries 15 and 16. They are placed and are not
+flow nodes. The balenpers leg is recorded here and not modelled. It would
+need a second (reject) output on the sorter node.
+
+Consistent with, not proof of: the bunker HMI's "Pers alleen" feed mode
+(`hmi_reference.md` §22), `floor_plan_edits.md` (balenpers at the east end of
+sorteerlijn 3, "possible downstream of sorted fraction - ask operator"), and
+CEDO.xlsx's "16 reject → 48 balen".
+
+## S3. Deferred: "lets discuss the sorting line tomorrow"
+
+He gave that answer to both of these. Nothing was changed for either.
+
+- **The trilzeef.** His own notes (`misc_sources.md` §1b) say the trilzeef
+  keeps shaking so film "goes through Titech/Tomra 1+2 → Shredder 2". The sort
+  macro has had no trilzeef since `9d16514` (2026-08-16). Before that commit it
+  had two, one per lane, at x ±2.5. Open: whether each lane has one, and where.
+  `LineFlow._PACK_UP_ORDER` already names a trilzeef.
+- **Tomra's model.** `tomra_sort` has no MachineFlow profile, so it defaults
+  to `process = "convey"` and the Tomra lane passes film unsorted. Titech
+  removes 60 % of "other" polymer and 20 % of HDPE (sim constants; no source
+  is recorded).
+
+Also for that discussion (found while measuring, not asked):
+
+- The macro's geometry does not match its flow. The opzetband discharges 6 m
+  past shredder 1. The incline tops sit 6 m above the sorter inlets. The
+  accept conveyor and the long transfer are main entries, so their `"z"` is
+  never read, and they stand under the sorter lanes.
+- The split belt is the intake's `switch_belt` (it jogs ±1.5 m toward VSS
+  3A/3B), not a model of the 2040/2035 diverter.
