@@ -124,11 +124,17 @@ tick after STARTING, while the MP>MF that belongs with that flow read 0.
    `test_extruder_melt_pressures` cannot see this, because it only starts a
    fresh model (item 2 hides it). Whether the green button should also wait for
    pressure headroom is an operator call.
+   **Resolved the same day by operator rulings** (a start ramps to the setpoint
+   the operator left, 60 is the floor and a new extruder's setpoint, the green
+   button also waits until the screw passes no lumps, a per-line rpm control):
+   `extruder_warm_restart_2026-09-25.md`, guard `test_extruder_start_rpm`.
 2. **A model's first start re-ramps from idle in RUNNING.** STARTING ends at
    q 0.968. On the next tick RUNNING's `lerp(idle_kg_per_h, nominal, runtime_s /
    startup_ramp_s)` puts it at q 0.053, and the screw slows from 0.966 toward
    idle rpm. Later starts (runtime_s past 180 s) do not. The suite records this
    as an `info` line and gates the warm-restart handover instead (3.2 % step).
+   **Removed the same day** with item 1: every start now ramps to the setpoint
+   and RUNNING holds it, so a first start and a warm one run identically.
 3. **`motor_torque_pct *= rpm_frac` in `_tick_stopping` compounds the same
    way.** Measured from a 60 % running torque: 0.142 of it 1.2 s into a stop
    with 0.1 s ticks, 0.024 with 0.05 s ticks, 0 by 4 s. It needs a coast-down

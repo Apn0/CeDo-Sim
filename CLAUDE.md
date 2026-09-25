@@ -593,7 +593,8 @@ the one before that ~6 months stale — treat this one as re-checkable too):
 | `docs/DESIGN_vacuum_pot_minigame_2026-09-23.md` | **P3 stage B as the operator described it: not a hold-E but a mini-game** — lid pull that stiffens with time, plamuurmes planes at 90 %, the block by hand, re-lid, the two-minute race. Systems, parameters (his vs placeholder), test strategy. **Built 2026-09-24** (`test_vacuum_pot_minigame`, 33 ok); the feel is his to play |
 | `docs/audit/extruder_stop_torque_2026-09-25.md` | **The extruder's load through a stop, from the plant's raw WinCC archive.** The model compounded the torque every STOPPING tick (0.142 of running 1.2 s in at 0.1 s ticks, 0.024 at 0.05 s). Now it is entry torque x rpm / entry rpm, the law the 17 samples caught mid-stop show (slope 0.969). Open, for the operator: the plant's screw stops within one ~5 s log cycle in 70 of 83 stops, while the model coasts for 21.6 s; 26 of 83 stops were run empty first |
 | `docs/audit/extruder_screw_die_plate_2026-09-24.md` | **LineFlow's OWN screw model (not ExtruderModel) read 0.11 "bar" at the die, at 200 rpm and a 195 °C melt.** The MFI estimate was 1491 g/10min, so every QA sample graded REJECT, and on lines 1/3A/3B the terminal and SCADA read the `extruder_silo`. Now: die plate after the kopfilter (operator ruling), per-line rpm, melt and output from the WinCC trends, MFI anchor re-solved. §10 (2026-09-25): the "flat kopdruk vs proportional model" gap was a probe holding rpm fixed; both models now carry a power-law die, P ∝ Q^0.35, gated across the trend's output band |
-| `docs/plant/operator_rulings_2026-09-25.md` | **The die plate against output, 2026-09-25**: the flat kopdruk in the June-2023 trends is "operator-specific", perhaps an office test without head filters (CLAIMED; the downsampled curves cannot tell). Power-law die P ∝ Q^0.35 in ExtruderScrew AND ExtruderModel, MfiProxy only the matching exponent (MFI itself deferred to the beta). Open: melt pump on 3A/3B (08-31 says none, 09-24 names one), the profiles' rpm is not the rpm at the nominal output |
+| `docs/audit/extruder_warm_restart_2026-09-25.md` | **A warm extruder restart at the green button tripped 318 bar** (4.3-4.8 s after green, 3A and 3B, through the plain stop / PREHEAT / green path too): a model that had run before went on at nominal flow, and only a first start re-ramped. Also found: only the FIRST extruder in the group could have its rpm set, and the green button accepted a melt that passes lumps. Built from operator rulings: start ramps to the persisted setpoint, 60 floor and new-extruder setpoint, green from the lump point too (201.875 °C), a per-line rpm control. Probe, 27-check suite, 11 mutations; open items (interlocks, ~5 s ramp in the archive, OFF cooling rate, the lump law's knife edge) |
+| `docs/plant/operator_rulings_2026-09-25.md` | **The die plate against output, 2026-09-25**: the flat kopdruk in the June-2023 trends is "operator-specific", perhaps an office test without head filters (CLAIMED; the downsampled curves cannot tell). Power-law die P ∝ Q^0.35 in ExtruderScrew AND ExtruderModel, MfiProxy only the matching exponent (MFI itself deferred to the beta). Open: melt pump on 3A/3B (08-31 says none, 09-24 names one), the profiles' rpm is not the rpm at the nominal output **Third session, §E1-§E7: extruder start, rpm setpoint, green button** — a start ramps to the setpoint the operator left (not always to 60); 60 is the floor, the remedy after a 318 trip and a new extruder's setpoint; green waits out the lumps (201.875 °C); 3 s to 60 kept against the raw archive's ~5 s; a line choice on the HMI. Recollections beside the raw WinCC archive's 126 starts. Open: start interlocks, the left "easy work" button |
 | `docs/plant/operator_rulings_2026-09-24.md` | **Extruder melt pressures, 2026-09-24**: the "280 psi" die pressure was 280 BAR, a safe maximum before the laserfilter under the 318-bar shutdown (he runs ~220). Two pressures: before the laserfilter = melt-set after + dMP; MP<PEL (160 bar) = dP across the kopfilter; per-line FORM-008 kopdruk. Recollections; what was measured before/after, and what is still open (3B above its one-session trend). §6: merged with #275, which fixed the same finding in parallel. The melt-set pressures follow MELT temperature (3A fit 6.83 bar/°C, weak). §7: the screen's dMP follows it too (operator 2026-09-25), measured before/after |
 | `docs/AUDIO_machine_sounds_2026-09-25.md` | **The operator's 11 plant-floor recordings, on their machines, driven by the sim.** File-name cutting grammar (`5s+_`, `25s-35s_`, `loop_3x_`, `_in_operation`, `_loop_4x`) and the rulings behind each bake; `MachineSoundSpec` `.tres` per placeable with the `gain_db` slider (every level a PLACEHOLDER until play-tested); loop seams measured against each loop's own fluctuation; ramps generated from the run loop; the 60 line-macro machines still without a recording. `test_machine_sounds` 80 ok |
 | `docs/plant/operator_rulings_2026-09-23.md` | **Operator answers from memory, 2026-09-23** — film look, colour order, bed depth per belt, where wet flake is visible, screws "differ". Recollections, not documents: cite them as such |
@@ -1133,7 +1134,8 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   because a value that is simply HELD agrees at every tick size (the torque
   suite's mutation M5). `docs/audit/extruder_ramp_pressures_2026-09-25.md`,
   which also records that a WARM restart at the preheat-ready melt trips 318 bar
-  (old code and new).
+  (old code and new) — resolved the same day by operator rulings, see "The
+  extruder warm-up" below and `docs/audit/extruder_warm_restart_2026-09-25.md`.
 
 ## Save files go through `AtomicFile` (2026-09-21)
 
@@ -1264,9 +1266,30 @@ turned the heaters back on.** Measured over a recorded shift: **81 % of starts o
 `State.PREHEAT` fixes that. Pressing start on a cold barrel routes to PREHEAT
 (`ExtruderModel._route_start_request`), the heaters warm the melt toward
 setpoint, and the green button is not live until `preheat_ready()`. The ready
-threshold is *derived* from the trip rather than picked: it is the melt
-temperature at which cold-melt torque still leaves 25 % headroom under
-`TORQUE_TRIP_PCT`.
+threshold is *derived* rather than picked: the melt temperature at which
+cold-melt torque still leaves 25 % headroom under `TORQUE_TRIP_PCT` (110 %)
+AND under `LUMP_PASSTHROUGH_TORQUE_PCT` (95 %, where un-melted lumps start
+reaching the laserfilter), whichever is warmer: **201.875 °C** on 3A/3B.
+Until 2026-09-25 only the torque trip counted (196.25 °C, i.e. 97.5 % torque),
+so the green button accepted a melt that passes lumps; a restart pressed the
+moment it went green caked the screen and tripped 318 bar in 3.3 s. Operator
+ruling, `docs/plant/operator_rulings_2026-09-25.md` §E3.
+
+**How a start runs (operator rulings 2026-09-25, same file §E1-§E5).** A start
+ramps the screw from standstill to the operator's rpm SETPOINT at 20 rpm/s
+(60 rpm in ~3 s), and a stop does not change the setpoint. 60 rpm is the floor
+(`ExtruderConfig.screw_rpm_min`) and a new extruder's setpoint; after a 318 trip
+the operator drops a line to 60 to get it going again, because at 100+ rpm it
+re-trips while ramping (measured: a caked screen re-trips at 110 at 4.7 s, and
+runs at 60). He rejected "every start goes to 60" in so many words: *"That's not
+how operating works."* The setpoint is set per line: the all-lines web HMI has a
+line strip above the WebView (it used to drive only the FIRST extruder in the
+group), and the touchscreen's extruder zone panel has an rpm row. A model's
+first start no longer re-ramps from idle over `startup_ramp_s` (a
+LIFETIME-runtime ramp that made first and later starts differ; the field is no
+longer read). Guard: `test_extruder_start_rpm` (27 checks, 11 mutations red).
+The raw WinCC archive agrees on the floor and on starts returning to the old rpm
+after short stops, and points at a ~5 s ramp where he says 3 s; he kept 3 s.
 
 **Duration comes from the docs, not from feel.** `ExtruderConfig.preheat_min_s`
 = 1800 s, from Cedo-PROD-SWI-042 p4 step 19: starting the 3a/3b extruder

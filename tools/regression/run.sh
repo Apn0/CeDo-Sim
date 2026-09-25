@@ -624,6 +624,20 @@ wl_sentinel "vehicle spawn (clamp nesting)"
 # ancestor or same-port twin of another; one controller per belt; every
 # intake bed carries its own flow. Own slot file, no world_layout write.
 # 34 checks, 4 mutations red.
+# test_extruder_start_rpm (2026-09-25): a WARM extruder restart at the green
+# button's temperature tripped 318 bar ~4.5 s after green (MP<MF 317 bar), on 3A
+# and 3B, through the plain stop / PREHEAT / green path too: a model that had run
+# before went straight to NOMINAL flow, only a first start re-ramped. Operator
+# rulings: a start ramps to the rpm setpoint the operator left (20 rpm/s), 60 is
+# the floor and a new extruder's setpoint, the player sets it per line (a line
+# strip on the all-lines web HMI, an rpm row on the touchscreen), and the green
+# button waits until the screw passes no lumps (201.875 C, was 196.25). A line
+# tripped on a caked screen re-trips at 110 and runs at 60. 27 checks, 11
+# mutations red: main's model whole 19; old STARTING 6; lifetime re-ramp 4;
+# start resets to 60 4; torque-only green 6; alarm forcing nominal 1; 0..250
+# clamp 2; web HMI on the first extruder 3; slider not following 1; new
+# extruder at nominal 4; 4 s ramp 4.
+for t in test_machine_sounds test_extruder_melt_pressures test_extruder_ramp_pressures test_extruder_start_rpm test_extruder_stop_torque test_motor_trip_stops_conveying test_die_pressure_bar test_screw_die_plate_bar test_hmi_ack_rearm test_hmi_fault_rearm test_hmi_fault_per_line test_legacy_props_spawner test_legacy_props_unconfigured_boot test_lump_cart_overflow test_lump_cart_speed_clamp test_save_checkpoint test_keybind_sheet test_map_labels test_compactor_sight_glass test_belt_film_field test_silo_level_windows test_chute_choke test_trip_smoke test_vacuum_pot_visual test_doseersilo_trough test_bale_weight_variance test_wet_side_beds test_line1_metal_detect test_vacuum_pot_minigame test_belt_speed_mismatch test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_line3a_identity test_line3b_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_humanoid_rig_conformance test_line1_flow_conformance test_line1_throughput test_line1_overband_mount test_line1_twin_streams test_line3a_flow_conformance test_line3b_flow_conformance test_extruder_silo_chain test_macro_edges_reload test_fallback_chains test_flow_node_unique test_sort_line_topology test_shredder_rate_reconciliation test_line1_no_false_overload test_line_builder_ghost test_macro_part_placement test_project_sweep_guards test_tool_placement_mode test_scada_dashboard_scene test_atomic_file test_extruder_brain_wired test_vehicle_census test_map_overlay_init test_qa_loop test_qa_spec test_assessment_procedure test_character_customizer test_f10_reserved test_bale_sticker_supplier test_hose_reel_round test_macro_delta_guard; do
 # test_ghost_census (2026-09-25): a placement GHOST is never placed_object and
 # never a LineFlow node. build_node("shredder_1"/"shredder_2", true) was: the
 # body is ShredderMachine.gd even for a ghost and its _ready added itself to

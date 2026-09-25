@@ -14,11 +14,29 @@ class_name ExtruderConfig
 
 @export_group("Throughput")
 @export var nominal_kg_per_h    : float = 950.0   # design throughput
-@export var startup_ramp_s      : float = 180.0   # 0 → nominal over this time
+## NOT READ since 2026-09-25. It was RUNNING's own idle -> nominal ramp, timed
+## off the model's LIFETIME runtime_s, so only a model's first start ever used
+## it; a later start ran straight to nominal flow on a still-cold melt and
+## tripped 318 bar. A start now ramps to the operator's rpm setpoint (see
+## screw_rpm_min). Kept only so the .tres files still load clean.
+@export var startup_ramp_s      : float = 180.0
 @export var idle_kg_per_h       : float = 50.0    # screw turning, no feed
 @export var screw_rpm_idle      : float = 35.0
 @export var screw_rpm_nominal   : float = 110.0
 @export var screw_rpm_max       : float = 145.0
+## The lowest screw speed the operator can set. A start ramps the screw from
+## standstill to the operator's setpoint, which a stop leaves where it was, at
+## this many rpm per ExtruderModel.START_RAMP_S (60 rpm in 3 s). Operator
+## 2026-09-25 (recollection): "the minimum value possible to set 60 rpm"; a
+## start "will ramp up to that 80 ... not 80 instantly"; and after a 318-bar
+## trip "it is not possible to leave the extruder at 100 RPM ... as it ramps up,
+## it reaches the 318 plus bar again ... So you can put it at 60 RPM. And then
+## hope that it is able to start." The EREMA WinCC archive agrees on the floor:
+## 3A/3B speed_extruder has no reading between 0 and 60 rpm (6-min medians,
+## 2023-06-19..28, and the raw ~5 s export), and the raw starts land on 60
+## after long stops, back on the old rpm after short ones
+## (docs/plant/operator_rulings_2026-09-25.md §E1). Applies to every extruder.
+@export var screw_rpm_min       : float = 60.0
 
 @export_group("Thermals")
 @export var melt_temp_setpoint  : float = 215.0   # °C

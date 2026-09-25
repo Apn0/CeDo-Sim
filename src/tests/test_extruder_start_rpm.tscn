@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/tests/test_extruder_start_rpm.gd" id="1_startrpm"]
+
+[node name="TestExtruderStartRpm" type="Node"]
+script = ExtResource("1_startrpm")
