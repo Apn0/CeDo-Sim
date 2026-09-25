@@ -282,12 +282,19 @@ static func profile(id: String) -> Dictionary:
 		"u_bay":
 			# Concrete overflow surge bay — the U-shaped poured concrete pit the
 			# Merlo scoops out of when VSS is full. Larger buffer, manual discharge
-			# (the front loader carries flake back to opzetband). For now LineFlow
-			# models it as a slow-discharging buffer feeding the wash-line head too.
+			# (the front loader carries flake back to opzetband). Fed by C8.5 only
+			# (C8 reversed), and it feeds NOTHING: no conveyor leaves it (operator's
+			# notes, misc_sources.md §1b, confirmed 2026-09-25). `no_outlet` keeps
+			# LineFlow's geometry fallback from wiring it onward (it used to feed
+			# C9 or the wash-line head), and ends a macro stream on it
+			# (BuildMode.macro_flow_edges). It stays a buffer, NOT a sink: a sink
+			# banks what it takes as granulaat (LineFlow gran_mass). What reaches
+			# it stays in its out buffer until a Merlo scoop is modelled.
 			pr["in"]   = Vector3(0.0, 0.85, 0.0)
 			pr["out"]  = Vector3(0.0, 0.15, 0.45)
 			pr["rate"] = 5.0
 			pr["process"] = "buffer"
+			pr["no_outlet"] = true
 		"variable_belt":
 			# Variable-length conveyor — endpoints come from the placed instance's
 			# vb_start / vb_end meta; the in/out fractions here are placeholders

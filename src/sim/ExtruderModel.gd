@@ -340,7 +340,25 @@ var kopdruk_bar               : float = 0.0   # into the kopfilter (MD_vor_SF2) 
 var mp_pel_bar                : float = 0.0   # MP<PEL = kopfilter dP (operator ruling)
 
 var die_face_state : int = DieFaceState.OFF
+## Which machine stopped, for the last natraject trip (fault_reason
+## "natraject_stopped"); shown beside it on SCADA.
+var natraject_trip_text : String = ""
+## The extruder silo in front of this extruder, as its laser level sensor
+## reports it (LineFlow, rulings §I11): % of the safe cutoff (can read over
+## 100), the distance in mm, and whether its feed stop holds. Written by
+## ExtruderMachine every tick; plain data for the HMIs. `silo_level_known` is
+## false where the extruder has no macro-built silo.
+var silo_level_known : bool = false
+var silo_level_pct : float = 0.0
+var silo_level_mm : float = 0.0
+var silo_feed_stopped : bool = false
 var pelletizer : PelletizerModel = null
+## The start button and its natraject (operator rulings 2026-09-25, rulings
+## file §I1-§I9). Plain data kept here so every HMI that reaches the model can
+## show it and reset its alarm; ExtruderMachine ticks it, because it needs the
+## LineFlow machines. A bare model (no ExtruderMachine) has no interlock: its
+## start_production input starts the screw as before.
+var start_seq = preload("res://src/sim/ExtruderStartSequence.gd").new()
 
 # ── Construction ──────────────────────────────────────────────────────────────
 func _init(cfg: ExtruderConfig) -> void:
@@ -363,6 +381,8 @@ func _init(cfg: ExtruderConfig) -> void:
 			zone_temp_setpoints[i] = config.melt_temp_setpoint if config != null else 215.0
 	if pelletizer == null:
 		pelletizer = PelletizerModel.new()
+	if config != null:
+		start_seq.natraject_enabled = config.natraject_enabled
 
 # =============================================================================
 # TICK — called once per SimTick (delta = SimTick.TICK_DT, fixed 0.1 s)
@@ -436,6 +456,16 @@ func tick(delta: float, inputs: Dictionary) -> Array[String]:
 			_tick_e_stop(delta)
 			if inputs.get("reset_after_estop", false):
 				_transition(State.OFF, events)
+
+	# A natraject machine stopped under a running screw (ExtruderStartSequence,
+	# rulings §I5): the extruder trips. FAULT stops the screw at once and keeps
+	# the heaters on; the natraject then runs down behind it.
+	var nat_trip : String = String(inputs.get("natraject_trip", ""))
+	if nat_trip != "" and state in [State.STARTING, State.RUNNING, State.VACUUM_ALARM]:
+		fault_reason = "natraject_stopped"
+		natraject_trip_text = nat_trip
+		_transition(State.FAULT, events)
+		events.append("natraject_trip")
 
 	# E-stop input always honoured, regardless of current state. Clear the
 	# fault_reason so the next run starts with a clean SCADA chip (the operator

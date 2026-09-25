@@ -10,19 +10,127 @@
 #
 # Exit code 0 = all green. Non-zero = a check failed (see the log / PNG).
 #
-# Usage:   bash tools/regression/run.sh
-# Override the engine path with:  GODOT=/path/to/godot bash tools/regression/run.sh
+# Usage:   CEDO_HARNESS_RUNNER=1 bash tools/regression/run.sh
+#          (only the harness-runner session; see ONE HARNESS RUNNER below)
+# Override the engine path with:  GODOT=/path/to/godot
 set -uo pipefail
 
 # All three are overridable so the harness runs off-Windows (Linux CI, a cloud
 # session) without editing this file. The defaults are the operator's Windows
-# paths and are unchanged — plain `bash tools/regression/run.sh` on that machine
-# behaves exactly as before.
+# paths.
 GODOT="${GODOT:-C:/Users/arnod/AppData/Local/Godot/Godot_v4.6.3-stable_win64_console.exe}"
 PROJ="${PROJ:-C:/Users/arnod/Documents/CeDo_Simulator}"
 UD="${UD:-C:/Users/arnod/AppData/Roaming/Godot/app_userdata/CeDo Simulator}"
+
+# ONE HARNESS RUNNER (operator ruling 2026-09-25). Sessions each ran this script
+# on their own branch, up to four at once: four slightly different trees, C:
+# filled up, and eight healthy suites went red on AtomicFile short writes. Now
+# ONE designated Claude session runs the full harness, on main, and reports to
+# the operator. Every other session runs only the suites its change touches.
+# So this script refuses to start without CEDO_HARNESS_RUNNER=1, and refuses
+# while another full harness runs on this machine: a lock directory, plus a
+# scan for any other `bash …/regression/run.sh`, which also catches older
+# copies of this script that take no lock. A user-level Claude Code hook
+# (~/.claude/hooks/cedo_harness_guard.py) refuses the command before it gets
+# here. CLAUDE.md, "One harness runner".
+if [ "${CEDO_HARNESS_RUNNER:-}" != "1" ]; then
+	cat >&2 <<'EOF'
+REFUSED: the full harness is run by ONE harness-runner session (operator
+ruling 2026-09-25, CLAUDE.md "One harness runner"). Do not set
+CEDO_HARNESS_RUNNER yourself. Run the suites your change touches instead,
+under a scratch APPDATA:
+  APPDATA=<scratch> "$GODOT" --headless --path <tree> res://src/tests/<suite>.tscn
+plus the parse sweep (tools/regression/parse_sweep.gd) and, if you touched
+run.sh, `bash -n tools/regression/run.sh`. The operator runs it by hand with
+CEDO_HARNESS_RUNNER=1.
+EOF
+	exit 3
+fi
+HARNESS_LOCK="${CEDO_HARNESS_LOCK:-$HOME/.cedo_harness.lock}"
+MY_WINPID=""
+read -r MY_WINPID 2>/dev/null < "/proc/$$/winpid" || MY_WINPID=""
+# True while the process that took $HARNESS_LOCK is still running. Git Bash:
+# the Windows pid, via tasklist (MSYS pids are not unique across runtimes).
+lock_owner_alive() {
+	local pid="" wp=""
+	read -r pid 2>/dev/null < "$HARNESS_LOCK/pid" || pid=""
+	read -r wp 2>/dev/null < "$HARNESS_LOCK/winpid" || wp=""
+	if [ -n "$wp" ] && command -v tasklist >/dev/null 2>&1; then
+		tasklist //FI "PID eq $wp" //NH 2>/dev/null | grep -qw -- "$wp"
+	elif [ -n "$pid" ]; then
+		kill -0 "$pid" 2>/dev/null
+	else
+		return 1
+	fi
+}
+if ! mkdir "$HARNESS_LOCK" 2>/dev/null; then
+	if lock_owner_alive; then
+		echo "REFUSED: another full harness holds $HARNESS_LOCK:" >&2
+		sed 's/^/  /' "$HARNESS_LOCK/info" >&2 2>/dev/null
+		exit 4
+	fi
+	echo "== harness lock: taking over a stale lock (its process is gone) ==" >&2
+	sed 's/^/  /' "$HARNESS_LOCK/info" >&2 2>/dev/null
+	rm -rf "$HARNESS_LOCK"
+	if ! mkdir "$HARNESS_LOCK" 2>/dev/null; then
+		echo "REFUSED: another harness took $HARNESS_LOCK first" >&2
+		exit 4
+	fi
+fi
+printf '%s\n' "$$" > "$HARNESS_LOCK/pid"
+printf '%s\n' "$MY_WINPID" > "$HARNESS_LOCK/winpid"
+printf 'started %s  pid %s  winpid %s\nPROJ %s\nHEAD %s\n' "$(date '+%F %T')" "$$" \
+	"${MY_WINPID:-?}" "$PROJ" \
+	"$(git -C "$PROJ" rev-parse --short HEAD 2>/dev/null || echo '?')" > "$HARNESS_LOCK/info"
+trap 'rm -rf "$HARNESS_LOCK"' EXIT
+trap 'exit 143' TERM INT HUP
+# Any other interpreter running a regression/run.sh (Git Bash lists every MSYS
+# process in /proc, other sessions' included). Builtins only in this loop: a
+# forked subshell would carry this script's own argv and count itself.
+# Skipped: our own ancestors, `bash -c` wrappers and `bash -n` syntax checks.
+HARNESS_OTHERS=()
+_anc=" $$ $BASHPID "
+_p=$$
+while read -r _p 2>/dev/null < "/proc/$_p/ppid" && [ -n "$_p" ] && [ "$_p" != 0 ] && [ "$_p" != 1 ]; do
+	case "$_anc" in *" $_p "*) break ;; esac
+	_anc="$_anc$_p "
+done
+for _f in /proc/[0-9]*/cmdline; do
+	_p="${_f#/proc/}"; _p="${_p%/cmdline}"
+	case "$_anc" in *" $_p "*) continue ;; esac
+	_args=()
+	mapfile -d '' -t _args 2>/dev/null < "$_f" || continue
+	[ "${#_args[@]}" -ge 2 ] || continue
+	case "${_args[0]##*[/\\]}" in bash|bash.exe|sh|sh.exe) ;; *) continue ;; esac
+	_i=1; _skip=0
+	while [ "$_i" -lt "${#_args[@]}" ]; do
+		case "${_args[$_i]}" in
+			--*) ;;
+			-*[cn]*) _skip=1 ;;
+			-*) ;;
+			*) break ;;
+		esac
+		_i=$((_i + 1))
+	done
+	[ "$_skip" -eq 0 ] && [ "$_i" -lt "${#_args[@]}" ] || continue
+	case "${_args[$_i]}" in
+		*regression[/\\]run.sh) HARNESS_OTHERS+=("pid $_p: ${_args[*]}") ;;
+	esac
+done
+if [ "${#HARNESS_OTHERS[@]}" -gt 0 ]; then
+	echo "REFUSED: another full harness is running on this machine:" >&2
+	printf '  %s\n' "${HARNESS_OTHERS[@]}" >&2
+	exit 4
+fi
+unset _anc _p _f _args _i _skip
+echo "== harness lock: $HARNESS_LOCK (pid $$, winpid ${MY_WINPID:-?}) =="
+
 OUT="$PROJ/tools/regression/out"
 mkdir -p "$OUT"
+# Every log this run writes is newer than this marker; the SCRIPT ERROR census
+# at the end reads exactly those (the out dir is never cleared).
+RUN_MARK="$OUT/.run_start"
+: > "$RUN_MARK"
 
 # WORLD LAYOUT SENTINEL. user://world_layout.json is the operator's world and is
 # in git nowhere. Every suite that boots a world must redirect its saves
@@ -647,7 +755,29 @@ wl_sentinel "vehicle spawn (clamp nesting)"
 # two real shredders beside them keep placed_object/shredder/rated and are the
 # only 2 nodes; BuildMode continuous placement with the ghost alive across each
 # rebuild. Own slot file, no world_layout write. 11 checks, 4 of 5 mutations red.
-for t in test_machine_sounds test_extruder_melt_pressures test_extruder_ramp_pressures test_extruder_start_rpm test_extruder_stop_torque test_motor_trip_stops_conveying test_die_pressure_bar test_screw_die_plate_bar test_hmi_ack_rearm test_hmi_fault_rearm test_hmi_fault_per_line test_legacy_props_spawner test_legacy_props_unconfigured_boot test_lump_cart_overflow test_lump_cart_speed_clamp test_save_checkpoint test_keybind_sheet test_map_labels test_compactor_sight_glass test_belt_film_field test_silo_level_windows test_chute_choke test_trip_smoke test_vacuum_pot_visual test_doseersilo_trough test_bale_weight_variance test_wet_side_beds test_line1_metal_detect test_vacuum_pot_minigame test_belt_speed_mismatch test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_line3a_identity test_line3b_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_humanoid_rig_conformance test_line1_flow_conformance test_line1_throughput test_line1_overband_mount test_line1_twin_streams test_line3a_flow_conformance test_line3b_flow_conformance test_extruder_silo_chain test_macro_edges_reload test_fallback_chains test_flow_node_unique test_ghost_census test_sort_line_topology test_shredder_rate_reconciliation test_line1_no_false_overload test_line_builder_ghost test_macro_part_placement test_project_sweep_guards test_tool_placement_mode test_scada_dashboard_scene test_atomic_file test_extruder_brain_wired test_vehicle_census test_map_overlay_init test_qa_loop test_qa_spec test_assessment_procedure test_character_customizer test_f10_reserved test_bale_sticker_supplier test_hose_reel_round test_macro_delta_guard; do
+# test_extruder_start_interlock (2026-09-25): the extruder's start button and
+# its natraject, operator rulings (docs/plant/operator_rulings_2026-09-25.md
+# §I1-§I10). The press runs checks first (a failed one latches an alarm, and the
+# button is dead until the HMI resets it), then starts blower+weegschaal ->
+# centrifuge -> ontwaterzeef -> heetafslag -> laserfilter, each once the one
+# before is up, then the screw; the ring blinks 0.5 s off / 0.5 s on, solid with
+# the screw. The extruder claims its LineFlow node and natraject (the line's
+# start no longer runs them); one that stops under the screw trips it; a stop
+# runs them down in reverse after the screw stands. Part A the sequence alone,
+# B a real 3B line + a 3C line beside it (kg through the natraject, the trip,
+# the latch), C the HMI reset and the natraject switch. 32 checks, 14
+# mutations red (audit doc §5).
+# test_extruder_silo_feed_stop (2026-09-25): the extruder silo's laser level
+# sensor and its feed stop, operator rulings (rulings file §I11, §I13). The
+# sensor reports a 1 s running average once per second as % of the sim's silo
+# full; at >= 100 % the feed stops at once (3A/3B the VSS dosing screw M11a,
+# line 1 the shredder) and runs again only after 10 reports in a row under
+# 100 %. The PCU belt stops at a full PCU pot, so an extruder left off fills
+# its silo instead of e-stopping the line at 250 kg (16 min before). A real 3B
+# line and line 1 fed at 950 kg/h with the extruders off, then started; HAND
+# bypasses the stop; the extruder HMI shows the reading; the backlog waits in
+# the VSS, not in the stopped screw. 17 checks, 9 mutations red.
+for t in test_machine_sounds test_extruder_melt_pressures test_extruder_ramp_pressures test_extruder_start_rpm test_extruder_start_interlock test_extruder_silo_feed_stop test_extruder_stop_torque test_motor_trip_stops_conveying test_die_pressure_bar test_screw_die_plate_bar test_hmi_ack_rearm test_hmi_fault_rearm test_hmi_fault_per_line test_legacy_props_spawner test_legacy_props_unconfigured_boot test_lump_cart_overflow test_lump_cart_speed_clamp test_save_checkpoint test_keybind_sheet test_map_labels test_compactor_sight_glass test_belt_film_field test_silo_level_windows test_chute_choke test_trip_smoke test_vacuum_pot_visual test_doseersilo_trough test_bale_weight_variance test_wet_side_beds test_line1_metal_detect test_vacuum_pot_minigame test_belt_speed_mismatch test_map_frame test_nested_vehicle_drift test_npc_target_guard test_feeder_fetch test_vehicle_spawn_frame test_nav_connectivity test_outdoor_route test_jam_baseline test_gate_carve test_line3c_seq_alignment test_line3c_identity test_line3a_identity test_line3b_identity test_tag_snapshot test_waslijn3c_overzicht test_lump_cart_coverage test_hmi_retired test_bale_yard_mass_conservation test_belt_discharge_geometry test_hmi_screen_zeroing test_l3c_unit_screens test_npc05_realworld test_humanoid_rig_conformance test_line1_flow_conformance test_line1_throughput test_line1_overband_mount test_line1_twin_streams test_line3a_flow_conformance test_line3b_flow_conformance test_extruder_silo_chain test_macro_edges_reload test_fallback_chains test_flow_node_unique test_ghost_census test_sort_line_topology test_shredder_rate_reconciliation test_line1_no_false_overload test_line_builder_ghost test_macro_part_placement test_project_sweep_guards test_tool_placement_mode test_scada_dashboard_scene test_atomic_file test_extruder_brain_wired test_vehicle_census test_map_overlay_init test_qa_loop test_qa_spec test_assessment_procedure test_character_customizer test_f10_reserved test_bale_sticker_supplier test_hose_reel_round test_macro_delta_guard; do
 	echo "== $t =="
 	${SUITE_TO[@]+"${SUITE_TO[@]}"} "$GODOT" --headless --path "$PROJ" "res://src/tests/$t.tscn" > "$OUT/$t.log" 2>&1
 	rc=$?
@@ -1192,6 +1322,19 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/lump_chunk_ccd.log"; then
 	[ $code -eq 0 ] && code=1
 fi
 wl_sentinel "lump chunk CCD (phys-07)"
+
+# SCRIPT ERROR CENSUS (2026-09-25). A GDScript runtime error aborts only the
+# function it hits, so a suite can lose a whole phase and still print PASS: with
+# C: full, test_macro_edges_reload's phase D died on a failed save and the suite
+# printed `PASS (51 ok)` instead of 60, and every step above reads only its
+# verdict line. Every such abort prints `SCRIPT ERROR:`, so any log of this run
+# that carries one fails here, by name. The one excused log (parse_sweep.log) and
+# the reasons are in the script's header. docs/audit/aborted_phase_guard_2026-09-25.md.
+echo "== script error census =="
+if ! bash "$PROJ/tools/regression/script_error_census.sh" "$OUT" "$RUN_MARK"; then
+	echo "FAIL  : a log of this run carries SCRIPT ERROR lines (named above)"
+	[ $code -eq 0 ] && code=1
+fi
 
 if [ ${#WL_BLAMED[@]} -eq 0 ]; then
 	echo "== world_layout sentinel: untouched by every step =="

@@ -465,30 +465,57 @@ const GRAPH_TOPOLOGY_MACROS : Array[String] = ["line_3c"]
 #   step 3b: Wash + extrude path B (LINE_3B_SEQ)
 # Const name kept as INTAKE_3A3B_SEQ + id `line_intake_3a3b` for save-file
 # compat — only the operator-facing labels say "Transportbanden 3A/3B" now.
+#
+# 2026-09-25 — the head and the overflow are WIRED, not left to the geometry
+# fallback (docs/audit/intake_3a3b_topology_2026-09-25.md). Measured before
+# with dump_line_graph: the opzetband's discharge (z -27.1) was nearer the
+# climb belt's inlet (5.78 m) than shredder 2's (6.44 m), so film skipped
+# shredding and shredder 2 was a feed head. C8's only edge went to C8.5, so
+# every kg took the overflow belt whatever C8's direction (Conveyor8's overlay
+# needs two edges and never engaged); C8.5 fed C9 by geometry, and the U-bay,
+# with no inlet, was a feed head into C9.
+#   * entry 0 is a plain transport_belt, not an opzetband. Operator
+#     2026-09-25: the conveyor into shredder 2 "is actually not an opzetband
+#     … it's just a conveyor that feeds it", no bale is ever placed on it, and
+#     shredder 2 is "more similar like a mill on the other lines". It is the
+#     sort line's long transfer (LINE_SORT_SEQ 18, the same id), so in the
+#     sim it is this macro's head, fed from outside it like a wash line's VSS.
+#   * shredder 2 → climb belt → transportband 1: LINE_SORT_SEQ 19-20 ("Climb
+#     conveyor to Transportband 1"), misc_sources.md §1b ("Shredder 2 … small
+#     flakes … enter the transportation belts system").
+#   * C8 forward → C9; C8 reversed (both VSS FULL) → C8.5 → U (stortvak), and
+#     the U feeds nothing (the Merlo empties it): the operator's notes,
+#     misc_sources.md §1b, confirmed 2026-09-25. The `overflow` stream opens at
+#     C8 and ENDS at the U-bay (MachineFlow `no_outlet`), so macro_flow_edges
+#     writes no merge edge and continues the main path C8 → C9 as C8's FIRST
+#     edge, the forward one Conveyor8's overlay reads (LineFlow, #138).
+# Guarded by test_fallback_chains (H heads and dead ends, the head chain and
+# the overflow by name and by kg). Save compat: a layout saved with the old
+# opzetband at index 0 no longer matches this SEQ, so a reload REFUSES to
+# re-pin that line (_rederive_macro_flow_edges) and it keeps geometry wiring.
 const INTAKE_3A3B_SEQ : Array[Dictionary] = [
-	# D4 — opzetband_3a3b at the head feeds the shredder. Was missing; macro
-	# previously assumed bales arrived at the shredder by hand.
-	{"id": "opzetband_3a3b"},
-	{"id": "shredder_2"},
-	{"id": "inclined_belt_8m"},      # the climb out of shredder-2's discharge
-	{"id": "transportband_1"},
+	{"id": "transport_belt"},        # 0: the conveyor into shredder 2 (fed by the sort line)
+	{"id": "shredder_2",       "explicit_from_prev": true},   # 1
+	{"id": "inclined_belt_8m", "explicit_from_prev": true},   # 2: the climb out of shredder-2's discharge
+	{"id": "transportband_1",  "explicit_from_prev": true},   # 3
 	{"id": "transportband_2"},
 	{"id": "transportband_3"},
 	{"id": "transportband_4"},
 	{"id": "transportband_5"},
 	{"id": "transportband_6"},
 	{"id": "transportband_7"},
-	{"id": "transportband_8"},
-	# ── BRANCH (overflow path): C8.5 → U-bay on the -X side lane. The branch
-	#    is NOT a parallel sibling — it's the C8-reverse discharge target. C8
-	#    sends material here only when both VSSs are FULL (task #138).
-	{"id": "transportband_8_5", "x": -3.5, "z": -1.5},
-	{"id": "u_bay",           "x": -8.0, "z": -2.0},
+	{"id": "transportband_8"},       # 10: bidirectional (Conveyor8, #138)
+	# ── OVERFLOW (C8 reversed): C8.5 → U-bay on the -X side lane. Not a
+	#    parallel sibling — the C8-reverse discharge target. C8 sends material
+	#    here only when both VSSs are FULL (task #138). The stream ends at the
+	#    U-bay; the main path continues C8 → C9.
+	{"id": "transportband_8_5", "x": -3.5, "z": -1.5, "stream": "overflow"},  # 11
+	{"id": "u_bay",             "x": -8.0, "z": -2.0, "stream": "overflow"},  # 12
 	# ── Main forward chain continues. ──
-	{"id": "transportband_9"},
+	{"id": "transportband_9"},       # 13
 	{"id": "transportband_10"},
 	{"id": "transportband_11"},
-	{"id": "switch_belt"},           # = conveyor 12; jogs ±1.5m to feed VSS_3A / VSS_3B
+	{"id": "switch_belt"},           # 16: = conveyor 12; jogs ±1.5m to feed VSS_3A / VSS_3B
 ]
 const LINE_3B_SEQ : Array[Dictionary] = [
 	# #136 — VSS is the FIRST machine in the wash line (not the intake macro).
@@ -3091,6 +3118,20 @@ const LF_PLACEMENT_ONLY_META : String = "lf_placement_only"
 func _macro_entry_in_flow(entry: Dictionary) -> bool:
 	return bool(entry.get("flow", true))
 
+## True for a SEQ entry whose machine sends nothing on: a sink, or a MachineFlow
+## profile with `no_outlet` (the U-bay, whose film the Merlo scoops out). A
+## stream that ends on one does not merge back (macro_flow_edges).
+func _macro_entry_feeds_nothing(entry: Dictionary) -> bool:
+	var prof : Dictionary = MachineFlow.profile(String(entry.get("id", "")))
+	return String(prof.get("role", "")) == "sink" or bool(prof.get("no_outlet", false))
+
+## True when `edges` (macro_flow_edges triples) already holds a → b.
+func _edge_triple_in(edges: Array, a: int, b: int) -> bool:
+	for e in edges:
+		if int((e as Array)[0]) == a and int((e as Array)[1]) == b:
+			return true
+	return false
+
 ## The explicit flow edges a macro SEQ declares, as [src_index, tgt_index,
 ## recirc] triples in SEQ-index space, in the order they are stamped. This is
 ## the ONE implementation of the #71 branch / #streams / explicit_from_prev
@@ -3137,6 +3178,7 @@ func macro_flow_edges(line_id: String, seq: Array) -> Array:
 	var parallel_siblings : Array = [] # entries flagged "parallel_branch"
 	var parallel_source : int = -1
 	var stream_chains : Dictionary = {} # tag → Array[int], in SEQ order
+	var stream_split : Dictionary = {}  # tag → the main entry that opened it
 	for entry_idx in range(seq.size()):
 		var entry : Dictionary = seq[entry_idx]
 		var mid : String = String(entry.get("id", ""))
@@ -3170,6 +3212,7 @@ func macro_flow_edges(line_id: String, seq: Array) -> Array:
 			# merge is written when the next main entry arrives (below).
 			var chain : Array = stream_chains.get(stream_tag, [])
 			if chain.is_empty():
+				stream_split[stream_tag] = last_main
 				if last_main >= 0:
 					out.append([last_main, entry_idx, false])
 			else:
@@ -3226,12 +3269,36 @@ func macro_flow_edges(line_id: String, seq: Array) -> Array:
 			# makes the trains converge here and nowhere earlier. Cleared after,
 			# so the next split starts fresh (line 1 splits twice — before the
 			# mill and after it).
+			#
+			# A stream whose LAST member has no outlet (a sink, or MachineFlow
+			# `no_outlet`: the 3A/3B intake's U-bay, 2026-09-25) ENDS there, like
+			# a chained branch that dead-ends in a sink: no merge edge, and the
+			# main path continues from the stream's split to this entry instead.
+			# That continuation is inserted BEFORE the split's other edges, so it
+			# is the split's first out-edge — a splitter's primary outlet, which
+			# Conveyor8's overlay reads as FORWARD (LineFlow, #138). Appended
+			# after the stream's opening edge, C8 would send its forward share
+			# into the overflow belt.
 			if not stream_chains.is_empty():
+				var cont_split : int = -1
 				for tag in stream_chains.keys():
 					var sc : Array = stream_chains[tag]
-					if not sc.is_empty():
-						out.append([int(sc[sc.size() - 1]), entry_idx, false])
+					if sc.is_empty():
+						continue
+					var tail : int = int(sc[sc.size() - 1])
+					if _macro_entry_feeds_nothing(seq[tail] as Dictionary):
+						cont_split = int(stream_split.get(tag, -1))
+						continue
+					out.append([tail, entry_idx, false])
+				if cont_split >= 0 and not _edge_triple_in(out, cont_split, entry_idx):
+					var at : int = out.size()
+					for k in out.size():
+						if int((out[k] as Array)[0]) == cont_split:
+							at = k
+							break
+					out.insert(at, [cont_split, entry_idx, false])
 				stream_chains.clear()
+				stream_split.clear()
 			if not parallel_siblings.is_empty():
 				for sib in parallel_siblings:
 					out.append([int(sib), entry_idx, false])

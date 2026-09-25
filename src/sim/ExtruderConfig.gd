@@ -102,6 +102,16 @@ class_name ExtruderConfig
 ## note in ExtruderModel._tick_preheat().
 @export var preheat_min_s : float = 1800.0
 
+@export_group("Start button — natraject")
+## The hidden deep setting "natraject" (operator 2026-09-25, rulings file
+## §I7): ON (the default), the start button checks and starts the machines
+## after the extruder (blower + weegschaal, centrifuge, ontwaterzeef,
+## heetafslag, laserfilter) before the screw. OFF, it neither checks nor
+## starts them and only starts the screw: "you don't use that setting ... that
+## doesn't make sense during normal operation". The runtime switch is
+## ExtruderStartSequence.natraject_enabled; this is its starting value.
+@export var natraject_enabled : bool = true
+
 @export_group("Vacuum cascade — the signature 120-second mechanic")
 @export var vacuum_alarm_grace_s     : float = 120.0
 ## The real plant timing: vacuum unit error → 120s grace → if missed, cascade.

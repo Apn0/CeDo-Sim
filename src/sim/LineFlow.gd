@@ -181,6 +181,68 @@ var feed_enabled : bool = true
 # Auto-clears once the fault is relieved (crew) AND the downstream has drained.
 const OVERLOAD_KG : float = 250.0          # ~2× the crew jam threshold (BUF-300 = 120)
 var _estop_active : bool = false
+## Machines an extruder's PLC runs instead of the line's (operator ruling
+## 2026-09-25, docs/plant/operator_rulings_2026-09-25.md §I4): the extruder
+## itself and its natraject (laserfilter, heetafslag, ontwaterzeef,
+## centrifuge, weegschaal). body instance id -> {"owner": owner instance id,
+## "run": bool}. Keyed by the placed body, so it survives rebuild(); an entry
+## whose owner is gone is ignored and the line's PLC governs again.
+var _owned : Dictionary = {}
+## body instance id -> _nodes index, rebuilt on a miss (see _nd_for_body).
+var _body_index : Dictionary = {}
+
+# ── The extruder silo's level sensor and its feed stop ───────────────────────
+# Operator 2026-09-25 (docs/plant/operator_rulings_2026-09-25.md §I11, §I13;
+# recollection, no document): a single-beam laser at the top of each extruder
+# silo measures the distance down to the material; the HMI shows it as a %,
+# where a "safe cutoff" distance is 100 % and no material is 0 %. It reports a
+# running average (the sim: once per second). At 100 % or more the silo's feed
+# stops at once — on 3A/3B the VSS dosing screw M11a, on line 1 the shredder
+# (its hopper is line 1's VSS) — and everything else keeps running, so the
+# material still in the wash line lands on top and the silo reads over 100 %.
+# The feed runs again only after 10 s continuously under 100 %.
+#
+# 100 % is SILO_FULL_KG, the sim's silo-full that the level windows already
+# show: no plant capacity is documented. The mm scale is his "for instance"
+# (1780 mm = 100 %, 4950 mm = 0 %), a display only. 3C and 6 run a stop/start
+# band instead (the 3C screen: stop vullen 225 cm, start vullen 120 cm); not
+# built, his "later".
+const SILO_REPORT_S  : float = 1.0
+const SILO_EMPTY_MM  : float = 4950.0
+const SILO_CUTOFF_MM : float = 1780.0
+const SILO_RESUME_S  : float = 10.0
+## macro_id -> [the SEQ id the stopped machine follows ("" = none), the id it is]:
+## the first matching entry of that line's SEQ is its silo's feed stop.
+const SILO_FEED_STOP : Dictionary = {
+	"line_3a": ["vuilsnippersilo", "transport_screw"],   # VSS dosing screw M11a
+	"line_3b": ["vuilsnippersilo", "transport_screw"],   # VSS dosing screw M11a
+	"line_1":  ["", "shredder_1"],                       # the shredder pauses
+}
+## Held with the feed stop. In the sim the VSS (vss_silo) discharges straight
+## into the dosing screw's input, so with the screw alone held the VSS would
+## empty itself into the stopped screw. In the plant the screw IS the VSS's
+## discharge and the material stays in the VSS, where the intake's own "VSS
+## full" logic (VSS_FULL_KG) sees it. Measured 2026-09-25 before this: the
+## backlog piled up in M11a's input and e-stopped there at 31.8 min.
+const SILO_FEED_STOP_ALSO : Dictionary = {
+	"line_3a": ["vss_silo"],
+	"line_3b": ["vss_silo"],
+}
+## The PCU belt (the compactorband from the extruder silo into the extruder)
+## feeds only while the PCU pot has room. On lines 1/3A/3B the extruder's flow
+## node is PCU and screw in one, so its input buffer is the pot. With the
+## extruder off the pot fills, the belt and the silo's discharge stop, and the
+## silo fills (operator 2026-09-25, §I13: "if the compactor belt is not
+## running ... the extruder silo might be filled to ... 114 %, 120 %"). Full =
+## CutterCompactor.POT_CAPACITY_KG, the sim's own pot size; his rough guess for
+## a full PCU was "like a hundred kilograms". Only the belt's AUTO mode is
+## modelled (he named auto / continuous / off / manual).
+const PCU_POT_FULL_KG : float = CutterCompactorScript.POT_CAPACITY_KG
+## [{silo, target, line, belt, pcu}], rebuilt with the topology: `belt` is the
+## compactorband and `pcu` the extruder of the same build (null when absent).
+var _silo_stops : Array = []
+## silo body instance id -> sensor + interlock state; kept across rebuild().
+var _silo_state : Dictionary = {}
 var _estop_fault_order : int = -1          # flow-order position of the fault
 var _estop_fault_node  : int = -1          # node index of the fault
 
@@ -437,9 +499,17 @@ func rebuild() -> void:
 						# survivor stages so they DON'T re-stagger.
 	_spawn_connectors()
 	_index_silo_sensors()    # #A3: build target-node → sensor lookup for surge wiring
+	_index_silo_feed_stops() # §I11: each extruder silo's level sensor → its feed stop
 	# Consume the snapshot — one-shot for this rebuild. Subsequent reads
 	# (HMI placement scans, per-tick code) must see an empty dict.
 	_restore_state = {}
+	# Every extruder claims its own flow node and its natraject NOW (rulings
+	# 2026-09-25 §I4), not on its next SimTick: otherwise whether the line's
+	# PLC or the extruder runs those machines for the first ticks depends on
+	# whether a SimTick lands before them (a suite that ticks LineFlow in a
+	# tight loop would get either, run to run).
+	if is_inside_tree():
+		get_tree().call_group("extruder_machine", "on_line_flow_rebuilt", self)
 	print("[LineFlow] %d machines, %d links (transport physicalized)" % [_nodes.size(), _edges.size()])
 
 ## #218 — Explicit shift telemetry reset. The shift-reset button on the
@@ -683,6 +753,9 @@ func _process_discovered_node(node3d: Node3D, id_ordinal: Dictionary, code_owner
 		"line":  String(node3d.get_meta("line")) if node3d.has_meta("line") else "",
 		"hmi_id": String(node3d.get_meta("hmi_id")) if node3d.has_meta("hmi_id") else "",
 		"role":  String(prof["role"]),
+		# MachineFlow `no_outlet` (the U-bay): the geometry fallback gives it no
+		# out-edge. It is not a sink: it holds what it takes, it does not bank it.
+		"no_outlet": bool(prof.get("no_outlet", false)),
 		"waste": p_waste,
 		"rate":  float(prof["rate"]),
 		"process":       String(prof["process"]),
@@ -1280,6 +1353,8 @@ func _link() -> void:
 		var a: Dictionary = _nodes[i]
 		if String(a["role"]) == "sink":
 			continue                       # sinks consume, never feed downstream
+		if bool(a.get("no_outlet", false)):
+			continue                       # a dump (the U-bay) holds, never feeds downstream
 		# #71 — node was tagged with `lf_explicit_outs` by the macro builder:
 		# its downstreams are fully specified above. Skip geometry fallback to
 		# avoid adding a SPURIOUS third edge alongside an L-R split or recirc.
@@ -2062,6 +2137,275 @@ func _resolve(handle: String) -> Dictionary:
 func code_conflicts() -> Array[Dictionary]:
 	return _code_conflicts
 
+## ── Extruder-owned machines (operator ruling 2026-09-25, §I4) ─────────────
+## An extruder claims the machines its PLC runs (itself and its natraject) and
+## commands each one on or off; the line's PLC no longer powers them. A claim
+## held by another live owner is refused. Returns whether `owner` holds it.
+func claim_node(body: Node3D, owner: Object) -> bool:
+	if body == null or not is_instance_valid(body) or owner == null:
+		return false
+	var bid := body.get_instance_id()
+	var own : Dictionary = _owned.get(bid, {})
+	if not own.is_empty() and int(own["owner"]) != owner.get_instance_id() 			and is_instance_id_valid(int(own["owner"])):
+		return false
+	if own.is_empty() or int(own["owner"]) != owner.get_instance_id():
+		_owned[bid] = {"owner": owner.get_instance_id(), "run": false}
+	return true
+
+## Run command for a claimed machine. Ignored unless `owner` holds the claim.
+func command_node(body: Node3D, owner: Object, run: bool) -> void:
+	if body == null or not is_instance_valid(body) or owner == null:
+		return
+	var own : Dictionary = _owned.get(body.get_instance_id(), {})
+	if not own.is_empty() and int(own["owner"]) == owner.get_instance_id():
+		own["run"] = run
+
+## Drop every claim `owner` holds; those machines go back to the line's PLC.
+func release_nodes(owner: Object) -> void:
+	if owner == null:
+		return
+	var oid := owner.get_instance_id()
+	for bid in _owned.keys():
+		if int(_owned[bid]["owner"]) == oid:
+			_owned.erase(bid)
+
+## The live owner of a machine's claim, or null.
+func node_owner(body: Node3D) -> Object:
+	if body == null or not is_instance_valid(body):
+		return null
+	var own : Dictionary = _owned.get(body.get_instance_id(), {})
+	if own.is_empty() or not is_instance_id_valid(int(own["owner"])):
+		return null
+	return instance_from_id(int(own["owner"]))
+
+## What an owner reads about one machine: whether it is in the flow graph,
+## whether it may be started (not tripped, choked, in HAND or held off by the
+## line's e-stop) and why not, and whether it is powered and spun up.
+func natraject_status(body: Node3D) -> Dictionary:
+	var ni := _nd_for_body(body)
+	if ni < 0:
+		return {"found": false, "available": false, "why": "niet gevonden",
+			"powered": false, "spin": 0.0}
+	var nd : Dictionary = _nodes[ni]
+	var why := ""
+	if _is_mol_tripped(nd):
+		why = "motor uitgevallen (thermisch)"
+	elif bool(nd.get("choked", false)):
+		why = "verstopt"
+	elif bool(nd.get("hand_mode", false)):
+		why = "staat in HAND"
+	elif _estop_active and _plc_stage_node.find(ni) <= _estop_fault_order and _plc_stage_node.find(ni) >= 0:
+		why = "noodstop lijn actief"
+	return {
+		"found": true,
+		"available": why == "",
+		"why": why if why != "" else "gestopt",
+		"powered": bool(nd.get("powered", false)),
+		"spin": float(nd.get("spin", 0.0)),
+		"key": String(nd.get("key", "")),
+	}
+
+## Pair every macro-built extruder silo with its feed stop (SILO_FEED_STOP):
+## the machine of the same build (macro_instance) at that SEQ entry.
+func _index_silo_feed_stops() -> void:
+	_silo_stops.clear()
+	for nd in _nodes:
+		if String(nd.get("id", "")) != "extruder_silo":
+			continue
+		var silo = nd.get("node", null)
+		if silo == null or not is_instance_valid(silo):
+			continue
+		var mid : String = String((silo as Node3D).get_meta("macro_id", ""))
+		var rule : Array = SILO_FEED_STOP.get(mid, [])
+		if rule.is_empty():
+			continue
+		var ti : int = _seq_entry_after(_macro_seq(mid), String(rule[0]), String(rule[1]))
+		if ti < 0:
+			continue
+		var inst : String = String((silo as Node3D).get_meta("macro_instance", ""))
+		var target : Node3D = null
+		var best_d : float = INF
+		for nd2 in _nodes:
+			var b = nd2.get("node", null)
+			if b == null or not is_instance_valid(b):
+				continue
+			var b3 := b as Node3D
+			if String(b3.get_meta("macro_id", "")) != mid or int(b3.get_meta("macro_index", -1)) != ti:
+				continue
+			if inst != "" and String(b3.get_meta("macro_instance", "")) != inst:
+				continue
+			var d : float = (b3.global_position - (silo as Node3D).global_position).length()
+			if d < best_d:
+				best_d = d
+				target = b3
+		if target != null:
+			var seq : Array = _macro_seq(mid)
+			var si_idx : int = int((silo as Node3D).get_meta("macro_index", -1))
+			var bi : int = _seq_entry_after_index(seq, si_idx, "compactorband")
+			var belt : Node3D = _macro_body(mid, inst, bi)
+			var pcu : Node3D = null
+			if bi >= 0 and bi + 1 < seq.size() and String((seq[bi + 1] as Dictionary).get("id", "")).begins_with("extruder_"):
+				pcu = _macro_body(mid, inst, bi + 1)
+			var also : Array = []
+			for aid in SILO_FEED_STOP_ALSO.get(mid, []):
+				var ab : Node3D = _macro_body(mid, inst, _seq_entry_after(seq, "", String(aid)))
+				if ab != null:
+					also.append(ab)
+			_silo_stops.append({"silo": silo, "target": target, "line": mid, "belt": belt, "pcu": pcu, "also": also})
+
+func _seq_entry_after_index(seq: Array, from_idx: int, id: String) -> int:
+	if from_idx < 0:
+		return -1
+	for k in range(from_idx + 1, seq.size()):
+		if String((seq[k] as Dictionary).get("id", "")) == id:
+			return k
+	return -1
+
+## The flow body at (macro_id, macro_index) of build `inst` ("" = any build).
+func _macro_body(macro_id: String, inst: String, idx: int) -> Node3D:
+	if idx < 0:
+		return null
+	for nd in _nodes:
+		var b = nd.get("node", null)
+		if b == null or not is_instance_valid(b):
+			continue
+		var b3 := b as Node3D
+		if String(b3.get_meta("macro_id", "")) == macro_id and int(b3.get_meta("macro_index", -1)) == idx \
+				and (inst == "" or String(b3.get_meta("macro_instance", "")) == inst):
+			return b3
+	return null
+
+func _macro_seq(macro_id: String) -> Array:
+	match macro_id:
+		"line_3a": return BuildMode.LINE_3A_SEQ
+		"line_3b": return BuildMode.LINE_3B_SEQ
+		"line_1":  return BuildMode.LINE_1_SEQ
+	return []
+
+## Index of the first `id` entry after the first `after_id` entry ("" = from 0).
+static func _seq_entry_after(seq: Array, after_id: String, id: String) -> int:
+	var from := 0
+	if after_id != "":
+		from = -1
+		for k in seq.size():
+			if String((seq[k] as Dictionary).get("id", "")) == after_id:
+				from = k + 1
+				break
+		if from < 0:
+			return -1
+	for k in range(from, seq.size()):
+		if String((seq[k] as Dictionary).get("id", "")) == id:
+			return k
+	return -1
+
+## The sensor (a 1 s running average of the silo's content, reported once per
+## second) and the interlock it drives: at >= 100 % the feed stop is held off at
+## once; it is let go after SILO_RESUME_S of reports all under 100 %.
+func _tick_silo_feed_stops(delta: float) -> void:
+	for st in _silo_stops:
+		var silo = st["silo"]
+		var target = st["target"]
+		if silo == null or not is_instance_valid(silo) or target == null or not is_instance_valid(target):
+			continue
+		var sid : int = (silo as Object).get_instance_id()
+		if not _silo_state.has(sid):
+			_silo_state[sid] = {"acc": 0.0, "n": 0, "t": 0.0, "pct": 0.0, "mm": SILO_EMPTY_MM,
+				"held": false, "below_t": 0.0, "reports": 0}
+		var s : Dictionary = _silo_state[sid]
+		var si : int = _nd_for_body(silo)
+		if si >= 0:
+			s["acc"] = float(s["acc"]) + float(_nodes[si].get("buffer", 0.0))
+			s["n"] = int(s["n"]) + 1
+		s["t"] = float(s["t"]) + delta
+		if float(s["t"]) >= SILO_REPORT_S - 1e-6:
+			var avg : float = float(s["acc"]) / float(maxi(1, int(s["n"])))
+			s["pct"] = avg / SILO_FULL_KG * 100.0
+			s["mm"] = SILO_EMPTY_MM - float(s["pct"]) / 100.0 * (SILO_EMPTY_MM - SILO_CUTOFF_MM)
+			s["acc"] = 0.0
+			s["n"] = 0
+			s["t"] = float(s["t"]) - SILO_REPORT_S
+			s["reports"] = int(s["reports"]) + 1
+			if float(s["pct"]) >= 100.0:
+				s["held"] = true
+				s["below_t"] = 0.0
+			elif bool(s["held"]):
+				s["below_t"] = float(s["below_t"]) + SILO_REPORT_S
+				if float(s["below_t"]) >= SILO_RESUME_S - 1e-6:
+					s["held"] = false
+					s["below_t"] = 0.0
+		if bool(s["held"]):
+			for hb in [target] + (st.get("also", []) as Array):
+				if hb == null or not is_instance_valid(hb):
+					continue
+				var ti : int = _nd_for_body(hb)
+				if ti >= 0:
+					_nodes[ti]["powered"] = false
+		# The PCU belt: a full pot stops the belt and the silo's discharge.
+		var pcu = st.get("pcu", null)
+		var pcu_full := false
+		if pcu != null and is_instance_valid(pcu):
+			var pi : int = _nd_for_body(pcu)
+			pcu_full = pi >= 0 and float(_nodes[pi].get("buffer", 0.0)) >= PCU_POT_FULL_KG
+		s["pcu_full"] = pcu_full
+		if pcu_full:
+			for held_body in [st.get("belt", null), silo]:
+				if held_body != null and is_instance_valid(held_body):
+					var hi : int = _nd_for_body(held_body)
+					if hi >= 0:
+						_nodes[hi]["powered"] = false
+
+## The extruder silo of the same build as `body` (an extruder or a silo), as its
+## sensor last reported it: {found, pct, mm, held, reports, silo, target, line}.
+func silo_level_for(body: Node3D) -> Dictionary:
+	if body == null or not is_instance_valid(body):
+		return {"found": false}
+	var inst : String = String(body.get_meta("macro_instance", ""))
+	for st in _silo_stops:
+		var silo = st["silo"]
+		if silo == null or not is_instance_valid(silo):
+			continue
+		if silo == body or (inst != "" and String((silo as Node3D).get_meta("macro_instance", "")) == inst):
+			var s : Dictionary = _silo_state.get((silo as Object).get_instance_id(), {})
+			return {"found": true, "pct": float(s.get("pct", 0.0)), "mm": float(s.get("mm", SILO_EMPTY_MM)),
+				"held": bool(s.get("held", false)), "reports": int(s.get("reports", 0)),
+				"pcu_full": bool(s.get("pcu_full", false)),
+				"silo": silo, "target": st["target"], "line": String(st["line"]), "also": st.get("also", []),
+				"belt": st.get("belt", null), "pcu": st.get("pcu", null)}
+	return {"found": false}
+
+## Every extruder silo's feed stop: [{silo, target, line}] (tests, HMI).
+func silo_feed_stops() -> Array:
+	return _silo_stops.duplicate()
+
+## The LineFlow node dict for a placed body, or {} when it is not a flow node.
+func node_for_body(body: Node3D) -> Dictionary:
+	var ni := _nd_for_body(body)
+	return _nodes[ni] if ni >= 0 else {}
+
+## Every flow node's placed body with its placeable id, for owners to pick
+## their machines from: [{"body": Node3D, "id": String}].
+func flow_bodies() -> Array:
+	var out : Array = []
+	for nd in _nodes:
+		var b = nd.get("node", null)
+		if b != null and is_instance_valid(b):
+			out.append({"body": b, "id": String(nd.get("id", ""))})
+	return out
+
+func _nd_for_body(body: Node3D) -> int:
+	if body == null or not is_instance_valid(body):
+		return -1
+	var bid := body.get_instance_id()
+	var ni : int = int(_body_index.get(bid, -1))
+	if ni >= 0 and ni < _nodes.size() and _nodes[ni].get("node", null) == body:
+		return ni
+	_body_index.clear()
+	for i in _nodes.size():
+		var b = _nodes[i].get("node", null)
+		if b != null and is_instance_valid(b):
+			_body_index[(b as Object).get_instance_id()] = i
+	return int(_body_index.get(bid, -1))
+
 ## Public HMI surface — every setter quietly noops on an unknown handle so the
 ## panel can be opened before the line has been built without crashing.
 func set_machine_hand_mode(id: String, on: bool) -> void:
@@ -2633,6 +2977,20 @@ func _tick_plc_power_downstream(delta: float) -> void:
 				nd_t["powered"] = true
 			else:
 				nd_t["powered"] = plc_says
+	# EXTRUDER-OWNED machines (operator ruling 2026-09-25, §I4): the line's PLC
+	# does not run an extruder or its natraject; the extruder's start sequence
+	# does (ExtruderStartSequence via ExtruderMachine). HAND, the trip latches
+	# and the e-stop below still override it, as they override the PLC.
+	for nd_o in _nodes:
+		var body_o = nd_o.get("node", null)
+		if body_o == null or not is_instance_valid(body_o):
+			continue
+		var own : Dictionary = _owned.get((body_o as Object).get_instance_id(), {})
+		if not own.is_empty() and is_instance_id_valid(int(own["owner"])):
+			nd_o["powered"] = bool(own["run"])
+	# The extruder silo's level stops its feed (§I11). Applied like a PLC
+	# command: HAND below bypasses it, as HAND bypasses every PLC safeguard.
+	_tick_silo_feed_stops(delta)
 	# HMI HAND-mode override (#new-hmi): when the operator has switched a machine to
 	# HAND on the per-machine HMI screen, the PLC + safeguards are BYPASSED for that
 	# machine — `manual_on` directly drives powered. Operator's responsibility (the

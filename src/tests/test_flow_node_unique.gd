@@ -403,8 +403,9 @@ func _behaviour(lf: Node) -> void:
 				% [String(po.get_meta("macro_id")), int(po.get_meta("macro_index", -1)), c])
 	_check(n_sw >= 2 and n_c8 >= 1, "C0 the controllers were looked for (switch belts %d, C8 %d)" % [n_sw, n_c8])
 
-	# C3 — feed the intake line at its opzetband and read every intake belt's
-	# own film bed against its own throughput.
+	# C3 — feed the intake line at its head (entry 0: the conveyor into
+	# shredder 2 since 2026-09-25, an opzetband before) and read every intake
+	# belt's own film bed against its own throughput.
 	var head : int = -1
 	var belts : Array = []
 	for i in nodes.size():
@@ -412,7 +413,7 @@ func _behaviour(lf: Node) -> void:
 		if n3 == null or not is_instance_valid(n3) or String((n3 as Node).get_meta("macro_id", "")) != "line_intake_3a3b":
 			continue
 		var id : String = String((nodes[i] as Dictionary).get("id", ""))
-		if id == "opzetband_3a3b":
+		if int((n3 as Node).get_meta("macro_index", -1)) == 0:
 			head = i
 		elif id.begins_with("transportband_") and (n3 as Node).has_meta("macro_index"):
 			belts.append(i)
