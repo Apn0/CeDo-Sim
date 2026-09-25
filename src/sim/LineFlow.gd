@@ -736,6 +736,9 @@ func _process_discovered_node(node3d: Node3D, id_ordinal: Dictionary, code_owner
 		# P5 (2026-09-23) — the silo's level windows (PlaceableCatalog.SiloFill);
 		# driven every tick from this node's buffer against SILO_FULL_KG.
 		"silo_fill": _find_silo_fill(node3d),
+		# Sound (2026-09-25): the machine's MachineSound, driven every tick from
+		# this node's spin × rotor fraction. Null for machines without a .tres.
+		"snd":     _find_machine_sound(node3d),
 		# Flow-gated visuals: steam plume + extruder die-face melt strands only
 		# show while material is actually being processed (no invention from nothing).
 		"plume":       _find_steam_plume(node3d),
@@ -1760,6 +1763,15 @@ func _find_film_field(machine: Node) -> Node:
 			return c
 	return null
 
+## Sound (2026-09-25): the MachineSound MachineSoundBank.attach() hung directly
+## under the placed body. A direct child lookup, not a subtree search — the
+## bank always names and places it the same way.
+func _find_machine_sound(machine: Node) -> Node:
+	var s := machine.get_node_or_null("MachineSound")
+	if s != null and s.has_method("set_drive"):
+		return s
+	return null
+
 ## Task 1c (2026-09-24): ALL of a machine's fields. The scheidingsgoot has one
 ## per segment (five); the first-match drive above would leave four dead.
 func _find_film_fields(machine: Node) -> Array:
@@ -2663,6 +2675,15 @@ func _tick_plc_power_downstream(delta: float) -> void:
 		var load_s : float = clampf(float(nd_s["thru"]) / rate_s, 0.0, 1.25) if rate_s > 0.0 else 0.0
 		nd_s["amps"] = ProcessModelScript.stage_amps(
 			float(nd_s["amps_nominal"]), load_s, float(nd_s["spin"]) > 0.1)
+		# Sound (2026-09-25): the machine is heard at the speed it is AT — the
+		# PLC spin ramp (0..1 over SPIN_UP_S) times the rotor's commanded
+		# fraction (an HMI rpm setpoint at 50 % is heard at half drive). A node
+		# that is not powered ramps to 0 and MachineSound stops its players; a
+		# node that leaves this graph stops being called and winds down on the
+		# component's own watchdog. Nothing here plays a sound directly.
+		var snd_s = nd_s.get("snd")
+		if snd_s != null and is_instance_valid(snd_s):
+			snd_s.call("set_drive", float(nd_s["spin"]) * _mech_fraction(nd_s))
 		# Drive the visual flake layer from the live state (#173): material present
 		# → flake density, throughput → drift speed, moisture/contam → wet/dirty look.
 		var moist01_s : float = clampf(float(nd_s["moist"]) / 40.0, 0.0, 1.0)

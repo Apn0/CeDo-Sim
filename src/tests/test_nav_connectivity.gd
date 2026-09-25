@@ -28,8 +28,10 @@ extends Node
 
 const TEST_SLOT : String = "__navconn__"
 
+## This slot's own files. The operator's world_layout.json is not on the list:
+## world saves go to the guard's scratch file, and the real one is only
+## compared, never written (src/tests/world_layout_guard.gd).
 const PROTECT : Array[String] = [
-	"user://world_layout.json",
 	"user://__navconn___save.json",
 	"user://__navconn___factory.json",
 ]
@@ -53,7 +55,8 @@ const BOOT_FRAMES   : int = 120
 const SETTLE_FRAMES : int = 60
 const BAKE_WAIT_FRAMES : int = 600
 
-var _backups : Dictionary = {}
+const WorldLayoutGuard := preload("res://src/tests/world_layout_guard.gd")
+var _wlg := WorldLayoutGuard.new(TEST_SLOT, PROTECT)
 var _fails : int = 0
 var _oks   : int = 0
 var _world : Node3D = null
@@ -77,7 +80,9 @@ func _ready() -> void:
 	if get_node_or_null("/root/WorldLayout") == null:
 		print("FATAL: WorldLayout autoload missing (boot via the .tscn, not --script)")
 		get_tree().quit(2); return
-	_backup_files()
+	# Before boot, so no world save can reach the operator's world_layout.json.
+	if not _wlg.arm(get_tree()):
+		get_tree().quit(2); return
 
 	var bus := get_node_or_null("/root/EventBus")
 	if bus:
@@ -107,6 +112,9 @@ func _ready() -> void:
 	_test_machine_carve()
 	_test_inside_outside()
 	await _test_crew_posts()
+
+	for c in _wlg.final_checks(_world):
+		_check(c[0], c[1])
 
 	print("\n=========================================")
 	print("Result: %s (%d ok, %d fail)"
@@ -612,29 +620,15 @@ const BF_ZU : Vector2 = Vector2(-0.76604, -0.64279)
 func _bf_to_pc(bf: Vector2) -> Vector2:
 	return BF_O + bf.x * BF_XU + bf.y * BF_ZU
 
+## Restore BEFORE the world is freed, then again after: the headless teardown
+## segfault lands inside world teardown (CLAUDE.md, 15 of 62 boots) and never
+## reaches code after it.
 func _finish(code: int) -> void:
+	_wlg.restore()
 	if _world != null and is_instance_valid(_world):
 		_world.queue_free()
-	await get_tree().process_frame
-	_restore_files()
+		await get_tree().process_frame
+	_wlg.restore()
+	_wlg.disarm()
 	get_tree().quit(code)
 
-func _backup_files() -> void:
-	for p in PROTECT:
-		if FileAccess.file_exists(p):
-			var f := FileAccess.open(p, FileAccess.READ)
-			_backups[p] = f.get_buffer(f.get_length())
-			f.close()
-		else:
-			_backups[p] = null
-
-func _restore_files() -> void:
-	for p in PROTECT:
-		var data = _backups.get(p, null)
-		if data == null:
-			if FileAccess.file_exists(p):
-				DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
-		else:
-			var f := FileAccess.open(p, FileAccess.WRITE)
-			f.store_buffer(data)
-			f.close()

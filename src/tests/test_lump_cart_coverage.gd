@@ -40,8 +40,11 @@ const BF_XU := Vector2(-0.64279, 0.76604)
 const BF_ZU := Vector2(-0.76604, -0.64279)
 
 const TEST_SLOT := "__lumpcov__"
+## This slot's own files. The operator's world_layout.json is not on the list:
+## world saves go to the guard's scratch file, and the real one is only
+## compared, never written (src/tests/world_layout_guard.gd).
 const TOUCHED := [
-	"user://world_layout.json", "user://world_layout_consumed.flag",
+	"user://world_layout_consumed.flag",
 	"user://__lumpcov___save.json", "user://__lumpcov___factory.json",
 ]
 
@@ -61,7 +64,8 @@ const MIN_HEIGHT_SPLIT := 0.05
 
 var _pass := 0
 var _fail := 0
-var _backups : Dictionary = {}
+const WorldLayoutGuard := preload("res://src/tests/world_layout_guard.gd")
+var _wlg := WorldLayoutGuard.new(TEST_SLOT, TOUCHED)
 var _guarded : Dictionary = {}
 
 
@@ -82,7 +86,9 @@ func _ready() -> void:
 		print("FATAL: WorldLayout autoload missing (boot via the .tscn, not --script)")
 		get_tree().quit(2); return
 
-	_backup_files()
+	# Before boot, so no world save can reach the operator's world_layout.json.
+	if not _wlg.arm(get_tree()):
+		get_tree().quit(2); return
 	_guard_operator_saves()
 
 	var bus := get_node_or_null("/root/EventBus")
@@ -103,7 +109,7 @@ func _ready() -> void:
 	if bm == null:
 		bm = world.find_child("BuildMode", true, false)
 	if bm == null:
-		print("FATAL: BuildMode missing after boot"); _finish(); return
+		print("FATAL: BuildMode missing after boot"); _finish(world); return
 
 	for line_id in LINES.keys():
 		await _place_macro(bm, String(line_id), LINES[line_id])
@@ -115,9 +121,10 @@ func _ready() -> void:
 	_check_coverage()
 	_check_shell_clearance()
 
-	world.queue_free()
+	for c in _wlg.final_checks(world):
+		_ok(c[0], c[1])
 	_verify_operator_saves()
-	_finish()
+	_finish(world)
 
 
 func _check_coverage() -> void:
@@ -191,13 +198,21 @@ func _check_coverage() -> void:
 			"%s: a lump_platform bordes sits under the raised cart (XZ within 1.0 m)" % tag)
 
 
-func _finish() -> void:
-	_restore_files()
+## The verdict is printed and user:// restored BEFORE the world is freed, then
+## restored again after: the headless teardown segfault lands inside world
+## teardown (CLAUDE.md, 15 of 62 boots) and never reaches code after it.
+func _finish(world: Node = null) -> void:
+	_wlg.restore()
 	print("\n=========================================")
 	print("Result: %d ok, %d fail, 0 skip" % [_pass, _fail])
 	print("Result: %s" % ("PASS" if _fail == 0 else "FAIL"))
 	print("RESULT: %s" % ("PASS" if _fail == 0 else "FAIL"))
 	print("=========================================")
+	if world != null and is_instance_valid(world):
+		world.queue_free()
+		await get_tree().process_frame
+	_wlg.restore()
+	_wlg.disarm()
 	get_tree().quit(0 if _fail == 0 else 1)
 
 
@@ -212,27 +227,6 @@ func _place_macro(bm, macro_id: String, start_bf: Vector2) -> void:
 	bm.call("_build_full_line", macro_id, start, atan2(-fdir.x, -fdir.z))
 	for _i in range(10):
 		await get_tree().process_frame
-
-
-func _backup_files() -> void:
-	for p in TOUCHED:
-		if FileAccess.file_exists(p):
-			var f := FileAccess.open(p, FileAccess.READ)
-			_backups[p] = f.get_as_text() if f else null
-			if f: f.close()
-		else:
-			_backups[p] = null
-
-
-func _restore_files() -> void:
-	for p in _backups.keys():
-		var orig = _backups[p]
-		if orig is String:
-			var f := FileAccess.open(p, FileAccess.WRITE)
-			if f: f.store_string(orig); f.close()
-		elif FileAccess.file_exists(p):
-			DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
-	print("  (restored touched user:// files)")
 
 
 func _guard_operator_saves() -> void:

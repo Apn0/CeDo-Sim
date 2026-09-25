@@ -49,13 +49,16 @@ const MIN_SPAWN_GAP_M := 3.0                   # tools must NOT appear at the fe
 const ARRIVE_M        := 2.0                   # counts as "got there" (walk stops at 1.8)
 const REACH_M         := 2.5                   # stand spot ↔ kit: arm's reach, not a shortcut
 
+## This slot's own files. The operator's world_layout.json is not on the list:
+## world saves go to the guard's scratch file, and the real one is only
+## compared, never written (src/tests/world_layout_guard.gd).
 const PROTECT := [
-	"user://world_layout.json",
 	"user://__feederfetch___save.json",
 	"user://__feederfetch___factory.json",
 ]
 
-var _backups : Dictionary = {}
+const WorldLayoutGuard := preload("res://src/tests/world_layout_guard.gd")
+var _wlg := WorldLayoutGuard.new(TEST_SLOT, PROTECT)
 var _fails   : int = 0
 
 func _check(ok: bool, msg: String) -> void:
@@ -69,7 +72,9 @@ func _ready() -> void:
 	if wl == null:
 		print("FATAL: WorldLayout autoload missing (boot via the .tscn, not --script)")
 		get_tree().quit(2); return
-	_backup_files()
+	# Before boot, so no world save can reach the operator's world_layout.json.
+	if not _wlg.arm(get_tree()):
+		get_tree().quit(2); return
 
 	var bus := get_node_or_null("/root/EventBus")
 	if bus:
@@ -204,13 +209,20 @@ func _ready() -> void:
 	_check(feeder.get("personal_scissors") == held_sc and feeder.get("personal_scanner") == held_scn,
 		"the feeder still carries the same kit after re-assignment")
 	_check(_feeder_for(cm, "role:feeder") == feeder, "re-pin reused the existing feeder (no duplicate worker)")
+	for c in _wlg.final_checks(world):
+		_check(c[0], c[1])
 
+	# The verdict is printed and user:// restored BEFORE the world is freed,
+	# then restored again after: the headless teardown segfault lands inside
+	# world teardown (CLAUDE.md, 15 of 62 boots) and never reaches code after it.
+	_wlg.restore()
 	print("\n=========================================")
 	print("Result: %s (%d fail)" % ["PASS" if _fails == 0 else "FAIL", _fails])
 	print("=========================================")
 	world.queue_free()
 	await get_tree().process_frame
-	_restore_files()
+	_wlg.restore()
+	_wlg.disarm()
 	get_tree().quit(0 if _fails == 0 else 1)
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -255,25 +267,7 @@ func _ensure_belt(world: Node) -> Node3D:
 	return belt as Node3D
 
 func _bail(code: int) -> void:
-	_restore_files()
+	_wlg.restore()
+	_wlg.disarm()
 	get_tree().quit(code)
 
-func _backup_files() -> void:
-	for p in PROTECT:
-		if FileAccess.file_exists(p):
-			var f := FileAccess.open(p, FileAccess.READ)
-			_backups[p] = f.get_buffer(f.get_length())
-			f.close()
-		else:
-			_backups[p] = null
-
-func _restore_files() -> void:
-	for p in PROTECT:
-		var data = _backups.get(p, null)
-		if data == null:
-			if FileAccess.file_exists(p):
-				DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
-		else:
-			var f := FileAccess.open(p, FileAccess.WRITE)
-			f.store_buffer(data)
-			f.close()

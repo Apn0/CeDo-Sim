@@ -24,8 +24,10 @@ extends Node3D
 ##     (round-trip fidelity — the loader is not silently shifting anything).
 ##
 ## Emits user://regression_positions.json for tools/regression/topdown_render.py.
-## Backs up and restores every user:// file it touches, so the operator's real
-## world_layout.json and saves are never harmed.
+## Backs up and restores every user:// file it touches, so the operator's saves
+## are never harmed. His world_layout.json is READ (the world boots on it) but
+## never written: every world save, the round-trip's own _save_layout included,
+## goes to a scratch file (src/tests/world_layout_guard.gd).
 
 # ── Building frame (bf) -> Plant Coordinates affine (operator-verified) ────────
 const BF_O  := Vector2(573.404, 463.647)
@@ -56,8 +58,11 @@ const GRADE_TOL := 0.25
 const ROUNDTRIP_TOL := 0.01         # 1 cm
 
 const TEST_SLOT := "__regression__"
+## This slot's own files. The operator's world_layout.json is not on the list:
+## world saves go to the guard's scratch file, and the real one is only
+## compared, never written (src/tests/world_layout_guard.gd).
 const TOUCHED := [
-	"user://world_layout.json", "user://world_layout_consumed.flag",
+	"user://world_layout_consumed.flag",
 	"user://__regression___save.json", "user://__regression___factory.json",
 ]
 const DUMP_PATH := "user://regression_positions.json"
@@ -65,7 +70,8 @@ const DUMP_PATH := "user://regression_positions.json"
 var _pass := 0
 var _fail := 0
 var _skip := 0
-var _backups : Dictionary = {}
+const WorldLayoutGuard := preload("res://src/tests/world_layout_guard.gd")
+var _wlg := WorldLayoutGuard.new(TEST_SLOT, TOUCHED)
 var _dump : Dictionary = {}
 
 
@@ -111,7 +117,10 @@ func _ready() -> void:
 		print("FATAL: WorldLayout autoload missing (boot via --main-scene, not --script)")
 		get_tree().quit(2); return
 
-	_backup_files()
+	# Before boot. The save->reload round-trip below runs _save_layout, which
+	# would otherwise write the operator's world_layout.json.
+	if not _wlg.arm(get_tree()):
+		get_tree().quit(2); return
 
 	# Load-existing (not new-save) so MainWorld builds the configured world
 	# without entering the interactive setup flow (which would hang headless).
@@ -123,7 +132,7 @@ func _ready() -> void:
 
 	var scn := load("res://src/scenes/world/MainWorld.tscn") as PackedScene
 	if scn == null:
-		print("FATAL: MainWorld.tscn failed to load"); _restore_files(); get_tree().quit(2); return
+		print("FATAL: MainWorld.tscn failed to load"); _wlg.restore(); _wlg.disarm(); get_tree().quit(2); return
 	var world : Node = scn.instantiate()
 	await get_tree().process_frame
 	get_tree().root.add_child(world)
@@ -144,6 +153,9 @@ func _ready() -> void:
 	# shell colliders queryable) — MUST be awaited, or the verdict + quit below
 	# run first and the exterior checks silently never count.
 	await _test_exterior(world)
+	_section("LEAK GUARD")
+	for c in _wlg.final_checks(world):
+		_ok(c[0], c[1])
 
 	# Verdict list for the render.
 	_dump["checks"] = [
@@ -151,12 +163,18 @@ func _ready() -> void:
 	]
 	_write_dump()
 
-	world.queue_free()
-	_restore_files()
+	# The verdict is printed and user:// restored BEFORE the world is freed,
+	# then restored again after: the headless teardown segfault lands inside
+	# world teardown (CLAUDE.md, 15 of 62 boots) and never reaches code after it.
+	_wlg.restore()
 	print("\n=========================================")
 	print("Result: %d ok, %d fail, %d skip" % [_pass, _fail, _skip])
 	print("Dump: %s" % ProjectSettings.globalize_path(DUMP_PATH))
 	print("=========================================")
+	world.queue_free()
+	await get_tree().process_frame
+	_wlg.restore()
+	_wlg.disarm()
 	get_tree().quit(0 if _fail == 0 else 1)
 
 
@@ -581,26 +599,6 @@ func _test_macros() -> void:
 	if not any:
 		print("  note  : no operator macros present"); _skip += 1
 
-
-# ── user:// file safety ───────────────────────────────────────────────────────
-func _backup_files() -> void:
-	for p in TOUCHED:
-		if FileAccess.file_exists(p):
-			var f := FileAccess.open(p, FileAccess.READ)
-			_backups[p] = f.get_as_text() if f else null
-			if f: f.close()
-		else:
-			_backups[p] = null
-
-func _restore_files() -> void:
-	for p in _backups.keys():
-		var orig = _backups[p]
-		if orig is String:
-			var f := FileAccess.open(p, FileAccess.WRITE)
-			if f: f.store_string(orig); f.close()
-		elif FileAccess.file_exists(p):
-			DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
-	print("  (restored touched user:// files)")
 
 func _write_dump() -> void:
 	var f := FileAccess.open(DUMP_PATH, FileAccess.WRITE)
