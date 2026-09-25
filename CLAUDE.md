@@ -28,6 +28,23 @@ of `assets/` and `.godot/` (gitignored) to run the world suites — **copy them,
 never link them**: a linked `assets/` is how the 2026-09-21 cleanup of old
 worktrees emptied the real one (`docs/audit/assets_loss_and_restore_2026-09-21.md`).
 
+**The directory you start `run.sh` from no longer matters (fixed 2026-09-25).**
+`tools/audit/symbol_flow.py` resolved `extends "res://…"` against the CURRENT
+directory (`--project` defaulted to `.`). Started from another tree with `PROJ=`
+set, `== symbol flow audit ==` reported 38 "parse-breaking" symbols, all
+members that `L3CUnitScreen.gd` and `WashingScope.gd` inherit from
+`HmiScreenBase.gd`, and the harness stopped before any world suite. Started
+from another drive, it crashed in `os.path.relpath`. `res://` now means the
+`project.godot` directory at or above `--root`, and a missing one is an error.
+Measured the same from four directories (0 parse-breaking, byte-identical
+output). A planted undeclared symbol, one inheriting by `res://` path and one by
+`class_name`, is reported from all of them.
+
+For an isolated run (never the operator's `app_userdata`), redirect `APPDATA`
+and pass the matching `UD`, or the world_layout sentinel watches his real
+folder while Godot writes the copy:
+`APPDATA="$(cygpath -w <scratch>)" PROJ=<tree> UD=<scratch>/Godot/app_userdata/"CeDo Simulator" bash tools/regression/run.sh`
+
 `project.godot` declares `config/features=PackedStringArray("4.6")`.
 **Do not use `C:/Users/arnod/AppData/Local/Godot/godot.exe`** — that file is
 byte-identical to `Godot_v4.2-stable_win64.exe` (`--version` → `4.2.stable`) and
@@ -272,6 +289,13 @@ count.
 > Measured after: `PASS (19 ok, 0 fail, 0 skipped)`. **He chose to KEEP the
 > leaked entry (asked 2026-09-24), so those two reds are environmental. Do
 > not edit his world_layout.json without asking him.**
+> **It is FOUR reds, not two** (full harness 2026-09-25 at `2c217c0` on a copy
+> of his `app_userdata`). The same one entry also fails two more checks:
+> - `test_project_sweep_guards` B1b (`structure_items starts empty (1 entries)`);
+> - `test_new_world_wipe`: a new world boots with `Loaded 0 placed objects
+>   (per-save) + 1 shared structure`, so `PlacedObjects` holds 1 child.
+>
+> `docs/audit/cycle_guard_swap_2026-09-25.md` §8.
 > `docs/audit/jam_baseline_layout_leak_2026-09-24.md`.
 
 **`test_jam_baseline` was `14 ok, 0 fail, 0 skipped` (2026-09-03) — the first time this suite
@@ -398,11 +422,12 @@ Two consequences you must not repeat:
   harness total. Quoting it as the harness result is how this hang stayed
   invisible. Both mistakes were made in this repo on 2026-08-03.
 
-Killing a mid-run suite leaves residue: `test_l3c_unit_screens` backs up its
-`TOUCHED` `user://` files **in memory only** and restores them in `_finish()`, so
-a kill loses the backups. Verified 2026-08-03 that `world_layout.json` survived
-intact; `world_layout_consumed.flag` was left behind but no production code reads
-it — only tests do.
+Killing a mid-run suite leaves residue: the suites back up their own slot files
+(`__<slot>___save.json`, `_factory.json`, `world_layout_consumed.flag`) **in
+memory only**, so a kill loses those backups. It no longer reaches
+`world_layout.json`. Since 2026-09-25 every world-booting suite sends its world
+saves to `user://<slot>_world_layout.json` (`src/tests/world_layout_guard.gd`)
+and never writes the real file. See "Save files go through `AtomicFile`" below.
 
 ### Within the suites that do run
 
@@ -544,6 +569,7 @@ the one before that ~6 months stale — treat this one as re-checkable too):
 | `docs/audit/material_trace_2026-08-18.md` | Follow one bale end-to-end: the symbol-flow + material-census tools, mass-minting proven structurally closed, and the spawn-clearance check that was unsatisfiable for 4 weeks |
 | `docs/audit/robustness_and_coverage_2026-09-21.md` | **Crash-safe persistence (`AtomicFile`) and 26 formerly-unrun suites now gated.** Why a save killed mid-write used to load back as an empty factory and get autosaved over; the delete-resurrection bug caught in the first draft; 5 mutation proofs. Plus the bisect that pins the `test_gate_carve` red on two rotation-sign flips in the uncommitted `WallOpenings.gd`, which reds are identical at clean HEAD, and what was measured but not touched |
 | `docs/audit/overnight_enhancement_2026-09-23.md` | **The unattended 2026-09-23 run: 12 commits, every one measured first.** A MotorOverload trip that never stopped conveying, a Lumpenwagen that lost kg when full, checkpoint saves, the F1 key sheet, map labels, the cart speed clamp, the compactor kijkglas, LineFlow moved to 10 Hz (2.85 → 0.54 ms/frame), and two harness reds root-caused as frame-count races (navmesh bake, bale streaming). Two full harness runs, the operator list at the end |
+| `docs/audit/cycle_guard_swap_2026-09-25.md` | **LineFlow's fallback cycle guard was called with swapped arguments and never refused an edge.** Every rerouted edge, on all seven macros, before and after the swap. The per-edge rulings: swap alone, a 3A pin, or fixtures moved to role `none`. The reload measurement (0 cycles, still wrong without pins). `test_fallback_chains` and its mutation table. Found, not fixed: intake belts discovered twice; the sort line's topology |
 | `docs/audit/hmi_fault_rearm_2026-09-24.md` | **HMI alarms: KWITTEREN acknowledges one occurrence of an alarm (#279), and the same EREMA code on two lines is two alarms (#282).** Probes, the guard suites `test_hmi_fault_rearm` and `test_hmi_fault_per_line` with their mutation matrices, and the full harness on `04eaa77`. **Open:** every panel lists every line's EREMA alarms (found by reading the code, not measured); Afschermen does not exist (the Onderdrukt tab reads a table nothing writes); RESETTEN clearing every acknowledgement has not been ruled on |
 | `docs/audit/operator_session_2026-09-23.md` | **The interactive 2026-09-23 session: tasks ranked by operator effort against sim impact, each answered by AskUserQuestion then built and measured.** Task 1: film beds on every belt (P1), the inclined belt's deck running the wrong diagonal, the cost probe, the renders; per-task evidence and the open questions each one left |
 | `docs/DESIGN_vacuum_pot_minigame_2026-09-23.md` | **P3 stage B as the operator described it: not a hold-E but a mini-game** — lid pull that stiffens with time, plamuurmes planes at 90 %, the block by hand, re-lid, the two-minute race. Systems, parameters (his vs placeholder), test strategy. **Built 2026-09-24** (`test_vacuum_pot_minigame`, 33 ok); the feel is his to play |
@@ -691,6 +717,60 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   previous one — a silo fed from above, a compactor beyond a blower — pin the
   edge; and read the info lines a suite prints without gating, they are
   measurements too.
+  **2026-09-25 — the same on 3A and 3B, and WHY the fallback makes 2-cycles
+  at all.** The extruder's inlet sits 15.22 m (3A) / 14.24 m (3B, and line 1)
+  from its compactorband's discharge, past `MAX_LINK_DIST` (14, exclusive),
+  so the band never sees the extruder and falls back to the nearest inlet
+  BEHIND it: on 3A a silo ↔ band 2-cycle, on 3B a band → booster blower
+  edge, with the booster blower ↔ tussenventilator-cyclone 2-cycle beside it
+  and no in-edge on the silo. `extruder_3a` and `extruder_3b` received 0 kg
+  from 63 kg fed. A 2-cycle survives at all because `_link_best_target`
+  calls `_creates_cycle(best, src_idx)` against a `(from, to)` contract. That
+  asks whether the source already reaches the target, and never refuses a
+  back-edge. The same swapped guard leaves further 2-cycles on these lines
+  (3A's infeed wind_sifter ↔ blower 2, which starves the big top cyclone;
+  centrifuge ↔ weegschaal on 1 and 3B, which starves voorraad_silo). They
+  were fixed the same night by swapping the arguments (the next entry). The
+  3A/3B tails are pinned in the SEQs, guarded
+  by `test_extruder_silo_chain` (by name and by kg: no node of the chain may
+  process more than was fed, which is how a 2-cycle shows up in flow).
+  `src/tests/dump_line_graph.tscn -- <line_id>` dumps any macro line, marks
+  every edge explicit or geometry, and lists every cycle.
+  **And no pin survives a reload.** `lf_explicit_outs` is stamped only by
+  `_build_full_line` and is not in `_save_layout`, so a world loaded from a
+  save carries 0 explicit edges. Measured with
+  `probe_explicit_edges_roundtrip` under a scratch APPDATA: 47 tagged nodes
+  before a save/load, 0 after, and all three silo tails back to broken
+  wiring. That also covers line 1's pins, the 3B split and the 3A recirc.
+  A macro-flow suite that builds its lines fresh proves the session the
+  line is built in, not a reloaded world.
+  `docs/audit/extruder_silo_tail_2026-09-25.md`.
+- **A guard called with its arguments swapped never fires, and fixing it
+  REROUTES edges rather than repairing them.** Measured 2026-09-25 with
+  `dump_line_graph` on all seven macros: `_link_best_target` now calls
+  `_creates_cycle(src_idx, best)`, and the 36 edges that sat on cycles are 0.
+  But a refused back-edge falls to the source's NEXT candidate. Three of those
+  were wrong too:
+  - 3A's infeed blower 2 went to doseerschroef M11b, skipping the mengsilo.
+    It is now pinned to the big top cyclone (ruling 2.1-B).
+  - Every lump cart fed the laser filter (vacuum_degas on 3C).
+  - One compressor of the pair became a feed head.
+
+  The carts, their spots, the lump platform and both visible compressors now
+  have MachineFlow role `none`. Three code comments already claimed that, and
+  the code never did it. Two consequences:
+  - The post-extruder chain on 1/3A/3B is `extruder → laser_filter →
+    heetafslag`, no longer THROUGH a cart.
+  - `weegschaal → voorraad_silo` on 1 and 3B came from the swap alone.
+
+  When you fix a guard, dump every graph it touches before and after, and
+  read each rerouted edge against the docs. A fixed guard proves only that
+  there are no cycles, not that the wiring is right. A world reloaded from a
+  save still loses every pin: 0 cycles there too (60 before), but not right.
+  Guarded by `test_fallback_chains`: no cycle on any line, fixtures out of
+  the graph, only the plant's own feed heads, and the 3A infeed and the 1/3B
+  granulate tails by name and by kg.
+  `docs/audit/cycle_guard_swap_2026-09-25.md`.
 - **A visual grafted onto a node before that node's `_ready()` is a visual
   that does not exist.** `_build_opzetband` attached the #196 metal-detector
   head to the belt's `InclinePivot`, which `ShredderFeedBelt` builds in
@@ -999,9 +1079,30 @@ Two rules that were wrong in the first draft and are now guarded by
 - **A corrupt primary must never be copied over the last good `.bak`.**
 
 Limits, stated once: Godot has no `fsync`, so this survives a killed process and
-a short write, not an OS crash with the page cache unflushed. Tests that keep a
-world booted past the 60 s autosave must set `WorldLayout.layout_path_override`
-first, or that autosave rewrites the real `world_layout.json`.
+a short write, not an OS crash with the page cache unflushed.
+
+**A test that boots a world must never write `world_layout.json` (2026-09-25).**
+The 60 s autosave is only one of the writers. `BuildMode._save_layout` also runs
+on every placement and deletion, and it calls `WorldLayout.save()` whenever
+`load_shared_structure` is true. The world's own BuildMode has it true. The old
+guard was an in-memory copy written back after `queue_free()`, which a kill, a
+`SUITE_TIMEOUT` or the teardown segfault skipped. Every save also rotated
+AtomicFile's `.bak`, which the write-back never repaired. Any suite that boots
+`MainWorld.tscn` or builds a BuildMode with shared structure uses
+`src/tests/world_layout_guard.gd`, preloaded:
+- `arm()` before boot: it redirects `layout_path_override` to
+  `user://<slot>_world_layout.json`, and the suite refuses to run if the
+  redirect does not take.
+- `final_checks(world)` before the verdict: it forces one `_save_layout` and
+  proves the save landed in scratch. It also proves the real file and its
+  `.bak`/`.tmp` kept their md5 AND mtime.
+- `restore()` before and after the world is freed. It skips unchanged bytes and
+  never writes the real file.
+
+`tools/regression/run.sh` fingerprints the real file the same way and fails
+any step that changes it, naming the step, without restoring. The measurements,
+including which suites wrote the file before, are in
+`docs/audit/world_layout_guard_2026-09-25.md`.
 
 ## Operator feedback channel
 
@@ -1010,6 +1111,27 @@ places an orb, G snaps to grid/edge, H clears, RMB/F10 exits and writes
 `user://feedback/<stamp>/markers.json` + `context.json` + a screenshot. When the
 operator says "check feedback", read the newest directory under
 `%APPDATA%/Godot/app_userdata/CeDo Simulator/feedback/`.
+
+## Placed machines get their sound the same way (2026-09-25)
+
+A placeable has a sound iff `src/audio/machine_sounds/<placeable_id>.tres`
+exists (a `MachineSoundSpec`). `MachineSoundBank.attach(body, id)` runs at the
+tail of `build_node` beside `MachineBrains.attach`, and `LineFlow` drives the
+resulting `MachineSound` every tick with `spin × rotor fraction` — so a machine
+that is not powered is *stopped*, not quiet, and a machine that leaves the flow
+graph winds down on the component's own 1 s watchdog. Ramp-up and ramp-down
+are generated from the run loop (pitch + level, over the spec's ramp times or
+the sim's `SPIN_UP_S`); a real start/stop recording goes in `start_clip` /
+`stop_clip`. The WAVs live in `assets/audio/machines/` (gitignored, plus the
+`.gdignore`d `_source/` recordings) and are rebuilt from the committed recipe
+`tools/audio/machine_sounds.json` by `tools/audio/machine_clips.py`; every
+loop is RMS-normalised to −20 dBFS so the `.tres` `gain_db` slider is the only
+place relative loudness lives. **Every level in those `.tres` is a placeholder
+until the operator has played** — the notes say so. Guard:
+`test_machine_sounds` (80 checks, in `run.sh`). Three rulings this hangs on:
+the compactor's 1:11–1:14 ×3 sequence is a LOOP (not an event), the two dryer
+windows await an L/R assignment, and which valve the crank was recorded on is
+an assumption (hose-reel base valve + IBC drain). `docs/AUDIO_machine_sounds_2026-09-25.md`.
 
 ## Placed machines must be given a sim brain
 
@@ -1289,6 +1411,9 @@ already flags as being in git nowhere — is simply skipped. It came through eve
 boot byte-identical against a `.bak`, so nothing is lost today; the exposure is
 the finding, and it is the same failure mode already recorded for killed runs.
 Take a `.bak` of `world_layout.json` before batch-running any MainWorld suite.
+(2026-09-25: the suites no longer write it at all, and the restore of their own
+slot files now runs BEFORE the world is freed as well as after; see "Save files
+go through `AtomicFile`".)
 
 ## `test_outdoor_route` does not share the navmesh race — it has no navmesh
 

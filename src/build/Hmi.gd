@@ -69,6 +69,7 @@ func _ready() -> void:
 	var scope := _SCOPES.get_scope(_hmi_id)
 	_label = String(scope.get("label", "HMI"))
 	_build_trigger()
+	_setup_alarm_sound(scope)
 
 ## The scope's human title ("Shredder lijn 1"); "HMI" for an inert panel.
 ## Read by MapOverlay for its wayfinding label (Q5, 2026-09-23).
@@ -259,3 +260,92 @@ func _on_relay_close() -> void:
 	if _relay_layer != null and is_instance_valid(_relay_layer):
 		_relay_layer.visible = false
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+
+# =============================================================================
+# ALARM SOUND (2026-09-25) — the panel beeps until someone KWITTEREN's
+# =============================================================================
+# The operator's `washing_3A_alarm` recording is one 0.37 s beep. A real Siemens
+# panel repeats it until the fault is acknowledged, so this panel does the same
+# for the faults that are ITS business — and only those:
+#
+#   1. EventBus.machine_alarm_raised on a machine this panel's scope matches
+#      (HmiScopes.matches on the machine id: OVERLOAD-ESTOP, RELAY-TRIP, SMOKE,
+#      CHUTE-BLOCKED from LineFlow; the wash line has no fault registry of its
+#      own — see WashingScope.gd). An occurrence lives until
+#      machine_alarm_cleared; a re-emit of a live alarm is NOT a new one, a
+#      clear-then-raise is (the same model the overlay uses, test_hmi_fault_rearm).
+#   2. The overlay's own fault list (BUF-300 at a wash machine, DRG-310 …),
+#      scoped by this panel's tokens — HmiOverlay.unacked_count_for_tokens.
+#
+# Acknowledgement: the overlay's KWITTEREN (signal faults_acknowledged) acks
+# both lists; a storing-fixen worker's NpcAutonomyBoard.mark_npc_acked counts
+# too. Ack only silences: the beep returns on the next NEW occurrence.
+#
+# Which panels beep is data: a panel whose hmi_id has no
+# src/audio/machine_sounds/<hmi_id>.tres does none of this (the process is
+# switched off). Today that is hmi_washing_all only.
+const _SOUND_BANK   := preload("res://src/audio/MachineSoundBank.gd")
+const ALARM_POLL_S  : float = 0.25
+
+var _snd           : Node = null
+var _scope_dict    : Dictionary = {}
+var _scope_tokens  : Array = []
+var _alarms        : Dictionary = {}    # "<machine_id>/<alarm_id>" -> {machine_id, alarm_id, acked}
+var _poll_acc      : float = 0.0
+var _ack_connected : bool = false
+
+func _setup_alarm_sound(scope: Dictionary) -> void:
+	_scope_dict = scope
+	_scope_tokens = scope.get("tokens", [])
+	_snd = _SOUND_BANK.attach(self, _hmi_id)
+	if _snd == null:
+		set_process(false)
+		return
+	EventBus.machine_alarm_raised.connect(_on_alarm_raised)
+	EventBus.machine_alarm_cleared.connect(_on_alarm_cleared)
+	set_process(true)
+
+func _on_alarm_raised(machine_id: String, alarm_id: String, _severity: int) -> void:
+	if not _SCOPES.matches(_scope_dict, machine_id, ""):
+		return
+	var key := machine_id + "/" + alarm_id
+	if _alarms.has(key):
+		return    # still live: keeps its ack state
+	_alarms[key] = {"machine_id": machine_id, "alarm_id": alarm_id, "acked": false}
+
+func _on_alarm_cleared(machine_id: String, alarm_id: String) -> void:
+	_alarms.erase(machine_id + "/" + alarm_id)
+
+## Live, unacknowledged alarms that belong to this panel (both sources).
+func unacked_alarm_count() -> int:
+	var n := 0
+	var board := get_node_or_null("/root/NpcAutonomyBoard")
+	for k in _alarms:
+		var a : Dictionary = _alarms[k]
+		if bool(a.get("acked", false)):
+			continue
+		if board != null and board.has_method("npc_acked") and bool(board.call("npc_acked", String(a["alarm_id"]))):
+			continue
+		n += 1
+	if _overlay != null and is_instance_valid(_overlay) and _overlay.has_method("unacked_count_for_tokens"):
+		n += int(_overlay.call("unacked_count_for_tokens", _scope_tokens))
+	return n
+
+## KWITTEREN for this panel's EventBus alarms (the overlay acks its own list).
+func acknowledge_alarms() -> void:
+	for k in _alarms:
+		_alarms[k]["acked"] = true
+
+func _process(delta: float) -> void:
+	_poll_acc += delta
+	if _poll_acc < ALARM_POLL_S:
+		return
+	_poll_acc = 0.0
+	if _overlay != null and is_instance_valid(_overlay) and not _ack_connected \
+			and _overlay.has_signal("faults_acknowledged"):
+		_overlay.connect("faults_acknowledged", acknowledge_alarms)
+		_ack_connected = true
+	elif _overlay == null or not is_instance_valid(_overlay):
+		_ack_connected = false
+	if _snd != null and is_instance_valid(_snd):
+		_snd.call("set_alarm", unacked_alarm_count() > 0)

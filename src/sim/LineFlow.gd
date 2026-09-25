@@ -736,6 +736,9 @@ func _process_discovered_node(node3d: Node3D, id_ordinal: Dictionary, code_owner
 		# P5 (2026-09-23) — the silo's level windows (PlaceableCatalog.SiloFill);
 		# driven every tick from this node's buffer against SILO_FULL_KG.
 		"silo_fill": _find_silo_fill(node3d),
+		# Sound (2026-09-25): the machine's MachineSound, driven every tick from
+		# this node's spin × rotor fraction. Null for machines without a .tres.
+		"snd":     _find_machine_sound(node3d),
 		# Flow-gated visuals: steam plume + extruder die-face melt strands only
 		# show while material is actually being processed (no invention from nothing).
 		"plume":       _find_steam_plume(node3d),
@@ -1328,7 +1331,19 @@ func _link_best_target(src_idx: int, source_port: Vector3, src_proc: String, exc
 		var b_proc : String = String(_nodes[best].get("process", ""))
 		if _is_invalid_flow_direction(src_proc, b_proc):
 			continue
-		if _creates_cycle(best, src_idx):
+		# The edge being proposed is src_idx → best, and _creates_cycle(from, to)
+		# asks "would edge from → to close a cycle" (DFS from `to` looking for
+		# `from`). Until 2026-09-25 this read _creates_cycle(best, src_idx): it
+		# asked whether the SOURCE already reached the target, and in this pass a
+		# source has no out-edges yet, so the guard never refused anything and
+		# #78's "full DAG cycle prevention" never ran. Measured with
+		# dump_line_graph on all seven macros: 36 edges sat on cycles
+		# (wind_sifter ↔ infeed blower 2 on 3A, centrifuge ↔ weegschaal on 1 and
+		# 3B, lump_cart ↔ lump_cart_spot, compressor_a ↔ compressor_b, …); after
+		# the swap, 0. A refused candidate falls through to the NEXT one, which is
+		# not automatically right — see docs/audit/cycle_guard_swap_2026-09-25.md
+		# for what each rerouted edge became and how it was settled.
+		if _creates_cycle(src_idx, best):
 			continue
 		return best
 	return -1
@@ -1746,6 +1761,15 @@ func _find_film_field(machine: Node) -> Node:
 	for c in machine.find_children("*", "", true, false):
 		if c.is_in_group("film_field") and c.has_method("set_live_state"):
 			return c
+	return null
+
+## Sound (2026-09-25): the MachineSound MachineSoundBank.attach() hung directly
+## under the placed body. A direct child lookup, not a subtree search — the
+## bank always names and places it the same way.
+func _find_machine_sound(machine: Node) -> Node:
+	var s := machine.get_node_or_null("MachineSound")
+	if s != null and s.has_method("set_drive"):
+		return s
 	return null
 
 ## Task 1c (2026-09-24): ALL of a machine's fields. The scheidingsgoot has one
@@ -2651,6 +2675,15 @@ func _tick_plc_power_downstream(delta: float) -> void:
 		var load_s : float = clampf(float(nd_s["thru"]) / rate_s, 0.0, 1.25) if rate_s > 0.0 else 0.0
 		nd_s["amps"] = ProcessModelScript.stage_amps(
 			float(nd_s["amps_nominal"]), load_s, float(nd_s["spin"]) > 0.1)
+		# Sound (2026-09-25): the machine is heard at the speed it is AT — the
+		# PLC spin ramp (0..1 over SPIN_UP_S) times the rotor's commanded
+		# fraction (an HMI rpm setpoint at 50 % is heard at half drive). A node
+		# that is not powered ramps to 0 and MachineSound stops its players; a
+		# node that leaves this graph stops being called and winds down on the
+		# component's own watchdog. Nothing here plays a sound directly.
+		var snd_s = nd_s.get("snd")
+		if snd_s != null and is_instance_valid(snd_s):
+			snd_s.call("set_drive", float(nd_s["spin"]) * _mech_fraction(nd_s))
 		# Drive the visual flake layer from the live state (#173): material present
 		# → flake density, throughput → drift speed, moisture/contam → wet/dirty look.
 		var moist01_s : float = clampf(float(nd_s["moist"]) / 40.0, 0.0, 1.0)
