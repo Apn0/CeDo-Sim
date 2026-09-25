@@ -84,8 +84,11 @@ const BF_XU := Vector2(-0.64279, 0.76604)
 const BF_ZU := Vector2(-0.76604, -0.64279)
 
 const TEST_SLOT := "__wl3covz__"
+## This slot's own files. The operator's world_layout.json is not on the list:
+## world saves go to the guard's scratch file, and the real one is only
+## compared, never written (src/tests/world_layout_guard.gd).
 const TOUCHED := [
-	"user://world_layout.json", "user://world_layout_consumed.flag",
+	"user://world_layout_consumed.flag",
 	"user://__wl3covz___save.json", "user://__wl3covz___factory.json",
 ]
 const DUMP_PATH := "user://waslijn3c_overzicht_report.json"
@@ -134,7 +137,8 @@ const MIN_DISTINCT_STROOM := 4
 var _pass := 0
 var _fail := 0
 var _skip := 0
-var _backups : Dictionary = {}
+const WorldLayoutGuard := preload("res://src/tests/world_layout_guard.gd")
+var _wlg := WorldLayoutGuard.new(TEST_SLOT, TOUCHED)
 var _guarded : Dictionary = {}
 var _dump : Dictionary = {}
 ## The REAL LineFlow, kept for criterion G. Held separately from whatever the
@@ -194,7 +198,9 @@ func _ready() -> void:
 		print("FATAL: WorldLayout autoload missing (boot via a .tscn, not --script)")
 		get_tree().quit(2); return
 
-	_backup_files()
+	# Before boot, so no world save can reach the operator's world_layout.json.
+	if not _wlg.arm(get_tree()):
+		get_tree().quit(2); return
 	_guard_operator_saves()
 
 	var bus := get_node_or_null("/root/EventBus")
@@ -218,26 +224,35 @@ func _ready() -> void:
 	if lf == null or bm == null:
 		print("FATAL: LineFlow (%s) or BuildMode (%s) missing after boot"
 			% [str(lf != null), str(bm != null)])
-		world.queue_free(); _finish(); return
+		_finish(world); return
 
 	await _build_world(bm, lf)
 	_drive_line(lf)
 	await _exercise_screen(lf)
 
-	world.queue_free()
+	for c in _wlg.final_checks(world):
+		_ok(c[0], c[1])
 	_verify_operator_saves()
 	_write_dump()
-	_finish()
+	_finish(world)
 
 
-func _finish() -> void:
-	_restore_files()
+## The verdict is printed and user:// restored BEFORE the world is freed, then
+## restored again after: the headless teardown segfault lands inside world
+## teardown (CLAUDE.md, 15 of 62 boots) and never reaches code after it.
+func _finish(world: Node = null) -> void:
+	_wlg.restore()
 	print("\n=========================================")
 	print("Result: %d ok, %d fail, %d skip" % [_pass, _fail, _skip])
 	print("Dump: %s" % ProjectSettings.globalize_path(DUMP_PATH))
 	print("Result: %s" % ("PASS" if _fail == 0 else "FAIL"))
 	print("RESULT: %s" % ("PASS" if _fail == 0 else "FAIL"))
 	print("=========================================")
+	if world != null and is_instance_valid(world):
+		world.queue_free()
+		await get_tree().process_frame
+	_wlg.restore()
+	_wlg.disarm()
 	get_tree().quit(0 if _fail == 0 else 1)
 
 
@@ -607,25 +622,6 @@ func _audit(scope: Control, export_tags: Dictionary, _tag: String) -> Array:
 # =============================================================================
 # user:// file safety
 # =============================================================================
-func _backup_files() -> void:
-	for p in TOUCHED:
-		if FileAccess.file_exists(p):
-			var f := FileAccess.open(p, FileAccess.READ)
-			_backups[p] = f.get_as_text() if f else null
-			if f: f.close()
-		else:
-			_backups[p] = null
-
-func _restore_files() -> void:
-	for p in _backups.keys():
-		var orig = _backups[p]
-		if orig is String:
-			var f := FileAccess.open(p, FileAccess.WRITE)
-			if f: f.store_string(orig); f.close()
-		elif FileAccess.file_exists(p):
-			DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
-	print("  (restored touched user:// files)")
-
 func _guard_operator_saves() -> void:
 	var dir := DirAccess.open("user://")
 	if dir == null:

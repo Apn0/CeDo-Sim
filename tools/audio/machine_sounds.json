@@ -1,0 +1,183 @@
+{
+  "_about": "Manifest for tools/audio/machine_clips.py. Sources are the operator's recordings (Desktop drop of 2026-09-22, moved to assets/audio/machines/_source/ on 2026-09-25 — gitignored, .gdignore'd). Every region/range below was MEASURED on the recording's RMS envelope (0.05–1 s hops) before being written down; the reasoning is in the note. Loops are RMS-normalised to rms_db so the .tres gain_db slider is the only place relative loudness lives.",
+  "source_dir": "assets/audio/machines/_source",
+  "out_dir": "assets/audio/machines",
+  "clips": [
+    {
+      "out": "trilzeef_run",
+      "source": "17s+_trilzeef_sorting_3A_3B.mp3",
+      "kind": "loop",
+      "region": [17.0, 57.0],
+      "loop_len_s": 24.0,
+      "xfade_s": 0.75,
+      "rms_db": -20.0,
+      "note": "File name: take 17 s onwards — the region starts at exactly 17.0 s, as the name says (2026-09-25 review; it was 18.0). Envelope: -20 dB until 15.5 s, a step to -17 dB at 16 s (the sieve at full amplitude), steady to 57.5 s, then fades out (-25 .. -52 dB). 24 s loop cut from within 17-57 s."
+    },
+    {
+      "out": "laser_filter_run",
+      "source": "25s-35s_laserfilter.mp3",
+      "kind": "loop",
+      "region": [25.0, 35.0],
+      "loop_len_s": 9.0,
+      "xfade_s": 0.5,
+      "search_s": 0.5,
+      "rms_db": -20.0,
+      "note": "File name: take 25-35 s exactly. That window is -26 .. -28 dB and flat. 9 s loop with a 0.5 s seam inside the 10 s the operator marked."
+    },
+    {
+      "out": "mech_dryer_run_30s",
+      "source": "5s+_onwards_mechanical_dryer.mp3",
+      "kind": "loop",
+      "region": [30.0, 42.0],
+      "loop_len_s": 11.0,
+      "xfade_s": 0.75,
+      "rms_db": -20.0,
+      "note": "File name: take 5 s onwards. Operator 2026-09-25, asked which window: '30-42s and 43-55s clipped separately, I'll let you know what dryer is which' — so TWO loops are baked from this recording and the L/R assignment is his, pending. This is the 30-42 s window: -2.4 dBFS flat with ~8 % of samples at full scale (measured per 2 s: 7.8-8.3 % clipped), so the distortion is in the recording and stays in the loop; RMS normalisation lowers it ~17.6 dB. The 5-30 s rise (-14 -> -2.4 dB, motor fundamental fixed at 72-74 Hz) is the microphone approaching, not a spin-up, and is in neither loop."
+    },
+    {
+      "out": "mech_dryer_run_43s",
+      "source": "5s+_onwards_mechanical_dryer.mp3",
+      "kind": "loop",
+      "region": [43.0, 55.5],
+      "loop_len_s": 11.0,
+      "xfade_s": 0.75,
+      "rms_db": -20.0,
+      "note": "The 43-55.5 s window of the same recording (see mech_dryer_run_30s): -4.2 .. -4.5 dB, 0.9-1.4 % of samples clipped. Currently the one mech_dryer.tres points at, as an INTERIM default until the operator assigns the two windows to L3C.14 L/R."
+    },
+    {
+      "out": "blower_run",
+      "source": "blower_in_operation.mp3",
+      "kind": "loop",
+      "region": [0.5, 14.3],
+      "loop_len_s": 12.5,
+      "xfade_s": 0.75,
+      "rms_db": -20.0,
+      "note": "'in_operation': running sound only; ramps are generated at runtime. Whole file is -26.5 dB flat after the first 0.5 s."
+    },
+    {
+      "out": "verdeelwals_run",
+      "source": "verdeelwals_in_operation.mp3",
+      "kind": "loop",
+      "region": [1.0, 62.0],
+      "loop_len_s": 24.0,
+      "xfade_s": 1.0,
+      "rms_db": -20.0,
+      "note": "'in_operation'. Quiet recording (-32 dB flat, peak -13 dB) — normalising lifts it 12 dB. Ramps generated at runtime."
+    },
+    {
+      "out": "plasmaq_run",
+      "source": "plasmaq.mp3",
+      "kind": "loop",
+      "region": [5.0, 160.0],
+      "loop_len_s": 25.0,
+      "xfade_s": 1.0,
+      "rms_db": -20.0,
+      "note": "No cutting instruction; 163 s of -28 dB flat. 25 s loop from 5 s in."
+    },
+    {
+      "out": "shredder_2_run",
+      "source": "shredder_2_sorting_3A_3B.mp3",
+      "kind": "loop",
+      "region": [1.5, 58.0],
+      "loop_len_s": 25.0,
+      "xfade_s": 0.75,
+      "rms_db": -20.0,
+      "note": "No cutting instruction; -17 dB from 1 s to 58 s, then the fade-out at 58-60 s. 25 s loop keeps the irregular crunching from repeating on a short period."
+    },
+    {
+      "out": "leafblower_start",
+      "source": "leaf_blower_starter_idle_revving.mp3",
+      "kind": "oneshot",
+      "range": [0.0, 1.30],
+      "peak_db": -3.0,
+      "fade_ms": [2, 40],
+      "note": "Starter: the pull and the catch, 0-1.25 s; -43 dB gap at 1.0 s, engine from 1.25 s."
+    },
+    {
+      "out": "leafblower_rev",
+      "source": "leaf_blower_starter_idle_revving.mp3",
+      "kind": "loop",
+      "region": [2.3, 5.65],
+      "loop_len_s": 3.0,
+      "xfade_s": 0.35,
+      "search_s": 0.3,
+      "rms_db": -20.0,
+      "note": "Revving: 2.25-5.6 s is 4 dB louder than the idle with the fundamental jumping 256-556 Hz (throttle being worked). Used as the full-throttle loop; it is short, so MachineSound crossfades it over the pitched-up idle rather than playing it alone."
+    },
+    {
+      "out": "leafblower_idle",
+      "source": "leaf_blower_starter_idle_revving.mp3",
+      "kind": "loop",
+      "region": [6.0, 17.2],
+      "loop_len_s": 10.0,
+      "xfade_s": 0.6,
+      "rms_db": -20.0,
+      "note": "Idle: 5.75-17.25 s at a rock-steady 248 Hz peak and -19 dB — the engine idling."
+    },
+    {
+      "out": "leafblower_stop",
+      "source": "leaf_blower_starter_idle_revving.mp3",
+      "kind": "oneshot",
+      "range": [17.35, 20.136],
+      "peak_db": -3.0,
+      "fade_ms": [40, 80],
+      "note": "Shut-off: a last blip at 17.5-19.2 s then the engine dying to -33 dB by 19.75 s."
+    },
+    {
+      "out": "compactor_ringleiding_loop",
+      "source": "loop_3x_1m11s-1m14s_automatic_compactor_PCU_ringleiding_cleaning.mp3",
+      "kind": "repeat",
+      "range": [71.0, 74.0],
+      "repeat": 3,
+      "join_xfade_s": 0.03,
+      "loop": true,
+      "rms_db": -20.0,
+      "note": "File name: loop_3x_1m11s-1m14s. Operator 2026-09-25, verbatim: make a new sound from 1:11 to 1:14, 'then it does twice more from 1 minute 11 s to 1 minute 14 s, and then that entire sound of the three, in a sequence, has to loop'. So this is a LOOP, not a one-shot event (an earlier bake made it a 9 s event fired every 90 s — that period was invented and is gone). The window holds one air pulse at 72.65-73.0 s (-16.5 dB peak against a -25 dB bed, 50 ms RMS); the bed at 71.00 s (-24.9 dB) and 73.95 s (-24.4 dB) match, so the wrap is one more 30 ms join like the two inside. 3 x 3.0 s minus three 30 ms joins = 8.91 s, three pulses 2.97 s apart, forever."
+    },
+    {
+      "out": "valve_crank_1",
+      "source": "turn-crank_old_metal_manually_operated_valve_loop_4x.mp3",
+      "kind": "oneshot",
+      "range": [0.10, 1.60],
+      "peak_db": -6.0,
+      "fade_ms": [2, 60],
+      "note": "Take 1 of 4: onset 0.15 s, crank to 0.55 s, decay to 1.6 s."
+    },
+    {
+      "out": "valve_crank_2",
+      "source": "turn-crank_old_metal_manually_operated_valve_loop_4x.mp3",
+      "kind": "oneshot",
+      "range": [1.75, 3.30],
+      "peak_db": -6.0,
+      "fade_ms": [2, 60],
+      "note": "Take 2 of 4: onset 1.8 s."
+    },
+    {
+      "out": "valve_crank_3",
+      "source": "turn-crank_old_metal_manually_operated_valve_loop_4x.mp3",
+      "kind": "oneshot",
+      "range": [3.40, 4.95],
+      "peak_db": -6.0,
+      "fade_ms": [2, 60],
+      "note": "Take 3 of 4: onset 3.45 s."
+    },
+    {
+      "out": "valve_crank_4",
+      "source": "turn-crank_old_metal_manually_operated_valve_loop_4x.mp3",
+      "kind": "oneshot",
+      "range": [5.10, 6.74],
+      "peak_db": -6.0,
+      "fade_ms": [2, 60],
+      "note": "Take 4 of 4: onset 5.15 s, runs to the end of the file."
+    },
+    {
+      "out": "washing_alarm_beep",
+      "source": "washing_3A_alarm.mp3",
+      "kind": "oneshot",
+      "range": [0.0, 0.366],
+      "peak_db": -3.0,
+      "fade_ms": [1, 8],
+      "note": "One 0.37 s beep. MachineSound repeats it every alarm_period_s while the wash-line panel holds an unacknowledged fault."
+    }
+  ]
+}

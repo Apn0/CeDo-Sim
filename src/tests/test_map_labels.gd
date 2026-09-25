@@ -16,13 +16,16 @@ extends Node
 const TEST_SLOT := "__maplabels__"
 const BOOT_FRAMES := 80
 const WATCHDOG_S := 240.0
+## This slot's own files. The operator's world_layout.json is not on the list:
+## world saves go to the guard's scratch file, and the real one is only
+## compared, never written (src/tests/world_layout_guard.gd).
 const PROTECT := [
-	"user://world_layout.json",
 	"user://__maplabels___save.json",
 	"user://__maplabels___factory.json",
 ]
 
-var _backups : Dictionary = {}
+const WorldLayoutGuard := preload("res://src/tests/world_layout_guard.gd")
+var _wlg := WorldLayoutGuard.new(TEST_SLOT, PROTECT)
 var _fails := 0
 var _oks := 0
 
@@ -44,44 +47,18 @@ func _ready() -> void:
 
 func _on_watchdog() -> void:
 	print("Result: FAIL (0 ok, 1 fail — watchdog: verdict never completed; see SCRIPT ERROR above)")
+	_wlg.restore()
+	_wlg.disarm()
 	get_tree().quit(2)
-
-func _backup_files() -> void:
-	for p in PROTECT:
-		if FileAccess.file_exists(p):
-			var f := FileAccess.open(p, FileAccess.READ)
-			if f != null:
-				_backups[p] = f.get_buffer(f.get_length())
-				f.close()
-		else:
-			_backups[p] = null
-
-func _restore_files() -> void:
-	for p in PROTECT:
-		var had = _backups.get(p, null)
-		if had == null:
-			if p.find(TEST_SLOT) >= 0:
-				AtomicFile.delete(p)
-			continue
-		var now : PackedByteArray = PackedByteArray()
-		if FileAccess.file_exists(p):
-			var f := FileAccess.open(p, FileAccess.READ)
-			if f != null:
-				now = f.get_buffer(f.get_length())
-				f.close()
-		if now != had:
-			var w := FileAccess.open(p, FileAccess.WRITE)
-			if w != null:
-				w.store_buffer(had)
-				w.close()
-			print("  note  : restored %s (it had changed during the test)" % p)
 
 func _run() -> void:
 	print("[TEST] map wayfinding labels")
 	if get_node_or_null("/root/WorldLayout") == null:
 		print("FATAL: WorldLayout autoload missing (boot via the .tscn, not --script)")
 		get_tree().quit(2); return
-	_backup_files()
+	# Before boot, so no world save can reach the operator's world_layout.json.
+	if not _wlg.arm(get_tree()):
+		get_tree().quit(2); return
 	var bus := get_node_or_null("/root/EventBus")
 	if bus:
 		bus.set_meta("pending_save_name", TEST_SLOT)
@@ -179,14 +156,21 @@ func _run() -> void:
 	_check(overlay.is_open(), "S4 overlay still open after two redraws with labels, crew names and HMI diamonds (no SCRIPT ERROR above = the draw ran)")
 	overlay.close()
 	overlay.queue_free()
+	for c in _wlg.final_checks(world):
+		_check(c[0], c[1])
 	_finish(world)
 
+## The verdict is printed and user:// restored BEFORE the world is freed, then
+## restored again after: the headless teardown segfault lands inside world
+## teardown (CLAUDE.md, 15 of 62 boots) and never reaches code after it.
 func _finish(world: Node) -> void:
-	if world != null and is_instance_valid(world):
-		world.queue_free()
-		await get_tree().process_frame
-	_restore_files()
+	_wlg.restore()
 	var verdict := "PASS" if _fails == 0 else "FAIL"
 	print("[TEST] map wayfinding labels %s (%d ok, %d fail)" % [verdict, _oks, _fails])
 	print("Result: %s (%d ok, %d fail)" % [verdict, _oks, _fails])
+	if world != null and is_instance_valid(world):
+		world.queue_free()
+		await get_tree().process_frame
+	_wlg.restore()
+	_wlg.disarm()
 	get_tree().quit(0 if _fails == 0 else 1)

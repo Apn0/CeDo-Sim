@@ -1226,6 +1226,11 @@ const DOSEERSILO_BED_SPEED_MPS : float = 0.05   # three augers metering along th
 # meta (0.5 m/s) — the texture's internal slat period adds the missing factor.
 const _INTAKE_BELT_SHADER_SCROLL : float = _INTAKE_BELT_SPEED_MPS * 0.25
 const _RM_SCRIPT := preload("res://src/sim/RotatingMechanism.gd")
+# Per-machine sound (2026-09-25): a placeable has a sound iff
+# src/audio/machine_sounds/<id>.tres exists. Attached at the tail of build_node
+# beside the sim brain; driven by LineFlow (drive), the tool/valve scripts
+# (events) and Hmi (alarm). See src/audio/MachineSound.gd.
+const _SOUND_BANK := preload("res://src/audio/MachineSoundBank.gd")
 ## `simple` builds a cheap LOD model for bales (single box + minimal wire bands)
 ## instead of the full ~10-sheet + 24-wire-segment model — used to fill bale
 ## yards (hundreds of bales) without thousands of draw calls. A simple bale is
@@ -1713,6 +1718,9 @@ static func build_node(id: String, ghost: bool = false, simple: bool = false) ->
 		# We are already inside `if not ghost`, so ghosts never get a brain, and
 		# attach() is idempotent so rebuild_in_place() cannot stack two.
 		MachineBrains.attach(body, id, size)
+		# Sound (2026-09-25): same contract as the brain — data-driven by id,
+		# idempotent, never on a ghost. A machine with no .tres stays silent.
+		_SOUND_BANK.attach(body, id)
 
 	return body
 

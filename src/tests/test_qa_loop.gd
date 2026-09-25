@@ -28,8 +28,11 @@ extends Node3D
 ## allernieuwste_* saves are hashed and verified byte-identical.
 
 const TEST_SLOT := "__qaloop__"
+## This slot's own files. The operator's world_layout.json is not on the list:
+## world saves go to the guard's scratch file, and the real one is only
+## compared, never written (src/tests/world_layout_guard.gd).
 const TOUCHED := [
-	"user://world_layout.json", "user://world_layout_consumed.flag",
+	"user://world_layout_consumed.flag",
 	"user://__qaloop___save.json", "user://__qaloop___factory.json",
 ]
 # Building-frame -> plant-coordinate affine, copied verbatim from
@@ -52,7 +55,8 @@ const WARMUP_TICKS := 15000            # 1500 s of sim time
 var _pass := 0
 var _fail := 0
 var _skip := 0
-var _backups : Dictionary = {}
+const WorldLayoutGuard := preload("res://src/tests/world_layout_guard.gd")
+var _wlg := WorldLayoutGuard.new(TEST_SLOT, TOUCHED)
 var _guarded : Dictionary = {}
 
 
@@ -84,7 +88,10 @@ func _ready() -> void:
 		print("FATAL: WorldLayout autoload missing (boot via the .tscn, not --script)")
 		get_tree().quit(2)
 		return
-	_backup_files()
+	# Before boot, so no world save can reach the operator's world_layout.json.
+	if not _wlg.arm(get_tree()):
+		get_tree().quit(2)
+		return
 	_guard_operator_saves()
 
 	var bus := get_node_or_null("/root/EventBus")
@@ -103,7 +110,7 @@ func _ready() -> void:
 		bm = world.find_child("BuildMode", true, false)
 	if bm == null:
 		_skip_msg("BuildMode unavailable — cannot place line_3c")
-		_finish()
+		_finish(world)
 		return
 	await _place_macro(bm, "line_3c", Vector2(0.0, 0.0))
 
@@ -112,7 +119,7 @@ func _ready() -> void:
 		lf = get_tree().get_first_node_in_group("line_flow")
 	_ok(lf != null, "LineFlow resolved off MainWorld.line_flow (MainWorld.gd:24)")
 	if lf == null:
-		_finish()
+		_finish(world)
 		return
 
 	# ── 1) non-vacuity ───────────────────────────────────────────────────────
@@ -138,8 +145,7 @@ func _ready() -> void:
 	_ok(gran > 0.0, "line banked %.2f kg granulaat — a green here is not vacuous" % gran)
 	if gran <= 0.0:
 		_note("no granulaat banked, so the assay checks below cannot mean anything")
-		world.queue_free()
-		_finish()
+		_finish(world)
 		return
 
 	# ── 2) real sample ───────────────────────────────────────────────────────
@@ -152,8 +158,7 @@ func _ready() -> void:
 		"take_product_sample returned %.5f kg of banked granulaat"
 			% (batch.mass_kg if batch != null else -1.0))
 	if batch == null:
-		world.queue_free()
-		_finish()
+		_finish(world)
 		return
 
 	# ── 3) bench delay against LineFlow's own clock ──────────────────────────
@@ -211,9 +216,10 @@ func _ready() -> void:
 		% [lab.spec.spec_id, lab.spec.needs_operator_count()])
 	_note("lab stats: %s" % str(lab.stats()))
 
-	world.queue_free()
+	for c in _wlg.final_checks(world):
+		_ok(c[0], c[1])
 	_verify_operator_saves()
-	_finish()
+	_finish(world)
 
 
 ## Push material into every head node (no incoming edge, not a sink). Copied
@@ -250,30 +256,6 @@ func _place_macro(bm, macro_id: String, start_bf: Vector2) -> void:
 		await get_tree().process_frame
 
 
-func _backup_files() -> void:
-	for p in TOUCHED:
-		if FileAccess.file_exists(p):
-			var f := FileAccess.open(p, FileAccess.READ)
-			_backups[p] = f.get_as_text() if f else null
-			if f:
-				f.close()
-		else:
-			_backups[p] = null
-
-
-func _restore_files() -> void:
-	for p in _backups.keys():
-		var orig = _backups[p]
-		if orig is String:
-			var f := FileAccess.open(p, FileAccess.WRITE)
-			if f:
-				f.store_string(orig)
-				f.close()
-		elif FileAccess.file_exists(p):
-			DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
-	print("  (restored touched user:// files)")
-
-
 func _guard_operator_saves() -> void:
 	var dir := DirAccess.open("user://")
 	if dir == null:
@@ -308,8 +290,11 @@ func _verify_operator_saves() -> void:
 ## no BuildMode, no LineFlow, no granulaat — the honest verdict is red. An
 ## earlier version of this function printed PASS on 0 ok / 0 fail / 1 skip,
 ## which is the exact vacuous green the rule warns about.
-func _finish() -> void:
-	_restore_files()
+## The verdict is printed and user:// restored BEFORE the world is freed, then
+## restored again after: the headless teardown segfault lands inside world
+## teardown (CLAUDE.md, 15 of 62 boots) and never reaches code after it.
+func _finish(world: Node = null) -> void:
+	_wlg.restore()
 	var vacuous := _pass == 0
 	if vacuous:
 		print("  FAIL  : suite asserted nothing (%d ok, %d skip) — a 0/0 run is not a pass" % [_pass, _skip])
@@ -319,4 +304,9 @@ func _finish() -> void:
 	print("Result: %s" % ("PASS" if _fail == 0 else "FAIL"))
 	print("RESULT: %s" % ("PASS" if _fail == 0 else "FAIL"))
 	print("=========================================")
+	if world != null and is_instance_valid(world):
+		world.queue_free()
+		await get_tree().process_frame
+	_wlg.restore()
+	_wlg.disarm()
 	get_tree().quit(0 if _fail == 0 else 1)

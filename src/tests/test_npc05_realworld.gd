@@ -23,8 +23,10 @@ extends Node
 
 const TEST_SLOT : String = "__npc05real__"
 
+## This slot's own files. The operator's world_layout.json is not on the list:
+## world saves go to the guard's scratch file, and the real one is only
+## compared, never written (src/tests/world_layout_guard.gd).
 const PROTECT : Array[String] = [
-	"user://world_layout.json",
 	"user://__npc05real___save.json",
 	"user://__npc05real___factory.json",
 ]
@@ -52,7 +54,8 @@ const SKIP_EXPECTED_INDOORS : bool = true
 const BOOT_FRAMES : int = 120        # _ready cascade + first ContainerGuide pass
 const SETTLE_FRAMES : int = 120      # let physics/crew settle before we intervene
 
-var _backups : Dictionary = {}
+const WorldLayoutGuard := preload("res://src/tests/world_layout_guard.gd")
+var _wlg := WorldLayoutGuard.new(TEST_SLOT, PROTECT)
 var _fails : int = 0
 var _oks : int = 0
 var _world : Node3D = null
@@ -95,7 +98,9 @@ func _ready() -> void:
 	if wl == null:
 		print("FATAL: WorldLayout autoload missing (boot via the .tscn, not --script)")
 		get_tree().quit(2); return
-	_backup_files()
+	# Before boot, so no world save can reach the operator's world_layout.json.
+	if not _wlg.arm(get_tree()):
+		get_tree().quit(2); return
 
 	var bus := get_node_or_null("/root/EventBus")
 	if bus:
@@ -117,8 +122,8 @@ func _ready() -> void:
 	for _i in range(BOOT_FRAMES):
 		await get_tree().process_frame
 	# Kill the autosave timer. MainWorld's SaveCoordinator fires every 60 s and
-	# rewrites user://world_layout.json — a file this harness must never leave
-	# modified. (_backup_files/_restore_files still cover it belt-and-braces.)
+	# every save rewrites the world layout. The guard armed above sends those
+	# writes to its scratch file; stopping the timer keeps the run quiet too.
 	var autosave := _world.find_child("AutosaveTimer", true, false) as Timer
 	if autosave != null:
 		autosave.stop()
@@ -138,18 +143,9 @@ func _ready() -> void:
 		await get_tree().physics_frame
 
 	await _run()
+	for c in _wlg.final_checks(_world):
+		_check(c[0], c[1])
 	_finish(0 if _fails == 0 else 1)
-
-func _restore_files() -> void:
-	for p in PROTECT:
-		var data = _backups.get(p, null)
-		if data == null:
-			if FileAccess.file_exists(p):
-				DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
-		else:
-			var f := FileAccess.open(p, FileAccess.WRITE)
-			f.store_buffer(data)
-			f.close()
 
 # =============================================================================
 # RESTORED 2026-08-11 — _backup_files / _run / _finish were referenced by
@@ -160,25 +156,18 @@ func _restore_files() -> void:
 # scene and never loads anything under src/tests/.
 # =============================================================================
 
-## Snapshot every protected file so _restore_files() can put it back.
-## Paths that do not exist are deliberately left out of _backups, which makes
-## _restore_files() delete them again — the correct behaviour for a file this
-## run created (e.g. the TEST_SLOT saves).
-func _backup_files() -> void:
-	for p in PROTECT:
-		if not FileAccess.file_exists(p):
-			continue
-		var f := FileAccess.open(p, FileAccess.READ)
-		if f == null:
-			push_warning("[npc05real] cannot read %s for backup" % p)
-			continue
-		_backups[p] = f.get_buffer(f.get_length())
-		f.close()
-
+## The verdict is printed and user:// restored BEFORE the world is freed, then
+## restored again after: the headless teardown segfault lands inside world
+## teardown (CLAUDE.md, 15 of 62 boots) and never reaches code after it.
 func _finish(code: int) -> void:
-	_restore_files()
+	_wlg.restore()
 	print("Result: %s (%d ok, %d fail)"
 		% ["PASS" if _fails == 0 else "FAIL", _oks, _fails])
+	if _world != null and is_instance_valid(_world):
+		_world.queue_free()
+		await get_tree().process_frame
+	_wlg.restore()
+	_wlg.disarm()
 	get_tree().quit(code)
 
 # ── observation ──────────────────────────────────────────────────────────────

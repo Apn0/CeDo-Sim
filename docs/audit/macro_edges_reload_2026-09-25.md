@@ -306,6 +306,24 @@ B1b and `child_count=1` reds on the same file:
 The last runs where both passed (`ready-daacfa`, 16:13/16:19 on 2026-09-24)
 came before the 17:15 leak.
 
+### After merging `origin/main` (#289-#292)
+
+`main` had moved on: #289 itself had been merged, plus the machine sounds
+work. The only conflict was the scene loop in `run.sh`. It was resolved as
+the union of both lists, and `main`'s list lost nothing. One suite came back:
+`test_screw_die_plate_bar` was on this branch's loop but not on `main`'s. The
+machine-sounds loop replacement dropped it, the same way it dropped the two
+suites `c40b000` re-wired. It passed in the 04:38 harness above (36 ok).
+
+On the merged tree, after an `--import` for `main`'s three new `class_name`s:
+
+- parse sweep: `Result: 466 ok, 0 fail`;
+- `test_macro_edges_reload`: `PASS (60 ok)`;
+- `test_extruder_silo_chain`: `PASS (41 ok)`;
+- both suites with 0 `^SCRIPT ERROR` lines.
+
+The full harness was NOT re-run on the merged tree; the operator runs it.
+
 ## 8. Not changed here
 
 - **The live delete path.** It still leaves the dangling pin, and with it the

@@ -379,6 +379,17 @@ func _update_mound() -> void:
 # =============================================================================
 # FLUID VALVE (IBC tote) — drain on foot via the interact key
 # =============================================================================
+## Sound (2026-09-25): the crank of the tote's drain valve — the operator's
+## "turn-crank old metal manually operated valve" recording, take 2
+## (src/audio/machine_sounds/ibc_valve.tres). Attached lazily and idempotently.
+const _SOUND_BANK := preload("res://src/audio/MachineSoundBank.gd")
+
+func open_valve_sound() -> bool:
+	var snd : Node = _SOUND_BANK.attach(self, "ibc_valve")
+	if snd == null:
+		return false
+	return bool(snd.call("play_event", "valve_open"))
+
 ## Proximity prompt + E to drain. Only built when fluid_valve is true (IBC tote).
 func _build_valve_trigger() -> void:
 	var area := Area3D.new()
@@ -413,6 +424,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not fluid_valve or not _player_near:
 		return
 	if event.is_action_pressed("interact"):
+		open_valve_sound()
 		var drained := empty()
 		print("[IBC] Valve opened — drained %.0f L (mass)" % drained)
 		get_viewport().set_input_as_handled()
