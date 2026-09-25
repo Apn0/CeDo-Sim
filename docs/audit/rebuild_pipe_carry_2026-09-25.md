@@ -79,8 +79,12 @@ the fix reverted to that key (mutation M5 below) the suite counts 3 of them.
   **or out of the tree** gets `id # index`, so a deleted machine no longer
   calls `get_path()`.
 - `_snapshot_pipes()` runs before `_discover()` replaces `_nodes` (the edges
-  hold node indices): every edge's `pipe` Array and `stage_t`, keyed by both
-  ends' survivor keys.
+  hold node indices): every LOADED edge's `pipe` Array and `stage_t`, keyed by
+  both ends' survivor keys. An empty edge is not taken: it has no kg, and its
+  phase describes no material, so it restarts at 0 like a new edge, and a
+  rebuild of an idle line is exactly what it was before this fix. The first
+  version carried empty phases too and turned `test_extruder_silo_feed_stop`
+  red (§5.1).
 - `_carry_pipes(old_pipes)` runs right after `_init_pipes()`:
   - **Both ends survived and the edge still exists**: the edge gets its old
     stages (the same `MaterialBatch` objects) and its `stage_t` back. The new
@@ -98,21 +102,23 @@ the fix reverted to that key (mutation M5 below) the suite counts 3 of them.
   the last rebuild, and rebuild prints one line when anything was re-homed or
   lost.
 
-Measured after, same probe:
+Measured after, same probe on the final code (the probe now switches LineFlow's
+`_process` off after `add_child`, §5; its first "after" run did not, and read
+13.3950 kg because the first version carried the phase of those frame ticks):
 
 ```
-  before rebuild   ... pipe_mass 13.3950 kg  in_transit 35.3874 kg  ... (+injected 35.8333 = -0.000000)
-  after rebuild    ... pipe_mass 13.3950 kg  in_transit 35.3874 kg  ... (+injected 35.8333 = -0.000000)
+[A] rebuild with nothing changed
+  before rebuild   ... pipe_mass 13.3497 kg  in_transit 35.3997 kg  ... (+injected 35.8333 = -0.000000)
+  after rebuild    ... pipe_mass 13.3497 kg  in_transit 35.3997 kg  ... (+injected 35.8333 = -0.000000)
   LOST across the rebuild: pipe 0.0000 kg, ledger moved 0.0000 kg
+  30 s later (no feed)  ... pipe_mass 4.5715 kg ... (+injected 35.8333 = -0.000000)
 [B] delete the compactorband, then rebuild
+  band holds 0.0000 kg (in+out), 1.8585 kg in the pipes leaving it, 0.3485 kg in the pipes into it
 [LineFlow] rebuild: 0.348 kg from connectors that are gone went back into their source, 1.859 kg into their target, 0.000 kg left with both machines
-  ... ledger moved -0.0000 kg; pipe fell 2.2070 kg
+  silo out 0.3485 kg after (was 0.0000); ledger moved -0.0000 kg; pipe fell 2.2070 kg
 ```
 
-(13.3950 here against 13.3497 above is the probe's own drift, not the fix:
-as first run, the probe never switched LineFlow's `_process` off, see §5.)
-
-## 4. The guard: `test_rebuild_pipe_carry` (25 checks, in `run.sh`)
+## 4. The guard: `test_rebuild_pipe_carry` (26 checks, in `run.sh`)
 
 The same 3B line, with LineFlow's `_process` switched off after `add_child`
 so only `tick(0.1)` moves material. A bare BuildMode never saves; nothing
@@ -121,10 +127,10 @@ writes `world_layout.json`.
 | phase | what | checks |
 |---|---|---|
 | S0 | 60 s fed: kg in the connectors, the ledger balances | 13.35 kg over 16 edges; residual + injected 0 |
-| A | a rebuild with nothing changed | A1 pipe_mass, A2 the ledger, A3 every edge's every stage (kg, volume, water, dirt, composition) and `stage_t` identical, A4 `last_pipe_carry` all carried, A5 30 s on the ledger still balances |
+| A | a rebuild with nothing changed | A1 pipe_mass, A2 the ledger, A3 every edge's every stage (kg, volume, water, dirt, composition) identical and every loaded edge's `stage_t`, A4 `last_pipe_carry` all carried, A5 30 s on the ledger still balances, A6 every empty edge restarts at phase 0 (9 empty edges had a phase before) |
 | E | line 3A placed 400 m away, rebuild (25 → 57 nodes) | E2 every 3B edge identical, E3 ledger and pipe_mass unchanged |
 | F | the plasmaq moved 1.5 m, rebuild | F1 plasmaq → cyclone carries 2.65 kg and survives with a new `stage_dt` (2.059 → 2.076 s), F2 every edge's stages and phase identical, F3 ledger unchanged |
-| B | one machine deleted BuildMode's way | the first 3B machine with one edge in and one out, both carrying kg (dewater_screw #8 in this run: 1.16 kg in, 0.21 kg out). B1 the in-edge's kg are in the source's `out`, B2 the out-edge's kg in the target's `in`, B3 the ledger moved by exactly what the machine itself held, B4 reported, B5 no `Cannot get path` engine error (an engine `Logger`) |
+| B | one machine deleted BuildMode's way | the first 3B machine with one edge in and one out, both carrying kg (dewater_screw #8 every time; its edges carried 1.16 / 0.21 kg in / out in the first version's runs on an empty user://, 0.85 / 0.24 kg in the final run on the operator's copy). B1 the in-edge's kg are in the source's `out`, B2 the out-edge's kg in the target's `in`, B3 the ledger moved by exactly what the machine itself held, B4 reported, B5 no `Cannot get path` engine error (an engine `Logger`) |
 | C | the rafter and the dewater screw after it deleted in one rebuild | C1 only the rafter → dewater kg (0.768) are lost; M11a and the friction separator get their edges' kg; C2 the ledger moved by exactly the two machines' kg plus that connector |
 | Z | every phase reached its last line; 0 `SCRIPT ERROR` (engine `Logger`) | |
 
@@ -135,21 +141,31 @@ is full (the extruder is off, so §I13's pot stop halts the silo's discharge).
 
 ### Mutation matrix
 
-Each mutation applied to the fixed `LineFlow.gd`, the suite run, and the file
-restored and md5-checked (`32c9042d…`) after every run.
+Each mutation applied to the final `LineFlow.gd` (md5 `f01b9082…`), the suite
+run under the copy of the operator's `app_userdata`, and the file restored and
+md5-checked after every run.
 
 | # | mutation | result | red |
 |---|---|---|---|
 | M0 | `main`'s LineFlow.gd (`c1dabb7`) | FAIL 3 ok, 2 fail | Z phases A–C missing, Z 1 SCRIPT ERROR (`last_pipe_carry` does not exist, so A aborts) |
-| M1 | no `_carry_pipes` call (main's behaviour, with the new report field) | FAIL 9 ok, 16 fail | A1–A5 (13.35 kg lost), E2 E3, F1–F3, B1–B4, C1 C2 |
-| M2 | stages carried, `stage_t` not | FAIL 22 ok, 3 fail | A3, E2, F2 |
-| M3 | a gone edge's kg not put anywhere | FAIL 20 ok, 5 fail | B1 B2 B3, C1 C2 |
-| M4 | only-the-target-survived counted as lost | FAIL 20 ok, 5 fail | B2 B3 B4, C1 C2 |
-| M5 | survivor key without `is_inside_tree()` | FAIL 24 ok, 1 fail | B5 (3 `Cannot get path` errors) |
-| M6 | edges matched by source only | FAIL 15 ok, 10 fail | A1 A2 A3 A5 (the 3B splitter friction_sep #9 → mech_dryer #10 / #11 loses one pipe, 0.41 kg), E2 E3, F2 F3, B3, C2 |
+| M1 | no `_carry_pipes` call (main's behaviour, with the new report field) | FAIL 9 ok, 17 fail | A1–A5 (13.26 kg lost), E2 E3, F1–F3, B1–B4, C0–C2 |
+| M2 | stages carried, `stage_t` not | FAIL 22 ok, 4 fail | A3, E2, F2, C0 |
+| M3 | a gone edge's kg not put anywhere | FAIL 21 ok, 5 fail | B1 B2 B3, C1 C2 |
+| M4 | only-the-target-survived counted as lost | FAIL 21 ok, 5 fail | B2 B3 B4, C1 C2 |
+| M5 | survivor key without `is_inside_tree()` | FAIL 25 ok, 1 fail | B5 (3 `Cannot get path` errors) |
+| M6 | edges matched by source only | FAIL 16 ok, 10 fail | A1 A2 A3 A5 (the 3B splitter friction_sep #9 → mech_dryer #10 / #11 loses one pipe), E2 E3, F2 F3, B3, C2 |
+| M7 | empty edges carried too (this fix's first version) | FAIL 25 ok, 1 fail | A6 (the empty edges kept their phase) |
 
-The fixed tree: `PASS (25 ok, 0 fail)` twice, check and info lines
-byte-identical between the two runs.
+C0 is the anti-vacuity check before the double delete. It goes red under M1
+and M2 because their runs diverge, and one of the three edges around the
+rafter happens to be empty at that instant.
+
+The final tree: `PASS (26 ok, 0 fail)`. The first version, with an empty
+user://, passed its 25 checks twice with byte-identical check and info lines.
+The absolute kg depend on the userdata and on nothing under test: S0 reads
+13.3497 kg on an empty user:// and 13.2630 kg on the copy of the operator's,
+for the fix, M1 and M7 alike. No line macro override is saved there; the
+cause, probably a value in `settings.cfg`, was not traced.
 
 ## 5. A suite trap met on the way: `set_process(false)` before `add_child`
 
@@ -163,13 +179,57 @@ frame between its own first rebuild and the suite's, and the fix carried that
 frame's `stage_t` where M1 reset it. With the call after `add_child`, S0 reads
 13.3497 kg under every variant. The probe in §2 was first run without any
 `set_process(false)`, so it ticked in the same frame, and the fix carried that
-frame's phase: that is why its "after" run reads 13.3950. It now switches
+frame's phase: that is why its first "after" run read 13.3950. It now switches
 `_process` off after `add_child` too.
 
 `src/tests/test_line_hud_overlay.gd:39` has the same order (not changed,
 not measured; it tests the HUD label, not flow).
 
+### 5.1 The same frame, in another suite: why an empty connector is not carried
+
+Most suites that drive `tick()` themselves never switch LineFlow's `_process`
+off at all. Counted by grep: 27 suites in `run.sh`'s loops make their own
+LineFlow, call `rebuild()` and never call `set_process(false)`; besides this
+suite's own, only `test_line1_metal_detect` switches it off. They add LineFlow (its
+`_ready` rebuilds), await frames, then call `rebuild()` themselves. LineFlow
+ticks on frame time in those frames with the line idle and the connectors
+empty, so on `main` nothing of those ticks survived the explicit rebuild,
+because every phase restarted at 0. The first version of this fix carried
+every edge's `stage_t`, the phases of empty edges included, so those suites
+began from whatever phase the awaited frames left.
+
+`test_extruder_silo_feed_stop` went red on it. Measured, two runs each, on a
+copy of the operator's `app_userdata`:
+
+| LineFlow.gd | result | S3 "backlog waits in the VSS" |
+|---|---|---|
+| `main` (`c1dabb7`), run 1 | PASS 17 ok | VSS 63.5 kg; the stopped 3B screw's input 0.2 kg at the stop, 1.2 kg at the end |
+| `main`, run 2 | PASS 17 ok | identical |
+| fix, first version, run 1 | FAIL 16 ok, 1 fail | VSS 63.0 kg; 0.0 kg at the stop, 1.2 kg at the end (+1.2 against the check's < 1.0) |
+| fix, first version, run 2 | FAIL 16 ok, 1 fail | identical |
+
+Deterministic both ways: the shifted phases change when the kg already in
+flight reach the stopped screw. On `main` the check passes by a hair
+(0.2 → 1.2 kg against < 1.0 kg).
+
+What should a rebuild do with the phase of an empty delay line? The phase only
+decides when a parcel moves up one stage, so an empty line's phase says
+nothing about material. Restarting it at 0 is exactly what a new edge does.
+So `_snapshot_pipes()` now leaves empty edges out. A loaded edge still keeps
+its phase, and that is what keeps its kg arriving on time. The guard pins
+this down with A6: every edge that was empty restarts at 0, and at least one
+of them had a phase before. Mutation M7 carries empty phases again.
+
+The general cure is for those suites to drive LineFlow alone, calling
+`set_process(false)` after `add_child`. That is a change to 27 suites, each
+one to re-measure, so it is not done here (§6).
+
 ## 6. Not fixed, for the operator or a later session
+
+- **Most suites that drive `tick()` still let LineFlow tick on frame time
+  during their awaits** (§5.1). A suite that awaits between ticks mid-run is
+  frame-rate dependent whatever this fix does. Found by reading, not measured
+  per suite.
 
 - **A deleted machine's own `in`/`out` kg leave the ledger** (measured in B
   and C: 0 kg for the pass-through machines deleted there, because they pass

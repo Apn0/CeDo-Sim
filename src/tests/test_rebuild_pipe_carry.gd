@@ -13,8 +13,9 @@ extends Node
 ## connectors, a rebuild with nothing changed left 0, and the ledger stayed
 ## 13.35 kg off for good.
 ##
-## The rule now: an edge whose two ends both survive keeps its stages and its
-## phase (stage_t); an edge that is gone puts its kg into the source's out
+## The rule now: a loaded edge whose two ends both survive keeps its stages and
+## its phase (stage_t), and an empty edge restarts at phase 0 like a new one;
+## an edge that is gone puts its kg into the source's out
 ## batch, or into the target's in batch when only the target is left; only an
 ## edge with neither end left loses its kg, with the two machines' own buffers.
 ##
@@ -189,7 +190,8 @@ func _edge_kg(a: Node3D, b: Node3D) -> float:
 	return float(r.get("kg", -1.0))
 
 
-## Edges of `before` that differ in `after` (a missing edge counts).
+## Edges of `before` that differ in `after` (a missing edge counts). The phase
+## is compared on loaded edges only: an empty edge restarts at 0 (A6).
 func _changed(before: Dictionary, after: Dictionary, with_dt: bool) -> Array:
 	var bad : Array = []
 	for k in before:
@@ -198,7 +200,8 @@ func _changed(before: Dictionary, after: Dictionary, with_dt: bool) -> Array:
 			bad.append(String(x["label"]) + " (gone)")
 			continue
 		var y : Dictionary = after[k]
-		if str(x["stages"]) != str(y["stages"]) or float(x["stage_t"]) != float(y["stage_t"]) \
+		if str(x["stages"]) != str(y["stages"]) \
+				or (float(x["kg"]) > 0.0 and float(x["stage_t"]) != float(y["stage_t"])) \
 				or (with_dt and float(x["stage_dt"]) != float(y["stage_dt"])):
 			bad.append("%s %.3f kg t %.3f -> %.3f kg t %.3f" % [x["label"], x["kg"], x["stage_t"], y["kg"], y["stage_t"]])
 	return bad
@@ -306,7 +309,22 @@ func _run() -> void:
 	_check(absf(r1 - r0) < LEDGER_EPS, "A2 the ledger is the same across the rebuild (moved %.9f kg)" % (r1 - r0))
 	var a3 := _changed(e0, e1, true)
 	_check(a3.is_empty() and e1.size() == e0.size(),
-		"A3 every edge keeps every stage's batch (kg, volume, water, dirt, composition) and its phase stage_t (%d of %d changed: %s)" % [a3.size(), e0.size(), str(a3.slice(0, 4))])
+		"A3 every edge keeps every stage's batch (kg, volume, water, dirt, composition), and every loaded edge its phase stage_t (%d of %d changed: %s)" % [a3.size(), e0.size(), str(a3.slice(0, 4))])
+	# An empty edge's phase describes no material. It restarts at 0 like a new
+	# edge, so a rebuild of an idle line is what it was before the carry, and a
+	# suite that lets LineFlow tick on frame time before its own rebuild() does
+	# not start from that frame's phase (measured: test_extruder_silo_feed_stop).
+	var empty_phased := 0
+	var empty_kept : Array = []
+	for k in e0:
+		if float(e0[k]["kg"]) > 0.0:
+			continue
+		if float(e0[k]["stage_t"]) > 0.0:
+			empty_phased += 1
+		if e1.has(k) and float(e1[k]["stage_t"]) != 0.0:
+			empty_kept.append(String(e0[k]["label"]))
+	_check(empty_phased > 0 and empty_kept.is_empty(),
+		"A6 an empty edge restarts at phase 0 (%d empty edges had a phase before; kept: %s)" % [empty_phased, str(empty_kept)])
 	_check(absf(float(carry.get("carried", -1.0)) - p0) < 1e-9 and float(carry.get("to_source", -1.0)) == 0.0
 		and float(carry.get("to_target", -1.0)) == 0.0 and float(carry.get("lost", -1.0)) == 0.0,
 		"A4 LineFlow reports all of it carried in place, none re-homed or lost (%s)" % str(carry))

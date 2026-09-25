@@ -516,20 +516,30 @@ func _survivor_key(nd: Dictionary) -> String:
 ## target is left), `lost` had neither end left. Empty before the first rebuild.
 var last_pipe_carry : Dictionary = {}
 
-## Every edge's delay line, keyed by its two ends' survivor keys. Taken before
-## _discover() replaces _nodes, since the edges hold node INDICES.
+## Every loaded edge's delay line, keyed by its two ends' survivor keys. Taken
+## before _discover() replaces _nodes, since the edges hold node INDICES. An
+## EMPTY edge is left out: it has no kg, and its phase (stage_t) describes no
+## material, so it starts at 0 like a new edge and a rebuild of an idle line
+## stays what it was. Carrying empty phases made every suite that lets
+## LineFlow tick on frame time before its own rebuild() depend on that frame
+## (docs/audit/rebuild_pipe_carry_2026-09-25.md §5).
 func _snapshot_pipes() -> Array:
 	var out : Array = []
 	for e in _edges:
 		if not e.has("pipe"):
+			continue
+		var kg := 0.0
+		for s in (e["pipe"] as Array):
+			kg += (s as MaterialBatch).mass_kg
+		if kg <= 0.0:
 			continue
 		out.append({"src": _survivor_key(_nodes[int(e["a"])]),
 			"dst": _survivor_key(_nodes[int(e["b"])]),
 			"pipe": e["pipe"], "stage_t": float(e.get("stage_t", 0.0))})
 	return out
 
-## Put the connectors' kg back after _init_pipes(). An edge whose two ends both
-## survived gets its stages and its phase back, so a rebuild that changes
+## Put the connectors' kg back after _init_pipes(). A loaded edge whose two ends
+## both survived gets its stages and its phase back, so a rebuild that changes
 ## nothing changes nothing on the belts. An edge that is gone (its target was
 ## deleted, or the linker picked another target) puts its kg back into the
 ## source's out batch, which the next tick routes down the source's edges as
