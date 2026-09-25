@@ -669,6 +669,33 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   previous one — a silo fed from above, a compactor beyond a blower — pin the
   edge; and read the info lines a suite prints without gating, they are
   measurements too.
+  **2026-09-25 — the same on 3A and 3B, and WHY the fallback makes 2-cycles
+  at all.** The extruder's inlet sits 15.22 m (3A) / 14.24 m (3B, and line 1)
+  from its compactorband's discharge, past `MAX_LINK_DIST` (14, exclusive),
+  so the band never sees the extruder and falls back to the nearest inlet
+  BEHIND it: on 3A a silo ↔ band 2-cycle, on 3B a band → booster blower
+  edge, with the booster blower ↔ tussenventilator-cyclone 2-cycle beside it
+  and no in-edge on the silo. `extruder_3a` and `extruder_3b` received 0 kg
+  from 63 kg fed. A 2-cycle survives at all because `_link_best_target`
+  calls `_creates_cycle(best, src_idx)` against a `(from, to)` contract. That
+  asks whether the source already reaches the target, and never refuses a
+  back-edge. The same swapped guard leaves further 2-cycles on these lines
+  (3A's infeed wind_sifter ↔ blower 2, which starves the big top cyclone;
+  centrifuge ↔ weegschaal on 1 and 3B, which starves voorraad_silo). They
+  are measured, not fixed. The 3A/3B tails are pinned in the SEQs, guarded
+  by `test_extruder_silo_chain` (by name and by kg: no node of the chain may
+  process more than was fed, which is how a 2-cycle shows up in flow).
+  `src/tests/dump_line_graph.tscn -- <line_id>` dumps any macro line, marks
+  every edge explicit or geometry, and lists every cycle.
+  **And no pin survives a reload.** `lf_explicit_outs` is stamped only by
+  `_build_full_line` and is not in `_save_layout`, so a world loaded from a
+  save carries 0 explicit edges. Measured with
+  `probe_explicit_edges_roundtrip` under a scratch APPDATA: 47 tagged nodes
+  before a save/load, 0 after, and all three silo tails back to broken
+  wiring. That also covers line 1's pins, the 3B split and the 3A recirc.
+  A macro-flow suite that builds its lines fresh proves the session the
+  line is built in, not a reloaded world.
+  `docs/audit/extruder_silo_tail_2026-09-25.md`.
 - **A visual grafted onto a node before that node's `_ready()` is a visual
   that does not exist.** `_build_opzetband` attached the #196 metal-detector
   head to the belt's `InclinePivot`, which `ShredderFeedBelt` builds in
