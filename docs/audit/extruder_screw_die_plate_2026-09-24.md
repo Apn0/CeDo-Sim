@@ -375,6 +375,21 @@ replaced two CLAUDE.md index rows (this doc's and
 `operator_rulings_2026-09-24.md`) with its AUDIO row; this merge keeps all
 of them.
 
+**And once more (`d29ceb5`, #291–#297: the coast-down torque, the cycle-guard
+swap, macro edges that survive a reload).** `main` had lost
+`test_extruder_ramp_pressures` from `run.sh`: #292 and then #295 dropped it
+while resolving conflicts, and the test file stayed in the tree. It is back in
+the loop. #296 had also swapped the AUDIO index row out for the two rows #288
+removed; all of them are kept. Results on the merged tree: parse sweep
+`468 ok, 0 fail`; `test_extruder_ramp_pressures` 21 ok; `test_extruder_stop_torque`
+21 ok; `test_extruder_silo_chain` 41 ok; `test_screw_die_plate_bar` 55 ok (the
+cycle-guard rewiring moved none of its numbers); `test_extruder_screw` 15 ok;
+`test_die_pressure_bar` 21 ok; `test_extruder_melt_pressures` 53 ok;
+`test_extruder_brain_wired` 26 ok; `test_qa_loop` 16 ok; `test_qa_spec` 24 ok;
+`test_tag_snapshot` 30 ok, 1 data-gated skip; `test_mfi_proxy` 22 ok;
+`test_qa_terminal` 0 failures; lint 0 of 463 files. 0 `^SCRIPT ERROR` lines, and
+`world_layout.json` hashed `e046af7d…` before and after.
+
 **An incident during this session, not caused by it.** At 02:34:33 the file was
 rewritten to `bd62352d…`, with the jam-baseline fixture gate in
 `structure_items` **twice**. At that moment two OTHER sessions were running

@@ -13,6 +13,9 @@ extends Node
 ## meta. If nothing re-stamps it on load, a reloaded world is wired by the
 ## geometry fallback alone. This builds lines 1, 3A and 3B, dumps each silo
 ## tail, saves, rebuilds a fresh BuildMode from the file, and dumps again.
+## Measured 2026-09-25 before the fix: 47 tagged nodes → 0. load_layout now
+## re-derives them (BuildMode._rederive_macro_flow_edges); the gated proof is
+## test_macro_edges_reload, and this probe stays as the quick look.
 
 const FACTORY_PATH : String = "user://__rt_probe_factory.json"
 const WORLD_PATH   : String = "user://__rt_probe_world_layout.json"

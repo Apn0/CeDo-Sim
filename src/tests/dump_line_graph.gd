@@ -14,6 +14,11 @@ extends Node
 ## can be read off rather than argued about.
 ##
 ## Headless-safe, writes nothing. Measures only; gates nothing.
+##
+## Written 2026-09-25 on branch claude/laughing-booth-e208e8 (the extruder-silo
+## tail pins); the EDGE / NOIN / NOOUT lines at the end were added the same day
+## for the cycle-guard swap in LineFlow._link_best_target, so every macro line
+## can be dumped before and after a linker change and diffed.
 
 func _ready() -> void:
 	call_deferred("_run")
@@ -25,15 +30,44 @@ func _label(nodes: Array, i: int) -> String:
 	return "%s#%d[m%d]" % [String(nd.get("id", "?")), i, mi]
 
 func _run() -> void:
-	var args := OS.get_cmdline_user_args()
+	var args := Array(OS.get_cmdline_user_args())
+	# `--reload` (2026-09-25): build, save through BuildMode._save_layout, load
+	# the file into a FRESH BuildMode and dump THAT world. BuildMode does not
+	# persist lf_explicit_outs (docs/audit/extruder_silo_tail_2026-09-25.md §7),
+	# so a reloaded line is wired by the geometry fallback alone — this shows
+	# what that fallback makes of it. Both files go to probe-only names; run it
+	# under a scratch APPDATA anyway.
+	var reload : bool = args.has("--reload")
+	args.erase("--reload")
 	var line_id : String = args[0] if args.size() > 0 else "line_3a"
 	var tail_from : String = args[1] if args.size() > 1 else "mengsilo"
 
 	var bm := BuildMode.new()
+	if reload:
+		WorldLayout.layout_path_override = "user://__dumpgraph_world_layout.json"
+		bm.layout_path = "user://__dumpgraph_factory.json"
+		# BuildMode._ready loads layout_path, so a previous run's probe file
+		# would be built into this world first (measured: node counts grew
+		# 45 → 77 → 102 … across the seven lines until this delete).
+		AtomicFile.delete(bm.layout_path)
+		AtomicFile.delete(WorldLayout.layout_path_override)
 	add_child(bm)
 	await get_tree().process_frame
 	bm.call("_build_full_line", line_id, Vector3.ZERO, 0.0)
 	await get_tree().process_frame
+	if reload:
+		print("[RELOAD] user dir %s — saving to %s" % [OS.get_user_data_dir(), bm.layout_path])
+		bm.call("_save_layout")
+		var path : String = bm.layout_path
+		bm.queue_free()
+		await get_tree().process_frame
+		await get_tree().process_frame
+		bm = BuildMode.new()
+		bm.layout_path = path
+		add_child(bm)                  # _ready → load_layout()
+		await get_tree().process_frame
+		await get_tree().process_frame
+		print("[RELOAD] reloaded from %s" % path)
 	var lf := LineFlow.new()
 	add_child(lf)
 	await get_tree().process_frame
@@ -154,5 +188,45 @@ func _run() -> void:
 			print("  [CYCLE] %s -> %s (%s) closes a cycle"
 				% [_label(nodes, a), _label(nodes, b), "explicit" if tagged.has(a) else "geometry"])
 	print("[CYCLES] %d non-recirc edges sit on a cycle" % n_cyc)
+
+	# 2026-09-25 (cycle-guard swap) — a DIFFABLE edge list. One line per edge,
+	# `id[m<macro_index>]#<node index>`, sorted, so two runs of the same line
+	# (before / after a linker change) diff edge by edge. Node indices are the
+	# discovery order, which a linker change does not move. Then every
+	# non-sink node with no in-edge (LineFlow treats those as HEADS and draws
+	# from a bale at their feed point) and every non-sink with no out-edge.
+	var edge_lines : Array = []
+	for e in edges:
+		var a : int = int(e["a"])
+		var kind : String = "explicit" if tagged.has(a) else "geometry"
+		if bool(e.get("recirc", false)):
+			kind = "recirc"
+		edge_lines.append("EDGE %s -> %s %s" % [_label(nodes, a), _label(nodes, int(e["b"])), kind])
+	edge_lines.sort()
+	for s in edge_lines:
+		print(s)
+	var heads : Array = []
+	var ends : Array = []
+	for i in nodes.size():
+		var role : String = String((nodes[i] as Dictionary).get("role", ""))
+		if role == "sink":
+			continue
+		var has_in := false
+		var has_out := false
+		for e in edges:
+			if int(e["b"]) == i:
+				has_in = true
+			if int(e["a"]) == i:
+				has_out = true
+		if not has_in:
+			heads.append("NOIN  %s role=%s" % [_label(nodes, i), role])
+		if not has_out:
+			ends.append("NOOUT %s role=%s" % [_label(nodes, i), role])
+	heads.sort()
+	ends.sort()
+	for s in heads:
+		print(s)
+	for s in ends:
+		print(s)
 	print("Result: DUMP DONE")
 	get_tree().quit(0)

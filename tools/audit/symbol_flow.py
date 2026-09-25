@@ -22,7 +22,9 @@ GDScript private convention makes this sound: a `_name` must resolve inside its 
 file, so an in-file miss is a real miss. Names reached through `.` (obj.field) are
 attributed to the object, never to this file, which keeps false positives near zero.
 
-Usage:  python tools/audit/symbol_flow.py [--root src] [--json out.json] [--all]
+Usage:  python tools/audit/symbol_flow.py [--root src] [--project DIR] [--json out.json] [--all]
+        res:// resolves against --project, by default the project.godot directory
+        at or above --root, so the result does not depend on the current directory.
 """
 
 from __future__ import annotations
@@ -258,15 +260,40 @@ def analyse(scan: dict, inherited: set) -> list[dict]:
     return findings
 
 
+def find_project(root: str) -> str:
+    """The directory holding project.godot, at or above `root`: what res:// means.
+
+    This used to default to '.', the CURRENT directory, which is right only when the
+    tool is started from inside the tree it scans. Measured 2026-09-25: run.sh
+    started from another worktree with PROJ=<tree> resolved every
+    `extends "res://…/HmiScreenBase.gd"` into the wrong tree, lost the inherited
+    members and reported 38 parse-breaking symbols in L3CUnitScreen.gd /
+    WashingScope.gd (0 from inside the tree). Started from another drive it
+    crashed in os.path.relpath. No project.godot is an error, not a silent
+    fall-back to the cwd, since that fall-back is what hid this.
+    """
+    d = os.path.abspath(root)
+    while True:
+        if os.path.isfile(os.path.join(d, 'project.godot')):
+            return d
+        parent = os.path.dirname(d)
+        if parent == d:
+            sys.exit(f'[symbol_flow] no project.godot at or above --root {root!r}; '
+                     f'pass --project <the directory res:// means>')
+        d = parent
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument('--root', default='src')
-    ap.add_argument('--project', default='.',
-                    help='project root that res:// resolves to')
+    ap.add_argument('--project', default=None,
+                    help='project root that res:// resolves to (default: the nearest '
+                         'directory at or above --root that holds project.godot)')
     ap.add_argument('--json')
     ap.add_argument('--all', action='store_true',
                     help='include WRITE_ONLY/DEAD (default: only parse-breaking UNDECLARED)')
     args = ap.parse_args()
+    args.project = os.path.abspath(args.project) if args.project else find_project(args.root)
 
     files = []
     for dirpath, _, names in os.walk(args.root):

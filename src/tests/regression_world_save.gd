@@ -11,7 +11,8 @@ extends Node3D
 ##  WORLD CREATION
 ##   - Plant initialised; building shell present with a real mesh;
 ##   - operating-floor grade at ~-9.0 (the site datum, not a wing roof);
-##   - every door in WorldLayout.structure_items sits ON a wall line.
+##   - every door in WorldLayout.structure_items stands in a wall opening the
+##     carve cut in the real shell (opening_id on its placed node).
 ##
 ##  SAVE CREATION (the "machines outside the building" class of bug)
 ##   - every id in LINE_3A_SEQ resolves in the catalog (no silent drops);
@@ -24,8 +25,10 @@ extends Node3D
 ##     (round-trip fidelity — the loader is not silently shifting anything).
 ##
 ## Emits user://regression_positions.json for tools/regression/topdown_render.py.
-## Backs up and restores every user:// file it touches, so the operator's real
-## world_layout.json and saves are never harmed.
+## Backs up and restores every user:// file it touches, so the operator's saves
+## are never harmed. His world_layout.json is READ (the world boots on it) but
+## never written: every world save, the round-trip's own _save_layout included,
+## goes to a scratch file (src/tests/world_layout_guard.gd).
 
 # ── Building frame (bf) -> Plant Coordinates affine (operator-verified) ────────
 const BF_O  := Vector2(573.404, 463.647)
@@ -48,16 +51,17 @@ const BF_RECTS := [
 	[57.0, 81.0, 61.0, 66.0],      # annex west (shallow)
 	[81.0, 131.5, 61.0, 71.5],     # annex east
 ]
-# Wall lines a door/gate is allowed to sit on (bf coordinate + which axis).
 const INSIDE_MARGIN := 0.6          # m of slack for a machine centre near a wall
-const DOOR_WALL_TOL := 1.6          # m a door centre may be off a wall line
 const GRADE_Y := -9.0
 const GRADE_TOL := 0.25
 const ROUNDTRIP_TOL := 0.01         # 1 cm
 
 const TEST_SLOT := "__regression__"
+## This slot's own files. The operator's world_layout.json is not on the list:
+## world saves go to the guard's scratch file, and the real one is only
+## compared, never written (src/tests/world_layout_guard.gd).
 const TOUCHED := [
-	"user://world_layout.json", "user://world_layout_consumed.flag",
+	"user://world_layout_consumed.flag",
 	"user://__regression___save.json", "user://__regression___factory.json",
 ]
 const DUMP_PATH := "user://regression_positions.json"
@@ -65,7 +69,8 @@ const DUMP_PATH := "user://regression_positions.json"
 var _pass := 0
 var _fail := 0
 var _skip := 0
-var _backups : Dictionary = {}
+const WorldLayoutGuard := preload("res://src/tests/world_layout_guard.gd")
+var _wlg := WorldLayoutGuard.new(TEST_SLOT, TOUCHED)
 var _dump : Dictionary = {}
 
 
@@ -98,10 +103,23 @@ func _bf_inside(bf: Vector2, margin: float) -> bool:
 			return true
 	return false
 
-func _on_a_wall(bf: Vector2) -> bool:
-	return absf(bf.y - 71.5) < DOOR_WALL_TOL or absf(bf.y - 61.0) < DOOR_WALL_TOL \
-		or absf(bf.y - 0.0) < DOOR_WALL_TOL or absf(bf.x - 150.7) < DOOR_WALL_TOL \
-		or absf(bf.x - 0.0) < DOOR_WALL_TOL or absf(bf.y - 66.0) < DOOR_WALL_TOL
+## The placed node BuildMode built for one structure_items entry: the surface
+## node whose stored corner points match the entry's (same list, same order —
+## _save_layout writes surface_data["p"] back verbatim).
+func _surface_node_for(nodes: Array, pts: Array) -> Node:
+	for n in nodes:
+		var sp : Array = (n.get_meta("surface_data") as Dictionary).get("p", [])
+		if sp.size() != pts.size():
+			continue
+		var same := true
+		for i in range(sp.size()):
+			if Vector3(float(sp[i][0]), float(sp[i][1]), float(sp[i][2])).distance_to(
+					Vector3(float(pts[i][0]), float(pts[i][1]), float(pts[i][2]))) > 0.01:
+				same = false
+				break
+		if same:
+			return n
+	return null
 
 
 func _ready() -> void:
@@ -111,7 +129,10 @@ func _ready() -> void:
 		print("FATAL: WorldLayout autoload missing (boot via --main-scene, not --script)")
 		get_tree().quit(2); return
 
-	_backup_files()
+	# Before boot. The save->reload round-trip below runs _save_layout, which
+	# would otherwise write the operator's world_layout.json.
+	if not _wlg.arm(get_tree()):
+		get_tree().quit(2); return
 
 	# Load-existing (not new-save) so MainWorld builds the configured world
 	# without entering the interactive setup flow (which would hang headless).
@@ -123,7 +144,7 @@ func _ready() -> void:
 
 	var scn := load("res://src/scenes/world/MainWorld.tscn") as PackedScene
 	if scn == null:
-		print("FATAL: MainWorld.tscn failed to load"); _restore_files(); get_tree().quit(2); return
+		print("FATAL: MainWorld.tscn failed to load"); _wlg.restore(); _wlg.disarm(); get_tree().quit(2); return
 	var world : Node = scn.instantiate()
 	await get_tree().process_frame
 	get_tree().root.add_child(world)
@@ -144,6 +165,9 @@ func _ready() -> void:
 	# shell colliders queryable) — MUST be awaited, or the verdict + quit below
 	# run first and the exterior checks silently never count.
 	await _test_exterior(world)
+	_section("LEAK GUARD")
+	for c in _wlg.final_checks(world):
+		_ok(c[0], c[1])
 
 	# Verdict list for the render.
 	_dump["checks"] = [
@@ -151,12 +175,18 @@ func _ready() -> void:
 	]
 	_write_dump()
 
-	world.queue_free()
-	_restore_files()
+	# The verdict is printed and user:// restored BEFORE the world is freed,
+	# then restored again after: the headless teardown segfault lands inside
+	# world teardown (CLAUDE.md, 15 of 62 boots) and never reaches code after it.
+	_wlg.restore()
 	print("\n=========================================")
 	print("Result: %d ok, %d fail, %d skip" % [_pass, _fail, _skip])
 	print("Dump: %s" % ProjectSettings.globalize_path(DUMP_PATH))
 	print("=========================================")
+	world.queue_free()
+	await get_tree().process_frame
+	_wlg.restore()
+	_wlg.disarm()
 	get_tree().quit(0 if _fail == 0 else 1)
 
 
@@ -190,7 +220,21 @@ func _test_world_creation(world: Node, wl: Node) -> void:
 		_ok(ab.size.x > 50.0 and ab.size.z > 30.0,
 			"shell footprint non-trivial (aabb %.0f x %.0f)" % [ab.size.x, ab.size.z])
 
-	# Doors: each structure_item center must sit on a wall line.
+	# Doors: each structure_item must stand in a wall opening that WallOpenings
+	# cut in the REAL shell. BuildMode stamps opening_id on the placed node only
+	# when the carve found shell wall triangles inside the opening box.
+	# Until 2026-09-25 this tested the centre against six typed wall lines of
+	# the building frame (BF_*). That frame does not line up with the 3D shell:
+	# drawn through Plant it comes out axis-aligned in scene space, while the
+	# shell stands rotated (measured with a top-down render). So the operator's
+	# own 3A/3B gate, carved through the south-west wall, read "on-wall 0"
+	# (operator 2026-09-25: the gate is right, keep it).
+	var bm_d = world.get("build_mode")
+	var surf_nodes : Array = []
+	if bm_d != null and bm_d.get("_placed_root") != null:
+		for ch in (bm_d.get("_placed_root") as Node).get_children():
+			if ch.has_meta("surface_data"):
+				surf_nodes.append(ch)
 	var items : Array = []
 	if wl.has_method("get") and wl.get("structure_items") != null:
 		items = wl.get("structure_items")
@@ -209,7 +253,8 @@ func _test_world_creation(world: Node, wl: Node) -> void:
 			c += Vector3(float(pp[0]), float(pp[1]), float(pp[2]))
 		c /= float(pts.size())
 		var bf := _scene_to_bf(c)
-		var on_wall := _on_a_wall(bf)
+		var node : Node = _surface_node_for(surf_nodes, pts)
+		var on_wall : bool = node != null and node.has_meta("opening_id")
 		if on_wall:
 			doors_on_wall += 1
 		door_dump.append({
@@ -220,7 +265,7 @@ func _test_world_creation(world: Node, wl: Node) -> void:
 		print("  note  : no structure_items (doors) in world_layout — skipped"); _skip += 1
 	else:
 		_ok(doors_on_wall == doors_total,
-			"all %d door(s)/gate(s) sit on a wall (on-wall %d)" % [doors_total, doors_on_wall])
+			"all %d door(s)/gate(s) stand in a wall opening carved in the real shell (carved %d)" % [doors_total, doors_on_wall])
 
 
 # =============================================================================
@@ -581,26 +626,6 @@ func _test_macros() -> void:
 	if not any:
 		print("  note  : no operator macros present"); _skip += 1
 
-
-# ── user:// file safety ───────────────────────────────────────────────────────
-func _backup_files() -> void:
-	for p in TOUCHED:
-		if FileAccess.file_exists(p):
-			var f := FileAccess.open(p, FileAccess.READ)
-			_backups[p] = f.get_as_text() if f else null
-			if f: f.close()
-		else:
-			_backups[p] = null
-
-func _restore_files() -> void:
-	for p in _backups.keys():
-		var orig = _backups[p]
-		if orig is String:
-			var f := FileAccess.open(p, FileAccess.WRITE)
-			if f: f.store_string(orig); f.close()
-		elif FileAccess.file_exists(p):
-			DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
-	print("  (restored touched user:// files)")
 
 func _write_dump() -> void:
 	var f := FileAccess.open(DUMP_PATH, FileAccess.WRITE)

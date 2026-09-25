@@ -396,7 +396,23 @@ static func profile(id: String) -> Dictionary:
 		# the `hmi_` prefix branch below covers every HMI that still exists.
 		"door", "pcu_cabinet", "surface", "waste_container", "water_pump", "zss_water", \
 		"kleine_la", "tankje_tussen_extruders", "pomp_c1", "pomp_zeefbocht", "eop_endpoint", \
-		"heater_cabinet", "thermal_dryer_decommissioned", "scrap_bin", "overband_magnet":
+		"heater_cabinet", "thermal_dryer_decommissioned", "scrap_bin", "overband_magnet", \
+		"lump_platform", "lump_cart_spot", "lump_cart", "compressor_a", "compressor_b":
+			# lump_platform / lump_cart_spot / lump_cart and compressor_a / _b
+			# (2026-09-25): three places already said these are not flow nodes —
+			# BuildMode's I1 guard ("lump cart + spot" are role-none utilities),
+			# the 3A/3B identity suites ("furniture … that LineFlow does not
+			# track"), and LineFlow._spawn_visible_compressors ("they don't enter
+			# LineFlow's material graph") — but none of the five was listed here,
+			# so each fell to the default role "process". Measured with
+			# dump_line_graph: lines 1/3A/3B/3C wired lump_cart ↔ lump_cart_spot,
+			# every line with air users wired compressor_a ↔ compressor_b, both as
+			# 2-cycles, and 1/3A/3B carried their pelletising melt THROUGH a lump
+			# cart (laser_filter → lump_cart → heetafslag). Once the fallback's cycle guard worked, each cart fell
+			# through to the next inlet — the laser filter on 1/3A/3B, vacuum_degas
+			# on 3C. The laser filter drops lumps into a cart by physics
+			# (LaserFilter._closest_lump_cart, group "lump_cart"), and the air bank
+			# is AirNetwork's, so no flow edge was ever carrying either.
 			# overband_magnet (2026-09-24): it HANGS OVER a belt and pulls ferrous
 			# out of the stream — a fixture, not a machine the film passes
 			# through. As a flow node it had no wired input, so LineFlow's

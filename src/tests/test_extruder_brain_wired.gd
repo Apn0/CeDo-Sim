@@ -27,8 +27,14 @@ const BOOT_FRAMES : int = 120
 const SETTLE_FRAMES : int = 60
 const EXTRUDER_ID : String = "extruder_3a"
 
-var _protect : Array[String] = []
-var _backups : Dictionary = {}
+const WorldLayoutGuard := preload("res://src/tests/world_layout_guard.gd")
+## This slot's own files. The operator's world_layout.json is not on the list:
+## world saves go to the guard's scratch file, and the real one is only
+## compared, never written (src/tests/world_layout_guard.gd).
+var _wlg := WorldLayoutGuard.new(TEST_SLOT, [
+	"user://%s_save.json" % TEST_SLOT,
+	"user://%s_factory.json" % TEST_SLOT,
+])
 var _world : Node = null
 var _oks : int = 0
 var _fails : int = 0
@@ -50,12 +56,10 @@ func _ready() -> void:
 		get_tree().quit(2)
 		return
 
-	_protect = [
-		"user://world_layout.json",
-		"user://%s_save.json" % TEST_SLOT,
-		"user://%s_factory.json" % TEST_SLOT,
-	]
-	_backup_files()
+	# Before boot, so no world save can reach the operator's world_layout.json.
+	if not _wlg.arm(get_tree()):
+		get_tree().quit(2)
+		return
 
 	# ── unit level: the mapping, with a negative control ─────────────────────
 	# Without the negative control this file would pass on an attach() that
@@ -156,6 +160,8 @@ func _ready() -> void:
 		% seen["n"] + "the model is really ticking")
 
 	await _check_preheat()
+	for c in _wlg.final_checks(_world):
+		_check(c[0], c[1])
 	_finish(0 if _fails == 0 else 1)
 
 
@@ -238,31 +244,17 @@ func _check_preheat() -> void:
 	_check(evs.has("vacuum_lines_cleaned"), "emits vacuum_lines_cleaned event on tick")
 
 
-func _backup_files() -> void:
-	for p in _protect:
-		if FileAccess.file_exists(p):
-			var f := FileAccess.open(p, FileAccess.READ)
-			if f != null:
-				_backups[p] = f.get_buffer(f.get_length())
-				f.close()
-
-
-func _restore_files() -> void:
-	for p in _protect:
-		var data = _backups.get(p, null)
-		if data == null:
-			if FileAccess.file_exists(p):
-				DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
-		else:
-			var f := FileAccess.open(p, FileAccess.WRITE)
-			if f != null:
-				f.store_buffer(data)
-				f.close()
-
-
+## The verdict is printed and user:// restored BEFORE the world is freed, then
+## restored again after: the headless teardown segfault lands inside world
+## teardown (CLAUDE.md, 15 of 62 boots) and never reaches code after it.
 func _finish(code: int) -> void:
-	_restore_files()
+	_wlg.restore()
 	print("Result: %s (%d ok, %d fail)"
 		% ["PASS" if _fails == 0 else "FAIL", _oks, _fails])
 	print("RESULT: %s" % ["PASS" if _fails == 0 else "FAIL"])
+	if _world != null and is_instance_valid(_world):
+		_world.queue_free()
+		await get_tree().process_frame
+	_wlg.restore()
+	_wlg.disarm()
 	get_tree().quit(code)
