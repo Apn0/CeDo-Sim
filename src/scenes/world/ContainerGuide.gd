@@ -56,6 +56,11 @@ const SLOT_REGISTRY : Dictionary = {
 	"overband_magnet": [
 		{"offset": Vector3(1.4, 0.0, 1.0), "container_id": "skip_steel"},
 	],
+	# Line 1's cross-belt magnet (operator 2026-09-25): the scrap leaves off its
+	# +X end, so the skip stands under that end, past the 1.5 m half-length.
+	"overband_magnet_l1": [
+		{"offset": Vector3(2.3, 0.0, 0.0), "container_id": "skip_steel"},
+	],
 	"flotation_tank": [
 		{"offset": Vector3(0.0, 0.0, 5.6), "container_id": "waste_container"},
 	],

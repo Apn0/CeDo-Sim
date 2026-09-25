@@ -672,11 +672,14 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	#   leg B  LEFT +90°  uitvoerband + magnet           (short east run)
 	#   leg C  LEFT +90°  short belt → drum_feed_belt → hoekgoot (climb to drum head)
 	#   leg D  RIGHT −90°  drum → Y-goot → wet train     (the long drum axis)
-	#   leg E  RIGHT −90°  flotation tank + dewater      (sketch: tank offset
-	#                                                     south of the train)
-	#   leg F  LEFT +90°  friction → … → extruder tail   (east — CONFIRMED by
-	#          the operator 2026-08-28 ("leg F is correct"); matches the floor
-	#          plan's east-west extruder-1 block on Hal 2's south wall.)
+	#   leg E  REVERSE 180° flotation tank, beside the train (2026-09-17)
+	#   leg F  LEFT +90°  dewater screw → L-R friction → Kufferath/MAS pairs.
+	#          The turn sits on the dewatering screw since 2026-09-25 (operator:
+	#          it runs perpendicular to the tank, turned left, out of its
+	#          discharge end); it used to sit one machine later, on the friction
+	#          separator. Heading unchanged, so the operator's "leg F is correct"
+	#          (2026-08-28, re-confirmed 2026-09-06) still holds.
+	#   leg G  LEFT +90°  cyclone → extruder tail (east-west, Hal 2 south wall)
 	# turn_deg +90 (LEFT) on the FIRST entry gives the through-the-wall feeder
 	# its own leg heading EAST (−X in this line's frame — see the axis note on
 	# the S5 plan checks), so the RIGHT turn onto westa_band_1 below lands back
@@ -702,7 +705,7 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	# directly under opzetband_1's lip. It depends only on the CATALOG BOX, so it
 	# survives a change of incline.
 	#
-	# gap 0.957 then lands the Westa's own lip on shredder_1's throat: the belt's
+	# (HISTORY, superseded 2026-09-25 below.) gap 0.957 landed the Westa's own lip on shredder_1's throat: the belt's
 	# structure ends run+flat past its origin and the shredder's throat is at its
 	# centre, so
 	#   gap = (run + flat) − westa_half − shredder_half = 5.757 + 0.6 − 2.9 − 2.5.
@@ -713,23 +716,51 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	# which is exactly the −1.48 that used to sit here; at the operator's 30°
 	# (2026-09-17) it is +0.957. Change one, recompute the other.
 	# Both are guarded in-world by test_line1_flow_conformance S6/S6b.
-	{"id": "westa_band_1", "turn_deg": -90.0, "turn_advance": -2.9, "gap": 0.957},
-	{"id": "shredder_1"},
-	# y 0.281 — DERIVED, same style as the gaps below. The overband magnet that
-	# straddles this belt (next entry) is floor-standing, so its pick-up height is
-	# fixed by its own model: its LOWEST part, the cross-belt drum end flanges,
-	# sits at 1.206 m. Putting the deck OVERBAND_CLEARANCE_M under that lowest
-	# part — rather than under the drum barrels at 1.242 — means NO part of the
-	# magnet is ever closer than the clearance:
-	#   lift = (1.206 − 0.25) − deck_top(0.675) = 0.281
-	# The belt's own legs stretch back to the floor via extend_legs. With the
-	# skirt-board rails from _m_belt the rail top lands at 0.956 + 0.15 = 1.106,
-	# clearing the magnet by 0.10 m; with the OLD 0.333 m trough rails it would
-	# have reached 1.289 and punched straight through the drums — which is why the
-	# rails had to shrink before this belt could be raised at all.
-	# Guarded in-world by test_line1_overband_mount T5/T6.
-	{"id": "transport_belt", "turn_deg": 90.0,
-	 "y": 0.281, "extend_legs": true},                # uitvoerband — leg B (east)
+	# ── 2026-09-25 OPERATOR CORRECTION (top-down view): the Westa is one metre
+	# too long, and the shredder must move up the leg so the Westa's end "sticks
+	# into the shredder hopper about 30 centimeters" — at the throat the lip ran
+	# to the middle of the hopper. Now:
+	#   gap = (run + flat) + (hopper half-depth − 0.3) − westa_half − shredder_half
+	#       = 4.757 + 0.6 + (2.6 − 0.3) − 2.9 − 2.5 = 2.257
+	# hopper half-depth 2.6 = the flared collar of _m_shredder_1, size.z·1.04/2.
+	# run = PlaceableCatalog.WESTA_BAND_1_RUN_M (the 30° run less his metre), 0.3 =
+	# SHREDDER_1_HOPPER_OVERLAP_M; the shredder and everything after it move 1.3 m.
+	# The Westa's ANGLE is no longer an input here: shown in a side view that its
+	# end sat 1.63 m under the hopper rim, he chose "Westa should climb steeper",
+	# so the belt climbs until its lip clears the rim (≈44.5°, was 30°).
+	{"id": "westa_band_1", "turn_deg": -90.0, "turn_advance": -2.9, "gap": 2.257},
+	# gap −2.5 (2026-09-25) = half the shredder's 5 m box: leg B pivots under the
+	# shredder's CENTRE, because the uitvoerband now runs under its rotors.
+	# no_discharge_conveyor: the shredder model's own conveyor (running out the
+	# far side with a 35° climb) goes on line 1; the same shredder elsewhere keeps it.
+	{"id": "shredder_1", "gap": -2.5, "no_discharge_conveyor": true},
+	# ── 2026-09-25 OPERATOR RULING (top-down view): the uitvoerband ran ACROSS
+	# the rotors' direction (it started 0.5 m past the shredder's far edge, and
+	# the shredder's own conveyor ran out the other way), while the rotors throw
+	# the material along their length. Now ONE conveyor, uitvoerband_1: "starting
+	# with the center of the conveyor aligned with the center of the two rotors,
+	# 10 centimeters to the right of the rotors", under the rotors, "extends from
+	# the end of the rotors to the left further, 2.5 meters … it runs from
+	# underneath the shredder horizontally, then after it exits the shredder at
+	# a distance of 30 centimeters it goes in a slight incline upwards, about 20
+	# degrees". Geometry: PlaceableCatalog.uitvoerband_1_spec_m() — 4.12 m flat
+	# at 0.956 m, 1.87 m at 20° + a 5 cm tray, 6.04 m in plan, lip at 1.64 m.
+	#   turn_advance −4.84 = its tail 1.82 m before the pivot (rotor half-length
+	#                        1.72 + 0.10), less half its 6.04 m box: the macro
+	#                        centres a box, the belt is built from its origin.
+	#   gap 3.454          = the next pivot (the receiving belt's centre line) at
+	#                        the landing point: lip 4.22 m past the pivot + the
+	#                        mean throw 0.434 m, less the cursor 1.20 m. The throw
+	#                        is the operator's own method (belt speed, drop,
+	#                        spread): tools/audit/line1_uitvoerband_throw.py,
+	#                        1.0 m/s, 0.887 m drop (lip 1.637 → receiving deck
+	#                        0.750), leaving at 20°: 0.434 m, ±2σ 0.252–0.627 m
+	#                        (σ = 20 % of the speed, ASSUMED), all on the 0.94 m
+	#                        receiving belt.
+	# (Until today this entry was a transport_belt lifted y 0.281 so its flat deck
+	# sat 0.25 m under the floor-standing magnet; the magnet now hangs over the
+	# climb instead, see below.)
+	{"id": "uitvoerband_1", "turn_deg": 90.0, "turn_advance": -4.84, "gap": 3.454},  # leg B
 	# #overband 2026-09-16 — operator correction (live chat): the overband magnet
 	# is a cross-belt separator SUSPENDED OVER the uitvoerband, centred along its
 	# length — not a station in the running sequence. The model was always built
@@ -747,9 +778,45 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	# (rulings §20) shifted every index after it by one; this anchor is an
 	# ENTRY INDEX and had to follow (test_line1_overband_mount caught it:
 	# 2.73 m off its belt). No operator line_1.json macro existed to re-save.
-	{"id": "overband_magnet", "mount_over": 4},
-	{"id": "transport_belt", "turn_deg": 90.0,
-	 "main_advance": 1.0},                             # short belt — leg C (north)
+	# ── 2026-09-25 OPERATOR RULING, in two steps. First "over the climb, level",
+	# 25 cm above the deck at its closest point. Then, from the render: it is a
+	# CROSS-belt magnet — its belt runs across the uitvoerband and its underside
+	# carries the scrap "towards the bottom of the image, towards the skip and
+	# container below it" — and it sits at "about 75% the length of the
+	# outgoing belt, starting at 0% on the right": that line is its centre line.
+	# overband_magnet_l1 is the same magnet turned so its belt runs across, the
+	# scrap leaving off its end into the skip south of the uitvoerband
+	# (ContainerGuide slot). His 75 % line was then corrected, from the next
+	# render: "take the coordinates of the top right of [the receiving belt],
+	# take the coordinates of the top left of the shredder, find out
+	# horizontally the center and use that as the center line for the magnet …
+	# and then also move the magnet towards the top of the image about 20
+	# centimeters". Numbers:
+	#   z 5.032 = that centre, 3.212 m past the shredder's centre: the midpoint
+	#             of the receiving belt's near edge (4.654 − 0.47 = 4.184) and
+	#             the shredder's hopper-collar face (2.24). mount_over anchors on
+	#             the uitvoerband's origin, 1.82 m before the pivot.
+	#   x 0.2   = 20 cm toward the top of the image (this leg's right).
+	#   y 0.48  = its lowest part over the belt (the cooling fins, 1.242 m in its
+	#             own frame) 0.25 m above the deck at the highest point under it
+	#             (1.4685 m, 3.708 m past the shredder's centre).
+	{"id": "overband_magnet_l1", "mount_over": 4, "z": 5.032, "x": 0.2, "y": 0.48,
+	 "extend_legs": true},
+	# The receiving belt (operator 2026-09-25): centred on the landing point
+	# (the pivot above) and, across, its tail "starting 30 centimeters before"
+	# the uitvoerband's edge as a safe zone: turn_advance −0.8 = half its 1.0 m
+	# width + 0.3. Then: "line up … the conveyor to which the output conveyor
+	# discharges, with the conveyor after it, so like a seamless transition …
+	# and move the rest of the line that follows accordingly". It used to end
+	# 4.1 m short of drum_feed_belt's tail (main_advance 1.0, plus a feed belt
+	# is built from its origin at its box centre). Now:
+	#   gap −2.9 = the drum_feed_belt's origin (its tail) lands on this belt's
+	#              discharge end: 2.0 + gap + 2.9 (its half box) = 2.0
+	#   y 0.075  = deck 0.750, 5 cm above the drum_feed_belt's 0.70 m inlet, so
+	#              the transfer drops instead of climbing 2.5 cm
+	# Every entry after this one moves with it: all relative.
+	{"id": "transport_belt", "turn_deg": 90.0, "turn_advance": -0.8,
+	 "gap": -2.9, "y": 0.075, "extend_legs": true},    # short belt — leg C (north)
 	# drum_feed_belt gap 2.14 (né westa_band_1, #fold 2026-09-16) — DERIVED:
 	# the belt's lip sits run+flat = 5.12 m past its origin; the chute's IN
 	# port is 0.828 m upstream of the chute centre, so centre-to-centre =
@@ -825,9 +892,17 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	# rather than leaving it hovering. Everything that feeds it re-derives from
 	# the same constant (sga_feed_chute above, drum_feed_belt's incline_run in
 	# PlaceableCatalog) so the gravity chain still lands where it has to.
+	# gap −0.6 (2026-09-25): the scheidingsgoot sits flush against the drum
+	# shell's end, under its discharge hood (operator: "the very next component
+	# there needs to sit flush with the end of the drum"). The shell ends at
+	# 0.85 · 8.0 / 2 = 3.4 m past the drum's centre, its box at 4.0: −0.6.
 	{"id": "vw_trommel", "turn_deg": -90.0, "turn_advance": 0.49,
-	 "y": PlaceableCatalog.VW_TROMMEL_LIFT_M, "extend_legs": true},  # leg D — drum axis
-	{"id": "scheidingsgoot"},                          # Y-splitgoot, drum → friction L/R
+	 "y": PlaceableCatalog.VW_TROMMEL_LIFT_M, "extend_legs": true,
+	 "gap": -0.6},                                     # leg D — drum axis
+	# Rebuilt 2026-09-25 (PlaceableCatalog.scheidingsgoot_layout_local): inlet
+	# under the drum's lip, a stem, then two legs sideways into the hoppers of
+	# the friction separators beside it. gap 0: the cursor below is its end.
+	{"id": "scheidingsgoot", "gap": 0.0},              # Y-splitgoot, drum → friction L/R
 	# ── #streams 2026-09-17 — OPERATOR SPEC (live chat), verbatim: "from the
 	# first scheidingsgoot: one half of the material goes to the left, other half
 	# goes to the right. both streams then continue — BY THEMSELVES,
@@ -837,7 +912,7 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	# So this is ONE split into two trains that never touch until the mill. The
 	# glijgoot and the two pipes are not machines: LineFlow fits them per EDGE
 	# (friction_sep source → closed-top slide chute = the glijgoot; mech_dryer →
-	# blower → elbow duct; blower → cyclone → Ø140 round duct — LineFlow.gd
+	# blower → curved duct; blower → cyclone → Ø140 curved duct — LineFlow.gd
 	# _make_connector rules 2/2b/3), so they appear automatically once the edges
 	# below are right, and they appeared WRONG before because the edges were.
 	#
@@ -851,12 +926,38 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	# non-splitter source with two out-edges (1/n each, LineFlow.gd ~2727) — the
 	# scheidingsgoot gets exactly two out-edges now, so "one half / other half"
 	# falls out of the topology rather than needing a coefficient.
-	{"id": "friction_sep", "x": -2.5, "z": 1.0, "stream": "L"},
-	{"id": "friction_sep", "x":  2.5, "z": 1.0, "stream": "R", "main_advance": 5.0},
-	{"id": "mech_dryer",  "x": -2.5, "z": 1.0, "stream": "L"},
-	{"id": "mech_dryer",  "x":  2.5, "z": 1.0, "stream": "R", "main_advance": 5.0},
-	{"id": "blower",      "x": -2.0, "z": 0.5, "stream": "L"},
-	{"id": "blower",      "x":  2.0, "z": 0.5, "stream": "R", "main_advance": 2.5},
+	# ── 2026-09-25 OPERATOR RULINGS, from the plan and side views: "the friction
+	# separators have to sit flush against the right and left side … to the
+	# component after the drum", "the friction separators and mechanical dryers
+	# have to sit flush against each other" (confirmed: "End to end, per side"),
+	# and the blowers stand "slightly off center outwards from the mechanical
+	# dryer … the motor pointing outwards", "so that there is 30cm space between
+	# the output-chute of the dryer and the blower encasing". All four pairs are
+	# placed from the SAME cursor (the goot's end, 1.8 m past the drum shell's
+	# end); every number is derived from the models:
+	#   x ±1.596  separators: the goot's half-width 0.8 + a separator's plain
+	#             side 0.796 (friction_sep_side_extent). The right-hand one is
+	#             MIRRORED so its motor stands outside, not inside the goot.
+	#   z 0.673   separators start at the drum's discharge-hood end (0.495 past
+	#             the shell's end), reach 1.978 upstream of their centre
+	#             (friction_sep_upstream_extent): 0.495 + 1.978 − 1.8.
+	#   z 5.111   dryers start where their separator ends: 0.673 + 1.978 + 2.46
+	#             (a dryer's bearing boss, 2.46 past its centre), same x.
+	#   z 7.728   blowers just past the dryer's skid (2.1375) by their scroll's
+	#             radius 0.48: 5.111 + 2.1375 + 0.48.
+	#   x ±2.468  blowers: the dryer's line 1.596 + its air-outlet stub's
+	#             radius 0.222 (the "output chute" the blower stands beside)
+	#             + 0.30 + half the blower's 0.70 base plate on its eye side.
+	#   yaw 180   the LEFT blower: _m_blower's motor is on its local −X, the
+	#             flow's right, so the left one's motor pointed inward.
+	#   main_advance 9.728 keeps the old 2.0 m from the blowers to the cursor
+	#             that places the mill's cyclones.
+	{"id": "friction_sep", "x": -1.596, "z": 0.673, "stream": "L"},
+	{"id": "friction_sep", "x":  1.596, "z": 0.673, "stream": "R", "mirror": true},
+	{"id": "mech_dryer",  "x": -1.596, "z": 5.111, "stream": "L"},
+	{"id": "mech_dryer",  "x":  1.596, "z": 5.111, "stream": "R"},
+	{"id": "blower",      "x": -2.468, "z": 7.728, "stream": "L", "yaw_deg": 180.0},
+	{"id": "blower",      "x":  2.468, "z": 7.728, "stream": "R", "main_advance": 9.728},
 	# ── Operator 2026-08-28 (line-1 drawing walk): "then to the two cyclones
 	# ON the mill" — this pair rides the mill's top (mill 3.6×4.8×4.6; the
 	# next main). z 2.8 puts them over its centre, x ±0.9 keeps both inside
@@ -865,8 +966,9 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	# #streams — these two close the L/R trains: each is fed by its OWN blower and
 	# each discharges by gravity into the mill below it (the next main entry),
 	# which is the operator's "the 2 cyclones feed the top of the mill".
-	{"id": "cyclone",     "x": -0.9, "z": 2.8, "y": 4.6, "stream": "L"},
-	{"id": "cyclone",     "x":  0.9, "z": 2.8, "y": 4.6, "stream": "R", "main_advance": 3.0},
+	# 2026-09-25: x + 4.905, with the mill (see the mill entry below).
+	{"id": "cyclone",     "x": 4.005, "z": 2.8, "y": 4.6, "stream": "L"},
+	{"id": "cyclone",     "x": 5.805, "z": 2.8, "y": 4.6, "stream": "R", "main_advance": 3.0},
 	# ── DOC-WALK GAP FIX 2026-08-28 (gap 1.2) — lijn_1_flow.md edges 12-19 ──
 	# The diagram's post-mill chain is
 	#   maalmolen_1 → ventilator_10a/b → intrekschroef_11a/b → flotatie_tank
@@ -886,20 +988,47 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	# after reaching the bottom of the mill: blower, pipe, cyclone,
 	# transportation screw — and then the material converges again in the
 	# flotation tank." One machine, four edges: two in, two out.
-	{"id": "mill"},
-	{"id": "blower",      "x": -2.0, "z": 0.5, "stream": "L"},
-	{"id": "blower",      "x":  2.0, "z": 0.5, "stream": "R", "main_advance": 2.5},
+	# ── 2026-09-25 OPERATOR RULING (plan view): the mill moves "up so that the
+	# center line of the mill lines up with the flotation tank center line", the
+	# tank's new line (see the tank entry below): 4.905 m to this leg's right.
+	# The two cyclones on it and its two blowers move with it: x + 4.905.
+	# `shift_x` keeps the mill a MAIN entry (an `x` would make it a branch), so
+	# it still merges the L/R trains and splits them again.
+	{"id": "mill", "shift_x": 4.905},
+	{"id": "blower",      "x": 2.905, "z": 0.5, "stream": "L"},
+	{"id": "blower",      "x": 6.905, "z": 0.5, "stream": "R", "main_advance": 2.5},
 	# ── Operator 2026-08-28: this pair sits "at the top of the flotation
 	# tank" (tank 4.5×5.0×9.0), the intrekschroeven running from the cyclone
-	# discharges INTO the tank. y 5.0 = rim height; extend_legs → their
-	# supports run to the floor beside the tank.
-	{"id": "cyclone",     "x": -2.0, "z": 0.5, "y": 5.0, "extend_legs": true,
+	# discharges INTO the tank.
+	# ── 2026-09-25 OPERATOR RULING (line 1 only): each screw runs from the
+	# BOTTOM of its cyclone about 30° DOWN into the tank, 1.5-2 m long, crosses
+	# the tank's outer wall, goes in ~0.5 m and discharges into the water; its
+	# top end is above the water. Until today the pair were 4.6 m flat
+	# transport_screws ending 2-6 m outside the tank, 5 m ahead of the fold.
+	# Now: two `intrekschroef` (1.75 m, 30° down) hanging from the cyclones,
+	# which stand just outside the tank's INLET end wall, as the archived
+	# washing-flow drawing shows (both screws in the tank's end wall).
+	# DERIVED placement (as first built; the tank moved later the same day, see
+	# the next paragraph. The tank is built by the next entry: 180° turn at the
+	# cursor, leg_offset −7.45, so its centre line is +7.45 m right of THIS leg
+	# and its inlet-end rim 0.18 m behind the cursor, hz·0.96 of a 9 m box):
+	#   x 6.45 / 8.45 = 7.45 ∓ 1.0, both within the end rim (half-width 2.07)
+	#   screw  z 0.08 = its spout (local −0.76) lands 0.18 + 0.5 m behind the cursor
+	#   cyclone z 0.84 = over the screw's inlet boot (local +0.76)
+	#   screw  y 3.93 = spout at 4.05 m; water surface 4.0, rim 4.1 (_m_flotation);
+	#                   the tube clears the rim cap where it crosses it
+	#   cyclone y 5.1  = its spout (0.24 above its base) over the boot top, 5.31 m
+	# No main_advance: the tank's turn pivots right here, beside the mill.
+	# 2026-09-25, the tank moved (below): the same rule, re-derived. The tank's
+	# inlet end is now 13.034 m BACK up this leg (its turn_advance), and its
+	# centre line 4.905 m to the right, so x 3.905 / 5.905 and z −12.954 /
+	# −12.194 (the 0.08 / 0.84 above, less 13.034).
+	{"id": "cyclone",     "x": 3.905, "z": -12.194, "y": 5.1, "extend_legs": true,
 	 "stream": "L"},
-	{"id": "cyclone",     "x":  2.0, "z": 0.5, "y": 5.0, "extend_legs": true,
-	 "stream": "R", "main_advance": 3.0},
-	{"id": "transport_screw", "x": -2.0, "z": 0.5, "stream": "L"},  # intrekschroef 11a
-	{"id": "transport_screw", "x":  2.0, "z": 0.5, "stream": "R",   # intrekschroef 11b
-	 "main_advance": 5.0},
+	{"id": "cyclone",     "x": 5.905, "z": -12.194, "y": 5.1, "extend_legs": true,
+	 "stream": "R"},
+	{"id": "intrekschroef", "x": 3.905, "z": -12.954, "y": 3.93, "stream": "L"},  # 11a
+	{"id": "intrekschroef", "x": 5.905, "z": -12.954, "y": 3.93, "stream": "R"},  # 11b
 	# ── #serpentine 2026-09-17 — OPERATOR CORRECTION (live chat), against the
 	# ARCHIVED drawing docs/plant/photos/line1_washing_flow_sketch_2026-08-28.png:
 	# "the direction of travel of the material through the drum is 180 deg
@@ -929,8 +1058,31 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	# + walkway               1.50 = clear space for the bordes the sketch draws
 	# = 7.45 m, negative because after the 180° turn the new leg's right vector
 	# points back toward the street and the tank belongs on the far side of it.
-	{"id": "flotation_tank", "turn_deg": 180.0, "leg_offset": -7.45},
-	{"id": "dewater_screw"},
+	# gap 0.6 (2026-09-25): the next turn pivots 0.6 m past the tank's
+	# discharge end, half the dewatering screw's 1.2 m width, so the screw lies
+	# along that end face without overlapping the tank (operator, from the
+	# top-down view: "the flotation tank and the dewatering screw should not be
+	# overlapping").
+	# ── 2026-09-25 OPERATOR RULINGS (plan view): "the walkway from the washing
+	# drum is actually shared with the one from the flotation tank. So first,
+	# remove the stairs and walkway from the flotation tank. Second, move the
+	# flotation tank so that where the walkway used to be lines up perfectly
+	# with the walkway from the washing drum." And: "leftmost point of flotation
+	# tank to rightmost point of mill: 6 meters." Derived:
+	#   no_catwalk          its own catwalk, posts and stair come off
+	#   leg_offset −4.905   the catwalk's centre line (2.83 m out from the
+	#                       tank's) on the drum walkway's (2.075 m out from the
+	#                       drum's axis, on this leg's right): 2.075 + 2.83. The
+	#                       tank-facing edges lined up instead would stand the
+	#                       tank's legs 0.07 m into the right-hand dryer's skid.
+	#   turn_advance 13.034 the tank's westmost point (its box face, 4.5 from its
+	#                       centre: measured, the rim is at 4.32) 6.0 m past the
+	#                       mill's east end (1.734 from the mill's centre):
+	#                       30.018 − (24.718 − 1.734 − 6.0), with the cursor here
+	#                       at 30.018 and the mill's centre at 24.718 on this leg.
+	# The 180° heading, the drum ↔ tank anti-parallel rule, stays.
+	{"id": "flotation_tank", "turn_deg": 180.0, "leg_offset": -4.905, "turn_advance": 13.034,
+	 "gap": 0.6, "no_catwalk": true},
 	# #fold — leg F (LEFT +90): the long tail heads east again. CONFIRMED by the
 	# operator: 2026-08-28 "leg F is correct", re-confirmed 2026-09-06. East
 	# matches the floor plan's east-west extruder-1 block in Hal 2.
@@ -939,7 +1091,34 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	# "ASSUMED" on 2026-09-06 while the leg map at the top of this SEQ already
 	# read "CONFIRMED", i.e. the file contradicted itself and pointed each
 	# reader at the other half. Settled now; do not re-litigate.
-	{"id": "friction_sep", "turn_deg": 90.0},
+	# ── 2026-09-25 OPERATOR RULING: the turn belongs on the DEWATERING SCREW.
+	# "The dewatering screw runs perpendicular to the tank and turns left
+	# relative to the tank's direction of travel", taking the material out of
+	# the tank's discharge end, and it sticks out past the tank on its output
+	# side. The turn used to sit on the friction separator, one machine later,
+	# with the screw running straight on out of the tank's end.
+	# Same +90, so every leg after this keeps its heading.
+	# Placed from the top-down view the same day: "line up the left bottom corner
+	# of the dewatering screw with the right bottom corner of the flotation tank,
+	# and make the dewatering screw so that it is 1.5 meters sticking out
+	# compared to the right top of the flotation tank". So it stands BESIDE the
+	# tank's discharge end (gap 0.6 above), its low end flush with the tank's
+	# right side and its high end 1.5 m past the left side: 4.5 + 1.5 = 6.0 m,
+	# a line-1 variant of the screw (dewater_screw_l1). His earlier figures were
+	# "about 1.5 m" and "one meter"; the view settled it at 1.5.
+	#   turn_advance −2.25 = the screw starts at the tank's right side
+	#                        (half-width 2.25) and ends 3.75 m left of its
+	#                        centre line: 1.5 m past the left side
+	#   gap 0.0            = its discharge end over the separator's inlet
+	{"id": "dewater_screw_l1", "turn_deg": 90.0, "turn_advance": -2.25, "gap": 0.0},
+	# ── 2026-09-25 OPERATOR RULING: ONE L-R friction separator lying ACROSS the
+	# dewatering screw's direction. "Material enters in the middle on the back
+	# side; the screw rotating rapidly in there sends the material that reaches
+	# the right half to the right and the left half to the left — one separator
+	# with two outputs, like a splitter; on the front side, far left and far
+	# right, the material comes out and goes into the Kufferath." Its own model
+	# (friction_sep_lr: long axis across the line, spout at each far end).
+	{"id": "friction_sep_lr"},
 	# ── #streams 2026-09-24 — OPERATOR RULING (round 7): this ONE friction
 	# separator feeds BOTH Kufferath sieves ("One separator feeds both sieves
 	# (split)"). Until today the pairs below carried only x-offsets, and the
@@ -949,14 +1128,24 @@ const LINE_1_SEQ : Array[Dictionary] = [
 	# the separator the split (first member of each train) and chain each side
 	# head-to-tail to its blower; the trains merge at the next main entry, the
 	# cyclone, exactly like the split after the scheidingsgoot.
-	{"id": "kufferath_sieve", "x": -2.5, "z": 1.0, "stream": "L"},
-	{"id": "kufferath_sieve", "x":  2.5, "z": 1.0, "stream": "R", "main_advance": 4.5},
-	{"id": "mas_bak",     "x": -2.5, "z": 1.0, "stream": "L"},
-	{"id": "mas_bak",     "x":  2.5, "z": 1.0, "stream": "R", "main_advance": 4.0},
-	{"id": "mas_droger",  "x": -2.5, "z": 1.0, "stream": "L"},
-	{"id": "mas_droger",  "x":  2.5, "z": 1.0, "stream": "R", "main_advance": 5.0},
-	{"id": "blower",      "x": -2.0, "z": 0.5, "stream": "L"},
-	{"id": "blower",      "x":  2.0, "z": 0.5, "stream": "R", "main_advance": 2.5},
+	# 2026-09-25: re-confirmed, two sieves, one per outlet, each with its own
+	# MAS bak. Then, from the top-down view: "about 1.5 meters of space between
+	# them … from the top right of the left one to the top left of the right one
+	# should be 1.5 m horizontally, and the center of the left Kufferath has to
+	# line up with the center of the left MAS bak, and the same for the right".
+	#   x ±1.65 = 0.75 (half the 1.5 m gap) + 0.9 (half a 1.8 m sieve); the MAS
+	#             baks share it. Both pairs were at ±2.5 until today.
+	# The separator's spouts sit at ±1.70, 0.05 m outside the sieve centres.
+	{"id": "kufferath_sieve", "x": -1.65, "z": 1.0, "stream": "L"},
+	{"id": "kufferath_sieve", "x":  1.65, "z": 1.0, "stream": "R", "main_advance": 4.5},
+	{"id": "mas_bak",     "x": -1.65, "z": 1.0, "stream": "L"},
+	{"id": "mas_bak",     "x":  1.65, "z": 1.0, "stream": "R", "main_advance": 4.0},
+	# Operator 2026-09-25 (top-down view): "also centre the dryers" — each MAS
+	# droger and its blower on the same line as its Kufferath and MAS bak.
+	{"id": "mas_droger",  "x": -1.65, "z": 1.0, "stream": "L"},
+	{"id": "mas_droger",  "x":  1.65, "z": 1.0, "stream": "R", "main_advance": 5.0},
+	{"id": "blower",      "x": -1.65, "z": 0.5, "stream": "L"},
+	{"id": "blower",      "x":  1.65, "z": 0.5, "stream": "R", "main_advance": 2.5},
 	# ── #serpentine 2026-09-17 — leg G, the turn back to east. ────────────────
 	# Consequence of the flotation-tank correction above, not a free choice.
 	# Rotating leg E by 180° rotates every leg behind it, and leg F's unchanged
@@ -2676,15 +2865,24 @@ func _build_full_line(line_id: String, start: Vector3, rot_y: float, preview: bo
 			# y=0.12, mirroring NpcTaskBench.PLATFORM_Y). Defaults to 0 so every
 			# existing macro entry is unchanged.
 			var entry_y : float = float(entry.get("y", 0.0))
+			# {"shift_x": m} slides a MAIN entry sideways (+ = right) without making
+			# it a branch: `x` would, and a branch cannot be a stream's merge or
+			# split. Built for line 1's mill (2026-09-25), which moved onto the
+			# flotation tank's centre line and still merges and splits the trains.
+			var shift_x : float = 0.0 if off_cursor else float(entry.get("shift_x", 0.0))
 			var target_pos : Vector3 = Vector3(leg_start.x, leg_start.y + tb_y_offset, leg_start.z) \
-				+ fwd * (place_z + d_dz) + rgt * (x + d_dx) + Vector3.UP * (d_dy + entry_y)
+				+ fwd * (place_z + d_dz) + rgt * (x + shift_x + d_dx) + Vector3.UP * (d_dy + entry_y)
 			if node.is_inside_tree():
 				node.global_position = target_pos
 			else:
 				node.position = target_pos
-			node.rotation.y = leg_rot + PI + d_drot
+			# {"yaw_deg": a} turns this one machine about its own vertical axis
+			# (2026-09-25: one blower of a pair turned 180° so both motors point
+			# outward). save_macro_overrides subtracts it the same way.
+			node.rotation.y = leg_rot + PI + d_drot + deg_to_rad(float(entry.get("yaw_deg", 0.0)))
 			if d_scale != Vector3.ONE:
 				node.scale = d_scale
+			_apply_macro_entry_trims(node, entry)
 			built += 1
 			# #linebuilder-geometry — preview parity for lifted entries. The real
 			# build stretches an elevated machine's legs down to the floor via
@@ -3202,6 +3400,31 @@ var last_macro_rederive : Array = []
 ## the load dropped) is not refused. Its holes are handled the way a live delete
 ## leaves them (_stamp_macro_flow_edges): no edge from a hole, nothing rewired
 ## around one, and a machine whose declared target is gone stays a dead end.
+## Per-entry changes to a machine's model that a SEQ entry asks for. They are
+## applied when the line is built AND when a saved line is reloaded
+## (_rederive_macro_flow_edges), because a saved machine is rebuilt from its
+## placeable id alone and would otherwise come back untrimmed.
+##   {"no_discharge_conveyor": true} — drop shredder_1's built-in conveyor
+##   (line 1, operator 2026-09-25: its uitvoerband is "a single conveyor").
+##   {"no_catwalk": true} — drop the flotation tank's own catwalk and stair
+##   (line 1, operator 2026-09-25: it shares the drum's walkway).
+##   {"mirror": true} — mirror the machine's MODEL left-right, so a side-
+##   specific part (a motor) stands on the other side. Visual only: the body's
+##   collider and the flow ports are symmetric about the centre line. Used for
+##   line 1's right-hand friction separator (2026-09-25), whose motor otherwise
+##   stood inside the scheidingsgoot beside it.
+func _apply_macro_entry_trims(node: Node3D, entry: Dictionary) -> void:
+	if node == null:
+		return
+	if bool(entry.get("no_discharge_conveyor", false)):
+		PlaceableCatalog.remove_shredder_discharge_conveyor(node)
+	if bool(entry.get("no_catwalk", false)):
+		PlaceableCatalog.remove_tank_catwalk(node)
+	if bool(entry.get("mirror", false)):
+		var model := node.get_node_or_null("Model") as Node3D
+		if model != null:
+			model.scale.x = -absf(model.scale.x)
+
 func _rederive_macro_flow_edges() -> void:
 	last_macro_rederive.clear()
 	var groups : Dictionary = {}   # "macro_id|instance" → {mid, inst, nodes: Array}
@@ -3247,6 +3470,8 @@ func _rederive_macro_flow_edges() -> void:
 			for n3 in members:
 				if (n3 as Node3D).has_meta("lf_explicit_outs"):
 					(n3 as Node3D).remove_meta("lf_explicit_outs")
+			for idx in by_idx:
+				_apply_macro_entry_trims(by_idx[idx] as Node3D, seq[int(idx)] as Dictionary)
 			rep["edges"] = _stamp_macro_flow_edges(mid, seq, by_idx)
 			rep["status"] = "authored" if GRAPH_TOPOLOGY_MACROS.has(mid) else "stamped"
 			print("[BuildMode] %s: %d of %d SEQ machines loaded, %d explicit flow edges re-derived%s"
@@ -3373,8 +3598,10 @@ func _macro_nominal_poses(p_seed: Array[Dictionary]) -> Array:
 		# ON TOP of entry_y: every save/rebuild cycle would double the lift
 		# (lump carts +0.12, the fold's hoekgoot +3.48 → 6.96 m). delta_sane
 		# never catches it (threshold is metres of drag, not stacking).
+		if not off_cursor:
+			x += float(entry.get("shift_x", 0.0))   # mirrors _build_full_line
 		poses.append({"x": x, "y": tb_y_offset + float(entry.get("y", 0.0)),
-			"z": place_z, "leg": leg})
+			"z": place_z, "leg": leg, "yaw": deg_to_rad(float(entry.get("yaw_deg", 0.0)))})
 		if entry.has("main_advance"):
 			main_z += float(entry["main_advance"])
 	return poses
@@ -3452,7 +3679,8 @@ func save_macro_overrides(macro_id: String) -> int:
 		var dx : float = x_local - float(nom.get("x", 0.0))
 		var dy : float = y_local - float(nom.get("y", 0.0))
 		var dz : float = z_local - float(nom.get("z", 0.0))
-		var drot : float = node.rotation.y - (n_rot + PI)
+		# {"yaw_deg"} is the SEQ's own turn of that machine, not an operator edit.
+		var drot : float = node.rotation.y - (n_rot + PI) - float(nom.get("yaw", 0.0))
 		# Wrap rotation into (-PI, PI] so saved deltas are minimal.
 		drot = wrapf(drot, -PI, PI)
 		var sc : Vector3 = node.scale

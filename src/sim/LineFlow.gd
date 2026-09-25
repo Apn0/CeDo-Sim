@@ -1905,7 +1905,8 @@ func _belt_speed_of(nd: Dictionary) -> float:
 func _apply_dewater_open() -> void:
 	for i in _nodes.size():
 		var nd : Dictionary = _nodes[i]
-		if String(nd.get("id", "")) != "dewater_screw":
+		var dw_id : String = String(nd.get("id", ""))
+		if dw_id != "dewater_screw" and dw_id != "dewater_screw_l1":
 			continue
 		var open := false
 		for e in _edges:
@@ -4411,6 +4412,12 @@ func _spawn_connectors() -> void:
 func _make_connector(a: Dictionary, b: Dictionary) -> void:
 	var a_world: Vector3 = a["wout"]
 	var b_world: Vector3 = b["win"]
+	# Line 1's L-R frictiescheider has a spout at EACH far end (MachineFlow
+	# "out" / "out2"); each Kufferath train's chute starts at the nearer one.
+	if String(a.get("id", "")) == "friction_sep_lr":
+		var a2 : Vector3 = a.get("wout2", Vector3.ZERO)
+		if a2 != Vector3.ZERO and a2.distance_to(b_world) < a_world.distance_to(b_world):
+			a_world = a2
 	var dir := b_world - a_world
 	var length := dir.length()
 	if length < 0.05:
@@ -4443,12 +4450,19 @@ func _make_connector(a: Dictionary, b: Dictionary) -> void:
 	if _is_friction_sep_source(src_id):
 		_spawn_chute(a_world, b_world, 0.34, 0.14, true)
 		return
-	# Rule 2b — DRYER → BLOWER gets an L-shaped round duct: a forward segment
-	# from the dryer's front-bottom discharge, then a 90° lateral turn into
-	# the blower inlet. Two parallel dryers each get their own pipe from
-	# opposite sides — the V-shape avoids intersection.
+	# Rule 2b — DRYER → BLOWER: a round duct from the dryer's air-outlet stub
+	# into the blower's inlet eye. It was an L of two straight pipes meeting at
+	# a sharp 90° corner; operator 2026-09-25: every pneumatic pipe is round and
+	# smoothly curved ("Curve those too").
 	if src_id == "mech_dryer" and tgt_id == "blower":
-		_spawn_elbow_duct(a_world, b_world, 0.16)
+		var dn := a.get("node") as Node3D
+		if dn != null and is_instance_valid(dn):
+			var d_out : Vector3 = dn.to_global(
+				PlaceableCatalog.mech_dryer_air_outlet_local(_catalog_size(src_id)))
+			var d_end : Array = _duct_target(b, b_world, d_out)
+			_spawn_curved_duct(d_out, dn.global_transform.basis.z.normalized(), d_end[0], d_end[1], 0.16)
+		else:
+			_spawn_elbow_duct(a_world, b_world, 0.16)
 		return
 	# Rule 3 — BLOWER ALWAYS PNEUMATICALLY CONVEYS TO A CYCLONE through a round
 	# steel duct. Per operator: blower output → cyclone is deterministic in this
@@ -4458,14 +4472,26 @@ func _make_connector(a: Dictionary, b: Dictionary) -> void:
 		# Radius 0.07 → Ø 140 mm — operator 2026-08-28 on the line-1 drawing's
 		# pink pipelines: "about one twenty millimeters or so diameter …
 		# maybe it's like one fifty". Was 0.18 (Ø 360, twice the real bore).
-		_spawn_round_duct(a_world, b_world, 0.07)
+		# 2026-09-25 (operator): "round smoothly curved pipelines for the
+		# connections between the blowers and the cyclones, not only here but
+		# everywhere". Up out of the blower's outlet, bending over into the
+		# target's inlet. It was one straight cylinder, port to port.
+		var bn := a.get("node") as Node3D
+		if bn != null and is_instance_valid(bn):
+			var b_out : Vector3 = bn.to_global(PlaceableCatalog.blower_outlet_top_local(_catalog_size(src_id)))
+			var b_end : Array = _duct_target(b, b_world, b_out)
+			_spawn_j_duct(b_out, b_end[0], b_end[1], 0.07)
+		else:
+			_spawn_round_duct(a_world, b_world, 0.07)
 		return
 	# #107 — CYCLONE → BLOWER is the suction-leg of a pneumatic loop (blower
 	# pulls air + flake OUT the bottom of the cyclone), same round-pipe geometry
 	# as the discharge leg above.
 	if src_id == "cyclone" and tgt_id == "blower":
-		# Ø 140 mm, same operator sizing as the discharge leg above.
-		_spawn_round_duct(a_world, b_world, 0.07)
+		# Ø 140 mm, same operator sizing as the discharge leg above; curved like
+		# it (2026-09-25): down out of the spout, into the blower's inlet eye.
+		var c_end : Array = _duct_target(b, b_world, a_world)
+		_spawn_curved_duct(a_world, Vector3.DOWN, c_end[0], c_end[1], 0.07)
 		return
 	# #107 — CYCLONE → SILO (or extruder_silo) is a vertical gravity drop: a
 	# tapered funnel from the cyclone's discharge spout into the silo's top
@@ -4479,8 +4505,15 @@ func _make_connector(a: Dictionary, b: Dictionary) -> void:
 	# screw chute but a wider trough so it visually reads as a real slide
 	# instead of a thin gutter. One spawn per sibling fan-out (the macro
 	# builder fires this rule once per scheidingsgoot→friction_sep edge).
+	# 2026-09-25: the rebuilt goot's own legs run into the separators' hoppers
+	# (operator: "each leg slopes down sideways into the inlet hopper of the
+	# friction separator beside it"), so this edge draws nothing any more.
 	if src_id == "scheidingsgoot" and tgt_id == "friction_sep":
-		_spawn_chute(a_world, b_world, 0.55, 0.12, false)
+		return
+	# The rebuilt goot's inlet sits under the drum's discharge lip, so the flakes
+	# fall straight in. The drum's out port is at its axis, and the gravity-gutter
+	# fallback below drew a gutter from there down into the goot.
+	if src_id == "vw_trommel" and tgt_id == "scheidingsgoot":
 		return
 	# Otherwise — fall through to the legacy gravity-gutter behaviour.
 	_spawn_gravity_gutter(a_world, b_world)
@@ -4489,7 +4522,8 @@ func _make_connector(a: Dictionary, b: Dictionary) -> void:
 ## "screw → anything = chute" rule applies to. Extruder screws live INSIDE the
 ## extruder unit and don't discharge to the outside, so they're excluded.
 static func _is_screw_source(id: String) -> bool:
-	return id == "transport_screw" or id == "dewater_screw" or id == "doseerschroef"
+	return id == "transport_screw" or id == "dewater_screw" or id == "doseerschroef" \
+			or id == "intrekschroef" or id == "dewater_screw_l1"
 
 ## #106 — belt-family check used to suppress the gravity-gutter fallback when
 ## one conveyor feeds directly into the next (no real gap to bridge). Covers
@@ -4500,7 +4534,7 @@ static func _is_belt_id(id: String) -> bool:
 	if id == "transport_belt" or id == "variable_belt" \
 			or id == "inclined_belt_8m" or id == "metal_belt" \
 			or id == "compactorband" or id == "compactor_belt" \
-			or id == "switch_belt" or id == "drum_feed_belt":
+			or id == "switch_belt" or id == "drum_feed_belt" or id == "uitvoerband_1":
 		return true
 	return id.begins_with("transportband_") or id.begins_with("opzetband") \
 			or id.begins_with("westa_band")
@@ -4509,7 +4543,8 @@ static func _is_belt_id(id: String) -> bool:
 ## frictiescheider and the wet-process frictiewasser kick up enough wind+water
 ## spray to need a closed-top chute on the discharge.
 static func _is_friction_sep_source(id: String) -> bool:
-	return id == "friction_sep" or id == "friction_washer" or id == "intensive_washer"
+	return id == "friction_sep" or id == "friction_washer" or id == "intensive_washer" \
+			or id == "friction_sep_lr"
 
 ## Spawn a chute from a_world (source out) to b_world (target in). With
 ## `closed_top = false` it's an open-top trough (floor + 2 side rails); with
@@ -4568,6 +4603,177 @@ func _spawn_chute(a_world: Vector3, b_world: Vector3, width: float, height: floa
 	var box := BoxShape3D.new()
 	box.size = Vector3(width, height * 1.1, length)
 	cs.shape = box
+	col.add_child(cs)
+	root.add_child(col)
+
+## Where a pneumatic duct ends on its target, and the direction it arrives in:
+## a cyclone's inlet opening (PlaceableCatalog.cyclone_inlet_local), entered
+## along -X because its inlet box sticks out on +X; a blower's inlet eye, the
+## same way; anything else at its flow port, arriving level (or from above
+## when the port is straight below the start).
+func _duct_target(b: Dictionary, b_world: Vector3, from: Vector3) -> Array:
+	var tid : String = String(b.get("id", ""))
+	var tn := b.get("node") as Node3D
+	if tn != null and is_instance_valid(tn):
+		var into : Vector3 = -tn.global_transform.basis.x.normalized()
+		if tid == "cyclone":
+			return [tn.to_global(PlaceableCatalog.cyclone_inlet_local(_catalog_size(tid))), into]
+		if tid == "cyclone_tower":
+			return [b_world, into]
+		if tid == "blower":
+			return [tn.to_global(PlaceableCatalog.blower_eye_local(_catalog_size(tid))), into]
+	var flat : Vector3 = b_world - from
+	flat.y = 0.0
+	if flat.length() > 0.1:
+		return [b_world, flat.normalized()]
+	return [b_world, Vector3.DOWN]
+
+func _catalog_size(id: String) -> Vector3:
+	var it : Dictionary = PlaceableCatalog.get_item(id)
+	return it["size"] if not it.is_empty() else Vector3.ONE
+
+## A round steel duct swept along a smooth curve (operator 2026-09-25: "round
+## smoothly curved pipelines"): a cubic Bezier from `a`, leaving along `a_dir`,
+## to `b`, arriving along `b_dir`. Used where the two ends are close (dryer →
+## blower, cyclone → blower); blower → cyclone takes _spawn_j_duct.
+func _spawn_curved_duct(a: Vector3, a_dir: Vector3, b: Vector3, b_dir: Vector3, radius: float) -> void:
+	var dist : float = a.distance_to(b)
+	if dist < 0.05:
+		return
+	var k : float = clampf(dist * 0.45, 0.25, 4.0)
+	var p1 : Vector3 = a + a_dir.normalized() * k
+	var p2 : Vector3 = b - b_dir.normalized() * k
+	var pts : Array[Vector3] = []
+	for i in 29:
+		var t : float = float(i) / 28.0
+		var u : float = 1.0 - t
+		pts.append(a * (u * u * u) + p1 * (3.0 * u * u * t) + p2 * (3.0 * u * t * t) + b * (t * t * t))
+	_sweep_duct(pts, radius)
+
+## The blower → cyclone duct, shaped like a J (operator 2026-09-25: the first
+## curved ducts "look more like parentheses, it should look more like the letter
+## J"). Straight UP out of the blower's outlet `a` to the inlet's height, one
+## bend over, a level run, and a short straight into the inlet `b` along
+## `b_dir`. The top bend's radius is half the level distance (at most 0.6 of
+## the rise), so the stem stays straight and the curve sits at the top.
+func _spawn_j_duct(a: Vector3, b: Vector3, b_dir: Vector3, radius: float) -> void:
+	var into : Vector3 = Vector3(b_dir.x, 0.0, b_dir.z)
+	if into.length() < 0.01 or b.y - a.y < 0.5:
+		_spawn_curved_duct(a, Vector3.UP, b, b_dir, radius)
+		return
+	into = into.normalized()
+	var q : Vector3 = b - into * 0.6                      # approach point, level with the inlet
+	var c : Vector3 = Vector3(a.x, q.y, a.z)              # top of the vertical stem
+	var level : float = Vector2(q.x - c.x, q.z - c.z).length()
+	var rise : float = c.y - a.y
+	var pts : Array[Vector3] = [a]
+	if level < 0.05:
+		pts.append(q)
+	else:
+		var r1 : float = clampf(level * 0.5, 0.3, rise * 0.6)
+		_append_fillet(pts, a, c, q, r1)
+		_append_fillet(pts, c, q, b, minf(0.5, minf(level * 0.45, 0.27)))
+	pts.append(b)
+	_sweep_duct(pts, radius)
+
+## Append the rounded corner at `corner` of the polyline prev → corner → next:
+## a straight run up to the fillet, then the fillet itself (a quadratic Bezier
+## between the two tangent points, `r` from the corner along each leg).
+func _append_fillet(pts: Array[Vector3], prev: Vector3, corner: Vector3, next: Vector3, r: float) -> void:
+	var d_in : Vector3 = corner - prev
+	var d_out : Vector3 = next - corner
+	if d_in.length() < 0.01 or d_out.length() < 0.01:
+		pts.append(corner)
+		return
+	var rr : float = minf(r, minf(d_in.length(), d_out.length()) * 0.95)
+	var t1 : Vector3 = corner - d_in.normalized() * rr
+	var t2 : Vector3 = corner + d_out.normalized() * rr
+	pts.append(t1)
+	for i in range(1, 12):
+		var t : float = float(i) / 12.0
+		var u : float = 1.0 - t
+		pts.append(t1 * (u * u) + corner * (2.0 * u * t) + t2 * (t * t))
+	pts.append(t2)
+
+## Sweep a round tube along `pts`: rings carried along the path by parallel
+## transport (no twist), a flange at each end, and a trimesh collider so the
+## player cannot walk through it.
+func _sweep_duct(pts: Array[Vector3], radius: float) -> void:
+	if pts.size() < 2:
+		return
+	const SIDES : int = 14
+	var a : Vector3 = pts[0]
+	var tans : Array[Vector3] = []
+	for i in pts.size():
+		var d : Vector3
+		if i == 0:
+			d = pts[1] - pts[0]
+		elif i == pts.size() - 1:
+			d = pts[i] - pts[i - 1]
+		else:
+			d = pts[i + 1] - pts[i - 1]
+		tans.append(d.normalized())
+	var n0 : Vector3 = tans[0].cross(Vector3.UP)
+	if n0.length() < 0.01:
+		n0 = tans[0].cross(Vector3.RIGHT)
+	var normals : Array[Vector3] = [n0.normalized()]
+	for i in range(1, pts.size()):
+		var axis : Vector3 = tans[i - 1].cross(tans[i])
+		var nrm : Vector3 = normals[i - 1]
+		if axis.length() > 1e-6:
+			nrm = nrm.rotated(axis.normalized(), tans[i - 1].angle_to(tans[i]))
+		normals.append(nrm.normalized())
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in pts.size():
+		var bin : Vector3 = tans[i].cross(normals[i]).normalized()
+		for j in SIDES + 1:
+			var ang : float = TAU * float(j) / float(SIDES)
+			var off : Vector3 = normals[i] * cos(ang) + bin * sin(ang)
+			st.set_normal(off)
+			st.set_uv(Vector2(float(j) / float(SIDES), float(i) / float(pts.size() - 1)))
+			st.add_vertex(pts[i] - a + off * radius)
+	for i in pts.size() - 1:
+		for j in SIDES:
+			var r0 : int = i * (SIDES + 1) + j
+			var r1 : int = (i + 1) * (SIDES + 1) + j
+			st.add_index(r0)
+			st.add_index(r1)
+			st.add_index(r0 + 1)
+			st.add_index(r0 + 1)
+			st.add_index(r1)
+			st.add_index(r1 + 1)
+	var mesh : ArrayMesh = st.commit()
+	var steel_mat := StandardMaterial3D.new()
+	steel_mat.albedo_color = Color(0.62, 0.63, 0.66)
+	steel_mat.metallic = 0.7
+	steel_mat.roughness = 0.35
+	steel_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var flange_mat := StandardMaterial3D.new()
+	flange_mat.albedo_color = Color(0.40, 0.41, 0.44)
+	flange_mat.metallic = 0.5
+	flange_mat.roughness = 0.45
+	var root := Node3D.new()
+	root.name = "CurvedDuct"
+	_connectors.add_child(root)
+	root.global_transform = Transform3D(Basis(), a)
+	var pipe := MeshInstance3D.new()
+	pipe.mesh = mesh
+	pipe.material_override = steel_mat
+	root.add_child(pipe)
+	for end_i in [0, pts.size() - 1]:
+		var fl := MeshInstance3D.new()
+		var fm := CylinderMesh.new()
+		fm.top_radius = radius * 1.30
+		fm.bottom_radius = radius * 1.30
+		fm.height = 0.06
+		fl.mesh = fm
+		fl.material_override = flange_mat
+		fl.transform = Transform3D(_basis_along(tans[end_i], "y"), pts[end_i] - a)
+		root.add_child(fl)
+	var col := StaticBody3D.new()
+	var cs := CollisionShape3D.new()
+	cs.shape = mesh.create_trimesh_shape()
 	col.add_child(cs)
 	root.add_child(col)
 

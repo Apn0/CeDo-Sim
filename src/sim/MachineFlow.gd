@@ -183,24 +183,48 @@ static func profile(id: String) -> Dictionary:
 		# through the rubber flap), discharges OVERS out the -Z low end into the
 		# open-top chute. The THROUGHS (small fines) drop into a collection bin
 		# below — modelled as `waste` so they leave the line.
+		# Line 1's scheidingsgoot, rebuilt 2026-09-25 (PlaceableCatalog.
+		# scheidingsgoot_layout_local, catalog 1.6 x 3.0 x 1.8): in = the stem's
+		# inlet under the drum's lip (floor 2.71 m + 0.1), out = the junction the
+		# two legs leave from (2.56 m, 0.22 m past the centre). The legs themselves
+		# deliver into the friction separators, so LineFlow draws no connector.
+		"scheidingsgoot":
+			pr["in"]   = Vector3(0.0, 0.937, -0.47)
+			pr["out"]  = Vector3(0.0, 0.853, 0.124)
 		"trilzeef":
 			pr["in"]   = Vector3(0.0, 0.95, 0.40)
 			pr["out"]  = Vector3(0.0, 0.10, -0.45)
 			pr["waste"] = 0.08      # fines that drop through the holes
 		"friction_sep", "friction_washer", "intensive_washer":
 			pr["waste"] = 0.04
+		# Line 1's L-R frictiescheider (operator 2026-09-25): fed in the MIDDLE of
+		# its back side, one outlet spout at each far end of its front side. The
+		# line-1 macro makes it the split of two stream trains; "out2" is the
+		# second spout, and LineFlow draws each train's chute from the nearer one.
+		# Fractions of the catalog size 4.5 x 2.8 x 1.8, read off _m_friction_lr.
+		"friction_sep_lr":
+			pr["in"]    = Vector3(0.0, 0.97, -0.12)
+			pr["out"]   = Vector3(-0.378, 0.557, 0.47)
+			pr["out2"]  = Vector3( 0.378, 0.557, 0.47)
+			pr["waste"] = 0.04
 		"sink_float":
 			pr["in"]   = Vector3(0.0, 0.72, -0.45)
 			pr["out"]  = Vector3(0.0, 0.72, 0.45)
 			pr["waste"] = 0.10
 		# ── dewatering / conveyance ──────────────────────────────────────────
-		"dewater_screw":
+		"dewater_screw", "dewater_screw_l1":
 			pr["in"]  = Vector3(0.0, 0.4, -0.45)
 			pr["out"] = Vector3(0.0, 0.95, 0.45)
 		"transport_screw":
 			pr["role"] = "conveyor"
 			pr["in"]   = Vector3(0.0, 0.4, -0.45)
 			pr["out"]  = Vector3(0.0, 0.95, 0.45)
+		# Line 1's intrekschroef runs DOWN: inlet boot high at +Z under the
+		# cyclone, discharge spout low at -Z inside the flotation tank.
+		"intrekschroef":
+			pr["role"] = "conveyor"
+			pr["in"]   = Vector3(0.0, 0.95, 0.42)
+			pr["out"]  = Vector3(0.0, 0.08, -0.42)
 		"transport_belt":
 			pr["role"] = "conveyor"
 			pr["in"]   = Vector3(0.0, 0.85, -0.45)
@@ -403,7 +427,7 @@ static func profile(id: String) -> Dictionary:
 		# the `hmi_` prefix branch below covers every HMI that still exists.
 		"door", "pcu_cabinet", "surface", "waste_container", "water_pump", "zss_water", \
 		"kleine_la", "tankje_tussen_extruders", "pomp_c1", "pomp_zeefbocht", "eop_endpoint", \
-		"heater_cabinet", "thermal_dryer_decommissioned", "scrap_bin", "overband_magnet", \
+		"heater_cabinet", "thermal_dryer_decommissioned", "scrap_bin", "overband_magnet", "overband_magnet_l1", \
 		"lump_platform", "lump_cart_spot", "lump_cart", "compressor_a", "compressor_b":
 			# lump_platform / lump_cart_spot / lump_cart and compressor_a / _b
 			# (2026-09-25): three places already said these are not flow nodes —
@@ -467,7 +491,7 @@ static func _apply_process(pr: Dictionary, id: String) -> void:
 		"vuilsnippersilo", "silo", "mas_bak", "bunker", "vss_silo", "u_bay":
 			pr["process"] = "buffer"
 		# ── friction wash: mechanical scrub, wets the film, strips a lot of dirt
-		"friction_washer", "friction_sep":
+		"friction_washer", "friction_sep", "friction_sep_lr":
 			pr["process"] = "wash"
 			pr["water_add"]     = 0.45
 			pr["contam_remove"] = 0.45
@@ -493,7 +517,7 @@ static func _apply_process(pr: Dictionary, id: String) -> void:
 			pr["process"] = "screen"
 			pr["contam_remove"] = 0.20
 		# ── dewatering: mechanical water removal ──────────────────────────────
-		"dewater_screw":
+		"dewater_screw", "dewater_screw_l1":
 			pr["process"] = "dewater"
 			pr["water_remove"] = 0.50
 		# ── dryers: drive off the bulk of the moisture ────────────────────────
@@ -550,7 +574,7 @@ static func _apply_process(pr: Dictionary, id: String) -> void:
 			pr["water_remove"]  = 0.20
 			pr["contam_remove"] = 0.10
 		# ── conveyance: inert ─────────────────────────────────────────────────
-		"transport_belt", "transport_screw", "inclined_belt_8m", "feed_hopper", "blower":
+		"transport_belt", "transport_screw", "intrekschroef", "inclined_belt_8m", "feed_hopper", "blower":
 			pr["process"] = "convey"
 		# front-end sorting: open bales, screen fines, pull metal/heavies/off-spec
 		"sga_drum":

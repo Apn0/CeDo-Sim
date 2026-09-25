@@ -142,15 +142,17 @@ func _run() -> void:
 	# mill in the diagram. Operator confirmed 2026-08-28: "after the mill, like
 	# the doc says".
 	print("  -- S1b: intrekschroef 11a/11b sit after the mill (doc edges 16-19) --")
-	var screws := _all_idx(seq, "transport_screw")
+	# 2026-09-25: line 1's intake screws are `intrekschroef` (1.75 m, 30° down
+	# from each cyclone into the tank, operator), no longer transport_screws.
+	var screws := _all_idx(seq, "intrekschroef")
 	var i_flot := _idx(seq, "flotation_tank")
-	_check(screws.size() == 2, "line 1 has exactly 2 transport_screw entries (intrekschroef 11a/11b), got %d" % screws.size())
+	_check(screws.size() == 2, "line 1 has exactly 2 intrekschroef entries (11a/11b), got %d" % screws.size())
 	var pre_mill_screws : Array = []
 	for s in screws:
 		if int(s) < i_mill:
 			pre_mill_screws.append(s)
 	_check(pre_mill_screws.is_empty(),
-		"NO transport_screw before the mill (doc has none there; found %d)" % pre_mill_screws.size())
+		"NO intake screw before the mill (doc has none there; found %d)" % pre_mill_screws.size())
 	for s in screws:
 		_check(int(s) > i_mill, "intrekschroef at SEQ %d is after the mill (%d)" % [int(s), i_mill])
 		_check(int(s) < i_flot, "intrekschroef at SEQ %d feeds the flotation tank (%d)" % [int(s), i_flot])
@@ -217,7 +219,7 @@ func _run() -> void:
 	_check(int(counts.get("compactorband", 0)) == 1,
 		"world contains exactly 1 compactorband (doc edge 32, was missing)")
 	_check(int(counts.get("scheidingsgoot", 0)) == 1, "world contains exactly 1 scheidingsgoot")
-	_check(int(counts.get("transport_screw", 0)) == 2, "world contains 2 transport_screw (intrekschroef 11a/11b)")
+	_check(int(counts.get("intrekschroef", 0)) == 2, "world contains 2 intrekschroef (11a/11b)")
 
 	# With the fold the line is 2-D in plan — S5 reports the full bounding box
 	# and gates it against the building shell; this line is just the raw Z.
@@ -371,7 +373,7 @@ func _run() -> void:
 	# placeholder did before the geometry was derived. Both legs of the transfer
 	# are measured in the built world, not recomputed from the builder's own
 	# expressions.
-	print("  -- S6: opzetband lip → westa deck · S6b: westa lip → shredder throat --")
+	print("  -- S6: opzetband lip → westa deck · S6b: westa lip → shredder hopper --")
 	var opz : Node3D = null
 	var wsta : Node3D = null
 	var shr : Node3D = null
@@ -404,9 +406,11 @@ func _run() -> void:
 			"S6 opzetband_1 lip lands on the Westa deck (horiz %.2f m, gate 0.35)" % h3)
 		_check(d3 >= 0.05 and d3 <= 0.9,
 			"S6 opzetband_1 lip is a sane drop above the Westa deck (%.2f m, want 0.05–0.9)" % d3)
-		# S6b — the Westa's lip over shredder_1's throat. The throat comes from
-		# PlaceableCatalog.shredder_infeed_local, which mirrors MachineFlow's `in`
-		# fraction; measuring it here is what stops those two drifting apart.
+		# S6b — the Westa's lip INTO shredder_1's hopper. Until 2026-09-25 this
+		# asserted the lip over the throat (the shredder's centre); the operator
+		# then ruled it ends "about 30 centimeters" into the hopper and clears its
+		# rim ("Westa should climb steeper"). The throat is still printed, so
+		# shredder_infeed_local and MachineFlow's `in` can be compared.
 		var w_lip : Vector3 = wsta.call("_discharge_lip_pos")
 		var throat : Vector3 = shr.to_global(PlaceableCatalog.shredder_infeed_local(
 			Vector3(PlaceableCatalog.get_item("shredder_1")["size"])))
@@ -414,10 +418,17 @@ func _run() -> void:
 		var d4 : float = w_lip.y - throat.y
 		print("  info   : westa lip (%.2f, %.2f, %.2f)  shredder throat (%.2f, %.2f, %.2f)  horiz %.2f  drop %.2f"
 			% [w_lip.x, w_lip.y, w_lip.z, throat.x, throat.y, throat.z, h4, d4])
-		_check(h4 <= 0.35,
-			"S6b westa_band_1 lip lands in the shredder throat (horiz %.2f m, gate 0.35)" % h4)
-		_check(d4 >= 0.05 and d4 <= 0.9,
-			"S6b westa_band_1 lip is a sane drop above the throat (%.2f m, want 0.05–0.9)" % d4)
+		var ssz6 : Vector3 = PlaceableCatalog.get_item("shredder_1")["size"]
+		var w_anc : Dictionary = wsta.get_meta("macro_anchor", {}) as Dictionary
+		var w_rot : float = float(w_anc.get("rot_y", 0.0))
+		var w_fwd := Vector3(-sin(w_rot), 0.0, -cos(w_rot))
+		var into : float = (w_lip - shr.global_position).dot(w_fwd) + ssz6.z * 1.04 * 0.5
+		var over_rim : float = w_lip.y - (shr.global_position.y + ssz6.y)
+		print("  info   : westa lip %.2f m into the hopper, %.2f m over its rim" % [into, over_rim])
+		_check(absf(into - PlaceableCatalog.SHREDDER_1_HOPPER_OVERLAP_M) <= 0.05,
+			"S6b westa_band_1 lip is ~0.30 m into the shredder hopper (%.2f m)" % into)
+		_check(over_rim >= 0.05 and over_rim <= 0.6,
+			"S6b westa_band_1 lip clears the hopper rim (%.2f m, want 0.05–0.6)" % over_rim)
 
 	# ── S5 — the fold itself: legs, headings, plan box, and mirror parity ────
 	print("  -- S5: fold geometry (operator sketch) --")
@@ -432,7 +443,7 @@ func _run() -> void:
 		by_idx[int(n3.get_meta("macro_index"))] = n3
 	var n_shred : Node3D = by_idx.get(_idx(seq, "shredder_1"))
 	var n_opzet : Node3D = by_idx.get(_idx(seq, "opzetband_1"))
-	var n_magnet : Node3D = by_idx.get(_idx(seq, "overband_magnet"))
+	var n_magnet : Node3D = by_idx.get(_idx(seq, "overband_magnet_l1"))
 	var n_mill : Node3D = by_idx.get(_idx(seq, "mill"))
 	var n_flot : Node3D = by_idx.get(_idx(seq, "flotation_tank"))
 	var n_ext : Node3D = by_idx.get(_idx(seq, "extruder_1"))

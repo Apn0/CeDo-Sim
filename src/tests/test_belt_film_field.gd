@@ -301,7 +301,10 @@ func _s4() -> void:
 		if nid == "flotation_tank":
 			tank_view = nd.get("view")
 	_check(belts.size() >= 3, "S4 line 1 has %d belt nodes" % belts.size())
-	var tb : Array = []             # the two transport_belts
+	# The fed belt and the one after it. Since 2026-09-25 line 1's first
+	# conveyor after shredder 1 is uitvoerband_1 (a feed-belt model with its own
+	# bed), and it throws onto the one transport_belt left before the drum.
+	var tb : Array = []
 	var cband : int = -1
 	var no_field : Array = []
 	for i in belts:
@@ -312,12 +315,17 @@ func _s4() -> void:
 			no_field.append(nid)
 			continue
 		_check(bool(v.get("belt_mode")), "S4 %s#%d field is belt-mode" % [nid, i])
-		if nid == "transport_belt":
+		if nid == "uitvoerband_1" or nid == "transport_belt":
 			tb.append(i)
 		elif nid == "compactorband":
 			cband = i
 	print("  info  : belt nodes without a field: %s (drum_feed_belt is a ShredderFeedBelt scene — listed as open)" % [no_field])
-	_check(tb.size() == 2 and cband >= 0, "S4 two transport_belts (%s) and the compactorband (#%d) carry fields" % [tb, cband])
+	_check(tb.size() == 2 and cband >= 0 and String((nodes[tb[0]] as Dictionary)["id"]) == "uitvoerband_1",
+		"S4 the uitvoerband, the belt after it (%s) and the compactorband (#%d) carry fields" % [tb, cband])
+	if tb.size() > 0:
+		_check(((nodes[tb[0]] as Dictionary).get("views", []) as Array).size() == 2,
+			"S4 the uitvoerband carries a bed on its flat deck AND on its climb (%d)"
+				% ((nodes[tb[0]] as Dictionary).get("views", []) as Array).size())
 	_check(tank_view != null and bool(tank_view.get("mat_mode")) and not bool(tank_view.get("belt_mode")),
 		"S4 the flotation tank's field stays a float raft (mat mode, not belt mode)")
 	if tb.size() < 2 or cband < 0:
@@ -329,7 +337,7 @@ func _s4() -> void:
 	var vc : Node = nodes[cband]["view"]
 	# steady injection of 3 kg/s into the first belt's input buffer, 20 s
 	var bin1 : MaterialBatch = n1.get("in", null) as MaterialBatch
-	_check(bin1 != null, "S4 first transport_belt has an input buffer")
+	_check(bin1 != null, "S4 the uitvoerband has an input buffer")
 	if bin1 == null:
 		return
 	var edges : Array = lf.get("_edges")
@@ -358,7 +366,9 @@ func _s4() -> void:
 				% [t + 1, tb[0], float(n1["thru"]), float(n1.get("_moved_kg", 0.0)), float(n1.get("_backlog_kg", 0.0)),
 				   float(n1["spin"]), tb[1], float(n2["thru"])])
 	var thru1 : float = float(n1["thru"])
-	var speed1 : float = float((n1["node"] as Node).get_meta("belt_speed"))
+	# LineFlow's own lookup: the body's belt_speed meta, else the bed field's
+	# (a feed-belt model such as uitvoerband_1 carries it on the field).
+	var speed1 : float = float(lf.call("_belt_speed_of", n1))
 	var bed1 : float = float(v1.call("bed_kg_per_m"))
 	print("  info  : belt#%d thru %.2f kg/s, deck %.2f m/s, spin %.2f -> bed %.2f kg/m, depth %.1f cm, %d flakes"
 		% [tb[0], thru1, speed1, float(n1["spin"]), bed1, float(v1.call("bed_depth_m")) * 100.0, int(v1.call("visible_count"))])
