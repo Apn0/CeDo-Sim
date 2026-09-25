@@ -549,7 +549,7 @@ the one before that ~6 months stale — treat this one as re-checkable too):
 | `docs/DESIGN_vacuum_pot_minigame_2026-09-23.md` | **P3 stage B as the operator described it: not a hold-E but a mini-game** — lid pull that stiffens with time, plamuurmes planes at 90 %, the block by hand, re-lid, the two-minute race. Systems, parameters (his vs placeholder), test strategy. **Built 2026-09-24** (`test_vacuum_pot_minigame`, 33 ok); the feel is his to play |
 | `docs/audit/extruder_screw_die_plate_2026-09-24.md` | **LineFlow's OWN screw model (not ExtruderModel) read 0.11 "bar" at the die, at 200 rpm and a 195 °C melt.** The MFI estimate was 1491 g/10min, so every QA sample graded REJECT, and on lines 1/3A/3B the terminal and SCADA read the `extruder_silo`. Now: die plate after the kopfilter (operator ruling), per-line rpm, melt and output from the WinCC trends, MFI anchor re-solved. §10 (2026-09-25): the "flat kopdruk vs proportional model" gap was a probe holding rpm fixed; both models now carry a power-law die, P ∝ Q^0.35, gated across the trend's output band |
 | `docs/plant/operator_rulings_2026-09-25.md` | **The die plate against output, 2026-09-25**: the flat kopdruk in the June-2023 trends is "operator-specific", perhaps an office test without head filters (CLAIMED; the downsampled curves cannot tell). Power-law die P ∝ Q^0.35 in ExtruderScrew AND ExtruderModel, MfiProxy only the matching exponent (MFI itself deferred to the beta). Open: melt pump on 3A/3B (08-31 says none, 09-24 names one), the profiles' rpm is not the rpm at the nominal output |
-| `docs/plant/operator_rulings_2026-09-24.md` | **Extruder melt pressures, 2026-09-24**: the "280 psi" die pressure was 280 BAR, a safe maximum before the laserfilter under the 318-bar shutdown (he runs ~220). Two pressures: before the laserfilter = melt-set after + dMP; MP<PEL (160 bar) = dP across the kopfilter; per-line FORM-008 kopdruk. Recollections; what was measured before/after, and what is still open (3B above its one-session trend). §6: merged with #275, which fixed the same finding in parallel. The melt-set pressures follow MELT temperature (3A fit 6.83 bar/°C, weak), and whether the screen's dMP does too is open |
+| `docs/plant/operator_rulings_2026-09-24.md` | **Extruder melt pressures, 2026-09-24**: the "280 psi" die pressure was 280 BAR, a safe maximum before the laserfilter under the 318-bar shutdown (he runs ~220). Two pressures: before the laserfilter = melt-set after + dMP; MP<PEL (160 bar) = dP across the kopfilter; per-line FORM-008 kopdruk. Recollections; what was measured before/after, and what is still open (3B above its one-session trend). §6: merged with #275, which fixed the same finding in parallel. The melt-set pressures follow MELT temperature (3A fit 6.83 bar/°C, weak). §7: the screen's dMP follows it too (operator 2026-09-25), measured before/after |
 | `docs/plant/operator_rulings_2026-09-23.md` | **Operator answers from memory, 2026-09-23** — film look, colour order, bed depth per belt, where wet flake is visible, screws "differ". Recollections, not documents: cite them as such |
 | `docs/audit/assets_loss_and_restore_2026-09-21.md` | **`assets/` was wiped and restored.** Godot's `.md5` fingerprints identify originals byte for byte: 159 of 273 are back exact and 101 are cache-only (listed; do not re-import them). Also the `Merlo.fbx` re-import trap, what `winfr` did and did not recover (nothing exact), and the method to reuse |
 | `docs/BACKLOG_ultracode_2026-07-19.md` | Deferred queue — 16 of 40 findings landed; also records the npc-05 vacuous-green correction |
@@ -572,9 +572,10 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   PRE-filter pressure (would E-STOP every nominal run), the laser filter's
   inlet was fed the kopfilter's ΔP (downstream of it, and on 3A/3B line 3C's),
   and the pressure rode a torque proxy that made one zone 30 °C down read 320
-  bar and trip the line (the melt-set pressures now follow melt temperature at
-  the 3A trend fit, 6.83 bar/°C as 2.44 % of 280 bar — a weak fit, refit when
-  a longer export exists). Two sessions fixed this the same evening (#275 and
+  bar and trip the line (the melt-set pressures AND the laserfilter's dMP now
+  follow melt temperature at the 3A trend fit, 6.83 bar/°C as 2.44 % of 280
+  bar — a weak fit, refit when a longer export exists; a melt held 9 °C under
+  setpoint trips 318 through the screen). Two sessions fixed this the same evening (#275 and
   #278); the merged model is the operator's TWO pressures — MP<PEL is the dP
   across the kopfilter, not a 140-bar copy of the pre-filter pressure — see the
   "Operator-documented" entry below. Guarded by `test_die_pressure_bar` and
@@ -600,6 +601,13 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   `world_layout.json`. Guarded by `test_legacy_props_spawner`. To audit:
   `grep -rhoE 'world\.call\("[A-Za-z_]+"' src | sort -u` and check each name
   exists as a `func` on MainWorld.
+  The same trap caught a merge on 2026-09-25. #278 removed
+  `LaserFilter.set_upstream_pressure_indicator()`. #279 and #282, merged the
+  same night, called it by string from their suites. `main` then had
+  `test_hmi_fault_rearm` at 15 fail and `test_hmi_fault_per_line` at 19 fail,
+  and the parse sweep stayed green. Before merging a PR that removes or renames
+  a method, grep the target branch for the name in quotes:
+  `grep -rn '"<name>"' src tools`.
   The damage was bigger than the error lines, because a failed `call()` ABORTS
   the calling function: the diesel pump was never spawned at all (the outlet's
   call came one line before it), the feeder shredder stood at the world origin

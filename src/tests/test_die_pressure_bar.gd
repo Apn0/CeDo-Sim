@@ -24,11 +24,13 @@ extends Node
 ## (25 bar nominal) + the screen's own dMP, and MP<PEL, the 160-bar interlock,
 ## is the dP ACROSS the kopfilter, not a 140-bar copy of the pre-filter pressure.
 ## This suite's checks that asserted the single-pressure model (a bare model
-## reading 280 bar, MP<PEL 120-150 bar, a 12 °C cold melt alone crossing 318)
-## are rewritten against that; the reachability of both trips is
-## test_extruder_melt_pressures' job (caked screen, cold zones, a loaded pack).
-## The melt-temperature sensitivity stays: the melt-set pressures scale by
-## DIE_PRESSURE_BAR_PER_C as a fraction of MELT_FIT_LEVEL_BAR (2.44 %/°C).
+## reading 280 bar, MP<PEL 120-150 bar, a 12 °C cold melt crossing 318 on a
+## model with no screen) are rewritten against that; the reachability of both
+## trips is test_extruder_melt_pressures' job (caked screen, cold zones, a cold
+## melt through the screen, a loaded pack). The melt-temperature sensitivity
+## stays: the melt-set pressures scale by DIE_PRESSURE_BAR_PER_C as a fraction
+## of MELT_FIT_LEVEL_BAR (2.44 %/°C), and so does the laserfilter's dMP
+## (operator 2026-09-25: "dMP rises too").
 ##
 ## Mutation-proven after the merge (2026-09-24): torque proxy restored -> A7c
 ## red (3.23 %/°C); laser filter fed the kopfilter's ΔP -> B1/B2 red. C2 alone
@@ -129,8 +131,9 @@ func _run() -> void:
 	_check(absf(frac - want) < 0.003,
 		"A7c 1 °C of cold melt raises the melt-set pressures %.2f %% (fit %.2f %%): MP>MF +%.2f bar, die plate +%.2f bar"
 			% [frac * 100.0, want * 100.0, m.mp_after_laserfilter_bar - after0, m.die_plate_bar - plate0])
-	print("  info  : the melt-set part alone moves MP<MF %.2f bar per °C; the 3A trend fit ON MP<MF is %.2f. Whether the screen's dMP also scales with viscosity is open (operator_rulings_2026-09-24.md §5)"
-		% [m.mp_after_laserfilter_bar - after0, ExtruderModel.DIE_PRESSURE_BAR_PER_C])
+	_check(absf(m.melt_viscosity_factor - (1.0 + want)) < 0.003,
+		"A7d the model exposes that factor for the laserfilter (x%.4f at 1 °C cold): the screen's dMP scales too, so MP<MF moves at the fit's %.2f bar/°C (test_extruder_melt_pressures measures it end to end)"
+			% [m.melt_viscosity_factor, ExtruderModel.DIE_PRESSURE_BAR_PER_C])
 
 	# ── B. the wired brain feeds the laser filter's inlet ────────────────────
 	var root := Node3D.new()

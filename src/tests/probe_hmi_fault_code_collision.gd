@@ -81,8 +81,13 @@ func _tab_rows(tab_text: String) -> Array:
 			(hb.get_child(1) as Label).text, (hb.get_child(2) as Label).text])
 	return out
 
+## (2026-09-25: this was set_upstream_pressure_indicator(psi), inverted
+## through the registry's old psi * 0.0689. #278 split the melt pressure in two
+## and removed that setter. With no melt flowing the filter's no-flow gate holds
+## its dMP at 0, so the pressure BEFORE the filter, mp_before_filter_bar(),
+## which EREMA 6557 reads, is exactly the bar written here.)
 func _set_bar(f: Node, bar: float) -> void:
-	f.call("set_upstream_pressure_indicator", bar / 0.0689)
+	f.call("set_mp_after_filter_bar", bar)
 
 func _hold(s: float) -> void:
 	var t0 := Time.get_ticks_msec()
