@@ -62,10 +62,14 @@ on that tick, where it fed 0 before.
 When the power-law die lands (`DIE_FLOW_INDEX`, operator ruling 2026-09-25,
 uncommitted in worktree `unruffled-keller-219387` when this was written), the
 helper's one call becomes `_set_melt_pressures(throughput_norm, melt_viscosity_factor)`.
-It must NOT become `_set_melt_pressures(throughput_norm * melt_viscosity_factor)`:
-that still parses against a default `melt_factor = 1.0`, but it computes
-`pow(q * m, n)` instead of `pow(q, n) * m`. Mutation M3b below proves the suite
-catches that.
+It must NOT become `_set_melt_pressures(throughput_norm * melt_viscosity_factor)`,
+which computes `pow(q * m, n)` instead of `pow(q, n) * m`. That session's first
+version gave `melt_factor` a default of 1.0, so a one-argument call parsed and
+went quietly wrong. It has since dropped the default (read in its worktree,
+2026-09-25: `func _set_melt_pressures(throughput_norm: float, melt_factor: float)`,
+the zero calls are `(0.0, 1.0)`). A surviving one-argument call is now a parse
+error that the parse sweep gates on. This suite's mutation M3b (below) catches
+the default-argument form as well.
 
 ## 3. The guard and its mutation matrix
 
@@ -129,6 +133,11 @@ tick after STARTING, while the MP>MF that belongs with that flow read 0.
    way.** Measured from a 60 % running torque: 0.142 of it 1.2 s into a stop
    with 0.1 s ticks, 0.024 with 0.05 s ticks, 0 by 4 s. It needs a coast-down
    torque law. No document gives one.
+   **Fixed the same day, on top of this branch** (`test_extruder_stop_torque`).
+   No SWI gives the law, but the plant's own raw 3A/3B archive does: load and
+   speed are logged in the same ~5 s cycle, and the 17 samples caught mid-stop
+   read load / entry load = 0.969 x rpm / entry rpm.
+   `extruder_stop_torque_2026-09-25.md`.
 4. **`test_hmi_fault_rearm` and `test_hmi_fault_per_line` are in no `run.sh`
    loop on `main`.** `00646e6` and `04eaa77` wired them; both commits are
    ancestors of `64921ff`, whose `for t in` lines no longer name them. A merge

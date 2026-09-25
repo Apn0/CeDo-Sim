@@ -52,12 +52,13 @@ const TEST_LAYOUT_PATH := "user://test_denest_layout.json"
 # CHECK B spawns a REAL BuildMode, and a live BuildMode can reach _save_layout()
 # → WorldLayout.save(). With load_shared_structure = false this instance holds no
 # structure items, so such a save would write an EMPTY structure list over the
-# operator's shared walls/doors/gates. Measured: a run does bump this file's
-# mtime (content happened to be identical here). Byte-backup and restore it —
-# same pattern as src/tests/repro_feeder_drive.gd.
-const WORLD_LAYOUT_PATH := "user://world_layout.json"
-var _wl_bytes : PackedByteArray = PackedByteArray()
-var _wl_existed : bool = false
+# operator's shared walls/doors/gates. Measured: a run did bump
+# world_layout.json's mtime, content identical. That was this file's own
+# restore, which rewrote the backup bytes unconditionally. Now WorldLayout's
+# writes go to a scratch file, and the real one is only compared at the end,
+# md5 + mtime, never written (src/tests/world_layout_guard.gd).
+const WorldLayoutGuard := preload("res://src/tests/world_layout_guard.gd")
+var _wlg := WorldLayoutGuard.new("__nesteddrift__")
 const DENEST_VEHICLE_ID := "vehicle_baleclamp"
 const DENEST_ORIGIN_X : float = 2000.0   # far from the CHECK A pairs
 
@@ -143,7 +144,9 @@ func _run_denest_check() -> void:
 	f.store_string(JSON.stringify(entries, "\t"))
 	f.close()
 
-	_backup_world_layout()
+	if not _wlg.arm(get_tree()):
+		_failures.append("CHECK B: WorldLayout.layout_path_override not honoured — refusing to run a BuildMode that may overwrite world_layout.json")
+		return
 	var bm := Node3D.new()
 	bm.set_script(BUILD_MODE)
 	# Set BEFORE add_child — _ready() calls load_layout() immediately.
@@ -181,41 +184,6 @@ func _run_denest_check() -> void:
 	# Leave no scratch save behind, and keep the loaded vehicles out of CHECK A.
 	bm.queue_free()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_LAYOUT_PATH))
-	_restore_world_layout()
-
-func _backup_world_layout() -> void:
-	_wl_existed = FileAccess.file_exists(WORLD_LAYOUT_PATH)
-	if not _wl_existed:
-		return
-	var f := FileAccess.open(WORLD_LAYOUT_PATH, FileAccess.READ)
-	if f == null:
-		_failures.append("CHECK B: could not back up %s — refusing to run a BuildMode that may overwrite it" % WORLD_LAYOUT_PATH)
-		return
-	_wl_bytes = f.get_buffer(f.get_length())
-	f.close()
-
-## Rewrite the backed-up bytes unconditionally (cheap) and verify the file now
-## matches the backup. A failure here is reported as a test failure, not
-## swallowed — a silently clobbered world_layout is worse than a red test.
-func _restore_world_layout() -> void:
-	if not _wl_existed or _wl_bytes.is_empty():
-		return
-	var w := FileAccess.open(WORLD_LAYOUT_PATH, FileAccess.WRITE)
-	if w == null:
-		_failures.append("CHECK B: could not restore %s from backup" % WORLD_LAYOUT_PATH)
-		return
-	w.store_buffer(_wl_bytes)
-	w.close()
-	var r := FileAccess.open(WORLD_LAYOUT_PATH, FileAccess.READ)
-	if r == null:
-		_failures.append("CHECK B: could not re-read %s after restore" % WORLD_LAYOUT_PATH)
-		return
-	var now := r.get_buffer(r.get_length())
-	r.close()
-	if now != _wl_bytes:
-		_failures.append("CHECK B: %s does not match its backup after restore" % WORLD_LAYOUT_PATH)
-	else:
-		_denest_lines.append("world_layout.json restored byte-identical (%d bytes)" % _wl_bytes.size())
 
 ## Axis-aligned overlap of two 85 %-footprint hull boxes standing on their
 ## placement origin. Exact for the rot_y = 0 entries this test writes.
@@ -289,6 +257,12 @@ func _report() -> void:
 			_failures.append("CHECK C: driven vehicle penetrated the wall %.3f m (hull nose x=%.3f, wall face x=%.3f)"
 				% [deepest - wall_face, deepest, wall_face])
 	print("--- CHECK B: de-nest on load ---")
+	# Over the whole run, after the BuildMode is long gone.
+	var wl_check : Array = _wlg.real_layout_check()
+	_denest_lines.append(String(wl_check[1]))
+	if not bool(wl_check[0]):
+		_failures.append("CHECK B: " + String(wl_check[1]))
+	_wlg.disarm()
 	for line in _denest_lines:
 		print("  " + line)
 	if _failures.is_empty():

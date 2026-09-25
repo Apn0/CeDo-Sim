@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="MachineSoundSpec" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/audio/MachineSoundSpec.gd" id="1_spec"]
+
+[resource]
+script = ExtResource("1_spec")
+gain_db = 4.0
+unit_size_m = 4.0
+max_distance_m = 35.0
+run_loop = "res://assets/audio/machines/mech_dryer_run_43s.wav"
+pitch_floor = 0.5
+ramp_db_floor = -24.0
+ramp_up_s = 4.0
+ramp_down_s = 8.0
+notes = "Mechanical dryer (L3C.14 L and R — both are this ONE placeable id, told apart only by \"stream\": \"L\"/\"R\" in the line SEQ). Source 5s+_onwards_mechanical_dryer.mp3. Operator 2026-09-25, asked which window to loop: '30-42s and 43-55s clipped separately, I'll let you know what dryer is which'. Both are baked — mech_dryer_run_30s.wav (30-42 s, -2.4 dBFS flat, ~8 % of samples clipped in the recording itself) and mech_dryer_run_43s.wav (43-55.5 s, ~1 % clipped). THIS SPEC POINTS AT _43s AS AN INTERIM DEFAULT; the L/R assignment is the operator's, pending, and needs a per-stream variant (one spec per id today). The 5-30 s level rise (-14 -> -2.4 dB with the motor fixed at 72-74 Hz) is the microphone approaching, not a spin-up, and is in neither loop. Ramps generated. Level (gain_db), attenuation radii, pitch_floor and the ramp times are PLACEHOLDERS chosen by ear-less reasoning on 2026-09-25 — tune them in this inspector after play-testing. Baked by tools/audio/machine_clips.py from assets/audio/machines/_source/, RMS-normalised to -20 dBFS so gain_db is the only relative level."

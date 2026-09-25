@@ -66,8 +66,11 @@ extends Node3D
 ## file is byte-backed-up and restored in _finish().
 
 const TEST_SLOT := "__sweepguards__"
+## This slot's own files. The operator's world_layout.json is not on the list:
+## world saves go to the guard's scratch file, and the real one is only
+## compared, never written (src/tests/world_layout_guard.gd).
 const TOUCHED := [
-	"user://world_layout.json", "user://world_layout_consumed.flag",
+	"user://world_layout_consumed.flag",
 	"user://__sweepguards___save.json", "user://__sweepguards___factory.json",
 ]
 
@@ -80,7 +83,8 @@ const SMOKE_RISE   : float = STRAND_H * 0.55   # 0.22 m above the strand centre
 
 var _pass := 0
 var _fail := 0
-var _backups : Dictionary = {}
+const WorldLayoutGuard := preload("res://src/tests/world_layout_guard.gd")
+var _wlg := WorldLayoutGuard.new(TEST_SLOT, TOUCHED)
 var _guarded : Dictionary = {}
 
 
@@ -97,7 +101,9 @@ func _ready() -> void:
 		print("FATAL: WorldLayout autoload missing (boot via the .tscn, not --script)")
 		get_tree().quit(2); return
 
-	_backup_files()
+	# Before boot, so no world save can reach the operator's world_layout.json.
+	if not _wlg.arm(get_tree()):
+		get_tree().quit(2); return
 	_guard_operator_saves()
 
 	_check_die_face_smoke()
@@ -119,10 +125,10 @@ func _ready() -> void:
 	await _check_wall_persistence(world)
 	_check_voice_connect()
 
-	world.queue_free()
-	await get_tree().process_frame
+	for c in _wlg.final_checks(world):
+		_ok(c[0], c[1])
 	_verify_operator_saves()
-	_finish()
+	_finish(world)
 
 
 # =============================================================================
@@ -208,11 +214,17 @@ func _check_wall_persistence(world: Node) -> void:
 	if wall_id == "":
 		return
 
-	# NON-VACUITY: structure_items must be empty first, or a wall shipped with
-	# the site would make B2 pass without this placement doing anything.
+	# NON-VACUITY: structure_items must hold no WALL first, or a wall shipped
+	# with the site would make B3 pass without this placement doing anything.
+	# Other site structure is fine: since 2026-09-25 the operator's world keeps
+	# his 3A/3B gate there (a gate is not a wall, so B3 cannot mistake it).
 	var before : int = WorldLayout.structure_items.size()
-	_ok(before == 0,
-		"B1b WorldLayout.structure_items starts empty (%d entries)" % before)
+	var walls_before : int = 0
+	for e in WorldLayout.structure_items:
+		if String((e as Dictionary).get("id", "")).begins_with("wall_"):
+			walls_before += 1
+	_ok(walls_before == 0,
+		"B1b WorldLayout.structure_items holds no wall before the placement (%d wall(s) among %d entries)" % [walls_before, before])
 
 	# Drive BuildMode's own two-point placement path — not build_wall() directly,
 	# because the defect was in the caller, not the builder.
@@ -311,34 +323,21 @@ func _find_meta(root: Node, key: String) -> Node3D:
 	return null
 
 
-func _finish() -> void:
-	_restore_files()
+## The verdict is printed and user:// restored BEFORE the world is freed, then
+## restored again after: the headless teardown segfault lands inside world
+## teardown (CLAUDE.md, 15 of 62 boots) and never reaches code after it.
+func _finish(world: Node = null) -> void:
+	_wlg.restore()
 	print("\n=========================================")
 	print("Result: %d ok, %d fail, 0 skip" % [_pass, _fail])
 	print("RESULT: %s" % ("PASS" if _fail == 0 else "FAIL"))
 	print("=========================================")
+	if world != null and is_instance_valid(world):
+		world.queue_free()
+		await get_tree().process_frame
+	_wlg.restore()
+	_wlg.disarm()
 	get_tree().quit(0 if _fail == 0 else 1)
-
-
-func _backup_files() -> void:
-	for p in TOUCHED:
-		if FileAccess.file_exists(p):
-			var f := FileAccess.open(p, FileAccess.READ)
-			_backups[p] = f.get_as_text() if f else null
-			if f: f.close()
-		else:
-			_backups[p] = null
-
-
-func _restore_files() -> void:
-	for p in _backups.keys():
-		var orig = _backups[p]
-		if orig is String:
-			var f := FileAccess.open(p, FileAccess.WRITE)
-			if f: f.store_string(orig); f.close()
-		elif FileAccess.file_exists(p):
-			DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
-	print("  (restored touched user:// files)")
 
 
 func _guard_operator_saves() -> void:

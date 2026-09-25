@@ -35,13 +35,16 @@ const WATCH_FRAMES := 1800                            # 30 s after last click
                                                       # ample margin)
 const JUMP_M := 2.0                                   # per-frame teleport threshold
 
+## This slot's own files. The operator's world_layout.json is not on the list:
+## world saves go to the guard's scratch file, and the real one is only
+## compared, never written (src/tests/world_layout_guard.gd).
 const PROTECT := [
-	"user://world_layout.json",
 	"user://__clamprepro___save.json",
 	"user://__clamprepro___factory.json",
 ]
 
-var _backups : Dictionary = {}
+const WorldLayoutGuard := preload("res://src/tests/world_layout_guard.gd")
+var _wlg := WorldLayoutGuard.new(TEST_SLOT, PROTECT)
 var _prev_pos : Dictionary = {}    # instance_id -> Vector3
 var _jump_count := 0
 # CLAMPREPRO_STALL_MS=200 recreates the operator's 5-FPS session: each frame
@@ -65,7 +68,9 @@ func _ready() -> void:
 		print("FATAL: WorldLayout autoload missing (boot via the .tscn, not --script)")
 		get_tree().quit(2); return
 
-	_backup_files()
+	# Before boot, so no world save can reach the operator's world_layout.json.
+	if not _wlg.arm(get_tree()):
+		get_tree().quit(2); return
 
 	var bus := get_node_or_null("/root/EventBus")
 	if bus:
@@ -74,7 +79,7 @@ func _ready() -> void:
 
 	var scn := load("res://src/scenes/world/MainWorld.tscn") as PackedScene
 	if scn == null:
-		print("FATAL: MainWorld.tscn failed to load"); _restore_files(); get_tree().quit(2); return
+		print("FATAL: MainWorld.tscn failed to load"); _wlg.restore(); _wlg.disarm(); get_tree().quit(2); return
 	var world : Node = scn.instantiate()
 	await get_tree().process_frame
 	get_tree().root.add_child(world)
@@ -83,7 +88,7 @@ func _ready() -> void:
 
 	var bm : Node = world.get("build_mode")
 	if bm == null:
-		print("FATAL: world.build_mode is null"); _restore_files(); get_tree().quit(2); return
+		print("FATAL: world.build_mode is null"); _wlg.restore(); _wlg.disarm(); get_tree().quit(2); return
 
 	# Ground truth at the aim point BEFORE any placement: what does a down-ray see?
 	var space : PhysicsDirectSpaceState3D = (world as Node3D).get_world_3d().direct_space_state
@@ -100,7 +105,7 @@ func _ready() -> void:
 	await get_tree().process_frame
 	var ghost : Node3D = bm.get("_ghost")
 	if ghost == null:
-		print("FATAL: ghost not built by _enter_placing"); _restore_files(); get_tree().quit(2); return
+		print("FATAL: ghost not built by _enter_placing"); _wlg.restore(); _wlg.disarm(); get_tree().quit(2); return
 
 	for click in range(1, CLICKS + 1):
 		# Park the ghost exactly where the operator's crosshair ray landed. The
@@ -162,13 +167,25 @@ func _ready() -> void:
 		print("  FAIL  : %d teleport jump(s) >%.0f m/frame observed" % [_jump_count, JUMP_M])
 	else:
 		print("  ok    : no per-frame teleports")
+	for c in _wlg.final_checks(world):
+		if c[0]:
+			print("  ok    : %s" % c[1])
+		else:
+			fails += 1
+			print("  FAIL  : %s" % c[1])
+
+	# The verdict is printed and user:// restored BEFORE the world is freed,
+	# then restored again after: the headless teardown segfault lands inside
+	# world teardown (CLAUDE.md, 15 of 62 boots) and never reaches code after it.
+	_wlg.restore()
 	print("\n=========================================")
 	print("Result: %s (%d fail)" % ["PASS" if fails == 0 else "FAIL", fails])
 	print("=========================================")
 
 	world.queue_free()
 	await get_tree().process_frame
-	_restore_files()
+	_wlg.restore()
+	_wlg.disarm()
 	get_tree().quit(0 if fails == 0 else 1)
 
 func _clamps(bm: Node) -> Array:
@@ -209,22 +226,3 @@ func _report(bm: Node, tag: String) -> void:
 			% [c.get_instance_id(), c.global_position.x, c.global_position.y,
 			c.global_position.z, d])
 
-func _backup_files() -> void:
-	for p in PROTECT:
-		if FileAccess.file_exists(p):
-			var f := FileAccess.open(p, FileAccess.READ)
-			_backups[p] = f.get_buffer(f.get_length())
-			f.close()
-		else:
-			_backups[p] = null
-
-func _restore_files() -> void:
-	for p in PROTECT:
-		var data = _backups.get(p, null)
-		if data == null:
-			if FileAccess.file_exists(p):
-				DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
-		else:
-			var f := FileAccess.open(p, FileAccess.WRITE)
-			f.store_buffer(data)
-			f.close()
