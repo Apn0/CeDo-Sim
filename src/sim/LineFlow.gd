@@ -1328,7 +1328,19 @@ func _link_best_target(src_idx: int, source_port: Vector3, src_proc: String, exc
 		var b_proc : String = String(_nodes[best].get("process", ""))
 		if _is_invalid_flow_direction(src_proc, b_proc):
 			continue
-		if _creates_cycle(best, src_idx):
+		# The edge being proposed is src_idx → best, and _creates_cycle(from, to)
+		# asks "would edge from → to close a cycle" (DFS from `to` looking for
+		# `from`). Until 2026-09-25 this read _creates_cycle(best, src_idx): it
+		# asked whether the SOURCE already reached the target, and in this pass a
+		# source has no out-edges yet, so the guard never refused anything and
+		# #78's "full DAG cycle prevention" never ran. Measured with
+		# dump_line_graph on all seven macros: 36 edges sat on cycles
+		# (wind_sifter ↔ infeed blower 2 on 3A, centrifuge ↔ weegschaal on 1 and
+		# 3B, lump_cart ↔ lump_cart_spot, compressor_a ↔ compressor_b, …); after
+		# the swap, 0. A refused candidate falls through to the NEXT one, which is
+		# not automatically right — see docs/audit/cycle_guard_swap_2026-09-25.md
+		# for what each rerouted edge became and how it was settled.
+		if _creates_cycle(src_idx, best):
 			continue
 		return best
 	return -1
