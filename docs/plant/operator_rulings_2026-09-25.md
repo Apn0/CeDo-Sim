@@ -503,6 +503,9 @@ answered the wrong question. Asked again with the correction:
 machine's saved state, so it is its own task. Until then a load starts cold and
 every extruder is OFF with default settings.
 
+**Built the same day, as that task: §R1-§R4 below** (resume on load; how a NEW
+save starts is deferred by him there).
+
 ## I13. The feed stop's restart, and line 1
 
 - **3A/3B:** *"If it's a hundred or more, it will stop"*, at once. The restart
@@ -769,7 +772,68 @@ almost every object has one F action and, if it can be carried, one E action.
 
 ---
 
-# Line 1's wet tail — sixth session, same day (the fold after the mill)
+# Resume on load — sixth session, same day
+
+Source: Arno's request of 2026-09-25, relayed to the Claude session as a written
+brief (worktree `unruffled-keller-219387`), then one AskUserQuestion round. The
+request was first recorded in §I12 (fourth session), which set it aside as its
+own task; this is that task. The request is a **recollection of how shifts
+work, not a document** and is labelled **CLAIMED**. The answers are design choices, so they are rulings. What was
+measured before and after is in `docs/audit/plant_resume_2026-09-25.md`.
+
+## R1. The request (CLAIMED — operator recollection)
+
+*"During normal gameplay or during normal shifts, I would like the state to be as
+it was at the end of the shift before. The problem we are having now is if I start
+a new save, there is no previous shift."* And: *"it is unrealistic that at the five
+shift operation you will arrive at work and every time the extruder is cold nothing
+is running ... it should always be running, always be ready to run."*
+
+For a NEW save he offered two options: (1) a cold start once, going through every
+line setting realistic parameters, saved as the template for any new save; (2) seed
+the HMI values from the live values in the captured HMI photos instead of the
+zeros he put in the mockups deliberately.
+
+**Measured before (VERIFIED, `src/tests/probe_resume_baseline.gd`):** line 3B
+running (25 of 25 LineFlow nodes powered, extruder RUNNING at 80 rpm, zone 3 at
+205 °C, the compactorband in HAND at 70 %, 7 kg in the pipes) reloaded as 0 powered,
+extruder OFF and cooling 0.5 °C/s, rpm setpoint 60, every zone 215 °C, no HAND, 0 kg
+anywhere. Nothing of LineFlow's or the extruder's run state was in the save.
+
+## R2. The answers
+
+| question | answer | what it means for the build |
+|---|---|---|
+| When you load a save, what comes back exactly as you left it? (multi-select: run state / your settings / material in the line / faults and alarms) | **All four.** | Every placed machine comes back in its saved state: which machines run, each extruder's state and melt, where its start sequence was; the rpm and zone setpoints, suction, the natraject switch, HAND / manual / rpm % / per-component rpm; the kg in every machine, silo and pipe, plus the shift's kg ledger; trips, chokes, the e-stop and alarms not yet reset come back latched and reset as before. |
+| How should a NEW save start? | **Free text, summarised; key sentences verbatim.** The empty new save is the pre-alpha stage: *"we are building the things needed to create the state that we want to achieve."* Once the plant is laid out, a new save *"should start with the factory built as it was in a snapshot of time"*, pre-placed like Farming Simulator. Whether that first shift starts cold (learning the start-up) or as a hand-over (*"probably slow running, clogged filters, blocked gutters"*) *"depends I can't tell you now"*; first get lines 1, 3A/3B, the sorting line and the transport conveyors working. Also: the Tab build menu *"will not be in the final version. At least not for anyone but me."* | **Deferred, nothing built.** Neither the template save (option 1) nor photo-seeded values (option 2) are built now. The final new save is a pre-placed snapshot of the plant (his vision). Its starting condition is decided later. The HMI mockups' zeros stay (`test_hmi_screen_zeroing`). |
+| What should a machine placed NEW in build mode do? | **"Cold as today"**, with: *"This will not be the final simulator gameplay mechanics. This is just our suffering for now, until the factory is built."* | A machine placed new starts exactly as before (an extruder handed over hot but OFF, cooling). Only a LOADED save resumes. |
+
+## R3. What this replaces
+
+- **The 2026-07-08 "cold start on load" decision** (`MainWorld._spawn_world_items`).
+  A loaded save no longer starts cold. It is also not the old warm boot, which
+  started the WHOLE line on every load (`LineFlow.force_all_powered()`,
+  commissioned or not). Each machine comes back as it was saved: a stopped line
+  comes back stopped.
+- **§E2's "The model does not save the setpoint, so a reloaded world starts at 60
+  too."** The setpoint is saved now, so a reloaded extruder keeps the rpm the
+  operator left. A NEW extruder still starts at 60 (§E2 unchanged for that).
+
+## R4. Built, and not built
+
+Built: `src/sim/PlantResume.gd`. Per-body state rides in its own factory entry
+(`"run"`), the line's in a `plant_run` entry, and `MainWorld._resume_plant()`
+applies them after LineFlow's rebuild and the shift clock's load. Guard:
+`test_plant_resume` (in `run.sh`).
+
+Not built (the audit doc §6 has the list): the new-save template or seeding (R2,
+deferred). Bales on the feed points and on the opzetband, vehicles' loads, crew
+activity, gates' positions, the vacuum-pot mini-game mid-way, the HMI screens'
+own session state (the page shown, KWITTEREN acknowledgements), dirt hotspots.
+
+---
+
+# Line 1's wet tail — seventh session, same day (the fold after the mill)
 
 Source: Arno, answering AskUserQuestion prompts on 2026-09-25 in the session of
 worktree `clever-hypatia-945f15` (branch `claude/line1-layout-2026-09-25`). These

@@ -141,6 +141,20 @@ func restore_fill(kg: float, cool_left_s: float) -> void:
 	_cool_time_s = maxf(cool_left_s, 0.0)
 	_last_received_at = _now_sim_s()
 
+## Resume on load (operator 2026-09-25, rulings file §R1-§R3;
+## src/sim/PlantResume.gd). The factory entry still carries lumps_kg /
+## cool_left_s and BuildMode still restores them at once, for mass. This runs
+## again after the shift clock has loaded, and re-anchors the cool timer there:
+## at BuildMode's load the clock still reads its pre-load time, so a cart
+## anchored then read as cool as soon as the loaded shift time moved past it.
+func save_run_state() -> Dictionary:
+	if lumps_kg <= 0.001:
+		return {}
+	return {"lumps_kg": lumps_kg, "cool_left_s": cool_remaining_s()}
+
+func restore_run_state(d: Dictionary) -> void:
+	restore_fill(float(d.get("lumps_kg", 0.0)), float(d.get("cool_left_s", 0.0)))
+
 ## Sim time in seconds since the ShiftClock's day-zero epoch. Falls back to the
 ## wall-clock if the shift clock isn't reachable (test scenes).
 ## The ShiftClock is looked up ONCE and cached: this used to run

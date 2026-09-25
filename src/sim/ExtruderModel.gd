@@ -229,8 +229,9 @@ var zone_temp_setpoints : Array[float] = []
 # Operator screw speed setpoint (rpm). A start ramps the screw to it and a stop
 # leaves it alone. A NEW extruder starts at config.screw_rpm_min (60), not at
 # nominal (operator ruling 2026-09-25): at nominal, a first start at the green
-# button's temperature tripped 318 bar ~15 s in. It is not saved, so a reloaded
-# world starts at 60 too. 0 means "no operator setpoint — run at nominal".
+# button's temperature tripped 318 bar ~15 s in. It IS saved since 2026-09-25
+# (RESUME_FIELDS, rulings §R3): a reloaded extruder keeps the rpm the operator
+# left. 0 means "no operator setpoint — run at nominal".
 var screw_rpm_setpoint : float = 0.0
 # Live actual temperatures for the 7 individual zones.
 var actual_zone_temps : Array[float] = [113.0, 157.0, 184.0, 213.0, 215.0, 215.0, 215.0]
@@ -1176,3 +1177,49 @@ func clean_vacuum_lines() -> void:
 func reset_shift_counters() -> void:
 	primary_pot_fill_kg = 0.0
 	secondary_pot_fill_kg = 0.0
+
+# =============================================================================
+# RESUME ON LOAD (operator 2026-09-25, rulings file §R1-§R3)
+# =============================================================================
+## Everything a save carries for this extruder: its state and where it is in it,
+## the barrel, the operator's settings (rpm and zone setpoints, suction, bypass),
+## the pots and vacuum lines, the pressures, and the latched fault's cause.
+## ExtruderMachine.save_run_state() calls this; src/sim/PlantResume.gd holds the
+## scheme. The config (ExtruderConfig .tres) is not state and is not saved.
+const RESUME_FIELDS : Array[String] = [
+	"state", "melt_temp", "screw_rpm", "throughput_kg_h", "filter_loading_g",
+	"runtime_s", "vacuum_alarm_remaining_s", "time_since_state_change",
+	"_last_lump_emit_s", "fault_reason", "vacuum_alarm_pot", "vacuum_alarm_elapsed_s",
+	"zone_temp_setpoints", "screw_rpm_setpoint", "actual_zone_temps",
+	"motor_torque_pct", "_torque_trip_accum_s", "lump_passthrough_rate_g_s",
+	"_stop_entry_torque_pct", "_stop_entry_rpm", "vacuum_line_gunk_kg",
+	"flooded_dismantle_required", "volatile_load_g_per_kg", "primary_suction_pct",
+	"secondary_suction_pct", "bypass_primary", "primary_pot_fill_kg",
+	"secondary_pot_fill_kg", "residence_time_s", "per_stage_residence_s",
+	"per_stage_extracted_g_s", "residual_volatile_g_per_kg", "pellet_defect_rate",
+	"mp_after_laserfilter_bar", "die_plate_bar", "laserfilter_dp_bar",
+	"kopfilter_dp_bar", "mp_before_laserfilter_bar", "kopdruk_bar", "mp_pel_bar",
+	"die_face_state", "natraject_trip_text",
+]
+const PELLETIZER_RESUME_FIELDS : Array[String] = ["knife_states", "_accum_h"]
+const _Resume := preload("res://src/sim/PlantResume.gd")
+
+func save_run_state() -> Dictionary:
+	var out := _Resume.pack(self, RESUME_FIELDS)
+	out["start_seq"] = start_seq.save_run_state()
+	if pelletizer != null:
+		out["pelletizer"] = _Resume.pack(pelletizer, PELLETIZER_RESUME_FIELDS)
+	return out
+
+## Returns the fields the save had and this model does not (a renamed field).
+func restore_run_state(d: Dictionary) -> Array:
+	var fields : Dictionary = {}
+	for k in d:
+		if k != "start_seq" and k != "pelletizer":
+			fields[k] = d[k]
+	var missed : Array = _Resume.unpack(self, fields)
+	if d.get("start_seq", null) is Dictionary:
+		start_seq.restore_run_state(d["start_seq"])
+	if pelletizer != null and d.get("pelletizer", null) is Dictionary:
+		missed.append_array(_Resume.unpack(pelletizer, d["pelletizer"]))
+	return missed
