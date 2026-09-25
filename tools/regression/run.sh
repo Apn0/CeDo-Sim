@@ -127,6 +127,10 @@ echo "== harness lock: $HARNESS_LOCK (pid $$, winpid ${MY_WINPID:-?}) =="
 
 OUT="$PROJ/tools/regression/out"
 mkdir -p "$OUT"
+# Every log this run writes is newer than this marker; the SCRIPT ERROR census
+# at the end reads exactly those (the out dir is never cleared).
+RUN_MARK="$OUT/.run_start"
+: > "$RUN_MARK"
 
 # WORLD LAYOUT SENTINEL. user://world_layout.json is the operator's world and is
 # in git nowhere. Every suite that boots a world must redirect its saves
@@ -1308,6 +1312,19 @@ if ! grep -qaE "^Result: [1-9][0-9]* ok, 0 fail" "$OUT/lump_chunk_ccd.log"; then
 	[ $code -eq 0 ] && code=1
 fi
 wl_sentinel "lump chunk CCD (phys-07)"
+
+# SCRIPT ERROR CENSUS (2026-09-25). A GDScript runtime error aborts only the
+# function it hits, so a suite can lose a whole phase and still print PASS: with
+# C: full, test_macro_edges_reload's phase D died on a failed save and the suite
+# printed `PASS (51 ok)` instead of 60, and every step above reads only its
+# verdict line. Every such abort prints `SCRIPT ERROR:`, so any log of this run
+# that carries one fails here, by name. The one excused log (parse_sweep.log) and
+# the reasons are in the script's header. docs/audit/aborted_phase_guard_2026-09-25.md.
+echo "== script error census =="
+if ! bash "$PROJ/tools/regression/script_error_census.sh" "$OUT" "$RUN_MARK"; then
+	echo "FAIL  : a log of this run carries SCRIPT ERROR lines (named above)"
+	[ $code -eq 0 ] && code=1
+fi
 
 if [ ${#WL_BLAMED[@]} -eq 0 ]; then
 	echo "== world_layout sentinel: untouched by every step =="

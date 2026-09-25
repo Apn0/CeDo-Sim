@@ -626,6 +626,7 @@ the one before that ~6 months stale — treat this one as re-checkable too):
 | `docs/audit/intake_3a3b_topology_2026-09-25.md` | **The 3A/3B intake (`INTAKE_3A3B_SEQ`): the opzetband fed the climb belt past shredder 2, and conveyor 8 only ever fed the overflow.** Entry 0 is now a plain `transport_belt` (operator 2026-09-25: no bale is ever put on the belt into shredder 2), the head is pinned to shredder 2 → climb belt → transportband 1, and C8 → C9 (forward, edge 0) / C8 → C8.5 → U-bay (reverse) runs on an `overflow` stream that ends at the U-bay (MachineFlow `no_outlet`). Before/after dumps, `test_fallback_chains` H/G/F3/O and its mutation table. Found, not fixed: the #139 pack-up cascade stops C8.5 and C8 within 4 s of both VSSs full, against the operator's notes; the layout; old saves with the opzetband refuse to re-pin; C: measured 0 GB free |
 | `docs/audit/flow_node_twins_2026-09-25.md` | **Every intake belt was two LineFlow nodes: the body's `Model` child was a placeable too.** The mechanism (`BeltBuilder.build()` in 4 belt builders, an inner `_finalize_placeable` in 10 more, 31 catalog ids), what the twin did (feed heads, a double-fed next belt, every intake film bed at 0.000 kg/m, two controllers per deck, K-mode resolving hatch colliders to the Model), the dumps before/after, `test_flow_node_unique` and its mutation table. Both things it found and left are fixed since: the shredder ghosts (next row) and the opzetband bypassing its shredder (the sort line in `sort_line_topology_2026-09-25.md`, the 3A/3B intake in `intake_3a3b_topology_2026-09-25.md`) |
 | `docs/audit/shredder_ghost_placed_object_2026-09-25.md` | **A shredder placement ghost was a `placed_object`:** `ShredderMachine._ready` added the group without knowing it was a ghost, so a raw `build_node(id, true)` became a LineFlow feed head. Measured: BuildMode rebuilds LineFlow with the ghost alive on every placement, but its own ghost was never a flow node (`_make_preview_inert` strips the script first). The fix, why real shredders are unchanged, `test_ghost_census` (all 200 catalog ghosts) and its mutation table. Found, not fixed: raw ghosts still join their own behaviour groups (`shredder`, `lump_cart`, `waste_container`, `hmi`, …) |
+| `docs/audit/aborted_phase_guard_2026-09-25.md` | **A suite lost a whole phase and still printed PASS, and `run.sh` would have passed it.** With C: full, `test_macro_edges_reload`'s phase-D save failed and the typed read after it was a runtime error: `PASS (51 ok)` instead of 60. The fix: the suite checks its save (D-1) and asserts every phase reached its last line (Z3); `run.sh` ends with `script_error_census.sh`, which fails any log of the run with a `^SCRIPT ERROR` line (only `parse_sweep.log` excused); `test_route_goal_clearance`'s pre-autoload compile noise removed. Census tests on real and fabricated logs, the suite's mutation table, the full harness |
 | `docs/audit/macro_edges_reload_2026-09-25.md` | **A macro line's explicit flow edges (pins, streams, split, recirc) now survive a save → load.** Before, a reloaded world had 0 of them (47 tagged nodes → 0). One function, `BuildMode.macro_flow_edges`, serves the build and the load, and the refactored build is diffed identical to the old one (269 rows). Covers `macro_instance`, the hole and dead-end rules for deleted machines, when a save is refused, the guard `test_macro_edges_reload` and its mutation matrix, and what the load does with every macro-bearing layout on this machine |
 | `docs/audit/hmi_fault_rearm_2026-09-24.md` | **HMI alarms: KWITTEREN acknowledges one occurrence of an alarm (#279), and the same EREMA code on two lines is two alarms (#282).** Probes, the guard suites `test_hmi_fault_rearm` and `test_hmi_fault_per_line` with their mutation matrices, and the full harness on `04eaa77`. **Open:** every panel lists every line's EREMA alarms (found by reading the code, not measured); Afschermen does not exist (the Onderdrukt tab reads a table nothing writes); RESETTEN clearing every acknowledgement has not been ruled on |
 | `docs/audit/operator_session_2026-09-23.md` | **The interactive 2026-09-23 session: tasks ranked by operator effort against sim impact, each answered by AskUserQuestion then built and measured.** Task 1: film beds on every belt (P1), the inclined belt's deck running the wrong diagonal, the cost probe, the renders; per-task evidence and the open questions each one left |
@@ -1171,6 +1172,22 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   on the `Result:` line plus zero `SCRIPT ERROR` lines, never on the exit code.
   Worked example: `src/tests/test_lump_chunk_ccd.gd` (watchdog proven by
   injecting that exact error: exit 2 with a failing verdict in 11 s).
+  **A fourth mode, measured 2026-09-25: a suite that PASSES without a phase.**
+  `await _phase_d()` returns as if D were done when D dies on a runtime error,
+  so `_run` reaches the verdict. With C: full, `test_macro_edges_reload`'s D
+  save failed, and the typed read after it aborted the phase. The suite printed
+  `PASS (51 ok)` instead of 60, and every `run.sh` step reads only its verdict
+  line. Since then:
+  - `run.sh` ends with `tools/regression/script_error_census.sh`, which fails
+    every log of the run that carries a `^SCRIPT ERROR` line. Only
+    `parse_sweep.log` is excused.
+  - A suite that awaits phases should record each one's LAST line and assert
+    all of them (`test_macro_edges_reload` Z3).
+  - A `--script` suite must not name a class whose script uses an autoload.
+    `BaseVehicle.NPC_ARRIVE_TOL` in `test_route_goal_clearance` made the
+    pre-autoload compile fail on `EventBus`. It ran anyway, but its log carried
+    2 `SCRIPT ERROR` lines until the constant was read through `load()`.
+  `docs/audit/aborted_phase_guard_2026-09-25.md`.
 - **Most `src/tests/*.gd` files are never executed by the harness.** `run.sh:261`
   runs an explicit allow-list of `.tscn` suites; anything not on it is only seen by
   the full-tree parse sweep, which proves the file PARSES and nothing more. As of

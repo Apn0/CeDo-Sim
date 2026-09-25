@@ -38,6 +38,10 @@ extends Node
 ##      matches the SEQ, a macro_index past the SEQ's end. A refused line gets
 ##      no edge at all; a single legacy copy (line 1 without macro_instance)
 ##      is still re-derived.
+##   Z  the slot files are gone, the override is restored, the leak guard,
+##      and every phase ran to its LAST line (Z3). Added 2026-09-25: a failed
+##      save made phase D die on a runtime error, and the suite still printed
+##      PASS with 51 of its 60 checks (docs/audit/aborted_phase_guard_2026-09-25.md).
 ##
 ## ISOLATION. Everything goes to this suite's OWN slot (FACTORY_PATH); both
 ## WorldLayout.layout_path_override and every BuildMode.layout_path are set
@@ -94,6 +98,12 @@ var _guard_before : Dictionary = {}
 var _macro_store_prev : Dictionary = {}   # LineMacroStore._cache as it was, restored in _cleanup
 var _diag_built : Dictionary = {}         # source label → its fallback candidates in the BUILT world
 var _gap_const_3b : float = 0.0           # 3B band → extruder along the line, const SEQ (phase A)
+# Phases that ran to their LAST line. A runtime error aborts only the function it
+# hits: `await _phase_d()` then returns as if D were done, _run goes on to
+# _finish, and the suite used to print PASS without D's checks (2026-09-25, a
+# full C: drive: `PASS (51 ok)` instead of 60). _finish asserts every phase here.
+const PHASES : Array = ["A", "B", "C", "D"]
+var _phases_done : Dictionary = {}
 
 func _check(c: bool, msg: String) -> void:
 	print(("  ok    : " if c else "  FAIL  : ") + msg)
@@ -487,6 +497,7 @@ func _phase_a_b() -> void:
 	_free(bm2)
 	await get_tree().process_frame
 	await get_tree().process_frame
+	_phases_done["A"] = true
 
 func _phase_b(bm: BuildMode, lf: LineFlow) -> void:
 	print("  -- B: the reloaded world's silo chains, by name and by kg --")
@@ -574,6 +585,7 @@ func _phase_b(bm: BuildMode, lf: LineFlow) -> void:
 		_check(worst <= CIRC_FRAC * fed,
 			"B5 %s: nothing circulates — no chain machine processed more than was fed (max %.1f of %.1f kg)"
 			% [ch["tag"], worst, fed])
+	_phases_done["B"] = true
 
 # ── C: a partial line, and an operator jog ───────────────────────────────────
 
@@ -754,6 +766,7 @@ func _phase_c() -> void:
 	_free(bm4)
 	await get_tree().process_frame
 	await get_tree().process_frame
+	_phases_done["C"] = true
 
 # ── D: saves the load must refuse ────────────────────────────────────────────
 
@@ -770,7 +783,16 @@ func _phase_d() -> void:
 	bm6.call("_save_layout")
 	_free(bm6)
 	await get_tree().process_frame
-	var arr : Array = AtomicFile.read_json(FACTORY_PATH, TYPE_ARRAY)
+	# The save must LAND before anything is crafted from it. _save_layout
+	# returns nothing; a failed write (a full disk: AtomicFile "short write",
+	# error 13) leaves no file, read_json returns null, and assigning that to a
+	# typed Array was a runtime error that silently ended this phase.
+	var raw : Variant = AtomicFile.read_json(FACTORY_PATH, TYPE_ARRAY)
+	var n_raw : int = (raw as Array).size() if raw is Array else -1
+	_check(n_raw > 1, "D-1 the build was saved to the suite's slot and reads back (%d entries)" % n_raw)
+	if n_raw <= 1:
+		return                             # nothing to craft from; Z3 names the unfinished phase
+	var arr : Array = raw
 	var i3b_silo : int = _seq_index(BuildMode.LINE_3B_SEQ, "extruder_silo")
 	var sort_mid : int = -1
 	for e in arr:
@@ -816,6 +838,7 @@ func _phase_d() -> void:
 		"D4 … with the same %d edges as when it was built — %s" % [l1_ref.size(), "same" if l1_got == l1_ref else _diff(l1_ref, l1_got)])
 	_free(bm7)
 	await get_tree().process_frame
+	_phases_done["D"] = true
 
 func _finish() -> void:
 	_done = true
@@ -833,6 +856,12 @@ func _finish() -> void:
 			changed.append("%s vanished" % k)
 	_check(changed.is_empty(), "Z2 LEAK GUARD: %d operator files md5-identical before and after %s"
 		% [after.size(), str(changed) if not changed.is_empty() else ""])
+	var unfinished : Array = []
+	for ph in PHASES:
+		if not _phases_done.has(ph):
+			unfinished.append(ph)
+	_check(unfinished.is_empty(), "Z3 every phase ran to its end %s — a phase cut short by a runtime error is not a pass%s"
+		% [str(PHASES), "" if unfinished.is_empty() else "; did not finish: %s (read the SCRIPT ERROR above)" % str(unfinished)])
 	var verdict : String = "PASS" if _fails == 0 and _ok > 0 else "FAIL"
 	print("[TEST] macro edges reload %s (%d ok, %d fail)" % [verdict, _ok, _fails])
 	print("Result: %s (%d ok, %d fail)" % [verdict, _ok, _fails])
