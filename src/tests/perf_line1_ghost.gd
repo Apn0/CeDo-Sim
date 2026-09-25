@@ -205,8 +205,7 @@ func _ready() -> void:
 	var med : float = float(sorted_d[n / 2]) if n % 2 == 1 		else (float(sorted_d[n / 2 - 1]) + float(sorted_d[n / 2])) * 0.5
 	var off_calls : float = _mean(offs, "calls")
 	var on_calls : float = _mean(ons, "calls")
-	print("
---- attributable to the ghost (%d PAIRED A/B differences) ---" % deltas.size())
+	print("\n--- attributable to the ghost (%d PAIRED A/B differences) ---" % deltas.size())
 	var line := "  per-pair B-A:"
 	for d in deltas:
 		line += " %+.1f" % float(d)
