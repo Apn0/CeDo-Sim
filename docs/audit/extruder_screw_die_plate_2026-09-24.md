@@ -356,6 +356,25 @@ PASS (21 ok); `test_extruder_melt_pressures` PASS (53 ok, main's dMP suite);
 first waited out another session's `test_jam_baseline`, and
 `world_layout.json` hashed `e046af7d…` before and after.
 
+**After merging `origin/main` again (`5afb880`: #287/#288 machine sounds, #289
+the 3A/3B silo tails, #290 the ramp pressures).** #290's shared helper
+`_set_melt_pressures_from_flow()` arrived with a one-argument call. On this
+branch that is a parse error, and it was changed to
+`_set_melt_pressures(throughput_norm, melt_viscosity_factor)`, the resolution
+#290's session and this one agreed on. Results: parse sweep `462 ok, 0 fail`;
+`test_extruder_ramp_pressures` PASS (21 ok), and its own info line reads
+`die plate ∝ q^0.350 x melt (ExtruderModel.DIE_FLOW_INDEX)`, so it ran on
+this law; `test_extruder_silo_chain` PASS (41 ok); `test_screw_die_plate_bar`
+PASS (55 ok); `test_extruder_screw` 15 ok; `test_die_pressure_bar` PASS (21 ok);
+`test_extruder_melt_pressures` PASS (53 ok); `test_extruder_brain_wired` PASS
+(24 ok); `test_qa_loop` 14 ok; `test_qa_spec` 24 ok; `test_tag_snapshot` 28 ok,
+1 data-gated skip; `test_mfi_proxy` 22 ok; `test_qa_terminal` 0 failures;
+`lint_unused_params` 0 of 457 files. 0 `^SCRIPT ERROR` lines, and
+`world_layout.json` hashed `e046af7d…` before and after. Merge #288 had
+replaced two CLAUDE.md index rows (this doc's and
+`operator_rulings_2026-09-24.md`) with its AUDIO row; this merge keeps all
+of them.
+
 **An incident during this session, not caused by it.** At 02:34:33 the file was
 rewritten to `bd62352d…`, with the jam-baseline fixture gate in
 `structure_items` **twice**. At that moment two OTHER sessions were running
