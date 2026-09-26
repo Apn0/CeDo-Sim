@@ -283,7 +283,13 @@ func _run() -> void:
 	(_nd(silo)["in"] as MaterialBatch).add(MaterialBatch.new(SILO_KG, SILO_KG / LineFlow.FEED_DENSITY,
 		LineFlow.DEFAULT_COMP.duplicate(), "rebuild_pipes", 0.0, 0.0))
 	_injected += SILO_KG
-	_feed(RUN_S)
+	# Since 2026-09-26 3B's wash line holds its material 3 min from M11a to the
+	# silo (LineFlow.WASH_TIMING, rulings 2026-09-26 W3): run until the first kg
+	# has crossed the whole line, then RUN_S more, so every connector the checks
+	# below lean on (the plasmaq -> cyclone edge, a machine loaded both ways)
+	# carries kg. With 60 s alone only 3 edges were loaded (measured).
+	var fill_s : float = float((_lf.call("wash_timing", "line_3b") as Dictionary).get("first_kg_s", 0.0))
+	_feed(fill_s + RUN_S)
 	var e0 := _edges()
 	var loaded := 0
 	for k in e0:
@@ -292,7 +298,7 @@ func _run() -> void:
 	var p0 : float = float(_lf.call("pipe_mass"))
 	var r0 : float = _residual()
 	_info("after %.0f s: %d edges, %d carry kg, pipe_mass %.4f kg, in_transit %.4f kg, residual+injected %.9f kg" % [
-		RUN_S, e0.size(), loaded, p0, float(_lf.call("in_transit_mass")), r0])
+		fill_s + RUN_S, e0.size(), loaded, p0, float(_lf.call("in_transit_mass")), r0])
 	_check(p0 > 5.0 and loaded >= 8,
 		"S0 the connectors carry kg before any rebuild (%.3f kg over %d edges; not a vacuous 0)" % [p0, loaded])
 	_check(absf(r0) < LEDGER_EPS, "S0 the ledger balances before any rebuild (%.9f kg)" % r0)
