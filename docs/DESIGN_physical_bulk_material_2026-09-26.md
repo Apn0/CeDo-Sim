@@ -41,16 +41,18 @@ Evidence tags used throughout:
 - **The game runs Rapier3D 0.8.34, not Jolt** (§3.4), a single-threaded
   build without SIMD. As shipped it throws blobs out of the bin from a turning
   screw: 143, 260 and 204 blobs lost in three runs, one flung 157 m up. Jolt
-  lost 0-11 in the same kind of runs. Which engine the blobs run in is Q7 (Rapier ≥ 0.35 is
-  multithreaded and still deterministic, and unmeasured here).
+  lost 0-11 in the same kind of runs. Which engine the blobs run in is Q7
+  (Rapier ≥ 0.35 is multithreaded and still deterministic, and unmeasured
+  here).
 - **No GPU for anything that carries kg.** Under `--headless`, where every
   regression suite runs, there is no RenderingDevice (measured). GDScript is
   too slow to be the solver (21 ms per step per 1,000 particles). The GPU
   draws the flakes; the CPU carries the kg.
 - **Cost** (§7): a running doseersilo keeps ~2,000 blobs awake in its screw
-  layer alone, and 3,000 active blobs cost 19-24 ms per step in Jolt on this
-  PC, about one frame for one silo. The whole plant cannot run physically at
-  once at 1 L; physical-where-the-player-is (LOD) is Q5.
+  layer alone, and 3,000 active blobs cost 19-36 ms per step in Jolt on this
+  PC (by how busy the other cores were): one to two frames for one silo. The
+  whole plant cannot run physically at once at 1 L;
+  physical-where-the-player-is (LOD) is Q5.
 - **Machine by machine** (§10): about 70 of the 200 macro machines are
   granular (silos with screws, belts, chutes, screws). Those move to the
   physical model in four phases, the 3C doseersilo and its feed belt first.
@@ -67,8 +69,9 @@ Evidence tags used throughout:
 
 Arno, 2026-09-26, answering AskUserQuestion in the rpm_pct session
 (`docs/audit/hmi_rpm_rate_2026-09-26.md` §2, rulings R1-R3; the rulings file
-for the day, `docs/plant/operator_rulings_2026-09-26.md`, is not on `main` yet).
-Paraphrased, as that doc records them:
+for the day, `docs/plant/operator_rulings_2026-09-26.md`, comes with PR #334
+and is not on `main` yet). Paraphrased, as that doc and the brief for this
+task record them:
 
 - **R1.** LineFlow's rate law (design kg/s × spin × rotor fraction × rpm_pct ×
   component multiplier) is a BASE and stays untouched, including the measured
@@ -88,8 +91,9 @@ Paraphrased, as that doc records them:
   SERIES, and the wash-water inflow moves the film through it (the level rises
   and overflows into the chute), not the stirrers.
 
-The general rules I derive from that, restated so he can reject them
-(`memory: operator-answers-are-situational`; each is an option in §12):
+The general rules I derive from that, restated so he can reject them (a
+plant answer describes one situation, and a rule built from it can be wrong;
+§12's options restate the rule each one would make):
 
 - **G1.** Material is conserved as discrete lumps with a mass each; no machine
   has a throughput number of its own anywhere in the physical part.
@@ -244,8 +248,8 @@ documented splits the material in two:
   slope failure is happening,
 
 and converts material between them in both directions. AGX Terrain (Algoryx)
-documents this best [1][2]; CM Labs Vortex does the same ("as particles come
-to rest, they are then reintegrated", 1/60 s steps, the particle count can be
+documents this best [1][2]; CM Labs Vortex does the same (particles that come
+to rest are put back into the terrain, 1/60 s steps, the particle count can be
 capped) [3][4].
 
 Games mostly do not conserve mass:
@@ -275,18 +279,18 @@ by a tool; its loss of mass is a design choice this project cannot make.
 | technique | how it works | real-time cost (SOURCED) | mass | belt / screw in it |
 |---|---|---|---|---|
 | **Heightfield + talus relaxation** (Sumner et al. 1999 [10], thermal erosion [11]) | columns on a grid; a body pushes columns down and the displaced volume goes to the nearest free columns; slopes steeper than the angle of repose shed height downhill | Sumner: ~37,000 active columns of >2 M; GPU erosion variants, no ms given [11]; a 2.5D depth-integrated sand model runs at "real-time frame rates" on a GPU [12] | exact if every decrement equals an increment; Sumner's compression and race-ignoring GPU writes are not [10][11] | a belt can advect columns (MudRunner's mud offset [15]); a screw inside a pile has no natural form |
-| **Hybrid store + active particles** (Onoue-Nishita 2003 [13], Vortex [3], AGX Terrain [1]) | resting material in a heightfield/voxels, moving material as particles; tool contact or failure converts store → particles, particles at rest merge back | AGX: 0.1 m voxels + ~1,000 particles at a 10 ms step in real time; its DEM reference (200,000 × 50 mm particles, 1 ms step, 250 iterations) ran ~2000× slower on an i7-8700K [1] p.29 | AGX: "By construction, all mass exchange operations preserve the total mass" (p.23); swell changes volume, not mass | the tool acts on the active zone; AGX's "soil deformer" faces displace material "using the resulting velocity of the body projected on the respective face normal" [1] Fig. 8 |
-| **DEM** (each grain a contact body) | Hertz-Mindlin contacts, tiny steps | a 250,000-particle hopper over 40 s: 3 h on 16 cores at Δt = 10 µs [9]; studies use 100 k to millions of particles [9] | exact (fixed particle mass) | the reference method for screws (Owen & Cleary 2009, screw mass flow "in excellent agreement" [45] [snip]); offline only |
-| **Position-based dynamics** (Macklin et al. 2014, NVIDIA FleX [5]) | particles, position-level friction that allows "high angles of repose"; friction depends on the iteration count | sandcastle: 73k particles, 2 substeps, 12 iterations, 10.2 ms/frame on a GTX 680; 1,000 objects × 44 particles: 4 ms [5] | exact (fixed mass) | moving colliders; particle sleeping freezes slow particles [5] |
-| **MPM / FLIP** (continuum sand) | particles carry the state, a grid solves the continuum | 6.7 M particles: 38.4 s per frame; "still far from being real-time" [6]; 1.33 M snow particles at 68.5 fps on four V100s [7]; up to 500 k on a CPU at "interactive" rates [8] | exact (fixed mass) | moving boundary conditions; GPU pipeline needed |
+| **Hybrid store + active particles** (Onoue-Nishita 2003 [13], Vortex [3], AGX Terrain [1]) | resting material in a heightfield/voxels, moving material as particles; tool contact or failure converts store → particles, particles at rest merge back | AGX: 0.1 m voxels + ~1,000 particles at a 10 ms step in real time; its DEM reference (200,000 × 50 mm particles, 1 ms step, 250 iterations) ran ~2000× slower on an i7-8700K [1] p.29 | AGX: every mass exchange preserves total mass by construction (p.23); swell changes volume, not mass | the tool acts on the active zone; AGX's "soil deformer" faces push material at the body's velocity projected on each face's normal [1] Fig. 8 |
+| **DEM** (each grain a contact body) | Hertz-Mindlin contacts, tiny steps | a 250,000-particle hopper over 40 s: 3 h on 16 cores at Δt = 10 µs [9]; studies use 100 k to millions of particles [9] | exact (fixed particle mass) | the reference method for screws (Owen & Cleary 2009 predicted screw mass flow close to experiment [45] [snip]); offline only |
+| **Position-based dynamics** (Macklin et al. 2014, NVIDIA FleX [5]) | particles, position-level friction that gives steep piles; friction depends on the iteration count | sandcastle: 73k particles, 2 substeps, 12 iterations, 10.2 ms/frame on a GTX 680; 1,000 objects × 44 particles: 4 ms [5] | exact (fixed mass) | moving colliders; particle sleeping freezes slow particles [5] |
+| **MPM / FLIP** (continuum sand) | particles carry the state, a grid solves the continuum | 6.7 M particles: 38.4 s per frame, and the authors call it far from real time [6]; 1.33 M snow particles at 68.5 fps on four V100s [7]; up to 500 k on a CPU at interactive rates [8] | exact (fixed mass) | moving boundary conditions; GPU pipeline needed |
 | **Falling-sand cellular automaton** (Noita [14]) | per-cell rules on a grid, chunked, multithreaded | no numbers found | exact if the rules only move cells | 2D; its 3D analogue is the voxel store |
 
 ### 4.3 AGX Terrain, the template (SOURCED [1][2])
 
 - **Store.** Voxels with a solid occupancy 0-1, a compaction and a velocity
   each. The surface heightfield is the top voxel's fill level, so it is
-  single-valued (p.17). A "fluidized mass" buffer exists "to ensure total mass
-  conservation".
+  single-valued (p.17). A "fluidized mass" buffer exists so that total mass is
+  conserved.
 - **Store → particles.** When a cutting edge enters the soil, a wedge-shaped
   active zone is predicted. The voxel mass inside it is converted into
   particles, new or grown, between a minimum and a maximum diameter, exchanging
@@ -294,19 +298,19 @@ by a tool; its loss of mass is a design choice this project cannot make.
 - **Particles → store.** A particle at rest outside an active zone merges once
   its contact velocity, distance and a delay pass thresholds (merge speed
   0.06 m/s by default [2]); its mass is spread over the adjacent voxels
-  "respecting the maximum angle of repose" (p.15).
+  within the maximum angle of repose (p.15).
 - **Relaxation.** A cellular automaton moves mass downhill until no slope is
   steeper than the angle of repose, optionally capped per step, which acts as a
   maximum flow rate (p.19).
 - **Tool coupling.** The tool feels the active zone as an aggregate body joined
   to it with a compliant, force-limited lock.
 - **Cost.** 0.1 m voxels and ~1,000 particles at a 10 ms step in real time,
-  against a DEM reference ~2000× slower (p.29). Solver iterations "as low as …
-  25" (p.24).
+  against a DEM reference ~2000× slower (p.29). As few as 25 solver
+  iterations (p.24).
 
 ### 4.4 The screw: the formula an emergent model must reproduce (SOURCED)
 
-TUM / Logistics Journal 2006, "closely based on DIN 15262" [28]:
+TUM / Logistics Journal 2006, a method built closely on DIN 15262 [28]:
 
     I_V = (π/4)(D² − d²) · φ · S · n · ζ
 
@@ -325,8 +329,8 @@ itself from friction against flight, trough and neighbouring material.
 
 ### 4.5 The belt
 
-`StaticBody3D.constant_linear_velocity` "does not move the body, but affects
-touching bodies, as if it were moving"; the Godot docs name conveyor belts as
+`StaticBody3D.constant_linear_velocity` leaves the body where it is but moves
+what touches it as if the body moved; the Godot docs name conveyor belts as
 the use [43]. At the head pulley a fast belt throws material off at the
 tangent at belt speed; a slow one lets it ride around the pulley; the
 criterion is v²/(r·g) against cos θ [42]. INFERRED: a friction-driven blob
@@ -334,17 +338,16 @@ leaving at belt speed on a ballistic arc is the belt's acceptance test.
 
 ### 4.6 What film does in a silo (SOURCED)
 
-- Loose film flake bridges: "the lightweight flakes arch across the hopper
-  opening and starve the screw", with throughput swings of ±30 % [38].
-  Shredded bags "bridged", and a screw "rat-holed" and "balled up" [34].
-- **Why three floor screws:** a KWS feeder for plastic fluff uses "three
-  individual screws with individual drive units" and **vertical hopper walls**
-  "to prevent compression and bridging" [33]; live bottoms draw material
-  "equally from the full width and length" for materials that "pack or bridge
-  easily" [32]. The 3C doseersilo is that machine: vertical walls, three
+- Loose film flake bridges: light flakes arch over a hopper opening and
+  starve the screw, with throughput swings of ±30 % [38]. Shredded bags
+  bridged, and a screw rat-holed and balled up at its discharge [34].
+- **Why three floor screws:** a KWS feeder for plastic fluff uses three
+  screws, each with its own drive, and **vertical hopper walls** against
+  compression and bridging [33]; live bottoms draw material evenly over the
+  whole opening for materials that pack or bridge [32]. The 3C doseersilo is that machine: vertical walls, three
   screws, one VFD each (8/8/9 Hz on the HMI).
-- **No angle of repose for film was found.** PET bottle flakes "stack steeply
-  (>80°)" [41]; FleX notes that simulated friction, and so the repose angle,
+- **No angle of repose for film was found.** PET bottle flakes stack at more
+  than 80° [41]; FleX notes that simulated friction, and so the repose angle,
   depends on the iteration count [5].
 - **A heightfield cannot bridge or rathole**: a column holds one height (AGX
   p.17). If the operator wants to see a bridge form over a screw, the store
@@ -367,9 +370,9 @@ SOURCED unless marked; sources are the [G…] entries in §13.
   against `"simd-stable,serde-serialize,parallel,…"` for the other flavour,
   and the locked rapier3d 0.32 refuses SIMD with enhanced determinism at
   compile time [G1]. So the solver is single-threaded and scalar.
-- From godot-rapier 0.35.0 (2026-08-08) there is one flavour, and its
-  Cargo.toml says "enhanced-determinism costs no measurable performance and
-  composes with SIMD and `parallel`" [G1]. Upgrading is a separate change; the
+- From godot-rapier 0.35.0 (2026-08-08) there is one flavour; its Cargo.toml
+  says enhanced determinism now costs no measurable speed and combines with
+  SIMD and `parallel` [G1]. Upgrading is a separate change; the
   4.7 migration plan's rule is one variable at a time
   (`docs/PLAN_godot_4.7_migration_2026-09-25.md`).
 - **A belt in Rapier is not friction.** In 0.8.34 a contact with a static body
@@ -403,8 +406,8 @@ SOURCED unless marked; sources are the [G…] entries in §13.
 
 **Both.** `AnimatableBody3D` estimates its velocity from how it moves, so a
 rotated screw pushes with the right contact velocity [G9]. A concave trimesh is
-"the slowest 3D collision shape", and small fast bodies "have a chance to clip
-through" it [G10]. Screws and walls should be convex pieces.
+the slowest 3D collision shape, and small fast bodies can clip through it
+[G10]. Screws and walls should be convex pieces.
 
 ### 5.2 The GPU paths
 
@@ -413,15 +416,15 @@ through" it [G10]. Screws and walls should be convex pieces.
   per system; there is no position readback; and an open bug has particles
   freeze or ignore a moving collider [G11]. Visual only, as the 2026-07-15 doc
   already said.
-- **Compute shaders** need a RenderingDevice, which "is not available when
-  running in headless mode" [G12]. MEASURED this session (§6.1):
+- **Compute shaders** need a RenderingDevice, which the Godot docs say is not
+  available in headless mode [G12]. MEASURED this session (§6.1):
   `create_local_rendering_device()` and `get_rendering_device()` both return
   null under `--headless` on this machine. **So a solver that carries kg on the
   GPU cannot run in any headless suite**, which is where every regression test
   in this repo runs. Reading data back also costs frames
-  (`buffer_get_data_async` calls back "in a certain amount of frames") [G12].
-- Existing Godot compute examples: an SPH addon with "32k+ particles on
-  mid-range GPUs", no rigid coupling; boids at 32,000 on a GTX 1060 [G13].
+  (`buffer_get_data_async` calls back some frames later) [G12].
+- Existing Godot compute examples: an SPH addon claiming 32k+ particles on
+  mid-range GPUs, no rigid coupling; boids at 32,000 on a GTX 1060 [G13].
 
 ### 5.3 Native libraries through GDExtension
 
@@ -440,9 +443,9 @@ Bindings: godot-cpp is MIT, godot-rust (gdext) MPL-2.0 [G14].
 
 ### 5.4 Terrain and rendering
 
-- Terrain3D (MIT) edits heights at runtime (`set_height`, `update_maps()`) and
-  "may also need to regenerate collision"; godot_voxel's physics shape creation
-  costs "about 3 to 5 times" its meshing [G15]. Both are world terrain, not a
+- Terrain3D (MIT) edits heights at runtime (`set_height`, `update_maps()`), and
+  its collision may need regenerating; godot_voxel's physics shapes cost about
+  3-5× its meshing [G15]. Both are world terrain, not a
   5 m trough; §8 keeps the store in-house.
 - MultiMesh: the whole buffer is set in one call; the dummy (headless) renderer
   drops per-instance writes but stores a bulk `buffer` write, which explains
@@ -479,6 +482,10 @@ it move, what does it cost, what breaks", not "what is the plant's kg/h".
 - **Steady inventory** (`feed=1`): a blob that leaves a tube is counted and
   thrown back in over the inlet end at 1 m/s, as off a belt. A blob below
   y = −0.5 m is counted LOST and thrown back the same way.
+- **Jolt's limits**: runs named `tp_*` / `cost_*` used Jolt's defaults; runs
+  named `tp2_*` / `cost2_*` used raised ones (`max_bodies` 40,960,
+  `max_body_pairs` 262,144, `max_contact_constraints` 131,072), added after
+  the 10,000-blob loss in §6.3.
 - **Timing**: the wall time between frames after a settle period. Other
   sessions' Godot processes used between 0.3 and 5 cores meanwhile; each row
   below gives that load. Compare rows, not absolute ms.
@@ -507,7 +514,7 @@ kg/h is the blobs out of the three tubes in the 20 s, × 0.060 kg, × 180.
 | Rapier 0.8.34 | anim, `sync_to_physics` on | 1 (left) | 130 | **51** | 1.7 | `tp2_rapier_animsync_one` |
 | Jolt | anim, **10 rpm** | all 3 | **54** | 0 | ? | `tp2_jolt_anim_all_rpm10` (the load reading went negative: a process ended mid-run) |
 | Jolt | anim, **40 rpm** | all 3 | **1555** | 11 | 1.3 | `tp2_jolt_anim_all_rpm40` |
-__TP2_ROWS__
+| Jolt | anim, blobs are 1 L **cubes** | all 3 | **1026** | 0 | 1.0 | 57 ms/step against 24 for spheres; `tp2_jolt_anim_all_box` |
 
 What that shows:
 
@@ -534,8 +541,12 @@ What that shows:
    637 and 1555 kg/h: ×2.4 from 20 to 40, but ×12 from 10 to 20. The formula
    (§4.4) is linear in n for a flooded screw, so the spike fails A5 as it
    stands. Counts are small (5, 59 and 144 blobs in 20 s), but not that small.
-   Points 4 and 5 are the risk in §11: the numbers emerge, but they depend on
-   everything and match nothing yet.
+6. **The blob's shape moves the kg/h too.** The same run with 1 L cubes
+   instead of spheres gave 1026 kg/h against 637, lost none, and cost 2.3×
+   the frame time (57 against 24 ms).
+
+Points 4-6 are the risk in §11: the numbers emerge, but they depend on
+everything and match nothing yet.
 
 ### 6.3 What it costs
 
@@ -556,12 +567,25 @@ What that shows:
   the cause was not isolated. A ledger that deletes lost blobs would have
   lost the whole silo.
 
-**An active pile** (screws turning, blobs awake): 3,000 blobs in Jolt cost
-19-24 ms per step (`tp_jolt_anim_*`, 1.1 other cores), and 21.5 ms with every
-blob held awake (`tp2_jolt_surf_nosleep_all`). Rapier: 47-48 ms turning,
-73 ms held awake. **One active doseersilo at 1 L blobs does not fit a 60 Hz
-frame on this PC in either engine.**
-__COST2_ROWS__
+- **With raised limits** (`max_bodies` 40,960, `max_contact_constraints`
+  131,072) the same 10,000-blob pile lost nothing and fell asleep: 13 ms p50,
+  27 ms mean (`cost2_jolt_surf_10000_limits`). So the limits were the cause.
+  Any Jolt build of this must set them.
+
+**An active pile** (the screws turning at 20 rpm, 4 s settle, 5 s measured):
+
+| blobs | Jolt ms/step | lost | other cores | Rapier 0.8.34 (`sync_to_physics`) ms/step | lost | other cores |
+|---|---|---|---|---|---|---|
+| 1,000 | 9.2 | 0 | 2.7 | 16.2 | **28** | 2.9 |
+| 3,000 | 36.3 (19-24 in the throughput runs at 1.1 cores) | 0 | 2.4 | 52.0 | **68** | 2.1 |
+| 6,000 | 73.6 | 1 | 1.7 | 124.0 | **72** | 2.1 |
+| 10,000 | 144.8 (raised limits) | 0 | 1.8 | — | — | — |
+
+Jolt costs ~12-14 ms per 1,000 active blobs on this PC with ~2 cores taken by
+other work, and ~7 ms per 1,000 with ~1 core taken; Rapier ~17-20 ms per
+1,000 and keeps losing blobs. Held awake with nothing turning, 3,000 blobs
+cost 21.5 ms in Jolt and 73 ms in Rapier. **One active doseersilo at 1 L
+blobs does not fit a 60 Hz frame on this PC in either engine.**
 
 ### 6.4 A solver of our own, in GDScript, and the heightfield store
 
@@ -577,7 +601,22 @@ __COST2_ROWS__
 GDScript is ~20 ms per 1,000 particles with only 2 iterations; FleX needed 12
 iterations for good piles [5]. **GDScript cannot be the blob solver.** A native
 solver would have to be measured on its own (not done).
-__HF_ROWS__
+
+`cpu_bench.gd what=hf`: the doseersilo floor at 0.10 m cells (29 × 55 = 1,595
+columns), a talus rule at 45°, 1 L deposited per tick at the inlet:
+
+| sweeps per tick | ms per tick (GDScript) | volume added | volume in the grid |
+|---|---|---|---|
+| 4 | 19.9 (max 36.8) | 0.6000 m³ | 0.6000 m³ (+1.8e-7) |
+| 16 | 71.0 (max 124.3) | 0.6000 m³ | 0.6000 m³ (+1.6e-6) |
+
+- Relaxing the WHOLE grid every tick is too slow in GDScript. The store
+  should relax only the columns something changed, at LineFlow's 10 Hz, or
+  in native code (INFERRED; neither measured).
+- The volume closed to 1.8e-7 m³ over 600 ticks at 4 sweeps and 1.6e-6 m³
+  at 16: float32 rounding (`PackedFloat32Array`), growing with the number of
+  moves. The store's kg must be doubles: a `MaterialBatch`
+  per column, as §9.1 has it.
 
 ---
 
@@ -620,8 +659,8 @@ From §6 on this PC (other cores busy, so read the ratios):
 
 | option | resting pile of 3,000 | 2,000-3,000 active blobs | verdict for one silo at 60 Hz |
 |---|---|---|---|
-| rigid blobs, Jolt | 3-4 ms (asleep) | 19-24 ms at 3,000 | ~1.2-1.5 frames at 3,000; the hybrid's ~2,000 would be near one frame (INFERRED) |
-| rigid blobs, Rapier 0.8.34 | 15-28 ms | 47-73 ms; loses blobs | no |
+| rigid blobs, Jolt | 3-4 ms (asleep) | 19-36 ms at 3,000, by the other load (~7-14 ms per 1,000) | 1.2-2.2 frames at 3,000; the hybrid's ~2,000 would be about one frame (INFERRED) |
+| rigid blobs, Rapier 0.8.34 | 15-28 ms | 47-52 ms turning, 73 ms held awake; loses blobs | no |
 | rigid blobs, Rapier ≥ 0.35 (parallel SIMD) | not measured | not measured | unknown; the maintainer's drop test has it ahead of Jolt [G3] |
 | hybrid: heightfield store + Jolt blobs | the store's cost (§6.4) | as the row above, for the screw layer only | the store makes the resting pile nearly free; the screw layer sets the cost |
 | own PBD solver in GDScript | — | 84 ms at 3,000 | no |
@@ -633,9 +672,9 @@ From §6 on this PC (other cores busy, so read the ratios):
 About 70 of the 200 macro machines are granular (§10.1: 10 silos with
 screws, 40 moving surfaces, 16 screws, 4 chutes, 3 vibrating decks). If all ten
 silos ran physically at once and each were a doseersilo, that is ~20,000
-active blobs, ~150 ms per step in Jolt on this PC by the linear rate of §6.3
-(INFERRED). Belts carried parametrically cost next to nothing, but piles and
-screws do not. Hence §9.6: physical where the player is, or bigger blobs, or a
+active blobs, ~140-280 ms per step in Jolt on this PC at the 7-14 ms per
+1,000 of §6.3 (INFERRED: linear, measured to 10,000). Belts carried
+parametrically cost next to nothing, but piles and screws do not. Hence §9.6: physical where the player is, or bigger blobs, or a
 faster solver. That trade is the operator's (Q5, Q8).
 
 ---
@@ -646,7 +685,7 @@ faster solver. That trade is the operator's (Q5, Q8).
 |---|---|---|---|---|---|---|
 | A | rigid blobs in Rapier 0.8.34, as the game ships | kinematic screw bodies | exact, but blobs escape (§6.2) | yes | 47-73 ms at 3,000 | **NO**: loses blobs, single-threaded |
 | A′ | rigid blobs in Rapier ≥ 0.35 (parallel SIMD, deterministic) | the same | exact if A2 holds | yes | not measured | **measure first** (Q7): the smallest change for the rest of the game |
-| B | rigid blobs in Jolt | kinematic screw bodies | exact; raise the limits (§6.3) | yes | 19-24 ms at 3,000 | **works** in the spike; means moving the whole game to Jolt (Q7) |
+| B | rigid blobs in Jolt | kinematic screw bodies | exact; raise the limits (§6.3) | yes | 19-36 ms at 3,000 | **works** in the spike; means moving the whole game to Jolt (Q7) |
 | C | an own particle solver (PBD), native code | analytic helicoid, belt and trough | exact | yes | GDScript 84 ms at 3,000; native not measured | a fallback if A′ and B miss the budget (Q7, Q8) |
 | D | a GPU compute solver (PBD or MPM) | anything | exact on the GPU, but unreadable headless | **no** | cheap | **NO** for anything that carries kg; fine for looks |
 | E | `GPUParticles3D` | colliders only | none (no readback) | — | cheap | **NO**: particles do not touch each other, cannot pile [G11] |
@@ -924,9 +963,9 @@ proven, and every machine not yet physical keeps running on it (R1).
 
 ## 12. Questions for the operator (AskUserQuestion-ready)
 
-Every option states the GENERAL rule it would make, not only the case, because
-a plant answer describes one situation (`memory:
-operator-answers-are-situational`). Three batches, most blocking first; each
+Every option states the GENERAL rule it would make, not only the case,
+because a plant answer describes one situation. Three batches, most blocking
+first; each
 batch fits one AskUserQuestion call (at most 4 questions, 2-4 options). The
 first option is the recommendation where there is one.
 
