@@ -1,4 +1,4 @@
-[gd_scene load_steps=2 format=3 uid="uid://c8y8d6jo0x1a2"]
+[gd_scene format=3 uid="uid://c8y8d6jo0x1a2"]
 
 [ext_resource type="Script" uid="uid://dhca6c50nj628" path="res://src/scenes/menus/main_menu/MainMenu.gd" id="1_mainmenu"]
 
@@ -29,8 +29,6 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 horizontal_scroll_mode = 0
-vertical_scroll_mode = 1
-clip_contents = true
 
 [node name="Centerer" type="HBoxContainer" parent="ScrollContainer" unique_id=990293644]
 layout_mode = 2
@@ -43,11 +41,10 @@ size_flags_horizontal = 3
 mouse_filter = 2
 
 [node name="Wrapper" type="VBoxContainer" parent="ScrollContainer/Centerer" unique_id=1569871510]
+custom_minimum_size = Vector2(900, 0)
 layout_mode = 2
 size_flags_horizontal = 0
 size_flags_vertical = 0
-custom_minimum_size = Vector2(900, 0)
-alignment = 0
 theme_override_constants/separation = 8
 
 [node name="Label" type="Label" parent="ScrollContainer/Centerer/Wrapper" unique_id=210645557]
