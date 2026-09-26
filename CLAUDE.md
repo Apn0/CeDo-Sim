@@ -54,8 +54,22 @@ searching — and treat every number here as re-checkable, not as gospel.**
 CEDO_HARNESS_RUNNER=1 bash tools/regression/run.sh   # the harness runner only, see above
 ```
 
-Engine: **`C:/Users/arnod/AppData/Local/Godot/Godot_v4.6.3-stable_win64_console.exe`**
-— this is what `tools/regression/run.sh:21` defaults to, override with `GODOT=`.
+Engine: **`V:/Godot/Godot_v4.7.2-stable_win64_console.exe`** — this is what
+`tools/regression/run.sh:21` defaults to, override with `GODOT=`. `V:\Godot` is
+the operator's canonical engine folder and still holds 4.6.3 and 4.7.1.
+
+> **2026-09-26: the project moved from 4.6.3 to 4.7.2 on this branch.**
+> Measured in a trial (`docs/audit/godot_4.7_migration_trial_2026-09-26.md`):
+> - the 4.7.2 import re-imports nothing: 0 changes in `.godot/imported/` and
+>   `assets/`, and the 101 cache-only assets and `Merlo.fbx` are byte-identical;
+> - the parse sweep is 481 ok on both engines;
+> - 20 of 20 suite runs give the verdict they gave on 4.6.3, down to the jam
+>   drive times.
+>
+> One new warning, left on purpose: `add_blend_point` without a name
+> (`Humanoid.gd`). Its fix does not compile on 4.6.3, so it waits until the
+> switch has held. A tree copied from an older `.godot/` needs one `--import`
+> pass before it reaches a fixed point.
 
 **`run.sh` tests `PROJ`, and `PROJ` defaults to the operator's checkout**
 (`run.sh:22`, `C:/Users/arnod/Documents/CeDo_Simulator`), not to the tree the
