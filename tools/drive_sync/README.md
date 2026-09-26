@@ -95,7 +95,7 @@ PowerShell 7.4.6, checks both against their published SHA-256, and replaces Driv
 unchanged.
 
 Measured 2026-09-26: **91 passed, 0 failed, 0 skipped**, in 16 scenarios. Twice in a row, and
-once from a cold download cache (59 s). The suite covers:
+once from a cold download cache (57 s). The suite covers:
 - first run, a no-change run, and an edit with the same size and nanosecond mtime that only MD5
   can see;
 - rename, delete, the versions folder, the shrink guard and the restore it prints, the delete
