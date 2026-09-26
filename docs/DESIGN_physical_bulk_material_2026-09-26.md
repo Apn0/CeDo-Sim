@@ -52,8 +52,8 @@ Evidence tags used throughout:
 - **Cost** (§7): a running doseersilo keeps ~2,000 blobs awake in its screw
   layer alone, and 3,000 active blobs cost 19-36 ms per step in Jolt on this
   PC (by how busy the other cores were): one to two frames for one silo. The
-  whole plant cannot run physically at once at 1 L;
-  physical-where-the-player-is (LOD) is Q5.
+  operator ruled out LOD (everything physical, always), so the cost has to
+  come from the store, a small active set and a faster engine (§9.6).
 - **Machine by machine** (§10): about 70 of the 200 macro machines are
   granular (silos with screws, belts, chutes, screws). Those move to the
   physical model in four phases, the 3C doseersilo and its feed belt first.
@@ -65,7 +65,10 @@ Evidence tags used throughout:
   the nameplates (numbers still to come); the silo is ~5 m deep at the inlet
   and ~1 m at the outlet under a level rim, which the modelled 22.5° × 5.57 m
   trough cannot be (left open); and film does bridge, so the store must be
-  voxels, not a heightfield. Batches 2 and 3 are still open.
+  voxels, not a heightfield. **Batch 2 too** (§12.5): physical everywhere,
+  always (no LOD); bridges from a support rule in the store; measure Rapier
+  0.35 first; up to a frame per silo during development. Batch 3 waits for
+  phase 1.
 
 ---
 
@@ -357,8 +360,9 @@ leaving at belt speed on a ballistic arc is the belt's acceptance test.
 - **Why three floor screws:** a KWS feeder for plastic fluff uses three
   screws, each with its own drive, and **vertical hopper walls** against
   compression and bridging [33]; live bottoms draw material evenly over the
-  whole opening for materials that pack or bridge [32]. The 3C doseersilo is that machine: vertical walls, three
-  screws, one VFD each (8/8/9 Hz on the HMI).
+  whole opening for materials that pack or bridge [32]. The 3C doseersilo
+  is that machine: vertical walls, three screws, one VFD each (8/8/9 Hz on
+  the HMI).
 - **No angle of repose for film was found.** PET bottle flakes stack at more
   than 80° [41]; FleX notes that simulated friction, and so the repose angle,
   depends on the iteration count [5].
@@ -690,8 +694,10 @@ screws, 40 moving surfaces, 16 screws, 4 chutes, 3 vibrating decks). If all ten
 silos ran physically at once and each were a doseersilo, that is ~20,000
 active blobs, ~140-280 ms per step in Jolt on this PC at the 7-14 ms per
 1,000 of §6.3 (INFERRED: linear, measured to 10,000). Belts carried
-parametrically cost next to nothing, but piles and screws do not. Hence §9.6: physical where the player is, or bigger blobs, or a
-faster solver. That trade is the operator's (Q5, Q8).
+parametrically cost next to nothing, but piles and screws do not. The ways
+out are simulating only near the player, bigger blobs, or a faster solver.
+The operator chose physical everywhere, always, and up to a frame per silo
+for now (Q5, Q8, §12.5); §9.6 has the consequences.
 
 ---
 
@@ -849,15 +855,23 @@ This is what keeps R1's base and the physical model in one ledger (G4).
 - The engine for the active blobs is an operator decision (Q7): §6 measured
   what each candidate does with a turning screw.
 
-### 9.6 LOD: physical where the player is (a choice, not a given)
+### 9.6 No LOD: physical everywhere, always (ruled, Q5)
 
 Section 7 shows the plant cannot afford 1 L blobs in every silo at once on this
-machine. The standard answer is simulation LOD: a zone near the player runs
-physically; a zone far away runs a law measured FROM the physical model (kg/h
-against screw rpm and fill, per screw set), and hands over by moving its kg
-between the zone and the node's `in`, which conserves. That law would be
-emergent-derived, not an average someone chose, but it is still a law for the
-unwatched machines. Whether that is acceptable is Q5.
+machine. The standard answer would be simulation LOD: a zone near the player
+runs physically, one far away runs a law measured from the physical model.
+**The operator ruled it out** (Q5, §12.5): once a machine is physical it is
+physical at all times, watched or not, and no law runs for it anywhere. So
+the cost has to come down another way:
+
+- the resting pile lives in the voxel store and costs almost nothing;
+- only what moves is a body: the screws' layer of a RUNNING silo, blobs in
+  the air, a collapsing bridge. A stopped silo sleeps (§6.3: 1 ms per 1,000
+  sleeping blobs in Jolt);
+- a faster engine (Q7: Rapier 0.35, multithreaded, measured first);
+- during development a silo may cost up to a frame (Q8), and optimisation
+  comes later. INFERRED consequence: with several silos physical and running,
+  the game will not hold 60 fps on this PC until that optimisation happens.
 
 ### 9.7 What stays out of this model
 
@@ -924,6 +938,12 @@ runner.
 - **Phase 0, done here** (throwaway, §6): emergence shows qualitatively;
   the installed Rapier ejects blobs from a turning screw; GDScript is too slow
   to be the solver; there is no GPU device headless.
+- **Phase 0.5: Rapier 0.35, measured alone** (Q7). Upgrade the addon in a
+  change of its own (the 4.7 migration plan's one-variable rule), run the
+  suites that drive, carry and open things plus the full harness by the
+  runner, then repeat §6's turning-screw test on it. If blobs still leave the
+  bin, Q7 comes back to the operator with Jolt and an own solver as the
+  alternatives.
 - **Phase 1: the 3C doseersilo and the end of its feed belt (the Verdeelband
   L3C.67).** Needs, first: the nameplate numbers (Q2), the length/tilt
   contradiction settled (§12.4, Q3), the Verdeelband's speed, width and drop
@@ -1034,7 +1054,7 @@ first option is the recommendation where there is one.
   show that, which means blobs (or a store with overhangs) everywhere in the
   pile, at a higher cost.
 
-### 12.2 Batch 2: architecture
+### 12.2 Batch 2: architecture (answered, §12.5)
 
 **Q5. Where must the physical material run?** (header `Scope`)
 
@@ -1169,6 +1189,25 @@ above:
   Q6;
 - "until someone clears it" (the option he chose) makes clearing a bridge a
   player action; how it is cleared at CeDo was not asked (next round).
+
+### 12.5 Answers, 2026-09-26 (batch 2)
+
+Asked right after batch 1. All CLAIMED; general rules as he chose them.
+
+- **Q5, scope: everywhere, always.** Every granular machine runs physically
+  at all times, watched or not; no law anywhere once a machine is physical.
+  §9.6 now says what that costs and how the design meets it.
+- **Q6, bridges: a store rule.** Film at rest sits in a voxel store; a cell
+  stays up while its neighbours carry it, so a bridge forms over a screw that
+  empties the space under it, and falls past a set width or when someone
+  pokes it. The width is tuned, not emergent (the option said so).
+- **Q7, engine: measure Rapier 0.35 first.** The game keeps Rapier, upgraded
+  0.8.34 → 0.35 in a change of its own; the blobs run in it if it passes the
+  turning-screw test (phase 0.5, §10.2).
+- **Q8, budget: up to a frame for now.** During development a physical silo
+  may cost up to ~16 ms per frame; optimisation comes later.
+
+Batch 3 (Q9 save, Q10 look) is left for when phase 1 starts.
 
 ---
 
