@@ -22,6 +22,19 @@ GODOT="${GODOT:-V:/Godot/Godot_v4.7.2-stable_win64_console.exe}"
 PROJ="${PROJ:-C:/Users/arnod/Documents/CeDo_Simulator}"
 UD="${UD:-C:/Users/arnod/AppData/Roaming/Godot/app_userdata/CeDo Simulator}"
 
+# log_has <file> <ERE>: does the log hold a line matching <ERE>, \r stripped?
+# Never write `tr … | grep -q` in this script. grep -q quits at the first match,
+# `tr` then dies of SIGPIPE with output left, and under `pipefail` above the
+# pipeline returns 141: "no match". It happens once the log outgrows the 64 KB
+# pipe buffer and the match comes early. Measured 2026-09-26 (Godot 4.7.2 made
+# two world logs 169 KB): test_layout_load (22 ok) and test_new_world_wipe
+# (11 ok) printed as "ZERO checks ran", and the `  FAIL` check beside them
+# missed a planted FAIL line the same way. grep without -q reads to the end.
+# docs/audit/harness_pipefail_false_red_2026-09-26.md.
+log_has() {
+	tr -d '\r' < "$1" | grep -aE -- "$2" > /dev/null
+}
+
 # ONE HARNESS RUNNER (operator ruling 2026-09-25). Sessions each ran this script
 # on their own branch, up to four at once: four slightly different trees, C:
 # filled up, and eight healthy suites went red on AtomicFile short writes. Now
@@ -254,7 +267,7 @@ grep -E "^===|^  FAIL|^note  :|^Result:" "$OUT/parse_sweep.log" || true
 # bash grep -q "^RESULT: PASS" treats \r as part of the line content so the
 # anchor match fails — the line is "RESULT: PASS\r" not "RESULT: PASS".
 # Strip \r before the grep so this check works on both Windows and Linux CI.
-if ! tr -d '\r' < "$OUT/parse_sweep.log" | grep -q "^RESULT: PASS"; then
+if ! log_has "$OUT/parse_sweep.log" "^RESULT: PASS"; then
 	echo "FAIL  : one or more project scripts do not parse (see $OUT/parse_sweep.log)"
 	exit 1
 fi
@@ -873,13 +886,13 @@ for t in test_layout_load test_new_world_wipe test_world_layout_coords test_cutt
 	[ "$rc" -eq 124 ] && echo "TIMEOUT: $t hung past ${SUITE_TIMEOUT_S}s and was killed (no verdict was printed)"
 	re="$(dialect_re "$t")"
 	grep -aE "^  (ok|FAIL)|^Result|^\[TEST\]" "$OUT/$t.log" | tail -3 || true
-	if ! tr -d '\r' < "$OUT/$t.log" | grep -aqE "$re"; then
+	if ! log_has "$OUT/$t.log" "$re"; then
 		echo "FAIL  : $t — its own verdict line ($re) was not printed (see $OUT/$t.log)"
 		[ $code -eq 0 ] && code=1
-	elif tr -d '\r' < "$OUT/$t.log" | grep -aqE '^  FAIL'; then
+	elif log_has "$OUT/$t.log" '^  FAIL'; then
 		echo "FAIL  : $t — verdict line printed but a check reported FAIL (see $OUT/$t.log)"
 		[ $code -eq 0 ] && code=1
-	elif ! tr -d '\r' < "$OUT/$t.log" | grep -aqE '^  ok'; then
+	elif ! log_has "$OUT/$t.log" '^  ok'; then
 		echo "FAIL  : $t — verdict printed but ZERO checks ran (vacuous) (see $OUT/$t.log)"
 		[ $code -eq 0 ] && code=1
 	fi
@@ -916,7 +929,7 @@ for cfg in "NOLINE" "LINE"; do
 	grep -aE "^  (ok|FAIL|ADVIS)  |^Result" "$OUT/spawn_clearance_$cfg.log" || true
 	# Verdict-based, like every step above: Godot segfaults in teardown after a
 	# clean pass on this one (observed with "0 fail" already printed).
-	if ! tr -d '\r' < "$OUT/spawn_clearance_$cfg.log" | grep -qE "^Result: PASS"; then
+	if ! log_has "$OUT/spawn_clearance_$cfg.log" "^Result: PASS"; then
 		echo "FAIL  : spawn clearance $cfg (see $OUT/spawn_clearance_$cfg.log)"
 		[ $code -eq 0 ] && code=1
 	fi
