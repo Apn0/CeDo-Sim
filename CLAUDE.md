@@ -1135,6 +1135,9 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   `.godot/imported/<name>-<md5 of res path>.md5`. The list and method are in
   `docs/audit/assets_loss_and_restore_2026-09-21.md`. `.godot/imported/` is what
   made the restore possible: never delete it while assets are missing.
+  Since 2026-09-26 `tools/drive_sync/` (a desktop button the operator clicks; not automatic)
+  mirrors the whole checkout, `assets/` and `.godot/` included, to his Drive and keeps what it
+  overwrites or deletes for 30 days. Its README has the restore command.
 - **`user://world_layout.json` is the world's ground truth and is in git nowhere.**
   `WorldLayout.gd`'s `LAYOUT_PATH` has no `res://` fallback. Losing your
   `app_userdata` loses the world.
