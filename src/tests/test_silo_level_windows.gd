@@ -302,6 +302,7 @@ func _s3() -> void:
 	_check(wits.size() == 1 and wits[0]["wit"] != null, "S3 the witness mesh survives the merge")
 	var lf := LineFlow.new()
 	add_child(lf)
+	lf.set_process(false)   # the suite drives tick() itself; after add_child, as READY turns _process back on
 	await get_tree().process_frame
 	lf.set("feed_enabled", false)
 	lf.call("rebuild")
