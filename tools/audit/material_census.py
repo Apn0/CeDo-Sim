@@ -21,7 +21,8 @@ Verdicts
   MINTS     builds a non-empty batch without debiting an upstream reservoir
   SINKS     consumes (split_*) but never emits (add/merge) — material dead-ends
   DROPS_SUB moves mass_kg but ignores water_kg/contaminant_kg — sub-masses lost
-  OK        balanced, or a documented boundary (plant intake / reject stream)
+  OK        balanced, or a documented boundary (plant intake / reject stream /
+            the save-load restore)
 
 Usage:  python tools/audit/material_census.py [--root src] [--json out.json]
 """
@@ -54,6 +55,17 @@ BOUNDARY = {
     # duplicate_batch(), not the live one, so the plant ledger never sees the
     # sample. A lab bench consuming its own sample is a boundary, not a sink.
     'QaLab.gd': 'QA bench sample — grades a duplicate, never debited from the plant ledger',
+    # PlantResume.gd:121-129 — the save/load boundary (2026-09-26). batch_in()
+    # re-creates the batches a save wrote: their kg left the world in the save
+    # file and come back with the load, so there is nothing upstream to debit.
+    # It carries every sub-mass by its dict key (MaterialBatch.to_dict() ->
+    # d.get("water_kg") / d.get("contaminant_kg")), which this census cannot
+    # count: strip_comments() blanks string literals. So the carry is proven at
+    # runtime instead: test_plant_resume A11 sums water and contaminant per body
+    # in LineFlow itself, before the save and after the resume, and goes red when
+    # batch_in drops either (docs/audit/plant_resume_2026-09-25.md §8).
+    'PlantResume.gd': 'save/load boundary — re-creates the batches a save wrote; '
+                      'sub-masses ride by dict key, proven by test_plant_resume A11',
 }
 # Test fixtures construct batches as literal input (BaleDefs.gd's boundary,
 # applied per-file) rather than moving real plant mass — same as the plant

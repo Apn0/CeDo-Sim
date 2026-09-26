@@ -88,7 +88,8 @@ unchanged (§R3).
 ## 3. The guard: `test_plant_resume` (in `run.sh`'s main loop)
 
 `godot --headless --path . res://src/tests/test_plant_resume.tscn`: 62 checks,
-three phases plus Z. It has a watchdog, a `Result:` line and a per-phase
+three phases plus Z (64 since 2026-09-26: phase A feeds line 1 a wet, dirty
+bale sample and A11 checks its water and contaminant come back, §8). It has a watchdog, a `Result:` line and a per-phase
 last-line assertion (Z2). It writes only its own slot files and arms the
 world_layout guard for the whole run.
 
@@ -113,6 +114,9 @@ world_layout guard for the whole run.
     80 rpm, and granulate kept coming.
   - A9: the ledger residual is unchanged.
   - A10: a rebuild afterwards keeps the settings.
+  - A11 (2026-09-26, §8): every body's water and contaminant kg, summed in
+    LineFlow itself, are identical by name. Line 1's head is fed an Alba Marl
+    sample for those 60 s so there is dirt to compare; A1 gates that it is there.
 - **B, latched faults.** Line 3A, line 3C (for its DRD pair's cycles; its extruder
   is `extruder_screw`, which has no brain), a compactor, a TITECH sorter, a
   kopfilter, a sink_float (bezinktank), a waste bin (120 kg) and a bridged level
@@ -301,3 +305,135 @@ On the merged tree:
     It measured 0.0 → 1.1 kg on the bare world and 0.2 → 1.2 kg on the copy, so
     it sits on its own threshold. Worth widening, or measuring over more runs,
     in #322's suite. Not changed here.
+
+## 8. The material census, and a line that carries dirt (2026-09-26)
+
+### 8.1 What stopped `main`'s harness
+
+`tools/regression/run.sh` runs `tools/audit/material_census.py` before any Godot
+suite and exits 1 on a flag. `PlantResume.gd` got two flags:
+
+```
+[MINTS] src/sim/PlantResume.gd:127
+       MaterialBatch.new(float(d.get(…) with no debit anywhere in file
+[DROPS_SUB] src/sim/PlantResume.gd
+       mass_kg x2 but water_kg x0 / contaminant_kg x0 — wet+dirty sub-masses are not carried through this stage
+```
+
+So the full harness on `main` stopped at `== material census ==`, before
+`== running regression ==`. Measured on archives of `main`: the census exits 0 at
+`c1dabb7` (#322) and 1 at `dde61eb` (#324, 2026-09-26 00:52, the first merge
+carrying this file). It was still 1 at `7e37741`. The session that built the
+resume ran the suites it touched and the parse sweep (§7), per the one-runner
+ruling, but not the census, which is a one-second Python step and not a suite. CLAUDE.md's one-runner block
+now lists the four stdlib gates `run.sh` exits on before any suite.
+
+### 8.2 What each flag is
+
+- **MINTS** is true and right. `batch_in()` builds a batch with mass, and nothing
+  in the file debits a source. A load re-creates the batches a save wrote. Their
+  kg left the world with the save file, so there is nothing upstream to debit. It
+  is a boundary, like `BaleDefs.gd`'s intake.
+- **DROPS_SUB** is a blind spot of the census, not of this file.
+  - `strip_comments()` blanks every string literal before it counts
+    `water_kg` / `contaminant_kg` as words. `batch_in` reads both as dict keys
+    (`d.get("water_kg", 0.0)`), so the census counts 0 of each.
+  - `batch_out` writes `MaterialBatch.to_dict()`, which has both keys.
+  - The one "emit" the census counted is `Dictionary.merge()` in `unpack()`, not
+    a batch.
+
+  So the flag cannot tell whether a reloaded wet line comes back dry. Measured
+  instead.
+
+### 8.3 Measured
+
+Godot 4.7.2 headless, a copy of the operator's `app_userdata` on D:
+(`D:\cedo_archive\userdata\session_census_resume_2026-09-26`), `7e37741`.
+Each mutation was applied to `PlantResume.gd` alone, and the file was put back
+and md5-checked after each run. 0 `^SCRIPT ERROR` lines in every run.
+
+| suite as merged (62 checks) | verdict |
+|---|---|
+| unmodified | PASS (62 ok) |
+| `batch_in` drops `water_kg` AND `contaminant_kg` | FAIL (60 ok, 2 fail): A6, B2 |
+| `batch_in` drops `contaminant_kg` only | **PASS (62 ok, 0 fail)** |
+
+The code carried both sub-masses. Water was guarded, but by accident: the only
+water in either phase was a few grams in 3B's pipes past the heetafslag,
+centrifuge and weegschaal (0.001-0.024 kg per stage), and a compactor's pot
+charge in phase B (5.96 kg). Contaminant was not guarded at all. Both phases fed
+clean flake (`MaterialBatch.new(…, 0.0, 0.0)`), so no batch in the suite ever
+held any dirt.
+
+### 8.4 The change
+
+- **The fixture carries dirt.** For the same 60 s as 3B's silo, phase A feeds
+  line 1's head (`opzetband_1`, the line-1 node with no in-edge) what a bale
+  feeds it: `BaleDefs.feed_sample("alba_marl", …)`, the wettest and dirtiest
+  origin (12 % moisture, 14 % dirt). Measured before the save: 3.25 kg of water
+  in 40 bodies and 0.54 kg of contaminant in 37 bodies, of 20.5 kg in the line.
+  The flotation tank took on 11.06 kg of wash water.
+- **A1** gates that the fixture is there, at about half those numbers: over
+  1.5 kg of water, over 0.25 kg of contaminant in at least 15 bodies, over 5 kg
+  of wash water.
+- **A11** compares mass, water and contaminant for each body by name, before the
+  save and after the resume. It sums them in LineFlow itself: the in and out
+  batches, a compactor's pot charge, and the pipes leaving the body. It does not
+  go through `PlantResume.capture_body`, so it still sees a sub-mass that the
+  capture and the restore both lose (M17). A6 cannot see that, because it
+  compares two captures.
+- **Phase A frees its loose piles** between the save and the load, and at its
+  end, as phase B always did (`_free_loose_piles`). The wet feed spills line 1's
+  dirt on the floor as a `ChuteSpill`. The first extended run left it standing,
+  and two reds came from that alone:
+  - A6: 2 piles against 1, the old one next to its restored copy.
+  - B2: phase A's piles carried into phase B.
+- **`material_census.py`** lists `PlantResume.gd` as a `BOUNDARY` (save/load).
+  Its comment names A11 as the runtime proof the census cannot give. Census now:
+  43 files, 0 flagged, exit 0.
+
+### 8.5 Mutation proofs (the extended suite, 64 checks)
+
+| # | mutation | file | verdict | red checks |
+|---|---|---|---|---|
+| M15 | `batch_in` drops `water_kg` | PlantResume | FAIL (61 ok, 3 fail) | A6 A11 B2 |
+| M16 | `batch_in` drops `contaminant_kg` | PlantResume | FAIL (62 ok, 2 fail) | A6 A11. The suite as merged was PASS (62 ok) under this same mutation |
+| M17 | `batch_out` erases `contaminant_kg`, so the capture and the restore agree | PlantResume | FAIL (63 ok, 1 fail) | A11 only. A6 stays green: it compares a capture with a capture, and both lack the key |
+| M18 | no wet feed at line 1's head | the suite | FAIL (63 ok, 1 fail) | A1 fixture (0.03 kg water in 3 bodies, 0.00 kg contaminant). A11 alone would have stayed green on nothing, which is why A1 gates the fixture |
+
+### 8.6 Found, not fixed
+
+**A loose pile's name does not always survive a save and a load.**
+`_spawn_chute_pile` names every spill `ChuteSpill`. A second spill under the
+same parent is renamed by `add_child` to `@Node3D@<n>`, and `restore_pile`'s
+`pile.name = …` turns the `@`s into `_`s. Measured in the first extended run: B2
+read `@Node3D@9005 != _Node3D_9005`. It is cosmetic: outside the suites nothing
+looks a pile up by name (`grep ChuteSpill` finds only the line that sets it),
+and the choke finds its pile again by position. The suite does compare pile
+names, which is one more reason phase A must free its piles before the load.
+
+### 8.7 Verification
+
+Measured 2026-09-26 on `7e37741` plus this change, with Godot 4.7.2 headless.
+Each Godot run was on its own, under a scratch APPDATA on D:. The full harness
+was not run, per the one-runner ruling.
+
+- **The four stdlib gates `run.sh` exits on before any suite:** all exit 0.
+  - `material_census.py`: 43 files, 0 flagged.
+  - `lint_unused_params.py`: 482 files, 0 unused.
+  - `palette_census.py`: PASS.
+  - `symbol_flow.py --all`: 0 parse-breaking.
+- **Parse sweep:** `Result: 488 ok, 0 fail`, `RESULT: PASS`.
+- **`test_plant_resume`:** PASS (64 ok, 0 fail), 0 `^SCRIPT ERROR` lines, on
+  both worlds:
+  - On the D: copy of the operator's `app_userdata`, 47 s. Phase C booted his
+    authoritative world and printed "Resumed the plant as saved: 71 machines (70
+    LineFlow nodes, 10 machine parts), 1 floor piles". The copy's
+    `world_layout.json` kept its md5.
+  - On a bare APPDATA, 91 s.
+
+  The before-save sub-masses were identical in all seven extended runs that fed
+  the line: two development runs, M15-M17 and the two above (3.2544 kg water,
+  0.5379 kg contaminant).
+- **Not changed:** `PlantResume.gd` and every file under `src/sim/`. The fix is a
+  fixture, a check, and a census entry.

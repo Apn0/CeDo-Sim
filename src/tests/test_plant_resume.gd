@@ -18,11 +18,16 @@ extends Node
 ##      started through its own button with the operator's settings changed (rpm
 ##      80, zone 3 205 °C), a belt in HAND at 70 %, a motor component at 60 %,
 ##      line 1's extruder left OFF with its hidden natraject setting OFF, a hot lump
-##      cart, 60 s fed. Saved, loaded into a fresh BuildMode + LineFlow, resumed.
+##      cart, 60 s fed: 3B's extruder silo with clean dry flake, line 1's head with
+##      a wet, dirty bale sample (WET_ORIGIN). Saved, loaded into a fresh BuildMode
+##      + LineFlow, resumed.
 ##      Every body's run state and the line's own must be identical by name; a save
 ##      BEFORE the resume must write the stash back unchanged; and the resumed line
 ##      must keep running (never unpowered, extruder at 80 rpm) and keep making
-##      granulate, with the kg ledger's residual unchanged.
+##      granulate, with the kg ledger's residual unchanged. A11: every body's
+##      water and contaminant kg come back, walked in LineFlow itself rather than
+##      through the capture (2026-09-26: with batch_in dropping contaminant_kg this
+##      suite still passed 62 of 62, because nothing it fed carried any dirt).
 ##   B  LATCHED FAULTS. Line 3A plus a compactor, a NIR sorter, a kopfilter, a
 ##      bezinktank, a waste bin and a level sensor. A friction separator's motor
 ##      tripped, a machine choked on a full chute pile, a buffer past the e-stop,
@@ -48,6 +53,9 @@ const WorldLayoutGuard := preload("res://src/tests/world_layout_guard.gd")
 const Resume := preload("res://src/sim/PlantResume.gd")
 const WATCHDOG_MS : int = 900000
 const FEED_KG_H : float = 950.0
+## Line 1's head is fed what a bale feeds it (BaleDefs.feed_sample): Alba Marl is
+## the wettest and dirtiest origin there (12 % moisture, 14 % dirt).
+const WET_ORIGIN : String = "alba_marl"
 const SHIFT_ELAPSED_S : float = 4.0 * 3600.0
 ## A lump cart's cool timer runs on the wall clock in phases A/B (no ShiftClock
 ## in the tree), so it moves by the real seconds between two captures.
@@ -167,7 +175,50 @@ func _inline_kg(lf: Node) -> float:
 				kg += (b as MaterialBatch).mass_kg
 	return kg + float(lf.call("pipe_mass"))
 
-func _tick(bm: Node, lf: Node, secs: float, feed: Array = []) -> Dictionary:
+## label → [mass, water, contaminant] kg of every batch a body's LineFlow node
+## holds: its in/out batches, a compactor's pot charge, and the pipes leaving
+## it. Read from LineFlow itself, not through PlantResume's capture, so a
+## sub-mass the capture and the restore both forgot is still seen.
+func _submass(bm: Node, lf: Node) -> Dictionary:
+	var ords := _ordinals(bm)
+	var nodes : Array = lf.get("_nodes")
+	var out : Dictionary = {}
+	var batches : Dictionary = {}          # node index → [MaterialBatch]
+	for i in nodes.size():
+		var nd : Dictionary = nodes[i]
+		var bs : Array = [nd.get("in", null), nd.get("out", null)]
+		if nd.get("cc", null) != null:
+			bs.append(nd["cc"].get("charge"))
+		batches[i] = bs
+	for e in lf.get("_edges"):
+		(batches[int((e as Dictionary)["a"])] as Array).append_array((e as Dictionary).get("pipe", []))
+	for i in nodes.size():
+		var body : Node = (nodes[i] as Dictionary).get("node", null)
+		if body == null or not is_instance_valid(body):
+			continue
+		var s : Array = [0.0, 0.0, 0.0]
+		for b in (batches[i] as Array):
+			if b is MaterialBatch:
+				s[0] += (b as MaterialBatch).mass_kg
+				s[1] += (b as MaterialBatch).water_kg
+				s[2] += (b as MaterialBatch).contaminant_kg
+		out[_label(body, ords)] = s
+	return out
+
+func _submass_sum(sub: Dictionary) -> Dictionary:
+	var out : Dictionary = {"mass": 0.0, "water": 0.0, "contam": 0.0, "n_water": 0, "n_contam": 0}
+	for lab in sub:
+		var s : Array = sub[lab]
+		out["mass"] = float(out["mass"]) + float(s[0])
+		out["water"] = float(out["water"]) + float(s[1])
+		out["contam"] = float(out["contam"]) + float(s[2])
+		if float(s[1]) > 1e-6:
+			out["n_water"] = int(out["n_water"]) + 1
+		if float(s[2]) > 1e-6:
+			out["n_contam"] = int(out["n_contam"]) + 1
+	return out
+
+func _tick(bm: Node, lf: Node, secs: float, feed: Array = [], wet_feed: Array = []) -> Dictionary:
 	var brains := _brains_under(bm)
 	var nodes : Array = lf.get("_nodes")
 	var kg_tick : float = FEED_KG_H / 3600.0 * 0.1
@@ -177,6 +228,8 @@ func _tick(bm: Node, lf: Node, secs: float, feed: Array = []) -> Dictionary:
 		for fi in feed:
 			(((nodes[int(fi)] as Dictionary)["in"]) as MaterialBatch).add(MaterialBatch.new(
 				kg_tick, kg_tick / LineFlow.FEED_DENSITY, LineFlow.DEFAULT_COMP.duplicate(), "resume_suite", 0.0, 0.0))
+		for wi in wet_feed:
+			(((nodes[int(wi)] as Dictionary)["in"]) as MaterialBatch).add(BaleDefs.feed_sample(WET_ORIGIN, kg_tick))
 		lf.call("tick", 0.1)
 		for b in brains:
 			b.call("_on_sim_tick", 0.1)
@@ -245,6 +298,15 @@ func _file_runs(path: String) -> Dictionary:
 func _free(n: Node) -> void:
 	if n != null and is_instance_valid(n):
 		n.queue_free()
+
+## The loose piles are world nodes (LineFlow parents them to the current scene
+## or itself): gone with the world, as they are when a save is closed. Left in
+## the tree, the next capture counts them twice, and a restored pile named like
+## one still standing is renamed by add_child ("ChuteSpill" → "@Node3D@N").
+func _free_loose_piles() -> void:
+	for p in get_tree().get_nodes_in_group("floor_pile"):
+		if not p.has_meta("placeable_id"):
+			p.queue_free()
 
 func _cleanup_files() -> void:
 	for p in [FACTORY_PATH, SAVE_PATH, FACTORY_B]:
@@ -324,9 +386,13 @@ func _phase_a() -> void:
 	var hand_body : Node = null
 	var comp_body : Node = null
 	var silo_i := -1
+	var wet_heads : Array = []
 	for i in nodes.size():
 		var nd : Dictionary = nodes[i]
 		var body : Node = nd.get("node", null)
+		if body != null and String(body.get_meta("macro_id", "")) == "line_1" \
+				and String(nd.get("role", "")) != "sink" and not bool(lf1.call("_has_incoming", i)):
+			wet_heads.append(i)
 		if body == null or String(body.get_meta("macro_id", "")) != "line_3b":
 			continue
 		if String(nd.get("id", "")) == "compactorband" and hand_key == "":
@@ -343,7 +409,7 @@ func _phase_a() -> void:
 	lf1.call("set_machine_rpm_pct", hand_key, 0.7)
 	if comp_key != "":
 		lf1.call("set_machine_component_pct", comp_key, comp_name, 0.6)
-	_tick(bm1, lf1, 60.0, [silo_i] if silo_i >= 0 else [])
+	_tick(bm1, lf1, 60.0, [silo_i] if silo_i >= 0 else [], wet_heads)
 	var cart := _find(bm1, "lump_cart", "line_3b")
 	if cart != null:
 		cart.call("receive_lump", 30.0)
@@ -371,6 +437,22 @@ func _phase_a() -> void:
 	var cap1 : Dictionary = _capture(bm1, lf1)
 	t_cap = Time.get_ticks_usec() - t_cap
 	var line1 : Dictionary = Resume.capture_line(lf1, get_tree())
+	var sub1 : Dictionary = _submass(bm1, lf1)
+	var sum1 : Dictionary = _submass_sum(sub1)
+	var heads : Array = []
+	for wi in wet_heads:
+		heads.append(_label((nodes[int(wi)] as Dictionary)["node"], ords0))
+	print("  info  : sub-masses before save — %.3f kg water in %d bodies, %.3f kg contaminant in %d bodies, of %.3f kg; wash water taken on %.3f kg; wet feed at %s"
+		% [float(sum1["water"]), int(sum1["n_water"]), float(sum1["contam"]), int(sum1["n_contam"]),
+		float(sum1["mass"]), float(lf1.get("water_added")), str(heads)])
+	# Anti-vacuity: the line really carries wet, dirty material through several
+	# machines and their pipes, not only at the head it was poured into.
+	# Measured 2026-09-26: 3.25 kg water in 40 bodies, 0.54 kg contaminant in 37,
+	# 11.06 kg wash water taken on; the floors sit at about half of that.
+	_check(heads.size() >= 1 and float(sum1["water"]) > 1.5 and float(sum1["contam"]) > 0.25 \
+			and int(sum1["n_contam"]) >= 15 and float(lf1.get("water_added")) > 5.0,
+		"A1 fixture: line 1 carries wet, dirty feed (%.2f kg water in %d bodies, %.2f kg contaminant in %d bodies, wash water %.2f kg)"
+		% [float(sum1["water"]), int(sum1["n_water"]), float(sum1["contam"]), int(sum1["n_contam"]), float(lf1.get("water_added"))])
 	var t_save : int = Time.get_ticks_usec()
 	bm1.call("_save_layout")
 	t_save = Time.get_ticks_usec() - t_save
@@ -396,6 +478,7 @@ func _phase_a() -> void:
 
 	_free(bm1)
 	_free(lf1)
+	_free_loose_piles()           # line 1's dirt spills on the floor (the wet feed)
 	await get_tree().process_frame
 	await get_tree().process_frame
 	var bm2 := _new_build_mode(FACTORY_PATH)
@@ -426,6 +509,7 @@ func _phase_a() -> void:
 		% [int(rep.get("bodies", 0)), cap1.size(), str(rep.get("missed", []))])
 	var cap2 : Dictionary = _capture(bm2, lf2)
 	var line2 : Dictionary = Resume.capture_line(lf2, get_tree())
+	var sub2 : Dictionary = _submass(bm2, lf2)      # checked in A11, before A8 ticks it
 	var bad : Array = []
 	for lab in cap1:
 		var d : Array = []
@@ -505,8 +589,28 @@ func _phase_a() -> void:
 		"A10 a rebuild keeps the settings: %s at %.2f, %s HAND at %.2f"
 		% [comp_name, float((cnd2.get("components", {}) as Dictionary).get(comp_name, -1.0)),
 			hand_label, float(hnd2.get("rpm_pct", -1.0))])
+	# The sub-masses by name: a reloaded wet line must not come back dry, nor a
+	# dirty one clean. material_census.py cannot see this carry (PlantResume
+	# restores the sub-masses by dict key, which it reads as a string), so this
+	# is the check that does; the census lists PlantResume as a load boundary.
+	var sub_bad : Array = []
+	for lab3 in sub1:
+		var s1 : Array = sub1[lab3]
+		var s2 : Array = sub2.get(lab3, [])
+		if s2.size() != 3:
+			sub_bad.append("%s: missing after the resume" % lab3)
+			continue
+		for q in 3:
+			if absf(float(s1[q]) - float(s2[q])) > maxf(1e-6, absf(float(s1[q])) * 1e-6):
+				sub_bad.append("%s.%s: %.6f != %.6f" % [lab3, ["mass_kg", "water_kg", "contaminant_kg"][q], float(s1[q]), float(s2[q])])
+	var sum2 : Dictionary = _submass_sum(sub2)
+	_check(sub1.size() == sub2.size() and sub_bad.is_empty(),
+		"A11 every body's water and contaminant come back by name: %.4f kg water (was %.4f), %.4f kg contaminant (was %.4f) %s"
+		% [float(sum2["water"]), float(sum1["water"]), float(sum2["contam"]), float(sum1["contam"]),
+		str(sub_bad.slice(0, 6)) if not sub_bad.is_empty() else ""])
 	_free(bm2)
 	_free(lf2)
+	_free_loose_piles()
 	await get_tree().process_frame
 	await get_tree().process_frame
 	_phases_done["A"] = true
@@ -645,11 +749,7 @@ func _phase_b() -> void:
 	bm1.call("_save_layout")
 	_free(bm1)
 	_free(lf1)
-	# The loose piles are world nodes (LineFlow parents them to the current scene
-	# or itself): gone with the world, as they are when a save is closed.
-	for p in get_tree().get_nodes_in_group("floor_pile"):
-		if not p.has_meta("placeable_id"):
-			p.queue_free()
+	_free_loose_piles()
 	await get_tree().process_frame
 	await get_tree().process_frame
 	var bm2 := _new_build_mode(FACTORY_B)
@@ -741,9 +841,7 @@ func _phase_b() -> void:
 	_check(bool(lf2.call("reset_choke", choke_key)), "B6 once the pile is shovelled the choke resets")
 	_free(bm2)
 	_free(lf2)
-	for p2 in get_tree().get_nodes_in_group("floor_pile"):
-		if not p2.has_meta("placeable_id"):
-			p2.queue_free()
+	_free_loose_piles()
 	await get_tree().process_frame
 	await get_tree().process_frame
 	_phases_done["B"] = true
