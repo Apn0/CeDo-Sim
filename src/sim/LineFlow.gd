@@ -3773,7 +3773,20 @@ func _tick_process_machines(delta: float) -> void:
 	#    water off / take water on → shed mechanical yield loss. The extruder
 	#    (sink) does the last melt-filter + degas and grades the granulaat.
 	var dt := maxf(delta, 0.0001)
+	# A sink with a wired downstream passes its output on; only the LAST node of a
+	# line banks granulaat (operator 2026-09-26: the granulate must reach the
+	# weegschaal). Before, extruder_1 and extruder_3a were sinks with an explicit
+	# edge to their laser filter, so the pellet side (laser filter, heetafslag,
+	# centrifuge, weegschaal, voorraad_silo) carried 0 kg on lines 1 and 3A, while
+	# on 3B and 3C the extruder already passed on to its voorraad_silo.
+	var passes_on : Array[bool] = []
+	passes_on.resize(_nodes.size())
+	passes_on.fill(false)
+	for e in _edges:
+		passes_on[int(e["a"])] = true
+	var ni : int = -1
 	for nd in _nodes:
+		ni += 1
 		var bin : MaterialBatch = nd.get("in", null) as MaterialBatch
 		if bin == null:
 			continue
@@ -3873,8 +3886,9 @@ func _tick_process_machines(delta: float) -> void:
 		nd["contam"]  = flow.contam_pct()
 		nd["quality"] = flow.quality_grade()
 
-		# f) sink banks the granulaat + its quality; everything else passes on
-		if String(nd["role"]) == "sink":
+		# f) a terminal sink banks the granulaat + its quality; everything else,
+		#    a sink with a downstream edge included, passes on
+		if String(nd["role"]) == "sink" and not passes_on[ni]:
 			gran_mass += flow.mass_kg
 			_gran_q_accum += flow.quality_grade() * flow.mass_kg
 			# Keep a copy of the most recently banked parcel so the QA bench has

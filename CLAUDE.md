@@ -10,6 +10,13 @@ searching — and treat every number here as re-checkable, not as gospel.**
 > Sessions opened inside this repo load NO cross-project memory. That is why
 > durable knowledge belongs here and in `docs/`, committed. See the last section.
 
+> **Several sessions work on this repo at once. Register on the session board
+> before you edit:** `D:\cedo_archive\coordination\` (it is outside git on
+> purpose). `README.md` holds the rules. Before you edit a hot file (LineFlow,
+> PlaceableCatalog, BuildMode, run.sh, this file, the day's rulings) or open a
+> PR, run `python D:/cedo_archive/coordination/board.py`, which lists the files
+> two sessions both change. Agreements go in `log.md`, which is append only.
+
 ## Engine
 
 > **ONE HARNESS RUNNER (operator ruling 2026-09-25): do not run the full
@@ -1069,6 +1076,15 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   water inflow moves the film, and its two stirrers, in series, do not set its
   rate. Guarded by `test_frictiewasser_rate`, whose C checks pin the kept law on
   three neighbours. `docs/audit/hmi_rpm_rate_2026-09-26.md`.
+- **Only the LAST node of a line banks granulaat (since 2026-09-26).** LineFlow's
+  `gran_mass` used to be banked by every `role: sink`. `extruder_1` and `extruder_3a`
+  are sinks with an explicit edge to their laser filter, so the whole pellet side of
+  lines 1 and 3A (laser filter, heetafslag, centrifuge, weegschaal, voorraad_silo)
+  carried 0 kg. Now a sink with a downstream edge passes its output on. Measured with
+  `probe_line1_playtest` (a real save, the extruder started as the HMI does): 23.2 kg
+  past the weegschaal, 0 before. `test_line1_throughput`'s ungated "granulaat banked
+  0.0 kg" is its bench never starting the extruder, not a broken line.
+  `docs/plant/operator_rulings_2026-09-26.md` §G.
 - **A stop that is written AFTER the conveying split is not a stop.** LineFlow's
   tick is `_tick_plc_power_downstream` (PLC writes `powered`, runs the spin and
   mechanism ramp) → `_tick_feed` → `_tick_process_machines` (conveys on `spin`)
