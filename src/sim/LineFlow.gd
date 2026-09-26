@@ -228,6 +228,49 @@ const SILO_FEED_STOP_ALSO : Dictionary = {
 	"line_3a": ["vss_silo"],
 	"line_3b": ["vss_silo"],
 }
+## The dosing screw IS the VSS's discharge (operator 2026-09-26, rulings W2.1:
+## "if it is ... blocked by non-rotating ... screw, then LOGICALLY no more
+## material can enter"). In the sim they are two nodes with a connector between
+## them, so every edge from a SILO_FEED_STOP_ALSO body into its feed stop is a
+## DIRECT feed (`e["direct"]`): the VSS conveys no faster than the screw does
+## (`nd["direct_to"]`), and the connector delivers nothing while the screw is
+## not powered. Before this the VSS emptied its connector into the stopped
+## screw: 0.96-1.20 kg by tick phase (docs/audit/lineflow_set_process_2026-09-26.md §6).
+
+## ── The wash line's meter and its hold-up (operator 2026-09-26) ─────────────
+## docs/plant/operator_rulings_2026-09-26.md W2-W5. Recollections (CLAIMED);
+## every number below is a PLACEHOLDER until he corrects it. Before this every
+## wash machine conveyed at MachineFlow's 6 kg/s and held nothing: on 3B the
+## first kg reached the extruder silo 38.8 s after the VSS, the line held 9.6 kg
+## at 950 kg/h, and a 150 kg VSS emptied in 15 s (probe_3b_residence). Per line:
+##   - its silo's feed stop (SILO_FEED_STOP) is the line's METER: it conveys
+##     meter_kg_h_per_rpm x its rpm, the HMI setpoint (rpm_pct x meter_rpm_max);
+##     a newly built line starts at meter_rpm_start;
+##   - from the meter to the extruder silo the first kg takes transit_s (plug
+##     flow): the connectors keep their geometry transit, every machine on the
+##     way holds pass_hold_s (the `air` ids hold nothing), and the `tanks` hold
+##     the rest, each its share of it;
+##   - a machine's hold rides on its out-connectors (they carry its residence on
+##     top of their travel, in HOLD_STAGE_S stages) and advances with the
+##     machine's spin, so a stopped machine keeps what it holds;
+##   - the VSS is full at vss_full_min and the extruder silo reads 100 % at
+##     silo_full_min, both minutes of the meter at meter_rpm_start. A vessel's
+##     overload e-stop keeps today's ratio to its full level (_overload_kg).
+## 3A "differs" (not said how), line 1 and 3C come later (W5): not listed.
+const WASH_TIMING : Dictionary = {
+	"line_3b": {
+		"transit_s": 180.0,            # W3: 14-20 % of a 17.5-min silo, as 3 min
+		"pass_hold_s": 5.0,            # W4
+		"tanks": {"flotation_tank": 2.0 / 3.0, "rafter": 1.0 / 3.0},   # W2.5
+		"air": ["blower", "cyclone"],  # pipes, blowers and cyclones as before
+		"meter_kg_h_per_rpm": 19.0,    # W2.6: "at 100 like 1800-2000kg/h"
+		"meter_rpm_max": 100.0,        # W2.6: the 50-100 setting is rpm
+		"meter_rpm_start": 50.0,       # W2.7
+		"vss_full_min": 15.0,          # W2.8
+		"silo_full_min": 17.5,         # W2.9: "15-20 min of feeding"
+	},
+}
+const HOLD_STAGE_S : float = 1.0
 ## The PCU belt (the compactorband from the extruder silo into the extruder)
 ## feeds only while the PCU pot has room. On lines 1/3A/3B the extruder's flow
 ## node is PCU and screw in one, so its input buffer is the pot. With the
@@ -479,6 +522,8 @@ func rebuild() -> void:
 			if s["nir_ctrl"]    != null and is_instance_valid(s["nir_ctrl"]):
 				nd["nir_ctrl"] = s["nir_ctrl"]
 			if s["dryer_cycle"] != null: nd["dryer_cycle"] = s["dryer_cycle"]
+	_index_silo_feed_stops() # §I11: each extruder silo's level sensor → its feed stop
+	_index_wash_timing()     # WASH_TIMING: holds, sizes, the VSS's direct feed (before the pipes)
 	_init_pipes()       # #145: turn each link into a transit delay-line
 	_carry_pipes(old_pipes) # and put back the kg that were riding them
 	_apply_dewater_open()   # rulings §12: open the screw troughs a flotation tank feeds
@@ -487,7 +532,6 @@ func rebuild() -> void:
 						# survivor stages so they DON'T re-stagger.
 	_spawn_connectors()
 	_index_silo_sensors()    # #A3: build target-node → sensor lookup for surge wiring
-	_index_silo_feed_stops() # §I11: each extruder silo's level sensor → its feed stop
 	# Consume the snapshot — one-shot for this rebuild. Subsequent reads
 	# (HMI placement scans, per-tick code) must see an empty dict.
 	_restore_state = {}
@@ -863,6 +907,15 @@ func _process_discovered_node(node3d: Node3D, id_ordinal: Dictionary, code_owner
 		"wout2": _node_wout2(node3d, prof, size),
 		"in":    MaterialBatch.new(),
 		"out":   MaterialBatch.new(),
+		# WASH_TIMING (_index_wash_timing, every rebuild): the residence this
+		# machine adds to its out-connectors, the kg at which a VSS is full or
+		# an extruder silo reads 100 % (0 = the VSS_FULL_KG / SILO_FULL_KG
+		# default), the node a VSS discharges only as fast as (-1 = none), and
+		# a meter's rated max rpm (0 = not a meter).
+		"hold_s":        0.0,
+		"full_kg":       0.0,
+		"direct_to":     -1,
+		"meter_rpm_max": 0.0,
 		# Live telemetry, refreshed each tick so the HMI can read real operator
 		# numbers per machine (smoothed throughput; instantaneous stream state).
 		"thru":    0.0,    # kg/s leaving this machine (EMA-smoothed)
@@ -929,6 +982,15 @@ func _process_discovered_node(node3d: Node3D, id_ordinal: Dictionary, code_owner
 		# transportband_8 only.
 		"c8_ctrl":      null,
 	})
+	# WASH_TIMING — the line's meter conveys meter_kg_h_per_rpm x its rpm. A NEW
+	# node starts at meter_rpm_start; a survivor (rebuild) and a loaded save put
+	# their own rpm_pct back afterwards, so the operator's setpoint stays his.
+	var meter := _wash_meter_spec(node3d)
+	if not meter.is_empty():
+		var nd_m : Dictionary = _nodes[_nodes.size() - 1]
+		nd_m["meter_rpm_max"] = float(meter["meter_rpm_max"])
+		nd_m["rate"] = float(meter["meter_kg_h_per_rpm"]) * float(meter["meter_rpm_max"]) / 3600.0
+		nd_m["rpm_pct"] = float(meter["meter_rpm_start"]) / float(meter["meter_rpm_max"])
 	# #137 — attach the jog controller to switch_belt bodies and stash it on
 	# the node dict so the tick can read jog_x without a per-frame find_child.
 	if id == "switch_belt":
@@ -1733,7 +1795,7 @@ func _both_vss_full_native() -> bool:
 		if String(nd.get("id", "")) != "vss_silo":
 			continue
 		vss_count += 1
-		if float(nd.get("buffer", 0.0)) >= VSS_FULL_KG:
+		if float(nd.get("buffer", 0.0)) >= _full_kg(nd, VSS_FULL_KG):
 			vss_full += 1
 	# Need at least two VSSs registered (3A + 3B). If only one is placed,
 	# overflow logic can't trigger — fall back to forward-only.
@@ -2035,19 +2097,32 @@ func _mech_run_gate(nd: Dictionary) -> float:
 ## Turn every link into a fixed-resolution delay-line: PIPE_STAGES MaterialBatch
 ## slots that shift forward one slot every stage_dt, so a parcel takes the whole
 ## transit_time (length ÷ transport speed) to cross. Bounded memory, conserving.
+## WASH_TIMING: an edge whose source holds material (nd["hold_s"]) carries that
+## residence too, in HOLD_STAGE_S stages instead of PIPE_STAGES, and advances
+## with its source's spin (e["hold"], _tick_route_outputs). Every other edge is
+## built exactly as before.
 func _init_pipes() -> void:
 	for e in _edges:
-		var a: Dictionary = _nodes[int(e["a"])]
-		var b: Dictionary = _nodes[int(e["b"])]
-		var length: float = (a["wout"] as Vector3).distance_to(b["win"] as Vector3)
-		var transit: float = maxf(length / TRANSPORT_MPS, MIN_TRANSIT_S)
+		var transit: float = _edge_geo_transit(e)
+		var hold : float = float(_nodes[int(e["a"])].get("hold_s", 0.0))
+		var stages : int = PIPE_STAGES
+		if hold > 0.0:
+			transit += hold
+			stages = maxi(PIPE_STAGES, ceili(transit / HOLD_STAGE_S))
 		var pipe: Array = []
-		for _s in PIPE_STAGES:
+		for _s in stages:
 			pipe.append(MaterialBatch.new())
 		e["pipe"]     = pipe
-		e["len"]      = length
-		e["stage_dt"] = transit / float(PIPE_STAGES)
+		e["len"]      = (_nodes[int(e["a"])]["wout"] as Vector3).distance_to(_nodes[int(e["b"])]["win"] as Vector3)
+		e["stage_dt"] = transit / float(stages)
 		e["stage_t"]  = 0.0
+		e["hold"]     = hold > 0.0
+
+## A connector's travel time from its length alone (TRANSPORT_MPS, at least
+## MIN_TRANSIT_S), without any machine's hold.
+func _edge_geo_transit(e: Dictionary) -> float:
+	var length: float = (_nodes[int(e["a"])]["wout"] as Vector3).distance_to(_nodes[int(e["b"])]["win"] as Vector3)
+	return maxf(length / TRANSPORT_MPS, MIN_TRANSIT_S)
 
 ## Build the PLC start sequencer in FLOW order (head→tail). PLCSequencer powers
 ## the LAST stage (the tail / sink) first and walks upstream, which is the real
@@ -2356,6 +2431,155 @@ func _index_silo_feed_stops() -> void:
 					also.append(ab)
 			_silo_stops.append({"silo": silo, "target": target, "line": mid, "belt": belt, "pcu": pcu, "also": also})
 
+## What _index_wash_timing derived, per line: {meter, silo, transit_s, geo_s
+## (the connectors of the fastest way), pass_s, tanks_s, first_kg_s (the
+## fastest way with every hold), holds: {node key: s}, vss_full_kg,
+## silo_full_kg}. For tests and probes.
+var _wash_report : Dictionary = {}
+
+func wash_timing(line: String) -> Dictionary:
+	return (_wash_report.get(line, {}) as Dictionary).duplicate(true)
+
+## The WASH_TIMING spec when `node3d` is its line's meter (the silo's feed stop,
+## SILO_FEED_STOP), else {}.
+func _wash_meter_spec(node3d: Node3D) -> Dictionary:
+	var mid : String = String(node3d.get_meta("macro_id", ""))
+	var spec : Dictionary = WASH_TIMING.get(mid, {})
+	var rule : Array = SILO_FEED_STOP.get(mid, [])
+	if spec.is_empty() or rule.is_empty():
+		return {}
+	if String(node3d.get_meta("placeable_id", "")) != String(rule[1]):
+		return {}
+	var ti : int = _seq_entry_after(_macro_seq(mid), String(rule[0]), String(rule[1]))
+	return spec if ti >= 0 and int(node3d.get_meta("macro_index", -1)) == ti else {}
+
+## Every rebuild, after _index_silo_feed_stops and before _init_pipes: flag each
+## VSS → dosing-screw edge as a direct feed (SILO_FEED_STOP_ALSO), and for each
+## WASH_TIMING line size its VSS and silo and give the machines between the
+## meter and the silo their holds (see WASH_TIMING).
+func _index_wash_timing() -> void:
+	_wash_report.clear()
+	for nd in _nodes:
+		nd["hold_s"] = 0.0
+		nd["full_kg"] = 0.0
+		nd["direct_to"] = -1
+	for e in _edges:
+		e["direct"] = false
+	for st in _silo_stops:
+		var mi : int = _nd_for_body(st["target"])
+		var si : int = _nd_for_body(st["silo"])
+		if mi < 0 or si < 0:
+			continue
+		var vss : Array = []
+		for ab in (st.get("also", []) as Array):
+			var ai : int = _nd_for_body(ab)
+			if ai < 0:
+				continue
+			vss.append(ai)
+			for e in _edges:
+				if int(e["a"]) == ai and int(e["b"]) == mi:
+					e["direct"] = true
+					_nodes[ai]["direct_to"] = mi
+		var spec : Dictionary = WASH_TIMING.get(String(st["line"]), {})
+		if spec.is_empty():
+			continue
+		var kg_h : float = float(spec["meter_kg_h_per_rpm"]) * float(spec["meter_rpm_start"])
+		_nodes[si]["full_kg"] = kg_h * float(spec["silo_full_min"]) / 60.0
+		for ai2 in vss:
+			if String(_nodes[ai2].get("id", "")) == "vss_silo":
+				_nodes[ai2]["full_kg"] = kg_h * float(spec["vss_full_min"]) / 60.0
+		# The machines between the meter and the silo: reached from the meter
+		# without passing the silo, and reaching the silo.
+		var fwd := _reach(mi, true, si)
+		var bwd := _reach(si, false, -1)
+		var way : Array = []
+		for i in fwd:
+			if i != si and bwd.has(i):
+				way.append(i)
+		var tanks : Dictionary = spec["tanks"]
+		var air : Array = spec["air"]
+		var tank_nodes : Array = []
+		for i in way:
+			var id : String = String(_nodes[i].get("id", ""))
+			if tanks.has(id):
+				tank_nodes.append(i)
+			elif not air.has(id):
+				_nodes[i]["hold_s"] = float(spec["pass_hold_s"])
+		var geo : float = _first_kg_s(mi, si, way, false)
+		var with_pass : float = _first_kg_s(mi, si, way, true)
+		var rest : float = float(spec["transit_s"]) - with_pass
+		if rest < 0.0:
+			push_warning("[LineFlow] WASH_TIMING %s: the connectors and pass holds already take %.1f s of %.1f s; the tanks hold nothing"
+				% [String(st["line"]), with_pass, float(spec["transit_s"])])
+			rest = 0.0
+		for i in tank_nodes:
+			_nodes[i]["hold_s"] = rest * float(tanks[String(_nodes[i].get("id", ""))])
+		var holds : Dictionary = {}
+		for i in way:
+			holds[String(_nodes[i].get("key", ""))] = float(_nodes[i]["hold_s"])
+		_wash_report[String(st["line"])] = {
+			"meter": String(_nodes[mi].get("key", "")), "silo": String(_nodes[si].get("key", "")),
+			"transit_s": float(spec["transit_s"]), "geo_s": geo, "pass_s": with_pass - geo, "tanks_s": rest,
+			"first_kg_s": _first_kg_s(mi, si, way, true), "holds": holds,
+			"vss_full_kg": kg_h * float(spec["vss_full_min"]) / 60.0, "silo_full_kg": float(_nodes[si]["full_kg"]),
+		}
+
+## Node indices reachable from `start` along the edges (forward) or against them
+## (backward), never passing through `block`.
+func _reach(start: int, forward: bool, block: int) -> Array:
+	var seen : Dictionary = {start: true}
+	var q : Array = [start]
+	while not q.is_empty():
+		var n : int = q.pop_front()
+		if n == block and n != start:
+			continue
+		for e in _edges:
+			var from : int = int(e["a"]) if forward else int(e["b"])
+			var to : int = int(e["b"]) if forward else int(e["a"])
+			if from == n and not seen.has(to):
+				seen[to] = true
+				q.append(to)
+	return seen.keys()
+
+## The fastest way from `from` to `to` through the nodes of `way`: each edge's
+## geometry transit, plus its source's hold when `holds` (Dijkstra, a line is
+## a few dozen nodes).
+func _first_kg_s(from: int, to: int, way: Array, holds: bool) -> float:
+	var best : Dictionary = {from: 0.0}
+	var done : Dictionary = {}
+	while true:
+		var n : int = -1
+		var nt : float = INF
+		for k in best:
+			if not done.has(k) and float(best[k]) < nt:
+				nt = float(best[k])
+				n = int(k)
+		if n < 0 or n == to:
+			break
+		done[n] = true
+		for e in _edges:
+			if int(e["a"]) != n:
+				continue
+			var b : int = int(e["b"])
+			if b != to and not way.has(b):
+				continue
+			var t : float = nt + _edge_geo_transit(e) + (float(_nodes[n].get("hold_s", 0.0)) if holds else 0.0)
+			if t < float(best.get(b, INF)):
+				best[b] = t
+	return float(best.get(to, -1.0))
+
+## The kg at which this node is full (a VSS) or reads 100 % (an extruder silo):
+## its WASH_TIMING size, else `dflt`.
+func _full_kg(nd: Dictionary, dflt: float) -> float:
+	var f : float = float(nd.get("full_kg", 0.0))
+	return f if f > 0.0 else dflt
+
+## The input kg past which this node e-stops the line: OVERLOAD_KG, scaled for
+## a vessel that WASH_TIMING made bigger than the 150 kg the overload was sized
+## against (the same ratio, 250 : 150; PLACEHOLDER, rulings W7).
+func _overload_kg(nd: Dictionary) -> float:
+	return OVERLOAD_KG * maxf(1.0, float(nd.get("full_kg", 0.0)) / VSS_FULL_KG)
+
 func _seq_entry_after_index(seq: Array, from_idx: int, id: String) -> int:
 	if from_idx < 0:
 		return -1
@@ -2422,7 +2646,7 @@ func _tick_silo_feed_stops(delta: float) -> void:
 		s["t"] = float(s["t"]) + delta
 		if float(s["t"]) >= SILO_REPORT_S - 1e-6:
 			var avg : float = float(s["acc"]) / float(maxi(1, int(s["n"])))
-			s["pct"] = avg / SILO_FULL_KG * 100.0
+			s["pct"] = avg / (_full_kg(_nodes[si], SILO_FULL_KG) if si >= 0 else SILO_FULL_KG) * 100.0
 			s["mm"] = SILO_EMPTY_MM - float(s["pct"]) / 100.0 * (SILO_EMPTY_MM - SILO_CUTOFF_MM)
 			s["acc"] = 0.0
 			s["n"] = 0
@@ -2472,6 +2696,7 @@ func silo_level_for(body: Node3D) -> Dictionary:
 			return {"found": true, "pct": float(s.get("pct", 0.0)), "mm": float(s.get("mm", SILO_EMPTY_MM)),
 				"held": bool(s.get("held", false)), "reports": int(s.get("reports", 0)),
 				"pcu_full": bool(s.get("pcu_full", false)),
+				"full_kg": _full_kg(node_for_body(silo), SILO_FULL_KG),
 				"silo": silo, "target": st["target"], "line": String(st["line"]), "also": st.get("also", []),
 				"belt": st.get("belt", null), "pcu": st.get("pcu", null)}
 	return {"found": false}
@@ -2923,6 +3148,8 @@ func get_machine_info(id: String) -> Dictionary:
 ## The rated max rpm the HMI slider should top out at — the primary rotor's
 ## nominal_rpm (the real visible spin rate). Falls back to 100 if no rotor.
 func _machine_max_rpm(nd: Dictionary) -> float:
+	if float(nd.get("meter_rpm_max", 0.0)) > 0.0:
+		return float(nd["meter_rpm_max"])     # a WASH_TIMING meter: its rpm scale
 	var mech = nd.get("mech")
 	if mech != null and is_instance_valid(mech) and ("nominal_rpm" in mech):
 		return maxf(float(mech.nominal_rpm), 1.0)
@@ -2996,15 +3223,18 @@ func _estop_step() -> void:
 	if _estop_active:
 		# Recovery: fault relieved (crew unchoked it) AND downstream emptied.
 		var fault_buf := 0.0
+		var fault_over := OVERLOAD_KG
 		if _estop_fault_node >= 0 and _estop_fault_node < _nodes.size():
 			fault_buf = float(_nodes[_estop_fault_node].get("buffer", 0.0))
-		if fault_buf < OVERLOAD_KG * 0.5 and _downstream_transit(_estop_fault_order) < 1.0:
+			fault_over = _overload_kg(_nodes[_estop_fault_node])
+		if fault_buf < fault_over * 0.5 and _downstream_transit(_estop_fault_order) < 1.0:
 			_clear_estop()
 	else:
-		# Detection: trip on the first machine whose input buffer is past OVERLOAD_KG.
+		# Detection: trip on the first machine whose input buffer is past its
+		# overload (OVERLOAD_KG, or a WASH_TIMING vessel's scaled one).
 		for stage in _plc_stage_node.size():
 			var ni : int = int(_plc_stage_node[stage])
-			if float(_nodes[ni].get("buffer", 0.0)) > OVERLOAD_KG:
+			if float(_nodes[ni].get("buffer", 0.0)) > _overload_kg(_nodes[ni]):
 				_trigger_estop(stage, ni)
 				break
 	# Enforce: while tripped, kill the feed + the fault and everything UPSTREAM of
@@ -3432,7 +3662,7 @@ func _tick_plc_power_downstream(delta: float) -> void:
 			var bin_s : MaterialBatch = nd_s.get("in", null) as MaterialBatch
 			var kg_s : float = float(bin_s.mass_kg) if bin_s != null else float(nd_s["buffer"])
 			PlaceableCatalog.set_silo_fill(n3d_s as Node3D,
-				clampf(kg_s / SILO_FULL_KG, 0.0, 1.0), sf_s as Node3D)
+				clampf(kg_s / _full_kg(nd_s, SILO_FULL_KG), 0.0, 1.0), sf_s as Node3D)
 		# Flow-gated emitters: material actually moving through this machine?
 		var flowing_s : bool = float(nd_s["thru"]) > 0.001
 		var plume_s = nd_s.get("plume")
@@ -3504,6 +3734,39 @@ func _tick_feed(delta: float) -> void:
 				bale.queue_free()
 
 
+## A node's conveying rate this tick (kg/s).
+func _eff_rate(nd: Dictionary) -> float:
+	# Effective rate = design × spin × mech × HMI overrides (rpm slider AND the
+	# avg of the per-component RPMs — inlet/transports/outlet for tanks).
+	# KNOWN, KEPT (operator 2026-09-26, "don't touch the base"): this counts
+	# one HMI speed setting 2-3 times — the rotor _mech_fraction reads was set
+	# from rpm_pct, and a single-drive component slider is written into
+	# rpm_pct too — so a rotor machine at 50 % conveys 25 %, a transport belt moved on
+	# the MACHINES screen 12.5 %. The physical material model replaces this
+	# law; do not "fix" it without asking. docs/audit/hmi_rpm_rate_2026-09-26.md
+	var rate_mul : float = float(nd.get("rpm_pct", 1.0)) * _component_pct_multiplier(nd)
+	var mech_mul : float = _mech_fraction(nd)
+	if RATE_NOT_BY_RPM.has(String(nd.get("id", ""))):
+		rate_mul = 1.0
+		mech_mul = _mech_run_gate(nd)
+	var eff_rate: float = float(nd.get("rate", 0.0)) * float(nd.get("spin", 0.0)) * mech_mul * rate_mul
+	# #52 air gating — an air-driven consumer (TITECH ejector / PCU ram) starved of
+	# header pressure conveys slower. This is a GENTLE rate multiplier only: it
+	# slows flow, the un-moved mass simply backs up in the buffer (conserving). At
+	# full pressure consumer_air_factor()==1.0 and nothing changes.
+	if String(nd.get("air_id", "")) != "":
+		eff_rate *= _air_factor()
+	# NIR shaft-wrap penalty (TITECH/TOMRA only). Below TRIP_WRAP_G the
+	# multiplier is 1.0 and this is a no-op; once tripped it lerps 1.0 → 0.5
+	# as wrap fills to FULL_WRAP_G. Like the air gate, the un-moved mass
+	# simply backs up in the buffer (conserving). The controller's own tick
+	# runs AFTER the split in _tick_process_machines so it accumulates on what
+	# actually moved, not the design rate.
+	var nir_ctrl = nd.get("nir_ctrl")
+	if nir_ctrl != null and is_instance_valid(nir_ctrl):
+		eff_rate *= float(nir_ctrl.throughput_multiplier())
+	return eff_rate
+
 func _tick_process_machines(delta: float) -> void:
 	# 2) Each machine processes up to rate·delta. It fights water + dirt in the
 	#    same order a real line does: strip contaminant → sort off-spec → drive
@@ -3525,35 +3788,12 @@ func _tick_process_machines(delta: float) -> void:
 		# Effective conveying rate is GATED by live rotation: design rate × spin-up
 		# × rotor rpm-fraction. A stopped or still-spinning-up rotor moves nothing,
 		# so material backs up in this machine's input buffer (#145).
-		# Effective rate = design × spin × mech × HMI overrides (rpm slider AND the
-		# avg of the per-component RPMs — inlet/transports/outlet for tanks).
-		# KNOWN, KEPT (operator 2026-09-26, "don't touch the base"): this counts
-		# one HMI speed setting 2-3 times — the rotor _mech_fraction reads was set
-		# from rpm_pct, and a single-drive component slider is written into
-		# rpm_pct too — so a rotor machine at 50 % conveys 25 %, a transport belt moved on
-		# the MACHINES screen 12.5 %. The physical material model replaces this
-		# law; do not "fix" it without asking. docs/audit/hmi_rpm_rate_2026-09-26.md
-		var rate_mul : float = float(nd.get("rpm_pct", 1.0)) * _component_pct_multiplier(nd)
-		var mech_mul : float = _mech_fraction(nd)
-		if RATE_NOT_BY_RPM.has(String(nd.get("id", ""))):
-			rate_mul = 1.0
-			mech_mul = _mech_run_gate(nd)
-		var eff_rate: float = float(nd.get("rate", 0.0)) * float(nd.get("spin", 0.0)) * mech_mul * rate_mul
-		# #52 air gating — an air-driven consumer (TITECH ejector / PCU ram) starved of
-		# header pressure conveys slower. This is a GENTLE rate multiplier only: it
-		# slows flow, the un-moved mass simply backs up in the buffer (conserving). At
-		# full pressure consumer_air_factor()==1.0 and nothing changes.
-		if String(nd.get("air_id", "")) != "":
-			eff_rate *= _air_factor()
-		# NIR shaft-wrap penalty (TITECH/TOMRA only). Below TRIP_WRAP_G the
-		# multiplier is 1.0 and this is a no-op; once tripped it lerps 1.0 → 0.5
-		# as wrap fills to FULL_WRAP_G. Like the air gate, the un-moved mass
-		# simply backs up in the buffer (conserving). The controller's own tick
-		# runs AFTER the split below so it accumulates on what actually moved,
-		# not the design rate.
-		var nir_ctrl = nd.get("nir_ctrl")
-		if nir_ctrl != null and is_instance_valid(nir_ctrl):
-			eff_rate *= float(nir_ctrl.throughput_multiplier())
+		var eff_rate : float = _eff_rate(nd)
+		# A VSS discharges only through its dosing screw (WASH_TIMING, direct
+		# feed): no faster than the screw conveys, so the backlog stays in the VSS.
+		var to_i : int = int(nd.get("direct_to", -1))
+		if to_i >= 0 and to_i < _nodes.size():
+			eff_rate = minf(eff_rate, _eff_rate(_nodes[to_i]))
 		# ── STOP-WITH-RESIDUAL CONTRACT (operator-confirmed "leegdraaien" cascade) ──
 		# When a machine is stopped (PLC power off, HAND-mode manual_on=false, E-stop
 		# upstream cut, MotorOverload trip, CutterCompactor Donut stall, or the
@@ -3765,6 +4005,12 @@ func _tick_route_outputs(delta: float) -> void:
 		var pipe: Array = e["pipe"]
 		var src := int(e["a"])
 		var rem : int = int(_out_left[src])
+		# A direct feed (VSS → its dosing screw, WASH_TIMING) is the screw's own
+		# inlet: while the screw is not powered nothing moves on it, into it or
+		# along it, and what is on it stays with the VSS (rulings W2.1).
+		if bool(e.get("direct", false)) and not bool(bn.get("powered", false)):
+			_out_left[src] = rem - 1
+			continue
 		# Inject this branch's SHARE of the source's output into the entry slot.
 		var aout: MaterialBatch = an["out"]
 		var take : float = float(_edge_take[ei])
@@ -3797,7 +4043,9 @@ func _tick_route_outputs(delta: float) -> void:
 				(pipe[0] as MaterialBatch).add(aout.split_fraction(take))
 		_out_left[src] = rem - 1
 		# Advance the belt: shift slots forward whenever a stage interval elapses.
-		e["stage_t"] = float(e["stage_t"]) + delta
+		# An edge carrying its source's hold (WASH_TIMING) moves with the source's
+		# spin: a stopped tank keeps what it holds.
+		e["stage_t"] = float(e["stage_t"]) + delta * (float(an.get("spin", 0.0)) if bool(e.get("hold", false)) else 1.0)
 		var guard := 0
 		while float(e["stage_t"]) >= float(e["stage_dt"]) and guard < PIPE_STAGES * 4:
 			e["stage_t"] = float(e["stage_t"]) - float(e["stage_dt"])

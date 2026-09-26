@@ -24,9 +24,16 @@ extends Node
 ## saves; nothing here writes world_layout.json.
 
 const DT : float = 0.1
-const WATCHDOG_S : float = 420.0
+const WATCHDOG_S : float = 600.0
 const FEED_KG_H : float = 950.0
-const FEED_S : float = 1200.0          # 20 min: ~317 kg a line, past the silo's 100 %
+# How long each line is fed, past its silo's 100 %. 3B: 30 min, ~475 kg; its
+# silo reads 100 % at 277 kg (17.5 min of its dosing screw at 50 rpm, rulings
+# 2026-09-26 W2.9), behind a 60 kg PCU pot and a wash line that takes 3 min.
+# Line 1: 20 min, ~317 kg, as before (its silo is still 150 kg). Feeding line 1
+# 30 min as well piled 248 kg into its paused shredder's hopper, at the edge of
+# the 250 kg overload.
+const FEED_S : float = 1800.0
+const FEED_S_LINE_1 : float = 1200.0
 const SETTLE_S : float = 300.0         # then let the lines run empty into the silos
 
 var _oks : int = 0
@@ -104,13 +111,7 @@ func _run() -> void:
 		brains[String(em.get_parent().get_meta("macro_id", ""))] = em
 	_lf = LineFlow.new()
 	add_child(_lf)
-	# LineFlow's _process is left ON here, on purpose, until S3 is re-derived
-	# (operator 2026-09-26). The frame awaited below ticks it once on frame time
-	# on this machine, and that tick is what S3 passes on: the level sensor's
-	# clock (_silo_state, kept through rebuild) starts 0.1 s ahead, and the stop
-	# lands on a tick phase where the screw's input grows 0.96 kg (< 1.0). With
-	# _process off it grows 1.12 kg and S3 is red; 2 or 3 such ticks give 1.15 /
-	# 1.20 kg. probe_feed_stop_pre_ticks, docs/audit/lineflow_set_process_2026-09-26.md.
+	_lf.set_process(false)
 	await get_tree().process_frame
 	_lf.call("rebuild")
 
@@ -184,6 +185,8 @@ func _run() -> void:
 	for i in ticks:
 		if float(i) * DT < FEED_S:
 			for head in [vss3b, head1]:
+				if head == head1 and float(i) * DT >= FEED_S_LINE_1:
+					continue
 				(_nd(head)["in"] as MaterialBatch).add(MaterialBatch.new(feed_tick, feed_tick / LineFlow.FEED_DENSITY,
 					LineFlow.DEFAULT_COMP.duplicate(), "silo_stop", 0.0, 0.0))
 			fed += feed_tick
@@ -204,7 +207,7 @@ func _run() -> void:
 				var sum := 0.0
 				for k in range(buf_hist.size() - 11, buf_hist.size() - 1):
 					sum += float(buf_hist[k])
-				var mine : float = sum / 10.0 / LineFlow.SILO_FULL_KG * 100.0
+				var mine : float = sum / 10.0 / float(lv3["full_kg"]) * 100.0
 				avg_ok = avg_ok and absf(mine - float(lv3["pct"])) < 1e-6
 				avg_checked += 1
 			mm_ok = mm_ok and absf(float(lv3["mm"]) - (4950.0 - float(lv3["pct"]) / 100.0 * 3170.0)) < 1e-6
@@ -232,9 +235,10 @@ func _run() -> void:
 			% [line, LineFlow.PCU_POT_FULL_KG, float(pcu_t[line]), float(full_t[line])])
 	_check(reports_60 == 60,
 		"S1 the sensor reports once per second: %d reports in the first 60 s" % reports_60)
+	var full3b : float = float((_lf.call("silo_level_for", silo3b) as Dictionary)["full_kg"])
 	_check(avg_ok and avg_checked >= 30 and mm_ok,
-		"S1 each report is the average of the silo's content over the second before it (%d reports checked), as %% of SILO_FULL_KG %.0f kg, and mm = 4950 - %% x 31.7"
-		% [avg_checked, LineFlow.SILO_FULL_KG])
+		"S1 each report is the average of the silo's content over the second before it (%d reports checked), as %% of the silo's 100 %% level %.1f kg, and mm = 4950 - %% x 31.7"
+		% [avg_checked, full3b])
 	_check(float(full_t["line_3b"]) > 0.0 and bool(off_at_full["line_3b"]) and screw_off_after and flot_on_after,
 		"S2 3B: the first report at >= 100 %% (%.0f s, %.1f min) holds the VSS dosing screw off at once; 60 s later it is still off and the flotation tank still runs"
 		% [float(full_t["line_3b"]), float(full_t["line_3b"]) / 60.0])
@@ -246,11 +250,17 @@ func _run() -> void:
 	var vsn_kg : float = float(_nd(vsn).get("buffer", 0.0)) if vsn != null else -1.0
 	var hop_kg : float = float(_nd(shred1).get("buffer", 0.0))
 	_check(float(peak["line_3b"]) > 100.0 and float(peak["line_1"]) > 100.0 and not estop,
-		"S3 the wash line runs empty on top of the full silo: peaks 3B %.1f %%, line 1 %.1f %%; no overload e-stop anywhere in %.0f min (fed %.0f kg a line)"
+		"S3 the wash line runs empty on top of the full silo: peaks 3B %.1f %%, line 1 %.1f %%; no overload e-stop anywhere in %.0f min (fed 3B %.0f kg)"
 		% [float(peak["line_3b"]), float(peak["line_1"]), (FEED_S + SETTLE_S) / 60.0, fed])
+	# Nothing more enters the stopped dosing screw (operator 2026-09-26, rulings
+	# W2.1: "LOGICALLY no more material can enter"). The screw is the VSS's
+	# discharge, so the VSS -> screw connector is a direct feed that moves
+	# nothing while the screw is not powered (LineFlow.SILO_FEED_STOP_ALSO).
+	# Before, it emptied into the stopped screw: 0.96-1.20 kg by tick phase
+	# against a typed < 1.0 (docs/audit/lineflow_set_process_2026-09-26.md §6).
 	var screw_in_end : float = float(_nd(screw3b).get("buffer", 0.0))
-	_check(vss_kg > 10.0 and screw_in_end - screw_in_at_stop < 1.0,
-		"S3 3B's backlog waits in the VSS (%.1f kg), where the intake's own VSS-full logic sees it, not in the stopped screw (its input %.1f kg at the stop, %.1f kg now)"
+	_check(vss_kg > 10.0 and screw_in_end - screw_in_at_stop <= 1e-9,
+		"S3 3B's backlog waits in the VSS (%.1f kg), where the intake's own VSS-full logic sees it, and nothing more enters the stopped dosing screw (its input %.3f kg at the stop, %.3f kg now)"
 		% [vss_kg, screw_in_at_stop, screw_in_end])
 	_info("vuilsnippersilo %.1f kg; line 1's backlog in the shredder hopper %.1f kg" % [vsn_kg, hop_kg])
 
@@ -310,7 +320,8 @@ func _run() -> void:
 			"S5 %s: once the running extruder drains the silo under 100 %%, the feed stays stopped until 10 reports in a row read under 100 %% (%d; released %.1f s after the first)"
 			% [line, int(below_reports[line]), dt])
 	_check(bool(_nd(screw3b).get("powered", false)) and bool(_nd(shred1).get("powered", false)),
-		"S5 the 3B dosing screw and line 1's shredder run again")
+		"S5 the 3B dosing screw and line 1's shredder run again (%s, %s)"
+		% [bool(_nd(screw3b).get("powered", false)), bool(_nd(shred1).get("powered", false))])
 	_check(model_ok,
 		"S6 the 3B extruder model carries its silo's reading every tick (%.1f %%, feed stopped %s)"
 		% [(brains["line_3b"].get("model") as ExtruderModel).silo_level_pct,

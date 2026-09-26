@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/tests/probe_rpm_pct_rate.gd" id="1"]
+
+[node name="ProbeRpmPctRate" type="Node"]
+script = ExtResource("1")

@@ -14,15 +14,20 @@ extends Node
 ##
 ## This probe switches _process off after add_child and runs exactly <k> ticks
 ## by hand where the frame ticks used to land, then the S1/S2 feed of the suite
-## (950 kg/h at 3B's VSS and line 1's opzetband, extruders off, 20 + 5 min), and
-## prints the S3 numbers plus what was on its way into the stopped screw.
-## docs/audit/lineflow_set_process_2026-09-26.md.
+## (950 kg/h at 3B's VSS for 30 min and line 1's opzetband for 20, extruders
+## off, then 5 min), and prints the S3 numbers plus what was on its way into the
+## stopped screw. docs/audit/lineflow_set_process_2026-09-26.md.
+##
+## 2026-09-26, the wash line's timing (docs/plant/operator_rulings_2026-09-26.md
+## W2.1): nothing more may enter the stopped dosing screw, so S3 now allows 0 kg
+## (it allowed < 1.0 kg, which the growth crossed by tick phase: 0.96-1.20 kg).
 
 const DT : float = 0.1
 const FEED_KG_H : float = 950.0
-const FEED_S : float = 1200.0
+const FEED_S : float = 1800.0          # 3B, as the suite since 2026-09-26 (its silo is 277 kg)
+const FEED_S_LINE_1 : float = 1200.0
 const SETTLE_S : float = 300.0
-const WATCHDOG_S : float = 420.0
+const WATCHDOG_S : float = 900.0
 
 var _lf : Node = null
 var _done : bool = false
@@ -136,6 +141,8 @@ func _run(k: int) -> void:
 	for i in int((FEED_S + SETTLE_S) / DT):
 		if float(i) * DT < FEED_S:
 			for head in [vss3b, head1]:
+				if head == head1 and float(i) * DT >= FEED_S_LINE_1:
+					continue
 				((_lf.call("node_for_body", head) as Dictionary)["in"] as MaterialBatch).add(MaterialBatch.new(
 					feed_tick, feed_tick / LineFlow.FEED_DENSITY, LineFlow.DEFAULT_COMP.duplicate(), "probe", 0.0, 0.0))
 		in_prev = float((_lf.call("node_for_body", screw3b) as Dictionary).get("buffer", 0.0))
@@ -152,5 +159,5 @@ func _run(k: int) -> void:
 			_where(k, "stop +%.1f s" % (t - full_t), vss3b, screw3b)
 	var in_end : float = float((_lf.call("node_for_body", screw3b) as Dictionary).get("buffer", 0.0))
 	var vss_kg : float = float((_lf.call("node_for_body", vss3b) as Dictionary).get("buffer", 0.0))
-	print("PROBE k=%d: end: screw input %.3f kg, grew %.3f kg after the stop (S3 allows < 1.0: %s); in flight at the stop %.3f; VSS %.1f kg"
-		% [k, in_end, in_end - in_at_stop, "PASS" if in_end - in_at_stop < 1.0 else "FAIL", fly_at_stop, vss_kg])
+	print("PROBE k=%d: end: screw input %.3f kg, grew %.6f kg after the stop (S3 allows 0: %s); in flight at the stop %.3f; VSS %.1f kg"
+		% [k, in_end, in_end - in_at_stop, "PASS" if in_end - in_at_stop <= 1e-9 and vss_kg > 10.0 else "FAIL", fly_at_stop, vss_kg])
