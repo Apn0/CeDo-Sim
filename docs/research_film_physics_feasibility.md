@@ -1,5 +1,13 @@
 # Film-physics tooling — feasibility read (2026-07-15)
 
+> **2026-09-26 — stale on the engine.** This doc treats Jolt as the game's
+> physics engine. The project switched to **Rapier3D** a week later
+> (`project.godot:419`, commit `1a2e2e2`, 2026-07-22) and still runs it
+> (0.8.34, a single-threaded, non-SIMD build). Its verdicts on GPU particles
+> (visual only) still hold, and are now measured for the headless case. The
+> current read on piles, blobs and engines is
+> `docs/DESIGN_physical_bulk_material_2026-09-26.md`.
+
 Research for the [film-physics R&D track](../../.claude/...) — cyclone clog → film ejection → aerodynamic dispersal (leaf-blower / HP nozzle) → settle into piles → buoyancy in water. Target engine: **Godot 4.6.3-stable, GDScript**. Verdicts are GO / NO-GO with sources.
 
 ## TL;DR — recommended stack (all built into Godot 4.6, zero native deps)
