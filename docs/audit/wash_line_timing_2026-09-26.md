@@ -139,11 +139,23 @@ a time on this tree: 71 PASS and 3 red. Every one has a log under `logs\after_wa
 
 Suites that pass through the change with numbers worth naming:
 `test_fallback_chains` 110 ok, `test_macro_edges_reload` 62 ok,
-`test_plant_resume` 62 ok (on the tree before `main`'s census-fix edit of it; re-run
+`test_plant_resume` 62 ok (on the tree before `main`'s census-fix edit of it; 65 ok
 after the rebase, below), `test_extruder_silo_chain` 41 ok (it feeds the blower
 before the silo, so the wash line's hold is not on its path),
 `test_extruder_start_interlock` 32 ok, `test_jam_baseline` 20 ok / 0 skipped,
 `test_nav_connectivity` 13 ok.
+
+**After the rebase.** On `31a9a80` (with `main`'s census fix in
+`test_plant_resume`): `test_plant_resume` 65 ok, `test_wash_line_timing` 13 ok,
+`test_extruder_silo_feed_stop` 17 ok, `test_rebuild_pipe_carry` 26 ok. Then
+onto `5c156d8`, i.e. #332 (the frictiewasser's rate; its `RATE_NOT_BY_RPM`
+branch now sits in `_eff_rate`, operand order unchanged) and #333:
+`test_frictiewasser_rate` 22 ok, `test_wash_line_timing` 13 ok,
+`test_extruder_silo_feed_stop` 17 ok, `test_rebuild_pipe_carry` 26 ok,
+`test_plant_resume` 65 ok, `test_extruder_silo_chain` 41 ok,
+`test_fallback_chains` 110 ok, all with 0 `SCRIPT ERROR` lines; the four
+stdlib gates exit 0, the parse sweep 494 ok / 0 fail, `bash -n run.sh` OK
+with one main loop, and the operator's `world_layout.json` md5 is unchanged.
 
 ## 4. Mutation matrix
 
