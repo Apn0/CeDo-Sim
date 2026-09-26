@@ -4201,7 +4201,9 @@ func _spawn_chute_pile(pos: Vector3, cls: int) -> Node:
 	var root : Node = get_tree().current_scene
 	if root == null:
 		root = self
-	root.add_child(pile)
+	# Readable: a second spill is "ChuteSpill2", not "@Node3D@N", which a save
+	# cannot give back (set_name turns the @s into _s; test_plant_resume B7).
+	root.add_child(pile, true)
 	var ground := pos
 	ground.y = _floor_y_below(pos)
 	(pile as Node3D).global_position = ground

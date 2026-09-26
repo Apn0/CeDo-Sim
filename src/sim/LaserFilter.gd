@@ -911,7 +911,7 @@ func _spill_pile(chan: int) -> Node:
 		var dest : Node = get_parent().get_parent() if get_parent() != null and get_parent().get_parent() != null else get_parent()
 		if dest == null:
 			dest = self
-		dest.add_child(pile)
+		dest.add_child(pile, true)   # readable on a clash, so a save gives the name back (as LineFlow's chute spill)
 		(pile as Node3D).global_position = at
 		best = pile
 	_spill_piles[chan] = best

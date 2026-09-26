@@ -89,7 +89,8 @@ unchanged (§R3).
 
 `godot --headless --path . res://src/tests/test_plant_resume.tscn`: 62 checks,
 three phases plus Z (64 since 2026-09-26: phase A feeds line 1 a wet, dirty
-bale sample and A11 checks its water and contaminant come back, §8). It has a watchdog, a `Result:` line and a per-phase
+bale sample and A11 checks its water and contaminant come back, §8; 65 with B7,
+§9). It has a watchdog, a `Result:` line and a per-phase
 last-line assertion (Z2). It writes only its own slot files and arms the
 world_layout guard for the whole run.
 
@@ -137,6 +138,9 @@ world_layout guard for the whole run.
     e-stop and EMERGENCY_STOP hold.
   - B6: RESETTEN clears the restored trip. A choke reset is refused while the pile
     is full and succeeds once it is shovelled.
+  - B7 (2026-09-26, §9): a second chute spill and two laserfilters' nozzle-0
+    lump spills, each pair under one parent, keep readable names through the
+    save.
 - **C, a real MainWorld boot** on phase A's save with the shift clock 4 h in:
   - C2: MainWorld's own load path resumed 3B's extruder (RUNNING, 80 rpm, 205 °C)
     with its node powered, and line 1's extruder is OFF with natraject OFF.
@@ -401,7 +405,7 @@ held any dirt.
 | M17 | `batch_out` erases `contaminant_kg`, so the capture and the restore agree | PlantResume | FAIL (63 ok, 1 fail) | A11 only. A6 stays green: it compares a capture with a capture, and both lack the key |
 | M18 | no wet feed at line 1's head | the suite | FAIL (63 ok, 1 fail) | A1 fixture (0.03 kg water in 3 bodies, 0.00 kg contaminant). A11 alone would have stayed green on nothing, which is why A1 gates the fixture |
 
-### 8.6 Found, not fixed
+### 8.6 Found, not fixed (fixed later the same day, §9)
 
 **A loose pile's name does not always survive a save and a load.**
 `_spawn_chute_pile` names every spill `ChuteSpill`. A second spill under the
@@ -437,3 +441,80 @@ was not run, per the one-runner ruling.
   0.5379 kg contaminant).
 - **Not changed:** `PlantResume.gd` and every file under `src/sim/`. The fix is a
   fixture, a check, and a census entry.
+
+## 9. Loose piles keep their names through a save (2026-09-26, later)
+
+§8.6 found that a second chute spill under the same parent does not get its
+name back from a save. It was fixed the same day. It turned out to hit two
+kinds of pile, not one:
+- `LineFlow._spawn_chute_pile` names every spill `ChuteSpill`, under the
+  current scene.
+- `LaserFilter._spill_pile` names its pile `LumpSpill<nozzle>`, under the
+  filter's grandparent (the BuildMode for a placed filter). So two
+  laserfilters spilling from nozzle 0 clash the same way.
+
+Both are loose piles, so `PlantResume.capture_piles` saves both.
+
+### 9.1 Measured before
+
+Phase B got a fixture (step 2b): a second uncaught chute 200 m out (beyond
+`_nearest_floor_pile`'s 40 m search, so it gets its own pile), and 5 kg from
+nozzle 0 of both 3A's and 3C's laserfilter. That makes 4 loose piles. The new
+check B7 asks for at least 2 of each kind, readable names, and the same names
+after the load. On the unfixed code:
+
+| | names |
+|---|---|
+| saved | `@Node3D@13411`, `@Node3D@13414`, `ChuteSpill`, `LumpSpill0` |
+| after the load | `ChuteSpill`, `LumpSpill0`, `_Node3D_13411`, `_Node3D_13414` |
+
+`FAIL (63 ok, 2 fail)`: B2 (the line compare, on the two names) and B7. 0
+`^SCRIPT ERROR` lines.
+
+### 9.2 The change
+
+`add_child(pile, true)` at both spawn sites. On a clash Godot then picks a
+readable name, which `set_name` keeps. Measured: the second chute spill is
+`ChuteSpill2`, and the second nozzle-0 lump spill is `LumpSpill1`. Godot
+increments a trailing number, so `LumpSpill1` can be a second filter's nozzle
+0. The name is only a label: a laserfilter finds its pile through
+`_spill_piles[nozzle]` or by position, and a choke finds its pile by position.
+
+Not changed:
+- `PlantResume.restore_pile`. It clashes only when a pile of the same name
+  already stands under the parent it restores into, as when a suite leaves its
+  piles in the tree (which is why both phases free them). Not measured: whether
+  anything spills in a MainWorld boot before `_resume_plant()` runs. If it
+  does, that restored pile gets an `@Node3D@N` name again.
+- Old saves that already hold a `@Node3D@N` name. It comes back `_Node3D_N`
+  once and keeps that name after.
+- The belt heap (`BeltHeap`). It has the same plain `add_child`, but it is a
+  mirror of a buffer and never saved.
+
+### 9.3 Mutation proofs
+
+| | mutation | result | red |
+|---|---|---|---|
+| P1 | `_spawn_chute_pile` back to plain `add_child` | FAIL (63 ok, 2 fail) | B2, B7 (1 chute, 2 lump) |
+| P2 | `LaserFilter._spill_pile` back to plain `add_child` | FAIL (63 ok, 2 fail) | B2, B7 (2 chute, 1 lump) |
+
+Each file was restored md5-exact after its run. 0 `^SCRIPT ERROR` lines.
+
+### 9.4 Verification
+
+Measured 2026-09-26 on `cae760b` (#328 merged) plus this change, with Godot
+4.7.2 headless. Each run was on its own, under a scratch APPDATA on D:. The
+full harness was not run, per the one-runner ruling.
+
+- **`test_plant_resume`:** `PASS (65 ok, 0 fail)`, 0 `^SCRIPT ERROR` lines, on
+  the D: copy of the operator's `app_userdata`. B7 read `ChuteSpill`,
+  `ChuteSpill2`, `LumpSpill0`, `LumpSpill1` before and after the load. The
+  process exited 139, the headless teardown segfault this repo already records.
+  The log ends at the verdict, and Z1 (slot files gone) and Z2 (every phase
+  ran to its last line) are ok.
+- **The other suites that spill:** `test_chute_choke` `PASS (24 ok, 0 fail)`,
+  `test_lump_cart_overflow` `PASS (45 ok, 0 fail)`, 0 `^SCRIPT ERROR` lines.
+- **Parse sweep:** `Result: 489 ok, 0 fail`, `RESULT: PASS`.
+- **The four stdlib gates:** all exit 0. The census reported 44 files, 0
+  flagged.
+- **The operator's real `world_layout.json`:** md5 `e046af7d…` before and after.
