@@ -159,9 +159,40 @@ with one main loop, and the operator's `world_layout.json` md5 is unchanged.
 
 ## 4. Mutation matrix
 
-Not run yet when the PR was opened; it follows as a commit on this branch
-(`mutate.py` in the session folder: 15 mutations, one at a time, md5 restored
-after each).
+Run after #334 merged, on its head `185d513` (`mutate.py` in the session
+folder: each mutation an exact-string edit of `LineFlow.gd` that matches once,
+the named suites run one at a time on a fresh `app_userdata` copy, the file
+restored and its md5 checked after each; `mutations.tsv` beside it). Every
+mutation turns at least one suite red, with 0 `SCRIPT ERROR` lines in every log.
+MS1, MS4 and MS5 are `test_extruder_silo_feed_stop`'s own matrix
+(`extruder_start_interlock_2026-09-25.md` §8); they still turn it red.
+
+| id | mutation | `test_extruder_silo_feed_stop` | `test_wash_line_timing` |
+|---|---|---|---|
+| MS1 | a full silo does not stop its feed | **red** S2, S3, S4, S5 (8 ok) | — |
+| MS4 | the sensor reports every tick | **red** S1, S5 (14 ok) | — |
+| MS5 | a full PCU pot does not stop the belt and the silo's discharge | **red** S2, S3, S4, S5 (7 ok) | — |
+| MS9 | 3B's VSS not in `SILO_FEED_STOP_ALSO` (no hold, no direct feed) | **red** S3 (16 ok) | — |
+| MD1 | the VSS → M11a connector delivers into the stopped screw | **red** S3 (16 ok) | green 13 ok |
+| MD2 | the VSS discharges faster than its dosing screw (no pull) | green 17 ok | **red** W2, W6 (11 ok) |
+| WM1 | no machine holds material | — | **red** W3, W4, W5 (10 ok) |
+| WM2 | the meter keeps MachineFlow's 6 kg/s | — | **red** W1, W2, W6, W9 (9 ok) |
+| WM3 | a new line starts the meter at 100 % | — | **red** W1, W2 (10 ok) |
+| WM4 | a hold advances whether its machine turns or not | — | **red** W4, W5 (11 ok) |
+| WM5 | the extruder silo keeps the 150 kg default | green 17 ok | **red** W6 (12 ok) |
+| WM6 | the VSS keeps the 150 kg default | — | **red** W6 (11 ok) |
+| WM7 | the two tanks share equally | — | **red** W3 (12 ok) |
+| WM8 | a rebuild resets the meter's setpoint | — | **red** W7 (12 ok) |
+| WM9 | a vessel's overload is not scaled with its size | **red** S2, S3, S4, S5 (10 ok) | — |
+
+Each of the three greens is caught by the other suite. S3 alone sees MD1: the
+wash-line suite never stops M11a with kg on the connector into it. W2 alone
+sees MD2. S3 still passes under it, but its own numbers move: M11a's input
+holds 5.331 kg at the stop (0.079 kg unmutated) and the VSS 34.8 kg (40.5 kg).
+S3 asserts only that nothing MORE enters the stopped screw and that the VSS
+holds over 10 kg, not where the surplus waits while M11a runs. The feed-stop
+suite reads the silo's size from the node, so under WM5 its level sensor and
+windows move with it, and W6 pins the size.
 
 ## 5. Found on the way, not fixed
 
