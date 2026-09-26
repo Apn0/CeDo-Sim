@@ -53,6 +53,21 @@ create mass is `MaterialBatch.new()`, and all 25 sites are accounted for:
 - `LineFlow.gd:2431` — documented shadow feed to the CutterCompactor model; its
   discharge is explicitly discarded and real accounting stays on LineFlow's in→out path.
 - `LineFlow.gd:2796` — the reject side stream.
+- `PlantResume.gd:127` (added 2026-09-26) — the save/load boundary: `batch_in()`
+  re-creates the batches a save wrote. The census flagged it twice (MINTS and
+  DROPS_SUB), and the full harness stopped at `== material census ==` on `main`
+  from `dde61eb` (#324, the first merge carrying it) to `7e37741`: measured,
+  census exit 0 at `c1dabb7` and exit 1 at `dde61eb`. MINTS is right, and a
+  load is a boundary like the bale intake.
+  DROPS_SUB is a blind spot of the census, not of the file: `strip_comments()`
+  blanks string literals, so a sub-mass carried by dict key
+  (`d.get("water_kg", 0.0)`) counts as 0, and `Dictionary.merge()` counts as an
+  emit. It is now a `BOUNDARY` entry, and the carry the census cannot see is
+  proven at runtime by `test_plant_resume` A11 (per-body water and contaminant
+  before the save and after the resume, mutation-proven). A boundary for a
+  string-key blind spot needs such a runtime check; a boundary alone would stop
+  the census watching the file and prove nothing.
+  `docs/audit/plant_resume_2026-09-25.md` §8.
 
 ### 2. The invariant already exists AND is asserted — but only on line 3C
 `LineFlow.ledger_residual()` is exactly the operator's formula:
