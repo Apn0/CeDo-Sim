@@ -179,6 +179,7 @@ func _run() -> void:
 	await get_tree().process_frame
 	var lf1 := LineFlow.new()
 	add_child(lf1)
+	lf1.set_process(false)   # the suite drives tick() itself; after add_child, as READY turns _process back on
 	await get_tree().process_frame
 	lf1.call("rebuild")
 	await get_tree().process_frame

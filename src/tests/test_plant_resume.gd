@@ -297,6 +297,7 @@ func _phase_a() -> void:
 	await get_tree().process_frame
 	var lf1 := LineFlow.new()
 	add_child(lf1)
+	lf1.set_process(false)   # the suite drives tick() itself; after add_child, as READY turns _process back on
 	bm1.line_flow = lf1
 	await get_tree().process_frame
 	lf1.call("rebuild")
@@ -401,6 +402,7 @@ func _phase_a() -> void:
 	await get_tree().process_frame
 	var lf2 := LineFlow.new()
 	add_child(lf2)
+	lf2.set_process(false)   # the suite drives tick() itself; after add_child, as READY turns _process back on
 	bm2.line_flow = lf2
 	await get_tree().process_frame
 	lf2.call("rebuild")
@@ -534,6 +536,7 @@ func _phase_b() -> void:
 	await get_tree().process_frame
 	var lf1 := LineFlow.new()
 	add_child(lf1)
+	lf1.set_process(false)   # the suite drives tick() itself; after add_child, as READY turns _process back on
 	bm1.line_flow = lf1
 	lf1.smoke_chance = 0.0
 	await get_tree().process_frame
@@ -653,6 +656,7 @@ func _phase_b() -> void:
 	await get_tree().process_frame
 	var lf2 := LineFlow.new()
 	add_child(lf2)
+	lf2.set_process(false)   # the suite drives tick() itself; after add_child, as READY turns _process back on
 	bm2.line_flow = lf2
 	lf2.smoke_chance = 0.0
 	await get_tree().process_frame

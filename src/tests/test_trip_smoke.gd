@@ -76,6 +76,7 @@ func _run() -> void:
 	_check(not is_nan(motor_g.x), "F1 its builder left a motor anchor (motor_pos_local) at %s" % str(motor_g))
 	var lf := LineFlow.new()
 	add_child(lf)
+	lf.set_process(false)   # the suite drives tick() itself; after add_child, as READY turns _process back on
 	await get_tree().process_frame
 	lf.set("feed_enabled", false)
 	lf.call("rebuild")

@@ -224,12 +224,18 @@ The general cure is for those suites to drive LineFlow alone, calling
 `set_process(false)` after `add_child`. That is a change to 27 suites, each
 one to re-measure, so it is not done here (§6).
 
+**Done 2026-09-26** for 21 of them, each measured before and after:
+`docs/audit/lineflow_set_process_2026-09-26.md`. `test_extruder_silo_feed_stop`
+is left on frame time until its S3 is re-derived: its green rests on one frame
+tick (0.96 kg with it, 1.12 kg without, against < 1.0).
+
 ## 6. Not fixed, for the operator or a later session
 
 - **Most suites that drive `tick()` still let LineFlow tick on frame time
   during their awaits** (§5.1). A suite that awaits between ticks mid-run is
   frame-rate dependent whatever this fix does. Found by reading, not measured
   per suite.
+  Done 2026-09-26, measured per suite: `docs/audit/lineflow_set_process_2026-09-26.md`.
 
 - **A deleted machine's own `in`/`out` kg leave the ledger** (measured in B
   and C: 0 kg for the pass-through machines deleted there, because they pass

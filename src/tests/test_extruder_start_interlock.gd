@@ -358,6 +358,7 @@ func _part_b() -> void:
 	_brains = [b3b, b3a]
 	_lf = LineFlow.new()
 	add_child(_lf)
+	_lf.set_process(false)   # the suite drives tick() itself; after add_child, as READY turns _process back on
 	await get_tree().process_frame
 	_lf.call("rebuild")
 

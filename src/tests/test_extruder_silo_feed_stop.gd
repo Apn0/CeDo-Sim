@@ -104,6 +104,13 @@ func _run() -> void:
 		brains[String(em.get_parent().get_meta("macro_id", ""))] = em
 	_lf = LineFlow.new()
 	add_child(_lf)
+	# LineFlow's _process is left ON here, on purpose, until S3 is re-derived
+	# (operator 2026-09-26). The frame awaited below ticks it once on frame time
+	# on this machine, and that tick is what S3 passes on: the level sensor's
+	# clock (_silo_state, kept through rebuild) starts 0.1 s ahead, and the stop
+	# lands on a tick phase where the screw's input grows 0.96 kg (< 1.0). With
+	# _process off it grows 1.12 kg and S3 is red; 2 or 3 such ticks give 1.15 /
+	# 1.20 kg. probe_feed_stop_pre_ticks, docs/audit/lineflow_set_process_2026-09-26.md.
 	await get_tree().process_frame
 	_lf.call("rebuild")
 
