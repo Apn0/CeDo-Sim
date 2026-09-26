@@ -254,6 +254,19 @@ suite; re-derive the allowance from the model; restate S3 as a ratio), the
 operator chose to leave this suite on frame time until S3 is re-derived. No threshold
 was changed. A follow-up task carries the probe numbers and the options.
 
+**Update, later on 2026-09-26.** Relayed by the follow-up session (branch
+`claude/sweet-mcnulty-6890da`), where the rulings are recorded. They are
+recollections, not documents, and not verified here:
+- **S3 is PARKED.** The operator says a stopped dosing screw M11a takes nothing
+  more, so the ~1 kg measured here is a sim artifact: the 5.9 m connector
+  between `vss_silo` and M11a, which `lijn_3b_flow.md` does not have. S3
+  should end up asserting 0.
+- **The 3B wash-line timing comes first.** That session measured the sim at 39 s
+  from VSS to extruder silo and 9.6 kg in the line at 950 kg/h. The operator
+  recalls ~10 min and ~160–200 kg.
+
+This suite stays on frame time until that model work is done.
+
 ## 7. On Godot 4.7.2
 
 `main` moved to 4.7.2 (#327) while this ran. After merging it:
