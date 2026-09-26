@@ -148,3 +148,50 @@ the "drive" row multiplies on top, as for every other machine.
 - **The pipes**: every connector moves at 1.3 m/s, pneumatic runs included
   (3B's 15 m plasmaq → tussenventilator pipe takes 12.4 s).
 - **The VSS pressure in bar** (FORM-008, §I13) is still not modelled.
+
+## R. The rpm rate law and the frictiewasser (another session, same day)
+
+Arno, answering AskUserQuestion in the session that measured the HMI speed
+setting's double count (PR #332). Recollections and choices, not documents. The
+full wording, the measurements and the guard are in
+`docs/audit/hmi_rpm_rate_2026-09-26.md` §2.
+
+- **R1. The rpm law stays as it is.** An HMI speed setting counts 2-3 times in
+  LineFlow's rate (squared or cubed). He asked whether this was a base or
+  end-game work, and was told it is phase 1. He chose "Don't touch the base".
+  The effort goes into the physical material model instead. Do not linearise
+  the law without asking him.
+- **R2. The frictiewasser's two stirrers are in SERIES, and the water moves the
+  film.** They "certainly have an effect, but not necessarily on throughput
+  speed". Their rpm no longer sets its rate (`LineFlow.RATE_NOT_BY_RPM`), and
+  the tank still stops when it is switched off.
+- **R3. No averages for parallel augers.** The 3C doseersilo's screws are not
+  to be modelled as an average of three. That machine waits for the physical
+  model (`docs/DESIGN_physical_bulk_material_2026-09-26.md`, PR #335).
+
+## G. Line 1's granulate reaches the weegschaal (evening, same day)
+
+Arno's goal for the evening playtest was line 1 running from bales to the
+extruder, "or at least that the granulate reaches the weighing station for
+line one … if it just disappears after the weighing station, it would be at
+this point fine". Measured the same evening: `extruder_1` and `extruder_3a`
+were LineFlow **sinks** that banked all they took and passed nothing to their
+explicit edge to the laser filter. So the pellet side of lines 1 and 3A
+(laser filter, heetafslag, centrifuge, weegschaal, voorraad_silo) always
+carried 0 kg. On 3B and 3C the extruder already passed its output on to the
+voorraad_silo. Shown this, he chose "fix it tonight": a sink with a downstream
+edge now passes its output on, and only the last node of a line banks
+granulaat. On lines 1 and 3A that is the voorraad_silo, past the weegschaal.
+
+Measured after the change (`src/tests/probe_line1_playtest.tscn`: his save
+reduced to one line 1, loaded as a save, the extruder's start button pressed as
+the HMI does, the warm-up skipped in the probe only, two Rotterdam bales on
+opzetband_1): 420.2 kg fed, **23.2 kg past the weegschaal** into the
+voorraad_silo (0 kg before). The same run shows the next stop: by t = 90 s,
+shredder_1 held 269.7 kg and tripped on motor overload, with opzetband_1 off
+and 106.4 kg still on it. The belt pours a whole bale in, and nothing slows it.
+Asked how the real line 1 keeps shredder 1 from overloading, he answered:
+**"fill level sensor"** (CLAIMED). Its position and thresholds are open, and the
+feed control is tomorrow's work. `test_line1_throughput` still prints
+"granulaat banked 0.0 kg": that bench never starts the extruder, and since
+2026-09-25 the line's start does not run it.
