@@ -2015,6 +2015,23 @@ func _mech_fraction(nd: Dictionary) -> float:
 		return 1.0
 	return clampf(float(mech.call("commanded_rpm")) / nom, 0.0, 1.25)
 
+## Machines whose drives do not meter the flow (operator 2026-09-26,
+## docs/audit/hmi_rpm_rate_2026-09-26.md §2): the frictiewasser's two stirrers,
+## one per chamber and in SERIES, wash the film, but the wash water's inflow
+## moves it through (the level rises and overflows into the chute). So neither
+## the stirrers' rpm (its components) nor rpm_pct (which drives both) scales its
+## rate; its rotors only gate it, through _mech_run_gate. Exact ids.
+const RATE_NOT_BY_RPM : Array[String] = ["friction_washer"]
+
+## 1.0 while a machine's rotors are switched on, 0.0 once the PLC has switched
+## them off — the on/off half of _mech_fraction without its speed. A machine
+## with no rotor is 1.0 (its spin alone gates it), as in _mech_fraction.
+func _mech_run_gate(nd: Dictionary) -> float:
+	var mech = nd.get("mech")
+	if mech == null or not is_instance_valid(mech) or not ("running" in mech):
+		return 1.0
+	return 1.0 if bool(mech.running) else 0.0
+
 ## Turn every link into a fixed-resolution delay-line: PIPE_STAGES MaterialBatch
 ## slots that shift forward one slot every stage_dt, so a parcel takes the whole
 ## transit_time (length ÷ transport speed) to cross. Bounded memory, conserving.
@@ -2162,8 +2179,9 @@ static func _default_components_for(id: String) -> Dictionary:
 		# (catalog tags the end drums with comp == "belt").
 		out["belt"] = 1.0
 	elif lid.find("friction_washer") >= 0 or lid.find("frictiewasser") >= 0:
-		# Frictiewasser stirring tank — two independent vertical stirrer motors
-		# (the catalog tags the shafts comp == "stirrer_1" / "stirrer_2").
+		# Frictiewasser stirring tank — two vertical stirrer motors, one per
+		# chamber, in SERIES (the catalog tags the shafts comp == "stirrer_1" /
+		# "stirrer_2"). Their rpm does not set the tank's rate: RATE_NOT_BY_RPM.
 		out["stirrer_1"] = 1.0
 		out["stirrer_2"] = 1.0
 	else:
@@ -2186,8 +2204,11 @@ static func _component_topology(id: String) -> String:
 		return "parallel"
 	if lid.find("flotation") >= 0 or lid.find("sink") >= 0:
 		return "series"
+	# The frictiewasser's stirrers sit one after the other (operator
+	# 2026-09-26: "They are not in parallel. They are in series."), and its rate
+	# ignores them anyway (RATE_NOT_BY_RPM); "series" only keeps this table true.
 	if lid.find("friction_washer") >= 0 or lid.find("frictiewasser") >= 0:
-		return "parallel"
+		return "series"
 	return "single"
 
 ## Lookup by placeable id — returns the FIRST match. A placeable id is a machine
@@ -3506,8 +3527,18 @@ func _tick_process_machines(delta: float) -> void:
 		# so material backs up in this machine's input buffer (#145).
 		# Effective rate = design × spin × mech × HMI overrides (rpm slider AND the
 		# avg of the per-component RPMs — inlet/transports/outlet for tanks).
+		# KNOWN, KEPT (operator 2026-09-26, "don't touch the base"): this counts
+		# one HMI speed setting 2-3 times — the rotor _mech_fraction reads was set
+		# from rpm_pct, and a single-drive component slider is written into
+		# rpm_pct too — so a rotor machine at 50 % conveys 25 %, a transport belt moved on
+		# the MACHINES screen 12.5 %. The physical material model replaces this
+		# law; do not "fix" it without asking. docs/audit/hmi_rpm_rate_2026-09-26.md
 		var rate_mul : float = float(nd.get("rpm_pct", 1.0)) * _component_pct_multiplier(nd)
-		var eff_rate: float = float(nd.get("rate", 0.0)) * float(nd.get("spin", 0.0)) * _mech_fraction(nd) * rate_mul
+		var mech_mul : float = _mech_fraction(nd)
+		if RATE_NOT_BY_RPM.has(String(nd.get("id", ""))):
+			rate_mul = 1.0
+			mech_mul = _mech_run_gate(nd)
+		var eff_rate: float = float(nd.get("rate", 0.0)) * float(nd.get("spin", 0.0)) * mech_mul * rate_mul
 		# #52 air gating — an air-driven consumer (TITECH ejector / PCU ram) starved of
 		# header pressure conveys slower. This is a GENTLE rate multiplier only: it
 		# slows flow, the un-moved mass simply backs up in the buffer (conserving). At

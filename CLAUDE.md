@@ -657,6 +657,7 @@ the one before that ~6 months stale — treat this one as re-checkable too):
 | `docs/audit/operator_session_2026-09-23.md` | **The interactive 2026-09-23 session: tasks ranked by operator effort against sim impact, each answered by AskUserQuestion then built and measured.** Task 1: film beds on every belt (P1), the inclined belt's deck running the wrong diagonal, the cost probe, the renders; per-task evidence and the open questions each one left |
 | `docs/DESIGN_inworld_hmi_2026-09-25.md` | **HMI screens IN the world + hold-F interact mode — SURVEY and operator decisions, nothing built.** Why the 7 web panels cannot go on a mesh (godot_wry is a native window), the pixel budget of a 0.49 m screen at 3–5 m, every key E/F/Q is bound to today, which suites assume a pop-up or the one shared overlay, and the cost probe. The operator's answers (F = interact, E = pick up, F-mode camera/zoom/gold dot) are in `docs/plant/operator_rulings_2026-09-25.md` §H5 |
 | `docs/DESIGN_vacuum_pot_minigame_2026-09-23.md` | **P3 stage B as the operator described it: not a hold-E but a mini-game** — lid pull that stiffens with time, plamuurmes planes at 90 %, the block by hand, re-lid, the two-minute race. Systems, parameters (his vs placeholder), test strategy. **Built 2026-09-24** (`test_vacuum_pot_minigame`, 33 ok); the feel is his to play |
+| `docs/audit/hmi_rpm_rate_2026-09-26.md` | **An HMI rpm setting counts 2-3 times in LineFlow's rate (rotor read back, and a single-drive slider mirrored into `rpm_pct`). Measured on all seven macros, and KEPT by operator ruling ("don't touch the base"; a physical material model replaces it).** One machine changed by ruling: the frictiewasser's stirrers (in series) no longer set its rate, because the water inflow moves the film. `test_frictiewasser_rate` and its mutation table. Found, not fixed: the bunker's slider never reaches the `rpm_pct` its relay trip reads, and two settings drive one motor on the shredders, bunker and NIR belts |
 | `docs/audit/extruder_stop_torque_2026-09-25.md` | **The extruder's load through a stop, from the plant's raw WinCC archive.** The model compounded the torque every STOPPING tick (0.142 of running 1.2 s in at 0.1 s ticks, 0.024 at 0.05 s). Now it is entry torque x rpm / entry rpm, the law the 17 samples caught mid-stop show (slope 0.969). Open, for the operator: the plant's screw stops within one ~5 s log cycle in 70 of 83 stops, while the model coasts for 21.6 s; 26 of 83 stops were run empty first |
 | `docs/audit/extruder_screw_die_plate_2026-09-24.md` | **LineFlow's OWN screw model (not ExtruderModel) read 0.11 "bar" at the die, at 200 rpm and a 195 °C melt.** The MFI estimate was 1491 g/10min, so every QA sample graded REJECT, and on lines 1/3A/3B the terminal and SCADA read the `extruder_silo`. Now: die plate after the kopfilter (operator ruling), per-line rpm, melt and output from the WinCC trends, MFI anchor re-solved. §10 (2026-09-25): the "flat kopdruk vs proportional model" gap was a probe holding rpm fixed; both models now carry a power-law die, P ∝ Q^0.35, gated across the trend's output band |
 | `docs/audit/extruder_warm_restart_2026-09-25.md` | **A warm extruder restart at the green button tripped 318 bar** (4.3-4.8 s after green, 3A and 3B, through the plain stop / PREHEAT / green path too): a model that had run before went on at nominal flow, and only a first start re-ramped. Also found: only the FIRST extruder in the group could have its rpm set, and the green button accepted a melt that passes lumps. Built from operator rulings: start ramps to the persisted setpoint, 60 floor and new-extruder setpoint, green from the lump point too (201.875 °C), a per-line rpm control. Probe, 27-check suite, 11 mutations; open items (interlocks, ~5 s ramp in the archive, OFF cooling rate, the lump law's knife edge) |
@@ -1023,6 +1024,20 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   LineFlow's `_process` on (27 in `run.sh`) start from the phase of the frames
   they await before their own `rebuild()`. Measured on one of them:
   `test_extruder_silo_feed_stop` went red. `docs/audit/rebuild_pipe_carry_2026-09-25.md`.
+- **An HMI speed setting counts 2-3 times in LineFlow's rate, and that is
+  KEPT (operator ruling 2026-09-26).** In `eff_rate = rate × spin ×
+  _mech_fraction × rpm_pct × components`, `_mech_fraction` reads back the
+  rotor speed that `rpm_pct` just set. A single-drive MACHINES-screen slider is
+  also written into `rpm_pct` as well as `components`. Measured on all seven
+  macros (`src/tests/probe_hmi_speed_rate.tscn -- <line>`): at 50 %, a rotor
+  machine conveys 25 %, and a transport belt or blower moved on the MACHINES
+  screen 12.5 %. 100 % is exact. His ruling was "don't touch the base": this
+  rate model is phase 1, and a physical material model (film as litre-sized
+  blobs, augers pushing piles) replaces it. **Do not linearise it without asking
+  him.** The one exception is the frictiewasser (`LineFlow.RATE_NOT_BY_RPM`):
+  water inflow moves the film, and its two stirrers, in series, do not set its
+  rate. Guarded by `test_frictiewasser_rate`, whose C checks pin the kept law on
+  three neighbours. `docs/audit/hmi_rpm_rate_2026-09-26.md`.
 - **A stop that is written AFTER the conveying split is not a stop.** LineFlow's
   tick is `_tick_plc_power_downstream` (PLC writes `powered`, runs the spin and
   mechanism ramp) → `_tick_feed` → `_tick_process_machines` (conveys on `spin`)
