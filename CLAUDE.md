@@ -74,10 +74,14 @@ the operator's canonical engine folder and still holds 4.6.3 and 4.7.1.
 > - 20 of 20 suite runs give the verdict they gave on 4.6.3, down to the jam
 >   drive times.
 >
-> One new warning, left on purpose: `add_blend_point` without a name
-> (`Humanoid.gd`). Its fix does not compile on 4.6.3, so it waits until the
-> switch has held. A tree copied from an older `.godot/` needs one `--import`
-> pass before it reaches a fixed point.
+> The one new warning, `add_blend_point` without a name (`Humanoid.gd`), was
+> left on purpose until the switch held. It was fixed 2026-09-26, after the
+> first full harness on 4.7.2: 140 of those warnings per world boot pushed two
+> world logs past 64 KB and tripped a `run.sh` check into two false reds
+> (`docs/audit/harness_pipefail_false_red_2026-09-26.md`). The named points take
+> a 4.7-only argument, so **`Humanoid.gd` no longer parses on 4.6.3**: a revert
+> to 4.6.3 must revert that fix too. A tree copied from an older `.godot/` needs
+> one `--import` pass before it reaches a fixed point.
 
 **`run.sh` tests `PROJ`, and `PROJ` defaults to the operator's checkout**
 (`run.sh:22`, `C:/Users/arnod/Documents/CeDo_Simulator`), not to the tree the
@@ -252,6 +256,16 @@ count.
 > since the morning: `test_belt_film_field`, `test_silo_level_windows`,
 > `test_chute_choke`, `test_trip_smoke` in the main loop, and the jam
 > baseline's own doorway. `docs/audit/operator_session_2026-09-23.md`.
+
+> **2026-09-26 — the first full harness on Godot 4.7.2, by the harness runner,
+> on `origin/main` `5c156d8`: `== done (exit 1)`, 151 sections, 59 min, 140
+> logs by mtime, 0 `^SCRIPT ERROR`, 0 timeouts, the world_layout sentinel
+> untouched.** One real red, `test_npc05_realworld` (expected). Two FALSE
+> reds: `test_layout_load` (22 ok) and `test_new_world_wipe` (11 ok) printed
+> "ZERO checks ran". That was `run.sh` piping `tr | grep -q` under `pipefail`
+> (see the trap below), and it is fixed with the warning that made those logs
+> big. The runner's record is `D:\cedo_archive\userdata\harness_runner\runs.tsv`.
+> `docs/audit/harness_pipefail_false_red_2026-09-26.md`.
 
 > **2026-09-24 16:57 — harness run 5 at `adb6cbd` was STOPPED at 6 min by
 > hand.** The operator chose to play-test next; the harness writes its test
@@ -1267,6 +1281,16 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   `bash -n tools/regression/run.sh` and check
   `grep -c '^for t in test_machine_sounds' tools/regression/run.sh` is 1.
   Resolve such a conflict by merging the two suite lists into one line.
+- **`… | grep -q` under `set -o pipefail` says "no match" on a big log.**
+  grep -q quits at its first match, the writer (`tr -d '\r'`) dies of SIGPIPE
+  with output left, and pipefail returns 141. It needs a log over the 64 KB
+  pipe buffer AND an early match, so it stayed hidden until 4.7.2 grew two
+  world logs from 28 to 169 KB. Measured 2026-09-26: the own-dialect loop's
+  `^  ok` check printed `test_layout_load` / `test_new_world_wipe` as "ZERO
+  checks ran" 7 and 9 times in 10, and its `^  FAIL` check missed a planted
+  FAIL line 10 times in 10. In `run.sh` use `log_has <file> <ERE>` (it greps to
+  the end), or grep the file directly. A check whose line sits at the END of the
+  log (a verdict) is safe by luck, not by design.
 - **A headless run that outlives its expected time is HUNG, and exit 0 is not a
   pass.** Measured 2026-09-22 on a throwaway `--script` probe that idled until
   the session was killed. Three silent modes: (1) a runtime `SCRIPT ERROR` in

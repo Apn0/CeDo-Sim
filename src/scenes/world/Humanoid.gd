@@ -962,16 +962,19 @@ static func _install_skeleton_rig(root: Node3D) -> void:
 	n_walk.animation = "walk"
 	var n_run := AnimationNodeAnimation.new()
 	n_run.animation = "run"
-	bs.add_blend_point(n_idle, Vector2(0.0, 0.0))
-	bs.add_blend_point(n_walk, Vector2(1.0, 0.0))
-	bs.add_blend_point(n_run,  Vector2(2.0, 0.0))
+	# Each point is NAMED (4.7): an unnamed one prints an engine WARNING with
+	# a backtrace per point per humanoid, 140 per world boot, which grew the
+	# world suites' logs 28 KB -> 169 KB (docs/audit/harness_pipefail_false_red_2026-09-26.md).
+	bs.add_blend_point(n_idle, Vector2(0.0, 0.0), -1, &"idle")
+	bs.add_blend_point(n_walk, Vector2(1.0, 0.0), -1, &"walk")
+	bs.add_blend_point(n_run,  Vector2(2.0, 0.0), -1, &"run")
 	# #224 — strafe rows on the Y axis (left = -1, right = +1) at walk speed.
 	var n_strafe_l := AnimationNodeAnimation.new()
 	n_strafe_l.animation = "strafe_l"
 	var n_strafe_r := AnimationNodeAnimation.new()
 	n_strafe_r.animation = "strafe_r"
-	bs.add_blend_point(n_strafe_l, Vector2(1.0, -1.0))
-	bs.add_blend_point(n_strafe_r, Vector2(1.0,  1.0))
+	bs.add_blend_point(n_strafe_l, Vector2(1.0, -1.0), -1, &"strafe_l")
+	bs.add_blend_point(n_strafe_r, Vector2(1.0,  1.0), -1, &"strafe_r")
 	# Phase 2: wrap the locomotion BlendSpace + three pose animations in a
 	# StateMachine. The controller (PlayerController._update_animation_blend and
 	# NPC._update_animation_blend) travels between states by writing
