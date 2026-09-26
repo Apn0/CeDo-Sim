@@ -1,7 +1,7 @@
 # Physical bulk material: research and design (2026-09-26)
 
 RESEARCH AND DESIGN ONLY. Nothing in `src/` or `tools/` changes. Branch
-`docs/physical-bulk-material-2026-09-26`, on `main` `a727485`.
+`docs/physical-bulk-material-2026-09-26`, on `main` `5c156d8`.
 
 Evidence tags used throughout:
 
