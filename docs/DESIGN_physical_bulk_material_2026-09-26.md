@@ -24,10 +24,11 @@ Evidence tags used throughout:
   deforms), and it does not conserve mass, on purpose.
 - **Recommended for CeDo** (§8 R, §9): the same hybrid, one zone per
   physical machine. Blobs of ~1 L where film moves (belt ends, falls, the
-  screws' layer), a heightfield store where it rests, and screws as helicoid
-  bodies that TURN. The zone sits between its LineFlow node's `in` and `out`;
-  the rate law skips that node; the zone's kg count in `in_transit_mass()`, so
-  `ledger_residual()` closes unchanged; nothing is ever deleted (§9.4).
+  screws' layer), a voxel store where it rests (voxels, not heights, because
+  film bridges: §12.4), and screws as helicoid bodies that TURN. The zone
+  sits between its LineFlow node's `in` and `out`; the rate law skips that
+  node; the zone's kg count in `in_transit_mass()`, so `ledger_residual()`
+  closes unchanged; nothing is ever deleted (§9.4).
 - **Measured in a throwaway spike** (§6): in Jolt, a turning screw moves
   material out of a pile, a stopped one moves nothing, and reversed it moves
   material back. No rate was stated anywhere; the kg/h came out of contacts.
@@ -58,10 +59,13 @@ Evidence tags used throughout:
   physical model in four phases, the 3C doseersilo and its feed belt first.
   Air, water (the frictiewasser, R2), shredders, dryers and the melt train
   keep the rate law or get models of their own.
-- **Ten operator questions** (§12), AskUserQuestion-ready. Batch 1 blocks
-  phase 1: what feeds the doseersilo (the docs do not say), the screws'
-  sizes and gearbox, the silo's depth (the HMI scale reads 0-300 cm, the model
-  has 1.0 m walls), and whether film bridges in it.
+- **Ten operator questions** (§12), AskUserQuestion-ready. **Batch 1 was
+  asked and answered on 2026-09-26** (§12.4): the Verdeelband L3C.67 on top
+  fills the doseersilo (its direction picks the silo); screw data come from
+  the nameplates (numbers still to come); the silo is ~5 m deep at the inlet
+  and ~1 m at the outlet under a level rim, which the modelled 22.5° × 5.57 m
+  trough cannot be (left open); and film does bridge, so the store must be
+  voxels, not a heightfield. Batches 2 and 3 are still open.
 
 ---
 
@@ -203,12 +207,21 @@ The SCADA export has `scada/3c/info/1/{em, niveau meting, schroef 1..3}`
 dirty feed, more kg than the granulate; no document gives its kg/h. This doc
 works with 1.0-1.7 t/h.
 
-**What feeds it: not known.** `docs/plant/fixed_equipment_inventory.md:52`
-lists an "HMI — Transportbanden 3C/6" for the 3C/6 intake conveyor cluster in
-Hal 8, and `:49` a shredder HMI for 3C/6. `LINE_3C6_SEQ` builds opzetband_3c6
-→ shredder_1 → inclined_belt_8m → trilzeef (`BuildMode.gd:359-364`) and does not
-link to the doseersilo. Which belt drops into the doseersilo, how fast, how
-wide and where: question Q1.
+**What feeds it: answered 2026-09-26 (§12.4).** Before the answer, no repo
+doc said: `docs/plant/fixed_equipment_inventory.md:52` lists an "HMI —
+Transportbanden 3C/6" for the 3C/6 intake conveyor cluster in Hal 8, and
+`:49` a shredder HMI for 3C/6. The operator then pasted the plant's machine
+list for the 3C preparation section, and the last belt in it, the
+**Verdeelband L3C.67** ("Verteilband oben quer, Rechts-/Linkslauf"), runs
+across the top and fills the doseersilo in one direction. Its speed, width
+and drop point are still open.
+
+**The sim does not match that list.** `LINE_3C6_SEQ` builds opzetband_3c6 →
+shredder_1 → inclined_belt_8m → trilzeef (`BuildMode.gd:359-364`) and does not
+link to the doseersilo. The list has no trilzeef in this section, and has
+three transport belts, an overband magnet and the verdeelband after the
+shredder's knickband (§12.4). Found here, not changed: a layout task of its
+own.
 
 **The material.** Shred before any wash (the bezinkafscheider L3C.3 comes
 next). The sim's stated bulk density for fresh shred is 60 kg/m³
@@ -640,18 +653,21 @@ throughputs (the brief's 1.0 t/h, the BluPort's 1.37 and SCADA's 1.69):
   "other conveyors", rulings 2026-09-23) that is 3-16 blobs per metre, so a
   10 m belt carries 30-160 blobs. Cheap.
 - **The fall**: a blob falls ~0.5 s, so 2-8 are in the air at once. Cheap.
-- **The pile**: the inventory in litres. 1 m³ is 1,000 blobs, 5 m³ is 5,000;
-  the model's trough with its 1.0 m walls holds 16.6 m³ (16,600), with 3 m
-  walls 49.8 m³. At 1 t/h and 60 kg/m³, 3 m³ is 11 minutes of feed and a full
-  1 m trough an hour.
+- **The pile**: the inventory in litres. 1 m³ is 1,000 blobs, 5 m³ is 5,000.
+  The model's trough with its 1.0 m placeholder walls holds 16.6 m³. The
+  operator's depths (§12.4: ~5 m at the inlet, ~1 m at the outlet, level rim)
+  make a full silo **~35-87 m³, i.e. 35,000-86,000 blobs**, two to five hours
+  of feed at 1 t/h and 60 kg/m³. How full it runs depends on the Stop/Start
+  vullen levels, which are not known.
 - **The screws' layer**: the annulus between shaft and flight tip is
   (π/4)(0.536² − 0.178²) × 5.57 m = 1.12 m³ per screw, 3.35 m³ for three. With
   spheres packing at about 0.6 that is **~2,000 blobs that are awake whenever
   the screws turn**, however little is piled above them.
 
 So the doseersilo alone needs ~2,000 active blobs while it runs, plus a
-resting pile of 1,000-16,000 more depending on the level, which is a store (a
-heightfield) in the hybrid and bodies otherwise.
+resting pile of thousands to tens of thousands of litres depending on the
+level, which is a voxel store in the hybrid and bodies otherwise. Bodies
+everywhere (Q6 "blobs only") is out of reach at that size on this PC.
 
 ### 7.2 What each option costs for that silo
 
@@ -662,7 +678,7 @@ From §6 on this PC (other cores busy, so read the ratios):
 | rigid blobs, Jolt | 3-4 ms (asleep) | 19-36 ms at 3,000, by the other load (~7-14 ms per 1,000) | 1.2-2.2 frames at 3,000; the hybrid's ~2,000 would be about one frame (INFERRED) |
 | rigid blobs, Rapier 0.8.34 | 15-28 ms | 47-52 ms turning, 73 ms held awake; loses blobs | no |
 | rigid blobs, Rapier ≥ 0.35 (parallel SIMD) | not measured | not measured | unknown; the maintainer's drop test has it ahead of Jolt [G3] |
-| hybrid: heightfield store + Jolt blobs | the store's cost (§6.4) | as the row above, for the screw layer only | the store makes the resting pile nearly free; the screw layer sets the cost |
+| hybrid: voxel store + Jolt blobs | the store's cost: §6.4 measured a 2D heightfield (20 ms per full GDScript pass); voxels cost more, but only changed cells need work (INFERRED) | as the row above, for the screw layer only | the store makes the resting pile nearly free; the screw layer sets the cost |
 | own PBD solver in GDScript | — | 84 ms at 3,000 | no |
 | own PBD solver, native (C++) | — | not measured | unknown; FleX did 73k particles in 10.2 ms on a 2012 GPU [5], AGX 1,000 particles + voxels at a 10 ms step on a CPU [1] |
 | GPU compute solver | — | cheap | cannot carry kg: no device headless (§6.1) |
@@ -690,9 +706,9 @@ faster solver. That trade is the operator's (Q5, Q8).
 | D | a GPU compute solver (PBD or MPM) | anything | exact on the GPU, but unreadable headless | **no** | cheap | **NO** for anything that carries kg; fine for looks |
 | E | `GPUParticles3D` | colliders only | none (no readback) | — | cheap | **NO**: particles do not touch each other, cannot pile [G11] |
 | F | MPM / FLIP continuum sand | a grid solver | exact | GPU only | 6.7 M particles 38 s/frame [6] | **NO**: not real time, not film |
-| G | a heightfield alone (the Gold Rush way) | a tool deforms the heights | exact if every move is paired | yes | ~nothing | **as the store only**: it cannot hold a screw inside a pile, a fall or a bridge |
+| G | a heightfield alone (the Gold Rush way) | a tool deforms the heights | exact if every move is paired | yes | ~nothing | **not enough even as the store**: it cannot hold a screw inside a pile, a fall, or the bridges the operator has seen (Q4); the store becomes voxels (AGX's own choice) |
 | H | Salva `Fluid3D` (SPH) | liquid pressure | exact | yes | not measured | **NO** for film piles; a candidate for the WATER that moves the frictiewasser (R2), later |
-| **R** | **the hybrid: G's store + active blobs from A′, B or C** | moving bodies where film moves, heights where it rests | exact by the §9.4 contract | yes | the screw layer (~2,000 blobs) sets it | **recommended** |
+| **R** | **the hybrid: a voxel store + active blobs from A′, B or C** | moving bodies where film moves, voxels where it rests | exact by the §9.4 contract | yes | the screw layer (~2,000 blobs) sets it | **recommended** |
 
 The recommendation R is independent of the solver. The store, the ledger
 contract, the ports, the save and the tests (§9) are the same whether the
@@ -710,8 +726,10 @@ is in §9.8.
 
 A physical machine gets a **bulk zone**: a node under its body that owns
 
-- a **store**: columns on a 0.10 m grid over the machine's floor, each with a
-  height and a `MaterialBatch`;
+- a **store**: voxels of 0.10 m over the machine's volume, each with a fill
+  fraction and a `MaterialBatch`. Not a heightfield: the operator says film
+  does bridge and rat-hole in the doseersilo (Q4, §12.4), and a bridge is a
+  full cell over an empty one, which a heightfield cannot hold;
 - the **active blobs** in the zone, each a body with a `MaterialBatch`;
 - its **ports**: emitters where material arrives, absorbers where it leaves.
 
@@ -724,9 +742,13 @@ Material converts both ways:
 - **blobs → store** where a blob has rested (speed under a threshold for a set
   time; AGX uses 0.06 m/s [2]) outside every active region: its batch is added
   to the column below (`add`) and the column grows.
-- **relaxation**: a column steeper than the angle of repose passes part of its
-  batch downhill (`split_fraction` → `add`), capped per tick as AGX does, which
-  sets a maximum slide rate.
+- **relaxation**: a surface steeper than the angle of repose passes part of
+  a cell's batch downhill (`split_fraction` → `add`), capped per tick as AGX
+  does, which sets a maximum slide rate.
+- **support**: a cell with an empty cell under it stays up while its
+  neighbours carry it, which is a bridge; past a span (or when someone pokes
+  it) it turns into falling blobs. Whether bridges come from this rule or only
+  from blobs is Q6.
 
 For the doseersilo, the screws run the full length of the floor, so the
 active region is the whole bottom layer while they turn; the store is the
@@ -902,8 +924,10 @@ runner.
 - **Phase 0, done here** (throwaway, §6): emergence shows qualitatively;
   the installed Rapier ejects blobs from a turning screw; GDScript is too slow
   to be the solver; there is no GPU device headless.
-- **Phase 1: the 3C doseersilo and the end of its feed belt.** Needs Q1, Q2,
-  Q3 and Q7 answered first.
+- **Phase 1: the 3C doseersilo and the end of its feed belt (the Verdeelband
+  L3C.67).** Needs, first: the nameplate numbers (Q2), the length/tilt
+  contradiction settled (§12.4, Q3), the Verdeelband's speed, width and drop
+  point, the Stop/Start vullen levels, and answers to Q6 and Q7.
   1. The helicoid screws and the trough as colliders, built from the same
      constants as the visual model (no second set of numbers).
   2. The zone, its ledger contract (§9.4) and its save/resume.
@@ -969,7 +993,7 @@ first; each
 batch fits one AskUserQuestion call (at most 4 questions, 2-4 options). The
 first option is the recommendation where there is one.
 
-### Batch 1: facts phase 1 cannot start without
+### 12.1 Batch 1: facts phase 1 cannot start without (answered, §12.4)
 
 **Q1. What fills the 3C doseersilo?** (header `3C feed`)
 
@@ -1010,7 +1034,7 @@ first option is the recommendation where there is one.
   show that, which means blobs (or a store with overhangs) everywhere in the
   pile, at a higher cost.
 
-### Batch 2: architecture
+### 12.2 Batch 2: architecture
 
 **Q5. Where must the physical material run?** (header `Scope`)
 
@@ -1025,14 +1049,18 @@ first option is the recommendation where there is one.
 - **Only machines I name**: physics only where you say (the 3C doseersilo
   first); every other machine keeps today's rate law until you name it.
 
-**Q6. May film at rest become a height field?** (header `At rest`)
+**Q6. How may bridges form?** (header `Bridges`; rewritten after Q4 was
+answered "yes, sometimes")
 
-- **Yes (Recommended)**: film lying still, away from the screws and from
-  where blobs land, is stored as heights (the Gold Rush way) and turns back
-  into blobs the moment anything touches it; the kg are identical. It cannot
-  show a bridge (Q4).
-- **No, blobs everywhere**: every litre is always a blob, moving or still;
-  bridges and rat-holes can happen; about one body per litre in the silo.
+- **A store rule (Recommended)**: film at rest is held in a voxel store
+  (~10 cm cells that can be full over empty); a cell stays up while its
+  neighbours carry it, so a bridge forms over a screw that empties the space
+  under it, and falls when the gap grows past a width or someone pokes it.
+  Cheap; the bridge width is a tuned number, not an emergent one.
+- **Blobs only**: every litre in the pile is a rigid blob, and a bridge forms
+  (or not) from friction between blobs alone; nothing is tuned for it, but a
+  full doseersilo is 35,000-86,000 bodies (§12.4), far beyond this PC
+  (§6.3).
 
 **Q7. Which physics engine may the blobs run in?** (header `Engine`)
 
@@ -1059,7 +1087,7 @@ first option is the recommendation where there is one.
 - **Only on a faster PC**: the physical model is for machines better than
   this one; the i7-3770 runs the law.
 
-### Batch 3: later
+### 12.3 Batch 3: later
 
 **Q9. When you save, may blobs lying still be packed into the pile?**
 (header `Save`)
@@ -1076,6 +1104,71 @@ first option is the recommendation where there is one.
   falls and piles.
 - **The blobs**: each litre is a visible lump wearing a film texture; clearer
   to read, less like film.
+
+### 12.4 Answers, 2026-09-26 (batch 1 and two follow-ups)
+
+Asked through AskUserQuestion in this session, after PR #335 opened. The
+day's rulings file (`docs/plant/operator_rulings_2026-09-26.md`) comes with
+PR #334; these answers go there as a lettered section once it lands.
+
+**Q1, what fills the doseersilo.** He answered by pasting the plant's machine
+list. PASTED: the text of a plant document ("Anlagen-Aufbau &
+Prozessübersicht (Maschinenliste)", German left, item number, Dutch right),
+relayed by the operator; the original is not in the repo. Its "Aufbereitung &
+Shredder" section, in the order pasted:
+
+| German | item | Dutch |
+|---|---|---|
+| Aufgabeband für Ballen | L3C.61 | Opzetband |
+| Schredder Fabr. WEIMA WPC 3000/800 | L3C.62 | Shredder |
+| Knickband unter Shredder | L3C.63 | Uitvoerband Shredder |
+| Transportband 1 | L3C.64 | Transportband 1 |
+| Transportband 2 | L3C.65 | Transportband 2 |
+| Transportband 3 | L3C.66 | Transportband 3 |
+| Magnetabscheider - Überband Quer | L3C.68 | Magneetband |
+| Verteilband oben Quer (Rechts- / Linkslauf) | L3C.67 | Verdeelband |
+
+Follow-up, CLAIMED: the Verdeelband's direction **picks the silo**. General
+rule, as he chose it: one direction drops film into the 3C doseersilo, the
+other into a different target; the belt's direction decides which gets the
+film. The other target was not named (the option's "e.g. line 6's
+doseersilo" was an example, not his answer).
+
+Still open: the Verdeelband's speed, width and drop point over the
+doseersilo; whether "Stop vullen" stops it, reverses it or does something
+else; the other target.
+
+**Q2, screw data.** CLAIMED: **from the nameplates**. General rule: screw
+diameter, shaft diameter, pitch and gearbox ratio come from the machine, and
+the model must then hit the 3C kg/h at 8/8/9 Hz by itself (A7). The numbers
+themselves are still to come (photos of the three drives' plates and a tape
+measure on a screw).
+
+**Q3, depth.** CLAIMED, his words: "at the lowest point, about 5 meters. at
+the highest point, about 1 meter". Follow-up: **the rim is level**. General
+rule, as he chose it: the rim is horizontal and the floor slopes up to the
+outlet, so the floor rises about 4 m from the inlet end to the outlet end.
+
+**That contradicts the model, and is left open.** The accepted model (rulings
+2026-09-23 §17 and §19: 20-25° and 1.1 × a 5.06 m render, now 22.5° over
+5.57 m) rises only 2.13 m. A 4 m rise needs either ~10.4 m of floor at 22.5°
+(9.7 m horizontal) or ~46° over 5.57 m. With a mean depth of 3 m and the
+modelled 2.98 m width, a full silo is then **~87 m³** (the long reading) or
+**~35 m³** (the steep one): 2.1-5.2 t at 60 kg/m³, two to five hours of feed
+at 1 t/h, and **35,000-86,000 one-litre blobs**. The HMI's 0-300 cm level
+scale is not explained by either (a sensor range is the guess). Next round: a
+side view with both readings drawn, for him to pick.
+
+**Q4, bridging.** CLAIMED: **yes, sometimes**. General rule: film can hang
+over a running screw and starve it, or rat-hole down to it, until someone
+clears it, and the model must be able to show that. Consequences, applied
+above:
+
+- the store is voxels, not a heightfield (§9.1, §8 G and R);
+- how a bridge forms (a support rule in the store, or blobs alone) became
+  Q6;
+- "until someone clears it" (the option he chose) makes clearing a bridge a
+  player action; how it is cleared at CeDo was not asked (next round).
 
 ---
 
