@@ -18,7 +18,7 @@ set -uo pipefail
 # All three are overridable so the harness runs off-Windows (Linux CI, a cloud
 # session) without editing this file. The defaults are the operator's Windows
 # paths.
-GODOT="${GODOT:-C:/Users/arnod/AppData/Local/Godot/Godot_v4.6.3-stable_win64_console.exe}"
+GODOT="${GODOT:-V:/Godot/Godot_v4.7.2-stable_win64_console.exe}"
 PROJ="${PROJ:-C:/Users/arnod/Documents/CeDo_Simulator}"
 UD="${UD:-C:/Users/arnod/AppData/Roaming/Godot/app_userdata/CeDo Simulator}"
 
