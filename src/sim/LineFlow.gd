@@ -280,8 +280,9 @@ var _plc_stage_node : Array = []
 ## When true, PLCSequencer.start() fires immediately after rebuild() and
 ## walks the line tail-to-head, powering each node on stagger_s apart.
 ## Defaults to FALSE — operator must press START on the HMI to begin
-## production. The save loader flips _warm_boot=true so an already-running
-## save resumes correctly on first rebuild without forcing a cold start.
+## production. _warm_boot is NOT used by the save loader (2026-09-25): a save
+## resumes machine by machine (restore_node_run_state, src/sim/PlantResume.gd),
+## so a stopped line comes back stopped instead of every stage forced on.
 var auto_start : bool = false
 var _warm_boot : bool = false
 
@@ -400,20 +401,12 @@ func rebuild() -> void:
 	# in/out batches and its hand-mode HMI overrides. New nodes (no matching
 	# key in old_state) start at the defaults their fresh dict was built with.
 	var old_state : Dictionary = {}
+	# The kg riding the connectors. _link() drops every edge and _init_pipes()
+	# builds empty ones, so without this every rebuild deleted them (measured
+	# 2026-09-25: 13.35 kg on a running 3B line, ledger 13.35 kg off for good).
+	var old_pipes : Array = _snapshot_pipes()
 	for nd in _nodes:
-		# UNTYPED on purpose. `var node3d : Node = ...` THROWS "Trying to assign
-		# invalid previously freed instance" when the dict still holds a machine
-		# that was queue_free()d — the typed assignment fails BEFORE the
-		# is_instance_valid() guard below can run, and the throw aborts rebuild(),
-		# leaving _nodes pinned to the freed set for the rest of the session. Same
-		# untyped-var-plus-guard idiom as _silo_feed_multiplier (:397-407).
-		var node3d = nd.get("node", null)
-		var key : String = ""
-		if node3d != null and is_instance_valid(node3d):
-			key = String(nd.get("id", "")) + "@" + String(node3d.get_path())
-		else:
-			key = String(nd.get("id", "")) + "#" + str(nd.get("index", _nodes.find(nd)))
-		old_state[key] = {
+		old_state[_survivor_key(nd)] = {
 			"powered":     nd.get("powered", false),
 			"spin":        nd.get("spin", 0.0),
 			"buffer":      nd.get("buffer", 0.0),
@@ -422,6 +415,9 @@ func rebuild() -> void:
 			"hand_mode":   nd.get("hand_mode", false),
 			"manual_on":   nd.get("manual_on", false),
 			"rpm_pct":     nd.get("rpm_pct", 1.0),
+			# Per-component rpm (HMI sliders). Missing until 2026-09-25: every
+			# rebuild (an HMI placed mid-shift) put them back to 100 %.
+			"components":  (nd.get("components", {}) as Dictionary).duplicate(),
 			# #218 — preserve observer modules so _attach_advanced_systems()
 			# guards see existing instances and don't reconstruct them.
 			"ex":          nd.get("ex", null),
@@ -451,18 +447,7 @@ func rebuild() -> void:
 	# #218 — Rehydrate survivors BEFORE _init_plc() (which used to slam
 	# powered=false / spin=0.0 unconditionally). Match by id @ scene path.
 	for nd in _nodes:
-		# UNTYPED on purpose. `var node3d : Node = ...` THROWS "Trying to assign
-		# invalid previously freed instance" when the dict still holds a machine
-		# that was queue_free()d — the typed assignment fails BEFORE the
-		# is_instance_valid() guard below can run, and the throw aborts rebuild(),
-		# leaving _nodes pinned to the freed set for the rest of the session. Same
-		# untyped-var-plus-guard idiom as _silo_feed_multiplier (:397-407).
-		var node3d = nd.get("node", null)
-		var key : String = ""
-		if node3d != null and is_instance_valid(node3d):
-			key = String(nd.get("id", "")) + "@" + String(node3d.get_path())
-		else:
-			key = String(nd.get("id", "")) + "#" + str(nd.get("index", _nodes.find(nd)))
+		var key : String = _survivor_key(nd)
 		if old_state.has(key):
 			var s : Dictionary = old_state[key]
 			nd["powered"]   = s["powered"]
@@ -475,6 +460,8 @@ func rebuild() -> void:
 			nd["choked"]    = bool(s.get("choked", false))
 			nd["choke_pile"] = s.get("choke_pile", null)
 			nd["rpm_pct"]   = s["rpm_pct"]
+			if not (s["components"] as Dictionary).is_empty():
+				nd["components"] = s["components"]
 			# #218 — survivor-PLC integration flag. The per-tick PLC
 			# override (`_nodes[ni]["powered"] = _plc.is_powered(stage)`)
 			# would otherwise immediately re-drop a survivor stage to
@@ -493,6 +480,7 @@ func rebuild() -> void:
 				nd["nir_ctrl"] = s["nir_ctrl"]
 			if s["dryer_cycle"] != null: nd["dryer_cycle"] = s["dryer_cycle"]
 	_init_pipes()       # #145: turn each link into a transit delay-line
+	_carry_pipes(old_pipes) # and put back the kg that were riding them
 	_apply_dewater_open()   # rulings §12: open the screw troughs a flotation tank feeds
 	_init_plc()         # #145: stage the downstream-first power-up;
 						# _init_plc reads _survivor_powered to pre-power
@@ -512,6 +500,99 @@ func rebuild() -> void:
 		get_tree().call_group("extruder_machine", "on_line_flow_rebuilt", self)
 	print("[LineFlow] %d machines, %d links (transport physicalized)" % [_nodes.size(), _edges.size()])
 
+## The key rebuild() matches a node on across the rebuild: `id @ scene path`,
+## or `id # index` when the body is freed or already out of the tree (BuildMode
+## removes a deleted machine from its parent before it rebuilds, and get_path()
+## on it is an engine ERROR that returns an empty path).
+func _survivor_key(nd: Dictionary) -> String:
+	# UNTYPED on purpose. `var node3d : Node = ...` THROWS "Trying to assign
+	# invalid previously freed instance" when the dict still holds a machine
+	# that was queue_free()d — the typed assignment fails BEFORE the
+	# is_instance_valid() guard below can run, and the throw aborts rebuild(),
+	# leaving _nodes pinned to the freed set for the rest of the session. Same
+	# untyped-var-plus-guard idiom as _silo_feed_multiplier.
+	var node3d = nd.get("node", null)
+	if node3d != null and is_instance_valid(node3d) and (node3d as Node).is_inside_tree():
+		return String(nd.get("id", "")) + "@" + String(node3d.get_path())
+	return String(nd.get("id", "")) + "#" + str(nd.get("index", _nodes.find(nd)))
+
+## What the last rebuild() did with the kg on the connectors: `carried` rode on
+## in the same edge, `to_source` went back into the source's out batch (the edge
+## is gone, the source is not), `to_target` into the target's in batch (only the
+## target is left), `lost` had neither end left. Empty before the first rebuild.
+var last_pipe_carry : Dictionary = {}
+
+## Every loaded edge's delay line, keyed by its two ends' survivor keys. Taken
+## before _discover() replaces _nodes, since the edges hold node INDICES. An
+## EMPTY edge is left out: it has no kg, and its phase (stage_t) describes no
+## material, so it starts at 0 like a new edge and a rebuild of an idle line
+## stays what it was. Carrying empty phases made every suite that lets
+## LineFlow tick on frame time before its own rebuild() depend on that frame
+## (docs/audit/rebuild_pipe_carry_2026-09-25.md §5).
+func _snapshot_pipes() -> Array:
+	var out : Array = []
+	for e in _edges:
+		if not e.has("pipe"):
+			continue
+		var kg := 0.0
+		for s in (e["pipe"] as Array):
+			kg += (s as MaterialBatch).mass_kg
+		if kg <= 0.0:
+			continue
+		out.append({"src": _survivor_key(_nodes[int(e["a"])]),
+			"dst": _survivor_key(_nodes[int(e["b"])]),
+			"pipe": e["pipe"], "stage_t": float(e.get("stage_t", 0.0))})
+	return out
+
+## Put the connectors' kg back after _init_pipes(). A loaded edge whose two ends
+## both survived gets its stages and its phase back, so a rebuild that changes
+## nothing changes nothing on the belts. An edge that is gone (its target was
+## deleted, or the linker picked another target) puts its kg back into the
+## source's out batch, which the next tick routes down the source's edges as
+## they are now; a source that is gone itself hands them to the target. Only an
+## edge with neither end left loses its kg, with the two machines' own buffers.
+func _carry_pipes(old_pipes: Array) -> void:
+	var idx_by_key : Dictionary = {}
+	for i in _nodes.size():
+		idx_by_key[_survivor_key(_nodes[i])] = i
+	var edge_by_ends : Dictionary = {}
+	for e in _edges:
+		edge_by_ends[Vector2i(int(e["a"]), int(e["b"]))] = e
+	var carried := 0.0
+	var to_source := 0.0
+	var to_target := 0.0
+	var lost := 0.0
+	for p in old_pipes:
+		var ai : int = int(idx_by_key.get(p["src"], -1))
+		var bi : int = int(idx_by_key.get(p["dst"], -1))
+		var kg := 0.0
+		for s in (p["pipe"] as Array):
+			kg += (s as MaterialBatch).mass_kg
+		var e = edge_by_ends.get(Vector2i(ai, bi), null) if ai >= 0 and bi >= 0 else null
+		if e != null:
+			e["pipe"] = p["pipe"]
+			e["stage_t"] = float(p["stage_t"])
+			carried += kg
+			continue
+		if kg <= 0.0:
+			continue
+		var into : MaterialBatch = null
+		if ai >= 0:
+			into = _nodes[ai]["out"]
+			to_source += kg
+		elif bi >= 0:
+			into = _nodes[bi]["in"]
+			to_target += kg
+		else:
+			lost += kg
+			continue
+		for s in (p["pipe"] as Array):
+			into.add(s as MaterialBatch)
+	last_pipe_carry = {"carried": carried, "to_source": to_source, "to_target": to_target, "lost": lost}
+	if to_source + to_target + lost > 0.0:
+		print("[LineFlow] rebuild: %.3f kg from connectors that are gone went back into their source, %.3f kg into their target, %.3f kg left with both machines" % [
+			to_source, to_target, lost])
+
 ## #218 — Explicit shift telemetry reset. The shift-reset button on the
 ## supervisor HMI calls this; rebuild() must NOT touch these counters or a
 ## mid-shift HMI placement would zero the operator's running totals.
@@ -525,9 +606,10 @@ func reset_shift_telemetry() -> void:
 	poly_rejected = 0.0
 	_gran_q_accum = 0.0
 
-## Save-file loader must call this BEFORE the first rebuild() after a
-## resume so the line picks up where it left off rather than cold-starting.
-## auto_start stays false — only _warm_boot fires once.
+## Forces EVERY stage on at the next rebuild(). No caller: the save loader
+## resumes each machine as it was saved instead (PlantResume, 2026-09-25), and
+## the old unconditional warm boot is what the 2026-07-08 cold-start decision
+## removed. auto_start stays false — only _warm_boot fires once.
 func mark_warm_boot() -> void:
 	_warm_boot = true
 
@@ -1823,7 +1905,8 @@ func _belt_speed_of(nd: Dictionary) -> float:
 func _apply_dewater_open() -> void:
 	for i in _nodes.size():
 		var nd : Dictionary = _nodes[i]
-		if String(nd.get("id", "")) != "dewater_screw":
+		var dw_id : String = String(nd.get("id", ""))
+		if dw_id != "dewater_screw" and dw_id != "dewater_screw_l1":
 			continue
 		var open := false
 		for e in _edges:
@@ -2389,6 +2472,251 @@ func flow_bodies() -> Array:
 		var b = nd.get("node", null)
 		if b != null and is_instance_valid(b):
 			out.append({"body": b, "id": String(nd.get("id", ""))})
+	return out
+
+## ── Resume on load (operator 2026-09-25, rulings file §R1-§R3) ──────────
+## What a machine's LineFlow node carries into a save and back
+## (src/sim/PlantResume.gd holds the whole scheme). The node's run state, its
+## material, the operator's settings, its latched faults, its observers, and the
+## kg in the pipes leaving it. Keep this list beside rebuild()'s survivor list:
+## a field that must survive a rebuild must almost always survive a save too.
+const RESUME_NODE_FIELDS : Array[String] = [
+	"powered", "spin", "buffer", "hand_mode", "manual_on", "rpm_pct",
+	"choked", "thru", "moist", "contam", "quality", "_was_tripped",
+]
+const RESUME_MOL_FIELDS : Array[String] = [
+	"accumulated_kg", "current_amps", "running", "_tripped", "_overload_timer",
+]
+const RESUME_SCREW_FIELDS : Array[String] = [
+	"screw_rpm", "viscosity", "shear_heat", "barrel_temp", "melt_temp",
+	"cooling_fan_level", "die_pressure", "rpm_setpoint", "throughput",
+	"fan_auto", "_fan_integral",
+]
+const RESUME_CC_FIELDS : Array[String] = [
+	"disc_rpm_setpoint", "dosing_gate", "pot_temperature_setpoint",
+	"power_cap_kw_setpoint", "feed_moisture_pct", "power_kw", "breaker_tripped",
+	"softstarter_tripped", "softstarter_budget_kws", "lumps_kg_this_shift",
+	"knife_sharpness", "_knife_sharpen_remaining_s", "air_flush_on",
+	"emergency_water_uses_shift", "_ewi_cooldown_remaining_s",
+	"process_unstable_flag", "state", "pot_temperature", "disc_rpm",
+	"motor_amps", "charge", "screw_fill_efficiency", "throughput_kg_s",
+	"stalled", "_last_friction_w", "_last_cooling_w", "_time_in_state",
+	"total_fed_kg", "discharged_kg", "water_removed_kg",
+]
+const RESUME_DRD_CYCLE_FIELDS : Array[String] = [
+	"trockenzeit_s", "befuelstop_pct", "entleerstop_pct", "temp_sollwert_c",
+	"cycle_enabled", "step", "step_elapsed_s", "entleer_open", "besch_open", "_gate_t",
+]
+const RESUME_DRD_MODEL_FIELDS : Array[String] = [
+	"fill_pct", "temp_c", "residual_moisture_pct", "throughput_kg_s", "heater_on", "setpoint_c",
+]
+const RESUME_LINE_FIELDS : Array[String] = [
+	"fed_mass", "gran_mass", "waste_mass", "water_added", "water_removed",
+	"contam_removed", "poly_rejected", "_gran_q_accum", "feed_enabled",
+]
+const _Resume := preload("res://src/sim/PlantResume.gd")
+## Set by restore_node_run_state on the node that held the e-stop; consumed by
+## restore_line_run_state (the e-stop is keyed by node index, which a load does
+## not keep, so it travels on the fault machine's own entry).
+var _resume_estop_ni : int = -1
+
+## The run state of `body`'s node, {} when it is not a flow node.
+func node_run_state(body: Node3D) -> Dictionary:
+	var ni := _nd_for_body(body)
+	if ni < 0:
+		return {}
+	var nd : Dictionary = _nodes[ni]
+	var out : Dictionary = {}
+	for f in RESUME_NODE_FIELDS:
+		if nd.has(f):
+			out[f] = _Resume.to_json(nd[f])
+	out["in"] = _Resume.batch_out(nd.get("in", null))
+	out["out"] = _Resume.batch_out(nd.get("out", null))
+	out["components"] = _Resume.to_json(nd.get("components", {}))
+	if bool(nd.get("choked", false)):
+		var pile = nd.get("choke_pile", null)
+		if pile != null and is_instance_valid(pile):
+			out["choke_pile_pos"] = _Resume.to_json((pile as Node3D).global_position)
+	if _estop_active and _estop_fault_node == ni:
+		out["estop_fault"] = true
+	if nd.get("mol", null) != null:
+		out["mol"] = _Resume.pack(nd["mol"], RESUME_MOL_FIELDS)
+	if nd.get("ex", null) != null:
+		out["screw"] = _Resume.pack(nd["ex"], RESUME_SCREW_FIELDS)
+	if nd.get("cc", null) != null:
+		out["cc"] = _Resume.pack(nd["cc"], RESUME_CC_FIELDS)
+	var nir = nd.get("nir_ctrl", null)
+	if nir != null and is_instance_valid(nir):
+		out["nir"] = {"wrap_g": float(nir.shaft_wrap.wrap_g), "_alarm_raised": bool(nir.get("_alarm_raised"))}
+	# The extruder silo's level sensor and its feed-stop latch (§I11): without
+	# it a silo that held its feed would let the feed run for the first report.
+	if body != null and _silo_state.has(body.get_instance_id()):
+		out["silo_stop"] = _Resume.to_json(_silo_state[body.get_instance_id()])
+	var cyc = nd.get("dryer_cycle", null)
+	if cyc != null:
+		out["drd"] = _Resume.pack(cyc, RESUME_DRD_CYCLE_FIELDS)
+		if cyc.get("dryer") != null:
+			out["drd_model"] = _Resume.pack(cyc.get("dryer"), RESUME_DRD_MODEL_FIELDS)
+	# The kg on their way OUT of this machine, per out-edge in _edges order, with
+	# the target's id so a reload that wires this machine differently puts them
+	# back in the machine instead of into the wrong pipe.
+	var pipes : Array = []
+	for e in _edges:
+		if int(e["a"]) != ni:
+			continue
+		var stages : Array = []
+		var kg := 0.0
+		for s in (e.get("pipe", []) as Array):
+			stages.append(_Resume.batch_out(s))
+			kg += (s as MaterialBatch).mass_kg
+		pipes.append({"to": String(_nodes[int(e["b"])].get("id", "")),
+			"stage_t": float(e.get("stage_t", 0.0)), "stages": stages if kg > 0.0 else []})
+	if not pipes.is_empty():
+		out["pipes"] = pipes
+	return out
+
+## Put a saved node state back on `body`'s node (after the load's rebuild).
+## Returns false when the body is not a flow node here.
+func restore_node_run_state(body: Node3D, d: Dictionary) -> bool:
+	var ni := _nd_for_body(body)
+	if ni < 0:
+		return false
+	var nd : Dictionary = _nodes[ni]
+	for f in RESUME_NODE_FIELDS:
+		# A field the fresh node does not carry yet (_was_tripped is created on
+		# the first tick) is set as saved: a latched trip must not look like a
+		# new trip edge on the first tick after the load (smoke, alarm).
+		if d.has(f):
+			var v : Variant = _Resume.from_json(d[f])
+			nd[f] = _Resume.coerce(nd[f], v) if nd.has(f) else v
+	if d.get("in", {}) is Dictionary and not (d.get("in", {}) as Dictionary).is_empty():
+		nd["in"] = _Resume.batch_in(d["in"])
+	if d.get("out", {}) is Dictionary and not (d.get("out", {}) as Dictionary).is_empty():
+		nd["out"] = _Resume.batch_in(d["out"])
+	var comps : Variant = _Resume.from_json(d.get("components", {}))
+	if comps is Dictionary:
+		var c : Dictionary = nd.get("components", {})
+		for k in comps:
+			if c.has(k):
+				c[k] = float(comps[k])
+	# The power the node had, held through the PLC's per-tick override the way a
+	# rebuild's survivor is (see _init_plc): stage pre-powered, flag set.
+	var on : bool = bool(nd.get("powered", false))
+	nd["_survivor_powered"] = on
+	var stage : int = _plc_stage_node.find(ni)
+	if _plc != null and stage >= 0:
+		_plc.set_stage_powered(stage, on)
+	# The rotors the HMI settings drive (a setting reaches them only through its
+	# setter, so apply them the same way): rpm_pct on every rotor, then each
+	# component that has rotors of its own. NOT a component without tagged
+	# rotors: on a single-drive machine _apply_component_rotor writes the
+	# component's value INTO rpm_pct (measured: a belt saved at 70 % came back
+	# at 100 %, its "drive" component's default).
+	_apply_rotor_rpm(nd)
+	_cache_component_rotors(nd)
+	var tagged : Dictionary = nd.get("component_rotors", {})
+	for comp in (nd.get("components", {}) as Dictionary):
+		if tagged.has(comp):
+			_apply_component_rotor(nd, String(comp))
+	if bool(nd.get("choked", false)) and d.has("choke_pile_pos"):
+		var at : Variant = _Resume.from_json(d["choke_pile_pos"])
+		if at is Vector3:
+			_floor_piles_cache = get_tree().get_nodes_in_group("floor_pile") if is_inside_tree() else []
+			nd["choke_pile"] = _nearest_floor_pile(at)
+	if bool(d.get("estop_fault", false)):
+		_resume_estop_ni = ni
+	if nd.get("mol", null) != null and d.get("mol", null) is Dictionary:
+		_Resume.unpack(nd["mol"], d["mol"])
+	if nd.get("ex", null) != null and d.get("screw", null) is Dictionary:
+		_Resume.unpack(nd["ex"], d["screw"])
+	if nd.get("cc", null) != null and d.get("cc", null) is Dictionary:
+		_Resume.unpack(nd["cc"], d["cc"])
+	var nir = nd.get("nir_ctrl", null)
+	if nir != null and is_instance_valid(nir) and d.get("nir", null) is Dictionary:
+		nir.shaft_wrap.wrap_g = float((d["nir"] as Dictionary).get("wrap_g", 0.0))
+		nir.set("_alarm_raised", bool((d["nir"] as Dictionary).get("_alarm_raised", false)))
+	if d.get("silo_stop", null) is Dictionary:
+		var tmpl : Dictionary = {"acc": 0.0, "n": 0, "t": 0.0, "pct": 0.0, "mm": SILO_EMPTY_MM,
+			"held": false, "below_t": 0.0, "reports": 0, "pcu_full": false}
+		_silo_state[body.get_instance_id()] = _Resume.coerce(tmpl, _Resume.from_json(d["silo_stop"]))
+	var cyc = nd.get("dryer_cycle", null)
+	if cyc != null and d.get("drd", null) is Dictionary:
+		_Resume.unpack(cyc, d["drd"])
+		if cyc.get("dryer") != null and d.get("drd_model", null) is Dictionary:
+			_Resume.unpack(cyc.get("dryer"), d["drd_model"])
+	# Pipes: matched by position among this node's out-edges AND the target id.
+	# A pipe with no matching edge goes back into this machine's out batch, so no
+	# kg is lost when a reload wires the machine differently.
+	var saved_pipes : Array = d.get("pipes", [])
+	var k : int = 0
+	for e in _edges:
+		if int(e["a"]) != ni:
+			continue
+		if k < saved_pipes.size():
+			var sp : Dictionary = saved_pipes[k]
+			if String(sp.get("to", "")) == String(_nodes[int(e["b"])].get("id", "")):
+				var st : Array = sp.get("stages", [])
+				var pipe : Array = e.get("pipe", [])
+				if st.is_empty() or st.size() == pipe.size():
+					for i in st.size():
+						pipe[i] = _Resume.batch_in(st[i])
+					e["stage_t"] = float(sp.get("stage_t", 0.0))
+					saved_pipes[k] = {}
+		k += 1
+	for sp2 in saved_pipes:
+		for sd in ((sp2 as Dictionary).get("stages", []) as Array):
+			var b := _Resume.batch_in(sd)
+			if b.mass_kg > 0.0:
+				(nd["out"] as MaterialBatch).add(b)
+	return true
+
+## The line's own state: the shift's kg ledger, whether the feed is on, the PLC.
+func line_run_state() -> Dictionary:
+	var out := _Resume.pack(self, RESUME_LINE_FIELDS)
+	if _plc != null:
+		out["plc"] = {"phase": int(_plc.get("_phase")), "idx": int(_plc.get("_idx")),
+			"timer": float(_plc.get("_timer")), "stages": _plc_stage_node.size()}
+	out["estop_active"] = _estop_active
+	return out
+
+func restore_line_run_state(d: Dictionary) -> void:
+	_Resume.unpack(self, _only(d, RESUME_LINE_FIELDS))
+	var plc_d : Variant = d.get("plc", null)
+	if _plc != null and plc_d is Dictionary:
+		var phase : int = int((plc_d as Dictionary).get("phase", 0))
+		if int((plc_d as Dictionary).get("stages", -1)) == _plc_stage_node.size():
+			_plc.set("_phase", phase)
+			_plc.set("_idx", int((plc_d as Dictionary).get("idx", 0)))
+			_plc.set("_timer", float((plc_d as Dictionary).get("timer", 0.0)))
+		elif phase == 1:
+			_plc.start()      # a different graph: continue the power-up from the tail
+		elif phase == -1:
+			_plc.stop()
+	if bool(d.get("estop_active", false)) and _resume_estop_ni >= 0:
+		_estop_active = true
+		_estop_fault_node = _resume_estop_ni
+		_estop_fault_order = _plc_stage_node.find(_resume_estop_ni)
+		feed_enabled = false
+	_resume_estop_ni = -1
+	# The alarms a latched fault raised when it happened, raised again for the
+	# listeners of this session (HMI alarm lists, SCADA, crew): a latch that
+	# comes back silent is a latch nobody can see.
+	var bus := get_node_or_null("/root/EventBus")
+	if bus == null or not bus.has_signal("machine_alarm_raised"):
+		return
+	if _estop_active and _estop_fault_node >= 0:
+		bus.emit_signal("machine_alarm_raised", String(_nodes[_estop_fault_node].get("id", "?")), "OVERLOAD-ESTOP", 3)
+	for nd in _nodes:
+		if bool(nd.get("choked", false)):
+			bus.emit_signal("machine_alarm_raised", String(nd.get("id", "?")), "CHUTE-BLOCKED", 2)
+		if _is_mol_tripped(nd):
+			bus.emit_signal("machine_alarm_raised", String(nd["mol"].get("machine_id")), MotorOverloadScript.ALARM_ID, 3)
+
+static func _only(d: Dictionary, keys: Array) -> Dictionary:
+	var out : Dictionary = {}
+	for k in keys:
+		if d.has(k):
+			out[k] = d[k]
 	return out
 
 func _nd_for_body(body: Node3D) -> int:
@@ -4084,6 +4412,12 @@ func _spawn_connectors() -> void:
 func _make_connector(a: Dictionary, b: Dictionary) -> void:
 	var a_world: Vector3 = a["wout"]
 	var b_world: Vector3 = b["win"]
+	# Line 1's L-R frictiescheider has a spout at EACH far end (MachineFlow
+	# "out" / "out2"); each Kufferath train's chute starts at the nearer one.
+	if String(a.get("id", "")) == "friction_sep_lr":
+		var a2 : Vector3 = a.get("wout2", Vector3.ZERO)
+		if a2 != Vector3.ZERO and a2.distance_to(b_world) < a_world.distance_to(b_world):
+			a_world = a2
 	var dir := b_world - a_world
 	var length := dir.length()
 	if length < 0.05:
@@ -4116,12 +4450,19 @@ func _make_connector(a: Dictionary, b: Dictionary) -> void:
 	if _is_friction_sep_source(src_id):
 		_spawn_chute(a_world, b_world, 0.34, 0.14, true)
 		return
-	# Rule 2b — DRYER → BLOWER gets an L-shaped round duct: a forward segment
-	# from the dryer's front-bottom discharge, then a 90° lateral turn into
-	# the blower inlet. Two parallel dryers each get their own pipe from
-	# opposite sides — the V-shape avoids intersection.
+	# Rule 2b — DRYER → BLOWER: a round duct from the dryer's air-outlet stub
+	# into the blower's inlet eye. It was an L of two straight pipes meeting at
+	# a sharp 90° corner; operator 2026-09-25: every pneumatic pipe is round and
+	# smoothly curved ("Curve those too").
 	if src_id == "mech_dryer" and tgt_id == "blower":
-		_spawn_elbow_duct(a_world, b_world, 0.16)
+		var dn := a.get("node") as Node3D
+		if dn != null and is_instance_valid(dn):
+			var d_out : Vector3 = dn.to_global(
+				PlaceableCatalog.mech_dryer_air_outlet_local(_catalog_size(src_id)))
+			var d_end : Array = _duct_target(b, b_world, d_out)
+			_spawn_curved_duct(d_out, dn.global_transform.basis.z.normalized(), d_end[0], d_end[1], 0.16)
+		else:
+			_spawn_elbow_duct(a_world, b_world, 0.16)
 		return
 	# Rule 3 — BLOWER ALWAYS PNEUMATICALLY CONVEYS TO A CYCLONE through a round
 	# steel duct. Per operator: blower output → cyclone is deterministic in this
@@ -4131,14 +4472,26 @@ func _make_connector(a: Dictionary, b: Dictionary) -> void:
 		# Radius 0.07 → Ø 140 mm — operator 2026-08-28 on the line-1 drawing's
 		# pink pipelines: "about one twenty millimeters or so diameter …
 		# maybe it's like one fifty". Was 0.18 (Ø 360, twice the real bore).
-		_spawn_round_duct(a_world, b_world, 0.07)
+		# 2026-09-25 (operator): "round smoothly curved pipelines for the
+		# connections between the blowers and the cyclones, not only here but
+		# everywhere". Up out of the blower's outlet, bending over into the
+		# target's inlet. It was one straight cylinder, port to port.
+		var bn := a.get("node") as Node3D
+		if bn != null and is_instance_valid(bn):
+			var b_out : Vector3 = bn.to_global(PlaceableCatalog.blower_outlet_top_local(_catalog_size(src_id)))
+			var b_end : Array = _duct_target(b, b_world, b_out)
+			_spawn_j_duct(b_out, b_end[0], b_end[1], 0.07)
+		else:
+			_spawn_round_duct(a_world, b_world, 0.07)
 		return
 	# #107 — CYCLONE → BLOWER is the suction-leg of a pneumatic loop (blower
 	# pulls air + flake OUT the bottom of the cyclone), same round-pipe geometry
 	# as the discharge leg above.
 	if src_id == "cyclone" and tgt_id == "blower":
-		# Ø 140 mm, same operator sizing as the discharge leg above.
-		_spawn_round_duct(a_world, b_world, 0.07)
+		# Ø 140 mm, same operator sizing as the discharge leg above; curved like
+		# it (2026-09-25): down out of the spout, into the blower's inlet eye.
+		var c_end : Array = _duct_target(b, b_world, a_world)
+		_spawn_curved_duct(a_world, Vector3.DOWN, c_end[0], c_end[1], 0.07)
 		return
 	# #107 — CYCLONE → SILO (or extruder_silo) is a vertical gravity drop: a
 	# tapered funnel from the cyclone's discharge spout into the silo's top
@@ -4152,8 +4505,15 @@ func _make_connector(a: Dictionary, b: Dictionary) -> void:
 	# screw chute but a wider trough so it visually reads as a real slide
 	# instead of a thin gutter. One spawn per sibling fan-out (the macro
 	# builder fires this rule once per scheidingsgoot→friction_sep edge).
+	# 2026-09-25: the rebuilt goot's own legs run into the separators' hoppers
+	# (operator: "each leg slopes down sideways into the inlet hopper of the
+	# friction separator beside it"), so this edge draws nothing any more.
 	if src_id == "scheidingsgoot" and tgt_id == "friction_sep":
-		_spawn_chute(a_world, b_world, 0.55, 0.12, false)
+		return
+	# The rebuilt goot's inlet sits under the drum's discharge lip, so the flakes
+	# fall straight in. The drum's out port is at its axis, and the gravity-gutter
+	# fallback below drew a gutter from there down into the goot.
+	if src_id == "vw_trommel" and tgt_id == "scheidingsgoot":
 		return
 	# Otherwise — fall through to the legacy gravity-gutter behaviour.
 	_spawn_gravity_gutter(a_world, b_world)
@@ -4162,7 +4522,8 @@ func _make_connector(a: Dictionary, b: Dictionary) -> void:
 ## "screw → anything = chute" rule applies to. Extruder screws live INSIDE the
 ## extruder unit and don't discharge to the outside, so they're excluded.
 static func _is_screw_source(id: String) -> bool:
-	return id == "transport_screw" or id == "dewater_screw" or id == "doseerschroef"
+	return id == "transport_screw" or id == "dewater_screw" or id == "doseerschroef" \
+			or id == "intrekschroef" or id == "dewater_screw_l1"
 
 ## #106 — belt-family check used to suppress the gravity-gutter fallback when
 ## one conveyor feeds directly into the next (no real gap to bridge). Covers
@@ -4173,7 +4534,7 @@ static func _is_belt_id(id: String) -> bool:
 	if id == "transport_belt" or id == "variable_belt" \
 			or id == "inclined_belt_8m" or id == "metal_belt" \
 			or id == "compactorband" or id == "compactor_belt" \
-			or id == "switch_belt" or id == "drum_feed_belt":
+			or id == "switch_belt" or id == "drum_feed_belt" or id == "uitvoerband_1":
 		return true
 	return id.begins_with("transportband_") or id.begins_with("opzetband") \
 			or id.begins_with("westa_band")
@@ -4182,7 +4543,8 @@ static func _is_belt_id(id: String) -> bool:
 ## frictiescheider and the wet-process frictiewasser kick up enough wind+water
 ## spray to need a closed-top chute on the discharge.
 static func _is_friction_sep_source(id: String) -> bool:
-	return id == "friction_sep" or id == "friction_washer" or id == "intensive_washer"
+	return id == "friction_sep" or id == "friction_washer" or id == "intensive_washer" \
+			or id == "friction_sep_lr"
 
 ## Spawn a chute from a_world (source out) to b_world (target in). With
 ## `closed_top = false` it's an open-top trough (floor + 2 side rails); with
@@ -4241,6 +4603,177 @@ func _spawn_chute(a_world: Vector3, b_world: Vector3, width: float, height: floa
 	var box := BoxShape3D.new()
 	box.size = Vector3(width, height * 1.1, length)
 	cs.shape = box
+	col.add_child(cs)
+	root.add_child(col)
+
+## Where a pneumatic duct ends on its target, and the direction it arrives in:
+## a cyclone's inlet opening (PlaceableCatalog.cyclone_inlet_local), entered
+## along -X because its inlet box sticks out on +X; a blower's inlet eye, the
+## same way; anything else at its flow port, arriving level (or from above
+## when the port is straight below the start).
+func _duct_target(b: Dictionary, b_world: Vector3, from: Vector3) -> Array:
+	var tid : String = String(b.get("id", ""))
+	var tn := b.get("node") as Node3D
+	if tn != null and is_instance_valid(tn):
+		var into : Vector3 = -tn.global_transform.basis.x.normalized()
+		if tid == "cyclone":
+			return [tn.to_global(PlaceableCatalog.cyclone_inlet_local(_catalog_size(tid))), into]
+		if tid == "cyclone_tower":
+			return [b_world, into]
+		if tid == "blower":
+			return [tn.to_global(PlaceableCatalog.blower_eye_local(_catalog_size(tid))), into]
+	var flat : Vector3 = b_world - from
+	flat.y = 0.0
+	if flat.length() > 0.1:
+		return [b_world, flat.normalized()]
+	return [b_world, Vector3.DOWN]
+
+func _catalog_size(id: String) -> Vector3:
+	var it : Dictionary = PlaceableCatalog.get_item(id)
+	return it["size"] if not it.is_empty() else Vector3.ONE
+
+## A round steel duct swept along a smooth curve (operator 2026-09-25: "round
+## smoothly curved pipelines"): a cubic Bezier from `a`, leaving along `a_dir`,
+## to `b`, arriving along `b_dir`. Used where the two ends are close (dryer →
+## blower, cyclone → blower); blower → cyclone takes _spawn_j_duct.
+func _spawn_curved_duct(a: Vector3, a_dir: Vector3, b: Vector3, b_dir: Vector3, radius: float) -> void:
+	var dist : float = a.distance_to(b)
+	if dist < 0.05:
+		return
+	var k : float = clampf(dist * 0.45, 0.25, 4.0)
+	var p1 : Vector3 = a + a_dir.normalized() * k
+	var p2 : Vector3 = b - b_dir.normalized() * k
+	var pts : Array[Vector3] = []
+	for i in 29:
+		var t : float = float(i) / 28.0
+		var u : float = 1.0 - t
+		pts.append(a * (u * u * u) + p1 * (3.0 * u * u * t) + p2 * (3.0 * u * t * t) + b * (t * t * t))
+	_sweep_duct(pts, radius)
+
+## The blower → cyclone duct, shaped like a J (operator 2026-09-25: the first
+## curved ducts "look more like parentheses, it should look more like the letter
+## J"). Straight UP out of the blower's outlet `a` to the inlet's height, one
+## bend over, a level run, and a short straight into the inlet `b` along
+## `b_dir`. The top bend's radius is half the level distance (at most 0.6 of
+## the rise), so the stem stays straight and the curve sits at the top.
+func _spawn_j_duct(a: Vector3, b: Vector3, b_dir: Vector3, radius: float) -> void:
+	var into : Vector3 = Vector3(b_dir.x, 0.0, b_dir.z)
+	if into.length() < 0.01 or b.y - a.y < 0.5:
+		_spawn_curved_duct(a, Vector3.UP, b, b_dir, radius)
+		return
+	into = into.normalized()
+	var q : Vector3 = b - into * 0.6                      # approach point, level with the inlet
+	var c : Vector3 = Vector3(a.x, q.y, a.z)              # top of the vertical stem
+	var level : float = Vector2(q.x - c.x, q.z - c.z).length()
+	var rise : float = c.y - a.y
+	var pts : Array[Vector3] = [a]
+	if level < 0.05:
+		pts.append(q)
+	else:
+		var r1 : float = clampf(level * 0.5, 0.3, rise * 0.6)
+		_append_fillet(pts, a, c, q, r1)
+		_append_fillet(pts, c, q, b, minf(0.5, minf(level * 0.45, 0.27)))
+	pts.append(b)
+	_sweep_duct(pts, radius)
+
+## Append the rounded corner at `corner` of the polyline prev → corner → next:
+## a straight run up to the fillet, then the fillet itself (a quadratic Bezier
+## between the two tangent points, `r` from the corner along each leg).
+func _append_fillet(pts: Array[Vector3], prev: Vector3, corner: Vector3, next: Vector3, r: float) -> void:
+	var d_in : Vector3 = corner - prev
+	var d_out : Vector3 = next - corner
+	if d_in.length() < 0.01 or d_out.length() < 0.01:
+		pts.append(corner)
+		return
+	var rr : float = minf(r, minf(d_in.length(), d_out.length()) * 0.95)
+	var t1 : Vector3 = corner - d_in.normalized() * rr
+	var t2 : Vector3 = corner + d_out.normalized() * rr
+	pts.append(t1)
+	for i in range(1, 12):
+		var t : float = float(i) / 12.0
+		var u : float = 1.0 - t
+		pts.append(t1 * (u * u) + corner * (2.0 * u * t) + t2 * (t * t))
+	pts.append(t2)
+
+## Sweep a round tube along `pts`: rings carried along the path by parallel
+## transport (no twist), a flange at each end, and a trimesh collider so the
+## player cannot walk through it.
+func _sweep_duct(pts: Array[Vector3], radius: float) -> void:
+	if pts.size() < 2:
+		return
+	const SIDES : int = 14
+	var a : Vector3 = pts[0]
+	var tans : Array[Vector3] = []
+	for i in pts.size():
+		var d : Vector3
+		if i == 0:
+			d = pts[1] - pts[0]
+		elif i == pts.size() - 1:
+			d = pts[i] - pts[i - 1]
+		else:
+			d = pts[i + 1] - pts[i - 1]
+		tans.append(d.normalized())
+	var n0 : Vector3 = tans[0].cross(Vector3.UP)
+	if n0.length() < 0.01:
+		n0 = tans[0].cross(Vector3.RIGHT)
+	var normals : Array[Vector3] = [n0.normalized()]
+	for i in range(1, pts.size()):
+		var axis : Vector3 = tans[i - 1].cross(tans[i])
+		var nrm : Vector3 = normals[i - 1]
+		if axis.length() > 1e-6:
+			nrm = nrm.rotated(axis.normalized(), tans[i - 1].angle_to(tans[i]))
+		normals.append(nrm.normalized())
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in pts.size():
+		var bin : Vector3 = tans[i].cross(normals[i]).normalized()
+		for j in SIDES + 1:
+			var ang : float = TAU * float(j) / float(SIDES)
+			var off : Vector3 = normals[i] * cos(ang) + bin * sin(ang)
+			st.set_normal(off)
+			st.set_uv(Vector2(float(j) / float(SIDES), float(i) / float(pts.size() - 1)))
+			st.add_vertex(pts[i] - a + off * radius)
+	for i in pts.size() - 1:
+		for j in SIDES:
+			var r0 : int = i * (SIDES + 1) + j
+			var r1 : int = (i + 1) * (SIDES + 1) + j
+			st.add_index(r0)
+			st.add_index(r1)
+			st.add_index(r0 + 1)
+			st.add_index(r0 + 1)
+			st.add_index(r1)
+			st.add_index(r1 + 1)
+	var mesh : ArrayMesh = st.commit()
+	var steel_mat := StandardMaterial3D.new()
+	steel_mat.albedo_color = Color(0.62, 0.63, 0.66)
+	steel_mat.metallic = 0.7
+	steel_mat.roughness = 0.35
+	steel_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var flange_mat := StandardMaterial3D.new()
+	flange_mat.albedo_color = Color(0.40, 0.41, 0.44)
+	flange_mat.metallic = 0.5
+	flange_mat.roughness = 0.45
+	var root := Node3D.new()
+	root.name = "CurvedDuct"
+	_connectors.add_child(root)
+	root.global_transform = Transform3D(Basis(), a)
+	var pipe := MeshInstance3D.new()
+	pipe.mesh = mesh
+	pipe.material_override = steel_mat
+	root.add_child(pipe)
+	for end_i in [0, pts.size() - 1]:
+		var fl := MeshInstance3D.new()
+		var fm := CylinderMesh.new()
+		fm.top_radius = radius * 1.30
+		fm.bottom_radius = radius * 1.30
+		fm.height = 0.06
+		fl.mesh = fm
+		fl.material_override = flange_mat
+		fl.transform = Transform3D(_basis_along(tans[end_i], "y"), pts[end_i] - a)
+		root.add_child(fl)
+	var col := StaticBody3D.new()
+	var cs := CollisionShape3D.new()
+	cs.shape = mesh.create_trimesh_shape()
 	col.add_child(cs)
 	root.add_child(col)
 

@@ -168,7 +168,7 @@ const STAGES := [
 	{"name": "BUNKER",      "tokens": ["bunker"]},
 	{"name": "SORTEREN",    "tokens": ["sga", "metal_belt", "ballistic", "wind_sifter", "titech", "tomra", "sorteer"]},
 	{"name": "SHREDDERS",   "tokens": ["shredder"]},
-	{"name": "OPVOER",      "tokens": ["inclined_belt", "feed_hopper", "transport_belt", "transport_screw", "conveyor", "blower"]},
+	{"name": "OPVOER",      "tokens": ["inclined_belt", "feed_hopper", "transport_belt", "transport_screw", "intrekschroef", "conveyor", "blower"]},
 	{"name": "WASSEN",      "tokens": ["prewash", "friction", "intensive", "wash", "was"]},
 	{"name": "FLOTATIE",    "tokens": ["flotation", "rotation", "sink_float"]},
 	{"name": "ZEVEN",       "tokens": ["kufferath", "rafter", "sieve", "zeef"]},

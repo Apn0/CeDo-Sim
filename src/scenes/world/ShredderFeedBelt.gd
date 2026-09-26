@@ -41,6 +41,10 @@ signal metal_detected(belt_id: String)        # rulings §11 — the sensor fire
 @export var incline_run   : float = 5.0     # incline horizontal run (m)
 @export var incline_deg   : float = 35.0    # incline angle — lowered from 45° per operator (top ≈ 4 m)
 @export var deck_height   : float = 0.7     # deck top off the ground
+## Side-guard height above the belt. 0.30 m on every feed belt; line 1's
+## uitvoerband uses the 0.15 m skirt board (UITVOERBAND_RAIL_H_M), the only
+## guard that leaves the overband magnet its 25 cm working gap (2026-09-17).
+@export var guard_h       : float = 0.30
 @export var belt_speed    : float = 0.12    # m/s creep — +50% per operator (was 0.08)
 @export var fill_setpoint : float = 0.85    # belt halts at/above this throat fill
 @export var digest_rate   : float = 0.04    # shredder eats throat fill / s
@@ -88,12 +92,46 @@ const _METAL_SCRAP_SCRIPT : String = "res://src/scenes/world/MetalScrap.gd"
 @export var funnel_start_m   : float = 0.0
 @export var funnel_narrow_m  : float = 0.0
 @export var funnel_min_width : float = 0.0
+## A flake bed (P1's belt-mode FilmFlakeField) on the flat deck and on the
+## climb, for a feed belt that carries SHREDDED film: line 1's uitvoerband
+## (2026-09-25). It replaced a transport_belt that had one, and a bed is also
+## what gives LineFlow's belt node its MotorOverload (belt speed mismatch,
+## round 8). The bale feeders (opzetband, Westa) carry whole bales and stay
+## without one.
+@export var film_bed : bool = false
 
 var fill : float = 0.0
 ## Kilograms currently in the throat. `fill` is the 0..1 geometric fill level;
 ## this is what that volume actually weighs. Kept in step with `fill` so the
 ## belt can hand REAL mass downstream instead of inventing it from a constant.
 var _throat_kg : float = 0.0
+
+## Resume on load (operator 2026-09-25, rulings file §R1-§R3;
+## src/sim/PlantResume.gd): the throat (fill and its kg), start/stop, the metal
+## cycle, the counters, and the three fault latches, which come back through
+## _raise_fault so the alarm is raised the way it was the first time. NOT the
+## bales riding the belt: bales are not in the save at all (they are yard or
+## vehicle objects), so what they still carried is not restored.
+const RESUME_FIELDS : Array[String] = [
+	"fill", "_throat_kg", "start_requested", "_metal_cycle", "_metal_reverse_left_m",
+	"metal_detections", "bales_accepted", "bales_rejected", "untraced_count",
+	"_spacing_violation_frames", "_thermal_grace_t",
+]
+
+func save_run_state() -> Dictionary:
+	var out : Dictionary = preload("res://src/sim/PlantResume.gd").pack(self, RESUME_FIELDS)
+	out["faults"] = [_fault_belt_jam, _fault_intake_overfill, _fault_thermal_shutdown]
+	return out
+
+func restore_run_state(d: Dictionary) -> void:
+	var fields : Dictionary = d.duplicate()
+	fields.erase("faults")
+	preload("res://src/sim/PlantResume.gd").unpack(self, fields)
+	var f : Array = d.get("faults", [false, false, false])
+	if f.size() >= 3:
+		if bool(f[0]): _raise_fault("belt_jam", _ALARM_BELT_JAM)
+		if bool(f[1]): _raise_fault("intake_overfill", _ALARM_INTAKE_OVERFILL)
+		if bool(f[2]): _raise_fault("thermal_shutdown", _ALARM_THERMAL_SHUTDOWN)
 
 ## Total kg the belt is holding right now (riders still to feed + throat).
 ## Exists so a conservation test can sum the belt without reaching into privates.
@@ -218,6 +256,28 @@ func _build_visual() -> void:
 	_build_deck_visual(steel, belt_mat, guard)
 	var inc_pivot := _build_incline_visual(steel, belt_mat, guard)
 	_build_top_end_visual(inc_pivot, steel, belt_mat, guard)
+	if film_bed:
+		_build_film_beds(inc_pivot)
+
+## The beds sit on the belt skins' top faces (deck and climb boxes are 0.10 m
+## thick). A belt-mode field scrolls along its own +Z, which is this belt's
+## travel on both sections. The flat deck's bed is the FIRST child, because
+## LineFlow sizes the belt's MotorOverload from the first field it finds.
+func _build_film_beds(inc_pivot: Node3D) -> void:
+	if deck_length > 0.01:
+		var flat := Node3D.new()
+		flat.name = "DeckBed"
+		flat.position = Vector3(0.0, 0.0, deck_length * 0.5)
+		add_child(flat)
+		move_child(flat, 0)
+		BeltBuilder.attach_film_field(flat, deck_width, deck_length, deck_height + 0.05,
+			belt_speed, BeltBuilder.SNIPPER_BULK_KGM3)
+	var slope := Node3D.new()
+	slope.name = "InclineBed"
+	slope.position = Vector3(0.0, 0.0, _incline_hyp * 0.5)
+	inc_pivot.add_child(slope)
+	BeltBuilder.attach_film_field(slope, deck_width * 0.8, _incline_hyp, 0.05,
+		belt_speed, BeltBuilder.SNIPPER_BULK_KGM3)
 
 func _build_top_end_visual(inc_pivot: Node3D, steel: StandardMaterial3D, belt_mat: StandardMaterial3D, guard: StandardMaterial3D) -> void:
 	var hyp := _incline_hyp
@@ -235,9 +295,9 @@ func _build_top_end_visual(inc_pivot: Node3D, steel: StandardMaterial3D, belt_ma
 		add_child(tray)
 		for sx in [-1.0, 1.0]:
 			var gt := MeshInstance3D.new()
-			var gtm := BoxMesh.new(); gtm.size = Vector3(0.08, 0.30, top_flat_m)
+			var gtm := BoxMesh.new(); gtm.size = Vector3(0.08, guard_h, top_flat_m)
 			gt.mesh = gtm; gt.material_override = guard
-			gt.position = Vector3(sx * deck_width * 0.4, top_y + 0.18, top_z + top_flat_m * 0.5)
+			gt.position = Vector3(sx * deck_width * 0.4, top_y + 0.03 + guard_h * 0.5, top_z + top_flat_m * 0.5)
 			add_child(gt)
 	else:
 		# Drop snout at the top of the incline (where it dumps into the shredder).
@@ -288,9 +348,9 @@ func _build_incline_visual(steel: StandardMaterial3D, belt_mat: StandardMaterial
 	else:
 		for sx in [-1.0, 1.0]:
 			var g2 := MeshInstance3D.new()
-			var gm2 := BoxMesh.new(); gm2.size = Vector3(0.08, 0.30, hyp)
+			var gm2 := BoxMesh.new(); gm2.size = Vector3(0.08, guard_h, hyp)
 			g2.mesh = gm2; g2.material_override = guard
-			g2.position = Vector3(sx * deck_width * 0.4, 0.2, hyp * 0.5)
+			g2.position = Vector3(sx * deck_width * 0.4, 0.05 + guard_h * 0.5, hyp * 0.5)
 			inc_pivot.add_child(g2)
 	return inc_pivot
 
@@ -309,9 +369,9 @@ func _build_deck_visual(steel: StandardMaterial3D, belt_mat: StandardMaterial3D,
 	# Side guards along the deck
 	for sx in [-1.0, 1.0]:
 		var g := MeshInstance3D.new()
-		var gm := BoxMesh.new(); gm.size = Vector3(0.08, 0.30, deck_length)
+		var gm := BoxMesh.new(); gm.size = Vector3(0.08, guard_h, deck_length)
 		g.mesh = gm; g.material_override = guard
-		g.position = Vector3(sx * deck_width * 0.5, deck_height + 0.18, deck_length * 0.5)
+		g.position = Vector3(sx * deck_width * 0.5, deck_height + 0.03 + guard_h * 0.5, deck_length * 0.5)
 		add_child(g)
 	# Support legs under the deck
 	for sz in [0.2, 0.8]:

@@ -43,6 +43,10 @@ const PROTECT : Array[String] = [
 const BOOT_FRAMES : int = 120
 const OUT_DIR : String = "res://docs/plant/renders/"
 const STAMP : String = "2026_09_17"
+## Filename stamp for this run: STAMP, or the first user arg
+## (`… shot_line1_plan.tscn -- 2026_09_25_v10`), so a series of renders of
+## one day does not need the tool edited between runs.
+var _stamp : String = STAMP
 
 var _backups : Dictionary = {}
 var _world : Node3D = null
@@ -173,6 +177,10 @@ func _shoot_current_named(name_: String, cam: Camera3D) -> bool:
 
 func _ready() -> void:
 	print("=== shot_line1_plan — orthographic plan view of the BUILT line 1 ===")
+	var user_args : PackedStringArray = OS.get_cmdline_user_args()
+	if user_args.size() > 0 and String(user_args[0]) != "":
+		_stamp = String(user_args[0])
+	print("[SHOT] stamp %s" % _stamp)
 	if DisplayServer.get_name() == "headless":
 		print("FATAL: run WINDOWED — headless has no rendering device, every frame would be blank.")
 		get_tree().quit(2); return
@@ -212,6 +220,16 @@ func _ready() -> void:
 	# The real commit path, not a preview: this is what the operator triggers by
 	# placing Lijn 1, so the picture is of the object the sim actually runs.
 	bm.call("_build_full_line", "line_1", start, 0.0)
+	# The operator's placement path rebuilds LineFlow right after the macro
+	# (BuildMode, `_active_id.begins_with("line_")`), and the rebuild is what
+	# spawns the connectors: chutes, glijgoten and the blower ducts. Without it
+	# the render showed none of them (2026-09-25).
+	var lf_node : Node = bm.get("line_flow")
+	if lf_node != null and lf_node.has_method("rebuild"):
+		lf_node.rebuild()
+		print("[SHOT] LineFlow rebuilt: connectors spawned")
+	else:
+		print("[SHOT] WARN: no LineFlow on BuildMode — the render has no connectors")
 	await get_tree().process_frame
 
 	# Collect what the macro just placed. Same handle the conformance suite uses
@@ -227,6 +245,33 @@ func _ready() -> void:
 
 	var box : AABB = _visual_aabb(placed)
 	print("[SHOT] built visual AABB pos=%s size=%s" % [str(box.position), str(box.size)])
+	# A leg extend_machine_legs HID (its path to the floor hit something) is a
+	# machine standing on nothing, and a plan view cannot show it. Report each
+	# one with what its ray hits (2026-09-25: the tank's inlet cyclones lost
+	# theirs when the tank moved).
+	await get_tree().physics_frame
+	var space := (placed[0] as Node3D).get_world_3d().direct_space_state
+	var hidden_legs := 0
+	for n3 in placed:
+		var node := n3 as Node3D
+		for m in node.find_children("*", "MeshInstance3D", true, false):
+			var leg := m as MeshInstance3D
+			if leg == null or not leg.is_in_group("machine_leg") or leg.visible:
+				continue
+			hidden_legs += 1
+			var lp : Vector3 = leg.global_position
+			var q := PhysicsRayQueryParameters3D.create(
+				Vector3(lp.x, node.global_position.y + 0.05, lp.z), Vector3(lp.x, -0.05, lp.z))
+			if node is CollisionObject3D:
+				q.exclude = [(node as CollisionObject3D).get_rid()]
+			var hit := space.intersect_ray(q)
+			var what : String = "nothing now"
+			if not hit.is_empty():
+				var col := hit["collider"] as Node
+				what = "%s at y %.2f" % [str(col.get_path()) if col != null else "?", (hit["position"] as Vector3).y]
+			print("[SHOT] hidden leg: %s #%d at (%.2f, %.2f) -> %s" % [
+				String(node.get_meta("placeable_id", "")), int(node.get_meta("macro_index", -1)), lp.x, lp.z, what])
+	print("[SHOT] %d hidden machine leg(s)" % hidden_legs)
 	if not _orphan_parts.is_empty():
 		print("[SHOT] WARN: %d part(s) resolve >%.0f m from their own machine and were"
 			% [_orphan_parts.size(), PART_RADIUS_LIMIT_M])
@@ -265,11 +310,18 @@ func _ready() -> void:
 			"aabb_pos": [b.position.x, b.position.y, b.position.z],
 			"aabb_size": [b.size.x, b.size.y, b.size.z],
 		})
+		# The drum's walkway stair, measured on its own (the operator places it
+		# against the dewatering screw, 2026-09-25).
+		var fs : Node = node.find_child("FloorStair", true, false)
+		if fs != null and fs is Node3D:
+			var sb2 : AABB = _visual_aabb([fs])
+			(dump[dump.size() - 1] as Dictionary)["stair_aabb_pos"] = [sb2.position.x, sb2.position.y, sb2.position.z]
+			(dump[dump.size() - 1] as Dictionary)["stair_aabb_size"] = [sb2.size.x, sb2.size.y, sb2.size.z]
 	dump.sort_custom(func(a, c): return int(a["macro_index"]) < int(c["macro_index"]))
-	var jf := FileAccess.open(OUT_DIR + "shot_line1_plan_%s.json" % STAMP, FileAccess.WRITE)
+	var jf := FileAccess.open(OUT_DIR + "shot_line1_plan_%s.json" % _stamp, FileAccess.WRITE)
 	jf.store_string(JSON.stringify({"start": [start.x, start.y, start.z], "machines": dump}, "  "))
 	jf.close()
-	print("[SHOT] wrote %s" % ProjectSettings.globalize_path(OUT_DIR + "shot_line1_plan_%s.json" % STAMP))
+	print("[SHOT] wrote %s" % ProjectSettings.globalize_path(OUT_DIR + "shot_line1_plan_%s.json" % _stamp))
 
 	# Line 1 lives indoors, so the shell has to come off or the shot is of a roof,
 	# and the HUD covers a third of the frame. Both hidden for the capture only —
@@ -285,6 +337,14 @@ func _ready() -> void:
 			layer.visible = false
 			hud_hidden += 1
 	print("[SHOT] %d CanvasLayer(s) hidden" % hud_hidden)
+	# The overhead TL light fixtures hang at 4-10 m under the (hidden) roof. From
+	# straight above they read as thin diagonal bars across the floor plan, and
+	# the operator asked what those shapes were (2026-09-25). They are not floor
+	# equipment, so plan views leave them out.
+	var lights : Node = _world.find_child("OverheadLights", true, false)
+	if lights != null and lights is Node3D:
+		(lights as Node3D).visible = false
+		print("[SHOT] OverheadLights hidden for the capture (%d fixtures)" % lights.get_child_count())
 	await get_tree().process_frame
 
 	# In-game clock is 07:00 (Vroege dienst) — the world sun is barely up and the
@@ -308,7 +368,7 @@ func _ready() -> void:
 	# percent of horizontal margin costs five times as much dead floor.
 	var centre : Vector3 = box.position + box.size * 0.5
 	await _shoot_plan(cam, centre, box.size.x * 1.06,
-		"shot_line1_plan_full_%s.png" % STAMP)
+		"shot_line1_plan_full_%s.png" % _stamp)
 
 	# ── head: the corrected feeder -> Westa -> shredder corner ──────────────
 	# The 2026-09-16 fold correction is entirely in these three machines, and at
@@ -318,7 +378,7 @@ func _ready() -> void:
 	for n3 in placed:
 		var node := n3 as Node3D
 		if String(node.get_meta("placeable_id", "")) in [
-				"opzetband_1", "westa_band_1", "shredder_1", "transport_belt"]:
+				"opzetband_1", "westa_band_1", "shredder_1", "transport_belt", "uitvoerband_1"]:
 			head.append(node)
 	if head.is_empty():
 		print("[SHOT] WARN: no head machines found — skipping the head shot")
@@ -328,7 +388,7 @@ func _ready() -> void:
 		var hc : Vector3 = hb.position + hb.size * 0.5
 		print("[SHOT] head AABB pos=%s size=%s" % [str(hb.position), str(hb.size)])
 		await _shoot_plan(cam, hc, maxf(hb.size.x, hb.size.z * 1.78) * 1.30,
-			"shot_line1_plan_head_%s.png" % STAMP)
+			"shot_line1_plan_head_%s.png" % _stamp)
 
 	# ── elevation: the overband magnet over the uitvoerband ─────────────────
 	# A plan view cannot show a HEIGHT, and the 2026-09-17 change is entirely a
@@ -340,10 +400,11 @@ func _ready() -> void:
 	var belts : Array = []
 	for n3 in placed:
 		var node := n3 as Node3D
+		# Line 1's cross-belt magnet over uitvoerband_1 since 2026-09-25.
 		match String(node.get_meta("placeable_id", "")):
-			"overband_magnet":
+			"overband_magnet", "overband_magnet_l1":
 				magnet = node
-			"transport_belt":
+			"transport_belt", "uitvoerband_1":
 				belts.append(node)
 	# Resolve the uitvoerband AFTER the walk — it is whichever belt the magnet
 	# straddles, and picking it inside the loop would depend on whether the
@@ -415,11 +476,97 @@ func _ready() -> void:
 		fill.rotation_degrees = Vector3(-18.0, 0.0, 0.0)   # shines along -Z, slightly down
 		cam.make_current()
 		print("[SHOT] elevation AABB pos=%s size=%s" % [str(eb.position), str(eb.size)])
-		await _shoot_current_named("shot_line1_elevation_magnet_%s.png" % STAMP, cam)
+		await _shoot_current_named("shot_line1_elevation_magnet_%s.png" % _stamp, cam)
 		for vi in saved_layers:
 			(vi as VisualInstance3D).layers = saved_layers[vi]
 		cam.cull_mask = 0xFFFFF
 		fill.queue_free()
+
+	# ── wet street: drum → scheidingsgoot → friction/dryer pairs → blowers → mill ─
+	# Added 2026-09-25 for the operator's "flush" corrections to this stretch. A
+	# plan view, and a side view along the flow, isolated on a private layer like
+	# the magnet elevation above but by REGION: every visual whose centre lies in
+	# the stretch's box, so LineFlow's connectors (the glijgoot chutes, the ducts)
+	# are in the frame too.
+	var street : Array = []
+	var i_drum := -1
+	var i_mill := -1
+	for n3 in placed:
+		var node := n3 as Node3D
+		var pid := String(node.get_meta("placeable_id", ""))
+		var mi_ := int(node.get_meta("macro_index", -1))
+		if pid == "vw_trommel":
+			i_drum = mi_
+		elif pid == "mill" and (i_mill < 0 or mi_ < i_mill):
+			i_mill = mi_
+	var drum : Node3D = null
+	for n3 in placed:
+		var node := n3 as Node3D
+		var mi_ := int(node.get_meta("macro_index", -1))
+		if i_drum >= 0 and i_mill >= 0 and mi_ >= i_drum and mi_ <= i_mill:
+			street.append(node)
+			if mi_ == i_drum:
+				drum = node
+	if street.is_empty() or drum == null:
+		print("[SHOT] WARN: no drum..mill stretch found — skipping the wet-street shots")
+		_fails += 1
+	else:
+		var sb : AABB = _visual_aabb(street)
+		var sc : Vector3 = sb.position + sb.size * 0.5
+		print("[SHOT] wet street AABB pos=%s size=%s (%d machines)" % [str(sb.position), str(sb.size), street.size()])
+		cam.cull_mask = 0xFFFFF
+		await _shoot_plan(cam, sc, maxf(sb.size.x, sb.size.z * 1.78) * 1.12,
+			"shot_line1_plan_wetstreet_%s.png" % _stamp)
+		# Side view: look across the flow, from the drum's walkway side.
+		var fwd : Vector3 = drum.global_transform.basis.z
+		fwd.y = 0.0
+		fwd = fwd.normalized()
+		var side : Vector3 = Vector3(-fwd.z, 0.0, fwd.x)
+		const SIDE_LAYER : int = 1 << 18
+		# The stretch's own machines, plus LineFlow's connectors (the chutes and
+		# ducts between them) inside its box. A plain region test also pulled in
+		# the tank and its screws behind the street.
+		var region : AABB = sb.grow(0.5)
+		var saved : Dictionary = {}
+		var candidates : Array = []
+		for node in street:
+			candidates.append_array((node as Node).find_children("*", "VisualInstance3D", true, false))
+		var conns : Node = _world.find_child("Connectors", true, false)
+		if conns != null:
+			for m in conns.find_children("*", "VisualInstance3D", true, false):
+				var cvi := m as VisualInstance3D
+				var cwb : AABB = cvi.global_transform * cvi.get_aabb()
+				if region.has_point(cwb.position + cwb.size * 0.5):
+					candidates.append(cvi)
+		for m in candidates:
+			var vi := m as VisualInstance3D
+			if vi == null or vi is Light3D or not vi.is_visible_in_tree():
+				continue
+			saved[vi] = vi.layers
+			vi.layers = SIDE_LAYER
+		var side_fill := DirectionalLight3D.new()
+		side_fill.light_energy = 2.4
+		side_fill.shadow_enabled = false
+		side_fill.layers = SIDE_LAYER
+		add_child(side_fill)
+		side_fill.global_transform = Transform3D(
+			Basis(Vector3.UP.cross(side).normalized(), Vector3.UP, side).rotated(
+				Vector3.UP.cross(side).normalized(), deg_to_rad(-18.0)), sc)
+		cam.projection = Camera3D.PROJECTION_ORTHOGONAL
+		cam.keep_aspect = Camera3D.KEEP_WIDTH
+		var along : float = absf(sb.size.x * fwd.x) + absf(sb.size.z * fwd.z)
+		cam.size = maxf(along, sb.size.y * 1.78) * 1.08
+		cam.global_transform = Transform3D(
+			Basis(Vector3.UP.cross(side).normalized(), Vector3.UP, side),
+			Vector3(sc.x, sb.position.y + sb.size.y * 0.5, sc.z) + side * 60.0)
+		cam.cull_mask = SIDE_LAYER
+		cam.make_current()
+		print("[SHOT] wet street side view: %d visual(s) on a private layer" % saved.size())
+		await _shoot_current_named("shot_line1_side_wetstreet_%s.png" % _stamp, cam)
+		for vi in saved:
+			(vi as VisualInstance3D).layers = saved[vi]
+		cam.cull_mask = 0xFFFFF
+		side_fill.queue_free()
 
 	print("\n=========================================")
 	print("Result: %s (%d fail)" % ["PASS" if _fails == 0 else "FAIL", _fails])

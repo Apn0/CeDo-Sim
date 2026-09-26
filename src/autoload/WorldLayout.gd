@@ -317,9 +317,28 @@ func _has_any_rd_marker() -> bool:
 			if c is Vector3 and _is_rd_scale(c): return true
 	return false
 
+## The world layout an exported build carries (the Steam build). The build
+## script copies the operator's world_layout.json here at export time
+## (tools/steam/build_windows.sh); steam_seed/ is gitignored.
+const SEED_PATH := "res://steam_seed/world_layout.json"
+
+## Exported builds only. A player's first launch has no world_layout.json, and
+## without one the world has no building, gate or spawns (measured 2026-09-26,
+## docs/steam/README.md). Writes the layout the build carries to user:// once;
+## after that the player's own file rules. The editor and every suite never
+## take this path, so a missing layout there still means "not configured".
+func _seed_from_build(path: String) -> bool:
+	if OS.has_feature("editor") or path != LAYOUT_PATH:
+		return false
+	var text := FileAccess.get_file_as_string(SEED_PATH)
+	if text.is_empty() or AtomicFile.write_text(path, text) != OK:
+		return false
+	print("[WorldLayout] first launch: seeded %s from the layout this build carries" % path)
+	return true
+
 func _load() -> void:
 	var path := get_layout_path()
-	if not AtomicFile.exists_any(path):
+	if not AtomicFile.exists_any(path) and not _seed_from_build(path):
 		return
 	# Recovering read. A truncated or empty primary (what a kill mid-save used to
 	# leave behind) falls back to the .tmp / .bak generation instead of being

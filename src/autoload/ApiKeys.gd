@@ -54,7 +54,12 @@ func _ready() -> void:
 ## user://api_keys.cfg, and from then on the cfg is authoritative. We never read
 ## Desktop again — that keeps the secret in user-only writable space and prevents
 ## accidental commits.
+##
+## Editor builds only. An exported game (the Steam build) runs on other people's
+## machines, and a game has no business opening a file on a player's Desktop.
 func _bootstrap_from_env() -> void:
+	if not _env_bootstrap_allowed():
+		return
 	var env_path : String = _desktop_env_path()
 	if env_path.is_empty() or not FileAccess.file_exists(env_path):
 		return
@@ -86,6 +91,9 @@ func _bootstrap_from_env() -> void:
 ## username), falling back to the home dir via USERPROFILE (Windows) or HOME
 ## (macOS/Linux). Returns "" when no home can be determined — caller skips the
 ## bootstrap and the cfg simply stays empty (graceful no-cloud fallback).
+func _env_bootstrap_allowed() -> bool:
+	return OS.has_feature("editor")
+
 func _desktop_env_path() -> String:
 	var desktop : String = OS.get_system_dir(OS.SYSTEM_DIR_DESKTOP)
 	if desktop.is_empty():

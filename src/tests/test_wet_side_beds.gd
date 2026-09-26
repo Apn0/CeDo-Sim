@@ -7,8 +7,8 @@ extends Node
 ##
 ## B — geometry read off UNMERGED builds (the catalog's own _m_* on a bare
 ##     Node3D): the Kufferath deck descends toward its outlet and carries one
-##     bed; the scheidingsgoot carries a bed in each of its five segments, all
-##     downhill; the dewatering screw builds both its closed tube and the open
+##     bed; the scheidingsgoot carries a bed in each of its three segments
+##     (stem + two legs since the 2026-09-25 rebuild), all downhill; the dewatering screw builds both its closed tube and the open
 ##     trough (closed by default, switchable); the bunker and doseersilo beds.
 ## P — the production path: build_node + StaticMerge keep every bed.
 ## G — the graph decides which screw troughs open: a flotation-fed one opens,
@@ -79,7 +79,9 @@ func _run() -> void:
 	var sg := _build_unmerged("scheidingsgoot")
 	await get_tree().process_frame
 	var sg_f := _fields(sg)
-	_check(sg_f.size() == 5, "B2 scheidingsgoot: a bed in each of the 5 segments — stem, 2 branches, 2 run-outs (%d)" % sg_f.size())
+	# 2026-09-25 (operator): stem from under the drum's lip, a splitter, and one
+	# leg out of each side into a friction separator's hopper: three segments.
+	_check(sg_f.size() == 3, "B2 scheidingsgoot: a bed in each of the 3 segments — stem and 2 legs (%d)" % sg_f.size())
 	var downhill := 0
 	for f in sg_f:
 		if (f as Node3D).global_transform.basis.z.y < -0.2:
@@ -118,7 +120,7 @@ func _run() -> void:
 	for n in [kf, sg, dw, bk, ds]:
 		n.queue_free()
 	# ── P production path ──
-	for pair in [["kufferath_sieve", 1], ["scheidingsgoot", 5], ["dewater_screw", 1], ["bunker", 1], ["doseersilo", 1]]:
+	for pair in [["kufferath_sieve", 1], ["scheidingsgoot", 3], ["dewater_screw", 1], ["bunker", 1], ["doseersilo", 1]]:
 		var body : Node3D = PlaceableCatalog.build_node(String(pair[0]), false)
 		add_child(body)
 		await get_tree().process_frame
@@ -204,7 +206,8 @@ func _run() -> void:
 	var watched : Array = []
 	for nd in nodes:
 		var id := String(nd.get("id", ""))
-		if id in ["kufferath_sieve", "scheidingsgoot", "dewater_screw"]:
+		# Line 1's screw is its own 6 m `dewater_screw_l1` since 2026-09-25.
+		if id in ["kufferath_sieve", "scheidingsgoot", "dewater_screw", "dewater_screw_l1"]:
 			watched.append({"nd": nd, "id": id, "max_depth": 0.0, "moist": 0.0, "tint": 1.0, "views": (nd.get("views", []) as Array).size()})
 	_check(watched.size() == 4, "L0 line 1 carries 2 Kufferath sieves, the scheidingsgoot and a dewatering screw (%d watched)" % watched.size())
 	var goot_views := 0
@@ -212,9 +215,9 @@ func _run() -> void:
 	for w0 in watched:
 		if w0["id"] == "scheidingsgoot":
 			goot_views = int(w0["views"])
-		if w0["id"] == "dewater_screw":
+		if w0["id"] == "dewater_screw" or w0["id"] == "dewater_screw_l1":
 			dw_open_l1 = bool(((w0["nd"] as Dictionary).get("node") as Node).get_meta("dewater_open", false))
-	_check(goot_views == 5, "L0 LineFlow sees all 5 goot beds (views = %d)" % goot_views)
+	_check(goot_views == 3, "L0 LineFlow sees all 3 goot beds (views = %d)" % goot_views)
 	_check(dw_open_l1, "L0 line 1's dewatering screw (after the flotation tank) is OPEN")
 	var bale : Node3D = PlaceableCatalog.build_node("rotterdam", false)
 	add_child(bale)

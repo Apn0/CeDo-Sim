@@ -503,6 +503,9 @@ answered the wrong question. Asked again with the correction:
 machine's saved state, so it is its own task. Until then a load starts cold and
 every extruder is OFF with default settings.
 
+**Built the same day, as that task: §R1-§R4 below** (resume on load; how a NEW
+save starts is deferred by him there).
+
 ## I13. The feed stop's restart, and line 1
 
 - **3A/3B:** *"If it's a hundred or more, it will stop"*, at once. The restart
@@ -766,3 +769,448 @@ almost every object has one F action and, if it can be carried, one E action.
 - **Automaat / hand mode per panel or per machine.** Today it lives on the
   one shared overlay (`HmiOverlay.gd:206-209`). In the plant it is the PLC's
   state, so two panels showing one machine should agree. INFERRED; to confirm.
+
+---
+
+# Resume on load — sixth session, same day
+
+Source: Arno's request of 2026-09-25, relayed to the Claude session as a written
+brief (worktree `unruffled-keller-219387`), then one AskUserQuestion round. The
+request was first recorded in §I12 (fourth session), which set it aside as its
+own task; this is that task. The request is a **recollection of how shifts
+work, not a document** and is labelled **CLAIMED**. The answers are design choices, so they are rulings. What was
+measured before and after is in `docs/audit/plant_resume_2026-09-25.md`.
+
+## R1. The request (CLAIMED — operator recollection)
+
+*"During normal gameplay or during normal shifts, I would like the state to be as
+it was at the end of the shift before. The problem we are having now is if I start
+a new save, there is no previous shift."* And: *"it is unrealistic that at the five
+shift operation you will arrive at work and every time the extruder is cold nothing
+is running ... it should always be running, always be ready to run."*
+
+For a NEW save he offered two options: (1) a cold start once, going through every
+line setting realistic parameters, saved as the template for any new save; (2) seed
+the HMI values from the live values in the captured HMI photos instead of the
+zeros he put in the mockups deliberately.
+
+**Measured before (VERIFIED, `src/tests/probe_resume_baseline.gd`):** line 3B
+running (25 of 25 LineFlow nodes powered, extruder RUNNING at 80 rpm, zone 3 at
+205 °C, the compactorband in HAND at 70 %, 7 kg in the pipes) reloaded as 0 powered,
+extruder OFF and cooling 0.5 °C/s, rpm setpoint 60, every zone 215 °C, no HAND, 0 kg
+anywhere. Nothing of LineFlow's or the extruder's run state was in the save.
+
+## R2. The answers
+
+| question | answer | what it means for the build |
+|---|---|---|
+| When you load a save, what comes back exactly as you left it? (multi-select: run state / your settings / material in the line / faults and alarms) | **All four.** | Every placed machine comes back in its saved state: which machines run, each extruder's state and melt, where its start sequence was; the rpm and zone setpoints, suction, the natraject switch, HAND / manual / rpm % / per-component rpm; the kg in every machine, silo and pipe, plus the shift's kg ledger; trips, chokes, the e-stop and alarms not yet reset come back latched and reset as before. |
+| How should a NEW save start? | **Free text, summarised; key sentences verbatim.** The empty new save is the pre-alpha stage: *"we are building the things needed to create the state that we want to achieve."* Once the plant is laid out, a new save *"should start with the factory built as it was in a snapshot of time"*, pre-placed like Farming Simulator. Whether that first shift starts cold (learning the start-up) or as a hand-over (*"probably slow running, clogged filters, blocked gutters"*) *"depends I can't tell you now"*; first get lines 1, 3A/3B, the sorting line and the transport conveyors working. Also: the Tab build menu *"will not be in the final version. At least not for anyone but me."* | **Deferred, nothing built.** Neither the template save (option 1) nor photo-seeded values (option 2) are built now. The final new save is a pre-placed snapshot of the plant (his vision). Its starting condition is decided later. The HMI mockups' zeros stay (`test_hmi_screen_zeroing`). |
+| What should a machine placed NEW in build mode do? | **"Cold as today"**, with: *"This will not be the final simulator gameplay mechanics. This is just our suffering for now, until the factory is built."* | A machine placed new starts exactly as before (an extruder handed over hot but OFF, cooling). Only a LOADED save resumes. |
+
+## R3. What this replaces
+
+- **The 2026-07-08 "cold start on load" decision** (`MainWorld._spawn_world_items`).
+  A loaded save no longer starts cold. It is also not the old warm boot, which
+  started the WHOLE line on every load (`LineFlow.force_all_powered()`,
+  commissioned or not). Each machine comes back as it was saved: a stopped line
+  comes back stopped.
+- **§E2's "The model does not save the setpoint, so a reloaded world starts at 60
+  too."** The setpoint is saved now, so a reloaded extruder keeps the rpm the
+  operator left. A NEW extruder still starts at 60 (§E2 unchanged for that).
+
+## R4. Built, and not built
+
+Built: `src/sim/PlantResume.gd`. Per-body state rides in its own factory entry
+(`"run"`), the line's in a `plant_run` entry, and `MainWorld._resume_plant()`
+applies them after LineFlow's rebuild and the shift clock's load. Guard:
+`test_plant_resume` (in `run.sh`).
+
+Not built (the audit doc §6 has the list): the new-save template or seeding (R2,
+deferred). Bales on the feed points and on the opzetband, vehicles' loads, crew
+activity, gates' positions, the vacuum-pot mini-game mid-way, the HMI screens'
+own session state (the page shown, KWITTEREN acknowledgements), dirt hotspots.
+
+---
+
+# Line 1's wet tail — seventh session, same day (the fold after the mill)
+
+Source: Arno, answering AskUserQuestion prompts on 2026-09-25 in the session of
+worktree `clever-hypatia-945f15` (branch `claude/line1-layout-2026-09-25`). These
+are **recollections** (CLAIMED), not documents or photos. The archived drawing
+`docs/plant/photos/line1_washing_flow_sketch_2026-08-28.png` agrees with them
+in plan: two screws into the tank's end wall from two cyclones outside it, the
+dewatering screw at the other end at 90°, an "L-R friction separator" across it,
+two Kufferaths side by side in front of it.
+
+He was asked which is wrong, the shell or line 1's layout, because line 1 fits
+nowhere inside the 3D shell (`docs/audit/building_frame_2026-09-25.md` §7). He
+answered with the layout, and asked to see the top-down view again once built.
+Shown first: `docs/plant/renders/line1_wet_tail_as_built_2026_09_25.png` and
+`shot_line1_plan_annotated_2026_09_25.png` (the line as it was on `main`).
+
+## L1. The intake screws into the flotation tank (line 1 only)
+
+**His words:** "those screws in real life would be going from the bottom of the
+cyclone at a 30 degree angle downwards into the flotation tank. So part of it
+would be outside of the tank, and then at some point it crosses the outer wall.
+And then it goes in like 50 centimeters and then it exits into the water … the
+bottom of the cyclone, which would be the top of the screw, would be above the
+water level. And the total length of such a screw would be like two meters,
+maybe one and a half meter." Asked to confirm the rule, he picked "Yes most of
+your rule is correct but it's **only the rule for line one**, not for the other
+lines." (The question put the cyclones "right beside the tank's inlet end".
+Which part of the rule was not correct was not said.)
+
+**Built:** `intrekschroef` (new catalog id, line 1 only): 1.75 m tube at 30°
+down, inlet under the cyclone, discharge 0.5 m inside the tank's end rim just
+above the water (4.05 m; water 4.0, rim 4.1). The cyclones stand just outside
+the inlet end wall. Before: two 4.6 m flat `transport_screw`s ending 2–6 m
+outside the tank.
+
+## L2. Tank → dewatering screw: a 90° LEFT turn
+
+**His words:** "after the flotation tank at the end to the dewatering screw is a
+90 degree left turn". Confirmed: "the dewatering screw runs perpendicular to the
+tank and turns left relative to the tank's direction of travel and also it
+sticks out on the output side of the dewatering screw about 1.5 meters", then,
+restating it, "sticking out one meter to the left of the material flow inside
+the flotation tank". **Two figures, 1.5 m and 1 m; the later one (1.0 m) is
+built.**
+
+**First build:** the fold's +90 moved from the friction separator to the
+dewatering screw, laid across the tank's discharge end, 1.0 m past its left side.
+
+**Corrected from the top-down view (same day):** "the flotation tank and the
+dewatering screw should not be overlapping … line up the left bottom corner of
+the dewatering screw with the right bottom corner of the flotation tank and also
+make the dewatering screw so that it is 1.5 meters sticking out compared to the
+right top of the flotation tank and the left top of the dewatering screw." So
+the screw stands BESIDE the tank's discharge end, its low end flush with the
+tank's right side, its high end 1.5 m past the left side: 4.5 + 1.5 = **6.0 m**,
+a line-1 variant (`dewater_screw_l1`, same model). Measured on the built line:
+screw edge to tank end face 0.000 m, low end to tank side 0.000 m, high end past
+the other side 1.500 m.
+
+## L3. One L-R friction separator, two outlets, two Kufferaths
+
+**His words:** "one separator; material enters in the middle on the back side
+basically, then the screw that is rotating rapidly in there basically is
+designed for [it]: the material that reaches the right side goes to the right,
+material that reaches the left half goes to the left, so it's one separator
+with two outputs, basically like a splitter … on the front side on the far left
+and far right, that is where the material comes out of and goes into the
+Kufferath." Earlier: the left exit is "a 90 degree right turn into the
+Kufferath", the right exit "a 90 degree left turn". Asked how many Kufferaths:
+**"Two sieves, one per outlet"**, and "each output of it has a separate
+Kufferath and a separate MAS bak". Consistent with round 7 of 2026-09-24 ("one
+separator feeds both sieves").
+
+**Built:** `friction_sep_lr` (new catalog id, used by line 1 only): one housing
+across the flow, hopper in the middle of its back, a spout at each far end of
+its front. First build: the two Kufferaths inward of the spouts (x ±1.1 against
+spouts at ±1.70).
+
+**Corrected from the top-down view (same day):** "put those Kufferath machines
+spaced out a bit wider, there should be about 1.5 meters of space between them,
+so from the top right of the left one to the top left of the right one should be
+1.5 meter distance horizontally, and then the center of the left Kufferath has
+to line up with the center of the left MAS bak, and same centering for the right
+side." Built: sieves and MAS baks at x ±1.65 (0.75 + half a 1.8 m sieve).
+Measured: clear gap 1.500 m, sieve-to-bak centre offset 0.000 m both sides.
+Asked next about the MAS dryers and blowers (still at ±2.5 / ±2.0): **"Also
+centre the dryers."** Built: droger and blower at ±1.65 too; measured, all four
+machines of each train on one line.
+
+## L4. The Westa band and the shredder (line 1's head)
+
+**His words, looking at the top-down render:** "the opzetband, it's okay; then
+there is the Westa band, it is one meter too long; then also the shredder is too
+far down on the image, it should be translated upwards so that the Westa band,
+at the very top where it ends, sticks into the shredder hopper about 30
+centimeters, because currently the material would fall next to the shredder."
+
+**Built:** `PlaceableCatalog.WESTA_BAND_1_SHORTEN_M` = 1.0 m off the climb in
+plan (same 30°, same inlet height; its run 5.757 → 4.757 m), and the shredder
+moved up the leg so the lip ends `SHREDDER_1_HOPPER_OVERLAP_M` = 0.3 m inside the
+hopper's flared collar (LINE_1_SEQ gap 0.957 → 2.257; the shredder and every
+machine after it move 1.30 m). Measured with `dump_line1_head`: lip 0.300 m
+inside the collar edge.
+
+**Found, not his figure:** at 30° that lip was 7.37 m high, the hopper rim 9.0 m
+(the 9 m `shredder_1` model's collar); before the change it was 7.95 m, over the
+shredder's centre. So the band ended inside the hopper's side wall either way,
+which the top-down view cannot show
+(`docs/plant/renders/line1_head_side_view_2026_09_25.png`). Asked which is
+wrong (the shredder's height, or the band's climb), he picked **"Westa should
+climb steeper"**. Built: the plan run is now the given number
+(`WESTA_BAND_1_RUN_M` = 4.757 m) and the lip clears the rim by one transfer drop;
+the angle follows, **44.49°** (supersedes his 30° of 2026-09-17). Measured: lip
+9.30 m, 0.300 m inside the collar edge
+(`line1_head_side_view_v6_2026_09_25.png`).
+
+## L5. The uitvoerband under shredder 1
+
+**His words, from the top-down view:** the output conveyor "is going from bottom
+to top while the rotors are going from left to right, so the material will be
+falling from left to right where the rotors are, with a bit of spread … so that
+conveyor should be going from right to left, starting with the center of the
+conveyor aligned with the center of the two rotors, 10 centimeters to the right
+of the rotors … then the length of the rotors, underneath which the conveyor is
+as well, and then the conveyor extends from the end of the rotors to the left
+further, 2.5 meters … it is a single conveyor, it runs from underneath the
+shredder horizontally, then after it exits the shredder at a distance of 30
+centimeters it goes in a slight incline upwards, about 20 degrees." Restated
+back and confirmed ("Yes, that's it"), including that the shredder's own
+bottom-to-top conveyor goes on line 1.
+
+**Magnet:** "Over the climb, level" (25 cm above the deck at its closest point).
+
+**What it discharges onto:** the receiving belt's centre, along the flow, at
+"the center of the spread" of the material: "what is the speed of the conveyor,
+what is the drop … using standard deviation, what is the minimum distance and the
+maximum distance". Across, its tail "starting 30 centimeters before" the
+uitvoerband's edge "as a safe zone".
+
+**Built:**
+- `uitvoerband_1` (new id, feed-belt model): 4.12 m flat at 0.956 m, 1.87 m at
+  20°, a 5 cm tray; 6.04 m in plan; lip at 1.64 m; 0.15 m skirt boards (a new
+  `guard_h` on the feed belt, 0.30 m everywhere else); 1.0 m/s, the speed of
+  the transport belt it replaces.
+- `shredder_1` on line 1 loses its built-in conveyor
+  (`{"no_discharge_conveyor": true}`, re-applied when a saved line reloads);
+  the same shredder on 3A/3B and 3C/6 keeps it.
+- The receiving belt: centred 0.450 m past the discharge end, the mean throw
+  from `tools/audit/line1_uitvoerband_throw.py` (1.0 m/s, 0.962 m drop, leaving
+  at 20°, no air drag, so the particle mass cancels; ±2σ 0.262–0.650 m with an
+  ASSUMED speed σ of 20 %); its tail 0.8 m across from the uitvoerband's
+  centre line.
+- The magnet, first build: level, lowest part 0.25 m over the lip, its 3.0 m
+  length ALONG the uitvoerband. That put its scrap skip (the ContainerGuide
+  marker) on top of the receiving belt. Asked about it, he corrected the magnet
+  itself: it is a CROSS-belt magnet, "situated at about 75% the length of the
+  outgoing belt from the shredder, starting at 0% on the right … that is
+  basically the center line for the magnet", with the container on the bottom
+  side of the image, the magnet belt's "underside moving in the direction of
+  the bottom of the image, towards the skip and container below it". Built as
+  `overband_magnet_l1` (line 1 only; the sort line's two magnets keep the shared
+  model): the same magnet turned so its own belt runs ACROSS the uitvoerband,
+  the scrap chute moved to the end the underside runs toward (its drums already
+  turn that way), the skip slot under that end. Centre at 75.0 % of the 6.04 m
+  (4.53 m from the right end), level, y 0.30: its lowest part over the belt
+  0.25 m above the highest deck under it. Its near legs stand 0.04 m clear of
+  the shredder's chamber wall (0.01 m of its base plates).
+- **Corrected from the next render:** "the magnet 75% line was wrong, I
+  miscalculated … take the coordinates of the top right of [the receiving belt],
+  take the coordinates of the top left of the shredder, find out horizontally
+  the center and use that as the center line for the magnet … and then also
+  move the magnet towards the top of the image about 20 centimeters". And: "line
+  up … the conveyor to which the output conveyor discharges with the conveyor
+  after it, like a seamless transition between those, and move the rest of the
+  line that follows accordingly so that all links up again." Built: magnet
+  centre on the midpoint of the receiving belt's right edge and the shredder's
+  hopper-collar face, 0.20 m toward the top, raised to keep 0.25 m over the
+  deck under it (y 0.48); the receiving belt's discharge end on the drum-feed
+  belt's tail, on one centre line, its deck 0.75 m, 5 cm above the drum-feed
+  inlet (y 0.075). The mean throw was recomputed for that deck (0.887 m drop:
+  0.434 m, ±2σ 0.252–0.627 m). Measured: magnet centre 0.000 m off the
+  midpoint, 0.200 m toward the top; both belts centred on x −161.411; every
+  machine from the drum-feed belt to the voorraad silo moved as one block,
+  4.40 m toward the top (and 0.016 m sideways, the throw's change).
+
+**Measured on the built line:** tail 0.100 m past the rotors' right end, end
+2.500 m past their left end, centred on the rotor gap (0.000 m); receiving belt
+centre 0.450 m past the end; its tail 0.29 m past the uitvoerband's guard edge
+(0.33 m past its deck edge); magnet legs 0.10 m clear of the receiving belt and
+0.62 m clear of the shredder.
+
+## L6. The drum's stair, the wet street, and every pneumatic pipe
+
+**His words, from the full render:** "the walkway next to the rotating drum is
+oriented correctly. But the stairs currently seem to have their lowest step on
+the right side of the image and the highest on the left. The highest point of
+the stairs should sit on the right upward side of the walkway and the bottom
+stair would be upwards of that, so it has to do a 90 degree turn." Then: "after
+the drum that very next component needs to sit flush with the end of the drum,
+and then the friction separators and mechanical dryers have to sit flush against
+each other, and the friction separators have to sit flush against the right and
+left side … to the component after the drum. And lastly for now, the blowers are
+sitting slightly off center outwards from the mechanical dryer on the floor and
+the motor is pointing outwards, so you have to flip one of the two blowers 180
+degrees. Then for the pipelines, please use round smoothly curved pipelines for
+the connections between the blowers and the cyclones, not only here but
+everywhere in the CeDo simulator." He also asked what the "several thin
+rectangles … going from the bottom right to the top left" in the renders are.
+
+Asked (AskUserQuestion, with a side view showing the goot back to front):
+- the goot: **"Yes, rebuild it that way"**: starts right under the drum's
+  discharge, splits in two, each leg slopes down sideways into the inlet hopper
+  of the friction separator beside it;
+- "flush against each other": **"End to end, per side"**;
+- how far outward the blowers stand: **"so that there is 30cm space between the
+  output-chute of the dryer and the blower encasing"**;
+- the dryer→blower duct (an L with a sharp corner): **"Curve those too"**.
+
+**Built and measured** (revisions v10/v11 of `shot_line1_plan`, archived, and
+its new wet-street plan and side views; the side view that showed the goot back
+to front is `shot_line1_side_wetstreet_2026_09_25_v9b.png`):
+- The thin rectangles are the overhead TL light fixtures (1.7 m, 9.6 m up, along
+  the halls). Their projected positions matched the five in the first full render
+  to a few pixels. Plan renders now hide them.
+- **Stair:** its top at the walkway's upstream end on the outer side,
+  descending away from the drum. It was also built from the model's floor, so on
+  the lifted drum (VW_TROMMEL_LIFT_M) it hung 2.5 m up; it now hangs from the
+  walkway and `extend_machine_legs` rebuilds it to the real floor (17 steps,
+  4.6 m). The walkway's own legs reach the floor too. The outer railing opens
+  where the stair lands; a railing closes the upstream end instead.
+- **Scheidingsgoot:** found BACK TO FRONT (its high inlet at the far end,
+  draining toward the drum, 1.2 m under the drum's lip). Rebuilt: inlet under
+  the lip, flush against the drum shell's end (0.000 m), a 12° stem, two legs
+  (28°) sideways over the separators' hoppers. His 2026-08-28 angles (30°, then
+  60°) fall 1.37 m; only 0.59 m is left since the drum was lifted.
+- **Separators:** flush against the goot's sides (0.000 m), their upstream ends
+  at the drum's discharge-hood end. The right-hand one is mirrored so its motor
+  stands outside, not in the goot.
+- **Dryers:** each starts where its separator ends (0.000 m), same centre line.
+- **Blowers:** each housing 0.300 m clear of its dryer's air-outlet stub (the
+  "output chute" read as the stub the blower's suction connects to, the one
+  part of the dryer that sticks out of its end), against the dryer's skid end;
+  the left one turned 180° (both motors outward).
+- **Pipes:** every blower→anything, cyclone→blower and dryer→blower duct is a
+  round tube swept along a smooth curve, leaving the blower upward and arriving
+  in the cyclone's inlet box or the blower's inlet eye.
+- Everything after the blowers moved 5.57 m upstream with them.
+
+**The friction separator's slope.** The side view showed its housing high at the
+inlet (the goot's end) and low at the dryer, with its inlet hopper buried inside
+the housing. Asked, he picked **"Low at inlet, rising"**, on every line (the
+model is shared with 3B/3C). Built: `_m_friction`'s tube is tipped the other
+way (it was the `PI/2 + tilt` sign mistake `_m_transport_screw` records), its
+legs follow the rising underside; the hopper stands 0.38 m proud of the housing
+and the goot's legs end 0.08 m above it.
+
+## L7. The shared walkway, the tank beside the separators, the mill, J pipes
+
+**His words, from revision 12:** "the walkway from the washing drum is actually
+shared with the one from the flotation tank. So first step, remove the stairs and
+walkway from the flotation tank. Second step, move the flotation tank so that
+where the walkway used to be lines up perfectly with the walkway from the
+washing drum. The walkway from the washing drum currently has very thin stairs,
+I think. Make it wider towards the right of the image. And then lastly, with the
+flotation tank placed at the new location: leftmost point of flotation tank to
+rightmost point of mill: 6 meters. Center line vertically … line it up with the
+mill. Move the mill up so that the center line of the mill lines up with the
+flotation tank center line at the new location. Adjust the piping." And: the
+pipes from the dryers' blowers "are entering the cyclones about halfway. Should be
+about 85% up. And the curvature … looks more like parentheses. It should look
+more like the letter J." (The transcript read "Leftmost point of flotation tank:
+2. Rightmost point of mill: 6 meters"; read as "to".)
+
+**Built and measured** (revision v14 of `shot_line1_plan`, archived):
+- The tank's own catwalk, posts and stair come off on line 1
+  (`{"no_catwalk": true}`, re-applied on reload); the same tank elsewhere keeps
+  them.
+- Tank moved: its former catwalk's centre line on the drum walkway's centre line
+  (measured 0.000 m). Lining up the tank-facing edges instead would have stood
+  the tank's legs 0.07 m into the right-hand dryer's skid; it clears the dryer by
+  0.049 m. It now lies north of the separators and dryers, its discharge end
+  level with the drum's end.
+- Tank's west end 6.000 m from the mill's east end (measured). Its westmost
+  point is its box face (4.5 m from its centre), not the rim (4.32).
+- Mill on the tank's centre line (0.000 m), moved 4.905 m north with its two
+  cyclones and two blowers. A new SEQ key, `shift_x`, moves a main-line machine
+  sideways without turning it into a branch, so the mill still merges and splits
+  the two trains.
+- The tank's inlet cyclones and screws moved with it (same rule as L1).
+- Stair 1.2 m wide (was 0.76). **1.2 m is my figure, not his.** First grown
+  toward the right with the walkway 0.44 m longer there; then, from revision 14:
+  **"right side of dewatering screw should be aligned against the left side of
+  the stairs to the washing drum"**. The stair now leaves the walkway 1.679 m
+  past the drum's centre (`VW_TROMMEL_STAIR_Z_M`), the walkway is back to its
+  length, and the railing opens where the stair lands. Measured: screw's right
+  side to the stair's left side 0.000 m (`_2026_09_25_v15`). The tank's
+  reject-container floor marker (ContainerGuide, 5.6 m past its outlet end)
+  now lies partly under the stair's foot.
+- Cyclone inlet at 85 % of the barrel (was 65 %), on every cyclone; the duct
+  aims at it (`cyclone_inlet_local`). The MachineFlow port is unchanged.
+- Blower → cyclone ducts shaped like a J: straight up out of the blower, one
+  bend at the top (radius half the level distance), a level run, a short
+  straight into the inlet. Dryer → blower and cyclone → blower keep a smooth
+  curve.
+- In the render, 17 machine legs are hidden (the drum, the corner chute, the
+  tank's inlet cyclones): at his line-1 start those spots sit on the building
+  shell's own surface 1.0–1.6 m up. The plan tool now reports each hidden leg
+  and what it hits. Part of the known "line 1 fits nowhere in this shell".
+
+## L8. Open
+
+- **The separator → dryer glijgoot runs uphill.** The separator discharges at
+  its high end (~1.7 m); the dryer's inlet is on its top (2.77 m).
+- **The pre-mill cyclones stand beside the mill, not on it** (on 4.6 m legs,
+  0.2 m short of its upstream face), though the SEQ comment says "ON the mill".
+- **The cyclone's flow port is 1.6 m under its inlet box** (0.8·size.y = 2.4 m
+  vs 4.02 m). The ducts use the box; the port steers the flow linker and was
+  left alone.
+- **Heights of the L-R separator.** Nothing here gives the separator's height or
+  how the dewatering screw (discharging at ~5.4 m) feeds it. Built: separator on the floor,
+  housing raised so its spouts fall into the Kufferaths; a 2.7 m chute from the
+  screw down into its hopper.
+- **The MAS trains** after the Kufferaths are one per side (bak, dryer, blower),
+  now centred on their Kufferaths (L3). The 2026-08-28 drawing shows ONE
+  "heather thing" under both Kufferaths; he said "a separate MAS bak" per side.
+  Not asked further.
+- **Lines 3B and 3C** also have an "L-R" friction separator (3B's "throws
+  material both ways", L3C.13). They still use the end-fed `friction_sep`
+  model. Whether his description applies to them was not asked.
+- **Line 1 in the building shell.** At his line-1 start the line still crosses
+  the shell (`docs/audit/building_frame_2026-09-25.md` §7): 17 legs stop on the
+  shell's surface in the render.
+
+## L9. Renders, and the suite that holds these rulings
+
+**Renders kept in `docs/plant/renders/`:** the line as it was on `main`
+(`line1_wet_tail_as_built_2026_09_25.png`, `shot_line1_plan_annotated_`,
+`shot_line1_plan_full_`, `shot_line1_plan_head_`,
+`shot_line1_elevation_magnet_2026_09_25.png` and its `.json`); the two head
+side views of L4; the goot side view of L6 (`_v9b`); and the final layout,
+`_v15` (full plan, head, wet-street plan and side view, magnet elevation, and
+the `.json` of every machine's position). The revisions in between (new, v2 to
+v14, and the wet-tail sketches) are in
+`D:\cedo_archive\renders\line1_2026-09-25\`, not in git.
+
+**Guard:** `src/tests/test_line1_layout.tscn` (in `run.sh`) builds line 1 from
+`LINE_1_SEQ` and measures each ruling above as a distance between two built
+machines, 2 cm tolerance: 54 checks, from the Westa's 0.30 m into the hopper to
+the tank's 6.000 m from the mill. Mutation-proven with 8 changes to the SEQ and
+the catalog, every one red:
+
+| mutation | red checks |
+|---|---|
+| magnet `x` 0.2 → 0.0 | magnet 0.20 m toward the top (1) |
+| right separator not mirrored | flush against the goot, mirrored (2) |
+| tank keeps its catwalk | no catwalk, 6 m to the mill, clears the dryer (3; the catwalk widens the tank) |
+| mill `shift_x` 4.905 → 4.5 | mill on the tank's centre line (1) |
+| `VW_TROMMEL_STAIR_Z_M` 1.679 → 1.709 | stair against the screw (1) |
+| `WESTA_BAND_1_RUN_M` 4.757 → 4.9 | 0.30 m into the hopper (1) |
+| dewatering screw `turn_advance` −2.25 → −2.0 | flush with the tank's side, 1.5 m past the other (2) |
+| tank `gap` 0.6 → 0.3 | stair against the screw, screw flush with the tank (2) |
+
+The first version of the suite missed the dewatering screw's
+sideways position (L2, "flush with the tank's right side, 1.5 m past its
+left"): `turn_advance` on that entry moves the screw along its own run, which no
+check measured. It has three checks for that now.
+
+**Found while updating the suites: the uitvoerband had lost its flake bed.**
+The transport_belt it replaced carried a P1 film bed, and on a LineFlow belt
+node the bed is also what sizes its MotorOverload (round 8, the belt speed
+mismatch). `uitvoerband_1` is built on the feed-belt model, which had no bed,
+so the belt under the magnet showed no flake and could not trip.
+`test_belt_film_field` (S4) and `test_belt_speed_mismatch` went red on it.
+`ShredderFeedBelt.film_bed` now seats a bed on the flat deck and one on the
+climb (snipper density, as for shredded film elsewhere), switched on for
+`uitvoerband_1` only: the opzetband and Westa carry whole bales. Measured after:
+143 ok and 24 ok, `test_line1_no_false_overload` green (the new overload model
+does not trip on line 1's own load), and `drum_feed_belt` still listed as open
+without a bed, as before. Observed, not changed: the receiving belt now gets its
+3.00 kg/s in steps (its input alternates 0.0 / 0.3 / 0.6 kg per 0.1 s tick,
+2.97–3.03 kg/s over any 10 s), where the old 4 m belt handed it on smoothly.

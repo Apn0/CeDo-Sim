@@ -636,12 +636,14 @@ the one before that ~6 months stale — treat this one as re-checkable too):
 | `docs/audit/robustness_and_coverage_2026-09-21.md` | **Crash-safe persistence (`AtomicFile`) and 26 formerly-unrun suites now gated.** Why a save killed mid-write used to load back as an empty factory and get autosaved over; the delete-resurrection bug caught in the first draft; 5 mutation proofs. Plus the bisect that pins the `test_gate_carve` red on two rotation-sign flips in the uncommitted `WallOpenings.gd`, which reds are identical at clean HEAD, and what was measured but not touched |
 | `docs/audit/overnight_enhancement_2026-09-23.md` | **The unattended 2026-09-23 run: 12 commits, every one measured first.** A MotorOverload trip that never stopped conveying, a Lumpenwagen that lost kg when full, checkpoint saves, the F1 key sheet, map labels, the cart speed clamp, the compactor kijkglas, LineFlow moved to 10 Hz (2.85 → 0.54 ms/frame), and two harness reds root-caused as frame-count races (navmesh bake, bale streaming). Two full harness runs, the operator list at the end |
 | `docs/audit/cycle_guard_swap_2026-09-25.md` | **LineFlow's fallback cycle guard was called with swapped arguments and never refused an edge.** Every rerouted edge, on all seven macros, before and after the swap. The per-edge rulings: swap alone, a 3A pin, or fixtures moved to role `none`. The reload measurement (0 cycles, still wrong without pins). `test_fallback_chains` and its mutation table. Found, not fixed at the time: the sort line's topology and the intake belts discovered twice, both fixed the same day (next two rows) |
+| `docs/audit/rebuild_pipe_carry_2026-09-25.md` | **`LineFlow.rebuild()` kept every machine and dropped every belt.** The survivor snapshot (#218) covered nodes, not the connectors: `_link()` cleared `_edges` and `_init_pipes()` built empty pipes, so every rebuild (a flow placement, delete or jog, a line macro beside a running line, the line coupler; not an HMI panel since #218) deleted the kg in transit, 13.35 kg on a 3B line fed 60 s, and the ledger stayed that far off. Now a loaded surviving edge keeps its stages and `stage_t` (an empty one restarts at phase 0: carrying empty phases turned `test_extruder_silo_feed_stop` red), a gone edge's kg go to the source's `out` (or the target's `in` when only it is left); `last_pipe_carry` reports it. Also the survivor key's `get_path()` on a deleted machine (an engine ERROR per delete). `test_rebuild_pipe_carry` and its mutation matrix; the `set_process(false)`-before-`add_child` trap. Open: a deleted machine's own kg leave the ledger |
 | `docs/audit/sort_line_topology_2026-09-25.md` | **The sort line (`LINE_SORT_SEQ`) was wired by guesses: its side lanes sat in one branch chain.** The opzetband fed the bunker past shredder 1, the sorters fed the final climb belt past shredder 2, and shredder 2 had no in-edge. Every link is now declared: main-chain pins, `titech`/`tomra` streams with the sorters in SERIES per lane (operator ruling 2026-09-25), and the new `{"flow": false}` SEQ flag for the reject belts (placed, not flow nodes). Before/after graphs, what settles each link, `test_sort_line_topology` (by name and by kg, incl. "every kg passes both sorter stages") and its mutation table. Open for the operator: the trilzeef, Tomra's missing sort model, the line's geometry |
 | `docs/audit/intake_3a3b_topology_2026-09-25.md` | **The 3A/3B intake (`INTAKE_3A3B_SEQ`): the opzetband fed the climb belt past shredder 2, and conveyor 8 only ever fed the overflow.** Entry 0 is now a plain `transport_belt` (operator 2026-09-25: no bale is ever put on the belt into shredder 2), the head is pinned to shredder 2 → climb belt → transportband 1, and C8 → C9 (forward, edge 0) / C8 → C8.5 → U-bay (reverse) runs on an `overflow` stream that ends at the U-bay (MachineFlow `no_outlet`). Before/after dumps, `test_fallback_chains` H/G/F3/O and its mutation table. Found, not fixed: the #139 pack-up cascade stops C8.5 and C8 within 4 s of both VSSs full, against the operator's notes; the layout; old saves with the opzetband refuse to re-pin; C: measured 0 GB free |
 | `docs/audit/flow_node_twins_2026-09-25.md` | **Every intake belt was two LineFlow nodes: the body's `Model` child was a placeable too.** The mechanism (`BeltBuilder.build()` in 4 belt builders, an inner `_finalize_placeable` in 10 more, 31 catalog ids), what the twin did (feed heads, a double-fed next belt, every intake film bed at 0.000 kg/m, two controllers per deck, K-mode resolving hatch colliders to the Model), the dumps before/after, `test_flow_node_unique` and its mutation table. Both things it found and left are fixed since: the shredder ghosts (next row) and the opzetband bypassing its shredder (the sort line in `sort_line_topology_2026-09-25.md`, the 3A/3B intake in `intake_3a3b_topology_2026-09-25.md`) |
 | `docs/audit/shredder_ghost_placed_object_2026-09-25.md` | **A shredder placement ghost was a `placed_object`:** `ShredderMachine._ready` added the group without knowing it was a ghost, so a raw `build_node(id, true)` became a LineFlow feed head. Measured: BuildMode rebuilds LineFlow with the ghost alive on every placement, but its own ghost was never a flow node (`_make_preview_inert` strips the script first). The fix, why real shredders are unchanged, `test_ghost_census` (all 200 catalog ghosts) and its mutation table. Found, not fixed: raw ghosts still join their own behaviour groups (`shredder`, `lump_cart`, `waste_container`, `hmi`, …) |
 | `docs/audit/aborted_phase_guard_2026-09-25.md` | **A suite lost a whole phase and still printed PASS, and `run.sh` would have passed it.** With C: full, `test_macro_edges_reload`'s phase-D save failed and the typed read after it was a runtime error: `PASS (51 ok)` instead of 60. The fix: the suite checks its save (D-1) and asserts every phase reached its last line (Z3); `run.sh` ends with `script_error_census.sh`, which fails any log of the run with a `^SCRIPT ERROR` line (only `parse_sweep.log` excused); `test_route_goal_clearance`'s pre-autoload compile noise removed. Census tests on real and fabricated logs, the suite's mutation table, the full harness |
 | `docs/audit/macro_edges_reload_2026-09-25.md` | **A macro line's explicit flow edges (pins, streams, split, recirc) now survive a save → load.** Before, a reloaded world had 0 of them (47 tagged nodes → 0). One function, `BuildMode.macro_flow_edges`, serves the build and the load, and the refactored build is diffed identical to the old one (269 rows). Covers `macro_instance`, the hole and dead-end rules for deleted machines, when a save is refused, the guard `test_macro_edges_reload` and its mutation matrix, and what the load does with every macro-bearing layout on this machine |
+| `docs/audit/plant_resume_2026-09-25.md` | **A loaded save resumes the plant as it was saved** (operator ruling 2026-09-25, rulings §R1-§R4; replaces the 2026-07-08 cold start). Measured before: a running line reloaded with 0 powered, the extruder OFF, setpoints at defaults, 0 kg. Where each machine's state rides (its own factory entry), the load order (stash, then resume after LineFlow's rebuild and the shift clock), what each module saves, four things found (rebuild reset component rpm; single-drive component overwrite; lump cart cool timer anchored before the shift load; screen grades re-rolled every boot), `test_plant_resume` and its 14 mutations, what is still not in any save |
 | `docs/audit/hmi_fault_rearm_2026-09-24.md` | **HMI alarms: KWITTEREN acknowledges one occurrence of an alarm (#279), and the same EREMA code on two lines is two alarms (#282).** Probes, the guard suites `test_hmi_fault_rearm` and `test_hmi_fault_per_line` with their mutation matrices, and the full harness on `04eaa77`. **Open:** every panel lists every line's EREMA alarms (found by reading the code, not measured); Afschermen does not exist (the Onderdrukt tab reads a table nothing writes); RESETTEN clearing every acknowledgement has not been ruled on |
 | `docs/audit/operator_session_2026-09-23.md` | **The interactive 2026-09-23 session: tasks ranked by operator effort against sim impact, each answered by AskUserQuestion then built and measured.** Task 1: film beds on every belt (P1), the inclined belt's deck running the wrong diagonal, the cost probe, the renders; per-task evidence and the open questions each one left |
 | `docs/DESIGN_inworld_hmi_2026-09-25.md` | **HMI screens IN the world + hold-F interact mode — SURVEY and operator decisions, nothing built.** Why the 7 web panels cannot go on a mesh (godot_wry is a native window), the pixel budget of a 0.49 m screen at 3–5 m, every key E/F/Q is bound to today, which suites assume a pop-up or the one shared overlay, and the cost probe. The operator's answers (F = interact, E = pick up, F-mode camera/zoom/gold dot) are in `docs/plant/operator_rulings_2026-09-25.md` §H5 |
@@ -655,6 +657,7 @@ the one before that ~6 months stale — treat this one as re-checkable too):
 | `docs/AUDIO_machine_sounds_2026-09-25.md` | **The operator's 11 plant-floor recordings, on their machines, driven by the sim.** File-name cutting grammar (`5s+_`, `25s-35s_`, `loop_3x_`, `_in_operation`, `_loop_4x`) and the rulings behind each bake; `MachineSoundSpec` `.tres` per placeable with the `gain_db` slider (every level a PLACEHOLDER until play-tested); loop seams measured against each loop's own fluctuation; ramps generated from the run loop; the 60 line-macro machines still without a recording. `test_machine_sounds` 80 ok |
 | `docs/plant/operator_rulings_2026-09-23.md` | **Operator answers from memory, 2026-09-23** — film look, colour order, bed depth per belt, where wet flake is visible, screws "differ". Recollections, not documents: cite them as such |
 | `docs/audit/assets_loss_and_restore_2026-09-21.md` | **`assets/` was wiped and restored.** Godot's `.md5` fingerprints identify originals byte for byte: 159 of 273 are back exact and 101 are cache-only (listed; do not re-import them). Also the `Merlo.fbx` re-import trap, what `winfr` did and did not recover (nothing exact), and the method to reuse |
+| `docs/steam/README.md` | **The Steam build (Windows 64-bit), 2026-09-26: built and measured, not uploaded** (no Steamworks account yet). Why "Export all resources" would ship without the building (101 cache-only assets), the explicit file list (`tools/steam/gen_export_preset.py`), the operator's world bundled as a player's first-launch layout (exported builds only), no Desktop `.env` read in an export, the probe runs, and the Steamworks steps. `store_page.md` beside it: the draft text and image sizes |
 | `docs/BACKLOG_ultracode_2026-07-19.md` | Deferred queue — 16 of 40 findings landed; also records the npc-05 vacuous-green correction |
 | `docs/DESIGN_SUGGESTIONS_2026-07-08.md` | Ranked roadmap, P1-P8 physicalization + Q1-Q8 QoL, every item file-cited |
 | `docs/FULL_LOGIC_AUDIT_2026-07-08.md` | Runtime-behaviour audit, 25 findings. **Snapshot, no per-finding status.** Bug 0 / HIGH #1 / #2 / #7 are DONE (#7 fixed 2026-08-23, guarded by `test_project_sweep_guards`); **#12 Walkie→VoiceService is REFUTED — measured, the connect works**; 5 dead files still unverified. Two findings re-measured, one was wrong: re-measure before acting |
@@ -900,6 +903,32 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   DOWN it; fixed to +14° and guarded by `test_wet_side_beds` (the deck's
   `basis.z.y` must be negative). When a builder tilts a surface, assert which
   end is low against `MachineFlow` — the two agree nowhere by construction.
+  **The same class twice more on 2026-09-25, found only from a SIDE view.**
+  The scheidingsgoot stood back to front: inlet at the far end, 1.2 m under the
+  drum's lip, draining back toward the drum. And `_m_friction`'s tube was
+  tipped `PI/2 + tilt` (the sign `_m_transport_screw` already records as wrong),
+  high at its inlet and low at the dryer, with its hopper buried inside the
+  housing. Every plan render looked right. A macro places a machine with its
+  local +Z downstream (rotation = leg + PI), so a model built "toward −Z"
+  arrives reversed. Read the side view, or assert heights at the two ports.
+  `docs/plant/operator_rulings_2026-09-25.md` L6.
+- **A per-entry SEQ trim must be re-applied on reload, or a reloaded line
+  quietly gets the part back.** Line 1's shredder loses its own discharge
+  conveyor (`no_discharge_conveyor`), its tank loses its catwalk (`no_catwalk`),
+  and its right-hand friction separator is mirrored (`mirror`). No save holds
+  any of that: a load rebuilds each machine from the catalog. So all three live
+  in ONE function, `BuildMode._apply_macro_entry_trims`, called after the build
+  places a node AND from `_rederive_macro_flow_edges` on load. A new trim goes
+  in there, not in the build loop. The same goes for `yaw_deg` and `shift_x`:
+  they must also be in `_macro_nominal_poses`, or `save_macro_overrides`
+  records the rotation or offset as an operator edit.
+- **A check measured along one leg cannot see a SEQ key that moves a machine
+  along another.** `turn_advance` on a turned entry moves the machine along its
+  OWN new run. On line 1's dewatering screw that is sideways to the drum's axis,
+  and `test_line1_layout`'s first version measured the stair and the tank
+  against the screw only along that axis. A 0.25 m mutation of it stayed green
+  (M7, 2026-09-26). Mutate every number the rulings rest on, one at a time, and
+  add a check for each one that stays green.
 - **An opaque shell hides whatever you put inside it — a "sight glass" over a
   closed drum shows the drum, not the level.** Measured 2026-09-23 by
   rendering: the compactor kijkglas built that morning (a flat glass disc on
@@ -962,6 +991,22 @@ the one before that ~6 months stale — treat this one as re-checkable too):
   `tick(0.1)` — do not reintroduce per-frame calls, and do not subscribe
   LineFlow to `SimTick` (that autoload is PROCESS_MODE_ALWAYS and would run the
   flow behind the pause menu — the QaLab header explains).
+  **A suite that drives `tick()` itself must call `set_process(false)` AFTER
+  `add_child`.** Godot 4 turns processing on at READY for a script that
+  overrides `_process`, and ignores a call made before it. Measured 2026-09-25
+  in `test_rebuild_pipe_carry`: with the call before `add_child`, LineFlow
+  ticked on frame time in an awaited frame, and the same setup read 13.35 /
+  13.40 / 12.85 kg in its connectors depending on the code under test.
+- **`rebuild()` rebuilds the edges from scratch; whatever lives ON an edge is
+  carried by `_carry_pipes`, not by the node snapshot.** Until 2026-09-25 only
+  the nodes were carried, and every rebuild deleted the kg in the connectors
+  (13.35 kg on a running 3B line; the ledger stayed off). If you add state to
+  an edge dict, carry it there too, and key anything that must match across a
+  rebuild with `_survivor_key()`. An EMPTY edge is deliberately not carried:
+  its phase describes no material, and carrying it let suites that leave
+  LineFlow's `_process` on (27 in `run.sh`) start from the phase of the frames
+  they await before their own `rebuild()`. Measured on one of them:
+  `test_extruder_silo_feed_stop` went red. `docs/audit/rebuild_pipe_carry_2026-09-25.md`.
 - **A stop that is written AFTER the conveying split is not a stop.** LineFlow's
   tick is `_tick_plc_power_downstream` (PLC writes `powered`, runs the spin and
   mechanism ramp) → `_tick_feed` → `_tick_process_machines` (conveys on `spin`)
@@ -1302,6 +1347,31 @@ any step that changes it, naming the step, without restoring. The measurements,
 including which suites wrote the file before, are in
 `docs/audit/world_layout_guard_2026-09-25.md`.
 
+## A loaded save resumes the plant as it was (2026-09-25)
+
+Operator ruling (`docs/plant/operator_rulings_2026-09-25.md` §R1-§R4): a load
+brings back the run state, his settings, the material in the line and the
+latched faults. This replaces the 2026-07-08 "cold start on load". A machine
+placed NEW still starts cold. How a NEW save starts is deferred: the final new
+save is a pre-placed snapshot of the plant, and the empty new save plus the Tab
+build menu are dev-phase tools.
+
+- Each placed body's state rides in its OWN factory entry (`"run"`), the line's in
+  a `{"plant_run": …}` entry. The scheme is in `src/sim/PlantResume.gd`.
+- `_apply_layout_entry` only stashes it. `MainWorld._resume_plant()` applies it
+  after LineFlow's rebuild and the shift clock's load. A save before that writes
+  the stash back.
+- **A field that must survive a rebuild must almost always survive a save.** When
+  you add runtime state, add it to the owner's `RESUME_*` list or
+  `save_run_state` / `restore_run_state`: `LineFlow.RESUME_NODE_FIELDS` sits beside
+  rebuild()'s survivor list, and `ExtruderModel.RESUME_FIELDS` beside its vars.
+  `test_plant_resume` compares every body's saved state by name, so a field that
+  does not come back is red.
+- Only MainWorld wires `BuildMode.line_flow` (SystemsSpawner). A BuildMode without
+  it saves no LineFlow state.
+- Never look a machine up by LineFlow's key across a load: `compactorband#2` is an
+  ordinal of discovery order. Name bodies by `macro_id#instance[index]id`.
+
 ## Operator feedback channel
 
 **F10 is a multi-point marker tool** (`src/scenes/player/MarkerTool.gd`): LMB
@@ -1442,8 +1512,10 @@ his next answers (same file §I11, §I13):
   M11a and the VSS's own discharge, on line 1 the shredder. It runs again after
   10 reports in a row under 100 %. HAND bypasses it, as HAND bypasses every PLC
   safeguard.
-Guard: `test_extruder_silo_feed_stop` (17 checks, 9 mutations red). A load still
-starts cold with every extruder OFF (§I12, a separate task).
+Guard: `test_extruder_silo_feed_stop` (17 checks, 9 mutations red). Since
+the resume on load (§R1-§R4, the section "A loaded save resumes the plant as it
+was" above) a load brings each extruder, and the silo's feed-stop latch, back as
+saved.
 
 **Duration comes from the docs, not from feel.** `ExtruderConfig.preheat_min_s`
 = 1800 s, from Cedo-PROD-SWI-042 p4 step 19: starting the 3a/3b extruder
