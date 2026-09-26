@@ -35,7 +35,10 @@ extends Node
 ##      failed start latching the start alarm. After the reload every latch is
 ##      back, the alarms are raised again for this session, the latches hold on the
 ##      next ticks, and they reset the way they always did (the choke only once the
-##      pile is shovelled).
+##      pile is shovelled). B7: two chute spills under one parent, and two
+##      laserfilters' nozzle-0 lump spills under one parent, keep readable names
+##      through the save (2026-09-26: the second of each was "@Node3D@N" and came
+##      back "_Node3D_N").
 ##   C  A REAL MAINWORLD BOOT on phase A's save, mid-shift (4 h in): MainWorld's
 ##      own load path resumes the plant, and a hot lump cart is still hot (its cool
 ##      timer used to be anchored before the shift clock loaded).
@@ -705,6 +708,14 @@ func _phase_b() -> void:
 	if not choke_nd.is_empty():
 		var wout : Vector3 = choke_nd["wout"]
 		lf1.call("_dump_waste", wout, MaterialBatch.new(1.0e6, 1.0e6 / 400.0, LineFlow.DEFAULT_COMP.duplicate(), "fixture"), [], -1, choke_nd)
+	# 2b) A second spill of each kind under the same parent (B7): an uncaught
+	#     chute beyond LineFlow's 40 m pile search from the first, and nozzle 0
+	#     of 3A's and 3C's laserfilters (both spill under the BuildMode).
+	lf1.call("_dump_waste", Vector3(0.0, 2.0, 200.0), MaterialBatch.new(5.0, 5.0 / 400.0, LineFlow.DEFAULT_COMP.duplicate(), "fixture"), [], -1)
+	for lf_line in ["line_3a", "line_3c"]:
+		var lz := _find(bm1, "laser_filter", lf_line)
+		if lz != null:
+			lz.call("_spill_to_floor", 0, 5.0)
 	# 3) A buffer past the e-stop's overload.
 	var est_nd : Dictionary = {}
 	for nd3 in nodes:
@@ -784,6 +795,27 @@ func _phase_b() -> void:
 	_jdiff(line1, line2, "line", d_line)
 	_check(d_line.is_empty() and piles1.size() >= 1,
 		"B2 the line's own state and its %d loose floor pile(s) are identical %s" % [piles1.size(), str(d_line) if not d_line.is_empty() else ""])
+	var names1 : Array = []
+	var names2 : Array = []
+	for pd1 in piles1:
+		names1.append(String((pd1 as Dictionary).get("name", "")))
+	for pd2 in (line2.get("piles", []) as Array):
+		names2.append(String((pd2 as Dictionary).get("name", "")))
+	names1.sort()
+	names2.sort()
+	var n_chute : int = 0
+	var n_lump : int = 0
+	var unreadable : Array = []
+	for nm in names1:
+		if String(nm).begins_with("ChuteSpill"):
+			n_chute += 1
+		elif String(nm).begins_with("LumpSpill"):
+			n_lump += 1
+		else:
+			unreadable.append(nm)
+	_check(n_chute >= 2 and n_lump >= 2 and unreadable.is_empty() and names2 == names1,
+		"B7 two spills of each kind under one parent keep readable names through the save (%d chute, %d lump): %s -> %s"
+		% [n_chute, n_lump, str(names1), str(names2)])
 	var ex2 := _find(bm2, "extruder_3a")
 	var br2 := _brain(ex2)
 	var m2 = br2.get("model")
